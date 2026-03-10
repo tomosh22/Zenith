@@ -4,7 +4,11 @@
 #include "UI/Zenith_UIStyleRenderer.h"
 #include "Flux/Text/Flux_Text.h"
 #include "Input/Zenith_Input.h"
+#ifdef ZENITH_INPUT_SIMULATOR
+#include "Input/Zenith_InputSimulator.h"
+#endif
 #include "DataStream/Zenith_DataStream.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
@@ -15,7 +19,7 @@
 
 namespace Zenith_UI {
 
-static constexpr uint32_t UI_BUTTON_VERSION = 2;
+static constexpr uint32_t UI_BUTTON_VERSION = 3;
 
 static void WriteStyleToStream(Zenith_DataStream& xStream, const UIStyle& xStyle)
 {
@@ -50,6 +54,9 @@ Zenith_UIButton::Zenith_UIButton(const std::string& strText, const std::string& 
 	// Default button size
 	m_xSize = { 200.0f, 50.0f };
 
+	// Buttons are focusable by default
+	m_bFocusable = true;
+
 	// Default per-state colors
 	m_xNormalStyle.m_xFillColor = {0.25f, 0.25f, 0.30f, 1.0f};
 	m_xHoveredStyle.m_xFillColor = {0.35f, 0.35f, 0.45f, 1.0f};
@@ -64,6 +71,15 @@ Zenith_UIButton::Zenith_UIButton(const std::string& strText, const std::string& 
 	m_xPressedStyle.m_xBorderColor = {0.5f, 0.5f, 0.6f, 1.0f};
 
 	m_xCurrentStyle = m_xNormalStyle;
+}
+
+void Zenith_UIButton::SetIconTexturePath(const std::string& strPath)
+{
+	m_xIconTexture.SetPath(strPath);
+	if (m_xIconTexture.IsSet())
+	{
+		m_xIconTexture.Get(); // trigger load
+	}
 }
 
 void Zenith_UIButton::Update(float fDt)
@@ -86,7 +102,11 @@ void Zenith_UIButton::Update(float fDt)
 	}
 
 #ifdef ZENITH_TOOLS
-	if (Zenith_Editor::GetEditorMode() == EditorMode::Stopped)
+	if (Zenith_Editor::GetEditorMode() == EditorMode::Stopped
+#ifdef ZENITH_INPUT_SIMULATOR
+		&& !Zenith_InputSimulator::IsEnabled()
+#endif
+	)
 	{
 		m_bFocused = false;
 		m_bMousePressedInside = false;
@@ -103,6 +123,9 @@ void Zenith_UIButton::Update(float fDt)
 	float fMouseX = static_cast<float>(xMousePos.x);
 	float fMouseY = static_cast<float>(xMousePos.y);
 #ifdef ZENITH_TOOLS
+#ifdef ZENITH_INPUT_SIMULATOR
+	if (!Zenith_InputSimulator::IsEnabled())
+#endif
 	{
 		Zenith_Maths::Vector2 xViewportPos = Zenith_Editor::GetViewportPos();
 		Zenith_Maths::Vector2 xViewportSize = Zenith_Editor::GetViewportSize();
@@ -204,21 +227,100 @@ void Zenith_UIButton::Render(Zenith_UICanvas& xCanvas)
 
 	UIStyleRenderer::RenderStyledRect(xCanvas, xRenderStyle, xBounds, fAlpha);
 
-	// Render text
-	if (!m_strText.empty())
+	// Determine icon texture
+	uint32_t uIconTextureID = 0;
+	bool bHasIcon = false;
+	if (m_xIconTexture.IsSet() && m_xIconSize.x > 0.f && m_xIconSize.y > 0.f)
 	{
-		float fCharWidth = m_fFontSize * fCHAR_SPACING;
-		float fTextWidth = m_strText.length() * fCharWidth;
-		float fTextHeight = m_fFontSize;
+		Zenith_TextureAsset* pxIconTex = m_xIconTexture.Get();
+		if (pxIconTex && pxIconTex->IsValid() && pxIconTex->m_xSRV.m_xImageViewHandle.IsValid())
+		{
+			uIconTextureID = pxIconTex->m_xSRV.m_xImageViewHandle.AsUInt();
+			bHasIcon = true;
+		}
+	}
 
-		float fBoundsWidth = xBounds.z - xBounds.x;
-		float fBoundsHeight = xBounds.w - xBounds.y;
+	float fBoundsW = xBounds.z - xBounds.x;
+	float fBoundsH = xBounds.w - xBounds.y;
+	float fCharWidth = m_fFontSize * fCHAR_SPACING;
+	float fTextWidth = m_strText.empty() ? 0.f : static_cast<float>(m_strText.length()) * fCharWidth;
+	float fTextHeight = m_fFontSize;
 
-		Zenith_Maths::Vector2 xTextPos = {
-			xBounds.x + (fBoundsWidth - fTextWidth) * 0.5f,
-			xBounds.y + (fBoundsHeight - fTextHeight) * 0.5f
+	// Calculate icon and text positions based on placement
+	Zenith_Maths::Vector2 xIconPos = {0.f, 0.f};
+	Zenith_Maths::Vector2 xTextPos = {0.f, 0.f};
+
+	if (bHasIcon && m_eIconPlacement == IconPlacement::ICON_ONLY)
+	{
+		// Icon centered, no text
+		xIconPos = {
+			xBounds.x + (fBoundsW - m_xIconSize.x) * 0.5f,
+			xBounds.y + (fBoundsH - m_xIconSize.y) * 0.5f
 		};
+	}
+	else if (bHasIcon && !m_strText.empty())
+	{
+		if (m_eIconPlacement == IconPlacement::LEFT || m_eIconPlacement == IconPlacement::RIGHT)
+		{
+			float fTotalW = m_xIconSize.x + m_fIconPadding + fTextWidth;
+			float fStartX = xBounds.x + (fBoundsW - fTotalW) * 0.5f;
+			float fCenterY = xBounds.y + fBoundsH * 0.5f;
 
+			if (m_eIconPlacement == IconPlacement::LEFT)
+			{
+				xIconPos = {fStartX, fCenterY - m_xIconSize.y * 0.5f};
+				xTextPos = {fStartX + m_xIconSize.x + m_fIconPadding, fCenterY - fTextHeight * 0.5f};
+			}
+			else
+			{
+				xTextPos = {fStartX, fCenterY - fTextHeight * 0.5f};
+				xIconPos = {fStartX + fTextWidth + m_fIconPadding, fCenterY - m_xIconSize.y * 0.5f};
+			}
+		}
+		else // TOP or BOTTOM
+		{
+			float fTotalH = m_xIconSize.y + m_fIconPadding + fTextHeight;
+			float fStartY = xBounds.y + (fBoundsH - fTotalH) * 0.5f;
+			float fCenterX = xBounds.x + fBoundsW * 0.5f;
+
+			if (m_eIconPlacement == IconPlacement::TOP)
+			{
+				xIconPos = {fCenterX - m_xIconSize.x * 0.5f, fStartY};
+				xTextPos = {fCenterX - fTextWidth * 0.5f, fStartY + m_xIconSize.y + m_fIconPadding};
+			}
+			else
+			{
+				xTextPos = {fCenterX - fTextWidth * 0.5f, fStartY};
+				xIconPos = {fCenterX - m_xIconSize.x * 0.5f, fStartY + fTextHeight + m_fIconPadding};
+			}
+		}
+	}
+	else if (!m_strText.empty())
+	{
+		// Text only (no icon) — center text
+		xTextPos = {
+			xBounds.x + (fBoundsW - fTextWidth) * 0.5f,
+			xBounds.y + (fBoundsH - fTextHeight) * 0.5f
+		};
+	}
+
+	// Render icon
+	if (bHasIcon && m_eIconPlacement != IconPlacement::ICON_ONLY)
+	{
+		Zenith_Maths::Vector4 xIconBounds = {xIconPos.x, xIconPos.y, xIconPos.x + m_xIconSize.x, xIconPos.y + m_xIconSize.y};
+		Zenith_Maths::Vector4 xIconColor = {1.f, 1.f, 1.f, fAlpha};
+		xCanvas.SubmitQuadWithUV(xIconBounds, xIconColor, uIconTextureID, {0.f, 0.f}, {1.f, 1.f});
+	}
+	else if (bHasIcon && m_eIconPlacement == IconPlacement::ICON_ONLY)
+	{
+		Zenith_Maths::Vector4 xIconBounds = {xIconPos.x, xIconPos.y, xIconPos.x + m_xIconSize.x, xIconPos.y + m_xIconSize.y};
+		Zenith_Maths::Vector4 xIconColor = {1.f, 1.f, 1.f, fAlpha};
+		xCanvas.SubmitQuadWithUV(xIconBounds, xIconColor, uIconTextureID, {0.f, 0.f}, {1.f, 1.f});
+	}
+
+	// Render text (unless icon-only mode)
+	if (!m_strText.empty() && m_eIconPlacement != IconPlacement::ICON_ONLY)
+	{
 		// Text shadow
 		if (m_bTextShadowEnabled)
 		{
@@ -258,6 +360,13 @@ void Zenith_UIButton::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_bTextShadowEnabled;
 	xStream << m_xTextShadowColor.x; xStream << m_xTextShadowColor.y; xStream << m_xTextShadowColor.z; xStream << m_xTextShadowColor.w;
 	xStream << m_xTextShadowOffset.x; xStream << m_xTextShadowOffset.y;
+
+	// v3: icon data
+	std::string strIconPath = m_xIconTexture.GetPath();
+	xStream << strIconPath;
+	xStream << m_xIconSize.x; xStream << m_xIconSize.y;
+	xStream << static_cast<uint32_t>(m_eIconPlacement);
+	xStream << m_fIconPadding;
 }
 
 void Zenith_UIButton::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -267,7 +376,7 @@ void Zenith_UIButton::ReadFromDataStream(Zenith_DataStream& xStream)
 	uint32_t uVersion;
 	xStream >> uVersion;
 
-	Zenith_Assert(uVersion == UI_BUTTON_VERSION, "UIButton version mismatch");
+	Zenith_Assert(uVersion <= UI_BUTTON_VERSION, "UIButton version mismatch");
 
 	xStream >> m_strText;
 	xStream >> m_fFontSize;
@@ -283,6 +392,21 @@ void Zenith_UIButton::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_bTextShadowEnabled;
 	xStream >> m_xTextShadowColor.x; xStream >> m_xTextShadowColor.y; xStream >> m_xTextShadowColor.z; xStream >> m_xTextShadowColor.w;
 	xStream >> m_xTextShadowOffset.x; xStream >> m_xTextShadowOffset.y;
+
+	if (uVersion >= 3)
+	{
+		std::string strIconPath;
+		xStream >> strIconPath;
+		if (!strIconPath.empty())
+		{
+			SetIconTexturePath(strIconPath);
+		}
+		xStream >> m_xIconSize.x; xStream >> m_xIconSize.y;
+		uint32_t uPlacement;
+		xStream >> uPlacement;
+		m_eIconPlacement = static_cast<IconPlacement>(uPlacement);
+		xStream >> m_fIconPadding;
+	}
 
 	m_xCurrentStyle = m_xNormalStyle;
 }
@@ -342,6 +466,33 @@ void Zenith_UIButton::RenderPropertiesPanel()
 	ImGui::Checkbox("Shadow", &m_xNormalStyle.m_bShadowEnabled);
 	ImGui::Checkbox("Text Shadow", &m_bTextShadowEnabled);
 
+	ImGui::Separator();
+	ImGui::Text("Icon");
+
+	char szIconPathBuffer[512];
+	const std::string& strIconPath = m_xIconTexture.GetPath();
+	strncpy_s(szIconPathBuffer, strIconPath.c_str(), sizeof(szIconPathBuffer) - 1);
+	if (ImGui::InputText("Icon Path", szIconPathBuffer, sizeof(szIconPathBuffer), ImGuiInputTextFlags_EnterReturnsTrue))
+	{
+		SetIconTexturePath(szIconPathBuffer);
+	}
+
+	float fIconSz[2] = {m_xIconSize.x, m_xIconSize.y};
+	if (ImGui::DragFloat2("Icon Size", fIconSz, 1.f, 0.f, 256.f))
+	{
+		m_xIconSize = {fIconSz[0], fIconSz[1]};
+	}
+
+	const char* szPlacements[] = {"Left", "Right", "Top", "Bottom", "Icon Only"};
+	int iPlacement = static_cast<int>(m_eIconPlacement);
+	if (ImGui::Combo("Icon Placement", &iPlacement, szPlacements, 5))
+	{
+		m_eIconPlacement = static_cast<IconPlacement>(iPlacement);
+	}
+
+	ImGui::DragFloat("Icon Padding", &m_fIconPadding, 0.5f, 0.f, 50.f);
+
+	ImGui::Separator();
 	const char* szStates[] = { "Normal", "Hovered", "Pressed" };
 	ImGui::Text("Current State: %s", szStates[static_cast<int>(m_eState)]);
 	ImGui::Text("Focused: %s", m_bFocused ? "Yes" : "No");

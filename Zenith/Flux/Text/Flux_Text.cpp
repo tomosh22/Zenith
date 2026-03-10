@@ -36,6 +36,13 @@ static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 
 static Zenith_TextureAsset* s_pxFontAtlasTexture = nullptr;
 
+// Overlay clip rect state (set during canvas render, consumed during Flux_Text::Render)
+static bool s_bOverlayClipActive = false;
+static Zenith_Maths::Vector4 s_xOverlayClipRect = {-1.f, -1.f, -1.f, -1.f};
+static int s_iOverlayClipSortOrder = 100;
+static uint32_t s_uBgCharCount = 0;
+static uint32_t s_uFgCharCount = 0;
+
 DEBUGVAR bool dbg_bEnable = true;
 DEBUGVAR float dbg_fTextSize = 100.f;
 
@@ -104,55 +111,110 @@ void Flux_Text::Shutdown()
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text shut down");
 }
 
+void Flux_Text::SetOverlayClipRect(const Zenith_Maths::Vector4& xRect, int iSortOrder)
+{
+	s_bOverlayClipActive = true;
+	s_xOverlayClipRect = xRect;
+	s_iOverlayClipSortOrder = iSortOrder;
+}
+
+void Flux_Text::ClearOverlayClipRect()
+{
+	s_bOverlayClipActive = false;
+	s_xOverlayClipRect = {-1.f, -1.f, -1.f, -1.f};
+}
+
+// Helper: process a text entry's characters into the vertex buffer
+static void ProcessTextEntry(const Zenith_UI::UITextEntry& xEntry, Zenith_Vector<TextVertex>& xVertices, uint32_t& uCharCount)
+{
+	float fCursorX = 0.f;
+	float fCursorY = 0.f;
+	for (uint32_t u = 0; u < xEntry.m_strText.size(); u++)
+	{
+		char cChar = xEntry.m_strText.at(u);
+
+		// Handle newline: advance to next line
+		if (cChar == '\n')
+		{
+			fCursorX = 0.f;
+			fCursorY += 1.f;
+			continue;
+		}
+
+		// Skip non-printable characters (ASCII < 32) to prevent index underflow
+		// Font atlas starts at space (ASCII 32), so characters below that are invalid
+		if (cChar < 32 || cChar > 126)
+		{
+			continue;
+		}
+
+		TextVertex xVertex;
+		xVertex.m_xTextRoot = { static_cast<uint32_t>(xEntry.m_xPosition.x), static_cast<uint32_t>(xEntry.m_xPosition.y) };
+		xVertex.m_fTextSize = xEntry.m_fSize;
+		xVertex.m_xPos = Zenith_Maths::Vector2(fCursorX, fCursorY);
+		xVertex.m_xColour = xEntry.m_xColor;
+
+		const uint32_t uIndex = static_cast<uint32_t>(cChar - 32);
+
+		const Zenith_Maths::UVector2 xTextureOffsets = { (uIndex % 10), (uIndex / 10) };
+		xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
+		xVertex.m_xUV /= 10.f;
+		uCharCount++;
+
+		xVertices.PushBack(xVertex);
+		fCursorX += fCHAR_SPACING;
+	}
+}
+
 //#TO returns number of chars to render
 uint32_t Flux_Text::UploadChars()
 {
 	Zenith_Vector<TextVertex> xVertices(s_uMaxCharsPerFrame);
 	uint32_t uCharCount = 0;
 
-	// Process UI text entries from Zenith_UICanvas
 	Zenith_Vector<Zenith_UI::UITextEntry>& xUITextEntries = Zenith_UI::Zenith_UICanvas::GetPendingTextEntries();
-	for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
+
+	if (s_bOverlayClipActive)
 	{
-		const Zenith_UI::UITextEntry& xEntry = xIt.GetData();
-		float fCursorX = 0.f;
-		float fCursorY = 0.f;
-		for (uint32_t u = 0; u < xEntry.m_strText.size(); u++)
+		// Two-pass partitioning: background text first, then overlay text
+		// This allows the renderer to draw them with different clip rect push constants
+		s_uBgCharCount = 0;
+		s_uFgCharCount = 0;
+
+		// Pass 1: Background text (sort order below overlay threshold)
+		for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
 		{
-			char cChar = xEntry.m_strText.at(u);
-
-			// Handle newline: advance to next line
-			if (cChar == '\n')
+			const Zenith_UI::UITextEntry& xEntry = xIt.GetData();
+			if (xEntry.m_iSortOrder < s_iOverlayClipSortOrder)
 			{
-				fCursorX = 0.f;
-				fCursorY += 1.f;
-				continue;
+				ProcessTextEntry(xEntry, xVertices, s_uBgCharCount);
 			}
+		}
 
-			// Skip non-printable characters (ASCII < 32) to prevent index underflow
-			// Font atlas starts at space (ASCII 32), so characters below that are invalid
-			if (cChar < 32 || cChar > 126)
+		// Pass 2: Overlay/foreground text (sort order at or above overlay threshold)
+		for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
+		{
+			const Zenith_UI::UITextEntry& xEntry = xIt.GetData();
+			if (xEntry.m_iSortOrder >= s_iOverlayClipSortOrder)
 			{
-				continue;
+				ProcessTextEntry(xEntry, xVertices, s_uFgCharCount);
 			}
+		}
 
-			TextVertex xVertex;
-			xVertex.m_xTextRoot = { static_cast<uint32_t>(xEntry.m_xPosition.x), static_cast<uint32_t>(xEntry.m_xPosition.y) };
-			xVertex.m_fTextSize = xEntry.m_fSize;
-			xVertex.m_xPos = Zenith_Maths::Vector2(fCursorX, fCursorY);
-			xVertex.m_xColour = xEntry.m_xColor;
+		uCharCount = s_uBgCharCount + s_uFgCharCount;
+	}
+	else
+	{
+		// No overlay active: process all entries in a single pass
+		s_uBgCharCount = 0;
+		s_uFgCharCount = 0;
 
-			const uint32_t uIndex = static_cast<uint32_t>(cChar - 32);
-
-			const Zenith_Maths::UVector2 xTextureOffsets = { (uIndex % 10), (uIndex / 10) };
-			xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
-			xVertex.m_xUV /= 10.f;
-			uCharCount++;
-
-			xVertices.PushBack(xVertex);
-			fCursorX += fCHAR_SPACING;
+		for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
+		{
+			ProcessTextEntry(xIt.GetData(), xVertices, uCharCount);
 		}
 	}
+
 	// Clear UI text entries after processing
 	Zenith_UI::Zenith_UICanvas::ClearPendingTextEntries();
 
@@ -180,6 +242,12 @@ void Flux_Text::Render(void*)
 
 	uint32_t uNumChars = UploadChars();
 
+	if (uNumChars == 0)
+	{
+		s_bOverlayClipActive = false;
+		return;
+	}
+
 	g_xCommandList.Reset(false);
 
 	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
@@ -192,7 +260,30 @@ void Flux_Text::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxFontAtlasTexture->m_xSRV, 1);
 
-	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
+	if (s_bOverlayClipActive && s_uBgCharCount > 0)
+	{
+		// Draw background text with overlay clip rect active
+		g_xCommandList.AddCommand<Flux_CommandPushConstant>(&s_xOverlayClipRect, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uBgCharCount, 0, 0, 0);
+
+		if (s_uFgCharCount > 0)
+		{
+			// Draw overlay text without clip rect
+			Zenith_Maths::Vector4 xNoClip = {-1.f, -1.f, -1.f, -1.f};
+			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uFgCharCount, 0, 0, s_uBgCharCount);
+		}
+	}
+	else
+	{
+		// No overlay clipping: single draw, clip rect disabled
+		Zenith_Maths::Vector4 xNoClip = {-1.f, -1.f, -1.f, -1.f};
+		g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
+	}
 
 	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_TEXT);
+
+	// Clear overlay clip rect for next frame
+	s_bOverlayClipActive = false;
 }

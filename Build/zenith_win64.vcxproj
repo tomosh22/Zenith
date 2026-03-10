@@ -1297,10 +1297,14 @@
     <ClInclude Include="..\Zenith\UI\Zenith_UIElement.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIImage.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UILayoutGroup.h" />
+    <ClInclude Include="..\Zenith\UI\Zenith_UIOverlay.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIRect.h" />
+    <ClInclude Include="..\Zenith\UI\Zenith_UIScrollView.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIStyle.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIStyleRenderer.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIText.h" />
+    <ClInclude Include="..\Zenith\UI\Zenith_UIToggle.h" />
+    <ClInclude Include="..\Zenith\UI\Zenith_UITween.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AITests.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AutomationTests.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h" />
@@ -2420,9 +2424,12 @@
     <ClCompile Include="..\Zenith\UI\Zenith_UIElement.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIImage.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UILayoutGroup.cpp" />
+    <ClCompile Include="..\Zenith\UI\Zenith_UIOverlay.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIRect.cpp" />
+    <ClCompile Include="..\Zenith\UI\Zenith_UIScrollView.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIStyleRenderer.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIText.cpp" />
+    <ClCompile Include="..\Zenith\UI\Zenith_UIToggle.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AITests.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AutomationTests.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.cpp" />

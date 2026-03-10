@@ -26,7 +26,8 @@ void SetCatCafeVisible(bool bVisible)
 	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
 	const char* aszCatCafeElements[] = {
-		"CatCafeBg", "CatCafeTitle", "CatCafeCount"
+		"CatCafeBg", "CatCafeTitle", "CatCafeCount",
+		"CatProgressBg", "CatProgressFill"
 	};
 	for (const char* szName : aszCatCafeElements)
 	{
@@ -131,29 +132,11 @@ void UpdateCatCafeUI()
 		}
 	}
 
-	// Collection progress bar via canvas
-	Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
-	if (pxCanvas)
+	// Update cat collection progress bar fill amount
+	if (m_pxCatProgressFill)
 	{
-		int32_t iWinWidth, iWinHeight;
-		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
-		float fW = static_cast<float>(iWinWidth);
-
-		float fBarX = 50.0f;
-		float fBarY = 70.0f;
-		float fBarW = fW - 100.0f;
-		float fBarH = 12.0f;
-
-		// Background bar
-		pxCanvas->SubmitQuad(
-			Zenith_Maths::Vector4(fBarX, fBarY, fBarX + fBarW, fBarY + fBarH),
-			Zenith_Maths::Vector4(0.15f, 0.15f, 0.2f, 0.8f));
-
-		// Fill bar
 		float fFillRatio = static_cast<float>(m_xSaveData.uCatsCollectedCount) / static_cast<float>(TilePuzzleSaveData::uMAX_CATS);
-		pxCanvas->SubmitQuad(
-			Zenith_Maths::Vector4(fBarX, fBarY, fBarX + fBarW * fFillRatio, fBarY + fBarH),
-			Zenith_Maths::Vector4(1.0f, 0.7f, 0.2f, 0.9f));
+		m_pxCatProgressFill->SetFillAmount(fFillRatio);
 	}
 }
 
@@ -208,9 +191,6 @@ void SetVictoryOverlayVisible(bool bVisible)
 		"VictoryStarGroup", "VictoryStar0", "VictoryStar1", "VictoryStar2"
 	};
 
-	// Button handled separately — hidden until animation reveals it
-	Zenith_UI::Zenith_UIButton* pxNextBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("NextLevelBtn");
-
 	if (bVisible)
 	{
 		// Show all elements but start fully transparent for staggered reveal
@@ -238,14 +218,14 @@ void SetVictoryOverlayVisible(bool bVisible)
 		}
 
 		// Keep button hidden until the animation makes it visible
-		if (pxNextBtn)
+		if (m_pxNextLevelBtn)
 		{
-			pxNextBtn->SetVisible(false);
-			pxNextBtn->SetPosition(0.f, 145.f);
-			pxNextBtn->SetNormalColor(Zenith_Maths::Vector4(0.15f, 0.4f, 0.2f, 1.0f));
-			pxNextBtn->SetHoverColor(Zenith_Maths::Vector4(0.25f, 0.55f, 0.3f, 1.0f));
-			pxNextBtn->SetPressedColor(Zenith_Maths::Vector4(0.1f, 0.3f, 0.15f, 1.0f));
-			pxNextBtn->SetGroupAlpha(1.0f);
+			m_pxNextLevelBtn->SetVisible(false);
+			m_pxNextLevelBtn->SetPosition(0.f, 145.f);
+			m_pxNextLevelBtn->SetNormalColor(Zenith_Maths::Vector4(0.15f, 0.4f, 0.2f, 1.0f));
+			m_pxNextLevelBtn->SetHoverColor(Zenith_Maths::Vector4(0.25f, 0.55f, 0.3f, 1.0f));
+			m_pxNextLevelBtn->SetPressedColor(Zenith_Maths::Vector4(0.1f, 0.3f, 0.15f, 1.0f));
+			m_pxNextLevelBtn->SetGroupAlpha(1.0f);
 		}
 
 		// Reset coin display counter
@@ -258,7 +238,7 @@ void SetVictoryOverlayVisible(bool bVisible)
 			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
 			if (pxElem) pxElem->SetVisible(false);
 		}
-		if (pxNextBtn) pxNextBtn->SetVisible(false);
+		if (m_pxNextLevelBtn) m_pxNextLevelBtn->SetVisible(false);
 	}
 }
 
@@ -461,13 +441,12 @@ void UpdateVictoryOverlay(float fDeltaTime)
 
 	// (2.5s) Button appears
 	{
-		Zenith_UI::Zenith_UIButton* pxNextBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("NextLevelBtn");
-		if (pxNextBtn)
+		if (m_pxNextLevelBtn)
 		{
 			float fProgress = EaseInRange(fT, s_fButtonsStart, s_fButtonsDuration);
-			if (fProgress > 0.0f && !pxNextBtn->IsVisible())
+			if (fProgress > 0.0f && !m_pxNextLevelBtn->IsVisible())
 			{
-				pxNextBtn->SetVisible(true);
+				m_pxNextLevelBtn->SetVisible(true);
 			}
 		}
 	}
@@ -479,37 +458,25 @@ void UpdateVictoryOverlay(float fDeltaTime)
 
 void SetLivesDisplayVisible(bool bVisible)
 {
-	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		return;
-
-	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
-	if (auto* pxArea = xUI.FindElement("LivesArea"))
-		pxArea->SetVisible(bVisible);
+	if (m_pxLivesArea)
+		m_pxLivesArea->SetVisible(bVisible);
 }
 
 void UpdateLivesDisplay()
 {
-	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		return;
-
-	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
-	Zenith_UI::Zenith_UIText* pxLives = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesText");
-	if (pxLives)
+	if (m_pxLivesText)
 	{
 		char szLives[64];
 		snprintf(szLives, sizeof(szLives), "Lives: %u/%u",
 			m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES);
-		pxLives->SetText(szLives);
+		m_pxLivesText->SetText(szLives);
 	}
 
 	// Timer text shown below lives group when regenerating
-	Zenith_UI::Zenith_UIText* pxTimer = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesTimerText");
-	if (pxTimer)
+	if (m_pxLivesTimerText)
 	{
 		bool bRegenerating = m_xSaveData.uLives < TilePuzzleSaveData::uMAX_LIVES;
-		pxTimer->SetVisible(bRegenerating && m_eState == TILEPUZZLE_STATE_MAIN_MENU);
+		m_pxLivesTimerText->SetVisible(bRegenerating && m_eState == TILEPUZZLE_STATE_MAIN_MENU);
 		if (bRegenerating)
 		{
 			uint32_t uTimerSecs = m_xSaveData.GetSecondsUntilNextLife(GetCurrentTimestamp());
@@ -517,15 +484,14 @@ void UpdateLivesDisplay()
 			uint32_t uSecs = uTimerSecs % 60;
 			char szTimer[32];
 			snprintf(szTimer, sizeof(szTimer), "Next: %u:%02u", uMins, uSecs);
-			pxTimer->SetText(szTimer);
+			m_pxLivesTimerText->SetText(szTimer);
 		}
 	}
 
 	// Show/hide refill button based on lives count
-	Zenith_UI::Zenith_UIButton* pxRefill = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
-	if (pxRefill)
+	if (m_pxRefillBtn)
 	{
-		pxRefill->SetVisible(m_eState == TILEPUZZLE_STATE_MAIN_MENU &&
+		m_pxRefillBtn->SetVisible(m_eState == TILEPUZZLE_STATE_MAIN_MENU &&
 			m_xSaveData.uLives < TilePuzzleSaveData::uMAX_LIVES);
 	}
 }
@@ -546,17 +512,11 @@ static void OnRefillLivesClicked(void* pxUserData)
 
 void UpdateCoinDisplay()
 {
-	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		return;
-
-	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
-	Zenith_UI::Zenith_UIText* pxCoins = xUI.FindElement<Zenith_UI::Zenith_UIText>("CoinText");
-	if (pxCoins)
+	if (m_pxMenuCoinText)
 	{
 		char szCoins[32];
 		snprintf(szCoins, sizeof(szCoins), "Coins: %u", m_xSaveData.uCoins);
-		pxCoins->SetText(szCoins);
+		m_pxMenuCoinText->SetText(szCoins);
 	}
 }
 
@@ -597,17 +557,11 @@ static void OnDailyPuzzleClicked(void* pxUserData)
 
 void UpdateDailyStreakDisplay()
 {
-	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		return;
-
-	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
-	Zenith_UI::Zenith_UIText* pxStreak = xUI.FindElement<Zenith_UI::Zenith_UIText>("DailyStreakText");
-	if (pxStreak)
+	if (m_pxStreakText)
 	{
 		char szStreak[32];
 		snprintf(szStreak, sizeof(szStreak), "%u days", m_xSaveData.uDailyStreak);
-		pxStreak->SetText(szStreak);
+		m_pxStreakText->SetText(szStreak);
 	}
 }
 
@@ -651,49 +605,31 @@ void SetSettingsVisible(bool bVisible)
 		if (pxElem) pxElem->SetVisible(bVisible);
 	}
 
-	const char* aszSettingsButtons[] = {
+	const char* aszSettingsInteractables[] = {
 		"SettingsSoundBtn", "SettingsMusicBtn", "SettingsHapticsBtn", "SettingsCreditsBtn", "SettingsBackBtn"
 	};
-	for (const char* szName : aszSettingsButtons)
+	for (const char* szName : aszSettingsInteractables)
 	{
-		Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(szName);
-		if (pxBtn) pxBtn->SetVisible(bVisible);
+		Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement(szName);
+		if (pxElem) pxElem->SetVisible(bVisible);
 	}
 }
 
-void UpdateSettingsUI()
+void SyncSettingsToggles()
 {
 	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
 		return;
 
 	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
-	Zenith_UI::Zenith_UIButton* pxSoundBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsSoundBtn");
-	if (pxSoundBtn)
-	{
-		pxSoundBtn->SetText(m_xSaveData.bSoundEnabled ? "Sound: ON" : "Sound: OFF");
-		pxSoundBtn->SetNormalColor(m_xSaveData.bSoundEnabled
-			? Zenith_Maths::Vector4(0.2f, 0.4f, 0.3f, 1.0f)
-			: Zenith_Maths::Vector4(0.3f, 0.15f, 0.15f, 1.0f));
-	}
+	Zenith_UI::Zenith_UIToggle* pxSound = xUI.FindElement<Zenith_UI::Zenith_UIToggle>("SettingsSoundBtn");
+	if (pxSound) pxSound->SetIsOn(m_xSaveData.bSoundEnabled);
 
-	Zenith_UI::Zenith_UIButton* pxMusicBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsMusicBtn");
-	if (pxMusicBtn)
-	{
-		pxMusicBtn->SetText(m_xSaveData.bMusicEnabled ? "Music: ON" : "Music: OFF");
-		pxMusicBtn->SetNormalColor(m_xSaveData.bMusicEnabled
-			? Zenith_Maths::Vector4(0.2f, 0.4f, 0.3f, 1.0f)
-			: Zenith_Maths::Vector4(0.3f, 0.15f, 0.15f, 1.0f));
-	}
+	Zenith_UI::Zenith_UIToggle* pxMusic = xUI.FindElement<Zenith_UI::Zenith_UIToggle>("SettingsMusicBtn");
+	if (pxMusic) pxMusic->SetIsOn(m_xSaveData.bMusicEnabled);
 
-	Zenith_UI::Zenith_UIButton* pxHapticsBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsHapticsBtn");
-	if (pxHapticsBtn)
-	{
-		pxHapticsBtn->SetText(m_xSaveData.bHapticsEnabled ? "Haptics: ON" : "Haptics: OFF");
-		pxHapticsBtn->SetNormalColor(m_xSaveData.bHapticsEnabled
-			? Zenith_Maths::Vector4(0.2f, 0.4f, 0.3f, 1.0f)
-			: Zenith_Maths::Vector4(0.3f, 0.15f, 0.15f, 1.0f));
-	}
+	Zenith_UI::Zenith_UIToggle* pxHaptics = xUI.FindElement<Zenith_UI::Zenith_UIToggle>("SettingsHapticsBtn");
+	if (pxHaptics) pxHaptics->SetIsOn(m_xSaveData.bHapticsEnabled);
 }
 
 static void OnSettingsClicked(void* pxUserData)
@@ -710,31 +646,30 @@ static void OnSettingsBackClicked(void* pxUserData)
 	pxSelf->StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 }
 
-static void OnToggleSoundClicked(void* pxUserData)
+static void OnSettingSoundChanged(bool bNewValue, void* pxUserData)
 {
 	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-	pxSelf->m_xSaveData.bSoundEnabled = !pxSelf->m_xSaveData.bSoundEnabled;
-	pxSelf->UpdateSettingsUI();
+	pxSelf->m_xSaveData.bSoundEnabled = bNewValue;
 }
 
-static void OnToggleMusicClicked(void* pxUserData)
+static void OnSettingMusicChanged(bool bNewValue, void* pxUserData)
 {
 	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-	pxSelf->m_xSaveData.bMusicEnabled = !pxSelf->m_xSaveData.bMusicEnabled;
-	pxSelf->UpdateSettingsUI();
+	pxSelf->m_xSaveData.bMusicEnabled = bNewValue;
 }
 
-static void OnToggleHapticsClicked(void* pxUserData)
+static void OnSettingHapticsChanged(bool bNewValue, void* pxUserData)
 {
 	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-	pxSelf->m_xSaveData.bHapticsEnabled = !pxSelf->m_xSaveData.bHapticsEnabled;
-	pxSelf->UpdateSettingsUI();
+	pxSelf->m_xSaveData.bHapticsEnabled = bNewValue;
 }
 
 static void OnCreditsClicked(void* pxUserData)
 {
 	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
 	pxSelf->m_bCreditsOverlayActive = true;
+	if (pxSelf->m_pxCreditsOverlay)
+		pxSelf->m_pxCreditsOverlay->Show();
 }
 
 static void OnAchievementsClicked(void* pxUserData)
@@ -748,58 +683,13 @@ void UpdateCreditsOverlay(float /*fDeltaTime*/)
 	if (!m_bCreditsOverlayActive)
 		return;
 
-	Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
-	if (!pxCanvas) return;
-
-	int32_t iWinWidth, iWinHeight;
-	Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
-	float fW = static_cast<float>(iWinWidth);
-	float fH = static_cast<float>(iWinHeight);
-
-	// Dark overlay
-	pxCanvas->SubmitQuad(
-		Zenith_Maths::Vector4(0.0f, 0.0f, fW, fH),
-		Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.8f));
-
-	// Credits box
-	float fBoxW = 350.0f;
-	float fBoxH = 250.0f;
-	float fBoxX = (fW - fBoxW) * 0.5f;
-	float fBoxY = (fH - fBoxH) * 0.5f;
-
-	pxCanvas->SubmitQuad(
-		Zenith_Maths::Vector4(fBoxX, fBoxY, fBoxX + fBoxW, fBoxY + fBoxH),
-		Zenith_Maths::Vector4(0.1f, 0.1f, 0.2f, 0.95f));
-
-	pxCanvas->SubmitText(
-		"Paws & Pins v1.0",
-		Zenith_Maths::Vector2(fBoxX + 60.0f, fBoxY + 30.0f),
-		32.0f,
-		Zenith_Maths::Vector4(1.0f, 0.9f, 0.3f, 1.0f));
-
-	pxCanvas->SubmitText(
-		"Built with Zenith Engine",
-		Zenith_Maths::Vector2(fBoxX + 50.0f, fBoxY + 80.0f),
-		22.0f,
-		Zenith_Maths::Vector4(0.8f, 0.8f, 0.9f, 1.0f));
-
-	pxCanvas->SubmitText(
-		"A Cat Puzzle Game",
-		Zenith_Maths::Vector2(fBoxX + 80.0f, fBoxY + 120.0f),
-		22.0f,
-		Zenith_Maths::Vector4(0.8f, 0.8f, 0.9f, 1.0f));
-
-	pxCanvas->SubmitText(
-		"Tap anywhere to dismiss",
-		Zenith_Maths::Vector2(fBoxX + 60.0f, fBoxY + 200.0f),
-		18.0f,
-		Zenith_Maths::Vector4(0.6f, 0.6f, 0.6f, 0.5f + 0.5f * sinf(m_fMenuTimer * 3.0f)));
-
-	// Tap to dismiss
+	// Overlay handles its own rendering — just check for dismiss
 	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 	if (bMouseDown && !m_bConfirmDialogMouseWasDown)
 	{
 		m_bCreditsOverlayActive = false;
+		if (m_pxCreditsOverlay)
+			m_pxCreditsOverlay->Hide();
 	}
 	m_bConfirmDialogMouseWasDown = bMouseDown;
 }
@@ -815,17 +705,12 @@ void UpdateMainMenuUI()
 	UpdateDailyStreakDisplay();
 
 	// Star counter on main menu
-	if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+	if (m_pxTotalStarsText)
 	{
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIText* pxStars = xUI.FindElement<Zenith_UI::Zenith_UIText>("TotalStarsText");
-		if (pxStars)
-		{
-			uint32_t uMaxStars = TilePuzzleSaveData::uMAX_LEVELS * 3;
-			char szStars[48];
-			snprintf(szStars, sizeof(szStars), "Stars: %u / %u", m_xSaveData.uTotalStars, uMaxStars);
-			pxStars->SetText(szStars);
-		}
+		uint32_t uMaxStars = TilePuzzleSaveData::uMAX_LEVELS * 3;
+		char szStars[48];
+		snprintf(szStars, sizeof(szStars), "Stars: %u / %u", m_xSaveData.uTotalStars, uMaxStars);
+		m_pxTotalStarsText->SetText(szStars);
 	}
 
 	// Regenerate lives periodically

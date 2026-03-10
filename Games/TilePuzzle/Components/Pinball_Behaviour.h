@@ -466,6 +466,29 @@ public:
 			{
 				pxBackBtn->SetOnClick(&OnBackClicked, this);
 			}
+
+			// Gate select widgets
+			m_pxGateSelectBg = xUI.FindElement("GateSelectBg");
+			m_pxGateSelectTitle = xUI.FindElement("GateSelectTitle");
+			m_pxGateFreeplayBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("GateFreeplayBtn");
+			m_pxGateBackBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("GateBackBtn");
+
+			for (uint32_t i = 0; i < s_uPB_MaxGates; ++i)
+			{
+				char szName[32];
+				snprintf(szName, sizeof(szName), "GateBtn_%u", i);
+				m_apxGateBtns[i] = xUI.FindElement<Zenith_UI::Zenith_UIButton>(szName);
+				if (m_apxGateBtns[i])
+				{
+					s_axGateButtonData[i].pxBehaviour = this;
+					s_axGateButtonData[i].uGateIndex = i;
+					m_apxGateBtns[i]->SetOnClick(&OnGateButtonClicked, &s_axGateButtonData[i]);
+				}
+			}
+			if (m_pxGateFreeplayBtn)
+				m_pxGateFreeplayBtn->SetOnClick(&OnFreeplayClicked, this);
+			if (m_pxGateBackBtn)
+				m_pxGateBackBtn->SetOnClick(&OnGateBackClicked, this);
 		}
 
 		// Load gate data and determine which gate is active
@@ -490,7 +513,6 @@ public:
 		{
 			// Start in gate selection mode
 			m_eState = PINBALL_STATE_GATE_SELECT;
-			m_bGateSelectMouseWasDown = false;
 		}
 		else
 		{
@@ -657,6 +679,26 @@ private:
 	// ========================================================================
 
 	static void OnBackClicked(void* pxUserData)
+	{
+		Pinball_Behaviour* pxSelf = static_cast<Pinball_Behaviour*>(pxUserData);
+		pxSelf->ReturnToMenu();
+	}
+
+	static void OnGateButtonClicked(void* pxUserData)
+	{
+		GateButtonCallbackData* pxData = static_cast<GateButtonCallbackData*>(pxUserData);
+		pxData->pxBehaviour->SetGateSelectVisible(false);
+		pxData->pxBehaviour->EnterGateFromSelect(pxData->uGateIndex);
+	}
+
+	static void OnFreeplayClicked(void* pxUserData)
+	{
+		Pinball_Behaviour* pxSelf = static_cast<Pinball_Behaviour*>(pxUserData);
+		pxSelf->SetGateSelectVisible(false);
+		pxSelf->EnterFreeplayFromSelect();
+	}
+
+	static void OnGateBackClicked(void* pxUserData)
 	{
 		Pinball_Behaviour* pxSelf = static_cast<Pinball_Behaviour*>(pxUserData);
 		pxSelf->ReturnToMenu();
@@ -1847,41 +1889,13 @@ private:
 	// Gate Selection UI
 	// ========================================================================
 
-	void UpdateGateSelectUI()
+	void SetGateSelectVisible(bool bVisible)
 	{
-		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
-		if (!pxCanvas)
-			return;
+		if (m_pxGateSelectBg) m_pxGateSelectBg->SetVisible(bVisible);
+		if (m_pxGateSelectTitle) m_pxGateSelectTitle->SetVisible(bVisible);
+		if (m_pxGateBackBtn) m_pxGateBackBtn->SetVisible(bVisible);
 
-		int32_t iWinWidth, iWinHeight;
-		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
-		float fWinW = static_cast<float>(iWinWidth);
-		float fWinH = static_cast<float>(iWinHeight);
-
-		// Dark background (bounds: left, top, right, bottom)
-		pxCanvas->SubmitQuad(
-			Zenith_Maths::Vector4(0.f, 0.f, fWinW, fWinH),
-			Zenith_Maths::Vector4(0.08f, 0.08f, 0.15f, 1.f));
-
-		// Title
-		pxCanvas->SubmitText("Select Gate",
-			Zenith_Maths::Vector2(fWinW * 0.5f - 80.f, 40.f), 28.f,
-			Zenith_Maths::Vector4(1.f, 0.9f, 0.5f, 1.f));
-
-		// Gate buttons (5x2 grid)
-		float fBtnW = 80.f;
-		float fBtnH = 80.f;
-		float fGap = 15.f;
-		float fGridW = 5.f * fBtnW + 4.f * fGap;
-		float fStartX = (fWinW - fGridW) * 0.5f;
-		float fStartY = 100.f;
-
-		bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-		Zenith_Maths::Vector2_64 xMousePos64;
-		Zenith_Input::GetMousePosition(xMousePos64);
-		float fMouseX = static_cast<float>(xMousePos64.x);
-		float fMouseY = static_cast<float>(xMousePos64.y);
-
+		// Update gate button states and visibility
 		bool bAllCleared = true;
 		for (uint32_t i = 0; i < s_uPB_MaxGates; ++i)
 		{
@@ -1894,103 +1908,59 @@ private:
 
 		for (uint32_t i = 0; i < s_uPB_MaxGates; ++i)
 		{
-			uint32_t uCol = i % 5;
-			uint32_t uRow = i / 5;
-			float fX = fStartX + uCol * (fBtnW + fGap);
-			float fY = fStartY + uRow * (fBtnH + fGap);
+			if (!m_apxGateBtns[i]) continue;
+			m_apxGateBtns[i]->SetVisible(bVisible);
 
-			bool bCleared = m_xSaveData.IsPinballGateCleared(i);
-			bool bSelectable = bCleared || (m_bGateActive && i == m_uCurrentGate);
-
-			Zenith_Maths::Vector4 xBtnColor;
-			if (bCleared)
-				xBtnColor = Zenith_Maths::Vector4(0.15f, 0.4f, 0.7f, 1.f);
-			else if (bSelectable)
-				xBtnColor = Zenith_Maths::Vector4(0.2f, 0.5f, 0.3f, 1.f);
-			else
-				xBtnColor = Zenith_Maths::Vector4(0.3f, 0.3f, 0.3f, 1.f);
-
-			pxCanvas->SubmitQuad(
-				Zenith_Maths::Vector4(fX, fY, fX + fBtnW, fY + fBtnH),
-				xBtnColor);
-
-			char szNum[8];
-			snprintf(szNum, sizeof(szNum), "%u", i + 1);
-			pxCanvas->SubmitText(szNum,
-				Zenith_Maths::Vector2(fX + fBtnW * 0.5f - 8.f, fY + 15.f), 24.f,
-				Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
-
-			if (bCleared)
+			if (bVisible)
 			{
-				pxCanvas->SubmitText("OK",
-					Zenith_Maths::Vector2(fX + fBtnW * 0.5f - 10.f, fY + 50.f), 14.f,
-					Zenith_Maths::Vector4(0.3f, 1.f, 0.4f, 1.f));
-			}
-			else if (!bSelectable)
-			{
-				pxCanvas->SubmitText("LOCKED",
-					Zenith_Maths::Vector2(fX + fBtnW * 0.5f - 20.f, fY + 50.f), 10.f,
-					Zenith_Maths::Vector4(0.5f, 0.5f, 0.5f, 1.f));
-			}
+				bool bCleared = m_xSaveData.IsPinballGateCleared(i);
+				bool bSelectable = bCleared || (m_bGateActive && i == m_uCurrentGate);
 
-			if (bSelectable && !bMouseDown && m_bGateSelectMouseWasDown)
-			{
-				if (fMouseX >= fX && fMouseX <= fX + fBtnW &&
-					fMouseY >= fY && fMouseY <= fY + fBtnH)
+				// Update button color based on state
+				if (bCleared)
 				{
-					EnterGateFromSelect(i);
-					m_bGateSelectMouseWasDown = bMouseDown;
-					return;
+					m_apxGateBtns[i]->SetNormalColor(Zenith_Maths::Vector4(0.15f, 0.4f, 0.7f, 1.f));
+					m_apxGateBtns[i]->SetHoverColor(Zenith_Maths::Vector4(0.25f, 0.5f, 0.8f, 1.f));
 				}
-			}
-		}
-
-		// Freeplay button (visible after all 10 cleared)
-		if (bAllCleared)
-		{
-			float fFreeX = (fWinW - 200.f) * 0.5f;
-			float fFreeY = fStartY + 2.f * (fBtnH + fGap) + 20.f;
-			pxCanvas->SubmitQuad(
-				Zenith_Maths::Vector4(fFreeX, fFreeY, fFreeX + 200.f, fFreeY + 50.f),
-				Zenith_Maths::Vector4(0.5f, 0.3f, 0.6f, 1.f));
-			pxCanvas->SubmitText("Freeplay",
-				Zenith_Maths::Vector2(fFreeX + 50.f, fFreeY + 12.f), 22.f,
-				Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
-
-			if (!bMouseDown && m_bGateSelectMouseWasDown)
-			{
-				if (fMouseX >= fFreeX && fMouseX <= fFreeX + 200.f &&
-					fMouseY >= fFreeY && fMouseY <= fFreeY + 50.f)
+				else if (bSelectable)
 				{
-					EnterFreeplayFromSelect();
-					m_bGateSelectMouseWasDown = bMouseDown;
-					return;
+					m_apxGateBtns[i]->SetNormalColor(Zenith_Maths::Vector4(0.2f, 0.5f, 0.3f, 1.f));
+					m_apxGateBtns[i]->SetHoverColor(Zenith_Maths::Vector4(0.3f, 0.6f, 0.4f, 1.f));
 				}
+				else
+				{
+					m_apxGateBtns[i]->SetNormalColor(Zenith_Maths::Vector4(0.3f, 0.3f, 0.3f, 1.f));
+					m_apxGateBtns[i]->SetHoverColor(Zenith_Maths::Vector4(0.3f, 0.3f, 0.3f, 1.f));
+				}
+
+				// Update button text to show status
+				char szLabel[16];
+				if (bCleared)
+					snprintf(szLabel, sizeof(szLabel), "%u OK", i + 1);
+				else if (!bSelectable)
+					snprintf(szLabel, sizeof(szLabel), "%u", i + 1);
+				else
+					snprintf(szLabel, sizeof(szLabel), "%u", i + 1);
+				m_apxGateBtns[i]->SetText(szLabel);
+
+				// Disable interaction for locked gates
+				m_apxGateBtns[i]->SetGroupInteractable(bSelectable);
 			}
 		}
 
-		// Back button
-		float fBackX = (fWinW - 150.f) * 0.5f;
-		float fBackY = fWinH - 80.f;
-		pxCanvas->SubmitQuad(
-			Zenith_Maths::Vector4(fBackX, fBackY, fBackX + 150.f, fBackY + 45.f),
-			Zenith_Maths::Vector4(0.4f, 0.2f, 0.2f, 1.f));
-		pxCanvas->SubmitText("Back",
-			Zenith_Maths::Vector2(fBackX + 50.f, fBackY + 10.f), 20.f,
-			Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+		// Freeplay button only visible when all gates cleared
+		if (m_pxGateFreeplayBtn)
+			m_pxGateFreeplayBtn->SetVisible(bVisible && bAllCleared);
+	}
 
-		if (!bMouseDown && m_bGateSelectMouseWasDown)
+	void UpdateGateSelectUI()
+	{
+		// Widget-based gate select handles its own rendering and input
+		// Just ensure visibility is set correctly on first frame
+		if (m_pxGateSelectBg && !m_pxGateSelectBg->IsVisible())
 		{
-			if (fMouseX >= fBackX && fMouseX <= fBackX + 150.f &&
-				fMouseY >= fBackY && fMouseY <= fBackY + 45.f)
-			{
-				ReturnToMenu();
-				m_bGateSelectMouseWasDown = bMouseDown;
-				return;
-			}
+			SetGateSelectVisible(true);
 		}
-
-		m_bGateSelectMouseWasDown = bMouseDown;
 	}
 
 	void EnterGateFromSelect(uint32_t uGateIndex)
@@ -2140,6 +2110,19 @@ private:
 	// Daily bonus
 	bool m_bDailyBonusAwarded = false;
 
-	// Gate select UI
-	bool m_bGateSelectMouseWasDown = false;
+	// Gate select UI (widget-based)
+	Zenith_UI::Zenith_UIElement* m_pxGateSelectBg = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxGateSelectTitle = nullptr;
+	Zenith_UI::Zenith_UIButton* m_apxGateBtns[s_uPB_MaxGates] = {};
+	Zenith_UI::Zenith_UIButton* m_pxGateFreeplayBtn = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxGateBackBtn = nullptr;
+
+	struct GateButtonCallbackData
+	{
+		Pinball_Behaviour* pxBehaviour;
+		uint32_t uGateIndex;
+	};
+	static GateButtonCallbackData s_axGateButtonData[s_uPB_MaxGates];
 };
+
+Pinball_Behaviour::GateButtonCallbackData Pinball_Behaviour::s_axGateButtonData[10] = {};

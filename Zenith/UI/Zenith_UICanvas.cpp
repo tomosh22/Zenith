@@ -3,8 +3,12 @@
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIImage.h"
+#include "UI/Zenith_UIButton.h"
+#include "UI/Zenith_UIToggle.h"
 #include "Flux/Quads/Flux_Quads.h"
+#include "Input/Zenith_Input.h"
 #include "DataStream/Zenith_DataStream.h"
+#include <algorithm>
 
 namespace Zenith_UI {
 
@@ -150,6 +154,8 @@ void Zenith_UICanvas::ReparentElement(Zenith_UIElement* pxChild, Zenith_UIElemen
 
 void Zenith_UICanvas::Clear()
 {
+    m_pxFocusedElement = nullptr;
+
     // Delete all elements
     for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xAllElements); !xIt.Done(); xIt.Next())
     {
@@ -198,6 +204,36 @@ void Zenith_UICanvas::Update(float fDt)
 {
     UpdateSize();
 
+    // Focus navigation input
+    if (m_pxFocusedElement)
+    {
+        if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP))
+            NavigateUp();
+        else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
+            NavigateDown();
+        else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
+            NavigateLeft();
+        else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
+            NavigateRight();
+
+        // Gamepad D-pad navigation
+        if (Zenith_Input::IsGamepadConnected())
+        {
+            if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_UP))
+                NavigateUp();
+            else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_DOWN))
+                NavigateDown();
+            else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_LEFT))
+                NavigateLeft();
+            else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_RIGHT))
+                NavigateRight();
+
+            // Gamepad A button activates focused element
+            if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_A))
+                ActivateFocused();
+        }
+    }
+
     for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
     {
         Zenith_UIElement* pxElement = xIt.GetData();
@@ -214,13 +250,29 @@ void Zenith_UICanvas::Render()
     // This is necessary because Update() may not be called every frame
     UpdateSize();
 
+    // Build a sorted array of root elements by sort order (stable sort preserves insertion order)
+    static constexpr uint32_t uMAX_SORTED_ROOTS = 128;
+    Zenith_UIElement* apxSorted[uMAX_SORTED_ROOTS];
+    uint32_t uCount = 0;
+
     for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
     {
         Zenith_UIElement* pxElement = xIt.GetData();
-        if (pxElement && pxElement->IsVisible())
+        if (pxElement && pxElement->IsVisible() && uCount < uMAX_SORTED_ROOTS)
         {
-            pxElement->Render(*this);
+            apxSorted[uCount++] = pxElement;
         }
+    }
+
+    std::stable_sort(apxSorted, apxSorted + uCount, [](const Zenith_UIElement* pxA, const Zenith_UIElement* pxB)
+    {
+        return pxA->GetSortOrder() < pxB->GetSortOrder();
+    });
+
+    for (uint32_t u = 0; u < uCount; ++u)
+    {
+        m_iCurrentSortOrder = apxSorted[u]->GetSortOrder();
+        apxSorted[u]->Render(*this);
     }
 }
 
@@ -255,6 +307,49 @@ void Zenith_UICanvas::SetReferenceResolution(float fWidth, float fHeight)
     UpdateSize();
 }
 
+// ========== Clip Rect Stack ==========
+
+void Zenith_UICanvas::PushClipRect(const Zenith_Maths::Vector4& xBounds)
+{
+    Zenith_Assert(m_uClipRectStackDepth < uMAX_CLIP_RECT_DEPTH, "Clip rect stack overflow");
+
+    if (m_uClipRectStackDepth > 0)
+    {
+        // Intersect with current active clip rect
+        const Zenith_Maths::Vector4& xCurrent = m_axClipRectStack[m_uClipRectStackDepth - 1];
+        Zenith_Maths::Vector4 xIntersected = {
+            glm::max(xBounds.x, xCurrent.x),
+            glm::max(xBounds.y, xCurrent.y),
+            glm::min(xBounds.z, xCurrent.z),
+            glm::min(xBounds.w, xCurrent.w)
+        };
+        m_axClipRectStack[m_uClipRectStackDepth] = xIntersected;
+    }
+    else
+    {
+        m_axClipRectStack[m_uClipRectStackDepth] = xBounds;
+    }
+
+    m_uClipRectStackDepth++;
+}
+
+void Zenith_UICanvas::PopClipRect()
+{
+    if (m_uClipRectStackDepth > 0)
+    {
+        m_uClipRectStackDepth--;
+    }
+}
+
+Zenith_Maths::Vector4 Zenith_UICanvas::GetActiveClipRect() const
+{
+    if (m_uClipRectStackDepth > 0)
+    {
+        return m_axClipRectStack[m_uClipRectStackDepth - 1];
+    }
+    return {0.f, 0.f, 99999.f, 99999.f};
+}
+
 void Zenith_UICanvas::SubmitQuad(const Zenith_Maths::Vector4& xBounds, const Zenith_Maths::Vector4& xColor, uint32_t uTextureID,
     float fCornerRadius, const Zenith_Maths::Vector4& xGradientColor)
 {
@@ -262,6 +357,18 @@ void Zenith_UICanvas::SubmitQuad(const Zenith_Maths::Vector4& xBounds, const Zen
     float fTop = xBounds.y;
     float fRight = xBounds.z;
     float fBottom = xBounds.w;
+
+    // CPU-side clip rect clamping
+    if (m_uClipRectStackDepth > 0)
+    {
+        const Zenith_Maths::Vector4& xClip = m_axClipRectStack[m_uClipRectStackDepth - 1];
+        fLeft = glm::max(fLeft, xClip.x);
+        fTop = glm::max(fTop, xClip.y);
+        fRight = glm::min(fRight, xClip.z);
+        fBottom = glm::min(fBottom, xClip.w);
+        if (fLeft >= fRight || fTop >= fBottom)
+            return; // Fully clipped
+    }
 
     float fWidth = fRight - fLeft;
     float fHeight = fBottom - fTop;
@@ -311,13 +418,211 @@ void Zenith_UICanvas::SubmitText(const std::string& strText, const Zenith_Maths:
     if (strText.empty())
         return;
 
+    // CPU-side clip: skip text entries fully outside the clip rect
+    if (m_uClipRectStackDepth > 0)
+    {
+        const Zenith_Maths::Vector4& xClip = m_axClipRectStack[m_uClipRectStackDepth - 1];
+        if (xPosition.x > xClip.z || xPosition.y > xClip.w ||
+            xPosition.y + fSize < xClip.y)
+        {
+            return; // Fully outside clip region
+        }
+    }
+
     UITextEntry xEntry;
     xEntry.m_strText = strText;
     xEntry.m_xPosition = xPosition;
     xEntry.m_fSize = fSize;
     xEntry.m_xColor = xColor;
+    xEntry.m_iSortOrder = m_iCurrentSortOrder;
 
     s_xPendingTextEntries.PushBack(xEntry);
+}
+
+// ========== Focus Navigation ==========
+
+void Zenith_UICanvas::SetFocusedElement(Zenith_UIElement* pxElement)
+{
+	// Unfocus previous
+	if (m_pxFocusedElement)
+	{
+		if (m_pxFocusedElement->GetType() == UIElementType::Button)
+		{
+			static_cast<Zenith_UIButton*>(m_pxFocusedElement)->SetFocused(false);
+		}
+		else if (m_pxFocusedElement->GetType() == UIElementType::Toggle)
+		{
+			static_cast<Zenith_UIToggle*>(m_pxFocusedElement)->SetFocused(false);
+		}
+	}
+
+	m_pxFocusedElement = pxElement;
+
+	// Focus new
+	if (m_pxFocusedElement)
+	{
+		if (m_pxFocusedElement->GetType() == UIElementType::Button)
+		{
+			static_cast<Zenith_UIButton*>(m_pxFocusedElement)->SetFocused(true);
+		}
+		else if (m_pxFocusedElement->GetType() == UIElementType::Toggle)
+		{
+			static_cast<Zenith_UIToggle*>(m_pxFocusedElement)->SetFocused(true);
+		}
+	}
+}
+
+void Zenith_UICanvas::CollectFocusableElements(Zenith_UIElement* pxElement, Zenith_UIElement** apxOut, uint32_t& uCount, uint32_t uMax) const
+{
+	if (!pxElement || !pxElement->IsVisible() || uCount >= uMax)
+		return;
+
+	if (pxElement->IsFocusable() && pxElement->IsGroupInteractable())
+	{
+		apxOut[uCount++] = pxElement;
+	}
+
+	const Zenith_Vector<Zenith_UIElement*>& xChildren = pxElement->GetChildren();
+	for (uint32_t u = 0; u < xChildren.GetSize() && uCount < uMax; u++)
+	{
+		CollectFocusableElements(xChildren.Get(u), apxOut, uCount, uMax);
+	}
+}
+
+Zenith_UIElement* Zenith_UICanvas::FindNearestFocusable(Zenith_UIElement* pxFrom, float fDirX, float fDirY) const
+{
+	if (!pxFrom)
+		return nullptr;
+
+	static constexpr uint32_t uMAX_FOCUSABLE = 256;
+	Zenith_UIElement* apxFocusable[uMAX_FOCUSABLE];
+	uint32_t uCount = 0;
+
+	for (uint32_t u = 0; u < m_xRootElements.GetSize(); u++)
+	{
+		CollectFocusableElements(m_xRootElements.Get(u), apxFocusable, uCount, uMAX_FOCUSABLE);
+	}
+
+	Zenith_Maths::Vector4 xFromBounds = pxFrom->GetScreenBounds();
+	float fFromCX = (xFromBounds.x + xFromBounds.z) * 0.5f;
+	float fFromCY = (xFromBounds.y + xFromBounds.w) * 0.5f;
+
+	Zenith_UIElement* pxBest = nullptr;
+	float fBestScore = 1e18f;
+
+	for (uint32_t u = 0; u < uCount; u++)
+	{
+		Zenith_UIElement* pxCandidate = apxFocusable[u];
+		if (pxCandidate == pxFrom)
+			continue;
+
+		Zenith_Maths::Vector4 xCandBounds = pxCandidate->GetScreenBounds();
+		float fCandCX = (xCandBounds.x + xCandBounds.z) * 0.5f;
+		float fCandCY = (xCandBounds.y + xCandBounds.w) * 0.5f;
+
+		float fDX = fCandCX - fFromCX;
+		float fDY = fCandCY - fFromCY;
+
+		// Dot product with direction — must be positive (candidate is in desired direction)
+		float fDot = fDX * fDirX + fDY * fDirY;
+		if (fDot <= 0.f)
+			continue;
+
+		// Score: distance, weighted to prefer aligned elements
+		float fDist = fDX * fDX + fDY * fDY;
+		if (fDist < fBestScore)
+		{
+			fBestScore = fDist;
+			pxBest = pxCandidate;
+		}
+	}
+
+	return pxBest;
+}
+
+void Zenith_UICanvas::NavigateUp()
+{
+	if (!m_pxFocusedElement)
+		return;
+
+	Zenith_UIElement* pxNext = m_pxFocusedElement->GetNavUp();
+	if (!pxNext)
+	{
+		pxNext = FindNearestFocusable(m_pxFocusedElement, 0.f, -1.f);
+	}
+
+	if (pxNext && pxNext->IsVisible() && pxNext->IsFocusable())
+	{
+		SetFocusedElement(pxNext);
+	}
+}
+
+void Zenith_UICanvas::NavigateDown()
+{
+	if (!m_pxFocusedElement)
+		return;
+
+	Zenith_UIElement* pxNext = m_pxFocusedElement->GetNavDown();
+	if (!pxNext)
+	{
+		pxNext = FindNearestFocusable(m_pxFocusedElement, 0.f, 1.f);
+	}
+
+	if (pxNext && pxNext->IsVisible() && pxNext->IsFocusable())
+	{
+		SetFocusedElement(pxNext);
+	}
+}
+
+void Zenith_UICanvas::NavigateLeft()
+{
+	if (!m_pxFocusedElement)
+		return;
+
+	Zenith_UIElement* pxNext = m_pxFocusedElement->GetNavLeft();
+	if (!pxNext)
+	{
+		pxNext = FindNearestFocusable(m_pxFocusedElement, -1.f, 0.f);
+	}
+
+	if (pxNext && pxNext->IsVisible() && pxNext->IsFocusable())
+	{
+		SetFocusedElement(pxNext);
+	}
+}
+
+void Zenith_UICanvas::NavigateRight()
+{
+	if (!m_pxFocusedElement)
+		return;
+
+	Zenith_UIElement* pxNext = m_pxFocusedElement->GetNavRight();
+	if (!pxNext)
+	{
+		pxNext = FindNearestFocusable(m_pxFocusedElement, 1.f, 0.f);
+	}
+
+	if (pxNext && pxNext->IsVisible() && pxNext->IsFocusable())
+	{
+		SetFocusedElement(pxNext);
+	}
+}
+
+void Zenith_UICanvas::ActivateFocused()
+{
+	if (!m_pxFocusedElement)
+		return;
+
+	if (m_pxFocusedElement->GetType() == UIElementType::Button)
+	{
+		Zenith_UIButton* pxButton = static_cast<Zenith_UIButton*>(m_pxFocusedElement);
+		pxButton->Activate();
+	}
+	else if (m_pxFocusedElement->GetType() == UIElementType::Toggle)
+	{
+		Zenith_UIToggle* pxToggle = static_cast<Zenith_UIToggle*>(m_pxFocusedElement);
+		pxToggle->SetIsOn(!pxToggle->IsOn());
+	}
 }
 
 // Recursive helper: write element + children tree

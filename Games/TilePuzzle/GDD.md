@@ -351,6 +351,7 @@ MAIN_MENU -> LEVEL_SELECT -> PLAYING -> SHAPE_SLIDING -> CHECK_ELIMINATION
 - **Pinball:** Jump to pinball scene
 - **New Game / Reset Save:** Reset all progress
 - **Displays:** Coins, lives (with regen timer), daily streak
+- **Keyboard/Gamepad Navigation:** Arrow keys navigate vertically between menu buttons (Continue ↕ LevelSelect ↕ NewGame ↕ Pinball ↕ ResetSave ↕ CatCafe ↕ DailyPuzzle ↕ Settings ↕ Achievements). Enter/Space activates the focused button.
 
 ### 7.2.1 Main Menu Visual Style
 
@@ -428,9 +429,10 @@ the engine's UIStyle system for consistent styling.
 - Level number
 - Move counter
 - Cats remaining counter
-- Progress bar
+- Progress bar (UIRect with fill direction)
 - Buttons: Reset, Undo, Hint, Skip (offered after 3 resets), Menu
-- **Confirmation dialogs:** Exit Level ("Exit level? You will lose 1 life." / Cancel / Exit) and Skip Level ("Skip level for 100 coins?" / Cancel / Skip) require confirmation before action
+- **Keyboard/Gamepad Navigation:** Arrow keys navigate horizontally between HUD buttons (Menu ↔ Reset ↔ Undo ↔ Hint ↔ Skip)
+- **Confirmation dialogs:** Modal overlay with dimmed background (`Zenith_UIOverlay`), styled Cancel and Accept buttons with hover states and fade animation. Used for Exit Level and Skip Level confirmations.
 
 ### 7.5 Victory Overlay
 
@@ -470,18 +472,47 @@ Accessible from main menu via settings gear button. Contains:
 
 | Setting | Type | Default | Persisted |
 |---------|------|---------|-----------|
-| Sound Effects | Toggle | On | Yes |
-| Music | Toggle | On | Yes |
-| Haptics | Toggle | On | Yes |
+| Sound Effects | `Zenith_UIToggle` widget | On | Yes |
+| Music | `Zenith_UIToggle` widget | On | Yes |
+| Haptics | `Zenith_UIToggle` widget | On | Yes |
 | Credits/About | Button | — | — |
 | Privacy Policy | Link | — | — |
 | Reset Progress | Button (with confirmation dialog) | — | — |
 
-**Credits/About:** Displays game version, engine version, and credits text. Scrollable if content exceeds screen height.
+Toggle widgets display on/off state with distinct colors (green=on, gray=off) and fire a callback on state change, replacing the previous manual text/color swapping approach.
+
+**Keyboard/Gamepad Navigation:** Arrow keys navigate vertically between settings controls (Sound ↕ Music ↕ Haptics ↕ Credits ↕ Back).
+
+**Credits/About:** Displayed as a `Zenith_UIOverlay` with dimmed background. Shows game title, credits text, and tap-to-dismiss instruction.
 
 **Privacy Policy:** Opens the privacy policy URL in the system browser. Required by Google Play.
 
 **Reset Progress:** Shows a confirmation dialog ("Are you sure? This will delete all progress, coins, and cat collection. This cannot be undone.") with "Cancel" and "Reset" buttons. On confirm, clears save data and returns to main menu.
+
+### 7.8 UI Engine Features
+
+The game uses the Zenith UI system, a canvas-based anchor/pivot widget toolkit. Available widgets and features:
+
+**Widgets:**
+| Widget | Class | Description |
+|--------|-------|-------------|
+| Button | `Zenith_UIButton` | Click/tap button with normal/hover/pressed styles, icon+label support |
+| Text | `Zenith_UIText` | Monospace text rendering with alignment and multi-line support |
+| Rect | `Zenith_UIRect` | Styled rectangle with fill direction, corner radius, gradient |
+| Image | `Zenith_UIImage` | Texture display with UV support |
+| Toggle | `Zenith_UIToggle` | On/off switch widget with distinct on/off colors and callback |
+| Overlay | `Zenith_UIOverlay` | Modal popup with dimmed background, fade animation, input blocking |
+| ScrollView | `Zenith_UIScrollView` | Scrollable content area with clipping and inertia |
+| LayoutGroup | `Zenith_UILayoutGroup` | Horizontal/vertical automatic child layout |
+
+**Features:**
+- **Tween animations:** `TweenAlpha`, `TweenPosition`, `TweenColor`, `TweenSize` with easing (Linear, EaseIn, EaseOut, EaseInOut) and delay support
+- **Focus navigation:** Keyboard/gamepad navigation between focusable elements with explicit directional links
+- **Sort order:** Elements render in configurable sort order (overlays use sort order 100+)
+- **StretchAll anchor:** Elements automatically fill parent bounds
+- **UIRect fill:** Progress bar support with fill direction and fill amount
+- **Screen management:** Centralized `ShowScreen()` / `ShowScreenAdditive()` for managing screen visibility
+- **InputSimulator:** `SimulateClickOnUIElement(name)` for automated UI testing
 
 ---
 
@@ -910,14 +941,18 @@ Pinball:
 4. "New Best!" pulsing gold animation in victory overlay
 5. Target cat highlighting on levels 1-5
 6. Stuck detection (45s prompt, 90s auto-hint on levels 1-10)
-7. Confirmation dialogs (reset save, exit level, skip level)
-8. Credits/About screen in settings
+7. ~~Confirmation dialogs (reset save, exit level, skip level)~~ Done — uses `Zenith_UIOverlay`
+8. ~~Credits/About screen in settings~~ Done — uses `Zenith_UIOverlay`
 9. No life loss on zero-move exit
 10. Level select UX polish (time-based pulse, star counter, Unicode stars)
 11. Cat Cafe visual upgrade (tier borders, progress bar)
-12. Pinball gate selection UI for Quick Play
+12. ~~Pinball gate selection UI for Quick Play~~ Done — widget-based buttons
 13. Daily pinball bonus (25 coins/day)
 14. Pinball thematic elements (cat-themed materials)
+15. ~~Settings toggles~~ Done — uses `Zenith_UIToggle` widgets
+16. ~~Screen management~~ Done — centralized `ShowScreen()` / `ShowScreenAdditive()`
+17. ~~Focus/keyboard navigation~~ Done — all screens wired with directional nav links
+18. ~~StretchAll backgrounds~~ Done — menu/settings/level-select/cat-cafe backgrounds use StretchAll anchor
 
 ### Phase 7: Visual Upgrade
 1. Cat mesh upgrade (replace sphere with low-poly cat model)
@@ -934,6 +969,16 @@ Pinball:
 
 ## Appendix D: Test Plan
 
+> **Coverage Summary:** Tests marked `[AUTO]` in sections D.6-D.26 are exercised by the automated test suite in `TilePuzzle_AutoTest.h`. Key automated UI tests:
+> - **Test_UIAllMenuElements** — verifies existence and type of all ~60 named UI elements across all screens
+> - **Test_UIAllScreenElements** — verifies ShowScreen/ShowScreenAdditive visibility logic for each screen
+> - **Test_UIConfirmDialogFlow** — programmatically tests all 3 confirm dialog types (show/hide/text)
+> - **Test_UILevelSelectPagination** — verifies page text updates on page changes
+> - **Test_UIEconomyDisplay** — verifies coin/lives/stars text matches save data, tests economy updates
+> - **Test_UIInteractionWalkthrough** — InputSimulator-driven button clicks for screen navigation and toggle interaction (16 steps)
+>
+> Sections without `[AUTO]` markers require manual testing (visual styling, animations, device-specific, gameplay interactions).
+
 ### D.1 Existing Automated Tests
 
 These tests are implemented in `Games/TilePuzzle/Tests/TilePuzzle_AutoTest.h` and run via the `--autotest` flag.
@@ -947,6 +992,30 @@ These tests are implemented in `Games/TilePuzzle/Tests/TilePuzzle_AutoTest.h` an
 | `Test_Pinball_GateObjectives` | All 10 gate types verify correctly |
 | `Test_SaveLoad_Integrity` | Save -> load round-trip preserves all fields |
 | `Test_CoinSystem` | Earning, spending, balance, coin sinks |
+| `Test_UIStretchAll` | StretchAll anchor fills parent bounds |
+| `Test_UITextMetrics` | Monospace text width/height calculation |
+| `Test_UISortOrder` | Element sort order affects render order |
+| `Test_UITweenSystem` | Property tweens with easing and delay |
+| `Test_UIToggle` | Toggle widget on/off state and callback |
+| `Test_UIButtonIcon` | Button icon placement and sizing |
+| `Test_UIOverlay` | Overlay show/hide and dim background |
+| `Test_UIFocusNavigation` | Directional navigation between elements |
+| `Test_UIScrollView` | Scroll position, clamping, content size |
+| `Test_UICanvasClipRect` | Clip rect push/pop stack |
+| `Test_UIInputSimulatorClick` | Click UI element by name |
+| `Test_UICachedPointers` | Cached FindElement pointers valid |
+| `Test_UIRectFillAmount` | Rect fill direction and amount |
+| `Test_UISettingsToggles` | Settings use toggle widgets correctly |
+| `Test_UIScreenManagement` | ShowScreen/ShowScreenAdditive |
+| `Test_UIConfirmOverlay` | Confirm/credits overlays exist and configured |
+| `Test_UIMenuFocusNavigation` | Game-level nav links wired correctly |
+| `Test_UIStretchAllBackgrounds` | Background rects use StretchAll |
+| `Test_UIAllMenuElements` | All ~60 named UI elements exist with correct types (covers D.6-D.13) |
+| `Test_UIAllScreenElements` | ShowScreen/ShowScreenAdditive visibility per screen (covers D.17) |
+| `Test_UIConfirmDialogFlow` | All 3 confirm dialog types show/hide/text correctly (covers D.9) |
+| `Test_UILevelSelectPagination` | Page text updates on page change (covers D.7) |
+| `Test_UIEconomyDisplay` | Coin/lives/stars text matches save data (covers D.21) |
+| `Test_UIInteractionWalkthrough` | InputSimulator clicks through Menu↔Settings↔LevelSelect↔CatCafe↔Achievements + toggle (covers D.17) |
 | `Test_FullGame` | Visual playthrough of all 100 levels + 10 pinball gates |
 
 ### D.2 Manual Test Checklist: Game Feel
@@ -990,3 +1059,476 @@ After any code change:
 | Cold start time | < 3s |
 | Memory usage | < 150 MB |
 | APK size | < 100 MB |
+
+### D.6 Test Checklist: Main Menu UI
+
+> **Automation note:** `Test_UIAllMenuElements` verifies existence and type of all menu elements. `Test_UIEconomyDisplay` verifies coin/lives/stars text matches save data. `UpdateUIInteract` tests button click navigation via InputSimulator. Tests marked `[AUTO]` are covered by the autotest suite; unmarked tests require manual verification.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-MENU-01 | `[AUTO]` Menu background exists | MenuBackground element exists and is correct type |
+| M-MENU-02 | Title text displays | "Paws & Pins" at 84pt, white, centered horizontally with text shadow |
+| M-MENU-03 | Subtitle text displays | "A Cat Puzzle Game" at 24pt, muted lavender, positioned below title with text shadow |
+| M-MENU-04 | `[AUTO]` Continue button exists | ContinueButton element exists with Button type |
+| M-MENU-05 | Continue button hover | Button transitions to hover color on mouse-over (0.12s blend) |
+| M-MENU-06 | Continue button press | Button transitions to pressed color on click/tap (darker shade) |
+| M-MENU-07 | Continue button navigates | Tapping Continue starts gameplay at current level |
+| M-MENU-08 | `[AUTO]` Level Select button exists | LevelSelectButton element exists with Button type |
+| M-MENU-09 | `[AUTO]` Level Select button navigates | Tapping Level Select transitions to level select screen (InputSimulator) |
+| M-MENU-10 | `[AUTO]` Cat Cafe button exists | CatCafeButton element exists with Button type |
+| M-MENU-11 | `[AUTO]` Cat Cafe button navigates | Tapping Cat Cafe transitions to Cat Cafe screen (InputSimulator) |
+| M-MENU-12 | `[AUTO]` Daily Puzzle button exists | DailyPuzzleButton element exists with Button type |
+| M-MENU-13 | Daily Puzzle button navigates | Tapping Daily Puzzle starts daily challenge level |
+| M-MENU-14 | `[AUTO]` Pinball button exists | PinballButton element exists with Button type |
+| M-MENU-15 | Pinball button navigates | Tapping Pinball transitions to pinball gate select |
+| M-MENU-16 | `[AUTO]` Settings button exists | SettingsButton element exists with Button type |
+| M-MENU-17 | `[AUTO]` Settings button navigates | Tapping Settings transitions to settings screen (InputSimulator) |
+| M-MENU-18 | `[AUTO]` New Game button exists | NewGameButton element exists with Button type |
+| M-MENU-19 | New Game button triggers confirm | Tapping New Game shows confirmation dialog |
+| M-MENU-20 | `[AUTO]` Reset Save button exists | ResetSaveButton element exists with Button type |
+| M-MENU-21 | Reset Save button triggers confirm | Tapping Reset Save shows confirmation dialog |
+| M-MENU-22 | `[AUTO]` Refill Lives button exists | RefillLivesButton element exists with Button type |
+| M-MENU-23 | Refill Lives button works | Tapping Refill Lives deducts 50 coins and restores 5 lives |
+| M-MENU-24 | Refill Lives hidden at full lives | Button hidden or disabled when lives == 5 |
+| M-MENU-25 | `[AUTO]` Achievements button exists & navigates | AchievementsButton element exists; InputSimulator verifies navigation |
+| M-MENU-26 | `[AUTO]` Coin display shows balance | CoinText shows correct coin count matching save data |
+| M-MENU-27 | `[AUTO]` Coin icon exists | CoinIcon element exists |
+| M-MENU-28 | `[AUTO]` Lives display shows count | LivesText shows current lives count matching save data |
+| M-MENU-29 | `[AUTO]` Heart icon exists | HeartIcon element exists |
+| M-MENU-30 | Lives timer visible when < 5 | LivesTimerText shows countdown "MM:SS" when lives < 5 |
+| M-MENU-31 | `[AUTO]` Lives timer hidden at full | LivesTimerText hidden when lives == 5 |
+| M-MENU-32 | `[AUTO]` Daily streak group exists | StreakGroup and StreakText elements exist |
+| M-MENU-33 | `[AUTO]` Total stars displays | TotalStarsText shows total star count matching save data |
+| M-MENU-34 | `[AUTO]` Version text exists | VersionText element exists with Text type |
+| M-MENU-35 | Button layout vertical stack | All buttons stacked vertically with 24px spacing |
+| M-MENU-36 | Button corner radius | All buttons have 12px corner radius |
+| M-MENU-37 | Button drop shadows | All buttons have visible drop shadow (3px offset) |
+| M-MENU-38 | Button borders | All buttons have 2px border in lighter tint |
+| M-MENU-39 | Button text shadow | All button text has 1px shadow at 40% alpha |
+| M-MENU-40 | Corner HUD pill backgrounds | Coin/lives/streak/stars displays have pill-shaped background rect (16px radius, translucent) |
+| M-MENU-41 | All buttons touch-responsive | Every button responds to tap/click without keyboard |
+
+### D.7 Test Checklist: Level Select UI
+
+> **Automation note:** `Test_UIAllMenuElements` verifies element existence. `Test_UILevelSelectPagination` verifies page text updates. `UpdateUIInteract` tests Level Select button click navigation. Tests marked `[AUTO]` are covered by the autotest suite.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-LSEL-01 | `[AUTO]` Level select background exists | LevelSelectBg element exists |
+| M-LSEL-02 | `[AUTO]` Title exists | LevelSelectTitle element exists |
+| M-LSEL-03 | 4x5 grid layout | 20 level buttons arranged in 4 columns by 5 rows |
+| M-LSEL-04 | `[AUTO]` Page text shows correct page | PageText displays "Page X / Y" and updates on page change |
+| M-LSEL-05 | `[AUTO]` Previous page button exists | PrevPageButton element exists |
+| M-LSEL-06 | `[AUTO]` Next page button exists | NextPageButton element exists |
+| M-LSEL-07 | `[AUTO]` Page wrapping | Pagination stays within valid page range |
+| M-LSEL-08 | `[AUTO]` Back button returns to menu | BackButton navigates back to main menu (InputSimulator) |
+| M-LSEL-09 | Gold 3-star level buttons | Completed levels with 3 stars show gold color |
+| M-LSEL-10 | Purple pinball gate levels | Every 10th level (10,20,...,100) shows purple tint |
+| M-LSEL-11 | Green current level | Current level button has pulsing green brightness (sine wave, 3 Hz) |
+| M-LSEL-12 | Blue unlocked levels | Unlocked but incomplete levels show blue |
+| M-LSEL-13 | Gray locked levels | Levels beyond highest reached show dim gray, not clickable |
+| M-LSEL-14 | Star display on buttons | Each level button shows star rating (filled/empty star characters) |
+| M-LSEL-15 | Star progress bar | "Stars: X / 300" text displayed at top of level select |
+| M-LSEL-16 | Tap level starts game | Tapping an unlocked level button loads and starts that level |
+| M-LSEL-17 | Tap locked level blocked | Tapping a locked level does nothing |
+| M-LSEL-18 | Level number on buttons | Each button shows its level number (1-100) |
+| M-LSEL-19 | Button corner radius | Level grid buttons have 8px corner radius |
+| M-LSEL-20 | Button shadows | Level grid buttons have shadow enabled |
+| M-LSEL-21 | Current level pulse animation | Pulsing brightness animation is smooth, continuous, and visible |
+| M-LSEL-22 | Correct page for current level | Opening level select auto-navigates to the page containing current level |
+
+### D.8 Manual Test Checklist: Gameplay HUD (no automation — HUD elements are on gameplay scene)
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-HUD-01 | Level number displays | LevelText shows "Level N" matching current level |
+| M-HUD-02 | Move counter displays | MovesText shows current move count, starts at 0 |
+| M-HUD-03 | Move counter increments | MovesText increments by 1 after each shape slide |
+| M-HUD-04 | Cats remaining displays | CatsText shows number of cats remaining to eliminate |
+| M-HUD-05 | Cats counter decrements | CatsText decrements when a cat is eliminated |
+| M-HUD-06 | Coin display in HUD | HUDCoinsText shows current coin balance |
+| M-HUD-07 | Reset button visible | ResetBtn displayed and labeled |
+| M-HUD-08 | Reset button works | Tapping Reset restores level to initial state, resets moves to 0 |
+| M-HUD-09 | Undo button visible | UndoBtn displayed and labeled |
+| M-HUD-10 | Undo button works (free first) | First undo per level is free, restores previous state |
+| M-HUD-11 | Undo button costs coins (2nd+) | Second+ undo deducts 20 coins |
+| M-HUD-12 | Undo with no coins | Undo blocked or shows insufficient coins if balance < 20 (after first free) |
+| M-HUD-13 | Undo with no moves | Undo disabled/no-op when no moves have been made |
+| M-HUD-14 | Hint button visible | HintBtn displayed and labeled |
+| M-HUD-15 | Hint button works (free first) | First hint per level is free, highlights shape + direction |
+| M-HUD-16 | Hint button costs coins (2nd+) | Second+ hint deducts 30 coins |
+| M-HUD-17 | Hint visual | Hint highlights a shape with blink animation indicating direction |
+| M-HUD-18 | Hint clears on move | Hint highlight clears when player makes any move |
+| M-HUD-19 | Skip button hidden initially | SkipBtn not visible until 3 resets on current level |
+| M-HUD-20 | Skip button appears after 3 resets | SkipBtn becomes visible after 3 resets on the same level |
+| M-HUD-21 | Skip button triggers confirm | Tapping Skip shows confirmation dialog for skip (100 coins) |
+| M-HUD-22 | Menu button visible | MenuBtn displayed and labeled |
+| M-HUD-23 | Menu button triggers confirm | Tapping Menu shows confirmation dialog (exit level, lose life) |
+| M-HUD-24 | Menu confirm dialog text | Confirm dialog states player will lose a life if they exit |
+| M-HUD-25 | Menu confirm cancel | Cancel button dismisses dialog, returns to gameplay |
+| M-HUD-26 | Menu confirm accept | Accept button returns to main menu, deducts 1 life |
+| M-HUD-27 | No life loss on 0 moves | Exiting before making any moves does NOT cost a life |
+| M-HUD-28 | HUD button layout | Buttons arranged horizontally in HUDButtonGroup |
+| M-HUD-29 | All HUD buttons touch-responsive | Every HUD button responds to tap without keyboard |
+| M-HUD-30 | Progress bar background | CatProgressBg visible as dark background bar |
+| M-HUD-31 | Progress bar fill | CatProgressFill shows progress based on cats eliminated vs total |
+| M-HUD-32 | Progress bar updates | Fill amount updates in real-time as cats are eliminated |
+
+### D.9 Test Checklist: Confirmation Dialogs
+
+> **Automation note:** `Test_UIConfirmDialogFlow` programmatically tests all 3 dialog types (EXIT_LEVEL, SKIP_LEVEL, RESET_SAVE) — show/hide state, text content, and multiple sequential triggers. Tests marked `[AUTO]` are covered by the autotest suite.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-CONF-01 | `[AUTO]` Overlay appears on trigger | ConfirmOverlay becomes visible (IsShowing) when ShowConfirmDialog called |
+| M-CONF-02 | Dim background renders | Semi-transparent dark background covers full screen behind overlay |
+| M-CONF-03 | Dim background fades in | Background alpha animates from 0 to 0.7 (not instant) |
+| M-CONF-04 | Content container visible | Centered content container (400x200) visible on top of dim |
+| M-CONF-05 | `[AUTO]` Confirm text displays | ConfirmText populated with non-empty text for each dialog type |
+| M-CONF-06 | `[AUTO]` Exit level text correct | ConfirmText contains expected text for CONFIRM_EXIT_LEVEL |
+| M-CONF-07 | `[AUTO]` Skip level text correct | ConfirmText contains expected text for CONFIRM_SKIP_LEVEL |
+| M-CONF-08 | `[AUTO]` Reset save text correct | ConfirmText contains expected text for CONFIRM_RESET_SAVE |
+| M-CONF-09 | `[AUTO]` Cancel button exists | ConfirmCancelBtn element exists |
+| M-CONF-10 | `[AUTO]` Cancel/hide works | HideConfirmDialog sets IsShowing to false |
+| M-CONF-11 | `[AUTO]` Accept button exists | ConfirmAcceptBtn element exists with context text |
+| M-CONF-12 | Accept button works (exit) | Accept on exit level: returns to menu, deducts life |
+| M-CONF-13 | Accept button works (skip) | Accept on skip: advances to next level, deducts 100 coins |
+| M-CONF-14 | Accept button works (reset) | Accept on reset save: clears all data, returns to menu |
+| M-CONF-15 | Overlay blocks input behind | Cannot tap buttons behind the overlay while it is showing |
+| M-CONF-16 | Overlay dim fade out | Dim background fades out on dismiss (not instant) |
+| M-CONF-17 | Sort order renders on top | Overlay renders above all other UI elements (sort order 100+) |
+| M-CONF-18 | Text behind overlay occluded | Text elements behind the overlay content box are clipped by fragment shader |
+| M-CONF-19 | Cancel button hover state | Cancel button shows hover color on mouse-over |
+| M-CONF-20 | Accept button hover state | Accept button shows hover/pressed color on interaction |
+| M-CONF-21 | Overlay exists in gameplay scene | ConfirmOverlay is created in the TilePuzzle gameplay scene (not just main menu) |
+| M-CONF-22 | `[AUTO]` Multiple confirms work | Show/hide/show cycle works without issues for all dialog types |
+
+### D.10 Manual Test Checklist: Victory Overlay (partial auto — ShowScreenAdditive tested in D.17)
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-VIC-06 | Victory overlay appears | VictoryBg fades in after level complete |
+| M-VIC-07 | "Level Complete!" title | VictoryTitle displays with scale-up animation |
+| M-VIC-08 | Star 1 animation | VictoryStar0 appears at 0.6s with scale bounce (back-out easing) |
+| M-VIC-09 | Star 2 animation | VictoryStar1 appears at 1.0s with same animation |
+| M-VIC-10 | Star 3 animation | VictoryStar2 appears at 1.4s (filled or empty based on rating) |
+| M-VIC-11 | 1-star appearance | Only VictoryStar0 filled, stars 1 and 2 empty |
+| M-VIC-12 | 2-star appearance | VictoryStar0 and VictoryStar1 filled, star 2 empty |
+| M-VIC-13 | 3-star appearance | All three stars filled |
+| M-VIC-14 | Cat rescue text | VictoryCatText shows "Cat rescued: [Name]!" with correct cat name |
+| M-VIC-15 | Coin count-up | VictoryCoinsText animates counting up from 0 to earned coins |
+| M-VIC-16 | Next Level button appears | NextLevelBtn fades in at ~2.5s after victory start |
+| M-VIC-17 | Next Level button works | Tapping NextLevelBtn loads and starts the next level |
+| M-VIC-18 | Gold particle burst per star | Each star appearance triggers gold particles at grid center |
+| M-VIC-19 | Confetti by star count | 1-star: no confetti, 2-star: 40 particles, 3-star: 80 particles |
+| M-VIC-20 | "New Best!" indicator | Shows gold pulsing text when beating previous best stars/moves |
+| M-VIC-21 | "New Best!" not shown on first play | No "New Best!" on first completion of a level |
+| M-VIC-22 | Camera zoom pulse | Camera zooms in 5% then eases back during victory |
+| M-VIC-23 | Stagger timing correct | Elements appear at documented intervals (0.0, 0.3, 0.6, 1.0, 1.4, 1.8, 2.2, 2.5s) |
+| M-VIC-24 | Victory on last level (100) | Victory works correctly on level 100 without crash |
+
+### D.11 Test Checklist: Settings Screen
+
+> **Automation note:** `Test_UIAllMenuElements` verifies all settings elements exist. `UpdateUIInteract` tests navigation to/from settings and clicking the sound toggle via InputSimulator (steps 0-3, 14-16). Tests marked `[AUTO]` are covered by the autotest suite.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-SET-01 | `[AUTO]` Settings background exists | SettingsBg element exists |
+| M-SET-02 | `[AUTO]` Settings title exists | SettingsTitle element exists |
+| M-SET-03 | `[AUTO]` Sound toggle exists | SettingsSoundBtn element exists |
+| M-SET-04 | Sound toggle on state | Green color when sound is on |
+| M-SET-05 | Sound toggle off state | Gray color when sound is off |
+| M-SET-06 | `[AUTO]` Sound toggle works | InputSimulator clicks toggle, verifies IsOn() flips |
+| M-SET-07 | Sound toggle persists | Sound preference saved and restored across sessions |
+| M-SET-08 | `[AUTO]` Music toggle exists | SettingsMusicBtn element exists |
+| M-SET-09 | Music toggle on/off colors | Green=on, gray=off |
+| M-SET-10 | Music toggle works | Tapping toggles music on/off |
+| M-SET-11 | Music toggle persists | Music preference saved and restored |
+| M-SET-12 | `[AUTO]` Haptics toggle exists | SettingsHapticsBtn element exists |
+| M-SET-13 | Haptics toggle on/off colors | Green=on, gray=off |
+| M-SET-14 | Haptics toggle works | Tapping toggles haptics on/off |
+| M-SET-15 | Haptics toggle persists | Haptics preference saved and restored |
+| M-SET-16 | `[AUTO]` Credits button exists | SettingsCreditsBtn element exists |
+| M-SET-17 | Credits button opens overlay | Tapping Credits opens credits overlay |
+| M-SET-18 | `[AUTO]` Back button exists | SettingsBackBtn element exists |
+| M-SET-19 | `[AUTO]` Back button returns to menu | InputSimulator clicks back, verifies menu visible |
+| M-SET-20 | Toggle initial state matches save | On opening settings, toggle states match saved preferences |
+| M-SET-21 | All settings touch-responsive | Every toggle and button responds to tap |
+
+### D.12 Test Checklist: Credits Overlay
+
+> **Automation note:** `Test_UIAllMenuElements` verifies CreditsOverlay, CreditsTitleText, CreditsLine1, CreditsLine2, CreditsDismissText elements exist. Tests marked `[AUTO]` are covered by the autotest suite.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-CRED-01 | `[AUTO]` Credits overlay exists | CreditsOverlay element exists |
+| M-CRED-02 | Dim background | Semi-transparent dim background covers screen |
+| M-CRED-03 | `[AUTO]` Credits title exists | CreditsTitleText element exists |
+| M-CRED-04 | `[AUTO]` Credits content lines exist | CreditsLine1 and CreditsLine2 elements exist |
+| M-CRED-05 | `[AUTO]` Dismiss instruction exists | CreditsDismissText element exists |
+| M-CRED-06 | Tap to dismiss works | Tapping anywhere on overlay dismisses it |
+| M-CRED-07 | Returns to settings | After dismiss, settings screen is visible and interactive |
+| M-CRED-08 | Input blocked behind | Cannot interact with settings while credits shown |
+
+### D.13 Test Checklist: Cat Cafe UI
+
+> **Automation note:** `Test_UIAllMenuElements` verifies all cat cafe elements exist. `UpdateUIInteract` tests navigation to/from Cat Cafe via InputSimulator (steps 8-11). Tests marked `[AUTO]` are covered by the autotest suite.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-CAFE-01 | `[AUTO]` Cat Cafe background exists | CatCafeBg element exists |
+| M-CAFE-02 | `[AUTO]` Cat Cafe title exists | CatCafeTitle element exists |
+| M-CAFE-03 | `[AUTO]` Cat count display exists | CatCafeCount element exists |
+| M-CAFE-04 | 8 cards per page | Up to 8 cat cards visible per page |
+| M-CAFE-05 | `[AUTO]` Previous page button exists | CatCafePrevPage element exists |
+| M-CAFE-06 | `[AUTO]` Next page button exists | CatCafeNextPage element exists |
+| M-CAFE-07 | Page bounds | Cannot navigate before page 1 or after page 13 |
+| M-CAFE-08 | `[AUTO]` Back button returns to menu | CatCafeBackButton navigates to main menu (InputSimulator) |
+| M-CAFE-09 | Collected cat card shows name | Cat card for collected cat shows cat name (e.g., "Whiskers") |
+| M-CAFE-10 | Collected cat card shows breed | Cat card shows breed name (e.g., "Tabby") |
+| M-CAFE-11 | Collected cat card shows level | Cat card shows level number where cat was rescued |
+| M-CAFE-12 | Collected cat card shows stars | Cat card shows 3-star indicator for that level |
+| M-CAFE-13 | Uncollected cat placeholder | Uncollected cats show "???" placeholder |
+| M-CAFE-14 | Cat card backgrounds | CatCardBg_N rects have 10px corner radius and shadow |
+| M-CAFE-15 | Correct cats on correct pages | Page 1 shows cats 0-7, page 2 shows cats 8-15, etc. |
+| M-CAFE-16 | All cards touch-responsive | Cards don't require keyboard to view |
+
+### D.14 Test Checklist: Achievements Screen
+
+> **Automation note:** `UpdateUIInteract` (steps 12-13) tests navigating to achievements via InputSimulator and verifying game state changes. Tests marked `[AUTO]` are covered by the autotest suite.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-ACH-01 | `[AUTO]` Achievements accessible | InputSimulator clicks AchievementsButton, verifies state == ACHIEVEMENTS |
+| M-ACH-02 | All 10 achievements listed | All 10 achievements visible (scrollable if needed) |
+| M-ACH-03 | Achievement names correct | Each achievement shows correct name (First Steps, Getting Started, etc.) |
+| M-ACH-04 | Achievement descriptions correct | Each shows condition text |
+| M-ACH-05 | Unlocked achievements gold border | Unlocked achievements have gold border visual |
+| M-ACH-06 | Locked achievements dimmed | Locked achievements show as locked/dimmed |
+| M-ACH-07 | Achievement state matches save | Unlocked states match uAchievementFlags in save data |
+| M-ACH-08 | Back button works | Can return to main menu from achievements |
+| M-ACH-09 | Achievement toast appears | When unlocking an achievement, gold banner appears at top |
+| M-ACH-10 | Toast auto-dismisses | Achievement toast auto-dismisses after 2 seconds |
+
+### D.15 Manual Test Checklist: Pinball Gate Selection (no automation)
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-GATE-01 | Gate select background | GateSelectBg renders full-screen |
+| M-GATE-02 | Gate select title | GateSelectTitle shows "Select Gate" |
+| M-GATE-03 | Gate buttons display | Gate buttons (GateBtn_0 through GateBtn_N) in grid layout |
+| M-GATE-04 | Cleared gates blue + checkmark | Gates already cleared show blue color with check indicator |
+| M-GATE-05 | Locked gates gray | Gates not yet reached show gray, not selectable |
+| M-GATE-06 | Tap cleared gate starts pinball | Tapping a cleared gate starts pinball at that gate |
+| M-GATE-07 | Tap locked gate blocked | Tapping a locked gate does nothing |
+| M-GATE-08 | Freeplay button visibility | GateFreeplayBtn visible only after all 10 gates cleared |
+| M-GATE-09 | Freeplay button works | Tapping Freeplay starts pinball in freeplay mode |
+| M-GATE-10 | Back button | GateBackBtn returns to main menu |
+| M-GATE-11 | Gate buttons hover states | Gate buttons show hover/pressed visual feedback |
+| M-GATE-12 | All gates touch-responsive | Every gate button responds to tap |
+
+### D.16 Manual Test Checklist: Pinball HUD (no automation)
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-PIN-01 | Score display | PinballScore shows current session score, starts at 0 |
+| M-PIN-02 | Score updates on peg hit | Score increases by 100 when ball hits a peg |
+| M-PIN-03 | Score updates on target hit | Score increases by 500 when ball hits target |
+| M-PIN-04 | High score / total display | PinballHighScore shows lifetime total score |
+| M-PIN-05 | Launch hint text | PinballLaunchHint shows "Drag plunger to launch" before first launch |
+| M-PIN-06 | Objective text (score gates) | PinballObjective shows "Score N points" for score-based gates |
+| M-PIN-07 | Objective text (peg gates) | PinballObjective shows "Hit all N pegs" for peg-based gates |
+| M-PIN-08 | Objective text (target gates) | PinballObjective shows "Hit the target N times" for target gates |
+| M-PIN-09 | Objective text (combined) | PinballObjective shows combined criteria for gate 8 |
+| M-PIN-10 | Objective text (freeplay) | Shows "Freeplay - All gates cleared!" after all gates |
+| M-PIN-11 | Peg counter visible | PinballPegCount visible on hit-all-pegs and combined gates |
+| M-PIN-12 | Peg counter updates | "Pegs: X/Y" updates when a peg is hit |
+| M-PIN-13 | Target counter visible | PinballTargetCount visible on target-hits gates |
+| M-PIN-14 | Target counter updates | "Targets: X/Y" updates when target is hit |
+| M-PIN-15 | Balls remaining visible | PinballBalls visible on limited-ball gates only |
+| M-PIN-16 | Balls remaining decrements | Ball count decreases when ball drains |
+| M-PIN-17 | Gate status pass | PinballGateStatus shows green "Pass" when gate cleared |
+| M-PIN-18 | Gate status fail | PinballGateStatus shows red "Fail" when failed (limited balls) |
+| M-PIN-19 | Gate number display | PinballGateNum shows "Gate N" during play |
+| M-PIN-20 | Back button | PinballBackBtn exits pinball and returns to menu/gate select |
+| M-PIN-21 | Daily bonus text | "+25 Daily Bonus!" shown on first gate completion of the day |
+| M-PIN-22 | Daily bonus not repeated | Daily bonus not shown on subsequent gate completions same day |
+| M-PIN-23 | Peg/target counters hidden on score-only gates | PinballPegCount and PinballTargetCount hidden when not applicable |
+
+### D.17 Test Checklist: Screen Transitions
+
+> **Automation note:** `Test_UIAllScreenElements` programmatically tests ShowScreen/ShowScreenAdditive visibility logic. `UpdateUIInteract` tests actual button-click-driven transitions via InputSimulator (Menu↔Settings, Menu↔LevelSelect, Menu↔CatCafe, Menu→Achievements). Tests marked `[AUTO]` are covered by the autotest suite.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-TRAN-01 | `[AUTO]` Menu to Level Select | InputSimulator clicks LevelSelectButton, verifies LevelSelectBg visible, MenuBg hidden |
+| M-TRAN-02 | `[AUTO]` Level Select to Menu | InputSimulator clicks BackButton, verifies MenuBg visible |
+| M-TRAN-03 | `[AUTO]` Menu to Settings | InputSimulator clicks SettingsButton, verifies SettingsBg visible, MenuBg hidden |
+| M-TRAN-04 | `[AUTO]` Settings to Menu | InputSimulator clicks SettingsBackBtn, verifies MenuBg visible |
+| M-TRAN-05 | `[AUTO]` Menu to Cat Cafe | InputSimulator clicks CatCafeButton, verifies CatCafeBg visible |
+| M-TRAN-06 | `[AUTO]` Cat Cafe to Menu | InputSimulator clicks CatCafeBackButton, verifies MenuBg visible |
+| M-TRAN-07 | `[AUTO]` Menu to Achievements | InputSimulator clicks AchievementsButton, verifies state change |
+| M-TRAN-08 | Achievements to Menu | Back button returns to menu |
+| M-TRAN-09 | Menu to Gameplay | Continue/Level Select button loads level, shows HUD |
+| M-TRAN-10 | Gameplay to Menu (via confirm) | Confirm dialog accept returns to menu, HUD hidden |
+| M-TRAN-11 | Gameplay to Victory | Level complete triggers victory overlay on top of HUD |
+| M-TRAN-12 | Victory to Next Level | Next Level loads next level seamlessly |
+| M-TRAN-13 | Menu to Pinball Gate Select | Pinball button shows gate selection |
+| M-TRAN-14 | Gate Select to Pinball Gameplay | Gate button starts pinball, shows pinball HUD |
+| M-TRAN-15 | Pinball to Menu | Back button returns to menu from pinball |
+| M-TRAN-16 | No orphan UI elements | After each transition, no elements from previous screen remain visible |
+| M-TRAN-17 | `[AUTO]` ShowScreen hides other screens | ShowScreen(X) makes X visible, hides all others |
+| M-TRAN-18 | `[AUTO]` ShowScreenAdditive for overlays | ShowScreenAdditive(VICTORY) keeps HUD visible |
+
+### D.18 Manual Test Checklist: Focus & Keyboard Navigation (no automation)
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-NAV-01 | Main menu vertical nav | Arrow keys navigate vertically between all menu buttons |
+| M-NAV-02 | Focused button visual | Focused button shows distinct visual indicator (highlight/glow) |
+| M-NAV-03 | Enter/Space activates button | Pressing Enter or Space on focused button triggers its callback |
+| M-NAV-04 | HUD horizontal nav | Arrow keys navigate horizontally: Menu, Reset, Undo, Hint, Skip |
+| M-NAV-05 | Settings vertical nav | Arrow keys navigate vertically: Sound, Music, Haptics, Credits, Back |
+| M-NAV-06 | Enter on toggle | Enter/Space on focused toggle flips its state |
+| M-NAV-07 | Focus skips invisible elements | Navigation skips hidden/invisible elements |
+| M-NAV-08 | Focus skips disabled elements | Navigation skips non-interactable elements |
+| M-NAV-09 | Initial focus on screen enter | First button gets focus when entering a screen |
+| M-NAV-10 | Level select 2D grid nav | Arrow keys navigate 4x5 grid (left/right within rows, up/down between rows) |
+| M-NAV-11 | All nav works without mouse | Full navigation possible using only keyboard |
+
+### D.19 Manual Test Checklist: Touch Input — Mobile (no automation)
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-TOUCH-01 | All buttons respond to tap | Every button across all screens responds to single tap |
+| M-TOUCH-02 | All toggles respond to tap | Every toggle switches state on single tap |
+| M-TOUCH-03 | No double-tap required | Single tap sufficient for all interactions |
+| M-TOUCH-04 | Drag to select shape | Touch-drag on a shape selects and slides it |
+| M-TOUCH-05 | Drag direction detection | Shape slides in dominant drag direction (up/down/left/right) |
+| M-TOUCH-06 | Shape release snaps | Shape snaps to grid position on finger lift |
+| M-TOUCH-07 | Multi-touch ignored | Only single touch tracked, additional fingers ignored |
+| M-TOUCH-08 | Pinball plunger drag | Touch-drag down on plunger charges launch |
+| M-TOUCH-09 | Pinball plunger release | Lifting finger launches ball |
+| M-TOUCH-10 | Overlay tap-to-dismiss | Credits overlay dismisses on tap anywhere |
+| M-TOUCH-11 | Confirm dialog buttons touchable | Cancel and Accept buttons in confirm dialog respond to tap |
+| M-TOUCH-12 | No hover-only features | No functionality requires mouse hover (hover is enhancement only) |
+| M-TOUCH-13 | Touch on overlays blocked behind | Cannot accidentally tap buttons behind a visible overlay |
+
+### D.20 Manual Test Checklist: UI Widget Rendering (no automation — visual verification only)
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-WIDG-01 | UIText alignment | Text elements are correctly aligned (left/center/right per element) |
+| M-WIDG-02 | UIText multi-line | Multi-line text wraps and displays correctly |
+| M-WIDG-03 | UIText font sizes | Different font sizes render at correct scale (20pt, 24pt, 28pt, 32pt, 84pt used) |
+| M-WIDG-04 | UIText color | Text colors match specified RGBA values |
+| M-WIDG-05 | UIText shadow | Text shadows render at correct offset and alpha |
+| M-WIDG-06 | UIRect corner radius | Rects with corner radius show rounded corners (0, 8, 10, 12, 16px used) |
+| M-WIDG-07 | UIRect fill color | Rect fill colors match specified RGBA values |
+| M-WIDG-08 | UIRect gradient | Gradient rects render smooth color transition |
+| M-WIDG-09 | UIRect border | Bordered rects show border at correct thickness and color |
+| M-WIDG-10 | UIRect shadow | Rects with shadow show drop shadow at correct offset |
+| M-WIDG-11 | UIRect fill direction | Progress bars fill in correct direction (left-to-right) |
+| M-WIDG-12 | UIRect fill amount | Fill amount correctly represents 0.0 to 1.0 range |
+| M-WIDG-13 | UIImage renders texture | UIImage elements display their assigned textures |
+| M-WIDG-14 | UIButton 3-state colors | Buttons show distinct normal/hover/pressed colors |
+| M-WIDG-15 | UIButton transition speed | Color transitions between states are smooth (0.12s) |
+| M-WIDG-16 | UIToggle distinct on/off | Toggle widgets show clearly different on (green) vs off (gray) state |
+| M-WIDG-17 | UIOverlay dim alpha | Overlay dim background renders at correct alpha (0.7) |
+| M-WIDG-18 | UIOverlay fade animation | Show/hide uses fade animation (not instant) at 0.2s duration |
+| M-WIDG-19 | UILayoutGroup spacing | Layout groups space children correctly (vertical or horizontal) |
+| M-WIDG-20 | StretchAll anchoring | Elements with StretchAll anchor fill their parent's full bounds |
+| M-WIDG-21 | Sort order rendering | Elements with higher sort order render on top of lower ones |
+
+### D.21 Test Checklist: Lives & Economy UI
+
+> **Automation note:** `Test_UIEconomyDisplay` verifies CoinText, LivesText, TotalStarsText match save data, and tests coin economy updates. Also verifies lives timer visibility logic at max lives. Tests marked `[AUTO]` are covered by the autotest suite.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-ECON-01 | Coins update on level complete | Coin display increases by 10 after completing a level |
+| M-ECON-02 | 3-star bonus coins | Coin display increases by additional 5 when earning 3 stars |
+| M-ECON-03 | Coins decrease on undo | Coin display decreases by 20 on paid undo |
+| M-ECON-04 | Coins decrease on hint | Coin display decreases by 30 on paid hint |
+| M-ECON-05 | Coins decrease on skip | Coin display decreases by 100 on skip level |
+| M-ECON-06 | Coins decrease on life refill | Coin display decreases by 50 on refill |
+| M-ECON-07 | Lives decrease on exit | Lives count decreases by 1 when exiting level with moves made |
+| M-ECON-08 | `[AUTO]` Lives preserved on 0-move exit | Lives unchanged when exiting before any moves |
+| M-ECON-09 | Lives regeneration timer | Timer counts down correctly, adds 1 life when reaching 0 |
+| M-ECON-10 | Lives cap at 5 | Lives never exceed 5 |
+| M-ECON-11 | Can't play with 0 lives | Cannot start a level with 0 lives (or appropriate behavior) |
+| M-ECON-12 | `[AUTO]` Lives timer hidden at max | LivesTimerText hidden when lives == 5 |
+| M-ECON-13 | Pinball gate coins | +25 coins displayed on gate clear |
+| M-ECON-14 | Daily puzzle coins | +50 coins displayed on daily puzzle complete |
+| M-ECON-15 | `[AUTO]` Coin display matches save data | CoinText matches m_xSaveData.uCoins; updates after modification |
+| M-ECON-16 | Insufficient coins feedback | Some visual feedback when trying to spend more coins than available |
+
+### D.22 Test Checklist: Daily Puzzle & Streak UI (logic automated via Test_DailyStreak)
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-DAILY-01 | Daily Puzzle button on menu | DailyPuzzleButton visible on main menu |
+| M-DAILY-02 | Daily puzzle loads | Tapping Daily Puzzle starts a puzzle at Hard tier difficulty |
+| M-DAILY-03 | Daily streak increments | Completing daily puzzle on consecutive days increments streak |
+| M-DAILY-04 | Streak display updates | StreakGroup shows updated streak count after completion |
+| M-DAILY-05 | Daily puzzle reward | +50 coins awarded on daily puzzle completion |
+| M-DAILY-06 | Same puzzle per day | Re-entering daily puzzle on same day gives same puzzle |
+
+### D.23 Test Checklist: Weekly Challenge UI (logic automated via Test_WeeklyChallenge_*)
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-WEEK-01 | Challenge banner on menu | Weekly challenge description visible on main menu |
+| M-WEEK-02 | Challenge progress bar | Progress bar shows current progress toward target |
+| M-WEEK-03 | Challenge reward display | Coin reward amount visible on challenge banner |
+| M-WEEK-04 | Challenge completion toast | "Challenge Complete!" toast shown on reaching target |
+| M-WEEK-05 | Challenge refreshes weekly | New challenge appears on Monday |
+
+### D.24 Test Checklist: Save Data & Persistence
+
+> **Automation note:** `Test_SaveLoad_Integrity`, `Test_SaveLoad_VersionMigration`, and `Test_StarRatingPersistence` cover serialization round-trip and data integrity. Tests marked `[AUTO]` are covered by the autotest suite.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-SAVE-01 | `[AUTO]` Progress saved on level complete | Save/load round-trip preserves level records, coins, stars |
+| M-SAVE-02 | Progress saved on menu return | State saved when returning to menu |
+| M-SAVE-03 | Progress restored on relaunch | All save data present after closing and reopening game |
+| M-SAVE-04 | `[AUTO]` Cat collection persisted | Cat collection flags survive save/load cycle |
+| M-SAVE-05 | `[AUTO]` Settings persisted | Sound/Music/Haptics flags survive save/load cycle |
+| M-SAVE-06 | `[AUTO]` Pinball gate flags persisted | Gate clear flags survive save/load cycle |
+| M-SAVE-07 | `[AUTO]` Achievement flags persisted | Achievement flags survive save/load cycle |
+| M-SAVE-08 | Reset save clears all | After reset save, all data returns to defaults |
+
+### D.25 Test Checklist: Edge Cases & Error Handling
+
+> **Automation note:** `Test_WinCondition` tests level completion. `Test_LivesNoLossOnZeroMoves` tests zero-move exit. Tests marked `[AUTO]` are covered by the autotest suite.
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-EDGE-01 | Level 1 with no progress | Fresh game shows only Continue and basic buttons, no stars |
+| M-EDGE-02 | `[AUTO]` Level 100 victory | Completing level 100 works without crash, no "next level" overflow |
+| M-EDGE-03 | 0 coins economy | All paid features gracefully handle 0 coin balance |
+| M-EDGE-04 | 0 lives state | Game handles 0 lives correctly (blocks play or shows refill) |
+| M-EDGE-05 | Rapid button taps | Quickly tapping same button multiple times doesn't double-trigger |
+| M-EDGE-06 | Overlay while overlay | Cannot open a second overlay while one is showing |
+| M-EDGE-07 | `[AUTO]` Undo on first move | Undo after exactly 1 move restores to initial state |
+| M-EDGE-08 | Skip at level 100 | Skip on last level doesn't go beyond level 100 |
+| M-EDGE-09 | Screen resize / rotation | UI adapts to different screen sizes without element overlap |
+| M-EDGE-10 | Very long cat names | UI handles longest cat names without text overflow |
+| M-EDGE-11 | 999+ coins display | Large coin values don't overflow their display container |
+| M-EDGE-12 | All 100 cats collected | Cat Cafe shows all 100 cats correctly across all 13 pages |
+| M-EDGE-13 | All 10 gates cleared | Gate select shows all gates blue + freeplay button |
+| M-EDGE-14 | Max stars (300) | Star progress shows "300 / 300" correctly |
+
+### D.26 Manual Test Checklist: Android-Specific (no automation — device only)
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-ANDR-01 | Touch input functional | All touch interactions work on Android device |
+| M-ANDR-02 | Portrait orientation | App displays in portrait (720x1280) |
+| M-ANDR-03 | Back button behavior | Android back button functions appropriately (e.g., navigates back) |
+| M-ANDR-04 | App resume preserves state | Returning from background preserves game state |
+| M-ANDR-05 | Vulkan rendering | All UI renders correctly via Vulkan on Android |
+| M-ANDR-06 | Pre-compiled shaders | No shader compilation stalls, all .spv files loaded |
+| M-ANDR-07 | Frame rate | 60 FPS during UI navigation and gameplay |
+| M-ANDR-08 | No ANR on transitions | No "App Not Responding" during screen transitions |

@@ -9,6 +9,10 @@
  *
  * Renders text at a specified position using the Flux_Text system.
  * Supports color, size, alignment, and word wrapping options.
+ *
+ * Note: Text metrics (GetTextWidth/GetTextHeight) assume a monospace font.
+ * The Flux_Text system uses a fixed-advance SDF font atlas. Proportional
+ * fonts are not supported.
  */
 
 namespace Zenith_UI {

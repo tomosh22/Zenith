@@ -27,6 +27,7 @@ struct UITextEntry
     Zenith_Maths::Vector2 m_xPosition;
     float m_fSize;
     Zenith_Maths::Vector4 m_xColor;
+    int m_iSortOrder = 0; // Owning element's sort order (for overlay clip partitioning)
 };
 
 class Zenith_UICanvas
@@ -88,6 +89,24 @@ public:
     static Zenith_UICanvas* GetPrimaryCanvas() { return s_pxPrimaryCanvas; }
     static void SetPrimaryCanvas(Zenith_UICanvas* pxCanvas) { s_pxPrimaryCanvas = pxCanvas; }
 
+    // ========== Focus Navigation ==========
+
+    void SetFocusedElement(Zenith_UIElement* pxElement);
+    Zenith_UIElement* GetFocusedElement() const { return m_pxFocusedElement; }
+
+    void NavigateUp();
+    void NavigateDown();
+    void NavigateLeft();
+    void NavigateRight();
+    void ActivateFocused();
+
+    // ========== Clip Rect Stack ==========
+
+    void PushClipRect(const Zenith_Maths::Vector4& xBounds);
+    void PopClipRect();
+    bool HasActiveClipRect() const { return m_uClipRectStackDepth > 0; }
+    Zenith_Maths::Vector4 GetActiveClipRect() const;
+
     // ========== Rendering Interface ==========
 
     // Submit a quad (called by UI elements)
@@ -121,6 +140,19 @@ private:
     Zenith_Maths::Vector2 m_xSize = { 1920.0f, 1080.0f };
     Zenith_Maths::Vector2 m_xReferenceResolution = { 1920.0f, 1080.0f };
     float m_fScaleFactor = 1.0f;
+
+    // Clip rect stack (CPU-side bounds clamping for scroll views)
+    static constexpr uint32_t uMAX_CLIP_RECT_DEPTH = 8;
+    Zenith_Maths::Vector4 m_axClipRectStack[uMAX_CLIP_RECT_DEPTH];
+    uint32_t m_uClipRectStackDepth = 0;
+
+    // Focus navigation
+    Zenith_UIElement* m_pxFocusedElement = nullptr;
+    void CollectFocusableElements(Zenith_UIElement* pxElement, Zenith_UIElement** apxOut, uint32_t& uCount, uint32_t uMax) const;
+    Zenith_UIElement* FindNearestFocusable(Zenith_UIElement* pxFrom, float fDirX, float fDirY) const;
+
+    // Current sort order for text entry tagging (set during Render loop)
+    int m_iCurrentSortOrder = 0;
 
     // Primary canvas
     static Zenith_UICanvas* s_pxPrimaryCanvas;

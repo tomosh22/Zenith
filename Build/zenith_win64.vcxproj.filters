@@ -910,13 +910,22 @@
     <ClCompile Include="..\Zenith\UI\Zenith_UILayoutGroup.cpp">
       <Filter>UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\UI\Zenith_UIOverlay.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\UI\Zenith_UIRect.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\UI\Zenith_UIScrollView.cpp">
       <Filter>UI</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\UI\Zenith_UIStyleRenderer.cpp">
       <Filter>UI</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\UI\Zenith_UIText.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\UI\Zenith_UIToggle.cpp">
       <Filter>UI</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AITests.cpp">
@@ -3801,7 +3810,13 @@
     <ClInclude Include="..\Zenith\UI\Zenith_UILayoutGroup.h">
       <Filter>UI</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\UI\Zenith_UIOverlay.h">
+      <Filter>UI</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\UI\Zenith_UIRect.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UI\Zenith_UIScrollView.h">
       <Filter>UI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UI\Zenith_UIStyle.h">
@@ -3811,6 +3826,12 @@
       <Filter>UI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UI\Zenith_UIText.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UI\Zenith_UIToggle.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UI\Zenith_UITween.h">
       <Filter>UI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AITests.h">

@@ -3,6 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Input/Zenith_InputSimulator.h"
+#include "UI/Zenith_UICanvas.h"
 #include "Zenith_Core.h"
 
 bool Zenith_InputSimulator::s_bEnabled = false;
@@ -175,6 +176,20 @@ void Zenith_InputSimulator::SimulateTap(double fScreenX, double fScreenY)
 void Zenith_InputSimulator::SimulateSwipe(double fStartX, double fStartY, double fEndX, double fEndY, u_int32 uDurationFrames)
 {
 	SimulateMouseDrag(fStartX, fStartY, fEndX, fEndY, uDurationFrames);
+}
+
+void Zenith_InputSimulator::SimulateClickOnUIElement(const char* szElementName)
+{
+	Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+	Zenith_Assert(pxCanvas, "No primary canvas for SimulateClickOnUIElement");
+	Zenith_UI::Zenith_UIElement* pxElement = pxCanvas->FindElement(szElementName);
+	Zenith_Assert(pxElement, "UI element not found: %s", szElementName);
+
+	Zenith_Maths::Vector4 xBounds = pxElement->GetScreenBounds();
+	double fCenterX = static_cast<double>((xBounds.x + xBounds.z) * 0.5f);
+	double fCenterY = static_cast<double>((xBounds.y + xBounds.w) * 0.5f);
+
+	SimulateMouseClick(fCenterX, fCenterY);
 }
 
 // ========== Key State Manipulation ==========

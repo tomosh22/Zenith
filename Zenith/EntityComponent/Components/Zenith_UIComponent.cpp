@@ -79,6 +79,27 @@ Zenith_UI::Zenith_UILayoutGroup* Zenith_UIComponent::CreateLayoutGroup(const std
     return pxLayout;
 }
 
+Zenith_UI::Zenith_UIToggle* Zenith_UIComponent::CreateToggle(const std::string& strName, const std::string& strText)
+{
+    Zenith_UI::Zenith_UIToggle* pxToggle = new Zenith_UI::Zenith_UIToggle(strText, strName);
+    m_xCanvas.AddElement(pxToggle);
+    return pxToggle;
+}
+
+Zenith_UI::Zenith_UIOverlay* Zenith_UIComponent::CreateOverlay(const std::string& strName)
+{
+    Zenith_UI::Zenith_UIOverlay* pxOverlay = new Zenith_UI::Zenith_UIOverlay(strName);
+    m_xCanvas.AddElement(pxOverlay);
+    return pxOverlay;
+}
+
+Zenith_UI::Zenith_UIScrollView* Zenith_UIComponent::CreateScrollView(const std::string& strName)
+{
+    Zenith_UI::Zenith_UIScrollView* pxScrollView = new Zenith_UI::Zenith_UIScrollView(strName);
+    m_xCanvas.AddElement(pxScrollView);
+    return pxScrollView;
+}
+
 Zenith_UI::Zenith_UIElement* Zenith_UIComponent::CreateElement(const std::string& strName)
 {
     Zenith_UI::Zenith_UIElement* pxElement = new Zenith_UI::Zenith_UIElement(strName);
@@ -222,6 +243,16 @@ void Zenith_UIComponent::RenderPropertiesPanel()
             std::string strName = "Layout_" + std::to_string(s_iLayoutCount++);
             Zenith_UI::Zenith_UILayoutGroup* pxLayout = CreateLayoutGroup(strName);
             m_pxSelectedElement = pxLayout;
+        }
+        ImGui::SameLine();
+
+        if (ImGui::Button("+ Toggle"))
+        {
+            static int s_iToggleCount = 0;
+            std::string strName = "Toggle_" + std::to_string(s_iToggleCount++);
+            Zenith_UI::Zenith_UIToggle* pxToggle = CreateToggle(strName, "Toggle");
+            pxToggle->SetSize(200, 50);
+            m_pxSelectedElement = pxToggle;
         }
 
         ImGui::Separator();

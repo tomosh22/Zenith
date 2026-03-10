@@ -10,7 +10,6 @@
 #include <d3d11.h>
 #include <tchar.h>
 
-#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #include <filesystem>

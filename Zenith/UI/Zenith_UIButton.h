@@ -2,8 +2,11 @@
 
 #include "UI/Zenith_UIElement.h"
 #include "UI/Zenith_UIStyle.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Maths/Zenith_Maths.h"
 #include <string>
+
+class Zenith_TextureAsset;
 
 /**
  * Zenith_UIButton - Clickable/tappable button widget
@@ -92,6 +95,23 @@ public:
 	void SetTextShadowColor(const Zenith_Maths::Vector4& xColor) { m_xTextShadowColor = xColor; }
 	void SetTextShadowOffset(const Zenith_Maths::Vector2& xOffset) { m_xTextShadowOffset = xOffset; }
 
+	// ========== Icon ==========
+
+	enum class IconPlacement : uint32_t { LEFT, RIGHT, TOP, BOTTOM, ICON_ONLY };
+
+	void SetIconTexturePath(const std::string& strPath);
+	const std::string& GetIconTexturePath() const { return m_xIconTexture.GetPath(); }
+	void SetIconSize(float fW, float fH) { m_xIconSize = {fW, fH}; }
+	Zenith_Maths::Vector2 GetIconSize() const { return m_xIconSize; }
+	void SetIconPlacement(IconPlacement ePlacement) { m_eIconPlacement = ePlacement; }
+	IconPlacement GetIconPlacement() const { return m_eIconPlacement; }
+	void SetIconPadding(float fPadding) { m_fIconPadding = fPadding; }
+	float GetIconPadding() const { return m_fIconPadding; }
+
+	// ========== Activation ==========
+
+	void Activate() { if (m_pfnOnClick) m_pfnOnClick(m_pxUserData); }
+
 	// ========== State ==========
 
 	ButtonState GetState() const { return m_eState; }
@@ -145,6 +165,12 @@ private:
 	// Transition
 	float m_fTransitionDuration = 0.1f;
 	float m_fTransitionT = 0.0f;
+
+	// Icon
+	TextureHandle m_xIconTexture;
+	Zenith_Maths::Vector2 m_xIconSize = {0.0f, 0.0f};
+	IconPlacement m_eIconPlacement = IconPlacement::LEFT;
+	float m_fIconPadding = 4.0f;
 };
 
 } // namespace Zenith_UI

@@ -427,6 +427,107 @@ void Zenith_EditorAutomation::AddStep_SetUILayoutReverse(const char* szElement, 
 	s_axActions.PushBack(xAction);
 }
 
+// -- UI Toggle --
+
+void Zenith_EditorAutomation::AddStep_CreateUIToggle(const char* szName, const char* szText)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::CREATE_UI_TOGGLE;
+	xAction.m_szArg1 = szName;
+	xAction.m_szArg2 = szText;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIToggleOnColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_TOGGLE_ON_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIToggleOffColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_TOGGLE_OFF_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
+	s_axActions.PushBack(xAction);
+}
+
+// -- UI Overlay --
+
+void Zenith_EditorAutomation::AddStep_CreateUIOverlay(const char* szName)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::CREATE_UI_OVERLAY;
+	xAction.m_szArg1 = szName;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_OVERLAY_DIM_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize(const char* szElement, float fW, float fH)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_OVERLAY_CONTENT_SIZE;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fW;
+	xAction.m_afArgs[1] = fH;
+	s_axActions.PushBack(xAction);
+}
+
+// -- UI Focus Navigation --
+
+void Zenith_EditorAutomation::AddStep_SetUINavigation(const char* szElement, const char* szUp, const char* szDown, const char* szLeft, const char* szRight)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_NAVIGATION;
+	xAction.m_szArg1 = szElement;
+	xAction.m_szArg2 = szUp;
+	xAction.m_pArg = const_cast<void*>(static_cast<const void*>(szDown));
+	xAction.m_pArg2 = const_cast<void*>(static_cast<const void*>(szLeft));
+	xAction.m_pfnFunc = reinterpret_cast<void(*)()>(const_cast<char*>(szRight));
+	s_axActions.PushBack(xAction);
+}
+
+// -- UI ScrollView --
+
+void Zenith_EditorAutomation::AddStep_CreateUIScrollView(const char* szName)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::CREATE_UI_SCROLL_VIEW;
+	xAction.m_szArg1 = szName;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIScrollViewContentSize(const char* szElement, float fW, float fH)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fW;
+	xAction.m_afArgs[1] = fH;
+	s_axActions.PushBack(xAction);
+}
+
 // -- UI Button --
 
 void Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor(const char* szElement, float fR, float fG, float fB, float fA)
@@ -471,6 +572,34 @@ void Zenith_EditorAutomation::AddStep_SetUIButtonFontSize(const char* szElement,
 	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_FONT_SIZE;
 	xAction.m_szArg1 = szElement;
 	xAction.m_afArgs[0] = fSize;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonIcon(const char* szElement, const char* szTexturePath)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_ICON;
+	xAction.m_szArg1 = szElement;
+	xAction.m_szArg2 = szTexturePath;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonIconSize(const char* szElement, float fW, float fH)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_ICON_SIZE;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fW;
+	xAction.m_afArgs[1] = fH;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonIconPlacement(const char* szElement, int iPlacement)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_ICON_PLACEMENT;
+	xAction.m_szArg1 = szElement;
+	xAction.m_aiArgs[0] = iPlacement;
 	s_axActions.PushBack(xAction);
 }
 
@@ -1149,6 +1278,122 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	}
 
 	//--------------------------------------------------------------------------
+	// UI toggle
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::CREATE_UI_TOGGLE:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_TOGGLE");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateToggle(xAction.m_szArg1, xAction.m_szArg2);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_TOGGLE_ON_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_TOGGLE_ON_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIToggle* pxToggle = xUI.FindElement<Zenith_UI::Zenith_UIToggle>(xAction.m_szArg1);
+		Zenith_Assert(pxToggle, "UI toggle not found: %s", xAction.m_szArg1);
+		pxToggle->SetOnColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_TOGGLE_OFF_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_TOGGLE_OFF_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIToggle* pxToggle = xUI.FindElement<Zenith_UI::Zenith_UIToggle>(xAction.m_szArg1);
+		Zenith_Assert(pxToggle, "UI toggle not found: %s", xAction.m_szArg1);
+		pxToggle->SetOffColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// UI overlay
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::CREATE_UI_OVERLAY:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_OVERLAY");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateOverlay(xAction.m_szArg1);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_OVERLAY_DIM_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_OVERLAY_DIM_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIOverlay* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>(xAction.m_szArg1);
+		Zenith_Assert(pxOverlay, "UI overlay not found: %s", xAction.m_szArg1);
+		pxOverlay->SetDimColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_OVERLAY_CONTENT_SIZE:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_OVERLAY_CONTENT_SIZE");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIOverlay* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>(xAction.m_szArg1);
+		Zenith_Assert(pxOverlay, "UI overlay not found: %s", xAction.m_szArg1);
+		pxOverlay->SetContentSize(xAction.m_afArgs[0], xAction.m_afArgs[1]);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// UI focus navigation
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::SET_UI_NAVIGATION:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_NAVIGATION");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+
+		const char* szUp = xAction.m_szArg2;
+		const char* szDown = static_cast<const char*>(xAction.m_pArg);
+		const char* szLeft = static_cast<const char*>(xAction.m_pArg2);
+		const char* szRight = reinterpret_cast<const char*>(xAction.m_pfnFunc);
+
+		Zenith_UI::Zenith_UIElement* pxUp = szUp ? xUI.FindElement(szUp) : nullptr;
+		Zenith_UI::Zenith_UIElement* pxDown = szDown ? xUI.FindElement(szDown) : nullptr;
+		Zenith_UI::Zenith_UIElement* pxLeft = szLeft ? xUI.FindElement(szLeft) : nullptr;
+		Zenith_UI::Zenith_UIElement* pxRight = szRight ? xUI.FindElement(szRight) : nullptr;
+
+		pxElement->SetNavigation(pxUp, pxDown, pxLeft, pxRight);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// UI scroll view
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::CREATE_UI_SCROLL_VIEW:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_SCROLL_VIEW");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		xUI.CreateScrollView(xAction.m_szArg1);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_SCROLL_VIEW_CONTENT_SIZE");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIScrollView* pxScrollView = xUI.FindElement<Zenith_UI::Zenith_UIScrollView>(xAction.m_szArg1);
+		Zenith_Assert(pxScrollView, "UI scroll view not found: %s", xAction.m_szArg1);
+		pxScrollView->SetContentSize(xAction.m_afArgs[0], xAction.m_afArgs[1]);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
 	// UI button field edits
 	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::SET_UI_BUTTON_NORMAL_COLOR:
@@ -1192,6 +1437,39 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
 		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
 		pxButton->SetFontSize(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_ICON:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_ICON");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetIconTexturePath(xAction.m_szArg2);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_ICON_SIZE:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_ICON_SIZE");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetIconSize(xAction.m_afArgs[0], xAction.m_afArgs[1]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_ICON_PLACEMENT:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_ICON_PLACEMENT");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetIconPlacement(static_cast<Zenith_UI::Zenith_UIButton::IconPlacement>(xAction.m_aiArgs[0]));
 		break;
 	}
 

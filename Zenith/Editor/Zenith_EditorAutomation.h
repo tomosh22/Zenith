@@ -91,6 +91,11 @@ enum class Zenith_EditorActionType
 	SET_UI_BUTTON_PRESSED_COLOR,
 	SET_UI_BUTTON_FONT_SIZE,
 
+	// UI Button icon
+	SET_UI_BUTTON_ICON,
+	SET_UI_BUTTON_ICON_SIZE,
+	SET_UI_BUTTON_ICON_PLACEMENT,
+
 	// UIRect styling
 	SET_UI_CORNER_RADIUS,
 	SET_UI_GRADIENT_COLOR,
@@ -117,6 +122,23 @@ enum class Zenith_EditorActionType
 	SET_UI_BUTTON_TRANSITION_DURATION,
 	SET_UI_BUTTON_TEXT_SHADOW,
 	SET_UI_BUTTON_TEXT_SHADOW_COLOR,
+
+	// UI Toggle
+	CREATE_UI_TOGGLE,
+	SET_UI_TOGGLE_ON_COLOR,
+	SET_UI_TOGGLE_OFF_COLOR,
+
+	// UI Overlay
+	CREATE_UI_OVERLAY,
+	SET_UI_OVERLAY_DIM_COLOR,
+	SET_UI_OVERLAY_CONTENT_SIZE,
+
+	// UI Focus Navigation
+	SET_UI_NAVIGATION,
+
+	// UI ScrollView
+	CREATE_UI_SCROLL_VIEW,
+	SET_UI_SCROLL_VIEW_CONTENT_SIZE,
 
 	// Script (via Zenith_Editor::SetBehaviourOnSelected / SetBehaviourForSerializationOnSelected)
 	SET_BEHAVIOUR,
@@ -251,12 +273,40 @@ public:
 	static void AddStep_SetUILayoutReverse(const char* szElement, bool bReverse);
 
 	//--------------------------------------------------------------------------
+	// UI Toggle Step Helpers
+	//--------------------------------------------------------------------------
+	static void AddStep_CreateUIToggle(const char* szName, const char* szText);
+	static void AddStep_SetUIToggleOnColor(const char* szElement, float fR, float fG, float fB, float fA);
+	static void AddStep_SetUIToggleOffColor(const char* szElement, float fR, float fG, float fB, float fA);
+
+	//--------------------------------------------------------------------------
+	// UI Overlay Step Helpers
+	//--------------------------------------------------------------------------
+	static void AddStep_CreateUIOverlay(const char* szName);
+	static void AddStep_SetUIOverlayDimColor(const char* szElement, float fR, float fG, float fB, float fA);
+	static void AddStep_SetUIOverlayContentSize(const char* szElement, float fW, float fH);
+
+	//--------------------------------------------------------------------------
+	// UI Focus Navigation Step Helpers
+	//--------------------------------------------------------------------------
+	static void AddStep_SetUINavigation(const char* szElement, const char* szUp, const char* szDown, const char* szLeft, const char* szRight);
+
+	//--------------------------------------------------------------------------
+	// UI ScrollView Step Helpers
+	//--------------------------------------------------------------------------
+	static void AddStep_CreateUIScrollView(const char* szName);
+	static void AddStep_SetUIScrollViewContentSize(const char* szElement, float fW, float fH);
+
+	//--------------------------------------------------------------------------
 	// UI Button Step Helpers
 	//--------------------------------------------------------------------------
 	static void AddStep_SetUIButtonNormalColor(const char* szElement, float fR, float fG, float fB, float fA);
 	static void AddStep_SetUIButtonHoverColor(const char* szElement, float fR, float fG, float fB, float fA);
 	static void AddStep_SetUIButtonPressedColor(const char* szElement, float fR, float fG, float fB, float fA);
 	static void AddStep_SetUIButtonFontSize(const char* szElement, float fSize);
+	static void AddStep_SetUIButtonIcon(const char* szElement, const char* szTexturePath);
+	static void AddStep_SetUIButtonIconSize(const char* szElement, float fW, float fH);
+	static void AddStep_SetUIButtonIconPlacement(const char* szElement, int iPlacement);
 
 	//--------------------------------------------------------------------------
 	// UIElement Background Step Helpers

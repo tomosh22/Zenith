@@ -29,6 +29,9 @@
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIImage.h"
 #include "UI/Zenith_UILayoutGroup.h"
+#include "UI/Zenith_UIRect.h"
+#include "UI/Zenith_UIToggle.h"
+#include "UI/Zenith_UIOverlay.h"
 
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Rules.h"
@@ -457,21 +460,89 @@ public:
 			if (pxSettingsBackBtn)
 				pxSettingsBackBtn->SetOnClick(&OnSettingsBackClicked, this);
 
-			Zenith_UI::Zenith_UIButton* pxSoundToggle = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsSoundBtn");
+			Zenith_UI::Zenith_UIToggle* pxSoundToggle = xUI.FindElement<Zenith_UI::Zenith_UIToggle>("SettingsSoundBtn");
 			if (pxSoundToggle)
-				pxSoundToggle->SetOnClick(&OnToggleSoundClicked, this);
+			{
+				pxSoundToggle->SetOnValueChanged(&OnSettingSoundChanged, this);
+				pxSoundToggle->SetIsOn(m_xSaveData.bSoundEnabled);
+			}
 
-			Zenith_UI::Zenith_UIButton* pxMusicToggle = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsMusicBtn");
+			Zenith_UI::Zenith_UIToggle* pxMusicToggle = xUI.FindElement<Zenith_UI::Zenith_UIToggle>("SettingsMusicBtn");
 			if (pxMusicToggle)
-				pxMusicToggle->SetOnClick(&OnToggleMusicClicked, this);
+			{
+				pxMusicToggle->SetOnValueChanged(&OnSettingMusicChanged, this);
+				pxMusicToggle->SetIsOn(m_xSaveData.bMusicEnabled);
+			}
 
-			Zenith_UI::Zenith_UIButton* pxHapticsToggle = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsHapticsBtn");
+			Zenith_UI::Zenith_UIToggle* pxHapticsToggle = xUI.FindElement<Zenith_UI::Zenith_UIToggle>("SettingsHapticsBtn");
 			if (pxHapticsToggle)
-				pxHapticsToggle->SetOnClick(&OnToggleHapticsClicked, this);
+			{
+				pxHapticsToggle->SetOnValueChanged(&OnSettingHapticsChanged, this);
+				pxHapticsToggle->SetIsOn(m_xSaveData.bHapticsEnabled);
+			}
 
 			Zenith_UI::Zenith_UIButton* pxCreditsBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsCreditsBtn");
 			if (pxCreditsBtn)
 				pxCreditsBtn->SetOnClick(&OnCreditsClicked, this);
+
+			// Cache UI element pointers for runtime access (avoids repeated FindElement)
+			// Menu
+			m_pxMenuTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
+			m_pxMenuBtnGroup = xUI.FindElement("MenuButtonGroup");
+			m_pxMenuBg = xUI.FindElement("MenuBackground");
+			m_pxMenuCoinText = xUI.FindElement<Zenith_UI::Zenith_UIText>("CoinText");
+			m_pxTotalStarsText = xUI.FindElement<Zenith_UI::Zenith_UIText>("TotalStarsText");
+			m_pxStreakGroup = xUI.FindElement("StreakGroup");
+			m_pxLivesArea = xUI.FindElement("LivesArea");
+			m_pxMenuSubtitle = xUI.FindElement("MenuSubtitle");
+			m_pxVersionText = xUI.FindElement("VersionText");
+			m_pxMenuPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			m_pxLevelSelectBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("LevelSelectButton");
+			m_pxCatCafeBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("CatCafeButton");
+			m_pxDailyBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("DailyPuzzleButton");
+			m_pxPinballBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("PinballButton");
+			// HUD
+			m_pxHUDInfoGroup = xUI.FindElement("HUDInfoGroup");
+			m_pxHUDCoinGroup = xUI.FindElement("HUDCoinGroup");
+			m_pxHUDButtonGroup = xUI.FindElement("HUDButtonGroup");
+			m_pxLevelText = xUI.FindElement<Zenith_UI::Zenith_UIText>("LevelText");
+			m_pxMovesText = xUI.FindElement<Zenith_UI::Zenith_UIText>("MovesText");
+			m_pxCatsText = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatsText");
+			m_pxHUDCoinsText = xUI.FindElement<Zenith_UI::Zenith_UIText>("HUDCoinsText");
+			m_pxUndoBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("UndoBtn");
+			m_pxHintBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("HintBtn");
+			m_pxSkipBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SkipBtn");
+			m_pxNextLevelBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("NextLevelBtn");
+			// Level select
+			m_pxLevelSelectTitle = xUI.FindElement("LevelSelectTitle");
+			m_pxLevelSelectNavGroup = xUI.FindElement("LevelSelectNavGroup");
+			m_pxLevelSelectBg = xUI.FindElement("LevelSelectBg");
+			m_pxPageText = xUI.FindElement<Zenith_UI::Zenith_UIText>("PageText");
+			m_pxStarProgress = xUI.FindElement<Zenith_UI::Zenith_UIText>("LevelSelectStarProgress");
+			for (uint32_t i = 0; i < 20; ++i)
+			{
+				char szName[32];
+				snprintf(szName, sizeof(szName), "LevelBtn_%u", i);
+				m_apxLevelBtns[i] = xUI.FindElement<Zenith_UI::Zenith_UIButton>(szName);
+			}
+			// Meta-game
+			m_pxLivesText = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesText");
+			m_pxLivesTimerText = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesTimerText");
+			m_pxStreakText = xUI.FindElement<Zenith_UI::Zenith_UIText>("DailyStreakText");
+			m_pxRefillBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
+			m_pxCatProgressBg = xUI.FindElement<Zenith_UI::Zenith_UIRect>("CatProgressBg");
+			m_pxCatProgressFill = xUI.FindElement<Zenith_UI::Zenith_UIRect>("CatProgressFill");
+			// Confirm dialog overlay
+			m_pxConfirmOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>("ConfirmOverlay");
+			m_pxConfirmText = xUI.FindElement<Zenith_UI::Zenith_UIText>("ConfirmText");
+			m_pxConfirmCancelBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("ConfirmCancelBtn");
+			m_pxConfirmAcceptBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("ConfirmAcceptBtn");
+			if (m_pxConfirmCancelBtn)
+				m_pxConfirmCancelBtn->SetOnClick(&OnConfirmCancelClicked, this);
+			if (m_pxConfirmAcceptBtn)
+				m_pxConfirmAcceptBtn->SetOnClick(&OnConfirmAcceptClicked, this);
+			// Credits overlay
+			m_pxCreditsOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>("CreditsOverlay");
 		}
 
 		// Regenerate lives on startup
@@ -481,12 +552,7 @@ public:
 		{
 			// Start in main menu state
 			m_eState = TILEPUZZLE_STATE_MAIN_MENU;
-			SetMenuVisible(true);
-			SetHUDVisible(false);
-			SetLevelSelectVisible(false);
-			SetCatCafeVisible(false);
-			SetSettingsVisible(false);
-			SetVictoryOverlayVisible(false);
+			ShowScreen(SCREEN_MENU);
 		}
 		else
 		{
@@ -511,8 +577,7 @@ public:
 
 		if (m_eState == TILEPUZZLE_STATE_MAIN_MENU)
 		{
-			SetMenuVisible(true);
-			SetHUDVisible(false);
+			ShowScreen(SCREEN_MENU);
 		}
 	}
 
@@ -539,7 +604,14 @@ public:
 #ifdef ZENITH_TOOLS
 			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
-				ReturnToMenu();
+				if (m_bConfirmDialogActive)
+				{
+					OnConfirmDialogCancel();
+				}
+				else
+				{
+					ReturnToMenu();
+				}
 				return;
 			}
 #endif
@@ -554,7 +626,16 @@ public:
 				{
 					m_fHintFlashTimer += fDeltaTime;
 				}
-				if (!m_bConfirmDialogActive)
+				if (m_bConfirmDialogActive)
+				{
+					// Defensive: if overlay should be showing but isn't, retry Show()
+					if (m_pxConfirmOverlay && !m_pxConfirmOverlay->IsShowing())
+					{
+						Zenith_Log(LOG_CATEGORY_GENERAL, "ConfirmDialog: overlay not showing despite active flag, retrying Show()");
+						m_pxConfirmOverlay->Show();
+					}
+				}
+				else
 				{
 					HandleDragInput();
 				}
@@ -867,8 +948,7 @@ private:
 
 	void StartGame()
 	{
-		SetMenuVisible(false);
-		SetHUDVisible(true);
+		ShowScreen(SCREEN_HUD);
 
 		// Create puzzle scene for level entities
 		m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
@@ -1035,7 +1115,7 @@ private:
 		m_fVictoryTimer = 0.f;
 		m_uVictoryStarsShown = 0;
 		m_uVictoryStarRating = static_cast<uint8_t>(m_uStarsEarned);
-		SetVictoryOverlayVisible(true);
+		ShowScreenAdditive(SCREEN_VICTORY);
 
 		// Camera zoom pulse for emphasis (extended for 3-star)
 		m_fZoomPulseDuration = (m_uStarsEarned >= 3) ? 0.8f : 0.6f;
@@ -1064,14 +1144,9 @@ private:
 
 		// Show next level button (unless this is the last level)
 		bool bIsLastLevel = (m_uCurrentLevelNumber >= m_uAvailableLevelCount);
-		if (!bIsLastLevel && m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (!bIsLastLevel && m_pxNextLevelBtn)
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-			Zenith_UI::Zenith_UIButton* pxNextBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("NextLevelBtn");
-			if (pxNextBtn)
-			{
-				pxNextBtn->SetVisible(true);
-			}
+			m_pxNextLevelBtn->SetVisible(true);
 		}
 	}
 
@@ -1199,140 +1274,115 @@ private:
 
 	void SetMenuVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-			return;
-
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
-		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
-		if (pxTitle) pxTitle->SetVisible(bVisible);
-
-		// Menu buttons layout group
-		Zenith_UI::Zenith_UIElement* pxMenuBtnGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("MenuButtonGroup");
-		if (pxMenuBtnGroup) pxMenuBtnGroup->SetVisible(bVisible);
-
-		// Background
-		Zenith_UI::Zenith_UIElement* pxBg = xUI.FindElement<Zenith_UI::Zenith_UIElement>("MenuBackground");
-		if (pxBg) pxBg->SetVisible(bVisible);
-
-		// Meta-game info texts
-		const char* aszInfoTexts[] = { "CoinText", "TotalStarsText" };
-		for (const char* szName : aszInfoTexts)
-		{
-			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
-			if (pxText) pxText->SetVisible(bVisible);
-		}
-
-		// Streak group (vertical stack: label + value)
-		if (auto* pxStreak = xUI.FindElement("StreakGroup"))
-			pxStreak->SetVisible(bVisible);
-
-		// Lives area (vertical stack: pill, timer, refill button)
-		if (auto* pxArea = xUI.FindElement("LivesArea"))
-			pxArea->SetVisible(bVisible);
+		if (m_pxMenuTitle) m_pxMenuTitle->SetVisible(bVisible);
+		if (m_pxMenuBtnGroup) m_pxMenuBtnGroup->SetVisible(bVisible);
+		if (m_pxMenuBg) m_pxMenuBg->SetVisible(bVisible);
+		if (m_pxMenuCoinText) m_pxMenuCoinText->SetVisible(bVisible);
+		if (m_pxTotalStarsText) m_pxTotalStarsText->SetVisible(bVisible);
+		if (m_pxStreakGroup) m_pxStreakGroup->SetVisible(bVisible);
+		if (m_pxLivesArea) m_pxLivesArea->SetVisible(bVisible);
 
 		// FTUE progressive disclosure: hide buttons until player reaches milestone levels
 		uint32_t uProgress = m_xSaveData.uHighestLevelReached;
+		if (m_pxLevelSelectBtn) m_pxLevelSelectBtn->SetVisible(bVisible && uProgress >= 5);
+		if (m_pxCatCafeBtn) m_pxCatCafeBtn->SetVisible(bVisible && uProgress >= 3);
+		if (m_pxDailyBtn) m_pxDailyBtn->SetVisible(bVisible && uProgress >= 10);
+		if (m_pxPinballBtn) m_pxPinballBtn->SetVisible(bVisible && uProgress >= 10);
 
-		Zenith_UI::Zenith_UIButton* pxLevelSelectBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("LevelSelectButton");
-		if (pxLevelSelectBtn) pxLevelSelectBtn->SetVisible(bVisible && uProgress >= 5);
-
-		Zenith_UI::Zenith_UIButton* pxCatCafeBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("CatCafeButton");
-		if (pxCatCafeBtn) pxCatCafeBtn->SetVisible(bVisible && uProgress >= 3);
-
-		Zenith_UI::Zenith_UIButton* pxDailyBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("DailyPuzzleButton");
-		if (pxDailyBtn) pxDailyBtn->SetVisible(bVisible && uProgress >= 10);
-
-		Zenith_UI::Zenith_UIButton* pxPinballBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("PinballButton");
-		if (pxPinballBtn) pxPinballBtn->SetVisible(bVisible && uProgress >= 10);
-
-		// New styled elements
-		if (auto* px = xUI.FindElement("MenuSubtitle")) px->SetVisible(bVisible);
-		if (auto* px = xUI.FindElement("VersionText")) px->SetVisible(bVisible);
-		// Legacy fallback
-		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-		if (pxPlay) pxPlay->SetVisible(bVisible);
+		if (m_pxMenuSubtitle) m_pxMenuSubtitle->SetVisible(bVisible);
+		if (m_pxVersionText) m_pxVersionText->SetVisible(bVisible);
+		if (m_pxMenuPlay) m_pxMenuPlay->SetVisible(bVisible);
 	}
 
 	void SetHUDVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-			return;
-
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
-		// HUD layout groups (GDD section 7.4)
-		const char* aszHUDGroups[] = { "HUDInfoGroup", "HUDCoinGroup", "HUDButtonGroup" };
-		for (const char* szName : aszHUDGroups)
-		{
-			Zenith_UI::Zenith_UIElement* pxGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
-			if (pxGroup) pxGroup->SetVisible(bVisible);
-		}
-
-		// Skip button only shows when skip is offered (within HUDButtonGroup)
-		Zenith_UI::Zenith_UIButton* pxSkipBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SkipBtn");
-		if (pxSkipBtn) pxSkipBtn->SetVisible(bVisible && m_bSkipOffered);
+		if (m_pxHUDInfoGroup) m_pxHUDInfoGroup->SetVisible(bVisible);
+		if (m_pxHUDCoinGroup) m_pxHUDCoinGroup->SetVisible(bVisible);
+		if (m_pxHUDButtonGroup) m_pxHUDButtonGroup->SetVisible(bVisible);
+		if (m_pxSkipBtn) m_pxSkipBtn->SetVisible(bVisible && m_bSkipOffered);
 	}
 
 	void SetLevelSelectVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-			return;
-
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
-		const char* aszElements[] = {
-			"LevelSelectTitle", "PageText", "LevelSelectStarProgress"
-		};
-		for (const char* szName : aszElements)
-		{
-			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
-			if (pxElem) pxElem->SetVisible(bVisible);
-		}
-
-		// Level select navigation layout group
-		Zenith_UI::Zenith_UIElement* pxNavGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("LevelSelectNavGroup");
-		if (pxNavGroup) pxNavGroup->SetVisible(bVisible);
-
-		// Level select background
-		Zenith_UI::Zenith_UIElement* pxBg = xUI.FindElement<Zenith_UI::Zenith_UIElement>("LevelSelectBg");
-		if (pxBg) pxBg->SetVisible(bVisible);
+		if (m_pxLevelSelectTitle) m_pxLevelSelectTitle->SetVisible(bVisible);
+		if (m_pxPageText) m_pxPageText->SetVisible(bVisible);
+		if (m_pxStarProgress) m_pxStarProgress->SetVisible(bVisible);
+		if (m_pxLevelSelectNavGroup) m_pxLevelSelectNavGroup->SetVisible(bVisible);
+		if (m_pxLevelSelectBg) m_pxLevelSelectBg->SetVisible(bVisible);
 
 		for (uint32_t i = 0; i < 20; ++i)
 		{
-			char szName[32];
-			snprintf(szName, sizeof(szName), "LevelBtn_%u", i);
-			Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(szName);
-			if (pxBtn) pxBtn->SetVisible(bVisible);
+			if (m_apxLevelBtns[i]) m_apxLevelBtns[i]->SetVisible(bVisible);
 		}
+	}
+
+	// ========================================================================
+	// Screen Management
+	// ========================================================================
+
+	enum ScreenID : uint8_t
+	{
+		SCREEN_MENU,
+		SCREEN_HUD,
+		SCREEN_LEVEL_SELECT,
+		SCREEN_CAT_CAFE,
+		SCREEN_SETTINGS,
+		SCREEN_VICTORY,
+		SCREEN_COUNT
+	};
+
+	void SetScreenVisible(ScreenID eScreen, bool bVisible)
+	{
+		switch (eScreen)
+		{
+		case SCREEN_MENU:			SetMenuVisible(bVisible); break;
+		case SCREEN_HUD:			SetHUDVisible(bVisible); break;
+		case SCREEN_LEVEL_SELECT:	SetLevelSelectVisible(bVisible); break;
+		case SCREEN_CAT_CAFE:		SetCatCafeVisible(bVisible); break;
+		case SCREEN_SETTINGS:		SetSettingsVisible(bVisible); break;
+		case SCREEN_VICTORY:		SetVictoryOverlayVisible(bVisible); break;
+		default: break;
+		}
+	}
+
+	void HideAllScreens()
+	{
+		for (uint8_t u = 0; u < SCREEN_COUNT; u++)
+		{
+			SetScreenVisible(static_cast<ScreenID>(u), false);
+		}
+	}
+
+	void ShowScreen(ScreenID eScreen)
+	{
+		HideAllScreens();
+		SetScreenVisible(eScreen, true);
+	}
+
+	void ShowScreenAdditive(ScreenID eScreen)
+	{
+		SetScreenVisible(eScreen, true);
 	}
 
 	void UpdateLevelSelectUI()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-			return;
-
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
 		// Update page text
 		uint32_t uTotalPages = (m_uAvailableLevelCount + 19) / 20;
 		if (uTotalPages == 0) uTotalPages = 1;
 
-		Zenith_UI::Zenith_UIText* pxPageText = xUI.FindElement<Zenith_UI::Zenith_UIText>("PageText");
-		if (pxPageText)
+		if (m_pxPageText)
 		{
 			char szPage[32];
 			snprintf(szPage, sizeof(szPage), "Page %u / %u", m_uLevelSelectPage + 1, uTotalPages);
-			pxPageText->SetText(szPage);
+			m_pxPageText->SetText(szPage);
 		}
 
 		// Star progress display
-		Zenith_UI::Zenith_UIText* pxStarProgress = xUI.FindElement<Zenith_UI::Zenith_UIText>("LevelSelectStarProgress");
-		if (pxStarProgress)
+		if (m_pxStarProgress)
 		{
 			char szStars[32];
 			snprintf(szStars, sizeof(szStars), "Stars: %u / %u", m_xSaveData.uTotalStars, m_uAvailableLevelCount * 3);
-			pxStarProgress->SetText(szStars);
+			m_pxStarProgress->SetText(szStars);
 		}
 
 		// Update level buttons
@@ -1340,9 +1390,7 @@ private:
 		for (uint32_t i = 0; i < 20; ++i)
 		{
 			uint32_t uLevel = uStartLevel + i;
-			char szBtnName[32];
-			snprintf(szBtnName, sizeof(szBtnName), "LevelBtn_%u", i);
-			Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(szBtnName);
+			Zenith_UI::Zenith_UIButton* pxBtn = m_apxLevelBtns[i];
 			if (!pxBtn) continue;
 
 			// Update user data for callback
@@ -1469,6 +1517,57 @@ private:
 	MaterialHandle m_axShapeMaterialsHighlighted[TILEPUZZLE_COLOR_COUNT];
 	MaterialHandle m_axCatMaterials[TILEPUZZLE_COLOR_COUNT];
 
+	// Cached UI element pointers (assigned in OnStart, avoid runtime FindElement)
+	// Menu
+	Zenith_UI::Zenith_UIText* m_pxMenuTitle = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxMenuBtnGroup = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxMenuBg = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxMenuCoinText = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxTotalStarsText = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxStreakGroup = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxLivesArea = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxMenuSubtitle = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxVersionText = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxMenuPlay = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxLevelSelectBtn = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxCatCafeBtn = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxDailyBtn = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxPinballBtn = nullptr;
+	// HUD
+	Zenith_UI::Zenith_UIElement* m_pxHUDInfoGroup = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxHUDCoinGroup = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxHUDButtonGroup = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxLevelText = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxMovesText = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxCatsText = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxHUDCoinsText = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxUndoBtn = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxHintBtn = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxSkipBtn = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxNextLevelBtn = nullptr;
+	// Level select
+	Zenith_UI::Zenith_UIElement* m_pxLevelSelectTitle = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxLevelSelectNavGroup = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxLevelSelectBg = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxPageText = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxStarProgress = nullptr;
+	Zenith_UI::Zenith_UIButton* m_apxLevelBtns[20] = {};
+	// Meta-game
+	Zenith_UI::Zenith_UIText* m_pxLivesText = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxLivesTimerText = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxStreakText = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxRefillBtn = nullptr;
+	// Cat cafe progress bar
+	Zenith_UI::Zenith_UIRect* m_pxCatProgressBg = nullptr;
+	Zenith_UI::Zenith_UIRect* m_pxCatProgressFill = nullptr;
+	// Confirm dialog overlay
+	Zenith_UI::Zenith_UIOverlay* m_pxConfirmOverlay = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxConfirmText = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxConfirmCancelBtn = nullptr;
+	Zenith_UI::Zenith_UIButton* m_pxConfirmAcceptBtn = nullptr;
+	// Credits overlay
+	Zenith_UI::Zenith_UIOverlay* m_pxCreditsOverlay = nullptr;
+
 	// Selection tracking
 	int32_t m_iPreviousSelectedShapeIndex = -1;
 
@@ -1565,7 +1664,6 @@ private:
 	// Confirmation dialog state
 	bool m_bConfirmDialogActive = false;
 	TilePuzzleConfirmDialogType m_eConfirmDialogType = CONFIRM_RESET_SAVE;
-	float m_fConfirmDialogFade = 0.0f;
 	bool m_bConfirmDialogMouseWasDown = false;
 
 	// Target cat highlighting (levels 1-5)
@@ -1738,132 +1836,66 @@ private:
 
 	void ShowConfirmDialog(TilePuzzleConfirmDialogType eType)
 	{
+		if (!m_pxConfirmOverlay)
+		{
+			Zenith_Log(LOG_CATEGORY_GENERAL, "ShowConfirmDialog: overlay is null, performing action directly");
+			m_eConfirmDialogType = eType;
+			OnConfirmDialogAccept();
+			return;
+		}
+
+		Zenith_Log(LOG_CATEGORY_GENERAL, "ShowConfirmDialog: overlay=%p isShowing=%d isVisible=%d canvas=%p type=%d",
+			m_pxConfirmOverlay, m_pxConfirmOverlay->IsShowing(), m_pxConfirmOverlay->IsVisible(),
+			static_cast<void*>(&m_xParentEntity.GetComponent<Zenith_UIComponent>()), static_cast<int>(eType));
+
 		m_bConfirmDialogActive = true;
 		m_eConfirmDialogType = eType;
-		m_fConfirmDialogFade = 0.0f;
-		m_bConfirmDialogMouseWasDown = true; // Prevent immediate dismiss from the same click
-	}
 
-	const char* GetConfirmDialogText() const
-	{
-		switch (m_eConfirmDialogType)
+		if (m_pxConfirmText)
 		{
-		case CONFIRM_RESET_SAVE: return "Reset all progress?\nThis cannot be undone.";
-		case CONFIRM_EXIT_LEVEL: return "Exit level?\nYou will lose 1 life.";
-		case CONFIRM_SKIP_LEVEL: return "Skip level for 100 coins?";
-		default: return "";
-		}
-	}
-
-	const char* GetConfirmDialogAcceptText() const
-	{
-		switch (m_eConfirmDialogType)
-		{
-		case CONFIRM_RESET_SAVE: return "Reset";
-		case CONFIRM_EXIT_LEVEL: return "Exit";
-		case CONFIRM_SKIP_LEVEL: return "Skip";
-		default: return "OK";
-		}
-	}
-
-	void UpdateConfirmDialog(float fDeltaTime)
-	{
-		if (!m_bConfirmDialogActive)
-			return;
-
-		m_fConfirmDialogFade += fDeltaTime / 0.2f;
-		if (m_fConfirmDialogFade > 1.0f)
-			m_fConfirmDialogFade = 1.0f;
-
-		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
-		if (!pxCanvas)
-			return;
-
-		int32_t iWinWidth, iWinHeight;
-		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
-		if (iWinWidth <= 0 || iWinHeight <= 0)
-			return;
-
-		float fW = static_cast<float>(iWinWidth);
-		float fH = static_cast<float>(iWinHeight);
-		float fAlpha = m_fConfirmDialogFade;
-
-		// Dark overlay
-		pxCanvas->SubmitQuad(
-			Zenith_Maths::Vector4(0.0f, 0.0f, fW, fH),
-			Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, fAlpha * 0.7f));
-
-		// Dialog box
-		float fBoxW = 400.0f;
-		float fBoxH = 200.0f;
-		float fBoxX = (fW - fBoxW) * 0.5f;
-		float fBoxY = (fH - fBoxH) * 0.5f;
-
-		pxCanvas->SubmitQuad(
-			Zenith_Maths::Vector4(fBoxX, fBoxY, fBoxX + fBoxW, fBoxY + fBoxH),
-			Zenith_Maths::Vector4(0.12f, 0.12f, 0.25f, fAlpha * 0.95f));
-
-		// Dialog text
-		pxCanvas->SubmitText(
-			GetConfirmDialogText(),
-			Zenith_Maths::Vector2(fBoxX + 30.0f, fBoxY + 30.0f),
-			28.0f,
-			Zenith_Maths::Vector4(1.0f, 1.0f, 0.9f, fAlpha));
-
-		// Cancel button area
-		float fBtnW = 140.0f;
-		float fBtnH = 50.0f;
-		float fCancelX = fBoxX + 30.0f;
-		float fBtnY = fBoxY + fBoxH - fBtnH - 20.0f;
-		float fAcceptX = fBoxX + fBoxW - fBtnW - 30.0f;
-
-		pxCanvas->SubmitQuad(
-			Zenith_Maths::Vector4(fCancelX, fBtnY, fCancelX + fBtnW, fBtnY + fBtnH),
-			Zenith_Maths::Vector4(0.25f, 0.25f, 0.3f, fAlpha * 0.9f));
-		pxCanvas->SubmitText(
-			"Cancel",
-			Zenith_Maths::Vector2(fCancelX + 30.0f, fBtnY + 10.0f),
-			26.0f,
-			Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, fAlpha));
-
-		// Accept button area
-		pxCanvas->SubmitQuad(
-			Zenith_Maths::Vector4(fAcceptX, fBtnY, fAcceptX + fBtnW, fBtnY + fBtnH),
-			Zenith_Maths::Vector4(0.5f, 0.15f, 0.15f, fAlpha * 0.9f));
-		pxCanvas->SubmitText(
-			GetConfirmDialogAcceptText(),
-			Zenith_Maths::Vector2(fAcceptX + 30.0f, fBtnY + 10.0f),
-			26.0f,
-			Zenith_Maths::Vector4(1.0f, 0.9f, 0.9f, fAlpha));
-
-		// Handle click input for button detection
-		bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-		if (bMouseDown && !m_bConfirmDialogMouseWasDown && m_fConfirmDialogFade >= 0.5f)
-		{
-			Zenith_Maths::Vector2_64 xMousePos64;
-			Zenith_Input::GetMousePosition(xMousePos64);
-			float fMX = static_cast<float>(xMousePos64.x);
-			float fMY = static_cast<float>(xMousePos64.y);
-
-			// Check Cancel button
-			if (fMX >= fCancelX && fMX <= fCancelX + fBtnW &&
-				fMY >= fBtnY && fMY <= fBtnY + fBtnH)
+			switch (eType)
 			{
-				OnConfirmDialogCancel();
-			}
-			// Check Accept button
-			else if (fMX >= fAcceptX && fMX <= fAcceptX + fBtnW &&
-				fMY >= fBtnY && fMY <= fBtnY + fBtnH)
-			{
-				OnConfirmDialogAccept();
+			case CONFIRM_RESET_SAVE: m_pxConfirmText->SetText("Reset all progress?\nThis cannot be undone."); break;
+			case CONFIRM_EXIT_LEVEL: m_pxConfirmText->SetText("Exit level?\nYou will lose 1 life."); break;
+			case CONFIRM_SKIP_LEVEL: m_pxConfirmText->SetText("Skip level for 100 coins?"); break;
+			default: break;
 			}
 		}
-		m_bConfirmDialogMouseWasDown = bMouseDown;
+		if (m_pxConfirmAcceptBtn)
+		{
+			switch (eType)
+			{
+			case CONFIRM_RESET_SAVE: m_pxConfirmAcceptBtn->SetText("Reset"); break;
+			case CONFIRM_EXIT_LEVEL: m_pxConfirmAcceptBtn->SetText("Exit"); break;
+			case CONFIRM_SKIP_LEVEL: m_pxConfirmAcceptBtn->SetText("Skip"); break;
+			default: m_pxConfirmAcceptBtn->SetText("OK"); break;
+			}
+		}
+		m_pxConfirmOverlay->Show();
+	}
+
+	void UpdateConfirmDialog(float /*fDeltaTime*/)
+	{
+		// Overlay handles its own rendering and fade — nothing needed here
+	}
+
+	static void OnConfirmAcceptClicked(void* pxUserData)
+	{
+		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+		pxSelf->OnConfirmDialogAccept();
+	}
+
+	static void OnConfirmCancelClicked(void* pxUserData)
+	{
+		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+		pxSelf->OnConfirmDialogCancel();
 	}
 
 	void OnConfirmDialogAccept()
 	{
 		m_bConfirmDialogActive = false;
+		if (m_pxConfirmOverlay)
+			m_pxConfirmOverlay->Hide();
 		switch (m_eConfirmDialogType)
 		{
 		case CONFIRM_RESET_SAVE:
@@ -1881,6 +1913,8 @@ private:
 	void OnConfirmDialogCancel()
 	{
 		m_bConfirmDialogActive = false;
+		if (m_pxConfirmOverlay)
+			m_pxConfirmOverlay->Hide();
 	}
 
 	void PerformResetSave()
@@ -1890,30 +1924,23 @@ private:
 			TilePuzzle_WriteSaveData, &m_xSaveData);
 		m_uCurrentLevelNumber = 1;
 
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 			char szBuffer[64];
 
-			Zenith_UI::Zenith_UIText* pxCoinText = xUI.FindElement<Zenith_UI::Zenith_UIText>("CoinText");
-			if (pxCoinText)
+			if (m_pxMenuCoinText)
 			{
 				snprintf(szBuffer, sizeof(szBuffer), "Coins: %u", m_xSaveData.uCoins);
-				pxCoinText->SetText(szBuffer);
+				m_pxMenuCoinText->SetText(szBuffer);
 			}
 
-			Zenith_UI::Zenith_UIText* pxLivesText = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesText");
-			if (pxLivesText)
+			if (m_pxLivesText)
 			{
 				snprintf(szBuffer, sizeof(szBuffer), "Lives: %u/%u", m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES);
-				pxLivesText->SetText(szBuffer);
+				m_pxLivesText->SetText(szBuffer);
 			}
 
-			Zenith_UI::Zenith_UIText* pxStreakText = xUI.FindElement<Zenith_UI::Zenith_UIText>("DailyStreakText");
-			if (pxStreakText) pxStreakText->SetText("0 days");
-
-			Zenith_UI::Zenith_UIButton* pxRefill = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
-			if (pxRefill) pxRefill->SetVisible(false);
+			if (m_pxStreakText) m_pxStreakText->SetText("0 days");
+			if (m_pxRefillBtn) m_pxRefillBtn->SetVisible(false);
 		}
 	}
 
@@ -2425,14 +2452,9 @@ private:
 		if (m_uResetCount >= s_uResetsBeforeSkipOffer && !m_bSkipOffered)
 		{
 			m_bSkipOffered = true;
-			if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			if (m_pxSkipBtn)
 			{
-				Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-				Zenith_UI::Zenith_UIButton* pxSkipBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SkipBtn");
-				if (pxSkipBtn)
-				{
-					pxSkipBtn->SetVisible(true);
-				}
+				m_pxSkipBtn->SetVisible(true);
 			}
 		}
 
@@ -2452,12 +2474,7 @@ private:
 		// Reset skip state for new level
 		m_uResetCount = 0;
 		m_bSkipOffered = false;
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-			Zenith_UI::Zenith_UIButton* pxSkipBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SkipBtn");
-			if (pxSkipBtn) pxSkipBtn->SetVisible(false);
-		}
+		if (m_pxSkipBtn) m_pxSkipBtn->SetVisible(false);
 
 		StartNewLevel();
 	}
@@ -3413,81 +3430,71 @@ private:
 
 	void UpdateUI()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-			return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		char szBuffer[128];
 
 		// Update level text
-		char szBuffer[128];
-		Zenith_UI::Zenith_UIText* pxLevel = xUI.FindElement<Zenith_UI::Zenith_UIText>("LevelText");
-		if (pxLevel)
+		if (m_pxLevelText)
 		{
 			snprintf(szBuffer, sizeof(szBuffer), "Level %u", m_uCurrentLevelNumber);
-			pxLevel->SetText(szBuffer);
+			m_pxLevelText->SetText(szBuffer);
 		}
 
 		// Update move counter
-		Zenith_UI::Zenith_UIText* pxMoves = xUI.FindElement<Zenith_UI::Zenith_UIText>("MovesText");
-		if (pxMoves)
+		if (m_pxMovesText)
 		{
 			snprintf(szBuffer, sizeof(szBuffer), "Moves: %u / Par: %u", m_uMoveCount, m_xCurrentLevel.uMinimumMoves);
-			pxMoves->SetText(szBuffer);
+			m_pxMovesText->SetText(szBuffer);
 		}
 
 		// Update cats remaining
 		size_t uRemaining = CountRemainingCats();
 		size_t uTotal = m_xCurrentLevel.axCats.size();
-		Zenith_UI::Zenith_UIText* pxCats = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatsText");
-		if (pxCats)
+		if (m_pxCatsText)
 		{
 			snprintf(szBuffer, sizeof(szBuffer), "Cats: %zu / %zu", uTotal - uRemaining, uTotal);
-			pxCats->SetText(szBuffer);
+			m_pxCatsText->SetText(szBuffer);
 		}
 
 		// Update coin display
-		Zenith_UI::Zenith_UIText* pxCoins = xUI.FindElement<Zenith_UI::Zenith_UIText>("HUDCoinsText");
-		if (pxCoins)
+		if (m_pxHUDCoinsText)
 		{
 			snprintf(szBuffer, sizeof(szBuffer), "%u", m_xSaveData.uCoins);
-			pxCoins->SetText(szBuffer);
+			m_pxHUDCoinsText->SetText(szBuffer);
 		}
 
 		// Update undo button label with cost info
-		Zenith_UI::Zenith_UIButton* pxUndoBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("UndoBtn");
-		if (pxUndoBtn)
+		if (m_pxUndoBtn)
 		{
 			if (m_bFreeUndoAvailable && m_axUndoStack.GetSize() > 0)
 			{
-				pxUndoBtn->SetText("Undo (Free)");
+				m_pxUndoBtn->SetText("Undo (Free)");
 			}
 			else if (m_axUndoStack.GetSize() > 0)
 			{
 				char szUndoLabel[32];
 				snprintf(szUndoLabel, sizeof(szUndoLabel), "Undo (%u)", s_uUndoCoinCost);
-				pxUndoBtn->SetText(szUndoLabel);
+				m_pxUndoBtn->SetText(szUndoLabel);
 			}
 			else
 			{
-				pxUndoBtn->SetText("Undo");
+				m_pxUndoBtn->SetText("Undo");
 			}
 		}
 
 		// Update hint button label with cost
-		Zenith_UI::Zenith_UIButton* pxHintBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("HintBtn");
-		if (pxHintBtn)
+		if (m_pxHintBtn)
 		{
 			char szHintLabel[32];
 			snprintf(szHintLabel, sizeof(szHintLabel), "Hint (%u)", s_uHintCoinCost);
-			pxHintBtn->SetText(szHintLabel);
+			m_pxHintBtn->SetText(szHintLabel);
 		}
 
 		// Update skip button label with cost
-		Zenith_UI::Zenith_UIButton* pxSkipBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SkipBtn");
-		if (pxSkipBtn && m_bSkipOffered)
+		if (m_pxSkipBtn && m_bSkipOffered)
 		{
 			char szSkipLabel[32];
 			snprintf(szSkipLabel, sizeof(szSkipLabel), "Skip (%u)", s_uSkipCoinCost);
-			pxSkipBtn->SetText(szSkipLabel);
+			m_pxSkipBtn->SetText(szSkipLabel);
 		}
 	}
 
@@ -4159,29 +4166,27 @@ private:
 		switch (m_eTransitionTargetState)
 		{
 		case TILEPUZZLE_STATE_MAIN_MENU:
-			SetLevelSelectVisible(false);
-			SetCatCafeVisible(false);
-			SetSettingsVisible(false);
-			SetMenuVisible(true);
+			ShowScreen(SCREEN_MENU);
 			m_eState = TILEPUZZLE_STATE_MAIN_MENU;
 			break;
 		case TILEPUZZLE_STATE_LEVEL_SELECT:
-			SetMenuVisible(false);
-			SetLevelSelectVisible(true);
+			ShowScreen(SCREEN_LEVEL_SELECT);
 			UpdateLevelSelectUI();
 			m_eState = TILEPUZZLE_STATE_LEVEL_SELECT;
 			break;
 		case TILEPUZZLE_STATE_CAT_CAFE:
-			SetMenuVisible(false);
-			SetCatCafeVisible(true);
+			ShowScreen(SCREEN_CAT_CAFE);
 			UpdateCatCafeUI();
 			m_eState = TILEPUZZLE_STATE_CAT_CAFE;
 			break;
 		case TILEPUZZLE_STATE_SETTINGS:
-			SetMenuVisible(false);
-			SetSettingsVisible(true);
-			UpdateSettingsUI();
+			ShowScreen(SCREEN_SETTINGS);
+			SyncSettingsToggles();
 			m_eState = TILEPUZZLE_STATE_SETTINGS;
+			break;
+		case TILEPUZZLE_STATE_ACHIEVEMENTS:
+			HideAllScreens();
+			m_eState = TILEPUZZLE_STATE_ACHIEVEMENTS;
 			break;
 		default:
 			break;

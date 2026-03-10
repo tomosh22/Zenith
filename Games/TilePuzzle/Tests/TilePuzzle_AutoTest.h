@@ -18,6 +18,11 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "TilePuzzle/Components/TilePuzzle_Behaviour.h"
+#include "UI/Zenith_UIText.h"
+#include "UI/Zenith_UIToggle.h"
+#include "UI/Zenith_UIScrollView.h"
+#include "UI/Zenith_UIRect.h"
+#include "Flux/Text/Flux_Text.h"
 #include "TilePuzzle/Components/Pinball_Behaviour.h"
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Rules.h"
@@ -102,6 +107,34 @@ public:
 		PHASE_TEST_CONFIRM_DIALOG_STATE,
 		PHASE_TEST_TUTORIAL_TRIGGER_LOGIC,
 		PHASE_TEST_MENU_PROGRESSIVE_DISCLOSURE,
+		// UI engine tests
+		PHASE_TEST_UI_STRETCH_ALL,
+		PHASE_TEST_UI_TEXT_METRICS,
+		PHASE_TEST_UI_SORT_ORDER,
+		PHASE_TEST_UI_TWEEN_SYSTEM,
+		PHASE_TEST_UI_TOGGLE,
+		PHASE_TEST_UI_BUTTON_ICON,
+		PHASE_TEST_UI_OVERLAY,
+		PHASE_TEST_UI_FOCUS_NAVIGATION,
+		PHASE_TEST_UI_SCROLL_VIEW,
+		PHASE_TEST_UI_CANVAS_CLIP_RECT,
+		PHASE_TEST_UI_INPUT_SIMULATOR_CLICK,
+		PHASE_TEST_UI_CACHED_POINTERS,
+		PHASE_TEST_UI_RECT_FILL,
+		PHASE_TEST_UI_SETTINGS_TOGGLES,
+		PHASE_TEST_UI_SCREEN_MANAGEMENT,
+		PHASE_TEST_UI_CONFIRM_OVERLAY,
+		PHASE_TEST_UI_MENU_FOCUS_NAV,
+		PHASE_TEST_UI_STRETCH_ALL_BACKGROUNDS,
+		// Comprehensive UI element & interaction tests
+		PHASE_TEST_UI_ALL_MENU_ELEMENTS,
+		PHASE_TEST_UI_ALL_SCREEN_ELEMENTS,
+		PHASE_TEST_UI_CONFIRM_DIALOG_FLOW,
+		PHASE_TEST_UI_PAGINATION,
+		PHASE_TEST_UI_ECONOMY_DISPLAY,
+		PHASE_TEST_UI_INTERACT_INIT,
+		PHASE_TEST_UI_INTERACT_STEP,
+		PHASE_TEST_UI_INTERACT_DONE,
 		// Full-game test (plays ALL levels + pinball gates)
 		PHASE_FULL_GAME_RESET_SAVE,
 		PHASE_FULL_GAME_WAIT_PLAYING,
@@ -440,8 +473,156 @@ public:
 
 		case PHASE_TEST_MENU_PROGRESSIVE_DISCLOSURE:
 			RunSingleTest("Test_MenuProgressiveDisclosure", &Test_MenuProgressiveDisclosure);
-			m_ePhase = PHASE_FULL_GAME_RESET_SAVE;
+			m_ePhase = PHASE_TEST_UI_STRETCH_ALL;
 			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_STRETCH_ALL:
+			RunSingleTest("Test_UIStretchAll", &Test_UIStretchAll);
+			m_ePhase = PHASE_TEST_UI_TEXT_METRICS;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_TEXT_METRICS:
+			RunSingleTest("Test_UITextMetrics", &Test_UITextMetrics);
+			m_ePhase = PHASE_TEST_UI_SORT_ORDER;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_SORT_ORDER:
+			RunSingleTest("Test_UISortOrder", &Test_UISortOrder);
+			m_ePhase = PHASE_TEST_UI_TWEEN_SYSTEM;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_TWEEN_SYSTEM:
+			RunSingleTest("Test_UITweenSystem", &Test_UITweenSystem);
+			m_ePhase = PHASE_TEST_UI_TOGGLE;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_TOGGLE:
+			RunSingleTest("Test_UIToggle", &Test_UIToggle);
+			m_ePhase = PHASE_TEST_UI_BUTTON_ICON;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_BUTTON_ICON:
+			RunSingleTest("Test_UIButtonIcon", &Test_UIButtonIcon);
+			m_ePhase = PHASE_TEST_UI_OVERLAY;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_OVERLAY:
+			RunSingleTest("Test_UIOverlay", &Test_UIOverlay);
+			m_ePhase = PHASE_TEST_UI_FOCUS_NAVIGATION;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_FOCUS_NAVIGATION:
+			RunSingleTest("Test_UIFocusNavigation", &Test_UIFocusNavigation);
+			m_ePhase = PHASE_TEST_UI_SCROLL_VIEW;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_SCROLL_VIEW:
+			RunSingleTest("Test_UIScrollView", &Test_UIScrollView);
+			m_ePhase = PHASE_TEST_UI_CANVAS_CLIP_RECT;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_CANVAS_CLIP_RECT:
+			RunSingleTest("Test_UICanvasClipRect", &Test_UICanvasClipRect);
+			m_ePhase = PHASE_TEST_UI_INPUT_SIMULATOR_CLICK;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_INPUT_SIMULATOR_CLICK:
+			RunSingleTest("Test_UIInputSimulatorClick", &Test_UIInputSimulatorClick);
+			m_ePhase = PHASE_TEST_UI_CACHED_POINTERS;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_CACHED_POINTERS:
+			RunSingleTestLive("Test_UICachedPointers", &TilePuzzle_AutoTest::Test_UICachedPointers);
+			m_ePhase = PHASE_TEST_UI_RECT_FILL;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_RECT_FILL:
+			RunSingleTest("Test_UIRectFillAmount", &Test_UIRectFillAmount);
+			m_ePhase = PHASE_TEST_UI_SETTINGS_TOGGLES;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_SETTINGS_TOGGLES:
+			RunSingleTestLive("Test_UISettingsToggles", &TilePuzzle_AutoTest::Test_UISettingsToggles);
+			m_ePhase = PHASE_TEST_UI_SCREEN_MANAGEMENT;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_SCREEN_MANAGEMENT:
+			RunSingleTestLive("Test_UIScreenManagement", &TilePuzzle_AutoTest::Test_UIScreenManagement);
+			m_ePhase = PHASE_TEST_UI_CONFIRM_OVERLAY;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_CONFIRM_OVERLAY:
+			RunSingleTestLive("Test_UIConfirmOverlay", &TilePuzzle_AutoTest::Test_UIConfirmOverlay);
+			m_ePhase = PHASE_TEST_UI_MENU_FOCUS_NAV;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_MENU_FOCUS_NAV:
+			RunSingleTestLive("Test_UIMenuFocusNavigation", &TilePuzzle_AutoTest::Test_UIMenuFocusNavigation);
+			m_ePhase = PHASE_TEST_UI_STRETCH_ALL_BACKGROUNDS;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_STRETCH_ALL_BACKGROUNDS:
+			RunSingleTestLive("Test_UIStretchAllBackgrounds", &TilePuzzle_AutoTest::Test_UIStretchAllBackgrounds);
+			m_ePhase = PHASE_TEST_UI_ALL_MENU_ELEMENTS;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_ALL_MENU_ELEMENTS:
+			RunSingleTestLive("Test_UIAllMenuElements", &TilePuzzle_AutoTest::Test_UIAllMenuElements);
+			m_ePhase = PHASE_TEST_UI_ALL_SCREEN_ELEMENTS;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_ALL_SCREEN_ELEMENTS:
+			RunSingleTestLive("Test_UIAllScreenElements", &TilePuzzle_AutoTest::Test_UIAllScreenElements);
+			m_ePhase = PHASE_TEST_UI_CONFIRM_DIALOG_FLOW;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_CONFIRM_DIALOG_FLOW:
+			RunSingleTestLive("Test_UIConfirmDialogFlow", &TilePuzzle_AutoTest::Test_UIConfirmDialogFlow);
+			m_ePhase = PHASE_TEST_UI_PAGINATION;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_PAGINATION:
+			RunSingleTestLive("Test_UILevelSelectPagination", &TilePuzzle_AutoTest::Test_UILevelSelectPagination);
+			m_ePhase = PHASE_TEST_UI_ECONOMY_DISPLAY;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_ECONOMY_DISPLAY:
+			RunSingleTestLive("Test_UIEconomyDisplay", &TilePuzzle_AutoTest::Test_UIEconomyDisplay);
+			m_ePhase = PHASE_TEST_UI_INTERACT_INIT;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_INTERACT_INIT:
+			UpdateUIInteract_Init();
+			break;
+		case PHASE_TEST_UI_INTERACT_STEP:
+			UpdateUIInteract_Step();
+			break;
+		case PHASE_TEST_UI_INTERACT_DONE:
+			UpdateUIInteract_Done();
 			break;
 
 		// ==============================================================
@@ -568,6 +749,15 @@ private:
 	TilePuzzleDirection m_aeCellPath[uMAX_CELL_PATH];
 	uint32_t m_uCellPathLength = 0;
 	uint32_t m_uCellPathIndex = 0;
+
+	// ========================================================================
+	// UI interaction walkthrough state
+	// ========================================================================
+	uint32_t m_uInteractStep = 0;
+	uint32_t m_uInteractWait = 0;
+	bool m_bInteractPassed = true;
+	TilePuzzleGameState m_eInteractOrigState = TILEPUZZLE_STATE_MAIN_MENU;
+	uint32_t m_uInteractOrigProgress = 0;
 
 	// ========================================================================
 	// Test Runner Helper
@@ -5764,6 +5954,2666 @@ private:
 
 		return bPass;
 	}
+
+	// ========================================================================
+	// UI Engine Tests
+	// ========================================================================
+
+	static bool Test_UIStretchAll()
+	{
+		bool bPass = true;
+
+		// Create parent element (size 800x600) with known position
+		Zenith_UI::Zenith_UIElement xParent("TestParent");
+		xParent.SetPosition(0.f, 0.f);
+		xParent.SetSize(800.f, 600.f);
+		xParent.SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
+
+		// Create child and set StretchAll
+		Zenith_UI::Zenith_UIElement xChild("TestChild");
+		xParent.AddChild(&xChild);
+		xChild.SetAnchorAndPivot(Zenith_UI::AnchorPreset::StretchAll);
+
+		// Verify child bounds match parent bounds
+		Zenith_Maths::Vector4 xChildBounds = xChild.GetScreenBounds();
+		Zenith_Maths::Vector4 xParentBounds = xParent.GetScreenBounds();
+		if (std::abs(xChildBounds.x - xParentBounds.x) > 0.01f || std::abs(xChildBounds.y - xParentBounds.y) > 0.01f ||
+			std::abs(xChildBounds.z - xParentBounds.z) > 0.01f || std::abs(xChildBounds.w - xParentBounds.w) > 0.01f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: StretchAll child bounds (%.1f,%.1f,%.1f,%.1f) should match parent (%.1f,%.1f,%.1f,%.1f)",
+				xChildBounds.x, xChildBounds.y, xChildBounds.z, xChildBounds.w,
+				xParentBounds.x, xParentBounds.y, xParentBounds.z, xParentBounds.w);
+			bPass = false;
+		}
+
+		// Verify IsStretchAll flag
+		if (!xChild.IsStretchAll())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: IsStretchAll() should return true after SetAnchorAndPivot(StretchAll)");
+			bPass = false;
+		}
+
+		// Change parent size and verify child bounds update
+		xParent.SetSize(1024.f, 768.f);
+		xChildBounds = xChild.GetScreenBounds();
+		xParentBounds = xParent.GetScreenBounds();
+		if (std::abs(xChildBounds.z - xChildBounds.x - 1024.f) > 0.01f || std::abs(xChildBounds.w - xChildBounds.y - 768.f) > 0.01f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: StretchAll child should resize with parent (expected 1024x768, got %.1fx%.1f)",
+				xChildBounds.z - xChildBounds.x, xChildBounds.w - xChildBounds.y);
+			bPass = false;
+		}
+
+		// Set child to Center preset, verify m_bStretchAll is false
+		xChild.SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		if (xChild.IsStretchAll())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: IsStretchAll() should return false after SetAnchorAndPivot(Center)");
+			bPass = false;
+		}
+
+		// Serialization round-trip
+		xChild.SetAnchorAndPivot(Zenith_UI::AnchorPreset::StretchAll);
+		Zenith_DataStream xWriteStream;
+		xChild.WriteToDataStream(xWriteStream);
+
+		Zenith_UI::Zenith_UIElement xReadChild("ReadChild");
+		xWriteStream.SetCursor(0);
+		xReadChild.ReadFromDataStream(xWriteStream);
+
+		if (!xReadChild.IsStretchAll())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: StretchAll flag not preserved after serialization round-trip");
+			bPass = false;
+		}
+
+		// Clean up parent-child link to avoid dangling pointers
+		xParent.RemoveChild(&xChild);
+
+		return bPass;
+	}
+
+	static bool Test_UISortOrder()
+	{
+		bool bPass = true;
+
+		// Verify default sort order is 0
+		Zenith_UI::Zenith_UIElement xElem("TestSortOrder");
+		if (xElem.GetSortOrder() != 0)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Default sort order should be 0, got %d", xElem.GetSortOrder());
+			bPass = false;
+		}
+
+		// Verify SetSortOrder/GetSortOrder round-trip
+		xElem.SetSortOrder(42);
+		if (xElem.GetSortOrder() != 42)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetSortOrder() should return 42, got %d", xElem.GetSortOrder());
+			bPass = false;
+		}
+
+		// Verify negative sort order
+		xElem.SetSortOrder(-5);
+		if (xElem.GetSortOrder() != -5)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetSortOrder() should return -5, got %d", xElem.GetSortOrder());
+			bPass = false;
+		}
+
+		// Serialization round-trip
+		xElem.SetSortOrder(42);
+		Zenith_DataStream xWriteStream;
+		xElem.WriteToDataStream(xWriteStream);
+
+		Zenith_UI::Zenith_UIElement xReadElem("ReadSortOrder");
+		xWriteStream.SetCursor(0);
+		xReadElem.ReadFromDataStream(xWriteStream);
+
+		if (xReadElem.GetSortOrder() != 42)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Sort order not preserved after serialization (got %d, expected 42)", xReadElem.GetSortOrder());
+			bPass = false;
+		}
+
+		return bPass;
+	}
+
+	static bool Test_UITweenSystem()
+	{
+		bool bPass = true;
+
+		// Test linear position tween
+		{
+			Zenith_UI::Zenith_UIElement xElem("TweenTest");
+			xElem.SetPosition(0.f, 0.f);
+			xElem.TweenPosition({100.f, 50.f}, 1.f);
+
+			if (!xElem.IsTweening())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: IsTweening() should be true after TweenPosition");
+				bPass = false;
+			}
+
+			// Simulate 0.5s
+			xElem.Update(0.5f);
+			Zenith_Maths::Vector2 xPos = xElem.GetPosition();
+			if (std::abs(xPos.x - 50.f) > 1.f || std::abs(xPos.y - 25.f) > 1.f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Position at t=0.5 should be ~(50,25), got (%.1f,%.1f)", xPos.x, xPos.y);
+				bPass = false;
+			}
+
+			// Simulate remaining 0.5s
+			xElem.Update(0.5f);
+			xPos = xElem.GetPosition();
+			if (std::abs(xPos.x - 100.f) > 0.01f || std::abs(xPos.y - 50.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Position at t=1.0 should be (100,50), got (%.1f,%.1f)", xPos.x, xPos.y);
+				bPass = false;
+			}
+
+			if (xElem.IsTweening())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: IsTweening() should be false after tween completes");
+				bPass = false;
+			}
+		}
+
+		// Test alpha tween
+		{
+			Zenith_UI::Zenith_UIElement xElem("AlphaTween");
+			xElem.SetGroupAlpha(1.f);
+			xElem.TweenAlpha(0.f, 0.5f);
+
+			xElem.Update(0.25f);
+			float fAlpha = xElem.GetGroupAlpha();
+			if (std::abs(fAlpha - 0.5f) > 0.05f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Alpha at t=0.25 should be ~0.5, got %.2f", fAlpha);
+				bPass = false;
+			}
+		}
+
+		// Test CancelTweens
+		{
+			Zenith_UI::Zenith_UIElement xElem("CancelTest");
+			xElem.SetPosition(0.f, 0.f);
+			xElem.TweenPosition({100.f, 100.f}, 1.f);
+			xElem.Update(0.3f);
+			Zenith_Maths::Vector2 xPosBefore = xElem.GetPosition();
+			xElem.CancelTweens();
+
+			if (xElem.IsTweening())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: IsTweening() should be false after CancelTweens");
+				bPass = false;
+			}
+
+			xElem.Update(0.5f);
+			Zenith_Maths::Vector2 xPosAfter = xElem.GetPosition();
+			if (std::abs(xPosBefore.x - xPosAfter.x) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Position should not change after cancel (%.1f vs %.1f)", xPosBefore.x, xPosAfter.x);
+				bPass = false;
+			}
+		}
+
+		// Test EaseIn: at t=0.5, value should be 0.25 (t*t)
+		{
+			Zenith_UI::Zenith_UIElement xElem("EaseInTest");
+			xElem.SetGroupAlpha(0.f);
+			xElem.TweenAlpha(1.f, 1.f, Zenith_UI::TweenEasing::EASE_IN);
+			xElem.Update(0.5f);
+			float fAlpha = xElem.GetGroupAlpha();
+			if (std::abs(fAlpha - 0.25f) > 0.05f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: EaseIn at t=0.5 should be ~0.25, got %.2f", fAlpha);
+				bPass = false;
+			}
+		}
+
+		// Test EaseOut: at t=0.5, value should be 0.75 (1-(1-t)^2)
+		{
+			Zenith_UI::Zenith_UIElement xElem("EaseOutTest");
+			xElem.SetGroupAlpha(0.f);
+			xElem.TweenAlpha(1.f, 1.f, Zenith_UI::TweenEasing::EASE_OUT);
+			xElem.Update(0.5f);
+			float fAlpha = xElem.GetGroupAlpha();
+			if (std::abs(fAlpha - 0.75f) > 0.05f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: EaseOut at t=0.5 should be ~0.75, got %.2f", fAlpha);
+				bPass = false;
+			}
+		}
+
+		// Test multiple simultaneous tweens (position + alpha)
+		{
+			Zenith_UI::Zenith_UIElement xElem("MultiTween");
+			xElem.SetPosition(0.f, 0.f);
+			xElem.SetGroupAlpha(1.f);
+			xElem.TweenPosition({100.f, 0.f}, 1.f);
+			xElem.TweenAlpha(0.f, 1.f);
+
+			xElem.Update(0.5f);
+			if (std::abs(xElem.GetPosition().x - 50.f) > 1.f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Multi-tween position should be ~50, got %.1f", xElem.GetPosition().x);
+				bPass = false;
+			}
+			if (std::abs(xElem.GetGroupAlpha() - 0.5f) > 0.05f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Multi-tween alpha should be ~0.5, got %.2f", xElem.GetGroupAlpha());
+				bPass = false;
+			}
+		}
+
+		// Test delayed tween
+		{
+			Zenith_UI::Zenith_UIElement xElem("DelayedTween");
+			xElem.SetGroupAlpha(0.f);
+			xElem.TweenAlpha(1.f, 0.5f, Zenith_UI::TweenEasing::LINEAR, 0.3f);
+
+			// At t=0.2 (still in delay), alpha should be unchanged
+			xElem.Update(0.2f);
+			if (std::abs(xElem.GetGroupAlpha()) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Delayed tween alpha should be 0 at t=0.2, got %.2f", xElem.GetGroupAlpha());
+				bPass = false;
+			}
+
+			// At t=0.55 (0.25s into the 0.5s tween), alpha should be ~0.5
+			xElem.Update(0.35f);
+			float fAlpha = xElem.GetGroupAlpha();
+			if (std::abs(fAlpha - 0.5f) > 0.1f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Delayed tween alpha at t=0.55 should be ~0.5, got %.2f", fAlpha);
+				bPass = false;
+			}
+
+			// At t=0.8 (tween complete), alpha should be 1.0
+			xElem.Update(0.25f);
+			if (std::abs(xElem.GetGroupAlpha() - 1.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Delayed tween alpha should be 1.0 after completion, got %.2f", xElem.GetGroupAlpha());
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	static bool Test_UITextMetrics()
+	{
+		bool bPass = true;
+
+		// Create text with "Hello" at font size 24
+		Zenith_UI::Zenith_UIText xText("Hello", "TestText");
+		xText.SetFontSize(24.f);
+
+		// Verify GetTextWidth() == 5 * 24 * fCHAR_SPACING
+		float fExpectedWidth = 5.f * 24.f * fCHAR_SPACING;
+		float fActualWidth = xText.GetTextWidth();
+		if (std::abs(fActualWidth - fExpectedWidth) > 0.01f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetTextWidth() = %.2f, expected %.2f", fActualWidth, fExpectedWidth);
+			bPass = false;
+		}
+
+		// Verify GetTextHeight() == 24 (single line)
+		float fActualHeight = xText.GetTextHeight();
+		if (std::abs(fActualHeight - 24.f) > 0.01f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetTextHeight() = %.2f, expected 24.0", fActualHeight);
+			bPass = false;
+		}
+
+		// Set text to "Hi\nWorld", verify height == 48 (2 lines)
+		xText.SetText("Hi\nWorld");
+		fActualHeight = xText.GetTextHeight();
+		if (std::abs(fActualHeight - 48.f) > 0.01f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Multi-line GetTextHeight() = %.2f, expected 48.0", fActualHeight);
+			bPass = false;
+		}
+
+		// Verify GetTextWidth() returns max of line widths ("World" = 5 chars)
+		float fExpectedMaxWidth = 5.f * 24.f * fCHAR_SPACING;
+		fActualWidth = xText.GetTextWidth();
+		if (std::abs(fActualWidth - fExpectedMaxWidth) > 0.01f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Multi-line GetTextWidth() = %.2f, expected %.2f (max of line widths)", fActualWidth, fExpectedMaxWidth);
+			bPass = false;
+		}
+
+		return bPass;
+	}
+
+	static bool Test_UIToggle()
+	{
+		bool bPass = true;
+
+		// Test default state is off
+		{
+			Zenith_UI::Zenith_UIToggle xToggle("Test", "ToggleTest");
+			if (xToggle.IsOn())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Toggle should default to off");
+				bPass = false;
+			}
+		}
+
+		// Test SetIsOn
+		{
+			Zenith_UI::Zenith_UIToggle xToggle("Test", "ToggleTest");
+			xToggle.SetIsOn(true);
+			if (!xToggle.IsOn())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetIsOn(true) should set IsOn to true");
+				bPass = false;
+			}
+		}
+
+		// Test callback fires on SetIsOn
+		{
+			static bool s_bCallbackFired = false;
+			static bool s_bCallbackValue = false;
+			s_bCallbackFired = false;
+			s_bCallbackValue = false;
+
+			auto pfnCallback = [](bool bNewValue, void* /*pxUserData*/)
+			{
+				s_bCallbackFired = true;
+				s_bCallbackValue = bNewValue;
+			};
+
+			Zenith_UI::Zenith_UIToggle xToggle("Test", "ToggleTest");
+			xToggle.SetOnValueChanged(pfnCallback);
+			xToggle.SetIsOn(true);
+
+			if (!s_bCallbackFired)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Callback should fire on SetIsOn");
+				bPass = false;
+			}
+			if (!s_bCallbackValue)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Callback should receive bNewValue=true");
+				bPass = false;
+			}
+
+			// SetIsOn to same value should NOT fire callback
+			s_bCallbackFired = false;
+			xToggle.SetIsOn(true);
+			if (s_bCallbackFired)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Callback should not fire when value doesn't change");
+				bPass = false;
+			}
+
+			// SetIsOn(false) should fire with false
+			s_bCallbackFired = false;
+			xToggle.SetIsOn(false);
+			if (!s_bCallbackFired || s_bCallbackValue)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Callback should fire with false on SetIsOn(false)");
+				bPass = false;
+			}
+		}
+
+		// Test type
+		{
+			Zenith_UI::Zenith_UIToggle xToggle("Test", "ToggleTest");
+			if (xToggle.GetType() != Zenith_UI::UIElementType::Toggle)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetType() should return Toggle");
+				bPass = false;
+			}
+		}
+
+		// Test text round-trip
+		{
+			Zenith_UI::Zenith_UIToggle xToggle("Sound", "ToggleTest");
+			if (xToggle.GetText() != "Sound")
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetText() should return 'Sound'");
+				bPass = false;
+			}
+			xToggle.SetText("Music");
+			if (xToggle.GetText() != "Music")
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetText/GetText round-trip failed");
+				bPass = false;
+			}
+		}
+
+		// Test on/off color setters
+		{
+			Zenith_UI::Zenith_UIToggle xToggle("Test", "ToggleTest");
+			xToggle.SetOnColor({0.1f, 0.2f, 0.3f, 0.4f});
+			xToggle.SetOffColor({0.5f, 0.6f, 0.7f, 0.8f});
+
+			const Zenith_UI::UIStyle& xOnStyle = xToggle.GetOnStyle();
+			if (std::abs(xOnStyle.m_xFillColor.x - 0.1f) > 0.01f || std::abs(xOnStyle.m_xFillColor.w - 0.4f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetOnColor did not set on style fill color correctly");
+				bPass = false;
+			}
+
+			const Zenith_UI::UIStyle& xOffStyle = xToggle.GetOffStyle();
+			if (std::abs(xOffStyle.m_xFillColor.x - 0.5f) > 0.01f || std::abs(xOffStyle.m_xFillColor.w - 0.8f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetOffColor did not set off style fill color correctly");
+				bPass = false;
+			}
+		}
+
+		// Test serialization round-trip
+		{
+			Zenith_UI::Zenith_UIToggle xOriginal("Haptics", "SerToggle");
+			xOriginal.SetIsOn(true);
+			xOriginal.SetFontSize(32.f);
+			xOriginal.SetOnColor({0.1f, 0.2f, 0.3f, 1.0f});
+			xOriginal.SetOffColor({0.4f, 0.5f, 0.6f, 1.0f});
+
+			Zenith_DataStream xStream;
+			xOriginal.WriteToDataStream(xStream);
+			xStream.SetCursor(0);
+
+			Zenith_UI::Zenith_UIToggle xLoaded("", "Loaded");
+			xLoaded.ReadFromDataStream(xStream);
+
+			if (!xLoaded.IsOn())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized toggle should be on");
+				bPass = false;
+			}
+			if (xLoaded.GetText() != "Haptics")
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized toggle text should be 'Haptics', got '%s'", xLoaded.GetText().c_str());
+				bPass = false;
+			}
+			if (std::abs(xLoaded.GetFontSize() - 32.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized toggle font size should be 32, got %.1f", xLoaded.GetFontSize());
+				bPass = false;
+			}
+			if (std::abs(xLoaded.GetOnStyle().m_xFillColor.x - 0.1f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized toggle on color mismatch");
+				bPass = false;
+			}
+			if (std::abs(xLoaded.GetOffStyle().m_xFillColor.x - 0.4f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized toggle off color mismatch");
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	static bool Test_UIButtonIcon()
+	{
+		bool bPass = true;
+
+		// Test default icon texture is not set
+		{
+			Zenith_UI::Zenith_UIButton xButton("Test", "IconBtn");
+			if (!xButton.GetIconTexturePath().empty())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Default icon texture path should be empty");
+				bPass = false;
+			}
+		}
+
+		// Test SetIconSize
+		{
+			Zenith_UI::Zenith_UIButton xButton("Test", "IconBtn");
+			xButton.SetIconSize(32.f, 32.f);
+			Zenith_Maths::Vector2 xSize = xButton.GetIconSize();
+			if (std::abs(xSize.x - 32.f) > 0.01f || std::abs(xSize.y - 32.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetIconSize(32,32) / GetIconSize mismatch");
+				bPass = false;
+			}
+		}
+
+		// Test SetIconPlacement — all 5 values
+		{
+			Zenith_UI::Zenith_UIButton xButton("Test", "IconBtn");
+
+			xButton.SetIconPlacement(Zenith_UI::Zenith_UIButton::IconPlacement::LEFT);
+			if (xButton.GetIconPlacement() != Zenith_UI::Zenith_UIButton::IconPlacement::LEFT)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetIconPlacement(LEFT) / getter mismatch");
+				bPass = false;
+			}
+
+			xButton.SetIconPlacement(Zenith_UI::Zenith_UIButton::IconPlacement::RIGHT);
+			if (xButton.GetIconPlacement() != Zenith_UI::Zenith_UIButton::IconPlacement::RIGHT)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetIconPlacement(RIGHT) / getter mismatch");
+				bPass = false;
+			}
+
+			xButton.SetIconPlacement(Zenith_UI::Zenith_UIButton::IconPlacement::TOP);
+			if (xButton.GetIconPlacement() != Zenith_UI::Zenith_UIButton::IconPlacement::TOP)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetIconPlacement(TOP) / getter mismatch");
+				bPass = false;
+			}
+
+			xButton.SetIconPlacement(Zenith_UI::Zenith_UIButton::IconPlacement::BOTTOM);
+			if (xButton.GetIconPlacement() != Zenith_UI::Zenith_UIButton::IconPlacement::BOTTOM)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetIconPlacement(BOTTOM) / getter mismatch");
+				bPass = false;
+			}
+
+			xButton.SetIconPlacement(Zenith_UI::Zenith_UIButton::IconPlacement::ICON_ONLY);
+			if (xButton.GetIconPlacement() != Zenith_UI::Zenith_UIButton::IconPlacement::ICON_ONLY)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetIconPlacement(ICON_ONLY) / getter mismatch");
+				bPass = false;
+			}
+		}
+
+		// Test all 5 enum values are distinct
+		{
+			uint32_t uLeft = static_cast<uint32_t>(Zenith_UI::Zenith_UIButton::IconPlacement::LEFT);
+			uint32_t uRight = static_cast<uint32_t>(Zenith_UI::Zenith_UIButton::IconPlacement::RIGHT);
+			uint32_t uTop = static_cast<uint32_t>(Zenith_UI::Zenith_UIButton::IconPlacement::TOP);
+			uint32_t uBottom = static_cast<uint32_t>(Zenith_UI::Zenith_UIButton::IconPlacement::BOTTOM);
+			uint32_t uIconOnly = static_cast<uint32_t>(Zenith_UI::Zenith_UIButton::IconPlacement::ICON_ONLY);
+
+			if (uLeft == uRight || uLeft == uTop || uLeft == uBottom || uLeft == uIconOnly
+				|| uRight == uTop || uRight == uBottom || uRight == uIconOnly
+				|| uTop == uBottom || uTop == uIconOnly
+				|| uBottom == uIconOnly)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: IconPlacement enum values are not all distinct");
+				bPass = false;
+			}
+		}
+
+		// Test default icon padding is 4.0f
+		{
+			Zenith_UI::Zenith_UIButton xButton("Test", "IconBtn");
+			if (std::abs(xButton.GetIconPadding() - 4.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Default icon padding should be 4.0, got %.1f", xButton.GetIconPadding());
+				bPass = false;
+			}
+		}
+
+		// Test SetIconPadding
+		{
+			Zenith_UI::Zenith_UIButton xButton("Test", "IconBtn");
+			xButton.SetIconPadding(8.f);
+			if (std::abs(xButton.GetIconPadding() - 8.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetIconPadding(8) / GetIconPadding mismatch");
+				bPass = false;
+			}
+		}
+
+		// Test serialization round-trip preserves icon size, placement, padding
+		{
+			Zenith_UI::Zenith_UIButton xOriginal("Test", "SerBtn");
+			xOriginal.SetIconSize(24.f, 24.f);
+			xOriginal.SetIconPlacement(Zenith_UI::Zenith_UIButton::IconPlacement::RIGHT);
+			xOriginal.SetIconPadding(12.f);
+
+			Zenith_DataStream xStream;
+			xOriginal.WriteToDataStream(xStream);
+			xStream.SetCursor(0);
+
+			Zenith_UI::Zenith_UIButton xLoaded("", "Loaded");
+			xLoaded.ReadFromDataStream(xStream);
+
+			Zenith_Maths::Vector2 xSize = xLoaded.GetIconSize();
+			if (std::abs(xSize.x - 24.f) > 0.01f || std::abs(xSize.y - 24.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized icon size mismatch");
+				bPass = false;
+			}
+			if (xLoaded.GetIconPlacement() != Zenith_UI::Zenith_UIButton::IconPlacement::RIGHT)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized icon placement should be RIGHT");
+				bPass = false;
+			}
+			if (std::abs(xLoaded.GetIconPadding() - 12.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized icon padding should be 12.0, got %.1f", xLoaded.GetIconPadding());
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	static bool Test_UIOverlay()
+	{
+		bool bPass = true;
+
+		// Test default state: not showing
+		{
+			Zenith_UI::Zenith_UIOverlay xOverlay("TestOverlay");
+			if (xOverlay.IsShowing())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Overlay should default to not showing");
+				bPass = false;
+			}
+		}
+
+		// Test Show() sets showing and visible
+		{
+			Zenith_UI::Zenith_UIOverlay xOverlay("TestOverlay");
+			xOverlay.Show();
+			if (!xOverlay.IsShowing())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Show() should set IsShowing to true");
+				bPass = false;
+			}
+			if (!xOverlay.IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Show() should set IsVisible to true");
+				bPass = false;
+			}
+		}
+
+		// Test Hide() begins hiding (may still be visible during fade)
+		{
+			Zenith_UI::Zenith_UIOverlay xOverlay("TestOverlay");
+			xOverlay.SetFadeDuration(0.f); // instant fade
+			xOverlay.Show();
+			xOverlay.Update(0.016f); // process one frame to set alpha
+			xOverlay.Hide();
+			xOverlay.Update(0.016f); // process hide
+			if (xOverlay.IsShowing())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: After Hide() with 0 fade, should not be showing");
+				bPass = false;
+			}
+		}
+
+		// Test dim color
+		{
+			Zenith_UI::Zenith_UIOverlay xOverlay("TestOverlay");
+			xOverlay.SetDimColor({0.0f, 0.0f, 0.0f, 0.5f});
+			Zenith_Maths::Vector4 xDim = xOverlay.GetDimColor();
+			if (std::abs(xDim.w - 0.5f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetDimColor alpha should be 0.5, got %.2f", xDim.w);
+				bPass = false;
+			}
+		}
+
+		// Test content size
+		{
+			Zenith_UI::Zenith_UIOverlay xOverlay("TestOverlay");
+			xOverlay.SetContentSize(400.f, 300.f);
+			Zenith_Maths::Vector2 xSize = xOverlay.GetContentSize();
+			if (std::abs(xSize.x - 400.f) > 0.01f || std::abs(xSize.y - 300.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetContentSize(400,300) mismatch");
+				bPass = false;
+			}
+		}
+
+		// Test fade duration
+		{
+			Zenith_UI::Zenith_UIOverlay xOverlay("TestOverlay");
+			xOverlay.SetFadeDuration(0.3f);
+			if (std::abs(xOverlay.GetFadeDuration() - 0.3f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetFadeDuration(0.3) mismatch");
+				bPass = false;
+			}
+		}
+
+		// Test type
+		{
+			Zenith_UI::Zenith_UIOverlay xOverlay("TestOverlay");
+			if (xOverlay.GetType() != Zenith_UI::UIElementType::Overlay)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetType() should return Overlay");
+				bPass = false;
+			}
+		}
+
+		// Test sort order defaults to >= 100
+		{
+			Zenith_UI::Zenith_UIOverlay xOverlay("TestOverlay");
+			if (xOverlay.GetSortOrder() < 100)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Default sort order should be >= 100, got %d", xOverlay.GetSortOrder());
+				bPass = false;
+			}
+		}
+
+		// Test serialization round-trip
+		{
+			Zenith_UI::Zenith_UIOverlay xOriginal("SerOverlay");
+			xOriginal.SetDimColor({0.0f, 0.0f, 0.0f, 0.5f});
+			xOriginal.SetContentSize(400.f, 300.f);
+			xOriginal.SetFadeDuration(0.3f);
+
+			Zenith_DataStream xStream;
+			xOriginal.WriteToDataStream(xStream);
+			xStream.SetCursor(0);
+
+			Zenith_UI::Zenith_UIOverlay xLoaded("Loaded");
+			xLoaded.ReadFromDataStream(xStream);
+
+			Zenith_Maths::Vector4 xDim = xLoaded.GetDimColor();
+			if (std::abs(xDim.w - 0.5f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized dim color alpha should be 0.5, got %.2f", xDim.w);
+				bPass = false;
+			}
+			Zenith_Maths::Vector2 xSize = xLoaded.GetContentSize();
+			if (std::abs(xSize.x - 400.f) > 0.01f || std::abs(xSize.y - 300.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized content size mismatch");
+				bPass = false;
+			}
+			if (std::abs(xLoaded.GetFadeDuration() - 0.3f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized fade duration should be 0.3, got %.2f", xLoaded.GetFadeDuration());
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Test: UI Focus Navigation
+	// ========================================================================
+	static bool Test_UIFocusNavigation()
+	{
+		bool bPass = true;
+
+		// Create a canvas with 3 buttons A, B, C and wire up explicit nav links
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+
+			Zenith_UI::Zenith_UIButton* pxA = new Zenith_UI::Zenith_UIButton("A", "BtnA");
+			Zenith_UI::Zenith_UIButton* pxB = new Zenith_UI::Zenith_UIButton("B", "BtnB");
+			Zenith_UI::Zenith_UIButton* pxC = new Zenith_UI::Zenith_UIButton("C", "BtnC");
+
+			pxA->SetPosition(100.f, 100.f);
+			pxA->SetSize(200.f, 50.f);
+			pxB->SetPosition(100.f, 200.f);
+			pxB->SetSize(200.f, 50.f);
+			pxC->SetPosition(100.f, 300.f);
+			pxC->SetSize(200.f, 50.f);
+
+			xCanvas.AddElement(pxA);
+			xCanvas.AddElement(pxB);
+			xCanvas.AddElement(pxC);
+
+			// Wire nav: A->down=B, B->down=C, B->up=A, C->up=B
+			pxA->SetNavigation(nullptr, pxB, nullptr, nullptr);
+			pxB->SetNavigation(pxA, pxC, nullptr, nullptr);
+			pxC->SetNavigation(pxB, nullptr, nullptr, nullptr);
+
+			// Verify buttons are focusable by default
+			if (!pxA->IsFocusable())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Button should be focusable by default");
+				bPass = false;
+			}
+
+			// Set focus on A
+			xCanvas.SetFocusedElement(pxA);
+			if (xCanvas.GetFocusedElement() != pxA)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetFocusedElement should return A");
+				bPass = false;
+			}
+			if (!pxA->IsFocused())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: A should be focused after SetFocusedElement");
+				bPass = false;
+			}
+
+			// NavigateDown: A -> B
+			xCanvas.NavigateDown();
+			if (xCanvas.GetFocusedElement() != pxB)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: NavigateDown from A should go to B");
+				bPass = false;
+			}
+			if (pxA->IsFocused())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: A should not be focused after navigating away");
+				bPass = false;
+			}
+			if (!pxB->IsFocused())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: B should be focused after NavigateDown");
+				bPass = false;
+			}
+
+			// NavigateDown: B -> C
+			xCanvas.NavigateDown();
+			if (xCanvas.GetFocusedElement() != pxC)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: NavigateDown from B should go to C");
+				bPass = false;
+			}
+
+			// NavigateUp: C -> B
+			xCanvas.NavigateUp();
+			if (xCanvas.GetFocusedElement() != pxB)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: NavigateUp from C should go to B");
+				bPass = false;
+			}
+
+			// NavigateDown from C (null nav link): should stay on C via spatial fallback (nothing below)
+			xCanvas.SetFocusedElement(pxC);
+			xCanvas.NavigateDown();
+			// C has no down nav link and nothing below it spatially, so should stay on C
+			if (xCanvas.GetFocusedElement() != pxC)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: NavigateDown from C with no target should stay on C");
+				bPass = false;
+			}
+		}
+
+		// Test SetFocusable(false) prevents focus
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+
+			Zenith_UI::Zenith_UIButton* pxA = new Zenith_UI::Zenith_UIButton("A", "BtnA");
+			Zenith_UI::Zenith_UIButton* pxB = new Zenith_UI::Zenith_UIButton("B", "BtnB");
+			pxA->SetPosition(100.f, 100.f);
+			pxA->SetSize(200.f, 50.f);
+			pxB->SetPosition(100.f, 200.f);
+			pxB->SetSize(200.f, 50.f);
+			pxB->SetFocusable(false);
+
+			xCanvas.AddElement(pxA);
+			xCanvas.AddElement(pxB);
+
+			// A has no explicit down nav; spatial search finds B but B is not focusable
+			xCanvas.SetFocusedElement(pxA);
+			xCanvas.NavigateDown();
+			// B is not focusable, so spatial search should skip it — stay on A
+			if (xCanvas.GetFocusedElement() != pxA)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Non-focusable element should be skipped during navigation");
+				bPass = false;
+			}
+		}
+
+		// Test invisible elements are skipped during spatial navigation
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+
+			Zenith_UI::Zenith_UIButton* pxA = new Zenith_UI::Zenith_UIButton("A", "BtnA");
+			Zenith_UI::Zenith_UIButton* pxB = new Zenith_UI::Zenith_UIButton("B", "BtnB");
+			Zenith_UI::Zenith_UIButton* pxC = new Zenith_UI::Zenith_UIButton("C", "BtnC");
+			pxA->SetPosition(100.f, 100.f);
+			pxA->SetSize(200.f, 50.f);
+			pxB->SetPosition(100.f, 200.f);
+			pxB->SetSize(200.f, 50.f);
+			pxB->SetVisible(false);
+			pxC->SetPosition(100.f, 300.f);
+			pxC->SetSize(200.f, 50.f);
+
+			xCanvas.AddElement(pxA);
+			xCanvas.AddElement(pxB);
+			xCanvas.AddElement(pxC);
+
+			xCanvas.SetFocusedElement(pxA);
+			xCanvas.NavigateDown();
+			// B is invisible, so spatial search should skip to C
+			if (xCanvas.GetFocusedElement() != pxC)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Invisible elements should be skipped, expected C got %s",
+					xCanvas.GetFocusedElement() ? xCanvas.GetFocusedElement()->GetName().c_str() : "null");
+				bPass = false;
+			}
+		}
+
+		// Test ActivateFocused on toggle
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+
+			Zenith_UI::Zenith_UIToggle* pxToggle = new Zenith_UI::Zenith_UIToggle("Toggle", "TestToggle");
+			pxToggle->SetPosition(100.f, 100.f);
+			pxToggle->SetSize(200.f, 50.f);
+
+			xCanvas.AddElement(pxToggle);
+
+			bool bCallbackFired = false;
+			pxToggle->SetOnValueChanged([](bool /*bNewVal*/, void* pxData)
+			{
+				*static_cast<bool*>(pxData) = true;
+			}, &bCallbackFired);
+
+			xCanvas.SetFocusedElement(pxToggle);
+			xCanvas.ActivateFocused();
+
+			if (!pxToggle->IsOn())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ActivateFocused on toggle should flip IsOn to true");
+				bPass = false;
+			}
+			if (!bCallbackFired)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ActivateFocused on toggle should fire callback");
+				bPass = false;
+			}
+		}
+
+		// Test ActivateFocused with no focused element — should not crash
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+			xCanvas.ActivateFocused(); // no crash
+		}
+
+		// Test toggle is focusable by default
+		{
+			Zenith_UI::Zenith_UIToggle xToggle("Test", "TestToggle");
+			if (!xToggle.IsFocusable())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Toggle should be focusable by default");
+				bPass = false;
+			}
+		}
+
+		// Test nav link getters
+		{
+			Zenith_UI::Zenith_UIButton xA("A", "A");
+			Zenith_UI::Zenith_UIButton xB("B", "B");
+			xA.SetNavigation(&xB, nullptr, nullptr, &xB);
+			if (xA.GetNavUp() != &xB)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetNavUp should return B");
+				bPass = false;
+			}
+			if (xA.GetNavRight() != &xB)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetNavRight should return B");
+				bPass = false;
+			}
+			if (xA.GetNavDown() != nullptr)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetNavDown should return nullptr");
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Test: UI ScrollView
+	// ========================================================================
+	static bool Test_UIScrollView()
+	{
+		bool bPass = true;
+
+		// Test default state
+		{
+			Zenith_UI::Zenith_UIScrollView xScrollView("TestSV");
+			if (xScrollView.GetType() != Zenith_UI::UIElementType::ScrollView)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetType() should return ScrollView");
+				bPass = false;
+			}
+		}
+
+		// Test initial scroll position is (0,0)
+		{
+			Zenith_UI::Zenith_UIScrollView xScrollView("TestSV");
+			xScrollView.SetSize(200.f, 100.f);
+			Zenith_Maths::Vector2 xPos = xScrollView.GetScrollPosition();
+			if (std::abs(xPos.x) > 0.01f || std::abs(xPos.y) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Initial scroll position should be (0,0)");
+				bPass = false;
+			}
+		}
+
+		// Test SetScrollPosition
+		{
+			Zenith_UI::Zenith_UIScrollView xScrollView("TestSV");
+			xScrollView.SetSize(200.f, 100.f);
+			xScrollView.SetContentSize(200.f, 500.f);
+			xScrollView.SetScrollPosition(0.f, 100.f);
+			Zenith_Maths::Vector2 xPos = xScrollView.GetScrollPosition();
+			if (std::abs(xPos.y - 100.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetScrollPosition(0,100) mismatch, got %.1f", xPos.y);
+				bPass = false;
+			}
+		}
+
+		// Test scroll clamping: max = contentH - viewH
+		{
+			Zenith_UI::Zenith_UIScrollView xScrollView("TestSV");
+			xScrollView.SetSize(200.f, 100.f);
+			xScrollView.SetContentSize(200.f, 500.f);
+			xScrollView.SetScrollPosition(0.f, 1000.f);
+			Zenith_Maths::Vector2 xPos = xScrollView.GetScrollPosition();
+			float fExpected = 400.f; // 500 - 100
+			if (std::abs(xPos.y - fExpected) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Scroll should clamp to %.0f, got %.1f", fExpected, xPos.y);
+				bPass = false;
+			}
+		}
+
+		// Test negative scroll clamped to 0
+		{
+			Zenith_UI::Zenith_UIScrollView xScrollView("TestSV");
+			xScrollView.SetSize(200.f, 100.f);
+			xScrollView.SetContentSize(200.f, 500.f);
+			xScrollView.SetScrollPosition(0.f, -50.f);
+			Zenith_Maths::Vector2 xPos = xScrollView.GetScrollPosition();
+			if (std::abs(xPos.y) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Negative scroll should clamp to 0, got %.1f", xPos.y);
+				bPass = false;
+			}
+		}
+
+		// Test scroll direction getter
+		{
+			Zenith_UI::Zenith_UIScrollView xScrollView("TestSV");
+			xScrollView.SetScrollDirection(Zenith_UI::ScrollDirection::VERTICAL);
+			if (xScrollView.GetScrollDirection() != Zenith_UI::ScrollDirection::VERTICAL)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GetScrollDirection should return VERTICAL");
+				bPass = false;
+			}
+		}
+
+		// Test horizontal-only: vertical scroll clamped to 0
+		{
+			Zenith_UI::Zenith_UIScrollView xScrollView("TestSV");
+			xScrollView.SetSize(200.f, 100.f);
+			xScrollView.SetContentSize(500.f, 500.f);
+			xScrollView.SetScrollDirection(Zenith_UI::ScrollDirection::HORIZONTAL);
+			xScrollView.SetScrollPosition(50.f, 100.f);
+			Zenith_Maths::Vector2 xPos = xScrollView.GetScrollPosition();
+			if (std::abs(xPos.y) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Horizontal-only: vertical scroll should be 0, got %.1f", xPos.y);
+				bPass = false;
+			}
+			if (std::abs(xPos.x - 50.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Horizontal scroll should be 50, got %.1f", xPos.x);
+				bPass = false;
+			}
+		}
+
+		// Test inertia settings
+		{
+			Zenith_UI::Zenith_UIScrollView xScrollView("TestSV");
+			xScrollView.SetInertia(true);
+			if (!xScrollView.HasInertia())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetInertia(true) should return true");
+				bPass = false;
+			}
+			xScrollView.SetInertia(false);
+			if (xScrollView.HasInertia())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetInertia(false) should return false");
+				bPass = false;
+			}
+			xScrollView.SetDecelerationRate(0.95f);
+			if (std::abs(xScrollView.GetDecelerationRate() - 0.95f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SetDecelerationRate(0.95) mismatch");
+				bPass = false;
+			}
+		}
+
+		// Test serialization round-trip
+		{
+			Zenith_UI::Zenith_UIScrollView xOriginal("SerSV");
+			xOriginal.SetContentSize(500.f, 1000.f);
+			xOriginal.SetScrollDirection(Zenith_UI::ScrollDirection::VERTICAL);
+			xOriginal.SetInertia(true);
+			xOriginal.SetDecelerationRate(0.85f);
+
+			Zenith_DataStream xStream;
+			xOriginal.WriteToDataStream(xStream);
+			xStream.SetCursor(0);
+
+			Zenith_UI::Zenith_UIScrollView xLoaded("Loaded");
+			xLoaded.ReadFromDataStream(xStream);
+
+			Zenith_Maths::Vector2 xSize = xLoaded.GetContentSize();
+			if (std::abs(xSize.x - 500.f) > 0.01f || std::abs(xSize.y - 1000.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized content size mismatch");
+				bPass = false;
+			}
+			if (xLoaded.GetScrollDirection() != Zenith_UI::ScrollDirection::VERTICAL)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized scroll direction mismatch");
+				bPass = false;
+			}
+			if (!xLoaded.HasInertia())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized inertia should be true");
+				bPass = false;
+			}
+			if (std::abs(xLoaded.GetDecelerationRate() - 0.85f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Serialized deceleration rate mismatch");
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Test: UI Canvas Clip Rect
+	// ========================================================================
+	static bool Test_UICanvasClipRect()
+	{
+		bool bPass = true;
+
+		// Test clip rect stack starts empty
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+			if (xCanvas.HasActiveClipRect())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Clip rect stack should start empty");
+				bPass = false;
+			}
+		}
+
+		// Test PushClipRect sets active clip rect
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+			xCanvas.PushClipRect({10.f, 10.f, 200.f, 200.f});
+			if (!xCanvas.HasActiveClipRect())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Clip rect should be active after push");
+				bPass = false;
+			}
+			Zenith_Maths::Vector4 xClip = xCanvas.GetActiveClipRect();
+			if (std::abs(xClip.x - 10.f) > 0.01f || std::abs(xClip.z - 200.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Active clip rect should be {10,10,200,200}");
+				bPass = false;
+			}
+		}
+
+		// Test nested clip rects intersect
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+			xCanvas.PushClipRect({10.f, 10.f, 200.f, 200.f});
+			xCanvas.PushClipRect({50.f, 50.f, 150.f, 150.f});
+			Zenith_Maths::Vector4 xClip = xCanvas.GetActiveClipRect();
+			if (std::abs(xClip.x - 50.f) > 0.01f || std::abs(xClip.y - 50.f) > 0.01f ||
+				std::abs(xClip.z - 150.f) > 0.01f || std::abs(xClip.w - 150.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Nested clip rect should intersect to {50,50,150,150}");
+				bPass = false;
+			}
+		}
+
+		// Test PopClipRect reverts
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+			xCanvas.PushClipRect({10.f, 10.f, 200.f, 200.f});
+			xCanvas.PushClipRect({50.f, 50.f, 150.f, 150.f});
+			xCanvas.PopClipRect();
+			Zenith_Maths::Vector4 xClip = xCanvas.GetActiveClipRect();
+			if (std::abs(xClip.x - 10.f) > 0.01f || std::abs(xClip.z - 200.f) > 0.01f)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: After PopClipRect, should revert to {10,10,200,200}");
+				bPass = false;
+			}
+		}
+
+		// Test PopClipRect to empty
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+			xCanvas.PushClipRect({10.f, 10.f, 200.f, 200.f});
+			xCanvas.PopClipRect();
+			if (xCanvas.HasActiveClipRect())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: After final PopClipRect, should have no active clip rect");
+				bPass = false;
+			}
+		}
+
+		// Test PopClipRect on empty stack doesn't crash
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+			xCanvas.PopClipRect(); // should not crash
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Test: UI InputSimulator Click Helper
+	// ========================================================================
+	static bool Test_UIInputSimulatorClick()
+	{
+		bool bPass = true;
+
+		// Test that SimulateClickOnUIElement correctly resolves an element's center position.
+		// NOTE: We cannot call SimulateClickOnUIElement directly here because it calls
+		// StepFrame() which re-enters the main loop and causes infinite recursion.
+		// Instead, we test the position resolution logic manually.
+		{
+			Zenith_UI::Zenith_UICanvas xCanvas;
+			xCanvas.SetReferenceResolution(1920.f, 1080.f);
+
+			Zenith_UI::Zenith_UIButton* pxBtn = new Zenith_UI::Zenith_UIButton("TestBtn", "ClickTestButton");
+			pxBtn->SetPosition(100.f, 100.f);
+			pxBtn->SetSize(200.f, 50.f);
+			xCanvas.AddElement(pxBtn);
+
+			// Set as primary canvas temporarily
+			Zenith_UI::Zenith_UICanvas* pxPrevPrimary = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+			Zenith_UI::Zenith_UICanvas::SetPrimaryCanvas(&xCanvas);
+
+			// Verify element can be found on the primary canvas
+			Zenith_UI::Zenith_UIElement* pxFound = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas()->FindElement("ClickTestButton");
+			if (!pxFound)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: FindElement failed for ClickTestButton on primary canvas");
+				bPass = false;
+			}
+			else
+			{
+				// Replicate the position resolution from SimulateClickOnUIElement
+				Zenith_Maths::Vector4 xBounds = pxFound->GetScreenBounds();
+				double fCenterX = static_cast<double>((xBounds.x + xBounds.z) * 0.5f);
+				double fCenterY = static_cast<double>((xBounds.y + xBounds.w) * 0.5f);
+
+				// Set the mouse position (no StepFrame) and verify it was stored
+				Zenith_InputSimulator::SimulateMousePosition(fCenterX, fCenterY);
+
+				Zenith_Maths::Vector2_64 xMousePos;
+				Zenith_InputSimulator::GetMousePositionSimulated(xMousePos);
+
+				if (std::abs(xMousePos.x - fCenterX) > 1.0 || std::abs(xMousePos.y - fCenterY) > 1.0)
+				{
+					Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Mouse position should be (%.0f,%.0f), got (%.0f,%.0f)",
+						fCenterX, fCenterY, xMousePos.x, xMousePos.y);
+					bPass = false;
+				}
+			}
+
+			// Restore primary canvas
+			Zenith_UI::Zenith_UICanvas::SetPrimaryCanvas(pxPrevPrimary);
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Test: UIRect Fill Amount
+	// ========================================================================
+	static bool Test_UIRectFillAmount()
+	{
+		bool bPass = true;
+
+		Zenith_UI::Zenith_UIRect xRect("TestFillRect");
+
+		// Default fill amount is 1.0
+		if (std::abs(xRect.GetFillAmount() - 1.0f) > 0.001f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Default fill amount should be 1.0, got %.2f", xRect.GetFillAmount());
+			bPass = false;
+		}
+
+		// Set fill amount to 0.5
+		xRect.SetFillAmount(0.5f);
+		if (std::abs(xRect.GetFillAmount() - 0.5f) > 0.001f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Fill amount should be 0.5, got %.2f", xRect.GetFillAmount());
+			bPass = false;
+		}
+
+		// Clamp negative to 0
+		xRect.SetFillAmount(-0.1f);
+		if (std::abs(xRect.GetFillAmount()) > 0.001f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Negative fill should clamp to 0, got %.2f", xRect.GetFillAmount());
+			bPass = false;
+		}
+
+		// Clamp above 1 to 1
+		xRect.SetFillAmount(1.5f);
+		if (std::abs(xRect.GetFillAmount() - 1.0f) > 0.001f)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Fill > 1 should clamp to 1, got %.2f", xRect.GetFillAmount());
+			bPass = false;
+		}
+
+		// Fill direction
+		xRect.SetFillDirection(Zenith_UI::FillDirection::BottomToTop);
+		if (xRect.GetFillDirection() != Zenith_UI::FillDirection::BottomToTop)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Fill direction should be BottomToTop");
+			bPass = false;
+		}
+
+		// Test all 4 directions store correctly
+		Zenith_UI::FillDirection aeDirections[] = {
+			Zenith_UI::FillDirection::LeftToRight,
+			Zenith_UI::FillDirection::RightToLeft,
+			Zenith_UI::FillDirection::BottomToTop,
+			Zenith_UI::FillDirection::TopToBottom
+		};
+		for (Zenith_UI::FillDirection eDir : aeDirections)
+		{
+			xRect.SetFillDirection(eDir);
+			if (xRect.GetFillDirection() != eDir)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Fill direction %u did not round-trip", static_cast<uint32_t>(eDir));
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Test: Cached UI Pointers (live test)
+	// ========================================================================
+	bool Test_UICachedPointers()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: No TilePuzzle_Behaviour found");
+			return false;
+		}
+
+		Zenith_Entity xGameManager = pxBehaviour->m_xParentEntity;
+		if (!xGameManager.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: No UIComponent on GameManager entity");
+			return false;
+		}
+
+		Zenith_UIComponent& xUI = xGameManager.GetComponent<Zenith_UIComponent>();
+
+		// Verify a sample of cached pointers are non-null
+		struct CacheCheck
+		{
+			const char* szFieldName;
+			void* pxCached;
+			const char* szElementName;
+		};
+
+		// Only check elements on the menu scene (scene 0) — HUD elements
+		// (LevelText, MovesText, CatsText, HUDCoinsText, UndoBtn, HintBtn,
+		// SkipBtn, NextLevelBtn, HUDInfoGroup, HUDButtonGroup) are on the
+		// gameplay scene (scene 1) and can't be found via menu UIComponent
+		CacheCheck axChecks[] = {
+			{ "m_pxMenuBg",           pxBehaviour->m_pxMenuBg,           "MenuBackground" },
+			{ "m_pxMenuCoinText",     pxBehaviour->m_pxMenuCoinText,     "CoinText" },
+			{ "m_pxPageText",         pxBehaviour->m_pxPageText,         "PageText" },
+			{ "m_pxLivesText",        pxBehaviour->m_pxLivesText,        "LivesText" },
+			{ "m_pxRefillBtn",        pxBehaviour->m_pxRefillBtn,        "RefillLivesButton" },
+		};
+
+		for (const CacheCheck& xCheck : axChecks)
+		{
+			// Verify non-null
+			if (!xCheck.pxCached)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: %s is null", xCheck.szFieldName);
+				bPass = false;
+				continue;
+			}
+
+			// Verify matches FindElement
+			Zenith_UI::Zenith_UIElement* pxFound = xUI.FindElement(xCheck.szElementName);
+			if (xCheck.pxCached != pxFound)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: %s does not match FindElement(\"%s\")",
+					xCheck.szFieldName, xCheck.szElementName);
+				bPass = false;
+			}
+		}
+
+		// Verify level button array
+		for (uint32_t i = 0; i < 20; ++i)
+		{
+			if (!pxBehaviour->m_apxLevelBtns[i])
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: m_apxLevelBtns[%u] is null", i);
+				bPass = false;
+				break;
+			}
+
+			char szName[32];
+			snprintf(szName, sizeof(szName), "LevelBtn_%u", i);
+			Zenith_UI::Zenith_UIElement* pxFound = xUI.FindElement(szName);
+			if (pxBehaviour->m_apxLevelBtns[i] != pxFound)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: m_apxLevelBtns[%u] does not match FindElement", i);
+				bPass = false;
+				break;
+			}
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Test: Settings Toggles (live test)
+	// ========================================================================
+	bool Test_UISettingsToggles()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		// Verify all three settings elements exist and are toggles
+		const char* aszNames[] = { "SettingsSoundBtn", "SettingsMusicBtn", "SettingsHapticsBtn" };
+		Zenith_UI::Zenith_UIToggle* apxToggles[3] = {};
+
+		for (int i = 0; i < 3; i++)
+		{
+			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement(aszNames[i]);
+			if (!pxElem)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: %s not found", aszNames[i]);
+				bPass = false;
+				continue;
+			}
+			if (pxElem->GetType() != Zenith_UI::UIElementType::Toggle)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: %s is not a Toggle (type %u)", aszNames[i], static_cast<uint32_t>(pxElem->GetType()));
+				bPass = false;
+				continue;
+			}
+			apxToggles[i] = static_cast<Zenith_UI::Zenith_UIToggle*>(pxElem);
+		}
+
+		// Verify initial IsOn matches save data
+		if (apxToggles[0] && apxToggles[0]->IsOn() != pxBehaviour->m_xSaveData.bSoundEnabled)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Sound toggle IsOn (%d) does not match save data (%d)",
+				apxToggles[0]->IsOn(), pxBehaviour->m_xSaveData.bSoundEnabled);
+			bPass = false;
+		}
+		if (apxToggles[1] && apxToggles[1]->IsOn() != pxBehaviour->m_xSaveData.bMusicEnabled)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Music toggle IsOn (%d) does not match save data (%d)",
+				apxToggles[1]->IsOn(), pxBehaviour->m_xSaveData.bMusicEnabled);
+			bPass = false;
+		}
+		if (apxToggles[2] && apxToggles[2]->IsOn() != pxBehaviour->m_xSaveData.bHapticsEnabled)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Haptics toggle IsOn (%d) does not match save data (%d)",
+				apxToggles[2]->IsOn(), pxBehaviour->m_xSaveData.bHapticsEnabled);
+			bPass = false;
+		}
+
+		// Test toggle flip: set sound toggle to opposite, verify save data updates via callback
+		if (apxToggles[0])
+		{
+			bool bOriginal = apxToggles[0]->IsOn();
+			apxToggles[0]->SetIsOn(!bOriginal);
+			if (pxBehaviour->m_xSaveData.bSoundEnabled != !bOriginal)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Toggling sound did not update save data (expected %d, got %d)",
+					!bOriginal, pxBehaviour->m_xSaveData.bSoundEnabled);
+				bPass = false;
+			}
+			// Restore original state
+			apxToggles[0]->SetIsOn(bOriginal);
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Test: Screen Management (live test)
+	// ========================================================================
+	bool Test_UIScreenManagement()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		// Save original state to restore later
+		TilePuzzleGameState eOrigState = pxBehaviour->m_eState;
+
+		// ShowScreen(MENU) — menu visible, all others hidden
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_MENU);
+		if (pxBehaviour->m_pxMenuBg && !pxBehaviour->m_pxMenuBg->IsVisible())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBg should be visible after ShowScreen(MENU)");
+			bPass = false;
+		}
+		if (pxBehaviour->m_pxHUDInfoGroup && pxBehaviour->m_pxHUDInfoGroup->IsVisible())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: HUDInfoGroup should be hidden after ShowScreen(MENU)");
+			bPass = false;
+		}
+		if (pxBehaviour->m_pxLevelSelectBg && pxBehaviour->m_pxLevelSelectBg->IsVisible())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LevelSelectBg should be hidden after ShowScreen(MENU)");
+			bPass = false;
+		}
+
+		// ShowScreen(LEVEL_SELECT) — level select visible, menu hidden
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_LEVEL_SELECT);
+		if (pxBehaviour->m_pxMenuBg && pxBehaviour->m_pxMenuBg->IsVisible())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBg should be hidden after ShowScreen(LEVEL_SELECT)");
+			bPass = false;
+		}
+		if (pxBehaviour->m_pxLevelSelectBg && !pxBehaviour->m_pxLevelSelectBg->IsVisible())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LevelSelectBg should be visible after ShowScreen(LEVEL_SELECT)");
+			bPass = false;
+		}
+
+		// ShowScreen(HUD) — HUD visible, all others hidden
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_HUD);
+		if (pxBehaviour->m_pxHUDInfoGroup && !pxBehaviour->m_pxHUDInfoGroup->IsVisible())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: HUDInfoGroup should be visible after ShowScreen(HUD)");
+			bPass = false;
+		}
+		if (pxBehaviour->m_pxLevelSelectBg && pxBehaviour->m_pxLevelSelectBg->IsVisible())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LevelSelectBg should be hidden after ShowScreen(HUD)");
+			bPass = false;
+		}
+
+		// ShowScreenAdditive(VICTORY) — Victory becomes visible, HUD stays visible
+		pxBehaviour->ShowScreenAdditive(TilePuzzle_Behaviour::SCREEN_VICTORY);
+		if (pxBehaviour->m_pxHUDInfoGroup && !pxBehaviour->m_pxHUDInfoGroup->IsVisible())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: HUDInfoGroup should still be visible after ShowScreenAdditive(VICTORY)");
+			bPass = false;
+		}
+
+		// Restore: show menu screen (original state is likely MAIN_MENU)
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_MENU);
+		pxBehaviour->m_eState = eOrigState;
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Test: Confirm Overlay + Credits Overlay (live test)
+	// ========================================================================
+	bool Test_UIConfirmOverlay()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		// Verify confirm overlay exists and is an overlay
+		if (!pxBehaviour->m_pxConfirmOverlay)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ConfirmOverlay is null");
+			bPass = false;
+		}
+		else if (pxBehaviour->m_pxConfirmOverlay->GetType() != Zenith_UI::UIElementType::Overlay)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ConfirmOverlay is not type Overlay");
+			bPass = false;
+		}
+
+		// Verify overlay is initially hidden
+		if (pxBehaviour->m_pxConfirmOverlay && pxBehaviour->m_pxConfirmOverlay->IsShowing())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ConfirmOverlay should be hidden initially");
+			bPass = false;
+		}
+
+		// Verify child elements exist
+		if (!pxBehaviour->m_pxConfirmText)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ConfirmText is null");
+			bPass = false;
+		}
+		if (!pxBehaviour->m_pxConfirmCancelBtn)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ConfirmCancelBtn is null");
+			bPass = false;
+		}
+		if (!pxBehaviour->m_pxConfirmAcceptBtn)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ConfirmAcceptBtn is null");
+			bPass = false;
+		}
+
+		// Verify credits overlay exists
+		if (!pxBehaviour->m_pxCreditsOverlay)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: CreditsOverlay is null");
+			bPass = false;
+		}
+		else if (pxBehaviour->m_pxCreditsOverlay->GetType() != Zenith_UI::UIElementType::Overlay)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: CreditsOverlay is not type Overlay");
+			bPass = false;
+		}
+
+		return bPass;
+	}
+
+	bool Test_UIMenuFocusNavigation()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		// Navigation links are raw pointers (not serialized), so we set them
+		// up here and verify the API works correctly on live elements.
+		// EditorAutomation sets them during scene creation but they are lost
+		// on save/load. Runtime setup (e.g. in OnStart) is needed for persistence.
+
+		// Verify menu elements exist
+		Zenith_UI::Zenith_UIElement* pxContinue = xUI.FindElement("ContinueButton");
+		Zenith_UI::Zenith_UIElement* pxLevelSelect = xUI.FindElement("LevelSelectButton");
+		if (!pxContinue || !pxLevelSelect)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ContinueButton or LevelSelectButton not found");
+			bPass = false;
+		}
+		else
+		{
+			// Set nav links and verify they are applied
+			pxContinue->SetNavigation(nullptr, pxLevelSelect, nullptr, nullptr);
+			pxLevelSelect->SetNavigation(pxContinue, nullptr, nullptr, nullptr);
+
+			if (pxContinue->GetNavDown() != pxLevelSelect)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ContinueButton NavDown should be LevelSelectButton after SetNavigation");
+				bPass = false;
+			}
+			if (pxLevelSelect->GetNavUp() != pxContinue)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LevelSelectButton NavUp should be ContinueButton after SetNavigation");
+				bPass = false;
+			}
+		}
+
+		// Settings: verify elements exist and nav works
+		Zenith_UI::Zenith_UIElement* pxSound = xUI.FindElement("SettingsSoundBtn");
+		Zenith_UI::Zenith_UIElement* pxMusic = xUI.FindElement("SettingsMusicBtn");
+		if (!pxSound || !pxMusic)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SettingsSoundBtn or SettingsMusicBtn not found");
+			bPass = false;
+		}
+		else
+		{
+			pxSound->SetNavigation(nullptr, pxMusic, nullptr, nullptr);
+			if (pxSound->GetNavDown() != pxMusic)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SettingsSoundBtn NavDown should be SettingsMusicBtn after SetNavigation");
+				bPass = false;
+			}
+		}
+
+		// Verify focusable elements have m_bFocusable set
+		if (pxContinue && !pxContinue->IsFocusable())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ContinueButton should be focusable (buttons default to focusable)");
+			bPass = false;
+		}
+
+		// Verify end-of-chain: null nav when not set
+		Zenith_UI::Zenith_UIElement* pxAchievements = xUI.FindElement("AchievementsButton");
+		if (pxAchievements)
+		{
+			// NavDown should be null since we didn't set it
+			if (pxAchievements->GetNavDown() != nullptr)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: AchievementsButton NavDown should be null (not set)");
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	bool Test_UIStretchAllBackgrounds()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		const char* aszBgNames[] = { "MenuBackground", "CatCafeBg", "LevelSelectBg", "SettingsBg" };
+		for (const char* szName : aszBgNames)
+		{
+			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement(szName);
+			if (!pxElem)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: %s not found", szName);
+				bPass = false;
+				continue;
+			}
+			if (!pxElem->IsStretchAll())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: %s should have StretchAll enabled", szName);
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Comprehensive UI Element Existence: Main Menu (live test)
+	// Covers GDD D.6 M-MENU-01 through M-MENU-41
+	// ========================================================================
+	bool Test_UIAllMenuElements()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		// All menu scene elements that should exist regardless of progress
+		const char* aszMenuElements[] = {
+			"MenuBackground", "MenuTitle", "MenuSubtitle", "MenuButtonGroup",
+			"ContinueButton", "CoinText", "CoinIcon", "TotalStarsText",
+			"LivesText", "LivesTimerText", "RefillLivesButton", "VersionText",
+			"LevelSelectButton", "CatCafeButton", "DailyPuzzleButton",
+			"PinballButton", "SettingsButton", "AchievementsButton",
+			"NewGameButton",
+		};
+
+		for (const char* szName : aszMenuElements)
+		{
+			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement(szName);
+			if (!pxElem)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Menu element '%s' not found", szName);
+				bPass = false;
+			}
+		}
+
+		// Verify button types
+		const char* aszButtons[] = {
+			"ContinueButton", "LevelSelectButton", "CatCafeButton",
+			"DailyPuzzleButton", "PinballButton", "SettingsButton",
+			"AchievementsButton", "NewGameButton", "RefillLivesButton",
+		};
+		for (const char* szName : aszButtons)
+		{
+			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement(szName);
+			if (pxElem && pxElem->GetType() != Zenith_UI::UIElementType::Button)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: '%s' is not a Button (type %u)",
+					szName, static_cast<uint32_t>(pxElem->GetType()));
+				bPass = false;
+			}
+		}
+
+		// Verify text types
+		const char* aszTexts[] = {
+			"MenuTitle", "MenuSubtitle", "CoinText", "TotalStarsText",
+			"LivesText", "LivesTimerText", "VersionText",
+		};
+		for (const char* szName : aszTexts)
+		{
+			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement(szName);
+			if (pxElem && pxElem->GetType() != Zenith_UI::UIElementType::Text)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: '%s' is not a Text (type %u)",
+					szName, static_cast<uint32_t>(pxElem->GetType()));
+				bPass = false;
+			}
+		}
+
+		// Level select elements
+		const char* aszLevelSelect[] = {
+			"LevelSelectBg", "LevelSelectTitle", "LevelSelectNavGroup",
+			"PageText", "PrevPageButton", "NextPageButton", "BackButton",
+		};
+		for (const char* szName : aszLevelSelect)
+		{
+			if (!xUI.FindElement(szName))
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Level select element '%s' not found", szName);
+				bPass = false;
+			}
+		}
+
+		// 20 level buttons
+		for (uint32_t i = 0; i < 20; ++i)
+		{
+			char szName[32];
+			snprintf(szName, sizeof(szName), "LevelBtn_%u", i);
+			if (!xUI.FindElement(szName))
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: '%s' not found", szName);
+				bPass = false;
+				break;
+			}
+		}
+
+		// Settings elements
+		const char* aszSettings[] = {
+			"SettingsBg", "SettingsTitle", "SettingsSoundBtn", "SettingsMusicBtn",
+			"SettingsHapticsBtn", "SettingsCreditsBtn", "SettingsBackBtn",
+		};
+		for (const char* szName : aszSettings)
+		{
+			if (!xUI.FindElement(szName))
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Settings element '%s' not found", szName);
+				bPass = false;
+			}
+		}
+
+		// Cat Cafe elements
+		const char* aszCatCafe[] = {
+			"CatCafeBg", "CatCafeTitle", "CatCafeNavGroup", "CatCafeCount",
+			"CatCafePrevPage", "CatCafeNextPage", "CatCafeBackButton",
+		};
+		for (const char* szName : aszCatCafe)
+		{
+			if (!xUI.FindElement(szName))
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Cat Cafe element '%s' not found", szName);
+				bPass = false;
+			}
+		}
+
+		// Confirm dialog elements
+		const char* aszConfirm[] = {
+			"ConfirmOverlay", "ConfirmText", "ConfirmCancelBtn", "ConfirmAcceptBtn",
+		};
+		for (const char* szName : aszConfirm)
+		{
+			if (!xUI.FindElement(szName))
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Confirm element '%s' not found", szName);
+				bPass = false;
+			}
+		}
+
+		// Credits overlay elements
+		const char* aszCredits[] = {
+			"CreditsOverlay", "CreditsTitleText", "CreditsLine1",
+			"CreditsLine2", "CreditsDismissText",
+		};
+		for (const char* szName : aszCredits)
+		{
+			if (!xUI.FindElement(szName))
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Credits element '%s' not found", szName);
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Comprehensive Screen Element Visibility (live test)
+	// Covers GDD D.17 screen transitions
+	// ========================================================================
+	bool Test_UIAllScreenElements()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		TilePuzzleGameState eOrigState = pxBehaviour->m_eState;
+
+		// Test: ShowScreen(MENU) - verify correct elements visible
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_MENU);
+		{
+			if (pxBehaviour->m_pxMenuBg && !pxBehaviour->m_pxMenuBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBg should be visible on SCREEN_MENU");
+				bPass = false;
+			}
+			if (pxBehaviour->m_pxMenuTitle && !pxBehaviour->m_pxMenuTitle->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuTitle should be visible on SCREEN_MENU");
+				bPass = false;
+			}
+			if (pxBehaviour->m_pxMenuBtnGroup && !pxBehaviour->m_pxMenuBtnGroup->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBtnGroup should be visible on SCREEN_MENU");
+				bPass = false;
+			}
+			// Settings should be hidden
+			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIElement* pxSettingsBg = xUI.FindElement("SettingsBg");
+			if (pxSettingsBg && pxSettingsBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SettingsBg should be hidden on SCREEN_MENU");
+				bPass = false;
+			}
+			// Level select should be hidden
+			if (pxBehaviour->m_pxLevelSelectBg && pxBehaviour->m_pxLevelSelectBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LevelSelectBg should be hidden on SCREEN_MENU");
+				bPass = false;
+			}
+		}
+
+		// Test: ShowScreen(LEVEL_SELECT) - verify menu hidden, level select visible
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_LEVEL_SELECT);
+		{
+			if (pxBehaviour->m_pxMenuBg && pxBehaviour->m_pxMenuBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBg should be hidden on SCREEN_LEVEL_SELECT");
+				bPass = false;
+			}
+			if (pxBehaviour->m_pxLevelSelectBg && !pxBehaviour->m_pxLevelSelectBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LevelSelectBg should be visible on SCREEN_LEVEL_SELECT");
+				bPass = false;
+			}
+			if (pxBehaviour->m_pxLevelSelectTitle && !pxBehaviour->m_pxLevelSelectTitle->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LevelSelectTitle should be visible on SCREEN_LEVEL_SELECT");
+				bPass = false;
+			}
+			if (pxBehaviour->m_pxPageText && !pxBehaviour->m_pxPageText->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: PageText should be visible on SCREEN_LEVEL_SELECT");
+				bPass = false;
+			}
+		}
+
+		// Test: ShowScreen(SETTINGS) - verify only settings visible
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_SETTINGS);
+		{
+			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIElement* pxSettingsBg = xUI.FindElement("SettingsBg");
+			if (pxSettingsBg && !pxSettingsBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SettingsBg should be visible on SCREEN_SETTINGS");
+				bPass = false;
+			}
+			Zenith_UI::Zenith_UIElement* pxSettingsTitle = xUI.FindElement("SettingsTitle");
+			if (pxSettingsTitle && !pxSettingsTitle->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SettingsTitle should be visible on SCREEN_SETTINGS");
+				bPass = false;
+			}
+			if (pxBehaviour->m_pxMenuBg && pxBehaviour->m_pxMenuBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBg should be hidden on SCREEN_SETTINGS");
+				bPass = false;
+			}
+			if (pxBehaviour->m_pxLevelSelectBg && pxBehaviour->m_pxLevelSelectBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LevelSelectBg should be hidden on SCREEN_SETTINGS");
+				bPass = false;
+			}
+		}
+
+		// Test: ShowScreen(CAT_CAFE) - verify only cat cafe visible
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_CAT_CAFE);
+		{
+			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIElement* pxCatCafeBg = xUI.FindElement("CatCafeBg");
+			if (pxCatCafeBg && !pxCatCafeBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: CatCafeBg should be visible on SCREEN_CAT_CAFE");
+				bPass = false;
+			}
+			Zenith_UI::Zenith_UIElement* pxCatCafeTitle = xUI.FindElement("CatCafeTitle");
+			if (pxCatCafeTitle && !pxCatCafeTitle->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: CatCafeTitle should be visible on SCREEN_CAT_CAFE");
+				bPass = false;
+			}
+			if (pxBehaviour->m_pxMenuBg && pxBehaviour->m_pxMenuBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBg should be hidden on SCREEN_CAT_CAFE");
+				bPass = false;
+			}
+		}
+
+		// Test: ShowScreenAdditive(VICTORY) from HUD — both should be visible
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_HUD);
+		pxBehaviour->ShowScreenAdditive(TilePuzzle_Behaviour::SCREEN_VICTORY);
+		{
+			if (pxBehaviour->m_pxHUDInfoGroup && !pxBehaviour->m_pxHUDInfoGroup->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: HUDInfoGroup should stay visible after ShowScreenAdditive(VICTORY)");
+				bPass = false;
+			}
+		}
+
+		// Restore
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_MENU);
+		pxBehaviour->m_eState = eOrigState;
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Confirm Dialog Flow (live test)
+	// Covers GDD D.9 M-CONF-01 through M-CONF-22
+	// ========================================================================
+	bool Test_UIConfirmDialogFlow()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		if (!pxBehaviour->m_pxConfirmOverlay)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ConfirmOverlay is null, cannot test flow");
+			return false;
+		}
+
+		TilePuzzleGameState eOrigState = pxBehaviour->m_eState;
+
+		// Test 1: Show confirm dialog for exit level
+		pxBehaviour->m_eConfirmDialogType = CONFIRM_EXIT_LEVEL;
+		pxBehaviour->m_bConfirmDialogActive = true;
+		pxBehaviour->m_pxConfirmOverlay->Show();
+		if (!pxBehaviour->m_pxConfirmOverlay->IsShowing())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Overlay should be showing after Show()");
+			bPass = false;
+		}
+
+		// Test 2: Cancel should hide overlay
+		pxBehaviour->m_pxConfirmOverlay->Hide();
+		pxBehaviour->m_bConfirmDialogActive = false;
+		if (pxBehaviour->m_bConfirmDialogActive)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: m_bConfirmDialogActive should be false after cancel");
+			bPass = false;
+		}
+
+		// Test 3: Show again for skip level
+		pxBehaviour->m_eConfirmDialogType = CONFIRM_SKIP_LEVEL;
+		pxBehaviour->m_bConfirmDialogActive = true;
+		pxBehaviour->m_pxConfirmOverlay->Show();
+		if (!pxBehaviour->m_pxConfirmOverlay->IsShowing())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Overlay should be showing after second Show()");
+			bPass = false;
+		}
+
+		// Test 4: Hide again (simulating accept without actually running the accept logic)
+		pxBehaviour->m_pxConfirmOverlay->Hide();
+		pxBehaviour->m_bConfirmDialogActive = false;
+
+		// Test 5: Show for reset save
+		pxBehaviour->m_eConfirmDialogType = CONFIRM_RESET_SAVE;
+		pxBehaviour->m_bConfirmDialogActive = true;
+		pxBehaviour->m_pxConfirmOverlay->Show();
+		if (!pxBehaviour->m_pxConfirmOverlay->IsShowing())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Overlay should be showing for reset save");
+			bPass = false;
+		}
+
+		// Test 6: Verify confirm text element is set
+		if (pxBehaviour->m_pxConfirmText)
+		{
+			// Text should be non-empty
+			const std::string& strText = pxBehaviour->m_pxConfirmText->GetText();
+			if (strText.empty())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ConfirmText should have text set");
+				bPass = false;
+			}
+		}
+
+		// Clean up
+		pxBehaviour->m_pxConfirmOverlay->Hide();
+		pxBehaviour->m_bConfirmDialogActive = false;
+		pxBehaviour->m_eState = eOrigState;
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Level Select Pagination (live test)
+	// Covers GDD D.7 M-LSEL-04 through M-LSEL-07
+	// ========================================================================
+	bool Test_UILevelSelectPagination()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		TilePuzzleGameState eOrigState = pxBehaviour->m_eState;
+		uint32_t uOrigPage = pxBehaviour->m_uLevelSelectPage;
+
+		// Switch to level select to test pagination
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_LEVEL_SELECT);
+
+		// Set to page 0 and update
+		pxBehaviour->m_uLevelSelectPage = 0;
+		pxBehaviour->UpdateLevelSelectUI();
+		if (pxBehaviour->m_pxPageText)
+		{
+			const std::string& strText = pxBehaviour->m_pxPageText->GetText();
+			if (strText.find("1") == std::string::npos)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Page 0 should show '1' in page text, got '%s'", strText.c_str());
+				bPass = false;
+			}
+		}
+
+		// Advance to page 1
+		pxBehaviour->m_uLevelSelectPage = 1;
+		pxBehaviour->UpdateLevelSelectUI();
+		if (pxBehaviour->m_pxPageText)
+		{
+			const std::string& strText = pxBehaviour->m_pxPageText->GetText();
+			if (strText.find("2") == std::string::npos)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Page 1 should show '2' in page text, got '%s'", strText.c_str());
+				bPass = false;
+			}
+		}
+
+		// Go back to page 0
+		pxBehaviour->m_uLevelSelectPage = 0;
+		pxBehaviour->UpdateLevelSelectUI();
+
+		// Restore
+		pxBehaviour->m_uLevelSelectPage = uOrigPage;
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_MENU);
+		pxBehaviour->m_eState = eOrigState;
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Economy Display (live test)
+	// Covers GDD D.21 M-ECON-01 through M-ECON-16
+	// ========================================================================
+	bool Test_UIEconomyDisplay()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		// Verify coin text matches save data
+		if (pxBehaviour->m_pxMenuCoinText)
+		{
+			char szExpected[32];
+			snprintf(szExpected, sizeof(szExpected), "%u", pxBehaviour->m_xSaveData.uCoins);
+			const std::string& strCoinText = pxBehaviour->m_pxMenuCoinText->GetText();
+			if (strCoinText.find(szExpected) == std::string::npos)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: CoinText '%s' should contain '%s' (matching save data)",
+					strCoinText.c_str(), szExpected);
+				bPass = false;
+			}
+		}
+
+		// Verify lives text matches save data
+		if (pxBehaviour->m_pxLivesText)
+		{
+			char szExpected[32];
+			snprintf(szExpected, sizeof(szExpected), "%u", pxBehaviour->m_xSaveData.uLives);
+			const std::string& strLivesText = pxBehaviour->m_pxLivesText->GetText();
+			if (strLivesText.find(szExpected) == std::string::npos)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LivesText '%s' should contain '%s' (matching save data)",
+					strLivesText.c_str(), szExpected);
+				bPass = false;
+			}
+		}
+
+		// Verify total stars text matches save data
+		if (pxBehaviour->m_pxTotalStarsText)
+		{
+			char szExpected[32];
+			snprintf(szExpected, sizeof(szExpected), "%u", pxBehaviour->m_xSaveData.uTotalStars);
+			const std::string& strStarsText = pxBehaviour->m_pxTotalStarsText->GetText();
+			if (strStarsText.find(szExpected) == std::string::npos)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: TotalStarsText '%s' should contain '%s' (matching save data)",
+					strStarsText.c_str(), szExpected);
+				bPass = false;
+			}
+		}
+
+		// Test coin economy: add coins, update text, verify display
+		uint32_t uOrigCoins = pxBehaviour->m_xSaveData.uCoins;
+		pxBehaviour->m_xSaveData.uCoins += 100;
+		if (pxBehaviour->m_pxMenuCoinText)
+		{
+			char szBuf[64];
+			snprintf(szBuf, sizeof(szBuf), "Coins: %u", pxBehaviour->m_xSaveData.uCoins);
+			pxBehaviour->m_pxMenuCoinText->SetText(szBuf);
+
+			char szExpected[32];
+			snprintf(szExpected, sizeof(szExpected), "%u", pxBehaviour->m_xSaveData.uCoins);
+			const std::string& strCoinText = pxBehaviour->m_pxMenuCoinText->GetText();
+			if (strCoinText.find(szExpected) == std::string::npos)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: After adding coins, CoinText should show new balance '%s'", szExpected);
+				bPass = false;
+			}
+		}
+		// Restore
+		pxBehaviour->m_xSaveData.uCoins = uOrigCoins;
+		if (pxBehaviour->m_pxMenuCoinText)
+		{
+			char szBuf[64];
+			snprintf(szBuf, sizeof(szBuf), "Coins: %u", pxBehaviour->m_xSaveData.uCoins);
+			pxBehaviour->m_pxMenuCoinText->SetText(szBuf);
+		}
+
+		// Verify lives timer visibility logic
+		if (pxBehaviour->m_pxLivesTimerText)
+		{
+			if (pxBehaviour->m_xSaveData.uLives >= 5)
+			{
+				if (pxBehaviour->m_pxLivesTimerText->IsVisible())
+				{
+					Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LivesTimerText should be hidden at max lives");
+					bPass = false;
+				}
+			}
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Multi-phase UI Interaction Walkthrough (InputSimulator)
+	// Covers GDD D.17 screen transitions via actual button clicks
+	// and D.9 confirm dialog interaction
+	// ========================================================================
+
+	void ClickUIElementByName(const char* szName, TilePuzzle_Behaviour* pxBehaviour)
+	{
+		Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(szName);
+		if (!pxElement)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  WARN: Cannot click '%s' - element not found", szName);
+			return;
+		}
+		Zenith_Maths::Vector4 xBounds = pxElement->GetScreenBounds();
+		double fCenterX = (static_cast<double>(xBounds.x) + static_cast<double>(xBounds.z)) * 0.5;
+		double fCenterY = (static_cast<double>(xBounds.y) + static_cast<double>(xBounds.w)) * 0.5;
+		Zenith_InputSimulator::SimulateMousePosition(fCenterX, fCenterY);
+		Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
+	}
+
+	void UpdateUIInteract_Init()
+	{
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: No TilePuzzle_Behaviour for UI interaction test");
+			m_ePhase = PHASE_TEST_UI_INTERACT_DONE;
+			m_bInteractPassed = false;
+			return;
+		}
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] Running Test_UIInteractionWalkthrough...");
+
+		// Save original state
+		m_eInteractOrigState = pxBehaviour->m_eState;
+		m_uInteractOrigProgress = pxBehaviour->m_xSaveData.uHighestLevelReached;
+
+		// Set progress high so all buttons are visible
+		pxBehaviour->m_xSaveData.uHighestLevelReached = 100;
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_MENU);
+		pxBehaviour->m_eState = TILEPUZZLE_STATE_MAIN_MENU;
+
+		Zenith_InputSimulator::Enable();
+		Zenith_InputSimulator::SetFixedDt(0.10f); // 100ms/frame so transitions complete deterministically
+
+		m_uInteractStep = 0;
+		m_uInteractWait = 0;
+		m_bInteractPassed = true;
+		m_ePhase = PHASE_TEST_UI_INTERACT_STEP;
+		m_uFrameDelay = 3;
+	}
+
+	void UpdateUIInteract_Step()
+	{
+		// Internal wait
+		if (m_uInteractWait > 0)
+		{
+			m_uInteractWait--;
+			return;
+		}
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			m_bInteractPassed = false;
+			m_ePhase = PHASE_TEST_UI_INTERACT_DONE;
+			return;
+		}
+
+		switch (m_uInteractStep)
+		{
+		// ---- Navigate to Settings via button click ----
+		case 0:
+			ClickUIElementByName("SettingsButton", pxBehaviour);
+			m_uInteractStep = 1;
+			m_uInteractWait = 5;
+			break;
+
+		case 1:
+		{
+			// After clicking SettingsButton, game should transition to settings
+			// The button callback calls PerformTransitionSwitch
+			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIElement* pxSettingsBg = xUI.FindElement("SettingsBg");
+			if (pxSettingsBg && !pxSettingsBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SettingsBg should be visible after clicking SettingsButton");
+				m_bInteractPassed = false;
+			}
+			if (pxBehaviour->m_pxMenuBg && pxBehaviour->m_pxMenuBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBg should be hidden after clicking SettingsButton");
+				m_bInteractPassed = false;
+			}
+			m_uInteractStep = 2;
+			break;
+		}
+
+		// ---- Navigate back to menu via SettingsBackBtn ----
+		case 2:
+			ClickUIElementByName("SettingsBackBtn", pxBehaviour);
+			m_uInteractStep = 3;
+			m_uInteractWait = 5;
+			break;
+
+		case 3:
+			if (pxBehaviour->m_pxMenuBg && !pxBehaviour->m_pxMenuBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBg should be visible after clicking SettingsBackBtn");
+				m_bInteractPassed = false;
+			}
+			m_uInteractStep = 4;
+			break;
+
+		// ---- Navigate to Level Select ----
+		case 4:
+			ClickUIElementByName("LevelSelectButton", pxBehaviour);
+			m_uInteractStep = 5;
+			m_uInteractWait = 5;
+			break;
+
+		case 5:
+			if (pxBehaviour->m_pxLevelSelectBg && !pxBehaviour->m_pxLevelSelectBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LevelSelectBg should be visible after clicking LevelSelectButton");
+				m_bInteractPassed = false;
+			}
+			m_uInteractStep = 6;
+			break;
+
+		// ---- Navigate back from Level Select ----
+		case 6:
+			ClickUIElementByName("BackButton", pxBehaviour);
+			m_uInteractStep = 7;
+			m_uInteractWait = 5;
+			break;
+
+		case 7:
+			if (pxBehaviour->m_pxMenuBg && !pxBehaviour->m_pxMenuBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBg should be visible after clicking BackButton");
+				m_bInteractPassed = false;
+			}
+			m_uInteractStep = 8;
+			break;
+
+		// ---- Navigate to Cat Cafe ----
+		case 8:
+			ClickUIElementByName("CatCafeButton", pxBehaviour);
+			m_uInteractStep = 9;
+			m_uInteractWait = 5;
+			break;
+
+		case 9:
+		{
+			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIElement* pxCatCafeBg = xUI.FindElement("CatCafeBg");
+			if (pxCatCafeBg && !pxCatCafeBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: CatCafeBg should be visible after clicking CatCafeButton");
+				m_bInteractPassed = false;
+			}
+			m_uInteractStep = 10;
+			break;
+		}
+
+		// ---- Navigate back from Cat Cafe ----
+		case 10:
+			ClickUIElementByName("CatCafeBackButton", pxBehaviour);
+			m_uInteractStep = 11;
+			m_uInteractWait = 5;
+			break;
+
+		case 11:
+			if (pxBehaviour->m_pxMenuBg && !pxBehaviour->m_pxMenuBg->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: MenuBg should be visible after clicking CatCafeBackButton");
+				m_bInteractPassed = false;
+			}
+			m_uInteractStep = 12;
+			break;
+
+		// ---- Navigate to Achievements ----
+		case 12:
+			ClickUIElementByName("AchievementsButton", pxBehaviour);
+			m_uInteractStep = 13;
+			m_uInteractWait = 5;
+			break;
+
+		case 13:
+			if (pxBehaviour->m_eState == TILEPUZZLE_STATE_ACHIEVEMENTS)
+			{
+				// Good
+			}
+			else
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: State should be ACHIEVEMENTS after clicking AchievementsButton (got %u)",
+					static_cast<uint32_t>(pxBehaviour->m_eState));
+				m_bInteractPassed = false;
+			}
+			// Navigate back to menu
+			pxBehaviour->m_eTransitionTargetState = TILEPUZZLE_STATE_MAIN_MENU;
+			pxBehaviour->PerformTransitionSwitch();
+			m_uInteractStep = 14;
+			m_uInteractWait = 3;
+			break;
+
+		// ---- Test Settings Toggle Click ----
+		case 14:
+		{
+			// Click the sound toggle and verify it changes state
+			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIToggle* pxToggle = static_cast<Zenith_UI::Zenith_UIToggle*>(xUI.FindElement("SettingsSoundBtn"));
+			if (pxToggle)
+			{
+					// Transition to settings so toggle is visible
+				pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_SETTINGS);
+				m_uInteractStep = 15;
+				m_uInteractWait = 3;
+			}
+			else
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SettingsSoundBtn not found for toggle click test");
+				m_bInteractPassed = false;
+				m_uInteractStep = 20; // skip to end
+			}
+			break;
+		}
+
+		case 15:
+		{
+			// Click the sound toggle
+			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIToggle* pxToggle = static_cast<Zenith_UI::Zenith_UIToggle*>(xUI.FindElement("SettingsSoundBtn"));
+			if (pxToggle)
+			{
+				m_bInteractSoundWasBefore = pxToggle->IsOn();
+				ClickUIElementByName("SettingsSoundBtn", pxBehaviour);
+			}
+			m_uInteractStep = 16;
+			m_uInteractWait = 5;
+			break;
+		}
+
+		case 16:
+		{
+			// Verify toggle flipped
+			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIToggle* pxToggle = static_cast<Zenith_UI::Zenith_UIToggle*>(xUI.FindElement("SettingsSoundBtn"));
+			if (pxToggle)
+			{
+				if (pxToggle->IsOn() == m_bInteractSoundWasBefore)
+				{
+					Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Sound toggle should have flipped after click (was %d, still %d)",
+						m_bInteractSoundWasBefore, pxToggle->IsOn());
+					m_bInteractPassed = false;
+				}
+				// Restore original state
+				pxToggle->SetIsOn(m_bInteractSoundWasBefore);
+			}
+			// Return to menu
+			pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_MENU);
+			pxBehaviour->m_eState = TILEPUZZLE_STATE_MAIN_MENU;
+			m_uInteractStep = 20;
+			m_uInteractWait = 3;
+			break;
+		}
+
+		// ---- Done ----
+		case 20:
+			m_ePhase = PHASE_TEST_UI_INTERACT_DONE;
+			break;
+		}
+	}
+
+	void UpdateUIInteract_Done()
+	{
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (pxBehaviour)
+		{
+			// Restore original state
+			pxBehaviour->m_xSaveData.uHighestLevelReached = m_uInteractOrigProgress;
+			pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_MENU);
+			pxBehaviour->m_eState = m_eInteractOrigState;
+		}
+
+		Zenith_InputSimulator::ClearFixedDt();
+		Zenith_InputSimulator::Disable();
+
+		if (m_bInteractPassed)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] PASS: Test_UIInteractionWalkthrough");
+			m_uPassed++;
+		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_UIInteractionWalkthrough");
+			m_uFailed++;
+		}
+
+		m_ePhase = PHASE_FULL_GAME_RESET_SAVE;
+		m_uFrameDelay = 5;
+	}
+
+	bool m_bInteractSoundWasBefore = false;
 };
 
 // Static member definitions

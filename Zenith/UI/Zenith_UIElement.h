@@ -3,6 +3,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 #include "UI/Zenith_UIStyle.h"
+#include "UI/Zenith_UITween.h"
 #include <string>
 
 class Zenith_DataStream;
@@ -33,6 +34,9 @@ enum class UIElementType : uint32_t
     Image,
     Button,
     LayoutGroup,
+    Toggle,
+    Overlay,
+    ScrollView,
     COUNT
 };
 
@@ -89,22 +93,22 @@ public:
 
     // ========== Transform ==========
 
-    void SetPosition(float fX, float fY) { m_xPosition = { fX, fY }; m_bTransformDirty = true; }
-    void SetPosition(const Zenith_Maths::Vector2& xPos) { m_xPosition = xPos; m_bTransformDirty = true; }
+    void SetPosition(float fX, float fY) { m_xPosition = { fX, fY }; MarkTransformDirty(); }
+    void SetPosition(const Zenith_Maths::Vector2& xPos) { m_xPosition = xPos; MarkTransformDirty(); }
     Zenith_Maths::Vector2 GetPosition() const { return m_xPosition; }
 
-    void SetSize(float fWidth, float fHeight) { m_xSize = { fWidth, fHeight }; m_bTransformDirty = true; if (m_pxParent) m_pxParent->OnChildSizeChanged(); }
-    void SetSize(const Zenith_Maths::Vector2& xSize) { m_xSize = xSize; m_bTransformDirty = true; if (m_pxParent) m_pxParent->OnChildSizeChanged(); }
+    void SetSize(float fWidth, float fHeight) { m_xSize = { fWidth, fHeight }; MarkTransformDirty(); if (m_pxParent) m_pxParent->OnChildSizeChanged(); }
+    void SetSize(const Zenith_Maths::Vector2& xSize) { m_xSize = xSize; MarkTransformDirty(); if (m_pxParent) m_pxParent->OnChildSizeChanged(); }
     Zenith_Maths::Vector2 GetSize() const { return m_xSize; }
 
-    void SetAnchor(float fX, float fY) { m_xAnchor = { fX, fY }; m_bTransformDirty = true; }
-    void SetAnchor(const Zenith_Maths::Vector2& xAnchor) { m_xAnchor = xAnchor; m_bTransformDirty = true; }
-    void SetAnchor(AnchorPreset ePreset) { m_xAnchor = AnchorPresetToValue(ePreset); m_bTransformDirty = true; }
+    void SetAnchor(float fX, float fY) { m_xAnchor = { fX, fY }; MarkTransformDirty(); }
+    void SetAnchor(const Zenith_Maths::Vector2& xAnchor) { m_xAnchor = xAnchor; MarkTransformDirty(); }
+    void SetAnchor(AnchorPreset ePreset) { m_xAnchor = AnchorPresetToValue(ePreset); MarkTransformDirty(); }
     Zenith_Maths::Vector2 GetAnchor() const { return m_xAnchor; }
 
-    void SetPivot(float fX, float fY) { m_xPivot = { fX, fY }; m_bTransformDirty = true; }
-    void SetPivot(const Zenith_Maths::Vector2& xPivot) { m_xPivot = xPivot; m_bTransformDirty = true; }
-    void SetPivot(AnchorPreset ePreset) { m_xPivot = AnchorPresetToValue(ePreset); m_bTransformDirty = true; }
+    void SetPivot(float fX, float fY) { m_xPivot = { fX, fY }; MarkTransformDirty(); }
+    void SetPivot(const Zenith_Maths::Vector2& xPivot) { m_xPivot = xPivot; MarkTransformDirty(); }
+    void SetPivot(AnchorPreset ePreset) { m_xPivot = AnchorPresetToValue(ePreset); MarkTransformDirty(); }
     Zenith_Maths::Vector2 GetPivot() const { return m_xPivot; }
 
     void SetAnchorAndPivot(AnchorPreset ePreset)
@@ -112,8 +116,25 @@ public:
         Zenith_Maths::Vector2 xValue = AnchorPresetToValue(ePreset);
         m_xAnchor = xValue;
         m_xPivot = xValue;
-        m_bTransformDirty = true;
+        m_bStretchAll = (ePreset == AnchorPreset::StretchAll);
+        MarkTransformDirty();
     }
+
+    bool IsStretchAll() const { return m_bStretchAll; }
+
+    // ========== Tweens ==========
+
+    void TweenAlpha(float fTo, float fDuration, TweenEasing eEasing = TweenEasing::LINEAR, float fDelay = 0.f);
+    void TweenPosition(const Zenith_Maths::Vector2& xTo, float fDuration, TweenEasing eEasing = TweenEasing::LINEAR, float fDelay = 0.f);
+    void TweenColor(const Zenith_Maths::Vector4& xTo, float fDuration, TweenEasing eEasing = TweenEasing::LINEAR, float fDelay = 0.f);
+    void TweenSize(const Zenith_Maths::Vector2& xTo, float fDuration, TweenEasing eEasing = TweenEasing::LINEAR, float fDelay = 0.f);
+    void CancelTweens();
+    bool IsTweening() const;
+
+    // ========== Sort Order ==========
+
+    void SetSortOrder(int iOrder) { m_iSortOrder = iOrder; }
+    int GetSortOrder() const { return m_iSortOrder; }
 
     // ========== Appearance ==========
 
@@ -151,6 +172,24 @@ public:
         if (!m_bGroupInteractable) return false;
         return m_pxParent ? m_pxParent->IsGroupInteractable() : true;
     }
+
+    // ========== Focus Navigation ==========
+
+    void SetFocusable(bool bFocusable) { m_bFocusable = bFocusable; }
+    bool IsFocusable() const { return m_bFocusable; }
+
+    void SetNavigation(Zenith_UIElement* pxUp, Zenith_UIElement* pxDown, Zenith_UIElement* pxLeft, Zenith_UIElement* pxRight)
+    {
+        m_pxNavUp = pxUp;
+        m_pxNavDown = pxDown;
+        m_pxNavLeft = pxLeft;
+        m_pxNavRight = pxRight;
+    }
+
+    Zenith_UIElement* GetNavUp() const { return m_pxNavUp; }
+    Zenith_UIElement* GetNavDown() const { return m_pxNavDown; }
+    Zenith_UIElement* GetNavLeft() const { return m_pxNavLeft; }
+    Zenith_UIElement* GetNavRight() const { return m_pxNavRight; }
 
     // ========== Background Style ==========
 
@@ -208,6 +247,7 @@ public:
 #endif
 
 protected:
+    void MarkTransformDirty();
     void RecalculateScreenBounds() const;
 
     std::string m_strName;
@@ -231,6 +271,24 @@ protected:
     // Hierarchy - raw pointers, canvas owns all elements
     Zenith_UIElement* m_pxParent = nullptr;
     Zenith_Vector<Zenith_UIElement*> m_xChildren;
+
+    // Active tweens (runtime-only, not serialized)
+    static constexpr uint32_t uMAX_TWEENS = 8;
+    Zenith_UITween m_axTweens[uMAX_TWEENS];
+    uint32_t m_uActiveTweenCount = 0;
+
+    // Sort order (higher renders on top)
+    int m_iSortOrder = 0;
+
+    // Focus navigation
+    bool m_bFocusable = false;
+    Zenith_UIElement* m_pxNavUp = nullptr;
+    Zenith_UIElement* m_pxNavDown = nullptr;
+    Zenith_UIElement* m_pxNavLeft = nullptr;
+    Zenith_UIElement* m_pxNavRight = nullptr;
+
+    // StretchAll mode
+    bool m_bStretchAll = false;
 
     // Cached bounds
     mutable bool m_bTransformDirty = true;

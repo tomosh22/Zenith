@@ -36,6 +36,9 @@ public:
 	static void SimulateTap(double fScreenX, double fScreenY);
 	static void SimulateSwipe(double fStartX, double fStartY, double fEndX, double fEndY, u_int32 uDurationFrames);
 
+	// UI element click helper: resolves element name to screen center and simulates a click
+	static void SimulateClickOnUIElement(const char* szElementName);
+
 	// Key state manipulation (for unit tests that need explicit held-key control)
 	static void SetKeyHeld(Zenith_KeyCode eKey, bool bHeld);
 	static void ClearHeldKeys();
@@ -48,6 +51,8 @@ public:
 	static void EndTestFrame();
 
 	// Fixed dt override (called by Zenith_Core::UpdateTimers when enabled)
+	static void SetFixedDt(float fDt) { s_bFixedDtEnabled = true; s_fFixedDt = fDt; }
+	static void ClearFixedDt() { s_bFixedDtEnabled = false; }
 	static bool HasFixedDtOverride();
 	static float GetFixedDt();
 
