@@ -283,6 +283,9 @@
     <ClInclude Include="..\Components\TilePuzzle_Behaviour.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\TilePuzzle_ConditionalValidator.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\TilePuzzle_LevelGenerator.h">
       <Filter>Components</Filter>
     </ClInclude>

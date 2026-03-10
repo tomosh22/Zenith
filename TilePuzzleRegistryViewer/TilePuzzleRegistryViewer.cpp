@@ -2,7 +2,10 @@
 #pragma warning(disable: 4005) // APIENTRY macro redefinition
 #include "Core/Memory/Zenith_MemoryManagement_Disabled.h"
 
+#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "TilePuzzleLevelMetadata.h"
+#include "Components/TilePuzzle_ConditionalValidator.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -10,6 +13,9 @@
 #include <d3d11.h>
 #include <tchar.h>
 
+#ifndef ZENITH_TOOLS
+#define STB_IMAGE_IMPLEMENTATION
+#endif
 #include "stb_image.h"
 
 #include <filesystem>
@@ -24,10 +30,6 @@
 // ============================================================================
 const char* Project_GetGameAssetsDirectory() { return ""; }
 const char* Project_GetName() { return "TilePuzzleRegistryViewer"; }
-
-#ifdef ZENITH_TOOLS
-void Zenith_EditorAddLogMessage(const char*, int, Zenith_LogCategory) {}
-#endif
 
 // ============================================================================
 // DX11 globals
@@ -256,6 +258,68 @@ static void ScanRegistry(const char* szRegistryDir)
 }
 
 // ============================================================================
+// Conditional Validation
+// ============================================================================
+static bool s_bValidateDone = false;
+static uint32_t s_uValModified = 0;
+static uint32_t s_uValRemoved = 0;
+static char s_szValStatus[256] = "";
+
+static void ValidateAllConditionals(const char* /*szRegistryDir*/)
+{
+	s_bValidateDone = false;
+	s_uValModified = 0;
+	s_uValRemoved = 0;
+	s_szValStatus[0] = '\0';
+
+	uint32_t uProcessed = 0;
+	uint32_t uWithConditionals = 0;
+
+	for (size_t i = 0; i < s_axEntries.size(); ++i)
+	{
+		ViewerEntry& xViewer = s_axEntries[i];
+
+		// Skip entries with no conditionals
+		if (xViewer.xMeta.uNumConditionalShapes == 0)
+			continue;
+
+		uWithConditionals++;
+
+		// Load full level data
+		Zenith_DataStream xStream;
+		xStream.ReadFromFile(xViewer.szFilePath);
+		if (!xStream.IsValid())
+			continue;
+
+		TilePuzzleLevelData xLevel;
+		Zenith_Vector<TilePuzzleShapeDefinition> axDefs;
+		if (!TilePuzzleLevelSerialize::Read(xStream, xLevel, axDefs))
+			continue;
+
+		// Run conditional validation
+		TilePuzzle_ConditionalValidator::ValidationResult xValResult =
+			TilePuzzle_ConditionalValidator::ValidateConditionalShapes(xLevel);
+
+		if (xValResult.uRemovedCount > 0)
+		{
+			// Update metadata and re-save
+			TilePuzzle_ConditionalValidator::UpdateMetadataConditionals(xViewer.xMeta, xLevel);
+			WriteMetadataAndLevel(xViewer.szFilePath, xViewer.xMeta, xLevel);
+
+			s_uValModified++;
+			s_uValRemoved += xValResult.uRemovedCount;
+		}
+
+		uProcessed++;
+	}
+
+	snprintf(s_szValStatus, sizeof(s_szValStatus),
+		"Done: %u/%u files modified, %u thresholds removed",
+		s_uValModified, uWithConditionals, s_uValRemoved);
+	s_bValidateDone = true;
+}
+
+// ============================================================================
 // Sorting
 // ============================================================================
 enum SortColumn
@@ -361,6 +425,11 @@ int main(int argc, char** argv)
 	printf("TilePuzzle Registry Viewer\n");
 	printf("Registry: %s\n", szRegistryDir);
 
+	// Minimal engine init (required for solver profiling in conditional validation)
+	Zenith_MemoryManagement::Initialise();
+	Zenith_Profiling::Initialise();
+	Zenith_Multithreading::RegisterThread(true);
+
 	// Create application window
 	ImGui_ImplWin32_EnableDpiAwareness();
 	float fScale = ImGui_ImplWin32_GetDpiScaleForMonitor(::MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY));
@@ -457,6 +526,17 @@ int main(int argc, char** argv)
 		if (ImGui::Button("Refresh"))
 		{
 			ScanRegistry(szRegistryDir);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Validate Conditionals"))
+		{
+			ValidateAllConditionals(szRegistryDir);
+			ScanRegistry(szRegistryDir);
+		}
+		if (s_bValidateDone)
+		{
+			ImGui::SameLine();
+			ImGui::Text("%s", s_szValStatus);
 		}
 		ImGui::SameLine();
 

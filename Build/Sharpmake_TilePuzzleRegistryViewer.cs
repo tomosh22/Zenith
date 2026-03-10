@@ -72,6 +72,10 @@ public class TilePuzzleRegistryViewerProject : ZenithBaseProject
 		{
 			conf.Defines.Add("ZENITH_DEBUG");
 		}
+		if (target.ToolsEnabled == ToolsEnabled.True)
+		{
+			conf.Defines.Add("ZENITH_TOOLS");
+		}
 
 		// Include paths
 		conf.IncludePaths.Add(RootPath + "/Zenith");

@@ -7,6 +7,7 @@
 #include "TilePuzzleLevelMetadata.h"
 #include "TilePuzzleLevelData_Image.h"
 #include "TilePuzzleLevelGen_Analytics.h"
+#include "Components/TilePuzzle_ConditionalValidator.h"
 
 #include <filesystem>
 #include <chrono>
@@ -1399,6 +1400,64 @@ static void ValidateRegistryTask(void* pData, u_int uInvocationIndex, u_int /*uN
 }
 
 // ============================================================================
+// Conditional Validation (parallel task)
+// ============================================================================
+
+struct ConditionalValidationEntry
+{
+	bool bLoadSuccess = false;
+	bool bModified = false;
+	uint32_t uRemovedCount = 0;
+	uint32_t uOriginalConditionals = 0;
+};
+
+struct ConditionalValidationTaskData
+{
+	const std::vector<std::string>* paxFilePaths;
+	ConditionalValidationEntry* paxResults;
+};
+
+static void ValidateConditionalsTask(void* pData, u_int uInvocationIndex, u_int /*uNumInvocations*/)
+{
+	ConditionalValidationTaskData* pxData = static_cast<ConditionalValidationTaskData*>(pData);
+	const std::string& strPath = (*pxData->paxFilePaths)[uInvocationIndex];
+	ConditionalValidationEntry& xEntry = pxData->paxResults[uInvocationIndex];
+
+	// Load level from .tlvl
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(strPath.c_str());
+	if (!xStream.IsValid())
+		return;
+
+	TilePuzzleLevelData xLevel;
+	Zenith_Vector<TilePuzzleShapeDefinition> axDefs;
+	if (!TilePuzzleLevelSerialize::Read(xStream, xLevel, axDefs))
+		return;
+
+	xEntry.bLoadSuccess = true;
+
+	// Run conditional validation
+	TilePuzzle_ConditionalValidator::ValidationResult xValResult =
+		TilePuzzle_ConditionalValidator::ValidateConditionalShapes(xLevel);
+
+	xEntry.uOriginalConditionals = xValResult.uOriginalConditionalCount;
+	xEntry.uRemovedCount = xValResult.uRemovedCount;
+
+	if (xValResult.uRemovedCount > 0)
+	{
+		xEntry.bModified = true;
+
+		// Re-read metadata, update conditional fields, re-save
+		TilePuzzleLevelMetadata xMeta;
+		if (ReadMetadataFromFile(strPath.c_str(), xMeta))
+		{
+			TilePuzzle_ConditionalValidator::UpdateMetadataConditionals(xMeta, xLevel);
+			WriteMetadataAndLevel(strPath.c_str(), xMeta, xLevel);
+		}
+	}
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -1419,6 +1478,7 @@ int main(int argc, char* argv[])
 	uint32_t uMinMoves = 0;
 	DifficultyTier eTier = DIFFICULTY_TIER_NONE;
 	bool bValidateRegistry = false;
+	bool bValidateConditionals = false;
 	bool bDeleteInvalid = false;
 	bool bProfile = false;
 	uint32_t uValidateMaxStates = 5000000; // 5M default for validation
@@ -1466,6 +1526,10 @@ int main(int argc, char* argv[])
 		{
 			uValidateMaxStates = static_cast<uint32_t>(atoi(argv[++i]));
 		}
+		else if (strcmp(argv[i], "--validate-conditionals") == 0)
+		{
+			bValidateConditionals = true;
+		}
 		else if (strcmp(argv[i], "--profile") == 0)
 		{
 			bProfile = true;
@@ -1479,8 +1543,8 @@ int main(int argc, char* argv[])
 		uMinMoves = s_axTierConstraints[eTier].uMinMoves;
 	}
 
-	// Validate required arguments (not needed for --validate-registry)
-	if (!bValidateRegistry)
+	// Validate required arguments (not needed for --validate-registry or --validate-conditionals)
+	if (!bValidateRegistry && !bValidateConditionals)
 	{
 		if (uCount == 0)
 		{
@@ -1488,6 +1552,7 @@ int main(int argc, char* argv[])
 			fprintf(stderr, "Usage: tilepuzzlelevelgen --count N --min-moves M [--tier TIER] [--output DIR] [--timeout S] [--seed N] [--profile]\n");
 			fprintf(stderr, "       tilepuzzlelevelgen --count N --tier TIER [--output DIR] [--timeout S] [--seed N] [--profile]\n");
 			fprintf(stderr, "       tilepuzzlelevelgen --validate-registry [--delete-invalid] [--validate-max-states N]\n");
+			fprintf(stderr, "       tilepuzzlelevelgen --validate-conditionals\n");
 			fprintf(stderr, "Tiers: tutorial, easy, medium, hard, expert, master\n");
 			return 1;
 		}
@@ -1654,6 +1719,125 @@ int main(int argc, char* argv[])
 	}
 
 	// ========================================================================
+	// Conditional Validation Mode (parallel)
+	// ========================================================================
+	if (bValidateConditionals)
+	{
+		std::string strRegistryDir = LEVELGEN_REGISTRY_DIR;
+		printf("Mode: Conditional Validation (parallel)\n\n");
+		fflush(stdout);
+
+		if (!std::filesystem::exists(strRegistryDir))
+		{
+			printf("Registry directory does not exist: %s\n", strRegistryDir.c_str());
+			return 1;
+		}
+
+		// Collect all .tlvl files
+		std::vector<std::string> axFilePaths;
+		for (auto& xEntry : std::filesystem::directory_iterator(strRegistryDir))
+		{
+			if (xEntry.is_regular_file() && xEntry.path().extension() == ".tlvl")
+				axFilePaths.push_back(xEntry.path().string());
+		}
+
+		uint32_t uNumFiles = static_cast<uint32_t>(axFilePaths.size());
+		printf("Found %u .tlvl files in registry\n\n", uNumFiles);
+		fflush(stdout);
+
+		if (uNumFiles == 0)
+		{
+			printf("Nothing to validate.\n");
+			return 0;
+		}
+
+		std::vector<ConditionalValidationEntry> axResults(uNumFiles);
+
+		auto xStartTime = std::chrono::high_resolution_clock::now();
+
+		printf("Validating conditionals in %u levels (parallel)...\n\n", uNumFiles);
+		fflush(stdout);
+
+		// Process in batches (same pattern as validate-registry)
+		static constexpr uint32_t uBATCH_SIZE = 64;
+		for (uint32_t uBatchStart = 0; uBatchStart < uNumFiles && s_bRunning; uBatchStart += uBATCH_SIZE)
+		{
+			uint32_t uBatchEnd = std::min(uBatchStart + uBATCH_SIZE, uNumFiles);
+			uint32_t uBatchCount = uBatchEnd - uBatchStart;
+
+			std::vector<std::string> axBatchPaths(axFilePaths.begin() + uBatchStart, axFilePaths.begin() + uBatchEnd);
+			ConditionalValidationTaskData xBatchData;
+			xBatchData.paxFilePaths = &axBatchPaths;
+			xBatchData.paxResults = axResults.data() + uBatchStart;
+
+			printf("  Batch %u-%u/%u...\n", uBatchStart + 1, uBatchEnd, uNumFiles);
+			fflush(stdout);
+
+			Zenith_TaskArray xTaskArray(
+				ZENITH_PROFILE_INDEX__SCENE_UPDATE,
+				&ValidateConditionalsTask,
+				&xBatchData,
+				static_cast<u_int>(uBatchCount),
+				true);
+
+			Zenith_TaskSystem::SubmitTaskArray(&xTaskArray);
+			xTaskArray.WaitUntilComplete();
+		}
+
+		auto xEndTime = std::chrono::high_resolution_clock::now();
+		double fElapsedSec = std::chrono::duration<double>(xEndTime - xStartTime).count();
+
+		// Aggregate and print results
+		uint32_t uLoadFailed = 0, uNoConditionals = 0, uUnchanged = 0, uModified = 0;
+		uint32_t uTotalRemoved = 0;
+
+		for (uint32_t i = 0; i < uNumFiles; ++i)
+		{
+			const std::string& strPath = axFilePaths[i];
+			std::string strFileName = std::filesystem::path(strPath).filename().string();
+			const ConditionalValidationEntry& xEntry = axResults[i];
+
+			if (!xEntry.bLoadSuccess)
+			{
+				printf("  %s: LOAD FAILED\n", strFileName.c_str());
+				uLoadFailed++;
+			}
+			else if (xEntry.uOriginalConditionals == 0)
+			{
+				uNoConditionals++;
+			}
+			else if (xEntry.bModified)
+			{
+				printf("  %s: MODIFIED (%u/%u conditionals removed)\n",
+					strFileName.c_str(), xEntry.uRemovedCount, xEntry.uOriginalConditionals);
+				uModified++;
+				uTotalRemoved += xEntry.uRemovedCount;
+			}
+			else
+			{
+				printf("  %s: UNCHANGED (%u conditionals all affect gameplay)\n",
+					strFileName.c_str(), xEntry.uOriginalConditionals);
+				uUnchanged++;
+			}
+		}
+
+		printf("\n========================================\n");
+		printf("Conditional Validation Results\n");
+		printf("========================================\n");
+		printf("Total files:     %u\n", uNumFiles);
+		printf("No conditionals: %u (skipped)\n", uNoConditionals);
+		printf("Unchanged:       %u (all conditionals affect gameplay)\n", uUnchanged);
+		printf("Modified:        %u (pointless conditionals removed)\n", uModified);
+		printf("Total removed:   %u conditional thresholds\n", uTotalRemoved);
+		printf("Load failed:     %u\n", uLoadFailed);
+		printf("Time:            %.1f seconds\n", fElapsedSec);
+		printf("========================================\n");
+
+		fflush(stdout);
+		return 0;
+	}
+
+	// ========================================================================
 	// Random Generation
 	// ========================================================================
 
@@ -1761,6 +1945,14 @@ int main(int argc, char* argv[])
 				// Accept the level
 				xDuplicateDetector.RegisterLevel(xBestLevel, ulLayoutHash);
 				bAccepted = true;
+
+				// Validate conditional shapes — remove any that don't affect minimum moves
+				{
+					auto xValResult = TilePuzzle_ConditionalValidator::ValidateConditionalShapes(xBestLevel);
+					if (xValResult.uRemovedCount > 0)
+						printf(" [%u/%u conditionals removed - didn't affect solve]",
+							xValResult.uRemovedCount, xValResult.uOriginalConditionalCount);
+				}
 
 				// Build metadata
 				TilePuzzleLevelMetadata xMeta = BuildMetadata(uLevelNum, xBestLevel,

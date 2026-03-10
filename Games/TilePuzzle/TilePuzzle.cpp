@@ -2213,7 +2213,7 @@ static bool TilePuzzle_HasAutoTestFlag()
 			return true;
 	}
 #endif
-	return false;
+	return true;
 }
 
 #endif // ZENITH_INPUT_SIMULATOR

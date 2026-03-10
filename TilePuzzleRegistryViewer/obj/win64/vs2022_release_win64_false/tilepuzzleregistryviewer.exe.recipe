@@ -2,7 +2,7 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>c:\dev\Zenith\TilePuzzleRegistryViewer\output\win64\vs2022_release_win64_false\tilepuzzleregistryviewer.exe</FullPath>
+      <FullPath>C:\dev\Zenith\TilePuzzleRegistryViewer\output\win64\vs2022_release_win64_false\tilepuzzleregistryviewer.exe</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />
