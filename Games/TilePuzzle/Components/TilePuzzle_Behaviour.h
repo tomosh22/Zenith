@@ -490,6 +490,7 @@ public:
 			m_pxMenuTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
 			m_pxMenuBtnGroup = xUI.FindElement("MenuButtonGroup");
 			m_pxMenuBg = xUI.FindElement("MenuBackground");
+			m_pxTopRightCounters = xUI.FindElement("TopRightCounters");
 			m_pxMenuCoinText = xUI.FindElement<Zenith_UI::Zenith_UIText>("CoinText");
 			m_pxTotalStarsText = xUI.FindElement<Zenith_UI::Zenith_UIText>("TotalStarsText");
 			m_pxStreakGroup = xUI.FindElement("StreakGroup");
@@ -1277,8 +1278,7 @@ private:
 		if (m_pxMenuTitle) m_pxMenuTitle->SetVisible(bVisible);
 		if (m_pxMenuBtnGroup) m_pxMenuBtnGroup->SetVisible(bVisible);
 		if (m_pxMenuBg) m_pxMenuBg->SetVisible(bVisible);
-		if (m_pxMenuCoinText) m_pxMenuCoinText->SetVisible(bVisible);
-		if (m_pxTotalStarsText) m_pxTotalStarsText->SetVisible(bVisible);
+		if (m_pxTopRightCounters) m_pxTopRightCounters->SetVisible(bVisible);
 		if (m_pxStreakGroup) m_pxStreakGroup->SetVisible(bVisible);
 		if (m_pxLivesArea) m_pxLivesArea->SetVisible(bVisible);
 
@@ -1522,6 +1522,7 @@ private:
 	Zenith_UI::Zenith_UIText* m_pxMenuTitle = nullptr;
 	Zenith_UI::Zenith_UIElement* m_pxMenuBtnGroup = nullptr;
 	Zenith_UI::Zenith_UIElement* m_pxMenuBg = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxTopRightCounters = nullptr;
 	Zenith_UI::Zenith_UIText* m_pxMenuCoinText = nullptr;
 	Zenith_UI::Zenith_UIText* m_pxTotalStarsText = nullptr;
 	Zenith_UI::Zenith_UIElement* m_pxStreakGroup = nullptr;
@@ -1803,7 +1804,7 @@ private:
 			pxCanvas->SubmitText(
 				"Tap to continue",
 				Zenith_Maths::Vector2(fTextX + 170.0f, fTextY + 90.0f),
-				22.0f,
+				24.0f,
 				Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, fHintAlpha));
 		}
 
@@ -1929,13 +1930,13 @@ private:
 
 			if (m_pxMenuCoinText)
 			{
-				snprintf(szBuffer, sizeof(szBuffer), "Coins: %u", m_xSaveData.uCoins);
+				snprintf(szBuffer, sizeof(szBuffer), "%u", m_xSaveData.uCoins);
 				m_pxMenuCoinText->SetText(szBuffer);
 			}
 
 			if (m_pxLivesText)
 			{
-				snprintf(szBuffer, sizeof(szBuffer), "Lives: %u/%u", m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES);
+				snprintf(szBuffer, sizeof(szBuffer), "%u/%u", m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES);
 				m_pxLivesText->SetText(szBuffer);
 			}
 
@@ -2247,7 +2248,7 @@ private:
 			pxCanvas->SubmitText(
 				GetAchievementDescription(i),
 				Zenith_Maths::Vector2(50.0f, fY + 35.0f),
-				18.0f,
+				22.0f,
 				Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.0f));
 
 			// Status icon
@@ -2263,7 +2264,7 @@ private:
 		pxCanvas->SubmitText(
 			"Tap to return",
 			Zenith_Maths::Vector2(fW * 0.5f - 80.0f, fH - 50.0f),
-			22.0f,
+			24.0f,
 			Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 0.5f + 0.5f * sinf(m_fMenuTimer * 3.0f)));
 
 		// Handle back tap

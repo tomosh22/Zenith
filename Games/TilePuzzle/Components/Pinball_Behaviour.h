@@ -1617,28 +1617,28 @@ private:
 		Zenith_UI::Zenith_UIText* pxObjective = xUI.CreateText("PinballObjective", "");
 		pxObjective->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
 		pxObjective->SetPosition(20.f, 60.f);
-		pxObjective->SetFontSize(20.f);
+		pxObjective->SetFontSize(24.f);
 		pxObjective->SetColor({ 1.f, 0.9f, 0.5f, 1.f });
 
 		// Peg counter - below objective
 		Zenith_UI::Zenith_UIText* pxPegCount = xUI.CreateText("PinballPegCount", "");
 		pxPegCount->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
 		pxPegCount->SetPosition(20.f, 85.f);
-		pxPegCount->SetFontSize(18.f);
+		pxPegCount->SetFontSize(22.f);
 		pxPegCount->SetColor({ 0.7f, 1.f, 0.9f, 1.f });
 
 		// Target hit counter - below peg counter
 		Zenith_UI::Zenith_UIText* pxTargetCount = xUI.CreateText("PinballTargetCount", "");
 		pxTargetCount->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
 		pxTargetCount->SetPosition(20.f, 108.f);
-		pxTargetCount->SetFontSize(18.f);
+		pxTargetCount->SetFontSize(22.f);
 		pxTargetCount->SetColor({ 0.7f, 1.f, 0.9f, 1.f });
 
 		// Balls remaining - top right
 		Zenith_UI::Zenith_UIText* pxBalls = xUI.CreateText("PinballBalls", "");
 		pxBalls->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopRight);
 		pxBalls->SetPosition(-20.f, 60.f);
-		pxBalls->SetFontSize(20.f);
+		pxBalls->SetFontSize(24.f);
 		pxBalls->SetAlignment(Zenith_UI::TextAlignment::Right);
 		pxBalls->SetColor({ 1.f, 0.7f, 0.5f, 1.f });
 
@@ -1655,7 +1655,7 @@ private:
 		Zenith_UI::Zenith_UIText* pxGateNum = xUI.CreateText("PinballGateNum", "");
 		pxGateNum->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopCenter);
 		pxGateNum->SetPosition(0.f, 60.f);
-		pxGateNum->SetFontSize(16.f);
+		pxGateNum->SetFontSize(22.f);
 		pxGateNum->SetAlignment(Zenith_UI::TextAlignment::Center);
 		pxGateNum->SetColor({ 0.6f, 0.6f, 0.8f, 1.f });
 

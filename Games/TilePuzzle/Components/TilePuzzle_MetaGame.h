@@ -467,7 +467,7 @@ void UpdateLivesDisplay()
 	if (m_pxLivesText)
 	{
 		char szLives[64];
-		snprintf(szLives, sizeof(szLives), "Lives: %u/%u",
+		snprintf(szLives, sizeof(szLives), "%u/%u",
 			m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES);
 		m_pxLivesText->SetText(szLives);
 	}
@@ -515,7 +515,7 @@ void UpdateCoinDisplay()
 	if (m_pxMenuCoinText)
 	{
 		char szCoins[32];
-		snprintf(szCoins, sizeof(szCoins), "Coins: %u", m_xSaveData.uCoins);
+		snprintf(szCoins, sizeof(szCoins), "%u", m_xSaveData.uCoins);
 		m_pxMenuCoinText->SetText(szCoins);
 	}
 }
@@ -709,7 +709,7 @@ void UpdateMainMenuUI()
 	{
 		uint32_t uMaxStars = TilePuzzleSaveData::uMAX_LEVELS * 3;
 		char szStars[48];
-		snprintf(szStars, sizeof(szStars), "Stars: %u / %u", m_xSaveData.uTotalStars, uMaxStars);
+		snprintf(szStars, sizeof(szStars), "%u / %u", m_xSaveData.uTotalStars, uMaxStars);
 		m_pxTotalStarsText->SetText(szStars);
 	}
 
@@ -744,7 +744,7 @@ void UpdateMainMenuUI()
 			pxCanvas->SubmitText(
 				"Weekly Challenge Complete!",
 				Zenith_Maths::Vector2(20.0f, fBannerY + 10.0f),
-				22.0f,
+				24.0f,
 				Zenith_Maths::Vector4(0.3f, 1.0f, 0.3f, 1.0f));
 		}
 		else
@@ -752,14 +752,14 @@ void UpdateMainMenuUI()
 			pxCanvas->SubmitText(
 				m_xSaveData.GetWeeklyChallengeDescription(),
 				Zenith_Maths::Vector2(20.0f, fBannerY + 8.0f),
-				20.0f,
+				22.0f,
 				Zenith_Maths::Vector4(1.0f, 0.9f, 0.7f, 1.0f));
 
 			// Progress bar
 			float fBarX = 20.0f;
 			float fBarY2 = fBannerY + 38.0f;
 			float fBarW = fW - 50.0f;
-			float fBarH2 = 10.0f;
+			float fBarH2 = 14.0f;
 			pxCanvas->SubmitQuad(
 				Zenith_Maths::Vector4(fBarX, fBarY2, fBarX + fBarW, fBarY2 + fBarH2),
 				Zenith_Maths::Vector4(0.2f, 0.2f, 0.25f, 0.8f));
@@ -778,7 +778,7 @@ void UpdateMainMenuUI()
 			pxCanvas->SubmitText(
 				szProgress,
 				Zenith_Maths::Vector2(20.0f, fBannerY + 55.0f),
-				16.0f,
+				20.0f,
 				Zenith_Maths::Vector4(0.7f, 0.7f, 0.8f, 1.0f));
 		}
 	}

@@ -8270,7 +8270,7 @@ private:
 		if (pxBehaviour->m_pxMenuCoinText)
 		{
 			char szBuf[64];
-			snprintf(szBuf, sizeof(szBuf), "Coins: %u", pxBehaviour->m_xSaveData.uCoins);
+			snprintf(szBuf, sizeof(szBuf), "%u", pxBehaviour->m_xSaveData.uCoins);
 			pxBehaviour->m_pxMenuCoinText->SetText(szBuf);
 
 			char szExpected[32];
@@ -8287,7 +8287,7 @@ private:
 		if (pxBehaviour->m_pxMenuCoinText)
 		{
 			char szBuf[64];
-			snprintf(szBuf, sizeof(szBuf), "Coins: %u", pxBehaviour->m_xSaveData.uCoins);
+			snprintf(szBuf, sizeof(szBuf), "%u", pxBehaviour->m_xSaveData.uCoins);
 			pxBehaviour->m_pxMenuCoinText->SetText(szBuf);
 		}
 

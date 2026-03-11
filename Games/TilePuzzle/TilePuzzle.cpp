@@ -1127,8 +1127,6 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Menu title
 	Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "Paws & Pins");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.f, -180.f);
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", 84.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 1.f, 1.f, 1.f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
@@ -1137,26 +1135,24 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Menu subtitle
 	Zenith_EditorAutomation::AddStep_CreateUIText("MenuSubtitle", "A Cat Puzzle Game");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuSubtitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuSubtitle", 0.f, -120.f);
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuSubtitle", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("MenuSubtitle", 0.6f, 0.6f, 0.8f, 0.7f);
 	Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuSubtitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
 	Zenith_EditorAutomation::AddStep_SetUITextShadow("MenuSubtitle", 1.f, 1.f, true);
 	Zenith_EditorAutomation::AddStep_SetUITextShadowColor("MenuSubtitle", 0.f, 0.f, 0.f, 0.3f);
 
-	// Menu buttons layout group (vertical stack, centered)
+	// Menu layout group (vertical stack: title, subtitle, then buttons)
 	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("MenuButtonGroup");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuButtonGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuButtonGroup", 0.f, 280.f);
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuButtonGroup", 0.f, 60.f);
 	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("MenuButtonGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
-	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("MenuButtonGroup", 24.f);
-	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("MenuButtonGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("MenuButtonGroup", 14.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("MenuButtonGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperCenter));
 	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("MenuButtonGroup", true);
 
 	// Continue button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("ContinueButton", "Continue");
-	Zenith_EditorAutomation::AddStep_SetUISize("ContinueButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("ContinueButton", 300.f, 66.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ContinueButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ContinueButton", 0.18f, 0.30f, 0.55f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ContinueButton", 0.22f, 0.36f, 0.65f, 1.f);
@@ -1172,7 +1168,7 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Level Select button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("LevelSelectButton", "Level Select");
-	Zenith_EditorAutomation::AddStep_SetUISize("LevelSelectButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("LevelSelectButton", 300.f, 66.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("LevelSelectButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("LevelSelectButton", 0.18f, 0.30f, 0.55f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("LevelSelectButton", 0.22f, 0.36f, 0.65f, 1.f);
@@ -1188,7 +1184,7 @@ void Project_RegisterEditorAutomationSteps()
 
 	// New Game button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("NewGameButton", "New Game");
-	Zenith_EditorAutomation::AddStep_SetUISize("NewGameButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("NewGameButton", 300.f, 66.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("NewGameButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NewGameButton", 0.20f, 0.25f, 0.40f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NewGameButton", 0.28f, 0.33f, 0.50f, 1.f);
@@ -1204,7 +1200,7 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Pinball button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("PinballButton", "Pinball");
-	Zenith_EditorAutomation::AddStep_SetUISize("PinballButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("PinballButton", 300.f, 66.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PinballButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PinballButton", 0.18f, 0.35f, 0.40f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PinballButton", 0.22f, 0.42f, 0.48f, 1.f);
@@ -1220,7 +1216,7 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Reset Save button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("ResetSaveButton", "Reset Save");
-	Zenith_EditorAutomation::AddStep_SetUISize("ResetSaveButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("ResetSaveButton", 300.f, 66.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ResetSaveButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ResetSaveButton", 0.45f, 0.15f, 0.15f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ResetSaveButton", 0.55f, 0.20f, 0.20f, 1.f);
@@ -1236,7 +1232,7 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Cat Cafe button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafeButton", "Cat Cafe");
-	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeButton", 300.f, 66.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafeButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafeButton", 0.45f, 0.22f, 0.35f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafeButton", 0.55f, 0.28f, 0.42f, 1.f);
@@ -1252,7 +1248,7 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Daily Puzzle button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("DailyPuzzleButton", "Daily Puzzle");
-	Zenith_EditorAutomation::AddStep_SetUISize("DailyPuzzleButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("DailyPuzzleButton", 300.f, 66.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("DailyPuzzleButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("DailyPuzzleButton", 0.22f, 0.38f, 0.22f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("DailyPuzzleButton", 0.28f, 0.48f, 0.28f, 1.f);
@@ -1266,6 +1262,8 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow("DailyPuzzleButton", 1.f, 1.f, true);
 	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor("DailyPuzzleButton", 0.f, 0.f, 0.f, 0.4f);
 
+	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "MenuTitle");
+	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "MenuSubtitle");
 	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "ContinueButton");
 	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "LevelSelectButton");
 	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "NewGameButton");
@@ -1274,10 +1272,17 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "CatCafeButton");
 	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "DailyPuzzleButton");
 
-	// Coin layout group (top-right of menu): icon + text with pill background
+	// Top-right counters area (vertical stack: coins pill, stars pill)
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("TopRightCounters");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("TopRightCounters", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("TopRightCounters", -14.f, 14.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("TopRightCounters", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("TopRightCounters", 8.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("TopRightCounters", static_cast<int>(Zenith_UI::ChildAlignment::UpperRight));
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("TopRightCounters", true);
+
+	// Coin pill (icon + text with pill background)
 	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("CoinGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CoinGroup", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CoinGroup", -14.f, 14.f);
 	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("CoinGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
 	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("CoinGroup", 8.f);
 	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("CoinGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
@@ -1293,12 +1298,39 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("CoinIcon",
 		GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("CoinText", "Coins: 0");
+	Zenith_EditorAutomation::AddStep_CreateUIText("CoinText", "0");
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("CoinText", 36.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("CoinText", 1.f, 0.85f, 0.2f, 1.f);
 
 	Zenith_EditorAutomation::AddStep_AddUIChild("CoinGroup", "CoinIcon");
 	Zenith_EditorAutomation::AddStep_AddUIChild("CoinGroup", "CoinText");
+
+	// Star pill (icon + text with pill background)
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("StarGroup");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("StarGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("StarGroup", 8.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("StarGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("StarGroup", true);
+	Zenith_EditorAutomation::AddStep_SetUILayoutPadding("StarGroup", 10.f, 10.f, 10.f, 2.f);
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundColor("StarGroup", 0.05f, 0.05f, 0.10f, 0.6f);
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius("StarGroup", 16.f);
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder("StarGroup", 0.2f, 0.2f, 0.3f, 1.f);
+
+	Zenith_EditorAutomation::AddStep_CreateUIImage("StarIcon");
+	Zenith_EditorAutomation::AddStep_SetUISize("StarIcon", 36.f, 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("StarIcon", 1.f, 0.85f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("StarIcon",
+		GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT);
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("TotalStarsText", "0 / 300");
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("TotalStarsText", 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("TotalStarsText", 1.f, 0.85f, 0.2f, 1.f);
+
+	Zenith_EditorAutomation::AddStep_AddUIChild("StarGroup", "StarIcon");
+	Zenith_EditorAutomation::AddStep_AddUIChild("StarGroup", "TotalStarsText");
+
+	Zenith_EditorAutomation::AddStep_AddUIChild("TopRightCounters", "CoinGroup");
+	Zenith_EditorAutomation::AddStep_AddUIChild("TopRightCounters", "StarGroup");
 
 	// Lives layout group (top-left of menu): icon + text with pill background
 	// Lives area — vertical stack: pill (icon+text), timer, refill button
@@ -1326,7 +1358,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("HeartIcon",
 		GAME_ASSETS_DIR "Textures/Icons/heart" ZENITH_TEXTURE_EXT);
 
-	Zenith_EditorAutomation::AddStep_CreateUIText("LivesText", "Lives: 5/5");
+	Zenith_EditorAutomation::AddStep_CreateUIText("LivesText", "5/5");
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("LivesText", 36.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("LivesText", 1.f, 0.3f, 0.3f, 1.f);
 
@@ -1335,14 +1367,14 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Lives timer text (shown when lives are regenerating)
 	Zenith_EditorAutomation::AddStep_CreateUIText("LivesTimerText", "");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("LivesTimerText", 22.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("LivesTimerText", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("LivesTimerText", 0.8f, 0.5f, 0.5f, 0.8f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("LivesTimerText", false);
 
 	// Lives Refill button (hidden by default)
 	Zenith_EditorAutomation::AddStep_CreateUIButton("RefillLivesButton", "Refill (50)");
-	Zenith_EditorAutomation::AddStep_SetUISize("RefillLivesButton", 160.f, 40.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("RefillLivesButton", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("RefillLivesButton", 170.f, 60.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("RefillLivesButton", 22.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("RefillLivesButton", 0.50f, 0.20f, 0.20f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("RefillLivesButton", 0.60f, 0.30f, 0.30f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("RefillLivesButton", 0.35f, 0.12f, 0.12f, 1.f);
@@ -1375,7 +1407,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder("StreakGroup", 0.2f, 0.2f, 0.3f, 1.f);
 
 	Zenith_EditorAutomation::AddStep_CreateUIText("DailyStreakLabel", "Streak");
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("DailyStreakLabel", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("DailyStreakLabel", 22.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("DailyStreakLabel", 0.5f, 0.7f, 0.5f, 0.7f);
 
 	Zenith_EditorAutomation::AddStep_CreateUIText("DailyStreakText", "0 days");
@@ -1395,7 +1427,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIText("VersionText", "v1.0");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("VersionText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("VersionText", 0.f, -8.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("VersionText", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("VersionText", 22.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("VersionText", 0.4f, 0.4f, 0.5f, 0.4f);
 	Zenith_EditorAutomation::AddStep_SetUIAlignment("VersionText", static_cast<int>(Zenith_UI::TextAlignment::Center));
 
@@ -1431,7 +1463,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIRect("CatProgressBg");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatProgressBg", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("CatProgressBg", 0.f, 108.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("CatProgressBg", 400.f, 12.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatProgressBg", 400.f, 16.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("CatProgressBg", 0.15f, 0.15f, 0.2f, 0.8f);
 	Zenith_EditorAutomation::AddStep_SetUICornerRadius("CatProgressBg", 6.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("CatProgressBg", false);
@@ -1439,7 +1471,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIRect("CatProgressFill");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatProgressFill", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("CatProgressFill", 0.f, 108.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("CatProgressFill", 400.f, 12.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatProgressFill", 400.f, 16.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("CatProgressFill", 1.f, 0.7f, 0.2f, 0.9f);
 	Zenith_EditorAutomation::AddStep_SetUICornerRadius("CatProgressFill", 6.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("CatProgressFill", false);
@@ -1465,7 +1497,7 @@ void Project_RegisterEditorAutomationSteps()
 		Zenith_EditorAutomation::AddStep_CreateUIText(s_aszCatCardNames[u], "???");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszCatCardNames[u], static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszCatCardNames[u], fX, fY);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize(s_aszCatCardNames[u], 20.f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize(s_aszCatCardNames[u], 22.f);
 		Zenith_EditorAutomation::AddStep_SetUIAlignment(s_aszCatCardNames[u], static_cast<int>(Zenith_UI::TextAlignment::Center));
 		Zenith_EditorAutomation::AddStep_SetUIColor(s_aszCatCardNames[u], 0.9f, 0.9f, 0.9f, 1.f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible(s_aszCatCardNames[u], false);
@@ -1482,19 +1514,19 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeNavGroup", false);
 
 	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafePrevPage", "<");
-	Zenith_EditorAutomation::AddStep_SetUISize("CatCafePrevPage", 60.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatCafePrevPage", 70.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafePrevPage", 28.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafePrevPage", 0.15f, 0.2f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafePrevPage", 0.25f, 0.3f, 0.45f, 1.f);
 
 	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafeBackButton", "Back");
-	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeBackButton", 120.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeBackButton", 140.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafeBackButton", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafeBackButton", 0.15f, 0.2f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafeBackButton", 0.25f, 0.3f, 0.45f, 1.f);
 
 	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafeNextPage", ">");
-	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeNextPage", 60.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeNextPage", 70.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafeNextPage", 28.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafeNextPage", 0.15f, 0.2f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafeNextPage", 0.25f, 0.3f, 0.45f, 1.f);
@@ -1539,12 +1571,12 @@ void Project_RegisterEditorAutomationSteps()
 	for (uint32_t u = 0; u < 20; ++u)
 	{
 		float fX = (static_cast<float>(u % 5) - 2.f) * 105.f;
-		float fY = -50.f + (static_cast<float>(u / 5) - 1.5f) * 65.f;
+		float fY = -50.f + (static_cast<float>(u / 5) - 1.5f) * 80.f;
 		Zenith_EditorAutomation::AddStep_CreateUIButton(s_aszLevelBtnNames[u], s_aszLevelLabels[u]);
 		Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszLevelBtnNames[u], static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszLevelBtnNames[u], fX, fY);
-		Zenith_EditorAutomation::AddStep_SetUISize(s_aszLevelBtnNames[u], 90.f, 55.f);
-		Zenith_EditorAutomation::AddStep_SetUIButtonFontSize(s_aszLevelBtnNames[u], 20.f);
+		Zenith_EditorAutomation::AddStep_SetUISize(s_aszLevelBtnNames[u], 100.f, 70.f);
+		Zenith_EditorAutomation::AddStep_SetUIButtonFontSize(s_aszLevelBtnNames[u], 24.f);
 		Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor(s_aszLevelBtnNames[u], 0.2f, 0.3f, 0.5f, 1.f);
 		Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor(s_aszLevelBtnNames[u], 0.3f, 0.4f, 0.6f, 1.f);
 		Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor(s_aszLevelBtnNames[u], 0.1f, 0.15f, 0.3f, 1.f);
@@ -1566,21 +1598,21 @@ void Project_RegisterEditorAutomationSteps()
 
 	// PrevPage button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("PrevPageButton", "<");
-	Zenith_EditorAutomation::AddStep_SetUISize("PrevPageButton", 100.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("PrevPageButton", 100.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PrevPageButton", 28.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PrevPageButton", 0.15f, 0.2f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PrevPageButton", 0.25f, 0.3f, 0.45f, 1.f);
 
 	// Back button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("BackButton", "Back");
-	Zenith_EditorAutomation::AddStep_SetUISize("BackButton", 120.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("BackButton", 140.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("BackButton", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("BackButton", 0.15f, 0.2f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("BackButton", 0.25f, 0.3f, 0.45f, 1.f);
 
 	// NextPage button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("NextPageButton", ">");
-	Zenith_EditorAutomation::AddStep_SetUISize("NextPageButton", 100.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("NextPageButton", 100.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("NextPageButton", 28.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NextPageButton", 0.15f, 0.2f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NextPageButton", 0.25f, 0.3f, 0.45f, 1.f);
@@ -1594,16 +1626,9 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUINavigation("BackButton", nullptr, nullptr, "PrevPageButton", "NextPageButton");
 	Zenith_EditorAutomation::AddStep_SetUINavigation("NextPageButton", nullptr, nullptr, "BackButton", nullptr);
 
-	// ---- Total Star Counter (main menu) ----
-	Zenith_EditorAutomation::AddStep_CreateUIText("TotalStarsText", "Stars: 0 / 300");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("TotalStarsText", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("TotalStarsText", -20.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("TotalStarsText", 28.f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("TotalStarsText", 1.f, 0.85f, 0.2f, 1.f);
-
 	// ---- Settings Button (main menu, gear icon) ----
 	Zenith_EditorAutomation::AddStep_CreateUIButton("SettingsButton", "Settings");
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("SettingsButton", 300.f, 66.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("SettingsButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("SettingsButton", 0.25f, 0.25f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("SettingsButton", 0.35f, 0.35f, 0.4f, 1.f);
@@ -1612,7 +1637,7 @@ void Project_RegisterEditorAutomationSteps()
 
 	// ---- Achievements Button (main menu) ----
 	Zenith_EditorAutomation::AddStep_CreateUIButton("AchievementsButton", "Achievements");
-	Zenith_EditorAutomation::AddStep_SetUISize("AchievementsButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("AchievementsButton", 300.f, 66.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("AchievementsButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("AchievementsButton", 0.4f, 0.35f, 0.1f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("AchievementsButton", 0.5f, 0.45f, 0.15f, 1.f);
@@ -1653,7 +1678,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIToggle("SettingsSoundBtn", "Sound");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsSoundBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsSoundBtn", 0.f, -60.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsSoundBtn", 300.f, 70.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("SettingsSoundBtn", 300.f, 80.f);
 	Zenith_EditorAutomation::AddStep_SetUIToggleOnColor("SettingsSoundBtn", 0.2f, 0.4f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIToggleOffColor("SettingsSoundBtn", 0.3f, 0.15f, 0.15f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsSoundBtn", false);
@@ -1661,7 +1686,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIToggle("SettingsMusicBtn", "Music");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsMusicBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsMusicBtn", 0.f, 20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsMusicBtn", 300.f, 70.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("SettingsMusicBtn", 300.f, 80.f);
 	Zenith_EditorAutomation::AddStep_SetUIToggleOnColor("SettingsMusicBtn", 0.2f, 0.4f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIToggleOffColor("SettingsMusicBtn", 0.3f, 0.15f, 0.15f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsMusicBtn", false);
@@ -1669,7 +1694,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIToggle("SettingsHapticsBtn", "Haptics");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsHapticsBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsHapticsBtn", 0.f, 100.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsHapticsBtn", 300.f, 70.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("SettingsHapticsBtn", 300.f, 80.f);
 	Zenith_EditorAutomation::AddStep_SetUIToggleOnColor("SettingsHapticsBtn", 0.2f, 0.4f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIToggleOffColor("SettingsHapticsBtn", 0.3f, 0.15f, 0.15f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsHapticsBtn", false);
@@ -1678,7 +1703,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIButton("SettingsCreditsBtn", "Credits");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsCreditsBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsCreditsBtn", 0.f, 170.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsCreditsBtn", 200.f, 55.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("SettingsCreditsBtn", 200.f, 65.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("SettingsCreditsBtn", 26.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("SettingsCreditsBtn", 0.2f, 0.2f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("SettingsCreditsBtn", 0.3f, 0.3f, 0.42f, 1.f);
@@ -1689,7 +1714,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIButton("SettingsBackBtn", "Back");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsBackBtn", 0.f, 240.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("SettingsBackBtn", 200.f, 60.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("SettingsBackBtn", 200.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("SettingsBackBtn", 28.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("SettingsBackBtn", 0.15f, 0.2f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("SettingsBackBtn", 0.25f, 0.3f, 0.45f, 1.f);
@@ -1706,7 +1731,7 @@ void Project_RegisterEditorAutomationSteps()
 	// ---- Confirm Dialog Overlay ----
 	Zenith_EditorAutomation::AddStep_CreateUIOverlay("ConfirmOverlay");
 	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("ConfirmOverlay", 0.f, 0.f, 0.f, 0.7f);
-	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("ConfirmOverlay", 400.f, 200.f);
+	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("ConfirmOverlay", 400.f, 220.f);
 
 	Zenith_EditorAutomation::AddStep_CreateUIText("ConfirmText", "Are you sure?");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
@@ -1719,7 +1744,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIButton("ConfirmCancelBtn", "Cancel");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmCancelBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("ConfirmCancelBtn", 30.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmCancelBtn", 140.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmCancelBtn", 155.f, 65.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ConfirmCancelBtn", 26.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ConfirmCancelBtn", 0.25f, 0.25f, 0.3f, 0.9f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ConfirmCancelBtn", 0.35f, 0.35f, 0.42f, 1.f);
@@ -1729,7 +1754,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIButton("ConfirmAcceptBtn", "Accept");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmAcceptBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("ConfirmAcceptBtn", -30.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmAcceptBtn", 140.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmAcceptBtn", 155.f, 65.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ConfirmAcceptBtn", 26.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ConfirmAcceptBtn", 0.5f, 0.15f, 0.15f, 0.9f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ConfirmAcceptBtn", 0.65f, 0.25f, 0.25f, 1.f);
@@ -1765,7 +1790,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIText("CreditsDismissText", "Tap anywhere to dismiss");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("CreditsDismissText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("CreditsDismissText", 0.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CreditsDismissText", 18.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CreditsDismissText", 22.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("CreditsDismissText", 0.6f, 0.6f, 0.6f, 0.7f);
 	Zenith_EditorAutomation::AddStep_AddUIChild("CreditsOverlay", "CreditsDismissText");
 
@@ -1826,7 +1851,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIVisible("HUDCoinGroup", false);
 
 	Zenith_EditorAutomation::AddStep_CreateUIImage("HUDCoinIcon");
-	Zenith_EditorAutomation::AddStep_SetUISize("HUDCoinIcon", 28.f, 28.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("HUDCoinIcon", 36.f, 36.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("HUDCoinIcon", 1.f, 0.85f, 0.2f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("HUDCoinIcon",
 		GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);
@@ -1849,31 +1874,31 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIVisible("HUDButtonGroup", false);
 
 	Zenith_EditorAutomation::AddStep_CreateUIButton("MenuBtn", "Menu");
-	Zenith_EditorAutomation::AddStep_SetUISize("MenuBtn", 120.f, 55.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("MenuBtn", 120.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("MenuBtn", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("MenuBtn", 0.2f, 0.25f, 0.35f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("MenuBtn", 0.3f, 0.35f, 0.5f, 1.f);
 
 	Zenith_EditorAutomation::AddStep_CreateUIButton("ResetBtn", "Reset");
-	Zenith_EditorAutomation::AddStep_SetUISize("ResetBtn", 120.f, 55.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("ResetBtn", 120.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ResetBtn", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ResetBtn", 0.2f, 0.25f, 0.35f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ResetBtn", 0.3f, 0.35f, 0.5f, 1.f);
 
 	Zenith_EditorAutomation::AddStep_CreateUIButton("UndoBtn", "Undo");
-	Zenith_EditorAutomation::AddStep_SetUISize("UndoBtn", 120.f, 55.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("UndoBtn", 120.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("UndoBtn", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("UndoBtn", 0.2f, 0.25f, 0.35f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("UndoBtn", 0.3f, 0.35f, 0.5f, 1.f);
 
 	Zenith_EditorAutomation::AddStep_CreateUIButton("HintBtn", "Hint");
-	Zenith_EditorAutomation::AddStep_SetUISize("HintBtn", 120.f, 55.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("HintBtn", 120.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("HintBtn", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("HintBtn", 0.2f, 0.25f, 0.35f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("HintBtn", 0.3f, 0.35f, 0.5f, 1.f);
 
 	Zenith_EditorAutomation::AddStep_CreateUIButton("SkipBtn", "Skip");
-	Zenith_EditorAutomation::AddStep_SetUISize("SkipBtn", 120.f, 55.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("SkipBtn", 120.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("SkipBtn", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("SkipBtn", 0.5f, 0.15f, 0.15f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("SkipBtn", 0.65f, 0.2f, 0.2f, 1.f);
@@ -1895,7 +1920,7 @@ void Project_RegisterEditorAutomationSteps()
 	// ---- Confirm Dialog Overlay (gameplay scene) ----
 	Zenith_EditorAutomation::AddStep_CreateUIOverlay("ConfirmOverlay");
 	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("ConfirmOverlay", 0.f, 0.f, 0.f, 0.7f);
-	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("ConfirmOverlay", 400.f, 200.f);
+	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("ConfirmOverlay", 400.f, 220.f);
 
 	Zenith_EditorAutomation::AddStep_CreateUIText("ConfirmText", "Are you sure?");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
@@ -1908,7 +1933,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIButton("ConfirmCancelBtn", "Cancel");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmCancelBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("ConfirmCancelBtn", 30.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmCancelBtn", 140.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmCancelBtn", 155.f, 65.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ConfirmCancelBtn", 26.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ConfirmCancelBtn", 0.25f, 0.25f, 0.3f, 0.9f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ConfirmCancelBtn", 0.35f, 0.35f, 0.42f, 1.f);
@@ -1918,7 +1943,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIButton("ConfirmAcceptBtn", "Accept");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("ConfirmAcceptBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("ConfirmAcceptBtn", -30.f, -20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmAcceptBtn", 140.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("ConfirmAcceptBtn", 155.f, 65.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ConfirmAcceptBtn", 26.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ConfirmAcceptBtn", 0.5f, 0.15f, 0.15f, 0.9f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ConfirmAcceptBtn", 0.65f, 0.25f, 0.25f, 1.f);
@@ -2004,7 +2029,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIButton("NextLevelBtn", "Next Level");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("NextLevelBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("NextLevelBtn", 0.f, 145.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("NextLevelBtn", 200.f, 60.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("NextLevelBtn", 200.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("NextLevelBtn", 28.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NextLevelBtn", 0.15f, 0.4f, 0.2f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NextLevelBtn", 0.25f, 0.55f, 0.3f, 1.f);
@@ -2069,8 +2094,8 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIButton("PinballBackBtn", "Menu");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballBackBtn", 20.f, 20.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("PinballBackBtn", 100.f, 50.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PinballBackBtn", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("PinballBackBtn", 100.f, 70.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PinballBackBtn", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PinballBackBtn", 0.2f, 0.25f, 0.35f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PinballBackBtn", 0.3f, 0.35f, 0.5f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("PinballBackBtn", 0.12f, 0.15f, 0.25f, 1.f);
@@ -2133,8 +2158,8 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIButton("GateFreeplayBtn", "Freeplay");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("GateFreeplayBtn", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("GateFreeplayBtn", 0.f, 310.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("GateFreeplayBtn", 200.f, 50.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("GateFreeplayBtn", 22.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("GateFreeplayBtn", 200.f, 65.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("GateFreeplayBtn", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("GateFreeplayBtn", 0.5f, 0.3f, 0.6f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("GateFreeplayBtn", 0.6f, 0.4f, 0.7f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("GateFreeplayBtn", 0.35f, 0.2f, 0.45f, 1.f);
@@ -2144,8 +2169,8 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateUIButton("GateBackBtn", "Back");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("GateBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("GateBackBtn", 0.f, -35.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("GateBackBtn", 150.f, 45.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("GateBackBtn", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("GateBackBtn", 150.f, 65.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("GateBackBtn", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("GateBackBtn", 0.4f, 0.2f, 0.2f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("GateBackBtn", 0.55f, 0.3f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("GateBackBtn", 0.3f, 0.15f, 0.15f, 1.f);
@@ -2213,7 +2238,7 @@ static bool TilePuzzle_HasAutoTestFlag()
 			return true;
 	}
 #endif
-	return true;
+	return false;
 }
 
 #endif // ZENITH_INPUT_SIMULATOR
