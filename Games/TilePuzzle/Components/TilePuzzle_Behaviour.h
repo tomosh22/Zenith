@@ -69,6 +69,7 @@ namespace TilePuzzle
 {
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
+	extern Flux_MeshGeometry* g_pxCatMeshGeometry;
 	extern MaterialHandle g_xFloorMaterial;
 	extern MaterialHandle g_xBlockerMaterial;
 	extern MaterialHandle g_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
@@ -269,6 +270,7 @@ public:
 		// Cache global resources (lightweight)
 		m_pxCubeGeometry = TilePuzzle::g_pxCubeGeometry;
 		m_pxSphereGeometry = TilePuzzle::g_pxSphereGeometry;
+		m_pxCatGeometry = TilePuzzle::g_pxCatMeshGeometry;
 		m_xFloorMaterial = TilePuzzle::g_xFloorMaterial;
 		m_xBlockerMaterial = TilePuzzle::g_xBlockerMaterial;
 
@@ -1511,6 +1513,7 @@ private:
 	// Cached resources
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* m_pxSphereGeometry = nullptr;
+	Flux_MeshGeometry* m_pxCatGeometry = nullptr;
 	MaterialHandle m_xFloorMaterial;
 	MaterialHandle m_xBlockerMaterial;
 	MaterialHandle m_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
@@ -3045,7 +3048,7 @@ private:
 			xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));
 
 			Zenith_ModelComponent& xModel = xCatEntity.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*m_pxSphereGeometry, *m_axCatMaterials[xCat.eColor].Get());
+			xModel.AddMeshEntry(*m_pxCatGeometry, *m_axCatMaterials[xCat.eColor].Get());
 
 			xCat.uEntityID = xCatEntity.GetEntityID();
 		}
@@ -3641,7 +3644,7 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));
 
 		Zenith_ModelComponent& xModel = xCatEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*m_pxSphereGeometry, *m_axCatMaterials[xCat.eColor].Get());
+		xModel.AddMeshEntry(*m_pxCatGeometry, *m_axCatMaterials[xCat.eColor].Get());
 
 		xCat.uEntityID = xCatEntity.GetEntityID();
 	}

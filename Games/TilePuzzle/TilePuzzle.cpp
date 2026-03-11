@@ -56,6 +56,9 @@ namespace TilePuzzle
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
 
+	// Programmatically generated cat head mesh
+	Flux_MeshGeometry* g_pxCatMeshGeometry = nullptr;
+
 	// Floor material
 	MaterialHandle g_xFloorMaterial;
 
@@ -338,7 +341,7 @@ static float GetEdgeScale(const Zenith_Vector<PerimeterPoint>& axPerimeter, uint
 static void EmitTopFace(
 	MeshBuilder& xBuilder,
 	const Zenith_Vector<PerimeterPoint>& axPerimeter,
-	float fMaxY, float fCenterX, float fCenterZ)
+	float fMaxY, float fCenterX, float fCenterZ, bool bFlipV = false)
 {
 	uint32_t uNumPoints = axPerimeter.GetSize();
 
@@ -360,7 +363,7 @@ static void EmitTopFace(
 		float fX = xPt.m_fX - xPt.m_fOutX * fInset;
 		float fZ = xPt.m_fZ - xPt.m_fOutZ * fInset;
 		float fU = fX - fCenterX + 0.5f;
-		float fV = fZ - fCenterZ + 0.5f;
+		float fV = bFlipV ? (fCenterZ - fZ + 0.5f) : (fZ - fCenterZ + 0.5f);
 
 		uint32_t uIdx = xBuilder.AddVertex(
 			{ fX, fMaxY, fZ },
@@ -573,6 +576,134 @@ void TilePuzzle::GenerateShapeMeshFromDefinition(const TilePuzzleShapeDefinition
 }
 
 // ============================================================================
+// Cat Head Mesh Generation
+// ============================================================================
+static void GenerateCatMesh(Flux_MeshGeometry& xGeometryOut)
+{
+	MeshBuilder xBuilder;
+	Zenith_Vector<PerimeterPoint> axPerimeter;
+
+	// Cat head geometry parameters (10% larger than base 0.35/0.48)
+	static constexpr float fHEAD_RADIUS = 0.385f;
+	static constexpr float fEAR_TIP_RADIUS = 0.528f;
+	static constexpr float fEAR_ANGLE_OFFSET = 0.45f;
+	static constexpr float fEAR_HALF_WIDTH = 0.18f;
+	static constexpr uint32_t uCIRCLE_RESOLUTION = 24;
+
+	// CW perimeter from +Y: x = R*cos(t), z = -R*sin(t), t in [0, 2pi]
+	// Top (+Z) is at t = 3pi/2
+	// Left ear (negative X) at t = 3pi/2 - offset, right ear (positive X) at t = 3pi/2 + offset
+	float fTopT = 1.5f * fPI;
+	float fLEStart = fTopT - fEAR_ANGLE_OFFSET - fEAR_HALF_WIDTH;
+	float fLETip = fTopT - fEAR_ANGLE_OFFSET;
+	float fLEEnd = fTopT - fEAR_ANGLE_OFFSET + fEAR_HALF_WIDTH;
+	float fREStart = fTopT + fEAR_ANGLE_OFFSET - fEAR_HALF_WIDTH;
+	float fRETip = fTopT + fEAR_ANGLE_OFFSET;
+	float fREEnd = fTopT + fEAR_ANGLE_OFFSET + fEAR_HALF_WIDTH;
+
+	// Helper: add a circle perimeter point at parameter t
+	auto AddCirclePt = [&](float fT)
+	{
+		PerimeterPoint xPt;
+		xPt.m_fX = fHEAD_RADIUS * cosf(fT);
+		xPt.m_fZ = -fHEAD_RADIUS * sinf(fT);
+		xPt.m_fOutX = cosf(fT);
+		xPt.m_fOutZ = -sinf(fT);
+		xPt.m_bExterior = true;
+		axPerimeter.PushBack(xPt);
+	};
+
+	// Helper: add ear tip point with averaged edge normals
+	auto AddEarTip = [&](float fTBase1, float fTTip, float fTBase2)
+	{
+		float fBase1X = fHEAD_RADIUS * cosf(fTBase1);
+		float fBase1Z = -fHEAD_RADIUS * sinf(fTBase1);
+		float fTipX = fEAR_TIP_RADIUS * cosf(fTTip);
+		float fTipZ = -fEAR_TIP_RADIUS * sinf(fTTip);
+		float fBase2X = fHEAD_RADIUS * cosf(fTBase2);
+		float fBase2Z = -fHEAD_RADIUS * sinf(fTBase2);
+
+		// Edge 1 (base1 -> tip): outward normal = CCW rotation of edge direction
+		float fDx1 = fTipX - fBase1X;
+		float fDz1 = fTipZ - fBase1Z;
+		float fLen1 = sqrtf(fDx1 * fDx1 + fDz1 * fDz1);
+		float fN1X = -fDz1 / fLen1;
+		float fN1Z = fDx1 / fLen1;
+
+		// Edge 2 (tip -> base2): outward normal = CCW rotation of edge direction
+		float fDx2 = fBase2X - fTipX;
+		float fDz2 = fBase2Z - fTipZ;
+		float fLen2 = sqrtf(fDx2 * fDx2 + fDz2 * fDz2);
+		float fN2X = -fDz2 / fLen2;
+		float fN2Z = fDx2 / fLen2;
+
+		// Average and normalize
+		float fAvgX = fN1X + fN2X;
+		float fAvgZ = fN1Z + fN2Z;
+		float fAvgLen = sqrtf(fAvgX * fAvgX + fAvgZ * fAvgZ);
+		fAvgX /= fAvgLen;
+		fAvgZ /= fAvgLen;
+
+		PerimeterPoint xPt;
+		xPt.m_fX = fTipX;
+		xPt.m_fZ = fTipZ;
+		xPt.m_fOutX = fAvgX;
+		xPt.m_fOutZ = fAvgZ;
+		xPt.m_bExterior = true;
+		axPerimeter.PushBack(xPt);
+	};
+
+	// Helper: emit evenly-spaced circle points for an arc
+	auto EmitArc = [&](float fTStart, float fTEnd, bool bIncludeStart, bool bIncludeEnd)
+	{
+		float fSpan = fTEnd - fTStart;
+		uint32_t uSegs = static_cast<uint32_t>(fSpan / (2.f * fPI) * static_cast<float>(uCIRCLE_RESOLUTION));
+		if (uSegs < 2)
+			uSegs = 2;
+		uint32_t uStart = bIncludeStart ? 0 : 1;
+		uint32_t uEnd = bIncludeEnd ? uSegs : uSegs - 1;
+		for (uint32_t i = uStart; i <= uEnd; ++i)
+		{
+			float fT = fTStart + fSpan * static_cast<float>(i) / static_cast<float>(uSegs);
+			AddCirclePt(fT);
+		}
+	};
+
+	// Build CW perimeter:
+	// Section 1: circle from 0 to left ear start
+	EmitArc(0.f, fLEStart, true, false);
+
+	// Left ear
+	AddCirclePt(fLEStart);
+	AddEarTip(fLEStart, fLETip, fLEEnd);
+	AddCirclePt(fLEEnd);
+
+	// Section 3: circle between ears
+	EmitArc(fLEEnd, fREStart, false, false);
+
+	// Right ear
+	AddCirclePt(fREStart);
+	AddEarTip(fREStart, fRETip, fREEnd);
+	AddCirclePt(fREEnd);
+
+	// Section 5: circle from right ear end back to start
+	EmitArc(fREEnd, 2.f * fPI, false, false);
+
+	// Emit geometry using same pipeline as shapes
+	EmitTopFace(xBuilder, axPerimeter, fHALF_HEIGHT, 0.f, 0.f, true);
+	EmitEdgeRounding(xBuilder, axPerimeter, fHALF_HEIGHT);
+	EmitSideWalls(xBuilder, axPerimeter, -fHALF_HEIGHT, fHALF_HEIGHT);
+
+	// Finalize
+	xBuilder.CopyToGeometry(xGeometryOut);
+	xGeometryOut.GenerateLayoutAndVertexData();
+	Flux_MemoryManager::InitialiseVertexBuffer(
+		xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	Flux_MemoryManager::InitialiseIndexBuffer(
+		xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+}
+
+// ============================================================================
 // Shape Mesh Deserialization (runtime)
 // ============================================================================
 static bool ReadShapeMeshFromStream(Zenith_DataStream& xStream, Flux_MeshGeometry& xGeometry)
@@ -698,6 +829,10 @@ static void InitializeTilePuzzleResources()
 
 	g_pxSphereAsset = Zenith_MeshGeometryAsset::CreateUnitSphere(16);
 	g_pxSphereGeometry = g_pxSphereAsset->GetGeometry();
+
+	// Generate cat head mesh
+	g_pxCatMeshGeometry = new Flux_MeshGeometry();
+	GenerateCatMesh(*g_pxCatMeshGeometry);
 
 	// Load pre-generated merged polyomino meshes from disk
 	for (uint32_t u = 0; u < TILEPUZZLE_SHAPE_COUNT; ++u)
