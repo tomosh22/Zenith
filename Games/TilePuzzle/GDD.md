@@ -120,6 +120,12 @@ Every 10th level (levels 10, 20, ..., 100) triggers a pinball minigame. 10 total
 | 8 | 90 | Combined (Score + All Pegs) | 3,000 | 8 | Unlimited |
 | 9 | 100 | Target Hits (10) | - | 8 | Unlimited |
 
+**Peg Hit Visual Feedback:**
+- On hit: peg swaps to flash material `(1.0, 0.8, 0.5)` with high emissive (intensity 3.0)
+- Flash duration: 0.3s for hit-all-pegs gates, 1.0s for other gate types
+- Hit-all gates: after flash, peg stays lit with hit material `(0.7, 0.5, 0.4)` (emissive 1.2) to show progress
+- Other gates: peg reverts to normal material after flash and can be re-hit for additional points
+
 **Pinball HUD:**
 
 Each gate displays clear on-screen instructions telling the player what they need to do:
@@ -131,7 +137,7 @@ Each gate displays clear on-screen instructions telling the player what they nee
 | `PinballTargetCount` | Below peg count | Cyan | Target-hits / combined gates only | "Targets: X/Y" progress counter |
 | `PinballBalls` | Top-right | Orange | Limited-ball gates only | "Balls: N" remaining counter |
 | `PinballGateStatus` | Center | Yellow/Green/Red | Gate end | Pass/fail result display |
-| `PinballGateNum` | Top-center | Purple | During gate | "Gate N" label |
+| `PinballGateNum` | Top-center | Light Blue | During gate | "Gate N" label |
 | `PinballScore` | Top-left, below objective | White | Always | "Score: N" current session score |
 | `PinballHighScore` | Below score | White | Always | "Total: N" lifetime pinball score |
 
@@ -140,7 +146,8 @@ After all 10 gates are cleared, the objective text shows "Freeplay - All gates c
 **Quick Play Pinball:** Unlocked after clearing Gate 1 (level 10). Accessible from the main menu "Pinball" button.
 
 **Gate Selection UI:** On entering Quick Play, a gate selection screen (`PINBALL_STATE_GATE_SELECT`) shows 10 gate buttons in a 5x2 grid:
-- Cleared gates: blue with checkmark, selectable
+- Cleared gates: blue, selectable
+- Current/active gate: green, selectable
 - Locked gates: gray, not selectable
 - "Freeplay" button: visible after all 10 gates cleared
 - "Back" button: returns to main menu scene
@@ -148,14 +155,15 @@ After all 10 gates are cleared, the objective text shows "Freeplay - All gates c
 **Daily Pinball Bonus:** First gate completion of the day awards 25 bonus coins. Tracked via `uLastDailyPinballDate` (YYYYMMDD) in save data. Shows "+25 Daily Bonus!" text on award.
 
 **Thematic Elements:**
-- Pinball pegs use flattened cylinder geometry with warm orange tint (cat-themed)
+- Pinball pegs use flattened sphere geometry with brown tint `(0.55, 0.35, 0.3)`
 - Ball material uses orange base color instead of silver for cat-face color tint
-- Collision remains circular regardless of visual geometry
+- Collision remains circular (sphere) regardless of visual geometry
 
 **Pinball Playfield:**
 - Bounds: x=[-2.4, 2.4], y=[0.0, 8.0]
 - Wall thickness: 0.3 units
 - Ball radius: 0.15 units, max launch force: 35.0 units/sec
+- Two angled wall pieces at the top redirect the ball from the launcher channel into the main play area (30deg and 10deg rotation)
 
 ---
 
@@ -230,6 +238,11 @@ else:                      1 star
 | 3-star bonus | +5 |
 | Pinball gate clear | +25 |
 | Daily puzzle complete | +50 |
+| Milestone: 10 cats rescued (first time) | +50 |
+| Milestone: 25 cats rescued (first time) | +100 |
+| Milestone: 50 cats rescued (first time) | +200 |
+| Milestone: 75 cats rescued (first time) | +300 |
+| Milestone: 100 cats rescued (first time) | +500 |
 
 ### 4.2 Coin Sinks
 
@@ -285,7 +298,7 @@ Each cat has:
 - **8 cats per page**, paginated display
 - **13 pages** for 100 cats
 - Per-cat card shows: name, breed, level number, 3-star indicator
-- Uncollected cats display "???" placeholder
+- Uncollected cats display "?" placeholder
 
 ---
 
@@ -714,7 +727,7 @@ Time-limited goals that give players a medium-term engagement target beyond dail
 
 **Toast UI:** Gold banner at top of screen showing achievement name, auto-dismisses after 2 seconds.
 
-**Achievement Screen:** Accessible from main menu via "Achievements" button. Uses `TILEPUZZLE_STATE_ACHIEVEMENTS` game state. Simple scrollable list of 10 achievements showing name, description, and locked/unlocked state. Unlocked achievements show a gold border.
+**Achievement Screen:** Accessible from main menu via "Achievements" button. Uses `TILEPUZZLE_STATE_ACHIEVEMENTS` game state. Canvas-rendered list of 10 achievements showing name, description, and locked/unlocked state. Unlocked achievements use a gold background; locked achievements use a dark background. "Tap to return" prompt at the bottom dismisses the screen.
 
 ### 11.4 Future Considerations
 
