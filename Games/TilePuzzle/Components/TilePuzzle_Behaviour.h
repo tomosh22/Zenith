@@ -83,6 +83,50 @@ namespace TilePuzzle
 	void GenerateShapeMeshFromDefinition(const TilePuzzleShapeDefinition& xDef, Flux_MeshGeometry& xGeometryOut);
 }
 
+namespace TilePuzzleUI
+{
+	// Tutorial overlay
+	static constexpr float fTUTORIAL_FONT = 48.f;
+	static constexpr float fTUTORIAL_HINT_FONT = 36.f;
+	static constexpr float fTUTORIAL_PANEL_HALF_W = 405.f;
+
+	// Achievement toast
+	static constexpr float fTOAST_FONT = 40.f;
+	static constexpr float fTOAST_BANNER_H = 90.f;
+
+	// Achievements screen
+	static constexpr float fACHIEV_TITLE_FONT = 56.f;
+	static constexpr float fACHIEV_NAME_FONT = 36.f;
+	static constexpr float fACHIEV_DESC_FONT = 34.f;
+	static constexpr float fACHIEV_ICON_FONT = 42.f;
+	static constexpr float fACHIEV_ITEM_H = 100.f;
+	static constexpr float fACHIEV_RETURN_FONT = 36.f;
+
+	// "Need a hint?" prompt
+	static constexpr float fHINT_PROMPT_FONT = 44.f;
+
+	// MetaGame: Cat cards (runtime overrides)
+	static constexpr float fCAT_CARD_COLLECTED_FONT = 32.f;
+	static constexpr float fCAT_CARD_LOCKED_FONT = 42.f;
+
+	// MetaGame: Victory title (runtime override by star rating)
+	static constexpr float fVICTORY_TITLE_3STAR = 72.f;
+	static constexpr float fVICTORY_TITLE_2STAR = 64.f;
+	static constexpr float fVICTORY_TITLE_1STAR = 56.f;
+	static constexpr float fVICTORY_CONTENT_W = 600.f;
+	static constexpr float fVICTORY_CONTENT_H = 340.f;
+	static constexpr float fVICTORY_CONTENT_SPACING = 26.f;
+	static constexpr float fNEXT_LEVEL_BTN_Y = 195.f;
+
+	// MetaGame: Weekly challenge banner
+	static constexpr float fWEEKLY_BANNER_H = 120.f;
+	static constexpr float fWEEKLY_BANNER_BOTTOM_OFFSET = 135.f;
+	static constexpr float fWEEKLY_TITLE_FONT = 36.f;
+	static constexpr float fWEEKLY_DESC_FONT = 34.f;
+	static constexpr float fWEEKLY_PROGRESS_FONT = 32.f;
+	static constexpr float fWEEKLY_BAR_H = 22.f;
+}
+
 // Forward declaration for level select button user data
 class TilePuzzle_Behaviour;
 
@@ -317,12 +361,6 @@ public:
 			if (pxLevelSelectBtn)
 			{
 				pxLevelSelectBtn->SetOnClick(&OnLevelSelectClicked, this);
-			}
-
-			Zenith_UI::Zenith_UIButton* pxNewGameBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("NewGameButton");
-			if (pxNewGameBtn)
-			{
-				pxNewGameBtn->SetOnClick(&OnNewGameClicked, this);
 			}
 
 			Zenith_UI::Zenith_UIButton* pxPinballBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("PinballButton");
@@ -829,16 +867,6 @@ private:
 		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
 		pxSelf->m_uLevelSelectPage = 0;
 		pxSelf->StartTransition(TILEPUZZLE_STATE_LEVEL_SELECT);
-	}
-
-	static void OnNewGameClicked(void* pxUserData)
-	{
-		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-		pxSelf->m_xSaveData.Reset();
-		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
-			TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
-		pxSelf->m_uCurrentLevelNumber = 1;
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	static void OnResetSaveClicked(void* pxUserData)
@@ -1857,7 +1885,7 @@ private:
 		if (szText)
 		{
 			float fTextY = static_cast<float>(iWinHeight) * 0.65f;
-			float fTextX = static_cast<float>(iWinWidth) * 0.5f - 270.0f;
+			float fTextX = static_cast<float>(iWinWidth) * 0.5f - TilePuzzleUI::fTUTORIAL_PANEL_HALF_W;
 
 			// Text background panel (bounds: left, top, right, bottom)
 			pxCanvas->SubmitQuad(
@@ -1867,7 +1895,7 @@ private:
 			pxCanvas->SubmitText(
 				szText,
 				Zenith_Maths::Vector2(fTextX, fTextY),
-				32.0f,
+				TilePuzzleUI::fTUTORIAL_FONT,
 				Zenith_Maths::Vector4(1.0f, 1.0f, 0.8f, m_fTutorialFadeProgress));
 
 			// "Tap to continue" hint at bottom
@@ -1875,7 +1903,7 @@ private:
 			pxCanvas->SubmitText(
 				"Tap to continue",
 				Zenith_Maths::Vector2(fTextX + 170.0f, fTextY + 90.0f),
-				24.0f,
+				TilePuzzleUI::fTUTORIAL_HINT_FONT,
 				Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, fHintAlpha));
 		}
 
@@ -2133,7 +2161,7 @@ private:
 					"Need a hint?",
 					Zenith_Maths::Vector2(static_cast<float>(iWinWidth) * 0.5f - 100.0f,
 						static_cast<float>(iWinHeight) * 0.7f),
-					30.0f,
+					TilePuzzleUI::fHINT_PROMPT_FONT,
 					Zenith_Maths::Vector4(1.0f, 0.85f, 0.2f, fPulseAlpha));
 			}
 		}
@@ -2254,7 +2282,7 @@ private:
 		float fAlpha = (m_fAchievementToastTimer > 0.3f) ? 1.0f : (m_fAchievementToastTimer / 0.3f);
 
 		// Gold banner at top of screen
-		float fBannerH = 60.0f;
+		float fBannerH = TilePuzzleUI::fTOAST_BANNER_H;
 		pxCanvas->SubmitQuad(
 			Zenith_Maths::Vector4(0.0f, 0.0f, fW, fBannerH),
 			Zenith_Maths::Vector4(0.4f, 0.35f, 0.1f, fAlpha * 0.9f));
@@ -2265,7 +2293,7 @@ private:
 		pxCanvas->SubmitText(
 			szText,
 			Zenith_Maths::Vector2(fW * 0.5f - 200.0f, 15.0f),
-			26.0f,
+			TilePuzzleUI::fTOAST_FONT,
 			Zenith_Maths::Vector4(1.0f, 0.9f, 0.3f, fAlpha));
 	}
 
@@ -2291,12 +2319,12 @@ private:
 		pxCanvas->SubmitText(
 			"Achievements",
 			Zenith_Maths::Vector2(fW * 0.5f - 120.0f, 30.0f),
-			40.0f,
+			TilePuzzleUI::fACHIEV_TITLE_FONT,
 			Zenith_Maths::Vector4(1.0f, 0.9f, 0.3f, 1.0f));
 
 		// List achievements
 		float fStartY = 90.0f;
-		float fItemH = 65.0f;
+		float fItemH = TilePuzzleUI::fACHIEV_ITEM_H;
 		for (uint32_t i = 0; i < ACHIEVEMENT_COUNT; ++i)
 		{
 			float fY = fStartY + static_cast<float>(i) * fItemH;
@@ -2317,14 +2345,14 @@ private:
 			pxCanvas->SubmitText(
 				GetAchievementName(i),
 				Zenith_Maths::Vector2(50.0f, fY + 8.0f),
-				24.0f,
+				TilePuzzleUI::fACHIEV_NAME_FONT,
 				xNameColor);
 
 			// Description
 			pxCanvas->SubmitText(
 				GetAchievementDescription(i),
 				Zenith_Maths::Vector2(50.0f, fY + 35.0f),
-				22.0f,
+				TilePuzzleUI::fACHIEV_DESC_FONT,
 				Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.0f));
 
 			// Status icon
@@ -2332,7 +2360,7 @@ private:
 			pxCanvas->SubmitText(
 				szStatus,
 				Zenith_Maths::Vector2(fW - 70.0f, fY + 15.0f),
-				28.0f,
+				TilePuzzleUI::fACHIEV_ICON_FONT,
 				xNameColor);
 		}
 
@@ -2340,7 +2368,7 @@ private:
 		pxCanvas->SubmitText(
 			"Tap to return",
 			Zenith_Maths::Vector2(fW * 0.5f - 80.0f, fH - 50.0f),
-			24.0f,
+			TilePuzzleUI::fACHIEV_RETURN_FONT,
 			Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 0.5f + 0.5f * sinf(m_fMenuTimer * 3.0f)));
 
 		// Handle back tap

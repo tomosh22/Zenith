@@ -105,7 +105,7 @@ void UpdateCatCafeUI()
 			char szText[128];
 			snprintf(szText, sizeof(szText), "=^.^= %s\n%s\nLvl %u %s", szName, szBreed, uLevel, GetStarString(uStars));
 			pxCard->SetText(szText);
-			pxCard->SetFontSize(20.f);
+			pxCard->SetFontSize(TilePuzzleUI::fCAT_CARD_COLLECTED_FONT);
 
 			// Tier-colored border: Tutorial(1-10)=bronze, Easy(11-25)=silver, Medium+(26+)=gold
 			if (pxBg)
@@ -124,7 +124,7 @@ void UpdateCatCafeUI()
 		else
 		{
 			pxCard->SetText("?");
-			pxCard->SetFontSize(28.f);
+			pxCard->SetFontSize(TilePuzzleUI::fCAT_CARD_LOCKED_FONT);
 			if (pxBg)
 			{
 				pxBg->SetColor(Zenith_Maths::Vector4(0.15f, 0.15f, 0.15f, 0.5f));
@@ -213,15 +213,15 @@ void SetVictoryOverlayVisible(bool bVisible)
 		{
 			pxContentGroup->SetFitToContent(false);
 			pxContentGroup->SetPosition(0.f, 20.f);
-			pxContentGroup->SetSize(460.f, 250.f);
-			pxContentGroup->SetSpacing(20.f);
+			pxContentGroup->SetSize(TilePuzzleUI::fVICTORY_CONTENT_W, TilePuzzleUI::fVICTORY_CONTENT_H);
+			pxContentGroup->SetSpacing(TilePuzzleUI::fVICTORY_CONTENT_SPACING);
 		}
 
 		// Keep button hidden until the animation makes it visible
 		if (m_pxNextLevelBtn)
 		{
 			m_pxNextLevelBtn->SetVisible(false);
-			m_pxNextLevelBtn->SetPosition(0.f, 145.f);
+			m_pxNextLevelBtn->SetPosition(0.f, TilePuzzleUI::fNEXT_LEVEL_BTN_Y);
 			m_pxNextLevelBtn->SetNormalColor(Zenith_Maths::Vector4(0.15f, 0.4f, 0.2f, 1.0f));
 			m_pxNextLevelBtn->SetHoverColor(Zenith_Maths::Vector4(0.25f, 0.55f, 0.3f, 1.0f));
 			m_pxNextLevelBtn->SetPressedColor(Zenith_Maths::Vector4(0.1f, 0.3f, 0.15f, 1.0f));
@@ -296,7 +296,7 @@ void UpdateVictoryOverlay(float fDeltaTime)
 			float fEased = Zenith_ApplyEasing(EASING_BACK_OUT, fProgress);
 			pxTitle->SetColor(Zenith_Maths::Vector4(1.0f, 1.0f, 0.5f, fProgress));
 			// Simulate scale via font size (scaled by star count: 1-star=40, 2-star=48, 3-star=56)
-			float fBaseFontSize = (m_uVictoryStarRating >= 3) ? 56.0f : ((m_uVictoryStarRating >= 2) ? 48.0f : 40.0f);
+			float fBaseFontSize = (m_uVictoryStarRating >= 3) ? TilePuzzleUI::fVICTORY_TITLE_3STAR : ((m_uVictoryStarRating >= 2) ? TilePuzzleUI::fVICTORY_TITLE_2STAR : TilePuzzleUI::fVICTORY_TITLE_1STAR);
 			float fFontSize = fBaseFontSize * fEased;
 			if (fFontSize > 0.1f)
 				pxTitle->SetFontSize(fFontSize);
@@ -401,7 +401,7 @@ void UpdateVictoryOverlay(float fDeltaTime)
 			{
 				snprintf(szText, sizeof(szText), "Cat rescued: %s!", szCatName);
 			}
-			pxCatText->SetMaxWidth(460.f);
+			pxCatText->SetMaxWidth(TilePuzzleUI::fVICTORY_CONTENT_W);
 			pxCatText->SetText(szText);
 
 			if (m_bVictoryNewBest)
@@ -754,8 +754,8 @@ void UpdateMainMenuUI()
 		float fH = static_cast<float>(iWinHeight);
 
 		// Banner at bottom of screen
-		float fBannerY = fH - 90.0f;
-		float fBannerH = 80.0f;
+		float fBannerY = fH - TilePuzzleUI::fWEEKLY_BANNER_BOTTOM_OFFSET;
+		float fBannerH = TilePuzzleUI::fWEEKLY_BANNER_H;
 		pxCanvas->SubmitQuad(
 			Zenith_Maths::Vector4(10.0f, fBannerY, fW - 10.0f, fBannerY + fBannerH),
 			Zenith_Maths::Vector4(0.1f, 0.1f, 0.2f, 0.85f));
@@ -765,7 +765,7 @@ void UpdateMainMenuUI()
 			pxCanvas->SubmitText(
 				"Weekly Challenge Complete!",
 				Zenith_Maths::Vector2(20.0f, fBannerY + 10.0f),
-				24.0f,
+				TilePuzzleUI::fWEEKLY_TITLE_FONT,
 				Zenith_Maths::Vector4(0.3f, 1.0f, 0.3f, 1.0f));
 		}
 		else
@@ -773,14 +773,14 @@ void UpdateMainMenuUI()
 			pxCanvas->SubmitText(
 				m_xSaveData.GetWeeklyChallengeDescription(),
 				Zenith_Maths::Vector2(20.0f, fBannerY + 8.0f),
-				22.0f,
+				TilePuzzleUI::fWEEKLY_DESC_FONT,
 				Zenith_Maths::Vector4(1.0f, 0.9f, 0.7f, 1.0f));
 
 			// Progress bar
 			float fBarX = 20.0f;
 			float fBarY2 = fBannerY + 38.0f;
 			float fBarW = fW - 50.0f;
-			float fBarH2 = 14.0f;
+			float fBarH2 = TilePuzzleUI::fWEEKLY_BAR_H;
 			pxCanvas->SubmitQuad(
 				Zenith_Maths::Vector4(fBarX, fBarY2, fBarX + fBarW, fBarY2 + fBarH2),
 				Zenith_Maths::Vector4(0.2f, 0.2f, 0.25f, 0.8f));
@@ -799,7 +799,7 @@ void UpdateMainMenuUI()
 			pxCanvas->SubmitText(
 				szProgress,
 				Zenith_Maths::Vector2(20.0f, fBannerY + 55.0f),
-				20.0f,
+				TilePuzzleUI::fWEEKLY_PROGRESS_FONT,
 				Zenith_Maths::Vector4(0.7f, 0.7f, 0.8f, 1.0f));
 		}
 	}

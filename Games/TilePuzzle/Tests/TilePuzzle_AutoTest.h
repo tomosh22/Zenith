@@ -8114,7 +8114,6 @@ private:
 			"LivesText", "LivesTimerText", "RefillLivesButton", "VersionText",
 			"LevelSelectButton", "CatCafeButton", "DailyPuzzleButton",
 			"PinballButton", "SettingsButton", "AchievementsButton",
-			"NewGameButton",
 		};
 
 		for (const char* szName : aszMenuElements)
@@ -8131,7 +8130,7 @@ private:
 		const char* aszButtons[] = {
 			"ContinueButton", "LevelSelectButton", "CatCafeButton",
 			"DailyPuzzleButton", "PinballButton", "SettingsButton",
-			"AchievementsButton", "NewGameButton", "RefillLivesButton",
+			"AchievementsButton", "RefillLivesButton",
 		};
 		for (const char* szName : aszButtons)
 		{

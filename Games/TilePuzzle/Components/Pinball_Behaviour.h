@@ -78,6 +78,23 @@ namespace TilePuzzle
 	extern Flux_MeshGeometry* g_pxTargetRampGeometry;
 }
 
+namespace TilePuzzleUI
+{
+	// Pinball HUD text sizes
+	static constexpr float fPB_OBJECTIVE_FONT = 36.f;
+	static constexpr float fPB_COUNTER_FONT = 34.f;
+	static constexpr float fPB_BALLS_FONT = 36.f;
+	static constexpr float fPB_GATE_STATUS_FONT = 52.f;
+	static constexpr float fPB_GATE_NUM_FONT = 34.f;
+
+	// Pinball HUD Y positions (scaled up for readability)
+	static constexpr float fPB_OBJECTIVE_Y = 60.f;
+	static constexpr float fPB_PEG_COUNT_Y = 100.f;
+	static constexpr float fPB_TARGET_COUNT_Y = 138.f;
+	static constexpr float fPB_BALLS_Y = 60.f;
+	static constexpr float fPB_GATE_STATUS_Y = -40.f;
+}
+
 // ============================================================================
 // Configuration Constants
 // ============================================================================
@@ -1804,37 +1821,37 @@ private:
 		// Objective text - top left
 		Zenith_UI::Zenith_UIText* pxObjective = xUI.CreateText("PinballObjective", "");
 		pxObjective->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-		pxObjective->SetPosition(20.f, 60.f);
-		pxObjective->SetFontSize(24.f);
+		pxObjective->SetPosition(20.f, TilePuzzleUI::fPB_OBJECTIVE_Y);
+		pxObjective->SetFontSize(TilePuzzleUI::fPB_OBJECTIVE_FONT);
 		pxObjective->SetColor({ 1.f, 0.9f, 0.5f, 1.f });
 
 		// Peg counter - below objective
 		Zenith_UI::Zenith_UIText* pxPegCount = xUI.CreateText("PinballPegCount", "");
 		pxPegCount->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-		pxPegCount->SetPosition(20.f, 85.f);
-		pxPegCount->SetFontSize(22.f);
+		pxPegCount->SetPosition(20.f, TilePuzzleUI::fPB_PEG_COUNT_Y);
+		pxPegCount->SetFontSize(TilePuzzleUI::fPB_COUNTER_FONT);
 		pxPegCount->SetColor({ 0.7f, 1.f, 0.9f, 1.f });
 
 		// Target hit counter - below peg counter
 		Zenith_UI::Zenith_UIText* pxTargetCount = xUI.CreateText("PinballTargetCount", "");
 		pxTargetCount->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-		pxTargetCount->SetPosition(20.f, 108.f);
-		pxTargetCount->SetFontSize(22.f);
+		pxTargetCount->SetPosition(20.f, TilePuzzleUI::fPB_TARGET_COUNT_Y);
+		pxTargetCount->SetFontSize(TilePuzzleUI::fPB_COUNTER_FONT);
 		pxTargetCount->SetColor({ 0.7f, 1.f, 0.9f, 1.f });
 
 		// Balls remaining - top right
 		Zenith_UI::Zenith_UIText* pxBalls = xUI.CreateText("PinballBalls", "");
 		pxBalls->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopRight);
-		pxBalls->SetPosition(-20.f, 60.f);
-		pxBalls->SetFontSize(24.f);
+		pxBalls->SetPosition(-20.f, TilePuzzleUI::fPB_BALLS_Y);
+		pxBalls->SetFontSize(TilePuzzleUI::fPB_BALLS_FONT);
 		pxBalls->SetAlignment(Zenith_UI::TextAlignment::Right);
 		pxBalls->SetColor({ 1.f, 0.7f, 0.5f, 1.f });
 
 		// Gate status (cleared/failed) - center screen
 		Zenith_UI::Zenith_UIText* pxGateStatus = xUI.CreateText("PinballGateStatus", "");
 		pxGateStatus->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxGateStatus->SetPosition(0.f, -30.f);
-		pxGateStatus->SetFontSize(36.f);
+		pxGateStatus->SetPosition(0.f, TilePuzzleUI::fPB_GATE_STATUS_Y);
+		pxGateStatus->SetFontSize(TilePuzzleUI::fPB_GATE_STATUS_FONT);
 		pxGateStatus->SetAlignment(Zenith_UI::TextAlignment::Center);
 		pxGateStatus->SetColor({ 1.f, 1.f, 0.3f, 1.f });
 		pxGateStatus->SetVisible(false);
@@ -1843,7 +1860,7 @@ private:
 		Zenith_UI::Zenith_UIText* pxGateNum = xUI.CreateText("PinballGateNum", "");
 		pxGateNum->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopCenter);
 		pxGateNum->SetPosition(0.f, 60.f);
-		pxGateNum->SetFontSize(22.f);
+		pxGateNum->SetFontSize(TilePuzzleUI::fPB_GATE_NUM_FONT);
 		pxGateNum->SetAlignment(Zenith_UI::TextAlignment::Center);
 		pxGateNum->SetColor({ 0.6f, 0.6f, 0.8f, 1.f });
 

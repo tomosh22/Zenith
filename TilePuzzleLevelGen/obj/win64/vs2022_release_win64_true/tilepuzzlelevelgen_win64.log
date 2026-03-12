@@ -1,10 +1,1 @@
-﻿  TilePuzzleLevelGen.cpp
-C:\dev\Zenith\games\tilepuzzle\Components\TilePuzzle_LevelGenerator.h(819,17): warning C4100: 'xRng': unreferenced formal parameter
-  (compiling source file '../TilePuzzleLevelGen/TilePuzzleLevelGen.cpp')
-  
-C:\dev\Zenith\TilePuzzleLevelGen\TilePuzzleLevelGen.cpp(1475,12): warning C4244: 'argument': conversion from 'time_t' to 'unsigned int', possible loss of data
-  tilepuzzlelevelgen_win64.vcxproj -> C:\dev\Zenith\TilePuzzleLevelGen\output\win64\vs2022_release_win64_true\tilepuzzlelevelgen.exe
-  'pwsh.exe' is not recognized as an internal or external command,
-  operable program or batch file.
-  0 File(s) copied
-  0 File(s) copied
+﻿

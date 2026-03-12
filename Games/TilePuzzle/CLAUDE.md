@@ -245,8 +245,7 @@ Puzzle scene (created/destroyed per level):
 |------|--------|-----------------|
 | T2.1 | Click Continue | Game transitions to PLAYING state, puzzle appears |
 | T2.2 | Click Level Select | Level grid appears with page navigation |
-| T2.3 | Click New Game | Save data resets, starts from level 1 |
-| T2.4 | Press Escape during gameplay | Returns to main menu |
+| T2.3 | Press Escape during gameplay | Returns to main menu |
 
 ### T3: Level Generation
 | Step | Action | Expected Result |

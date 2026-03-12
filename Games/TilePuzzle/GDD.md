@@ -394,9 +394,9 @@ MAIN_MENU -> LEVEL_SELECT -> PLAYING -> SHAPE_SLIDING -> CHECK_ELIMINATION
 - **Cat Cafe:** View cat collection
 - **Daily Puzzle:** Play daily challenge
 - **Pinball:** Jump to pinball scene
-- **New Game / Reset Save:** Reset all progress
+- **Reset Save:** Reset all progress
 - **Displays:** Coins, lives (with regen timer), daily streak
-- **Keyboard/Gamepad Navigation:** Arrow keys navigate vertically between menu buttons (Continue ↕ LevelSelect ↕ NewGame ↕ Pinball ↕ ResetSave ↕ CatCafe ↕ DailyPuzzle ↕ Settings ↕ Achievements). Enter/Space activates the focused button.
+- **Keyboard/Gamepad Navigation:** Arrow keys navigate vertically between menu buttons (Continue ↕ LevelSelect ↕ Pinball ↕ ResetSave ↕ CatCafe ↕ DailyPuzzle ↕ Settings ↕ Achievements). Enter/Space activates the focused button.
 
 ### 7.2.1 Main Menu Visual Style
 
@@ -430,7 +430,6 @@ the engine's UIStyle system for consistent styling.
 | Daily Puzzle | `(0.22, 0.38, 0.22)` | `(0.28, 0.48, 0.28)` | `(0.16, 0.28, 0.16)` | `(0.35, 0.55, 0.35)` |
 | Pinball | `(0.18, 0.35, 0.40)` | `(0.22, 0.42, 0.48)` | `(0.12, 0.26, 0.30)` | `(0.30, 0.50, 0.55)` |
 | Settings | `(0.22, 0.22, 0.28)` | `(0.30, 0.30, 0.38)` | `(0.15, 0.15, 0.20)` | `(0.35, 0.35, 0.42)` |
-| New Game | `(0.20, 0.25, 0.40)` | `(0.28, 0.33, 0.50)` | `(0.14, 0.18, 0.30)` | `(0.32, 0.38, 0.55)` |
 | Reset Save | `(0.45, 0.15, 0.15)` | `(0.55, 0.20, 0.20)` | `(0.35, 0.10, 0.10)` | `(0.60, 0.25, 0.25)` |
 | Refill Lives | `(0.50, 0.20, 0.20)` | `(0.60, 0.30, 0.30)` | `(0.35, 0.12, 0.12)` | `(0.65, 0.32, 0.32)` |
 
@@ -1128,9 +1127,7 @@ After any code change:
 | M-MENU-15 | Pinball button navigates | Tapping Pinball transitions to pinball gate select |
 | M-MENU-16 | `[AUTO]` Settings button exists | SettingsButton element exists with Button type |
 | M-MENU-17 | `[AUTO]` Settings button navigates | Tapping Settings transitions to settings screen (InputSimulator) |
-| M-MENU-18 | `[AUTO]` New Game button exists | NewGameButton element exists with Button type |
-| M-MENU-19 | New Game button triggers confirm | Tapping New Game shows confirmation dialog |
-| M-MENU-20 | `[AUTO]` Reset Save button exists | ResetSaveButton element exists with Button type |
+| M-MENU-18 | `[AUTO]` Reset Save button exists | ResetSaveButton element exists with Button type |
 | M-MENU-21 | Reset Save button triggers confirm | Tapping Reset Save shows confirmation dialog |
 | M-MENU-22 | `[AUTO]` Refill Lives button exists | RefillLivesButton element exists with Button type |
 | M-MENU-23 | Refill Lives button works | Tapping Refill Lives deducts 50 coins and restores 5 lives |
