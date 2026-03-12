@@ -170,3 +170,61 @@ private:
 	Flux_Buffer m_xBuffer;
 	Flux_UnorderedAccessView_Buffer m_xUAV;
 };
+
+class Flux_DynamicReadWriteBuffer
+{
+public:
+	void Reset()
+	{
+		for (u_int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+		{
+			m_axBuffers[i] = Flux_Buffer();
+		}
+	}
+
+	const Flux_Buffer& GetBuffer() const
+	{
+		const u_int uIndex = Flux_Swapchain::GetCurrentFrameIndex();
+		Zenith_Assert(uIndex < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uIndex, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uIndex];
+	}
+	Flux_Buffer& GetBuffer()
+	{
+		const u_int uIndex = Flux_Swapchain::GetCurrentFrameIndex();
+		Zenith_Assert(uIndex < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uIndex, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uIndex];
+	}
+
+	const Flux_UnorderedAccessView_Buffer& GetUAV() const
+	{
+		const u_int uIndex = Flux_Swapchain::GetCurrentFrameIndex();
+		Zenith_Assert(uIndex < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uIndex, MAX_FRAMES_IN_FLIGHT);
+		return m_axUAVs[uIndex];
+	}
+	Flux_UnorderedAccessView_Buffer& GetUAV()
+	{
+		const u_int uIndex = Flux_Swapchain::GetCurrentFrameIndex();
+		Zenith_Assert(uIndex < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uIndex, MAX_FRAMES_IN_FLIGHT);
+		return m_axUAVs[uIndex];
+	}
+
+	const Flux_Buffer& GetBufferForFrameInFlight(const u_int uFrame) const
+	{
+		Zenith_Assert(uFrame < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uFrame, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uFrame];
+	}
+	Flux_Buffer& GetBufferForFrameInFlight(const u_int uFrame)
+	{
+		Zenith_Assert(uFrame < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uFrame, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uFrame];
+	}
+
+	Flux_UnorderedAccessView_Buffer& GetUAVForFrameInFlight(const u_int uFrame)
+	{
+		Zenith_Assert(uFrame < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uFrame, MAX_FRAMES_IN_FLIGHT);
+		return m_axUAVs[uFrame];
+	}
+private:
+	Flux_Buffer m_axBuffers[MAX_FRAMES_IN_FLIGHT];
+	Flux_UnorderedAccessView_Buffer m_axUAVs[MAX_FRAMES_IN_FLIGHT];
+};

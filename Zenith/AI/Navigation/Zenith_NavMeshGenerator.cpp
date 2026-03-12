@@ -1,6 +1,6 @@
 #include "Zenith.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
-#include "EntityComponent/Zenith_SceneData.h"
+#include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics_Fwd.h"

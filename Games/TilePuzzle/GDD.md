@@ -38,7 +38,11 @@ Select Level -> Solve Puzzle -> Star Rating -> Rescue Cat -> Next Level
                                                     |
                                               (every 10th level)
                                                     v
-                                              Pinball Gate -> Clear Gate -> Continue
+                                         Pinball Gate (MANDATORY)
+                                                    |
+                                              Clear Gate -> Unlock Next Level -> Continue
+                                                    |
+                                          +Score-Based Coins + Hint Token (first clear)
 ```
 
 ### 2.2 Puzzle Mechanics
@@ -86,7 +90,8 @@ Select Level -> Solve Puzzle -> Star Rating -> Rescue Cat -> Next Level
 - Full state snapshots stored (shape positions, cat elimination mask, removed flags)
 
 **Hint System:**
-- Costs 30 coins (first hint free)
+- Costs 1 Hint Token (free) or 30 coins; tokens are consumed first
+- Hint Tokens earned from pinball gate first-clears (10 total) and daily pinball sessions
 - Highlights one shape and direction via BFS solver
 - Auto-clears when the player makes any move
 
@@ -96,7 +101,7 @@ Select Level -> Solve Puzzle -> Star Rating -> Rescue Cat -> Next Level
 
 ### 2.4 Pinball Gates
 
-Every 10th level (levels 10, 20, ..., 100) triggers a pinball minigame. 10 total gates.
+Every 10th level (levels 10, 20, ..., 100) triggers a **mandatory** pinball gate. The next puzzle level is **blocked** until the gate is cleared. 10 total gates.
 
 **Pinball Mechanics:**
 - Physics-based ball (Jolt Physics engine) on a vertical playfield
@@ -152,7 +157,12 @@ After all 10 gates are cleared, the objective text shows "Freeplay - All gates c
 - "Freeplay" button: visible after all 10 gates cleared
 - "Back" button: returns to main menu scene
 
-**Daily Pinball Bonus:** First gate completion of the day awards 25 bonus coins. Tracked via `uLastDailyPinballDate` (YYYYMMDD) in save data. Shows "+25 Daily Bonus!" text on award.
+**Gate Rewards:**
+- **Score-based coins:** `max(5, score / 100)` coins per session (typical: 10-30 coins)
+- **First-clear bonus:** +50 coins + 1 Hint Token (one-time per gate, 10 gates = 10 tokens total)
+- **Gate blocking:** On completing a gate level (10, 20, ..., 100), the victory overlay shows "Pinball Gate!" with a Play button. The next level does NOT unlock until the gate is cleared.
+
+**Daily Pinball Bonus:** First gate completion of the day awards score-based coins + 1 Hint Token. The main menu Pinball button changes to amber "Pinball!" when the daily bonus is available. Tracked via `uLastDailyPinballDate` (YYYYMMDD) in save data.
 
 **Thematic Elements:**
 - Pinball pegs use flattened sphere geometry with brown tint `(0.55, 0.35, 0.3)`
@@ -236,7 +246,8 @@ else:                      1 star
 |--------|-------|
 | Level complete | +10 |
 | 3-star bonus | +5 |
-| Pinball gate clear | +25 |
+| Pinball gate clear | max(5, score/100) |
+| Pinball gate first clear (one-time) | +50 bonus |
 | Daily puzzle complete | +50 |
 | Milestone: 10 cats rescued (first time) | +50 |
 | Milestone: 25 cats rescued (first time) | +100 |
@@ -275,6 +286,27 @@ else:                      1 star
 - Remove ads (one-time)
 - Coin bundles (tiered: small/medium/large)
 - Starter pack (coins + remove ads bundle)
+
+### 4.5 Hint Tokens
+
+A free consumable that substitutes for the 30-coin hint cost.
+
+**Sources:**
+| Source | Tokens |
+|--------|--------|
+| Pinball gate first clear (one-time per gate) | +1 (10 total) |
+| Daily pinball session (first gate clear of the day) | +1 |
+
+**Usage:**
+- When requesting a hint, tokens are consumed first (priority over coins)
+- Hint button shows "Free xN" when tokens available, "(30)" when only coins
+- Paw print icon displayed on the hint button and in the main menu counter
+
+**Save Data:** `uFreeHintTokens` (uint32_t), `abPinballGateFirstClearClaimed[10]` (bool array). Save version 8.
+
+**UI:**
+- Main menu: cyan paw-print pill counter below the lives display (same pattern as coins/lives/stars pills)
+- Gameplay HUD: hint button shows paw-print icon (LEFT placement) with token count or coin cost as label
 
 ---
 

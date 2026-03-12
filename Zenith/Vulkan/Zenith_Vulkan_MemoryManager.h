@@ -27,6 +27,7 @@ class Flux_DynamicConstantBuffer;
 class Flux_ConstantBuffer;
 class Flux_IndirectBuffer;
 class Flux_ReadWriteBuffer;
+class Flux_DynamicReadWriteBuffer;
 class Zenith_Vulkan_CommandBuffer;
 constexpr uint64_t g_uStagingPoolSize = 512u * 1024u * 1024u;
 #define ALIGN(size, align) ((size + align - 1) / align) * align
@@ -56,6 +57,7 @@ public:
 	static void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
 	static void InitialiseIndirectBuffer(size_t uSize, Flux_IndirectBuffer& xBufferOut);
 	static void InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut);
+	static void InitialiseDynamicReadWriteBuffer(const void* pData, size_t uSize, Flux_DynamicReadWriteBuffer& xBufferOut);
 
 	static void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize);
 	static void UploadBufferDataAtOffset(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize, size_t uDestOffset);
@@ -68,6 +70,7 @@ public:
 	static void DestroyDynamicConstantBuffer(Flux_DynamicConstantBuffer& xBuffer);
 	static void DestroyIndirectBuffer(Flux_IndirectBuffer& xBuffer);
 	static void DestroyReadWriteBuffer(Flux_ReadWriteBuffer& xBuffer);
+	static void DestroyDynamicReadWriteBuffer(Flux_DynamicReadWriteBuffer& xBuffer);
 
 	static Flux_VRAMHandle CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency);
 	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);

@@ -107,6 +107,13 @@ public:
 		PHASE_TEST_CONFIRM_DIALOG_STATE,
 		PHASE_TEST_TUTORIAL_TRIGGER_LOGIC,
 		PHASE_TEST_MENU_PROGRESSIVE_DISCLOSURE,
+		// Pinball integration tests (v8)
+		PHASE_TEST_HINT_TOKENS,
+		PHASE_TEST_SAVE_DATA_V8_MIGRATION,
+		PHASE_TEST_SAVE_DATA_V8_ROUNDTRIP,
+		PHASE_TEST_SCORE_BASED_COIN_REWARD,
+		PHASE_TEST_GATE_PROGRESSION_BLOCKING,
+		PHASE_TEST_FIRST_CLEAR_BONUS,
 		// UI engine tests
 		PHASE_TEST_UI_STRETCH_ALL,
 		PHASE_TEST_UI_TEXT_METRICS,
@@ -473,6 +480,42 @@ public:
 
 		case PHASE_TEST_MENU_PROGRESSIVE_DISCLOSURE:
 			RunSingleTest("Test_MenuProgressiveDisclosure", &Test_MenuProgressiveDisclosure);
+			m_ePhase = PHASE_TEST_HINT_TOKENS;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_HINT_TOKENS:
+			RunSingleTest("Test_HintTokens", &Test_HintTokens);
+			m_ePhase = PHASE_TEST_SAVE_DATA_V8_MIGRATION;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_SAVE_DATA_V8_MIGRATION:
+			RunSingleTest("Test_SaveDataV8Migration", &Test_SaveDataV8Migration);
+			m_ePhase = PHASE_TEST_SAVE_DATA_V8_ROUNDTRIP;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_SAVE_DATA_V8_ROUNDTRIP:
+			RunSingleTest("Test_SaveDataV8RoundTrip", &Test_SaveDataV8RoundTrip);
+			m_ePhase = PHASE_TEST_SCORE_BASED_COIN_REWARD;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_SCORE_BASED_COIN_REWARD:
+			RunSingleTest("Test_ScoreBasedCoinReward", &Test_ScoreBasedCoinReward);
+			m_ePhase = PHASE_TEST_GATE_PROGRESSION_BLOCKING;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_GATE_PROGRESSION_BLOCKING:
+			RunSingleTest("Test_GateProgressionBlocking", &Test_GateProgressionBlocking);
+			m_ePhase = PHASE_TEST_FIRST_CLEAR_BONUS;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_FIRST_CLEAR_BONUS:
+			RunSingleTest("Test_FirstClearBonus", &Test_FirstClearBonus);
 			m_ePhase = PHASE_TEST_UI_STRETCH_ALL;
 			m_uFrameDelay = 5;
 			break;
@@ -1603,6 +1646,12 @@ private:
 				pxPinball->m_uPegsHit, pxPinball->m_uCurrentGatePegCount,
 				pxPinball->m_uTargetHitCount);
 			pxPinball->m_xSaveData.SetPinballGateCleared(m_uFullGameNextGate);
+			if (!pxPinball->m_xSaveData.HasClaimedFirstClearBonus(m_uFullGameNextGate))
+			{
+				pxPinball->m_xSaveData.ClaimFirstClearBonus(m_uFullGameNextGate);
+				pxPinball->m_xSaveData.AddCoins(static_cast<int32_t>(s_uPB_FirstClearBonus));
+				pxPinball->m_xSaveData.AddHintToken(1);
+			}
 			Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 				TilePuzzle_WriteSaveData, &pxPinball->m_xSaveData);
 			m_uFullGameGatesCleared++;
@@ -1893,6 +1942,24 @@ private:
 		{
 			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Not all pinball gates cleared");
 			bPass = false;
+		}
+
+		// Verify hint tokens: 10 first-clear tokens + daily tokens (score-dependent)
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Hint tokens: %u", xSave.uFreeHintTokens);
+		if (xSave.uFreeHintTokens < 10)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Should have at least 10 hint tokens from gate first-clears, got %u", xSave.uFreeHintTokens);
+			bPass = false;
+		}
+
+		// Verify all first-clear bonuses claimed
+		for (uint32_t i = 0; i < 10; ++i)
+		{
+			if (!xSave.abPinballGateFirstClearClaimed[i])
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Gate %u first-clear bonus not claimed", i);
+				bPass = false;
+			}
 		}
 
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Coins: %u, Cats collected: %u",
@@ -4593,12 +4660,12 @@ private:
 		if (!xData.HasDailyPinballBonus(uToday))
 		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should have daily bonus available"); bPass = false; }
 
-		// Claim bonus
+		// Claim bonus (no longer awards coins directly - caller handles rewards)
 		xData.ClaimDailyPinballBonus(uToday);
 
-		// Should have received 25 coins
-		if (xData.uCoins != uInitialCoins + 25)
-		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should receive 25 coins for daily bonus"); bPass = false; }
+		// Should NOT have received coins (caller handles score-based coins + hint token)
+		if (xData.uCoins != uInitialCoins)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ClaimDailyPinballBonus should not add coins directly"); bPass = false; }
 
 		// Second play same day - should NOT have bonus
 		if (xData.HasDailyPinballBonus(uToday))
@@ -4612,8 +4679,8 @@ private:
 		// Claim on new day
 		uint32_t uCoinsBeforeSecondDay = xData.uCoins;
 		xData.ClaimDailyPinballBonus(uTomorrow);
-		if (xData.uCoins != uCoinsBeforeSecondDay + 25)
-		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should receive 25 coins on new day"); bPass = false; }
+		if (xData.uCoins != uCoinsBeforeSecondDay)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: ClaimDailyPinballBonus should not add coins directly"); bPass = false; }
 
 		return bPass;
 	}
@@ -5654,11 +5721,17 @@ private:
 			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: non-milestone count should give 0 bonus, got %u", uBonus); bPass = false; }
 		}
 
-		// Pinball gate coin award
+		// Pinball reward constants (volatile to avoid C4127 on constexpr comparisons)
 		{
-			uint32_t uGateAward = s_uCoinsPerPinballGate;
-			if (uGateAward != 25)
-			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: pinball gate coins should be 25, got %u", uGateAward); bPass = false; }
+			volatile uint32_t uFirstClear = s_uPB_FirstClearBonus;
+			volatile uint32_t uDivisor = s_uPB_ScoreToCoinDivisor;
+			volatile uint32_t uMinCoins = s_uPB_MinCoinsPerSession;
+			if (uFirstClear != 50)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: first clear bonus should be 50, got %u", static_cast<uint32_t>(uFirstClear)); bPass = false; }
+			if (uDivisor != 100)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: score-to-coin divisor should be 100, got %u", static_cast<uint32_t>(uDivisor)); bPass = false; }
+			if (uMinCoins != 5)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: min coins per session should be 5, got %u", static_cast<uint32_t>(uMinCoins)); bPass = false; }
 		}
 
 		return bPass;
@@ -5905,6 +5978,261 @@ private:
 			if (!bSkipVisible)
 			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: skip button should be visible when offered and HUD visible"); bPass = false; }
 		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Pinball Integration Tests (v8)
+	// ========================================================================
+
+	static bool Test_HintTokens()
+	{
+		bool bPass = true;
+
+		TilePuzzleSaveData xData;
+		xData.Reset();
+
+		// Initial state
+		if (xData.GetFreeHintTokens() != 0)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: initial tokens should be 0"); bPass = false; }
+		if (xData.HasHintTokens())
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: HasHintTokens should be false at 0"); bPass = false; }
+
+		// Add tokens
+		xData.AddHintToken(1);
+		if (xData.GetFreeHintTokens() != 1)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should have 1 token after AddHintToken(1)"); bPass = false; }
+		if (!xData.HasHintTokens())
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: HasHintTokens should be true at 1"); bPass = false; }
+
+		xData.AddHintToken(5);
+		if (xData.GetFreeHintTokens() != 6)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should have 6 tokens after AddHintToken(5)"); bPass = false; }
+
+		// Spend tokens
+		if (!xData.SpendHintToken())
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SpendHintToken should return true when tokens > 0"); bPass = false; }
+		if (xData.GetFreeHintTokens() != 5)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should have 5 tokens after spending 1"); bPass = false; }
+
+		// Spend down to 0
+		for (uint32_t i = 0; i < 5; ++i) xData.SpendHintToken();
+		if (xData.GetFreeHintTokens() != 0)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should have 0 tokens after spending all"); bPass = false; }
+
+		// Underflow protection
+		if (xData.SpendHintToken())
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SpendHintToken should return false at 0"); bPass = false; }
+		if (xData.HasHintTokens())
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: HasHintTokens should be false at 0"); bPass = false; }
+
+		return bPass;
+	}
+
+	static bool Test_SaveDataV8Migration()
+	{
+		bool bPass = true;
+
+		static constexpr const char* szTmpPath = GAME_ASSETS_DIR "autotest_v8_migration.bin";
+
+		// Create a v7 save with 3 gates cleared
+		TilePuzzleSaveData xV7;
+		xV7.Reset();
+		xV7.SetPinballGateCleared(0);
+		xV7.SetPinballGateCleared(1);
+		xV7.SetPinballGateCleared(2);
+
+		// Serialize and write to disk
+		{
+			Zenith_DataStream xStream;
+			TilePuzzle_WriteSaveData(xStream, &xV7);
+			xStream.WriteToFile(szTmpPath);
+		}
+
+		// Read back as if game version was 7 (triggers migration)
+		TilePuzzleSaveData xLoaded;
+		Zenith_DataStream xReadStream;
+		xReadStream.ReadFromFile(szTmpPath);
+		TilePuzzle_ReadSaveData(xReadStream, 7, &xLoaded);
+
+		// Verify migration: should have 3 hint tokens (one per cleared gate)
+		if (xLoaded.uFreeHintTokens != 3)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: v7->v8 migration should grant 3 tokens, got %u", xLoaded.uFreeHintTokens); bPass = false; }
+
+		// Verify first-clear flags
+		for (uint32_t i = 0; i < 3; ++i)
+		{
+			if (!xLoaded.abPinballGateFirstClearClaimed[i])
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate %u first-clear should be claimed after migration", i); bPass = false; }
+		}
+		for (uint32_t i = 3; i < TilePuzzleSaveData::uMAX_PINBALL_GATES; ++i)
+		{
+			if (xLoaded.abPinballGateFirstClearClaimed[i])
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate %u first-clear should NOT be claimed after migration", i); bPass = false; }
+		}
+
+		return bPass;
+	}
+
+	static bool Test_SaveDataV8RoundTrip()
+	{
+		bool bPass = true;
+
+		static constexpr const char* szTmpPath = GAME_ASSETS_DIR "autotest_v8_roundtrip.bin";
+
+		TilePuzzleSaveData xOriginal;
+		xOriginal.Reset();
+		xOriginal.uFreeHintTokens = 7;
+		for (uint32_t i = 0; i < 5; ++i)
+			xOriginal.abPinballGateFirstClearClaimed[i] = true;
+
+		// Serialize and write to disk
+		{
+			Zenith_DataStream xStream;
+			TilePuzzle_WriteSaveData(xStream, &xOriginal);
+			xStream.WriteToFile(szTmpPath);
+		}
+
+		// Deserialize
+		TilePuzzleSaveData xLoaded;
+		Zenith_DataStream xReadStream;
+		xReadStream.ReadFromFile(szTmpPath);
+		TilePuzzle_ReadSaveData(xReadStream, 8, &xLoaded);
+
+		if (xLoaded.uFreeHintTokens != 7)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: v8 round-trip tokens should be 7, got %u", xLoaded.uFreeHintTokens); bPass = false; }
+
+		for (uint32_t i = 0; i < TilePuzzleSaveData::uMAX_PINBALL_GATES; ++i)
+		{
+			bool bExpected = (i < 5);
+			if (xLoaded.abPinballGateFirstClearClaimed[i] != bExpected)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: v8 round-trip gate %u first-clear mismatch", i); bPass = false; }
+		}
+
+		return bPass;
+	}
+
+	static bool Test_ScoreBasedCoinReward()
+	{
+		bool bPass = true;
+
+		struct RewardTest
+		{
+			uint32_t uScore;
+			uint32_t uExpectedCoins;
+		};
+
+		RewardTest axTests[] = {
+			{ 0,    5 },   // min
+			{ 50,   5 },   // below divisor
+			{ 100,  5 },   // exactly 1, but min is 5
+			{ 500,  5 },   // exactly 5
+			{ 600,  6 },
+			{ 1000, 10 },
+			{ 3000, 30 },
+			{ 5000, 50 },
+		};
+
+		for (const auto& xTest : axTests)
+		{
+			uint32_t uCoins = xTest.uScore / s_uPB_ScoreToCoinDivisor;
+			if (uCoins < s_uPB_MinCoinsPerSession) uCoins = s_uPB_MinCoinsPerSession;
+
+			if (uCoins != xTest.uExpectedCoins)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: score %u -> expected %u coins, got %u", xTest.uScore, xTest.uExpectedCoins, uCoins); bPass = false; }
+		}
+
+		return bPass;
+	}
+
+	static bool Test_GateProgressionBlocking()
+	{
+		bool bPass = true;
+
+		TilePuzzleSaveData xData;
+		xData.Reset();
+		xData.uHighestLevelReached = 10;
+		xData.uCurrentLevel = 10;
+
+		// Simulate completing level 10 (gate level) WITHOUT gate cleared
+		uint32_t uLevelNumber = 10;
+		bool bIsGateLevel = (uLevelNumber % 10 == 0) && (uLevelNumber / 10 <= TilePuzzleSaveData::uMAX_PINBALL_GATES);
+		bool bGateCleared = bIsGateLevel && xData.IsPinballGateCleared(uLevelNumber / 10 - 1);
+
+		if (!bIsGateLevel)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 10 should be a gate level"); bPass = false; }
+
+		// Gate NOT cleared - should not unlock next level
+		if (!bIsGateLevel || bGateCleared)
+		{
+			if (uLevelNumber >= xData.uHighestLevelReached && uLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
+				xData.uHighestLevelReached = uLevelNumber + 1;
+		}
+
+		if (xData.uHighestLevelReached != 10)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: highest level should still be 10 (gate not cleared), got %u", xData.uHighestLevelReached); bPass = false; }
+
+		// Now clear gate 0
+		xData.SetPinballGateCleared(0);
+		bGateCleared = xData.IsPinballGateCleared(uLevelNumber / 10 - 1);
+
+		if (!bIsGateLevel || bGateCleared)
+		{
+			if (uLevelNumber >= xData.uHighestLevelReached && uLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
+				xData.uHighestLevelReached = uLevelNumber + 1;
+		}
+
+		if (xData.uHighestLevelReached != 11)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: highest level should be 11 after gate cleared, got %u", xData.uHighestLevelReached); bPass = false; }
+
+		// Non-gate level (level 5) should always unlock
+		xData.uHighestLevelReached = 5;
+		uLevelNumber = 5;
+		bIsGateLevel = (uLevelNumber % 10 == 0) && (uLevelNumber / 10 <= TilePuzzleSaveData::uMAX_PINBALL_GATES);
+		if (!bIsGateLevel || true)
+		{
+			if (uLevelNumber >= xData.uHighestLevelReached && uLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
+				xData.uHighestLevelReached = uLevelNumber + 1;
+		}
+
+		if (xData.uHighestLevelReached != 6)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: non-gate level 5 should unlock 6, got %u", xData.uHighestLevelReached); bPass = false; }
+
+		return bPass;
+	}
+
+	static bool Test_FirstClearBonus()
+	{
+		bool bPass = true;
+
+		TilePuzzleSaveData xData;
+		xData.Reset();
+
+		// Initially unclaimed
+		if (xData.HasClaimedFirstClearBonus(0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate 0 first-clear should be unclaimed initially"); bPass = false; }
+
+		// Simulate first clear of gate 0
+		uint32_t uCoinsBefore = xData.uCoins;
+		xData.ClaimFirstClearBonus(0);
+		xData.AddCoins(static_cast<int32_t>(s_uPB_FirstClearBonus));
+		xData.AddHintToken(1);
+
+		if (!xData.HasClaimedFirstClearBonus(0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate 0 first-clear should be claimed after ClaimFirstClearBonus"); bPass = false; }
+		if (xData.uCoins != uCoinsBefore + s_uPB_FirstClearBonus)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should have +%u coins from first clear", s_uPB_FirstClearBonus); bPass = false; }
+		if (xData.GetFreeHintTokens() != 1)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should have 1 hint token from first clear"); bPass = false; }
+
+		// Second clear of same gate - should still be claimed (no double bonus)
+		if (!xData.HasClaimedFirstClearBonus(0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate 0 should still be claimed on second check"); bPass = false; }
+
+		// Other gates should be unclaimed
+		if (xData.HasClaimedFirstClearBonus(1))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate 1 should be unclaimed"); bPass = false; }
 
 		return bPass;
 	}

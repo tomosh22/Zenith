@@ -439,14 +439,27 @@ void UpdateVictoryOverlay(float fDeltaTime)
 		}
 	}
 
-	// (2.5s) Button appears
+	// (2.5s) Button appears - either NextLevel or Pinball Gate
 	{
 		if (m_pxNextLevelBtn)
 		{
 			float fProgress = EaseInRange(fT, s_fButtonsStart, s_fButtonsDuration);
 			if (fProgress > 0.0f && !m_pxNextLevelBtn->IsVisible())
 			{
-				m_pxNextLevelBtn->SetVisible(true);
+				if (m_bPinballGateRequired)
+				{
+					// Repurpose NextLevel button as "Pinball Gate!" button
+					m_pxNextLevelBtn->SetText("Pinball Gate!");
+					m_pxNextLevelBtn->SetNormalColor(Zenith_Maths::Vector4(0.5f, 0.25f, 0.1f, 1.0f));
+					m_pxNextLevelBtn->SetHoverColor(Zenith_Maths::Vector4(0.65f, 0.35f, 0.15f, 1.0f));
+					m_pxNextLevelBtn->SetPressedColor(Zenith_Maths::Vector4(0.4f, 0.2f, 0.08f, 1.0f));
+					m_pxNextLevelBtn->SetOnClick(&OnPinballGateClicked, this);
+					m_pxNextLevelBtn->SetVisible(true);
+				}
+				else
+				{
+					m_pxNextLevelBtn->SetVisible(true);
+				}
 			}
 		}
 	}
@@ -703,6 +716,14 @@ void UpdateMainMenuUI()
 	UpdateCoinDisplay();
 	UpdateLivesDisplay();
 	UpdateDailyStreakDisplay();
+
+	// Hint token counter
+	if (m_pxHintTokenText)
+	{
+		char szTokens[16];
+		snprintf(szTokens, sizeof(szTokens), "%u", m_xSaveData.uFreeHintTokens);
+		m_pxHintTokenText->SetText(szTokens);
+	}
 
 	// Star counter on main menu
 	if (m_pxTotalStarsText)

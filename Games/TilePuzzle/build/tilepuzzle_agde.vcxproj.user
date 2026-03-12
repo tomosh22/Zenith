@@ -3,4 +3,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
     <AndroidDebugTarget>None</AndroidDebugTarget>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+    <AndroidDebugTarget>SM-S928B:R3CX30MVVZF:arm64-v8a</AndroidDebugTarget>
+  </PropertyGroup>
 </Project>

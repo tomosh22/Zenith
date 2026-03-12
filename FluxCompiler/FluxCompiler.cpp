@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <unordered_set>
 
 // Stub functions for standalone FluxCompiler
 const char* Project_GetGameAssetsDirectory() { return ""; }
@@ -55,6 +56,14 @@ static void WriteSpirv(const std::string& strPath, const Zenith_Vector<uint32_t>
 	}
 }
 
+static void WriteReflection(const std::string& strSpvPath, const Flux_ShaderReflection& xReflection)
+{
+	std::string strReflPath = strSpvPath + ".refl";
+	Zenith_DataStream xReflStream;
+	xReflection.WriteToDataStream(xReflStream);
+	xReflStream.WriteToFile(strReflPath.c_str());
+}
+
 int main()
 {
 	printf("FluxCompiler - Slang-based Shader Compiler\n");
@@ -85,6 +94,9 @@ int main()
 	u_int uSuccessCount = 0;
 	u_int uFailCount = 0;
 
+	// Collect all shader files first, so we can pair vert+frag for combined compilation
+	// Paired compilation ensures Slang preserves GLSL set/binding qualifiers correctly
+	std::vector<std::filesystem::path> axShaderFiles;
 	for (auto& xFile : std::filesystem::recursive_directory_iterator(SHADER_SOURCE_ROOT))
 	{
 		if (!xFile.is_regular_file())
@@ -93,7 +105,6 @@ int main()
 		}
 
 		std::string strExtension = xFile.path().extension().string();
-
 		bool bIsShader = false;
 		for (const char* szExt : aszShaderExtensions)
 		{
@@ -104,12 +115,80 @@ int main()
 			}
 		}
 
-		if (!bIsShader)
+		if (bIsShader)
+		{
+			axShaderFiles.push_back(xFile.path());
+		}
+	}
+
+	// Track which files have been compiled as part of a pair
+	std::unordered_set<std::string> xCompiledPaths;
+
+	// First pass: compile vert+frag pairs together
+	for (const auto& xPath : axShaderFiles)
+	{
+		std::string strExtension = xPath.extension().string();
+		if (strExtension != ".vert")
 		{
 			continue;
 		}
 
-		std::string strPath = xFile.path().string();
+		// Look for matching .frag file
+		std::filesystem::path xFragPath = xPath;
+		xFragPath.replace_extension(".frag");
+
+		if (!std::filesystem::exists(xFragPath))
+		{
+			continue;
+		}
+
+		std::string strVertPath = xPath.string();
+		std::string strFragPath = xFragPath.string();
+
+		printf("Compiling (paired): %s + %s\n", strVertPath.c_str(), strFragPath.c_str());
+
+		Flux_SlangGraphicsPipelineResult xResult;
+		if (Flux_SlangCompiler::CompileGraphicsPipeline(strVertPath, strFragPath, xResult))
+		{
+			// Write vertex SPIR-V and reflection
+			std::string strVertSpvPath = strVertPath + ".spv";
+			WriteSpirv(strVertSpvPath, xResult.m_axVertexSpirv);
+			WriteReflection(strVertSpvPath, xResult.m_xVertexReflection);
+
+			// Write fragment SPIR-V and reflection
+			std::string strFragSpvPath = strFragPath + ".spv";
+			WriteSpirv(strFragSpvPath, xResult.m_axFragmentSpirv);
+			WriteReflection(strFragSpvPath, xResult.m_xFragmentReflection);
+
+			printf("  -> Success (vert: %u bytes, frag: %u bytes, %u bindings)\n",
+				   static_cast<u_int>(xResult.m_axVertexSpirv.GetSize() * sizeof(uint32_t)),
+				   static_cast<u_int>(xResult.m_axFragmentSpirv.GetSize() * sizeof(uint32_t)),
+				   xResult.m_xVertexReflection.GetBindings().GetSize());
+			uSuccessCount += 2;
+
+			xCompiledPaths.insert(strVertPath);
+			xCompiledPaths.insert(strFragPath);
+		}
+		else
+		{
+			printf("  -> FAILED: %s\n", xResult.m_strError.c_str());
+			uFailCount += 2;
+
+			xCompiledPaths.insert(strVertPath);
+			xCompiledPaths.insert(strFragPath);
+		}
+	}
+
+	// Second pass: compile remaining shaders individually (compute, unpaired vert/frag, tesc, tese, geom)
+	for (const auto& xPath : axShaderFiles)
+	{
+		std::string strPath = xPath.string();
+		if (xCompiledPaths.count(strPath))
+		{
+			continue;
+		}
+
+		std::string strExtension = xPath.extension().string();
 		std::string strOutputPath = strPath + ".spv";
 
 		printf("Compiling: %s\n", strPath.c_str());
@@ -120,12 +199,7 @@ int main()
 		if (Flux_SlangCompiler::Compile(strPath, eStage, xResult))
 		{
 			WriteSpirv(strOutputPath, xResult.m_axSpirv);
-
-			// Write reflection data alongside SPIR-V
-			std::string strReflPath = strOutputPath + ".refl";
-			Zenith_DataStream xReflStream;
-			xResult.m_xReflection.WriteToDataStream(xReflStream);
-			xReflStream.WriteToFile(strReflPath.c_str());
+			WriteReflection(strOutputPath, xResult.m_xReflection);
 
 			printf("  -> Success (%u bytes, %u bindings)\n",
 				   static_cast<u_int>(xResult.m_axSpirv.GetSize() * sizeof(uint32_t)),

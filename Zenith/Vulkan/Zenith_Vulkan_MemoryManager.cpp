@@ -414,6 +414,37 @@ void Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer(const void* pData, s
 	}
 }
 
+void Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer(const void* pData, size_t uSize, Flux_DynamicReadWriteBuffer& xBufferOut)
+{
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		// CPU-resident (host-visible) to allow direct writes without staging buffer.
+		// Per-frame uploads through the GPU staging buffer are unsafe because the staging
+		// buffer can be overwritten by the next frame before the GPU executes the copy.
+		Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__UNORDERED_ACCESS | 1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_CPU);
+		Flux_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
+		xBuffer.m_xVRAMHandle = xHandle;
+		xBuffer.m_ulSize = uSize;
+
+		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+		Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
+
+		vk::DescriptorBufferInfo xBufferInfo;
+		xBufferInfo.setBuffer(pxVRAM->GetBuffer());
+		xBufferInfo.setOffset(0);
+		xBufferInfo.setRange(uSize);
+
+		Flux_UnorderedAccessView_Buffer& xUAV = xBufferOut.GetUAVForFrameInFlight(u);
+		xUAV.m_xBufferDescHandle = RegisterBufferDescriptor(xBufferInfo);
+		xUAV.m_xVRAMHandle = xHandle;
+
+		if (pData)
+		{
+			UploadBufferData(xHandle, pData, uSize);
+		}
+	}
+}
+
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency)
 {
 	vk::BufferUsageFlags eUsageFlags = vk::BufferUsageFlagBits::eTransferDst;
@@ -1097,6 +1128,16 @@ void Zenith_Vulkan_MemoryManager::DestroyReadWriteBuffer(Flux_ReadWriteBuffer& x
 {
 	Flux_VRAMHandle xHandle = xBuffer.GetBuffer().m_xVRAMHandle;
 	DestroySimpleBuffer(xHandle);
+	xBuffer.Reset();
+}
+
+void Zenith_Vulkan_MemoryManager::DestroyDynamicReadWriteBuffer(Flux_DynamicReadWriteBuffer& xBuffer)
+{
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		Flux_VRAMHandle xHandle = xBuffer.GetBufferForFrameInFlight(u).m_xVRAMHandle;
+		DestroySimpleBuffer(xHandle);
+	}
 	xBuffer.Reset();
 }
 

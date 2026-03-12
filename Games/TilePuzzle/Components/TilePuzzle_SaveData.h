@@ -23,7 +23,7 @@ struct TilePuzzleSaveData
 	static constexpr uint32_t uMAX_LIVES = 5;
 	static constexpr uint32_t uLIFE_REGEN_SECONDS = 1200; // 20 minutes
 	static constexpr uint32_t uLIFE_REFILL_COST = 50;
-	static constexpr uint32_t uGAME_SAVE_VERSION = 7;
+	static constexpr uint32_t uGAME_SAVE_VERSION = 8;
 	static constexpr uint32_t uTUTORIAL_COUNT = 6;
 
 	// v1 fields
@@ -69,6 +69,10 @@ struct TilePuzzleSaveData
 	uint16_t uAchievementFlags;                 // Bitfield for 10 achievements
 	uint32_t uLastDailyPinballDate;             // YYYYMMDD for daily pinball bonus
 
+	// v8 fields
+	uint32_t uFreeHintTokens;                   // Consumable hint tokens (earned from pinball)
+	bool abPinballGateFirstClearClaimed[uMAX_PINBALL_GATES]; // One-time first-clear bonus tracked
+
 	void Reset()
 	{
 		uHighestLevelReached = 1;
@@ -100,6 +104,8 @@ struct TilePuzzleSaveData
 		bWeeklyChallengeCompleted = false;
 		uAchievementFlags = 0;
 		uLastDailyPinballDate = 0;
+		uFreeHintTokens = 0;
+		memset(abPinballGateFirstClearClaimed, 0, sizeof(abPinballGateFirstClearClaimed));
 	}
 
 	// ========================================================================
@@ -405,7 +411,35 @@ struct TilePuzzleSaveData
 	void ClaimDailyPinballBonus(uint32_t uToday)
 	{
 		uLastDailyPinballDate = uToday;
-		AddCoins(25);
+		// Caller handles score-based coins and token award
+	}
+
+	// ========================================================================
+	// Hint Token Management
+	// ========================================================================
+
+	uint32_t GetFreeHintTokens() const { return uFreeHintTokens; }
+	bool HasHintTokens() const { return uFreeHintTokens > 0; }
+
+	void AddHintToken(uint32_t uCount = 1) { uFreeHintTokens += uCount; }
+
+	bool SpendHintToken()
+	{
+		if (uFreeHintTokens == 0) return false;
+		uFreeHintTokens--;
+		return true;
+	}
+
+	bool HasClaimedFirstClearBonus(uint32_t uGate) const
+	{
+		if (uGate >= uMAX_PINBALL_GATES) return true;
+		return abPinballGateFirstClearClaimed[uGate];
+	}
+
+	void ClaimFirstClearBonus(uint32_t uGate)
+	{
+		if (uGate >= uMAX_PINBALL_GATES) return;
+		abPinballGateFirstClearClaimed[uGate] = true;
 	}
 
 	// ========================================================================
@@ -487,6 +521,12 @@ static void TilePuzzle_WriteSaveData(Zenith_DataStream& xStream, void* pxUserDat
 	xStream << pxData->bWeeklyChallengeCompleted;
 	xStream << pxData->uAchievementFlags;
 	xStream << pxData->uLastDailyPinballDate;
+	// v8 fields
+	xStream << pxData->uFreeHintTokens;
+	for (uint32_t i = 0; i < TilePuzzleSaveData::uMAX_PINBALL_GATES; ++i)
+	{
+		xStream << pxData->abPinballGateFirstClearClaimed[i];
+	}
 }
 
 // Static read callback for Zenith_SaveData
@@ -564,5 +604,27 @@ static void TilePuzzle_ReadSaveData(Zenith_DataStream& xStream, uint32_t uGameVe
 		xStream >> pxData->bWeeklyChallengeCompleted;
 		xStream >> pxData->uAchievementFlags;
 		xStream >> pxData->uLastDailyPinballDate;
+	}
+	if (uGameVersion >= 8)
+	{
+		xStream >> pxData->uFreeHintTokens;
+		for (uint32_t i = 0; i < TilePuzzleSaveData::uMAX_PINBALL_GATES; ++i)
+		{
+			xStream >> pxData->abPinballGateFirstClearClaimed[i];
+		}
+	}
+	else
+	{
+		// v7->v8 migration: retroactively grant 1 hint token per already-cleared gate
+		pxData->uFreeHintTokens = 0;
+		memset(pxData->abPinballGateFirstClearClaimed, 0, sizeof(pxData->abPinballGateFirstClearClaimed));
+		for (uint32_t i = 0; i < TilePuzzleSaveData::uMAX_PINBALL_GATES; ++i)
+		{
+			if (pxData->IsPinballGateCleared(i))
+			{
+				pxData->uFreeHintTokens++;
+				pxData->abPinballGateFirstClearClaimed[i] = true;
+			}
+		}
 	}
 }

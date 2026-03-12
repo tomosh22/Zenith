@@ -730,6 +730,33 @@ namespace TilePuzzle_AssetGen
 		}
 	}
 
+	static void GenerateIcon_HintToken(uint32_t* puPixels, uint32_t uSize)
+	{
+		using namespace TilePuzzle_SDF;
+		float fAA = 1.5f / static_cast<float>(uSize);
+
+		for (uint32_t uY = 0; uY < uSize; ++uY)
+		{
+			for (uint32_t uX = 0; uX < uSize; ++uX)
+			{
+				float fX = (static_cast<float>(uX) + 0.5f) / static_cast<float>(uSize);
+				float fY = (static_cast<float>(uY) + 0.5f) / static_cast<float>(uSize);
+
+				// Paw print: 1 large palm pad + 4 small toe beans
+				float fPalm = Circle(fX, fY, 0.5f, 0.58f, 0.22f);
+				float fToe0 = Circle(fX, fY, 0.25f, 0.32f, 0.09f);
+				float fToe1 = Circle(fX, fY, 0.40f, 0.22f, 0.09f);
+				float fToe2 = Circle(fX, fY, 0.60f, 0.22f, 0.09f);
+				float fToe3 = Circle(fX, fY, 0.75f, 0.32f, 0.09f);
+
+				float fDist = Union(Union(Union(fPalm, fToe0), Union(fToe1, fToe2)), fToe3);
+				float fAlpha = Fill(fDist, fAA);
+
+				puPixels[uY * uSize + uX] = PackRGBAf(1.f, 1.f, 1.f, fAlpha);
+			}
+		}
+	}
+
 	// ========================================================================
 	// Cat Face Texture Generator
 	// ========================================================================
@@ -884,6 +911,249 @@ namespace TilePuzzle_AssetGen
 	}
 
 	// ========================================================================
+	// Pinball PBR Texture Generators (128x128)
+	// ========================================================================
+
+	static void GeneratePinballBumperDiffuse(uint32_t* puPixels, uint32_t uSize)
+	{
+		float fCenter = 0.5f;
+		for (uint32_t uY = 0; uY < uSize; ++uY)
+		{
+			for (uint32_t uX = 0; uX < uSize; ++uX)
+			{
+				float fU = (static_cast<float>(uX) + 0.5f) / static_cast<float>(uSize);
+				float fV = (static_cast<float>(uY) + 0.5f) / static_cast<float>(uSize);
+				float fDist = TilePuzzle_SDF::Circle(fU, fV, fCenter, fCenter, 0.0f);
+
+				// Concentric ring pattern
+				float fR, fG, fB;
+				if (fDist < 0.2f)
+				{
+					// Inner disc: bright polished cap
+					fR = 0.8f; fG = 0.6f; fB = 0.3f;
+				}
+				else if (fDist < 0.22f)
+				{
+					// Ring edge
+					fR = 0.9f; fG = 0.7f; fB = 0.35f;
+				}
+				else if (fDist < 0.38f)
+				{
+					// Outer ring: brushed amber
+					fR = 0.6f; fG = 0.4f; fB = 0.2f;
+				}
+				else
+				{
+					// Rim edge
+					fR = 0.5f; fG = 0.35f; fB = 0.18f;
+				}
+
+				// Hash noise for grain
+				uint32_t uHash = (uX * 374761393u + uY * 668265263u) ^ 0x85ebca6bu;
+				uHash = ((uHash >> 16) ^ uHash) * 0x45d9f3bu;
+				float fNoise = (static_cast<float>(uHash & 0xFF) / 255.f - 0.5f) * 0.03f;
+				fR += fNoise; fG += fNoise; fB += fNoise;
+
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fR, fG, fB, 1.f);
+			}
+		}
+	}
+
+	static void GeneratePinballBumperRM(uint32_t* puPixels, uint32_t uSize)
+	{
+		float fCenter = 0.5f;
+		for (uint32_t uY = 0; uY < uSize; ++uY)
+		{
+			for (uint32_t uX = 0; uX < uSize; ++uX)
+			{
+				float fU = (static_cast<float>(uX) + 0.5f) / static_cast<float>(uSize);
+				float fV = (static_cast<float>(uY) + 0.5f) / static_cast<float>(uSize);
+				float fDist = TilePuzzle_SDF::Circle(fU, fV, fCenter, fCenter, 0.0f);
+
+				float fRoughness, fMetallic;
+				if (fDist < 0.2f)
+				{
+					// Inner disc: polished chrome
+					fRoughness = 0.2f; fMetallic = 0.9f;
+				}
+				else if (fDist < 0.38f)
+				{
+					// Outer ring: brushed metal
+					fRoughness = 0.6f; fMetallic = 0.7f;
+				}
+				else
+				{
+					// Rim
+					fRoughness = 0.4f; fMetallic = 0.8f;
+				}
+
+				// Smooth transitions
+				float fEdge1 = fmaxf(0.f, fminf(1.f, (fDist - 0.18f) / 0.04f));
+				if (fDist >= 0.18f && fDist < 0.22f)
+				{
+					fRoughness = 0.2f + fEdge1 * 0.4f;
+					fMetallic = 0.9f - fEdge1 * 0.2f;
+				}
+
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fRoughness, fMetallic, 0.f, 1.f);
+			}
+		}
+	}
+
+	static void GeneratePinballWallDiffuse(uint32_t* puPixels, uint32_t uSize)
+	{
+		for (uint32_t uY = 0; uY < uSize; ++uY)
+		{
+			for (uint32_t uX = 0; uX < uSize; ++uX)
+			{
+				// Base: dark steel blue
+				float fR = 0.12f, fG = 0.15f, fB = 0.25f;
+
+				// Horizontal stripe grooves (machined rail look)
+				uint32_t uPeriod = uSize / 8;
+				uint32_t uStripePos = uY % uPeriod;
+				bool bRidge = uStripePos < (uPeriod / 2);
+				if (bRidge)
+				{
+					fR += 0.04f; fG += 0.04f; fB += 0.05f;
+				}
+
+				// Edge highlights at top and bottom borders
+				if (uY < 3 || uY >= uSize - 3)
+				{
+					fR = 0.2f; fG = 0.25f; fB = 0.5f;
+				}
+
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fR, fG, fB, 1.f);
+			}
+		}
+	}
+
+	static void GeneratePinballWallRM(uint32_t* puPixels, uint32_t uSize)
+	{
+		for (uint32_t uY = 0; uY < uSize; ++uY)
+		{
+			for (uint32_t uX = 0; uX < uSize; ++uX)
+			{
+				float fRoughness, fMetallic;
+
+				// Edge borders: very smooth, high metallic
+				if (uY < 3 || uY >= uSize - 3)
+				{
+					fRoughness = 0.15f; fMetallic = 0.8f;
+				}
+				else
+				{
+					// Stripe grooves vs ridges
+					uint32_t uPeriod = uSize / 8;
+					uint32_t uStripePos = uY % uPeriod;
+					bool bRidge = uStripePos < (uPeriod / 2);
+					fRoughness = bRidge ? 0.25f : 0.6f;
+					fMetallic = 0.5f;
+				}
+
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fRoughness, fMetallic, 0.f, 1.f);
+			}
+		}
+	}
+
+	static void GeneratePinballFloorDiffuse(uint32_t* puPixels, uint32_t uSize)
+	{
+		for (uint32_t uY = 0; uY < uSize; ++uY)
+		{
+			for (uint32_t uX = 0; uX < uSize; ++uX)
+			{
+				// Base: dark warm wood
+				float fR = 0.08f, fG = 0.06f, fB = 0.04f;
+
+				// Horizontal grain lines using sin waves
+				float fV = static_cast<float>(uY) / static_cast<float>(uSize);
+				float fGrain = sinf(fV * 40.f) * 0.01f + sinf(fV * 97.f) * 0.005f;
+				fR += fGrain; fG += fGrain * 0.8f; fB += fGrain * 0.5f;
+
+				// Hash noise for wood grain variation
+				uint32_t uHash = (uX * 374761393u + uY * 668265263u) ^ 0x85ebca6bu;
+				uHash = ((uHash >> 16) ^ uHash) * 0x45d9f3bu;
+				float fNoise = (static_cast<float>(uHash & 0xFF) / 255.f - 0.5f) * 0.02f;
+				fR += fNoise; fG += fNoise * 0.8f; fB += fNoise * 0.5f;
+
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fR, fG, fB, 1.f);
+			}
+		}
+	}
+
+	static void GeneratePinballFloorRM(uint32_t* puPixels, uint32_t uSize)
+	{
+		for (uint32_t uY = 0; uY < uSize; ++uY)
+		{
+			for (uint32_t uX = 0; uX < uSize; ++uX)
+			{
+				// Matte wood base
+				float fRoughness = 0.85f;
+				float fMetallic = 0.0f;
+
+				// Grain lines slightly less rough for subtle sheen
+				float fV = static_cast<float>(uY) / static_cast<float>(uSize);
+				float fGrain = sinf(fV * 40.f);
+				if (fGrain > 0.5f)
+					fRoughness = 0.7f;
+
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fRoughness, fMetallic, 0.f, 1.f);
+			}
+		}
+	}
+
+	static void GeneratePinballPlungerRM(uint32_t* puPixels, uint32_t uSize)
+	{
+		for (uint32_t uY = 0; uY < uSize; ++uY)
+		{
+			for (uint32_t uX = 0; uX < uSize; ++uX)
+			{
+				float fV = static_cast<float>(uY) / static_cast<float>(uSize);
+				float fRoughness, fMetallic;
+
+				if (fV < 0.7f)
+				{
+					// Shaft: smooth chrome
+					fRoughness = 0.15f; fMetallic = 0.9f;
+				}
+				else
+				{
+					// Handle: rubber grip
+					fRoughness = 0.95f; fMetallic = 0.0f;
+				}
+
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fRoughness, fMetallic, 0.f, 1.f);
+			}
+		}
+	}
+
+	static void GeneratePinballTargetDiffuse(uint32_t* puPixels, uint32_t uSize)
+	{
+		for (uint32_t uY = 0; uY < uSize; ++uY)
+		{
+			for (uint32_t uX = 0; uX < uSize; ++uX)
+			{
+				float fU = (static_cast<float>(uX) + 0.5f) / static_cast<float>(uSize);
+				float fV = (static_cast<float>(uY) + 0.5f) / static_cast<float>(uSize);
+
+				// Base green
+				float fR = 0.1f, fG = 0.7f, fB = 0.2f;
+
+				// Chevron arrows pointing inward (repeating V pattern)
+				float fChevronY = fmodf(fV * 4.0f, 1.0f);
+				float fChevronDist = fabsf(fU - 0.5f) - (1.0f - fChevronY) * 0.3f;
+				if (fChevronDist < 0.02f && fChevronDist > -0.04f)
+				{
+					fR = 0.2f; fG = 0.9f; fB = 0.3f;
+				}
+
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fR, fG, fB, 1.f);
+			}
+		}
+	}
+
+	// ========================================================================
 	// Orchestration: Generate All Textures
 	// ========================================================================
 
@@ -937,8 +1207,9 @@ namespace TilePuzzle_AssetGen
 			WriteSmall(GenerateIcon_Gear, "gear");
 			WriteLarge(GenerateIcon_CatSilhouette, "cat_silhouette");
 			WriteSmall(GenerateIcon_Hint, "hint");
+			WriteSmall(GenerateIcon_HintToken, "hint_token");
 
-			Zenith_Log(LOG_CATEGORY_GENERAL, "  Wrote 15 icon textures to " GAME_ASSETS_DIR "Textures/Icons/");
+			Zenith_Log(LOG_CATEGORY_GENERAL, "  Wrote 16 icon textures to " GAME_ASSETS_DIR "Textures/Icons/");
 		}
 
 		// ----- Cat Face Textures (256x256) -----
@@ -989,6 +1260,34 @@ namespace TilePuzzle_AssetGen
 				GAME_ASSETS_DIR "Textures/Gameplay/blocker" ZENITH_TEXTURE_EXT);
 
 			Zenith_Log(LOG_CATEGORY_GENERAL, "  Wrote gameplay textures to " GAME_ASSETS_DIR "Textures/Gameplay/");
+		}
+
+		// ----- Pinball PBR Textures (128x128) -----
+		{
+			std::filesystem::create_directories(GAME_ASSETS_DIR "Textures/Pinball");
+
+			constexpr uint32_t uPBSize = 128;
+			uint32_t auPBBuf[uPBSize * uPBSize];
+
+			auto WritePB = [&](void (*pfnGen)(uint32_t*, uint32_t), const char* szName) {
+				memset(auPBBuf, 0, sizeof(auPBBuf));
+				pfnGen(auPBBuf, uPBSize);
+				char szPath[ZENITH_MAX_PATH_LENGTH];
+				snprintf(szPath, sizeof(szPath),
+					GAME_ASSETS_DIR "Textures/Pinball/%s" ZENITH_TEXTURE_EXT, szName);
+				WriteTexture(auPBBuf, uPBSize, uPBSize, szPath);
+			};
+
+			WritePB(GeneratePinballBumperDiffuse, "bumper_diffuse");
+			WritePB(GeneratePinballBumperRM, "bumper_rm");
+			WritePB(GeneratePinballWallDiffuse, "wall_diffuse");
+			WritePB(GeneratePinballWallRM, "wall_rm");
+			WritePB(GeneratePinballFloorDiffuse, "floor_diffuse");
+			WritePB(GeneratePinballFloorRM, "floor_rm");
+			WritePB(GeneratePinballPlungerRM, "plunger_rm");
+			WritePB(GeneratePinballTargetDiffuse, "target_diffuse");
+
+			Zenith_Log(LOG_CATEGORY_GENERAL, "  Wrote 8 pinball PBR textures to " GAME_ASSETS_DIR "Textures/Pinball/");
 		}
 
 		Zenith_Log(LOG_CATEGORY_GENERAL, "Procedural texture generation complete.");

@@ -185,9 +185,14 @@ struct DirectionalLightInstance
 static_assert(sizeof(DirectionalLightInstance) == 32, "DirectionalLightInstance must be 32 bytes for storage buffer alignment");
 
 // Per-LOD instance buffers (storage buffers for GPU instancing)
-static Flux_ReadWriteBuffer s_axPointLightInstanceBuffers[uNUM_LODS];
-static Flux_ReadWriteBuffer s_axSpotLightInstanceBuffers[uNUM_LODS];
-static Flux_ReadWriteBuffer s_xDirectionalLightInstanceBuffer;
+// Uses storage buffers (UAV) instead of uniform buffers (CBV) because
+// SpotLightInstance * 256 = 16KB, which hits the Vulkan maxUniformBufferRange minimum guarantee.
+// Per-frame indexed (host-visible) to prevent race conditions with MAX_FRAMES_IN_FLIGHT frame pipelining.
+// Host-visible memory is required because per-frame uploads through the GPU staging buffer are
+// unsafe: the staging buffer can be overwritten by the next frame before the GPU executes the copy.
+static Flux_DynamicReadWriteBuffer s_axPointLightInstanceBuffers[uNUM_LODS];
+static Flux_DynamicReadWriteBuffer s_axSpotLightInstanceBuffers[uNUM_LODS];
+static Flux_DynamicReadWriteBuffer s_xDirectionalLightInstanceBuffer;
 
 // Per-LOD instance counts (set during GatherLightsFromScene)
 static u_int s_auPointLightInstanceCounts[uNUM_LODS];
@@ -537,12 +542,12 @@ void Flux_DynamicLights::Initialise()
 
 	for (u_int i = 0; i < uNUM_LODS; ++i)
 	{
-		Flux_MemoryManager::InitialiseReadWriteBuffer(xZeroedPointLights.data(), ulPointInstanceBufferSize, s_axPointLightInstanceBuffers[i]);
-		Flux_MemoryManager::InitialiseReadWriteBuffer(xZeroedSpotLights.data(), ulSpotInstanceBufferSize, s_axSpotLightInstanceBuffers[i]);
+		Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(xZeroedPointLights.data(), ulPointInstanceBufferSize, s_axPointLightInstanceBuffers[i]);
+		Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(xZeroedSpotLights.data(), ulSpotInstanceBufferSize, s_axSpotLightInstanceBuffers[i]);
 		s_auPointLightInstanceCounts[i] = 0;
 		s_auSpotLightInstanceCounts[i] = 0;
 	}
-	Flux_MemoryManager::InitialiseReadWriteBuffer(xZeroedDirLights.data(), ulDirInstanceBufferSize, s_xDirectionalLightInstanceBuffer);
+	Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(xZeroedDirLights.data(), ulDirInstanceBufferSize, s_xDirectionalLightInstanceBuffer);
 	s_uDirectionalLightInstanceCount = 0;
 
 	// Pre-allocate sort buffer to avoid per-frame allocations during priority sorting
@@ -644,10 +649,10 @@ void Flux_DynamicLights::Shutdown()
 		Flux_MemoryManager::DestroyIndexBuffer(s_axConeLODs[i].m_xIndexBuffer);
 
 		// Clean up instance buffers
-		Flux_MemoryManager::DestroyReadWriteBuffer(s_axPointLightInstanceBuffers[i]);
-		Flux_MemoryManager::DestroyReadWriteBuffer(s_axSpotLightInstanceBuffers[i]);
+		Flux_MemoryManager::DestroyDynamicReadWriteBuffer(s_axPointLightInstanceBuffers[i]);
+		Flux_MemoryManager::DestroyDynamicReadWriteBuffer(s_axSpotLightInstanceBuffers[i]);
 	}
-	Flux_MemoryManager::DestroyReadWriteBuffer(s_xDirectionalLightInstanceBuffer);
+	Flux_MemoryManager::DestroyDynamicReadWriteBuffer(s_xDirectionalLightInstanceBuffer);
 
 	s_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DynamicLights shut down");

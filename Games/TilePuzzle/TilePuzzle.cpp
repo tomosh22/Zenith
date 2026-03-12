@@ -98,6 +98,7 @@ namespace TilePuzzle
 	Zenith_TextureAsset* g_pxIconGear = nullptr;
 	Zenith_TextureAsset* g_pxIconCatSilhouette = nullptr;
 	Zenith_TextureAsset* g_pxIconHint = nullptr;
+	Zenith_TextureAsset* g_pxIconHintToken = nullptr;
 
 	// Cat face textures (one per color)
 	Zenith_TextureAsset* g_apxCatFaceTextures[TILEPUZZLE_COLOR_COUNT] = {};
@@ -110,6 +111,22 @@ namespace TilePuzzle
 	Zenith_MaterialAsset* g_pxPinballBallMaterial = nullptr;
 	Zenith_MaterialAsset* g_pxPinballPegMaterial = nullptr;
 	Zenith_MaterialAsset* g_pxPinballPegHitMaterial = nullptr;
+
+	// Pinball PBR textures
+	Zenith_TextureAsset* g_pxPinballBumperDiffuseTex = nullptr;
+	Zenith_TextureAsset* g_pxPinballBumperRMTex = nullptr;
+	Zenith_TextureAsset* g_pxPinballWallDiffuseTex = nullptr;
+	Zenith_TextureAsset* g_pxPinballWallRMTex = nullptr;
+	Zenith_TextureAsset* g_pxPinballFloorDiffuseTex = nullptr;
+	Zenith_TextureAsset* g_pxPinballFloorRMTex = nullptr;
+	Zenith_TextureAsset* g_pxPinballPlungerRMTex = nullptr;
+	Zenith_TextureAsset* g_pxPinballTargetDiffuseTex = nullptr;
+
+	// Pinball custom meshes
+	Flux_MeshGeometry* g_pxBumperGeometry = nullptr;
+	Flux_MeshGeometry* g_pxBeveledCubeGeometry = nullptr;
+	Flux_MeshGeometry* g_pxPlungerGeometry = nullptr;
+	Flux_MeshGeometry* g_pxTargetRampGeometry = nullptr;
 
 	// Particle configs
 	Flux_ParticleEmitterConfig* g_pxEliminationParticleConfig = nullptr;
@@ -704,6 +721,325 @@ static void GenerateCatMesh(Flux_MeshGeometry& xGeometryOut)
 }
 
 // ============================================================================
+// Pinball Custom Mesh Generation
+// ============================================================================
+
+static void FinalizeMesh(MeshBuilder& xBuilder, Flux_MeshGeometry& xGeometry)
+{
+	xBuilder.CopyToGeometry(xGeometry);
+	xGeometry.GenerateLayoutAndVertexData();
+	Flux_MemoryManager::InitialiseVertexBuffer(
+		xGeometry.GetVertexData(), xGeometry.GetVertexDataSize(), xGeometry.m_xVertexBuffer);
+	Flux_MemoryManager::InitialiseIndexBuffer(
+		xGeometry.GetIndexData(), xGeometry.GetIndexDataSize(), xGeometry.m_xIndexBuffer);
+}
+
+static void GenerateBumperMesh(Flux_MeshGeometry& xGeometry)
+{
+	MeshBuilder xBuilder;
+	static constexpr uint32_t uSegments = 16;
+	static constexpr uint32_t uDomeRings = 8;
+	static constexpr float fRadius = 0.5f;
+	static constexpr float fBaseHeight = 0.3f;
+
+	Zenith_Maths::Vector3 xTangent(1.f, 0.f, 0.f);
+	Zenith_Maths::Vector3 xBitangent(0.f, 0.f, 1.f);
+
+	// Bottom cap: triangle fan
+	uint32_t uCenterBot = xBuilder.AddVertex(
+		{0.f, 0.f, 0.f}, {0.5f, 0.5f}, {0.f, -1.f, 0.f}, xTangent, xBitangent);
+	uint32_t uFirstBot = 0;
+	for (uint32_t i = 0; i <= uSegments; ++i)
+	{
+		float fAngle = static_cast<float>(i) / static_cast<float>(uSegments) * 2.f * fPI;
+		float fX = cosf(fAngle) * fRadius;
+		float fZ = sinf(fAngle) * fRadius;
+		uint32_t uIdx = xBuilder.AddVertex(
+			{fX, 0.f, fZ},
+			{fX * 0.5f + 0.5f, fZ * 0.5f + 0.5f},
+			{0.f, -1.f, 0.f}, xTangent, xBitangent);
+		if (i == 0) uFirstBot = uIdx;
+	}
+	for (uint32_t i = 0; i < uSegments; ++i)
+		xBuilder.AddTriangle(uCenterBot, uFirstBot + i + 1, uFirstBot + i);
+
+	// Cylinder sides
+	for (uint32_t i = 0; i <= uSegments; ++i)
+	{
+		float fAngle = static_cast<float>(i) / static_cast<float>(uSegments) * 2.f * fPI;
+		float fCos = cosf(fAngle);
+		float fSin = sinf(fAngle);
+		float fU = static_cast<float>(i) / static_cast<float>(uSegments);
+		Zenith_Maths::Vector3 xNorm(fCos, 0.f, fSin);
+
+		xBuilder.AddVertex({fCos * fRadius, 0.f, fSin * fRadius}, {fU, 0.f}, xNorm, xTangent, xBitangent);
+		xBuilder.AddVertex({fCos * fRadius, fBaseHeight, fSin * fRadius}, {fU, 0.5f}, xNorm, xTangent, xBitangent);
+	}
+	uint32_t uCylStart = uFirstBot + uSegments + 1;
+	for (uint32_t i = 0; i < uSegments; ++i)
+	{
+		uint32_t uBL = uCylStart + i * 2;
+		uint32_t uBR = uCylStart + (i + 1) * 2;
+		uint32_t uTL = uBL + 1;
+		uint32_t uTR = uBR + 1;
+		xBuilder.AddTriangle(uBL, uBR, uTR);
+		xBuilder.AddTriangle(uBL, uTR, uTL);
+	}
+
+	// Dome (hemisphere)
+	uint32_t uDomeStart = xBuilder.m_axPositions.GetSize();
+	for (uint32_t iRing = 0; iRing <= uDomeRings; ++iRing)
+	{
+		float fPhi = static_cast<float>(iRing) / static_cast<float>(uDomeRings) * fPI * 0.5f;
+		float fY = fBaseHeight + sinf(fPhi) * fRadius;
+		float fRingRadius = cosf(fPhi) * fRadius;
+
+		for (uint32_t iSeg = 0; iSeg <= uSegments; ++iSeg)
+		{
+			float fTheta = static_cast<float>(iSeg) / static_cast<float>(uSegments) * 2.f * fPI;
+			float fX = cosf(fTheta) * fRingRadius;
+			float fZ = sinf(fTheta) * fRingRadius;
+			Zenith_Maths::Vector3 xNorm = glm::normalize(Zenith_Maths::Vector3(
+				cosf(fTheta) * cosf(fPhi), sinf(fPhi), sinf(fTheta) * cosf(fPhi)));
+			float fU = static_cast<float>(iSeg) / static_cast<float>(uSegments);
+			float fV = 0.5f + static_cast<float>(iRing) / static_cast<float>(uDomeRings) * 0.5f;
+			xBuilder.AddVertex({fX, fY, fZ}, {fU, fV}, xNorm, xTangent, xBitangent);
+		}
+	}
+	for (uint32_t iRing = 0; iRing < uDomeRings; ++iRing)
+	{
+		for (uint32_t iSeg = 0; iSeg < uSegments; ++iSeg)
+		{
+			uint32_t uCur = uDomeStart + iRing * (uSegments + 1) + iSeg;
+			uint32_t uNext = uCur + uSegments + 1;
+			xBuilder.AddTriangle(uCur, uCur + 1, uNext + 1);
+			xBuilder.AddTriangle(uCur, uNext + 1, uNext);
+		}
+	}
+
+	FinalizeMesh(xBuilder, xGeometry);
+}
+
+static void GenerateBeveledCubeMesh(Flux_MeshGeometry& xGeometry)
+{
+	MeshBuilder xBuilder;
+	static constexpr float fHalf = 0.5f;
+	static constexpr float fBevel = 0.06f;
+	static constexpr float fInner = fHalf - fBevel;
+	static constexpr uint32_t uBevelSegs = 3;
+
+	Zenith_Maths::Vector3 xTangent(1.f, 0.f, 0.f);
+	Zenith_Maths::Vector3 xBitangent(0.f, 0.f, 1.f);
+
+	// 6 flat faces (inset by bevel radius)
+	auto AddQuad = [&](Zenith_Maths::Vector3 a, Zenith_Maths::Vector3 b,
+		Zenith_Maths::Vector3 c, Zenith_Maths::Vector3 d, Zenith_Maths::Vector3 n) {
+		Zenith_Maths::Vector3 t = glm::normalize(b - a);
+		Zenith_Maths::Vector3 bt = glm::normalize(glm::cross(n, t));
+		uint32_t u0 = xBuilder.AddVertex(a, {0.f, 0.f}, n, t, bt);
+		uint32_t u1 = xBuilder.AddVertex(b, {1.f, 0.f}, n, t, bt);
+		uint32_t u2 = xBuilder.AddVertex(c, {1.f, 1.f}, n, t, bt);
+		uint32_t u3 = xBuilder.AddVertex(d, {0.f, 1.f}, n, t, bt);
+		xBuilder.AddTriangle(u0, u1, u2);
+		xBuilder.AddTriangle(u0, u2, u3);
+	};
+
+	// Top (+Y)
+	AddQuad({-fInner, fHalf, -fInner}, {fInner, fHalf, -fInner},
+		{fInner, fHalf, fInner}, {-fInner, fHalf, fInner}, {0,1,0});
+	// Bottom (-Y)
+	AddQuad({-fInner, -fHalf, fInner}, {fInner, -fHalf, fInner},
+		{fInner, -fHalf, -fInner}, {-fInner, -fHalf, -fInner}, {0,-1,0});
+	// Front (+Z)
+	AddQuad({-fInner, -fInner, fHalf}, {fInner, -fInner, fHalf},
+		{fInner, fInner, fHalf}, {-fInner, fInner, fHalf}, {0,0,1});
+	// Back (-Z)
+	AddQuad({fInner, -fInner, -fHalf}, {-fInner, -fInner, -fHalf},
+		{-fInner, fInner, -fHalf}, {fInner, fInner, -fHalf}, {0,0,-1});
+	// Right (+X)
+	AddQuad({fHalf, -fInner, fInner}, {fHalf, -fInner, -fInner},
+		{fHalf, fInner, -fInner}, {fHalf, fInner, fInner}, {1,0,0});
+	// Left (-X)
+	AddQuad({-fHalf, -fInner, -fInner}, {-fHalf, -fInner, fInner},
+		{-fHalf, fInner, fInner}, {-fHalf, fInner, -fInner}, {-1,0,0});
+
+	// 12 edge bevels (quarter-cylinder strips)
+	auto AddEdgeBevel = [&](Zenith_Maths::Vector3 xEdgeStart, Zenith_Maths::Vector3 xEdgeEnd,
+		Zenith_Maths::Vector3 xN1, Zenith_Maths::Vector3 xN2) {
+		Zenith_Maths::Vector3 xEdgeDir = glm::normalize(xEdgeEnd - xEdgeStart);
+		for (uint32_t i = 0; i <= uBevelSegs; ++i)
+		{
+			float fT = static_cast<float>(i) / static_cast<float>(uBevelSegs);
+			float fAngle = fT * fPI * 0.5f;
+			Zenith_Maths::Vector3 xNorm = glm::normalize(xN1 * cosf(fAngle) + xN2 * sinf(fAngle));
+			Zenith_Maths::Vector3 xOffset = xN1 * (cosf(fAngle) * fBevel) + xN2 * (sinf(fAngle) * fBevel);
+
+			uint32_t uA = xBuilder.AddVertex(xEdgeStart + xOffset, {fT, 0.f}, xNorm, xEdgeDir, glm::cross(xNorm, xEdgeDir));
+			uint32_t uB = xBuilder.AddVertex(xEdgeEnd + xOffset, {fT, 1.f}, xNorm, xEdgeDir, glm::cross(xNorm, xEdgeDir));
+
+			if (i > 0)
+			{
+				xBuilder.AddTriangle(uA - 2, uB - 2, uB);
+				xBuilder.AddTriangle(uA - 2, uB, uA);
+			}
+		}
+	};
+
+	// Top 4 edges
+	AddEdgeBevel({-fInner, fInner, -fInner}, {fInner, fInner, -fInner}, {0,0,-1}, {0,1,0});
+	AddEdgeBevel({fInner, fInner, -fInner}, {fInner, fInner, fInner}, {1,0,0}, {0,1,0});
+	AddEdgeBevel({fInner, fInner, fInner}, {-fInner, fInner, fInner}, {0,0,1}, {0,1,0});
+	AddEdgeBevel({-fInner, fInner, fInner}, {-fInner, fInner, -fInner}, {-1,0,0}, {0,1,0});
+
+	// Bottom 4 edges
+	AddEdgeBevel({-fInner, -fInner, fInner}, {fInner, -fInner, fInner}, {0,0,1}, {0,-1,0});
+	AddEdgeBevel({fInner, -fInner, fInner}, {fInner, -fInner, -fInner}, {1,0,0}, {0,-1,0});
+	AddEdgeBevel({fInner, -fInner, -fInner}, {-fInner, -fInner, -fInner}, {0,0,-1}, {0,-1,0});
+	AddEdgeBevel({-fInner, -fInner, -fInner}, {-fInner, -fInner, fInner}, {-1,0,0}, {0,-1,0});
+
+	// Vertical 4 edges
+	AddEdgeBevel({fInner, -fInner, fInner}, {fInner, fInner, fInner}, {0,0,1}, {1,0,0});
+	AddEdgeBevel({fInner, -fInner, -fInner}, {fInner, fInner, -fInner}, {1,0,0}, {0,0,-1});
+	AddEdgeBevel({-fInner, -fInner, -fInner}, {-fInner, fInner, -fInner}, {0,0,-1}, {-1,0,0});
+	AddEdgeBevel({-fInner, -fInner, fInner}, {-fInner, fInner, fInner}, {-1,0,0}, {0,0,1});
+
+	FinalizeMesh(xBuilder, xGeometry);
+}
+
+static void GeneratePlungerMesh(Flux_MeshGeometry& xGeometry)
+{
+	MeshBuilder xBuilder;
+	static constexpr uint32_t uSegments = 12;
+	static constexpr float fShaftRadius = 0.3f;
+	static constexpr float fShaftHeight = 0.7f;
+	static constexpr float fHandleRadius = 0.35f;
+	static constexpr uint32_t uHandleRings = 6;
+
+	Zenith_Maths::Vector3 xTangent(1.f, 0.f, 0.f);
+	Zenith_Maths::Vector3 xBitangent(0.f, 0.f, 1.f);
+
+	// Bottom cap
+	uint32_t uCenter = xBuilder.AddVertex({0,0,0}, {0.5f,0.5f}, {0,-1,0}, xTangent, xBitangent);
+	uint32_t uFirstBot = 0;
+	for (uint32_t i = 0; i <= uSegments; ++i)
+	{
+		float fAngle = static_cast<float>(i) / static_cast<float>(uSegments) * 2.f * fPI;
+		uint32_t uIdx = xBuilder.AddVertex(
+			{cosf(fAngle) * fShaftRadius, 0.f, sinf(fAngle) * fShaftRadius},
+			{cosf(fAngle) * 0.5f + 0.5f, sinf(fAngle) * 0.5f + 0.5f},
+			{0,-1,0}, xTangent, xBitangent);
+		if (i == 0) uFirstBot = uIdx;
+	}
+	for (uint32_t i = 0; i < uSegments; ++i)
+		xBuilder.AddTriangle(uCenter, uFirstBot + i + 1, uFirstBot + i);
+
+	// Cylinder shaft
+	uint32_t uCylStart = xBuilder.m_axPositions.GetSize();
+	for (uint32_t i = 0; i <= uSegments; ++i)
+	{
+		float fAngle = static_cast<float>(i) / static_cast<float>(uSegments) * 2.f * fPI;
+		float fCos = cosf(fAngle), fSin = sinf(fAngle);
+		Zenith_Maths::Vector3 xN(fCos, 0.f, fSin);
+		float fU = static_cast<float>(i) / static_cast<float>(uSegments);
+		xBuilder.AddVertex({fCos * fShaftRadius, 0.f, fSin * fShaftRadius}, {fU, 0.f}, xN, xTangent, xBitangent);
+		xBuilder.AddVertex({fCos * fShaftRadius, fShaftHeight, fSin * fShaftRadius}, {fU, 0.7f}, xN, xTangent, xBitangent);
+	}
+	for (uint32_t i = 0; i < uSegments; ++i)
+	{
+		uint32_t uBL = uCylStart + i * 2;
+		xBuilder.AddTriangle(uBL, uBL + 2, uBL + 3);
+		xBuilder.AddTriangle(uBL, uBL + 3, uBL + 1);
+	}
+
+	// Handle dome (hemisphere)
+	uint32_t uDomeStart = xBuilder.m_axPositions.GetSize();
+	for (uint32_t iRing = 0; iRing <= uHandleRings; ++iRing)
+	{
+		float fPhi = static_cast<float>(iRing) / static_cast<float>(uHandleRings) * fPI * 0.5f;
+		float fY = fShaftHeight + sinf(fPhi) * fHandleRadius;
+		float fRR = cosf(fPhi) * fHandleRadius;
+		for (uint32_t iSeg = 0; iSeg <= uSegments; ++iSeg)
+		{
+			float fTheta = static_cast<float>(iSeg) / static_cast<float>(uSegments) * 2.f * fPI;
+			Zenith_Maths::Vector3 xN = glm::normalize(Zenith_Maths::Vector3(
+				cosf(fTheta) * cosf(fPhi), sinf(fPhi), sinf(fTheta) * cosf(fPhi)));
+			xBuilder.AddVertex(
+				{cosf(fTheta) * fRR, fY, sinf(fTheta) * fRR},
+				{static_cast<float>(iSeg) / uSegments, 0.7f + static_cast<float>(iRing) / uHandleRings * 0.3f},
+				xN, xTangent, xBitangent);
+		}
+	}
+	for (uint32_t iRing = 0; iRing < uHandleRings; ++iRing)
+	{
+		for (uint32_t iSeg = 0; iSeg < uSegments; ++iSeg)
+		{
+			uint32_t uCur = uDomeStart + iRing * (uSegments + 1) + iSeg;
+			uint32_t uNext = uCur + uSegments + 1;
+			xBuilder.AddTriangle(uCur, uCur + 1, uNext + 1);
+			xBuilder.AddTriangle(uCur, uNext + 1, uNext);
+		}
+	}
+
+	FinalizeMesh(xBuilder, xGeometry);
+}
+
+static void GenerateTargetRampMesh(Flux_MeshGeometry& xGeometry)
+{
+	MeshBuilder xBuilder;
+
+	// Tapered wedge: wider front, narrower back, sloping down
+	float fFrontW = 0.5f, fBackW = 0.3f;
+	float fDepth = 0.5f;
+	float fFrontH = 0.3f, fBackH = 0.1f;
+
+	// 8 corner vertices (top trapezoid + bottom rectangle)
+	Zenith_Maths::Vector3 axTop[4] = {
+		{-fFrontW, fFrontH, -fDepth * 0.5f},  // front-left
+		{ fFrontW, fFrontH, -fDepth * 0.5f},  // front-right
+		{ fBackW,  fBackH,   fDepth * 0.5f},   // back-right
+		{-fBackW,  fBackH,   fDepth * 0.5f},   // back-left
+	};
+	Zenith_Maths::Vector3 axBot[4] = {
+		{-fFrontW, 0.f, -fDepth * 0.5f},
+		{ fFrontW, 0.f, -fDepth * 0.5f},
+		{ fBackW,  0.f,  fDepth * 0.5f},
+		{-fBackW,  0.f,  fDepth * 0.5f},
+	};
+
+	Zenith_Maths::Vector3 xTangent(1.f, 0.f, 0.f);
+	Zenith_Maths::Vector3 xBitangent(0.f, 0.f, 1.f);
+
+	// Helper to add a flat quad with computed face normal
+	auto AddFace = [&](Zenith_Maths::Vector3 a, Zenith_Maths::Vector3 b,
+		Zenith_Maths::Vector3 c, Zenith_Maths::Vector3 d) {
+		Zenith_Maths::Vector3 xN = glm::normalize(glm::cross(b - a, d - a));
+		Zenith_Maths::Vector3 t = glm::normalize(b - a);
+		Zenith_Maths::Vector3 bt = glm::normalize(glm::cross(xN, t));
+		uint32_t u0 = xBuilder.AddVertex(a, {0,0}, xN, t, bt);
+		uint32_t u1 = xBuilder.AddVertex(b, {1,0}, xN, t, bt);
+		uint32_t u2 = xBuilder.AddVertex(c, {1,1}, xN, t, bt);
+		uint32_t u3 = xBuilder.AddVertex(d, {0,1}, xN, t, bt);
+		xBuilder.AddTriangle(u0, u1, u2);
+		xBuilder.AddTriangle(u0, u2, u3);
+	};
+
+	// Top (ramp surface)
+	AddFace(axTop[0], axTop[1], axTop[2], axTop[3]);
+	// Bottom
+	AddFace(axBot[3], axBot[2], axBot[1], axBot[0]);
+	// Front
+	AddFace(axBot[0], axBot[1], axTop[1], axTop[0]);
+	// Back
+	AddFace(axBot[2], axBot[3], axTop[3], axTop[2]);
+	// Left side
+	AddFace(axBot[3], axBot[0], axTop[0], axTop[3]);
+	// Right side
+	AddFace(axBot[1], axBot[2], axTop[2], axTop[1]);
+
+	FinalizeMesh(xBuilder, xGeometry);
+}
+
+// ============================================================================
 // Shape Mesh Deserialization (runtime)
 // ============================================================================
 static bool ReadShapeMeshFromStream(Zenith_DataStream& xStream, Flux_MeshGeometry& xGeometry)
@@ -784,6 +1120,7 @@ static void LoadProceduralAssets(Zenith_AssetRegistry& xRegistry)
 	g_pxIconGear = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/gear" ZENITH_TEXTURE_EXT);
 	g_pxIconCatSilhouette = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/cat_silhouette" ZENITH_TEXTURE_EXT);
 	g_pxIconHint = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/hint" ZENITH_TEXTURE_EXT);
+	g_pxIconHintToken = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/hint_token" ZENITH_TEXTURE_EXT);
 
 	// Load cat face textures
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
@@ -812,6 +1149,16 @@ static void LoadProceduralAssets(Zenith_AssetRegistry& xRegistry)
 	g_pxPinballPegMaterial = xRegistry.Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg" ZENITH_MATERIAL_EXT);
 	g_pxPinballPegHitMaterial = xRegistry.Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg_hit" ZENITH_MATERIAL_EXT);
 
+	// Load pinball PBR textures
+	g_pxPinballBumperDiffuseTex = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/bumper_diffuse" ZENITH_TEXTURE_EXT);
+	g_pxPinballBumperRMTex = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/bumper_rm" ZENITH_TEXTURE_EXT);
+	g_pxPinballWallDiffuseTex = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/wall_diffuse" ZENITH_TEXTURE_EXT);
+	g_pxPinballWallRMTex = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/wall_rm" ZENITH_TEXTURE_EXT);
+	g_pxPinballFloorDiffuseTex = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/floor_diffuse" ZENITH_TEXTURE_EXT);
+	g_pxPinballFloorRMTex = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/floor_rm" ZENITH_TEXTURE_EXT);
+	g_pxPinballPlungerRMTex = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/plunger_rm" ZENITH_TEXTURE_EXT);
+	g_pxPinballTargetDiffuseTex = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/target_diffuse" ZENITH_TEXTURE_EXT);
+
 	// Load particle configs
 	TilePuzzle_AssetGen::LoadParticleConfigs();
 }
@@ -833,6 +1180,16 @@ static void InitializeTilePuzzleResources()
 	// Generate cat head mesh
 	g_pxCatMeshGeometry = new Flux_MeshGeometry();
 	GenerateCatMesh(*g_pxCatMeshGeometry);
+
+	// Generate pinball custom meshes
+	g_pxBumperGeometry = new Flux_MeshGeometry();
+	GenerateBumperMesh(*g_pxBumperGeometry);
+	g_pxBeveledCubeGeometry = new Flux_MeshGeometry();
+	GenerateBeveledCubeMesh(*g_pxBeveledCubeGeometry);
+	g_pxPlungerGeometry = new Flux_MeshGeometry();
+	GeneratePlungerMesh(*g_pxPlungerGeometry);
+	g_pxTargetRampGeometry = new Flux_MeshGeometry();
+	GenerateTargetRampMesh(*g_pxTargetRampGeometry);
 
 	// Load pre-generated merged polyomino meshes from disk
 	for (uint32_t u = 0; u < TILEPUZZLE_SHAPE_COUNT; ++u)
@@ -927,11 +1284,15 @@ static void InitializeTilePuzzleResources()
 	g_xFloorMaterial.Get()->SetName("TilePuzzleFloor");
 	g_xFloorMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 	g_xFloorMaterial.Get()->SetBaseColor(xFloorColor);
+	g_xFloorMaterial.Get()->SetRoughness(0.8f);
+	g_xFloorMaterial.Get()->SetMetallic(0.0f);
 
 	g_xBlockerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 	g_xBlockerMaterial.Get()->SetName("TilePuzzleBlocker");
 	g_xBlockerMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 	g_xBlockerMaterial.Get()->SetBaseColor(xBlockerColor);
+	g_xBlockerMaterial.Get()->SetRoughness(0.9f);
+	g_xBlockerMaterial.Get()->SetMetallic(0.0f);
 
 	// Shape materials with loaded colors + per-color PBR variation
 	const char* aszShapeColorNames[] = { "Red", "Green", "Blue", "Yellow", "Purple" };
@@ -958,6 +1319,8 @@ static void InitializeTilePuzzleResources()
 		g_axCatMaterials[i].Get()->SetName(szName);
 		g_axCatMaterials[i].Get()->SetDiffuseTextureDirectly(pxGridTex);
 		g_axCatMaterials[i].Get()->SetBaseColor(axShapeColors[i]);
+		g_axCatMaterials[i].Get()->SetRoughness(0.6f);
+		g_axCatMaterials[i].Get()->SetMetallic(0.05f);
 	}
 
 #ifndef ZENITH_TOOLS
@@ -1528,6 +1891,32 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_AddUIChild("LivesArea", "LivesTimerText");
 	Zenith_EditorAutomation::AddStep_AddUIChild("LivesArea", "RefillLivesButton");
 
+	// Hint token pill (icon + text with pill background) — under lives
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("HintTokenGroup");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("HintTokenGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("HintTokenGroup", 8.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("HintTokenGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("HintTokenGroup", true);
+	Zenith_EditorAutomation::AddStep_SetUILayoutPadding("HintTokenGroup", 10.f, 10.f, 10.f, 2.f);
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundColor("HintTokenGroup", 0.05f, 0.05f, 0.10f, 0.6f);
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius("HintTokenGroup", 16.f);
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder("HintTokenGroup", 0.2f, 0.2f, 0.3f, 1.f);
+
+	Zenith_EditorAutomation::AddStep_CreateUIImage("HintTokenIcon");
+	Zenith_EditorAutomation::AddStep_SetUISize("HintTokenIcon", 36.f, 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("HintTokenIcon", 0.4f, 0.85f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("HintTokenIcon",
+		GAME_ASSETS_DIR "Textures/Icons/hint_token" ZENITH_TEXTURE_EXT);
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("HintTokenText", "0");
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("HintTokenText", 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("HintTokenText", 0.4f, 0.85f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUITextShadow("HintTokenText", 1.f, 1.f, true);
+
+	Zenith_EditorAutomation::AddStep_AddUIChild("HintTokenGroup", "HintTokenIcon");
+	Zenith_EditorAutomation::AddStep_AddUIChild("HintTokenGroup", "HintTokenText");
+	Zenith_EditorAutomation::AddStep_AddUIChild("LivesArea", "HintTokenGroup");
+
 	// Daily streak (bottom-left) — vertical layout with pill background
 	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("StreakGroup");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("StreakGroup", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
@@ -2031,6 +2420,11 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("HintBtn", 24.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("HintBtn", 0.2f, 0.25f, 0.35f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("HintBtn", 0.3f, 0.35f, 0.5f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonIcon("HintBtn",
+		GAME_ASSETS_DIR "Textures/Icons/hint_token" ZENITH_TEXTURE_EXT);
+	Zenith_EditorAutomation::AddStep_SetUIButtonIconSize("HintBtn", 28.f, 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonIconPlacement("HintBtn",
+		static_cast<int>(Zenith_UI::Zenith_UIButton::IconPlacement::LEFT));
 
 	Zenith_EditorAutomation::AddStep_CreateUIButton("SkipBtn", "Skip");
 	Zenith_EditorAutomation::AddStep_SetUISize("SkipBtn", 120.f, 70.f);

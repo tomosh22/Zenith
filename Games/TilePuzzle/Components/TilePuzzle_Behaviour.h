@@ -49,6 +49,7 @@
 
 #include "Collections/Zenith_Vector.h"
 #include "Flux/Skybox/Flux_Skybox.h"
+#include "EntityComponent/Components/Zenith_LightComponent.h"
 
 #include <unordered_map>
 #include <utility>
@@ -149,7 +150,6 @@ static const char* s_aszCatBreeds[s_uCatBreedCount] = {
 // ============================================================================
 static constexpr uint32_t s_uCoinsPerLevelComplete = 10;
 static constexpr uint32_t s_uCoinsPerThreeStar = 5;
-static constexpr uint32_t s_uCoinsPerPinballGate = 25;
 static constexpr uint32_t s_uCoinsPerDailyPuzzle = 50;
 
 // ============================================================================
@@ -533,6 +533,8 @@ public:
 			m_pxLivesTimerText = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesTimerText");
 			m_pxStreakText = xUI.FindElement<Zenith_UI::Zenith_UIText>("DailyStreakText");
 			m_pxRefillBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
+			m_pxHintTokenText = xUI.FindElement<Zenith_UI::Zenith_UIText>("HintTokenText");
+			m_pxHintTokenGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("HintTokenGroup");
 			m_pxCatProgressBg = xUI.FindElement<Zenith_UI::Zenith_UIRect>("CatProgressBg");
 			m_pxCatProgressFill = xUI.FindElement<Zenith_UI::Zenith_UIRect>("CatProgressFill");
 			// Confirm dialog overlay
@@ -586,6 +588,20 @@ public:
 
 	void OnUpdate(const float fDeltaTime) ZENITH_FINAL override
 	{
+#ifdef ZENITH_TOOLS
+		if (m_bPendingReloadLevel)
+		{
+			m_bPendingReloadLevel = false;
+			StartNewLevel();
+			return;
+		}
+		if (m_bPendingResetLevel)
+		{
+			m_bPendingResetLevel = false;
+			ResetLevel();
+			return;
+		}
+#endif
 		switch (m_eState)
 		{
 		case TILEPUZZLE_STATE_MAIN_MENU:
@@ -757,13 +773,13 @@ public:
 
 		if (ImGui::Button("Reload Level"))
 		{
-			StartNewLevel();
+			m_bPendingReloadLevel = true;
 		}
 
 		ImGui::SameLine();
 		if (ImGui::Button("Reset"))
 		{
-			ResetLevel();
+			m_bPendingResetLevel = true;
 		}
 #endif
 	}
@@ -945,6 +961,28 @@ private:
 		}
 	}
 
+	static void OnPinballGateClicked(void* pxUserData)
+	{
+		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+		if (pxSelf->m_eState == TILEPUZZLE_STATE_LEVEL_COMPLETE)
+		{
+			// Save and transition to pinball scene
+			pxSelf->m_xSaveData.uCurrentLevel = pxSelf->m_uCurrentLevelNumber;
+			Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+				TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
+
+			// Unload puzzle scene
+			if (pxSelf->m_xPuzzleScene.IsValid())
+			{
+				pxSelf->ClearEntityReferences();
+				Zenith_SceneManager::UnloadScene(pxSelf->m_xPuzzleScene);
+				pxSelf->m_xPuzzleScene = Zenith_Scene();
+			}
+
+			Zenith_SceneManager::LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+		}
+	}
+
 	// ========================================================================
 	// State Transitions
 	// ========================================================================
@@ -1044,12 +1082,23 @@ private:
 			}
 		}
 
-		// Unlock next level
-		if (m_uCurrentLevelNumber >= m_xSaveData.uHighestLevelReached &&
-			m_uCurrentLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
+		// Check if this is a pinball gate level
+		bool bIsGateLevel = (m_uCurrentLevelNumber % 10 == 0)
+			&& (m_uCurrentLevelNumber / 10 <= TilePuzzleSaveData::uMAX_PINBALL_GATES);
+		bool bGateCleared = bIsGateLevel
+			&& m_xSaveData.IsPinballGateCleared(m_uCurrentLevelNumber / 10 - 1);
+
+		// Only unlock next level if this is NOT a gate level, or if the gate is already cleared
+		if (!bIsGateLevel || bGateCleared)
 		{
-			m_xSaveData.uHighestLevelReached = m_uCurrentLevelNumber + 1;
+			if (m_uCurrentLevelNumber >= m_xSaveData.uHighestLevelReached &&
+				m_uCurrentLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
+			{
+				m_xSaveData.uHighestLevelReached = m_uCurrentLevelNumber + 1;
+			}
 		}
+
+		m_bPinballGateRequired = bIsGateLevel && !bGateCleared;
 
 		m_xSaveData.uCurrentLevel = m_uCurrentLevelNumber;
 
@@ -1145,12 +1194,8 @@ private:
 			}
 		}
 
-		// Show next level button (unless this is the last level)
-		bool bIsLastLevel = (m_uCurrentLevelNumber >= m_uAvailableLevelCount);
-		if (!bIsLastLevel && m_pxNextLevelBtn)
-		{
-			m_pxNextLevelBtn->SetVisible(true);
-		}
+		// NextLevel button (or Pinball Gate button) is shown by the victory
+		// overlay animation in UpdateVictoryOverlay based on m_bPinballGateRequired
 	}
 
 	// ========================================================================
@@ -1283,13 +1328,30 @@ private:
 		if (m_pxTopRightCounters) m_pxTopRightCounters->SetVisible(bVisible);
 		if (m_pxStreakGroup) m_pxStreakGroup->SetVisible(bVisible);
 		if (m_pxLivesArea) m_pxLivesArea->SetVisible(bVisible);
+		if (m_pxHintTokenGroup) m_pxHintTokenGroup->SetVisible(bVisible);
 
 		// FTUE progressive disclosure: hide buttons until player reaches milestone levels
 		uint32_t uProgress = m_xSaveData.uHighestLevelReached;
 		if (m_pxLevelSelectBtn) m_pxLevelSelectBtn->SetVisible(bVisible && uProgress >= 5);
 		if (m_pxCatCafeBtn) m_pxCatCafeBtn->SetVisible(bVisible && uProgress >= 3);
 		if (m_pxDailyBtn) m_pxDailyBtn->SetVisible(bVisible && uProgress >= 10);
-		if (m_pxPinballBtn) m_pxPinballBtn->SetVisible(bVisible && uProgress >= 10);
+		if (m_pxPinballBtn)
+		{
+			m_pxPinballBtn->SetVisible(bVisible && uProgress >= 10);
+			// Highlight pinball button when daily bonus is available
+			if (bVisible && m_xSaveData.HasDailyPinballBonus(GetCurrentDateYYYYMMDD()))
+			{
+				m_pxPinballBtn->SetText("Pinball!");
+				m_pxPinballBtn->SetNormalColor(Zenith_Maths::Vector4(0.6f, 0.35f, 0.1f, 1.0f));
+				m_pxPinballBtn->SetHoverColor(Zenith_Maths::Vector4(0.75f, 0.45f, 0.15f, 1.0f));
+			}
+			else
+			{
+				m_pxPinballBtn->SetText("Pinball");
+				m_pxPinballBtn->SetNormalColor(Zenith_Maths::Vector4(0.2f, 0.25f, 0.35f, 1.0f));
+				m_pxPinballBtn->SetHoverColor(Zenith_Maths::Vector4(0.3f, 0.35f, 0.5f, 1.0f));
+			}
+		}
 
 		if (m_pxMenuSubtitle) m_pxMenuSubtitle->SetVisible(bVisible);
 		if (m_pxVersionText) m_pxVersionText->SetVisible(bVisible);
@@ -1561,6 +1623,10 @@ private:
 	Zenith_UI::Zenith_UIText* m_pxLivesTimerText = nullptr;
 	Zenith_UI::Zenith_UIText* m_pxStreakText = nullptr;
 	Zenith_UI::Zenith_UIButton* m_pxRefillBtn = nullptr;
+	// Hint tokens
+	Zenith_UI::Zenith_UIText* m_pxHintTokenText = nullptr;
+	Zenith_UI::Zenith_UIElement* m_pxHintTokenGroup = nullptr;
+	bool m_bPinballGateRequired = false;
 	// Cat cafe progress bar
 	Zenith_UI::Zenith_UIRect* m_pxCatProgressBg = nullptr;
 	Zenith_UI::Zenith_UIRect* m_pxCatProgressFill = nullptr;
@@ -1579,6 +1645,8 @@ private:
 	bool m_bDragging = false;
 	bool m_bMouseWasDown = false;
 	bool m_bPendingLevelComplete = false;
+	bool m_bPendingReloadLevel = false;
+	bool m_bPendingResetLevel = false;
 	int32_t m_iDragShapeIndex = -1;
 	int32_t m_iDragGrabOffsetX = 0;
 	int32_t m_iDragGrabOffsetY = 0;
@@ -1945,6 +2013,11 @@ private:
 
 			if (m_pxStreakText) m_pxStreakText->SetText("0 days");
 			if (m_pxRefillBtn) m_pxRefillBtn->SetVisible(false);
+			if (m_pxHintTokenText)
+			{
+				snprintf(szBuffer, sizeof(szBuffer), "%u", m_xSaveData.uFreeHintTokens);
+				m_pxHintTokenText->SetText(szBuffer);
+			}
 		}
 	}
 
@@ -3052,6 +3125,19 @@ private:
 
 			xCat.uEntityID = xCatEntity.GetEntityID();
 		}
+
+		// Overhead light for specular highlights on shapes and cats
+		{
+			Zenith_Entity xLight(pxSceneData, "PuzzleLight");
+			Zenith_TransformComponent& xT = xLight.GetComponent<Zenith_TransformComponent>();
+			float fGridExtent = static_cast<float>(m_xCurrentLevel.uGridHeight > m_xCurrentLevel.uGridWidth ? m_xCurrentLevel.uGridHeight : m_xCurrentLevel.uGridWidth);
+			xT.SetPosition(Zenith_Maths::Vector3(0.f, fGridExtent * 0.8f, 0.f));
+			Zenith_LightComponent& xLC = xLight.AddComponent<Zenith_LightComponent>();
+			xLC.SetLightType(LIGHT_TYPE_POINT);
+			xLC.SetColor(Zenith_Maths::Vector3(1.0f, 0.95f, 0.9f));
+			xLC.SetIntensity(150.f);
+			xLC.SetRange(30.f);
+		}
 	}
 
 	void UpdateVisuals(float fDeltaTime)
@@ -3485,11 +3571,14 @@ private:
 			}
 		}
 
-		// Update hint button label with cost
+		// Update hint button label with cost (tokens take priority over coins)
 		if (m_pxHintBtn)
 		{
 			char szHintLabel[32];
-			snprintf(szHintLabel, sizeof(szHintLabel), "Hint (%u)", s_uHintCoinCost);
+			if (m_xSaveData.HasHintTokens())
+				snprintf(szHintLabel, sizeof(szHintLabel), "Free x%u", m_xSaveData.GetFreeHintTokens());
+			else
+				snprintf(szHintLabel, sizeof(szHintLabel), "(%u)", s_uHintCoinCost);
 			m_pxHintBtn->SetText(szHintLabel);
 		}
 
@@ -3687,8 +3776,9 @@ private:
 		if (m_bHintActive)
 			return;  // Hint already showing
 
-		// Check coin cost (don't deduct yet - wait until we find a valid hint)
-		if (m_xSaveData.uCoins < s_uHintCoinCost)
+		// Check if player can afford a hint (tokens take priority)
+		bool bUseToken = m_xSaveData.HasHintTokens();
+		if (!bUseToken && m_xSaveData.uCoins < s_uHintCoinCost)
 			return;
 
 		// Build a TilePuzzleLevelData from the current game state for the solver
@@ -3749,8 +3839,11 @@ private:
 		if (iBestShapeIndex < 0)
 			return;  // No improving move found
 
-		// Deduct coins and show hint
-		m_xSaveData.SpendCoins(s_uHintCoinCost);
+		// Deduct hint token or coins
+		if (bUseToken)
+			m_xSaveData.SpendHintToken();
+		else
+			m_xSaveData.SpendCoins(s_uHintCoinCost);
 		m_bHintActive = true;
 		m_iHintShapeIndex = iBestShapeIndex;
 		m_eHintDirection = eBestDirection;

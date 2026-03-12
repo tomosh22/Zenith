@@ -37,6 +37,10 @@
 #include "TilePuzzle/Components/TilePuzzle_SaveData.h"
 #include "SaveData/Zenith_SaveData.h"
 
+#include "EntityComponent/Components/Zenith_LightComponent.h"
+#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/Skybox/Flux_Skybox.h"
+
 #include "DataStream/Zenith_DataStream.h"
 
 #include <cmath>
@@ -58,6 +62,20 @@ namespace TilePuzzle
 	extern Zenith_MaterialAsset* g_pxPinballBallMaterial;
 	extern Zenith_MaterialAsset* g_pxPinballPegMaterial;
 	extern Zenith_MaterialAsset* g_pxPinballPegHitMaterial;
+
+	extern Zenith_TextureAsset* g_pxPinballBumperDiffuseTex;
+	extern Zenith_TextureAsset* g_pxPinballBumperRMTex;
+	extern Zenith_TextureAsset* g_pxPinballWallDiffuseTex;
+	extern Zenith_TextureAsset* g_pxPinballWallRMTex;
+	extern Zenith_TextureAsset* g_pxPinballFloorDiffuseTex;
+	extern Zenith_TextureAsset* g_pxPinballFloorRMTex;
+	extern Zenith_TextureAsset* g_pxPinballPlungerRMTex;
+	extern Zenith_TextureAsset* g_pxPinballTargetDiffuseTex;
+
+	extern Flux_MeshGeometry* g_pxBumperGeometry;
+	extern Flux_MeshGeometry* g_pxBeveledCubeGeometry;
+	extern Flux_MeshGeometry* g_pxPlungerGeometry;
+	extern Flux_MeshGeometry* g_pxTargetRampGeometry;
 }
 
 // ============================================================================
@@ -91,6 +109,9 @@ static constexpr uint32_t s_uPB_MaxWalls = 10;
 static constexpr uint32_t s_uPB_PegScore = 100;
 static constexpr float s_fPB_PegFlashDuration = 0.3f;
 static constexpr float s_fPB_GateCelebrationDuration = 2.5f;
+static constexpr uint32_t s_uPB_FirstClearBonus = 50;
+static constexpr uint32_t s_uPB_ScoreToCoinDivisor = 100;
+static constexpr uint32_t s_uPB_MinCoinsPerSession = 5;
 
 // Peg layout: array of 2D positions for each peg
 struct PinballPegLayout
@@ -520,6 +541,11 @@ public:
 			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
 			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
 
+			Flux_HDR::SetBloomIntensity(0.8f);
+			Flux_HDR::SetBloomThreshold(0.8f);
+			Flux_HDR::SetExposure(1.2f);
+			Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector4(0.02f, 0.02f, 0.06f, 1.0f);
+
 			CreatePlayfield();
 			SpawnBall();
 			ResetGateAttempt();
@@ -710,9 +736,22 @@ private:
 
 	void ReturnToMenu()
 	{
+		// Award score-based coins for freeplay sessions (gate clears already awarded)
+		if (!m_bGateCleared && m_uSessionScore > 0)
+		{
+			uint32_t uCoins = m_uSessionScore / s_uPB_ScoreToCoinDivisor;
+			if (uCoins < s_uPB_MinCoinsPerSession) uCoins = s_uPB_MinCoinsPerSession;
+			m_xSaveData.AddCoins(static_cast<int32_t>(uCoins));
+		}
+
 		// Update total score and save
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 			TilePuzzle_WriteSaveData, &m_xSaveData);
+
+		// Restore HDR defaults
+		Flux_HDR::SetBloomIntensity(0.5f);
+		Flux_HDR::SetBloomThreshold(1.0f);
+		Flux_HDR::SetExposure(1.0f);
 
 		// Cleanup dynamic scene
 		if (m_xPinballScene.IsValid())
@@ -733,61 +772,106 @@ private:
 		auto& xRegistry = Zenith_AssetRegistry::Get();
 		Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
 
-		// Ball - cat-themed orange
+		// Ball - cat-themed orange, metallic chrome
 		m_xBallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xBallMaterial.Get()->SetName("PinballBall");
 		m_xBallMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xBallMaterial.Get()->SetBaseColor({ 0.95f, 0.6f, 0.2f, 1.f });
+		m_xBallMaterial.Get()->SetRoughness(0.2f);
+		m_xBallMaterial.Get()->SetMetallic(0.8f);
 		m_xBallMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.5f, 0.3f, 0.1f));
-		m_xBallMaterial.Get()->SetEmissiveIntensity(0.3f);
+		m_xBallMaterial.Get()->SetEmissiveIntensity(0.8f);
 
-		// Walls - dark blue
+		// Walls - dark steel blue with PBR textures
 		m_xWallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xWallMaterial.Get()->SetName("PinballWall");
-		m_xWallMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xWallMaterial.Get()->SetBaseColor({ 0.15f, 0.18f, 0.3f, 1.f });
+		m_xWallMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.1f, 0.15f, 0.4f));
+		m_xWallMaterial.Get()->SetEmissiveIntensity(0.3f);
+		if (TilePuzzle::g_pxPinballWallDiffuseTex)
+			m_xWallMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballWallDiffuseTex);
+		else
+			m_xWallMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
+		if (TilePuzzle::g_pxPinballWallRMTex)
+			m_xWallMaterial.Get()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballWallRMTex);
 
-		// Pegs - warm paw-themed pink-brown
+		// Wall trim - neon blue emissive for boundary walls
+		m_xWallTrimMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+		m_xWallTrimMaterial.Get()->SetName("PinballWallTrim");
+		m_xWallTrimMaterial.Get()->SetBaseColor({ 0.1f, 0.15f, 0.4f, 1.f });
+		m_xWallTrimMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.2f, 0.3f, 1.0f));
+		m_xWallTrimMaterial.Get()->SetEmissiveIntensity(1.5f);
+		if (TilePuzzle::g_pxPinballWallDiffuseTex)
+			m_xWallTrimMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballWallDiffuseTex);
+		else
+			m_xWallTrimMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
+		if (TilePuzzle::g_pxPinballWallRMTex)
+			m_xWallTrimMaterial.Get()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballWallRMTex);
+
+		// Pegs - warm paw-themed with PBR bumper textures
 		m_xObstacleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xObstacleMaterial.Get()->SetName("PinballObstacle");
-		m_xObstacleMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xObstacleMaterial.Get()->SetBaseColor({ 0.55f, 0.35f, 0.3f, 1.f });
+		if (TilePuzzle::g_pxPinballBumperDiffuseTex)
+			m_xObstacleMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballBumperDiffuseTex);
+		else
+			m_xObstacleMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
+		if (TilePuzzle::g_pxPinballBumperRMTex)
+			m_xObstacleMaterial.Get()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballBumperRMTex);
 
-		// Plunger - red
+		// Plunger - red with chrome shaft texture
 		m_xPlungerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xPlungerMaterial.Get()->SetName("PinballPlunger");
 		m_xPlungerMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xPlungerMaterial.Get()->SetBaseColor({ 0.8f, 0.15f, 0.15f, 1.f });
+		m_xPlungerMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.8f, 0.1f, 0.05f));
+		m_xPlungerMaterial.Get()->SetEmissiveIntensity(0.4f);
+		if (TilePuzzle::g_pxPinballPlungerRMTex)
+			m_xPlungerMaterial.Get()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballPlungerRMTex);
 
-		// Target - bright green
+		// Target - bright green with chevron texture
 		m_xTargetMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xTargetMaterial.Get()->SetName("PinballTarget");
-		m_xTargetMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xTargetMaterial.Get()->SetBaseColor({ 0.1f, 0.8f, 0.2f, 1.f });
 		m_xTargetMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.1f, 0.8f, 0.2f));
-		m_xTargetMaterial.Get()->SetEmissiveIntensity(0.5f);
+		m_xTargetMaterial.Get()->SetEmissiveIntensity(1.5f);
+		if (TilePuzzle::g_pxPinballTargetDiffuseTex)
+			m_xTargetMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballTargetDiffuseTex);
+		else
+			m_xTargetMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 
-		// Floor - very dark
+		// Floor - dark wood playfield with PBR textures
 		m_xFloorMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xFloorMaterial.Get()->SetName("PinballFloor");
-		m_xFloorMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xFloorMaterial.Get()->SetBaseColor({ 0.06f, 0.06f, 0.1f, 1.f });
+		m_xFloorMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f));
+		m_xFloorMaterial.Get()->SetEmissiveIntensity(0.2f);
+		if (TilePuzzle::g_pxPinballFloorDiffuseTex)
+			m_xFloorMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballFloorDiffuseTex);
+		else
+			m_xFloorMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
+		if (TilePuzzle::g_pxPinballFloorRMTex)
+			m_xFloorMaterial.Get()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballFloorRMTex);
 
 		// Lit peg material - warm glow for hit pegs
 		m_xPegHitMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xPegHitMaterial.Get()->SetName("PinballPegHit");
 		m_xPegHitMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xPegHitMaterial.Get()->SetBaseColor({ 0.7f, 0.5f, 0.4f, 1.f });
+		m_xPegHitMaterial.Get()->SetRoughness(0.3f);
+		m_xPegHitMaterial.Get()->SetMetallic(0.5f);
 		m_xPegHitMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.8f, 0.5f, 0.2f));
-		m_xPegHitMaterial.Get()->SetEmissiveIntensity(1.2f);
+		m_xPegHitMaterial.Get()->SetEmissiveIntensity(2.0f);
 
 		// Flash peg material - bright warm emissive spike for the moment of impact
 		m_xPegFlashMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xPegFlashMaterial.Get()->SetName("PinballPegFlash");
 		m_xPegFlashMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xPegFlashMaterial.Get()->SetBaseColor({ 1.0f, 0.8f, 0.5f, 1.f });
+		m_xPegFlashMaterial.Get()->SetRoughness(0.2f);
+		m_xPegFlashMaterial.Get()->SetMetallic(0.5f);
 		m_xPegFlashMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(1.0f, 0.7f, 0.3f));
-		m_xPegFlashMaterial.Get()->SetEmissiveIntensity(3.0f);
+		m_xPegFlashMaterial.Get()->SetEmissiveIntensity(5.0f);
 
 		// Use loaded procedural materials when available
 		if (TilePuzzle::g_pxPinballBallMaterial)
@@ -912,7 +996,8 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(fScale, fScale, fScale * 0.6f));
 
 		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*m_pxSphereGeometry, *xMaterial.Get());
+		Flux_MeshGeometry* pxMesh = TilePuzzle::g_pxBumperGeometry ? TilePuzzle::g_pxBumperGeometry : m_pxSphereGeometry;
+		xModel.AddMeshEntry(*pxMesh, *xMaterial.Get());
 
 		Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_STATIC);
@@ -942,29 +1027,29 @@ private:
 		// === Boundary Walls ===
 
 		// Left wall
-		AddWall(pxScene, "PB_WallLeft",
+		AddBoundaryWall(pxScene, "PB_WallLeft",
 			{ s_fPB_FieldLeft - s_fPB_WallThickness * 0.5f, fCenterY, 0.f },
 			{ s_fPB_WallThickness, fFieldH + s_fPB_WallThickness, 0.5f });
 
 		// Right wall
-		AddWall(pxScene, "PB_WallRight",
+		AddBoundaryWall(pxScene, "PB_WallRight",
 			{ s_fPB_FieldRight + s_fPB_WallThickness * 0.5f, fCenterY, 0.f },
 			{ s_fPB_WallThickness, fFieldH + s_fPB_WallThickness, 0.5f });
 
 		// Top wall
-		AddWall(pxScene, "PB_WallTop",
+		AddBoundaryWall(pxScene, "PB_WallTop",
 			{ fCenterX, s_fPB_FieldTop + s_fPB_WallThickness * 0.5f, 0.f },
 			{ fFieldW + s_fPB_WallThickness * 2.f, s_fPB_WallThickness, 0.5f });
 
 		// Bottom wall left (gap in center for ball exit)
 		float fGapHalfWidth = 0.6f;
 		float fBottomWallLeftW = (fFieldW * 0.5f - fGapHalfWidth);
-		AddWall(pxScene, "PB_WallBotL",
+		AddBoundaryWall(pxScene, "PB_WallBotL",
 			{ s_fPB_FieldLeft + fBottomWallLeftW * 0.5f, s_fPB_FieldBottom - s_fPB_WallThickness * 0.5f, 0.f },
 			{ fBottomWallLeftW, s_fPB_WallThickness, 0.5f });
 
 		// Bottom wall right
-		AddWall(pxScene, "PB_WallBotR",
+		AddBoundaryWall(pxScene, "PB_WallBotR",
 			{ s_fPB_FieldRight - fBottomWallLeftW * 0.5f, s_fPB_FieldBottom - s_fPB_WallThickness * 0.5f, 0.f },
 			{ fBottomWallLeftW, s_fPB_WallThickness, 0.5f });
 
@@ -1030,19 +1115,33 @@ private:
 
 		// === Score Target (bottom center) ===
 		{
-			Zenith_Entity xTarget = CreateStaticBox(pxScene, "PB_Target",
-				{ 0.f, 0.8f, 0.f },
-				{ 1.5f, 0.3f, 0.5f },
-				m_xTargetMaterial);
+			Zenith_Entity xTarget(pxScene, "PB_Target");
+			Zenith_TransformComponent& xT = xTarget.GetComponent<Zenith_TransformComponent>();
+			xT.SetPosition({ 0.f, 0.8f, 0.f });
+			xT.SetScale({ 1.5f, 0.3f, 0.5f });
+
+			Flux_MeshGeometry* pxMesh = TilePuzzle::g_pxTargetRampGeometry ? TilePuzzle::g_pxTargetRampGeometry : m_pxCubeGeometry;
+			Zenith_ModelComponent& xModel = xTarget.AddComponent<Zenith_ModelComponent>();
+			xModel.AddMeshEntry(*pxMesh, *m_xTargetMaterial.Get());
+
+			Zenith_ColliderComponent& xCollider = xTarget.AddComponent<Zenith_ColliderComponent>();
+			xCollider.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+			Zenith_Physics::SetFriction(xCollider.GetBodyID(), 0.f);
+
 			m_xTargetEntityID = xTarget.GetEntityID();
 		}
 
 		// === Plunger (visual only, no collider) ===
 		{
-			Zenith_Entity xPlunger = CreateStaticBox(pxScene, "PB_Plunger",
-				{ (s_fPB_ChannelLeft + s_fPB_ChannelRight) * 0.5f, s_fPB_PlungerRestY, 0.f },
-				{ 0.5f, 0.4f, 0.3f },
-				m_xPlungerMaterial, false);
+			Zenith_Entity xPlunger(pxScene, "PB_Plunger");
+			Zenith_TransformComponent& xT = xPlunger.GetComponent<Zenith_TransformComponent>();
+			xT.SetPosition({ (s_fPB_ChannelLeft + s_fPB_ChannelRight) * 0.5f, s_fPB_PlungerRestY, 0.f });
+			xT.SetScale({ 0.5f, 0.4f, 0.3f });
+
+			Flux_MeshGeometry* pxMesh = TilePuzzle::g_pxPlungerGeometry ? TilePuzzle::g_pxPlungerGeometry : m_pxCubeGeometry;
+			Zenith_ModelComponent& xModel = xPlunger.AddComponent<Zenith_ModelComponent>();
+			xModel.AddMeshEntry(*pxMesh, *m_xPlungerMaterial.Get());
+
 			m_xPlungerEntityID = xPlunger.GetEntityID();
 		}
 
@@ -1050,6 +1149,67 @@ private:
 		AddWall(pxScene, "PB_WallBack",
 			{ fCenterX, fCenterY, 0.35f },
 			{ fFieldW + s_fPB_WallThickness * 2.f, fFieldH + s_fPB_WallThickness * 2.f, 0.1f });
+
+		// Dynamic lights
+		CreateLights(pxScene, fCenterX, fCenterY);
+	}
+
+	void CreateLights(Zenith_SceneData* pxScene, float fCenterX, float fCenterY)
+	{
+		// Main overhead light
+		{
+			Zenith_Entity xLight(pxScene, "PB_LightMain");
+			xLight.GetComponent<Zenith_TransformComponent>().SetPosition(
+				Zenith_Maths::Vector3(fCenterX, fCenterY, -2.0f));
+			Zenith_LightComponent& xLC = xLight.AddComponent<Zenith_LightComponent>();
+			xLC.SetLightType(LIGHT_TYPE_POINT);
+			xLC.SetColor(Zenith_Maths::Vector3(1.0f, 0.95f, 0.85f));
+			xLC.SetIntensity(600.f);
+			xLC.SetRange(15.f);
+		}
+
+		// Top accent (cool blue)
+		{
+			Zenith_Entity xLight(pxScene, "PB_LightTop");
+			xLight.GetComponent<Zenith_TransformComponent>().SetPosition(
+				Zenith_Maths::Vector3(0.f, 7.0f, -1.5f));
+			Zenith_LightComponent& xLC = xLight.AddComponent<Zenith_LightComponent>();
+			xLC.SetLightType(LIGHT_TYPE_POINT);
+			xLC.SetColor(Zenith_Maths::Vector3(0.4f, 0.5f, 1.0f));
+			xLC.SetIntensity(200.f);
+			xLC.SetRange(8.f);
+		}
+
+		// Bottom accent (warm amber)
+		{
+			Zenith_Entity xLight(pxScene, "PB_LightBottom");
+			xLight.GetComponent<Zenith_TransformComponent>().SetPosition(
+				Zenith_Maths::Vector3(0.f, 1.0f, -1.5f));
+			Zenith_LightComponent& xLC = xLight.AddComponent<Zenith_LightComponent>();
+			xLC.SetLightType(LIGHT_TYPE_POINT);
+			xLC.SetColor(Zenith_Maths::Vector3(1.0f, 0.6f, 0.2f));
+			xLC.SetIntensity(150.f);
+			xLC.SetRange(6.f);
+		}
+	}
+
+	Zenith_Entity CreateBoundaryWall(Zenith_SceneData* pxScene, const char* szName,
+		const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Vector3& xScale)
+	{
+		Zenith_Entity xEntity(pxScene, szName);
+		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+		xTransform.SetPosition(xPos);
+		xTransform.SetScale(xScale);
+
+		Flux_MeshGeometry* pxMesh = TilePuzzle::g_pxBeveledCubeGeometry ? TilePuzzle::g_pxBeveledCubeGeometry : m_pxCubeGeometry;
+		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
+		xModel.AddMeshEntry(*pxMesh, *m_xWallTrimMaterial.Get());
+
+		Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
+		xCollider.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		Zenith_Physics::SetFriction(xCollider.GetBodyID(), 0.f);
+
+		return xEntity;
 	}
 
 	void AddWall(Zenith_SceneData* pxScene, const char* szName,
@@ -1058,6 +1218,16 @@ private:
 		if (m_uWallCount >= s_uPB_MaxWalls)
 			return;
 		Zenith_Entity xWall = CreateStaticBox(pxScene, szName, xPos, xScale, m_xWallMaterial);
+		m_axWallEntityIDs[m_uWallCount] = xWall.GetEntityID();
+		m_uWallCount++;
+	}
+
+	void AddBoundaryWall(Zenith_SceneData* pxScene, const char* szName,
+		const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Vector3& xScale)
+	{
+		if (m_uWallCount >= s_uPB_MaxWalls)
+			return;
+		Zenith_Entity xWall = CreateBoundaryWall(pxScene, szName, xPos, xScale);
 		m_axWallEntityIDs[m_uWallCount] = xWall.GetEntityID();
 		m_uWallCount++;
 	}
@@ -1416,6 +1586,10 @@ private:
 		m_bGateCleared = false;
 		m_bGateFailed = false;
 		m_fGateCelebrationTimer = 0.f;
+		m_uSessionCoinsEarned = 0;
+		m_bFirstClearBonusAwarded = false;
+		m_bDailyBonusAwarded = false;
+		m_bDailyHintTokenAwarded = false;
 		memset(m_abPegHit, 0, sizeof(m_abPegHit));
 		memset(m_afPegFlashTimer, 0, sizeof(m_afPegFlashTimer));
 
@@ -1521,12 +1695,42 @@ private:
 		// Save gate as cleared
 		m_xSaveData.SetPinballGateCleared(m_uCurrentGate);
 
-		// Daily pinball bonus: award 25 coins on first gate completion of the day
+		// Score-based coin reward: max(5, score / 100)
+		uint32_t uCoins = m_uSessionScore / s_uPB_ScoreToCoinDivisor;
+		if (uCoins < s_uPB_MinCoinsPerSession) uCoins = s_uPB_MinCoinsPerSession;
+		m_uSessionCoinsEarned = uCoins;
+
+		// First-clear bonus: +50 coins + 1 hint token (one-time per gate)
+		m_bFirstClearBonusAwarded = false;
+		if (!m_xSaveData.HasClaimedFirstClearBonus(m_uCurrentGate))
+		{
+			m_xSaveData.ClaimFirstClearBonus(m_uCurrentGate);
+			m_uSessionCoinsEarned += s_uPB_FirstClearBonus;
+			m_xSaveData.AddHintToken(1);
+			m_bFirstClearBonusAwarded = true;
+		}
+
+		// Daily pinball bonus: score-based coins already awarded above + 1 hint token
+		m_bDailyHintTokenAwarded = false;
 		uint32_t uToday = GetTodayDate();
 		if (m_xSaveData.HasDailyPinballBonus(uToday))
 		{
 			m_xSaveData.ClaimDailyPinballBonus(uToday);
+			m_xSaveData.AddHintToken(1);
 			m_bDailyBonusAwarded = true;
+			m_bDailyHintTokenAwarded = true;
+		}
+
+		m_xSaveData.AddCoins(static_cast<int32_t>(m_uSessionCoinsEarned));
+
+		// Unlock next puzzle level now that gate is cleared
+		uint32_t uGateLevel = (m_uCurrentGate + 1) * 10;
+		if (uGateLevel < TilePuzzleSaveData::uMAX_LEVELS)
+		{
+			if (uGateLevel >= m_xSaveData.uHighestLevelReached)
+			{
+				m_xSaveData.uHighestLevelReached = uGateLevel + 1;
+			}
 		}
 
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
@@ -1811,15 +2015,13 @@ private:
 		{
 			if (m_bGateCleared)
 			{
-				if (m_bDailyBonusAwarded)
-				{
-					snprintf(szBuffer, sizeof(szBuffer), "Gate %u Cleared! +25 Daily Bonus!", m_uCurrentGate + 1);
-				}
-				else
-				{
-					snprintf(szBuffer, sizeof(szBuffer), "Gate %u Cleared!", m_uCurrentGate + 1);
-				}
-				pxGateStatus->SetText(szBuffer);
+				char szRewards[128];
+				int iLen = snprintf(szRewards, sizeof(szRewards), "Gate %u Cleared! +%u Coins", m_uCurrentGate + 1, m_uSessionCoinsEarned);
+				if (m_bFirstClearBonusAwarded && iLen < static_cast<int>(sizeof(szRewards)))
+					iLen += snprintf(szRewards + iLen, sizeof(szRewards) - iLen, " (incl. +%u bonus)", s_uPB_FirstClearBonus);
+				if (m_bDailyHintTokenAwarded && iLen < static_cast<int>(sizeof(szRewards)))
+					snprintf(szRewards + iLen, sizeof(szRewards) - iLen, " +Hint Token!");
+				pxGateStatus->SetText(szRewards);
 				pxGateStatus->SetColor({ 0.2f, 1.f, 0.3f, 1.f });
 				pxGateStatus->SetVisible(true);
 			}
@@ -1975,6 +2177,12 @@ private:
 		{
 			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
 			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
+
+			Flux_HDR::SetBloomIntensity(0.8f);
+			Flux_HDR::SetBloomThreshold(0.8f);
+			Flux_HDR::SetExposure(1.2f);
+			Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector4(0.02f, 0.02f, 0.06f, 1.0f);
+
 			CreatePlayfield();
 			SpawnBall();
 		}
@@ -1999,6 +2207,12 @@ private:
 		{
 			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
 			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
+
+			Flux_HDR::SetBloomIntensity(0.8f);
+			Flux_HDR::SetBloomThreshold(0.8f);
+			Flux_HDR::SetExposure(1.2f);
+			Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector4(0.02f, 0.02f, 0.06f, 1.0f);
+
 			CreatePlayfield();
 			SpawnBall();
 		}
@@ -2082,6 +2296,7 @@ private:
 	MaterialHandle m_xFloorMaterial;
 	MaterialHandle m_xPegHitMaterial;
 	MaterialHandle m_xPegFlashMaterial;
+	MaterialHandle m_xWallTrimMaterial;
 
 	// Gate objective system
 	PinballGateData m_axGateData[s_uPB_MaxGates];
@@ -2107,8 +2322,11 @@ private:
 	// HUD state
 	bool m_bHUDCreated;
 
-	// Daily bonus
+	// Session rewards
+	uint32_t m_uSessionCoinsEarned = 0;
+	bool m_bFirstClearBonusAwarded = false;
 	bool m_bDailyBonusAwarded = false;
+	bool m_bDailyHintTokenAwarded = false;
 
 	// Gate select UI (widget-based)
 	Zenith_UI::Zenith_UIElement* m_pxGateSelectBg = nullptr;

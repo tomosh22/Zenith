@@ -2,7 +2,7 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>c:\dev\Zenith\FluxCompiler\output\win64\vs2022_debug_win64_false\fluxcompiler.exe</FullPath>
+      <FullPath>C:\dev\Zenith\FluxCompiler\output\win64\vs2022_debug_win64_false\fluxcompiler.exe</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />
