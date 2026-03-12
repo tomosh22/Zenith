@@ -973,29 +973,29 @@ namespace TilePuzzle_AssetGen
 				float fRoughness, fMetallic;
 				if (fDist < 0.2f)
 				{
-					// Inner disc: polished chrome
-					fRoughness = 0.2f; fMetallic = 0.9f;
+					// Inner disc: smooth plastic cap
+					fRoughness = 0.4f; fMetallic = 0.05f;
 				}
 				else if (fDist < 0.38f)
 				{
-					// Outer ring: brushed metal
-					fRoughness = 0.6f; fMetallic = 0.7f;
+					// Outer ring: rougher matte
+					fRoughness = 0.8f; fMetallic = 0.05f;
 				}
 				else
 				{
 					// Rim
-					fRoughness = 0.4f; fMetallic = 0.8f;
+					fRoughness = 0.7f; fMetallic = 0.1f;
 				}
 
 				// Smooth transitions
 				float fEdge1 = fmaxf(0.f, fminf(1.f, (fDist - 0.18f) / 0.04f));
 				if (fDist >= 0.18f && fDist < 0.22f)
 				{
-					fRoughness = 0.2f + fEdge1 * 0.4f;
-					fMetallic = 0.9f - fEdge1 * 0.2f;
+					fRoughness = 0.4f + fEdge1 * 0.4f;
+					fMetallic = 0.05f;
 				}
 
-				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fRoughness, fMetallic, 0.f, 1.f);
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(0.f, fRoughness, fMetallic, 1.f);
 			}
 		}
 	}
@@ -1037,10 +1037,10 @@ namespace TilePuzzle_AssetGen
 			{
 				float fRoughness, fMetallic;
 
-				// Edge borders: very smooth, high metallic
+				// Edge borders: slightly smoother, minimal metallic
 				if (uY < 3 || uY >= uSize - 3)
 				{
-					fRoughness = 0.15f; fMetallic = 0.8f;
+					fRoughness = 0.5f; fMetallic = 0.1f;
 				}
 				else
 				{
@@ -1048,11 +1048,11 @@ namespace TilePuzzle_AssetGen
 					uint32_t uPeriod = uSize / 8;
 					uint32_t uStripePos = uY % uPeriod;
 					bool bRidge = uStripePos < (uPeriod / 2);
-					fRoughness = bRidge ? 0.25f : 0.6f;
-					fMetallic = 0.5f;
+					fRoughness = bRidge ? 0.6f : 0.85f;
+					fMetallic = 0.05f;
 				}
 
-				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fRoughness, fMetallic, 0.f, 1.f);
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(0.f, fRoughness, fMetallic, 1.f);
 			}
 		}
 	}
@@ -1098,7 +1098,7 @@ namespace TilePuzzle_AssetGen
 				if (fGrain > 0.5f)
 					fRoughness = 0.7f;
 
-				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fRoughness, fMetallic, 0.f, 1.f);
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(0.f, fRoughness, fMetallic, 1.f);
 			}
 		}
 	}
@@ -1114,8 +1114,8 @@ namespace TilePuzzle_AssetGen
 
 				if (fV < 0.7f)
 				{
-					// Shaft: smooth chrome
-					fRoughness = 0.15f; fMetallic = 0.9f;
+					// Shaft: smooth plastic
+					fRoughness = 0.4f; fMetallic = 0.05f;
 				}
 				else
 				{
@@ -1123,7 +1123,7 @@ namespace TilePuzzle_AssetGen
 					fRoughness = 0.95f; fMetallic = 0.0f;
 				}
 
-				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(fRoughness, fMetallic, 0.f, 1.f);
+				puPixels[uY * uSize + uX] = TilePuzzle_SDF::PackRGBAf(0.f, fRoughness, fMetallic, 1.f);
 			}
 		}
 	}

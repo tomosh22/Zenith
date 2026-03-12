@@ -778,7 +778,7 @@ private:
 		m_xBallMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xBallMaterial.Get()->SetBaseColor({ 0.95f, 0.6f, 0.2f, 1.f });
 		m_xBallMaterial.Get()->SetRoughness(0.2f);
-		m_xBallMaterial.Get()->SetMetallic(0.8f);
+		m_xBallMaterial.Get()->SetMetallic(1.0f);
 		m_xBallMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.5f, 0.3f, 0.1f));
 		m_xBallMaterial.Get()->SetEmissiveIntensity(0.8f);
 
@@ -786,8 +786,6 @@ private:
 		m_xWallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xWallMaterial.Get()->SetName("PinballWall");
 		m_xWallMaterial.Get()->SetBaseColor({ 0.15f, 0.18f, 0.3f, 1.f });
-		m_xWallMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.1f, 0.15f, 0.4f));
-		m_xWallMaterial.Get()->SetEmissiveIntensity(0.3f);
 		if (TilePuzzle::g_pxPinballWallDiffuseTex)
 			m_xWallMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballWallDiffuseTex);
 		else
@@ -799,8 +797,6 @@ private:
 		m_xWallTrimMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xWallTrimMaterial.Get()->SetName("PinballWallTrim");
 		m_xWallTrimMaterial.Get()->SetBaseColor({ 0.1f, 0.15f, 0.4f, 1.f });
-		m_xWallTrimMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.2f, 0.3f, 1.0f));
-		m_xWallTrimMaterial.Get()->SetEmissiveIntensity(1.5f);
 		if (TilePuzzle::g_pxPinballWallDiffuseTex)
 			m_xWallTrimMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballWallDiffuseTex);
 		else
@@ -843,7 +839,7 @@ private:
 		// Floor - dark wood playfield with PBR textures
 		m_xFloorMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xFloorMaterial.Get()->SetName("PinballFloor");
-		m_xFloorMaterial.Get()->SetBaseColor({ 0.06f, 0.06f, 0.1f, 1.f });
+		m_xFloorMaterial.Get()->SetBaseColor({ 1.f, 1.f, 1.f, 1.f });
 		m_xFloorMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f));
 		m_xFloorMaterial.Get()->SetEmissiveIntensity(0.2f);
 		if (TilePuzzle::g_pxPinballFloorDiffuseTex)
@@ -859,7 +855,7 @@ private:
 		m_xPegHitMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xPegHitMaterial.Get()->SetBaseColor({ 0.7f, 0.5f, 0.4f, 1.f });
 		m_xPegHitMaterial.Get()->SetRoughness(0.3f);
-		m_xPegHitMaterial.Get()->SetMetallic(0.5f);
+		m_xPegHitMaterial.Get()->SetMetallic(0.0f);
 		m_xPegHitMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.8f, 0.5f, 0.2f));
 		m_xPegHitMaterial.Get()->SetEmissiveIntensity(2.0f);
 
@@ -869,7 +865,7 @@ private:
 		m_xPegFlashMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xPegFlashMaterial.Get()->SetBaseColor({ 1.0f, 0.8f, 0.5f, 1.f });
 		m_xPegFlashMaterial.Get()->SetRoughness(0.2f);
-		m_xPegFlashMaterial.Get()->SetMetallic(0.5f);
+		m_xPegFlashMaterial.Get()->SetMetallic(0.0f);
 		m_xPegFlashMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(1.0f, 0.7f, 0.3f));
 		m_xPegFlashMaterial.Get()->SetEmissiveIntensity(5.0f);
 
@@ -1151,23 +1147,11 @@ private:
 			{ fFieldW + s_fPB_WallThickness * 2.f, fFieldH + s_fPB_WallThickness * 2.f, 0.1f });
 
 		// Dynamic lights
-		CreateLights(pxScene, fCenterX, fCenterY);
+		CreateLights(pxScene);
 	}
 
-	void CreateLights(Zenith_SceneData* pxScene, float fCenterX, float fCenterY)
+	void CreateLights(Zenith_SceneData* pxScene)
 	{
-		// Main overhead light
-		{
-			Zenith_Entity xLight(pxScene, "PB_LightMain");
-			xLight.GetComponent<Zenith_TransformComponent>().SetPosition(
-				Zenith_Maths::Vector3(fCenterX, fCenterY, -2.0f));
-			Zenith_LightComponent& xLC = xLight.AddComponent<Zenith_LightComponent>();
-			xLC.SetLightType(LIGHT_TYPE_POINT);
-			xLC.SetColor(Zenith_Maths::Vector3(1.0f, 0.95f, 0.85f));
-			xLC.SetIntensity(600.f);
-			xLC.SetRange(15.f);
-		}
-
 		// Top accent (cool blue)
 		{
 			Zenith_Entity xLight(pxScene, "PB_LightTop");
