@@ -18,6 +18,61 @@
 // Cat Cafe Screen
 // ============================================================================
 
+void CreateCatCafeDisplayEntity()
+{
+	Zenith_SceneData* pxSceneData = m_xParentEntity.GetSceneData();
+	if (!pxSceneData)
+		return;
+
+	uint32_t uColorIndex = 0;
+	if (m_axCatCafeCats.GetSize() > 0)
+	{
+		uint32_t uCatID = m_axCatCafeCats.Get(m_uCatCafeCurrentIndex);
+		uColorIndex = uCatID % TILEPUZZLE_COLOR_COUNT;
+	}
+
+	Zenith_MaterialAsset* pxMaterial = TilePuzzle::g_axCatCafeDisplayMaterials[uColorIndex].Get();
+	if (!pxMaterial || !TilePuzzle::g_pxCatMeshGeometry)
+		return;
+
+	m_xCatCafeDisplayEntity = Zenith_Entity(pxSceneData, "CatCafeDisplay");
+	Zenith_TransformComponent& xTransform = m_xCatCafeDisplayEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetPosition(Zenith_Maths::Vector3(0.f, 0.f, 0.f));
+	xTransform.SetScale(Zenith_Maths::Vector3(2.f, 2.f, 2.f));
+
+	Zenith_ModelComponent& xModel = m_xCatCafeDisplayEntity.AddComponent<Zenith_ModelComponent>();
+	xModel.AddMeshEntry(*TilePuzzle::g_pxCatMeshGeometry, *pxMaterial);
+}
+
+void DestroyCatCafeDisplayEntity()
+{
+	if (m_xCatCafeDisplayEntity.IsValid())
+	{
+		Zenith_SceneManager::Destroy(m_xCatCafeDisplayEntity);
+	}
+}
+
+void UpdateCatCafeDisplayMaterial()
+{
+	if (!m_xCatCafeDisplayEntity.IsValid())
+		return;
+
+	uint32_t uColorIndex = 0;
+	if (m_axCatCafeCats.GetSize() > 0)
+	{
+		uint32_t uCatID = m_axCatCafeCats.Get(m_uCatCafeCurrentIndex);
+		uColorIndex = uCatID % TILEPUZZLE_COLOR_COUNT;
+	}
+
+	Zenith_MaterialAsset* pxMaterial = TilePuzzle::g_axCatCafeDisplayMaterials[uColorIndex].Get();
+	if (!pxMaterial)
+		return;
+
+	Zenith_ModelComponent& xModel = m_xCatCafeDisplayEntity.GetComponent<Zenith_ModelComponent>();
+	xModel.m_xMeshEntries.Clear();
+	xModel.AddMeshEntry(*TilePuzzle::g_pxCatMeshGeometry, *pxMaterial);
+}
+
 void SetCatCafeVisible(bool bVisible)
 {
 	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
@@ -26,8 +81,9 @@ void SetCatCafeVisible(bool bVisible)
 	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
 	const char* aszCatCafeElements[] = {
-		"CatCafeBg", "CatCafeTitle", "CatCafeCount",
-		"CatProgressBg", "CatProgressFill"
+		"CatCafeTitle", "CatCafeCount",
+		"CatProgressBg", "CatProgressFill",
+		"CatCafeNavGroup"
 	};
 	for (const char* szName : aszCatCafeElements)
 	{
@@ -35,21 +91,65 @@ void SetCatCafeVisible(bool bVisible)
 		if (pxElem) pxElem->SetVisible(bVisible);
 	}
 
-	// Cat Cafe navigation layout group
-	Zenith_UI::Zenith_UIElement* pxNavGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("CatCafeNavGroup");
-	if (pxNavGroup) pxNavGroup->SetVisible(bVisible);
-
-	// Cat card text elements (8 per page)
-	for (uint32_t i = 0; i < 8; ++i)
+	const char* aszInfoElements[] = {
+		"CatCafeInfoName", "CatCafeInfoBreed", "CatCafeInfoLevel", "CatCafeEmpty", "CatCafeSwipeHint"
+	};
+	for (const char* szName : aszInfoElements)
 	{
-		char szName[32];
-		snprintf(szName, sizeof(szName), "CatCard_%u", i);
 		Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
-		if (pxElem) pxElem->SetVisible(bVisible);
+		if (pxElem) pxElem->SetVisible(false); // UpdateCatCafeUI decides which are shown
+	}
 
-		snprintf(szName, sizeof(szName), "CatCardBg_%u", i);
-		pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
-		if (pxElem) pxElem->SetVisible(bVisible);
+	if (bVisible)
+	{
+		// Save camera state and set up front-facing view for 3D cat display
+		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		{
+			Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			xCam.GetPosition(m_xCatCafeSavedCameraPos);
+			m_fCatCafeSavedPitch = xCam.GetPitch();
+			m_fCatCafeSavedYaw = xCam.GetYaw();
+			xCam.SetPosition(Zenith_Maths::Vector3(0.f, 0.5f, -6.f));
+			xCam.SetPitch(-0.05);
+			xCam.SetYaw(0.0);
+			m_xCameraBasePosition = Zenith_Maths::Vector3(0.f, 0.5f, -6.f);
+		}
+
+		// Build collected cats list
+		m_axCatCafeCats.Clear();
+		for (uint32_t i = 0; i < TilePuzzleSaveData::uMAX_CATS; ++i)
+		{
+			if (m_xSaveData.IsCatCollected(i))
+				m_axCatCafeCats.PushBack(i);
+		}
+
+		if (m_axCatCafeCats.GetSize() == 0)
+		{
+			Zenith_UI::Zenith_UIElement* pxEmpty = xUI.FindElement<Zenith_UI::Zenith_UIElement>("CatCafeEmpty");
+			if (pxEmpty) pxEmpty->SetVisible(true);
+		}
+		else
+		{
+			if (m_uCatCafeCurrentIndex >= m_axCatCafeCats.GetSize())
+				m_uCatCafeCurrentIndex = 0;
+			CreateCatCafeDisplayEntity();
+		}
+
+		UpdateCatCafeUI();
+	}
+	else
+	{
+		DestroyCatCafeDisplayEntity();
+
+		// Restore camera state
+		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		{
+			Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			xCam.SetPosition(m_xCatCafeSavedCameraPos);
+			xCam.SetPitch(m_fCatCafeSavedPitch);
+			xCam.SetYaw(m_fCatCafeSavedYaw);
+			m_xCameraBasePosition = m_xCatCafeSavedCameraPos;
+		}
 	}
 }
 
@@ -60,7 +160,7 @@ void UpdateCatCafeUI()
 
 	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
-	// Update total count with progress percentage
+	// Update total count
 	Zenith_UI::Zenith_UIText* pxCount = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatCafeCount");
 	if (pxCount)
 	{
@@ -71,79 +171,103 @@ void UpdateCatCafeUI()
 		pxCount->SetText(szCount);
 	}
 
-	// Update cat cards for current page (8 cats per page)
-	uint32_t uStartCat = m_uCatCafePage * 8;
-	for (uint32_t i = 0; i < 8; ++i)
-	{
-		uint32_t uCatID = uStartCat + i;
-		char szCardName[32];
-		snprintf(szCardName, sizeof(szCardName), "CatCard_%u", i);
-		Zenith_UI::Zenith_UIText* pxCard = xUI.FindElement<Zenith_UI::Zenith_UIText>(szCardName);
-		if (!pxCard) continue;
-
-		char szBgName[32];
-		snprintf(szBgName, sizeof(szBgName), "CatCardBg_%u", i);
-		Zenith_UI::Zenith_UIElement* pxBg = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szBgName);
-
-		if (uCatID >= TilePuzzleSaveData::uMAX_CATS)
-		{
-			pxCard->SetVisible(false);
-			if (pxBg) pxBg->SetVisible(false);
-			continue;
-		}
-
-		pxCard->SetVisible(true);
-		if (pxBg) pxBg->SetVisible(true);
-
-		if (m_xSaveData.IsCatCollected(uCatID))
-		{
-			const char* szName = s_aszCatNames[uCatID % s_uCatNameCount];
-			const char* szBreed = s_aszCatBreeds[uCatID % s_uCatBreedCount];
-			uint32_t uLevel = uCatID + 1;
-			uint8_t uStars = m_xSaveData.GetStarRating(uLevel);
-
-			char szText[128];
-			snprintf(szText, sizeof(szText), "=^.^= %s\n%s\nLvl %u %s", szName, szBreed, uLevel, GetStarString(uStars));
-			pxCard->SetText(szText);
-			pxCard->SetFontSize(TilePuzzleUI::fCAT_CARD_COLLECTED_FONT);
-
-			// Tier-colored border: Tutorial(1-10)=bronze, Easy(11-25)=silver, Medium+(26+)=gold
-			if (pxBg)
-			{
-				Zenith_Maths::Vector4 xBorderColor;
-				if (uLevel <= 10)
-					xBorderColor = Zenith_Maths::Vector4(0.6f, 0.4f, 0.2f, 0.8f); // Bronze
-				else if (uLevel <= 25)
-					xBorderColor = Zenith_Maths::Vector4(0.6f, 0.6f, 0.7f, 0.8f); // Silver
-				else
-					xBorderColor = Zenith_Maths::Vector4(0.8f, 0.7f, 0.2f, 0.8f); // Gold
-
-				pxBg->SetColor(xBorderColor);
-			}
-		}
-		else
-		{
-			pxCard->SetText("?");
-			pxCard->SetFontSize(TilePuzzleUI::fCAT_CARD_LOCKED_FONT);
-			if (pxBg)
-			{
-				pxBg->SetColor(Zenith_Maths::Vector4(0.15f, 0.15f, 0.15f, 0.5f));
-			}
-		}
-	}
-
-	// Update cat collection progress bar fill amount
+	// Update progress bar fill
 	if (m_pxCatProgressFill)
 	{
 		float fFillRatio = static_cast<float>(m_xSaveData.uCatsCollectedCount) / static_cast<float>(TilePuzzleSaveData::uMAX_CATS);
 		m_pxCatProgressFill->SetFillAmount(fFillRatio);
+	}
+
+	// Update the 3D display entity material to match the current cat
+	UpdateCatCafeDisplayMaterial();
+
+	if (m_axCatCafeCats.GetSize() == 0)
+		return;
+
+	uint32_t uCatID = m_axCatCafeCats.Get(m_uCatCafeCurrentIndex);
+	const char* szCatName = s_aszCatNames[uCatID % s_uCatNameCount];
+	const char* szBreed = s_aszCatBreeds[uCatID % s_uCatBreedCount];
+	uint32_t uLevel = uCatID + 1;
+	uint8_t uStars = m_xSaveData.GetStarRating(uLevel);
+
+	Zenith_UI::Zenith_UIText* pxName = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatCafeInfoName");
+	if (pxName) { pxName->SetText(szCatName); pxName->SetVisible(true); }
+
+	Zenith_UI::Zenith_UIText* pxBreed = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatCafeInfoBreed");
+	if (pxBreed) { pxBreed->SetText(szBreed); pxBreed->SetVisible(true); }
+
+	Zenith_UI::Zenith_UIText* pxLevel = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatCafeInfoLevel");
+	if (pxLevel)
+	{
+		char szLevel[64];
+		snprintf(szLevel, sizeof(szLevel), "Lvl %u | %s", uLevel, GetStarString(uStars));
+		pxLevel->SetText(szLevel);
+		pxLevel->SetVisible(true);
+	}
+
+	// Show swipe hint only when there are multiple cats
+	Zenith_UI::Zenith_UIElement* pxHint = xUI.FindElement<Zenith_UI::Zenith_UIElement>("CatCafeSwipeHint");
+	if (pxHint) pxHint->SetVisible(m_axCatCafeCats.GetSize() > 1);
+
+	// Show/hide nav buttons based on prev/next availability
+	Zenith_UI::Zenith_UIElement* pxPrev = xUI.FindElement<Zenith_UI::Zenith_UIElement>("CatCafePrevPage");
+	if (pxPrev) pxPrev->SetVisible(m_uCatCafeCurrentIndex > 0);
+
+	Zenith_UI::Zenith_UIElement* pxNext = xUI.FindElement<Zenith_UI::Zenith_UIElement>("CatCafeNextPage");
+	if (pxNext) pxNext->SetVisible(m_uCatCafeCurrentIndex + 1 < m_axCatCafeCats.GetSize());
+}
+
+void HandleCatCafeInput(float /*fDeltaTime*/)
+{
+	if (m_axCatCafeCats.GetSize() <= 1)
+		return;
+
+	bool bDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	Zenith_Maths::Vector2_64 xPos;
+	Zenith_Input::GetMousePosition(xPos);
+	float fX = static_cast<float>(xPos.x);
+
+	if (bDown && !m_bCatCafeMouseWasDown)
+	{
+		m_fCatCafeSwipeStartX = fX;
+		m_bCatCafeSwipeActive = true;
+	}
+	else if (!bDown && m_bCatCafeMouseWasDown && m_bCatCafeSwipeActive)
+	{
+		static constexpr float fSWIPE_THRESHOLD = 60.f;
+		float fDelta = fX - m_fCatCafeSwipeStartX;
+		if (fDelta > fSWIPE_THRESHOLD)
+			OnCatCafePrevCat();
+		else if (fDelta < -fSWIPE_THRESHOLD)
+			OnCatCafeNextCat();
+		m_bCatCafeSwipeActive = false;
+	}
+
+	m_bCatCafeMouseWasDown = bDown;
+}
+
+void OnCatCafePrevCat()
+{
+	if (m_uCatCafeCurrentIndex > 0)
+	{
+		m_uCatCafeCurrentIndex--;
+		UpdateCatCafeUI();
+	}
+}
+
+void OnCatCafeNextCat()
+{
+	if (m_uCatCafeCurrentIndex + 1 < m_axCatCafeCats.GetSize())
+	{
+		m_uCatCafeCurrentIndex++;
+		UpdateCatCafeUI();
 	}
 }
 
 static void OnCatCafeClicked(void* pxUserData)
 {
 	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-	pxSelf->m_uCatCafePage = 0;
+	pxSelf->m_uCatCafeCurrentIndex = 0;
 	pxSelf->StartTransition(TILEPUZZLE_STATE_CAT_CAFE);
 }
 
@@ -155,23 +279,12 @@ static void OnCatCafeBackClicked(void* pxUserData)
 
 static void OnCatCafePrevPageClicked(void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-	if (pxSelf->m_uCatCafePage > 0)
-	{
-		pxSelf->m_uCatCafePage--;
-		pxSelf->UpdateCatCafeUI();
-	}
+	static_cast<TilePuzzle_Behaviour*>(pxUserData)->OnCatCafePrevCat();
 }
 
 static void OnCatCafeNextPageClicked(void* pxUserData)
 {
-	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-	uint32_t uTotalPages = (TilePuzzleSaveData::uMAX_CATS + 7) / 8;
-	if (pxSelf->m_uCatCafePage < uTotalPages - 1)
-	{
-		pxSelf->m_uCatCafePage++;
-		pxSelf->UpdateCatCafeUI();
-	}
+	static_cast<TilePuzzle_Behaviour*>(pxUserData)->OnCatCafeNextCat();
 }
 
 // ============================================================================

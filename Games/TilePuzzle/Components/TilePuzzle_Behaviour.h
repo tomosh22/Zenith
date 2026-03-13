@@ -23,6 +23,7 @@
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -75,6 +76,8 @@ namespace TilePuzzle
 	extern MaterialHandle g_xBlockerMaterial;
 	extern MaterialHandle g_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
 	extern MaterialHandle g_axCatMaterials[TILEPUZZLE_COLOR_COUNT];
+	extern MaterialHandle g_axCatCafeDisplayMaterials[TILEPUZZLE_COLOR_COUNT];
+	extern Zenith_TextureAsset* g_apxCatCafeFaceTextures[TILEPUZZLE_COLOR_COUNT];
 	extern Zenith_Prefab* g_pxCellPrefab;
 	extern Zenith_Prefab* g_pxShapeCubePrefab;
 	extern Zenith_Prefab* g_pxCatPrefab;
@@ -261,7 +264,10 @@ public:
 		, m_uVictoryCoinsEarned(0)
 		, m_uVictoryStarRating(0)
 		, m_bVictoryOverlayActive(false)
-		, m_uCatCafePage(0)
+		, m_uCatCafeCurrentIndex(0)
+		, m_bCatCafeMouseWasDown(false)
+		, m_fCatCafeSwipeStartX(0.f)
+		, m_bCatCafeSwipeActive(false)
 		, m_bDailyPuzzleMode(false)
 	{
 		m_xSaveData.Reset();
@@ -739,6 +745,7 @@ public:
 				return;
 			}
 #endif
+			HandleCatCafeInput(fDeltaTime);
 			break;
 
 		case TILEPUZZLE_STATE_SETTINGS:
@@ -1731,7 +1738,15 @@ private:
 	Zenith_EntityID m_uVictoryConfettiEmitterID;
 
 	// Cat cafe state
-	uint32_t m_uCatCafePage;
+	uint32_t m_uCatCafeCurrentIndex;
+	Zenith_Vector<uint32_t> m_axCatCafeCats;
+	Zenith_Entity m_xCatCafeDisplayEntity;
+	bool m_bCatCafeMouseWasDown;
+	float m_fCatCafeSwipeStartX;
+	bool m_bCatCafeSwipeActive;
+	Zenith_Maths::Vector3 m_xCatCafeSavedCameraPos;
+	double m_fCatCafeSavedPitch = 0.0;
+	double m_fCatCafeSavedYaw = 0.0;
 
 	// Daily puzzle mode
 	bool m_bDailyPuzzleMode;
@@ -4100,6 +4115,8 @@ private:
 
 		m_xCameraBasePosition = Zenith_Maths::Vector3(0.f, fRequiredHeight, 0.f);
 		xCam.SetPosition(m_xCameraBasePosition);
+		xCam.SetPitch(-1.5);
+		xCam.SetYaw(0.0);
 	}
 
 	// ========================================================================
@@ -4301,7 +4318,6 @@ private:
 			break;
 		case TILEPUZZLE_STATE_CAT_CAFE:
 			ShowScreen(SCREEN_CAT_CAFE);
-			UpdateCatCafeUI();
 			m_eState = TILEPUZZLE_STATE_CAT_CAFE;
 			break;
 		case TILEPUZZLE_STATE_SETTINGS:

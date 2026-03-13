@@ -349,45 +349,24 @@ Each asset includes:
 
 | Field | Value |
 |-------|-------|
-| **Specs** | 256x128 or UI rect with rounded corners |
-| **Where used** | Per-cat card in cat cafe screen |
-| **Priority** | Must-Have |
-| **Procedural** | Fully procedural |
-| **How to generate** | `Zenith_UIRect` with fill color, border, and optional glow. Different background color for 3-star cats (gold tint) vs normal (white/cream). Rounded corners achievable via SDF rect with corner radius. |
-| **Effort** | Low |
+| **Status** | **REMOVED** |
+| **Notes** | Replaced by 3D scene entity display. No per-cat card rectangles exist in the new design. |
 
 ### 4.2 Cat Portrait (Per Cat)
 
 | Field | Value |
 |-------|-------|
-| **Specs** | 96x96 rendered to texture or inline 3D viewport |
-| **Where used** | Cat cafe card left side |
-| **Priority** | Nice-to-Have (text-only works) |
-| **Procedural** | Partially procedural + hand-tweaked |
-| **How to generate** | Option A: Render cat mesh to texture (render-to-texture pass per cat). Option B: Use 2D cat face (compute-generated, see 3.2). Option C: Colored circle with cat ear silhouette SDF overlay. For 100 cats, color variation is sufficient (5 colors x different accessories). |
-| **Effort** | Medium |
+| **Status** | **DONE (procedural)** |
+| **Where used** | Cat cafe 3D display — one at a time, centered in scene |
+| **How implemented** | 3D cat head mesh rendered in scene with procedurally generated face texture. Uses `g_pxCatMeshGeometry` + `g_axCatCafeDisplayMaterials`. Face textures generated at startup via `GenerateCatCafeFaceTexture()`: 256×256 RGBA, eyes + nose + whiskers drawn in code. |
 
-### 4.3 Cafe Background
+### 4.4 Cat Navigation Indicators
 
 | Field | Value |
 |-------|-------|
-| **Specs** | Full-screen background image or gradient |
-| **Where used** | Cat cafe screen background |
-| **Priority** | Nice-to-Have |
-| **Procedural** | Fully procedural |
-| **How to generate** | Vertical gradient (warm cream #FFF5E6 to soft pink #FFE6F0) rendered via `Zenith_UIRect` with gradient fill, or a compute-generated texture with subtle pattern (paw prints, fish bones). |
-| **Effort** | Low |
-
-### 4.4 Page Indicator Dots
-
-| Field | Value |
-|-------|-------|
-| **Specs** | Small circles, 8-12px, filled + hollow variants |
-| **Where used** | Cat cafe pagination (13 pages) |
-| **Priority** | Must-Have |
-| **Procedural** | Fully procedural |
-| **How to generate** | SDF circles or `Zenith_UIRect` elements. Current page = filled, other pages = hollow outline. Trivial procedural rendering. |
-| **Effort** | Low |
+| **Status** | **CHANGED** |
+| **Where used** | Cat cafe per-cat navigation |
+| **How implemented** | < > text buttons (`CatCafePrevPage` / `CatCafeNextPage`) for per-cat navigation. Page dots removed; swipe gesture also supported. |
 
 ---
 
@@ -488,10 +467,10 @@ Each asset includes:
 | **Pinball Ball Material** | DONE | In-code (material properties set programmatically) |
 | **Pinball Peg Material** | DONE | In-code (material properties set programmatically) |
 | **Pinball Peg-Hit Material** | DONE | In-code (flash via emissive boost) |
-| **Cat Card BG** | DONE | Procedural (UIRect in code) |
-| **Page Indicator Dots** | DONE | Procedural (text-based in code) |
+| **Cat Card BG** | REMOVED | Replaced by 3D scene entity display |
+| **Page Indicator Dots** | CHANGED | Now < > buttons for per-cat navigation (CatCafePrevPage / CatCafeNextPage) |
 | **Lock Indicator Overlay** | DONE | Uses Flux_Text (floating number) |
-| **Cat 3D Mesh** | NOT DONE | Using sphere placeholder |
+| **Cat 3D Mesh** | IN USE | `g_pxCatMeshGeometry` used in gameplay AND cat cafe display |
 | **Shape Material Variants (PBR)** | PARTIAL | Flat colors exist, not PBR-tuned |
 | **App Icon** | NOT DONE | Required for store submission |
 | **Feature Graphic** | NOT DONE | Required for store submission |
@@ -500,8 +479,8 @@ Each asset includes:
 | **All Audio SFX (14)** | NOT DONE | No audio system in engine |
 | **All Music (5 tracks)** | NOT DONE | No audio system in engine |
 | **Promo Video** | NOT DONE | Nice-to-Have |
-| **Cat Portrait** | NOT DONE | Nice-to-Have |
-| **Cafe Background** | NOT DONE | Nice-to-Have (gradient in code) |
+| **Cat Portrait** | DONE | 3D cat head in scene + procedural face texture (`GenerateCatCafeFaceTexture`) |
+| **Cat Face Textures (5, cafe)** | DONE | Generated procedurally at startup via `GenerateCatCafeFaceTexture()`, applied to cat cafe display materials |
 | **Loading Spinner** | NOT DONE | Nice-to-Have |
 | **Pinball Target Material** | DONE | In-code (green emissive) |
 | **Pinball Floor Material** | NOT DONE | Nice-to-Have (procedural in code) |

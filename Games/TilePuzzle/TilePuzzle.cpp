@@ -71,6 +71,10 @@ namespace TilePuzzle
 	// Colored cat materials
 	MaterialHandle g_axCatMaterials[TILEPUZZLE_COLOR_COUNT];
 
+	// Cat cafe display materials (procedural face textures applied to cat head mesh)
+	MaterialHandle g_axCatCafeDisplayMaterials[TILEPUZZLE_COLOR_COUNT];
+	Zenith_TextureAsset* g_apxCatCafeFaceTextures[TILEPUZZLE_COLOR_COUNT] = {};
+
 	// Prefabs for runtime instantiation
 	Zenith_Prefab* g_pxCellPrefab = nullptr;
 	Zenith_Prefab* g_pxShapeCubePrefab = nullptr;
@@ -1100,6 +1104,110 @@ static bool ReadShapeMeshFromStream(Zenith_DataStream& xStream, Flux_MeshGeometr
 	return true;
 }
 
+// ============================================================================
+// Cat Cafe Procedural Face Texture Generation
+// ============================================================================
+static void GenerateCatCafeFaceTextures(
+	Zenith_AssetRegistry& xRegistry,
+	const Zenith_Maths::Vector4 axColors[TILEPUZZLE_COLOR_COUNT])
+{
+	using namespace TilePuzzle;
+
+	static constexpr uint32_t uTEX_SIZE = 256;
+
+	uint8_t* pPixels = new uint8_t[uTEX_SIZE * uTEX_SIZE * 4];
+
+	auto SetPixel = [&](int32_t iX, int32_t iY, uint8_t uR, uint8_t uG, uint8_t uB)
+	{
+		if (iX < 0 || iX >= static_cast<int32_t>(uTEX_SIZE) ||
+			iY < 0 || iY >= static_cast<int32_t>(uTEX_SIZE)) return;
+		uint8_t* pPx = pPixels + (iY * static_cast<int32_t>(uTEX_SIZE) + iX) * 4;
+		pPx[0] = uR; pPx[1] = uG; pPx[2] = uB; pPx[3] = 255;
+	};
+
+	auto DrawFilledCircle = [&](int32_t iCX, int32_t iCY, int32_t iRadius,
+		uint8_t uR, uint8_t uG, uint8_t uB)
+	{
+		for (int32_t iY = iCY - iRadius; iY <= iCY + iRadius; ++iY)
+			for (int32_t iX = iCX - iRadius; iX <= iCX + iRadius; ++iX)
+				if ((iX - iCX) * (iX - iCX) + (iY - iCY) * (iY - iCY) <= iRadius * iRadius)
+					SetPixel(iX, iY, uR, uG, uB);
+	};
+
+	auto DrawLine = [&](int32_t iX0, int32_t iY0, int32_t iX1, int32_t iY1,
+		uint8_t uR, uint8_t uG, uint8_t uB)
+	{
+		int32_t iDX = abs(iX1 - iX0), iDY = abs(iY1 - iY0);
+		int32_t iSX = iX0 < iX1 ? 1 : -1, iSY = iY0 < iY1 ? 1 : -1;
+		int32_t iErr = iDX - iDY;
+		while (true)
+		{
+			SetPixel(iX0, iY0, uR, uG, uB);
+			if (iX0 == iX1 && iY0 == iY1) break;
+			int32_t i2Err = iErr * 2;
+			if (i2Err > -iDY) { iErr -= iDY; iX0 += iSX; }
+			if (i2Err <  iDX) { iErr += iDX; iY0 += iSY; }
+		}
+	};
+
+	Flux_SurfaceInfo xSurfaceInfo;
+	xSurfaceInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xSurfaceInfo.m_uWidth = uTEX_SIZE;
+	xSurfaceInfo.m_uHeight = uTEX_SIZE;
+	xSurfaceInfo.m_uDepth = 1;
+	xSurfaceInfo.m_uNumMips = 1;
+	xSurfaceInfo.m_uNumLayers = 1;
+	xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
+
+	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
+	{
+		// Fill background with cat's base color
+		uint8_t uBR = static_cast<uint8_t>(axColors[i].x * 255.f);
+		uint8_t uBG = static_cast<uint8_t>(axColors[i].y * 255.f);
+		uint8_t uBB = static_cast<uint8_t>(axColors[i].z * 255.f);
+		for (uint32_t uPx = 0; uPx < uTEX_SIZE * uTEX_SIZE; ++uPx)
+		{
+			pPixels[uPx * 4 + 0] = uBR;
+			pPixels[uPx * 4 + 1] = uBG;
+			pPixels[uPx * 4 + 2] = uBB;
+			pPixels[uPx * 4 + 3] = 255;
+		}
+
+		// Eyes: white circles at (95,115) and (161,115), radius 10
+		DrawFilledCircle(95, 115, 10, 255, 255, 255);
+		DrawFilledCircle(161, 115, 10, 255, 255, 255);
+		// Pupils: dark circles slightly up-right inside each eye, radius 5
+		DrawFilledCircle(97, 113, 5, 30, 20, 20);
+		DrawFilledCircle(163, 113, 5, 30, 20, 20);
+
+		// Nose: pink triangle centered at (128,148)
+		for (int32_t iY = 142; iY <= 153; ++iY)
+		{
+			int32_t iHalfWidth = ((iY - 142) * 6) / 11;
+			for (int32_t iX = 128 - iHalfWidth; iX <= 128 + iHalfWidth; ++iX)
+				SetPixel(iX, iY, 220, 140, 140);
+		}
+
+		// Mouth: two short lines angling down-out from below the nose
+		DrawLine(128, 158, 120, 165, 80, 40, 40);
+		DrawLine(128, 158, 136, 165, 80, 40, 40);
+
+		// Whiskers: 3 lines per side
+		DrawLine(120, 147, 58, 139, 255, 255, 255);
+		DrawLine(120, 150, 58, 150, 255, 255, 255);
+		DrawLine(120, 153, 58, 161, 255, 255, 255);
+		DrawLine(136, 147, 198, 139, 255, 255, 255);
+		DrawLine(136, 150, 198, 150, 255, 255, 255);
+		DrawLine(136, 153, 198, 161, 255, 255, 255);
+
+		g_apxCatCafeFaceTextures[i] = xRegistry.Create<Zenith_TextureAsset>();
+		g_apxCatCafeFaceTextures[i]->CreateFromData(pPixels, xSurfaceInfo);
+		g_apxCatCafeFaceTextures[i]->MarkAsBindless();
+	}
+
+	delete[] pPixels;
+}
+
 static void LoadProceduralAssets(Zenith_AssetRegistry& xRegistry)
 {
 	using namespace TilePuzzle;
@@ -1321,6 +1429,20 @@ static void InitializeTilePuzzleResources()
 		g_axCatMaterials[i].Get()->SetBaseColor(axShapeColors[i]);
 		g_axCatMaterials[i].Get()->SetRoughness(0.6f);
 		g_axCatMaterials[i].Get()->SetMetallic(0.05f);
+	}
+
+	// Cat cafe display materials (programmatic face textures on cat head mesh)
+	GenerateCatCafeFaceTextures(xRegistry, axShapeColors);
+	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
+	{
+		char szName[64];
+		snprintf(szName, sizeof(szName), "TilePuzzleCatCafeDisplay%s", aszShapeColorNames[i]);
+		g_axCatCafeDisplayMaterials[i].Set(xRegistry.Create<Zenith_MaterialAsset>());
+		g_axCatCafeDisplayMaterials[i].Get()->SetName(szName);
+		g_axCatCafeDisplayMaterials[i].Get()->SetDiffuseTextureDirectly(g_apxCatCafeFaceTextures[i]);
+		g_axCatCafeDisplayMaterials[i].Get()->SetBaseColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+		g_axCatCafeDisplayMaterials[i].Get()->SetRoughness(0.6f);
+		g_axCatCafeDisplayMaterials[i].Get()->SetMetallic(0.05f);
 	}
 
 #ifndef ZENITH_TOOLS
@@ -1582,15 +1704,6 @@ void Project_InitializeResources()
 	LoadProceduralAssets(Zenith_AssetRegistry::Get());
 }
 
-// Static string arrays for cat cafe cards (safe for deferred const char* in automation actions)
-static const char* s_aszCatCardBgNames[8] = {
-	"CatCardBg_0", "CatCardBg_1", "CatCardBg_2", "CatCardBg_3",
-	"CatCardBg_4", "CatCardBg_5", "CatCardBg_6", "CatCardBg_7"
-};
-static const char* s_aszCatCardNames[8] = {
-	"CatCard_0", "CatCard_1", "CatCard_2", "CatCard_3",
-	"CatCard_4", "CatCard_5", "CatCard_6", "CatCard_7"
-};
 
 // Static string arrays for level select grid (safe for deferred const char* in automation actions)
 static const char* s_aszLevelBtnNames[20] = {
@@ -1702,7 +1815,6 @@ namespace TilePuzzleUI
 	static constexpr float fCAFE_NAV_BTN_FONT = 36.f;
 	static constexpr float fCAFE_BACK_BTN_W = 180.f;
 	static constexpr float fCAFE_BACK_BTN_FONT = 34.f;
-
 	// Victory overlay
 	static constexpr float fVICTORY_BG_W = 640.f;
 	static constexpr float fVICTORY_BG_H = 520.f;
@@ -1755,23 +1867,27 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIColor("MenuBackground", 0.06f, 0.06f, 0.12f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIGradientColor("MenuBackground", 0.10f, 0.06f, 0.18f, 1.f);
 
-	// Menu title
+	// Menu title (standalone, not in button group to avoid glyph correction offset)
 	Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "Paws & Pins");
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", TilePuzzleUI::fMENU_TITLE_FONT);
 	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 1.f, 1.f, 1.f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
 	Zenith_EditorAutomation::AddStep_SetUITextShadow("MenuTitle", 2.f, 2.f, true);
 	Zenith_EditorAutomation::AddStep_SetUITextShadowColor("MenuTitle", 0.f, 0.f, 0.f, 0.5f);
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.f, -419.f);
 
-	// Menu subtitle
+	// Menu subtitle (standalone, positioned below title)
 	Zenith_EditorAutomation::AddStep_CreateUIText("MenuSubtitle", "A Cat Puzzle Game");
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuSubtitle", TilePuzzleUI::fMENU_SUBTITLE_FONT);
 	Zenith_EditorAutomation::AddStep_SetUIColor("MenuSubtitle", 0.6f, 0.6f, 0.8f, 0.7f);
 	Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuSubtitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
 	Zenith_EditorAutomation::AddStep_SetUITextShadow("MenuSubtitle", 1.f, 1.f, true);
 	Zenith_EditorAutomation::AddStep_SetUITextShadowColor("MenuSubtitle", 0.f, 0.f, 0.f, 0.3f);
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuSubtitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuSubtitle", 0.f, -375.f);
 
-	// Menu layout group (vertical stack: title, subtitle, then buttons)
+	// Menu layout group (vertical stack of buttons only)
 	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("MenuButtonGroup");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuButtonGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuButtonGroup", 0.f, 60.f);
@@ -1876,8 +1992,6 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow("DailyPuzzleButton", 1.f, 1.f, true);
 	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor("DailyPuzzleButton", 0.f, 0.f, 0.f, 0.4f);
 
-	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "MenuTitle");
-	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "MenuSubtitle");
 	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "ContinueButton");
 	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "LevelSelectButton");
 	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "PinballButton");
@@ -2073,13 +2187,6 @@ void Project_RegisterEditorAutomationSteps()
 
 	// ---- Cat Cafe UI elements (starts hidden) ----
 
-	// Cat Cafe background
-	Zenith_EditorAutomation::AddStep_CreateUIRect("CatCafeBg");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeBg", static_cast<int>(Zenith_UI::AnchorPreset::StretchAll));
-	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeBg", 0.06f, 0.06f, 0.12f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIGradientColor("CatCafeBg", 0.10f, 0.06f, 0.18f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeBg", false);
-
 	// Cat Cafe title
 	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeTitle", "Cat Cafe");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeTitle", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
@@ -2116,32 +2223,48 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUICornerRadius("CatProgressFill", 6.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("CatProgressFill", false);
 
-	// Cat cards (8 per page, arranged in 2x4 grid)
-	for (uint32_t u = 0; u < 8; ++u)
-	{
-		float fX = (static_cast<float>(u % 2) - 0.5f) * TilePuzzleUI::fCAT_CARD_X_SPACING;
-		float fY = TilePuzzleUI::fCAT_CARD_Y_START + static_cast<float>(u / 2) * TilePuzzleUI::fCAT_CARD_Y_SPACING;
+	// Cat cafe single-cat info display
+	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeInfoName", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeInfoName", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeInfoName", 0.f, 340.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeInfoName", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeInfoName", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeInfoName", 1.f, 1.f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUITextShadow("CatCafeInfoName", 2.f, 2.f, true);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeInfoName", false);
 
-		// Card background rect
-		Zenith_EditorAutomation::AddStep_CreateUIRect(s_aszCatCardBgNames[u]);
-		Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszCatCardBgNames[u], static_cast<int>(Zenith_UI::AnchorPreset::Center));
-		Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszCatCardBgNames[u], fX, fY);
-		Zenith_EditorAutomation::AddStep_SetUISize(s_aszCatCardBgNames[u], TilePuzzleUI::fCAT_CARD_W, TilePuzzleUI::fCAT_CARD_H);
-		Zenith_EditorAutomation::AddStep_SetUIColor(s_aszCatCardBgNames[u], 0.15f, 0.12f, 0.14f, 1.f);
-		Zenith_EditorAutomation::AddStep_SetUICornerRadius(s_aszCatCardBgNames[u], 10.f);
-		Zenith_EditorAutomation::AddStep_SetUIShadow(s_aszCatCardBgNames[u], 2.f, 2.f, 2.f, true);
-		Zenith_EditorAutomation::AddStep_SetUIRectBorder(s_aszCatCardBgNames[u], 0.25f, 0.20f, 0.24f, 1.f);
-		Zenith_EditorAutomation::AddStep_SetUIVisible(s_aszCatCardBgNames[u], false);
+	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeInfoBreed", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeInfoBreed", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeInfoBreed", 0.f, 385.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeInfoBreed", 22.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeInfoBreed", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeInfoBreed", 0.75f, 0.75f, 0.8f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUITextShadow("CatCafeInfoBreed", 1.f, 1.f, true);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeInfoBreed", false);
 
-		// Card text
-		Zenith_EditorAutomation::AddStep_CreateUIText(s_aszCatCardNames[u], "???");
-		Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszCatCardNames[u], static_cast<int>(Zenith_UI::AnchorPreset::Center));
-		Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszCatCardNames[u], fX, fY);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize(s_aszCatCardNames[u], TilePuzzleUI::fCAT_CARD_FONT);
-		Zenith_EditorAutomation::AddStep_SetUIAlignment(s_aszCatCardNames[u], static_cast<int>(Zenith_UI::TextAlignment::Center));
-		Zenith_EditorAutomation::AddStep_SetUIColor(s_aszCatCardNames[u], 0.9f, 0.9f, 0.9f, 1.f);
-		Zenith_EditorAutomation::AddStep_SetUIVisible(s_aszCatCardNames[u], false);
-	}
+	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeInfoLevel", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeInfoLevel", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeInfoLevel", 0.f, 415.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeInfoLevel", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeInfoLevel", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeInfoLevel", 1.f, 0.85f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeInfoLevel", false);
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeEmpty", "No cats rescued yet!");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeEmpty", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeEmpty", 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeEmpty", 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeEmpty", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeEmpty", 0.7f, 0.7f, 0.75f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeEmpty", false);
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeSwipeHint", "< Swipe to browse >");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeSwipeHint", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeSwipeHint", 0.f, 460.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeSwipeHint", 18.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeSwipeHint", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeSwipeHint", 0.5f, 0.5f, 0.55f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeSwipeHint", false);
 
 	// Cat Cafe navigation layout group (< Back >)
 	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("CatCafeNavGroup");

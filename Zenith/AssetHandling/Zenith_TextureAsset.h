@@ -78,6 +78,8 @@ public:
 
 	bool IsValid() const { return m_xVRAMHandle.IsValid(); }
 
+	bool IsMarkedBindless() const { return (m_xSurfaceInfo.m_uMemoryFlags & (1 << MEMORY_FLAGS__BINDLESS)) != 0; }
+
 	/**
 	 * Mark this texture for bindless access
 	 * Registers the SRV in the bindless descriptor set so it can be

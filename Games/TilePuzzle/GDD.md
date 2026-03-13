@@ -327,10 +327,13 @@ Each cat has:
 
 ### 5.3 Cat Cafe UI
 
-- **8 cats per page**, paginated display
-- **13 pages** for 100 cats
-- Per-cat card shows: name, breed, level number, 3-star indicator
-- Uncollected cats display "?" placeholder
+- **One cat at a time**, swiped horizontally to browse
+- Horizontal swipe or < > buttons to navigate between collected cats
+- Center shows 3D cat head mesh with procedural face texture (eyes, nose, whiskers)
+- Below cat: name, breed, "Lvl X | ★★★" info
+- Progress bar and "X / 100 cats rescued" header at top
+- Uncollected cats are simply not navigable (only collected cats appear in the swipe carousel)
+- "No cats rescued yet!" shown when collection is empty
 
 ---
 
@@ -452,7 +455,7 @@ the engine's UIStyle system for consistent styling.
 **Level Select & Cat Cafe:**
 - Same background gradient as main menu
 - Level grid buttons: corner radius 8px, shadow enabled, blue palette
-- Cat card background rects: corner radius 10px, shadow enabled
+- Cat 3D display entity: overhead camera view with face-textured cat mesh
 - Navigation buttons: corner radius 8px
 - All titles get text shadow
 
@@ -989,7 +992,7 @@ Pinball:
 8. ~~Credits/About screen in settings~~ Done — uses `Zenith_UIOverlay`
 9. No life loss on zero-move exit
 10. Level select UX polish (time-based pulse, star counter, Unicode stars)
-11. Cat Cafe visual upgrade (tier borders, progress bar)
+11. ~~Cat Cafe visual upgrade (tier borders, progress bar)~~ Done — 3D cat swipe carousel with procedural face textures
 12. ~~Pinball gate selection UI for Quick Play~~ Done — widget-based buttons
 13. Daily pinball bonus (25 coins/day)
 14. Pinball thematic elements (cat-themed materials)
@@ -1318,22 +1321,20 @@ After any code change:
 
 | ID | What to Verify | Pass Criteria |
 |----|---------------|---------------|
-| M-CAFE-01 | `[AUTO]` Cat Cafe background exists | CatCafeBg element exists |
 | M-CAFE-02 | `[AUTO]` Cat Cafe title exists | CatCafeTitle element exists |
 | M-CAFE-03 | `[AUTO]` Cat count display exists | CatCafeCount element exists |
-| M-CAFE-04 | 8 cards per page | Up to 8 cat cards visible per page |
-| M-CAFE-05 | `[AUTO]` Previous page button exists | CatCafePrevPage element exists |
-| M-CAFE-06 | `[AUTO]` Next page button exists | CatCafeNextPage element exists |
-| M-CAFE-07 | Page bounds | Cannot navigate before page 1 or after page 13 |
-| M-CAFE-08 | `[AUTO]` Back button returns to menu | CatCafeBackButton navigates to main menu (InputSimulator) |
-| M-CAFE-09 | Collected cat card shows name | Cat card for collected cat shows cat name (e.g., "Whiskers") |
-| M-CAFE-10 | Collected cat card shows breed | Cat card shows breed name (e.g., "Tabby") |
-| M-CAFE-11 | Collected cat card shows level | Cat card shows level number where cat was rescued |
-| M-CAFE-12 | Collected cat card shows stars | Cat card shows 3-star indicator for that level |
-| M-CAFE-13 | Uncollected cat placeholder | Uncollected cats show "???" placeholder |
-| M-CAFE-14 | Cat card backgrounds | CatCardBg_N rects have 10px corner radius and shadow |
-| M-CAFE-15 | Correct cats on correct pages | Page 1 shows cats 0-7, page 2 shows cats 8-15, etc. |
-| M-CAFE-16 | All cards touch-responsive | Cards don't require keyboard to view |
+| M-CAFE-04 | 3D cat visible on screen | Cat head mesh entity visible centered in scene when cats are collected |
+| M-CAFE-05 | `[AUTO]` Previous cat button exists | CatCafePrevPage element exists |
+| M-CAFE-06 | `[AUTO]` Next cat button exists | CatCafeNextPage element exists |
+| M-CAFE-07 | Swipe left advances cat | Horizontal swipe left shows next collected cat |
+| M-CAFE-08 | Swipe right goes back | Horizontal swipe right shows previous collected cat |
+| M-CAFE-09 | `[AUTO]` Back button returns to menu | CatCafeBackButton navigates to main menu |
+| M-CAFE-10 | Cat name displayed | Info text shows cat name below 3D view |
+| M-CAFE-11 | Cat breed displayed | Info text shows breed name |
+| M-CAFE-12 | Cat level/stars displayed | Info text shows "Lvl X \| ★★★" |
+| M-CAFE-13 | Empty state | "No cats rescued yet!" shown when no cats collected |
+| M-CAFE-14 | Face texture | Cat head has procedural face texture (eyes/nose/whiskers) visible from above |
+| M-CAFE-15 | Cat color cycles | Each cat uses color based on catID % colorCount |
 
 ### D.14 Test Checklist: Achievements Screen
 
@@ -1407,7 +1408,7 @@ After any code change:
 | M-TRAN-02 | `[AUTO]` Level Select to Menu | InputSimulator clicks BackButton, verifies MenuBg visible |
 | M-TRAN-03 | `[AUTO]` Menu to Settings | InputSimulator clicks SettingsButton, verifies SettingsBg visible, MenuBg hidden |
 | M-TRAN-04 | `[AUTO]` Settings to Menu | InputSimulator clicks SettingsBackBtn, verifies MenuBg visible |
-| M-TRAN-05 | `[AUTO]` Menu to Cat Cafe | InputSimulator clicks CatCafeButton, verifies CatCafeBg visible |
+| M-TRAN-05 | `[AUTO]` Menu to Cat Cafe | InputSimulator clicks CatCafeButton, verifies CatCafeTitle visible |
 | M-TRAN-06 | `[AUTO]` Cat Cafe to Menu | InputSimulator clicks CatCafeBackButton, verifies MenuBg visible |
 | M-TRAN-07 | `[AUTO]` Menu to Achievements | InputSimulator clicks AchievementsButton, verifies state change |
 | M-TRAN-08 | Achievements to Menu | Back button returns to menu |
@@ -1558,7 +1559,7 @@ After any code change:
 | M-EDGE-09 | Screen resize / rotation | UI adapts to different screen sizes without element overlap |
 | M-EDGE-10 | Very long cat names | UI handles longest cat names without text overflow |
 | M-EDGE-11 | 999+ coins display | Large coin values don't overflow their display container |
-| M-EDGE-12 | All 100 cats collected | Cat Cafe shows all 100 cats correctly across all 13 pages |
+| M-EDGE-12 | All 100 cats collected | Cat Cafe shows all 100 cats, swipeable sequentially from first to last collected |
 | M-EDGE-13 | All 10 gates cleared | Gate select shows all gates blue + freeplay button |
 | M-EDGE-14 | Max stars (300) | Star progress shows "300 / 300" correctly |
 

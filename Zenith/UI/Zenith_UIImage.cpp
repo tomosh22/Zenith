@@ -88,6 +88,10 @@ void Zenith_UIImage::Render(Zenith_UICanvas& xCanvas)
     Zenith_TextureAsset* pxTexture = m_xTexture.Get();
     if (pxTexture && pxTexture->IsValid() && pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
     {
+        Zenith_Assert(pxTexture->IsMarkedBindless(),
+            "UIImage '%s': texture has a valid SRV but MarkAsBindless() was never called. "
+            "The shader will sample an unregistered descriptor slot (silent transparent output). "
+            "Call MarkAsBindless() after CreateFromData().", m_strName.c_str());
         uTextureID = pxTexture->m_xSRV.m_xImageViewHandle.AsUInt();
     }
 

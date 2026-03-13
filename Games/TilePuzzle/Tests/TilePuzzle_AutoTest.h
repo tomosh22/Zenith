@@ -8070,7 +8070,7 @@ private:
 
 		Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
-		const char* aszBgNames[] = { "MenuBackground", "CatCafeBg", "LevelSelectBg", "SettingsBg" };
+		const char* aszBgNames[] = { "MenuBackground", "LevelSelectBg", "SettingsBg" };
 		for (const char* szName : aszBgNames)
 		{
 			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement(szName);
@@ -8202,8 +8202,10 @@ private:
 
 		// Cat Cafe elements
 		const char* aszCatCafe[] = {
-			"CatCafeBg", "CatCafeTitle", "CatCafeNavGroup", "CatCafeCount",
+			"CatCafeTitle", "CatCafeNavGroup", "CatCafeCount",
 			"CatCafePrevPage", "CatCafeNextPage", "CatCafeBackButton",
+			"CatCafeInfoName", "CatCafeInfoBreed", "CatCafeInfoLevel",
+			"CatCafeEmpty", "CatCafeSwipeHint",
 		};
 		for (const char* szName : aszCatCafe)
 		{
@@ -8352,12 +8354,6 @@ private:
 		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_CAT_CAFE);
 		{
 			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
-			Zenith_UI::Zenith_UIElement* pxCatCafeBg = xUI.FindElement("CatCafeBg");
-			if (pxCatCafeBg && !pxCatCafeBg->IsVisible())
-			{
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: CatCafeBg should be visible on SCREEN_CAT_CAFE");
-				bPass = false;
-			}
 			Zenith_UI::Zenith_UIElement* pxCatCafeTitle = xUI.FindElement("CatCafeTitle");
 			if (pxCatCafeTitle && !pxCatCafeTitle->IsVisible())
 			{
