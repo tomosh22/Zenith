@@ -191,10 +191,10 @@ void UpdateCatCafeUI()
 	uint8_t uStars = m_xSaveData.GetStarRating(uLevel);
 
 	Zenith_UI::Zenith_UIText* pxName = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatCafeInfoName");
-	if (pxName) { pxName->SetText(szCatName); pxName->SetVisible(true); }
+	if (pxName) { pxName->SetText(szCatName); pxName->SetFontSize(56.f); pxName->SetVisible(true); }
 
 	Zenith_UI::Zenith_UIText* pxBreed = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatCafeInfoBreed");
-	if (pxBreed) { pxBreed->SetText(szBreed); pxBreed->SetVisible(true); }
+	if (pxBreed) { pxBreed->SetText(szBreed); pxBreed->SetFontSize(44.f); pxBreed->SetVisible(true); }
 
 	Zenith_UI::Zenith_UIText* pxLevel = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatCafeInfoLevel");
 	if (pxLevel)
@@ -202,12 +202,18 @@ void UpdateCatCafeUI()
 		char szLevel[64];
 		snprintf(szLevel, sizeof(szLevel), "Lvl %u | %s", uLevel, GetStarString(uStars));
 		pxLevel->SetText(szLevel);
+		pxLevel->SetFontSize(40.f);
 		pxLevel->SetVisible(true);
 	}
 
 	// Show swipe hint only when there are multiple cats
-	Zenith_UI::Zenith_UIElement* pxHint = xUI.FindElement<Zenith_UI::Zenith_UIElement>("CatCafeSwipeHint");
-	if (pxHint) pxHint->SetVisible(m_axCatCafeCats.GetSize() > 1);
+	Zenith_UI::Zenith_UIText* pxHint = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatCafeSwipeHint");
+	if (pxHint)
+	{
+		Zenith_UI::Zenith_UIText* pxHintText = static_cast<Zenith_UI::Zenith_UIText*>(pxHint);
+		pxHintText->SetFontSize(36.f);
+		pxHint->SetVisible(m_axCatCafeCats.GetSize() > 1);
+	}
 
 	// Show/hide nav buttons based on prev/next availability
 	Zenith_UI::Zenith_UIElement* pxPrev = xUI.FindElement<Zenith_UI::Zenith_UIElement>("CatCafePrevPage");
@@ -552,27 +558,19 @@ void UpdateVictoryOverlay(float fDeltaTime)
 		}
 	}
 
-	// (2.5s) Button appears - either NextLevel or Pinball Gate
+	// (2.5s) Next Level button appears
 	{
 		if (m_pxNextLevelBtn)
 		{
 			float fProgress = EaseInRange(fT, s_fButtonsStart, s_fButtonsDuration);
 			if (fProgress > 0.0f && !m_pxNextLevelBtn->IsVisible())
 			{
-				if (m_bPinballGateRequired)
-				{
-					// Repurpose NextLevel button as "Pinball Gate!" button
-					m_pxNextLevelBtn->SetText("Pinball Gate!");
-					m_pxNextLevelBtn->SetNormalColor(Zenith_Maths::Vector4(0.5f, 0.25f, 0.1f, 1.0f));
-					m_pxNextLevelBtn->SetHoverColor(Zenith_Maths::Vector4(0.65f, 0.35f, 0.15f, 1.0f));
-					m_pxNextLevelBtn->SetPressedColor(Zenith_Maths::Vector4(0.4f, 0.2f, 0.08f, 1.0f));
-					m_pxNextLevelBtn->SetOnClick(&OnPinballGateClicked, this);
-					m_pxNextLevelBtn->SetVisible(true);
-				}
-				else
-				{
-					m_pxNextLevelBtn->SetVisible(true);
-				}
+				m_pxNextLevelBtn->SetText("Next Level");
+				m_pxNextLevelBtn->SetNormalColor(Zenith_Maths::Vector4(0.15f, 0.4f, 0.2f, 1.0f));
+				m_pxNextLevelBtn->SetHoverColor(Zenith_Maths::Vector4(0.25f, 0.55f, 0.3f, 1.0f));
+				m_pxNextLevelBtn->SetPressedColor(Zenith_Maths::Vector4(0.1f, 0.3f, 0.15f, 1.0f));
+				m_pxNextLevelBtn->SetOnClick(&OnNextLevelClicked, this);
+				m_pxNextLevelBtn->SetVisible(true);
 			}
 		}
 	}

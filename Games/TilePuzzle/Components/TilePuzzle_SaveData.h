@@ -628,3 +628,18 @@ static void TilePuzzle_ReadSaveData(Zenith_DataStream& xStream, uint32_t uGameVe
 		}
 	}
 }
+
+// Shared between TilePuzzle_Behaviour and Pinball_Behaviour for scene transitions
+namespace TilePuzzle
+{
+	inline uint32_t g_uPinballRequestedGate = UINT32_MAX; // UINT32_MAX = no request
+}
+
+inline bool TilePuzzle_IsGateLevel(uint32_t uLevel, uint32_t* pxGateIndexOut = nullptr)
+{
+	bool bIsGate = (uLevel % 10 == 0)
+		&& (uLevel / 10 <= TilePuzzleSaveData::uMAX_PINBALL_GATES);
+	if (bIsGate && pxGateIndexOut)
+		*pxGateIndexOut = uLevel / 10 - 1;
+	return bIsGate;
+}

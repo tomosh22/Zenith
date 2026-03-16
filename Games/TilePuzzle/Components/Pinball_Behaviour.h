@@ -173,7 +173,8 @@ enum PinballState : uint8_t
 	PINBALL_STATE_READY,
 	PINBALL_STATE_LAUNCHING,
 	PINBALL_STATE_PLAYING,
-	PINBALL_STATE_BALL_LOST
+	PINBALL_STATE_BALL_LOST,
+	PINBALL_STATE_LEVEL_COMPLETE
 };
 
 // ============================================================================
@@ -536,25 +537,16 @@ public:
 		// Create HUD elements for objective display
 		CreateHUDElements();
 
-		// Check if any gates are cleared - if so, show gate select screen
-		bool bHasClearedGates = false;
-		for (uint32_t i = 0; i < s_uPB_MaxGates; ++i)
+		// Check if a specific gate was requested (from level select / next level / continue)
+		if (TilePuzzle::g_uPinballRequestedGate != UINT32_MAX
+			&& TilePuzzle::g_uPinballRequestedGate < s_uPB_MaxGates)
 		{
-			if (m_xSaveData.IsPinballGateCleared(i))
-			{
-				bHasClearedGates = true;
-				break;
-			}
-		}
+			m_uCurrentGate = TilePuzzle::g_uPinballRequestedGate;
+			m_xCurrentGateData = m_axGateData[m_uCurrentGate];
+			m_uCurrentGatePegCount = m_xCurrentGateData.uNumPegs;
+			m_bGateActive = true;
+			TilePuzzle::g_uPinballRequestedGate = UINT32_MAX;
 
-		if (bHasClearedGates)
-		{
-			// Start in gate selection mode
-			m_eState = PINBALL_STATE_GATE_SELECT;
-		}
-		else
-		{
-			// No gates cleared yet - go straight to gameplay
 			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
 			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
 
@@ -569,6 +561,42 @@ public:
 
 			m_eState = PINBALL_STATE_READY;
 		}
+		else
+		{
+			TilePuzzle::g_uPinballRequestedGate = UINT32_MAX;
+
+			// Fallback: check if any gates are cleared for gate select screen
+			bool bHasClearedGates = false;
+			for (uint32_t i = 0; i < s_uPB_MaxGates; ++i)
+			{
+				if (m_xSaveData.IsPinballGateCleared(i))
+				{
+					bHasClearedGates = true;
+					break;
+				}
+			}
+
+			if (bHasClearedGates)
+			{
+				m_eState = PINBALL_STATE_GATE_SELECT;
+			}
+			else
+			{
+				m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
+				Zenith_SceneManager::SetActiveScene(m_xPinballScene);
+
+				Flux_HDR::SetBloomIntensity(0.8f);
+				Flux_HDR::SetBloomThreshold(0.8f);
+				Flux_HDR::SetExposure(1.2f);
+				Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector4(0.02f, 0.02f, 0.06f, 1.0f);
+
+				CreatePlayfield();
+				SpawnBall();
+				ResetGateAttempt();
+
+				m_eState = PINBALL_STATE_READY;
+			}
+		}
 
 		UpdateUI();
 	}
@@ -582,15 +610,13 @@ public:
 		// Handle escape to return to menu
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 		{
-			if (m_eState == PINBALL_STATE_GATE_SELECT)
+			if (m_eState == PINBALL_STATE_LEVEL_COMPLETE)
 			{
-				ReturnToMenu();
+				HidePinballVictoryOverlay();
+				m_bGateCleared = false;
+				m_bDailyBonusAwarded = false;
 			}
-			else
-			{
-				// Return to gate select if we came from it, otherwise menu
-				ReturnToMenu();
-			}
+			ReturnToMenu();
 			return;
 		}
 
@@ -600,6 +626,10 @@ public:
 			UpdateGateSelectUI();
 			return;
 		}
+
+		// Level complete overlay - just wait for button click
+		if (m_eState == PINBALL_STATE_LEVEL_COMPLETE)
+			return;
 
 		// Decrement cooldowns
 		if (m_fTargetCooldown > 0.f)
@@ -617,13 +647,9 @@ public:
 				m_fGateCelebrationTimer = 0.f;
 				if (m_bGateCleared)
 				{
-					// Advance to next gate
-					m_bGateCleared = false;
-					m_bDailyBonusAwarded = false;
-					DetermineCurrentGate();
-					ResetGateAttempt();
-					RebuildPegsForCurrentGate();
-					RespawnBall();
+					// Show victory overlay
+					ShowPinballVictoryOverlay();
+					m_eState = PINBALL_STATE_LEVEL_COMPLETE;
 				}
 				else if (m_bGateFailed)
 				{
@@ -672,7 +698,7 @@ public:
 		ImGui::Text("Total Score: %u", m_xSaveData.uPinballScore);
 		ImGui::Text("Plunger Pull: %.2f", m_fPlungerPull);
 
-		const char* aszStateNames[] = { "Gate Select", "Ready", "Launching", "Playing", "Ball Lost" };
+		const char* aszStateNames[] = { "Gate Select", "Ready", "Launching", "Playing", "Ball Lost", "Level Complete" };
 		ImGui::Text("State: %s", aszStateNames[m_eState]);
 
 		ImGui::Separator();
@@ -778,6 +804,25 @@ private:
 		}
 
 		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+	}
+
+	void ReturnToGateSelect()
+	{
+		// Clean up gameplay scene
+		if (m_xPinballScene.IsValid())
+		{
+			Zenith_SceneManager::UnloadScene(m_xPinballScene);
+			m_xPinballScene = Zenith_Scene();
+		}
+
+		// Restore HDR defaults
+		Flux_HDR::SetBloomIntensity(0.5f);
+		Flux_HDR::SetBloomThreshold(1.0f);
+		Flux_HDR::SetExposure(1.0f);
+		Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector4(0.f, 0.f, 0.f, 0.f);
+
+		DetermineCurrentGate();
+		m_eState = PINBALL_STATE_GATE_SELECT;
 	}
 
 	// ========================================================================
@@ -1732,6 +1777,18 @@ private:
 			{
 				m_xSaveData.uHighestLevelReached = uGateLevel + 1;
 			}
+			// Advance current level past the gate so Continue doesn't replay it
+			if (m_xSaveData.uCurrentLevel <= uGateLevel)
+			{
+				m_xSaveData.uCurrentLevel = uGateLevel + 1;
+			}
+		}
+
+		// Mark gate level as completed in level records for unified level select
+		if (uGateLevel > 0 && uGateLevel <= TilePuzzleSaveData::uMAX_LEVELS)
+		{
+			m_xSaveData.axLevelRecords[uGateLevel - 1].bCompleted = true;
+			m_xSaveData.SetStarRating(uGateLevel, 3);
 		}
 
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
@@ -1750,6 +1807,140 @@ private:
 		// Destroy ball during failure message
 		DestroyBall();
 		m_eState = PINBALL_STATE_READY;
+	}
+
+	// ========================================================================
+	// Pinball Victory Overlay
+	// ========================================================================
+
+	void ShowPinballVictoryOverlay()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIElement* pxBg = xUI.FindElement("PinballVictoryBg");
+		if (pxBg) pxBg->SetVisible(true);
+
+		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("PinballVictoryTitle");
+		if (pxTitle) pxTitle->SetVisible(true);
+
+		Zenith_UI::Zenith_UIText* pxCoins = xUI.FindElement<Zenith_UI::Zenith_UIText>("PinballVictoryCoins");
+		if (pxCoins)
+		{
+			char szCoins[64];
+			snprintf(szCoins, sizeof(szCoins), "+%u coins", m_uSessionCoinsEarned);
+			pxCoins->SetText(szCoins);
+			pxCoins->SetVisible(true);
+		}
+
+		Zenith_UI::Zenith_UIButton* pxNextBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("PinballVictoryNextBtn");
+		if (pxNextBtn)
+		{
+			// Check if there are more levels
+			uint32_t uGateLevel = (m_uCurrentGate + 1) * 10;
+			if (uGateLevel >= TilePuzzleSaveData::uMAX_LEVELS)
+			{
+				pxNextBtn->SetText("Menu");
+			}
+			else
+			{
+				pxNextBtn->SetText("Next Level");
+			}
+			pxNextBtn->SetVisible(true);
+		}
+
+		// Hide HUD elements behind overlay
+		Zenith_UI::Zenith_UIElement* pxGateStatus = xUI.FindElement("PinballGateStatus");
+		if (pxGateStatus) pxGateStatus->SetVisible(false);
+	}
+
+	void HidePinballVictoryOverlay()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		const char* aszElements[] = {
+			"PinballVictoryBg", "PinballVictoryTitle",
+			"PinballVictoryCoins", "PinballVictoryNextBtn"
+		};
+		for (const char* szName : aszElements)
+		{
+			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement(szName);
+			if (pxElem) pxElem->SetVisible(false);
+		}
+	}
+
+	static void OnPinballNextLevelClicked(void* pxUserData)
+	{
+		Pinball_Behaviour* pxSelf = static_cast<Pinball_Behaviour*>(pxUserData);
+		if (pxSelf->m_eState != PINBALL_STATE_LEVEL_COMPLETE)
+			return;
+
+		pxSelf->HidePinballVictoryOverlay();
+
+		uint32_t uGateLevel = (pxSelf->m_uCurrentGate + 1) * 10;
+		uint32_t uNextLevel = uGateLevel + 1;
+
+		if (uNextLevel > TilePuzzleSaveData::uMAX_LEVELS)
+		{
+			// No more levels, return to menu
+			pxSelf->m_bGateCleared = false;
+			pxSelf->m_bDailyBonusAwarded = false;
+			pxSelf->ReturnToMenu();
+			return;
+		}
+
+		// Check if next level is another pinball gate
+		uint32_t uNextGateIndex = 0;
+		if (TilePuzzle_IsGateLevel(uNextLevel, &uNextGateIndex)
+			&& !pxSelf->m_xSaveData.IsPinballGateCleared(uNextGateIndex))
+		{
+			// Stay in pinball scene, load next gate
+			pxSelf->m_bGateCleared = false;
+			pxSelf->m_bDailyBonusAwarded = false;
+			pxSelf->m_uCurrentGate = uNextGateIndex;
+			pxSelf->m_xCurrentGateData = pxSelf->m_axGateData[uNextGateIndex];
+			pxSelf->m_uCurrentGatePegCount = pxSelf->m_xCurrentGateData.uNumPegs;
+			pxSelf->RebuildPegsForCurrentGate();
+			pxSelf->ResetGateAttempt();
+			pxSelf->RespawnBall();
+			pxSelf->m_eState = PINBALL_STATE_READY;
+		}
+		else
+		{
+			// Next level is a puzzle - save and transition
+			pxSelf->m_bGateCleared = false;
+			pxSelf->m_bDailyBonusAwarded = false;
+			pxSelf->m_xSaveData.uCurrentLevel = uNextLevel;
+			Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+				TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
+			pxSelf->ReturnToMenuAndLoadPuzzle();
+		}
+	}
+
+	void ReturnToMenuAndLoadPuzzle()
+	{
+		// Save and transition to puzzle scene
+		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+			TilePuzzle_WriteSaveData, &m_xSaveData);
+
+		// Restore HDR defaults
+		Flux_HDR::SetBloomIntensity(0.5f);
+		Flux_HDR::SetBloomThreshold(1.0f);
+		Flux_HDR::SetExposure(1.0f);
+
+		// Cleanup dynamic scene
+		if (m_xPinballScene.IsValid())
+		{
+			Zenith_SceneManager::UnloadScene(m_xPinballScene);
+			m_xPinballScene = Zenith_Scene();
+		}
+
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -1863,6 +2054,41 @@ private:
 		pxGateNum->SetFontSize(TilePuzzleUI::fPB_GATE_NUM_FONT);
 		pxGateNum->SetAlignment(Zenith_UI::TextAlignment::Center);
 		pxGateNum->SetColor({ 0.6f, 0.6f, 0.8f, 1.f });
+
+		// Victory overlay elements (initially hidden)
+		Zenith_UI::Zenith_UIRect* pxVictoryBg = xUI.CreateRect("PinballVictoryBg");
+		pxVictoryBg->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxVictoryBg->SetPosition(0.f, 0.f);
+		pxVictoryBg->SetSize(9999.f, 9999.f);
+		pxVictoryBg->SetColor({ 0.05f, 0.05f, 0.15f, 0.9f });
+		pxVictoryBg->SetVisible(false);
+
+		Zenith_UI::Zenith_UIText* pxVictoryTitle = xUI.CreateText("PinballVictoryTitle", "Level Complete!");
+		pxVictoryTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxVictoryTitle->SetPosition(0.f, -80.f);
+		pxVictoryTitle->SetFontSize(64.f);
+		pxVictoryTitle->SetAlignment(Zenith_UI::TextAlignment::Center);
+		pxVictoryTitle->SetColor({ 1.f, 1.f, 0.5f, 1.f });
+		pxVictoryTitle->SetVisible(false);
+
+		Zenith_UI::Zenith_UIText* pxVictoryCoins = xUI.CreateText("PinballVictoryCoins", "");
+		pxVictoryCoins->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxVictoryCoins->SetPosition(0.f, 0.f);
+		pxVictoryCoins->SetFontSize(44.f);
+		pxVictoryCoins->SetAlignment(Zenith_UI::TextAlignment::Center);
+		pxVictoryCoins->SetColor({ 1.f, 0.85f, 0.2f, 1.f });
+		pxVictoryCoins->SetVisible(false);
+
+		Zenith_UI::Zenith_UIButton* pxVictoryNextBtn = xUI.CreateButton("PinballVictoryNextBtn", "Next Level");
+		pxVictoryNextBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxVictoryNextBtn->SetPosition(0.f, 80.f);
+		pxVictoryNextBtn->SetSize(280.f, 70.f);
+		pxVictoryNextBtn->SetFontSize(40.f);
+		pxVictoryNextBtn->SetNormalColor({ 0.15f, 0.4f, 0.2f, 1.f });
+		pxVictoryNextBtn->SetHoverColor({ 0.25f, 0.55f, 0.3f, 1.f });
+		pxVictoryNextBtn->SetPressedColor({ 0.1f, 0.3f, 0.15f, 1.f });
+		pxVictoryNextBtn->SetOnClick(&OnPinballNextLevelClicked, this);
+		pxVictoryNextBtn->SetVisible(false);
 
 		m_bHUDCreated = true;
 	}

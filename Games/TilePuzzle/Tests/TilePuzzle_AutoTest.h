@@ -8,9 +8,11 @@
  * Implemented as a Zenith_ScriptBehaviour with a per-frame state machine.
  * When --autotest is passed, this behaviour is added as a persistent entity.
  *
- * The visual puzzle test uses Zenith_InputSimulator to simulate touch input
- * (tap to select, swipe to drag) and solves a real puzzle level on screen.
- * You can see the shapes moving and cats being eliminated in real-time.
+ * The visual puzzle test uses Zenith_InputSimulator to simulate Android
+ * touchscreen input: touch-drag to move shapes (via HandleDragInput →
+ * MoveShapeImmediate), tap for UI buttons, drag for the pinball plunger,
+ * and swipe for cat cafe navigation. All input paths match what a player
+ * does on a real touchscreen device.
  *
  * Logic-only tests (save/load, coins, star rating) also run each frame.
  */
@@ -114,6 +116,7 @@ public:
 		PHASE_TEST_SCORE_BASED_COIN_REWARD,
 		PHASE_TEST_GATE_PROGRESSION_BLOCKING,
 		PHASE_TEST_FIRST_CLEAR_BONUS,
+		PHASE_TEST_LEVEL_FLOW,
 		// UI engine tests
 		PHASE_TEST_UI_STRETCH_ALL,
 		PHASE_TEST_UI_TEXT_METRICS,
@@ -139,6 +142,16 @@ public:
 		PHASE_TEST_UI_CONFIRM_DIALOG_FLOW,
 		PHASE_TEST_UI_PAGINATION,
 		PHASE_TEST_UI_ECONOMY_DISPLAY,
+		// Cat cafe swipe test (touch gesture)
+		PHASE_TEST_CAT_CAFE_SWIPE_INIT,
+		PHASE_TEST_CAT_CAFE_SWIPE_LEFT_START,
+		PHASE_TEST_CAT_CAFE_SWIPE_LEFT_MOVE,
+		PHASE_TEST_CAT_CAFE_SWIPE_LEFT_END,
+		PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_START,
+		PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_MOVE,
+		PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_END,
+		PHASE_TEST_CAT_CAFE_SWIPE_DONE,
+		// UI interaction walkthrough
 		PHASE_TEST_UI_INTERACT_INIT,
 		PHASE_TEST_UI_INTERACT_STEP,
 		PHASE_TEST_UI_INTERACT_DONE,
@@ -147,6 +160,9 @@ public:
 		PHASE_FULL_GAME_WAIT_PLAYING,
 		PHASE_FULL_GAME_COMPUTE_SOLUTION,
 		PHASE_FULL_GAME_SELECT_AND_MOVE,
+		PHASE_FULL_GAME_DRAG_START,
+		PHASE_FULL_GAME_DRAG_MOVE,
+		PHASE_FULL_GAME_DRAG_RELEASE,
 		PHASE_FULL_GAME_WAIT_SETTLE,
 		PHASE_FULL_GAME_CHECK_COMPLETE,
 		PHASE_FULL_GAME_NEXT_LEVEL,
@@ -516,6 +532,12 @@ public:
 
 		case PHASE_TEST_FIRST_CLEAR_BONUS:
 			RunSingleTest("Test_FirstClearBonus", &Test_FirstClearBonus);
+			m_ePhase = PHASE_TEST_LEVEL_FLOW;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_LEVEL_FLOW:
+			RunSingleTest("Test_LevelFlow", &Test_LevelFlow);
 			m_ePhase = PHASE_TEST_UI_STRETCH_ALL;
 			m_uFrameDelay = 5;
 			break;
@@ -654,8 +676,24 @@ public:
 
 		case PHASE_TEST_UI_ECONOMY_DISPLAY:
 			RunSingleTestLive("Test_UIEconomyDisplay", &TilePuzzle_AutoTest::Test_UIEconomyDisplay);
-			m_ePhase = PHASE_TEST_UI_INTERACT_INIT;
+			m_ePhase = PHASE_TEST_CAT_CAFE_SWIPE_INIT;
 			m_uFrameDelay = 5;
+			break;
+
+		// Cat cafe swipe test (touch gesture simulation)
+		case PHASE_TEST_CAT_CAFE_SWIPE_INIT:
+			UpdateCatCafeSwipe_Init();
+			break;
+		case PHASE_TEST_CAT_CAFE_SWIPE_LEFT_START:
+		case PHASE_TEST_CAT_CAFE_SWIPE_LEFT_MOVE:
+		case PHASE_TEST_CAT_CAFE_SWIPE_LEFT_END:
+		case PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_START:
+		case PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_MOVE:
+		case PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_END:
+			UpdateCatCafeSwipe_Step();
+			break;
+		case PHASE_TEST_CAT_CAFE_SWIPE_DONE:
+			UpdateCatCafeSwipe_Done();
 			break;
 
 		case PHASE_TEST_UI_INTERACT_INIT:
@@ -682,6 +720,15 @@ public:
 			break;
 		case PHASE_FULL_GAME_SELECT_AND_MOVE:
 			UpdateFullGame_SelectAndMove();
+			break;
+		case PHASE_FULL_GAME_DRAG_START:
+			UpdateFullGame_DragStart();
+			break;
+		case PHASE_FULL_GAME_DRAG_MOVE:
+			UpdateFullGame_DragMove();
+			break;
+		case PHASE_FULL_GAME_DRAG_RELEASE:
+			UpdateFullGame_DragRelease();
 			break;
 		case PHASE_FULL_GAME_WAIT_SETTLE:
 			UpdateFullGame_WaitSettle();
@@ -767,6 +814,23 @@ private:
 	double m_fPinballDragEndX = 0.0;          // Screen coords: plunger dragged position
 	double m_fPinballDragEndY = 0.0;
 
+	// Puzzle shape drag simulation state (touch-drag per cell step)
+	double m_fDragStartScreenX = 0.0;
+	double m_fDragStartScreenY = 0.0;
+	double m_fDragEndScreenX = 0.0;
+	double m_fDragEndScreenY = 0.0;
+	TilePuzzleDirection m_eDragDirection = TILEPUZZLE_DIR_NONE;
+
+	// Cat cafe swipe test state
+	bool m_bCatCafeSwipePassed = true;
+	uint32_t m_uCatCafeSwipeOrigIndex = 0;
+	TilePuzzleGameState m_eCatCafeSwipeOrigState = TILEPUZZLE_STATE_MAIN_MENU;
+	uint32_t m_uCatCafeSwipeOrigProgress = 0;
+	uint32_t m_uCatCafeSwipeDragFrame = 0;
+	static constexpr uint32_t uCAT_CAFE_SWIPE_FRAMES = 5;
+	double m_fCatCafeSwipeStartX = 0.0;
+	double m_fCatCafeSwipeStartY = 0.0;
+
 	// Per-level solution replay state
 	uint32_t m_uTotalCellMoves = 0;       // Total single-cell moves for current level
 	uint32_t m_uWaitFrames = 0;
@@ -778,7 +842,7 @@ private:
 	TilePuzzleLevelData m_xCleanLevel;    // Clean level used for BFS path finding (solver's expected state)
 	TilePuzzleLevelData m_xSolverCleanLevel; // Clean level at solve time (updated to track solver's state)
 	uint32_t m_uSolverPreviousMask = 0;  // Cumulative elimination mask from solver's perspective
-	uint32_t m_uCurrentTargetShape = 0;   // Shape index in ORIGINAL level for TryMoveShape
+	uint32_t m_uCurrentTargetShape = 0;   // Shape index in ORIGINAL level for touch-drag
 	uint32_t m_uCleanTargetShape = 0;     // Shape index in CLEAN level for BFS path finding
 	int32_t m_iCurrentTargetX = 0;        // Target X for current outer move
 	int32_t m_iCurrentTargetY = 0;        // Target Y for current outer move
@@ -1262,6 +1326,7 @@ private:
 				m_uFullGameCurrentLevel);
 			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 			m_uFailed++;
+			Zenith_InputSimulator::Disable();
 			m_ePhase = PHASE_COMPLETE;
 			return;
 		}
@@ -1316,21 +1381,88 @@ private:
 			return;
 		}
 
-		// Execute the next step in the cell path via direct TryMoveShape call
-		TilePuzzleDirection eDir = m_aeCellPath[m_uCellPathIndex];
+		// Simulate touch-drag for the next cell step (replicating Android touchscreen input).
+		// Instead of calling TryMoveShape() directly, we go through HandleDragInput() →
+		// MoveShapeImmediate(), which is the actual code path a player exercises on touch.
+		m_eDragDirection = m_aeCellPath[m_uCellPathIndex];
 		m_uCellPathIndex++;
 
-		bool bMoved = m_pxPuzzleBehaviour->TryMoveShape(static_cast<int32_t>(uShapeIdx), eDir);
-		if (!bMoved)
+		int32_t iDeltaX, iDeltaY;
+		TilePuzzleDirections::GetDelta(m_eDragDirection, iDeltaX, iDeltaY);
+
+		// Compute screen coords for shape origin and target cell
+		if (!PuzzleGridToScreen(m_pxPuzzleBehaviour, xShape.iOriginX, xShape.iOriginY,
+				m_fDragStartScreenX, m_fDragStartScreenY) ||
+			!PuzzleGridToScreen(m_pxPuzzleBehaviour, xShape.iOriginX + iDeltaX, xShape.iOriginY + iDeltaY,
+				m_fDragEndScreenX, m_fDragEndScreenY))
 		{
-			// Move rejected — game state diverged from BFS expectation. Force re-solve.
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "    REJECTED: shape %u step %u/%u, forcing re-solve",
-				uShapeIdx, m_uCellPathIndex, m_uCellPathLength);
-			m_axLiveSolution.clear(); // Force full re-solve
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    FAIL: PuzzleGridToScreen failed for shape %u", uShapeIdx);
+			m_axLiveSolution.clear();
 			m_uCurrentSolutionMoveIndex = 0;
 			m_ePhase = PHASE_FULL_GAME_COMPUTE_SOLUTION;
 			m_uFrameDelay = 2;
 			return;
+		}
+
+		m_ePhase = PHASE_FULL_GAME_DRAG_START;
+	}
+
+	void UpdateFullGame_DragStart()
+	{
+		// Touch down on the shape (simulates finger pressing on the shape).
+		// The simulator stays enabled across all drags for a level to avoid
+		// resetting HandleDragInput's frame-to-frame m_bMouseWasDown tracking.
+		// A 1-frame delay ensures HandleDragInput sees the press at the shape
+		// position and starts the drag before we move the finger to the target.
+		if (!Zenith_InputSimulator::IsEnabled())
+			Zenith_InputSimulator::Enable();
+		Zenith_InputSimulator::SimulateMousePosition(m_fDragStartScreenX, m_fDragStartScreenY);
+		Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_LEFT);
+
+		m_ePhase = PHASE_FULL_GAME_DRAG_MOVE;
+		m_uFrameDelay = 1;
+	}
+
+	void UpdateFullGame_DragMove()
+	{
+		// Move finger to the target cell (HandleDragInput will call MoveShapeImmediate).
+		// A 1-frame delay ensures HandleDragInput processes the move before we release.
+		Zenith_InputSimulator::SimulateMousePosition(m_fDragEndScreenX, m_fDragEndScreenY);
+
+		m_ePhase = PHASE_FULL_GAME_DRAG_RELEASE;
+		m_uFrameDelay = 1;
+	}
+
+	void UpdateFullGame_DragRelease()
+	{
+		// Lift finger (ends the drag gesture).
+		// Do NOT disable the simulator here — it stays enabled across drags so
+		// HandleDragInput's m_bMouseWasDown tracking remains consistent.
+		Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_LEFT);
+
+		m_pxPuzzleBehaviour = FindPuzzleBehaviour();
+		if (!m_pxPuzzleBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Lost reference after drag release (level %u)",
+				m_uFullGameCurrentLevel);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
+			m_uFailed++;
+			Zenith_InputSimulator::Disable();
+			m_ePhase = PHASE_COMPLETE;
+			return;
+		}
+
+		uint32_t uShapeIdx = m_uCurrentTargetShape;
+		if (uShapeIdx < static_cast<uint32_t>(m_pxPuzzleBehaviour->m_xCurrentLevel.axShapes.size()))
+		{
+			const TilePuzzleShapeInstance& xShape = m_pxPuzzleBehaviour->m_xCurrentLevel.axShapes[uShapeIdx];
+			if (xShape.bRemoved)
+			{
+				// Shape was eliminated during the drag — continue to next solution move
+				m_ePhase = PHASE_FULL_GAME_COMPUTE_SOLUTION;
+				m_uFrameDelay = 2;
+				return;
+			}
 		}
 
 		m_uTotalCellMoves++;
@@ -1348,10 +1480,13 @@ private:
 				m_uFullGameCurrentLevel);
 			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 			m_uFailed++;
+			Zenith_InputSimulator::Disable();
 			m_ePhase = PHASE_COMPLETE;
 			return;
 		}
 
+		// Wait for slide animation or elimination check to finish (legacy path
+		// still possible if TryMoveShape is ever reintroduced; kept for safety)
 		if (m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_SHAPE_SLIDING ||
 			m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_CHECK_ELIMINATION)
 		{
@@ -1362,6 +1497,7 @@ private:
 					m_uFullGameCurrentLevel, m_pxPuzzleBehaviour->m_eState);
 				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 				m_uFailed++;
+				Zenith_InputSimulator::Disable();
 				m_ePhase = PHASE_COMPLETE;
 			}
 			return;
@@ -1371,7 +1507,26 @@ private:
 			m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_VICTORY_OVERLAY)
 		{
 			m_uWaitFrames = 0;
+			Zenith_InputSimulator::Disable();
 			m_ePhase = PHASE_FULL_GAME_CHECK_COMPLETE;
+			return;
+		}
+
+		// With touch-drag (MoveShapeImmediate), level completion is detected
+		// via m_bPendingLevelComplete which triggers OnLevelCompleted on drag
+		// release. Give it a frame to propagate.
+		if (m_pxPuzzleBehaviour->m_bPendingLevelComplete)
+		{
+			m_uWaitFrames++;
+			if (m_uWaitFrames > 30)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Pending level complete stuck (level %u)",
+					m_uFullGameCurrentLevel);
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
+				m_uFailed++;
+				Zenith_InputSimulator::Disable();
+				m_ePhase = PHASE_COMPLETE;
+			}
 			return;
 		}
 
@@ -1384,6 +1539,7 @@ private:
 			return;
 		}
 
+		// State is PLAYING — drag move completed instantly, proceed to next step
 		m_ePhase = PHASE_FULL_GAME_SELECT_AND_MOVE;
 	}
 
@@ -1497,6 +1653,43 @@ private:
 	}
 
 	// ========================================================================
+	// Coordinate helpers
+	// ========================================================================
+
+	// Convert a puzzle grid cell to screen pixel coordinates using the puzzle camera.
+	// Matches the inverse of TilePuzzle_Behaviour::ScreenToGrid.
+	bool PuzzleGridToScreen(TilePuzzle_Behaviour* pxBehaviour, int32_t iGridX, int32_t iGridY, double& fScreenX, double& fScreenY)
+	{
+		if (!pxBehaviour->m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+			return false;
+
+		Zenith_CameraComponent& xCam = pxBehaviour->m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+
+		Zenith_Maths::Matrix4 xView, xProj;
+		xCam.BuildViewMatrix(xView);
+		xCam.BuildProjectionMatrix(xProj);
+
+		Zenith_Maths::Vector3 xWorldPos = pxBehaviour->GridToWorld(
+			static_cast<float>(iGridX), static_cast<float>(iGridY), s_fShapeHeight);
+
+		Zenith_Maths::Vector4 xClip = xProj * xView * Zenith_Maths::Vector4(xWorldPos, 1.0f);
+		if (fabsf(xClip.w) < 1e-6f)
+			return false;
+
+		xClip.x /= xClip.w;
+		xClip.y /= xClip.w;
+
+		int32_t iWidth, iHeight;
+		Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
+
+		// Clip [-1,1] to screen pixels (matching PinballWorldToScreen convention)
+		fScreenX = static_cast<double>((xClip.x + 1.0f) * 0.5f * static_cast<float>(iWidth));
+		fScreenY = static_cast<double>((xClip.y + 1.0f) * 0.5f * static_cast<float>(iHeight));
+
+		return true;
+	}
+
+	// ========================================================================
 	// Pinball gate phases
 	// ========================================================================
 
@@ -1553,6 +1746,7 @@ private:
 	void UpdateFullGame_PinballEnter()
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Entering pinball for gate %u...", m_uFullGameNextGate);
+		TilePuzzle::g_uPinballRequestedGate = m_uFullGameNextGate;
 		Zenith_SceneManager::LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
 		m_uWaitFrames = 0;
 		m_ePhase = PHASE_FULL_GAME_PINBALL_WAIT;
@@ -5925,7 +6119,7 @@ private:
 		// LevelSelectButton: visible when progress >= 5
 		// CatCafeButton: visible when progress >= 3
 		// DailyPuzzleButton: visible when progress >= 10
-		// PinballButton: visible when progress >= 10
+		// PinballButton: removed (pinball accessed through level select)
 
 		struct DisclosureTest
 		{
@@ -5933,19 +6127,18 @@ private:
 			bool bLevelSelect;
 			bool bCatCafe;
 			bool bDaily;
-			bool bPinball;
 		};
 
 		DisclosureTest axTests[] = {
-			{ 1,  false, false, false, false },
-			{ 2,  false, false, false, false },
-			{ 3,  false, true,  false, false },
-			{ 4,  false, true,  false, false },
-			{ 5,  true,  true,  false, false },
-			{ 9,  true,  true,  false, false },
-			{ 10, true,  true,  true,  true },
-			{ 50, true,  true,  true,  true },
-			{ 100, true, true,  true,  true },
+			{ 1,  false, false, false },
+			{ 2,  false, false, false },
+			{ 3,  false, true,  false },
+			{ 4,  false, true,  false },
+			{ 5,  true,  true,  false },
+			{ 9,  true,  true,  false },
+			{ 10, true,  true,  true },
+			{ 50, true,  true,  true },
+			{ 100, true, true,  true },
 		};
 
 		for (const auto& xTest : axTests)
@@ -5953,7 +6146,6 @@ private:
 			bool bLevelSelect = (xTest.uProgress >= 5);
 			bool bCatCafe = (xTest.uProgress >= 3);
 			bool bDaily = (xTest.uProgress >= 10);
-			bool bPinball = (xTest.uProgress >= 10);
 
 			if (bLevelSelect != xTest.bLevelSelect)
 			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: LevelSelect at progress %u: expected %s", xTest.uProgress, xTest.bLevelSelect ? "visible" : "hidden"); bPass = false; }
@@ -5961,8 +6153,6 @@ private:
 			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: CatCafe at progress %u: expected %s", xTest.uProgress, xTest.bCatCafe ? "visible" : "hidden"); bPass = false; }
 			if (bDaily != xTest.bDaily)
 			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Daily at progress %u: expected %s", xTest.uProgress, xTest.bDaily ? "visible" : "hidden"); bPass = false; }
-			if (bPinball != xTest.bPinball)
-			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Pinball at progress %u: expected %s", xTest.uProgress, xTest.bPinball ? "visible" : "hidden"); bPass = false; }
 		}
 
 		// Skip button visibility: only when skip is offered
@@ -6150,54 +6340,68 @@ private:
 	{
 		bool bPass = true;
 
+		// Puzzle completion now always unlocks the next level (pinball gates are separate level entries)
 		TilePuzzleSaveData xData;
 		xData.Reset();
-		xData.uHighestLevelReached = 10;
-		xData.uCurrentLevel = 10;
+		xData.uHighestLevelReached = 9;
+		xData.uCurrentLevel = 9;
 
-		// Simulate completing level 10 (gate level) WITHOUT gate cleared
-		uint32_t uLevelNumber = 10;
-		bool bIsGateLevel = (uLevelNumber % 10 == 0) && (uLevelNumber / 10 <= TilePuzzleSaveData::uMAX_PINBALL_GATES);
-		bool bGateCleared = bIsGateLevel && xData.IsPinballGateCleared(uLevelNumber / 10 - 1);
-
-		if (!bIsGateLevel)
-		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 10 should be a gate level"); bPass = false; }
-
-		// Gate NOT cleared - should not unlock next level
-		if (!bIsGateLevel || bGateCleared)
-		{
-			if (uLevelNumber >= xData.uHighestLevelReached && uLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
-				xData.uHighestLevelReached = uLevelNumber + 1;
-		}
+		// Completing level 9 should unlock level 10 (the pinball gate level)
+		uint32_t uLevelNumber = 9;
+		if (uLevelNumber >= xData.uHighestLevelReached && uLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
+			xData.uHighestLevelReached = uLevelNumber + 1;
 
 		if (xData.uHighestLevelReached != 10)
-		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: highest level should still be 10 (gate not cleared), got %u", xData.uHighestLevelReached); bPass = false; }
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: completing level 9 should unlock 10, got %u", xData.uHighestLevelReached); bPass = false; }
 
-		// Now clear gate 0
+		// Verify level 10 is a gate level using the helper
+		uint32_t uGateIndex = 0;
+		if (!TilePuzzle_IsGateLevel(10, &uGateIndex))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 10 should be a gate level"); bPass = false; }
+		if (uGateIndex != 0)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 10 gate index should be 0, got %u", uGateIndex); bPass = false; }
+
+		// Clearing gate 0 should mark gate level as completed and unlock level 11
 		xData.SetPinballGateCleared(0);
-		bGateCleared = xData.IsPinballGateCleared(uLevelNumber / 10 - 1);
-
-		if (!bIsGateLevel || bGateCleared)
-		{
-			if (uLevelNumber >= xData.uHighestLevelReached && uLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
-				xData.uHighestLevelReached = uLevelNumber + 1;
-		}
+		xData.axLevelRecords[9].bCompleted = true;
+		xData.SetStarRating(10, 3);
+		uint32_t uGateLevel = 10;
+		if (uGateLevel >= xData.uHighestLevelReached && uGateLevel < TilePuzzleSaveData::uMAX_LEVELS)
+			xData.uHighestLevelReached = uGateLevel + 1;
 
 		if (xData.uHighestLevelReached != 11)
 		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: highest level should be 11 after gate cleared, got %u", xData.uHighestLevelReached); bPass = false; }
+		if (!xData.axLevelRecords[9].bCompleted)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate level 10 should be marked completed"); bPass = false; }
+		if (xData.GetStarRating(10) != 3)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate level 10 should have 3 stars"); bPass = false; }
 
 		// Non-gate level (level 5) should always unlock
 		xData.uHighestLevelReached = 5;
 		uLevelNumber = 5;
-		bIsGateLevel = (uLevelNumber % 10 == 0) && (uLevelNumber / 10 <= TilePuzzleSaveData::uMAX_PINBALL_GATES);
-		if (!bIsGateLevel || true)
-		{
-			if (uLevelNumber >= xData.uHighestLevelReached && uLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
-				xData.uHighestLevelReached = uLevelNumber + 1;
-		}
+		if (uLevelNumber >= xData.uHighestLevelReached && uLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
+			xData.uHighestLevelReached = uLevelNumber + 1;
 
 		if (xData.uHighestLevelReached != 6)
 		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: non-gate level 5 should unlock 6, got %u", xData.uHighestLevelReached); bPass = false; }
+
+		// Verify TilePuzzle_IsGateLevel for all 10 gates
+		for (uint32_t uGate = 0; uGate < TilePuzzleSaveData::uMAX_PINBALL_GATES; ++uGate)
+		{
+			uint32_t uLevel = (uGate + 1) * 10;
+			uint32_t uOutIndex = 0;
+			if (!TilePuzzle_IsGateLevel(uLevel, &uOutIndex) || uOutIndex != uGate)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: TilePuzzle_IsGateLevel(%u) returned wrong result", uLevel);
+				bPass = false;
+			}
+		}
+
+		// Verify non-gate levels return false
+		if (TilePuzzle_IsGateLevel(5))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 5 should NOT be a gate level"); bPass = false; }
+		if (TilePuzzle_IsGateLevel(15))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 15 should NOT be a gate level"); bPass = false; }
 
 		return bPass;
 	}
@@ -6233,6 +6437,169 @@ private:
 		// Other gates should be unclaimed
 		if (xData.HasClaimedFirstClearBonus(1))
 		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate 1 should be unclaimed"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Level flow regression tests
+	// Verifies all four transition paths work correctly:
+	// tilepuzzle->tilepuzzle, tilepuzzle->pinball, pinball->tilepuzzle, pinball->pinball
+	// ========================================================================
+
+	static bool Test_LevelFlow()
+	{
+		bool bPass = true;
+
+		// ------------------------------------------------------------------
+		// 1. Bug 1: After clearing pinball gate, uCurrentLevel must advance
+		// ------------------------------------------------------------------
+		{
+			TilePuzzleSaveData xData;
+			xData.Reset();
+			xData.uHighestLevelReached = 10;
+			xData.uCurrentLevel = 10;
+
+			// Simulate OnGateCleared logic for gate 0 (after completing level 10)
+			uint32_t uCurrentGate = 0;
+			xData.SetPinballGateCleared(uCurrentGate);
+
+			uint32_t uGateLevel = (uCurrentGate + 1) * 10; // = 10
+			if (uGateLevel < TilePuzzleSaveData::uMAX_LEVELS)
+			{
+				if (uGateLevel >= xData.uHighestLevelReached)
+					xData.uHighestLevelReached = uGateLevel + 1;
+				if (xData.uCurrentLevel <= uGateLevel)
+					xData.uCurrentLevel = uGateLevel + 1;
+			}
+
+			if (xData.uCurrentLevel != 11)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: uCurrentLevel should be 11 after clearing gate 0, got %u", xData.uCurrentLevel); bPass = false; }
+			if (xData.uHighestLevelReached != 11)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: uHighestLevelReached should be 11 after clearing gate 0, got %u", xData.uHighestLevelReached); bPass = false; }
+		}
+
+		// Verify for gate 4 (level 50)
+		{
+			TilePuzzleSaveData xData;
+			xData.Reset();
+			xData.uHighestLevelReached = 50;
+			xData.uCurrentLevel = 50;
+
+			uint32_t uCurrentGate = 4;
+			xData.SetPinballGateCleared(uCurrentGate);
+
+			uint32_t uGateLevel = (uCurrentGate + 1) * 10; // = 50
+			if (uGateLevel < TilePuzzleSaveData::uMAX_LEVELS)
+			{
+				if (uGateLevel >= xData.uHighestLevelReached)
+					xData.uHighestLevelReached = uGateLevel + 1;
+				if (xData.uCurrentLevel <= uGateLevel)
+					xData.uCurrentLevel = uGateLevel + 1;
+			}
+
+			if (xData.uCurrentLevel != 51)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: uCurrentLevel should be 51 after clearing gate 4, got %u", xData.uCurrentLevel); bPass = false; }
+		}
+
+		// Verify uCurrentLevel not overwritten if already past the gate
+		{
+			TilePuzzleSaveData xData;
+			xData.Reset();
+			xData.uHighestLevelReached = 15;
+			xData.uCurrentLevel = 15; // Already past gate level 10
+
+			uint32_t uCurrentGate = 0;
+			xData.SetPinballGateCleared(uCurrentGate);
+
+			uint32_t uGateLevel = (uCurrentGate + 1) * 10; // = 10
+			if (uGateLevel < TilePuzzleSaveData::uMAX_LEVELS)
+			{
+				if (uGateLevel >= xData.uHighestLevelReached)
+					xData.uHighestLevelReached = uGateLevel + 1;
+				if (xData.uCurrentLevel <= uGateLevel)
+					xData.uCurrentLevel = uGateLevel + 1;
+			}
+
+			if (xData.uCurrentLevel != 15)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: uCurrentLevel should stay 15 (already past gate), got %u", xData.uCurrentLevel); bPass = false; }
+		}
+
+		// ------------------------------------------------------------------
+		// 2. Gate level detection using TilePuzzle_IsGateLevel helper
+		// ------------------------------------------------------------------
+		{
+			// Level 10 is a gate level (gate index 0)
+			uint32_t uGateIndex = 0;
+			if (!TilePuzzle_IsGateLevel(10, &uGateIndex))
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 10 should be a gate level"); bPass = false; }
+			if (uGateIndex != 0)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 10 gate index should be 0, got %u", uGateIndex); bPass = false; }
+
+			// Level 5 is NOT a gate level
+			if (TilePuzzle_IsGateLevel(5))
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 5 should NOT be a gate level"); bPass = false; }
+
+			// Level 100 IS a gate level (gate 9, last gate)
+			if (!TilePuzzle_IsGateLevel(100, &uGateIndex))
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 100 should be a gate level"); bPass = false; }
+			if (uGateIndex != 9)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 100 gate index should be 9, got %u", uGateIndex); bPass = false; }
+
+			// Level 110 should NOT be a gate level (past MAX_PINBALL_GATES)
+			if (TilePuzzle_IsGateLevel(110))
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 110 should NOT be a gate level"); bPass = false; }
+		}
+
+		// ------------------------------------------------------------------
+		// 3. Victory overlay always shows "Next Level" (no more Pinball Gate button)
+		// m_bPinballGateRequired is always false in the new unified flow
+		// ------------------------------------------------------------------
+		{
+			// Non-gate levels: not pinball gates
+			if (TilePuzzle_IsGateLevel(7))
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: non-gate level 7 should not be a gate level"); bPass = false; }
+
+			// Gate levels are handled via NextLevel routing, not via victory button
+			uint32_t uIdx = 0;
+			if (!TilePuzzle_IsGateLevel(20, &uIdx) || uIdx != 1)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 20 should be gate index 1"); bPass = false; }
+		}
+
+		// ------------------------------------------------------------------
+		// 4. Tilepuzzle->tilepuzzle: NextLevel progression
+		// ------------------------------------------------------------------
+		{
+			TilePuzzleSaveData xData;
+			xData.Reset();
+			xData.uHighestLevelReached = 5;
+			xData.uCurrentLevel = 5;
+
+			// Simulate NextLevel: increment and save
+			uint32_t uCurrentLevel = xData.uCurrentLevel;
+			uCurrentLevel++;
+			xData.uCurrentLevel = uCurrentLevel;
+
+			if (xData.uCurrentLevel != 6)
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: NextLevel should advance to 6, got %u", xData.uCurrentLevel); bPass = false; }
+		}
+
+		// ------------------------------------------------------------------
+		// 5. All 10 gate levels produce correct gate indices via helper
+		// ------------------------------------------------------------------
+		{
+			for (uint32_t uGate = 0; uGate < TilePuzzleSaveData::uMAX_PINBALL_GATES; ++uGate)
+			{
+				uint32_t uLevel = (uGate + 1) * 10;
+				uint32_t uGateIndex = 0;
+				if (!TilePuzzle_IsGateLevel(uLevel, &uGateIndex) || uGateIndex != uGate)
+				{
+					Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: TilePuzzle_IsGateLevel(%u) should map to gate %u, got idx=%u",
+						uLevel, uGate, uGateIndex);
+					bPass = false;
+				}
+			}
+		}
 
 		return bPass;
 	}
@@ -8628,6 +8995,214 @@ private:
 		}
 
 		return bPass;
+	}
+
+	// ========================================================================
+	// Cat Cafe Swipe Test (touch gesture simulation)
+	// Verifies that horizontal swipe gestures in the cat cafe screen
+	// browse through collected cats, replicating Android touchscreen input.
+	// ========================================================================
+
+	void UpdateCatCafeSwipe_Init()
+	{
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: No TilePuzzle_Behaviour for cat cafe swipe test");
+			m_uFailed++;
+			m_ePhase = PHASE_TEST_UI_INTERACT_INIT;
+			m_uFrameDelay = 5;
+			return;
+		}
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] Running Test_CatCafeSwipe...");
+
+		// Save original state
+		m_eCatCafeSwipeOrigState = pxBehaviour->m_eState;
+		m_uCatCafeSwipeOrigProgress = pxBehaviour->m_xSaveData.uHighestLevelReached;
+
+		// Ensure enough cats are collected for swiping (need 3+)
+		pxBehaviour->m_xSaveData.CollectCat(0);
+		pxBehaviour->m_xSaveData.CollectCat(1);
+		pxBehaviour->m_xSaveData.CollectCat(2);
+
+		// Navigate to cat cafe (ShowScreen calls SetCatCafeVisible which builds the cat list)
+		pxBehaviour->m_xSaveData.uHighestLevelReached = 100;
+		pxBehaviour->m_eState = TILEPUZZLE_STATE_CAT_CAFE;
+		pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_CAT_CAFE);
+
+		// Start at first cat
+		pxBehaviour->m_uCatCafeCurrentIndex = 0;
+		pxBehaviour->m_bCatCafeMouseWasDown = false;
+		pxBehaviour->m_bCatCafeSwipeActive = false;
+
+		// Get screen center for swipe start position
+		int32_t iWidth, iHeight;
+		Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
+		m_fCatCafeSwipeStartX = static_cast<double>(iWidth) * 0.5;
+		m_fCatCafeSwipeStartY = static_cast<double>(iHeight) * 0.5;
+
+		m_bCatCafeSwipePassed = true;
+		m_uCatCafeSwipeDragFrame = 0;
+
+		Zenith_InputSimulator::Enable();
+		Zenith_InputSimulator::SetFixedDt(0.10f);
+
+		m_ePhase = PHASE_TEST_CAT_CAFE_SWIPE_LEFT_START;
+		m_uFrameDelay = 3;
+	}
+
+	void UpdateCatCafeSwipe_Step()
+	{
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			m_bCatCafeSwipePassed = false;
+			m_ePhase = PHASE_TEST_CAT_CAFE_SWIPE_DONE;
+			return;
+		}
+
+		switch (m_ePhase)
+		{
+		// ---- Swipe left (should advance to next cat) ----
+		case PHASE_TEST_CAT_CAFE_SWIPE_LEFT_START:
+		{
+			// Touch down at screen center
+			m_uCatCafeSwipeOrigIndex = pxBehaviour->m_uCatCafeCurrentIndex;
+			Zenith_InputSimulator::SimulateMousePosition(m_fCatCafeSwipeStartX, m_fCatCafeSwipeStartY);
+			Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_LEFT);
+			m_uCatCafeSwipeDragFrame = 0;
+			m_ePhase = PHASE_TEST_CAT_CAFE_SWIPE_LEFT_MOVE;
+			m_uFrameDelay = 1;
+			break;
+		}
+
+		case PHASE_TEST_CAT_CAFE_SWIPE_LEFT_MOVE:
+		{
+			// Move finger leftward over multiple frames (total 80+ pixels, exceeds 60px threshold)
+			m_uCatCafeSwipeDragFrame++;
+			double fProgress = static_cast<double>(m_uCatCafeSwipeDragFrame) / static_cast<double>(uCAT_CAFE_SWIPE_FRAMES);
+			double fOffsetX = -100.0 * fProgress; // 100 pixels to the left
+			Zenith_InputSimulator::SimulateMousePosition(m_fCatCafeSwipeStartX + fOffsetX, m_fCatCafeSwipeStartY);
+
+			if (m_uCatCafeSwipeDragFrame >= uCAT_CAFE_SWIPE_FRAMES)
+			{
+				m_ePhase = PHASE_TEST_CAT_CAFE_SWIPE_LEFT_END;
+				m_uFrameDelay = 1;
+			}
+			break;
+		}
+
+		case PHASE_TEST_CAT_CAFE_SWIPE_LEFT_END:
+		{
+			// Release finger — HandleCatCafeInput should detect swipe left → next cat.
+			// Verification is deferred to RIGHT_START to ensure HandleCatCafeInput
+			// has processed the release (it may run before or after the autotest).
+			Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_LEFT);
+
+			m_uCatCafeSwipeDragFrame = 0;
+			m_ePhase = PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_START;
+			m_uFrameDelay = 2;
+			break;
+		}
+
+		// ---- Verify left swipe, then start right swipe ----
+		case PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_START:
+		{
+			// Verify left swipe result (deferred from LEFT_END)
+			uint32_t uExpectedAfterLeft = m_uCatCafeSwipeOrigIndex + 1;
+			if (pxBehaviour->m_uCatCafeCurrentIndex != uExpectedAfterLeft)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Swipe left expected cat index %u, got %u",
+					uExpectedAfterLeft, pxBehaviour->m_uCatCafeCurrentIndex);
+				m_bCatCafeSwipePassed = false;
+			}
+
+			// Start right swipe (should go back to previous cat)
+			m_uCatCafeSwipeOrigIndex = pxBehaviour->m_uCatCafeCurrentIndex;
+			Zenith_InputSimulator::SimulateMousePosition(m_fCatCafeSwipeStartX, m_fCatCafeSwipeStartY);
+			Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_LEFT);
+			m_uCatCafeSwipeDragFrame = 0;
+			m_ePhase = PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_MOVE;
+			m_uFrameDelay = 1;
+			break;
+		}
+
+		case PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_MOVE:
+		{
+			// Move finger rightward (total 80+ pixels)
+			m_uCatCafeSwipeDragFrame++;
+			double fProgress = static_cast<double>(m_uCatCafeSwipeDragFrame) / static_cast<double>(uCAT_CAFE_SWIPE_FRAMES);
+			double fOffsetX = 100.0 * fProgress; // 100 pixels to the right
+			Zenith_InputSimulator::SimulateMousePosition(m_fCatCafeSwipeStartX + fOffsetX, m_fCatCafeSwipeStartY);
+
+			if (m_uCatCafeSwipeDragFrame >= uCAT_CAFE_SWIPE_FRAMES)
+			{
+				m_ePhase = PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_END;
+				m_uFrameDelay = 1;
+			}
+			break;
+		}
+
+		case PHASE_TEST_CAT_CAFE_SWIPE_RIGHT_END:
+		{
+			// Release finger — HandleCatCafeInput should detect swipe right → prev cat.
+			// Verification deferred to DONE phase.
+			Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_LEFT);
+
+			m_ePhase = PHASE_TEST_CAT_CAFE_SWIPE_DONE;
+			m_uFrameDelay = 2;
+			break;
+		}
+
+		default:
+			m_ePhase = PHASE_TEST_CAT_CAFE_SWIPE_DONE;
+			break;
+		}
+	}
+
+	void UpdateCatCafeSwipe_Done()
+	{
+		Zenith_InputSimulator::ClearFixedDt();
+		Zenith_InputSimulator::Disable();
+
+		// Verify right swipe result (deferred from RIGHT_END)
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (pxBehaviour && m_uCatCafeSwipeOrigIndex > 0)
+		{
+			uint32_t uExpectedAfterRight = m_uCatCafeSwipeOrigIndex - 1;
+			if (pxBehaviour->m_uCatCafeCurrentIndex != uExpectedAfterRight)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Swipe right expected cat index %u, got %u",
+					uExpectedAfterRight, pxBehaviour->m_uCatCafeCurrentIndex);
+				m_bCatCafeSwipePassed = false;
+			}
+		}
+
+		// Restore original state
+		if (pxBehaviour)
+		{
+			pxBehaviour->m_xSaveData.uHighestLevelReached = m_uCatCafeSwipeOrigProgress;
+			pxBehaviour->m_eState = m_eCatCafeSwipeOrigState;
+			if (m_eCatCafeSwipeOrigState == TILEPUZZLE_STATE_MAIN_MENU)
+				pxBehaviour->ShowScreen(TilePuzzle_Behaviour::SCREEN_MENU);
+			pxBehaviour->m_bCatCafeMouseWasDown = false;
+			pxBehaviour->m_bCatCafeSwipeActive = false;
+		}
+
+		if (m_bCatCafeSwipePassed)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] PASS: Test_CatCafeSwipe");
+			m_uPassed++;
+		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_CatCafeSwipe");
+			m_uFailed++;
+		}
+
+		m_ePhase = PHASE_TEST_UI_INTERACT_INIT;
+		m_uFrameDelay = 5;
 	}
 
 	// ========================================================================

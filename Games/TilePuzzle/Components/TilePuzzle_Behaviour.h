@@ -369,10 +369,11 @@ public:
 				pxLevelSelectBtn->SetOnClick(&OnLevelSelectClicked, this);
 			}
 
+			// Hide legacy Pinball button (pinball is now accessed through level select)
 			Zenith_UI::Zenith_UIButton* pxPinballBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("PinballButton");
 			if (pxPinballBtn)
 			{
-				pxPinballBtn->SetOnClick(&OnPinballClicked, this);
+				pxPinballBtn->SetVisible(false);
 			}
 
 			Zenith_UI::Zenith_UIButton* pxResetSaveBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("ResetSaveButton");
@@ -547,7 +548,7 @@ public:
 			m_pxLevelSelectBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("LevelSelectButton");
 			m_pxCatCafeBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("CatCafeButton");
 			m_pxDailyBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("DailyPuzzleButton");
-			m_pxPinballBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("PinballButton");
+			// Pinball button removed — pinball accessed through level select
 			// HUD
 			m_pxHUDInfoGroup = xUI.FindElement("HUDInfoGroup");
 			m_pxHUDCoinGroup = xUI.FindElement("HUDCoinGroup");
@@ -566,11 +567,50 @@ public:
 			m_pxLevelSelectBg = xUI.FindElement("LevelSelectBg");
 			m_pxPageText = xUI.FindElement<Zenith_UI::Zenith_UIText>("PageText");
 			m_pxStarProgress = xUI.FindElement<Zenith_UI::Zenith_UIText>("LevelSelectStarProgress");
+
+			// Fix level select text positions so they don't overlap
+			if (m_pxLevelSelectTitle)
+			{
+				m_pxLevelSelectTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopCenter);
+				m_pxLevelSelectTitle->SetPosition(0.f, 20.f);
+			}
+			if (m_pxPageText)
+			{
+				m_pxPageText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopCenter);
+				m_pxPageText->SetPosition(0.f, 90.f);
+			}
+			if (m_pxStarProgress)
+			{
+				m_pxStarProgress->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopCenter);
+				m_pxStarProgress->SetPosition(0.f, 130.f);
+			}
+
 			for (uint32_t i = 0; i < 20; ++i)
 			{
 				char szName[32];
 				snprintf(szName, sizeof(szName), "LevelBtn_%u", i);
 				m_apxLevelBtns[i] = xUI.FindElement<Zenith_UI::Zenith_UIButton>(szName);
+			}
+
+			// Create star images for each level button (3 per button)
+			for (uint32_t i = 0; i < 20; ++i)
+			{
+				if (!m_apxLevelBtns[i])
+					continue;
+				for (uint32_t s = 0; s < 3; ++s)
+				{
+					char szStarName[32];
+					snprintf(szStarName, sizeof(szStarName), "LevelStar_%u_%u", i, s);
+					Zenith_UI::Zenith_UIImage* pxStar = xUI.CreateImage(szStarName);
+					pxStar->SetSize(20.f, 20.f);
+					pxStar->SetAnchor(0.5f, 1.f);
+					pxStar->SetPivot(0.5f, 1.f);
+					float fStarX = (static_cast<float>(s) - 1.f) * 22.f;
+					pxStar->SetPosition(fStarX, -4.f);
+					pxStar->SetVisible(false);
+					m_apxLevelBtns[i]->AddChild(pxStar);
+					m_apxLevelStars[i][s] = pxStar;
+				}
 			}
 			// Meta-game
 			m_pxLivesText = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesText");
@@ -866,7 +906,18 @@ private:
 		pxSelf->m_xSaveData.uCurrentLevel = pxSelf->m_uCurrentLevelNumber;
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 			TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+
+		// Route pinball gate levels to pinball scene
+		uint32_t uGateIndex = 0;
+		if (TilePuzzle_IsGateLevel(pxSelf->m_uCurrentLevelNumber, &uGateIndex))
+		{
+			TilePuzzle::g_uPinballRequestedGate = uGateIndex;
+			Zenith_SceneManager::LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+		}
+		else
+		{
+			Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		}
 	}
 
 	static void OnLevelSelectClicked(void* pxUserData)
@@ -880,11 +931,6 @@ private:
 	{
 		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
 		pxSelf->ShowConfirmDialog(CONFIRM_RESET_SAVE);
-	}
-
-	static void OnPinballClicked(void* /*pxUserData*/)
-	{
-		Zenith_SceneManager::LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
 	}
 
 	static void OnLevelButtonClicked(void* pxUserData)
@@ -906,7 +952,18 @@ private:
 		pxData->pxBehaviour->m_xSaveData.uCurrentLevel = pxData->uLevelNumber;
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 			TilePuzzle_WriteSaveData, &pxData->pxBehaviour->m_xSaveData);
-		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+
+		// Route pinball gate levels to pinball scene
+		uint32_t uGateIndex = 0;
+		if (TilePuzzle_IsGateLevel(pxData->uLevelNumber, &uGateIndex))
+		{
+			TilePuzzle::g_uPinballRequestedGate = uGateIndex;
+			Zenith_SceneManager::LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+		}
+		else
+		{
+			Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		}
 	}
 
 	static void OnPrevPageClicked(void* pxUserData)
@@ -993,28 +1050,6 @@ private:
 		if (pxSelf->m_eState == TILEPUZZLE_STATE_LEVEL_COMPLETE)
 		{
 			pxSelf->NextLevel();
-		}
-	}
-
-	static void OnPinballGateClicked(void* pxUserData)
-	{
-		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-		if (pxSelf->m_eState == TILEPUZZLE_STATE_LEVEL_COMPLETE)
-		{
-			// Save and transition to pinball scene
-			pxSelf->m_xSaveData.uCurrentLevel = pxSelf->m_uCurrentLevelNumber;
-			Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
-				TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
-
-			// Unload puzzle scene
-			if (pxSelf->m_xPuzzleScene.IsValid())
-			{
-				pxSelf->ClearEntityReferences();
-				Zenith_SceneManager::UnloadScene(pxSelf->m_xPuzzleScene);
-				pxSelf->m_xPuzzleScene = Zenith_Scene();
-			}
-
-			Zenith_SceneManager::LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
 		}
 	}
 
@@ -1117,23 +1152,13 @@ private:
 			}
 		}
 
-		// Check if this is a pinball gate level
-		bool bIsGateLevel = (m_uCurrentLevelNumber % 10 == 0)
-			&& (m_uCurrentLevelNumber / 10 <= TilePuzzleSaveData::uMAX_PINBALL_GATES);
-		bool bGateCleared = bIsGateLevel
-			&& m_xSaveData.IsPinballGateCleared(m_uCurrentLevelNumber / 10 - 1);
-
-		// Only unlock next level if this is NOT a gate level, or if the gate is already cleared
-		if (!bIsGateLevel || bGateCleared)
+		// Always unlock next level (pinball gates are separate entries, not blockers)
+		if (m_uCurrentLevelNumber >= m_xSaveData.uHighestLevelReached
+			&& m_uCurrentLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
 		{
-			if (m_uCurrentLevelNumber >= m_xSaveData.uHighestLevelReached &&
-				m_uCurrentLevelNumber < TilePuzzleSaveData::uMAX_LEVELS)
-			{
-				m_xSaveData.uHighestLevelReached = m_uCurrentLevelNumber + 1;
-			}
+			m_xSaveData.uHighestLevelReached = m_uCurrentLevelNumber + 1;
 		}
-
-		m_bPinballGateRequired = bIsGateLevel && !bGateCleared;
+		m_bPinballGateRequired = false;
 
 		m_xSaveData.uCurrentLevel = m_uCurrentLevelNumber;
 
@@ -1370,23 +1395,6 @@ private:
 		if (m_pxLevelSelectBtn) m_pxLevelSelectBtn->SetVisible(bVisible && uProgress >= 5);
 		if (m_pxCatCafeBtn) m_pxCatCafeBtn->SetVisible(bVisible && uProgress >= 3);
 		if (m_pxDailyBtn) m_pxDailyBtn->SetVisible(bVisible && uProgress >= 10);
-		if (m_pxPinballBtn)
-		{
-			m_pxPinballBtn->SetVisible(bVisible && uProgress >= 10);
-			// Highlight pinball button when daily bonus is available
-			if (bVisible && m_xSaveData.HasDailyPinballBonus(GetCurrentDateYYYYMMDD()))
-			{
-				m_pxPinballBtn->SetText("Pinball!");
-				m_pxPinballBtn->SetNormalColor(Zenith_Maths::Vector4(0.6f, 0.35f, 0.1f, 1.0f));
-				m_pxPinballBtn->SetHoverColor(Zenith_Maths::Vector4(0.75f, 0.45f, 0.15f, 1.0f));
-			}
-			else
-			{
-				m_pxPinballBtn->SetText("Pinball");
-				m_pxPinballBtn->SetNormalColor(Zenith_Maths::Vector4(0.2f, 0.25f, 0.35f, 1.0f));
-				m_pxPinballBtn->SetHoverColor(Zenith_Maths::Vector4(0.3f, 0.35f, 0.5f, 1.0f));
-			}
-		}
 
 		if (m_pxMenuSubtitle) m_pxMenuSubtitle->SetVisible(bVisible);
 		if (m_pxVersionText) m_pxVersionText->SetVisible(bVisible);
@@ -1412,6 +1420,10 @@ private:
 		for (uint32_t i = 0; i < 20; ++i)
 		{
 			if (m_apxLevelBtns[i]) m_apxLevelBtns[i]->SetVisible(bVisible);
+			for (uint32_t s = 0; s < 3; ++s)
+			{
+				if (m_apxLevelStars[i][s]) m_apxLevelStars[i][s]->SetVisible(false);
+			}
 		}
 	}
 
@@ -1510,6 +1522,13 @@ private:
 			bool bUnlocked = uLevel <= m_xSaveData.uHighestLevelReached;
 			bool bIsPinballGate = (uLevel % 10 == 0) && (uLevel / 10 <= TilePuzzleSaveData::uMAX_PINBALL_GATES);
 
+			// Star images: hide by default, show for completed levels below
+			for (uint32_t s = 0; s < 3; ++s)
+			{
+				if (m_apxLevelStars[i][s])
+					m_apxLevelStars[i][s]->SetVisible(false);
+			}
+
 			if (!bUnlocked)
 			{
 				// Locked level: show lock symbol
@@ -1519,23 +1538,35 @@ private:
 			}
 			else if (m_xSaveData.axLevelRecords[uIndex].bCompleted)
 			{
-				// Completed: show star rating
-				uint8_t uStarRating = m_xSaveData.GetStarRating(uLevel);
-				const char* szStars = GetStarString(uStarRating);
-				snprintf(szLabel, sizeof(szLabel), "%u\n%s", uLevel, szStars);
+				// Completed: show level number and star images
+				snprintf(szLabel, sizeof(szLabel), "%u", uLevel);
 				pxBtn->SetText(szLabel);
 
-				if (uStarRating >= 3)
-					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.5f, 0.4f, 0.1f, 1.f));
-				else if (bIsPinballGate)
+				if (bIsPinballGate)
 					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.4f, 0.2f, 0.5f, 1.f));
 				else
 					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.2f, 0.3f, 0.5f, 1.f));
+
+				// Show star images
+				uint8_t uStarRating = m_xSaveData.GetStarRating(uLevel);
+				for (uint32_t s = 0; s < 3; ++s)
+				{
+					if (m_apxLevelStars[i][s])
+					{
+						m_apxLevelStars[i][s]->SetTexturePath(s < uStarRating
+							? GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT
+							: GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
+						m_apxLevelStars[i][s]->SetVisible(true);
+					}
+				}
 			}
 			else
 			{
 				// Unlocked but not completed
-				snprintf(szLabel, sizeof(szLabel), "%u", uLevel);
+				if (bIsPinballGate)
+					snprintf(szLabel, sizeof(szLabel), "%u PB", uLevel);
+				else
+					snprintf(szLabel, sizeof(szLabel), "%u", uLevel);
 				pxBtn->SetText(szLabel);
 
 				if (uLevel == m_xSaveData.uHighestLevelReached)
@@ -1633,7 +1664,6 @@ private:
 	Zenith_UI::Zenith_UIButton* m_pxLevelSelectBtn = nullptr;
 	Zenith_UI::Zenith_UIButton* m_pxCatCafeBtn = nullptr;
 	Zenith_UI::Zenith_UIButton* m_pxDailyBtn = nullptr;
-	Zenith_UI::Zenith_UIButton* m_pxPinballBtn = nullptr;
 	// HUD
 	Zenith_UI::Zenith_UIElement* m_pxHUDInfoGroup = nullptr;
 	Zenith_UI::Zenith_UIElement* m_pxHUDCoinGroup = nullptr;
@@ -1653,6 +1683,7 @@ private:
 	Zenith_UI::Zenith_UIText* m_pxPageText = nullptr;
 	Zenith_UI::Zenith_UIText* m_pxStarProgress = nullptr;
 	Zenith_UI::Zenith_UIButton* m_apxLevelBtns[20] = {};
+	Zenith_UI::Zenith_UIImage* m_apxLevelStars[20][3] = {};
 	// Meta-game
 	Zenith_UI::Zenith_UIText* m_pxLivesText = nullptr;
 	Zenith_UI::Zenith_UIText* m_pxLivesTimerText = nullptr;
@@ -2590,6 +2621,24 @@ private:
 		m_xSaveData.uCurrentLevel = m_uCurrentLevelNumber;
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 			TilePuzzle_WriteSaveData, &m_xSaveData);
+
+		// If next level is a pinball gate, transition to pinball scene
+		uint32_t uGateIndex = 0;
+		if (TilePuzzle_IsGateLevel(m_uCurrentLevelNumber, &uGateIndex)
+			&& !m_xSaveData.IsPinballGateCleared(uGateIndex))
+		{
+			m_bVictoryOverlayActive = false;
+			SetVictoryOverlayVisible(false);
+			if (m_xPuzzleScene.IsValid())
+			{
+				ClearEntityReferences();
+				Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
+				m_xPuzzleScene = Zenith_Scene();
+			}
+			TilePuzzle::g_uPinballRequestedGate = uGateIndex;
+			Zenith_SceneManager::LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+			return;
+		}
 
 		// Reset skip state for new level
 		m_uResetCount = 0;
