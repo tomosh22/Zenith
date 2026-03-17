@@ -450,6 +450,20 @@ void UpdateVictoryOverlay(float fDeltaTime)
 		static constexpr float s_fStarSize = 48.f;
 		static constexpr float s_fStarSpacing = 8.f;
 
+		// Get the star group spacer's screen position (layout determines its Y)
+		// and VictoryBg's screen position (stars' parent) to compute the relative offset
+		Zenith_UI::Zenith_UIElement* pxSpacerGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("VictoryStarGroup");
+		Zenith_UI::Zenith_UIElement* pxVictoryBg = xUI.FindElement<Zenith_UI::Zenith_UIElement>("VictoryBg");
+		float fStarY = 0.f;
+		if (pxSpacerGroup && pxVictoryBg)
+		{
+			Zenith_Maths::Vector4 xSpacerBounds = pxSpacerGroup->GetScreenBounds();
+			Zenith_Maths::Vector4 xBgBounds = pxVictoryBg->GetScreenBounds();
+			float fSpacerCenterY = (xSpacerBounds.y + xSpacerBounds.w) * 0.5f;
+			float fBgCenterY = (xBgBounds.y + xBgBounds.w) * 0.5f;
+			fStarY = fSpacerCenterY - fBgCenterY;
+		}
+
 		uint32_t uPrevStarsShown = m_uVictoryStarsShown;
 
 		for (uint32_t u = 0; u < 3; ++u)
@@ -467,12 +481,12 @@ void UpdateVictoryOverlay(float fDeltaTime)
 				? GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT
 				: GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
 
-			// Position each star centered horizontally: star 0 = left, 1 = center, 2 = right
+			// Position each star centered horizontally, at the spacer's Y
 			float fTotalWidth = 3.f * s_fStarSize + 2.f * s_fStarSpacing;
 			float fStartX = -fTotalWidth * 0.5f;
 			float fX = fStartX + static_cast<float>(u) * (s_fStarSize + s_fStarSpacing) + s_fStarSize * 0.5f;
 			pxStar->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-			pxStar->SetPosition(fX, -110.f);
+			pxStar->SetPosition(fX, fStarY);
 			pxStar->SetSize(s_fStarSize, s_fStarSize);
 			pxStar->SetVisible(true);
 
