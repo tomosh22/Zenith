@@ -325,6 +325,27 @@ void SetVictoryOverlayVisible(bool bVisible)
 			}
 		}
 
+		// Reparent star images to VictoryBg so they can be centered on screen,
+		// but keep the star group in the content layout as a fixed-height spacer
+		Zenith_UI::Zenith_UIElement* pxVictoryBg = xUI.FindElement<Zenith_UI::Zenith_UIElement>("VictoryBg");
+		Zenith_UI::Zenith_UILayoutGroup* pxStarGroup = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("VictoryStarGroup");
+		if (pxVictoryBg && pxStarGroup)
+		{
+			static const char* s_aszStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
+			for (const char* szName : s_aszStarNames)
+			{
+				Zenith_UI::Zenith_UIImage* pxStar = xUI.FindElement<Zenith_UI::Zenith_UIImage>(szName);
+				if (pxStar && pxStar->GetParent() == pxStarGroup)
+				{
+					pxStarGroup->RemoveChild(pxStar);
+					pxVictoryBg->AddChild(pxStar);
+				}
+			}
+			// Star group stays in layout as a spacer with the height of a star
+			pxStarGroup->SetFitToContent(false);
+			pxStarGroup->SetSize(0.f, 48.f);
+		}
+
 		// Configure VictoryContentGroup layout at runtime to ensure correct positioning
 		// (scene generation values may differ from saved scene file)
 		Zenith_UI::Zenith_UILayoutGroup* pxContentGroup = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("VictoryContentGroup");
@@ -422,10 +443,12 @@ void UpdateVictoryOverlay(float fDeltaTime)
 		}
 	}
 
-	// (0.6s, 1.0s, 1.4s) Stars appear with staggered fade-in
+	// (0.6s, 1.0s, 1.4s) Stars appear with staggered fade-in, positioned centered on screen
 	{
 		static const char* s_aszStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
 		static constexpr float s_afStarStarts[] = { s_fStar0Start, s_fStar1Start, s_fStar2Start };
+		static constexpr float s_fStarSize = 48.f;
+		static constexpr float s_fStarSpacing = 8.f;
 
 		uint32_t uPrevStarsShown = m_uVictoryStarsShown;
 
@@ -444,7 +467,15 @@ void UpdateVictoryOverlay(float fDeltaTime)
 				? GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT
 				: GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
 
-			// Fade in (size stays fixed at 48x48 so layout group remains stable)
+			// Position each star centered horizontally: star 0 = left, 1 = center, 2 = right
+			float fTotalWidth = 3.f * s_fStarSize + 2.f * s_fStarSpacing;
+			float fStartX = -fTotalWidth * 0.5f;
+			float fX = fStartX + static_cast<float>(u) * (s_fStarSize + s_fStarSpacing) + s_fStarSize * 0.5f;
+			pxStar->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+			pxStar->SetPosition(fX, -110.f);
+			pxStar->SetSize(s_fStarSize, s_fStarSize);
+			pxStar->SetVisible(true);
+
 			float fAlpha = Zenith_ApplyEasing(EASING_QUAD_OUT, fProgress);
 			pxStar->SetColor(Zenith_Maths::Vector4(1.f, 0.85f, 0.1f, fAlpha));
 
@@ -463,23 +494,12 @@ void UpdateVictoryOverlay(float fDeltaTime)
 				Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().GetConfig();
 				if (pxConfig)
 				{
-					pxConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.85f, 0.1f, 1.0f); // Gold sparkle
+					pxConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.85f, 0.1f, 1.0f);
 				}
-				// Position roughly above the grid center (victory stars are at screen center)
 				xEmitter.GetComponent<Zenith_TransformComponent>().SetPosition(
 					Zenith_Maths::Vector3(0.0f, s_fShapeHeight + 0.5f, 0.0f));
 				xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().Emit(10);
 			}
-		}
-
-		// Keep the star group visible
-		Zenith_UI::Zenith_UIElement* pxStarGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("VictoryStarGroup");
-		if (pxStarGroup)
-		{
-			float fGroupAlpha = EaseInRange(fT, s_fStar0Start, 0.1f);
-			Zenith_Maths::Vector4 xGroupColor = pxStarGroup->GetColor();
-			xGroupColor.w = fGroupAlpha;
-			pxStarGroup->SetColor(xGroupColor);
 		}
 
 		// Hide old text stars
