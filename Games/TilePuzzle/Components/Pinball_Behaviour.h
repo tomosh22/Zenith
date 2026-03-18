@@ -357,11 +357,11 @@ public:
 		axGates[2].uNumPegs = 6;
 		axGates[2].bHasAllPegsObjective = false;
 
-		// Gate 4: After level 40, SCORE_THRESHOLD 3000, max 3 balls, 7 pegs
+		// Gate 4: After level 40, SCORE_THRESHOLD 2000, max 4 balls, 7 pegs
 		axGates[3].eObjectiveType = PINBALL_OBJ_SCORE_THRESHOLD;
-		axGates[3].uScoreThreshold = 3000;
+		axGates[3].uScoreThreshold = 2000;
 		axGates[3].uTargetHitsRequired = 0;
-		axGates[3].uMaxBalls = 3;
+		axGates[3].uMaxBalls = 4;
 		axGates[3].uNumPegs = 7;
 		axGates[3].bHasAllPegsObjective = false;
 
