@@ -45,7 +45,8 @@ static void SignalHandler(int)
 enum DifficultyTier : uint8_t
 {
 	DIFFICULTY_TIER_NONE = 0,
-	DIFFICULTY_TIER_TUTORIAL,
+	DIFFICULTY_TIER_TUTORIAL_EARLY,
+	DIFFICULTY_TIER_TUTORIAL_LATE,
 	DIFFICULTY_TIER_EASY,
 	DIFFICULTY_TIER_MEDIUM,
 	DIFFICULTY_TIER_HARD,
@@ -69,7 +70,8 @@ struct TierConstraints
 static const TierConstraints s_axTierConstraints[] =
 {
 	{},                                                               // NONE (unused)
-	{ 5,  6,  1, 2,  1, 2,  0, 0,  1, 2,   3,  5,  0, 0,  0, 0 },  // TUTORIAL
+	{ 5,  6,  1, 2,  1, 2,  0, 0,  1, 1,   3,  5,  0, 0,  0, 0 },  // TUTORIAL_EARLY (single-cell only)
+	{ 5,  6,  1, 2,  1, 2,  0, 0,  2, 2,   3,  5,  0, 0,  0, 0 },  // TUTORIAL_LATE (multi-cell introduced)
 	{ 6,  7,  2, 3,  1, 2,  0, 1,  1, 3,   5,  8,  0, 0,  0, 0 },  // EASY
 	{ 7,  8,  3, 3,  2, 2,  1, 2,  2, 3,   8, 12,  0, 0,  0, 1 },  // MEDIUM
 	{ 8,  9,  3, 4,  2, 3,  1, 2,  3, 4,  10, 15,  0, 2,  0, 1 },  // HARD
@@ -79,7 +81,7 @@ static const TierConstraints s_axTierConstraints[] =
 
 static const char* s_aszTierNames[] =
 {
-	"none", "tutorial", "easy", "medium", "hard", "expert", "master"
+	"none", "tutorial-early", "tutorial-late", "easy", "medium", "hard", "expert", "master"
 };
 
 static DifficultyTier ParseTierName(const char* szName)
@@ -410,7 +412,8 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParamsForT
 	uint32_t uMinScramble, uMaxScramble;
 	switch (eTier)
 	{
-	case DIFFICULTY_TIER_TUTORIAL: uMinScramble = 50;  uMaxScramble = 200;  break;
+	case DIFFICULTY_TIER_TUTORIAL_EARLY:
+	case DIFFICULTY_TIER_TUTORIAL_LATE: uMinScramble = 50;  uMaxScramble = 200;  break;
 	case DIFFICULTY_TIER_EASY:     uMinScramble = 100; uMaxScramble = 400;  break;
 	case DIFFICULTY_TIER_MEDIUM:   uMinScramble = 200; uMaxScramble = 600;  break;
 	case DIFFICULTY_TIER_HARD:     uMinScramble = 300; uMaxScramble = 800;  break;
@@ -1510,7 +1513,7 @@ int main(int argc, char* argv[])
 			eTier = ParseTierName(argv[++i]);
 			if (eTier == DIFFICULTY_TIER_NONE)
 			{
-				fprintf(stderr, "Error: Unknown tier '%s'. Valid tiers: tutorial, easy, medium, hard, expert, master\n", argv[i]);
+				fprintf(stderr, "Error: Unknown tier '%s'. Valid tiers: tutorial-early, tutorial-late, easy, medium, hard, expert, master\n", argv[i]);
 				return 1;
 			}
 		}
@@ -1553,7 +1556,7 @@ int main(int argc, char* argv[])
 			fprintf(stderr, "       tilepuzzlelevelgen --count N --tier TIER [--output DIR] [--timeout S] [--seed N] [--profile]\n");
 			fprintf(stderr, "       tilepuzzlelevelgen --validate-registry [--delete-invalid] [--validate-max-states N]\n");
 			fprintf(stderr, "       tilepuzzlelevelgen --validate-conditionals\n");
-			fprintf(stderr, "Tiers: tutorial, easy, medium, hard, expert, master\n");
+			fprintf(stderr, "Tiers: tutorial-early, tutorial-late, easy, medium, hard, expert, master\n");
 			return 1;
 		}
 		if (uMinMoves == 0)

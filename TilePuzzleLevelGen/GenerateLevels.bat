@@ -22,13 +22,14 @@ if not exist %ASSETS_DIR% mkdir %ASSETS_DIR%
 
 REM ---- Tier definitions ----
 REM Format: tier_name count timeout
-set TIER[0]=tutorial 10 120
-set TIER[1]=easy 15 120
-set TIER[2]=medium 20 300
-set TIER[3]=hard 20 300
-set TIER[4]=expert 15 300
-set TIER[5]=master 20 600
-set NUM_TIERS=6
+set TIER[0]=tutorial-early 5 120
+set TIER[1]=tutorial-late 5 120
+set TIER[2]=easy 15 120
+set TIER[3]=medium 20 300
+set TIER[4]=hard 20 300
+set TIER[5]=expert 15 300
+set TIER[6]=master 20 600
+set NUM_TIERS=7
 
 echo ============================================
 echo  TilePuzzle Level Generation
@@ -36,7 +37,7 @@ echo ============================================
 echo.
 
 REM ---- Generate each tier into a temp directory ----
-for /L %%t in (0,1,5) do (
+for /L %%t in (0,1,6) do (
     for /f "tokens=1,2,3" %%a in ("!TIER[%%t]!") do (
         set TIER_NAME=%%a
         set TIER_COUNT=%%b
@@ -62,7 +63,7 @@ REM ---- Combine all tiers with sequential numbering ----
 echo Combining levels into %ASSETS_DIR%...
 set LEVEL_NUM=0
 
-for /L %%t in (0,1,5) do (
+for /L %%t in (0,1,6) do (
     for /f "tokens=1" %%a in ("!TIER[%%t]!") do (
         set TIER_DIR=%TEMP_BASE%_%%a
 
@@ -90,7 +91,7 @@ echo  Done: !LEVEL_NUM! levels in %ASSETS_DIR%
 echo ============================================
 
 REM ---- Cleanup temp directories ----
-for /L %%t in (0,1,5) do (
+for /L %%t in (0,1,6) do (
     for /f "tokens=1" %%a in ("!TIER[%%t]!") do (
         rmdir /s /q "%TEMP_BASE%_%%a" 2>nul
     )

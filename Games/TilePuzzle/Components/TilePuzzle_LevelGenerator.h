@@ -148,13 +148,14 @@ public:
 	/**
 	 * GetDifficultyForLevel - Get difficulty parameters based on level number
 	 *
-	 * 6-tier progressive difficulty curve:
-	 *   Tutorial (1-10):  Small grids, 1-2 colors, no blockers, simple shapes
-	 *   Easy     (11-25): Medium grids, 2 colors, few blockers, +I-shape
-	 *   Medium   (26-45): Larger grids, 2-3 colors, blocker-cats introduced
-	 *   Hard     (46-65): Full grids, 3 colors, conditional shapes
-	 *   Expert   (66-80): Large grids, 3-4 colors, multiple conditionals
-	 *   Master   (81-100): Largest grids, 4-5 colors, all mechanics combined
+	 * 7-tier progressive difficulty curve:
+	 *   Tutorial Early (1-5):   Small grids, 1-2 colors, single-cell shapes only
+	 *   Tutorial Late  (6-10):  Small grids, 1-2 colors, multi-cell shapes introduced
+	 *   Easy           (11-25): Medium grids, 2 colors, blockers introduced
+	 *   Medium         (26-45): Larger grids, 2-3 colors, blocker-cats introduced
+	 *   Hard           (46-65): Full grids, 3 colors, conditional shapes introduced
+	 *   Expert         (66-80): Large grids, 3-4 colors, multiple conditionals
+	 *   Master         (81-100): Largest grids, 3 colors, all mechanics combined
 	 */
 	static DifficultyParams GetDifficultyForLevel(uint32_t uLevelNumber)
 	{
@@ -163,15 +164,31 @@ public:
 		xParams.uSolverStateLimit = s_uGenSolverStateLimit;
 		xParams.uMaxAttempts = static_cast<uint32_t>(s_iTilePuzzleMaxGenerationAttempts);
 
-		if (uLevelNumber <= 10)
+		if (uLevelNumber <= 5)
 		{
-			// Tutorial: gentle introduction
+			// Tutorial (early): single-cell shapes only (multi-cell tutorial at level 6)
 			xParams.uMinGridWidth = 5;   xParams.uMaxGridWidth = 6;
 			xParams.uMinGridHeight = 5;  xParams.uMaxGridHeight = 6;
 			xParams.uMinNumColors = 1;   xParams.uNumColors = 2;
 			xParams.uMinCatsPerColor = 1; xParams.uNumCatsPerColor = 1;
 			xParams.uMinBlockers = 0;    xParams.uNumBlockers = 0;
-			xParams.uMinMaxShapeSize = 1; xParams.uMaxShapeSize = 2;
+			xParams.uMinMaxShapeSize = 1; xParams.uMaxShapeSize = 1;
+			xParams.uScrambleMoves = 50;
+			xParams.uMinBlockerCats = 0; xParams.uNumBlockerCats = 0;
+			xParams.uMinConditionalShapes = 0; xParams.uNumConditionalShapes = 0;
+			xParams.uConditionalThreshold = 0;
+			xParams.uMinSolverMoves = 2;
+			xParams.uMinScrambleMoves = 10;
+		}
+		else if (uLevelNumber <= 10)
+		{
+			// Tutorial (late): multi-cell shapes introduced at level 6
+			xParams.uMinGridWidth = 5;   xParams.uMaxGridWidth = 6;
+			xParams.uMinGridHeight = 5;  xParams.uMaxGridHeight = 6;
+			xParams.uMinNumColors = 1;   xParams.uNumColors = 2;
+			xParams.uMinCatsPerColor = 1; xParams.uNumCatsPerColor = 1;
+			xParams.uMinBlockers = 0;    xParams.uNumBlockers = 0;
+			xParams.uMinMaxShapeSize = 2; xParams.uMaxShapeSize = 2;
 			xParams.uScrambleMoves = 50;
 			xParams.uMinBlockerCats = 0; xParams.uNumBlockerCats = 0;
 			xParams.uMinConditionalShapes = 0; xParams.uNumConditionalShapes = 0;
@@ -181,7 +198,7 @@ public:
 		}
 		else if (uLevelNumber <= 25)
 		{
-			// Easy: introduce more colors and I-shape
+			// Easy: introduce blockers and larger shapes
 			xParams.uMinGridWidth = 6;   xParams.uMaxGridWidth = 7;
 			xParams.uMinGridHeight = 6;  xParams.uMaxGridHeight = 7;
 			xParams.uMinNumColors = 2;   xParams.uNumColors = 2;
@@ -205,7 +222,8 @@ public:
 			xParams.uMinBlockers = 1;    xParams.uNumBlockers = 2;
 			xParams.uMinMaxShapeSize = 2; xParams.uMaxShapeSize = 3;
 			xParams.uScrambleMoves = 200;
-			xParams.uMinBlockerCats = 0; xParams.uNumBlockerCats = 1;
+			xParams.uMinBlockerCats = (uLevelNumber == 26) ? 1u : 0u;
+			xParams.uNumBlockerCats = 1;
 			xParams.uMinConditionalShapes = 0; xParams.uNumConditionalShapes = 0;
 			xParams.uConditionalThreshold = 0;
 			xParams.uMinSolverMoves = 4;
@@ -222,7 +240,8 @@ public:
 			xParams.uMinMaxShapeSize = 3; xParams.uMaxShapeSize = 4;
 			xParams.uScrambleMoves = 400;
 			xParams.uMinBlockerCats = 0; xParams.uNumBlockerCats = 1;
-			xParams.uMinConditionalShapes = 0; xParams.uNumConditionalShapes = 1;
+			xParams.uMinConditionalShapes = (uLevelNumber == 46) ? 1u : 0u;
+			xParams.uNumConditionalShapes = 1;
 			xParams.uConditionalThreshold = 2;
 			xParams.uMinSolverMoves = 5;
 			xParams.uMinScrambleMoves = 80;

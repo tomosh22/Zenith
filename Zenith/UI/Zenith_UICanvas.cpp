@@ -274,6 +274,11 @@ void Zenith_UICanvas::Render()
         m_iCurrentSortOrder = apxSorted[u]->GetSortOrder();
         apxSorted[u]->Render(*this);
     }
+
+    // Reset sort order after render loop so text submitted outside Render
+    // (e.g. during script Update on the next frame) gets sort order 0,
+    // not the last rendered element's sort order
+    m_iCurrentSortOrder = 0;
 }
 
 void Zenith_UICanvas::UpdateSize()

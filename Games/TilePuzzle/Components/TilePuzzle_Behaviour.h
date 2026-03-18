@@ -33,6 +33,7 @@
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UIOverlay.h"
+#include "Flux/Text/Flux_Text.h"
 
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Rules.h"
@@ -93,7 +94,8 @@ namespace TilePuzzleUI
 	// Tutorial overlay
 	static constexpr float fTUTORIAL_FONT = 48.f;
 	static constexpr float fTUTORIAL_HINT_FONT = 36.f;
-	static constexpr float fTUTORIAL_PANEL_HALF_W = 405.f;
+	static constexpr float fTUTORIAL_OVERLAY_W = 810.f;
+	static constexpr float fTUTORIAL_OVERLAY_H = 180.f;
 
 	// Achievement toast
 	static constexpr float fTOAST_FONT = 40.f;
@@ -647,6 +649,12 @@ public:
 				m_pxConfirmAcceptBtn->SetOnClick(&OnConfirmAcceptClicked, this);
 			// Credits overlay
 			m_pxCreditsOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>("CreditsOverlay");
+			// Tutorial overlay
+			m_pxTutorialOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>("TutorialOverlay");
+			m_pxTutorialText = xUI.FindElement<Zenith_UI::Zenith_UIText>("TutorialText");
+			m_pxTutorialHintText = xUI.FindElement<Zenith_UI::Zenith_UIText>("TutorialHintText");
+			Zenith_Log(LOG_CATEGORY_GENERAL, "Tutorial UI: overlay=%p text=%p hint=%p",
+				static_cast<void*>(m_pxTutorialOverlay), static_cast<void*>(m_pxTutorialText), static_cast<void*>(m_pxTutorialHintText));
 		}
 
 		// Regenerate lives on startup
@@ -1724,6 +1732,10 @@ private:
 	Zenith_UI::Zenith_UIButton* m_pxConfirmAcceptBtn = nullptr;
 	// Credits overlay
 	Zenith_UI::Zenith_UIOverlay* m_pxCreditsOverlay = nullptr;
+	// Tutorial overlay
+	Zenith_UI::Zenith_UIOverlay* m_pxTutorialOverlay = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxTutorialText = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxTutorialHintText = nullptr;
 
 	// Selection tracking
 	int32_t m_iPreviousSelectedShapeIndex = -1;
@@ -1892,6 +1904,26 @@ private:
 		m_uTutorialIndex = static_cast<uint32_t>(iTutIdx);
 		m_uTutorialStep = 0;
 		m_fTutorialFadeProgress = 0.0f;
+		m_bTutorialMouseWasDown = false;
+
+		if (m_pxTutorialOverlay)
+		{
+			// Size overlay to fit screen with padding
+			int32_t iWinWidth, iWinHeight;
+			Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+			float fScreenW = static_cast<float>(iWinWidth);
+			float fOverlayW = glm::min(fScreenW - 40.f, TilePuzzleUI::fTUTORIAL_OVERLAY_W);
+			m_pxTutorialOverlay->SetContentSize(fOverlayW, TilePuzzleUI::fTUTORIAL_OVERLAY_H);
+
+			if (m_pxTutorialText)
+			{
+				float fTextW = fOverlayW - 60.f;
+				m_pxTutorialText->SetSize(fTextW, 100.f);
+			}
+
+			SetTutorialTextWithAutoSize(GetTutorialText());
+			m_pxTutorialOverlay->Show();
+		}
 	}
 
 	const char* GetTutorialText() const
@@ -1906,12 +1938,49 @@ private:
 			case 2: return "Match all cats to complete the level!";
 			default: return nullptr;
 			}
-		case 1: return "This shape covers multiple tiles.\nIt slides as one piece!";
+		case 1: return "Some shapes cover more than one tile.\nThey slide as one piece!";
 		case 2: return "Dark shapes are blockers.\nThey can't be moved!";
 		case 3: return "This cat sits on a blocker.\nGet a matching shape next to it!";
 		case 4: return "Locked shapes need cats\neliminated first to unlock!";
 		default: return nullptr;
 		}
+	}
+
+	void SetTutorialTextWithAutoSize(const char* szText)
+	{
+		if (!m_pxTutorialText || !szText)
+			return;
+
+		float fTextW = m_pxTutorialText->GetSize().x;
+		if (fTextW <= 0.f)
+			fTextW = 700.f;
+
+		// Find longest line length
+		uint32_t uMaxLineLen = 0;
+		uint32_t uCurrentLen = 0;
+		for (const char* p = szText; *p; ++p)
+		{
+			if (*p == '\n')
+			{
+				if (uCurrentLen > uMaxLineLen) uMaxLineLen = uCurrentLen;
+				uCurrentLen = 0;
+			}
+			else
+			{
+				uCurrentLen++;
+			}
+		}
+		if (uCurrentLen > uMaxLineLen) uMaxLineLen = uCurrentLen;
+
+		float fDesiredFont = TilePuzzleUI::fTUTORIAL_FONT;
+		if (uMaxLineLen > 0)
+		{
+			float fLineWidth = static_cast<float>(uMaxLineLen) * fDesiredFont * fCHAR_SPACING;
+			if (fLineWidth > fTextW)
+				fDesiredFont = fTextW / (static_cast<float>(uMaxLineLen) * fCHAR_SPACING);
+		}
+		m_pxTutorialText->SetFontSize(fDesiredFont);
+		m_pxTutorialText->SetText(szText);
 	}
 
 	uint32_t GetTutorialStepCount() const
@@ -1930,50 +1999,20 @@ private:
 		if (m_fTutorialFadeProgress > 1.0f)
 			m_fTutorialFadeProgress = 1.0f;
 
-		// Render the tutorial overlay using canvas direct rendering
-		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
-		if (!pxCanvas)
-			return;
-
-		int32_t iWinWidth, iWinHeight;
-		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
-		if (iWinWidth <= 0 || iWinHeight <= 0)
-			return;
-
-		float fAlpha = m_fTutorialFadeProgress * 0.7f;
-
-		// Semi-transparent dark overlay background (bounds: left, top, right, bottom)
-		float fW = static_cast<float>(iWinWidth);
-		float fH = static_cast<float>(iWinHeight);
-		pxCanvas->SubmitQuad(
-			Zenith_Maths::Vector4(0.0f, 0.0f, fW, fH),
-			Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, fAlpha));
-
-		// Tutorial text box at bottom third of screen
-		const char* szText = GetTutorialText();
-		if (szText)
+		// One-shot diagnostic: log UIText state on first frame
+		if (m_fTutorialFadeProgress < 0.1f && m_pxTutorialText)
 		{
-			float fTextY = static_cast<float>(iWinHeight) * 0.65f;
-			float fTextX = static_cast<float>(iWinWidth) * 0.5f - TilePuzzleUI::fTUTORIAL_PANEL_HALF_W;
+			Zenith_Maths::Vector4 xBounds = m_pxTutorialText->GetScreenBounds();
+			Zenith_Log(LOG_CATEGORY_GENERAL, "TutorialText: visible=%d text='%s' bounds=(%.0f,%.0f,%.0f,%.0f) parent=%p",
+				m_pxTutorialText->IsVisible(), m_pxTutorialText->GetText().c_str(),
+				xBounds.x, xBounds.y, xBounds.z, xBounds.w, static_cast<void*>(m_pxTutorialText->GetParent()));
+		}
 
-			// Text background panel (bounds: left, top, right, bottom)
-			pxCanvas->SubmitQuad(
-				Zenith_Maths::Vector4(fTextX - 30.0f, fTextY - 20.0f, fTextX + 570.0f, fTextY + 120.0f),
-				Zenith_Maths::Vector4(0.1f, 0.1f, 0.25f, m_fTutorialFadeProgress * 0.9f));
-
-			pxCanvas->SubmitText(
-				szText,
-				Zenith_Maths::Vector2(fTextX, fTextY),
-				TilePuzzleUI::fTUTORIAL_FONT,
-				Zenith_Maths::Vector4(1.0f, 1.0f, 0.8f, m_fTutorialFadeProgress));
-
-			// "Tap to continue" hint at bottom
-			float fHintAlpha = m_fTutorialFadeProgress * (0.5f + 0.5f * sinf(m_fTutorialFadeProgress * 6.0f));
-			pxCanvas->SubmitText(
-				"Tap to continue",
-				Zenith_Maths::Vector2(fTextX + 170.0f, fTextY + 90.0f),
-				TilePuzzleUI::fTUTORIAL_HINT_FONT,
-				Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, fHintAlpha));
+		// Pulse the "Tap to continue" hint alpha
+		if (m_pxTutorialHintText)
+		{
+			float fHintAlpha = 0.5f + 0.5f * sinf(m_fTutorialFadeProgress * 6.0f);
+			m_pxTutorialHintText->SetColor(Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, fHintAlpha));
 		}
 
 		// Check for tap to advance/dismiss (detect mouse-down transition)
@@ -1981,11 +2020,16 @@ private:
 		if (bMouseDown && !m_bTutorialMouseWasDown && m_fTutorialFadeProgress >= 0.5f)
 		{
 			m_uTutorialStep++;
-			m_fTutorialFadeProgress = 0.0f;
 
 			if (m_uTutorialStep >= GetTutorialStepCount())
 			{
 				DismissTutorial();
+			}
+			else
+			{
+				// Multi-step tutorial: update text for next step
+				SetTutorialTextWithAutoSize(GetTutorialText());
+				m_fTutorialFadeProgress = 0.0f;
 			}
 		}
 		m_bTutorialMouseWasDown = bMouseDown;
@@ -1994,6 +2038,8 @@ private:
 	void DismissTutorial()
 	{
 		m_bTutorialActive = false;
+		if (m_pxTutorialOverlay)
+			m_pxTutorialOverlay->Hide();
 		m_xSaveData.SetTutorialShown(m_uTutorialIndex);
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 			TilePuzzle_WriteSaveData, &m_xSaveData);

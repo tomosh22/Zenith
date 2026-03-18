@@ -2523,6 +2523,29 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("ConfirmAcceptBtn", 0.35f, 0.1f, 0.1f, 1.f);
 	Zenith_EditorAutomation::AddStep_AddUIChild("ConfirmOverlay", "ConfirmAcceptBtn");
 
+	// ---- Tutorial Overlay ----
+	Zenith_EditorAutomation::AddStep_CreateUIOverlay("TutorialOverlay");
+	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("TutorialOverlay", 0.f, 0.f, 0.f, 0.7f);
+	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("TutorialOverlay", TilePuzzleUI::fTUTORIAL_OVERLAY_W, TilePuzzleUI::fTUTORIAL_OVERLAY_H);
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialText", " ");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialText", 0.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("TutorialText", 750.f, 100.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialText", TilePuzzleUI::fTUTORIAL_FONT);
+	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialText", 1.f, 1.f, 0.8f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialText");
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialHintText", "Tap to continue");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialHintText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialHintText", 0.f, -15.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("TutorialHintText", 400.f, 40.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialHintText", TilePuzzleUI::fTUTORIAL_HINT_FONT);
+	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialHintText", 0.7f, 0.7f, 0.7f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialHintText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
+
 	// ---- Credits Overlay ----
 	Zenith_EditorAutomation::AddStep_CreateUIOverlay("CreditsOverlay");
 	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("CreditsOverlay", 0.f, 0.f, 0.f, 0.8f);
@@ -2716,6 +2739,29 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ConfirmAcceptBtn", 0.65f, 0.25f, 0.25f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("ConfirmAcceptBtn", 0.35f, 0.1f, 0.1f, 1.f);
 	Zenith_EditorAutomation::AddStep_AddUIChild("ConfirmOverlay", "ConfirmAcceptBtn");
+
+	// ---- Tutorial Overlay (gameplay scene) ----
+	Zenith_EditorAutomation::AddStep_CreateUIOverlay("TutorialOverlay");
+	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("TutorialOverlay", 0.f, 0.f, 0.f, 0.7f);
+	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("TutorialOverlay", TilePuzzleUI::fTUTORIAL_OVERLAY_W, TilePuzzleUI::fTUTORIAL_OVERLAY_H);
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialText", " ");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialText", 0.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("TutorialText", 750.f, 100.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialText", TilePuzzleUI::fTUTORIAL_FONT);
+	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialText", 1.f, 1.f, 0.8f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialText");
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialHintText", "Tap to continue");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialHintText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialHintText", 0.f, -15.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("TutorialHintText", 400.f, 40.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialHintText", TilePuzzleUI::fTUTORIAL_HINT_FONT);
+	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialHintText", 0.7f, 0.7f, 0.7f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialHintText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
 
 	// ---- Victory Overlay UI elements (starts hidden) ----
 
