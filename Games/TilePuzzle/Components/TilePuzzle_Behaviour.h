@@ -52,6 +52,8 @@
 #include "Flux/Skybox/Flux_Skybox.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 
+#include "TaskSystem/Zenith_TaskSystem.h"
+
 #include <unordered_map>
 #include <utility>
 #include <cmath>
@@ -229,6 +231,15 @@ struct TilePuzzleUndoState
 	int32_t iLastMovedShapeIndex;
 };
 
+// Data passed to/from the background hint solver task
+struct HintSolverData
+{
+	TilePuzzleLevelData xLevelState;                    // Input: copy of current state
+	std::vector<TilePuzzleSolutionMove> axSolution;     // Output: solution path
+	int32_t iResult = -1;                               // Output: solver return value
+	std::atomic<bool> bComplete{false};                 // Completion flag
+};
+
 // ============================================================================
 // Main Behavior Class
 // ============================================================================
@@ -255,8 +266,9 @@ public:
 		, m_bFreeUndoAvailable(true)
 		, m_bHintActive(false)
 		, m_iHintShapeIndex(-1)
-		, m_eHintDirection(TILEPUZZLE_DIR_NONE)
 		, m_fHintFlashTimer(0.f)
+		, m_bHintSolving(false)
+		, m_pxHintTask(nullptr)
 		, m_uResetCount(0)
 		, m_bSkipOffered(false)
 		, m_fVictoryTimer(0.f)
@@ -273,7 +285,10 @@ public:
 		m_xSaveData.Reset();
 	}
 
-	~TilePuzzle_Behaviour() = default;
+	~TilePuzzle_Behaviour()
+	{
+		ClearHint();
+	}
 
 	// ========================================================================
 	// Lifecycle Hooks
@@ -725,7 +740,7 @@ public:
 			else
 			{
 				m_fLevelTimer += fDeltaTime;
-				if (m_bHintActive)
+				if (m_bHintActive || m_bHintSolving)
 				{
 					m_fHintFlashTimer += fDeltaTime;
 				}
@@ -828,6 +843,12 @@ public:
 		{
 			UpdateVisuals(fDeltaTime);
 			UpdateUI();
+		}
+
+		// Process hint solver results after rendering so the "..." indicator shows for at least one frame
+		if (m_eState == TILEPUZZLE_STATE_PLAYING)
+		{
+			UpdateHintSolver();
 		}
 
 		// Achievement toast
@@ -1733,8 +1754,10 @@ private:
 	// Hint system
 	bool m_bHintActive;
 	int32_t m_iHintShapeIndex;
-	TilePuzzleDirection m_eHintDirection;
 	float m_fHintFlashTimer;
+	bool m_bHintSolving;
+	HintSolverData m_xHintSolverData;
+	Zenith_Task* m_pxHintTask;
 
 	// Level skip
 	uint32_t m_uResetCount;
@@ -3377,6 +3400,7 @@ private:
 		RenderConditionalShapeIndicators();
 		RenderUsesIndicators();
 		RenderHintIndicator();
+		RenderHintSolvingIndicator();
 
 		UpdateSelectionHighlight();
 	}
@@ -3863,10 +3887,18 @@ private:
 	// Hint System
 	// ========================================================================
 
+	static void HintSolveTask(void* pData)
+	{
+		HintSolverData* pxData = static_cast<HintSolverData*>(pData);
+		pxData->iResult = TilePuzzle_Solver::SolveLevelWithPath(
+			pxData->xLevelState, pxData->axSolution);
+		pxData->bComplete.store(true, std::memory_order_release);
+	}
+
 	void PerformHint()
 	{
-		if (m_bHintActive)
-			return;  // Hint already showing
+		if (m_bHintActive || m_bHintSolving)
+			return;
 
 		// Check if player can afford a hint (tokens take priority)
 		bool bUseToken = m_xSaveData.HasHintTokens();
@@ -3874,80 +3906,95 @@ private:
 			return;
 
 		// Build a TilePuzzleLevelData from the current game state for the solver
-		TilePuzzleLevelData xCurrentState = BuildCurrentLevelState();
+		m_xHintSolverData.xLevelState = BuildCurrentLevelState();
+		m_xHintSolverData.axSolution.clear();
+		m_xHintSolverData.iResult = -1;
+		m_xHintSolverData.bComplete.store(false, std::memory_order_release);
 
-		// Run solver from current state
-		int32_t iSolution = TilePuzzle_Solver::SolveLevel(xCurrentState, 500000);
-		if (iSolution < 0)
-			return;  // Unsolvable from current state (shouldn't happen)
+		// Dispatch solver on background thread
+		m_pxHintTask = new Zenith_Task(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_WITH_PATH, HintSolveTask, &m_xHintSolverData);
+		Zenith_TaskSystem::SubmitTask(m_pxHintTask);
+		m_bHintSolving = true;
+		m_fHintFlashTimer = 0.f;
+	}
 
-		// Find the best first move by trying each shape in each direction
-		int32_t iBestShapeIndex = -1;
-		TilePuzzleDirection eBestDirection = TILEPUZZLE_DIR_NONE;
-		int32_t iBestResult = iSolution;
+	void UpdateHintSolver()
+	{
+		if (!m_bHintSolving)
+			return;
 
-		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
-		{
-			const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[i];
-			if (!xShape.pxDefinition || !xShape.pxDefinition->bDraggable)
-				continue;
-			if (xShape.bRemoved)
-				continue;
+		if (!m_xHintSolverData.bComplete.load(std::memory_order_acquire))
+			return;
 
-			TilePuzzleDirection aeDirections[] = {
-				TILEPUZZLE_DIR_UP, TILEPUZZLE_DIR_DOWN,
-				TILEPUZZLE_DIR_LEFT, TILEPUZZLE_DIR_RIGHT
-			};
+		// Solver complete — clean up task
+		m_pxHintTask->WaitUntilComplete();
+		delete m_pxHintTask;
+		m_pxHintTask = nullptr;
+		m_bHintSolving = false;
 
-			for (TilePuzzleDirection eDir : aeDirections)
-			{
-				int32_t iDeltaX, iDeltaY;
-				TilePuzzleDirections::GetDelta(eDir, iDeltaX, iDeltaY);
+		if (m_xHintSolverData.iResult < 0 || m_xHintSolverData.axSolution.empty())
+			return;
 
-				if (!CanMoveShape(static_cast<int32_t>(i), iDeltaX, iDeltaY))
-					continue;
+		// Extract which shape should be moved next
+		const TilePuzzleSolutionMove& xFirstMove = m_xHintSolverData.axSolution[0];
+		int32_t iShapeIndex = static_cast<int32_t>(xFirstMove.uShapeIndex);
 
-				// Build state after this move
-				TilePuzzleLevelData xAfterMove = xCurrentState;
-				for (size_t s = 0; s < xAfterMove.axShapes.size(); ++s)
-				{
-					if (s == i)
-					{
-						xAfterMove.axShapes[s].iOriginX += iDeltaX;
-						xAfterMove.axShapes[s].iOriginY += iDeltaY;
-					}
-				}
+		if (iShapeIndex < 0 || iShapeIndex >= static_cast<int32_t>(m_xCurrentLevel.axShapes.size()))
+			return;
 
-				int32_t iResult = TilePuzzle_Solver::SolveLevel(xAfterMove, 500000);
-				if (iResult >= 0 && iResult < iBestResult)
-				{
-					iBestResult = iResult;
-					iBestShapeIndex = static_cast<int32_t>(i);
-					eBestDirection = eDir;
-				}
-			}
-		}
+		const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShapeIndex];
+		if (xShape.bRemoved)
+			return;
 
-		if (iBestShapeIndex < 0)
-			return;  // No improving move found
-
-		// Deduct hint token or coins
+		// Deduct cost now that we have a valid hint
+		bool bUseToken = m_xSaveData.HasHintTokens();
 		if (bUseToken)
 			m_xSaveData.SpendHintToken();
 		else
 			m_xSaveData.SpendCoins(s_uHintCoinCost);
+
 		m_bHintActive = true;
-		m_iHintShapeIndex = iBestShapeIndex;
-		m_eHintDirection = eBestDirection;
+		m_iHintShapeIndex = iShapeIndex;
 		m_fHintFlashTimer = 0.f;
+	}
+
+	void RenderHintSolvingIndicator()
+	{
+		if (!m_bHintSolving)
+			return;
+
+		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+		if (!pxCanvas)
+			return;
+
+		// Animated dots: "." -> ".." -> "..."
+		int32_t iDots = (static_cast<int32_t>(m_fHintFlashTimer * 3.0f) % 3) + 1;
+		char szText[16];
+		snprintf(szText, sizeof(szText), "%.*s", iDots, "...");
+
+		int32_t iWinWidth, iWinHeight;
+		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+
+		pxCanvas->SubmitText(
+			szText,
+			Zenith_Maths::Vector2(static_cast<float>(iWinWidth) * 0.5f - 32.0f,
+				static_cast<float>(iWinHeight) * 0.5f),
+			128.0f,
+			Zenith_Maths::Vector4(0.2f, 1.0f, 0.2f, 1.0f));
 	}
 
 	void ClearHint()
 	{
 		m_bHintActive = false;
 		m_iHintShapeIndex = -1;
-		m_eHintDirection = TILEPUZZLE_DIR_NONE;
 		m_fHintFlashTimer = 0.f;
+		if (m_bHintSolving)
+		{
+			m_pxHintTask->WaitUntilComplete();
+			delete m_pxHintTask;
+			m_pxHintTask = nullptr;
+			m_bHintSolving = false;
+		}
 	}
 
 	TilePuzzleLevelData BuildCurrentLevelState() const
@@ -3958,17 +4005,20 @@ private:
 		xState.aeCells = m_xCurrentLevel.aeCells;
 		xState.uMinimumMoves = m_xCurrentLevel.uMinimumMoves;
 
-		// Copy shapes with current positions
+		// Copy shapes with current positions (null out removed shapes to avoid false collisions)
 		xState.axShapes.resize(m_xCurrentLevel.axShapes.size());
 		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
 		{
 			xState.axShapes[i] = m_xCurrentLevel.axShapes[i];
+			if (m_xCurrentLevel.axShapes[i].bRemoved)
+				xState.axShapes[i].pxDefinition = nullptr;
 		}
 
-		// Copy cats with current elimination state (only non-eliminated cats matter)
+		// Only include non-eliminated cats (solver starts with elimMask=0)
 		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
 		{
-			xState.axCats.push_back(m_xCurrentLevel.axCats[i]);
+			if (!m_xCurrentLevel.axCats[i].bEliminated)
+				xState.axCats.push_back(m_xCurrentLevel.axCats[i]);
 		}
 
 		return xState;
@@ -4009,7 +4059,7 @@ private:
 		if (iWinWidth <= 0 || iWinHeight <= 0)
 			return;
 
-		// Render direction arrow above the hint shape
+		// Render highlight indicator above the hint shape
 		Zenith_Maths::Vector3 xWorldPos = GridToWorld(
 			static_cast<float>(xShape.iOriginX), static_cast<float>(xShape.iOriginY),
 			s_fShapeHeight + 1.0f);
@@ -4024,18 +4074,8 @@ private:
 		float fScreenX = (xClipPos.x + 1.0f) * 0.5f * static_cast<float>(iWinWidth);
 		float fScreenY = (xClipPos.y + 1.0f) * 0.5f * static_cast<float>(iWinHeight);
 
-		const char* szArrow = "?";
-		switch (m_eHintDirection)
-		{
-		case TILEPUZZLE_DIR_UP:    szArrow = "v"; break;   // Grid up = visual down
-		case TILEPUZZLE_DIR_DOWN:  szArrow = "^"; break;   // Grid down = visual up
-		case TILEPUZZLE_DIR_LEFT:  szArrow = "<"; break;
-		case TILEPUZZLE_DIR_RIGHT: szArrow = ">"; break;
-		default: break;
-		}
-
 		pxCanvas->SubmitText(
-			szArrow,
+			"!",
 			Zenith_Maths::Vector2(fScreenX - 32.0f, fScreenY - 64.0f),
 			192.0f,
 			Zenith_Maths::Vector4(0.2f, 1.0f, 0.2f, 1.0f));
