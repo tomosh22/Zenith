@@ -1933,8 +1933,8 @@ private:
 		case 0:
 			switch (m_uTutorialStep)
 			{
-			case 0: return "Tap a colored shape to select it";
-			case 1: return "Drag to slide it onto the matching cat";
+			case 0: return "Drag a colored shape to slide it";
+			case 1: return "Slide it onto the matching cat";
 			case 2: return "Match all cats to complete the level!";
 			default: return nullptr;
 			}

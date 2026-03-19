@@ -62,7 +62,7 @@ struct TierConstraints
 	uint32_t uMinCatsPerColor, uMaxCatsPerColor;
 	uint32_t uMinBlockers, uMaxBlockers;
 	uint32_t uMinComplexity, uMaxComplexity; // 1=Single, 2=+Domino, 3=+L/T/I, 4=+S/Z/O
-	uint32_t uMinMoves, uMaxMoves;
+	uint32_t uMinSolverMoves, uMaxMoves;
 	uint32_t uMinConditional, uMaxConditional;
 	uint32_t uMinBlockerCats, uMaxBlockerCats;
 };
@@ -70,13 +70,13 @@ struct TierConstraints
 static const TierConstraints s_axTierConstraints[] =
 {
 	{},                                                               // NONE (unused)
-	{ 5,  6,  1, 2,  1, 2,  0, 0,  1, 1,   3,  5,  0, 0,  0, 0 },  // TUTORIAL_EARLY (single-cell only)
-	{ 5,  6,  1, 2,  1, 2,  0, 0,  2, 2,   3,  5,  0, 0,  0, 0 },  // TUTORIAL_LATE (multi-cell introduced)
-	{ 6,  7,  2, 3,  1, 2,  0, 1,  1, 3,   5,  8,  0, 0,  0, 0 },  // EASY
+	{ 5,  6,  1, 2,  1, 2,  0, 0,  1, 1,   2,  5,  0, 0,  0, 0 },  // TUTORIAL_EARLY (single-cell only)
+	{ 5,  6,  1, 2,  1, 2,  0, 0,  2, 2,   2,  5,  0, 0,  0, 0 },  // TUTORIAL_LATE (multi-cell introduced)
+	{ 6,  7,  2, 3,  1, 2,  0, 1,  1, 3,   4,  8,  0, 0,  0, 0 },  // EASY
 	{ 7,  8,  3, 3,  2, 2,  1, 2,  2, 3,   8, 12,  0, 0,  0, 1 },  // MEDIUM
 	{ 8,  9,  3, 4,  2, 3,  1, 2,  3, 4,  10, 15,  0, 2,  0, 1 },  // HARD
-	{ 9, 10,  4, 5,  2, 3,  2, 3,  3, 4,  15, 20,  1, 3,  0, 2 },  // EXPERT
-	{ 9, 10,  4, 5,  3, 4,  2, 3,  3, 4,  18, 99,  1, 3,  1, 2 },  // MASTER
+	{ 9, 10,  4, 5,  2, 3,  2, 3,  3, 4,  12, 20,  1, 3,  0, 2 },  // EXPERT
+	{ 9, 10,  4, 5,  3, 4,  2, 3,  3, 4,  16, 99,  1, 3,  1, 2 },  // MASTER
 };
 
 static const char* s_aszTierNames[] =
@@ -425,10 +425,9 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParamsForT
 	xParams.uScrambleMoves = xScrambleDist(xRng);
 	xParams.uMinScrambleMoves = std::max(10u, xParams.uScrambleMoves / 10);
 
-	// Solver settings - delegate to the min-moves-based logic
-	xParams.uMinSolverMoves = 4;
-	uint32_t uTierMinMoves = xTC.uMinMoves;
-	if (uTierMinMoves >= 20)
+	// Solver settings - scale with tier's minimum solver moves
+	xParams.uMinSolverMoves = xTC.uMinSolverMoves;
+	if (xTC.uMinSolverMoves >= 20)
 	{
 		xParams.uSolverStateLimit = 1000000;
 		xParams.uDeepSolverStateLimit = 5000000;
@@ -437,7 +436,7 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParamsForT
 		xParams.eScrambleMode = TilePuzzle_LevelGenerator::SCRAMBLE_MODE_GUIDED;
 		xParams.uScrambleRestarts = 20;
 	}
-	else if (uTierMinMoves >= 10)
+	else if (xTC.uMinSolverMoves >= 10)
 	{
 		xParams.uSolverStateLimit = 1000000;
 		xParams.uDeepSolverStateLimit = 5000000;
@@ -1543,7 +1542,7 @@ int main(int argc, char* argv[])
 	// When --tier is specified, derive --min-moves from the tier constraints if not explicitly set
 	if (eTier != DIFFICULTY_TIER_NONE && uMinMoves == 0)
 	{
-		uMinMoves = s_axTierConstraints[eTier].uMinMoves;
+		uMinMoves = s_axTierConstraints[eTier].uMinSolverMoves;
 	}
 
 	// Validate required arguments (not needed for --validate-registry or --validate-conditionals)
