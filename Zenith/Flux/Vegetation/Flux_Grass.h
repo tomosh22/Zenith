@@ -2,6 +2,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Maths/Zenith_Maths.h"
 
 enum Grass_DebugMode : u_int
@@ -65,9 +66,7 @@ public:
 	static void Shutdown();
 	static void Reset();
 
-	static void Render(void*);
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	// Configuration
 	static void SetEnabled(bool bEnabled);
@@ -99,6 +98,7 @@ public:
 #endif
 
 private:
+	static void ExecuteRender(Flux_CommandList* pxCmdList, void* pUserData);
 	static void GenerateGrassForChunk(GrassChunk& xChunk, const Zenith_Maths::Vector3& xCenter);
 	static void UpdateVisibleChunks();
 	static void UploadInstanceData();

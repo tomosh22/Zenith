@@ -8,9 +8,9 @@
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
 
 // Static member definitions
 Flux_RenderAttachment Flux_SSR::s_xRayMarchResult;
@@ -51,13 +51,6 @@ static struct SSRConstants
 	// 2.0m is appropriate for human-scale environments (floor reflections)
 	float m_fContactHardeningDist = 2.0f;
 } dbg_xSSRConstants;
-
-// Task system
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_SSR, Flux_SSR::Render, nullptr);
-
-// Command lists
-static Flux_CommandList g_xRayMarchCommandList("SSR RayMarch");
-static Flux_CommandList g_xResolveCommandList("SSR Resolve");
 
 // Shaders and pipelines
 static Flux_Shader s_xRayMarchShader;
@@ -197,10 +190,6 @@ void Flux_SSR::Initialise()
 		DestroyRenderTargets();
 		CreateRenderTargets();
 
-		// Reset command lists to clear any cached descriptor bindings pointing to old textures
-		g_xRayMarchCommandList.Reset(true);
-		g_xResolveCommandList.Reset(true);
-
 #ifdef ZENITH_DEBUG_VARIABLES
 		// Re-register debug textures with the new SRVs (old ones were destroyed)
 		Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "RayMarch" }, s_xRayMarchResult.m_pxSRV);
@@ -225,44 +214,8 @@ void Flux_SSR::Shutdown()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR shut down");
 }
 
-void Flux_SSR::Reset()
+static void UpdateSSRConstants()
 {
-	g_xRayMarchCommandList.Reset(true);
-	g_xResolveCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR::Reset()");
-}
-
-void Flux_SSR::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_SSR::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_SSR::Render(void*)
-{
-	if (!dbg_bSSREnable || !s_bEnabled || !s_bInitialised)
-		return;
-
-	// SSR REQUIRES Hi-Z buffer for hierarchical ray marching
-	// Without HiZ, SSR would need O(N) linear marching instead of O(log N)
-	if (!Flux_HiZ::IsEnabled())
-	{
-		static bool s_bHiZWarningShown = false;
-		if (!s_bHiZWarningShown)
-		{
-			Zenith_Warning(LOG_CATEGORY_RENDERER,
-				"Flux_SSR: SSR is enabled but HiZ is disabled. "
-				"SSR requires Hi-Z for hierarchical ray marching. "
-				"Enable HiZ via 'Flux/HiZ/Enable' debug variable, or disable SSR.");
-			s_bHiZWarningShown = true;
-		}
-		return;
-	}
-
 	// Update constants from debug variables and HiZ system
 	dbg_xSSRConstants.m_uDebugMode = dbg_uDebugMode;
 	dbg_xSSRConstants.m_uHiZMipCount = Flux_HiZ::GetMipCount();
@@ -279,32 +232,25 @@ void Flux_SSR::Render(void*)
 	// Clamp start mip to valid range
 	if (dbg_xSSRConstants.m_uStartMip >= dbg_xSSRConstants.m_uHiZMipCount)
 		dbg_xSSRConstants.m_uStartMip = dbg_xSSRConstants.m_uHiZMipCount - 1;
-
-	RenderRayMarch();
-
-	if (dbg_bRoughnessBlur)
-	{
-		RenderResolve();
-	}
 }
 
-void Flux_SSR::RenderRayMarch()
+static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 {
-	g_xRayMarchCommandList.Reset(true);  // Full reset to update frame constants each frame
+	if (!dbg_bSSREnable || !Flux_SSR::s_bEnabled || !Flux_SSR::IsInitialised() || !Flux_HiZ::IsEnabled())
+		return;
 
-	g_xRayMarchCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xRayMarchPipeline);
+	UpdateSSRConstants();
 
-	g_xRayMarchCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xRayMarchCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xRayMarchPipeline);
 
-	// Use shader binder for ALL bindings - ALWAYS use hardcoded bindings for debugging
-	Flux_ShaderBinder xBinder(g_xRayMarchCommandList);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	// Bind frame constants (always hardcoded for now)
+	Flux_ShaderBinder xBinder(*pxCommandList);
+
 	xBinder.BindCBV(s_xRM_FrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xBinder.PushConstant(&dbg_xSSRConstants, sizeof(SSRConstants));
 
-	// Bind textures - ALWAYS use hardcoded binding indices matching shader layout
 	xBinder.BindSRV(s_xRM_DepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(s_xRM_NormalsTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(s_xRM_MaterialTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
@@ -312,36 +258,69 @@ void Flux_SSR::RenderRayMarch()
 	xBinder.BindSRV(s_xRM_DiffuseTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	xBinder.BindSRV(s_xRM_BlueNoiseTexBinding, &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
 
-	g_xRayMarchCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	Flux::SubmitCommandList(&g_xRayMarchCommandList, s_xRayMarchTargetSetup, RENDER_ORDER_SSR_RAYMARCH);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_SSR::RenderResolve()
+static void ExecuteSSRResolve(Flux_CommandList* pxCommandList, void*)
 {
-	g_xResolveCommandList.Reset(true);  // Full reset to update frame constants each frame
+	if (!dbg_bSSREnable || !Flux_SSR::s_bEnabled || !Flux_SSR::IsInitialised() || !Flux_HiZ::IsEnabled() || !dbg_bRoughnessBlur)
+		return;
 
-	g_xResolveCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xResolvePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xResolvePipeline);
 
-	g_xResolveCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xResolveCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	// Use shader binder for ALL bindings - ALWAYS use hardcoded bindings for debugging
-	Flux_ShaderBinder xBinder(g_xResolveCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	// Bind frame constants (always hardcoded for now)
 	xBinder.BindCBV(s_xRS_FrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xBinder.PushConstant(&dbg_xSSRConstants, sizeof(SSRConstants));
 
-	// Bind textures - ALWAYS use hardcoded binding indices matching shader layout
-	xBinder.BindSRV(s_xRS_RayMarchResultBinding, &s_xRayMarchResult.m_pxSRV);
+	xBinder.BindSRV(s_xRS_RayMarchResultBinding, &Flux_SSR::s_xRayMarchResult.m_pxSRV);
 	xBinder.BindSRV(s_xRS_NormalsTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(s_xRS_MaterialTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
 	xBinder.BindSRV(s_xRS_DepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
 
-	g_xResolveCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+}
 
-	Flux::SubmitCommandList(&g_xResolveCommandList, s_xResolveTargetSetup, RENDER_ORDER_SSR_RESOLVE);
+void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	// Always add all passes — enable/disable is handled at runtime in execute callbacks
+
+	// RayMarch pass — first writer of its target; clear so the initial
+	// render-pass LoadOp is valid.
+	{
+		u_int uPassIndex = xGraph.AddPass("SSR RayMarch", ExecuteSSRRayMarch);
+		xGraph.SetPassTargetSetup(uPassIndex, s_xRayMarchTargetSetup);
+		xGraph.SetPassClearTargets(uPassIndex, true);
+
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		// SSR samples the full HiZ mip chain via Flux_HiZ::GetHiZSRV() — declare
+		// every mip so the render graph transitions all of them, not just mip 0.
+		xGraph.PassReads(uPassIndex, &Flux_HiZ::s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount);
+		// SSR raymarch shader samples three GBuffer color attachments — must
+		// declare so the graph transitions them out of COLOR_ATTACHMENT_OPTIMAL
+		// before this pass binds them as SRVs.
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPassIndex, &s_xRayMarchResult, RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	// Resolve pass — first writer of its target; clear.
+	{
+		u_int uPassIndex = xGraph.AddPass("SSR Resolve", ExecuteSSRResolve);
+		xGraph.SetPassTargetSetup(uPassIndex, s_xResolveTargetSetup);
+		xGraph.SetPassClearTargets(uPassIndex, true);
+
+		xGraph.PassReads(uPassIndex, &s_xRayMarchResult, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		// Resolve samples normals + material (roughness) for the bilateral blur.
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPassIndex, &s_xResolvedReflection, RESOURCE_ACCESS_WRITE_RTV);
+	}
 }
 
 Flux_ShaderResourceView& Flux_SSR::GetReflectionSRV()

@@ -172,7 +172,7 @@ void Flux_ParticleGPU::Reset()
 	}
 
 	s_uAliveCount = 0;
-	s_xComputeCommandList.Reset(true);
+	s_xComputeCommandList.Reset();
 
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_ParticleGPU::Reset()");
 }
@@ -371,47 +371,41 @@ void Flux_ParticleGPU::ProcessPendingSpawns()
 	}
 }
 
-void Flux_ParticleGPU::DispatchCompute()
+void Flux_ParticleGPU::PreExecuteCompute()
 {
-	if (!dbg_bEnableGPUParticles)
-	{
+	if (!dbg_bEnableGPUParticles || s_axEmitters.GetSize() == 0)
 		return;
-	}
 
-	if (s_axEmitters.GetSize() == 0)
-	{
-		return;
-	}
-
-	// Process pending particle spawns before compute dispatch
+	// CPU-side work that must run before parallel recording
 	ProcessPendingSpawns();
 
-	// Get delta time
-	float fDt = Zenith_Core::GetDt();
-
-	// Determine which buffers to use (ping-pong)
-	Flux_ReadWriteBuffer& xInputBuffer = s_bUseBufferA ? s_xParticleBufferA : s_xParticleBufferB;
-	Flux_ReadWriteBuffer& xOutputBuffer = s_bUseBufferA ? s_xParticleBufferB : s_xParticleBufferA;
-
-	// Reset counter to zero
+	// Reset counter to zero via staging buffer
 	uint32_t uZero = 0;
 	Flux_MemoryManager::UploadBufferData(
 		s_xCounterBuffer.GetBuffer().m_xVRAMHandle,
 		&uZero,
 		sizeof(uint32_t)
 	);
+}
 
-	s_xComputeCommandList.Reset(false);
+void Flux_ParticleGPU::DispatchCompute(Flux_CommandList* pxCmdList)
+{
+	if (!dbg_bEnableGPUParticles || s_axEmitters.GetSize() == 0)
+		return;
 
-	s_xComputeCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xComputePipeline);
+	float fDt = Zenith_Core::GetDt();
 
-	// Set up push constants
-	// Use first active emitter's config for shared values (gravity, turbulence)
+	// Determine which buffers to use (ping-pong)
+	Flux_ReadWriteBuffer& xInputBuffer = s_bUseBufferA ? s_xParticleBufferA : s_xParticleBufferB;
+	Flux_ReadWriteBuffer& xOutputBuffer = s_bUseBufferA ? s_xParticleBufferB : s_xParticleBufferA;
+
+	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&s_xComputePipeline);
+
 	ParticleComputeConstants xConstants;
 	xConstants.m_fDeltaTime = fDt;
 	xConstants.m_uParticleCount = s_uTotalAllocatedParticles;
 	xConstants.m_fTurbulence = 0.0f;
-	xConstants.m_xGravity = Zenith_Maths::Vector4(0.0f, -9.8f, 0.0f, 0.0f);  // Default gravity
+	xConstants.m_xGravity = Zenith_Maths::Vector4(0.0f, -9.8f, 0.0f, 0.0f);
 
 	for (uint32_t i = 0; i < s_axEmitters.GetSize(); ++i)
 	{
@@ -422,18 +416,15 @@ void Flux_ParticleGPU::DispatchCompute()
 		}
 	}
 
-	Flux_ShaderBinder xBinder(s_xComputeCommandList);
+	Flux_ShaderBinder xBinder(*pxCmdList);
 	xBinder.BindUAV_Buffer(s_xInputParticlesBinding, &xInputBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(s_xOutputParticlesBinding, &xOutputBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(s_xInstanceBufferBinding, &s_xInstanceBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(s_xCounterBufferBinding, &s_xCounterBuffer.GetUAV());
 	xBinder.PushConstant(&xConstants, sizeof(xConstants));
 
-	// Dispatch compute shader
 	uint32_t uWorkgroups = (s_uTotalAllocatedParticles + s_uWorkgroupSize - 1) / s_uWorkgroupSize;
-	s_xComputeCommandList.AddCommand<Flux_CommandDispatch>(uWorkgroups, 1, 1);
-
-	Flux::SubmitCommandList(&s_xComputeCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_PARTICLES_COMPUTE);
+	pxCmdList->AddCommand<Flux_CommandDispatch>(uWorkgroups, 1, 1);
 
 	// Swap buffers for next frame
 	s_bUseBufferA = !s_bUseBufferA;
@@ -444,9 +435,6 @@ void Flux_ParticleGPU::DispatchCompute()
 		s_axEmitters.Get(i).m_uPendingSpawnCount = 0;
 	}
 
-	// Note: We can't read back the counter immediately as compute hasn't finished yet
-	// The alive count will be available on the next frame
-	// For now, use a conservative estimate
 	s_uAliveCount = s_uTotalAllocatedParticles;
 }
 

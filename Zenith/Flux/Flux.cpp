@@ -30,10 +30,21 @@
 #include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/Vegetation/Flux_Grass.h"
 #include "Flux/DynamicLights/Flux_DynamicLights.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
-std::vector<void(*)()> Flux::s_xResChangeCallbacks;
-Zenith_Vector<Flux_CommandListEntry> Flux::s_xPendingCommandLists[RENDER_ORDER_MAX];
+Zenith_Vector<void(*)()> Flux::s_xResChangeCallbacks;
+Zenith_Vector<Flux_CommandListEntry> Flux::s_xPendingCommandLists;
+Flux_RenderGraph* Flux::s_pxRenderGraph = nullptr;
+
+// No-op record callback used by the final-layout-transition barrier pass — the
+// pass exists purely so the render graph emits a prologue barrier transitioning
+// the Final Render Target into SHADER_READ_ONLY_OPTIMAL at end-of-frame, ready
+// for the swapchain copy command buffer (which lives outside the graph) to
+// sample it without a layout mismatch.
+static void Flux_FinalLayoutTransitionNoOp(Flux_CommandList*, void*)
+{
+}
 
 void Flux_PipelineHelper::BuildFullscreenPipeline(
 	Flux_Shader& xShader,
@@ -60,6 +71,19 @@ Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpec(
 	xSpec.m_xVertexInputDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 	xSpec.m_bDepthTestEnabled = false;
 	xSpec.m_bDepthWriteEnabled = false;
+
+	// Fullscreen passes are conceptually overwrite operations — the fragment
+	// shader is expected to write every pixel. Default Flux_BlendState has
+	// alpha blending enabled, which for passes like SSR RayMarch would blend
+	// the new output into stale last-frame contents (alpha < 1 preserves old
+	// pixels, producing ghosting). Callers that actually want a blend mode
+	// (e.g. SSAO Upsample, Skybox Aerial Perspective) override this explicitly.
+	for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
+	{
+		xBlendState.m_bBlendEnabled = false;
+		xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+		xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+	}
 
 	xShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 
@@ -127,10 +151,95 @@ void Flux::LateInitialise()
 	Flux_Quads::Initialise();
 	Flux_Text::Initialise();
 	Flux_MemoryManager::EndFrame(false);
+
+	// Create and compile the render graph
+	s_pxRenderGraph = new Flux_RenderGraph();
+	SetupRenderGraph();
+	AddResChangeCallback(SetupRenderGraph);
+}
+
+void Flux::SetupRenderGraph()
+{
+	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+		"SetupRenderGraph: must run on the main thread; pending command lists are accessed without locking here.");
+
+	// Clear pending command lists first — they hold pointers to the graph's command lists
+	// which will be destroyed by Clear(). Caller must have already drained the GPU.
+	ClearPendingCommandLists();
+	s_pxRenderGraph->Clear();
+
+	// Preprocessing
+	Flux_IBL::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_Skybox::SetupRenderGraph(*s_pxRenderGraph);
+
+	// Geometry (all write to G-Buffer + Depth)
+	Flux_Shadows::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_StaticMeshes::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_Terrain::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_Primitives::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_AnimatedMeshes::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_InstancedMeshes::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_Grass::SetupRenderGraph(*s_pxRenderGraph);
+
+	// Screen-space effects
+	Flux_HiZ::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_SSR::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_SSGI::SetupRenderGraph(*s_pxRenderGraph);
+
+	// Lighting & composition
+	Flux_DeferredShading::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_DynamicLights::SetupRenderGraph(*s_pxRenderGraph);
+	// Aerial perspective runs after DeferredShading — it blends scattering on
+	// top of the already-lit HDR scene. Registering here keeps the writer-chain
+	// topological order correct.
+	Flux_Skybox::SetupAerialPerspectiveRenderGraph(*s_pxRenderGraph);
+	Flux_SSAO::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_Fog::SetupRenderGraph(*s_pxRenderGraph);
+
+	// Post-processing
+	Flux_SDFs::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_Particles::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_HDR::SetupRenderGraph(*s_pxRenderGraph);
+
+	// UI & presentation
+	Flux_Quads::SetupRenderGraph(*s_pxRenderGraph);
+	Flux_Text::SetupRenderGraph(*s_pxRenderGraph);
+#ifdef ZENITH_TOOLS
+	Flux_Gizmos::SetupRenderGraph(*s_pxRenderGraph);
+#endif
+
+	// Final-layout transition pass — leaves the Final Render Target in
+	// SHADER_READ_ONLY_OPTIMAL so the swapchain copy command buffer (which
+	// lives outside the render graph) can sample it without a layout
+	// mismatch. The pass has no commands and no target setup; it exists
+	// purely so the graph emits a prologue barrier transitioning the Final
+	// RT from WRITE_RTV (set by tonemap / last writer) to READ_SRV.
+	//
+	// Note: every existing writer of the Final RT (HDR tonemap, Quads,
+	// Text, Gizmos) targets the `_NoDepth` target setup's attachment slot,
+	// not the original `s_xFinalRenderTarget` slot, even though the two
+	// share the same underlying VRAM. The render graph tracks resources by
+	// pointer, so we must read from the same Flux_RenderAttachment instance
+	// that the writers wrote to — otherwise the graph asserts "read but
+	// never written".
+	{
+		u_int uFinalTransitionPass = s_pxRenderGraph->AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp);
+		s_pxRenderGraph->PassReads(uFinalTransitionPass, &Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_READ_SRV);
+	}
+
+	// Clear() already left the graph dirty — no explicit MarkDirty() needed.
 }
 
 void Flux::Shutdown()
 {
+	delete s_pxRenderGraph;
+	s_pxRenderGraph = nullptr;
+	// Phase 5.7: Drop res-change callbacks BEFORE deleting the graph above
+	// would matter, but the order is functionally equivalent: any callback
+	// that fires after Shutdown derefs the now-null s_pxRenderGraph and would
+	// crash. Clear the list so OnResChange has nothing to invoke.
+	s_xResChangeCallbacks.Clear();
+
 	// Shutdown Flux subsystems in REVERSE order of initialization
 	// This ensures dependencies are destroyed after their dependents
 	// NOTE: Some subsystems (Fog, DeferredShading, Primitives, AnimatedMeshes, StaticMeshes)
@@ -177,9 +286,9 @@ void Flux::Shutdown()
 
 void Flux::OnResChange()
 {
-	for (void(*pfnCallback)() : s_xResChangeCallbacks)
+	for (u_int i = 0; i < s_xResChangeCallbacks.GetSize(); i++)
 	{
-		pfnCallback();
+		s_xResChangeCallbacks.Get(i)();
 	}
 }
 
@@ -189,29 +298,14 @@ bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 
 	xOutDistribution.Clear();
 
-	// Sort command lists by sub-order within each render order
-	// This ensures correct execution order for multi-pass effects like bloom
-	for (u_int uRenderOrder = 0; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
+	// W13: the render graph submits command lists in topological order, so no sort needed.
+
+	// Count total commands
+	for (u_int i = 0; i < s_xPendingCommandLists.GetSize(); i++)
 	{
-		Zenith_Vector<Flux_CommandListEntry>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
-		if (xCommandLists.GetSize() > 1)
-		{
-			std::sort(xCommandLists.GetDataPointer(), xCommandLists.GetDataPointer() + xCommandLists.GetSize());
-		}
+		xOutDistribution.uTotalCommandCount += s_xPendingCommandLists.Get(i).m_pxCmdList->GetCommandCount();
 	}
 
-	// Count total commands across all render orders
-	for (u_int uRenderOrder = RENDER_ORDER_MEMORY_UPDATE + 1; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
-	{
-		const Zenith_Vector<Flux_CommandListEntry>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
-
-		for (u_int i = 0; i < xCommandLists.GetSize(); i++)
-		{
-			xOutDistribution.uTotalCommandCount += xCommandLists.Get(i).m_pxCmdList->GetCommandCount();
-		}
-	}
-
-	// Early exit if there are no commands
 	if (xOutDistribution.uTotalCommandCount == 0)
 	{
 		return false;
@@ -222,47 +316,43 @@ bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 	u_int uCurrentThreadIndex = 0;
 	u_int uCurrentThreadCommandCount = 0;
 
-	// Set the first thread's start position
-	xOutDistribution.auStartRenderOrder[0] = RENDER_ORDER_MEMORY_UPDATE + 1;
 	xOutDistribution.auStartIndex[0] = 0;
 
-	// Iterate through all render orders and command lists to distribute work
-	for (u_int uRenderOrder = RENDER_ORDER_MEMORY_UPDATE + 1; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
+	for (u_int uIndex = 0; uIndex < s_xPendingCommandLists.GetSize(); uIndex++)
 	{
-		const Zenith_Vector<Flux_CommandListEntry>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
+		const u_int uCommandCount = s_xPendingCommandLists.Get(uIndex).m_pxCmdList->GetCommandCount();
 
-		for (u_int uIndex = 0; uIndex < xCommandLists.GetSize(); uIndex++)
-		{
-			const u_int uCommandCount = xCommandLists.Get(uIndex).m_pxCmdList->GetCommandCount();
-
-			// If adding this item would exceed the target and we have more threads available, move to next thread
 		if (uCurrentThreadCommandCount > 0 &&
-			    uCurrentThreadCommandCount + uCommandCount > uTargetCommandsPerThread && 
-		    uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS - 1)
+			uCurrentThreadCommandCount + uCommandCount > uTargetCommandsPerThread &&
+			uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS - 1)
 		{
-				// Finalize current thread's range
-			xOutDistribution.auEndRenderOrder[uCurrentThreadIndex] = uRenderOrder;
-				xOutDistribution.auEndIndex[uCurrentThreadIndex] = uIndex;
+			xOutDistribution.auEndIndex[uCurrentThreadIndex] = uIndex;
 
-			// Move to next thread
 			uCurrentThreadIndex++;
 			uCurrentThreadCommandCount = 0;
-			xOutDistribution.auStartRenderOrder[uCurrentThreadIndex] = uRenderOrder;
-				xOutDistribution.auStartIndex[uCurrentThreadIndex] = uIndex;
+			xOutDistribution.auStartIndex[uCurrentThreadIndex] = uIndex;
 		}
 
-			uCurrentThreadCommandCount += uCommandCount;
-		}
+		uCurrentThreadCommandCount += uCommandCount;
 	}
 
-	// Finalize the last thread's range (end is exclusive, so point to start of next render order)
 	Zenith_Assert(uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS,
 		"PrepareFrame: Thread index %u out of bounds (max %u)", uCurrentThreadIndex, FLUX_NUM_WORKER_THREADS);
 
 	if (uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS)
 	{
-		xOutDistribution.auEndRenderOrder[uCurrentThreadIndex] = RENDER_ORDER_MAX;
-		xOutDistribution.auEndIndex[uCurrentThreadIndex] = 0;
+		xOutDistribution.auEndIndex[uCurrentThreadIndex] = s_xPendingCommandLists.GetSize();
+	}
+
+	// Phase 5.9: explicitly write empty (N, N) ranges for any worker that did
+	// not receive a command-list slice. This used to "work" only because
+	// xOutDistribution.Clear() left them at (0, 0); make the invariant explicit
+	// so a future change to Clear() can't break things.
+	const u_int uPendingSize = s_xPendingCommandLists.GetSize();
+	for (u_int u = uCurrentThreadIndex + 1; u < FLUX_NUM_WORKER_THREADS; u++)
+	{
+		xOutDistribution.auStartIndex[u] = uPendingSize;
+		xOutDistribution.auEndIndex[u] = uPendingSize;
 	}
 
 	return true;

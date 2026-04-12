@@ -5,10 +5,10 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Vulkan/Zenith_Vulkan_Pipeline.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
 
 // Static member definitions
 Flux_RenderAttachment Flux_HiZ::s_xHiZBuffer;
@@ -20,12 +20,6 @@ bool Flux_HiZ::s_bInitialised = false;
 
 // Debug variables
 DEBUGVAR bool dbg_bHiZEnable = true;
-
-// Task system
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_HIZ, Flux_HiZ::Render, nullptr);
-
-// Command list for compute
-static Flux_CommandList g_xCommandList("HiZ Generate");
 
 // Compute shader and pipeline
 static Zenith_Vulkan_Shader g_xComputeShader;
@@ -151,7 +145,6 @@ void Flux_HiZ::Initialise()
 		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HiZ resize callback triggered");
 		DestroyHiZRenderTargets();
 		CreateHiZRenderTargets();
-		g_xCommandList.Reset(true);
 	});
 
 	s_bInitialised = true;
@@ -169,71 +162,130 @@ void Flux_HiZ::Shutdown()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HiZ shut down");
 }
 
-void Flux_HiZ::Reset()
+static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 {
-	g_xCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HiZ::Reset()");
-}
-
-void Flux_HiZ::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_HiZ::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_HiZ::Render(void*)
-{
-	if (!dbg_bHiZEnable || !s_bInitialised)
+	if (!Flux_HiZ::IsEnabled())
 		return;
 
-	g_xCommandList.Reset(false);
-	g_xCommandList.AddCommand<Flux_CommandBindComputePipeline>(&g_xComputePipeline);
+	u_int uMip = static_cast<u_int>(reinterpret_cast<uintptr_t>(pUserData));
+
+	// -----------------------------------------------------------------------
+	// Inline per-mip layout transitions.
+	//
+	// The HiZ buffer's initial layout is SHADER_READ_ONLY_OPTIMAL (set by the
+	// memory manager for render targets with SHADER_READ + UAV flags). Each
+	// mip pass needs:
+	//   - Current mip (UAV target)   : UNDEFINED -> GENERAL (discard prior)
+	//   - Previous mip (SRV source)  : GENERAL   -> SHADER_READ_ONLY_OPTIMAL
+	//
+	// The render graph tracks access state per-attachment (not per-subresource),
+	// so it cannot emit these transitions correctly on its own. We own the
+	// ordering here, and it matches the compute pipeline's descriptor layout
+	// expectations (SRVs want SHADER_READ_ONLY_OPTIMAL, UAVs want GENERAL).
+	//
+	// UNDEFINED as the source access on the target mip is safe: it's the
+	// standard "discard + transition" path used across frame boundaries when
+	// the previous frame's contents don't need to survive.
+	// -----------------------------------------------------------------------
+
+	// Transition current mip to GENERAL for UAV write (discard prior contents).
+	pxCommandList->AddCommand<Flux_CommandImageTransition>(
+		&Flux_HiZ::s_xHiZBuffer,
+		uMip, 1,     // mip range
+		0, 1,        // layer range
+		RESOURCE_ACCESS_UNDEFINED, RESOURCE_ACCESS_WRITE_UAV);
+
+	// For mip > 0 the previous mip (just written as UAV) needs to flip to
+	// SHADER_READ_ONLY_OPTIMAL so the compute shader can sample it.
+	if (uMip > 0)
+	{
+		pxCommandList->AddCommand<Flux_CommandImageTransition>(
+			&Flux_HiZ::s_xHiZBuffer,
+			uMip - 1, 1, // previous mip
+			0, 1,
+			RESOURCE_ACCESS_WRITE_UAV, RESOURCE_ACCESS_READ_SRV);
+	}
+
+	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&g_xComputePipeline);
 
 	u_int uWidth = Flux_Swapchain::GetWidth();
 	u_int uHeight = Flux_Swapchain::GetHeight();
 
-	// Generate each mip level
+	// Calculate output dimensions for this mip
+	u_int uMipWidth = std::max(1u, uWidth >> uMip);
+	u_int uMipHeight = std::max(1u, uHeight >> uMip);
+
+	HiZPushConstants xConstants;
+	xConstants.m_uOutputWidth = uMipWidth;
+	xConstants.m_uOutputHeight = uMipHeight;
+	// u_uInputMip == 0 tells shader to read from depth buffer (R32F)
+	// u_uInputMip > 0 tells shader to read from HiZ (RG32F) and sample .rg
+	xConstants.m_uInputMip = uMip;
+	xConstants.m_uPad = 0;
+
+	Flux_ShaderBinder xBinder(*pxCommandList);
+
+	// For mip 0, read from depth buffer; for other mips, read from previous mip
+	if (uMip == 0)
+	{
+		xBinder.BindSRV(s_xInputTexBinding, Flux_Graphics::GetDepthStencilSRV());
+	}
+	else
+	{
+		xBinder.BindSRV(s_xInputTexBinding, &Flux_HiZ::s_axMipSRVs[uMip - 1]);
+	}
+
+	xBinder.BindUAV_Texture(s_xOutputTexBinding, &Flux_HiZ::s_axMipUAVs[uMip]);
+	xBinder.PushConstant(s_xPushConstantsBinding, &xConstants, sizeof(HiZPushConstants));
+
+	// Dispatch: ceil(width/8) x ceil(height/16) workgroups
+	// Workgroup size is 8x16 for better NVIDIA occupancy (4 warps vs 2 warps)
+	u_int uGroupsX = (uMipWidth + 7) / 8;
+	u_int uGroupsY = (uMipHeight + 15) / 16;
+	pxCommandList->AddCommand<Flux_CommandDispatch>(uGroupsX, uGroupsY, 1);
+
+	// On the last mip, flip it back to SHADER_READ_ONLY_OPTIMAL so downstream
+	// consumers (SSR, SSAO, etc.) see it in the layout their descriptors
+	// expect. Earlier mips are already flipped by the next mip's transition.
+	if (uMip == Flux_HiZ::GetMipCount() - 1)
+	{
+		pxCommandList->AddCommand<Flux_CommandImageTransition>(
+			&Flux_HiZ::s_xHiZBuffer,
+			uMip, 1,
+			0, 1,
+			RESOURCE_ACCESS_WRITE_UAV, RESOURCE_ACCESS_READ_SRV);
+	}
+}
+
+void Flux_HiZ::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	// Always add all passes — enable/disable is handled at runtime in execute callback
+
+	static const char* s_aszHiZPassNames[] = {
+		"HiZ Mip 0", "HiZ Mip 1", "HiZ Mip 2", "HiZ Mip 3",
+		"HiZ Mip 4", "HiZ Mip 5", "HiZ Mip 6", "HiZ Mip 7",
+		"HiZ Mip 8", "HiZ Mip 9", "HiZ Mip 10", "HiZ Mip 11"
+	};
+
 	for (u_int uMip = 0; uMip < s_uMipCount; uMip++)
 	{
-		// Calculate output dimensions for this mip
-		u_int uMipWidth = std::max(1u, uWidth >> uMip);
-		u_int uMipHeight = std::max(1u, uHeight >> uMip);
+		Zenith_Assert(uMip < sizeof(s_aszHiZPassNames) / sizeof(s_aszHiZPassNames[0]), "HiZ mip count exceeds pass name array size");
 
-		HiZPushConstants xConstants;
-		xConstants.m_uOutputWidth = uMipWidth;
-		xConstants.m_uOutputHeight = uMipHeight;
-		// u_uInputMip == 0 tells shader to read from depth buffer (R32F)
-		// u_uInputMip > 0 tells shader to read from HiZ (RG32F) and sample .rg
-		xConstants.m_uInputMip = uMip;
-		xConstants.m_uPad = 0;
+		u_int uPassIndex = xGraph.AddPass(s_aszHiZPassNames[uMip], ExecuteHiZMip, reinterpret_cast<void*>(static_cast<uintptr_t>(uMip)));
+		xGraph.SetPassTargetSetup(uPassIndex, Flux_Graphics::s_xNullTargetSetup);
 
-		Flux_ShaderBinder xBinder(g_xCommandList);
-
-		// For mip 0, read from depth buffer; for other mips, read from previous mip
+		// Resource dependencies
 		if (uMip == 0)
 		{
-			xBinder.BindSRV(s_xInputTexBinding, Flux_Graphics::GetDepthStencilSRV());
+			xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
 		}
 		else
 		{
-			xBinder.BindSRV(s_xInputTexBinding, &s_axMipSRVs[uMip - 1]);
+			xGraph.PassReads(uPassIndex, &s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1);
 		}
 
-		xBinder.BindUAV_Texture(s_xOutputTexBinding, &s_axMipUAVs[uMip]);
-		xBinder.PushConstant(s_xPushConstantsBinding, &xConstants, sizeof(HiZPushConstants));
-
-		// Dispatch: ceil(width/8) x ceil(height/16) workgroups
-		// Workgroup size is 8x16 for better NVIDIA occupancy (4 warps vs 2 warps)
-		u_int uGroupsX = (uMipWidth + 7) / 8;
-		u_int uGroupsY = (uMipHeight + 15) / 16;
-		g_xCommandList.AddCommand<Flux_CommandDispatch>(uGroupsX, uGroupsY, 1);
+		xGraph.PassWrites(uPassIndex, &s_xHiZBuffer, RESOURCE_ACCESS_WRITE_UAV, uMip, 1);
 	}
-
-	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_HIZ_GENERATE);
 }
 
 Flux_ShaderResourceView& Flux_HiZ::GetHiZSRV()

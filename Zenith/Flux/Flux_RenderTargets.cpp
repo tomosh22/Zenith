@@ -1,8 +1,10 @@
 #include "Zenith.h"
 
 #include "Flux/Flux_RenderTargets.h"
+#include "Vulkan/Zenith_Vulkan.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 
-void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachment, const std::string&)
+void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName)
 {
 	// Check if attachment already has VRAM allocated and queue it for deletion
 	if (xAttachment.m_xVRAMHandle.IsValid())
@@ -41,9 +43,17 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	{
 		xAttachment.m_pxUAV = Flux_MemoryManager::CreateUnorderedAccessView(xAttachment.m_xVRAMHandle, xInfo, 0);
 	}
+
+	// DIAG: log VkImage handle so we can correlate validation errors back to the attachment that produced the image
+	{
+		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Colour Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u",
+			strName.c_str(), (unsigned long long)(VkImage)pxVRAM->GetImage(),
+			xAttachment.m_xVRAMHandle.AsUInt(), xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uNumMips);
+	}
 }
 
-void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachment& xAttachment, const std::string&)
+void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachment& xAttachment, const std::string& strName)
 {
 	// Check if attachment already has VRAM allocated and queue it for deletion
 	if (xAttachment.m_xVRAMHandle.IsValid())
@@ -100,9 +110,17 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachment& xAt
 	{
 		xAttachment.m_pxUAV = Flux_MemoryManager::CreateUnorderedAccessView(xAttachment.m_xVRAMHandle, xInfo, 0);
 	}
+
+	// DIAG: log VkImage handle so we can correlate validation errors back to the attachment that produced the image
+	{
+		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Cubemap Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u",
+			strName.c_str(), (unsigned long long)(VkImage)pxVRAM->GetImage(),
+			xAttachment.m_xVRAMHandle.AsUInt(), xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uNumMips);
+	}
 }
 
-void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string&)
+void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string& strName)
 {
 	// Check if attachment already has VRAM allocated and queue it for deletion
 	if (xAttachment.m_xVRAMHandle.IsValid())
@@ -130,6 +148,14 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 
 	// Create SRV
 	xAttachment.m_pxSRV = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, xInfo.m_uNumMips);
+
+	// DIAG: log VkImage handle so we can correlate validation errors back to the attachment that produced the image
+	{
+		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: DepthStencil Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u",
+			strName.c_str(), (unsigned long long)(VkImage)pxVRAM->GetImage(),
+			xAttachment.m_xVRAMHandle.AsUInt(), xInfo.m_uWidth, xInfo.m_uHeight);
+	}
 }
 
 void Flux_TargetSetup::AssignDepthStencil(Flux_RenderAttachment* pxDS)
@@ -137,10 +163,10 @@ void Flux_TargetSetup::AssignDepthStencil(Flux_RenderAttachment* pxDS)
 	m_pxDepthStencil = pxDS;
 }
 
-const uint32_t Flux_TargetSetup::GetNumColourAttachments()
+uint32_t Flux_TargetSetup::GetNumColourAttachments() const
 {
 	uint32_t uRet = 0;
-	for (Flux_RenderAttachment& xTarget : m_axColourAttachments)
+	for (const Flux_RenderAttachment& xTarget : m_axColourAttachments)
 	{
 		if (xTarget.m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
 		{

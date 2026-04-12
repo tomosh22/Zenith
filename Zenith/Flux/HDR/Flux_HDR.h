@@ -2,6 +2,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Vulkan/Zenith_Vulkan_Pipeline.h"
 
 enum ToneMappingOperator : u_int
@@ -40,9 +41,7 @@ public:
 	static void Shutdown();
 	static void Reset();
 
-	static void Render(void*);
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	static Flux_ShaderResourceView& GetHDRSceneSRV();
 	static Flux_RenderAttachment& GetHDRSceneTarget();
@@ -76,10 +75,14 @@ public:
 private:
 	static void SyncDebugVariables();
 	static void InitializeAutoExposure();
-	static void RenderToneMapping();
-	static void RenderBloom();
-	static void ComputeLuminanceHistogram();
-	static void ComputeExposureAdaptation();
+	// Render graph callbacks
+	static void PreExecuteLuminanceHistogram(void* pUserData);
+	static void ExecuteLuminanceHistogram(Flux_CommandList* pxCommandList, void* pUserData);
+	static void ExecuteAdaptation(Flux_CommandList* pxCommandList, void* pUserData);
+	static void ExecuteBloomThreshold(Flux_CommandList* pxCommandList, void* pUserData);
+	static void ExecuteBloomDownsample(Flux_CommandList* pxCommandList, void* pUserData);
+	static void ExecuteBloomUpsample(Flux_CommandList* pxCommandList, void* pUserData);
+	static void ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserData);
 
 	static void CreateRenderTargets();
 	static void DestroyRenderTargets();

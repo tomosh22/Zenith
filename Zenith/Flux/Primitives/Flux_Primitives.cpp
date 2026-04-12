@@ -14,9 +14,6 @@
 
 // ========== STATIC DATA ==========
 
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_PRIMITIVES, Flux_Primitives::Render, nullptr);
-static Flux_CommandList g_xCommandList("Primitives");
-
 // Shaders and pipelines
 static Flux_Shader s_xPrimitivesShader;
 static Flux_Pipeline s_xPrimitivesPipeline;
@@ -555,14 +552,6 @@ void Flux_Primitives::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives initialised");
 }
 
-void Flux_Primitives::Reset()
-{
-	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	g_xCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives::Reset() - Reset command list");
-}
-
 void Flux_Primitives::Shutdown()
 {
 	// Destroy all vertex and index buffers
@@ -592,14 +581,16 @@ void Flux_Primitives::Shutdown()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives shut down");
 }
 
-void Flux_Primitives::SubmitRenderTask()
+void Flux_Primitives::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
+	u_int uPassIndex = xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer);
+	xGraph.SetPassTargetSetup(uPassIndex, Flux_Graphics::s_xMRTTarget);
 
-void Flux_Primitives::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
+	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+	{
+		xGraph.PassWrites(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
+	}
+	xGraph.PassWrites(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 }
 
 void Flux_Primitives::AddSphere(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor)
@@ -700,7 +691,7 @@ void Flux_Primitives::Clear()
 
 // ========== RENDERING ==========
 
-void Flux_Primitives::Render(void*)
+void Flux_Primitives::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!dbg_bEnablePrimitives)
 	{
@@ -753,18 +744,16 @@ void Flux_Primitives::Render(void*)
 		g_xTriangleInstances.Clear();
 	}
 
-	g_xCommandList.Reset(false);  // Don't clear GBuffer targets (other geometry already rendered)
-
 	// Create binder and bind frame constants (same for all primitives)
-	Flux_ShaderBinder xBinder(g_xCommandList);
+	Flux_ShaderBinder xBinder(*pxCmdList);
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	// ========== RENDER SPHERES ==========
 	if (xLocalSphereInstances.GetSize() > 0)
 	{
-		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
-		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xSphereVertexBuffer);
-		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xSphereIndexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xSphereVertexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&s_xSphereIndexBuffer);
 
 		for (u_int i = 0; i < xLocalSphereInstances.GetSize(); ++i)
 		{
@@ -780,7 +769,7 @@ void Flux_Primitives::Render(void*)
 			xPushConstant.m_fPadding = 0.0f;
 
 			xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(s_uSphereIndexCount);
+			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(s_uSphereIndexCount);
 		}
 	}
 
@@ -794,15 +783,15 @@ void Flux_Primitives::Render(void*)
 			// Set pipeline based on wireframe flag
 			if (xInstance.m_bWireframe)
 			{
-				g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesWireframePipeline);
+				pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesWireframePipeline);
 			}
 			else
 			{
-				g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
+				pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
 			}
 
-			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xCubeVertexBuffer);
-			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xCubeIndexBuffer);
+			pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xCubeVertexBuffer);
+			pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&s_xCubeIndexBuffer);
 
 			// Build model matrix: translate to center, scale by half extents
 			Zenith_Maths::Matrix4 xModelMatrix = Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xInstance.m_xCenter);
@@ -814,16 +803,16 @@ void Flux_Primitives::Render(void*)
 			xPushConstant.m_fPadding = 0.0f;
 
 			xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(s_uCubeIndexCount);
+			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(s_uCubeIndexCount);
 		}
 	}
 
 	// ========== RENDER LINES ==========
 	if (xLocalLineInstances.GetSize() > 0)
 	{
-		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
-		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xLineVertexBuffer);
-		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xLineIndexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xLineVertexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&s_xLineIndexBuffer);
 
 		for (u_int i = 0; i < xLocalLineInstances.GetSize(); ++i)
 		{
@@ -866,16 +855,16 @@ void Flux_Primitives::Render(void*)
 			xPushConstant.m_fPadding = 0.0f;
 
 			xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(s_uLineIndexCount);
+			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(s_uLineIndexCount);
 		}
 	}
 
 	// ========== RENDER CAPSULES ==========
 	if (xLocalCapsuleInstances.GetSize() > 0)
 	{
-		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
-		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xCapsuleVertexBuffer);
-		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xCapsuleIndexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xCapsuleVertexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&s_xCapsuleIndexBuffer);
 
 		for (u_int i = 0; i < xLocalCapsuleInstances.GetSize(); ++i)
 		{
@@ -918,16 +907,16 @@ void Flux_Primitives::Render(void*)
 			xPushConstant.m_fPadding = 0.0f;
 
 			xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(s_uCapsuleIndexCount);
+			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(s_uCapsuleIndexCount);
 		}
 	}
 
 	// ========== RENDER CYLINDERS ==========
 	if (xLocalCylinderInstances.GetSize() > 0)
 	{
-		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
-		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xCylinderVertexBuffer);
-		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xCylinderIndexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xCylinderVertexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&s_xCylinderIndexBuffer);
 
 		for (u_int i = 0; i < xLocalCylinderInstances.GetSize(); ++i)
 		{
@@ -969,7 +958,7 @@ void Flux_Primitives::Render(void*)
 			xPushConstant.m_fPadding = 0.0f;
 
 			xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(s_uCylinderIndexCount);
+			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(s_uCylinderIndexCount);
 		}
 	}
 
@@ -1051,9 +1040,9 @@ void Flux_Primitives::Render(void*)
 		);
 
 		// Render all triangles with identity transform (vertices are in world space)
-		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
-		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xTriangleDynamicVertexBuffer);
-		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xTriangleIndexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xTriangleDynamicVertexBuffer);
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&s_xTriangleIndexBuffer);
 
 		PrimitivePushConstant xPushConstant;
 		xPushConstant.m_xModelMatrix = Zenith_Maths::Matrix4(1.0f);  // Identity
@@ -1061,11 +1050,8 @@ void Flux_Primitives::Render(void*)
 		xPushConstant.m_fPadding = 0.0f;
 
 		xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
-		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xTriangleIndices.GetSize());
+		pxCmdList->AddCommand<Flux_CommandDrawIndexed>(xTriangleIndices.GetSize());
 	}
-
-	// Submit command list to GBuffer target at RENDER_ORDER_PRIMITIVES
-	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_PRIMITIVES);
 
 	// Note: Instances already cleared inside the lock above
 }

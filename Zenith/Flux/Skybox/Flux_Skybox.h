@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 // ============================================================================
 // Physical Atmosphere Constants
@@ -70,15 +71,12 @@ public:
 	static void Shutdown();
 	static void Reset();
 
-	// Main sky render (cubemap or procedural atmosphere)
-	static void Render(void*);
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
-
-	// Aerial perspective pass (renders to HDR target when atmosphere enabled)
-	static void RenderAerialPerspective(void*);
-	static void SubmitAerialPerspectiveTask();
-	static void WaitForAerialPerspectiveTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
+	// Aerial perspective is a separate registration because it must run AFTER
+	// DeferredShading — it blends atmospheric scattering onto the lit HDR scene.
+	// Flux::SetupRenderGraph calls this after the deferred/lighting passes are
+	// in place so the writer-chain topological ordering is correct.
+	static void SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph);
 
 	// Atmosphere configuration
 	static void SetAtmosphereEnabled(bool bEnabled);
@@ -109,6 +107,14 @@ public:
 	static void RegisterDebugVariables();
 #endif
 
+	// Pipelines and buffers (public for render graph execute callback access)
+	static Flux_Pipeline s_xCubemapPipeline;
+	static Flux_Pipeline s_xAtmospherePipeline;
+	static Flux_Pipeline s_xAerialPerspectivePipeline;
+	static Flux_DynamicConstantBuffer s_xAtmosphereConstantsBuffer;
+	static Flux_Pipeline s_xSolidColourPipeline;
+	static Flux_DynamicConstantBuffer s_xSolidColourConstantsBuffer;
+
 private:
 	static void RenderSolidColour();
 	static void RenderCubemapSky();
@@ -121,11 +127,6 @@ private:
 	static Flux_RenderAttachment s_xTransmittanceLUT;
 	static Flux_TargetSetup s_xTransmittanceLUTSetup;
 	static bool s_bLUTNeedsUpdate;
-
-	// Pipelines
-	static Flux_Pipeline s_xCubemapPipeline;
-	static Flux_Pipeline s_xAtmospherePipeline;
-	static Flux_Pipeline s_xAerialPerspectivePipeline;
 
 	// Shaders
 	static Flux_Shader s_xCubemapShader;
@@ -141,11 +142,6 @@ private:
 	static bool s_bAerialPerspectiveEnabled;
 	static float s_fAerialPerspectiveStrength;
 
-	// Constants buffer for atmosphere parameters
-	static Flux_DynamicConstantBuffer s_xAtmosphereConstantsBuffer;
-
 	// Solid colour override
-	static Flux_Pipeline s_xSolidColourPipeline;
 	static Flux_Shader s_xSolidColourShader;
-	static Flux_DynamicConstantBuffer s_xSolidColourConstantsBuffer;
 };

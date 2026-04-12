@@ -72,7 +72,7 @@ static const TierConstraints s_axTierConstraints[] =
 	{},                                                               // NONE (unused)
 	{ 5,  6,  1, 2,  1, 2,  0, 0,  1, 1,   2,  5,  0, 0,  0, 0 },  // TUTORIAL_EARLY (single-cell only)
 	{ 5,  6,  1, 2,  1, 2,  0, 0,  2, 2,   2,  5,  0, 0,  0, 0 },  // TUTORIAL_LATE (multi-cell introduced)
-	{ 6,  7,  2, 3,  1, 2,  0, 1,  1, 3,   4,  8,  0, 0,  0, 0 },  // EASY
+	{ 6,  7,  2, 3,  1, 2,  1, 1,  1, 3,   4,  8,  0, 0,  0, 0 },  // EASY
 	{ 7,  8,  3, 3,  2, 2,  1, 2,  2, 3,   8, 12,  0, 0,  0, 1 },  // MEDIUM
 	{ 8,  9,  3, 4,  2, 3,  1, 2,  3, 4,  10, 15,  0, 2,  0, 1 },  // HARD
 	{ 9, 10,  4, 5,  2, 3,  2, 3,  3, 4,  12, 20,  1, 3,  0, 2 },  // EXPERT

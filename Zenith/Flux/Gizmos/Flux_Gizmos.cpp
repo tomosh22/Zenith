@@ -14,7 +14,7 @@
 #include "Flux/Primitives/Flux_Primitives.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Maths/Zenith_Maths_Intersections.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 // Constants
 static constexpr float GIZMO_BASE_SIZE = 1.0f;
@@ -53,8 +53,6 @@ Flux_CommandList Flux_Gizmos::s_xCommandList("Gizmos");
 Zenith_Vector<Flux_Gizmos::GizmoGeometry> Flux_Gizmos::s_xTranslateGeometry;
 Zenith_Vector<Flux_Gizmos::GizmoGeometry> Flux_Gizmos::s_xRotateGeometry;
 Zenith_Vector<Flux_Gizmos::GizmoGeometry> Flux_Gizmos::s_xScaleGeometry;
-
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_GIZMOS, Flux_Gizmos::Render, nullptr);
 
 void Flux_Gizmos::Initialise()
 {
@@ -125,10 +123,6 @@ void Flux_Gizmos::Shutdown()
 
 void Flux_Gizmos::Reset()
 {
-	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	s_xCommandList.Reset(true);
-
 	// Clear target entity reference (will be invalid after scene reset)
 	s_pxTargetEntity = nullptr;
 
@@ -137,7 +131,7 @@ void Flux_Gizmos::Reset()
 	s_eActiveComponent = GizmoComponent::None;
 	s_bIsInteracting = false;
 
-	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos::Reset() - Reset command list and cleared entity reference");
+	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos::Reset() - Cleared entity reference");
 }
 
 // ==================== EXTRACTED HELPERS ====================
@@ -233,8 +227,9 @@ void Flux_Gizmos::ComputeTangentFrame(const Zenith_Maths::Vector3& xAxis, Zenith
 
 // ==================== RENDERING ====================
 
-void Flux_Gizmos::Render(void*)
+void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 {
+	(void)pUserData;
 	if (!dbg_bRenderGizmos)
 	{
 		return;
@@ -255,6 +250,19 @@ void Flux_Gizmos::Render(void*)
 	float fDistance = glm::length(xEntityPos - xCameraPos);
 	s_fGizmoScale = fDistance / GIZMO_AUTO_SCALE_DISTANCE;
 
+#ifdef ZENITH_DEBUG
+	// Visualize gizmo interaction bounding boxes for debugging
+	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
+		Zenith_Maths::Vector3(GIZMO_ARROW_LENGTH * s_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale),
+		Zenith_Maths::Vector3(1, 0, 0));
+	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 1, 0) * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
+		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_ARROW_LENGTH * s_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale),
+		Zenith_Maths::Vector3(0, 1, 0));
+	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 0, 1) * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
+		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_ARROW_LENGTH * s_fGizmoScale * 0.5f),
+		Zenith_Maths::Vector3(0, 0, 1));
+#endif
+
 	// Build gizmo transform matrix
 	Zenith_Maths::Matrix4 xGizmoMatrix = glm::translate(Zenith_Maths::Matrix4(1.0f), xEntityPos);
 	xGizmoMatrix = glm::scale(xGizmoMatrix, Zenith_Maths::Vector3(s_fGizmoScale));
@@ -270,27 +278,14 @@ void Flux_Gizmos::Render(void*)
 
 	if (!pxGeometry || pxGeometry->GetSize() == 0)
 	{
-		Zenith_Log(LOG_CATEGORY_GIZMOS, "Gizmos: No geometry - mode=%d, size=%d", s_eMode, pxGeometry ? pxGeometry->GetSize() : 0);
 		return;
 	}
 
-	// Visualize gizmo interaction bounding boxes for debugging
-	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
-		Zenith_Maths::Vector3(GIZMO_ARROW_LENGTH * s_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale),
-		Zenith_Maths::Vector3(1, 0, 0));
-	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 1, 0) * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
-		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_ARROW_LENGTH * s_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale),
-		Zenith_Maths::Vector3(0, 1, 0));
-	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 0, 1) * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
-		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_ARROW_LENGTH * s_fGizmoScale * 0.5f),
-		Zenith_Maths::Vector3(0, 0, 1));
-
 	// Record rendering commands
-	s_xCommandList.Reset(false);
-	s_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
 	// Create binder once - bind frame constants once (same for all gizmo components)
-	Flux_ShaderBinder xBinder(s_xCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindCBV(Flux_BindingHandle{0, 0}, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	// Render each gizmo component
@@ -299,8 +294,8 @@ void Flux_Gizmos::Render(void*)
 		const GizmoGeometry& xGeom = pxGeometry->Get(i);
 
 		// Set vertex and index buffers
-		s_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&xGeom.m_xVertexBuffer);
-		s_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&xGeom.m_xIndexBuffer);
+		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGeom.m_xVertexBuffer);
+		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&xGeom.m_xIndexBuffer);
 
 		// Prepare push constants
 		struct GizmoPushConstants
@@ -322,21 +317,20 @@ void Flux_Gizmos::Render(void*)
 		xBinder.PushConstant(&xPushConstants, sizeof(xPushConstants));
 
 		// Draw
-		s_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xGeom.m_uIndexCount);
+		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(xGeom.m_uIndexCount);
 	}
-
-	// Submit to rendering pass (after scene but before UI)
-	Flux::SubmitCommandList(&s_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_TEXT);
 }
 
-void Flux_Gizmos::SubmitRenderTask()
+void Flux_Gizmos::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_Gizmos::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
+	u_int uPass = xGraph.AddPass("Gizmos", ExecuteGizmos);
+	xGraph.SetPassTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget);
+	xGraph.PassWrites(uPass, &Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+	// Gizmos pipeline disables depth-test and depth-write but the renderpass
+	// still includes the depth attachment via s_xFinalRenderTarget. Declare a
+	// READ_DEPTH so the graph transitions the depth to READ_ONLY_OPTIMAL and
+	// the renderpass initialLayout matches.
+	xGraph.PassReads(uPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_DEPTH);
 }
 
 void Flux_Gizmos::SetTargetEntity(Zenith_Entity* pxEntity)

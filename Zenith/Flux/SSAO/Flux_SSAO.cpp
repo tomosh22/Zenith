@@ -8,22 +8,14 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
-
-// Task system
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_SSAO, Flux_SSAO::Render, nullptr);
-
-// Command lists (one per pass)
-static Flux_CommandList g_xComputeCommandList("SSAO Compute");
-static Flux_CommandList g_xBlurCommandList("SSAO Blur");
-static Flux_CommandList g_xUpsampleCommandList("SSAO Upsample");
 
 // Shaders and pipelines
-static Flux_Shader s_xComputeShader;
+static Flux_Shader s_xGenerateShader;
 static Flux_Shader s_xBlurShader;
 static Flux_Shader s_xUpsampleShader;
-static Flux_Pipeline s_xComputePipeline;
+static Flux_Pipeline s_xGeneratePipeline;
 static Flux_Pipeline s_xBlurPipeline;
 static Flux_Pipeline s_xUpsamplePipeline;
 
@@ -32,22 +24,22 @@ static Flux_RenderAttachment s_xRawOcclusion;
 static Flux_RenderAttachment s_xBlurred;
 
 // Target setups
-static Flux_TargetSetup s_xComputeTargetSetup;
+static Flux_TargetSetup s_xGenerateTargetSetup;
 static Flux_TargetSetup s_xBlurTargetSetup;
 
 bool Flux_SSAO::s_bEnabled = true;
 
-// Compute pass constants
+// Generate pass constants
 DEBUGVAR bool dbg_bEnable = true;
 DEBUGVAR bool dbg_bBlurEnable = true;
 
-static struct SSAOComputeConstants
+static struct SSAOGenerateConstants
 {
 	float m_fRadius = 0.5f;
 	float m_fBias = 0.025f;
 	float m_fIntensity = 1.5f;
 	float m_fKernelSize = 32.f; // Total samples: 8 directions x 4 steps
-} dbg_xComputeConstants;
+} dbg_xGenerateConstants;
 
 // Blur pass constants
 static struct SSAOBlurConstants
@@ -58,10 +50,10 @@ static struct SSAOBlurConstants
 	u_int m_uKernelRadius = 3;     // 7x7 kernel (HBAO+ uses radius 4)
 } dbg_xBlurConstants;
 
-// Cached binding handles for compute pass
-static Flux_BindingHandle s_xCompute_FrameConstants;
-static Flux_BindingHandle s_xCompute_DepthTex;
-static Flux_BindingHandle s_xCompute_NormalTex;
+// Cached binding handles for generate pass
+static Flux_BindingHandle s_xGenerate_FrameConstants;
+static Flux_BindingHandle s_xGenerate_DepthTex;
+static Flux_BindingHandle s_xGenerate_NormalTex;
 
 // Cached binding handles for blur pass
 static Flux_BindingHandle s_xBlur_OcclusionTex;
@@ -89,8 +81,8 @@ void Flux_SSAO::CreateRenderTargets()
 
 		xBuilder.BuildColour(s_xRawOcclusion, "SSAO Raw");
 
-		s_xComputeTargetSetup.m_axColourAttachments[0] = s_xRawOcclusion;
-		s_xComputeTargetSetup.m_pxDepthStencil = nullptr;
+		s_xGenerateTargetSetup.m_axColourAttachments[0] = s_xRawOcclusion;
+		s_xGenerateTargetSetup.m_pxDepthStencil = nullptr;
 	}
 
 	// Blurred SSAO (half-res)
@@ -133,16 +125,19 @@ void Flux_SSAO::Initialise()
 {
 	CreateRenderTargets();
 
-	// Compute pass: existing SSAO shader, rendering to half-res R8_UNORM (no blending)
+	// Generate pass: fullscreen-quad fragment shader rendering raw SSAO into a
+	// half-res R8_UNORM target (no blending). NOTE: this is a graphics pipeline,
+	// NOT a Vulkan compute dispatch — the name "Generate" reflects the SSAO
+	// computation phase, not VK_PIPELINE_BIND_POINT_COMPUTE.
 	Flux_PipelineHelper::BuildFullscreenPipeline(
-		s_xComputeShader, s_xComputePipeline,
-		"SSAO/Flux_SSAO.frag", &s_xComputeTargetSetup);
+		s_xGenerateShader, s_xGeneratePipeline,
+		"SSAO/Flux_SSAO.frag", &s_xGenerateTargetSetup);
 
 	{
-		const Flux_ShaderReflection& xReflection = s_xComputeShader.GetReflection();
-		s_xCompute_FrameConstants = xReflection.GetBinding("FrameConstants");
-		s_xCompute_DepthTex = xReflection.GetBinding("g_xDepthTex");
-		s_xCompute_NormalTex = xReflection.GetBinding("g_xNormalTex");
+		const Flux_ShaderReflection& xReflection = s_xGenerateShader.GetReflection();
+		s_xGenerate_FrameConstants = xReflection.GetBinding("FrameConstants");
+		s_xGenerate_DepthTex = xReflection.GetBinding("g_xDepthTex");
+		s_xGenerate_NormalTex = xReflection.GetBinding("g_xNormalTex");
 	}
 
 	// Blur pass: bilateral blur at half-res (no blending)
@@ -177,10 +172,10 @@ void Flux_SSAO::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "SSAO" }, dbg_bEnable);
-	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Radius" }, dbg_xComputeConstants.m_fRadius, 0.01f, 2.f);
-	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Bias" }, dbg_xComputeConstants.m_fBias, 0.01f, 2.f);
-	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Intensity" }, dbg_xComputeConstants.m_fIntensity, 0.01f, 2.f);
-	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Kernel Size" }, dbg_xComputeConstants.m_fKernelSize, 8.f, 64.f);
+	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Radius" }, dbg_xGenerateConstants.m_fRadius, 0.01f, 2.f);
+	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Bias" }, dbg_xGenerateConstants.m_fBias, 0.01f, 2.f);
+	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Intensity" }, dbg_xGenerateConstants.m_fIntensity, 0.01f, 2.f);
+	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Kernel Size" }, dbg_xGenerateConstants.m_fKernelSize, 8.f, 64.f);
 
 	Zenith_DebugVariables::AddBoolean({ "Render", "SSAO", "Blur", "Enable" }, dbg_bBlurEnable);
 	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Blur", "Spatial Sigma" }, dbg_xBlurConstants.m_fSpatialSigma, 0.5f, 4.f);
@@ -200,10 +195,6 @@ void Flux_SSAO::Initialise()
 		DestroyRenderTargets();
 		CreateRenderTargets();
 
-		g_xComputeCommandList.Reset(true);
-		g_xBlurCommandList.Reset(true);
-		g_xUpsampleCommandList.Reset(true);
-
 #ifdef ZENITH_DEBUG_VARIABLES
 		Zenith_DebugVariables::AddTexture({ "Render", "SSAO", "Textures", "Raw" }, s_xRawOcclusion.m_pxSRV);
 		Zenith_DebugVariables::AddTexture({ "Render", "SSAO", "Textures", "Blurred" }, s_xBlurred.m_pxSRV);
@@ -221,91 +212,55 @@ void Flux_SSAO::Shutdown()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSAO shut down");
 }
 
-void Flux_SSAO::Reset()
+static void ExecuteSSAOGenerate(Flux_CommandList* pxCommandList, void*)
 {
-	g_xComputeCommandList.Reset(true);
-	g_xBlurCommandList.Reset(true);
-	g_xUpsampleCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSAO::Reset()");
-}
-
-void Flux_SSAO::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_SSAO::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_SSAO::Render(void*)
-{
-	if (!dbg_bEnable || !s_bEnabled)
-	{
+	if (!dbg_bEnable || !Flux_SSAO::s_bEnabled)
 		return;
-	}
 
-	RenderCompute();
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xGeneratePipeline);
 
-	if (dbg_bBlurEnable)
-	{
-		RenderBlur();
-	}
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	RenderUpsample();
+	Flux_ShaderBinder xBinder(*pxCommandList);
+	xBinder.BindCBV(s_xGenerate_FrameConstants, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.PushConstant(&dbg_xGenerateConstants, sizeof(SSAOGenerateConstants));
+	xBinder.BindSRV(s_xGenerate_DepthTex, Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(s_xGenerate_NormalTex, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_SSAO::RenderCompute()
+static void ExecuteSSAOBlur(Flux_CommandList* pxCommandList, void*)
 {
-	g_xComputeCommandList.Reset(true);
+	if (!dbg_bEnable || !Flux_SSAO::s_bEnabled || !dbg_bBlurEnable)
+		return;
 
-	g_xComputeCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xComputePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xBlurPipeline);
 
-	g_xComputeCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xComputeCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	Flux_ShaderBinder xBinder(g_xComputeCommandList);
-	xBinder.BindCBV(s_xCompute_FrameConstants, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xBinder.PushConstant(&dbg_xComputeConstants, sizeof(SSAOComputeConstants));
-	xBinder.BindSRV(s_xCompute_DepthTex, Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xCompute_NormalTex, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-
-	g_xComputeCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	Flux::SubmitCommandList(&g_xComputeCommandList, s_xComputeTargetSetup, RENDER_ORDER_SSAO);
-}
-
-void Flux_SSAO::RenderBlur()
-{
-	g_xBlurCommandList.Reset(true);
-
-	g_xBlurCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xBlurPipeline);
-
-	g_xBlurCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xBlurCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-
-	Flux_ShaderBinder xBinder(g_xBlurCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.PushConstant(&dbg_xBlurConstants, sizeof(SSAOBlurConstants));
 	xBinder.BindSRV(s_xBlur_OcclusionTex, &s_xRawOcclusion.m_pxSRV);
 	xBinder.BindSRV(s_xBlur_DepthTex, Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(s_xBlur_NormalTex, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
-	g_xBlurCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	Flux::SubmitCommandList(&g_xBlurCommandList, s_xBlurTargetSetup, RENDER_ORDER_SSAO_BLUR);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_SSAO::RenderUpsample()
+static void ExecuteSSAOUpsample(Flux_CommandList* pxCommandList, void*)
 {
-	g_xUpsampleCommandList.Reset(false);
+	if (!dbg_bEnable || !Flux_SSAO::s_bEnabled)
+		return;
 
-	g_xUpsampleCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xUpsamplePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xUpsamplePipeline);
 
-	g_xUpsampleCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xUpsampleCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	Flux_ShaderBinder xBinder(g_xUpsampleCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	// Bind blurred or raw depending on blur enable state
 	if (dbg_bBlurEnable)
@@ -319,7 +274,48 @@ void Flux_SSAO::RenderUpsample()
 
 	xBinder.BindSRV(s_xUpsample_DepthTex, Flux_Graphics::GetDepthStencilSRV());
 
-	g_xUpsampleCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+}
 
-	Flux::SubmitCommandList(&g_xUpsampleCommandList, Flux_HDR::GetHDRSceneTargetSetup(), RENDER_ORDER_SSAO_UPSAMPLE);
+void Flux_SSAO::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	// Always add all passes — enable/disable is handled at runtime in execute callbacks
+
+	// Generate pass — first writer of the raw occlusion target; clear so the
+	// initial render-pass LoadOp is valid against the undefined image layout.
+	// Implemented as a fullscreen-quad fragment shader pass (graphics pipeline,
+	// not a Vulkan compute dispatch).
+	{
+		u_int uPassIndex = xGraph.AddPass("SSAO Generate", ExecuteSSAOGenerate);
+		xGraph.SetPassTargetSetup(uPassIndex, s_xGenerateTargetSetup);
+		xGraph.SetPassClearTargets(uPassIndex, true);
+
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPassIndex, &s_xRawOcclusion, RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	// Blur pass — first writer of the blurred target; clear for the same reason.
+	{
+		u_int uPassIndex = xGraph.AddPass("SSAO Blur", ExecuteSSAOBlur);
+		xGraph.SetPassTargetSetup(uPassIndex, s_xBlurTargetSetup);
+		xGraph.SetPassClearTargets(uPassIndex, true);
+
+		xGraph.PassReads(uPassIndex, &s_xRawOcclusion, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPassIndex, &s_xBlurred, RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	// Upsample pass — writes HDR scene via blend, do NOT clear.
+	{
+		u_int uPassIndex = xGraph.AddPass("SSAO Upsample", ExecuteSSAOUpsample);
+		xGraph.SetPassTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
+
+		xGraph.PassReads(uPassIndex, &s_xBlurred, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &s_xRawOcclusion, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		// W8: writes HDR scene via blend (upsampled AO modulates existing contents)
+		xGraph.PassWrites(uPassIndex, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+	}
 }

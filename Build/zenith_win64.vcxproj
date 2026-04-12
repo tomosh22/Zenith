@@ -1173,6 +1173,7 @@
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_Particles.h" />
     <ClInclude Include="..\Zenith\Flux\Primitives\Flux_Primitives.h" />
     <ClInclude Include="..\Zenith\Flux\Quads\Flux_Quads.h" />
+    <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.h" />
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFs.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_FragCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToGBuffer.frag" />
@@ -2395,6 +2396,7 @@
     <ClCompile Include="..\Zenith\Flux\Particles\Flux_Particles.cpp" />
     <ClCompile Include="..\Zenith\Flux\Primitives\Flux_Primitives.cpp" />
     <ClCompile Include="..\Zenith\Flux\Quads\Flux_Quads.cpp" />
+    <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.cpp" />
     <ClCompile Include="..\Zenith\Flux\SDFs\Flux_SDFs.cpp" />
     <ClCompile Include="..\Zenith\Flux\Shadows\Flux_Shadows.cpp" />
     <ClCompile Include="..\Zenith\Flux\Skybox\Flux_Skybox.cpp" />

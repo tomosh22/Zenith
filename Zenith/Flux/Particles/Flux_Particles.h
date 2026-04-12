@@ -1,5 +1,8 @@
 #pragma once
 
+class Flux_CommandList;
+class Flux_RenderGraph;
+
 class Flux_Particles
 {
 public:
@@ -10,6 +13,8 @@ public:
 
 	static void Render(void*);
 
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+private:
+	static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData);
 };

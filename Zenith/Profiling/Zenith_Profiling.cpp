@@ -9,6 +9,7 @@
 static constexpr u_int uMAX_PROFILE_DEPTH = 16;
 thread_local static u_int tl_g_uCurrentDepth;
 thread_local static Zenith_ProfileIndex tl_g_aeIndices[uMAX_PROFILE_DEPTH];
+thread_local static const char* tl_g_aszLabels[uMAX_PROFILE_DEPTH];
 thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> tl_g_axStartPoints[uMAX_PROFILE_DEPTH];
 thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> tl_g_axEndPoints[uMAX_PROFILE_DEPTH];
 static std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>> g_xEvents;
@@ -26,6 +27,7 @@ void Zenith_Profiling::Initialise()
 {
 	tl_g_uCurrentDepth = 0;
 	memset(tl_g_aeIndices, ZENITH_PROFILE_INDEX__TOTAL_FRAME, sizeof(tl_g_aeIndices));
+	memset(tl_g_aszLabels, 0, sizeof(tl_g_aszLabels));
 	memset(tl_g_axStartPoints, 0, sizeof(tl_g_axStartPoints));
 	memset(tl_g_axEndPoints, 0, sizeof(tl_g_axEndPoints));
 	Zenith_ScopedMutexLock_T xLock(g_xEventsMutex);
@@ -293,12 +295,16 @@ void Zenith_Profiling::RenderTimelineView(int& iMinDepthToRender, int& iMaxDepth
 			
 			pxDrawList->AddRectFilled(xClampedMin, xClampedMax, uColor, 3.0f);
 
+			const char* szDisplayName = xEvent.m_szLabel ? xEvent.m_szLabel : g_aszProfileNames[xEvent.m_eIndex];
+			const float fDisplayTextWidth = xEvent.m_szLabel
+				? ImGui::CalcTextSize(szDisplayName).x
+				: ls_afCachedTextWidths[xEvent.m_eIndex];
 			const float fRectWidth = xRectMax.x - xRectMin.x;
-			if (ls_afCachedTextWidths[xEvent.m_eIndex] <= fRectWidth)
+			if (fDisplayTextWidth <= fRectWidth)
 			{
 				const ImVec2 xTextPos = ImVec2(std::max(xRectMin.x, xCanvasPos.x), xRectMin.y);
 				const ImU32 uTextColor = bIsEventHovered ? IM_COL32(0, 0, 0, 255) : IM_COL32_WHITE;
-				pxDrawList->AddText(xTextPos, uTextColor, g_aszProfileNames[xEvent.m_eIndex]);
+				pxDrawList->AddText(xTextPos, uTextColor, szDisplayName);
 			}
 
 			if (bIsEventHovered)
@@ -312,7 +318,8 @@ void Zenith_Profiling::RenderTimelineView(int& iMinDepthToRender, int& iMaxDepth
 	if (pHoveredEvent != nullptr)
 	{
 		ImGui::BeginTooltip();
-		ImGui::Text("%s", g_aszProfileNames[pHoveredEvent->m_eIndex]);
+		const char* szHoveredName = pHoveredEvent->m_szLabel ? pHoveredEvent->m_szLabel : g_aszProfileNames[pHoveredEvent->m_eIndex];
+		ImGui::Text("%s", szHoveredName);
 		ImGui::Separator();
 		
 		const float fDurationUs = fHoveredEventDuration / 1000.0f;
@@ -638,13 +645,14 @@ static Zenith_Vector<Zenith_Profiling::Event>& GetOrCreateThreadEvents()
 	return xIt->second;
 }
 
-void Zenith_Profiling::BeginProfile(const Zenith_ProfileIndex eIndex)
+void Zenith_Profiling::BeginProfile(const Zenith_ProfileIndex eIndex, const char* szLabel)
 {
 	if (g_bIsPaused) return;
 
 	Zenith_Assert(tl_g_uCurrentDepth < uMAX_PROFILE_DEPTH, "Profiling has nested too far");
 
 	tl_g_aeIndices[tl_g_uCurrentDepth] = eIndex;
+	tl_g_aszLabels[tl_g_uCurrentDepth] = szLabel;
 	tl_g_axStartPoints[tl_g_uCurrentDepth] = std::chrono::high_resolution_clock::now();
 
 	tl_g_uCurrentDepth++;
@@ -660,10 +668,17 @@ void Zenith_Profiling::EndProfile(const Zenith_ProfileIndex eIndex)
 	tl_g_uCurrentDepth--;
 
 	tl_g_axEndPoints[tl_g_uCurrentDepth] = std::chrono::high_resolution_clock::now();
-	const Event& xEvent = {tl_g_axStartPoints[tl_g_uCurrentDepth], tl_g_axEndPoints[tl_g_uCurrentDepth], tl_g_aeIndices[tl_g_uCurrentDepth], tl_g_uCurrentDepth};
+	const Event xEvent = {
+		tl_g_axStartPoints[tl_g_uCurrentDepth],
+		tl_g_axEndPoints[tl_g_uCurrentDepth],
+		tl_g_aeIndices[tl_g_uCurrentDepth],
+		tl_g_uCurrentDepth,
+		tl_g_aszLabels[tl_g_uCurrentDepth]
+	};
 	GetOrCreateThreadEvents().PushBack(xEvent);
 
 	tl_g_aeIndices[tl_g_uCurrentDepth] = ZENITH_PROFILE_INDEX__TOTAL_FRAME;
+	tl_g_aszLabels[tl_g_uCurrentDepth] = nullptr;
 }
 
 const Zenith_ProfileIndex Zenith_Profiling::GetCurrentIndex()

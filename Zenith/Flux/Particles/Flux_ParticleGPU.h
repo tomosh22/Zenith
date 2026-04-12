@@ -51,10 +51,15 @@ public:
 	static void ProcessPendingSpawns();
 
 	/**
-	 * Run the compute shader to update all GPU particles.
-	 * Called at RENDER_ORDER_PARTICLES_COMPUTE.
+	 * CPU-side pre-execute: process spawns, upload counter reset.
+	 * Must run sequentially before parallel recording.
 	 */
-	static void DispatchCompute();
+	static void PreExecuteCompute();
+
+	/**
+	 * Record compute shader commands to update all GPU particles.
+	 */
+	static void DispatchCompute(Flux_CommandList* pxCmdList);
 
 	/**
 	 * Get the instance buffer for rendering GPU particles.

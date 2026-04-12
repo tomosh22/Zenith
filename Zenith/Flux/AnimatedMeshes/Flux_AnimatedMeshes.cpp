@@ -21,10 +21,6 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES, Flux_AnimatedMeshes::RenderToGBuffer, nullptr);
-
-static Flux_CommandList g_xCommandList("Animated Meshes");
-
 static Flux_Shader s_xGBufferShader;
 static Flux_Pipeline s_xGBufferPipeline;
 
@@ -130,37 +126,29 @@ void Flux_AnimatedMeshes::Initialise()
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "Flux_AnimatedMeshes initialised");
 }
 
-void Flux_AnimatedMeshes::Reset()
+void Flux_AnimatedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	g_xCommandList.Reset(true);
+	u_int uPassIndex = xGraph.AddPass("Animated Meshes GBuffer", ExecuteGBuffer);
+	xGraph.SetPassTargetSetup(uPassIndex, Flux_Graphics::s_xMRTTarget);
 
-	Zenith_Log(LOG_CATEGORY_ANIMATION, "Flux_AnimatedMeshes::Reset() - Reset command list");
+	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+	{
+		xGraph.PassWrites(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
+	}
+	xGraph.PassWrites(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 }
 
-void Flux_AnimatedMeshes::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_AnimatedMeshes::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_AnimatedMeshes::RenderToGBuffer(void*)
+void Flux_AnimatedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!dbg_bEnable)
 	{
 		return;
 	}
 
-	g_xCommandList.Reset(false);
-	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
 
 	// Create binder for named resource binding
-	Flux_ShaderBinder xBinder(g_xCommandList);
+	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind FrameConstants once per command list (set 0 - per-frame data)
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
@@ -217,8 +205,8 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 				continue;
 			}
 
-			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
-			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+			pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
+			pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
 			Zenith_Maths::Matrix4 xModelMatrix;
 			pxModelComponent->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
@@ -243,11 +231,9 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 			xBinder.BindSRV(s_xOcclusionTexBinding, &pxMaterial->GetOcclusionTexture()->m_xSRV);
 			xBinder.BindSRV(s_xEmissiveTexBinding, &pxMaterial->GetEmissiveTexture()->m_xSRV);
 
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
+			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}
 	}
-
-	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKINNED_MESHES);
 }
 
 void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)

@@ -678,7 +678,7 @@ static uint32_t CountColourAttachments(const Flux_TargetSetup& xTargetSetup)
 	return FLUX_MAX_TARGETS;
 }
 
-vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
+vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage, bool bDepthIsReadOnly)
 {
 	const uint32_t uNumColourAttachments = CountColourAttachments(xTargetSetup);
 
@@ -722,6 +722,14 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	vk::AttachmentReference xDepthStencilAttachmentRef;
 	if (bHasDepth)
 	{
+		// Initial / final layouts match what the render-graph barrier consumer
+		// produces. Write passes use eDepthStencilAttachmentOptimal; passes that
+		// only sample the depth attachment (e.g. Grass) use
+		// eDepthStencilReadOnlyOptimal. Subsequent graph passes that change
+		// access emit their own barrier transitioning between the two.
+		const vk::ImageLayout eDepthLayout = bDepthIsReadOnly
+			? vk::ImageLayout::eDepthStencilReadOnlyOptimal
+			: vk::ImageLayout::eDepthStencilAttachmentOptimal;
 		xDepthStencilAttachment = vk::AttachmentDescription()
 			.setFormat(Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat))
 			.setSamples(vk::SampleCountFlagBits::e1)
@@ -729,12 +737,12 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 			.setStoreOp(Zenith_Vulkan::ConvertToVkStoreAction(eDepthStencilStore))
 			.setStencilLoadOp(Zenith_Vulkan::ConvertToVkLoadAction(eDepthStencilLoad))
 			.setStencilStoreOp(Zenith_Vulkan::ConvertToVkStoreAction(eDepthStencilStore))
-			.setInitialLayout(eDepthStencilLoad == LOAD_ACTION_LOAD ? vk::ImageLayout::eDepthStencilReadOnlyOptimal : vk::ImageLayout::eUndefined)
-			.setFinalLayout(vk::ImageLayout::eDepthStencilReadOnlyOptimal);
+			.setInitialLayout(eDepthStencilLoad == LOAD_ACTION_LOAD ? eDepthLayout : vk::ImageLayout::eUndefined)
+			.setFinalLayout(eDepthLayout);
 
 		xDepthStencilAttachmentRef = vk::AttachmentReference()
 			.setAttachment(uNumColourAttachments)
-			.setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
+			.setLayout(eDepthLayout);
 
 		xAttachmentDescs.push_back(xDepthStencilAttachment);
 		xAttachmentRefs.push_back(xDepthStencilAttachmentRef);
@@ -760,7 +768,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	return VkUnwrap(Zenith_Vulkan::GetDevice().createRenderPass(xRenderPassInfo));
 }
 
-vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass)
+vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	const bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;

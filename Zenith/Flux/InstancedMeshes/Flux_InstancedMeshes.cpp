@@ -39,11 +39,6 @@ static_assert(sizeof(InstancedMeshPushConstants) == 128, "InstancedMeshPushConst
 // Static Data
 //=============================================================================
 
-static Zenith_Task g_xCullingTask(ZENITH_PROFILE_INDEX__FLUX_COMPUTE, Flux_InstancedMeshes::DispatchCulling, nullptr);
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_INSTANCED_MESHES, Flux_InstancedMeshes::RenderToGBuffer, nullptr);
-
-static Flux_CommandList g_xCullingCommandList("Instanced Meshes Culling");
-static Flux_CommandList g_xGBufferCommandList("Instanced Meshes GBuffer");
 
 // Registered instance groups
 static std::vector<Flux_InstanceGroup*> s_apxInstanceGroups;
@@ -220,15 +215,12 @@ void Flux_InstancedMeshes::Shutdown()
 
 void Flux_InstancedMeshes::Reset()
 {
-	// Reset command lists to clear stale GPU resource references
-	g_xCullingCommandList.Reset(true);
-	g_xGBufferCommandList.Reset(true);
-
+	// Reset is handled by the render graph
 	// Update statistics
 	s_uTotalInstances = 0;
 	s_uVisibleInstances = 0;
 
-	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes::Reset() - Reset command lists");
+	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes::Reset()");
 }
 
 //=============================================================================
@@ -281,7 +273,29 @@ void Flux_InstancedMeshes::ClearAllGroups()
 // Per-Frame Rendering
 //=============================================================================
 
-void Flux_InstancedMeshes::DispatchCulling(void*)
+void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	// Pass 1: GPU culling compute
+	u_int uCullingPass = xGraph.AddPass("Instanced Meshes Culling", ExecuteCulling);
+	xGraph.SetPassTargetSetup(uCullingPass, Flux_Graphics::s_xNullTargetSetup);
+
+	// Pass 2: GBuffer render
+	u_int uGBufferPass = xGraph.AddPass("Instanced Meshes GBuffer", ExecuteGBuffer);
+	xGraph.SetPassTargetSetup(uGBufferPass, Flux_Graphics::s_xMRTTarget);
+
+	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+	{
+		xGraph.PassWrites(uGBufferPass, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
+	}
+	xGraph.PassWrites(uGBufferPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+
+	// GBuffer's indirect draws read the per-instance-group output buffers the
+	// culling compute writes. Those buffers are dynamic per-group and not
+	// graph-tracked, so encode the ordering as an explicit edge.
+	xGraph.AddPassDependency(uGBufferPass, uCullingPass);
+}
+
+void Flux_InstancedMeshes::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 {
 	// Check if GPU culling should run
 	if (!s_bCullingInitialized || !s_bCullingEnabled || !dbg_bEnableGPUCulling)
@@ -298,11 +312,10 @@ void Flux_InstancedMeshes::DispatchCulling(void*)
 	Zenith_Maths::Matrix4 xViewProjMatrix = Flux_Graphics::GetViewProjMatrix();
 	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
 
-	g_xCullingCommandList.Reset(true);
-	g_xCullingCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xCullingPipeline);
+	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&s_xCullingPipeline);
 
 	// Create binder for compute shader bindings
-	Flux_ShaderBinder xBinder(g_xCullingCommandList);
+	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	for (size_t uGroup = 0; uGroup < s_apxInstanceGroups.size(); ++uGroup)
 	{
@@ -349,14 +362,11 @@ void Flux_InstancedMeshes::DispatchCulling(void*)
 
 		// Dispatch compute shader: 64 threads per workgroup
 		uint32_t uNumWorkgroups = (pxGroup->GetInstanceCount() + 63) / 64;
-		g_xCullingCommandList.AddCommand<Flux_CommandDispatch>(uNumWorkgroups, 1, 1);
+		pxCmdList->AddCommand<Flux_CommandDispatch>(uNumWorkgroups, 1, 1);
 	}
-
-	// Submit culling command list (compute pass - no render targets)
-	Flux::SubmitCommandList(&g_xCullingCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_INSTANCE_CULLING);
 }
 
-void Flux_InstancedMeshes::RenderToGBuffer(void*)
+void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!dbg_bEnableInstancedMeshes)
 	{
@@ -368,11 +378,10 @@ void Flux_InstancedMeshes::RenderToGBuffer(void*)
 		return;
 	}
 
-	g_xGBufferCommandList.Reset(false);
-	g_xGBufferCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
 
 	// Create binder for named resource binding
-	Flux_ShaderBinder xBinder(g_xGBufferCommandList);
+	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind FrameConstants once per command list (set 0 - per-frame data)
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
@@ -395,7 +404,7 @@ void Flux_InstancedMeshes::RenderToGBuffer(void*)
 			continue;
 		}
 
-		// When GPU culling is enabled, buffers are updated by the culling pass (DispatchCulling)
+		// When GPU culling is enabled, buffers are updated by the culling pass (ExecuteCulling)
 		// When disabled (CPU fallback), update buffers here including CPU-side visible list
 		bool bUseGPUCulling = s_bCullingEnabled && dbg_bEnableGPUCulling && s_bCullingInitialized;
 		if (!bUseGPUCulling)
@@ -405,8 +414,8 @@ void Flux_InstancedMeshes::RenderToGBuffer(void*)
 		}
 
 		// Set vertex and index buffers from mesh
-		g_xGBufferCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxMesh->GetVertexBuffer());
-		g_xGBufferCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxMesh->GetIndexBuffer());
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMesh->GetVertexBuffer());
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMesh->GetIndexBuffer());
 
 		// Get material (fall back to blank if none)
 		Zenith_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
@@ -477,7 +486,7 @@ void Flux_InstancedMeshes::RenderToGBuffer(void*)
 		{
 			// GPU culling: use indirect draw with count from visible count buffer
 			// The culling compute shader wrote the visible instance count to the indirect buffer
-			g_xGBufferCommandList.AddCommand<Flux_CommandDrawIndexedIndirect>(
+			pxCmdList->AddCommand<Flux_CommandDrawIndexedIndirect>(
 				&pxGroup->GetIndirectBuffer(),
 				1,   // drawCount = 1 (single draw call)
 				0,   // offset = 0
@@ -490,7 +499,7 @@ void Flux_InstancedMeshes::RenderToGBuffer(void*)
 			uint32_t uVisibleCount = pxGroup->GetVisibleCount();
 			if (uVisibleCount > 0)
 			{
-				g_xGBufferCommandList.AddCommand<Flux_CommandDrawIndexed>(pxMesh->GetNumIndices(), uVisibleCount);
+				pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMesh->GetNumIndices(), uVisibleCount);
 			}
 		}
 
@@ -498,8 +507,6 @@ void Flux_InstancedMeshes::RenderToGBuffer(void*)
 		// Note: visible count is not accurate for GPU culling path (would need GPU readback)
 		s_uVisibleInstances += bUseGPUCulling ? pxGroup->GetInstanceCount() : pxGroup->GetVisibleCount();
 	}
-
-	Flux::SubmitCommandList(&g_xGBufferCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_INSTANCED_MESHES);
 }
 
 void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
@@ -560,31 +567,6 @@ void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Fl
 // Task System
 //=============================================================================
 
-void Flux_InstancedMeshes::SubmitCullingTask()
-{
-	if (s_bCullingEnabled && dbg_bEnableGPUCulling && s_bCullingInitialized)
-	{
-		Zenith_TaskSystem::SubmitTask(&g_xCullingTask);
-	}
-}
-
-void Flux_InstancedMeshes::WaitForCullingTask()
-{
-	if (s_bCullingEnabled && dbg_bEnableGPUCulling && s_bCullingInitialized)
-	{
-		g_xCullingTask.WaitUntilComplete();
-	}
-}
-
-void Flux_InstancedMeshes::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_InstancedMeshes::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
 
 //=============================================================================
 // Accessors

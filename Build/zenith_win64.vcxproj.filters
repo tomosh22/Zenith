@@ -823,6 +823,9 @@
     <ClCompile Include="..\Zenith\Flux\Quads\Flux_Quads.cpp">
       <Filter>Flux\Quads</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.cpp">
+      <Filter>Flux\RenderGraph</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\SDFs\Flux_SDFs.cpp">
       <Filter>Flux\SDFs</Filter>
     </ClCompile>
@@ -3438,6 +3441,9 @@
     <ClInclude Include="..\Zenith\Flux\Quads\Flux_Quads.h">
       <Filter>Flux\Quads</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.h">
+      <Filter>Flux\RenderGraph</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFs.h">
       <Filter>Flux\SDFs</Filter>
     </ClInclude>
@@ -4021,6 +4027,9 @@
     </Filter>
     <Filter Include="Flux\Quads">
       <UniqueIdentifier>{c8d29e68-a623-2148-3317-ba713cd281aa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\RenderGraph">
+      <UniqueIdentifier>{b4854dfe-bc31-a4a4-5bd0-5ade1b517896}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\SDFs">
       <UniqueIdentifier>{87ce86cb-333b-cc52-e70b-72cb7608d982}</UniqueIdentifier>

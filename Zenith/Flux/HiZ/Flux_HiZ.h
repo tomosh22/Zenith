@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 class Flux_HiZ
 {
@@ -10,11 +11,8 @@ public:
 
 	static void Initialise();
 	static void Shutdown();
-	static void Reset();
 
-	static void Render(void*);
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	// Accessors for other systems (SSR, SSAO, etc.)
 	static Flux_ShaderResourceView& GetHiZSRV();           // Full mip chain

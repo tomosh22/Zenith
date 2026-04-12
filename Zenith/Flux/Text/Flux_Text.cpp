@@ -11,11 +11,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Zenith_OS_Include.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
-
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_TEXT, Flux_Text::Render, nullptr);
-
-static Flux_CommandList g_xCommandList("Text");
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -42,6 +38,7 @@ static Zenith_Maths::Vector4 s_xOverlayClipRect = {-1.f, -1.f, -1.f, -1.f};
 static int s_iOverlayClipSortOrder = 100;
 static uint32_t s_uBgCharCount = 0;
 static uint32_t s_uFgCharCount = 0;
+static uint32_t s_uTotalCharCount = 0;
 
 DEBUGVAR bool dbg_bEnable = true;
 DEBUGVAR float dbg_fTextSize = 100.f;
@@ -95,14 +92,10 @@ void Flux_Text::Initialise()
 
 void Flux_Text::Reset()
 {
-	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	g_xCommandList.Reset(true);
-
 	// Clear pending text entries to prevent stale text from destroyed scenes persisting
 	Zenith_UI::Zenith_UICanvas::ClearPendingTextEntries();
 
-	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text::Reset() - Reset command list and cleared pending text entries");
+	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text::Reset() - Cleared pending text entries");
 }
 
 void Flux_Text::Shutdown()
@@ -220,17 +213,8 @@ uint32_t Flux_Text::UploadChars()
 
 	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(TextVertex) * xVertices.GetSize());
 
+	s_uTotalCharCount = uCharCount;
 	return uCharCount;
-}
-
-void Flux_Text::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_Text::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
 }
 
 void Flux_Text::Render(void*)
@@ -240,50 +224,70 @@ void Flux_Text::Render(void*)
 		return;
 	}
 
-	uint32_t uNumChars = UploadChars();
+	UploadChars();
+}
 
+static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
+{
+	(void)pUserData;
+	if (!dbg_bEnable)
+	{
+		return;
+	}
+
+	uint32_t uNumChars = Flux_Text::UploadChars();
 	if (uNumChars == 0)
 	{
 		s_bOverlayClipActive = false;
 		return;
 	}
 
-	g_xCommandList.Reset(false);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
 
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
-
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxFontAtlasTexture->m_xSRV, 1);
+	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+	pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_pxFontAtlasTexture->m_xSRV, 1);
 
 	if (s_bOverlayClipActive && s_uBgCharCount > 0)
 	{
 		// Draw background text with overlay clip rect active
-		g_xCommandList.AddCommand<Flux_CommandPushConstant>(&s_xOverlayClipRect, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
-		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uBgCharCount, 0, 0, 0);
+		pxCommandList->AddCommand<Flux_CommandPushConstant>(&s_xOverlayClipRect, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uBgCharCount, 0, 0, 0);
 
 		if (s_uFgCharCount > 0)
 		{
 			// Draw overlay text without clip rect
 			Zenith_Maths::Vector4 xNoClip = {-1.f, -1.f, -1.f, -1.f};
-			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uFgCharCount, 0, 0, s_uBgCharCount);
+			pxCommandList->AddCommand<Flux_CommandPushConstant>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uFgCharCount, 0, 0, s_uBgCharCount);
 		}
 	}
 	else
 	{
 		// No overlay clipping: single draw, clip rect disabled
 		Zenith_Maths::Vector4 xNoClip = {-1.f, -1.f, -1.f, -1.f};
-		g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
-		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
+		pxCommandList->AddCommand<Flux_CommandPushConstant>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
 	}
-
-	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_TEXT);
 
 	// Clear overlay clip rect for next frame
 	s_bOverlayClipActive = false;
+}
+
+void Flux_Text::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	u_int uPass = xGraph.AddPass("Text", ExecuteText);
+	xGraph.SetPassTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget);
+	// Use same attachment pointer as ToneMapping/Quads so auto-clear doesn't re-trigger
+	// (s_xFinalRenderTarget and s_xFinalRenderTarget_NoDepth share the same color attachment VRAM)
+	xGraph.PassWrites(uPass, &Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+	// Text pipeline disables depth-test and depth-write but the renderpass still
+	// includes the depth attachment via s_xFinalRenderTarget. Declare a READ_DEPTH
+	// so the graph transitions the depth to READ_ONLY_OPTIMAL and the renderpass
+	// initialLayout matches.
+	xGraph.PassReads(uPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_DEPTH);
 }

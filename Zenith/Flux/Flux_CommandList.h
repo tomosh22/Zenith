@@ -1,11 +1,13 @@
 #pragma once
 #include "Zenith_PlatformGraphics_Include.h"
+#include "Flux/Flux_Enums.h"  // for ResourceAccess
 
 #include "Profiling/Zenith_Profiling.h"
 
 // Forward declarations
 struct Flux_Texture;
 struct Flux_Buffer;
+struct Flux_RenderAttachment;
 
 // Single source of truth for all command types.
 // To add a new command: add one X() entry here and define the command class below.
@@ -27,6 +29,7 @@ struct Flux_Buffer;
 	X(DRAW_INDEXED_INDIRECT_COUNT, Flux_CommandDrawIndexedIndirectCount) \
 	X(BIND_COMPUTE_PIPELINE,       Flux_CommandBindComputePipeline) \
 	X(DISPATCH,                    Flux_CommandDispatch) \
+	X(IMAGE_TRANSITION,            Flux_CommandImageTransition) \
 	X(RENDER_IMGUI,                Flux_CommandRenderImGui)
 
 enum Flux_CommandType
@@ -322,6 +325,47 @@ public:
 	u_int m_uGroupCountZ;
 };
 
+// Inline image subresource transition command. Emitted directly into a
+// command list when a pass needs to transition a specific (mip, layer) range
+// between compute/graphics accesses *inside* its own recording — e.g. the
+// HiZ mip chain transitions mip N-1 to SHADER_READ and mip N to UAV_WRITE
+// between successive dispatches on the same attachment.
+//
+// This is the narrow-blast-radius alternative to having the render graph
+// consume per-pass prologue barriers. The graph only tracks per-attachment
+// state; passes that need per-subresource transitions own their own ordering.
+class Flux_CommandImageTransition
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__IMAGE_TRANSITION;
+
+	Flux_CommandImageTransition(Flux_RenderAttachment* pxAttachment,
+		u_int uBaseMip, u_int uMipCount,
+		u_int uBaseLayer, u_int uLayerCount,
+		ResourceAccess eSrcAccess, ResourceAccess eDstAccess)
+		: m_pxAttachment(pxAttachment)
+		, m_uBaseMip(uBaseMip)
+		, m_uMipCount(uMipCount)
+		, m_uBaseLayer(uBaseLayer)
+		, m_uLayerCount(uLayerCount)
+		, m_eSrcAccess(eSrcAccess)
+		, m_eDstAccess(eDstAccess)
+	{}
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->ImageTransition(m_pxAttachment,
+			m_uBaseMip, m_uMipCount, m_uBaseLayer, m_uLayerCount,
+			m_eSrcAccess, m_eDstAccess);
+	}
+	Flux_RenderAttachment* m_pxAttachment;
+	u_int m_uBaseMip;
+	u_int m_uMipCount;
+	u_int m_uBaseLayer;
+	u_int m_uLayerCount;
+	ResourceAccess m_eSrcAccess;
+	ResourceAccess m_eDstAccess;
+};
+
 class Flux_CommandRenderImGui
 {
 public:
@@ -338,12 +382,21 @@ public:
 class Flux_CommandList
 {
 public:
+	// No default ctor — every command list must be constructed with a name and
+	// (optionally) an initial capacity. Render-graph passes that need a member-
+	// default-initialised command list should heap-own the instance instead.
 	Flux_CommandList() = delete;
+	Flux_CommandList(const Flux_CommandList&) = delete;
+	Flux_CommandList& operator=(const Flux_CommandList&) = delete;
+	Flux_CommandList(Flux_CommandList&&) = delete;
+	Flux_CommandList& operator=(Flux_CommandList&&) = delete;
 
-	Flux_CommandList(const char* szName)
-	: m_pcData(static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(uINITIAL_SIZE)))
+	// Explicit initial capacity lets heavy passes pre-size to avoid the
+	// cold-start realloc spike. Name pointer must outlive the command list.
+	explicit Flux_CommandList(const char* szName, u_int uInitialCapacity = uDEFAULT_INITIAL_SIZE)
+	: m_pcData(static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(uInitialCapacity)))
 	, m_uCursor(0)
-	, m_uCapacity(uINITIAL_SIZE)
+	, m_uCapacity(uInitialCapacity)
 	, m_szName(szName)
 	{}
 
@@ -407,16 +460,11 @@ public:
 		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS);
 	}
 
-	void Reset(const bool bClearTargets)
+	// Reset no longer carries clear state — that lives on the render-graph pass.
+	void Reset()
 	{
 		m_uCursor = 0;
 		m_uCommandCount = 0;
-		m_bClearTargets = bClearTargets;
-	}
-
-	bool RequiresClear() const
-	{
-		return m_bClearTargets;
 	}
 
 	u_int GetCommandCount() const
@@ -430,12 +478,10 @@ public:
 	}
 
 private:
-	static constexpr u_int uINITIAL_SIZE = 32;
-	u_int8* m_pcData;
+	static constexpr u_int uDEFAULT_INITIAL_SIZE = 4096;
+	u_int8* m_pcData = nullptr;
 	u_int m_uCursor = 0;
 	u_int m_uCapacity = 0;
 	u_int m_uCommandCount = 0;
 	const char* m_szName = nullptr;
-
-	bool m_bClearTargets;
 };

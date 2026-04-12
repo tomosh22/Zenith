@@ -21,10 +21,6 @@ namespace Zenith_Core
 	void Zenith_MainLoop();
 	void UpdateTimers();
 
-	// Wait for all render tasks to complete
-	// Used by editor to ensure render tasks finish before scene transitions
-	void WaitForAllRenderTasks();
-
 	// Frame timing state (definitions in Zenith_Core.cpp)
 	extern float g_fDt;
 	extern float g_fTimePassed;

@@ -8,11 +8,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
-
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_SDFS, Flux_SDFs::Render, nullptr);
-
-static Flux_CommandList g_xCommandList("SDFs");
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -60,14 +56,6 @@ void Flux_SDFs::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs initialised");
 }
 
-void Flux_SDFs::Reset()
-{
-	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	g_xCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs::Reset() - Reset command list");
-}
-
 void Flux_SDFs::Shutdown()
 {
 	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xSpheresBuffer);
@@ -92,16 +80,6 @@ void UploadSpheres()
 	Flux_MemoryManager::UploadBufferData(s_xSpheresBuffer.GetBuffer().m_xVRAMHandle, &s_axSphereData, sizeof(s_axSphereData));
 }
 
-void Flux_SDFs::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_SDFs::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
 void Flux_SDFs::Render(void*)
 {
 	if (!dbg_bEnable)
@@ -110,19 +88,37 @@ void Flux_SDFs::Render(void*)
 	}
 
 	UploadSpheres();
+}
 
-	g_xCommandList.Reset(false);
+void Flux_SDFs::ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
+{
+	(void)pUserData;
+	if (!dbg_bEnable)
+	{
+		return;
+	}
 
-	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	UploadSpheres();
 
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&s_xSpheresBuffer.GetCBV(), 1);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&s_xSpheresBuffer.GetCBV(), 1);
 
-	Flux::SubmitCommandList(&g_xCommandList, Flux_HDR::GetHDRSceneTargetSetupWithDepth(), RENDER_ORDER_SDFS);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+}
+
+void Flux_SDFs::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	u_int uPass = xGraph.AddPass("SDFs", ExecuteSDFs);
+	xGraph.SetPassTargetSetup(uPass, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
+	xGraph.PassWrites(uPass, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+	// The pipeline uses default depth-test+write enabled, so the depth attachment
+	// is bound as a writable DSV for the renderpass. The graph needs to know so
+	// it transitions from whatever layout the previous pass left it in.
+	xGraph.PassWrites(uPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 }

@@ -16,20 +16,10 @@
 
 // Flux reset includes (for ResetAllRenderSystems)
 #include "Flux/Terrain/Flux_Terrain.h"
-#include "Flux/StaticMeshes/Flux_StaticMeshes.h"
-#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
-#include "Flux/Shadows/Flux_Shadows.h"
-#include "Flux/Primitives/Flux_Primitives.h"
 #include "Flux/Text/Flux_Text.h"
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Skybox/Flux_Skybox.h"
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
-#include "Flux/HiZ/Flux_HiZ.h"
-#include "Flux/SSR/Flux_SSR.h"
-#include "Flux/SSAO/Flux_SSAO.h"
 #include "Flux/Fog/Flux_Fog.h"
-#include "Flux/SDFs/Flux_SDFs.h"
-#include "Flux/Quads/Flux_Quads.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #endif
@@ -2511,21 +2501,13 @@ void Zenith_SceneManager::ResetAllRenderSystems()
 	// called AFTER scene entity destruction (collider destructors need
 	// the physics world to still be valid). Physics reset is called
 	// separately after UnloadAllNonPersistent().
+	// Only subsystems with real per-scene state need a Reset hook. The empty
+	// stubs that the render-graph refactor left behind have been deleted.
 	Flux_Terrain::Reset();
-	Flux_StaticMeshes::Reset();
-	Flux_AnimatedMeshes::Reset();
-	Flux_Shadows::Reset();
-	Flux_Primitives::Reset();
 	Flux_Text::Reset();
 	Flux_Particles::Reset();
 	Flux_Skybox::Reset();
-	Flux_HiZ::Reset();
-	Flux_SSR::Reset();
-	Flux_DeferredShading::Reset();
-	Flux_SSAO::Reset();
 	Flux_Fog::Reset();
-	Flux_SDFs::Reset();
-	Flux_Quads::Reset();
 #ifdef ZENITH_TOOLS
 	Flux_Gizmos::Reset();
 #endif

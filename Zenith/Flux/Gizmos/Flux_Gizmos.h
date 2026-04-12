@@ -6,6 +6,8 @@
 #include "Flux/Flux_Buffers.h"
 #include "Maths/Zenith_Maths.h"
 
+class Flux_RenderGraph;
+
 class Zenith_Entity;
 class Zenith_TransformComponent;
 
@@ -39,9 +41,7 @@ public:
 	static void Reset();  // Clear state when scene resets (e.g., Play/Stop transitions)
 
 	// Rendering
-	static void Render(void*);
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	// Interaction
 	static void SetTargetEntity(Zenith_Entity* pxEntity);
@@ -116,6 +116,9 @@ private:
 	static Zenith_Maths::Quaternion s_xInitialEntityRotation;
 	static Zenith_Maths::Vector3 s_xInitialEntityScale;
 	static float s_fGizmoScale;  // Scale gizmo based on camera distance
+
+	// Render graph execute callback
+	static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData);
 
 	// Rendering resources
 	static Flux_Pipeline s_xPipeline;

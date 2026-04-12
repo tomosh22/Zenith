@@ -8,15 +8,11 @@
 #include "Flux/Flux_CommandList.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Skybox/Flux_Skybox.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
 #endif
-
-// Command lists
-static Flux_CommandList g_xBRDFLUTCommandList("IBL_BRDF_LUT");
 
 // Static member definitions
 Flux_RenderAttachment Flux_IBL::s_xBRDFLUT;
@@ -81,6 +77,12 @@ IBL_RegenState Flux_IBL::s_eRegenState = IBL_REGEN_IDLE;
 u_int Flux_IBL::s_uRegenFace = 0;
 u_int Flux_IBL::s_uRegenMip = 0;
 
+// Render-graph pass indices — populated by SetupRenderGraph, consumed every
+// frame by UpdateGraphPassEnables.
+u_int Flux_IBL::s_uBRDFLUTPassIdx = UINT32_MAX;
+u_int Flux_IBL::s_auIrradianceFacePassIdx[6] = { UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX };
+u_int Flux_IBL::s_auPrefilterMipFacePassIdx[IBLConfig::uPREFILTER_MIP_COUNT][6] = {};
+
 // Cached binding handles
 static Flux_BindingHandle s_xBRDFLUTFrameConstantsBinding;
 Flux_BindingHandle Flux_IBL::s_xIrradianceFrameConstantsBinding;
@@ -88,47 +90,16 @@ Flux_BindingHandle Flux_IBL::s_xPrefilterFrameConstantsBinding;
 static Flux_BindingHandle s_xIrradianceSkyboxBinding;
 static Flux_BindingHandle s_xPrefilterSkyboxBinding;
 
-// Command lists for convolution - one per face since SubmitCommandList stores pointers
-static Flux_CommandList g_axIrradianceCommandLists[6] = {
-	Flux_CommandList("IBL_Irradiance_0"),
-	Flux_CommandList("IBL_Irradiance_1"),
-	Flux_CommandList("IBL_Irradiance_2"),
-	Flux_CommandList("IBL_Irradiance_3"),
-	Flux_CommandList("IBL_Irradiance_4"),
-	Flux_CommandList("IBL_Irradiance_5")
+// Per-pass user data structs — small PODs holding the (mip, face) the pass
+// targets. Pointer-stable file-static storage so the graph can hand them as
+// void* without lifetime concerns.
+struct IBLPrefilterPassData
+{
+	u_int m_uMip;
+	u_int m_uFace;
 };
-// Command lists for prefilter: 7 mips × 6 faces = 42 command lists
-// Indexed as [mip * 6 + face]
-static Flux_CommandList g_axPrefilterCommandLists[IBLConfig::uPREFILTER_MIP_COUNT * 6] = {
-	// Mip 0 (roughness 0.0)
-	Flux_CommandList("IBL_Prefilter_M0_F0"), Flux_CommandList("IBL_Prefilter_M0_F1"),
-	Flux_CommandList("IBL_Prefilter_M0_F2"), Flux_CommandList("IBL_Prefilter_M0_F3"),
-	Flux_CommandList("IBL_Prefilter_M0_F4"), Flux_CommandList("IBL_Prefilter_M0_F5"),
-	// Mip 1 (roughness 0.25)
-	Flux_CommandList("IBL_Prefilter_M1_F0"), Flux_CommandList("IBL_Prefilter_M1_F1"),
-	Flux_CommandList("IBL_Prefilter_M1_F2"), Flux_CommandList("IBL_Prefilter_M1_F3"),
-	Flux_CommandList("IBL_Prefilter_M1_F4"), Flux_CommandList("IBL_Prefilter_M1_F5"),
-	// Mip 2 (roughness 0.5)
-	Flux_CommandList("IBL_Prefilter_M2_F0"), Flux_CommandList("IBL_Prefilter_M2_F1"),
-	Flux_CommandList("IBL_Prefilter_M2_F2"), Flux_CommandList("IBL_Prefilter_M2_F3"),
-	Flux_CommandList("IBL_Prefilter_M2_F4"), Flux_CommandList("IBL_Prefilter_M2_F5"),
-	// Mip 3 (roughness 0.75)
-	Flux_CommandList("IBL_Prefilter_M3_F0"), Flux_CommandList("IBL_Prefilter_M3_F1"),
-	Flux_CommandList("IBL_Prefilter_M3_F2"), Flux_CommandList("IBL_Prefilter_M3_F3"),
-	Flux_CommandList("IBL_Prefilter_M3_F4"), Flux_CommandList("IBL_Prefilter_M3_F5"),
-	// Mip 4 (roughness ~0.57)
-	Flux_CommandList("IBL_Prefilter_M4_F0"), Flux_CommandList("IBL_Prefilter_M4_F1"),
-	Flux_CommandList("IBL_Prefilter_M4_F2"), Flux_CommandList("IBL_Prefilter_M4_F3"),
-	Flux_CommandList("IBL_Prefilter_M4_F4"), Flux_CommandList("IBL_Prefilter_M4_F5"),
-	// Mip 5 (roughness ~0.71)
-	Flux_CommandList("IBL_Prefilter_M5_F0"), Flux_CommandList("IBL_Prefilter_M5_F1"),
-	Flux_CommandList("IBL_Prefilter_M5_F2"), Flux_CommandList("IBL_Prefilter_M5_F3"),
-	Flux_CommandList("IBL_Prefilter_M5_F4"), Flux_CommandList("IBL_Prefilter_M5_F5"),
-	// Mip 6 (roughness 1.0)
-	Flux_CommandList("IBL_Prefilter_M6_F0"), Flux_CommandList("IBL_Prefilter_M6_F1"),
-	Flux_CommandList("IBL_Prefilter_M6_F2"), Flux_CommandList("IBL_Prefilter_M6_F3"),
-	Flux_CommandList("IBL_Prefilter_M6_F4"), Flux_CommandList("IBL_Prefilter_M6_F5")
-};
+static IBLPrefilterPassData s_axPrefilterPassData[IBLConfig::uPREFILTER_MIP_COUNT][6];
+static u_int s_auIrradianceFaceData[6] = { 0, 1, 2, 3, 4, 5 };
 
 DEBUGVAR bool dbg_bIBLShowBRDFLUT = false;
 DEBUGVAR bool dbg_bIBLForceRoughness = false;
@@ -172,7 +143,7 @@ void Flux_IBL::Initialise()
 	RegisterDebugVariables();
 #endif
 
-	// BRDF LUT will be generated on first frame via SubmitRenderTask()
+	// BRDF LUT will be generated on first frame via render graph ExecuteIBLUpdate()
 	// This ensures the render loop is active when the command list is submitted
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL Initialised");
@@ -186,16 +157,6 @@ void Flux_IBL::Shutdown()
 
 void Flux_IBL::Reset()
 {
-	g_xBRDFLUTCommandList.Reset(true);
-	for (u_int i = 0; i < 6; i++)
-	{
-		g_axIrradianceCommandLists[i].Reset(true);
-	}
-	// Reset all prefilter command lists (7 mips × 6 faces)
-	for (u_int i = 0; i < IBLConfig::uPREFILTER_MIP_COUNT * 6; i++)
-	{
-		g_axPrefilterCommandLists[i].Reset(true);
-	}
 	s_bSkyIBLDirty = true;
 	s_bIBLReady = false;  // Need to regenerate IBL on next frame
 	s_bFirstGeneration = true;  // Force non-amortized generation after reset
@@ -206,42 +167,302 @@ void Flux_IBL::Reset()
 	s_uRegenMip = 0;
 }
 
-void Flux_IBL::SubmitRenderTask()
-{
+// ---------------------------------------------------------------------------
+// First-class IBL graph passes
+//
+// One graph pass per output subresource (1 BRDF LUT + 6 irradiance faces + 42
+// prefilter mip-face combinations = 49 passes). UpdateGraphPassEnables (called
+// from Zenith_Core::ExecuteRenderGraph BEFORE Compile) advances the amortised
+// state machine and toggles per-pass enable bits via SetPassEnabled. Disabled
+// passes are excluded from Phase 0 (OnPrepare), Phase 1 (record), and Phase 2
+// (submit) — so their loadOp=CLEAR never fires and their previously-rendered
+// contents are preserved across idle frames.
+//
+// The state machine MUST run as a free function (not as a pass OnPrepare),
+// because Phase 0 only invokes OnPrepare for *enabled* passes — once everything
+// is disabled the state machine could never re-enable anything.
+// ---------------------------------------------------------------------------
 
-	// Check if BRDF LUT needs generation (first frame or regenerate requested)
+void Flux_IBL::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
+{
+	// If a full recompile is pending (e.g. fog technique was just switched, the
+	// window was resized, the graph was rebuilt, or any other system called
+	// MarkDirty), the validator will run inside Compile() and require every
+	// read of an IBL texture (BRDF LUT, irradiance, prefiltered) to have at
+	// least one *enabled* writer in the graph. Without this, the per-frame
+	// amortised state machine below would have all 49 IBL passes disabled in
+	// steady state, BuildResourceTraffic would skip them, and the validator
+	// would fire "Resource '<image>' is read but never written".
+	//
+	// Reset the state machine to first-generation mode so the next frame
+	// re-runs all 49 passes in one shot. This re-fills the IBL textures with
+	// identical contents (cheap) and gives the barrier generator a fresh,
+	// consistent view of writers vs readers. After this single frame the state
+	// machine drops back to amortised idle on the very next frame.
+	//
+	// IMPORTANT ordering: this check must run AFTER any system that may have
+	// called MarkDirty() this frame (e.g. Flux_Fog::ApplyTechniqueSelectionToGraph),
+	// so the call sequence in Zenith_Core::ExecuteRenderGraph is:
+	//   1. Flux_Fog::ApplyTechniqueSelectionToGraph(xGraph)  // may call MarkDirty
+	//   2. Flux_IBL::UpdateGraphPassEnables(xGraph)          // sees IsDirty()
+	//   3. xGraph.Compile()                                  // full recompile
+	//   4. xGraph.Execute()
+	if (xGraph.IsDirty())
+	{
+		s_bBRDFLUTGenerated = false;
+		s_bSkyIBLDirty = true;
+		s_bFirstGeneration = true;
+		s_bIBLReady = false;
+		s_eRegenState = IBL_REGEN_IDLE;
+		s_uRegenFace = 0;
+		s_uRegenMip = 0;
+	}
+
+	// Default: nothing runs this frame.
+	bool bRunBRDF = false;
+	bool abRunIrradiance[6] = {};
+	bool abRunPrefilter[IBLConfig::uPREFILTER_MIP_COUNT][6] = {};
+
+	// BRDF LUT — generate on first frame or on manual regenerate.
 	if (!s_bBRDFLUTGenerated || dbg_bIBLRegenerateBRDFLUT)
 	{
+		bRunBRDF = true;
 		if (dbg_bIBLRegenerateBRDFLUT)
 		{
-			// Reset the flag and force regeneration
 #ifdef ZENITH_DEBUG_VARIABLES
 			dbg_bIBLRegenerateBRDFLUT = false;
 #endif
 			s_bBRDFLUTGenerated = false;
-			Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Regenerating BRDF LUT (manual trigger)");
 		}
-		GenerateBRDFLUT();
 	}
 
-	// Update sky IBL if dirty
-	if (s_bSkyIBLDirty)
+	// Sky IBL state machine.
+	if (!s_bSkyIBLDirty && s_eRegenState == IBL_REGEN_IDLE)
 	{
-		UpdateSkyIBL();
+		// Mark ready once everything has been generated at least once.
+		if (s_bBRDFLUTGenerated && !s_bIBLReady)
+		{
+			s_bIBLReady = true;
+			Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: All IBL textures ready");
+		}
+	}
+	else if (s_bFirstGeneration)
+	{
+		// First generation must complete in a single frame to ensure all mip
+		// levels have valid layouts before deferred shading binds the cubemap.
+		for (u_int uFace = 0; uFace < 6; uFace++)
+			abRunIrradiance[uFace] = true;
+		for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
+			for (u_int uFace = 0; uFace < 6; uFace++)
+				abRunPrefilter[uMip][uFace] = true;
+		s_bSkyIBLDirty = false;
+		s_bFirstGeneration = false;
+		s_eRegenState = IBL_REGEN_IDLE;
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: First generation - processing all passes this frame");
+	}
+	else
+	{
+		// Begin amortised regeneration if dirty and idle.
+		if (s_bSkyIBLDirty && s_eRegenState == IBL_REGEN_IDLE)
+		{
+			s_eRegenState = IBL_REGEN_IRRADIANCE;
+			s_uRegenFace = 0;
+			s_uRegenMip = 0;
+			Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Starting amortized IBL regeneration");
+		}
+
+		u_int uPassesThisFrame = 0;
+
+		// Process irradiance faces (6 total)
+		while (s_eRegenState == IBL_REGEN_IRRADIANCE && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
+		{
+			abRunIrradiance[s_uRegenFace] = true;
+			s_uRegenFace++;
+			uPassesThisFrame++;
+
+			if (s_uRegenFace >= 6)
+			{
+				s_eRegenState = IBL_REGEN_PREFILTER;
+				s_uRegenFace = 0;
+				s_uRegenMip = 0;
+			}
+		}
+
+		// Process prefilter mip-face combinations (42 total)
+		while (s_eRegenState == IBL_REGEN_PREFILTER && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
+		{
+			abRunPrefilter[s_uRegenMip][s_uRegenFace] = true;
+			uPassesThisFrame++;
+
+			s_uRegenFace++;
+			if (s_uRegenFace >= 6)
+			{
+				s_uRegenFace = 0;
+				s_uRegenMip++;
+
+				if (s_uRegenMip >= IBLConfig::uPREFILTER_MIP_COUNT)
+				{
+					s_eRegenState = IBL_REGEN_IDLE;
+					s_bSkyIBLDirty = false;
+					Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Completed amortized IBL regeneration");
+				}
+			}
+		}
 	}
 
-	// Mark IBL as ready once all textures have been generated
-	if (s_bBRDFLUTGenerated && !s_bSkyIBLDirty && !s_bIBLReady)
-	{
-		s_bIBLReady = true;
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: All IBL textures ready");
-	}
+	// Push the resolved enable bits into the graph. SetPassEnabled is a no-op
+	// when the bit hasn't changed, so this is cheap in steady state. The IBL
+	// passes have no explicit dependency edges, so SetPassEnabled takes the
+	// cheap m_bEnabledMaskDirty path (clear-flag re-resolve only, no full
+	// recompile).
+	xGraph.SetPassEnabled(s_uBRDFLUTPassIdx, bRunBRDF);
+	for (u_int uFace = 0; uFace < 6; uFace++)
+		xGraph.SetPassEnabled(s_auIrradianceFacePassIdx[uFace], abRunIrradiance[uFace]);
+	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
+		for (u_int uFace = 0; uFace < 6; uFace++)
+			xGraph.SetPassEnabled(s_auPrefilterMipFacePassIdx[uMip][uFace], abRunPrefilter[uMip][uFace]);
 }
 
-void Flux_IBL::WaitForRenderTask()
+void Flux_IBL::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
 {
-	// IBL runs synchronously (command lists submitted directly)
-	// No task to wait for
+	// No per-frame gate — disabled passes are skipped before record runs
+	// (see Flux_RenderGraph::Execute Phase 1/2 enable check).
+	pxCmd->AddCommand<Flux_CommandSetPipeline>(&s_xBRDFLUTPipeline);
+	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+
+	{
+		Flux_ShaderBinder xBinder(*pxCmd);
+		xBinder.BindCBV(s_xBRDFLUTFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	}
+	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
+	s_bBRDFLUTGenerated = true;
+}
+
+void Flux_IBL::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserData)
+{
+	const u_int uFace = *static_cast<const u_int*>(pUserData);
+
+	struct IrradianceConstants { u_int m_uUseAtmosphere; float m_fSunIntensity; u_int m_uFaceIndex; float m_fPad; };
+	IrradianceConstants xConsts;
+	xConsts.m_uUseAtmosphere = 1;
+	xConsts.m_fSunIntensity = Flux_Skybox::GetSunIntensity();
+	xConsts.m_uFaceIndex = uFace;
+	xConsts.m_fPad = 0.0f;
+
+	pxCmd->AddCommand<Flux_CommandSetPipeline>(&s_xIrradianceConvolvePipeline);
+	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+
+	{
+		Flux_ShaderBinder xBinder(*pxCmd);
+		xBinder.BindCBV(s_xIrradianceFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.PushConstant(&xConsts, sizeof(xConsts));
+		if (s_xIrradianceSkyboxBinding.IsValid())
+		{
+			if (Flux_Graphics::s_pxCubemapTexture)
+				xBinder.BindSRV(s_xIrradianceSkyboxBinding, &Flux_Graphics::s_pxCubemapTexture->GetSRV());
+			else if (Flux_Graphics::s_pxBlackTexture)
+				xBinder.BindSRV(s_xIrradianceSkyboxBinding, &Flux_Graphics::s_pxBlackTexture->GetSRV());
+		}
+	}
+	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
+}
+
+void Flux_IBL::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserData)
+{
+	const IBLPrefilterPassData* pxData = static_cast<const IBLPrefilterPassData*>(pUserData);
+
+	struct PrefilterConstants { float m_fRoughness; u_int m_uUseAtmosphere; float m_fSunIntensity; u_int m_uFaceIndex; };
+	PrefilterConstants xConsts;
+	xConsts.m_fRoughness = static_cast<float>(pxData->m_uMip) / static_cast<float>(IBLConfig::uPREFILTER_MIP_COUNT - 1);
+	xConsts.m_uUseAtmosphere = 1;
+	xConsts.m_fSunIntensity = Flux_Skybox::GetSunIntensity();
+	xConsts.m_uFaceIndex = pxData->m_uFace;
+
+	pxCmd->AddCommand<Flux_CommandSetPipeline>(&s_xPrefilterPipeline);
+	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+
+	{
+		Flux_ShaderBinder xBinder(*pxCmd);
+		xBinder.BindCBV(s_xPrefilterFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.PushConstant(&xConsts, sizeof(xConsts));
+		if (s_xPrefilterSkyboxBinding.IsValid())
+		{
+			if (Flux_Graphics::s_pxCubemapTexture)
+				xBinder.BindSRV(s_xPrefilterSkyboxBinding, &Flux_Graphics::s_pxCubemapTexture->GetSRV());
+			else if (Flux_Graphics::s_pxBlackTexture)
+				xBinder.BindSRV(s_xPrefilterSkyboxBinding, &Flux_Graphics::s_pxBlackTexture->GetSRV());
+		}
+	}
+	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
+}
+
+void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	// Note: the IBL state-machine reset that used to live here has been moved
+	// into UpdateGraphPassEnables, where it now triggers off the graph's
+	// IsDirty() flag. That covers SetupRenderGraph rebuilds (resize) AND any
+	// other system that calls MarkDirty() (e.g. Flux_Fog technique switching),
+	// without needing per-call-site reset code.
+
+	// BRDF LUT pass. The amortised state machine that decides which IBL passes
+	// run this frame lives in Flux_IBL::UpdateGraphPassEnables, called from
+	// Zenith_Core::ExecuteRenderGraph BEFORE Compile (it cannot live as a pass
+	// OnPrepare because Phase 0 only fires OnPrepare for *enabled* passes).
+	// SetPassClearTargets(true) is safe even when the pass is disabled —
+	// ResolveClearFlags filters disabled passes out of clear ownership.
+	{
+		s_uBRDFLUTPassIdx = xGraph.AddPass("IBL BRDF LUT", ExecuteBRDFLUTPass);
+		xGraph.SetPassTargetSetup(s_uBRDFLUTPassIdx, s_xBRDFLUTSetup);
+		xGraph.SetPassClearTargets(s_uBRDFLUTPassIdx, true);
+		xGraph.PassWrites(s_uBRDFLUTPassIdx, &s_xBRDFLUT, RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	// 6 irradiance face passes — each writes layer N of the irradiance cubemap.
+	static const char* const s_aszIrradianceFaceNames[6] = {
+		"IBL Irradiance Face 0", "IBL Irradiance Face 1", "IBL Irradiance Face 2",
+		"IBL Irradiance Face 3", "IBL Irradiance Face 4", "IBL Irradiance Face 5"
+	};
+	for (u_int uFace = 0; uFace < 6; uFace++)
+	{
+		s_auIrradianceFacePassIdx[uFace] = xGraph.AddPass(s_aszIrradianceFaceNames[uFace], ExecuteIrradianceFacePass, &s_auIrradianceFaceData[uFace]);
+		xGraph.SetPassTargetSetup(s_auIrradianceFacePassIdx[uFace], s_axIrradianceFaceSetup[uFace]);
+		xGraph.SetPassClearTargets(s_auIrradianceFacePassIdx[uFace], true);
+		// Mip 0 (the only mip). Face distinction is handled by target setup —
+		// render graph old-API only tracks mip ranges, so all face writes appear
+		// as writers of the same resource and form a sequential chain that
+		// correctly barriers between faces.
+		xGraph.PassWrites(s_auIrradianceFacePassIdx[uFace], &s_xIrradianceMap, RESOURCE_ACCESS_WRITE_RTV, 0, 1);
+	}
+
+	// 42 prefilter mip-face passes — each writes one (mip, face) slot of the
+	// prefiltered cubemap. The graph honours per-mip/per-layer ranges so each
+	// slot is tracked independently and no phantom edges are added between
+	// disjoint subresources.
+	static const char* const s_aszPrefilterPassNames[IBLConfig::uPREFILTER_MIP_COUNT * 6] = {
+		"IBL Prefilter M0 F0", "IBL Prefilter M0 F1", "IBL Prefilter M0 F2", "IBL Prefilter M0 F3", "IBL Prefilter M0 F4", "IBL Prefilter M0 F5",
+		"IBL Prefilter M1 F0", "IBL Prefilter M1 F1", "IBL Prefilter M1 F2", "IBL Prefilter M1 F3", "IBL Prefilter M1 F4", "IBL Prefilter M1 F5",
+		"IBL Prefilter M2 F0", "IBL Prefilter M2 F1", "IBL Prefilter M2 F2", "IBL Prefilter M2 F3", "IBL Prefilter M2 F4", "IBL Prefilter M2 F5",
+		"IBL Prefilter M3 F0", "IBL Prefilter M3 F1", "IBL Prefilter M3 F2", "IBL Prefilter M3 F3", "IBL Prefilter M3 F4", "IBL Prefilter M3 F5",
+		"IBL Prefilter M4 F0", "IBL Prefilter M4 F1", "IBL Prefilter M4 F2", "IBL Prefilter M4 F3", "IBL Prefilter M4 F4", "IBL Prefilter M4 F5",
+		"IBL Prefilter M5 F0", "IBL Prefilter M5 F1", "IBL Prefilter M5 F2", "IBL Prefilter M5 F3", "IBL Prefilter M5 F4", "IBL Prefilter M5 F5",
+		"IBL Prefilter M6 F0", "IBL Prefilter M6 F1", "IBL Prefilter M6 F2", "IBL Prefilter M6 F3", "IBL Prefilter M6 F4", "IBL Prefilter M6 F5",
+	};
+	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
+	{
+		for (u_int uFace = 0; uFace < 6; uFace++)
+		{
+			s_axPrefilterPassData[uMip][uFace].m_uMip = uMip;
+			s_axPrefilterPassData[uMip][uFace].m_uFace = uFace;
+			s_auPrefilterMipFacePassIdx[uMip][uFace] = xGraph.AddPass(s_aszPrefilterPassNames[uMip * 6 + uFace],
+				ExecutePrefilterMipFacePass, &s_axPrefilterPassData[uMip][uFace]);
+			xGraph.SetPassTargetSetup(s_auPrefilterMipFacePassIdx[uMip][uFace], s_axPrefilteredMipFaceSetup[uMip][uFace]);
+			xGraph.SetPassClearTargets(s_auPrefilterMipFacePassIdx[uMip][uFace], true);
+			xGraph.PassWrites(s_auPrefilterMipFacePassIdx[uMip][uFace], &s_xPrefilteredMap, RESOURCE_ACCESS_WRITE_RTV, uMip, 1);
+		}
+	}
 }
 
 void Flux_IBL::CreateRenderTargets()
@@ -356,312 +577,33 @@ void Flux_IBL::DestroyRenderTargets()
 	DestroyAttachment(s_xPrefilteredMap);
 }
 
+// Phase 5.1: GenerateBRDFLUT/UpdateSkyIBL/GenerateIrradianceMap/GeneratePrefilteredMap
+// were the old bypass-submit path. Their work is now performed by graph-driven
+// per-pass execute callbacks (IBLBRDFLUTExecute / IBLIrradianceFaceExecute /
+// IBLPrefilterMipFaceExecute) that fill per-pass command lists during Phase 1.
+// The functions remain only as no-op compatibility shims for any external caller.
 void Flux_IBL::GenerateBRDFLUT()
 {
-	if (s_bBRDFLUTGenerated)
-	{
-		return;
-	}
-
-	g_xBRDFLUTCommandList.Reset(true);  // Clear needed - first render to this target
-
-	g_xBRDFLUTCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xBRDFLUTPipeline);
-	g_xBRDFLUTCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xBRDFLUTCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-
-	{
-		Flux_ShaderBinder xBinder(g_xBRDFLUTCommandList);
-		xBinder.BindCBV(s_xBRDFLUTFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	}
-
-	g_xBRDFLUTCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	// Submit to RENDER_ORDER_PROBE_CONVOLUTION which is actually processed
-	// (RENDER_ORDER_MEMORY_UPDATE is skipped in the render loop)
-	Flux::SubmitCommandList(&g_xBRDFLUTCommandList, s_xBRDFLUTSetup, RENDER_ORDER_PROBE_CONVOLUTION);
-
-	s_bBRDFLUTGenerated = true;
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Generated BRDF LUT");
+	// No-op: BRDF LUT generation is driven by the render graph + per-frame
+	// IBLPrepareCallback. Setting s_bBRDFLUTGenerated=false marks it for
+	// regeneration on the next graph pass.
+	s_bBRDFLUTGenerated = false;
 }
 
 void Flux_IBL::UpdateSkyIBL()
 {
-	if (!s_bSkyIBLDirty && s_eRegenState == IBL_REGEN_IDLE)
-	{
-		return;
-	}
-
-	// First generation MUST be non-amortized to ensure all mip levels are in valid
-	// image layouts before the deferred shader binds the prefiltered cubemap.
-	// Subsequent regenerations (e.g., skybox changes) use amortization to avoid hitches.
-	if (s_bFirstGeneration)
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: First generation - processing all passes");
-		GenerateIrradianceMap();
-		GeneratePrefilteredMap();
-		s_bSkyIBLDirty = false;
-		s_bFirstGeneration = false;
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: First generation complete");
-		return;
-	}
-
-	// Start regeneration if dirty and not already in progress
-	if (s_bSkyIBLDirty && s_eRegenState == IBL_REGEN_IDLE)
-	{
-		s_eRegenState = IBL_REGEN_IRRADIANCE;
-		s_uRegenFace = 0;
-		s_uRegenMip = 0;
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Starting amortized IBL regeneration");
-	}
-
-	u_int uPassesThisFrame = 0;
-
-	// Process irradiance faces (6 total)
-	while (s_eRegenState == IBL_REGEN_IRRADIANCE && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
-	{
-		GenerateIrradianceFace(s_uRegenFace);
-		s_uRegenFace++;
-		uPassesThisFrame++;
-
-		// Finished all irradiance faces?
-		if (s_uRegenFace >= 6)
-		{
-			s_eRegenState = IBL_REGEN_PREFILTER;
-			s_uRegenFace = 0;
-			s_uRegenMip = 0;
-		}
-	}
-
-	// Process prefilter mips/faces (7 mips × 6 faces = 42 total)
-	while (s_eRegenState == IBL_REGEN_PREFILTER && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
-	{
-		GeneratePrefilteredFace(s_uRegenMip, s_uRegenFace);
-		uPassesThisFrame++;
-
-		// Advance to next face/mip
-		s_uRegenFace++;
-		if (s_uRegenFace >= 6)
-		{
-			s_uRegenFace = 0;
-			s_uRegenMip++;
-
-			// Finished all mips?
-			if (s_uRegenMip >= IBLConfig::uPREFILTER_MIP_COUNT)
-			{
-				s_eRegenState = IBL_REGEN_IDLE;
-				s_bSkyIBLDirty = false;
-				Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Completed amortized IBL regeneration");
-			}
-		}
-	}
+	// No-op: regeneration is driven by IBLPrepareCallback. Marking the dirty
+	// flag is enough to schedule per-face/per-mip work over the next frames.
+	s_bSkyIBLDirty = true;
 }
 
-void Flux_IBL::GenerateIrradianceMap()
-{
-	struct IrradianceConstants
-	{
-		u_int m_uUseAtmosphere;
-		float m_fSunIntensity;
-		u_int m_uFaceIndex;
-		float m_fPad;
-	};
-
-	// Render all 6 cubemap faces - each face needs its own command list
-	// because SubmitCommandList stores a pointer, not a copy
-	for (u_int uFace = 0; uFace < 6; uFace++)
-	{
-		Flux_CommandList& xCmdList = g_axIrradianceCommandLists[uFace];
-		xCmdList.Reset(true);  // Clear needed - first render to this cubemap face
-
-		xCmdList.AddCommand<Flux_CommandSetPipeline>(&s_xIrradianceConvolvePipeline);
-		xCmdList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-		xCmdList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-
-		IrradianceConstants xConsts;
-		xConsts.m_uUseAtmosphere = 1;  // Use procedural atmosphere
-		xConsts.m_fSunIntensity = Flux_Skybox::GetSunIntensity();  // Query from atmosphere system
-		xConsts.m_uFaceIndex = uFace;
-		xConsts.m_fPad = 0.0f;
-
-		{
-			Flux_ShaderBinder xBinder(xCmdList);
-			xBinder.BindCBV(s_xIrradianceFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-			xBinder.PushConstant(&xConsts, sizeof(xConsts));
-			// Bind placeholder texture for skybox cubemap (required by Vulkan even when using atmosphere)
-			if (s_xIrradianceSkyboxBinding.IsValid())
-			{
-				if (Flux_Graphics::s_pxCubemapTexture)
-				{
-					xBinder.BindSRV(s_xIrradianceSkyboxBinding, &Flux_Graphics::s_pxCubemapTexture->GetSRV());
-				}
-				else if (Flux_Graphics::s_pxBlackTexture)
-				{
-					xBinder.BindSRV(s_xIrradianceSkyboxBinding, &Flux_Graphics::s_pxBlackTexture->GetSRV());
-				}
-			}
-		}
-
-		xCmdList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-		Flux::SubmitCommandList(&xCmdList, s_axIrradianceFaceSetup[uFace], RENDER_ORDER_PROBE_CONVOLUTION);
-	}
-}
-
-void Flux_IBL::GeneratePrefilteredMap()
-{
-	struct PrefilterConstants
-	{
-		float m_fRoughness;
-		u_int m_uUseAtmosphere;
-		float m_fSunIntensity;
-		u_int m_uFaceIndex;
-	};
-
-	// Render all mip levels × 6 cubemap faces = 30 total renders
-	// Each mip level corresponds to a roughness value: mip 0 = 0.0 (mirror), mip 4 = 1.0 (diffuse-like)
-	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
-	{
-		// Calculate roughness for this mip level (0.0 to 1.0)
-		float fRoughness = static_cast<float>(uMip) / static_cast<float>(IBLConfig::uPREFILTER_MIP_COUNT - 1);
-
-		for (u_int uFace = 0; uFace < 6; uFace++)
-		{
-			// Get command list for this mip-face combination
-			u_int uCmdListIndex = uMip * 6 + uFace;
-			Flux_CommandList& xCmdList = g_axPrefilterCommandLists[uCmdListIndex];
-			xCmdList.Reset(true);  // Clear needed - first render to this mip level
-
-			xCmdList.AddCommand<Flux_CommandSetPipeline>(&s_xPrefilterPipeline);
-			xCmdList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-			xCmdList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-
-			PrefilterConstants xConsts;
-			xConsts.m_fRoughness = fRoughness;
-			xConsts.m_uUseAtmosphere = 1;
-			xConsts.m_fSunIntensity = Flux_Skybox::GetSunIntensity();  // Query from atmosphere system
-			xConsts.m_uFaceIndex = uFace;
-
-			{
-				Flux_ShaderBinder xBinder(xCmdList);
-				xBinder.BindCBV(s_xPrefilterFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-				xBinder.PushConstant(&xConsts, sizeof(xConsts));
-				if (s_xPrefilterSkyboxBinding.IsValid())
-				{
-					if (Flux_Graphics::s_pxCubemapTexture)
-					{
-						xBinder.BindSRV(s_xPrefilterSkyboxBinding, &Flux_Graphics::s_pxCubemapTexture->GetSRV());
-					}
-					else if (Flux_Graphics::s_pxBlackTexture)
-					{
-						xBinder.BindSRV(s_xPrefilterSkyboxBinding, &Flux_Graphics::s_pxBlackTexture->GetSRV());
-					}
-				}
-			}
-
-			xCmdList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-			// Submit to the per-mip-face target setup
-			Flux::SubmitCommandList(&xCmdList, s_axPrefilteredMipFaceSetup[uMip][uFace], RENDER_ORDER_PROBE_CONVOLUTION);
-		}
-	}
-}
-
-void Flux_IBL::GenerateIrradianceFace(u_int uFace)
-{
-	struct IrradianceConstants
-	{
-		u_int m_uUseAtmosphere;
-		float m_fSunIntensity;
-		u_int m_uFaceIndex;
-		float m_fPad;
-	};
-
-	Flux_CommandList& xCmdList = g_axIrradianceCommandLists[uFace];
-	xCmdList.Reset(true);  // Clear needed - first render to this cubemap face
-
-	xCmdList.AddCommand<Flux_CommandSetPipeline>(&s_xIrradianceConvolvePipeline);
-	xCmdList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	xCmdList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-
-	IrradianceConstants xConsts;
-	xConsts.m_uUseAtmosphere = 1;  // Use procedural atmosphere
-	xConsts.m_fSunIntensity = Flux_Skybox::GetSunIntensity();
-	xConsts.m_uFaceIndex = uFace;
-	xConsts.m_fPad = 0.0f;
-
-	{
-		Flux_ShaderBinder xBinder(xCmdList);
-		xBinder.BindCBV(s_xIrradianceFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-		xBinder.PushConstant(&xConsts, sizeof(xConsts));
-		// Bind placeholder texture for skybox cubemap (required by Vulkan even when using atmosphere)
-		if (s_xIrradianceSkyboxBinding.IsValid())
-		{
-			if (Flux_Graphics::s_pxCubemapTexture)
-			{
-				xBinder.BindSRV(s_xIrradianceSkyboxBinding, &Flux_Graphics::s_pxCubemapTexture->GetSRV());
-			}
-			else if (Flux_Graphics::s_pxBlackTexture)
-			{
-				xBinder.BindSRV(s_xIrradianceSkyboxBinding, &Flux_Graphics::s_pxBlackTexture->GetSRV());
-			}
-		}
-	}
-
-	xCmdList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	Flux::SubmitCommandList(&xCmdList, s_axIrradianceFaceSetup[uFace], RENDER_ORDER_PROBE_CONVOLUTION);
-}
-
-void Flux_IBL::GeneratePrefilteredFace(u_int uMip, u_int uFace)
-{
-	struct PrefilterConstants
-	{
-		float m_fRoughness;
-		u_int m_uUseAtmosphere;
-		float m_fSunIntensity;
-		u_int m_uFaceIndex;
-	};
-
-	// Calculate roughness for this mip level (0.0 to 1.0)
-	float fRoughness = static_cast<float>(uMip) / static_cast<float>(IBLConfig::uPREFILTER_MIP_COUNT - 1);
-
-	// Get command list for this mip-face combination
-	u_int uCmdListIndex = uMip * 6 + uFace;
-	Flux_CommandList& xCmdList = g_axPrefilterCommandLists[uCmdListIndex];
-	xCmdList.Reset(true);  // Clear needed - first render to this mip level
-
-	xCmdList.AddCommand<Flux_CommandSetPipeline>(&s_xPrefilterPipeline);
-	xCmdList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	xCmdList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-
-	PrefilterConstants xConsts;
-	xConsts.m_fRoughness = fRoughness;
-	xConsts.m_uUseAtmosphere = 1;
-	xConsts.m_fSunIntensity = Flux_Skybox::GetSunIntensity();
-	xConsts.m_uFaceIndex = uFace;
-
-	{
-		Flux_ShaderBinder xBinder(xCmdList);
-		xBinder.BindCBV(s_xPrefilterFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-		xBinder.PushConstant(&xConsts, sizeof(xConsts));
-		if (s_xPrefilterSkyboxBinding.IsValid())
-		{
-			if (Flux_Graphics::s_pxCubemapTexture)
-			{
-				xBinder.BindSRV(s_xPrefilterSkyboxBinding, &Flux_Graphics::s_pxCubemapTexture->GetSRV());
-			}
-			else if (Flux_Graphics::s_pxBlackTexture)
-			{
-				xBinder.BindSRV(s_xPrefilterSkyboxBinding, &Flux_Graphics::s_pxBlackTexture->GetSRV());
-			}
-		}
-	}
-
-	xCmdList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	// Submit to the per-mip-face target setup
-	Flux::SubmitCommandList(&xCmdList, s_axPrefilteredMipFaceSetup[uMip][uFace], RENDER_ORDER_PROBE_CONVOLUTION);
-}
+// GenerateIrradianceMap / GeneratePrefilteredMap / GenerateIrradianceFace /
+// GeneratePrefilteredFace were the bypass-submit helpers — now obsolete.
+// All work is performed by the per-pass execute callbacks above.
+void Flux_IBL::GenerateIrradianceMap() {}
+void Flux_IBL::GeneratePrefilteredMap() {}
+void Flux_IBL::GenerateIrradianceFace(u_int /*uFace*/) {}
+void Flux_IBL::GeneratePrefilteredFace(u_int /*uMip*/, u_int /*uFace*/) {}
 
 void Flux_IBL::MarkAllProbesDirty()
 {
@@ -702,7 +644,7 @@ void Flux_IBL::SetSpecularEnabled(bool bEnabled)
 	s_bSpecularEnabled = bEnabled;
 }
 
-// Getters - return actual state variables (synced from debug variables in SubmitRenderTask)
+// Getters - return actual state variables (synced from debug variables in ExecuteIBLUpdate)
 bool Flux_IBL::IsEnabled() { return s_bEnabled; }
 bool Flux_IBL::IsReady() { return s_bIBLReady; }
 float Flux_IBL::GetIntensity() { return s_fIntensity; }

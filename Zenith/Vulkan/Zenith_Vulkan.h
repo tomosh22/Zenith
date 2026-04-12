@@ -214,7 +214,7 @@ private:
 	static std::vector<Zenith_Vulkan_VRAM*> s_xVRAMRegistry;
 	static std::vector<uint32_t> s_xFreeVRAMHandles;
 
-	static std::vector<const Zenith_Vulkan_CommandBuffer*> s_xPendingCommandBuffers[RENDER_ORDER_MAX];
+	static std::vector<const Zenith_Vulkan_CommandBuffer*> s_xPendingCommandBuffers;
 	static Zenith_Vulkan_PerFrame s_axPerFrame[MAX_FRAMES_IN_FLIGHT];
 	static Zenith_Vulkan_PerFrame* s_pxCurrentFrame;
 };

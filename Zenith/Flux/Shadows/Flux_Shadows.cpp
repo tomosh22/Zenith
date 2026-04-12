@@ -9,15 +9,11 @@
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
 
 static Flux_RenderAttachment g_axCSMs[ZENITH_FLUX_NUM_CSMS];
 static Flux_TargetSetup g_axCSMTargetSetups[ZENITH_FLUX_NUM_CSMS];
 static Zenith_Maths::Matrix4 g_axShadowMatrices[ZENITH_FLUX_NUM_CSMS];
 
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_SHADOWS, Flux_Shadows::Render, nullptr);
-
-static Flux_CommandList g_axCommandLists[ZENITH_FLUX_NUM_CSMS] = {{"Shadows"}, {"Shadows"}, {"Shadows"}, {"Shadows"}};
 static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 
 static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
@@ -104,18 +100,6 @@ void Flux_Shadows::Initialise()
 #endif
 }
 
-void Flux_Shadows::Reset()
-{
-	// Reset all cascade shadow map command lists to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		g_axCommandLists[u].Reset(true);
-	}
-
-	Zenith_Log(LOG_CATEGORY_SHADOWS, "Flux_Shadows::Reset() - Reset %d shadow cascade command lists", ZENITH_FLUX_NUM_CSMS);
-}
-
 void Flux_Shadows::Shutdown()
 {
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
@@ -134,47 +118,74 @@ void Flux_Shadows::Shutdown()
 	}
 }
 
-void Flux_Shadows::Render(void*)
+// Persistent pass names (W1: prevents dangling stack-buffer pointers passed to AddPass).
+static const char* const s_aszShadowCascadePassNames[ZENITH_FLUX_NUM_CSMS] =
+{
+	"Shadow Cascade 0",
+	"Shadow Cascade 1",
+	"Shadow Cascade 2",
+	"Shadow Cascade 3",
+};
+static_assert(ZENITH_FLUX_NUM_CSMS == 4, "s_aszShadowCascadePassNames must match ZENITH_FLUX_NUM_CSMS");
+
+// W23: small ints packed into user-data void* — matches the convention used in HDR.
+static inline void* PackSmallInt(u_int u) { return reinterpret_cast<void*>(static_cast<uintptr_t>(u)); }
+static inline u_int UnpackSmallInt(void* p) { return static_cast<u_int>(reinterpret_cast<uintptr_t>(p)); }
+
+static void PreExecuteShadowMatrices(void*)
+{
+	// W3: CPU-side shadow matrix update runs once per frame on the main thread
+	// before parallel cascade recording begins. Used to live inside cascade 0's
+	// Execute callback, which forced the cascades to serialize.
+	if (!dbg_bEnabled)
+	{
+		return;
+	}
+	Flux_Shadows::UpdateShadowMatrices();
+}
+
+static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	if (!dbg_bEnabled)
 	{
 		return;
 	}
 
-	UpdateShadowMatrices();
-	
+	uint32_t u = UnpackSmallInt(pUserData);
+
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
+
+	// RenderToShadowMap handles all bindings via shader reflection
+	Flux_StaticMeshes::RenderToShadowMap(*pxCommandList, g_xShadowMatrixBuffers[u]);
+
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_AnimatedMeshes::GetShadowPipeline());
+
+	// RenderToShadowMap handles all bindings via shader reflection
+	Flux_AnimatedMeshes::RenderToShadowMap(*pxCommandList, g_xShadowMatrixBuffers[u]);
+
+	// #TODO: Enable terrain shadow casting
+	// Flux_Terrain::RenderToShadowMap(*pxCommandList, g_xShadowMatrixBuffers[u]);
+}
+
+void Flux_Shadows::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
+		const u_int uPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade, PackSmallInt(u));
+		xGraph.SetPassTargetSetup(uPass, g_axCSMTargetSetups[u]);
+		// Each cascade owns its own target setup and clears its depth.
+		xGraph.SetPassClearTargets(uPass, true);
+
+		// W2: CSM targets are depth textures — declare as DSV writes, not RTV.
+		xGraph.PassWrites(uPass, &g_axCSMs[u], RESOURCE_ACCESS_WRITE_DSV);
+
+		// W3: cascade 0 owns the CPU-side matrix update via its pre-execute callback.
+		// No inter-cascade GPU dependency exists, so the 4 cascades now record in parallel.
+		if (u == 0)
 		{
-			g_axCommandLists[u].Reset(true);
-			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
-
-			// RenderToShadowMap handles all bindings via shader reflection
-			Flux_StaticMeshes::RenderToShadowMap(g_axCommandLists[u], g_xShadowMatrixBuffers[u]);
+			xGraph.SetPassOnPrepare(uPass, PreExecuteShadowMatrices);
 		}
-
-		{
-			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_AnimatedMeshes::GetShadowPipeline());
-
-			// RenderToShadowMap handles all bindings via shader reflection
-			Flux_AnimatedMeshes::RenderToShadowMap(g_axCommandLists[u], g_xShadowMatrixBuffers[u]);
-		}
-
-		// #TODO: Enable terrain shadow casting
-		// Flux_Terrain::RenderToShadowMap(g_axCommandLists[u], g_xShadowMatrixBuffers[u]);
-
-		Flux::SubmitCommandList(&g_axCommandLists[u], g_axCSMTargetSetups[u], RENDER_ORDER_CSM);
 	}
-}
-
-void Flux_Shadows::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_Shadows::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
 }
 
 Flux_TargetSetup& Flux_Shadows::GetCSMTargetSetup(const uint32_t uIndex)

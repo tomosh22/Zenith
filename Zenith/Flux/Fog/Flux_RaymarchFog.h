@@ -23,12 +23,12 @@
  *   - Maxime Heckel's raymarching tutorial
  */
 
+class Flux_CommandList;
+
 class Flux_RaymarchFog
 {
 public:
 	static void Initialise();
 	static void Reset();
-	static void Render(void*);
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void Render(Flux_CommandList* pxCommandList);
 };

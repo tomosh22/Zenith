@@ -13,12 +13,6 @@
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Vulkan/Zenith_Vulkan_Pipeline.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
-
-// Command lists for the three passes
-static Flux_CommandList g_xInjectCommandList("FroxelFog_Inject");
-static Flux_CommandList g_xLightCommandList("FroxelFog_Light");
-static Flux_CommandList g_xApplyCommandList("FroxelFog_Apply");
 
 // Compute pipelines
 static Zenith_Vulkan_Shader s_xInjectShader;
@@ -239,9 +233,6 @@ void Flux_FroxelFog::Initialise()
 
 void Flux_FroxelFog::Reset()
 {
-	g_xInjectCommandList.Reset(true);
-	g_xLightCommandList.Reset(true);
-	g_xApplyCommandList.Reset(true);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_FroxelFog::Reset()");
 }
 
@@ -253,6 +244,11 @@ Flux_RenderAttachment& Flux_FroxelFog::GetDensityGrid()
 Flux_RenderAttachment& Flux_FroxelFog::GetLightingGrid()
 {
 	return s_xLightingGrid;
+}
+
+Flux_RenderAttachment& Flux_FroxelFog::GetScatteringGrid()
+{
+	return s_xScatteringGrid;
 }
 
 Flux_RenderAttachment& Flux_FroxelFog::GetDebugSliceTexture()
@@ -270,16 +266,12 @@ float Flux_FroxelFog::GetFarZ()
 	return dbg_fFroxelFarZ;
 }
 
-void Flux_FroxelFog::Render(void*)
+void Flux_FroxelFog::RenderInject(Flux_CommandList* pxCommandList)
 {
-	// Get debug mode
-	extern u_int dbg_uVolFogDebugMode;
-
 	// Get shared fog constants
 	const Flux_VolumeFogConstants& xShared = Flux_VolumeFog::GetSharedConstants();
 	float fTime = static_cast<float>(Flux::GetFrameCounter()) * 0.016f;
 
-	// ========== INJECT PASS ==========
 	s_xInjectConstants.m_xFogParams = Zenith_Maths::Vector4(
 		xShared.m_fDensity,
 		xShared.m_fScatteringCoeff,
@@ -308,23 +300,25 @@ void Flux_FroxelFog::Render(void*)
 	s_xInjectConstants.m_fFarZ = dbg_fFroxelFarZ;
 	s_xInjectConstants.m_uFrameIndex = Flux::GetFrameCounter();
 
-	g_xInjectCommandList.Reset(false);
-	g_xInjectCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xInjectPipeline);
+	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&s_xInjectPipeline);
 
-	Flux_ShaderBinder xInjectBinder(g_xInjectCommandList);
+	Flux_ShaderBinder xInjectBinder(*pxCommandList);
 	xInjectBinder.BindCBV(s_xInjectFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xInjectBinder.BindSRV(s_xInjectNoiseBinding, &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV, &Flux_Graphics::s_xRepeatSampler);
 	xInjectBinder.BindUAV_Texture(s_xInjectDensityOutputBinding, &s_xDensityGrid.m_pxUAV);
 	xInjectBinder.PushConstant(&s_xInjectConstants, sizeof(InjectConstants));
-	g_xInjectCommandList.AddCommand<Flux_CommandDispatch>(
+	pxCommandList->AddCommand<Flux_CommandDispatch>(
 		(FROXEL_WIDTH + 7) / 8,
 		(FROXEL_HEIGHT + 7) / 8,
 		(FROXEL_DEPTH + 7) / 8
 	);
+}
 
-	Flux::SubmitCommandList(&g_xInjectCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_VOLUMEFOG_INJECT);
+void Flux_FroxelFog::RenderLight(Flux_CommandList* pxCommandList)
+{
+	extern u_int dbg_uVolFogDebugMode;
+	const Flux_VolumeFogConstants& xShared = Flux_VolumeFog::GetSharedConstants();
 
-	// ========== LIGHT PASS ==========
 	s_xLightConstants.m_xFogColour = xShared.m_xFogColour;
 	s_xLightConstants.m_xLightDirection = Zenith_Maths::Vector4(
 		Flux_Graphics::s_xFrameConstants.m_xSunDir_Pad.x,
@@ -338,16 +332,13 @@ void Flux_FroxelFog::Render(void*)
 	s_xLightConstants.m_fAbsorptionCoeff = xShared.m_fAbsorptionCoeff;
 	s_xLightConstants.m_fPhaseG = dbg_fFroxelPhaseG;
 	s_xLightConstants.m_uDebugMode = dbg_uVolFogDebugMode;
-	// Volumetric shadow parameters from debug variables
 	s_xLightConstants.m_fVolShadowBias = dbg_fVolShadowBias;
 	s_xLightConstants.m_fVolShadowConeRadius = dbg_fVolShadowConeRadius;
-	// Ambient irradiance ratio from shared fog constants
 	s_xLightConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
 
-	g_xLightCommandList.Reset(false);
-	g_xLightCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xLightPipeline);
+	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&s_xLightPipeline);
 
-	Flux_ShaderBinder xLightBinder(g_xLightCommandList);
+	Flux_ShaderBinder xLightBinder(*pxCommandList);
 	xLightBinder.BindCBV(s_xLightFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xLightBinder.BindSRV(s_xLightDensityInputBinding, &s_xDensityGrid.m_pxSRV);
 	xLightBinder.BindUAV_Texture(s_xLightLightingOutputBinding, &s_xLightingGrid.m_pxUAV);
@@ -362,33 +353,32 @@ void Flux_FroxelFog::Render(void*)
 	}
 
 	xLightBinder.PushConstant(&s_xLightConstants, sizeof(LightConstants));
-	g_xLightCommandList.AddCommand<Flux_CommandDispatch>(
+	pxCommandList->AddCommand<Flux_CommandDispatch>(
 		(FROXEL_WIDTH + 7) / 8,
 		(FROXEL_HEIGHT + 7) / 8,
 		(FROXEL_DEPTH + 7) / 8
 	);
+}
 
-	Flux::SubmitCommandList(&g_xLightCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_VOLUMEFOG_LIGHT);
+void Flux_FroxelFog::RenderApply(Flux_CommandList* pxCommandList)
+{
+	extern u_int dbg_uVolFogDebugMode;
 
-	// ========== APPLY PASS ==========
 	s_xApplyConstants.m_xGridDimensions = s_xInjectConstants.m_xGridDimensions;
 	s_xApplyConstants.m_fNearZ = dbg_fFroxelNearZ;
 	s_xApplyConstants.m_fFarZ = dbg_fFroxelFarZ;
 	s_xApplyConstants.m_uDebugMode = dbg_uVolFogDebugMode;
 	s_xApplyConstants.m_uDebugSliceIndex = dbg_uFroxelDebugSlice;
 
-	g_xApplyCommandList.Reset(false);
-	g_xApplyCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xApplyPipeline);
-	g_xApplyCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xApplyCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xApplyPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	Flux_ShaderBinder xApplyBinder(g_xApplyCommandList);
+	Flux_ShaderBinder xApplyBinder(*pxCommandList);
 	xApplyBinder.BindCBV(s_xApplyFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xApplyBinder.BindSRV(s_xApplyDepthBinding, Flux_Graphics::GetDepthStencilSRV());
 	xApplyBinder.BindSRV(s_xApplyLightingBinding, &s_xLightingGrid.m_pxSRV);
 	xApplyBinder.BindSRV(s_xApplyScatteringBinding, &s_xScatteringGrid.m_pxSRV);
 	xApplyBinder.PushConstant(&s_xApplyConstants, sizeof(ApplyConstants));
-	g_xApplyCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	Flux::SubmitCommandList(&g_xApplyCommandList, Flux_HDR::GetHDRSceneTargetSetup(), RENDER_ORDER_FOG);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

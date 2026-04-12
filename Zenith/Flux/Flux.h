@@ -4,6 +4,7 @@
 #include "Zenith_PlatformGraphics_Include.h"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_CommandList.h"
+#include "Multithreading/Zenith_Multithreading.h"
 
 struct Flux_SurfaceInfo
 {
@@ -121,7 +122,7 @@ struct Flux_TargetSetup {
 
 	void AssignDepthStencil(Flux_RenderAttachment* pxDS);
 
-	const uint32_t GetNumColourAttachments();
+	uint32_t GetNumColourAttachments() const;
 
 	bool operator==(const Flux_TargetSetup& xOther) const
 	{
@@ -146,28 +147,23 @@ struct Flux_TargetSetup {
 	}
 };
 
-// Entry for pending command list with sub-ordering support
+struct Flux_RenderGraph_Pass;
+
+// Entry for a command list submitted by the render graph. All fields are
+// non-owning pointers into graph-owned storage — lifetimes span a single frame.
 struct Flux_CommandListEntry
 {
-	const Flux_CommandList* m_pxCmdList;
-	Flux_TargetSetup m_xTargetSetup;
-	u_int m_uSubOrder;
-
-	// For sorting by sub-order within a render order
-	bool operator<(const Flux_CommandListEntry& xOther) const
-	{
-		return m_uSubOrder < xOther.m_uSubOrder;
-	}
+	const Flux_CommandList* m_pxCmdList = nullptr;
+	const Flux_TargetSetup* m_pxTargetSetup = nullptr;
+	const Flux_RenderGraph_Pass* m_pxPass = nullptr;  // Carries precomputed prologue barriers
+	bool m_bClearTargets = false;                     // Single source of truth for clear
+	bool m_bDepthIsReadOnly = false;                  // Pass declares depth as a read attachment (no writes)
 };
 
-// Work distribution indices for parallel command buffer recording
+// Work distribution indices for parallel Vulkan command buffer recording
 struct Flux_WorkDistribution
 {
-	// Start and end positions for each worker thread
-	// Each position is a (render order, index within that render order) pair
-	u_int auStartRenderOrder[FLUX_NUM_WORKER_THREADS];
 	u_int auStartIndex[FLUX_NUM_WORKER_THREADS];
-	u_int auEndRenderOrder[FLUX_NUM_WORKER_THREADS];
 	u_int auEndIndex[FLUX_NUM_WORKER_THREADS];
 	u_int uTotalCommandCount;
 
@@ -175,14 +171,14 @@ struct Flux_WorkDistribution
 	{
 		for (u_int i = 0; i < FLUX_NUM_WORKER_THREADS; i++)
 		{
-			auStartRenderOrder[i] = 0;
 			auStartIndex[i] = 0;
-			auEndRenderOrder[i] = 0;
 			auEndIndex[i] = 0;
 		}
 		uTotalCommandCount = 0;
 	}
 };
+
+class Flux_RenderGraph;
 
 class Flux
 {
@@ -195,44 +191,57 @@ public:
 
 	static const uint32_t GetFrameCounter() { return s_uFrameCounter; }
 
-	static void SubmitCommandList(const Flux_CommandList* pxCmdList, const Flux_TargetSetup& xTargetSetup, RenderOrder eOrder, u_int uSubOrder = 0)
+	// Submit a command list for Vulkan recording. Only called from
+	// Flux_RenderGraph::Execute Phase 2, sequentially on the main thread —
+	// the source pass pointer carries the precomputed barriers the platform
+	// layer consumes via ConsumeGraphPrologueBarriers. No bypass path exists.
+	static void SubmitCommandList(const Flux_CommandList* pxCmdList, const Flux_TargetSetup& xTargetSetup,
+		bool bClearTargets, bool bDepthIsReadOnly, const Flux_RenderGraph_Pass* pxPass)
 	{
 		Zenith_Assert(pxCmdList != nullptr, "SubmitCommandList: Command list is null");
-		Zenith_Assert(eOrder < RENDER_ORDER_MAX, "SubmitCommandList: Invalid render order %u", eOrder);
-
-		// Note: xTargetSetup.m_pxDepthStencil is a non-owning pointer that must outlive the frame
-		// Caller is responsible for ensuring depth stencil attachment remains valid
-
-		static Zenith_Mutex ls_xMutex;
-		ls_xMutex.Lock();
-		s_xPendingCommandLists[eOrder].PushBack({pxCmdList, xTargetSetup, uSubOrder});
-		ls_xMutex.Unlock();
+		Zenith_Assert(pxPass != nullptr, "SubmitCommandList: pass pointer is null — bypass path no longer supported");
+		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SubmitCommandList: must be called from the main thread (Flux_RenderGraph::Execute Phase 2)");
+		Flux_CommandListEntry xEntry;
+		xEntry.m_pxCmdList = pxCmdList;
+		xEntry.m_pxTargetSetup = &xTargetSetup;
+		xEntry.m_pxPass = pxPass;
+		xEntry.m_bClearTargets = bClearTargets;
+		xEntry.m_bDepthIsReadOnly = bDepthIsReadOnly;
+		s_xPendingCommandLists.PushBack(xEntry);
 	}
-	
+
 	// Prepare frame for rendering - distributes work across worker threads
 	// Returns false if there is no work to do
 	static bool PrepareFrame(Flux_WorkDistribution& xOutDistribution);
 
-	static void AddResChangeCallback(void(*pfnCallback)()) { s_xResChangeCallbacks.push_back(pfnCallback); }
+	static void AddResChangeCallback(void(*pfnCallback)()) { s_xResChangeCallbacks.PushBack(pfnCallback); }
 	static void OnResChange();
-	
-	// Clear all pending command lists - call before scene transitions to prevent stale pointers
+
+	// Clear all pending command lists. CALLER GUARANTEES that no worker thread
+	// is currently submitting (i.e. graph Execute is not in flight) and that
+	// the GPU has finished consuming the previous frame's lists. Called from:
+	//   - Main thread between frames during res change / scene transition.
+	// This function intentionally does NOT take s_xPendingCommandListMutex
+	// because the contract above means there is no contender to lock against.
 	static void ClearPendingCommandLists()
 	{
-		for (u_int i = 0; i < RENDER_ORDER_MAX; i++)
-		{
-			s_xPendingCommandLists[i].Clear();
-		}
+		Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+			"ClearPendingCommandLists: main-thread only");
+		s_xPendingCommandLists.Clear();
 	}
-	
-	// Public access to pending command lists for platform layer
-	// Entries are sorted by sub-order during PrepareFrame
-	static Zenith_Vector<Flux_CommandListEntry> s_xPendingCommandLists[RENDER_ORDER_MAX];
+
+	static Flux_RenderGraph& GetRenderGraph() { return *s_pxRenderGraph; }
+	static void SetupRenderGraph();
+
+	// Public access to pending command lists for platform layer.
+	// Inserted in topological order by Flux_RenderGraph::Execute Phase 2 only.
+	static Zenith_Vector<Flux_CommandListEntry> s_xPendingCommandLists;
 private:
 	friend class Flux_PlatformAPI;
 
 	static uint32_t s_uFrameCounter;
-	static std::vector<void(*)()> s_xResChangeCallbacks;
+	static Zenith_Vector<void(*)()> s_xResChangeCallbacks;
+	static Flux_RenderGraph* s_pxRenderGraph;
 };
 
 struct Flux_PipelineSpecification

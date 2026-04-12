@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 enum SSGI_DebugMode : u_int
 {
@@ -20,11 +21,8 @@ public:
 
 	static void Initialise();
 	static void Shutdown();
-	static void Reset();
 
-	static void Render(void*);
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	// For deferred shading to sample
 	static Flux_ShaderResourceView& GetSSGISRV();
@@ -34,17 +32,7 @@ public:
 	// Configuration
 	static bool s_bEnabled;
 
-private:
-	// Render passes
-	static void RenderRayMarch();
-	static void RenderUpsample();
-	static void RenderDenoise();
-
-	// Render target management
-	static void CreateRenderTargets();
-	static void DestroyRenderTargets();
-
-	// Render targets (half-res for performance)
+	// Render targets (public for render graph access)
 	static Flux_RenderAttachment s_xRawResult;          // RGBA16F: RGB=indirect color, A=confidence
 	static Flux_RenderAttachment s_xResolved;           // RGBA16F: upsampled full-res result
 	static Flux_RenderAttachment s_xDenoised;           // RGBA16F: denoised full-res result
@@ -53,6 +41,10 @@ private:
 	static Flux_TargetSetup s_xRayMarchTargetSetup;
 	static Flux_TargetSetup s_xUpsampleTargetSetup;
 	static Flux_TargetSetup s_xDenoiseTargetSetup;
+
+private:
+	static void CreateRenderTargets();
+	static void DestroyRenderTargets();
 
 	static bool s_bInitialised;
 };

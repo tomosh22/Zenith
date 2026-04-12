@@ -7,7 +7,6 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/IBL/Flux_IBL.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
@@ -69,8 +68,6 @@ struct LightVolumeVertex
 
 bool Flux_DynamicLights::s_bInitialised = false;
 
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_DYNAMIC_LIGHTS, Flux_DynamicLights::Render, nullptr);
-static Flux_CommandList g_xCommandList("Dynamic Lights");
 
 static Flux_Shader s_xVolumeShader;
 static Flux_Pipeline s_xVolumePipeline;           // For point/spot lights (CULL_MODE_FRONT)
@@ -660,7 +657,6 @@ void Flux_DynamicLights::Shutdown()
 
 void Flux_DynamicLights::Reset()
 {
-	g_xCommandList.Reset(true);
 	// Instance counts are reset in GatherLightsFromScene()
 }
 
@@ -999,19 +995,9 @@ void Flux_DynamicLights::GatherLightsFromScene()
 	}
 }
 
-void Flux_DynamicLights::SubmitRenderTask()
+static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 {
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_DynamicLights::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_DynamicLights::Render(void*)
-{
-	if (!s_bInitialised)
+	if (!Flux_DynamicLights::IsInitialised())
 	{
 		return;
 	}
@@ -1023,7 +1009,7 @@ void Flux_DynamicLights::Render(void*)
 	}
 #endif
 
-	GatherLightsFromScene();
+	Flux_DynamicLights::GatherLightsFromScene();
 
 	// Calculate total lights from instance counts (replaces old vector size checks)
 	u_int uTotalPointLights = 0;
@@ -1041,10 +1027,8 @@ void Flux_DynamicLights::Render(void*)
 		return;
 	}
 
-	g_xCommandList.Reset(false);  // Don't clear - we're adding to existing scene
-
 	// Use shader binder for named bindings
-	Flux_ShaderBinder xBinder(g_xCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	// Bind frame constants (shared by all lights)
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
@@ -1082,7 +1066,7 @@ void Flux_DynamicLights::Render(void*)
 
 		if (bAnyPointLights)
 		{
-			g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xVolumePipeline);
+			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xVolumePipeline);
 
 			// Push light type constant (0 = point)
 			LightTypePushConstant xTypeConstant;
@@ -1103,11 +1087,11 @@ void Flux_DynamicLights::Render(void*)
 				xBinder.BindUAV_Buffer(s_xPointLightBufferBinding, &s_axPointLightInstanceBuffers[uLOD].GetUAV());
 
 				// Bind geometry for this LOD
-				g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_axSphereLODs[uLOD].m_xVertexBuffer);
-				g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_axSphereLODs[uLOD].m_xIndexBuffer);
+				pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_axSphereLODs[uLOD].m_xVertexBuffer);
+				pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&s_axSphereLODs[uLOD].m_xIndexBuffer);
 
 				// Instanced draw: one draw call for all lights at this LOD
-				g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(
+				pxCommandList->AddCommand<Flux_CommandDrawIndexed>(
 					s_axSphereLODs[uLOD].m_uIndexCount,
 					s_auPointLightInstanceCounts[uLOD]);
 			}
@@ -1130,7 +1114,7 @@ void Flux_DynamicLights::Render(void*)
 
 		if (bAnySpotLights)
 		{
-			g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xVolumePipeline);
+			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xVolumePipeline);
 
 			// Push light type constant (1 = spot)
 			LightTypePushConstant xTypeConstant;
@@ -1151,11 +1135,11 @@ void Flux_DynamicLights::Render(void*)
 				xBinder.BindUAV_Buffer(s_xSpotLightBufferBinding, &s_axSpotLightInstanceBuffers[uLOD].GetUAV());
 
 				// Bind geometry for this LOD
-				g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_axConeLODs[uLOD].m_xVertexBuffer);
-				g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_axConeLODs[uLOD].m_xIndexBuffer);
+				pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_axConeLODs[uLOD].m_xVertexBuffer);
+				pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&s_axConeLODs[uLOD].m_xIndexBuffer);
 
 				// Instanced draw: one draw call for all lights at this LOD
-				g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(
+				pxCommandList->AddCommand<Flux_CommandDrawIndexed>(
 					s_axConeLODs[uLOD].m_uIndexCount,
 					s_auSpotLightInstanceCounts[uLOD]);
 			}
@@ -1167,7 +1151,7 @@ void Flux_DynamicLights::Render(void*)
 	// Use directional pipeline with back-face culling (render front faces of quad)
 	if (s_uDirectionalLightInstanceCount > 0)
 	{
-		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xDirectionalPipeline);
+		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xDirectionalPipeline);
 
 		// Push light type constant (2 = directional)
 		LightTypePushConstant xTypeConstant;
@@ -1181,13 +1165,33 @@ void Flux_DynamicLights::Render(void*)
 		xBinder.BindUAV_Buffer(s_xDirectionalLightBufferBinding, &s_xDirectionalLightInstanceBuffer.GetUAV());
 
 		// Bind fullscreen quad geometry
-		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 		// Instanced draw: one draw call for all directional lights
-		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uDirectionalLightInstanceCount);
+		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uDirectionalLightInstanceCount);
+	}
+}
+
+void Flux_DynamicLights::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	u_int uPassIndex = xGraph.AddPass("Dynamic Lights", ExecuteDynamicLights);
+	xGraph.SetPassTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
+
+	// Reads: G-Buffer MRT attachments
+	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+	{
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_READ_SRV);
 	}
 
-	// Submit at RENDER_ORDER_POINT_LIGHTS (after APPLY_LIGHTING)
-	Flux::SubmitCommandList(&g_xCommandList, Flux_HDR::GetHDRSceneTargetSetup(), RENDER_ORDER_POINT_LIGHTS);
+	// Reads: depth buffer
+	xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+
+	// Reads: IBL BRDF LUT — bound by the execute callback for multiscatter energy
+	// compensation. Without this declaration the LUT stays in COLOR_ATTACHMENT_OPTIMAL
+	// after the IBL BRDF LUT pass writes it and the validator rejects the SRV bind.
+	xGraph.PassReads(uPassIndex, &Flux_IBL::s_xBRDFLUT, RESOURCE_ACCESS_READ_SRV);
+
+	// Writes: HDR scene target (additive lighting)
+	xGraph.PassWrites(uPassIndex, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }

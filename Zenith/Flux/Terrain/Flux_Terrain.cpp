@@ -19,10 +19,7 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, Flux_Terrain::RenderToGBuffer, nullptr);
 static Zenith_Vector<Zenith_TerrainComponent*> g_xTerrainComponentsToRender;
-
-static Flux_CommandList g_xTerrainCommandList("Terrain");
 
 static Flux_Shader s_xTerrainGBufferShader;
 static Flux_Pipeline s_xTerrainGBufferPipeline;
@@ -41,7 +38,6 @@ static uint32_t s_uWaterDisplacementTexHandle = UINT32_MAX;
 static Flux_Pipeline s_xCullingPipeline;
 static Flux_Shader s_xCullingShader;
 static Flux_RootSig s_xCullingRootSig;
-static Flux_CommandList s_xCullingCommandList("Terrain Culling Compute");
 
 // ========== Performance Metrics ==========
 static uint32_t s_uFrameCounter = 0;
@@ -249,15 +245,11 @@ void Flux_Terrain::Initialise()
 
 void Flux_Terrain::Reset()
 {
-	// Reset command lists to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	g_xTerrainCommandList.Reset(true);
-	s_xCullingCommandList.Reset(true);
-
+	// Reset is handled by the render graph
 	// Clear cached terrain components (will be repopulated next frame)
 	g_xTerrainComponentsToRender.Clear();
 
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain::Reset() - Reset command lists and cleared cached terrain components");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain::Reset()");
 }
 
 void Flux_Terrain::Shutdown()
@@ -266,7 +258,32 @@ void Flux_Terrain::Shutdown()
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain shut down");
 }
 
-void Flux_Terrain::SubmitRenderToGBufferTask()
+void Flux_Terrain::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	// Pass 1: Terrain culling compute. Touches per-Zenith_TerrainComponent
+	// indirect-draw / visible-count buffers that are dynamic (created per
+	// component) and not graph-tracked. The compute output is consumed by the
+	// GBuffer pass via DrawIndexedIndirectCount, so we encode that ordering as
+	// an explicit edge below.
+	u_int uCullingPass = xGraph.AddPass("Terrain Culling Compute", ExecuteCulling);
+	xGraph.SetPassTargetSetup(uCullingPass, Flux_Graphics::s_xNullTargetSetup);
+
+	// Pass 2: Terrain GBuffer render
+	u_int uGBufferPass = xGraph.AddPass("Terrain GBuffer", ExecuteGBuffer);
+	xGraph.SetPassTargetSetup(uGBufferPass, Flux_Graphics::s_xMRTTarget);
+
+	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+	{
+		xGraph.PassWrites(uGBufferPass, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
+	}
+	xGraph.PassWrites(uGBufferPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+
+	// GBuffer must run after Culling — explicit edge stands in for the
+	// untracked indirect-draw buffer dependency.
+	xGraph.AddPassDependency(uGBufferPass, uCullingPass);
+}
+
+void Flux_Terrain::PreRenderUpdate()
 {
 	s_uFrameCounter++;
 
@@ -289,15 +306,22 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 		Zenith_TerrainComponent* pxTerrain = g_xTerrainComponentsToRender.Get(u);
 		pxTerrain->UpdateChunkLODAllocations();
 	}
+}
 
-	// ========== Per-Component Terrain Culling Dispatch ==========
-	// Each terrain component dispatches its own culling compute pass
-	// using its own chunk/LOD metadata and indirect draw buffers
+void Flux_Terrain::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
+{
+	// CPU-side update (was in PreRenderUpdate/SubmitRenderToGBufferTask)
+	PreRenderUpdate();
+
+	if (!dbg_bEnableTerrain)
+	{
+		return;
+	}
+
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
-	s_xCullingCommandList.Reset(false);  // No render targets to clear
 
 	// Bind the terrain culling compute pipeline once (owned by Flux_Terrain)
-	s_xCullingCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xCullingPipeline);
+	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&s_xCullingPipeline);
 
 	// For each terrain component, dispatch culling using its own buffers
 	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
@@ -305,34 +329,23 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 		Zenith_TerrainComponent* pxTerrain = g_xTerrainComponentsToRender.Get(u);
 
 		// Component records buffer bindings and dispatch (assumes pipeline already bound)
-		pxTerrain->UpdateCullingAndLod(s_xCullingCommandList, Flux_Graphics::s_xFrameConstants.m_xViewProjMat);
+		pxTerrain->UpdateCullingAndLod(*pxCmdList, Flux_Graphics::s_xFrameConstants.m_xViewProjMat);
 	}
 
-	// Submit culling compute command list before terrain rendering
-	Flux::SubmitCommandList(&s_xCullingCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_TERRAIN_CULLING);
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
-
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
 }
 
-void Flux_Terrain::WaitForRenderToGBufferTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_Terrain::RenderToGBuffer(void*)
+void Flux_Terrain::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!dbg_bEnableTerrain)
 	{
 		return;
 	}
 
-	g_xTerrainCommandList.Reset(false);
-
-	g_xTerrainCommandList.AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xTerrainWireframePipeline : &s_xTerrainGBufferPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xTerrainWireframePipeline : &s_xTerrainGBufferPipeline);
 
 	// Create binder for named resource binding
-	Flux_ShaderBinder xBinder(g_xTerrainCommandList);
+	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind set 0 (per-frame data) once per command list
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
@@ -357,8 +370,8 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		// Bind LOD level buffer (per-terrain, set 1)
 		xBinder.BindUAV_Buffer(s_xLODLevelBufferBinding, &pxTerrain->GetLODLevelBuffer().GetUAV());
 
-		g_xTerrainCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetUnifiedVertexBuffer());
-		g_xTerrainCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetUnifiedIndexBuffer());
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetUnifiedVertexBuffer());
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetUnifiedIndexBuffer());
 
 		// Bind splatmap texture
 		if (pxTerrain->GetSplatmapTexture())
@@ -392,7 +405,7 @@ void Flux_Terrain::RenderToGBuffer(void*)
 
 		// GPU-driven indirect rendering with front-to-back sorted visible chunks
 		// Each component uses its own indirect draw buffer and visible count buffer
-		g_xTerrainCommandList.AddCommand<Flux_CommandDrawIndexedIndirectCount>(
+		pxCmdList->AddCommand<Flux_CommandDrawIndexedIndirectCount>(
 			&pxTerrain->GetIndirectDrawBuffer(),  // Per-component indirect buffer with sorted draw commands
 			&pxTerrain->GetVisibleCountBuffer(),   // Per-component count buffer with actual number of visible chunks
 			pxTerrain->GetMaxDrawCount(),          // Max 4096 draws (theoretical maximum)
@@ -400,10 +413,8 @@ void Flux_Terrain::RenderToGBuffer(void*)
 			0,                                      // Count buffer offset (bytes)
 			20                                      // Stride between commands (5 * sizeof(uint32_t))
 		);
-		
-	}
 
-	Flux::SubmitCommandList(&g_xTerrainCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_TERRAIN);
+	}
 }
 
 void Flux_Terrain::RenderToShadowMap(Flux_CommandList&, const Flux_DynamicConstantBuffer&)

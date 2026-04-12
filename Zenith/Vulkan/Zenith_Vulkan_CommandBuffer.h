@@ -22,6 +22,7 @@ struct Flux_UnorderedAccessView_Texture;
 struct Flux_UnorderedAccessView_Buffer;
 struct Flux_RenderTargetView;
 struct Flux_DepthStencilView;
+struct Flux_RenderAttachment;
 
 // Scratch buffer binding info for push constant replacement
 struct ScratchBufferBinding {
@@ -66,7 +67,10 @@ public:
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0, uint32_t uInstanceOffset = 0);
 	void DrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset = 0, uint32_t uStride = 20);
 	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, uint32_t uMaxDrawCount, uint32_t uIndirectOffset = 0, uint32_t uCountOffset = 0, uint32_t uStride = 20);
-	void BeginRenderPass(Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false);
+	// bDepthIsReadOnly = true tells the render pass to declare the depth
+	// attachment as eDepthStencilReadOnlyOptimal (the pass samples depth and
+	// does not write). Default false = depth-write attachment.
+	void BeginRenderPass(const Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false, bool bDepthIsReadOnly = false);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	
 	// Direct3D-style view binding methods
@@ -89,11 +93,30 @@ public:
 	u_int GetWorkerIndex() const { return m_uWorkerIndex; }
 
 	void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, int uMipLevel = 0, int uLayer = 0);
+	// Range overload — used by the render-graph barrier consumer to transition a
+	// rectangle of (mip, layer) subresources in a single barrier with caller-supplied
+	// access masks. Falls through to the same vkCmdPipelineBarrier path.
+	void ImageTransitionBarrierRange(vk::Image xImage,
+		vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout,
+		vk::ImageAspectFlags eAspect,
+		vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage,
+		vk::AccessFlags eSrcAccess, vk::AccessFlags eDstAccess,
+		uint32_t uBaseMip, uint32_t uMipCount,
+		uint32_t uBaseLayer, uint32_t uLayerCount);
 
 	// Compute methods
 	void BindComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	void Dispatch(uint32_t uGroupCountX, uint32_t uGroupCountY, uint32_t uGroupCountZ);
 	void ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout);
+
+	// High-level subresource transition: maps engine-facing ResourceAccess enums
+	// to Vulkan layouts / access masks / pipeline stages and emits a single
+	// vkCmdPipelineBarrier. Used by passes (e.g. HiZ mip chain) that need to
+	// transition specific mip/layer ranges between consecutive dispatches.
+	void ImageTransition(Flux_RenderAttachment* pxAttachment,
+		uint32_t uBaseMip, uint32_t uMipCount,
+		uint32_t uBaseLayer, uint32_t uLayerCount,
+		ResourceAccess eSrcAccess, ResourceAccess eDstAccess);
 
 	void RenderImGui();
 	void SetCurrentRenderPass(vk::RenderPass xRenderPass) { m_xCurrentRenderPass = xRenderPass; }
@@ -107,7 +130,6 @@ public:
 	vk::RenderPass m_xCurrentRenderPass;
 private:
 	void UpdateDescriptorSets();
-	void TransitionUAVs(vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eSrcAccessFlags, vk::AccessFlags eDstAccessFlags, vk::PipelineStageFlags eSrcStages, vk::PipelineStageFlags eDstStages);
 	std::vector<vk::CommandBuffer> m_xCmdBuffers;
 
 	Zenith_Vulkan_Pipeline* m_pxCurrentPipeline;

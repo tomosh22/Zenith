@@ -2,6 +2,9 @@
 
 #define FLUX_MAX_QUADS_PER_FRAME 1024
 
+class Flux_CommandList;
+class Flux_RenderGraph;
+
 class Flux_Quads
 {
 public:
@@ -32,16 +35,14 @@ public:
 	static void Initialise();
 	static void Shutdown();
 
-	static void Reset();  // Clear state when scene resets (e.g., Play/Stop transitions)
-
 	static void Render(void*);
 
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	static void UploadQuad(const Quad& xQuad);
 
 private:
+	static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData);
 	static void UploadInstanceData();
 
 	static Quad s_axQuadsToRender[FLUX_MAX_QUADS_PER_FRAME];

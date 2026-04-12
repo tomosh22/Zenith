@@ -149,42 +149,6 @@ void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexB
 	m_xCurrentCmdBuffer.bindIndexBuffer(xBuffer, 0, vk::IndexType::eUint32);
 }
 
-void Zenith_Vulkan_CommandBuffer::TransitionUAVs(vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eSrcAccessFlags, vk::AccessFlags eDstAccessFlags, vk::PipelineStageFlags eSrcStages, vk::PipelineStageFlags eDstStages)
-{
-	vk::ImageMemoryBarrier axBarriers[FLUX_MAX_DESCRIPTOR_BINDINGS];
-	u_int uNumBarriers = 0;
-
-	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
-	{
-		for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_BINDINGS; i++)
-		{
-			const Flux_UnorderedAccessView_Texture* pxUAV = m_xBindings[uDescSet].m_xUAV_Textures[i];
-			if (!pxUAV || !pxUAV->m_xImageViewHandle.IsValid()) continue;
-
-			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
-			Zenith_Assert(pxVRAM, "Invalid VRAM for UAV");
-
-			axBarriers[uNumBarriers++] = vk::ImageMemoryBarrier()
-				.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1))
-				.setImage(pxVRAM->GetImage())
-				.setOldLayout(eOldLayout)
-				.setNewLayout(eNewLayout)
-				.setSrcAccessMask(eSrcAccessFlags)
-				.setDstAccessMask(eDstAccessFlags);
-		}
-	}
-
-	m_xCurrentCmdBuffer.pipelineBarrier
-	(
-		eSrcStages,
-		eDstStages,
-		vk::DependencyFlags(),
-		0, nullptr,
-		0, nullptr,
-		uNumBarriers, axBarriers
-	);
-}
-
 void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 {
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS);
@@ -414,7 +378,7 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBu
 	}
 }
 
-void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool /*= false*/)
+void Zenith_Vulkan_CommandBuffer::BeginRenderPass(const Flux_TargetSetup& xTargetSetup, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool /*= false*/, bool bDepthIsReadOnly /*= false*/)
 {
 	LoadAction eColourLoad = bClearColour ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
 	LoadAction eDepthStencilLoad = bClearDepth ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
@@ -427,7 +391,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 		uNumColourAttachments++;
 	}
 
-	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xTargetSetup, eColourLoad, STORE_ACTION_STORE, eDepthStencilLoad, STORE_ACTION_STORE, RENDER_TARGET_USAGE_RENDERTARGET);
+	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xTargetSetup, eColourLoad, STORE_ACTION_STORE, eDepthStencilLoad, STORE_ACTION_STORE, RENDER_TARGET_USAGE_RENDERTARGET, bDepthIsReadOnly);
 	Zenith_Assert(m_xCurrentRenderPass, "BeginRenderPass: TargetSetupToRenderPass returned null render pass");
 	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyRenderPass(m_xCurrentRenderPass);
 
@@ -630,6 +594,122 @@ void Zenith_Vulkan_CommandBuffer::ImageTransitionBarrier(vk::Image xImage, vk::I
 	m_xCurrentCmdBuffer.pipelineBarrier(eSrcStage, eDstStage, vk::DependencyFlags(), 0, nullptr, 0, nullptr, 1, &xMemoryBarrier);
 }
 
+void Zenith_Vulkan_CommandBuffer::ImageTransitionBarrierRange(vk::Image xImage,
+	vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout,
+	vk::ImageAspectFlags eAspect,
+	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage,
+	vk::AccessFlags eSrcAccess, vk::AccessFlags eDstAccess,
+	uint32_t uBaseMip, uint32_t uMipCount,
+	uint32_t uBaseLayer, uint32_t uLayerCount)
+{
+	vk::ImageMemoryBarrier xMemoryBarrier = vk::ImageMemoryBarrier()
+		.setSubresourceRange(vk::ImageSubresourceRange(eAspect, uBaseMip, uMipCount, uBaseLayer, uLayerCount))
+		.setImage(xImage)
+		.setOldLayout(eOldLayout)
+		.setNewLayout(eNewLayout)
+		.setSrcAccessMask(eSrcAccess)
+		.setDstAccessMask(eDstAccess);
+	m_xCurrentCmdBuffer.pipelineBarrier(eSrcStage, eDstStage, vk::DependencyFlags(), 0, nullptr, 0, nullptr, 1, &xMemoryBarrier);
+}
+
+// Translate the engine-facing ResourceAccess enum into the Vulkan (layout,
+// access mask, pipeline stage) triple required by a pipeline barrier.
+// bIsDepth selects the depth variants for the depth-attachment layouts.
+static void ResourceAccessToVulkan(ResourceAccess eAccess, bool bIsDepth,
+	vk::ImageLayout& eOutLayout, vk::AccessFlags& eOutAccess, vk::PipelineStageFlags& eOutStage)
+{
+	switch (eAccess)
+	{
+	case RESOURCE_ACCESS_UNDEFINED:
+		eOutLayout = vk::ImageLayout::eUndefined;
+		eOutAccess = {};
+		eOutStage  = vk::PipelineStageFlagBits::eTopOfPipe;
+		break;
+	case RESOURCE_ACCESS_READ_SRV:
+		eOutLayout = bIsDepth ? vk::ImageLayout::eDepthStencilReadOnlyOptimal
+		                      : vk::ImageLayout::eShaderReadOnlyOptimal;
+		eOutAccess = vk::AccessFlagBits::eShaderRead;
+		// Sampled reads can come from either graphics or compute - match on both.
+		eOutStage  = vk::PipelineStageFlagBits::eFragmentShader
+		           | vk::PipelineStageFlagBits::eComputeShader;
+		break;
+	case RESOURCE_ACCESS_READ_DEPTH:
+		eOutLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+		eOutAccess = vk::AccessFlagBits::eDepthStencilAttachmentRead;
+		eOutStage  = vk::PipelineStageFlagBits::eEarlyFragmentTests
+		           | vk::PipelineStageFlagBits::eLateFragmentTests;
+		break;
+	case RESOURCE_ACCESS_WRITE_RTV:
+		eOutLayout = vk::ImageLayout::eColorAttachmentOptimal;
+		eOutAccess = vk::AccessFlagBits::eColorAttachmentWrite;
+		eOutStage  = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+		break;
+	case RESOURCE_ACCESS_WRITE_DSV:
+		eOutLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+		eOutAccess = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+		eOutStage  = vk::PipelineStageFlagBits::eEarlyFragmentTests
+		           | vk::PipelineStageFlagBits::eLateFragmentTests;
+		break;
+	case RESOURCE_ACCESS_WRITE_UAV:
+		eOutLayout = vk::ImageLayout::eGeneral;
+		eOutAccess = vk::AccessFlagBits::eShaderWrite;
+		eOutStage  = vk::PipelineStageFlagBits::eComputeShader;
+		break;
+	case RESOURCE_ACCESS_READWRITE_UAV:
+		eOutLayout = vk::ImageLayout::eGeneral;
+		eOutAccess = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+		eOutStage  = vk::PipelineStageFlagBits::eComputeShader;
+		break;
+	default:
+		Zenith_Assert(false, "ResourceAccessToVulkan: unhandled access enum %d", (int)eAccess);
+		eOutLayout = vk::ImageLayout::eUndefined;
+		eOutAccess = {};
+		eOutStage  = vk::PipelineStageFlagBits::eTopOfPipe;
+		break;
+	}
+}
+
+void Zenith_Vulkan_CommandBuffer::ImageTransition(Flux_RenderAttachment* pxAttachment,
+	uint32_t uBaseMip, uint32_t uMipCount,
+	uint32_t uBaseLayer, uint32_t uLayerCount,
+	ResourceAccess eSrcAccess, ResourceAccess eDstAccess)
+{
+	Zenith_Assert(pxAttachment != nullptr, "ImageTransition: null attachment");
+	if (pxAttachment == nullptr) return;
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxAttachment->m_xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr, "ImageTransition: GetVRAM returned null");
+	if (pxVRAM == nullptr) return;
+
+	const bool bIsDepth = IsDepthFormat(pxAttachment->m_xSurfaceInfo.m_eFormat);
+	const vk::ImageAspectFlags eAspect = bIsDepth
+		? vk::ImageAspectFlagBits::eDepth
+		: vk::ImageAspectFlagBits::eColor;
+
+	vk::ImageLayout eOldLayout, eNewLayout;
+	vk::AccessFlags eSrcAccessMask, eDstAccessMask;
+	vk::PipelineStageFlags eSrcStage, eDstStage;
+	ResourceAccessToVulkan(eSrcAccess, bIsDepth, eOldLayout, eSrcAccessMask, eSrcStage);
+	ResourceAccessToVulkan(eDstAccess, bIsDepth, eNewLayout, eDstAccessMask, eDstStage);
+
+	// UNDEFINED source discards prior contents - the barrier is still a valid
+	// layout transition and drivers do not physically discard pixels on this
+	// path (tested with RenderDoc + validation). This is the safe "first touch
+	// this frame" path for amortised / once-per-frame resources.
+	if (eSrcAccess == RESOURCE_ACCESS_UNDEFINED)
+	{
+		eSrcAccessMask = {};
+	}
+
+	ImageTransitionBarrierRange(pxVRAM->GetImage(),
+		eOldLayout, eNewLayout,
+		eAspect,
+		eSrcStage, eDstStage,
+		eSrcAccessMask, eDstAccessMask,
+		uBaseMip, uMipCount,
+		uBaseLayer, uLayerCount);
+}
+
 void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline)
 {
 	m_eCurrentBindPoint = vk::PipelineBindPoint::eCompute;
@@ -641,162 +721,12 @@ void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* px
 
 void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGroupCountY, uint32_t uGroupCountZ)
 {
+	// All synchronisation (image layouts, UAV memory barriers, post-dispatch
+	// buffer flushes) is owned by Flux_RenderGraph and emitted as prologue
+	// barriers via ConsumeGraphPrologueBarriers before the pass begins. This
+	// function is intentionally trivial — see Vulkan/CLAUDE.md.
 	UpdateDescriptorSets();
-
-	// Collect all barriers - both images and buffers
-	vk::ImageMemoryBarrier axImageBarriers[FLUX_MAX_DESCRIPTOR_BINDINGS * 2];  // Extra space for SRV barriers
-	vk::BufferMemoryBarrier axBufferBarriers[FLUX_MAX_DESCRIPTOR_BINDINGS];
-	u_int uNumImageBarriers = 0;
-	u_int uNumBufferBarriers = 0;
-
-	// Collect UAV VRAM handles to detect SRVs that share the same texture
-	Flux_VRAMHandle axUAVHandles[FLUX_MAX_DESCRIPTOR_BINDINGS];
-	u_int uNumUAVHandles = 0;
-
-	// Transition image UAVs to general layout for compute write
-	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
-	{
-		for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_BINDINGS; i++)
-		{
-			const Flux_UnorderedAccessView_Texture* pxUAV = m_xBindings[uDescSet].m_xUAV_Textures[i];
-			if (!pxUAV || !pxUAV->m_xImageViewHandle.IsValid()) continue;
-
-			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
-			Zenith_Assert(pxVRAM, "Invalid VRAM for UAV");
-
-			// Track this UAV's VRAM handle for SRV barrier detection
-			axUAVHandles[uNumUAVHandles++] = pxUAV->m_xVRAMHandle;
-
-			// Use eUndefined as old layout since we don't care about previous contents
-			// (we're about to overwrite via UAV). This handles both freshly created
-			// mips (which start in eUndefined) and previously used mips.
-			axImageBarriers[uNumImageBarriers++] = vk::ImageMemoryBarrier()
-				.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, pxUAV->m_uMipLevel, 1, 0, 1))
-				.setImage(pxVRAM->GetImage())
-				.setOldLayout(vk::ImageLayout::eUndefined)
-				.setNewLayout(vk::ImageLayout::eGeneral)
-				.setSrcAccessMask(vk::AccessFlagBits::eNone)
-				.setDstAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead);
-		}
-	}
-
-	// Check SRVs that share a VRAM handle with any UAV (same texture, different mips)
-	// These need barriers to ensure proper layout for reading
-	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
-	{
-		for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_BINDINGS; i++)
-		{
-			const Flux_ShaderResourceView* pxSRV = m_xBindings[uDescSet].m_xSRVs[i];
-			if (!pxSRV || !pxSRV->m_xImageViewHandle.IsValid()) continue;
-			if (pxSRV->m_bIsDepthStencil) continue;  // Skip depth textures, they use different layouts
-
-			// Check if this SRV shares a VRAM handle with any UAV
-			bool bSharesVRAM = false;
-			for (u_int j = 0; j < uNumUAVHandles; j++)
-			{
-				if (pxSRV->m_xVRAMHandle.AsUInt() == axUAVHandles[j].AsUInt())
-				{
-					bSharesVRAM = true;
-					break;
-				}
-			}
-
-			if (bSharesVRAM)
-			{
-				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxSRV->m_xVRAMHandle);
-				Zenith_Assert(pxVRAM, "Invalid VRAM for SRV");
-
-				// Add barrier to ensure SRV's mip range is in SHADER_READ_ONLY_OPTIMAL
-				// Use eUndefined as old layout to handle both first-use and subsequent reads
-				// after UAV writes. This works because we only care about the transition,
-				// and the data was written by a previous dispatch in the same command buffer.
-				axImageBarriers[uNumImageBarriers++] = vk::ImageMemoryBarrier()
-					.setSubresourceRange(vk::ImageSubresourceRange(
-						vk::ImageAspectFlagBits::eColor,
-						pxSRV->m_uBaseMip,
-						pxSRV->m_uMipCount,
-						0, 1))
-					.setImage(pxVRAM->GetImage())
-					.setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)  // Assume already transitioned by post-dispatch
-					.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)  // No actual transition, just synchronization
-					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
-					.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-			}
-		}
-	}
-
-	// Pre-dispatch barrier: transition images to required layouts
-	if (uNumImageBarriers > 0)
-	{
-		m_xCurrentCmdBuffer.pipelineBarrier(
-			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
-			vk::PipelineStageFlagBits::eComputeShader,
-			vk::DependencyFlags(),
-			0, nullptr,
-			0, nullptr,
-			uNumImageBarriers, axImageBarriers
-		);
-	}
-
-	// Execute compute shader
 	m_xCurrentCmdBuffer.dispatch(uGroupCountX, uGroupCountY, uGroupCountZ);
-
-	// Reset barrier counts
-	uNumImageBarriers = 0;
-	uNumBufferBarriers = 0;
-
-	// Post-dispatch barriers: transition images back and add buffer barriers
-	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
-	{
-		for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_BINDINGS; i++)
-		{
-			// Image UAVs: transition back to shader read
-			const Flux_UnorderedAccessView_Texture* pxUAV_Texture = m_xBindings[uDescSet].m_xUAV_Textures[i];
-			if (pxUAV_Texture && pxUAV_Texture->m_xImageViewHandle.IsValid())
-			{
-				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV_Texture->m_xVRAMHandle);
-				Zenith_Assert(pxVRAM, "Invalid VRAM for image UAV");
-
-				axImageBarriers[uNumImageBarriers++] = vk::ImageMemoryBarrier()
-					.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, pxUAV_Texture->m_uMipLevel, 1, 0, 1))
-					.setImage(pxVRAM->GetImage())
-					.setOldLayout(vk::ImageLayout::eGeneral)
-					.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead)
-					.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-			}
-
-			// Buffer UAVs: ensure writes are visible
-			const Flux_UnorderedAccessView_Buffer* pxUAV_Buffer = m_xBindings[uDescSet].m_xUAV_Buffers[i];
-			if (pxUAV_Buffer)
-			{
-				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV_Buffer->m_xVRAMHandle);
-				Zenith_Assert(pxVRAM, "Invalid VRAM for buffer UAV");
-
-				axBufferBarriers[uNumBufferBarriers++] = vk::BufferMemoryBarrier()
-					.setBuffer(pxVRAM->GetBuffer())
-					.setOffset(0)
-					.setSize(VK_WHOLE_SIZE)
-					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
-					.setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead)
-					.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-					.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED);
-			}
-		}
-	}
-
-	// Combined post-dispatch barrier for both images and buffers
-	if (uNumImageBarriers > 0 || uNumBufferBarriers > 0)
-	{
-		m_xCurrentCmdBuffer.pipelineBarrier(
-			vk::PipelineStageFlagBits::eComputeShader,
-			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexShader,
-			vk::DependencyFlags(),
-			0, nullptr,
-			uNumBufferBarriers, axBufferBarriers,
-			uNumImageBarriers, axImageBarriers
-		);
-	}
 }
 
 void Zenith_Vulkan_CommandBuffer::ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout)

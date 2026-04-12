@@ -11,11 +11,6 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
-
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_FOG, Flux_RaymarchFog::Render, nullptr);
-
-static Flux_CommandList g_xCommandList("RaymarchFog");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -119,21 +114,10 @@ void Flux_RaymarchFog::Initialise()
 
 void Flux_RaymarchFog::Reset()
 {
-	g_xCommandList.Reset(true);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_RaymarchFog::Reset()");
 }
 
-void Flux_RaymarchFog::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_RaymarchFog::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_RaymarchFog::Render(void*)
+void Flux_RaymarchFog::Render(Flux_CommandList* pxCommandList)
 {
 	// Get shared fog parameters
 	Flux_VolumeFogConstants& xShared = Flux_VolumeFog::GetSharedConstants();
@@ -182,14 +166,12 @@ void Flux_RaymarchFog::Render(void*)
 	s_xConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
 	s_xConstants.m_fNoiseWorldScale = xShared.m_fNoiseWorldScale;
 
-	g_xCommandList.Reset(false);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-
-	Flux_ShaderBinder xBinder(g_xCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV(s_xDepthBinding, Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(s_xNoise3DBinding, &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV);
@@ -205,7 +187,5 @@ void Flux_RaymarchFog::Render(void*)
 
 	xBinder.PushConstant(&s_xConstants, sizeof(Flux_RaymarchConstants));
 
-	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	Flux::SubmitCommandList(&g_xCommandList, Flux_HDR::GetHDRSceneTargetSetup(), RENDER_ORDER_FOG);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

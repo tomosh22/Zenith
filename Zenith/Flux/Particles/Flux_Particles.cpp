@@ -18,11 +18,7 @@
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
-
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_PFX, Flux_Particles::Render, nullptr);
-
-static Flux_CommandList g_xCommandList("Particles");
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipelineAlpha;
@@ -101,8 +97,6 @@ void Flux_Particles::Initialise()
 
 void Flux_Particles::Reset()
 {
-	// Reset command list to ensure no stale GPU resource references
-	g_xCommandList.Reset(true);
 	s_uAlphaInstanceCount = 0;
 	s_uAdditiveInstanceCount = 0;
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles::Reset()");
@@ -181,16 +175,6 @@ static void UploadInstanceData()
 	}
 }
 
-void Flux_Particles::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_Particles::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
 void Flux_Particles::Render(void*)
 {
 	if (!dbg_bEnable)
@@ -202,63 +186,88 @@ void Flux_Particles::Render(void*)
 	float fDt = Zenith_Core::GetDt();
 	UpdateEmittersAndBuildInstanceBuffer(fDt);
 
-	// GPU compute dispatch is disabled until GPU particle rendering is implemented.
-	// GPU emitters will fall back to CPU simulation in the component's SetConfig.
-	// if (Flux_ParticleGPU::HasGPUEmitters())
-	// {
-	// 	Flux_ParticleGPU::DispatchCompute();
-	// }
-
 	// Upload CPU instance data to GPU
+	UploadInstanceData();
+}
+
+void Flux_Particles::ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
+{
+	(void)pUserData;
+	if (!dbg_bEnable)
+	{
+		return;
+	}
+
+	// CPU-side work: update emitters and upload instance data
+	float fDt = Zenith_Core::GetDt();
+	UpdateEmittersAndBuildInstanceBuffer(fDt);
 	UploadInstanceData();
 
 	// Render CPU particles (alpha-blended first, then additive)
 	if (s_uAlphaInstanceCount > 0 || s_uAdditiveInstanceCount > 0)
 	{
-		g_xCommandList.Reset(false);
-
 		// Alpha-blended particles
 		if (s_uAlphaInstanceCount > 0)
 		{
-			g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipelineAlpha);
+			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipelineAlpha);
 
-			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBufferAlpha, 1);
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
+			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBufferAlpha, 1);
 
-			g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxParticleTexture->m_xSRV, 1);
+			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
+			pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+			pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_pxParticleTexture->m_xSRV, 1);
 
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uAlphaInstanceCount);
+			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uAlphaInstanceCount);
 		}
 
 		// Additive particles
 		if (s_uAdditiveInstanceCount > 0)
 		{
-			g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipelineAdditive);
+			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipelineAdditive);
 
-			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBufferAdditive, 1);
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
+			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBufferAdditive, 1);
 
-			g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxParticleTexture->m_xSRV, 1);
+			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
+			pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+			pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_pxParticleTexture->m_xSRV, 1);
 
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uAdditiveInstanceCount);
+			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uAdditiveInstanceCount);
 		}
+	}
+}
 
-		Flux::SubmitCommandList(&g_xCommandList, Flux_HDR::GetHDRSceneTargetSetupWithDepth(), RENDER_ORDER_PARTICLES);
+static void ExecuteParticleCompute(Flux_CommandList* pxCmdList, void*)
+{
+	Flux_ParticleGPU::DispatchCompute(pxCmdList);
+}
+
+static void PreExecuteParticleCompute(void*)
+{
+	Flux_ParticleGPU::PreExecuteCompute();
+}
+
+void Flux_Particles::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	// GPU particle compute pass (updates instance buffer before draw)
+	u_int uComputePass = UINT32_MAX;
+	{
+		uComputePass = xGraph.AddPass("Particles Compute", ExecuteParticleCompute);
+		xGraph.SetPassTargetSetup(uComputePass, Flux_Graphics::s_xNullTargetSetup);
+		xGraph.SetPassOnPrepare(uComputePass, PreExecuteParticleCompute);
 	}
 
-	// TODO: GPU particle rendering requires using the compute output buffer as a vertex buffer.
-	// The current abstraction doesn't support Flux_ReadWriteBuffer as instance data.
-	// Options to implement:
-	// 1. Add a Flux_VertexStorageBuffer type that can be used for both compute and vertex input
-	// 2. Use indirect drawing with the storage buffer
-	// 3. Read back GPU instances and copy to CPU buffer (defeats purpose of GPU particles)
-	//
-	// For now, GPU compute is disabled until rendering is implemented.
-	// GPU emitters will fall back to CPU simulation.
+	// Particle draw pass
+	{
+		u_int uPass = xGraph.AddPass("Particles", ExecuteParticles);
+		xGraph.SetPassTargetSetup(uPass, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
+		xGraph.PassReads(uPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPass, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		// W5: explicit pass-level dependency replaces the old dummy attachment hack.
+		// The GPU instance buffer is managed internally by Flux_ParticleGPU.
+		xGraph.AddPassDependency(uPass, uComputePass);
+	}
 }

@@ -63,11 +63,16 @@ float fMinDepth = min(min(xDepths.x, xDepths.y), min(xDepths.z, xDepths.w));
 
 ### Barrier Handling
 
-The Vulkan backend automatically handles all barriers between compute dispatches. Each mip dispatch:
-1. Reads from previous mip (SRV)
-2. Writes to current mip (UAV)
+`Flux_RenderGraph` emits all barriers between compute dispatches based on the
+declared `PassReads` / `PassWrites` ranges on each per-mip pass. Each mip pass
+declares:
+1. `PassReads(prev mip, RESOURCE_ACCESS_READ_SRV)` — read previous mip
+2. `PassWrites(this mip, RESOURCE_ACCESS_WRITE_UAV)` — write current mip
 
-The backend detects these transitions and inserts appropriate `vkCmdPipelineBarrier` calls.
+The graph tracks layout state per (attachment, mip, layer) so consecutive HiZ
+mip passes do not over-synchronise, and SSR / SSGI consumers must declare the
+full mip chain via `FLUX_RG_ALL_MIPS` to pick up the post-write SHADER_READ
+transition for every mip they sample.
 
 ## Public Interface
 

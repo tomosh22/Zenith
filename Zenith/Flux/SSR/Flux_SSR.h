@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 enum SSR_DebugMode : u_int
 {
@@ -27,11 +28,8 @@ public:
 
 	static void Initialise();
 	static void Shutdown();
-	static void Reset();
 
-	static void Render(void*);
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	// For deferred shading to sample
 	static Flux_ShaderResourceView& GetReflectionSRV();
@@ -41,20 +39,15 @@ public:
 	// Configuration
 	static bool s_bEnabled;
 
-private:
-	// Render passes
-	static void RenderRayMarch();
-	static void RenderResolve();
-
-	// Render target management
-	static void CreateRenderTargets();
-	static void DestroyRenderTargets();
-
-	// Render targets
+	// Render targets (public for render graph access)
 	static Flux_RenderAttachment s_xRayMarchResult;      // RGBA16F: RGB=reflection, A=confidence
 	static Flux_RenderAttachment s_xResolvedReflection;  // RGBA16F: blurred reflection
 	static Flux_TargetSetup s_xRayMarchTargetSetup;
 	static Flux_TargetSetup s_xResolveTargetSetup;
+
+private:
+	static void CreateRenderTargets();
+	static void DestroyRenderTargets();
 
 	static bool s_bInitialised;
 };

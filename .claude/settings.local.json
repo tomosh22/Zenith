@@ -112,7 +112,11 @@
       "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"c:/dev/Zenith/Build/zenith_win64.sln\" //p:Configuration=vs2022_Debug_Win64_True //p:Platform=x64 //t:combat //v:m //nologo)",
       "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" zenith_win64.sln -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -m -v:minimal)",
       "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" zenith_win64.sln -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:Zenith -m)",
-      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 /maxCpuCount:1)"
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 /maxCpuCount:1)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" zenith_win64.sln -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -maxCpuCount:1)",
+      "Bash(find C:/dev/Zenith/Zenith/Editor -type f \\\\\\(-name *.cpp -o -name *.h \\\\\\))",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" zenith_win64.vcxproj -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -maxCpuCount:1)"
     ],
     "deny": [],
     "ask": []

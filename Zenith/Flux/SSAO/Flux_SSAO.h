@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
+
 class Flux_SSAO
 {
 public:
@@ -8,18 +10,9 @@ public:
 	static void Initialise();
 	static void Shutdown();
 
-	static void Reset();
-
-	static void Render(void*);
-
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 private:
-	static void RenderCompute();
-	static void RenderBlur();
-	static void RenderUpsample();
-
 	static void CreateRenderTargets();
 	static void DestroyRenderTargets();
 };

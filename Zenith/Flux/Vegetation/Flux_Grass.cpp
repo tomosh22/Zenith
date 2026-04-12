@@ -20,11 +20,6 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #endif
 
-// Task for async rendering
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_GRASS, Flux_Grass::Render, nullptr);
-
-// Command list
-static Flux_CommandList g_xCommandList("Grass");
 
 // Static member definitions
 Flux_Pipeline Flux_Grass::s_xGrassPipeline;
@@ -169,7 +164,7 @@ void Flux_Grass::Shutdown()
 
 void Flux_Grass::Reset()
 {
-	g_xCommandList.Reset(true);
+	// Reset is handled by the render graph
 	s_axChunks.Clear();
 	s_uVisibleBladeCount = 0;
 	s_uActiveChunkCount = 0;
@@ -192,17 +187,22 @@ void Flux_Grass::DestroyBuffers()
 	}
 }
 
-void Flux_Grass::SubmitRenderTask()
+void Flux_Grass::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+	u_int uPassIndex = xGraph.AddPass("Grass", ExecuteRender);
+	xGraph.SetPassTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
+	// Do NOT clear: the with-depth target setup shares the main scene depth
+	// buffer, and clearing here would wipe the depth that the geometry passes
+	// just wrote — causing deferred lighting to sample garbage depth and
+	// producing fully unlit / flat-shaded output. The HDR colour attachment is
+	// also shared with DeferredShading's no-depth setup, which DOES clear it,
+	// so the underlying image is already in a valid state when Grass runs.
+
+	xGraph.PassWrites(uPassIndex, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_DEPTH);
 }
 
-void Flux_Grass::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_Grass::Render(void*)
+void Flux_Grass::ExecuteRender(Flux_CommandList* pxCmdList, void*)
 {
 	if (!dbg_bGrassEnable || !s_bInstancesUploaded)
 	{
@@ -251,24 +251,19 @@ void Flux_Grass::Render(void*)
 
 	Flux_MemoryManager::UploadBufferData(s_xGrassConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xGrassConstants, sizeof(GrassConstants));
 
-	g_xCommandList.Reset(false);
-
-	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xGrassPipeline);
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xGrassBladeMesh.m_xVertexBuffer);
-	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xGrassBladeMesh.m_xIndexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xGrassPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xGrassBladeMesh.m_xVertexBuffer);
+	pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&s_xGrassBladeMesh.m_xIndexBuffer);
 
 	{
-		Flux_ShaderBinder xBinder(g_xCommandList);
+		Flux_ShaderBinder xBinder(*pxCmdList);
 		xBinder.BindCBV(s_xGrassFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindCBV(s_xGrassParamsBinding, &s_xGrassConstantsBuffer.GetCBV());
 		xBinder.BindUAV_Buffer(s_xGrassInstanceBinding, &s_xInstanceBuffer.GetUAV());
 	}
 
 	// Draw instanced grass (6 indices per blade, s_uVisibleBladeCount instances)
-	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uVisibleBladeCount);
-
-	// Submit to HDR target - grass is forward-rendered after deferred shading
-	Flux::SubmitCommandList(&g_xCommandList, Flux_HDR::GetHDRSceneTargetSetupWithDepth(), RENDER_ORDER_FOLIAGE);
+	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(6, s_uVisibleBladeCount);
 }
 
 void Flux_Grass::GenerateGrassForChunk(GrassChunk& xChunk, const Zenith_Maths::Vector3& xCenter)

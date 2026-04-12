@@ -12,29 +12,10 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Skybox/Flux_Skybox.h"
-#include "Flux/StaticMeshes/Flux_StaticMeshes.h"
-#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
-#include "Flux/Terrain/Flux_Terrain.h"
-#include "Flux/Primitives/Flux_Primitives.h"
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
-#include "Flux/SSAO/Flux_SSAO.h"
 #include "Flux/Fog/Flux_Fog.h"
-#include "Flux/Quads/Flux_Quads.h"
-#include "Flux/SDFs/Flux_SDFs.h"
-#include "Flux/Shadows/Flux_Shadows.h"
-#include "Flux/Particles/Flux_Particles.h"
-#include "Flux/Text/Flux_Text.h"
-#include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
-#include "Flux/HDR/Flux_HDR.h"
 #include "Flux/IBL/Flux_IBL.h"
-#include "Flux/HiZ/Flux_HiZ.h"
-#include "Flux/SSR/Flux_SSR.h"
-#include "Flux/SSGI/Flux_SSGI.h"
-#include "Flux/Vegetation/Flux_Grass.h"
-#include "Flux/DynamicLights/Flux_DynamicLights.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #ifdef ZENITH_TOOLS
-#include "Flux/Gizmos/Flux_Gizmos.h"
 #include "Editor/Zenith_Editor.h"
 #endif
 #include "Input/Zenith_Input.h"
@@ -128,62 +109,27 @@ void RenderImGui()
 
 #endif
 
-static void SubmitRenderTasks()
+static void ExecuteRenderGraph()
 {
-	Flux_IBL::SubmitRenderTask();         // IBL BRDF LUT generation (early, used by deferred shading)
-	Flux_Shadows::SubmitRenderTask();
-	Flux_Skybox::SubmitRenderTask();      // Cubemap skybox + procedural atmosphere
-	Flux_Skybox::SubmitAerialPerspectiveTask();  // Aerial perspective (if atmosphere enabled)
-	Flux_StaticMeshes::SubmitRenderToGBufferTask();
-	Flux_AnimatedMeshes::SubmitRenderTask();
-	Flux_InstancedMeshes::SubmitCullingTask();
-	Flux_InstancedMeshes::SubmitRenderTask();
-	Flux_Terrain::SubmitRenderToGBufferTask();
-	Flux_Grass::SubmitRenderTask();       // Grass/vegetation (after terrain)
-	Flux_Primitives::SubmitRenderTask();
-	Flux_HiZ::SubmitRenderTask();         // Hi-Z depth pyramid (after G-Buffer, needed by SSR)
-	Flux_SSR::SubmitRenderTask();         // Screen-space reflections (uses Hi-Z, needed by deferred shading)
-	Flux_SSGI::SubmitRenderTask();        // Screen-space GI (uses Hi-Z, needed by deferred shading)
-	Flux_DeferredShading::SubmitRenderTask();
-	Flux_DynamicLights::SubmitRenderTask();  // Dynamic lights (after deferred shading, additive blend)
-	Flux_SSAO::SubmitRenderTask();
-	Flux_Fog::SubmitRenderTask();
-	Flux_SDFs::SubmitRenderTask();
-	Flux_Particles::SubmitRenderTask();
-	Flux_HDR::SubmitRenderTask();         // Tone mapping (must be after all HDR scene passes)
-	Flux_Text::SubmitRenderTask();
-	Flux_Quads::SubmitRenderTask();
+	Flux_RenderGraph& xGraph = Flux::GetRenderGraph();
 
-}
+	// Order matters here. Both subsystems below run BEFORE Compile() so any
+	// SetPassEnabled / MarkDirty mutations they perform take effect on the
+	// same frame. Neither can live as a pass OnPrepare callback because
+	// Phase 0 only fires OnPrepare for *enabled* passes — once a system has
+	// disabled its previously-active pass, an OnPrepare-based switcher would
+	// never run again.
+	//
+	// Fog must run BEFORE IBL so that if the user changes fog technique this
+	// frame, ApplyTechniqueSelectionToGraph calls MarkDirty() *before* IBL's
+	// UpdateGraphPassEnables checks IsDirty() — which lets IBL force-enable
+	// all 49 of its passes for the upcoming full Compile() so the validator
+	// sees a writer for every IBL texture that DeferredShading reads.
+	Flux_Fog::ApplyTechniqueSelectionToGraph(xGraph);
+	Flux_IBL::UpdateGraphPassEnables(xGraph);
 
-// Public wrapper for WaitForRenderTasks
-// Used by editor to synchronize before scene transitions
-// bIncludeGizmos: If false, skips waiting for gizmo task (useful when called mid-frame before gizmo submission)
-void Zenith_Core::WaitForAllRenderTasks()
-{
-	Flux_IBL::WaitForRenderTask();
-	Flux_Shadows::WaitForRenderTask();
-	Flux_Skybox::WaitForRenderTask();
-	Flux_Skybox::WaitForAerialPerspectiveTask();
-	Flux_StaticMeshes::WaitForRenderToGBufferTask();
-	Flux_AnimatedMeshes::WaitForRenderTask();
-	Flux_InstancedMeshes::WaitForCullingTask();
-	Flux_InstancedMeshes::WaitForRenderTask();
-	Flux_Terrain::WaitForRenderToGBufferTask();
-	Flux_Grass::WaitForRenderTask();
-	Flux_Primitives::WaitForRenderTask();
-	Flux_HiZ::WaitForRenderTask();
-	Flux_SSR::WaitForRenderTask();
-	Flux_SSGI::WaitForRenderTask();
-	Flux_DeferredShading::WaitForRenderTask();
-	Flux_DynamicLights::WaitForRenderTask();
-	Flux_SSAO::WaitForRenderTask();
-	Flux_Fog::WaitForRenderTask();
-	Flux_SDFs::WaitForRenderTask();
-	Flux_Particles::WaitForRenderTask();
-	Flux_HDR::WaitForRenderTask();
-	Flux_Text::WaitForRenderTask();
-	Flux_Quads::WaitForRenderTask();
+	xGraph.Compile();
+	xGraph.Execute();
 }
 
 void Zenith_Core::Zenith_MainLoop()
@@ -253,34 +199,17 @@ void Zenith_Core::Zenith_MainLoop()
 		}
 		Zenith_SceneManager::SetIsUpdating(false);
 
-		#ifdef ZENITH_ASSERT
-		Zenith_SceneManager::SetRenderTasksActive(true);
-		#endif
-		SubmitRenderTasks();
-		WaitForAllRenderTasks();
-		#ifdef ZENITH_ASSERT
-		Zenith_SceneManager::SetRenderTasksActive(false);
+		// W22: ordering constraint documented on Flux_RenderGraph::Execute.
+		#ifdef ZENITH_TOOLS
+		ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
 		#endif
 
-		// Render ImGui AFTER all render tasks have completed
-		// This allows editor UI callbacks (scene load/save/unload) to call SceneManager
-		// directly without needing deferred queues - no render tasks are active here.
-		// RenderImGui itself runs on the main thread so SceneManager calls are safe.
-		// However, it submits Flux_Gizmos::SubmitRenderTask() which runs on a worker
-		// thread and needs s_bRenderTasksActive for thread safety asserts.
-		// Set the flag BEFORE RenderImGui to avoid race: gizmo worker can start and
-		// call GetActiveScene() before main thread reaches the line after RenderImGui.
-		// This is safe because main thread ImGui callbacks pass the IsMainThread() check
-		// regardless of this flag - it only enables the gizmo worker thread to also pass.
-		#ifdef ZENITH_TOOLS
 		#ifdef ZENITH_ASSERT
 		Zenith_SceneManager::SetRenderTasksActive(true);
 		#endif
-		ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
-		Flux_Gizmos::WaitForRenderTask();
+		ExecuteRenderGraph();
 		#ifdef ZENITH_ASSERT
 		Zenith_SceneManager::SetRenderTasksActive(false);
-		#endif
 		#endif
 	}
 

@@ -152,6 +152,10 @@ static constexpr float fCORNER_RADIUS = 0.10f;
 static constexpr uint32_t uCORNER_SEGMENTS = 4;
 static constexpr float fEDGE_RADIUS = 0.04f;
 static constexpr uint32_t uEDGE_SEGMENTS = 3;
+// Depth bias pushes edge rounding strictly below the top face to prevent Z-fighting.
+// All geometry is in one draw call, so triangle processing order is undefined.
+// With LESS_OR_EQUAL depth test, equal-depth surfaces produce undefined results.
+static constexpr float fEDGE_DEPTH_BIAS = 0.02f;
 
 struct PerimeterPoint
 {
@@ -350,6 +354,8 @@ static void BuildCellPerimeter(
 
 // Per-point edge rounding scale: 1.0 if both adjacent segments are exterior, 0.0 otherwise.
 // This prevents edge rounding inset on interior boundaries between cells.
+// Used by EmitEdgeRounding and EmitSideWalls (but NOT by EmitTopFace, which extends to the
+// full perimeter so it always wins the depth test over edge rounding below).
 static float GetEdgeScale(const Zenith_Vector<PerimeterPoint>& axPerimeter, uint32_t uIndex)
 {
 	uint32_t uNumPoints = axPerimeter.GetSize();
@@ -374,15 +380,15 @@ static void EmitTopFace(
 		{ 1.f, 0.f, 0.f },
 		{ 0.f, 0.f, -1.f });
 
-	// Perimeter vertices (only inset on fully-exterior points)
+	// Perimeter vertices at full perimeter (no inset). The top face must cover the
+	// entire cell surface at fMaxY so it always wins the depth test over edge rounding
+	// (which is biased below fMaxY by fEDGE_DEPTH_BIAS).
 	Zenith_Vector<uint32_t> auPerimVerts;
 	for (uint32_t u = 0; u < uNumPoints; ++u)
 	{
 		const PerimeterPoint& xPt = axPerimeter.Get(u);
-		float fScale = GetEdgeScale(axPerimeter, u);
-		float fInset = fEDGE_RADIUS * fScale;
-		float fX = xPt.m_fX - xPt.m_fOutX * fInset;
-		float fZ = xPt.m_fZ - xPt.m_fOutZ * fInset;
+		float fX = xPt.m_fX;
+		float fZ = xPt.m_fZ;
 		float fU = fX - fCenterX + 0.5f;
 		float fV = bFlipV ? (fCenterZ - fZ + 0.5f) : (fZ - fCenterZ + 0.5f);
 
@@ -430,7 +436,7 @@ static void EmitEdgeRounding(
 			float fCosAlpha = cosf(fAlpha);
 
 			float fInset = fEDGE_RADIUS * (1.f - fSinAlpha) * fScaleA;
-			float fY = fMaxY - fEDGE_RADIUS * (1.f - fCosAlpha) * fScaleA;
+			float fY = fMaxY - (fEDGE_RADIUS * (1.f - fCosAlpha) + fEDGE_DEPTH_BIAS) * fScaleA;
 
 			float fX = xPtA.m_fX - xPtA.m_fOutX * fInset;
 			float fZ = xPtA.m_fZ - xPtA.m_fOutZ * fInset;
@@ -456,7 +462,7 @@ static void EmitEdgeRounding(
 			float fCosAlpha = cosf(fAlpha);
 
 			float fInset = fEDGE_RADIUS * (1.f - fSinAlpha) * fScaleB;
-			float fY = fMaxY - fEDGE_RADIUS * (1.f - fCosAlpha) * fScaleB;
+			float fY = fMaxY - (fEDGE_RADIUS * (1.f - fCosAlpha) + fEDGE_DEPTH_BIAS) * fScaleB;
 
 			float fX = xPtB.m_fX - xPtB.m_fOutX * fInset;
 			float fZ = xPtB.m_fZ - xPtB.m_fOutZ * fInset;
@@ -480,9 +486,49 @@ static void EmitEdgeRounding(
 			uint32_t uA1 = uBaseA + uRing + 1;
 			uint32_t uB0 = uBaseB + uRing;
 			uint32_t uB1 = uBaseB + uRing + 1;
-			xBuilder.AddTriangle(uA0, uA1, uB0);
-			xBuilder.AddTriangle(uB0, uA1, uB1);
+			xBuilder.AddTriangle(uA0, uB0, uA1);
+			xBuilder.AddTriangle(uA1, uB0, uB1);
 		}
+	}
+}
+
+static void EmitBottomFace(
+	MeshBuilder& xBuilder,
+	const Zenith_Vector<PerimeterPoint>& axPerimeter,
+	float fMinY, float fCenterX, float fCenterZ)
+{
+	uint32_t uNumPoints = axPerimeter.GetSize();
+
+	// Center vertex
+	uint32_t uCenter = xBuilder.AddVertex(
+		{ fCenterX, fMinY, fCenterZ },
+		{ 0.5f, 0.5f },
+		{ 0.f, -1.f, 0.f },
+		{ 1.f, 0.f, 0.f },
+		{ 0.f, 0.f, 1.f });
+
+	// Perimeter vertices (no edge inset on bottom face)
+	Zenith_Vector<uint32_t> auPerimVerts;
+	for (uint32_t u = 0; u < uNumPoints; ++u)
+	{
+		const PerimeterPoint& xPt = axPerimeter.Get(u);
+		float fU = xPt.m_fX - fCenterX + 0.5f;
+		float fV = xPt.m_fZ - fCenterZ + 0.5f;
+
+		uint32_t uIdx = xBuilder.AddVertex(
+			{ xPt.m_fX, fMinY, xPt.m_fZ },
+			{ fU, fV },
+			{ 0.f, -1.f, 0.f },
+			{ 1.f, 0.f, 0.f },
+			{ 0.f, 0.f, 1.f });
+		auPerimVerts.PushBack(uIdx);
+	}
+
+	// Triangle fan (reversed winding for downward-facing face)
+	for (uint32_t u = 0; u < uNumPoints; ++u)
+	{
+		uint32_t uNext = (u + 1) % uNumPoints;
+		xBuilder.AddTriangle(uCenter, auPerimVerts.Get(uNext), auPerimVerts.Get(u));
 	}
 }
 
@@ -502,9 +548,9 @@ static void EmitSideWalls(
 		const PerimeterPoint& xPtA = axPerimeter.Get(u);
 		const PerimeterPoint& xPtB = axPerimeter.Get(uNext);
 
-		// Per-point side wall top: accounts for edge rounding where present
-		float fTopA = fMaxY - fEDGE_RADIUS * GetEdgeScale(axPerimeter, u);
-		float fTopB = fMaxY - fEDGE_RADIUS * GetEdgeScale(axPerimeter, uNext);
+		// Per-point side wall top: accounts for edge rounding + depth bias where present
+		float fTopA = fMaxY - (fEDGE_RADIUS + fEDGE_DEPTH_BIAS) * GetEdgeScale(axPerimeter, u);
+		float fTopB = fMaxY - (fEDGE_RADIUS + fEDGE_DEPTH_BIAS) * GetEdgeScale(axPerimeter, uNext);
 
 		Zenith_Maths::Vector3 xTangentA = { xPtA.m_fOutZ, 0.f, -xPtA.m_fOutX };
 		Zenith_Maths::Vector3 xTangentB = { xPtB.m_fOutZ, 0.f, -xPtB.m_fOutX };
@@ -577,10 +623,11 @@ static void GenerateShapeMesh(const TilePuzzleShapeDefinition& xDef, Flux_MeshGe
 			bHasRight, bHasLeft, bHasFront, bHasBack,
 			axPerimeter);
 
-		// Emit geometry layers (no bottom face — always occluded from the top-down camera)
+		// Emit geometry layers
 		EmitTopFace(xBuilder, axPerimeter, fMaxY, fCX, fCZ);
 		EmitEdgeRounding(xBuilder, axPerimeter, fMaxY);
 		EmitSideWalls(xBuilder, axPerimeter, fMinY, fMaxY);
+		EmitBottomFace(xBuilder, axPerimeter, fMinY, fCX, fCZ);
 	}
 
 	xBuilder.CopyToGeometry(xGeometryOut);
@@ -2886,7 +2933,7 @@ void Project_RegisterEditorAutomationSteps()
 	// Pinball score layout group (score + high score, vertical stack)
 	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("PinballScoreGroup");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballScoreGroup", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballScoreGroup", -30.f, 30.f);
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballScoreGroup", -30.f, TilePuzzleUI::fPB_TOP_PADDING + 30.f);
 	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("PinballScoreGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
 	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("PinballScoreGroup", 0.f);
 	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("PinballScoreGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperRight));
@@ -2905,8 +2952,8 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Back button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("PinballBackBtn", "Menu");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballBackBtn", 20.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballBackBtn", 20.f, -20.f);
 	Zenith_EditorAutomation::AddStep_SetUISize("PinballBackBtn", TilePuzzleUI::fPB_BACK_BTN_W, TilePuzzleUI::fPB_BACK_BTN_H);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PinballBackBtn", TilePuzzleUI::fPB_BACK_BTN_FONT);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PinballBackBtn", 0.2f, 0.25f, 0.35f, 1.f);
@@ -2988,6 +3035,29 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("GateBackBtn", 0.55f, 0.3f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("GateBackBtn", 0.3f, 0.15f, 0.15f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("GateBackBtn", false);
+
+	// ---- Tutorial Overlay (pinball scene) ----
+	Zenith_EditorAutomation::AddStep_CreateUIOverlay("TutorialOverlay");
+	Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor("TutorialOverlay", 0.f, 0.f, 0.f, 0.7f);
+	Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize("TutorialOverlay", TilePuzzleUI::fTUTORIAL_OVERLAY_W, TilePuzzleUI::fTUTORIAL_OVERLAY_H);
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialText", " ");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialText", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialText", 0.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("TutorialText", 750.f, 100.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialText", TilePuzzleUI::fTUTORIAL_FONT);
+	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialText", 1.f, 1.f, 0.8f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialText");
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("TutorialHintText", "Tap to continue");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialHintText", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialHintText", 0.f, -15.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("TutorialHintText", 400.f, 40.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialHintText", TilePuzzleUI::fTUTORIAL_HINT_FONT);
+	Zenith_EditorAutomation::AddStep_SetUIColor("TutorialHintText", 0.7f, 0.7f, 0.7f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialHintText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
 
 	// Script
 	Zenith_EditorAutomation::AddStep_AddScript();

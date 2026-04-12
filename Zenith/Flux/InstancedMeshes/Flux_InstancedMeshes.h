@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 class Flux_DynamicConstantBuffer;
 class Flux_InstanceGroup;
@@ -28,22 +29,13 @@ public:
 	// Per-Frame Rendering
 	//-------------------------------------------------------------------------
 
-	// Dispatch GPU culling compute shader (call before RenderToGBuffer)
-	static void DispatchCulling(void*);
-
-	// Render all instance groups to GBuffer
-	static void RenderToGBuffer(void*);
-
 	// Render to shadow map
 	static void RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
 
 	//-------------------------------------------------------------------------
-	// Task System
+	// Render Graph
 	//-------------------------------------------------------------------------
-	static void SubmitCullingTask();
-	static void WaitForCullingTask();
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	//-------------------------------------------------------------------------
 	// Accessors
@@ -51,4 +43,8 @@ public:
 	static uint32_t GetTotalInstanceCount();
 	static uint32_t GetVisibleInstanceCount();
 	static uint32_t GetGroupCount();
+
+private:
+	static void ExecuteCulling(Flux_CommandList* pxCmdList, void* pUserData);
+	static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
 };

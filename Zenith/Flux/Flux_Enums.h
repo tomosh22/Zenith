@@ -27,52 +27,15 @@ enum TextureType
 	TEXTURE_TYPE_CUBE
 };
 
-enum RenderOrder
+enum ResourceAccess
 {
-	RENDER_ORDER_MEMORY_UPDATE,
-	RENDER_ORDER_PROBE_CONVOLUTION,   // IBL probe irradiance/prefilter convolution
-	RENDER_ORDER_CSM,
-	RENDER_ORDER_ATMOSPHERE_LUT,      // Precompute transmittance LUT (compute)
-	RENDER_ORDER_SKYBOX,              // Cubemap or procedural atmosphere
-	RENDER_ORDER_OPAQUE_MESHES,
-	RENDER_ORDER_TERRAIN_CULLING,
-	RENDER_ORDER_TERRAIN,
-	RENDER_ORDER_PRIMITIVES,  // Debug primitives - rendered after terrain, into GBuffer
-	RENDER_ORDER_SKINNED_MESHES,
-	RENDER_ORDER_INSTANCE_CULLING,  // GPU frustum culling compute pass for instanced meshes
-	RENDER_ORDER_INSTANCED_MESHES,  // GPU-instanced meshes (100k+ instances)
-	RENDER_ORDER_FOLIAGE,
-	RENDER_ORDER_HIZ_GENERATE,        // Hi-Z depth pyramid (compute)
-	RENDER_ORDER_SSR_RAYMARCH,        // Screen-space reflection ray marching
-	RENDER_ORDER_SSGI_RAYMARCH,       // Screen-space GI ray marching
-	RENDER_ORDER_SSR_RESOLVE,         // SSR roughness blur pass
-	RENDER_ORDER_SSGI_UPSAMPLE,       // SSGI bilateral upsample to full res
-	RENDER_ORDER_SSGI_DENOISE,        // SSGI joint bilateral denoising
-	RENDER_ORDER_APPLY_LIGHTING,
-	RENDER_ORDER_POINT_LIGHTS,
-	RENDER_ORDER_WATER,
-	RENDER_ORDER_SSAO,                // Half-res SSAO occlusion generation
-	RENDER_ORDER_SSAO_BLUR,           // Half-res bilateral blur
-	RENDER_ORDER_SSAO_UPSAMPLE,       // Bilateral upsample + HDR composite
-	RENDER_ORDER_VOLUMEFOG_INJECT,    // Volumetric fog density injection (compute)
-	RENDER_ORDER_VOLUMEFOG_LIGHT,     // Volumetric fog lighting pass (compute)
-	RENDER_ORDER_VOLUMEFOG_TEMPORAL,  // Volumetric fog temporal resolve (compute)
-	RENDER_ORDER_FOG,
-	RENDER_ORDER_AERIAL_PERSPECTIVE,  // Atmospheric distance fog (after regular fog)
-	RENDER_ORDER_SDFS,
-	RENDER_ORDER_PARTICLES_COMPUTE,
-	RENDER_ORDER_PARTICLES,
-	RENDER_ORDER_HDR_LUMINANCE,       // Auto-exposure histogram (must be after all HDR scene rendering)
-	RENDER_ORDER_HDR_ADAPTATION,      // Auto-exposure adaptation
-	RENDER_ORDER_HDR_BLOOM_THRESHOLD, // Bloom threshold extraction (HDR scene -> bloom[0])
-	RENDER_ORDER_HDR_BLOOM_DOWNSAMPLE,// Bloom downsample chain (bloom[i-1] -> bloom[i])
-	RENDER_ORDER_HDR_BLOOM_UPSAMPLE,  // Bloom upsample chain (bloom[i+1] -> bloom[i], additive)
-	RENDER_ORDER_HDR_TONEMAP,         // Tone mapping (reads HDR target, writes to final target)
-	RENDER_ORDER_QUADS,               // UI quads (rendered on top of tone-mapped scene)
-	RENDER_ORDER_TEXT,                // UI text (rendered on top of quads)
-	RENDER_ORDER_IMGUI,
-	RENDER_ORDER_COPYTOFRAMEBUFFER,
-	RENDER_ORDER_MAX
+	RESOURCE_ACCESS_UNDEFINED,          // No prior state — first touch, contents discardable
+	RESOURCE_ACCESS_READ_SRV,           // Sampled read (fragment | compute) — stage discrimination is handled inside the access translator, not the enum.
+	RESOURCE_ACCESS_READ_DEPTH,         // Depth attachment read-only
+	RESOURCE_ACCESS_WRITE_RTV,          // Color attachment write
+	RESOURCE_ACCESS_WRITE_DSV,          // Depth attachment write
+	RESOURCE_ACCESS_WRITE_UAV,          // Compute/storage write
+	RESOURCE_ACCESS_READWRITE_UAV,      // Compute read-modify-write
 };
 
 enum TextureFormat
@@ -107,6 +70,11 @@ enum TextureFormat
 	TEXTURE_FORMAT_D32_SFLOAT,
 	TEXTURE_FORMAT_DEPTH_STENCIL_END,//////////////////
 };
+
+inline bool IsDepthFormat(TextureFormat eFormat)
+{
+	return eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
+}
 
 enum BlendFactor
 {

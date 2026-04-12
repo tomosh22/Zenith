@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Maths/Zenith_Maths.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 /**
  * Flux_Primitives - Debug primitive renderer
@@ -37,22 +38,9 @@ public:
 	static void Shutdown();
 
 	/**
-	 * Clear state when scene resets (e.g., Play/Stop transitions)
-	 * Resets command lists to prevent stale GPU resource references
+	 * Register passes with the render graph
 	 */
-	static void Reset();
-
-	/**
-	 * Submit the render task to the task system
-	 * Called once per frame from SubmitRenderTasks() in Zenith_Core.cpp
-	 */
-	static void SubmitRenderTask();
-
-	/**
-	 * Wait for the render task to complete
-	 * Called once per frame from WaitForRenderTasks() in Zenith_Core.cpp
-	 */
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	/**
 	 * Queue a sphere for rendering this frame
@@ -123,11 +111,6 @@ public:
 
 	/**
 	 * Internal render function executed on worker thread
-	 * Records Flux_CommandList with all queued primitives
-	 * Public because it's used as a task callback
-	 */
-	static void Render(void*);
-
 	// ========== HELPER FUNCTIONS (use existing primitives) ==========
 
 	/**
@@ -214,4 +197,7 @@ public:
 	 * @param fSize Length of each axis
 	 */
 	static void AddAxes(const Zenith_Maths::Vector3& xOrigin, float fSize);
+
+private:
+	static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
 };

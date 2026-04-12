@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 class Flux_DynamicConstantBuffer;
 
@@ -11,11 +12,12 @@ public:
 	static void Shutdown();
 	static void Reset();  // Clear state when scene resets (e.g., Play/Stop transitions)
 
-	static void RenderToGBuffer(void*);
 	static void RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
 
-	static void SubmitRenderToGBufferTask();
-	static void WaitForRenderToGBufferTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	// CPU-side per-frame update (streaming, LOD, culling dispatch)
+	static void PreRenderUpdate();
 
 	static Flux_Pipeline& GetShadowPipeline();
 	static Flux_DynamicConstantBuffer& GetTerrainConstantsBuffer();
@@ -28,4 +30,8 @@ public:
 
 	static u_int& GetDebugMode();
 	static bool& GetWireframeMode();
+
+private:
+	static void ExecuteCulling(Flux_CommandList* pxCmdList, void* pUserData);
+	static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
 };

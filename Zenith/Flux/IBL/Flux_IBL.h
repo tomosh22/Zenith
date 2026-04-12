@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 enum IBL_DebugMode : u_int
 {
@@ -67,8 +68,14 @@ public:
 	static void UpdateSkyIBL();
 
 	// Per-frame update - checks if BRDF LUT needs generation
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	// Per-frame state-machine update — must be called BEFORE Flux_RenderGraph::Compile()
+	// each frame. Toggles SetPassEnabled for the 49 IBL passes based on the
+	// amortised regen state machine. Cannot live as a pass OnPrepare callback
+	// because OnPrepare only runs for *enabled* passes — once everything is
+	// disabled the state machine could never re-enable anything.
+	static void UpdateGraphPassEnables(Flux_RenderGraph& xGraph);
 
 	// Mark all probes as needing update
 	static void MarkAllProbesDirty();
@@ -99,29 +106,44 @@ public:
 	static void RegisterDebugVariables();
 #endif
 
+	// State flags (public for render graph execute callback access)
+	static bool s_bBRDFLUTGenerated;
+	static bool s_bSkyIBLDirty;
+	static bool s_bIBLReady;  // True after all IBL textures have been generated
+
+	// Render-graph execute callbacks (public so the file-static graph wiring
+	// can take their address as Flux_RenderGraph_OnRecordFunc).
+	static void ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void* pUserData);
+	static void ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserData);
+	static void ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserData);
+
+	// Render attachments — public so consumers (DeferredShading, DynamicLights)
+	// can declare PassReads on them in their own SetupRenderGraph functions.
+	// Matches the SSR / SSGI pattern (s_xResolvedReflection, s_xDenoised, etc.).
+
+	// BRDF Integration LUT (2D texture, computed once)
+	static Flux_RenderAttachment s_xBRDFLUT;
+
+	// Sky-based irradiance map (cubemap for diffuse)
+	static Flux_RenderAttachment s_xIrradianceMap;
+
+	// Sky-based prefiltered environment map (cubemap with mips for specular)
+	static Flux_RenderAttachment s_xPrefilteredMap;
+
 private:
 	static void CreateRenderTargets();
 	static void DestroyRenderTargets();
 
-	// Legacy functions that process all faces at once (kept for reference)
+	// Legacy functions retained as no-op compat shims; actual work happens in
+	// the render-graph execute callbacks above.
 	static void GenerateIrradianceMap();
 	static void GeneratePrefilteredMap();
-
-	// Frame-amortized helpers that process a single face
 	static void GenerateIrradianceFace(u_int uFace);
 	static void GeneratePrefilteredFace(u_int uMip, u_int uFace);
 
-	// BRDF Integration LUT (2D texture, computed once)
-	static Flux_RenderAttachment s_xBRDFLUT;
+	// Per-face / per-mip target setups (still private — only IBL touches these).
 	static Flux_TargetSetup s_xBRDFLUTSetup;
-	static bool s_bBRDFLUTGenerated;
-
-	// Sky-based irradiance map (cubemap for diffuse)
-	static Flux_RenderAttachment s_xIrradianceMap;
 	static Flux_TargetSetup s_axIrradianceFaceSetup[6];  // Per-face target setups
-
-	// Sky-based prefiltered environment map (cubemap with mips for specular)
-	static Flux_RenderAttachment s_xPrefilteredMap;
 	static Flux_TargetSetup s_axPrefilteredFaceSetup[6];  // Per-face target setups (mip 0)
 
 	// Pipelines
@@ -145,12 +167,16 @@ private:
 	static bool s_bSpecularEnabled;
 
 	// Dirty flags
-	static bool s_bSkyIBLDirty;
-	static bool s_bIBLReady;  // True after all IBL textures have been generated
 	static bool s_bFirstGeneration;  // True until first full generation completes
 
 	// Frame-amortized regeneration state
 	static IBL_RegenState s_eRegenState;
 	static u_int s_uRegenFace;  // Current face being processed (0-5)
 	static u_int s_uRegenMip;   // Current mip being processed (0-6, prefilter only)
+
+	// Render-graph pass indices — populated by SetupRenderGraph and consumed by
+	// UpdateGraphPassEnables to flip per-pass enable bits each frame.
+	static u_int s_uBRDFLUTPassIdx;
+	static u_int s_auIrradianceFacePassIdx[6];
+	static u_int s_auPrefilterMipFacePassIdx[IBLConfig::uPREFILTER_MIP_COUNT][6];
 };

@@ -36,6 +36,9 @@
 
 #include "TilePuzzle/Components/TilePuzzle_SaveData.h"
 #include "SaveData/Zenith_SaveData.h"
+#include "UI/Zenith_UIOverlay.h"
+#include "UI/Zenith_UIText.h"
+#include "Flux/Text/Flux_Text.h"
 
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "Flux/HDR/Flux_HDR.h"
@@ -81,17 +84,20 @@ namespace TilePuzzle
 namespace TilePuzzleUI
 {
 	// Pinball HUD text sizes
-	static constexpr float fPB_OBJECTIVE_FONT = 36.f;
-	static constexpr float fPB_COUNTER_FONT = 34.f;
-	static constexpr float fPB_BALLS_FONT = 36.f;
+	static constexpr float fPB_OBJECTIVE_FONT = 52.f;
+	static constexpr float fPB_COUNTER_FONT = 48.f;
+	static constexpr float fPB_BALLS_FONT = 52.f;
 	static constexpr float fPB_GATE_STATUS_FONT = 52.f;
-	static constexpr float fPB_GATE_NUM_FONT = 34.f;
+	static constexpr float fPB_GATE_NUM_FONT = 48.f;
+
+	// Top padding to clear Android status bar
+	static constexpr float fPB_TOP_PADDING = 60.f;
 
 	// Pinball HUD Y positions (scaled up for readability)
-	static constexpr float fPB_OBJECTIVE_Y = 60.f;
-	static constexpr float fPB_PEG_COUNT_Y = 100.f;
-	static constexpr float fPB_TARGET_COUNT_Y = 138.f;
-	static constexpr float fPB_BALLS_Y = 60.f;
+	static constexpr float fPB_OBJECTIVE_Y = fPB_TOP_PADDING + 20.f;
+	static constexpr float fPB_PEG_COUNT_Y = fPB_TOP_PADDING + 76.f;
+	static constexpr float fPB_TARGET_COUNT_Y = fPB_TOP_PADDING + 130.f;
+	static constexpr float fPB_BALLS_Y = fPB_TOP_PADDING + 60.f;
 	static constexpr float fPB_GATE_STATUS_Y = -40.f;
 }
 
@@ -506,6 +512,13 @@ public:
 				pxBackBtn->SetOnClick(&OnBackClicked, this);
 			}
 
+			// Apply top padding to score group to clear Android status bar
+			Zenith_UI::Zenith_UIElement* pxScoreGroup = xUI.FindElement("PinballScoreGroup");
+			if (pxScoreGroup)
+			{
+				pxScoreGroup->SetPosition(-30.f, TilePuzzleUI::fPB_TOP_PADDING + 30.f);
+			}
+
 			// Gate select widgets
 			m_pxGateSelectBg = xUI.FindElement("GateSelectBg");
 			m_pxGateSelectTitle = xUI.FindElement("GateSelectTitle");
@@ -528,6 +541,11 @@ public:
 				m_pxGateFreeplayBtn->SetOnClick(&OnFreeplayClicked, this);
 			if (m_pxGateBackBtn)
 				m_pxGateBackBtn->SetOnClick(&OnGateBackClicked, this);
+
+			// Tutorial overlay
+			m_pxTutorialOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>("TutorialOverlay");
+			m_pxTutorialText = xUI.FindElement<Zenith_UI::Zenith_UIText>("TutorialText");
+			m_pxTutorialHintText = xUI.FindElement<Zenith_UI::Zenith_UIText>("TutorialHintText");
 		}
 
 		// Load gate data and determine which gate is active
@@ -560,6 +578,9 @@ public:
 			ResetGateAttempt();
 
 			m_eState = PINBALL_STATE_READY;
+
+			// Show pinball gate tutorial on first gate level
+			TryShowPinballTutorial();
 		}
 		else
 		{
@@ -607,6 +628,13 @@ public:
 
 	void OnUpdate(const float fDeltaTime) ZENITH_FINAL override
 	{
+		// Tutorial overlay blocks all input while active
+		if (m_bTutorialActive)
+		{
+			UpdatePinballTutorial(fDeltaTime);
+			return;
+		}
+
 		// Handle escape to return to menu
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 		{
@@ -2050,7 +2078,7 @@ private:
 		// Gate number display - top center, below score
 		Zenith_UI::Zenith_UIText* pxGateNum = xUI.CreateText("PinballGateNum", "");
 		pxGateNum->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopCenter);
-		pxGateNum->SetPosition(0.f, 60.f);
+		pxGateNum->SetPosition(0.f, TilePuzzleUI::fPB_TOP_PADDING + 130.f);
 		pxGateNum->SetFontSize(TilePuzzleUI::fPB_GATE_NUM_FONT);
 		pxGateNum->SetAlignment(Zenith_UI::TextAlignment::Center);
 		pxGateNum->SetColor({ 0.6f, 0.6f, 0.8f, 1.f });
@@ -2461,6 +2489,83 @@ private:
 	}
 
 	// ========================================================================
+	// Pinball Gate Tutorial
+	// ========================================================================
+
+	static constexpr uint32_t uPINBALL_TUTORIAL_INDEX = 2;
+	static constexpr float s_fPinballTutorialFadeDuration = 0.3f;
+
+	void TryShowPinballTutorial()
+	{
+		if (m_xSaveData.IsTutorialShown(uPINBALL_TUTORIAL_INDEX))
+			return;
+
+		m_bTutorialActive = true;
+		m_fTutorialTimer = 0.0f;
+		m_bTutorialMouseWasDown = false;
+
+		if (m_pxTutorialOverlay)
+		{
+			int32_t iWinWidth, iWinHeight;
+			Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+			float fScreenW = static_cast<float>(iWinWidth);
+			float fOverlayW = glm::min(fScreenW - 40.f, 810.f);
+			m_pxTutorialOverlay->SetContentSize(fOverlayW, 180.f);
+
+			if (m_pxTutorialText)
+			{
+				float fTextW = fOverlayW - 60.f;
+				m_pxTutorialText->SetSize(fTextW, 100.f);
+
+				const char* szText = "Every 10 levels is a pinball gate.\nClear it to continue!";
+				float fDesiredFont = 48.f;
+				// Find longest line
+				uint32_t uMaxLineLen = 0, uCurrentLen = 0;
+				for (const char* p = szText; *p; ++p)
+				{
+					if (*p == '\n') { if (uCurrentLen > uMaxLineLen) uMaxLineLen = uCurrentLen; uCurrentLen = 0; }
+					else uCurrentLen++;
+				}
+				if (uCurrentLen > uMaxLineLen) uMaxLineLen = uCurrentLen;
+				if (uMaxLineLen > 0)
+				{
+					float fLineWidth = static_cast<float>(uMaxLineLen) * fDesiredFont * fCHAR_SPACING;
+					if (fLineWidth > fTextW)
+						fDesiredFont = fTextW / (static_cast<float>(uMaxLineLen) * fCHAR_SPACING);
+				}
+				m_pxTutorialText->SetFontSize(fDesiredFont);
+				m_pxTutorialText->SetText(szText);
+			}
+			m_pxTutorialOverlay->Show();
+		}
+	}
+
+	void UpdatePinballTutorial(float fDeltaTime)
+	{
+		m_fTutorialTimer += fDeltaTime / s_fPinballTutorialFadeDuration;
+		if (m_fTutorialTimer > 1.0f)
+			m_fTutorialTimer = 1.0f;
+
+		if (m_pxTutorialHintText)
+		{
+			float fHintAlpha = 0.5f + 0.5f * sinf(m_fTutorialTimer * 6.0f);
+			m_pxTutorialHintText->SetColor(Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, fHintAlpha));
+		}
+
+		bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+		if (bMouseDown && !m_bTutorialMouseWasDown && m_fTutorialTimer >= 0.5f)
+		{
+			m_bTutorialActive = false;
+			if (m_pxTutorialOverlay)
+				m_pxTutorialOverlay->Hide();
+			m_xSaveData.SetTutorialShown(uPINBALL_TUTORIAL_INDEX);
+			Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+				TilePuzzle_WriteSaveData, &m_xSaveData);
+		}
+		m_bTutorialMouseWasDown = bMouseDown;
+	}
+
+	// ========================================================================
 	// Date Helper
 	// ========================================================================
 
@@ -2484,6 +2589,14 @@ private:
 	PinballState m_eState;
 	uint32_t m_uSessionScore;
 	TilePuzzleSaveData m_xSaveData;
+
+	// Tutorial overlay
+	Zenith_UI::Zenith_UIOverlay* m_pxTutorialOverlay = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxTutorialText = nullptr;
+	Zenith_UI::Zenith_UIText* m_pxTutorialHintText = nullptr;
+	bool m_bTutorialActive = false;
+	float m_fTutorialTimer = 0.0f;
+	bool m_bTutorialMouseWasDown = false;
 
 	// Entity IDs (dynamic scene)
 	Zenith_EntityID m_xBallEntityID;

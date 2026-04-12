@@ -21,10 +21,6 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, Flux_StaticMeshes::RenderToGBuffer, nullptr);
-
-static Flux_CommandList g_xCommandList("Static Meshes");
-
 static Flux_Shader s_xGBufferShader;
 static Flux_Pipeline s_xGBufferPipeline;
 
@@ -125,37 +121,29 @@ void Flux_StaticMeshes::Initialise()
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_StaticMeshes initialised");
 }
 
-void Flux_StaticMeshes::Reset()
+void Flux_StaticMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	g_xCommandList.Reset(true);
+	u_int uPassIndex = xGraph.AddPass("Static Meshes GBuffer", ExecuteGBuffer);
+	xGraph.SetPassTargetSetup(uPassIndex, Flux_Graphics::s_xMRTTarget);
 
-	Zenith_Log(LOG_CATEGORY_MESH, "Flux_StaticMeshes::Reset() - Reset command list");
+	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+	{
+		xGraph.PassWrites(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
+	}
+	xGraph.PassWrites(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 }
 
-void Flux_StaticMeshes::SubmitRenderToGBufferTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_StaticMeshes::WaitForRenderToGBufferTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_StaticMeshes::RenderToGBuffer(void*)
+void Flux_StaticMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!dbg_bEnable)
 	{
 		return;
 	}
 
-	g_xCommandList.Reset(false);
-	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
 
 	// Create binder for named resource binding
-	Flux_ShaderBinder xBinder(g_xCommandList);
+	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind FrameConstants once per command list (set 0 - per-frame data)
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
@@ -224,8 +212,8 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 					continue;
 				}
 
-				g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
-				g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+				pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
+				pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
 				Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
 				if (!pxMaterial)
@@ -246,7 +234,7 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 				xBinder.BindSRV(s_xOcclusionTexBinding, &pxMaterial->GetOcclusionTexture()->m_xSRV);
 				xBinder.BindSRV(s_xEmissiveTexBinding, &pxMaterial->GetEmissiveTexture()->m_xSRV);
 
-				g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
+				pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 			}
 			continue;
 		}
@@ -264,8 +252,8 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
-			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
-			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
+			pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
+			pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
 
 			Zenith_MaterialAsset& xMaterial = *pxModel->GetMaterialAtIndex(uMesh);
 
@@ -281,11 +269,9 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 			xBinder.BindSRV(s_xOcclusionTexBinding, &xMaterial.GetOcclusionTexture()->m_xSRV);
 			xBinder.BindSRV(s_xEmissiveTexBinding, &xMaterial.GetEmissiveTexture()->m_xSRV);
 
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
+			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
 		}
 	}
-
-	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_OPAQUE_MESHES);
 }
 
 void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)

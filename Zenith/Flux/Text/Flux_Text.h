@@ -1,5 +1,7 @@
 #pragma once
 
+class Flux_RenderGraph;
+
 /// Character width as fraction of height (typical monospace ratio is ~0.5-0.6).
 /// Must also match CHAR_ASPECT_RATIO in Flux_Text.vert.
 static constexpr float fCHAR_ASPECT_RATIO = 0.5f;
@@ -24,8 +26,7 @@ public:
 
 	static void Render(void*);
 
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	static uint32_t UploadChars();
 

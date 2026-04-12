@@ -1869,10 +1869,10 @@ private:
 	// Tutorial index mapping:
 	// 0 = Level 1 (basic drag)
 	// 1 = Level 6 (first domino/multi-cell shape)
-	// 2 = Level 11 (first static blocker)
-	// 3 = Level 26 (first blocker-cat)
-	// 4 = Level 46 (first conditional/locked shape)
-	// 5 = (spare)
+	// 2 = Level 10 (first pinball gate level)
+	// 3 = Level 11 (first static blocker)
+	// 4 = Level 26 (first blocker-cat)
+	// 5 = Level 46 (first conditional/locked shape)
 
 	int32_t GetTutorialIndexForLevel(uint32_t uLevel) const
 	{
@@ -1880,9 +1880,10 @@ private:
 		{
 		case 1:  return 0;
 		case 6:  return 1;
-		case 11: return 2;
-		case 26: return 3;
-		case 46: return 4;
+		case 10: return 2;
+		case 11: return 3;
+		case 26: return 4;
+		case 46: return 5;
 		default: return -1;
 		}
 	}
@@ -1939,9 +1940,10 @@ private:
 			default: return nullptr;
 			}
 		case 1: return "Some shapes cover more than one tile.\nThey slide as one piece!";
-		case 2: return "Dark shapes are blockers.\nThey can't be moved!";
-		case 3: return "This cat sits on a blocker.\nGet a matching shape next to it!";
-		case 4: return "Locked shapes need cats\neliminated first to unlock!";
+		case 2: return "Every 10th level is a pinball gate.\nClear it to continue!";
+		case 3: return "Dark shapes are blockers.\nThey can't be moved!";
+		case 4: return "This cat sits on a blocker.\nGet a matching shape next to it!";
+		case 5: return "Locked shapes need cats\neliminated first to unlock!";
 		default: return nullptr;
 		}
 	}
@@ -3444,7 +3446,6 @@ private:
 
 		// Render text indicators above conditional (locked) shapes
 		RenderConditionalShapeIndicators();
-		RenderUsesIndicators();
 		RenderHintIndicator();
 		RenderHintSolvingIndicator();
 
@@ -3521,76 +3522,6 @@ private:
 				Zenith_Maths::Vector2(fScreenX - 32.0f, fScreenY - 64.0f),
 				128.0f,
 				Zenith_Maths::Vector4(1.0f, 0.8f, 0.2f, 1.0f));
-		}
-	}
-
-	void RenderUsesIndicators()
-	{
-		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
-		if (!pxCanvas)
-			return;
-
-		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
-			return;
-
-		Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
-		Zenith_Maths::Matrix4 xViewMat, xProjMat;
-		xCam.BuildViewMatrix(xViewMat);
-		xCam.BuildProjectionMatrix(xProjMat);
-		Zenith_Maths::Matrix4 xVPMat = xProjMat * xViewMat;
-
-		int32_t iWinWidth, iWinHeight;
-		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
-		if (iWinWidth <= 0 || iWinHeight <= 0)
-			return;
-
-		// Count remaining cats per color
-		uint32_t auRemainingCatsPerColor[TILEPUZZLE_COLOR_COUNT] = {};
-		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
-		{
-			if (!m_xCurrentLevel.axCats[i].bEliminated &&
-				m_xCurrentLevel.axCats[i].eColor < TILEPUZZLE_COLOR_COUNT)
-			{
-				auRemainingCatsPerColor[m_xCurrentLevel.axCats[i].eColor]++;
-			}
-		}
-
-		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
-		{
-			const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[i];
-			if (!xShape.pxDefinition || !xShape.pxDefinition->bDraggable)
-				continue;
-			if (xShape.bRemoved)
-				continue;
-			if (xShape.eColor >= TILEPUZZLE_COLOR_COUNT)
-				continue;
-
-			uint32_t uRemaining = auRemainingCatsPerColor[xShape.eColor];
-			if (uRemaining == 0)
-				continue;
-
-			Zenith_Maths::Vector3 xWorldPos = GridToWorld(
-				static_cast<float>(xShape.iOriginX), static_cast<float>(xShape.iOriginY),
-				s_fShapeHeight + 0.5f);
-
-			Zenith_Maths::Vector4 xClipPos = xVPMat * Zenith_Maths::Vector4(xWorldPos, 1.0f);
-			if (xClipPos.w <= 0.0f)
-				continue;
-
-			xClipPos.x /= xClipPos.w;
-			xClipPos.y /= xClipPos.w;
-
-			float fScreenX = (xClipPos.x + 1.0f) * 0.5f * static_cast<float>(iWinWidth);
-			float fScreenY = (xClipPos.y + 1.0f) * 0.5f * static_cast<float>(iWinHeight);
-
-			char szText[8];
-			snprintf(szText, sizeof(szText), "%u", uRemaining);
-
-			pxCanvas->SubmitText(
-				szText,
-				Zenith_Maths::Vector2(fScreenX - 32.0f, fScreenY - 64.0f),
-				128.0f,
-				Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
 		}
 	}
 

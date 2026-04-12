@@ -8,11 +8,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
-
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_QUADS, Flux_Quads::Render, nullptr);
-
-static Flux_CommandList g_xCommandList("Quads");
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -63,14 +59,6 @@ void Flux_Quads::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads initialised");
 }
 
-void Flux_Quads::Reset()
-{
-	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	g_xCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads::Reset() - Reset command list");
-}
-
 void Flux_Quads::Shutdown()
 {
 	Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xInstanceBuffer);
@@ -82,16 +70,6 @@ void Flux_Quads::UploadInstanceData()
 	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer().m_xVRAMHandle, s_axQuadsToRender, sizeof(Quad) * s_uQuadRenderIndex);
 }
 
-void Flux_Quads::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_Quads::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
 void Flux_Quads::Render(void*)
 {
 	if (!dbg_bEnable)
@@ -100,26 +78,39 @@ void Flux_Quads::Render(void*)
 	}
 
 	UploadInstanceData();
+}
 
-	g_xCommandList.Reset(false);
+void Flux_Quads::ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
+{
+	(void)pUserData;
+	if (!dbg_bEnable || s_uQuadRenderIndex == 0)
+	{
+		return;
+	}
 
-	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	UploadInstanceData();
 
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
 
-	g_xCommandList.AddCommand<Flux_CommandUseUnboundedTextures>(1);
+	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 
-	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uQuadRenderIndex);
+	pxCommandList->AddCommand<Flux_CommandUseUnboundedTextures>(1);
 
-	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RENDER_ORDER_QUADS);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uQuadRenderIndex);
 
 	s_uQuadRenderIndex = 0;
+}
 
+void Flux_Quads::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	u_int uPass = xGraph.AddPass("Quads", ExecuteQuads);
+	xGraph.SetPassTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth);
+	xGraph.PassWrites(uPass, &Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
 }
 
 void Flux_Quads::UploadQuad(const Quad& xQuad)

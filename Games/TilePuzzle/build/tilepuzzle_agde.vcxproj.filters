@@ -271,6 +271,273 @@
     <ClInclude Include="..\Android\app\build\intermediates\assets\debug\Water\Flux_Water.vert">
       <Filter>Android\app\build\intermediates\assets\debug\Water</Filter>
     </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\AnimatedMeshes\Flux_AnimatedMeshes_FragCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\AnimatedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\AnimatedMeshes\Flux_AnimatedMeshes_ToGBuffer.frag">
+      <Filter>Android\app\build\intermediates\assets\release\AnimatedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\AnimatedMeshes\Flux_AnimatedMeshes_ToGBuffer.vert">
+      <Filter>Android\app\build\intermediates\assets\release\AnimatedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\AnimatedMeshes\Flux_AnimatedMeshes_ToShadowmap.frag">
+      <Filter>Android\app\build\intermediates\assets\release\AnimatedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\AnimatedMeshes\Flux_AnimatedMeshes_ToShadowmap.vert">
+      <Filter>Android\app\build\intermediates\assets\release\AnimatedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\AnimatedMeshes\Flux_AnimatedMeshes_VertCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\AnimatedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Common.fxh">
+      <Filter>Android\app\build\intermediates\assets\release</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\ComputeTest\ComputeTest.comp">
+      <Filter>Android\app\build\intermediates\assets\release\ComputeTest</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\ComputeTest\ComputeTest_Display.frag">
+      <Filter>Android\app\build\intermediates\assets\release\ComputeTest</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\ComputeTest\ComputeTest_Display.vert">
+      <Filter>Android\app\build\intermediates\assets\release\ComputeTest</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\DeferredShading\Flux_DeferredShading.frag">
+      <Filter>Android\app\build\intermediates\assets\release\DeferredShading</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\DynamicLights\Flux_DynamicLights.frag">
+      <Filter>Android\app\build\intermediates\assets\release\DynamicLights</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\DynamicLights\Flux_DynamicLights.vert">
+      <Filter>Android\app\build\intermediates\assets\release\DynamicLights</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Flux_Fullscreen_UV.vert">
+      <Filter>Android\app\build\intermediates\assets\release</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Flux_TexturedQuad.frag">
+      <Filter>Android\app\build\intermediates\assets\release</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Fog\Flux_Fog.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Fog\Flux_FroxelFog_Apply.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Fog\Flux_FroxelFog_Inject.comp">
+      <Filter>Android\app\build\intermediates\assets\release\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Fog\Flux_FroxelFog_Light.comp">
+      <Filter>Android\app\build\intermediates\assets\release\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Fog\Flux_GodRays.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Fog\Flux_NoiseCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Fog\Flux_RaymarchFog.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Fog\Flux_TemporalFog_Resolve.comp">
+      <Filter>Android\app\build\intermediates\assets\release\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Fog\Flux_VolumetricCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\GBufferCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Gizmos\Flux_Gizmos.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Gizmos</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Gizmos\Flux_Gizmos.vert">
+      <Filter>Android\app\build\intermediates\assets\release\Gizmos</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\HDR\Flux_Adaptation.comp">
+      <Filter>Android\app\build\intermediates\assets\release\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\HDR\Flux_BloomDownsample.frag">
+      <Filter>Android\app\build\intermediates\assets\release\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\HDR\Flux_BloomThreshold.frag">
+      <Filter>Android\app\build\intermediates\assets\release\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\HDR\Flux_BloomUpsample.frag">
+      <Filter>Android\app\build\intermediates\assets\release\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\HDR\Flux_Luminance.comp">
+      <Filter>Android\app\build\intermediates\assets\release\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\HDR\Flux_ToneMapping.frag">
+      <Filter>Android\app\build\intermediates\assets\release\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\HiZ\Flux_HiZ_Generate.comp">
+      <Filter>Android\app\build\intermediates\assets\release\HiZ</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\IBL\Flux_BRDFIntegration.frag">
+      <Filter>Android\app\build\intermediates\assets\release\IBL</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\IBL\Flux_IBLCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\IBL</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\IBL\Flux_IrradianceConvolution.frag">
+      <Filter>Android\app\build\intermediates\assets\release\IBL</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\IBL\Flux_PrefilterEnvMap.frag">
+      <Filter>Android\app\build\intermediates\assets\release\IBL</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\InstancedMeshes\Flux_InstanceCulling.comp">
+      <Filter>Android\app\build\intermediates\assets\release\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\InstancedMeshes\Flux_InstancedMeshes_FragCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\InstancedMeshes\Flux_InstancedMeshes_ToGBuffer.frag">
+      <Filter>Android\app\build\intermediates\assets\release\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\InstancedMeshes\Flux_InstancedMeshes_ToGBuffer.vert">
+      <Filter>Android\app\build\intermediates\assets\release\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\InstancedMeshes\Flux_InstancedMeshes_ToShadowMap.frag">
+      <Filter>Android\app\build\intermediates\assets\release\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\InstancedMeshes\Flux_InstancedMeshes_ToShadowMap.vert">
+      <Filter>Android\app\build\intermediates\assets\release\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\InstancedMeshes\Flux_InstancedMeshes_VertCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\MaterialCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Particles\Flux_Particles.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Particles\Flux_Particles.vert">
+      <Filter>Android\app\build\intermediates\assets\release\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Particles\Flux_ParticleUpdate.comp">
+      <Filter>Android\app\build\intermediates\assets\release\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\PBRConstants.fxh">
+      <Filter>Android\app\build\intermediates\assets\release</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Primitives\Flux_Primitives.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Primitives</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Primitives\Flux_Primitives.vert">
+      <Filter>Android\app\build\intermediates\assets\release\Primitives</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Quads\Flux_Quads.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Quads</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Quads\Flux_Quads.vert">
+      <Filter>Android\app\build\intermediates\assets\release\Quads</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\RayMarchCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\SDFs\Flux_SDFs.frag">
+      <Filter>Android\app\build\intermediates\assets\release\SDFs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Skybox\Flux_AerialPerspective.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Skybox\Flux_Atmosphere.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Skybox\Flux_AtmosphereCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Skybox\Flux_Skybox.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Skybox\Flux_SkyboxSolidColour.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\SSAO\Flux_SSAO.frag">
+      <Filter>Android\app\build\intermediates\assets\release\SSAO</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\SSAO\Flux_SSAO_Blur.frag">
+      <Filter>Android\app\build\intermediates\assets\release\SSAO</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\SSAO\Flux_SSAO_Upsample.frag">
+      <Filter>Android\app\build\intermediates\assets\release\SSAO</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\SSGI\Flux_SSGI_Denoise.frag">
+      <Filter>Android\app\build\intermediates\assets\release\SSGI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\SSGI\Flux_SSGI_RayMarch.frag">
+      <Filter>Android\app\build\intermediates\assets\release\SSGI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\SSGI\Flux_SSGI_Upsample.frag">
+      <Filter>Android\app\build\intermediates\assets\release\SSGI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\SSR\Flux_SSR_RayMarch.frag">
+      <Filter>Android\app\build\intermediates\assets\release\SSR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\SSR\Flux_SSR_Resolve.frag">
+      <Filter>Android\app\build\intermediates\assets\release\SSR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\StaticMeshes\Flux_StaticMeshes_FragCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\StaticMeshes\Flux_StaticMeshes_ToGBuffer.frag">
+      <Filter>Android\app\build\intermediates\assets\release\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\StaticMeshes\Flux_StaticMeshes_ToGBuffer.vert">
+      <Filter>Android\app\build\intermediates\assets\release\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\StaticMeshes\Flux_StaticMeshes_ToShadowmap.frag">
+      <Filter>Android\app\build\intermediates\assets\release\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\StaticMeshes\Flux_StaticMeshes_ToShadowmap.vert">
+      <Filter>Android\app\build\intermediates\assets\release\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\StaticMeshes\Flux_StaticMeshes_VertCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Terrain\Flux_TerrainCulling.comp">
+      <Filter>Android\app\build\intermediates\assets\release\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Terrain\Flux_Terrain_FragCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Terrain\Flux_Terrain_ToGBuffer.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Terrain\Flux_Terrain_ToGBuffer.vert">
+      <Filter>Android\app\build\intermediates\assets\release\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Terrain\Flux_Terrain_ToShadowmap.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Terrain\Flux_Terrain_ToShadowmap.vert">
+      <Filter>Android\app\build\intermediates\assets\release\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Terrain\Flux_Terrain_VertCommon.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Text\Flux_Text.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Text</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Text\Flux_Text.vert">
+      <Filter>Android\app\build\intermediates\assets\release\Text</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Vegetation\Flux_Grass.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Vegetation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Vegetation\Flux_Grass.vert">
+      <Filter>Android\app\build\intermediates\assets\release\Vegetation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Vegetation\Flux_Wind.fxh">
+      <Filter>Android\app\build\intermediates\assets\release\Vegetation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Water\Flux_Water.frag">
+      <Filter>Android\app\build\intermediates\assets\release\Water</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Android\app\build\intermediates\assets\release\Water\Flux_Water.vert">
+      <Filter>Android\app\build\intermediates\assets\release\Water</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\Pinball_Behaviour.h">
       <Filter>Components</Filter>
     </ClInclude>
@@ -395,6 +662,78 @@
     </Filter>
     <Filter Include="Android\app\build\intermediates\assets\debug\Water">
       <UniqueIdentifier>{bcc3a13d-1eb3-9bba-054b-d5eaba7a2994}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release">
+      <UniqueIdentifier>{92677438-5b11-f6e8-da14-3ec280f40eed}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\AnimatedMeshes">
+      <UniqueIdentifier>{c1fe462c-bdd2-d8fc-7473-607e87b477f7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\ComputeTest">
+      <UniqueIdentifier>{f989e46c-269d-59c9-c277-144eea5028d4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\DeferredShading">
+      <UniqueIdentifier>{6cf8d543-78ad-999e-73df-6d65225cf705}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\DynamicLights">
+      <UniqueIdentifier>{e6c763a0-972b-081d-6404-573eacec5afa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\Fog">
+      <UniqueIdentifier>{38e28b9d-21c0-af4b-45d8-9549024ed599}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\Gizmos">
+      <UniqueIdentifier>{ff368f03-4775-e780-d176-cc5a4f004e1c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\HDR">
+      <UniqueIdentifier>{04d58489-94dc-84ff-3675-145a5075dc6c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\HiZ">
+      <UniqueIdentifier>{e44cd140-5e04-bc34-e9e5-7fefd9ee74f5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\IBL">
+      <UniqueIdentifier>{ed4561ce-5505-dfdb-3b8a-d113915f8494}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\InstancedMeshes">
+      <UniqueIdentifier>{68e712cd-1540-f94e-6398-97ff2d4daf68}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\Particles">
+      <UniqueIdentifier>{ad760e06-ee1e-a590-bfb9-e9b6856e0ead}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\Primitives">
+      <UniqueIdentifier>{03968c23-c650-79dd-a0cb-52a74a81d209}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\Quads">
+      <UniqueIdentifier>{0b4e2c37-f551-40d9-5cc9-0c7af12fff13}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\SDFs">
+      <UniqueIdentifier>{9210da72-0792-3174-7e6d-fc912ca497d6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\SSAO">
+      <UniqueIdentifier>{c40c9f2e-3ce0-a3b7-d519-efc88d2c02e3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\SSGI">
+      <UniqueIdentifier>{f12d4540-49e3-4600-3d04-f6abb44736f2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\SSR">
+      <UniqueIdentifier>{3a3132a9-5491-89a8-e342-9d5998860e5b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\Skybox">
+      <UniqueIdentifier>{4fc7ddce-b6e8-5573-80fe-0947ae579253}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\StaticMeshes">
+      <UniqueIdentifier>{9f2e214d-29ef-7b07-a113-79039c7f3ad1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\Terrain">
+      <UniqueIdentifier>{b6f37243-62f3-9258-474a-425bc85ab05b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\Text">
+      <UniqueIdentifier>{15f8ea6c-bd23-c372-2519-44b1080eb460}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\Vegetation">
+      <UniqueIdentifier>{c51f32d4-be79-c9be-3f4a-6a05502e22f1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\app\build\intermediates\assets\release\Water">
+      <UniqueIdentifier>{3cdcbda2-f43d-d9ca-b22d-51ee049ce30f}</UniqueIdentifier>
     </Filter>
     <Filter Include="Components">
       <UniqueIdentifier>{3bb4bb05-923d-8332-e0b6-ffafd088f41f}</UniqueIdentifier>

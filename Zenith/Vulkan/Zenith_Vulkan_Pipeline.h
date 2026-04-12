@@ -122,8 +122,8 @@ public:
 
 	
 
-	static vk::RenderPass TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
-	static vk::Framebuffer TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass);
+	static vk::RenderPass TargetSetupToRenderPass(const Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage, bool bDepthIsReadOnly = false);
+	static vk::Framebuffer TargetSetupToFramebuffer(const Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass);
 };
 
 class Zenith_Vulkan_RootSigBuilder

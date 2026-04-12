@@ -8,9 +8,9 @@
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
 
 // Static member definitions
 Flux_RenderAttachment Flux_SSGI::s_xRawResult;
@@ -54,14 +54,6 @@ static struct SSGIDenoiseConstants
 	float _pad0;
 	float _pad1;
 } dbg_xSSGIDenoiseConstants;
-
-// Task system
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_SSGI, Flux_SSGI::Render, nullptr);
-
-// Command lists
-static Flux_CommandList g_xRayMarchCommandList("SSGI RayMarch");
-static Flux_CommandList g_xUpsampleCommandList("SSGI Upsample");
-static Flux_CommandList g_xDenoiseCommandList("SSGI Denoise");
 
 // Shaders and pipelines
 static Flux_Shader s_xRayMarchShader;
@@ -239,10 +231,6 @@ void Flux_SSGI::Initialise()
 		DestroyRenderTargets();
 		CreateRenderTargets();
 
-		g_xRayMarchCommandList.Reset(true);
-		g_xUpsampleCommandList.Reset(true);
-		g_xDenoiseCommandList.Reset(true);
-
 #ifdef ZENITH_DEBUG_VARIABLES
 		Zenith_DebugVariables::AddTexture({ "Flux", "SSGI", "Textures", "Raw" }, s_xRawResult.m_pxSRV);
 		Zenith_DebugVariables::AddTexture({ "Flux", "SSGI", "Textures", "Resolved" }, s_xResolved.m_pxSRV);
@@ -267,48 +255,8 @@ void Flux_SSGI::Shutdown()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI shut down");
 }
 
-void Flux_SSGI::Reset()
+static void UpdateSSGIConstants()
 {
-	g_xRayMarchCommandList.Reset(true);
-	g_xUpsampleCommandList.Reset(true);
-	g_xDenoiseCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI::Reset()");
-}
-
-void Flux_SSGI::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_SSGI::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_SSGI::Render(void*)
-{
-#pragma warning(push)
-#pragma warning(disable: 4127) // conditional expression is constant (dbg_bSSGIEnable is const in non-tools builds)
-	if (!dbg_bSSGIEnable || !s_bEnabled || !s_bInitialised)
-		return;
-#pragma warning(pop)
-
-	// SSGI requires Hi-Z buffer for accelerated ray marching
-	if (!Flux_HiZ::IsEnabled())
-	{
-		static bool s_bHiZWarningShown = false;
-		if (!s_bHiZWarningShown)
-		{
-			Zenith_Warning(LOG_CATEGORY_RENDERER,
-				"Flux_SSGI: SSGI is enabled but HiZ is disabled. "
-				"SSGI requires Hi-Z for hierarchical ray marching. "
-				"Enable HiZ via 'Flux/HiZ/Enable' debug variable, or disable SSGI.");
-			s_bHiZWarningShown = true;
-		}
-		return;
-	}
-
-	// Update constants
 	dbg_xSSGIConstants.m_uDebugMode = dbg_uDebugMode;
 	dbg_xSSGIConstants.m_uHiZMipCount = Flux_HiZ::GetMipCount();
 	dbg_xSSGIConstants.m_uFrameIndex = Flux::GetFrameCounter();
@@ -316,22 +264,21 @@ void Flux_SSGI::Render(void*)
 	// Clamp start mip to valid range
 	if (dbg_xSSGIConstants.m_uStartMip >= dbg_xSSGIConstants.m_uHiZMipCount)
 		dbg_xSSGIConstants.m_uStartMip = dbg_xSSGIConstants.m_uHiZMipCount - 1;
-
-	RenderRayMarch();
-	RenderUpsample();
-	RenderDenoise();
 }
 
-void Flux_SSGI::RenderRayMarch()
+static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 {
-	g_xRayMarchCommandList.Reset(true);
+	if (!dbg_bSSGIEnable || !Flux_SSGI::s_bEnabled || !Flux_SSGI::IsInitialised() || !Flux_HiZ::IsEnabled())
+		return;
 
-	g_xRayMarchCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xRayMarchPipeline);
+	UpdateSSGIConstants();
 
-	g_xRayMarchCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xRayMarchCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xRayMarchPipeline);
 
-	Flux_ShaderBinder xBinder(g_xRayMarchCommandList);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+
+	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	xBinder.BindCBV(s_xRM_FrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xBinder.PushConstant(&dbg_xSSGIConstants, sizeof(SSGIConstants));
@@ -343,53 +290,96 @@ void Flux_SSGI::RenderRayMarch()
 	xBinder.BindSRV(s_xRM_DiffuseTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	xBinder.BindSRV(s_xRM_BlueNoiseTexBinding, &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
 
-	g_xRayMarchCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	Flux::SubmitCommandList(&g_xRayMarchCommandList, s_xRayMarchTargetSetup, RENDER_ORDER_SSGI_RAYMARCH);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_SSGI::RenderUpsample()
+static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 {
-	g_xUpsampleCommandList.Reset(true);
+	if (!dbg_bSSGIEnable || !Flux_SSGI::s_bEnabled || !Flux_SSGI::IsInitialised() || !Flux_HiZ::IsEnabled())
+		return;
 
-	g_xUpsampleCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xUpsamplePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xUpsamplePipeline);
 
-	g_xUpsampleCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xUpsampleCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	Flux_ShaderBinder xBinder(g_xUpsampleCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindSRV(s_xUS_SSGITexBinding, &s_xRawResult.m_pxSRV);
+	xBinder.BindSRV(s_xUS_SSGITexBinding, &Flux_SSGI::s_xRawResult.m_pxSRV);
 	xBinder.BindSRV(s_xUS_DepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
 
-	g_xUpsampleCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	Flux::SubmitCommandList(&g_xUpsampleCommandList, s_xUpsampleTargetSetup, RENDER_ORDER_SSGI_UPSAMPLE);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_SSGI::RenderDenoise()
+static void ExecuteSSGIDenoise(Flux_CommandList* pxCommandList, void*)
 {
-	g_xDenoiseCommandList.Reset(true);
+	if (!dbg_bSSGIEnable || !Flux_SSGI::s_bEnabled || !Flux_SSGI::IsInitialised() || !Flux_HiZ::IsEnabled())
+		return;
 
-	g_xDenoiseCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xDenoisePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xDenoisePipeline);
 
-	g_xDenoiseCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xDenoiseCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	Flux_ShaderBinder xBinder(g_xDenoiseCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	// Push denoise constants
 	xBinder.PushConstant(&dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
-	// Bind textures
-	xBinder.BindSRV(s_xDN_SSGITexBinding, &s_xResolved.m_pxSRV);
+	xBinder.BindSRV(s_xDN_SSGITexBinding, &Flux_SSGI::s_xResolved.m_pxSRV);
 	xBinder.BindSRV(s_xDN_DepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(s_xDN_NormalsTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(s_xDN_AlbedoTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 
-	g_xDenoiseCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+}
 
-	Flux::SubmitCommandList(&g_xDenoiseCommandList, s_xDenoiseTargetSetup, RENDER_ORDER_SSGI_DENOISE);
+void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	// Always add all passes — enable/disable is handled at runtime in execute callbacks
+
+	// RayMarch pass — owns its own target, clears.
+	{
+		u_int uPassIndex = xGraph.AddPass("SSGI RayMarch", ExecuteSSGIRayMarch);
+		xGraph.SetPassTargetSetup(uPassIndex, s_xRayMarchTargetSetup);
+		xGraph.SetPassClearTargets(uPassIndex, true);
+
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		// SSGI samples the full HiZ mip chain via Flux_HiZ::GetHiZSRV() — declare
+		// every mip so the render graph transitions all of them, not just mip 0.
+		xGraph.PassReads(uPassIndex, &Flux_HiZ::s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount);
+		// SSGI raymarch shader samples three GBuffer color attachments — must
+		// declare so the graph transitions them out of COLOR_ATTACHMENT_OPTIMAL
+		// before this pass binds them as SRVs.
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPassIndex, &s_xRawResult, RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	// Upsample pass — owns its own target, clears.
+	{
+		u_int uPassIndex = xGraph.AddPass("SSGI Upsample", ExecuteSSGIUpsample);
+		xGraph.SetPassTargetSetup(uPassIndex, s_xUpsampleTargetSetup);
+		xGraph.SetPassClearTargets(uPassIndex, true);
+
+		xGraph.PassReads(uPassIndex, &s_xRawResult, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPassIndex, &s_xResolved, RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	// Denoise pass — owns its own target, clears.
+	{
+		u_int uPassIndex = xGraph.AddPass("SSGI Denoise", ExecuteSSGIDenoise);
+		xGraph.SetPassTargetSetup(uPassIndex, s_xDenoiseTargetSetup);
+		xGraph.SetPassClearTargets(uPassIndex, true);
+
+		xGraph.PassReads(uPassIndex, &s_xResolved, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		// Joint bilateral denoise samples normals and albedo from the GBuffer.
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPassIndex, &s_xDenoised, RESOURCE_ACCESS_WRITE_RTV);
+	}
 }
 
 Flux_ShaderResourceView& Flux_SSGI::GetSSGISRV()

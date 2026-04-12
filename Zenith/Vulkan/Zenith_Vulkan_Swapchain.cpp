@@ -333,7 +333,8 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 		// Cleanup swapchain resources before recreation
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
-			// Destroy image views directly - GPU is already idle so no deferred deletion needed`nxDevice.destroyImageView(s_xImageViews[u]);
+			// Destroy image views directly - GPU is already idle so no deferred deletion needed
+			xDevice.destroyImageView(s_xImageViews[u]);
 			xDevice.destroySemaphore(s_axImageAvailableSemaphores[u]);
 			xDevice.destroySemaphore(s_axRenderFinishedSemaphores[u]);
 		}
@@ -447,14 +448,15 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().endRenderPass();
 	VkCheck(s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().end());
 
-	// Use per-image semaphores to avoid signaling a semaphore still in use by a previous present
+	// Only signal renderFinished semaphore when we have a valid image to present
+	// Otherwise the semaphore stays signaled and causes a double-signal on the next frame
 	vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
 		.setCommandBufferCount(1)
 		.setPCommandBuffers(&s_xCopyToFramebufferCmd.GetCurrentCmdBuffer())
 		.setPWaitSemaphores(nullptr)
 		.setWaitSemaphoreCount(0)
-		.setPSignalSemaphores(&s_axRenderFinishedSemaphores[s_uCurrentImageIndex])
-		.setSignalSemaphoreCount(1);
+		.setPSignalSemaphores(s_bShouldWaitOnImageAvailableSem ? &s_axRenderFinishedSemaphores[s_uCurrentImageIndex] : nullptr)
+		.setSignalSemaphoreCount(s_bShouldWaitOnImageAvailableSem ? 1 : 0);
 
 	VkCheck(Zenith_Vulkan::GetQueue(COMMANDTYPE_GRAPHICS).submit(xRenderSubmitInfo, Zenith_Vulkan::GetCurrentInFlightFence()));
 

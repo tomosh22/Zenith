@@ -9,7 +9,6 @@
 #include "Flux/Flux_CommandList.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
 #include "Core/Zenith_Core.h"
 #include "UI/Zenith_UICanvas.h"
 
@@ -17,27 +16,11 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #endif
 
-// Task for async rendering
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_HDR, Flux_HDR::Render, nullptr);
-
-// Command lists - separate command list per bloom pass to avoid pointer aliasing
-// (SubmitCommandList stores pointers, so each pass needs its own command list)
-static Flux_CommandList g_xBloomThresholdCommandList("HDR_Bloom_Threshold");
-// 5 bloom chain levels (downsample from threshold -> mip1,2,3,4, so 4 downsample passes)
-// Upsample from mip4 -> mip3,2,1,0, so 4 upsample passes
-static Flux_CommandList g_axBloomDownsampleCommandLists[4] = {
-	Flux_CommandList("HDR_Bloom_Down0"),
-	Flux_CommandList("HDR_Bloom_Down1"),
-	Flux_CommandList("HDR_Bloom_Down2"),
-	Flux_CommandList("HDR_Bloom_Down3")
-};
-static Flux_CommandList g_axBloomUpsampleCommandLists[4] = {
-	Flux_CommandList("HDR_Bloom_Up0"),
-	Flux_CommandList("HDR_Bloom_Up1"),
-	Flux_CommandList("HDR_Bloom_Up2"),
-	Flux_CommandList("HDR_Bloom_Up3")
-};
-static Flux_CommandList g_xToneMappingCommandList("HDR_ToneMapping");
+// Strongly-typed per-pass user data: each downsample / upsample pass is given
+// a pointer into one of these arrays so the execute callback recovers the mip
+// index without going through a void*-as-int reinterpret_cast.
+static u_int s_axBloomMipUserData[5]      = { 0, 1, 2, 3, 4 };
+static u_int s_axBloomUpsampleUserData[4] = { 0, 1, 2, 3 };
 
 // Shaders
 static Flux_Shader s_xToneMappingShader;
@@ -85,10 +68,6 @@ Zenith_Vulkan_Shader Flux_HDR::s_xLuminanceHistogramShader;
 Zenith_Vulkan_Shader Flux_HDR::s_xAdaptationShader;
 Zenith_Vulkan_RootSig Flux_HDR::s_xLuminanceRootSig;
 Zenith_Vulkan_RootSig Flux_HDR::s_xAdaptationRootSig;
-
-// Command lists for compute
-static Flux_CommandList g_xLuminanceHistogramCommandList("HDR_LuminanceHistogram");
-static Flux_CommandList g_xAdaptationCommandList("HDR_Adaptation");
 
 // Cached binding handles from shader reflection
 static Flux_BindingHandle s_xToneMappingConstantsBinding;
@@ -253,6 +232,7 @@ void Flux_HDR::Initialise()
 	{
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
 			s_xBloomUpsampleShader, "HDR/Flux_BloomUpsample.frag", &s_axBloomChainSetup[0]);
+		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 		Flux_PipelineBuilder::FromSpecification(s_xBloomUpsamplePipeline, xSpec);
@@ -297,15 +277,6 @@ void Flux_HDR::Shutdown()
 
 void Flux_HDR::Reset()
 {
-	g_xBloomThresholdCommandList.Reset(true);
-	for (u_int u = 0; u < 4; u++)
-	{
-		g_axBloomDownsampleCommandLists[u].Reset(true);
-		g_axBloomUpsampleCommandLists[u].Reset(true);
-	}
-	g_xToneMappingCommandList.Reset(true);
-	g_xLuminanceHistogramCommandList.Reset(true);
-	g_xAdaptationCommandList.Reset(true);
 	s_fCurrentExposure = 1.0f;
 	s_fAverageLuminance = 0.18f;
 
@@ -451,29 +422,51 @@ void Flux_HDR::InitializeAutoExposure()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HDR: Auto-exposure compute pipelines initialized");
 }
 
-void Flux_HDR::ComputeLuminanceHistogram()
+void Flux_HDR::PreExecuteLuminanceHistogram(void* pUserData)
 {
-	// Guard against uninitialized buffers (can occur if InitializeAutoExposure failed)
+	(void)pUserData;
+
+	// SYNC NOTE: UploadBufferData() below stages into the memory transfer
+	// command buffer. EndFrame() submits that CB and signals s_xMemorySemaphore,
+	// which the subsequent render submission waits on, so any uploads issued
+	// from a Phase-0 OnPrepare callback are guaranteed to be visible before any
+	// pass that reads them. This replaces the old RENDER_ORDER_MEMORY_UPDATE
+	// invariant that the static_assert in EndFrame used to enforce.
+	SyncDebugVariables();
+	bool bAutoExposureJustEnabled = s_bAutoExposure && !s_bAutoExposureWasEnabled;
+	s_bAutoExposureWasEnabled = s_bAutoExposure;
+	if (bAutoExposureJustEnabled && s_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid())
+	{
+		float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
+		Zenith_Vulkan_MemoryManager::UploadBufferData(
+			s_xExposureBuffer.GetBuffer().m_xVRAMHandle,
+			afInitialExposure,
+			4 * sizeof(float));
+	}
+
+	// Clear histogram buffer before compute (only when auto-exposure or histogram visualization is active)
+	if ((s_bAutoExposure || dbg_bHDRShowHistogram) && s_xHistogramBuffer.GetBuffer().m_xVRAMHandle.IsValid())
+	{
+		static u_int auZeroHistogram[256] = { 0 };
+		Zenith_Vulkan_MemoryManager::UploadBufferData(
+			s_xHistogramBuffer.GetBuffer().m_xVRAMHandle,
+			auZeroHistogram,
+			256 * sizeof(u_int));
+	}
+}
+
+void Flux_HDR::ExecuteLuminanceHistogram(Flux_CommandList* pxCommandList, void* pUserData)
+{
+	(void)pUserData;
+
 	if (!s_xHistogramBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
 		return;
 	}
 
-	// Clear histogram buffer to zero before compute
-	// This ensures consistent results regardless of workgroup execution order
-	// SYNC NOTE: UploadBufferData() is processed in RENDER_ORDER_MEMORY_UPDATE which
-	// executes before RENDER_ORDER_HDR_LUMINANCE. The memory submit waits on a semaphore
-	// before render work begins, ensuring the transfer completes before compute reads.
-	// TODO: Consider using vkCmdFillBuffer for GPU-side clear to reduce CPU overhead
-	static u_int auZeroHistogram[256] = { 0 };
-	Zenith_Vulkan_MemoryManager::UploadBufferData(
-		s_xHistogramBuffer.GetBuffer().m_xVRAMHandle,
-		auZeroHistogram,
-		256 * sizeof(u_int));
+	// Buffer uploads are handled in PreExecuteLuminanceHistogram
 
-	g_xLuminanceHistogramCommandList.Reset(false);
-
-	g_xLuminanceHistogramCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xLuminanceHistogramPipeline);
+	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&s_xLuminanceHistogramPipeline);
 
 	LuminanceConstants xConsts;
 	xConsts.m_uImageWidth = Flux_Swapchain::GetWidth();
@@ -481,32 +474,26 @@ void Flux_HDR::ComputeLuminanceHistogram()
 	xConsts.m_fMinLogLum = s_fMinLogLuminance;
 	xConsts.m_fLogLumRange = s_fLogLuminanceRange;
 
-	// Use reflection-based binding handles
-	Flux_ShaderBinder xBinder(g_xLuminanceHistogramCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.PushConstant(s_xLuminanceConstantsBinding, &xConsts, sizeof(xConsts));
 	xBinder.BindSRV(s_xLuminanceHDRTexBinding, &s_xHDRSceneTarget.m_pxSRV);
 	xBinder.BindUAV_Buffer(s_xLuminanceHistogramBinding, &s_xHistogramBuffer.GetUAV());
 
-	// Dispatch: divide screen into 16x16 workgroups
 	u_int uGroupsX = (Flux_Swapchain::GetWidth() + 15) / 16;
 	u_int uGroupsY = (Flux_Swapchain::GetHeight() + 15) / 16;
-	g_xLuminanceHistogramCommandList.AddCommand<Flux_CommandDispatch>(uGroupsX, uGroupsY, 1);
-
-	Flux::SubmitCommandList(&g_xLuminanceHistogramCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_HDR_LUMINANCE);
+	pxCommandList->AddCommand<Flux_CommandDispatch>(uGroupsX, uGroupsY, 1);
 }
 
-void Flux_HDR::ComputeExposureAdaptation()
+void Flux_HDR::ExecuteAdaptation(Flux_CommandList* pxCommandList, void* pUserData)
 {
-	// Guard against uninitialized buffers (can occur if InitializeAutoExposure failed)
+	(void)pUserData;
 	if (!s_xHistogramBuffer.GetBuffer().m_xVRAMHandle.IsValid() ||
 		!s_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
 		return;
 	}
 
-	g_xAdaptationCommandList.Reset(false);
-
-	g_xAdaptationCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xAdaptationPipeline);
+	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&s_xAdaptationPipeline);
 
 	AdaptationConstants xConsts;
 	xConsts.m_fMinLogLum = s_fMinLogLuminance;
@@ -516,67 +503,18 @@ void Flux_HDR::ComputeExposureAdaptation()
 	xConsts.m_fTargetLuminance = s_fTargetLuminance;
 	xConsts.m_fMinExposure = s_fMinExposure;
 	xConsts.m_fMaxExposure = s_fMaxExposure;
-	xConsts.m_fLowPercentile = 0.05f;   // Ignore darkest 5%
-	xConsts.m_fHighPercentile = 0.95f;  // Ignore brightest 5%
+	xConsts.m_fLowPercentile = 0.05f;
+	xConsts.m_fHighPercentile = 0.95f;
 	xConsts.m_uTotalPixels = Flux_Swapchain::GetWidth() * Flux_Swapchain::GetHeight();
 	xConsts.m_uPad0 = 0;
 	xConsts.m_uPad1 = 0;
 
-	// Use reflection-based binding handles
-	Flux_ShaderBinder xBinder(g_xAdaptationCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.PushConstant(s_xAdaptationConstantsBinding, &xConsts, sizeof(xConsts));
 	xBinder.BindUAV_Buffer(s_xAdaptationHistogramBinding, &s_xHistogramBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(s_xAdaptationExposureBinding, &s_xExposureBuffer.GetUAV());
 
-	// Dispatch single workgroup with 256 threads
-	g_xAdaptationCommandList.AddCommand<Flux_CommandDispatch>(1, 1, 1);
-
-	Flux::SubmitCommandList(&g_xAdaptationCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_HDR_ADAPTATION);
-
-	// Note: GPU-side exposure values are used directly in shaders.
-	// CPU-side readback not currently implemented - using default values for debug display.
-	// The auto-exposure still works correctly on the GPU.
-}
-
-void Flux_HDR::Render(void*)
-{
-	SyncDebugVariables();
-
-	// Auto-exposure: compute luminance histogram and adapt exposure
-	// Also compute histogram if ShowHistogram is enabled (for visualization)
-	// Track state transition to ensure clean histogram when auto-exposure is first enabled
-	bool bAutoExposureJustEnabled = s_bAutoExposure && !s_bAutoExposureWasEnabled;
-	s_bAutoExposureWasEnabled = s_bAutoExposure;
-
-	if (s_bAutoExposure || dbg_bHDRShowHistogram)
-	{
-		ComputeLuminanceHistogram();
-
-		// If auto-exposure was just enabled, reset exposure to default
-		// to prevent jarring transition from potentially stale values
-		if (bAutoExposureJustEnabled)
-		{
-			float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
-			Zenith_Vulkan_MemoryManager::UploadBufferData(
-				s_xExposureBuffer.GetBuffer().m_xVRAMHandle,
-				afInitialExposure,
-				4 * sizeof(float));
-		}
-
-		// Always run adaptation - it computes histogram max for visualization
-		// and exposure adaptation when auto-exposure is enabled
-		ComputeExposureAdaptation();
-	}
-
-	// Bloom pass
-	if (s_bBloomEnabled)
-	{
-		RenderBloom();
-	}
-
-	// Always run tone mapping - deferred shading renders to HDR target,
-	// tone mapping converts to final LDR output
-	RenderToneMapping();
+	pxCommandList->AddCommand<Flux_CommandDispatch>(1, 1, 1);
 }
 
 static void SubmitHistogramLabels()
@@ -652,87 +590,72 @@ static void SubmitHistogramLabels()
 	}
 }
 
-void Flux_HDR::RenderBloom()
+void Flux_HDR::ExecuteBloomThreshold(Flux_CommandList* pxCommandList, void* pUserData)
 {
+	(void)pUserData;
 	BloomConstants xBloomConsts;
 	xBloomConsts.m_fThreshold = s_fBloomThreshold;
 	xBloomConsts.m_fIntensity = s_fBloomIntensity;
+	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / s_axBloomChain[0].m_xSurfaceInfo.m_uWidth, 1.0f / s_axBloomChain[0].m_xSurfaceInfo.m_uHeight);
 
-	// Bloom threshold pass - extract bright areas from HDR scene to bloom[0]
-	{
-		g_xBloomThresholdCommandList.Reset(true);
-		xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / s_axBloomChain[0].m_xSurfaceInfo.m_uWidth, 1.0f / s_axBloomChain[0].m_xSurfaceInfo.m_uHeight);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xBloomThresholdPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-		g_xBloomThresholdCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xBloomThresholdPipeline);
-		g_xBloomThresholdCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-		g_xBloomThresholdCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	Flux_ShaderBinder xBinder(*pxCommandList);
+	xBinder.BindSRV(s_xBloomThresholdHDRTexBinding, &s_xHDRSceneTarget.m_pxSRV);
+	xBinder.PushConstant(s_xBloomThresholdConstantsBinding, &xBloomConsts, sizeof(BloomConstants));
 
-		Flux_ShaderBinder xBinder(g_xBloomThresholdCommandList);
-		xBinder.BindSRV(s_xBloomThresholdHDRTexBinding, &s_xHDRSceneTarget.m_pxSRV);
-		xBinder.PushConstant(s_xBloomThresholdConstantsBinding, &xBloomConsts, sizeof(BloomConstants));
-
-		g_xBloomThresholdCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-		Flux::SubmitCommandList(&g_xBloomThresholdCommandList, s_axBloomChainSetup[0], RENDER_ORDER_HDR_BLOOM_THRESHOLD);
-	}
-
-	// Downsample chain - progressive blur to smaller mips
-	// Each pass reads from previous level and writes to current level
-	// Separate render order ensures proper layout transitions between passes
-	for (u_int i = 1; i < 5; i++)
-	{
-		Flux_CommandList& xCmdList = g_axBloomDownsampleCommandLists[i - 1];
-		xCmdList.Reset(true);
-		xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / s_axBloomChain[i].m_xSurfaceInfo.m_uWidth, 1.0f / s_axBloomChain[i].m_xSurfaceInfo.m_uHeight);
-
-		xCmdList.AddCommand<Flux_CommandSetPipeline>(&s_xBloomDownsamplePipeline);
-		xCmdList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-		xCmdList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-
-		Flux_ShaderBinder xBinder(xCmdList);
-		xBinder.BindSRV(s_xBloomDownsampleSourceBinding, &s_axBloomChain[i - 1].m_pxSRV);
-		xBinder.PushConstant(s_xBloomDownsampleConstantsBinding, &xBloomConsts, sizeof(BloomConstants));
-
-		xCmdList.AddCommand<Flux_CommandDrawIndexed>(6);
-		// Use sub-order within downsample phase to ensure correct execution order
-		Flux::SubmitCommandList(&xCmdList, s_axBloomChainSetup[i], RENDER_ORDER_HDR_BLOOM_DOWNSAMPLE, i);
-	}
-
-	// Upsample chain (additive blending) - accumulate bloom back up the mip chain
-	// Iterates from smallest mip to largest: reads mip[4]->writes mip[3], reads mip[3]->writes mip[2], etc.
-	// Each pass uses a unique sub-order within RENDER_ORDER_HDR_BLOOM_UPSAMPLE
-	// to ensure correct execution order. Layout transitions between passes are
-	// handled by the render target system (ColorAttachment <-> ShaderReadOnly).
-	for (u_int i = 0; i < 4; i++)
-	{
-		u_int uTargetMip = 3 - i;  // Write destination: mip 3, 2, 1, 0
-		u_int uSourceMip = uTargetMip + 1;  // Read source: mip 4, 3, 2, 1
-
-		Flux_CommandList& xCmdList = g_axBloomUpsampleCommandLists[i];
-		xCmdList.Reset(false);  // Don't clear - we're additively blending
-		xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / s_axBloomChain[uTargetMip].m_xSurfaceInfo.m_uWidth, 1.0f / s_axBloomChain[uTargetMip].m_xSurfaceInfo.m_uHeight);
-
-		xCmdList.AddCommand<Flux_CommandSetPipeline>(&s_xBloomUpsamplePipeline);
-		xCmdList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-		xCmdList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-
-		Flux_ShaderBinder xBinder(xCmdList);
-		xBinder.BindSRV(s_xBloomUpsampleSourceBinding, &s_axBloomChain[uSourceMip].m_pxSRV);
-		xBinder.PushConstant(s_xBloomUpsampleConstantsBinding, &xBloomConsts, sizeof(BloomConstants));
-
-		xCmdList.AddCommand<Flux_CommandDrawIndexed>(6);
-		Flux::SubmitCommandList(&xCmdList, s_axBloomChainSetup[uTargetMip], RENDER_ORDER_HDR_BLOOM_UPSAMPLE, i);
-	}
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_HDR::RenderToneMapping()
+void Flux_HDR::ExecuteBloomDownsample(Flux_CommandList* pxCommandList, void* pUserData)
 {
-	// Reset with clear=true since this is the first pass rendering to the final target
-	// Using clear ensures correct layout transition from eUndefined on first frame
-	// (content is overwritten by fullscreen quad anyway, so clearing has no visual effect)
-	g_xToneMappingCommandList.Reset(true);
+	const u_int uMipIndex = *static_cast<const u_int*>(pUserData);
 
+	BloomConstants xBloomConsts;
+	xBloomConsts.m_fThreshold = s_fBloomThreshold;
+	xBloomConsts.m_fIntensity = s_fBloomIntensity;
+	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / s_axBloomChain[uMipIndex].m_xSurfaceInfo.m_uWidth, 1.0f / s_axBloomChain[uMipIndex].m_xSurfaceInfo.m_uHeight);
+
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xBloomDownsamplePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+
+	Flux_ShaderBinder xBinder(*pxCommandList);
+	xBinder.BindSRV(s_xBloomDownsampleSourceBinding, &s_axBloomChain[uMipIndex - 1].m_pxSRV);
+	xBinder.PushConstant(s_xBloomDownsampleConstantsBinding, &xBloomConsts, sizeof(BloomConstants));
+
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+}
+
+void Flux_HDR::ExecuteBloomUpsample(Flux_CommandList* pxCommandList, void* pUserData)
+{
+	const u_int uIndex = *static_cast<const u_int*>(pUserData);
+	const u_int uTargetMip = 3 - uIndex;
+	const u_int uSourceMip = uTargetMip + 1;
+
+	BloomConstants xBloomConsts;
+	xBloomConsts.m_fThreshold = s_fBloomThreshold;
+	xBloomConsts.m_fIntensity = s_fBloomIntensity;
+	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / s_axBloomChain[uTargetMip].m_xSurfaceInfo.m_uWidth, 1.0f / s_axBloomChain[uTargetMip].m_xSurfaceInfo.m_uHeight);
+
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xBloomUpsamplePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+
+	Flux_ShaderBinder xBinder(*pxCommandList);
+	xBinder.BindSRV(s_xBloomUpsampleSourceBinding, &s_axBloomChain[uSourceMip].m_pxSRV);
+	xBinder.PushConstant(s_xBloomUpsampleConstantsBinding, &xBloomConsts, sizeof(BloomConstants));
+
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+}
+
+void Flux_HDR::ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserData)
+{
+	(void)pUserData;
 	ToneMappingConstants xConsts;
-	xConsts.m_fExposure = s_fExposure;  // Manual exposure (used when auto-exposure disabled)
+	xConsts.m_fExposure = s_fExposure;
 	xConsts.m_fBloomIntensity = s_bBloomEnabled ? s_fBloomIntensity : 0.0f;
 	xConsts.m_uToneMappingOperator = static_cast<u_int>(s_eToneMappingOperator);
 	xConsts.m_uDebugMode = dbg_uHDRDebugMode;
@@ -741,12 +664,12 @@ void Flux_HDR::RenderToneMapping()
 	xConsts.m_uPad0 = 0;
 	xConsts.m_uPad1 = 0;
 
-	g_xToneMappingCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xToneMappingPipeline);
-	g_xToneMappingCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xToneMappingCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xToneMappingPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	{
-		Flux_ShaderBinder xBinder(g_xToneMappingCommandList);
+		Flux_ShaderBinder xBinder(*pxCommandList);
 		xBinder.BindSRV(s_xToneMappingHDRTexBinding, &s_xHDRSceneTarget.m_pxSRV);
 		xBinder.BindSRV(s_xToneMappingBloomTexBinding, &s_axBloomChain[0].m_pxSRV);
 		xBinder.BindUAV_Buffer(s_xToneMappingHistogramBinding, &s_xHistogramBuffer.GetUAV());
@@ -754,9 +677,7 @@ void Flux_HDR::RenderToneMapping()
 		xBinder.PushConstant(s_xToneMappingConstantsBinding, &xConsts, sizeof(ToneMappingConstants));
 	}
 
-	g_xToneMappingCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-
-	Flux::SubmitCommandList(&g_xToneMappingCommandList, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RENDER_ORDER_HDR_TONEMAP);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 
 	// Submit histogram labels if ShowHistogram is enabled
 	if (dbg_bHDRShowHistogram)
@@ -765,14 +686,69 @@ void Flux_HDR::RenderToneMapping()
 	}
 }
 
-void Flux_HDR::SubmitRenderTask()
+void Flux_HDR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
+	// Luminance histogram (compute, null target). Histogram SSBO is a buffer
+	// resource so the graph can track the dependency on the adaptation pass.
+	u_int uHistogramPass = UINT32_MAX;
+	{
+		uHistogramPass = xGraph.AddPass("HDR_LuminanceHistogram", ExecuteLuminanceHistogram);
+		xGraph.SetPassTargetSetup(uHistogramPass, Flux_Graphics::s_xNullTargetSetup);
+		xGraph.SetPassOnPrepare(uHistogramPass, PreExecuteLuminanceHistogram);
+		xGraph.PassReads(uHistogramPass, &s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWritesBuffer(uHistogramPass, &s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+	}
 
-void Flux_HDR::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
+	// Exposure adaptation (compute, reads histogram).
+	{
+		u_int uPass = xGraph.AddPass("HDR_Adaptation", ExecuteAdaptation);
+		xGraph.SetPassTargetSetup(uPass, Flux_Graphics::s_xNullTargetSetup);
+		xGraph.PassReadsBuffer(uPass, &s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWritesBuffer(uPass, &s_xExposureBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+	}
+
+	// Bloom threshold — first writer of bloom mip 0; overwrites it entirely so clear is the
+	// correct LoadOp (eliminates a discard barrier on first frame).
+	{
+		u_int uPass = xGraph.AddPass("HDR_BloomThreshold", ExecuteBloomThreshold);
+		xGraph.SetPassTargetSetup(uPass, s_axBloomChainSetup[0]);
+		xGraph.SetPassClearTargets(uPass, true);
+		xGraph.PassReads(uPass, &s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPass, &s_axBloomChain[0], RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	// Bloom downsample chain — each pass is the first writer of its mip's
+	// target setup, so each one clears.
+	for (u_int i = 1; i < 5; i++)
+	{
+		u_int uPass = xGraph.AddPass("HDR_BloomDownsample", ExecuteBloomDownsample, &s_axBloomMipUserData[i]);
+		xGraph.SetPassTargetSetup(uPass, s_axBloomChainSetup[i]);
+		xGraph.SetPassClearTargets(uPass, true);
+		xGraph.PassReads(uPass, &s_axBloomChain[i - 1], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPass, &s_axBloomChain[i], RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	// Bloom upsample chain — additive blend into the downsampled mip, NO clear.
+	for (u_int i = 0; i < 4; i++)
+	{
+		u_int uTargetMip = 3 - i;
+		u_int uSourceMip = uTargetMip + 1;
+
+		u_int uPass = xGraph.AddPass("HDR_BloomUpsample", ExecuteBloomUpsample, &s_axBloomUpsampleUserData[i]);
+		xGraph.SetPassTargetSetup(uPass, s_axBloomChainSetup[uTargetMip]);
+		xGraph.PassReads(uPass, &s_axBloomChain[uSourceMip], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPass, &s_axBloomChain[uTargetMip], RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	// Tone mapping — first writer of the final target; overwrites every pixel.
+	{
+		u_int uPass = xGraph.AddPass("HDR_ToneMapping", ExecuteToneMapping);
+		xGraph.SetPassTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth);
+		xGraph.SetPassClearTargets(uPass, true);
+		xGraph.PassReads(uPass, &s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPass, &s_axBloomChain[0], RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassWrites(uPass, &Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+	}
 }
 
 Flux_ShaderResourceView& Flux_HDR::GetHDRSceneSRV()

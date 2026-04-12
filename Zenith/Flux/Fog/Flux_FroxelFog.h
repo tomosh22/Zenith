@@ -23,6 +23,8 @@
  *   - Bart Wronski SIGGRAPH 2014
  */
 
+class Flux_CommandList;
+
 class Flux_FroxelFog
 {
 public:
@@ -32,22 +34,15 @@ public:
 	static void Initialise();
 	static void Reset();
 
-	// Submit render tasks for the three passes
-	static void SubmitInjectTask();
-	static void SubmitLightTask();
-	static void SubmitApplyTask();
-
-	// Wait for tasks to complete
-	static void WaitForInjectTask();
-	static void WaitForLightTask();
-	static void WaitForApplyTask();
-
-	// Main render function (calls all passes)
-	static void Render(void* pData = nullptr);
+	// Individual pass functions for render graph integration
+	static void RenderInject(Flux_CommandList* pxCommandList);
+	static void RenderLight(Flux_CommandList* pxCommandList);
+	static void RenderApply(Flux_CommandList* pxCommandList);
 
 	// Access froxel grid for debug visualization
 	static struct Flux_RenderAttachment& GetDensityGrid();
 	static struct Flux_RenderAttachment& GetLightingGrid();
+	static struct Flux_RenderAttachment& GetScatteringGrid();
 
 	// Debug slice visualization
 	static struct Flux_RenderAttachment& GetDebugSliceTexture();

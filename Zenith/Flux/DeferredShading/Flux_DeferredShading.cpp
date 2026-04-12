@@ -10,13 +10,8 @@
 #include "Flux/IBL/Flux_IBL.h"
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSGI/Flux_SSGI.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-
-static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING, Flux_DeferredShading::Render, nullptr);
-
-static Flux_CommandList g_xCommandList("Apply Lighting");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -112,35 +107,15 @@ void Flux_DeferredShading::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DeferredShading initialised");
 }
 
-void Flux_DeferredShading::Reset()
+static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 {
-	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	g_xCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DeferredShading::Reset() - Reset command list");
-}
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-void Flux_DeferredShading::SubmitRenderTask()
-{
-	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
-}
-
-void Flux_DeferredShading::WaitForRenderTask()
-{
-	g_xRenderTask.WaitUntilComplete();
-}
-
-void Flux_DeferredShading::Render(void*)
-{
-	g_xCommandList.Reset(true);
-
-	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
-
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	// Use named bindings via shader binder (auto-manages descriptor set switches)
-	Flux_ShaderBinder xBinder(g_xCommandList);
+	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	// Bind frame constants
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
@@ -225,8 +200,66 @@ void Flux_DeferredShading::Render(void*)
 
 	xBinder.PushConstant(&xConstants, sizeof(xConstants));
 
-	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+}
 
-	// Render to HDR target for proper HDR lighting pipeline
-	Flux::SubmitCommandList(&g_xCommandList, Flux_HDR::GetHDRSceneTargetSetup(), RENDER_ORDER_APPLY_LIGHTING);
+void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	u_int uPassIndex = xGraph.AddPass("Apply Lighting", ExecuteApplyLighting);
+	xGraph.SetPassTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
+	// First writer of the HDR scene no-depth setup — overwrites every pixel
+	// with the lighting result, so clear is the correct LoadOp.
+	xGraph.SetPassClearTargets(uPassIndex, true);
+
+	// Reads: G-Buffer MRT attachments
+	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+	{
+		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_READ_SRV);
+	}
+
+	// Reads: depth buffer
+	xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+
+	// Reads: shadow maps (CSM depth targets)
+	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
+	{
+		xGraph.PassReads(uPassIndex, Flux_Shadows::GetCSMTargetSetup(u).m_pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
+	}
+
+	// Reads: SSR results. The execute callback binds GetReflectionSRV() which
+	// returns either s_xResolvedReflection or s_xRayMarchResult depending on
+	// the dbg_bRoughnessBlur runtime toggle. Same dual-binding pattern as SSGI
+	// — SetupRenderGraph runs once at init / on resolution change so we have
+	// to declare BOTH so whichever one ends up bound at record time has been
+	// transitioned out of COLOR_ATTACHMENT_OPTIMAL by the graph.
+	if (Flux_SSR::IsInitialised())
+	{
+		xGraph.PassReads(uPassIndex, &Flux_SSR::s_xRayMarchResult, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_SSR::s_xResolvedReflection, RESOURCE_ACCESS_READ_SRV);
+	}
+
+	// Reads: SSGI results. The execute callback binds GetSSGISRV() which returns
+	// either s_xResolved or s_xDenoised depending on a runtime debug variable.
+	// SetupRenderGraph runs once at init (and on resolution change), so we have
+	// to declare BOTH so the graph transitions whichever one ends up bound at
+	// record time. Both are RGBA16F color attachments written by the SSGI passes
+	// — without these declarations they stay in COLOR_ATTACHMENT_OPTIMAL and the
+	// validator rejects the SRV bind here.
+	if (Flux_SSGI::IsInitialised())
+	{
+		xGraph.PassReads(uPassIndex, &Flux_SSGI::s_xResolved, RESOURCE_ACCESS_READ_SRV);
+		xGraph.PassReads(uPassIndex, &Flux_SSGI::s_xDenoised, RESOURCE_ACCESS_READ_SRV);
+	}
+
+	// Reads: IBL textures. The IBL graph passes write these as color attachments
+	// (BRDF LUT once at init, irradiance / prefiltered cubemap faces frame-amortised
+	// when the sky is dirty), so they sit in COLOR_ATTACHMENT_OPTIMAL until the
+	// graph transitions them. Cubemaps cover all faces via the FLUX_RG_ALL_LAYERS
+	// default, prefilter covers all mips via FLUX_RG_ALL_MIPS.
+	xGraph.PassReads(uPassIndex, &Flux_IBL::s_xBRDFLUT, RESOURCE_ACCESS_READ_SRV);
+	xGraph.PassReads(uPassIndex, &Flux_IBL::s_xIrradianceMap, RESOURCE_ACCESS_READ_SRV);
+	xGraph.PassReads(uPassIndex, &Flux_IBL::s_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+
+	// Writes: HDR scene target
+	xGraph.PassWrites(uPassIndex, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }

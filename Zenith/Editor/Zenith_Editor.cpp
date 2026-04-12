@@ -493,9 +493,8 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 
 		// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
 		// This matches the synchronization used for scene loading
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before resetting scene...");
-		Zenith_Core::WaitForAllRenderTasks();
-
+		// W14: Render graph now synchronously completes recording during Execute(),
+		// so no CPU-side wait is needed — go straight to GPU idle.
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before resetting scene...");
 		Flux_PlatformAPI::WaitForGPUIdle();
 
@@ -569,9 +568,6 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 	{
 		s_bPendingRegisteredSceneLoad = false;
 
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before loading registered scene...");
-		Zenith_Core::WaitForAllRenderTasks();
-
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading registered scene...");
 		Flux_PlatformAPI::WaitForGPUIdle();
 
@@ -599,7 +595,6 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 	{
 		s_bPendingSceneLoadFromFile = false;
 
-		Zenith_Core::WaitForAllRenderTasks();
 		Flux_PlatformAPI::WaitForGPUIdle();
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
@@ -625,15 +620,7 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 {
 	s_bPendingSceneLoad = false;
 
-	// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
-	// Two-phase synchronization:
-	// 1. Wait for CPU-side render tasks (worker threads recording commands into command lists)
-	// 2. Wait for GPU to finish executing command buffers
-	// Without both, we get access violations when LoadFromFile resets command lists or destroys resources
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before loading scene...");
-	Zenith_Core::WaitForAllRenderTasks();  // CPU synchronization
-
-
+	// W14: Render graph Execute() is now synchronous on the main thread, so only GPU idle is needed.
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading scene...");
 	Flux_PlatformAPI::WaitForGPUIdle();  // GPU synchronization
 
@@ -1094,9 +1081,7 @@ void Zenith_Editor::RenderGizmos()
 		Flux_Gizmos::SetGizmoMode(static_cast<GizmoMode>(s_eGizmoMode));
 	}
 
-	// Submit Flux_Gizmos render task (renders 3D gizmos in Vulkan)
-	// Must always submit exactly once per frame, task will early-out if no target entity
-	Flux_Gizmos::SubmitRenderTask();
+	// Gizmos are now part of the render graph - no separate task submission needed
 
 	// Optionally render selection bounding box for visual feedback
 	// Zenith_SelectionSystem::RenderSelectedBoundingBox(pxSelectedEntity);
@@ -1364,9 +1349,6 @@ void Zenith_Editor::FlushPendingSceneOperations()
 	{
 		s_bPendingSceneReset = false;
 
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Waiting for render tasks before scene reset...");
-		Zenith_Core::WaitForAllRenderTasks();
-
 		// Flush staging buffer to complete any pending copy operations before destroying buffers
 		// Must use BeginFrame/EndFrame to properly bracket the staging buffer flush with command buffer recording
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Flushing staging buffer...");
@@ -1424,9 +1406,6 @@ void Zenith_Editor::FlushPendingSceneOperations()
 	if (s_bPendingSceneLoad)
 	{
 		s_bPendingSceneLoad = false;
-
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Waiting for render tasks before scene load...");
-		Zenith_Core::WaitForAllRenderTasks();
 
 		// Flush staging buffer to complete any pending copy operations before destroying buffers
 		// Must use BeginFrame/EndFrame to properly bracket the staging buffer flush with command buffer recording

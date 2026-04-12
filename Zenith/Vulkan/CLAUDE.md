@@ -112,7 +112,13 @@ s_xCommandBuffer.ImageTransitionBarrier(
 ### Compute Dispatch
 
 ```cpp
-// Dispatch handles UAV barriers automatically
+// Dispatch is intentionally trivial: UpdateDescriptorSets() then vkCmdDispatch().
+// All synchronisation (image layouts, UAV memory barriers, post-dispatch buffer
+// flushes) is owned by Flux_RenderGraph and emitted as prologue barriers via
+// ConsumeGraphPrologueBarriers before the pass begins. Declare every read/write
+// via PassReads / PassWrites / PassReadsBuffer / PassWritesBuffer (or use
+// AddPassDependency for explicit compute->graphics edges) and the graph will
+// emit the right barrier.
 s_xCommandBuffer.Dispatch(uGroupsX, uGroupsY, uGroupsZ);
 ```
 

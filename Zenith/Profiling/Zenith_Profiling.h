@@ -54,6 +54,7 @@ enum Zenith_ProfileIndex
 
 	ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS,
 	ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS,
+	ZENITH_PROFILE_INDEX__FLUX_RECORD_PASS,   // Per-pass record scope — used with a runtime label argument to BeginProfile.
 
 	ZENITH_PROFILE_INDEX__FLUX_MESH_GEOMETRY_LOAD_FROM_FILE,
 
@@ -143,6 +144,7 @@ static const char* g_aszProfileNames[]
 	"Flux PlatformAPI End Frame",
 	"Flux Iterate Commands",
 	"Flux Record Command Buffers",
+	"Flux Record Pass",
 	"Flux Mesh Geometry Load From File",
 
 	"Asset Load",
@@ -195,17 +197,23 @@ class Zenith_Profiling
 public:
 	struct Event
 	{
-		Event(const std::chrono::time_point<std::chrono::high_resolution_clock>& xBegin, const std::chrono::time_point<std::chrono::high_resolution_clock>& xEnd, const Zenith_ProfileIndex eIndex, const u_int uDepth)
+		Event(const std::chrono::time_point<std::chrono::high_resolution_clock>& xBegin, const std::chrono::time_point<std::chrono::high_resolution_clock>& xEnd, const Zenith_ProfileIndex eIndex, const u_int uDepth, const char* szLabel = nullptr)
 			: m_xBegin(xBegin)
 			, m_xEnd(xEnd)
 			, m_eIndex(eIndex)
 			, m_uDepth(uDepth)
+			, m_szLabel(szLabel)
 		{
 		}
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_xBegin;
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_xEnd;
 		Zenith_ProfileIndex m_eIndex;
 		u_int m_uDepth;
+		// Optional label — string literal pointer (no copy, no lifetime concern).
+		// When non-null, profiler UI displays this in place of g_aszProfileNames[m_eIndex].
+		// Used by per-pass render-graph profiling so a single FLUX_RECORD_PASS slot
+		// can carry per-pass names without enum bloat.
+		const char* m_szLabel;
 	};
 
 	class Scope
@@ -240,7 +248,7 @@ private:
 public:
 	#endif
 
-	static void BeginProfile(const Zenith_ProfileIndex eIndex);
+	static void BeginProfile(const Zenith_ProfileIndex eIndex, const char* szLabel = nullptr);
 	static void EndProfile(const Zenith_ProfileIndex eIndex);
 
 	static const Zenith_ProfileIndex GetCurrentIndex();

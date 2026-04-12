@@ -21,12 +21,12 @@
  *   - Andrew Gotow's Screen-space Volumetric Shadowing
  */
 
+class Flux_CommandList;
+
 class Flux_GodRaysFog
 {
 public:
 	static void Initialise();
 	static void Reset();
-	static void Render(void*);
-	static void SubmitRenderTask();
-	static void WaitForRenderTask();
+	static void Render(Flux_CommandList* pxCommandList);
 };
