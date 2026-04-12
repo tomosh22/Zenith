@@ -91,7 +91,7 @@ class HalsteadMetrics:
 @dataclass
 class FileMetrics:
     """Metrics for a single source file"""
-    filepath: str
+    filepath: str = ''
     total_lines: int = 0
     code_lines: int = 0
     comment_lines: int = 0
@@ -144,6 +144,19 @@ class DirectoryMetrics:
     files: List[FileMetrics] = field(default_factory=list)
 
 
+@dataclass
+class FunctionMetrics:
+    """Metrics for a single function"""
+    name: str = ''
+    filepath: str = ''
+    start_line: int = 0
+    end_line: int = 0
+    cyclomatic_complexity: int = 1
+    cognitive_complexity: int = 0
+    max_nesting_depth: int = 0
+    code_lines: int = 0
+
+
 class CppAnalyzer:
     """Analyzer for C/C++ source code"""
     
@@ -169,12 +182,13 @@ class CppAnalyzer:
     
     # Keywords that increase cognitive complexity
     COGNITIVE_KEYWORDS = {'if', 'else', 'for', 'while', 'do', 'switch', 'catch', 'goto', 'break', 'continue'}
-    COGNITIVE_NESTING = {'if', 'for', 'while', 'do', 'switch', 'catch', 'try'}
+    COGNITIVE_NESTING = {'if', 'else', 'for', 'while', 'do', 'switch', 'catch', 'try'}
     
     def __init__(self, root_path: str, exclude_dirs: List[str] = None):
         self.root_path = Path(root_path)
         self.exclude_dirs = set(exclude_dirs or [])
         self.file_metrics: List[FileMetrics] = []
+        self.function_metrics: List[FunctionMetrics] = []
         self.directory_metrics: Dict[str, DirectoryMetrics] = {}
         
     def should_exclude(self, path: Path) -> bool:
@@ -289,7 +303,10 @@ class CppAnalyzer:
     def calculate_cognitive_complexity(self, cleaned_code: str) -> int:
         """
         Calculate Cognitive Complexity (SonarSource metric)
-        Measures how hard code is to understand
+        Measures how hard code is to understand.
+        
+        Uses context-aware brace tracking: only control-flow blocks (if/for/while/etc.)
+        increment nesting, not class/struct/namespace/function bodies.
         """
         cognitive = 0
         nesting_level = 0
@@ -298,12 +315,12 @@ class CppAnalyzer:
         for line in lines:
             stripped = line.strip()
             
-            # Check for nesting increasers
-            nesting_increase = False
+            # Check for control flow keywords that increase cognitive complexity
+            found_keyword = False
             for keyword in self.COGNITIVE_NESTING:
                 if re.search(rf'\b{keyword}\b', stripped):
-                    nesting_increase = True
-                    cognitive += 1 + nesting_level  # Base + nesting penalty
+                    cognitive += 1 + nesting_level
+                    found_keyword = True
                     break
             
             # Count logical operators (each adds 1)
@@ -313,13 +330,34 @@ class CppAnalyzer:
             if re.search(r'\bgoto\b', stripped):
                 cognitive += 1
             
-            # Update nesting level
-            # NOTE: This counts ALL braces including namespace/class/function bodies,
-            # not just control-flow braces, which inflates nesting penalties.
-            # A proper fix would require contextual brace tracking (partial parser).
-            nesting_level += stripped.count('{')
-            nesting_level -= stripped.count('}')
-            nesting_level = max(0, nesting_level)
+            # Update nesting level with context awareness
+            # Only control-flow braces increment nesting, not type/function bodies
+            open_count = stripped.count('{')
+            close_count = stripped.count('}')
+            
+            i = 0
+            while i < len(stripped):
+                if stripped[i] == '{':
+                    before = stripped[:i].rstrip()
+                    tokens = before.split()
+                    context = 'other'
+                    
+                    if tokens:
+                        last_tok = re.sub(r'[;,\s]+$', '', tokens[-1])
+                        if self._is_control_flow_keyword(last_tok):
+                            context = 'control_flow'
+                        elif self._is_type_keyword(last_tok):
+                            context = 'type_decl'
+                    
+                    if context == 'control_flow':
+                        nesting_level += 1
+                    # 'type_decl' and 'other' don't increment
+                    i += 1
+                elif stripped[i] == '}':
+                    nesting_level = max(0, nesting_level - 1)
+                    i += 1
+                else:
+                    i += 1
         
         return cognitive
     
@@ -385,31 +423,323 @@ class CppAnalyzer:
             N2=sum(operands.values())
         )
     
-    def count_functions_and_classes(self, cleaned_code: str) -> Tuple[int, int]:
-        """Count functions and classes in the code"""
-        # Function pattern (simplified)
-        func_pattern = r'\b\w+\s+\w+\s*\([^)]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?\s*\{'
-        functions = len(re.findall(func_pattern, cleaned_code))
-        
-        # Class/struct pattern
-        class_pattern = r'\b(?:class|struct)\s+\w+'
-        classes = len(re.findall(class_pattern, cleaned_code))
-        
-        return functions, classes
+    def _is_control_flow_keyword(self, keyword: str) -> bool:
+        """Check if keyword is a control flow keyword that increments nesting."""
+        return keyword in {'if', 'else', 'for', 'while', 'do', 'switch', 'catch', 'try'}
     
-    def calculate_max_nesting(self, cleaned_code: str) -> int:
-        """Calculate maximum nesting depth"""
-        max_depth = 0
-        current_depth = 0
+    def _is_type_keyword(self, keyword: str) -> bool:
+        """Check if keyword introduces a type/namespace scope that should NOT increment nesting."""
+        return keyword in {'class', 'struct', 'namespace', 'enum', 'union', 'extern'}
+    
+    def _find_function_boundaries(self, code: str) -> List[Dict]:
+        """
+        Find all function boundaries in code.
+        Returns list of dicts with: name, start_line, end_line, signature_end (char pos)
+        Uses brace matching to find end of function body.
+        """
+        functions = []
+        lines = code.split('\n')
         
-        for char in cleaned_code:
-            if char == '{':
-                current_depth += 1
-                max_depth = max(max_depth, current_depth)
-            elif char == '}':
-                current_depth = max(0, current_depth - 1)
+        # Patterns for function declarations
+        # Handle: return_type name(params) const noexcept override -> type { ... }
+        func_pattern = re.compile(
+            r'(?:^|\n)'                                    # Start of line or newline
+            r'(?:template\s*<[^>]*>\s*)?'                  # Optional template
+            r'(?:inline\s+|constexpr\s+|static\s+|virtual\s+)*'  # Modifiers
+            r'('                                           # Group 1: full signature (capture)
+            r'(?:[\w:]+(?:\s*\*|\s*&)*\s+)?'              # Optional return type
+            r'(?:[\w:]+)\s*'                               # Function name
+            r'\([^)]*\)'                                   # Parameters
+            r'(?:\s*const)?(?:\s*volatile)?'              # const/volatile
+            r'(?:\s*noexcept(?:\s*\([^)]*\))?)?'          # noexcept
+            r'(?:\s*override)?(?:\s*final)?'              # override/final
+            r'(?:\s*->\s*[\w:&*]+(?:\s*<[^>]*>)?(?:\s*\*|\s*&)*)?'  # trailing return type
+            r')'
+            r'\s*\{',                                      # Opening brace
+            re.MULTILINE
+        )
+        
+        for match in func_pattern.finditer(code):
+            # Get line number (1-indexed)
+            start_pos = match.start()
+            start_line = code[:start_pos].count('\n') + 1
+            
+            # Find the opening brace position
+            brace_pos = match.end() - 1  # position of '{'
+            
+            # Find matching closing brace using a simple stack approach
+            brace_count = 1
+            pos = brace_pos + 1
+            while pos < len(code) and brace_count > 0:
+                if code[pos] == '{':
+                    brace_count += 1
+                elif code[pos] == '}':
+                    brace_count -= 1
+                pos += 1
+            
+            if brace_count == 0:
+                end_line = code[:pos - 1].count('\n') + 1
+                
+                # Extract function name from the match
+                full_sig = match.group(1)
+                # Find the function name (after return type, before parenthesis)
+                name_match = re.search(r'(?:[\w:]+(?:\s*\*|\s*&)*\s+)?([\w:]+)\s*\(', full_sig)
+                func_name = name_match.group(1) if name_match else '<unknown>'
+                
+                functions.append({
+                    'name': func_name,
+                    'start_line': start_line,
+                    'end_line': end_line,
+                    'start_pos': start_pos,
+                    'brace_start': brace_pos,
+                    'brace_end': pos - 1
+                })
+        
+        return functions
+    
+    def _calculate_function_complexities(self, code: str, func_boundaries: List[Dict], cleaned_code: str) -> List[FunctionMetrics]:
+        """
+        Calculate complexity metrics for each function.
+        Uses cleaned_code for CC/cognitive, and tracks control-flow-only nesting.
+        """
+        if not func_boundaries:
+            return []
+        
+        results = []
+        code_lines = code.split('\n')
+        
+        for func in func_boundaries:
+            # Extract function code (from start to end line, 1-indexed)
+            start_l = func['start_line'] - 1  # 0-indexed
+            end_l = func['end_line']
+            func_lines = code_lines[start_l:end_l]
+            func_code = '\n'.join(func_lines)
+            
+            # Re-clean just this function's code
+            func_cleaned, _ = self.remove_comments_and_strings(func_code)
+            
+            # Calculate CC (decision points in this function)
+            func_cc = 1
+            patterns = [
+                r'\bif\b', r'\bfor\b', r'\bwhile\b',
+                r'\bdo\b', r'\bcase\b', r'\bcatch\b',
+                r'(?<![?!=<>])\?(?![?=])',  # ternary
+                r'&&', r'\|\|'
+            ]
+            for pattern in patterns:
+                func_cc += len(re.findall(pattern, func_cleaned))
+            
+            max_nesting = self._calculate_nesting_depth(func_cleaned)
+            func_cognitive = self._calculate_cognitive_complexity_for_function(func_cleaned)
+            func_loc = end_l - start_l
+            
+            results.append(FunctionMetrics(
+                name=func['name'],
+                filepath='',
+                start_line=func['start_line'],
+                end_line=end_l,
+                cyclomatic_complexity=func_cc,
+                cognitive_complexity=func_cognitive,
+                max_nesting_depth=max_nesting,
+                code_lines=func_loc
+            ))
+        
+        return results
+    
+    def _calculate_nesting_depth(self, code: str) -> int:
+        """
+        Calculate maximum control-flow nesting depth.
+        Only control flow blocks (if/for/while/do/switch/catch) increment nesting.
+        Handles multi-line control flow (keyword on one line, brace on next).
+        """
+        max_depth = 0
+        current_nesting = 0
+        pending_control_flow = False
+        lines = code.split('\n')
+        
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            
+            has_control_flow_on_line = False
+            for keyword in self.COGNITIVE_NESTING:
+                if re.search(rf'\b{keyword}\b', stripped):
+                    has_control_flow_on_line = True
+                    pending_control_flow = True  # Set flag so next line's brace is recognized
+                    break
+            
+            # If brace is on same line, clear pending (consumed immediately)
+            if '{' in stripped:
+                pending_control_flow = False
+            
+            i = 0
+            while i < len(stripped):
+                ch = stripped[i]
+                if ch == '{':
+                    is_control_flow = pending_control_flow
+                    
+                    if not is_control_flow:
+                        before = stripped[:i].rstrip()
+                        if before.endswith(')'):
+                            is_control_flow = True
+                    
+                    if not is_control_flow and has_control_flow_on_line:
+                        before = stripped[:i].rstrip()
+                        remaining = before.strip()
+                        if remaining and remaining[-1] not in '({':
+                            for keyword in self.COGNITIVE_NESTING:
+                                if keyword in before:
+                                    is_control_flow = True
+                                    break
+                    
+                    if is_control_flow:
+                        current_nesting += 1
+                        max_depth = max(max_depth, current_nesting)
+                        pending_control_flow = False  # Consume the pending flag when used
+                    
+                    i += 1
+                elif ch == '}':
+                    current_nesting = max(0, current_nesting - 1)
+                    i += 1
+                else:
+                    i += 1
         
         return max_depth
+    
+    def _calculate_cognitive_complexity_for_function(self, code: str) -> int:
+        """
+        Calculate cognitive complexity for a function.
+        Uses same algorithm as calculate_cognitive_complexity but for a single function.
+        """
+        cognitive = 0
+        nesting_level = 0
+        pending_control_flow = False
+        lines = code.split('\n')
+        
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            
+            for keyword in self.COGNITIVE_NESTING:
+                if re.search(rf'\b{keyword}\b', stripped):
+                    cognitive += 1 + nesting_level
+                    pending_control_flow = True
+                    break
+            
+            cognitive += len(re.findall(r'&&|\|\|', stripped))
+            
+            if re.search(r'\bgoto\b', stripped):
+                cognitive += 1
+            
+            has_control_flow_on_line = False
+            for keyword in self.COGNITIVE_NESTING:
+                if re.search(rf'\b{keyword}\b', stripped):
+                    has_control_flow_on_line = True
+                    break
+            
+            i = 0
+            while i < len(stripped):
+                ch = stripped[i]
+                if ch == '{':
+                    is_control_flow = pending_control_flow
+                    
+                    if not is_control_flow:
+                        before = stripped[:i].rstrip()
+                        if before.endswith(')'):
+                            is_control_flow = True
+                    
+                    if not is_control_flow and has_control_flow_on_line:
+                        before = stripped[:i].rstrip()
+                        remaining = before.strip()
+                        if remaining and remaining[-1] not in '({':
+                            for keyword in self.COGNITIVE_NESTING:
+                                if keyword in before:
+                                    is_control_flow = True
+                                    break
+                    
+                    if is_control_flow:
+                        nesting_level += 1
+                        pending_control_flow = False  # Consume the pending flag when used
+                    
+                    i += 1
+                elif ch == '}':
+                    nesting_level = max(0, nesting_level - 1)
+                    i += 1
+                else:
+                    i += 1
+        
+        return cognitive
+    
+    def _calculate_file_max_nesting(self, cleaned_code: str) -> int:
+        """
+        Calculate maximum nesting depth for a file.
+        Uses context-aware brace tracking: only control-flow blocks increment nesting.
+        Handles multi-line control flow (keyword on one line, brace on next).
+        """
+        max_depth = 0
+        current_nesting = 0
+        pending_control_flow = False  # Next '{' following a control flow keyword
+        lines = cleaned_code.split('\n')
+        
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            
+            # Check if this line has a control flow keyword
+            has_control_flow_on_line = False
+            for keyword in self.COGNITIVE_NESTING:
+                if re.search(rf'\b{keyword}\b', stripped):
+                    has_control_flow_on_line = True
+                    break
+            
+            # Process each character to find braces in context
+            i = 0
+            while i < len(stripped):
+                ch = stripped[i]
+                if ch == '{':
+                    # Determine if this is a control flow block
+                    is_control_flow = pending_control_flow
+                    
+                    if not is_control_flow:
+                        # Check if '{' comes after ')' (indicates if/for/while/do/switch/catch)
+                        before = stripped[:i].rstrip()
+                        if before.endswith(')'):
+                            is_control_flow = True
+                    
+                    if not is_control_flow and has_control_flow_on_line:
+                        # Check if '{' is on same line as control flow keyword
+                        before = stripped[:i].rstrip()
+                        remaining = before.strip()
+                        if remaining and remaining[-1] not in '({':
+                            # Check if '{' is close to control flow keyword
+                            for keyword in self.COGNITIVE_NESTING:
+                                if keyword in before:
+                                    is_control_flow = True
+                                    break
+                    
+                    if is_control_flow:
+                        current_nesting += 1
+                        max_depth = max(max_depth, current_nesting)
+                        pending_control_flow = False  # Consume the pending flag when used
+                    
+                    i += 1
+                elif ch == '}':
+                    current_nesting = max(0, current_nesting - 1)
+                    i += 1
+                else:
+                    i += 1
+                
+                # If line had control flow keyword but no brace, keep pending for next line
+        
+        return max_depth
+    
+    def _count_classes(self, cleaned_code: str) -> int:
+        """Count class/struct declarations in the code"""
+        class_pattern = r'\b(?:class|struct)\s+\w+'
+        return len(re.findall(class_pattern, cleaned_code))
     
     def analyze_file(self, filepath: Path) -> FileMetrics:
         """Analyze a single source file"""
@@ -418,7 +748,9 @@ class CppAnalyzer:
                 code = f.read()
         except Exception as e:
             print(f"Error reading {filepath}: {e}")
-            return FileMetrics(filepath=str(filepath))
+            fm = FileMetrics(filepath=str(filepath.relative_to(self.root_path)))
+            fm.max_nesting_depth = 0
+            return fm
         
         cleaned_code, comment_count = self.remove_comments_and_strings(code)
 
@@ -426,11 +758,21 @@ class CppAnalyzer:
         cc = self.calculate_cyclomatic_complexity(cleaned_code)
         cognitive = self.calculate_cognitive_complexity(cleaned_code)
         halstead = self.calculate_halstead_metrics(cleaned_code)
-        functions, classes = self.count_functions_and_classes(cleaned_code)
-        max_nesting = self.calculate_max_nesting(cleaned_code)
+        classes = self._count_classes(cleaned_code)
+        max_nesting = self._calculate_file_max_nesting(cleaned_code)
+        
+        # Extract per-function metrics
+        func_boundaries = self._find_function_boundaries(code)
+        func_metrics = self._calculate_function_complexities(code, func_boundaries, cleaned_code)
+        
+        # Set filepath and add to global list
+        relative_path = str(filepath.relative_to(self.root_path))
+        for fm in func_metrics:
+            fm.filepath = relative_path
+            self.function_metrics.append(fm)
         
         return FileMetrics(
-            filepath=str(filepath.relative_to(self.root_path)),
+            filepath=relative_path,
             total_lines=total,
             code_lines=code_lines,
             comment_lines=comment_lines,
@@ -438,7 +780,7 @@ class CppAnalyzer:
             cyclomatic_complexity=cc,
             cognitive_complexity=cognitive,
             halstead=halstead,
-            function_count=functions,
+            function_count=len(func_boundaries),
             class_count=classes,
             max_nesting_depth=max_nesting
         )
@@ -1031,6 +1373,8 @@ class MetricsVisualizer:
         # Right: histogram of all nesting depths
         ax = axes[1]
         all_depths = [f.max_nesting_depth for f in files]
+        if not all_depths:
+            return
         ax.hist(all_depths, bins=max(1, max(all_depths) - min(all_depths)),
                 color=self.COLOR_PRIMARY, edgecolor='black', alpha=0.7)
         ax.axvline(np.mean(all_depths), color=self.COLOR_POOR, linestyle='--',
@@ -1252,6 +1596,26 @@ def export_csv(analyzer: CppAnalyzer, output_dir: Path) -> None:
             ])
     
     print(f"  Directory metrics exported to: {dir_csv}")
+    
+    # Function metrics CSV
+    if analyzer.function_metrics:
+        func_csv = output_dir / 'function_metrics.csv'
+        with open(func_csv, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                'Function Name', 'File', 'Start Line', 'End Line',
+                'Cyclomatic Complexity', 'Cognitive Complexity', 
+                'Max Nesting Depth', 'Code Lines'
+            ])
+            
+            for fm in analyzer.function_metrics:
+                writer.writerow([
+                    fm.name, fm.filepath, fm.start_line, fm.end_line,
+                    fm.cyclomatic_complexity, fm.cognitive_complexity,
+                    fm.max_nesting_depth, fm.code_lines
+                ])
+        
+        print(f"  Function metrics exported to: {func_csv}")
 
 
 def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
