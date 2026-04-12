@@ -292,34 +292,28 @@ void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// render-pass LoadOp is valid.
 	{
 		u_int uPassIndex = xGraph.AddPass("SSR RayMarch", ExecuteSSRRayMarch);
-		xGraph.SetPassTargetSetup(uPassIndex, s_xRayMarchTargetSetup);
-		xGraph.SetPassClearTargets(uPassIndex, true);
+		xGraph.SetTargetSetup(uPassIndex, s_xRayMarchTargetSetup);
+		xGraph.SetClear(uPassIndex, true);
 
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		// SSR samples the full HiZ mip chain via Flux_HiZ::GetHiZSRV() — declare
-		// every mip so the render graph transitions all of them, not just mip 0.
-		xGraph.PassReads(uPassIndex, &Flux_HiZ::s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount);
-		// SSR raymarch shader samples three GBuffer color attachments — must
-		// declare so the graph transitions them out of COLOR_ATTACHMENT_OPTIMAL
-		// before this pass binds them as SRVs.
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPassIndex, &s_xRayMarchResult, RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_HiZ::s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPassIndex, s_xRayMarchResult, RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	// Resolve pass — first writer of its target; clear.
 	{
 		u_int uPassIndex = xGraph.AddPass("SSR Resolve", ExecuteSSRResolve);
-		xGraph.SetPassTargetSetup(uPassIndex, s_xResolveTargetSetup);
-		xGraph.SetPassClearTargets(uPassIndex, true);
+		xGraph.SetTargetSetup(uPassIndex, s_xResolveTargetSetup);
+		xGraph.SetClear(uPassIndex, true);
 
-		xGraph.PassReads(uPassIndex, &s_xRayMarchResult, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		// Resolve samples normals + material (roughness) for the bilateral blur.
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPassIndex, &s_xResolvedReflection, RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Read(uPassIndex, s_xRayMarchResult, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPassIndex, s_xResolvedReflection, RESOURCE_ACCESS_WRITE_RTV);
 	}
 }
 

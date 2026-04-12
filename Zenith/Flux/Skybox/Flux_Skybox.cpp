@@ -336,19 +336,19 @@ void Flux_Skybox::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// clear the MRT target (both color — redundantly — and depth, which the
 	// subsequent geometry passes need for depth testing).
 	u_int uSkyPassIndex = xGraph.AddPass("Skybox", ExecuteSkybox);
-	xGraph.SetPassTargetSetup(uSkyPassIndex, Flux_Graphics::s_xMRTTarget);
-	xGraph.SetPassOnPrepare(uSkyPassIndex, PreExecuteSkybox);
-	xGraph.SetPassClearTargets(uSkyPassIndex, true);
+	xGraph.SetTargetSetup(uSkyPassIndex, Flux_Graphics::s_xMRTTarget);
+	xGraph.SetPrepare(uSkyPassIndex, PreExecuteSkybox);
+	xGraph.SetClear(uSkyPassIndex, true);
 
 	// Writes: MRT colour attachments
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
 	{
-		xGraph.PassWrites(uSkyPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Write(uSkyPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
 	}
 	// Skybox owns the depth clear and the pipeline uses default depth-test+write
 	// enabled — declare the depth as a write so the graph emits the transition
 	// to ATTACHMENT_OPTIMAL before the renderpass begins.
-	xGraph.PassWrites(uSkyPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+	xGraph.Write(uSkyPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 }
 
 void Flux_Skybox::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)
@@ -359,13 +359,13 @@ void Flux_Skybox::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)
 	// it downstream of the lighting pass — otherwise it would blend into stale
 	// last-frame HDR and produce garbage.
 	u_int uAerialPassIndex = xGraph.AddPass("Aerial Perspective", ExecuteAerialPerspective);
-	xGraph.SetPassTargetSetup(uAerialPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
+	xGraph.SetTargetSetup(uAerialPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
 
 	// Reads: depth buffer
-	xGraph.PassReads(uAerialPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uAerialPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
 
 	// Writes: HDR scene target (blends into existing contents, does NOT clear)
-	xGraph.PassWrites(uAerialPassIndex, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uAerialPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
 // Setters

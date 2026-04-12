@@ -340,45 +340,45 @@ void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// RayMarch pass — owns its own target, clears.
 	{
 		u_int uPassIndex = xGraph.AddPass("SSGI RayMarch", ExecuteSSGIRayMarch);
-		xGraph.SetPassTargetSetup(uPassIndex, s_xRayMarchTargetSetup);
-		xGraph.SetPassClearTargets(uPassIndex, true);
+		xGraph.SetTargetSetup(uPassIndex, s_xRayMarchTargetSetup);
+		xGraph.SetClear(uPassIndex, true);
 
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
 		// SSGI samples the full HiZ mip chain via Flux_HiZ::GetHiZSRV() — declare
 		// every mip so the render graph transitions all of them, not just mip 0.
-		xGraph.PassReads(uPassIndex, &Flux_HiZ::s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount);
+		xGraph.Read(uPassIndex, Flux_HiZ::s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount);
 		// SSGI raymarch shader samples three GBuffer color attachments — must
 		// declare so the graph transitions them out of COLOR_ATTACHMENT_OPTIMAL
 		// before this pass binds them as SRVs.
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPassIndex, &s_xRawResult, RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPassIndex, s_xRawResult, RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	// Upsample pass — owns its own target, clears.
 	{
 		u_int uPassIndex = xGraph.AddPass("SSGI Upsample", ExecuteSSGIUpsample);
-		xGraph.SetPassTargetSetup(uPassIndex, s_xUpsampleTargetSetup);
-		xGraph.SetPassClearTargets(uPassIndex, true);
+		xGraph.SetTargetSetup(uPassIndex, s_xUpsampleTargetSetup);
+		xGraph.SetClear(uPassIndex, true);
 
-		xGraph.PassReads(uPassIndex, &s_xRawResult, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPassIndex, &s_xResolved, RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Read(uPassIndex, s_xRawResult, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPassIndex, s_xResolved, RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	// Denoise pass — owns its own target, clears.
 	{
 		u_int uPassIndex = xGraph.AddPass("SSGI Denoise", ExecuteSSGIDenoise);
-		xGraph.SetPassTargetSetup(uPassIndex, s_xDenoiseTargetSetup);
-		xGraph.SetPassClearTargets(uPassIndex, true);
+		xGraph.SetTargetSetup(uPassIndex, s_xDenoiseTargetSetup);
+		xGraph.SetClear(uPassIndex, true);
 
-		xGraph.PassReads(uPassIndex, &s_xResolved, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, s_xResolved, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
 		// Joint bilateral denoise samples normals and albedo from the GBuffer.
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPassIndex, &s_xDenoised, RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPassIndex, s_xDenoised, RESOURCE_ACCESS_WRITE_RTV);
 	}
 }
 

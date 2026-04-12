@@ -688,66 +688,57 @@ void Flux_HDR::ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserDa
 
 void Flux_HDR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// Luminance histogram (compute, null target). Histogram SSBO is a buffer
-	// resource so the graph can track the dependency on the adaptation pass.
 	u_int uHistogramPass = UINT32_MAX;
 	{
 		uHistogramPass = xGraph.AddPass("HDR_LuminanceHistogram", ExecuteLuminanceHistogram);
-		xGraph.SetPassTargetSetup(uHistogramPass, Flux_Graphics::s_xNullTargetSetup);
-		xGraph.SetPassOnPrepare(uHistogramPass, PreExecuteLuminanceHistogram);
-		xGraph.PassReads(uHistogramPass, &s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWritesBuffer(uHistogramPass, &s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.SetTargetSetup(uHistogramPass, Flux_Graphics::s_xNullTargetSetup);
+		xGraph.SetPrepare(uHistogramPass, PreExecuteLuminanceHistogram);
+		xGraph.Read(uHistogramPass, s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
+		xGraph.WriteBuffer(uHistogramPass, s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
 	}
 
-	// Exposure adaptation (compute, reads histogram).
 	{
 		u_int uPass = xGraph.AddPass("HDR_Adaptation", ExecuteAdaptation);
-		xGraph.SetPassTargetSetup(uPass, Flux_Graphics::s_xNullTargetSetup);
-		xGraph.PassReadsBuffer(uPass, &s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWritesBuffer(uPass, &s_xExposureBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.SetTargetSetup(uPass, Flux_Graphics::s_xNullTargetSetup);
+		xGraph.ReadBuffer(uPass, s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_READ_SRV);
+		xGraph.WriteBuffer(uPass, s_xExposureBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
 	}
 
-	// Bloom threshold — first writer of bloom mip 0; overwrites it entirely so clear is the
-	// correct LoadOp (eliminates a discard barrier on first frame).
 	{
 		u_int uPass = xGraph.AddPass("HDR_BloomThreshold", ExecuteBloomThreshold);
-		xGraph.SetPassTargetSetup(uPass, s_axBloomChainSetup[0]);
-		xGraph.SetPassClearTargets(uPass, true);
-		xGraph.PassReads(uPass, &s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPass, &s_axBloomChain[0], RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.SetTargetSetup(uPass, s_axBloomChainSetup[0]);
+		xGraph.SetClear(uPass, true);
+		xGraph.Read(uPass, s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPass, s_axBloomChain[0], RESOURCE_ACCESS_WRITE_RTV);
 	}
 
-	// Bloom downsample chain — each pass is the first writer of its mip's
-	// target setup, so each one clears.
 	for (u_int i = 1; i < 5; i++)
 	{
 		u_int uPass = xGraph.AddPass("HDR_BloomDownsample", ExecuteBloomDownsample, &s_axBloomMipUserData[i]);
-		xGraph.SetPassTargetSetup(uPass, s_axBloomChainSetup[i]);
-		xGraph.SetPassClearTargets(uPass, true);
-		xGraph.PassReads(uPass, &s_axBloomChain[i - 1], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPass, &s_axBloomChain[i], RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.SetTargetSetup(uPass, s_axBloomChainSetup[i]);
+		xGraph.SetClear(uPass, true);
+		xGraph.Read(uPass, s_axBloomChain[i - 1], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPass, s_axBloomChain[i], RESOURCE_ACCESS_WRITE_RTV);
 	}
 
-	// Bloom upsample chain — additive blend into the downsampled mip, NO clear.
 	for (u_int i = 0; i < 4; i++)
 	{
 		u_int uTargetMip = 3 - i;
 		u_int uSourceMip = uTargetMip + 1;
 
 		u_int uPass = xGraph.AddPass("HDR_BloomUpsample", ExecuteBloomUpsample, &s_axBloomUpsampleUserData[i]);
-		xGraph.SetPassTargetSetup(uPass, s_axBloomChainSetup[uTargetMip]);
-		xGraph.PassReads(uPass, &s_axBloomChain[uSourceMip], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPass, &s_axBloomChain[uTargetMip], RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.SetTargetSetup(uPass, s_axBloomChainSetup[uTargetMip]);
+		xGraph.Read(uPass, s_axBloomChain[uSourceMip], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPass, s_axBloomChain[uTargetMip], RESOURCE_ACCESS_WRITE_RTV);
 	}
 
-	// Tone mapping — first writer of the final target; overwrites every pixel.
 	{
 		u_int uPass = xGraph.AddPass("HDR_ToneMapping", ExecuteToneMapping);
-		xGraph.SetPassTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth);
-		xGraph.SetPassClearTargets(uPass, true);
-		xGraph.PassReads(uPass, &s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPass, &s_axBloomChain[0], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPass, &Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.SetTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth);
+		xGraph.SetClear(uPass, true);
+		xGraph.Read(uPass, s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPass, s_axBloomChain[0], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
 	}
 }
 

@@ -224,7 +224,7 @@ void Flux::SetupRenderGraph()
 	// never written".
 	{
 		u_int uFinalTransitionPass = s_pxRenderGraph->AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp);
-		s_pxRenderGraph->PassReads(uFinalTransitionPass, &Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_READ_SRV);
+		s_pxRenderGraph->Read(uFinalTransitionPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Clear() already left the graph dirty — no explicit MarkDirty() needed.

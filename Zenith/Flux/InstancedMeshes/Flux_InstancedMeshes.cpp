@@ -277,22 +277,22 @@ void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// Pass 1: GPU culling compute
 	u_int uCullingPass = xGraph.AddPass("Instanced Meshes Culling", ExecuteCulling);
-	xGraph.SetPassTargetSetup(uCullingPass, Flux_Graphics::s_xNullTargetSetup);
+	xGraph.SetTargetSetup(uCullingPass, Flux_Graphics::s_xNullTargetSetup);
 
 	// Pass 2: GBuffer render
 	u_int uGBufferPass = xGraph.AddPass("Instanced Meshes GBuffer", ExecuteGBuffer);
-	xGraph.SetPassTargetSetup(uGBufferPass, Flux_Graphics::s_xMRTTarget);
+	xGraph.SetTargetSetup(uGBufferPass, Flux_Graphics::s_xMRTTarget);
 
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
 	{
-		xGraph.PassWrites(uGBufferPass, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Write(uGBufferPass, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
 	}
-	xGraph.PassWrites(uGBufferPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 
 	// GBuffer's indirect draws read the per-instance-group output buffers the
 	// culling compute writes. Those buffers are dynamic per-group and not
 	// graph-tracked, so encode the ordering as an explicit edge.
-	xGraph.AddPassDependency(uGBufferPass, uCullingPass);
+	xGraph.DependsOn(uGBufferPass, uCullingPass);
 }
 
 void Flux_InstancedMeshes::ExecuteCulling(Flux_CommandList* pxCmdList, void*)

@@ -266,21 +266,21 @@ void Flux_Terrain::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// GBuffer pass via DrawIndexedIndirectCount, so we encode that ordering as
 	// an explicit edge below.
 	u_int uCullingPass = xGraph.AddPass("Terrain Culling Compute", ExecuteCulling);
-	xGraph.SetPassTargetSetup(uCullingPass, Flux_Graphics::s_xNullTargetSetup);
+	xGraph.SetTargetSetup(uCullingPass, Flux_Graphics::s_xNullTargetSetup);
 
 	// Pass 2: Terrain GBuffer render
 	u_int uGBufferPass = xGraph.AddPass("Terrain GBuffer", ExecuteGBuffer);
-	xGraph.SetPassTargetSetup(uGBufferPass, Flux_Graphics::s_xMRTTarget);
+	xGraph.SetTargetSetup(uGBufferPass, Flux_Graphics::s_xMRTTarget);
 
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
 	{
-		xGraph.PassWrites(uGBufferPass, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Write(uGBufferPass, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
 	}
-	xGraph.PassWrites(uGBufferPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 
 	// GBuffer must run after Culling — explicit edge stands in for the
 	// untracked indirect-draw buffer dependency.
-	xGraph.AddPassDependency(uGBufferPass, uCullingPass);
+	xGraph.DependsOn(uGBufferPass, uCullingPass);
 }
 
 void Flux_Terrain::PreRenderUpdate()

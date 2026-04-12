@@ -584,13 +584,13 @@ void Flux_Primitives::Shutdown()
 void Flux_Primitives::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	u_int uPassIndex = xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer);
-	xGraph.SetPassTargetSetup(uPassIndex, Flux_Graphics::s_xMRTTarget);
+	xGraph.SetTargetSetup(uPassIndex, Flux_Graphics::s_xMRTTarget);
 
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
 	{
-		xGraph.PassWrites(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Write(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
 	}
-	xGraph.PassWrites(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+	xGraph.Write(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 }
 
 void Flux_Primitives::AddSphere(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor)

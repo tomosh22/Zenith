@@ -115,10 +115,10 @@ void Flux_SDFs::ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 void Flux_SDFs::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	u_int uPass = xGraph.AddPass("SDFs", ExecuteSDFs);
-	xGraph.SetPassTargetSetup(uPass, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
-	xGraph.PassWrites(uPass, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.SetTargetSetup(uPass, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
+	xGraph.Write(uPass, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 	// The pipeline uses default depth-test+write enabled, so the depth attachment
 	// is bound as a writable DSV for the renderpass. The graph needs to know so
 	// it transitions from whatever layout the previous pass left it in.
-	xGraph.PassWrites(uPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+	xGraph.Write(uPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 }

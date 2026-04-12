@@ -272,19 +272,19 @@ void Flux_HiZ::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		Zenith_Assert(uMip < sizeof(s_aszHiZPassNames) / sizeof(s_aszHiZPassNames[0]), "HiZ mip count exceeds pass name array size");
 
 		u_int uPassIndex = xGraph.AddPass(s_aszHiZPassNames[uMip], ExecuteHiZMip, reinterpret_cast<void*>(static_cast<uintptr_t>(uMip)));
-		xGraph.SetPassTargetSetup(uPassIndex, Flux_Graphics::s_xNullTargetSetup);
+		xGraph.SetTargetSetup(uPassIndex, Flux_Graphics::s_xNullTargetSetup);
 
 		// Resource dependencies
 		if (uMip == 0)
 		{
-			xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+			xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
 		}
 		else
 		{
-			xGraph.PassReads(uPassIndex, &s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1);
+			xGraph.Read(uPassIndex, s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1);
 		}
 
-		xGraph.PassWrites(uPassIndex, &s_xHiZBuffer, RESOURCE_ACCESS_WRITE_UAV, uMip, 1);
+		xGraph.Write(uPassIndex, s_xHiZBuffer, RESOURCE_ACCESS_WRITE_UAV, uMip, 1);
 	}
 }
 

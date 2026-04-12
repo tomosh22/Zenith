@@ -315,12 +315,12 @@ void Flux_IBL::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 	// passes have no explicit dependency edges, so SetPassEnabled takes the
 	// cheap m_bEnabledMaskDirty path (clear-flag re-resolve only, no full
 	// recompile).
-	xGraph.SetPassEnabled(s_uBRDFLUTPassIdx, bRunBRDF);
+	xGraph.SetEnabled(s_uBRDFLUTPassIdx, bRunBRDF);
 	for (u_int uFace = 0; uFace < 6; uFace++)
-		xGraph.SetPassEnabled(s_auIrradianceFacePassIdx[uFace], abRunIrradiance[uFace]);
+		xGraph.SetEnabled(s_auIrradianceFacePassIdx[uFace], abRunIrradiance[uFace]);
 	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
 		for (u_int uFace = 0; uFace < 6; uFace++)
-			xGraph.SetPassEnabled(s_auPrefilterMipFacePassIdx[uMip][uFace], abRunPrefilter[uMip][uFace]);
+			xGraph.SetEnabled(s_auPrefilterMipFacePassIdx[uMip][uFace], abRunPrefilter[uMip][uFace]);
 }
 
 void Flux_IBL::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
@@ -415,9 +415,9 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// ResolveClearFlags filters disabled passes out of clear ownership.
 	{
 		s_uBRDFLUTPassIdx = xGraph.AddPass("IBL BRDF LUT", ExecuteBRDFLUTPass);
-		xGraph.SetPassTargetSetup(s_uBRDFLUTPassIdx, s_xBRDFLUTSetup);
-		xGraph.SetPassClearTargets(s_uBRDFLUTPassIdx, true);
-		xGraph.PassWrites(s_uBRDFLUTPassIdx, &s_xBRDFLUT, RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.SetTargetSetup(s_uBRDFLUTPassIdx, s_xBRDFLUTSetup);
+		xGraph.SetClear(s_uBRDFLUTPassIdx, true);
+		xGraph.Write(s_uBRDFLUTPassIdx, s_xBRDFLUT, RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	// 6 irradiance face passes — each writes layer N of the irradiance cubemap.
@@ -428,13 +428,9 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	for (u_int uFace = 0; uFace < 6; uFace++)
 	{
 		s_auIrradianceFacePassIdx[uFace] = xGraph.AddPass(s_aszIrradianceFaceNames[uFace], ExecuteIrradianceFacePass, &s_auIrradianceFaceData[uFace]);
-		xGraph.SetPassTargetSetup(s_auIrradianceFacePassIdx[uFace], s_axIrradianceFaceSetup[uFace]);
-		xGraph.SetPassClearTargets(s_auIrradianceFacePassIdx[uFace], true);
-		// Mip 0 (the only mip). Face distinction is handled by target setup —
-		// render graph old-API only tracks mip ranges, so all face writes appear
-		// as writers of the same resource and form a sequential chain that
-		// correctly barriers between faces.
-		xGraph.PassWrites(s_auIrradianceFacePassIdx[uFace], &s_xIrradianceMap, RESOURCE_ACCESS_WRITE_RTV, 0, 1);
+		xGraph.SetTargetSetup(s_auIrradianceFacePassIdx[uFace], s_axIrradianceFaceSetup[uFace]);
+		xGraph.SetClear(s_auIrradianceFacePassIdx[uFace], true);
+		xGraph.Write(s_auIrradianceFacePassIdx[uFace], s_xIrradianceMap, RESOURCE_ACCESS_WRITE_RTV, 0, 1);
 	}
 
 	// 42 prefilter mip-face passes — each writes one (mip, face) slot of the
@@ -458,9 +454,9 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			s_axPrefilterPassData[uMip][uFace].m_uFace = uFace;
 			s_auPrefilterMipFacePassIdx[uMip][uFace] = xGraph.AddPass(s_aszPrefilterPassNames[uMip * 6 + uFace],
 				ExecutePrefilterMipFacePass, &s_axPrefilterPassData[uMip][uFace]);
-			xGraph.SetPassTargetSetup(s_auPrefilterMipFacePassIdx[uMip][uFace], s_axPrefilteredMipFaceSetup[uMip][uFace]);
-			xGraph.SetPassClearTargets(s_auPrefilterMipFacePassIdx[uMip][uFace], true);
-			xGraph.PassWrites(s_auPrefilterMipFacePassIdx[uMip][uFace], &s_xPrefilteredMap, RESOURCE_ACCESS_WRITE_RTV, uMip, 1);
+			xGraph.SetTargetSetup(s_auPrefilterMipFacePassIdx[uMip][uFace], s_axPrefilteredMipFaceSetup[uMip][uFace]);
+			xGraph.SetClear(s_auPrefilterMipFacePassIdx[uMip][uFace], true);
+			xGraph.Write(s_auPrefilterMipFacePassIdx[uMip][uFace], s_xPrefilteredMap, RESOURCE_ACCESS_WRITE_RTV, uMip, 1);
 		}
 	}
 }

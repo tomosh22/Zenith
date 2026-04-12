@@ -111,12 +111,12 @@ void Flux_Fog::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 
 	s_uLastFogTechnique = dbg_uVolFogTechnique;
 
-	xGraph.SetPassEnabled(s_uSimpleFogPass, dbg_uVolFogTechnique == 0);
-	xGraph.SetPassEnabled(s_uFroxelInjectPass, dbg_uVolFogTechnique == 1);
-	xGraph.SetPassEnabled(s_uFroxelLightPass, dbg_uVolFogTechnique == 1);
-	xGraph.SetPassEnabled(s_uFroxelApplyPass, dbg_uVolFogTechnique == 1);
-	xGraph.SetPassEnabled(s_uRaymarchPass, dbg_uVolFogTechnique == 2);
-	xGraph.SetPassEnabled(s_uGodRaysPass, dbg_uVolFogTechnique == 3);
+	xGraph.SetEnabled(s_uSimpleFogPass, dbg_uVolFogTechnique == 0);
+	xGraph.SetEnabled(s_uFroxelInjectPass, dbg_uVolFogTechnique == 1);
+	xGraph.SetEnabled(s_uFroxelLightPass, dbg_uVolFogTechnique == 1);
+	xGraph.SetEnabled(s_uFroxelApplyPass, dbg_uVolFogTechnique == 1);
+	xGraph.SetEnabled(s_uRaymarchPass, dbg_uVolFogTechnique == 2);
+	xGraph.SetEnabled(s_uGodRaysPass, dbg_uVolFogTechnique == 3);
 
 	// Force a full recompile. SetPassEnabled's cheap m_bEnabledMaskDirty path
 	// only re-resolves per-target-setup clear ownership; it does NOT rebuild
@@ -221,49 +221,49 @@ void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Simple fog pass
 	{
 		s_uSimpleFogPass = xGraph.AddPass("Fog_Simple", ExecuteSimpleFog);
-		xGraph.SetPassTargetSetup(s_uSimpleFogPass, Flux_HDR::GetHDRSceneTargetSetup());
-		xGraph.PassReads(s_uSimpleFogPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(s_uSimpleFogPass, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.SetTargetSetup(s_uSimpleFogPass, Flux_HDR::GetHDRSceneTargetSetup());
+		xGraph.Read(s_uSimpleFogPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(s_uSimpleFogPass, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	// Froxel fog passes (3 sub-passes with explicit resource dependencies)
 	{
 		s_uFroxelInjectPass = xGraph.AddPass("Fog_FroxelInject", ExecuteFroxelInject);
-		xGraph.SetPassTargetSetup(s_uFroxelInjectPass, Flux_Graphics::s_xNullTargetSetup);
-		xGraph.PassWrites(s_uFroxelInjectPass, &Flux_FroxelFog::GetDensityGrid(), RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.SetTargetSetup(s_uFroxelInjectPass, Flux_Graphics::s_xNullTargetSetup);
+		xGraph.Write(s_uFroxelInjectPass, Flux_FroxelFog::GetDensityGrid(), RESOURCE_ACCESS_WRITE_UAV);
 
 		s_uFroxelLightPass = xGraph.AddPass("Fog_FroxelLight", ExecuteFroxelLight);
-		xGraph.SetPassTargetSetup(s_uFroxelLightPass, Flux_Graphics::s_xNullTargetSetup);
-		xGraph.PassReads(s_uFroxelLightPass, &Flux_FroxelFog::GetDensityGrid(), RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(s_uFroxelLightPass, &Flux_FroxelFog::GetLightingGrid(), RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.SetTargetSetup(s_uFroxelLightPass, Flux_Graphics::s_xNullTargetSetup);
+		xGraph.Read(s_uFroxelLightPass, Flux_FroxelFog::GetDensityGrid(), RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(s_uFroxelLightPass, Flux_FroxelFog::GetLightingGrid(), RESOURCE_ACCESS_WRITE_UAV);
 		// Light shader also writes the scattering grid as a UAV (see
 		// Flux_FroxelFog.cpp s_xLightScatteringOutputBinding bind site).
-		xGraph.PassWrites(s_uFroxelLightPass, &Flux_FroxelFog::GetScatteringGrid(), RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.Write(s_uFroxelLightPass, Flux_FroxelFog::GetScatteringGrid(), RESOURCE_ACCESS_WRITE_UAV);
 
 		s_uFroxelApplyPass = xGraph.AddPass("Fog_FroxelApply", ExecuteFroxelApply);
-		xGraph.SetPassTargetSetup(s_uFroxelApplyPass, Flux_HDR::GetHDRSceneTargetSetup());
-		xGraph.PassReads(s_uFroxelApplyPass, &Flux_FroxelFog::GetLightingGrid(), RESOURCE_ACCESS_READ_SRV);
+		xGraph.SetTargetSetup(s_uFroxelApplyPass, Flux_HDR::GetHDRSceneTargetSetup());
+		xGraph.Read(s_uFroxelApplyPass, Flux_FroxelFog::GetLightingGrid(), RESOURCE_ACCESS_READ_SRV);
 		// Apply shader also samples the scattering grid alongside the lighting
 		// grid — both must be declared so the graph transitions them out of
 		// VK_IMAGE_LAYOUT_GENERAL (post-UAV-write) before the SRV bind.
-		xGraph.PassReads(s_uFroxelApplyPass, &Flux_FroxelFog::GetScatteringGrid(), RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(s_uFroxelApplyPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(s_uFroxelApplyPass, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Read(s_uFroxelApplyPass, Flux_FroxelFog::GetScatteringGrid(), RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(s_uFroxelApplyPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(s_uFroxelApplyPass, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	// Raymarch fog pass
 	{
 		s_uRaymarchPass = xGraph.AddPass("Fog_Raymarch", ExecuteRaymarch);
-		xGraph.SetPassTargetSetup(s_uRaymarchPass, Flux_HDR::GetHDRSceneTargetSetup());
-		xGraph.PassReads(s_uRaymarchPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(s_uRaymarchPass, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.SetTargetSetup(s_uRaymarchPass, Flux_HDR::GetHDRSceneTargetSetup());
+		xGraph.Read(s_uRaymarchPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(s_uRaymarchPass, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	// God rays fog pass
 	{
 		s_uGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays);
-		xGraph.SetPassTargetSetup(s_uGodRaysPass, Flux_HDR::GetHDRSceneTargetSetup());
-		xGraph.PassReads(s_uGodRaysPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(s_uGodRaysPass, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.SetTargetSetup(s_uGodRaysPass, Flux_HDR::GetHDRSceneTargetSetup());
+		xGraph.Read(s_uGodRaysPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(s_uGodRaysPass, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 	}
 }

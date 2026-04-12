@@ -124,13 +124,13 @@ void Flux_StaticMeshes::Initialise()
 void Flux_StaticMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	u_int uPassIndex = xGraph.AddPass("Static Meshes GBuffer", ExecuteGBuffer);
-	xGraph.SetPassTargetSetup(uPassIndex, Flux_Graphics::s_xMRTTarget);
+	xGraph.SetTargetSetup(uPassIndex, Flux_Graphics::s_xMRTTarget);
 
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
 	{
-		xGraph.PassWrites(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Write(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
 	}
-	xGraph.PassWrites(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+	xGraph.Write(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 }
 
 void Flux_StaticMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)

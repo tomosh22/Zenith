@@ -109,8 +109,8 @@ void Flux_Quads::ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 void Flux_Quads::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	u_int uPass = xGraph.AddPass("Quads", ExecuteQuads);
-	xGraph.SetPassTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth);
-	xGraph.PassWrites(uPass, &Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.SetTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth);
+	xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
 }
 
 void Flux_Quads::UploadQuad(const Quad& xQuad)

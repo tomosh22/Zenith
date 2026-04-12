@@ -256,18 +256,18 @@ void Flux_Particles::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	u_int uComputePass = UINT32_MAX;
 	{
 		uComputePass = xGraph.AddPass("Particles Compute", ExecuteParticleCompute);
-		xGraph.SetPassTargetSetup(uComputePass, Flux_Graphics::s_xNullTargetSetup);
-		xGraph.SetPassOnPrepare(uComputePass, PreExecuteParticleCompute);
+		xGraph.SetTargetSetup(uComputePass, Flux_Graphics::s_xNullTargetSetup);
+		xGraph.SetPrepare(uComputePass, PreExecuteParticleCompute);
 	}
 
 	// Particle draw pass
 	{
 		u_int uPass = xGraph.AddPass("Particles", ExecuteParticles);
-		xGraph.SetPassTargetSetup(uPass, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
-		xGraph.PassReads(uPass, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPass, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.SetTargetSetup(uPass, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
+		xGraph.Read(uPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPass, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 		// W5: explicit pass-level dependency replaces the old dummy attachment hack.
 		// The GPU instance buffer is managed internally by Flux_ParticleGPU.
-		xGraph.AddPassDependency(uPass, uComputePass);
+		xGraph.DependsOn(uPass, uComputePass);
 	}
 }

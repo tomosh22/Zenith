@@ -206,24 +206,24 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	u_int uPassIndex = xGraph.AddPass("Apply Lighting", ExecuteApplyLighting);
-	xGraph.SetPassTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
+	xGraph.SetTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
 	// First writer of the HDR scene no-depth setup — overwrites every pixel
 	// with the lighting result, so clear is the correct LoadOp.
-	xGraph.SetPassClearTargets(uPassIndex, true);
+	xGraph.SetClear(uPassIndex, true);
 
 	// Reads: G-Buffer MRT attachments
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
 	{
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Reads: depth buffer
-	xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
 
 	// Reads: shadow maps (CSM depth targets)
 	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		xGraph.PassReads(uPassIndex, Flux_Shadows::GetCSMTargetSetup(u).m_pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, *Flux_Shadows::GetCSMTargetSetup(u).m_pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Reads: SSR results. The execute callback binds GetReflectionSRV() which
@@ -234,8 +234,8 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// transitioned out of COLOR_ATTACHMENT_OPTIMAL by the graph.
 	if (Flux_SSR::IsInitialised())
 	{
-		xGraph.PassReads(uPassIndex, &Flux_SSR::s_xRayMarchResult, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_SSR::s_xResolvedReflection, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_SSR::s_xRayMarchResult, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_SSR::s_xResolvedReflection, RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Reads: SSGI results. The execute callback binds GetSSGISRV() which returns
@@ -247,8 +247,8 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// validator rejects the SRV bind here.
 	if (Flux_SSGI::IsInitialised())
 	{
-		xGraph.PassReads(uPassIndex, &Flux_SSGI::s_xResolved, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_SSGI::s_xDenoised, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_SSGI::s_xResolved, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_SSGI::s_xDenoised, RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Reads: IBL textures. The IBL graph passes write these as color attachments
@@ -256,10 +256,10 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// when the sky is dirty), so they sit in COLOR_ATTACHMENT_OPTIMAL until the
 	// graph transitions them. Cubemaps cover all faces via the FLUX_RG_ALL_LAYERS
 	// default, prefilter covers all mips via FLUX_RG_ALL_MIPS.
-	xGraph.PassReads(uPassIndex, &Flux_IBL::s_xBRDFLUT, RESOURCE_ACCESS_READ_SRV);
-	xGraph.PassReads(uPassIndex, &Flux_IBL::s_xIrradianceMap, RESOURCE_ACCESS_READ_SRV);
-	xGraph.PassReads(uPassIndex, &Flux_IBL::s_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uPassIndex, Flux_IBL::s_xBRDFLUT, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uPassIndex, Flux_IBL::s_xIrradianceMap, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uPassIndex, Flux_IBL::s_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
 
 	// Writes: HDR scene target
-	xGraph.PassWrites(uPassIndex, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }

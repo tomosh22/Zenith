@@ -1176,22 +1176,22 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 void Flux_DynamicLights::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	u_int uPassIndex = xGraph.AddPass("Dynamic Lights", ExecuteDynamicLights);
-	xGraph.SetPassTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
+	xGraph.SetTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
 
 	// Reads: G-Buffer MRT attachments
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
 	{
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Reads: depth buffer
-	xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
 
 	// Reads: IBL BRDF LUT — bound by the execute callback for multiscatter energy
 	// compensation. Without this declaration the LUT stays in COLOR_ATTACHMENT_OPTIMAL
 	// after the IBL BRDF LUT pass writes it and the validator rejects the SRV bind.
-	xGraph.PassReads(uPassIndex, &Flux_IBL::s_xBRDFLUT, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uPassIndex, Flux_IBL::s_xBRDFLUT, RESOURCE_ACCESS_READ_SRV);
 
 	// Writes: HDR scene target (additive lighting)
-	xGraph.PassWrites(uPassIndex, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }

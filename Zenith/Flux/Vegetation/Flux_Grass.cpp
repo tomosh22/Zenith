@@ -190,7 +190,7 @@ void Flux_Grass::DestroyBuffers()
 void Flux_Grass::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	u_int uPassIndex = xGraph.AddPass("Grass", ExecuteRender);
-	xGraph.SetPassTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
+	xGraph.SetTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
 	// Do NOT clear: the with-depth target setup shares the main scene depth
 	// buffer, and clearing here would wipe the depth that the geometry passes
 	// just wrote — causing deferred lighting to sample garbage depth and
@@ -198,8 +198,8 @@ void Flux_Grass::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// also shared with DeferredShading's no-depth setup, which DOES clear it,
 	// so the underlying image is already in a valid state when Grass runs.
 
-	xGraph.PassWrites(uPassIndex, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_DEPTH);
+	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_DEPTH);
 }
 
 void Flux_Grass::ExecuteRender(Flux_CommandList* pxCmdList, void*)

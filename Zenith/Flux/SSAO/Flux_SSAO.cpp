@@ -287,35 +287,35 @@ void Flux_SSAO::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// not a Vulkan compute dispatch).
 	{
 		u_int uPassIndex = xGraph.AddPass("SSAO Generate", ExecuteSSAOGenerate);
-		xGraph.SetPassTargetSetup(uPassIndex, s_xGenerateTargetSetup);
-		xGraph.SetPassClearTargets(uPassIndex, true);
+		xGraph.SetTargetSetup(uPassIndex, s_xGenerateTargetSetup);
+		xGraph.SetClear(uPassIndex, true);
 
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPassIndex, &s_xRawOcclusion, RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPassIndex, s_xRawOcclusion, RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	// Blur pass — first writer of the blurred target; clear for the same reason.
 	{
 		u_int uPassIndex = xGraph.AddPass("SSAO Blur", ExecuteSSAOBlur);
-		xGraph.SetPassTargetSetup(uPassIndex, s_xBlurTargetSetup);
-		xGraph.SetPassClearTargets(uPassIndex, true);
+		xGraph.SetTargetSetup(uPassIndex, s_xBlurTargetSetup);
+		xGraph.SetClear(uPassIndex, true);
 
-		xGraph.PassReads(uPassIndex, &s_xRawOcclusion, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassWrites(uPassIndex, &s_xBlurred, RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Read(uPassIndex, s_xRawOcclusion, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Write(uPassIndex, s_xBlurred, RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	// Upsample pass — writes HDR scene via blend, do NOT clear.
 	{
 		u_int uPassIndex = xGraph.AddPass("SSAO Upsample", ExecuteSSAOUpsample);
-		xGraph.SetPassTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
+		xGraph.SetTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
 
-		xGraph.PassReads(uPassIndex, &s_xBlurred, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &s_xRawOcclusion, RESOURCE_ACCESS_READ_SRV);
-		xGraph.PassReads(uPassIndex, &Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, s_xBlurred, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, s_xRawOcclusion, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
 		// W8: writes HDR scene via blend (upsampled AO modulates existing contents)
-		xGraph.PassWrites(uPassIndex, &Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 	}
 }

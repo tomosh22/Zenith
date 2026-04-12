@@ -172,18 +172,18 @@ void Flux_Shadows::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		const u_int uPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade, PackSmallInt(u));
-		xGraph.SetPassTargetSetup(uPass, g_axCSMTargetSetups[u]);
+		xGraph.SetTargetSetup(uPass, g_axCSMTargetSetups[u]);
 		// Each cascade owns its own target setup and clears its depth.
-		xGraph.SetPassClearTargets(uPass, true);
+		xGraph.SetClear(uPass, true);
 
 		// W2: CSM targets are depth textures — declare as DSV writes, not RTV.
-		xGraph.PassWrites(uPass, &g_axCSMs[u], RESOURCE_ACCESS_WRITE_DSV);
+		xGraph.Write(uPass, g_axCSMs[u], RESOURCE_ACCESS_WRITE_DSV);
 
 		// W3: cascade 0 owns the CPU-side matrix update via its pre-execute callback.
 		// No inter-cascade GPU dependency exists, so the 4 cascades now record in parallel.
 		if (u == 0)
 		{
-			xGraph.SetPassOnPrepare(uPass, PreExecuteShadowMatrices);
+			xGraph.SetPrepare(uPass, PreExecuteShadowMatrices);
 		}
 	}
 }
