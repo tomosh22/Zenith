@@ -613,6 +613,9 @@
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.cpp">
       <Filter>Editor\Panels</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_RenderGraph.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.cpp">
       <Filter>Editor\Panels</Filter>
     </ClCompile>
@@ -3214,6 +3217,9 @@
       <Filter>Editor\Panels</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_RenderGraph.h">
       <Filter>Editor\Panels</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.h">

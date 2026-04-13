@@ -28,6 +28,7 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	// Create actual target VRAM and store it in registry
 	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
+	xAttachment.m_strName = strName;
 
 	// Create RTV (only for 2D textures)
 	if (m_eTextureType == TEXTURE_TYPE_2D)
@@ -90,6 +91,7 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachment& xAt
 	// Create actual target VRAM and store it in registry
 	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
+	xAttachment.m_strName = strName;
 
 	// Create main RTV (full cubemap view)
 	xAttachment.m_pxRTV = Flux_MemoryManager::CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, 0);
@@ -142,6 +144,7 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	// Create actual target VRAM and store it in registry
 	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
+	xAttachment.m_strName = strName;
 
 	// Create DSV
 	xAttachment.m_pxDSV = Flux_MemoryManager::CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);

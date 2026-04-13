@@ -61,6 +61,8 @@ struct Flux_RenderAttachment {
 
 	Flux_VRAMHandle m_xVRAMHandle;
 
+	std::string m_strName;
+
 	// Views for different usage patterns
 	Flux_ShaderResourceView m_pxSRV;  // For reading in shaders
 	Flux_UnorderedAccessView_Texture m_pxUAV; // For compute shader read/write

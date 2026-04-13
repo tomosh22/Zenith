@@ -24,7 +24,7 @@ void Flux_RenderGraph::TrackResource(void* pRes, const char* szName)
     {
         Flux_RenderGraph_Resource xRes;
         xRes.m_xResource = Flux_GraphResource();
-        xRes.m_szName = szName;
+        xRes.m_strName = szName;
         xRes.m_uFirstWrite = UINT32_MAX;
         xRes.m_uLastRead = UINT32_MAX;
         m_xResources[pRes] = xRes;
@@ -36,7 +36,7 @@ u_int Flux_RenderGraph::AddPass(const char* szName, Flux_RenderGraph_OnRecordFun
     AssertMutable("AddPass");
     Zenith_Assert(szName && pfnOnRecord, "Flux_RenderGraph::AddPass: null name or callback");
     Flux_RenderGraph_Pass* pxPass = new Flux_RenderGraph_Pass();
-    pxPass->m_szName = szName;
+    pxPass->m_strName = szName;
     pxPass->m_pfnOnRecord = pfnOnRecord;
     pxPass->m_pUserData = pUserData;
     pxPass->m_pxCommandList = new Flux_CommandList(szName, uInitialCapacity);
@@ -49,7 +49,7 @@ void Flux_RenderGraph::AddResourceUsage(u_int uPassIndex, Flux_RenderAttachment&
     AssertMutable(bWrite ? "Write" : "Read");
     Zenith_Assert(uPassIndex < m_xPasses.GetSize(), "Flux_RenderGraph: invalid pass index %u", uPassIndex);
     Zenith_Assert(uMipCount > 0, "Flux_RenderGraph: mip count must be > 0");
-    TrackResource(&xImage, "<image>");
+    TrackResource(&xImage, xImage.m_strName.empty() ? "<unnamed>" : xImage.m_strName.c_str());
     Flux_RenderGraph_ResourceUsage xUsage;
     xUsage.m_xResource = Flux_GraphResource(xImage);
     xUsage.m_eAccess = eAccess;
@@ -160,14 +160,14 @@ void Flux_RenderGraph::BuildResourceTraffic()
         {
             const Flux_RenderGraph_ResourceUsage& xWrite = it.GetData();
             void* pRes = xWrite.m_xResource.GetVoidPtr();
-            Zenith_Assert(pRes, "Flux_RenderGraph::BuildResourceTraffic: pass '%s' has null write", pxPass->m_szName);
+            Zenith_Assert(pRes, "Flux_RenderGraph::BuildResourceTraffic: pass '%s' has null write", pxPass->m_strName.c_str());
             m_xTraffic[pRes].m_xWriters.PushBack(uPass);
         }
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())
         {
             const Flux_RenderGraph_ResourceUsage& xRead = it.GetData();
             void* pRes = xRead.m_xResource.GetVoidPtr();
-            Zenith_Assert(pRes, "Flux_RenderGraph::BuildResourceTraffic: pass '%s' has null read", pxPass->m_szName);
+            Zenith_Assert(pRes, "Flux_RenderGraph::BuildResourceTraffic: pass '%s' has null read", pxPass->m_strName.c_str());
             m_xTraffic[pRes].m_xReaders.PushBack(uPass);
         }
     }
@@ -180,7 +180,7 @@ void Flux_RenderGraph::Validate() const
         if (xPair.second.m_xReaders.GetSize() > 0 && xPair.second.m_xWriters.GetSize() == 0)
         {
             auto it = m_xResources.find(xPair.first);
-            const char* sz = (it != m_xResources.end()) ? it->second.m_szName : "<unknown>";
+            const char* sz = (it != m_xResources.end()) ? it->second.m_strName.c_str() : "<unknown>";
             Zenith_Assert(false, "Flux_RenderGraph: resource '%s' read but never written", sz);
         }
     }
@@ -189,13 +189,13 @@ void Flux_RenderGraph::Validate() const
         Flux_RenderGraph_Pass* pxP = m_xPasses.Get(i);
         if (!pxP->m_bEnabled) continue;
         bool bIsGfx = pxP->m_pxTargetSetup && *pxP->m_pxTargetSetup != Flux_Graphics::s_xNullTargetSetup;
-        if (bIsGfx) Zenith_Assert(pxP->m_xWrites.GetSize() > 0, "Flux_RenderGraph: graphics pass '%s' has no Write()", pxP->m_szName);
+        if (bIsGfx) Zenith_Assert(pxP->m_xWrites.GetSize() > 0, "Flux_RenderGraph: graphics pass '%s' has no Write()", pxP->m_strName.c_str());
         for (Zenith_Vector<u_int>::Iterator it(pxP->m_xExplicitDependencies); !it.Done(); it.Next())
         {
             u_int d = it.GetData();
-            Zenith_Assert(d < m_xPasses.GetSize(), "Flux_RenderGraph: pass '%s' invalid dep %u", pxP->m_szName, d);
+            Zenith_Assert(d < m_xPasses.GetSize(), "Flux_RenderGraph: pass '%s' invalid dep %u", pxP->m_strName.c_str(), d);
         }
-        if (pxP->m_xWrites.GetSize() > 0) Zenith_Assert(pxP->m_pfnOnRecord, "Flux_RenderGraph: pass '%s' has writes but no callback", pxP->m_szName);
+        if (pxP->m_xWrites.GetSize() > 0) Zenith_Assert(pxP->m_pfnOnRecord, "Flux_RenderGraph: pass '%s' has writes but no callback", pxP->m_strName.c_str());
     }
 }
 

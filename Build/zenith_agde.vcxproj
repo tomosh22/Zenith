@@ -870,6 +870,7 @@
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_MaterialEditor.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Memory.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_RenderGraph.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h" />
@@ -1776,6 +1777,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_RenderGraph.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>

@@ -53,6 +53,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Panels/Zenith_EditorPanel_MaterialEditor.h"
 #include "Panels/Zenith_EditorPanel_Memory.h"
 #include "Panels/Zenith_EditorPanel_Properties.h"
+#include "Panels/Zenith_EditorPanel_RenderGraph.h"
 #include "Panels/Zenith_EditorPanel_Toolbar.h"
 #include "Panels/Zenith_EditorPanel_Viewport.h"
 
@@ -816,6 +817,8 @@ void Zenith_Editor::Render()
 	Zenith_EditorPanelMemory::Render();
 #endif
 
+	Zenith_EditorPanelRenderGraph::Render();
+
 	// Animation state machine editor
 	// Zenith_AnimationStateMachineEditor::Render();  // TEMPORARILY DISABLED
 
@@ -959,6 +962,11 @@ void Zenith_Editor::RenderMainMenuBar()
 				Zenith_EditorPanelMemory::SetVisible(!Zenith_EditorPanelMemory::IsVisible());
 			}
 #endif
+
+			if (ImGui::MenuItem("Render Graph", nullptr, Zenith_EditorPanelRenderGraph::IsVisible()))
+			{
+				Zenith_EditorPanelRenderGraph::SetVisible(!Zenith_EditorPanelRenderGraph::IsVisible());
+			}
 
 			ImGui::Separator();
 

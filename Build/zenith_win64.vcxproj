@@ -1098,6 +1098,7 @@
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_MaterialEditor.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Memory.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_RenderGraph.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h" />
@@ -2326,6 +2327,7 @@
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_MaterialEditor.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Memory.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.cpp" />
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_RenderGraph.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp" />

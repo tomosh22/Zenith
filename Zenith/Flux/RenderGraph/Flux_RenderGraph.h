@@ -4,6 +4,7 @@
 #include "Flux/Flux.h"
 #include <unordered_map>
 #include <unordered_set>
+#include <string>
 
 using Flux_RenderGraph_OnRecordFunc = void(*)(Flux_CommandList*, void*);
 using Flux_RenderGraph_OnPrepareFunc = void(*)(void*);
@@ -56,7 +57,7 @@ struct Flux_RenderGraph_ResourceUsage
 struct Flux_RenderGraph_Resource
 {
     Flux_GraphResource m_xResource;
-    const char* m_szName = nullptr;
+    std::string m_strName;
     u_int m_uFirstWrite = UINT32_MAX;
     u_int m_uLastRead = UINT32_MAX;
 };
@@ -71,7 +72,7 @@ struct Flux_RenderGraph_ImageBarrier
 
 struct Flux_RenderGraph_Pass
 {
-    const char* m_szName = nullptr;
+    std::string m_strName;
     Zenith_Vector<Flux_RenderGraph_ResourceUsage> m_xReads;
     Zenith_Vector<Flux_RenderGraph_ResourceUsage> m_xWrites;
     Zenith_Vector<u_int> m_xExplicitDependencies;
@@ -120,6 +121,7 @@ public:
 
     const Zenith_Vector<Flux_RenderGraph_Pass*>& GetPasses() const { return m_xPasses; }
     const Zenith_Vector<u_int>& GetExecutionOrder() const { return m_xExecutionOrder; }
+    const std::unordered_map<void*, Flux_RenderGraph_Resource>& GetResources() const { return m_xResources; }
 
 private:
     Zenith_Vector<Flux_RenderGraph_Pass*> m_xPasses;
