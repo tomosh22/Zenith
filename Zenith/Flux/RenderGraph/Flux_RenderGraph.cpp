@@ -143,9 +143,7 @@ void Flux_RenderGraph::Clear()
     m_xEdgeSet.clear();
     m_xAdjacency.Clear();
     m_xInDegree.Clear();
-    m_xQueue.Clear();
     m_xExecutionOrder.Clear();
-    m_xLevelStarts.Clear();
     m_bCompiled = false;
     m_bDirty = true;
     m_bEnabledMaskDirty = false;
@@ -291,18 +289,24 @@ void Flux_RenderGraph::AddExplicitDependencies()
     }
 }
 
-bool Flux_RenderGraph::ComputeTopologicalOrder()
+bool Flux_RenderGraph::TopologicalSort()
 {
-    m_xExecutionOrder.Clear(); m_xQueue.Clear();
+    InitAdjacencyData();
+    BuildAdjacencyFromTraffic();
+    AddExplicitDependencies();
+    
+    m_xExecutionOrder.Clear();
+    Zenith_Vector<u_int> xQueue;
     const u_int uN = m_xPasses.GetSize();
+    
     for (u_int i = 0; i < uN; i++)
         if (m_xPasses.Get(i)->m_bEnabled && m_xInDegree.Get(i) == 0)
-            m_xQueue.PushBack(i);
-
+            xQueue.PushBack(i);
+    
     u_int uProcessed = 0;
-    for (u_int qf = 0; qf < m_xQueue.GetSize(); qf++)
+    for (u_int qf = 0; qf < xQueue.GetSize(); qf++)
     {
-        u_int uCurrent = m_xQueue.Get(qf);
+        u_int uCurrent = xQueue.Get(qf);
         uProcessed++;
         m_xExecutionOrder.PushBack(uCurrent);
         m_xPasses.Get(uCurrent)->m_uTopologicalOrder = m_xExecutionOrder.GetSize() - 1;
@@ -310,76 +314,20 @@ bool Flux_RenderGraph::ComputeTopologicalOrder()
         {
             u_int uNeighbor = it.GetData();
             if (--m_xInDegree.Get(uNeighbor) == 0)
-                m_xQueue.PushBack(uNeighbor);
+                xQueue.PushBack(uNeighbor);
         }
     }
-
+    
     u_int uEnabledCount = 0;
     for (u_int i = 0; i < uN; i++)
         if (m_xPasses.Get(i)->m_bEnabled) uEnabledCount++;
+    
     if (uProcessed != uEnabledCount)
     {
-        Zenith_Assert(false, "Flux_RenderGraph: Cycle detected! Processed %u of %u", uProcessed, uEnabledCount);
+        Zenith_Assert(false, "Flux_RenderGraph: Cycle detected!");
         return false;
     }
-    return true;
-}
-
-void Flux_RenderGraph::ComputePassLevels()
-{
-    for (u_int i = 0; i < m_xPasses.GetSize(); i++) m_xPasses.Get(i)->m_uLevel = 0;
-    for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
-    {
-        u_int uPassIdx = itE.GetData();
-        u_int uLevel = m_xPasses.Get(uPassIdx)->m_uLevel;
-        for (Zenith_Vector<u_int>::Iterator itN(m_xAdjacency.Get(uPassIdx)); !itN.Done(); itN.Next())
-        {
-            u_int uNeighbor = itN.GetData();
-            if (m_xPasses.Get(uNeighbor)->m_uLevel < uLevel + 1)
-                m_xPasses.Get(uNeighbor)->m_uLevel = uLevel + 1;
-        }
-    }
-}
-
-void Flux_RenderGraph::SortByLevel()
-{
-    for (u_int i = 1; i < m_xExecutionOrder.GetSize(); i++)
-    {
-        u_int uKey = m_xExecutionOrder.Get(i);
-        u_int uKeyLevel = m_xPasses.Get(uKey)->m_uLevel;
-        int j = static_cast<int>(i) - 1;
-        while (j >= 0 && m_xPasses.Get(m_xExecutionOrder.Get(j))->m_uLevel > uKeyLevel)
-        { m_xExecutionOrder.Get(j + 1) = m_xExecutionOrder.Get(j); j--; }
-        m_xExecutionOrder.Get(j + 1) = uKey;
-    }
-}
-
-void Flux_RenderGraph::BuildLevelStarts()
-{
-    m_xLevelStarts.Clear();
-    if (m_xExecutionOrder.GetSize() == 0) return;
-    m_xLevelStarts.PushBack(0);
-    u_int uPrevLevel = m_xPasses.Get(m_xExecutionOrder.Get(0))->m_uLevel;
-    u_int uPos = 0;
-    for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
-    {
-        u_int uLevel = m_xPasses.Get(it.GetData())->m_uLevel;
-        if (uLevel != uPrevLevel) { m_xLevelStarts.PushBack(uPos); uPrevLevel = uLevel; }
-        uPos++;
-    }
-}
-
-bool Flux_RenderGraph::TopologicalSort()
-{
-    InitAdjacencyData();
-    BuildAdjacencyFromTraffic();
-    AddExplicitDependencies();
-    if (!ComputeTopologicalOrder()) return false;
-    ComputePassLevels();
-    SortByLevel();
-    BuildLevelStarts();
-    for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
-        m_xPasses.Get(itE.GetData())->m_uTopologicalOrder = itE.GetData();
+    
     return true;
 }
 
@@ -507,24 +455,20 @@ void Flux_RenderGraph::MarkPassesAsComputeOrGraphics()
     }
 }
 
-struct Flux_RenderGraph_RecordTaskData { Flux_RenderGraph* m_pxGraph; u_int m_uLevelBatchStart; u_int m_uLevelBatchEnd; };
+struct Flux_RenderGraph_RecordTaskData { Flux_RenderGraph* m_pxGraph; u_int m_uPassIndex; };
 
-void Flux_RenderGraph_RecordLevelTask(void* pData, u_int uInvocationIndex, u_int uWorkerIndex)
+void Flux_RenderGraph_RecordPassTask(void* pData, u_int uInvocationIndex, u_int uWorkerIndex)
 {
     auto* pxData = static_cast<Flux_RenderGraph_RecordTaskData*>(pData);
     Flux_RenderGraph* pxGraph = pxData[uInvocationIndex].m_pxGraph;
-    u_int uStart = pxData[uInvocationIndex].m_uLevelBatchStart;
-    u_int uEnd = pxData[uInvocationIndex].m_uLevelBatchEnd;
+    const u_int uPassIndex = pxData[uInvocationIndex].m_uPassIndex;
     (void)uWorkerIndex;
     const Zenith_Vector<u_int>& xExecOrder = pxGraph->GetExecutionOrder();
     const Zenith_Vector<Flux_RenderGraph_Pass*>& xPasses = pxGraph->GetPasses();
-    for (u_int i = uStart; i < uEnd; i++)
-    {
-        Flux_RenderGraph_Pass& xPass = *xPasses.Get(xExecOrder.Get(i));
-        xPass.m_pxCommandList->Reset();
-        if (!xPass.m_bEnabled || !xPass.m_pfnOnRecord) continue;
-        xPass.m_pfnOnRecord(xPass.m_pxCommandList, xPass.m_pUserData);
-    }
+    Flux_RenderGraph_Pass& xPass = *xPasses.Get(xExecOrder.Get(uPassIndex));
+    xPass.m_pxCommandList->Reset();
+    if (!xPass.m_bEnabled || !xPass.m_pfnOnRecord) return;
+    xPass.m_pfnOnRecord(xPass.m_pxCommandList, xPass.m_pUserData);
 }
 
 void Flux_RenderGraph::Execute()
@@ -549,21 +493,20 @@ void Flux_RenderGraph::CallPrepareCallbacks()
 
 void Flux_RenderGraph::RecordCommandLists()
 {
-    u_int uNumLevels = m_xLevelStarts.GetSize();
-    if (uNumLevels > 0)
+    const u_int uNumPasses = m_xExecutionOrder.GetSize();
+    if (uNumPasses == 0) return;
+    
+    auto* pxTaskData = static_cast<Flux_RenderGraph_RecordTaskData*>(Zenith_MemoryManagement::Allocate(sizeof(Flux_RenderGraph_RecordTaskData) * uNumPasses));
+    for (u_int i = 0; i < uNumPasses; i++)
     {
-        auto* pxTaskData = static_cast<Flux_RenderGraph_RecordTaskData*>(Zenith_MemoryManagement::Allocate(sizeof(Flux_RenderGraph_RecordTaskData) * uNumLevels));
-        for (u_int l = 0; l < uNumLevels; l++)
-        {
-            pxTaskData[l].m_pxGraph = this;
-            pxTaskData[l].m_uLevelBatchStart = m_xLevelStarts.Get(l);
-            pxTaskData[l].m_uLevelBatchEnd = (l + 1 < uNumLevels) ? m_xLevelStarts.Get(l + 1) : m_xExecutionOrder.GetSize();
-        }
-        Zenith_TaskArray xTasks(ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS, Flux_RenderGraph_RecordLevelTask, pxTaskData, uNumLevels, true);
-        Zenith_TaskSystem::SubmitTaskArray(&xTasks);
-        xTasks.WaitUntilComplete();
-        Zenith_MemoryManagement::Deallocate(pxTaskData);
+        pxTaskData[i].m_pxGraph = this;
+        pxTaskData[i].m_uPassIndex = i;
     }
+    
+    Zenith_TaskArray xTasks(ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS, Flux_RenderGraph_RecordPassTask, pxTaskData, uNumPasses, true);
+    Zenith_TaskSystem::SubmitTaskArray(&xTasks);
+    xTasks.WaitUntilComplete();
+    Zenith_MemoryManagement::Deallocate(pxTaskData);
 }
 
 void Flux_RenderGraph::SubmitRecordedLists()

@@ -79,7 +79,6 @@ struct Flux_RenderGraph_Pass
     Flux_RenderGraph_OnPrepareFunc m_pfnOnPrepare = nullptr;
     void* m_pUserData = nullptr;
     u_int m_uTopologicalOrder = UINT32_MAX;
-    u_int m_uLevel = 0;
     bool m_bIsCompute = false;
     bool m_bEnabled = true;
     bool m_bRequestsClear = false;
@@ -121,13 +120,11 @@ public:
 
     const Zenith_Vector<Flux_RenderGraph_Pass*>& GetPasses() const { return m_xPasses; }
     const Zenith_Vector<u_int>& GetExecutionOrder() const { return m_xExecutionOrder; }
-    const Zenith_Vector<u_int>& GetLevelStarts() const { return m_xLevelStarts; }
 
 private:
     Zenith_Vector<Flux_RenderGraph_Pass*> m_xPasses;
     std::unordered_map<void*, Flux_RenderGraph_Resource> m_xResources;
     Zenith_Vector<u_int> m_xExecutionOrder;
-    Zenith_Vector<u_int> m_xLevelStarts;
     bool m_bCompiled = false;
     bool m_bDirty = true;
     bool m_bEnabledMaskDirty = false;
@@ -167,14 +164,10 @@ private:
     void AddWriterChainEdges(const Zenith_Vector<u_int>& axWriters);
     void AddEdgeIfNew(u_int uFrom, u_int uTo);
     void AddExplicitDependencies();
-    bool ComputeTopologicalOrder();
-    void ComputePassLevels();
-    void SortByLevel();
-    void BuildLevelStarts();
     void CollectClearRequirements();
     void AssignClearFlags();
 
-    friend void Flux_RenderGraph_RecordLevelTask(void* pData, u_int uInvocationIndex, u_int uWorkerIndex);
+    friend void Flux_RenderGraph_RecordPassTask(void* pData, u_int uInvocationIndex, u_int uWorkerIndex);
 };
 
 namespace std { template<> struct hash<Flux_GraphResource> { size_t operator()(const Flux_GraphResource& xRes) const { return static_cast<size_t>(xRes.GetHash()); } }; }
