@@ -39,7 +39,8 @@ void Flux_Quads::Initialise()
 	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget_NoDepth;
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -108,9 +109,8 @@ void Flux_Quads::ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 
 void Flux_Quads::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	u_int uPass = xGraph.AddPass("Quads", ExecuteQuads);
-	xGraph.SetTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth);
-	xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+	uint32_t uPass = xGraph.AddPass("Quads", ExecuteQuads);
+	xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RESOURCE_ACCESS_WRITE_RTV);
 }
 
 void Flux_Quads::UploadQuad(const Quad& xQuad)

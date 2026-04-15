@@ -62,7 +62,8 @@ void Flux_Gizmos::Initialise()
 	// Create pipeline specification
 	Flux_PipelineSpecification xSpec;
 	xSpec.m_pxShader = &s_xShader;
-	xSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget;  // Render to final target with depth
+	xSpec.m_aeColourAttachmentFormats[0] = Flux_Graphics::s_xFinalRenderTarget.m_xSurfaceInfo.m_eFormat;
+	xSpec.m_uNumColourAttachments = 1;
 
 	// Vertex input description
 	Flux_VertexInputDescription xVertexDesc;
@@ -323,14 +324,8 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 
 void Flux_Gizmos::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	u_int uPass = xGraph.AddPass("Gizmos", ExecuteGizmos);
-	xGraph.SetTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget);
-	xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
-	// Gizmos pipeline disables depth-test and depth-write but the renderpass
-	// still includes the depth attachment via s_xFinalRenderTarget. Declare a
-	// READ_DEPTH so the graph transitions the depth to READ_ONLY_OPTIMAL and
-	// the renderpass initialLayout matches.
-	xGraph.Read(uPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_DEPTH);
+	uint32_t uPass = xGraph.AddPass("Gizmos", ExecuteGizmos);
+	xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget, RESOURCE_ACCESS_WRITE_RTV);
 }
 
 void Flux_Gizmos::SetTargetEntity(Zenith_Entity* pxEntity)

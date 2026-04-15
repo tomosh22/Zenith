@@ -13,7 +13,6 @@ class Flux_IndirectBuffer;
 class Flux_IndexBuffer;
 class Zenith_Vulkan_Pipeline;
 class Zenith_Vulkan_Sampler;
-struct Flux_TargetSetup;
 struct Flux_Buffer;
 class Flux_ReadWriteBuffer;
 struct Flux_ConstantBufferView;
@@ -23,12 +22,12 @@ struct Flux_UnorderedAccessView_Buffer;
 struct Flux_RenderTargetView;
 struct Flux_DepthStencilView;
 struct Flux_RenderAttachment;
+struct Flux_RenderGraph_AttachmentRef;
 
-// Scratch buffer binding info for push constant replacement
 struct ScratchBufferBinding {
 	u_int m_uOffset = 0;
 	u_int m_uSize = 0;
-	u_int m_uBinding = 0;  // Which binding slot in the descriptor set
+	u_int m_uBinding = 0;
 	bool m_bValid = false;
 };
 
@@ -40,10 +39,8 @@ struct DescSetBindings {
 
 	Zenith_Vulkan_Sampler* m_apxSamplers[FLUX_MAX_DESCRIPTOR_BINDINGS];
 
-	// Scratch buffer binding (for push constant replacement)
 	ScratchBufferBinding m_xScratchBuffer;
 
-	// Helper for hashing - compares if two DescSetBindings are equal
 	bool operator==(const DescSetBindings& other) const
 	{
 		return memcmp(this, &other, sizeof(DescSetBindings)) == 0;
@@ -67,13 +64,9 @@ public:
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0, uint32_t uInstanceOffset = 0);
 	void DrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset = 0, uint32_t uStride = 20);
 	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, uint32_t uMaxDrawCount, uint32_t uIndirectOffset = 0, uint32_t uCountOffset = 0, uint32_t uStride = 20);
-	// bDepthIsReadOnly = true tells the render pass to declare the depth
-	// attachment as eDepthStencilReadOnlyOptimal (the pass samples depth and
-	// does not write). Default false = depth-write attachment.
-	void BeginRenderPass(const Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false, bool bDepthIsReadOnly = false);
+	void BeginRenderPass(const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour, const Flux_RenderGraph_AttachmentRef& rxDepthStencil, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false, bool bDepthIsReadOnly = false);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	
-	// Direct3D-style view binding methods
 	void BindSRV(const Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
 	void BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, uint32_t uBindPoint);
 	void BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, uint32_t uBindPoint);
@@ -93,9 +86,6 @@ public:
 	u_int GetWorkerIndex() const { return m_uWorkerIndex; }
 
 	void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, int uMipLevel = 0, int uLayer = 0);
-	// Range overload — used by the render-graph barrier consumer to transition a
-	// rectangle of (mip, layer) subresources in a single barrier with caller-supplied
-	// access masks. Falls through to the same vkCmdPipelineBarrier path.
 	void ImageTransitionBarrierRange(vk::Image xImage,
 		vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout,
 		vk::ImageAspectFlags eAspect,
@@ -104,15 +94,10 @@ public:
 		uint32_t uBaseMip, uint32_t uMipCount,
 		uint32_t uBaseLayer, uint32_t uLayerCount);
 
-	// Compute methods
 	void BindComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	void Dispatch(uint32_t uGroupCountX, uint32_t uGroupCountY, uint32_t uGroupCountZ);
 	void ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout);
 
-	// High-level subresource transition: maps engine-facing ResourceAccess enums
-	// to Vulkan layouts / access masks / pipeline stages and emits a single
-	// vkCmdPipelineBarrier. Used by passes (e.g. HiZ mip chain) that need to
-	// transition specific mip/layer ranges between consecutive dispatches.
 	void ImageTransition(Flux_RenderAttachment* pxAttachment,
 		uint32_t uBaseMip, uint32_t uMipCount,
 		uint32_t uBaseLayer, uint32_t uLayerCount,
@@ -139,7 +124,7 @@ private:
 	u_int m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 
 	CommandType m_eCommandType;
-	u_int m_uWorkerIndex; // Index of the worker thread (0 to NUM_WORKER_THREADS-1)
+	u_int m_uWorkerIndex;
 
 	vk::DescriptorSet m_axCurrentDescSet[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS] = { VK_NULL_HANDLE };
 	u_int m_uDescriptorDirty = true;
@@ -149,7 +134,6 @@ private:
 
 	bool m_bShouldClear = false;
 	
-	// Simple descriptor set cache - stores last used bindings and descriptor set per descriptor set slot
 	struct DescriptorSetCacheEntry
 	{
 		DescSetBindings bindings;

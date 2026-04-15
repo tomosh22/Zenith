@@ -668,19 +668,9 @@ vk::BlendFactor FluxBlendFactorToVK(BlendFactor eFactor)
 	}
 }
 
-static uint32_t CountColourAttachments(const Flux_TargetSetup& xTargetSetup)
+vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const TextureFormat* aeColourFormats, uint32_t uNumColourAttachments, TextureFormat eDepthStencilFormat, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage, bool bDepthIsReadOnly)
 {
-	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
-	{
-		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat == TEXTURE_FORMAT_NONE)
-			return i;
-	}
-	return FLUX_MAX_TARGETS;
-}
-
-vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage, bool bDepthIsReadOnly)
-{
-	const uint32_t uNumColourAttachments = CountColourAttachments(xTargetSetup);
+	const bool bHasDepth = eDepthStencilFormat != TEXTURE_FORMAT_NONE;
 
 	vk::ImageLayout eLayout = vk::ImageLayout::eColorAttachmentOptimal;
 	switch (eUsage)
@@ -700,9 +690,8 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const Flux_Target
 	std::vector<vk::AttachmentReference> xAttachmentRefs(uNumColourAttachments);
 	for (uint32_t i = 0; i < uNumColourAttachments; i++)
 	{
-		const Flux_RenderAttachment& xTarget = xTargetSetup.m_axColourAttachments[i];
 		xAttachmentDescs.at(i)
-			.setFormat(Zenith_Vulkan::ConvertToVkFormat_Colour(xTarget.m_xSurfaceInfo.m_eFormat))
+			.setFormat(Zenith_Vulkan::ConvertToVkFormat_Colour(aeColourFormats[i]))
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(Zenith_Vulkan::ConvertToVkLoadAction(eColourLoad))
 			.setStoreOp(Zenith_Vulkan::ConvertToVkStoreAction(eColourStore))
@@ -716,8 +705,6 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const Flux_Target
 			.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
 	}
 
-	//should probably have a better way of checking for existence of depth/stencil target
-	bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
 	vk::AttachmentDescription xDepthStencilAttachment;
 	vk::AttachmentReference xDepthStencilAttachmentRef;
 	if (bHasDepth)
@@ -731,7 +718,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const Flux_Target
 			? vk::ImageLayout::eDepthStencilReadOnlyOptimal
 			: vk::ImageLayout::eDepthStencilAttachmentOptimal;
 		xDepthStencilAttachment = vk::AttachmentDescription()
-			.setFormat(Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat))
+			.setFormat(Zenith_Vulkan::ConvertToVkFormat_DepthStencil(eDepthStencilFormat))
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(Zenith_Vulkan::ConvertToVkLoadAction(eDepthStencilLoad))
 			.setStoreOp(Zenith_Vulkan::ConvertToVkStoreAction(eDepthStencilStore))
@@ -768,11 +755,10 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const Flux_Target
 	return VkUnwrap(Zenith_Vulkan::GetDevice().createRenderPass(xRenderPassInfo));
 }
 
-vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass)
+vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColourAttachments, const Flux_RenderGraph_AttachmentRef& xDepthStencil, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	const bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
-	const uint32_t uNumColourAttachments = CountColourAttachments(xTargetSetup);
+	const bool bHasDepth = xDepthStencil.IsValid();
 	const uint32_t uNumAttachments = bHasDepth ? uNumColourAttachments + 1 : uNumColourAttachments;
 
 	Zenith_Assert(uNumAttachments > 0, "TargetSetupToFramebuffer: no attachments");
@@ -782,13 +768,37 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_Targ
 	vk::ImageView axAttachments[FLUX_MAX_TARGETS];
 	for (uint32_t i = 0; i < uNumColourAttachments; i++)
 	{
-		axAttachments[i] = Zenith_Vulkan_MemoryManager::GetImageView(xTargetSetup.m_axColourAttachments[i].m_pxRTV.m_xImageViewHandle);
-		Zenith_Assert(axAttachments[i], "TargetSetupToFramebuffer: null image view for colour attachment %u (format %u)", i, static_cast<uint32_t>(xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat));
+		const Flux_RenderGraph_AttachmentRef& rxRef = axColourAttachments[i];
+		Zenith_Assert(rxRef.IsValid(), "TargetSetupToFramebuffer: invalid colour attachment %u", i);
+		Zenith_Assert(rxRef.m_xResource.IsImageLike(), "TargetSetupToFramebuffer: colour attachment %u is not image-like", i);
+
+		// 2D vs Cube path: 2D images have one axis (mip), cubes have two (mip + face).
+		// The asymmetry is intrinsic — a 2D RTV ignores layer because Flux_RenderAttachment
+		// is single-layer by construction; a cube needs both axes to pick a single
+		// face's RTV. Asserts here catch (a) misuse of a non-zero layer with a 2D
+		// attachment and (b) any future Flux_GraphResourceKind that satisfies
+		// IsImageLike() but isn't yet handled.
+		Flux_ImageViewHandle xViewHandle;
+		if (rxRef.m_xResource.GetKind() == Flux_GraphResourceKind::Image)
+		{
+			Zenith_Assert(rxRef.m_uLayer == 0, "TargetSetupToFramebuffer: colour attachment %u is 2D but uLayer=%u (expected 0)", i, static_cast<uint32_t>(rxRef.m_uLayer));
+			xViewHandle = rxRef.m_xResource.AsImage()->RTV(rxRef.m_uMip).m_xImageViewHandle;
+		}
+		else
+		{
+			Zenith_Assert(rxRef.m_xResource.GetKind() == Flux_GraphResourceKind::ImageCube, "TargetSetupToFramebuffer: colour attachment %u has unhandled image-like kind", i);
+			xViewHandle = rxRef.m_xResource.AsImageCube()->RTV(rxRef.m_uMip, rxRef.m_uLayer).m_xImageViewHandle;
+		}
+
+		axAttachments[i] = Zenith_Vulkan_MemoryManager::GetImageView(xViewHandle);
+		Zenith_Assert(axAttachments[i], "TargetSetupToFramebuffer: null image view for colour attachment %u (format %u, mip %u, layer %u)", i, static_cast<uint32_t>(rxRef.m_xResource.GetSurfaceInfo().m_eFormat), static_cast<uint32_t>(rxRef.m_uMip), static_cast<uint32_t>(rxRef.m_uLayer));
 	}
 	if (bHasDepth)
 	{
-		axAttachments[uNumAttachments - 1] = Zenith_Vulkan_MemoryManager::GetImageView(xTargetSetup.m_pxDepthStencil->m_pxDSV.m_xImageViewHandle);
-		Zenith_Assert(axAttachments[uNumAttachments - 1], "TargetSetupToFramebuffer: null depth image view (format %u)", static_cast<uint32_t>(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat));
+		Zenith_Assert(xDepthStencil.m_xResource.GetKind() == Flux_GraphResourceKind::Image, "TargetSetupToFramebuffer: depth attachment must be 2D image kind");
+		Flux_RenderAttachment* pxDepthStencil = xDepthStencil.m_xResource.AsImage();
+		axAttachments[uNumAttachments - 1] = Zenith_Vulkan_MemoryManager::GetImageView(pxDepthStencil->DSV().m_xImageViewHandle);
+		Zenith_Assert(axAttachments[uNumAttachments - 1], "TargetSetupToFramebuffer: null depth image view (format %u)", static_cast<uint32_t>(pxDepthStencil->m_xSurfaceInfo.m_eFormat));
 	}
 
 	vk::FramebufferCreateInfo framebufferInfo = vk::FramebufferCreateInfo()
@@ -834,7 +844,7 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 #pragma region BlendStates
 	vk::PipelineColorBlendStateCreateInfo xBlendInfo;
 	vk::PipelineColorBlendAttachmentState axBlendInfo[FLUX_MAX_TARGETS];
-	for (u_int u = 0; u < xSpec.m_pxTargetSetup->GetNumColourAttachments(); u++)
+	for (u_int u = 0; u < xSpec.m_uNumColourAttachments; u++)
 	{
 		axBlendInfo[u]
 			.setColorWriteMask(
@@ -850,7 +860,7 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 			.setDstAlphaBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eDstBlendFactor))
 			.setDstColorBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eDstBlendFactor));
 	}
-	xBlendInfo.setAttachmentCount(xSpec.m_pxTargetSetup->GetNumColourAttachments());
+	xBlendInfo.setAttachmentCount(xSpec.m_uNumColourAttachments);
 	xBlendInfo.setPAttachments(axBlendInfo);
 
 	xPipelineInfo.setPColorBlendState(&xBlendInfo);
@@ -868,7 +878,7 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 #pragma endregion
 
 #pragma region RenderPass
-	xPipelineInfo.setRenderPass(Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(*xSpec.m_pxTargetSetup, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_RENDERTARGET));
+	xPipelineInfo.setRenderPass(Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xSpec.m_aeColourAttachmentFormats, xSpec.m_uNumColourAttachments, xSpec.m_eDepthStencilFormat, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_RENDERTARGET));
 #pragma endregion
 
 #pragma region RasterState

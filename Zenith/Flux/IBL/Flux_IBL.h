@@ -125,10 +125,10 @@ public:
 	static Flux_RenderAttachment s_xBRDFLUT;
 
 	// Sky-based irradiance map (cubemap for diffuse)
-	static Flux_RenderAttachment s_xIrradianceMap;
+	static Flux_RenderAttachmentCube s_xIrradianceMap;
 
 	// Sky-based prefiltered environment map (cubemap with mips for specular)
-	static Flux_RenderAttachment s_xPrefilteredMap;
+	static Flux_RenderAttachmentCube s_xPrefilteredMap;
 
 private:
 	static void CreateRenderTargets();
@@ -140,11 +140,6 @@ private:
 	static void GeneratePrefilteredMap();
 	static void GenerateIrradianceFace(u_int uFace);
 	static void GeneratePrefilteredFace(u_int uMip, u_int uFace);
-
-	// Per-face / per-mip target setups (still private — only IBL touches these).
-	static Flux_TargetSetup s_xBRDFLUTSetup;
-	static Flux_TargetSetup s_axIrradianceFaceSetup[6];  // Per-face target setups
-	static Flux_TargetSetup s_axPrefilteredFaceSetup[6];  // Per-face target setups (mip 0)
 
 	// Pipelines
 	static Flux_Pipeline s_xBRDFLUTPipeline;

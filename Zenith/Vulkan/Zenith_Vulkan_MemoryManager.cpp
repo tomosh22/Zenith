@@ -999,6 +999,37 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 	return xView;
 }
 
+Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAccessViewForSlice(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uSlice, uint32_t uMipLevel)
+{
+	Flux_UnorderedAccessView_Texture xView;
+	xView.m_xVRAMHandle = xVRAMHandle;
+	xView.m_uMipLevel = uMipLevel;
+
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateUnorderedAccessViewForSlice");
+	if (!pxVRAM) return xView;
+
+	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+
+	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
+		.setAspectMask(vk::ImageAspectFlagBits::eColor)
+		.setBaseMipLevel(uMipLevel)
+		.setLevelCount(1)
+		.setBaseArrayLayer(uSlice)
+		.setLayerCount(1);
+
+	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
+		.setImage(pxVRAM->GetImage())
+		.setViewType(vk::ImageViewType::e2D)
+		.setFormat(xFormat)
+		.setSubresourceRange(xSubresourceRange);
+
+	vk::ImageView xVkView = VkUnwrap(xDevice.createImageView(xViewCreate));
+	xView.m_xImageViewHandle = RegisterImageView(xVkView);
+	return xView;
+}
+
 void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);

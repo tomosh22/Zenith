@@ -19,10 +19,9 @@
 #include "Editor/Zenith_Editor.h"
 #endif
 
-Flux_TargetSetup Flux_Graphics::s_xMRTTarget;
-Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget;
-Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget_NoDepth;
-Flux_TargetSetup Flux_Graphics::s_xNullTargetSetup;  // For compute passes without render targets
+Flux_RenderAttachment Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_COUNT];
+Flux_RenderAttachment Flux_Graphics::s_xFinalRenderTarget;
+Flux_RenderAttachment Flux_Graphics::s_xFinalRenderTarget_NoDepth;
 Flux_RenderAttachment Flux_Graphics::s_xDepthBuffer;
 Flux_Sampler Flux_Graphics::s_xRepeatSampler;
 Flux_Sampler Flux_Graphics::s_xClampSampler;
@@ -153,7 +152,7 @@ void Flux_Graphics::Initialise()
 	Zenith_DebugVariables::AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
 	Zenith_DebugVariables::AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
 
-	Zenith_DebugVariables::AddTexture({ "Render", "Debug", "MRT Diffuse" }, s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE].m_pxSRV);
+	Zenith_DebugVariables::AddTexture({ "Render", "Debug", "MRT Diffuse" }, s_axMRTColourAttachments[MRT_INDEX_DIFFUSE].SRV());
 
 	Zenith_DebugVariables::AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
 	Zenith_DebugVariables::AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
@@ -187,23 +186,19 @@ void Flux_Graphics::InitialiseRenderTargets()
 		{
 			xBuilder.m_eFormat = s_aeMRTFormats[u];
 			Zenith_Log(LOG_CATEGORY_RENDERER, "Creating MRT[%u] format=%u", u, static_cast<uint32_t>(s_aeMRTFormats[u]));
-			xBuilder.BuildColour(s_xMRTTarget.m_axColourAttachments[u], "Flux Graphics MRT " + std::to_string(u));
-			Zenith_Assert(s_xMRTTarget.m_axColourAttachments[u].m_pxRTV.m_xImageViewHandle.IsValid(), "MRT[%u] RTV image view is invalid", u);
-			Zenith_Assert(s_xMRTTarget.m_axColourAttachments[u].m_pxSRV.m_xImageViewHandle.IsValid(), "MRT[%u] SRV image view is invalid", u);
+			xBuilder.BuildColour(s_axMRTColourAttachments[u], "Flux Graphics MRT " + std::to_string(u));
+			Zenith_Assert(s_axMRTColourAttachments[u].RTV().m_xImageViewHandle.IsValid(), "MRT[%u] RTV image view is invalid", u);
+			Zenith_Assert(s_axMRTColourAttachments[u].SRV().m_xImageViewHandle.IsValid(), "MRT[%u] SRV image view is invalid", u);
 		}
-
-		s_xMRTTarget.AssignDepthStencil(&s_xDepthBuffer);
 	}
 
 	{
 		xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_UNORM;
 		Zenith_Log(LOG_CATEGORY_RENDERER, "Creating final render target format=%u", static_cast<uint32_t>(TEXTURE_FORMAT_R16G16B16A16_UNORM));
-		xBuilder.BuildColour(s_xFinalRenderTarget.m_axColourAttachments[0], "Flux Graphics Final Render Target");
-		Zenith_Assert(s_xFinalRenderTarget.m_axColourAttachments[0].m_pxRTV.m_xImageViewHandle.IsValid(), "Final RT RTV image view is invalid");
+		xBuilder.BuildColour(s_xFinalRenderTarget, "Flux Graphics Final Render Target");
+		Zenith_Assert(s_xFinalRenderTarget.RTV().m_xImageViewHandle.IsValid(), "Final RT RTV image view is invalid");
 
-		s_xFinalRenderTarget.AssignDepthStencil(&s_xDepthBuffer);
-
-		s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0] = s_xFinalRenderTarget.m_axColourAttachments[0];
+		s_xFinalRenderTarget_NoDepth = s_xFinalRenderTarget;
 	}
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Render targets created successfully");
@@ -283,22 +278,22 @@ const Zenith_Maths::Vector3& Flux_Graphics::GetCameraPosition()
 
 Flux_ShaderResourceView* Flux_Graphics::GetGBufferSRV(MRTIndex eIndex)
 {
-	return &s_xMRTTarget.m_axColourAttachments[eIndex].m_pxSRV;
+	return &s_axMRTColourAttachments[eIndex].SRV();
 }
 
 Flux_ShaderResourceView* Flux_Graphics::GetDepthStencilSRV()
 {
-	return &s_xDepthBuffer.m_pxSRV;
+	return &s_xDepthBuffer.SRV();
 }
 
 Flux_RenderTargetView* Flux_Graphics::GetGBufferRTV(MRTIndex eIndex)
 {
-	return &s_xMRTTarget.m_axColourAttachments[eIndex].m_pxRTV;
+	return &s_axMRTColourAttachments[eIndex].RTV();
 }
 
 Flux_DepthStencilView* Flux_Graphics::GetDepthStencilDSV()
 {
-	return &s_xDepthBuffer.m_pxDSV;
+	return &s_xDepthBuffer.DSV();
 }
 
 float Flux_Graphics::GetNearPlane()
@@ -351,19 +346,19 @@ void Flux_Graphics::Shutdown()
 		{
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
 			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
-				xAttachment.m_pxRTV.m_xImageViewHandle, xAttachment.m_pxDSV.m_xImageViewHandle,
-				xAttachment.m_pxSRV.m_xImageViewHandle, xAttachment.m_pxUAV.m_xImageViewHandle);
+				xAttachment.RTV().m_xImageViewHandle, xAttachment.DSV().m_xImageViewHandle,
+				xAttachment.SRV().m_xImageViewHandle, xAttachment.UAV(0).m_xImageViewHandle);
 		}
 	};
 
 	// Destroy MRT render targets
 	for (uint32_t u = 0; u < MRT_INDEX_COUNT; u++)
 	{
-		DestroyRenderAttachment(s_xMRTTarget.m_axColourAttachments[u]);
+		DestroyRenderAttachment(s_axMRTColourAttachments[u]);
 	}
 
 	// Destroy final render target
-	DestroyRenderAttachment(s_xFinalRenderTarget.m_axColourAttachments[0]);
+	DestroyRenderAttachment(s_xFinalRenderTarget);
 
 	// Destroy depth buffer
 	DestroyRenderAttachment(s_xDepthBuffer);

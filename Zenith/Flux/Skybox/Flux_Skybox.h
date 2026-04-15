@@ -125,7 +125,6 @@ private:
 
 	// Transmittance LUT (precomputed for atmosphere)
 	static Flux_RenderAttachment s_xTransmittanceLUT;
-	static Flux_TargetSetup s_xTransmittanceLUTSetup;
 	static bool s_bLUTNeedsUpdate;
 
 	// Shaders

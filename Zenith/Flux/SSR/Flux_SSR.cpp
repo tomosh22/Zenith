@@ -15,8 +15,6 @@
 // Static member definitions
 Flux_RenderAttachment Flux_SSR::s_xRayMarchResult;
 Flux_RenderAttachment Flux_SSR::s_xResolvedReflection;
-Flux_TargetSetup Flux_SSR::s_xRayMarchTargetSetup;
-Flux_TargetSetup Flux_SSR::s_xResolveTargetSetup;
 bool Flux_SSR::s_bEnabled = true;
 bool Flux_SSR::s_bInitialised = false;
 
@@ -90,9 +88,6 @@ void Flux_SSR::CreateRenderTargets()
 		xBuilder.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 
 		xBuilder.BuildColour(s_xRayMarchResult, "SSR RayMarch Result");
-
-		s_xRayMarchTargetSetup.m_axColourAttachments[0] = s_xRayMarchResult;
-		s_xRayMarchTargetSetup.m_pxDepthStencil = nullptr;
 	}
 
 	// Create resolved reflection target (RGBA16F)
@@ -104,9 +99,6 @@ void Flux_SSR::CreateRenderTargets()
 		xBuilder.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 
 		xBuilder.BuildColour(s_xResolvedReflection, "SSR Resolved");
-
-		s_xResolveTargetSetup.m_axColourAttachments[0] = s_xResolvedReflection;
-		s_xResolveTargetSetup.m_pxDepthStencil = nullptr;
 	}
 }
 
@@ -118,10 +110,10 @@ void Flux_SSR::DestroyRenderTargets()
 		{
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
 			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
-				xAttachment.m_pxRTV.m_xImageViewHandle,
-				xAttachment.m_pxDSV.m_xImageViewHandle,
-				xAttachment.m_pxSRV.m_xImageViewHandle,
-				xAttachment.m_pxUAV.m_xImageViewHandle);
+				xAttachment.RTV().m_xImageViewHandle,
+				xAttachment.DSV().m_xImageViewHandle,
+				xAttachment.SRV().m_xImageViewHandle,
+				xAttachment.UAV(0).m_xImageViewHandle);
 		}
 	};
 
@@ -138,7 +130,7 @@ void Flux_SSR::Initialise()
 	// Initialize ray march shader and pipeline
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xRayMarchShader, s_xRayMarchPipeline,
-		"SSR/Flux_SSR_RayMarch.frag", &s_xRayMarchTargetSetup);
+		"SSR/Flux_SSR_RayMarch.frag", s_xRayMarchResult.m_xSurfaceInfo.m_eFormat);
 
 	// Cache ray march binding handles from reflection
 	{
@@ -155,7 +147,7 @@ void Flux_SSR::Initialise()
 	// Initialize resolve shader and pipeline
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xResolveShader, s_xResolvePipeline,
-		"SSR/Flux_SSR_Resolve.frag", &s_xResolveTargetSetup);
+		"SSR/Flux_SSR_Resolve.frag", s_xResolvedReflection.m_xSurfaceInfo.m_eFormat);
 
 	// Cache resolve binding handles from reflection
 	{
@@ -178,8 +170,8 @@ void Flux_SSR::Initialise()
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "StepCount" }, dbg_xSSRConstants.m_uStepCount, 8, 256);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "StartMip" }, dbg_xSSRConstants.m_uStartMip, 0, 10);
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSR", "ContactHardeningDist" }, dbg_xSSRConstants.m_fContactHardeningDist, 0.5f, 10.0f);
-	Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "RayMarch" }, s_xRayMarchResult.m_pxSRV);
-	Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "Resolved" }, s_xResolvedReflection.m_pxSRV);
+	Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "RayMarch" }, s_xRayMarchResult.SRV());
+	Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "Resolved" }, s_xResolvedReflection.SRV());
 #endif
 
 	// Register resize callback to recreate render targets on window resize
@@ -192,8 +184,8 @@ void Flux_SSR::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 		// Re-register debug textures with the new SRVs (old ones were destroyed)
-		Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "RayMarch" }, s_xRayMarchResult.m_pxSRV);
-		Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "Resolved" }, s_xResolvedReflection.m_pxSRV);
+		Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "RayMarch" }, s_xRayMarchResult.SRV());
+		Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "Resolved" }, s_xResolvedReflection.SRV());
 #endif
 
 		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR resize complete - textures re-registered");
@@ -276,7 +268,7 @@ static void ExecuteSSRResolve(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindCBV(s_xRS_FrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xBinder.PushConstant(&dbg_xSSRConstants, sizeof(SSRConstants));
 
-	xBinder.BindSRV(s_xRS_RayMarchResultBinding, &Flux_SSR::s_xRayMarchResult.m_pxSRV);
+	xBinder.BindSRV(s_xRS_RayMarchResultBinding, &Flux_SSR::s_xRayMarchResult.SRV());
 	xBinder.BindSRV(s_xRS_NormalsTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(s_xRS_MaterialTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
 	xBinder.BindSRV(s_xRS_DepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
@@ -292,27 +284,25 @@ void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// render-pass LoadOp is valid.
 	{
 		u_int uPassIndex = xGraph.AddPass("SSR RayMarch", ExecuteSSRRayMarch);
-		xGraph.SetTargetSetup(uPassIndex, s_xRayMarchTargetSetup);
 		xGraph.SetClear(uPassIndex, true);
 
 		xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
 		xGraph.Read(uPassIndex, Flux_HiZ::s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount);
-		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_DIFFUSE], RESOURCE_ACCESS_READ_SRV);
 		xGraph.Write(uPassIndex, s_xRayMarchResult, RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	// Resolve pass — first writer of its target; clear.
 	{
 		u_int uPassIndex = xGraph.AddPass("SSR Resolve", ExecuteSSRResolve);
-		xGraph.SetTargetSetup(uPassIndex, s_xResolveTargetSetup);
 		xGraph.SetClear(uPassIndex, true);
 
 		xGraph.Read(uPassIndex, s_xRayMarchResult, RESOURCE_ACCESS_READ_SRV);
 		xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL], RESOURCE_ACCESS_READ_SRV);
 		xGraph.Write(uPassIndex, s_xResolvedReflection, RESOURCE_ACCESS_WRITE_RTV);
 	}
 }
@@ -321,8 +311,8 @@ Flux_ShaderResourceView& Flux_SSR::GetReflectionSRV()
 {
 	// Return resolved if blur is enabled, otherwise raw ray march result
 	if (dbg_bRoughnessBlur)
-		return s_xResolvedReflection.m_pxSRV;
-	return s_xRayMarchResult.m_pxSRV;
+		return s_xResolvedReflection.SRV();
+	return s_xRayMarchResult.SRV();
 }
 
 bool Flux_SSR::IsEnabled()

@@ -66,7 +66,11 @@ void Flux_AnimatedMeshes::Initialise()
 
 	{
 		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_DIFFUSE].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
 		xPipelineSpec.m_pxShader = &s_xGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -84,7 +88,15 @@ void Flux_AnimatedMeshes::Initialise()
 
 	{
 		Flux_PipelineSpecification xShadowPipelineSpec;
-		xShadowPipelineSpec.m_pxTargetSetup = &Flux_Shadows::GetCSMTargetSetup(0);
+		uint32_t uNumColour;
+		Flux_RenderAttachment* pxDepthStencil;
+		Flux_RenderAttachment* pxColour = Flux_Shadows::GetCSMTargetSetup(0, uNumColour, pxDepthStencil);
+		if (pxColour)
+		{
+			xShadowPipelineSpec.m_aeColourAttachmentFormats[0] = pxColour->m_xSurfaceInfo.m_eFormat;
+		}
+		xShadowPipelineSpec.m_uNumColourAttachments = uNumColour;
+		xShadowPipelineSpec.m_eDepthStencilFormat = pxDepthStencil->m_xSurfaceInfo.m_eFormat;
 		xShadowPipelineSpec.m_pxShader = &s_xShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -128,13 +140,10 @@ void Flux_AnimatedMeshes::Initialise()
 
 void Flux_AnimatedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	u_int uPassIndex = xGraph.AddPass("Animated Meshes GBuffer", ExecuteGBuffer);
-	xGraph.SetTargetSetup(uPassIndex, Flux_Graphics::s_xMRTTarget);
-
-	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
-	{
-		xGraph.Write(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
-	}
+	uint32_t uPassIndex = xGraph.AddPass("Animated Meshes GBuffer", ExecuteGBuffer);
+	xGraph.Write(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[1], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[2], RESOURCE_ACCESS_WRITE_RTV);
 	xGraph.Write(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 }
 

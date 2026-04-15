@@ -50,7 +50,8 @@ void Flux_DeferredShading::Initialise()
 
 	Flux_PipelineSpecification xPipelineSpec;
 	// Render to HDR target for proper HDR lighting pipeline (tone mapping converts to final output)
-	xPipelineSpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetup();
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -206,7 +207,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	u_int uPassIndex = xGraph.AddPass("Apply Lighting", ExecuteApplyLighting);
-	xGraph.SetTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
+	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 	// First writer of the HDR scene no-depth setup — overwrites every pixel
 	// with the lighting result, so clear is the correct LoadOp.
 	xGraph.SetClear(uPassIndex, true);
@@ -214,7 +215,7 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Reads: G-Buffer MRT attachments
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
 	{
-		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[u], RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Reads: depth buffer
@@ -223,7 +224,10 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Reads: shadow maps (CSM depth targets)
 	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		xGraph.Read(uPassIndex, *Flux_Shadows::GetCSMTargetSetup(u).m_pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
+		uint32_t uNumColour;
+		Flux_RenderAttachment* pxDepthStencil;
+		Flux_Shadows::GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
+		xGraph.Read(uPassIndex, *pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Reads: SSR results. The execute callback binds GetReflectionSRV() which
@@ -259,7 +263,4 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.Read(uPassIndex, Flux_IBL::s_xBRDFLUT, RESOURCE_ACCESS_READ_SRV);
 	xGraph.Read(uPassIndex, Flux_IBL::s_xIrradianceMap, RESOURCE_ACCESS_READ_SRV);
 	xGraph.Read(uPassIndex, Flux_IBL::s_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
-
-	// Writes: HDR scene target
-	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }

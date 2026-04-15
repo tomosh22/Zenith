@@ -29,7 +29,13 @@ namespace Zenith_EditorPanelRenderGraph
 
 	static const char* ResourceKindToString(Flux_GraphResourceKind eKind)
 	{
-		return eKind == Flux_GraphResourceKind::Image ? "Image" : "Buffer";
+		switch (eKind)
+		{
+		case Flux_GraphResourceKind::Image:     return "Image";
+		case Flux_GraphResourceKind::ImageCube: return "ImageCube";
+		case Flux_GraphResourceKind::Buffer:    return "Buffer";
+		}
+		return "?";
 	}
 
 	static const Flux_RenderGraph_Resource* FindResource(const Flux_RenderGraph& xGraph, void* pResource)
@@ -45,14 +51,31 @@ namespace Zenith_EditorPanelRenderGraph
 		void* pRes = xUsage.m_xResource.GetVoidPtr();
 		const Flux_RenderGraph_Resource* pxRes = FindResource(xGraph, pRes);
 
-		const char* szResourceName = pxRes->m_strName.empty() ? "<unnamed>" : pxRes->m_strName.c_str();
+		const std::string& strName = pxRes->m_xResource.GetName();
+		const char* szResourceName = strName.empty() ? "<unnamed>" : strName.c_str();
 		const char* szKind = ResourceKindToString(xUsage.m_xResource.GetKind());
 		const char* szAccess = AccessToString(xUsage.m_eAccess);
 
-		if (xUsage.m_uMipCount > 1 || xUsage.m_uMipLevel > 0)
+		const bool bHasMipRange = (xUsage.m_uMipCount > 1 || xUsage.m_uMipLevel > 0);
+		const bool bHasLayerRange = (xUsage.m_uLayerCount > 1 || xUsage.m_uLayer > 0);
+
+		if (bHasMipRange && bHasLayerRange)
+		{
+			ImGui::Text("  %s (%s) [Mip%u/%u, Layer%u/%u] -> %s",
+				szResourceName, szKind,
+				xUsage.m_uMipLevel, xUsage.m_uMipCount,
+				xUsage.m_uLayer, xUsage.m_uLayerCount,
+				szAccess);
+		}
+		else if (bHasMipRange)
 		{
 			ImGui::Text("  %s (%s) [Mip%u/%u] -> %s",
 				szResourceName, szKind, xUsage.m_uMipLevel, xUsage.m_uMipCount, szAccess);
+		}
+		else if (bHasLayerRange)
+		{
+			ImGui::Text("  %s (%s) [Layer%u/%u] -> %s",
+				szResourceName, szKind, xUsage.m_uLayer, xUsage.m_uLayerCount, szAccess);
 		}
 		else
 		{
@@ -63,8 +86,15 @@ namespace Zenith_EditorPanelRenderGraph
 
 	static void RenderBarrier(const Flux_RenderGraph_ImageBarrier& xBarrier)
 	{
-		ImGui::Text("  %s: %s -> %s %s",
-			xBarrier.m_pxAttachment ? "<attachment>" : "<null>",
+		const std::string& strName = xBarrier.m_xResource.GetName();
+		const char* szName = xBarrier.m_xResource.IsValid()
+			? (strName.empty() ? "<unnamed>" : strName.c_str())
+			: "<null>";
+		const char* szKind = ResourceKindToString(xBarrier.m_xResource.GetKind());
+		ImGui::Text("  %s (%s) [Mip%u/%u, Layer%u/%u]: %s -> %s %s",
+			szName, szKind,
+			xBarrier.m_uMipLevel, xBarrier.m_uMipCount,
+			xBarrier.m_uLayer, xBarrier.m_uLayerCount,
 			AccessToString(xBarrier.m_ePrevAccess),
 			AccessToString(xBarrier.m_eNewAccess),
 			xBarrier.m_bDiscard ? "(discard)" : "");

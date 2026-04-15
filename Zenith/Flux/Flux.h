@@ -22,7 +22,8 @@ struct Flux_SurfaceInfo
 
 // View structures for Direct3D-style resource views
 // Use opaque handles to abstract away Vulkan types from Flux layer
-struct Flux_ShaderResourceView {
+struct Flux_ShaderResourceView
+{
 	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 	bool m_bIsDepthStencil = false;  // True if this SRV is for a depth/stencil texture
@@ -30,52 +31,101 @@ struct Flux_ShaderResourceView {
 	u_int m_uMipCount = 1;           // Number of mip levels this SRV covers
 };
 
-struct Flux_UnorderedAccessView_Texture {
+struct Flux_UnorderedAccessView_Texture
+{
 	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 	u_int m_uMipLevel = 0;  // Mip level this UAV targets (for barrier tracking)
 };
 
-struct Flux_UnorderedAccessView_Buffer {
+struct Flux_UnorderedAccessView_Buffer
+{
 	Flux_BufferDescriptorHandle m_xBufferDescHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
-struct Flux_RenderTargetView {
+struct Flux_RenderTargetView
+{
 	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
-struct Flux_DepthStencilView {
+struct Flux_DepthStencilView
+{
 	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
-struct Flux_ConstantBufferView {
+struct Flux_ConstantBufferView
+{
 	Flux_BufferDescriptorHandle m_xBufferDescHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
-struct Flux_RenderAttachment {
+struct Flux_RenderAttachment
+{
 	Flux_SurfaceInfo m_xSurfaceInfo;
 
 	Flux_VRAMHandle m_xVRAMHandle;
 
 	std::string m_strName;
 
-	// Views for different usage patterns
-	Flux_ShaderResourceView m_pxSRV;  // For reading in shaders
-	Flux_UnorderedAccessView_Texture m_pxUAV; // For compute shader read/write
-	Flux_RenderTargetView m_pxRTV;     // For rendering (color attachments)
-	Flux_DepthStencilView m_pxDSV;     // For depth/stencil attachments
+	Flux_ShaderResourceView m_xSRV;
+	Flux_ShaderResourceView m_axMipSRVs[FLUX_MAX_MIPS];
+	Flux_UnorderedAccessView_Texture m_axUAVs[FLUX_MAX_MIPS];
+	Flux_RenderTargetView m_axRTVs[FLUX_MAX_MIPS];
+	Flux_DepthStencilView m_xDSV;
 
-	// Cubemap face RTVs (for rendering to individual cubemap faces)
-	// Only valid when m_xSurfaceInfo.m_eTextureType == TEXTURE_TYPE_CUBE
-	Flux_RenderTargetView m_axFaceRTVs[6];
+	Flux_ShaderResourceView& SRV();
+	const Flux_ShaderResourceView& SRV() const;
+	Flux_ShaderResourceView& SRV(u_int uMip);
+	const Flux_ShaderResourceView& SRV(u_int uMip) const;
+	Flux_UnorderedAccessView_Texture& UAV(u_int uMip);
+	Flux_RenderTargetView& RTV(u_int uMip = 0);
+	Flux_DepthStencilView& DSV() { return m_xDSV; }
+	const Flux_DepthStencilView& DSV() const { return m_xDSV; }
+};
 
-	// Cubemap face SRVs (for debug display of individual faces)
-	// Only valid when m_xSurfaceInfo.m_eTextureType == TEXTURE_TYPE_CUBE
-	Flux_ShaderResourceView m_axFaceSRVs[6];
+struct Flux_RenderAttachmentCube
+{
+	Flux_SurfaceInfo m_xSurfaceInfo;
+
+	Flux_VRAMHandle m_xVRAMHandle;
+
+	std::string m_strName;
+
+	Flux_ShaderResourceView m_xSRV;
+	Flux_ShaderResourceView m_axSliceSRVs[FLUX_MAX_MIPS];
+	Flux_UnorderedAccessView_Texture m_axUAVs[FLUX_MAX_MIPS];
+	// Whole-mip layered RTVs — one per mip level, each view covers all 6 cube faces
+	// as a 2D array (layerCount = 6). Useful for multi-view rendering that writes
+	// every face in one draw.
+	Flux_RenderTargetView m_axRTVs[FLUX_MAX_MIPS];
+	// Per-(mip, face) RTVs — single-layer 2D views (layerCount = 1, viewType = 2D).
+	// The render graph binds one of these per IBL face pass so the Vulkan backend
+	// can bind a single subresource as the colour attachment.
+	Flux_RenderTargetView m_aaxMipFaceRTVs[FLUX_MAX_MIPS][6];
+	Flux_DepthStencilView m_xDSV;
+
+	// Whole-cube SRV spanning every mip and all 6 layers. This is the view shaders
+	// bind for cube sampling (e.g. textureLod(prefiltered, R, roughness*MAX_LOD)).
+	Flux_ShaderResourceView& SRV();
+	const Flux_ShaderResourceView& SRV() const;
+	// Single-mip cube-slice SRV (still cube-typed, 6 layers, but restricted to one mip).
+	// Used for debug viewers that step through the roughness mip chain. No default
+	// argument — callers that want the whole-cube view must call SRV() explicitly
+	// so the per-mip vs whole-cube choice is never silently wrong.
+	Flux_ShaderResourceView& SRV(u_int uMip);
+	const Flux_ShaderResourceView& SRV(u_int uMip) const;
+	Flux_UnorderedAccessView_Texture& UAV(u_int uMip = 0);
+	// Whole-mip layered RTV (all 6 faces, viewType 2D_ARRAY). See m_axRTVs.
+	Flux_RenderTargetView& RTV(u_int uMip = 0);
+	// Per-(mip, face) single-layer 2D RTV. Used by the IBL render graph, one face
+	// at a time. See m_aaxMipFaceRTVs.
+	Flux_RenderTargetView& RTV(u_int uMip, u_int uFace);
+	const Flux_RenderTargetView& RTV(u_int uMip, u_int uFace) const;
+	Flux_DepthStencilView& DSV() { return m_xDSV; }
+	const Flux_DepthStencilView& DSV() const { return m_xDSV; }
 };
 
 struct Flux_Texture
@@ -96,6 +146,121 @@ struct Flux_Buffer
 	u_int64 m_ulSize = 0;
 };
 
+// ---- Render graph resource tagging --------------------------------------
+// Defined in Flux.h (not Flux_RenderGraph.h) so that Flux_CommandListEntry
+// can embed a Flux_RenderGraph_AttachmentRef carrier without introducing
+// a circular dependency between Flux.h and the render graph header.
+
+enum class Flux_GraphResourceKind : u_int
+{
+	Image,
+	ImageCube,
+	Buffer,
+};
+
+// Tagged-pointer wrapper so the render graph can uniformly track 2D images,
+// cubemap images, and buffers. Hashing/equality is pointer-based (plus kind,
+// to avoid the theoretical cross-kind pointer alias).
+class Flux_GraphResource
+{
+public:
+	Flux_GraphResource() = default;
+	Flux_GraphResource(Flux_RenderAttachment& xImage) : m_eKind(Flux_GraphResourceKind::Image), m_pxImage(&xImage) {}
+	Flux_GraphResource(Flux_RenderAttachmentCube& xImageCube) : m_eKind(Flux_GraphResourceKind::ImageCube), m_pxImageCube(&xImageCube) {}
+	Flux_GraphResource(Flux_Buffer& xBuffer) : m_eKind(Flux_GraphResourceKind::Buffer), m_pxBuffer(&xBuffer) {}
+
+	Flux_GraphResourceKind GetKind() const { return m_eKind; }
+	bool IsImageLike() const { return m_eKind == Flux_GraphResourceKind::Image || m_eKind == Flux_GraphResourceKind::ImageCube; }
+	bool IsValid() const { return m_pxImage != nullptr; } // any union member aliases the same bytes
+
+	Flux_RenderAttachment* AsImage() const
+	{
+		Zenith_Assert(m_eKind == Flux_GraphResourceKind::Image, "Flux_GraphResource: called AsImage() on non-Image kind");
+		return m_pxImage;
+	}
+
+	Flux_RenderAttachmentCube* AsImageCube() const
+	{
+		Zenith_Assert(m_eKind == Flux_GraphResourceKind::ImageCube, "Flux_GraphResource: called AsImageCube() on non-ImageCube kind");
+		return m_pxImageCube;
+	}
+
+	Flux_Buffer* AsBuffer() const
+	{
+		Zenith_Assert(m_eKind == Flux_GraphResourceKind::Buffer, "Flux_GraphResource: called AsBuffer() on non-Buffer kind");
+		return m_pxBuffer;
+	}
+
+	Flux_VRAMHandle GetVRAMHandle() const
+	{
+		Zenith_Assert(IsImageLike(), "Flux_GraphResource::GetVRAMHandle: only valid for image kinds");
+		return m_eKind == Flux_GraphResourceKind::Image ? m_pxImage->m_xVRAMHandle : m_pxImageCube->m_xVRAMHandle;
+	}
+
+	const Flux_SurfaceInfo& GetSurfaceInfo() const
+	{
+		Zenith_Assert(IsImageLike(), "Flux_GraphResource::GetSurfaceInfo: only valid for image kinds");
+		return m_eKind == Flux_GraphResourceKind::Image ? m_pxImage->m_xSurfaceInfo : m_pxImageCube->m_xSurfaceInfo;
+	}
+
+	const std::string& GetName() const
+	{
+		static const std::string s_strBufferName = "<buffer>";
+		if (m_eKind == Flux_GraphResourceKind::Image)     return m_pxImage->m_strName;
+		if (m_eKind == Flux_GraphResourceKind::ImageCube) return m_pxImageCube->m_strName;
+		return s_strBufferName;
+	}
+
+	void* GetVoidPtr() const
+	{
+		switch (m_eKind)
+		{
+			case Flux_GraphResourceKind::Image:     return static_cast<void*>(m_pxImage);
+			case Flux_GraphResourceKind::ImageCube: return static_cast<void*>(m_pxImageCube);
+			case Flux_GraphResourceKind::Buffer:    return static_cast<void*>(m_pxBuffer);
+		}
+		return nullptr;
+	}
+
+	u_int64 GetHash() const
+	{
+		// Mix the kind into the top byte so two kinds whose pointers alias
+		// (extremely unlikely but theoretically possible) hash separately.
+		return reinterpret_cast<u_int64>(GetVoidPtr()) ^ (static_cast<u_int64>(m_eKind) << 56);
+	}
+
+	bool operator==(const Flux_GraphResource& rhs) const
+	{
+		return m_eKind == rhs.m_eKind && GetVoidPtr() == rhs.GetVoidPtr();
+	}
+	bool operator!=(const Flux_GraphResource& rhs) const { return !(*this == rhs); }
+
+private:
+	Flux_GraphResourceKind m_eKind = Flux_GraphResourceKind::Image;
+	union
+	{
+		Flux_RenderAttachment*     m_pxImage = nullptr;
+		Flux_RenderAttachmentCube* m_pxImageCube;
+		Flux_Buffer*               m_pxBuffer;
+	};
+};
+
+// Carrier used by pass metadata and Flux_CommandListEntry to identify which
+// single subresource of an attachment gets bound as a render target for this
+// pass. For 2D attachments, m_uLayer is always 0.
+struct Flux_RenderGraph_AttachmentRef
+{
+	Flux_GraphResource m_xResource;
+	uint16_t m_uMip = 0;
+	uint16_t m_uLayer = 0;
+
+	Flux_RenderGraph_AttachmentRef() = default;
+	Flux_RenderGraph_AttachmentRef(const Flux_GraphResource& xRes, u_int uMip = 0, u_int uLayer = 0)
+		: m_xResource(xRes), m_uMip(static_cast<uint16_t>(uMip)), m_uLayer(static_cast<uint16_t>(uLayer)) {}
+
+	bool IsValid() const { return m_xResource.IsValid(); }
+};
+
 
 class Flux_RenderAttachmentBuilder {
 public:
@@ -110,56 +275,31 @@ public:
 	uint32_t m_uNumMips = 1;  // Number of mip levels (for cubemaps with roughness mips)
 
 	void BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName);
-	void BuildColourCubemap(Flux_RenderAttachment& xAttachment, const std::string& strName);
+	void BuildColourCubemap(Flux_RenderAttachmentCube& xAttachment, const std::string& strName);
 	void BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string& strName);
-};
 
-struct Flux_TargetSetup {
-	Flux_RenderAttachment m_axColourAttachments[FLUX_MAX_TARGETS];
-
-	//#TO not owned by this
-	Flux_RenderAttachment* m_pxDepthStencil = nullptr;
-
-	std::string m_strName;
-
-	void AssignDepthStencil(Flux_RenderAttachment* pxDS);
-
-	uint32_t GetNumColourAttachments() const;
-
-	bool operator==(const Flux_TargetSetup& xOther) const
-	{
-		for (u_int u = 0; u < FLUX_MAX_TARGETS; u++)
-		{
-			if (m_axColourAttachments[u].m_xVRAMHandle.AsUInt() != xOther.m_axColourAttachments[u].m_xVRAMHandle.AsUInt())
-			{
-				return false;
-			}
-			// Also compare RTV handles to distinguish cubemap faces (same VRAM, different layer views)
-			if (m_axColourAttachments[u].m_pxRTV.m_xImageViewHandle.AsUInt() != xOther.m_axColourAttachments[u].m_pxRTV.m_xImageViewHandle.AsUInt())
-			{
-				return false;
-			}
-		}
-		return m_pxDepthStencil == xOther.m_pxDepthStencil;
-	}
-
-	bool operator!=(const Flux_TargetSetup& xOther) const
-	{
-		return !(*this == xOther);
-	}
+	// Queue the attachment's VRAM and every owned image view for deferred GPU-safe
+	// deletion and reset the attachment to a default-constructed state. Safe to
+	// call on an already-cleared attachment (no-op). The Build* methods above use
+	// these internally to make rebuild-on-resize idempotent; external callers
+	// (e.g. subsystem Shutdown() methods) should use these instead of hand-rolling
+	// QueueVRAMDeletion / QueueImageViewDeletion loops — missing a view in a hand-
+	// rolled teardown silently leaks GPU memory.
+	static void Destroy(Flux_RenderAttachment& xAttachment);
+	static void Destroy(Flux_RenderAttachmentCube& xAttachment);
 };
 
 struct Flux_RenderGraph_Pass;
 
-// Entry for a command list submitted by the render graph. All fields are
-// non-owning pointers into graph-owned storage — lifetimes span a single frame.
 struct Flux_CommandListEntry
 {
 	const Flux_CommandList* m_pxCmdList = nullptr;
-	const Flux_TargetSetup* m_pxTargetSetup = nullptr;
-	const Flux_RenderGraph_Pass* m_pxPass = nullptr;  // Carries precomputed prologue barriers
-	bool m_bClearTargets = false;                     // Single source of truth for clear
-	bool m_bDepthIsReadOnly = false;                  // Pass declares depth as a read attachment (no writes)
+	Flux_RenderGraph_AttachmentRef m_axColourAttachments[FLUX_MAX_TARGETS];
+	uint32_t m_uNumColourAttachments = 0;
+	Flux_RenderGraph_AttachmentRef m_xDepthStencil;
+	const Flux_RenderGraph_Pass* m_pxPass = nullptr;
+	bool m_bClearTargets = false;
+	bool m_bDepthIsReadOnly = false;
 };
 
 // Work distribution indices for parallel Vulkan command buffer recording
@@ -197,7 +337,9 @@ public:
 	// Flux_RenderGraph::Execute Phase 2, sequentially on the main thread —
 	// the source pass pointer carries the precomputed barriers the platform
 	// layer consumes via ConsumeGraphPrologueBarriers. No bypass path exists.
-	static void SubmitCommandList(const Flux_CommandList* pxCmdList, const Flux_TargetSetup& xTargetSetup,
+	static void SubmitCommandList(const Flux_CommandList* pxCmdList,
+		const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour,
+		const Flux_RenderGraph_AttachmentRef& xDepthStencil,
 		bool bClearTargets, bool bDepthIsReadOnly, const Flux_RenderGraph_Pass* pxPass)
 	{
 		Zenith_Assert(pxCmdList != nullptr, "SubmitCommandList: Command list is null");
@@ -205,7 +347,9 @@ public:
 		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SubmitCommandList: must be called from the main thread (Flux_RenderGraph::Execute Phase 2)");
 		Flux_CommandListEntry xEntry;
 		xEntry.m_pxCmdList = pxCmdList;
-		xEntry.m_pxTargetSetup = &xTargetSetup;
+		for (uint32_t i = 0; i < uNumColour; i++) xEntry.m_axColourAttachments[i] = axColourAttachments[i];
+		xEntry.m_uNumColourAttachments = uNumColour;
+		xEntry.m_xDepthStencil = xDepthStencil;
 		xEntry.m_pxPass = pxPass;
 		xEntry.m_bClearTargets = bClearTargets;
 		xEntry.m_bDepthIsReadOnly = bDepthIsReadOnly;
@@ -257,7 +401,7 @@ struct Flux_PipelineSpecification
 	bool m_bDepthTestEnabled = true;
 	bool m_bDepthWriteEnabled = true;
 	DepthCompareFunc m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
-	TextureFormat m_eDepthStencilFormat;
+	TextureFormat m_eDepthStencilFormat = TEXTURE_FORMAT_NONE;
 	bool m_bUsePushConstants = true;
 	bool m_bUseTesselation = false;
 
@@ -265,11 +409,12 @@ struct Flux_PipelineSpecification
 
 	Flux_VertexInputDescription m_xVertexInputDesc;
 
-	struct Flux_TargetSetup* m_pxTargetSetup;
+	TextureFormat m_aeColourAttachmentFormats[FLUX_MAX_TARGETS] = {};
+	uint32_t m_uNumColourAttachments = 0;
 	LoadAction m_eColourLoadAction;
-	StoreAction m_eColourStoreAction;
+	LoadAction m_eColourStoreAction;
 	LoadAction m_eDepthStencilLoadAction;
-	StoreAction m_eDepthStencilStoreAction;
+	LoadAction m_eDepthStencilStoreAction;
 	bool m_bWireframe = false;
 
 	CullMode m_eCullMode = CULL_MODE_NONE;  // No culling by default (matches previous hardcoded behavior)
@@ -294,7 +439,8 @@ public:
 		Flux_Shader& xShader,
 		Flux_Pipeline& xPipeline,
 		const char* szFragShader,
-		Flux_TargetSetup* pxTargetSetup,
+		TextureFormat eColourFormat,
+		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE,
 		const char* szVertShader = "Flux_Fullscreen_UV.vert");
 
 	// Creates a pre-populated fullscreen spec without building.
@@ -302,6 +448,7 @@ public:
 	static Flux_PipelineSpecification CreateFullscreenSpec(
 		Flux_Shader& xShader,
 		const char* szFragShader,
-		Flux_TargetSetup* pxTargetSetup,
+		TextureFormat eColourFormat,
+		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE,
 		const char* szVertShader = "Flux_Fullscreen_UV.vert");
 };

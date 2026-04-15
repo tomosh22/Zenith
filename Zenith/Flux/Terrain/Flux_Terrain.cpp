@@ -109,7 +109,11 @@ void Flux_Terrain::Initialise()
 	{
 
 		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_DIFFUSE].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
 		xPipelineSpec.m_pxShader = &s_xTerrainGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -166,7 +170,11 @@ void Flux_Terrain::Initialise()
 
 	{
 		Flux_PipelineSpecification xShadowPipelineSpec;
-		xShadowPipelineSpec.m_pxTargetSetup = &Flux_Shadows::GetCSMTargetSetup(0);
+		uint32_t uNumColour;
+		Flux_RenderAttachment* pxDepthStencil;
+		Flux_Shadows::GetCSMTargetSetup(0, uNumColour, pxDepthStencil);
+		xShadowPipelineSpec.m_eDepthStencilFormat = pxDepthStencil->m_xSurfaceInfo.m_eFormat;
+		xShadowPipelineSpec.m_uNumColourAttachments = 0;
 		xShadowPipelineSpec.m_pxShader = &s_xTerrainShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -189,7 +197,9 @@ void Flux_Terrain::Initialise()
 		xWaterVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget;
+		xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_Graphics::s_xFinalRenderTarget.m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_uNumColourAttachments = 1;
+		xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
 		xPipelineSpec.m_pxShader = &s_xWaterShader;
 		xPipelineSpec.m_xVertexInputDesc = xWaterVertexDesc;
 
@@ -266,17 +276,12 @@ void Flux_Terrain::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// GBuffer pass via DrawIndexedIndirectCount, so we encode that ordering as
 	// an explicit edge below.
 	u_int uCullingPass = xGraph.AddPass("Terrain Culling Compute", ExecuteCulling);
-	xGraph.SetTargetSetup(uCullingPass, Flux_Graphics::s_xNullTargetSetup);
 
 	// Pass 2: Terrain GBuffer render
-	u_int uGBufferPass = xGraph.AddPass("Terrain GBuffer", ExecuteGBuffer);
-	xGraph.SetTargetSetup(uGBufferPass, Flux_Graphics::s_xMRTTarget);
-
-	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
-	{
-		xGraph.Write(uGBufferPass, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
-	}
-	xGraph.Write(uGBufferPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+	uint32_t uGBufferPass = xGraph.AddPass("Terrain GBuffer", ExecuteGBuffer);
+	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[1], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[2], RESOURCE_ACCESS_WRITE_RTV);
 
 	// GBuffer must run after Culling — explicit edge stands in for the
 	// untracked indirect-draw buffer dependency.

@@ -30,11 +30,8 @@ static Flux_Shader s_xBloomUpsampleShader;
 
 // Static member definitions
 Flux_RenderAttachment Flux_HDR::s_xHDRSceneTarget;
-Flux_TargetSetup Flux_HDR::s_xHDRSceneTargetSetup;
-Flux_TargetSetup Flux_HDR::s_xHDRSceneTargetSetupWithDepth;
 
 Flux_RenderAttachment Flux_HDR::s_axBloomChain[5];
-Flux_TargetSetup Flux_HDR::s_axBloomChainSetup[5];
 
 Flux_Pipeline Flux_HDR::s_xToneMappingPipeline;
 Flux_Pipeline Flux_HDR::s_xBloomDownsamplePipeline;
@@ -176,7 +173,7 @@ void Flux_HDR::Initialise()
 	// Initialize tone mapping shader and pipeline
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xToneMappingShader, s_xToneMappingPipeline,
-		"HDR/Flux_ToneMapping.frag", &Flux_Graphics::s_xFinalRenderTarget_NoDepth);
+		"HDR/Flux_ToneMapping.frag", Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_xSurfaceInfo.m_eFormat);
 
 	// Cache binding handles from reflection and validate
 	const Flux_ShaderReflection& xToneMappingReflection = s_xToneMappingShader.GetReflection();
@@ -201,7 +198,7 @@ void Flux_HDR::Initialise()
 	// Initialize bloom threshold shader and pipeline
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xBloomThresholdShader, s_xBloomThresholdPipeline,
-		"HDR/Flux_BloomThreshold.frag", &s_axBloomChainSetup[0]);
+		"HDR/Flux_BloomThreshold.frag", s_axBloomChain[0].m_xSurfaceInfo.m_eFormat);
 
 	// Cache binding handles from reflection and validate
 	const Flux_ShaderReflection& xThresholdReflection = s_xBloomThresholdShader.GetReflection();
@@ -216,7 +213,7 @@ void Flux_HDR::Initialise()
 	// Initialize bloom downsample shader and pipeline
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xBloomDownsampleShader, s_xBloomDownsamplePipeline,
-		"HDR/Flux_BloomDownsample.frag", &s_axBloomChainSetup[1]);
+		"HDR/Flux_BloomDownsample.frag", s_axBloomChain[1].m_xSurfaceInfo.m_eFormat);
 
 	// Cache binding handles from reflection and validate
 	const Flux_ShaderReflection& xDownsampleReflection = s_xBloomDownsampleShader.GetReflection();
@@ -231,7 +228,7 @@ void Flux_HDR::Initialise()
 	// Initialize bloom upsample shader and pipeline (additive blending)
 	{
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			s_xBloomUpsampleShader, "HDR/Flux_BloomUpsample.frag", &s_axBloomChainSetup[0]);
+			s_xBloomUpsampleShader, "HDR/Flux_BloomUpsample.frag", s_axBloomChain[0].m_xSurfaceInfo.m_eFormat);
 		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
@@ -311,12 +308,6 @@ void Flux_HDR::CreateRenderTargets()
 	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 
 	xBuilder.BuildColour(s_xHDRSceneTarget, "Flux HDR Scene Target");
-	s_xHDRSceneTargetSetup.m_axColourAttachments[0] = s_xHDRSceneTarget;
-	s_xHDRSceneTargetSetup.m_pxDepthStencil = nullptr;  // Explicitly ensure no depth attachment
-
-	// Set up target with depth (for passes like particles/SDFs that need depth testing)
-	s_xHDRSceneTargetSetupWithDepth.m_axColourAttachments[0] = s_xHDRSceneTarget;
-	s_xHDRSceneTargetSetupWithDepth.AssignDepthStencil(&Flux_Graphics::s_xDepthBuffer);
 
 	u_int uBloomWidth = Flux_Swapchain::GetWidth() / 2;
 	u_int uBloomHeight = Flux_Swapchain::GetHeight() / 2;
@@ -326,8 +317,6 @@ void Flux_HDR::CreateRenderTargets()
 		xBuilder.m_uWidth = uBloomWidth;
 		xBuilder.m_uHeight = uBloomHeight;
 		xBuilder.BuildColour(s_axBloomChain[i], "Flux Bloom Chain " + std::to_string(i));
-		s_axBloomChainSetup[i].m_axColourAttachments[0] = s_axBloomChain[i];
-		s_axBloomChainSetup[i].m_pxDepthStencil = nullptr;  // Explicitly no depth for bloom passes
 
 		uBloomWidth = std::max(1u, uBloomWidth / 2);
 		uBloomHeight = std::max(1u, uBloomHeight / 2);
@@ -342,8 +331,8 @@ void Flux_HDR::DestroyRenderTargets()
 		{
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
 			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
-				xAttachment.m_pxRTV.m_xImageViewHandle, xAttachment.m_pxDSV.m_xImageViewHandle,
-				xAttachment.m_pxSRV.m_xImageViewHandle, xAttachment.m_pxUAV.m_xImageViewHandle);
+				xAttachment.RTV().m_xImageViewHandle, xAttachment.DSV().m_xImageViewHandle,
+				xAttachment.SRV().m_xImageViewHandle, xAttachment.UAV(0).m_xImageViewHandle);
 		}
 	};
 
@@ -476,7 +465,7 @@ void Flux_HDR::ExecuteLuminanceHistogram(Flux_CommandList* pxCommandList, void* 
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.PushConstant(s_xLuminanceConstantsBinding, &xConsts, sizeof(xConsts));
-	xBinder.BindSRV(s_xLuminanceHDRTexBinding, &s_xHDRSceneTarget.m_pxSRV);
+	xBinder.BindSRV(s_xLuminanceHDRTexBinding, &s_xHDRSceneTarget.SRV());
 	xBinder.BindUAV_Buffer(s_xLuminanceHistogramBinding, &s_xHistogramBuffer.GetUAV());
 
 	u_int uGroupsX = (Flux_Swapchain::GetWidth() + 15) / 16;
@@ -603,7 +592,7 @@ void Flux_HDR::ExecuteBloomThreshold(Flux_CommandList* pxCommandList, void* pUse
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(s_xBloomThresholdHDRTexBinding, &s_xHDRSceneTarget.m_pxSRV);
+	xBinder.BindSRV(s_xBloomThresholdHDRTexBinding, &s_xHDRSceneTarget.SRV());
 	xBinder.PushConstant(s_xBloomThresholdConstantsBinding, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -623,7 +612,7 @@ void Flux_HDR::ExecuteBloomDownsample(Flux_CommandList* pxCommandList, void* pUs
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(s_xBloomDownsampleSourceBinding, &s_axBloomChain[uMipIndex - 1].m_pxSRV);
+	xBinder.BindSRV(s_xBloomDownsampleSourceBinding, &s_axBloomChain[uMipIndex - 1].SRV());
 	xBinder.PushConstant(s_xBloomDownsampleConstantsBinding, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -645,7 +634,7 @@ void Flux_HDR::ExecuteBloomUpsample(Flux_CommandList* pxCommandList, void* pUser
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(s_xBloomUpsampleSourceBinding, &s_axBloomChain[uSourceMip].m_pxSRV);
+	xBinder.BindSRV(s_xBloomUpsampleSourceBinding, &s_axBloomChain[uSourceMip].SRV());
 	xBinder.PushConstant(s_xBloomUpsampleConstantsBinding, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -670,8 +659,8 @@ void Flux_HDR::ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserDa
 
 	{
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindSRV(s_xToneMappingHDRTexBinding, &s_xHDRSceneTarget.m_pxSRV);
-		xBinder.BindSRV(s_xToneMappingBloomTexBinding, &s_axBloomChain[0].m_pxSRV);
+	xBinder.BindSRV(s_xToneMappingHDRTexBinding, &s_xHDRSceneTarget.SRV());
+	xBinder.BindSRV(s_xToneMappingBloomTexBinding, &s_axBloomChain[0].SRV());
 		xBinder.BindUAV_Buffer(s_xToneMappingHistogramBinding, &s_xHistogramBuffer.GetUAV());
 		xBinder.BindUAV_Buffer(s_xToneMappingExposureBinding, &s_xExposureBuffer.GetUAV());
 		xBinder.PushConstant(s_xToneMappingConstantsBinding, &xConsts, sizeof(ToneMappingConstants));
@@ -691,7 +680,6 @@ void Flux_HDR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	u_int uHistogramPass = UINT32_MAX;
 	{
 		uHistogramPass = xGraph.AddPass("HDR_LuminanceHistogram", ExecuteLuminanceHistogram);
-		xGraph.SetTargetSetup(uHistogramPass, Flux_Graphics::s_xNullTargetSetup);
 		xGraph.SetPrepare(uHistogramPass, PreExecuteLuminanceHistogram);
 		xGraph.Read(uHistogramPass, s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
 		xGraph.WriteBuffer(uHistogramPass, s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
@@ -699,14 +687,12 @@ void Flux_HDR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	{
 		u_int uPass = xGraph.AddPass("HDR_Adaptation", ExecuteAdaptation);
-		xGraph.SetTargetSetup(uPass, Flux_Graphics::s_xNullTargetSetup);
 		xGraph.ReadBuffer(uPass, s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_READ_SRV);
 		xGraph.WriteBuffer(uPass, s_xExposureBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
 	}
 
 	{
 		u_int uPass = xGraph.AddPass("HDR_BloomThreshold", ExecuteBloomThreshold);
-		xGraph.SetTargetSetup(uPass, s_axBloomChainSetup[0]);
 		xGraph.SetClear(uPass, true);
 		xGraph.Read(uPass, s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
 		xGraph.Write(uPass, s_axBloomChain[0], RESOURCE_ACCESS_WRITE_RTV);
@@ -715,7 +701,6 @@ void Flux_HDR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	for (u_int i = 1; i < 5; i++)
 	{
 		u_int uPass = xGraph.AddPass("HDR_BloomDownsample", ExecuteBloomDownsample, &s_axBloomMipUserData[i]);
-		xGraph.SetTargetSetup(uPass, s_axBloomChainSetup[i]);
 		xGraph.SetClear(uPass, true);
 		xGraph.Read(uPass, s_axBloomChain[i - 1], RESOURCE_ACCESS_READ_SRV);
 		xGraph.Write(uPass, s_axBloomChain[i], RESOURCE_ACCESS_WRITE_RTV);
@@ -727,24 +712,22 @@ void Flux_HDR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		u_int uSourceMip = uTargetMip + 1;
 
 		u_int uPass = xGraph.AddPass("HDR_BloomUpsample", ExecuteBloomUpsample, &s_axBloomUpsampleUserData[i]);
-		xGraph.SetTargetSetup(uPass, s_axBloomChainSetup[uTargetMip]);
 		xGraph.Read(uPass, s_axBloomChain[uSourceMip], RESOURCE_ACCESS_READ_SRV);
 		xGraph.Write(uPass, s_axBloomChain[uTargetMip], RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	{
 		u_int uPass = xGraph.AddPass("HDR_ToneMapping", ExecuteToneMapping);
-		xGraph.SetTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth);
 		xGraph.SetClear(uPass, true);
 		xGraph.Read(uPass, s_xHDRSceneTarget, RESOURCE_ACCESS_READ_SRV);
 		xGraph.Read(uPass, s_axBloomChain[0], RESOURCE_ACCESS_READ_SRV);
-		xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RESOURCE_ACCESS_WRITE_RTV);
 	}
 }
 
 Flux_ShaderResourceView& Flux_HDR::GetHDRSceneSRV()
 {
-	return s_xHDRSceneTarget.m_pxSRV;
+	return s_xHDRSceneTarget.SRV();
 }
 
 Flux_RenderAttachment& Flux_HDR::GetHDRSceneTarget()
@@ -752,14 +735,18 @@ Flux_RenderAttachment& Flux_HDR::GetHDRSceneTarget()
 	return s_xHDRSceneTarget;
 }
 
-Flux_TargetSetup& Flux_HDR::GetHDRSceneTargetSetup()
+void Flux_HDR::GetHDRSceneTargetSetup(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil)
 {
-	return s_xHDRSceneTargetSetup;
+	apxColourAttachments[0] = &s_xHDRSceneTarget;
+	uNumColour = 1;
+	pxDepthStencil = nullptr;
 }
 
-Flux_TargetSetup& Flux_HDR::GetHDRSceneTargetSetupWithDepth()
+void Flux_HDR::GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil)
 {
-	return s_xHDRSceneTargetSetupWithDepth;
+	apxColourAttachments[0] = &s_xHDRSceneTarget;
+	uNumColour = 1;
+	pxDepthStencil = &Flux_Graphics::s_xDepthBuffer;
 }
 
 void Flux_HDR::SetToneMappingOperator(ToneMappingOperator eOperator)
@@ -863,9 +850,9 @@ void Flux_HDR::RegisterDebugVariables()
 	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "MinExposure" }, dbg_fHDRMinExposure, 0.01f, 1.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "MaxExposure" }, dbg_fHDRMaxExposure, 1.0f, 20.0f);
 
-	Zenith_DebugVariables::AddTexture({ "Flux", "HDR", "Textures", "HDRScene" }, s_xHDRSceneTarget.m_pxSRV);
-	Zenith_DebugVariables::AddTexture({ "Flux", "HDR", "Textures", "BloomMip0" }, s_axBloomChain[0].m_pxSRV);
-	Zenith_DebugVariables::AddTexture({ "Flux", "HDR", "Textures", "BloomMip1" }, s_axBloomChain[1].m_pxSRV);
-	Zenith_DebugVariables::AddTexture({ "Flux", "HDR", "Textures", "BloomMip2" }, s_axBloomChain[2].m_pxSRV);
+	Zenith_DebugVariables::AddTexture({ "Flux", "HDR", "Textures", "HDRScene" }, s_xHDRSceneTarget.SRV());
+	Zenith_DebugVariables::AddTexture({ "Flux", "HDR", "Textures", "BloomMip0" }, s_axBloomChain[0].SRV());
+	Zenith_DebugVariables::AddTexture({ "Flux", "HDR", "Textures", "BloomMip1" }, s_axBloomChain[1].SRV());
+	Zenith_DebugVariables::AddTexture({ "Flux", "HDR", "Textures", "BloomMip2" }, s_axBloomChain[2].SRV());
 }
 #endif

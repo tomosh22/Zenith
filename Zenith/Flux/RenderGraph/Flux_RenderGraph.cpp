@@ -18,13 +18,14 @@ Flux_RenderGraph_Pass* Flux_RenderGraph::GetPass(u_int uIdx) const
     return m_xPasses.Get(uIdx);
 }
 
-void Flux_RenderGraph::TrackResource(void* pRes, const char* szName)
+void Flux_RenderGraph::TrackResource(const Flux_GraphResource& xResource)
 {
+    void* pRes = xResource.GetVoidPtr();
+    Zenith_Assert(pRes != nullptr, "Flux_RenderGraph::TrackResource: null resource");
     if (m_xResources.find(pRes) == m_xResources.end())
     {
         Flux_RenderGraph_Resource xRes;
-        xRes.m_xResource = Flux_GraphResource();
-        xRes.m_strName = szName;
+        xRes.m_xResource = xResource;
         xRes.m_uFirstWrite = UINT32_MAX;
         xRes.m_uLastRead = UINT32_MAX;
         m_xResources[pRes] = xRes;
@@ -44,30 +45,21 @@ u_int Flux_RenderGraph::AddPass(const char* szName, Flux_RenderGraph_OnRecordFun
     return m_xPasses.GetSize() - 1;
 }
 
-void Flux_RenderGraph::AddResourceUsage(u_int uPassIndex, Flux_RenderAttachment& xImage, ResourceAccess eAccess, u_int uMip, u_int uMipCount, bool bWrite)
+void Flux_RenderGraph::AddResourceUsage(u_int uPassIndex, const Flux_GraphResource& xResource, ResourceAccess eAccess,
+                                        u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount, bool bWrite)
 {
     AssertMutable(bWrite ? "Write" : "Read");
     Zenith_Assert(uPassIndex < m_xPasses.GetSize(), "Flux_RenderGraph: invalid pass index %u", uPassIndex);
     Zenith_Assert(uMipCount > 0, "Flux_RenderGraph: mip count must be > 0");
-    TrackResource(&xImage, xImage.m_strName.empty() ? "<unnamed>" : xImage.m_strName.c_str());
+    Zenith_Assert(uLayerCount > 0, "Flux_RenderGraph: layer count must be > 0");
+    TrackResource(xResource);
     Flux_RenderGraph_ResourceUsage xUsage;
-    xUsage.m_xResource = Flux_GraphResource(xImage);
+    xUsage.m_xResource = xResource;
     xUsage.m_eAccess = eAccess;
     xUsage.m_uMipLevel = uMip;
     xUsage.m_uMipCount = uMipCount;
-    Flux_RenderGraph_Pass* pxPass = GetPass(uPassIndex);
-    if (bWrite) pxPass->m_xWrites.PushBack(xUsage);
-    else pxPass->m_xReads.PushBack(xUsage);
-}
-
-void Flux_RenderGraph::AddBufferUsage(u_int uPassIndex, Flux_Buffer& xBuffer, ResourceAccess eAccess, bool bWrite)
-{
-    AssertMutable(bWrite ? "WriteBuffer" : "ReadBuffer");
-    Zenith_Assert(uPassIndex < m_xPasses.GetSize(), "Flux_RenderGraph: invalid pass index %u", uPassIndex);
-    TrackResource(&xBuffer, "<buffer>");
-    Flux_RenderGraph_ResourceUsage xUsage;
-    xUsage.m_xResource = Flux_GraphResource(xBuffer);
-    xUsage.m_eAccess = eAccess;
+    xUsage.m_uLayer = uLayer;
+    xUsage.m_uLayerCount = uLayerCount;
     Flux_RenderGraph_Pass* pxPass = GetPass(uPassIndex);
     if (bWrite) pxPass->m_xWrites.PushBack(xUsage);
     else pxPass->m_xReads.PushBack(xUsage);
@@ -75,22 +67,34 @@ void Flux_RenderGraph::AddBufferUsage(u_int uPassIndex, Flux_Buffer& xBuffer, Re
 
 void Flux_RenderGraph::Read(u_int uPassIndex, Flux_RenderAttachment& xImage, ResourceAccess eAccess, u_int uMip, u_int uMipCount)
 {
-    AddResourceUsage(uPassIndex, xImage, eAccess, uMip, uMipCount, false);
+    AddResourceUsage(uPassIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, 0, 1, false);
 }
 
 void Flux_RenderGraph::Write(u_int uPassIndex, Flux_RenderAttachment& xImage, ResourceAccess eAccess, u_int uMip, u_int uMipCount)
 {
-    AddResourceUsage(uPassIndex, xImage, eAccess, uMip, uMipCount, true);
+    AddResourceUsage(uPassIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, 0, 1, true);
+}
+
+void Flux_RenderGraph::Read(u_int uPassIndex, Flux_RenderAttachmentCube& xImage, ResourceAccess eAccess,
+                            u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount)
+{
+    AddResourceUsage(uPassIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, uLayer, uLayerCount, false);
+}
+
+void Flux_RenderGraph::Write(u_int uPassIndex, Flux_RenderAttachmentCube& xImage, ResourceAccess eAccess,
+                             u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount)
+{
+    AddResourceUsage(uPassIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, uLayer, uLayerCount, true);
 }
 
 void Flux_RenderGraph::ReadBuffer(u_int uPassIndex, Flux_Buffer& xBuffer, ResourceAccess eAccess)
 {
-    AddBufferUsage(uPassIndex, xBuffer, eAccess, false);
+    AddResourceUsage(uPassIndex, Flux_GraphResource(xBuffer), eAccess, 0, 1, 0, 1, false);
 }
 
 void Flux_RenderGraph::WriteBuffer(u_int uPassIndex, Flux_Buffer& xBuffer, ResourceAccess eAccess)
 {
-    AddBufferUsage(uPassIndex, xBuffer, eAccess, true);
+    AddResourceUsage(uPassIndex, Flux_GraphResource(xBuffer), eAccess, 0, 1, 0, 1, true);
 }
 
 void Flux_RenderGraph::DependsOn(u_int uDependentPass, u_int uDependencyPass)
@@ -108,25 +112,18 @@ void Flux_RenderGraph::SetEnabled(u_int uPassIndex, bool bEnabled)
     if (pxPass->m_bEnabled != bEnabled) { pxPass->m_bEnabled = bEnabled; m_bEnabledMaskDirty = true; }
 }
 
-void Flux_RenderGraph::SetTargetSetup(u_int uPassIndex, const Flux_TargetSetup& xTargetSetup)
+void Flux_RenderGraph::SetClear(u_int uPassIndex, bool bClearTargets)
 {
-    AssertMutable("SetTargetSetup");
-    Zenith_Assert(uPassIndex < m_xPasses.GetSize(), "Flux_RenderGraph: SetTargetSetup: invalid pass index %u", uPassIndex);
-    GetPass(uPassIndex)->m_pxTargetSetup = &xTargetSetup;
+    AssertMutable("SetClear");
+    Zenith_Assert(uPassIndex < m_xPasses.GetSize(), "Flux_RenderGraph::SetClear: invalid pass index %u", uPassIndex);
+    GetPass(uPassIndex)->m_bRequestsClear = bClearTargets;
 }
 
 void Flux_RenderGraph::SetPrepare(u_int uPassIndex, Flux_RenderGraph_OnPrepareFunc pfnOnPrepare)
 {
     AssertMutable("SetPrepare");
-    Zenith_Assert(uPassIndex < m_xPasses.GetSize(), "Flux_RenderGraph: SetPrepare: invalid pass index %u", uPassIndex);
+    Zenith_Assert(uPassIndex < m_xPasses.GetSize(), "Flux_RenderGraph::SetPrepare: invalid pass index %u", uPassIndex);
     GetPass(uPassIndex)->m_pfnOnPrepare = pfnOnPrepare;
-}
-
-void Flux_RenderGraph::SetClear(u_int uPassIndex, bool bClearTargets)
-{
-    AssertMutable("SetClear");
-    Zenith_Assert(uPassIndex < m_xPasses.GetSize(), "Flux_RenderGraph: SetClear: invalid pass index %u", uPassIndex);
-    GetPass(uPassIndex)->m_bRequestsClear = bClearTargets;
 }
 
 void Flux_RenderGraph::MarkDirty() { m_bDirty = true; }
@@ -138,8 +135,8 @@ void Flux_RenderGraph::Clear()
     m_xResources.clear();
     m_xTraffic.clear();
     m_xBarrierState.clear();
-    m_xSetupNeedsClear.clear();
-    m_xSetupClearAssigned.clear();
+    m_xAttachmentNeedsClear.clear();
+    m_xAttachmentClearAssigned.clear();
     m_xEdgeSet.clear();
     m_xAdjacency.Clear();
     m_xInDegree.Clear();
@@ -180,7 +177,7 @@ void Flux_RenderGraph::Validate() const
         if (xPair.second.m_xReaders.GetSize() > 0 && xPair.second.m_xWriters.GetSize() == 0)
         {
             auto it = m_xResources.find(xPair.first);
-            const char* sz = (it != m_xResources.end()) ? it->second.m_strName.c_str() : "<unknown>";
+            const char* sz = (it != m_xResources.end()) ? it->second.m_xResource.GetName().c_str() : "<unknown>";
             Zenith_Assert(false, "Flux_RenderGraph: resource '%s' read but never written", sz);
         }
     }
@@ -188,7 +185,7 @@ void Flux_RenderGraph::Validate() const
     {
         Flux_RenderGraph_Pass* pxP = m_xPasses.Get(i);
         if (!pxP->m_bEnabled) continue;
-        bool bIsGfx = pxP->m_pxTargetSetup && *pxP->m_pxTargetSetup != Flux_Graphics::s_xNullTargetSetup;
+        bool bIsGfx = pxP->m_uNumColourAttachments > 0 || pxP->m_xDepthStencil.IsValid();
         if (bIsGfx) Zenith_Assert(pxP->m_xWrites.GetSize() > 0, "Flux_RenderGraph: graphics pass '%s' has no Write()", pxP->m_strName.c_str());
         for (Zenith_Vector<u_int>::Iterator it(pxP->m_xExplicitDependencies); !it.Done(); it.Next())
         {
@@ -371,26 +368,72 @@ void Flux_RenderGraph::GenerateBarriers()
     }
 }
 
+// Pack a (pointer, mip, layer) triple into a single u_int64 for use as a
+// barrier-state map key. The low 48 bits hold the resource pointer, the next
+// 8 bits the mip index, and the top 8 bits the layer index. 48 bits is
+// sufficient for all pointers on current x64 / ARM64 systems, and the mip /
+// layer slots comfortably cover anything we emit (max 15 mips, 6 faces).
+static inline u_int64 MakeBarrierKey(void* pRes, u_int uMip, u_int uLayer)
+{
+    return (reinterpret_cast<u_int64>(pRes) & 0x0000FFFFFFFFFFFFull)
+         | (static_cast<u_int64>(uMip   & 0xFFu) << 48)
+         | (static_cast<u_int64>(uLayer & 0xFFu) << 56);
+}
+
 void Flux_RenderGraph::GenerateImageBarriers(Flux_RenderGraph_Pass& rxPass, const Zenith_Vector<Flux_RenderGraph_ResourceUsage>& rxUsages, bool bIsRead)
 {
     for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(rxUsages); !it.Done(); it.Next())
     {
         const Flux_RenderGraph_ResourceUsage& rxUsage = it.GetData();
-        if (rxUsage.m_xResource.GetKind() != Flux_GraphResourceKind::Image) continue;
-        Flux_RenderAttachment* pxImg = rxUsage.m_xResource.AsImage();
-        auto itState = m_xBarrierState.find(pxImg);
-        bool bFirst = itState == m_xBarrierState.end();
-        ResourceAccess ePrev = bFirst ? RESOURCE_ACCESS_UNDEFINED : itState->second;
-        if (bFirst || ePrev != rxUsage.m_eAccess)
+        if (!rxUsage.m_xResource.IsImageLike()) continue;
+        void* pRes = rxUsage.m_xResource.GetVoidPtr();
+
+        // Resolve the concrete (mip, layer) range. Sentinel values get
+        // expanded against the surface's actual mip / layer counts so that
+        // barrier tracking is subresource-accurate.
+        const Flux_SurfaceInfo& rxInfo = rxUsage.m_xResource.GetSurfaceInfo();
+        const u_int uTotalMips   = rxInfo.m_uNumMips;
+        const u_int uTotalLayers = rxUsage.m_xResource.GetKind() == Flux_GraphResourceKind::ImageCube ? 6u : rxInfo.m_uNumLayers;
+
+        const u_int uMipStart   = rxUsage.m_uMipLevel;
+        const u_int uMipCount   = (rxUsage.m_uMipCount == FLUX_RG_ALL_MIPS)   ? (uTotalMips   - uMipStart)   : rxUsage.m_uMipCount;
+        const u_int uLayerStart = rxUsage.m_uLayer;
+        const u_int uLayerCount = (rxUsage.m_uLayerCount == FLUX_RG_ALL_LAYERS) ? (uTotalLayers - uLayerStart) : rxUsage.m_uLayerCount;
+
+        Zenith_Assert(uMipStart + uMipCount <= uTotalMips, "Flux_RenderGraph: mip range [%u, %u) exceeds mip count %u", uMipStart, uMipStart + uMipCount, uTotalMips);
+        Zenith_Assert(uLayerStart + uLayerCount <= uTotalLayers, "Flux_RenderGraph: layer range [%u, %u) exceeds layer count %u", uLayerStart, uLayerStart + uLayerCount, uTotalLayers);
+
+        // Walk every (mip, layer) pair the usage covers. Emit one barrier
+        // per distinct ePrev within a contiguous (mip, layer) run. The
+        // simplest first-pass grouping is per-pair; passes that cover a
+        // whole mip chain or whole cube still end up with correct layouts,
+        // just with more barriers than strictly necessary. Future
+        // optimisation: merge runs of identical ePrev into a single barrier
+        // with a wider subresource range.
+        for (u_int uMip = uMipStart; uMip < uMipStart + uMipCount; uMip++)
         {
-            Flux_RenderGraph_ImageBarrier xB;
-            xB.m_pxAttachment = pxImg;
-            xB.m_ePrevAccess = ePrev;
-            xB.m_eNewAccess = rxUsage.m_eAccess;
-            xB.m_bDiscard = bFirst || (!bIsRead && rxPass.m_bClearTargets);
-            rxPass.m_xPrologueBarriers.PushBack(xB);
+            for (u_int uLayer = uLayerStart; uLayer < uLayerStart + uLayerCount; uLayer++)
+            {
+                u_int64 ulKey = MakeBarrierKey(pRes, uMip, uLayer);
+                auto itState = m_xBarrierState.find(ulKey);
+                const bool bFirst = itState == m_xBarrierState.end();
+                const ResourceAccess ePrev = bFirst ? RESOURCE_ACCESS_UNDEFINED : itState->second;
+                if (bFirst || ePrev != rxUsage.m_eAccess)
+                {
+                    Flux_RenderGraph_ImageBarrier xB;
+                    xB.m_xResource = rxUsage.m_xResource;
+                    xB.m_ePrevAccess = ePrev;
+                    xB.m_eNewAccess = rxUsage.m_eAccess;
+                    xB.m_uMipLevel = uMip;
+                    xB.m_uMipCount = 1;
+                    xB.m_uLayer = uLayer;
+                    xB.m_uLayerCount = 1;
+                    xB.m_bDiscard = bFirst || (!bIsRead && rxPass.m_bClearTargets);
+                    rxPass.m_xPrologueBarriers.PushBack(xB);
+                }
+                m_xBarrierState[ulKey] = rxUsage.m_eAccess;
+            }
         }
-        m_xBarrierState[pxImg] = rxUsage.m_eAccess;
     }
 }
 
@@ -403,28 +446,81 @@ void Flux_RenderGraph::ResolveClearFlags()
 
 void Flux_RenderGraph::CollectClearRequirements()
 {
-    m_xSetupNeedsClear.clear();
+    // Clear tracking is keyed on (void*, uMip, uLayer) using MakeBarrierKey so
+    // that two passes writing (mip=0, face=0) and (mip=1, face=2) of the same
+    // cube image each get independent clear-requirement slots. The ptr-only
+    // scheme used previously collapsed the whole cube into one slot, which
+    // broke the 42-prefilter-pass IBL case: only the first writer saw the
+    // clear-request, and the other 41 passes' (mip, face) subresources stayed
+    // UNDEFINED at creation but the backend tried to transition them from
+    // SHADER_READ_ONLY_OPTIMAL.
+    m_xAttachmentNeedsClear.clear();
     for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
-        if (pxPass->m_bIsCompute || !pxPass->m_bEnabled || !pxPass->m_pxTargetSetup) continue;
-        auto itSetup = m_xSetupNeedsClear.find(pxPass->m_pxTargetSetup);
-        if (itSetup == m_xSetupNeedsClear.end()) m_xSetupNeedsClear[pxPass->m_pxTargetSetup] = pxPass->m_bRequestsClear;
-        else itSetup->second = itSetup->second || pxPass->m_bRequestsClear;
+        if (pxPass->m_bIsCompute || !pxPass->m_bEnabled) continue;
+        if (pxPass->m_uNumColourAttachments == 0 && !pxPass->m_xDepthStencil.IsValid()) continue;
+        for (uint32_t i = 0; i < pxPass->m_uNumColourAttachments; i++)
+        {
+            const Flux_RenderGraph_AttachmentRef& rxRef = pxPass->m_axColourAttachments[i];
+            u_int64 ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
+            if (m_xAttachmentNeedsClear.find(ulKey) == m_xAttachmentNeedsClear.end())
+                m_xAttachmentNeedsClear[ulKey] = pxPass->m_bRequestsClear;
+            else
+                m_xAttachmentNeedsClear[ulKey] = m_xAttachmentNeedsClear[ulKey] || pxPass->m_bRequestsClear;
+        }
+        if (pxPass->m_xDepthStencil.IsValid())
+        {
+            const Flux_RenderGraph_AttachmentRef& rxDepth = pxPass->m_xDepthStencil;
+            u_int64 ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
+            if (m_xAttachmentNeedsClear.find(ulKey) == m_xAttachmentNeedsClear.end())
+                m_xAttachmentNeedsClear[ulKey] = pxPass->m_bRequestsClear;
+            else
+                m_xAttachmentNeedsClear[ulKey] = m_xAttachmentNeedsClear[ulKey] || pxPass->m_bRequestsClear;
+        }
     }
 }
 
 void Flux_RenderGraph::AssignClearFlags()
 {
-    m_xSetupClearAssigned.clear();
+    m_xAttachmentClearAssigned.clear();
     for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
-        if (pxPass->m_bIsCompute || !pxPass->m_bEnabled || !pxPass->m_pxTargetSetup) continue;
-        auto itNeeds = m_xSetupNeedsClear.find(pxPass->m_pxTargetSetup);
-        if (itNeeds == m_xSetupNeedsClear.end() || !itNeeds->second) continue;
-        if (m_xSetupClearAssigned.find(pxPass->m_pxTargetSetup) == m_xSetupClearAssigned.end())
-        { pxPass->m_bClearTargets = true; m_xSetupClearAssigned.insert(pxPass->m_pxTargetSetup); }
+        if (pxPass->m_bIsCompute || !pxPass->m_bEnabled) continue;
+        if (pxPass->m_uNumColourAttachments == 0 && !pxPass->m_xDepthStencil.IsValid()) continue;
+        bool bNeedsClear = false;
+        for (uint32_t i = 0; i < pxPass->m_uNumColourAttachments; i++)
+        {
+            const Flux_RenderGraph_AttachmentRef& rxRef = pxPass->m_axColourAttachments[i];
+            u_int64 ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
+            auto itNeed = m_xAttachmentNeedsClear.find(ulKey);
+            if (itNeed != m_xAttachmentNeedsClear.end() && itNeed->second) { bNeedsClear = true; break; }
+        }
+        if (!bNeedsClear && pxPass->m_xDepthStencil.IsValid())
+        {
+            const Flux_RenderGraph_AttachmentRef& rxDepth = pxPass->m_xDepthStencil;
+            u_int64 ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
+            auto itNeed = m_xAttachmentNeedsClear.find(ulKey);
+            if (itNeed != m_xAttachmentNeedsClear.end() && itNeed->second) bNeedsClear = true;
+        }
+        if (!bNeedsClear) continue;
+        bool bIsFirstWriter = false;
+        for (uint32_t i = 0; i < pxPass->m_uNumColourAttachments; i++)
+        {
+            const Flux_RenderGraph_AttachmentRef& rxRef = pxPass->m_axColourAttachments[i];
+            u_int64 ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
+            if (m_xAttachmentClearAssigned.find(ulKey) == m_xAttachmentClearAssigned.end())
+            { m_xAttachmentClearAssigned.insert(ulKey); bIsFirstWriter = true; }
+        }
+        if (pxPass->m_xDepthStencil.IsValid())
+        {
+            const Flux_RenderGraph_AttachmentRef& rxDepth = pxPass->m_xDepthStencil;
+            u_int64 ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
+            if (m_xAttachmentClearAssigned.find(ulKey) == m_xAttachmentClearAssigned.end())
+            { m_xAttachmentClearAssigned.insert(ulKey); bIsFirstWriter = true; }
+        }
+        pxPass->m_bClearTargets = bIsFirstWriter;
     }
 }
 
@@ -436,6 +532,7 @@ bool Flux_RenderGraph::Compile()
     Validate();
     if (!TopologicalSort()) return false;
     ComputeResourceLifetimes();
+    InferPassAttachments();
     MarkPassesAsComputeOrGraphics();
     ResolveClearFlags();
     GenerateBarriers();
@@ -451,7 +548,7 @@ void Flux_RenderGraph::MarkPassesAsComputeOrGraphics()
     for (u_int i = 0; i < m_xPasses.GetSize(); i++)
     {
         Flux_RenderGraph_Pass* pxP = m_xPasses.Get(i);
-        pxP->m_bIsCompute = !pxP->m_pxTargetSetup || *pxP->m_pxTargetSetup == Flux_Graphics::s_xNullTargetSetup;
+        pxP->m_bIsCompute = (pxP->m_uNumColourAttachments == 0 && !pxP->m_xDepthStencil.IsValid());
     }
 }
 
@@ -516,19 +613,171 @@ void Flux_RenderGraph::SubmitRecordedLists()
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
         if (!pxPass->m_bEnabled || !pxPass->m_pfnOnRecord) continue;
         if (pxPass->m_pxCommandList->GetCommandCount() == 0 && !pxPass->m_bClearTargets) continue;
-        const Flux_TargetSetup& xTargetSetup = pxPass->m_pxTargetSetup ? *pxPass->m_pxTargetSetup : Flux_Graphics::s_xNullTargetSetup;
-        bool bDepthReadOnly = CheckDepthReadOnly(xTargetSetup, *pxPass);
-        Flux::SubmitCommandList(pxPass->m_pxCommandList, xTargetSetup, pxPass->m_bClearTargets, bDepthReadOnly, pxPass);
+        bool bDepthReadOnly = false;
+        if (pxPass->m_xDepthStencil.IsValid())
+        {
+            void* pDepthRes = pxPass->m_xDepthStencil.m_xResource.GetVoidPtr();
+            for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator itR(pxPass->m_xReads); !itR.Done(); itR.Next())
+            {
+                if (itR.GetData().m_xResource.GetVoidPtr() == pDepthRes) { bDepthReadOnly = true; break; }
+            }
+        }
+        Flux::SubmitCommandList(pxPass->m_pxCommandList,
+            pxPass->m_axColourAttachments, pxPass->m_uNumColourAttachments,
+            pxPass->m_xDepthStencil,
+            pxPass->m_bClearTargets, bDepthReadOnly, pxPass);
     }
 }
 
-bool Flux_RenderGraph::CheckDepthReadOnly(const Flux_TargetSetup& rxTargetSetup, const Flux_RenderGraph_Pass& rxPass)
+void Flux_RenderGraph::InferPassAttachments()
 {
-    if (!rxTargetSetup.m_pxDepthStencil) return false;
-    void* pDepthRes = static_cast<void*>(rxTargetSetup.m_pxDepthStencil);
-    for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator itR(rxPass.m_xReads); !itR.Done(); itR.Next())
+    for (u_int i = 0; i < m_xPasses.GetSize(); i++)
     {
-        if (itR.GetData().m_xResource.GetVoidPtr() == pDepthRes) return true;
+        Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(i);
+        pxPass->m_uNumColourAttachments = 0;
+        pxPass->m_xDepthStencil = Flux_RenderGraph_AttachmentRef();
+        for (uint32_t t = 0; t < FLUX_MAX_TARGETS; t++)
+            pxPass->m_axColourAttachments[t] = Flux_RenderGraph_AttachmentRef();
+        for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
+        {
+            const Flux_RenderGraph_ResourceUsage& rxUsage = it.GetData();
+            if (!rxUsage.m_xResource.IsImageLike()) continue;
+            if (rxUsage.m_eAccess == RESOURCE_ACCESS_WRITE_RTV)
+            {
+                if (pxPass->m_uNumColourAttachments < FLUX_MAX_TARGETS)
+                {
+                    pxPass->m_axColourAttachments[pxPass->m_uNumColourAttachments++] =
+                        Flux_RenderGraph_AttachmentRef(rxUsage.m_xResource, rxUsage.m_uMipLevel, rxUsage.m_uLayer);
+                }
+            }
+            else if (rxUsage.m_eAccess == RESOURCE_ACCESS_WRITE_DSV)
+            {
+                // Depth attachments are never cubemaps in this engine — they always
+                // bind as a 2D depth/stencil view. Assert to catch accidental misuse.
+                Zenith_Assert(rxUsage.m_xResource.GetKind() == Flux_GraphResourceKind::Image,
+                    "Flux_RenderGraph: depth/stencil writes require a 2D Flux_RenderAttachment (pass '%s')", pxPass->m_strName.c_str());
+                pxPass->m_xDepthStencil =
+                    Flux_RenderGraph_AttachmentRef(rxUsage.m_xResource, rxUsage.m_uMipLevel, rxUsage.m_uLayer);
+            }
+        }
     }
-    return false;
+}
+
+void Flux_RenderGraph_Pass::EmitPrologueBarriers(vk::CommandBuffer xCmdBuf, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage) const
+{
+    if (m_xPrologueBarriers.GetSize() == 0) return;
+
+    std::vector<vk::ImageMemoryBarrier> axBarriers;
+    axBarriers.reserve(m_xPrologueBarriers.GetSize());
+
+    for (Zenith_Vector<Flux_RenderGraph_ImageBarrier>::Iterator it(m_xPrologueBarriers); !it.Done(); it.Next())
+    {
+        const Flux_RenderGraph_ImageBarrier& rxBarrier = it.GetData();
+        if (!rxBarrier.m_xResource.IsImageLike()) continue;
+
+        Flux_VRAMHandle xVRAMHandle = rxBarrier.m_xResource.GetVRAMHandle();
+        if (xVRAMHandle.AsUInt() == UINT32_MAX) continue;
+
+        Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
+        if (!pxVRAM) continue;
+
+        vk::ImageLayout eOldLayout;
+        vk::ImageLayout eNewLayout;
+        vk::AccessFlags eSrcAccess;
+        vk::AccessFlags eDstAccess;
+
+        switch (rxBarrier.m_ePrevAccess)
+        {
+        case RESOURCE_ACCESS_UNDEFINED:
+            eOldLayout = vk::ImageLayout::eUndefined;
+            eSrcAccess = vk::AccessFlags();
+            break;
+        case RESOURCE_ACCESS_READ_SRV:
+            eOldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            eSrcAccess = vk::AccessFlagBits::eShaderRead;
+            break;
+        case RESOURCE_ACCESS_READ_DEPTH:
+            eOldLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+            eSrcAccess = vk::AccessFlagBits::eDepthStencilAttachmentRead;
+            break;
+        case RESOURCE_ACCESS_WRITE_RTV:
+            eOldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            eSrcAccess = vk::AccessFlagBits::eColorAttachmentWrite;
+            break;
+        case RESOURCE_ACCESS_WRITE_DSV:
+            eOldLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+            eSrcAccess = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+            break;
+        case RESOURCE_ACCESS_WRITE_UAV:
+            eOldLayout = vk::ImageLayout::eGeneral;
+            eSrcAccess = vk::AccessFlagBits::eShaderWrite;
+            break;
+        default:
+            eOldLayout = vk::ImageLayout::eUndefined;
+            eSrcAccess = vk::AccessFlags();
+            break;
+        }
+
+        switch (rxBarrier.m_eNewAccess)
+        {
+        case RESOURCE_ACCESS_READ_SRV:
+            eNewLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            eDstAccess = vk::AccessFlagBits::eShaderRead;
+            break;
+        case RESOURCE_ACCESS_READ_DEPTH:
+            eNewLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+            eDstAccess = vk::AccessFlagBits::eDepthStencilAttachmentRead;
+            break;
+        case RESOURCE_ACCESS_WRITE_RTV:
+            eNewLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            eDstAccess = vk::AccessFlagBits::eColorAttachmentWrite;
+            break;
+        case RESOURCE_ACCESS_WRITE_DSV:
+            eNewLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+            eDstAccess = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+            break;
+        case RESOURCE_ACCESS_WRITE_UAV:
+            eNewLayout = vk::ImageLayout::eGeneral;
+            eDstAccess = vk::AccessFlagBits::eShaderWrite;
+            break;
+        default:
+            eNewLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            eDstAccess = vk::AccessFlagBits::eShaderRead;
+            break;
+        }
+
+        // Aspect: depth transitions use Depth, everything else Color. Cube faces
+        // are always colour — depth cubemaps aren't used in this engine.
+        const bool bIsDepth = (rxBarrier.m_eNewAccess == RESOURCE_ACCESS_WRITE_DSV
+                            || rxBarrier.m_eNewAccess == RESOURCE_ACCESS_READ_DEPTH
+                            || rxBarrier.m_ePrevAccess == RESOURCE_ACCESS_WRITE_DSV
+                            || rxBarrier.m_ePrevAccess == RESOURCE_ACCESS_READ_DEPTH);
+        const vk::ImageAspectFlags eAspect = bIsDepth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
+
+        // Map FLUX_RG_ALL_* sentinels to VK_REMAINING_* so "whole image" usages
+        // continue to transition the full subresource set without per-subresource
+        // fan-out (which GenerateImageBarriers already avoided at declaration time
+        // by emitting 1x1 per-pair barriers when ranges were finite).
+        const uint32_t uMipLevel   = rxBarrier.m_uMipLevel;
+        const uint32_t uMipCount   = (rxBarrier.m_uMipCount == FLUX_RG_ALL_MIPS)     ? VK_REMAINING_MIP_LEVELS   : rxBarrier.m_uMipCount;
+        const uint32_t uLayerStart = rxBarrier.m_uLayer;
+        const uint32_t uLayerCount = (rxBarrier.m_uLayerCount == FLUX_RG_ALL_LAYERS) ? VK_REMAINING_ARRAY_LAYERS : rxBarrier.m_uLayerCount;
+
+        vk::ImageSubresourceRange xSubRange(eAspect, uMipLevel, uMipCount, uLayerStart, uLayerCount);
+
+        axBarriers.push_back(vk::ImageMemoryBarrier()
+            .setSrcAccessMask(eSrcAccess)
+            .setDstAccessMask(eDstAccess)
+            .setOldLayout(eOldLayout)
+            .setNewLayout(eNewLayout)
+            .setImage(pxVRAM->GetImage())
+            .setSubresourceRange(xSubRange));
+    }
+
+    if (!axBarriers.empty())
+    {
+        xCmdBuf.pipelineBarrier(eSrcStage, eDstStage, vk::DependencyFlags(),
+            0, nullptr, 0, nullptr,
+            static_cast<uint32_t>(axBarriers.size()), axBarriers.data());
+    }
 }

@@ -125,10 +125,9 @@ void Flux_Grass::Initialise()
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	Flux_PipelineSpecification xPipelineSpec;
-	// Grass uses forward rendering with direct lighting in the fragment shader,
-	// so it renders to HDR target (after deferred shading) rather than G-Buffer.
-	// This allows proper depth testing against deferred-rendered geometry.
-	xPipelineSpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetupWithDepth();
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_uNumColourAttachments = 1;
+	xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
 	xPipelineSpec.m_pxShader = &s_xGrassShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 	xPipelineSpec.m_bDepthTestEnabled = true;
@@ -189,8 +188,7 @@ void Flux_Grass::DestroyBuffers()
 
 void Flux_Grass::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	u_int uPassIndex = xGraph.AddPass("Grass", ExecuteRender);
-	xGraph.SetTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
+	uint32_t uPassIndex = xGraph.AddPass("Grass", ExecuteRender);
 	// Do NOT clear: the with-depth target setup shares the main scene depth
 	// buffer, and clearing here would wipe the depth that the geometry passes
 	// just wrote — causing deferred lighting to sample garbage depth and

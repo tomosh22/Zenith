@@ -56,7 +56,8 @@ void Flux_Particles::Initialise()
 	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetupWithDepth();
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -256,15 +257,12 @@ void Flux_Particles::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	u_int uComputePass = UINT32_MAX;
 	{
 		uComputePass = xGraph.AddPass("Particles Compute", ExecuteParticleCompute);
-		xGraph.SetTargetSetup(uComputePass, Flux_Graphics::s_xNullTargetSetup);
 		xGraph.SetPrepare(uComputePass, PreExecuteParticleCompute);
 	}
 
 	// Particle draw pass
 	{
-		u_int uPass = xGraph.AddPass("Particles", ExecuteParticles);
-		xGraph.SetTargetSetup(uPass, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
-		xGraph.Read(uPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+		uint32_t uPass = xGraph.AddPass("Particles", ExecuteParticles);
 		xGraph.Write(uPass, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 		// W5: explicit pass-level dependency replaces the old dummy attachment hack.
 		// The GPU instance buffer is managed internally by Flux_ParticleGPU.

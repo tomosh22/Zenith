@@ -378,37 +378,46 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBu
 	}
 }
 
-void Zenith_Vulkan_CommandBuffer::BeginRenderPass(const Flux_TargetSetup& xTargetSetup, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool /*= false*/, bool bDepthIsReadOnly /*= false*/)
+void Zenith_Vulkan_CommandBuffer::BeginRenderPass(const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColourAttachments, const Flux_RenderGraph_AttachmentRef& rxDepthStencil, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool /*= false*/, bool bDepthIsReadOnly /*= false*/)
 {
 	LoadAction eColourLoad = bClearColour ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
 	LoadAction eDepthStencilLoad = bClearDepth ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
 
-	uint32_t uNumColourAttachments = 0;
-	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
+	TextureFormat aeColourFormats[FLUX_MAX_TARGETS] = {};
+	for (uint32_t i = 0; i < uNumColourAttachments; i++)
 	{
-		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat == TEXTURE_FORMAT_NONE)
-			break;
-		uNumColourAttachments++;
+		aeColourFormats[i] = axColourAttachments[i].m_xResource.GetSurfaceInfo().m_eFormat;
 	}
+	const TextureFormat eDepthStencilFormat = rxDepthStencil.IsValid() ? rxDepthStencil.m_xResource.GetSurfaceInfo().m_eFormat : TEXTURE_FORMAT_NONE;
 
-	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xTargetSetup, eColourLoad, STORE_ACTION_STORE, eDepthStencilLoad, STORE_ACTION_STORE, RENDER_TARGET_USAGE_RENDERTARGET, bDepthIsReadOnly);
+	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(aeColourFormats, uNumColourAttachments, eDepthStencilFormat, eColourLoad, STORE_ACTION_STORE, eDepthStencilLoad, STORE_ACTION_STORE, RENDER_TARGET_USAGE_RENDERTARGET, bDepthIsReadOnly);
 	Zenith_Assert(m_xCurrentRenderPass, "BeginRenderPass: TargetSetupToRenderPass returned null render pass");
 	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyRenderPass(m_xCurrentRenderPass);
 
-	uint32_t uWidth, uHeight;
-	if (xTargetSetup.m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
+	// Mip-adjusted framebuffer dimensions. When a pass binds mip N of an
+	// attachment (e.g. the IBL prefilter chain at mips 1..6), the framebuffer
+	// extent must be the mip's own dimensions, not the base image's — otherwise
+	// Vulkan rejects the render pass begin (VUID-VkRenderPassBeginInfo-framebuffer-*).
+	uint32_t uWidth = 0;
+	uint32_t uHeight = 0;
+	if (uNumColourAttachments > 0 && axColourAttachments[0].IsValid()
+		&& axColourAttachments[0].m_xResource.GetSurfaceInfo().m_eFormat != TEXTURE_FORMAT_NONE)
 	{
-		uWidth = xTargetSetup.m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth;
-		uHeight = xTargetSetup.m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight;
+		const Flux_SurfaceInfo& rxInfo = axColourAttachments[0].m_xResource.GetSurfaceInfo();
+		const uint32_t uMip = axColourAttachments[0].m_uMip;
+		uWidth  = (rxInfo.m_uWidth  >> uMip) ? (rxInfo.m_uWidth  >> uMip) : 1u;
+		uHeight = (rxInfo.m_uHeight >> uMip) ? (rxInfo.m_uHeight >> uMip) : 1u;
 	}
 	else
 	{
-		Zenith_Assert(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE, "Target setup has no attachments");
-		uWidth = xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_uWidth;
-		uHeight = xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_uHeight;
+		Zenith_Assert(rxDepthStencil.IsValid() && rxDepthStencil.m_xResource.GetSurfaceInfo().m_eFormat != TEXTURE_FORMAT_NONE, "Target setup has no attachments");
+		const Flux_SurfaceInfo& rxInfo = rxDepthStencil.m_xResource.GetSurfaceInfo();
+		const uint32_t uMip = rxDepthStencil.m_uMip;
+		uWidth  = (rxInfo.m_uWidth  >> uMip) ? (rxInfo.m_uWidth  >> uMip) : 1u;
+		uHeight = (rxInfo.m_uHeight >> uMip) ? (rxInfo.m_uHeight >> uMip) : 1u;
 	}
 
-	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(xTargetSetup, uWidth, uHeight, m_xCurrentRenderPass);
+	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(axColourAttachments, uNumColourAttachments, rxDepthStencil, uWidth, uHeight, m_xCurrentRenderPass);
 	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyFramebuffer(xFramebuffer);
 
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
@@ -419,7 +428,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(const Flux_TargetSetup& xTarge
 	vk::ClearValue axClearColour[FLUX_MAX_TARGETS+1];
 	if (eColourLoad == LOAD_ACTION_CLEAR || eDepthStencilLoad == LOAD_ACTION_CLEAR)
 	{
-		bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
+		bool bHasDepth = rxDepthStencil.IsValid();
 		const uint32_t uNumAttachments = bHasDepth && eDepthStencilLoad == LOAD_ACTION_CLEAR ? uNumColourAttachments + 1 : uNumColourAttachments;
 		for (uint32_t i = 0; i < uNumColourAttachments; i++)
 			axClearColour[i].color = vk::ClearColorValue(0.f, 0.f, 0.f, 0.f);

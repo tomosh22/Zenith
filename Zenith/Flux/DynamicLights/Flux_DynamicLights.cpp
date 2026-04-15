@@ -564,7 +564,8 @@ void Flux_DynamicLights::Initialise()
 
 	// Base pipeline specification (shared settings)
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetup();
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &s_xVolumeShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -1175,14 +1176,11 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 
 void Flux_DynamicLights::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	u_int uPassIndex = xGraph.AddPass("Dynamic Lights", ExecuteDynamicLights);
-	xGraph.SetTargetSetup(uPassIndex, Flux_HDR::GetHDRSceneTargetSetup());
+	uint32_t uPassIndex = xGraph.AddPass("Dynamic Lights", ExecuteDynamicLights);
+	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 
 	// Reads: G-Buffer MRT attachments
-	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
-	{
-		xGraph.Read(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_READ_SRV);
-	}
+	xGraph.Read(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
 
 	// Reads: depth buffer
 	xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
@@ -1191,7 +1189,4 @@ void Flux_DynamicLights::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// compensation. Without this declaration the LUT stays in COLOR_ATTACHMENT_OPTIMAL
 	// after the IBL BRDF LUT pass writes it and the validator rejects the SRV bind.
 	xGraph.Read(uPassIndex, Flux_IBL::s_xBRDFLUT, RESOURCE_ACCESS_READ_SRV);
-
-	// Writes: HDR scene target (additive lighting)
-	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }

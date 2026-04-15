@@ -50,23 +50,27 @@ void Flux_PipelineHelper::BuildFullscreenPipeline(
 	Flux_Shader& xShader,
 	Flux_Pipeline& xPipeline,
 	const char* szFragShader,
-	Flux_TargetSetup* pxTargetSetup,
+	TextureFormat eColourFormat,
+	TextureFormat eDepthStencilFormat,
 	const char* szVertShader)
 {
-	Flux_PipelineSpecification xSpec = CreateFullscreenSpec(xShader, szFragShader, pxTargetSetup, szVertShader);
+	Flux_PipelineSpecification xSpec = CreateFullscreenSpec(xShader, szFragShader, eColourFormat, eDepthStencilFormat, szVertShader);
 	Flux_PipelineBuilder::FromSpecification(xPipeline, xSpec);
 }
 
 Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpec(
 	Flux_Shader& xShader,
 	const char* szFragShader,
-	Flux_TargetSetup* pxTargetSetup,
+	TextureFormat eColourFormat,
+	TextureFormat eDepthStencilFormat,
 	const char* szVertShader)
 {
 	xShader.Initialise(szVertShader, szFragShader);
 
 	Flux_PipelineSpecification xSpec;
-	xSpec.m_pxTargetSetup = pxTargetSetup;
+	xSpec.m_aeColourAttachmentFormats[0] = eColourFormat;
+	xSpec.m_uNumColourAttachments = 1;
+	xSpec.m_eDepthStencilFormat = eDepthStencilFormat;
 	xSpec.m_pxShader = &xShader;
 	xSpec.m_xVertexInputDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 	xSpec.m_bDepthTestEnabled = false;
@@ -224,7 +228,7 @@ void Flux::SetupRenderGraph()
 	// never written".
 	{
 		u_int uFinalTransitionPass = s_pxRenderGraph->AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp);
-		s_pxRenderGraph->Read(uFinalTransitionPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_READ_SRV);
+		s_pxRenderGraph->Read(uFinalTransitionPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Clear() already left the graph dirty — no explicit MarkDirty() needed.

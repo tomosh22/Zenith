@@ -45,8 +45,8 @@ public:
 
 	static Flux_ShaderResourceView& GetHDRSceneSRV();
 	static Flux_RenderAttachment& GetHDRSceneTarget();
-	static Flux_TargetSetup& GetHDRSceneTargetSetup();
-	static Flux_TargetSetup& GetHDRSceneTargetSetupWithDepth();  // For passes that need depth testing
+	static void GetHDRSceneTargetSetup(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
+	static void GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);  // For passes that need depth testing
 
 	static void SetToneMappingOperator(ToneMappingOperator eOperator);
 	static void SetExposure(float fExposure);
@@ -88,11 +88,8 @@ private:
 	static void DestroyRenderTargets();
 
 	static Flux_RenderAttachment s_xHDRSceneTarget;
-	static Flux_TargetSetup s_xHDRSceneTargetSetup;
-	static Flux_TargetSetup s_xHDRSceneTargetSetupWithDepth;
 
 	static Flux_RenderAttachment s_axBloomChain[5];
-	static Flux_TargetSetup s_axBloomChainSetup[5];
 
 	static Flux_Pipeline s_xToneMappingPipeline;
 	static Flux_Pipeline s_xBloomDownsamplePipeline;

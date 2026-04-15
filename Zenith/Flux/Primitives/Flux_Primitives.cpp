@@ -504,7 +504,11 @@ void Flux_Primitives::Initialise()
 	// Build GBuffer pipeline (solid shading)
 	{
 		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;  // Render to GBuffer
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_DIFFUSE].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
 		xPipelineSpec.m_pxShader = &s_xPrimitivesShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -583,13 +587,10 @@ void Flux_Primitives::Shutdown()
 
 void Flux_Primitives::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	u_int uPassIndex = xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer);
-	xGraph.SetTargetSetup(uPassIndex, Flux_Graphics::s_xMRTTarget);
-
-	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
-	{
-		xGraph.Write(uPassIndex, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
-	}
+	uint32_t uPassIndex = xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer);
+	xGraph.Write(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[1], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[2], RESOURCE_ACCESS_WRITE_RTV);
 	xGraph.Write(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
 }
 

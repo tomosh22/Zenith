@@ -60,7 +60,8 @@ void Flux_Text::Initialise()
 	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget;
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_Graphics::s_xFinalRenderTarget.m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -280,14 +281,6 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 
 void Flux_Text::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	u_int uPass = xGraph.AddPass("Text", ExecuteText);
-	xGraph.SetTargetSetup(uPass, Flux_Graphics::s_xFinalRenderTarget);
-	// Use same attachment pointer as ToneMapping/Quads so auto-clear doesn't re-trigger
-	// (s_xFinalRenderTarget and s_xFinalRenderTarget_NoDepth share the same color attachment VRAM)
-	xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
-	// Text pipeline disables depth-test and depth-write but the renderpass still
-	// includes the depth attachment via s_xFinalRenderTarget. Declare a READ_DEPTH
-	// so the graph transitions the depth to READ_ONLY_OPTIMAL and the renderpass
-	// initialLayout matches.
-	xGraph.Read(uPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_DEPTH);
+	uint32_t uPass = xGraph.AddPass("Text", ExecuteText);
+	xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget, RESOURCE_ACCESS_WRITE_RTV);
 }

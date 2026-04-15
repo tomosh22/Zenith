@@ -32,7 +32,7 @@ uint32_t Zenith_Vulkan_Swapchain::s_uCurrentImageIndex = 0;
 vk::Semaphore Zenith_Vulkan_Swapchain::s_axImageAvailableSemaphores[MAX_FRAMES_IN_FLIGHT];
 vk::Semaphore Zenith_Vulkan_Swapchain::s_axRenderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
 uint32_t Zenith_Vulkan_Swapchain::s_uFrameIndex = 0;
-Flux_TargetSetup Zenith_Vulkan_Swapchain::s_axTargetSetups[MAX_FRAMES_IN_FLIGHT];
+Flux_RenderAttachment Zenith_Vulkan_Swapchain::s_axColourAttachments[MAX_FRAMES_IN_FLIGHT];
 bool Zenith_Vulkan_Swapchain::s_bShouldWaitOnImageAvailableSem;
 
 static Zenith_Vulkan_Shader s_xShader;
@@ -143,7 +143,8 @@ void Zenith_Vulkan_Swapchain::InitialiseCopyToFramebufferCommands()
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &s_axTargetSetups[0];
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = s_axColourAttachments[0].m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -256,19 +257,19 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		s_xImageViews[u] = VkUnwrap(xDevice.createImageView(xViewCreate));
 
 		// Swapchain images don't use VRAM handles since they're managed by the swapchain
-		s_axTargetSetups[u].m_axColourAttachments[0].m_xVRAMHandle.SetValue(UINT32_MAX);
+		s_axColourAttachments[u].m_xVRAMHandle.SetValue(UINT32_MAX);
 
-		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth = xExtent.width;
-		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight = xExtent.height;
-		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat =
+		s_axColourAttachments[u].m_xSurfaceInfo.m_uWidth = xExtent.width;
+		s_axColourAttachments[u].m_xSurfaceInfo.m_uHeight = xExtent.height;
+		s_axColourAttachments[u].m_xSurfaceInfo.m_eFormat =
 			xSurfaceFormat.format == vk::Format::eR8G8B8A8Srgb ? TEXTURE_FORMAT_RGBA8_SRGB : TEXTURE_FORMAT_BGRA8_SRGB;
 		
 		// Create views for swapchain images - register with handle system for consistency
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xImageViewHandle = Zenith_Vulkan_MemoryManager::RegisterImageView(s_xImageViews[u]);
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xVRAMHandle.SetValue(UINT32_MAX);
+		s_axColourAttachments[u].SRV().m_xImageViewHandle = Zenith_Vulkan_MemoryManager::RegisterImageView(s_xImageViews[u]);
+		s_axColourAttachments[u].SRV().m_xVRAMHandle.SetValue(UINT32_MAX);
 
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_xImageViewHandle = Zenith_Vulkan_MemoryManager::RegisterImageView(s_xImageViews[u]);
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_xVRAMHandle.SetValue(UINT32_MAX);
+		s_axColourAttachments[u].RTV().m_xImageViewHandle = Zenith_Vulkan_MemoryManager::RegisterImageView(s_xImageViews[u]);
+		s_axColourAttachments[u].RTV().m_xVRAMHandle.SetValue(UINT32_MAX);
 	}
 	
 
@@ -350,14 +351,20 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 
 void Zenith_Vulkan_Swapchain::BindAsTarget()
 {
+	Flux_RenderAttachment* pxSwapchainAttachment = &s_axColourAttachments[s_uCurrentImageIndex];
+	const TextureFormat aeColourFormats[] = { pxSwapchainAttachment->m_xSurfaceInfo.m_eFormat };
 #if 1//def ZENITH_DEBUG
-	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_axTargetSetups[s_uCurrentImageIndex], LOAD_ACTION_CLEAR, STORE_ACTION_STORE, LOAD_ACTION_CLEAR, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
+	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(aeColourFormats, 1, TEXTURE_FORMAT_NONE, LOAD_ACTION_CLEAR, STORE_ACTION_STORE, LOAD_ACTION_CLEAR, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
 #else
-	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_axTargetSetups[s_uCurrentImageIndex], LOAD_ACTION_DONTCARE, STORE_ACTION_STORE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
+	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(aeColourFormats, 1, TEXTURE_FORMAT_NONE, LOAD_ACTION_DONTCARE, STORE_ACTION_STORE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
 #endif
 	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyRenderPass(xRenderPass);
 
-	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_axTargetSetups[s_uCurrentImageIndex], Zenith_Vulkan_Swapchain::GetWidth(), Zenith_Vulkan_Swapchain::GetHeight(), xRenderPass);
+	// Wrap the raw swapchain attachment in a carrier so it flows through the same framebuffer-creation path as render graph attachments.
+	Flux_RenderGraph_AttachmentRef axColourRefs[1];
+	axColourRefs[0] = Flux_RenderGraph_AttachmentRef(Flux_GraphResource(*pxSwapchainAttachment), 0, 0);
+	Flux_RenderGraph_AttachmentRef xDepthRef; // default-constructed -> IsValid() == false
+	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(axColourRefs, 1, xDepthRef, Zenith_Vulkan_Swapchain::GetWidth(), Zenith_Vulkan_Swapchain::GetHeight(), xRenderPass);
 	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyFramebuffer(xFramebuffer);
 
 	vk::ClearValue xClear;
@@ -380,16 +387,16 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 	vk::Viewport xViewport{};
 	xViewport.x = 0.0f;
 	xViewport.y = 0.0f;
-	xViewport.width = static_cast<float>(s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth);
-	xViewport.height = static_cast<float>(s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight);
+	xViewport.width = static_cast<float>(s_axColourAttachments[s_uCurrentImageIndex].m_xSurfaceInfo.m_uWidth);
+	xViewport.height = static_cast<float>(s_axColourAttachments[s_uCurrentImageIndex].m_xSurfaceInfo.m_uHeight);
 	xViewport.minDepth = 0.0f;
 	xViewport.maxDepth = 1.0f;
 
 	vk::Rect2D xScissor{};
 	xScissor.offset = vk::Offset2D(0, 0);
 	xScissor.extent = vk::Extent2D(
-		s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth,
-		s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight);
+		s_axColourAttachments[s_uCurrentImageIndex].m_xSurfaceInfo.m_uWidth,
+		s_axColourAttachments[s_uCurrentImageIndex].m_xSurfaceInfo.m_uHeight);
 
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().setViewport(0, 1, &xViewport);
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().setScissor(0, 1, &xScissor);
@@ -426,7 +433,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 #endif
 	{
 		// Bind final render target using SRV
-		Flux_ShaderResourceView& xSRV = Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_pxSRV;
+		Flux_ShaderResourceView& xSRV = Flux_Graphics::s_xFinalRenderTarget.SRV();
 		if (xSRV.m_xImageViewHandle.IsValid())
 		{
 			s_xCopyToFramebufferCmd.BindSRV(&xSRV, 0);
@@ -485,7 +492,9 @@ vk::Semaphore& Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore()
 	return s_axImageAvailableSemaphores[s_uFrameIndex];
 }
 
-Flux_TargetSetup* Zenith_Vulkan_Swapchain::GetCurrentSwapchainTarget()
+Flux_RenderAttachment* Zenith_Vulkan_Swapchain::GetCurrentSwapchainTarget(uint32_t& uNumColourAttachments, Flux_RenderAttachment*& pxDepthStencil)
 {
-	return &s_axTargetSetups[s_uCurrentImageIndex];
+	uNumColourAttachments = 1;
+	pxDepthStencil = nullptr;
+	return &s_axColourAttachments[s_uCurrentImageIndex];
 }

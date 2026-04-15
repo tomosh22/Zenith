@@ -37,7 +37,9 @@ void Flux_SDFs::Initialise()
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetupWithDepth();
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_uNumColourAttachments = 1;
+	xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -114,8 +116,7 @@ void Flux_SDFs::ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 
 void Flux_SDFs::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	u_int uPass = xGraph.AddPass("SDFs", ExecuteSDFs);
-	xGraph.SetTargetSetup(uPass, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
+	uint32_t uPass = xGraph.AddPass("SDFs", ExecuteSDFs);
 	xGraph.Write(uPass, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 	// The pipeline uses default depth-test+write enabled, so the depth attachment
 	// is bound as a writable DSV for the renderpass. The graph needs to know so

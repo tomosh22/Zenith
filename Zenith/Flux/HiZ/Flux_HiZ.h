@@ -25,8 +25,6 @@ public:
 	// For resize callback access
 	static constexpr u_int uHIZ_MAX_MIPS = 12;  // Supports up to 4096x4096
 	static Flux_RenderAttachment s_xHiZBuffer;
-	static Flux_ShaderResourceView s_axMipSRVs[uHIZ_MAX_MIPS];
-	static Flux_UnorderedAccessView_Texture s_axMipUAVs[uHIZ_MAX_MIPS];
 	static u_int s_uMipCount;
 
 private:

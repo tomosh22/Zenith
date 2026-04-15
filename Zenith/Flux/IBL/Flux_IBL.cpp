@@ -16,45 +16,11 @@
 
 // Static member definitions
 Flux_RenderAttachment Flux_IBL::s_xBRDFLUT;
-Flux_TargetSetup Flux_IBL::s_xBRDFLUTSetup;
 bool Flux_IBL::s_bBRDFLUTGenerated = false;
 
-Flux_RenderAttachment Flux_IBL::s_xIrradianceMap;
-Flux_TargetSetup Flux_IBL::s_axIrradianceFaceSetup[6];
+Flux_RenderAttachmentCube Flux_IBL::s_xIrradianceMap;
 
-Flux_RenderAttachment Flux_IBL::s_xPrefilteredMap;
-Flux_TargetSetup Flux_IBL::s_axPrefilteredFaceSetup[6];
-
-// Per-mip-per-face RTVs and target setups for prefiltered map
-// Index as [mip][face]
-static Flux_RenderTargetView s_axPrefilteredMipFaceRTVs[IBLConfig::uPREFILTER_MIP_COUNT][6];
-static Flux_TargetSetup s_axPrefilteredMipFaceSetup[IBLConfig::uPREFILTER_MIP_COUNT][6];
-
-// Configure a target setup to render to a single cubemap face
-// Copies surface info from the source cubemap attachment, then overrides to 2D single-layer
-// If uMipSize > 0, also overrides mip level and dimensions (for per-mip rendering)
-static void ConfigureCubeFaceTarget(
-	Flux_TargetSetup& xSetup,
-	const Flux_RenderAttachment& xSourceMap,
-	u_int uFace,
-	const Flux_RenderTargetView& xRTV,
-	u_int uMip = 0,
-	u_int uMipSize = 0)
-{
-	Flux_RenderAttachment& xAttach = xSetup.m_axColourAttachments[0];
-	xAttach.m_xSurfaceInfo = xSourceMap.m_xSurfaceInfo;
-	xAttach.m_xSurfaceInfo.m_eTextureType = TEXTURE_TYPE_2D;
-	xAttach.m_xSurfaceInfo.m_uNumLayers = 1;
-	xAttach.m_xSurfaceInfo.m_uBaseLayer = uFace;
-	xAttach.m_xVRAMHandle = xSourceMap.m_xVRAMHandle;
-	xAttach.m_pxRTV = xRTV;
-	if (uMipSize > 0)
-	{
-		xAttach.m_xSurfaceInfo.m_uBaseMip = uMip;
-		xAttach.m_xSurfaceInfo.m_uWidth = uMipSize;
-		xAttach.m_xSurfaceInfo.m_uHeight = uMipSize;
-	}
-}
+Flux_RenderAttachmentCube Flux_IBL::s_xPrefilteredMap;
 
 Flux_Pipeline Flux_IBL::s_xBRDFLUTPipeline;
 Flux_Pipeline Flux_IBL::s_xIrradianceConvolvePipeline;
@@ -113,14 +79,14 @@ void Flux_IBL::Initialise()
 	// Initialize BRDF LUT shader and pipeline
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xBRDFLUTShader, s_xBRDFLUTPipeline,
-		"IBL/Flux_BRDFIntegration.frag", &s_xBRDFLUTSetup);
+		"IBL/Flux_BRDFIntegration.frag", s_xBRDFLUT.m_xSurfaceInfo.m_eFormat);
 
 	s_xBRDFLUTFrameConstantsBinding = s_xBRDFLUTShader.GetReflection().GetBinding("FrameConstants");
 
 	// Initialize irradiance convolution shader and pipeline
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xIrradianceConvolveShader, s_xIrradianceConvolvePipeline,
-		"IBL/Flux_IrradianceConvolution.frag", &s_axIrradianceFaceSetup[0]);
+		"IBL/Flux_IrradianceConvolution.frag", s_xIrradianceMap.m_xSurfaceInfo.m_eFormat);
 
 	{
 		const Flux_ShaderReflection& xReflection = s_xIrradianceConvolveShader.GetReflection();
@@ -131,7 +97,7 @@ void Flux_IBL::Initialise()
 	// Initialize prefilter shader and pipeline
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xPrefilterShader, s_xPrefilterPipeline,
-		"IBL/Flux_PrefilterEnvMap.frag", &s_axPrefilteredFaceSetup[0]);
+		"IBL/Flux_PrefilterEnvMap.frag", s_xPrefilteredMap.m_xSurfaceInfo.m_eFormat);
 
 	{
 		const Flux_ShaderReflection& xReflection = s_xPrefilterShader.GetReflection();
@@ -415,7 +381,6 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// ResolveClearFlags filters disabled passes out of clear ownership.
 	{
 		s_uBRDFLUTPassIdx = xGraph.AddPass("IBL BRDF LUT", ExecuteBRDFLUTPass);
-		xGraph.SetTargetSetup(s_uBRDFLUTPassIdx, s_xBRDFLUTSetup);
 		xGraph.SetClear(s_uBRDFLUTPassIdx, true);
 		xGraph.Write(s_uBRDFLUTPassIdx, s_xBRDFLUT, RESOURCE_ACCESS_WRITE_RTV);
 	}
@@ -428,15 +393,14 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	for (u_int uFace = 0; uFace < 6; uFace++)
 	{
 		s_auIrradianceFacePassIdx[uFace] = xGraph.AddPass(s_aszIrradianceFaceNames[uFace], ExecuteIrradianceFacePass, &s_auIrradianceFaceData[uFace]);
-		xGraph.SetTargetSetup(s_auIrradianceFacePassIdx[uFace], s_axIrradianceFaceSetup[uFace]);
 		xGraph.SetClear(s_auIrradianceFacePassIdx[uFace], true);
-		xGraph.Write(s_auIrradianceFacePassIdx[uFace], s_xIrradianceMap, RESOURCE_ACCESS_WRITE_RTV, 0, 1);
+		// Declare write to (mip 0, face uFace) slice of the cubemap so the graph can
+		// select the per-(mip, face) RTV and emit a tight subresource barrier.
+		xGraph.Write(s_auIrradianceFacePassIdx[uFace], s_xIrradianceMap, RESOURCE_ACCESS_WRITE_RTV, 0, 1, uFace, 1);
 	}
 
 	// 42 prefilter mip-face passes — each writes one (mip, face) slot of the
-	// prefiltered cubemap. The graph honours per-mip/per-layer ranges so each
-	// slot is tracked independently and no phantom edges are added between
-	// disjoint subresources.
+	// prefiltered cubemap.
 	static const char* const s_aszPrefilterPassNames[IBLConfig::uPREFILTER_MIP_COUNT * 6] = {
 		"IBL Prefilter M0 F0", "IBL Prefilter M0 F1", "IBL Prefilter M0 F2", "IBL Prefilter M0 F3", "IBL Prefilter M0 F4", "IBL Prefilter M0 F5",
 		"IBL Prefilter M1 F0", "IBL Prefilter M1 F1", "IBL Prefilter M1 F2", "IBL Prefilter M1 F3", "IBL Prefilter M1 F4", "IBL Prefilter M1 F5",
@@ -454,9 +418,9 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			s_axPrefilterPassData[uMip][uFace].m_uFace = uFace;
 			s_auPrefilterMipFacePassIdx[uMip][uFace] = xGraph.AddPass(s_aszPrefilterPassNames[uMip * 6 + uFace],
 				ExecutePrefilterMipFacePass, &s_axPrefilterPassData[uMip][uFace]);
-			xGraph.SetTargetSetup(s_auPrefilterMipFacePassIdx[uMip][uFace], s_axPrefilteredMipFaceSetup[uMip][uFace]);
 			xGraph.SetClear(s_auPrefilterMipFacePassIdx[uMip][uFace], true);
-			xGraph.Write(s_auPrefilterMipFacePassIdx[uMip][uFace], s_xPrefilteredMap, RESOURCE_ACCESS_WRITE_RTV, uMip, 1);
+			// Declare write to (mip uMip, face uFace) slice.
+			xGraph.Write(s_auPrefilterMipFacePassIdx[uMip][uFace], s_xPrefilteredMap, RESOURCE_ACCESS_WRITE_RTV, uMip, 1, uFace, 1);
 		}
 	}
 }
@@ -469,10 +433,9 @@ void Flux_IBL::CreateRenderTargets()
 	xBuilder.m_uWidth = IBLConfig::uBRDF_LUT_SIZE;
 	xBuilder.m_uHeight = IBLConfig::uBRDF_LUT_SIZE;
 	xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
-	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16_SFLOAT;  // Only need RG channels for scale/bias
+	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16_SFLOAT;
 
 	xBuilder.BuildColour(s_xBRDFLUT, "IBL BRDF LUT");
-	s_xBRDFLUTSetup.m_axColourAttachments[0] = s_xBRDFLUT;
 
 	// Irradiance map - cubemap for diffuse IBL
 	xBuilder.m_uWidth = IBLConfig::uIRRADIANCE_SIZE;
@@ -480,97 +443,23 @@ void Flux_IBL::CreateRenderTargets()
 	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 	xBuilder.BuildColourCubemap(s_xIrradianceMap, "IBL Irradiance Map");
 
-	// Set up per-face target setups for irradiance (using face RTVs)
-	for (u_int i = 0; i < 6; i++)
-	{
-		ConfigureCubeFaceTarget(s_axIrradianceFaceSetup[i], s_xIrradianceMap, i, s_xIrradianceMap.m_axFaceRTVs[i]);
-	}
-
 	// Prefiltered environment map - cubemap for specular IBL (with mip chain for roughness levels)
 	xBuilder.m_uWidth = IBLConfig::uPREFILTER_SIZE;
 	xBuilder.m_uHeight = IBLConfig::uPREFILTER_SIZE;
 	xBuilder.m_uNumMips = IBLConfig::uPREFILTER_MIP_COUNT;
 	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 	xBuilder.BuildColourCubemap(s_xPrefilteredMap, "IBL Prefiltered Map");
-
-	// Set up per-face target setups for prefiltered map (mip 0 only, for backwards compatibility)
-	for (u_int i = 0; i < 6; i++)
-	{
-		ConfigureCubeFaceTarget(s_axPrefilteredFaceSetup[i], s_xPrefilteredMap, i, s_xPrefilteredMap.m_axFaceRTVs[i]);
-	}
-
-	// Create per-mip-per-face RTVs and target setups for all roughness levels
-	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
-	{
-		u_int uMipSize = IBLConfig::uPREFILTER_SIZE >> uMip;
-
-		for (u_int uFace = 0; uFace < 6; uFace++)
-		{
-			s_axPrefilteredMipFaceRTVs[uMip][uFace] = Flux_MemoryManager::CreateRenderTargetViewForLayer(
-				s_xPrefilteredMap.m_xVRAMHandle,
-				s_xPrefilteredMap.m_xSurfaceInfo,
-				uFace,
-				uMip);
-
-			ConfigureCubeFaceTarget(s_axPrefilteredMipFaceSetup[uMip][uFace], s_xPrefilteredMap,
-				uFace, s_axPrefilteredMipFaceRTVs[uMip][uFace], uMip, uMipSize);
-		}
-	}
 }
 
 void Flux_IBL::DestroyRenderTargets()
 {
-	auto DestroyAttachment = [](Flux_RenderAttachment& xAttachment)
-	{
-		if (xAttachment.m_xVRAMHandle.IsValid())
-		{
-			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
-			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
-				xAttachment.m_pxRTV.m_xImageViewHandle, xAttachment.m_pxDSV.m_xImageViewHandle,
-				xAttachment.m_pxSRV.m_xImageViewHandle, xAttachment.m_pxUAV.m_xImageViewHandle);
-		}
-	};
-
-	// Helper to clean up cubemap face RTVs and SRVs
-	auto DestroyCubemapFaceViews = [](Flux_RenderAttachment& xAttachment)
-	{
-		for (u_int i = 0; i < 6; i++)
-		{
-			if (xAttachment.m_axFaceRTVs[i].m_xImageViewHandle.IsValid())
-			{
-				Flux_MemoryManager::QueueImageViewDeletion(xAttachment.m_axFaceRTVs[i].m_xImageViewHandle);
-				xAttachment.m_axFaceRTVs[i] = Flux_RenderTargetView();
-			}
-			if (xAttachment.m_axFaceSRVs[i].m_xImageViewHandle.IsValid())
-			{
-				Flux_MemoryManager::QueueImageViewDeletion(xAttachment.m_axFaceSRVs[i].m_xImageViewHandle);
-				xAttachment.m_axFaceSRVs[i] = Flux_ShaderResourceView();
-			}
-		}
-	};
-
-	DestroyAttachment(s_xBRDFLUT);
-
-	// Clean up irradiance cubemap face views before destroying VRAM
-	DestroyCubemapFaceViews(s_xIrradianceMap);
-	DestroyAttachment(s_xIrradianceMap);
-
-	// Clean up per-mip RTVs before destroying the prefiltered map VRAM
-	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
-	{
-		for (u_int uFace = 0; uFace < 6; uFace++)
-		{
-			if (s_axPrefilteredMipFaceRTVs[uMip][uFace].m_xImageViewHandle.IsValid())
-			{
-				Flux_MemoryManager::QueueImageViewDeletion(s_axPrefilteredMipFaceRTVs[uMip][uFace].m_xImageViewHandle);
-				s_axPrefilteredMipFaceRTVs[uMip][uFace] = Flux_RenderTargetView();
-			}
-		}
-	}
-
-	// Clean up prefiltered cubemap base face views
-	DestroyCubemapFaceViews(s_xPrefilteredMap);
-	DestroyAttachment(s_xPrefilteredMap);
+	// Route through the builder so per-mip RTVs / SRVs / UAVs for multi-mip
+	// attachments (prefiltered cube has 7 mips × 6 faces = 42 RTVs alone) get
+	// released — a hand-rolled loop here previously STUBBED the cube path and
+	// only queued mip 0 for the 2D path, leaking GPU memory every Shutdown.
+	Flux_RenderAttachmentBuilder::Destroy(s_xBRDFLUT);
+	Flux_RenderAttachmentBuilder::Destroy(s_xIrradianceMap);
+	Flux_RenderAttachmentBuilder::Destroy(s_xPrefilteredMap);
 }
 
 // Phase 5.1: GenerateBRDFLUT/UpdateSkyIBL/GenerateIrradianceMap/GeneratePrefilteredMap
@@ -609,17 +498,17 @@ void Flux_IBL::MarkAllProbesDirty()
 // Accessors - return const references to prevent modification and signal temporary nature
 const Flux_ShaderResourceView& Flux_IBL::GetBRDFLUTSRV()
 {
-	return s_xBRDFLUT.m_pxSRV;
+	return s_xBRDFLUT.SRV();
 }
 
 const Flux_ShaderResourceView& Flux_IBL::GetIrradianceMapSRV()
 {
-	return s_xIrradianceMap.m_pxSRV;
+	return s_xIrradianceMap.SRV();
 }
 
 const Flux_ShaderResourceView& Flux_IBL::GetPrefilteredMapSRV()
 {
-	return s_xPrefilteredMap.m_pxSRV;
+	return s_xPrefilteredMap.SRV();
 }
 
 // Setters
@@ -653,31 +542,13 @@ float Flux_IBL::GetForcedRoughness() { return dbg_fIBLForcedRoughness; }
 #ifdef ZENITH_TOOLS
 void Flux_IBL::RegisterDebugVariables()
 {
-	// NOTE: Texture debug variables are registered here during Initialise(), before
-	// content is generated. The SRVs are valid (created in CreateRenderTargets) but
-	// textures will appear black/undefined until GenerateBRDFLUT() and UpdateSkyIBL()
-	// run on the first frame. This is expected behavior.
 	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "ShowBRDFLUT" }, dbg_bIBLShowBRDFLUT);
 	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "ForceRoughness" }, dbg_bIBLForceRoughness);
 	Zenith_DebugVariables::AddFloat({ "Flux", "IBL", "ForcedRoughness" }, dbg_fIBLForcedRoughness, 0.0f, 1.0f);
 	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "RegenerateBRDFLUT" }, dbg_bIBLRegenerateBRDFLUT);
 
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "BRDF_LUT" }, s_xBRDFLUT.m_pxSRV);
-
-	// Register individual cubemap faces for irradiance map (face order: +X, -X, +Y, -Y, +Z, -Z)
-	// Using PosX/NegX naming to avoid special characters in debug variable paths
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Irradiance", "Face0_PosX" }, s_xIrradianceMap.m_axFaceSRVs[0]);
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Irradiance", "Face1_NegX" }, s_xIrradianceMap.m_axFaceSRVs[1]);
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Irradiance", "Face2_PosY" }, s_xIrradianceMap.m_axFaceSRVs[2]);
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Irradiance", "Face3_NegY" }, s_xIrradianceMap.m_axFaceSRVs[3]);
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Irradiance", "Face4_PosZ" }, s_xIrradianceMap.m_axFaceSRVs[4]);
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Irradiance", "Face5_NegZ" }, s_xIrradianceMap.m_axFaceSRVs[5]);
-
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Prefiltered", "Face0_PosX" }, s_xPrefilteredMap.m_axFaceSRVs[0]);
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Prefiltered", "Face1_NegX" }, s_xPrefilteredMap.m_axFaceSRVs[1]);
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Prefiltered", "Face2_PosY" }, s_xPrefilteredMap.m_axFaceSRVs[2]);
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Prefiltered", "Face3_NegY" }, s_xPrefilteredMap.m_axFaceSRVs[3]);
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Prefiltered", "Face4_PosZ" }, s_xPrefilteredMap.m_axFaceSRVs[4]);
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Prefiltered", "Face5_NegZ" }, s_xPrefilteredMap.m_axFaceSRVs[5]);
+	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "BRDF_LUT" }, s_xBRDFLUT.SRV());
+	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Irradiance" }, s_xIrradianceMap.SRV());
+	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Prefiltered" }, s_xPrefilteredMap.SRV());
 }
 #endif

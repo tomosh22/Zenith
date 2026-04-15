@@ -192,7 +192,9 @@ void Flux_FroxelFog::Initialise()
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	Flux_PipelineSpecification xApplySpec;
-	xApplySpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetup();
+	xApplySpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xApplySpec.m_uNumColourAttachments = 1;
+	xApplySpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
 	xApplySpec.m_pxShader = &s_xApplyShader;
 	xApplySpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -305,7 +307,7 @@ void Flux_FroxelFog::RenderInject(Flux_CommandList* pxCommandList)
 	Flux_ShaderBinder xInjectBinder(*pxCommandList);
 	xInjectBinder.BindCBV(s_xInjectFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xInjectBinder.BindSRV(s_xInjectNoiseBinding, &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV, &Flux_Graphics::s_xRepeatSampler);
-	xInjectBinder.BindUAV_Texture(s_xInjectDensityOutputBinding, &s_xDensityGrid.m_pxUAV);
+	xInjectBinder.BindUAV_Texture(s_xInjectDensityOutputBinding, &s_xDensityGrid.UAV(0));
 	xInjectBinder.PushConstant(&s_xInjectConstants, sizeof(InjectConstants));
 	pxCommandList->AddCommand<Flux_CommandDispatch>(
 		(FROXEL_WIDTH + 7) / 8,
@@ -340,9 +342,9 @@ void Flux_FroxelFog::RenderLight(Flux_CommandList* pxCommandList)
 
 	Flux_ShaderBinder xLightBinder(*pxCommandList);
 	xLightBinder.BindCBV(s_xLightFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xLightBinder.BindSRV(s_xLightDensityInputBinding, &s_xDensityGrid.m_pxSRV);
-	xLightBinder.BindUAV_Texture(s_xLightLightingOutputBinding, &s_xLightingGrid.m_pxUAV);
-	xLightBinder.BindUAV_Texture(s_xLightScatteringOutputBinding, &s_xScatteringGrid.m_pxUAV);
+	xLightBinder.BindSRV(s_xLightDensityInputBinding, &s_xDensityGrid.SRV());
+	xLightBinder.BindUAV_Texture(s_xLightLightingOutputBinding, &s_xLightingGrid.UAV(0));
+	xLightBinder.BindUAV_Texture(s_xLightScatteringOutputBinding, &s_xScatteringGrid.UAV(0));
 
 	// Bind CSM shadow maps and matrices for volumetric shadows
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
@@ -377,8 +379,8 @@ void Flux_FroxelFog::RenderApply(Flux_CommandList* pxCommandList)
 	Flux_ShaderBinder xApplyBinder(*pxCommandList);
 	xApplyBinder.BindCBV(s_xApplyFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xApplyBinder.BindSRV(s_xApplyDepthBinding, Flux_Graphics::GetDepthStencilSRV());
-	xApplyBinder.BindSRV(s_xApplyLightingBinding, &s_xLightingGrid.m_pxSRV);
-	xApplyBinder.BindSRV(s_xApplyScatteringBinding, &s_xScatteringGrid.m_pxSRV);
+	xApplyBinder.BindSRV(s_xApplyLightingBinding, &s_xLightingGrid.SRV());
+	xApplyBinder.BindSRV(s_xApplyScatteringBinding, &s_xScatteringGrid.SRV());
 	xApplyBinder.PushConstant(&s_xApplyConstants, sizeof(ApplyConstants));
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

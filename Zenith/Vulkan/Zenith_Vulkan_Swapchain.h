@@ -6,7 +6,7 @@
 //#TO for MAX_FRAMES_IN_FLIGHT which should really be somewhere else
 #include "Flux/Flux_Enums.h"
 
-struct Flux_TargetSetup;
+struct Flux_RenderAttachment;
 
 class Zenith_Vulkan_Swapchain
 {
@@ -31,7 +31,7 @@ public:
 
 	static bool ShouldWaitOnImageAvailableSemaphore();
 	
-	static Flux_TargetSetup* GetCurrentSwapchainTarget();
+	static Flux_RenderAttachment* GetCurrentSwapchainTarget(uint32_t& uNumColourAttachments, Flux_RenderAttachment*& pxDepthStencil);
 	
 private:
 	static void BindAsTarget();
@@ -48,5 +48,5 @@ private:
 	static uint32_t s_uFrameIndex; //set by us
 	static bool s_bShouldWaitOnImageAvailableSem;
 
-	static Flux_TargetSetup s_axTargetSetups[MAX_FRAMES_IN_FLIGHT];
+	static Flux_RenderAttachment s_axColourAttachments[MAX_FRAMES_IN_FLIGHT];
 };

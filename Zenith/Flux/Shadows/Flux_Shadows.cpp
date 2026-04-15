@@ -11,7 +11,6 @@
 #include "Flux/Terrain/Flux_Terrain.h"
 
 static Flux_RenderAttachment g_axCSMs[ZENITH_FLUX_NUM_CSMS];
-static Flux_TargetSetup g_axCSMTargetSetups[ZENITH_FLUX_NUM_CSMS];
 static Zenith_Maths::Matrix4 g_axShadowMatrices[ZENITH_FLUX_NUM_CSMS];
 
 static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
@@ -86,7 +85,6 @@ void Flux_Shadows::Initialise()
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		xBuilder.BuildDepthStencil(g_axCSMs[u], "CSM " + std::to_string(u));
-		g_axCSMTargetSetups[u].AssignDepthStencil(&g_axCSMs[u]);
 
 		Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xShadowMatrixBuffers[u]);
 	}
@@ -96,7 +94,7 @@ void Flux_Shadows::Initialise()
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({"Render", "Enable", "Shadows"}, dbg_bEnabled);
 	Zenith_DebugVariables::AddFloat({"Render", "Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
-	Zenith_DebugVariables::AddTexture({"Render", "Shadows", "CSM0" }, g_axCSMs->m_pxSRV);
+	Zenith_DebugVariables::AddTexture({"Render", "Shadows", "CSM0" }, g_axCSMs->SRV());
 #endif
 }
 
@@ -109,8 +107,8 @@ void Flux_Shadows::Shutdown()
 		{
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(g_axCSMs[u].m_xVRAMHandle);
 			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, g_axCSMs[u].m_xVRAMHandle,
-				g_axCSMs[u].m_pxRTV.m_xImageViewHandle, g_axCSMs[u].m_pxDSV.m_xImageViewHandle,
-				g_axCSMs[u].m_pxSRV.m_xImageViewHandle, g_axCSMs[u].m_pxUAV.m_xImageViewHandle);
+				g_axCSMs[u].RTV().m_xImageViewHandle, g_axCSMs[u].DSV().m_xImageViewHandle,
+				g_axCSMs[u].SRV().m_xImageViewHandle, g_axCSMs[u].UAV(0).m_xImageViewHandle);
 		}
 
 		// Destroy shadow matrix buffer
@@ -172,7 +170,9 @@ void Flux_Shadows::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		const u_int uPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade, PackSmallInt(u));
-		xGraph.SetTargetSetup(uPass, g_axCSMTargetSetups[u]);
+		uint32_t uNumColour;
+		Flux_RenderAttachment* pxDepthStencil;
+		Flux_Shadows::GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
 		// Each cascade owns its own target setup and clears its depth.
 		xGraph.SetClear(uPass, true);
 
@@ -188,9 +188,25 @@ void Flux_Shadows::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	}
 }
 
-Flux_TargetSetup& Flux_Shadows::GetCSMTargetSetup(const uint32_t uIndex)
+// Contract:
+//   - Returns the colour attachment pointer (currently always nullptr — CSMs are
+//     depth-only today; the return type is reserved for future variance/moment
+//     shadow map variants that would carry a colour cascade).
+//   - uNumColour is set to the number of colour attachments (0 today).
+//   - pxDepthStencil is ALWAYS populated with a non-null Flux_RenderAttachment*
+//     for a valid uIndex < ZENITH_FLUX_NUM_CSMS. Callers may dereference it
+//     unconditionally.
+//
+// Callers (Flux_AnimatedMeshes / StaticMeshes / InstancedMeshes / Terrain /
+// DeferredShading) rely on the non-null pxDepthStencil guarantee; if this ever
+// changes, every caller must be audited for null guards.
+Flux_RenderAttachment* Flux_Shadows::GetCSMTargetSetup(const uint32_t uIndex, uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil)
 {
-	return g_axCSMTargetSetups[uIndex];
+	Zenith_Assert(uIndex < ZENITH_FLUX_NUM_CSMS, "GetCSMTargetSetup: cascade index %u out of bounds (max %u)", uIndex, ZENITH_FLUX_NUM_CSMS);
+	uNumColour = 0;
+	pxDepthStencil = &g_axCSMs[uIndex];
+	Zenith_Assert(pxDepthStencil != nullptr, "GetCSMTargetSetup: depth-stencil out-param must be non-null per contract");
+	return nullptr;
 }
 
 Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
@@ -200,7 +216,7 @@ Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
 
 Flux_ShaderResourceView& Flux_Shadows::GetCSMSRV(const uint32_t u)
 {
-	return dbg_bEnabled ? g_axCSMs[u].m_pxSRV : Flux_Graphics::s_pxWhiteTexture->m_xSRV;
+	return dbg_bEnabled ? g_axCSMs[u].SRV() : Flux_Graphics::s_pxWhiteTexture->m_xSRV;
 }
 
 Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)

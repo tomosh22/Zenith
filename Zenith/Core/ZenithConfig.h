@@ -95,6 +95,7 @@ static constexpr uint32_t MAX_MATERIALS = 1024;
 // Maximum render targets and descriptor bindings per shader.
 
 static constexpr uint32_t FLUX_MAX_TARGETS = 8;
+static constexpr uint32_t FLUX_MAX_MIPS = 12;     // Maximum mip levels (supports up to 4096x4096)
 static constexpr uint32_t FLUX_MAX_DESCRIPTOR_BINDINGS = 32;
 static constexpr uint32_t FLUX_MAX_DESCRIPTOR_SET_LAYOUTS = 5;
 
@@ -175,4 +176,8 @@ static constexpr PhysicsMeshQuality DEFAULT_PHYSICS_MESH_QUALITY = PhysicsMeshQu
 
 #ifndef FLUX_MAX_DESCRIPTOR_SET_LAYOUTS
 #define FLUX_MAX_DESCRIPTOR_SET_LAYOUTS ZenithConfig::FLUX_MAX_DESCRIPTOR_SET_LAYOUTS
+#endif
+
+#ifndef FLUX_MAX_MIPS
+#define FLUX_MAX_MIPS ZenithConfig::FLUX_MAX_MIPS
 #endif

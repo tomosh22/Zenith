@@ -14,7 +14,7 @@ public:
 
 	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	static Flux_TargetSetup& GetCSMTargetSetup(const uint32_t uIndex);
+	static Flux_RenderAttachment* GetCSMTargetSetup(const uint32_t uIndex, uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
 	static Zenith_Maths::Matrix4 GetSunViewProjMatrix(const uint32_t uIndex);
 	static Flux_ShaderResourceView& GetCSMSRV(const uint32_t u);
 	static Flux_DynamicConstantBuffer& GetShadowMatrixBuffer(const uint32_t u);

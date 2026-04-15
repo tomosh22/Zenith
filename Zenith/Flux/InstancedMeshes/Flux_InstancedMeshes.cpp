@@ -118,7 +118,11 @@ void Flux_InstancedMeshes::Initialise()
 	// GBuffer pipeline
 	{
 		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_DIFFUSE].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
 		xPipelineSpec.m_pxShader = &s_xGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -137,7 +141,11 @@ void Flux_InstancedMeshes::Initialise()
 	// Shadow pipeline
 	{
 		Flux_PipelineSpecification xShadowPipelineSpec;
-		xShadowPipelineSpec.m_pxTargetSetup = &Flux_Shadows::GetCSMTargetSetup(0);
+		uint32_t uNumColour;
+		Flux_RenderAttachment* pxDepthStencil;
+		Flux_Shadows::GetCSMTargetSetup(0, uNumColour, pxDepthStencil);
+		xShadowPipelineSpec.m_eDepthStencilFormat = pxDepthStencil->m_xSurfaceInfo.m_eFormat;
+		xShadowPipelineSpec.m_uNumColourAttachments = 0;
 		xShadowPipelineSpec.m_pxShader = &s_xShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 		xShadowPipelineSpec.m_bDepthBias = false;
@@ -277,17 +285,12 @@ void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// Pass 1: GPU culling compute
 	u_int uCullingPass = xGraph.AddPass("Instanced Meshes Culling", ExecuteCulling);
-	xGraph.SetTargetSetup(uCullingPass, Flux_Graphics::s_xNullTargetSetup);
 
 	// Pass 2: GBuffer render
-	u_int uGBufferPass = xGraph.AddPass("Instanced Meshes GBuffer", ExecuteGBuffer);
-	xGraph.SetTargetSetup(uGBufferPass, Flux_Graphics::s_xMRTTarget);
-
-	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
-	{
-		xGraph.Write(uGBufferPass, Flux_Graphics::s_xMRTTarget.m_axColourAttachments[u], RESOURCE_ACCESS_WRITE_RTV);
-	}
-	xGraph.Write(uGBufferPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+	uint32_t uGBufferPass = xGraph.AddPass("Instanced Meshes GBuffer", ExecuteGBuffer);
+	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[1], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[2], RESOURCE_ACCESS_WRITE_RTV);
 
 	// GBuffer's indirect draws read the per-instance-group output buffers the
 	// culling compute writes. Those buffers are dynamic per-group and not

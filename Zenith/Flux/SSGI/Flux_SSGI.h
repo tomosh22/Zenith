@@ -37,11 +37,6 @@ public:
 	static Flux_RenderAttachment s_xResolved;           // RGBA16F: upsampled full-res result
 	static Flux_RenderAttachment s_xDenoised;           // RGBA16F: denoised full-res result
 
-	// Target setups
-	static Flux_TargetSetup s_xRayMarchTargetSetup;
-	static Flux_TargetSetup s_xUpsampleTargetSetup;
-	static Flux_TargetSetup s_xDenoiseTargetSetup;
-
 private:
 	static void CreateRenderTargets();
 	static void DestroyRenderTargets();

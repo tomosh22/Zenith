@@ -18,11 +18,10 @@ public:
 	//----------------------------------------------------------------------
 	// Render Targets
 	//----------------------------------------------------------------------
-	static Flux_TargetSetup s_xMRTTarget;
-	static Flux_TargetSetup s_xFinalRenderTarget;
-	static Flux_TargetSetup s_xFinalRenderTarget_NoDepth;
-	static Flux_TargetSetup s_xNullTargetSetup;  // For compute passes without render targets
-	static struct Flux_RenderAttachment s_xDepthBuffer;
+	static Flux_RenderAttachment s_axMRTColourAttachments[MRT_INDEX_COUNT];
+	static Flux_RenderAttachment s_xFinalRenderTarget;
+	static Flux_RenderAttachment s_xFinalRenderTarget_NoDepth;
+	static Flux_RenderAttachment s_xDepthBuffer;
 
 	//----------------------------------------------------------------------
 	// Samplers

@@ -42,8 +42,6 @@ public:
 	// Render targets (public for render graph access)
 	static Flux_RenderAttachment s_xRayMarchResult;      // RGBA16F: RGB=reflection, A=confidence
 	static Flux_RenderAttachment s_xResolvedReflection;  // RGBA16F: blurred reflection
-	static Flux_TargetSetup s_xRayMarchTargetSetup;
-	static Flux_TargetSetup s_xResolveTargetSetup;
 
 private:
 	static void CreateRenderTargets();

@@ -15,7 +15,8 @@ License: MIT (see LICENSE file at the top of the source tree)
 
 struct Flux_BlendState;
 struct Flux_PipelineSpecification;
-struct Flux_TargetSetup;
+struct Flux_RenderAttachment;
+struct Flux_RenderGraph_AttachmentRef;
 
 class Zenith_Vulkan_Shader
 {
@@ -122,8 +123,8 @@ public:
 
 	
 
-	static vk::RenderPass TargetSetupToRenderPass(const Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage, bool bDepthIsReadOnly = false);
-	static vk::Framebuffer TargetSetupToFramebuffer(const Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass);
+	static vk::RenderPass TargetSetupToRenderPass(const TextureFormat* aeColourFormats, uint32_t uNumColourAttachments, TextureFormat eDepthStencilFormat, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage, bool bDepthIsReadOnly = false);
+	static vk::Framebuffer TargetSetupToFramebuffer(const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColourAttachments, const Flux_RenderGraph_AttachmentRef& xDepthStencil, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass);
 };
 
 class Zenith_Vulkan_RootSigBuilder

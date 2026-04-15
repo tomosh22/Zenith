@@ -28,7 +28,6 @@ struct Flux_DepthStencilView;
 struct Flux_ConstantBufferView;
 
 // Pipeline and rendering types
-struct Flux_TargetSetup;
 struct Flux_PipelineSpecification;
 struct Flux_BlendState;
 struct Flux_PipelineLayout;
