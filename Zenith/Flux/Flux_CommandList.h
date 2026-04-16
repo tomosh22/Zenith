@@ -29,7 +29,6 @@ struct Flux_RenderAttachment;
 	X(DRAW_INDEXED_INDIRECT_COUNT, Flux_CommandDrawIndexedIndirectCount) \
 	X(BIND_COMPUTE_PIPELINE,       Flux_CommandBindComputePipeline) \
 	X(DISPATCH,                    Flux_CommandDispatch) \
-	X(IMAGE_TRANSITION,            Flux_CommandImageTransition) \
 	X(SET_CULL_MODE,               Flux_CommandSetCullMode) \
 	X(SET_DEPTH_BIAS,              Flux_CommandSetDepthBias) \
 	X(RENDER_IMGUI,                Flux_CommandRenderImGui)
@@ -331,46 +330,12 @@ public:
 	u_int m_uGroupCountZ;
 };
 
-// Inline image subresource transition command. Emitted directly into a
-// command list when a pass needs to transition a specific (mip, layer) range
-// between compute/graphics accesses *inside* its own recording — e.g. the
-// HiZ mip chain transitions mip N-1 to SHADER_READ and mip N to UAV_WRITE
-// between successive dispatches on the same attachment.
-//
-// This is the narrow-blast-radius alternative to having the render graph
-// consume per-pass prologue barriers. The graph only tracks per-attachment
-// state; passes that need per-subresource transitions own their own ordering.
-class Flux_CommandImageTransition
-{
-public:
-	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__IMAGE_TRANSITION;
-
-	Flux_CommandImageTransition(Flux_RenderAttachment* pxAttachment,
-		u_int uBaseMip, u_int uMipCount,
-		u_int uBaseLayer, u_int uLayerCount,
-		ResourceAccess eSrcAccess, ResourceAccess eDstAccess)
-		: m_pxAttachment(pxAttachment)
-		, m_uBaseMip(uBaseMip)
-		, m_uMipCount(uMipCount)
-		, m_uBaseLayer(uBaseLayer)
-		, m_uLayerCount(uLayerCount)
-		, m_eSrcAccess(eSrcAccess)
-		, m_eDstAccess(eDstAccess)
-	{}
-	void operator()(Flux_CommandBuffer* pxCmdBuf)
-	{
-		pxCmdBuf->ImageTransition(m_pxAttachment,
-			m_uBaseMip, m_uMipCount, m_uBaseLayer, m_uLayerCount,
-			m_eSrcAccess, m_eDstAccess);
-	}
-	Flux_RenderAttachment* m_pxAttachment;
-	u_int m_uBaseMip;
-	u_int m_uMipCount;
-	u_int m_uBaseLayer;
-	u_int m_uLayerCount;
-	ResourceAccess m_eSrcAccess;
-	ResourceAccess m_eDstAccess;
-};
+// Flux_CommandImageTransition was deleted in the Phase B follow-up.
+// Synchronisation is the render graph's responsibility — declare reads and
+// writes via Flux_RenderGraph::Read / Write and the graph emits the
+// necessary transitions outside the pass's command list. There is no
+// supported way for a pass to emit a barrier from inside its own recording
+// (it wouldn't be visible to the graph's tracker and would cause sync drift).
 
 class Flux_CommandSetCullMode
 {

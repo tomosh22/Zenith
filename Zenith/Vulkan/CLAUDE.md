@@ -113,12 +113,13 @@ s_xCommandBuffer.ImageTransitionBarrier(
 
 ```cpp
 // Dispatch is intentionally trivial: UpdateDescriptorSets() then vkCmdDispatch().
-// All synchronisation (image layouts, UAV memory barriers, post-dispatch buffer
-// flushes) is owned by Flux_RenderGraph and emitted as prologue barriers via
-// ConsumeGraphPrologueBarriers before the pass begins. Declare every read/write
-// via PassReads / PassWrites / PassReadsBuffer / PassWritesBuffer (or use
-// AddPassDependency for explicit compute->graphics edges) and the graph will
-// emit the right barrier.
+// All synchronisation (image layouts, UAV memory barriers) is owned by
+// Flux_RenderGraph::SynthesizeBarriers and emitted from
+// RecordCommandBuffersTask via Zenith_Vulkan_CommandBuffer::ImageTransition
+// before the pass executes (outside any active render pass). Declare every
+// read/write via Flux_RenderGraph::Read/Write (or ReadBuffer/WriteBuffer for
+// buffers, or DependsOn for explicit compute→graphics edges) and the graph
+// will emit the right barrier — no inline Flux_CommandImageTransition needed.
 s_xCommandBuffer.Dispatch(uGroupsX, uGroupsY, uGroupsZ);
 ```
 

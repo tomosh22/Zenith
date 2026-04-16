@@ -171,47 +171,12 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 
 	u_int uMip = static_cast<u_int>(reinterpret_cast<uintptr_t>(pUserData));
 
-	// -----------------------------------------------------------------------
-	// Inline per-mip layout transitions.
-	//
-	// The HiZ buffer's initial layout is SHADER_READ_ONLY_OPTIMAL (set by the
-	// memory manager for render targets with SHADER_READ + UAV flags). Each
-	// mip pass needs:
-	//   - Current mip (UAV target)   : UNDEFINED -> GENERAL (discard prior)
-	//   - Previous mip (SRV source)  : GENERAL   -> SHADER_READ_ONLY_OPTIMAL
-	//
-	// #TODO: Retire these inline transitions once the render graph's compute-pass
-	// barrier emission is wired to the platform layer.
-	//
-	// Graph-level barrier generation was removed (it was untested dead code).
-	// Barriers are computed by RecordCommandBuffersTask in Zenith_Vulkan.cpp.
-	// The per-mip Read/Write declarations in SetupRenderGraph() drive dependency
-	// ordering; actual vkCmdPipelineBarrier calls are emitted by the backend.
-	// The explicit transitions below match the compute pipeline's descriptor
-	// layout expectations (SRVs want SHADER_READ_ONLY_OPTIMAL, UAVs want GENERAL).
-	//
-	// UNDEFINED as the source access on the target mip is safe: it's the
-	// standard "discard + transition" path used across frame boundaries when
-	// the previous frame's contents don't need to survive.
-	// -----------------------------------------------------------------------
-
-	// Transition current mip to GENERAL for UAV write (discard prior contents).
-	pxCommandList->AddCommand<Flux_CommandImageTransition>(
-		&GetHiZBuffer(),
-		uMip, 1,     // mip range
-		0, 1,        // layer range
-		RESOURCE_ACCESS_UNDEFINED, RESOURCE_ACCESS_WRITE_UAV);
-
-	// For mip > 0 the previous mip (just written as UAV) needs to flip to
-	// SHADER_READ_ONLY_OPTIMAL so the compute shader can sample it.
-	if (uMip > 0)
-	{
-		pxCommandList->AddCommand<Flux_CommandImageTransition>(
-			&GetHiZBuffer(),
-			uMip - 1, 1, // previous mip
-			0, 1,
-			RESOURCE_ACCESS_WRITE_UAV, RESOURCE_ACCESS_READ_SRV);
-	}
+	// Layout transitions are now emitted by Flux_RenderGraph::SynthesizeBarriers
+	// from the per-mip Read/Write declarations in SetupRenderGraph (Phase B).
+	// The graph emits:
+	//   - Current mip: UNDEFINED → WRITE_UAV (GENERAL) before this dispatch
+	//   - Previous mip (read by mip N+1): WRITE_UAV → READ_SRV before that pass
+	// No inline transitions needed here; remove them and the graph fills the gap.
 
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&g_xComputePipeline);
 
@@ -251,17 +216,10 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 	u_int uGroupsY = (uMipHeight + 15) / 16;
 	pxCommandList->AddCommand<Flux_CommandDispatch>(uGroupsX, uGroupsY, 1);
 
-	// On the last mip, flip it back to SHADER_READ_ONLY_OPTIMAL so downstream
-	// consumers (SSR, SSAO, etc.) see it in the layout their descriptors
-	// expect. Earlier mips are already flipped by the next mip's transition.
-	if (uMip == Flux_HiZ::GetMipCount() - 1)
-	{
-		pxCommandList->AddCommand<Flux_CommandImageTransition>(
-			&GetHiZBuffer(),
-			uMip, 1,
-			0, 1,
-			RESOURCE_ACCESS_WRITE_UAV, RESOURCE_ACCESS_READ_SRV);
-	}
+	// The "final mip → SHADER_READ_ONLY" transition is now emitted by the
+	// graph as part of the next consumer's prologue (SSR / SSAO / SSGI all
+	// declare a Read on the HiZ chain, which triggers SynthesizeBarriers to
+	// transition every mip from WRITE_UAV → READ_SRV). Removed from here.
 }
 
 void Flux_HiZ::SetupRenderGraph(Flux_RenderGraph& xGraph)

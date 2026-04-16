@@ -709,11 +709,13 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const TextureForm
 	vk::AttachmentReference xDepthStencilAttachmentRef;
 	if (bHasDepth)
 	{
-		// Initial / final layouts match what the render-graph barrier consumer
-		// produces. Write passes use eDepthStencilAttachmentOptimal; passes that
-		// only sample the depth attachment (e.g. Grass) use
-		// eDepthStencilReadOnlyOptimal. Subsequent graph passes that change
-		// access emit their own barrier transitioning between the two.
+		// initialLayout == finalLayout == working layout. The render graph
+		// (Flux_RenderGraph::SynthesizeBarriers) puts the depth image in this
+		// layout BEFORE BeginRenderPass via a prologue barrier; the render
+		// pass itself never transitions. This holds for both LOAD and CLEAR
+		// loadOps — for CLEAR the prior state may be UNDEFINED, but the
+		// graph's barrier handles that as a discard transition into the
+		// working layout, not the render pass.
 		const vk::ImageLayout eDepthLayout = bDepthIsReadOnly
 			? vk::ImageLayout::eDepthStencilReadOnlyOptimal
 			: vk::ImageLayout::eDepthStencilAttachmentOptimal;
@@ -724,7 +726,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const TextureForm
 			.setStoreOp(Zenith_Vulkan::ConvertToVkStoreAction(eDepthStencilStore))
 			.setStencilLoadOp(Zenith_Vulkan::ConvertToVkLoadAction(eDepthStencilLoad))
 			.setStencilStoreOp(Zenith_Vulkan::ConvertToVkStoreAction(eDepthStencilStore))
-			.setInitialLayout(eDepthStencilLoad == LOAD_ACTION_LOAD ? eDepthLayout : vk::ImageLayout::eUndefined)
+			.setInitialLayout(eDepthLayout)
 			.setFinalLayout(eDepthLayout);
 
 		xDepthStencilAttachmentRef = vk::AttachmentReference()

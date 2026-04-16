@@ -23,6 +23,7 @@ struct Flux_RenderTargetView;
 struct Flux_DepthStencilView;
 struct Flux_RenderAttachment;
 struct Flux_RenderGraph_AttachmentRef;
+class Flux_GraphResource;
 
 struct ScratchBufferBinding {
 	u_int m_uOffset = 0;
@@ -101,6 +102,12 @@ public:
 	void ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout);
 
 	void ImageTransition(Flux_RenderAttachment* pxAttachment,
+		uint32_t uBaseMip, uint32_t uMipCount,
+		uint32_t uBaseLayer, uint32_t uLayerCount,
+		ResourceAccess eSrcAccess, ResourceAccess eDstAccess);
+	// Polymorphic overload — handles both 2D and cube attachments via the
+	// graph-resource tag. Used by the render-graph prologue-barrier emitter.
+	void ImageTransition(const Flux_GraphResource& xResource,
 		uint32_t uBaseMip, uint32_t uMipCount,
 		uint32_t uBaseLayer, uint32_t uLayerCount,
 		ResourceAccess eSrcAccess, ResourceAccess eDstAccess);

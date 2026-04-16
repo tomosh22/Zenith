@@ -31,10 +31,27 @@ struct Flux_RenderGraph_Resource
     u_int m_uLastRead = UINT32_MAX;
 };
 
-// TODO: Unify barrier generation. Graph-level barrier synthesis was deleted
-// because it was untested and unused by the Vulkan backend (which computes its
-// own barriers in RecordCommandBuffersTask). Re-introduce graph-driven barriers
-// with proper tests before wiring to the backend.
+// Per-(resource, subresource) state transition emitted by the graph as a
+// pass prologue. Synthesised in Compile()::SynthesizeBarriers from the
+// declared Read/Write set; the Vulkan backend
+// (Zenith_Vulkan.cpp::RecordCommandBuffersTask) emits these via
+// Zenith_Vulkan_CommandBuffer::ImageTransition right before each pass
+// executes (outside any active render pass scope). The graph is the SOLE
+// barrier authority — graphics programmers declare access via Read/Write
+// only; no inline transitions, no backend-side ad-hoc transitions.
+//
+// Resource is held as a Flux_GraphResource so the same struct covers both
+// 2D and cube attachments. Buffer barriers are still elided (Phase B image-only).
+struct Flux_RenderGraph_Barrier
+{
+    Flux_GraphResource m_xResource;
+    u_int m_uBaseMip = 0;
+    u_int m_uMipCount = 1;
+    u_int m_uBaseLayer = 0;
+    u_int m_uLayerCount = 1;
+    ResourceAccess m_eSrcAccess = RESOURCE_ACCESS_UNDEFINED;
+    ResourceAccess m_eDstAccess = RESOURCE_ACCESS_UNDEFINED;
+};
 
 struct Flux_RenderGraph_Pass
 {
@@ -44,6 +61,10 @@ struct Flux_RenderGraph_Pass
     Zenith_Vector<Flux_RenderGraph_ResourceUsage> m_xReads;
     Zenith_Vector<Flux_RenderGraph_ResourceUsage> m_xWrites;
     Zenith_Vector<u_int> m_xExplicitDependencies;
+    // Subresource transitions to emit BEFORE pfnOnRecord runs. Computed in
+    // Compile()::SynthesizeBarriers; the record task prepends them to the
+    // pass's command list as Flux_CommandImageTransition entries.
+    Zenith_Vector<Flux_RenderGraph_Barrier> m_xPrologueBarriers;
     Flux_RenderGraph_OnRecordFunc m_pfnOnRecord = nullptr;
     Flux_RenderGraph_OnPrepareFunc m_pfnOnPrepare = nullptr;
     void* m_pUserData = nullptr;
@@ -211,6 +232,11 @@ private:
     void BuildResourceTraffic();
     void Validate() const;
     void ValidatePassMemoryFlagCompatibility(const Flux_RenderGraph_Pass* pxP) const;
+    // Walk m_xExecutionOrder, track per-(attachment, mip, layer) access state,
+    // and synthesise prologue Flux_RenderGraph_Barrier entries on each pass
+    // whose declared accesses don't match the current state. Image-only for
+    // now; buffer barriers are still implicit via stage flags in the backend.
+    void SynthesizeBarriers();
     bool TopologicalSort();
     void ComputeResourceLifetimes();
     void ResolveClearFlags();

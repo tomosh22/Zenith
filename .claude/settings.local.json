@@ -125,7 +125,8 @@
       "Bash(chmod +x /tmp/migrate_flux.sh)",
       "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" /c/dev/Zenith/Build/zenith_win64.sln -t:Zenith -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -maxCpuCount:1 -verbosity:minimal)",
       "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" /c/dev/Zenith/Build/zenith_win64.sln -t:Sokoban -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -maxCpuCount:1 -verbosity:minimal)",
-      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" /c/dev/Zenith/Build/zenith_win64.sln -t:Combat -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -maxCpuCount:1 -verbosity:minimal)"
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" /c/dev/Zenith/Build/zenith_win64.sln -t:Combat -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -maxCpuCount:1 -verbosity:minimal)",
+      "Read(//tmp/**)"
     ],
     "deny": [],
     "ask": []

@@ -575,43 +575,54 @@ void Zenith_Vulkan_CommandBuffer::BeginBind(u_int uDescSet)
 	m_uCurrentBindFreq = uDescSet;
 }
 
+// Map an image layout to the access mask that operations using it produce or
+// consume. Used to populate both src and dst access on a layout transition
+// barrier — without these the sync validator (correctly) reports a hazard:
+// e.g. transitioning eTransferDstOptimal → eTransferSrcOptimal without
+// srcAccessMask=eTransferWrite leaves the prior copy unsynchronised against
+// the layout change. Returns READ|WRITE pairs for attachment layouts because
+// loadOp=LOAD reads the attachment and storeOp=STORE writes it; the validator
+// will flag a barrier that allows only the write side.
+static vk::AccessFlags AccessMaskForLayout(vk::ImageLayout eLayout)
+{
+	switch (eLayout)
+	{
+	case vk::ImageLayout::eUndefined:
+	case vk::ImageLayout::ePresentSrcKHR:
+		return vk::AccessFlagBits::eNone;
+	case vk::ImageLayout::eTransferDstOptimal:
+		return vk::AccessFlagBits::eTransferWrite;
+	case vk::ImageLayout::eTransferSrcOptimal:
+		return vk::AccessFlagBits::eTransferRead;
+	case vk::ImageLayout::eColorAttachmentOptimal:
+		return vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead;
+	case vk::ImageLayout::eDepthAttachmentOptimal:
+	case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+		return vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentRead;
+	case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
+		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eShaderRead;
+	case vk::ImageLayout::eShaderReadOnlyOptimal:
+		return vk::AccessFlagBits::eShaderRead;
+	case vk::ImageLayout::eGeneral:
+		// UAV / storage image; could be read, written, or both. Conservative
+		// choice covers the read-modify-write case and matches what the graph's
+		// ResourceAccessToVulkan emits for READWRITE_UAV.
+		return vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+	default:
+		Zenith_Assert(false, "AccessMaskForLayout: unknown layout %d", (int)eLayout);
+		return vk::AccessFlagBits::eNone;
+	}
+}
+
 static vk::ImageMemoryBarrier CreateImageBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, uint32_t uMipLevel, uint32_t uLayer)
 {
-	vk::ImageMemoryBarrier xMemoryBarrier = vk::ImageMemoryBarrier()
+	return vk::ImageMemoryBarrier()
 		.setSubresourceRange(vk::ImageSubresourceRange(eAspect, uMipLevel, 1, uLayer, 1))
 		.setImage(xImage)
 		.setOldLayout(eOldLayout)
-		.setNewLayout(eNewLayout);
-
-	switch (eNewLayout)
-	{
-	case vk::ImageLayout::eTransferDstOptimal:
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eTransferWrite);
-		break;
-	case vk::ImageLayout::eTransferSrcOptimal:
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eTransferRead);
-		break;
-	case vk::ImageLayout::eColorAttachmentOptimal:
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
-		break;
-	case vk::ImageLayout::eDepthAttachmentOptimal:
-	case vk::ImageLayout::eDepthStencilAttachmentOptimal:
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite);
-		break;
-	case vk::ImageLayout::eShaderReadOnlyOptimal:
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-		break;
-	case vk::ImageLayout::ePresentSrcKHR:
-	case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
-		//#TO_TODO: do we need an access mask for these?
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eNone);
-		break;
-	default:
-		Zenith_Assert(false, "unknown layout");
-		break;
-	}
-
-	return xMemoryBarrier;
+		.setNewLayout(eNewLayout)
+		.setSrcAccessMask(AccessMaskForLayout(eOldLayout))
+		.setDstAccessMask(AccessMaskForLayout(eNewLayout));
 }
 
 void Zenith_Vulkan_CommandBuffer::ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, int uMipLevel, int uLayer)
@@ -667,12 +678,14 @@ static void ResourceAccessToVulkan(ResourceAccess eAccess, bool bIsDepth,
 		break;
 	case RESOURCE_ACCESS_WRITE_RTV:
 		eOutLayout = vk::ImageLayout::eColorAttachmentOptimal;
-		eOutAccess = vk::AccessFlagBits::eColorAttachmentWrite;
+		// loadOp=LOAD reads the attachment; storeOp=STORE writes. The barrier
+		// must allow both at the destination or sync-validator reports RAW.
+		eOutAccess = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead;
 		eOutStage  = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 		break;
 	case RESOURCE_ACCESS_WRITE_DSV:
 		eOutLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-		eOutAccess = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+		eOutAccess = vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentRead;
 		eOutStage  = vk::PipelineStageFlagBits::eEarlyFragmentTests
 		           | vk::PipelineStageFlagBits::eLateFragmentTests;
 		break;
@@ -695,19 +708,13 @@ static void ResourceAccessToVulkan(ResourceAccess eAccess, bool bIsDepth,
 	}
 }
 
-void Zenith_Vulkan_CommandBuffer::ImageTransition(Flux_RenderAttachment* pxAttachment,
-	uint32_t uBaseMip, uint32_t uMipCount,
-	uint32_t uBaseLayer, uint32_t uLayerCount,
+// Internal helper: emit the actual pipeline barrier given the resolved
+// VRAM handle / depth-aspect / subresource range / accesses. Both ImageTransition
+// overloads (2D attachment + polymorphic GraphResource) funnel through here.
+static void EmitImageTransition(Zenith_Vulkan_CommandBuffer& rxCmdBuf, vk::Image xImage, bool bIsDepth,
+	uint32_t uBaseMip, uint32_t uMipCount, uint32_t uBaseLayer, uint32_t uLayerCount,
 	ResourceAccess eSrcAccess, ResourceAccess eDstAccess)
 {
-	Zenith_Assert(pxAttachment != nullptr, "ImageTransition: null attachment");
-	if (pxAttachment == nullptr) return;
-
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxAttachment->m_xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr, "ImageTransition: GetVRAM returned null");
-	if (pxVRAM == nullptr) return;
-
-	const bool bIsDepth = IsDepthFormat(pxAttachment->m_xSurfaceInfo.m_eFormat);
 	const vk::ImageAspectFlags eAspect = bIsDepth
 		? vk::ImageAspectFlagBits::eDepth
 		: vk::ImageAspectFlagBits::eColor;
@@ -727,13 +734,53 @@ void Zenith_Vulkan_CommandBuffer::ImageTransition(Flux_RenderAttachment* pxAttac
 		eSrcAccessMask = {};
 	}
 
-	ImageTransitionBarrierRange(pxVRAM->GetImage(),
+	rxCmdBuf.ImageTransitionBarrierRange(xImage,
 		eOldLayout, eNewLayout,
 		eAspect,
 		eSrcStage, eDstStage,
 		eSrcAccessMask, eDstAccessMask,
 		uBaseMip, uMipCount,
 		uBaseLayer, uLayerCount);
+}
+
+void Zenith_Vulkan_CommandBuffer::ImageTransition(Flux_RenderAttachment* pxAttachment,
+	uint32_t uBaseMip, uint32_t uMipCount,
+	uint32_t uBaseLayer, uint32_t uLayerCount,
+	ResourceAccess eSrcAccess, ResourceAccess eDstAccess)
+{
+	Zenith_Assert(pxAttachment != nullptr, "ImageTransition: null attachment");
+	if (pxAttachment == nullptr) return;
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxAttachment->m_xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr, "ImageTransition: GetVRAM returned null");
+	if (pxVRAM == nullptr) return;
+
+	EmitImageTransition(*this, pxVRAM->GetImage(),
+		IsDepthFormat(pxAttachment->m_xSurfaceInfo.m_eFormat),
+		uBaseMip, uMipCount, uBaseLayer, uLayerCount,
+		eSrcAccess, eDstAccess);
+}
+
+void Zenith_Vulkan_CommandBuffer::ImageTransition(const Flux_GraphResource& xResource,
+	uint32_t uBaseMip, uint32_t uMipCount,
+	uint32_t uBaseLayer, uint32_t uLayerCount,
+	ResourceAccess eSrcAccess, ResourceAccess eDstAccess)
+{
+	Zenith_Assert(xResource.IsImageLike(), "ImageTransition (GraphResource): only image-like kinds supported");
+	if (!xResource.IsImageLike()) return;
+
+	Flux_VRAMHandle xHandle = xResource.GetVRAMHandle();
+	Zenith_Assert(xHandle.IsValid(), "ImageTransition (GraphResource): invalid VRAM handle");
+	if (!xHandle.IsValid()) return;
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+	Zenith_Assert(pxVRAM != nullptr, "ImageTransition (GraphResource): GetVRAM returned null");
+	if (pxVRAM == nullptr) return;
+
+	EmitImageTransition(*this, pxVRAM->GetImage(),
+		IsDepthFormat(xResource.GetSurfaceInfo().m_eFormat),
+		uBaseMip, uMipCount, uBaseLayer, uLayerCount,
+		eSrcAccess, eDstAccess);
 }
 
 void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline)

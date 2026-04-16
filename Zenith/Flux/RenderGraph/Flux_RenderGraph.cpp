@@ -1124,11 +1124,188 @@ bool Flux_RenderGraph::Compile()
         ValidatePassMemoryFlagCompatibility(pxP);
     }
 
+    SynthesizeBarriers();
+
     m_bCompiled = true; m_bDirty = false; m_bEnabledMaskDirty = false;
 #ifdef ZENITH_DEBUG
     Zenith_Log(LOG_CATEGORY_RENDERER, "RenderGraph: Compiled %u passes", m_xExecutionOrder.GetSize());
 #endif
     return true;
+}
+
+// ---- Barrier synthesis ---------------------------------------------------
+//
+// Model
+//   The graph is the sole barrier authority. SynthesizeBarriers walks the
+//   execution order, tracks per-(image, mip, layer) access state, and
+//   populates each pass's m_xPrologueBarriers with the transitions needed
+//   to put every declared subresource into the right layout BEFORE the
+//   pass runs. The Vulkan backend emits those barriers via
+//   Zenith_Vulkan_CommandBuffer::ImageTransition outside any active render
+//   pass scope and DOES NOT emit any transitions of its own (the previous
+//   TransitionTargetsForRenderPass / TransitionTargetsAfterRenderPass path
+//   was deleted along with this rewrite).
+//
+//   First touch defaults to UNDEFINED → ImageTransition turns that into a
+//   discard transition, which is correct for the first frame and idempotent
+//   for transients reused across frames.
+//
+//   Render-pass initialLayout / finalLayout are now identical (the working
+//   layout of the access — COLOR_ATTACHMENT / DEPTH_ATTACHMENT / DEPTH_RO),
+//   so the render pass itself never transitions layouts. The graph puts
+//   the image in the right layout, the render pass uses it, the next pass's
+//   prologue barriers move it elsewhere if needed.
+
+// Layout the resource MUST be in when this pass starts executing. With the
+// graph owning all transitions, the required pre-pass layout is just the
+// access's natural layout — no special pre-staging for backend assumptions.
+static ResourceAccess RequiredPrePassAccess(ResourceAccess eAccess)
+{
+    switch (eAccess)
+    {
+        case RESOURCE_ACCESS_READ_SRV:        return RESOURCE_ACCESS_READ_SRV;        // SHADER_READ_ONLY
+        case RESOURCE_ACCESS_READ_DEPTH:      return RESOURCE_ACCESS_READ_DEPTH;      // DEPTH_READ_ONLY
+        case RESOURCE_ACCESS_WRITE_RTV:       return RESOURCE_ACCESS_WRITE_RTV;       // COLOR_ATTACHMENT
+        case RESOURCE_ACCESS_WRITE_DSV:       return RESOURCE_ACCESS_WRITE_DSV;       // DEPTH_STENCIL_ATTACHMENT
+        case RESOURCE_ACCESS_WRITE_UAV:       return RESOURCE_ACCESS_WRITE_UAV;       // GENERAL
+        case RESOURCE_ACCESS_READWRITE_UAV:   return RESOURCE_ACCESS_READWRITE_UAV;   // GENERAL
+        case RESOURCE_ACCESS_UNDEFINED:       return RESOURCE_ACCESS_UNDEFINED;
+    }
+    Zenith_Assert(false, "RequiredPrePassAccess: unknown access %d", (int)eAccess);
+    return RESOURCE_ACCESS_UNDEFINED;
+}
+
+// Layout the resource is in AFTER this pass executes. With the render pass's
+// finalLayout matching its initialLayout (no auto-transition), the resource
+// stays in the working layout of its access.
+static ResourceAccess PostPassAccess(ResourceAccess eAccess)
+{
+    return eAccess;
+}
+
+// READWRITE_UAV and WRITE_UAV both map to GENERAL — treat them as one layout.
+// READ_SRV from a previous WRITE_UAV needs an explicit transition
+// (GENERAL → SHADER_READ_ONLY) so they are NOT the same layout.
+static bool SameLayout(ResourceAccess a, ResourceAccess b)
+{
+    auto Norm = [](ResourceAccess e) -> ResourceAccess
+    {
+        if (e == RESOURCE_ACCESS_READWRITE_UAV) return RESOURCE_ACCESS_WRITE_UAV;
+        return e;
+    };
+    return Norm(a) == Norm(b);
+}
+
+// True if this access *writes* to the subresource (or potentially does, in
+// the case of READWRITE_UAV). Same-layout transitions still need a barrier
+// when either side is a write, to satisfy WAW / RAW hazards even though the
+// layout itself doesn't change (e.g. two consecutive RTV writes to the same
+// attachment in separate render passes need a ColorAttachmentOutput→
+// ColorAttachmentOutput memory barrier).
+static bool AccessIsWrite(ResourceAccess e)
+{
+    return e == RESOURCE_ACCESS_WRITE_RTV
+        || e == RESOURCE_ACCESS_WRITE_DSV
+        || e == RESOURCE_ACCESS_WRITE_UAV
+        || e == RESOURCE_ACCESS_READWRITE_UAV;
+}
+
+void Flux_RenderGraph::SynthesizeBarriers()
+{
+    for (u_int i = 0; i < m_xPasses.GetSize(); i++)
+        m_xPasses.Get(i)->m_xPrologueBarriers.Clear();
+
+    // Per-subresource state map keyed on MakeBarrierKey(ptr, mip, layer).
+    // #TODO: Replace std::unordered_map with engine hash map (Phase G).
+    std::unordered_map<u_int64, ResourceAccess> xState;
+
+    auto QueryState = [&](void* pRes, u_int uMip, u_int uLayer) -> ResourceAccess
+    {
+        const u_int64 ulKey = MakeBarrierKey(pRes, uMip, uLayer);
+        auto it = xState.find(ulKey);
+        return (it == xState.end()) ? RESOURCE_ACCESS_UNDEFINED : it->second;
+    };
+    auto SetState = [&](void* pRes, u_int uMip, u_int uLayer, ResourceAccess e)
+    {
+        xState[MakeBarrierKey(pRes, uMip, uLayer)] = e;
+    };
+
+    auto ResolveSubresourceRange = [](const Flux_RenderGraph_ResourceUsage& rxUsage,
+                                      u_int& uOutBaseMip, u_int& uOutMipCount,
+                                      u_int& uOutBaseLayer, u_int& uOutLayerCount) -> bool
+    {
+        if (!rxUsage.m_xResource.IsImageLike()) return false;
+        const Flux_SurfaceInfo& rxInfo = rxUsage.m_xResource.GetSurfaceInfo();
+        uOutBaseMip = rxUsage.m_uMipLevel;
+        uOutMipCount = (rxUsage.m_uMipCount == FLUX_RG_ALL_MIPS) ? rxInfo.m_uNumMips : rxUsage.m_uMipCount;
+        uOutBaseLayer = rxUsage.m_uLayer;
+        uOutLayerCount = (rxUsage.m_uLayerCount == FLUX_RG_ALL_LAYERS) ? rxInfo.m_uNumLayers : rxUsage.m_uLayerCount;
+        return true;
+    };
+
+    // Process one declared (read or write) access on a subresource range.
+    // Emits a prologue barrier per (mip, layer) where current ≠ required OR
+    // either side is a write (WAW / RAW within matching layout still needs
+    // a memory barrier). Updates the per-subresource tracker.
+    auto ProcessAccess = [&](Flux_RenderGraph_Pass* pxPass,
+                             const Flux_RenderGraph_ResourceUsage& rxUsage)
+    {
+        u_int uBaseMip, uMipCount, uBaseLayer, uLayerCount;
+        if (!ResolveSubresourceRange(rxUsage, uBaseMip, uMipCount, uBaseLayer, uLayerCount))
+            return; // buffer — barriers elided for now (Phase B is image-only)
+
+        // Reject the resource if the underlying VRAM isn't allocated yet
+        // (shouldn't happen post-AllocateTransients but guards against
+        // future ordering bugs).
+        if (!rxUsage.m_xResource.IsImageLike()) return;
+        Flux_VRAMHandle xHandle = rxUsage.m_xResource.GetVRAMHandle();
+        if (!xHandle.IsValid()) return;
+
+        const ResourceAccess eRequired = RequiredPrePassAccess(rxUsage.m_eAccess);
+        const ResourceAccess ePost = PostPassAccess(rxUsage.m_eAccess);
+        const bool bWriteAccess = AccessIsWrite(rxUsage.m_eAccess);
+        void* pRes = rxUsage.m_xResource.GetVoidPtr();
+
+        for (u_int uLayer = uBaseLayer; uLayer < uBaseLayer + uLayerCount; uLayer++)
+        {
+            for (u_int uMip = uBaseMip; uMip < uBaseMip + uMipCount; uMip++)
+            {
+                const ResourceAccess eSrc = QueryState(pRes, uMip, uLayer);
+                const bool bLayoutMatches = SameLayout(eSrc, eRequired);
+                const bool bSrcIsWrite = AccessIsWrite(eSrc);
+                // Need a barrier if the layout is changing OR either side is
+                // a write (so WAW/RAW still gets a memory barrier even when
+                // layout doesn't change — e.g. two consecutive RTV writes).
+                if (!bLayoutMatches || bWriteAccess || bSrcIsWrite)
+                {
+                    Flux_RenderGraph_Barrier xBarrier;
+                    xBarrier.m_xResource = rxUsage.m_xResource;
+                    xBarrier.m_uBaseMip = uMip;
+                    xBarrier.m_uMipCount = 1;
+                    xBarrier.m_uBaseLayer = uLayer;
+                    xBarrier.m_uLayerCount = 1;
+                    xBarrier.m_eSrcAccess = bLayoutMatches ? eRequired : eSrc;
+                    xBarrier.m_eDstAccess = eRequired;
+                    pxPass->m_xPrologueBarriers.PushBack(xBarrier);
+                }
+                SetState(pRes, uMip, uLayer, ePost);
+            }
+        }
+    };
+
+    for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
+    {
+        Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(itE.GetData());
+        if (!pxPass->m_bEnabled) continue;
+
+        // Reads first so READWRITE_UAV (which appears as a Read declaration when
+        // the caller used the read-modify-write convention) sets state to the
+        // RMW layout before any subsequent write tries to transition again.
+        for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())
+            ProcessAccess(pxPass, it.GetData());
+        for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
+            ProcessAccess(pxPass, it.GetData());
+    }
 }
 
 void Flux_RenderGraph::MarkPassesAsComputeOrGraphics()
@@ -1187,6 +1364,14 @@ void Flux_RenderGraph_RecordPassTask(void* pData, u_int uInvocationIndex, u_int 
     // Scopes restore prior values on exit even if the callback throws.
     Flux_RenderGraph::CurrentPassScope xPassScope(&xPass);
     CurrentGraphScope xGraphScope(pxGraph);
+
+    // Prologue barriers from SynthesizeBarriers are NOT injected into the
+    // command list — that path runs INSIDE the render pass for graphics
+    // passes (vkCmdBeginRenderPass already issued by the backend before
+    // IterateCommands), where vkCmdPipelineBarrier needs subpass self-deps.
+    // The backend reads xPass.m_xPrologueBarriers directly and emits them
+    // right before TransitionTargetsForRenderPass / Dispatch entry, outside
+    // any active render pass. See Zenith_Vulkan.cpp::RecordCommandBuffersTask.
     xPass.m_pfnOnRecord(xPass.m_pxCommandList, xPass.m_pUserData);
 }
 
@@ -1212,7 +1397,20 @@ void Flux_RenderGraph::Execute()
             "Flux_RenderGraph::Execute: enabled pass '%s' has null record callback", pxP->DebugName());
     }
 
-    if (m_bEnabledMaskDirty) { ResolveClearFlags(); m_bEnabledMaskDirty = false; }
+    if (m_bEnabledMaskDirty)
+    {
+        // SetEnabled flipped at least one pass's enable bit since last Execute.
+        // The cheap path (no full recompile) re-resolves clear ownership AND
+        // resynthesises barriers — both depend on which passes are actually
+        // running this frame. Without the barrier re-run, a pass that was
+        // enabled last compile but disabled now leaves the graph's compile-
+        // time state tracker out of sync with the actual GPU layout, and
+        // downstream consumers' barriers transition from a layout the resource
+        // is no longer in (sync-validator layout-mismatch error).
+        ResolveClearFlags();
+        SynthesizeBarriers();
+        m_bEnabledMaskDirty = false;
+    }
     CallPrepareCallbacks();
     RecordCommandLists();
     SubmitRecordedLists();
@@ -1251,7 +1449,14 @@ void Flux_RenderGraph::SubmitRecordedLists()
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
         if (!pxPass->m_bEnabled || !pxPass->m_pfnOnRecord) continue;
-        if (pxPass->m_pxCommandList->GetCommandCount() == 0 && !pxPass->m_bClearTargets) continue;
+        // A pass with zero recorded commands is normally pruned, but if it has
+        // graph-synthesised prologue barriers (e.g. the "Final RT Layout
+        // Transition" no-op pass that exists purely to flip the swapchain
+        // source target into SHADER_READ_ONLY) we MUST submit it so the
+        // backend gets a chance to emit those barriers. Same goes for clear-only
+        // passes that need their target zeroed.
+        const bool bHasBarriers = pxPass->m_xPrologueBarriers.GetSize() > 0;
+        if (pxPass->m_pxCommandList->GetCommandCount() == 0 && !pxPass->m_bClearTargets && !bHasBarriers) continue;
         bool bDepthReadOnly = false;
         if (pxPass->m_xDepthStencil.IsValid())
         {

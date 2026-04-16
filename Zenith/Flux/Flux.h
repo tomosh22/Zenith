@@ -374,8 +374,9 @@ public:
 
 	// Submit a command list for Vulkan recording. Only called from
 	// Flux_RenderGraph::Execute Phase 2, sequentially on the main thread —
-	// the source pass pointer carries the precomputed barriers the platform
-	// layer consumes via ConsumeGraphPrologueBarriers. No bypass path exists.
+	// the source pass pointer carries the precomputed prologue barriers
+	// (pxPass->m_xPrologueBarriers) the platform layer emits via
+	// ImageTransition right before the pass executes. No bypass path exists.
 	static void SubmitCommandList(const Flux_CommandList* pxCmdList,
 		const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour,
 		const Flux_RenderGraph_AttachmentRef& xDepthStencil,
