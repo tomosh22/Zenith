@@ -743,7 +743,9 @@ void Flux_HDR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	{
 		u_int uPass = xGraph.AddPass("HDR_Adaptation", ExecuteAdaptation);
-		xGraph.ReadBuffer(uPass, s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_READ_SRV);
+		// Histogram is bound as UAV_Buffer (see ExecuteAdaptation); declare as
+		// READWRITE_UAV so the graph barrier matches the actual compute-stage access.
+		xGraph.ReadBuffer(uPass, s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
 		xGraph.WriteBuffer(uPass, s_xExposureBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
 	}
 
@@ -758,9 +760,13 @@ void Flux_HDR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			xGraph.Write(uPass, s_axBloomChain[0], RESOURCE_ACCESS_WRITE_RTV);
 	}
 
+	static const char* s_aszBloomDownsampleNames[] = {
+		"HDR_BloomDownsample Mip1", "HDR_BloomDownsample Mip2",
+		"HDR_BloomDownsample Mip3", "HDR_BloomDownsample Mip4",
+	};
 	for (u_int i = 1; i < 5; i++)
 	{
-		u_int uPass = xGraph.AddPass("HDR_BloomDownsample", ExecuteBloomDownsample, &s_axBloomMipUserData[i]);
+		u_int uPass = xGraph.AddPass(s_aszBloomDownsampleNames[i - 1], ExecuteBloomDownsample, &s_axBloomMipUserData[i]);
 		xGraph.SetClear(uPass, true);
 
 		if (s_bUsingTransients)
@@ -775,12 +781,16 @@ void Flux_HDR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		}
 	}
 
+	static const char* s_aszBloomUpsampleNames[] = {
+		"HDR_BloomUpsample Mip3", "HDR_BloomUpsample Mip2",
+		"HDR_BloomUpsample Mip1", "HDR_BloomUpsample Mip0",
+	};
 	for (u_int i = 0; i < 4; i++)
 	{
 		u_int uTargetMip = 3 - i;
 		u_int uSourceMip = uTargetMip + 1;
 
-		u_int uPass = xGraph.AddPass("HDR_BloomUpsample", ExecuteBloomUpsample, &s_axBloomUpsampleUserData[i]);
+		u_int uPass = xGraph.AddPass(s_aszBloomUpsampleNames[i], ExecuteBloomUpsample, &s_axBloomUpsampleUserData[i]);
 
 		if (s_bUsingTransients)
 		{
@@ -805,6 +815,13 @@ void Flux_HDR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			xGraph.Read(uPass, s_axBloomChain[0], RESOURCE_ACCESS_READ_SRV);
 
 		xGraph.Write(uPass, Flux_Graphics::GetFinalRenderTarget_NoDepth(), RESOURCE_ACCESS_WRITE_RTV);
+
+		// Tone mapping also reads exposure (and optionally samples histogram for
+		// debug overlay). Both are bound as UAV_Buffer in ExecuteToneMapping so
+		// declare as READWRITE_UAV — the barrier must match the binding's access
+		// mode rather than the shader's actual read-only intent.
+		xGraph.ReadBuffer(uPass, s_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
+		xGraph.ReadBuffer(uPass, s_xExposureBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
 	}
 }
 

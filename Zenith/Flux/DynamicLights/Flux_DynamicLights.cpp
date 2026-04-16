@@ -1179,8 +1179,13 @@ void Flux_DynamicLights::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	uint32_t uPassIndex = xGraph.AddPass("Dynamic Lights", ExecuteDynamicLights);
 	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 
-	// Reads: G-Buffer MRT attachments
+	// Reads: full G-Buffer (DIFFUSE, NORMALSAMBIENT, MATERIAL) — all three are
+	// bound as SRVs in ExecuteDynamicLights for the per-light shading. Missing
+	// any of these leaves the corresponding attachment in COLOR_ATTACHMENT_OPTIMAL
+	// after the geometry pass and the SRV bind hits a layout-mismatch validator error.
+	xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_READ_SRV);
 	xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_READ_SRV);
 
 	// Reads: depth buffer
 	xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);

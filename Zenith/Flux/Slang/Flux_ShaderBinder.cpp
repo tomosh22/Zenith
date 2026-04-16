@@ -1,6 +1,8 @@
 #include "Zenith.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Flux_CommandList.h"
+#include "Flux/Flux.h" // for Flux_ShaderResourceView / Flux_UnorderedAccessView_* field access
+#include "Flux/RenderGraph/Flux_RenderGraph.h" // for render-graph bind-time assertions
 
 Flux_ShaderBinder::Flux_ShaderBinder(Flux_CommandList& xCmdList)
 	: m_xCmdList(xCmdList)
@@ -37,6 +39,13 @@ void Flux_ShaderBinder::BindSRV(Flux_BindingHandle xHandle, const Flux_ShaderRes
 		return;
 	}
 
+	Zenith_Assert(pxSRV != nullptr, "Flux_ShaderBinder::BindSRV: null SRV pointer");
+	// Cross-reference against the current render-graph pass (if we're inside a
+	// pfnOnRecord callback). Catches "bound a resource I didn't declare with
+	// Read()" — the exact class of bug that leaves the graph unable to emit
+	// the correct layout transition.
+	Flux_RenderGraph::AssertBoundResourceDeclared(pxSRV->m_xVRAMHandle, /*bIsWrite*/false, "BindSRV");
+
 	EnsureSet(xHandle.m_uSet);
 	m_xCmdList.AddCommand<Flux_CommandBindSRV>(pxSRV, xHandle.m_uBinding, pxSampler);
 }
@@ -49,6 +58,9 @@ void Flux_ShaderBinder::BindUAV_Texture(Flux_BindingHandle xHandle, const Flux_U
 		return;
 	}
 
+	Zenith_Assert(pxUAV != nullptr, "Flux_ShaderBinder::BindUAV_Texture: null UAV pointer");
+	Flux_RenderGraph::AssertBoundResourceDeclared(pxUAV->m_xVRAMHandle, /*bIsWrite*/true, "BindUAV_Texture");
+
 	EnsureSet(xHandle.m_uSet);
 	m_xCmdList.AddCommand<Flux_CommandBindUAV_Texture>(pxUAV, xHandle.m_uBinding);
 }
@@ -60,6 +72,9 @@ void Flux_ShaderBinder::BindUAV_Buffer(Flux_BindingHandle xHandle, const Flux_Un
 		Zenith_Error(LOG_CATEGORY_RENDERER, "Flux_ShaderBinder::BindUAV_Buffer - Invalid binding handle! GetBinding() failed to find the name.");
 		return;
 	}
+
+	Zenith_Assert(pxUAV != nullptr, "Flux_ShaderBinder::BindUAV_Buffer: null UAV pointer");
+	Flux_RenderGraph::AssertBoundResourceDeclared(pxUAV->m_xVRAMHandle, /*bIsWrite*/true, "BindUAV_Buffer");
 
 	EnsureSet(xHandle.m_uSet);
 	m_xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(pxUAV, xHandle.m_uBinding);

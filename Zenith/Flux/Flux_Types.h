@@ -12,6 +12,9 @@ public:
 
 	u_int AsUInt() const { return m_uVRAMHandle; }
 	bool IsValid() const { return m_uVRAMHandle != UINT32_MAX; }
+
+	bool operator==(const Flux_VRAMHandle& rhs) const { return m_uVRAMHandle == rhs.m_uVRAMHandle; }
+	bool operator!=(const Flux_VRAMHandle& rhs) const { return m_uVRAMHandle != rhs.m_uVRAMHandle; }
 private:
 	u_int m_uVRAMHandle = UINT32_MAX;
 };

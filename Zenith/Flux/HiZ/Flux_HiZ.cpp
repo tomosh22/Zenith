@@ -306,14 +306,17 @@ void Flux_HiZ::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		}
 		else
 		{
+			// Read the SINGLE prior mip. ReadTransient's default reads all mips,
+			// which overlaps with this pass's write of mip=uMip and trips
+			// subresource-conflict validation. Mirror the owned path explicitly.
 			if (s_bUsingTransients)
-				xGraph.ReadTransient(uPassIndex, s_xHiZBufferHandle, RESOURCE_ACCESS_READ_SRV);
+				xGraph.ReadTransient(uPassIndex, s_xHiZBufferHandle, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1);
 			else
 				xGraph.Read(uPassIndex, s_xHiZBuffer_Owned, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1);
 		}
 
 		if (s_bUsingTransients)
-			xGraph.WriteTransient(uPassIndex, s_xHiZBufferHandle, RESOURCE_ACCESS_WRITE_UAV);
+			xGraph.WriteTransient(uPassIndex, s_xHiZBufferHandle, RESOURCE_ACCESS_WRITE_UAV, uMip, 1);
 		else
 			xGraph.Write(uPassIndex, s_xHiZBuffer_Owned, RESOURCE_ACCESS_WRITE_UAV, uMip, 1);
 	}

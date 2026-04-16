@@ -113,6 +113,11 @@ public:
     Flux_TransientHandle CreateTransient(const Flux_TransientTextureDesc& xDesc);
     void ReadTransient(u_int uPassIndex, Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_READ_SRV);
     void WriteTransient(u_int uPassIndex, Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_WRITE_RTV);
+    // Subresource-explicit overloads — use when declaring one mip / layer of a
+    // larger resource (HiZ per-mip compute, IBL per-face, etc.). The default
+    // overloads cover the common case (all-mips read, single-mip write).
+    void ReadTransient(u_int uPassIndex, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount);
+    void WriteTransient(u_int uPassIndex, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount);
     Flux_RenderAttachment& GetTransientAttachment(Flux_TransientHandle xHandle);
     const Flux_RenderAttachment& GetTransientAttachment(Flux_TransientHandle xHandle) const;
 
@@ -129,6 +134,32 @@ public:
     const Zenith_Vector<Flux_RenderGraph_Pass*>& GetPasses() const { return m_xPasses; }
     const Zenith_Vector<u_int>& GetExecutionOrder() const { return m_xExecutionOrder; }
     const std::unordered_map<void*, Flux_RenderGraph_Resource>& GetResources() const { return m_xResources; }
+
+    // --- Current-pass thread-local context --------------------------------
+    // Set around each pfnOnRecord callback by Flux_RenderGraph_RecordPassTask.
+    // Enables bind-time assertions ("is the resource I'm about to bind declared
+    // as a Read/Write on this pass?") without threading the pass through every
+    // Flux_ShaderBinder call. Null outside a pass's recording window.
+    static const Flux_RenderGraph_Pass* GetCurrentRecordingPass();
+    // Scoped guard — sets TLS to the pass on construction, restores prior value
+    // (usually nullptr) on destruction. Used by the record task.
+    class CurrentPassScope
+    {
+    public:
+        CurrentPassScope(const Flux_RenderGraph_Pass* pxPass);
+        ~CurrentPassScope();
+    private:
+        const Flux_RenderGraph_Pass* m_pxPrev;
+    };
+
+    // Assert that the bound resource (identified by VRAM handle) appears in the
+    // current recording pass's reads or writes with an access compatible with
+    // the binding kind. Called from Flux_ShaderBinder. When no pass is recording
+    // (e.g. an Initialise-time bind), returns silently — Flux_ShaderBinder has
+    // callers outside the render graph recording window.
+    // bIsWrite: true for UAV bindings that express a write (or read-modify-write),
+    //           false for SRV / read-only binds.
+    static void AssertBoundResourceDeclared(Flux_VRAMHandle xVRAMHandle, bool bIsWrite, const char* szBindCall);
 
 private:
     // Transient resources owned by the graph (heap-allocated for pointer stability —
@@ -179,6 +210,7 @@ private:
                           u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount, bool bWrite);
     void BuildResourceTraffic();
     void Validate() const;
+    void ValidatePassMemoryFlagCompatibility(const Flux_RenderGraph_Pass* pxP) const;
     bool TopologicalSort();
     void ComputeResourceLifetimes();
     void ResolveClearFlags();
