@@ -1,5 +1,14 @@
 #version 450
 
+// ============================================================================
+// Compute Pipeline Test Shader
+// Workgroup: 8x8x1 (64 threads — standard 2D image tile)
+// Shared memory: none
+//
+// Validation shader for the compute pipeline. Writes a procedural pattern to
+// verify compute dispatch, descriptor binding, and UAV writes.
+// ============================================================================
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(binding = 0, rgba8) uniform image2D outputImage;

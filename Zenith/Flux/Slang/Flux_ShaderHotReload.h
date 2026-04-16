@@ -4,16 +4,15 @@
 
 #include <string>
 #include <functional>
+#include "Zenith_PlatformGraphics_Include.h"
 
-class Zenith_Vulkan_Pipeline;
-class Zenith_Vulkan_Shader;
 struct Flux_PipelineSpecification;
 
 // Callback signature for pipeline recreation
 // Called when a shader's source files have changed and the pipeline needs recreation
 // Parameters: pipeline pointer, vertex path, fragment path (or compute path)
 // Returns true if recreation succeeded
-using PipelineRecreateCallback = std::function<bool(Zenith_Vulkan_Pipeline*, const std::string&, const std::string&)>;
+using PipelineRecreateCallback = std::function<bool(Flux_Pipeline*, const std::string&, const std::string&)>;
 
 // Hot reload manager for shaders (ZENITH_TOOLS only)
 // Watches shader source files and triggers recompilation when files change
@@ -24,7 +23,7 @@ using PipelineRecreateCallback = std::function<bool(Zenith_Vulkan_Pipeline*, con
 //
 //   // Register pipelines for hot reload:
 //   Flux_ShaderHotReload::RegisterPipeline(&myPipeline, "path/to/vert.vert", "path/to/frag.frag",
-//       [](Zenith_Vulkan_Pipeline* p, const std::string& v, const std::string& f) {
+//       [](Flux_Pipeline* p, const std::string& v, const std::string& f) {
 //           // Recreate pipeline with new shaders
 //           return true;
 //       });
@@ -57,18 +56,18 @@ public:
 	// Register a graphics pipeline for hot reload
 	// strVertPath, strFragPath: Shader source paths (relative to SHADER_SOURCE_ROOT)
 	// pfnRecreate: Callback to recreate the pipeline when shaders change
-	static void RegisterPipeline(Zenith_Vulkan_Pipeline* pxPipeline,
+	static void RegisterPipeline(Flux_Pipeline* pxPipeline,
 								  const std::string& strVertPath,
 								  const std::string& strFragPath,
 								  PipelineRecreateCallback pfnRecreate);
 
 	// Register a compute pipeline for hot reload
-	static void RegisterComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline,
+	static void RegisterComputePipeline(Flux_Pipeline* pxPipeline,
 										 const std::string& strComputePath,
 										 PipelineRecreateCallback pfnRecreate);
 
 	// Unregister a pipeline (call before destroying the pipeline)
-	static void UnregisterPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
+	static void UnregisterPipeline(Flux_Pipeline* pxPipeline);
 
 	// Force reload all registered pipelines
 	static void ReloadAll();

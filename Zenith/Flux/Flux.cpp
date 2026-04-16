@@ -31,11 +31,13 @@
 #include "Flux/Vegetation/Flux_Grass.h"
 #include "Flux/DynamicLights/Flux_DynamicLights.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
 Zenith_Vector<void(*)()> Flux::s_xResChangeCallbacks;
 Zenith_Vector<Flux_CommandListEntry> Flux::s_xPendingCommandLists;
 Flux_RenderGraph* Flux::s_pxRenderGraph = nullptr;
+bool Flux::s_bGraphRebuildRequested = false;
 
 // No-op record callback used by the final-layout-transition barrier pass — the
 // pass exists purely so the render graph emits a prologue barrier transitioning
@@ -160,6 +162,10 @@ void Flux::LateInitialise()
 	s_pxRenderGraph = new Flux_RenderGraph();
 	SetupRenderGraph();
 	AddResChangeCallback(SetupRenderGraph);
+
+#ifdef ZENITH_DEBUG_VARIABLES
+	Zenith_DebugVariables::AddBoolean({ "Flux", "RenderGraph", "UseTransients" }, s_pxRenderGraph->m_bTransientsEnabled);
+#endif
 }
 
 void Flux::SetupRenderGraph()
@@ -171,6 +177,10 @@ void Flux::SetupRenderGraph()
 	// which will be destroyed by Clear(). Caller must have already drained the GPU.
 	ClearPendingCommandLists();
 	s_pxRenderGraph->Clear();
+
+	// Core render targets FIRST — every other subsystem depends on these.
+	Flux_Graphics::SetupTransients(*s_pxRenderGraph);
+	Flux_HDR::SetupTransients(*s_pxRenderGraph); // HDR scene target used by many subsystems
 
 	// Preprocessing
 	Flux_IBL::SetupRenderGraph(*s_pxRenderGraph);
@@ -228,7 +238,7 @@ void Flux::SetupRenderGraph()
 	// never written".
 	{
 		u_int uFinalTransitionPass = s_pxRenderGraph->AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp);
-		s_pxRenderGraph->Read(uFinalTransitionPass, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RESOURCE_ACCESS_READ_SRV);
+		s_pxRenderGraph->Read(uFinalTransitionPass, Flux_Graphics::GetFinalRenderTarget_NoDepth(), RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Clear() already left the graph dirty — no explicit MarkDirty() needed.

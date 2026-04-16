@@ -149,8 +149,8 @@ void Zenith_Vulkan_Swapchain::InitialiseCopyToFramebufferCommands()
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
 	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
-	xLayout.m_uNumDescriptorSets = 1;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_uNumBindingGroups = 1;
+	xLayout.m_axBindingGroups[0].m_axBindings[0].m_eType = BINDING_TYPE_TEXTURE;
 
 #if 0
 	(
@@ -433,7 +433,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 #endif
 	{
 		// Bind final render target using SRV
-		Flux_ShaderResourceView& xSRV = Flux_Graphics::s_xFinalRenderTarget.SRV();
+		Flux_ShaderResourceView& xSRV = Flux_Graphics::GetFinalRenderTarget().SRV();
 		if (xSRV.m_xImageViewHandle.IsValid())
 		{
 			s_xCopyToFramebufferCmd.BindSRV(&xSRV, 0);

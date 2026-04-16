@@ -323,7 +323,7 @@ void Flux_IBL::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserDat
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
 		xBinder.BindCBV(s_xIrradianceFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-		xBinder.PushConstant(&xConsts, sizeof(xConsts));
+		xBinder.BindDrawConstants(&xConsts, sizeof(xConsts));
 		if (s_xIrradianceSkyboxBinding.IsValid())
 		{
 			if (Flux_Graphics::s_pxCubemapTexture)
@@ -353,7 +353,7 @@ void Flux_IBL::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserD
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
 		xBinder.BindCBV(s_xPrefilterFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-		xBinder.PushConstant(&xConsts, sizeof(xConsts));
+		xBinder.BindDrawConstants(&xConsts, sizeof(xConsts));
 		if (s_xPrefilterSkyboxBinding.IsValid())
 		{
 			if (Flux_Graphics::s_pxCubemapTexture)
@@ -548,7 +548,8 @@ void Flux_IBL::RegisterDebugVariables()
 	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "RegenerateBRDFLUT" }, dbg_bIBLRegenerateBRDFLUT);
 
 	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "BRDF_LUT" }, s_xBRDFLUT.SRV());
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Irradiance" }, s_xIrradianceMap.SRV());
-	Zenith_DebugVariables::AddTexture({ "Flux", "IBL", "Textures", "Prefiltered" }, s_xPrefilteredMap.SRV());
+	// Irradiance and Prefiltered maps are cubemaps (VK_IMAGE_VIEW_TYPE_CUBE).
+	// ImGui's shader expects 2D textures, so these can't be displayed directly.
+	// TODO: create per-face 2D SRVs for cubemap debug display.
 }
 #endif

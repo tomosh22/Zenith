@@ -14,7 +14,9 @@ public:
 
 	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	// Accessors for other systems (SSR, SSAO, etc.)
+	// Accessors for other systems (SSR, SSGI, etc.)
+	// These route through the transient or owned attachment automatically.
+	static Flux_RenderAttachment& GetHiZAttachment();
 	static Flux_ShaderResourceView& GetHiZSRV();           // Full mip chain
 	static u_int GetMipCount();
 	static Flux_ShaderResourceView& GetMipSRV(u_int uMip); // Single mip access
@@ -24,7 +26,6 @@ public:
 
 	// For resize callback access
 	static constexpr u_int uHIZ_MAX_MIPS = 12;  // Supports up to 4096x4096
-	static Flux_RenderAttachment s_xHiZBuffer;
 	static u_int s_uMipCount;
 
 private:

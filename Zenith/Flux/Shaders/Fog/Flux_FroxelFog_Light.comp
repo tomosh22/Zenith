@@ -1,5 +1,15 @@
 #version 450
 
+// ============================================================================
+// Froxel Fog Directional Light Scattering
+// Workgroup: 8x8x8 (512 threads — matches 3D froxel grid topology)
+// Shared memory: none
+//
+// Applies directional light scattering to the froxel grid. Each thread reads
+// the density injected by the inject pass and computes in-scattered light using
+// the Henyey-Greenstein phase function. Output is accumulated radiance per froxel.
+// ============================================================================
+
 #include "../Common.fxh"
 #include "Flux_VolumetricCommon.fxh"
 

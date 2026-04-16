@@ -1,3 +1,4 @@
 #version 450 core
 #define SHADOWS
-#include "Flux_InstancedMeshes_VertCommon.fxh"
+#define MESH_INSTANCED
+#include "../Meshes/Mesh_Vert.fxh"

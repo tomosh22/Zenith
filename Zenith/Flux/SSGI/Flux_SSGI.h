@@ -32,14 +32,14 @@ public:
 	// Configuration
 	static bool s_bEnabled;
 
-	// Render targets (public for render graph access)
-	static Flux_RenderAttachment s_xRawResult;          // RGBA16F: RGB=indirect color, A=confidence
-	static Flux_RenderAttachment s_xResolved;           // RGBA16F: upsampled full-res result
-	static Flux_RenderAttachment s_xDenoised;           // RGBA16F: denoised full-res result
+	// Attachment accessors (return transient or owned depending on current mode)
+	static Flux_RenderAttachment& GetRawResultAttachment();
+	static Flux_RenderAttachment& GetResolvedAttachment();
+	static Flux_RenderAttachment& GetDenoisedAttachment();
 
 private:
-	static void CreateRenderTargets();
-	static void DestroyRenderTargets();
+	static void CreateOwnedRenderTargets();
+	static void DestroyOwnedRenderTargets();
 
 	static bool s_bInitialised;
 };

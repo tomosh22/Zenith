@@ -6,8 +6,7 @@
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Core/Zenith_FileWatcher.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
-#include "Vulkan/Zenith_Vulkan_Pipeline.h"
-#include "Vulkan/Zenith_Vulkan.h"
+#include "Zenith_PlatformGraphics_Include.h"
 #include <unordered_map> // #TODO: Replace with engine hash map
 #include <unordered_set> // #TODO: Replace with engine hash set when available
 #include <vector> // #TODO: Replace with Zenith_Vector (requires removing range-for and std::remove_if usage)
@@ -16,7 +15,7 @@
 // Registered pipeline info
 struct RegisteredPipeline
 {
-	Zenith_Vulkan_Pipeline* m_pxPipeline = nullptr;
+	Flux_Pipeline* m_pxPipeline = nullptr;
 	std::string m_strVertPath;
 	std::string m_strFragPath;     // Empty for compute
 	std::string m_strComputePath;  // Empty for graphics
@@ -292,7 +291,7 @@ void Flux_ShaderHotReload::ProcessPendingReloads()
 			   static_cast<u_int>(axPipelinesToReload.size()));
 
 	// Wait for GPU to be idle before recreating pipelines
-	Zenith_Vulkan::GetDevice().waitIdle();
+	Flux_PlatformAPI::GetDevice().waitIdle();
 
 	// Reload each pipeline
 	for (RegisteredPipeline* pxPipeline : axPipelinesToReload)
@@ -328,7 +327,7 @@ void Flux_ShaderHotReload::ProcessPendingReloads()
 	}
 }
 
-void Flux_ShaderHotReload::RegisterPipeline(Zenith_Vulkan_Pipeline* pxPipeline,
+void Flux_ShaderHotReload::RegisterPipeline(Flux_Pipeline* pxPipeline,
 											 const std::string& strVertPath,
 											 const std::string& strFragPath,
 											 PipelineRecreateCallback pfnRecreate)
@@ -364,7 +363,7 @@ void Flux_ShaderHotReload::RegisterPipeline(Zenith_Vulkan_Pipeline* pxPipeline,
 			   strVertPath.c_str(), strFragPath.c_str());
 }
 
-void Flux_ShaderHotReload::RegisterComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline,
+void Flux_ShaderHotReload::RegisterComputePipeline(Flux_Pipeline* pxPipeline,
 													const std::string& strComputePath,
 													PipelineRecreateCallback pfnRecreate)
 {
@@ -398,7 +397,7 @@ void Flux_ShaderHotReload::RegisterComputePipeline(Zenith_Vulkan_Pipeline* pxPip
 			   strComputePath.c_str());
 }
 
-void Flux_ShaderHotReload::UnregisterPipeline(Zenith_Vulkan_Pipeline* pxPipeline)
+void Flux_ShaderHotReload::UnregisterPipeline(Flux_Pipeline* pxPipeline)
 {
 	if (!s_bInitialised)
 	{

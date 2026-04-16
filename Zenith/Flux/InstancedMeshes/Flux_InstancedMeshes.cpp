@@ -9,8 +9,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_CommandList.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan_Pipeline.h"
+#include "Zenith_PlatformGraphics_Include.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/Flux_MaterialBinding.h"
@@ -23,7 +22,7 @@
 
 //=============================================================================
 // Push Constants for Instanced Meshes (128 bytes)
-// Different from MaterialPushConstants - has animation params instead of emissive
+// Different from MaterialDrawConstants - has animation params instead of emissive
 //=============================================================================
 struct InstancedMeshPushConstants
 {
@@ -54,7 +53,7 @@ static Flux_Pipeline s_xShadowPipeline;
 // Culling compute pipeline
 static Flux_Shader s_xCullingShader;
 static Flux_Pipeline s_xCullingPipeline;
-static Zenith_Vulkan_RootSig s_xCullingRootSig;
+static Flux_RootSig s_xCullingRootSig;
 static Flux_DynamicConstantBuffer s_xCullingConstantsBuffer;
 static bool s_bCullingInitialized = false;
 static bool s_bCullingEnabled = true;  // GPU culling enabled by default
@@ -118,11 +117,11 @@ void Flux_InstancedMeshes::Initialise()
 	// GBuffer pipeline
 	{
 		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_DIFFUSE].m_xSurfaceInfo.m_eFormat;
-		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT].m_xSurfaceInfo.m_eFormat;
-		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
-		xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xPipelineSpec.m_pxShader = &s_xGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -158,7 +157,7 @@ void Flux_InstancedMeshes::Initialise()
 	// Cache binding handles from shader reflection
 	const Flux_ShaderReflection& xGBufferReflection = s_xGBufferShader.GetReflection();
 	s_xFrameConstantsBinding = xGBufferReflection.GetBinding("FrameConstants");
-	s_xScratchBufferBinding = xGBufferReflection.GetBinding("PushConstants");
+	s_xScratchBufferBinding = xGBufferReflection.GetBinding("DrawConstants");
 	s_xDiffuseTexBinding = xGBufferReflection.GetBinding("g_xDiffuseTex");
 	s_xNormalTexBinding = xGBufferReflection.GetBinding("g_xNormalTex");
 	s_xRoughnessMetallicTexBinding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex");
@@ -172,7 +171,7 @@ void Flux_InstancedMeshes::Initialise()
 	// Shadow shader bindings
 	const Flux_ShaderReflection& xShadowReflection = s_xShadowShader.GetReflection();
 	s_xShadowFrameConstantsBinding = xShadowReflection.GetBinding("FrameConstants");
-	s_xShadowScratchBufferBinding = xShadowReflection.GetBinding("PushConstants");
+	s_xShadowScratchBufferBinding = xShadowReflection.GetBinding("DrawConstants");
 	s_xShadowMatrixBinding = xShadowReflection.GetBinding("ShadowMatrix");
 	s_xShadowTransformBufferBinding = xShadowReflection.GetBinding("TransformBuffer");
 	s_xShadowVisibleIndexBufferBinding = xShadowReflection.GetBinding("VisibleIndexBuffer");
@@ -183,10 +182,10 @@ void Flux_InstancedMeshes::Initialise()
 
 		// Build compute root signature from shader reflection
 		const Flux_ShaderReflection& xCullingReflection = s_xCullingShader.GetReflection();
-		Zenith_Vulkan_RootSigBuilder::FromReflection(s_xCullingRootSig, xCullingReflection);
+		Flux_RootSigBuilder::FromReflection(s_xCullingRootSig, xCullingReflection);
 
 		// Build compute pipeline
-		Zenith_Vulkan_ComputePipelineBuilder xComputeBuilder;
+		Flux_ComputePipelineBuilder xComputeBuilder;
 		xComputeBuilder.WithShader(s_xCullingShader)
 			.WithLayout(s_xCullingRootSig.m_xLayout)
 			.Build(s_xCullingPipeline);
@@ -288,9 +287,9 @@ void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	// Pass 2: GBuffer render
 	uint32_t uGBufferPass = xGraph.AddPass("Instanced Meshes GBuffer", ExecuteGBuffer);
-	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[1], RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[2], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_WRITE_RTV);
 
 	// GBuffer's indirect draws read the per-instance-group output buffers the
 	// culling compute writes. Those buffers are dynamic per-group and not
@@ -460,7 +459,7 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			xPushConstants.m_xAnimTexParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);  // VAT disabled
 		}
 
-		xBinder.PushConstant(s_xScratchBufferBinding, &xPushConstants, sizeof(xPushConstants));
+		xBinder.BindDrawConstants(s_xScratchBufferBinding, &xPushConstants, sizeof(xPushConstants));
 
 		// Bind material textures
 		xBinder.BindSRV(s_xDiffuseTexBinding, &pxMaterial->GetDiffuseTexture()->m_xSRV);
@@ -550,7 +549,7 @@ void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Fl
 
 		// Bind shadow matrix
 		Zenith_Maths::Matrix4 xIdentity = glm::identity<glm::mat4>();
-		xBinder.PushConstant(s_xShadowScratchBufferBinding, &xIdentity, sizeof(xIdentity));
+		xBinder.BindDrawConstants(s_xShadowScratchBufferBinding, &xIdentity, sizeof(xIdentity));
 		xBinder.BindCBV(s_xShadowMatrixBinding, &xShadowMatrixBuffer.GetCBV());
 
 		// Bind instance buffers

@@ -31,8 +31,8 @@ struct Flux_ConstantBufferView;
 struct Flux_PipelineSpecification;
 struct Flux_BlendState;
 struct Flux_PipelineLayout;
-struct Flux_DescriptorSetLayout;
-struct Flux_DescriptorBinding;
+struct Flux_BindingGroupLayout;
+struct Flux_BindingGroupEntry;
 struct Flux_VertexInputDescription;
 struct Flux_BufferLayout;
 struct Flux_BufferElement;
@@ -52,16 +52,22 @@ class Flux_AnimationController;
 class Flux_AnimationStateMachine;
 class Flux_IKSolver;
 
-// Platform abstraction types (defined via macros, forward declare the Vulkan versions)
+// Platform abstraction types
+// These are concrete Vulkan types, aliased via macros in Zenith_PlatformGraphics_Include.h.
+// Flux source code uses the Flux_* aliases; a second backend would swap these declarations.
+// See Flux_Backend.h for the backend contract documentation.
 class Zenith_Vulkan_Pipeline;
 class Zenith_Vulkan_PipelineBuilder;
+class Zenith_Vulkan_ComputePipelineBuilder;
 class Zenith_Vulkan_Shader;
 class Zenith_Vulkan_Sampler;
 class Zenith_Vulkan_RootSig;
+class Zenith_Vulkan_RootSigBuilder;
 class Zenith_Vulkan_CommandBuffer;
 class Zenith_Vulkan_Swapchain;
 class Zenith_Vulkan_MemoryManager;
 class Zenith_Vulkan;
+struct Zenith_Vulkan_VRAM;
 
 // Handle type (lightweight, doesn't need Vulkan)
 class Flux_VRAMHandle;

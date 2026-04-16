@@ -17,7 +17,7 @@ struct Flux_BindingHandle
 
 struct Flux_ReflectedBinding
 {
-	DescriptorType m_eType = DESCRIPTOR_TYPE_MAX;
+	BindingType m_eType = BINDING_TYPE_MAX;
 	u_int m_uSet = 0;
 	u_int m_uBinding = 0;
 	std::string m_strName;
@@ -129,5 +129,5 @@ private:
 	static bool ExtractParameterBinding(void* pxParam, void* pxTypeLayout, Flux_ReflectedBinding& xBindingOut);
 
 	static void ExtractReflection(void* pxEntryPointReflection, Flux_ShaderReflection& xReflectionOut);
-	static DescriptorType SlangTypeToDescriptorType(void* pxTypeLayout);
+	static BindingType SlangTypeToBindingType(void* pxTypeLayout);
 };

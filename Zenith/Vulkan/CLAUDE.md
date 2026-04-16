@@ -130,9 +130,9 @@ s_xCommandBuffer.Dispatch(uGroupsX, uGroupsY, uGroupsZ);
 Flux_PipelineSpecification xSpec;
 xSpec.m_pxShader = &s_xShader;
 xSpec.m_pxTargetSetup = &s_xTargetSetup;
-xSpec.m_xPipelineLayout.m_uNumDescriptorSets = 1;
-xSpec.m_xPipelineLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-xSpec.m_xPipelineLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+xSpec.m_xPipelineLayout.m_uNumBindingGroups = 1;
+xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[0].m_eType = BINDING_TYPE_BUFFER;
+xSpec.m_xPipelineLayout.m_axBindingGroups[0].m_axBindings[1].m_eType = BINDING_TYPE_TEXTURE;
 
 Flux_PipelineBuilder::FromSpecification(s_xPipeline, xSpec);
 ```

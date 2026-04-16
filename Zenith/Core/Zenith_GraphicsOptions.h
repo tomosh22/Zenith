@@ -9,7 +9,7 @@ struct Zenith_GraphicsOptions
 	bool m_bFogEnabled = true;
 	bool m_bSSREnabled = true;
 	bool m_bSSAOEnabled = true;
-	bool m_bSSGIEnabled = false;
+	bool m_bSSGIEnabled = true;
 	bool m_bSkyboxEnabled = true;
 	Zenith_Maths::Vector3 m_xSkyboxColour = Zenith_Maths::Vector3(0.f);
 };

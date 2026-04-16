@@ -1,3 +1,4 @@
 #version 450 core
 #define SHADOWS
-#include "Flux_StaticMeshes_VertCommon.fxh"
+#define MESH_STATIC
+#include "../Meshes/Mesh_Vert.fxh"

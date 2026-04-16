@@ -16,7 +16,7 @@ layout(location = 5) in float a_fBitangentSign;  // Sign for bitangent reconstru
 #endif
 
 // ========== Terrain Material Constants (per-draw, set 1 binding 0) ==========
-// Matches C++ TerrainMaterialPushConstants struct (288 bytes)
+// Matches C++ TerrainMaterialDrawConstants struct (288 bytes)
 layout(std140, set = 1, binding = 0) uniform TerrainMaterialConstants {
 	vec4 g_axBaseColors[4];       // 64 bytes
 	vec4 g_axUVParams[4];         // 64 bytes (tilingX, tilingY, offsetX, offsetY)

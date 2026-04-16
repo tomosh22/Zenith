@@ -1,3 +1,6 @@
+#ifndef GBUFFER_COMMON_FXH
+#define GBUFFER_COMMON_FXH
+
 // Barycentric extension for quad utilisation analysis (optional - not supported by Slang)
 #ifdef GL_EXT_fragment_shader_barycentric
 #extension GL_EXT_fragment_shader_barycentric : enable
@@ -35,3 +38,5 @@ void OutputToGBuffer(vec4 xDiffuse, vec3 xNormal, float fAmbient, float fRoughne
 {
 	OutputToGBuffer(xDiffuse, xNormal, fAmbient, fRoughness, fMetallic, 0.0);
 }
+
+#endif // GBUFFER_COMMON_FXH

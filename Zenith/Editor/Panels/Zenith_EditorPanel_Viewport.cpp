@@ -18,7 +18,7 @@ void Zenith_EditorPanelViewport::Render(ViewportState& xState)
 	xState.m_xViewportPos = { xViewportPanelPos.x, xViewportPanelPos.y };
 
 	// Get the final render target SRV
-	Flux_ShaderResourceView& xGameRenderSRV = Flux_Graphics::s_xFinalRenderTarget.SRV();
+	Flux_ShaderResourceView& xGameRenderSRV = Flux_Graphics::GetFinalRenderTarget().SRV();
 
 	if (xGameRenderSRV.m_xImageViewHandle.IsValid())
 	{

@@ -88,11 +88,11 @@ public:
 	Zenith_Vulkan_RootSig()
 	{
 		// Initialize all descriptor types to MAX (invalid/unused)
-		for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_BINDINGS; i++)
+		for (u_int i = 0; i < FLUX_MAX_BINDINGS_PER_GROUP; i++)
 		{
-			for (u_int j = 0; j < FLUX_MAX_DESCRIPTOR_BINDINGS; j++)
+			for (u_int j = 0; j < FLUX_MAX_BINDINGS_PER_GROUP; j++)
 			{
-				m_axDescriptorTypes[i][j] = DESCRIPTOR_TYPE_MAX;
+				m_axBindingTypes[i][j] = BINDING_TYPE_MAX;
 			}
 		}
 	}
@@ -104,9 +104,9 @@ public:
 	bool HasReflection() const { return m_xReflection.GetBindings().GetSize() > 0; }
 
 	vk::PipelineLayout m_xLayout;
-	vk::DescriptorSetLayout m_axDescSetLayouts[FLUX_MAX_DESCRIPTOR_BINDINGS];
-	DescriptorType m_axDescriptorTypes[FLUX_MAX_DESCRIPTOR_BINDINGS][FLUX_MAX_DESCRIPTOR_BINDINGS];
-	u_int m_uNumDescriptorSets = UINT32_MAX;
+	vk::DescriptorSetLayout m_axDescSetLayouts[FLUX_MAX_BINDINGS_PER_GROUP];
+	BindingType m_axBindingTypes[FLUX_MAX_BINDINGS_PER_GROUP][FLUX_MAX_BINDINGS_PER_GROUP];
+	u_int m_uNumBindingGroups = UINT32_MAX;
 
 	// Reflection data for name-based binding lookups
 	Flux_ShaderReflection m_xReflection;

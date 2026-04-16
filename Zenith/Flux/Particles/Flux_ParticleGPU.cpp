@@ -7,8 +7,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan_Pipeline.h"
+#include "Zenith_PlatformGraphics_Include.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 // Maximum particles across all GPU emitters
@@ -92,10 +91,10 @@ void Flux_ParticleGPU::Initialise()
 
 	// Build compute root signature from shader reflection
 	const Flux_ShaderReflection& xReflection = s_xComputeShader.GetReflection();
-	Zenith_Vulkan_RootSigBuilder::FromReflection(s_xComputeRootSig, xReflection);
+	Flux_RootSigBuilder::FromReflection(s_xComputeRootSig, xReflection);
 
 	// Build compute pipeline
-	Zenith_Vulkan_ComputePipelineBuilder xComputeBuilder;
+	Flux_ComputePipelineBuilder xComputeBuilder;
 	xComputeBuilder.WithShader(s_xComputeShader)
 		.WithLayout(s_xComputeRootSig.m_xLayout)
 		.Build(s_xComputePipeline);
@@ -421,7 +420,7 @@ void Flux_ParticleGPU::DispatchCompute(Flux_CommandList* pxCmdList)
 	xBinder.BindUAV_Buffer(s_xOutputParticlesBinding, &xOutputBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(s_xInstanceBufferBinding, &s_xInstanceBuffer.GetUAV());
 	xBinder.BindUAV_Buffer(s_xCounterBufferBinding, &s_xCounterBuffer.GetUAV());
-	xBinder.PushConstant(&xConstants, sizeof(xConstants));
+	xBinder.BindDrawConstants(&xConstants, sizeof(xConstants));
 
 	uint32_t uWorkgroups = (s_uTotalAllocatedParticles + s_uWorkgroupSize - 1) / s_uWorkgroupSize;
 	pxCmdList->AddCommand<Flux_CommandDispatch>(uWorkgroups, 1, 1);

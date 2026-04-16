@@ -2,6 +2,16 @@
 #include "Flux.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
+// ---- Core render-target format constants --------------------------------
+// Pipeline building needs these at init time (before transients exist).
+// Extracted from Flux_Graphics::InitialiseRenderTargets().
+static constexpr TextureFormat MRT_FORMAT_DIFFUSE         = TEXTURE_FORMAT_RGBA8_UNORM;
+static constexpr TextureFormat MRT_FORMAT_NORMALSAMBIENT  = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
+static constexpr TextureFormat MRT_FORMAT_MATERIAL        = TEXTURE_FORMAT_RGBA8_UNORM;
+static constexpr TextureFormat DEPTH_FORMAT               = TEXTURE_FORMAT_D32_SFLOAT;
+static constexpr TextureFormat FINAL_RT_FORMAT            = TEXTURE_FORMAT_R16G16B16A16_UNORM;
+static constexpr TextureFormat HDR_SCENE_FORMAT           = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
+
 class Flux_Graphics
 {
 public:
@@ -16,12 +26,18 @@ public:
 	static void UploadFrameConstants();
 
 	//----------------------------------------------------------------------
-	// Render Targets
+	// Transient resource setup (called from Flux::SetupRenderGraph BEFORE
+	// any other subsystem registers passes).
 	//----------------------------------------------------------------------
-	static Flux_RenderAttachment s_axMRTColourAttachments[MRT_INDEX_COUNT];
-	static Flux_RenderAttachment s_xFinalRenderTarget;
-	static Flux_RenderAttachment s_xFinalRenderTarget_NoDepth;
-	static Flux_RenderAttachment s_xDepthBuffer;
+	static void SetupTransients(Flux_RenderGraph& xGraph);
+
+	//----------------------------------------------------------------------
+	// Render Target Accessors (prefer these over direct member access)
+	//----------------------------------------------------------------------
+	static Flux_RenderAttachment& GetMRTAttachment(MRTIndex eIndex);
+	static Flux_RenderAttachment& GetDepthAttachment();
+	static Flux_RenderAttachment& GetFinalRenderTarget();
+	static Flux_RenderAttachment& GetFinalRenderTarget_NoDepth();
 
 	//----------------------------------------------------------------------
 	// Samplers
@@ -70,7 +86,7 @@ public:
 	static float GetFOV();
 	static float GetAspectRatio();
 
-	static Flux_DescriptorSetLayout s_xFrameConstantsLayout;
+	static Flux_BindingGroupLayout s_xFrameConstantsLayout;
 
 	struct FrameConstants
 	{
@@ -97,4 +113,18 @@ public:
 	static FrameConstants s_xFrameConstants;
 private:
 	static bool BuildCameraMatrices(FrameConstants& xConstants);
+
+	// ---- Owned render targets (created in Initialise, always valid) ----
+	static Flux_RenderAttachment s_axMRTColourAttachments_Owned[MRT_INDEX_COUNT];
+	static Flux_RenderAttachment s_xFinalRenderTarget_Owned;
+	static Flux_RenderAttachment s_xFinalRenderTarget_NoDepth_Owned;
+	static Flux_RenderAttachment s_xDepthBuffer_Owned;
+
+	// ---- Transient path (graph-owned allocation) ----
+	static Flux_TransientHandle s_axMRTHandles[MRT_INDEX_COUNT];
+	static Flux_TransientHandle s_xFinalRTHandle;
+	static Flux_TransientHandle s_xFinalRT_NoDepthHandle;
+	static Flux_TransientHandle s_xDepthHandle;
+	static Flux_RenderGraph* s_pxGraph;
+	static bool s_bUsingTransients;
 };

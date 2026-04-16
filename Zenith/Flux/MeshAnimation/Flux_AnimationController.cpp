@@ -4,7 +4,7 @@
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_AnimationAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Zenith_PlatformGraphics_Include.h"
 #include "Core/Zenith_Core.h"
 
 #ifdef ZENITH_TOOLS

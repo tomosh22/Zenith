@@ -1,2 +1,3 @@
 #version 450 core
-#include "Flux_AnimatedMeshes_VertCommon.fxh"
+#define MESH_ANIMATED
+#include "../Meshes/Mesh_Vert.fxh"

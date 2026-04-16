@@ -11,8 +11,4 @@ public:
 	static void Shutdown();
 
 	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
-
-private:
-	static void CreateRenderTargets();
-	static void DestroyRenderTargets();
 };

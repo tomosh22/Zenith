@@ -9,7 +9,7 @@
 // Material Push Constants (128 bytes - Vulkan minimum guarantee)
 // Used by StaticMeshes and AnimatedMeshes
 // ============================================================================
-struct MaterialPushConstants
+struct MaterialDrawConstants
 {
 	Zenith_Maths::Matrix4 m_xModelMatrix;       // 64 bytes
 	Zenith_Maths::Vector4 m_xBaseColor;         // 16 bytes
@@ -17,14 +17,14 @@ struct MaterialPushConstants
 	Zenith_Maths::Vector4 m_xUVParams;          // 16 bytes (tilingX, tilingY, offsetX, offsetY)
 	Zenith_Maths::Vector4 m_xEmissiveParams;    // 16 bytes (R, G, B, intensity)
 };
-static_assert(sizeof(MaterialPushConstants) == 128, "MaterialPushConstants must be 128 bytes");
+static_assert(sizeof(MaterialDrawConstants) == 128, "MaterialDrawConstants must be 128 bytes");
 
 // ============================================================================
 // Terrain Material Push Constants (288 bytes)
 // Holds properties for 4 splatmap-blended materials + terrain params
 // Uploaded via scratch buffer UBO (not hardware push constants)
 // ============================================================================
-struct TerrainMaterialPushConstants
+struct TerrainMaterialDrawConstants
 {
 	// Per-material arrays (4 materials, 256 bytes total)
 	Zenith_Maths::Vector4 m_axBaseColors[4];       // 64 bytes
@@ -36,14 +36,14 @@ struct TerrainMaterialPushConstants
 	Zenith_Maths::Vector4 m_xTerrainParams;        // 16 bytes (originX, originZ, sizeX, sizeZ)
 	Zenith_Maths::Vector4 m_xTerrainParams2;       // 16 bytes (materialCount as uint bits, debugMode as uint bits, 0, 0)
 };
-static_assert(sizeof(TerrainMaterialPushConstants) == 288, "TerrainMaterialPushConstants must be 288 bytes");
+static_assert(sizeof(TerrainMaterialDrawConstants) == 288, "TerrainMaterialDrawConstants must be 288 bytes");
 
 // ============================================================================
 // Helper Functions
 // ============================================================================
 
-inline void BuildMaterialPushConstants(
-	MaterialPushConstants& xOut,
+inline void BuildMaterialDrawConstants(
+	MaterialDrawConstants& xOut,
 	const Zenith_Maths::Matrix4& xModelMatrix,
 	const Zenith_MaterialAsset* pxMaterial)
 {
@@ -81,8 +81,8 @@ inline void BuildMaterialPushConstants(
 	}
 }
 
-inline void BuildTerrainMaterialPushConstants(
-	TerrainMaterialPushConstants& xOut,
+inline void BuildTerrainMaterialDrawConstants(
+	TerrainMaterialDrawConstants& xOut,
 	const Zenith_MaterialAsset* const* ppxMaterials,
 	u_int uMaterialCount,
 	u_int uDebugMode,

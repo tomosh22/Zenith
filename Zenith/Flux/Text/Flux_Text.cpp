@@ -60,7 +60,7 @@ void Flux_Text::Initialise()
 	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_Graphics::s_xFinalRenderTarget.m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
@@ -256,14 +256,14 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 	if (s_bOverlayClipActive && s_uBgCharCount > 0)
 	{
 		// Draw background text with overlay clip rect active
-		pxCommandList->AddCommand<Flux_CommandPushConstant>(&s_xOverlayClipRect, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+		pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&s_xOverlayClipRect, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uBgCharCount, 0, 0, 0);
 
 		if (s_uFgCharCount > 0)
 		{
 			// Draw overlay text without clip rect
 			Zenith_Maths::Vector4 xNoClip = {-1.f, -1.f, -1.f, -1.f};
-			pxCommandList->AddCommand<Flux_CommandPushConstant>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+			pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
 			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uFgCharCount, 0, 0, s_uBgCharCount);
 		}
 	}
@@ -271,7 +271,7 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 	{
 		// No overlay clipping: single draw, clip rect disabled
 		Zenith_Maths::Vector4 xNoClip = {-1.f, -1.f, -1.f, -1.f};
-		pxCommandList->AddCommand<Flux_CommandPushConstant>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+		pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
 	}
 
@@ -282,5 +282,5 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 void Flux_Text::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	uint32_t uPass = xGraph.AddPass("Text", ExecuteText);
-	xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget, RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uPass, Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }

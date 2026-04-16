@@ -1,2 +1,3 @@
 #version 450 core
-#include "Flux_StaticMeshes_FragCommon.fxh"
+#define MESH_STATIC
+#include "../Meshes/Mesh_Frag.fxh"

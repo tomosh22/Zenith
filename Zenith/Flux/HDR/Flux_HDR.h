@@ -3,7 +3,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "Vulkan/Zenith_Vulkan_Pipeline.h"
+#include "Zenith_PlatformGraphics_Include.h"
 
 enum ToneMappingOperator : u_int
 {
@@ -41,6 +41,9 @@ public:
 	static void Shutdown();
 	static void Reset();
 
+	// Must be called BEFORE other subsystems' SetupRenderGraph — many subsystems
+	// write to GetHDRSceneTarget() and need the transient handle to exist.
+	static void SetupTransients(Flux_RenderGraph& xGraph);
 	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	static Flux_ShaderResourceView& GetHDRSceneSRV();
@@ -57,6 +60,9 @@ public:
 	static float GetCurrentExposure();
 	static float GetAverageLuminance();
 	static bool IsEnabled();
+
+	// Attachment accessor for bloom chain (returns transient or owned)
+	static Flux_RenderAttachment& GetBloomChainAttachment(u_int uIndex);
 
 	// Auto-exposure control
 	static void SetAutoExposureEnabled(bool bEnabled);
@@ -87,7 +93,8 @@ private:
 	static void CreateRenderTargets();
 	static void DestroyRenderTargets();
 
-	static Flux_RenderAttachment s_xHDRSceneTarget;
+	static Flux_RenderAttachment s_xHDRSceneTarget_Owned;
+	static Flux_TransientHandle s_xHDRSceneTargetHandle;
 
 	static Flux_RenderAttachment s_axBloomChain[5];
 
@@ -117,10 +124,10 @@ private:
 	// Auto-exposure compute resources
 	static Flux_ReadWriteBuffer s_xHistogramBuffer;
 	static Flux_ReadWriteBuffer s_xExposureBuffer;
-	static Zenith_Vulkan_Pipeline s_xLuminanceHistogramPipeline;
-	static Zenith_Vulkan_Pipeline s_xAdaptationPipeline;
-	static Zenith_Vulkan_Shader s_xLuminanceHistogramShader;
-	static Zenith_Vulkan_Shader s_xAdaptationShader;
-	static Zenith_Vulkan_RootSig s_xLuminanceRootSig;
-	static Zenith_Vulkan_RootSig s_xAdaptationRootSig;
+	static Flux_Pipeline s_xLuminanceHistogramPipeline;
+	static Flux_Pipeline s_xAdaptationPipeline;
+	static Flux_Shader s_xLuminanceHistogramShader;
+	static Flux_Shader s_xAdaptationShader;
+	static Flux_RootSig s_xLuminanceRootSig;
+	static Flux_RootSig s_xAdaptationRootSig;
 };

@@ -519,7 +519,7 @@ Zenith_Vulkan_Pipeline::~Zenith_Vulkan_Pipeline()
 	}
 
 	// Destroy descriptor set layouts
-	for (u_int u = 0; u < m_xRootSig.m_uNumDescriptorSets && u < FLUX_MAX_DESCRIPTOR_BINDINGS; u++)
+	for (u_int u = 0; u < m_xRootSig.m_uNumBindingGroups && u < FLUX_MAX_BINDINGS_PER_GROUP; u++)
 	{
 		if (m_xRootSig.m_axDescSetLayouts[u])
 		{
@@ -917,13 +917,26 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 #pragma endregion
 
 #pragma region DynamicState
-	vk::DynamicState aeDynamicState[] =
+	// Viewport and scissor are always dynamic. Cull mode and depth bias are
+	// optionally dynamic per Flux_PipelineSpecification flags.
+	vk::DynamicState aeDynamicState[4] =
 	{
 		vk::DynamicState::eViewport,
 		vk::DynamicState::eScissor,
 	};
+	u_int uDynamicStateCount = 2;
+
+	if (xSpec.m_bDynamicCullMode)
+	{
+		aeDynamicState[uDynamicStateCount++] = vk::DynamicState::eCullMode;
+	}
+	if (xSpec.m_bDynamicDepthBias)
+	{
+		aeDynamicState[uDynamicStateCount++] = vk::DynamicState::eDepthBias;
+	}
+
 	vk::PipelineDynamicStateCreateInfo xDynamicState = vk::PipelineDynamicStateCreateInfo()
-		.setDynamicStateCount(sizeof(aeDynamicState) / sizeof(aeDynamicState[0]))
+		.setDynamicStateCount(uDynamicStateCount)
 		.setPDynamicStates(aeDynamicState);
 
 	xPipelineInfo.setPDynamicState(&xDynamicState);
@@ -987,7 +1000,7 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 					Zenith_Vulkan::GetDevice().destroyPipelineLayout(pxPipeline->m_xRootSig.m_xLayout);
 					pxPipeline->m_xRootSig.m_xLayout = nullptr;
 				}
-				for (u_int i = 0; i < pxPipeline->m_xRootSig.m_uNumDescriptorSets; i++)
+				for (u_int i = 0; i < pxPipeline->m_xRootSig.m_uNumBindingGroups; i++)
 				{
 					if (pxPipeline->m_xRootSig.m_axDescSetLayouts[i])
 					{
@@ -1009,29 +1022,29 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 
 void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_PipelineLayout& xSpec)
 {
-	xRootSigOut.m_uNumDescriptorSets = xSpec.m_uNumDescriptorSets;
-	for (u_int uDescSet = 0; uDescSet < xSpec.m_uNumDescriptorSets; uDescSet++)
+	xRootSigOut.m_uNumBindingGroups = xSpec.m_uNumBindingGroups;
+	for (u_int uDescSet = 0; uDescSet < xSpec.m_uNumBindingGroups; uDescSet++)
 	{
-		const Flux_DescriptorSetLayout& xLayout = xSpec.m_axDescriptorSetLayouts[uDescSet];
+		const Flux_BindingGroupLayout& xLayout = xSpec.m_axBindingGroups[uDescSet];
 
-		if (xLayout.m_axBindings[0].m_eType == DESCRIPTOR_TYPE_UNBOUNDED_TEXTURES)
+		if (xLayout.m_axBindings[0].m_eType == BINDING_TYPE_UNBOUNDED_TEXTURES)
 		{
 			xRootSigOut.m_axDescSetLayouts[uDescSet] = Zenith_Vulkan::GetBindlessTexturesDescriptorSetLayout();
 			continue;
 		}
 
 		vk::DescriptorSetLayoutCreateInfo xInfo = vk::DescriptorSetLayoutCreateInfo();
-		vk::DescriptorSetLayoutBinding axBindings[FLUX_MAX_DESCRIPTOR_BINDINGS];
+		vk::DescriptorSetLayoutBinding axBindings[FLUX_MAX_BINDINGS_PER_GROUP];
 		u_int uNumDescriptors = 0;
-		for (u_int uDesc = 0; uDesc < FLUX_MAX_DESCRIPTOR_BINDINGS; uDesc++)
+		for (u_int uDesc = 0; uDesc < FLUX_MAX_BINDINGS_PER_GROUP; uDesc++)
 		{
-			if (xLayout.m_axBindings[uDesc].m_eType == DESCRIPTOR_TYPE_MAX)
+			if (xLayout.m_axBindings[uDesc].m_eType == BINDING_TYPE_MAX)
 			{
 				break;
 			}
 
 			// Store descriptor type for later use in command buffer
-			xRootSigOut.m_axDescriptorTypes[uDescSet][uDesc] = xLayout.m_axBindings[uDesc].m_eType;
+			xRootSigOut.m_axBindingTypes[uDescSet][uDesc] = xLayout.m_axBindings[uDesc].m_eType;
 
 			vk::DescriptorSetLayoutBinding& xBinding = axBindings[uDesc]
 				.setBinding(uDesc)
@@ -1040,23 +1053,23 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 
 			switch (xLayout.m_axBindings[uDesc].m_eType)
 			{
-			case(DESCRIPTOR_TYPE_BUFFER):
+			case(BINDING_TYPE_BUFFER):
 				xBinding.setDescriptorType(vk::DescriptorType::eUniformBuffer);
 				break;
-			case(DESCRIPTOR_TYPE_STORAGE_BUFFER):
+			case(BINDING_TYPE_STORAGE_BUFFER):
 				xBinding.setDescriptorType(vk::DescriptorType::eStorageBuffer);
 				break;
-			case(DESCRIPTOR_TYPE_TEXTURE):
+			case(BINDING_TYPE_TEXTURE):
 				xBinding.setDescriptorType(vk::DescriptorType::eCombinedImageSampler);
 				break;
-			case(DESCRIPTOR_TYPE_STORAGE_IMAGE):
+			case(BINDING_TYPE_STORAGE_IMAGE):
 				xBinding.setDescriptorType(vk::DescriptorType::eStorageImage);
 				break;
-			case(DESCRIPTOR_TYPE_UNBOUNDED_TEXTURES):
+			case(BINDING_TYPE_UNBOUNDED_TEXTURES):
 				Zenith_Assert(false, "Unbounded textures must be in their own table");
 				break;
-			case(DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE):
-			case(DESCRIPTOR_TYPE_MAX):
+			case(BINDING_TYPE_ACCELERATION_STRUCTURE):
+			case(BINDING_TYPE_MAX):
 				break;
 			}
 
@@ -1071,7 +1084,7 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 	// Push constants replaced with scratch buffer system - no push constant ranges needed
 	vk::PipelineLayoutCreateInfo xPipelineLayoutInfo = vk::PipelineLayoutCreateInfo()
 		.setPSetLayouts(xRootSigOut.m_axDescSetLayouts)
-		.setSetLayoutCount(xSpec.m_uNumDescriptorSets)
+		.setSetLayoutCount(xSpec.m_uNumBindingGroups)
 		.setPushConstantRangeCount(0)
 		.setPPushConstantRanges(nullptr);
 

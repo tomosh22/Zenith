@@ -84,22 +84,6 @@ namespace Zenith_EditorPanelRenderGraph
 		}
 	}
 
-	static void RenderBarrier(const Flux_RenderGraph_ImageBarrier& xBarrier)
-	{
-		const std::string& strName = xBarrier.m_xResource.GetName();
-		const char* szName = xBarrier.m_xResource.IsValid()
-			? (strName.empty() ? "<unnamed>" : strName.c_str())
-			: "<null>";
-		const char* szKind = ResourceKindToString(xBarrier.m_xResource.GetKind());
-		ImGui::Text("  %s (%s) [Mip%u/%u, Layer%u/%u]: %s -> %s %s",
-			szName, szKind,
-			xBarrier.m_uMipLevel, xBarrier.m_uMipCount,
-			xBarrier.m_uLayer, xBarrier.m_uLayerCount,
-			AccessToString(xBarrier.m_ePrevAccess),
-			AccessToString(xBarrier.m_eNewAccess),
-			xBarrier.m_bDiscard ? "(discard)" : "");
-	}
-
 	static void RenderPass(const Flux_RenderGraph_Pass& xPass, const Flux_RenderGraph& xGraph)
 	{
 		const char* szPassName = xPass.m_strName.empty() ? "<unnamed>" : xPass.m_strName.c_str();
@@ -161,33 +145,8 @@ namespace Zenith_EditorPanelRenderGraph
 			ImGui::Unindent();
 		}
 
-		if (xPass.m_xPrologueBarriers.GetSize() > 0)
-		{
-			char acLabel[64];
-			snprintf(acLabel, sizeof(acLabel), "Prologue Barriers (%u)", xPass.m_xPrologueBarriers.GetSize());
-			if (ImGui::TreeNode(acLabel))
-			{
-				for (u_int i = 0; i < xPass.m_xPrologueBarriers.GetSize(); i++)
-				{
-					RenderBarrier(xPass.m_xPrologueBarriers.Get(i));
-				}
-				ImGui::TreePop();
-			}
-		}
-
-		if (xPass.m_xEpilogueBarriers.GetSize() > 0)
-		{
-			char acLabel[64];
-			snprintf(acLabel, sizeof(acLabel), "Epilogue Barriers (%u)", xPass.m_xEpilogueBarriers.GetSize());
-			if (ImGui::TreeNode(acLabel))
-			{
-				for (u_int i = 0; i < xPass.m_xEpilogueBarriers.GetSize(); i++)
-				{
-					RenderBarrier(xPass.m_xEpilogueBarriers.Get(i));
-				}
-				ImGui::TreePop();
-			}
-		}
+		// TODO: Barrier display was removed — graph-level barriers were dead code.
+		// Re-add once barrier generation is unified with RecordCommandBuffersTask.
 
 		ImGui::Unindent();
 	}

@@ -1075,7 +1075,7 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 			xTypeConstant.m_uPad0 = 0;
 			xTypeConstant.m_uPad1 = 0;
 			xTypeConstant.m_uPad2 = 0;
-			xBinder.PushConstant(s_xPushConstantsBinding, &xTypeConstant, sizeof(LightTypePushConstant));
+			xBinder.BindDrawConstants(s_xPushConstantsBinding, &xTypeConstant, sizeof(LightTypePushConstant));
 
 			for (u_int uLOD = 0; uLOD < uNUM_LODS; ++uLOD)
 			{
@@ -1123,7 +1123,7 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 			xTypeConstant.m_uPad0 = 0;
 			xTypeConstant.m_uPad1 = 0;
 			xTypeConstant.m_uPad2 = 0;
-			xBinder.PushConstant(s_xPushConstantsBinding, &xTypeConstant, sizeof(LightTypePushConstant));
+			xBinder.BindDrawConstants(s_xPushConstantsBinding, &xTypeConstant, sizeof(LightTypePushConstant));
 
 			for (u_int uLOD = 0; uLOD < uNUM_LODS; ++uLOD)
 			{
@@ -1160,7 +1160,7 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 		xTypeConstant.m_uPad0 = 0;
 		xTypeConstant.m_uPad1 = 0;
 		xTypeConstant.m_uPad2 = 0;
-		xBinder.PushConstant(s_xPushConstantsBinding, &xTypeConstant, sizeof(LightTypePushConstant));
+		xBinder.BindDrawConstants(s_xPushConstantsBinding, &xTypeConstant, sizeof(LightTypePushConstant));
 
 		// Bind storage buffer for directional lights
 		xBinder.BindUAV_Buffer(s_xDirectionalLightBufferBinding, &s_xDirectionalLightInstanceBuffer.GetUAV());
@@ -1180,10 +1180,10 @@ void Flux_DynamicLights::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 
 	// Reads: G-Buffer MRT attachments
-	xGraph.Read(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT], RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV);
 
 	// Reads: depth buffer
-	xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	// Reads: IBL BRDF LUT — bound by the execute callback for multiscatter energy
 	// compensation. Without this declaration the LUT stays in COLOR_ATTACHMENT_OPTIMAL

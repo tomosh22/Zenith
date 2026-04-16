@@ -149,9 +149,9 @@ Flux_DeferredShading::Initialise();  // After IBL
 ### Access IBL textures in shaders:
 ```cpp
 // In deferred shading setup
-xLayout.m_axDescriptorSetLayouts[0].m_axBindings[X].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // BRDF LUT
-xLayout.m_axDescriptorSetLayouts[0].m_axBindings[Y].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Irradiance
-xLayout.m_axDescriptorSetLayouts[0].m_axBindings[Z].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Prefiltered
+xLayout.m_axBindingGroups[0].m_axBindings[X].m_eType = BINDING_TYPE_TEXTURE;  // BRDF LUT
+xLayout.m_axBindingGroups[0].m_axBindings[Y].m_eType = BINDING_TYPE_TEXTURE;  // Irradiance
+xLayout.m_axBindingGroups[0].m_axBindings[Z].m_eType = BINDING_TYPE_TEXTURE;  // Prefiltered
 
 // Binding
 xBinder.BindSRV(xBRDFBinding, &Flux_IBL::GetBRDFLUTSRV());

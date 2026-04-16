@@ -6,23 +6,34 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan_Pipeline.h"
+#include "Zenith_PlatformGraphics_Include.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 // Static member definitions
-Flux_RenderAttachment Flux_HiZ::s_xHiZBuffer;
 u_int Flux_HiZ::s_uMipCount = 0;
 bool Flux_HiZ::s_bEnabled = true;
 bool Flux_HiZ::s_bInitialised = false;
+
+// ---- Transient path (graph-owned allocation) ----
+static Flux_TransientHandle s_xHiZBufferHandle;
+static Flux_RenderGraph* s_pxGraph = nullptr;
+
+// ---- Fallback path (subsystem-owned allocation) ----
+static Flux_RenderAttachment s_xHiZBuffer_Owned;
+
+// ---- Toggle: which path is active this frame ----
+static bool s_bUsingTransients = false;
+
+// HiZ format (constant -- pipeline building doesn't depend on allocation path)
+static constexpr TextureFormat HIZ_FORMAT = TEXTURE_FORMAT_R32G32_SFLOAT;
 
 // Debug variables
 DEBUGVAR bool dbg_bHiZEnable = true;
 
 // Compute shader and pipeline
-static Zenith_Vulkan_Shader g_xComputeShader;
-static Zenith_Vulkan_Pipeline g_xComputePipeline;
-static Zenith_Vulkan_RootSig g_xComputeRootSig;
+static Flux_Shader g_xComputeShader;
+static Flux_Pipeline g_xComputePipeline;
+static Flux_RootSig g_xComputeRootSig;
 
 // Cached binding handles
 static Flux_BindingHandle s_xInputTexBinding;
@@ -38,7 +49,18 @@ struct HiZPushConstants
 	u_int m_uPad;
 };
 
-static void CreateHiZRenderTargets()
+// ---- Helper to get the right attachment regardless of path ----
+
+static Flux_RenderAttachment& GetHiZBuffer()
+{
+	if (s_bUsingTransients)
+		return s_pxGraph->GetTransientAttachment(s_xHiZBufferHandle);
+	return s_xHiZBuffer_Owned;
+}
+
+// ---- Fallback: subsystem-owned create/destroy ----
+
+static void CreateOwnedRenderTargets()
 {
 	// Calculate mip count based on screen resolution
 	u_int uWidth = Flux_Swapchain::GetWidth();
@@ -53,29 +75,29 @@ static void CreateHiZRenderTargets()
 	Flux_RenderAttachmentBuilder xBuilder;
 	xBuilder.m_uWidth = uWidth;
 	xBuilder.m_uHeight = uHeight;
-	xBuilder.m_eFormat = TEXTURE_FORMAT_R32G32_SFLOAT;
+	xBuilder.m_eFormat = HIZ_FORMAT;
 	xBuilder.m_uNumMips = Flux_HiZ::s_uMipCount;
 	xBuilder.m_uMemoryFlags = (1u << MEMORY_FLAGS__UNORDERED_ACCESS) | (1u << MEMORY_FLAGS__SHADER_READ);
 
-	xBuilder.BuildColour(Flux_HiZ::s_xHiZBuffer, "HiZ Buffer");
+	xBuilder.BuildColour(s_xHiZBuffer_Owned, "HiZ Buffer (owned)");
 	// BuildColour now populates all mip/slice view arrays automatically
 }
 
-static void DestroyHiZRenderTargets()
+static void DestroyOwnedRenderTargets()
 {
 	// Queue VRAM for deferred deletion
-	if (Flux_HiZ::s_xHiZBuffer.m_xVRAMHandle.IsValid())
+	if (s_xHiZBuffer_Owned.m_xVRAMHandle.IsValid())
 	{
-		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(Flux_HiZ::s_xHiZBuffer.m_xVRAMHandle);
+		Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(s_xHiZBuffer_Owned.m_xVRAMHandle);
 
 		// Queue deletion with all image view handles
-		Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, Flux_HiZ::s_xHiZBuffer.m_xVRAMHandle,
-			Flux_HiZ::s_xHiZBuffer.RTV().m_xImageViewHandle,
-			Flux_HiZ::s_xHiZBuffer.DSV().m_xImageViewHandle,
-			Flux_HiZ::s_xHiZBuffer.SRV().m_xImageViewHandle,
-			Flux_HiZ::s_xHiZBuffer.UAV(0).m_xImageViewHandle);
+		Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, s_xHiZBuffer_Owned.m_xVRAMHandle,
+			s_xHiZBuffer_Owned.RTV().m_xImageViewHandle,
+			s_xHiZBuffer_Owned.DSV().m_xImageViewHandle,
+			s_xHiZBuffer_Owned.SRV().m_xImageViewHandle,
+			s_xHiZBuffer_Owned.UAV(0).m_xImageViewHandle);
 
-		Flux_HiZ::s_xHiZBuffer.m_xVRAMHandle = Flux_VRAMHandle();
+		s_xHiZBuffer_Owned.m_xVRAMHandle = Flux_VRAMHandle();
 	}
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HiZ::DestroyRenderTargets()");
@@ -83,7 +105,8 @@ static void DestroyHiZRenderTargets()
 
 void Flux_HiZ::Initialise()
 {
-	CreateHiZRenderTargets();
+	// Owned targets are always created -- used when transients are toggled off.
+	CreateOwnedRenderTargets();
 
 	static_assert(FLUX_MAX_MIPS >= uHIZ_MAX_MIPS,
 		"FLUX_MAX_MIPS must be >= uHIZ_MAX_MIPS");
@@ -93,7 +116,7 @@ void Flux_HiZ::Initialise()
 
 	// Build root signature from shader reflection
 	const Flux_ShaderReflection& xReflection = g_xComputeShader.GetReflection();
-	Zenith_Vulkan_RootSigBuilder::FromReflection(g_xComputeRootSig, xReflection);
+	Flux_RootSigBuilder::FromReflection(g_xComputeRootSig, xReflection);
 
 	// Cache binding handles
 	s_xInputTexBinding = xReflection.GetBinding("g_xInputTex");
@@ -101,7 +124,7 @@ void Flux_HiZ::Initialise()
 	s_xPushConstantsBinding = xReflection.GetBinding("pushConstants");
 
 	// Build compute pipeline
-	Zenith_Vulkan_ComputePipelineBuilder xPipelineBuilder;
+	Flux_ComputePipelineBuilder xPipelineBuilder;
 	xPipelineBuilder.WithShader(g_xComputeShader)
 		.WithLayout(g_xComputeRootSig.m_xLayout)
 		.Build(g_xComputePipeline);
@@ -121,8 +144,8 @@ void Flux_HiZ::Initialise()
 	Flux::AddResChangeCallback([]()
 	{
 		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HiZ resize callback triggered");
-		DestroyHiZRenderTargets();
-		CreateHiZRenderTargets();
+		DestroyOwnedRenderTargets();
+		CreateOwnedRenderTargets();
 	});
 
 	s_bInitialised = true;
@@ -134,7 +157,8 @@ void Flux_HiZ::Shutdown()
 	if (!s_bInitialised)
 		return;
 
-	DestroyHiZRenderTargets();
+	DestroyOwnedRenderTargets();
+	s_pxGraph = nullptr;
 
 	s_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HiZ shut down");
@@ -159,19 +183,12 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 	// #TODO: Retire these inline transitions once the render graph's compute-pass
 	// barrier emission is wired to the platform layer.
 	//
-	// The graph DOES track per-subresource access state (compound (ptr, mip, layer)
-	// keys — see MakeBarrierKey), and SetupRenderGraph() below declares the correct
-	// per-mip Read(prev mip, SRV) / Write(this mip, UAV) ranges. GenerateImageBarriers
-	// also populates m_xPrologueBarriers correctly per-pass. What's missing is the
-	// final link: Flux_RenderGraph_Pass::EmitPrologueBarriers exists but is never
-	// called — graphics passes get their transitions via TransitionTargetsForRenderPass
-	// / TransitionTargetsAfterRenderPass in Zenith_Vulkan.cpp (driven by the
-	// Flux_CommandListEntry carrier refs, not by the graph's barrier metadata),
-	// and compute passes have no equivalent hook. So on compute passes the declared
-	// per-mip ranges produce no vkCmdPipelineBarrier calls today. We own the
-	// ordering here until that hook exists. The transitions below match the
-	// compute pipeline's descriptor layout expectations (SRVs want
-	// SHADER_READ_ONLY_OPTIMAL, UAVs want GENERAL).
+	// Graph-level barrier generation was removed (it was untested dead code).
+	// Barriers are computed by RecordCommandBuffersTask in Zenith_Vulkan.cpp.
+	// The per-mip Read/Write declarations in SetupRenderGraph() drive dependency
+	// ordering; actual vkCmdPipelineBarrier calls are emitted by the backend.
+	// The explicit transitions below match the compute pipeline's descriptor
+	// layout expectations (SRVs want SHADER_READ_ONLY_OPTIMAL, UAVs want GENERAL).
 	//
 	// UNDEFINED as the source access on the target mip is safe: it's the
 	// standard "discard + transition" path used across frame boundaries when
@@ -180,7 +197,7 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 
 	// Transition current mip to GENERAL for UAV write (discard prior contents).
 	pxCommandList->AddCommand<Flux_CommandImageTransition>(
-		&Flux_HiZ::s_xHiZBuffer,
+		&GetHiZBuffer(),
 		uMip, 1,     // mip range
 		0, 1,        // layer range
 		RESOURCE_ACCESS_UNDEFINED, RESOURCE_ACCESS_WRITE_UAV);
@@ -190,7 +207,7 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 	if (uMip > 0)
 	{
 		pxCommandList->AddCommand<Flux_CommandImageTransition>(
-			&Flux_HiZ::s_xHiZBuffer,
+			&GetHiZBuffer(),
 			uMip - 1, 1, // previous mip
 			0, 1,
 			RESOURCE_ACCESS_WRITE_UAV, RESOURCE_ACCESS_READ_SRV);
@@ -226,7 +243,7 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 	}
 
 	xBinder.BindUAV_Texture(s_xOutputTexBinding, &Flux_HiZ::GetMipUAV(uMip));
-	xBinder.PushConstant(s_xPushConstantsBinding, &xConstants, sizeof(HiZPushConstants));
+	xBinder.BindDrawConstants(s_xPushConstantsBinding, &xConstants, sizeof(HiZPushConstants));
 
 	// Dispatch: ceil(width/8) x ceil(height/16) workgroups
 	// Workgroup size is 8x16 for better NVIDIA occupancy (4 warps vs 2 warps)
@@ -240,7 +257,7 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 	if (uMip == Flux_HiZ::GetMipCount() - 1)
 	{
 		pxCommandList->AddCommand<Flux_CommandImageTransition>(
-			&Flux_HiZ::s_xHiZBuffer,
+			&GetHiZBuffer(),
 			uMip, 1,
 			0, 1,
 			RESOURCE_ACCESS_WRITE_UAV, RESOURCE_ACCESS_READ_SRV);
@@ -249,7 +266,26 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 
 void Flux_HiZ::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// Always add all passes — enable/disable is handled at runtime in execute callback
+	s_pxGraph = &xGraph;
+	s_bUsingTransients = xGraph.AreTransientsEnabled();
+
+	// Declare transient resource if enabled
+	if (s_bUsingTransients)
+	{
+		u_int uWidth = Flux_Swapchain::GetWidth();
+		u_int uHeight = Flux_Swapchain::GetHeight();
+
+		Flux_TransientTextureDesc xHiZDesc;
+		xHiZDesc.m_uWidth = uWidth;
+		xHiZDesc.m_uHeight = uHeight;
+		xHiZDesc.m_eFormat = HIZ_FORMAT;
+		xHiZDesc.m_uNumMips = s_uMipCount;
+		xHiZDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__UNORDERED_ACCESS) | (1u << MEMORY_FLAGS__SHADER_READ);
+
+		s_xHiZBufferHandle = xGraph.CreateTransient(xHiZDesc);
+	}
+
+	// Always add all passes -- enable/disable is handled at runtime in execute callback
 
 	static const char* s_aszHiZPassNames[] = {
 		"HiZ Mip 0", "HiZ Mip 1", "HiZ Mip 2", "HiZ Mip 3",
@@ -266,20 +302,31 @@ void Flux_HiZ::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		// Resource dependencies
 		if (uMip == 0)
 		{
-			xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+			xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 		}
 		else
 		{
-			xGraph.Read(uPassIndex, s_xHiZBuffer, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1);
+			if (s_bUsingTransients)
+				xGraph.ReadTransient(uPassIndex, s_xHiZBufferHandle, RESOURCE_ACCESS_READ_SRV);
+			else
+				xGraph.Read(uPassIndex, s_xHiZBuffer_Owned, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1);
 		}
 
-		xGraph.Write(uPassIndex, s_xHiZBuffer, RESOURCE_ACCESS_WRITE_UAV, uMip, 1);
+		if (s_bUsingTransients)
+			xGraph.WriteTransient(uPassIndex, s_xHiZBufferHandle, RESOURCE_ACCESS_WRITE_UAV);
+		else
+			xGraph.Write(uPassIndex, s_xHiZBuffer_Owned, RESOURCE_ACCESS_WRITE_UAV, uMip, 1);
 	}
+}
+
+Flux_RenderAttachment& Flux_HiZ::GetHiZAttachment()
+{
+	return GetHiZBuffer();
 }
 
 Flux_ShaderResourceView& Flux_HiZ::GetHiZSRV()
 {
-	return s_xHiZBuffer.SRV();
+	return GetHiZBuffer().SRV();
 }
 
 u_int Flux_HiZ::GetMipCount()
@@ -290,13 +337,13 @@ u_int Flux_HiZ::GetMipCount()
 Flux_ShaderResourceView& Flux_HiZ::GetMipSRV(u_int uMip)
 {
 	Zenith_Assert(uMip < s_uMipCount, "Mip level %u out of range (max %u)", uMip, s_uMipCount);
-	return s_xHiZBuffer.SRV(uMip);
+	return GetHiZBuffer().SRV(uMip);
 }
 
 Flux_UnorderedAccessView_Texture& Flux_HiZ::GetMipUAV(u_int uMip)
 {
 	Zenith_Assert(uMip < s_uMipCount, "Mip level %u out of range (max %u)", uMip, s_uMipCount);
-	return s_xHiZBuffer.UAV(uMip);
+	return GetHiZBuffer().UAV(uMip);
 }
 
 bool Flux_HiZ::IsEnabled()

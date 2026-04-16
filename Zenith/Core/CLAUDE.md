@@ -42,7 +42,7 @@ Central configuration avoiding magic numbers scattered in code.
 - `MAX_FRAMES_IN_FLIGHT` - Frame pipelining (typically 2 for double buffering)
 - `FLUX_NUM_WORKER_THREADS` - Render command buffer recording threads (8)
 - Asset limits: `ZENITH_MAX_TEXTURES`, `ZENITH_MAX_MESHES`, `ZENITH_MAX_MATERIALS`
-- Vulkan limits: `FLUX_MAX_TARGETS`, `FLUX_MAX_DESCRIPTOR_BINDINGS`
+- Vulkan limits: `FLUX_MAX_TARGETS`, `FLUX_MAX_BINDINGS_PER_GROUP`
 - Vertex format: `STATIC_MESH_VERTEX_STRIDE` (60 bytes)
 
 ## Memory Management

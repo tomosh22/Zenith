@@ -22,7 +22,7 @@ struct Flux_RenderAttachment;
 	X(BIND_UAV_BUFFER,             Flux_CommandBindUAV_Buffer) \
 	X(BIND_CBV,                    Flux_CommandBindCBV) \
 	X(USE_UNBOUNDED_TEXTURES,      Flux_CommandUseUnboundedTextures) \
-	X(PUSH_CONSTANT,               Flux_CommandPushConstant) \
+	X(BIND_DRAW_CONSTANTS,         Flux_CommandBindDrawConstants) \
 	X(DRAW,                        Flux_CommandDraw) \
 	X(DRAW_INDEXED,                Flux_CommandDrawIndexed) \
 	X(DRAW_INDEXED_INDIRECT,       Flux_CommandDrawIndexedIndirect) \
@@ -30,6 +30,8 @@ struct Flux_RenderAttachment;
 	X(BIND_COMPUTE_PIPELINE,       Flux_CommandBindComputePipeline) \
 	X(DISPATCH,                    Flux_CommandDispatch) \
 	X(IMAGE_TRANSITION,            Flux_CommandImageTransition) \
+	X(SET_CULL_MODE,               Flux_CommandSetCullMode) \
+	X(SET_DEPTH_BIAS,              Flux_CommandSetDepthBias) \
 	X(RENDER_IMGUI,                Flux_CommandRenderImGui)
 
 enum Flux_CommandType
@@ -64,16 +66,16 @@ private:
 	u_int m_uBindPoint;
 };
 
-class Flux_CommandPushConstant
+class Flux_CommandBindDrawConstants
 {
 public:
-	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__PUSH_CONSTANT;
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_DRAW_CONSTANTS;
 
-	Flux_CommandPushConstant(const void* pData, u_int uSize, u_int uBinding = 0)
+	Flux_CommandBindDrawConstants(const void* pData, u_int uSize, u_int uBinding = 0)
 	: m_uSize(uSize)
 	, m_uBinding(uBinding)
 	{
-		Zenith_Assert(uSize <= uMAX_SIZE, "Push constant too big (%u > %u)", uSize, uMAX_SIZE);
+		Zenith_Assert(uSize <= uMAX_SIZE, "Scratch UBO payload too big (%u > %u)", uSize, uMAX_SIZE);
 		// Runtime guard for release builds - prevent buffer overflow
 		if (uSize > uMAX_SIZE)
 		{
@@ -84,10 +86,14 @@ public:
 	}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		pxCmdBuf->PushConstant(m_acData, m_uSize, m_uBinding);
+		// TODO: elide second memcpy by having AddCommand record directly into the
+		// worker's scratch-partition slot. Requires verifying pass-to-worker pinning
+		// holds across record -> execute.
+		pxCmdBuf->BindDrawConstants(m_acData, m_uSize, m_uBinding);
 	}
 private:
-	//#TO minimum that Vulkan requires for push constants
+	// Inline storage cap for deferred command payload.
+	// NOT related to Vulkan's maxPushConstantsSize — this path binds a dynamic UBO, not push constants.
 	static constexpr u_int uMAX_SIZE = 512;
 
 	u_int8 m_acData[uMAX_SIZE];
@@ -364,6 +370,39 @@ public:
 	u_int m_uLayerCount;
 	ResourceAccess m_eSrcAccess;
 	ResourceAccess m_eDstAccess;
+};
+
+class Flux_CommandSetCullMode
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__SET_CULL_MODE;
+
+	Flux_CommandSetCullMode(CullMode eCullMode) : m_eCullMode(eCullMode) {}
+
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->SetCullMode(m_eCullMode);
+	}
+private:
+	CullMode m_eCullMode;
+};
+
+class Flux_CommandSetDepthBias
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__SET_DEPTH_BIAS;
+
+	Flux_CommandSetDepthBias(float fConstant, float fSlope, float fClamp = 0.0f)
+		: m_fConstant(fConstant), m_fSlope(fSlope), m_fClamp(fClamp) {}
+
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->SetDepthBias(m_fConstant, m_fSlope, m_fClamp);
+	}
+private:
+	float m_fConstant;
+	float m_fSlope;
+	float m_fClamp;
 };
 
 class Flux_CommandRenderImGui

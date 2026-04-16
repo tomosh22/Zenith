@@ -1,2 +1,3 @@
 #version 450 core
-#include "Flux_StaticMeshes_VertCommon.fxh"
+#define MESH_STATIC
+#include "../Meshes/Mesh_Vert.fxh"

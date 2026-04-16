@@ -31,25 +31,16 @@ struct Flux_RenderGraph_Resource
     u_int m_uLastRead = UINT32_MAX;
 };
 
-// Image barrier metadata carried from graph compile into the platform layer.
-// Subresource range fields mirror the usage's declared (uMip/uMipCount/uLayer/uLayerCount)
-// so the backend can construct a tight vk::ImageSubresourceRange instead of
-// collapsing the whole image with VK_REMAINING_*.
-struct Flux_RenderGraph_ImageBarrier
-{
-    Flux_GraphResource m_xResource;
-    ResourceAccess m_ePrevAccess = RESOURCE_ACCESS_UNDEFINED;
-    ResourceAccess m_eNewAccess = RESOURCE_ACCESS_READ_SRV;
-    u_int m_uMipLevel = 0;
-    u_int m_uMipCount = 1;
-    u_int m_uLayer = 0;
-    u_int m_uLayerCount = 1;
-    bool m_bDiscard = false;
-};
+// TODO: Unify barrier generation. Graph-level barrier synthesis was deleted
+// because it was untested and unused by the Vulkan backend (which computes its
+// own barriers in RecordCommandBuffersTask). Re-introduce graph-driven barriers
+// with proper tests before wiring to the backend.
 
 struct Flux_RenderGraph_Pass
 {
+#ifdef ZENITH_TOOLS
     std::string m_strName;
+#endif
     Zenith_Vector<Flux_RenderGraph_ResourceUsage> m_xReads;
     Zenith_Vector<Flux_RenderGraph_ResourceUsage> m_xWrites;
     Zenith_Vector<u_int> m_xExplicitDependencies;
@@ -64,11 +55,16 @@ struct Flux_RenderGraph_Pass
     Flux_RenderGraph_AttachmentRef m_axColourAttachments[FLUX_MAX_TARGETS];
     uint32_t m_uNumColourAttachments = 0;
     Flux_RenderGraph_AttachmentRef m_xDepthStencil;
-    Zenith_Vector<Flux_RenderGraph_ImageBarrier> m_xPrologueBarriers;
-    Zenith_Vector<Flux_RenderGraph_ImageBarrier> m_xEpilogueBarriers;
     Flux_CommandList* m_pxCommandList = nullptr;
 
-    void EmitPrologueBarriers(vk::CommandBuffer xCmdBuf, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage) const;
+    // Debug-name accessor that compiles in all configurations. Tools builds return the real
+    // name; shipping builds return a placeholder so Zenith_Assert(...) sites keep compiling
+    // without pulling std::string weight into release binaries.
+#ifdef ZENITH_TOOLS
+    const char* DebugName() const { return m_strName.c_str(); }
+#else
+    const char* DebugName() const { return "<release>"; }
+#endif
 
     ~Flux_RenderGraph_Pass()
     {
@@ -102,6 +98,24 @@ public:
     void ReadBuffer(u_int uPassIndex, Flux_Buffer& xBuffer, ResourceAccess eAccess);
     void WriteBuffer(u_int uPassIndex, Flux_Buffer& xBuffer, ResourceAccess eAccess);
 
+    // Transient resources — graph-owned allocation. Declare in SetupRenderGraph;
+    // the graph allocates the backing Flux_RenderAttachment at Compile() time.
+    // Handles are invalidated on Clear() / recompile.
+    // Global toggle for transient resource allocation. When false, CreateTransient
+    // still returns a valid handle but the backing attachment is allocated immediately
+    // as a standalone resource (same as subsystem-owned). Subsystems should check
+    // AreTransientsEnabled() in SetupRenderGraph to decide whether to use the
+    // transient or owned path.
+    bool AreTransientsEnabled() const { return m_bTransientsEnabled; }
+    void SetTransientsEnabled(bool bEnabled) { m_bTransientsEnabled = bEnabled; }
+    bool m_bTransientsEnabled = true; // Public for debug variable binding
+
+    Flux_TransientHandle CreateTransient(const Flux_TransientTextureDesc& xDesc);
+    void ReadTransient(u_int uPassIndex, Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_READ_SRV);
+    void WriteTransient(u_int uPassIndex, Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_WRITE_RTV);
+    Flux_RenderAttachment& GetTransientAttachment(Flux_TransientHandle xHandle);
+    const Flux_RenderAttachment& GetTransientAttachment(Flux_TransientHandle xHandle) const;
+
     void DependsOn(u_int uDependentPass, u_int uDependencyPass);
     void SetEnabled(u_int uPassIndex, bool bEnabled);
     void SetPrepare(u_int uPassIndex, Flux_RenderGraph_OnPrepareFunc pfnOnPrepare);
@@ -117,6 +131,19 @@ public:
     const std::unordered_map<void*, Flux_RenderGraph_Resource>& GetResources() const { return m_xResources; }
 
 private:
+    // Transient resources owned by the graph (heap-allocated for pointer stability —
+    // Flux_GraphResource stores raw pointers to the m_xAttachment, so the address
+    // must not move when new transients are added to the vector).
+    struct TransientResource
+    {
+        Flux_TransientTextureDesc m_xDesc;
+        Flux_RenderAttachment m_xAttachment;
+        bool m_bAllocated = false;
+    };
+    Zenith_Vector<TransientResource*> m_axTransients;
+    void AllocateTransients();
+    void DestroyTransients();
+
     Zenith_Vector<Flux_RenderGraph_Pass*> m_xPasses;
     // #TODO: Replace std::unordered_map with engine hash map
     std::unordered_map<void*, Flux_RenderGraph_Resource> m_xResources;
@@ -128,13 +155,7 @@ private:
     struct ResourceTraffic { Zenith_Vector<u_int> m_xWriters; Zenith_Vector<u_int> m_xReaders; };
     // #TODO: Replace std::unordered_map with engine hash map
     std::unordered_map<void*, ResourceTraffic> m_xTraffic;
-    // Barrier state keyed on (void*, uMip, uLayer) packed into a u_int64 so that
-    // per-face / per-mip writes correctly emit UNDEFINED→layout transitions
-    // instead of getting short-circuited by a pointer-only cache.
-    // #TODO: Replace std::unordered_map with engine hash map
-    std::unordered_map<u_int64, ResourceAccess> m_xBarrierState;
-    // Clear tracking is keyed on (void*, uMip, uLayer) packed into a u_int64 —
-    // same scheme as m_xBarrierState — so that a cubemap whose 42 (mip, face)
+    // Clear tracking is keyed on (void*, uMip, uLayer) packed into a u_int64 so that a cubemap whose 42 (mip, face)
     // subresources are each written by a different pass correctly grants every
     // pass "first writer" status for *its* subresource. A ptr-only key would
     // grant first-writer to only the first of the 42 passes and leave the
@@ -160,14 +181,12 @@ private:
     void Validate() const;
     bool TopologicalSort();
     void ComputeResourceLifetimes();
-    void GenerateBarriers();
     void ResolveClearFlags();
     void AssertMutable(const char* szFn);
     void MarkPassesAsComputeOrGraphics();
     void CallPrepareCallbacks();
     void RecordCommandLists();
     void SubmitRecordedLists();
-    void GenerateImageBarriers(Flux_RenderGraph_Pass& rxPass, const Zenith_Vector<Flux_RenderGraph_ResourceUsage>& rxUsages, bool bIsRead);
     void InitAdjacencyData();
     void BuildAdjacencyFromTraffic();
     void AddReaderWriterEdges(const Zenith_Vector<u_int>& axReaders, const Zenith_Vector<u_int>& axWriters);

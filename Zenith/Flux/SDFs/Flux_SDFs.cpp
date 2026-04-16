@@ -39,7 +39,7 @@ void Flux_SDFs::Initialise()
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -121,5 +121,5 @@ void Flux_SDFs::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// The pipeline uses default depth-test+write enabled, so the depth attachment
 	// is bound as a writable DSV for the renderpass. The graph needs to know so
 	// it transitions from whatever layout the previous pass left it in.
-	xGraph.Write(uPass, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_WRITE_DSV);
+	xGraph.Write(uPass, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_WRITE_DSV);
 }

@@ -51,7 +51,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 	vk::CommandBufferBeginInfo xBeginInfo;
 	xBeginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
 	VkCheck(m_xCurrentCmdBuffer.begin(xBeginInfo));
-	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
+	m_uCurrentBindFreq = FLUX_MAX_BINDING_GROUPS;
 	m_uDescriptorDirty = ~0u;
 	m_pxCurrentPipeline = nullptr;  // Reset pipeline to catch any stale access
 	memset(m_xBindings, 0, sizeof(m_xBindings));
@@ -60,7 +60,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 	// CRITICAL: Must also clear the bindings to avoid false cache hits with stale pointers
 	// If old cached bindings happened to match new bindings (same pointer addresses after
 	// scene reload), we could return a stale descriptor set
-	for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS; i++)
+	for (u_int i = 0; i < FLUX_MAX_BINDING_GROUPS; i++)
 	{
 		m_axDescriptorSetCache[i].descriptorSet = VK_NULL_HANDLE;
 		m_axDescriptorSetCache[i].layout = VK_NULL_HANDLE;
@@ -81,7 +81,7 @@ void Zenith_Vulkan_CommandBuffer::EndRecording(bool bEndPass /*= true*/)
 		m_xCurrentRenderPass = VK_NULL_HANDLE;
 	}
 	VkCheck(m_xCurrentCmdBuffer.end());
-	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
+	m_uCurrentBindFreq = FLUX_MAX_BINDING_GROUPS;
 }
 
 void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
@@ -164,9 +164,9 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 	Zenith_Assert(m_pxCurrentPipeline, "UpdateDescriptorSets called with no pipeline set");
 	
 	// Read the pipeline's root signature carefully with explicit validation
-	const u_int uNumDescSets = m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets;
-	Zenith_Assert(uNumDescSets <= FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, 
-		"Pipeline has too many descriptor sets: %u (max %u)", uNumDescSets, FLUX_MAX_DESCRIPTOR_SET_LAYOUTS);
+	const u_int uNumDescSets = m_pxCurrentPipeline->m_xRootSig.m_uNumBindingGroups;
+	Zenith_Assert(uNumDescSets <= FLUX_MAX_BINDING_GROUPS, 
+		"Pipeline has too many descriptor sets: %u (max %u)", uNumDescSets, FLUX_MAX_BINDING_GROUPS);
 	
 	// Validate m_xBindings array is accessible (this helps catch corrupted this pointer)
 	// Reading a few bytes from each slot to ensure memory is valid
@@ -204,18 +204,18 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 
 			// Stack-allocated arrays for building descriptor writes
 			u_int uNumBufferWrites = 0;
-			vk::DescriptorBufferInfo axBufferInfos[FLUX_MAX_DESCRIPTOR_BINDINGS];
+			vk::DescriptorBufferInfo axBufferInfos[FLUX_MAX_BINDINGS_PER_GROUP];
 
 			u_int uNumTexWrites = 0;
-			vk::DescriptorImageInfo axTexInfos[FLUX_MAX_DESCRIPTOR_BINDINGS * 2]; //SRVs and UAVs
+			vk::DescriptorImageInfo axTexInfos[FLUX_MAX_BINDINGS_PER_GROUP * 2]; //SRVs and UAVs
 
 			u_int uNumWrites = 0;
-			vk::WriteDescriptorSet axWrites[FLUX_MAX_DESCRIPTOR_BINDINGS * 3]; //SRVs, UAVs and CBVs
+			vk::WriteDescriptorSet axWrites[FLUX_MAX_BINDINGS_PER_GROUP * 3]; //SRVs, UAVs and CBVs
 
-			for (u_int u = 0; u < FLUX_MAX_DESCRIPTOR_BINDINGS; u++)
+			for (u_int u = 0; u < FLUX_MAX_BINDINGS_PER_GROUP; u++)
 			{
-				const DescriptorType eType = m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][u];
-				if (eType == DESCRIPTOR_TYPE_MAX) continue;
+				const BindingType eType = m_pxCurrentPipeline->m_xRootSig.m_axBindingTypes[uDescSet][u];
+				if (eType == BINDING_TYPE_MAX) continue;
 
 					const Flux_ShaderResourceView* const pxSRV = m_xBindings[uDescSet].m_xSRVs[u];
 					if (pxSRV)
@@ -277,7 +277,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 					if (pxCBV)
 					{
 						axBufferInfos[uNumBufferWrites] = Zenith_Vulkan_MemoryManager::GetBufferDescriptor(pxCBV->m_xBufferDescHandle);
-					vk::DescriptorType eBufferType = (eType == DESCRIPTOR_TYPE_STORAGE_BUFFER)
+					vk::DescriptorType eBufferType = (eType == BINDING_TYPE_STORAGE_BUFFER)
 						? vk::DescriptorType::eStorageBuffer
 						: vk::DescriptorType::eUniformBuffer;
 						axWrites[uNumWrites++] = vk::WriteDescriptorSet()
@@ -455,7 +455,7 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 
 void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler /*= nullptr*/)
 {
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
+	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
 	Zenith_Assert(pxSRV && pxSRV->m_xImageViewHandle.IsValid(), "Invalid SRV");
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	m_xBindings[m_uCurrentBindFreq].m_xSRVs[uBindPoint] = pxSRV;
@@ -464,7 +464,7 @@ void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, 
 
 void Zenith_Vulkan_CommandBuffer::BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, uint32_t uBindPoint)
 {
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
+	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
 	Zenith_Assert(pxUAV && pxUAV->m_xImageViewHandle.IsValid(), "Invalid UAV");
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	m_xBindings[m_uCurrentBindFreq].m_xUAV_Textures[uBindPoint] = pxUAV;
@@ -473,7 +473,7 @@ void Zenith_Vulkan_CommandBuffer::BindUAV_Texture(const Flux_UnorderedAccessView
 
 void Zenith_Vulkan_CommandBuffer::BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, uint32_t uBindPoint)
 {
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
+	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
 	Zenith_Assert(pxUAV, "Invalid UAV");
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	m_xBindings[m_uCurrentBindFreq].m_xUAV_Buffers[uBindPoint] = pxUAV;
@@ -482,9 +482,9 @@ void Zenith_Vulkan_CommandBuffer::BindUAV_Buffer(const Flux_UnorderedAccessView_
 
 void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint)
 {
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
+	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
 	Zenith_Assert(pxCBV, "Invalid CBV (null)");
-	Zenith_Assert(uBindPoint < FLUX_MAX_DESCRIPTOR_BINDINGS, "Bind point out of range: %u", uBindPoint);
+	Zenith_Assert(uBindPoint < FLUX_MAX_BINDINGS_PER_GROUP, "Bind point out of range: %u", uBindPoint);
 	// Validate the CBV has valid buffer info
 	Zenith_Assert(pxCBV->m_xBufferDescHandle.IsValid(), "CBV has invalid buffer descriptor at bind point %u", uBindPoint);
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
@@ -521,7 +521,7 @@ void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void*, uint32_t) {
 		*/
 }
 
-void Zenith_Vulkan_CommandBuffer::PushConstant(void* pData, size_t uSize, u_int uBinding)
+void Zenith_Vulkan_CommandBuffer::BindDrawConstants(void* pData, size_t uSize, u_int uBinding)
 {
 	// Allocate from scratch buffer
 	Zenith_Vulkan_PerFrame* pxFrame = Zenith_Vulkan::s_pxCurrentFrame;
@@ -539,6 +539,23 @@ void Zenith_Vulkan_CommandBuffer::PushConstant(void* pData, size_t uSize, u_int 
 	m_xBindings[uSet].m_xScratchBuffer.m_uBinding = uBinding;
 	m_xBindings[uSet].m_xScratchBuffer.m_bValid = true;
 	m_uDescriptorDirty |= 1 << uSet;
+}
+
+void Zenith_Vulkan_CommandBuffer::SetCullMode(CullMode eCullMode)
+{
+	vk::CullModeFlags eVkCull = vk::CullModeFlagBits::eNone;
+	switch (eCullMode)
+	{
+	case CULL_MODE_NONE:  eVkCull = vk::CullModeFlagBits::eNone;  break;
+	case CULL_MODE_FRONT: eVkCull = vk::CullModeFlagBits::eFront; break;
+	case CULL_MODE_BACK:  eVkCull = vk::CullModeFlagBits::eBack;  break;
+	}
+	m_xCurrentCmdBuffer.setCullMode(eVkCull);
+}
+
+void Zenith_Vulkan_CommandBuffer::SetDepthBias(float fConstant, float fSlope, float fClamp)
+{
+	m_xCurrentCmdBuffer.setDepthBias(fConstant, fSlope, fClamp);
 }
 
 void Zenith_Vulkan_CommandBuffer::SetShoudClear(const bool bClear)

@@ -182,18 +182,18 @@ struct Flux_BlendState
 	bool m_bBlendEnabled = true;
 };
 
-struct Flux_DescriptorBinding
+struct Flux_BindingGroupEntry
 {
-	DescriptorType m_eType = DESCRIPTOR_TYPE_MAX;
+	BindingType m_eType = BINDING_TYPE_MAX;
 };
 
-struct Flux_DescriptorSetLayout
+struct Flux_BindingGroupLayout
 {
-	Flux_DescriptorBinding m_axBindings[FLUX_MAX_DESCRIPTOR_BINDINGS];
+	Flux_BindingGroupEntry m_axBindings[FLUX_MAX_BINDINGS_PER_GROUP];
 };
 
 struct Flux_PipelineLayout
 {
-	u_int m_uNumDescriptorSets = 0;
-	Flux_DescriptorSetLayout m_axDescriptorSetLayouts[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS];
+	u_int m_uNumBindingGroups = 0;
+	Flux_BindingGroupLayout m_axBindingGroups[FLUX_MAX_BINDING_GROUPS];
 };

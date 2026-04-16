@@ -109,11 +109,11 @@ void Flux_Terrain::Initialise()
 	{
 
 		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_DIFFUSE].m_xSurfaceInfo.m_eFormat;
-		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT].m_xSurfaceInfo.m_eFormat;
-		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL].m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
-		xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xPipelineSpec.m_pxShader = &s_xTerrainGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -197,9 +197,9 @@ void Flux_Terrain::Initialise()
 		xWaterVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_Graphics::s_xFinalRenderTarget.m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 		xPipelineSpec.m_uNumColourAttachments = 1;
-		xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
+		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xPipelineSpec.m_pxShader = &s_xWaterShader;
 		xPipelineSpec.m_xVertexInputDesc = xWaterVertexDesc;
 
@@ -235,10 +235,10 @@ void Flux_Terrain::Initialise()
 
 	// Build compute root signature from shader reflection
 	const Flux_ShaderReflection& xCullingReflection = s_xCullingShader.GetReflection();
-	Zenith_Vulkan_RootSigBuilder::FromReflection(s_xCullingRootSig, xCullingReflection);
+	Flux_RootSigBuilder::FromReflection(s_xCullingRootSig, xCullingReflection);
 
 	// Build compute pipeline
-	Zenith_Vulkan_ComputePipelineBuilder xCullingBuilder;
+	Flux_ComputePipelineBuilder xCullingBuilder;
 	xCullingBuilder.WithShader(s_xCullingShader)
 		.WithLayout(s_xCullingRootSig.m_xLayout)
 		.Build(s_xCullingPipeline);
@@ -279,9 +279,9 @@ void Flux_Terrain::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	// Pass 2: Terrain GBuffer render
 	uint32_t uGBufferPass = xGraph.AddPass("Terrain GBuffer", ExecuteGBuffer);
-	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[1], RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uGBufferPass, Flux_Graphics::s_axMRTColourAttachments[2], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_WRITE_RTV);
 
 	// GBuffer must run after Culling — explicit edge stands in for the
 	// untracked indirect-draw buffer dependency.
@@ -367,10 +367,10 @@ void Flux_Terrain::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			apxMaterials[m] = pxTerrain->GetMaterial(m);
 
 		// Build and push terrain material constants (288 bytes) - uses scratch buffer in set 1
-		TerrainMaterialPushConstants xTerrainMatConst;
-		BuildTerrainMaterialPushConstants(xTerrainMatConst, apxMaterials, 4, dbg_uDebugMode,
+		TerrainMaterialDrawConstants xTerrainMatConst;
+		BuildTerrainMaterialDrawConstants(xTerrainMatConst, apxMaterials, 4, dbg_uDebugMode,
 			0.0f, 0.0f, Flux_TerrainConfig::TERRAIN_SIZE, Flux_TerrainConfig::TERRAIN_SIZE);
-		xBinder.PushConstant(s_xScratchBufferBinding, &xTerrainMatConst, sizeof(xTerrainMatConst));
+		xBinder.BindDrawConstants(s_xScratchBufferBinding, &xTerrainMatConst, sizeof(xTerrainMatConst));
 
 		// Bind LOD level buffer (per-terrain, set 1)
 		xBinder.BindUAV_Buffer(s_xLODLevelBufferBinding, &pxTerrain->GetLODLevelBuffer().GetUAV());

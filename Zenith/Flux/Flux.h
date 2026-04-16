@@ -68,7 +68,9 @@ struct Flux_RenderAttachment
 
 	Flux_VRAMHandle m_xVRAMHandle;
 
+#ifdef ZENITH_TOOLS
 	std::string m_strName;
+#endif
 
 	Flux_ShaderResourceView m_xSRV;
 	Flux_ShaderResourceView m_axMipSRVs[FLUX_MAX_MIPS];
@@ -92,7 +94,9 @@ struct Flux_RenderAttachmentCube
 
 	Flux_VRAMHandle m_xVRAMHandle;
 
+#ifdef ZENITH_TOOLS
 	std::string m_strName;
+#endif
 
 	Flux_ShaderResourceView m_xSRV;
 	Flux_ShaderResourceView m_axSliceSRVs[FLUX_MAX_MIPS];
@@ -136,14 +140,44 @@ struct Flux_Texture
 
 	Flux_ShaderResourceView m_xSRV;
 
-	// Source path for serialization (set when loaded from file)
+#ifdef ZENITH_TOOLS
+	// Source path for serialization (set when loaded from file). Tools-only — shipping builds
+	// don't carry asset-author metadata on every texture.
 	std::string m_strSourcePath;
+#endif
 };
 
 struct Flux_Buffer
 {
 	Flux_VRAMHandle m_xVRAMHandle;
 	u_int64 m_ulSize = 0;
+};
+
+// TODO: add ray tracing extensions — Flux_AccelerationStructure (BLAS/TLAS),
+// Flux_RayTracingPipelineSpecification, RAY_GEN/CLOSEST_HIT/MISS shader stages,
+// and ResourceAccess::READ_ACCELERATION_STRUCTURE for the render graph.
+
+// ---- Transient resource descriptors (render-graph-owned) ----------------
+// Subsystems declare these instead of allocating their own Flux_RenderAttachment.
+// The graph allocates the backing resource at Compile() time and may alias
+// non-overlapping lifetimes in a future version.
+
+struct Flux_TransientTextureDesc
+{
+	u_int m_uWidth = 0;
+	u_int m_uHeight = 0;
+	u_int m_uDepth = 1;       // >1 for 3D textures
+	TextureFormat m_eFormat = TEXTURE_FORMAT_RGBA8_SRGB;
+	TextureType m_eTextureType = TEXTURE_TYPE_2D;
+	u_int m_uNumMips = 1;
+	u_int m_uMemoryFlags = 0; // MemoryFlags bitmask (e.g., 1u << MEMORY_FLAGS__SHADER_READ)
+	bool m_bIsDepthStencil = false; // true → uses BuildDepthStencil instead of BuildColour
+};
+
+struct Flux_TransientHandle
+{
+	u_int m_uIndex = UINT32_MAX;
+	bool IsValid() const { return m_uIndex != UINT32_MAX; }
 };
 
 // ---- Render graph resource tagging --------------------------------------
@@ -206,8 +240,13 @@ public:
 	const std::string& GetName() const
 	{
 		static const std::string s_strBufferName = "<buffer>";
+#ifdef ZENITH_TOOLS
 		if (m_eKind == Flux_GraphResourceKind::Image)     return m_pxImage->m_strName;
 		if (m_eKind == Flux_GraphResourceKind::ImageCube) return m_pxImageCube->m_strName;
+#else
+		static const std::string s_strReleaseName = "<release>";
+		if (IsImageLike()) return s_strReleaseName;
+#endif
 		return s_strBufferName;
 	}
 
@@ -379,6 +418,12 @@ public:
 	static Flux_RenderGraph& GetRenderGraph() { return *s_pxRenderGraph; }
 	static void SetupRenderGraph();
 
+	// Request a full graph rebuild (Clear + SetupRenderGraph) at the start of
+	// the next frame. Safe to call from execute callbacks — the rebuild is
+	// deferred until before the next Compile()/Execute() cycle.
+	static void RequestGraphRebuild() { s_bGraphRebuildRequested = true; }
+	static bool ConsumeGraphRebuildRequest() { bool b = s_bGraphRebuildRequested; s_bGraphRebuildRequested = false; return b; }
+
 	// Public access to pending command lists for platform layer.
 	// Inserted in topological order by Flux_RenderGraph::Execute Phase 2 only.
 	static Zenith_Vector<Flux_CommandListEntry> s_xPendingCommandLists;
@@ -388,6 +433,7 @@ private:
 	static uint32_t s_uFrameCounter;
 	static Zenith_Vector<void(*)()> s_xResChangeCallbacks;
 	static Flux_RenderGraph* s_pxRenderGraph;
+	static bool s_bGraphRebuildRequested;
 };
 
 struct Flux_PipelineSpecification
@@ -423,6 +469,12 @@ struct Flux_PipelineSpecification
 	float m_fDepthBiasConstant = 0.0f;
 	float m_fDepthBiasSlope = 0.0f;
 	float m_fDepthBiasClamp = 0.0f;
+
+	// Dynamic state flags — when set, the value in this spec is the initial/default,
+	// but can be overridden per-draw via Flux_CommandSetCullMode / Flux_CommandSetDepthBias.
+	// Requires VK_EXT_extended_dynamic_state (Vulkan 1.3 core).
+	bool m_bDynamicCullMode = false;
+	bool m_bDynamicDepthBias = false;
 };
 
 // Helper to reduce boilerplate when creating fullscreen post-processing pipelines.

@@ -10,7 +10,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Zenith_PlatformGraphics_Include.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include <random>
@@ -106,8 +106,8 @@ void CreateGrassBladeMesh()
 		1, 3, 2
 	};
 
-	Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(axVertices, sizeof(axVertices), s_xGrassBladeMesh.m_xVertexBuffer);
-	Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
+	Flux_MemoryManager::InitialiseVertexBuffer(axVertices, sizeof(axVertices), s_xGrassBladeMesh.m_xVertexBuffer);
+	Flux_MemoryManager::InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
 }
 
 void Flux_Grass::Initialise()
@@ -127,7 +127,7 @@ void Flux_Grass::Initialise()
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &s_xGrassShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 	xPipelineSpec.m_bDepthTestEnabled = true;
@@ -174,7 +174,7 @@ void Flux_Grass::CreateBuffers()
 	// Create instance buffer for grass blade data
 	u_int uBufferSize = GrassConfig::uMAX_TOTAL_INSTANCES * sizeof(GrassBladeInstance);
 
-	Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer(nullptr, uBufferSize, s_xInstanceBuffer);
+	Flux_MemoryManager::InitialiseReadWriteBuffer(nullptr, uBufferSize, s_xInstanceBuffer);
 	s_uAllocatedInstances = GrassConfig::uMAX_TOTAL_INSTANCES;
 }
 
@@ -182,7 +182,7 @@ void Flux_Grass::DestroyBuffers()
 {
 	if (s_xInstanceBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
-		Zenith_Vulkan_MemoryManager::DestroyReadWriteBuffer(s_xInstanceBuffer);
+		Flux_MemoryManager::DestroyReadWriteBuffer(s_xInstanceBuffer);
 	}
 }
 
@@ -197,7 +197,7 @@ void Flux_Grass::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// so the underlying image is already in a valid state when Grass runs.
 
 	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_DEPTH);
+	xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_DEPTH);
 }
 
 void Flux_Grass::ExecuteRender(Flux_CommandList* pxCmdList, void*)
@@ -404,7 +404,7 @@ void Flux_Grass::UploadInstanceData()
 	}
 
 	// Upload to GPU
-	Zenith_Vulkan_MemoryManager::UploadBufferData(
+	Flux_MemoryManager::UploadBufferData(
 		s_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
 		s_axAllInstances.GetDataPointer(),
 		static_cast<size_t>(uUploadSize));

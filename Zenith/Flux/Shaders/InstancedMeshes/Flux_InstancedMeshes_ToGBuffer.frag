@@ -1,2 +1,3 @@
 #version 450 core
-#include "Flux_InstancedMeshes_FragCommon.fxh"
+#define MESH_INSTANCED
+#include "../Meshes/Mesh_Frag.fxh"

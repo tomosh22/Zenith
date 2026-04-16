@@ -199,7 +199,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	xConstants.m_bSSGIEnabled = Flux_SSGI::IsEnabled() ? 1 : 0;
 	xConstants.m_fAmbientFallbackIntensity = dbg_fAmbientFallbackIntensity;
 
-	xBinder.PushConstant(&xConstants, sizeof(xConstants));
+	xBinder.BindDrawConstants(&xConstants, sizeof(xConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -215,11 +215,11 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Reads: G-Buffer MRT attachments
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
 	{
-		xGraph.Read(uPassIndex, Flux_Graphics::s_axMRTColourAttachments[u], RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Reads: depth buffer
-	xGraph.Read(uPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	// Reads: shadow maps (CSM depth targets)
 	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
@@ -231,28 +231,28 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	}
 
 	// Reads: SSR results. The execute callback binds GetReflectionSRV() which
-	// returns either s_xResolvedReflection or s_xRayMarchResult depending on
+	// returns either the resolved or ray-march attachment depending on
 	// the dbg_bRoughnessBlur runtime toggle. Same dual-binding pattern as SSGI
-	// — SetupRenderGraph runs once at init / on resolution change so we have
+	// - SetupRenderGraph runs once at init / on resolution change so we have
 	// to declare BOTH so whichever one ends up bound at record time has been
 	// transitioned out of COLOR_ATTACHMENT_OPTIMAL by the graph.
 	if (Flux_SSR::IsInitialised())
 	{
-		xGraph.Read(uPassIndex, Flux_SSR::s_xRayMarchResult, RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_SSR::s_xResolvedReflection, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_SSR::GetRayMarchAttachment(), RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_SSR::GetResolvedAttachment(), RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Reads: SSGI results. The execute callback binds GetSSGISRV() which returns
-	// either s_xResolved or s_xDenoised depending on a runtime debug variable.
+	// either the denoised or resolved attachment depending on a runtime debug variable.
 	// SetupRenderGraph runs once at init (and on resolution change), so we have
 	// to declare BOTH so the graph transitions whichever one ends up bound at
 	// record time. Both are RGBA16F color attachments written by the SSGI passes
-	// — without these declarations they stay in COLOR_ATTACHMENT_OPTIMAL and the
+	// - without these declarations they stay in COLOR_ATTACHMENT_OPTIMAL and the
 	// validator rejects the SRV bind here.
 	if (Flux_SSGI::IsInitialised())
 	{
-		xGraph.Read(uPassIndex, Flux_SSGI::s_xResolved, RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_SSGI::s_xDenoised, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_SSGI::GetResolvedAttachment(), RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(uPassIndex, Flux_SSGI::GetDenoisedAttachment(), RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// Reads: IBL textures. The IBL graph passes write these as color attachments

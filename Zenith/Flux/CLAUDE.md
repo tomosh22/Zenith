@@ -54,7 +54,7 @@ Materials (`Zenith_MaterialAsset`) store textures and rendering properties. Loca
 
 Key constants in `Core/ZenithConfig.h`:
 - `FLUX_MAX_TARGETS` - Maximum render targets per pass
-- `FLUX_MAX_DESCRIPTOR_BINDINGS` - Descriptors per shader
+- `FLUX_MAX_BINDINGS_PER_GROUP` - Descriptors per shader
 - `STATIC_MESH_VERTEX_STRIDE` - 60 bytes (position, UV, normal, tangent, bitangent, color)
 - `MAX_FRAMES_IN_FLIGHT` - Frame pipelining count
 

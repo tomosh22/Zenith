@@ -35,14 +35,13 @@ public:
 	// Bind unordered access view (buffer) using cached handle
 	void BindUAV_Buffer(Flux_BindingHandle xHandle, const Flux_UnorderedAccessView_Buffer* pxUAV);
 
-	// Push constant data using scratch buffer system
-	// Takes a binding handle to determine which set/binding to use (from shader reflection)
-	// This allows the scratch buffer to be in the per-draw descriptor set, not set 0
-	void PushConstant(Flux_BindingHandle xScratchBufferBinding, const void* pData, u_int uSize);
+	// Bind data via the per-frame scratch UBO system (dynamic uniform buffer with offset binding).
+	// Takes a binding handle to determine which set/binding to use (from shader reflection).
+	void BindDrawConstants(Flux_BindingHandle xScratchBufferBinding, const void* pData, u_int uSize);
 
 	// Legacy overload - assumes scratch buffer at set 0, binding 1
 	// DEPRECATED: Use the binding handle version for multi-set shaders
-	void PushConstant(const void* pData, u_int uSize);
+	void BindDrawConstants(const void* pData, u_int uSize);
 
 private:
 	// Switch to the specified descriptor set if not already active

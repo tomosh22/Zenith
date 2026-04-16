@@ -1,5 +1,15 @@
 #version 450
 
+// ============================================================================
+// Temporal Fog Resolve
+// Workgroup: 8x8x8 (512 threads — matches 3D froxel grid topology)
+// Shared memory: none
+//
+// Blends the current frame's froxel fog with the previous frame's result using
+// temporal jitter offsets. Reduces flickering from low-resolution froxel grids
+// by accumulating samples over multiple frames.
+// ============================================================================
+
 #include "../Common.fxh"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;

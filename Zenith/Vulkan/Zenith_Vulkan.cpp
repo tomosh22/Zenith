@@ -1340,6 +1340,8 @@ u_int Zenith_Vulkan_PerFrame::AllocateScratchBuffer(u_int uSize, u_int uWorkerIn
 	u_int uOffset = m_auWorkerScratchOffsets[uWorkerIndex];
 
 	// Check we don't exceed worker's partition
+	// TODO: graceful spill — fall back to a VMA sub-allocation when a worker
+	// partition fills. Today an assert, i.e. crash.
 	u_int uPartitionEnd = (uWorkerIndex + 1) * uWORKER_PARTITION_SIZE;
 	Zenith_Assert(uOffset + uAlignedSize <= uPartitionEnd,
 		"Worker %u scratch buffer overflow (offset=%u, size=%u, end=%u)",

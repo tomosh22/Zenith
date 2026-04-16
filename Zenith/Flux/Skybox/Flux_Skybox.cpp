@@ -116,9 +116,9 @@ void Flux_Skybox::Initialise()
 	// ========== Cubemap skybox pipeline (MRT with no blending) ==========
 	{
 		Flux_PipelineSpecification xSpec;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_DIFFUSE].m_xSurfaceInfo.m_eFormat;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT].m_xSurfaceInfo.m_eFormat;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL].m_xSurfaceInfo.m_eFormat;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		// skybox renders to MRT colour only, no depth (default TEXTURE_FORMAT_NONE)
 		xSpec.m_pxShader = &s_xCubemapShader;
@@ -136,9 +136,9 @@ void Flux_Skybox::Initialise()
 	// ========== Solid colour override pipeline (MRT with no blending) ==========
 	{
 		Flux_PipelineSpecification xSpec;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_DIFFUSE].m_xSurfaceInfo.m_eFormat;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT].m_xSurfaceInfo.m_eFormat;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL].m_xSurfaceInfo.m_eFormat;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		// skybox renders to MRT colour only, no depth (default TEXTURE_FORMAT_NONE)
 		xSpec.m_pxShader = &s_xSolidColourShader;
@@ -162,9 +162,9 @@ void Flux_Skybox::Initialise()
 	// ========== Atmosphere sky pipeline ==========
 	{
 		Flux_PipelineSpecification xSpec;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_DIFFUSE].m_xSurfaceInfo.m_eFormat;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_NORMALSAMBIENT].m_xSurfaceInfo.m_eFormat;
-		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = Flux_Graphics::s_axMRTColourAttachments[MRT_INDEX_MATERIAL].m_xSurfaceInfo.m_eFormat;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		// skybox renders to MRT colour only, no depth (default TEXTURE_FORMAT_NONE)
 		xSpec.m_pxShader = &s_xAtmosphereShader;
@@ -238,7 +238,7 @@ void Flux_Skybox::DestroyRenderTargets()
 {
 	if (s_xTransmittanceLUT.m_xVRAMHandle.IsValid())
 	{
-		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(s_xTransmittanceLUT.m_xVRAMHandle);
+		Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(s_xTransmittanceLUT.m_xVRAMHandle);
 		Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, s_xTransmittanceLUT.m_xVRAMHandle,
 			s_xTransmittanceLUT.RTV().m_xImageViewHandle, s_xTransmittanceLUT.DSV().m_xImageViewHandle,
 			s_xTransmittanceLUT.SRV().m_xImageViewHandle, s_xTransmittanceLUT.UAV(0).m_xImageViewHandle);
@@ -349,7 +349,7 @@ static void ExecuteAerialPerspective(Flux_CommandList* pxCommandList, void*)
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		xBinder.BindCBV(s_xAerialFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindCBV(s_xAerialAtmosConstantsBinding, &Flux_Skybox::s_xAtmosphereConstantsBuffer.GetCBV());
-		xBinder.BindSRV(s_xAerialDepthTexBinding, &Flux_Graphics::s_xDepthBuffer.SRV());
+		xBinder.BindSRV(s_xAerialDepthTexBinding, &Flux_Graphics::GetDepthAttachment().SRV());
 	}
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -362,9 +362,9 @@ void Flux_Skybox::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// clear the MRT target (both color — redundantly — and depth, which the
 	// subsequent geometry passes need for depth testing).
 	uint32_t uSkyPassIndex = xGraph.AddPass("Skybox", ExecuteSkybox);
-	xGraph.Write(uSkyPassIndex, Flux_Graphics::s_axMRTColourAttachments[0], RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uSkyPassIndex, Flux_Graphics::s_axMRTColourAttachments[1], RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uSkyPassIndex, Flux_Graphics::s_axMRTColourAttachments[2], RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uSkyPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uSkyPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uSkyPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_WRITE_RTV);
 	xGraph.SetPrepare(uSkyPassIndex, PreExecuteSkybox);
 	xGraph.SetClear(uSkyPassIndex, true);
 }
@@ -380,7 +380,7 @@ void Flux_Skybox::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.Write(uAerialPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
 
 	// Reads: depth buffer
-	xGraph.Read(uAerialPassIndex, Flux_Graphics::s_xDepthBuffer, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(uAerialPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 }
 
 // Setters

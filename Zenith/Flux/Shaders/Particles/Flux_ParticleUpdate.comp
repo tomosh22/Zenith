@@ -1,6 +1,14 @@
 #version 450
 
-// GPU Particle Update Compute Shader
+// ============================================================================
+// GPU Particle Update
+// Workgroup: 64x1x1 (64 threads — one thread per particle)
+// Shared memory: none
+//
+// Updates particle simulation state (position, velocity, age) and generates
+// render instances for surviving particles. Dead particles are compacted out.
+// ============================================================================
+//
 // Updates particle simulation state and generates render instances
 //
 // Particle Layout (96 bytes, std430):

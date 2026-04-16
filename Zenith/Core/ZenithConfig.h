@@ -96,8 +96,8 @@ static constexpr uint32_t MAX_MATERIALS = 1024;
 
 static constexpr uint32_t FLUX_MAX_TARGETS = 8;
 static constexpr uint32_t FLUX_MAX_MIPS = 12;     // Maximum mip levels (supports up to 4096x4096)
-static constexpr uint32_t FLUX_MAX_DESCRIPTOR_BINDINGS = 32;
-static constexpr uint32_t FLUX_MAX_DESCRIPTOR_SET_LAYOUTS = 5;
+static constexpr uint32_t FLUX_MAX_BINDINGS_PER_GROUP = 32;
+static constexpr uint32_t FLUX_MAX_BINDING_GROUPS = 5;
 
 
 // ============================================================================
@@ -170,12 +170,12 @@ static constexpr PhysicsMeshQuality DEFAULT_PHYSICS_MESH_QUALITY = PhysicsMeshQu
 #define FLUX_MAX_TARGETS ZenithConfig::FLUX_MAX_TARGETS
 #endif
 
-#ifndef FLUX_MAX_DESCRIPTOR_BINDINGS
-#define FLUX_MAX_DESCRIPTOR_BINDINGS ZenithConfig::FLUX_MAX_DESCRIPTOR_BINDINGS
+#ifndef FLUX_MAX_BINDINGS_PER_GROUP
+#define FLUX_MAX_BINDINGS_PER_GROUP ZenithConfig::FLUX_MAX_BINDINGS_PER_GROUP
 #endif
 
-#ifndef FLUX_MAX_DESCRIPTOR_SET_LAYOUTS
-#define FLUX_MAX_DESCRIPTOR_SET_LAYOUTS ZenithConfig::FLUX_MAX_DESCRIPTOR_SET_LAYOUTS
+#ifndef FLUX_MAX_BINDING_GROUPS
+#define FLUX_MAX_BINDING_GROUPS ZenithConfig::FLUX_MAX_BINDING_GROUPS
 #endif
 
 #ifndef FLUX_MAX_MIPS

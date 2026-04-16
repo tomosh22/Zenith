@@ -66,7 +66,7 @@ void Flux_RaymarchFog::Initialise()
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -187,7 +187,7 @@ void Flux_RaymarchFog::Render(Flux_CommandList* pxCommandList)
 		xBinder.BindCBV(s_axShadowMatrixBindings[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
 	}
 
-	xBinder.PushConstant(&s_xConstants, sizeof(Flux_RaymarchConstants));
+	xBinder.BindDrawConstants(&s_xConstants, sizeof(Flux_RaymarchConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

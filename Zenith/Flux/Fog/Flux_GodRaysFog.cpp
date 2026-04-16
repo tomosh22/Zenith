@@ -54,7 +54,7 @@ void Flux_GodRaysFog::Initialise()
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_eDepthStencilFormat = Flux_Graphics::s_xDepthBuffer.m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -141,7 +141,7 @@ void Flux_GodRaysFog::Render(Flux_CommandList* pxCommandList)
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV(s_xDepthBinding, Flux_Graphics::GetDepthStencilSRV());
 
-	xBinder.PushConstant(&s_xConstants, sizeof(Flux_GodRaysConstants));
+	xBinder.BindDrawConstants(&s_xConstants, sizeof(Flux_GodRaysConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

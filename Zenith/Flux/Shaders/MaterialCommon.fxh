@@ -11,7 +11,7 @@
 // ============================================================================
 // Material Push Constants Structure
 //
-// Layout matches C++ MaterialPushConstants (128 bytes total for Vulkan compatibility)
+// Layout matches C++ MaterialDrawConstants (128 bytes total for Vulkan compatibility)
 // ============================================================================
 // NOTE: This structure is expected to be defined in each shader that uses materials
 // with a push_constant layout. The individual shaders should include this header

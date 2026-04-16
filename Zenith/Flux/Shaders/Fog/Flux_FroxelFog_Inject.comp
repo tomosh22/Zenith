@@ -1,5 +1,15 @@
 #version 450
 
+// ============================================================================
+// Froxel Fog Density Injection
+// Workgroup: 8x8x8 (512 threads — matches 3D froxel grid topology)
+// Shared memory: none
+//
+// Writes fog density, scattering, and absorption into a 3D texture (froxel grid).
+// Applies height-based falloff and animated noise for natural fog variation.
+// Each thread maps 1:1 to a froxel cell.
+// ============================================================================
+
 #include "../Common.fxh"
 #include "Flux_NoiseCommon.fxh"
 #include "Flux_VolumetricCommon.fxh"

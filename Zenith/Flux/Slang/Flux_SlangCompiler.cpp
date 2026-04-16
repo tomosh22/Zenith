@@ -45,39 +45,39 @@ u_int Flux_ShaderReflection::GetDescriptorSet(const char* szName) const
 
 void Flux_ShaderReflection::PopulateLayout(Flux_PipelineLayout& xLayoutOut) const
 {
-	xLayoutOut.m_uNumDescriptorSets = 0;
+	xLayoutOut.m_uNumBindingGroups = 0;
 
 	for (u_int u = 0; u < m_axBindings.GetSize(); u++)
 	{
 		const Flux_ReflectedBinding& xBinding = m_axBindings.Get(u);
-		if (xBinding.m_uSet >= FLUX_MAX_DESCRIPTOR_SET_LAYOUTS)
+		if (xBinding.m_uSet >= FLUX_MAX_BINDING_GROUPS)
 		{
 			continue;
 		}
-		if (xBinding.m_uBinding >= FLUX_MAX_DESCRIPTOR_BINDINGS)
+		if (xBinding.m_uBinding >= FLUX_MAX_BINDINGS_PER_GROUP)
 		{
 			continue;
 		}
 
-		if (xBinding.m_uSet + 1 > xLayoutOut.m_uNumDescriptorSets)
+		if (xBinding.m_uSet + 1 > xLayoutOut.m_uNumBindingGroups)
 		{
-			xLayoutOut.m_uNumDescriptorSets = xBinding.m_uSet + 1;
+			xLayoutOut.m_uNumBindingGroups = xBinding.m_uSet + 1;
 		}
 
-		xLayoutOut.m_axDescriptorSetLayouts[xBinding.m_uSet].m_axBindings[xBinding.m_uBinding].m_eType = xBinding.m_eType;
+		xLayoutOut.m_axBindingGroups[xBinding.m_uSet].m_axBindings[xBinding.m_uBinding].m_eType = xBinding.m_eType;
 	}
 
 	// Fill gaps in binding indices with placeholder types.
-	// The pipeline builder stops at the first DESCRIPTOR_TYPE_MAX, so sparse
+	// The pipeline builder stops at the first BINDING_TYPE_MAX, so sparse
 	// bindings (e.g. shadow shaders that skip texture slots) need gaps filled.
-	for (u_int uSet = 0; uSet < xLayoutOut.m_uNumDescriptorSets; uSet++)
+	for (u_int uSet = 0; uSet < xLayoutOut.m_uNumBindingGroups; uSet++)
 	{
-		Flux_DescriptorSetLayout& xSetLayout = xLayoutOut.m_axDescriptorSetLayouts[uSet];
+		Flux_BindingGroupLayout& xSetLayout = xLayoutOut.m_axBindingGroups[uSet];
 
 		u_int uMaxBinding = 0;
-		for (u_int uBinding = 0; uBinding < FLUX_MAX_DESCRIPTOR_BINDINGS; uBinding++)
+		for (u_int uBinding = 0; uBinding < FLUX_MAX_BINDINGS_PER_GROUP; uBinding++)
 		{
-			if (xSetLayout.m_axBindings[uBinding].m_eType != DESCRIPTOR_TYPE_MAX)
+			if (xSetLayout.m_axBindings[uBinding].m_eType != BINDING_TYPE_MAX)
 			{
 				uMaxBinding = uBinding;
 			}
@@ -85,9 +85,9 @@ void Flux_ShaderReflection::PopulateLayout(Flux_PipelineLayout& xLayoutOut) cons
 
 		for (u_int uBinding = 0; uBinding < uMaxBinding; uBinding++)
 		{
-			if (xSetLayout.m_axBindings[uBinding].m_eType == DESCRIPTOR_TYPE_MAX)
+			if (xSetLayout.m_axBindings[uBinding].m_eType == BINDING_TYPE_MAX)
 			{
-				xSetLayout.m_axBindings[uBinding].m_eType = DESCRIPTOR_TYPE_BUFFER;
+				xSetLayout.m_axBindings[uBinding].m_eType = BINDING_TYPE_BUFFER;
 			}
 		}
 	}
@@ -111,8 +111,15 @@ void Flux_ShaderReflection::BuildLookupMap()
 	}
 }
 
+// Magic and version for the .spv.refl sidecar format.
+// Bump kFluxReflectionVersion when Flux_ReflectedBinding changes layout.
+static constexpr u_int32 kFluxReflectionMagic   = 0x46525846; // 'FXRF'
+static constexpr u_int32 kFluxReflectionVersion  = 1;
+
 void Flux_ShaderReflection::WriteToDataStream(Zenith_DataStream& xStream) const
 {
+	xStream << kFluxReflectionMagic;
+	xStream << kFluxReflectionVersion;
 	const u_int uCount = m_axBindings.GetSize();
 	xStream << uCount;
 	for (u_int u = 0; u < uCount; u++)
@@ -128,6 +135,14 @@ void Flux_ShaderReflection::WriteToDataStream(Zenith_DataStream& xStream) const
 
 void Flux_ShaderReflection::ReadFromDataStream(Zenith_DataStream& xStream)
 {
+	u_int32 uMagic = 0;
+	u_int32 uVersion = 0;
+	xStream >> uMagic;
+	xStream >> uVersion;
+	Zenith_Assert(uMagic == kFluxReflectionMagic,
+		"Flux_ShaderReflection: bad magic 0x%08X (expected 0x%08X). Rerun FluxCompiler.", uMagic, kFluxReflectionMagic);
+	Zenith_Assert(uVersion == kFluxReflectionVersion,
+		"Flux_ShaderReflection: format v%u != expected v%u. Rerun FluxCompiler.", uVersion, kFluxReflectionVersion);
 	u_int uCount;
 	xStream >> uCount;
 	for (u_int u = 0; u < uCount; u++)
@@ -135,7 +150,7 @@ void Flux_ShaderReflection::ReadFromDataStream(Zenith_DataStream& xStream)
 		Flux_ReflectedBinding xBinding;
 		u_int uType;
 		xStream >> uType;
-		xBinding.m_eType = static_cast<DescriptorType>(uType);
+		xBinding.m_eType = static_cast<BindingType>(uType);
 		xStream >> xBinding.m_uSet;
 		xStream >> xBinding.m_uBinding;
 		xStream >> xBinding.m_strName;
@@ -324,7 +339,7 @@ bool Flux_SlangCompiler::ExtractParameterBinding(void* pxParamVoid, void* pxType
 
 	xBindingOut.m_uSet = static_cast<u_int>(pxParam->getBindingSpace());
 	xBindingOut.m_uBinding = static_cast<u_int>(pxParam->getBindingIndex());
-	xBindingOut.m_eType = SlangTypeToDescriptorType(pxTypeLayout);
+	xBindingOut.m_eType = SlangTypeToBindingType(pxTypeLayout);
 	xBindingOut.m_uSize = static_cast<u_int>(pxTypeLayout->getSize());
 	return true;
 }
@@ -645,7 +660,7 @@ void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflec
 	xReflectionOut.BuildLookupMap();
 }
 
-DescriptorType Flux_SlangCompiler::SlangTypeToDescriptorType(void* pxTypeLayoutVoid)
+BindingType Flux_SlangCompiler::SlangTypeToBindingType(void* pxTypeLayoutVoid)
 {
 	slang::TypeLayoutReflection* pxTypeLayout = static_cast<slang::TypeLayoutReflection*>(pxTypeLayoutVoid);
 
@@ -657,7 +672,7 @@ DescriptorType Flux_SlangCompiler::SlangTypeToDescriptorType(void* pxTypeLayoutV
 		slang::TypeReflection* pxType = pxTypeLayout->getType();
 		if (pxType && pxType->getElementCount() == 0)
 		{
-			return DESCRIPTOR_TYPE_UNBOUNDED_TEXTURES;
+			return BINDING_TYPE_UNBOUNDED_TEXTURES;
 		}
 	}
 
@@ -666,17 +681,17 @@ DescriptorType Flux_SlangCompiler::SlangTypeToDescriptorType(void* pxTypeLayoutV
 	switch (eBindingType)
 	{
 	case slang::BindingType::ConstantBuffer:
-		return DESCRIPTOR_TYPE_BUFFER;
+		return BINDING_TYPE_BUFFER;
 	case slang::BindingType::RawBuffer:
 	case slang::BindingType::MutableRawBuffer:
-		return DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		return BINDING_TYPE_STORAGE_BUFFER;
 	case slang::BindingType::Texture:
 	case slang::BindingType::CombinedTextureSampler:
-		return DESCRIPTOR_TYPE_TEXTURE;
+		return BINDING_TYPE_TEXTURE;
 	case slang::BindingType::MutableTexture:
-		return DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		return BINDING_TYPE_STORAGE_IMAGE;
 	case slang::BindingType::Sampler:
-		return DESCRIPTOR_TYPE_TEXTURE;
+		return BINDING_TYPE_TEXTURE;
 	default:
 		break;
 	}
@@ -685,15 +700,15 @@ DescriptorType Flux_SlangCompiler::SlangTypeToDescriptorType(void* pxTypeLayoutV
 	{
 	case slang::TypeReflection::Kind::ConstantBuffer:
 	case slang::TypeReflection::Kind::ParameterBlock:
-		return DESCRIPTOR_TYPE_BUFFER;
+		return BINDING_TYPE_BUFFER;
 	case slang::TypeReflection::Kind::Resource:
-		return DESCRIPTOR_TYPE_TEXTURE;
+		return BINDING_TYPE_TEXTURE;
 	case slang::TypeReflection::Kind::SamplerState:
-		return DESCRIPTOR_TYPE_TEXTURE;
+		return BINDING_TYPE_TEXTURE;
 	case slang::TypeReflection::Kind::ShaderStorageBuffer:
-		return DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		return BINDING_TYPE_STORAGE_BUFFER;
 	default:
-		return DESCRIPTOR_TYPE_BUFFER;
+		return BINDING_TYPE_BUFFER;
 	}
 }
 #endif // ZENITH_WINDOWS

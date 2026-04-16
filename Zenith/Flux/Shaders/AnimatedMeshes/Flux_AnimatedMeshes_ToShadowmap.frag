@@ -1,3 +1,4 @@
 #version 450 core
 #define SHADOWS
-#include "Flux_AnimatedMeshes_FragCommon.fxh"
+#define MESH_ANIMATED
+#include "../Meshes/Mesh_Frag.fxh"

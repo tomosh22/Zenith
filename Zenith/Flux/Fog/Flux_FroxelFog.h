@@ -23,6 +23,9 @@
  *   - Bart Wronski SIGGRAPH 2014
  */
 
+#include "Flux/Flux.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
+
 class Flux_CommandList;
 
 class Flux_FroxelFog
@@ -34,15 +37,24 @@ public:
 	static void Initialise();
 	static void Reset();
 
+	// Called from Flux_Fog::SetupRenderGraph to create transients and set state.
+	static void SetupTransients(Flux_RenderGraph& xGraph);
+
 	// Individual pass functions for render graph integration
 	static void RenderInject(Flux_CommandList* pxCommandList);
 	static void RenderLight(Flux_CommandList* pxCommandList);
 	static void RenderApply(Flux_CommandList* pxCommandList);
 
-	// Access froxel grid for debug visualization
+	// Access froxel grid (routes through transient or owned path automatically)
 	static struct Flux_RenderAttachment& GetDensityGrid();
 	static struct Flux_RenderAttachment& GetLightingGrid();
 	static struct Flux_RenderAttachment& GetScatteringGrid();
+
+	// Transient handles for render graph declaration in Flux_Fog.cpp
+	static bool IsUsingTransients();
+	static Flux_TransientHandle GetDensityGridHandle();
+	static Flux_TransientHandle GetLightingGridHandle();
+	static Flux_TransientHandle GetScatteringGridHandle();
 
 	// Debug slice visualization
 	static struct Flux_RenderAttachment& GetDebugSliceTexture();

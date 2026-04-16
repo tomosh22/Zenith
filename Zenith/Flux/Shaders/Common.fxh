@@ -1,3 +1,6 @@
+#ifndef COMMON_FXH
+#define COMMON_FXH
+
 layout(std140, set = 0, binding=0) uniform FrameConstants{
 	mat4 g_xViewMat;
 	mat4 g_xProjMat;
@@ -90,3 +93,5 @@ float ComputeEdgeFade(vec2 xUV, float fMargin)
 // Blue noise sampling constants (shared by SSR, SSGI)
 const int BLUE_NOISE_SIZE = 64;
 const float GOLDEN_RATIO = 0.618033988749;
+
+#endif // COMMON_FXH

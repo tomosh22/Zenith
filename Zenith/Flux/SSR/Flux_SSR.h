@@ -39,13 +39,13 @@ public:
 	// Configuration
 	static bool s_bEnabled;
 
-	// Render targets (public for render graph access)
-	static Flux_RenderAttachment s_xRayMarchResult;      // RGBA16F: RGB=reflection, A=confidence
-	static Flux_RenderAttachment s_xResolvedReflection;  // RGBA16F: blurred reflection
+	// Attachment accessors (return transient or owned depending on current mode)
+	static Flux_RenderAttachment& GetRayMarchAttachment();
+	static Flux_RenderAttachment& GetResolvedAttachment();
 
 private:
-	static void CreateRenderTargets();
-	static void DestroyRenderTargets();
+	static void CreateOwnedRenderTargets();
+	static void DestroyOwnedRenderTargets();
 
 	static bool s_bInitialised;
 };

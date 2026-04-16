@@ -32,12 +32,12 @@ struct ScratchBufferBinding {
 };
 
 struct DescSetBindings {
-	const Flux_ShaderResourceView* m_xSRVs[FLUX_MAX_DESCRIPTOR_BINDINGS];
-	const Flux_UnorderedAccessView_Texture* m_xUAV_Textures[FLUX_MAX_DESCRIPTOR_BINDINGS];
-	const Flux_UnorderedAccessView_Buffer* m_xUAV_Buffers[FLUX_MAX_DESCRIPTOR_BINDINGS];
-	const Flux_ConstantBufferView* m_xCBVs[FLUX_MAX_DESCRIPTOR_BINDINGS];
+	const Flux_ShaderResourceView* m_xSRVs[FLUX_MAX_BINDINGS_PER_GROUP];
+	const Flux_UnorderedAccessView_Texture* m_xUAV_Textures[FLUX_MAX_BINDINGS_PER_GROUP];
+	const Flux_UnorderedAccessView_Buffer* m_xUAV_Buffers[FLUX_MAX_BINDINGS_PER_GROUP];
+	const Flux_ConstantBufferView* m_xCBVs[FLUX_MAX_BINDINGS_PER_GROUP];
 
-	Zenith_Vulkan_Sampler* m_apxSamplers[FLUX_MAX_DESCRIPTOR_BINDINGS];
+	Zenith_Vulkan_Sampler* m_apxSamplers[FLUX_MAX_BINDINGS_PER_GROUP];
 
 	ScratchBufferBinding m_xScratchBuffer;
 
@@ -73,7 +73,9 @@ public:
 	void BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint);
 
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
-	void PushConstant(void* pData, size_t uSize, u_int uBinding);
+	void BindDrawConstants(void* pData, size_t uSize, u_int uBinding);
+	void SetCullMode(CullMode eCullMode);
+	void SetDepthBias(float fConstant, float fSlope, float fClamp);
 	void SetShoudClear(const bool bClear);
 
 	void UseBindlessTextures(const uint32_t uSet);
@@ -120,13 +122,13 @@ private:
 	Zenith_Vulkan_Pipeline* m_pxCurrentPipeline;
 	vk::PipelineBindPoint m_eCurrentBindPoint = vk::PipelineBindPoint::eGraphics;
 
-	DescSetBindings m_xBindings[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS];
-	u_int m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
+	DescSetBindings m_xBindings[FLUX_MAX_BINDING_GROUPS];
+	u_int m_uCurrentBindFreq = FLUX_MAX_BINDING_GROUPS;
 
 	CommandType m_eCommandType;
 	u_int m_uWorkerIndex;
 
-	vk::DescriptorSet m_axCurrentDescSet[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS] = { VK_NULL_HANDLE };
+	vk::DescriptorSet m_axCurrentDescSet[FLUX_MAX_BINDING_GROUPS] = { VK_NULL_HANDLE };
 	u_int m_uDescriptorDirty = true;
 
 	vk::Viewport m_xViewport;
@@ -141,5 +143,5 @@ private:
 		vk::DescriptorSetLayout layout = VK_NULL_HANDLE;
 	};
 
-	DescriptorSetCacheEntry m_axDescriptorSetCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS];
+	DescriptorSetCacheEntry m_axDescriptorSetCache[FLUX_MAX_BINDING_GROUPS];
 };

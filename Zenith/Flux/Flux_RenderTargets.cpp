@@ -1,8 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Flux_RenderTargets.h"
-#include "Vulkan/Zenith_Vulkan.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Zenith_PlatformGraphics_Include.h"
 
 // -----------------------------------------------------------------------------
 // Attachment teardown helpers
@@ -23,7 +22,7 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachment& xAttachment)
 {
 	if (!xAttachment.m_xVRAMHandle.IsValid()) return;
 
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+	Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
 	const u_int uNumMips = xAttachment.m_xSurfaceInfo.m_uNumMips;
 
 	// The 2D builder creates up to one RTV per mip and up to one per-mip SRV
@@ -60,7 +59,7 @@ void Flux_RenderAttachmentBuilder::Destroy(Flux_RenderAttachmentCube& xAttachmen
 {
 	if (!xAttachment.m_xVRAMHandle.IsValid()) return;
 
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+	Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
 	const u_int uNumMips = xAttachment.m_xSurfaceInfo.m_uNumMips;
 
 	// Per-mip slice SRVs (one per mip, all populated by BuildColourCubemap).
@@ -171,7 +170,7 @@ Flux_UnorderedAccessView_Texture& Flux_RenderAttachmentCube::UAV(u_int uMip)
 }
 
 // Whole-mip layered RTV: a single view that covers all 6 cube faces of this mip
-// (viewType = 2D_ARRAY, layerCount = 6 — see Zenith_Vulkan_MemoryManager::CreateRenderTargetView).
+// (viewType = 2D_ARRAY, layerCount = 6 — see Flux_MemoryManager::CreateRenderTargetView).
 // Suitable for multi-view rendering where a single draw writes every face; NOT used
 // by the IBL render graph today, which binds one face at a time — see the two-arg
 // overload below.
@@ -219,7 +218,11 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 
 	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
+#ifdef ZENITH_TOOLS
 	xAttachment.m_strName = strName;
+#else
+	(void)strName;
+#endif
 
 	for (u_int uMip = 0; uMip < m_uNumMips; uMip++)
 	{
@@ -245,7 +248,7 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	}
 
 	{
-		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Colour Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u",
 			strName.c_str(), (unsigned long long)(VkImage)pxVRAM->GetImage(),
 			xAttachment.m_xVRAMHandle.AsUInt(), xInfo.m_uWidth, xInfo.m_uHeight, m_uNumMips);
@@ -275,7 +278,11 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube&
 
 	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
+#ifdef ZENITH_TOOLS
 	xAttachment.m_strName = strName;
+#else
+	(void)strName;
+#endif
 
 	// Whole-cube SRV spanning every mip and all 6 layers. This is the view that shaders
 	// bind for cube sampling (e.g. textureLod(cube, R, roughness) in IBL).
@@ -317,7 +324,7 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube&
 	}
 
 	{
-		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Cubemap Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u layers=6",
 			strName.c_str(), (unsigned long long)(VkImage)pxVRAM->GetImage(),
 			xAttachment.m_xVRAMHandle.AsUInt(), xInfo.m_uWidth, xInfo.m_uHeight, m_uNumMips);
@@ -340,13 +347,17 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 
 	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
+#ifdef ZENITH_TOOLS
 	xAttachment.m_strName = strName;
+#else
+	(void)strName;
+#endif
 
 	xAttachment.m_xDSV = Flux_MemoryManager::CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo);
 	xAttachment.m_xSRV = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo);
 
 	{
-		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: DepthStencil Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u",
 			strName.c_str(), (unsigned long long)(VkImage)pxVRAM->GetImage(),
 			xAttachment.m_xVRAMHandle.AsUInt(), xInfo.m_uWidth, xInfo.m_uHeight);

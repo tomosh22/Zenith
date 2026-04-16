@@ -12,8 +12,13 @@ class Zenith_Vulkan_Shader;
 class Zenith_Vulkan_Sampler;
 class Zenith_Vulkan_RootSig;
 
-// Define platform abstraction macros FIRST
-// These must be defined before any headers that use them (like Flux.h)
+// ============================================================================
+// Platform abstraction macros
+// These map Flux_* names to the Vulkan backend types. Flux source code should
+// use these aliases (not the concrete Zenith_Vulkan_* names) so that a second
+// backend can be added by swapping this header. See Flux_Backend.h for the
+// backend contract documentation.
+// ============================================================================
 #define Flux_PlatformAPI Zenith_Vulkan
 #define Flux_MemoryManager Zenith_Vulkan_MemoryManager
 #define Flux_CommandBuffer Zenith_Vulkan_CommandBuffer
@@ -23,6 +28,9 @@ class Zenith_Vulkan_RootSig;
 #define Flux_Shader Zenith_Vulkan_Shader
 #define Flux_Sampler Zenith_Vulkan_Sampler
 #define Flux_RootSig Zenith_Vulkan_RootSig
+#define Flux_ComputePipelineBuilder Zenith_Vulkan_ComputePipelineBuilder
+#define Flux_RootSigBuilder Zenith_Vulkan_RootSigBuilder
+#define Flux_VRAM Zenith_Vulkan_VRAM
 
 // Now include the actual headers (which may include Flux.h)
 #include "Zenith_Vulkan.h"

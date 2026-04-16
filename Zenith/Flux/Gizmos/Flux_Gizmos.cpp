@@ -62,7 +62,7 @@ void Flux_Gizmos::Initialise()
 	// Create pipeline specification
 	Flux_PipelineSpecification xSpec;
 	xSpec.m_pxShader = &s_xShader;
-	xSpec.m_aeColourAttachmentFormats[0] = Flux_Graphics::s_xFinalRenderTarget.m_xSurfaceInfo.m_eFormat;
+	xSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 	xSpec.m_uNumColourAttachments = 1;
 
 	// Vertex input description
@@ -315,7 +315,7 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 		else if (xGeom.m_eComponent == s_eActiveComponent && s_bIsInteracting)
 			xPushConstants.m_fHighlightIntensity = 1.0f;
 
-		xBinder.PushConstant(&xPushConstants, sizeof(xPushConstants));
+		xBinder.BindDrawConstants(&xPushConstants, sizeof(xPushConstants));
 
 		// Draw
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(xGeom.m_uIndexCount);
@@ -325,7 +325,7 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 void Flux_Gizmos::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	uint32_t uPass = xGraph.AddPass("Gizmos", ExecuteGizmos);
-	xGraph.Write(uPass, Flux_Graphics::s_xFinalRenderTarget, RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.Write(uPass, Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
 void Flux_Gizmos::SetTargetEntity(Zenith_Entity* pxEntity)

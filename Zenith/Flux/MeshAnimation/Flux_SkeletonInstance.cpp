@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "Flux_SkeletonInstance.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Zenith_PlatformGraphics_Include.h"
 
 //=============================================================================
 // Destructor

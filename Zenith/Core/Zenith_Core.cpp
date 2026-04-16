@@ -111,7 +111,24 @@ void RenderImGui()
 
 static void ExecuteRenderGraph()
 {
+	// Check if any subsystem requested a full graph rebuild
+	if (Flux::ConsumeGraphRebuildRequest())
+	{
+		Flux::SetupRenderGraph();
+	}
+
 	Flux_RenderGraph& xGraph = Flux::GetRenderGraph();
+
+	// Detect global transient toggle change — requires full graph rebuild
+	// so that subsystem SetupRenderGraph calls pick up the new mode.
+	{
+		static bool s_bLastTransientsEnabled = true;
+		if (s_bLastTransientsEnabled != xGraph.AreTransientsEnabled())
+		{
+			s_bLastTransientsEnabled = xGraph.AreTransientsEnabled();
+			Flux::SetupRenderGraph();
+		}
+	}
 
 	// Order matters here. Both subsystems below run BEFORE Compile() so any
 	// SetPassEnabled / MarkDirty mutations they perform take effect on the
