@@ -1,5 +1,12 @@
 #include "Zenith.h"
 
+// Tests use `friend class Zenith_UnitTests` injection (see Flux_ShaderBinder.h,
+// Flux_PerFrame.h) to inspect private state. The coupling is intentional and
+// pragmatic: the tested private state (name-cache slot positions, per-frame
+// callback arrays) is exactly the implementation detail the tests want to
+// pin. A future refactor may replace the friend declarations with a
+// test-only `*_Internal.h` header if the coupling starts to leak, but until
+// the interface grows the friend declarations are the cheapest option.
 #include "UnitTests/Zenith_UnitTests.h"
 
 #include "Collections/Zenith_CircularQueue.h"
@@ -513,6 +520,38 @@ void Zenith_UnitTests::RunAllTests()
 	TestUIStyleLerpHalfway();
 	TestUIStyleLerpEndpoints();
 	TestUIStyleLerpShadowBool();
+
+	// Flux render-graph tests (declaration-phase only)
+	TestRenderGraphEmpty();
+	TestRenderGraphPassHandles();
+	TestRenderGraphTransientGeneration();
+	TestRenderGraphSetEnabled();
+	TestRenderGraphBufferBarrierRMW();
+
+	// Transient-aliasing signature tests
+	TestAliasSignatureIdenticalDescs();
+	TestAliasSignatureDifferentFormat();
+	TestAliasSignatureDifferentMemoryFlags();
+	TestAliasSignatureDifferentTextureType();
+	TestAliasSignatureDepthVsColour();
+	TestAliasSignatureIgnoresDimensions();
+
+	// Flux_ShaderBinder name-cache tests
+	TestBinderNameCacheFirstLookupMisses();
+	TestBinderNameCacheRepeatLookupHits();
+	TestBinderNameCacheDifferentReflectionMisses();
+	TestBinderNameCacheDifferentNameMisses();
+	TestBinderNameCacheRoundRobinReplacement();
+	TestBinderNameCacheTypeStoredCorrectly();
+
+	// Flux_PerFrame ring-scheduler tests
+	TestFluxPerFrameFrameCounterAdvances();
+	TestFluxPerFrameRingIndexWraps();
+	TestFluxPerFrameBeginCallbackFires();
+	TestFluxPerFrameEndCallbackFires();
+	TestFluxPerFrameCallbackOrderPreserved();
+	TestFluxPerFrameCallbackUserDataPassed();
+	TestFluxPerFrameRingIndexInsideCallback();
 
 #ifdef ZENITH_TOOLS
 	// Gizmo math helper tests
@@ -10874,3 +10913,790 @@ void Zenith_UnitTests::TestGizmosTangentFrame()
 }
 
 #endif // ZENITH_TOOLS
+
+// ============================================================================
+// Flux render-graph tests
+// ============================================================================
+// These tests exercise the graph's declaration phase (AddPass, CreateTransient,
+// SetEnabled, Clear, generation counters) without calling Compile() — Compile
+// allocates VRAM via Flux_RenderAttachmentBuilder which requires a live Vulkan
+// device. A full golden-path test with synthetic passes mirroring the real
+// pipeline needs a headless Vulkan init path; that is out of scope here. The
+// sample-game runs under sync validation (Sokoban + Combat + the other games)
+// provide end-to-end correctness coverage for the compiled + executed graph.
+
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
+
+static void EmptyRecordCallback(Flux_CommandList*, void*) {}
+
+void Zenith_UnitTests::TestRenderGraphEmpty()
+{
+	Flux_RenderGraph xGraph;
+
+	Zenith_Assert(xGraph.GetPasses().GetSize() == 0, "Fresh graph has no passes");
+	Zenith_Assert(xGraph.IsDirty(), "Fresh Flux_RenderGraph starts in dirty state (m_bDirty default-initialised to true)");
+
+	xGraph.MarkDirty();
+	Zenith_Assert(xGraph.IsDirty(), "After MarkDirty, IsDirty == true");
+
+	xGraph.Clear();
+	Zenith_Assert(xGraph.GetPasses().GetSize() == 0, "Clear leaves graph empty");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRenderGraphEmpty PASSED");
+}
+
+void Zenith_UnitTests::TestRenderGraphPassHandles()
+{
+	Flux_RenderGraph xGraph;
+
+	Flux_PassHandle xPassA = xGraph.AddPass("A", EmptyRecordCallback);
+	Flux_PassHandle xPassB = xGraph.AddPass("B", EmptyRecordCallback);
+
+	Zenith_Assert(xPassA.IsValid(), "PassA handle valid");
+	Zenith_Assert(xPassB.IsValid(), "PassB handle valid");
+	Zenith_Assert(xPassA != xPassB, "Different passes produce different handles");
+	Zenith_Assert(xPassA.m_uGeneration == xPassB.m_uGeneration, "Handles from same graph generation match");
+	Zenith_Assert(xGraph.GetPasses().GetSize() == 2, "Graph has two passes");
+
+	// Invalid handle is false-valued.
+	Flux_PassHandle xBad;
+	Zenith_Assert(!xBad.IsValid(), "Default-constructed handle is invalid");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRenderGraphPassHandles PASSED");
+}
+
+void Zenith_UnitTests::TestRenderGraphTransientGeneration()
+{
+	Flux_RenderGraph xGraph;
+
+	Flux_TransientTextureDesc xDesc;
+	xDesc.m_uWidth = 64;
+	xDesc.m_uHeight = 64;
+	xDesc.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xDesc.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
+
+	Flux_TransientHandle xH0 = xGraph.CreateTransient(xDesc);
+	Zenith_Assert(xH0.IsValid(), "CreateTransient returns a valid handle");
+
+	const u_int uGenBefore = xH0.m_uGeneration;
+
+	// Clear bumps generation — previously-issued handles become stale.
+	xGraph.Clear();
+
+	Flux_TransientHandle xH1 = xGraph.CreateTransient(xDesc);
+	Zenith_Assert(xH1.IsValid(), "Handle after Clear is still valid");
+	Zenith_Assert(xH1.m_uGeneration != uGenBefore,
+		"Clear() bumps graph generation so old handles fail AssertTransientHandleValid");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRenderGraphTransientGeneration PASSED");
+}
+
+void Zenith_UnitTests::TestRenderGraphSetEnabled()
+{
+	Flux_RenderGraph xGraph;
+
+	Flux_PassHandle xPass = xGraph.AddPass("Togglable", EmptyRecordCallback);
+	Zenith_Assert(xGraph.GetPasses().Get(xPass.m_uIndex)->m_bEnabled, "Pass enabled by default");
+
+	xGraph.SetEnabled(xPass, false);
+	Zenith_Assert(!xGraph.GetPasses().Get(xPass.m_uIndex)->m_bEnabled, "SetEnabled(false) disables pass");
+
+	xGraph.SetEnabled(xPass, true);
+	Zenith_Assert(xGraph.GetPasses().Get(xPass.m_uIndex)->m_bEnabled, "SetEnabled(true) re-enables pass");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRenderGraphSetEnabled PASSED");
+}
+
+// Verify that two consecutive compute passes RMW-ing the same Flux_ReadWriteBuffer
+// produce a buffer-kind prologue barrier on the second pass. SynthesizeBarriers is
+// pure CPU once m_xExecutionOrder is populated; we bypass Compile (which would
+// allocate VRAM via Flux_RenderAttachmentBuilder and need a Vulkan device) by
+// poking m_xExecutionOrder directly via the Zenith_UnitTests friend access.
+void Zenith_UnitTests::TestRenderGraphBufferBarrierRMW()
+{
+	Flux_RenderGraph xGraph;
+
+	// Fake-valid VRAM handle and non-zero size on the buffer so the graph's
+	// declaration-time and barrier-emitter checks don't short-circuit. The
+	// test never touches the backing VRAM — only the buffer pointer identity
+	// matters for state-map keying.
+	Flux_ReadWriteBuffer xBuffer;
+	xBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+	xBuffer.GetBuffer().m_ulSize = 256;
+
+	Flux_PassHandle xPassA = xGraph.AddPass("RMW_A", EmptyRecordCallback);
+	xGraph.WriteBuffer(xPassA, xBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
+
+	Flux_PassHandle xPassB = xGraph.AddPass("RMW_B", EmptyRecordCallback);
+	xGraph.WriteBuffer(xPassB, xBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
+
+	// Skip Compile() — manually populate execution order in pass-add order
+	// (the only ordering SynthesizeBarriers cares about).
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xPassA.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xPassB.m_uIndex);
+
+	xGraph.SynthesizeBarriers();
+
+	const Flux_RenderGraph_Pass* pxA = xGraph.GetPasses().Get(xPassA.m_uIndex);
+	const Flux_RenderGraph_Pass* pxB = xGraph.GetPasses().Get(xPassB.m_uIndex);
+
+	// Pass A is the first writer — UNDEFINED → READWRITE_UAV is technically a
+	// "barrier" too because the new-side is a write, so we expect ONE entry
+	// on A (the discard / first-touch barrier).
+	u_int uABufferBarriers = 0;
+	for (u_int u = 0; u < pxA->m_xPrologueBarriers.GetSize(); u++)
+	{
+		const Flux_RenderGraph_Barrier& rxBar = pxA->m_xPrologueBarriers.Get(u);
+		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+			uABufferBarriers++;
+	}
+	Zenith_Assert(uABufferBarriers == 1,
+		"TestRenderGraphBufferBarrierRMW: pass A expected 1 buffer barrier (UNDEFINED→RW), got %u",
+		uABufferBarriers);
+
+	// Pass B is the second writer — must have exactly ONE buffer barrier
+	// (RW→RW write-after-write). This is the load-bearing assertion that
+	// proves the new buffer-barrier path actually emits.
+	u_int uBBufferBarriers = 0;
+	const Flux_RenderGraph_Barrier* pxBBarrier = nullptr;
+	for (u_int u = 0; u < pxB->m_xPrologueBarriers.GetSize(); u++)
+	{
+		const Flux_RenderGraph_Barrier& rxBar = pxB->m_xPrologueBarriers.Get(u);
+		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
+			uBBufferBarriers++;
+			pxBBarrier = &rxBar;
+		}
+	}
+	Zenith_Assert(uBBufferBarriers == 1,
+		"TestRenderGraphBufferBarrierRMW: pass B expected 1 buffer barrier (RW→RW WAW), got %u",
+		uBBufferBarriers);
+	Zenith_Assert(pxBBarrier != nullptr,
+		"TestRenderGraphBufferBarrierRMW: pass B buffer barrier missing");
+	Zenith_Assert(pxBBarrier->m_eSrcAccess == RESOURCE_ACCESS_READWRITE_UAV,
+		"TestRenderGraphBufferBarrierRMW: pass B src access expected READWRITE_UAV, got %d",
+		(int)pxBBarrier->m_eSrcAccess);
+	Zenith_Assert(pxBBarrier->m_eDstAccess == RESOURCE_ACCESS_READWRITE_UAV,
+		"TestRenderGraphBufferBarrierRMW: pass B dst access expected READWRITE_UAV, got %d",
+		(int)pxBBarrier->m_eDstAccess);
+	Zenith_Assert(pxBBarrier->m_xResource.AsBuffer() == &xBuffer.GetBuffer(),
+		"TestRenderGraphBufferBarrierRMW: pass B barrier targets wrong buffer");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRenderGraphBufferBarrierRMW PASSED");
+}
+
+// ============================================================================
+// Transient-aliasing signature tests
+// ============================================================================
+// MakeTransientMemorySignature is a pure function of the descriptor — tests
+// verify: (a) identical descs produce matching signatures, (b) any descriptor
+// field that affects memory requirements flips the signature, (c) fields that
+// DO NOT affect memory requirements (dimensions, mip count) are ignored.
+
+namespace
+{
+	Flux_TransientTextureDesc DefaultDesc()
+	{
+		Flux_TransientTextureDesc xDesc;
+		xDesc.m_uWidth       = 1280;
+		xDesc.m_uHeight      = 720;
+		xDesc.m_uDepth       = 1;
+		xDesc.m_eFormat      = TEXTURE_FORMAT_RGBA8_UNORM;
+		xDesc.m_eTextureType = TEXTURE_TYPE_2D;
+		xDesc.m_uNumMips     = 1;
+		xDesc.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
+		xDesc.m_bIsDepthStencil = false;
+		return xDesc;
+	}
+}
+
+void Zenith_UnitTests::TestAliasSignatureIdenticalDescs()
+{
+	const Flux_TransientTextureDesc xA = DefaultDesc();
+	const Flux_TransientTextureDesc xB = DefaultDesc();
+	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) ==
+	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
+	              "Identical descs must produce identical signatures");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureIdenticalDescs PASSED");
+}
+
+void Zenith_UnitTests::TestAliasSignatureDifferentFormat()
+{
+	Flux_TransientTextureDesc xA = DefaultDesc();
+	Flux_TransientTextureDesc xB = DefaultDesc();
+	xB.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
+	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) !=
+	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
+	              "Different format must produce different signature");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureDifferentFormat PASSED");
+}
+
+void Zenith_UnitTests::TestAliasSignatureDifferentMemoryFlags()
+{
+	Flux_TransientTextureDesc xA = DefaultDesc();
+	Flux_TransientTextureDesc xB = DefaultDesc();
+	xB.m_uMemoryFlags = xA.m_uMemoryFlags | (1u << MEMORY_FLAGS__UNORDERED_ACCESS);
+	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) !=
+	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
+	              "Adding UAV bit must produce different signature");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureDifferentMemoryFlags PASSED");
+}
+
+void Zenith_UnitTests::TestAliasSignatureDifferentTextureType()
+{
+	Flux_TransientTextureDesc xA = DefaultDesc();
+	Flux_TransientTextureDesc xB = DefaultDesc();
+	xB.m_eTextureType = TEXTURE_TYPE_3D;
+	xB.m_uDepth       = 64;
+	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) !=
+	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
+	              "Different texture type (2D vs 3D) must produce different signature");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureDifferentTextureType PASSED");
+}
+
+void Zenith_UnitTests::TestAliasSignatureDepthVsColour()
+{
+	Flux_TransientTextureDesc xA = DefaultDesc();
+	Flux_TransientTextureDesc xB = DefaultDesc();
+	xB.m_bIsDepthStencil = true;
+	xB.m_eFormat         = TEXTURE_FORMAT_D32_SFLOAT;
+	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) !=
+	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
+	              "Depth-stencil flag must produce different signature than colour");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureDepthVsColour PASSED");
+}
+
+void Zenith_UnitTests::TestAliasSignatureIgnoresDimensions()
+{
+	// Two descs differing ONLY in width/height/mip-count must have matching
+	// signatures. The packer handles size variation by computing pool size =
+	// max(occupant size); the signature is about memory-requirement class.
+	Flux_TransientTextureDesc xA = DefaultDesc();
+	Flux_TransientTextureDesc xB = DefaultDesc();
+	xB.m_uWidth   = 3840;
+	xB.m_uHeight  = 2160;
+	xB.m_uNumMips = 8;
+	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) ==
+	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
+	              "Dimensions and mip count must NOT affect signature");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureIgnoresDimensions PASSED");
+}
+
+// ============================================================================
+// Flux_ShaderBinder name-cache tests
+// ============================================================================
+// Exercise the pointer-identity cache via a synthetic Flux_ShaderReflection.
+// The binder's resolver takes a reflection pointer (not the Flux_Shader wrapper)
+// so these tests don't need a live Vulkan device. Friended in via Zenith_UnitTests.
+//
+// The cache contract: entries are matched by pointer compare on
+// (reflection-ptr, name-ptr). String literals have stable, deduplicated
+// addresses within a translation unit, so the typical caller pattern produces
+// a 100% cache hit after the first call. No hashing → no possibility of a
+// clashing false hit.
+
+#include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Flux_CommandList.h"
+
+namespace
+{
+	// Build a synthetic reflection with a fixed set of (name, type, set, binding)
+	// entries. Names are passed in as const char* — the caller controls their
+	// lifetime so the same literal addresses can be reused across multiple
+	// resolver calls (the whole point of the pointer-identity cache).
+	struct BindingSpec
+	{
+		const char* m_szName;
+		BindingType m_eType;
+		u_int       m_uSet;
+		u_int       m_uBinding;
+	};
+
+	void PopulateReflection(Flux_ShaderReflection& xReflection, const BindingSpec* axSpecs, u_int uCount)
+	{
+		for (u_int u = 0; u < uCount; u++)
+		{
+			Flux_ReflectedBinding xB;
+			xB.m_strName  = axSpecs[u].m_szName;
+			xB.m_eType    = axSpecs[u].m_eType;
+			xB.m_uSet     = axSpecs[u].m_uSet;
+			xB.m_uBinding = axSpecs[u].m_uBinding;
+			xB.m_uSize    = 0;
+			xReflection.AddBinding(xB);
+		}
+		xReflection.BuildLookupMap();
+	}
+}
+
+void Zenith_UnitTests::TestBinderNameCacheFirstLookupMisses()
+{
+	Flux_ShaderReflection xReflection;
+	const BindingSpec axSpecs[] = {
+		{ "FrameConstants", BINDING_TYPE_BUFFER, 0, 0 },
+	};
+	PopulateReflection(xReflection, axSpecs, 1);
+
+	Flux_CommandList xCmdList("UnitTest");
+	Flux_ShaderBinder xBinder(xCmdList);
+
+	// Cache starts empty — every slot's reflection-ptr is null.
+	for (u_int u = 0; u < Flux_ShaderBinder::NAME_CACHE_SIZE; u++)
+	{
+		Zenith_Assert(xBinder.m_axNameCache[u].m_pxReflection == nullptr,
+			"Fresh binder cache slot %u must be empty", u);
+	}
+
+	const char* szName = "FrameConstants";
+	const Flux_ShaderBinder::ResolvedBinding xR = xBinder.ResolveNamedBinding(&xReflection, szName);
+
+	Zenith_Assert(xR.m_eType == BINDING_TYPE_BUFFER, "First lookup returns the right type");
+	Zenith_Assert(xR.m_xHandle.m_uSet == 0 && xR.m_xHandle.m_uBinding == 0, "First lookup returns the right handle");
+
+	// Slot 0 should now hold the entry; slots 1..7 still empty.
+	Zenith_Assert(xBinder.m_axNameCache[0].m_pxReflection == &xReflection, "First entry stored at slot 0");
+	Zenith_Assert(xBinder.m_axNameCache[0].m_szName == szName, "First entry stores the literal pointer");
+	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "Round-robin slot advances after a miss");
+	Zenith_Assert(xBinder.m_axNameCache[1].m_pxReflection == nullptr, "Slot 1 still empty after one miss");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheFirstLookupMisses PASSED");
+}
+
+void Zenith_UnitTests::TestBinderNameCacheRepeatLookupHits()
+{
+	Flux_ShaderReflection xReflection;
+	const BindingSpec axSpecs[] = {
+		{ "g_xDepthTex", BINDING_TYPE_TEXTURE, 0, 1 },
+	};
+	PopulateReflection(xReflection, axSpecs, 1);
+
+	Flux_CommandList xCmdList("UnitTest");
+	Flux_ShaderBinder xBinder(xCmdList);
+
+	const char* szName = "g_xDepthTex";
+
+	// First call — cache miss.
+	xBinder.ResolveNamedBinding(&xReflection, szName);
+	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "Slot advanced after first miss");
+
+	// Second call with the same string-literal pointer — cache hit. The
+	// next-cache-slot should NOT advance (no new entry written).
+	xBinder.ResolveNamedBinding(&xReflection, szName);
+	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "Cache hit does not advance the next-cache-slot counter");
+	Zenith_Assert(xBinder.m_axNameCache[1].m_pxReflection == nullptr, "Cache hit does not populate slot 1");
+
+	// Hammer the resolver — all hits, no new slot writes.
+	for (u_int u = 0; u < 100; u++)
+	{
+		xBinder.ResolveNamedBinding(&xReflection, szName);
+	}
+	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "Many cache hits in a row never advance the slot counter");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheRepeatLookupHits PASSED");
+}
+
+void Zenith_UnitTests::TestBinderNameCacheDifferentReflectionMisses()
+{
+	// Two reflections with the same binding name. Same name-literal pointer
+	// across both calls. Expectation: distinct reflection pointers force two
+	// cache entries (the cache key is (reflection*, name*), not just name*).
+	Flux_ShaderReflection xReflectionA;
+	Flux_ShaderReflection xReflectionB;
+	const BindingSpec axSpecs[] = {
+		{ "Shared", BINDING_TYPE_BUFFER, 0, 0 },
+	};
+	PopulateReflection(xReflectionA, axSpecs, 1);
+	PopulateReflection(xReflectionB, axSpecs, 1);
+
+	Flux_CommandList xCmdList("UnitTest");
+	Flux_ShaderBinder xBinder(xCmdList);
+
+	const char* szName = "Shared";
+
+	xBinder.ResolveNamedBinding(&xReflectionA, szName);
+	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "First call (reflection A) populates slot 0");
+
+	xBinder.ResolveNamedBinding(&xReflectionB, szName);
+	Zenith_Assert(xBinder.m_uNextCacheSlot == 2, "Different reflection forces a cache miss → slot 1 populated");
+
+	Zenith_Assert(xBinder.m_axNameCache[0].m_pxReflection == &xReflectionA, "Slot 0 stores reflection A");
+	Zenith_Assert(xBinder.m_axNameCache[1].m_pxReflection == &xReflectionB, "Slot 1 stores reflection B");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheDifferentReflectionMisses PASSED");
+}
+
+void Zenith_UnitTests::TestBinderNameCacheDifferentNameMisses()
+{
+	// Single reflection with two bindings. Two different name-literal pointers
+	// → two distinct cache entries even within the same reflection.
+	Flux_ShaderReflection xReflection;
+	const BindingSpec axSpecs[] = {
+		{ "First",  BINDING_TYPE_BUFFER,  0, 0 },
+		{ "Second", BINDING_TYPE_TEXTURE, 0, 1 },
+	};
+	PopulateReflection(xReflection, axSpecs, 2);
+
+	Flux_CommandList xCmdList("UnitTest");
+	Flux_ShaderBinder xBinder(xCmdList);
+
+	xBinder.ResolveNamedBinding(&xReflection, "First");
+	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "First name occupies slot 0");
+
+	xBinder.ResolveNamedBinding(&xReflection, "Second");
+	Zenith_Assert(xBinder.m_uNextCacheSlot == 2, "Second name occupies slot 1");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheDifferentNameMisses PASSED");
+}
+
+void Zenith_UnitTests::TestBinderNameCacheRoundRobinReplacement()
+{
+	// Fill the cache to NAME_CACHE_SIZE-1 misses (one under the overflow
+	// threshold), verify the slot counter advances correctly, and verify the
+	// contents land in the expected slots. The Nth miss (N==NAME_CACHE_SIZE)
+	// would assert in ResolveNamedBinding now — the overflow assert fired
+	// because round-robin eviction at that point produces 0% hit rate; tests
+	// stop short of the assert line.
+	Flux_ShaderReflection xReflection;
+	BindingSpec axSpecs[Flux_ShaderBinder::NAME_CACHE_SIZE];
+	char aszNames[Flux_ShaderBinder::NAME_CACHE_SIZE][8];
+	for (u_int u = 0; u < Flux_ShaderBinder::NAME_CACHE_SIZE; u++)
+	{
+		snprintf(aszNames[u], sizeof(aszNames[u]), "B%u", u);
+		axSpecs[u] = { aszNames[u], BINDING_TYPE_BUFFER, 0, u };
+	}
+	PopulateReflection(xReflection, axSpecs, Flux_ShaderBinder::NAME_CACHE_SIZE);
+
+	Flux_CommandList xCmdList("UnitTest");
+	Flux_ShaderBinder xBinder(xCmdList);
+
+	// Fill all but the last slot. Each miss increments m_uNextCacheSlot.
+	for (u_int u = 0; u < Flux_ShaderBinder::NAME_CACHE_SIZE - 1; u++)
+	{
+		xBinder.ResolveNamedBinding(&xReflection, axSpecs[u].m_szName);
+		Zenith_Assert(xBinder.m_uNextCacheSlot == u + 1, "Slot counter advances after each miss");
+	}
+	Zenith_Assert(xBinder.m_axNameCache[0].m_szName == axSpecs[0].m_szName, "Slot 0 holds the first name");
+
+	// The last miss that keeps us inside the overflow budget — exactly
+	// NAME_CACHE_SIZE unique resolves filled the cache, slot counter wraps
+	// to 0 (though no eviction has happened yet).
+	xBinder.ResolveNamedBinding(&xReflection, axSpecs[Flux_ShaderBinder::NAME_CACHE_SIZE - 1].m_szName);
+	Zenith_Assert(xBinder.m_uNextCacheSlot == 0, "After NAME_CACHE_SIZE unique misses, slot counter wraps to 0");
+	Zenith_Assert(xBinder.m_uUniqueResolves == Flux_ShaderBinder::NAME_CACHE_SIZE,
+		"Unique resolve counter matches cache capacity after full fill");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheRoundRobinReplacement PASSED");
+}
+
+void Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly()
+{
+	// Verify the cached entry stores the reflected BindingType so the per-call
+	// type assertion in BindCBV/BindSRV/etc. has the data it needs without
+	// going back to the reflection on a hit.
+	Flux_ShaderReflection xReflection;
+	const BindingSpec axSpecs[] = {
+		{ "Buf",      BINDING_TYPE_BUFFER,         0, 0 },
+		{ "Tex",      BINDING_TYPE_TEXTURE,        0, 1 },
+		{ "StorTex",  BINDING_TYPE_STORAGE_IMAGE,  0, 2 },
+		{ "StorBuf",  BINDING_TYPE_STORAGE_BUFFER, 0, 3 },
+	};
+	PopulateReflection(xReflection, axSpecs, 4);
+
+	Flux_CommandList xCmdList("UnitTest");
+	Flux_ShaderBinder xBinder(xCmdList);
+
+	const Flux_ShaderBinder::ResolvedBinding xR0 = xBinder.ResolveNamedBinding(&xReflection, "Buf");
+	const Flux_ShaderBinder::ResolvedBinding xR1 = xBinder.ResolveNamedBinding(&xReflection, "Tex");
+	const Flux_ShaderBinder::ResolvedBinding xR2 = xBinder.ResolveNamedBinding(&xReflection, "StorTex");
+	const Flux_ShaderBinder::ResolvedBinding xR3 = xBinder.ResolveNamedBinding(&xReflection, "StorBuf");
+
+	Zenith_Assert(xR0.m_eType == BINDING_TYPE_BUFFER,         "Buf resolves to BINDING_TYPE_BUFFER");
+	Zenith_Assert(xR1.m_eType == BINDING_TYPE_TEXTURE,        "Tex resolves to BINDING_TYPE_TEXTURE");
+	Zenith_Assert(xR2.m_eType == BINDING_TYPE_STORAGE_IMAGE,  "StorTex resolves to BINDING_TYPE_STORAGE_IMAGE");
+	Zenith_Assert(xR3.m_eType == BINDING_TYPE_STORAGE_BUFFER, "StorBuf resolves to BINDING_TYPE_STORAGE_BUFFER");
+
+	// And the cached slots should mirror that.
+	Zenith_Assert(xBinder.m_axNameCache[0].m_eType == BINDING_TYPE_BUFFER,         "Slot 0 cached type == BUFFER");
+	Zenith_Assert(xBinder.m_axNameCache[1].m_eType == BINDING_TYPE_TEXTURE,        "Slot 1 cached type == TEXTURE");
+	Zenith_Assert(xBinder.m_axNameCache[2].m_eType == BINDING_TYPE_STORAGE_IMAGE,  "Slot 2 cached type == STORAGE_IMAGE");
+	Zenith_Assert(xBinder.m_axNameCache[3].m_eType == BINDING_TYPE_STORAGE_BUFFER, "Slot 3 cached type == STORAGE_BUFFER");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheTypeStoredCorrectly PASSED");
+}
+
+// ============================================================================
+// Flux_PerFrame ring-scheduler tests
+// ============================================================================
+// These tests run inside the live engine's main loop (RunAllTests is invoked
+// from Zenith_Main.cpp after Flux::EarlyInitialise has already registered the
+// real Vulkan begin and MemoryManager end callbacks). Each test saves the
+// live state (counter + callback arrays) at entry and restores it at exit so
+// the surrounding frame loop is unaffected by the temporary scratch state
+// the test installs.
+
+#include "Flux/Flux_PerFrame.h"
+
+// Snapshot of Flux_PerFrame's internal state used by the §5.2 tests to save
+// the live engine state before installing scratch callbacks, then restore it
+// at end-of-test. Defined here so it can hold the callback array sizes from
+// FLUX_MAX_PERFRAME_CALLBACKS without exposing them in the public header.
+struct Zenith_UnitTests::PerFrameSnapshot
+{
+	u_int                            m_uFrameCounter;
+	u_int                            m_uNumBegin;
+	u_int                            m_uNumEnd;
+	Flux_PerFrame::OnFrameBeginFunc  m_apfnBegin[FLUX_MAX_PERFRAME_CALLBACKS];
+	void*                            m_apBeginUser[FLUX_MAX_PERFRAME_CALLBACKS];
+	Flux_PerFrame::OnFrameEndFunc    m_apfnEnd[FLUX_MAX_PERFRAME_CALLBACKS];
+	void*                            m_apEndUser[FLUX_MAX_PERFRAME_CALLBACKS];
+};
+
+void Zenith_UnitTests::SnapshotPerFrameAndReset(PerFrameSnapshot& xOut)
+{
+	xOut.m_uFrameCounter = Flux_PerFrame::s_uFrameCounter;
+	xOut.m_uNumBegin     = Flux_PerFrame::s_uNumBeginCallbacks;
+	xOut.m_uNumEnd       = Flux_PerFrame::s_uNumEndCallbacks;
+	for (u_int u = 0; u < FLUX_MAX_PERFRAME_CALLBACKS; u++)
+	{
+		xOut.m_apfnBegin[u]   = Flux_PerFrame::s_apfnBeginCallbacks[u];
+		xOut.m_apBeginUser[u] = Flux_PerFrame::s_apBeginUserData[u];
+		xOut.m_apfnEnd[u]     = Flux_PerFrame::s_apfnEndCallbacks[u];
+		xOut.m_apEndUser[u]   = Flux_PerFrame::s_apEndUserData[u];
+	}
+	Flux_PerFrame::s_uFrameCounter      = 0;
+	Flux_PerFrame::s_uNumBeginCallbacks = 0;
+	Flux_PerFrame::s_uNumEndCallbacks   = 0;
+}
+
+void Zenith_UnitTests::RestorePerFrame(const PerFrameSnapshot& xIn)
+{
+	Flux_PerFrame::s_uFrameCounter      = xIn.m_uFrameCounter;
+	Flux_PerFrame::s_uNumBeginCallbacks = xIn.m_uNumBegin;
+	Flux_PerFrame::s_uNumEndCallbacks   = xIn.m_uNumEnd;
+	for (u_int u = 0; u < FLUX_MAX_PERFRAME_CALLBACKS; u++)
+	{
+		Flux_PerFrame::s_apfnBeginCallbacks[u] = xIn.m_apfnBegin[u];
+		Flux_PerFrame::s_apBeginUserData[u]    = xIn.m_apBeginUser[u];
+		Flux_PerFrame::s_apfnEndCallbacks[u]   = xIn.m_apfnEnd[u];
+		Flux_PerFrame::s_apEndUserData[u]      = xIn.m_apEndUser[u];
+	}
+}
+
+namespace
+{
+	// RAII helper that calls SnapshotPerFrameAndReset on construction and
+	// RestorePerFrame on destruction. Lives in this anon namespace because
+	// it doesn't need friend access — the static helpers do.
+	struct PerFrameScopedReset
+	{
+		Zenith_UnitTests::PerFrameSnapshot m_xSnap;
+		PerFrameScopedReset() { Zenith_UnitTests::SnapshotPerFrameAndReset(m_xSnap); }
+		~PerFrameScopedReset() { Zenith_UnitTests::RestorePerFrame(m_xSnap); }
+	};
+
+	// Mutable counters used by callback bodies in the tests.
+	u_int g_uTestBeginCallCount = 0;
+	u_int g_uTestEndCallCount   = 0;
+	u_int g_uTestLastBeginRing  = UINT32_MAX;
+	u_int g_uTestLastEndRing    = UINT32_MAX;
+	void* g_pTestLastUserData   = nullptr;
+
+	// Track callback firing order: each callback pushes its tag here.
+	u_int g_auTestCallOrder[16];
+	u_int g_uTestCallOrderCount = 0;
+
+	void TestBeginCallback_IncCount(u_int uRingIndex, void* pUserData)
+	{
+		g_uTestBeginCallCount++;
+		g_uTestLastBeginRing = uRingIndex;
+		g_pTestLastUserData  = pUserData;
+	}
+
+	void TestEndCallback_IncCount(u_int uRingIndex, void* pUserData)
+	{
+		g_uTestEndCallCount++;
+		g_uTestLastEndRing  = uRingIndex;
+		g_pTestLastUserData = pUserData;
+	}
+
+	void TestBeginCallback_OrderTagA(u_int /*uRingIndex*/, void* /*pUserData*/)
+	{
+		Zenith_Assert(g_uTestCallOrderCount < 16, "Test call-order overflow");
+		g_auTestCallOrder[g_uTestCallOrderCount++] = 'A';
+	}
+
+	void TestBeginCallback_OrderTagB(u_int /*uRingIndex*/, void* /*pUserData*/)
+	{
+		Zenith_Assert(g_uTestCallOrderCount < 16, "Test call-order overflow");
+		g_auTestCallOrder[g_uTestCallOrderCount++] = 'B';
+	}
+
+	void TestBeginCallback_OrderTagC(u_int /*uRingIndex*/, void* /*pUserData*/)
+	{
+		Zenith_Assert(g_uTestCallOrderCount < 16, "Test call-order overflow");
+		g_auTestCallOrder[g_uTestCallOrderCount++] = 'C';
+	}
+}
+
+void Zenith_UnitTests::TestFluxPerFrameFrameCounterAdvances()
+{
+	PerFrameScopedReset xReset;
+
+	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == 0, "Counter starts at 0");
+	Zenith_Assert(Flux_PerFrame::GetRingIndex()    == 0, "Ring index starts at 0");
+
+	// BeginFrame does NOT advance the counter — only EndFrame does. This
+	// matches the pre-extraction behaviour where the swapchain bumped its
+	// index inside EndFrame, so the same slot is used by Begin and End of
+	// the same frame.
+	Flux_PerFrame::BeginFrame();
+	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == 0, "BeginFrame does not advance the counter");
+
+	Flux_PerFrame::EndFrame();
+	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == 1, "EndFrame advances the counter by 1");
+
+	for (u_int u = 0; u < 5; u++)
+	{
+		Flux_PerFrame::BeginFrame();
+		Flux_PerFrame::EndFrame();
+	}
+	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == 6, "Five Begin/End pairs advance the counter to 6");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameFrameCounterAdvances PASSED");
+}
+
+void Zenith_UnitTests::TestFluxPerFrameRingIndexWraps()
+{
+	PerFrameScopedReset xReset;
+
+	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		Zenith_Assert(Flux_PerFrame::GetRingIndex() == u % MAX_FRAMES_IN_FLIGHT,
+			"Ring index at counter %u is %u, expected %u",
+			u, Flux_PerFrame::GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT);
+		Flux_PerFrame::EndFrame();
+	}
+	// After MAX_FRAMES_IN_FLIGHT EndFrames the counter is at MAX, ring index wraps to 0.
+	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == MAX_FRAMES_IN_FLIGHT, "Counter is at MAX_FRAMES_IN_FLIGHT");
+	Zenith_Assert(Flux_PerFrame::GetRingIndex()    == 0, "Ring index wraps to 0 after MAX_FRAMES_IN_FLIGHT EndFrames");
+
+	// Drive several full cycles and confirm the modulo continues to hold.
+	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT * 3 + 1; u++)
+	{
+		Flux_PerFrame::EndFrame();
+	}
+	const u_int uExpectedCounter = MAX_FRAMES_IN_FLIGHT + (MAX_FRAMES_IN_FLIGHT * 3 + 1);
+	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == uExpectedCounter, "Counter total tracks correctly");
+	Zenith_Assert(Flux_PerFrame::GetRingIndex()    == uExpectedCounter % MAX_FRAMES_IN_FLIGHT,
+		"Ring index continues to be counter %% MAX_FRAMES_IN_FLIGHT");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameRingIndexWraps PASSED");
+}
+
+void Zenith_UnitTests::TestFluxPerFrameBeginCallbackFires()
+{
+	PerFrameScopedReset xReset;
+
+	g_uTestBeginCallCount = 0;
+	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
+
+	Flux_PerFrame::BeginFrame();
+	Zenith_Assert(g_uTestBeginCallCount == 1, "Begin callback fires once per BeginFrame");
+
+	Flux_PerFrame::BeginFrame();
+	Flux_PerFrame::BeginFrame();
+	Zenith_Assert(g_uTestBeginCallCount == 3, "Begin callback fires every BeginFrame");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameBeginCallbackFires PASSED");
+}
+
+void Zenith_UnitTests::TestFluxPerFrameEndCallbackFires()
+{
+	PerFrameScopedReset xReset;
+
+	g_uTestEndCallCount = 0;
+	Flux_PerFrame::RegisterEndFrameCallback(&TestEndCallback_IncCount, nullptr);
+
+	Flux_PerFrame::EndFrame();
+	Zenith_Assert(g_uTestEndCallCount == 1, "End callback fires once per EndFrame");
+
+	Flux_PerFrame::EndFrame();
+	Zenith_Assert(g_uTestEndCallCount == 2, "End callback fires every EndFrame");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameEndCallbackFires PASSED");
+}
+
+void Zenith_UnitTests::TestFluxPerFrameCallbackOrderPreserved()
+{
+	PerFrameScopedReset xReset;
+
+	g_uTestCallOrderCount = 0;
+	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_OrderTagA, nullptr);
+	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_OrderTagB, nullptr);
+	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_OrderTagC, nullptr);
+
+	Flux_PerFrame::BeginFrame();
+
+	Zenith_Assert(g_uTestCallOrderCount == 3, "All three begin callbacks fired");
+	Zenith_Assert(g_auTestCallOrder[0] == 'A', "First registered (A) fires first");
+	Zenith_Assert(g_auTestCallOrder[1] == 'B', "Second registered (B) fires second");
+	Zenith_Assert(g_auTestCallOrder[2] == 'C', "Third registered (C) fires third");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameCallbackOrderPreserved PASSED");
+}
+
+void Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed()
+{
+	PerFrameScopedReset xReset;
+
+	int iSentinelOnStack = 0xC0DE;
+	g_pTestLastUserData = nullptr;
+	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_IncCount, &iSentinelOnStack);
+
+	Flux_PerFrame::BeginFrame();
+	Zenith_Assert(g_pTestLastUserData == &iSentinelOnStack,
+		"Begin callback receives the user-data pointer it was registered with");
+
+	int iSentinelTwo = 0xBEEF;
+	g_pTestLastUserData = nullptr;
+	Flux_PerFrame::RegisterEndFrameCallback(&TestEndCallback_IncCount, &iSentinelTwo);
+
+	Flux_PerFrame::EndFrame();
+	// Both callbacks fired; last one to run wrote g_pTestLastUserData.
+	// Begin fires first inside EndFrame? No — begin callbacks only fire in
+	// BeginFrame. So only the end callback fired here, and it wrote the
+	// end-callback's user-data pointer.
+	Zenith_Assert(g_pTestLastUserData == &iSentinelTwo,
+		"End callback receives the user-data pointer it was registered with");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameCallbackUserDataPassed PASSED");
+}
+
+void Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback()
+{
+	PerFrameScopedReset xReset;
+
+	g_uTestLastBeginRing = UINT32_MAX;
+	g_uTestLastEndRing   = UINT32_MAX;
+	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
+	Flux_PerFrame::RegisterEndFrameCallback  (&TestEndCallback_IncCount,   nullptr);
+
+	// Drive a few iterations; callbacks should always observe the same ring
+	// index that GetRingIndex() returns at call time.
+	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT * 2; u++)
+	{
+		const u_int uExpectedRing = u % MAX_FRAMES_IN_FLIGHT;
+
+		Flux_PerFrame::BeginFrame();
+		Zenith_Assert(g_uTestLastBeginRing == uExpectedRing,
+			"Begin callback at frame %u observed ring %u, expected %u",
+			u, g_uTestLastBeginRing, uExpectedRing);
+
+		Flux_PerFrame::EndFrame();
+		Zenith_Assert(g_uTestLastEndRing == uExpectedRing,
+			"End callback at frame %u observed ring %u, expected %u",
+			u, g_uTestLastEndRing, uExpectedRing);
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameRingIndexInsideCallback PASSED");
+}

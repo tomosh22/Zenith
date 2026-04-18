@@ -49,11 +49,11 @@ void Zenith_TextureAsset::MarkAsBindless()
 
 	if (m_xSRV.m_xImageViewHandle.IsValid())
 	{
-		vk::ImageView xVkView = Zenith_Vulkan_MemoryManager::GetImageView(m_xSRV.m_xImageViewHandle);
-		Zenith_Vulkan::WriteBindlessDescriptor(
+		// Engine-typed wrapper — backend extracts vk::ImageView / vk::Sampler internally.
+		Flux_PlatformAPI::WriteBindlessTextureSlot(
 			m_xSRV.m_xImageViewHandle.AsUInt(),
-			xVkView,
-			Flux_Graphics::s_xClampSampler.GetSampler());
+			m_xSRV,
+			Flux_Graphics::s_xClampSampler);
 	}
 }
 

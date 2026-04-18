@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Flux.h"
+#include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Skybox/Flux_Skybox.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
@@ -38,6 +39,11 @@ Zenith_Vector<void(*)()> Flux::s_xResChangeCallbacks;
 Zenith_Vector<Flux_CommandListEntry> Flux::s_xPendingCommandLists;
 Flux_RenderGraph* Flux::s_pxRenderGraph = nullptr;
 bool Flux::s_bGraphRebuildRequested = false;
+
+// Debug-variable backing store for the transient-aliasing runtime toggle.
+// Synced into the render graph at each SetupRenderGraph via SetAliasingEnabled;
+// changes trigger MarkDirty so the next Compile rebuilds the pool layout.
+DEBUGVAR bool dbg_bTransientAliasing = true;
 
 // No-op record callback used by the final-layout-transition barrier pass — the
 // pass exists purely so the render graph emits a prologue barrier transitioning
@@ -98,6 +104,12 @@ Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpec(
 
 void Flux::EarlyInitialise()
 {
+	// Flux_PerFrame must initialise BEFORE backend Initialise so backends can
+	// register their begin/end-frame callbacks during their own setup. The
+	// counter starts at 0 and the ring index is correctly defined from the
+	// first call.
+	Flux_PerFrame::Initialise();
+
 	Flux_PlatformAPI::Initialise();
 	Flux_MemoryManager::Initialise();
 	Flux_PlatformAPI::InitialiseScratchBuffers(); // Must be after memory manager init
@@ -160,11 +172,55 @@ void Flux::LateInitialise()
 
 	// Create and compile the render graph
 	s_pxRenderGraph = new Flux_RenderGraph();
-	SetupRenderGraph();
-	AddResChangeCallback(SetupRenderGraph);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Flux", "RenderGraph", "UseTransients" }, s_pxRenderGraph->m_bTransientsEnabled);
+	// Debug-variable tree-path convention: most renderer variables live under
+	// "Render/...", but a handful of subsystems (HDR and HiZ) established a
+	// "Flux/<Subsystem>/..." convention before the "Render/" top-level
+	// consolidated. New HDR / HiZ variables follow their subsystem's existing
+	// convention; generic renderer-level variables go under "Render/". A
+	// future cleanup pass may migrate HDR / HiZ under "Render/HDR" and
+	// "Render/HiZ" but is deliberately NOT done here (would require an editor
+	// config migration for users who saved expanded-tree state).
+
+	// Debug toggle for transient memory aliasing. The graph reads this value
+	// at each SetupRenderGraph invocation and calls SetAliasingEnabled; a
+	// change triggers MarkDirty so the next Compile rebuilds the pool layout.
+	Zenith_DebugVariables::AddBoolean({ "Render", "RenderGraph", "Transient Aliasing" }, dbg_bTransientAliasing);
+
+	// MRT / depth / HDR / bloom transient previews. Registered once here (not in
+	// SetupTransients, which re-runs on resize) and resolve the current SRV
+	// via callback every ImGui draw — rebuilds that invalidate the underlying
+	// TransientResource don't leave a dangling pointer in the tree.
+	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT Diffuse" },       &Flux_Graphics::GetDebugSRV_MRTDiffuse);
+	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT NormalsAO" },     &Flux_Graphics::GetDebugSRV_MRTNormalsAO);
+	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT Material" },      &Flux_Graphics::GetDebugSRV_MRTMaterial);
+	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "Depth" },             &Flux_Graphics::GetDebugSRV_Depth);
+	// HDR textures follow Flux_HDR.cpp's established "Flux/HDR/..." convention.
+	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "HDRScene"  }, &Flux_HDR::GetDebugSRV_HDRScene);
+	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip0" }, &Flux_HDR::GetDebugSRV_Bloom0);
+	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip1" }, &Flux_HDR::GetDebugSRV_Bloom1);
+	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip2" }, &Flux_HDR::GetDebugSRV_Bloom2);
+#endif
+
+	SetupRenderGraph();
+	AddResChangeCallback(SetupRenderGraph);
+}
+
+void Flux::SyncRenderGraphDebugToggles()
+{
+	if (s_pxRenderGraph == nullptr)
+		return;
+#ifdef ZENITH_DEBUG_VARIABLES
+	// Transient aliasing toggle — SetAliasingEnabled is a no-op when the
+	// value is unchanged and MarkDirty's on change, so calling this every
+	// frame is cheap and propagates editor flips on the next Compile.
+	// Guard uses ZENITH_DEBUG_VARIABLES (not ZENITH_TOOLS) to match the
+	// declaration guard on dbg_bTransientAliasing and the AddBoolean /
+	// AddTextureCallback registrations above — the macros imply one another
+	// (enforced in Zenith.h) so the choice is purely for reader clarity:
+	// anything touching a debug variable guards on ZENITH_DEBUG_VARIABLES.
+	s_pxRenderGraph->SetAliasingEnabled(dbg_bTransientAliasing);
 #endif
 }
 
@@ -177,6 +233,11 @@ void Flux::SetupRenderGraph()
 	// which will be destroyed by Clear(). Caller must have already drained the GPU.
 	ClearPendingCommandLists();
 	s_pxRenderGraph->Clear();
+
+	// Sync the transient-aliasing debug toggle into the graph. SetAliasingEnabled
+	// is a no-op if the value is unchanged; on change it calls MarkDirty so the
+	// next Compile rebuilds the pool layout.
+	SyncRenderGraphDebugToggles();
 
 	// Core render targets FIRST — every other subsystem depends on these.
 	Flux_Graphics::SetupTransients(*s_pxRenderGraph);
@@ -228,18 +289,8 @@ void Flux::SetupRenderGraph()
 	// mismatch. The pass has no commands and no target setup; it exists
 	// purely so the graph emits a prologue barrier transitioning the Final
 	// RT from WRITE_RTV (set by tonemap / last writer) to READ_SRV.
-	//
-	// Note: every existing writer of the Final RT (HDR tonemap, Quads,
-	// Text, Gizmos) targets the `_NoDepth` target setup's attachment slot,
-	// not the original `s_xFinalRenderTarget` slot, even though the two
-	// share the same underlying VRAM. The render graph tracks resources by
-	// pointer, so we must read from the same Flux_RenderAttachment instance
-	// that the writers wrote to — otherwise the graph asserts "read but
-	// never written".
-	{
-		u_int uFinalTransitionPass = s_pxRenderGraph->AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp);
-		s_pxRenderGraph->Read(uFinalTransitionPass, Flux_Graphics::GetFinalRenderTarget_NoDepth(), RESOURCE_ACCESS_READ_SRV);
-	}
+	s_pxRenderGraph->AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp)
+		.Reads(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_READ_SRV);
 
 	// Clear() already left the graph dirty — no explicit MarkDirty() needed.
 }
@@ -248,10 +299,8 @@ void Flux::Shutdown()
 {
 	delete s_pxRenderGraph;
 	s_pxRenderGraph = nullptr;
-	// Phase 5.7: Drop res-change callbacks BEFORE deleting the graph above
-	// would matter, but the order is functionally equivalent: any callback
-	// that fires after Shutdown derefs the now-null s_pxRenderGraph and would
-	// crash. Clear the list so OnResChange has nothing to invoke.
+	// Clear res-change callbacks so OnResChange has nothing to invoke — the
+	// callbacks would otherwise deref the now-null s_pxRenderGraph and crash.
 	s_xResChangeCallbacks.Clear();
 
 	// Shutdown Flux subsystems in REVERSE order of initialization
@@ -295,6 +344,11 @@ void Flux::Shutdown()
 	// Shutdown memory manager (VMA allocator, handle registries)
 	Flux_MemoryManager::Shutdown();
 
+	// Clear PerFrame callback arrays so a subsequent Flux::Initialise starts
+	// from a known empty state (matters for unit tests that re-init Flux
+	// within one process). Frame counter is intentionally left alone.
+	Flux_PerFrame::Shutdown();
+
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux shut down");
 }
 
@@ -312,7 +366,7 @@ bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 
 	xOutDistribution.Clear();
 
-	// W13: the render graph submits command lists in topological order, so no sort needed.
+	// The render graph submits command lists in topological order — no sort needed here.
 
 	// Count total commands
 	for (u_int i = 0; i < s_xPendingCommandLists.GetSize(); i++)
@@ -358,10 +412,10 @@ bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 		xOutDistribution.auEndIndex[uCurrentThreadIndex] = s_xPendingCommandLists.GetSize();
 	}
 
-	// Phase 5.9: explicitly write empty (N, N) ranges for any worker that did
-	// not receive a command-list slice. This used to "work" only because
-	// xOutDistribution.Clear() left them at (0, 0); make the invariant explicit
-	// so a future change to Clear() can't break things.
+	// Explicitly write empty (N, N) ranges for any worker that did not receive
+	// a command-list slice. The invariant is relied on by the consumer; writing
+	// it here defensively protects against xOutDistribution.Clear() behaviour
+	// changing in future.
 	const u_int uPendingSize = s_xPendingCommandLists.GetSize();
 	for (u_int u = uCurrentThreadIndex + 1; u < FLUX_NUM_WORKER_THREADS; u++)
 	{

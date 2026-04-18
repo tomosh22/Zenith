@@ -330,7 +330,6 @@ public:
 	u_int m_uGroupCountZ;
 };
 
-// Flux_CommandImageTransition was deleted in the Phase B follow-up.
 // Synchronisation is the render graph's responsibility — declare reads and
 // writes via Flux_RenderGraph::Read / Write and the graph emits the
 // necessary transitions outside the pass's command list. There is no

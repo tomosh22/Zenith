@@ -76,6 +76,16 @@ public:
 
 #ifdef ZENITH_TOOLS
 	static void RegisterDebugVariables();
+
+	// Debug-variable callbacks — resolve the current HDR scene / bloom SRV on
+	// every ImGui draw. Same pattern as Flux_Graphics::GetDebugSRV_MRTDiffuse:
+	// the callback handles resize rebuilds where the transient's backing
+	// SRV moves. Returns nullptr before the graph has allocated the transient
+	// (safe during early startup); the callback renderer no-ops.
+	static const Flux_ShaderResourceView* GetDebugSRV_HDRScene();
+	static const Flux_ShaderResourceView* GetDebugSRV_Bloom0();
+	static const Flux_ShaderResourceView* GetDebugSRV_Bloom1();
+	static const Flux_ShaderResourceView* GetDebugSRV_Bloom2();
 #endif
 
 private:
@@ -90,13 +100,7 @@ private:
 	static void ExecuteBloomUpsample(Flux_CommandList* pxCommandList, void* pUserData);
 	static void ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserData);
 
-	static void CreateRenderTargets();
-	static void DestroyRenderTargets();
-
-	static Flux_RenderAttachment s_xHDRSceneTarget_Owned;
 	static Flux_TransientHandle s_xHDRSceneTargetHandle;
-
-	static Flux_RenderAttachment s_axBloomChain[5];
 
 	static Flux_Pipeline s_xToneMappingPipeline;
 	static Flux_Pipeline s_xBloomDownsamplePipeline;

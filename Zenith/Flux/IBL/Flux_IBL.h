@@ -151,10 +151,6 @@ private:
 	static Flux_Shader s_xIrradianceConvolveShader;
 	static Flux_Shader s_xPrefilterShader;
 
-	// Convolution binding handles
-	static Flux_BindingHandle s_xIrradianceFrameConstantsBinding;
-	static Flux_BindingHandle s_xPrefilterFrameConstantsBinding;
-
 	// Configuration state
 	static bool s_bEnabled;
 	static float s_fIntensity;
@@ -169,9 +165,9 @@ private:
 	static u_int s_uRegenFace;  // Current face being processed (0-5)
 	static u_int s_uRegenMip;   // Current mip being processed (0-6, prefilter only)
 
-	// Render-graph pass indices — populated by SetupRenderGraph and consumed by
+	// Render-graph pass handles — populated by SetupRenderGraph and consumed by
 	// UpdateGraphPassEnables to flip per-pass enable bits each frame.
-	static u_int s_uBRDFLUTPassIdx;
-	static u_int s_auIrradianceFacePassIdx[6];
-	static u_int s_auPrefilterMipFacePassIdx[IBLConfig::uPREFILTER_MIP_COUNT][6];
+	static Flux_PassHandle s_xBRDFLUTPassHandle;
+	static Flux_PassHandle s_axIrradianceFacePassHandles[6];
+	static Flux_PassHandle s_axPrefilterMipFacePassHandles[IBLConfig::uPREFILTER_MIP_COUNT][6];
 };

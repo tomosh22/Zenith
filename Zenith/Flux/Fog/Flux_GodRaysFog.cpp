@@ -40,10 +40,6 @@ DEBUGVAR float dbg_fGodRaysWeight = 0.5f;
 // Cached constants for push constant
 static Flux_GodRaysConstants s_xConstants;
 
-// Cached binding handles from shader reflection
-static Flux_BindingHandle s_xFrameConstantsBinding;
-static Flux_BindingHandle s_xDepthBinding;
-
 void Flux_GodRaysFog::Initialise()
 {
 	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_GodRays.frag");
@@ -52,7 +48,7 @@ void Flux_GodRaysFog::Initialise()
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &s_xShader;
@@ -69,11 +65,6 @@ void Flux_GodRaysFog::Initialise()
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
-
-	// Cache binding handles from shader reflection
-	const Flux_ShaderReflection& xReflection = s_xShader.GetReflection();
-	s_xFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-	s_xDepthBinding = xReflection.GetBinding("g_xDepthTex");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "God Rays", "Sample Count" }, dbg_uGodRaysSamples, 8, 128);
@@ -138,10 +129,10 @@ void Flux_GodRaysFog::Render(Flux_CommandList* pxCommandList)
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV(s_xDepthBinding, Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindCBV(s_xShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindSRV(s_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 
-	xBinder.BindDrawConstants(&s_xConstants, sizeof(Flux_GodRaysConstants));
+	xBinder.BindDrawConstants(s_xShader, "GodRaysConstants", &s_xConstants, sizeof(Flux_GodRaysConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

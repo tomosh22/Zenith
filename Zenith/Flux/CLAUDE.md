@@ -50,12 +50,14 @@ Platform-agnostic command recording. Commands stored sequentially in dynamically
 ### Material System
 Materials (`Zenith_MaterialAsset`) store textures and rendering properties. Located in `AssetHandling/`. Use `SetDiffuseWithPath()` when creating materials to store texture source path for scene serialization. See `AssetHandling/CLAUDE.md` for details on material and texture asset management.
 
+### Backend Abstraction
+The renderer is backend-agnostic. `Flux_Backend.h` aggregates the seven C++20 concepts that any backend must satisfy: `FluxBackendDevice`, `FluxBackendMemoryAlloc`, `FluxBackendMemoryDelete`, `FluxBackendCommandRecorder`, `FluxBackendSync`, `FluxBackendPresentation`, and the shader/pipeline-builder family (`FluxBackendShader`, `FluxBackendPipelineBuilder`, `FluxBackendComputePipelineBuilder`, `FluxBackendRootSigBuilder`). `Backend/Flux_BackendConformance.cpp` static-asserts the active backend against each concept, so signature drift fails the build instead of the first frame. Adding a second backend (DX12 / Metal / WebGPU) means providing classes that satisfy each concept and adding the conformance asserts.
+
 ## Configuration
 
 Key constants in `Core/ZenithConfig.h`:
 - `FLUX_MAX_TARGETS` - Maximum render targets per pass
 - `FLUX_MAX_BINDINGS_PER_GROUP` - Descriptors per shader
-- `STATIC_MESH_VERTEX_STRIDE` - 60 bytes (position, UV, normal, tangent, bitangent, color)
 - `MAX_FRAMES_IN_FLIGHT` - Frame pipelining count
 
 ## Key Concepts

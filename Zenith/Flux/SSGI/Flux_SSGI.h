@@ -24,7 +24,17 @@ public:
 
 	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	// For deferred shading to sample
+	// Called every frame before Compile — detects runtime toggle of the
+	// denoise debug variable and requests a full graph rebuild via
+	// Flux::RequestGraphRebuild(). See Flux_SSR::ApplyBlurSelectionToGraph for
+	// the rationale: MarkDirty alone would leave Flux_DeferredShading's
+	// declared Read pointing at the stale transient handle.
+	static void ApplyDenoiseSelectionToGraph(Flux_RenderGraph& xGraph);
+
+	// For deferred shading to sample — returns the handle currently serving
+	// as SSGI's output (denoised if denoise is on, resolved if off).
+	static Flux_TransientHandle GetSSGIHandle();
+
 	static Flux_ShaderResourceView& GetSSGISRV();
 	static bool IsEnabled();
 	static bool IsInitialised();
@@ -32,14 +42,11 @@ public:
 	// Configuration
 	static bool s_bEnabled;
 
-	// Attachment accessors (return transient or owned depending on current mode)
+	// Attachment accessors
 	static Flux_RenderAttachment& GetRawResultAttachment();
 	static Flux_RenderAttachment& GetResolvedAttachment();
 	static Flux_RenderAttachment& GetDenoisedAttachment();
 
 private:
-	static void CreateOwnedRenderTargets();
-	static void DestroyOwnedRenderTargets();
-
 	static bool s_bInitialised;
 };

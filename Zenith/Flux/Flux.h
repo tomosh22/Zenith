@@ -161,6 +161,16 @@ struct Flux_Buffer
 // Subsystems declare these instead of allocating their own Flux_RenderAttachment.
 // The graph allocates the backing resource at Compile() time and may alias
 // non-overlapping lifetimes in a future version.
+//
+// #TODO: Add Flux_TransientBufferDesc + Flux_RenderGraph::CreateTransientBuffer
+// once a concrete use case emerges. The graph already emits buffer barriers
+// (see Flux_RenderGraph::SynthesizeBarriers), so the missing piece is just
+// graph-owned buffer allocation + aliasing pools. Audit existing
+// Flux_ReadWriteBuffer / Flux_IndirectBuffer usage first — most of today's
+// instances (HDR histogram, instance-group transforms, particle ping-pong
+// buffers, etc.) carry data ACROSS frames and are NOT transient candidates.
+// CBVs are explicitly out of scope: the per-frame scratch UBO path covers
+// that case already and aliasing tiny constant buffers wins nothing.
 
 struct Flux_TransientTextureDesc
 {
@@ -177,7 +187,42 @@ struct Flux_TransientTextureDesc
 struct Flux_TransientHandle
 {
 	u_int m_uIndex = UINT32_MAX;
+	// Generation of the Flux_RenderGraph that issued this handle. Compared in
+	// ReadTransient / WriteTransient / GetTransientAttachment and asserts if
+	// the graph has been Clear()'d / rebuilt since — catches "cached handle
+	// from last compile" bugs that would otherwise silently reference a
+	// deallocated transient slot or the wrong slot after re-ordering.
+	u_int m_uGeneration = 0;
+	// Per-graph-instance ID (monotonic counter on Flux_RenderGraph). Ensures
+	// two graphs that happen to share (index, generation) issue handles that
+	// still compare unequal — matters for unit tests and any future path that
+	// holds multiple graphs live concurrently. 0 is the "no graph" sentinel.
+	u_int m_uGraphInstanceID = 0;
 	bool IsValid() const { return m_uIndex != UINT32_MAX; }
+	// Equality is by index + generation + graph-instance. Handles from
+	// different graphs or different generations of the same graph never compare
+	// equal even if they share an index.
+	bool operator==(const Flux_TransientHandle& rhs) const { return m_uIndex == rhs.m_uIndex && m_uGeneration == rhs.m_uGeneration && m_uGraphInstanceID == rhs.m_uGraphInstanceID; }
+	bool operator!=(const Flux_TransientHandle& rhs) const { return !(*this == rhs); }
+};
+
+// Opaque, type-safe pass handle. Replaces the raw `u_int uPassIndex` that
+// Flux_RenderGraph::AddPass used to return. A Flux_PassHandle carries the
+// graph's generation counter so that passing a stale handle (e.g. one saved
+// across a graph rebuild on window resize) trips an assertion instead of
+// silently addressing a different pass.
+struct Flux_PassHandle
+{
+	u_int m_uIndex = UINT32_MAX;
+	u_int m_uGeneration = 0;
+	// Per-graph-instance ID (see Flux_TransientHandle::m_uGraphInstanceID).
+	u_int m_uGraphInstanceID = 0;
+	bool IsValid() const { return m_uIndex != UINT32_MAX; }
+	// Equality is by index + generation + graph-instance. Two handles with the
+	// same index but different generations (e.g. one from before Clear(), one
+	// from after) are NOT equal; neither are handles from different graphs.
+	bool operator==(const Flux_PassHandle& rhs) const { return m_uIndex == rhs.m_uIndex && m_uGeneration == rhs.m_uGeneration && m_uGraphInstanceID == rhs.m_uGraphInstanceID; }
+	bool operator!=(const Flux_PassHandle& rhs) const { return !(*this == rhs); }
 };
 
 // ---- Render graph resource tagging --------------------------------------
@@ -317,6 +362,20 @@ public:
 	void BuildColourCubemap(Flux_RenderAttachmentCube& xAttachment, const std::string& strName);
 	void BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string& strName);
 
+	// Aliased variants — skip the CreateRenderTargetVRAM call and use a
+	// pre-created aliased-image VRAM handle (from CreateAliasedImageVRAM).
+	// Used by the render graph's transient-aliasing path in AllocateTransients
+	// when SetAliasingEnabled(true) and the backend reports aliasing support.
+	// Everything else (view creation, surface info, tools name) runs identically
+	// to the non-aliased path; the only difference is who owns the underlying
+	// VkImage allocation.
+	void BuildColourFromAliasedVRAM(Flux_RenderAttachment& xAttachment,
+	                                const std::string& strName,
+	                                Flux_VRAMHandle xAliasedVRAM);
+	void BuildDepthStencilFromAliasedVRAM(Flux_RenderAttachment& xAttachment,
+	                                       const std::string& strName,
+	                                       Flux_VRAMHandle xAliasedVRAM);
+
 	// Queue the attachment's VRAM and every owned image view for deferred GPU-safe
 	// deletion and reset the attachment to a default-constructed state. Safe to
 	// call on an already-cleared attachment (no-op). The Build* methods above use
@@ -418,6 +477,14 @@ public:
 
 	static Flux_RenderGraph& GetRenderGraph() { return *s_pxRenderGraph; }
 	static void SetupRenderGraph();
+
+	// Called every frame from Zenith_Core::ExecuteRenderGraph before Compile.
+	// Forwards the current value of debug variables that the render graph
+	// cares about (e.g. transient aliasing toggle) into the graph via their
+	// respective setters; the setters MarkDirty on change, so toggling the
+	// editor variable mid-frame takes effect on the next Compile rather
+	// than waiting for the next SetupRenderGraph (which only runs on resize).
+	static void SyncRenderGraphDebugToggles();
 
 	// Request a full graph rebuild (Clear + SetupRenderGraph) at the start of
 	// the next frame. Safe to call from execute callbacks — the rebuild is

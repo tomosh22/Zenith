@@ -98,7 +98,18 @@ public:
 	}
 
 	// Get binding location by name (for named resource binding)
-	Flux_BindingHandle GetBinding(const char* szName) const { return m_xReflection.GetBinding(szName); }
+	Flux_BindingHandle GetBinding(const char* szName) const
+	{
+		const Flux_ReflectedBinding* pxBinding = m_xReflection.GetBinding(szName);
+		Zenith_Assert(pxBinding != nullptr, "Shader binding '%s' not found in reflection", szName);
+		Flux_BindingHandle xHandle;
+		if (pxBinding)
+		{
+			xHandle.m_uSet     = pxBinding->m_uSet;
+			xHandle.m_uBinding = pxBinding->m_uBinding;
+		}
+		return xHandle;
+	}
 
 	// Check if reflection data is available for name-based lookups
 	bool HasReflection() const { return m_xReflection.GetBindings().GetSize() > 0; }
@@ -201,12 +212,20 @@ class Zenith_Vulkan_ComputePipelineBuilder
 {
 public:
 	Zenith_Vulkan_ComputePipelineBuilder();
-	
+
 	Zenith_Vulkan_ComputePipelineBuilder& WithShader(const Zenith_Vulkan_Shader& shader);
 	Zenith_Vulkan_ComputePipelineBuilder& WithLayout(vk::PipelineLayout layout);
-	
+
 	void Build(Zenith_Vulkan_Pipeline& pipelineOut);
-	
+
+	// One-call helper — combines WithShader + WithLayout + Build + assigning
+	// the root signature into the pipeline's m_xRootSig slot. Engine code
+	// uses this rather than reaching into Flux_RootSig::m_xLayout (vk type)
+	// or assigning Flux_Pipeline::m_xRootSig directly.
+	static void BuildFromShader(Zenith_Vulkan_Pipeline& xPipelineOut,
+	                            const Zenith_Vulkan_Shader& xShader,
+	                            const Zenith_Vulkan_RootSig& xRootSig);
+
 private:
 	const Zenith_Vulkan_Shader* m_pxShader = nullptr;
 	vk::PipelineLayout m_xLayout;

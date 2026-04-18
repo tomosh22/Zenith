@@ -48,19 +48,6 @@ Flux_Pipeline Flux_Skybox::s_xSolidColourPipeline;
 Flux_Shader Flux_Skybox::s_xSolidColourShader;
 Flux_DynamicConstantBuffer Flux_Skybox::s_xSolidColourConstantsBuffer;
 
-// Cached binding handles for cubemap
-static Flux_BindingHandle s_xCubemapFrameConstantsBinding;
-static Flux_BindingHandle s_xCubemapTextureBinding;
-
-// Cached binding handles for atmosphere
-static Flux_BindingHandle s_xAtmosFrameConstantsBinding;
-static Flux_BindingHandle s_xAtmosConstantsBinding;
-
-// Cached binding handles for aerial perspective
-static Flux_BindingHandle s_xAerialFrameConstantsBinding;
-static Flux_BindingHandle s_xAerialAtmosConstantsBinding;
-static Flux_BindingHandle s_xAerialDepthTexBinding;
-
 // Solid colour override constants
 struct SkyboxOverrideConstants
 {
@@ -173,16 +160,10 @@ void Flux_Skybox::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xAtmospherePipeline, xSpec);
 	}
 
-	{
-		const Flux_ShaderReflection& xReflection = s_xAtmosphereShader.GetReflection();
-		s_xAtmosFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-		s_xAtmosConstantsBinding = xReflection.GetBinding("AtmosphereConstants");
-	}
-
 	// ========== Aerial perspective pipeline (alpha blending) ==========
 	{
 		Flux_PipelineSpecification xSpec;
-		xSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+		xSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 		xSpec.m_uNumColourAttachments = 1;
 		// skybox renders to MRT colour only, no depth (default TEXTURE_FORMAT_NONE)
 		xSpec.m_pxShader = &s_xAerialPerspectiveShader;
@@ -192,13 +173,6 @@ void Flux_Skybox::Initialise()
 		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
 		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 		Flux_PipelineBuilder::FromSpecification(s_xAerialPerspectivePipeline, xSpec);
-	}
-
-	{
-		const Flux_ShaderReflection& xReflection = s_xAerialPerspectiveShader.GetReflection();
-		s_xAerialFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-		s_xAerialAtmosConstantsBinding = xReflection.GetBinding("AtmosphereConstants");
-		s_xAerialDepthTexBinding = xReflection.GetBinding("g_xDepthTex");
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -310,8 +284,8 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 
 		{
 			Flux_ShaderBinder xBinder(*pxCommandList);
-			xBinder.BindCBV(s_xAtmosFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-			xBinder.BindCBV(s_xAtmosConstantsBinding, &Flux_Skybox::s_xAtmosphereConstantsBuffer.GetCBV());
+			xBinder.BindCBV(Flux_Skybox::s_xAtmosphereShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+			xBinder.BindCBV(Flux_Skybox::s_xAtmosphereShader, "AtmosphereConstants", &Flux_Skybox::s_xAtmosphereConstantsBuffer.GetCBV());
 		}
 
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -347,9 +321,9 @@ static void ExecuteAerialPerspective(Flux_CommandList* pxCommandList, void*)
 
 	{
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindCBV(s_xAerialFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindCBV(s_xAerialAtmosConstantsBinding, &Flux_Skybox::s_xAtmosphereConstantsBuffer.GetCBV());
-		xBinder.BindSRV(s_xAerialDepthTexBinding, &Flux_Graphics::GetDepthAttachment().SRV());
+		xBinder.BindCBV(Flux_Skybox::s_xAerialPerspectiveShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(Flux_Skybox::s_xAerialPerspectiveShader, "AtmosphereConstants", &Flux_Skybox::s_xAtmosphereConstantsBuffer.GetCBV());
+		xBinder.BindSRV(Flux_Skybox::s_xAerialPerspectiveShader, "g_xDepthTex", &Flux_Graphics::GetDepthAttachment().SRV());
 	}
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -361,12 +335,12 @@ void Flux_Skybox::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// all G-Buffer channels via OutputToGBuffer, so it's the natural place to
 	// clear the MRT target (both color — redundantly — and depth, which the
 	// subsequent geometry passes need for depth testing).
-	uint32_t uSkyPassIndex = xGraph.AddPass("Skybox", ExecuteSkybox);
-	xGraph.Write(uSkyPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uSkyPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uSkyPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.SetPrepare(uSkyPassIndex, PreExecuteSkybox);
-	xGraph.SetClear(uSkyPassIndex, true);
+	xGraph.AddPass("Skybox", ExecuteSkybox)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Prepare(PreExecuteSkybox)
+		.ClearTargets();
 }
 
 void Flux_Skybox::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)
@@ -376,11 +350,9 @@ void Flux_Skybox::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)
 	// (see Flux::SetupRenderGraph) so the writer-chain topological order puts
 	// it downstream of the lighting pass — otherwise it would blend into stale
 	// last-frame HDR and produce garbage.
-	uint32_t uAerialPassIndex = xGraph.AddPass("Aerial Perspective", ExecuteAerialPerspective);
-	xGraph.Write(uAerialPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
-
-	// Reads: depth buffer
-	xGraph.Read(uAerialPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+	xGraph.AddPass("Aerial Perspective", ExecuteAerialPerspective)
+		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 }
 
 // Setters

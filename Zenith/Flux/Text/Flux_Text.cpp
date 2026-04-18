@@ -281,6 +281,6 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 
 void Flux_Text::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	uint32_t uPass = xGraph.AddPass("Text", ExecuteText);
-	xGraph.Write(uPass, Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.AddPass("Text", ExecuteText)
+		.Writes(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }

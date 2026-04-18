@@ -31,7 +31,22 @@ public:
 
 	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	// For deferred shading to sample
+	// Called every frame before Compile — detects runtime toggle of the
+	// roughness-blur debug variable and requests a full graph rebuild via
+	// Flux::RequestGraphRebuild(). A rebuild (not just MarkDirty) is required
+	// because Flux_DeferredShading captures GetReflectionHandle() at
+	// SetupRenderGraph time; the deferred pass's declared Read on the SSR
+	// output must update when the toggle flips which transient serves as the
+	// "output". MarkDirty alone would re-Compile on stale declarations.
+	static void ApplyBlurSelectionToGraph(Flux_RenderGraph& xGraph);
+
+	// For deferred shading to sample — returns the handle currently serving
+	// as SSR's output (resolved if blur is on, raw if off). Consumers should
+	// declare a Read on this handle; no runtime re-binding required.
+	static Flux_TransientHandle GetReflectionHandle();
+
+	// For deferred shading to sample — same selection as GetReflectionHandle
+	// but returns the live SRV for BindSRV.
 	static Flux_ShaderResourceView& GetReflectionSRV();
 	static bool IsEnabled();
 	static bool IsInitialised();
@@ -39,13 +54,10 @@ public:
 	// Configuration
 	static bool s_bEnabled;
 
-	// Attachment accessors (return transient or owned depending on current mode)
+	// Attachment accessors
 	static Flux_RenderAttachment& GetRayMarchAttachment();
 	static Flux_RenderAttachment& GetResolvedAttachment();
 
 private:
-	static void CreateOwnedRenderTargets();
-	static void DestroyOwnedRenderTargets();
-
 	static bool s_bInitialised;
 };

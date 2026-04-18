@@ -290,8 +290,9 @@ void Flux_ShaderHotReload::ProcessPendingReloads()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Reloading %u pipeline(s)...",
 			   static_cast<u_int>(axPipelinesToReload.size()));
 
-	// Wait for GPU to be idle before recreating pipelines
-	Flux_PlatformAPI::GetDevice().waitIdle();
+	// Wait for GPU to be idle before recreating pipelines.
+	// Engine-typed wrapper rather than reaching into the backend's vk::Device.
+	Flux_PlatformAPI::WaitForGPUIdle();
 
 	// Reload each pipeline
 	for (RegisteredPipeline* pxPipeline : axPipelinesToReload)

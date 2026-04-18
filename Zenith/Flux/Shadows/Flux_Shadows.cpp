@@ -10,18 +10,12 @@
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 
-// ---- Transient path (graph-owned allocation) ----
+// Graph-owned transient — backing Flux_RenderAttachment is allocated and
+// destroyed by the render graph, sized from the descriptor in SetupRenderGraph.
+// CSM_FORMAT is declared in Flux_Shadows.h so subsystems that build shadow
+// pipelines at Initialise() time can reference it.
 static Flux_TransientHandle g_axCSMHandles[ZENITH_FLUX_NUM_CSMS];
 static Flux_RenderGraph* s_pxGraph = nullptr;
-
-// ---- Fallback path (subsystem-owned allocation) ----
-static Flux_RenderAttachment g_axCSMs_Owned[ZENITH_FLUX_NUM_CSMS];
-
-// ---- Toggle: which path is active this frame ----
-static bool s_bUsingTransients = false;
-
-// CSM format (constant -- pipeline building doesn't depend on allocation path)
-static constexpr TextureFormat CSM_FORMAT = TEXTURE_FORMAT_D32_SFLOAT;
 
 static Zenith_Maths::Matrix4 g_axShadowMatrices[ZENITH_FLUX_NUM_CSMS];
 
@@ -32,13 +26,10 @@ static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
 DEBUGVAR bool dbg_bEnabled = true;
 DEBUGVAR float dbg_fZMultiplier = 8.f;
 
-// ---- Helper to get the right CSM attachment regardless of path ----
-
 static Flux_RenderAttachment& GetCSM(u_int uIndex)
 {
-	if (s_bUsingTransients)
-		return s_pxGraph->GetTransientAttachment(g_axCSMHandles[uIndex]);
-	return g_axCSMs_Owned[uIndex];
+	Zenith_Assert(s_pxGraph, "Flux_Shadows::GetCSM: graph pointer is null");
+	return s_pxGraph->GetTransientAttachment(g_axCSMHandles[uIndex]);
 }
 
 struct FrustumCorners
@@ -96,24 +87,14 @@ static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Ze
 
 void Flux_Shadows::Initialise()
 {
-	// Owned targets are always created -- used when transients are toggled off.
-	Flux_RenderAttachmentBuilder xBuilder;
-	xBuilder.m_uWidth = ZENITH_FLUX_CSM_RESOLUTION;
-	xBuilder.m_uHeight = ZENITH_FLUX_CSM_RESOLUTION;
-	xBuilder.m_eFormat = CSM_FORMAT;
-	xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
-
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		xBuilder.BuildDepthStencil(g_axCSMs_Owned[u], "CSM " + std::to_string(u) + " (owned)");
-
 		Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xShadowMatrixBuffers[u]);
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({"Render", "Enable", "Shadows"}, dbg_bEnabled);
 	Zenith_DebugVariables::AddFloat({"Render", "Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
-	Zenith_DebugVariables::AddTexture({"Render", "Shadows", "CSM0" }, g_axCSMs_Owned->SRV());
 #endif
 }
 
@@ -121,16 +102,6 @@ void Flux_Shadows::Shutdown()
 {
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		// Destroy owned CSM render attachment
-		if (g_axCSMs_Owned[u].m_xVRAMHandle.IsValid())
-		{
-			Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(g_axCSMs_Owned[u].m_xVRAMHandle);
-			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, g_axCSMs_Owned[u].m_xVRAMHandle,
-				g_axCSMs_Owned[u].RTV().m_xImageViewHandle, g_axCSMs_Owned[u].DSV().m_xImageViewHandle,
-				g_axCSMs_Owned[u].SRV().m_xImageViewHandle, g_axCSMs_Owned[u].UAV(0).m_xImageViewHandle);
-		}
-
-		// Destroy shadow matrix buffer
 		Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xShadowMatrixBuffers[u]);
 	}
 
@@ -147,15 +118,14 @@ static const char* const s_aszShadowCascadePassNames[ZENITH_FLUX_NUM_CSMS] =
 };
 static_assert(ZENITH_FLUX_NUM_CSMS == 4, "s_aszShadowCascadePassNames must match ZENITH_FLUX_NUM_CSMS");
 
-// W23: small ints packed into user-data void* — matches the convention used in HDR.
-static inline void* PackSmallInt(u_int u) { return reinterpret_cast<void*>(static_cast<uintptr_t>(u)); }
-static inline u_int UnpackSmallInt(void* p) { return static_cast<u_int>(reinterpret_cast<uintptr_t>(p)); }
+// Cascade index is passed through the graph's typed user-data slot — see
+// Flux_PassBuilder::UserData<T> / Flux_UnpackUserData<T> in Flux_RenderGraph.h.
 
 static void PreExecuteShadowMatrices(void*)
 {
-	// W3: CPU-side shadow matrix update runs once per frame on the main thread
-	// before parallel cascade recording begins. Used to live inside cascade 0's
-	// Execute callback, which forced the cascades to serialize.
+	// CPU-side shadow matrix update runs once per frame on the main thread
+	// before parallel cascade recording begins. Runs as a Prepare callback on
+	// cascade 0 so the cascade Execute callbacks can then record in parallel.
 	if (!dbg_bEnabled)
 	{
 		return;
@@ -170,7 +140,7 @@ static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserDat
 		return;
 	}
 
-	uint32_t u = UnpackSmallInt(pUserData);
+	const uint32_t u = Flux_UnpackUserData<uint32_t>(pUserData);
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
 
@@ -189,45 +159,30 @@ static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserDat
 void Flux_Shadows::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	s_pxGraph = &xGraph;
-	s_bUsingTransients = xGraph.AreTransientsEnabled();
 
-	// Declare transient resources if enabled
-	if (s_bUsingTransients)
+	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-		{
-			Flux_TransientTextureDesc xCSMDesc;
-			xCSMDesc.m_uWidth = ZENITH_FLUX_CSM_RESOLUTION;
-			xCSMDesc.m_uHeight = ZENITH_FLUX_CSM_RESOLUTION;
-			xCSMDesc.m_eFormat = CSM_FORMAT;
-			xCSMDesc.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
-			xCSMDesc.m_bIsDepthStencil = true;
+		Flux_TransientTextureDesc xCSMDesc;
+		xCSMDesc.m_uWidth = ZENITH_FLUX_CSM_RESOLUTION;
+		xCSMDesc.m_uHeight = ZENITH_FLUX_CSM_RESOLUTION;
+		xCSMDesc.m_eFormat = CSM_FORMAT;
+		xCSMDesc.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
+		xCSMDesc.m_bIsDepthStencil = true;
 
-			g_axCSMHandles[u] = xGraph.CreateTransient(xCSMDesc);
-		}
+		g_axCSMHandles[u] = xGraph.CreateTransient(xCSMDesc);
 	}
 
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		const u_int uPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade, PackSmallInt(u));
-		uint32_t uNumColour;
-		Flux_RenderAttachment* pxDepthStencil;
-		Flux_Shadows::GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
-		// Each cascade owns its own target setup and clears its depth.
-		xGraph.SetClear(uPass, true);
-
-		// W2: CSM targets are depth textures -- declare as DSV writes, not RTV.
-		if (s_bUsingTransients)
-			xGraph.WriteTransient(uPass, g_axCSMHandles[u], RESOURCE_ACCESS_WRITE_DSV);
-		else
-			xGraph.Write(uPass, g_axCSMs_Owned[u], RESOURCE_ACCESS_WRITE_DSV);
-
-		// W3: cascade 0 owns the CPU-side matrix update via its pre-execute callback.
-		// No inter-cascade GPU dependency exists, so the 4 cascades now record in parallel.
+		// CSM targets are depth textures — declared as DSV writes, not RTV.
+		// Cascade 0 owns the CPU-side matrix update via its pre-execute callback;
+		// other cascades have no GPU dependency on each other so they record in parallel.
+		const Flux_PassHandle xPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade)
+			.UserData(u)
+			.ClearTargets()
+			.WritesTransient(g_axCSMHandles[u], RESOURCE_ACCESS_WRITE_DSV);
 		if (u == 0)
-		{
-			xGraph.SetPrepare(uPass, PreExecuteShadowMatrices);
-		}
+			xGraph.SetPrepare(xPass, PreExecuteShadowMatrices);
 	}
 }
 

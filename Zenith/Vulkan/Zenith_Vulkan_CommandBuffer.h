@@ -25,6 +25,12 @@ struct Flux_RenderAttachment;
 struct Flux_RenderGraph_AttachmentRef;
 class Flux_GraphResource;
 
+// Translate the engine-facing ResourceAccess enum into the Vulkan (layout,
+// access mask, pipeline stage) triple required by a pipeline barrier.
+// bIsDepth selects the depth variants for the depth-attachment layouts.
+void Flux_ResourceAccessToVulkan(ResourceAccess eAccess, bool bIsDepth,
+	vk::ImageLayout& eOutLayout, vk::AccessFlags& eOutAccess, vk::PipelineStageFlags& eOutStage);
+
 struct ScratchBufferBinding {
 	u_int m_uOffset = 0;
 	u_int m_uSize = 0;
@@ -110,6 +116,18 @@ public:
 	void ImageTransition(const Flux_GraphResource& xResource,
 		uint32_t uBaseMip, uint32_t uMipCount,
 		uint32_t uBaseLayer, uint32_t uLayerCount,
+		ResourceAccess eSrcAccess, ResourceAccess eDstAccess);
+
+	// Buffer-side equivalent of ImageTransition: emits a single
+	// vk::BufferMemoryBarrier covering the whole buffer with stage / access
+	// masks derived from Flux_ResourceAccessToVulkan. Buffers have no layout
+	// transitions, so this is a pure memory + execution barrier — RAW, WAW,
+	// or WAR ordering on UAV / indirect-arg / vertex / index buffers between
+	// passes. Used by the render-graph prologue-barrier emitter for buffer
+	// entries in m_xPrologueBarriers (see Flux_RenderGraph_Barrier doc).
+	// pxBuffer must be non-null; its m_xVRAMHandle must reference a valid
+	// VRAM allocation.
+	void BufferBarrier(Flux_Buffer* pxBuffer,
 		ResourceAccess eSrcAccess, ResourceAccess eDstAccess);
 
 	void RenderImGui();

@@ -3,12 +3,10 @@
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux.h"
-
-//#TO_TODO: need a platform independent way of handling this
-#ifdef ZENITH_VULKAN
-#include "Zenith_Vulkan_Pipeline.h"
+// Pulled in for Flux_Graphics::s_xRepeatSampler (used by the texture preview
+// widget); CreateImGuiTextureID itself is on Flux_PlatformAPI and reachable
+// via the platform-graphics include already in Flux.h.
 #include "Flux/Flux_Graphics.h"
-#endif
 
 Zenith_DebugVariableTree Zenith_DebugVariables::s_xTree;
 
@@ -58,47 +56,24 @@ void Zenith_DebugVariableTree::LeafNodeWithRange<float, float>::ImGuiDisplay()
 template<>
 void Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>::ImGuiDisplay()
 {
-	//#TO_TODO: need a platform independent way of handling this
-#ifdef ZENITH_VULKAN
+	// Engine-typed wrapper — backend allocates the per-frame descriptor set
+	// and returns an opaque uint64 that ImGui treats as a texture ID. Avoids
+	// dragging Vulkan descriptor / image-view types into the debug-variable
+	// system; portable to backends with different ImGui texture-ID conventions
+	// once each backend implements CreateImGuiTextureID.
+	const uint64_t ulTextureID = Flux_PlatformAPI::CreateImGuiTextureID(*m_pData, Flux_Graphics::s_xRepeatSampler);
+	ImGui::Image(static_cast<ImTextureID>(ulTextureID), ImVec2(1024, 1024), ImVec2(0, 1), ImVec2(1, 0));
+}
 
-	vk::DescriptorSetLayoutBinding xBinding = vk::DescriptorSetLayoutBinding()
-		.setBinding(0)
-		.setDescriptorCount(1)
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setStageFlags(vk::ShaderStageFlagBits::eFragment);
-
-	vk::DescriptorSetLayoutCreateInfo xInfo = vk::DescriptorSetLayoutCreateInfo()
-		.setBindingCount(1)
-		.setPBindings(&xBinding);
-
-	vk::DescriptorSetLayout xLayout = Zenith_Vulkan::GetDevice().createDescriptorSetLayout(xInfo);
-
-	// Use worker index 0 since this is called from the main thread during ImGui rendering
-	vk::DescriptorSetAllocateInfo xAllocInfo = vk::DescriptorSetAllocateInfo()
-		.setDescriptorPool(Zenith_Vulkan::GetPerFrameDescriptorPool(0))
-		.setDescriptorSetCount(1)
-		.setPSetLayouts(&xLayout);
-
-	vk::DescriptorSet xSet = Zenith_Vulkan::GetDevice().allocateDescriptorSets(xAllocInfo)[0];
-
-	vk::DescriptorImageInfo xImageInfo = vk::DescriptorImageInfo()
-		.setSampler(Flux_Graphics::s_xRepeatSampler.GetSampler())
-		.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(m_pData->m_xImageViewHandle))
-		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
-
-	vk::WriteDescriptorSet xImageWriteInfo = vk::WriteDescriptorSet()
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setDstSet(xSet)
-		.setDstBinding(0)
-		.setDstArrayElement(0)
-		.setDescriptorCount(1)
-		.setPImageInfo(&xImageInfo);
-
-	Zenith_Vulkan::GetDevice().updateDescriptorSets(1, &xImageWriteInfo, 0, nullptr);
-
-	// ImGui docking branch uses ImTextureID which is a void* or ImU64
-	ImGui::Image((ImTextureID)(uintptr_t)static_cast<VkDescriptorSet>(xSet), ImVec2(1024, 1024), ImVec2(0, 1), ImVec2(1, 0));
-#endif
+void Zenith_DebugVariableTree::TextureCallbackLeafNode::ImGuiDisplay()
+{
+	// Resolve the current SRV each draw so the preview follows render-graph
+	// rebuilds. Callback may return nullptr during early startup before the
+	// graph's transients are allocated — in that case render nothing.
+	const Flux_ShaderResourceView* pxSRV = m_pfnGetSRV ? m_pfnGetSRV() : nullptr;
+	if (pxSRV == nullptr) return;
+	const uint64_t ulTextureID = Flux_PlatformAPI::CreateImGuiTextureID(*pxSRV, Flux_Graphics::s_xRepeatSampler);
+	ImGui::Image(static_cast<ImTextureID>(ulTextureID), ImVec2(1024, 1024), ImVec2(0, 1), ImVec2(1, 0));
 }
 
 template<>

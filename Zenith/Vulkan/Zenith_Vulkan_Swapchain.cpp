@@ -5,6 +5,7 @@
 #include "Zenith_Vulkan.h"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Zenith_Vulkan_MemoryManager.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -31,7 +32,7 @@ vk::Extent2D Zenith_Vulkan_Swapchain::s_xExtent;
 uint32_t Zenith_Vulkan_Swapchain::s_uCurrentImageIndex = 0;
 vk::Semaphore Zenith_Vulkan_Swapchain::s_axImageAvailableSemaphores[MAX_FRAMES_IN_FLIGHT];
 vk::Semaphore Zenith_Vulkan_Swapchain::s_axRenderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
-uint32_t Zenith_Vulkan_Swapchain::s_uFrameIndex = 0;
+// s_uFrameIndex was removed when Flux_PerFrame took ownership of the ring counter.
 Flux_RenderAttachment Zenith_Vulkan_Swapchain::s_axColourAttachments[MAX_FRAMES_IN_FLIGHT];
 bool Zenith_Vulkan_Swapchain::s_bShouldWaitOnImageAvailableSem;
 
@@ -319,7 +320,7 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	//#TO_TODO: -1 here to shut up validation layer
-	vk::Result eResult = xDevice.acquireNextImageKHR(s_xSwapChain, UINT64_MAX - 1, s_axImageAvailableSemaphores[s_uFrameIndex], nullptr, &s_uCurrentImageIndex);
+	vk::Result eResult = xDevice.acquireNextImageKHR(s_xSwapChain, UINT64_MAX - 1, s_axImageAvailableSemaphores[GetCurrentFrameIndex()], nullptr, &s_uCurrentImageIndex);
 
 	s_bShouldWaitOnImageAvailableSem = eResult == vk::Result::eSuccess;
 
@@ -484,12 +485,23 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		Zenith_Assert(eResult == vk::Result::eSuccess || eResult == vk::Result::eErrorOutOfDateKHR || eResult == vk::Result::eSuboptimalKHR, "Failed to present");
 
 	}
-	s_uFrameIndex = (s_uFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+	// Frame counter advance is now owned by Flux_PerFrame::EndFrame, called
+	// once at the bottom of Zenith_MainLoop. Removed the local counter bump
+	// here to keep one source of truth.
 }
 
 vk::Semaphore& Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore()
 {
-	return s_axImageAvailableSemaphores[s_uFrameIndex];
+	return s_axImageAvailableSemaphores[GetCurrentFrameIndex()];
+}
+
+uint32_t Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()
+{
+	// Single source of truth — Flux_PerFrame owns the monotonic frame counter
+	// and the ring index. The swapchain's previous s_uFrameIndex member has
+	// been removed; backends and engine code that need the current ring slot
+	// all derive it from here.
+	return Flux_PerFrame::GetRingIndex();
 }
 
 Flux_RenderAttachment* Zenith_Vulkan_Swapchain::GetCurrentSwapchainTarget(uint32_t& uNumColourAttachments, Flux_RenderAttachment*& pxDepthStencil)

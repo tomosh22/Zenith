@@ -25,7 +25,11 @@ public:
 
 	static vk::Semaphore& GetCurrentImageAvailableSemaphore();
 
-	static uint32_t GetCurrentFrameIndex() { return s_uFrameIndex; }
+	// Ring index in [0, MAX_FRAMES_IN_FLIGHT). Owned by Flux_PerFrame as the
+	// engine's single source of truth for frame counting; this accessor is
+	// retained for compatibility but defined out-of-line so the header can
+	// stay free of the Flux_PerFrame include.
+	static uint32_t GetCurrentFrameIndex();
 
 	static vk::Format GetFormat() { return s_xImageFormat; }
 
@@ -45,7 +49,6 @@ private:
 	static vk::Semaphore s_axImageAvailableSemaphores[MAX_FRAMES_IN_FLIGHT];
 	static vk::Semaphore s_axRenderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
 	static uint32_t s_uCurrentImageIndex; //set by acquireNextImageKHR
-	static uint32_t s_uFrameIndex; //set by us
 	static bool s_bShouldWaitOnImageAvailableSem;
 
 	static Flux_RenderAttachment s_axColourAttachments[MAX_FRAMES_IN_FLIGHT];

@@ -715,6 +715,9 @@
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp">
       <Filter>Flux\AnimatedMeshes</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Backend\Flux_BackendConformance.cpp">
+      <Filter>Flux\Backend</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp">
       <Filter>Flux\DeferredShading</Filter>
     </ClCompile>
@@ -734,6 +737,9 @@
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_PerFrame.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_RenderTargets.cpp">
@@ -3318,6 +3324,27 @@
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h">
       <Filter>Flux\AnimatedMeshes</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h">
+      <Filter>Flux\Backend\Concepts</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Device.h">
+      <Filter>Flux\Backend\Concepts</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_MemoryAlloc.h">
+      <Filter>Flux\Backend\Concepts</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_MemoryDelete.h">
+      <Filter>Flux\Backend\Concepts</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_PipelineConstruction.h">
+      <Filter>Flux\Backend\Concepts</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Presentation.h">
+      <Filter>Flux\Backend\Concepts</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Sync.h">
+      <Filter>Flux\Backend\Concepts</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h">
       <Filter>Flux\DeferredShading</Filter>
     </ClInclude>
@@ -3325,6 +3352,9 @@
       <Filter>Flux\DynamicLights</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_Backend.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Buffers.h">
@@ -3349,6 +3379,9 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_PerFrame.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h">
@@ -3453,9 +3486,6 @@
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFs.h">
       <Filter>Flux\SDFs</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_FragCommon.fxh">
-      <Filter>Flux\Shaders\AnimatedMeshes</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToGBuffer.frag">
       <Filter>Flux\Shaders\AnimatedMeshes</Filter>
     </ClInclude>
@@ -3466,9 +3496,6 @@
       <Filter>Flux\Shaders\AnimatedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToShadowmap.vert">
-      <Filter>Flux\Shaders\AnimatedMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_VertCommon.fxh">
       <Filter>Flux\Shaders\AnimatedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common.fxh">
@@ -3483,8 +3510,20 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.vert">
       <Filter>Flux\Shaders\ComputeTest</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\DeferredShading_IBL.fxh">
+      <Filter>Flux\Shaders\DeferredShading</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\DeferredShading_Lighting.fxh">
+      <Filter>Flux\Shaders\DeferredShading</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\DeferredShading_Shadows.fxh">
+      <Filter>Flux\Shaders\DeferredShading</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag">
       <Filter>Flux\Shaders\DeferredShading</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\DrawConstants.fxh">
+      <Filter>Flux\Shaders</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.frag">
       <Filter>Flux\Shaders\DynamicLights</Filter>
@@ -3570,9 +3609,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceCulling.comp">
       <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_FragCommon.fxh">
-      <Filter>Flux\Shaders\InstancedMeshes</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToGBuffer.frag">
       <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
@@ -3585,11 +3621,14 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToShadowMap.vert">
       <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_VertCommon.fxh">
-      <Filter>Flux\Shaders\InstancedMeshes</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\MaterialCommon.fxh">
       <Filter>Flux\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Meshes\Mesh_Frag.fxh">
+      <Filter>Flux\Shaders\Meshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Meshes\Mesh_Vert.fxh">
+      <Filter>Flux\Shaders\Meshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.frag">
       <Filter>Flux\Shaders\Particles</Filter>
@@ -3614,9 +3653,6 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_Quads.vert">
       <Filter>Flux\Shaders\Quads</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\RayMarchCommon.fxh">
-      <Filter>Flux\Shaders</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag">
       <Filter>Flux\Shaders\SDFs</Filter>
@@ -3660,9 +3696,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Resolve.frag">
       <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_FragCommon.fxh">
-      <Filter>Flux\Shaders\StaticMeshes</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToGBuffer.frag">
       <Filter>Flux\Shaders\StaticMeshes</Filter>
     </ClInclude>
@@ -3673,9 +3706,6 @@
       <Filter>Flux\Shaders\StaticMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToShadowmap.vert">
-      <Filter>Flux\Shaders\StaticMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_VertCommon.fxh">
       <Filter>Flux\Shaders\StaticMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.comp">
@@ -3995,6 +4025,12 @@
     <Filter Include="Flux\AnimatedMeshes">
       <UniqueIdentifier>{bf2887ce-a035-709c-1b23-f354257dbdb0}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\Backend">
+      <UniqueIdentifier>{d65fb194-fec4-5546-28de-fa5f31c432fa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Backend\Concepts">
+      <UniqueIdentifier>{e0dff4ef-3f2c-0602-3bf0-62d10cc745dc}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\DeferredShading">
       <UniqueIdentifier>{a9dab6da-cbee-63eb-9c37-5df5e2db7ddb}</UniqueIdentifier>
     </Filter>
@@ -4081,6 +4117,9 @@
     </Filter>
     <Filter Include="Flux\Shaders\InstancedMeshes">
       <UniqueIdentifier>{b314e0cc-c57a-cfb4-9281-f0bd3ebfb433}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Shaders\Meshes">
+      <UniqueIdentifier>{0ccfc8ef-5e0f-f523-bf44-e3e26190921a}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\Particles">
       <UniqueIdentifier>{4ebcffad-75d4-aa28-cf01-3889f4480f8b}</UniqueIdentifier>

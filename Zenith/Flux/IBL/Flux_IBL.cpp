@@ -45,16 +45,9 @@ u_int Flux_IBL::s_uRegenMip = 0;
 
 // Render-graph pass indices — populated by SetupRenderGraph, consumed every
 // frame by UpdateGraphPassEnables.
-u_int Flux_IBL::s_uBRDFLUTPassIdx = UINT32_MAX;
-u_int Flux_IBL::s_auIrradianceFacePassIdx[6] = { UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX };
-u_int Flux_IBL::s_auPrefilterMipFacePassIdx[IBLConfig::uPREFILTER_MIP_COUNT][6] = {};
-
-// Cached binding handles
-static Flux_BindingHandle s_xBRDFLUTFrameConstantsBinding;
-Flux_BindingHandle Flux_IBL::s_xIrradianceFrameConstantsBinding;
-Flux_BindingHandle Flux_IBL::s_xPrefilterFrameConstantsBinding;
-static Flux_BindingHandle s_xIrradianceSkyboxBinding;
-static Flux_BindingHandle s_xPrefilterSkyboxBinding;
+Flux_PassHandle Flux_IBL::s_xBRDFLUTPassHandle = {};
+Flux_PassHandle Flux_IBL::s_axIrradianceFacePassHandles[6] = {};
+Flux_PassHandle Flux_IBL::s_axPrefilterMipFacePassHandles[IBLConfig::uPREFILTER_MIP_COUNT][6] = {};
 
 // Per-pass user data structs — small PODs holding the (mip, face) the pass
 // targets. Pointer-stable file-static storage so the graph can hand them as
@@ -81,29 +74,15 @@ void Flux_IBL::Initialise()
 		s_xBRDFLUTShader, s_xBRDFLUTPipeline,
 		"IBL/Flux_BRDFIntegration.frag", s_xBRDFLUT.m_xSurfaceInfo.m_eFormat);
 
-	s_xBRDFLUTFrameConstantsBinding = s_xBRDFLUTShader.GetReflection().GetBinding("FrameConstants");
-
 	// Initialize irradiance convolution shader and pipeline
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xIrradianceConvolveShader, s_xIrradianceConvolvePipeline,
 		"IBL/Flux_IrradianceConvolution.frag", s_xIrradianceMap.m_xSurfaceInfo.m_eFormat);
 
-	{
-		const Flux_ShaderReflection& xReflection = s_xIrradianceConvolveShader.GetReflection();
-		s_xIrradianceFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-		s_xIrradianceSkyboxBinding = xReflection.GetBinding("g_xSkyboxCubemap");
-	}
-
 	// Initialize prefilter shader and pipeline
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xPrefilterShader, s_xPrefilterPipeline,
 		"IBL/Flux_PrefilterEnvMap.frag", s_xPrefilteredMap.m_xSurfaceInfo.m_eFormat);
-
-	{
-		const Flux_ShaderReflection& xReflection = s_xPrefilterShader.GetReflection();
-		s_xPrefilterFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-		s_xPrefilterSkyboxBinding = xReflection.GetBinding("g_xSkyboxCubemap");
-	}
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
@@ -281,12 +260,12 @@ void Flux_IBL::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 	// passes have no explicit dependency edges, so SetPassEnabled takes the
 	// cheap m_bEnabledMaskDirty path (clear-flag re-resolve only, no full
 	// recompile).
-	xGraph.SetEnabled(s_uBRDFLUTPassIdx, bRunBRDF);
+	xGraph.SetEnabled(s_xBRDFLUTPassHandle, bRunBRDF);
 	for (u_int uFace = 0; uFace < 6; uFace++)
-		xGraph.SetEnabled(s_auIrradianceFacePassIdx[uFace], abRunIrradiance[uFace]);
+		xGraph.SetEnabled(s_axIrradianceFacePassHandles[uFace], abRunIrradiance[uFace]);
 	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
 		for (u_int uFace = 0; uFace < 6; uFace++)
-			xGraph.SetEnabled(s_auPrefilterMipFacePassIdx[uMip][uFace], abRunPrefilter[uMip][uFace]);
+			xGraph.SetEnabled(s_axPrefilterMipFacePassHandles[uMip][uFace], abRunPrefilter[uMip][uFace]);
 }
 
 void Flux_IBL::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
@@ -299,7 +278,7 @@ void Flux_IBL::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(s_xBRDFLUTFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(s_xBRDFLUTShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
 	s_bBRDFLUTGenerated = true;
@@ -322,15 +301,12 @@ void Flux_IBL::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserDat
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(s_xIrradianceFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindDrawConstants(&xConsts, sizeof(xConsts));
-		if (s_xIrradianceSkyboxBinding.IsValid())
-		{
-			if (Flux_Graphics::s_pxCubemapTexture)
-				xBinder.BindSRV(s_xIrradianceSkyboxBinding, &Flux_Graphics::s_pxCubemapTexture->GetSRV());
-			else if (Flux_Graphics::s_pxBlackTexture)
-				xBinder.BindSRV(s_xIrradianceSkyboxBinding, &Flux_Graphics::s_pxBlackTexture->GetSRV());
-		}
+		xBinder.BindCBV(s_xIrradianceConvolveShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindDrawConstants(s_xIrradianceConvolveShader, "IrradianceConstants", &xConsts, sizeof(xConsts));
+		if (Flux_Graphics::s_pxCubemapTexture)
+			xBinder.BindSRV(s_xIrradianceConvolveShader, "g_xSkyboxCubemap", &Flux_Graphics::s_pxCubemapTexture->GetSRV());
+		else if (Flux_Graphics::s_pxBlackTexture)
+			xBinder.BindSRV(s_xIrradianceConvolveShader, "g_xSkyboxCubemap", &Flux_Graphics::s_pxBlackTexture->GetSRV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -352,15 +328,12 @@ void Flux_IBL::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserD
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(s_xPrefilterFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindDrawConstants(&xConsts, sizeof(xConsts));
-		if (s_xPrefilterSkyboxBinding.IsValid())
-		{
-			if (Flux_Graphics::s_pxCubemapTexture)
-				xBinder.BindSRV(s_xPrefilterSkyboxBinding, &Flux_Graphics::s_pxCubemapTexture->GetSRV());
-			else if (Flux_Graphics::s_pxBlackTexture)
-				xBinder.BindSRV(s_xPrefilterSkyboxBinding, &Flux_Graphics::s_pxBlackTexture->GetSRV());
-		}
+		xBinder.BindCBV(s_xPrefilterShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindDrawConstants(s_xPrefilterShader, "PrefilterConstants", &xConsts, sizeof(xConsts));
+		if (Flux_Graphics::s_pxCubemapTexture)
+			xBinder.BindSRV(s_xPrefilterShader, "g_xSkyboxCubemap", &Flux_Graphics::s_pxCubemapTexture->GetSRV());
+		else if (Flux_Graphics::s_pxBlackTexture)
+			xBinder.BindSRV(s_xPrefilterShader, "g_xSkyboxCubemap", &Flux_Graphics::s_pxBlackTexture->GetSRV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -379,11 +352,9 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// OnPrepare because Phase 0 only fires OnPrepare for *enabled* passes).
 	// SetPassClearTargets(true) is safe even when the pass is disabled —
 	// ResolveClearFlags filters disabled passes out of clear ownership.
-	{
-		s_uBRDFLUTPassIdx = xGraph.AddPass("IBL BRDF LUT", ExecuteBRDFLUTPass);
-		xGraph.SetClear(s_uBRDFLUTPassIdx, true);
-		xGraph.Write(s_uBRDFLUTPassIdx, s_xBRDFLUT, RESOURCE_ACCESS_WRITE_RTV);
-	}
+	s_xBRDFLUTPassHandle = xGraph.AddPass("IBL BRDF LUT", ExecuteBRDFLUTPass)
+		.ClearTargets()
+		.Writes(s_xBRDFLUT, RESOURCE_ACCESS_WRITE_RTV);
 
 	// 6 irradiance face passes — each writes layer N of the irradiance cubemap.
 	static const char* const s_aszIrradianceFaceNames[6] = {
@@ -392,11 +363,12 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	};
 	for (u_int uFace = 0; uFace < 6; uFace++)
 	{
-		s_auIrradianceFacePassIdx[uFace] = xGraph.AddPass(s_aszIrradianceFaceNames[uFace], ExecuteIrradianceFacePass, &s_auIrradianceFaceData[uFace]);
-		xGraph.SetClear(s_auIrradianceFacePassIdx[uFace], true);
-		// Declare write to (mip 0, face uFace) slice of the cubemap so the graph can
-		// select the per-(mip, face) RTV and emit a tight subresource barrier.
-		xGraph.Write(s_auIrradianceFacePassIdx[uFace], s_xIrradianceMap, RESOURCE_ACCESS_WRITE_RTV, 0, 1, uFace, 1);
+		// Per-(mip 0, face uFace) slice write — the graph picks the per-(mip, face)
+		// RTV and emits a tight subresource barrier.
+		s_axIrradianceFacePassHandles[uFace] = xGraph.AddPass(
+				s_aszIrradianceFaceNames[uFace], ExecuteIrradianceFacePass, &s_auIrradianceFaceData[uFace])
+			.ClearTargets()
+			.Writes(s_xIrradianceMap, RESOURCE_ACCESS_WRITE_RTV, 0, 1, uFace, 1);
 	}
 
 	// 42 prefilter mip-face passes — each writes one (mip, face) slot of the
@@ -416,11 +388,11 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		{
 			s_axPrefilterPassData[uMip][uFace].m_uMip = uMip;
 			s_axPrefilterPassData[uMip][uFace].m_uFace = uFace;
-			s_auPrefilterMipFacePassIdx[uMip][uFace] = xGraph.AddPass(s_aszPrefilterPassNames[uMip * 6 + uFace],
-				ExecutePrefilterMipFacePass, &s_axPrefilterPassData[uMip][uFace]);
-			xGraph.SetClear(s_auPrefilterMipFacePassIdx[uMip][uFace], true);
-			// Declare write to (mip uMip, face uFace) slice.
-			xGraph.Write(s_auPrefilterMipFacePassIdx[uMip][uFace], s_xPrefilteredMap, RESOURCE_ACCESS_WRITE_RTV, uMip, 1, uFace, 1);
+			s_axPrefilterMipFacePassHandles[uMip][uFace] = xGraph.AddPass(
+					s_aszPrefilterPassNames[uMip * 6 + uFace],
+					ExecutePrefilterMipFacePass, &s_axPrefilterPassData[uMip][uFace])
+				.ClearTargets()
+				.Writes(s_xPrefilteredMap, RESOURCE_ACCESS_WRITE_RTV, uMip, 1, uFace, 1);
 		}
 	}
 }
@@ -462,11 +434,10 @@ void Flux_IBL::DestroyRenderTargets()
 	Flux_RenderAttachmentBuilder::Destroy(s_xPrefilteredMap);
 }
 
-// Phase 5.1: GenerateBRDFLUT/UpdateSkyIBL/GenerateIrradianceMap/GeneratePrefilteredMap
-// were the old bypass-submit path. Their work is now performed by graph-driven
-// per-pass execute callbacks (IBLBRDFLUTExecute / IBLIrradianceFaceExecute /
-// IBLPrefilterMipFaceExecute) that fill per-pass command lists during Phase 1.
-// The functions remain only as no-op compatibility shims for any external caller.
+// No-op compatibility shims — all IBL generation work is performed by graph-
+// driven per-pass execute callbacks (IBLBRDFLUTExecute / IBLIrradianceFaceExecute /
+// IBLPrefilterMipFaceExecute). These entry points remain only for external
+// callers that expect the imperative API; consider deleting them if unused.
 void Flux_IBL::GenerateBRDFLUT()
 {
 	// No-op: BRDF LUT generation is driven by the render graph + per-frame

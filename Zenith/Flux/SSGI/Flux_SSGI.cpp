@@ -12,21 +12,15 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-// ---- Transient path (graph-owned allocation) ----
+// Graph-owned transient handles — backing Flux_RenderAttachments are allocated
+// and destroyed by the render graph, sized from the descriptors set in
+// SetupRenderGraph.
 static Flux_TransientHandle s_xRawResultHandle;
 static Flux_TransientHandle s_xResolvedHandle;
 static Flux_TransientHandle s_xDenoisedHandle;
 static Flux_RenderGraph* s_pxGraph = nullptr;
 
-// ---- Fallback path (subsystem-owned allocation) ----
-static Flux_RenderAttachment s_xRawResult_Owned;
-static Flux_RenderAttachment s_xResolved_Owned;
-static Flux_RenderAttachment s_xDenoised_Owned;
-
-// ---- Toggle: which path is active this frame ----
-static bool s_bUsingTransients = false;
-
-// SSGI render target format (constant - pipeline building doesn't depend on allocation path)
+// SSGI render target format.
 static constexpr TextureFormat SSGI_FORMAT = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 
 // Static member definitions
@@ -74,157 +68,59 @@ static Flux_Pipeline s_xRayMarchPipeline;
 static Flux_Pipeline s_xUpsamplePipeline;
 static Flux_Pipeline s_xDenoisePipeline;
 
-// Cached binding handles for ray march pass
-static Flux_BindingHandle s_xRM_FrameConstantsBinding;
-static Flux_BindingHandle s_xRM_DepthTexBinding;
-static Flux_BindingHandle s_xRM_NormalsTexBinding;
-static Flux_BindingHandle s_xRM_MaterialTexBinding;
-static Flux_BindingHandle s_xRM_HiZTexBinding;
-static Flux_BindingHandle s_xRM_DiffuseTexBinding;
-static Flux_BindingHandle s_xRM_BlueNoiseTexBinding;
-
-// Cached binding handles for upsample pass
-static Flux_BindingHandle s_xUS_SSGITexBinding;
-static Flux_BindingHandle s_xUS_DepthTexBinding;
-
-// Cached binding handles for denoise pass
-static Flux_BindingHandle s_xDN_SSGITexBinding;
-static Flux_BindingHandle s_xDN_DepthTexBinding;
-static Flux_BindingHandle s_xDN_NormalsTexBinding;
-static Flux_BindingHandle s_xDN_AlbedoTexBinding;
-
-// ---- Helpers to get the right attachment regardless of path ----
-
 Flux_RenderAttachment& Flux_SSGI::GetRawResultAttachment()
 {
-	if (s_bUsingTransients)
-		return s_pxGraph->GetTransientAttachment(s_xRawResultHandle);
-	return s_xRawResult_Owned;
+	Zenith_Assert(s_pxGraph, "Flux_SSGI::GetRawResultAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return s_pxGraph->GetTransientAttachment(s_xRawResultHandle);
 }
-
 Flux_RenderAttachment& Flux_SSGI::GetResolvedAttachment()
 {
-	if (s_bUsingTransients)
-		return s_pxGraph->GetTransientAttachment(s_xResolvedHandle);
-	return s_xResolved_Owned;
+	Zenith_Assert(s_pxGraph, "Flux_SSGI::GetResolvedAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return s_pxGraph->GetTransientAttachment(s_xResolvedHandle);
 }
-
 Flux_RenderAttachment& Flux_SSGI::GetDenoisedAttachment()
 {
-	if (s_bUsingTransients)
-		return s_pxGraph->GetTransientAttachment(s_xDenoisedHandle);
-	return s_xDenoised_Owned;
+	Zenith_Assert(s_pxGraph, "Flux_SSGI::GetDenoisedAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return s_pxGraph->GetTransientAttachment(s_xDenoisedHandle);
 }
 
-// ---- Fallback: subsystem-owned create/destroy ----
-
-void Flux_SSGI::CreateOwnedRenderTargets()
+#ifdef ZENITH_DEBUG_VARIABLES
+// Debug-texture callbacks — resolved every ImGui draw so the preview follows
+// render-graph rebuilds. Returning nullptr before SetupRenderGraph avoids
+// tripping the null-guard asserts in the attachment getters above.
+static const Flux_ShaderResourceView* DebugGetRawSRV()
 {
-	u_int uFullWidth = Flux_Swapchain::GetWidth();
-	u_int uFullHeight = Flux_Swapchain::GetHeight();
-	u_int uHalfWidth = uFullWidth / 2;
-	u_int uHalfHeight = uFullHeight / 2;
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI::CreateOwnedRenderTargets() - Full: %ux%u, Half: %ux%u",
-		uFullWidth, uFullHeight, uHalfWidth, uHalfHeight);
-
-	// Create raw ray march result (half-res, RGBA16F)
-	{
-		Flux_RenderAttachmentBuilder xBuilder;
-		xBuilder.m_uWidth = uHalfWidth;
-		xBuilder.m_uHeight = uHalfHeight;
-		xBuilder.m_eFormat = SSGI_FORMAT;
-		xBuilder.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-		xBuilder.BuildColour(s_xRawResult_Owned, "SSGI RayMarch (owned)");
-	}
-
-	// Create resolved/upsampled result (full-res, RGBA16F)
-	{
-		Flux_RenderAttachmentBuilder xBuilder;
-		xBuilder.m_uWidth = uFullWidth;
-		xBuilder.m_uHeight = uFullHeight;
-		xBuilder.m_eFormat = SSGI_FORMAT;
-		xBuilder.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-		xBuilder.BuildColour(s_xResolved_Owned, "SSGI Resolved (owned)");
-	}
-
-	// Create denoised result (full-res, RGBA16F)
-	{
-		Flux_RenderAttachmentBuilder xBuilder;
-		xBuilder.m_uWidth = uFullWidth;
-		xBuilder.m_uHeight = uFullHeight;
-		xBuilder.m_eFormat = SSGI_FORMAT;
-		xBuilder.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-		xBuilder.BuildColour(s_xDenoised_Owned, "SSGI Denoised (owned)");
-	}
+	if (s_pxGraph == nullptr) return nullptr;
+	return &Flux_SSGI::GetRawResultAttachment().SRV();
 }
-
-void Flux_SSGI::DestroyOwnedRenderTargets()
+static const Flux_ShaderResourceView* DebugGetResolvedSRV()
 {
-	auto QueueDeletion = [](Flux_RenderAttachment& xAttachment)
-	{
-		if (xAttachment.m_xVRAMHandle.IsValid())
-		{
-			Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
-			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
-				xAttachment.RTV().m_xImageViewHandle,
-				xAttachment.DSV().m_xImageViewHandle,
-				xAttachment.SRV().m_xImageViewHandle,
-				xAttachment.UAV(0).m_xImageViewHandle);
-		}
-	};
-
-	QueueDeletion(s_xRawResult_Owned);
-	QueueDeletion(s_xResolved_Owned);
-	QueueDeletion(s_xDenoised_Owned);
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI::DestroyOwnedRenderTargets()");
+	if (s_pxGraph == nullptr) return nullptr;
+	return &Flux_SSGI::GetResolvedAttachment().SRV();
 }
+static const Flux_ShaderResourceView* DebugGetDenoisedSRV()
+{
+	if (s_pxGraph == nullptr) return nullptr;
+	return &Flux_SSGI::GetDenoisedAttachment().SRV();
+}
+#endif
 
 void Flux_SSGI::Initialise()
 {
-	// Owned targets are always created - used when transients are toggled off.
-	CreateOwnedRenderTargets();
-
 	// Initialize ray march shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xRayMarchShader, s_xRayMarchPipeline,
 		"SSGI/Flux_SSGI_RayMarch.frag", SSGI_FORMAT);
-
-	{
-		const Flux_ShaderReflection& xReflection = s_xRayMarchShader.GetReflection();
-		s_xRM_FrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-		s_xRM_DepthTexBinding = xReflection.GetBinding("g_xDepthTex");
-		s_xRM_NormalsTexBinding = xReflection.GetBinding("g_xNormalsTex");
-		s_xRM_MaterialTexBinding = xReflection.GetBinding("g_xMaterialTex");
-		s_xRM_HiZTexBinding = xReflection.GetBinding("g_xHiZTex");
-		s_xRM_DiffuseTexBinding = xReflection.GetBinding("g_xDiffuseTex");
-		s_xRM_BlueNoiseTexBinding = xReflection.GetBinding("g_xBlueNoiseTex");
-	}
 
 	// Initialize upsample shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xUpsampleShader, s_xUpsamplePipeline,
 		"SSGI/Flux_SSGI_Upsample.frag", SSGI_FORMAT);
 
-	{
-		const Flux_ShaderReflection& xReflection = s_xUpsampleShader.GetReflection();
-		s_xUS_SSGITexBinding = xReflection.GetBinding("g_xSSGITex");
-		s_xUS_DepthTexBinding = xReflection.GetBinding("g_xDepthTex");
-	}
-
 	// Initialize denoise shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xDenoiseShader, s_xDenoisePipeline,
 		"SSGI/Flux_SSGI_Denoise.frag", SSGI_FORMAT);
-
-	{
-		const Flux_ShaderReflection& xReflection = s_xDenoiseShader.GetReflection();
-		s_xDN_SSGITexBinding = xReflection.GetBinding("g_xSSGITex");
-		s_xDN_DepthTexBinding = xReflection.GetBinding("g_xDepthTex");
-		s_xDN_NormalsTexBinding = xReflection.GetBinding("g_xNormalsTex");
-		s_xDN_AlbedoTexBinding = xReflection.GetBinding("g_xAlbedoTex");
-	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Flux", "SSGI", "Enable" }, dbg_bSSGIEnable);
@@ -235,9 +131,11 @@ void Flux_SSGI::Initialise()
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "StepCount" }, dbg_xSSGIConstants.m_uStepCount, 8, 128);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "StartMip" }, dbg_xSSGIConstants.m_uStartMip, 0, 10);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "RaysPerPixel" }, dbg_xSSGIConstants.m_uRaysPerPixel, 1, 8);
-	Zenith_DebugVariables::AddTexture({ "Flux", "SSGI", "Textures", "Raw" }, s_xRawResult_Owned.SRV());
-	Zenith_DebugVariables::AddTexture({ "Flux", "SSGI", "Textures", "Resolved" }, s_xResolved_Owned.SRV());
-	Zenith_DebugVariables::AddTexture({ "Flux", "SSGI", "Textures", "Denoised" }, s_xDenoised_Owned.SRV());
+	// Transient-SRV previews: AddTextureCallback re-resolves through s_pxGraph
+	// each ImGui draw so the preview survives graph rebuilds (resize, toggle).
+	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSGI", "Textures", "Raw" },      &DebugGetRawSRV);
+	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSGI", "Textures", "Resolved" }, &DebugGetResolvedSRV);
+	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSGI", "Textures", "Denoised" }, &DebugGetDenoisedSRV);
 
 	// Denoise debug variables
 	Zenith_DebugVariables::AddBoolean({ "Flux", "SSGI", "Denoise", "Enable" }, reinterpret_cast<bool&>(dbg_xSSGIDenoiseConstants.m_bEnabled));
@@ -248,22 +146,8 @@ void Flux_SSGI::Initialise()
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Denoise", "AlbedoSigma" }, dbg_xSSGIDenoiseConstants.m_fAlbedoSigma, 0.05f, 0.5f);
 #endif
 
-	// Register resize callback
-	Flux::AddResChangeCallback([]()
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI resize callback triggered");
-
-		DestroyOwnedRenderTargets();
-		CreateOwnedRenderTargets();
-
-#ifdef ZENITH_DEBUG_VARIABLES
-		Zenith_DebugVariables::AddTexture({ "Flux", "SSGI", "Textures", "Raw" }, s_xRawResult_Owned.SRV());
-		Zenith_DebugVariables::AddTexture({ "Flux", "SSGI", "Textures", "Resolved" }, s_xResolved_Owned.SRV());
-		Zenith_DebugVariables::AddTexture({ "Flux", "SSGI", "Textures", "Denoised" }, s_xDenoised_Owned.SRV());
-#endif
-
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI resize complete");
-	});
+	// No resize callback needed — the graph re-creates its transients with
+	// updated dimensions when SetupRenderGraph re-runs on resize.
 
 	s_bInitialised = true;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI initialised");
@@ -274,9 +158,7 @@ void Flux_SSGI::Shutdown()
 	if (!s_bInitialised)
 		return;
 
-	DestroyOwnedRenderTargets();
 	s_pxGraph = nullptr;
-
 	s_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI shut down");
 }
@@ -306,15 +188,15 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(s_xRM_FrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindDrawConstants(&dbg_xSSGIConstants, sizeof(SSGIConstants));
+	xBinder.BindCBV(s_xRayMarchShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindDrawConstants(s_xRayMarchShader, "SSGIConstants", &dbg_xSSGIConstants, sizeof(SSGIConstants));
 
-	xBinder.BindSRV(s_xRM_DepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xRM_NormalsTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xRM_MaterialTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(s_xRM_HiZTexBinding, &Flux_HiZ::GetHiZSRV());
-	xBinder.BindSRV(s_xRM_DiffuseTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(s_xRM_BlueNoiseTexBinding, &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
+	xBinder.BindSRV(s_xRayMarchShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(s_xRayMarchShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(s_xRayMarchShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(s_xRayMarchShader, "g_xHiZTex", &Flux_HiZ::GetHiZSRV());
+	xBinder.BindSRV(s_xRayMarchShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(s_xRayMarchShader, "g_xBlueNoiseTex", &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -331,8 +213,8 @@ static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindSRV(s_xUS_SSGITexBinding, &Flux_SSGI::GetRawResultAttachment().SRV());
-	xBinder.BindSRV(s_xUS_DepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(s_xUpsampleShader, "g_xSSGITex", &Flux_SSGI::GetRawResultAttachment().SRV());
+	xBinder.BindSRV(s_xUpsampleShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -349,114 +231,112 @@ static void ExecuteSSGIDenoise(Flux_CommandList* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindDrawConstants(&dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
+	xBinder.BindDrawConstants(s_xDenoiseShader, "PushConstants", &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
-	xBinder.BindSRV(s_xDN_SSGITexBinding, &Flux_SSGI::GetResolvedAttachment().SRV());
-	xBinder.BindSRV(s_xDN_DepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xDN_NormalsTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xDN_AlbedoTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(s_xDenoiseShader, "g_xSSGITex", &Flux_SSGI::GetResolvedAttachment().SRV());
+	xBinder.BindSRV(s_xDenoiseShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(s_xDenoiseShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(s_xDenoiseShader, "g_xAlbedoTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
+// Handle for the denoise pass so ApplyDenoiseSelectionToGraph can toggle its
+// enable bit when the denoise debug variable changes.
+static Flux_PassHandle s_xDenoisePass;
+// Last value seen by ApplyDenoiseSelectionToGraph — change triggers a graph rebuild.
+static u_int s_uLastDenoiseEnabled = 1;
+// Handle committed at SetupRenderGraph exit. GetSSGIHandle asserts the live
+// toggle still resolves to this handle — any runtime toggle without a matching
+// Flux::RequestGraphRebuild() trips at the point of the mistake.
+static Flux_TransientHandle s_xCommittedSSGIHandle;
+
 void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	s_pxGraph = &xGraph;
-	s_bUsingTransients = xGraph.AreTransientsEnabled();
 
-	u_int uFullWidth = Flux_Swapchain::GetWidth();
-	u_int uFullHeight = Flux_Swapchain::GetHeight();
-	u_int uHalfWidth = uFullWidth / 2;
-	u_int uHalfHeight = uFullHeight / 2;
+	const u_int uFullWidth  = Flux_Swapchain::GetWidth();
+	const u_int uFullHeight = Flux_Swapchain::GetHeight();
+	const u_int uHalfWidth  = uFullWidth  / 2;
+	const u_int uHalfHeight = uFullHeight / 2;
 
-	// Declare transient resources if enabled
-	if (s_bUsingTransients)
-	{
-		// Raw result is half-res
-		{
-			Flux_TransientTextureDesc xDesc;
-			xDesc.m_uWidth = uHalfWidth;
-			xDesc.m_uHeight = uHalfHeight;
-			xDesc.m_eFormat = SSGI_FORMAT;
-			xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-			s_xRawResultHandle = xGraph.CreateTransient(xDesc);
-		}
+	// Raw result is half-res; resolved / denoised are full-res.
+	Flux_TransientTextureDesc xHalf;
+	xHalf.m_uWidth       = uHalfWidth;
+	xHalf.m_uHeight      = uHalfHeight;
+	xHalf.m_eFormat      = SSGI_FORMAT;
+	xHalf.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
+	s_xRawResultHandle = xGraph.CreateTransient(xHalf);
 
-		// Resolved and Denoised are full-res
-		{
-			Flux_TransientTextureDesc xDesc;
-			xDesc.m_uWidth = uFullWidth;
-			xDesc.m_uHeight = uFullHeight;
-			xDesc.m_eFormat = SSGI_FORMAT;
-			xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-			s_xResolvedHandle = xGraph.CreateTransient(xDesc);
-			s_xDenoisedHandle = xGraph.CreateTransient(xDesc);
-		}
-	}
+	Flux_TransientTextureDesc xFull = xHalf;
+	xFull.m_uWidth  = uFullWidth;
+	xFull.m_uHeight = uFullHeight;
+	s_xResolvedHandle = xGraph.CreateTransient(xFull);
+	s_xDenoisedHandle = xGraph.CreateTransient(xFull);
 
-	// Always add all passes - enable/disable is handled at runtime in execute callbacks
+	// RayMarch pass (half-res) — reads G-Buffer + HiZ, writes raw result.
+	xGraph.AddPass("SSGI RayMarch", ExecuteSSGIRayMarch)
+		.ClearTargets()
+		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_HiZ::GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(s_xRawResultHandle,                                        RESOURCE_ACCESS_WRITE_RTV);
 
-	// RayMarch pass - owns its own target, clears.
-	{
-		u_int uPassIndex = xGraph.AddPass("SSGI RayMarch", ExecuteSSGIRayMarch);
-		xGraph.SetClear(uPassIndex, true);
+	// Upsample pass — half→full res bilateral upsample.
+	xGraph.AddPass("SSGI Upsample", ExecuteSSGIUpsample)
+		.ClearTargets()
+		.Reads          (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (s_xRawResultHandle,                  RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(s_xResolvedHandle,                   RESOURCE_ACCESS_WRITE_RTV);
 
-		xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_HiZ::GetHiZAttachment(), RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount);
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_READ_SRV);
+	// Denoise pass — joint bilateral filter. Registered unconditionally;
+	// ApplyDenoiseSelectionToGraph toggles its enable bit.
+	s_xDenoisePass = xGraph.AddPass("SSGI Denoise", ExecuteSSGIDenoise)
+		.ClearTargets()
+		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (s_xResolvedHandle,                                         RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(s_xDenoisedHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
 
-		if (s_bUsingTransients)
-			xGraph.WriteTransient(uPassIndex, s_xRawResultHandle, RESOURCE_ACCESS_WRITE_RTV);
-		else
-			xGraph.Write(uPassIndex, s_xRawResult_Owned, RESOURCE_ACCESS_WRITE_RTV);
-	}
+	xGraph.SetEnabled(s_xDenoisePass, dbg_xSSGIDenoiseConstants.m_bEnabled != 0);
+	s_uLastDenoiseEnabled = dbg_xSSGIDenoiseConstants.m_bEnabled;
 
-	// Upsample pass - owns its own target, clears.
-	{
-		u_int uPassIndex = xGraph.AddPass("SSGI Upsample", ExecuteSSGIUpsample);
-		xGraph.SetClear(uPassIndex, true);
+	// Commit the handle the deferred pass will now read. GetSSGIHandle asserts
+	// against this value — any runtime toggle without a matching
+	// Flux::RequestGraphRebuild() trips at the point of the mistake.
+	s_xCommittedSSGIHandle = dbg_xSSGIDenoiseConstants.m_bEnabled ? s_xDenoisedHandle : s_xResolvedHandle;
+}
 
-		if (s_bUsingTransients)
-		{
-			xGraph.ReadTransient(uPassIndex, s_xRawResultHandle, RESOURCE_ACCESS_READ_SRV);
-			xGraph.WriteTransient(uPassIndex, s_xResolvedHandle, RESOURCE_ACCESS_WRITE_RTV);
-		}
-		else
-		{
-			xGraph.Read(uPassIndex, s_xRawResult_Owned, RESOURCE_ACCESS_READ_SRV);
-			xGraph.Write(uPassIndex, s_xResolved_Owned, RESOURCE_ACCESS_WRITE_RTV);
-		}
+void Flux_SSGI::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
+{
+	if (dbg_xSSGIDenoiseConstants.m_bEnabled == s_uLastDenoiseEnabled)
+		return;
 
-		xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
-	}
+	// Full graph rebuild — see Flux_SSR::ApplyBlurSelectionToGraph for the same
+	// rationale. MarkDirty() alone would leave Flux_DeferredShading reading the
+	// stale transient handle captured at the previous SetupRenderGraph.
+	Flux::RequestGraphRebuild();
+}
 
-	// Denoise pass - owns its own target, clears.
-	{
-		u_int uPassIndex = xGraph.AddPass("SSGI Denoise", ExecuteSSGIDenoise);
-		xGraph.SetClear(uPassIndex, true);
-
-		if (s_bUsingTransients)
-		{
-			xGraph.ReadTransient(uPassIndex, s_xResolvedHandle, RESOURCE_ACCESS_READ_SRV);
-			xGraph.WriteTransient(uPassIndex, s_xDenoisedHandle, RESOURCE_ACCESS_WRITE_RTV);
-		}
-		else
-		{
-			xGraph.Read(uPassIndex, s_xResolved_Owned, RESOURCE_ACCESS_READ_SRV);
-			xGraph.Write(uPassIndex, s_xDenoised_Owned, RESOURCE_ACCESS_WRITE_RTV);
-		}
-
-		xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_READ_SRV);
-	}
+Flux_TransientHandle Flux_SSGI::GetSSGIHandle()
+{
+	const Flux_TransientHandle xLive = dbg_xSSGIDenoiseConstants.m_bEnabled ? s_xDenoisedHandle : s_xResolvedHandle;
+	Zenith_Assert(!s_xCommittedSSGIHandle.IsValid() || xLive == s_xCommittedSSGIHandle,
+		"Flux_SSGI::GetSSGIHandle: live handle (idx=%u gen=%u) disagrees with the handle committed at SetupRenderGraph exit (idx=%u gen=%u). "
+		"Denoise toggle changed without Flux::RequestGraphRebuild() being called in ApplyDenoiseSelectionToGraph — "
+		"MarkDirty() alone does not re-run SetupRenderGraph, so the deferred pass's declared Read is stale.",
+		xLive.m_uIndex, xLive.m_uGeneration,
+		s_xCommittedSSGIHandle.m_uIndex, s_xCommittedSSGIHandle.m_uGeneration);
+	return xLive;
 }
 
 Flux_ShaderResourceView& Flux_SSGI::GetSSGISRV()
 {
-	// Return denoised output if denoise is enabled, otherwise return upsampled result
+	// Must match GetSSGIHandle so bind-time-declared-access assertions see the
+	// same resource the graph has a Read declared on.
 	if (dbg_xSSGIDenoiseConstants.m_bEnabled)
 		return GetDenoisedAttachment().SRV();
 	return GetResolvedAttachment().SRV();

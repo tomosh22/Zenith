@@ -58,6 +58,26 @@ public:
 		void ImGuiDisplay() override;
 	};
 
+	// Callback-backed texture preview. The function pointer is invoked on every
+	// ImGui pass to fetch the current SRV, so the displayed texture stays correct
+	// across render-graph rebuilds that invalidate the SRV stored on the
+	// previously-registered transient. Returning nullptr renders nothing.
+	struct TextureCallbackLeafNode : public LeafNodeBase
+	{
+		const Flux_ShaderResourceView*(*m_pfnGetSRV)() = nullptr;
+
+		TextureCallbackLeafNode(std::vector<std::string>& xName, const Flux_ShaderResourceView*(*pfnGetSRV)())
+		{
+			for (const std::string& strSection : xName)
+			{
+				m_xName.push_back(strSection);
+			}
+			m_pfnGetSRV = pfnGetSRV;
+		}
+
+		void ImGuiDisplay() override;
+	};
+
 	template<typename ValueT, typename RangeT>
 	struct LeafNodeWithRange : public LeafNodeBase
 	{
@@ -196,6 +216,15 @@ public:
 	static void AddTexture(std::vector<std::string> xName, const Flux_ShaderResourceView& xTexture)
 	{
 		Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>* pxLeaf = new Zenith_DebugVariableTree::LeafNode(xName, &xTexture);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
+	// Register a texture preview whose SRV is resolved on every ImGui draw via
+	// the supplied callback. Use this for render-graph transients whose backing
+	// SRV is recreated on resize / graph rebuild — storing a stale pointer via
+	// AddTexture would point at destroyed memory once the graph rebuilds.
+	static void AddTextureCallback(std::vector<std::string> xName, const Flux_ShaderResourceView*(*pfnGetSRV)())
+	{
+		Zenith_DebugVariableTree::TextureCallbackLeafNode* pxLeaf = new Zenith_DebugVariableTree::TextureCallbackLeafNode(xName, pfnGetSRV);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	static void AddText(std::vector<std::string> xName, std::string& strText)

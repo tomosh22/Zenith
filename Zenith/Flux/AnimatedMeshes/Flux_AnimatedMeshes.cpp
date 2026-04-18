@@ -27,23 +27,6 @@ static Flux_Pipeline s_xGBufferPipeline;
 static Flux_Shader s_xShadowShader;
 static Flux_Pipeline s_xShadowPipeline;
 
-// Cached binding handles for named resource binding (populated at init from shader reflection)
-// GBuffer shader bindings
-static Flux_BindingHandle s_xFrameConstantsBinding;
-static Flux_BindingHandle s_xScratchBufferBinding;  // For PushConstant calls
-static Flux_BindingHandle s_xBonesBinding;
-static Flux_BindingHandle s_xDiffuseTexBinding;
-static Flux_BindingHandle s_xNormalTexBinding;
-static Flux_BindingHandle s_xRoughnessMetallicTexBinding;
-static Flux_BindingHandle s_xOcclusionTexBinding;
-static Flux_BindingHandle s_xEmissiveTexBinding;
-
-// Shadow shader bindings
-static Flux_BindingHandle s_xShadowFrameConstantsBinding;
-static Flux_BindingHandle s_xShadowScratchBufferBinding;
-static Flux_BindingHandle s_xShadowBonesBinding;
-static Flux_BindingHandle s_xShadowMatrixBinding;
-
 DEBUGVAR bool dbg_bEnable = true;
 
 void Flux_AnimatedMeshes::Initialise()
@@ -87,16 +70,12 @@ void Flux_AnimatedMeshes::Initialise()
 	}
 
 	{
+		// CSMs are depth-only (GetCSMTargetSetup returns null colour, uNumColour=0).
+		// Format is the shared CSM_FORMAT constant so we don't need the transient
+		// attachment to exist yet.
 		Flux_PipelineSpecification xShadowPipelineSpec;
-		uint32_t uNumColour;
-		Flux_RenderAttachment* pxDepthStencil;
-		Flux_RenderAttachment* pxColour = Flux_Shadows::GetCSMTargetSetup(0, uNumColour, pxDepthStencil);
-		if (pxColour)
-		{
-			xShadowPipelineSpec.m_aeColourAttachmentFormats[0] = pxColour->m_xSurfaceInfo.m_eFormat;
-		}
-		xShadowPipelineSpec.m_uNumColourAttachments = uNumColour;
-		xShadowPipelineSpec.m_eDepthStencilFormat = pxDepthStencil->m_xSurfaceInfo.m_eFormat;
+		xShadowPipelineSpec.m_uNumColourAttachments = 0;
+		xShadowPipelineSpec.m_eDepthStencilFormat = CSM_FORMAT;
 		xShadowPipelineSpec.m_pxShader = &s_xShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -107,30 +86,6 @@ void Flux_AnimatedMeshes::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
 	}
 
-	// Cache binding handles from shader reflection for named resource binding
-	// GBuffer shader bindings
-	const Flux_ShaderReflection& xGBufferReflection = s_xGBufferShader.GetReflection();
-	s_xFrameConstantsBinding = xGBufferReflection.GetBinding("FrameConstants");
-	s_xScratchBufferBinding = xGBufferReflection.GetBinding("DrawConstants");  // Scratch buffer for per-draw data
-	s_xBonesBinding = xGBufferReflection.GetBinding("Bones");
-	s_xDiffuseTexBinding = xGBufferReflection.GetBinding("g_xDiffuseTex");
-	s_xNormalTexBinding = xGBufferReflection.GetBinding("g_xNormalTex");
-	s_xRoughnessMetallicTexBinding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex");
-	s_xOcclusionTexBinding = xGBufferReflection.GetBinding("g_xOcclusionTex");
-	s_xEmissiveTexBinding = xGBufferReflection.GetBinding("g_xEmissiveTex");
-
-	// Shadow shader bindings
-	const Flux_ShaderReflection& xShadowReflection = s_xShadowShader.GetReflection();
-	s_xShadowFrameConstantsBinding = xShadowReflection.GetBinding("FrameConstants");
-	s_xShadowScratchBufferBinding = xShadowReflection.GetBinding("DrawConstants");
-	s_xShadowBonesBinding = xShadowReflection.GetBinding("Bones");
-	s_xShadowMatrixBinding = xShadowReflection.GetBinding("ShadowMatrix");
-
-	// Log binding info for debugging
-	Zenith_Log(LOG_CATEGORY_ANIMATION, "AnimatedMeshes bindings: FrameConstants(set=%u,bind=%u) Bones(set=%u,bind=%u)",
-		s_xFrameConstantsBinding.m_uSet, s_xFrameConstantsBinding.m_uBinding,
-		s_xBonesBinding.m_uSet, s_xBonesBinding.m_uBinding);
-
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Animated Meshes" }, dbg_bEnable);
 #endif
@@ -140,11 +95,11 @@ void Flux_AnimatedMeshes::Initialise()
 
 void Flux_AnimatedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	uint32_t uPassIndex = xGraph.AddPass("Animated Meshes GBuffer", ExecuteGBuffer);
-	xGraph.Write(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_WRITE_DSV);
+	xGraph.AddPass("Animated Meshes GBuffer", ExecuteGBuffer)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 void Flux_AnimatedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
@@ -160,7 +115,7 @@ void Flux_AnimatedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind FrameConstants once per command list (set 0 - per-frame data)
-	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xGBufferShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
@@ -230,15 +185,15 @@ void Flux_AnimatedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			// Build and push material constants (128 bytes) - uses scratch buffer in set 1
 			MaterialDrawConstants xPushConstants;
 			BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
-			xBinder.BindDrawConstants(s_xScratchBufferBinding, &xPushConstants, sizeof(xPushConstants));
+			xBinder.BindDrawConstants(s_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
 
 			// Bind set 1: bone buffer and material textures (named bindings)
-			xBinder.BindCBV(s_xBonesBinding, &xBoneBuffer.GetCBV());
-			xBinder.BindSRV(s_xDiffuseTexBinding, &pxMaterial->GetDiffuseTexture()->m_xSRV);
-			xBinder.BindSRV(s_xNormalTexBinding, &pxMaterial->GetNormalTexture()->m_xSRV);
-			xBinder.BindSRV(s_xRoughnessMetallicTexBinding, &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
-			xBinder.BindSRV(s_xOcclusionTexBinding, &pxMaterial->GetOcclusionTexture()->m_xSRV);
-			xBinder.BindSRV(s_xEmissiveTexBinding, &pxMaterial->GetEmissiveTexture()->m_xSRV);
+			xBinder.BindCBV(s_xGBufferShader, "Bones", &xBoneBuffer.GetCBV());
+			xBinder.BindSRV(s_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
+			xBinder.BindSRV(s_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
+			xBinder.BindSRV(s_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
+			xBinder.BindSRV(s_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
+			xBinder.BindSRV(s_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
 
 			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}
@@ -251,7 +206,7 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flu
 	Flux_ShaderBinder xBinder(xCmdBuf);
 
 	// Bind FrameConstants once per command list (set 0 - per-frame data)
-	xBinder.BindCBV(s_xShadowFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xShadowShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
@@ -292,11 +247,11 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flu
 			Zenith_Maths::Matrix4 xModelMatrix;
 			pxModelComponent->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
 
-			xBinder.BindDrawConstants(s_xShadowScratchBufferBinding, &xModelMatrix, sizeof(xModelMatrix));
+			xBinder.BindDrawConstants(s_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
 
 			// Bind set 1: bone buffer and shadow matrix (named bindings)
-			xBinder.BindCBV(s_xShadowBonesBinding, &xBoneBuffer.GetCBV());
-			xBinder.BindCBV(s_xShadowMatrixBinding, &xShadowMatrixBuffer.GetCBV());
+			xBinder.BindCBV(s_xShadowShader, "Bones", &xBoneBuffer.GetCBV());
+			xBinder.BindCBV(s_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
 
 			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}

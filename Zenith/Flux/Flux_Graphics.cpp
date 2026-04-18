@@ -20,19 +20,14 @@
 #include "Editor/Zenith_Editor.h"
 #endif
 
-// ---- Owned render targets (fallback path) ----
-Flux_RenderAttachment Flux_Graphics::s_axMRTColourAttachments_Owned[MRT_INDEX_COUNT];
-Flux_RenderAttachment Flux_Graphics::s_xFinalRenderTarget_Owned;
-Flux_RenderAttachment Flux_Graphics::s_xFinalRenderTarget_NoDepth_Owned;
-Flux_RenderAttachment Flux_Graphics::s_xDepthBuffer_Owned;
-
-// ---- Transient path ----
+// Graph-owned transients — backing Flux_RenderAttachments are allocated and
+// destroyed by the render graph, sized from the descriptors set in
+// SetupTransients. All G-buffer / depth / final-RT access flows through
+// GetMRTAttachment / GetDepthAttachment / GetFinalRenderTarget.
 Flux_TransientHandle Flux_Graphics::s_axMRTHandles[MRT_INDEX_COUNT];
 Flux_TransientHandle Flux_Graphics::s_xFinalRTHandle;
-Flux_TransientHandle Flux_Graphics::s_xFinalRT_NoDepthHandle;
 Flux_TransientHandle Flux_Graphics::s_xDepthHandle;
 Flux_RenderGraph* Flux_Graphics::s_pxGraph = nullptr;
-bool Flux_Graphics::s_bUsingTransients = false;
 Flux_Sampler Flux_Graphics::s_xRepeatSampler;
 Flux_Sampler Flux_Graphics::s_xClampSampler;
 Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
@@ -155,14 +150,13 @@ void Flux_Graphics::Initialise()
 	Flux_MemoryManager::InitialiseIndexBuffer(s_xQuadMesh.GetIndexData(), s_xQuadMesh.GetIndexDataSize(), s_xQuadMesh.GetIndexBuffer());
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(FrameConstants), s_xFrameConstantsBuffer);
 
-	InitialiseRenderTargets();
-	Flux::AddResChangeCallback(InitialiseRenderTargets);
+	// Render targets are graph-owned transients, created in SetupTransients.
+	// No resize callback needed — the graph re-creates them on every
+	// SetupRenderGraph pass, which is already a resize callback.
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
 	Zenith_DebugVariables::AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
-
-	Zenith_DebugVariables::AddTexture({ "Render", "Debug", "MRT Diffuse" }, s_axMRTColourAttachments_Owned[MRT_INDEX_DIFFUSE].SRV());
 
 	Zenith_DebugVariables::AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
 	Zenith_DebugVariables::AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
@@ -174,44 +168,6 @@ void Flux_Graphics::Initialise()
 	s_xFrameConstantsLayout.m_axBindings[0].m_eType = BINDING_TYPE_BUFFER;
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics Initialised");
-}
-
-void Flux_Graphics::InitialiseRenderTargets()
-{
-	Flux_RenderAttachmentBuilder xBuilder;
-	xBuilder.m_uWidth = Flux_Swapchain::GetWidth();
-	xBuilder.m_uHeight = Flux_Swapchain::GetHeight();
-	xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
-
-	xBuilder.m_eFormat = DEPTH_FORMAT;
-	xBuilder.BuildDepthStencil(s_xDepthBuffer_Owned, "Flux Graphics Depth Buffer");
-	Flux_VRAM* pxDepthVRAM = Flux_PlatformAPI::GetVRAM(s_xDepthBuffer_Owned.m_xVRAMHandle);
-	Zenith_Log(LOG_CATEGORY_RENDERER, "DEBUG: Main depth buffer VRAM=%u VkImage=0x%llx",
-		s_xDepthBuffer_Owned.m_xVRAMHandle.AsUInt(), (unsigned long long)(VkImage)pxDepthVRAM->GetImage());
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Creating render targets: %ux%u", xBuilder.m_uWidth, xBuilder.m_uHeight);
-
-	{
-		for (uint32_t u = 0; u < MRT_INDEX_COUNT; u++)
-		{
-			xBuilder.m_eFormat = s_aeMRTFormats[u];
-			Zenith_Log(LOG_CATEGORY_RENDERER, "Creating MRT[%u] format=%u", u, static_cast<uint32_t>(s_aeMRTFormats[u]));
-			xBuilder.BuildColour(s_axMRTColourAttachments_Owned[u], "Flux Graphics MRT " + std::to_string(u));
-			Zenith_Assert(s_axMRTColourAttachments_Owned[u].RTV().m_xImageViewHandle.IsValid(), "MRT[%u] RTV image view is invalid", u);
-			Zenith_Assert(s_axMRTColourAttachments_Owned[u].SRV().m_xImageViewHandle.IsValid(), "MRT[%u] SRV image view is invalid", u);
-		}
-	}
-
-	{
-		xBuilder.m_eFormat = FINAL_RT_FORMAT;
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Creating final render target format=%u", static_cast<uint32_t>(FINAL_RT_FORMAT));
-		xBuilder.BuildColour(s_xFinalRenderTarget_Owned, "Flux Graphics Final Render Target");
-		Zenith_Assert(s_xFinalRenderTarget_Owned.RTV().m_xImageViewHandle.IsValid(), "Final RT RTV image view is invalid");
-
-		s_xFinalRenderTarget_NoDepth_Owned = s_xFinalRenderTarget_Owned;
-	}
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Render targets created successfully");
 }
 
 bool Flux_Graphics::BuildCameraMatrices(FrameConstants& xConstants)
@@ -350,126 +306,98 @@ float Flux_Graphics::GetAspectRatio()
 void Flux_Graphics::SetupTransients(Flux_RenderGraph& xGraph)
 {
 	s_pxGraph = &xGraph;
-	s_bUsingTransients = xGraph.AreTransientsEnabled();
 
-	if (!s_bUsingTransients)
-		return;
-
-	const u_int uWidth = Flux_Swapchain::GetWidth();
+	const u_int uWidth  = Flux_Swapchain::GetWidth();
 	const u_int uHeight = Flux_Swapchain::GetHeight();
+	Zenith_Assert(uWidth > 0 && uHeight > 0,
+		"Flux_Graphics::SetupTransients: swapchain dimensions are %ux%u — window minimised or swapchain not yet created",
+		uWidth, uHeight);
 
-	// MRT colour attachments
+	// MRT colour attachments (sRGB diffuse, RGBA16F normals+AO, RGBA8 material).
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
 	{
 		Flux_TransientTextureDesc xDesc;
-		xDesc.m_uWidth = uWidth;
-		xDesc.m_uHeight = uHeight;
-		xDesc.m_eFormat = s_aeMRTFormats[u];
+		xDesc.m_uWidth       = uWidth;
+		xDesc.m_uHeight      = uHeight;
+		xDesc.m_eFormat      = s_aeMRTFormats[u];
 		xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 		s_axMRTHandles[u] = xGraph.CreateTransient(xDesc);
 	}
 
-	// Depth buffer (depth-stencil)
+	// Depth buffer.
 	{
 		Flux_TransientTextureDesc xDesc;
-		xDesc.m_uWidth = uWidth;
-		xDesc.m_uHeight = uHeight;
-		xDesc.m_eFormat = DEPTH_FORMAT;
-		xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
+		xDesc.m_uWidth          = uWidth;
+		xDesc.m_uHeight         = uHeight;
+		xDesc.m_eFormat         = DEPTH_FORMAT;
+		xDesc.m_uMemoryFlags    = (1u << MEMORY_FLAGS__SHADER_READ);
 		xDesc.m_bIsDepthStencil = true;
 		s_xDepthHandle = xGraph.CreateTransient(xDesc);
 	}
 
-	// Final render target
+	// Final render target.
 	{
 		Flux_TransientTextureDesc xDesc;
-		xDesc.m_uWidth = uWidth;
-		xDesc.m_uHeight = uHeight;
-		xDesc.m_eFormat = FINAL_RT_FORMAT;
+		xDesc.m_uWidth       = uWidth;
+		xDesc.m_uHeight      = uHeight;
+		xDesc.m_eFormat      = FINAL_RT_FORMAT;
 		xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 		s_xFinalRTHandle = xGraph.CreateTransient(xDesc);
 	}
-
-	// Final render target (no-depth) — same VRAM as FinalRenderTarget.
-	// The _NoDepth variant is just the same target presented without a
-	// depth attachment in the render pass setup. Since transient
-	// allocation gives us a single Flux_RenderAttachment, we reuse the
-	// same handle. The getter resolves to the same attachment.
-	s_xFinalRT_NoDepthHandle = s_xFinalRTHandle;
 }
 
-// ---- Render target getters --------------------------------------------------
+#ifdef ZENITH_TOOLS
+// Debug-variable callbacks: resolve the current MRT transient's SRV at each
+// ImGui draw. Registered once via Zenith_DebugVariables::AddTextureCallback —
+// the callback returns the live SRV pointer from the (possibly just-rebuilt)
+// graph, so rebuilds that invalidate the old SRV don't leave a stale binding
+// in the tree. Returns nullptr if the graph isn't set up yet (safe in early
+// startup before the first SetupTransients call).
+const Flux_ShaderResourceView* Flux_Graphics::GetDebugSRV_MRTDiffuse()
+{
+	if (s_pxGraph == nullptr) return nullptr;
+	return &s_pxGraph->GetTransientAttachment(s_axMRTHandles[MRT_INDEX_DIFFUSE]).SRV();
+}
+const Flux_ShaderResourceView* Flux_Graphics::GetDebugSRV_MRTNormalsAO()
+{
+	if (s_pxGraph == nullptr) return nullptr;
+	return &s_pxGraph->GetTransientAttachment(s_axMRTHandles[MRT_INDEX_NORMALSAMBIENT]).SRV();
+}
+const Flux_ShaderResourceView* Flux_Graphics::GetDebugSRV_MRTMaterial()
+{
+	if (s_pxGraph == nullptr) return nullptr;
+	return &s_pxGraph->GetTransientAttachment(s_axMRTHandles[MRT_INDEX_MATERIAL]).SRV();
+}
+const Flux_ShaderResourceView* Flux_Graphics::GetDebugSRV_Depth()
+{
+	if (s_pxGraph == nullptr) return nullptr;
+	return &s_pxGraph->GetTransientAttachment(s_xDepthHandle).SRV();
+}
+#endif
 
+// Render target getters — always resolve through the graph's transient slot.
 Flux_RenderAttachment& Flux_Graphics::GetMRTAttachment(MRTIndex eIndex)
 {
 	Zenith_Assert(eIndex < MRT_INDEX_COUNT, "Flux_Graphics::GetMRTAttachment: index %u out of range", static_cast<u_int>(eIndex));
-	if (s_bUsingTransients)
-	{
-		Zenith_Assert(s_pxGraph, "Flux_Graphics::GetMRTAttachment: graph pointer is null");
-		// VRAM may not be valid yet during SetupRenderGraph (allocated in Compile).
-		// The returned pointer is stable — safe for graph resource tracking.
-		return s_pxGraph->GetTransientAttachment(s_axMRTHandles[eIndex]);
-	}
-	return s_axMRTColourAttachments_Owned[eIndex];
+	Zenith_Assert(s_pxGraph, "Flux_Graphics::GetMRTAttachment: graph pointer is null — call SetupTransients first");
+	return s_pxGraph->GetTransientAttachment(s_axMRTHandles[eIndex]);
 }
 
 Flux_RenderAttachment& Flux_Graphics::GetDepthAttachment()
 {
-	if (s_bUsingTransients)
-	{
-		Zenith_Assert(s_pxGraph, "Flux_Graphics::GetDepthAttachment: graph pointer is null");
-		return s_pxGraph->GetTransientAttachment(s_xDepthHandle);
-	}
-	return s_xDepthBuffer_Owned;
+	Zenith_Assert(s_pxGraph, "Flux_Graphics::GetDepthAttachment: graph pointer is null");
+	return s_pxGraph->GetTransientAttachment(s_xDepthHandle);
 }
 
 Flux_RenderAttachment& Flux_Graphics::GetFinalRenderTarget()
 {
-	if (s_bUsingTransients)
-	{
-		Zenith_Assert(s_pxGraph, "Flux_Graphics::GetFinalRenderTarget: graph pointer is null");
-		return s_pxGraph->GetTransientAttachment(s_xFinalRTHandle);
-	}
-	return s_xFinalRenderTarget_Owned;
-}
-
-Flux_RenderAttachment& Flux_Graphics::GetFinalRenderTarget_NoDepth()
-{
-	if (s_bUsingTransients)
-	{
-		Zenith_Assert(s_pxGraph, "Flux_Graphics::GetFinalRenderTarget_NoDepth: graph pointer is null");
-		return s_pxGraph->GetTransientAttachment(s_xFinalRT_NoDepthHandle);
-	}
-	return s_xFinalRenderTarget_NoDepth_Owned;
+	Zenith_Assert(s_pxGraph, "Flux_Graphics::GetFinalRenderTarget: graph pointer is null");
+	return s_pxGraph->GetTransientAttachment(s_xFinalRTHandle);
 }
 
 void Flux_Graphics::Shutdown()
 {
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics shutting down...");
-
-	// Helper lambda to destroy a render attachment's VRAM and views
-	auto DestroyRenderAttachment = [](Flux_RenderAttachment& xAttachment)
-	{
-		if (xAttachment.m_xVRAMHandle.IsValid())
-		{
-			Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
-			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
-				xAttachment.RTV().m_xImageViewHandle, xAttachment.DSV().m_xImageViewHandle,
-				xAttachment.SRV().m_xImageViewHandle, xAttachment.UAV(0).m_xImageViewHandle);
-		}
-	};
-
-	// Destroy MRT render targets
-	for (uint32_t u = 0; u < MRT_INDEX_COUNT; u++)
-	{
-		DestroyRenderAttachment(s_axMRTColourAttachments_Owned[u]);
-	}
-
-	// Destroy final render target
-	DestroyRenderAttachment(s_xFinalRenderTarget_Owned);
-
-	// Destroy depth buffer
-	DestroyRenderAttachment(s_xDepthBuffer_Owned);
 
 	s_pxGraph = nullptr;
 

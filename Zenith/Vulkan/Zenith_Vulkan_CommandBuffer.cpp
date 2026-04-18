@@ -380,6 +380,13 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBu
 
 void Zenith_Vulkan_CommandBuffer::BeginRenderPass(const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColourAttachments, const Flux_RenderGraph_AttachmentRef& rxDepthStencil, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool /*= false*/, bool bDepthIsReadOnly /*= false*/)
 {
+	// #TODO: expose DONT_CARE LoadOp as a third option. Today a pass that
+	// fully overwrites its target (e.g. HDR_ToneMapping, Apply Lighting,
+	// SSR RayMarch, SSAO Upsample) has to ClearTargets() because the
+	// alternative is LOAD_ACTION_LOAD — which on tiled GPUs costs a bandwidth-
+	// heavy tile-init read the pass doesn't need. Adding a third state to
+	// Flux_RenderGraph_Pass (e.g. m_bDontCareLoad) and plumbing it here would
+	// let those passes drop the clear without paying for a load.
 	LoadAction eColourLoad = bClearColour ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
 	LoadAction eDepthStencilLoad = bClearDepth ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
 
@@ -652,7 +659,9 @@ void Zenith_Vulkan_CommandBuffer::ImageTransitionBarrierRange(vk::Image xImage,
 // Translate the engine-facing ResourceAccess enum into the Vulkan (layout,
 // access mask, pipeline stage) triple required by a pipeline barrier.
 // bIsDepth selects the depth variants for the depth-attachment layouts.
-static void ResourceAccessToVulkan(ResourceAccess eAccess, bool bIsDepth,
+// Declared in Zenith_Vulkan_CommandBuffer.h so Zenith_Vulkan.cpp can reuse
+// this translation for aliasing-barrier emission.
+void Flux_ResourceAccessToVulkan(ResourceAccess eAccess, bool bIsDepth,
 	vk::ImageLayout& eOutLayout, vk::AccessFlags& eOutAccess, vk::PipelineStageFlags& eOutStage)
 {
 	switch (eAccess)
@@ -722,8 +731,8 @@ static void EmitImageTransition(Zenith_Vulkan_CommandBuffer& rxCmdBuf, vk::Image
 	vk::ImageLayout eOldLayout, eNewLayout;
 	vk::AccessFlags eSrcAccessMask, eDstAccessMask;
 	vk::PipelineStageFlags eSrcStage, eDstStage;
-	ResourceAccessToVulkan(eSrcAccess, bIsDepth, eOldLayout, eSrcAccessMask, eSrcStage);
-	ResourceAccessToVulkan(eDstAccess, bIsDepth, eNewLayout, eDstAccessMask, eDstStage);
+	Flux_ResourceAccessToVulkan(eSrcAccess, bIsDepth, eOldLayout, eSrcAccessMask, eSrcStage);
+	Flux_ResourceAccessToVulkan(eDstAccess, bIsDepth, eNewLayout, eDstAccessMask, eDstStage);
 
 	// UNDEFINED source discards prior contents - the barrier is still a valid
 	// layout transition and drivers do not physically discard pixels on this
@@ -781,6 +790,53 @@ void Zenith_Vulkan_CommandBuffer::ImageTransition(const Flux_GraphResource& xRes
 		IsDepthFormat(xResource.GetSurfaceInfo().m_eFormat),
 		uBaseMip, uMipCount, uBaseLayer, uLayerCount,
 		eSrcAccess, eDstAccess);
+}
+
+void Zenith_Vulkan_CommandBuffer::BufferBarrier(Flux_Buffer* pxBuffer,
+	ResourceAccess eSrcAccess, ResourceAccess eDstAccess)
+{
+	Zenith_Assert(pxBuffer != nullptr, "BufferBarrier: null buffer");
+	if (pxBuffer == nullptr) return;
+
+	Zenith_Assert(pxBuffer->m_xVRAMHandle.IsValid(), "BufferBarrier: invalid VRAM handle");
+	if (!pxBuffer->m_xVRAMHandle.IsValid()) return;
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxBuffer->m_xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr, "BufferBarrier: GetVRAM returned null");
+	if (pxVRAM == nullptr) return;
+
+	// Buffers have no layout — bIsDepth is irrelevant; pass false. We pull the
+	// stage + access masks from the shared access translator and discard the
+	// returned image layout.
+	vk::ImageLayout        eOldLayoutUnused, eNewLayoutUnused;
+	vk::AccessFlags        eSrcAccessMask, eDstAccessMask;
+	vk::PipelineStageFlags eSrcStage, eDstStage;
+	Flux_ResourceAccessToVulkan(eSrcAccess, /*bIsDepth*/ false, eOldLayoutUnused, eSrcAccessMask, eSrcStage);
+	Flux_ResourceAccessToVulkan(eDstAccess, /*bIsDepth*/ false, eNewLayoutUnused, eDstAccessMask, eDstStage);
+
+	// First-touch / undefined-source: skip the access mask. Matches the
+	// EmitImageTransition behaviour and prevents the validation layer from
+	// flagging an "uninitialised access bits" complaint.
+	if (eSrcAccess == RESOURCE_ACCESS_UNDEFINED)
+	{
+		eSrcAccessMask = {};
+	}
+
+	vk::BufferMemoryBarrier xBarrier = vk::BufferMemoryBarrier()
+		.setSrcAccessMask(eSrcAccessMask)
+		.setDstAccessMask(eDstAccessMask)
+		.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+		.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+		.setBuffer(pxVRAM->GetBuffer())
+		.setOffset(0)
+		.setSize(VK_WHOLE_SIZE);
+
+	m_xCurrentCmdBuffer.pipelineBarrier(
+		eSrcStage, eDstStage,
+		vk::DependencyFlags{},
+		0, nullptr,
+		1, &xBarrier,
+		0, nullptr);
 }
 
 void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline)

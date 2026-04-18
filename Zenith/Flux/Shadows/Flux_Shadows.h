@@ -6,6 +6,11 @@
 #include "Flux/Flux.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
+// CSM depth format — exposed here so subsystems that build shadow pipelines at
+// Initialise() time can reference it without going through a graph-owned
+// transient accessor (which requires the graph to exist).
+static constexpr TextureFormat CSM_FORMAT = TEXTURE_FORMAT_D32_SFLOAT;
+
 class Flux_Shadows
 {
 public:

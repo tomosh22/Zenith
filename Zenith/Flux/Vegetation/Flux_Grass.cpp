@@ -41,11 +41,6 @@ Zenith_Maths::Vector2 Flux_Grass::s_xWindDirection = glm::normalize(Zenith_Maths
 
 Flux_DynamicConstantBuffer Flux_Grass::s_xGrassConstantsBuffer;
 
-// Cached binding handles
-static Flux_BindingHandle s_xGrassFrameConstantsBinding;
-static Flux_BindingHandle s_xGrassParamsBinding;
-static Flux_BindingHandle s_xGrassInstanceBinding;
-
 // Grass constants buffer structure
 struct GrassConstants
 {
@@ -125,7 +120,7 @@ void Flux_Grass::Initialise()
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &s_xGrassShader;
@@ -137,12 +132,6 @@ void Flux_Grass::Initialise()
 	s_xGrassShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xGrassPipeline, xPipelineSpec);
-
-	// Cache binding handles
-	const Flux_ShaderReflection& xReflection = s_xGrassShader.GetReflection();
-	s_xGrassFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-	s_xGrassParamsBinding = xReflection.GetBinding("GrassConstants");
-	s_xGrassInstanceBinding = xReflection.GetBinding("g_xInstances");
 
 	// Initialize constants buffer
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xGrassConstants, sizeof(GrassConstants), s_xGrassConstantsBuffer);
@@ -188,16 +177,15 @@ void Flux_Grass::DestroyBuffers()
 
 void Flux_Grass::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	uint32_t uPassIndex = xGraph.AddPass("Grass", ExecuteRender);
 	// Do NOT clear: the with-depth target setup shares the main scene depth
 	// buffer, and clearing here would wipe the depth that the geometry passes
 	// just wrote — causing deferred lighting to sample garbage depth and
 	// producing fully unlit / flat-shaded output. The HDR colour attachment is
 	// also shared with DeferredShading's no-depth setup, which DOES clear it,
 	// so the underlying image is already in a valid state when Grass runs.
-
-	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_DEPTH);
+	xGraph.AddPass("Grass", ExecuteRender)
+		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_DEPTH);
 }
 
 void Flux_Grass::ExecuteRender(Flux_CommandList* pxCmdList, void*)
@@ -255,9 +243,9 @@ void Flux_Grass::ExecuteRender(Flux_CommandList* pxCmdList, void*)
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmdList);
-		xBinder.BindCBV(s_xGrassFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindCBV(s_xGrassParamsBinding, &s_xGrassConstantsBuffer.GetCBV());
-		xBinder.BindUAV_Buffer(s_xGrassInstanceBinding, &s_xInstanceBuffer.GetUAV());
+		xBinder.BindCBV(s_xGrassShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(s_xGrassShader, "GrassConstants", &s_xGrassConstantsBuffer.GetCBV());
+		xBinder.BindUAV_Buffer(s_xGrassShader, "g_xInstances", &s_xInstanceBuffer.GetUAV());
 	}
 
 	// Draw instanced grass (6 indices per blade, s_uVisibleBladeCount instances)

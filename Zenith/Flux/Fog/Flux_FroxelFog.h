@@ -51,7 +51,6 @@ public:
 	static struct Flux_RenderAttachment& GetScatteringGrid();
 
 	// Transient handles for render graph declaration in Flux_Fog.cpp
-	static bool IsUsingTransients();
 	static Flux_TransientHandle GetDensityGridHandle();
 	static Flux_TransientHandle GetLightingGridHandle();
 	static Flux_TransientHandle GetScatteringGridHandle();

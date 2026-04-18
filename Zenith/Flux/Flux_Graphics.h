@@ -20,7 +20,6 @@ public:
 
 	static void InitialiseSamplers();
 	static void Initialise();
-	static void InitialiseRenderTargets();
 	static void Shutdown();
 
 	static void UploadFrameConstants();
@@ -37,7 +36,6 @@ public:
 	static Flux_RenderAttachment& GetMRTAttachment(MRTIndex eIndex);
 	static Flux_RenderAttachment& GetDepthAttachment();
 	static Flux_RenderAttachment& GetFinalRenderTarget();
-	static Flux_RenderAttachment& GetFinalRenderTarget_NoDepth();
 
 	//----------------------------------------------------------------------
 	// Samplers
@@ -77,6 +75,17 @@ public:
 	static Flux_RenderTargetView* GetGBufferRTV(MRTIndex eIndex);
 	static Flux_DepthStencilView* GetDepthStencilDSV();
 
+#ifdef ZENITH_TOOLS
+	// Debug-variable callbacks — return the live SRV of each G-buffer/depth
+	// transient at ImGui display time. Used via Zenith_DebugVariables::AddTextureCallback
+	// so the editor's texture preview survives render-graph rebuilds that
+	// invalidate previously-captured SRV pointers. Returns nullptr pre-SetupTransients.
+	static const Flux_ShaderResourceView* GetDebugSRV_MRTDiffuse();
+	static const Flux_ShaderResourceView* GetDebugSRV_MRTNormalsAO();
+	static const Flux_ShaderResourceView* GetDebugSRV_MRTMaterial();
+	static const Flux_ShaderResourceView* GetDebugSRV_Depth();
+#endif
+
 	static Zenith_Maths::Matrix4 GetViewProjMatrix() { return s_xFrameConstants.m_xViewProjMat; }
 	static Zenith_Maths::Matrix4 GetInvViewProjMatrix() { return s_xFrameConstants.m_xInvViewProjMat; }
 	static Zenith_Maths::Matrix4 GetViewMatrix() { return s_xFrameConstants.m_xViewMat; }
@@ -114,17 +123,12 @@ public:
 private:
 	static bool BuildCameraMatrices(FrameConstants& xConstants);
 
-	// ---- Owned render targets (created in Initialise, always valid) ----
-	static Flux_RenderAttachment s_axMRTColourAttachments_Owned[MRT_INDEX_COUNT];
-	static Flux_RenderAttachment s_xFinalRenderTarget_Owned;
-	static Flux_RenderAttachment s_xFinalRenderTarget_NoDepth_Owned;
-	static Flux_RenderAttachment s_xDepthBuffer_Owned;
-
-	// ---- Transient path (graph-owned allocation) ----
+	// Graph-owned transient handles — backing Flux_RenderAttachments are
+	// allocated and destroyed by the render graph, sized from the descriptors
+	// set in SetupTransients. Access the resolved attachments via the
+	// Get*Attachment / GetFinalRenderTarget* getters above.
 	static Flux_TransientHandle s_axMRTHandles[MRT_INDEX_COUNT];
 	static Flux_TransientHandle s_xFinalRTHandle;
-	static Flux_TransientHandle s_xFinalRT_NoDepthHandle;
 	static Flux_TransientHandle s_xDepthHandle;
 	static Flux_RenderGraph* s_pxGraph;
-	static bool s_bUsingTransients;
 };

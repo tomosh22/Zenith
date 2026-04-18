@@ -4,111 +4,87 @@
 // Flux Backend Contract
 // ============================================================================
 //
-// This header documents the interface that any rendering backend must provide
-// for Flux to function. Today the only backend is Vulkan (Zenith/Vulkan/),
-// wired via compile-time macro aliases in Zenith_PlatformGraphics_Include.h.
+// Compile-time contract that any rendering backend must satisfy. Backends are
+// selected via macro alias in Zenith_PlatformGraphics_Include.h; each Flux_*
+// alias resolves to a concrete backend class (currently Zenith_Vulkan_*).
 //
-// A second backend (e.g., DX12, Metal) would:
-//   1. Implement all types and operations listed below
-//   2. Provide its own PlatformGraphics include mapping the Flux_* macros
-//   3. Compile-time or link-time selection chooses the active backend
+// Adding a second backend (DX12 / Metal / WebGPU) is a matter of providing
+// concrete classes that satisfy each of the seven concepts below. The
+// conformance file Flux_BackendConformance.cpp instantiates static_assert
+// against the active backend; any divergence is a compile-time error rather
+// than a silent runtime drift.
 //
-// This file is documentation, not a compilable interface. It is intentionally
-// kept as a reference so a backend author reads one header to understand the
-// full contract. Future work may convert this into a struct-of-function-pointers
-// or a templated Backend trait for runtime or zero-cost dispatch.
+// The seven concepts (one per responsibility — partitioned for diagnostic
+// readability rather than reduced to a single mega-concept):
 //
-// ============================================================================
-// BACKEND TYPES (macro-aliased in Zenith_PlatformGraphics_Include.h)
-// ============================================================================
+//   - FluxBackendDevice                  Device init / shutdown / VRAM registry
+//                                        / bindless / ImGui texture wrapper
+//   - FluxBackendMemoryAlloc             VRAM + view + buffer creation, uploads
+//   - FluxBackendMemoryDelete            Wrapper destroyers + deferred deletion
+//   - FluxBackendCommandRecorder         Per-worker command-buffer recording —
+//                                        composed from seven sub-concepts so a
+//                                        future backend can satisfy individual
+//                                        capabilities without depending on the
+//                                        whole surface (see Concept_CommandRecorder.h
+//                                        for the sub-concept breakdown).
+//   - FluxBackendSync                    Engine-typed barrier emission
+//                                        (graph-emitted barriers consumed here)
+//   - FluxBackendPresentation            Swapchain + frame index
+//   - FluxBackendShader / Builder /      Shader load + reflection, root sig
+//     ComputePipelineBuilder /           builder, graphics pipeline builder,
+//     RootSigBuilder                     compute pipeline builder
 //
-// Flux_PlatformAPI           -- Main backend singleton (device init, per-frame state,
-//                               VRAM registry). Provides static methods:
-//                                 ::Initialise(), ::Shutdown()
-//                                 ::GetDevice() → native device handle
-//                                 ::GetVRAM(Flux_VRAMHandle) → Flux_VRAM*
-//                                 ::s_pxCurrentFrame → per-frame state (scratch buffer, pools)
-//                                 ::IncrementDescriptorSetAllocations() (debug only)
+// ---- Scope of concept-based type checking --------------------------------
+// The concepts below type-check the CURRENT platform's types. The concrete
+// input types (Flux_Pipeline, Flux_Sampler, Flux_CommandList, Flux_*Buffer)
+// resolve through Zenith_PlatformGraphics_Include.h macros to backend-
+// specific definitions. In practice this means:
 //
-// Flux_MemoryManager         -- GPU resource creation/destruction. Static methods:
-//                                 ::CreateRenderTargetVRAM(Flux_SurfaceInfo) → Flux_VRAMHandle
-//                                 ::CreateTextureVRAM(Flux_SurfaceInfo, data) → Flux_VRAMHandle
-//                                 ::CreateBufferVRAM(...) → Flux_VRAMHandle
-//                                 ::CreateShaderResourceView(...) → Flux_ShaderResourceView
-//                                 ::CreateUnorderedAccessView(...) → Flux_UnorderedAccessView_*
-//                                 ::CreateRenderTargetView(...) → Flux_RenderTargetView
-//                                 ::CreateDepthStencilView(...) → Flux_DepthStencilView
-//                                 ::QueueVRAMDeletion(...)
-//                                 ::UploadBufferData(...)
-//                                 ::InitialiseReadWriteBuffer(...)
-//                                 ::DestroyVertexBuffer / DestroyIndexBuffer / DestroyReadWriteBuffer
+//   - The concept check passes iff the active backend's class has the
+//     required method signatures given the current-platform aliases.
+//   - Concepts do NOT prove "the backend is portable" — swapping in a
+//     second backend requires that backend to alias its own concrete
+//     types to the Flux_* names AND the method signatures to match. Both
+//     are checked by the conformance file when the second backend's
+//     static_assert lines are added.
 //
-// Flux_VRAM                  -- Opaque per-allocation state (image/buffer handle + memory).
-//                                 ::GetImage() → native image handle (for barriers)
+// A second-backend author's checklist (the concepts don't enforce order —
+// follow this as prose):
+//   1. Provide concrete classes matching each of the seven concept-typed
+//      surfaces (FluxBackendDevice → backend's top-level class, etc.).
+//   2. Add typedef aliases in Zenith_PlatformGraphics_Include.h under a
+//      platform guard (e.g. #ifdef ZENITH_D3D12 using Flux_CommandBuffer =
+//      Zenith_D3D12_CommandBuffer;).
+//   3. Add static_assert FluxBackend*<backend-class> lines in
+//      Flux_BackendConformance.cpp under the same platform guard.
+//   4. Build; fix every compile error surfaced from the concept substitution.
 //
-// Flux_CommandBuffer         -- Per-worker command buffer for recording draws/dispatches.
-//                                 ::BeginRecording(), ::EndRecording()
-//                                 ::SetPipeline(), ::SetVertexBuffer(), ::SetIndexBuffer()
-//                                 ::BindSRV(), ::BindCBV(), ::BindUAV_Texture(), ::BindUAV_Buffer()
-//                                 ::BindDrawConstants(data, size, binding)
-//                                 ::BeginBind(set), ::UseBindlessTextures(set)
-//                                 ::Draw(), ::DrawIndexed(), ::DrawIndexedIndirect(), ::DrawIndexedIndirectCount()
-//                                 ::Dispatch(x, y, z)
-//                                 ::ImageTransitionBarrier(...)
-//                                 ::SetShoudClear(bool)
+// ---- Reverse-drift limitation --------------------------------------------
+// Concepts check that the backend HAS the required methods; they do NOT
+// check that the backend ONLY has the required methods. A backend can grow
+// a public method that no concept asks for without failing the conformance
+// build. This is intentional — backends can expose platform-specific
+// helpers (e.g. GetVkInstance()) that the engine uses through a platform
+// guard but that don't belong in the neutral contract. The cost is that
+// accidental public-surface expansion slips past the compile check. If
+// this becomes painful, a "backend public surface" concept can be added
+// that enumerates the FULL expected method list; for now the review
+// process catches it.
 //
-// Flux_Swapchain             -- Swapchain lifecycle.
-//                                 ::Initialise(), ::Shutdown(), ::Reset()
-//                                 ::AcquireNextImage(), ::Present()
-//                                 ::GetCurrentFrameIndex() → u_int
-//                                 ::GetExtent() → (width, height)
-//
-// Flux_Shader                -- Compiled shader module + reflection.
-//                                 ::Initialise(vertPath, fragPath, ...)
-//                                 ::InitialiseCompute(compPath)
-//                                 ::InitialiseFromSource(...) (TOOLS only)
-//                                 ::GetReflection() → Flux_ShaderReflection&
-//
-// Flux_Pipeline              -- Compiled pipeline state object (graphics or compute).
-//                                 Storage type for both graphics and compute PSOs.
-//                                 Contains m_xRootSig for descriptor layout.
-//
-// Flux_PipelineBuilder       -- Graphics pipeline builder.
-//                                 ::FromSpecification(Flux_Pipeline&, Flux_PipelineSpecification&)
-//
-// Flux_ComputePipelineBuilder -- Compute pipeline builder.
-//                                 ::WithShader(), ::WithLayout(), ::Build()
-//
-// Flux_RootSig               -- Descriptor set / binding group layout for a pipeline.
-//                                 Contains m_xLayout (Flux_PipelineLayout) and
-//                                 m_axBindingTypes[group][entry] for runtime type queries.
-//
-// Flux_RootSigBuilder        -- Populates Flux_RootSig from shader reflection.
-//                                 ::FromReflection(Flux_RootSig&, Flux_ShaderReflection&)
-//
-// Flux_Sampler               -- Texture sampler state.
-//                                 ::GetSampler() → native sampler handle
-//
-// ============================================================================
-// PER-FRAME STATE
-// ============================================================================
-//
-// Flux_PlatformAPI::s_pxCurrentFrame provides:
-//   - Per-worker scratch buffer partitions (see Flux_CommandBindDrawConstants)
-//   - AllocateScratchBuffer(size, workerIndex) → offset
-//   - GetScratchBufferMappedPtr() → void*
-//   - GetScratchBuffer() → native buffer handle
-//   - Command pool reset, descriptor pool reset, fence management
-//
-// ============================================================================
-// OPERATIONS NOT IN THE BACKEND (owned by Flux directly)
-// ============================================================================
-//
-// - Render graph (Flux_RenderGraph) — API-neutral pass scheduling
-// - Command list DSL (Flux_CommandList) — deferred command recording
-// - Shader reflection (Flux_ShaderReflection) — format-neutral binding metadata
-// - Shader binder (Flux_ShaderBinder) — reflection-driven binding helpers
-// - Material binding (MaterialDrawConstants) — per-draw constant layout
-// - View types (Flux_ShaderResourceView, etc.) — opaque handle wrappers
-// - Buffer wrappers (Flux_VertexBuffer, etc.) — frame-indexed resource management
-//
+// Operations the backend does NOT need to provide (owned by Flux directly,
+// API-neutral):
+//   - Render graph                  (Flux_RenderGraph)
+//   - Command list DSL              (Flux_CommandList)
+//   - Shader reflection             (Flux_ShaderReflection from Slang)
+//   - Shader binder                 (Flux_ShaderBinder)
+//   - View structs                  (Flux_ShaderResourceView, etc.)
+//   - Buffer wrappers               (Flux_VertexBuffer, etc.)
+//   - Per-frame ring scheduler      (Flux_PerFrame)
+
+#include "Flux/Backend/Concepts/Flux_Concept_Device.h"
+#include "Flux/Backend/Concepts/Flux_Concept_MemoryAlloc.h"
+#include "Flux/Backend/Concepts/Flux_Concept_MemoryDelete.h"
+#include "Flux/Backend/Concepts/Flux_Concept_CommandRecorder.h"
+#include "Flux/Backend/Concepts/Flux_Concept_Sync.h"
+#include "Flux/Backend/Concepts/Flux_Concept_Presentation.h"
+#include "Flux/Backend/Concepts/Flux_Concept_PipelineConstruction.h"

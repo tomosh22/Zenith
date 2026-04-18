@@ -8,6 +8,14 @@ class Zenith_UnitTests
 {
 public:
 	static void RunAllTests();
+
+	// Test infrastructure exposed publicly so RAII helpers in the test .cpp's
+	// anonymous namespace can call them (anonymous-namespace types are not
+	// friended by `friend class Zenith_UnitTests` declarations elsewhere).
+	struct PerFrameSnapshot;
+	static void SnapshotPerFrameAndReset(PerFrameSnapshot& xOut);
+	static void RestorePerFrame         (const PerFrameSnapshot& xIn);
+
 private:
 	static void TestDataStream();
 	static void TestMemoryManagement();
@@ -425,6 +433,47 @@ private:
 	static void TestUIStyleLerpHalfway();
 	static void TestUIStyleLerpEndpoints();
 	static void TestUIStyleLerpShadowBool();
+
+	// Flux render-graph tests (declaration-phase only — compiling the graph
+	// requires Vulkan). The tests exercise pass registration, handle validity,
+	// generation-counter bumping on Clear(), and SetEnabled toggling.
+	static void TestRenderGraphEmpty();
+	static void TestRenderGraphPassHandles();
+	static void TestRenderGraphTransientGeneration();
+	static void TestRenderGraphSetEnabled();
+	static void TestRenderGraphBufferBarrierRMW();
+
+	// Transient-aliasing signature tests. The signature is pure pointer math
+	// over the transient descriptor; no Vulkan required.
+	static void TestAliasSignatureIdenticalDescs();
+	static void TestAliasSignatureDifferentFormat();
+	static void TestAliasSignatureDifferentMemoryFlags();
+	static void TestAliasSignatureDifferentTextureType();
+	static void TestAliasSignatureDepthVsColour();
+	static void TestAliasSignatureIgnoresDimensions();
+
+	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
+	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live
+	// Vulkan device required — the resolver path takes a reflection pointer
+	// directly so tests bypass the Flux_Shader wrapper). Friended in.
+	static void TestBinderNameCacheFirstLookupMisses();
+	static void TestBinderNameCacheRepeatLookupHits();
+	static void TestBinderNameCacheDifferentReflectionMisses();
+	static void TestBinderNameCacheDifferentNameMisses();
+	static void TestBinderNameCacheRoundRobinReplacement();
+	static void TestBinderNameCacheTypeStoredCorrectly();
+
+	// Flux_PerFrame ring-scheduler tests. Exercise the frame counter,
+	// ring-index modulo, and the begin/end callback dispatch logic. Tests
+	// save/restore live engine state so they don't disturb the running
+	// frame loop that hosts them.
+	static void TestFluxPerFrameFrameCounterAdvances();
+	static void TestFluxPerFrameRingIndexWraps();
+	static void TestFluxPerFrameBeginCallbackFires();
+	static void TestFluxPerFrameEndCallbackFires();
+	static void TestFluxPerFrameCallbackOrderPreserved();
+	static void TestFluxPerFrameCallbackUserDataPassed();
+	static void TestFluxPerFrameRingIndexInsideCallback();
 };
 
 // Include editor/tools-only tests separately as they are only available in ZENITH_TOOLS builds

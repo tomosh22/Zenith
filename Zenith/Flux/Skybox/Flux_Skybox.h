@@ -115,6 +115,13 @@ public:
 	static Flux_Pipeline s_xSolidColourPipeline;
 	static Flux_DynamicConstantBuffer s_xSolidColourConstantsBuffer;
 
+	// Shaders (public so free-function execute callbacks can pass them to
+	// name-based Flux_ShaderBinder calls).
+	static Flux_Shader s_xCubemapShader;
+	static Flux_Shader s_xAtmosphereShader;
+	static Flux_Shader s_xAerialPerspectiveShader;
+	static Flux_Shader s_xSolidColourShader;
+
 private:
 	static void RenderSolidColour();
 	static void RenderCubemapSky();
@@ -127,11 +134,6 @@ private:
 	static Flux_RenderAttachment s_xTransmittanceLUT;
 	static bool s_bLUTNeedsUpdate;
 
-	// Shaders
-	static Flux_Shader s_xCubemapShader;
-	static Flux_Shader s_xAtmosphereShader;
-	static Flux_Shader s_xAerialPerspectiveShader;
-
 	// Atmosphere configuration state
 	static bool s_bAtmosphereEnabled;
 	static float s_fSunIntensity;
@@ -141,6 +143,4 @@ private:
 	static bool s_bAerialPerspectiveEnabled;
 	static float s_fAerialPerspectiveStrength;
 
-	// Solid colour override
-	static Flux_Shader s_xSolidColourShader;
 };

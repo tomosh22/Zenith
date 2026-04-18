@@ -16,26 +16,6 @@
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
-// Cached binding handles for named resource binding (populated at init from shader reflection)
-static Flux_BindingHandle s_xFrameConstantsBinding;
-static Flux_BindingHandle s_axShadowMatrixBindings[ZENITH_FLUX_NUM_CSMS];
-static Flux_BindingHandle s_xDiffuseTexBinding;
-static Flux_BindingHandle s_xNormalsAmbientTexBinding;
-static Flux_BindingHandle s_xMaterialTexBinding;
-static Flux_BindingHandle s_xDepthTexBinding;
-static Flux_BindingHandle s_axCSMBindings[ZENITH_FLUX_NUM_CSMS];
-
-// IBL texture bindings
-static Flux_BindingHandle s_xBRDFLUTBinding;
-static Flux_BindingHandle s_xIrradianceMapBinding;
-static Flux_BindingHandle s_xPrefilteredMapBinding;
-
-// SSR texture binding
-static Flux_BindingHandle s_xSSRTexBinding;
-
-// SSGI texture binding
-static Flux_BindingHandle s_xSSGITexBinding;
-
 DEBUGVAR u_int dbg_uVisualiseCSMs = 0;
 DEBUGVAR bool dbg_bVisualiseCSMs = false;
 DEBUGVAR u_int dbg_uDeferredShadingDebugMode = 0;  // 0=normal, 1=cyan, 2=depth, 3=diffuse
@@ -50,7 +30,7 @@ void Flux_DeferredShading::Initialise()
 
 	Flux_PipelineSpecification xPipelineSpec;
 	// Render to HDR target for proper HDR lighting pipeline (tone mapping converts to final output)
-	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
@@ -65,39 +45,6 @@ void Flux_DeferredShading::Initialise()
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
-
-	// Cache binding handles from shader reflection for named resource binding
-	const Flux_ShaderReflection& xReflection = s_xShader.GetReflection();
-	s_xFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-	s_axShadowMatrixBindings[0] = xReflection.GetBinding("ShadowMatrix0");
-	s_axShadowMatrixBindings[1] = xReflection.GetBinding("ShadowMatrix1");
-	s_axShadowMatrixBindings[2] = xReflection.GetBinding("ShadowMatrix2");
-	s_axShadowMatrixBindings[3] = xReflection.GetBinding("ShadowMatrix3");
-	s_xDiffuseTexBinding = xReflection.GetBinding("g_xDiffuseTex");
-	s_xNormalsAmbientTexBinding = xReflection.GetBinding("g_xNormalsAmbientTex");
-	s_xMaterialTexBinding = xReflection.GetBinding("g_xMaterialTex");
-	s_xDepthTexBinding = xReflection.GetBinding("g_xDepthTex");
-	s_axCSMBindings[0] = xReflection.GetBinding("g_xCSM0");
-	s_axCSMBindings[1] = xReflection.GetBinding("g_xCSM1");
-	s_axCSMBindings[2] = xReflection.GetBinding("g_xCSM2");
-	s_axCSMBindings[3] = xReflection.GetBinding("g_xCSM3");
-
-	// IBL bindings
-	s_xBRDFLUTBinding = xReflection.GetBinding("g_xBRDFLUT");
-	s_xIrradianceMapBinding = xReflection.GetBinding("g_xIrradianceMap");
-	s_xPrefilteredMapBinding = xReflection.GetBinding("g_xPrefilteredMap");
-
-	// SSR binding
-	s_xSSRTexBinding = xReflection.GetBinding("g_xSSRTex");
-
-	// SSGI binding
-	s_xSSGITexBinding = xReflection.GetBinding("g_xSSGITex");
-
-	// Debug: Log IBL binding handles
-	Zenith_Log(LOG_CATEGORY_RENDERER, "IBL Bindings - BRDF: set=%u binding=%u valid=%d, Irradiance: set=%u binding=%u valid=%d, Prefiltered: set=%u binding=%u valid=%d",
-		s_xBRDFLUTBinding.m_uSet, s_xBRDFLUTBinding.m_uBinding, s_xBRDFLUTBinding.IsValid(),
-		s_xIrradianceMapBinding.m_uSet, s_xIrradianceMapBinding.m_uBinding, s_xIrradianceMapBinding.IsValid(),
-		s_xPrefilteredMapBinding.m_uSet, s_xPrefilteredMapBinding.m_uBinding, s_xPrefilteredMapBinding.IsValid());
 
 	#ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Shadows", "Visualise CSMs" }, dbg_bVisualiseCSMs);
@@ -119,53 +66,55 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	// Bind frame constants
-	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	// Bind G-buffer textures (named bindings)
-	xBinder.BindSRV(s_xDiffuseTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(s_xNormalsAmbientTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xMaterialTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(s_xDepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(s_xShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(s_xShader, "g_xNormalsAmbientTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(s_xShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(s_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 
 	// Bind shadow maps (named bindings)
+	static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "g_xCSM0", "g_xCSM1", "g_xCSM2", "g_xCSM3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xSRV = Flux_Shadows::GetCSMSRV(u);
-		xBinder.BindSRV(s_axCSMBindings[u], &xSRV, &Flux_Graphics::s_xClampSampler);
+		xBinder.BindSRV(s_xShader, s_aszCSMNames[u], &xSRV, &Flux_Graphics::s_xClampSampler);
 	}
 
 	// Bind shadow matrix buffers (named bindings)
+	static const char* const s_aszShadowMatrixNames[ZENITH_FLUX_NUM_CSMS] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		xBinder.BindCBV(s_axShadowMatrixBindings[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+		xBinder.BindCBV(s_xShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
 	}
 
 	// Bind IBL textures
-	xBinder.BindSRV(s_xBRDFLUTBinding, &Flux_IBL::GetBRDFLUTSRV());
-	xBinder.BindSRV(s_xIrradianceMapBinding, &Flux_IBL::GetIrradianceMapSRV());
-	xBinder.BindSRV(s_xPrefilteredMapBinding, &Flux_IBL::GetPrefilteredMapSRV());
+	xBinder.BindSRV(s_xShader, "g_xBRDFLUT", &Flux_IBL::GetBRDFLUTSRV());
+	xBinder.BindSRV(s_xShader, "g_xIrradianceMap", &Flux_IBL::GetIrradianceMapSRV());
+	xBinder.BindSRV(s_xShader, "g_xPrefilteredMap", &Flux_IBL::GetPrefilteredMapSRV());
 
 	// Always bind SSR texture if initialised (shader checks g_bSSREnabled before sampling)
 	// This avoids Vulkan validation errors for unbound descriptors
 	if (Flux_SSR::IsInitialised())
 	{
-		xBinder.BindSRV(s_xSSRTexBinding, &Flux_SSR::GetReflectionSRV());
+		xBinder.BindSRV(s_xShader, "g_xSSRTex", &Flux_SSR::GetReflectionSRV());
 	}
 	else
 	{
 		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(s_xSSRTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		xBinder.BindSRV(s_xShader, "g_xSSRTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
 	// Always bind SSGI texture if initialised (shader checks g_bSSGIEnabled before sampling)
 	if (Flux_SSGI::IsInitialised())
 	{
-		xBinder.BindSRV(s_xSSGITexBinding, &Flux_SSGI::GetSSGISRV());
+		xBinder.BindSRV(s_xShader, "g_xSSGITex", &Flux_SSGI::GetSSGISRV());
 	}
 	else
 	{
 		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(s_xSSGITexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		xBinder.BindSRV(s_xShader, "g_xSSGITex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
 	// Pass constants to shader
@@ -199,68 +148,48 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	xConstants.m_bSSGIEnabled = Flux_SSGI::IsEnabled() ? 1 : 0;
 	xConstants.m_fAmbientFallbackIntensity = dbg_fAmbientFallbackIntensity;
 
-	xBinder.BindDrawConstants(&xConstants, sizeof(xConstants));
+	xBinder.BindDrawConstants(s_xShader, "DeferredShadingConstants", &xConstants, sizeof(xConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
 void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	u_int uPassIndex = xGraph.AddPass("Apply Lighting", ExecuteApplyLighting);
-	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
-	// First writer of the HDR scene no-depth setup — overwrites every pixel
-	// with the lighting result, so clear is the correct LoadOp.
-	xGraph.SetClear(uPassIndex, true);
+	// First writer of the HDR scene target — clear overwrites every pixel.
+	// Capture the handle via the implicit conversion; builder temporary dies
+	// at the semicolon. All loop/conditional declarations below go through
+	// the graph's Read/ReadTransient helpers with the captured handle.
+	const Flux_PassHandle xPass = xGraph.AddPass("Apply Lighting", ExecuteApplyLighting)
+		.Writes(Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
+		.ClearTargets();
 
-	// Reads: G-Buffer MRT attachments
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
-	{
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
-	}
+		xGraph.Read(xPass, Flux_Graphics::GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
 
-	// Reads: depth buffer
-	xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
-	// Reads: shadow maps (CSM depth targets)
+	// Shadow maps (CSM depth targets)
 	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		uint32_t uNumColour;
 		Flux_RenderAttachment* pxDepthStencil;
 		Flux_Shadows::GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
-		xGraph.Read(uPassIndex, *pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(xPass, *pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
 	}
 
-	// Reads: SSR results. The execute callback binds GetReflectionSRV() which
-	// returns either the resolved or ray-march attachment depending on
-	// the dbg_bRoughnessBlur runtime toggle. Same dual-binding pattern as SSGI
-	// - SetupRenderGraph runs once at init / on resolution change so we have
-	// to declare BOTH so whichever one ends up bound at record time has been
-	// transitioned out of COLOR_ATTACHMENT_OPTIMAL by the graph.
+	// SSR / SSGI single-handle declarations. The subsystem decides which of
+	// its internal handles serves as "the output" based on its debug toggles
+	// at SetupRenderGraph time. Runtime toggles trigger Flux::RequestGraphRebuild()
+	// via ApplyBlurSelectionToGraph / ApplyDenoiseSelectionToGraph, which re-runs
+	// this SetupRenderGraph and re-resolves the handle.
 	if (Flux_SSR::IsInitialised())
-	{
-		xGraph.Read(uPassIndex, Flux_SSR::GetRayMarchAttachment(), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_SSR::GetResolvedAttachment(), RESOURCE_ACCESS_READ_SRV);
-	}
-
-	// Reads: SSGI results. The execute callback binds GetSSGISRV() which returns
-	// either the denoised or resolved attachment depending on a runtime debug variable.
-	// SetupRenderGraph runs once at init (and on resolution change), so we have
-	// to declare BOTH so the graph transitions whichever one ends up bound at
-	// record time. Both are RGBA16F color attachments written by the SSGI passes
-	// - without these declarations they stay in COLOR_ATTACHMENT_OPTIMAL and the
-	// validator rejects the SRV bind here.
+		xGraph.ReadTransient(xPass, Flux_SSR::GetReflectionHandle(), RESOURCE_ACCESS_READ_SRV);
 	if (Flux_SSGI::IsInitialised())
-	{
-		xGraph.Read(uPassIndex, Flux_SSGI::GetResolvedAttachment(), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_SSGI::GetDenoisedAttachment(), RESOURCE_ACCESS_READ_SRV);
-	}
+		xGraph.ReadTransient(xPass, Flux_SSGI::GetSSGIHandle(), RESOURCE_ACCESS_READ_SRV);
 
-	// Reads: IBL textures. The IBL graph passes write these as color attachments
-	// (BRDF LUT once at init, irradiance / prefiltered cubemap faces frame-amortised
-	// when the sky is dirty), so they sit in COLOR_ATTACHMENT_OPTIMAL until the
-	// graph transitions them. Cubemaps cover all faces via the FLUX_RG_ALL_LAYERS
-	// default, prefilter covers all mips via FLUX_RG_ALL_MIPS.
-	xGraph.Read(uPassIndex, Flux_IBL::s_xBRDFLUT, RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(uPassIndex, Flux_IBL::s_xIrradianceMap, RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(uPassIndex, Flux_IBL::s_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+	// IBL textures — BRDF LUT, irradiance cubemap, prefiltered cubemap. Cubemap
+	// reads default to FLUX_RG_ALL_MIPS / FLUX_RG_ALL_LAYERS.
+	xGraph.Read(xPass, Flux_IBL::s_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, Flux_IBL::s_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, Flux_IBL::s_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
 }

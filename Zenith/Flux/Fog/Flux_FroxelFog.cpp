@@ -26,21 +26,14 @@ static Flux_RootSig s_xLightRootSig;
 static Flux_Shader s_xApplyShader;
 static Flux_Pipeline s_xApplyPipeline;
 
-// ---- Transient path (graph-owned allocation) ----
-static Flux_TransientHandle s_xDensityGridHandle;
-static Flux_TransientHandle s_xLightingGridHandle;
-static Flux_TransientHandle s_xScatteringGridHandle;
+// Graph-owned transient handles — backing Flux_RenderAttachments are allocated
+// and destroyed by the render graph, sized from the descriptor in SetupTransients.
+static Flux_TransientHandle s_xDensityGridHandle;      // RGBA16F: density, scattering, absorption
+static Flux_TransientHandle s_xLightingGridHandle;     // RGBA16F: accumulated in-scatter
+static Flux_TransientHandle s_xScatteringGridHandle;   // RGBA16F: per-step scatter + extinction
 static Flux_RenderGraph* s_pxGraph = nullptr;
 
-// ---- Fallback path (subsystem-owned allocation) ----
-static Flux_RenderAttachment s_xDensityGrid_Owned;      // RGBA16F: density, scattering, absorption
-static Flux_RenderAttachment s_xLightingGrid_Owned;     // RGBA16F: accumulated in-scatter
-static Flux_RenderAttachment s_xScatteringGrid_Owned;   // RGBA16F: per-step scatter + extinction
-
-// ---- Toggle: which path is active this frame ----
-static bool s_bUsingTransients = false;
-
-// Froxel grid format (constant -- pipeline building doesn't depend on allocation path)
+// Froxel grid format
 static constexpr TextureFormat FROXEL_FORMAT = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 
 // Froxel grid configuration (fixed at compile time for performance)
@@ -114,69 +107,31 @@ static InjectConstants s_xInjectConstants;
 static LightConstants s_xLightConstants;
 static ApplyConstants s_xApplyConstants;
 
-// Cached binding handles from shader reflection
-// Inject pass
-static Flux_BindingHandle s_xInjectFrameConstantsBinding;
-static Flux_BindingHandle s_xInjectNoiseBinding;
-static Flux_BindingHandle s_xInjectDensityOutputBinding;
-// Light pass
-static Flux_BindingHandle s_xLightFrameConstantsBinding;
-static Flux_BindingHandle s_xLightDensityInputBinding;
-static Flux_BindingHandle s_xLightLightingOutputBinding;
-static Flux_BindingHandle s_xLightScatteringOutputBinding;
-// CSM shadow bindings for volumetric shadows
-static Flux_BindingHandle s_axLightCSMBindings[ZENITH_FLUX_NUM_CSMS];
-static Flux_BindingHandle s_axLightShadowMatrixBindings[ZENITH_FLUX_NUM_CSMS];
-// Apply pass
-static Flux_BindingHandle s_xApplyFrameConstantsBinding;
-static Flux_BindingHandle s_xApplyDepthBinding;
-static Flux_BindingHandle s_xApplyLightingBinding;
-static Flux_BindingHandle s_xApplyScatteringBinding;
-
-// ---- Helpers to get the right attachment regardless of path ----
-
 static Flux_RenderAttachment& GetDensityGridInternal()
 {
-	if (s_bUsingTransients)
-		return s_pxGraph->GetTransientAttachment(s_xDensityGridHandle);
-	return s_xDensityGrid_Owned;
+	Zenith_Assert(s_pxGraph, "Flux_FroxelFog::GetDensityGridInternal: graph pointer is null");
+	return s_pxGraph->GetTransientAttachment(s_xDensityGridHandle);
 }
 
 static Flux_RenderAttachment& GetLightingGridInternal()
 {
-	if (s_bUsingTransients)
-		return s_pxGraph->GetTransientAttachment(s_xLightingGridHandle);
-	return s_xLightingGrid_Owned;
+	Zenith_Assert(s_pxGraph, "Flux_FroxelFog::GetLightingGridInternal: graph pointer is null");
+	return s_pxGraph->GetTransientAttachment(s_xLightingGridHandle);
 }
 
 static Flux_RenderAttachment& GetScatteringGridInternal()
 {
-	if (s_bUsingTransients)
-		return s_pxGraph->GetTransientAttachment(s_xScatteringGridHandle);
-	return s_xScatteringGrid_Owned;
+	Zenith_Assert(s_pxGraph, "Flux_FroxelFog::GetScatteringGridInternal: graph pointer is null");
+	return s_pxGraph->GetTransientAttachment(s_xScatteringGridHandle);
 }
 
 void Flux_FroxelFog::Initialise()
 {
-	// Owned targets are always created -- used when transients are toggled off.
-	Flux_RenderAttachmentBuilder xBuilder;
-	xBuilder.m_uWidth = FROXEL_WIDTH;
-	xBuilder.m_uHeight = FROXEL_HEIGHT;
-	xBuilder.m_uDepth = FROXEL_DEPTH;
-	xBuilder.m_eFormat = FROXEL_FORMAT;
-	xBuilder.m_eTextureType = TEXTURE_TYPE_3D;
-	xBuilder.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ) | (1u << MEMORY_FLAGS__UNORDERED_ACCESS);
-
-	xBuilder.BuildColour(s_xDensityGrid_Owned, "FroxelDensityGrid (owned)");
-	xBuilder.BuildColour(s_xLightingGrid_Owned, "FroxelLightingGrid (owned)");
-	xBuilder.BuildColour(s_xScatteringGrid_Owned, "FroxelScatteringGrid (owned)");
-
 	// Initialize inject compute shader
 	s_xInjectShader.InitialiseCompute("Fog/Flux_FroxelFog_Inject.comp");
 
 	// Build inject root signature from shader reflection
-	const Flux_ShaderReflection& xInjectReflection = s_xInjectShader.GetReflection();
-	Flux_RootSigBuilder::FromReflection(s_xInjectRootSig, xInjectReflection);
+	Flux_RootSigBuilder::FromReflection(s_xInjectRootSig, s_xInjectShader.GetReflection());
 
 	// Build inject compute pipeline
 	Flux_ComputePipelineBuilder xInjectBuilder;
@@ -189,8 +144,7 @@ void Flux_FroxelFog::Initialise()
 	s_xLightShader.InitialiseCompute("Fog/Flux_FroxelFog_Light.comp");
 
 	// Build light root signature from shader reflection
-	const Flux_ShaderReflection& xLightReflection = s_xLightShader.GetReflection();
-	Flux_RootSigBuilder::FromReflection(s_xLightRootSig, xLightReflection);
+	Flux_RootSigBuilder::FromReflection(s_xLightRootSig, s_xLightShader.GetReflection());
 
 	// Build light compute pipeline
 	Flux_ComputePipelineBuilder xLightBuilder;
@@ -199,27 +153,6 @@ void Flux_FroxelFog::Initialise()
 		.Build(s_xLightPipeline);
 	s_xLightPipeline.m_xRootSig = s_xLightRootSig;
 
-	// Cache inject binding handles (xInjectReflection already declared above)
-	s_xInjectFrameConstantsBinding = xInjectReflection.GetBinding("FrameConstants");
-	s_xInjectNoiseBinding = xInjectReflection.GetBinding("u_xNoiseTexture3D");
-	s_xInjectDensityOutputBinding = xInjectReflection.GetBinding("u_xDensityGrid");
-
-	// Cache light binding handles (xLightReflection already declared above)
-	s_xLightFrameConstantsBinding = xLightReflection.GetBinding("FrameConstants");
-	s_xLightDensityInputBinding = xLightReflection.GetBinding("u_xDensityGrid");
-	s_xLightLightingOutputBinding = xLightReflection.GetBinding("u_xLightingGrid");
-	s_xLightScatteringOutputBinding = xLightReflection.GetBinding("u_xScatteringGrid");
-
-	// Cache CSM shadow bindings for volumetric shadows
-	s_axLightCSMBindings[0] = xLightReflection.GetBinding("u_xCSM0");
-	s_axLightCSMBindings[1] = xLightReflection.GetBinding("u_xCSM1");
-	s_axLightCSMBindings[2] = xLightReflection.GetBinding("u_xCSM2");
-	s_axLightCSMBindings[3] = xLightReflection.GetBinding("u_xCSM3");
-	s_axLightShadowMatrixBindings[0] = xLightReflection.GetBinding("ShadowMatrix0");
-	s_axLightShadowMatrixBindings[1] = xLightReflection.GetBinding("ShadowMatrix1");
-	s_axLightShadowMatrixBindings[2] = xLightReflection.GetBinding("ShadowMatrix2");
-	s_axLightShadowMatrixBindings[3] = xLightReflection.GetBinding("ShadowMatrix3");
-
 	// Initialize apply fragment shader
 	s_xApplyShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_FroxelFog_Apply.frag");
 
@@ -227,7 +160,7 @@ void Flux_FroxelFog::Initialise()
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	Flux_PipelineSpecification xApplySpec;
-	xApplySpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xApplySpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xApplySpec.m_uNumColourAttachments = 1;
 	xApplySpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xApplySpec.m_pxShader = &s_xApplyShader;
@@ -244,13 +177,6 @@ void Flux_FroxelFog::Initialise()
 	xApplySpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
 	Flux_PipelineBuilder::FromSpecification(s_xApplyPipeline, xApplySpec);
-
-	// Cache apply binding handles
-	const Flux_ShaderReflection& xApplyReflection = s_xApplyShader.GetReflection();
-	s_xApplyFrameConstantsBinding = xApplyReflection.GetBinding("FrameConstants");
-	s_xApplyDepthBinding = xApplyReflection.GetBinding("u_xDepthTexture");
-	s_xApplyLightingBinding = xApplyReflection.GetBinding("u_xLightingGrid");
-	s_xApplyScatteringBinding = xApplyReflection.GetBinding("u_xScatteringGrid");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Froxel", "Debug Slice Index" }, dbg_uFroxelDebugSlice, 0, 63);
@@ -271,22 +197,18 @@ void Flux_FroxelFog::Initialise()
 void Flux_FroxelFog::SetupTransients(Flux_RenderGraph& xGraph)
 {
 	s_pxGraph = &xGraph;
-	s_bUsingTransients = xGraph.AreTransientsEnabled();
 
-	if (s_bUsingTransients)
-	{
-		Flux_TransientTextureDesc xFroxelDesc;
-		xFroxelDesc.m_uWidth = FROXEL_WIDTH;
-		xFroxelDesc.m_uHeight = FROXEL_HEIGHT;
-		xFroxelDesc.m_uDepth = FROXEL_DEPTH;
-		xFroxelDesc.m_eFormat = FROXEL_FORMAT;
-		xFroxelDesc.m_eTextureType = TEXTURE_TYPE_3D;
-		xFroxelDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ) | (1u << MEMORY_FLAGS__UNORDERED_ACCESS);
+	Flux_TransientTextureDesc xFroxelDesc;
+	xFroxelDesc.m_uWidth = FROXEL_WIDTH;
+	xFroxelDesc.m_uHeight = FROXEL_HEIGHT;
+	xFroxelDesc.m_uDepth = FROXEL_DEPTH;
+	xFroxelDesc.m_eFormat = FROXEL_FORMAT;
+	xFroxelDesc.m_eTextureType = TEXTURE_TYPE_3D;
+	xFroxelDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ) | (1u << MEMORY_FLAGS__UNORDERED_ACCESS);
 
-		s_xDensityGridHandle = xGraph.CreateTransient(xFroxelDesc);
-		s_xLightingGridHandle = xGraph.CreateTransient(xFroxelDesc);
-		s_xScatteringGridHandle = xGraph.CreateTransient(xFroxelDesc);
-	}
+	s_xDensityGridHandle = xGraph.CreateTransient(xFroxelDesc);
+	s_xLightingGridHandle = xGraph.CreateTransient(xFroxelDesc);
+	s_xScatteringGridHandle = xGraph.CreateTransient(xFroxelDesc);
 }
 
 void Flux_FroxelFog::Reset()
@@ -307,11 +229,6 @@ Flux_RenderAttachment& Flux_FroxelFog::GetLightingGrid()
 Flux_RenderAttachment& Flux_FroxelFog::GetScatteringGrid()
 {
 	return GetScatteringGridInternal();
-}
-
-bool Flux_FroxelFog::IsUsingTransients()
-{
-	return s_bUsingTransients;
 }
 
 Flux_TransientHandle Flux_FroxelFog::GetDensityGridHandle()
@@ -381,10 +298,10 @@ void Flux_FroxelFog::RenderInject(Flux_CommandList* pxCommandList)
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&s_xInjectPipeline);
 
 	Flux_ShaderBinder xInjectBinder(*pxCommandList);
-	xInjectBinder.BindCBV(s_xInjectFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xInjectBinder.BindSRV(s_xInjectNoiseBinding, &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV, &Flux_Graphics::s_xRepeatSampler);
-	xInjectBinder.BindUAV_Texture(s_xInjectDensityOutputBinding, &GetDensityGridInternal().UAV(0));
-	xInjectBinder.BindDrawConstants(&s_xInjectConstants, sizeof(InjectConstants));
+	xInjectBinder.BindCBV(s_xInjectShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xInjectBinder.BindSRV(s_xInjectShader, "u_xNoiseTexture3D", &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV, &Flux_Graphics::s_xRepeatSampler);
+	xInjectBinder.BindUAV_Texture(s_xInjectShader, "u_xDensityGrid", &GetDensityGridInternal().UAV(0));
+	xInjectBinder.BindDrawConstants(s_xInjectShader, "InjectConstants", &s_xInjectConstants, sizeof(InjectConstants));
 	pxCommandList->AddCommand<Flux_CommandDispatch>(
 		(FROXEL_WIDTH + 7) / 8,
 		(FROXEL_HEIGHT + 7) / 8,
@@ -417,20 +334,22 @@ void Flux_FroxelFog::RenderLight(Flux_CommandList* pxCommandList)
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&s_xLightPipeline);
 
 	Flux_ShaderBinder xLightBinder(*pxCommandList);
-	xLightBinder.BindCBV(s_xLightFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xLightBinder.BindSRV(s_xLightDensityInputBinding, &GetDensityGridInternal().SRV());
-	xLightBinder.BindUAV_Texture(s_xLightLightingOutputBinding, &GetLightingGridInternal().UAV(0));
-	xLightBinder.BindUAV_Texture(s_xLightScatteringOutputBinding, &GetScatteringGridInternal().UAV(0));
+	xLightBinder.BindCBV(s_xLightShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xLightBinder.BindSRV(s_xLightShader, "u_xDensityGrid", &GetDensityGridInternal().SRV());
+	xLightBinder.BindUAV_Texture(s_xLightShader, "u_xLightingGrid", &GetLightingGridInternal().UAV(0));
+	xLightBinder.BindUAV_Texture(s_xLightShader, "u_xScatteringGrid", &GetScatteringGridInternal().UAV(0));
 
 	// Bind CSM shadow maps and matrices for volumetric shadows
+	static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "u_xCSM0", "u_xCSM1", "u_xCSM2", "u_xCSM3" };
+	static const char* const s_aszShadowMatrixNames[ZENITH_FLUX_NUM_CSMS] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xCSMSRV = Flux_Shadows::GetCSMSRV(u);
-		xLightBinder.BindSRV(s_axLightCSMBindings[u], &xCSMSRV, &Flux_Graphics::s_xClampSampler);
-		xLightBinder.BindCBV(s_axLightShadowMatrixBindings[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+		xLightBinder.BindSRV(s_xLightShader, s_aszCSMNames[u], &xCSMSRV, &Flux_Graphics::s_xClampSampler);
+		xLightBinder.BindCBV(s_xLightShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
 	}
 
-	xLightBinder.BindDrawConstants(&s_xLightConstants, sizeof(LightConstants));
+	xLightBinder.BindDrawConstants(s_xLightShader, "LightConstants", &s_xLightConstants, sizeof(LightConstants));
 	pxCommandList->AddCommand<Flux_CommandDispatch>(
 		(FROXEL_WIDTH + 7) / 8,
 		(FROXEL_HEIGHT + 7) / 8,
@@ -453,10 +372,10 @@ void Flux_FroxelFog::RenderApply(Flux_CommandList* pxCommandList)
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xApplyBinder(*pxCommandList);
-	xApplyBinder.BindCBV(s_xApplyFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xApplyBinder.BindSRV(s_xApplyDepthBinding, Flux_Graphics::GetDepthStencilSRV());
-	xApplyBinder.BindSRV(s_xApplyLightingBinding, &GetLightingGridInternal().SRV());
-	xApplyBinder.BindSRV(s_xApplyScatteringBinding, &GetScatteringGridInternal().SRV());
-	xApplyBinder.BindDrawConstants(&s_xApplyConstants, sizeof(ApplyConstants));
+	xApplyBinder.BindCBV(s_xApplyShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xApplyBinder.BindSRV(s_xApplyShader, "u_xDepthTexture", Flux_Graphics::GetDepthStencilSRV());
+	xApplyBinder.BindSRV(s_xApplyShader, "u_xLightingGrid", &GetLightingGridInternal().SRV());
+	xApplyBinder.BindSRV(s_xApplyShader, "u_xScatteringGrid", &GetScatteringGridInternal().SRV());
+	xApplyBinder.BindDrawConstants(s_xApplyShader, "ApplyConstants", &s_xApplyConstants, sizeof(ApplyConstants));
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

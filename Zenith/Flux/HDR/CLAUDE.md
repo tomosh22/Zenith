@@ -45,10 +45,13 @@ Scene Rendering (Deferred Shading, SSAO, Fog, Particles, SDFs)
 
 ## Render Targets
 
+All HDR render targets are graph-owned transients declared in
+`Flux_HDR::SetupTransients` / `SetupRenderGraph`.
+
 | Target | Format | Purpose |
 |--------|--------|---------|
-| `s_xHDRSceneTarget` | `RGBA16F` | Main HDR scene accumulation |
-| `s_axBloomChain[5]` | `RGBA16F` | Bloom downsample/upsample chain |
+| HDR scene target (`s_xHDRSceneTargetHandle`) | `RGBA16F` | Main HDR scene accumulation |
+| Bloom chain (`s_axBloomChainHandles[5]`) | `RGBA16F` | Bloom downsample/upsample chain |
 
 ## Target Setups
 

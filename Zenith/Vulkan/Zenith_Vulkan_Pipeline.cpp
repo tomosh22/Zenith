@@ -1146,3 +1146,17 @@ void Zenith_Vulkan_ComputePipelineBuilder::Build(Zenith_Vulkan_Pipeline& pipelin
 		Zenith_Error(LOG_CATEGORY_VULKAN, "Failed to create compute pipeline");
 	}
 }
+
+void Zenith_Vulkan_ComputePipelineBuilder::BuildFromShader(Zenith_Vulkan_Pipeline& xPipelineOut,
+                                                           const Zenith_Vulkan_Shader& xShader,
+                                                           const Zenith_Vulkan_RootSig& xRootSig)
+{
+	Zenith_Vulkan_ComputePipelineBuilder xBuilder;
+	xBuilder.WithShader(xShader)
+	        .WithLayout(xRootSig.m_xLayout)
+	        .Build(xPipelineOut);
+	// Centralise the two-step build + root-sig stamp so every compute-pipeline
+	// construction site calls a single helper instead of manually chaining
+	// WithShader/WithLayout/Build and then remembering to copy the root sig.
+	xPipelineOut.m_xRootSig = xRootSig;
+}

@@ -15,7 +15,7 @@
 static Slang::ComPtr<slang::IGlobalSession> s_pxGlobalSession;
 #endif // ZENITH_WINDOWS
 
-Flux_BindingHandle Flux_ShaderReflection::GetBinding(const char* szName) const
+const Flux_ReflectedBinding* Flux_ShaderReflection::GetBinding(const char* szName) const
 {
 	auto it = m_xBindingMap.find(szName);
 	if (it == m_xBindingMap.end())
@@ -25,22 +25,27 @@ Flux_BindingHandle Flux_ShaderReflection::GetBinding(const char* szName) const
 			szName, static_cast<u_int>(m_xBindingMap.size()));
 		for (const auto& pair : m_xBindingMap)
 		{
+			const Flux_ReflectedBinding& xBinding = m_axBindings.Get(pair.second);
 			Zenith_Log(LOG_CATEGORY_RENDERER, "  '%s' -> set=%u, binding=%u",
-				pair.first.c_str(), pair.second.m_uSet, pair.second.m_uBinding);
+				pair.first.c_str(), xBinding.m_uSet, xBinding.m_uBinding);
 		}
-		Zenith_Assert(false, "Shader binding '%s' not found in reflection", szName);
+		return nullptr;
 	}
-	return it->second;
+	return &m_axBindings.Get(it->second);
 }
 
 u_int Flux_ShaderReflection::GetBindingPoint(const char* szName) const
 {
-	return GetBinding(szName).m_uBinding;
+	const Flux_ReflectedBinding* pxBinding = GetBinding(szName);
+	Zenith_Assert(pxBinding != nullptr, "Shader binding '%s' not found in reflection", szName);
+	return pxBinding->m_uBinding;
 }
 
 u_int Flux_ShaderReflection::GetDescriptorSet(const char* szName) const
 {
-	return GetBinding(szName).m_uSet;
+	const Flux_ReflectedBinding* pxBinding = GetBinding(szName);
+	Zenith_Assert(pxBinding != nullptr, "Shader binding '%s' not found in reflection", szName);
+	return pxBinding->m_uSet;
 }
 
 void Flux_ShaderReflection::PopulateLayout(Flux_PipelineLayout& xLayoutOut) const
@@ -104,10 +109,7 @@ void Flux_ShaderReflection::BuildLookupMap()
 	for (u_int u = 0; u < m_axBindings.GetSize(); u++)
 	{
 		const Flux_ReflectedBinding& xBinding = m_axBindings.Get(u);
-		Flux_BindingHandle xHandle;
-		xHandle.m_uSet = xBinding.m_uSet;
-		xHandle.m_uBinding = xBinding.m_uBinding;
-		m_xBindingMap[xBinding.m_strName] = xHandle;
+		m_xBindingMap[xBinding.m_strName] = u;
 	}
 }
 

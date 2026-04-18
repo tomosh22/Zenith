@@ -66,12 +66,6 @@ static Flux_Shader s_xComputeShader;
 static Flux_RootSig s_xComputeRootSig;
 static Flux_CommandList s_xComputeCommandList("Particle GPU Compute");
 
-// Cached binding handles from shader reflection
-static Flux_BindingHandle s_xInputParticlesBinding;
-static Flux_BindingHandle s_xOutputParticlesBinding;
-static Flux_BindingHandle s_xInstanceBufferBinding;
-static Flux_BindingHandle s_xCounterBufferBinding;
-
 // Push constants for compute shader
 struct ParticleComputeConstants
 {
@@ -93,19 +87,10 @@ void Flux_ParticleGPU::Initialise()
 	const Flux_ShaderReflection& xReflection = s_xComputeShader.GetReflection();
 	Flux_RootSigBuilder::FromReflection(s_xComputeRootSig, xReflection);
 
-	// Build compute pipeline
-	Flux_ComputePipelineBuilder xComputeBuilder;
-	xComputeBuilder.WithShader(s_xComputeShader)
-		.WithLayout(s_xComputeRootSig.m_xLayout)
-		.Build(s_xComputePipeline);
-
-	s_xComputePipeline.m_xRootSig = s_xComputeRootSig;
-
-	// Cache binding handles from shader reflection
-	s_xInputParticlesBinding = xReflection.GetBinding("g_xInputParticles");
-	s_xOutputParticlesBinding = xReflection.GetBinding("g_xOutputParticles");
-	s_xInstanceBufferBinding = xReflection.GetBinding("g_xInstances");
-	s_xCounterBufferBinding = xReflection.GetBinding("g_xCounter");
+	// Build compute pipeline (one-call helper — wraps WithShader/WithLayout/Build
+	// + the root-sig assignment so engine code never touches vk::PipelineLayout
+	// or the m_xRootSig member directly).
+	Flux_ComputePipelineBuilder::BuildFromShader(s_xComputePipeline, s_xComputeShader, s_xComputeRootSig);
 
 	// Allocate particle buffers (double-buffered)
 	Flux_MemoryManager::InitialiseReadWriteBuffer(
@@ -416,11 +401,11 @@ void Flux_ParticleGPU::DispatchCompute(Flux_CommandList* pxCmdList)
 	}
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindUAV_Buffer(s_xInputParticlesBinding, &xInputBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(s_xOutputParticlesBinding, &xOutputBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(s_xInstanceBufferBinding, &s_xInstanceBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(s_xCounterBufferBinding, &s_xCounterBuffer.GetUAV());
-	xBinder.BindDrawConstants(&xConstants, sizeof(xConstants));
+	xBinder.BindUAV_Buffer(s_xComputeShader, "g_xInputParticles", &xInputBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(s_xComputeShader, "g_xOutputParticles", &xOutputBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(s_xComputeShader, "g_xInstances", &s_xInstanceBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(s_xComputeShader, "g_xCounter", &s_xCounterBuffer.GetUAV());
+	xBinder.BindDrawConstants(s_xComputeShader, "pc", &xConstants, sizeof(xConstants));
 
 	uint32_t uWorkgroups = (s_uTotalAllocatedParticles + s_uWorkgroupSize - 1) / s_uWorkgroupSize;
 	pxCmdList->AddCommand<Flux_CommandDispatch>(uWorkgroups, 1, 1);

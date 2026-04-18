@@ -88,18 +88,6 @@ static LightVolumeLOD s_axConeLODs[uNUM_LODS];
 // Cached frustum for culling (updated each frame)
 static Zenith_Frustum s_xCameraFrustum;
 
-// Cached binding handles from shader reflection
-static Flux_BindingHandle s_xFrameConstantsBinding;
-static Flux_BindingHandle s_xPointLightBufferBinding;
-static Flux_BindingHandle s_xSpotLightBufferBinding;
-static Flux_BindingHandle s_xDirectionalLightBufferBinding;
-static Flux_BindingHandle s_xDiffuseTexBinding;
-static Flux_BindingHandle s_xNormalsAmbientTexBinding;
-static Flux_BindingHandle s_xMaterialTexBinding;
-static Flux_BindingHandle s_xDepthTexBinding;
-static Flux_BindingHandle s_xPushConstantsBinding;
-static Flux_BindingHandle s_xBRDFLUTBinding;
-
 // Push constant structure for light type
 struct LightTypePushConstant
 {
@@ -553,7 +541,6 @@ void Flux_DynamicLights::Initialise()
 	// Load volume shaders
 	s_xVolumeShader.Initialise("DynamicLights/Flux_DynamicLights.vert", "DynamicLights/Flux_DynamicLights.frag");
 
-	// Cache binding handles from shader reflection
 	const Flux_ShaderReflection& xReflection = s_xVolumeShader.GetReflection();
 
 	// Define vertex layout (Position only - compact format)
@@ -564,7 +551,7 @@ void Flux_DynamicLights::Initialise()
 
 	// Base pipeline specification (shared settings)
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_aeColourAttachmentFormats[0] = Flux_HDR::GetHDRSceneTarget().m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &s_xVolumeShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
@@ -593,28 +580,6 @@ void Flux_DynamicLights::Initialise()
 	// Fullscreen quads have front faces toward camera, so we cull back faces
 	xPipelineSpec.m_eCullMode = CULL_MODE_BACK;
 	Flux_PipelineBuilder::FromSpecification(s_xDirectionalPipeline, xPipelineSpec);
-	s_xFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-	s_xPointLightBufferBinding = xReflection.GetBinding("PointLightBuffer");
-	s_xSpotLightBufferBinding = xReflection.GetBinding("SpotLightBuffer");
-	s_xDirectionalLightBufferBinding = xReflection.GetBinding("DirectionalLightBuffer");
-	s_xDiffuseTexBinding = xReflection.GetBinding("g_xDiffuseTex");
-	s_xNormalsAmbientTexBinding = xReflection.GetBinding("g_xNormalsAmbientTex");
-	s_xMaterialTexBinding = xReflection.GetBinding("g_xMaterialTex");
-	s_xDepthTexBinding = xReflection.GetBinding("g_xDepthTex");
-	s_xPushConstantsBinding = xReflection.GetBinding("pushConstants");
-	s_xBRDFLUTBinding = xReflection.GetBinding("g_xBRDFLUT");
-
-	// Validate binding handles (fail early if shader bindings are incorrect)
-	Zenith_Assert(s_xFrameConstantsBinding.IsValid(), "Failed to find FrameConstants binding in DynamicLights shader");
-	Zenith_Assert(s_xPointLightBufferBinding.IsValid(), "Failed to find PointLightBuffer binding in DynamicLights shader");
-	Zenith_Assert(s_xSpotLightBufferBinding.IsValid(), "Failed to find SpotLightBuffer binding in DynamicLights shader");
-	Zenith_Assert(s_xDirectionalLightBufferBinding.IsValid(), "Failed to find DirectionalLightBuffer binding in DynamicLights shader");
-	Zenith_Assert(s_xDiffuseTexBinding.IsValid(), "Failed to find g_xDiffuseTex binding in DynamicLights shader");
-	Zenith_Assert(s_xNormalsAmbientTexBinding.IsValid(), "Failed to find g_xNormalsAmbientTex binding in DynamicLights shader");
-	Zenith_Assert(s_xMaterialTexBinding.IsValid(), "Failed to find g_xMaterialTex binding in DynamicLights shader");
-	Zenith_Assert(s_xDepthTexBinding.IsValid(), "Failed to find g_xDepthTex binding in DynamicLights shader");
-	Zenith_Assert(s_xPushConstantsBinding.IsValid(), "Failed to find PushConstants binding in DynamicLights shader");
-	Zenith_Assert(s_xBRDFLUTBinding.IsValid(), "Failed to find g_xBRDFLUT binding in DynamicLights shader");
 
 	s_bInitialised = true;
 
@@ -1032,24 +997,24 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	// Bind frame constants (shared by all lights)
-	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xVolumeShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	// Bind G-buffer textures (shared by all lights)
-	xBinder.BindSRV(s_xDiffuseTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(s_xNormalsAmbientTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xMaterialTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(s_xDepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(s_xVolumeShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(s_xVolumeShader, "g_xNormalsAmbientTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(s_xVolumeShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(s_xVolumeShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 
 	// Bind BRDF LUT for multiscatter energy compensation
 	// This ensures rough metals have consistent brightness between IBL and dynamic lights
-	xBinder.BindSRV(s_xBRDFLUTBinding, &Flux_IBL::GetBRDFLUTSRV());
+	xBinder.BindSRV(s_xVolumeShader, "g_xBRDFLUT", &Flux_IBL::GetBRDFLUTSRV());
 
 	// Initial binding of instance buffers to satisfy Vulkan validation
 	// The shader statically references all three buffers, so they must all be bound.
 	// NOTE: Point and spot light buffers are rebound per-LOD in the rendering loops below.
-	xBinder.BindUAV_Buffer(s_xPointLightBufferBinding, &s_axPointLightInstanceBuffers[0].GetUAV());
-	xBinder.BindUAV_Buffer(s_xSpotLightBufferBinding, &s_axSpotLightInstanceBuffers[0].GetUAV());
-	xBinder.BindUAV_Buffer(s_xDirectionalLightBufferBinding, &s_xDirectionalLightInstanceBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(s_xVolumeShader, "PointLightBuffer", &s_axPointLightInstanceBuffers[0].GetUAV());
+	xBinder.BindUAV_Buffer(s_xVolumeShader, "SpotLightBuffer", &s_axSpotLightInstanceBuffers[0].GetUAV());
+	xBinder.BindUAV_Buffer(s_xVolumeShader, "DirectionalLightBuffer", &s_xDirectionalLightInstanceBuffer.GetUAV());
 
 	// ========== RENDER POINT LIGHTS (INSTANCED) ==========
 	// Use volume pipeline with front-face culling (render back faces)
@@ -1075,7 +1040,7 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 			xTypeConstant.m_uPad0 = 0;
 			xTypeConstant.m_uPad1 = 0;
 			xTypeConstant.m_uPad2 = 0;
-			xBinder.BindDrawConstants(s_xPushConstantsBinding, &xTypeConstant, sizeof(LightTypePushConstant));
+			xBinder.BindDrawConstants(s_xVolumeShader, "pushConstants", &xTypeConstant, sizeof(LightTypePushConstant));
 
 			for (u_int uLOD = 0; uLOD < uNUM_LODS; ++uLOD)
 			{
@@ -1085,7 +1050,7 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 				}
 
 				// Bind storage buffer for this LOD's point lights
-				xBinder.BindUAV_Buffer(s_xPointLightBufferBinding, &s_axPointLightInstanceBuffers[uLOD].GetUAV());
+				xBinder.BindUAV_Buffer(s_xVolumeShader, "PointLightBuffer", &s_axPointLightInstanceBuffers[uLOD].GetUAV());
 
 				// Bind geometry for this LOD
 				pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_axSphereLODs[uLOD].m_xVertexBuffer);
@@ -1123,7 +1088,7 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 			xTypeConstant.m_uPad0 = 0;
 			xTypeConstant.m_uPad1 = 0;
 			xTypeConstant.m_uPad2 = 0;
-			xBinder.BindDrawConstants(s_xPushConstantsBinding, &xTypeConstant, sizeof(LightTypePushConstant));
+			xBinder.BindDrawConstants(s_xVolumeShader, "pushConstants", &xTypeConstant, sizeof(LightTypePushConstant));
 
 			for (u_int uLOD = 0; uLOD < uNUM_LODS; ++uLOD)
 			{
@@ -1133,7 +1098,7 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 				}
 
 				// Bind storage buffer for this LOD's spot lights
-				xBinder.BindUAV_Buffer(s_xSpotLightBufferBinding, &s_axSpotLightInstanceBuffers[uLOD].GetUAV());
+				xBinder.BindUAV_Buffer(s_xVolumeShader, "SpotLightBuffer", &s_axSpotLightInstanceBuffers[uLOD].GetUAV());
 
 				// Bind geometry for this LOD
 				pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_axConeLODs[uLOD].m_xVertexBuffer);
@@ -1160,10 +1125,10 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 		xTypeConstant.m_uPad0 = 0;
 		xTypeConstant.m_uPad1 = 0;
 		xTypeConstant.m_uPad2 = 0;
-		xBinder.BindDrawConstants(s_xPushConstantsBinding, &xTypeConstant, sizeof(LightTypePushConstant));
+		xBinder.BindDrawConstants(s_xVolumeShader, "pushConstants", &xTypeConstant, sizeof(LightTypePushConstant));
 
 		// Bind storage buffer for directional lights
-		xBinder.BindUAV_Buffer(s_xDirectionalLightBufferBinding, &s_xDirectionalLightInstanceBuffer.GetUAV());
+		xBinder.BindUAV_Buffer(s_xVolumeShader, "DirectionalLightBuffer", &s_xDirectionalLightInstanceBuffer.GetUAV());
 
 		// Bind fullscreen quad geometry
 		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
@@ -1176,22 +1141,14 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 
 void Flux_DynamicLights::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	uint32_t uPassIndex = xGraph.AddPass("Dynamic Lights", ExecuteDynamicLights);
-	xGraph.Write(uPassIndex, Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV);
-
-	// Reads: full G-Buffer (DIFFUSE, NORMALSAMBIENT, MATERIAL) — all three are
-	// bound as SRVs in ExecuteDynamicLights for the per-light shading. Missing
-	// any of these leaves the corresponding attachment in COLOR_ATTACHMENT_OPTIMAL
-	// after the geometry pass and the SRV bind hits a layout-mismatch validator error.
-	xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_READ_SRV);
-
-	// Reads: depth buffer
-	xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
-
-	// Reads: IBL BRDF LUT — bound by the execute callback for multiscatter energy
-	// compensation. Without this declaration the LUT stays in COLOR_ATTACHMENT_OPTIMAL
-	// after the IBL BRDF LUT pass writes it and the validator rejects the SRV bind.
-	xGraph.Read(uPassIndex, Flux_IBL::s_xBRDFLUT, RESOURCE_ACCESS_READ_SRV);
+	// Full G-Buffer + depth + IBL BRDF LUT — all bound as SRVs in
+	// ExecuteDynamicLights. Missing any declaration here leaves the target in
+	// COLOR_ATTACHMENT_OPTIMAL and the SRV bind trips a layout-mismatch error.
+	xGraph.AddPass("Dynamic Lights", ExecuteDynamicLights)
+		.Writes(Flux_HDR::GetHDRSceneTarget(),                             RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
+		.Reads (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
+		.Reads (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads (Flux_IBL::s_xBRDFLUT,                                      RESOURCE_ACCESS_READ_SRV);
 }

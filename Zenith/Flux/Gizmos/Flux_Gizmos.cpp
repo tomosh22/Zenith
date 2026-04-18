@@ -287,7 +287,7 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 
 	// Create binder once - bind frame constants once (same for all gizmo components)
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(Flux_BindingHandle{0, 0}, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	// Render each gizmo component
 	for (uint32_t i = 0; i < pxGeometry->GetSize(); ++i)
@@ -315,7 +315,7 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 		else if (xGeom.m_eComponent == s_eActiveComponent && s_bIsInteracting)
 			xPushConstants.m_fHighlightIntensity = 1.0f;
 
-		xBinder.BindDrawConstants(&xPushConstants, sizeof(xPushConstants));
+		xBinder.BindDrawConstants(s_xShader, "GizmoPushConstants", &xPushConstants, sizeof(xPushConstants));
 
 		// Draw
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(xGeom.m_uIndexCount);
@@ -324,8 +324,8 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 
 void Flux_Gizmos::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	uint32_t uPass = xGraph.AddPass("Gizmos", ExecuteGizmos);
-	xGraph.Write(uPass, Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.AddPass("Gizmos", ExecuteGizmos)
+		.Writes(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
 void Flux_Gizmos::SetTargetEntity(Zenith_Entity* pxEntity)

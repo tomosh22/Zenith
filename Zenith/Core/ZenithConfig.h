@@ -96,24 +96,24 @@ static constexpr uint32_t MAX_MATERIALS = 1024;
 
 static constexpr uint32_t FLUX_MAX_TARGETS = 8;
 static constexpr uint32_t FLUX_MAX_MIPS = 12;     // Maximum mip levels (supports up to 4096x4096)
+// Maximum array layers per attachment. Cubes use 6, 2D array textures use up
+// to this. The render graph's barrier key (Flux_BarrierKey) packs the layer
+// index into 16 bits, so this constant must stay <= 0xFFFF; the static_assert
+// next to MakeBarrierKey enforces that pin at compile time.
+static constexpr uint32_t FLUX_MAX_LAYERS = 256;
 static constexpr uint32_t FLUX_MAX_BINDINGS_PER_GROUP = 32;
 static constexpr uint32_t FLUX_MAX_BINDING_GROUPS = 5;
 
+// Maximum number of begin/end-frame callbacks any backend can register with
+// Flux_PerFrame. Realistic subscribers: Vulkan PerFrame (begin), MemoryManager
+// (end), plus headroom for future hot-reload / profiler hooks.
+static constexpr uint32_t FLUX_MAX_PERFRAME_CALLBACKS = 4;
 
-// ============================================================================
-// VERTEX FORMATS
-// ============================================================================
-// Standard vertex stride for static meshes.
-// Layout: Position(12) + UV(8) + Normal(12) + Tangent(12) + Bitangent(12) + Color(4) = 60 bytes
-//
-// CRITICAL: This MUST match the vertex layout in:
-//   - Asset export tools (mesh converter)
-//   - Shader input layouts
-//   - Terrain vertex format (see Flux_TerrainConfig.h)
-//
-// Changing this value requires updating ALL mesh files and shaders.
-
-static constexpr uint32_t STATIC_MESH_VERTEX_STRIDE = 60;
+// Static mesh vertex stride. The engine does not use this constant directly;
+// the authoritative layout (pos12 + uv8 + normal12 + tangent12 + bitangent12 +
+// colour4 = 60 bytes) lives in the mesh converter tool's source. Changing the
+// vertex layout requires touching the converter, shader input layouts, and
+// the terrain vertex format (see Flux_TerrainConfig.h) in lockstep.
 
 
 // ============================================================================
@@ -180,4 +180,12 @@ static constexpr PhysicsMeshQuality DEFAULT_PHYSICS_MESH_QUALITY = PhysicsMeshQu
 
 #ifndef FLUX_MAX_MIPS
 #define FLUX_MAX_MIPS ZenithConfig::FLUX_MAX_MIPS
+#endif
+
+#ifndef FLUX_MAX_LAYERS
+#define FLUX_MAX_LAYERS ZenithConfig::FLUX_MAX_LAYERS
+#endif
+
+#ifndef FLUX_MAX_PERFRAME_CALLBACKS
+#define FLUX_MAX_PERFRAME_CALLBACKS ZenithConfig::FLUX_MAX_PERFRAME_CALLBACKS
 #endif

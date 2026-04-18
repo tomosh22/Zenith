@@ -12,19 +12,14 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-// ---- Transient path (graph-owned allocation) ----
+// Graph-owned transient handles — backing Flux_RenderAttachments are allocated
+// and destroyed by the render graph, sized from the descriptors set in
+// SetupRenderGraph.
 static Flux_TransientHandle s_xRayMarchHandle;
 static Flux_TransientHandle s_xResolvedHandle;
 static Flux_RenderGraph* s_pxGraph = nullptr;
 
-// ---- Fallback path (subsystem-owned allocation) ----
-static Flux_RenderAttachment s_xRayMarchResult_Owned;
-static Flux_RenderAttachment s_xResolvedReflection_Owned;
-
-// ---- Toggle: which path is active this frame ----
-static bool s_bUsingTransients = false;
-
-// SSR render target format (constant - pipeline building doesn't depend on allocation path)
+// SSR render target format.
 static constexpr TextureFormat SSR_FORMAT = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 
 // Static member definitions
@@ -69,123 +64,47 @@ static Flux_Shader s_xResolveShader;
 static Flux_Pipeline s_xRayMarchPipeline;
 static Flux_Pipeline s_xResolvePipeline;
 
-// Cached binding handles for ray march pass (from shader reflection)
-static Flux_BindingHandle s_xRM_FrameConstantsBinding;
-static Flux_BindingHandle s_xRM_DepthTexBinding;
-static Flux_BindingHandle s_xRM_NormalsTexBinding;
-static Flux_BindingHandle s_xRM_MaterialTexBinding;
-static Flux_BindingHandle s_xRM_HiZTexBinding;
-static Flux_BindingHandle s_xRM_DiffuseTexBinding;
-static Flux_BindingHandle s_xRM_BlueNoiseTexBinding;
-
-// Cached binding handles for resolve pass (from shader reflection)
-static Flux_BindingHandle s_xRS_FrameConstantsBinding;
-static Flux_BindingHandle s_xRS_RayMarchResultBinding;
-static Flux_BindingHandle s_xRS_NormalsTexBinding;
-static Flux_BindingHandle s_xRS_MaterialTexBinding;
-static Flux_BindingHandle s_xRS_DepthTexBinding;
-
 // ---- Helpers to get the right attachment regardless of path ----
 
 Flux_RenderAttachment& Flux_SSR::GetRayMarchAttachment()
 {
-	if (s_bUsingTransients)
-		return s_pxGraph->GetTransientAttachment(s_xRayMarchHandle);
-	return s_xRayMarchResult_Owned;
+	Zenith_Assert(s_pxGraph, "Flux_SSR::GetRayMarchAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return s_pxGraph->GetTransientAttachment(s_xRayMarchHandle);
 }
-
 Flux_RenderAttachment& Flux_SSR::GetResolvedAttachment()
 {
-	if (s_bUsingTransients)
-		return s_pxGraph->GetTransientAttachment(s_xResolvedHandle);
-	return s_xResolvedReflection_Owned;
+	Zenith_Assert(s_pxGraph, "Flux_SSR::GetResolvedAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return s_pxGraph->GetTransientAttachment(s_xResolvedHandle);
 }
 
-// ---- Fallback: subsystem-owned create/destroy ----
-
-void Flux_SSR::CreateOwnedRenderTargets()
+#ifdef ZENITH_DEBUG_VARIABLES
+// Debug-texture callbacks — resolved every ImGui draw so the preview follows
+// render-graph rebuilds (the transient SRVs are recreated on resize). Returning
+// nullptr before SetupRenderGraph / after Shutdown renders nothing, avoiding
+// the null-guard in the getters above.
+static const Flux_ShaderResourceView* DebugGetRayMarchSRV()
 {
-	u_int uWidth = Flux_Swapchain::GetWidth();
-	u_int uHeight = Flux_Swapchain::GetHeight();
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR::CreateOwnedRenderTargets() - Resolution: %ux%u", uWidth, uHeight);
-
-	{
-		Flux_RenderAttachmentBuilder xBuilder;
-		xBuilder.m_uWidth = uWidth;
-		xBuilder.m_uHeight = uHeight;
-		xBuilder.m_eFormat = SSR_FORMAT;
-		xBuilder.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-		xBuilder.BuildColour(s_xRayMarchResult_Owned, "SSR RayMarch (owned)");
-	}
-
-	{
-		Flux_RenderAttachmentBuilder xBuilder;
-		xBuilder.m_uWidth = uWidth;
-		xBuilder.m_uHeight = uHeight;
-		xBuilder.m_eFormat = SSR_FORMAT;
-		xBuilder.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-		xBuilder.BuildColour(s_xResolvedReflection_Owned, "SSR Resolved (owned)");
-	}
+	if (s_pxGraph == nullptr) return nullptr;
+	return &Flux_SSR::GetRayMarchAttachment().SRV();
 }
-
-void Flux_SSR::DestroyOwnedRenderTargets()
+static const Flux_ShaderResourceView* DebugGetResolvedSRV()
 {
-	auto QueueDeletion = [](Flux_RenderAttachment& xAttachment)
-	{
-		if (xAttachment.m_xVRAMHandle.IsValid())
-		{
-			Flux_VRAM* pxVRAM = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
-			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
-				xAttachment.RTV().m_xImageViewHandle,
-				xAttachment.DSV().m_xImageViewHandle,
-				xAttachment.SRV().m_xImageViewHandle,
-				xAttachment.UAV(0).m_xImageViewHandle);
-		}
-	};
-
-	QueueDeletion(s_xRayMarchResult_Owned);
-	QueueDeletion(s_xResolvedReflection_Owned);
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR::DestroyOwnedRenderTargets()");
+	if (s_pxGraph == nullptr) return nullptr;
+	return &Flux_SSR::GetResolvedAttachment().SRV();
 }
+#endif
 
 void Flux_SSR::Initialise()
 {
-	// Owned targets are always created - used when transients are toggled off.
-	CreateOwnedRenderTargets();
-
 	// Initialize ray march shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xRayMarchShader, s_xRayMarchPipeline,
 		"SSR/Flux_SSR_RayMarch.frag", SSR_FORMAT);
 
-	// Cache ray march binding handles from reflection
-	{
-		const Flux_ShaderReflection& xReflection = s_xRayMarchShader.GetReflection();
-		s_xRM_FrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-		s_xRM_DepthTexBinding = xReflection.GetBinding("g_xDepthTex");
-		s_xRM_NormalsTexBinding = xReflection.GetBinding("g_xNormalsTex");
-		s_xRM_MaterialTexBinding = xReflection.GetBinding("g_xMaterialTex");
-		s_xRM_HiZTexBinding = xReflection.GetBinding("g_xHiZTex");
-		s_xRM_DiffuseTexBinding = xReflection.GetBinding("g_xDiffuseTex");
-		s_xRM_BlueNoiseTexBinding = xReflection.GetBinding("g_xBlueNoiseTex");
-	}
-
 	// Initialize resolve shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xResolveShader, s_xResolvePipeline,
 		"SSR/Flux_SSR_Resolve.frag", SSR_FORMAT);
-
-	// Cache resolve binding handles from reflection
-	{
-		const Flux_ShaderReflection& xReflection = s_xResolveShader.GetReflection();
-		s_xRS_FrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-		s_xRS_RayMarchResultBinding = xReflection.GetBinding("g_xRayMarchTex");
-		s_xRS_NormalsTexBinding = xReflection.GetBinding("g_xNormalsTex");
-		s_xRS_MaterialTexBinding = xReflection.GetBinding("g_xMaterialTex");
-		s_xRS_DepthTexBinding = xReflection.GetBinding("g_xDepthTex");
-	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Flux", "SSR", "Enable" }, dbg_bSSREnable);
@@ -198,26 +117,12 @@ void Flux_SSR::Initialise()
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "StepCount" }, dbg_xSSRConstants.m_uStepCount, 8, 256);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "StartMip" }, dbg_xSSRConstants.m_uStartMip, 0, 10);
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSR", "ContactHardeningDist" }, dbg_xSSRConstants.m_fContactHardeningDist, 0.5f, 10.0f);
-	Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "RayMarch" }, s_xRayMarchResult_Owned.SRV());
-	Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "Resolved" }, s_xResolvedReflection_Owned.SRV());
+	// Transient-SRV previews use AddTextureCallback so the SRV is re-resolved
+	// through s_pxGraph on every ImGui draw. Storing a stale pointer via
+	// AddTexture would go dangling once the graph rebuilds (e.g. on resize).
+	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "RayMarch" }, &DebugGetRayMarchSRV);
+	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "Resolved" }, &DebugGetResolvedSRV);
 #endif
-
-	// Register resize callback to recreate render targets on window resize
-	Flux::AddResChangeCallback([]()
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR resize callback triggered");
-
-		DestroyOwnedRenderTargets();
-		CreateOwnedRenderTargets();
-
-#ifdef ZENITH_DEBUG_VARIABLES
-		// Re-register debug textures with the new SRVs (old ones were destroyed)
-		Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "RayMarch" }, s_xRayMarchResult_Owned.SRV());
-		Zenith_DebugVariables::AddTexture({ "Flux", "SSR", "Textures", "Resolved" }, s_xResolvedReflection_Owned.SRV());
-#endif
-
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR resize complete - textures re-registered");
-	});
 
 	s_bInitialised = true;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR initialised");
@@ -228,9 +133,7 @@ void Flux_SSR::Shutdown()
 	if (!s_bInitialised)
 		return;
 
-	DestroyOwnedRenderTargets();
 	s_pxGraph = nullptr;
-
 	s_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR shut down");
 }
@@ -269,15 +172,15 @@ static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(s_xRM_FrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindDrawConstants(&dbg_xSSRConstants, sizeof(SSRConstants));
+	xBinder.BindCBV(s_xRayMarchShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindDrawConstants(s_xRayMarchShader, "SSRConstants", &dbg_xSSRConstants, sizeof(SSRConstants));
 
-	xBinder.BindSRV(s_xRM_DepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xRM_NormalsTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xRM_MaterialTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(s_xRM_HiZTexBinding, &Flux_HiZ::GetHiZSRV());
-	xBinder.BindSRV(s_xRM_DiffuseTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(s_xRM_BlueNoiseTexBinding, &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
+	xBinder.BindSRV(s_xRayMarchShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(s_xRayMarchShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(s_xRayMarchShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(s_xRayMarchShader, "g_xHiZTex", &Flux_HiZ::GetHiZSRV());
+	xBinder.BindSRV(s_xRayMarchShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(s_xRayMarchShader, "g_xBlueNoiseTex", &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -294,83 +197,109 @@ static void ExecuteSSRResolve(Flux_CommandList* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(s_xRS_FrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindDrawConstants(&dbg_xSSRConstants, sizeof(SSRConstants));
+	xBinder.BindCBV(s_xResolveShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindDrawConstants(s_xResolveShader, "SSRConstants", &dbg_xSSRConstants, sizeof(SSRConstants));
 
-	xBinder.BindSRV(s_xRS_RayMarchResultBinding, &Flux_SSR::GetRayMarchAttachment().SRV());
-	xBinder.BindSRV(s_xRS_NormalsTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xRS_MaterialTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(s_xRS_DepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(s_xResolveShader, "g_xRayMarchTex", &Flux_SSR::GetRayMarchAttachment().SRV());
+	xBinder.BindSRV(s_xResolveShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(s_xResolveShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(s_xResolveShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
+// Handle for the resolve pass so ApplyBlurSelectionToGraph can toggle its
+// enable bit when dbg_bRoughnessBlur changes.
+static Flux_PassHandle s_xResolvePass;
+// Last value seen by ApplyBlurSelectionToGraph — change triggers a graph rebuild.
+static bool s_bLastBlurEnabled = true;
+// Handle committed at SetupRenderGraph exit. GetReflectionHandle asserts the
+// live toggle still resolves to this handle — otherwise a toggle has happened
+// without a corresponding Flux::RequestGraphRebuild(), which would leave the
+// deferred pass's declared Read referencing the stale transient.
+static Flux_TransientHandle s_xCommittedReflectionHandle;
+
 void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	s_pxGraph = &xGraph;
-	s_bUsingTransients = xGraph.AreTransientsEnabled();
 
-	u_int uWidth = Flux_Swapchain::GetWidth();
-	u_int uHeight = Flux_Swapchain::GetHeight();
+	Flux_TransientTextureDesc xSSRDesc;
+	xSSRDesc.m_uWidth       = Flux_Swapchain::GetWidth();
+	xSSRDesc.m_uHeight      = Flux_Swapchain::GetHeight();
+	xSSRDesc.m_eFormat      = SSR_FORMAT;
+	xSSRDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
+	s_xRayMarchHandle = xGraph.CreateTransient(xSSRDesc);
+	s_xResolvedHandle = xGraph.CreateTransient(xSSRDesc);
 
-	// Declare transient resources if enabled
-	if (s_bUsingTransients)
-	{
-		Flux_TransientTextureDesc xSSRDesc;
-		xSSRDesc.m_uWidth = uWidth;
-		xSSRDesc.m_uHeight = uHeight;
-		xSSRDesc.m_eFormat = SSR_FORMAT;
-		xSSRDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-
-		s_xRayMarchHandle = xGraph.CreateTransient(xSSRDesc);
-		s_xResolvedHandle = xGraph.CreateTransient(xSSRDesc);
-	}
-
-	// Always add all passes - enable/disable is handled at runtime in execute callbacks
-
-	// RayMarch pass - first writer of its target; clear so the initial
+	// RayMarch pass — first writer of its target; clear so the initial
 	// render-pass LoadOp is valid.
-	{
-		u_int uPassIndex = xGraph.AddPass("SSR RayMarch", ExecuteSSRRayMarch);
-		xGraph.SetClear(uPassIndex, true);
+	xGraph.AddPass("SSR RayMarch", ExecuteSSRRayMarch)
+		.ClearTargets()
+		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_HiZ::GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(s_xRayMarchHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
 
-		xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_HiZ::GetHiZAttachment(), RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount);
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_READ_SRV);
+	// Resolve pass — roughness-weighted blur; clear. Registered unconditionally;
+	// ApplyBlurSelectionToGraph toggles its enable bit based on dbg_bRoughnessBlur.
+	s_xResolvePass = xGraph.AddPass("SSR Resolve", ExecuteSSRResolve)
+		.ClearTargets()
+		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (s_xRayMarchHandle,                                         RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(s_xResolvedHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
 
-		if (s_bUsingTransients)
-			xGraph.WriteTransient(uPassIndex, s_xRayMarchHandle, RESOURCE_ACCESS_WRITE_RTV);
-		else
-			xGraph.Write(uPassIndex, s_xRayMarchResult_Owned, RESOURCE_ACCESS_WRITE_RTV);
-	}
+	xGraph.SetEnabled(s_xResolvePass, dbg_bRoughnessBlur);
+	s_bLastBlurEnabled = dbg_bRoughnessBlur;
 
-	// Resolve pass - first writer of its target; clear.
-	{
-		u_int uPassIndex = xGraph.AddPass("SSR Resolve", ExecuteSSRResolve);
-		xGraph.SetClear(uPassIndex, true);
+	// Commit the handle the deferred pass will now read. GetReflectionHandle
+	// asserts against this value on every call — any runtime toggle without a
+	// matching Flux::RequestGraphRebuild() will trip at the point of the
+	// mistake, not downstream in Validate() or AssertBoundResourceDeclared.
+	s_xCommittedReflectionHandle = dbg_bRoughnessBlur ? s_xResolvedHandle : s_xRayMarchHandle;
+}
 
-		if (s_bUsingTransients)
-		{
-			xGraph.ReadTransient(uPassIndex, s_xRayMarchHandle, RESOURCE_ACCESS_READ_SRV);
-			xGraph.WriteTransient(uPassIndex, s_xResolvedHandle, RESOURCE_ACCESS_WRITE_RTV);
-		}
-		else
-		{
-			xGraph.Read(uPassIndex, s_xRayMarchResult_Owned, RESOURCE_ACCESS_READ_SRV);
-			xGraph.Write(uPassIndex, s_xResolvedReflection_Owned, RESOURCE_ACCESS_WRITE_RTV);
-		}
+void Flux_SSR::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
+{
+	if (dbg_bRoughnessBlur == s_bLastBlurEnabled)
+		return;
 
-		xGraph.Read(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_READ_SRV);
-	}
+	// Full graph rebuild — not just xGraph.MarkDirty() — because
+	// Flux_DeferredShading::SetupRenderGraph captures the current
+	// GetReflectionHandle() value when declaring its Read. MarkDirty triggers a
+	// re-Compile on the same declared reads/writes, which would leave the
+	// deferred pass reading the stale handle (either an orphan Read whose
+	// writer is now disabled, or a valid Read on the wrong transient, with the
+	// execute callback binding an SRV the graph hasn't transitioned).
+	// Flux::RequestGraphRebuild() re-runs every subsystem's SetupRenderGraph
+	// on the next frame, so the deferred pass's declared Read resolves to the
+	// handle matching the new dbg_bRoughnessBlur value. SetupRenderGraph above
+	// will also re-seed s_xCommittedReflectionHandle and re-set the resolve
+	// pass's enable bit.
+	Flux::RequestGraphRebuild();
+}
+
+Flux_TransientHandle Flux_SSR::GetReflectionHandle()
+{
+	// Blur on → deferred reads the resolved (blurred) output.
+	// Blur off → deferred reads the raw ray-march result directly.
+	const Flux_TransientHandle xLive = dbg_bRoughnessBlur ? s_xResolvedHandle : s_xRayMarchHandle;
+	Zenith_Assert(!s_xCommittedReflectionHandle.IsValid() || xLive == s_xCommittedReflectionHandle,
+		"Flux_SSR::GetReflectionHandle: live handle (idx=%u gen=%u) disagrees with the handle committed at SetupRenderGraph exit (idx=%u gen=%u). "
+		"dbg_bRoughnessBlur changed without Flux::RequestGraphRebuild() being called in ApplyBlurSelectionToGraph — "
+		"MarkDirty() alone does not re-run SetupRenderGraph, so the deferred pass's declared Read is stale.",
+		xLive.m_uIndex, xLive.m_uGeneration,
+		s_xCommittedReflectionHandle.m_uIndex, s_xCommittedReflectionHandle.m_uGeneration);
+	return xLive;
 }
 
 Flux_ShaderResourceView& Flux_SSR::GetReflectionSRV()
 {
-	// Return resolved if blur is enabled, otherwise raw ray march result
+	// Must match GetReflectionHandle so bind-time-declared-access assertions
+	// see the same resource the graph has a Read declared on.
 	if (dbg_bRoughnessBlur)
 		return GetResolvedAttachment().SRV();
 	return GetRayMarchAttachment().SRV();

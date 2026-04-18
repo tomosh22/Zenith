@@ -125,6 +125,7 @@ public:
 #ifdef ZENITH_TOOLS
 	static vk::RenderPass s_xImGuiRenderPass;
 	static vk::DescriptorPool s_xImGuiDescriptorPool;
+	static vk::DescriptorSetLayout s_xImGuiPreviewLayout;
 	static void InitialiseImGui();
 	static void InitialiseImGuiRenderPass();
 	static void ShutdownImGui();
@@ -134,9 +135,22 @@ public:
 	// ImGui memory tracking
 	static u_int64 GetImGuiMemoryAllocated();
 	static u_int64 GetImGuiAllocationCount();
+
+	// Engine-typed wrapper that builds an ImGui-compatible texture identifier
+	// from a Flux SRV + sampler. Engine-side ImGui consumers (debug variable
+	// texture preview etc.) call this rather than allocating descriptor sets
+	// themselves. Returns a uint64 that can be cast to ImTextureID for
+	// ImGui::Image.
+	static uint64_t CreateImGuiTextureID(const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler);
 #endif
 
-	static void BeginFrame();
+	// Per-frame callback registered with Flux_PerFrame at Initialise time.
+	// Wraps the wait-fence / reset-pools / drain-typed-deletion-queues logic
+	// that used to live in BeginFrame. Receives the ring index from
+	// Flux_PerFrame so the swapchain is no longer the source of truth for
+	// the current per-frame slot.
+	static void OnFluxPerFrameBegin(u_int uRingIndex, void* pUserData);
+
 	static void EndFrame(bool bSubmitRenderWork);
 
 	// Wait for GPU to finish all work (blocks until idle)
@@ -169,6 +183,12 @@ public:
 	static vk::DescriptorSet& GetBindlessTexturesDescriptorSet() { return s_xBindlessTexturesDescriptorSet; }
 	static vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout() { return s_xBindlessTexturesDescriptorSetLayout; }
 	static void WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler);
+
+	// Engine-typed wrapper around WriteBindlessDescriptor. Engine code (asset
+	// system, etc.) calls this rather than reaching for vk::ImageView / vk::Sampler
+	// directly. The wrapper extracts the native handles internally so callers
+	// stay portable.
+	static void WriteBindlessTextureSlot(uint32_t uIndex, const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler);
 
 	// VRAM Registry
 	static Flux_VRAMHandle RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM);
@@ -226,6 +246,19 @@ public:
 
 	Zenith_Vulkan_VRAM(const vk::Buffer xBuffer, const VmaAllocation xAllocation, VmaAllocator xAllocator, const u_int uSize);
 
+	// Aliased-image constructor: the image is bound to an allocation owned by
+	// a *different* pool VRAM. m_bAliased is set true so the destructor
+	// destroys only the image (the allocation is freed when the pool VRAM is
+	// destroyed). m_xAllocation is retained for debug/inspection but not
+	// treated as owned.
+	struct AliasedImageTag {};
+	Zenith_Vulkan_VRAM(AliasedImageTag, const vk::Image xImage, const VmaAllocation xPoolAllocation, VmaAllocator xAllocator);
+
+	// Pool constructor: owns an allocation sized for multiple aliased images
+	// but has no image/buffer of its own. Destruction frees the allocation.
+	struct PoolTag {};
+	Zenith_Vulkan_VRAM(PoolTag, const VmaAllocation xAllocation, VmaAllocator xAllocator, u_int64 ulPoolSize);
+
 	~Zenith_Vulkan_VRAM();
 
 	VmaAllocation GetAllocation() const { return m_xAllocation; }
@@ -233,6 +266,8 @@ public:
 	vk::Image GetImage() const { return m_xImage; }
 	vk::Buffer GetBuffer() const { return m_xBuffer; }
 	u_int GetBufferSize() const { return m_uBufferSize; }
+	bool IsAliased() const { return m_bAliased; }
+	bool IsPool() const    { return m_bPool; }
 
 private:
 	VmaAllocation m_xAllocation = VK_NULL_HANDLE;
@@ -242,4 +277,20 @@ private:
 	u_int m_uBufferSize = 0;
 
 	vk::Image m_xImage = VK_NULL_HANDLE;
+
+	// Aliased image: the VkImage is bound to someone else's VmaAllocation
+	// (a pool's allocation). On destruction, destroy only the image —
+	// NOT the allocation. The pool's own VRAM frees the allocation.
+	bool m_bAliased = false;
+
+	// Pool VRAM: owns an allocation sized for multiple aliased images but
+	// has no image/buffer of its own. On destruction, vmaFreeMemory the
+	// allocation. Images aliased into this pool must have been destroyed
+	// before the pool (the frame-in-flight deferred-deletion ring ensures
+	// this since aliased-image VRAM queues deletion first in AllocateTransients).
+	bool m_bPool = false;
+
+	// Size of the pool allocation (pool VRAMs only). Tracked here for the
+	// memory-usage accounting that the non-pool path infers from m_xAllocation->GetSize.
+	u_int64 m_ulPoolSize = 0;
 };

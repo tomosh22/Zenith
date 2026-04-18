@@ -58,34 +58,6 @@ static Flux_DynamicConstantBuffer s_xCullingConstantsBuffer;
 static bool s_bCullingInitialized = false;
 static bool s_bCullingEnabled = true;  // GPU culling enabled by default
 
-// GBuffer shader binding handles
-static Flux_BindingHandle s_xFrameConstantsBinding;
-static Flux_BindingHandle s_xScratchBufferBinding;
-static Flux_BindingHandle s_xDiffuseTexBinding;
-static Flux_BindingHandle s_xNormalTexBinding;
-static Flux_BindingHandle s_xRoughnessMetallicTexBinding;
-static Flux_BindingHandle s_xOcclusionTexBinding;
-static Flux_BindingHandle s_xEmissiveTexBinding;
-static Flux_BindingHandle s_xTransformBufferBinding;
-static Flux_BindingHandle s_xAnimDataBufferBinding;
-static Flux_BindingHandle s_xVisibleIndexBufferBinding;
-static Flux_BindingHandle s_xAnimationTexBinding;
-
-// Shadow shader binding handles
-static Flux_BindingHandle s_xShadowFrameConstantsBinding;
-static Flux_BindingHandle s_xShadowScratchBufferBinding;
-static Flux_BindingHandle s_xShadowMatrixBinding;
-static Flux_BindingHandle s_xShadowTransformBufferBinding;
-static Flux_BindingHandle s_xShadowVisibleIndexBufferBinding;
-
-// Culling shader binding handles
-static Flux_BindingHandle s_xCullingConstantsBinding;
-static Flux_BindingHandle s_xCullingTransformBufferBinding;
-static Flux_BindingHandle s_xCullingAnimDataBufferBinding;
-static Flux_BindingHandle s_xCullingVisibleIndexBufferBinding;
-static Flux_BindingHandle s_xCullingVisibleCountBufferBinding;
-static Flux_BindingHandle s_xCullingIndirectBufferBinding;
-
 // Statistics
 static uint32_t s_uTotalInstances = 0;
 static uint32_t s_uVisibleInstances = 0;
@@ -140,10 +112,7 @@ void Flux_InstancedMeshes::Initialise()
 	// Shadow pipeline
 	{
 		Flux_PipelineSpecification xShadowPipelineSpec;
-		uint32_t uNumColour;
-		Flux_RenderAttachment* pxDepthStencil;
-		Flux_Shadows::GetCSMTargetSetup(0, uNumColour, pxDepthStencil);
-		xShadowPipelineSpec.m_eDepthStencilFormat = pxDepthStencil->m_xSurfaceInfo.m_eFormat;
+		xShadowPipelineSpec.m_eDepthStencilFormat = CSM_FORMAT;
 		xShadowPipelineSpec.m_uNumColourAttachments = 0;
 		xShadowPipelineSpec.m_pxShader = &s_xShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
@@ -153,28 +122,6 @@ void Flux_InstancedMeshes::Initialise()
 
 		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
 	}
-
-	// Cache binding handles from shader reflection
-	const Flux_ShaderReflection& xGBufferReflection = s_xGBufferShader.GetReflection();
-	s_xFrameConstantsBinding = xGBufferReflection.GetBinding("FrameConstants");
-	s_xScratchBufferBinding = xGBufferReflection.GetBinding("DrawConstants");
-	s_xDiffuseTexBinding = xGBufferReflection.GetBinding("g_xDiffuseTex");
-	s_xNormalTexBinding = xGBufferReflection.GetBinding("g_xNormalTex");
-	s_xRoughnessMetallicTexBinding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex");
-	s_xOcclusionTexBinding = xGBufferReflection.GetBinding("g_xOcclusionTex");
-	s_xEmissiveTexBinding = xGBufferReflection.GetBinding("g_xEmissiveTex");
-	s_xTransformBufferBinding = xGBufferReflection.GetBinding("TransformBuffer");
-	s_xAnimDataBufferBinding = xGBufferReflection.GetBinding("AnimDataBuffer");
-	s_xVisibleIndexBufferBinding = xGBufferReflection.GetBinding("VisibleIndexBuffer");
-	s_xAnimationTexBinding = xGBufferReflection.GetBinding("g_xAnimationTex");
-
-	// Shadow shader bindings
-	const Flux_ShaderReflection& xShadowReflection = s_xShadowShader.GetReflection();
-	s_xShadowFrameConstantsBinding = xShadowReflection.GetBinding("FrameConstants");
-	s_xShadowScratchBufferBinding = xShadowReflection.GetBinding("DrawConstants");
-	s_xShadowMatrixBinding = xShadowReflection.GetBinding("ShadowMatrix");
-	s_xShadowTransformBufferBinding = xShadowReflection.GetBinding("TransformBuffer");
-	s_xShadowVisibleIndexBufferBinding = xShadowReflection.GetBinding("VisibleIndexBuffer");
 
 	// Culling compute pipeline
 	{
@@ -191,14 +138,6 @@ void Flux_InstancedMeshes::Initialise()
 			.Build(s_xCullingPipeline);
 
 		s_xCullingPipeline.m_xRootSig = s_xCullingRootSig;
-
-		// Cache culling shader binding handles
-		s_xCullingConstantsBinding = xCullingReflection.GetBinding("CullingConstants");
-		s_xCullingTransformBufferBinding = xCullingReflection.GetBinding("TransformBuffer");
-		s_xCullingAnimDataBufferBinding = xCullingReflection.GetBinding("AnimDataBuffer");
-		s_xCullingVisibleIndexBufferBinding = xCullingReflection.GetBinding("VisibleIndexBuffer");
-		s_xCullingVisibleCountBufferBinding = xCullingReflection.GetBinding("visibleCount");
-		s_xCullingIndirectBufferBinding = xCullingReflection.GetBinding("indirectInstanceCount");
 
 		// Initialize culling constants buffer
 		Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), s_xCullingConstantsBuffer);
@@ -282,19 +221,17 @@ void Flux_InstancedMeshes::ClearAllGroups()
 
 void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// Pass 1: GPU culling compute
-	u_int uCullingPass = xGraph.AddPass("Instanced Meshes Culling", ExecuteCulling);
+	// Pass 1: GPU culling compute (no declared resources — per-instance-group
+	// output buffers are dynamic and not graph-tracked, so the GBuffer pass's
+	// dependency is expressed as an explicit DependsOn below).
+	Flux_PassHandle xCullingPass = xGraph.AddPass("Instanced Meshes Culling", ExecuteCulling);
 
 	// Pass 2: GBuffer render
-	uint32_t uGBufferPass = xGraph.AddPass("Instanced Meshes GBuffer", ExecuteGBuffer);
-	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_WRITE_RTV);
-
-	// GBuffer's indirect draws read the per-instance-group output buffers the
-	// culling compute writes. Those buffers are dynamic per-group and not
-	// graph-tracked, so encode the ordering as an explicit edge.
-	xGraph.DependsOn(uGBufferPass, uCullingPass);
+	xGraph.AddPass("Instanced Meshes GBuffer", ExecuteGBuffer)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.DependsOn(xCullingPass);
 }
 
 void Flux_InstancedMeshes::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
@@ -355,12 +292,12 @@ void Flux_InstancedMeshes::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 			sizeof(xCullingConstants));
 
 		// Bind resources
-		xBinder.BindCBV(s_xCullingConstantsBinding, &s_xCullingConstantsBuffer.GetCBV());
-		xBinder.BindUAV_Buffer(s_xCullingTransformBufferBinding, &pxGroup->GetTransformBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xCullingAnimDataBufferBinding, &pxGroup->GetAnimDataBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xCullingVisibleIndexBufferBinding, &pxGroup->GetVisibleIndexBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xCullingVisibleCountBufferBinding, &pxGroup->GetVisibleCountBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xCullingIndirectBufferBinding, &pxGroup->GetIndirectBuffer().GetUAV());
+		xBinder.BindCBV(s_xCullingShader, "CullingConstants", &s_xCullingConstantsBuffer.GetCBV());
+		xBinder.BindUAV_Buffer(s_xCullingShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(s_xCullingShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(s_xCullingShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(s_xCullingShader, "visibleCount", &pxGroup->GetVisibleCountBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(s_xCullingShader, "indirectInstanceCount", &pxGroup->GetIndirectBuffer().GetUAV());
 
 		// Dispatch compute shader: 64 threads per workgroup
 		uint32_t uNumWorkgroups = (pxGroup->GetInstanceCount() + 63) / 64;
@@ -386,7 +323,7 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind FrameConstants once per command list (set 0 - per-frame data)
-	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xGBufferShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	// Track statistics
 	s_uTotalInstances = 0;
@@ -459,29 +396,29 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			xPushConstants.m_xAnimTexParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);  // VAT disabled
 		}
 
-		xBinder.BindDrawConstants(s_xScratchBufferBinding, &xPushConstants, sizeof(xPushConstants));
+		xBinder.BindDrawConstants(s_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
 
 		// Bind material textures
-		xBinder.BindSRV(s_xDiffuseTexBinding, &pxMaterial->GetDiffuseTexture()->m_xSRV);
-		xBinder.BindSRV(s_xNormalTexBinding, &pxMaterial->GetNormalTexture()->m_xSRV);
-		xBinder.BindSRV(s_xRoughnessMetallicTexBinding, &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
-		xBinder.BindSRV(s_xOcclusionTexBinding, &pxMaterial->GetOcclusionTexture()->m_xSRV);
-		xBinder.BindSRV(s_xEmissiveTexBinding, &pxMaterial->GetEmissiveTexture()->m_xSRV);
+		xBinder.BindSRV(s_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
 
 		// Bind animation texture (VAT) if available, else bind blank texture
 		if (bHasVAT)
 		{
-			xBinder.BindSRV(s_xAnimationTexBinding, &pxAnimTex->GetPositionTexture()->m_xSRV);
+			xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &pxAnimTex->GetPositionTexture()->m_xSRV);
 		}
 		else
 		{
-			xBinder.BindSRV(s_xAnimationTexBinding, &Flux_Graphics::s_pxWhiteTexture->m_xSRV);
+			xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &Flux_Graphics::s_pxWhiteTexture->m_xSRV);
 		}
 
 		// Bind instance buffers
-		xBinder.BindUAV_Buffer(s_xTransformBufferBinding, &pxGroup->GetTransformBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xAnimDataBufferBinding, &pxGroup->GetAnimDataBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xVisibleIndexBufferBinding, &pxGroup->GetVisibleIndexBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(s_xGBufferShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(s_xGBufferShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(s_xGBufferShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
 
 		// Draw visible instances
 		if (bUseGPUCulling)
@@ -527,7 +464,7 @@ void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Fl
 	Flux_ShaderBinder xBinder(xCmdBuf);
 
 	// Bind FrameConstants once per command list
-	xBinder.BindCBV(s_xShadowFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xShadowShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	for (size_t uGroup = 0; uGroup < s_apxInstanceGroups.size(); ++uGroup)
 	{
@@ -549,12 +486,12 @@ void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Fl
 
 		// Bind shadow matrix
 		Zenith_Maths::Matrix4 xIdentity = glm::identity<glm::mat4>();
-		xBinder.BindDrawConstants(s_xShadowScratchBufferBinding, &xIdentity, sizeof(xIdentity));
-		xBinder.BindCBV(s_xShadowMatrixBinding, &xShadowMatrixBuffer.GetCBV());
+		xBinder.BindDrawConstants(s_xShadowShader, "DrawConstants", &xIdentity, sizeof(xIdentity));
+		xBinder.BindCBV(s_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
 
 		// Bind instance buffers
-		xBinder.BindUAV_Buffer(s_xShadowTransformBufferBinding, &pxGroup->GetTransformBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xShadowVisibleIndexBufferBinding, &pxGroup->GetVisibleIndexBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(s_xShadowShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(s_xShadowShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
 
 		// Draw all visible instances
 		uint32_t uVisibleCount = pxGroup->GetVisibleCount();

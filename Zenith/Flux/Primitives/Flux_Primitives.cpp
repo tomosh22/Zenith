@@ -20,9 +20,6 @@ static Flux_Pipeline s_xPrimitivesPipeline;
 static Flux_Pipeline s_xPrimitivesWireframePipeline;
 static Flux_Pipeline s_xLinesPipeline;
 
-// Cached binding handles from shader reflection
-static Flux_BindingHandle s_xFrameConstantsBinding;
-
 // Shared geometry for primitives (unit meshes, transformed via push constants)
 static Flux_VertexBuffer s_xSphereVertexBuffer;
 static Flux_IndexBuffer s_xSphereIndexBuffer;
@@ -534,10 +531,6 @@ void Flux_Primitives::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xPrimitivesWireframePipeline, xPipelineSpec);
 	}
 
-	// Cache binding handles from shader reflection
-	const Flux_ShaderReflection& xReflection = s_xPrimitivesShader.GetReflection();
-	s_xFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-
 	// Pre-allocate triangle buffers (dynamic vertex buffer, static index buffer)
 	// This avoids recreating GPU buffers every frame which causes memory leaks
 	{
@@ -587,11 +580,11 @@ void Flux_Primitives::Shutdown()
 
 void Flux_Primitives::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	uint32_t uPassIndex = xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer);
-	xGraph.Write(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uPassIndex, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uPassIndex, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_WRITE_DSV);
+	xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 void Flux_Primitives::AddSphere(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor)
@@ -747,7 +740,7 @@ void Flux_Primitives::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 
 	// Create binder and bind frame constants (same for all primitives)
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xPrimitivesShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	// ========== RENDER SPHERES ==========
 	if (xLocalSphereInstances.GetSize() > 0)
@@ -769,7 +762,7 @@ void Flux_Primitives::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			xPushConstant.m_xColor = xInstance.m_xColor;
 			xPushConstant.m_fPadding = 0.0f;
 
-			xBinder.BindDrawConstants(&xPushConstant, sizeof(PrimitivePushConstant));
+			xBinder.BindDrawConstants(s_xPrimitivesShader, "pushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
 			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(s_uSphereIndexCount);
 		}
 	}
@@ -803,7 +796,7 @@ void Flux_Primitives::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			xPushConstant.m_xColor = xInstance.m_xColor;
 			xPushConstant.m_fPadding = 0.0f;
 
-			xBinder.BindDrawConstants(&xPushConstant, sizeof(PrimitivePushConstant));
+			xBinder.BindDrawConstants(s_xPrimitivesShader, "pushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
 			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(s_uCubeIndexCount);
 		}
 	}
@@ -855,7 +848,7 @@ void Flux_Primitives::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			xPushConstant.m_xColor = xInstance.m_xColor;
 			xPushConstant.m_fPadding = 0.0f;
 
-			xBinder.BindDrawConstants(&xPushConstant, sizeof(PrimitivePushConstant));
+			xBinder.BindDrawConstants(s_xPrimitivesShader, "pushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
 			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(s_uLineIndexCount);
 		}
 	}
@@ -907,7 +900,7 @@ void Flux_Primitives::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			xPushConstant.m_xColor = xInstance.m_xColor;
 			xPushConstant.m_fPadding = 0.0f;
 
-			xBinder.BindDrawConstants(&xPushConstant, sizeof(PrimitivePushConstant));
+			xBinder.BindDrawConstants(s_xPrimitivesShader, "pushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
 			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(s_uCapsuleIndexCount);
 		}
 	}
@@ -958,7 +951,7 @@ void Flux_Primitives::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			xPushConstant.m_xColor = xInstance.m_xColor;
 			xPushConstant.m_fPadding = 0.0f;
 
-			xBinder.BindDrawConstants(&xPushConstant, sizeof(PrimitivePushConstant));
+			xBinder.BindDrawConstants(s_xPrimitivesShader, "pushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
 			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(s_uCylinderIndexCount);
 		}
 	}
@@ -1050,7 +1043,7 @@ void Flux_Primitives::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		xPushConstant.m_xColor = Zenith_Maths::Vector3(1.0f);  // Color is per-vertex
 		xPushConstant.m_fPadding = 0.0f;
 
-		xBinder.BindDrawConstants(&xPushConstant, sizeof(PrimitivePushConstant));
+		xBinder.BindDrawConstants(s_xPrimitivesShader, "pushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
 		pxCmdList->AddCommand<Flux_CommandDrawIndexed>(xTriangleIndices.GetSize());
 	}
 

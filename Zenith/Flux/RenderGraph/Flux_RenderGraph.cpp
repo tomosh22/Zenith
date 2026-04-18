@@ -12,6 +12,16 @@
 // chews all of heap / the topo-sort adjacency vectors blow up.
 static constexpr u_int kMaxPassCount = 256;
 
+// Monotonic graph-instance ID counter. Starts at 1 so 0 stays reserved as the
+// "no graph" sentinel on default-constructed handles. Bumped by the
+// Flux_RenderGraph constructor for every new instance.
+u_int Flux_RenderGraph::s_uNextGraphInstanceID = 1;
+
+// Forward-declare the transient-size estimator used by AllocateTransients
+// and AssignAliasingGroups. Defined further down beside the other aliasing
+// helpers; the forward decl lets the earlier functions call it.
+static u_int64 EstimateTransientImageSize(const Flux_TransientTextureDesc& xDesc);
+
 // ---- Access-mode classification helpers --------------------------------
 // Centralised so assertions across AddResourceUsage, Validate, bind-time
 // checks all agree on what a given ResourceAccess means. Any new access mode
@@ -104,6 +114,45 @@ void Flux_RenderGraph::AssertMutable(const char* szFn)
     Zenith_Assert(!m_bCompiled || m_bDirty, "Flux_RenderGraph::%s called after Compile() without MarkDirty()", szFn);
 }
 
+Flux_PassHandle Flux_RenderGraph::MakePassHandle(u_int uIndex) const
+{
+    Flux_PassHandle xHandle;
+    xHandle.m_uIndex = uIndex;
+    xHandle.m_uGeneration = m_uGeneration;
+    xHandle.m_uGraphInstanceID = m_uGraphInstanceID;
+    return xHandle;
+}
+
+void Flux_RenderGraph::AssertPassHandleValid(Flux_PassHandle xPass, const char* szCaller) const
+{
+    Zenith_Assert(xPass.IsValid(),
+        "Flux_RenderGraph::%s: uninitialised pass handle", szCaller);
+    Zenith_Assert(xPass.m_uGraphInstanceID == m_uGraphInstanceID,
+        "Flux_RenderGraph::%s: pass handle belongs to a different graph instance (handle instance %u, this graph instance %u)",
+        szCaller, xPass.m_uGraphInstanceID, m_uGraphInstanceID);
+    Zenith_Assert(xPass.m_uGeneration == m_uGeneration,
+        "Flux_RenderGraph::%s: stale pass handle (gen %u, graph gen %u) — handle was issued before a Clear()/rebuild",
+        szCaller, xPass.m_uGeneration, m_uGeneration);
+    Zenith_Assert(xPass.m_uIndex < m_xPasses.GetSize(),
+        "Flux_RenderGraph::%s: pass index %u out of range (have %u)",
+        szCaller, xPass.m_uIndex, m_xPasses.GetSize());
+}
+
+void Flux_RenderGraph::AssertTransientHandleValid(Flux_TransientHandle xHandle, const char* szCaller) const
+{
+    Zenith_Assert(xHandle.IsValid(),
+        "Flux_RenderGraph::%s: uninitialised transient handle", szCaller);
+    Zenith_Assert(xHandle.m_uGraphInstanceID == m_uGraphInstanceID,
+        "Flux_RenderGraph::%s: transient handle belongs to a different graph instance (handle instance %u, this graph instance %u)",
+        szCaller, xHandle.m_uGraphInstanceID, m_uGraphInstanceID);
+    Zenith_Assert(xHandle.m_uGeneration == m_uGeneration,
+        "Flux_RenderGraph::%s: stale transient handle (gen %u, graph gen %u) — handle was issued before a Clear()/rebuild",
+        szCaller, xHandle.m_uGeneration, m_uGeneration);
+    Zenith_Assert(xHandle.m_uIndex < m_axTransients.GetSize(),
+        "Flux_RenderGraph::%s: transient index %u out of range (have %u)",
+        szCaller, xHandle.m_uIndex, m_axTransients.GetSize());
+}
+
 Flux_RenderGraph_Pass* Flux_RenderGraph::GetPass(u_int uIdx) const
 {
     Zenith_Assert(uIdx < m_xPasses.GetSize(), "Flux_RenderGraph: pass index %u out of bounds", uIdx);
@@ -124,7 +173,7 @@ void Flux_RenderGraph::TrackResource(const Flux_GraphResource& xResource)
     }
 }
 
-u_int Flux_RenderGraph::AddPass(const char* szName, Flux_RenderGraph_OnRecordFunc pfnOnRecord, void* pUserData, u_int uInitialCapacity)
+Flux_PassBuilder Flux_RenderGraph::AddPass(const char* szName, Flux_RenderGraph_OnRecordFunc pfnOnRecord, void* pUserData, u_int uInitialCapacity)
 {
     AssertMutable("AddPass");
     Zenith_Assert(szName != nullptr, "Flux_RenderGraph::AddPass: null name");
@@ -154,12 +203,135 @@ u_int Flux_RenderGraph::AddPass(const char* szName, Flux_RenderGraph_OnRecordFun
     m_xPasses.PushBack(pxPass);
     const u_int uIdx = m_xPasses.GetSize() - 1;
     Zenith_Assert(m_xPasses.Get(uIdx) == pxPass, "Flux_RenderGraph::AddPass: pass index mismatch after PushBack ('%s')", szName);
-    return uIdx;
+    return Flux_PassBuilder(this, MakePassHandle(uIdx));
+}
+
+// ---- Flux_PassBuilder --------------------------------------------------
+// All chain methods are &&-qualified, return Flux_PassBuilder&& via
+// std::move(*this), and check the canary first. The graph's own handle-
+// validation assertions run inside each forwarded call, so the builder adds
+// only the canary check on top.
+
+void Flux_PassBuilder::AssertAlive(const char* szCaller) const
+{
+    // Force a canary read even when Zenith_Assert compiles away in shipping
+    // builds. Under ASan / MSan this load trips on use-after-free of the
+    // builder's storage; without the volatile the compiler would delete the
+    // whole body when the assert macro expands to nothing.
+    const volatile u_int32 uCanary = m_uCanary;
+    Zenith_Assert(uCanary == CANARY_LIVE,
+        "Flux_PassBuilder::%s: canary mismatch (got 0x%08X, expected 0x%08X) — builder accessed after its temporary was destroyed. "
+        "The `auto& x = xGraph.AddPass(...).Foo();` pattern captures a reference to a dying temporary; chain inline, or capture the Flux_PassHandle via implicit conversion and use the graph's Read/Write helpers.",
+        szCaller, static_cast<u_int32>(uCanary), CANARY_LIVE);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::Reads(Flux_RenderAttachment& xImage, ResourceAccess eAccess, u_int uMip, u_int uMipCount) &&
+{
+    AssertAlive("Reads(Image)");
+    m_pxGraph->Read(m_xPass, xImage, eAccess, uMip, uMipCount);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::Writes(Flux_RenderAttachment& xImage, ResourceAccess eAccess, u_int uMip, u_int uMipCount) &&
+{
+    AssertAlive("Writes(Image)");
+    m_pxGraph->Write(m_xPass, xImage, eAccess, uMip, uMipCount);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::Reads(Flux_RenderAttachmentCube& xImage, ResourceAccess eAccess,
+                                           u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount) &&
+{
+    AssertAlive("Reads(Cube)");
+    m_pxGraph->Read(m_xPass, xImage, eAccess, uMip, uMipCount, uLayer, uLayerCount);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::Writes(Flux_RenderAttachmentCube& xImage, ResourceAccess eAccess,
+                                            u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount) &&
+{
+    AssertAlive("Writes(Cube)");
+    m_pxGraph->Write(m_xPass, xImage, eAccess, uMip, uMipCount, uLayer, uLayerCount);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::ReadsBuffer(Flux_Buffer& xBuffer, ResourceAccess eAccess) &&
+{
+    AssertAlive("ReadsBuffer");
+    m_pxGraph->ReadBuffer(m_xPass, xBuffer, eAccess);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::WritesBuffer(Flux_Buffer& xBuffer, ResourceAccess eAccess) &&
+{
+    AssertAlive("WritesBuffer");
+    m_pxGraph->WriteBuffer(m_xPass, xBuffer, eAccess);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::ReadsTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess) &&
+{
+    AssertAlive("ReadsTransient");
+    m_pxGraph->ReadTransient(m_xPass, xHandle, eAccess);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::WritesTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess) &&
+{
+    AssertAlive("WritesTransient");
+    m_pxGraph->WriteTransient(m_xPass, xHandle, eAccess);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::ReadsTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount) &&
+{
+    AssertAlive("ReadsTransient(subres)");
+    m_pxGraph->ReadTransient(m_xPass, xHandle, eAccess, uMip, uMipCount);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::WritesTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount) &&
+{
+    AssertAlive("WritesTransient(subres)");
+    m_pxGraph->WriteTransient(m_xPass, xHandle, eAccess, uMip, uMipCount);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::DependsOn(Flux_PassHandle xDependency) &&
+{
+    AssertAlive("DependsOn");
+    m_pxGraph->DependsOn(m_xPass, xDependency);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::ClearTargets(bool bClear) &&
+{
+    AssertAlive("ClearTargets");
+    m_pxGraph->SetClear(m_xPass, bClear);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::Prepare(Flux_RenderGraph_OnPrepareFunc pfnPrepare) &&
+{
+    AssertAlive("Prepare");
+    m_pxGraph->SetPrepare(m_xPass, pfnPrepare);
+    return std::move(*this);
+}
+
+void Flux_PassBuilder::SetUserData(void* pData)
+{
+    AssertAlive("UserData");
+    m_pxGraph->AssertPassHandleValid(m_xPass, "Flux_PassBuilder::UserData");
+    Flux_RenderGraph_Pass* pxPass = m_pxGraph->m_xPasses.Get(m_xPass.m_uIndex);
+    pxPass->m_pUserData = pData;
 }
 
 void Flux_RenderGraph::AddResourceUsage(u_int uPassIndex, const Flux_GraphResource& xResource, ResourceAccess eAccess,
                                         u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount, bool bWrite)
 {
+    // Handle validity is checked at the public API layer by AssertPassHandleValid,
+    // which this private helper's callers (Read/Write/*) invoke before calling.
+    // Keep the index check here as defense in depth.
     const char* szCaller = bWrite ? "Write" : "Read";
     AssertMutable(szCaller);
     Zenith_Assert(uPassIndex < m_xPasses.GetSize(),
@@ -286,9 +458,12 @@ void Flux_RenderGraph::AddResourceUsage(u_int uPassIndex, const Flux_GraphResour
             "Flux_RenderGraph::%s: pass %u declares overlapping %s on same resource with conflicting access '%s' vs '%s'",
             szCaller, uPassIndex, szCaller, AccessToString(rxPrev.m_eAccess), AccessToString(eAccess));
     }
-    // Also catch a Read that overlaps a Write (or vice-versa) unless one is
-    // READWRITE_UAV on a single UAV — which is the legitimate read-modify-write
-    // pattern for compute.
+    // Any Read that overlaps a Write (or vice-versa) is invalid: read-modify-write
+    // must be declared exactly once using RESOURCE_ACCESS_READWRITE_UAV on either
+    // side, not as paired Read/Write declarations on the same subresource.
+    // Permitting the paired form would cause SynthesizeBarriers to emit a
+    // redundant intra-pass self-barrier when both the Read and Write land the
+    // subresource tracker in the same layout/stage.
     const Zenith_Vector<Flux_RenderGraph_ResourceUsage>& rxOther = bWrite ? pxPass->m_xReads : pxPass->m_xWrites;
     for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(rxOther); !it.Done(); it.Next())
     {
@@ -296,11 +471,11 @@ void Flux_RenderGraph::AddResourceUsage(u_int uPassIndex, const Flux_GraphResour
         if (rxPrev.m_xResource != xResource) continue;
         if (!SubresourceRangesOverlap(rxPrev.m_uMipLevel, rxPrev.m_uMipCount, rxPrev.m_uLayer, rxPrev.m_uLayerCount,
                                       uMip, uMipCount, uLayer, uLayerCount)) continue;
-        const bool bIsRMW = (eAccess == RESOURCE_ACCESS_READWRITE_UAV) || (rxPrev.m_eAccess == RESOURCE_ACCESS_READWRITE_UAV);
-        Zenith_Assert(bIsRMW,
+        Zenith_Assert(false,
             "Flux_RenderGraph: pass %u '%s' declares overlapping read and write on resource '%s' "
             "(prev '%s' mips[%u,%u) layers[%u,%u), new '%s' mips[%u,%u) layers[%u,%u)) — "
-            "use RESOURCE_ACCESS_READWRITE_UAV for read-modify-write, or narrow subresource ranges",
+            "declare read-modify-write exactly once as RESOURCE_ACCESS_READWRITE_UAV on either "
+            "Read() or Write() (not both), or narrow the subresource ranges so they don't overlap",
             uPassIndex, pxPass->DebugName(), xResource.GetName().c_str(),
             AccessToString(rxPrev.m_eAccess), rxPrev.m_uMipLevel,
                 (rxPrev.m_uMipCount == FLUX_RG_ALL_MIPS ? rxPrev.m_uMipLevel + 99 : rxPrev.m_uMipLevel + rxPrev.m_uMipCount),
@@ -324,86 +499,98 @@ void Flux_RenderGraph::AddResourceUsage(u_int uPassIndex, const Flux_GraphResour
     else pxPass->m_xReads.PushBack(xUsage);
 }
 
-void Flux_RenderGraph::Read(u_int uPassIndex, Flux_RenderAttachment& xImage, ResourceAccess eAccess, u_int uMip, u_int uMipCount)
+void Flux_RenderGraph::Read(Flux_PassHandle xPass, Flux_RenderAttachment& xImage, ResourceAccess eAccess, u_int uMip, u_int uMipCount)
 {
-    AddResourceUsage(uPassIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, 0, 1, false);
+    AssertPassHandleValid(xPass, "Read(Image)");
+    AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, 0, 1, false);
 }
 
-void Flux_RenderGraph::Write(u_int uPassIndex, Flux_RenderAttachment& xImage, ResourceAccess eAccess, u_int uMip, u_int uMipCount)
+void Flux_RenderGraph::Write(Flux_PassHandle xPass, Flux_RenderAttachment& xImage, ResourceAccess eAccess, u_int uMip, u_int uMipCount)
 {
-    AddResourceUsage(uPassIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, 0, 1, true);
+    AssertPassHandleValid(xPass, "Write(Image)");
+    AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, 0, 1, true);
 }
 
-void Flux_RenderGraph::Read(u_int uPassIndex, Flux_RenderAttachmentCube& xImage, ResourceAccess eAccess,
+void Flux_RenderGraph::Read(Flux_PassHandle xPass, Flux_RenderAttachmentCube& xImage, ResourceAccess eAccess,
                             u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount)
 {
-    AddResourceUsage(uPassIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, uLayer, uLayerCount, false);
+    AssertPassHandleValid(xPass, "Read(Cube)");
+    AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, uLayer, uLayerCount, false);
 }
 
-void Flux_RenderGraph::Write(u_int uPassIndex, Flux_RenderAttachmentCube& xImage, ResourceAccess eAccess,
+void Flux_RenderGraph::Write(Flux_PassHandle xPass, Flux_RenderAttachmentCube& xImage, ResourceAccess eAccess,
                              u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount)
 {
-    AddResourceUsage(uPassIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, uLayer, uLayerCount, true);
+    AssertPassHandleValid(xPass, "Write(Cube)");
+    AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, uLayer, uLayerCount, true);
 }
 
-void Flux_RenderGraph::ReadBuffer(u_int uPassIndex, Flux_Buffer& xBuffer, ResourceAccess eAccess)
+void Flux_RenderGraph::ReadBuffer(Flux_PassHandle xPass, Flux_Buffer& xBuffer, ResourceAccess eAccess)
 {
-    AddResourceUsage(uPassIndex, Flux_GraphResource(xBuffer), eAccess, 0, 1, 0, 1, false);
+    AssertPassHandleValid(xPass, "ReadBuffer");
+    AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(xBuffer), eAccess, 0, 1, 0, 1, false);
 }
 
-void Flux_RenderGraph::WriteBuffer(u_int uPassIndex, Flux_Buffer& xBuffer, ResourceAccess eAccess)
+void Flux_RenderGraph::WriteBuffer(Flux_PassHandle xPass, Flux_Buffer& xBuffer, ResourceAccess eAccess)
 {
-    AddResourceUsage(uPassIndex, Flux_GraphResource(xBuffer), eAccess, 0, 1, 0, 1, true);
+    AssertPassHandleValid(xPass, "WriteBuffer");
+    AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(xBuffer), eAccess, 0, 1, 0, 1, true);
 }
 
-void Flux_RenderGraph::DependsOn(u_int uDependentPass, u_int uDependencyPass)
+void Flux_RenderGraph::DependsOn(Flux_PassHandle xDependentPass, Flux_PassHandle xDependencyPass)
 {
     AssertMutable("DependsOn");
-    Zenith_Assert(uDependentPass < m_xPasses.GetSize(),
-        "Flux_RenderGraph::DependsOn: dependent pass %u out of range (have %u)", uDependentPass, m_xPasses.GetSize());
-    Zenith_Assert(uDependencyPass < m_xPasses.GetSize(),
-        "Flux_RenderGraph::DependsOn: dependency pass %u out of range (have %u)", uDependencyPass, m_xPasses.GetSize());
-    Zenith_Assert(uDependentPass != uDependencyPass,
-        "Flux_RenderGraph::DependsOn: self-dependency on pass %u", uDependentPass);
+    AssertPassHandleValid(xDependentPass, "DependsOn (dependent)");
+    AssertPassHandleValid(xDependencyPass, "DependsOn (dependency)");
+    Zenith_Assert(xDependentPass != xDependencyPass,
+        "Flux_RenderGraph::DependsOn: self-dependency on pass %u", xDependentPass.m_uIndex);
     // Catch accidental duplicate DependsOn calls — harmless but usually indicates
     // a copy-paste or lifetime bug (subsystem re-running SetupRenderGraph without MarkDirty).
-    Flux_RenderGraph_Pass* pxDependent = GetPass(uDependentPass);
+    Flux_RenderGraph_Pass* pxDependent = GetPass(xDependentPass.m_uIndex);
     for (Zenith_Vector<u_int>::Iterator it(pxDependent->m_xExplicitDependencies); !it.Done(); it.Next())
     {
-        Zenith_Assert(it.GetData() != uDependencyPass,
-            "Flux_RenderGraph::DependsOn: duplicate edge %u -> %u", uDependencyPass, uDependentPass);
+        Zenith_Assert(it.GetData() != xDependencyPass.m_uIndex,
+            "Flux_RenderGraph::DependsOn: duplicate edge %u -> %u", xDependencyPass.m_uIndex, xDependentPass.m_uIndex);
     }
-    pxDependent->m_xExplicitDependencies.PushBack(uDependencyPass);
+    pxDependent->m_xExplicitDependencies.PushBack(xDependencyPass.m_uIndex);
 }
 
-void Flux_RenderGraph::SetEnabled(u_int uPassIndex, bool bEnabled)
+void Flux_RenderGraph::SetEnabled(Flux_PassHandle xPass, bool bEnabled)
 {
     // Deliberately NOT AssertMutable — toggling enabled is allowed post-Compile;
-    // the graph re-runs ResolveClearFlags() in Execute() when m_bEnabledMaskDirty.
-    Zenith_Assert(uPassIndex < m_xPasses.GetSize(),
-        "Flux_RenderGraph::SetEnabled: invalid pass index %u (have %u)", uPassIndex, m_xPasses.GetSize());
-    Flux_RenderGraph_Pass* pxPass = GetPass(uPassIndex);
+    // the graph re-runs ResolveClearFlags() + SynthesizeBarriers() in Execute()
+    // when m_bEnabledMaskDirty.
+    AssertPassHandleValid(xPass, "SetEnabled");
+    Flux_RenderGraph_Pass* pxPass = GetPass(xPass.m_uIndex);
     if (pxPass->m_bEnabled != bEnabled) { pxPass->m_bEnabled = bEnabled; m_bEnabledMaskDirty = true; }
 }
 
-void Flux_RenderGraph::SetClear(u_int uPassIndex, bool bClearTargets)
+void Flux_RenderGraph::SetAliasingEnabled(bool bEnabled)
 {
-    AssertMutable("SetClear");
-    Zenith_Assert(uPassIndex < m_xPasses.GetSize(),
-        "Flux_RenderGraph::SetClear: invalid pass index %u (have %u)", uPassIndex, m_xPasses.GetSize());
-    GetPass(uPassIndex)->m_bRequestsClear = bClearTargets;
+    // Needs a full recompile — the aliasing phase changes the pool layout and
+    // the backing VRAM of every transient, so MarkDirty forces the next
+    // Compile to tear down and re-allocate the transient set.
+    if (m_bAliasingEnabled == bEnabled) return;
+    m_bAliasingEnabled = bEnabled;
+    MarkDirty();
 }
 
-void Flux_RenderGraph::SetPrepare(u_int uPassIndex, Flux_RenderGraph_OnPrepareFunc pfnOnPrepare)
+void Flux_RenderGraph::SetClear(Flux_PassHandle xPass, bool bClearTargets)
+{
+    AssertMutable("SetClear");
+    AssertPassHandleValid(xPass, "SetClear");
+    GetPass(xPass.m_uIndex)->m_bRequestsClear = bClearTargets;
+}
+
+void Flux_RenderGraph::SetPrepare(Flux_PassHandle xPass, Flux_RenderGraph_OnPrepareFunc pfnOnPrepare)
 {
     AssertMutable("SetPrepare");
-    Zenith_Assert(uPassIndex < m_xPasses.GetSize(),
-        "Flux_RenderGraph::SetPrepare: invalid pass index %u (have %u)", uPassIndex, m_xPasses.GetSize());
+    AssertPassHandleValid(xPass, "SetPrepare");
     Zenith_Assert(pfnOnPrepare != nullptr,
-        "Flux_RenderGraph::SetPrepare: null callback for pass %u", uPassIndex);
-    Zenith_Assert(GetPass(uPassIndex)->m_pfnOnPrepare == nullptr,
-        "Flux_RenderGraph::SetPrepare: prepare callback already set for pass %u (would silently overwrite)", uPassIndex);
-    GetPass(uPassIndex)->m_pfnOnPrepare = pfnOnPrepare;
+        "Flux_RenderGraph::SetPrepare: null callback for pass %u", xPass.m_uIndex);
+    Zenith_Assert(GetPass(xPass.m_uIndex)->m_pfnOnPrepare == nullptr,
+        "Flux_RenderGraph::SetPrepare: prepare callback already set for pass %u (would silently overwrite)", xPass.m_uIndex);
+    GetPass(xPass.m_uIndex)->m_pfnOnPrepare = pfnOnPrepare;
 }
 
 void Flux_RenderGraph::MarkDirty() { m_bDirty = true; }
@@ -424,6 +611,15 @@ void Flux_RenderGraph::Clear()
     m_bCompiled = false;
     m_bDirty = true;
     m_bEnabledMaskDirty = false;
+    // Bump the generation so any Flux_PassHandle / Flux_TransientHandle issued
+    // by the previous build can't be silently reused to address the new build's
+    // passes/transients. AssertPassHandleValid / AssertTransientHandleValid
+    // will trip on stale handles. Start at 1 and wrap with saturation-like
+    // avoidance of 0 so default-constructed handles (generation=0) always
+    // compare unequal to any issued handle.
+    m_uGeneration++;
+    // Skip 0 on wrap so default-constructed handles are always rejected.
+    if (m_uGeneration == 0) m_uGeneration = 1;
 }
 
 // ---- Transient resource management ----------------------------------------
@@ -462,64 +658,59 @@ Flux_TransientHandle Flux_RenderGraph::CreateTransient(const Flux_TransientTextu
 
     Flux_TransientHandle xHandle;
     xHandle.m_uIndex = m_axTransients.GetSize();
+    xHandle.m_uGeneration = m_uGeneration;
+    xHandle.m_uGraphInstanceID = m_uGraphInstanceID;
     m_axTransients.PushBack(pxTransient);
     return xHandle;
 }
 
-void Flux_RenderGraph::ReadTransient(u_int uPassIndex, Flux_TransientHandle xHandle, ResourceAccess eAccess)
+void Flux_RenderGraph::ReadTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess)
 {
-    Zenith_Assert(xHandle.IsValid(), "Flux_RenderGraph::ReadTransient: invalid handle (uninitialised)");
-    Zenith_Assert(xHandle.m_uIndex < m_axTransients.GetSize(),
-        "Flux_RenderGraph::ReadTransient: handle %u out of range (have %u transients)",
-        xHandle.m_uIndex, m_axTransients.GetSize());
-    // Stamp the transient's declared-read access footprint onto the desc so Validate
-    // can cross-check memory flags post-allocation.
+    AssertPassHandleValid(xPass, "ReadTransient");
+    AssertTransientHandleValid(xHandle, "ReadTransient");
     TransientResource* pxT = m_axTransients.Get(xHandle.m_uIndex);
     if (eAccess == RESOURCE_ACCESS_READ_SRV)
     {
         Zenith_Assert(pxT->m_xDesc.m_uMemoryFlags & (1u << MEMORY_FLAGS__SHADER_READ),
-            "Flux_RenderGraph::ReadTransient: READ_SRV requires MEMORY_FLAGS__SHADER_READ in transient desc (pass %u)", uPassIndex);
+            "Flux_RenderGraph::ReadTransient: READ_SRV requires MEMORY_FLAGS__SHADER_READ in transient desc (pass %u)", xPass.m_uIndex);
     }
     if (eAccess == RESOURCE_ACCESS_READWRITE_UAV)
     {
         Zenith_Assert(pxT->m_xDesc.m_uMemoryFlags & (1u << MEMORY_FLAGS__UNORDERED_ACCESS),
-            "Flux_RenderGraph::ReadTransient: READWRITE_UAV requires MEMORY_FLAGS__UNORDERED_ACCESS in transient desc (pass %u)", uPassIndex);
+            "Flux_RenderGraph::ReadTransient: READWRITE_UAV requires MEMORY_FLAGS__UNORDERED_ACCESS in transient desc (pass %u)", xPass.m_uIndex);
     }
-    Read(uPassIndex, pxT->m_xAttachment, eAccess);
+    Read(xPass, pxT->m_xAttachment, eAccess);
 }
 
-void Flux_RenderGraph::WriteTransient(u_int uPassIndex, Flux_TransientHandle xHandle, ResourceAccess eAccess)
+void Flux_RenderGraph::WriteTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess)
 {
-    Zenith_Assert(xHandle.IsValid(), "Flux_RenderGraph::WriteTransient: invalid handle (uninitialised)");
-    Zenith_Assert(xHandle.m_uIndex < m_axTransients.GetSize(),
-        "Flux_RenderGraph::WriteTransient: handle %u out of range (have %u transients)",
-        xHandle.m_uIndex, m_axTransients.GetSize());
+    AssertPassHandleValid(xPass, "WriteTransient");
+    AssertTransientHandleValid(xHandle, "WriteTransient");
     TransientResource* pxT = m_axTransients.Get(xHandle.m_uIndex);
     if (eAccess == RESOURCE_ACCESS_WRITE_UAV || eAccess == RESOURCE_ACCESS_READWRITE_UAV)
     {
         Zenith_Assert(pxT->m_xDesc.m_uMemoryFlags & (1u << MEMORY_FLAGS__UNORDERED_ACCESS),
             "Flux_RenderGraph::WriteTransient: '%s' requires MEMORY_FLAGS__UNORDERED_ACCESS in transient desc (pass %u)",
-            AccessToString(eAccess), uPassIndex);
+            AccessToString(eAccess), xPass.m_uIndex);
     }
     if (eAccess == RESOURCE_ACCESS_WRITE_DSV)
     {
         Zenith_Assert(pxT->m_xDesc.m_bIsDepthStencil,
-            "Flux_RenderGraph::WriteTransient: WRITE_DSV on a non-depth-stencil transient (pass %u)", uPassIndex);
+            "Flux_RenderGraph::WriteTransient: WRITE_DSV on a non-depth-stencil transient (pass %u)", xPass.m_uIndex);
     }
     if (eAccess == RESOURCE_ACCESS_WRITE_RTV)
     {
         Zenith_Assert(!pxT->m_xDesc.m_bIsDepthStencil,
             "Flux_RenderGraph::WriteTransient: WRITE_RTV on a depth-stencil transient (pass %u) — use WRITE_DSV",
-            uPassIndex);
+            xPass.m_uIndex);
     }
-    Write(uPassIndex, pxT->m_xAttachment, eAccess);
+    Write(xPass, pxT->m_xAttachment, eAccess);
 }
 
-void Flux_RenderGraph::ReadTransient(u_int uPassIndex, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount)
+void Flux_RenderGraph::ReadTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount)
 {
-    Zenith_Assert(xHandle.IsValid(), "Flux_RenderGraph::ReadTransient (subres): invalid handle");
-    Zenith_Assert(xHandle.m_uIndex < m_axTransients.GetSize(),
-        "Flux_RenderGraph::ReadTransient (subres): handle %u out of range (have %u)", xHandle.m_uIndex, m_axTransients.GetSize());
+    AssertPassHandleValid(xPass, "ReadTransient (subres)");
+    AssertTransientHandleValid(xHandle, "ReadTransient (subres)");
     TransientResource* pxT = m_axTransients.Get(xHandle.m_uIndex);
     Zenith_Assert(uMipCount == FLUX_RG_ALL_MIPS || uMip + uMipCount <= pxT->m_xDesc.m_uNumMips,
         "Flux_RenderGraph::ReadTransient: mip range [%u,%u) exceeds transient desc mip count %u",
@@ -527,37 +718,36 @@ void Flux_RenderGraph::ReadTransient(u_int uPassIndex, Flux_TransientHandle xHan
     if (eAccess == RESOURCE_ACCESS_READ_SRV)
     {
         Zenith_Assert(pxT->m_xDesc.m_uMemoryFlags & (1u << MEMORY_FLAGS__SHADER_READ),
-            "Flux_RenderGraph::ReadTransient: READ_SRV requires MEMORY_FLAGS__SHADER_READ in transient desc (pass %u)", uPassIndex);
+            "Flux_RenderGraph::ReadTransient: READ_SRV requires MEMORY_FLAGS__SHADER_READ in transient desc (pass %u)", xPass.m_uIndex);
     }
     // Route through Read() so all common assertions (access/kind compatibility,
     // duplicate declaration, memory-flag checks once allocated) apply uniformly.
-    Read(uPassIndex, pxT->m_xAttachment, eAccess, uMip, uMipCount);
+    Read(xPass, pxT->m_xAttachment, eAccess, uMip, uMipCount);
 }
 
-void Flux_RenderGraph::WriteTransient(u_int uPassIndex, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount)
+void Flux_RenderGraph::WriteTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount)
 {
-    Zenith_Assert(xHandle.IsValid(), "Flux_RenderGraph::WriteTransient (subres): invalid handle");
-    Zenith_Assert(xHandle.m_uIndex < m_axTransients.GetSize(),
-        "Flux_RenderGraph::WriteTransient (subres): handle %u out of range (have %u)", xHandle.m_uIndex, m_axTransients.GetSize());
+    AssertPassHandleValid(xPass, "WriteTransient (subres)");
+    AssertTransientHandleValid(xHandle, "WriteTransient (subres)");
     TransientResource* pxT = m_axTransients.Get(xHandle.m_uIndex);
-    Zenith_Assert(uMip + uMipCount <= pxT->m_xDesc.m_uNumMips,
+    // Mirror ReadTransient's FLUX_RG_ALL_MIPS short-circuit — without it, passing
+    // the sentinel overflows uMip + uMipCount and the assert message becomes
+    // garbage. Concrete ranges still get the bounds check.
+    Zenith_Assert(uMipCount == FLUX_RG_ALL_MIPS || uMip + uMipCount <= pxT->m_xDesc.m_uNumMips,
         "Flux_RenderGraph::WriteTransient: mip range [%u,%u) exceeds transient desc mip count %u",
         uMip, uMip + uMipCount, pxT->m_xDesc.m_uNumMips);
     if (eAccess == RESOURCE_ACCESS_WRITE_UAV || eAccess == RESOURCE_ACCESS_READWRITE_UAV)
     {
         Zenith_Assert(pxT->m_xDesc.m_uMemoryFlags & (1u << MEMORY_FLAGS__UNORDERED_ACCESS),
             "Flux_RenderGraph::WriteTransient: '%s' requires MEMORY_FLAGS__UNORDERED_ACCESS in transient desc (pass %u)",
-            AccessToString(eAccess), uPassIndex);
+            AccessToString(eAccess), xPass.m_uIndex);
     }
-    Write(uPassIndex, pxT->m_xAttachment, eAccess, uMip, uMipCount);
+    Write(xPass, pxT->m_xAttachment, eAccess, uMip, uMipCount);
 }
 
 Flux_RenderAttachment& Flux_RenderGraph::GetTransientAttachment(Flux_TransientHandle xHandle)
 {
-    Zenith_Assert(xHandle.IsValid(),
-        "Flux_RenderGraph::GetTransientAttachment: invalid handle (uninitialised)");
-    Zenith_Assert(xHandle.m_uIndex < m_axTransients.GetSize(),
-        "Flux_RenderGraph::GetTransientAttachment: invalid handle %u (size %u)", xHandle.m_uIndex, m_axTransients.GetSize());
+    AssertTransientHandleValid(xHandle, "GetTransientAttachment");
     TransientResource* pxT = m_axTransients.Get(xHandle.m_uIndex);
     // If the graph is already compiled, the transient MUST be allocated — any
     // caller that receives a reference with zero surface info is about to deref
@@ -573,10 +763,7 @@ Flux_RenderAttachment& Flux_RenderGraph::GetTransientAttachment(Flux_TransientHa
 
 const Flux_RenderAttachment& Flux_RenderGraph::GetTransientAttachment(Flux_TransientHandle xHandle) const
 {
-    Zenith_Assert(xHandle.IsValid(),
-        "Flux_RenderGraph::GetTransientAttachment(const): invalid handle (uninitialised)");
-    Zenith_Assert(xHandle.m_uIndex < m_axTransients.GetSize(),
-        "Flux_RenderGraph::GetTransientAttachment(const): invalid handle %u (size %u)", xHandle.m_uIndex, m_axTransients.GetSize());
+    AssertTransientHandleValid(xHandle, "GetTransientAttachment(const)");
     const TransientResource* pxT = m_axTransients.Get(xHandle.m_uIndex);
     if (m_bCompiled)
     {
@@ -588,8 +775,54 @@ const Flux_RenderAttachment& Flux_RenderGraph::GetTransientAttachment(Flux_Trans
 
 void Flux_RenderGraph::AllocateTransients()
 {
-    // Allocate backing Flux_RenderAttachment for each transient that isn't yet allocated.
-    // Future: pack non-overlapping lifetimes into shared VMA heaps for aliasing.
+    // If the packer opened any aliasing pools, allocate them first — each
+    // pool's VRAM must exist before per-transient CreateAliasedImageVRAM
+    // calls can bind images into it.
+    u_int64 ulPoolBytesTotal = 0;
+    for (u_int p = 0; p < m_axAliasPools.GetSize(); p++)
+    {
+        AliasPool& xPool = m_axAliasPools.Get(p);
+        if (xPool.m_ulTotalSize == 0) continue; // pool with no occupants — shouldn't happen but skip safely
+        xPool.m_xPoolVRAM = Flux_MemoryManager::CreateAliasPoolVRAM(xPool.m_ulTotalSize, xPool.m_ulMaxAlignment);
+        Zenith_Assert(xPool.m_xPoolVRAM.IsValid(),
+            "Flux_RenderGraph::AllocateTransients: pool %u alloc failed (size=%llu)",
+            p, static_cast<unsigned long long>(xPool.m_ulTotalSize));
+        ulPoolBytesTotal += xPool.m_ulTotalSize;
+    }
+
+    // Log the aliasing-savings headline — total pool VRAM vs what a standalone
+    // allocation per transient would have consumed. The standalone baseline
+    // uses the same size estimator as the packer so the comparison is apples-
+    // to-apples.
+    if (m_axAliasPools.GetSize() > 0)
+    {
+        u_int64 ulStandaloneBytes = 0;
+        u_int uAliasedCount = 0;
+        for (u_int i = 0; i < m_axTransients.GetSize(); i++)
+        {
+            const TransientResource* pxT = m_axTransients.Get(i);
+            if (pxT->m_uAliasPoolIndex == UINT32_MAX) continue;
+            ulStandaloneBytes += EstimateTransientImageSize(pxT->m_xDesc);
+            uAliasedCount++;
+        }
+        const u_int64 ulSavedBytes = (ulStandaloneBytes > ulPoolBytesTotal)
+            ? ulStandaloneBytes - ulPoolBytesTotal : 0;
+        Zenith_Log(LOG_CATEGORY_RENDERER,
+            "RenderGraph: Transient aliasing packed %u transients into %u pools; %llu KiB pooled vs %llu KiB standalone (%llu KiB saved, %.1f%%)",
+            uAliasedCount,
+            m_axAliasPools.GetSize(),
+            static_cast<unsigned long long>(ulPoolBytesTotal >> 10),
+            static_cast<unsigned long long>(ulStandaloneBytes >> 10),
+            static_cast<unsigned long long>(ulSavedBytes >> 10),
+            ulStandaloneBytes > 0 ? (100.0 * static_cast<double>(ulSavedBytes) / static_cast<double>(ulStandaloneBytes)) : 0.0);
+    }
+
+    // Per-transient allocation. Two paths:
+    //   - m_uAliasPoolIndex != UINT32_MAX → aliased into a pool; create a
+    //     VkImage bound at the packer's offset, then run the view-creation
+    //     logic via BuildColourFromAliasedVRAM / BuildDepthStencilFromAliasedVRAM.
+    //   - m_uAliasPoolIndex == UINT32_MAX → standalone allocation (aliasing
+    //     disabled, or transient was never referenced by a pass).
     for (u_int i = 0; i < m_axTransients.GetSize(); i++)
     {
         TransientResource* pxT = m_axTransients.Get(i);
@@ -604,10 +837,40 @@ void Flux_RenderGraph::AllocateTransients()
         xBuilder.m_eTextureType = pxT->m_xDesc.m_eTextureType;
         xBuilder.m_uDepth = pxT->m_xDesc.m_uDepth;
 
-        if (pxT->m_xDesc.m_bIsDepthStencil)
-            xBuilder.BuildDepthStencil(pxT->m_xAttachment, "Transient DS");
+        const bool bAliased = (pxT->m_uAliasPoolIndex != UINT32_MAX);
+
+        if (bAliased)
+        {
+            const AliasPool& xPool = m_axAliasPools.Get(pxT->m_uAliasPoolIndex);
+            // Build the surface info the aliased image wants (mirror the non-aliased path).
+            Flux_SurfaceInfo xInfo;
+            xInfo.m_uWidth       = pxT->m_xDesc.m_uWidth;
+            xInfo.m_uHeight      = pxT->m_xDesc.m_uHeight;
+            xInfo.m_uDepth       = pxT->m_xDesc.m_uDepth;
+            xInfo.m_eFormat      = pxT->m_xDesc.m_eFormat;
+            xInfo.m_eTextureType = pxT->m_xDesc.m_eTextureType;
+            xInfo.m_uNumMips     = pxT->m_xDesc.m_uNumMips;
+            xInfo.m_uNumLayers   = 1;
+            xInfo.m_uMemoryFlags = pxT->m_xDesc.m_uMemoryFlags;
+
+            Flux_VRAMHandle xAliasedVRAM = Flux_MemoryManager::CreateAliasedImageVRAM(
+                xInfo, xPool.m_xPoolVRAM, pxT->m_ulAliasOffset);
+            Zenith_Assert(xAliasedVRAM.IsValid(),
+                "Flux_RenderGraph::AllocateTransients: aliased image creation failed for transient %u (pool=%u offset=%llu)",
+                i, pxT->m_uAliasPoolIndex, static_cast<unsigned long long>(pxT->m_ulAliasOffset));
+
+            if (pxT->m_xDesc.m_bIsDepthStencil)
+                xBuilder.BuildDepthStencilFromAliasedVRAM(pxT->m_xAttachment, "Transient DS (aliased)", xAliasedVRAM);
+            else
+                xBuilder.BuildColourFromAliasedVRAM(pxT->m_xAttachment, "Transient (aliased)", xAliasedVRAM);
+        }
         else
-            xBuilder.BuildColour(pxT->m_xAttachment, "Transient");
+        {
+            if (pxT->m_xDesc.m_bIsDepthStencil)
+                xBuilder.BuildDepthStencil(pxT->m_xAttachment, "Transient DS");
+            else
+                xBuilder.BuildColour(pxT->m_xAttachment, "Transient");
+        }
 
         Zenith_Assert(pxT->m_xAttachment.m_xVRAMHandle.IsValid(),
             "Flux_RenderGraph::AllocateTransients: allocation failed for transient %u", i);
@@ -615,8 +878,44 @@ void Flux_RenderGraph::AllocateTransients()
     }
 }
 
+void Flux_RenderGraph::ReleaseTransientAllocations()
+{
+    // Same shape as DestroyTransients (attachments first, then pools with +1
+    // frame delay), but we do NOT touch m_axTransients — subsystems hold
+    // Flux_TransientHandle values that index into it and must stay stable
+    // across re-Compiles. m_bAllocated gets reset so AllocateTransients
+    // rebuilds the attachment next phase.
+    for (u_int i = 0; i < m_axTransients.GetSize(); i++)
+    {
+        TransientResource* pxT = m_axTransients.Get(i);
+        if (pxT->m_bAllocated)
+        {
+            Flux_RenderAttachmentBuilder::Destroy(pxT->m_xAttachment);
+            pxT->m_bAllocated = false;
+        }
+    }
+
+    for (u_int p = 0; p < m_axAliasPools.GetSize(); p++)
+    {
+        AliasPool& xPool = m_axAliasPools.Get(p);
+        if (!xPool.m_xPoolVRAM.IsValid()) continue;
+        Flux_VRAM* pxPoolVRAM = Flux_PlatformAPI::GetVRAM(xPool.m_xPoolVRAM);
+        Flux_MemoryManager::QueueVRAMDeletion(
+            pxPoolVRAM, xPool.m_xPoolVRAM,
+            Flux_ImageViewHandle(), Flux_ImageViewHandle(),
+            Flux_ImageViewHandle(), Flux_ImageViewHandle(),
+            /*uExtraFrameDelay*/ 1);
+    }
+    m_axAliasPools.Clear();
+}
+
 void Flux_RenderGraph::DestroyTransients()
 {
+    // Destroy per-transient attachments first (includes all their views). For
+    // aliased images this queues only the image for destruction; the pool's
+    // allocation is freed separately below with an extra frame of delay so
+    // the deferred-deletion ring guarantees aliased images are destroyed
+    // strictly before the pool's VkDeviceMemory is freed.
     for (u_int i = 0; i < m_axTransients.GetSize(); i++)
     {
         TransientResource* pxT = m_axTransients.Get(i);
@@ -627,6 +926,24 @@ void Flux_RenderGraph::DestroyTransients()
         delete pxT;
     }
     m_axTransients.Clear();
+
+    // Queue aliasing pool VRAMs for deletion. uExtraFrameDelay=1 pushes the
+    // pool's destruction a frame later than any image queued above — required
+    // because ProcessDeferredDeletions uses RemoveSwap which doesn't preserve
+    // within-frame order, and freeing VkDeviceMemory while an image is still
+    // bound to it trips the Vulkan validator.
+    for (u_int p = 0; p < m_axAliasPools.GetSize(); p++)
+    {
+        AliasPool& xPool = m_axAliasPools.Get(p);
+        if (!xPool.m_xPoolVRAM.IsValid()) continue;
+        Flux_VRAM* pxPoolVRAM = Flux_PlatformAPI::GetVRAM(xPool.m_xPoolVRAM);
+        Flux_MemoryManager::QueueVRAMDeletion(
+            pxPoolVRAM, xPool.m_xPoolVRAM,
+            Flux_ImageViewHandle(), Flux_ImageViewHandle(),
+            Flux_ImageViewHandle(), Flux_ImageViewHandle(),
+            /*uExtraFrameDelay*/ 1);
+    }
+    m_axAliasPools.Clear();
 }
 
 void Flux_RenderGraph::BuildResourceTraffic()
@@ -991,14 +1308,435 @@ void Flux_RenderGraph::ComputeResourceLifetimes()
     }
 }
 
-// Pack a (pointer, mip, layer) triple into a single u_int64 for use as a
-// subresource key. Used by clear-flag tracking to grant "first writer" status
-// per (attachment, mip, face). Low 48 bits = pointer, bits 48-55 = mip, bits 56-63 = layer.
-static inline u_int64 MakeBarrierKey(void* pRes, u_int uMip, u_int uLayer)
+// Build a Flux_SurfaceInfo matching a transient's desc so we can probe the
+// backend for the image's exact memory requirements.
+static Flux_SurfaceInfo TransientDescToSurfaceInfo(const Flux_TransientTextureDesc& xDesc)
 {
-    return (reinterpret_cast<u_int64>(pRes) & 0x0000FFFFFFFFFFFFull)
-         | (static_cast<u_int64>(uMip   & 0xFFu) << 48)
-         | (static_cast<u_int64>(uLayer & 0xFFu) << 56);
+    Flux_SurfaceInfo xInfo;
+    xInfo.m_uWidth       = xDesc.m_uWidth;
+    xInfo.m_uHeight      = xDesc.m_uHeight;
+    xInfo.m_uDepth       = xDesc.m_uDepth;
+    xInfo.m_eFormat      = xDesc.m_eFormat;
+    xInfo.m_eTextureType = xDesc.m_eTextureType;
+    xInfo.m_uNumMips     = xDesc.m_uNumMips;
+    xInfo.m_uNumLayers   = (xDesc.m_eTextureType == TEXTURE_TYPE_CUBE) ? 6u : 1u;
+    xInfo.m_uMemoryFlags = xDesc.m_uMemoryFlags;
+    return xInfo;
+}
+
+// Last-resort heuristic kept for the extremely unlikely case that
+// ProbeImageMemoryRequirements fails to create an image. The 2× factor + 1 MiB
+// round-up intentionally overestimates; a genuine allocation failure is far
+// better than a subtle bind mismatch.
+static u_int64 FallbackTransientImageSize(const Flux_TransientTextureDesc& xDesc)
+{
+    const u_int uBpp = xDesc.m_bIsDepthStencil
+        ? 4u
+        : ColourFormatBytesPerPixel(xDesc.m_eFormat);
+
+    const u_int64 ulLayers = (xDesc.m_eTextureType == TEXTURE_TYPE_CUBE) ? 6u : 1u;
+    const u_int64 ulDepth  = (xDesc.m_eTextureType == TEXTURE_TYPE_3D) ? xDesc.m_uDepth : 1u;
+    const u_int64 ulBase   = static_cast<u_int64>(xDesc.m_uWidth) * xDesc.m_uHeight * ulDepth * ulLayers * uBpp;
+    const u_int64 ulWithMips = (xDesc.m_uNumMips > 1) ? ((ulBase * 4 + 2) / 3) : ulBase;
+    const u_int64 ulWithHeadroom = ulWithMips * 2;
+    constexpr u_int64 ulALIGNMENT = 1024ull * 1024ull;
+    return (ulWithHeadroom + ulALIGNMENT - 1) & ~(ulALIGNMENT - 1);
+}
+
+// Returns the image's actual memory size (aligned up) from a driver probe, or
+// a 2× fallback on probe failure. Writes the probed alignment into ulAlignmentOut
+// (0 on probe failure — callers then fall back to the 64 KB default in
+// CreateAliasPoolVRAM).
+static u_int64 EstimateTransientImageSize(const Flux_TransientTextureDesc& xDesc, u_int64& ulAlignmentOut)
+{
+    const Flux_SurfaceInfo xInfo = TransientDescToSurfaceInfo(xDesc);
+    u_int64 ulProbedSize = 0;
+    u_int64 ulProbedAlignment = 0;
+    Flux_MemoryManager::ProbeImageMemoryRequirements(xInfo, ulProbedSize, ulProbedAlignment);
+
+    ulAlignmentOut = ulProbedAlignment;
+    if (ulProbedSize == 0)
+    {
+        Zenith_Log(LOG_CATEGORY_RENDERER,
+            "RenderGraph: ProbeImageMemoryRequirements failed for %ux%u format=%d — using 2x fallback size heuristic",
+            xDesc.m_uWidth, xDesc.m_uHeight, (int)xDesc.m_eFormat);
+        return FallbackTransientImageSize(xDesc);
+    }
+
+    // Round the probed size up to its own alignment so concatenating in a pool
+    // keeps successive images aligned without extra gap calculations.
+    if (ulProbedAlignment > 0)
+    {
+        const u_int64 ulMask = ulProbedAlignment - 1;
+        return (ulProbedSize + ulMask) & ~ulMask;
+    }
+    return ulProbedSize;
+}
+
+// Overload retained for call sites that don't care about alignment (diagnostics
+// summing standalone-bytes for the "pooled vs standalone" log line).
+static u_int64 EstimateTransientImageSize(const Flux_TransientTextureDesc& xDesc)
+{
+    u_int64 ulDiscard = 0;
+    return EstimateTransientImageSize(xDesc, ulDiscard);
+}
+
+void Flux_RenderGraph::SynthesizeAliasingBarriers()
+{
+    // Clear previous compile's aliasing-barrier vectors so the recompile
+    // starts from a clean state.
+    for (u_int p = 0; p < m_xPasses.GetSize(); p++)
+    {
+        m_xPasses.Get(p)->m_xAliasingBarriers.Clear();
+    }
+
+    // No work when aliasing is disabled — no pools exist.
+    if (m_axAliasPools.GetSize() == 0)
+        return;
+
+    // Return the access used for pxT in the pass at uPassIdx. Asserts on
+    // failure to find the transient in the pass: the aliasing barrier is only
+    // emitted when we already know the transient's lifetime covers uPassIdx,
+    // so failing to locate its access here means the lifetime tables and the
+    // pass's declared reads/writes have diverged — a bug that would otherwise
+    // silently map to TopOfPipe (no-op barrier).
+    auto FindAccessForTransientInPass = [this](const TransientResource* pxT, u_int uPassIdx) -> ResourceAccess
+    {
+        Zenith_Assert(uPassIdx != UINT32_MAX, "FindAccessForTransientInPass: sentinel pass index reached aliasing barrier synthesis");
+        const Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(uPassIdx);
+        const void* pTarget = static_cast<const void*>(&pxT->m_xAttachment);
+        for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
+        {
+            if (it.GetData().m_xResource.GetVoidPtr() == pTarget)
+                return it.GetData().m_eAccess;
+        }
+        for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())
+        {
+            if (it.GetData().m_xResource.GetVoidPtr() == pTarget)
+                return it.GetData().m_eAccess;
+        }
+        Zenith_Assert(false, "FindAccessForTransientInPass: transient '%s' not found in pass '%s' reads/writes — lifetime tables disagree with pass usage",
+            "<transient>", pxPass->DebugName());
+        return RESOURCE_ACCESS_UNDEFINED;
+    };
+
+    // For each pool, track the "current occupant" as we walk the execution
+    // order. When a new transient from the same pool becomes active (its
+    // first-write pass), the pass needs an aliasing barrier IF the prior
+    // occupant was a DIFFERENT transient. Single-occupant pools never need
+    // an aliasing barrier.
+    struct PoolCurrentOccupant { u_int m_uTransientIndex = UINT32_MAX; };
+    Zenith_Vector<PoolCurrentOccupant> axCurrent;
+    axCurrent.Reserve(m_axAliasPools.GetSize());
+    for (u_int p = 0; p < m_axAliasPools.GetSize(); p++)
+        axCurrent.PushBack(PoolCurrentOccupant{});
+
+    for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
+    {
+        const u_int uPassIdx = itE.GetData();
+        Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(uPassIdx);
+        if (!pxPass->m_bEnabled) continue;
+
+        for (u_int u = 0; u < m_axTransients.GetSize(); u++)
+        {
+            TransientResource* pxT = m_axTransients.Get(u);
+            if (pxT->m_uAliasPoolIndex == UINT32_MAX) continue;  // standalone
+            if (pxT->m_uFirstWrite != uPassIdx) continue;         // not its first-use pass
+
+            const u_int uPool = pxT->m_uAliasPoolIndex;
+            const u_int uPriorOccupant = axCurrent.Get(uPool).m_uTransientIndex;
+            if (uPriorOccupant != UINT32_MAX && uPriorOccupant != u)
+            {
+                // Memory hand-off from a different transient — push a per-
+                // transient barrier entry so the backend emits one tight
+                // vk::MemoryBarrier per hand-off. Passes that are the first
+                // user of multiple aliased transients push multiple entries;
+                // pre-fix this overwrote a single scalar pair and lost all
+                // but the last src/dst mask.
+                const TransientResource* pxPrior = m_axTransients.Get(uPriorOccupant);
+                const u_int uPriorLastPass = pxPrior->m_uLastUse;
+                Flux_RenderGraph_AliasingBarrier xBarrier;
+                xBarrier.m_eSrcAccess = FindAccessForTransientInPass(pxPrior, uPriorLastPass);
+                xBarrier.m_eDstAccess = FindAccessForTransientInPass(pxT,    uPassIdx);
+                xBarrier.m_bSrcIsDepth = (xBarrier.m_eSrcAccess == RESOURCE_ACCESS_WRITE_DSV
+                                       || xBarrier.m_eSrcAccess == RESOURCE_ACCESS_READ_DEPTH);
+                xBarrier.m_bDstIsDepth = (xBarrier.m_eDstAccess == RESOURCE_ACCESS_WRITE_DSV
+                                       || xBarrier.m_eDstAccess == RESOURCE_ACCESS_READ_DEPTH);
+                pxPass->m_xAliasingBarriers.PushBack(xBarrier);
+            }
+            axCurrent.Get(uPool).m_uTransientIndex = u;
+        }
+    }
+}
+
+u_int64 Flux_RenderGraph::MakeTransientMemorySignature(const Flux_TransientTextureDesc& xDesc)
+{
+    // Pack (texture-type, depth-stencil flag, memory-flags, format) into one
+    // u_int64 so two transients with matching signatures are known to have
+    // compatible memory requirements (same heap + alignment class).
+    //
+    // Bits (low to high):
+    //    [0..7]   : texture type (enum, fits in 8 bits)
+    //    [8]      : depth-stencil flag
+    //    [9..40]  : memory flags (u_int, 32 bits)
+    //    [41..56] : format (enum, fits in 16 bits)
+    // Everything else (dimensions, mip count) is NOT in the signature — the
+    // packer handles those by computing pool size from per-occupant allocations.
+    const u_int64 ulTextureType = static_cast<u_int64>(xDesc.m_eTextureType) & 0xFFull;
+    const u_int64 ulDepthFlag   = xDesc.m_bIsDepthStencil ? 1ull : 0ull;
+    const u_int64 ulMemFlags    = static_cast<u_int64>(xDesc.m_uMemoryFlags) & 0xFFFFFFFFull;
+    const u_int64 ulFormat      = static_cast<u_int64>(xDesc.m_eFormat) & 0xFFFFull;
+    return  ulTextureType
+         | (ulDepthFlag  << 8)
+         | (ulMemFlags   << 9)
+         | (ulFormat     << 41);
+}
+
+void Flux_RenderGraph::ComputeTransientLifetimes()
+{
+    // Copy the existing per-attachment lifetime data (computed over void*
+    // resource keys by ComputeResourceLifetimes) into each TransientResource
+    // so the aliasing packer can iterate m_axTransients directly without an
+    // extra map lookup. Transients that no enabled pass touched keep their
+    // sentinel UINT32_MAX — the packer treats those as not-referenced and
+    // skips them.
+    //
+    // m_uLastUse collapses "last read" and "last write, never read" into one
+    // non-sentinel value: for a write-only transient the lifetime ends at
+    // the write pass, not at UINT32_MAX. This lets the pool overlap check
+    // use a single clean comparison instead of a UINT32_MAX special case.
+    for (u_int u = 0; u < m_axTransients.GetSize(); u++)
+    {
+        TransientResource* pxT = m_axTransients.Get(u);
+        pxT->m_uFirstWrite = UINT32_MAX;
+        pxT->m_uLastUse    = UINT32_MAX;
+
+        // TrackResource adds entries keyed on the attachment pointer. If the
+        // transient was never read or written in any enabled pass it won't be
+        // in m_xResources at all, in which case the sentinels stay.
+        void* pRes = static_cast<void*>(&pxT->m_xAttachment);
+        auto itRes = m_xResources.find(pRes);
+        if (itRes == m_xResources.end())
+            continue;
+
+        pxT->m_uFirstWrite = itRes->second.m_uFirstWrite;
+        // Write-only transients have m_uLastRead == UINT32_MAX in the raw
+        // lifetime record; fold that into m_uFirstWrite so m_uLastUse is a
+        // real pass index whenever the transient is referenced at all.
+        pxT->m_uLastUse    = (itRes->second.m_uLastRead != UINT32_MAX)
+                             ? itRes->second.m_uLastRead
+                             : pxT->m_uFirstWrite;
+    }
+}
+
+// Greedy interval coloring packer: for each memory-signature bin, sort
+// transients by m_uFirstWrite and assign each to the first existing pool
+// whose occupants do NOT overlap the new transient's lifetime; allocate a
+// new pool when none fits. Pure pointer math — no Vulkan calls — so unit
+// tests can exercise this without a live device. Runs after lifetime
+// computation; no-op when aliasing is disabled.
+//
+// Algorithm cost: O(N * P) where N is number of transients and P is peak
+// concurrent transients per bin. For a typical deferred frame (~30 transients,
+// ~4-6 concurrent peak) that's sub-microsecond.
+void Flux_RenderGraph::AssignAliasingGroups()
+{
+    // Tear down any previous aliasing state before deriving the new one. The
+    // pool set is re-computed every Compile (pool count, size, and per-transient
+    // assignments can all change when the aliasing toggle flips or the pass
+    // graph changes), so the prior Compile's pools + aliased VkImages must be
+    // queued for deferred deletion — otherwise each toggle of aliasing leaks
+    // the entire previous pool set. Transient attachments are reset too,
+    // forcing AllocateTransients to rebuild them against the new layout.
+    ReleaseTransientAllocations();
+
+    // Reset per-transient pool assignments. Non-aliased (toggle-off) path
+    // leaves these as UINT32_MAX which AllocateTransients reads as "allocate
+    // standalone".
+    for (u_int u = 0; u < m_axTransients.GetSize(); u++)
+    {
+        TransientResource* pxT = m_axTransients.Get(u);
+        pxT->m_uAliasPoolIndex = UINT32_MAX;
+        pxT->m_ulAliasOffset   = 0;
+    }
+
+    const bool bAliasingActive = m_bAliasingEnabled
+        && Flux_MemoryManager::SupportsTransientAliasing();
+    if (!bAliasingActive)
+        return;
+
+    // Build a sort-order over transients that have valid lifetimes. Sorting
+    // by m_uFirstWrite lets the greedy packer consider transients in the
+    // order they become live, which matches the classic interval-coloring
+    // optimum for most realistic DAGs.
+    Zenith_Vector<u_int> axSortedIndices;
+    axSortedIndices.Reserve(m_axTransients.GetSize());
+    for (u_int u = 0; u < m_axTransients.GetSize(); u++)
+    {
+        const TransientResource* pxT = m_axTransients.Get(u);
+        if (pxT->m_uFirstWrite == UINT32_MAX) continue; // unreferenced → keep standalone
+        axSortedIndices.PushBack(u);
+    }
+    // Simple insertion sort — N is small (~30), avoids a std::sort dependency
+    // here and keeps the code unit-testable without pulling headers.
+    for (u_int i = 1; i < axSortedIndices.GetSize(); i++)
+    {
+        const u_int uCur = axSortedIndices.Get(i);
+        const u_int uCurFirst = m_axTransients.Get(uCur)->m_uFirstWrite;
+        u_int j = i;
+        while (j > 0 && m_axTransients.Get(axSortedIndices.Get(j - 1))->m_uFirstWrite > uCurFirst)
+        {
+            axSortedIndices.Get(j) = axSortedIndices.Get(j - 1);
+            j--;
+        }
+        axSortedIndices.Get(j) = uCur;
+    }
+
+    // Greedy pass: for each transient in first-write order, try every
+    // existing pool with matching signature; reuse if no occupant's lifetime
+    // overlaps. The "occupants overlap" check tracks the max last-use across
+    // occupants — sufficient because transients in a pool are assigned in
+    // first-write order, so a new transient's lifetime starts at or after
+    // every prior occupant's first write; the only overlap risk is against a
+    // prior occupant whose last-use extends past the new first-write.
+    //
+    // ComputeTransientLifetimes collapsed the "last read" and "last write
+    // when never read" sentinels into a single m_uLastUse, so the comparison
+    // below is a clean strict-greater without a UINT32_MAX special case.
+    struct PoolOccupancy
+    {
+        u_int64 m_ulSignature;
+        u_int   m_uMaxLastUse;
+    };
+    Zenith_Vector<PoolOccupancy> axOccupancy;
+
+    for (u_int idx = 0; idx < axSortedIndices.GetSize(); idx++)
+    {
+        const u_int u = axSortedIndices.Get(idx);
+        TransientResource* pxT = m_axTransients.Get(u);
+        const u_int64 ulSig = MakeTransientMemorySignature(pxT->m_xDesc);
+
+        // Try to place into an existing pool.
+        u_int uAssignedPool = UINT32_MAX;
+        for (u_int p = 0; p < axOccupancy.GetSize(); p++)
+        {
+            if (axOccupancy.Get(p).m_ulSignature != ulSig) continue;
+            // Non-overlap: pxT's first write must come strictly AFTER this
+            // pool's current max last-use. Equal is an overlap (writer and
+            // reader both touch the memory in the same pass ordering slot).
+            if (pxT->m_uFirstWrite > axOccupancy.Get(p).m_uMaxLastUse)
+            {
+                uAssignedPool = p;
+                break;
+            }
+        }
+
+        if (uAssignedPool == UINT32_MAX)
+        {
+            // Open a new pool for this signature.
+            AliasPool xNewPool;
+            xNewPool.m_ulSignature  = ulSig;
+            xNewPool.m_ulTotalSize  = 0; // filled in by MemoryManager at allocation time
+            xNewPool.m_uMemoryFlags = pxT->m_xDesc.m_uMemoryFlags;
+            m_axAliasPools.PushBack(xNewPool);
+
+            PoolOccupancy xOcc;
+            xOcc.m_ulSignature   = ulSig;
+            xOcc.m_uMaxLastUse   = pxT->m_uLastUse;
+            axOccupancy.PushBack(xOcc);
+
+            uAssignedPool = m_axAliasPools.GetSize() - 1;
+        }
+        else
+        {
+            // Extend this pool's coverage to the new transient's last use.
+            PoolOccupancy& xOcc = axOccupancy.Get(uAssignedPool);
+            if (pxT->m_uLastUse > xOcc.m_uMaxLastUse)
+                xOcc.m_uMaxLastUse = pxT->m_uLastUse;
+
+            // Defence-in-depth: the signature already includes m_bIsDepthStencil
+            // (bit 8 of MakeTransientMemorySignature), so two transients with
+            // matching signatures are guaranteed to share the depth-stencil
+            // kind. This assertion trips if the signature function ever
+            // regresses and loses the depth/colour separation — aliasing
+            // colour and depth-stencil memory on drivers that require
+            // distinct memoryTypeBits would surface as sporadic vmaCreateAliasingImage2
+            // failures only.
+            const AliasPool& xPool = m_axAliasPools.Get(uAssignedPool);
+            // The pool was opened by a prior transient whose depth-stencil
+            // flag matched this one's signature component — cheap to verify
+            // by comparing the flag directly, using the first-assigned
+            // occupant's m_xDesc as a reference.
+            bool bPoolIsDepth = false;
+            for (u_int vv = 0; vv < m_axTransients.GetSize(); vv++)
+            {
+                const TransientResource* pxOther = m_axTransients.Get(vv);
+                if (pxOther->m_uAliasPoolIndex == uAssignedPool)
+                {
+                    bPoolIsDepth = pxOther->m_xDesc.m_bIsDepthStencil;
+                    break;
+                }
+            }
+            Zenith_Assert(bPoolIsDepth == pxT->m_xDesc.m_bIsDepthStencil,
+                "AssignAliasingGroups: pool %u mixes depth-stencil (%d) and colour (%d) transients — signature logic regressed (signature 0x%llx).",
+                uAssignedPool, bPoolIsDepth ? 1 : 0, pxT->m_xDesc.m_bIsDepthStencil ? 1 : 0,
+                static_cast<unsigned long long>(xPool.m_ulSignature));
+        }
+
+        pxT->m_uAliasPoolIndex = uAssignedPool;
+        pxT->m_ulAliasOffset   = 0; // filled in by the per-pool offset pass below
+    }
+
+    // Second pass: within each pool, ALL aliased transients bind at offset 0
+    // of the pool's memory. The packer has already guaranteed their lifetimes
+    // don't overlap, so at any moment only one transient is "live" in the
+    // pool memory — the others' backing memory is (by definition) dead and
+    // can safely be overwritten. Pool size = max(per-transient size) because
+    // the pool must be big enough to host the largest occupant.
+    //
+    // This is the actual aliasing saving: 3 transients of 16 MiB each that
+    // don't overlap pool into a 16 MiB block, not a 48 MiB block.
+    for (u_int p = 0; p < m_axAliasPools.GetSize(); p++)
+    {
+        AliasPool& xPool = m_axAliasPools.Get(p);
+        u_int64 ulMaxSize = 0;
+        u_int64 ulMaxAlignment = 0;
+        for (u_int u = 0; u < m_axTransients.GetSize(); u++)
+        {
+            TransientResource* pxT = m_axTransients.Get(u);
+            if (pxT->m_uAliasPoolIndex != p) continue;
+            u_int64 ulPerImageAlignment = 0;
+            const u_int64 ulSize = EstimateTransientImageSize(pxT->m_xDesc, ulPerImageAlignment);
+            if (ulSize > ulMaxSize) ulMaxSize = ulSize;
+            if (ulPerImageAlignment > ulMaxAlignment) ulMaxAlignment = ulPerImageAlignment;
+            pxT->m_ulAliasOffset = 0;
+        }
+        xPool.m_ulTotalSize    = ulMaxSize;
+        xPool.m_ulMaxAlignment = ulMaxAlignment;
+    }
+}
+
+// Build a Flux_BarrierKey for (pointer, mip, layer). Used by clear-flag tracking
+// to grant "first writer" status per (attachment, mip, face), and by the
+// barrier-state map in SynthesizeBarriers. The key holds the FULL pointer (no
+// 48-bit truncation) alongside a u_int32 that packs (layer<<16)|mip. The
+// static_asserts pin the packing so bumping FLUX_MAX_MIPS or FLUX_MAX_LAYERS
+// above the 16-bit limit fails the build instead of producing silent
+// collisions at runtime.
+static_assert(FLUX_MAX_MIPS <= 0xFFFFu,
+    "Flux_BarrierKey packs mip index into 16 bits. If FLUX_MAX_MIPS grows, widen m_uMipLayerPacked or split the struct.");
+static_assert(FLUX_MAX_LAYERS <= 0xFFFFu,
+    "Flux_BarrierKey packs layer index into 16 bits. If FLUX_MAX_LAYERS grows, widen m_uMipLayerPacked or split the struct.");
+
+static inline Flux_BarrierKey MakeBarrierKey(void* pRes, u_int uMip, u_int uLayer)
+{
+    Zenith_Assert(uMip   < FLUX_MAX_MIPS,   "MakeBarrierKey: mip index %u >= FLUX_MAX_MIPS (%u)",   uMip,   FLUX_MAX_MIPS);
+    Zenith_Assert(uLayer < FLUX_MAX_LAYERS, "MakeBarrierKey: layer index %u >= FLUX_MAX_LAYERS (%u)", uLayer, FLUX_MAX_LAYERS);
+
+    Flux_BarrierKey xKey;
+    xKey.m_pRes = pRes;
+    xKey.m_uMipLayerPacked = (uLayer << 16) | (uMip & 0xFFFFu);
+    return xKey;
 }
 
 void Flux_RenderGraph::ResolveClearFlags()
@@ -1027,7 +1765,7 @@ void Flux_RenderGraph::CollectClearRequirements()
         for (uint32_t i = 0; i < pxPass->m_uNumColourAttachments; i++)
         {
             const Flux_RenderGraph_AttachmentRef& rxRef = pxPass->m_axColourAttachments[i];
-            u_int64 ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
+            const Flux_BarrierKey ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
             if (m_xAttachmentNeedsClear.find(ulKey) == m_xAttachmentNeedsClear.end())
                 m_xAttachmentNeedsClear[ulKey] = pxPass->m_bRequestsClear;
             else
@@ -1036,7 +1774,7 @@ void Flux_RenderGraph::CollectClearRequirements()
         if (pxPass->m_xDepthStencil.IsValid())
         {
             const Flux_RenderGraph_AttachmentRef& rxDepth = pxPass->m_xDepthStencil;
-            u_int64 ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
+            const Flux_BarrierKey ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
             if (m_xAttachmentNeedsClear.find(ulKey) == m_xAttachmentNeedsClear.end())
                 m_xAttachmentNeedsClear[ulKey] = pxPass->m_bRequestsClear;
             else
@@ -1057,14 +1795,14 @@ void Flux_RenderGraph::AssignClearFlags()
         for (uint32_t i = 0; i < pxPass->m_uNumColourAttachments; i++)
         {
             const Flux_RenderGraph_AttachmentRef& rxRef = pxPass->m_axColourAttachments[i];
-            u_int64 ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
+            const Flux_BarrierKey ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
             auto itNeed = m_xAttachmentNeedsClear.find(ulKey);
             if (itNeed != m_xAttachmentNeedsClear.end() && itNeed->second) { bNeedsClear = true; break; }
         }
         if (!bNeedsClear && pxPass->m_xDepthStencil.IsValid())
         {
             const Flux_RenderGraph_AttachmentRef& rxDepth = pxPass->m_xDepthStencil;
-            u_int64 ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
+            const Flux_BarrierKey ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
             auto itNeed = m_xAttachmentNeedsClear.find(ulKey);
             if (itNeed != m_xAttachmentNeedsClear.end() && itNeed->second) bNeedsClear = true;
         }
@@ -1073,14 +1811,14 @@ void Flux_RenderGraph::AssignClearFlags()
         for (uint32_t i = 0; i < pxPass->m_uNumColourAttachments; i++)
         {
             const Flux_RenderGraph_AttachmentRef& rxRef = pxPass->m_axColourAttachments[i];
-            u_int64 ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
+            const Flux_BarrierKey ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
             if (m_xAttachmentClearAssigned.find(ulKey) == m_xAttachmentClearAssigned.end())
             { m_xAttachmentClearAssigned.insert(ulKey); bIsFirstWriter = true; }
         }
         if (pxPass->m_xDepthStencil.IsValid())
         {
             const Flux_RenderGraph_AttachmentRef& rxDepth = pxPass->m_xDepthStencil;
-            u_int64 ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
+            const Flux_BarrierKey ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
             if (m_xAttachmentClearAssigned.find(ulKey) == m_xAttachmentClearAssigned.end())
             { m_xAttachmentClearAssigned.insert(ulKey); bIsFirstWriter = true; }
         }
@@ -1097,6 +1835,8 @@ bool Flux_RenderGraph::Compile()
     Validate();
     if (!TopologicalSort()) return false;
     ComputeResourceLifetimes();
+    ComputeTransientLifetimes();
+    AssignAliasingGroups();
     InferPassAttachments();
     MarkPassesAsComputeOrGraphics();
     ResolveClearFlags();
@@ -1125,6 +1865,7 @@ bool Flux_RenderGraph::Compile()
     }
 
     SynthesizeBarriers();
+    SynthesizeAliasingBarriers();
 
     m_bCompiled = true; m_bDirty = false; m_bEnabledMaskDirty = false;
 #ifdef ZENITH_DEBUG
@@ -1177,7 +1918,11 @@ static ResourceAccess RequiredPrePassAccess(ResourceAccess eAccess)
 
 // Layout the resource is in AFTER this pass executes. With the render pass's
 // finalLayout matching its initialLayout (no auto-transition), the resource
-// stays in the working layout of its access.
+// stays in the working layout of its access — so this is an identity function
+// today. The indirection is kept so a future layout-shifting render pass
+// (e.g. auto-transitioning attachments to SHADER_READ at finalLayout) has a
+// single hook to update, rather than touching every call site in the barrier
+// synthesiser.
 static ResourceAccess PostPassAccess(ResourceAccess eAccess)
 {
     return eAccess;
@@ -1215,19 +1960,33 @@ void Flux_RenderGraph::SynthesizeBarriers()
     for (u_int i = 0; i < m_xPasses.GetSize(); i++)
         m_xPasses.Get(i)->m_xPrologueBarriers.Clear();
 
-    // Per-subresource state map keyed on MakeBarrierKey(ptr, mip, layer).
-    // #TODO: Replace std::unordered_map with engine hash map (Phase G).
-    std::unordered_map<u_int64, ResourceAccess> xState;
+    // Per-subresource image state map keyed on Flux_BarrierKey (ptr, mip, layer).
+    // Per-buffer state map keyed on Flux_Buffer* (no subresources on buffers,
+    // so the key is simpler). Both reset at function entry — barrier synthesis
+    // is rebuilt from scratch on every Compile / re-synth, never incrementally.
+    // #TODO: Replace std::unordered_map with engine hash map.
+    std::unordered_map<Flux_BarrierKey, ResourceAccess> xState;
+    std::unordered_map<Flux_Buffer*,    ResourceAccess> xBufferState;
 
     auto QueryState = [&](void* pRes, u_int uMip, u_int uLayer) -> ResourceAccess
     {
-        const u_int64 ulKey = MakeBarrierKey(pRes, uMip, uLayer);
+        const Flux_BarrierKey ulKey = MakeBarrierKey(pRes, uMip, uLayer);
         auto it = xState.find(ulKey);
         return (it == xState.end()) ? RESOURCE_ACCESS_UNDEFINED : it->second;
     };
     auto SetState = [&](void* pRes, u_int uMip, u_int uLayer, ResourceAccess e)
     {
         xState[MakeBarrierKey(pRes, uMip, uLayer)] = e;
+    };
+
+    auto QueryBufferState = [&](Flux_Buffer* pxBuffer) -> ResourceAccess
+    {
+        auto it = xBufferState.find(pxBuffer);
+        return (it == xBufferState.end()) ? RESOURCE_ACCESS_UNDEFINED : it->second;
+    };
+    auto SetBufferState = [&](Flux_Buffer* pxBuffer, ResourceAccess e)
+    {
+        xBufferState[pxBuffer] = e;
     };
 
     auto ResolveSubresourceRange = [](const Flux_RenderGraph_ResourceUsage& rxUsage,
@@ -1243,16 +2002,62 @@ void Flux_RenderGraph::SynthesizeBarriers()
         return true;
     };
 
+    // Buffer barrier emission: pure memory + execution barriers (no layout
+    // transitions). A barrier is needed any time either side is a write
+    // (RAW, WAW, WAR); read-after-read collapses to no barrier. The
+    // single-Flux_RenderGraph_Barrier struct is reused with its mip/layer
+    // fields left at their defaults (0, 1, 0, 1) — the backend buffer-barrier
+    // emitter ignores them. See the struct's doc comment in the header.
+    auto ProcessBufferAccess = [&](Flux_RenderGraph_Pass* pxPass,
+                                   const Flux_RenderGraph_ResourceUsage& rxUsage)
+    {
+        Flux_Buffer* pxBuffer = rxUsage.m_xResource.AsBuffer();
+        if (pxBuffer == nullptr) return;
+        // Reject the resource if the underlying VRAM isn't allocated yet
+        // (shouldn't happen post-AllocateTransients but guards against
+        // future ordering bugs).
+        if (!pxBuffer->m_xVRAMHandle.IsValid()) return;
+
+        const ResourceAccess eRequired = RequiredPrePassAccess(rxUsage.m_eAccess);
+        const ResourceAccess ePost     = PostPassAccess(rxUsage.m_eAccess);
+        const bool bWriteAccess = AccessIsWrite(rxUsage.m_eAccess);
+
+        const ResourceAccess eSrc = QueryBufferState(pxBuffer);
+        const bool bSrcIsWrite = AccessIsWrite(eSrc);
+        // Skip read-after-read: no hazard, no barrier needed. Any other
+        // combination (RAW / WAR / WAW / first-touch-after-undefined-write)
+        // must emit a memory barrier so the prior writer's stage completes
+        // before the new access starts.
+        if (bWriteAccess || bSrcIsWrite)
+        {
+            Flux_RenderGraph_Barrier xBarrier;
+            xBarrier.m_xResource = rxUsage.m_xResource;
+            // mip/layer fields intentionally left at (0, 1, 0, 1) defaults —
+            // see Flux_RenderGraph_Barrier doc in the header.
+            xBarrier.m_eSrcAccess = eSrc;
+            xBarrier.m_eDstAccess = eRequired;
+            pxPass->m_xPrologueBarriers.PushBack(xBarrier);
+        }
+        SetBufferState(pxBuffer, ePost);
+    };
+
     // Process one declared (read or write) access on a subresource range.
     // Emits a prologue barrier per (mip, layer) where current ≠ required OR
     // either side is a write (WAW / RAW within matching layout still needs
-    // a memory barrier). Updates the per-subresource tracker.
+    // a memory barrier). Updates the per-subresource tracker. Buffer accesses
+    // are routed to ProcessBufferAccess instead.
     auto ProcessAccess = [&](Flux_RenderGraph_Pass* pxPass,
                              const Flux_RenderGraph_ResourceUsage& rxUsage)
     {
+        if (rxUsage.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+        {
+            ProcessBufferAccess(pxPass, rxUsage);
+            return;
+        }
+
         u_int uBaseMip, uMipCount, uBaseLayer, uLayerCount;
         if (!ResolveSubresourceRange(rxUsage, uBaseMip, uMipCount, uBaseLayer, uLayerCount))
-            return; // buffer — barriers elided for now (Phase B is image-only)
+            return;
 
         // Reject the resource if the underlying VRAM isn't allocated yet
         // (shouldn't happen post-AllocateTransients but guards against
@@ -1284,7 +2089,7 @@ void Flux_RenderGraph::SynthesizeBarriers()
                     xBarrier.m_uMipCount = 1;
                     xBarrier.m_uBaseLayer = uLayer;
                     xBarrier.m_uLayerCount = 1;
-                    xBarrier.m_eSrcAccess = bLayoutMatches ? eRequired : eSrc;
+                    xBarrier.m_eSrcAccess = eSrc;
                     xBarrier.m_eDstAccess = eRequired;
                     pxPass->m_xPrologueBarriers.PushBack(xBarrier);
                 }
@@ -1409,6 +2214,7 @@ void Flux_RenderGraph::Execute()
         // is no longer in (sync-validator layout-mismatch error).
         ResolveClearFlags();
         SynthesizeBarriers();
+        SynthesizeAliasingBarriers();
         m_bEnabledMaskDirty = false;
     }
     CallPrepareCallbacks();
@@ -1507,7 +2313,6 @@ void Flux_RenderGraph::InferPassAttachments()
     }
 }
 
-// EmitPrologueBarriers was deleted — see TODO in Flux_RenderGraph.h.
 // Barriers are computed by RecordCommandBuffersTask in the Vulkan backend.
 
 // ---- Current-pass thread-local recording context ------------------------

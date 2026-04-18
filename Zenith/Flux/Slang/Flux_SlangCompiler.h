@@ -29,7 +29,13 @@ class Flux_ShaderReflection
 public:
 	Flux_ShaderReflection() = default;
 
-	Flux_BindingHandle GetBinding(const char* szName) const;
+	// Single O(1) lookup returning the full reflected binding (or nullptr if
+	// the name is not present). Callers that need just the handle extract
+	// {m_uSet, m_uBinding} from the returned pointer; callers that need the
+	// reflected type (BindingType) use it directly. m_xBindingMap stores
+	// indices into m_axBindings, so GetBinding is a single map lookup with
+	// no per-call vector scan.
+	const Flux_ReflectedBinding* GetBinding(const char* szName) const;
 	u_int GetBindingPoint(const char* szName) const;
 	u_int GetDescriptorSet(const char* szName) const;
 
@@ -45,7 +51,9 @@ public:
 
 private:
 	Zenith_Vector<Flux_ReflectedBinding> m_axBindings;
-	std::unordered_map<std::string, Flux_BindingHandle> m_xBindingMap;
+	// #TODO: Replace with engine hash map. Map stores indices into
+	// m_axBindings so GetBinding returns a stable pointer into the vector.
+	std::unordered_map<std::string, u_int> m_xBindingMap;
 };
 
 enum SlangShaderStage

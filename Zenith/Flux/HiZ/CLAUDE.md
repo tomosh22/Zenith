@@ -64,15 +64,22 @@ float fMinDepth = min(min(xDepths.x, xDepths.y), min(xDepths.z, xDepths.w));
 ### Barrier Handling
 
 `Flux_RenderGraph::SynthesizeBarriers` (called from `Compile`) walks the
-execution order, tracks per-(attachment, mip, layer) access state, and
-populates each pass's `m_xPrologueBarriers` list. The Vulkan backend
-(`Zenith_Vulkan.cpp::RecordCommandBuffersTask`) consumes that list via
-`ImageTransition` calls right before each pass executes — outside any
-active render pass, so `vkCmdPipelineBarrier` is unrestricted.
+execution order, tracks per-(attachment, mip, layer) access state for images
+and per-buffer access state for buffers, and populates each pass's
+`m_xPrologueBarriers` list. The Vulkan backend
+(`Zenith_Vulkan.cpp::RecordCommandBuffersTask`) consumes that list — image
+entries via `ImageTransition`, buffer entries via `BufferBarrier` — right
+before each pass executes, outside any active render pass so
+`vkCmdPipelineBarrier` is unrestricted.
 
-For the HiZ chain, each per-mip pass declares:
-1. `xGraph.Read(uPass, hHiZ, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1)` — read previous mip (subresource-explicit)
-2. `xGraph.Write(uPass, hHiZ, RESOURCE_ACCESS_WRITE_UAV, uMip, 1)` — write current mip
+For the HiZ chain, each per-mip pass uses the fluent builder:
+
+```cpp
+xGraph.AddPass(szPassName, ExecuteHiZMip)
+    .UserData(uMip)                                          // typed, no void* cast
+    .ReadsTransient (s_xHiZBufferHandle, READ_SRV, uMip-1, 1) // previous mip
+    .WritesTransient(s_xHiZBufferHandle, WRITE_UAV, uMip, 1); // current mip
+```
 
 From those declarations the graph emits:
 - Mip pass `N`: `UNDEFINED → WRITE_UAV` (GENERAL) on mip `N` before the dispatch

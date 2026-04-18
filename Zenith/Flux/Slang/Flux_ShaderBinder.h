@@ -5,48 +5,128 @@
 
 class Flux_CommandList;
 
-// Helper class for binding shader resources using cached Flux_BindingHandle
-// This allows binding by name lookup (cached at init time) rather than hardcoded indices
+// Helper class for binding shader resources by name. Looks up the binding
+// slot via the shader's reflection on every call; an internal pointer-identity
+// cache (NAME_CACHE_SIZE entries, no hashing) absorbs the lookup cost when
+// callers pass string literals. The resource-type assertion catches Bind*
+// mix-ups (e.g. BindCBV called on a binding that reflection says is a
+// texture) at the call site, which is far clearer than the eventual Vulkan
+// validation-layer error.
 //
 // Usage:
-//   // At init time, cache binding handles:
-//   static Flux_BindingHandle s_xFrameConstantsBinding;
-//   s_xFrameConstantsBinding = xShader.GetReflection().GetBinding("FrameConstants");
+//   Flux_ShaderBinder xBinder(*pxCommandList);
+//   xBinder.BindCBV(g_xShader, "FrameConstants", &buffer.GetCBV());
+//   xBinder.BindSRV(g_xShader, "g_xDiffuseTex", &texture.GetSRV());
+//   xBinder.BindDrawConstants(g_xShader, "pushConstants", &xData, sizeof(xData));
 //
-//   // At render time, use cached handles:
-//   Flux_ShaderBinder xBinder(g_xCommandList);
-//   xBinder.BindCBV(s_xFrameConstantsBinding, &buffer.GetCBV());
-//   xBinder.BindSRV(s_xDiffuseTexBinding, &texture.GetSRV());
+// Cache scope: the cache is PER-INSTANCE. A new binder is constructed at the
+// top of each pass's record callback, so each binder starts with an empty
+// cache. The cache's real value shows up when a single pass performs many
+// draws that repeatedly call BindDrawConstants / BindCBV with the same
+// (shader, name-literal): the first call inside the pass is a miss, every
+// subsequent call within the same pass hits. Cross-pass / cross-frame hits
+// are NOT provided — each pass resolves names once.
 //
+// String-literal deduplication: pointer identity requires the compiler /
+// linker to give the same string literal a single address at each call
+// site. MSVC (/OPT:ICF) and GCC (-fmerge-constants) do this within a
+// translation unit; the cache is therefore reliable when a pass's record
+// callback lives in one TU. Cross-TU deduplication is implementation-
+// defined — a miss on a duplicate literal is a perf event, not a
+// correctness bug (the fallback reflection lookup still returns the right
+// binding).
 class Flux_ShaderBinder
 {
 public:
 	Flux_ShaderBinder(Flux_CommandList& xCmdList);
 
-	// Bind constant buffer view using cached handle
-	void BindCBV(Flux_BindingHandle xHandle, const Flux_ConstantBufferView* pxCBV);
+	// Bind a constant-buffer view to a uniform-buffer binding looked up by
+	// name on xShader's reflection. Asserts the reflected binding type is
+	// BINDING_TYPE_BUFFER.
+	void BindCBV          (const Flux_Shader& xShader, const char* szName, const Flux_ConstantBufferView*           pxCBV);
 
-	// Bind shader resource view (texture) using cached handle
-	void BindSRV(Flux_BindingHandle xHandle, const Flux_ShaderResourceView* pxSRV, Flux_Sampler* pxSampler = nullptr);
+	// Bind a sampled texture (SRV) to a texture binding. Asserts the reflected
+	// binding type is BINDING_TYPE_TEXTURE. pxSampler is optional (uses a
+	// default sampler when null, per backend convention).
+	void BindSRV          (const Flux_Shader& xShader, const char* szName, const Flux_ShaderResourceView*           pxSRV, Flux_Sampler* pxSampler = nullptr);
 
-	// Bind unordered access view (texture) using cached handle
-	void BindUAV_Texture(Flux_BindingHandle xHandle, const Flux_UnorderedAccessView_Texture* pxUAV);
+	// Bind a storage-image UAV. Asserts the reflected type is BINDING_TYPE_STORAGE_IMAGE.
+	void BindUAV_Texture  (const Flux_Shader& xShader, const char* szName, const Flux_UnorderedAccessView_Texture*  pxUAV);
 
-	// Bind unordered access view (buffer) using cached handle
-	void BindUAV_Buffer(Flux_BindingHandle xHandle, const Flux_UnorderedAccessView_Buffer* pxUAV);
+	// Bind a storage-buffer UAV. Asserts the reflected type is BINDING_TYPE_STORAGE_BUFFER.
+	void BindUAV_Buffer   (const Flux_Shader& xShader, const char* szName, const Flux_UnorderedAccessView_Buffer*   pxUAV);
 
-	// Bind data via the per-frame scratch UBO system (dynamic uniform buffer with offset binding).
-	// Takes a binding handle to determine which set/binding to use (from shader reflection).
-	void BindDrawConstants(Flux_BindingHandle xScratchBufferBinding, const void* pData, u_int uSize);
-
-	// Legacy overload - assumes scratch buffer at set 0, binding 1
-	// DEPRECATED: Use the binding handle version for multi-set shaders
-	void BindDrawConstants(const void* pData, u_int uSize);
+	// Push small inline constants via the per-frame scratch UBO system. The
+	// scratch slot is identified by a binding name in xShader's reflection
+	// (typically "pushConstants" or similar). Asserts the reflected type is
+	// BINDING_TYPE_BUFFER (the per-frame UBO is a uniform buffer slot).
+	void BindDrawConstants(const Flux_Shader& xShader, const char* szName, const void* pData, u_int uSize);
 
 private:
-	// Switch to the specified descriptor set if not already active
+	// Switch to the specified descriptor set if not already active. Emits a
+	// Flux_CommandBeginBind only on a set change.
 	void EnsureSet(u_int uSet);
+
+	// Resolve (reflection, name) to a handle and reflected type via the
+	// pointer-identity cache. Asserts inside Flux_ShaderReflection::GetBinding
+	// if the name is not present. Takes the reflection pointer directly (not
+	// the shader) so unit tests can exercise the resolver with a synthetic
+	// reflection — Flux_Shader itself needs a live Vulkan device to construct.
+	struct ResolvedBinding
+	{
+		Flux_BindingHandle m_xHandle;
+		BindingType        m_eType = BINDING_TYPE_MAX;
+	};
+	ResolvedBinding ResolveNamedBinding(const Flux_ShaderReflection* pxReflection, const char* szName);
 
 	Flux_CommandList& m_xCmdList;
 	u_int m_uCurrentSet = UINT32_MAX;
+
+	// Pointer-identity name cache. Entries are matched by pointer compare on
+	// (reflection-ptr, name-ptr) — no hashing, so cannot produce a false hit.
+	// Cache hits require the compiler/linker to deduplicate identical string
+	// literals at the call site; MSVC (/OPT:ICF) and GCC (-fmerge-constants)
+	// do this within a TU, and typically across TUs at link time, but the
+	// guarantee is implementation-defined. A miss falls back to full reflection
+	// lookup which still returns correct data — cross-TU misses are a perf
+	// issue, not a correctness issue.
+	//
+	// Size is set above the largest binding count any known pass currently
+	// touches, with headroom for reshuffles. The overflow assert in
+	// ResolveNamedBinding trips if a binder is asked to resolve more unique
+	// pairs than NAME_CACHE_SIZE — bump the constant rather than ship a
+	// thrashing cache.
+	//
+	// Current worst case: deferred lighting pass binds ~25 unique names (frame
+	// constants + 4 GBuffer SRVs + depth SRV + 4 CSM SRVs + 4 ShadowMatrix CBVs
+	// + 3 IBL SRVs + SSR + SSGI + deferred-shading constants + draw constants).
+	// 64 gives >50% headroom for future passes or bind reshuffles; bumping from
+	// the original 32 because the refactored deferred path sat at 78% capacity
+	// one pass away from overflowing the assert.
+	struct NameCacheEntry
+	{
+		const Flux_ShaderReflection* m_pxReflection = nullptr;
+		const char*                  m_szName       = nullptr;
+		Flux_BindingHandle           m_xHandle;
+		BindingType                  m_eType        = BINDING_TYPE_MAX;
+	};
+	static constexpr u_int NAME_CACHE_SIZE = 64;
+	// Floor below which any single known pass's bind count would push the cache
+	// into thrash-via-eviction territory. Tracks the real worst-case pass so a
+	// future reduction of NAME_CACHE_SIZE fails the build instead of silently
+	// regressing hot-path performance.
+	static constexpr u_int NAME_CACHE_WORST_CASE_PASS_BINDINGS = 25;
+	static_assert(NAME_CACHE_SIZE >= NAME_CACHE_WORST_CASE_PASS_BINDINGS * 2,
+		"Flux_ShaderBinder NAME_CACHE_SIZE must leave at least 2x headroom over the worst-case pass — bump the constant.");
+	NameCacheEntry m_axNameCache[NAME_CACHE_SIZE];
+	u_int          m_uNextCacheSlot = 0;
+	// Counts distinct (reflection, name) pairs resolved on this binder. The
+	// overflow assert in ResolveNamedBinding trips when the count would push
+	// past NAME_CACHE_SIZE, turning "cache thrashes silently under too many
+	// unique bindings" into a loud failure with the offending name.
+	u_int          m_uUniqueResolves = 0;
+
+	// Unit tests poke at m_axNameCache and call ResolveNamedBinding directly
+	// with a synthetic Flux_ShaderReflection (no live Vulkan device required).
+	friend class Zenith_UnitTests;
 };

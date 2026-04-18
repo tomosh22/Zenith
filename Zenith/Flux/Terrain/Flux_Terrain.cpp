@@ -51,40 +51,6 @@ struct TerrainConstants
 } s_xTerrainConstants;
 static Flux_DynamicConstantBuffer s_xTerrainConstantsBuffer;
 
-// Cached binding handles for named resource binding (populated at init from shader reflection)
-// GBuffer shader - set 0 bindings (per-frame)
-static Flux_BindingHandle s_xFrameConstantsBinding;
-static Flux_BindingHandle s_xTerrainConstantsBinding;
-// GBuffer shader - set 1 bindings (per-draw)
-static Flux_BindingHandle s_xScratchBufferBinding;  // For PushConstant calls
-static Flux_BindingHandle s_xLODLevelBufferBinding;
-// Material 0 textures (5 per material - full material system)
-static Flux_BindingHandle s_xDiffuseTex0Binding;
-static Flux_BindingHandle s_xNormalTex0Binding;
-static Flux_BindingHandle s_xRoughnessMetallicTex0Binding;
-static Flux_BindingHandle s_xOcclusionTex0Binding;
-static Flux_BindingHandle s_xEmissiveTex0Binding;
-// Material 1 textures
-static Flux_BindingHandle s_xDiffuseTex1Binding;
-static Flux_BindingHandle s_xNormalTex1Binding;
-static Flux_BindingHandle s_xRoughnessMetallicTex1Binding;
-static Flux_BindingHandle s_xOcclusionTex1Binding;
-static Flux_BindingHandle s_xEmissiveTex1Binding;
-// Material 2 textures
-static Flux_BindingHandle s_xDiffuseTex2Binding;
-static Flux_BindingHandle s_xNormalTex2Binding;
-static Flux_BindingHandle s_xRoughnessMetallicTex2Binding;
-static Flux_BindingHandle s_xOcclusionTex2Binding;
-static Flux_BindingHandle s_xEmissiveTex2Binding;
-// Material 3 textures
-static Flux_BindingHandle s_xDiffuseTex3Binding;
-static Flux_BindingHandle s_xNormalTex3Binding;
-static Flux_BindingHandle s_xRoughnessMetallicTex3Binding;
-static Flux_BindingHandle s_xOcclusionTex3Binding;
-static Flux_BindingHandle s_xEmissiveTex3Binding;
-// Splatmap texture
-static Flux_BindingHandle s_xSplatmapBinding;
-
 DEBUGVAR bool dbg_bEnableTerrain = true;
 bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
@@ -130,50 +96,12 @@ void Flux_Terrain::Initialise()
 
 		xPipelineSpec.m_bWireframe = true;
 		Flux_PipelineBuilder::FromSpecification(s_xTerrainWireframePipeline, xPipelineSpec);
-
-		// Cache binding handles from shader reflection for named resource binding
-		const Flux_ShaderReflection& xGBufferReflection = s_xTerrainGBufferShader.GetReflection();
-		// Set 0 bindings (per-frame)
-		s_xFrameConstantsBinding = xGBufferReflection.GetBinding("FrameConstants");
-		s_xTerrainConstantsBinding = xGBufferReflection.GetBinding("TerrainConstants");
-		// Set 1 bindings (per-draw)
-		s_xScratchBufferBinding = xGBufferReflection.GetBinding("TerrainMaterialConstants");  // Scratch buffer for per-draw data
-		s_xLODLevelBufferBinding = xGBufferReflection.GetBinding("LODLevelBuffer");
-		// Material 0 texture bindings (5 textures - full material system)
-		s_xDiffuseTex0Binding = xGBufferReflection.GetBinding("g_xDiffuseTex0");
-		s_xNormalTex0Binding = xGBufferReflection.GetBinding("g_xNormalTex0");
-		s_xRoughnessMetallicTex0Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex0");
-		s_xOcclusionTex0Binding = xGBufferReflection.GetBinding("g_xOcclusionTex0");
-		s_xEmissiveTex0Binding = xGBufferReflection.GetBinding("g_xEmissiveTex0");
-		// Material 1 texture bindings (5 textures - full material system)
-		s_xDiffuseTex1Binding = xGBufferReflection.GetBinding("g_xDiffuseTex1");
-		s_xNormalTex1Binding = xGBufferReflection.GetBinding("g_xNormalTex1");
-		s_xRoughnessMetallicTex1Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex1");
-		s_xOcclusionTex1Binding = xGBufferReflection.GetBinding("g_xOcclusionTex1");
-		s_xEmissiveTex1Binding = xGBufferReflection.GetBinding("g_xEmissiveTex1");
-		// Material 2 texture bindings
-		s_xDiffuseTex2Binding = xGBufferReflection.GetBinding("g_xDiffuseTex2");
-		s_xNormalTex2Binding = xGBufferReflection.GetBinding("g_xNormalTex2");
-		s_xRoughnessMetallicTex2Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex2");
-		s_xOcclusionTex2Binding = xGBufferReflection.GetBinding("g_xOcclusionTex2");
-		s_xEmissiveTex2Binding = xGBufferReflection.GetBinding("g_xEmissiveTex2");
-		// Material 3 texture bindings
-		s_xDiffuseTex3Binding = xGBufferReflection.GetBinding("g_xDiffuseTex3");
-		s_xNormalTex3Binding = xGBufferReflection.GetBinding("g_xNormalTex3");
-		s_xRoughnessMetallicTex3Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex3");
-		s_xOcclusionTex3Binding = xGBufferReflection.GetBinding("g_xOcclusionTex3");
-		s_xEmissiveTex3Binding = xGBufferReflection.GetBinding("g_xEmissiveTex3");
-		// Splatmap texture binding
-		s_xSplatmapBinding = xGBufferReflection.GetBinding("g_xSplatmap");
 	}
 
 
 	{
 		Flux_PipelineSpecification xShadowPipelineSpec;
-		uint32_t uNumColour;
-		Flux_RenderAttachment* pxDepthStencil;
-		Flux_Shadows::GetCSMTargetSetup(0, uNumColour, pxDepthStencil);
-		xShadowPipelineSpec.m_eDepthStencilFormat = pxDepthStencil->m_xSurfaceInfo.m_eFormat;
+		xShadowPipelineSpec.m_eDepthStencilFormat = CSM_FORMAT;
 		xShadowPipelineSpec.m_uNumColourAttachments = 0;
 		xShadowPipelineSpec.m_pxShader = &s_xTerrainShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
@@ -273,19 +201,15 @@ void Flux_Terrain::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Pass 1: Terrain culling compute. Touches per-Zenith_TerrainComponent
 	// indirect-draw / visible-count buffers that are dynamic (created per
 	// component) and not graph-tracked. The compute output is consumed by the
-	// GBuffer pass via DrawIndexedIndirectCount, so we encode that ordering as
-	// an explicit edge below.
-	u_int uCullingPass = xGraph.AddPass("Terrain Culling Compute", ExecuteCulling);
+	// GBuffer pass via DrawIndexedIndirectCount, so the ordering is encoded
+	// as an explicit DependsOn edge on the GBuffer pass.
+	Flux_PassHandle xCullingPass = xGraph.AddPass("Terrain Culling Compute", ExecuteCulling);
 
-	// Pass 2: Terrain GBuffer render
-	uint32_t uGBufferPass = xGraph.AddPass("Terrain GBuffer", ExecuteGBuffer);
-	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV);
-	xGraph.Write(uGBufferPass, Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL), RESOURCE_ACCESS_WRITE_RTV);
-
-	// GBuffer must run after Culling — explicit edge stands in for the
-	// untracked indirect-draw buffer dependency.
-	xGraph.DependsOn(uGBufferPass, uCullingPass);
+	xGraph.AddPass("Terrain GBuffer", ExecuteGBuffer)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.DependsOn(xCullingPass);
 }
 
 void Flux_Terrain::PreRenderUpdate()
@@ -353,8 +277,8 @@ void Flux_Terrain::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind set 0 (per-frame data) once per command list
-	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindCBV(s_xTerrainConstantsBinding, &s_xTerrainConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xTerrainGBufferShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xTerrainGBufferShader, "TerrainConstants", &s_xTerrainConstantsBuffer.GetCBV());
 
 	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
 	{
@@ -370,43 +294,43 @@ void Flux_Terrain::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		TerrainMaterialDrawConstants xTerrainMatConst;
 		BuildTerrainMaterialDrawConstants(xTerrainMatConst, apxMaterials, 4, dbg_uDebugMode,
 			0.0f, 0.0f, Flux_TerrainConfig::TERRAIN_SIZE, Flux_TerrainConfig::TERRAIN_SIZE);
-		xBinder.BindDrawConstants(s_xScratchBufferBinding, &xTerrainMatConst, sizeof(xTerrainMatConst));
+		xBinder.BindDrawConstants(s_xTerrainGBufferShader, "TerrainMaterialConstants", &xTerrainMatConst, sizeof(xTerrainMatConst));
 
 		// Bind LOD level buffer (per-terrain, set 1)
-		xBinder.BindUAV_Buffer(s_xLODLevelBufferBinding, &pxTerrain->GetLODLevelBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(s_xTerrainGBufferShader, "LODLevelBuffer", &pxTerrain->GetLODLevelBuffer().GetUAV());
 
 		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetUnifiedVertexBuffer());
 		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetUnifiedIndexBuffer());
 
 		// Bind splatmap texture
 		if (pxTerrain->GetSplatmapTexture())
-			xBinder.BindSRV(s_xSplatmapBinding, &pxTerrain->GetSplatmapTexture()->m_xSRV);
+			xBinder.BindSRV(s_xTerrainGBufferShader, "g_xSplatmap", &pxTerrain->GetSplatmapTexture()->m_xSRV);
 
 		// Bind material textures (set 1, named bindings) - 4 materials x 5 textures each
 		// Material 0 textures
-		xBinder.BindSRV(s_xDiffuseTex0Binding, &apxMaterials[0]->GetDiffuseTexture()->m_xSRV);
-		xBinder.BindSRV(s_xNormalTex0Binding, &apxMaterials[0]->GetNormalTexture()->m_xSRV);
-		xBinder.BindSRV(s_xRoughnessMetallicTex0Binding, &apxMaterials[0]->GetRoughnessMetallicTexture()->m_xSRV);
-		xBinder.BindSRV(s_xOcclusionTex0Binding, &apxMaterials[0]->GetOcclusionTexture()->m_xSRV);
-		xBinder.BindSRV(s_xEmissiveTex0Binding, &apxMaterials[0]->GetEmissiveTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xDiffuseTex0", &apxMaterials[0]->GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xNormalTex0", &apxMaterials[0]->GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xRoughnessMetallicTex0", &apxMaterials[0]->GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xOcclusionTex0", &apxMaterials[0]->GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xEmissiveTex0", &apxMaterials[0]->GetEmissiveTexture()->m_xSRV);
 		// Material 1 textures
-		xBinder.BindSRV(s_xDiffuseTex1Binding, &apxMaterials[1]->GetDiffuseTexture()->m_xSRV);
-		xBinder.BindSRV(s_xNormalTex1Binding, &apxMaterials[1]->GetNormalTexture()->m_xSRV);
-		xBinder.BindSRV(s_xRoughnessMetallicTex1Binding, &apxMaterials[1]->GetRoughnessMetallicTexture()->m_xSRV);
-		xBinder.BindSRV(s_xOcclusionTex1Binding, &apxMaterials[1]->GetOcclusionTexture()->m_xSRV);
-		xBinder.BindSRV(s_xEmissiveTex1Binding, &apxMaterials[1]->GetEmissiveTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xDiffuseTex1", &apxMaterials[1]->GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xNormalTex1", &apxMaterials[1]->GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xRoughnessMetallicTex1", &apxMaterials[1]->GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xOcclusionTex1", &apxMaterials[1]->GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xEmissiveTex1", &apxMaterials[1]->GetEmissiveTexture()->m_xSRV);
 		// Material 2 textures
-		xBinder.BindSRV(s_xDiffuseTex2Binding, &apxMaterials[2]->GetDiffuseTexture()->m_xSRV);
-		xBinder.BindSRV(s_xNormalTex2Binding, &apxMaterials[2]->GetNormalTexture()->m_xSRV);
-		xBinder.BindSRV(s_xRoughnessMetallicTex2Binding, &apxMaterials[2]->GetRoughnessMetallicTexture()->m_xSRV);
-		xBinder.BindSRV(s_xOcclusionTex2Binding, &apxMaterials[2]->GetOcclusionTexture()->m_xSRV);
-		xBinder.BindSRV(s_xEmissiveTex2Binding, &apxMaterials[2]->GetEmissiveTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xDiffuseTex2", &apxMaterials[2]->GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xNormalTex2", &apxMaterials[2]->GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xRoughnessMetallicTex2", &apxMaterials[2]->GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xOcclusionTex2", &apxMaterials[2]->GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xEmissiveTex2", &apxMaterials[2]->GetEmissiveTexture()->m_xSRV);
 		// Material 3 textures
-		xBinder.BindSRV(s_xDiffuseTex3Binding, &apxMaterials[3]->GetDiffuseTexture()->m_xSRV);
-		xBinder.BindSRV(s_xNormalTex3Binding, &apxMaterials[3]->GetNormalTexture()->m_xSRV);
-		xBinder.BindSRV(s_xRoughnessMetallicTex3Binding, &apxMaterials[3]->GetRoughnessMetallicTexture()->m_xSRV);
-		xBinder.BindSRV(s_xOcclusionTex3Binding, &apxMaterials[3]->GetOcclusionTexture()->m_xSRV);
-		xBinder.BindSRV(s_xEmissiveTex3Binding, &apxMaterials[3]->GetEmissiveTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xDiffuseTex3", &apxMaterials[3]->GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xNormalTex3", &apxMaterials[3]->GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xRoughnessMetallicTex3", &apxMaterials[3]->GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xOcclusionTex3", &apxMaterials[3]->GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xTerrainGBufferShader, "g_xEmissiveTex3", &apxMaterials[3]->GetEmissiveTexture()->m_xSRV);
 
 		// GPU-driven indirect rendering with front-to-back sorted visible chunks
 		// Each component uses its own indirect draw buffer and visible count buffer

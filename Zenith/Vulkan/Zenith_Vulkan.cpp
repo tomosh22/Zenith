@@ -1,8 +1,10 @@
 #include "Zenith.h"
+#include "Flux/Flux_PerFrame.h"
 
 #include "Vulkan/Zenith_Vulkan.h"
 #include "Vulkan/Zenith_Vulkan_Platform.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Vulkan/Zenith_Vulkan_CommandBuffer.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Graphics.h"
@@ -40,6 +42,7 @@ static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_valida
 #ifdef ZENITH_TOOLS
 vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
 vk::DescriptorPool Zenith_Vulkan::s_xImGuiDescriptorPool;
+vk::DescriptorSetLayout Zenith_Vulkan::s_xImGuiPreviewLayout;
 
 // ImGui memory tracking
 static std::atomic<u_int64> s_ulImGuiMemoryAllocated = 0;
@@ -220,6 +223,14 @@ void Zenith_Vulkan::Initialise()
 	s_pxCurrentFrame = &s_axPerFrame[0];
 
 	g_xCommandBuffer.Initialise();
+
+	// Register the per-frame begin callback with Flux_PerFrame. This is the
+	// load-bearing begin callback (waits for the slot's fence, resets descriptor
+	// pools, drains typed deletion queues, resets scratch offsets) — register
+	// it FIRST so it runs before any other backend's begin callback that might
+	// touch the slot. Counted in FLUX_PERFRAME_BEGIN_SUBSCRIBER_TALLY
+	// (Flux_PerFrame.cpp): bump that tally if you add another begin callback.
+	Flux_PerFrame::RegisterBeginFrameCallback(&Zenith_Vulkan::OnFluxPerFrameBegin, nullptr);
 }
 
 void Zenith_Vulkan::InitialiseScratchBuffers()
@@ -230,9 +241,13 @@ void Zenith_Vulkan::InitialiseScratchBuffers()
 	}
 }
 
-void Zenith_Vulkan::BeginFrame()
+void Zenith_Vulkan::OnFluxPerFrameBegin(u_int uRingIndex, void* /*pUserData*/)
 {
-	s_pxCurrentFrame = &s_axPerFrame[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
+	// Frame counter / ring index is owned by Flux_PerFrame; this callback
+	// receives the current ring index directly (no longer pulled from the
+	// swapchain). The swapchain itself will read GetCurrentFrameIndex()
+	// which is now a thin wrapper over Flux_PerFrame::GetRingIndex().
+	s_pxCurrentFrame = &s_axPerFrame[uRingIndex];
 	s_pxCurrentFrame->BeginFrame();
 
 #ifdef ZENITH_TOOLS
@@ -288,14 +303,61 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 		auto EmitGraphPrologueBarriers = [&]()
 		{
 			if (!xEntry.m_pxPass) return;
+
+			// Aliasing barriers: for each transient handed off TO this pass
+			// from a different prior occupant of the same aliasing-pool slot,
+			// emit one vk::MemoryBarrier with the prior occupant's last-access
+			// stage/mask as source and this transient's first-access as dest.
+			// Emitting one barrier per entry (rather than unioning into a
+			// single over-conservative barrier) keeps stage masks tight — a
+			// colour-attachment hand-off stays at ColourAttachmentOutput →
+			// FragmentShader, not eAllCommands. The aliased VkImages are
+			// distinct VkImage objects; the new image enters the pass with
+			// layout eUndefined and its own prologue ImageTransition drives
+			// the per-subresource layout transition separately. The memory
+			// barrier below is solely about "prior write flushed before new
+			// first access reads/writes the memory" — no image-layout change.
+			for (Zenith_Vector<Flux_RenderGraph_AliasingBarrier>::Iterator itA(xEntry.m_pxPass->m_xAliasingBarriers); !itA.Done(); itA.Next())
+			{
+				const Flux_RenderGraph_AliasingBarrier& rxA = itA.GetData();
+				vk::ImageLayout        eSrcLayoutUnused, eDstLayoutUnused;
+				vk::AccessFlags        eSrcMask, eDstMask;
+				vk::PipelineStageFlags eSrcStage, eDstStage;
+				Flux_ResourceAccessToVulkan(rxA.m_eSrcAccess, rxA.m_bSrcIsDepth, eSrcLayoutUnused, eSrcMask, eSrcStage);
+				Flux_ResourceAccessToVulkan(rxA.m_eDstAccess, rxA.m_bDstIsDepth, eDstLayoutUnused, eDstMask, eDstStage);
+
+				vk::MemoryBarrier xMemBarrier = vk::MemoryBarrier()
+					.setSrcAccessMask(eSrcMask)
+					.setDstAccessMask(eDstMask);
+				xCommandBuffer.GetCurrentCmdBuffer().pipelineBarrier(
+					eSrcStage,
+					eDstStage,
+					vk::DependencyFlags{},
+					1, &xMemBarrier,
+					0, nullptr,
+					0, nullptr);
+			}
+
+			// Image- and buffer-kind prologue barriers share the same
+			// Flux_RenderGraph_Barrier list (see header doc on the struct);
+			// dispatch on resource kind here. Buffer entries leave the
+			// mip/layer fields at their (0,1,0,1) defaults — the BufferBarrier
+			// method does not read them.
 			for (Zenith_Vector<Flux_RenderGraph_Barrier>::Iterator itB(xEntry.m_pxPass->m_xPrologueBarriers); !itB.Done(); itB.Next())
 			{
 				const Flux_RenderGraph_Barrier& rxB = itB.GetData();
-				xCommandBuffer.ImageTransition(
-					rxB.m_xResource,
-					rxB.m_uBaseMip, rxB.m_uMipCount,
-					rxB.m_uBaseLayer, rxB.m_uLayerCount,
-					rxB.m_eSrcAccess, rxB.m_eDstAccess);
+				if (rxB.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+				{
+					xCommandBuffer.BufferBarrier(rxB.m_xResource.AsBuffer(), rxB.m_eSrcAccess, rxB.m_eDstAccess);
+				}
+				else
+				{
+					xCommandBuffer.ImageTransition(
+						rxB.m_xResource,
+						rxB.m_uBaseMip, rxB.m_uMipCount,
+						rxB.m_uBaseLayer, rxB.m_uLayerCount,
+						rxB.m_eSrcAccess, rxB.m_eDstAccess);
+				}
 			}
 		};
 
@@ -372,7 +434,10 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 				// to do this, since vkCmdPipelineBarrier inside a render pass
 				// needs subpass self-deps which we don't model. Restart rather
 				// than skip the barriers.
-				if (xEntry.m_pxPass && xEntry.m_pxPass->m_xPrologueBarriers.GetSize() > 0)
+				const bool bHasBarriers = xEntry.m_pxPass && (
+					xEntry.m_pxPass->m_xPrologueBarriers.GetSize() > 0 ||
+					xEntry.m_pxPass->m_xAliasingBarriers.GetSize() > 0);
+				if (bHasBarriers)
 				{
 					xCommandBuffer.EndRenderPass();
 					EmitGraphPrologueBarriers();
@@ -916,7 +981,49 @@ void Zenith_Vulkan::WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImag
 	s_xDevice.updateDescriptorSets(1, &xWrite, 0, nullptr);
 }
 
+void Zenith_Vulkan::WriteBindlessTextureSlot(uint32_t uIndex, const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler)
+{
+	const vk::ImageView xVkView = Zenith_Vulkan_MemoryManager::GetImageView(xView.m_xImageViewHandle);
+	WriteBindlessDescriptor(uIndex, xVkView, xSampler.GetSampler());
+}
+
 #ifdef ZENITH_TOOLS
+
+uint64_t Zenith_Vulkan::CreateImGuiTextureID(const Flux_ShaderResourceView& xView, const Zenith_Vulkan_Sampler& xSampler)
+{
+	// Build an ImGui-compatible texture ID by allocating a one-shot descriptor
+	// set out of the per-frame worker-0 pool, writing the (sampler + image view)
+	// pair into it, and returning the descriptor-set handle as a uint64. The
+	// pool is reset every frame so the descriptor set is implicitly freed —
+	// this is intended for ImGui::Image preview widgets that re-issue every
+	// frame, NOT for long-lived textures. The descriptor-set layout is created
+	// once in InitialiseImGui and reused here.
+	// Worker index 0 — this is called from the main thread during ImGui rendering.
+	vk::DescriptorSetAllocateInfo xAllocInfo = vk::DescriptorSetAllocateInfo()
+		.setDescriptorPool(GetPerFrameDescriptorPool(0))
+		.setDescriptorSetCount(1)
+		.setPSetLayouts(&s_xImGuiPreviewLayout);
+
+	vk::DescriptorSet xSet = s_xDevice.allocateDescriptorSets(xAllocInfo)[0];
+
+	vk::DescriptorImageInfo xImageInfo = vk::DescriptorImageInfo()
+		.setSampler(xSampler.GetSampler())
+		.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(xView.m_xImageViewHandle))
+		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+
+	vk::WriteDescriptorSet xWriteInfo = vk::WriteDescriptorSet()
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setDstSet(xSet)
+		.setDstBinding(0)
+		.setDstArrayElement(0)
+		.setDescriptorCount(1)
+		.setPImageInfo(&xImageInfo);
+
+	s_xDevice.updateDescriptorSets(1, &xWriteInfo, 0, nullptr);
+
+	return reinterpret_cast<uint64_t>(static_cast<VkDescriptorSet>(xSet));
+}
+
 
 void Zenith_Vulkan::InitialiseImGui()
 {
@@ -945,7 +1052,20 @@ void Zenith_Vulkan::InitialiseImGui()
 		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
 
 	s_xImGuiDescriptorPool = s_xDevice.createDescriptorPool(xImGuiPoolInfo);
-	
+
+	// One reusable layout for ImGui preview widgets (CreateImGuiTextureID). The
+	// layout never changes — 1 combined-image-sampler binding in the fragment
+	// stage — so caching a single instance avoids leaking one layout per call.
+	vk::DescriptorSetLayoutBinding xPreviewBinding = vk::DescriptorSetLayoutBinding()
+		.setBinding(0)
+		.setDescriptorCount(1)
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setStageFlags(vk::ShaderStageFlagBits::eFragment);
+	vk::DescriptorSetLayoutCreateInfo xPreviewLayoutInfo = vk::DescriptorSetLayoutCreateInfo()
+		.setBindingCount(1)
+		.setPBindings(&xPreviewBinding);
+	s_xImGuiPreviewLayout = s_xDevice.createDescriptorSetLayout(xPreviewLayoutInfo);
+
 	Zenith_Log(LOG_CATEGORY_EDITOR, "ImGui dedicated descriptor pool created");
 
 	// Hook ImGui allocator for memory tracking BEFORE creating context
@@ -1044,6 +1164,8 @@ void Zenith_Vulkan::ShutdownImGui()
 	// Destroy ImGui Vulkan resources
 	s_xDevice.destroyRenderPass(s_xImGuiRenderPass);
 	s_xDevice.destroyDescriptorPool(s_xImGuiDescriptorPool);
+	s_xDevice.destroyDescriptorSetLayout(s_xImGuiPreviewLayout);
+	s_xImGuiPreviewLayout = vk::DescriptorSetLayout();
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "ImGui shut down");
 }
@@ -1119,6 +1241,23 @@ void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
 void Zenith_Vulkan_PerFrame::BeginFrame()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+
+	// Pre-flight fence status check — under healthy operation the fence is
+	// either signalled (previous use of this slot completed) or initial-signalled
+	// (very first use). If a ring-advance bug lets the counter wrap past valid
+	// submissions, the fence will be unsignalled and the waitForFences below
+	// would block indefinitely. Catch that upstream with a clear message.
+#ifdef ZENITH_DEBUG
+	{
+		const vk::Result eStatus = xDevice.getFenceStatus(m_xFence);
+		Zenith_Assert(eStatus == vk::Result::eSuccess || eStatus == vk::Result::eNotReady,
+			"Zenith_Vulkan_PerFrame::BeginFrame: fence in unexpected state %d. "
+			"Expected eSuccess (signalled) or eNotReady (GPU still working); anything else "
+			"suggests the ring counter advanced past a valid submission — see H3 in the code review.",
+			static_cast<int>(eStatus));
+	}
+#endif
+
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
 	vk::Result eResult = xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to wait for fence");

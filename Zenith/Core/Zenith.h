@@ -154,6 +154,16 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 #define ZENITH_DEBUG_VARIABLES
 #endif
 
+// ZENITH_DEBUG_VARIABLES is a strict subset of ZENITH_TOOLS — the block above
+// is the ONLY site that defines it, and it only runs when ZENITH_TOOLS is
+// already active. Any future define of ZENITH_DEBUG_VARIABLES from a build
+// system or other header breaks the "implies" relationship and would let
+// editor-only debug variables leak into shipping binaries. Fail the compile
+// loudly if that ever happens.
+#if defined(ZENITH_DEBUG_VARIABLES) && !defined(ZENITH_TOOLS)
+#error "ZENITH_DEBUG_VARIABLES must imply ZENITH_TOOLS. If you need the debug variable tree in a non-tools configuration, either define ZENITH_TOOLS too or split the guard. Mixing the two in a shipping build will surface debug variables that were only intended for editor builds."
+#endif
+
 #ifdef ZENITH_DEBUG_VARIABLES
 #define DEBUGVAR static
 #else

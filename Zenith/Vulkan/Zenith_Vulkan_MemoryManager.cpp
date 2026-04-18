@@ -9,7 +9,21 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_PerFrame.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+
+#include <unordered_map> // #TODO: Replace with engine hash map
+
+// Probe cache entry + storage. Declared here (above Initialise / Shutdown,
+// which both reference s_xProbeCache) instead of next to ProbeImageMemoryRequirements
+// so the definition order compiles. The cache is cleared in Initialise and
+// Shutdown; populated lazily on misses inside ProbeImageMemoryRequirements.
+struct ProbeCacheEntry
+{
+	u_int64 m_ulSize      = 0;
+	u_int64 m_ulAlignment = 0;
+};
+static std::unordered_map<u_int64, ProbeCacheEntry> s_xProbeCache;
 
 Zenith_Vulkan_CommandBuffer Zenith_Vulkan_MemoryManager::s_xCommandBuffer;
 VmaAllocator Zenith_Vulkan_MemoryManager::s_xAllocator;
@@ -84,6 +98,11 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 
 	vmaCreateAllocator(&xCreateInfo, &s_xAllocator);
 
+	// Probe cache starts empty on each engine init. Populated lazily inside
+	// ProbeImageMemoryRequirements; the cache is valid for the device's
+	// lifetime and is cleared in Shutdown below.
+	s_xProbeCache.clear();
+
 	s_xCommandBuffer.Initialise(COMMANDTYPE_COPY);
 
 	InitialiseStagingBuffer();
@@ -94,7 +113,277 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	Zenith_DebugVariables::AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Total Memory Used" }, s_ulMemoryUsed);
 	#endif
 
+	// Register the deferred-VRAM-deletion countdown as an end-frame callback.
+	// Fires unconditionally each main loop iteration (skipped frames included)
+	// to match the pre-extraction behaviour where MemoryManager::EndFrame ran
+	// on every iteration. Registered AFTER Zenith_Vulkan's begin callback so
+	// the natural begin-then-end ordering is preserved. Counted in
+	// FLUX_PERFRAME_END_SUBSCRIBER_TALLY (Flux_PerFrame.cpp): bump that tally
+	// if you add another end callback.
+	Flux_PerFrame::RegisterEndFrameCallback(&Zenith_Vulkan_MemoryManager::OnFluxPerFrameEnd, nullptr);
+
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan memory manager initialised");
+}
+
+bool Zenith_Vulkan_MemoryManager::SupportsTransientAliasing()
+{
+	// Vulkan supports aliasing via VMA's aliasing-image primitive (VMA 3.x).
+	// The render graph uses this flag to decide whether to run the per-frame
+	// packer; when false, every transient gets its own vmaCreateImage call
+	// exactly as before aliasing was introduced.
+	return true;
+}
+
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateAliasPoolVRAM(u_int64 ulSize, u_int64 ulAlignment,
+                                                                  AliasPoolMemoryKind eMemoryKind)
+{
+	Zenith_Assert(ulSize > 0, "CreateAliasPoolVRAM: zero-size pool");
+
+	// VMA's AUTO_* usages are forbidden with vmaAllocateMemory (no image/buffer
+	// to infer memory type from) — specify requiredFlags explicitly instead.
+	// For render-graph transients we always want DEVICE_LOCAL memory;
+	// memoryTypeBits is UINT32_MAX so VMA picks any matching heap. Alignment
+	// is the max across all transients the packer will bind into this pool
+	// (queried via ProbeImageMemoryRequirements); fall back to 64 KB if the
+	// caller passes 0 (probe failed).
+	VkMemoryRequirements xReqs = {};
+	xReqs.size           = ulSize;
+	xReqs.alignment      = (ulAlignment > 0) ? ulAlignment : 65536ull;
+	xReqs.memoryTypeBits = UINT32_MAX;
+
+	// Translate the memory-kind enum to the vk::MemoryPropertyFlags VMA needs
+	// as requiredFlags. The AliasPoolMemoryKind enum is the public contract;
+	// switching here keeps the Vulkan bitmask local to the backend.
+	VkMemoryPropertyFlags eRequiredFlags = 0;
+	switch (eMemoryKind)
+	{
+		case AliasPoolMemoryKind::DeviceLocal:
+			eRequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+			break;
+		case AliasPoolMemoryKind::HostVisibleCoherent:
+			eRequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+			break;
+	}
+	Zenith_Assert(eRequiredFlags != 0, "CreateAliasPoolVRAM: unknown AliasPoolMemoryKind %d", static_cast<int>(eMemoryKind));
+
+	VmaAllocationCreateInfo xCreateInfo = {};
+	xCreateInfo.usage         = VMA_MEMORY_USAGE_UNKNOWN;
+	xCreateInfo.requiredFlags = eRequiredFlags;
+	xCreateInfo.flags         = VMA_ALLOCATION_CREATE_CAN_ALIAS_BIT;
+
+	VmaAllocation xAllocation = VK_NULL_HANDLE;
+	VkResult eResult = vmaAllocateMemory(s_xAllocator, &xReqs, &xCreateInfo, &xAllocation, nullptr);
+	Zenith_Assert(eResult == VK_SUCCESS, "vmaAllocateMemory (alias pool) failed: %d", static_cast<int>(eResult));
+	if (eResult != VK_SUCCESS)
+	{
+		return Flux_VRAMHandle();
+	}
+
+	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(Zenith_Vulkan_VRAM::PoolTag{}, xAllocation, s_xAllocator, ulSize);
+	return Zenith_Vulkan::RegisterVRAM(pxVRAM);
+}
+
+// Shared helper — builds the VkImageCreateInfo used by both the probe path
+// and the aliased-image creation path. Centralising the logic guarantees the
+// two callers cannot drift (mip/layer clamp, usage flags, texture-type
+// handling), which is the invariant the packer relies on: the probe's
+// reported size must match the creation path's actual allocation.
+static vk::ImageCreateInfo BuildAliasedImageCreateInfo(const Flux_SurfaceInfo& xInfo)
+{
+	const bool bIsColour       = xInfo.m_eFormat > TEXTURE_FORMAT_COLOUR_BEGIN        && xInfo.m_eFormat < TEXTURE_FORMAT_COLOUR_END;
+	const bool bIsDepthStencil = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
+	Zenith_Assert(bIsColour ^ bIsDepthStencil, "BuildAliasedImageCreateInfo: format must be colour XOR depth/stencil");
+
+	vk::Format xFormat;
+	vk::ImageUsageFlags eUsageFlags;
+	if (bIsColour)
+	{
+		xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+		eUsageFlags = vk::ImageUsageFlagBits::eColorAttachment;
+		if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__UNORDERED_ACCESS)
+			eUsageFlags |= vk::ImageUsageFlagBits::eStorage;
+	}
+	else
+	{
+		xFormat = Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
+		eUsageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment;
+	}
+	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ)
+		eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
+
+	vk::ImageType eImageType = vk::ImageType::e2D;
+	vk::Extent3D xExtent = { xInfo.m_uWidth, xInfo.m_uHeight, 1 };
+	vk::ImageCreateFlags eCreateFlags = {};
+	if (xInfo.m_eTextureType == TEXTURE_TYPE_3D)
+	{
+		eImageType = vk::ImageType::e3D;
+		xExtent = vk::Extent3D(xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uDepth);
+	}
+	else if (xInfo.m_eTextureType == TEXTURE_TYPE_CUBE)
+	{
+		eCreateFlags |= vk::ImageCreateFlagBits::eCubeCompatible;
+	}
+
+	return vk::ImageCreateInfo()
+		.setImageType(eImageType)
+		.setFormat(xFormat)
+		.setTiling(vk::ImageTiling::eOptimal)
+		.setExtent(xExtent)
+		.setMipLevels(xInfo.m_uNumMips == 0 ? 1u : xInfo.m_uNumMips)
+		.setArrayLayers(xInfo.m_uNumLayers == 0 ? 1u : xInfo.m_uNumLayers)
+		.setInitialLayout(vk::ImageLayout::eUndefined)
+		.setUsage(eUsageFlags)
+		.setSharingMode(vk::SharingMode::eExclusive)
+		.setSamples(vk::SampleCountFlagBits::e1)
+		.setFlags(eCreateFlags);
+}
+
+// Signature that uniquely identifies the memory requirements of an image
+// probed via ProbeImageMemoryRequirements. Includes every field that affects
+// the driver's reported size or alignment (format, dimensions, mips/layers,
+// texture type, and memory-flag-derived usage bits that flip the VkImage
+// usage mask). The cache below is keyed on this signature so repeated probes
+// across recompiles (typical after a window resize) don't re-issue the
+// vkCreateImage / vkGetImageMemoryRequirements / vkDestroyImage trio.
+//
+// #TODO: Replace std::unordered_map with engine hash map
+static u_int64 MakeProbeSignature(const Flux_SurfaceInfo& xInfo)
+{
+	// Pack the scalar fields into a single u_int64. Dimensions dominate the
+	// entropy budget; format / texture type / flags fit in the remaining bits.
+	// If any of these widths is exceeded the shift goes out of range and the
+	// cache keys begin to collide — trip a static_assert-style runtime check.
+	u_int64 ulSig = 0;
+	ulSig ^= static_cast<u_int64>(xInfo.m_uWidth);
+	ulSig ^= static_cast<u_int64>(xInfo.m_uHeight) << 16;
+	ulSig ^= static_cast<u_int64>(xInfo.m_uDepth) << 32;
+	ulSig ^= static_cast<u_int64>(xInfo.m_uNumMips) << 40;
+	ulSig ^= static_cast<u_int64>(xInfo.m_uNumLayers) << 44;
+	ulSig ^= static_cast<u_int64>(xInfo.m_eFormat) << 48;
+	ulSig ^= static_cast<u_int64>(xInfo.m_eTextureType) << 56;
+	// Memory flags fold into a secondary mixing word to avoid colliding with
+	// the primary extent+format bits.
+	ulSig ^= static_cast<u_int64>(xInfo.m_uMemoryFlags) * 0x9e3779b97f4a7c15ull;
+	return ulSig;
+}
+
+// s_xProbeCache / ProbeCacheEntry are declared at the top of this TU — they
+// must be defined before Initialise references them. The lookup / populate
+// logic below uses the cache transparently.
+
+void Zenith_Vulkan_MemoryManager::ProbeImageMemoryRequirements(const Flux_SurfaceInfo& xInfo,
+                                                                u_int64& ulSizeOut,
+                                                                u_int64& ulAlignmentOut)
+{
+	ulSizeOut = 0;
+	ulAlignmentOut = 0;
+
+	// Hard format check — the packer depends on the probe returning accurate
+	// sizes. A "neither colour nor depth-stencil" format can only reach here
+	// via an uninitialised / newly-added format that no existing path knows
+	// how to size, and silently falling through to (0, 0) caused
+	// CreateAliasPoolVRAM to apply the 64 KB fallback alignment — a silent
+	// under-alignment risk that would only surface as an intermittent VMA
+	// binding failure on specific drivers. Trip instead so the offending
+	// format is named at the call site.
+	const bool bIsColour       = xInfo.m_eFormat > TEXTURE_FORMAT_COLOUR_BEGIN        && xInfo.m_eFormat < TEXTURE_FORMAT_COLOUR_END;
+	const bool bIsDepthStencil = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
+	Zenith_Assert(bIsColour ^ bIsDepthStencil,
+		"ProbeImageMemoryRequirements: format '%d' is neither colour nor depth-stencil — the aliasing packer cannot size it. Add the format to the colour or depth-stencil range in Flux_Enums.h, or route this transient away from the aliasing path.",
+		static_cast<int>(xInfo.m_eFormat));
+	Zenith_Assert(xInfo.m_uWidth > 0 && xInfo.m_uHeight > 0,
+		"ProbeImageMemoryRequirements: zero-size extent (%ux%ux%u)", xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uDepth);
+
+	// Cache lookup. Repeated compiles (resize → rebuild graph → probe same
+	// transients) skip the full create/getRequirements/destroy trio; typical
+	// probe counts of ~20 per compile turn into zero Vulkan calls after the
+	// first compile.
+	const u_int64 ulSig = MakeProbeSignature(xInfo);
+	{
+		auto it = s_xProbeCache.find(ulSig);
+		if (it != s_xProbeCache.end())
+		{
+			ulSizeOut      = it->second.m_ulSize;
+			ulAlignmentOut = it->second.m_ulAlignment;
+			return;
+		}
+	}
+
+	const vk::ImageCreateInfo xImageInfo = BuildAliasedImageCreateInfo(xInfo);
+
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	vk::Image xProbeImage;
+	vk::Result eCreateResult = xDevice.createImage(&xImageInfo, nullptr, &xProbeImage);
+	if (eCreateResult != vk::Result::eSuccess)
+	{
+		// createImage failure is surfaced to the caller via (0, 0) so the
+		// packer can still fall through to a safer standalone allocation
+		// (e.g. platforms with tighter usage-flag restrictions). The assert
+		// above already catches the format-range cause; this path covers
+		// driver-reported failures we don't diagnose here. Do NOT populate
+		// the cache on failure — the next call should retry (the driver may
+		// have been in a transient state).
+		return;
+	}
+
+	vk::MemoryRequirements xReqs = xDevice.getImageMemoryRequirements(xProbeImage);
+	xDevice.destroyImage(xProbeImage);
+
+	ulSizeOut      = xReqs.size;
+	ulAlignmentOut = xReqs.alignment;
+
+	ProbeCacheEntry xEntry;
+	xEntry.m_ulSize      = ulSizeOut;
+	xEntry.m_ulAlignment = ulAlignmentOut;
+	s_xProbeCache[ulSig] = xEntry;
+}
+
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateAliasedImageVRAM(const Flux_SurfaceInfo& xInfo,
+                                                                    Flux_VRAMHandle xPoolHandle,
+                                                                    u_int64 ulOffsetInPool)
+{
+	Zenith_Assert(xPoolHandle.IsValid(), "CreateAliasedImageVRAM: invalid pool handle");
+	Zenith_Vulkan_VRAM* pxPoolVRAM = Zenith_Vulkan::GetVRAM(xPoolHandle);
+	Zenith_Assert(pxPoolVRAM != nullptr && pxPoolVRAM->IsPool(),
+		"CreateAliasedImageVRAM: pool handle does not reference a pool VRAM");
+
+	// Same image-create-info as the probe path — BuildAliasedImageCreateInfo is
+	// the single source of truth so the packer's reported size is guaranteed
+	// to match what we actually bind into the pool.
+	const vk::ImageCreateInfo xImageInfo = BuildAliasedImageCreateInfo(xInfo);
+
+	const vk::ImageCreateInfo::NativeType xImageInfoNative = xImageInfo;
+
+	VkImage xImage = VK_NULL_HANDLE;
+	VkResult eResult = vmaCreateAliasingImage2(
+		s_xAllocator,
+		pxPoolVRAM->GetAllocation(),
+		ulOffsetInPool,
+		&xImageInfoNative,
+		&xImage);
+	Zenith_Assert(eResult == VK_SUCCESS, "vmaCreateAliasingImage2 failed: %d (offset=%llu)",
+		static_cast<int>(eResult), static_cast<unsigned long long>(ulOffsetInPool));
+	if (eResult != VK_SUCCESS)
+	{
+		return Flux_VRAMHandle();
+	}
+
+	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(
+		Zenith_Vulkan_VRAM::AliasedImageTag{},
+		vk::Image(xImage),
+		pxPoolVRAM->GetAllocation(),
+		s_xAllocator);
+	return Zenith_Vulkan::RegisterVRAM(pxVRAM);
+}
+
+void Zenith_Vulkan_MemoryManager::OnFluxPerFrameEnd(u_int /*uRingIndex*/, void* /*pUserData*/)
+{
+	// Decrement the per-resource frames-remaining counter on every queued
+	// deletion; destroy resources whose counter has reached 0. Lives here as
+	// the Flux_PerFrame end-frame callback rather than inside EndFrame()
+	// because the per-frame ring is the natural owner of "advance the
+	// deferred-deletion clock by one tick."
+	ProcessDeferredDeletions();
 }
 
 Zenith_Vulkan_MemoryManager::VMAStats Zenith_Vulkan_MemoryManager::GetVMAStats()
@@ -162,6 +451,10 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 	// Destroy VMA allocator
 	vmaDestroyAllocator(s_xAllocator);
 	s_xAllocator = nullptr;
+
+	// Probe cache is tied to the VMA allocator's device lifetime; drop it now
+	// so a subsequent Initialise starts from a known empty state.
+	s_xProbeCache.clear();
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan memory manager shut down");
 }
@@ -259,9 +552,12 @@ void Zenith_Vulkan_MemoryManager::EndFrame(bool bDefer /*= true*/)
 {
 	FlushStagingBuffer();
 
-	// Process deferred VRAM deletions
-	// Uses a frame counter (MAX_FRAMES_IN_FLIGHT) to ensure GPU has finished using resources
-	ProcessDeferredDeletions();
+	// ProcessDeferredDeletions used to be called here; it is now driven by
+	// Flux_PerFrame::EndFrame's end-frame callback (registered in Initialise).
+	// The relative timing shifts later in the frame but the +1 buffer in
+	// MAX_FRAMES_IN_FLIGHT + 1 keeps the deletion safe — the per-resource
+	// counter only reaches zero after the GPU has fully drained any in-flight
+	// frame that could have referenced it.
 
 	if (bDefer)
 	{
@@ -717,7 +1013,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 		else
 		{
 			// Upload via staging buffer
-			if (s_uNextFreeStagingOffset + ulDataSize >= g_uStagingPoolSize)
+			if (s_uNextFreeStagingOffset + ulDataSize > g_uStagingPoolSize)
 			{
 				HandleStagingBufferFull();
 			}
@@ -769,6 +1065,9 @@ vk::ImageViewType Zenith_Vulkan_MemoryManager::DetermineImageViewType(const Flux
 
 Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel)
 {
+	Zenith_Assert(uMipLevel < (xInfo.m_uNumMips == 0 ? 1u : xInfo.m_uNumMips),
+		"CreateRenderTargetView: uMipLevel %u out of range (surface has %u mips)", uMipLevel, xInfo.m_uNumMips);
+
 	Flux_RenderTargetView xView;
 	xView.m_xVRAMHandle = xVRAMHandle;
 
@@ -1071,7 +1370,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 			return;
 		}
 
-		if (s_uNextFreeStagingOffset + uSize >= g_uStagingPoolSize)
+		if (s_uNextFreeStagingOffset + uSize > g_uStagingPoolSize)
 		{
 			HandleStagingBufferFull();
 		}
@@ -1369,6 +1668,11 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 	s_uNextFreeStagingOffset = 0;
 }
 
+// Callers MUST hold s_xMutex and this function MUST NOT take it — EndFrame()
+// and BeginFrame() below are the only callees and neither reacquires the
+// mutex (FlushStagingBuffer and BeginRecording do GPU work lock-free). Adding
+// a lock here, or to any function reached from here, will deadlock every
+// staging upload path because Zenith_Mutex is non-recursive.
 void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull()
 {
 	//Zenith_Log("Staging buffer full, flushing");
@@ -1412,8 +1716,6 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, 0, uChunkSize));
 		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
 		xDevice.unmapMemory(s_xStagingMem);
-		s_uNextFreeStagingOffset = ALIGN(uChunkSize, 8);
-
 
 		vk::BufferCopy xCopyRegion(0, uCurrentOffset, uChunkSize);
 		s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, xDestBuffer, xCopyRegion);
@@ -1529,13 +1831,23 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 }
 
 void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, Flux_VRAMHandle& xHandle,
-	Flux_ImageViewHandle xRTV, Flux_ImageViewHandle xDSV, Flux_ImageViewHandle xSRV, Flux_ImageViewHandle xUAV)
+	Flux_ImageViewHandle xRTV, Flux_ImageViewHandle xDSV, Flux_ImageViewHandle xSRV, Flux_ImageViewHandle xUAV,
+	u_int uExtraFrameDelay)
 {
 	if (pxVRAM == nullptr && !xRTV.IsValid() && !xDSV.IsValid() &&
 		!xSRV.IsValid() && !xUAV.IsValid())
 	{
 		return;
 	}
+
+	// Pool VRAMs MUST be queued with uExtraFrameDelay >= 1 — aliased images
+	// bound into this pool rely on their own (shorter) deletion delay draining
+	// BEFORE the pool's VkDeviceMemory is freed. Forgetting the extra delay
+	// produces a silent one-frame use-after-free on the aliased VkImages, which
+	// the validation layer catches only intermittently. Trip the assert at the
+	// queue call instead so the offending caller is obvious from the stack.
+	Zenith_Assert(pxVRAM == nullptr || !pxVRAM->IsPool() || uExtraFrameDelay >= 1,
+		"QueueVRAMDeletion: pool VRAM requires uExtraFrameDelay >= 1 to outlive its aliased images");
 
 	PendingVRAMDeletion xDeletion;
 	xDeletion.m_pxVRAM = pxVRAM;
@@ -1544,9 +1856,13 @@ void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, 
 	xDeletion.m_xDSV = xDSV;
 	xDeletion.m_xSRV = xSRV;
 	xDeletion.m_xUAV = xUAV;
-	// Wait MAX_FRAMES_IN_FLIGHT + 1 to ensure GPU has finished with resource
-	// +1 because the resource might still be in use by command buffers being built this frame
-	xDeletion.m_uFramesRemaining = MAX_FRAMES_IN_FLIGHT + 1;
+	// Wait MAX_FRAMES_IN_FLIGHT + 1 to ensure GPU has finished with resource.
+	// +1 because the resource might still be in use by command buffers being built this frame.
+	// Aliasing pool callers pass uExtraFrameDelay=1 so the pool's VkDeviceMemory is freed
+	// strictly AFTER any aliased images bound to it (ProcessDeferredDeletions's RemoveSwap
+	// iteration doesn't preserve within-frame order). The assert above enforces this
+	// invariant at the queue point rather than waiting for the validation layer.
+	xDeletion.m_uFramesRemaining = MAX_FRAMES_IN_FLIGHT + 1 + uExtraFrameDelay;
 	s_xPendingDeletions.PushBack(xDeletion);
 
 	// Auto-invalidate the caller's handle to prevent double-free
@@ -1581,6 +1897,14 @@ void Zenith_Vulkan_MemoryManager::ProcessDeferredDeletions()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
+	// Note on within-frame ordering: RemoveSwap reorders the vector by moving
+	// the last element into the slot of the removed one. Any ordering between
+	// deletions that all hit zero on the same call is LOST. The cross-frame
+	// invariant that keeps this safe — pool VRAMs outlive their aliased images
+	// by >=1 frame — is enforced at queue time in QueueVRAMDeletion via the
+	// uExtraFrameDelay >= 1 assertion on pool VRAMs. If that assertion ever
+	// has to be relaxed, either introduce a second pool-only deletion queue
+	// or replace RemoveSwap here with order-preserving removal.
 	for (u_int i = 0; i < s_xPendingDeletions.GetSize();)
 	{
 		PendingVRAMDeletion& xDeletion = s_xPendingDeletions.Get(i);
@@ -1611,6 +1935,33 @@ void Zenith_Vulkan_MemoryManager::ProcessDeferredDeletions()
 	}
 }
 
+Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(AliasedImageTag, const vk::Image xImage, const VmaAllocation xPoolAllocation, VmaAllocator xAllocator)
+	: m_xAllocation(xPoolAllocation), m_xAllocator(xAllocator), m_xImage(xImage), m_bAliased(true)
+{
+	// No memory accounting bump here — the pool VRAM already counted the
+	// allocation's size when it was created; multiple aliased images sharing
+	// that allocation must not double-count.
+}
+
+Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(PoolTag, const VmaAllocation xAllocation, VmaAllocator xAllocator, u_int64 ulPoolSize)
+	: m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_bPool(true), m_ulPoolSize(ulPoolSize)
+{
+	// Trust the VMA-reported allocation size over the caller-provided ulPoolSize
+	// for memory accounting: VMA may align the backing allocation above the
+	// requested size, and using its value keeps engine counters in sync with
+	// what's actually on the heap. Store that same value in m_ulPoolSize so
+	// the destructor's DecreaseImageMemoryUsage call matches the increase.
+	if (xAllocation != VK_NULL_HANDLE)
+	{
+		VmaAllocationInfo xInfo = {};
+		vmaGetAllocationInfo(xAllocator, xAllocation, &xInfo);
+		if (xInfo.size > 0)
+			m_ulPoolSize = xInfo.size;
+	}
+	Zenith_Vulkan_MemoryManager::IncreaseImageMemoryUsage(m_ulPoolSize);
+	Zenith_Vulkan_MemoryManager::IncreaseMemoryUsage(m_ulPoolSize);
+}
+
 Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Image xImage, const VmaAllocation xAllocation, VmaAllocator xAllocator)
 	: m_xImage(xImage), m_xAllocation(xAllocation), m_xAllocator(xAllocator)
 {
@@ -1627,6 +1978,28 @@ Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Buffer xBuffer, const VmaAlloca
 
 Zenith_Vulkan_VRAM::~Zenith_Vulkan_VRAM()
 {
+	// Three destruction paths: aliased-image (image only), pool (allocation
+	// only), or regular owned resource (image+allocation or buffer+allocation).
+
+	if (m_bAliased)
+	{
+		Zenith_Assert(m_xImage != VK_NULL_HANDLE, "Aliased VRAM missing image");
+		// Destroy the image alone — the allocation is owned by the pool
+		// VRAM and will be freed when the pool is destroyed. No memory-usage
+		// accounting bump here either; the pool counted for everyone.
+		Zenith_Vulkan::GetDevice().destroyImage(m_xImage);
+		return;
+	}
+
+	if (m_bPool)
+	{
+		Zenith_Assert(m_xAllocation != VK_NULL_HANDLE, "Pool VRAM missing allocation");
+		Zenith_Vulkan_MemoryManager::DecreaseImageMemoryUsage(m_ulPoolSize);
+		Zenith_Vulkan_MemoryManager::DecreaseMemoryUsage(m_ulPoolSize);
+		vmaFreeMemory(m_xAllocator, m_xAllocation);
+		return;
+	}
+
 	if (m_xAllocation != VK_NULL_HANDLE && m_xAllocator != VK_NULL_HANDLE)
 	{
 		if (m_xImage != VK_NULL_HANDLE)

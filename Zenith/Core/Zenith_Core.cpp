@@ -12,8 +12,11 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_PerFrame.h"
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/IBL/Flux_IBL.h"
+#include "Flux/SSR/Flux_SSR.h"
+#include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
@@ -119,16 +122,11 @@ static void ExecuteRenderGraph()
 
 	Flux_RenderGraph& xGraph = Flux::GetRenderGraph();
 
-	// Detect global transient toggle change — requires full graph rebuild
-	// so that subsystem SetupRenderGraph calls pick up the new mode.
-	{
-		static bool s_bLastTransientsEnabled = true;
-		if (s_bLastTransientsEnabled != xGraph.AreTransientsEnabled())
-		{
-			s_bLastTransientsEnabled = xGraph.AreTransientsEnabled();
-			Flux::SetupRenderGraph();
-		}
-	}
+	// Forward any debug-variable toggles that affect graph compilation (e.g.
+	// transient aliasing) into the graph each frame. Cheap no-op when unchanged;
+	// triggers MarkDirty on change so editor flips apply immediately instead of
+	// waiting until the next SetupRenderGraph (which only runs on resize).
+	Flux::SyncRenderGraphDebugToggles();
 
 	// Order matters here. Both subsystems below run BEFORE Compile() so any
 	// SetPassEnabled / MarkDirty mutations they perform take effect on the
@@ -143,6 +141,13 @@ static void ExecuteRenderGraph()
 	// all 49 of its passes for the upcoming full Compile() so the validator
 	// sees a writer for every IBL texture that DeferredShading reads.
 	Flux_Fog::ApplyTechniqueSelectionToGraph(xGraph);
+	// SSR / SSGI runtime output toggles: when blur or denoise flip, these
+	// enable/disable their post-pass and MarkDirty so the deferred-lighting
+	// pass re-reads the correct handle (see Flux_SSR::GetReflectionHandle).
+	// Must run BEFORE IBL's UpdateGraphPassEnables for the same MarkDirty
+	// propagation reason described above.
+	Flux_SSR::ApplyBlurSelectionToGraph(xGraph);
+	Flux_SSGI::ApplyDenoiseSelectionToGraph(xGraph);
 	Flux_IBL::UpdateGraphPassEnables(xGraph);
 
 	xGraph.Compile();
@@ -151,7 +156,12 @@ static void ExecuteRenderGraph()
 
 void Zenith_Core::Zenith_MainLoop()
 {
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::BeginFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME);
+	// Flux_PerFrame::BeginFrame fires registered begin-frame callbacks (which
+	// includes the Vulkan backend's wait-fence + reset-pools logic that used
+	// to live behind Flux_PlatformAPI::BeginFrame). The PROFILE index name is
+	// kept the same so the profiler timeline is comparable to pre-extraction
+	// runs.
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PerFrame::BeginFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME);
 
 	UpdateTimers();
 	Zenith_Input::BeginFrame();
@@ -165,6 +175,12 @@ void Zenith_Core::Zenith_MainLoop()
 	if (!Flux_Swapchain::BeginFrame())
 	{
 		Flux_MemoryManager::EndFrame(false);
+		// Skipped frame still fires end-frame callbacks so the deferred VRAM
+		// deletion clock ticks, but we deliberately DON'T advance the ring
+		// counter — a rapid-resize sequence of consecutive skips would
+		// otherwise wrap the counter past valid fences and shorten the
+		// effective MAX_FRAMES_IN_FLIGHT+1 deferred-deletion grace period.
+		Flux_PerFrame::FireEndCallbacks();
 		return;
 	}
 
@@ -247,4 +263,11 @@ void Zenith_Core::Zenith_MainLoop()
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::EndFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME, bSubmitRenderWork);
 
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Swapchain::EndFrame, ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
+
+	// Final action of the main loop: fires registered end-frame callbacks
+	// (deferred-deletion countdown lives here now) and advances the
+	// Flux_PerFrame counter. Counter advance happens AFTER Swapchain::EndFrame
+	// so the present uses the slot for frame N before the ring index moves to
+	// N+1 for the next iteration — matches the old in-swapchain bump.
+	Flux_PerFrame::EndFrame();
 }
