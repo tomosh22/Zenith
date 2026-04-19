@@ -106,205 +106,240 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 }
 
 //-----------------------------------------------------------------------------
-// RenderPropertiesPanel - Main editor UI for model component
+// RenderPropertiesPanel - Main editor UI. Delegates to per-section helpers so
+// each block of the properties panel stays focused on its own concern.
 //-----------------------------------------------------------------------------
 void Zenith_ModelComponent::RenderPropertiesPanel()
 {
-	if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
+	if (!ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
+		return;
+
+	ImGui::Checkbox("Draw Physics Mesh", &m_bDebugDrawPhysicsMesh);
+
+	ImGui::Separator();
+	RenderModelStatusSection();
+
+	ImGui::Separator();
+	RenderModelDropTargetSection();
+
+	RenderManualLoadSection();
+
+	ImGui::Separator();
+	RenderModelInstanceMaterialsSection();
+
+	RenderProceduralMeshEntriesSection();
+}
+
+//-----------------------------------------------------------------------------
+// Shows which mesh system is currently driving this component (new model
+// instance, procedural entries, or empty) along with a short summary.
+//-----------------------------------------------------------------------------
+void Zenith_ModelComponent::RenderModelStatusSection()
+{
+	if (m_pxModelInstance)
 	{
-		ImGui::Checkbox("Draw Physics Mesh", &m_bDebugDrawPhysicsMesh);
+		ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Using: New Model Instance System");
+		ImGui::Text("Model Path: %s", m_strModelPath.c_str());
+		ImGui::Text("Meshes: %u", m_pxModelInstance->GetNumMeshes());
+		ImGui::Text("Has Skeleton: %s", m_pxModelInstance->HasSkeleton() ? "Yes" : "No");
+	}
+	else if (m_xMeshEntries.GetSize() > 0)
+	{
+		ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.2f, 1.0f), "Using: Procedural Mesh Entries");
+	}
+	else
+	{
+		ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No model loaded");
+	}
+}
 
-		ImGui::Separator();
+//-----------------------------------------------------------------------------
+// Button-shaped drop target for .zmodel files plus a Clear action. Accepts
+// DRAGDROP_PAYLOAD_MODEL drags from the content browser.
+//-----------------------------------------------------------------------------
+void Zenith_ModelComponent::RenderModelDropTargetSection()
+{
+	ImGui::Text("Model:");
+	ImGui::SameLine();
 
-		// Show which system is being used
-		if (m_pxModelInstance)
+	std::string strModelName = "(none)";
+	if (m_pxModelInstance && !m_strModelPath.empty())
+	{
+		std::filesystem::path xPath(m_strModelPath);
+		strModelName = xPath.filename().string();
+	}
+
+	ImVec2 xButtonSize(200, 20);
+	ImGui::Button(strModelName.c_str(), xButtonSize);
+
+	if (ImGui::BeginDragDropTarget())
+	{
+		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_MODEL))
 		{
-			ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Using: New Model Instance System");
-			ImGui::Text("Model Path: %s", m_strModelPath.c_str());
-			ImGui::Text("Meshes: %u", m_pxModelInstance->GetNumMeshes());
-			ImGui::Text("Has Skeleton: %s", m_pxModelInstance->HasSkeleton() ? "Yes" : "No");
+			const DragDropFilePayload* pFilePayload =
+				static_cast<const DragDropFilePayload*>(pPayload->Data);
+
+			Zenith_Log(LOG_CATEGORY_MESH, "Model dropped: %s", pFilePayload->m_szFilePath);
+			LoadModel(pFilePayload->m_szFilePath);
 		}
-		else if (m_xMeshEntries.GetSize() > 0)
+		ImGui::EndDragDropTarget();
+	}
+
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Drop a .zmodel file here to load it");
+	}
+
+	ImGui::SameLine();
+	if (ImGui::Button("Clear##ClearModel"))
+	{
+		ClearModel();
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Fallback for loading a model by typing its path manually. Kept as a
+// TreeNode so it stays collapsed by default.
+//-----------------------------------------------------------------------------
+void Zenith_ModelComponent::RenderManualLoadSection()
+{
+	if (!ImGui::TreeNode("Load Model (Manual Path)"))
+		return;
+
+	static char s_szModelPath[512] = "";
+	ImGui::InputText("Model Path", s_szModelPath, sizeof(s_szModelPath));
+
+	if (ImGui::Button("Load Model"))
+	{
+		if (strlen(s_szModelPath) > 0)
 		{
-			ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.2f, 1.0f), "Using: Procedural Mesh Entries");
+			LoadModel(s_szModelPath);
+		}
+	}
+
+	ImGui::TreePop();
+}
+
+//-----------------------------------------------------------------------------
+// Per-mesh material UI for the new Flux_ModelInstance system. Each mesh is
+// wrapped in its own TreeNode with an "Edit" shortcut to the material editor.
+//-----------------------------------------------------------------------------
+void Zenith_ModelComponent::RenderModelInstanceMaterialsSection()
+{
+	if (!m_pxModelInstance)
+		return;
+
+	ImGui::Text("Materials (%u meshes):", m_pxModelInstance->GetNumMeshes());
+	for (uint32_t uMeshIdx = 0; uMeshIdx < m_pxModelInstance->GetNumMeshes(); ++uMeshIdx)
+	{
+		ImGui::PushID(uMeshIdx);
+
+		Zenith_MaterialAsset* pxMaterial = m_pxModelInstance->GetMaterial(uMeshIdx);
+		if (pxMaterial)
+		{
+			// Material header with name and edit button
+			bool bExpanded = ImGui::TreeNode("Material", "Mesh %u: %s", uMeshIdx, pxMaterial->GetName().c_str());
+
+			// Button to select in Material Editor
+			ImGui::SameLine();
+			if (ImGui::SmallButton("Edit"))
+			{
+				Zenith_Editor::SelectMaterial(pxMaterial);
+			}
+
+			if (bExpanded)
+			{
+				// Material properties (using shared utility)
+				Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMaterial, "ModelInstance");
+
+				ImGui::Separator();
+
+				RenderMeshMaterialSlots(uMeshIdx, *pxMaterial);
+
+				ImGui::TreePop();
+			}
 		}
 		else
 		{
-			ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No model loaded");
+			ImGui::Text("Mesh %u: (no material)", uMeshIdx);
 		}
 
-		ImGui::Separator();
+		ImGui::PopID();
+	}
+}
 
-		// Model drop target - drag .zmodel files here
+//-----------------------------------------------------------------------------
+// Per-mesh material UI for the legacy procedural mesh entries path. Shows
+// the source path (if any) and reuses the same texture slot widgets as the
+// model-instance section.
+//-----------------------------------------------------------------------------
+void Zenith_ModelComponent::RenderProceduralMeshEntriesSection()
+{
+	if (m_xMeshEntries.GetSize() > 0)
+	{
+		ImGui::Text("Procedural Mesh Entries (%u):", m_xMeshEntries.GetSize());
+	}
+	for (uint32_t uMeshIdx = 0; uMeshIdx < m_xMeshEntries.GetSize(); ++uMeshIdx)
+	{
+		ImGui::PushID(uMeshIdx + 1000);  // Offset ID to avoid conflict with model instance
+
+		Zenith_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uMeshIdx).m_xMaterial.Get();
+
+		bool bExpanded = ImGui::TreeNode("MeshEntry", "Mesh %u: %s", uMeshIdx,
+			pxMaterial ? pxMaterial->GetName().c_str() : "(no material)");
+
+		if (pxMaterial)
 		{
-			ImGui::Text("Model:");
 			ImGui::SameLine();
-
-			std::string strModelName = "(none)";
-			if (m_pxModelInstance && !m_strModelPath.empty())
+			if (ImGui::SmallButton("Edit"))
 			{
-				std::filesystem::path xPath(m_strModelPath);
-				strModelName = xPath.filename().string();
-			}
-
-			ImVec2 xButtonSize(200, 20);
-			ImGui::Button(strModelName.c_str(), xButtonSize);
-
-			if (ImGui::BeginDragDropTarget())
-			{
-				if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_MODEL))
-				{
-					const DragDropFilePayload* pFilePayload =
-						static_cast<const DragDropFilePayload*>(pPayload->Data);
-
-					Zenith_Log(LOG_CATEGORY_MESH, "Model dropped: %s", pFilePayload->m_szFilePath);
-					LoadModel(pFilePayload->m_szFilePath);
-				}
-				ImGui::EndDragDropTarget();
-			}
-
-			if (ImGui::IsItemHovered())
-			{
-				ImGui::SetTooltip("Drop a .zmodel file here to load it");
-			}
-
-			ImGui::SameLine();
-			if (ImGui::Button("Clear##ClearModel"))
-			{
-				ClearModel();
+				Zenith_Editor::SelectMaterial(pxMaterial);
 			}
 		}
 
-		// Load model from .zmodel file (new system) - manual path entry
-		if (ImGui::TreeNode("Load Model (Manual Path)"))
+		if (bExpanded)
 		{
-			static char s_szModelPath[512] = "";
-			ImGui::InputText("Model Path", s_szModelPath, sizeof(s_szModelPath));
-
-			if (ImGui::Button("Load Model"))
+			Flux_MeshGeometry& xGeom = GetMeshGeometryAtIndex(uMeshIdx);
+			if (!xGeom.m_strSourcePath.empty())
 			{
-				if (strlen(s_szModelPath) > 0)
-				{
-					LoadModel(s_szModelPath);
-				}
+				ImGui::TextWrapped("Source: %s", xGeom.m_strSourcePath.c_str());
+			}
+
+			if (pxMaterial)
+			{
+				// Material properties (using shared utility)
+				Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMaterial, "ProceduralMesh");
+
+				ImGui::Separator();
+
+				RenderMeshMaterialSlots(uMeshIdx, *pxMaterial);
 			}
 
 			ImGui::TreePop();
 		}
 
-		ImGui::Separator();
-
-		// Show materials for NEW MODEL INSTANCE SYSTEM
-		if (m_pxModelInstance)
-		{
-			ImGui::Text("Materials (%u meshes):", m_pxModelInstance->GetNumMeshes());
-			for (uint32_t uMeshIdx = 0; uMeshIdx < m_pxModelInstance->GetNumMeshes(); ++uMeshIdx)
-			{
-				ImGui::PushID(uMeshIdx);
-
-				Zenith_MaterialAsset* pxMaterial = m_pxModelInstance->GetMaterial(uMeshIdx);
-				if (pxMaterial)
-				{
-					// Material header with name and edit button
-					bool bExpanded = ImGui::TreeNode("Material", "Mesh %u: %s", uMeshIdx, pxMaterial->GetName().c_str());
-
-					// Button to select in Material Editor
-					ImGui::SameLine();
-					if (ImGui::SmallButton("Edit"))
-					{
-						Zenith_Editor::SelectMaterial(pxMaterial);
-					}
-
-					if (bExpanded)
-					{
-						// Material properties (using shared utility)
-						Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMaterial, "ModelInstance");
-
-						ImGui::Separator();
-
-						// Texture slots (using shared utility with custom assignment callback)
-						using namespace Zenith_Editor_MaterialUI;
-						auto fnAssign = [this, uMeshIdx](TextureSlotType eSlot) {
-							return [this, uMeshIdx, eSlot](const char* szPath) {
-								AssignTextureToSlot(szPath, uMeshIdx, eSlot);
-							};
-						};
-						RenderTextureSlot("Diffuse", *pxMaterial, TEXTURE_SLOT_DIFFUSE, true, 48.0f, fnAssign(TEXTURE_SLOT_DIFFUSE));
-						RenderTextureSlot("Normal", *pxMaterial, TEXTURE_SLOT_NORMAL, true, 48.0f, fnAssign(TEXTURE_SLOT_NORMAL));
-						RenderTextureSlot("Roughness/Metallic", *pxMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC, true, 48.0f, fnAssign(TEXTURE_SLOT_ROUGHNESS_METALLIC));
-						RenderTextureSlot("Occlusion", *pxMaterial, TEXTURE_SLOT_OCCLUSION, true, 48.0f, fnAssign(TEXTURE_SLOT_OCCLUSION));
-						RenderTextureSlot("Emissive", *pxMaterial, TEXTURE_SLOT_EMISSIVE, true, 48.0f, fnAssign(TEXTURE_SLOT_EMISSIVE));
-
-						ImGui::TreePop();
-					}
-				}
-				else
-				{
-					ImGui::Text("Mesh %u: (no material)", uMeshIdx);
-				}
-
-				ImGui::PopID();
-			}
-		}
-
-		// PROCEDURAL MESH ENTRIES - Enhanced to show material properties
-		if (m_xMeshEntries.GetSize() > 0)
-		{
-			ImGui::Text("Procedural Mesh Entries (%u):", m_xMeshEntries.GetSize());
-		}
-		for (uint32_t uMeshIdx = 0; uMeshIdx < m_xMeshEntries.GetSize(); ++uMeshIdx)
-		{
-			ImGui::PushID(uMeshIdx + 1000);  // Offset ID to avoid conflict with model instance
-
-			Zenith_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uMeshIdx).m_xMaterial.Get();
-
-			bool bExpanded = ImGui::TreeNode("MeshEntry", "Mesh %u: %s", uMeshIdx,
-				pxMaterial ? pxMaterial->GetName().c_str() : "(no material)");
-
-			if (pxMaterial)
-			{
-				ImGui::SameLine();
-				if (ImGui::SmallButton("Edit"))
-				{
-					Zenith_Editor::SelectMaterial(pxMaterial);
-				}
-			}
-
-			if (bExpanded)
-			{
-				Flux_MeshGeometry& xGeom = GetMeshGeometryAtIndex(uMeshIdx);
-				if (!xGeom.m_strSourcePath.empty())
-				{
-					ImGui::TextWrapped("Source: %s", xGeom.m_strSourcePath.c_str());
-				}
-
-				if (pxMaterial)
-				{
-					// Material properties (using shared utility)
-					Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMaterial, "ProceduralMesh");
-
-					ImGui::Separator();
-
-					// Texture slots (using shared utility with custom assignment callback)
-					using namespace Zenith_Editor_MaterialUI;
-					auto fnAssign = [this, uMeshIdx](TextureSlotType eSlot) {
-						return [this, uMeshIdx, eSlot](const char* szPath) {
-							AssignTextureToSlot(szPath, uMeshIdx, eSlot);
-						};
-					};
-					RenderTextureSlot("Diffuse", *pxMaterial, TEXTURE_SLOT_DIFFUSE, true, 48.0f, fnAssign(TEXTURE_SLOT_DIFFUSE));
-					RenderTextureSlot("Normal", *pxMaterial, TEXTURE_SLOT_NORMAL, true, 48.0f, fnAssign(TEXTURE_SLOT_NORMAL));
-					RenderTextureSlot("Roughness/Metallic", *pxMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC, true, 48.0f, fnAssign(TEXTURE_SLOT_ROUGHNESS_METALLIC));
-					RenderTextureSlot("Occlusion", *pxMaterial, TEXTURE_SLOT_OCCLUSION, true, 48.0f, fnAssign(TEXTURE_SLOT_OCCLUSION));
-					RenderTextureSlot("Emissive", *pxMaterial, TEXTURE_SLOT_EMISSIVE, true, 48.0f, fnAssign(TEXTURE_SLOT_EMISSIVE));
-				}
-
-				ImGui::TreePop();
-			}
-
-			ImGui::PopID();
-		}
+		ImGui::PopID();
 	}
+}
+
+//-----------------------------------------------------------------------------
+// Renders the five texture slots (diffuse/normal/RM/occlusion/emissive) for a
+// single mesh index, wiring each slot's assignment callback back through
+// AssignTextureToSlot so drops create a new material instance correctly.
+//-----------------------------------------------------------------------------
+void Zenith_ModelComponent::RenderMeshMaterialSlots(uint32_t uMeshIdx, Zenith_MaterialAsset& xMaterial)
+{
+	using namespace Zenith_Editor_MaterialUI;
+	auto fnAssign = [this, uMeshIdx](TextureSlotType eSlot) {
+		return [this, uMeshIdx, eSlot](const char* szPath) {
+			AssignTextureToSlot(szPath, uMeshIdx, eSlot);
+		};
+	};
+	RenderTextureSlot("Diffuse", xMaterial, TEXTURE_SLOT_DIFFUSE, true, 48.0f, fnAssign(TEXTURE_SLOT_DIFFUSE));
+	RenderTextureSlot("Normal", xMaterial, TEXTURE_SLOT_NORMAL, true, 48.0f, fnAssign(TEXTURE_SLOT_NORMAL));
+	RenderTextureSlot("Roughness/Metallic", xMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC, true, 48.0f, fnAssign(TEXTURE_SLOT_ROUGHNESS_METALLIC));
+	RenderTextureSlot("Occlusion", xMaterial, TEXTURE_SLOT_OCCLUSION, true, 48.0f, fnAssign(TEXTURE_SLOT_OCCLUSION));
+	RenderTextureSlot("Emissive", xMaterial, TEXTURE_SLOT_EMISSIVE, true, 48.0f, fnAssign(TEXTURE_SLOT_EMISSIVE));
 }
 
 #endif // ZENITH_TOOLS

@@ -103,7 +103,217 @@ Zenith_ColliderComponent::~Zenith_ColliderComponent()
 	}
 }
 
-void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType) 
+namespace
+{
+	// Central min-scale floor; capsule computation also uses it for its degenerate case.
+	constexpr float g_fMinColliderScale = 0.001f;
+
+	Zenith_Maths::Vector3 ClampScale(const Zenith_Maths::Vector3& xScale)
+	{
+		Zenith_Maths::Vector3 xClamped = xScale;
+		if (xClamped.x < g_fMinColliderScale) xClamped.x = g_fMinColliderScale;
+		if (xClamped.y < g_fMinColliderScale) xClamped.y = g_fMinColliderScale;
+		if (xClamped.z < g_fMinColliderScale) xClamped.z = g_fMinColliderScale;
+		return xClamped;
+	}
+}
+
+JPH::Shape* Zenith_ColliderComponent::CreateBoxShape(const Zenith_Maths::Vector3& xScale) const
+{
+	// BoxShape takes half-extents; unit cube is -0.5..0.5 so half-extent = scale * 0.5
+	return new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
+}
+
+JPH::Shape* Zenith_ColliderComponent::CreateSphereShape(const Zenith_Maths::Vector3& xScale) const
+{
+	// Unit sphere has radius 0.5, so physics radius = max_scale * 0.5
+	const float fRadius = std::max({ xScale.x, xScale.y, xScale.z }) * 0.5f;
+	return new JPH::SphereShape(fRadius);
+}
+
+JPH::Shape* Zenith_ColliderComponent::CreateCapsuleShape(const Zenith_Maths::Vector3& xScale, float fMinScale) const
+{
+	float fRadius;
+	float fHalfHeight;
+
+	if (m_bUseExplicitCapsuleDimensions)
+	{
+		// Caller provided explicit dimensions via AddCapsuleCollider.
+		fRadius = m_fExplicitCapsuleRadius;
+		fHalfHeight = m_fExplicitCapsuleHalfHeight;
+	}
+	else
+	{
+		// Capsule extends along Y. Radius comes from horizontal extents (X/Z); the
+		// cylindrical middle half-length is Y_half minus the cap radius. If Y is too
+		// short for the implied caps the capsule is degenerate, so clamp the cylinder
+		// length to fMinScale rather than letting it go negative.
+		fRadius = std::max(xScale.x, xScale.z) * 0.5f;
+		const float fHalfY = xScale.y * 0.5f;
+		fHalfHeight = std::max(fMinScale, fHalfY - fRadius);
+		if (fHalfY <= fRadius)
+		{
+			fHalfHeight = fMinScale;
+		}
+	}
+	return new JPH::CapsuleShape(fHalfHeight, fRadius);
+}
+
+JPH::Shape* Zenith_ColliderComponent::CreateTerrainShape()
+{
+	Zenith_Assert(m_xParentEntity.HasComponent<Zenith_TerrainComponent>(), "Can't have a terrain collider without a terrain component");
+	const Zenith_TerrainComponent& xTerrain = m_xParentEntity.GetComponent<Zenith_TerrainComponent>();
+	const Flux_MeshGeometry& xMesh = xTerrain.GetPhysicsMeshGeometry();
+
+	// Copy mesh data into our owned storage so the physics body outlives the
+	// TerrainComponent's internal geometry; the destructor frees m_pxTerrainMeshData.
+	m_pxTerrainMeshData = new TerrainMeshData();
+	m_pxTerrainMeshData->m_uNumVertices = xMesh.m_uNumVerts;
+	m_pxTerrainMeshData->m_uNumIndices = xMesh.m_uNumIndices;
+
+	m_pxTerrainMeshData->m_pfVertices = new float[xMesh.m_uNumVerts * 3];
+	for (uint32_t i = 0; i < xMesh.m_uNumVerts; ++i)
+	{
+		m_pxTerrainMeshData->m_pfVertices[i * 3 + 0] = xMesh.m_pxPositions[i].x;
+		m_pxTerrainMeshData->m_pfVertices[i * 3 + 1] = xMesh.m_pxPositions[i].y;
+		m_pxTerrainMeshData->m_pfVertices[i * 3 + 2] = xMesh.m_pxPositions[i].z;
+	}
+
+	m_pxTerrainMeshData->m_puIndices = new uint32_t[xMesh.m_uNumIndices];
+	memcpy(m_pxTerrainMeshData->m_puIndices, xMesh.m_puIndices, xMesh.m_uNumIndices * sizeof(uint32_t));
+
+	JPH::TriangleList xTriangles;
+	for (uint32_t i = 0; i < xMesh.m_uNumIndices; i += 3)
+	{
+		JPH::Triangle xTri;
+		for (int j = 0; j < 3; ++j)
+		{
+			const uint32_t uIdx = xMesh.m_puIndices[i + j];
+			xTri.mV[j] = JPH::Float3(
+				xMesh.m_pxPositions[uIdx].x,
+				xMesh.m_pxPositions[uIdx].y,
+				xMesh.m_pxPositions[uIdx].z
+			);
+		}
+		xTriangles.push_back(xTri);
+	}
+
+	JPH::MeshShapeSettings xMeshSettings(xTriangles);
+	JPH::Shape::ShapeResult xShapeResult = xMeshSettings.Create();
+	// ShapeResult::Get() returns a RefConst<Shape>; ->GetPtr() returns the raw pointer
+	// with refcount still at 1, matching the `new XxxShape()` return of the other
+	// factories (caller sinks into a RefConst which becomes owner).
+	return xShapeResult.Get().GetPtr();
+}
+
+JPH::Shape* Zenith_ColliderComponent::CreateConvexOrMeshShape(const Zenith_Maths::Vector3& xScale, RigidBodyType eRigidBodyType)
+{
+	Zenith_Assert(m_xParentEntity.HasComponent<Zenith_ModelComponent>(), "Can't have a model mesh collider without a model component");
+	Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
+	Zenith_TransformComponent& xTrans = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+
+	if (!xModel.HasPhysicsMesh())
+	{
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Model does not have physics mesh, generating...");
+		xModel.GeneratePhysicsMesh();
+	}
+
+	const Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
+	if (!pxPhysicsMesh || !pxPhysicsMesh->m_pxPositions || pxPhysicsMesh->GetNumVerts() < 3)
+	{
+		// Model has no usable physics mesh — fall back to a scaled box so the entity
+		// still has a collider of roughly the right size.
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Invalid physics mesh, falling back to OBB collider");
+		return CreateBoxShape(xScale);
+	}
+
+	Zenith_Log(LOG_CATEGORY_PHYSICS, "Creating collider from model physics mesh: %u verts, %u tris",
+		pxPhysicsMesh->GetNumVerts(),
+		pxPhysicsMesh->GetNumIndices() / 3);
+
+	// Cache the mesh for the lifetime of the body. Uses the transform's scale
+	// (not the clamped xScale) so the owned copy matches the rendered geometry.
+	Zenith_Maths::Vector3 xModelScale;
+	xTrans.GetScale(xModelScale);
+
+	m_pxTerrainMeshData = new TerrainMeshData();
+	m_pxTerrainMeshData->m_uNumVertices = pxPhysicsMesh->m_uNumVerts;
+	m_pxTerrainMeshData->m_uNumIndices = pxPhysicsMesh->m_uNumIndices;
+
+	m_pxTerrainMeshData->m_pfVertices = new float[pxPhysicsMesh->m_uNumVerts * 3];
+	for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumVerts; ++i)
+	{
+		m_pxTerrainMeshData->m_pfVertices[i * 3 + 0] = pxPhysicsMesh->m_pxPositions[i].x * xModelScale.x;
+		m_pxTerrainMeshData->m_pfVertices[i * 3 + 1] = pxPhysicsMesh->m_pxPositions[i].y * xModelScale.y;
+		m_pxTerrainMeshData->m_pfVertices[i * 3 + 2] = pxPhysicsMesh->m_pxPositions[i].z * xModelScale.z;
+	}
+
+	m_pxTerrainMeshData->m_puIndices = new uint32_t[pxPhysicsMesh->m_uNumIndices];
+	memcpy(m_pxTerrainMeshData->m_puIndices, pxPhysicsMesh->m_puIndices, pxPhysicsMesh->m_uNumIndices * sizeof(uint32_t));
+
+	// Convex hulls work for both dynamic and static bodies and are cheaper than a
+	// full mesh, so try this path first. If Jolt rejects the input (degenerate mesh
+	// etc.) fall back to a static MeshShape, then to a box as last resort.
+	JPH::Array<JPH::Vec3> xHullPoints;
+	for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumVerts; ++i)
+	{
+		xHullPoints.push_back(JPH::Vec3(
+			pxPhysicsMesh->m_pxPositions[i].x * xScale.x,
+			pxPhysicsMesh->m_pxPositions[i].y * xScale.y,
+			pxPhysicsMesh->m_pxPositions[i].z * xScale.z
+		));
+	}
+
+	Zenith_Log(LOG_CATEGORY_PHYSICS, "Creating convex hull with scale (%.3f, %.3f, %.3f), %u points",
+		xScale.x, xScale.y, xScale.z, pxPhysicsMesh->m_uNumVerts);
+
+	JPH::ConvexHullShapeSettings xConvexSettings(xHullPoints);
+	JPH::Shape::ShapeResult xConvexResult = xConvexSettings.Create();
+
+	if (xConvexResult.IsValid())
+	{
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Created convex hull collider successfully");
+		return xConvexResult.Get().GetPtr();
+	}
+
+	Zenith_Log(LOG_CATEGORY_PHYSICS, " Convex hull failed, falling back to mesh shape (static only)");
+
+	if (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC)
+	{
+		// MeshShape can't be used on dynamic bodies — box is the best we can do.
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " WARNING: Dynamic body requires convex shape, using box fallback");
+		return CreateBoxShape(xScale);
+	}
+
+	JPH::TriangleList xTriangles;
+	for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumIndices; i += 3)
+	{
+		JPH::Triangle xTri;
+		for (int j = 0; j < 3; ++j)
+		{
+			const uint32_t uIdx = pxPhysicsMesh->m_puIndices[i + j];
+			xTri.mV[j] = JPH::Float3(
+				pxPhysicsMesh->m_pxPositions[uIdx].x * xScale.x,
+				pxPhysicsMesh->m_pxPositions[uIdx].y * xScale.y,
+				pxPhysicsMesh->m_pxPositions[uIdx].z * xScale.z
+			);
+		}
+		xTriangles.push_back(xTri);
+	}
+
+	JPH::MeshShapeSettings xMeshSettings(xTriangles);
+	JPH::Shape::ShapeResult xMeshResult = xMeshSettings.Create();
+	if (xMeshResult.IsValid())
+	{
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Created mesh collider successfully");
+		return xMeshResult.Get().GetPtr();
+	}
+
+	Zenith_Log(LOG_CATEGORY_PHYSICS, " Mesh shape failed, using box fallback");
+	return CreateBoxShape(xScale);
+}
+
+void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType)
 {
 	Zenith_Assert(m_xBodyID.IsInvalid(), "This ColliderComponent already has a collider");
 	Zenith_TransformComponent& xTrans = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
@@ -111,224 +321,31 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	m_eVolumeType = eVolumeType;
 	m_eRigidBodyType = eRigidBodyType;
 
-	// Get scale and ensure it's valid (non-zero, positive) for shape creation
-	Zenith_Maths::Vector3 xScale = xTrans.m_xScale;
-	const float fMinScale = 0.001f;
-	if (xScale.x < fMinScale) xScale.x = fMinScale;
-	if (xScale.y < fMinScale) xScale.y = fMinScale;
-	if (xScale.z < fMinScale) xScale.z = fMinScale;
+	const Zenith_Maths::Vector3 xScale = ClampScale(xTrans.m_xScale);
 
 	JPH::RefConst<JPH::Shape> pxShape;
-
 	switch (eVolumeType)
 	{
 	case COLLISION_VOLUME_TYPE_AABB:
-	{
-		// AABB uses BoxShape but ignores entity rotation (always axis-aligned)
-		// BoxShape takes half-extents; unit cube is -0.5..0.5 so half-extent = scale * 0.5
-		pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
-	}
-	break;
 	case COLLISION_VOLUME_TYPE_OBB:
-	{
-		// OBB uses BoxShape and respects entity rotation
-		// BoxShape takes half-extents; unit cube is -0.5..0.5 so half-extent = scale * 0.5
-		pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
-	}
-	break;
+		// AABB and OBB share shape creation — they only differ in whether the body's
+		// rotation is applied below (AABB forces identity).
+		pxShape = CreateBoxShape(xScale);
+		break;
 	case COLLISION_VOLUME_TYPE_SPHERE:
-	{
-		// Sphere uses the maximum scale component as diameter
-		// Unit sphere has radius 0.5, so physics radius = max_scale * 0.5
-		float fRadius = std::max({ xScale.x, xScale.y, xScale.z }) * 0.5f;
-		pxShape = new JPH::SphereShape(fRadius);
-	}
-	break;
+		pxShape = CreateSphereShape(xScale);
+		break;
 	case COLLISION_VOLUME_TYPE_CAPSULE:
-	{
-		float fRadius, fHalfHeight;
-
-		if (m_bUseExplicitCapsuleDimensions)
-		{
-			// Use explicitly specified dimensions (caller provides exact values)
-			fRadius = m_fExplicitCapsuleRadius;
-			fHalfHeight = m_fExplicitCapsuleHalfHeight;
-		}
-		else
-		{
-			// Capsule extends along Y axis (vertical orientation)
-			// Unit geometry goes -0.5..0.5, so actual dimensions = scale * 0.5
-			// Radius is based on horizontal extents (X and Z)
-			// Half-height is the cylindrical portion's half-length (Y half minus radius for cap)
-			fRadius = std::max(xScale.x, xScale.z) * 0.5f;
-			float fHalfY = xScale.y * 0.5f;
-			fHalfHeight = std::max(fMinScale, fHalfY - fRadius);
-			if (fHalfY <= fRadius)
-			{
-				// Y half-extent is smaller than radius - degenerate capsule
-				fHalfHeight = fMinScale;
-			}
-		}
-		pxShape = new JPH::CapsuleShape(fHalfHeight, fRadius);
-	}
-	break;
+		pxShape = CreateCapsuleShape(xScale, g_fMinColliderScale);
+		break;
 	case COLLISION_VOLUME_TYPE_TERRAIN:
-	{
-		Zenith_Assert(m_xParentEntity.HasComponent<Zenith_TerrainComponent>(), "Can't have a terrain collider without a terrain component");
-		const Zenith_TerrainComponent& xTerrain = m_xParentEntity.GetComponent<Zenith_TerrainComponent>();
-
-		const Flux_MeshGeometry& xMesh = xTerrain.GetPhysicsMeshGeometry();
-
-		m_pxTerrainMeshData = new TerrainMeshData();
-		m_pxTerrainMeshData->m_uNumVertices = xMesh.m_uNumVerts;
-		m_pxTerrainMeshData->m_uNumIndices = xMesh.m_uNumIndices;
-
-		m_pxTerrainMeshData->m_pfVertices = new float[xMesh.m_uNumVerts * 3];
-		for (uint32_t i = 0; i < xMesh.m_uNumVerts; ++i)
-		{
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 0] = xMesh.m_pxPositions[i].x;
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 1] = xMesh.m_pxPositions[i].y;
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 2] = xMesh.m_pxPositions[i].z;
-		}
-
-		m_pxTerrainMeshData->m_puIndices = new uint32_t[xMesh.m_uNumIndices];
-		memcpy(m_pxTerrainMeshData->m_puIndices, xMesh.m_puIndices, xMesh.m_uNumIndices * sizeof(uint32_t));
-
-		JPH::TriangleList xTriangles;
-		for (uint32_t i = 0; i < xMesh.m_uNumIndices; i += 3)
-		{
-			JPH::Triangle xTri;
-			for (int j = 0; j < 3; ++j)
-			{
-				uint32_t uIdx = xMesh.m_puIndices[i + j];
-				xTri.mV[j] = JPH::Float3(
-					xMesh.m_pxPositions[uIdx].x,
-					xMesh.m_pxPositions[uIdx].y,
-					xMesh.m_pxPositions[uIdx].z
-				);
-			}
-			xTriangles.push_back(xTri);
-		}
-
-		JPH::MeshShapeSettings xMeshSettings(xTriangles);
-		JPH::Shape::ShapeResult xShapeResult = xMeshSettings.Create();
-		pxShape = xShapeResult.Get();
-	}
-	break;
+		pxShape = CreateTerrainShape();
+		break;
 	case COLLISION_VOLUME_TYPE_MODEL_MESH:
-	{
-		Zenith_Assert(m_xParentEntity.HasComponent<Zenith_ModelComponent>(), "Can't have a model mesh collider without a model component");
-		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
-
-		// Ensure physics mesh is generated
-		if (!xModel.HasPhysicsMesh())
-		{
-			Zenith_Log(LOG_CATEGORY_PHYSICS, " Model does not have physics mesh, generating...");
-			xModel.GeneratePhysicsMesh();
-		}
-
-		const Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
-		if (!pxPhysicsMesh || !pxPhysicsMesh->m_pxPositions || pxPhysicsMesh->GetNumVerts() < 3)
-		{
-			Zenith_Log(LOG_CATEGORY_PHYSICS, " Invalid physics mesh, falling back to OBB collider");
-			pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
-			break;
-		}
-
-		Zenith_Log(LOG_CATEGORY_PHYSICS, "Creating collider from model physics mesh: %u verts, %u tris",
-			pxPhysicsMesh->GetNumVerts(),
-			pxPhysicsMesh->GetNumIndices() / 3);
-
-		// Store mesh data for later cleanup (reuse TerrainMeshData structure)
-		// Apply transform scale to match visually rendered size
-		m_pxTerrainMeshData = new TerrainMeshData();
-		m_pxTerrainMeshData->m_uNumVertices = pxPhysicsMesh->m_uNumVerts;
-		m_pxTerrainMeshData->m_uNumIndices = pxPhysicsMesh->m_uNumIndices;
-
-		m_pxTerrainMeshData->m_pfVertices = new float[pxPhysicsMesh->m_uNumVerts * 3];
-		Zenith_Maths::Vector3 xModelScale;
-		xTrans.GetScale(xModelScale);
-		for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumVerts; ++i)
-		{
-			// Apply scale to match rendered geometry size
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 0] = pxPhysicsMesh->m_pxPositions[i].x * xModelScale.x;
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 1] = pxPhysicsMesh->m_pxPositions[i].y * xModelScale.y;
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 2] = pxPhysicsMesh->m_pxPositions[i].z * xModelScale.z;
-		}
-
-		m_pxTerrainMeshData->m_puIndices = new uint32_t[pxPhysicsMesh->m_uNumIndices];
-		memcpy(m_pxTerrainMeshData->m_puIndices, pxPhysicsMesh->m_puIndices, pxPhysicsMesh->m_uNumIndices * sizeof(uint32_t));
-
-		// Try to create as convex hull first (works for both dynamic and static bodies)
-		// Convex hulls are more efficient and work with dynamic bodies
-		// Apply scale to match rendered geometry size
-		JPH::Array<JPH::Vec3> xHullPoints;
-		for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumVerts; ++i)
-		{
-			xHullPoints.push_back(JPH::Vec3(
-				pxPhysicsMesh->m_pxPositions[i].x * xScale.x,
-				pxPhysicsMesh->m_pxPositions[i].y * xScale.y,
-				pxPhysicsMesh->m_pxPositions[i].z * xScale.z
-			));
-		}
-		
-		Zenith_Log(LOG_CATEGORY_PHYSICS, "Creating convex hull with scale (%.3f, %.3f, %.3f), %u points",
-			xScale.x, xScale.y, xScale.z, pxPhysicsMesh->m_uNumVerts);
-
-		JPH::ConvexHullShapeSettings xConvexSettings(xHullPoints);
-		JPH::Shape::ShapeResult xConvexResult = xConvexSettings.Create();
-		
-		if (xConvexResult.IsValid())
-		{
-			pxShape = xConvexResult.Get();
-			Zenith_Log(LOG_CATEGORY_PHYSICS, " Created convex hull collider successfully");
-		}
-		else
-		{
-			// Fall back to mesh shape (only works for static bodies)
-			Zenith_Log(LOG_CATEGORY_PHYSICS, " Convex hull failed, falling back to mesh shape (static only)");
-			
-			if (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC)
-			{
-				Zenith_Log(LOG_CATEGORY_PHYSICS, " WARNING: Dynamic body requires convex shape, using box fallback");
-				pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
-			}
-			else
-			{
-				JPH::TriangleList xTriangles;
-				for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumIndices; i += 3)
-				{
-					JPH::Triangle xTri;
-					for (int j = 0; j < 3; ++j)
-					{
-						uint32_t uIdx = pxPhysicsMesh->m_puIndices[i + j];
-						// Apply scale to match rendered geometry size
-						xTri.mV[j] = JPH::Float3(
-							pxPhysicsMesh->m_pxPositions[uIdx].x * xScale.x,
-							pxPhysicsMesh->m_pxPositions[uIdx].y * xScale.y,
-							pxPhysicsMesh->m_pxPositions[uIdx].z * xScale.z
-						);
-					}
-					xTriangles.push_back(xTri);
-				}				JPH::MeshShapeSettings xMeshSettings(xTriangles);
-				JPH::Shape::ShapeResult xMeshResult = xMeshSettings.Create();
-				if (xMeshResult.IsValid())
-				{
-					pxShape = xMeshResult.Get();
-					Zenith_Log(LOG_CATEGORY_PHYSICS, " Created mesh collider successfully");
-				}
-				else
-				{
-					Zenith_Log(LOG_CATEGORY_PHYSICS, " Mesh shape failed, using box fallback");
-					pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
-				}
-			}
-		}
-	}
-	break;
+		pxShape = CreateConvexOrMeshShape(xScale, eRigidBodyType);
+		break;
 	}
 
-	// Ensure shape was created
 	if (pxShape == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_PHYSICS, "ERROR: Failed to create shape for volume type %d", static_cast<int>(eVolumeType));
@@ -341,31 +358,22 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	xTrans.GetPosition(xPos);
 	xTrans.GetRotation(xRot);
 
-	JPH::Vec3 xJoltPos(xPos.x, xPos.y, xPos.z);
-
-	// AABB colliders are always axis-aligned (identity rotation)
-	// OBB and other colliders use the entity's rotation
-	JPH::Quat xJoltRot = (eVolumeType == COLLISION_VOLUME_TYPE_AABB)
+	// AABB colliders are always axis-aligned (identity rotation); OBB and the rest
+	// use the entity's rotation.
+	const JPH::Vec3 xJoltPos(xPos.x, xPos.y, xPos.z);
+	const JPH::Quat xJoltRot = (eVolumeType == COLLISION_VOLUME_TYPE_AABB)
 		? JPH::Quat::sIdentity()
 		: JPH::Quat(xRot.x, xRot.y, xRot.z, xRot.w);
 
-	JPH::EMotionType eMotionType = (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC)
+	const JPH::EMotionType eMotionType = (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC)
 		? JPH::EMotionType::Dynamic
 		: JPH::EMotionType::Static;
+	const JPH::ObjectLayer uObjectLayer = (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC) ? 1 : 0; // MOVING : NON_MOVING
 
-	JPH::ObjectLayer uObjectLayer = (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC) ? 1 : 0; // MOVING : NON_MOVING
-
-	JPH::BodyCreationSettings xBodySettings(
-		pxShape,
-		xJoltPos,
-		xJoltRot,
-		eMotionType,
-		uObjectLayer
-	);
-
+	JPH::BodyCreationSettings xBodySettings(pxShape, xJoltPos, xJoltRot, eMotionType, uObjectLayer);
 	JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
 	m_xBodyID = xBodyInterface.CreateAndAddBody(xBodySettings, JPH::EActivation::Activate);
-	
+
 	if (m_xBodyID.IsInvalid())
 	{
 		Zenith_Assert(false, "Failed to create physics body");
@@ -376,9 +384,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	if (xLock.Succeeded())
 	{
 		m_pxRigidBody = &xLock.GetBody();
-
-		// Store entity ID as user data so we can retrieve it during collision callbacks
-		// Use packed 64-bit representation of EntityID (index + generation)
+		// Store entity ID as user data for collision callback lookup (packed 64-bit).
 		m_pxRigidBody->SetUserData(m_xParentEntity.GetEntityID().GetPacked());
 	}
 }

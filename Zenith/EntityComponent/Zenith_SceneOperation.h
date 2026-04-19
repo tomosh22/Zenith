@@ -172,7 +172,15 @@ public:
 	//==========================================================================
 
 	/**
-	 * Get the resulting scene handle (only valid after IsComplete() returns true)
+	 * Get the resulting scene handle (only valid after IsComplete() returns true).
+	 *
+	 * Returns:
+	 *   - LoadSceneAsync success: handle to the loaded scene, with captured generation.
+	 *   - LoadSceneAsync failure/cancel: Zenith_Scene::INVALID_SCENE.
+	 *   - UnloadSceneAsync (any outcome): Zenith_Scene::INVALID_SCENE — the scene
+	 *     the caller asked about is gone by the time the op completes. Code paths that
+	 *     want to refer to the unloaded scene should capture its handle before calling
+	 *     UnloadSceneAsync.
 	 */
 	Zenith_Scene GetResultScene() const;
 

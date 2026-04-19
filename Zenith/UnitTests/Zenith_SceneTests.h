@@ -629,6 +629,10 @@ private:
 	static void TestHasFailedOnNonExistentFileAsync();
 	static void TestCancelAlreadyCompletedOperation();
 	static void TestIsCancellationRequestedTracking();
+	// Guards the SCENE_LOAD_SINGLE cancellation path extracted into
+	// Zenith_SceneManager_AsyncLoad.cpp — regression test for a review concern that
+	// cancelling a SINGLE-mode load before file I/O completes could double-delete the job.
+	static void TestLoadSceneAsyncSingleModeCancelBeforeFileRead();
 
 	//==========================================================================
 	// Cat 33: Component Handle System
@@ -853,4 +857,49 @@ private:
 	//==========================================================================
 	static void TestMoveEntityInternalValidSlotSucceeds();
 	static void TestSelectNewActiveSceneNoEligibleWarns();
+
+	//==========================================================================
+	// 2026-04 Audit Remediation — Phase A/B/C/D/E fix verification
+	// Tests below exercise the bug fixes listed in the audit plan at
+	// C:\Users\tomos\.claude\plans\you-are-auditing-my-indexed-octopus.md.
+	// Each test name is prefixed with its audit-finding tag (e.g. B4, D11) so a
+	// failure instantly points at which plan step regressed.
+	//==========================================================================
+
+	// B.4 — build index survives ADDITIVE_WITHOUT_LOADING on both sync and async.
+	static void TestB4_LoadSceneByIndex_AdditiveWithoutLoading_PreservesBuildIndex();
+	static void TestB4_LoadSceneAsyncByIndex_AdditiveWithoutLoading_PreservesBuildIndex();
+
+	// B.7 — Reset split preserves / clears metadata as documented.
+	static void TestB7_ResetEntitiesOnly_PreservesMetadata();
+	static void TestB7_ResetAll_ClearsMetadata();
+
+	// B.9 — CreateEmptyScene progresses m_bIsActivated false → true inside the call.
+	static void TestB9_CreateEmptyScene_IsActivatedTrueOnReturn();
+
+	// D.11 / D.12 — atomic swap preserves the old scene on failure AND when
+	// SetActivationAllowed(false) is requested on SINGLE mode.
+	static void TestD12_LoadSceneSingle_InvalidBody_PreservesOldScene();
+	static void TestD11_LoadSceneAsyncSingle_ActivationPaused_KeepsOldSceneLive();
+	static void TestD11_LoadSceneAsyncSingle_ActivationResumed_AtomicSwap();
+
+	// D.13 — IsLoadingScene() returns false inside SceneLoaded handlers.
+	static void TestD13_IsLoadingSceneFalseInsideSceneLoadedSingle();
+	static void TestD13_IsLoadingSceneFalseInsideSceneLoadedAsync();
+
+	// E.15 — cancelled async load that reached Phase 1 fires paired
+	// SceneUnloading+SceneUnloaded callbacks.
+	static void TestE15_CancelAfterPhase1_FiresSceneUnloadingAndUnloaded();
+
+	// E.16 — unload ops always report INVALID_SCENE as their result scene.
+	static void TestE16_UnloadSceneAsync_ResultSceneIsInvalid();
+
+	// E.18 — RenameScene updates the name cache atomically.
+	static void TestE18_RenameScene_UpdatesNameCache();
+	static void TestE18_RenameScene_RejectsPersistent();
+
+	// E.20 — snapshot iteration in Update() is stable across phases.
+	// Covered indirectly by all Update-pumping tests; explicit check that
+	// DispatchPendingStarts/Update see the same scene set as FixedUpdate.
+	static void TestE20_UpdateSnapshot_StableAcrossPhases();
 };

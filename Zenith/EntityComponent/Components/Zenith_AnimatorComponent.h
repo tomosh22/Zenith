@@ -85,6 +85,16 @@ private:
 	void UpdateWorldMatrix();
 	void SyncModelInstanceAnimation();
 
+#ifdef ZENITH_TOOLS
+	void RenderStatusAndStateInfoSection();
+	void RenderAnimationClipsSection();
+	void RenderPlaybackControlsSection();
+	void RenderParametersSection();
+	void RenderStateMachineSection();
+	void RenderLayersSection();
+	void RenderUpdateModeSection();
+#endif
+
 	Zenith_Entity m_xParentEntity;
 	Flux_AnimationController m_xController;
 	Zenith_ModelComponent* m_pxCachedModelComponent = nullptr;

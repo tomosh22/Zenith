@@ -75,8 +75,50 @@ Zenith_EntityID PhysicsTestBehaviour::s_xLastCollisionExitOther;
 // Helper Functions
 //==============================================================================
 
+// ResetPhysicsState — called at the top of every physics test to guarantee a
+// pristine Jolt world. Previously only reset the timestep accumulator, which
+// was not enough: prior-test static bodies (e.g. the box at (0,5,0) from
+// TestStaticBodyDoesNotFall) could persist into the next test and silently
+// collide with the new test's dynamic body. The canonical failure mode was
+// TestAddImpulseInstantVelocityChange: impulse sphere launched upward from
+// (0,0,0) at v=10 would clip the leftover static box around Y=5, decelerate,
+// and land at Y=7.13 instead of ~10.
+//
+// A full Physics::Reset() tears down and rebuilds the Jolt PhysicsSystem, which
+// implicitly removes every body regardless of whether ColliderComponent
+// destructors ran correctly. Tests that create new colliders AFTER this call
+// pick up fresh bodies in the fresh world, so scene state is still consistent.
+//
+// Safety: this must only be called from tests where no ColliderComponent is
+// currently alive across the reset. All physics tests call this at the top,
+// right after CreateEmptyScene and BEFORE creating any colliders, so the
+// invariant holds. Game code must never call this mid-session — it would
+// leave live ColliderComponents with stale (invalid) Jolt BodyIDs.
+//
+// The assertion below enforces that precondition at runtime. Today the function
+// is file-static so only this translation unit can reach it, but promoting it
+// (or copy-pasting the pattern into a new test file) without the check would
+// silently corrupt every live collider. Querying all loaded scenes for existing
+// colliders is cheap — tests run a handful of scenes with <50 entities — and
+// gives a concrete error message pointing at the failure instead of a mystery
+// Jolt assertion when the next frame touches a stale BodyID.
 static void ResetPhysicsState()
 {
+	// Precondition: no live ColliderComponent anywhere in the engine. See the long
+	// block-comment above for why — tearing down the Jolt system with live colliders
+	// leaves stale BodyIDs that trip asserts on next access. The assertion includes
+	// the live count so a trip points straight at the failing test.
+	Zenith_Vector<Zenith_ColliderComponent*> axLiveColliders;
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ColliderComponent>(axLiveColliders);
+	Zenith_Assert(axLiveColliders.GetSize() == 0,
+		"ResetPhysicsState: %u live ColliderComponent(s) detected across all loaded scenes. "
+		"Tearing down the Jolt PhysicsSystem now would leave every one of them with a stale "
+		"BodyID and trip a Jolt assertion on next dtor or method call. Destroy or unload any "
+		"collider-bearing scenes BEFORE calling this helper — the convention is to call it "
+		"after CreateEmptyScene and before AddCollider.",
+		axLiveColliders.GetSize());
+
+	Zenith_Physics::Reset();
 	Zenith_Physics::s_fTimestepAccumulator = 0;
 }
 
@@ -202,6 +244,20 @@ void Zenith_PhysicsTests::RunAllTests()
 	// Cat 11: Gravity Toggle + Impulse Launch
 	TestGravityOffThenImpulseLaunch();
 
+	// Post-suite recovery: physics tests now use UnloadSceneForced to keep scene
+	// slots clean (was UnloadScene, which silently refused to unload the last
+	// non-persistent scene and leaked a test scene per test). The downside is the
+	// engine exits physics tests with no active non-persistent scene, and
+	// downstream suites (EditorTests::TestTransformRoundTrip etc.) assume
+	// GetActiveScene() returns something valid for "create an entity here" tests.
+	// Create a placeholder empty scene to restore the invariant. The subsequent
+	// suites will load / replace it as needed.
+	if (!Zenith_SceneManager::GetActiveScene().IsValid())
+	{
+		Zenith_Scene xFallback = Zenith_SceneManager::CreateEmptyScene("PostPhysicsTestsFallback");
+		Zenith_SceneManager::SetActiveScene(xFallback);
+	}
+
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "=== Physics Tests Complete ===");
 }
 
@@ -226,7 +282,7 @@ void Zenith_PhysicsTests::TestDynamicBodyFallsUnderGravity()
 	Zenith_Assert(xPos.y < 6.0f, "TestDynamicBodyFallsUnderGravity: Sphere should have fallen below Y=6 (got %f)", xPos.y);
 	Zenith_Assert(xPos.y > 4.0f, "TestDynamicBodyFallsUnderGravity: Sphere should not be below Y=4 after 1s (got %f)", xPos.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDynamicBodyFallsUnderGravity PASSED");
 }
 
@@ -246,7 +302,7 @@ void Zenith_PhysicsTests::TestStaticBodyDoesNotFall()
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	Zenith_Assert(ApproxEqual(xPos.y, 5.0f), "TestStaticBodyDoesNotFall: Static body should remain at Y=5 (got %f)", xPos.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStaticBodyDoesNotFall PASSED");
 }
 
@@ -266,7 +322,7 @@ void Zenith_PhysicsTests::TestGravityDisabledBodyStaysStill()
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	Zenith_Assert(ApproxEqual(xPos.y, 10.0f), "TestGravityDisabledBodyStaysStill: Body should remain at Y=10 (got %f)", xPos.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGravityDisabledBodyStaysStill PASSED");
 }
 
@@ -291,7 +347,7 @@ void Zenith_PhysicsTests::TestGravityReenabledBodyFalls()
 	Zenith_Maths::Vector3 xPosAfter = GetBodyPosition(xCollider);
 	Zenith_Assert(xPosAfter.y < 10.0f, "TestGravityReenabledBodyFalls: Body should have fallen after re-enabling gravity (got %f)", xPosAfter.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGravityReenabledBodyFalls PASSED");
 }
 
@@ -317,7 +373,7 @@ void Zenith_PhysicsTests::TestSetLinearVelocity()
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	Zenith_Assert(xPos.x > 4.5f && xPos.x < 5.5f, "TestSetLinearVelocity: Expected X~5.0, got %f", xPos.x);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSetLinearVelocity PASSED");
 }
 
@@ -339,7 +395,7 @@ void Zenith_PhysicsTests::TestGetLinearVelocityMatchesSet()
 	Zenith_Assert(ApproxEqual(xVel.y, 4.0f), "TestGetLinearVelocityMatchesSet: Expected vy=4, got %f", xVel.y);
 	Zenith_Assert(ApproxEqual(xVel.z, 5.0f), "TestGetLinearVelocityMatchesSet: Expected vz=5, got %f", xVel.z);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetLinearVelocityMatchesSet PASSED");
 }
 
@@ -360,7 +416,7 @@ void Zenith_PhysicsTests::TestSetAngularVelocity()
 	Zenith_Maths::Vector3 xAngVel = Zenith_Physics::GetAngularVelocity(xCollider.GetBodyID());
 	Zenith_Assert(std::abs(xAngVel.y) > 0.1f, "TestSetAngularVelocity: Angular velocity Y should be non-zero (got %f)", xAngVel.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSetAngularVelocity PASSED");
 }
 
@@ -382,7 +438,7 @@ void Zenith_PhysicsTests::TestGetAngularVelocityMatchesSet()
 	Zenith_Assert(ApproxEqual(xAngVel.y, 2.0f, 0.1f), "TestGetAngularVelocityMatchesSet: Expected wy=2, got %f", xAngVel.y);
 	Zenith_Assert(ApproxEqual(xAngVel.z, 3.0f, 0.1f), "TestGetAngularVelocityMatchesSet: Expected wz=3, got %f", xAngVel.z);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetAngularVelocityMatchesSet PASSED");
 }
 
@@ -406,7 +462,7 @@ void Zenith_PhysicsTests::TestZeroVelocityNoMovement()
 	Zenith_Assert(ApproxEqual(xPos.y, 5.0f), "TestZeroVelocityNoMovement: Y should remain 5 (got %f)", xPos.y);
 	Zenith_Assert(ApproxEqual(xPos.z, 5.0f), "TestZeroVelocityNoMovement: Z should remain 5 (got %f)", xPos.z);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestZeroVelocityNoMovement PASSED");
 }
 
@@ -438,7 +494,7 @@ void Zenith_PhysicsTests::TestAddForceAcceleratesBody()
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	Zenith_Assert(xPos.x > 0.0f, "TestAddForceAcceleratesBody: X position should have increased (got %f)", xPos.x);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAddForceAcceleratesBody PASSED");
 }
 
@@ -463,7 +519,7 @@ void Zenith_PhysicsTests::TestAddImpulseInstantVelocityChange()
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	Zenith_Assert(xPos.y > 9.0f, "TestAddImpulseInstantVelocityChange: Body should have moved upward (got Y=%f)", xPos.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAddImpulseInstantVelocityChange PASSED");
 }
 
@@ -501,7 +557,7 @@ void Zenith_PhysicsTests::TestForceAccumulatesOverFrames()
 	// Body B had force applied for twice as long, so velocity should be roughly double
 	Zenith_Assert(xVelB.x > xVelA.x * 1.5f, "TestForceAccumulatesOverFrames: 60-frame body should be faster than 30-frame body (A=%f, B=%f)", xVelA.x, xVelB.x);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestForceAccumulatesOverFrames PASSED");
 }
 
@@ -522,7 +578,7 @@ void Zenith_PhysicsTests::TestImpulseOnStaticBodyNoEffect()
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	Zenith_Assert(ApproxEqual(xPos.y, 5.0f), "TestImpulseOnStaticBodyNoEffect: Static body should remain at Y=5 (got %f)", xPos.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestImpulseOnStaticBodyNoEffect PASSED");
 }
 
@@ -554,7 +610,7 @@ void Zenith_PhysicsTests::TestDynamicHitsStaticFloor()
 	Zenith_Assert(xPos.y > 0.0f, "TestDynamicHitsStaticFloor: Sphere should be above the floor (got Y=%f)", xPos.y);
 	Zenith_Assert(xPos.y < 3.0f, "TestDynamicHitsStaticFloor: Sphere should have fallen near the floor (got Y=%f)", xPos.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDynamicHitsStaticFloor PASSED");
 }
 
@@ -589,7 +645,7 @@ void Zenith_PhysicsTests::TestTwoDynamicBodiesCollide()
 	Zenith_Assert(xPosA.x < 4.0f, "TestTwoDynamicBodiesCollide: SphereA should not have passed through (X=%f)", xPosA.x);
 	Zenith_Assert(xPosB.x > -4.0f, "TestTwoDynamicBodiesCollide: SphereB should not have passed through (X=%f)", xPosB.x);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTwoDynamicBodiesCollide PASSED");
 }
 
@@ -610,7 +666,7 @@ void Zenith_PhysicsTests::TestStaticStaticNoCollision()
 	// If this doesn't crash, the test passes
 	StepPhysics(10);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStaticStaticNoCollision PASSED");
 }
 
@@ -638,7 +694,7 @@ void Zenith_PhysicsTests::TestSphereOnBoxCollision()
 	Zenith_Assert(xPos.y > 0.2f, "TestSphereOnBoxCollision: Sphere should be above floor surface (got Y=%f)", xPos.y);
 	Zenith_Assert(xPos.y < 2.0f, "TestSphereOnBoxCollision: Sphere should have settled near floor (got Y=%f)", xPos.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSphereOnBoxCollision PASSED");
 }
 
@@ -671,7 +727,7 @@ void Zenith_PhysicsTests::TestCollisionEnterCallback()
 		"TestCollisionEnterCallback: Expected collision enter count > 0, got %u",
 		PhysicsTestBehaviour::s_uCollisionEnterCount);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCollisionEnterCallback PASSED");
 }
 
@@ -700,7 +756,7 @@ void Zenith_PhysicsTests::TestCollisionStayCallback()
 		"TestCollisionStayCallback: Expected collision stay count > 0, got %u",
 		PhysicsTestBehaviour::s_uCollisionStayCount);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCollisionStayCallback PASSED");
 }
 
@@ -737,7 +793,7 @@ void Zenith_PhysicsTests::TestCollisionExitCallback()
 		"TestCollisionExitCallback: Expected collision exit count > 0, got %u",
 		PhysicsTestBehaviour::s_uCollisionExitCount);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCollisionExitCallback PASSED");
 }
 
@@ -766,7 +822,7 @@ void Zenith_PhysicsTests::TestCollisionEventBothEntitiesReceive()
 		"TestCollisionEventBothEntitiesReceive: Expected collision enter count >= 2 (got %u)",
 		PhysicsTestBehaviour::s_uCollisionEnterCount);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCollisionEventBothEntitiesReceive PASSED");
 }
 
@@ -793,7 +849,7 @@ void Zenith_PhysicsTests::TestRaycastHitsSphere()
 
 	Zenith_Assert(xResult.m_bHit, "TestRaycastHitsSphere: Raycast should have hit the sphere");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRaycastHitsSphere PASSED");
 }
 
@@ -812,7 +868,7 @@ void Zenith_PhysicsTests::TestRaycastMissesNoBody()
 
 	Zenith_Assert(!xResult.m_bHit, "TestRaycastMissesNoBody: Raycast should not hit anything in empty scene");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRaycastMissesNoBody PASSED");
 }
 
@@ -839,7 +895,7 @@ void Zenith_PhysicsTests::TestRaycastReturnsHitPoint()
 	Zenith_Assert(xResult.m_fDistance > 8.0f && xResult.m_fDistance < 10.0f,
 		"TestRaycastReturnsHitPoint: Distance should be ~9 (got %f)", xResult.m_fDistance);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRaycastReturnsHitPoint PASSED");
 }
 
@@ -864,7 +920,7 @@ void Zenith_PhysicsTests::TestRaycastReturnsHitEntity()
 	Zenith_Assert(xResult.m_xHitEntity == xExpectedID,
 		"TestRaycastReturnsHitEntity: Hit entity ID should match target");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRaycastReturnsHitEntity PASSED");
 }
 
@@ -894,7 +950,7 @@ void Zenith_PhysicsTests::TestRaycastMaxDistanceRespected()
 		25.0f);
 	Zenith_Assert(xLongResult.m_bHit, "TestRaycastMaxDistanceRespected: Long ray should hit");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRaycastMaxDistanceRespected PASSED");
 }
 
@@ -922,7 +978,7 @@ void Zenith_PhysicsTests::TestLockRotationPreventsAngularVelocity()
 	float fTotalAngVel = std::abs(xAngVel.x) + std::abs(xAngVel.y) + std::abs(xAngVel.z);
 	Zenith_Assert(fTotalAngVel < 1.0f, "TestLockRotationPreventsAngularVelocity: Angular velocity should be near zero (got total=%f)", fTotalAngVel);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLockRotationPreventsAngularVelocity PASSED");
 }
 
@@ -938,7 +994,7 @@ void Zenith_PhysicsTests::TestColliderHasValidBodyAfterAdd()
 	Zenith_Assert(xCollider.HasValidBody(), "TestColliderHasValidBodyAfterAdd: Collider should have valid body");
 	Zenith_Assert(!xCollider.GetBodyID().IsInvalid(), "TestColliderHasValidBodyAfterAdd: Body ID should not be invalid");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestColliderHasValidBodyAfterAdd PASSED");
 }
 
@@ -956,7 +1012,7 @@ void Zenith_PhysicsTests::TestColliderBodyIDMatchesJolt()
 	bool bIsAdded = xBI.IsAdded(xCollider.GetBodyID());
 	Zenith_Assert(bIsAdded, "TestColliderBodyIDMatchesJolt: Body should be added to Jolt physics system");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestColliderBodyIDMatchesJolt PASSED");
 }
 
@@ -979,7 +1035,7 @@ void Zenith_PhysicsTests::TestRebuildColliderPreservesVelocity()
 	Zenith_Maths::Vector3 xVelAfter = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
 	Zenith_Assert(ApproxEqual(xVelAfter.x, 5.0f, 0.5f), "TestRebuildColliderPreservesVelocity: Velocity X should be preserved (~5, got %f)", xVelAfter.x);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRebuildColliderPreservesVelocity PASSED");
 }
 
@@ -999,7 +1055,7 @@ void Zenith_PhysicsTests::TestAABBColliderCreation()
 	Zenith_Assert(xCollider.HasValidBody(), "TestAABBColliderCreation: AABB collider should have valid body");
 	Zenith_Assert(xCollider.GetRigidBodyType() == RIGIDBODY_TYPE_DYNAMIC, "TestAABBColliderCreation: Should be dynamic");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAABBColliderCreation PASSED");
 }
 
@@ -1014,7 +1070,7 @@ void Zenith_PhysicsTests::TestSphereColliderCreation()
 
 	Zenith_Assert(xCollider.HasValidBody(), "TestSphereColliderCreation: Sphere collider should have valid body");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSphereColliderCreation PASSED");
 }
 
@@ -1029,7 +1085,7 @@ void Zenith_PhysicsTests::TestCapsuleColliderCreation()
 
 	Zenith_Assert(xCollider.HasValidBody(), "TestCapsuleColliderCreation: Capsule collider should have valid body");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCapsuleColliderCreation PASSED");
 }
 
@@ -1044,7 +1100,7 @@ void Zenith_PhysicsTests::TestCapsuleExplicitDimensions()
 
 	Zenith_Assert(xCollider.HasValidBody(), "TestCapsuleExplicitDimensions: Explicit capsule should have valid body");
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCapsuleExplicitDimensions PASSED");
 }
 
@@ -1072,7 +1128,7 @@ void Zenith_PhysicsTests::TestFixedTimestepOneStep()
 	Zenith_Assert(xPos.y < 10.0f, "TestFixedTimestepOneStep: Body should have moved slightly (got %f)", xPos.y);
 	Zenith_Assert(xPos.y > 9.9f, "TestFixedTimestepOneStep: Body should not have moved much in 1 step (got %f)", xPos.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFixedTimestepOneStep PASSED");
 }
 
@@ -1099,7 +1155,7 @@ void Zenith_PhysicsTests::TestAccumulatorDoesNotOverStep()
 	Zenith_Maths::Vector3 xPosAfter = GetBodyPosition(xCollider);
 	Zenith_Assert(xPosAfter.y < 10.0f, "TestAccumulatorDoesNotOverStep: Body should have moved after accumulator crossed threshold (got %f)", xPosAfter.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAccumulatorDoesNotOverStep PASSED");
 }
 
@@ -1115,7 +1171,7 @@ void Zenith_PhysicsTests::TestResetClearsPhysicsState()
 	StepPhysics(10);
 
 	// Unload scene first (destroys collider components which remove bodies)
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 
 	// Reset physics (Shutdown + Initialise)
 	Zenith_Physics::Reset();
@@ -1137,7 +1193,7 @@ void Zenith_PhysicsTests::TestResetClearsPhysicsState()
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider2);
 	Zenith_Assert(xPos.y < 10.0f, "TestResetClearsPhysicsState: New body should simulate after Reset (got Y=%f)", xPos.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene2);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene2);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestResetClearsPhysicsState PASSED");
 }
 
@@ -1161,7 +1217,7 @@ void Zenith_PhysicsTests::TestUnloadSceneDestroysPhysicsBodies()
 	StepPhysics(10);
 
 	// Unload scene - should destroy all bodies without crashing
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 
 	// Verify physics still works with a fresh scene
 	Zenith_Scene xTestScene2 = Zenith_SceneManager::CreateEmptyScene("PhysicsTest_UnloadClean2");
@@ -1177,7 +1233,7 @@ void Zenith_PhysicsTests::TestUnloadSceneDestroysPhysicsBodies()
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	Zenith_Assert(xPos.y < 5.0f, "TestUnloadSceneDestroysPhysicsBodies: Physics should work after unload (got Y=%f)", xPos.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene2);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene2);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUnloadSceneDestroysPhysicsBodies PASSED");
 }
 
@@ -1209,14 +1265,14 @@ void Zenith_PhysicsTests::TestMultipleScenePhysicsIndependence()
 	Zenith_Assert(xPosB.y < 10.0f, "TestMultipleScenePhysicsIndependence: Sphere B should have fallen (Y=%f)", xPosB.y);
 
 	// Unload scene A
-	Zenith_SceneManager::UnloadScene(xSceneA);
+	Zenith_SceneManager::UnloadSceneForced(xSceneA);
 
 	// Scene B's sphere should still work
 	StepPhysics(30);
 	Zenith_Maths::Vector3 xPosBAfter = GetBodyPosition(xColliderB);
 	Zenith_Assert(xPosBAfter.y < xPosB.y, "TestMultipleScenePhysicsIndependence: Sphere B should still fall after A unloaded (before=%f, after=%f)", xPosB.y, xPosBAfter.y);
 
-	Zenith_SceneManager::UnloadScene(xSceneB);
+	Zenith_SceneManager::UnloadSceneForced(xSceneB);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMultipleScenePhysicsIndependence PASSED");
 }
 
@@ -1265,6 +1321,6 @@ void Zenith_PhysicsTests::TestGravityOffThenImpulseLaunch()
 	Zenith_Assert(xPosFallen.y < 5.0f,
 		"TestGravityOffThenImpulseLaunch: Ball should fall below Y=5 after gravity takes over (got %f)", xPosFallen.y);
 
-	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGravityOffThenImpulseLaunch PASSED");
 }

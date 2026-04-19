@@ -66,6 +66,9 @@ public:
 
 private:
 	void ClampScrollPosition();
+	void GetTransformedMousePosition(float& fMouseX, float& fMouseY) const;
+	void HandleDragInput(float fMouseX, float fMouseY, bool bInside, float fDt);
+	void UpdateInertia(float fDt);
 
 	Zenith_Maths::Vector2 m_xContentSize = {0.f, 0.f};
 	Zenith_Maths::Vector2 m_xScrollPosition = {0.f, 0.f};

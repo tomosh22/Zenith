@@ -77,11 +77,8 @@ void Zenith_UIToggle::SetIsOn(bool bOn)
 	}
 }
 
-void Zenith_UIToggle::Update(float fDt)
+void Zenith_UIToggle::ResetInteractionStateForEditor()
 {
-	if (!m_bVisible)
-		return;
-
 #ifdef ZENITH_TOOLS
 	if (Zenith_Editor::GetEditorMode() == EditorMode::Stopped
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -94,14 +91,15 @@ void Zenith_UIToggle::Update(float fDt)
 		m_bMouseDownLastFrame = false;
 	}
 #endif
+}
 
-	bool bInteractable = IsGroupInteractable();
-
+void Zenith_UIToggle::GetInteractionMousePosition(float& fOutMouseX, float& fOutMouseY) const
+{
 	Zenith_Maths::Vector2_64 xMousePos;
 	Zenith_Input::GetMousePosition(xMousePos);
 
-	float fMouseX = static_cast<float>(xMousePos.x);
-	float fMouseY = static_cast<float>(xMousePos.y);
+	fOutMouseX = static_cast<float>(xMousePos.x);
+	fOutMouseY = static_cast<float>(xMousePos.y);
 #ifdef ZENITH_TOOLS
 #ifdef ZENITH_INPUT_SIMULATOR
 	if (!Zenith_InputSimulator::IsEnabled())
@@ -112,55 +110,64 @@ void Zenith_UIToggle::Update(float fDt)
 		if (xViewportSize.x > 0.f && xViewportSize.y > 0.f && m_pxCanvas)
 		{
 			Zenith_Maths::Vector2 xCanvasSize = m_pxCanvas->GetSize();
-			fMouseX = (fMouseX - xViewportPos.x) * (xCanvasSize.x / xViewportSize.x);
-			fMouseY = (fMouseY - xViewportPos.y) * (xCanvasSize.y / xViewportSize.y);
+			fOutMouseX = (fOutMouseX - xViewportPos.x) * (xCanvasSize.x / xViewportSize.x);
+			fOutMouseY = (fOutMouseY - xViewportPos.y) * (xCanvasSize.y / xViewportSize.y);
 		}
 	}
 #endif
+}
 
+bool Zenith_UIToggle::ComputeHovered(bool bInteractable, float fMouseX, float fMouseY) const
+{
 	Zenith_Maths::Vector4 xBounds = GetScreenBounds();
-	bool bHovered = bInteractable
+	return bInteractable
 		&& fMouseX >= xBounds.x
 		&& fMouseX <= xBounds.z
 		&& fMouseY >= xBounds.y
 		&& fMouseY <= xBounds.w;
+}
 
-	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-
-	if (bInteractable)
+void Zenith_UIToggle::FireValueChangedCallback()
+{
+	if (m_pfnOnValueChanged)
 	{
-		if (bMouseDown && !m_bMouseDownLastFrame && bHovered)
-		{
-			m_bMousePressedInside = true;
-		}
-		if (!bMouseDown)
-		{
-			if (m_bMouseDownLastFrame && m_bMousePressedInside && bHovered)
-			{
-				// Toggle state
-				m_bIsOn = !m_bIsOn;
-				if (m_pfnOnValueChanged)
-				{
-					m_pfnOnValueChanged(m_bIsOn, m_pxUserData);
-				}
-			}
-			m_bMousePressedInside = false;
-		}
-		m_bMouseDownLastFrame = bMouseDown;
-
-		bool bActivated = m_bFocused
-			&& (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
-				|| Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
-		if (bActivated)
-		{
-			m_bIsOn = !m_bIsOn;
-			if (m_pfnOnValueChanged)
-			{
-				m_pfnOnValueChanged(m_bIsOn, m_pxUserData);
-			}
-		}
+		m_pfnOnValueChanged(m_bIsOn, m_pxUserData);
 	}
+}
 
+void Zenith_UIToggle::HandleMouseInteraction(bool bHovered, bool bMouseDown)
+{
+	if (bMouseDown && !m_bMouseDownLastFrame && bHovered)
+	{
+		m_bMousePressedInside = true;
+	}
+	if (!bMouseDown)
+	{
+		if (m_bMouseDownLastFrame && m_bMousePressedInside && bHovered)
+		{
+			// Toggle state
+			m_bIsOn = !m_bIsOn;
+			FireValueChangedCallback();
+		}
+		m_bMousePressedInside = false;
+	}
+	m_bMouseDownLastFrame = bMouseDown;
+}
+
+void Zenith_UIToggle::HandleKeyboardActivation()
+{
+	bool bActivated = m_bFocused
+		&& (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
+			|| Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
+	if (bActivated)
+	{
+		m_bIsOn = !m_bIsOn;
+		FireValueChangedCallback();
+	}
+}
+
+void Zenith_UIToggle::UpdateVisualFromState(float fDt)
+{
 	// Lerp toward target style based on on/off state
 	const UIStyle& xTargetStyle = m_bIsOn ? m_xOnStyle : m_xOffStyle;
 
@@ -174,6 +181,31 @@ void Zenith_UIToggle::Update(float fDt)
 	{
 		m_xCurrentStyle = xTargetStyle;
 	}
+}
+
+void Zenith_UIToggle::Update(float fDt)
+{
+	if (!m_bVisible)
+		return;
+
+	ResetInteractionStateForEditor();
+
+	bool bInteractable = IsGroupInteractable();
+
+	float fMouseX;
+	float fMouseY;
+	GetInteractionMousePosition(fMouseX, fMouseY);
+
+	bool bHovered = ComputeHovered(bInteractable, fMouseX, fMouseY);
+	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+
+	if (bInteractable)
+	{
+		HandleMouseInteraction(bHovered, bMouseDown);
+		HandleKeyboardActivation();
+	}
+
+	UpdateVisualFromState(fDt);
 
 	Zenith_UIElement::Update(fDt);
 }

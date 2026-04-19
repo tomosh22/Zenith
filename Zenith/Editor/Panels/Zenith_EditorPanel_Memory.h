@@ -3,6 +3,10 @@
 #ifdef ZENITH_TOOLS
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
 
+#include <vector>
+
+struct Zenith_AllocationRecord;
+
 //=============================================================================
 // Memory Debug Panel
 //
@@ -17,6 +21,29 @@ namespace Zenith_EditorPanelMemory
 	// Show/hide the panel
 	void SetVisible(bool bVisible);
 	bool IsVisible();
+
+	//-------------------------------------------------------------------------
+	// Private helpers for the Allocation tab. Declared here so the dispatcher
+	// (RenderAllocationTab) can delegate to focused per-section functions
+	// instead of carrying the entire tab's logic inline.
+	//-------------------------------------------------------------------------
+	namespace Private
+	{
+		// Draws the filter text input and Clear button.
+		void RenderAllocationFilters();
+
+		// Collects live allocation records from the tracker, applies the
+		// current filter text, and sorts them according to the active sort
+		// column / direction. Output is written into axRecords.
+		void CollectAndSortAllocations(std::vector<const Zenith_AllocationRecord*>& axRecords);
+
+		// Renders the scrollable allocation table, handling sort-spec changes
+		// and row selection.
+		void RenderAllocationTable(const std::vector<const Zenith_AllocationRecord*>& axRecords);
+
+		// If a row is selected, renders the callstack for that allocation.
+		void RenderAllocationCallstack(const std::vector<const Zenith_AllocationRecord*>& axRecords);
+	}
 }
 
 #endif // ZENITH_MEMORY_MANAGEMENT_ENABLED

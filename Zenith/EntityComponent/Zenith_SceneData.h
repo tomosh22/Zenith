@@ -249,7 +249,22 @@ public:
 
 	Zenith_SceneData();
 	~Zenith_SceneData();
-	void Reset();
+
+	// Destroys every entity + component pool in the scene but leaves scene metadata
+	// (name, path, build index, isLoaded, isActivated, wasLoadedAdditively, unsaved-changes
+	// flag) untouched. This is the correct call for LoadFromFile, which will overwrite
+	// the metadata as part of deserialisation.
+	void ResetEntitiesOnly();
+
+	// Full reset: entity teardown PLUS metadata cleared — name/path emptied, build index
+	// reset to -1, flags cleared. The scene becomes indistinguishable from a freshly
+	// constructed Zenith_SceneData. Used by the destructor and by callers that want
+	// the "make this scene feel brand new" semantics.
+	void ResetAll();
+
+	// Back-compat alias for existing call sites that predate the split. Same behaviour
+	// as ResetAll. Prefer the explicit names above for new code.
+	void Reset() { ResetAll(); }
 
 	//==========================================================================
 	// Read-Only Scene Properties

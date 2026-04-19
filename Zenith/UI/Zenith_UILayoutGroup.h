@@ -77,6 +77,39 @@ public:
 private:
 	void RecalculateLayout();
 
+	// Internal layout phases, extracted from RecalculateLayout to keep each step focused.
+
+	// Flatten ChildAlignment (9-value enum) into independent row/col selectors.
+	struct AlignmentAxes
+	{
+		uint32_t m_uRow; // 0=Upper, 1=Middle, 2=Lower
+		uint32_t m_uCol; // 0=Left,  1=Center, 2=Right
+	};
+
+	// Shared state used by PlaceChild; filled in by the outer RecalculateLayout and
+	// mutated for the running cursor. Struct exists only to keep PlaceChild's
+	// signature manageable (lots of geometry bundled as one parameter).
+	struct PlacementContext
+	{
+		float m_fAvailableCross;
+		float m_fExpandedPrimarySize;
+		float m_fCrossPad;
+		float m_fCursor;           // advances as children are placed
+		uint32_t m_uCrossAlign;
+		bool m_bForceExpandPrimary;
+		bool m_bForceExpandCross;
+	};
+
+	static AlignmentAxes DecodeAlignment(ChildAlignment eAlignment);
+
+	void RecalculateDirtyChildLayouts();
+	void WrapTextChildrenToCrossSize(float fPadLeft, float fPadTop, float fPadRight, float fPadBottom);
+	void MeasureChildren(float& fOutTotalPrimary, float& fOutMaxCross, uint32_t& uOutVisibleCount) const;
+	void FitContainerToContent(float fTotalPrimary, float fMaxCross,
+		float fPadLeft, float fPadTop, float fPadRight, float fPadBottom);
+	void PlaceChild(uint32_t uIndex, PlacementContext& xCtx);
+	void ApplyForceExpandCross(float fAvailableCross);
+
 	LayoutDirection m_eDirection = LayoutDirection::Horizontal;
 	ChildAlignment m_eChildAlignment = ChildAlignment::MiddleCenter;
 	Zenith_Maths::Vector4 m_xPadding = { 0.f, 0.f, 0.f, 0.f };  // left, top, right, bottom

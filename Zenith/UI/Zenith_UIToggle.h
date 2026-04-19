@@ -82,6 +82,16 @@ public:
 #endif
 
 private:
+	// ========== Update Helpers ==========
+
+	void ResetInteractionStateForEditor();
+	void GetInteractionMousePosition(float& fOutMouseX, float& fOutMouseY) const;
+	bool ComputeHovered(bool bInteractable, float fMouseX, float fMouseY) const;
+	void HandleMouseInteraction(bool bHovered, bool bMouseDown);
+	void HandleKeyboardActivation();
+	void FireValueChangedCallback();
+	void UpdateVisualFromState(float fDt);
+
 	// Callback
 	UIToggleCallback m_pfnOnValueChanged = nullptr;
 	void* m_pxUserData = nullptr;

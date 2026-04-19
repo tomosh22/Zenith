@@ -55,6 +55,15 @@ bool Zenith_Scene::IsLoaded() const
 	}
 	// Return false if scene is being unloaded or not yet activated (Unity parity:
 	// scene.isLoaded is false until Awake/OnEnable have completed for async loads)
+	//
+	// State transitions:
+	//   - SceneManager::LoadScene(SINGLE/ADDITIVE) sync path: creates with IsActivated=false,
+	//     flips to true AFTER Awake/OnEnable complete, BEFORE SceneLoaded callback.
+	//   - SceneManager::LoadSceneAsync sync path: same progression inside Phase 2.
+	//   - CreateEmptyScene / LoadScene(ADDITIVE_WITHOUT_LOADING): same progression (false
+	//     during construction, flipped to true before any callbacks fire).
+	// Handlers registered with SceneLoadStarted observe IsLoaded==false; handlers
+	// registered with SceneLoaded observe IsLoaded==true.
 	return pxData->IsLoaded() && pxData->IsActivated() && !pxData->IsUnloading();
 }
 

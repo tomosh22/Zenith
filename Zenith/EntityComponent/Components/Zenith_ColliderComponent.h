@@ -186,6 +186,19 @@ public:
 #endif
 	
 private:
+	// Shape factories used by AddCollider. Kept private because they can (and do) mutate
+	// member state — CreateTerrainShape and CreateConvexOrMeshShape allocate
+	// m_pxTerrainMeshData for later cleanup, so they cannot be free functions.
+	//
+	// Returning raw JPH::Shape* (ref count 0 on return) avoids pulling the Jolt
+	// Reference.h template into this header; AddCollider assigns the result into a
+	// JPH::RefConst<JPH::Shape> which takes ownership.
+	JPH::Shape* CreateBoxShape(const Zenith_Maths::Vector3& xScale) const;
+	JPH::Shape* CreateSphereShape(const Zenith_Maths::Vector3& xScale) const;
+	JPH::Shape* CreateCapsuleShape(const Zenith_Maths::Vector3& xScale, float fMinScale) const;
+	JPH::Shape* CreateTerrainShape();
+	JPH::Shape* CreateConvexOrMeshShape(const Zenith_Maths::Vector3& xScale, RigidBodyType eRigidBodyType);
+
 	Zenith_Entity m_xParentEntity;
 	JPH::Body* m_pxRigidBody = nullptr;
 	JPH::BodyID m_xBodyID;

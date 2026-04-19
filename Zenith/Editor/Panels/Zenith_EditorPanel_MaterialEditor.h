@@ -40,6 +40,46 @@ namespace Zenith_EditorPanelMaterialEditor
 	void RenderMaterialTextureSlot(const char* szLabel, Zenith_MaterialAsset* pMaterial,
 		const std::string& strCurrentPath,
 		void (*SetPathFunc)(Zenith_MaterialAsset*, const std::string&));
+
+	//-------------------------------------------------------------------------
+	// Private rendering sections
+	//-------------------------------------------------------------------------
+
+	/**
+	 * Render the top toolbar (Create New / Load Material buttons).
+	 */
+	void RenderToolbarSection();
+
+	/**
+	 * Render the Loaded Materials collapsing list.
+	 */
+	void RenderLoadedMaterialsSection();
+
+	/**
+	 * Render the selected material's header (name field + path / unsaved state).
+	 *
+	 * @param pMat The currently selected material (non-null).
+	 */
+	void RenderMaterialHeaderSection(Zenith_MaterialAsset* pMat);
+
+	/**
+	 * Render the material's editable properties and texture slots.
+	 *
+	 * @param pMat The currently selected material (non-null).
+	 */
+	void RenderPropertiesAndTexturesSection(Zenith_MaterialAsset* pMat);
+
+	/**
+	 * Render the Save / Save As / Reload buttons for the selected material.
+	 *
+	 * @param pMat The currently selected material (non-null).
+	 */
+	void RenderSaveLoadControlsSection(Zenith_MaterialAsset* pMat);
+
+	/**
+	 * Render the "no selection" placeholder text.
+	 */
+	void RenderNoSelectionSection();
 }
 
 #endif // ZENITH_TOOLS

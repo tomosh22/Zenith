@@ -354,21 +354,25 @@ namespace Zenith_EditorPanelMemory
 		}
 	}
 
-	static void RenderAllocationTab()
+	//-------------------------------------------------------------------------
+	// Helper: Filter text input + Clear button.
+	//-------------------------------------------------------------------------
+	void Private::RenderAllocationFilters()
 	{
-		ImGui::Text("Allocation List");
-		ImGui::Separator();
-
-		// Filter
 		ImGui::InputText("Filter", s_acFilterText, sizeof(s_acFilterText));
 		ImGui::SameLine();
 		if (ImGui::Button("Clear"))
 		{
 			s_acFilterText[0] = '\0';
 		}
+	}
 
-		// Collect allocations
-		std::vector<const Zenith_AllocationRecord*> axRecords;
+	//-------------------------------------------------------------------------
+	// Helper: Gather every live allocation from the tracker, drop records that
+	// do not match the filter, then sort by the active column/direction.
+	//-------------------------------------------------------------------------
+	void Private::CollectAndSortAllocations(std::vector<const Zenith_AllocationRecord*>& axRecords)
+	{
 		axRecords.reserve(Zenith_MemoryTracker::GetAllocationCount());
 
 		Zenith_MemoryTracker::ForEachAllocation(
@@ -428,10 +432,14 @@ namespace Zenith_EditorPanelMemory
 				}
 			}
 		);
+	}
 
-		ImGui::Text("%zu allocations", axRecords.size());
-
-		// Table
+	//-------------------------------------------------------------------------
+	// Helper: Render the scrollable allocation table. Syncs sort specs back to
+	// the static state so subsequent frames honour the user's sort choice.
+	//-------------------------------------------------------------------------
+	void Private::RenderAllocationTable(const std::vector<const Zenith_AllocationRecord*>& axRecords)
+	{
 		if (ImGui::BeginTable("AllocationTable", 5,
 			ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
 			ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY |
@@ -507,42 +515,71 @@ namespace Zenith_EditorPanelMemory
 
 			ImGui::EndTable();
 		}
+	}
 
-		// Show callstack for selected allocation
-		if (s_iSelectedAllocationIndex >= 0 && s_iSelectedAllocationIndex < static_cast<int>(axRecords.size()))
+	//-------------------------------------------------------------------------
+	// Helper: Show the symbolicated callstack for the currently selected row,
+	// if any. Falls back to raw addresses when symbolication fails.
+	//-------------------------------------------------------------------------
+	void Private::RenderAllocationCallstack(const std::vector<const Zenith_AllocationRecord*>& axRecords)
+	{
+		if (s_iSelectedAllocationIndex < 0 || s_iSelectedAllocationIndex >= static_cast<int>(axRecords.size()))
 		{
-			const Zenith_AllocationRecord* pRecord = axRecords[s_iSelectedAllocationIndex];
+			return;
+		}
 
-			ImGui::Separator();
-			ImGui::Text("Callstack for allocation #%llu:", pRecord->m_ulAllocationID);
+		const Zenith_AllocationRecord* pRecord = axRecords[s_iSelectedAllocationIndex];
 
-			if (pRecord->m_uCallstackDepth > 0)
+		ImGui::Separator();
+		ImGui::Text("Callstack for allocation #%llu:", pRecord->m_ulAllocationID);
+
+		if (pRecord->m_uCallstackDepth > 0)
+		{
+			for (u_int j = 0; j < pRecord->m_uCallstackDepth; ++j)
 			{
-				for (u_int j = 0; j < pRecord->m_uCallstackDepth; ++j)
+				Zenith_CallstackFrame xFrame;
+				if (Zenith_Callstack::Symbolicate(pRecord->m_apCallstack[j], xFrame))
 				{
-					Zenith_CallstackFrame xFrame;
-					if (Zenith_Callstack::Symbolicate(pRecord->m_apCallstack[j], xFrame))
+					if (xFrame.m_uLine > 0 && xFrame.m_acFile[0] != '\0')
 					{
-						if (xFrame.m_uLine > 0 && xFrame.m_acFile[0] != '\0')
-						{
-							ImGui::Text("  [%u] %s (%s:%u)", j, xFrame.m_acSymbol, xFrame.m_acFile, xFrame.m_uLine);
-						}
-						else
-						{
-							ImGui::Text("  [%u] %s", j, xFrame.m_acSymbol);
-						}
+						ImGui::Text("  [%u] %s (%s:%u)", j, xFrame.m_acSymbol, xFrame.m_acFile, xFrame.m_uLine);
 					}
 					else
 					{
-						ImGui::Text("  [%u] 0x%p", j, pRecord->m_apCallstack[j]);
+						ImGui::Text("  [%u] %s", j, xFrame.m_acSymbol);
 					}
 				}
-			}
-			else
-			{
-				ImGui::TextDisabled("  No callstack available");
+				else
+				{
+					ImGui::Text("  [%u] 0x%p", j, pRecord->m_apCallstack[j]);
+				}
 			}
 		}
+		else
+		{
+			ImGui::TextDisabled("  No callstack available");
+		}
+	}
+
+	//-------------------------------------------------------------------------
+	// RenderAllocationTab - Dispatcher for the Allocations tab. Delegates to
+	// focused per-section helpers so each section owns a single concern
+	// (filters, collection/sort, table, callstack display).
+	//-------------------------------------------------------------------------
+	static void RenderAllocationTab()
+	{
+		ImGui::Text("Allocation List");
+		ImGui::Separator();
+
+		Private::RenderAllocationFilters();
+
+		std::vector<const Zenith_AllocationRecord*> axRecords;
+		Private::CollectAndSortAllocations(axRecords);
+
+		ImGui::Text("%zu allocations", axRecords.size());
+
+		Private::RenderAllocationTable(axRecords);
+		Private::RenderAllocationCallstack(axRecords);
 	}
 
 	static void RenderBudgetTab()

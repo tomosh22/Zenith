@@ -110,7 +110,76 @@ void Zenith_UILayoutGroup::RecalculateLayout()
 {
 	m_bLayoutDirty = false;
 
-	// Force dirty child layout groups to recalculate first so their sizes are up-to-date
+	const float fPadLeft   = m_xPadding.x;
+	const float fPadTop    = m_xPadding.y;
+	const float fPadRight  = m_xPadding.z;
+	const float fPadBottom = m_xPadding.w;
+
+	RecalculateDirtyChildLayouts();
+	WrapTextChildrenToCrossSize(fPadLeft, fPadTop, fPadRight, fPadBottom);
+
+	// Phase 1 — Measure
+	float fTotalPrimary = 0.f;
+	float fMaxCross = 0.f;
+	uint32_t uVisibleCount = 0;
+	MeasureChildren(fTotalPrimary, fMaxCross, uVisibleCount);
+
+	// Phase 2 — Fit container to content (may expand m_xSize)
+	FitContainerToContent(fTotalPrimary, fMaxCross, fPadLeft, fPadTop, fPadRight, fPadBottom);
+
+	// Phase 3 — Position children. Bundle shared placement state in a context struct
+	// so PlaceChild has a sane signature and we can update fCursor as we go.
+	const float fAvailableCross = (m_eDirection == LayoutDirection::Horizontal)
+		? (m_xSize.y - fPadTop - fPadBottom)
+		: (m_xSize.x - fPadLeft - fPadRight);
+
+	const bool bForceExpandPrimary = (m_eDirection == LayoutDirection::Horizontal)
+		? m_bChildForceExpandWidth : m_bChildForceExpandHeight;
+	const bool bForceExpandCross = (m_eDirection == LayoutDirection::Horizontal)
+		? m_bChildForceExpandHeight : m_bChildForceExpandWidth;
+
+	float fExpandedPrimarySize = 0.f;
+	if (bForceExpandPrimary && uVisibleCount > 0 && !m_bFitToContent)
+	{
+		const float fAvailablePrimary = (m_eDirection == LayoutDirection::Horizontal)
+			? (m_xSize.x - fPadLeft - fPadRight)
+			: (m_xSize.y - fPadTop - fPadBottom);
+		const float fSpacingTotal = (uVisibleCount > 1) ? m_fSpacing * (uVisibleCount - 1) : 0.f;
+		fExpandedPrimarySize = (fAvailablePrimary - fSpacingTotal) / uVisibleCount;
+	}
+
+	const AlignmentAxes xAxes = DecodeAlignment(m_eChildAlignment);
+	const uint32_t uCrossAlign = (m_eDirection == LayoutDirection::Horizontal) ? xAxes.m_uRow : xAxes.m_uCol;
+
+	PlacementContext xCtx;
+	xCtx.m_fAvailableCross     = fAvailableCross;
+	xCtx.m_fExpandedPrimarySize = fExpandedPrimarySize;
+	xCtx.m_fCrossPad           = (m_eDirection == LayoutDirection::Horizontal) ? fPadTop : fPadLeft;
+	xCtx.m_fCursor             = (m_eDirection == LayoutDirection::Horizontal) ? fPadLeft : fPadTop;
+	xCtx.m_uCrossAlign         = uCrossAlign;
+	xCtx.m_bForceExpandPrimary = bForceExpandPrimary;
+	xCtx.m_bForceExpandCross   = bForceExpandCross;
+
+	if (m_bReverseArrangement)
+	{
+		for (int32_t i = static_cast<int32_t>(m_xChildren.GetSize()) - 1; i >= 0; --i)
+			PlaceChild(static_cast<uint32_t>(i), xCtx);
+	}
+	else
+	{
+		for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)
+			PlaceChild(i, xCtx);
+	}
+
+	// Phase 4 — Force-expand cross axis (overrides per-child sizes set during placement).
+	if (bForceExpandCross)
+		ApplyForceExpandCross(fAvailableCross);
+}
+
+void Zenith_UILayoutGroup::RecalculateDirtyChildLayouts()
+{
+	// Recurse into dirty child layout groups first so their sizes are up-to-date when
+	// we measure them below.
 	for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)
 	{
 		Zenith_UIElement* pxChild = m_xChildren.Get(i);
@@ -121,38 +190,36 @@ void Zenith_UILayoutGroup::RecalculateLayout()
 				pxChildLayout->RecalculateLayout();
 		}
 	}
+}
 
-	float fPadLeft = m_xPadding.x;
-	float fPadTop = m_xPadding.y;
-	float fPadRight = m_xPadding.z;
-	float fPadBottom = m_xPadding.w;
+void Zenith_UILayoutGroup::WrapTextChildrenToCrossSize(float fPadLeft, float fPadTop, float fPadRight, float fPadBottom)
+{
+	// Only when the group has a fixed size — otherwise there's no authoritative cross
+	// size to wrap against (and Measure will derive one from children instead).
+	if (m_bFitToContent)
+		return;
 
-	// Auto-wrap text children to fit available cross-axis space (only when group has a fixed size)
-	if (!m_bFitToContent)
+	const float fCrossSpace = (m_eDirection == LayoutDirection::Horizontal)
+		? (m_xSize.y - fPadTop - fPadBottom)
+		: (m_xSize.x - fPadLeft - fPadRight);
+	if (fCrossSpace <= 0.f)
+		return;
+
+	for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)
 	{
-		float fCrossSpace;
-		if (m_eDirection == LayoutDirection::Horizontal)
-			fCrossSpace = m_xSize.y - fPadTop - fPadBottom;
-		else
-			fCrossSpace = m_xSize.x - fPadLeft - fPadRight;
-
-		if (fCrossSpace > 0.f)
+		Zenith_UIElement* pxChild = m_xChildren.Get(i);
+		if (pxChild && pxChild->IsVisible() && pxChild->GetType() == UIElementType::Text)
 		{
-			for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)
-			{
-				Zenith_UIElement* pxChild = m_xChildren.Get(i);
-				if (pxChild && pxChild->IsVisible() && pxChild->GetType() == UIElementType::Text)
-				{
-					static_cast<Zenith_UIText*>(pxChild)->SetMaxWidth(fCrossSpace);
-				}
-			}
+			static_cast<Zenith_UIText*>(pxChild)->SetMaxWidth(fCrossSpace);
 		}
 	}
+}
 
-	// Phase 1 — Measure: accumulate primary-axis extent and max cross-axis extent
-	float fTotalPrimary = 0.f;
-	float fMaxCross = 0.f;
-	uint32_t uVisibleCount = 0;
+void Zenith_UILayoutGroup::MeasureChildren(float& fOutTotalPrimary, float& fOutMaxCross, uint32_t& uOutVisibleCount) const
+{
+	fOutTotalPrimary = 0.f;
+	fOutMaxCross = 0.f;
+	uOutVisibleCount = 0;
 
 	for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)
 	{
@@ -160,179 +227,128 @@ void Zenith_UILayoutGroup::RecalculateLayout()
 		if (!pxChild || !pxChild->IsVisible())
 			continue;
 
-		float fPrimary = GetChildPrimarySize(pxChild, m_eDirection);
-		float fCross = GetChildCrossSize(pxChild, m_eDirection);
-
-		fTotalPrimary += fPrimary;
-		if (fCross > fMaxCross)
-			fMaxCross = fCross;
-		uVisibleCount++;
+		fOutTotalPrimary += GetChildPrimarySize(pxChild, m_eDirection);
+		const float fCross = GetChildCrossSize(pxChild, m_eDirection);
+		if (fCross > fOutMaxCross)
+			fOutMaxCross = fCross;
+		uOutVisibleCount++;
 	}
 
-	if (uVisibleCount > 1)
-		fTotalPrimary += m_fSpacing * (uVisibleCount - 1);
+	if (uOutVisibleCount > 1)
+		fOutTotalPrimary += m_fSpacing * (uOutVisibleCount - 1);
+}
 
-	// Phase 2 — Fit container to content
-	if (m_bFitToContent)
-	{
-		if (m_eDirection == LayoutDirection::Horizontal)
-		{
-			m_xSize.x = fTotalPrimary + fPadLeft + fPadRight;
-			m_xSize.y = fMaxCross + fPadTop + fPadBottom;
-		}
-		else
-		{
-			m_xSize.x = fMaxCross + fPadLeft + fPadRight;
-			m_xSize.y = fTotalPrimary + fPadTop + fPadBottom;
-		}
-		m_bTransformDirty = true;
-	}
+void Zenith_UILayoutGroup::FitContainerToContent(float fTotalPrimary, float fMaxCross,
+	float fPadLeft, float fPadTop, float fPadRight, float fPadBottom)
+{
+	if (!m_bFitToContent)
+		return;
 
-	// Calculate available space for cross-axis alignment
-	float fAvailableCross;
 	if (m_eDirection == LayoutDirection::Horizontal)
-		fAvailableCross = m_xSize.y - fPadTop - fPadBottom;
-	else
-		fAvailableCross = m_xSize.x - fPadLeft - fPadRight;
-
-	// Phase 4 — Force expand: calculate expanded sizes if needed
-	bool bForceExpandPrimary = (m_eDirection == LayoutDirection::Horizontal)
-		? m_bChildForceExpandWidth : m_bChildForceExpandHeight;
-
-	float fExpandedPrimarySize = 0.f;
-	if (bForceExpandPrimary && uVisibleCount > 0 && !m_bFitToContent)
 	{
-		float fAvailablePrimary;
-		if (m_eDirection == LayoutDirection::Horizontal)
-			fAvailablePrimary = m_xSize.x - fPadLeft - fPadRight;
-		else
-			fAvailablePrimary = m_xSize.y - fPadTop - fPadBottom;
+		m_xSize.x = fTotalPrimary + fPadLeft + fPadRight;
+		m_xSize.y = fMaxCross + fPadTop + fPadBottom;
+	}
+	else
+	{
+		m_xSize.x = fMaxCross + fPadLeft + fPadRight;
+		m_xSize.y = fTotalPrimary + fPadTop + fPadBottom;
+	}
+	m_bTransformDirty = true;
+}
 
-		float fSpacingTotal = (uVisibleCount > 1) ? m_fSpacing * (uVisibleCount - 1) : 0.f;
-		fExpandedPrimarySize = (fAvailablePrimary - fSpacingTotal) / uVisibleCount;
+Zenith_UILayoutGroup::AlignmentAxes Zenith_UILayoutGroup::DecodeAlignment(ChildAlignment eAlignment)
+{
+	// ChildAlignment is laid out as a 3x3 grid: row * 3 + col where row is
+	// Upper/Middle/Lower (0..2) and col is Left/Center/Right (0..2).
+	const uint32_t uVal = static_cast<uint32_t>(eAlignment);
+	return AlignmentAxes{ uVal / 3, uVal % 3 };
+}
+
+void Zenith_UILayoutGroup::PlaceChild(uint32_t uIndex, PlacementContext& xCtx)
+{
+	Zenith_UIElement* pxChild = m_xChildren.Get(uIndex);
+	if (!pxChild || !pxChild->IsVisible())
+		return;
+
+	float fPrimary = GetChildPrimarySize(pxChild, m_eDirection);
+	float fCross = GetChildCrossSize(pxChild, m_eDirection);
+
+	// Sync text element size to its measured text dimensions so bounds match what's
+	// drawn (prevents overlap with siblings).
+	if (pxChild->GetType() == UIElementType::Text)
+	{
+		Zenith_UIText* pxText = static_cast<Zenith_UIText*>(pxChild);
+		pxText->SetSize(pxText->GetTextWidth(), pxText->GetTextHeight());
 	}
 
-	// Pre-compute force-expand cross flag (needed during placement to avoid double-centering)
-	bool bForceExpandCross = (m_eDirection == LayoutDirection::Horizontal)
-		? m_bChildForceExpandHeight : m_bChildForceExpandWidth;
+	// When force-expanding cross-axis, text elements are expanded to fill the space
+	// and self-center within their bounds. Use the expanded size for alignment here
+	// to avoid double-centering (layout + text alignment both applying).
+	if (xCtx.m_bForceExpandCross && pxChild->GetType() == UIElementType::Text)
+		fCross = xCtx.m_fAvailableCross;
 
-	// Extract alignment components
-	uint32_t uAlignVal = static_cast<uint32_t>(m_eChildAlignment);
-	uint32_t uAlignRow = uAlignVal / 3;  // 0=Upper, 1=Middle, 2=Lower
-	uint32_t uAlignCol = uAlignVal % 3;  // 0=Left, 1=Center, 2=Right
-
-	// For horizontal layout: cross-axis uses row (Upper/Middle/Lower)
-	// For vertical layout: cross-axis uses col (Left/Center/Right)
-	uint32_t uCrossAlign = (m_eDirection == LayoutDirection::Horizontal) ? uAlignRow : uAlignCol;
-
-	// Phase 3 — Position children
-	float fCursor = (m_eDirection == LayoutDirection::Horizontal) ? fPadLeft : fPadTop;
-
-	auto PlaceChild = [&](uint32_t uIndex)
+	if (xCtx.m_bForceExpandPrimary && !m_bFitToContent)
 	{
-		Zenith_UIElement* pxChild = m_xChildren.Get(uIndex);
-		if (!pxChild || !pxChild->IsVisible())
-			return;
+		fPrimary = xCtx.m_fExpandedPrimarySize;
+		if (m_eDirection == LayoutDirection::Horizontal)
+			pxChild->SetSize(fPrimary, pxChild->GetSize().y);
+		else
+			pxChild->SetSize(pxChild->GetSize().x, fPrimary);
+	}
 
-		float fPrimary = GetChildPrimarySize(pxChild, m_eDirection);
-		float fCross = GetChildCrossSize(pxChild, m_eDirection);
+	// Cross-axis offset (Left/Center/Right or Upper/Middle/Lower)
+	float fCrossOffset;
+	switch (xCtx.m_uCrossAlign)
+	{
+	case 0: // Upper / Left
+		fCrossOffset = xCtx.m_fCrossPad;
+		break;
+	case 1: // Middle / Center
+		fCrossOffset = xCtx.m_fCrossPad + (xCtx.m_fAvailableCross - fCross) * 0.5f;
+		break;
+	case 2: // Lower / Right
+	default:
+		fCrossOffset = xCtx.m_fCrossPad + xCtx.m_fAvailableCross - fCross;
+		break;
+	}
 
-		// Sync text element size to match actual text dimensions so element bounds
-		// accurately reflect the space the text occupies (prevents overlap with siblings)
-		if (pxChild->GetType() == UIElementType::Text)
+	// Text glyph correction: SDF atlas glyphs sit below the top of the cell due to
+	// ascender padding, so shift non-text children up to align with the perceived
+	// text baseline. Uses the first visible text sibling's font size as reference.
+	if (pxChild->GetType() != UIElementType::Text)
+	{
+		for (uint32_t s = 0; s < m_xChildren.GetSize(); ++s)
 		{
-			Zenith_UIText* pxText = static_cast<Zenith_UIText*>(pxChild);
-			if (m_eDirection == LayoutDirection::Horizontal)
-				pxText->SetSize(pxText->GetTextWidth(), pxText->GetTextHeight());
-			else
-				pxText->SetSize(pxText->GetTextWidth(), pxText->GetTextHeight());
-		}
-
-		// When force-expanding cross-axis, text elements will be expanded to fill
-		// the available space and self-center within their bounds. Use the expanded
-		// size for alignment to avoid double-centering (layout + text alignment).
-		if (bForceExpandCross && pxChild->GetType() == UIElementType::Text)
-			fCross = fAvailableCross;
-
-		// Force expand: override primary size
-		if (bForceExpandPrimary && !m_bFitToContent)
-		{
-			fPrimary = fExpandedPrimarySize;
-			if (m_eDirection == LayoutDirection::Horizontal)
-				pxChild->SetSize(fPrimary, pxChild->GetSize().y);
-			else
-				pxChild->SetSize(pxChild->GetSize().x, fPrimary);
-		}
-
-		// Calculate cross-axis offset
-		float fCrossOffset;
-		float fCrossPad = (m_eDirection == LayoutDirection::Horizontal) ? fPadTop : fPadLeft;
-		switch (uCrossAlign)
-		{
-		case 0: // Upper / Left
-			fCrossOffset = fCrossPad;
-			break;
-		case 1: // Middle / Center
-			fCrossOffset = fCrossPad + (fAvailableCross - fCross) * 0.5f;
-			break;
-		case 2: // Lower / Right
-		default:
-			fCrossOffset = fCrossPad + fAvailableCross - fCross;
-			break;
-		}
-
-		// Text glyph correction: SDF atlas glyphs sit below the top of the cell
-		// due to ascender padding, so shift non-text children up to match the
-		// perceived text baseline.  Only applies on the cross axis.
-		if (pxChild->GetType() != UIElementType::Text)
-		{
-			// Find the first visible text sibling to derive the correction magnitude
-			for (uint32_t s = 0; s < m_xChildren.GetSize(); ++s)
+			Zenith_UIElement* pxSibling = m_xChildren.Get(s);
+			if (pxSibling && pxSibling->IsVisible() && pxSibling->GetType() == UIElementType::Text)
 			{
-				Zenith_UIElement* pxSibling = m_xChildren.Get(s);
-				if (pxSibling && pxSibling->IsVisible() && pxSibling->GetType() == UIElementType::Text)
-				{
-					Zenith_UIText* pxText = static_cast<Zenith_UIText*>(pxSibling);
-					fCrossOffset -= pxText->GetFontSize() * fFONT_ASCENDER_RATIO;
-					break;
-				}
+				fCrossOffset -= static_cast<Zenith_UIText*>(pxSibling)->GetFontSize() * fFONT_ASCENDER_RATIO;
+				break;
 			}
 		}
-
-		// Set child position
-		if (m_eDirection == LayoutDirection::Horizontal)
-			pxChild->SetPosition(fCursor, fCrossOffset);
-		else
-			pxChild->SetPosition(fCrossOffset, fCursor);
-
-		fCursor += fPrimary + m_fSpacing;
-	};
-
-	if (m_bReverseArrangement)
-	{
-		for (int32_t i = static_cast<int32_t>(m_xChildren.GetSize()) - 1; i >= 0; --i)
-			PlaceChild(static_cast<uint32_t>(i));
 	}
+
+	if (m_eDirection == LayoutDirection::Horizontal)
+		pxChild->SetPosition(xCtx.m_fCursor, fCrossOffset);
 	else
-	{
-		for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)
-			PlaceChild(i);
-	}
+		pxChild->SetPosition(fCrossOffset, xCtx.m_fCursor);
 
-	// Force expand cross-axis: expand all children to fill cross dimension
-	if (bForceExpandCross)
-	{
-		for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)
-		{
-			Zenith_UIElement* pxChild = m_xChildren.Get(i);
-			if (!pxChild || !pxChild->IsVisible())
-				continue;
+	xCtx.m_fCursor += fPrimary + m_fSpacing;
+}
 
-			if (m_eDirection == LayoutDirection::Horizontal)
-				pxChild->SetSize(pxChild->GetSize().x, fAvailableCross);
-			else
-				pxChild->SetSize(fAvailableCross, pxChild->GetSize().y);
-		}
+void Zenith_UILayoutGroup::ApplyForceExpandCross(float fAvailableCross)
+{
+	for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)
+	{
+		Zenith_UIElement* pxChild = m_xChildren.Get(i);
+		if (!pxChild || !pxChild->IsVisible())
+			continue;
+
+		if (m_eDirection == LayoutDirection::Horizontal)
+			pxChild->SetSize(pxChild->GetSize().x, fAvailableCross);
+		else
+			pxChild->SetSize(fAvailableCross, pxChild->GetSize().y);
 	}
 }
 

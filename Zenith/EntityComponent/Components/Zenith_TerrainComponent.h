@@ -192,8 +192,20 @@ public:
 	void LoadCombinedPhysicsGeometry();
 
 #ifdef ZENITH_TOOLS
-	// Editor UI
+	// Editor UI — main entry point; section helpers below.
 	void RenderPropertiesPanel();
+
+private:
+	void RenderTerrainCreationSection();
+	void RenderTerrainRegenerationSection();
+	void RenderTerrainStatisticsSection();
+	void RenderDebugVisualizationSection();
+	void RenderMaterialPalette();
+	void RenderSplatmapSlot();
+
+	// Cleanup helper used by Regenerate to tear down prior GPU / physics / buffer state
+	// before re-exporting. Split out because the 5-step sequence is easy to get wrong.
+	void CleanupPriorGenerationForRegenerate();
 #endif
 
 };

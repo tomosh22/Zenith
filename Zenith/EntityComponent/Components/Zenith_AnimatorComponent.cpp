@@ -355,6 +355,10 @@ void Zenith_AnimatorComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 #include "Editor/Zenith_Editor.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 
+//-----------------------------------------------------------------------------
+// RenderPropertiesPanel - Main editor UI. Delegates to per-section helpers so
+// each section stays focused on its own concern.
+//-----------------------------------------------------------------------------
 void Zenith_AnimatorComponent::RenderPropertiesPanel()
 {
 	if (!ImGui::CollapsingHeader("Animator", ImGuiTreeNodeFlags_DefaultOpen))
@@ -375,6 +379,24 @@ void Zenith_AnimatorComponent::RenderPropertiesPanel()
 		SyncModelInstanceAnimation();
 	}
 
+	RenderStatusAndStateInfoSection();
+
+	ImGui::Separator();
+
+	RenderAnimationClipsSection();
+	RenderPlaybackControlsSection();
+	RenderParametersSection();
+	RenderStateMachineSection();
+	RenderLayersSection();
+	RenderUpdateModeSection();
+}
+
+//-----------------------------------------------------------------------------
+// Status line (initialized / not) and the current-state info shown above the
+// first separator. This block runs unconditionally every panel frame.
+//-----------------------------------------------------------------------------
+void Zenith_AnimatorComponent::RenderStatusAndStateInfoSection()
+{
 	// Status
 	if (m_xController.IsInitialized())
 	{
@@ -397,266 +419,298 @@ void Zenith_AnimatorComponent::RenderPropertiesPanel()
 			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Transitioning (%.0f%%)", xInfo.m_fTransitionProgress * 100.0f);
 		}
 	}
+}
 
-	ImGui::Separator();
+//-----------------------------------------------------------------------------
+// "Animation Clips" tree node: drag-drop target for .zanim files, manual path
+// input + Load button, and a list of every clip already loaded on the
+// controller with a per-clip Play button.
+//-----------------------------------------------------------------------------
+void Zenith_AnimatorComponent::RenderAnimationClipsSection()
+{
+	if (!ImGui::TreeNode("Animation Clips"))
+		return;
 
-	// Animation Clips section
-	if (ImGui::TreeNode("Animation Clips"))
+	// Drag-drop target for .zanim files
+	ImVec2 xDropSize(ImGui::GetContentRegionAvail().x, 30);
+	ImGui::Button("Drop .zanim file here", xDropSize);
+	if (ImGui::BeginDragDropTarget())
 	{
-		// Drag-drop target for .zanim files
-		ImVec2 xDropSize(ImGui::GetContentRegionAvail().x, 30);
-		ImGui::Button("Drop .zanim file here", xDropSize);
-		if (ImGui::BeginDragDropTarget())
+		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_ANIMATION))
 		{
-			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_ANIMATION))
-			{
-				const DragDropFilePayload* pFilePayload =
-					static_cast<const DragDropFilePayload*>(pPayload->Data);
-				Zenith_Log(LOG_CATEGORY_ANIMATION, "Animation dropped: %s", pFilePayload->m_szFilePath);
-				m_xController.AddClipFromFile(pFilePayload->m_szFilePath);
-			}
-			ImGui::EndDragDropTarget();
+			const DragDropFilePayload* pFilePayload =
+				static_cast<const DragDropFilePayload*>(pPayload->Data);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "Animation dropped: %s", pFilePayload->m_szFilePath);
+			m_xController.AddClipFromFile(pFilePayload->m_szFilePath);
 		}
+		ImGui::EndDragDropTarget();
+	}
 
-		// Manual path entry
-		static char s_szAnimPath[512] = "";
-		ImGui::InputText("Path##AnimPath", s_szAnimPath, sizeof(s_szAnimPath));
+	// Manual path entry
+	static char s_szAnimPath[512] = "";
+	ImGui::InputText("Path##AnimPath", s_szAnimPath, sizeof(s_szAnimPath));
+	ImGui::SameLine();
+	if (ImGui::Button("Load##LoadAnim"))
+	{
+		if (strlen(s_szAnimPath) > 0)
+		{
+			m_xController.AddClipFromFile(s_szAnimPath);
+			s_szAnimPath[0] = '\0';
+		}
+	}
+
+	// Loaded clips list
+	const auto& xClips = m_xController.GetClipCollection().GetClips();
+	for (size_t i = 0; i < xClips.size(); ++i)
+	{
+		Flux_AnimationClip* pxClip = xClips[i];
+		if (!pxClip)
+			continue;
+
+		ImGui::PushID(static_cast<int>(i));
+
+		float fDuration = pxClip->GetDuration();
+		ImGui::BulletText("%s (%.2fs)", pxClip->GetName().c_str(), fDuration);
 		ImGui::SameLine();
-		if (ImGui::Button("Load##LoadAnim"))
+		if (ImGui::SmallButton("Play"))
 		{
-			if (strlen(s_szAnimPath) > 0)
-			{
-				m_xController.AddClipFromFile(s_szAnimPath);
-				s_szAnimPath[0] = '\0';
-			}
+			m_xController.PlayClip(pxClip->GetName(), 0.15f);
 		}
 
-		// Loaded clips list
-		const auto& xClips = m_xController.GetClipCollection().GetClips();
-		for (size_t i = 0; i < xClips.size(); ++i)
+		ImGui::PopID();
+	}
+
+	ImGui::TreePop();
+}
+
+//-----------------------------------------------------------------------------
+// "Playback Controls" tree node: paused checkbox, speed slider, Stop button,
+// and a row of CrossFade buttons - one per state in the state machine.
+//-----------------------------------------------------------------------------
+void Zenith_AnimatorComponent::RenderPlaybackControlsSection()
+{
+	if (!ImGui::TreeNode("Playback Controls"))
+		return;
+
+	bool bPaused = m_xController.IsPaused();
+	if (ImGui::Checkbox("Paused", &bPaused))
+	{
+		m_xController.SetPaused(bPaused);
+	}
+
+	float fSpeed = m_xController.GetPlaybackSpeed();
+	if (ImGui::SliderFloat("Speed", &fSpeed, 0.0f, 3.0f))
+	{
+		m_xController.SetPlaybackSpeed(fSpeed);
+	}
+
+	if (ImGui::Button("Stop"))
+	{
+		m_xController.Stop();
+	}
+
+	// CrossFade to state
+	if (m_xController.HasStateMachine())
+	{
+		ImGui::Separator();
+		ImGui::Text("CrossFade:");
+
+		const auto& xStates = m_xController.GetStateMachine().GetStates();
+		for (auto it = xStates.begin(); it != xStates.end(); ++it)
 		{
-			Flux_AnimationClip* pxClip = xClips[i];
-			if (!pxClip)
-				continue;
-
-			ImGui::PushID(static_cast<int>(i));
-
-			float fDuration = pxClip->GetDuration();
-			ImGui::BulletText("%s (%.2fs)", pxClip->GetName().c_str(), fDuration);
 			ImGui::SameLine();
-			if (ImGui::SmallButton("Play"))
+			if (ImGui::SmallButton(it->first.c_str()))
 			{
-				m_xController.PlayClip(pxClip->GetName(), 0.15f);
+				m_xController.CrossFade(it->first, 0.15f);
 			}
-
-			ImGui::PopID();
 		}
-
-		ImGui::TreePop();
 	}
 
-	// Playback Controls section
-	if (ImGui::TreeNode("Playback Controls"))
+	ImGui::TreePop();
+}
+
+//-----------------------------------------------------------------------------
+// "Parameters" tree node: one widget per state machine parameter (float / int
+// / bool / trigger). No-op when the controller has no state machine.
+//-----------------------------------------------------------------------------
+void Zenith_AnimatorComponent::RenderParametersSection()
+{
+	if (!m_xController.HasStateMachine())
+		return;
+
+	if (!ImGui::TreeNode("Parameters"))
+		return;
+
+	Flux_AnimationParameters& xParams = m_xController.GetStateMachine().GetParameters();
+	const auto& xParamMap = xParams.GetParameters();
+
+	for (auto it = xParamMap.begin(); it != xParamMap.end(); ++it)
 	{
-		bool bPaused = m_xController.IsPaused();
-		if (ImGui::Checkbox("Paused", &bPaused))
-		{
-			m_xController.SetPaused(bPaused);
-		}
+		const Flux_AnimationParameters::Parameter& xParam = it->second;
+		ImGui::PushID(it->first.c_str());
 
-		float fSpeed = m_xController.GetPlaybackSpeed();
-		if (ImGui::SliderFloat("Speed", &fSpeed, 0.0f, 3.0f))
+		switch (xParam.m_eType)
 		{
-			m_xController.SetPlaybackSpeed(fSpeed);
-		}
-
-		if (ImGui::Button("Stop"))
+		case Flux_AnimationParameters::ParamType::Float:
 		{
-			m_xController.Stop();
-		}
-
-		// CrossFade to state
-		if (m_xController.HasStateMachine())
-		{
-			ImGui::Separator();
-			ImGui::Text("CrossFade:");
-
-			const auto& xStates = m_xController.GetStateMachine().GetStates();
-			for (auto it = xStates.begin(); it != xStates.end(); ++it)
+			float fVal = xParams.GetFloat(it->first);
+			if (ImGui::DragFloat(it->first.c_str(), &fVal, 0.01f))
 			{
-				ImGui::SameLine();
-				if (ImGui::SmallButton(it->first.c_str()))
-				{
-					m_xController.CrossFade(it->first, 0.15f);
-				}
+				xParams.SetFloat(it->first, fVal);
 			}
+			break;
+		}
+		case Flux_AnimationParameters::ParamType::Int:
+		{
+			int32_t iVal = xParams.GetInt(it->first);
+			if (ImGui::DragInt(it->first.c_str(), &iVal))
+			{
+				xParams.SetInt(it->first, iVal);
+			}
+			break;
+		}
+		case Flux_AnimationParameters::ParamType::Bool:
+		{
+			bool bVal = xParams.GetBool(it->first);
+			if (ImGui::Checkbox(it->first.c_str(), &bVal))
+			{
+				xParams.SetBool(it->first, bVal);
+			}
+			break;
+		}
+		case Flux_AnimationParameters::ParamType::Trigger:
+		{
+			ImGui::Text("%s", it->first.c_str());
+			ImGui::SameLine();
+			if (ImGui::SmallButton("Fire"))
+			{
+				xParams.SetTrigger(it->first);
+			}
+			break;
+		}
 		}
 
-		ImGui::TreePop();
+		ImGui::PopID();
 	}
 
-	// Parameters section
-	if (m_xController.HasStateMachine())
+	ImGui::TreePop();
+}
+
+//-----------------------------------------------------------------------------
+// "State Machine" tree node: list of states with transitions + sub-SM markers,
+// followed by any-state transitions. No-op when the controller has no SM.
+//-----------------------------------------------------------------------------
+void Zenith_AnimatorComponent::RenderStateMachineSection()
+{
+	if (!m_xController.HasStateMachine())
+		return;
+
+	if (!ImGui::TreeNode("State Machine"))
+		return;
+
+	Flux_AnimationStateMachine& xSM = m_xController.GetStateMachine();
+
+	// States list
+	ImGui::Text("States:");
+	const auto& xStates = xSM.GetStates();
+	for (auto it = xStates.begin(); it != xStates.end(); ++it)
 	{
-		if (ImGui::TreeNode("Parameters"))
+		bool bIsCurrent = (xSM.GetCurrentStateName() == it->first);
+		bool bIsDefault = (xSM.GetDefaultStateName() == it->first);
+
+		if (bIsCurrent)
+			ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  > %s%s",
+				it->first.c_str(), bIsDefault ? " [Default]" : "");
+		else
+			ImGui::Text("    %s%s",
+				it->first.c_str(), bIsDefault ? " [Default]" : "");
+
+		// Show transitions for this state
+		const Zenith_Vector<Flux_StateTransition>& xTransitions = it->second->GetTransitions();
+		for (uint32_t t = 0; t < xTransitions.GetSize(); ++t)
 		{
-			Flux_AnimationParameters& xParams = m_xController.GetStateMachine().GetParameters();
-			const auto& xParamMap = xParams.GetParameters();
+			const Flux_StateTransition& xTrans = xTransitions.Get(t);
+			ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "      -> %s (dur: %.2fs, pri: %d)",
+				xTrans.m_strTargetStateName.c_str(), xTrans.m_fTransitionDuration, xTrans.m_iPriority);
+		}
 
-			for (auto it = xParamMap.begin(); it != xParamMap.end(); ++it)
+		// Show sub-state machine
+		if (it->second->IsSubStateMachine())
+		{
+			ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "      [Sub-State Machine]");
+		}
+	}
+
+	// Any-state transitions
+	const Zenith_Vector<Flux_StateTransition>& xAnyState = xSM.GetAnyStateTransitions();
+	if (xAnyState.GetSize() > 0)
+	{
+		ImGui::Separator();
+		ImGui::Text("Any-State Transitions:");
+		for (uint32_t i = 0; i < xAnyState.GetSize(); ++i)
+		{
+			const Flux_StateTransition& xTrans = xAnyState.Get(i);
+			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "  * -> %s (dur: %.2fs, pri: %d)",
+				xTrans.m_strTargetStateName.c_str(), xTrans.m_fTransitionDuration, xTrans.m_iPriority);
+		}
+	}
+
+	ImGui::TreePop();
+}
+
+//-----------------------------------------------------------------------------
+// "Layers" tree node: per-layer weight slider, blend mode combo, avatar mask
+// status. No-op when the controller has no layers.
+//-----------------------------------------------------------------------------
+void Zenith_AnimatorComponent::RenderLayersSection()
+{
+	if (!m_xController.HasLayers())
+		return;
+
+	if (!ImGui::TreeNode("Layers"))
+		return;
+
+	for (uint32_t i = 0; i < m_xController.GetLayerCount(); ++i)
+	{
+		Flux_AnimationLayer* pxLayer = m_xController.GetLayer(i);
+		ImGui::PushID(i);
+
+		if (ImGui::TreeNode("##Layer", "%s (%.0f%%)", pxLayer->GetName().c_str(), pxLayer->GetWeight() * 100.0f))
+		{
+			float fWeight = pxLayer->GetWeight();
+			if (ImGui::SliderFloat("Weight", &fWeight, 0.0f, 1.0f))
 			{
-				const Flux_AnimationParameters::Parameter& xParam = it->second;
-				ImGui::PushID(it->first.c_str());
-
-				switch (xParam.m_eType)
-				{
-				case Flux_AnimationParameters::ParamType::Float:
-				{
-					float fVal = xParams.GetFloat(it->first);
-					if (ImGui::DragFloat(it->first.c_str(), &fVal, 0.01f))
-					{
-						xParams.SetFloat(it->first, fVal);
-					}
-					break;
-				}
-				case Flux_AnimationParameters::ParamType::Int:
-				{
-					int32_t iVal = xParams.GetInt(it->first);
-					if (ImGui::DragInt(it->first.c_str(), &iVal))
-					{
-						xParams.SetInt(it->first, iVal);
-					}
-					break;
-				}
-				case Flux_AnimationParameters::ParamType::Bool:
-				{
-					bool bVal = xParams.GetBool(it->first);
-					if (ImGui::Checkbox(it->first.c_str(), &bVal))
-					{
-						xParams.SetBool(it->first, bVal);
-					}
-					break;
-				}
-				case Flux_AnimationParameters::ParamType::Trigger:
-				{
-					ImGui::Text("%s", it->first.c_str());
-					ImGui::SameLine();
-					if (ImGui::SmallButton("Fire"))
-					{
-						xParams.SetTrigger(it->first);
-					}
-					break;
-				}
-				}
-
-				ImGui::PopID();
+				pxLayer->SetWeight(fWeight);
 			}
+
+			const char* aszBlendModes[] = { "Override", "Additive" };
+			int iBlendMode = static_cast<int>(pxLayer->GetBlendMode());
+			if (ImGui::Combo("Blend Mode", &iBlendMode, aszBlendModes, 2))
+			{
+				pxLayer->SetBlendMode(static_cast<Flux_LayerBlendMode>(iBlendMode));
+			}
+
+			ImGui::Text("Mask: %s", pxLayer->HasAvatarMask() ? "Active" : "None");
 
 			ImGui::TreePop();
 		}
+
+		ImGui::PopID();
 	}
 
-	// State Machine section
-	if (m_xController.HasStateMachine())
+	ImGui::TreePop();
+}
+
+//-----------------------------------------------------------------------------
+// Bottom-of-panel Update Mode combo (Normal / Fixed / Unscaled).
+//-----------------------------------------------------------------------------
+void Zenith_AnimatorComponent::RenderUpdateModeSection()
+{
+	const char* aszUpdateModes[] = { "Normal", "Fixed", "Unscaled" };
+	int iMode = static_cast<int>(m_xController.GetUpdateMode());
+	if (ImGui::Combo("Update Mode", &iMode, aszUpdateModes, 3))
 	{
-		if (ImGui::TreeNode("State Machine"))
-		{
-			Flux_AnimationStateMachine& xSM = m_xController.GetStateMachine();
-
-			// States list
-			ImGui::Text("States:");
-			const auto& xStates = xSM.GetStates();
-			for (auto it = xStates.begin(); it != xStates.end(); ++it)
-			{
-				bool bIsCurrent = (xSM.GetCurrentStateName() == it->first);
-				bool bIsDefault = (xSM.GetDefaultStateName() == it->first);
-
-				if (bIsCurrent)
-					ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "  > %s%s",
-						it->first.c_str(), bIsDefault ? " [Default]" : "");
-				else
-					ImGui::Text("    %s%s",
-						it->first.c_str(), bIsDefault ? " [Default]" : "");
-
-				// Show transitions for this state
-				const Zenith_Vector<Flux_StateTransition>& xTransitions = it->second->GetTransitions();
-				for (uint32_t t = 0; t < xTransitions.GetSize(); ++t)
-				{
-					const Flux_StateTransition& xTrans = xTransitions.Get(t);
-					ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "      -> %s (dur: %.2fs, pri: %d)",
-						xTrans.m_strTargetStateName.c_str(), xTrans.m_fTransitionDuration, xTrans.m_iPriority);
-				}
-
-				// Show sub-state machine
-				if (it->second->IsSubStateMachine())
-				{
-					ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "      [Sub-State Machine]");
-				}
-			}
-
-			// Any-state transitions
-			const Zenith_Vector<Flux_StateTransition>& xAnyState = xSM.GetAnyStateTransitions();
-			if (xAnyState.GetSize() > 0)
-			{
-				ImGui::Separator();
-				ImGui::Text("Any-State Transitions:");
-				for (uint32_t i = 0; i < xAnyState.GetSize(); ++i)
-				{
-					const Flux_StateTransition& xTrans = xAnyState.Get(i);
-					ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "  * -> %s (dur: %.2fs, pri: %d)",
-						xTrans.m_strTargetStateName.c_str(), xTrans.m_fTransitionDuration, xTrans.m_iPriority);
-				}
-			}
-
-			ImGui::TreePop();
-		}
-	}
-
-	// Layers section
-	if (m_xController.HasLayers())
-	{
-		if (ImGui::TreeNode("Layers"))
-		{
-			for (uint32_t i = 0; i < m_xController.GetLayerCount(); ++i)
-			{
-				Flux_AnimationLayer* pxLayer = m_xController.GetLayer(i);
-				ImGui::PushID(i);
-
-				if (ImGui::TreeNode("##Layer", "%s (%.0f%%)", pxLayer->GetName().c_str(), pxLayer->GetWeight() * 100.0f))
-				{
-					float fWeight = pxLayer->GetWeight();
-					if (ImGui::SliderFloat("Weight", &fWeight, 0.0f, 1.0f))
-					{
-						pxLayer->SetWeight(fWeight);
-					}
-
-					const char* aszBlendModes[] = { "Override", "Additive" };
-					int iBlendMode = static_cast<int>(pxLayer->GetBlendMode());
-					if (ImGui::Combo("Blend Mode", &iBlendMode, aszBlendModes, 2))
-					{
-						pxLayer->SetBlendMode(static_cast<Flux_LayerBlendMode>(iBlendMode));
-					}
-
-					ImGui::Text("Mask: %s", pxLayer->HasAvatarMask() ? "Active" : "None");
-
-					ImGui::TreePop();
-				}
-
-				ImGui::PopID();
-			}
-
-			ImGui::TreePop();
-		}
-	}
-
-	// Update Mode
-	{
-		const char* aszUpdateModes[] = { "Normal", "Fixed", "Unscaled" };
-		int iMode = static_cast<int>(m_xController.GetUpdateMode());
-		if (ImGui::Combo("Update Mode", &iMode, aszUpdateModes, 3))
-		{
-			m_xController.SetUpdateMode(static_cast<Flux_AnimationUpdateMode>(iMode));
-		}
+		m_xController.SetUpdateMode(static_cast<Flux_AnimationUpdateMode>(iMode));
 	}
 }
 

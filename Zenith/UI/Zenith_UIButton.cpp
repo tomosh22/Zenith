@@ -91,6 +91,36 @@ void Zenith_UIButton::Update(float fDt)
 		return;
 	}
 
+	HandleFirstVisibleFrame();
+
+#ifdef ZENITH_TOOLS
+	HandleEditorStoppedState();
+#endif
+
+	bool bInteractable = IsGroupInteractable();
+
+	float fMouseX = 0.0f;
+	float fMouseY = 0.0f;
+	ComputeMousePosition(fMouseX, fMouseY);
+
+	Zenith_Maths::Vector4 xBounds = GetScreenBounds();
+	bool bHovered = bInteractable
+		&& fMouseX >= xBounds.x
+		&& fMouseX <= xBounds.z
+		&& fMouseY >= xBounds.y
+		&& fMouseY <= xBounds.w;
+
+	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+
+	HandleInputEvents(bInteractable, bHovered, bMouseDown);
+	ResolveState(bHovered, bMouseDown);
+	UpdateVisualTransition(fDt);
+
+	Zenith_UIElement::Update(fDt);
+}
+
+void Zenith_UIButton::HandleFirstVisibleFrame()
+{
 	// Snap current style to target on first visible frame to avoid stale-style transitions
 	if (m_bWasInvisible)
 	{
@@ -100,8 +130,11 @@ void Zenith_UIButton::Update(float fDt)
 		m_bMousePressedInside = false;
 		m_bMouseDownLastFrame = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 	}
+}
 
 #ifdef ZENITH_TOOLS
+void Zenith_UIButton::HandleEditorStoppedState()
+{
 	if (Zenith_Editor::GetEditorMode() == EditorMode::Stopped
 #ifdef ZENITH_INPUT_SIMULATOR
 		&& !Zenith_InputSimulator::IsEnabled()
@@ -112,16 +145,16 @@ void Zenith_UIButton::Update(float fDt)
 		m_bMousePressedInside = false;
 		m_bMouseDownLastFrame = false;
 	}
+}
 #endif
 
-	// Check group interactable
-	bool bInteractable = IsGroupInteractable();
-
+void Zenith_UIButton::ComputeMousePosition(float& fMouseX, float& fMouseY) const
+{
 	Zenith_Maths::Vector2_64 xMousePos;
 	Zenith_Input::GetMousePosition(xMousePos);
 
-	float fMouseX = static_cast<float>(xMousePos.x);
-	float fMouseY = static_cast<float>(xMousePos.y);
+	fMouseX = static_cast<float>(xMousePos.x);
+	fMouseY = static_cast<float>(xMousePos.y);
 #ifdef ZENITH_TOOLS
 #ifdef ZENITH_INPUT_SIMULATOR
 	if (!Zenith_InputSimulator::IsEnabled())
@@ -137,47 +170,46 @@ void Zenith_UIButton::Update(float fDt)
 		}
 	}
 #endif
+}
 
-	Zenith_Maths::Vector4 xBounds = GetScreenBounds();
-	bool bHovered = bInteractable
-		&& fMouseX >= xBounds.x
-		&& fMouseX <= xBounds.z
-		&& fMouseY >= xBounds.y
-		&& fMouseY <= xBounds.w;
-
-	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-
-	if (bInteractable)
+void Zenith_UIButton::HandleInputEvents(bool bInteractable, bool bHovered, bool bMouseDown)
+{
+	if (!bInteractable)
 	{
-		if (bMouseDown && !m_bMouseDownLastFrame && bHovered)
-		{
-			m_bMousePressedInside = true;
-		}
-		if (!bMouseDown)
-		{
-			if (m_bMouseDownLastFrame && m_bMousePressedInside && bHovered)
-			{
-				if (m_pfnOnClick)
-				{
-					m_pfnOnClick(m_pxUserData);
-				}
-			}
-			m_bMousePressedInside = false;
-		}
-		m_bMouseDownLastFrame = bMouseDown;
+		return;
+	}
 
-		bool bActivated = m_bFocused
-			&& (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
-				|| Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
-		if (bActivated)
+	if (bMouseDown && !m_bMouseDownLastFrame && bHovered)
+	{
+		m_bMousePressedInside = true;
+	}
+	if (!bMouseDown)
+	{
+		if (m_bMouseDownLastFrame && m_bMousePressedInside && bHovered)
 		{
 			if (m_pfnOnClick)
 			{
 				m_pfnOnClick(m_pxUserData);
 			}
 		}
+		m_bMousePressedInside = false;
 	}
+	m_bMouseDownLastFrame = bMouseDown;
 
+	bool bActivated = m_bFocused
+		&& (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
+			|| Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
+	if (bActivated)
+	{
+		if (m_pfnOnClick)
+		{
+			m_pfnOnClick(m_pxUserData);
+		}
+	}
+}
+
+void Zenith_UIButton::ResolveState(bool bHovered, bool bMouseDown)
+{
 	if (m_bMousePressedInside && bHovered && bMouseDown)
 	{
 		m_eState = ButtonState::PRESSED;
@@ -190,7 +222,10 @@ void Zenith_UIButton::Update(float fDt)
 	{
 		m_eState = ButtonState::NORMAL;
 	}
+}
 
+void Zenith_UIButton::UpdateVisualTransition(float fDt)
+{
 	// Lerp current style toward target
 	const UIStyle& xTargetStyle = (m_eState == ButtonState::PRESSED) ? m_xPressedStyle
 		: (m_eState == ButtonState::HOVERED) ? m_xHoveredStyle
@@ -206,8 +241,6 @@ void Zenith_UIButton::Update(float fDt)
 	{
 		m_xCurrentStyle = xTargetStyle;
 	}
-
-	Zenith_UIElement::Update(fDt);
 }
 
 void Zenith_UIButton::Render(Zenith_UICanvas& xCanvas)

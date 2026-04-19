@@ -242,6 +242,9 @@ public:
 private:
 	static void RenderConsolePanel();
 	static void RenderMainMenuBar();
+	static void RenderFileMenu();
+	static void RenderEditMenu();
+	static void RenderViewMenu();
 	static void RenderToolbar();
 	static void RenderHierarchyPanel();
 	static void RenderPropertiesPanel();

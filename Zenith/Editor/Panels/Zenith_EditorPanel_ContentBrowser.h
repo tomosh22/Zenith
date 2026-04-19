@@ -71,6 +71,61 @@ namespace Zenith_EditorPanelContentBrowser
 	 */
 	void RenderItemContextMenu(const ContentBrowserEntry& xEntry, ContentBrowserState& xState);
 
+	//-------------------------------------------------------------------------
+	// Private helpers used by Render() to keep the main dispatcher thin.
+	// Declared here so they can be forward-referenced from the header-level
+	// namespace; definitions live in the .cpp file.
+	//-------------------------------------------------------------------------
+
+	/**
+	 * Render the top bar: navigation buttons, breadcrumbs, search input,
+	 * asset type filter, thumbnail size slider, and view toggle buttons.
+	 * Also applies filtering when search/filter changes.
+	 *
+	 * @param xState Reference to content browser state
+	 */
+	void RenderTopBar(ContentBrowserState& xState);
+
+	/**
+	 * Render the right-click context menu for empty space (Create Folder /
+	 * Create Material).
+	 *
+	 * @param xState Reference to content browser state
+	 */
+	void RenderCreateContextMenu(ContentBrowserState& xState);
+
+	/**
+	 * Render the list (table) view of the current directory contents.
+	 *
+	 * @param xState Reference to content browser state
+	 */
+	void RenderFileList(ContentBrowserState& xState);
+
+	/**
+	 * Render the grid (thumbnail) view of the current directory contents.
+	 *
+	 * @param xState Reference to content browser state
+	 * @param fPanelWidth Width of the content region available to the grid
+	 * @param fCellSize Thumbnail cell size
+	 */
+	void RenderFileGrid(ContentBrowserState& xState, float fPanelWidth, float fCellSize);
+
+	/**
+	 * Begin a drag-drop source for a file entry (shared between list/grid).
+	 * No-op for directories.
+	 *
+	 * @param xEntry The content browser entry to use as drag source
+	 */
+	void RenderEntryDragDropSource(const ContentBrowserEntry& xEntry);
+
+	/**
+	 * Handle double-click open semantics for a file entry (materials/scenes).
+	 * Shared between list and grid views.
+	 *
+	 * @param xEntry The content browser entry that was double-clicked
+	 */
+	void HandleEntryDoubleClickOpen(const ContentBrowserEntry& xEntry);
+
 	/**
 	 * Generate a unique filename by appending _1, _2, etc. until no collision
 	 *

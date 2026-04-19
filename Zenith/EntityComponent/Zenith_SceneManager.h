@@ -269,11 +269,12 @@ public:
 	 * Set the active scene (for new entity creation)
 	 *
 	 * When the active scene is unloaded (via UnloadScene or UnloadSceneAsync),
-	 * Zenith automatically selects a new active scene:
-	 * 1. Most recently loaded non-persistent scene (by load timestamp)
-	 * 2. Fallback to persistent scene if no other scenes loaded
-	 *
-	 * Note: Unity behavior may differ in edge cases.
+	 * Zenith automatically selects a new active scene via SelectNewActiveScene():
+	 * 1. Non-persistent scene with the LOWEST m_iBuildIndex (Unity parity).
+	 * 2. Fallback: most recently loaded non-persistent scene (by load timestamp)
+	 *    among scenes without a build index.
+	 * 3. Fallback: INVALID_SCENE. The persistent (DontDestroyOnLoad) scene is NEVER
+	 *    selected — it's a container, not a real scene (enforced in A6).
 	 */
 	static bool SetActiveScene(Zenith_Scene xScene);
 
@@ -319,6 +320,21 @@ public:
 	 */
 	static bool MergeScenes(Zenith_Scene xSource, Zenith_Scene xTarget);
 
+	/**
+	 * Rename a loaded scene (E.18 / finding 3.15).
+	 *
+	 * Updates both the SceneData's m_strName and the SceneManager's name-lookup
+	 * cache atomically so GetSceneByName continues to return correct results after
+	 * the rename. Previously m_strName was mutable via friend access but the cache
+	 * never caught up — leaving stale name lookups.
+	 *
+	 * @param xScene Target scene. Must be valid and not the persistent scene.
+	 * @param strNewName New scene name (empty allowed, though lookups against ""
+	 *        then match every nameless scene — caller's responsibility).
+	 * @return true if the rename succeeded; false for invalid handle / persistent scene.
+	 */
+	static bool RenameScene(Zenith_Scene xScene, const std::string& strNewName);
+
 	//==========================================================================
 	// Entity Destruction
 	//==========================================================================
@@ -354,13 +370,19 @@ public:
 	//==========================================================================
 
 	/**
-	 * Mark entity to persist across scene loads (Unity DontDestroyOnLoad)
-	 * Entity is moved to the persistent scene.
-	 * The passed-in reference is updated to point to the new location.
+	 * Mark entity to persist across scene loads (Unity DontDestroyOnLoad).
 	 *
-	 * @note Only root entities (no parent) can be marked persistent.
-	 *       This matches Unity's DontDestroyOnLoad behavior.
-	 *       Non-root entities will log an error and return without action.
+	 * E.19 / finding 3.20: Unity walks UP the hierarchy and marks the ROOT persistent;
+	 * a non-root child becomes persistent as part of its ancestor's subtree. Zenith
+	 * matches this behaviour — the passed-in entity may be a descendant, and the call
+	 * will silently locate its root and move that whole subtree to the persistent
+	 * scene. On return, the passed-in Zenith_Entity reference is still valid (entity
+	 * IDs are globally unique and stable across scene moves) and points to the same
+	 * entity which now lives under the persistent scene.
+	 *
+	 * Previous documentation here claimed "only root entities can be marked persistent
+	 * — non-root entities will log an error and return without action." That was
+	 * never what the implementation did. The new docstring reflects reality.
 	 *
 	 * EntityID remains stable after move to persistent scene (globally unique IDs).
 	 * Cached EntityIDs and Entity handles remain valid.
@@ -891,6 +913,23 @@ private:
 	static void FailAsyncLoadOperation(Zenith_SceneOperation* pxOp);
 	static void CleanupAndRemoveAsyncJob(u_int uIndex);
 
+	// ProcessPendingAsyncLoads helpers. Each step returns one of these to tell the
+	// outer per-job loop how to advance — job-removal paths all funnel through
+	// CleanupAndRemoveAsyncJob which is why the outer loop needs the hint rather
+	// than deriving it from the returned bool.
+	enum class AsyncJobStepResult
+	{
+		Removed,     // job removed this iteration; do NOT advance index
+		Waiting,     // job still pending; advance to next job
+		FallThrough, // step complete; try the next phase on the SAME job this iteration
+	};
+	static void SortAsyncJobsByPriority();
+	// uIndex is mutable: RunAsyncJobPhase1 may cancel peer jobs in SCENE_LOAD_SINGLE
+	// mode via CancelAllPendingAsyncLoads, after which the surviving job is at index 0.
+	static bool HandleAsyncJobCancellation(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
+	static AsyncJobStepResult RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int& uIndex);
+	static AsyncJobStepResult RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
+
 	// Async unloading job - destruction spread across frames
 	struct AsyncUnloadJob
 	{
@@ -919,7 +958,11 @@ private:
 	static bool CanUnloadScene(Zenith_Scene xScene);
 	static void UnloadSceneInternal(Zenith_Scene xScene);
 	static void ProcessPendingUnloads();
-	static void UnloadAllNonPersistent();
+	// iExcludeHandle: optional scene-slot index to skip (in addition to the persistent
+	// scene). D.12 uses this to keep the staging scene alive while the old world is
+	// torn down during an atomic-swap sync LoadScene(SINGLE). Pass -1 (the default)
+	// for the original "unload every non-persistent scene" behaviour.
+	static void UnloadAllNonPersistent(int iExcludeHandle = -1);
 };
 
 // Include SceneData after class definition for template implementations

@@ -900,6 +900,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneData.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager_Internal.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneOperation.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h" />
@@ -1817,6 +1818,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_Editor_Menu.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_Gizmo.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1850,6 +1855,7 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_AsyncLoad.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneOperation.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />

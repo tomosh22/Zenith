@@ -198,6 +198,16 @@ public:
 private:
 	// Helper to load texture and assign to material slot (creates new material instance)
 	void AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, Zenith_Editor_MaterialUI::TextureSlotType eSlot);
+
+	// Per-section helpers that RenderPropertiesPanel dispatches to. Each owns
+	// one logical block of the properties panel (status, drop targets, material
+	// lists, etc.) so the top-level function stays a thin dispatcher.
+	void RenderModelStatusSection();
+	void RenderModelDropTargetSection();
+	void RenderManualLoadSection();
+	void RenderModelInstanceMaterialsSection();
+	void RenderProceduralMeshEntriesSection();
+	void RenderMeshMaterialSlots(uint32_t uMeshIdx, Zenith_MaterialAsset& xMaterial);
 public:
 #endif
 

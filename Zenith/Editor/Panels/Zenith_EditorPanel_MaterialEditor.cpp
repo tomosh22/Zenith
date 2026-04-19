@@ -70,6 +70,10 @@ static std::string ShowSaveFileDialog(const char* szFilter, const char* szDefaul
 }
 #endif // _WIN32
 
+//-----------------------------------------------------------------------------
+// Render - Top-level dispatcher. Delegates to per-section helpers so each
+// section stays focused on its own concern.
+//-----------------------------------------------------------------------------
 void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 {
 	if (!xState.m_bShowMaterialEditor)
@@ -77,6 +81,41 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 
 	ImGui::Begin("Material Editor", &xState.m_bShowMaterialEditor);
 
+	RenderToolbarSection();
+
+	ImGui::Separator();
+
+	RenderLoadedMaterialsSection();
+
+	ImGui::Separator();
+
+	if (xState.m_pxSelectedMaterial)
+	{
+		Zenith_MaterialAsset* pMat = xState.m_pxSelectedMaterial;
+
+		RenderMaterialHeaderSection(pMat);
+
+		ImGui::Separator();
+
+		RenderPropertiesAndTexturesSection(pMat);
+
+		ImGui::Separator();
+
+		RenderSaveLoadControlsSection(pMat);
+	}
+	else
+	{
+		RenderNoSelectionSection();
+	}
+
+	ImGui::End();
+}
+
+//-----------------------------------------------------------------------------
+// Top toolbar: Create New Material / Load Material buttons.
+//-----------------------------------------------------------------------------
+void Zenith_EditorPanelMaterialEditor::RenderToolbarSection()
+{
 	// Create New Material button
 	if (ImGui::Button("Create New Material"))
 	{
@@ -112,9 +151,14 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 		}
 #endif
 	}
+}
 
-	ImGui::Separator();
-
+//-----------------------------------------------------------------------------
+// Loaded Materials collapsing list (currently a placeholder while the asset
+// registry does not yet expose GetAllOfType<T>()).
+//-----------------------------------------------------------------------------
+void Zenith_EditorPanelMaterialEditor::RenderLoadedMaterialsSection()
+{
 	// TODO: Re-implement material list using Zenith_AssetRegistry API when needed
 	// The registry currently doesn't expose GetAllOfType<T>() method
 	if (ImGui::CollapsingHeader("Loaded Materials", ImGuiTreeNodeFlags_DefaultOpen))
@@ -122,83 +166,65 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 		ImGui::TextDisabled("Use Content Browser to select materials");
 		ImGui::TextDisabled("Or use Create New/Load buttons above");
 	}
+}
+
+//-----------------------------------------------------------------------------
+// Header for the currently selected material: display name, path / unsaved
+// indicator, and the editable name field.
+//-----------------------------------------------------------------------------
+void Zenith_EditorPanelMaterialEditor::RenderMaterialHeaderSection(Zenith_MaterialAsset* pMat)
+{
+	ImGui::Text("Editing: %s", pMat->GetName().c_str());
+
+	if (!pMat->GetPath().empty() && !pMat->IsProcedural())
+	{
+		ImGui::TextDisabled("Path: %s", pMat->GetPath().c_str());
+	}
+	else
+	{
+		ImGui::TextDisabled("(Unsaved)");
+	}
 
 	ImGui::Separator();
 
-	// Material properties editor
-	if (xState.m_pxSelectedMaterial)
+	// Name
+	char szNameBuffer[256];
+	strncpy_s(szNameBuffer, sizeof(szNameBuffer), pMat->GetName().c_str(), _TRUNCATE);
+	if (ImGui::InputText("Name", szNameBuffer, sizeof(szNameBuffer)))
 	{
-		Zenith_MaterialAsset* pMat = xState.m_pxSelectedMaterial;
+		pMat->SetName(szNameBuffer);
+	}
+}
 
-		ImGui::Text("Editing: %s", pMat->GetName().c_str());
+//-----------------------------------------------------------------------------
+// Material property editor + texture slot rows. Both are delegated to the
+// shared Zenith_Editor_MaterialUI utilities.
+//-----------------------------------------------------------------------------
+void Zenith_EditorPanelMaterialEditor::RenderPropertiesAndTexturesSection(Zenith_MaterialAsset* pMat)
+{
+	ImGui::Text("Material Properties");
 
-		if (!pMat->GetPath().empty() && !pMat->IsProcedural())
+	// Use shared utility for material properties
+	Zenith_Editor_MaterialUI::RenderMaterialProperties(pMat, "MaterialEditor");
+
+	ImGui::Separator();
+	ImGui::Text("Textures");
+
+	// Use shared utility for texture slots (no preview in this panel for cleaner look)
+	Zenith_Editor_MaterialUI::RenderAllTextureSlots(*pMat, false);
+}
+
+//-----------------------------------------------------------------------------
+// Save / Save As / Reload button row for the selected material.
+//-----------------------------------------------------------------------------
+void Zenith_EditorPanelMaterialEditor::RenderSaveLoadControlsSection(Zenith_MaterialAsset* pMat)
+{
+	// Save button
+	if (ImGui::Button("Save Material"))
+	{
+		if (pMat->GetPath().empty() || pMat->IsProcedural())
 		{
-			ImGui::TextDisabled("Path: %s", pMat->GetPath().c_str());
-		}
-		else
-		{
-			ImGui::TextDisabled("(Unsaved)");
-		}
-
-		ImGui::Separator();
-
-		// Name
-		char szNameBuffer[256];
-		strncpy_s(szNameBuffer, sizeof(szNameBuffer), pMat->GetName().c_str(), _TRUNCATE);
-		if (ImGui::InputText("Name", szNameBuffer, sizeof(szNameBuffer)))
-		{
-			pMat->SetName(szNameBuffer);
-		}
-
-		ImGui::Separator();
-		ImGui::Text("Material Properties");
-
-		// Use shared utility for material properties
-		Zenith_Editor_MaterialUI::RenderMaterialProperties(pMat, "MaterialEditor");
-
-		ImGui::Separator();
-		ImGui::Text("Textures");
-
-		// Use shared utility for texture slots (no preview in this panel for cleaner look)
-		Zenith_Editor_MaterialUI::RenderAllTextureSlots(*pMat, false);
-
-		ImGui::Separator();
-
-		// Save button
-		if (ImGui::Button("Save Material"))
-		{
-			if (pMat->GetPath().empty() || pMat->IsProcedural())
-			{
-				// Show save dialog for new material
-#ifdef _WIN32
-				std::string strFilePath = ShowSaveFileDialog(
-					"Zenith Material Files (*" ZENITH_MATERIAL_EXT ")\0 * " ZENITH_MATERIAL_EXT "\0All Files (*.*)\0 * .*\0",
-					ZENITH_MATERIAL_EXT,
-					(pMat->GetName() + ZENITH_MATERIAL_EXT).c_str());
-				if (!strFilePath.empty())
-				{
-					if (pMat->SaveToFile(strFilePath))
-					{
-						Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Saved material to: %s", strFilePath.c_str());
-					}
-				}
-#endif
-			}
-			else
-			{
-				// Save to existing path
-				if (pMat->SaveToFile(pMat->GetPath()))
-				{
-					Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Saved material: %s", pMat->GetPath().c_str());
-				}
-			}
-		}
-
-		ImGui::SameLine();
-
-		if (ImGui::Button("Save As..."))
-		{
+			// Show save dialog for new material
 #ifdef _WIN32
 			std::string strFilePath = ShowSaveFileDialog(
 				"Zenith Material Files (*" ZENITH_MATERIAL_EXT ")\0 * " ZENITH_MATERIAL_EXT "\0All Files (*.*)\0 * .*\0",
@@ -213,22 +239,51 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 			}
 #endif
 		}
-
-		ImGui::SameLine();
-
-		if (ImGui::Button("Reload") && !pMat->GetPath().empty() && !pMat->IsProcedural())
+		else
 		{
-			pMat->Reload();
-			Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Reloaded material: %s", pMat->GetName().c_str());
+			// Save to existing path
+			if (pMat->SaveToFile(pMat->GetPath()))
+			{
+				Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Saved material: %s", pMat->GetPath().c_str());
+			}
 		}
 	}
-	else
+
+	ImGui::SameLine();
+
+	if (ImGui::Button("Save As..."))
 	{
-		ImGui::TextDisabled("No material selected");
-		ImGui::TextDisabled("Create a new material or load an existing one");
+#ifdef _WIN32
+		std::string strFilePath = ShowSaveFileDialog(
+			"Zenith Material Files (*" ZENITH_MATERIAL_EXT ")\0 * " ZENITH_MATERIAL_EXT "\0All Files (*.*)\0 * .*\0",
+			ZENITH_MATERIAL_EXT,
+			(pMat->GetName() + ZENITH_MATERIAL_EXT).c_str());
+		if (!strFilePath.empty())
+		{
+			if (pMat->SaveToFile(strFilePath))
+			{
+				Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Saved material to: %s", strFilePath.c_str());
+			}
+		}
+#endif
 	}
 
-	ImGui::End();
+	ImGui::SameLine();
+
+	if (ImGui::Button("Reload") && !pMat->GetPath().empty() && !pMat->IsProcedural())
+	{
+		pMat->Reload();
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Reloaded material: %s", pMat->GetName().c_str());
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Placeholder shown when no material is currently selected.
+//-----------------------------------------------------------------------------
+void Zenith_EditorPanelMaterialEditor::RenderNoSelectionSection()
+{
+	ImGui::TextDisabled("No material selected");
+	ImGui::TextDisabled("Create a new material or load an existing one");
 }
 
 #endif // ZENITH_TOOLS
