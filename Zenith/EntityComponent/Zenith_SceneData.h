@@ -383,9 +383,25 @@ public:
 	// Serialization
 	//==========================================================================
 
+	// Scene file header constants — single source of truth for all call sites that
+	// write, read, or validate a .zscen binary. Bumping the format version? Update
+	// uSCENE_VERSION_CURRENT here and the three call sites below:
+	//   SaveToFile, LoadFromDataStream, ValidateFileHeader (this file), plus the
+	//   async Phase 2 header check in Zenith_SceneManager::ProcessPendingAsyncLoads.
+	// All of them reference these constants — no magic numbers elsewhere.
+	static constexpr u_int uSCENE_MAGIC                 = 0x5A53434E;
+	static constexpr u_int uSCENE_VERSION_CURRENT       = 5;
+	static constexpr u_int uSCENE_VERSION_MIN_SUPPORTED = 3;
+
 	void SaveToFile(const std::string& strFilename, bool bIncludeTransient = false);
 	bool LoadFromFile(const std::string& strFilename);
 	bool LoadFromDataStream(Zenith_DataStream& xStream);
+
+	// Zero-side-effect peek at a scene file's header. Returns true when the file exists,
+	// is large enough, has the correct magic, and has a supported version. Used by
+	// LoadScene(SINGLE) to validate the new file BEFORE destroying the current world,
+	// so a failed load cannot leave the engine scene-less.
+	static bool ValidateFileHeader(const std::string& strFilename);
 
 private:
 	//==========================================================================

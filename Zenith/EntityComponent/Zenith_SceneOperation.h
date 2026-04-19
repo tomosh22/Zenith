@@ -180,8 +180,16 @@ private:
 	// Cancellation request flag - not atomic (only modified from main thread)
 	bool m_bCancellationRequested = false;
 
-	// Progress (0.0 to 1.0) - atomic for thread-safe reads during async load
+	// Progress (0.0 to 1.0) - atomic for thread-safe reads during async load.
+	// N8: C++ standard does not guarantee std::atomic<float> is lock-free on all
+	// platforms. We rely on lock-free behaviour for cheap worker-thread writes;
+	// the static_assert below ensures a port to a platform without it would fail
+	// fast at compile time rather than introducing silent lock acquisition.
 	std::atomic<float> m_fProgress = 0.0f;
+	static_assert(std::atomic<float>::is_always_lock_free,
+		"Zenith_SceneOperation::m_fProgress must be lock-free on the target platform; "
+		"otherwise worker-thread progress updates acquire a lock that defeats the "
+		"async-loading concurrency model.");
 
 	// Completion flag - atomic for thread-safe polling
 	std::atomic<bool> m_bIsComplete = false;
@@ -201,6 +209,14 @@ private:
 	// Result scene handle (set by SceneManager when load completes)
 	int m_iResultSceneHandle = -1;
 
+	// Result scene generation captured at the point the result was recorded.
+	// Stored alongside the handle so GetResultScene/FireCompletionCallback can
+	// return a Zenith_Scene that stays faithful to the moment the op completed
+	// — otherwise a scene unloaded between completion and callback would cause
+	// the callback to receive a freshly-recycled handle pointing at a different
+	// scene (or an invalid one if the slot is free).
+	uint32_t m_uResultSceneGeneration = 0;
+
 	// Frame counter for delayed cleanup (allows result access after completion)
 	uint32_t m_uFramesSinceComplete = 0;
 
@@ -210,11 +226,22 @@ private:
 	// Scene manager needs access to internal state
 	friend class Zenith_SceneManager;
 
+	// Unit tests exercise the generation-capture invariant directly (F8 regression).
+	friend class Zenith_SceneTests;
+
 	//==========================================================================
 	// Internal Methods (SceneManager use only)
 	//==========================================================================
 
-	void SetProgress(float fProgress) { m_fProgress.store(fProgress, std::memory_order_release); }
+	void SetProgress(float fProgress)
+	{
+		// D3: progress must be a normalised [0, 1] fraction. Upstream call sites
+		// feed the FILE_READ / DESERIALIZE milestones defined in the header comment;
+		// any out-of-range value means a caller bug, not user input.
+		Zenith_Assert(fProgress >= 0.0f && fProgress <= 1.0f,
+			"Zenith_SceneOperation::SetProgress: value %f out of [0, 1]", fProgress);
+		m_fProgress.store(fProgress, std::memory_order_release);
+	}
 	void SetComplete(bool bComplete)
 	{
 		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetComplete must be called from main thread");
@@ -224,6 +251,18 @@ private:
 	{
 		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetResultSceneHandle must be called from main thread");
 		m_iResultSceneHandle = iHandle;
+		m_uResultSceneGeneration = 0;  // invalid-result path; callers that want a live generation must use SetResultScene
+	}
+
+	// Preferred setter for success paths: captures both the handle and the scene's
+	// generation at the moment of set, so a later completion callback sees the
+	// scene that existed at op-completion time, not whatever currently sits in
+	// the slot.
+	void SetResultScene(int iHandle, uint32_t uGeneration)
+	{
+		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetResultScene must be called from main thread");
+		m_iResultSceneHandle = iHandle;
+		m_uResultSceneGeneration = uGeneration;
 	}
 	void SetFailed(bool bFailed)
 	{

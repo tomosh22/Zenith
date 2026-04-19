@@ -723,4 +723,134 @@ private:
 	static void TestCircularLoadNoMatch();
 	static void TestCircularLoadWithMatch();
 	static void TestFireUnloadCallbacksAndSelectNewActive();
+
+	//==========================================================================
+	// Audit Remediation — A2: LoadScene(SINGLE) rollback + forced cleanup
+	//==========================================================================
+	static void TestValidateFileHeaderRejectsMissingFile();
+	static void TestValidateFileHeaderRejectsCorruptMagic();
+	static void TestValidateFileHeaderRejectsUnsupportedVersion();
+	static void TestValidateFileHeaderAcceptsValidFile();
+	static void TestLoadSceneSingleMissingFilePreservesCurrentScene();
+	static void TestLoadSceneSingleCorruptMagicRollsBack();
+	static void TestLoadSceneSingleCorruptMagicLeavesNoGhostScene();
+	static void TestLoadSceneSingleCorruptMagicPreservesActiveScene();
+
+	//==========================================================================
+	// Audit Remediation — A3: SceneUnloading/Unloaded two-callback contract
+	//==========================================================================
+	static void TestSceneUnloadedCallbackGetSceneDataReturnsNull();
+
+	//==========================================================================
+	// Audit Remediation — A8: Reject duplicate callback registration
+	//==========================================================================
+	static void TestRegisterSceneLoadedCallbackSamePfnTwiceReturnsExistingHandle();
+	static void TestRegisterSceneLoadedCallbackSamePfnTwiceFiresOnce();
+	static void TestRegisterSceneUnloadingCallbackSamePfnDedupes();
+	static void TestRegisterSceneUnloadedCallbackSamePfnDedupes();
+	static void TestRegisterActiveSceneChangedCallbackSamePfnDedupes();
+	static void TestRegisterSceneLoadStartedCallbackSamePfnDedupes();
+	static void TestRegisterEntityPersistentCallbackSamePfnDedupes();
+	static void TestRegisterCallbackDifferentPfnsCoexist();
+
+	//==========================================================================
+	// Audit Remediation — A7: m_iBuildIndex before SceneLoaded (sync path)
+	//==========================================================================
+	static void TestLoadSceneByIndexSyncCallbackSeesCorrectBuildIndex();
+
+	//==========================================================================
+	// Audit Remediation — A4: Hierarchy-ordered Reset + runaway OnAwake break
+	//==========================================================================
+	static void TestUnloadSceneDestroysChildrenBeforeParent();
+	static void TestUnloadSceneDisablesChildrenBeforeParent();
+	static void TestUnloadSceneDeepHierarchyDestructionOrder();
+
+	//==========================================================================
+	// Audit Remediation — A5: Single ActiveSceneChanged per SINGLE load
+	//==========================================================================
+	static void TestLoadSceneSingleFiresExactlyOneActiveSceneChanged();
+	static void TestLoadSceneSingleActiveSceneChangedReportsCorrectOldAndNew();
+
+	//==========================================================================
+	// Audit Remediation — A10: Sync-path m_bIsActivated gating
+	//==========================================================================
+	static void TestLoadSceneSyncIsActivatedFalseDuringAwake();
+	static void TestLoadSceneSyncIsActivatedTrueWhenSceneLoadedCallbackFires();
+
+	//==========================================================================
+	// Audit Remediation — A6: Persistent scene never active
+	//==========================================================================
+	static void TestSetActiveScenePersistentHandleRejected();
+	static void TestSelectNewActiveSceneNeverFallsBackToPersistent();
+	static void TestGetActiveSceneAfterUnloadAllNonPersistentIsInvalid();
+
+	//==========================================================================
+	// Audit Remediation — Phase B (B4, B6, B7)
+	//==========================================================================
+	static void TestSceneLoadedCallbackSeesIsLoadingSceneFalse();
+	static void TestGetLoadedSceneCountAfterUnloadAllReturnsZero();
+	static void TestGetLoadedSceneCountMatchesIteration();
+
+	//==========================================================================
+	// Audit Remediation — Phase C (C12)
+	//==========================================================================
+	static void TestClearBuildIndexRegistryResetsLoadedSceneIndices();
+
+	//==========================================================================
+	// Audit Remediation — Phase A0: Zenith_AssertCaptureScope test harness
+	//==========================================================================
+	static void TestAssertCaptureBasicUsage();
+	static void TestAssertCaptureCountsMultipleHits();
+	static void TestAssertCaptureResetsBetweenScopes();
+	static void TestAssertCaptureInactiveBreaksNormally();
+	static void TestAssertCaptureDidAssertFireFalseByDefault();
+	static void TestAssertCaptureNestedScopeRestoresOuterState();
+
+	//==========================================================================
+	// Audit Remediation — Phase A3: DispatchAwakeForNewScene wave-limit cleanup
+	//==========================================================================
+	static void TestDispatchAwakeBoundedWavesCompletesNormally();
+	static void TestDispatchAwakeRunawayCreationDestroysUnawakenedEntities();
+	static void TestDispatchAwakeRunawayCreationAllSurvivorsAwoken();
+
+	//==========================================================================
+	// Audit Remediation — F8: SceneOperation captures generation at result-set time
+	//==========================================================================
+	static void TestGetResultSceneWhileSceneLoadedReturnsValid();
+	static void TestGetResultSceneAfterSceneRecycledReturnsInvalid();
+	static void TestFireCompletionCallbackUsesCapturedGeneration();
+	static void TestSetResultSceneHandleFailureClearsGeneration();
+
+	//==========================================================================
+	// Audit Remediation — F3: ADDITIVE_WITHOUT_LOADING fires SceneLoaded
+	//==========================================================================
+	static void TestLoadSceneAdditiveWithoutLoadingFiresSceneLoaded();
+	static void TestLoadSceneAdditiveWithoutLoadingSceneLoadedReceivesCreatedScene();
+	static void TestLoadSceneAdditiveWithoutLoadingSceneLoadedModeIsAdditive();
+	static void TestLoadSceneAsyncAdditiveWithoutLoadingFiresSceneLoaded();
+	static void TestLoadSceneAdditiveWithoutLoadingCallbackSeesIsLoadingSceneFalse();
+
+	//==========================================================================
+	// Audit Remediation — A5: Async-load handle generation capture
+	//==========================================================================
+	static void TestAsyncLoadJobStoresCreatedSceneGeneration();
+	static void TestCancelAsyncLoadWithValidGenerationCleansUp();
+
+	//==========================================================================
+	// Audit Remediation — B1 (F2): UnloadScene last-scene failure signals
+	//==========================================================================
+	static void TestUnloadSceneLastSceneReturnsSilentlyButSceneRemains();
+	static void TestUnloadSceneAsyncLastSceneReturnsFailedOp();
+	static void TestUnloadSceneAsyncLastSceneDoesNotFireSceneUnloaded();
+
+	//==========================================================================
+	// Audit Remediation — C-cluster: C2+C4+C10 defensive asserts & warnings
+	//
+	// Note: the C2 stale-generation assert is defence-in-depth — Entity::GetSceneData()
+	// already validates generation and returns nullptr on mismatch, so
+	// MoveEntityInternal early-returns before reaching C2. The assert guards future
+	// refactors that might skip that upstream check. No trip-test is practical.
+	//==========================================================================
+	static void TestMoveEntityInternalValidSlotSucceeds();
+	static void TestSelectNewActiveSceneNoEligibleWarns();
 };

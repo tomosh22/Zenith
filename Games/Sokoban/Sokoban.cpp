@@ -97,7 +97,9 @@ static void InitializeSokobanResources()
 	// Create prefabs for runtime instantiation
 	// Note: Prefabs don't include ModelComponent because material varies by tile type
 	// The behaviour adds ModelComponent with correct material at instantiation
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	// Use the persistent scene here: InitializeResources runs before the initial scene
+	// loads, and (post-A6) GetActiveScene returns INVALID until that happens.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetPersistentScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Tile prefab - basic entity (ModelComponent added at runtime with correct material)

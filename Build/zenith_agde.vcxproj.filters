@@ -943,6 +943,9 @@
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AITests.cpp">
       <Filter>UnitTests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_AssertCapture.cpp">
+      <Filter>UnitTests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AutomationTests.cpp">
       <Filter>UnitTests</Filter>
     </ClCompile>
@@ -3877,6 +3880,9 @@
       <Filter>UI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AITests.h">
+      <Filter>UnitTests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_AssertCapture.h">
       <Filter>UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AutomationTests.h">

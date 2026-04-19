@@ -432,8 +432,10 @@ static void InitializeSurvivalResources()
 	g_xStoneMaterial.Get()->SetName("SurvivalStone");
 	g_xStoneMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Stone.ztex");
 
-	// Create prefabs for runtime instantiation
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	// Create prefabs for runtime instantiation.
+	// Use the persistent scene here: InitializeResources runs before the initial scene
+	// loads, and (post-A6) GetActiveScene returns INVALID until that happens.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetPersistentScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Player prefab

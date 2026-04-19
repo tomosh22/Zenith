@@ -540,9 +540,13 @@ static void InitializeCombatResources()
 	Flux_ParticleEmitterConfig::Register("Combat_Flame", g_pxFlameConfig);
 
 	// Create prefabs for runtime instantiation
-	// Note: Prefabs are lightweight templates - components added after transform is set
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	// Note: Prefabs are lightweight templates - components added after transform is set.
+	// Use the persistent scene here rather than GetActiveScene(): InitializeCombatResources
+	// runs before the initial scene is loaded, and (post-A6) GetActiveScene returns INVALID
+	// until that happens. The persistent scene is always available and these template
+	// entities are destroyed before any gameplay begins.
+	Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xPersistentScene);
 
 	// Player prefab
 	{

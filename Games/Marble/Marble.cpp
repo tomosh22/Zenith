@@ -191,7 +191,9 @@ static void InitializeMarbleResources()
 	// Note: Prefabs are lightweight templates with only TransformComponent
 	// ModelComponent and ColliderComponent are added AFTER setting position/scale
 	// (ColliderComponent creates physics bodies - must be added after transform is set)
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	// Use the persistent scene here: InitializeResources runs before the initial scene
+	// loads, and (post-A6) GetActiveScene returns INVALID until that happens.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetPersistentScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Ball prefab - basic entity (ModelComponent and ColliderComponent added at runtime)

@@ -385,8 +385,10 @@ static void InitializeRunnerResources()
 	g_xCollectParticleMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 	g_xCollectParticleMaterial.Get()->SetBaseColor({ 255.f/255.f, 255.f/255.f, 150.f/255.f, 1.f });
 
-	// Create prefabs for runtime instantiation
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	// Create prefabs for runtime instantiation.
+	// Use the persistent scene here: InitializeResources runs before the initial scene
+	// loads, and (post-A6) GetActiveScene returns INVALID until that happens.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetPersistentScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Character prefab

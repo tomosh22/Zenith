@@ -1498,8 +1498,11 @@ static void InitializeTilePuzzleResources()
 	LoadProceduralAssets(xRegistry);
 #endif
 
-	// Create prefabs for runtime instantiation
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	// Create prefabs for runtime instantiation.
+	// Use the persistent scene here: InitializeResources runs before the initial scene
+	// loads, and (post-A6) GetActiveScene returns INVALID until that happens. These
+	// template entities are destroyed immediately after capture into the Zenith_Prefab.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetPersistentScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Cell prefab (floor tiles)

@@ -9,6 +9,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "FileAccess/Zenith_FileAccess.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #endif
@@ -88,20 +89,87 @@ void Zenith_SceneData::DestroyEntityComponents(Zenith_EntityID xID)
 
 void Zenith_SceneData::Reset()
 {
-	Zenith_Assert(!m_bIsUpdating, "Reset() called during Update - this would corrupt iteration state");
+	// C8: spell out the guidance. Reset() destroys every entity in the scene —
+	// doing that mid-Update corrupts iteration of m_xActiveEntities. Same-scene
+	// self-unload is not supported; use LoadScene(SINGLE) or LoadSceneAsync to
+	// transition between scenes, and let the scene manager tear the old one down.
+	Zenith_Assert(!m_bIsUpdating,
+		"Reset() called during Update — unload your scene via LoadScene(SINGLE) or "
+		"LoadSceneAsync, not from within OnUpdate/OnFixedUpdate. Same-scene self-"
+		"unload is not supported. "
+		"#TODO: auto-promote same-scene self-unload to async.");
+	// C9: see CreateEntity for rationale — render-task-ordering invariant.
+	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(),
+		"Reset(): scene mutation while render tasks are reading — render-task invariant violated");
 	m_bIsBeingDestroyed = true;
 
-	// Unity parity: Two-pass destruction for all active entities
-	// Pass 1: OnDisable for all entities (all entities still alive during this pass)
-	// Reverse iteration so later-created entities are disabled first
-	for (int i = static_cast<int>(m_xActiveEntities.GetSize()) - 1; i >= 0; --i)
-		DisableEntity(m_xActiveEntities.Get(i));
+	// Unity parity: Two-pass destruction in hierarchy-depth-first order.
+	//
+	// RemoveEntity() already walks children-before-parent via CollectHierarchyDepthFirst;
+	// Reset() previously iterated in reverse insertion order, which is close enough in
+	// most cases but breaks when children are created before their parent (possible with
+	// runtime reparenting, or serialization formats that don't guarantee root-first order).
+	// Using the same traversal as RemoveEntity keeps single-entity destruction and whole-
+	// scene teardown consistent, and guarantees every child is disabled/destroyed before
+	// its parent, matching Unity semantics.
+	// Collect roots directly from m_xActiveEntities rather than relying on the cached
+	// list, because Reset() may run with entities whose TransformComponent has already
+	// been destroyed (e.g. TestSceneDisableDestroyHelpers) — and RebuildRootEntityCache
+	// asserts on IsRoot() which needs that component.
+	Zenith_Vector<Zenith_EntityID> axRoots;
+	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
+	{
+		Zenith_EntityID xID = m_xActiveEntities.Get(u);
+		if (!EntityExists(xID)) continue;
+		if (!EntityHasComponent<Zenith_TransformComponent>(xID))
+		{
+			// No transform → no hierarchy → treat as its own root and handle via the
+			// sweep below, which appends it to axHierarchy.
+			continue;
+		}
+		Zenith_Entity xEntity(this, xID);
+		if (xEntity.IsRoot())
+		{
+			axRoots.PushBack(xID);
+		}
+	}
 
-	// Pass 2: OnDestroy + component removal in correct reverse serialization order
-	// Using RemoveAllComponents ensures components are destroyed in dependency-safe order
-	// (e.g. ScriptComponent before ColliderComponent before TransformComponent)
-	for (int i = static_cast<int>(m_xActiveEntities.GetSize()) - 1; i >= 0; --i)
-		DestroyEntityComponents(m_xActiveEntities.Get(i));
+	Zenith_Vector<Zenith_EntityID> axHierarchy;
+	for (u_int u = 0; u < axRoots.GetSize(); ++u)
+	{
+		CollectHierarchyDepthFirst(axRoots.Get(u), axHierarchy);
+	}
+
+	// Sweep: pick up any active entities not reached by the root traversal. This covers
+	// (a) entities without a TransformComponent (treated as standalone), and (b) any
+	// transient mid-test state where an entity exists but is not attached to a root.
+	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
+	{
+		Zenith_EntityID xID = m_xActiveEntities.Get(u);
+		if (!EntityExists(xID)) continue;
+		bool bAlreadyCollected = false;
+		for (u_int v = 0; v < axHierarchy.GetSize(); ++v)
+		{
+			if (axHierarchy.Get(v) == xID) { bAlreadyCollected = true; break; }
+		}
+		if (!bAlreadyCollected)
+		{
+			axHierarchy.PushBack(xID);
+		}
+	}
+
+	// Pass 1: OnDisable for every entity while all data is still intact.
+	for (u_int u = 0; u < axHierarchy.GetSize(); ++u)
+	{
+		DisableEntity(axHierarchy.Get(u));
+	}
+
+	// Pass 2: OnDestroy + component removal in hierarchy-depth order. Components are
+	// removed in dependency-safe serialization order inside RemoveAllComponents.
+	for (u_int u = 0; u < axHierarchy.GetSize(); ++u)
+	{
+		DestroyEntityComponents(axHierarchy.Get(u));
+	}
 
 	// Delete now-empty component pools
 	for (Zenith_Vector<Zenith_ComponentPoolBase*>::Iterator xIt(m_xComponents); !xIt.Done(); xIt.Next())
@@ -198,6 +266,13 @@ void Zenith_SceneData::GetCachedRootEntities(Zenith_Vector<Zenith_EntityID>& axO
 Zenith_EntityID Zenith_SceneData::CreateEntity()
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CreateEntity must be called from main thread");
+	// C9: render-task-ordering invariant — several read APIs (EntityExists,
+	// GetComponentFromEntity, GetAllOfComponentType) widen their main-thread-only
+	// assertion to "main thread OR AreRenderTasksActive()". That relaxation is
+	// sound only if the main thread never mutates scene storage while render
+	// tasks are in flight. Enforce that invariant here.
+	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(),
+		"CreateEntity: scene mutation while render tasks are reading — render-task invariant violated");
 	u_int uIndex = 0;
 	u_int uGeneration = 0;
 
@@ -255,14 +330,21 @@ Zenith_EntityID Zenith_SceneData::CreateEntity()
 
 void Zenith_SceneData::CollectHierarchyDepthFirst(Zenith_EntityID xID, Zenith_Vector<Zenith_EntityID>& axOut)
 {
-	Zenith_Entity xEntity(this, xID);
-	Zenith_Vector<Zenith_EntityID> axChildIDs = xEntity.GetChildEntityIDs();
-	for (u_int i = 0; i < axChildIDs.GetSize(); ++i)
+	// Hierarchy is encoded on the TransformComponent. If the component has been
+	// explicitly destroyed by a caller (Reset() tolerates this — see its hierarchy
+	// traversal) we have no children to recurse into; still emit this entity so
+	// its slot gets freed.
+	if (EntityHasComponent<Zenith_TransformComponent>(xID))
 	{
-		Zenith_EntityID xChildID = axChildIDs.Get(i);
-		if (EntityExists(xChildID))
+		Zenith_Entity xEntity(this, xID);
+		Zenith_Vector<Zenith_EntityID> axChildIDs = xEntity.GetChildEntityIDs();
+		for (u_int i = 0; i < axChildIDs.GetSize(); ++i)
 		{
-			CollectHierarchyDepthFirst(xChildID, axOut);
+			Zenith_EntityID xChildID = axChildIDs.Get(i);
+			if (EntityExists(xChildID))
+			{
+				CollectHierarchyDepthFirst(xChildID, axOut);
+			}
 		}
 	}
 	axOut.PushBack(xID);
@@ -271,6 +353,9 @@ void Zenith_SceneData::CollectHierarchyDepthFirst(Zenith_EntityID xID, Zenith_Ve
 void Zenith_SceneData::RemoveEntity(Zenith_EntityID xID)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RemoveEntity must be called from main thread");
+	// C9: see CreateEntity for rationale — render-task-ordering invariant.
+	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(),
+		"RemoveEntity: scene mutation while render tasks are reading — render-task invariant violated");
 	if (!EntityExists(xID))
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "Attempted to remove non-existent entity (idx=%u, gen=%u)", xID.m_uIndex, xID.m_uGeneration);
@@ -602,7 +687,11 @@ void Zenith_SceneData::DispatchOnLateUpdateForEntities(const Zenith_Vector<Zenit
 
 void Zenith_SceneData::TickTimedDestructions(float fDt)
 {
-	// Unity Destroy(obj, delay) parity - uses scaled Time.time
+	// C3 (F11): this uses the raw fDt the caller passes in. Zenith does not have a
+	// global Time.timeScale equivalent today, so the "scaled Time.time" claim in
+	// the prior comment was aspirational. If a timescale system is introduced,
+	// update the caller (SceneManager::Update) to multiply dt by timescale before
+	// forwarding — do NOT multiply here, so OnUpdate and this decay stay aligned.
 	for (int i = static_cast<int>(m_axTimedDestructions.GetSize()) - 1; i >= 0; --i)
 	{
 		TimedDestruction& xEntry = m_axTimedDestructions.Get(i);
@@ -733,6 +822,39 @@ void Zenith_SceneData::DispatchAwakeForNewScene()
 				"infinite entity creation in Awake callbacks", uMAX_AWAKE_ITERATIONS);
 			if (uIteration >= uMAX_AWAKE_ITERATIONS)
 			{
+				// Release-build safety net: the Zenith_Assert above compiles away in
+				// release builds, so without this explicit Zenith_Error a runaway scene
+				// would silently truncate its Awake dispatch. The break is already
+				// outside the assert so the loop still terminates; this just makes the
+				// failure observable in shipped builds.
+				Zenith_Error(LOG_CATEGORY_SCENE,
+					"DispatchAwakeForNewScene: Awake wave limit (%u) reached for scene '%s'; "
+					"destroying %u unawakened entities. An OnAwake handler is creating "
+					"entities without bound.",
+					uMAX_AWAKE_ITERATIONS, m_strPath.c_str(), uWaveEnd - uWaveStart);
+
+				// Phase A3 fix: destroy the unawakened entities so the scene-lifecycle
+				// invariant holds (every surviving entity in DispatchEnableAndPendingStartsForNewScene
+				// must have received OnAwake). Leaving them in m_xActiveEntities would
+				// silently fire OnEnable/OnStart on entities that never got OnAwake.
+				//
+				// Snapshot IDs first because RemoveEntity erases from m_xActiveEntities.
+				// A scene that hits this path is malformed, so we're also not worried
+				// about recursive OnDestroy creating more entities — they'd just be
+				// swept by the same cleanup on the next scene load.
+				Zenith_Vector<Zenith_EntityID> axUnawokenIDs;
+				for (u_int u = uWaveStart; u < uWaveEnd; ++u)
+				{
+					axUnawokenIDs.PushBack(m_xActiveEntities.Get(u));
+				}
+				for (u_int i = 0; i < axUnawokenIDs.GetSize(); ++i)
+				{
+					Zenith_EntityID xID = axUnawokenIDs.Get(i);
+					if (EntityExists(xID))
+					{
+						RemoveEntity(xID);
+					}
+				}
 				break;
 			}
 		}
@@ -880,10 +1002,8 @@ void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeT
 {
 	Zenith_DataStream xStream;
 
-	static constexpr u_int SCENE_MAGIC = 0x5A53434E;
-	static constexpr u_int SCENE_VERSION = 5;
-	xStream << SCENE_MAGIC;
-	xStream << SCENE_VERSION;
+	xStream << uSCENE_MAGIC;
+	xStream << uSCENE_VERSION_CURRENT;
 
 	u_int uNumEntities = 0;
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
@@ -925,6 +1045,43 @@ void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeT
 	xStream.WriteToFile(strFilename.c_str());
 
 	ClearDirty();
+}
+
+bool Zenith_SceneData::ValidateFileHeader(const std::string& strFilename)
+{
+	if (!Zenith_FileAccess::FileExists(strFilename.c_str()))
+	{
+		return false;
+	}
+
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(strFilename.c_str());
+
+	if (!xStream.IsValid())
+	{
+		return false;
+	}
+
+	static constexpr uint64_t ulMIN_HEADER_SIZE = sizeof(u_int) * 2;
+	if (xStream.GetSize() < ulMIN_HEADER_SIZE)
+	{
+		return false;
+	}
+
+	u_int uMagicNumber;
+	u_int uVersion;
+	xStream >> uMagicNumber;
+	xStream >> uVersion;
+
+	if (uMagicNumber != uSCENE_MAGIC)
+	{
+		return false;
+	}
+	if (uVersion > uSCENE_VERSION_CURRENT || uVersion < uSCENE_VERSION_MIN_SUPPORTED)
+	{
+		return false;
+	}
+	return true;
 }
 
 bool Zenith_SceneData::LoadFromFile(const std::string& strFilename)
@@ -1015,6 +1172,12 @@ Zenith_EntityID Zenith_SceneData::ReadEntityFromDataStream(Zenith_DataStream& xS
 
 bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 {
+	// C9: see CreateEntity for rationale — render-task-ordering invariant.
+	// LoadFromDataStream creates entities + components en masse; if render
+	// tasks are actively reading, those reads would see half-populated scenes.
+	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(),
+		"LoadFromDataStream: scene mutation while render tasks are reading — render-task invariant violated");
+
 	// Validate stream has minimum header data (magic + version = 8 bytes)
 	static constexpr uint64_t ulMIN_HEADER_SIZE = sizeof(u_int) * 2;
 	if (xStream.GetSize() < ulMIN_HEADER_SIZE)
@@ -1029,18 +1192,14 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> uMagicNumber;
 	xStream >> uVersion;
 
-	static constexpr u_int SCENE_MAGIC = 0x5A53434E;
-	static constexpr u_int SCENE_VERSION_CURRENT = 5;
-	static constexpr u_int SCENE_VERSION_MIN_SUPPORTED = 3;
-
-	if (uMagicNumber != SCENE_MAGIC)
+	if (uMagicNumber != uSCENE_MAGIC)
 	{
 		Zenith_Error(LOG_CATEGORY_SCENE, "Invalid scene file format: bad magic number 0x%08X (expected 0x%08X)",
-			uMagicNumber, SCENE_MAGIC);
+			uMagicNumber, uSCENE_MAGIC);
 		return false;
 	}
 
-	if (uVersion > SCENE_VERSION_CURRENT || uVersion < SCENE_VERSION_MIN_SUPPORTED)
+	if (uVersion > uSCENE_VERSION_CURRENT || uVersion < uSCENE_VERSION_MIN_SUPPORTED)
 	{
 		Zenith_Error(LOG_CATEGORY_SCENE, "Unsupported scene file version %u", uVersion);
 		return false;

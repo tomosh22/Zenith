@@ -1316,6 +1316,7 @@
     <ClInclude Include="..\Zenith\UI\Zenith_UIToggle.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UITween.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AITests.h" />
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_AssertCapture.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AutomationTests.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTests.h" />
@@ -2445,6 +2446,7 @@
     <ClCompile Include="..\Zenith\UI\Zenith_UIText.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIToggle.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AITests.cpp" />
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_AssertCapture.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AutomationTests.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTests.cpp" />

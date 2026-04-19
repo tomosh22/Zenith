@@ -147,7 +147,11 @@ public:
 	 * Create an empty scene at runtime (no file)
 	 * Useful for procedural content generation.
 	 */
-	static Zenith_Scene CreateEmptyScene(const std::string& strName);
+	// Creates an empty scene. By default auto-activates if there is no active scene
+	// (matches Unity's CreateScene behaviour for the first loaded scene). Pass
+	// bAllowSetActive=false to prevent auto-activation — used internally when creating
+	// the persistent DontDestroyOnLoad scene (A6).
+	static Zenith_Scene CreateEmptyScene(const std::string& strName, bool bAllowSetActive = true);
 
 	//==========================================================================
 	// Scene Queries
@@ -403,14 +407,26 @@ public:
 	static void UnregisterSceneLoadedCallback(CallbackHandle ulHandle);
 
 	/**
-	 * Register callback for scene unloading events (BEFORE destruction)
+	 * Register callback fired BEFORE a scene is destroyed.
 	 *
-	 * ZENITH ENHANCEMENT: Unlike Unity, Zenith provides two unload callbacks:
-	 * - sceneUnloading (this one) - fires BEFORE scene destruction
-	 * - sceneUnloaded - fires AFTER scene destruction
+	 * ZENITH ENHANCEMENT over Unity: Zenith splits Unity's single sceneUnloaded
+	 * into two callbacks — sceneUnloading (before destruction) and sceneUnloaded
+	 * (after destruction). Pick the one whose contract matches your needs:
 	 *
-	 * Unity only provides sceneUnloaded (after destruction).
-	 * Use sceneUnloading for cleanup that needs access to scene data.
+	 *   sceneUnloading (THIS callback)            sceneUnloaded (below)
+	 *   ──────────────────────────────           ──────────────────────
+	 *   Scene data is still intact.              Scene data has been deleted.
+	 *   GetSceneData(xScene) != nullptr.         GetSceneData(xScene) == nullptr.
+	 *   Entity queries work.                     Handle still unique (not yet
+	 *   Name/path/buildIndex readable.           recycled — generation bump happens
+	 *                                            after this callback returns).
+	 *   Use for: final data capture,             Use for: notification / bookkeeping
+	 *     analytics, decoupled save state,         tied to handle identity
+	 *     anything that reads entity data          (subscription cleanup, UI refresh
+	 *     before it's gone.                        that does NOT touch scene data).
+	 *
+	 * Subscribers MUST NOT mutate the scene from sceneUnloading — entities will be
+	 * destroyed immediately after this callback returns.
 	 *
 	 * @return Handle for unregistration (0 = invalid)
 	 */
@@ -418,7 +434,20 @@ public:
 	static void UnregisterSceneUnloadingCallback(CallbackHandle ulHandle);
 
 	/**
-	 * Register callback for scene unloaded events (AFTER destruction)
+	 * Register callback fired AFTER a scene has been destroyed.
+	 *
+	 * At dispatch time:
+	 *   - The scene's Zenith_SceneData has already been deleted and the slot set to
+	 *     nullptr. GetSceneData(xScene) will return nullptr.
+	 *   - The scene handle is still unique and safe to identify the scene by —
+	 *     the slot generation is NOT bumped until after all subscribers return,
+	 *     matching Unity's sceneUnloaded semantics.
+	 *   - Do not call GetSceneData, query entities, read the name/path, etc.
+	 *     Use RegisterSceneUnloadingCallback for anything that needs scene data.
+	 *
+	 * Typical use: removing bookkeeping keyed by handle, notifying other systems
+	 * that this particular scene is gone, logging/analytics.
+	 *
 	 * @return Handle for unregistration (0 = invalid)
 	 */
 	static CallbackHandle RegisterSceneUnloadedCallback(SceneUnloadedCallback pfn);
@@ -833,8 +862,20 @@ private:
 		Zenith_Task* m_pxTask;              // Task for worker thread execution
 		LoadPhase m_ePhase;                 // Current load phase (main thread only)
 		int m_iCreatedSceneHandle;          // Scene handle after deserialization (-1 until created)
+		// A5: generation captured at scene-creation time. Cancellation/finalization paths
+		// compare against the current s_axSceneGenerations entry before dereferencing —
+		// if they differ, the slot was recycled (scene unloaded + replacement loaded into
+		// the same handle) and touching m_iCreatedSceneHandle would corrupt the wrong scene.
+		uint32_t m_uCreatedSceneGeneration;
 
-		AsyncLoadJob() : m_iBuildIndex(-1), m_pxOperation(nullptr), m_bFileLoadComplete(false), m_eMilestone(FileLoadMilestone::IDLE), m_pxLoadedData(nullptr), m_pxTask(nullptr), m_ePhase(LoadPhase::WAITING_FOR_FILE), m_iCreatedSceneHandle(-1) {}
+		// A5: Pre-teardown active scene captured so Phase 2 can fire a single consolidated
+		// ActiveSceneChanged (old→new) instead of two (old→fallback, fallback→new). Stored
+		// as handle+generation rather than Zenith_Scene to avoid making this header depend
+		// on Zenith_Scene.h (keeps forward-decl usable). -1 handle means "no snapshot yet".
+		int m_iSingleModeOldActiveHandle;
+		uint32_t m_uSingleModeOldActiveGeneration;
+
+		AsyncLoadJob() : m_iBuildIndex(-1), m_pxOperation(nullptr), m_bFileLoadComplete(false), m_eMilestone(FileLoadMilestone::IDLE), m_pxLoadedData(nullptr), m_pxTask(nullptr), m_ePhase(LoadPhase::WAITING_FOR_FILE), m_iCreatedSceneHandle(-1), m_uCreatedSceneGeneration(0), m_iSingleModeOldActiveHandle(-1), m_uSingleModeOldActiveGeneration(0) {}
 		~AsyncLoadJob()
 		{
 			Zenith_Assert(Zenith_Multithreading::IsMainThread(), "AsyncLoadJob must be deleted from main thread");
