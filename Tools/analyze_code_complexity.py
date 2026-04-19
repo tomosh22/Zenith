@@ -14,11 +14,12 @@ Results are visualized by directory and source file.
 
 import os
 import re
+import sys
 import math
 import argparse
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Optional, Tuple, Set
 from collections import defaultdict
 
 # Try to import visualization libraries
@@ -31,6 +32,69 @@ try:
 except ImportError:
     HAS_MATPLOTLIB = False
     print("Warning: matplotlib not found. Install with 'pip install matplotlib numpy' for visualizations.")
+
+
+# Control-flow keywords that open a nestable block and contribute to cognitive complexity.
+# Kept as a tuple so iteration order is stable; lookup via set for O(1).
+_COGNITIVE_NESTING_KEYWORDS: Tuple[str, ...] = (
+    'if', 'else', 'for', 'while', 'do', 'switch', 'catch', 'try'
+)
+_COGNITIVE_NESTING_SET: Set[str] = set(_COGNITIVE_NESTING_KEYWORDS)
+_COGNITIVE_KEYWORD_PATTERNS: Tuple[re.Pattern, ...] = tuple(
+    re.compile(rf'\b{kw}\b') for kw in _COGNITIVE_NESTING_KEYWORDS
+)
+_LOGICAL_OP_PATTERN: re.Pattern = re.compile(r'&&|\|\|')
+_GOTO_PATTERN: re.Pattern = re.compile(r'\bgoto\b')
+# Cyclomatic complexity decision points (one regex per construct to match the existing counting semantics).
+_CC_PATTERNS: Tuple[re.Pattern, ...] = tuple(re.compile(p) for p in (
+    r'\bif\b', r'\bfor\b', r'\bwhile\b',
+    r'\bdo\b', r'\bcase\b', r'\bcatch\b',
+    r'(?<![?!=<>])\?(?![?=])',  # ternary operator
+    r'&&', r'\|\|',
+))
+_RETURN_PATTERN: re.Pattern = re.compile(r'\breturn\b')
+_CASE_PATTERN: re.Pattern = re.compile(r'\bcase\b')
+# Tech-debt markers: TODO / FIXME / HACK / XXX. Captured so we can embed the surrounding text.
+_TECH_DEBT_PATTERN: re.Pattern = re.compile(
+    r'\b(TODO|FIXME|HACK|XXX)\b[:\s]?[ \t]*(.{0,120}?)(?=$|\n)'
+)
+
+# Anti-pattern thresholds (overridable via --thresholds JSON). Values picked to be
+# loud enough that firing means something, quiet enough not to drown out signal.
+DEFAULT_THRESHOLDS: Dict[str, float] = {
+    'long_function_loc': 80,
+    'very_long_function_loc': 200,
+    'deep_nesting': 5,
+    'complex_branching_cc': 15,
+    'hard_to_follow_cognitive': 25,
+    'many_params': 6,
+    'many_returns': 6,
+    'big_switch_cases': 10,
+    'big_switch_max_nesting': 3,
+    'nesting_hell_depth': 5,
+    'nesting_hell_max_cases': 5,
+    'low_mi': 40,
+    'god_file_loc': 1000,
+    'god_file_funcs': 40,
+    'extract_candidate_depth': 4,
+    'extract_candidate_min_lines': 15,
+}
+
+# Tag -> short human hint used in the markdown refactoring queue. Kept short and
+# conservative — the tags themselves, not the prose, are the actionable signal.
+_TAG_SUGGESTIONS: Dict[str, str] = {
+    'nesting-hell': 'flatten with guard clauses / early returns; extract inner branches into helpers',
+    'big-switch': 'consider a dispatch table or polymorphism if the switch is on a type/enum',
+    'long-function': 'extract cohesive blocks into helpers',
+    'very-long-function': 'split into multiple functions; identify the 2-3 core responsibilities',
+    'deep-nesting': 'extract inner blocks; use early returns to reduce depth',
+    'complex-branching': 'extract branches into named helpers or strategy objects',
+    'hard-to-follow': 'break up into smaller, named steps',
+    'many-params': 'introduce a parameter object / struct',
+    'many-returns': 'check whether returns can be consolidated via result-holding variable',
+    'low-mi': 'general maintainability issue; start with the worst functions in this file',
+    'god-file': 'file is doing too much; split by responsibility into separate files',
+}
 
 
 @dataclass
@@ -102,6 +166,16 @@ class FileMetrics:
     function_count: int = 0
     class_count: int = 0
     max_nesting_depth: int = 0
+    # Populated during post-analysis; blends file-level metrics with the worst function
+    # score so "one awful function in a small file" doesn't hide behind averages.
+    priority_score: float = 0.0
+    worst_function_score: float = 0.0
+    # Tech-debt markers (TODO/FIXME/HACK/XXX); `tech_debt_markers` holds location+text.
+    todo_count: int = 0
+    fixme_count: int = 0
+    hack_count: int = 0
+    tech_debt_markers: List[Dict] = field(default_factory=list)
+    tags: List[str] = field(default_factory=list)
     
     @property
     def maintainability_index(self) -> float:
@@ -155,6 +229,63 @@ class FunctionMetrics:
     cognitive_complexity: int = 0
     max_nesting_depth: int = 0
     code_lines: int = 0
+    # Readability signals computed cheaply from cleaned function source.
+    param_count: int = 0
+    return_count: int = 0
+    case_count: int = 0
+    # Populated during post-analysis; higher score = stronger refactoring candidate.
+    priority_score: float = 0.0
+    tags: List[str] = field(default_factory=list)
+    extract_candidates: List[Dict] = field(default_factory=list)
+
+
+def compute_function_priority_score(
+    cognitive_complexity: int,
+    cyclomatic_complexity: int,
+    max_nesting_depth: int,
+    code_lines: int,
+    param_count: int = 0,
+) -> float:
+    """
+    Composite 0-100 priority score for refactoring a function.
+
+    Blends cognitive complexity (the signal most correlated with human difficulty),
+    cyclomatic complexity (branch count), nesting depth (visual indentation pain),
+    function length, and parameter count. Each dimension is soft-capped so beyond a
+    threshold more doesn't matter more, and the cap is normalized to 0-1 before
+    weighting — so the score is interpretable: 0 = clean, ~50 = starting to hurt,
+    80+ = priority refactoring target.
+    """
+    cog_n = min(cognitive_complexity / 40.0, 1.0)
+    cc_n = min(cyclomatic_complexity / 30.0, 1.0)
+    nest_n = min(max_nesting_depth / 8.0, 1.0)
+    len_n = min(code_lines / 200.0, 1.0)
+    params_n = min(param_count / 8.0, 1.0)
+    return round(
+        (0.30 * cog_n + 0.25 * cc_n + 0.20 * nest_n + 0.15 * len_n + 0.10 * params_n) * 100.0,
+        1,
+    )
+
+
+def _analyze_file_worker(args: Tuple[str, str, Dict[str, float], List[str], bool]):
+    """
+    Process-pool worker. Must be a top-level function so it's picklable. Reconstructs
+    a minimal CppAnalyzer in the child process, analyzes one file, and returns
+    (FileMetrics, List[FunctionMetrics]) for the main process to merge.
+    """
+    filepath_str, root_path, thresholds, ignore_macros, exclude_generated = args
+    analyzer = CppAnalyzer(
+        root_path,
+        thresholds=thresholds,
+        ignore_macros=ignore_macros,
+        exclude_generated=exclude_generated,
+    )
+    # analyze_file populates analyzer.function_metrics as a side effect; capture the
+    # slice that belongs to this file.
+    before = len(analyzer.function_metrics)
+    file_m = analyzer.analyze_file(Path(filepath_str))
+    func_ms = analyzer.function_metrics[before:]
+    return file_m, func_ms
 
 
 class CppAnalyzer:
@@ -180,13 +311,29 @@ class CppAnalyzer:
         'sizeof', 'alignof', 'typeid', 'new', 'delete', 'throw', 'co_await', 'co_yield',
     }
     
-    # Keywords that increase cognitive complexity
-    COGNITIVE_KEYWORDS = {'if', 'else', 'for', 'while', 'do', 'switch', 'catch', 'goto', 'break', 'continue'}
-    COGNITIVE_NESTING = {'if', 'else', 'for', 'while', 'do', 'switch', 'catch', 'try'}
+    # Control-flow keywords that contribute to cognitive complexity + nestable blocks.
+    # See module-level _COGNITIVE_NESTING_KEYWORDS for the canonical list.
+    COGNITIVE_NESTING: Set[str] = _COGNITIVE_NESTING_SET
     
-    def __init__(self, root_path: str, exclude_dirs: List[str] = None):
+    def __init__(
+        self,
+        root_path: str,
+        exclude_dirs: List[str] = None,
+        thresholds: Optional[Dict[str, float]] = None,
+        ignore_macros: Optional[List[str]] = None,
+        exclude_generated: bool = False,
+    ):
         self.root_path = Path(root_path)
         self.exclude_dirs = set(exclude_dirs or [])
+        self.thresholds: Dict[str, float] = dict(DEFAULT_THRESHOLDS)
+        if thresholds:
+            self.thresholds.update(thresholds)
+        self.ignore_macros: List[str] = list(ignore_macros or [])
+        self._ignore_macro_pattern: Optional[re.Pattern] = (
+            re.compile(r'\b(?:' + '|'.join(re.escape(m) for m in self.ignore_macros) + r')\b')
+            if self.ignore_macros else None
+        )
+        self.exclude_generated = exclude_generated
         self.file_metrics: List[FileMetrics] = []
         self.function_metrics: List[FunctionMetrics] = []
         self.directory_metrics: Dict[str, DirectoryMetrics] = {}
@@ -198,27 +345,106 @@ class CppAnalyzer:
                 return True
         return False
     
+    _SOURCE_EXTENSIONS: Set[str] = frozenset({
+        '.cpp', '.c', '.h', '.hpp', '.cc', '.cxx', '.hxx', '.inl'
+    })
+    _GENERATED_NAME_HINTS: Tuple[str, ...] = ('.pb.', '.generated.', '_generated.')
+    _GENERATED_HEADER_HINTS: Tuple[str, ...] = (
+        'automatically generated', 'do not edit', 'auto-generated', 'autogenerated',
+    )
+
     def find_source_files(self) -> List[Path]:
-        """Find all C/C++ source files"""
-        extensions = {'.cpp', '.c', '.h', '.hpp', '.cc', '.cxx', '.hxx', '.inl'}
-        files = []
-        
-        for ext in extensions:
-            for file in self.root_path.rglob(f'*{ext}'):
-                if not self.should_exclude(file.relative_to(self.root_path)):
-                    files.append(file)
-        
+        """
+        Find all C/C++ source files. One rglob over '*' is faster than one rglob per
+        extension on deep trees, because each rglob independently walks the directory
+        tree.
+        """
+        files: List[Path] = []
+        for file in self.root_path.rglob('*'):
+            if file.suffix.lower() not in self._SOURCE_EXTENSIONS:
+                continue
+            rel = file.relative_to(self.root_path)
+            if self.should_exclude(rel):
+                continue
+            if self.exclude_generated and self._looks_generated(file):
+                continue
+            files.append(file)
         return sorted(files)
+
+    @classmethod
+    def _looks_generated(cls, path: Path) -> bool:
+        """Heuristic: filename markers (.pb.cc, .generated.cpp) or `DO NOT EDIT` banners."""
+        name_lower = path.name.lower()
+        for hint in cls._GENERATED_NAME_HINTS:
+            if hint in name_lower:
+                return True
+        try:
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                head = ''.join(f.readline() for _ in range(5)).lower()
+        except OSError:
+            return False
+        return any(hint in head for hint in cls._GENERATED_HEADER_HINTS)
+
+    def _strip_ignored_macros(self, code: str) -> str:
+        """
+        Replace balanced `MACRO(...)` invocations with empty parens for every macro
+        listed in `ignore_macros`. Used to suppress assert-like macros from inflating
+        CC / cognitive complexity. No-op when no macros are configured.
+        """
+        if not self._ignore_macro_pattern:
+            return code
+        out = []
+        i = 0
+        for match in self._ignore_macro_pattern.finditer(code):
+            out.append(code[i:match.start()])
+            # Strip the macro name and its balanced argument list.
+            j = match.end()
+            # Skip whitespace before '('.
+            while j < len(code) and code[j] in ' \t':
+                j += 1
+            if j >= len(code) or code[j] != '(':
+                # Macro without args; just drop the name.
+                out.append(match.group(0))
+                i = match.end()
+                continue
+            # Walk balanced parens.
+            depth = 1
+            k = j + 1
+            while k < len(code) and depth > 0:
+                c = code[k]
+                if c == '(':
+                    depth += 1
+                elif c == ')':
+                    depth -= 1
+                k += 1
+            # Replace with spaces (preserving newlines) to keep line numbers intact.
+            out.append(' ' * len(match.group(0)))
+            for c in code[match.end():k]:
+                out.append('\n' if c == '\n' else ' ')
+            i = k
+        out.append(code[i:])
+        return ''.join(out)
     
-    def remove_comments_and_strings(self, code: str) -> Tuple[str, int]:
-        """Remove comments and string literals, return cleaned code and comment line count"""
+    def remove_comments_and_strings(self, code: str) -> Tuple[str, Set[int]]:
+        """
+        Remove comments and string literals, returning (cleaned_code, comment_line_numbers).
+
+        Strings (including raw strings R"(...)", u8R"...", LR"...", etc.) are replaced
+        with spaces so line numbers are preserved. Comments are stripped entirely from the
+        line (but the line itself is preserved). The returned set contains 1-indexed line
+        numbers of any line that had comment content on it.
+
+        Code-line detection is left to the caller: any line in the cleaned output with
+        non-whitespace content is a code line (allows a line to count as both code and
+        comment when code is followed by `// trailing comment`).
+        """
         result = []
-        comment_lines = set()
+        comment_lines: Set[int] = set()
         i = 0
         line_num = 1
         in_string = False
         string_char = None
-        
+
         while i < len(code):
             # Track line numbers
             if code[i] == '\n':
@@ -226,140 +452,205 @@ class CppAnalyzer:
                 result.append(code[i])
                 i += 1
                 continue
-            
-            # Handle string literals
+
+            # Raw string literals must be checked before normal string handling, because
+            # they may contain unescaped quote characters, `//`, and `/*` within their body.
+            if not in_string:
+                raw_end = self._try_match_raw_string(code, i)
+                if raw_end is not None:
+                    # Replace the entire raw string with spaces, preserving newlines so
+                    # line numbers stay accurate.
+                    for j in range(i, raw_end):
+                        if code[j] == '\n':
+                            line_num += 1
+                            result.append('\n')
+                        else:
+                            result.append(' ')
+                    i = raw_end
+                    continue
+
+            # Handle normal string literals
             if not in_string and code[i] in '"\'':
                 in_string = True
                 string_char = code[i]
-                result.append(' ')  # Replace with space
+                result.append(' ')
                 i += 1
                 continue
-            
+
             if in_string:
                 if code[i] == '\\' and i + 1 < len(code):
-                    i += 2  # Skip escaped character
+                    # Preserve newline if we skip over one inside a string continuation
+                    if code[i + 1] == '\n':
+                        result.append('\n')
+                        line_num += 1
+                    i += 2
                 elif code[i] == string_char:
                     in_string = False
                     i += 1
                 else:
+                    if code[i] == '\n':
+                        result.append('\n')
+                        line_num += 1
                     i += 1
                 continue
-            
+
             # Handle single-line comments
             if code[i:i+2] == '//':
                 comment_lines.add(line_num)
                 while i < len(code) and code[i] != '\n':
                     i += 1
                 continue
-            
+
             # Handle multi-line comments
             if code[i:i+2] == '/*':
-                start_line = line_num
+                comment_lines.add(line_num)
                 i += 2
                 while i < len(code) and code[i:i+2] != '*/':
                     if code[i] == '\n':
                         line_num += 1
                         comment_lines.add(line_num)
+                        result.append('\n')  # preserve newline for line counts
                     i += 1
-                comment_lines.add(start_line)
                 if i < len(code):
                     i += 2  # Skip */
                 continue
-            
+
             result.append(code[i])
             i += 1
-        
-        return ''.join(result), len(comment_lines)
+
+        return ''.join(result), comment_lines
+
+    @staticmethod
+    def _try_match_raw_string(code: str, i: int) -> Optional[int]:
+        """
+        If code[i:] begins a C++ raw string literal (R"delim(...)delim", u8R"...", LR"...",
+        uR"...", UR"..."), return the index just past the closing delimiter. Otherwise None.
+        """
+        start = i
+        # Optional encoding prefix
+        if code[i:i+3] == 'u8R' and i + 3 < len(code) and code[i+3] == '"':
+            i += 3
+        elif i + 2 < len(code) and code[i] in 'uUL' and code[i+1] == 'R' and code[i+2] == '"':
+            i += 2
+        elif i + 1 < len(code) and code[i] == 'R' and code[i+1] == '"':
+            i += 1
+        else:
+            return None
+
+        # Require the '"' we just validated
+        if i >= len(code) or code[i] != '"':
+            return None
+        i += 1
+
+        # Delimiter: any chars except ' ', '(', ')', '\\', '"', '\n' (per C++ spec, simplified)
+        delim_start = i
+        while i < len(code) and code[i] != '(':
+            if code[i] in ' \t\n()\\"':
+                return None
+            i += 1
+        if i >= len(code):
+            return None
+        delim = code[delim_start:i]
+        end_marker = ')' + delim + '"'
+        i += 1  # skip '('
+
+        end = code.find(end_marker, i)
+        if end == -1:
+            # Malformed raw string: skip to end of file rather than falling through to
+            # the string handler (which would then misinterpret `"` characters inside).
+            return len(code)
+        return end + len(end_marker)
     
-    def count_lines(self, code: str, comment_count: int) -> Tuple[int, int, int, int]:
-        """Count total, code, comment, and blank lines"""
-        lines = code.split('\n')
-        total = len(lines)
-        blank = sum(1 for line in lines if not line.strip())
+    def count_lines(self, raw_code: str, cleaned_code: str, comment_lines: Set[int]) -> Tuple[int, int, int, int]:
+        """
+        Count total, code, comment, and blank lines.
 
-        # Code lines = total - blank - pure comment lines (approximation)
-        code_lines = total - blank - comment_count
-        code_lines = max(0, code_lines)
-
-        return total, code_lines, comment_count, blank
+        A line with both code and a trailing comment (`int x = 5; // note`) counts in both
+        `code` and `comment`; the four returned values therefore are NOT required to sum to
+        `total` (matches `cloc`'s convention). `code` is derived from the cleaned code so
+        that comment-only lines don't contribute — any non-whitespace after cleaning is real
+        source content.
+        """
+        raw_lines = raw_code.split('\n')
+        cleaned_lines = cleaned_code.split('\n')
+        total = len(raw_lines)
+        blank = sum(1 for line in raw_lines if not line.strip())
+        code_line_count = sum(1 for line in cleaned_lines if line.strip())
+        return total, code_line_count, len(comment_lines), blank
     
     def calculate_cyclomatic_complexity(self, cleaned_code: str) -> int:
-        """Calculate McCabe's Cyclomatic Complexity"""
+        """Calculate McCabe's Cyclomatic Complexity using precompiled decision-point patterns."""
         cc = 1  # Base complexity
-        
-        # Count decision points
-        patterns = [
-            r'\bif\b', r'\bfor\b', r'\bwhile\b',
-            r'\bdo\b', r'\bcase\b', r'\bcatch\b',
-            r'(?<![?!=<>])\?(?![?=])',  # ternary operator
-            r'&&', r'\|\|'
-        ]
-        
-        for pattern in patterns:
-            cc += len(re.findall(pattern, cleaned_code))
-        
+        for pattern in _CC_PATTERNS:
+            cc += len(pattern.findall(cleaned_code))
         return cc
     
     def calculate_cognitive_complexity(self, cleaned_code: str) -> int:
+        """Cognitive Complexity (SonarSource). See `_analyze_control_flow` for the algorithm."""
+        return self._analyze_control_flow(cleaned_code)[0]
+
+    def _analyze_control_flow(self, cleaned_code: str) -> Tuple[int, int]:
         """
-        Calculate Cognitive Complexity (SonarSource metric)
-        Measures how hard code is to understand.
-        
-        Uses context-aware brace tracking: only control-flow blocks (if/for/while/etc.)
-        increment nesting, not class/struct/namespace/function bodies.
+        Walk `cleaned_code` once, returning (cognitive_complexity, max_nesting_depth).
+
+        Cognitive complexity follows SonarSource's rule: each control-flow keyword adds
+        `1 + current_nesting`, logical operators (&& / ||) each add 1, `goto` adds 1.
+
+        Nesting only increments for control-flow `{` — class/struct/namespace/function
+        bodies don't count. Detection is heuristic and handles:
+          - same-line: `if (x) {`  (brace follows `)`)
+          - multi-line: `if (x)` on one line, `{` on the next (via pending_control_flow)
+          - keyword + brace with no parens: `do {`, `try {`, `else {`
         """
         cognitive = 0
-        nesting_level = 0
-        lines = cleaned_code.split('\n')
-        
-        for line in lines:
+        nesting = 0
+        max_nesting = 0
+        pending_control_flow = False
+
+        for line in cleaned_code.split('\n'):
             stripped = line.strip()
-            
-            # Check for control flow keywords that increase cognitive complexity
-            found_keyword = False
-            for keyword in self.COGNITIVE_NESTING:
-                if re.search(rf'\b{keyword}\b', stripped):
-                    cognitive += 1 + nesting_level
-                    found_keyword = True
+            if not stripped:
+                continue
+
+            has_control_flow_on_line = False
+            for pattern in _COGNITIVE_KEYWORD_PATTERNS:
+                if pattern.search(stripped):
+                    cognitive += 1 + nesting
+                    has_control_flow_on_line = True
+                    pending_control_flow = True
                     break
-            
-            # Count logical operators (each adds 1)
-            cognitive += len(re.findall(r'&&|\|\|', stripped))
-            
-            # Count goto, break to label, continue to label
-            if re.search(r'\bgoto\b', stripped):
+
+            cognitive += len(_LOGICAL_OP_PATTERN.findall(stripped))
+            if _GOTO_PATTERN.search(stripped):
                 cognitive += 1
-            
-            # Update nesting level with context awareness
-            # Only control-flow braces increment nesting, not type/function bodies
-            open_count = stripped.count('{')
-            close_count = stripped.count('}')
-            
-            i = 0
-            while i < len(stripped):
-                if stripped[i] == '{':
-                    before = stripped[:i].rstrip()
-                    tokens = before.split()
-                    context = 'other'
-                    
-                    if tokens:
-                        last_tok = re.sub(r'[;,\s]+$', '', tokens[-1])
-                        if self._is_control_flow_keyword(last_tok):
-                            context = 'control_flow'
-                        elif self._is_type_keyword(last_tok):
-                            context = 'type_decl'
-                    
-                    if context == 'control_flow':
-                        nesting_level += 1
-                    # 'type_decl' and 'other' don't increment
-                    i += 1
-                elif stripped[i] == '}':
-                    nesting_level = max(0, nesting_level - 1)
-                    i += 1
-                else:
-                    i += 1
-        
-        return cognitive
+
+            for i, ch in enumerate(stripped):
+                if ch == '{':
+                    is_control_flow = pending_control_flow
+
+                    if not is_control_flow:
+                        before = stripped[:i].rstrip()
+                        if before.endswith(')'):
+                            is_control_flow = True
+
+                    if not is_control_flow and has_control_flow_on_line:
+                        before = stripped[:i].rstrip()
+                        remaining = before.strip()
+                        if remaining and remaining[-1] not in '({':
+                            for pattern in _COGNITIVE_KEYWORD_PATTERNS:
+                                if pattern.search(before):
+                                    is_control_flow = True
+                                    break
+
+                    if is_control_flow:
+                        nesting += 1
+                        if nesting > max_nesting:
+                            max_nesting = nesting
+                        pending_control_flow = False
+                elif ch == '}':
+                    nesting = max(0, nesting - 1)
+
+        return cognitive, max_nesting
     
     def calculate_halstead_metrics(self, cleaned_code: str) -> HalsteadMetrics:
         """Calculate Halstead complexity metrics"""
@@ -423,51 +714,69 @@ class CppAnalyzer:
             N2=sum(operands.values())
         )
     
-    def _is_control_flow_keyword(self, keyword: str) -> bool:
-        """Check if keyword is a control flow keyword that increments nesting."""
-        return keyword in {'if', 'else', 'for', 'while', 'do', 'switch', 'catch', 'try'}
-    
-    def _is_type_keyword(self, keyword: str) -> bool:
-        """Check if keyword introduces a type/namespace scope that should NOT increment nesting."""
-        return keyword in {'class', 'struct', 'namespace', 'enum', 'union', 'extern'}
-    
+    # Names that the function regex can match as identifiers but which are actually
+    # control-flow constructs (`if (x) { }`, `catch (e) { }`, etc.). Filter after match.
+    _CONTROL_FLOW_NAMES: Set[str] = frozenset({
+        'if', 'else', 'for', 'while', 'switch', 'catch',
+        'return', 'sizeof', 'alignof', 'new', 'delete', 'do', 'try'
+    })
+
+    # Cached compiled regex for function detection. Supports:
+    #   - leading whitespace / indentation on the line
+    #   - optional template<...> header
+    #   - modifiers: inline, constexpr, static, virtual, explicit, friend
+    #   - optional return type with flat template args (std::pair<int,int>)
+    #   - function names: normal identifiers, qualified (Foo::Bar), destructors (~Foo),
+    #     operator overloads including qualified (Foo::operator==)
+    #   - const / volatile / noexcept / override / final
+    #   - trailing return type (-> T)
+    #   - constructor member-initializer lists (: m_x(0), m_y(0))
+    #
+    # Approximations: nested templates (<std::pair<int,int>>), C++20 `requires` clauses,
+    # function-try-blocks, macro-generated signatures, and `throw(...)` specifications
+    # are not handled. Missing a function here just means it's absent from per-function
+    # metrics; file-level metrics are unaffected.
+    _FUNC_PATTERN: re.Pattern = re.compile(
+        r'(?:^|\n)[ \t]*'
+        r'(?:template\s*<[^>]*>\s*)?'
+        r'(?:(?:inline|constexpr|static|virtual|explicit|friend)\s+)*'
+        r'('                                                          # group 1: signature
+        r'(?:[\w:]+(?:\s*<[^<>;{}\n]*>)?(?:\s*[*&])*\s+)?'           # optional return type
+        r'(?P<name>[\w:]*?operator\s*(?:<<|>>|\(\)|\[\]|[+\-*/%^&|~!=<>,]+)|[~\w:]+)'  # name
+        r'\s*\([^)]*\)'                                               # params (no nested parens)
+        r'(?:\s*const)?(?:\s*volatile)?'
+        r'(?:\s*noexcept(?:\s*\([^)]*\))?)?'
+        r'(?:\s*override)?(?:\s*final)?'
+        r'(?:\s*->\s*[\w:&*<>,\s]+)?'                                 # trailing return type
+        r'(?:\s*:\s*[\w:]+\s*\([^)]*\)(?:\s*,\s*[\w:]+\s*\([^)]*\))*)?'  # init list
+        r')'
+        r'\s*\{',
+        re.MULTILINE
+    )
+
     def _find_function_boundaries(self, code: str) -> List[Dict]:
         """
-        Find all function boundaries in code.
-        Returns list of dicts with: name, start_line, end_line, signature_end (char pos)
-        Uses brace matching to find end of function body.
+        Find function boundaries via regex + brace matching.
+
+        Returns a list of dicts with keys: name, start_line, end_line, start_pos,
+        brace_start, brace_end. Line numbers are 1-indexed. Regex is approximate
+        (see `_FUNC_PATTERN` comment for known limitations).
         """
         functions = []
-        lines = code.split('\n')
-        
-        # Patterns for function declarations
-        # Handle: return_type name(params) const noexcept override -> type { ... }
-        func_pattern = re.compile(
-            r'(?:^|\n)'                                    # Start of line or newline
-            r'(?:template\s*<[^>]*>\s*)?'                  # Optional template
-            r'(?:inline\s+|constexpr\s+|static\s+|virtual\s+)*'  # Modifiers
-            r'('                                           # Group 1: full signature (capture)
-            r'(?:[\w:]+(?:\s*\*|\s*&)*\s+)?'              # Optional return type
-            r'(?:[\w:]+)\s*'                               # Function name
-            r'\([^)]*\)'                                   # Parameters
-            r'(?:\s*const)?(?:\s*volatile)?'              # const/volatile
-            r'(?:\s*noexcept(?:\s*\([^)]*\))?)?'          # noexcept
-            r'(?:\s*override)?(?:\s*final)?'              # override/final
-            r'(?:\s*->\s*[\w:&*]+(?:\s*<[^>]*>)?(?:\s*\*|\s*&)*)?'  # trailing return type
-            r')'
-            r'\s*\{',                                      # Opening brace
-            re.MULTILINE
-        )
-        
-        for match in func_pattern.finditer(code):
-            # Get line number (1-indexed)
+        for match in self._FUNC_PATTERN.finditer(code):
+            func_name = match.group('name')
+            # The name regex accepts control-flow keywords like `if`, which would match
+            # things like `if (cond) { ... }`. Reject those here.
+            if func_name in self._CONTROL_FLOW_NAMES:
+                continue
+
             start_pos = match.start()
             start_line = code[:start_pos].count('\n') + 1
-            
-            # Find the opening brace position
+
             brace_pos = match.end() - 1  # position of '{'
-            
-            # Find matching closing brace using a simple stack approach
+
+            # Find matching closing brace (strings/comments inside function bodies are
+            # rare enough at this granularity that a naive scan is acceptable).
             brace_count = 1
             pos = brace_pos + 1
             while pos < len(code) and brace_count > 0:
@@ -476,265 +785,259 @@ class CppAnalyzer:
                 elif code[pos] == '}':
                     brace_count -= 1
                 pos += 1
-            
-            if brace_count == 0:
-                end_line = code[:pos - 1].count('\n') + 1
-                
-                # Extract function name from the match
-                full_sig = match.group(1)
-                # Find the function name (after return type, before parenthesis)
-                name_match = re.search(r'(?:[\w:]+(?:\s*\*|\s*&)*\s+)?([\w:]+)\s*\(', full_sig)
-                func_name = name_match.group(1) if name_match else '<unknown>'
-                
-                functions.append({
-                    'name': func_name,
-                    'start_line': start_line,
-                    'end_line': end_line,
-                    'start_pos': start_pos,
-                    'brace_start': brace_pos,
-                    'brace_end': pos - 1
-                })
-        
+
+            if brace_count != 0:
+                continue  # unbalanced; skip rather than emit garbage
+
+            end_line = code[:pos - 1].count('\n') + 1
+            functions.append({
+                'name': func_name,
+                'start_line': start_line,
+                'end_line': end_line,
+                'start_pos': start_pos,
+                'brace_start': brace_pos,
+                'brace_end': pos - 1,
+            })
+
         return functions
     
     def _calculate_function_complexities(self, code: str, func_boundaries: List[Dict], cleaned_code: str) -> List[FunctionMetrics]:
-        """
-        Calculate complexity metrics for each function.
-        Uses cleaned_code for CC/cognitive, and tracks control-flow-only nesting.
-        """
+        """Calculate per-function complexity metrics using `_analyze_control_flow` once per function."""
         if not func_boundaries:
             return []
-        
+
         results = []
-        code_lines = code.split('\n')
-        
+        source_lines = code.split('\n')
+
         for func in func_boundaries:
-            # Extract function code (from start to end line, 1-indexed)
             start_l = func['start_line'] - 1  # 0-indexed
             end_l = func['end_line']
-            func_lines = code_lines[start_l:end_l]
-            func_code = '\n'.join(func_lines)
-            
-            # Re-clean just this function's code
+            func_code = '\n'.join(source_lines[start_l:end_l])
+
             func_cleaned, _ = self.remove_comments_and_strings(func_code)
-            
-            # Calculate CC (decision points in this function)
-            func_cc = 1
-            patterns = [
-                r'\bif\b', r'\bfor\b', r'\bwhile\b',
-                r'\bdo\b', r'\bcase\b', r'\bcatch\b',
-                r'(?<![?!=<>])\?(?![?=])',  # ternary
-                r'&&', r'\|\|'
-            ]
-            for pattern in patterns:
-                func_cc += len(re.findall(pattern, func_cleaned))
-            
-            max_nesting = self._calculate_nesting_depth(func_cleaned)
-            func_cognitive = self._calculate_cognitive_complexity_for_function(func_cleaned)
-            func_loc = end_l - start_l
-            
-            results.append(FunctionMetrics(
+            func_cc = self.calculate_cyclomatic_complexity(func_cleaned)
+            func_cognitive, func_max_nesting = self._analyze_control_flow(func_cleaned)
+
+            param_count = self._count_parameters(code, func['brace_start'])
+            return_count = len(_RETURN_PATTERN.findall(func_cleaned))
+            case_count = len(_CASE_PATTERN.findall(func_cleaned))
+
+            fm = FunctionMetrics(
                 name=func['name'],
                 filepath='',
                 start_line=func['start_line'],
                 end_line=end_l,
                 cyclomatic_complexity=func_cc,
                 cognitive_complexity=func_cognitive,
-                max_nesting_depth=max_nesting,
-                code_lines=func_loc
-            ))
-        
+                max_nesting_depth=func_max_nesting,
+                code_lines=end_l - start_l,
+                param_count=param_count,
+                return_count=return_count,
+                case_count=case_count,
+            )
+            # Extract-method candidates (line ranges where nesting stays deep) are cheap
+            # to compute and tell Claude where to look first, so bundle them here.
+            fm.extract_candidates = self._find_extract_candidates(
+                func_cleaned,
+                base_line=func['start_line'],
+                min_depth=int(self.thresholds['extract_candidate_depth']),
+                min_lines=int(self.thresholds['extract_candidate_min_lines']),
+            )
+            results.append(fm)
+
         return results
-    
-    def _calculate_nesting_depth(self, code: str) -> int:
+
+    @staticmethod
+    def _count_parameters(code: str, brace_start: int) -> int:
         """
-        Calculate maximum control-flow nesting depth.
-        Only control flow blocks (if/for/while/do/switch/catch) increment nesting.
-        Handles multi-line control flow (keyword on one line, brace on next).
+        Count parameters in the function signature preceding `brace_start`.
+
+        Walks backwards from the `{` to find the signature's `(...)` pair, then counts
+        top-level commas. Returns 0 for empty, `(void)`, or signatures that can't be
+        parsed (malformed or missing-paren cases).
         """
-        max_depth = 0
-        current_nesting = 0
+        # Scan backwards for the closing ')' of the param list.
+        close_pos = code.rfind(')', 0, brace_start)
+        if close_pos == -1:
+            return 0
+        # Find matching '(' — walk backwards counting parens.
+        depth = 1
+        open_pos = close_pos - 1
+        while open_pos >= 0 and depth > 0:
+            c = code[open_pos]
+            if c == ')':
+                depth += 1
+            elif c == '(':
+                depth -= 1
+            open_pos -= 1
+        if depth != 0:
+            return 0
+        open_pos += 1  # index of the matching '('
+        params_src = code[open_pos + 1:close_pos].strip()
+        if not params_src or params_src == 'void':
+            return 0
+
+        # Count top-level commas (ignore commas inside nested <>, (), {}, []).
+        count = 1
+        depth_angle = depth_paren = depth_brace = depth_brack = 0
+        for ch in params_src:
+            if ch == '<':
+                depth_angle += 1
+            elif ch == '>' and depth_angle > 0:
+                depth_angle -= 1
+            elif ch == '(':
+                depth_paren += 1
+            elif ch == ')' and depth_paren > 0:
+                depth_paren -= 1
+            elif ch == '{':
+                depth_brace += 1
+            elif ch == '}' and depth_brace > 0:
+                depth_brace -= 1
+            elif ch == '[':
+                depth_brack += 1
+            elif ch == ']' and depth_brack > 0:
+                depth_brack -= 1
+            elif ch == ',' and depth_angle == depth_paren == depth_brace == depth_brack == 0:
+                count += 1
+        return count
+
+    @staticmethod
+    def _find_extract_candidates(
+        cleaned_func_code: str,
+        base_line: int,
+        min_depth: int,
+        min_lines: int,
+    ) -> List[Dict]:
+        """
+        Scan the function body for contiguous runs where nesting depth stays at or above
+        `min_depth` for at least `min_lines` lines. Each such run is a candidate block to
+        extract into a helper. `base_line` is the 1-indexed line number of the function
+        start in the source file, used to translate function-local line indices back to
+        source-file line numbers.
+
+        Uses the same brace-context detection as `_analyze_control_flow` but tracks depth
+        per-line instead of cumulatively computing cognitive complexity.
+        """
+        candidates: List[Dict] = []
+        lines = cleaned_func_code.split('\n')
+        depth = 0
         pending_control_flow = False
-        lines = code.split('\n')
-        
-        for line in lines:
+        run_start: Optional[int] = None  # 0-indexed inclusive line where the run began
+        run_peak = 0
+
+        for idx, line in enumerate(lines):
             stripped = line.strip()
-            if not stripped:
-                continue
-            
-            has_control_flow_on_line = False
-            for keyword in self.COGNITIVE_NESTING:
-                if re.search(rf'\b{keyword}\b', stripped):
-                    has_control_flow_on_line = True
-                    pending_control_flow = True  # Set flag so next line's brace is recognized
-                    break
-            
-            # If brace is on same line, clear pending (consumed immediately)
-            if '{' in stripped:
-                pending_control_flow = False
-            
-            i = 0
-            while i < len(stripped):
-                ch = stripped[i]
+
+            line_has_keyword = False
+            if stripped:
+                for pattern in _COGNITIVE_KEYWORD_PATTERNS:
+                    if pattern.search(stripped):
+                        line_has_keyword = True
+                        pending_control_flow = True
+                        break
+
+            # Track depth over this line (at end-of-line).
+            for i, ch in enumerate(stripped):
                 if ch == '{':
                     is_control_flow = pending_control_flow
-                    
                     if not is_control_flow:
                         before = stripped[:i].rstrip()
                         if before.endswith(')'):
                             is_control_flow = True
-                    
-                    if not is_control_flow and has_control_flow_on_line:
+                    if not is_control_flow and line_has_keyword:
                         before = stripped[:i].rstrip()
                         remaining = before.strip()
                         if remaining and remaining[-1] not in '({':
-                            for keyword in self.COGNITIVE_NESTING:
-                                if keyword in before:
+                            for pat in _COGNITIVE_KEYWORD_PATTERNS:
+                                if pat.search(before):
                                     is_control_flow = True
                                     break
-                    
                     if is_control_flow:
-                        current_nesting += 1
-                        max_depth = max(max_depth, current_nesting)
-                        pending_control_flow = False  # Consume the pending flag when used
-                    
-                    i += 1
+                        depth += 1
+                        pending_control_flow = False
                 elif ch == '}':
-                    current_nesting = max(0, current_nesting - 1)
-                    i += 1
-                else:
-                    i += 1
-        
-        return max_depth
-    
-    def _calculate_cognitive_complexity_for_function(self, code: str) -> int:
+                    depth = max(0, depth - 1)
+
+            if depth >= min_depth:
+                if run_start is None:
+                    run_start = idx
+                    run_peak = depth
+                elif depth > run_peak:
+                    run_peak = depth
+            else:
+                if run_start is not None:
+                    run_len = idx - run_start
+                    if run_len >= min_lines:
+                        candidates.append({
+                            'start_line': base_line + run_start,
+                            'end_line': base_line + idx - 1,
+                            'peak_depth': run_peak,
+                            'line_count': run_len,
+                        })
+                    run_start = None
+
+        # Handle a run that extends to the end of the function.
+        if run_start is not None:
+            run_len = len(lines) - run_start
+            if run_len >= min_lines:
+                candidates.append({
+                    'start_line': base_line + run_start,
+                    'end_line': base_line + len(lines) - 1,
+                    'peak_depth': run_peak,
+                    'line_count': run_len,
+                })
+
+        return candidates
+
+    @staticmethod
+    def _find_tech_debt_markers(raw_code: str) -> List[Dict]:
         """
-        Calculate cognitive complexity for a function.
-        Uses same algorithm as calculate_cognitive_complexity but for a single function.
+        Find TODO/FIXME/HACK/XXX markers in raw source (not cleaned — markers are in
+        comments, which cleaning strips). Returns list of {line, marker, text}.
         """
-        cognitive = 0
-        nesting_level = 0
-        pending_control_flow = False
-        lines = code.split('\n')
-        
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            
-            for keyword in self.COGNITIVE_NESTING:
-                if re.search(rf'\b{keyword}\b', stripped):
-                    cognitive += 1 + nesting_level
-                    pending_control_flow = True
-                    break
-            
-            cognitive += len(re.findall(r'&&|\|\|', stripped))
-            
-            if re.search(r'\bgoto\b', stripped):
-                cognitive += 1
-            
-            has_control_flow_on_line = False
-            for keyword in self.COGNITIVE_NESTING:
-                if re.search(rf'\b{keyword}\b', stripped):
-                    has_control_flow_on_line = True
-                    break
-            
-            i = 0
-            while i < len(stripped):
-                ch = stripped[i]
-                if ch == '{':
-                    is_control_flow = pending_control_flow
-                    
-                    if not is_control_flow:
-                        before = stripped[:i].rstrip()
-                        if before.endswith(')'):
-                            is_control_flow = True
-                    
-                    if not is_control_flow and has_control_flow_on_line:
-                        before = stripped[:i].rstrip()
-                        remaining = before.strip()
-                        if remaining and remaining[-1] not in '({':
-                            for keyword in self.COGNITIVE_NESTING:
-                                if keyword in before:
-                                    is_control_flow = True
-                                    break
-                    
-                    if is_control_flow:
-                        nesting_level += 1
-                        pending_control_flow = False  # Consume the pending flag when used
-                    
-                    i += 1
-                elif ch == '}':
-                    nesting_level = max(0, nesting_level - 1)
-                    i += 1
-                else:
-                    i += 1
-        
-        return cognitive
-    
-    def _calculate_file_max_nesting(self, cleaned_code: str) -> int:
-        """
-        Calculate maximum nesting depth for a file.
-        Uses context-aware brace tracking: only control-flow blocks increment nesting.
-        Handles multi-line control flow (keyword on one line, brace on next).
-        """
-        max_depth = 0
-        current_nesting = 0
-        pending_control_flow = False  # Next '{' following a control flow keyword
-        lines = cleaned_code.split('\n')
-        
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            
-            # Check if this line has a control flow keyword
-            has_control_flow_on_line = False
-            for keyword in self.COGNITIVE_NESTING:
-                if re.search(rf'\b{keyword}\b', stripped):
-                    has_control_flow_on_line = True
-                    break
-            
-            # Process each character to find braces in context
-            i = 0
-            while i < len(stripped):
-                ch = stripped[i]
-                if ch == '{':
-                    # Determine if this is a control flow block
-                    is_control_flow = pending_control_flow
-                    
-                    if not is_control_flow:
-                        # Check if '{' comes after ')' (indicates if/for/while/do/switch/catch)
-                        before = stripped[:i].rstrip()
-                        if before.endswith(')'):
-                            is_control_flow = True
-                    
-                    if not is_control_flow and has_control_flow_on_line:
-                        # Check if '{' is on same line as control flow keyword
-                        before = stripped[:i].rstrip()
-                        remaining = before.strip()
-                        if remaining and remaining[-1] not in '({':
-                            # Check if '{' is close to control flow keyword
-                            for keyword in self.COGNITIVE_NESTING:
-                                if keyword in before:
-                                    is_control_flow = True
-                                    break
-                    
-                    if is_control_flow:
-                        current_nesting += 1
-                        max_depth = max(max_depth, current_nesting)
-                        pending_control_flow = False  # Consume the pending flag when used
-                    
-                    i += 1
-                elif ch == '}':
-                    current_nesting = max(0, current_nesting - 1)
-                    i += 1
-                else:
-                    i += 1
-                
-                # If line had control flow keyword but no brace, keep pending for next line
-        
-        return max_depth
+        markers = []
+        for match in _TECH_DEBT_PATTERN.finditer(raw_code):
+            line_num = raw_code[:match.start()].count('\n') + 1
+            markers.append({
+                'line': line_num,
+                'marker': match.group(1),
+                'text': match.group(2).strip(),
+            })
+        return markers
+
+    def _tag_function(self, fm: FunctionMetrics) -> List[str]:
+        """Apply the reliable anti-pattern tag rules. Order-stable for stable output."""
+        t = self.thresholds
+        tags: List[str] = []
+        if fm.code_lines > t['very_long_function_loc']:
+            tags.append('very-long-function')
+        elif fm.code_lines > t['long_function_loc']:
+            tags.append('long-function')
+        if fm.max_nesting_depth >= t['deep_nesting']:
+            tags.append('deep-nesting')
+        if fm.cyclomatic_complexity >= t['complex_branching_cc']:
+            tags.append('complex-branching')
+        if fm.cognitive_complexity >= t['hard_to_follow_cognitive']:
+            tags.append('hard-to-follow')
+        if fm.param_count >= t['many_params']:
+            tags.append('many-params')
+        if fm.return_count >= t['many_returns']:
+            tags.append('many-returns')
+        if fm.case_count >= t['big_switch_cases'] and fm.max_nesting_depth <= t['big_switch_max_nesting']:
+            tags.append('big-switch')
+        if fm.max_nesting_depth >= t['nesting_hell_depth'] and fm.case_count < t['nesting_hell_max_cases']:
+            tags.append('nesting-hell')
+        return tags
+
+    def _tag_file(self, fm: FileMetrics) -> List[str]:
+        """Apply file-level anti-pattern tags. Functions get tagged separately."""
+        t = self.thresholds
+        tags: List[str] = []
+        if fm.maintainability_index < t['low_mi']:
+            tags.append('low-mi')
+        if fm.code_lines > t['god_file_loc'] or fm.function_count > t['god_file_funcs']:
+            tags.append('god-file')
+        return tags
     
     def _count_classes(self, cleaned_code: str) -> int:
         """Count class/struct declarations in the code"""
@@ -751,27 +1054,35 @@ class CppAnalyzer:
             fm = FileMetrics(filepath=str(filepath.relative_to(self.root_path)))
             fm.max_nesting_depth = 0
             return fm
-        
-        cleaned_code, comment_count = self.remove_comments_and_strings(code)
 
-        total, code_lines, comment_lines, blank = self.count_lines(code, comment_count)
-        cc = self.calculate_cyclomatic_complexity(cleaned_code)
-        cognitive = self.calculate_cognitive_complexity(cleaned_code)
-        halstead = self.calculate_halstead_metrics(cleaned_code)
+        cleaned_code, comment_line_set = self.remove_comments_and_strings(code)
+        # Macro stripping runs on cleaned code (strings/comments already gone) to avoid
+        # accidentally matching macro names inside strings.
+        scan_code = self._strip_ignored_macros(cleaned_code)
+
+        total, code_lines, comment_lines, blank = self.count_lines(code, cleaned_code, comment_line_set)
+        cc = self.calculate_cyclomatic_complexity(scan_code)
+        cognitive, max_nesting = self._analyze_control_flow(scan_code)
+        halstead = self.calculate_halstead_metrics(scan_code)
         classes = self._count_classes(cleaned_code)
-        max_nesting = self._calculate_file_max_nesting(cleaned_code)
-        
-        # Extract per-function metrics
+
+        # Extract per-function metrics (operates on raw code for signature detection and
+        # on cleaned code for body metrics).
         func_boundaries = self._find_function_boundaries(code)
         func_metrics = self._calculate_function_complexities(code, func_boundaries, cleaned_code)
-        
-        # Set filepath and add to global list
+
+        # TODO/FIXME/HACK markers come from raw source — they're inside comments.
+        tech_debt = self._find_tech_debt_markers(code)
+        todo_count = sum(1 for m in tech_debt if m['marker'] == 'TODO')
+        fixme_count = sum(1 for m in tech_debt if m['marker'] == 'FIXME')
+        hack_count = sum(1 for m in tech_debt if m['marker'] in ('HACK', 'XXX'))
+
         relative_path = str(filepath.relative_to(self.root_path))
         for fm in func_metrics:
             fm.filepath = relative_path
             self.function_metrics.append(fm)
-        
-        return FileMetrics(
+
+        file_m = FileMetrics(
             filepath=relative_path,
             total_lines=total,
             code_lines=code_lines,
@@ -782,23 +1093,92 @@ class CppAnalyzer:
             halstead=halstead,
             function_count=len(func_boundaries),
             class_count=classes,
-            max_nesting_depth=max_nesting
+            max_nesting_depth=max_nesting,
+            todo_count=todo_count,
+            fixme_count=fixme_count,
+            hack_count=hack_count,
+            tech_debt_markers=tech_debt,
         )
+        return file_m
     
-    def analyze(self) -> None:
-        """Analyze all source files"""
+    def analyze(self, workers: int = 0) -> None:
+        """
+        Analyze all source files.
+
+        When `workers` is 0, parallelizes across cores for >=200 files and runs serially
+        below that threshold (process-pool startup dominates on small trees). `workers=1`
+        forces serial; `workers>1` forces that many workers regardless of file count.
+        """
         files = self.find_source_files()
         print(f"Found {len(files)} source files to analyze...")
-        
-        for i, filepath in enumerate(files):
-            if (i + 1) % 50 == 0:
-                print(f"  Analyzed {i + 1}/{len(files)} files...")
-            
-            metrics = self.analyze_file(filepath)
-            self.file_metrics.append(metrics)
-        
+
+        auto_parallel = workers == 0 and len(files) >= 200
+        use_parallel = workers > 1 or auto_parallel
+
+        if use_parallel:
+            import concurrent.futures
+            worker_count = workers if workers > 1 else max(1, (os.cpu_count() or 2) - 1)
+            print(f"  Parallelizing across {worker_count} workers...")
+            # We pickle a lightweight (root_path, thresholds, ignore_macros, exclude_generated)
+            # bundle and reconstruct the analyzer in each worker; function_metrics come back
+            # alongside FileMetrics via a top-level helper.
+            args = [(str(f), str(self.root_path), dict(self.thresholds),
+                     list(self.ignore_macros), self.exclude_generated) for f in files]
+            with concurrent.futures.ProcessPoolExecutor(max_workers=worker_count) as executor:
+                for i, result in enumerate(executor.map(_analyze_file_worker, args)):
+                    if (i + 1) % 50 == 0:
+                        print(f"  Analyzed {i + 1}/{len(files)} files...")
+                    file_m, func_ms = result
+                    self.file_metrics.append(file_m)
+                    self.function_metrics.extend(func_ms)
+        else:
+            for i, filepath in enumerate(files):
+                if (i + 1) % 50 == 0:
+                    print(f"  Analyzed {i + 1}/{len(files)} files...")
+                metrics = self.analyze_file(filepath)
+                self.file_metrics.append(metrics)
+
         print(f"Analyzed {len(files)} files.")
+        self._compute_priority_scores()
         self._aggregate_by_directory()
+
+    def _compute_priority_scores(self) -> None:
+        """
+        Assign `priority_score` and `tags` to every FunctionMetrics and FileMetrics.
+
+        File-level score blends the file's own metrics with the worst contained function
+        so "one awful function in a small file" doesn't hide behind averages. Uses 70/30
+        weighting between file-intrinsic signals and the worst function's score.
+        """
+        functions_by_file: Dict[str, List[FunctionMetrics]] = defaultdict(list)
+        for fm in self.function_metrics:
+            fm.priority_score = compute_function_priority_score(
+                cognitive_complexity=fm.cognitive_complexity,
+                cyclomatic_complexity=fm.cyclomatic_complexity,
+                max_nesting_depth=fm.max_nesting_depth,
+                code_lines=fm.code_lines,
+                param_count=fm.param_count,
+            )
+            fm.tags = self._tag_function(fm)
+            functions_by_file[fm.filepath].append(fm)
+
+        for file_m in self.file_metrics:
+            worst = 0.0
+            for func in functions_by_file.get(file_m.filepath, ()):
+                if func.priority_score > worst:
+                    worst = func.priority_score
+            file_m.worst_function_score = worst
+
+            file_intrinsic = compute_function_priority_score(
+                cognitive_complexity=file_m.cognitive_complexity,
+                cyclomatic_complexity=file_m.cyclomatic_complexity,
+                max_nesting_depth=file_m.max_nesting_depth,
+                code_lines=file_m.code_lines,
+            )
+            # Scale file-intrinsic down a touch (files naturally score higher than
+            # functions because they accumulate), then blend in the worst function.
+            file_m.priority_score = round(0.7 * file_intrinsic + 0.3 * worst, 1)
+            file_m.tags = self._tag_file(file_m)
     
     def _aggregate_by_directory(self) -> None:
         """Aggregate metrics by directory"""
@@ -832,11 +1212,21 @@ class CppAnalyzer:
         """Get overall summary statistics"""
         if not self.file_metrics:
             return {}
-        
+
         total_files = len(self.file_metrics)
         total_loc = sum(f.code_lines for f in self.file_metrics)
         total_lines = sum(f.total_lines for f in self.file_metrics)
-        
+        avg_mi = sum(f.maintainability_index for f in self.file_metrics) / total_files
+
+        if avg_mi >= 80:
+            rating = "Excellent (highly maintainable)"
+        elif avg_mi >= 60:
+            rating = "Good (moderately maintainable)"
+        elif avg_mi >= 40:
+            rating = "Fair (somewhat difficult to maintain)"
+        else:
+            rating = "Poor (difficult to maintain)"
+
         return {
             'total_files': total_files,
             'total_lines': total_lines,
@@ -847,12 +1237,13 @@ class CppAnalyzer:
             'max_cyclomatic': max(f.cyclomatic_complexity for f in self.file_metrics),
             'avg_cognitive': sum(f.cognitive_complexity for f in self.file_metrics) / total_files,
             'max_cognitive': max(f.cognitive_complexity for f in self.file_metrics),
-            'avg_maintainability': sum(f.maintainability_index for f in self.file_metrics) / total_files,
+            'avg_maintainability': avg_mi,
             'min_maintainability': min(f.maintainability_index for f in self.file_metrics),
             'total_functions': sum(f.function_count for f in self.file_metrics),
             'total_classes': sum(f.class_count for f in self.file_metrics),
             'avg_halstead_volume': sum(f.halstead.volume for f in self.file_metrics) / total_files,
             'total_estimated_bugs': sum(f.halstead.bugs_delivered for f in self.file_metrics),
+            'overall_rating': rating,
         }
     
     def print_report(self) -> None:
@@ -938,6 +1329,23 @@ class CppAnalyzer:
             print(f"  {fm.filepath}")
             print(f"    MI: {fm.maintainability_index:.1f}, CC: {fm.cyclomatic_complexity}, "
                   f"LOC: {fm.code_lines}")
+
+        # Per-function refactoring queue: the highest-ROI section for Claude/human
+        # reviewers. Sorted by priority_score, formatted as `file:line` so it's
+        # trivially clickable and parseable.
+        if self.function_metrics:
+            print("\n=== TOP 20 FUNCTION HOTSPOTS (refactoring queue) ===")
+            print("-" * 40)
+            top_funcs = sorted(
+                self.function_metrics,
+                key=lambda f: f.priority_score,
+                reverse=True
+            )[:20]
+            for i, func in enumerate(top_funcs, 1):
+                print(f"  {i:2d}. {func.filepath}:{func.start_line}  {func.name}")
+                print(f"      score={func.priority_score:.1f}  "
+                      f"CC={func.cyclomatic_complexity}  cog={func.cognitive_complexity}  "
+                      f"nesting={func.max_nesting_depth}  LOC={func.code_lines}")
 
 
 class MetricsVisualizer:
@@ -1604,41 +2012,63 @@ def export_csv(analyzer: CppAnalyzer, output_dir: Path) -> None:
             writer = csv.writer(f)
             writer.writerow([
                 'Function Name', 'File', 'Start Line', 'End Line',
-                'Cyclomatic Complexity', 'Cognitive Complexity', 
-                'Max Nesting Depth', 'Code Lines'
+                'Cyclomatic Complexity', 'Cognitive Complexity',
+                'Max Nesting Depth', 'Code Lines', 'Priority Score'
             ])
-            
+
             for fm in analyzer.function_metrics:
                 writer.writerow([
                     fm.name, fm.filepath, fm.start_line, fm.end_line,
                     fm.cyclomatic_complexity, fm.cognitive_complexity,
-                    fm.max_nesting_depth, fm.code_lines
+                    fm.max_nesting_depth, fm.code_lines,
+                    f'{fm.priority_score:.1f}'
                 ])
-        
+
         print(f"  Function metrics exported to: {func_csv}")
 
 
+JSON_SCHEMA_VERSION = '1.0'
+
+JSON_CAVEATS = (
+    "Function-level metrics come from regex-based C++ parsing, which is approximate: "
+    "function-try-blocks, C++20 `requires` clauses, macro-generated signatures, nested "
+    "templates (e.g. std::vector<std::pair<int,int>>), and `throw(...)` exception specs "
+    "may cause functions to be missed. File-level metrics are unaffected. Missing "
+    "functions means they are absent from per-function lists, not that the file is simple."
+)
+
+
 def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
-    """Export comprehensive metrics to a JSON file for machine-readable analysis"""
+    """Export comprehensive metrics to a JSON file for machine-readable analysis."""
     import json
 
     summary = analyzer.get_summary()
 
-    # Compute overall rating
-    mi_avg = summary.get('avg_maintainability', 0)
-    if mi_avg >= 80:
-        rating = "Excellent"
-    elif mi_avg >= 60:
-        rating = "Good"
-    elif mi_avg >= 40:
-        rating = "Fair"
-    else:
-        rating = "Poor"
+    # Group functions by filepath so we can embed top functions per file.
+    functions_by_file: Dict[str, List[FunctionMetrics]] = defaultdict(list)
+    for func in analyzer.function_metrics:
+        functions_by_file[func.filepath].append(func)
 
-    summary['overall_rating'] = rating
-
-    def file_to_dict(fm: FileMetrics) -> dict:
+    def function_to_dict(func: FunctionMetrics) -> dict:
         return {
+            'name': func.name,
+            'file': func.filepath,
+            'start_line': func.start_line,
+            'end_line': func.end_line,
+            'cyclomatic_complexity': func.cyclomatic_complexity,
+            'cognitive_complexity': func.cognitive_complexity,
+            'max_nesting_depth': func.max_nesting_depth,
+            'code_lines': func.code_lines,
+            'param_count': func.param_count,
+            'return_count': func.return_count,
+            'case_count': func.case_count,
+            'priority_score': func.priority_score,
+            'tags': func.tags,
+            'extract_candidates': func.extract_candidates,
+        }
+
+    def file_to_dict(fm: FileMetrics, include_top_functions: bool = False) -> dict:
+        out = {
             'filepath': fm.filepath,
             'total_lines': fm.total_lines,
             'code_lines': fm.code_lines,
@@ -1654,13 +2084,36 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
             'halstead_difficulty': round(fm.halstead.difficulty, 2),
             'halstead_effort': round(fm.halstead.effort, 2),
             'estimated_bugs': round(fm.halstead.bugs_delivered, 3),
+            'priority_score': fm.priority_score,
+            'worst_function_score': fm.worst_function_score,
+            'tags': fm.tags,
+            'todo_count': fm.todo_count,
+            'fixme_count': fm.fixme_count,
+            'hack_count': fm.hack_count,
         }
+        if include_top_functions:
+            top = sorted(
+                functions_by_file.get(fm.filepath, ()),
+                key=lambda f: f.priority_score,
+                reverse=True,
+            )[:5]
+            out['top_functions'] = [function_to_dict(f) for f in top]
+        return out
 
-    # Ranked lists (top 20 each)
+    # Ranked lists (top 20 each). `top_complex_files` and `lowest_maintainability_files`
+    # embed per-file top functions so downstream consumers (including Claude) can see
+    # which part of a file is the problem without a second pass.
     top_complex = sorted(analyzer.file_metrics, key=lambda f: f.cyclomatic_complexity, reverse=True)[:20]
     lowest_mi = sorted(analyzer.file_metrics, key=lambda f: f.maintainability_index)[:20]
     deepest_nesting = sorted(analyzer.file_metrics, key=lambda f: f.max_nesting_depth, reverse=True)[:20]
     largest = sorted(analyzer.file_metrics, key=lambda f: f.code_lines, reverse=True)[:20]
+
+    # Function hotspots: top 50 by priority_score. The refactoring queue.
+    function_hotspots = sorted(
+        analyzer.function_metrics,
+        key=lambda f: f.priority_score,
+        reverse=True,
+    )[:50]
 
     # Directories
     dir_list = []
@@ -1681,11 +2134,31 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
             'comment_ratio': round(comment_ratio, 4),
         })
 
+    # Flatten tech-debt markers across all files into a single worklist (bounded to 500
+    # to keep the JSON manageable on large codebases).
+    tech_debt = []
+    for fm in analyzer.file_metrics:
+        for marker in fm.tech_debt_markers:
+            tech_debt.append({
+                'file': fm.filepath,
+                'line': marker['line'],
+                'marker': marker['marker'],
+                'text': marker['text'],
+            })
+    # Order: FIXME/HACK before TODO, then by file path for stable output.
+    _marker_priority = {'FIXME': 0, 'HACK': 1, 'XXX': 1, 'TODO': 2}
+    tech_debt.sort(key=lambda m: (_marker_priority.get(m['marker'], 3), m['file'], m['line']))
+
     report = {
+        'schema_version': JSON_SCHEMA_VERSION,
+        'caveats': JSON_CAVEATS,
+        'thresholds': analyzer.thresholds,
         'summary': summary,
         'directories': dir_list,
-        'top_complex_files': [file_to_dict(f) for f in top_complex],
-        'lowest_maintainability_files': [file_to_dict(f) for f in lowest_mi],
+        'function_hotspots': [function_to_dict(f) for f in function_hotspots],
+        'tech_debt_markers': tech_debt[:500],
+        'top_complex_files': [file_to_dict(f, include_top_functions=True) for f in top_complex],
+        'lowest_maintainability_files': [file_to_dict(f, include_top_functions=True) for f in lowest_mi],
         'deepest_nesting_files': [file_to_dict(f) for f in deepest_nesting],
         'largest_files': [file_to_dict(f) for f in largest],
         'all_files': [file_to_dict(f) for f in analyzer.file_metrics],
@@ -1696,6 +2169,216 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
         json.dump(report, f, indent=2, default=str)
 
     print(f"  JSON report exported to: {json_path}")
+
+
+def _suggest_refactor(tags: List[str]) -> str:
+    """Derive a short suggested-approach string from a function's tags."""
+    if not tags:
+        return ''
+    # Pick up to 3 most informative tags for the suggestion, preferring the composites
+    # (nesting-hell / big-switch) over individual signals since they imply a shape.
+    priority_order = [
+        'nesting-hell', 'big-switch', 'very-long-function', 'long-function',
+        'deep-nesting', 'many-params', 'many-returns',
+        'hard-to-follow', 'complex-branching',
+    ]
+    hints = []
+    for t in priority_order:
+        if t in tags and t in _TAG_SUGGESTIONS:
+            hints.append(_TAG_SUGGESTIONS[t])
+            if len(hints) == 2:
+                break
+    return '; '.join(hints)
+
+
+def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
+    """
+    Export a human-readable markdown report. Structured so each hotspot entry is easily
+    quotable in a PR comment and every file reference is a markdown link to `file:line`.
+    """
+    summary = analyzer.get_summary()
+    out: List[str] = []
+    out.append('# Code Complexity Report\n')
+    out.append(f'Root: `{analyzer.root_path}`\n')
+    out.append('')
+    out.append('## Summary\n')
+    if summary:
+        out.append(f'- Files: **{summary["total_files"]:,}**, SLOC: **{summary["total_code_lines"]:,}**, '
+                   f'Functions: **{summary["total_functions"]:,}**, Classes: **{summary["total_classes"]:,}**')
+        out.append(f'- Avg Cyclomatic: **{summary["avg_cyclomatic"]:.1f}** (max {summary["max_cyclomatic"]}), '
+                   f'Avg Cognitive: **{summary["avg_cognitive"]:.1f}** (max {summary["max_cognitive"]})')
+        out.append(f'- Avg Maintainability Index: **{summary["avg_maintainability"]:.1f}** '
+                   f'(min {summary["min_maintainability"]:.1f}) — {summary.get("overall_rating", "")}')
+        out.append(f'- Estimated bugs (Halstead B): **{summary["total_estimated_bugs"]:.1f}**')
+    out.append('')
+
+    out.append('## Suggested refactoring queue (top 20 functions)\n')
+    out.append('Sorted by composite priority score. Each entry is a single function — the '
+               '`file:line` link goes directly to its first line.\n')
+    top_funcs = sorted(analyzer.function_metrics,
+                       key=lambda f: f.priority_score, reverse=True)[:20]
+    if not top_funcs:
+        out.append('_No function-level metrics collected. Regex-based C++ parsing may have '
+                   'missed functions — see `caveats` in the JSON report._\n')
+    for i, func in enumerate(top_funcs, 1):
+        loc_ref = f'`{func.filepath}:{func.start_line}`'
+        out.append(f'### {i}. {loc_ref} — `{func.name}` (score: {func.priority_score:.1f})')
+        if func.tags:
+            out.append('Tags: ' + ', '.join(f'`{t}`' for t in func.tags))
+        out.append(
+            f'CC={func.cyclomatic_complexity}, cognitive={func.cognitive_complexity}, '
+            f'nesting={func.max_nesting_depth}, LOC={func.code_lines}, '
+            f'params={func.param_count}, returns={func.return_count}'
+        )
+        if func.extract_candidates:
+            out.append('')
+            out.append('Extract candidates:')
+            for cand in func.extract_candidates[:3]:
+                out.append(f'- Lines {cand["start_line"]}-{cand["end_line"]} '
+                           f'(depth {cand["peak_depth"]}+ for {cand["line_count"]} lines)')
+        suggestion = _suggest_refactor(func.tags)
+        if suggestion:
+            out.append('')
+            out.append(f'Suggested approach: {suggestion}.')
+        out.append('')
+
+    # File-level trouble spots
+    tagged_files = [f for f in analyzer.file_metrics if f.tags]
+    if tagged_files:
+        out.append('## Tagged files\n')
+        tagged_files.sort(key=lambda f: f.priority_score, reverse=True)
+        out.append('| File | Tags | Priority | MI | CC | Cog | LOC | Funcs |')
+        out.append('| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |')
+        for f in tagged_files[:25]:
+            tags = ', '.join(f'`{t}`' for t in f.tags)
+            out.append(
+                f'| `{f.filepath}` | {tags} | {f.priority_score:.1f} | '
+                f'{f.maintainability_index:.1f} | {f.cyclomatic_complexity} | '
+                f'{f.cognitive_complexity} | {f.code_lines} | {f.function_count} |'
+            )
+        out.append('')
+
+    # Tech-debt markers
+    all_markers = [
+        (fm.filepath, m) for fm in analyzer.file_metrics for m in fm.tech_debt_markers
+    ]
+    if all_markers:
+        _mp = {'FIXME': 0, 'HACK': 1, 'XXX': 1, 'TODO': 2}
+        all_markers.sort(key=lambda p: (_mp.get(p[1]['marker'], 3), p[0], p[1]['line']))
+        out.append(f'## Tech-debt markers ({len(all_markers)} total; showing first 30)\n')
+        for filepath, marker in all_markers[:30]:
+            text = marker['text'] or ''
+            out.append(f'- `{filepath}:{marker["line"]}` **{marker["marker"]}** {text}')
+        out.append('')
+
+    # Directory overview
+    out.append('## Directories (top 15 by code lines)\n')
+    out.append('| Directory | Files | LOC | Avg CC | Avg Cog | Avg MI |')
+    out.append('| --- | ---: | ---: | ---: | ---: | ---: |')
+    dirs = sorted(analyzer.directory_metrics.values(), key=lambda d: d.code_lines, reverse=True)[:15]
+    for d in dirs:
+        out.append(
+            f'| `{d.path}` | {d.file_count} | {d.code_lines:,} | '
+            f'{d.avg_cyclomatic:.1f} | {d.avg_cognitive:.1f} | {d.avg_maintainability:.1f} |'
+        )
+    out.append('')
+
+    out.append('## Caveats\n')
+    out.append('> ' + JSON_CAVEATS + '\n')
+
+    md_path = output_dir / 'analysis_report.md'
+    md_path.write_text('\n'.join(out), encoding='utf-8')
+    print(f"  Markdown report exported to: {md_path}")
+
+
+def apply_baseline(analyzer: CppAnalyzer, baseline_path: Path) -> Dict:
+    """
+    Compare current function hotspots against a baseline JSON produced by a previous run.
+
+    Returns a dict with 'regressions' (functions whose priority_score rose >=10 since
+    baseline) and 'improvements' (dropped >=10). Both lists include the function's
+    current metrics and the delta, sorted by absolute delta.
+    """
+    import json
+    try:
+        with open(baseline_path, 'r', encoding='utf-8') as f:
+            baseline = json.load(f)
+    except Exception as e:
+        print(f"  Warning: could not load baseline {baseline_path}: {e}")
+        return {'regressions': [], 'improvements': []}
+
+    # Index baseline functions by (file, name, start_line). start_line drift is possible
+    # after edits, so also fall back to (file, name) as a second index.
+    by_triple: Dict[Tuple[str, str, int], dict] = {}
+    by_pair: Dict[Tuple[str, str], dict] = {}
+    for func in baseline.get('function_hotspots', []):
+        triple = (func.get('file', ''), func.get('name', ''), int(func.get('start_line', 0)))
+        by_triple[triple] = func
+        by_pair.setdefault((triple[0], triple[1]), func)
+
+    regressions = []
+    improvements = []
+    for fm in analyzer.function_metrics:
+        prior = by_triple.get((fm.filepath, fm.name, fm.start_line)) \
+            or by_pair.get((fm.filepath, fm.name))
+        if prior is None:
+            continue
+        prior_score = float(prior.get('priority_score', 0.0))
+        delta = fm.priority_score - prior_score
+        if abs(delta) < 10.0:
+            continue
+        entry = {
+            'file': fm.filepath,
+            'line': fm.start_line,
+            'name': fm.name,
+            'previous_score': prior_score,
+            'current_score': fm.priority_score,
+            'delta': round(delta, 1),
+        }
+        (regressions if delta > 0 else improvements).append(entry)
+
+    regressions.sort(key=lambda e: -e['delta'])
+    improvements.sort(key=lambda e: e['delta'])
+    return {'regressions': regressions, 'improvements': improvements}
+
+
+def check_fail_on(analyzer: CppAnalyzer, thresholds: Dict[str, float]) -> List[str]:
+    """
+    Return a list of violation messages for functions exceeding the given thresholds.
+    Empty list means no violations. Used to gate CI on quality regressions.
+    """
+    violations: List[str] = []
+    max_cc = thresholds.get('max-cc')
+    max_cog = thresholds.get('max-cognitive')
+    max_nesting = thresholds.get('max-nesting')
+    max_loc = thresholds.get('max-loc')
+    for fm in analyzer.function_metrics:
+        ref = f'{fm.filepath}:{fm.start_line} {fm.name}'
+        if max_cc is not None and fm.cyclomatic_complexity > max_cc:
+            violations.append(f'{ref}: CC={fm.cyclomatic_complexity} exceeds max-cc={int(max_cc)}')
+        if max_cog is not None and fm.cognitive_complexity > max_cog:
+            violations.append(f'{ref}: cognitive={fm.cognitive_complexity} exceeds max-cognitive={int(max_cog)}')
+        if max_nesting is not None and fm.max_nesting_depth > max_nesting:
+            violations.append(f'{ref}: nesting={fm.max_nesting_depth} exceeds max-nesting={int(max_nesting)}')
+        if max_loc is not None and fm.code_lines > max_loc:
+            violations.append(f'{ref}: LOC={fm.code_lines} exceeds max-loc={int(max_loc)}')
+    return violations
+
+
+def _parse_fail_on(raw: str) -> Dict[str, float]:
+    """Parse `--fail-on max-cc=30,max-nesting=8` into a dict."""
+    out: Dict[str, float] = {}
+    if not raw:
+        return out
+    for item in raw.split(','):
+        item = item.strip()
+        if not item:
+            continue
+        if '=' not in item:
+            raise ValueError(f"Expected KEY=VALUE in --fail-on, got: {item!r}")
+        k, v = item.split('=', 1)
+        out[k.strip()] = float(v.strip())
+    return out
 
 
 def main():
@@ -1734,42 +2417,154 @@ def main():
         action='store_true',
         help='Skip generating JSON report (generated by default)'
     )
-    
+    parser.add_argument(
+        '--no-md',
+        action='store_true',
+        help='Skip generating markdown report (generated by default)'
+    )
+    parser.add_argument(
+        '--thresholds',
+        metavar='PATH',
+        help='Path to a JSON file overriding tag thresholds (see DEFAULT_THRESHOLDS)'
+    )
+    parser.add_argument(
+        '--ignore-macros',
+        nargs='+',
+        metavar='NAME',
+        default=[],
+        help='Macro names whose balanced MACRO(...) invocations are stripped before '
+             'CC/cognitive scanning. Useful for assertion macros (e.g. --ignore-macros '
+             'ZENITH_ASSERT assert).'
+    )
+    parser.add_argument(
+        '--fail-on',
+        metavar='RULES',
+        help='Comma-separated thresholds that cause a non-zero exit when exceeded by any '
+             'function. Keys: max-cc, max-cognitive, max-nesting, max-loc. '
+             'Example: --fail-on max-cc=30,max-nesting=8'
+    )
+    parser.add_argument(
+        '--exclude-generated',
+        action='store_true',
+        help='Skip files that look auto-generated (.pb.cc, .generated.*, banner markers).'
+    )
+    parser.add_argument(
+        '--absolute-paths',
+        action='store_true',
+        help='Emit absolute filepaths in JSON (useful for consumers like Claude Code).'
+    )
+    parser.add_argument(
+        '--baseline',
+        metavar='PATH',
+        help='Path to a previous analysis_report.json; emit regressions/improvements '
+             'sections comparing the current run against it.'
+    )
+    parser.add_argument(
+        '--workers',
+        type=int,
+        default=0,
+        help='Number of worker processes for file analysis. 0 (default) = auto (parallel '
+             'for >=200 files). 1 = force sequential.'
+    )
+
     args = parser.parse_args()
-    
+
     root_path = Path(args.path).resolve()
     output_dir = Path(args.output).resolve()
-    
+
+    # Load optional threshold overrides.
+    threshold_overrides: Optional[Dict[str, float]] = None
+    if args.thresholds:
+        import json
+        with open(args.thresholds, 'r', encoding='utf-8') as f:
+            threshold_overrides = json.load(f)
+        print(f"Loaded threshold overrides from: {args.thresholds}")
+
+    fail_on_rules = _parse_fail_on(args.fail_on) if args.fail_on else {}
+
     print(f"Analyzing codebase at: {root_path}")
     print(f"Excluding directories: {', '.join(args.exclude)}")
-    
-    # Create analyzer and run analysis
-    analyzer = CppAnalyzer(str(root_path), exclude_dirs=args.exclude)
-    analyzer.analyze()
-    
-    # Print text report
+    if args.ignore_macros:
+        print(f"Ignoring macros: {', '.join(args.ignore_macros)}")
+    if args.exclude_generated:
+        print("Skipping generated files.")
+
+    analyzer = CppAnalyzer(
+        str(root_path),
+        exclude_dirs=args.exclude,
+        thresholds=threshold_overrides,
+        ignore_macros=args.ignore_macros,
+        exclude_generated=args.exclude_generated,
+    )
+    analyzer.analyze(workers=args.workers)
+
+    if args.absolute_paths:
+        # Rewrite relative paths to absolute; downstream JSON / markdown will pick this up.
+        for fm in analyzer.file_metrics:
+            fm.filepath = str((root_path / fm.filepath).resolve())
+        for fm in analyzer.function_metrics:
+            fm.filepath = str((root_path / fm.filepath).resolve())
+
     analyzer.print_report()
-    
-    # Export JSON report (default: enabled)
+
     if not args.no_json:
         output_dir.mkdir(parents=True, exist_ok=True)
         print("\nExporting JSON report...")
         export_json(analyzer, output_dir)
 
-    # Export CSV if requested
+    if not args.no_md:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        print("\nExporting markdown report...")
+        export_markdown(analyzer, output_dir)
+
     if args.csv:
         output_dir.mkdir(parents=True, exist_ok=True)
         print("\nExporting CSV files...")
         export_csv(analyzer, output_dir)
 
-    # Generate visualizations
+    # Baseline comparison (requires JSON output to be useful; also printed to stdout).
+    if args.baseline:
+        print(f"\nComparing against baseline: {args.baseline}")
+        diff = apply_baseline(analyzer, Path(args.baseline))
+        print(f"  Regressions: {len(diff['regressions'])} functions (score rose >=10)")
+        for entry in diff['regressions'][:10]:
+            print(f"    {entry['file']}:{entry['line']} {entry['name']} "
+                  f"{entry['previous_score']:.1f} -> {entry['current_score']:.1f} "
+                  f"(+{entry['delta']:.1f})")
+        print(f"  Improvements: {len(diff['improvements'])} functions (score fell >=10)")
+        for entry in diff['improvements'][:10]:
+            print(f"    {entry['file']}:{entry['line']} {entry['name']} "
+                  f"{entry['previous_score']:.1f} -> {entry['current_score']:.1f} "
+                  f"({entry['delta']:.1f})")
+        # Persist the diff next to the report so it's machine-readable.
+        if not args.no_json:
+            import json
+            diff_path = output_dir / 'analysis_baseline_diff.json'
+            with open(diff_path, 'w', encoding='utf-8') as f:
+                json.dump(diff, f, indent=2)
+            print(f"  Baseline diff saved to: {diff_path}")
+
     if not args.no_viz and HAS_MATPLOTLIB:
         output_dir.mkdir(parents=True, exist_ok=True)
         visualizer = MetricsVisualizer(analyzer, str(output_dir))
         visualizer.create_all_visualizations()
-    
+
+    # --fail-on check runs last so we still emit reports before failing.
+    exit_code = 0
+    if fail_on_rules:
+        violations = check_fail_on(analyzer, fail_on_rules)
+        if violations:
+            print(f"\nFAIL: {len(violations)} function(s) exceed --fail-on thresholds:")
+            for v in violations[:20]:
+                print(f"  {v}")
+            if len(violations) > 20:
+                print(f"  ... and {len(violations) - 20} more")
+            exit_code = 1
+
     print("\n--- Analysis complete! ---")
-    
+
+    if exit_code:
+        sys.exit(exit_code)
     return analyzer
 
 
