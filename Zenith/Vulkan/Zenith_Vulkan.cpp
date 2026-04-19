@@ -1238,6 +1238,20 @@ void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
 	}
 }
 
+void Zenith_Vulkan_PerFrame::ShutdownScratchBuffer()
+{
+	// Scratch buffer is created via CreatePersistentlyMappedBuffer which bypasses
+	// the VRAM registry, so it must be destroyed directly here before the VMA
+	// allocator goes away in Zenith_Vulkan_MemoryManager::Shutdown.
+	if (m_xScratchAllocation != VK_NULL_HANDLE)
+	{
+		vmaDestroyBuffer(Zenith_Vulkan_MemoryManager::GetVMAAllocator(), m_xScratchBuffer, m_xScratchAllocation);
+		m_xScratchBuffer = VK_NULL_HANDLE;
+		m_xScratchAllocation = VK_NULL_HANDLE;
+		m_pScratchBufferMapped = nullptr;
+	}
+}
+
 void Zenith_Vulkan_PerFrame::BeginFrame()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();

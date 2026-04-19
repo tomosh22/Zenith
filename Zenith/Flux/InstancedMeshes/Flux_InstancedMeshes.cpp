@@ -156,6 +156,7 @@ void Flux_InstancedMeshes::Initialise()
 void Flux_InstancedMeshes::Shutdown()
 {
 	ClearAllGroups();
+	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xCullingConstantsBuffer);
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes shutdown");
 }
 

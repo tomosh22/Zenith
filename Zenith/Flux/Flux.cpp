@@ -305,18 +305,19 @@ void Flux::Shutdown()
 
 	// Shutdown Flux subsystems in REVERSE order of initialization
 	// This ensures dependencies are destroyed after their dependents
-	// NOTE: Some subsystems (Fog, DeferredShading, Primitives, AnimatedMeshes, StaticMeshes)
+	// NOTE: Some subsystems (Fog, DeferredShading, AnimatedMeshes, StaticMeshes)
 	// don't have Shutdown() methods - they rely on RAII or are stateless
 	Flux_Text::Shutdown();
 	Flux_Quads::Shutdown();
 	Flux_Particles::Shutdown();
 	Flux_SDFs::Shutdown();
-	// Flux_Fog, Flux_DeferredShading, Flux_Primitives - no Shutdown() methods
+	// Flux_Fog, Flux_DeferredShading - no Shutdown() methods
 	Flux_SSAO::Shutdown();           // SSAO render targets
 	Flux_DynamicLights::Shutdown();  // Dynamic lights (after DeferredShading in init order)
 	Flux_SSGI::Shutdown();         // Before HiZ (SSGI uses Hi-Z)
 	Flux_SSR::Shutdown();          // Before HiZ (SSR uses Hi-Z)
 	Flux_HiZ::Shutdown();          // Hi-Z depth pyramid
+	Flux_Primitives::Shutdown();   // Debug primitives (reverse of init: between HiZ and Grass)
 	Flux_Grass::Shutdown();        // After Terrain (depends on terrain data)
 	Flux_Terrain::Shutdown();
 	Flux_InstancedMeshes::Shutdown();

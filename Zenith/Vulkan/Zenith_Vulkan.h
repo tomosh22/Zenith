@@ -50,6 +50,7 @@ public:
 
 	void Initialise();
 	void InitialiseScratchBuffers(); // Must be called after Flux_MemoryManager::Initialise()
+	void ShutdownScratchBuffer();    // Must be called before Flux_MemoryManager::Shutdown() destroys the VMA allocator
 	void BeginFrame();
 	const vk::DescriptorPool& GetDescriptorPoolForWorkerIndex(u_int uWorkerIndex);
 	const vk::CommandPool& GetCommandPoolForWorkerIndex(u_int uWorkerIndex);

@@ -410,12 +410,24 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
-	// Drain all pending deletions by calling ProcessDeferredDeletions enough times
-	// Deletions are queued with MAX_FRAMES_IN_FLIGHT + 1 frames remaining
-	for (u_int i = 0; i < MAX_FRAMES_IN_FLIGHT + 1; i++)
+	// Drain all pending deletions. Each iteration decrements every entry's
+	// counter by 1, so we need enough iterations for the longest-lived counter
+	// (pool VRAMs queued with uExtraFrameDelay=1 → counter = MAX_FRAMES_IN_FLIGHT + 2)
+	// to reach zero. Looping until empty is robust to any future caller bumping
+	// uExtraFrameDelay without needing to update this constant in lockstep.
+	// ProcessDeferredDeletions never re-queues (each entry terminates via delete /
+	// ReleaseVRAMHandle / destroyImageView), so this cannot infinite-loop — the
+	// safety cap is belt-and-braces in case a re-queueing path gets introduced.
+	constexpr u_int uDrainSafetyCap = 64;
+	u_int uDrainIterations = 0;
+	while (s_xPendingDeletions.GetSize() > 0 && uDrainIterations < uDrainSafetyCap)
 	{
 		ProcessDeferredDeletions();
+		uDrainIterations++;
 	}
+	Zenith_Assert(s_xPendingDeletions.GetSize() == 0,
+		"Zenith_Vulkan_MemoryManager::Shutdown: drain exceeded %u iterations with %u entries still pending",
+		uDrainSafetyCap, s_xPendingDeletions.GetSize());
 
 	// Destroy all remaining VRAM allocations that weren't explicitly freed
 	// This handles game resources that weren't cleaned up before shutdown
@@ -446,6 +458,14 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 	{
 		xDevice.freeMemory(s_xStagingMem);
 		s_xStagingMem = nullptr;
+	}
+
+	// Destroy per-frame scratch buffers that bypass the VRAM registry
+	// (CreatePersistentlyMappedBuffer allocates via VMA but doesn't register).
+	// Must happen before vmaDestroyAllocator or the blocks leak.
+	for (u_int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		Zenith_Vulkan::s_axPerFrame[i].ShutdownScratchBuffer();
 	}
 
 	// Destroy VMA allocator

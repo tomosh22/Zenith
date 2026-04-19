@@ -147,6 +147,8 @@ void Flux_Grass::Shutdown()
 {
 	DestroyBuffers();
 	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xGrassConstantsBuffer);
+	Flux_MemoryManager::DestroyVertexBuffer(s_xGrassBladeMesh.m_xVertexBuffer);
+	Flux_MemoryManager::DestroyIndexBuffer(s_xGrassBladeMesh.m_xIndexBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass shut down");
 }
 
