@@ -408,7 +408,7 @@ private:
 		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, -0.05f, 0.0f));
 
 		Zenith_ModelComponent& xModel = xFloor.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xFloorMaterial.Get());
+		xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xFloorMaterial.GetDirect());
 
 		// Add static collider for NavMesh generation
 		Zenith_ColliderComponent& xCollider = xFloor.AddComponent<Zenith_ColliderComponent>();
@@ -451,7 +451,7 @@ private:
 			xTransform.SetScale(aWalls[u].m_xScale);
 
 			Zenith_ModelComponent& xModel = xWall.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xWallMaterial.Get());
+			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xWallMaterial.GetDirect());
 
 			Zenith_ColliderComponent& xCollider = xWall.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
@@ -495,7 +495,7 @@ private:
 			xTransform.SetScale(aObstacles[u].m_xScale);
 
 			Zenith_ModelComponent& xModel = xObstacle.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xObstacleMaterial.Get());
+			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xObstacleMaterial.GetDirect());
 
 			Zenith_ColliderComponent& xCollider = xObstacle.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
@@ -523,7 +523,7 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(0.8f, 1.0f, 0.8f));
 
 		Zenith_ModelComponent& xModel = xPlayer.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*AIShowcase::g_pxCylinderGeometry, *AIShowcase::g_xPlayerMaterial.Get());
+		xModel.AddMeshEntry(*AIShowcase::g_pxCylinderGeometry, *AIShowcase::g_xPlayerMaterial.GetDirect());
 
 		Zenith_ColliderComponent& xCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCapsuleCollider(0.4f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
@@ -571,19 +571,19 @@ private:
 			{
 			case 0:
 				eRole = SquadRole::LEADER;
-				pxMaterial = AIShowcase::g_xLeaderMaterial.Get();
+				pxMaterial = AIShowcase::g_xLeaderMaterial.GetDirect();
 				break;
 			case 1:
 				eRole = SquadRole::ASSAULT;
-				pxMaterial = AIShowcase::g_xEnemyMaterial.Get();
+				pxMaterial = AIShowcase::g_xEnemyMaterial.GetDirect();
 				break;
 			case 2:
 				eRole = SquadRole::FLANKER;
-				pxMaterial = AIShowcase::g_xFlankerMaterial.Get();
+				pxMaterial = AIShowcase::g_xFlankerMaterial.GetDirect();
 				break;
 			default:
 				eRole = SquadRole::ASSAULT;
-				pxMaterial = AIShowcase::g_xEnemyMaterial.Get();
+				pxMaterial = AIShowcase::g_xEnemyMaterial.GetDirect();
 				break;
 			}
 

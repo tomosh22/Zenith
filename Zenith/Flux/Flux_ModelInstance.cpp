@@ -37,9 +37,9 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 	if (pxAsset->HasSkeleton())
 	{
 		const std::string& strSkeletonPath = pxAsset->GetSkeletonPath();
-		// Load skeleton from registry via handle (handles ref counting automatically)
+		// Store path in handle for ref counting, load via registry
 		pxInstance->m_xLoadedSkeletonAsset.SetPath(strSkeletonPath);
-		Zenith_SkeletonAsset* pxSkeletonAsset = pxInstance->m_xLoadedSkeletonAsset.Get();
+		Zenith_SkeletonAsset* pxSkeletonAsset = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkeletonPath);
 
 		if (pxSkeletonAsset)
 		{
@@ -76,7 +76,7 @@ void Flux_ModelInstance::BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAss
 	const std::string strMeshPath = xBinding.GetMeshPath();
 
 	MeshHandle xMeshHandle(strMeshPath);
-	Zenith_MeshAsset* pxMeshAsset = xMeshHandle.Get();
+	Zenith_MeshAsset* pxMeshAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshPath);
 	if (!pxMeshAsset)
 	{
 		Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load mesh: %s", strMeshPath.c_str());
@@ -85,7 +85,10 @@ void Flux_ModelInstance::BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAss
 	m_xLoadedMeshAssets.PushBack(std::move(xMeshHandle));
 
 	// Pass skeleton for skinned meshes to apply bind pose transforms for static rendering.
-	Flux_MeshInstance* pxMeshInstance = Flux_MeshInstance::CreateFromAsset(pxMeshAsset, m_xLoadedSkeletonAsset.Get());
+	Zenith_SkeletonAsset* pxSkeletonForMeshInstance = m_xLoadedSkeletonAsset.GetPath().empty()
+		? nullptr
+		: Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(m_xLoadedSkeletonAsset.GetPath());
+	Flux_MeshInstance* pxMeshInstance = Flux_MeshInstance::CreateFromAsset(pxMeshAsset, pxSkeletonForMeshInstance);
 	if (!pxMeshInstance)
 	{
 		Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to create mesh instance from: %s", strMeshPath.c_str());
@@ -115,7 +118,7 @@ void Flux_ModelInstance::BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAss
 		const std::string strMaterialPath = xBinding.GetMaterialPath(uMatIdx);
 		MaterialHandle xMaterialHandle(strMaterialPath);
 
-		if (!xMaterialHandle.Get())
+		if (!Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(strMaterialPath))
 		{
 			Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load material: %s", strMaterialPath.c_str());
 			xMaterialHandle.Set(Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>());
@@ -208,7 +211,10 @@ Zenith_MaterialAsset* Flux_ModelInstance::GetMaterial(uint32_t uIndex) const
 	{
 		return nullptr;
 	}
-	return m_xMaterials.Get(uIndex).Get();
+	const MaterialHandle& xHandle = m_xMaterials.Get(uIndex);
+	return !xHandle.GetPath().empty()
+		? Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(xHandle.GetPath())
+		: xHandle.GetDirect();
 }
 
 void Flux_ModelInstance::SetMaterial(uint32_t uIndex, Zenith_MaterialAsset* pxMaterial)

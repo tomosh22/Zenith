@@ -33,10 +33,13 @@ class Zenith_DataStream;
  *   MeshHandle m_xMesh;
  *
  *   // Set from prefixed path
- *   m_xDiffuseTexture = TextureHandle("game:Textures/diffuse.ztex");
+ *   m_xDiffuseTexture = TextureHandle("game:Textures/diffuse.ztxtr");
  *
- *   // Get the asset (loads if needed)
- *   Zenith_TextureAsset* pTexture = m_xDiffuseTexture.Get();
+ *   // Retrieve file-based assets via registry (the ONLY way)
+ *   Zenith_TextureAsset* pTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xDiffuseTexture.GetPath());
+ *
+ *   // Retrieve procedural assets (created via reg.Create<T>() and stored with Set())
+ *   Zenith_TextureAsset* pTexture = m_xDiffuseTexture.GetDirect();
  *
  *   // Check if valid
  *   if (m_xMesh) { ... }
@@ -138,18 +141,11 @@ public:
 	}
 
 	/**
-	 * Get the asset, loading if necessary
-	 * @return Pointer to the asset, or nullptr if path is empty or load fails
+	 * Get the directly stored pointer (for procedural assets set via Set()).
+	 * Returns nullptr for file-based handles that have not been loaded.
+	 * For file-based assets, use Zenith_AssetRegistry::Get().Get<T>(GetPath()) instead.
 	 */
-	T* Get() const;
-
-	/**
-	 * Dereference operator
-	 */
-	T* operator->() const
-	{
-		return Get();
-	}
+	T* GetDirect() const { return m_pxCached; }
 
 	/**
 	 * Bool conversion - true if handle references a valid asset
@@ -274,6 +270,8 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
+	T* Get() const;  // Internal lazy-loading accessor — used only by Zenith_AssetHandle.cpp specializations
+
 	std::string m_strPath;
 	mutable T* m_pxCached = nullptr;  // mutable: lazy loading doesn't change logical state
 };

@@ -360,7 +360,7 @@ void Zenith_TerrainComponent::RenderTerrainRegenerationSection()
 				: m_xParentEntity.GetName();
 			for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 			{
-				if (!m_axMaterials[u].Get())
+				if (!m_axMaterials[u].GetDirect())
 				{
 					Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 					if (pxMat)
@@ -481,7 +481,7 @@ void Zenith_TerrainComponent::RenderMaterialPalette()
 	static const char* aszMaterialNames[] = { "Material 0", "Material 1", "Material 2", "Material 3" };
 	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 	{
-		Zenith_MaterialAsset* pxMat = m_axMaterials[u].Get();
+		Zenith_MaterialAsset* pxMat = m_axMaterials[u].GetDirect();
 		if (!pxMat)
 		{
 			ImGui::TextDisabled("%s: (not set)", aszMaterialNames[u]);
@@ -512,7 +512,7 @@ void Zenith_TerrainComponent::RenderSplatmapSlot()
 	if (!ImGui::TreeNode("Splatmap Texture"))
 		return;
 
-	if (Zenith_TextureAsset* pxSplatmap = m_xSplatmap.Get())
+	if (Zenith_TextureAsset* pxSplatmap = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xSplatmap.GetPath()))
 	{
 		Flux_ImGuiTextureHandle xSplatmapHandle = Zenith_Editor_MaterialUI::GetOrCreateTexturePreviewHandle(pxSplatmap);
 		if (xSplatmapHandle.IsValid())

@@ -293,7 +293,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetDiffuseTexture()
 	{
 		return m_pxDirectDiffuse;
 	}
-	Zenith_TextureAsset* pTex = m_xDiffuseTexture.Get();
+	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xDiffuseTexture.GetPath());
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
@@ -303,7 +303,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetNormalTexture()
 	{
 		return m_pxDirectNormal;
 	}
-	Zenith_TextureAsset* pTex = m_xNormalTexture.Get();
+	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xNormalTexture.GetPath());
 	return pTex ? pTex : GetDefaultNormalTexture();
 }
 
@@ -313,7 +313,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetRoughnessMetallicTexture()
 	{
 		return m_pxDirectRoughnessMetallic;
 	}
-	Zenith_TextureAsset* pTex = m_xRoughnessMetallicTexture.Get();
+	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xRoughnessMetallicTexture.GetPath());
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
@@ -323,7 +323,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetOcclusionTexture()
 	{
 		return m_pxDirectOcclusion;
 	}
-	Zenith_TextureAsset* pTex = m_xOcclusionTexture.Get();
+	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xOcclusionTexture.GetPath());
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
@@ -333,7 +333,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetEmissiveTexture()
 	{
 		return m_pxDirectEmissive;
 	}
-	Zenith_TextureAsset* pTex = m_xEmissiveTexture.Get();
+	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xEmissiveTexture.GetPath());
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 

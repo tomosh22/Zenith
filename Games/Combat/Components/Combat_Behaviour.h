@@ -174,9 +174,9 @@ public:
 		m_xArenaMaterial = Combat::g_xArenaMaterial;
 		m_xWallMaterial = Combat::g_xWallMaterial;
 
-		Zenith_Assert(m_xEnemyMaterial.Get() != nullptr,
+		Zenith_Assert(m_xEnemyMaterial.GetDirect() != nullptr,
 			"Combat::g_xEnemyMaterial was not properly initialized - check InitializeCombatResources()");
-		Zenith_Assert(m_xPlayerMaterial.Get() != nullptr,
+		Zenith_Assert(m_xPlayerMaterial.GetDirect() != nullptr,
 			"Combat::g_xPlayerMaterial was not properly initialized - check InitializeCombatResources()");
 
 		// Wire menu button callback
@@ -501,7 +501,7 @@ private:
 		xFloorTransform.SetScale(Zenith_Maths::Vector3(s_fArenaRadius * 2.0f, 1.0f, s_fArenaRadius * 2.0f));
 
 		Zenith_ModelComponent& xFloorModel = xFloor.AddComponent<Zenith_ModelComponent>();
-		xFloorModel.AddMeshEntry(*m_pxCubeGeometry, *m_xArenaMaterial.Get());
+		xFloorModel.AddMeshEntry(*m_pxCubeGeometry, *m_xArenaMaterial.GetDirect());
 
 		xFloor.AddComponent<Zenith_ColliderComponent>()
 			.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
@@ -527,8 +527,8 @@ private:
 			xWallTransform.SetRotation(glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
 
 			Zenith_ModelComponent& xWallModel = xWall.AddComponent<Zenith_ModelComponent>();
-			xWallModel.AddMeshEntry(*m_pxCubeGeometry, *m_xWallMaterial.Get());
-			xWallModel.AddMeshEntry(*Combat::g_pxConeGeometry, *Combat::g_xCandleMaterial.Get());
+			xWallModel.AddMeshEntry(*m_pxCubeGeometry, *m_xWallMaterial.GetDirect());
+			xWallModel.AddMeshEntry(*Combat::g_pxConeGeometry, *Combat::g_xCandleMaterial.GetDirect());
 
 			xWall.AddComponent<Zenith_ColliderComponent>()
 				.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
@@ -574,7 +574,7 @@ private:
 			xPlayerModel.LoadModel(Combat::g_strStickFigureModelPath);
 			if (xPlayerModel.GetModelInstance() && xPlayerModel.HasSkeleton())
 			{
-				xPlayerModel.GetModelInstance()->SetMaterial(0, m_xPlayerMaterial.Get());
+				xPlayerModel.GetModelInstance()->SetMaterial(0, m_xPlayerMaterial.GetDirect());
 				bUsingModelInstance = true;
 			}
 		}
@@ -584,7 +584,7 @@ private:
 				Combat::g_strStickFigureModelPath.empty() ? "yes" : "no",
 				xPlayerModel.IsUsingModelInstance() ? "yes" : "no",
 				xPlayerModel.IsUsingModelInstance() && xPlayerModel.HasSkeleton() ? "yes" : "no");
-			xPlayerModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xPlayerMaterial.Get());
+			xPlayerModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xPlayerMaterial.GetDirect());
 		}
 		else
 		{
@@ -664,13 +664,13 @@ private:
 				xModel.LoadModel(Combat::g_strStickFigureModelPath);
 				if (xModel.GetModelInstance() && xModel.HasSkeleton())
 				{
-					xModel.GetModelInstance()->SetMaterial(0, m_xEnemyMaterial.Get());
+					xModel.GetModelInstance()->SetMaterial(0, m_xEnemyMaterial.GetDirect());
 					bUsingEnemyModel = true;
 				}
 			}
 			if (!bUsingEnemyModel)
 			{
-				xModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xEnemyMaterial.Get());
+				xModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xEnemyMaterial.GetDirect());
 			}
 
 			// Add AnimatorComponent for skeletal animation (auto-discovers skeleton from ModelComponent)

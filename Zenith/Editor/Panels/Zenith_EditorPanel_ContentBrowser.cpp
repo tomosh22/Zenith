@@ -183,7 +183,7 @@ static Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath)
 	xEntry.m_bLoadAttempted = true;
 
 	xEntry.m_xTexture.SetPath(strPath);
-	Zenith_TextureAsset* pxTexture = xEntry.m_xTexture.Get();
+	Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(strPath);
 	if (pxTexture && pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
 	{
 		xEntry.m_xImGuiHandle = Flux_ImGuiIntegration::RegisterTexture(

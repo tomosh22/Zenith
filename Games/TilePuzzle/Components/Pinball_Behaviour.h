@@ -864,100 +864,100 @@ private:
 
 		// Ball - cat-themed orange, metallic chrome
 		m_xBallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-		m_xBallMaterial.Get()->SetName("PinballBall");
-		m_xBallMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-		m_xBallMaterial.Get()->SetBaseColor({ 0.95f, 0.6f, 0.2f, 1.f });
-		m_xBallMaterial.Get()->SetRoughness(0.2f);
-		m_xBallMaterial.Get()->SetMetallic(1.0f);
-		m_xBallMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.5f, 0.3f, 0.1f));
-		m_xBallMaterial.Get()->SetEmissiveIntensity(0.8f);
+		m_xBallMaterial.GetDirect()->SetName("PinballBall");
+		m_xBallMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+		m_xBallMaterial.GetDirect()->SetBaseColor({ 0.95f, 0.6f, 0.2f, 1.f });
+		m_xBallMaterial.GetDirect()->SetRoughness(0.2f);
+		m_xBallMaterial.GetDirect()->SetMetallic(1.0f);
+		m_xBallMaterial.GetDirect()->SetEmissiveColor(Zenith_Maths::Vector3(0.5f, 0.3f, 0.1f));
+		m_xBallMaterial.GetDirect()->SetEmissiveIntensity(0.8f);
 
 		// Walls - dark steel blue with PBR textures
 		m_xWallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-		m_xWallMaterial.Get()->SetName("PinballWall");
-		m_xWallMaterial.Get()->SetBaseColor({ 0.15f, 0.18f, 0.3f, 1.f });
+		m_xWallMaterial.GetDirect()->SetName("PinballWall");
+		m_xWallMaterial.GetDirect()->SetBaseColor({ 0.15f, 0.18f, 0.3f, 1.f });
 		if (TilePuzzle::g_pxPinballWallDiffuseTex)
-			m_xWallMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballWallDiffuseTex);
+			m_xWallMaterial.GetDirect()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballWallDiffuseTex);
 		else
-			m_xWallMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
+			m_xWallMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 		if (TilePuzzle::g_pxPinballWallRMTex)
-			m_xWallMaterial.Get()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballWallRMTex);
+			m_xWallMaterial.GetDirect()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballWallRMTex);
 
 		// Wall trim - neon blue emissive for boundary walls
 		m_xWallTrimMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-		m_xWallTrimMaterial.Get()->SetName("PinballWallTrim");
-		m_xWallTrimMaterial.Get()->SetBaseColor({ 0.1f, 0.15f, 0.4f, 1.f });
+		m_xWallTrimMaterial.GetDirect()->SetName("PinballWallTrim");
+		m_xWallTrimMaterial.GetDirect()->SetBaseColor({ 0.1f, 0.15f, 0.4f, 1.f });
 		if (TilePuzzle::g_pxPinballWallDiffuseTex)
-			m_xWallTrimMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballWallDiffuseTex);
+			m_xWallTrimMaterial.GetDirect()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballWallDiffuseTex);
 		else
-			m_xWallTrimMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
+			m_xWallTrimMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 		if (TilePuzzle::g_pxPinballWallRMTex)
-			m_xWallTrimMaterial.Get()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballWallRMTex);
+			m_xWallTrimMaterial.GetDirect()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballWallRMTex);
 
 		// Pegs - warm paw-themed with PBR bumper textures
 		m_xObstacleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-		m_xObstacleMaterial.Get()->SetName("PinballObstacle");
-		m_xObstacleMaterial.Get()->SetBaseColor({ 0.55f, 0.35f, 0.3f, 1.f });
+		m_xObstacleMaterial.GetDirect()->SetName("PinballObstacle");
+		m_xObstacleMaterial.GetDirect()->SetBaseColor({ 0.55f, 0.35f, 0.3f, 1.f });
 		if (TilePuzzle::g_pxPinballBumperDiffuseTex)
-			m_xObstacleMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballBumperDiffuseTex);
+			m_xObstacleMaterial.GetDirect()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballBumperDiffuseTex);
 		else
-			m_xObstacleMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
+			m_xObstacleMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 		if (TilePuzzle::g_pxPinballBumperRMTex)
-			m_xObstacleMaterial.Get()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballBumperRMTex);
+			m_xObstacleMaterial.GetDirect()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballBumperRMTex);
 
 		// Plunger - red with chrome shaft texture
 		m_xPlungerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-		m_xPlungerMaterial.Get()->SetName("PinballPlunger");
-		m_xPlungerMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-		m_xPlungerMaterial.Get()->SetBaseColor({ 0.8f, 0.15f, 0.15f, 1.f });
-		m_xPlungerMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.8f, 0.1f, 0.05f));
-		m_xPlungerMaterial.Get()->SetEmissiveIntensity(0.4f);
+		m_xPlungerMaterial.GetDirect()->SetName("PinballPlunger");
+		m_xPlungerMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+		m_xPlungerMaterial.GetDirect()->SetBaseColor({ 0.8f, 0.15f, 0.15f, 1.f });
+		m_xPlungerMaterial.GetDirect()->SetEmissiveColor(Zenith_Maths::Vector3(0.8f, 0.1f, 0.05f));
+		m_xPlungerMaterial.GetDirect()->SetEmissiveIntensity(0.4f);
 		if (TilePuzzle::g_pxPinballPlungerRMTex)
-			m_xPlungerMaterial.Get()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballPlungerRMTex);
+			m_xPlungerMaterial.GetDirect()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballPlungerRMTex);
 
 		// Target - bright green with chevron texture
 		m_xTargetMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-		m_xTargetMaterial.Get()->SetName("PinballTarget");
-		m_xTargetMaterial.Get()->SetBaseColor({ 0.1f, 0.8f, 0.2f, 1.f });
-		m_xTargetMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.1f, 0.8f, 0.2f));
-		m_xTargetMaterial.Get()->SetEmissiveIntensity(1.5f);
+		m_xTargetMaterial.GetDirect()->SetName("PinballTarget");
+		m_xTargetMaterial.GetDirect()->SetBaseColor({ 0.1f, 0.8f, 0.2f, 1.f });
+		m_xTargetMaterial.GetDirect()->SetEmissiveColor(Zenith_Maths::Vector3(0.1f, 0.8f, 0.2f));
+		m_xTargetMaterial.GetDirect()->SetEmissiveIntensity(1.5f);
 		if (TilePuzzle::g_pxPinballTargetDiffuseTex)
-			m_xTargetMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballTargetDiffuseTex);
+			m_xTargetMaterial.GetDirect()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballTargetDiffuseTex);
 		else
-			m_xTargetMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
+			m_xTargetMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 
 		// Floor - dark wood playfield with PBR textures
 		m_xFloorMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-		m_xFloorMaterial.Get()->SetName("PinballFloor");
-		m_xFloorMaterial.Get()->SetBaseColor({ 1.f, 1.f, 1.f, 1.f });
-		m_xFloorMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f));
-		m_xFloorMaterial.Get()->SetEmissiveIntensity(0.2f);
+		m_xFloorMaterial.GetDirect()->SetName("PinballFloor");
+		m_xFloorMaterial.GetDirect()->SetBaseColor({ 1.f, 1.f, 1.f, 1.f });
+		m_xFloorMaterial.GetDirect()->SetEmissiveColor(Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f));
+		m_xFloorMaterial.GetDirect()->SetEmissiveIntensity(0.2f);
 		if (TilePuzzle::g_pxPinballFloorDiffuseTex)
-			m_xFloorMaterial.Get()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballFloorDiffuseTex);
+			m_xFloorMaterial.GetDirect()->SetDiffuseTextureDirectly(TilePuzzle::g_pxPinballFloorDiffuseTex);
 		else
-			m_xFloorMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
+			m_xFloorMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 		if (TilePuzzle::g_pxPinballFloorRMTex)
-			m_xFloorMaterial.Get()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballFloorRMTex);
+			m_xFloorMaterial.GetDirect()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballFloorRMTex);
 
 		// Lit peg material - warm glow for hit pegs
 		m_xPegHitMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-		m_xPegHitMaterial.Get()->SetName("PinballPegHit");
-		m_xPegHitMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-		m_xPegHitMaterial.Get()->SetBaseColor({ 0.7f, 0.5f, 0.4f, 1.f });
-		m_xPegHitMaterial.Get()->SetRoughness(0.3f);
-		m_xPegHitMaterial.Get()->SetMetallic(0.0f);
-		m_xPegHitMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.8f, 0.5f, 0.2f));
-		m_xPegHitMaterial.Get()->SetEmissiveIntensity(2.0f);
+		m_xPegHitMaterial.GetDirect()->SetName("PinballPegHit");
+		m_xPegHitMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+		m_xPegHitMaterial.GetDirect()->SetBaseColor({ 0.7f, 0.5f, 0.4f, 1.f });
+		m_xPegHitMaterial.GetDirect()->SetRoughness(0.3f);
+		m_xPegHitMaterial.GetDirect()->SetMetallic(0.0f);
+		m_xPegHitMaterial.GetDirect()->SetEmissiveColor(Zenith_Maths::Vector3(0.8f, 0.5f, 0.2f));
+		m_xPegHitMaterial.GetDirect()->SetEmissiveIntensity(2.0f);
 
 		// Flash peg material - bright warm emissive spike for the moment of impact
 		m_xPegFlashMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-		m_xPegFlashMaterial.Get()->SetName("PinballPegFlash");
-		m_xPegFlashMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-		m_xPegFlashMaterial.Get()->SetBaseColor({ 1.0f, 0.8f, 0.5f, 1.f });
-		m_xPegFlashMaterial.Get()->SetRoughness(0.2f);
-		m_xPegFlashMaterial.Get()->SetMetallic(0.0f);
-		m_xPegFlashMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(1.0f, 0.7f, 0.3f));
-		m_xPegFlashMaterial.Get()->SetEmissiveIntensity(5.0f);
+		m_xPegFlashMaterial.GetDirect()->SetName("PinballPegFlash");
+		m_xPegFlashMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+		m_xPegFlashMaterial.GetDirect()->SetBaseColor({ 1.0f, 0.8f, 0.5f, 1.f });
+		m_xPegFlashMaterial.GetDirect()->SetRoughness(0.2f);
+		m_xPegFlashMaterial.GetDirect()->SetMetallic(0.0f);
+		m_xPegFlashMaterial.GetDirect()->SetEmissiveColor(Zenith_Maths::Vector3(1.0f, 0.7f, 0.3f));
+		m_xPegFlashMaterial.GetDirect()->SetEmissiveIntensity(5.0f);
 
 		// Use loaded procedural materials when available
 		if (TilePuzzle::g_pxPinballBallMaterial)
@@ -1059,7 +1059,7 @@ private:
 		xTransform.SetScale(xScale);
 
 		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*m_pxCubeGeometry, *xMaterial.Get());
+		xModel.AddMeshEntry(*m_pxCubeGeometry, *xMaterial.GetDirect());
 
 		if (bAddCollider)
 		{
@@ -1083,7 +1083,7 @@ private:
 
 		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
 		Flux_MeshGeometry* pxMesh = TilePuzzle::g_pxBumperGeometry ? TilePuzzle::g_pxBumperGeometry : m_pxSphereGeometry;
-		xModel.AddMeshEntry(*pxMesh, *xMaterial.Get());
+		xModel.AddMeshEntry(*pxMesh, *xMaterial.GetDirect());
 
 		Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_STATIC);
@@ -1160,7 +1160,7 @@ private:
 			xT.SetRotation(glm::normalize(xRot));
 
 			Zenith_ModelComponent& xModel = xCurve.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*m_pxCubeGeometry, *m_xWallMaterial.Get());
+			xModel.AddMeshEntry(*m_pxCubeGeometry, *m_xWallMaterial.GetDirect());
 
 			Zenith_ColliderComponent& xCollider = xCurve.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
@@ -1178,7 +1178,7 @@ private:
 			xT.SetRotation(glm::normalize(xRot));
 
 			Zenith_ModelComponent& xModel = xCurve2.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*m_pxCubeGeometry, *m_xWallMaterial.Get());
+			xModel.AddMeshEntry(*m_pxCubeGeometry, *m_xWallMaterial.GetDirect());
 
 			Zenith_ColliderComponent& xCollider = xCurve2.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
@@ -1208,7 +1208,7 @@ private:
 
 			Flux_MeshGeometry* pxMesh = TilePuzzle::g_pxTargetRampGeometry ? TilePuzzle::g_pxTargetRampGeometry : m_pxCubeGeometry;
 			Zenith_ModelComponent& xModel = xTarget.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*pxMesh, *m_xTargetMaterial.Get());
+			xModel.AddMeshEntry(*pxMesh, *m_xTargetMaterial.GetDirect());
 
 			Zenith_ColliderComponent& xCollider = xTarget.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
@@ -1226,7 +1226,7 @@ private:
 
 			Flux_MeshGeometry* pxMesh = TilePuzzle::g_pxPlungerGeometry ? TilePuzzle::g_pxPlungerGeometry : m_pxCubeGeometry;
 			Zenith_ModelComponent& xModel = xPlunger.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*pxMesh, *m_xPlungerMaterial.Get());
+			xModel.AddMeshEntry(*pxMesh, *m_xPlungerMaterial.GetDirect());
 
 			m_xPlungerEntityID = xPlunger.GetEntityID();
 		}
@@ -1277,7 +1277,7 @@ private:
 
 		Flux_MeshGeometry* pxMesh = TilePuzzle::g_pxBeveledCubeGeometry ? TilePuzzle::g_pxBeveledCubeGeometry : m_pxCubeGeometry;
 		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*pxMesh, *m_xWallTrimMaterial.Get());
+		xModel.AddMeshEntry(*pxMesh, *m_xWallTrimMaterial.GetDirect());
 
 		Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
@@ -1324,7 +1324,7 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(s_fPB_BallScale));
 
 		Zenith_ModelComponent& xModel = xBall.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*m_pxSphereGeometry, *m_xBallMaterial.Get());
+		xModel.AddMeshEntry(*m_pxSphereGeometry, *m_xBallMaterial.GetDirect());
 
 		Zenith_ColliderComponent& xCollider = xBall.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
@@ -1986,7 +1986,7 @@ private:
 			Zenith_ModelComponent& xModel = xPeg.GetComponent<Zenith_ModelComponent>();
 			if (xModel.GetNumMeshEntries() > 0)
 			{
-				xModel.GetMaterialHandleAtIndex(0).Set(xMaterial.Get());
+				xModel.GetMaterialHandleAtIndex(0).Set(xMaterial.GetDirect());
 			}
 		}
 	}

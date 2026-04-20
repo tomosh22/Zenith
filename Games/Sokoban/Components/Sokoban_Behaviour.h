@@ -317,7 +317,7 @@ public:
 		// Materials
 		auto WriteMaterial = [&xStream](const MaterialHandle& xMat)
 		{
-			Zenith_MaterialAsset* pxMat = xMat.Get();
+			Zenith_MaterialAsset* pxMat = xMat.GetDirect();
 			if (pxMat)
 			{
 				pxMat->WriteToDataStream(xStream);
@@ -748,8 +748,8 @@ private:
 			m_uPlayerX, m_uPlayerY,
 			Sokoban::g_pxTilePrefab, Sokoban::g_pxBoxPrefab, Sokoban::g_pxPlayerPrefab,
 			m_pxCubeGeometry,
-			m_xFloorMaterial.Get(), m_xWallMaterial.Get(), m_xTargetMaterial.Get(),
-			m_xBoxMaterial.Get(), m_xBoxOnTargetMaterial.Get(), m_xPlayerMaterial.Get(),
+			m_xFloorMaterial.GetDirect(), m_xWallMaterial.GetDirect(), m_xTargetMaterial.GetDirect(),
+			m_xBoxMaterial.GetDirect(), m_xBoxOnTargetMaterial.GetDirect(), m_xPlayerMaterial.GetDirect(),
 			pxPuzzleData);
 
 		m_xRenderer.RepositionCamera(m_uGridWidth, m_uGridHeight);
@@ -779,7 +779,7 @@ private:
 	void RenderMaterialSlot(const char* szLabel, MaterialHandle& xMaterial)
 	{
 		ImGui::PushID(szLabel);
-		Zenith_MaterialAsset* pxMat = xMaterial.Get();
+		Zenith_MaterialAsset* pxMat = xMaterial.GetDirect();
 		std::string strMaterialName = pxMat ? pxMat->GetName() : "(none)";
 		ImGui::Text("%s:", szLabel);
 		ImGui::SameLine();

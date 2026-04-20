@@ -394,7 +394,7 @@ private:
 			xTerrainConfig,
 			Runner::g_pxGroundPrefab,
 			m_pxCubeGeometry,
-			m_xGroundMaterial.Get());
+			m_xGroundMaterial.GetDirect());
 
 		// Initialize collectible spawner
 		Runner_CollectibleSpawner::Config xSpawnConfig;
@@ -404,8 +404,8 @@ private:
 			Runner::g_pxObstaclePrefab,
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
-			m_xCollectibleMaterial.Get(),
-			m_xObstacleMaterial.Get(),
+			m_xCollectibleMaterial.GetDirect(),
+			m_xObstacleMaterial.GetDirect(),
 			m_xRng);
 
 		// Initialize particle manager
@@ -414,8 +414,8 @@ private:
 			xParticleConfig,
 			Runner::g_pxParticlePrefab,
 			m_pxSphereGeometry,
-			m_xDustMaterial.Get(),
-			m_xCollectParticleMaterial.Get());
+			m_xDustMaterial.GetDirect(),
+			m_xCollectParticleMaterial.GetDirect());
 
 		// Create character entity
 		CreateCharacter();
@@ -437,7 +437,7 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(0.8f, 1.8f, 0.8f));
 
 		Zenith_ModelComponent& xModel = xCharacter.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*m_pxCapsuleGeometry, *m_xCharacterMaterial.Get());
+		xModel.AddMeshEntry(*m_pxCapsuleGeometry, *m_xCharacterMaterial.GetDirect());
 
 		m_uCharacterEntityID = xCharacter.GetEntityID();
 	}

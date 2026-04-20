@@ -492,29 +492,29 @@ static void InitializeCombatResources()
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 
 	g_xPlayerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xPlayerMaterial.Get()->SetName("CombatPlayer");
-	g_xPlayerMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Player.ztex");
-	g_xPlayerMaterial.Get()->SetRoughness(0.9f);  // HIGH roughness - player should be REFLECTED, not reflecting
+	g_xPlayerMaterial.GetDirect()->SetName("CombatPlayer");
+	g_xPlayerMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Player.ztex");
+	g_xPlayerMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - player should be REFLECTED, not reflecting
 
 	g_xEnemyMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xEnemyMaterial.Get()->SetName("CombatEnemy");
-	g_xEnemyMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Enemy.ztex");
-	g_xEnemyMaterial.Get()->SetRoughness(0.9f);  // HIGH roughness - enemies should be REFLECTED, not reflecting
+	g_xEnemyMaterial.GetDirect()->SetName("CombatEnemy");
+	g_xEnemyMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Enemy.ztex");
+	g_xEnemyMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - enemies should be REFLECTED, not reflecting
 
 	g_xArenaMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xArenaMaterial.Get()->SetName("CombatArena");
-	g_xArenaMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Arena.ztex");
-	g_xArenaMaterial.Get()->SetRoughness(0.15f);  // LOW roughness - floor IS the reflective surface
+	g_xArenaMaterial.GetDirect()->SetName("CombatArena");
+	g_xArenaMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Arena.ztex");
+	g_xArenaMaterial.GetDirect()->SetRoughness(0.15f);  // LOW roughness - floor IS the reflective surface
 
 	g_xWallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xWallMaterial.Get()->SetName("CombatWall");
-	g_xWallMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Wall.ztex");
-	g_xWallMaterial.Get()->SetRoughness(0.9f);  // HIGH roughness - walls should be REFLECTED, not reflecting
+	g_xWallMaterial.GetDirect()->SetName("CombatWall");
+	g_xWallMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Wall.ztex");
+	g_xWallMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - walls should be REFLECTED, not reflecting
 
 	g_xCandleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xCandleMaterial.Get()->SetName("CombatCandle");
-	g_xCandleMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Candle.ztex");
-	g_xCandleMaterial.Get()->SetRoughness(0.9f);  // HIGH roughness - candles should be REFLECTED, not reflecting
+	g_xCandleMaterial.GetDirect()->SetName("CombatCandle");
+	g_xCandleMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Candle.ztex");
+	g_xCandleMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - candles should be REFLECTED, not reflecting
 
 	// Create flame particle config for wall candles
 	g_pxFlameConfig = new Flux_ParticleEmitterConfig();

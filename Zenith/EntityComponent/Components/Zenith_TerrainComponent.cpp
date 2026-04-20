@@ -60,7 +60,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	// Ensure all 4 material slots have valid assets (blank fallback for 2-3)
 	for (u_int u = 2; u < TERRAIN_MATERIAL_COUNT; u++)
 	{
-		if (!m_axMaterials[u].Get())
+		if (!m_axMaterials[u].GetDirect())
 		{
 			Zenith_MaterialAsset* pxBlank = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 			if (pxBlank)
@@ -293,7 +293,7 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 	// Version 3: Serialize 4 materials + splatmap path
 	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 	{
-		Zenith_MaterialAsset* pxMat = m_axMaterials[u].Get();
+		Zenith_MaterialAsset* pxMat = m_axMaterials[u].GetDirect();
 		if (pxMat)
 		{
 			pxMat->WriteToDataStream(xStream);
@@ -394,16 +394,16 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		xStream >> xMat1Color.z;
 		xStream >> xMat1Color.w;
 
-		if (m_axMaterials[0].Get())
-			m_axMaterials[0].Get()->SetBaseColor(xMat0Color);
-		if (m_axMaterials[1].Get())
-			m_axMaterials[1].Get()->SetBaseColor(xMat1Color);
+		if (m_axMaterials[0].GetDirect())
+			m_axMaterials[0].GetDirect()->SetBaseColor(xMat0Color);
+		if (m_axMaterials[1].GetDirect())
+			m_axMaterials[1].GetDirect()->SetBaseColor(xMat1Color);
 	}
 
 	// Ensure all 4 material slots have valid assets (use blank material as fallback)
 	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 	{
-		if (!m_axMaterials[u].Get())
+		if (!m_axMaterials[u].GetDirect())
 		{
 			Zenith_MaterialAsset* pxBlank = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 			if (pxBlank)

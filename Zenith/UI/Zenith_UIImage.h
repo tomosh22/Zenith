@@ -39,7 +39,7 @@ public:
     const std::string& GetTexturePath() const { return m_xTexture.GetPath(); }
 
     void SetTexture(Zenith_TextureAsset* pxTexture) { m_xTexture.Set(pxTexture); }
-    Zenith_TextureAsset* GetTexture() const { return m_xTexture.Get(); }
+    Zenith_TextureAsset* GetTexture() const;
 
     TextureHandle& GetTextureHandle() { return m_xTexture; }
 

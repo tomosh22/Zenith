@@ -1290,13 +1290,13 @@ static void LoadProceduralAssets(Zenith_AssetRegistry& xRegistry)
 	g_pxBlockerTexture = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Gameplay/blocker" ZENITH_TEXTURE_EXT);
 
 	if (g_pxFloorTileTexture)
-		g_xFloorMaterial.Get()->SetDiffuseTextureDirectly(g_pxFloorTileTexture);
+		g_xFloorMaterial.GetDirect()->SetDiffuseTextureDirectly(g_pxFloorTileTexture);
 	if (g_pxBlockerTexture)
-		g_xBlockerMaterial.Get()->SetDiffuseTextureDirectly(g_pxBlockerTexture);
+		g_xBlockerMaterial.GetDirect()->SetDiffuseTextureDirectly(g_pxBlockerTexture);
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 	{
 		if (g_apxCatFaceTextures[i])
-			g_axCatMaterials[i].Get()->SetDiffuseTextureDirectly(g_apxCatFaceTextures[i]);
+			g_axCatMaterials[i].GetDirect()->SetDiffuseTextureDirectly(g_apxCatFaceTextures[i]);
 	}
 
 	// Load pinball materials from .zmtrl files
@@ -1436,18 +1436,18 @@ static void InitializeTilePuzzleResources()
 	// Create materials with loaded colors
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 	g_xFloorMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xFloorMaterial.Get()->SetName("TilePuzzleFloor");
-	g_xFloorMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xFloorMaterial.Get()->SetBaseColor(xFloorColor);
-	g_xFloorMaterial.Get()->SetRoughness(0.8f);
-	g_xFloorMaterial.Get()->SetMetallic(0.0f);
+	g_xFloorMaterial.GetDirect()->SetName("TilePuzzleFloor");
+	g_xFloorMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xFloorMaterial.GetDirect()->SetBaseColor(xFloorColor);
+	g_xFloorMaterial.GetDirect()->SetRoughness(0.8f);
+	g_xFloorMaterial.GetDirect()->SetMetallic(0.0f);
 
 	g_xBlockerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xBlockerMaterial.Get()->SetName("TilePuzzleBlocker");
-	g_xBlockerMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xBlockerMaterial.Get()->SetBaseColor(xBlockerColor);
-	g_xBlockerMaterial.Get()->SetRoughness(0.9f);
-	g_xBlockerMaterial.Get()->SetMetallic(0.0f);
+	g_xBlockerMaterial.GetDirect()->SetName("TilePuzzleBlocker");
+	g_xBlockerMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xBlockerMaterial.GetDirect()->SetBaseColor(xBlockerColor);
+	g_xBlockerMaterial.GetDirect()->SetRoughness(0.9f);
+	g_xBlockerMaterial.GetDirect()->SetMetallic(0.0f);
 
 	// Shape materials with loaded colors + per-color PBR variation
 	const char* aszShapeColorNames[] = { "Red", "Green", "Blue", "Yellow", "Purple" };
@@ -1458,11 +1458,11 @@ static void InitializeTilePuzzleResources()
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleShape%s", aszShapeColorNames[i]);
 		g_axShapeMaterials[i].Set(xRegistry.Create<Zenith_MaterialAsset>());
-		g_axShapeMaterials[i].Get()->SetName(szName);
-		g_axShapeMaterials[i].Get()->SetDiffuseTextureDirectly(pxGridTex);
-		g_axShapeMaterials[i].Get()->SetBaseColor(axShapeColors[i]);
-		g_axShapeMaterials[i].Get()->SetRoughness(s_afShapeRoughness[i]);
-		g_axShapeMaterials[i].Get()->SetMetallic(s_afShapeMetallic[i]);
+		g_axShapeMaterials[i].GetDirect()->SetName(szName);
+		g_axShapeMaterials[i].GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+		g_axShapeMaterials[i].GetDirect()->SetBaseColor(axShapeColors[i]);
+		g_axShapeMaterials[i].GetDirect()->SetRoughness(s_afShapeRoughness[i]);
+		g_axShapeMaterials[i].GetDirect()->SetMetallic(s_afShapeMetallic[i]);
 	}
 
 	// Cat materials (same colors as shapes)
@@ -1471,11 +1471,11 @@ static void InitializeTilePuzzleResources()
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleCat%s", aszShapeColorNames[i]);
 		g_axCatMaterials[i].Set(xRegistry.Create<Zenith_MaterialAsset>());
-		g_axCatMaterials[i].Get()->SetName(szName);
-		g_axCatMaterials[i].Get()->SetDiffuseTextureDirectly(pxGridTex);
-		g_axCatMaterials[i].Get()->SetBaseColor(axShapeColors[i]);
-		g_axCatMaterials[i].Get()->SetRoughness(0.6f);
-		g_axCatMaterials[i].Get()->SetMetallic(0.05f);
+		g_axCatMaterials[i].GetDirect()->SetName(szName);
+		g_axCatMaterials[i].GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+		g_axCatMaterials[i].GetDirect()->SetBaseColor(axShapeColors[i]);
+		g_axCatMaterials[i].GetDirect()->SetRoughness(0.6f);
+		g_axCatMaterials[i].GetDirect()->SetMetallic(0.05f);
 	}
 
 	// Cat cafe display materials (programmatic face textures on cat head mesh)
@@ -1485,11 +1485,11 @@ static void InitializeTilePuzzleResources()
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleCatCafeDisplay%s", aszShapeColorNames[i]);
 		g_axCatCafeDisplayMaterials[i].Set(xRegistry.Create<Zenith_MaterialAsset>());
-		g_axCatCafeDisplayMaterials[i].Get()->SetName(szName);
-		g_axCatCafeDisplayMaterials[i].Get()->SetDiffuseTextureDirectly(g_apxCatCafeFaceTextures[i]);
-		g_axCatCafeDisplayMaterials[i].Get()->SetBaseColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
-		g_axCatCafeDisplayMaterials[i].Get()->SetRoughness(0.6f);
-		g_axCatCafeDisplayMaterials[i].Get()->SetMetallic(0.05f);
+		g_axCatCafeDisplayMaterials[i].GetDirect()->SetName(szName);
+		g_axCatCafeDisplayMaterials[i].GetDirect()->SetDiffuseTextureDirectly(g_apxCatCafeFaceTextures[i]);
+		g_axCatCafeDisplayMaterials[i].GetDirect()->SetBaseColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+		g_axCatCafeDisplayMaterials[i].GetDirect()->SetRoughness(0.6f);
+		g_axCatCafeDisplayMaterials[i].GetDirect()->SetMetallic(0.05f);
 	}
 
 #ifndef ZENITH_TOOLS

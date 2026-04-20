@@ -356,7 +356,7 @@ Flux_AnimationClip* Flux_AnimationController::AddClipFromFile(const std::string&
 {
 	// Store handle to keep asset alive (the clip is owned by the asset)
 	AnimationHandle xHandle(strPath);
-	Zenith_AnimationAsset* pxAnimAsset = xHandle.Get();
+	Zenith_AnimationAsset* pxAnimAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strPath);
 	Zenith_Assert(pxAnimAsset != nullptr, "Failed to load animation asset from: %s", strPath.c_str());
 
 	// Get the clip (asset retains ownership)

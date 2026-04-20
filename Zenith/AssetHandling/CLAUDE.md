@@ -21,7 +21,7 @@ The **unified asset management system** for all asset types. This singleton prov
 auto& reg = Zenith_AssetRegistry::Get();
 
 // Load asset from file (returns cached if already loaded)
-Zenith_TextureAsset* pTex = reg.Get<Zenith_TextureAsset>("Assets/tex.ztex");
+Zenith_TextureAsset* pTex = reg.Get<Zenith_TextureAsset>("Assets/tex.ztxtr");
 
 // Create procedural asset (generates unique path like "procedural://texture_0")
 Zenith_TextureAsset* pProc = reg.Create<Zenith_TextureAsset>();
@@ -41,9 +41,9 @@ Zenith_AssetRegistry::Initialize();        // Call early, before Flux
 // ... Flux::EarlyInitialise() ...
 
 {
-    Flux_MemoryManager::BeginFrame();
+    Flux_PerFrame::BeginFrame();
     Zenith_AssetRegistry::InitializeGPUDependentAssets();  // After VMA is ready
-    Flux_MemoryManager::EndFrame(false);
+    Flux_PerFrame::EndFrame();
 }
 ```
 
@@ -70,21 +70,21 @@ class Zenith_TextureAsset : public Zenith_Asset
     Flux_SurfaceInfo m_xSurfaceInfo;  // Format, dimensions, mip count
     Flux_VRAMHandle m_xVRAMHandle;     // GPU memory handle
     Flux_ShaderResourceView m_xSRV;    // For shader binding
-    std::string m_strSourcePath;       // For serialization
 };
 ```
 
 ### Loading Textures
 
 ```cpp
-// Via registry (preferred)
+// Always retrieve assets via the registry
 Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(path);
-
-// Via asset handle
-TextureHandle xTexHandle;
-xTexHandle.SetFromPath("Assets/tex.ztex");
-Zenith_TextureAsset* pTex = xTexHandle.Get();
 ```
+
+Asset handles (`TextureHandle`, `MaterialHandle`, etc.) store paths and manage ref-counting, but
+asset retrieval must go through the registry. Use `handle.GetPath()` to obtain the path, then
+pass it to `Zenith_AssetRegistry::Get().Get<T>()`. For procedural assets (created via
+`reg.Create<T>()` and stored with `handle.Set(ptr)`), use `handle.GetDirect()` to retrieve the
+pointer directly.
 
 ## Material Assets (Zenith_MaterialAsset)
 
@@ -97,14 +97,14 @@ Materials store textures and rendering properties.
 Zenith_MaterialAsset* pMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 
 // Set textures (stores path for serialization)
-pMat->SetDiffuseWithPath("Assets/diffuse.ztex");
-pMat->SetNormalWithPath("Assets/normal.ztex");
+pMat->SetDiffuseTexturePath("Assets/diffuse.ztxtr");
+pMat->SetNormalTexturePath("Assets/normal.ztxtr");
 ```
 
 ### Default Textures
 
 Materials use default textures when slots are unset:
-- `s_pxDefaultDiffuse` - White 1x1 texture
+- `s_pxDefaultWhite` - White 1x1 texture
 - `s_pxDefaultNormal` - Flat normal (128, 128, 255)
 
 These are initialized by `Zenith_AssetRegistry::InitializeGPUDependentAssets()`.
@@ -113,6 +113,8 @@ These are initialized by `Zenith_AssetRegistry::InitializeGPUDependentAssets()`.
 
 | Asset | Extension | Description |
 |-------|-----------|-------------|
+| Texture | `.ztxtr` | GPU texture data and metadata |
+| Material | `.zmtrl` | Texture references and rendering properties |
 | Model | `.zmodel` | Container referencing meshes, skeleton, and materials |
 | Mesh | `.zmesh` | Geometry data with optional skinning weights |
 | Skeleton | `.zskel` | Bone hierarchy and bind pose data |
@@ -183,9 +185,11 @@ skinningMatrix = modelSpaceTransform * inverseBindPose
 **GPU Upload:** Skinning matrices are uploaded to a constant buffer for GPU skinning. Triple-buffered to match frame-in-flight count.
 
 ### Mesh Instance (`Flux_MeshInstance`)
-Two creation paths exist:
+Three creation paths exist:
 
 **Static Meshes:** `CreateFromAsset(mesh)` - Creates GPU buffers with vertex data as-is.
+
+**Bind-Pose Static Meshes:** `CreateFromAsset(mesh, skeleton)` - Creates GPU buffers with the skeleton's bind pose applied to the mesh vertices.
 
 **Skinned Meshes:** `CreateSkinnedFromAsset(mesh)` - Creates GPU buffers with bone indices and weights in vertex data for GPU skinning.
 
@@ -209,7 +213,7 @@ worldPos = skinningMatrix * meshLocalPos
 
 ## Known Limitations
 
-- Maximum 100 bones per skeleton at runtime (Flux_SkeletonInstance limit, matches shader's bone array size)
+- Maximum 100 bones per skeleton (`Zenith_SkeletonAsset::MAX_BONES`, matching shader's `g_xBones[100]` array size)
 - Maximum 4 bone influences per vertex
 - Blender exports with Armature nodes may have a ~90 degree rotation offset due to Z-up to Y-up conversion that isn't fully compensated in the current pipeline
 
@@ -231,8 +235,8 @@ Assets use prefixed paths for cross-machine portability:
 
 | Prefix | Resolves To | Example |
 |--------|-------------|---------|
-| `game:` | `GAME_ASSETS_DIR` | `game:Textures/diffuse.ztex` |
-| `engine:` | `ENGINE_ASSETS_DIR` | `engine:Materials/default.zmat` |
+| `game:` | `GAME_ASSETS_DIR` | `game:Textures/diffuse.ztxtr` |
+| `engine:` | `ENGINE_ASSETS_DIR` | `engine:Materials/default.zmtrl` |
 | `procedural://` | Runtime-created asset | `procedural://unit_cube` |
 
 ### .zdata File Format
@@ -259,6 +263,7 @@ AssetHandling/
   Zenith_SkeletonAsset.h/cpp  - Skeleton hierarchy and bind pose
   Zenith_ModelAsset.h/cpp     - Model container (meshes + skeleton + materials)
   Zenith_AnimationAsset.h/cpp - Animation clips
-  Zenith_MeshGeometryAsset.h  - Wrapper for Flux_MeshGeometry
-  Zenith_AsyncAssetLoader.h   - Background asset loading
+  Zenith_MeshGeometryAsset.h/cpp  - Wrapper for Flux_MeshGeometry
+  Zenith_AsyncAssetLoader.h/cpp   - Background asset loading
+  Zenith_FileWatcher.h/cpp        - File system change watching
 ```

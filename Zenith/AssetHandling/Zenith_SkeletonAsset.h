@@ -29,7 +29,7 @@ class Zenith_SkeletonAsset : public Zenith_Asset
 {
 public:
 	static constexpr int32_t INVALID_BONE_INDEX = -1;
-	static constexpr uint32_t MAX_BONES = 128;
+	static constexpr uint32_t MAX_BONES = 100;  // Must match shader's g_xBones[100] array size
 
 	/**
 	 * Bone - A single bone in the skeleton hierarchy

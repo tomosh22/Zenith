@@ -216,7 +216,7 @@ Zenith_MaterialAsset* Zenith_ModelComponent::GetMaterial(uint32_t uIndex) const
 	// Fall back to procedural mesh entries
 	if (uIndex < m_xMeshEntries.GetSize())
 	{
-		return m_xMeshEntries.Get(uIndex).m_xMaterial.Get();
+		return m_xMeshEntries.Get(uIndex).m_xMaterial.GetDirect();
 	}
 	return nullptr;
 }
@@ -292,7 +292,7 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 			xStream << strMeshPath;
 
 			// Serialize the entire material
-			Zenith_MaterialAsset* pxMaterial = xEntry.m_xMaterial.Get();
+			Zenith_MaterialAsset* pxMaterial = xEntry.m_xMaterial.GetDirect();
 			if (pxMaterial)
 			{
 				pxMaterial->WriteToDataStream(xStream);

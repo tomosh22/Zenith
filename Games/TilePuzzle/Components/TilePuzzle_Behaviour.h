@@ -351,7 +351,7 @@ public:
 		auto& xRegistry = Zenith_AssetRegistry::Get();
 		for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 		{
-			Zenith_MaterialAsset* pxOriginal = m_axShapeMaterials[i].Get();
+			Zenith_MaterialAsset* pxOriginal = m_axShapeMaterials[i].GetDirect();
 			Zenith_MaterialAsset* pxHighlighted = xRegistry.Create<Zenith_MaterialAsset>();
 
 			pxHighlighted->SetName(pxOriginal->GetName() + "_Highlighted");
@@ -3239,7 +3239,7 @@ private:
 					xTransform.SetScale(Zenith_Maths::Vector3(s_fCellSize * 0.95f, s_fFloorHeight, s_fCellSize * 0.95f));
 
 					Zenith_ModelComponent& xModel = xFloorEntity.AddComponent<Zenith_ModelComponent>();
-					xModel.AddMeshEntry(*m_pxCubeGeometry, *m_xFloorMaterial.Get());
+					xModel.AddMeshEntry(*m_pxCubeGeometry, *m_xFloorMaterial.GetDirect());
 
 					uint32_t uKey = y * 1000 + x;
 					m_axFloorEntityIDs[uKey] = xFloorEntity.GetEntityID();
@@ -3250,10 +3250,10 @@ private:
 		// Create shape visuals (one entity per shape with merged mesh)
 		for (auto& xShape : m_xCurrentLevel.axShapes)
 		{
-			Zenith_MaterialAsset* pxMaterial = m_xBlockerMaterial.Get();
+			Zenith_MaterialAsset* pxMaterial = m_xBlockerMaterial.GetDirect();
 			if (xShape.pxDefinition->bDraggable && xShape.eColor < TILEPUZZLE_COLOR_COUNT)
 			{
-				pxMaterial = m_axShapeMaterials[xShape.eColor].Get();
+				pxMaterial = m_axShapeMaterials[xShape.eColor].GetDirect();
 			}
 
 			// Generate mesh from actual loaded cell offsets (which may be rotated)
@@ -3284,7 +3284,7 @@ private:
 			xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));
 
 			Zenith_ModelComponent& xModel = xCatEntity.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*m_pxCatGeometry, *m_axCatMaterials[xCat.eColor].Get());
+			xModel.AddMeshEntry(*m_pxCatGeometry, *m_axCatMaterials[xCat.eColor].GetDirect());
 
 			xCat.uEntityID = xCatEntity.GetEntityID();
 		}
@@ -3547,7 +3547,7 @@ private:
 				TilePuzzleShapeInstance& xPrevShape = m_xCurrentLevel.axShapes[m_iPreviousSelectedShapeIndex];
 				if (xPrevShape.pxDefinition->bDraggable)
 				{
-					Zenith_MaterialAsset* pxNormalMaterial = m_axShapeMaterials[xPrevShape.eColor].Get();
+					Zenith_MaterialAsset* pxNormalMaterial = m_axShapeMaterials[xPrevShape.eColor].GetDirect();
 					if (pxSceneData->EntityExists(xPrevShape.xEntityID))
 					{
 						Zenith_Entity xEntity = pxSceneData->GetEntity(xPrevShape.xEntityID);
@@ -3578,7 +3578,7 @@ private:
 				TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[m_iSelectedShapeIndex];
 				if (xShape.pxDefinition->bDraggable)
 				{
-					Zenith_MaterialAsset* pxHighlightMaterial = m_axShapeMaterialsHighlighted[xShape.eColor].Get();
+					Zenith_MaterialAsset* pxHighlightMaterial = m_axShapeMaterialsHighlighted[xShape.eColor].GetDirect();
 					if (pxSceneData->EntityExists(xShape.xEntityID))
 					{
 						Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
@@ -3784,10 +3784,10 @@ private:
 		if (!xShape.pxDefinition)
 			return;
 
-		Zenith_MaterialAsset* pxMaterial = m_xBlockerMaterial.Get();
+		Zenith_MaterialAsset* pxMaterial = m_xBlockerMaterial.GetDirect();
 		if (xShape.pxDefinition->bDraggable && xShape.eColor < TILEPUZZLE_COLOR_COUNT)
 		{
-			pxMaterial = m_axShapeMaterials[xShape.eColor].Get();
+			pxMaterial = m_axShapeMaterials[xShape.eColor].GetDirect();
 		}
 
 		// Find or create mesh for this shape
@@ -3826,7 +3826,7 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));
 
 		Zenith_ModelComponent& xModel = xCatEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*m_pxCatGeometry, *m_axCatMaterials[xCat.eColor].Get());
+		xModel.AddMeshEntry(*m_pxCatGeometry, *m_axCatMaterials[xCat.eColor].GetDirect());
 
 		xCat.uEntityID = xCatEntity.GetEntityID();
 	}

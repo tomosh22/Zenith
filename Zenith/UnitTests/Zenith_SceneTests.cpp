@@ -857,14 +857,16 @@ void Zenith_SceneTests::RunAllTests()
 	// Clean up any scene state left over from tests so it doesn't leak into the game.
 	// We can't unload the last scene (engine prevents it), so reset the active scene's
 	// data and clear its test name/path. Project_LoadInitialScene will populate it.
+	// Re-mark as loaded after Reset() so that subsequent test suites (e.g. EditorTests)
+	// can create entities without hitting the "scene is not loaded" assertion.
 	{
 		Zenith_Scene xCleanupScene = Zenith_SceneManager::GetActiveScene();
 		Zenith_SceneData* pxCleanupData = Zenith_SceneManager::GetSceneData(xCleanupScene);
 		if (pxCleanupData)
 		{
 			pxCleanupData->Reset();
-			pxCleanupData->m_strName.clear();
-			pxCleanupData->m_strPath.clear();
+			pxCleanupData->m_bIsLoaded = true;
+			pxCleanupData->m_bIsActivated = true;
 		}
 	}
 

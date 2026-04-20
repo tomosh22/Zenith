@@ -356,34 +356,34 @@ static void InitializeRunnerResources()
 	// Create materials with grid texture and BaseColor
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 	g_xCharacterMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xCharacterMaterial.Get()->SetName("RunnerCharacter");
-	g_xCharacterMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xCharacterMaterial.Get()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
+	g_xCharacterMaterial.GetDirect()->SetName("RunnerCharacter");
+	g_xCharacterMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xCharacterMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
 	g_xGroundMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xGroundMaterial.Get()->SetName("RunnerGround");
-	g_xGroundMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xGroundMaterial.Get()->SetBaseColor({ 102.f/255.f, 77.f/255.f, 51.f/255.f, 1.f });
+	g_xGroundMaterial.GetDirect()->SetName("RunnerGround");
+	g_xGroundMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xGroundMaterial.GetDirect()->SetBaseColor({ 102.f/255.f, 77.f/255.f, 51.f/255.f, 1.f });
 
 	g_xObstacleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xObstacleMaterial.Get()->SetName("RunnerObstacle");
-	g_xObstacleMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xObstacleMaterial.Get()->SetBaseColor({ 204.f/255.f, 51.f/255.f, 51.f/255.f, 1.f });
+	g_xObstacleMaterial.GetDirect()->SetName("RunnerObstacle");
+	g_xObstacleMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xObstacleMaterial.GetDirect()->SetBaseColor({ 204.f/255.f, 51.f/255.f, 51.f/255.f, 1.f });
 
 	g_xCollectibleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xCollectibleMaterial.Get()->SetName("RunnerCollectible");
-	g_xCollectibleMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xCollectibleMaterial.Get()->SetBaseColor({ 255.f/255.f, 215.f/255.f, 0.f/255.f, 1.f });
+	g_xCollectibleMaterial.GetDirect()->SetName("RunnerCollectible");
+	g_xCollectibleMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xCollectibleMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 215.f/255.f, 0.f/255.f, 1.f });
 
 	g_xDustMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xDustMaterial.Get()->SetName("RunnerDust");
-	g_xDustMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xDustMaterial.Get()->SetBaseColor({ 180.f/255.f, 150.f/255.f, 100.f/255.f, 1.f });
+	g_xDustMaterial.GetDirect()->SetName("RunnerDust");
+	g_xDustMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xDustMaterial.GetDirect()->SetBaseColor({ 180.f/255.f, 150.f/255.f, 100.f/255.f, 1.f });
 
 	g_xCollectParticleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xCollectParticleMaterial.Get()->SetName("RunnerCollectParticle");
-	g_xCollectParticleMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xCollectParticleMaterial.Get()->SetBaseColor({ 255.f/255.f, 255.f/255.f, 150.f/255.f, 1.f });
+	g_xCollectParticleMaterial.GetDirect()->SetName("RunnerCollectParticle");
+	g_xCollectParticleMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xCollectParticleMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 255.f/255.f, 150.f/255.f, 1.f });
 
 	// Create prefabs for runtime instantiation.
 	// Use the persistent scene here: InitializeResources runs before the initial scene

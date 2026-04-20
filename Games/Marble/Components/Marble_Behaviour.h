@@ -309,10 +309,10 @@ private:
 			Marble::g_pxCollectiblePrefab,
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
-			m_xBallMaterial.Get(),
-			m_xPlatformMaterial.Get(),
-			m_xGoalMaterial.Get(),
-			m_xCollectibleMaterial.Get());
+			m_xBallMaterial.GetDirect(),
+			m_xPlatformMaterial.GetDirect(),
+			m_xGoalMaterial.GetDirect(),
+			m_xCollectibleMaterial.GetDirect());
 
 		// Reset game state
 		m_eGameState = MarbleGameState::PLAYING;
@@ -358,10 +358,10 @@ private:
 			Marble::g_pxCollectiblePrefab,
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
-			m_xBallMaterial.Get(),
-			m_xPlatformMaterial.Get(),
-			m_xGoalMaterial.Get(),
-			m_xCollectibleMaterial.Get());
+			m_xBallMaterial.GetDirect(),
+			m_xPlatformMaterial.GetDirect(),
+			m_xGoalMaterial.GetDirect(),
+			m_xCollectibleMaterial.GetDirect());
 
 		m_eGameState = MarbleGameState::PLAYING;
 		m_uScore = 0;

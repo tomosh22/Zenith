@@ -1,8 +1,7 @@
 #pragma once
 #include "Flux/Flux_Buffers.h"
 #include "Maths/Zenith_Maths.h"
-
-class Zenith_SkeletonAsset;
+#include "AssetHandling/Zenith_SkeletonAsset.h"
 
 /**
  * Flux_SkeletonInstance - Runtime skeleton for animation playback
@@ -18,7 +17,7 @@ class Zenith_SkeletonAsset;
 class Flux_SkeletonInstance
 {
 public:
-	static constexpr uint32_t MAX_BONES = 100;  // Must match shader's g_xBones[100] array size
+	static constexpr uint32_t MAX_BONES = Zenith_SkeletonAsset::MAX_BONES;
 
 	Flux_SkeletonInstance() = default;
 	~Flux_SkeletonInstance();

@@ -82,16 +82,16 @@ public:
 	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const { return *m_pxPhysicsGeometry; }
 	// Material accessors (4-material palette)
 	static constexpr u_int TERRAIN_MATERIAL_COUNT = 4;
-	Zenith_MaterialAsset* GetMaterial(u_int uIndex) const { Zenith_Assert(uIndex < TERRAIN_MATERIAL_COUNT, "Invalid material index"); return m_axMaterials[uIndex].Get(); }
+	Zenith_MaterialAsset* GetMaterial(u_int uIndex) const { Zenith_Assert(uIndex < TERRAIN_MATERIAL_COUNT, "Invalid material index"); return m_axMaterials[uIndex].GetDirect(); }
 	MaterialHandle& GetMaterialHandle(u_int uIndex) { Zenith_Assert(uIndex < TERRAIN_MATERIAL_COUNT, "Invalid material index"); return m_axMaterials[uIndex]; }
 
 	// Splatmap texture (RGBA8, weights for 4 materials)
-	Zenith_TextureAsset* GetSplatmapTexture() const { return m_xSplatmap.Get(); }
+	Zenith_TextureAsset* GetSplatmapTexture() const { return Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xSplatmap.GetPath()); }
 	TextureHandle& GetSplatmapHandle() { return m_xSplatmap; }
 
 	// Backward compatibility wrappers
-	Zenith_MaterialAsset* GetMaterial0() const { return m_axMaterials[0].Get(); }
-	Zenith_MaterialAsset* GetMaterial1() const { return m_axMaterials[1].Get(); }
+	Zenith_MaterialAsset* GetMaterial0() const { return m_axMaterials[0].GetDirect(); }
+	Zenith_MaterialAsset* GetMaterial1() const { return m_axMaterials[1].GetDirect(); }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 	// Serialization methods for Zenith_DataStream

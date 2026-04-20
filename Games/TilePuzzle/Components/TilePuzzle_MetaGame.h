@@ -31,7 +31,7 @@ void CreateCatCafeDisplayEntity()
 		uColorIndex = uCatID % TILEPUZZLE_COLOR_COUNT;
 	}
 
-	Zenith_MaterialAsset* pxMaterial = TilePuzzle::g_axCatCafeDisplayMaterials[uColorIndex].Get();
+	Zenith_MaterialAsset* pxMaterial = TilePuzzle::g_axCatCafeDisplayMaterials[uColorIndex].GetDirect();
 	if (!pxMaterial || !TilePuzzle::g_pxCatMeshGeometry)
 		return;
 
@@ -64,7 +64,7 @@ void UpdateCatCafeDisplayMaterial()
 		uColorIndex = uCatID % TILEPUZZLE_COLOR_COUNT;
 	}
 
-	Zenith_MaterialAsset* pxMaterial = TilePuzzle::g_axCatCafeDisplayMaterials[uColorIndex].Get();
+	Zenith_MaterialAsset* pxMaterial = TilePuzzle::g_axCatCafeDisplayMaterials[uColorIndex].GetDirect();
 	if (!pxMaterial)
 		return;
 

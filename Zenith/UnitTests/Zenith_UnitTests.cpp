@@ -7531,7 +7531,7 @@ void Zenith_UnitTests::TestAssetHandleProceduralBoolConversion()
 	// The key fix: operator bool() should return true for procedural assets
 	// Previously it only checked if path was set, which is empty for procedural assets
 	Zenith_Assert(static_cast<bool>(xHandle), "Procedural asset handle should be valid (operator bool)");
-	Zenith_Assert(xHandle.Get() == pxMaterial, "Get() should return the procedural material");
+	Zenith_Assert(xHandle.GetDirect() == pxMaterial, "GetDirect() should return the procedural material");
 	Zenith_Assert(xHandle.IsLoaded(), "IsLoaded() should return true for procedural asset");
 
 	// Path should be empty for procedural assets
@@ -7582,7 +7582,7 @@ void Zenith_UnitTests::TestAssetHandleEmptyBoolConversion()
 	Zenith_Assert(!xHandle.IsSet(), "Empty handle IsSet() should be false");
 	Zenith_Assert(!xHandle.IsLoaded(), "Empty handle IsLoaded() should be false");
 	Zenith_Assert(xHandle.GetPath().empty(), "Empty handle path should be empty");
-	Zenith_Assert(xHandle.Get() == nullptr, "Empty handle Get() should return nullptr");
+	Zenith_Assert(xHandle.GetDirect() == nullptr, "Empty handle GetDirect() should return nullptr");
 
 	// Guard pattern should correctly skip empty handles
 	bool bGuardSkipped = true;
@@ -7650,8 +7650,8 @@ void Zenith_UnitTests::TestAssetHandleCopySemantics()
 			"Copy constructor should increment ref count");
 
 		// Both handles should return the same pointer
-		Zenith_Assert(xHandle1.Get() == pxMaterial, "Handle1 should return original pointer");
-		Zenith_Assert(xHandle2.Get() == pxMaterial, "Handle2 should return original pointer");
+		Zenith_Assert(xHandle1.GetDirect() == pxMaterial, "Handle1 should return original pointer");
+		Zenith_Assert(xHandle2.GetDirect() == pxMaterial, "Handle2 should return original pointer");
 	}
 
 	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
@@ -7709,7 +7709,7 @@ void Zenith_UnitTests::TestAssetHandleMoveSemantics()
 
 		// Source handle should be nullified
 		Zenith_Assert(!xHandle1.IsLoaded(), "Moved-from handle should not be loaded");
-		Zenith_Assert(xHandle2.Get() == pxMaterial, "Moved-to handle should have pointer");
+		Zenith_Assert(xHandle2.GetDirect() == pxMaterial, "Moved-to handle should have pointer");
 	}
 
 	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
@@ -7920,19 +7920,19 @@ void Zenith_UnitTests::TestMaterialHandleCopyPreservesCachedPointer()
 	xOriginal.Set(pxMaterial);
 
 	// Verify original handle works
-	Zenith_Assert(xOriginal.Get() == pxMaterial, "Original handle should return the material");
+	Zenith_Assert(xOriginal.GetDirect() == pxMaterial, "Original handle should return the material");
 
 	// Copy to another handle (like m_xEnemyMaterial = Combat::g_xEnemyMaterial)
 	MaterialHandle xCopy = xOriginal;
 
 	// CRITICAL TEST: Copy must preserve the cached pointer
-	Zenith_Assert(xCopy.Get() != nullptr,
+	Zenith_Assert(xCopy.GetDirect() != nullptr,
 		"Copied handle returned nullptr - copy assignment failed to preserve cached pointer");
-	Zenith_Assert(xCopy.Get() == pxMaterial,
+	Zenith_Assert(xCopy.GetDirect() == pxMaterial,
 		"Copied handle returned different pointer than original");
 
 	// Verify original still works after copy
-	Zenith_Assert(xOriginal.Get() == pxMaterial, "Original handle should still work after copy");
+	Zenith_Assert(xOriginal.GetDirect() == pxMaterial, "Original handle should still work after copy");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMaterialHandleCopyPreservesCachedPointer passed");
 }

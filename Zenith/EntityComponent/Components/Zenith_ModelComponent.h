@@ -163,7 +163,7 @@ public:
 	Zenith_MaterialAsset* GetMaterialAtIndex(const uint32_t uIndex) const
 	{
 		Zenith_Assert(uIndex < m_xMeshEntries.GetSize(), "GetMaterialAtIndex: Index %u out of bounds (size=%u)", uIndex, m_xMeshEntries.GetSize());
-		return m_xMeshEntries.Get(uIndex).m_xMaterial.Get();
+		return m_xMeshEntries.Get(uIndex).m_xMaterial.GetDirect();
 	}
 	MaterialHandle& GetMaterialHandleAtIndex(const uint32_t uIndex)
 	{

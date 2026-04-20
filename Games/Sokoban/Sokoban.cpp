@@ -65,34 +65,34 @@ static void InitializeSokobanResources()
 
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 	g_xFloorMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xFloorMaterial.Get()->SetName("SokobanFloor");
-	g_xFloorMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xFloorMaterial.Get()->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
+	g_xFloorMaterial.GetDirect()->SetName("SokobanFloor");
+	g_xFloorMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xFloorMaterial.GetDirect()->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
 
 	g_xWallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xWallMaterial.Get()->SetName("SokobanWall");
-	g_xWallMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xWallMaterial.Get()->SetBaseColor({ 102.f/255.f, 64.f/255.f, 38.f/255.f, 1.f });
+	g_xWallMaterial.GetDirect()->SetName("SokobanWall");
+	g_xWallMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xWallMaterial.GetDirect()->SetBaseColor({ 102.f/255.f, 64.f/255.f, 38.f/255.f, 1.f });
 
 	g_xBoxMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xBoxMaterial.Get()->SetName("SokobanBox");
-	g_xBoxMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xBoxMaterial.Get()->SetBaseColor({ 204.f/255.f, 128.f/255.f, 51.f/255.f, 1.f });
+	g_xBoxMaterial.GetDirect()->SetName("SokobanBox");
+	g_xBoxMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xBoxMaterial.GetDirect()->SetBaseColor({ 204.f/255.f, 128.f/255.f, 51.f/255.f, 1.f });
 
 	g_xBoxOnTargetMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xBoxOnTargetMaterial.Get()->SetName("SokobanBoxOnTarget");
-	g_xBoxOnTargetMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xBoxOnTargetMaterial.Get()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
+	g_xBoxOnTargetMaterial.GetDirect()->SetName("SokobanBoxOnTarget");
+	g_xBoxOnTargetMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xBoxOnTargetMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
 	g_xPlayerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xPlayerMaterial.Get()->SetName("SokobanPlayer");
-	g_xPlayerMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xPlayerMaterial.Get()->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
+	g_xPlayerMaterial.GetDirect()->SetName("SokobanPlayer");
+	g_xPlayerMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xPlayerMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
 
 	g_xTargetMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
-	g_xTargetMaterial.Get()->SetName("SokobanTarget");
-	g_xTargetMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xTargetMaterial.Get()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 51.f/255.f, 1.f });
+	g_xTargetMaterial.GetDirect()->SetName("SokobanTarget");
+	g_xTargetMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xTargetMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 51.f/255.f, 1.f });
 
 	// Create prefabs for runtime instantiation
 	// Note: Prefabs don't include ModelComponent because material varies by tile type

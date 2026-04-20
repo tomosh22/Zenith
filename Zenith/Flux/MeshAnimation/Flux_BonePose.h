@@ -7,12 +7,13 @@
 
 // Forward declarations
 class Flux_MeshGeometry;
-class Zenith_SkeletonAsset;
+
+#include "AssetHandling/Zenith_SkeletonAsset.h"
 
 //=============================================================================
 // Constants
 //=============================================================================
-static constexpr uint32_t FLUX_MAX_BONES = 100;
+static constexpr uint32_t FLUX_MAX_BONES = Zenith_SkeletonAsset::MAX_BONES;
 
 //=============================================================================
 // Flux_BoneLocalPose
