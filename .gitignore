@@ -69,3 +69,7 @@
 # Ignore all Assets directories
 **/Assets/
 /nul
+
+# Android build outputs
+*.apk
+Games/TilePuzzle/Android/app/build/
