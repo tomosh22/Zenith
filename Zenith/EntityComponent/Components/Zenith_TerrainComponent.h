@@ -15,6 +15,7 @@ using namespace Flux_TerrainConfig;
 
 // Forward declarations
 class Flux_CommandList;
+struct Flux_TerrainChunkInitData;
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentRegistry.h"
@@ -187,6 +188,9 @@ public:
 
 	// Helper method to initialize render resources (called by constructor and deserialization)
 	void InitializeRenderResources();
+	void CalculateLowLODBufferSizes(uint32_t& uTotalVertsOut, uint32_t& uTotalIndicesOut) const;
+	void LoadAndCombineLowLODChunks(uint32_t uTotalVerts, uint32_t uTotalIndices, Flux_TerrainChunkInitData* pxChunkInitData, Flux_MeshGeometry*& pxLowLODGeometryOut);
+	void InitializeUnifiedBuffers(const Flux_MeshGeometry& xLowLODGeometry);
 
 	// Helper method to load and combine all physics chunks
 	void LoadCombinedPhysicsGeometry();

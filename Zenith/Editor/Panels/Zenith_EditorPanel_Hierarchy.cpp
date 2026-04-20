@@ -160,46 +160,112 @@ static void RenderEntityContextMenu(
 }
 
 //-----------------------------------------------------------------------------
-// Helper: Render a single entity tree node recursively
+// Scratch state threaded through recursion so RenderEntityTreeNode has a thin
+// signature instead of 5+ references.
 //-----------------------------------------------------------------------------
-static void RenderEntityTreeNode(
-	Zenith_SceneData& xSceneData,
-	Zenith_Entity xEntity,
-	Zenith_EntityID& uEntityToDelete,
-	Zenith_EntityID& uDraggedEntityID,
-	Zenith_EntityID& uDropTargetEntityID,
-	Zenith_Scene xDropTargetScene)
+struct TreeNodeRenderContext
 {
-	Zenith_EntityID uEntityID = xEntity.GetEntityID();
-	bool bIsSelected = Zenith_Editor::IsSelected(uEntityID);
-	bool bHasChildren = xEntity.HasChildren();
+	Zenith_SceneData& xSceneData;
+	Zenith_EntityID& uEntityToDelete;
+	Zenith_EntityID& uDraggedEntityID;
+	Zenith_EntityID& uDropTargetEntityID;
+};
 
-	// Build display name
-	std::string strDisplayName = xEntity.GetName().empty() ?
-		("Entity_" + std::to_string(uEntityID.m_uIndex)) : xEntity.GetName();
-
-	// Count components for display
-	uint32_t uComponentCount = 0;
+struct EntityDisplayLabel
+{
+	std::string strDisplayName;
 	std::string strComponentSummary;
+	uint32_t uComponentCount = 0;
+};
+
+static EntityDisplayLabel BuildEntityDisplayLabel(Zenith_Entity xEntity)
+{
+	EntityDisplayLabel xLabel;
+	Zenith_EntityID uEntityID = xEntity.GetEntityID();
+	xLabel.strDisplayName = xEntity.GetName().empty()
+		? ("Entity_" + std::to_string(uEntityID.m_uIndex))
+		: xEntity.GetName();
+
 	Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
 	const auto& xEntries = xRegistry.GetEntries();
 	for (const Zenith_ComponentRegistryEntry& xEntry : xEntries)
 	{
 		if (xEntry.m_pfnHasComponent(xEntity))
 		{
-			if (uComponentCount > 0)
-				strComponentSummary += ", ";
-			strComponentSummary += xEntry.m_strDisplayName;
-			uComponentCount++;
+			if (xLabel.uComponentCount > 0)
+				xLabel.strComponentSummary += ", ";
+			xLabel.strComponentSummary += xEntry.m_strDisplayName;
+			xLabel.uComponentCount++;
 		}
 	}
 
-	if (uComponentCount > 0)
+	if (xLabel.uComponentCount > 0)
 	{
-		strDisplayName += " [" + std::to_string(uComponentCount) + "]";
+		xLabel.strDisplayName += " [" + std::to_string(xLabel.uComponentCount) + "]";
+	}
+	return xLabel;
+}
+
+static void HandleNodeSelection(Zenith_EntityID uEntityID)
+{
+	if (!ImGui::IsItemClicked() || ImGui::IsItemToggledOpen())
+		return;
+
+	const bool bCtrlHeld = ImGui::GetIO().KeyCtrl;
+	const bool bShiftHeld = ImGui::GetIO().KeyShift;
+
+	if (bShiftHeld && Zenith_Editor::GetLastClickedEntityID() != INVALID_ENTITY_ID)
+	{
+		Zenith_Editor::SelectRange(uEntityID);
+	}
+	else if (bCtrlHeld)
+	{
+		Zenith_Editor::ToggleEntitySelection(uEntityID);
+	}
+	else
+	{
+		Zenith_Editor::SelectEntity(uEntityID, false);
+	}
+}
+
+static void HandleEntityDragDrop(
+	Zenith_Entity xEntity,
+	Zenith_EntityID& uDraggedEntityID,
+	Zenith_EntityID& uDropTargetEntityID)
+{
+	Zenith_EntityID uEntityID = xEntity.GetEntityID();
+
+	if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+	{
+		ImGui::SetDragDropPayload("HIERARCHY_ENTITY", &uEntityID, sizeof(Zenith_EntityID));
+		ImGui::Text("Move: %s", xEntity.GetName().c_str());
+		uDraggedEntityID = uEntityID;
+		ImGui::EndDragDropSource();
 	}
 
-	// Tree node flags
+	if (ImGui::BeginDragDropTarget())
+	{
+		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY"))
+		{
+			Zenith_EntityID uSourceEntityID = *(const Zenith_EntityID*)pPayload->Data;
+			uDropTargetEntityID = uEntityID;
+			uDraggedEntityID = uSourceEntityID;
+		}
+		ImGui::EndDragDropTarget();
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Helper: Render a single entity tree node recursively
+//-----------------------------------------------------------------------------
+static void RenderEntityTreeNode(Zenith_Entity xEntity, TreeNodeRenderContext& xCtx)
+{
+	Zenith_EntityID uEntityID = xEntity.GetEntityID();
+	bool bIsSelected = Zenith_Editor::IsSelected(uEntityID);
+	bool bHasChildren = xEntity.HasChildren();
+
+	EntityDisplayLabel xLabel = BuildEntityDisplayLabel(xEntity);
+
 	ImGuiTreeNodeFlags eFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
 	if (bIsSelected)
 	{
@@ -210,70 +276,27 @@ static void RenderEntityTreeNode(
 		eFlags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 	}
 
-	// Render tree node
-	bool bNodeOpen = ImGui::TreeNodeEx((void*)(uintptr_t)uEntityID.GetPacked(), eFlags, "%s", strDisplayName.c_str());
+	bool bNodeOpen = ImGui::TreeNodeEx((void*)(uintptr_t)uEntityID.GetPacked(), eFlags, "%s", xLabel.strDisplayName.c_str());
 
-	// Handle selection on click
-	if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+	HandleNodeSelection(uEntityID);
+	HandleEntityDragDrop(xEntity, xCtx.uDraggedEntityID, xCtx.uDropTargetEntityID);
+
+	if (ImGui::IsItemHovered() && xLabel.uComponentCount > 0)
 	{
-		bool bCtrlHeld = ImGui::GetIO().KeyCtrl;
-		bool bShiftHeld = ImGui::GetIO().KeyShift;
-
-		if (bShiftHeld && Zenith_Editor::GetLastClickedEntityID() != INVALID_ENTITY_ID)
-		{
-			Zenith_Editor::SelectRange(uEntityID);
-		}
-		else if (bCtrlHeld)
-		{
-			Zenith_Editor::ToggleEntitySelection(uEntityID);
-		}
-		else
-		{
-			Zenith_Editor::SelectEntity(uEntityID, false);
-		}
+		ImGui::SetTooltip("Components: %s", xLabel.strComponentSummary.c_str());
 	}
 
-	// Drag source for reparenting
-	if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
-	{
-		ImGui::SetDragDropPayload("HIERARCHY_ENTITY", &uEntityID, sizeof(Zenith_EntityID));
-		ImGui::Text("Move: %s", xEntity.GetName().c_str());
-		uDraggedEntityID = uEntityID;
-		ImGui::EndDragDropSource();
-	}
+	RenderEntityContextMenu(xCtx.xSceneData, xEntity, xCtx.uEntityToDelete);
 
-	// Drop target for reparenting (within same scene)
-	if (ImGui::BeginDragDropTarget())
-	{
-		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY"))
-		{
-			Zenith_EntityID uSourceEntityID = *(const Zenith_EntityID*)pPayload->Data;
-			// Set as child of this entity
-			uDropTargetEntityID = uEntityID;
-			uDraggedEntityID = uSourceEntityID;
-		}
-		ImGui::EndDragDropTarget();
-	}
-
-	// Show component list in tooltip on hover
-	if (ImGui::IsItemHovered() && uComponentCount > 0)
-	{
-		ImGui::SetTooltip("Components: %s", strComponentSummary.c_str());
-	}
-
-	// Context menu (extracted to reduce cyclomatic complexity)
-	RenderEntityContextMenu(xSceneData, xEntity, uEntityToDelete);
-
-	// Recursively render children if node is open and has children
 	if (bNodeOpen && bHasChildren)
 	{
 		Zenith_Vector<Zenith_EntityID> xChildren = xEntity.GetChildEntityIDs();
 		for (u_int u = 0; u < xChildren.GetSize(); ++u)
 		{
 			Zenith_EntityID xChildID = xChildren.Get(u);
-			if (xSceneData.EntityExists(xChildID))
+			if (xCtx.xSceneData.EntityExists(xChildID))
 			{
-				RenderEntityTreeNode(xSceneData, xSceneData.GetEntity(xChildID), uEntityToDelete, uDraggedEntityID, uDropTargetEntityID, xDropTargetScene);
+				RenderEntityTreeNode(xCtx.xSceneData.GetEntity(xChildID), xCtx);
 			}
 		}
 		ImGui::TreePop();
@@ -287,9 +310,10 @@ static void RenderSceneEntities(
 	Zenith_SceneData& xSceneData,
 	Zenith_EntityID& uEntityToDelete,
 	Zenith_EntityID& uDraggedEntityID,
-	Zenith_EntityID& uDropTargetEntityID,
-	Zenith_Scene& xDropTargetScene)
+	Zenith_EntityID& uDropTargetEntityID)
 {
+	TreeNodeRenderContext xCtx{ xSceneData, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID };
+
 	// Render only root entities (entities without parents)
 	const Zenith_Vector<Zenith_EntityID>& xActiveEntities = xSceneData.GetActiveEntities();
 	for (u_int u = 0; u < xActiveEntities.GetSize(); ++u)
@@ -300,7 +324,7 @@ static void RenderSceneEntities(
 			Zenith_Entity xEntity = xSceneData.GetEntity(xEntityID);
 			if (!xEntity.HasParent())
 			{
-				RenderEntityTreeNode(xSceneData, xEntity, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID, xDropTargetScene);
+				RenderEntityTreeNode(xEntity, xCtx);
 			}
 		}
 	}
@@ -402,7 +426,6 @@ static void RenderSceneHeaderAndBody(
 	Zenith_EntityID& uEntityToDelete,
 	Zenith_EntityID& uDraggedEntityID,
 	Zenith_EntityID& uDropTargetEntityID,
-	Zenith_Scene& xDropTargetScene,
 	bool& bSceneUnloaded)
 {
 	// Build scene header text
@@ -482,7 +505,7 @@ static void RenderSceneHeaderAndBody(
 	if (bHeaderOpen)
 	{
 		ImGui::Indent(4.0f);
-		RenderSceneEntities(xSceneData, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID, xDropTargetScene);
+		RenderSceneEntities(xSceneData, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
 		ImGui::Unindent(4.0f);
 	}
 
@@ -497,8 +520,7 @@ static void RenderSceneHeaderAndBody(
 void RenderScenesSection(
 	Zenith_EntityID& uEntityToDelete,
 	Zenith_EntityID& uDraggedEntityID,
-	Zenith_EntityID& uDropTargetEntityID,
-	Zenith_Scene& xDropTargetScene)
+	Zenith_EntityID& uDropTargetEntityID)
 {
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
@@ -533,7 +555,6 @@ void RenderScenesSection(
 			uEntityToDelete,
 			uDraggedEntityID,
 			uDropTargetEntityID,
-			xDropTargetScene,
 			bSceneUnloaded);
 	}
 }
@@ -630,9 +651,8 @@ void Render(Zenith_EntityID& uGameCameraEntityID)
 	Zenith_EntityID uEntityToDelete = INVALID_ENTITY_ID;
 	Zenith_EntityID uDraggedEntityID = INVALID_ENTITY_ID;
 	Zenith_EntityID uDropTargetEntityID = INVALID_ENTITY_ID;
-	Zenith_Scene xDropTargetScene;
 
-	RenderScenesSection(uEntityToDelete, uDraggedEntityID, uDropTargetEntityID, xDropTargetScene);
+	RenderScenesSection(uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
 
 	RenderRootDropTargetSection();
 

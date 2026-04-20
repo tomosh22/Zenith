@@ -71,11 +71,10 @@ namespace Zenith_Editor_MaterialUI
 	using TextureAssignCallback = std::function<void(const char* szFilePath)>;
 
 	/**
-	 * Render a texture slot with drag-drop support and optional preview.
+	 * Render a texture slot with drag-drop support and a preview thumbnail.
 	 * @param szLabel Label for the texture slot
 	 * @param xMaterial Material to modify
 	 * @param eSlot Which texture slot to edit
-	 * @param bShowPreview Whether to show texture preview (default true)
 	 * @param fPreviewSize Size of the preview image (default 48.0f)
 	 * @param pfnOnAssign Optional callback for custom assignment behavior.
 	 *                    If null, uses default SetTexturePathForSlot behavior.
@@ -84,7 +83,6 @@ namespace Zenith_Editor_MaterialUI
 		const char* szLabel,
 		Zenith_MaterialAsset& xMaterial,
 		TextureSlotType eSlot,
-		bool bShowPreview = true,
 		float fPreviewSize = 48.0f,
 		TextureAssignCallback pfnOnAssign = nullptr);
 

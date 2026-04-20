@@ -68,97 +68,102 @@ void Zenith_ScriptComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Editor/Zenith_Editor.h"
 
-void Zenith_ScriptComponent::RenderPropertiesPanel()
+void Zenith_ScriptComponent::ClearCurrentBehaviour()
 {
-	if (ImGui::CollapsingHeader("Script Component", ImGuiTreeNodeFlags_DefaultOpen))
+	if (!m_pxScriptBehaviour)
+		return;
+
+	m_pxScriptBehaviour->OnDestroy();
+	delete m_pxScriptBehaviour;
+	m_pxScriptBehaviour = nullptr;
+}
+
+void Zenith_ScriptComponent::RenderBehaviourSelector()
+{
+	std::vector<std::string> xBehaviourNames = Zenith_BehaviourRegistry::Get().GetRegisteredBehaviourNames();
+
+	if (xBehaviourNames.empty())
 	{
-		// Behavior selection dropdown
-		std::vector<std::string> xBehaviourNames = Zenith_BehaviourRegistry::Get().GetRegisteredBehaviourNames();
-		
-		if (xBehaviourNames.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "No behaviours registered!");
+		ImGui::TextWrapped("Call YourBehaviour::RegisterBehaviour() at startup.");
+		return;
+	}
+
+	// Combo items: "(None)" followed by each registered behaviour name.
+	std::vector<const char*> xItems;
+	xItems.push_back("(None)");
+	for (const auto& name : xBehaviourNames)
+	{
+		xItems.push_back(name.c_str());
+	}
+
+	int iCurrentIndex = 0;
+	if (m_pxScriptBehaviour != nullptr)
+	{
+		const char* szCurrentName = m_pxScriptBehaviour->GetBehaviourTypeName();
+		for (size_t i = 0; i < xBehaviourNames.size(); ++i)
 		{
-			ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "No behaviours registered!");
-			ImGui::TextWrapped("Call YourBehaviour::RegisterBehaviour() at startup.");
-		}
-		else
-		{
-			// Build combo items
-			static int s_iSelectedBehaviourIndex = 0;
-			std::vector<const char*> xItems;
-			xItems.push_back("(None)");
-			for (const auto& name : xBehaviourNames)
+			if (xBehaviourNames[i] == szCurrentName)
 			{
-				xItems.push_back(name.c_str());
+				iCurrentIndex = static_cast<int>(i) + 1; // +1 because of "(None)" at index 0
+				break;
 			}
-
-			// Find current selection index
-			int iCurrentIndex = 0;
-			if (m_pxScriptBehaviour != nullptr)
-			{
-				const char* szCurrentName = m_pxScriptBehaviour->GetBehaviourTypeName();
-				for (size_t i = 0; i < xBehaviourNames.size(); ++i)
-				{
-					if (xBehaviourNames[i] == szCurrentName)
-					{
-						iCurrentIndex = static_cast<int>(i) + 1; // +1 because of "(None)" at index 0
-						break;
-					}
-				}
-			}
-
-			if (ImGui::Combo("Behaviour", &iCurrentIndex, xItems.data(), static_cast<int>(xItems.size())))
-			{
-				if (iCurrentIndex > 0)
-				{
-					const char* szSelectedName = xBehaviourNames[iCurrentIndex - 1].c_str();
-					Zenith_Editor::SetBehaviourOnSelected(szSelectedName);
-				}
-				else
-				{
-					// "(None)" selected - clear the current behaviour
-					if (m_pxScriptBehaviour)
-					{
-						m_pxScriptBehaviour->OnDestroy();
-						delete m_pxScriptBehaviour;
-						m_pxScriptBehaviour = nullptr;
-					}
-				}
-			}
-		}
-
-		ImGui::Separator();
-
-		if (m_pxScriptBehaviour != nullptr)
-		{
-			ImGui::Text("Active Behaviour: %s", m_pxScriptBehaviour->GetBehaviourTypeName());
-			
-			// Display GUID references if any
-			if (m_pxScriptBehaviour->m_axGUIDRefs.size() > 0)
-			{
-				ImGui::Text("GUID References: %zu", m_pxScriptBehaviour->m_axGUIDRefs.size());
-				if (ImGui::TreeNode("GUID References"))
-				{
-					for (size_t i = 0; i < m_pxScriptBehaviour->m_axGUIDRefs.size(); ++i)
-					{
-						ImGui::Text("[%zu] GUID: %llu", i, m_pxScriptBehaviour->m_axGUIDRefs[i].m_uGUID);
-					}
-					ImGui::TreePop();
-				}
-			}
-
-			ImGui::Separator();
-
-			// Render behavior-specific properties
-			if (ImGui::TreeNode("Behaviour Properties"))
-			{
-				m_pxScriptBehaviour->RenderPropertiesPanel();
-				ImGui::TreePop();
-			}
-		}
-		else
-		{
-			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No behaviour set");
 		}
 	}
+
+	if (!ImGui::Combo("Behaviour", &iCurrentIndex, xItems.data(), static_cast<int>(xItems.size())))
+		return;
+
+	if (iCurrentIndex > 0)
+	{
+		const char* szSelectedName = xBehaviourNames[iCurrentIndex - 1].c_str();
+		Zenith_Editor::SetBehaviourOnSelected(szSelectedName);
+	}
+	else
+	{
+		ClearCurrentBehaviour();
+	}
+}
+
+void Zenith_ScriptComponent::RenderActiveBehaviour()
+{
+	if (m_pxScriptBehaviour == nullptr)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No behaviour set");
+		return;
+	}
+
+	ImGui::Text("Active Behaviour: %s", m_pxScriptBehaviour->GetBehaviourTypeName());
+
+	if (m_pxScriptBehaviour->m_axGUIDRefs.size() > 0)
+	{
+		ImGui::Text("GUID References: %zu", m_pxScriptBehaviour->m_axGUIDRefs.size());
+		if (ImGui::TreeNode("GUID References"))
+		{
+			for (size_t i = 0; i < m_pxScriptBehaviour->m_axGUIDRefs.size(); ++i)
+			{
+				ImGui::Text("[%zu] GUID: %llu", i, m_pxScriptBehaviour->m_axGUIDRefs[i].m_uGUID);
+			}
+			ImGui::TreePop();
+		}
+	}
+
+	ImGui::Separator();
+
+	if (ImGui::TreeNode("Behaviour Properties"))
+	{
+		m_pxScriptBehaviour->RenderPropertiesPanel();
+		ImGui::TreePop();
+	}
+}
+
+void Zenith_ScriptComponent::RenderPropertiesPanel()
+{
+	if (!ImGui::CollapsingHeader("Script Component", ImGuiTreeNodeFlags_DefaultOpen))
+		return;
+
+	RenderBehaviourSelector();
+	ImGui::Separator();
+	RenderActiveBehaviour();
 }
 #endif

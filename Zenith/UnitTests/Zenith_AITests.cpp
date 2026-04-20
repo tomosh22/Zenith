@@ -2455,8 +2455,80 @@ void Zenith_UnitTests::TestHasSufficientClearance()
 
 void Zenith_UnitTests::TestMergeOverlappingSpans()
 {
-	// #TODO: Re-enable once MergeOverlappingSpans is restored to NavMeshGenerator
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMergeOverlappingSpans SKIPPED (function removed)");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMergeOverlappingSpans...");
+
+	// Build the column via AddSpan so the sort order is correct, then assert
+	// on the merge outcome. AddSpan already calls MergeOverlappingSpans.
+	auto FreeColumn = [](Zenith_NavMeshGenerator::HeightfieldColumn& xColumn)
+	{
+		Zenith_NavMeshGenerator::VoxelSpan* pxSpan = xColumn.m_pxFirstSpan;
+		while (pxSpan)
+		{
+			Zenith_NavMeshGenerator::VoxelSpan* pxNext = pxSpan->m_pxNext;
+			delete pxSpan;
+			pxSpan = pxNext;
+		}
+		xColumn.m_pxFirstSpan = nullptr;
+	};
+
+	auto CountSpans = [](const Zenith_NavMeshGenerator::HeightfieldColumn& xColumn) -> u_int
+	{
+		u_int uCount = 0;
+		for (Zenith_NavMeshGenerator::VoxelSpan* pxSpan = xColumn.m_pxFirstSpan; pxSpan; pxSpan = pxSpan->m_pxNext)
+			uCount++;
+		return uCount;
+	};
+
+	// Case 1: two overlapping same-area-type spans merge into one.
+	{
+		Zenith_NavMeshGenerator::HeightfieldColumn xColumn;
+		Zenith_NavMeshGenerator::AddSpan(xColumn, 0, 10, /*uAreaType*/ 1);
+		Zenith_NavMeshGenerator::AddSpan(xColumn, 5, 15, /*uAreaType*/ 1);
+
+		Zenith_Assert(CountSpans(xColumn) == 1, "Same-type overlapping spans should merge to one");
+		Zenith_Assert(xColumn.m_pxFirstSpan->m_uMinY == 0, "Merged span minY should be 0");
+		Zenith_Assert(xColumn.m_pxFirstSpan->m_uMaxY == 15, "Merged span maxY should be 15");
+		FreeColumn(xColumn);
+	}
+
+	// Case 2: two disjoint same-area-type spans stay separate.
+	{
+		Zenith_NavMeshGenerator::HeightfieldColumn xColumn;
+		Zenith_NavMeshGenerator::AddSpan(xColumn, 0, 5, /*uAreaType*/ 1);
+		Zenith_NavMeshGenerator::AddSpan(xColumn, 10, 15, /*uAreaType*/ 1);
+
+		Zenith_Assert(CountSpans(xColumn) == 2, "Disjoint spans should not merge");
+		FreeColumn(xColumn);
+	}
+
+	// Case 3: overlapping spans with different area types — walkable below a
+	// blocker gets truncated to just under the blocker.
+	{
+		Zenith_NavMeshGenerator::HeightfieldColumn xColumn;
+		Zenith_NavMeshGenerator::AddSpan(xColumn, 0, 10, /*uAreaType*/ 1);  // walkable
+		Zenith_NavMeshGenerator::AddSpan(xColumn, 5, 20, /*uAreaType*/ 0);  // blocker
+
+		Zenith_Assert(CountSpans(xColumn) == 2, "Mixed-type overlap should keep both spans");
+		Zenith_NavMeshGenerator::VoxelSpan* pxFirst = xColumn.m_pxFirstSpan;
+		Zenith_Assert(pxFirst->m_uAreaType == 1, "First span should be the walkable one");
+		Zenith_Assert(pxFirst->m_uMaxY == 5, "Walkable span should be truncated to blocker's minY");
+		FreeColumn(xColumn);
+	}
+
+	// Case 4: three consecutive same-type spans collapse in one pass.
+	{
+		Zenith_NavMeshGenerator::HeightfieldColumn xColumn;
+		Zenith_NavMeshGenerator::AddSpan(xColumn, 0, 4, /*uAreaType*/ 1);
+		Zenith_NavMeshGenerator::AddSpan(xColumn, 3, 8, /*uAreaType*/ 1);
+		Zenith_NavMeshGenerator::AddSpan(xColumn, 7, 12, /*uAreaType*/ 1);
+
+		Zenith_Assert(CountSpans(xColumn) == 1, "Chained overlaps should collapse to one");
+		Zenith_Assert(xColumn.m_pxFirstSpan->m_uMinY == 0, "Chain-merged span minY should be 0");
+		Zenith_Assert(xColumn.m_pxFirstSpan->m_uMaxY == 12, "Chain-merged span maxY should be 12");
+		FreeColumn(xColumn);
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  TestMergeOverlappingSpans PASSED");
 }
 
 // ============================================================================

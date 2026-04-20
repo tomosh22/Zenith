@@ -128,25 +128,132 @@ void Flux_IBL::Reset()
 // is disabled the state machine could never re-enable anything.
 // ---------------------------------------------------------------------------
 
+// Reset the IBL regeneration state machine when a recompile is pending. The
+// validator inside Compile() requires every IBL-texture read to have at least
+// one enabled writer; without this, the steady-state amortised path would
+// leave all 49 IBL passes disabled and trip the validator. Re-running first-
+// generation refills the textures with identical contents (cheap) and gives
+// the barrier generator a consistent view.
+void Flux_IBL::ResetIBLRegenStateForRecompile()
+{
+	Flux_IBL::s_bBRDFLUTGenerated = false;
+	Flux_IBL::s_bSkyIBLDirty = true;
+	Flux_IBL::s_bFirstGeneration = true;
+	Flux_IBL::s_bIBLReady = false;
+	Flux_IBL::s_eRegenState = IBL_REGEN_IDLE;
+	Flux_IBL::s_uRegenFace = 0;
+	Flux_IBL::s_uRegenMip = 0;
+}
+
+// BRDF LUT runs on the first frame and on manual regenerate. Side-effects:
+// clears the regenerate-LUT debug flag and resets the generated bit when the
+// regenerate flag was set so the LUT runs THIS frame.
+bool Flux_IBL::ResolveBRDFLUTRun()
+{
+	if (!Flux_IBL::s_bBRDFLUTGenerated || dbg_bIBLRegenerateBRDFLUT)
+	{
+		if (dbg_bIBLRegenerateBRDFLUT)
+		{
+#ifdef ZENITH_DEBUG_VARIABLES
+			dbg_bIBLRegenerateBRDFLUT = false;
+#endif
+			Flux_IBL::s_bBRDFLUTGenerated = false;
+		}
+		return true;
+	}
+	return false;
+}
+
+// First generation: enable every irradiance face and every prefilter mip+face
+// in one frame. Required so all mip levels have valid layouts before deferred
+// shading binds the cubemap.
+void Flux_IBL::RunFirstGenerationFrame(bool (&abRunIrradiance)[6],
+	bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6])
+{
+	for (u_int uFace = 0; uFace < 6; uFace++)
+		abRunIrradiance[uFace] = true;
+	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
+		for (u_int uFace = 0; uFace < 6; uFace++)
+			abRunPrefilter[uMip][uFace] = true;
+	Flux_IBL::s_bSkyIBLDirty = false;
+	Flux_IBL::s_bFirstGeneration = false;
+	Flux_IBL::s_eRegenState = IBL_REGEN_IDLE;
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: First generation - processing all passes this frame");
+}
+
+// Amortised regeneration: process up to PASSES_PER_FRAME irradiance/prefilter
+// passes per frame. Two phases — irradiance (6 faces) then prefilter
+// (mip × face). State (s_eRegenState, s_uRegenFace, s_uRegenMip) advances each
+// frame; idle is reached after all faces of all mips have run.
+void Flux_IBL::AdvanceAmortizedRegen(bool (&abRunIrradiance)[6],
+	bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6])
+{
+	if (Flux_IBL::s_bSkyIBLDirty && Flux_IBL::s_eRegenState == IBL_REGEN_IDLE)
+	{
+		Flux_IBL::s_eRegenState = IBL_REGEN_IRRADIANCE;
+		Flux_IBL::s_uRegenFace = 0;
+		Flux_IBL::s_uRegenMip = 0;
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Starting amortized IBL regeneration");
+	}
+
+	u_int uPassesThisFrame = 0;
+
+	while (Flux_IBL::s_eRegenState == IBL_REGEN_IRRADIANCE && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
+	{
+		abRunIrradiance[Flux_IBL::s_uRegenFace] = true;
+		Flux_IBL::s_uRegenFace++;
+		uPassesThisFrame++;
+
+		if (Flux_IBL::s_uRegenFace >= 6)
+		{
+			Flux_IBL::s_eRegenState = IBL_REGEN_PREFILTER;
+			Flux_IBL::s_uRegenFace = 0;
+			Flux_IBL::s_uRegenMip = 0;
+		}
+	}
+
+	while (Flux_IBL::s_eRegenState == IBL_REGEN_PREFILTER && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
+	{
+		abRunPrefilter[Flux_IBL::s_uRegenMip][Flux_IBL::s_uRegenFace] = true;
+		uPassesThisFrame++;
+
+		Flux_IBL::s_uRegenFace++;
+		if (Flux_IBL::s_uRegenFace >= 6)
+		{
+			Flux_IBL::s_uRegenFace = 0;
+			Flux_IBL::s_uRegenMip++;
+
+			if (Flux_IBL::s_uRegenMip >= IBLConfig::uPREFILTER_MIP_COUNT)
+			{
+				Flux_IBL::s_eRegenState = IBL_REGEN_IDLE;
+				Flux_IBL::s_bSkyIBLDirty = false;
+				Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Completed amortized IBL regeneration");
+			}
+		}
+	}
+}
+
+// Push resolved enable bits into the graph. SetEnabled no-ops when the bit
+// hasn't changed (cheap in steady state); IBL passes have no explicit
+// dependency edges, so this takes the m_bEnabledMaskDirty fast path rather
+// than triggering a full recompile.
+void Flux_IBL::ApplyResolvedIBLEnables(Flux_RenderGraph& xGraph,
+	bool bRunBRDF,
+	const bool (&abRunIrradiance)[6],
+	const bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6])
+{
+	xGraph.SetEnabled(Flux_IBL::s_xBRDFLUTPassHandle, bRunBRDF);
+	for (u_int uFace = 0; uFace < 6; uFace++)
+		xGraph.SetEnabled(Flux_IBL::s_axIrradianceFacePassHandles[uFace], abRunIrradiance[uFace]);
+	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
+		for (u_int uFace = 0; uFace < 6; uFace++)
+			xGraph.SetEnabled(Flux_IBL::s_axPrefilterMipFacePassHandles[uMip][uFace], abRunPrefilter[uMip][uFace]);
+}
+
 void Flux_IBL::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 {
-	// If a full recompile is pending (e.g. fog technique was just switched, the
-	// window was resized, the graph was rebuilt, or any other system called
-	// MarkDirty), the validator will run inside Compile() and require every
-	// read of an IBL texture (BRDF LUT, irradiance, prefiltered) to have at
-	// least one *enabled* writer in the graph. Without this, the per-frame
-	// amortised state machine below would have all 49 IBL passes disabled in
-	// steady state, BuildResourceTraffic would skip them, and the validator
-	// would fire "Resource '<image>' is read but never written".
-	//
-	// Reset the state machine to first-generation mode so the next frame
-	// re-runs all 49 passes in one shot. This re-fills the IBL textures with
-	// identical contents (cheap) and gives the barrier generator a fresh,
-	// consistent view of writers vs readers. After this single frame the state
-	// machine drops back to amortised idle on the very next frame.
-	//
-	// IMPORTANT ordering: this check must run AFTER any system that may have
-	// called MarkDirty() this frame (e.g. Flux_Fog::ApplyTechniqueSelectionToGraph),
+	// IMPORTANT ordering: this dirty check must run AFTER any system that may
+	// have called MarkDirty() this frame (e.g. Flux_Fog::ApplyTechniqueSelectionToGraph),
 	// so the call sequence in Zenith_Core::ExecuteRenderGraph is:
 	//   1. Flux_Fog::ApplyTechniqueSelectionToGraph(xGraph)  // may call MarkDirty
 	//   2. Flux_IBL::UpdateGraphPassEnables(xGraph)          // sees IsDirty()
@@ -154,34 +261,14 @@ void Flux_IBL::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 	//   4. xGraph.Execute()
 	if (xGraph.IsDirty())
 	{
-		s_bBRDFLUTGenerated = false;
-		s_bSkyIBLDirty = true;
-		s_bFirstGeneration = true;
-		s_bIBLReady = false;
-		s_eRegenState = IBL_REGEN_IDLE;
-		s_uRegenFace = 0;
-		s_uRegenMip = 0;
+		ResetIBLRegenStateForRecompile();
 	}
 
-	// Default: nothing runs this frame.
-	bool bRunBRDF = false;
+	bool bRunBRDF = ResolveBRDFLUTRun();
 	bool abRunIrradiance[6] = {};
 	bool abRunPrefilter[IBLConfig::uPREFILTER_MIP_COUNT][6] = {};
 
-	// BRDF LUT — generate on first frame or on manual regenerate.
-	if (!s_bBRDFLUTGenerated || dbg_bIBLRegenerateBRDFLUT)
-	{
-		bRunBRDF = true;
-		if (dbg_bIBLRegenerateBRDFLUT)
-		{
-#ifdef ZENITH_DEBUG_VARIABLES
-			dbg_bIBLRegenerateBRDFLUT = false;
-#endif
-			s_bBRDFLUTGenerated = false;
-		}
-	}
-
-	// Sky IBL state machine.
+	// Sky IBL state machine: idle → first-generation OR amortised regen.
 	if (!s_bSkyIBLDirty && s_eRegenState == IBL_REGEN_IDLE)
 	{
 		// Mark ready once everything has been generated at least once.
@@ -193,79 +280,14 @@ void Flux_IBL::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 	}
 	else if (s_bFirstGeneration)
 	{
-		// First generation must complete in a single frame to ensure all mip
-		// levels have valid layouts before deferred shading binds the cubemap.
-		for (u_int uFace = 0; uFace < 6; uFace++)
-			abRunIrradiance[uFace] = true;
-		for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
-			for (u_int uFace = 0; uFace < 6; uFace++)
-				abRunPrefilter[uMip][uFace] = true;
-		s_bSkyIBLDirty = false;
-		s_bFirstGeneration = false;
-		s_eRegenState = IBL_REGEN_IDLE;
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: First generation - processing all passes this frame");
+		RunFirstGenerationFrame(abRunIrradiance, abRunPrefilter);
 	}
 	else
 	{
-		// Begin amortised regeneration if dirty and idle.
-		if (s_bSkyIBLDirty && s_eRegenState == IBL_REGEN_IDLE)
-		{
-			s_eRegenState = IBL_REGEN_IRRADIANCE;
-			s_uRegenFace = 0;
-			s_uRegenMip = 0;
-			Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Starting amortized IBL regeneration");
-		}
-
-		u_int uPassesThisFrame = 0;
-
-		// Process irradiance faces (6 total)
-		while (s_eRegenState == IBL_REGEN_IRRADIANCE && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
-		{
-			abRunIrradiance[s_uRegenFace] = true;
-			s_uRegenFace++;
-			uPassesThisFrame++;
-
-			if (s_uRegenFace >= 6)
-			{
-				s_eRegenState = IBL_REGEN_PREFILTER;
-				s_uRegenFace = 0;
-				s_uRegenMip = 0;
-			}
-		}
-
-		// Process prefilter mip-face combinations (42 total)
-		while (s_eRegenState == IBL_REGEN_PREFILTER && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
-		{
-			abRunPrefilter[s_uRegenMip][s_uRegenFace] = true;
-			uPassesThisFrame++;
-
-			s_uRegenFace++;
-			if (s_uRegenFace >= 6)
-			{
-				s_uRegenFace = 0;
-				s_uRegenMip++;
-
-				if (s_uRegenMip >= IBLConfig::uPREFILTER_MIP_COUNT)
-				{
-					s_eRegenState = IBL_REGEN_IDLE;
-					s_bSkyIBLDirty = false;
-					Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Completed amortized IBL regeneration");
-				}
-			}
-		}
+		AdvanceAmortizedRegen(abRunIrradiance, abRunPrefilter);
 	}
 
-	// Push the resolved enable bits into the graph. SetPassEnabled is a no-op
-	// when the bit hasn't changed, so this is cheap in steady state. The IBL
-	// passes have no explicit dependency edges, so SetPassEnabled takes the
-	// cheap m_bEnabledMaskDirty path (clear-flag re-resolve only, no full
-	// recompile).
-	xGraph.SetEnabled(s_xBRDFLUTPassHandle, bRunBRDF);
-	for (u_int uFace = 0; uFace < 6; uFace++)
-		xGraph.SetEnabled(s_axIrradianceFacePassHandles[uFace], abRunIrradiance[uFace]);
-	for (u_int uMip = 0; uMip < IBLConfig::uPREFILTER_MIP_COUNT; uMip++)
-		for (u_int uFace = 0; uFace < 6; uFace++)
-			xGraph.SetEnabled(s_axPrefilterMipFacePassHandles[uMip][uFace], abRunPrefilter[uMip][uFace]);
+	ApplyResolvedIBLEnables(xGraph, bRunBRDF, abRunIrradiance, abRunPrefilter);
 }
 
 void Flux_IBL::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)

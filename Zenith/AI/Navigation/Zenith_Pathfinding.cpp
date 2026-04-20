@@ -7,12 +7,100 @@
 #include <unordered_set>
 #include <algorithm>
 
+namespace
+{
+	// A* node for the priority queue. Lives at file scope (anonymous namespace)
+	// so file-scope helpers can take it directly without polluting the public
+	// header with <queue> / <unordered_set> / <unordered_map>.
+	struct AStarNode
+	{
+		uint32_t m_uPolygonIndex;
+		uint32_t m_uParentIndex;  // Index into the closed list, or UINT32_MAX for the start node.
+		float m_fGCost;           // Cost from start.
+		float m_fHCost;           // Heuristic to end.
+		float m_fFCost;           // Total cost (G + H).
+
+		bool operator>(const AStarNode& xOther) const
+		{
+			return m_fFCost > xOther.m_fFCost;
+		}
+	};
+
+	using AStarOpenSet = std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>>;
+
+	// Process one neighbour: skip if closed; compute edge/heuristic costs; add or
+	// update the open-set entry. Encapsulates the inner for-loop of FindPathInternal
+	// so the driver focuses on A* control flow rather than per-edge bookkeeping.
+	void ExpandNeighbor(uint32_t uNeighbor,
+		const AStarNode& xCurrent,
+		uint32_t uCurrentClosedIndex,
+		const Zenith_NavMesh& xNavMesh,
+		const Zenith_Maths::Vector3& xCurrentCenter,
+		const Zenith_Maths::Vector3& xEndProjected,
+		AStarOpenSet& xOpenSet,
+		const std::unordered_set<uint32_t>& xClosedSet,
+		std::unordered_map<uint32_t, float>& xOpenSetGCosts)
+	{
+		if (xClosedSet.count(uNeighbor) > 0) return;
+
+		Zenith_Assert(uNeighbor < xNavMesh.GetPolygonCount(),
+			"Pathfinding: Neighbor index %u out of bounds", uNeighbor);
+
+		const Zenith_NavMeshPolygon& xNeighborPoly = xNavMesh.GetPolygon(uNeighbor);
+
+		float fEdgeCost = Zenith_Maths::Length(xNeighborPoly.m_xCenter - xCurrentCenter);
+		fEdgeCost *= xNeighborPoly.m_fCost;  // Apply area cost multiplier.
+
+		const float fNewGCost = xCurrent.m_fGCost + fEdgeCost;
+
+		auto itOpen = xOpenSetGCosts.find(uNeighbor);
+		if (itOpen != xOpenSetGCosts.end())
+		{
+			if (fNewGCost >= itOpen->second) return;
+			itOpen->second = fNewGCost;
+		}
+		else
+		{
+			xOpenSetGCosts[uNeighbor] = fNewGCost;
+		}
+
+		const float fHCost = Zenith_Maths::Length(xEndProjected - xNeighborPoly.m_xCenter);
+
+		AStarNode xNeighborNode;
+		xNeighborNode.m_uPolygonIndex = uNeighbor;
+		xNeighborNode.m_uParentIndex = uCurrentClosedIndex;
+		xNeighborNode.m_fGCost = fNewGCost;
+		xNeighborNode.m_fHCost = fHCost;
+		xNeighborNode.m_fFCost = fNewGCost + fHCost;
+		xOpenSet.push(xNeighborNode);
+	}
+}
+
 Zenith_PathResult Zenith_Pathfinding::FindPath(const Zenith_NavMesh& xNavMesh,
 	const Zenith_Maths::Vector3& xStart,
 	const Zenith_Maths::Vector3& xEnd)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PATHFINDING);
 	return FindPathInternal(xNavMesh, xStart, xEnd);
+}
+
+void Zenith_Pathfinding::BuildWaypointsFromPolygonPath(const Zenith_NavMesh& xNavMesh,
+	const Zenith_Vector<uint32_t>& axPolygonPath,
+	const Zenith_Maths::Vector3& xStartPoint,
+	const Zenith_Maths::Vector3& xEndPoint,
+	Zenith_PathResult& xResult)
+{
+	xResult.m_axWaypoints.PushBack(xStartPoint);
+	for (uint32_t u = 0; u + 1 < axPolygonPath.GetSize(); ++u)
+	{
+		Zenith_Maths::Vector3 xMidpoint = GetPortalMidpoint(xNavMesh,
+			axPolygonPath.Get(u), axPolygonPath.Get(u + 1));
+		xResult.m_axWaypoints.PushBack(xMidpoint);
+	}
+	xResult.m_axWaypoints.PushBack(xEndPoint);
+
+	SmoothPath(xResult.m_axWaypoints, xNavMesh);
+	xResult.m_fTotalDistance = CalculatePathDistance(xResult.m_axWaypoints);
 }
 
 // Internal implementation without profiling (for batch processing)
@@ -56,13 +144,11 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 		return xResult;
 	}
 
-	// A* search
-	std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>> xOpenSet;
+	AStarOpenSet xOpenSet;
 	std::unordered_set<uint32_t> xClosedSet;
-	std::unordered_map<uint32_t, float> xOpenSetGCosts;  // Track best g-cost for nodes in open set
+	std::unordered_map<uint32_t, float> xOpenSetGCosts;  // Best g-cost seen for nodes still in the open set.
 	Zenith_Vector<AStarNode> axClosedList;
 
-	// Initialize with start node
 	AStarNode xStartNode;
 	xStartNode.m_uPolygonIndex = uStartPoly;
 	xStartNode.m_uParentIndex = UINT32_MAX;
@@ -80,31 +166,20 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 		AStarNode xCurrent = xOpenSet.top();
 		xOpenSet.pop();
 
-		// Skip if already processed
-		if (xClosedSet.count(xCurrent.m_uPolygonIndex) > 0)
-		{
-			continue;
-		}
+		if (xClosedSet.count(xCurrent.m_uPolygonIndex) > 0) continue;
 
-		// Add to closed set
-		uint32_t uCurrentClosedIndex = axClosedList.GetSize();
+		const uint32_t uCurrentClosedIndex = axClosedList.GetSize();
 		axClosedList.PushBack(xCurrent);
 		xClosedSet.insert(xCurrent.m_uPolygonIndex);
 
-		// Track best partial result
 		if (xCurrent.m_fHCost < fBestPartialDist)
 		{
 			fBestPartialDist = xCurrent.m_fHCost;
 			uBestPartialPoly = xCurrent.m_uPolygonIndex;
 		}
 
-		// Check if we reached the goal
 		if (xCurrent.m_uPolygonIndex == uEndPoly)
 		{
-			// Reconstruct path
-			xResult.m_eStatus = Zenith_PathResult::Status::SUCCESS;
-
-			// Build polygon path backwards
 			Zenith_Vector<uint32_t> axPolygonPath;
 			uint32_t uTraceIndex = uCurrentClosedIndex;
 			while (uTraceIndex != UINT32_MAX)
@@ -112,143 +187,54 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 				axPolygonPath.PushBack(axClosedList.Get(uTraceIndex).m_uPolygonIndex);
 				uTraceIndex = axClosedList.Get(uTraceIndex).m_uParentIndex;
 			}
-
-			// Reverse to get start-to-end order
 			axPolygonPath.Reverse();
 
-			// Convert polygon path to waypoints
-			xResult.m_axWaypoints.PushBack(xStartProjected);
-
-			for (uint32_t u = 0; u + 1 < axPolygonPath.GetSize(); ++u)
-			{
-				Zenith_Maths::Vector3 xMidpoint = GetPortalMidpoint(xNavMesh,
-					axPolygonPath.Get(u), axPolygonPath.Get(u + 1));
-				xResult.m_axWaypoints.PushBack(xMidpoint);
-			}
-
-			xResult.m_axWaypoints.PushBack(xEndProjected);
-
-			// Smooth the path
-			SmoothPath(xResult.m_axWaypoints, xNavMesh);
-
-			xResult.m_fTotalDistance = CalculatePathDistance(xResult.m_axWaypoints);
+			xResult.m_eStatus = Zenith_PathResult::Status::SUCCESS;
+			BuildWaypointsFromPolygonPath(xNavMesh, axPolygonPath, xStartProjected, xEndProjected, xResult);
 			return xResult;
 		}
 
-		// Bounds check before accessing polygon
 		Zenith_Assert(xCurrent.m_uPolygonIndex < xNavMesh.GetPolygonCount(),
 			"Pathfinding: Polygon index %u out of bounds (count=%u)",
 			xCurrent.m_uPolygonIndex, xNavMesh.GetPolygonCount());
 		if (xCurrent.m_uPolygonIndex >= xNavMesh.GetPolygonCount())
 		{
-			continue;  // Skip invalid polygon in release builds
+			continue;  // Skip invalid polygon in release builds.
 		}
 
-		// Expand neighbors
 		const Zenith_NavMeshPolygon& xPoly = xNavMesh.GetPolygon(xCurrent.m_uPolygonIndex);
 		const Zenith_Maths::Vector3& xCurrentCenter = xPoly.m_xCenter;
 
 		for (uint32_t u = 0; u < xPoly.m_axNeighborIndices.GetSize(); ++u)
 		{
-			int32_t iNeighbor = xPoly.m_axNeighborIndices.Get(u);
-			if (iNeighbor < 0)
-			{
-				continue;  // No neighbor on this edge
-			}
-
-			uint32_t uNeighbor = static_cast<uint32_t>(iNeighbor);
-			if (xClosedSet.count(uNeighbor) > 0)
-			{
-				continue;  // Already processed
-			}
-
-			Zenith_Assert(uNeighbor < xNavMesh.GetPolygonCount(), "Pathfinding: Neighbor index %u out of bounds", uNeighbor);
-
-			const Zenith_NavMeshPolygon& xNeighborPoly = xNavMesh.GetPolygon(uNeighbor);
-
-			// Calculate costs
-			float fEdgeCost = Zenith_Maths::Length(xNeighborPoly.m_xCenter - xCurrentCenter);
-			fEdgeCost *= xNeighborPoly.m_fCost;  // Apply area cost multiplier
-
-			float fNewGCost = xCurrent.m_fGCost + fEdgeCost;
-
-			// Check if this node is already in open set with a better path
-			auto itOpen = xOpenSetGCosts.find(uNeighbor);
-			if (itOpen != xOpenSetGCosts.end())
-			{
-				// Node already in open set - only add if we found a better path
-				if (fNewGCost >= itOpen->second)
-				{
-					continue;  // Existing path is better or equal, skip
-				}
-				// Update best known g-cost for this node
-				itOpen->second = fNewGCost;
-			}
-			else
-			{
-				// First time seeing this node
-				xOpenSetGCosts[uNeighbor] = fNewGCost;
-			}
-
-			float fHCost = Zenith_Maths::Length(xEndProjected - xNeighborPoly.m_xCenter);
-
-			AStarNode xNeighborNode;
-			xNeighborNode.m_uPolygonIndex = uNeighbor;
-			xNeighborNode.m_uParentIndex = uCurrentClosedIndex;
-			xNeighborNode.m_fGCost = fNewGCost;
-			xNeighborNode.m_fHCost = fHCost;
-			xNeighborNode.m_fFCost = fNewGCost + fHCost;
-
-			xOpenSet.push(xNeighborNode);
+			const int32_t iNeighbor = xPoly.m_axNeighborIndices.Get(u);
+			if (iNeighbor < 0) continue;
+			ExpandNeighbor(static_cast<uint32_t>(iNeighbor), xCurrent, uCurrentClosedIndex,
+				xNavMesh, xCurrentCenter, xEndProjected,
+				xOpenSet, xClosedSet, xOpenSetGCosts);
 		}
 	}
 
-	// No complete path found - return partial result if we got closer
-	if (uBestPartialPoly != uStartPoly)
+	// No complete path — emit partial path to the closest node we expanded.
+	if (uBestPartialPoly == uStartPoly) return xResult;
+
+	for (uint32_t u = 0; u < axClosedList.GetSize(); ++u)
 	{
-		// Find the best partial node
-		for (uint32_t u = 0; u < axClosedList.GetSize(); ++u)
+		if (axClosedList.Get(u).m_uPolygonIndex != uBestPartialPoly) continue;
+
+		Zenith_Vector<uint32_t> axPolygonPath;
+		uint32_t uTraceIndex = u;
+		while (uTraceIndex != UINT32_MAX)
 		{
-			if (axClosedList.Get(u).m_uPolygonIndex == uBestPartialPoly)
-			{
-				xResult.m_eStatus = Zenith_PathResult::Status::PARTIAL;
-
-				// Build path to best partial
-				Zenith_Vector<uint32_t> axPolygonPath;
-				uint32_t uTraceIndex = u;
-				while (uTraceIndex != UINT32_MAX)
-				{
-					axPolygonPath.PushBack(axClosedList.Get(uTraceIndex).m_uPolygonIndex);
-					uTraceIndex = axClosedList.Get(uTraceIndex).m_uParentIndex;
-				}
-
-				// Reverse
-				for (uint32_t i = 0; i < axPolygonPath.GetSize() / 2; ++i)
-				{
-					uint32_t uTemp = axPolygonPath.Get(i);
-					uint32_t uOtherIdx = axPolygonPath.GetSize() - 1 - i;
-					axPolygonPath.Get(i) = axPolygonPath.Get(uOtherIdx);
-					axPolygonPath.Get(uOtherIdx) = uTemp;
-				}
-
-				// Convert to waypoints
-				xResult.m_axWaypoints.PushBack(xStartProjected);
-				for (uint32_t i = 0; i + 1 < axPolygonPath.GetSize(); ++i)
-				{
-					Zenith_Maths::Vector3 xMidpoint = GetPortalMidpoint(xNavMesh,
-						axPolygonPath.Get(i), axPolygonPath.Get(i + 1));
-					xResult.m_axWaypoints.PushBack(xMidpoint);
-				}
-
-				// Add center of final polygon as destination
-				const Zenith_NavMeshPolygon& xFinalPoly = xNavMesh.GetPolygon(uBestPartialPoly);
-				xResult.m_axWaypoints.PushBack(xFinalPoly.m_xCenter);
-
-				SmoothPath(xResult.m_axWaypoints, xNavMesh);
-				xResult.m_fTotalDistance = CalculatePathDistance(xResult.m_axWaypoints);
-				break;
-			}
+			axPolygonPath.PushBack(axClosedList.Get(uTraceIndex).m_uPolygonIndex);
+			uTraceIndex = axClosedList.Get(uTraceIndex).m_uParentIndex;
 		}
+		axPolygonPath.Reverse();
+
+		xResult.m_eStatus = Zenith_PathResult::Status::PARTIAL;
+		const Zenith_NavMeshPolygon& xFinalPoly = xNavMesh.GetPolygon(uBestPartialPoly);
+		BuildWaypointsFromPolygonPath(xNavMesh, axPolygonPath, xStartProjected, xFinalPoly.m_xCenter, xResult);
+		break;
 	}
 
 	return xResult;

@@ -562,22 +562,65 @@ bool Zenith_NavMeshGenerator::BuildRegions(GenerationContext& xContext)
 	return uNextRegion > 1;
 }
 
+bool Zenith_NavMeshGenerator::IsRegionBoundary(const GenerationContext& xContext, int32_t iX, int32_t iZ, uint16_t uRegion)
+{
+	static const int32_t aiDx[] = {1, 0, -1, 0};
+	static const int32_t aiDz[] = {0, 1, 0, -1};
+	for (int32_t iDir = 0; iDir < 4; ++iDir)
+	{
+		const int32_t iNx = iX + aiDx[iDir];
+		const int32_t iNz = iZ + aiDz[iDir];
+		if (iNx < 0 || iNx >= xContext.m_iWidth || iNz < 0 || iNz >= xContext.m_iHeight)
+			return true;
+		if (!ColumnHasSpanInRegion(xContext.m_axCompactSpans, xContext.m_axColumnSpanCounts, xContext.m_axColumnSpanStarts, iNx, iNz, xContext.m_iWidth, xContext.m_iHeight, uRegion))
+			return true;
+	}
+	return false;
+}
+
+// For one region: scan every (x,z) span; push a ContourVertex for every span
+// in this region that borders a different region (or the heightfield edge).
+// "Boundary" check uses 4-connectivity (N/E/S/W) via IsRegionBoundary.
+void Zenith_NavMeshGenerator::CollectRegionContour(GenerationContext& xContext, uint16_t uRegion,
+	Zenith_Vector<ContourVertex>& axContour)
+{
+	for (int32_t iZ = 0; iZ < xContext.m_iHeight; ++iZ)
+	{
+		for (int32_t iX = 0; iX < xContext.m_iWidth; ++iX)
+		{
+			const uint32_t uCol = GetColumnIndex(iX, iZ, xContext.m_iWidth);
+			const uint32_t uSpanCount = xContext.m_axColumnSpanCounts.Get(uCol);
+			if (uSpanCount == 0) continue;
+
+			const uint32_t uSpanStart = xContext.m_axColumnSpanStarts.Get(uCol);
+			if (!IsRegionBoundary(xContext, iX, iZ, uRegion)) continue;
+
+			for (uint32_t s = 0; s < uSpanCount; ++s)
+			{
+				CompactSpan& xSpan = xContext.m_axCompactSpans.Get(uSpanStart + s);
+				if (xSpan.m_uRegion != uRegion) continue;
+
+				ContourVertex xVert;
+				xVert.m_iX = iX;
+				xVert.m_iY = xSpan.m_uY;
+				xVert.m_iZ = iZ;
+				xVert.m_uRegion = uRegion;
+				axContour.PushBack(xVert);
+			}
+		}
+	}
+}
+
+// Simplified contour tracing — for each region, collect a boundary-vertex
+// polygon. A full implementation would use marching squares or similar.
 bool Zenith_NavMeshGenerator::TraceContours(GenerationContext& xContext)
 {
-	// Simplified contour tracing - for each region, create a boundary polygon
-	// A full implementation would use marching squares or similar
-
-	// Find unique regions
 	uint16_t uMaxRegion = 0;
 	for (uint32_t u = 0; u < xContext.m_axCompactSpans.GetSize(); ++u)
 	{
 		uMaxRegion = std::max(uMaxRegion, xContext.m_axCompactSpans.Get(u).m_uRegion);
 	}
-
-	if (uMaxRegion == 0)
-	{
-		return false;
-	}
+	if (uMaxRegion == 0) return false;
 
 	xContext.m_axContours.Clear();
 	xContext.m_axContours.Reserve(uMaxRegion + 1);
@@ -587,67 +630,9 @@ bool Zenith_NavMeshGenerator::TraceContours(GenerationContext& xContext)
 		xContext.m_axContours.PushBack(std::move(xContour));
 	}
 
-	// For each region, find boundary cells
 	for (uint16_t uRegion = 1; uRegion <= uMaxRegion; ++uRegion)
 	{
-		Zenith_Vector<ContourVertex>& axContour = xContext.m_axContours.Get(uRegion);
-
-		// Find all spans in this region and their boundaries
-		for (int32_t iZ = 0; iZ < xContext.m_iHeight; ++iZ)
-		{
-			for (int32_t iX = 0; iX < xContext.m_iWidth; ++iX)
-			{
-				uint32_t uCol = GetColumnIndex(iX, iZ, xContext.m_iWidth);
-				uint32_t uSpanCount = xContext.m_axColumnSpanCounts.Get(uCol);
-				if (uSpanCount == 0)
-				{
-					continue;
-				}
-
-				uint32_t uSpanStart = xContext.m_axColumnSpanStarts.Get(uCol);
-
-				// Check each span in this column
-				for (uint32_t s = 0; s < uSpanCount; ++s)
-				{
-					CompactSpan& xSpan = xContext.m_axCompactSpans.Get(uSpanStart + s);
-					if (xSpan.m_uRegion != uRegion)
-					{
-						continue;
-					}
-
-					// Check if this is a boundary cell (has neighbor in different region)
-					bool bBoundary = false;
-					const int32_t aiDx[] = {1, 0, -1, 0};
-					const int32_t aiDz[] = {0, 1, 0, -1};
-
-					for (int32_t iDir = 0; iDir < 4 && !bBoundary; ++iDir)
-					{
-						int32_t iNx = iX + aiDx[iDir];
-						int32_t iNz = iZ + aiDz[iDir];
-
-						if (iNx < 0 || iNx >= xContext.m_iWidth ||
-							iNz < 0 || iNz >= xContext.m_iHeight)
-						{
-							bBoundary = true;
-						}
-						else if (!ColumnHasSpanInRegion(xContext.m_axCompactSpans, xContext.m_axColumnSpanCounts, xContext.m_axColumnSpanStarts, iNx, iNz, xContext.m_iWidth, xContext.m_iHeight, uRegion))
-						{
-							bBoundary = true;
-						}
-					}
-
-					if (bBoundary)
-					{
-						ContourVertex xVert;
-						xVert.m_iX = iX;
-						xVert.m_iY = xSpan.m_uY;
-						xVert.m_iZ = iZ;
-						xVert.m_uRegion = uRegion;
-						axContour.PushBack(xVert);
-					}
-				}
-			}
-		}
+		CollectRegionContour(xContext, uRegion, xContext.m_axContours.Get(uRegion));
 	}
 
 	return true;
@@ -838,31 +823,8 @@ bool Zenith_NavMeshGenerator::IsWalkableSlope(const Zenith_Maths::Vector3& xNorm
 	return xNormal.y >= fMinCos;
 }
 
-void Zenith_NavMeshGenerator::AddSpan(HeightfieldColumn& xColumn, uint16_t uMinY, uint16_t uMaxY, uint8_t uAreaType)
+void Zenith_NavMeshGenerator::MergeOverlappingSpans(HeightfieldColumn& xColumn)
 {
-	VoxelSpan* pxNewSpan = new VoxelSpan();
-	pxNewSpan->m_uMinY = uMinY;
-	pxNewSpan->m_uMaxY = uMaxY;
-	pxNewSpan->m_uRegion = 0;
-	pxNewSpan->m_uAreaType = uAreaType;
-	pxNewSpan->m_pxNext = nullptr;
-
-	if (xColumn.m_pxFirstSpan == nullptr)
-	{
-		xColumn.m_pxFirstSpan = pxNewSpan;
-		return;
-	}
-
-	// Insert in sorted order by minY
-	VoxelSpan** ppxInsertPos = &xColumn.m_pxFirstSpan;
-	while (*ppxInsertPos != nullptr && (*ppxInsertPos)->m_uMinY < uMinY)
-	{
-		ppxInsertPos = &((*ppxInsertPos)->m_pxNext);
-	}
-
-	pxNewSpan->m_pxNext = *ppxInsertPos;
-	*ppxInsertPos = pxNewSpan;
-
 	// Merge overlapping spans ONLY if they have the same area type
 	// This keeps walkable and non-walkable spans separate for proper clearance checking
 	VoxelSpan* pxCurrent = xColumn.m_pxFirstSpan;
@@ -877,9 +839,11 @@ void Zenith_NavMeshGenerator::AddSpan(HeightfieldColumn& xColumn, uint16_t uMinY
 			VoxelSpan* pxToDelete = pxCurrent->m_pxNext;
 			pxCurrent->m_pxNext = pxToDelete->m_pxNext;
 			delete pxToDelete;
+			continue;
 		}
-		else if (pxCurrent->m_uMaxY >= pxCurrent->m_pxNext->m_uMinY &&
-				 pxCurrent->m_uAreaType != pxCurrent->m_pxNext->m_uAreaType)
+
+		if (pxCurrent->m_uMaxY >= pxCurrent->m_pxNext->m_uMinY &&
+			pxCurrent->m_uAreaType != pxCurrent->m_pxNext->m_uAreaType)
 		{
 			// Overlapping but different area types - keep both but adjust boundaries
 			// The non-walkable span takes precedence (blocks walkability)
@@ -905,13 +869,38 @@ void Zenith_NavMeshGenerator::AddSpan(HeightfieldColumn& xColumn, uint16_t uMinY
 					continue;
 				}
 			}
-			pxCurrent = pxCurrent->m_pxNext;
 		}
-		else
-		{
-			pxCurrent = pxCurrent->m_pxNext;
-		}
+
+		pxCurrent = pxCurrent->m_pxNext;
 	}
+}
+
+void Zenith_NavMeshGenerator::AddSpan(HeightfieldColumn& xColumn, uint16_t uMinY, uint16_t uMaxY, uint8_t uAreaType)
+{
+	VoxelSpan* pxNewSpan = new VoxelSpan();
+	pxNewSpan->m_uMinY = uMinY;
+	pxNewSpan->m_uMaxY = uMaxY;
+	pxNewSpan->m_uRegion = 0;
+	pxNewSpan->m_uAreaType = uAreaType;
+	pxNewSpan->m_pxNext = nullptr;
+
+	if (xColumn.m_pxFirstSpan == nullptr)
+	{
+		xColumn.m_pxFirstSpan = pxNewSpan;
+		return;
+	}
+
+	// Insert in sorted order by minY
+	VoxelSpan** ppxInsertPos = &xColumn.m_pxFirstSpan;
+	while (*ppxInsertPos != nullptr && (*ppxInsertPos)->m_uMinY < uMinY)
+	{
+		ppxInsertPos = &((*ppxInsertPos)->m_pxNext);
+	}
+
+	pxNewSpan->m_pxNext = *ppxInsertPos;
+	*ppxInsertPos = pxNewSpan;
+
+	MergeOverlappingSpans(xColumn);
 }
 
 void Zenith_NavMeshGenerator::FloodFillRegion(

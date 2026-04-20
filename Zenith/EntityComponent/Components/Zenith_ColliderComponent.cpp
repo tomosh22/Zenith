@@ -475,3 +475,136 @@ void Zenith_ColliderComponent::RebuildCollider()
 
 	Zenith_Log(LOG_CATEGORY_PHYSICS, " Rebuilt collider after scale change");
 }
+
+#ifdef ZENITH_TOOLS
+
+#include "imgui.h"
+
+namespace
+{
+	const char* const s_aszVolumeTypes[] = { "AABB", "OBB", "Sphere", "Capsule", "Terrain", "Model Mesh" };
+	const char* const s_aszRigidBodyTypes[] = { "Dynamic", "Static" };
+	constexpr int s_iNumVolumeTypes = 6;
+	constexpr int s_iNumRigidBodyTypes = 2;
+}
+
+// Tear down the current physics body and associated terrain data so a new
+// collider can be constructed in its place. No-op if there is nothing live.
+void Zenith_ColliderComponent::DestroyExistingCollider()
+{
+	if (m_xBodyID.IsInvalid() == false)
+	{
+		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+		xBodyInterface.RemoveBody(m_xBodyID);
+		xBodyInterface.DestroyBody(m_xBodyID);
+		m_xBodyID = JPH::BodyID();
+		m_pxRigidBody = nullptr;
+	}
+	if (m_pxTerrainMeshData != nullptr)
+	{
+		delete[] m_pxTerrainMeshData->m_pfVertices;
+		delete[] m_pxTerrainMeshData->m_puIndices;
+		delete m_pxTerrainMeshData;
+		m_pxTerrainMeshData = nullptr;
+	}
+}
+
+void Zenith_ColliderComponent::RenderAddColliderUI()
+{
+	ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No collider attached");
+	ImGui::Separator();
+
+	static int s_iSelectedVolumeType = COLLISION_VOLUME_TYPE_SPHERE;
+	static int s_iSelectedRigidBodyType = RIGIDBODY_TYPE_DYNAMIC;
+
+	ImGui::Combo("Volume Type", &s_iSelectedVolumeType, s_aszVolumeTypes, s_iNumVolumeTypes);
+	ImGui::Combo("Body Type", &s_iSelectedRigidBodyType, s_aszRigidBodyTypes, s_iNumRigidBodyTypes);
+
+	if (ImGui::Button("Add Collider"))
+	{
+		AddCollider(static_cast<CollisionVolumeType>(s_iSelectedVolumeType),
+		            static_cast<RigidBodyType>(s_iSelectedRigidBodyType));
+		Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Added %s collider (%s)",
+		           s_aszVolumeTypes[s_iSelectedVolumeType],
+		           s_aszRigidBodyTypes[s_iSelectedRigidBodyType]);
+	}
+}
+
+void Zenith_ColliderComponent::RenderConfiguredColliderUI()
+{
+	ImGui::Text("Body ID: %u", m_xBodyID.GetIndexAndSequenceNumber());
+
+	const int iCurrentVolumeType = static_cast<int>(m_eVolumeType);
+	if (iCurrentVolumeType < s_iNumVolumeTypes)
+	{
+		ImGui::Text("Volume Type: %s", s_aszVolumeTypes[iCurrentVolumeType]);
+	}
+
+	const int iCurrentRigidBodyType = static_cast<int>(m_eRigidBodyType);
+	if (iCurrentRigidBodyType < s_iNumRigidBodyTypes)
+	{
+		ImGui::Text("Body Type: %s", s_aszRigidBodyTypes[iCurrentRigidBodyType]);
+	}
+
+	if (m_eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC)
+	{
+		ImGui::Separator();
+		static bool s_bGravityEnabled = true;
+		if (ImGui::Checkbox("Gravity Enabled", &s_bGravityEnabled))
+		{
+			Zenith_Physics::SetGravityEnabled(m_xBodyID, s_bGravityEnabled);
+			Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Gravity %s", s_bGravityEnabled ? "enabled" : "disabled");
+		}
+	}
+
+	if (m_pxTerrainMeshData)
+	{
+		ImGui::Separator();
+		ImGui::Text("Terrain Mesh Collider:");
+		ImGui::Text("  Vertices: %u", m_pxTerrainMeshData->m_uNumVertices);
+		ImGui::Text("  Indices: %u", m_pxTerrainMeshData->m_uNumIndices);
+		ImGui::Text("  Triangles: %u", m_pxTerrainMeshData->m_uNumIndices / 3);
+	}
+
+	ImGui::Separator();
+
+	if (ImGui::TreeNode("Reconfigure Collider"))
+	{
+		static int s_iNewVolumeType = COLLISION_VOLUME_TYPE_SPHERE;
+		static int s_iNewRigidBodyType = RIGIDBODY_TYPE_DYNAMIC;
+
+		ImGui::Combo("New Volume Type", &s_iNewVolumeType, s_aszVolumeTypes, s_iNumVolumeTypes);
+		ImGui::Combo("New Body Type", &s_iNewRigidBodyType, s_aszRigidBodyTypes, s_iNumRigidBodyTypes);
+
+		if (ImGui::Button("Rebuild Collider"))
+		{
+			DestroyExistingCollider();
+			AddCollider(static_cast<CollisionVolumeType>(s_iNewVolumeType),
+			            static_cast<RigidBodyType>(s_iNewRigidBodyType));
+			Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Rebuilt collider: %s (%s)",
+			           s_aszVolumeTypes[s_iNewVolumeType],
+			           s_aszRigidBodyTypes[s_iNewRigidBodyType]);
+		}
+
+		ImGui::TreePop();
+	}
+
+	if (ImGui::Button("Remove Collider"))
+	{
+		DestroyExistingCollider();
+		Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Removed collider");
+	}
+}
+
+void Zenith_ColliderComponent::RenderPropertiesPanel()
+{
+	if (!ImGui::CollapsingHeader("Collider", ImGuiTreeNodeFlags_DefaultOpen))
+		return;
+
+	if (!m_pxRigidBody)
+		RenderAddColliderUI();
+	else
+		RenderConfiguredColliderUI();
+}
+
+#endif // ZENITH_TOOLS

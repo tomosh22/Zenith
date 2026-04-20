@@ -174,6 +174,18 @@ private:
 
 	static bool TraceContours(GenerationContext& xContext);
 
+	// TraceContours phases — split out so the per-region boundary scan is
+	// isolated from the outer iteration. CollectRegionContour fills the
+	// contour vector for one region by scanning every (x,z) span and pushing
+	// vertices that border a different region (or the heightfield edge).
+	static void CollectRegionContour(GenerationContext& xContext, uint16_t uRegion,
+		Zenith_Vector<ContourVertex>& axContour);
+
+	// 4-connectivity (N/E/S/W) boundary test for CollectRegionContour. True
+	// if the cell at (iX, iZ) borders the heightfield edge or a column that
+	// contains no span of uRegion.
+	static bool IsRegionBoundary(const GenerationContext& xContext, int32_t iX, int32_t iZ, uint16_t uRegion);
+
 	static bool BuildPolygonMesh(GenerationContext& xContext);
 
 	static Zenith_NavMesh* BuildNavMesh(GenerationContext& xContext);
@@ -182,6 +194,13 @@ private:
 	static int32_t GetColumnIndex(int32_t iX, int32_t iZ, int32_t iWidth);
 	static bool IsWalkableSlope(const Zenith_Maths::Vector3& xNormal, float fMaxSlopeDeg);
 	static void AddSpan(HeightfieldColumn& xColumn, uint16_t uMinY, uint16_t uMaxY, uint8_t uAreaType);
+
+	// Walks the sorted span list and merges overlapping same-area-type spans
+	// in place. Where overlap occurs between different area types, the
+	// non-walkable span takes precedence (truncates / marks the walkable one
+	// non-walkable). Extracted from AddSpan so the merge rules can be unit
+	// tested in isolation.
+	static void MergeOverlappingSpans(HeightfieldColumn& xColumn);
 	static void FreeHeightfield(GenerationContext& xContext);
 
 	// Extracted helpers for reduced cyclomatic complexity

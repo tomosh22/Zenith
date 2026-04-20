@@ -149,45 +149,146 @@ void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexB
 	m_xCurrentCmdBuffer.bindIndexBuffer(xBuffer, 0, vk::IndexType::eUint32);
 }
 
+void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
+	u_int uDescSet,
+	vk::DescriptorBufferInfo* axBufferInfos, u_int& uNumBufferWrites,
+	vk::DescriptorImageInfo* axTexInfos, u_int& uNumTexWrites,
+	vk::WriteDescriptorSet* axWrites, u_int& uNumWrites)
+{
+	for (u_int u = 0; u < FLUX_MAX_BINDINGS_PER_GROUP; u++)
+	{
+		const BindingType eType = m_pxCurrentPipeline->m_xRootSig.m_axBindingTypes[uDescSet][u];
+		if (eType == BINDING_TYPE_MAX) continue;
+
+		// SRV → combined image sampler. Depth textures must use the
+		// DepthStencilReadOnlyOptimal layout, not ShaderReadOnlyOptimal.
+		const Flux_ShaderResourceView* const pxSRV = m_xBindings[uDescSet].m_xSRVs[u];
+		if (pxSRV)
+		{
+			Zenith_Assert(pxSRV->m_xImageViewHandle.IsValid(), "SRV at descSet=%u binding=%u has null image view", uDescSet, u);
+
+			Zenith_Vulkan_Sampler* pxSampler = m_xBindings[uDescSet].m_apxSamplers[u];
+			vk::ImageLayout eLayout = pxSRV->m_bIsDepthStencil
+				? vk::ImageLayout::eDepthStencilReadOnlyOptimal
+				: vk::ImageLayout::eShaderReadOnlyOptimal;
+			axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
+				.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
+				.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(pxSRV->m_xImageViewHandle))
+				.setImageLayout(eLayout);
+
+			axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+				.setDstSet(m_axCurrentDescSet[uDescSet])
+				.setDstBinding(u)
+				.setDstArrayElement(0)
+				.setDescriptorCount(1)
+				.setPImageInfo(axTexInfos + uNumTexWrites++);
+		}
+
+		// UAV image → storage image (general layout).
+		const Flux_UnorderedAccessView_Texture* const pxUAV_Texture = m_xBindings[uDescSet].m_xUAV_Textures[u];
+		if (pxUAV_Texture)
+		{
+			axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
+				.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(pxUAV_Texture->m_xImageViewHandle))
+				.setImageLayout(vk::ImageLayout::eGeneral);
+
+			axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+				.setDescriptorType(vk::DescriptorType::eStorageImage)
+				.setDstSet(m_axCurrentDescSet[uDescSet])
+				.setDstBinding(u)
+				.setDstArrayElement(0)
+				.setDescriptorCount(1)
+				.setPImageInfo(axTexInfos + uNumTexWrites++);
+		}
+
+		// UAV buffer → storage buffer.
+		const Flux_UnorderedAccessView_Buffer* const pxUAV_Buffer = m_xBindings[uDescSet].m_xUAV_Buffers[u];
+		if (pxUAV_Buffer)
+		{
+			axBufferInfos[uNumBufferWrites] = Zenith_Vulkan_MemoryManager::GetBufferDescriptor(pxUAV_Buffer->m_xBufferDescHandle);
+			axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+				.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+				.setDstSet(m_axCurrentDescSet[uDescSet])
+				.setDstBinding(u)
+				.setDstArrayElement(0)
+				.setDescriptorCount(1)
+				.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
+		}
+
+		// CBV → uniform buffer (or storage buffer if the binding type says so).
+		const Flux_ConstantBufferView* const pxCBV = m_xBindings[uDescSet].m_xCBVs[u];
+		if (pxCBV)
+		{
+			axBufferInfos[uNumBufferWrites] = Zenith_Vulkan_MemoryManager::GetBufferDescriptor(pxCBV->m_xBufferDescHandle);
+			vk::DescriptorType eBufferType = (eType == BINDING_TYPE_STORAGE_BUFFER)
+				? vk::DescriptorType::eStorageBuffer
+				: vk::DescriptorType::eUniformBuffer;
+			axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+				.setDescriptorType(eBufferType)
+				.setDstSet(m_axCurrentDescSet[uDescSet])
+				.setDstBinding(u)
+				.setDstArrayElement(0)
+				.setDescriptorCount(1)
+				.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
+		}
+	}
+
+	// Scratch buffer (push-constant replacement) lives outside the per-binding
+	// loop because its destination binding index comes from the binding record
+	// itself, not the iteration index.
+	const ScratchBufferBinding& xScratch = m_xBindings[uDescSet].m_xScratchBuffer;
+	if (xScratch.m_bValid)
+	{
+		Zenith_Vulkan_PerFrame* pxFrame = Zenith_Vulkan::s_pxCurrentFrame;
+		axBufferInfos[uNumBufferWrites] = vk::DescriptorBufferInfo()
+			.setBuffer(pxFrame->GetScratchBuffer())
+			.setOffset(xScratch.m_uOffset)
+			.setRange(xScratch.m_uSize);
+
+		axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
+			.setDstSet(m_axCurrentDescSet[uDescSet])
+			.setDstBinding(xScratch.m_uBinding)
+			.setDstArrayElement(0)
+			.setDescriptorCount(1)
+			.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
+	}
+}
+
 void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 {
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS);
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	
-	// Validate command buffer state
-	
-	// Validate worker index is in range
-	Zenith_Assert(m_uWorkerIndex < FLUX_NUM_WORKER_THREADS, 
+
+	Zenith_Assert(m_uWorkerIndex < FLUX_NUM_WORKER_THREADS,
 		"Invalid worker index: %u (max %u)", m_uWorkerIndex, FLUX_NUM_WORKER_THREADS);
-	
-	// Validate pipeline is set before iterating descriptor sets
 	Zenith_Assert(m_pxCurrentPipeline, "UpdateDescriptorSets called with no pipeline set");
-	
-	// Read the pipeline's root signature carefully with explicit validation
+
 	const u_int uNumDescSets = m_pxCurrentPipeline->m_xRootSig.m_uNumBindingGroups;
-	Zenith_Assert(uNumDescSets <= FLUX_MAX_BINDING_GROUPS, 
+	Zenith_Assert(uNumDescSets <= FLUX_MAX_BINDING_GROUPS,
 		"Pipeline has too many descriptor sets: %u (max %u)", uNumDescSets, FLUX_MAX_BINDING_GROUPS);
-	
-	// Validate m_xBindings array is accessible (this helps catch corrupted this pointer)
-	// Reading a few bytes from each slot to ensure memory is valid
+
+	// Touch each binding slot to ensure memory is valid (catches corrupted `this`).
 	for (u_int i = 0; i < uNumDescSets; i++)
 	{
-		// Just touch the memory to ensure it's accessible
 		volatile const void* pxCheck = &m_xBindings[i];
 		(void)pxCheck;
 	}
-	
+
 	for (u_int uDescSet = 0; uDescSet < uNumDescSets; uDescSet++)
 	{
 		if (Zenith_Vulkan::ShouldOnlyUpdateDirtyDescriptors() && !(m_uDescriptorDirty & (1 << uDescSet))) continue;
 
 		vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_xRootSig.m_axDescSetLayouts[uDescSet];
-		
 		DescriptorSetCacheEntry& xCacheEntry = m_axDescriptorSetCache[uDescSet];
-		if (Zenith_Vulkan::ShouldUseDescSetCache() &&
+
+		const bool bCacheHit = Zenith_Vulkan::ShouldUseDescSetCache() &&
 			xCacheEntry.descriptorSet != VK_NULL_HANDLE &&
 			xCacheEntry.layout == xLayout &&
-			xCacheEntry.bindings == m_xBindings[uDescSet])
+			xCacheEntry.bindings == m_xBindings[uDescSet];
+
+		if (bCacheHit)
 		{
 			m_axCurrentDescSet[uDescSet] = xCacheEntry.descriptorSet;
 		}
@@ -202,112 +303,17 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 			Zenith_Vulkan::IncrementDescriptorSetAllocations();
 			#endif
 
-			// Stack-allocated arrays for building descriptor writes
-			u_int uNumBufferWrites = 0;
 			vk::DescriptorBufferInfo axBufferInfos[FLUX_MAX_BINDINGS_PER_GROUP];
-
-			u_int uNumTexWrites = 0;
 			vk::DescriptorImageInfo axTexInfos[FLUX_MAX_BINDINGS_PER_GROUP * 2]; //SRVs and UAVs
-
-			u_int uNumWrites = 0;
 			vk::WriteDescriptorSet axWrites[FLUX_MAX_BINDINGS_PER_GROUP * 3]; //SRVs, UAVs and CBVs
+			u_int uNumBufferWrites = 0;
+			u_int uNumTexWrites = 0;
+			u_int uNumWrites = 0;
 
-			for (u_int u = 0; u < FLUX_MAX_BINDINGS_PER_GROUP; u++)
-			{
-				const BindingType eType = m_pxCurrentPipeline->m_xRootSig.m_axBindingTypes[uDescSet][u];
-				if (eType == BINDING_TYPE_MAX) continue;
-
-					const Flux_ShaderResourceView* const pxSRV = m_xBindings[uDescSet].m_xSRVs[u];
-					if (pxSRV)
-					{
-					// Validate SRV has a valid image view before using it
-						Zenith_Assert(pxSRV->m_xImageViewHandle.IsValid(), "SRV at descSet=%u binding=%u has null image view", uDescSet, u);
-
-
-						Zenith_Vulkan_Sampler* pxSampler = m_xBindings[uDescSet].m_apxSamplers[u];
-						// Use correct layout for depth textures - they must be sampled in DepthStencilReadOnlyOptimal
-						vk::ImageLayout eLayout = pxSRV->m_bIsDepthStencil
-							? vk::ImageLayout::eDepthStencilReadOnlyOptimal
-							: vk::ImageLayout::eShaderReadOnlyOptimal;
-						axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
-							.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
-							.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(pxSRV->m_xImageViewHandle))
-							.setImageLayout(eLayout);
-
-						axWrites[uNumWrites++] = vk::WriteDescriptorSet()
-							.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-							.setDstSet(m_axCurrentDescSet[uDescSet])
-							.setDstBinding(u)
-							.setDstArrayElement(0)
-							.setDescriptorCount(1)
-							.setPImageInfo(axTexInfos + uNumTexWrites++);
-					}
-
-					const Flux_UnorderedAccessView_Texture* const pxUAV_Texture = m_xBindings[uDescSet].m_xUAV_Textures[u];
-					if (pxUAV_Texture)
-					{
-						axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
-							.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(pxUAV_Texture->m_xImageViewHandle))
-							.setImageLayout(vk::ImageLayout::eGeneral);
-
-						axWrites[uNumWrites++] = vk::WriteDescriptorSet()
-							.setDescriptorType(vk::DescriptorType::eStorageImage)
-							.setDstSet(m_axCurrentDescSet[uDescSet])
-							.setDstBinding(u)
-							.setDstArrayElement(0)
-							.setDescriptorCount(1)
-							.setPImageInfo(axTexInfos + uNumTexWrites++);
-					}
-
-					const Flux_UnorderedAccessView_Buffer* const pxUAV_Buffer = m_xBindings[uDescSet].m_xUAV_Buffers[u];
-					if (pxUAV_Buffer)
-					{
-						axBufferInfos[uNumBufferWrites] = Zenith_Vulkan_MemoryManager::GetBufferDescriptor(pxUAV_Buffer->m_xBufferDescHandle);
-					vk::DescriptorType eBufferType = vk::DescriptorType::eStorageBuffer;
-						axWrites[uNumWrites++] = vk::WriteDescriptorSet()
-						.setDescriptorType(eBufferType)
-							.setDstSet(m_axCurrentDescSet[uDescSet])
-							.setDstBinding(u)
-							.setDstArrayElement(0)
-							.setDescriptorCount(1)
-							.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
-					}
-
-					const Flux_ConstantBufferView* const pxCBV = m_xBindings[uDescSet].m_xCBVs[u];
-					if (pxCBV)
-					{
-						axBufferInfos[uNumBufferWrites] = Zenith_Vulkan_MemoryManager::GetBufferDescriptor(pxCBV->m_xBufferDescHandle);
-					vk::DescriptorType eBufferType = (eType == BINDING_TYPE_STORAGE_BUFFER)
-						? vk::DescriptorType::eStorageBuffer
-						: vk::DescriptorType::eUniformBuffer;
-						axWrites[uNumWrites++] = vk::WriteDescriptorSet()
-						.setDescriptorType(eBufferType)
-							.setDstSet(m_axCurrentDescSet[uDescSet])
-							.setDstBinding(u)
-							.setDstArrayElement(0)
-							.setDescriptorCount(1)
-							.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
-					}
-				}
-
-			// Add scratch buffer binding if valid (for push constant replacement)
-			const ScratchBufferBinding& xScratch = m_xBindings[uDescSet].m_xScratchBuffer;
-			if (xScratch.m_bValid)
-			{
-				Zenith_Vulkan_PerFrame* pxFrame = Zenith_Vulkan::s_pxCurrentFrame;
-				axBufferInfos[uNumBufferWrites] = vk::DescriptorBufferInfo()
-					.setBuffer(pxFrame->GetScratchBuffer())
-					.setOffset(xScratch.m_uOffset)
-					.setRange(xScratch.m_uSize);
-
-				axWrites[uNumWrites++] = vk::WriteDescriptorSet()
-					.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-					.setDstSet(m_axCurrentDescSet[uDescSet])
-					.setDstBinding(xScratch.m_uBinding)
-					.setDstArrayElement(0)
-					.setDescriptorCount(1)
-					.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
-			}
+			BuildDescriptorWritesForSet(uDescSet,
+				axBufferInfos, uNumBufferWrites,
+				axTexInfos, uNumTexWrites,
+				axWrites, uNumWrites);
 
 			if (uNumWrites > 0)
 			{

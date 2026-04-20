@@ -632,307 +632,224 @@ static Zenith_Vector<Zenith_Maths::Vector3> s_xDroppedPointLightPositions;
 static Zenith_Vector<Zenith_Maths::Vector3> s_xDroppedSpotLightPositions;
 #endif
 
-void Flux_DynamicLights::GatherLightsFromScene()
+// Per-type "process inside ECS forEach" helpers — extracted from the inlined
+// type dispatch in GatherLightsFromScene so each type's validation, culling,
+// and LOD-selection lives in one place.
+
+static void TryGatherPointLight(const Zenith_LightComponent& xLight,
+	const Zenith_Maths::Vector3& xColor, float fIntensity,
+	Zenith_Vector<PointLightData>& xAllPointLights)
 {
+	Zenith_Maths::Vector3 xPosition = xLight.GetWorldPosition();
+	float fRange = xLight.GetRange();
+
+	// Frustum culling: skip lights whose bounding sphere is completely outside view.
+	if (!IsSphereFrustumVisible(xPosition, fRange)) return;
+
+	float fScreenRadius = CalculateScreenSpaceRadius(xPosition, fRange);
+	u_int uLODIndex = SelectLOD(fScreenRadius);
+	Zenith_Assert(uLODIndex < uNUM_LODS, "LOD index %u out of bounds (max %u)", uLODIndex, uNUM_LODS);
+
+	PointLightData xData;
+	xData.m_xPosition = xPosition;
+	xData.m_fRange = fRange;
+	xData.m_xColor = xColor;
+	xData.m_fIntensity = fIntensity;
+	xData.m_uLODIndex = uLODIndex;
+	xAllPointLights.PushBack(xData);
+}
+
+static void TryGatherSpotLight(Zenith_EntityID uID, const Zenith_LightComponent& xLight,
+	const Zenith_Maths::Vector3& xColor, float fIntensity,
+	Zenith_Vector<SpotLightData>& xAllSpotLights)
+{
+	Zenith_Maths::Vector3 xPosition = xLight.GetWorldPosition();
+	float fRange = xLight.GetRange();
+
+	float fInnerAngle = xLight.GetSpotInnerAngle();
+	float fOuterAngle = xLight.GetSpotOuterAngle();
+	Zenith_Assert(fInnerAngle <= fOuterAngle,
+		"Spot light inner angle (%.2f) must be <= outer angle (%.2f)", fInnerAngle, fOuterAngle);
+	Zenith_Assert(fOuterAngle > 0.0f && fOuterAngle < glm::pi<float>(),
+		"Spot light outer angle (%.2f) out of valid range", fOuterAngle);
+
+	// Validate direction on CPU (needed for cone culling and avoids per-pixel validation in shader).
+	Zenith_Maths::Vector3 xDirection = xLight.GetWorldDirection();
+	float fDirLength = Zenith_Maths::Length(xDirection);
+	if (fDirLength < fDIRECTION_EPSILON)
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping spot light with zero-length direction (Entity %u)", uID.m_uIndex);
+		return;
+	}
+	xDirection /= fDirLength;
+
+	// Cone test is more accurate than the sphere approximation we use for points.
+	if (!IsConeFrustumVisible(xPosition, xDirection, fRange, fOuterAngle)) return;
+
+	float fScreenRadius = CalculateScreenSpaceRadius(xPosition, fRange);
+	u_int uLODIndex = SelectLOD(fScreenRadius);
+	Zenith_Assert(uLODIndex < uNUM_LODS, "LOD index %u out of bounds (max %u)", uLODIndex, uNUM_LODS);
+
+	SpotLightData xData;
+	xData.m_xPosition = xPosition;
+	xData.m_fRange = fRange;
+	xData.m_xColor = xColor;
+	xData.m_fIntensity = fIntensity;
+	xData.m_xDirection = xDirection;
+	xData.m_fCosInner = cosf(fInnerAngle);
+	xData.m_fCosOuter = cosf(fOuterAngle);
+	xData.m_uLODIndex = uLODIndex;
+	xAllSpotLights.PushBack(xData);
+}
+
+static void TryGatherDirectionalLight(Zenith_EntityID uID, const Zenith_LightComponent& xLight,
+	const Zenith_Maths::Vector3& xColor, float fIntensity,
+	Zenith_Vector<DirectionalLightData>& xAllDirectionalLights)
+{
+	Zenith_Maths::Vector3 xDirection = xLight.GetWorldDirection();
+	float fDirLength = Zenith_Maths::Length(xDirection);
+	if (fDirLength < fDIRECTION_EPSILON)
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping directional light with zero-length direction (Entity %u)", uID.m_uIndex);
+		return;
+	}
+	xDirection /= fDirLength;
+
+	DirectionalLightData xData;
+	xData.m_xDirection = xDirection;
+	xData.m_xColor = xColor;
+	xData.m_fIntensity = fIntensity;
+	xAllDirectionalLights.PushBack(xData);
+}
+
+// ---- Per-type stage helpers (promoted from lambdas; no captures needed because
+// the staging buffers and counts are file-scope statics) -----------------------
+
+static void StagePointLight(const PointLightData& xLight)
+{
+	u_int uLOD = xLight.m_uLODIndex;
+	u_int uIdx = s_auPointLightInstanceCounts[uLOD];
+	Zenith_Assert(uIdx < Flux_DynamicLights::uMAX_LIGHTS,
+		"Point light LOD %u overflow: %u lights (max %u)", uLOD, uIdx, Flux_DynamicLights::uMAX_LIGHTS);
+	s_axPointLightStaging[uLOD][uIdx].m_xPositionRange =
+		{ xLight.m_xPosition.x, xLight.m_xPosition.y, xLight.m_xPosition.z, xLight.m_fRange };
+	s_axPointLightStaging[uLOD][uIdx].m_xColorIntensity =
+		{ xLight.m_xColor.x, xLight.m_xColor.y, xLight.m_xColor.z, xLight.m_fIntensity };
+	s_auPointLightInstanceCounts[uLOD]++;
+}
+
+static void StageSpotLight(const SpotLightData& xLight)
+{
+	u_int uLOD = xLight.m_uLODIndex;
+	u_int uIdx = s_auSpotLightInstanceCounts[uLOD];
+	Zenith_Assert(uIdx < Flux_DynamicLights::uMAX_LIGHTS,
+		"Spot light LOD %u overflow: %u lights (max %u)", uLOD, uIdx, Flux_DynamicLights::uMAX_LIGHTS);
+	s_axSpotLightStaging[uLOD][uIdx].m_xPositionRange =
+		{ xLight.m_xPosition.x, xLight.m_xPosition.y, xLight.m_xPosition.z, xLight.m_fRange };
+	s_axSpotLightStaging[uLOD][uIdx].m_xColorIntensity =
+		{ xLight.m_xColor.x, xLight.m_xColor.y, xLight.m_xColor.z, xLight.m_fIntensity };
+	s_axSpotLightStaging[uLOD][uIdx].m_xDirectionInner =
+		{ xLight.m_xDirection.x, xLight.m_xDirection.y, xLight.m_xDirection.z, xLight.m_fCosInner };
+	s_axSpotLightStaging[uLOD][uIdx].m_xSpotOuter =
+		{ xLight.m_fCosOuter, 0.0f, 0.0f, 0.0f };
+	s_auSpotLightInstanceCounts[uLOD]++;
+}
+
+static void StageDirectionalLight(const DirectionalLightData& xLight)
+{
+	u_int uIdx = s_uDirectionalLightInstanceCount;
+	Zenith_Assert(uIdx < Flux_DynamicLights::uMAX_LIGHTS,
+		"Directional light overflow: %u lights (max %u)", uIdx, Flux_DynamicLights::uMAX_LIGHTS);
+	s_axDirectionalLightStaging[uIdx].m_xColorIntensity =
+		{ xLight.m_xColor.x, xLight.m_xColor.y, xLight.m_xColor.z, xLight.m_fIntensity };
+	s_axDirectionalLightStaging[uIdx].m_xDirectionPad =
+		{ xLight.m_xDirection.x, xLight.m_xDirection.y, xLight.m_xDirection.z, 0.0f };
+	s_uDirectionalLightInstanceCount++;
+}
+
+// ---- Cull-and-stage helpers: priority-sort point and spot lights when over the
+// per-type limit; directional lights skip the sort (rarely many). All return the
+// dropped-count so the caller can emit a single set of warnings. -------------
+
+static u_int StageAndCullPointLights(const Zenith_Vector<PointLightData>& xAll)
+{
+	if (xAll.GetSize() <= Flux_DynamicLights::uMAX_LIGHTS)
+	{
+		for (u_int i = 0; i < xAll.GetSize(); ++i) StagePointLight(xAll.Get(i));
+		return 0;
+	}
+
+	s_xSortBuffer.Clear();
+	for (u_int i = 0; i < xAll.GetSize(); ++i)
+	{
+		const PointLightData& xLight = xAll.Get(i);
+		float fPriority = CalculateLightPriority(xLight.m_xPosition, xLight.m_fIntensity, xLight.m_fRange);
+		s_xSortBuffer.PushBack({ fPriority, i });
+	}
+	std::sort(s_xSortBuffer.GetDataPointer(), s_xSortBuffer.GetDataPointer() + s_xSortBuffer.GetSize());
+
+	for (u_int i = 0; i < Flux_DynamicLights::uMAX_LIGHTS; ++i)
+	{
+		StagePointLight(xAll.Get(s_xSortBuffer.Get(i).m_uIndex));
+	}
+
 #ifdef ZENITH_TOOLS
-	s_xDroppedPointLightPositions.Clear();
-	s_xDroppedSpotLightPositions.Clear();
+	for (u_int i = Flux_DynamicLights::uMAX_LIGHTS; i < xAll.GetSize(); ++i)
+	{
+		s_xDroppedPointLightPositions.PushBack(xAll.Get(s_xSortBuffer.Get(i).m_uIndex).m_xPosition);
+	}
 #endif
 
-	// Clear instance counts
-	for (u_int i = 0; i < uNUM_LODS; ++i)
+	return xAll.GetSize() - Flux_DynamicLights::uMAX_LIGHTS;
+}
+
+static u_int StageAndCullSpotLights(const Zenith_Vector<SpotLightData>& xAll)
+{
+	if (xAll.GetSize() <= Flux_DynamicLights::uMAX_LIGHTS)
 	{
-		s_auPointLightInstanceCounts[i] = 0;
-		s_auSpotLightInstanceCounts[i] = 0;
-	}
-	s_uDirectionalLightInstanceCount = 0;
-
-	// Update frustum for culling
-	s_xCameraFrustum.ExtractFromViewProjection(Flux_Graphics::GetViewProjMatrix());
-
-	// Temporary storage for visible lights (used during ECS query, then staged directly)
-	// OPTIMIZATION: Light data flows directly from these vectors to staging buffers,
-	// eliminating the previous intermediate static vectors (s_xPointLights, etc.)
-	Zenith_Vector<PointLightData> xAllPointLights;
-	Zenith_Vector<SpotLightData> xAllSpotLights;
-	Zenith_Vector<DirectionalLightData> xAllDirectionalLights;
-
-	// First pass: Collect ALL visible lights from ALL loaded scenes (no limit check yet)
-	for (uint32_t uSceneSlot = 0; uSceneSlot < Zenith_SceneManager::GetSceneSlotCount(); ++uSceneSlot)
-	{
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataAtSlot(uSceneSlot);
-		if (!pxSceneData || !pxSceneData->IsLoaded() || pxSceneData->IsUnloading())
-		{
-			continue;
-		}
-
-		pxSceneData->Query<Zenith_LightComponent, Zenith_TransformComponent>()
-			.ForEach([&xAllPointLights, &xAllSpotLights, &xAllDirectionalLights](Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent&)
-		{
-			LIGHT_TYPE eType = xLight.GetLightType();
-
-			// Validate light type
-			Zenith_Assert(eType < LIGHT_TYPE_COUNT, "Invalid light type: %u", static_cast<u_int>(eType));
-
-			const Zenith_Maths::Vector3& xColor = xLight.GetColor();
-			float fIntensity = xLight.GetIntensity();
-
-			// Skip lights with negligible intensity
-			if (fIntensity < fMIN_LIGHT_INTENSITY)
-			{
-				return;
-			}
-
-			if (eType == LIGHT_TYPE_POINT)
-			{
-				Zenith_Maths::Vector3 xPosition = xLight.GetWorldPosition();
-				float fRange = xLight.GetRange();
-
-				// Frustum culling: skip lights whose bounding sphere is completely outside view
-				if (!IsSphereFrustumVisible(xPosition, fRange))
-				{
-					return;
-				}
-
-				// Calculate LOD based on screen-space size
-				float fScreenRadius = CalculateScreenSpaceRadius(xPosition, fRange);
-				u_int uLODIndex = SelectLOD(fScreenRadius);
-				Zenith_Assert(uLODIndex < uNUM_LODS, "LOD index %u out of bounds (max %u)", uLODIndex, uNUM_LODS);
-
-				PointLightData xData;
-				xData.m_xPosition = xPosition;
-				xData.m_fRange = fRange;
-				xData.m_xColor = xColor;
-				xData.m_fIntensity = fIntensity;
-				xData.m_uLODIndex = uLODIndex;
-				xAllPointLights.PushBack(xData);
-			}
-			else if (eType == LIGHT_TYPE_SPOT)
-			{
-				Zenith_Maths::Vector3 xPosition = xLight.GetWorldPosition();
-				float fRange = xLight.GetRange();
-
-				// Get spot angles (needed for cone culling)
-				float fInnerAngle = xLight.GetSpotInnerAngle();
-				float fOuterAngle = xLight.GetSpotOuterAngle();
-				Zenith_Assert(fInnerAngle <= fOuterAngle,
-					"Spot light inner angle (%.2f) must be <= outer angle (%.2f)", fInnerAngle, fOuterAngle);
-				Zenith_Assert(fOuterAngle > 0.0f && fOuterAngle < glm::pi<float>(),
-					"Spot light outer angle (%.2f) out of valid range", fOuterAngle);
-
-				// Validate direction on CPU (needed for cone culling and avoids per-pixel validation in shader)
-				Zenith_Maths::Vector3 xDirection = xLight.GetWorldDirection();
-				float fDirLength = Zenith_Maths::Length(xDirection);
-				if (fDirLength < fDIRECTION_EPSILON)
-				{
-					Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping spot light with zero-length direction (Entity %u)", uID.m_uIndex);
-					return;
-				}
-				xDirection /= fDirLength;  // Normalize once on CPU
-
-				// Frustum culling using cone test (more accurate than sphere approximation)
-				if (!IsConeFrustumVisible(xPosition, xDirection, fRange, fOuterAngle))
-				{
-					return;
-				}
-
-				// Calculate LOD based on screen-space size
-				float fScreenRadius = CalculateScreenSpaceRadius(xPosition, fRange);
-				u_int uLODIndex = SelectLOD(fScreenRadius);
-				Zenith_Assert(uLODIndex < uNUM_LODS, "LOD index %u out of bounds (max %u)", uLODIndex, uNUM_LODS);
-
-				SpotLightData xData;
-				xData.m_xPosition = xPosition;
-				xData.m_fRange = fRange;
-				xData.m_xColor = xColor;
-				xData.m_fIntensity = fIntensity;
-				xData.m_xDirection = xDirection;
-				xData.m_fCosInner = cosf(fInnerAngle);
-				xData.m_fCosOuter = cosf(fOuterAngle);
-				xData.m_uLODIndex = uLODIndex;
-				xAllSpotLights.PushBack(xData);
-			}
-			else if (eType == LIGHT_TYPE_DIRECTIONAL)
-			{
-				// Validate direction on CPU (avoids per-pixel validation in shader)
-				Zenith_Maths::Vector3 xDirection = xLight.GetWorldDirection();
-				float fDirLength = Zenith_Maths::Length(xDirection);
-				if (fDirLength < fDIRECTION_EPSILON)
-				{
-					Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping directional light with zero-length direction (Entity %u)", uID.m_uIndex);
-					return;
-				}
-				xDirection /= fDirLength;  // Normalize once on CPU
-
-				DirectionalLightData xData;
-				xData.m_xDirection = xDirection;
-				xData.m_xColor = xColor;
-				xData.m_fIntensity = fIntensity;
-				xAllDirectionalLights.PushBack(xData);
-			}
-		});
+		for (u_int i = 0; i < xAll.GetSize(); ++i) StageSpotLight(xAll.Get(i));
+		return 0;
 	}
 
-	// Helper lambda: stage a point light directly to staging buffer
-	auto StagePointLight = [](const PointLightData& xLight)
+	s_xSortBuffer.Clear();
+	for (u_int i = 0; i < xAll.GetSize(); ++i)
 	{
-		u_int uLOD = xLight.m_uLODIndex;
-		u_int uIdx = s_auPointLightInstanceCounts[uLOD];
+		const SpotLightData& xLight = xAll.Get(i);
+		float fPriority = CalculateLightPriority(xLight.m_xPosition, xLight.m_fIntensity, xLight.m_fRange);
+		s_xSortBuffer.PushBack({ fPriority, i });
+	}
+	std::sort(s_xSortBuffer.GetDataPointer(), s_xSortBuffer.GetDataPointer() + s_xSortBuffer.GetSize());
 
-		Zenith_Assert(uIdx < Flux_DynamicLights::uMAX_LIGHTS,
-			"Point light LOD %u overflow: %u lights (max %u)", uLOD, uIdx, Flux_DynamicLights::uMAX_LIGHTS);
-
-		s_axPointLightStaging[uLOD][uIdx].m_xPositionRange =
-			{ xLight.m_xPosition.x, xLight.m_xPosition.y, xLight.m_xPosition.z, xLight.m_fRange };
-		s_axPointLightStaging[uLOD][uIdx].m_xColorIntensity =
-			{ xLight.m_xColor.x, xLight.m_xColor.y, xLight.m_xColor.z, xLight.m_fIntensity };
-		s_auPointLightInstanceCounts[uLOD]++;
-	};
-
-	// Helper lambda: stage a spot light directly to staging buffer
-	auto StageSpotLight = [](const SpotLightData& xLight)
+	for (u_int i = 0; i < Flux_DynamicLights::uMAX_LIGHTS; ++i)
 	{
-		u_int uLOD = xLight.m_uLODIndex;
-		u_int uIdx = s_auSpotLightInstanceCounts[uLOD];
+		StageSpotLight(xAll.Get(s_xSortBuffer.Get(i).m_uIndex));
+	}
 
-		Zenith_Assert(uIdx < Flux_DynamicLights::uMAX_LIGHTS,
-			"Spot light LOD %u overflow: %u lights (max %u)", uLOD, uIdx, Flux_DynamicLights::uMAX_LIGHTS);
-
-		s_axSpotLightStaging[uLOD][uIdx].m_xPositionRange =
-			{ xLight.m_xPosition.x, xLight.m_xPosition.y, xLight.m_xPosition.z, xLight.m_fRange };
-		s_axSpotLightStaging[uLOD][uIdx].m_xColorIntensity =
-			{ xLight.m_xColor.x, xLight.m_xColor.y, xLight.m_xColor.z, xLight.m_fIntensity };
-		s_axSpotLightStaging[uLOD][uIdx].m_xDirectionInner =
-			{ xLight.m_xDirection.x, xLight.m_xDirection.y, xLight.m_xDirection.z, xLight.m_fCosInner };
-		s_axSpotLightStaging[uLOD][uIdx].m_xSpotOuter =
-			{ xLight.m_fCosOuter, 0.0f, 0.0f, 0.0f };
-		s_auSpotLightInstanceCounts[uLOD]++;
-	};
-
-	// Helper lambda: stage a directional light directly to staging buffer
-	auto StageDirectionalLight = [](const DirectionalLightData& xLight)
-	{
-		u_int uIdx = s_uDirectionalLightInstanceCount;
-
-		Zenith_Assert(uIdx < Flux_DynamicLights::uMAX_LIGHTS,
-			"Directional light overflow: %u lights (max %u)", uIdx, Flux_DynamicLights::uMAX_LIGHTS);
-
-		s_axDirectionalLightStaging[uIdx].m_xColorIntensity =
-			{ xLight.m_xColor.x, xLight.m_xColor.y, xLight.m_xColor.z, xLight.m_fIntensity };
-		s_axDirectionalLightStaging[uIdx].m_xDirectionPad =
-			{ xLight.m_xDirection.x, xLight.m_xDirection.y, xLight.m_xDirection.z, 0.0f };
-		s_uDirectionalLightInstanceCount++;
-	};
-
-	// Second pass: Stage lights directly to GPU buffers (with priority sorting if over limit)
-	// OPTIMIZATION: Direct staging eliminates the previous intermediate copy step
-
-	// Point lights
-	u_int uDroppedPointLights = 0;
-	if (xAllPointLights.GetSize() > Flux_DynamicLights::uMAX_LIGHTS)
-	{
-		// Sort by priority (highest first) - reuse pre-allocated buffer
-		s_xSortBuffer.Clear();
-		for (u_int i = 0; i < xAllPointLights.GetSize(); ++i)
-		{
-			const PointLightData& xLight = xAllPointLights.Get(i);
-			float fPriority = CalculateLightPriority(xLight.m_xPosition, xLight.m_fIntensity, xLight.m_fRange);
-			s_xSortBuffer.PushBack({ fPriority, i });
-		}
-		std::sort(s_xSortBuffer.GetDataPointer(), s_xSortBuffer.GetDataPointer() + s_xSortBuffer.GetSize());
-
-		// Take top N lights - stage directly to GPU buffer
-		for (u_int i = 0; i < Flux_DynamicLights::uMAX_LIGHTS; ++i)
-		{
-			StagePointLight(xAllPointLights.Get(s_xSortBuffer.Get(i).m_uIndex));
-		}
-
-		// Track dropped lights for debug visualization
-		uDroppedPointLights = xAllPointLights.GetSize() - Flux_DynamicLights::uMAX_LIGHTS;
 #ifdef ZENITH_TOOLS
-		for (u_int i = Flux_DynamicLights::uMAX_LIGHTS; i < xAllPointLights.GetSize(); ++i)
-		{
-			s_xDroppedPointLightPositions.PushBack(xAllPointLights.Get(s_xSortBuffer.Get(i).m_uIndex).m_xPosition);
-		}
+	for (u_int i = Flux_DynamicLights::uMAX_LIGHTS; i < xAll.GetSize(); ++i)
+	{
+		s_xDroppedSpotLightPositions.PushBack(xAll.Get(s_xSortBuffer.Get(i).m_uIndex).m_xPosition);
+	}
 #endif
-	}
-	else
-	{
-		// Under limit - stage all directly to GPU buffer (no intermediate copy)
-		for (u_int i = 0; i < xAllPointLights.GetSize(); ++i)
-		{
-			StagePointLight(xAllPointLights.Get(i));
-		}
-	}
 
-	// Spot lights
-	u_int uDroppedSpotLights = 0;
-	if (xAllSpotLights.GetSize() > Flux_DynamicLights::uMAX_LIGHTS)
-	{
-		// Sort by priority (highest first) - reuse pre-allocated buffer
-		s_xSortBuffer.Clear();
-		for (u_int i = 0; i < xAllSpotLights.GetSize(); ++i)
-		{
-			const SpotLightData& xLight = xAllSpotLights.Get(i);
-			float fPriority = CalculateLightPriority(xLight.m_xPosition, xLight.m_fIntensity, xLight.m_fRange);
-			s_xSortBuffer.PushBack({ fPriority, i });
-		}
-		std::sort(s_xSortBuffer.GetDataPointer(), s_xSortBuffer.GetDataPointer() + s_xSortBuffer.GetSize());
+	return xAll.GetSize() - Flux_DynamicLights::uMAX_LIGHTS;
+}
 
-		// Take top N lights - stage directly to GPU buffer
-		for (u_int i = 0; i < Flux_DynamicLights::uMAX_LIGHTS; ++i)
-		{
-			StageSpotLight(xAllSpotLights.Get(s_xSortBuffer.Get(i).m_uIndex));
-		}
+static u_int StageAndCullDirectionalLights(const Zenith_Vector<DirectionalLightData>& xAll)
+{
+	const u_int uMax = std::min(static_cast<u_int>(xAll.GetSize()), Flux_DynamicLights::uMAX_LIGHTS);
+	for (u_int i = 0; i < uMax; ++i)
+	{
+		StageDirectionalLight(xAll.Get(i));
+	}
+	return (xAll.GetSize() > Flux_DynamicLights::uMAX_LIGHTS) ? (xAll.GetSize() - Flux_DynamicLights::uMAX_LIGHTS) : 0;
+}
 
-		// Track dropped lights for debug visualization
-		uDroppedSpotLights = xAllSpotLights.GetSize() - Flux_DynamicLights::uMAX_LIGHTS;
-#ifdef ZENITH_TOOLS
-		for (u_int i = Flux_DynamicLights::uMAX_LIGHTS; i < xAllSpotLights.GetSize(); ++i)
-		{
-			s_xDroppedSpotLightPositions.PushBack(xAllSpotLights.Get(s_xSortBuffer.Get(i).m_uIndex).m_xPosition);
-		}
-#endif
-	}
-	else
-	{
-		// Under limit - stage all directly to GPU buffer (no intermediate copy)
-		for (u_int i = 0; i < xAllSpotLights.GetSize(); ++i)
-		{
-			StageSpotLight(xAllSpotLights.Get(i));
-		}
-	}
-
-	// Directional lights (simple limit, no priority sorting - rarely have many)
-	u_int uDroppedDirLights = 0;
-	u_int uMaxDirLights = std::min(static_cast<u_int>(xAllDirectionalLights.GetSize()), Flux_DynamicLights::uMAX_LIGHTS);
-	for (u_int i = 0; i < uMaxDirLights; ++i)
-	{
-		StageDirectionalLight(xAllDirectionalLights.Get(i));
-	}
-	if (xAllDirectionalLights.GetSize() > Flux_DynamicLights::uMAX_LIGHTS)
-	{
-		uDroppedDirLights = xAllDirectionalLights.GetSize() - Flux_DynamicLights::uMAX_LIGHTS;
-	}
-
-	// Log warnings for dropped lights (includes count for better diagnostics)
-	if (uDroppedPointLights > 0)
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Dropped %u point lights (limit: %u, kept highest priority)", uDroppedPointLights, Flux_DynamicLights::uMAX_LIGHTS);
-	}
-	if (uDroppedSpotLights > 0)
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Dropped %u spot lights (limit: %u, kept highest priority)", uDroppedSpotLights, Flux_DynamicLights::uMAX_LIGHTS);
-	}
-	if (uDroppedDirLights > 0)
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Dropped %u directional lights (limit: %u)", uDroppedDirLights, Flux_DynamicLights::uMAX_LIGHTS);
-	}
-
-	// Upload staged instance data to GPU buffers
-	// NOTE: Flux_MemoryManager::UploadBufferData() handles memory barriers internally,
-	// ensuring transfer writes complete before shader reads. This is required because
-	// these buffers are read in the vertex/fragment shaders during Render().
+// Flux_MemoryManager::UploadBufferData handles memory barriers internally so
+// transfer writes complete before vertex/fragment shaders read these buffers
+// during deferred lighting.
+static void UploadLightBuffers()
+{
 	for (u_int i = 0; i < uNUM_LODS; ++i)
 	{
 		if (s_auPointLightInstanceCounts[i] > 0)
@@ -942,7 +859,6 @@ void Flux_DynamicLights::GatherLightsFromScene()
 				s_axPointLightStaging[i],
 				s_auPointLightInstanceCounts[i] * sizeof(PointLightInstance));
 		}
-
 		if (s_auSpotLightInstanceCounts[i] > 0)
 		{
 			Flux_MemoryManager::UploadBufferData(
@@ -959,6 +875,73 @@ void Flux_DynamicLights::GatherLightsFromScene()
 			s_axDirectionalLightStaging,
 			s_uDirectionalLightInstanceCount * sizeof(DirectionalLightInstance));
 	}
+}
+
+void Flux_DynamicLights::GatherLightsFromScene()
+{
+#ifdef ZENITH_TOOLS
+	s_xDroppedPointLightPositions.Clear();
+	s_xDroppedSpotLightPositions.Clear();
+#endif
+
+	for (u_int i = 0; i < uNUM_LODS; ++i)
+	{
+		s_auPointLightInstanceCounts[i] = 0;
+		s_auSpotLightInstanceCounts[i] = 0;
+	}
+	s_uDirectionalLightInstanceCount = 0;
+
+	s_xCameraFrustum.ExtractFromViewProjection(Flux_Graphics::GetViewProjMatrix());
+
+	// Light data flows from these per-type vectors directly into the GPU staging
+	// buffers via the Stage*-and-cull helpers — no intermediate static storage.
+	Zenith_Vector<PointLightData> xAllPointLights;
+	Zenith_Vector<SpotLightData> xAllSpotLights;
+	Zenith_Vector<DirectionalLightData> xAllDirectionalLights;
+
+	for (uint32_t uSceneSlot = 0; uSceneSlot < Zenith_SceneManager::GetSceneSlotCount(); ++uSceneSlot)
+	{
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataAtSlot(uSceneSlot);
+		if (!pxSceneData || !pxSceneData->IsLoaded() || pxSceneData->IsUnloading()) continue;
+
+		pxSceneData->Query<Zenith_LightComponent, Zenith_TransformComponent>()
+			.ForEach([&xAllPointLights, &xAllSpotLights, &xAllDirectionalLights]
+			        (Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent&)
+		{
+			LIGHT_TYPE eType = xLight.GetLightType();
+			Zenith_Assert(eType < LIGHT_TYPE_COUNT, "Invalid light type: %u", static_cast<u_int>(eType));
+
+			const Zenith_Maths::Vector3& xColor = xLight.GetColor();
+			float fIntensity = xLight.GetIntensity();
+			if (fIntensity < fMIN_LIGHT_INTENSITY) return;
+
+			if (eType == LIGHT_TYPE_POINT)
+			{
+				TryGatherPointLight(xLight, xColor, fIntensity, xAllPointLights);
+			}
+			else if (eType == LIGHT_TYPE_SPOT)
+			{
+				TryGatherSpotLight(uID, xLight, xColor, fIntensity, xAllSpotLights);
+			}
+			else if (eType == LIGHT_TYPE_DIRECTIONAL)
+			{
+				TryGatherDirectionalLight(uID, xLight, xColor, fIntensity, xAllDirectionalLights);
+			}
+		});
+	}
+
+	const u_int uDroppedPointLights = StageAndCullPointLights(xAllPointLights);
+	const u_int uDroppedSpotLights = StageAndCullSpotLights(xAllSpotLights);
+	const u_int uDroppedDirLights = StageAndCullDirectionalLights(xAllDirectionalLights);
+
+	if (uDroppedPointLights > 0)
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Dropped %u point lights (limit: %u, kept highest priority)", uDroppedPointLights, Flux_DynamicLights::uMAX_LIGHTS);
+	if (uDroppedSpotLights > 0)
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Dropped %u spot lights (limit: %u, kept highest priority)", uDroppedSpotLights, Flux_DynamicLights::uMAX_LIGHTS);
+	if (uDroppedDirLights > 0)
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Dropped %u directional lights (limit: %u)", uDroppedDirLights, Flux_DynamicLights::uMAX_LIGHTS);
+
+	UploadLightBuffers();
 }
 
 static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)

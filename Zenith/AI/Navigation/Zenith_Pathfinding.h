@@ -56,20 +56,9 @@ public:
 	static float CalculatePathDistance(const Zenith_Vector<Zenith_Maths::Vector3>& axPath);
 
 private:
-	// A* node for priority queue
-	struct AStarNode
-	{
-		uint32_t m_uPolygonIndex;
-		uint32_t m_uParentIndex;  // Index in closed list
-		float m_fGCost;           // Cost from start
-		float m_fHCost;           // Heuristic to end
-		float m_fFCost;           // Total cost (G + H)
-
-		bool operator>(const AStarNode& xOther) const
-		{
-			return m_fFCost > xOther.m_fFCost;
-		}
-	};
+	// AStarNode lives in an anonymous namespace in Zenith_Pathfinding.cpp so the
+	// file-scope expand-neighbour helper can take it without leaking <queue> /
+	// <unordered_set> / <unordered_map> into this header.
 
 	// Get midpoint of shared edge between two polygons
 	static Zenith_Maths::Vector3 GetPortalMidpoint(const Zenith_NavMesh& xNavMesh,
@@ -79,6 +68,15 @@ private:
 	static bool GetPortal(const Zenith_NavMesh& xNavMesh,
 		uint32_t uPoly1, uint32_t uPoly2,
 		Zenith_Maths::Vector3& xLeft, Zenith_Maths::Vector3& xRight);
+
+	// Convert a polygon-index path into world-space waypoints (start, portal
+	// midpoints, end), then smooth and measure. Shared by SUCCESS and PARTIAL
+	// reconstructions in FindPathInternal.
+	static void BuildWaypointsFromPolygonPath(const Zenith_NavMesh& xNavMesh,
+		const Zenith_Vector<uint32_t>& axPolygonPath,
+		const Zenith_Maths::Vector3& xStartPoint,
+		const Zenith_Maths::Vector3& xEndPoint,
+		Zenith_PathResult& xResult);
 
 	// ========================================================================
 	// Batch Parallel Pathfinding API

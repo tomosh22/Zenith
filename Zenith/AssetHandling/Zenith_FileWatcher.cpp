@@ -250,6 +250,45 @@ uint64_t Zenith_FileWatcher::GetFileModificationTime(const std::string& strPath)
 
 #ifdef _WIN32
 
+// Translate a single FILE_NOTIFY_INFORMATION into a FileChangeEvent and enqueue
+// it. Skips ignored paths and unknown actions. Pulled out of WatchThreadFunc so
+// the watch loop is a tight read-wait-process-reset cycle without inline
+// switch/goto bookkeeping.
+void Zenith_FileWatcher::ProcessChangeNotification(void* pInfoVoid, const std::string& strBasePath)
+{
+	FILE_NOTIFY_INFORMATION* pInfo = static_cast<FILE_NOTIFY_INFORMATION*>(pInfoVoid);
+
+	int iLen = WideCharToMultiByte(CP_UTF8, 0, pInfo->FileName,
+		pInfo->FileNameLength / sizeof(WCHAR), nullptr, 0, nullptr, nullptr);
+	std::string strFilename(iLen, '\0');
+	WideCharToMultiByte(CP_UTF8, 0, pInfo->FileName,
+		pInfo->FileNameLength / sizeof(WCHAR), &strFilename[0], iLen, nullptr, nullptr);
+
+	std::string strFullPath = strBasePath + "/" + strFilename;
+	std::replace(strFullPath.begin(), strFullPath.end(), '\\', '/');
+
+	if (IsIgnoredFile(strFullPath)) return;
+
+	FileChangeEvent xEvent;
+	xEvent.m_strPath = strFullPath;
+	xEvent.m_ulTimestamp = static_cast<uint64_t>(GetTickCount64());
+
+	switch (pInfo->Action)
+	{
+		case FILE_ACTION_ADDED:             xEvent.m_eType = FileChangeType::ADDED; break;
+		case FILE_ACTION_REMOVED:           xEvent.m_eType = FileChangeType::DELETED; break;
+		case FILE_ACTION_MODIFIED:          xEvent.m_eType = FileChangeType::MODIFIED; break;
+		case FILE_ACTION_RENAMED_OLD_NAME:
+			xEvent.m_eType = FileChangeType::RENAMED;
+			xEvent.m_strOldPath = strFullPath;
+			break;
+		case FILE_ACTION_RENAMED_NEW_NAME:  xEvent.m_eType = FileChangeType::RENAMED; break;
+		default: return;
+	}
+
+	EnqueueEvent(xEvent);
+}
+
 void Zenith_FileWatcher::WatchThreadFunc(const void* /*pUserData*/)
 {
 	constexpr DWORD BUFFER_SIZE = 32768;
@@ -268,20 +307,12 @@ void Zenith_FileWatcher::WatchThreadFunc(const void* /*pUserData*/)
 	while (s_bWatchThreadRunning)
 	{
 		DWORD dwBytesReturned = 0;
-
 		BOOL bResult = ReadDirectoryChangesW(
-			hDirectory,
-			acBuffer,
-			BUFFER_SIZE,
+			hDirectory, acBuffer, BUFFER_SIZE,
 			TRUE,  // Watch subdirectories
-			FILE_NOTIFY_CHANGE_FILE_NAME |
-			FILE_NOTIFY_CHANGE_DIR_NAME |
-			FILE_NOTIFY_CHANGE_SIZE |
-			FILE_NOTIFY_CHANGE_LAST_WRITE,
-			&dwBytesReturned,
-			&xOverlapped,
-			nullptr
-		);
+			FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME |
+			FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE,
+			&dwBytesReturned, &xOverlapped, nullptr);
 
 		if (!bResult)
 		{
@@ -293,76 +324,22 @@ void Zenith_FileWatcher::WatchThreadFunc(const void* /*pUserData*/)
 			}
 		}
 
-		// Wait for changes or shutdown
-		DWORD dwWaitResult = WaitForSingleObject(xOverlapped.hEvent, 100);
+		const DWORD dwWaitResult = WaitForSingleObject(xOverlapped.hEvent, 100);
+		if (dwWaitResult != WAIT_OBJECT_0) continue;
 
-		if (dwWaitResult == WAIT_OBJECT_0)
+		if (GetOverlappedResult(hDirectory, &xOverlapped, &dwBytesReturned, FALSE) && dwBytesReturned > 0)
 		{
-			if (GetOverlappedResult(hDirectory, &xOverlapped, &dwBytesReturned, FALSE))
+			FILE_NOTIFY_INFORMATION* pInfo = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(acBuffer);
+			while (pInfo)
 			{
-				if (dwBytesReturned > 0)
-				{
-					FILE_NOTIFY_INFORMATION* pInfo = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(acBuffer);
-
-					while (pInfo)
-					{
-						// Convert wide string to narrow string
-						int iLen = WideCharToMultiByte(CP_UTF8, 0, pInfo->FileName,
-							pInfo->FileNameLength / sizeof(WCHAR), nullptr, 0, nullptr, nullptr);
-
-						std::string strFilename(iLen, '\0');
-						WideCharToMultiByte(CP_UTF8, 0, pInfo->FileName,
-							pInfo->FileNameLength / sizeof(WCHAR), &strFilename[0], iLen, nullptr, nullptr);
-
-						std::string strFullPath = s_strWatchPath + "/" + strFilename;
-
-						// Replace backslashes with forward slashes
-						std::replace(strFullPath.begin(), strFullPath.end(), '\\', '/');
-
-						if (!IsIgnoredFile(strFullPath))
-						{
-							FileChangeEvent xEvent;
-							xEvent.m_strPath = strFullPath;
-							xEvent.m_ulTimestamp = static_cast<uint64_t>(GetTickCount64());
-
-							switch (pInfo->Action)
-							{
-							case FILE_ACTION_ADDED:
-								xEvent.m_eType = FileChangeType::ADDED;
-								break;
-							case FILE_ACTION_REMOVED:
-								xEvent.m_eType = FileChangeType::DELETED;
-								break;
-							case FILE_ACTION_MODIFIED:
-								xEvent.m_eType = FileChangeType::MODIFIED;
-								break;
-							case FILE_ACTION_RENAMED_OLD_NAME:
-								xEvent.m_eType = FileChangeType::RENAMED;
-								xEvent.m_strOldPath = strFullPath;
-								break;
-							case FILE_ACTION_RENAMED_NEW_NAME:
-								xEvent.m_eType = FileChangeType::RENAMED;
-								break;
-							default:
-								goto next_entry;
-							}
-
-							EnqueueEvent(xEvent);
-						}
-
-					next_entry:
-						if (pInfo->NextEntryOffset == 0)
-						{
-							break;
-						}
-						pInfo = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(
-							reinterpret_cast<char*>(pInfo) + pInfo->NextEntryOffset);
-					}
-				}
+				ProcessChangeNotification(pInfo, s_strWatchPath);
+				if (pInfo->NextEntryOffset == 0) break;
+				pInfo = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(
+					reinterpret_cast<char*>(pInfo) + pInfo->NextEntryOffset);
 			}
-
-			ResetEvent(xOverlapped.hEvent);
 		}
+
+		ResetEvent(xOverlapped.hEvent);
 	}
 
 	CloseHandle(xOverlapped.hEvent);

@@ -175,22 +175,19 @@ void Zenith_Editor::RenderViewMenu()
 {
 	if (ImGui::BeginMenu("View"))
 	{
-		if (ImGui::MenuItem("Hierarchy"))
+		if (ImGui::MenuItem("Hierarchy", nullptr, s_bShowHierarchyPanel))
 		{
-			// TODO: Toggle hierarchy panel visibility
-			Zenith_Log(LOG_CATEGORY_EDITOR, "Toggle Hierarchy - Not yet implemented");
+			s_bShowHierarchyPanel = !s_bShowHierarchyPanel;
 		}
 
-		if (ImGui::MenuItem("Properties"))
+		if (ImGui::MenuItem("Properties", nullptr, s_bShowPropertiesPanel))
 		{
-			// TODO: Toggle properties panel visibility
-			Zenith_Log(LOG_CATEGORY_EDITOR, "Toggle Properties - Not yet implemented");
+			s_bShowPropertiesPanel = !s_bShowPropertiesPanel;
 		}
 
-		if (ImGui::MenuItem("Console"))
+		if (ImGui::MenuItem("Console", nullptr, s_bShowConsolePanel))
 		{
-			// TODO: Toggle console panel visibility
-			Zenith_Log(LOG_CATEGORY_EDITOR, "Toggle Console - Not yet implemented");
+			s_bShowConsolePanel = !s_bShowConsolePanel;
 		}
 
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED

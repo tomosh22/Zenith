@@ -186,6 +186,12 @@ private:
 	// Update streaming statistics (HIGH LOD count, memory usage, fragmentation)
 	static void UpdateStreamingStats();
 
+	// UpdateStreaming phases — split out so the dispatcher reads as
+	// camera-tracking → request-nearby → evict-distant → stats. Each helper
+	// is called once per frame from UpdateStreaming.
+	static void RequestNearbyHighLOD(const Zenith_Maths::Vector3& xCameraPos);
+	static void EvictDistantHighLOD(const Zenith_Maths::Vector3& xCameraPos);
+
 	// Stream in a LOD for a chunk. Returns true on success.
 	static bool StreamInLOD(uint32_t uChunkIndex, uint32_t uLODLevel);
 	

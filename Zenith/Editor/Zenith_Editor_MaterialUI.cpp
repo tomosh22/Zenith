@@ -247,50 +247,91 @@ void RenderMaterialProperties(Zenith_MaterialAsset* pxMaterial, const char* szId
 	ImGui::PopID();
 }
 
+// Resolve the display name + fully-qualified path of the texture currently bound
+// to a material slot. Falls back to the texture's own path when the material
+// slot path is empty (can happen for runtime-loaded textures).
+static void ResolveTextureSlotDisplay(
+	const Zenith_MaterialAsset& xMaterial,
+	TextureSlotType eSlot,
+	std::string& strCurrentPathOut,
+	std::string& strTextureNameOut,
+	const Zenith_TextureAsset*& pxCurrentTextureOut,
+	bool& bHasTextureOut)
+{
+	strCurrentPathOut = GetTexturePathForSlot(xMaterial, eSlot);
+	pxCurrentTextureOut = GetTextureForSlot(const_cast<Zenith_MaterialAsset&>(xMaterial), eSlot);
+
+	if (strCurrentPathOut.empty() && pxCurrentTextureOut && !pxCurrentTextureOut->GetPath().empty())
+	{
+		strCurrentPathOut = pxCurrentTextureOut->GetPath();
+	}
+
+	bHasTextureOut = pxCurrentTextureOut && pxCurrentTextureOut->m_xVRAMHandle.IsValid();
+	strTextureNameOut = "(none)";
+	if (!bHasTextureOut)
+		return;
+
+	if (!strCurrentPathOut.empty())
+	{
+		std::filesystem::path xPath(strCurrentPathOut);
+		strTextureNameOut = xPath.filename().string();
+	}
+	else
+	{
+		char szBuf[64];
+		snprintf(szBuf, sizeof(szBuf), "(generated %ux%u)",
+			pxCurrentTextureOut->m_xSurfaceInfo.m_uWidth,
+			pxCurrentTextureOut->m_xSurfaceInfo.m_uHeight);
+		strTextureNameOut = szBuf;
+	}
+}
+
+// Handles the drag-drop target that wraps the texture preview button. Fires
+// pfnOnAssign if supplied, otherwise applies the default SetTexturePathForSlot.
+static void HandleTextureSlotDragDrop(
+	const char* szLabel,
+	Zenith_MaterialAsset& xMaterial,
+	TextureSlotType eSlot,
+	const TextureAssignCallback& pfnOnAssign)
+{
+	if (!ImGui::BeginDragDropTarget())
+		return;
+
+	if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
+	{
+		const DragDropFilePayload* pFilePayload =
+			static_cast<const DragDropFilePayload*>(pPayload->Data);
+
+		if (pfnOnAssign)
+		{
+			pfnOnAssign(pFilePayload->m_szFilePath);
+		}
+		else
+		{
+			SetTexturePathForSlot(xMaterial, eSlot, pFilePayload->m_szFilePath);
+		}
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialUI] Set %s texture: %s", szLabel, pFilePayload->m_szFilePath);
+	}
+	ImGui::EndDragDropTarget();
+}
+
 void RenderTextureSlot(
 	const char* szLabel,
 	Zenith_MaterialAsset& xMaterial,
 	TextureSlotType eSlot,
-	bool,
 	float fPreviewSize,
 	TextureAssignCallback pfnOnAssign)
 {
 	ImGui::PushID(szLabel);
 
-	std::string strCurrentPath = GetTexturePathForSlot(xMaterial, eSlot);
-	const Zenith_TextureAsset* pxCurrentTexture = GetTextureForSlot(xMaterial, eSlot);
-
-	// Fall back to texture's path if material path is empty
-	// (happens when texture loaded directly without setting material texture path)
-	if (strCurrentPath.empty() && pxCurrentTexture && !pxCurrentTexture->GetPath().empty())
-	{
-		strCurrentPath = pxCurrentTexture->GetPath();
-	}
-
-	std::string strTextureName = "(none)";
-	bool bHasTexture = pxCurrentTexture && pxCurrentTexture->m_xVRAMHandle.IsValid();
-	if (bHasTexture)
-	{
-		if (!strCurrentPath.empty())
-		{
-			std::filesystem::path xPath(strCurrentPath);
-			strTextureName = xPath.filename().string();
-		}
-		else
-		{
-			// Runtime-generated texture - show dimensions for identification
-			char szBuf[64];
-			snprintf(szBuf, sizeof(szBuf), "(generated %ux%u)",
-				pxCurrentTexture->m_xSurfaceInfo.m_uWidth,
-				pxCurrentTexture->m_xSurfaceInfo.m_uHeight);
-			strTextureName = szBuf;
-		}
-	}
+	std::string strCurrentPath, strTextureName;
+	const Zenith_TextureAsset* pxCurrentTexture = nullptr;
+	bool bHasTexture = false;
+	ResolveTextureSlotDisplay(xMaterial, eSlot, strCurrentPath, strTextureName, pxCurrentTexture, bHasTexture);
 
 	ImGui::Text("%s:", szLabel);
 	ImGui::SameLine();
 
-	// Always show texture preview or placeholder button
 	if (bHasTexture)
 	{
 		Flux_ImGuiTextureHandle xHandle = GetOrCreateTexturePreviewHandle(pxCurrentTexture);
@@ -309,45 +350,19 @@ void RenderTextureSlot(
 	}
 	else
 	{
-		// Empty slot - show placeholder button
 		ImGui::Button("...", ImVec2(fPreviewSize, fPreviewSize));
 	}
 
-	// Drag-drop target
-	if (ImGui::BeginDragDropTarget())
-	{
-		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
-		{
-			const DragDropFilePayload* pFilePayload =
-				static_cast<const DragDropFilePayload*>(pPayload->Data);
+	HandleTextureSlotDragDrop(szLabel, xMaterial, eSlot, pfnOnAssign);
 
-			// Use custom callback if provided, otherwise use default behavior
-			if (pfnOnAssign)
-			{
-				pfnOnAssign(pFilePayload->m_szFilePath);
-			}
-			else
-			{
-				SetTexturePathForSlot(xMaterial, eSlot, pFilePayload->m_szFilePath);
-			}
-			Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialUI] Set %s texture: %s", szLabel, pFilePayload->m_szFilePath);
-		}
-		ImGui::EndDragDropTarget();
-	}
-
-	// Tooltip with texture name and path (shown on hover)
 	if (ImGui::IsItemHovered())
 	{
 		if (bHasTexture)
 		{
 			if (!strCurrentPath.empty())
-			{
 				ImGui::SetTooltip("%s\nPath: %s\nDrop a .ztxtr texture here to change", strTextureName.c_str(), strCurrentPath.c_str());
-			}
 			else
-			{
 				ImGui::SetTooltip("%s\nDrop a .ztxtr texture here to change", strTextureName.c_str());
-			}
 		}
 		else
 		{
@@ -358,13 +373,13 @@ void RenderTextureSlot(
 	ImGui::PopID();
 }
 
-void RenderAllTextureSlots(Zenith_MaterialAsset& xMaterial, bool bShowPreview)
+void RenderAllTextureSlots(Zenith_MaterialAsset& xMaterial, bool /*bShowPreview*/)
 {
-	RenderTextureSlot("Diffuse", xMaterial, TEXTURE_SLOT_DIFFUSE, bShowPreview);
-	RenderTextureSlot("Normal", xMaterial, TEXTURE_SLOT_NORMAL, bShowPreview);
-	RenderTextureSlot("Roughness/Metallic", xMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC, bShowPreview);
-	RenderTextureSlot("Occlusion", xMaterial, TEXTURE_SLOT_OCCLUSION, bShowPreview);
-	RenderTextureSlot("Emissive", xMaterial, TEXTURE_SLOT_EMISSIVE, bShowPreview);
+	RenderTextureSlot("Diffuse", xMaterial, TEXTURE_SLOT_DIFFUSE);
+	RenderTextureSlot("Normal", xMaterial, TEXTURE_SLOT_NORMAL);
+	RenderTextureSlot("Roughness/Metallic", xMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC);
+	RenderTextureSlot("Occlusion", xMaterial, TEXTURE_SLOT_OCCLUSION);
+	RenderTextureSlot("Emissive", xMaterial, TEXTURE_SLOT_EMISSIVE);
 }
 
 } // namespace Zenith_Editor_MaterialUI

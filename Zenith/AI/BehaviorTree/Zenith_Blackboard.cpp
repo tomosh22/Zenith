@@ -123,6 +123,41 @@ void Zenith_Blackboard::Clear()
 	m_xData.clear();
 }
 
+void Zenith_Blackboard::IterateEntries(EntryDisplayFunc pfnCallback, void* pUserData) const
+{
+	if (!pfnCallback) return;
+	char acBuf[64];
+	for (const auto& [strKey, xValue] : m_xData)
+	{
+		const char* szType = "?";
+		switch (xValue.m_eType)
+		{
+			case ValueType::FLOAT:
+				szType = "float";
+				snprintf(acBuf, sizeof(acBuf), "%.3f", xValue.m_fValue);
+				break;
+			case ValueType::INT:
+				szType = "int";
+				snprintf(acBuf, sizeof(acBuf), "%d", xValue.m_iValue);
+				break;
+			case ValueType::BOOL:
+				szType = "bool";
+				snprintf(acBuf, sizeof(acBuf), "%s", xValue.m_bValue ? "true" : "false");
+				break;
+			case ValueType::VECTOR3:
+				szType = "Vector3";
+				snprintf(acBuf, sizeof(acBuf), "(%.2f, %.2f, %.2f)",
+					xValue.m_xVector3.x, xValue.m_xVector3.y, xValue.m_xVector3.z);
+				break;
+			case ValueType::ENTITY_ID:
+				szType = "EntityID";
+				snprintf(acBuf, sizeof(acBuf), "%llu", static_cast<unsigned long long>(xValue.m_ulEntityIDPacked));
+				break;
+		}
+		pfnCallback(pUserData, strKey.c_str(), szType, acBuf);
+	}
+}
+
 // ========== Serialization ==========
 
 void Zenith_Blackboard::WriteToDataStream(Zenith_DataStream& xStream) const

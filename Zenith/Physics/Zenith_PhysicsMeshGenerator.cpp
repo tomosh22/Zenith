@@ -27,6 +27,138 @@ PhysicsMeshConfig g_xPhysicsMeshConfig = {
 // Global debug flag for drawing all physics meshes
 bool g_bDebugDrawAllPhysicsMeshes = false;
 
+namespace
+{
+	struct DecimationCellKey
+	{
+		int32_t x, y, z;
+		bool operator==(const DecimationCellKey& other) const
+		{
+			return x == other.x && y == other.y && z == other.z;
+		}
+	};
+
+	struct DecimationCellKeyHash
+	{
+		size_t operator()(const DecimationCellKey& k) const
+		{
+			return std::hash<int32_t>()(k.x) ^
+				(std::hash<int32_t>()(k.y) << 1) ^
+				(std::hash<int32_t>()(k.z) << 2);
+		}
+	};
+
+	using CellToVertexMap = std::unordered_map<DecimationCellKey, uint32_t, DecimationCellKeyHash>;
+	using OldToNewIndexMap = std::unordered_map<uint32_t, uint32_t>;
+
+	DecimationCellKey ComputeCellKey(const Zenith_Maths::Vector3& xPos, float fInvCellSize)
+	{
+		DecimationCellKey xKey;
+		xKey.x = static_cast<int32_t>(std::floor(xPos.x * fInvCellSize));
+		xKey.y = static_cast<int32_t>(std::floor(xPos.y * fInvCellSize));
+		xKey.z = static_cast<int32_t>(std::floor(xPos.z * fInvCellSize));
+		return xKey;
+	}
+
+	// Phase 1: Extreme vertices (min/max on each axis) must be preserved to keep
+	// the bounding volume intact. Each gets a unique slot in the cell map, even
+	// if their raw cell collides, unless they share the same position exactly.
+	void PreserveExtremeVertices(
+		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		const std::unordered_set<uint32_t>& xExtremeSet,
+		float fInvCellSize,
+		CellToVertexMap& xCellToVertex,
+		OldToNewIndexMap& xOldToNewIndex,
+		Zenith_Vector<Zenith_Maths::Vector3>& xPositionsOut)
+	{
+		for (uint32_t i = 0; i < xPositions.GetSize(); i++)
+		{
+			if (xExtremeSet.find(i) == xExtremeSet.end())
+				continue;
+
+			const Zenith_Maths::Vector3& xPos = xPositions.Get(i);
+			const DecimationCellKey xKey = ComputeCellKey(xPos, fInvCellSize);
+
+			DecimationCellKey xUniqueKey = xKey;
+			bool bMerged = false;
+			while (xCellToVertex.find(xUniqueKey) != xCellToVertex.end())
+			{
+				const uint32_t uExistingIdx = xCellToVertex[xUniqueKey];
+				if (Zenith_Maths::Length(xPositionsOut.Get(uExistingIdx) - xPos) < 0.0001f)
+				{
+					xOldToNewIndex[i] = uExistingIdx;
+					bMerged = true;
+					break;
+				}
+				xUniqueKey.x += 1000000;
+			}
+
+			if (!bMerged)
+			{
+				const uint32_t uNewIdx = xPositionsOut.GetSize();
+				xPositionsOut.PushBack(xPos);
+				xCellToVertex[xKey] = uNewIdx;
+				xOldToNewIndex[i] = uNewIdx;
+			}
+		}
+	}
+
+	// Phase 2: Non-extreme vertices that land in the same cell collapse to a
+	// single representative — the first occupant wins.
+	void MergeNonExtremeVertices(
+		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		const std::unordered_set<uint32_t>& xExtremeSet,
+		float fInvCellSize,
+		CellToVertexMap& xCellToVertex,
+		OldToNewIndexMap& xOldToNewIndex,
+		Zenith_Vector<Zenith_Maths::Vector3>& xPositionsOut)
+	{
+		for (uint32_t i = 0; i < xPositions.GetSize(); i++)
+		{
+			if (xExtremeSet.find(i) != xExtremeSet.end())
+				continue;
+
+			const Zenith_Maths::Vector3& xPos = xPositions.Get(i);
+			const DecimationCellKey xKey = ComputeCellKey(xPos, fInvCellSize);
+
+			const auto xIt = xCellToVertex.find(xKey);
+			if (xIt == xCellToVertex.end())
+			{
+				const uint32_t uNewIdx = xPositionsOut.GetSize();
+				xPositionsOut.PushBack(xPos);
+				xCellToVertex[xKey] = uNewIdx;
+				xOldToNewIndex[i] = uNewIdx;
+			}
+			else
+			{
+				xOldToNewIndex[i] = xIt->second;
+			}
+		}
+	}
+
+	// Phase 3: Rewrite indices against the new vertex slots and drop triangles
+	// that collapsed to a line or point.
+	void RemapAndFilterIndices(
+		const Zenith_Vector<uint32_t>& xIndices,
+		OldToNewIndexMap& xOldToNewIndex,
+		Zenith_Vector<uint32_t>& xIndicesOut)
+	{
+		for (uint32_t t = 0; t < xIndices.GetSize(); t += 3)
+		{
+			const uint32_t i0 = xOldToNewIndex[xIndices.Get(t + 0)];
+			const uint32_t i1 = xOldToNewIndex[xIndices.Get(t + 1)];
+			const uint32_t i2 = xOldToNewIndex[xIndices.Get(t + 2)];
+
+			if (i0 != i1 && i1 != i2 && i2 != i0)
+			{
+				xIndicesOut.PushBack(i0);
+				xIndicesOut.PushBack(i1);
+				xIndicesOut.PushBack(i2);
+			}
+		}
+	}
+}
+
 const char* Zenith_PhysicsMeshGenerator::GetQualityName(PhysicsMeshQuality eQuality)
 {
 	switch (eQuality)
@@ -407,128 +539,22 @@ void Zenith_PhysicsMeshGenerator::DecimateVertices(
 		return;
 	}
 
-	// CRITICAL: First identify extreme vertices (min/max in each axis)
-	// These must be preserved to maintain correct bounding volume
 	uint32_t uExtremeIndices[6];
 	FindExtremeVertexIndices(xPositions, uExtremeIndices);
 
-	// Create a set of extreme vertex indices for quick lookup
 	std::unordered_set<uint32_t> xExtremeVertexSet;
 	for (int i = 0; i < 6; i++)
 	{
 		xExtremeVertexSet.insert(uExtremeIndices[i]);
 	}
 
-	// Spatial hash for vertex merging
-	struct CellKey
-	{
-		int32_t x, y, z;
-		bool operator==(const CellKey& other) const
-		{
-			return x == other.x && y == other.y && z == other.z;
-		}
-	};
+	CellToVertexMap xCellToVertex;
+	OldToNewIndexMap xOldToNewIndex;
+	const float fInvCellSize = 1.0f / fCellSize;
 
-	struct CellKeyHash
-	{
-		size_t operator()(const CellKey& k) const
-		{
-			return std::hash<int32_t>()(k.x) ^
-			       (std::hash<int32_t>()(k.y) << 1) ^
-			       (std::hash<int32_t>()(k.z) << 2);
-		}
-	};
-
-	std::unordered_map<CellKey, uint32_t, CellKeyHash> xCellToVertex;
-	std::unordered_map<uint32_t, uint32_t> xOldToNewIndex;
-
-	float fInvCellSize = 1.0f / fCellSize;
-
-	// First pass: Add all extreme vertices to ensure they're preserved
-	// This guarantees the bounding volume is maintained
-	for (uint32_t i = 0; i < xPositions.GetSize(); i++)
-	{
-		if (xExtremeVertexSet.find(i) == xExtremeVertexSet.end())
-		{
-			continue; // Not an extreme vertex, skip in first pass
-		}
-
-		const Zenith_Maths::Vector3& xPos = xPositions.Get(i);
-		CellKey xKey;
-		xKey.x = static_cast<int32_t>(std::floor(xPos.x * fInvCellSize));
-		xKey.y = static_cast<int32_t>(std::floor(xPos.y * fInvCellSize));
-		xKey.z = static_cast<int32_t>(std::floor(xPos.z * fInvCellSize));
-
-		// Extreme vertices always get their own slot, even if cell already exists
-		// Use a unique key by adding a large offset to prevent collision
-		CellKey xUniqueKey = xKey;
-		bool bMerged = false;
-		while (xCellToVertex.find(xUniqueKey) != xCellToVertex.end())
-		{
-			// If the cell already has an extreme vertex with the same position, merge
-			uint32_t uExistingIdx = xCellToVertex[xUniqueKey];
-			if (Zenith_Maths::Length(xPositionsOut.Get(uExistingIdx) - xPos) < 0.0001f)
-			{
-				xOldToNewIndex[i] = uExistingIdx;
-				bMerged = true;
-				break;
-			}
-			// Otherwise, find a unique key
-			xUniqueKey.x += 1000000;
-		}
-
-		if (!bMerged)
-		{
-			uint32_t uNewIdx = xPositionsOut.GetSize();
-			xPositionsOut.PushBack(xPos);
-			xCellToVertex[xKey] = uNewIdx; // Map the original key to this extreme vertex
-			xOldToNewIndex[i] = uNewIdx;
-		}
-	}
-
-	// Second pass: Merge non-extreme vertices that fall into the same cell
-	for (uint32_t i = 0; i < xPositions.GetSize(); i++)
-	{
-		if (xExtremeVertexSet.find(i) != xExtremeVertexSet.end())
-		{
-			continue; // Already processed extreme vertex
-		}
-
-		const Zenith_Maths::Vector3& xPos = xPositions.Get(i);
-		CellKey xKey;
-		xKey.x = static_cast<int32_t>(std::floor(xPos.x * fInvCellSize));
-		xKey.y = static_cast<int32_t>(std::floor(xPos.y * fInvCellSize));
-		xKey.z = static_cast<int32_t>(std::floor(xPos.z * fInvCellSize));
-
-		auto xIt = xCellToVertex.find(xKey);
-		if (xIt == xCellToVertex.end())
-		{
-			uint32_t uNewIdx = xPositionsOut.GetSize();
-			xPositionsOut.PushBack(xPos);
-			xCellToVertex[xKey] = uNewIdx;
-			xOldToNewIndex[i] = uNewIdx;
-		}
-		else
-		{
-			xOldToNewIndex[i] = xIt->second;
-		}
-	}
-
-	// Remap indices and filter degenerate triangles
-	for (uint32_t t = 0; t < xIndices.GetSize(); t += 3)
-	{
-		uint32_t i0 = xOldToNewIndex[xIndices.Get(t + 0)];
-		uint32_t i1 = xOldToNewIndex[xIndices.Get(t + 1)];
-		uint32_t i2 = xOldToNewIndex[xIndices.Get(t + 2)];
-
-		// Skip degenerate triangles
-		if (i0 != i1 && i1 != i2 && i2 != i0)
-		{
-			xIndicesOut.PushBack(i0);
-			xIndicesOut.PushBack(i1);
-			xIndicesOut.PushBack(i2);
-		}
-	}
+	PreserveExtremeVertices(xPositions, xExtremeVertexSet, fInvCellSize, xCellToVertex, xOldToNewIndex, xPositionsOut);
+	MergeNonExtremeVertices(xPositions, xExtremeVertexSet, fInvCellSize, xCellToVertex, xOldToNewIndex, xPositionsOut);
+	RemapAndFilterIndices(xIndices, xOldToNewIndex, xIndicesOut);
 }
 
 void Zenith_PhysicsMeshGenerator::FindExtremeVertexIndices(

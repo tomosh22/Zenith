@@ -316,6 +316,89 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 	}
 }
 
+void Zenith_ModelComponent::ReadModelInstanceWithMaterials(Zenith_DataStream& xStream, uint32_t uVersion)
+{
+	// Read model GUID
+	m_xModel.ReadFromDataStream(xStream);
+
+	// Resolve GUID to path and load the model
+	if (m_xModel.IsSet())
+	{
+		m_strModelPath = m_xModel.GetPath();
+		if (!m_strModelPath.empty())
+		{
+			LoadModel(m_strModelPath);
+		}
+		else
+		{
+			Zenith_Error(LOG_CATEGORY_MESH, "Failed to resolve model GUID to path");
+		}
+	}
+
+	if (uVersion < MODEL_COMPONENT_SERIALIZE_VERSION_MATERIALS)
+		return;
+
+	uint32_t uNumMaterials = 0;
+	xStream >> uNumMaterials;
+
+	for (uint32_t u = 0; u < uNumMaterials; u++)
+	{
+		Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+		if (!pxMaterial)
+			continue;
+
+		pxMaterial->SetName("LoadedMaterial");
+		pxMaterial->ReadFromDataStream(xStream);
+		pxMaterial->AddRef();  // Add reference for this component's usage
+
+		if (m_pxModelInstance && u < m_pxModelInstance->GetNumMaterials())
+		{
+			m_pxModelInstance->SetMaterial(u, pxMaterial);
+		}
+	}
+}
+
+void Zenith_ModelComponent::ReadLegacyMeshEntries(Zenith_DataStream& xStream)
+{
+	u_int uNumEntries;
+	xStream >> uNumEntries;
+
+	for (u_int u = 0; u < uNumEntries; u++)
+	{
+		std::string strMeshPath;
+		xStream >> strMeshPath;
+
+		std::string strResolvedMeshPath = Zenith_AssetRegistry::ResolvePath(strMeshPath);
+
+		Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+		if (!pxMaterial)
+		{
+			// Skip animation path read even when material allocation failed
+			std::string strAnimPath;
+			xStream >> strAnimPath;
+			continue;
+		}
+
+		pxMaterial->SetName("Material");
+		pxMaterial->ReadFromDataStream(xStream);
+
+		std::string strAnimPath;
+		xStream >> strAnimPath;
+
+		if (strResolvedMeshPath.empty() || !Zenith_FileAccess::FileExists(strResolvedMeshPath.c_str()))
+			continue;  // material stays in registry with refcount 0, will be cleaned up later
+
+		Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
+		Flux_MeshGeometry::LoadFromFile(strResolvedMeshPath.c_str(), *pxGeometry);
+		pxGeometry->m_strSourcePath = strMeshPath;  // Preserve prefixed path for future serialization
+
+		MeshEntry xEntry;
+		xEntry.m_pxGeometry = pxGeometry;
+		xEntry.m_xMaterial.Set(pxMaterial);
+		m_xMeshEntries.PushBack(std::move(xEntry));
+	}
+}
+
 void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	// Clear existing data
@@ -323,7 +406,6 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_xMeshEntries.Clear();
 	m_xModel.Clear();
 
-	// Read serialization version
 	uint32_t uVersion;
 	xStream >> uVersion;
 
@@ -339,97 +421,11 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	if (bUsingModelInstance)
 	{
-		// Read model GUID
-		m_xModel.ReadFromDataStream(xStream);
-
-		// Resolve GUID to path and load the model
-		if (m_xModel.IsSet())
-		{
-			m_strModelPath = m_xModel.GetPath();
-			if (!m_strModelPath.empty())
-			{
-				LoadModel(m_strModelPath);
-			}
-			else
-			{
-				Zenith_Error(LOG_CATEGORY_MESH, "Failed to resolve model GUID to path");
-			}
-		}
-
-		// Version 5+: Read and apply material overrides
-		if (uVersion >= MODEL_COMPONENT_SERIALIZE_VERSION_MATERIALS)
-		{
-			uint32_t uNumMaterials = 0;
-			xStream >> uNumMaterials;
-
-			for (uint32_t u = 0; u < uNumMaterials; u++)
-			{
-				// Create material through registry for proper lifetime management
-				Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-				if (pxMaterial)
-				{
-					pxMaterial->SetName("LoadedMaterial");
-					pxMaterial->ReadFromDataStream(xStream);
-					pxMaterial->AddRef();  // Add reference for this component's usage
-
-					// Apply material to model instance if it was loaded successfully
-					if (m_pxModelInstance && u < m_pxModelInstance->GetNumMaterials())
-					{
-						m_pxModelInstance->SetMaterial(u, pxMaterial);
-					}
-				}
-			}
-		}
+		ReadModelInstanceWithMaterials(xStream, uVersion);
 	}
 	else
 	{
-		// Legacy system: Read mesh entries with file paths
-		// Meshes are loaded from their source paths if available
-		u_int uNumEntries;
-		xStream >> uNumEntries;
-
-		for (u_int u = 0; u < uNumEntries; u++)
-		{
-			// Read mesh path
-			std::string strMeshPath;
-			xStream >> strMeshPath;
-
-			// Resolve prefixed path to absolute for direct file loading
-			std::string strResolvedMeshPath = Zenith_AssetRegistry::ResolvePath(strMeshPath);
-
-			// Read material data through registry for proper lifetime management
-			Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-			if (pxMaterial)
-			{
-				pxMaterial->SetName("Material");
-				pxMaterial->ReadFromDataStream(xStream);
-
-				// Read animation path (for future use)
-				std::string strAnimPath;
-				xStream >> strAnimPath;
-
-				// If mesh path is set, load the mesh from file
-				if (!strResolvedMeshPath.empty() && Zenith_FileAccess::FileExists(strResolvedMeshPath.c_str()))
-				{
-					Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
-					Flux_MeshGeometry::LoadFromFile(strResolvedMeshPath.c_str(), *pxGeometry);
-					pxGeometry->m_strSourcePath = strMeshPath;  // Preserve prefixed path for future serialization
-
-					// Create mesh entry with handle (handles ref counting automatically)
-					MeshEntry xEntry;
-					xEntry.m_pxGeometry = pxGeometry;
-					xEntry.m_xMaterial.Set(pxMaterial);
-					m_xMeshEntries.PushBack(std::move(xEntry));
-				}
-				// else: material stays in registry with refcount 0, will be cleaned up later
-			}
-			else
-			{
-				// Skip animation path read
-				std::string strAnimPath;
-				xStream >> strAnimPath;
-			}
-		}
+		ReadLegacyMeshEntries(xStream);
 	}
 }
 

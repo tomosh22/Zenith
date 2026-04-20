@@ -208,7 +208,12 @@ void Zenith_AIAgentComponent::RenderPropertiesPanel()
 	if (ImGui::CollapsingHeader("Blackboard"))
 	{
 		ImGui::Text("Entries: %u", m_xBlackboard.GetSize());
-		// TODO: Iterate and display blackboard contents
+		m_xBlackboard.IterateEntries(
+			[](void*, const char* szKey, const char* szType, const char* szValue)
+			{
+				ImGui::BulletText("%s = %s (%s)", szKey, szValue, szType);
+			},
+			nullptr);
 	}
 }
 #endif

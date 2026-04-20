@@ -52,6 +52,13 @@ public:
 	// Get number of entries
 	uint32_t GetSize() const { return static_cast<uint32_t>(m_xData.size()); }
 
+	// Iterate over every entry, formatted for display. Caller provides a
+	// function pointer (no captures so it converts from a lambda) and a
+	// user-data pointer; the callback receives the key, a type label, and
+	// the value pre-formatted into a temporary buffer.
+	using EntryDisplayFunc = void(*)(void* pUserData, const char* szKey, const char* szTypeName, const char* szFormattedValue);
+	void IterateEntries(EntryDisplayFunc pfnCallback, void* pUserData) const;
+
 	// ========== Serialization ==========
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const;

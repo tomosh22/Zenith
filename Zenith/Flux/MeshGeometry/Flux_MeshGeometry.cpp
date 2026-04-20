@@ -272,6 +272,28 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	}
 }
 
+// Reallocate pxDst to hold (uDstCount + uSrcCount) Ts and append uSrcCount
+// entries from pxSrc starting at the uDstCount offset. Returns false on
+// allocation failure (error already logged). Used by Combine() to collapse
+// the five near-identical non-position attribute stanzas.
+template<typename T>
+static bool EnsureAndCopyAttributeStream(T*& pxDst, u_int uDstCount,
+                                        const T* pxSrc, u_int uSrcCount,
+                                        const char* szName)
+{
+	// Cast to u_int64 before addition to prevent uint32_t overflow
+	u_int64 ulNewSize = (static_cast<u_int64>(uDstCount) + uSrcCount) * sizeof(T);
+	T* pxNew = static_cast<T*>(Zenith_MemoryManagement::Reallocate(pxDst, ulNewSize));
+	if (pxNew == nullptr)
+	{
+		Zenith_Error(LOG_CATEGORY_MESH, "%s buffer reallocation failed", szName);
+		return false;
+	}
+	pxDst = pxNew;
+	memcpy(pxDst + uDstCount, pxSrc, uSrcCount * sizeof(T));
+	return true;
+}
+
 void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry& xSrc)
 {
 	Zenith_Assert(xDst.m_xBufferLayout == xSrc.m_xBufferLayout, "Incompatible meshes");
@@ -330,75 +352,20 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 		memcpy(xDst.m_pxPositions + xDst.m_uNumVerts, xSrc.m_pxPositions, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
 	}
 
-	if (xDst.m_pxNormals)
-	{
-		// Cast to u_int64 before addition to prevent uint32_t overflow
-		u_int64 newSize = (static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
-		Zenith_Maths::Vector3* pNewNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxNormals, newSize));
-		if (pNewNormals == nullptr)
-		{
-			Zenith_Error(LOG_CATEGORY_MESH, "Normal buffer reallocation failed");
-			return;
-		}
-		xDst.m_pxNormals = pNewNormals;
-		memcpy(xDst.m_pxNormals + xDst.m_uNumVerts, xSrc.m_pxNormals, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
-	}
+	if (xDst.m_pxNormals && !EnsureAndCopyAttributeStream(xDst.m_pxNormals, xDst.m_uNumVerts, xSrc.m_pxNormals, xSrc.m_uNumVerts, "Normal"))
+		return;
 
-	if (xDst.m_pxTangents)
-	{
-		// Cast to u_int64 before addition to prevent uint32_t overflow
-		u_int64 newSize = (static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
-		Zenith_Maths::Vector3* pNewTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxTangents, newSize));
-		if (pNewTangents == nullptr)
-		{
-			Zenith_Error(LOG_CATEGORY_MESH, "Tangent buffer reallocation failed");
-			return;
-		}
-		xDst.m_pxTangents = pNewTangents;
-		memcpy(xDst.m_pxTangents + xDst.m_uNumVerts, xSrc.m_pxTangents, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
-	}
+	if (xDst.m_pxTangents && !EnsureAndCopyAttributeStream(xDst.m_pxTangents, xDst.m_uNumVerts, xSrc.m_pxTangents, xSrc.m_uNumVerts, "Tangent"))
+		return;
 
-	if (xDst.m_pxBitangents)
-	{
-		// Cast to u_int64 before addition to prevent uint32_t overflow
-		u_int64 newSize = (static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
-		Zenith_Maths::Vector3* pNewBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxBitangents, newSize));
-		if (pNewBitangents == nullptr)
-		{
-			Zenith_Error(LOG_CATEGORY_MESH, "Bitangent buffer reallocation failed");
-			return;
-		}
-		xDst.m_pxBitangents = pNewBitangents;
-		memcpy(xDst.m_pxBitangents + xDst.m_uNumVerts, xSrc.m_pxBitangents, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
-	}
+	if (xDst.m_pxBitangents && !EnsureAndCopyAttributeStream(xDst.m_pxBitangents, xDst.m_uNumVerts, xSrc.m_pxBitangents, xSrc.m_uNumVerts, "Bitangent"))
+		return;
 
-	if (xDst.m_pxColors)
-	{
-		// Cast to u_int64 before addition to prevent uint32_t overflow
-		u_int64 newSize = (static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector4);
-		Zenith_Maths::Vector4* pNewColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxColors, newSize));
-		if (pNewColors == nullptr)
-		{
-			Zenith_Error(LOG_CATEGORY_MESH, "Color buffer reallocation failed");
-			return;
-		}
-		xDst.m_pxColors = pNewColors;
-		memcpy(xDst.m_pxColors + xDst.m_uNumVerts, xSrc.m_pxColors, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector4));
-	}
+	if (xDst.m_pxColors && !EnsureAndCopyAttributeStream(xDst.m_pxColors, xDst.m_uNumVerts, xSrc.m_pxColors, xSrc.m_uNumVerts, "Color"))
+		return;
 
-	if (xDst.m_pfMaterialLerps)
-	{
-		// Cast to u_int64 before addition to prevent uint32_t overflow
-		u_int64 newSize = (static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts) * sizeof(float);
-		float* pNewMaterialLerps = static_cast<float*>(Zenith_MemoryManagement::Reallocate(xDst.m_pfMaterialLerps, newSize));
-		if (pNewMaterialLerps == nullptr)
-		{
-			Zenith_Error(LOG_CATEGORY_MESH, "MaterialLerps buffer reallocation failed");
-			return;
-		}
-		xDst.m_pfMaterialLerps = pNewMaterialLerps;
-		memcpy(xDst.m_pfMaterialLerps + xDst.m_uNumVerts, xSrc.m_pfMaterialLerps, xSrc.m_uNumVerts * sizeof(float));
-	}
+	if (xDst.m_pfMaterialLerps && !EnsureAndCopyAttributeStream(xDst.m_pfMaterialLerps, xDst.m_uNumVerts, xSrc.m_pfMaterialLerps, xSrc.m_uNumVerts, "MaterialLerps"))
+		return;
 
 
 	xDst.m_uNumVerts += xSrc.m_uNumVerts;

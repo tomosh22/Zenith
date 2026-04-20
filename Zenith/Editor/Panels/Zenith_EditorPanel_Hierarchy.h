@@ -52,8 +52,7 @@ namespace Zenith_EditorPanelHierarchy
 	void RenderScenesSection(
 		Zenith_EntityID& uEntityToDelete,
 		Zenith_EntityID& uDraggedEntityID,
-		Zenith_EntityID& uDropTargetEntityID,
-		Zenith_Scene& xDropTargetScene);
+		Zenith_EntityID& uDropTargetEntityID);
 
 	/**
 	 * Render the empty drop-zone at the bottom of the panel used to unparent

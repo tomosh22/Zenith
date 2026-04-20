@@ -335,11 +335,11 @@ void Zenith_ModelComponent::RenderMeshMaterialSlots(uint32_t uMeshIdx, Zenith_Ma
 			AssignTextureToSlot(szPath, uMeshIdx, eSlot);
 		};
 	};
-	RenderTextureSlot("Diffuse", xMaterial, TEXTURE_SLOT_DIFFUSE, true, 48.0f, fnAssign(TEXTURE_SLOT_DIFFUSE));
-	RenderTextureSlot("Normal", xMaterial, TEXTURE_SLOT_NORMAL, true, 48.0f, fnAssign(TEXTURE_SLOT_NORMAL));
-	RenderTextureSlot("Roughness/Metallic", xMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC, true, 48.0f, fnAssign(TEXTURE_SLOT_ROUGHNESS_METALLIC));
-	RenderTextureSlot("Occlusion", xMaterial, TEXTURE_SLOT_OCCLUSION, true, 48.0f, fnAssign(TEXTURE_SLOT_OCCLUSION));
-	RenderTextureSlot("Emissive", xMaterial, TEXTURE_SLOT_EMISSIVE, true, 48.0f, fnAssign(TEXTURE_SLOT_EMISSIVE));
+	RenderTextureSlot("Diffuse", xMaterial, TEXTURE_SLOT_DIFFUSE, 48.0f, fnAssign(TEXTURE_SLOT_DIFFUSE));
+	RenderTextureSlot("Normal", xMaterial, TEXTURE_SLOT_NORMAL, 48.0f, fnAssign(TEXTURE_SLOT_NORMAL));
+	RenderTextureSlot("Roughness/Metallic", xMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC, 48.0f, fnAssign(TEXTURE_SLOT_ROUGHNESS_METALLIC));
+	RenderTextureSlot("Occlusion", xMaterial, TEXTURE_SLOT_OCCLUSION, 48.0f, fnAssign(TEXTURE_SLOT_OCCLUSION));
+	RenderTextureSlot("Emissive", xMaterial, TEXTURE_SLOT_EMISSIVE, 48.0f, fnAssign(TEXTURE_SLOT_EMISSIVE));
 }
 
 #endif // ZENITH_TOOLS

@@ -717,6 +717,11 @@ private:
 	static int AllocateSceneHandle();
 	static void FreeSceneHandle(int iHandle);
 
+	// Per-frame helpers called from Update(). Split out to flatten Update()'s
+	// nesting — the animation collection walk was five levels deep inline.
+	static void CollectUpdatableScenes(Zenith_Vector<Zenith_SceneData*>& axOut);
+	static void CollectAnimationsFromScene(Zenith_SceneData* pxData);
+
 	/**
 	 * Create and return an invalid scene handle (handle=-1, generation=0).
 	 * Used by query and load functions to return a sentinel when a scene cannot be found or loaded.
@@ -737,6 +742,33 @@ private:
 	 * @param xScene The scene being unloaded (with valid generation for callbacks)
 	 */
 	static void FireUnloadCallbacksAndSelectNewActive(int iHandle, Zenith_Scene xScene);
+
+	//==========================================================================
+	// LoadScene helpers — carved out so LoadScene reads as an orchestration
+	// shell instead of a 250-line multi-phase body. See LoadScene for the
+	// ordering contract that ties these together.
+	//==========================================================================
+
+	// Phase 1: pre-condition checks. Returns false if the caller must bail
+	// with MakeInvalidScene().
+	static bool ValidateLoadRequest(const std::string& strPath);
+
+	// Phase 2: if called from inside an Update (s_bIsUpdating), defer to the
+	// async path. Returns true when the load was handled (caller must return
+	// xOutScene); false means continue synchronously.
+	static bool HandleDeferredLoad(const std::string& strPath, Zenith_SceneLoadMode eMode, Zenith_Scene& xOutScene);
+
+	// Phase 3: file-existence / circular-load / recursion-depth / SINGLE-mode
+	// header validation. Returns false if the caller must bail.
+	static bool ValidateFileAndDetectCircular(const std::string& strPath, const std::string& strCanonicalPath, Zenith_SceneLoadMode eMode);
+
+	// Phase 4b: SINGLE-mode teardown + swap. Called only after a successful
+	// staging-scene deserialization. Fires the consolidated ActiveSceneChanged.
+	static void PerformSingleModeTeardownAndSwap(Zenith_Scene xScene, Zenith_Scene xOldActiveBeforeTeardown);
+
+	// Phase 5: Awake / OnEnable / IsActivated flip / SceneLoaded callbacks /
+	// clear loading path. Runs after the scene is fully deserialized.
+	static void DispatchLifecycleAndFire(Zenith_Scene xScene, Zenith_SceneData* pxSceneData, const std::string& strCanonicalPath, Zenith_SceneLoadMode eMode);
 
 	//==========================================================================
 	// Scene Storage

@@ -53,6 +53,16 @@ public:
 
 private:
 	static BoundingBox CalculateBoundingBox(Zenith_Entity* pxEntity);
+
+	// Test a single candidate hit for RaycastSelect. Returns true iff the model
+	// was hit (either by its physics mesh or, as fallback, its cached AABB),
+	// with the hit distance stored in fOutDistance. fMaxDistance lets callers
+	// early-out when already beyond the closest known hit.
+	static bool TestEntityHit(class Zenith_ModelComponent* pxModel,
+		const Zenith_Maths::Vector3& xRayOrigin,
+		const Zenith_Maths::Vector3& xRayDir,
+		float fMaxDistance,
+		float& fOutDistance);
 };
 
 #endif // ZENITH_TOOLS

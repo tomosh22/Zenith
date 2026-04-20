@@ -2370,6 +2370,8 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_AsyncLoad.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_Callbacks.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_Queries.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneOperation.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
@@ -2413,6 +2415,8 @@
     <ClCompile Include="..\Zenith\Flux\Primitives\Flux_Primitives.cpp" />
     <ClCompile Include="..\Zenith\Flux\Quads\Flux_Quads.cpp" />
     <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.cpp" />
+    <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Compilation.cpp" />
+    <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Execution.cpp" />
     <ClCompile Include="..\Zenith\Flux\SDFs\Flux_SDFs.cpp" />
     <ClCompile Include="..\Zenith\Flux\Shadows\Flux_Shadows.cpp" />
     <ClCompile Include="..\Zenith\Flux\Skybox\Flux_Skybox.cpp" />
@@ -2459,9 +2463,11 @@
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.cpp" />
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_ComputePipelineBuilder.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_ImGuiIntegration.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp" />
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Shader.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Texture.cpp" />
     <ClCompile Include="..\Zenith\Windows\Callstack\Zenith_Windows_Callstack.cpp" />

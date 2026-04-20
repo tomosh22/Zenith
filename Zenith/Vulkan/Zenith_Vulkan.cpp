@@ -260,6 +260,177 @@ void Zenith_Vulkan::OnFluxPerFrameBegin(u_int uRingIndex, void* /*pUserData*/)
 #endif
 }
 
+// Tracks the open render-pass state across passes within a worker's slice.
+// Compared element-wise (resource + mip + layer) so two passes writing the
+// same base image but different subresources (cube faces, mip levels) restart
+// the render pass instead of mistakenly continuing it.
+struct RenderPassRecordingState
+{
+	Flux_RenderGraph_AttachmentRef m_axColourAttachments[FLUX_MAX_TARGETS];
+	uint32_t m_uNumColour = 0;
+	Flux_RenderGraph_AttachmentRef m_xDepthStencil;
+	bool m_bDepthIsReadOnly = false;
+};
+
+static void ResetRenderPassState(RenderPassRecordingState& xState)
+{
+	for (u_int u = 0; u < xState.m_uNumColour; u++)
+	{
+		xState.m_axColourAttachments[u] = Flux_RenderGraph_AttachmentRef();
+	}
+	xState.m_uNumColour = 0;
+	xState.m_xDepthStencil = Flux_RenderGraph_AttachmentRef();
+	xState.m_bDepthIsReadOnly = false;
+}
+
+// Aliasing barriers + image/buffer prologue transitions for this pass. Sits
+// outside any active render pass scope so vkCmdPipelineBarrier is unrestricted.
+// One barrier per aliasing entry (not unioned) so stage masks stay tight — a
+// colour→fragment hand-off stays at ColourAttachmentOutput → FragmentShader
+// rather than eAllCommands. xEntry.m_pxPass is asserted non-null in
+// SubmitCommandList; we no-op if absent so this helper is safe to call early.
+static void EmitGraphPrologueBarriers(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_CommandListEntry& xEntry)
+{
+	if (!xEntry.m_pxPass) return;
+
+	for (Zenith_Vector<Flux_RenderGraph_AliasingBarrier>::Iterator itA(xEntry.m_pxPass->m_xAliasingBarriers); !itA.Done(); itA.Next())
+	{
+		const Flux_RenderGraph_AliasingBarrier& rxA = itA.GetData();
+		vk::ImageLayout        eSrcLayoutUnused, eDstLayoutUnused;
+		vk::AccessFlags        eSrcMask, eDstMask;
+		vk::PipelineStageFlags eSrcStage, eDstStage;
+		Flux_ResourceAccessToVulkan(rxA.m_eSrcAccess, rxA.m_bSrcIsDepth, eSrcLayoutUnused, eSrcMask, eSrcStage);
+		Flux_ResourceAccessToVulkan(rxA.m_eDstAccess, rxA.m_bDstIsDepth, eDstLayoutUnused, eDstMask, eDstStage);
+
+		vk::MemoryBarrier xMemBarrier = vk::MemoryBarrier()
+			.setSrcAccessMask(eSrcMask)
+			.setDstAccessMask(eDstMask);
+		xCommandBuffer.GetCurrentCmdBuffer().pipelineBarrier(
+			eSrcStage, eDstStage, vk::DependencyFlags{},
+			1, &xMemBarrier, 0, nullptr, 0, nullptr);
+	}
+
+	// Image- and buffer-kind prologue barriers share one list (see header doc
+	// on Flux_RenderGraph_Barrier); dispatch on resource kind here.
+	for (Zenith_Vector<Flux_RenderGraph_Barrier>::Iterator itB(xEntry.m_pxPass->m_xPrologueBarriers); !itB.Done(); itB.Next())
+	{
+		const Flux_RenderGraph_Barrier& rxB = itB.GetData();
+		if (rxB.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
+			xCommandBuffer.BufferBarrier(rxB.m_xResource.AsBuffer(), rxB.m_eSrcAccess, rxB.m_eDstAccess);
+		}
+		else
+		{
+			xCommandBuffer.ImageTransition(
+				rxB.m_xResource,
+				rxB.m_uBaseMip, rxB.m_uMipCount,
+				rxB.m_uBaseLayer, rxB.m_uLayerCount,
+				rxB.m_eSrcAccess, rxB.m_eDstAccess);
+		}
+	}
+}
+
+// Compute pass: close any open render pass (compute happens outside one),
+// emit barriers, then iterate the command list (which becomes vkCmdDispatch).
+static void ProcessComputePass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, RenderPassRecordingState& xState,
+	const Flux_CommandListEntry& xEntry)
+{
+	if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
+	{
+		xCommandBuffer.EndRenderPass();
+		ResetRenderPassState(xState);
+	}
+	EmitGraphPrologueBarriers(xCommandBuffer, xEntry);
+	xEntry.m_pxCmdList->IterateCommands(&xCommandBuffer);
+}
+
+// Compare attachment lists element-wise (resource pointer + mip + layer).
+// Returns true if both lists describe the same target set, allowing render-
+// pass continuation; otherwise the recorder must End/Begin a fresh render pass.
+static bool RenderTargetsMatch(const Flux_RenderGraph_AttachmentRef* axA, uint32_t uNumA,
+	const Flux_RenderGraph_AttachmentRef* axB, uint32_t uNumB,
+	const Flux_RenderGraph_AttachmentRef& rxDepthA, const Flux_RenderGraph_AttachmentRef& rxDepthB)
+{
+	auto RefsMatch = [](const Flux_RenderGraph_AttachmentRef& a, const Flux_RenderGraph_AttachmentRef& b) -> bool
+	{
+		return a.m_xResource.GetVoidPtr() == b.m_xResource.GetVoidPtr()
+			&& a.m_uMip == b.m_uMip
+			&& a.m_uLayer == b.m_uLayer;
+	};
+	if (uNumA != uNumB) return false;
+	if (!RefsMatch(rxDepthA, rxDepthB)) return false;
+	for (uint32_t u = 0; u < uNumA; u++)
+	{
+		if (!RefsMatch(axA[u], axB[u])) return false;
+	}
+	return true;
+}
+
+// Graphics pass: decide whether to restart the render pass (target set differs,
+// clear requested, depth-readonly flag flipped, or no pass open) or continue
+// the existing one. Continuation still End/Begins if there are prologue
+// barriers, since vkCmdPipelineBarrier inside a render pass needs subpass
+// self-deps we don't model.
+static void ProcessRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, RenderPassRecordingState& xState,
+	const Flux_CommandListEntry& xEntry, u_int uInvocationIndex, u_int i)
+{
+	const Flux_RenderGraph_AttachmentRef* axColourAttachments = xEntry.m_axColourAttachments;
+	const uint32_t uNumColour = xEntry.m_uNumColourAttachments;
+	const Flux_RenderGraph_AttachmentRef& rxDepthStencil = xEntry.m_xDepthStencil;
+	const bool bClear = xEntry.m_bClearTargets;
+	const bool bDepthIsReadOnly = xEntry.m_bDepthIsReadOnly;
+
+	const bool bTargetsChanged = !RenderTargetsMatch(
+		axColourAttachments, uNumColour,
+		xState.m_axColourAttachments, xState.m_uNumColour,
+		rxDepthStencil, xState.m_xDepthStencil);
+
+	// Must restart when bDepthIsReadOnly differs because the render pass was
+	// created with the previous flag baked into its initial/final layouts.
+	if (bTargetsChanged || bClear || xCommandBuffer.m_xCurrentRenderPass == VK_NULL_HANDLE
+		|| bDepthIsReadOnly != xState.m_bDepthIsReadOnly)
+	{
+		if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
+		{
+			xCommandBuffer.EndRenderPass();
+		}
+		// Graph-driven prologue barriers put every declared subresource into the
+		// layout the upcoming render pass expects (matching the render-pass
+		// attachment initialLayout set by TargetSetupToRenderPass).
+		EmitGraphPrologueBarriers(xCommandBuffer, xEntry);
+
+		xCommandBuffer.BeginRenderPass(axColourAttachments, uNumColour, rxDepthStencil, bClear, bClear, bClear, bDepthIsReadOnly);
+		xState.m_uNumColour = uNumColour;
+		xState.m_xDepthStencil = rxDepthStencil;
+		xState.m_bDepthIsReadOnly = bDepthIsReadOnly;
+		for (uint32_t u = 0; u < uNumColour; u++)
+		{
+			xState.m_axColourAttachments[u] = axColourAttachments[u];
+		}
+		xEntry.m_pxCmdList->IterateCommands(&xCommandBuffer);
+		return;
+	}
+
+	Zenith_Assert(xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE,
+		"RecordCommandBuffersTask: Attempting to continue render pass for '%s' but no render pass is active (worker %u, index %u)",
+		xEntry.m_pxCmdList->GetName(), uInvocationIndex, i);
+
+	// Same target setup as previous pass — but the pass may still READ different
+	// resources as SRVs (e.g. its own dependencies on upstream UAV writes). We
+	// have to End+Begin the render pass to emit the barriers; restart rather
+	// than skip them.
+	const bool bHasBarriers = xEntry.m_pxPass && (
+		xEntry.m_pxPass->m_xPrologueBarriers.GetSize() > 0 ||
+		xEntry.m_pxPass->m_xAliasingBarriers.GetSize() > 0);
+	if (bHasBarriers)
+	{
+		xCommandBuffer.EndRenderPass();
+		EmitGraphPrologueBarriers(xCommandBuffer, xEntry);
+		xCommandBuffer.BeginRenderPass(axColourAttachments, uNumColour, rxDepthStencil, false /*bClear*/, false, false, bDepthIsReadOnly);
+	}
+	xEntry.m_pxCmdList->IterateCommands(&xCommandBuffer);
+}
+
 // Task array function to record command buffers in parallel.
 //
 // W15/W20/W21: consumes the render-graph-produced Flux_CommandListEntry layout.
@@ -272,14 +443,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 	Zenith_Vulkan_CommandBuffer& xCommandBuffer = Zenith_Vulkan::s_pxCurrentFrame->GetWorkerCommandBuffer(uInvocationIndex);
 	xCommandBuffer.BeginRecording();
 
-	// Track current render pass state. Carriers (resource + mip + layer) are
-	// compared element-wise so that two passes writing the same base image but
-	// different subresources (e.g. two cube faces, or two mip levels) correctly
-	// restart the render pass.
-	Flux_RenderGraph_AttachmentRef axCurrentColourAttachments[FLUX_MAX_TARGETS];
-	uint32_t uCurrentNumColour = 0;
-	Flux_RenderGraph_AttachmentRef xCurrentDepthStencil;
-	bool bCurrentDepthIsReadOnly = false;
+	RenderPassRecordingState xState;
 
 	const u_int uStartIndex = pWorkDistribution->auStartIndex[uInvocationIndex];
 	const u_int uEndIndex = pWorkDistribution->auEndIndex[uInvocationIndex];
@@ -287,168 +451,18 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 	for (u_int i = uStartIndex; i < uEndIndex; i++)
 	{
 		const Flux_CommandListEntry& xEntry = Flux::s_xPendingCommandLists.Get(i);
-		const Flux_CommandList* pxCommandList = xEntry.m_pxCmdList;
-		const Flux_RenderGraph_AttachmentRef* axColourAttachments = xEntry.m_axColourAttachments;
-		uint32_t uNumColour = xEntry.m_uNumColourAttachments;
-		const Flux_RenderGraph_AttachmentRef& rxDepthStencil = xEntry.m_xDepthStencil;
-		const bool bClear = xEntry.m_bClearTargets;
-		const bool bDepthIsReadOnly = xEntry.m_bDepthIsReadOnly;
-
-		const bool bIsComputePass = (uNumColour == 0 && !rxDepthStencil.IsValid());
-
-		// Emit graph-synthesised prologue barriers AFTER any pending render pass
-		// is closed but BEFORE the next pass's render pass / dispatch begins.
-		// Sits outside any active render pass scope so vkCmdPipelineBarrier is
-		// unrestricted. xEntry.m_pxPass is asserted non-null in SubmitCommandList.
-		auto EmitGraphPrologueBarriers = [&]()
-		{
-			if (!xEntry.m_pxPass) return;
-
-			// Aliasing barriers: for each transient handed off TO this pass
-			// from a different prior occupant of the same aliasing-pool slot,
-			// emit one vk::MemoryBarrier with the prior occupant's last-access
-			// stage/mask as source and this transient's first-access as dest.
-			// Emitting one barrier per entry (rather than unioning into a
-			// single over-conservative barrier) keeps stage masks tight — a
-			// colour-attachment hand-off stays at ColourAttachmentOutput →
-			// FragmentShader, not eAllCommands. The aliased VkImages are
-			// distinct VkImage objects; the new image enters the pass with
-			// layout eUndefined and its own prologue ImageTransition drives
-			// the per-subresource layout transition separately. The memory
-			// barrier below is solely about "prior write flushed before new
-			// first access reads/writes the memory" — no image-layout change.
-			for (Zenith_Vector<Flux_RenderGraph_AliasingBarrier>::Iterator itA(xEntry.m_pxPass->m_xAliasingBarriers); !itA.Done(); itA.Next())
-			{
-				const Flux_RenderGraph_AliasingBarrier& rxA = itA.GetData();
-				vk::ImageLayout        eSrcLayoutUnused, eDstLayoutUnused;
-				vk::AccessFlags        eSrcMask, eDstMask;
-				vk::PipelineStageFlags eSrcStage, eDstStage;
-				Flux_ResourceAccessToVulkan(rxA.m_eSrcAccess, rxA.m_bSrcIsDepth, eSrcLayoutUnused, eSrcMask, eSrcStage);
-				Flux_ResourceAccessToVulkan(rxA.m_eDstAccess, rxA.m_bDstIsDepth, eDstLayoutUnused, eDstMask, eDstStage);
-
-				vk::MemoryBarrier xMemBarrier = vk::MemoryBarrier()
-					.setSrcAccessMask(eSrcMask)
-					.setDstAccessMask(eDstMask);
-				xCommandBuffer.GetCurrentCmdBuffer().pipelineBarrier(
-					eSrcStage,
-					eDstStage,
-					vk::DependencyFlags{},
-					1, &xMemBarrier,
-					0, nullptr,
-					0, nullptr);
-			}
-
-			// Image- and buffer-kind prologue barriers share the same
-			// Flux_RenderGraph_Barrier list (see header doc on the struct);
-			// dispatch on resource kind here. Buffer entries leave the
-			// mip/layer fields at their (0,1,0,1) defaults — the BufferBarrier
-			// method does not read them.
-			for (Zenith_Vector<Flux_RenderGraph_Barrier>::Iterator itB(xEntry.m_pxPass->m_xPrologueBarriers); !itB.Done(); itB.Next())
-			{
-				const Flux_RenderGraph_Barrier& rxB = itB.GetData();
-				if (rxB.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
-				{
-					xCommandBuffer.BufferBarrier(rxB.m_xResource.AsBuffer(), rxB.m_eSrcAccess, rxB.m_eDstAccess);
-				}
-				else
-				{
-					xCommandBuffer.ImageTransition(
-						rxB.m_xResource,
-						rxB.m_uBaseMip, rxB.m_uMipCount,
-						rxB.m_uBaseLayer, rxB.m_uLayerCount,
-						rxB.m_eSrcAccess, rxB.m_eDstAccess);
-				}
-			}
-		};
-
+		const bool bIsComputePass = (xEntry.m_uNumColourAttachments == 0 && !xEntry.m_xDepthStencil.IsValid());
 		if (bIsComputePass)
 		{
-			if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
-			{
-				xCommandBuffer.EndRenderPass();
-				for (u_int u = 0; u < uCurrentNumColour; u++)
-				{
-					axCurrentColourAttachments[u] = Flux_RenderGraph_AttachmentRef();
-				}
-				uCurrentNumColour = 0;
-				xCurrentDepthStencil = Flux_RenderGraph_AttachmentRef();
-				bCurrentDepthIsReadOnly = false;
-			}
-			EmitGraphPrologueBarriers();
-			pxCommandList->IterateCommands(&xCommandBuffer);
+			ProcessComputePass(xCommandBuffer, xState, xEntry);
 		}
-		// Must also restart the render pass when bDepthIsReadOnly differs,
-		// because the render pass was created with the previous pass's flag
-		// baked into its initial/final layouts. Continuing with a draw that
-		// needs the opposite access would produce an attachment-layout mismatch.
 		else
 		{
-			auto RefsMatch = [](const Flux_RenderGraph_AttachmentRef& a, const Flux_RenderGraph_AttachmentRef& b) -> bool
-			{
-				return a.m_xResource.GetVoidPtr() == b.m_xResource.GetVoidPtr()
-					&& a.m_uMip == b.m_uMip
-					&& a.m_uLayer == b.m_uLayer;
-			};
-
-			bool bTargetsChanged = (uNumColour != uCurrentNumColour) || !RefsMatch(rxDepthStencil, xCurrentDepthStencil);
-			for (u_int u = 0; u < uNumColour && !bTargetsChanged; u++)
-			{
-				if (!RefsMatch(axColourAttachments[u], axCurrentColourAttachments[u]))
-				{
-					bTargetsChanged = true;
-					break;
-				}
-			}
-			if (bTargetsChanged || bClear || xCommandBuffer.m_xCurrentRenderPass == VK_NULL_HANDLE || bDepthIsReadOnly != bCurrentDepthIsReadOnly)
-			{
-				if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
-				{
-					xCommandBuffer.EndRenderPass();
-				}
-
-				// Graph-driven prologue barriers put every declared subresource
-				// into the layout the upcoming render pass expects (matching
-				// the render-pass attachment initialLayout set by
-				// TargetSetupToRenderPass).
-				EmitGraphPrologueBarriers();
-
-				xCommandBuffer.BeginRenderPass(axColourAttachments, uNumColour, rxDepthStencil, bClear, bClear, bClear, bDepthIsReadOnly);
-				uCurrentNumColour = uNumColour;
-				xCurrentDepthStencil = rxDepthStencil;
-				bCurrentDepthIsReadOnly = bDepthIsReadOnly;
-				for (uint32_t u = 0; u < uNumColour; u++)
-				{
-					axCurrentColourAttachments[u] = axColourAttachments[u];
-				}
-				pxCommandList->IterateCommands(&xCommandBuffer);
-			}
-			else
-			{
-				Zenith_Assert(xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE,
-					"RecordCommandBuffersTask: Attempting to continue render pass for '%s' but no render pass is active (worker %u, index %u)",
-					pxCommandList->GetName(), uInvocationIndex, i);
-				// Same target setup as the previous pass, so we don't restart the
-				// render pass. The pass may still READ different resources as SRVs
-				// (e.g. its own dependencies on upstream UAV writes) — emit the
-				// prologue barriers anyway. We have to End+Begin the render pass
-				// to do this, since vkCmdPipelineBarrier inside a render pass
-				// needs subpass self-deps which we don't model. Restart rather
-				// than skip the barriers.
-				const bool bHasBarriers = xEntry.m_pxPass && (
-					xEntry.m_pxPass->m_xPrologueBarriers.GetSize() > 0 ||
-					xEntry.m_pxPass->m_xAliasingBarriers.GetSize() > 0);
-				if (bHasBarriers)
-				{
-					xCommandBuffer.EndRenderPass();
-					EmitGraphPrologueBarriers();
-					xCommandBuffer.BeginRenderPass(axColourAttachments, uNumColour, rxDepthStencil, false /*bClear*/, false, false, bDepthIsReadOnly);
-				}
-				pxCommandList->IterateCommands(&xCommandBuffer);
-			}
+			ProcessRenderPass(xCommandBuffer, xState, xEntry, uInvocationIndex, i);
 		}
 	}
 
-	if (uCurrentNumColour > 0 || xCurrentDepthStencil.IsValid())
+	if (xState.m_uNumColour > 0 || xState.m_xDepthStencil.IsValid())
 	{
 		xCommandBuffer.EndRenderPass();
 		// No after-pass transition — the resource sits in its render-pass

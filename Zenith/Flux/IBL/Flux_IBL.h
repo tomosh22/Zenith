@@ -141,6 +141,19 @@ private:
 	static void GenerateIrradianceFace(u_int uFace);
 	static void GeneratePrefilteredFace(u_int uMip, u_int uFace);
 
+	// UpdateGraphPassEnables phases — split out so each step (reset / BRDF /
+	// first-gen / amortised regen / apply) is independently readable.
+	static void ResetIBLRegenStateForRecompile();
+	static bool ResolveBRDFLUTRun();
+	static void RunFirstGenerationFrame(bool (&abRunIrradiance)[6],
+		bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6]);
+	static void AdvanceAmortizedRegen(bool (&abRunIrradiance)[6],
+		bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6]);
+	static void ApplyResolvedIBLEnables(Flux_RenderGraph& xGraph,
+		bool bRunBRDF,
+		const bool (&abRunIrradiance)[6],
+		const bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6]);
+
 	// Pipelines
 	static Flux_Pipeline s_xBRDFLUTPipeline;
 	static Flux_Pipeline s_xIrradianceConvolvePipeline;

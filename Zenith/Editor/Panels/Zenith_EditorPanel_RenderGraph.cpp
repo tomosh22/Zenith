@@ -145,9 +145,6 @@ namespace Zenith_EditorPanelRenderGraph
 			ImGui::Unindent();
 		}
 
-		// TODO: Barrier display was removed — graph-level barriers were dead code.
-		// Re-add once barrier generation is unified with RecordCommandBuffersTask.
-
 		ImGui::Unindent();
 	}
 

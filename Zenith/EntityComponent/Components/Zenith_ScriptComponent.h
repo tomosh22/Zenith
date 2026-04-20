@@ -314,6 +314,11 @@ public:
 #ifdef ZENITH_TOOLS
 	// Editor UI
 	void RenderPropertiesPanel();
+
+private:
+	void RenderBehaviourSelector();
+	void RenderActiveBehaviour();
+	void ClearCurrentBehaviour();
 #endif
 
 };

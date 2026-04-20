@@ -240,6 +240,17 @@ public:
 	static void UnloadActiveScene();
 
 private:
+	// SetEditorMode transition helpers — split out so each transition's
+	// scene-state shuffling lives in one place. SetEditorMode owns the mode
+	// state itself; these helpers are pure transition routines.
+	// EnterPlayMode: backup scene → locate game camera → dispatch
+	//   OnAwake/OnEnable/OnStart for every entity. Returns false if no scene
+	//   data is loaded — caller is expected to revert s_eEditorMode.
+	// EnterStopMode: queue the deferred scene-restore from backup. The actual
+	//   load runs in next frame's Update() before any render tasks.
+	static bool EnterPlayMode();
+	static void EnterStopMode();
+
 	static void RenderConsolePanel();
 	static void RenderMainMenuBar();
 	static void RenderFileMenu();
@@ -256,6 +267,14 @@ private:
 	// Deferred scene operations (extracted from Update)
 	static bool ProcessDeferredSceneOperations();
 	static bool HandlePendingSceneLoad();
+
+	// FlushPendingSceneOperations branches — split out so each pending
+	// operation lives in one place. All three may run in the same frame
+	// (e.g. save+load), so they're called sequentially from the dispatcher.
+	static void WaitForGPUAndFlushDeferred(const char* szReason);
+	static void HandlePendingSceneReset();
+	static void HandlePendingSceneSave();
+	static void HandlePendingSceneLoadDeferred();
 
 	// Editor input (extracted from Update)
 	static void UpdateEditorInput();
@@ -324,6 +343,12 @@ private:
 	static bool s_bShowConsoleInfo;
 	static bool s_bShowConsoleWarnings;
 	static bool s_bShowConsoleErrors;
+
+	// Panel visibility flags toggled by the View menu. Defaults to true so the
+	// editor opens with all panels showing.
+	static bool s_bShowHierarchyPanel;
+	static bool s_bShowPropertiesPanel;
+	static bool s_bShowConsolePanel;
 	static std::bitset<LOG_CATEGORY_COUNT> s_xCategoryFilters;
 	static constexpr size_t MAX_CONSOLE_ENTRIES = 1000;
 

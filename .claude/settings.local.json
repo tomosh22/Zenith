@@ -128,7 +128,21 @@
       "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" /c/dev/Zenith/Build/zenith_win64.sln -t:Combat -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -maxCpuCount:1 -verbosity:minimal)",
       "Read(//tmp/**)",
       "Bash(\"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" zenith_win64.sln /t:Zenith /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1 -verbosity:minimal -nologo)",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('Tools/analyze_code_complexity.py'\\).read\\(\\)\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('Tools/analyze_code_complexity.py'\\).read\\(\\)\\)\")",
+      "Bash(python Tools/analyze_code_complexity.py Zenith --no-viz --workers 4 --exclude-generated --ignore-macros ZENITH_ASSERT Zenith_Assert Zenith_Warning Zenith_Error Zenith_Log -e Middleware ThirdParty External vendor build Build .git .claude -o C:/tmp/engine_cc_2026-04-19)",
+      "Bash(mkdir -p \"C:/dev/Zenith/complexity_reports/2026-04-19\")",
+      "Bash(cp \"C:/tmp/engine_cc_2026-04-19/analysis_report.json\" \"C:/dev/Zenith/complexity_reports/2026-04-19/analysis_report.json\")",
+      "Bash(python -c ' *)",
+      "Bash(python)",
+      "Bash(python Tools/analyze_code_complexity.py Zenith --no-viz --workers 4 --exclude-generated --ignore-macros ZENITH_ASSERT Zenith_Assert Zenith_Warning Zenith_Error Zenith_Log -e Middleware ThirdParty External vendor build Build .git .claude -o C:/tmp/engine_cc_2026-04-20)",
+      "Bash(mkdir -p C:/dev/Zenith/complexity_reports/2026-04-20)",
+      "Bash(cp C:/tmp/engine_cc_2026-04-20/analysis_report.json C:/dev/Zenith/complexity_reports/2026-04-20/analysis_report.json)",
+      "Bash(python C:/tmp/synth.py)",
+      "Bash(python C:/tmp/synth2.py)",
+      "Bash(python C:/tmp/analyze_cc.py)",
+      "Bash(python C:/tmp/analyze_cc2.py)",
+      "Bash(python C:/tmp/analyze_cc3.py)",
+      "Bash(python C:/tmp/analyze.py)"
     ],
     "deny": [],
     "ask": []

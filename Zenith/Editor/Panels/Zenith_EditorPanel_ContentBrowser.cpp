@@ -234,81 +234,93 @@ std::string Zenith_EditorPanelContentBrowser::GenerateUniqueFilename(const std::
 //=============================================================================
 void Zenith_EditorPanelContentBrowser::RenderItemContextMenu(const ContentBrowserEntry& xEntry, ContentBrowserState& xState)
 {
-	if (ImGui::BeginPopupContextItem())
+	if (!ImGui::BeginPopupContextItem())
+		return;
+
+	RenderCommonContextItems(xEntry);
+	if (xEntry.m_bIsDirectory)
+		RenderFolderContextMenu(xEntry, xState);
+	else
+		RenderFileContextMenu(xEntry, xState);
+
+	ImGui::EndPopup();
+}
+
+void Zenith_EditorPanelContentBrowser::RenderCommonContextItems(const ContentBrowserEntry& xEntry)
+{
+	if (ImGui::MenuItem("Show in Explorer"))
 	{
-		if (ImGui::MenuItem("Show in Explorer"))
-		{
 #ifdef _WIN32
-			std::string strCmd = "explorer /select,\"" + xEntry.m_strFullPath + "\"";
-			system(strCmd.c_str());
+		std::string strCmd = "explorer /select,\"" + xEntry.m_strFullPath + "\"";
+		system(strCmd.c_str());
 #endif
-		}
-		if (!xEntry.m_bIsDirectory)
+	}
+}
+
+void Zenith_EditorPanelContentBrowser::RenderFileContextMenu(const ContentBrowserEntry& xEntry, ContentBrowserState& xState)
+{
+	if (ImGui::MenuItem("Delete"))
+	{
+		if (std::filesystem::remove(xEntry.m_strFullPath))
 		{
-			if (ImGui::MenuItem("Delete"))
-			{
-				if (std::filesystem::remove(xEntry.m_strFullPath))
-				{
-					std::string strMetaPath = xEntry.m_strFullPath + ".zmeta";
-					std::filesystem::remove(strMetaPath);
-					xState.m_bDirectoryNeedsRefresh = true;
-				}
-			}
-			if (ImGui::MenuItem("Duplicate"))
-			{
-				std::filesystem::path xPath(xEntry.m_strFullPath);
-				std::string strBasePath = xPath.parent_path().string() + "/" + xPath.stem().string() + "_copy";
-				std::string strNewPath = GenerateUniqueFilename(strBasePath, xPath.extension().string());
-				std::filesystem::copy(xEntry.m_strFullPath, strNewPath);
-				xState.m_bDirectoryNeedsRefresh = true;
-			}
+			std::string strMetaPath = xEntry.m_strFullPath + ".zmeta";
+			std::filesystem::remove(strMetaPath);
+			xState.m_bDirectoryNeedsRefresh = true;
+		}
+	}
+	if (ImGui::MenuItem("Duplicate"))
+	{
+		std::filesystem::path xPath(xEntry.m_strFullPath);
+		std::string strBasePath = xPath.parent_path().string() + "/" + xPath.stem().string() + "_copy";
+		std::string strNewPath = GenerateUniqueFilename(strBasePath, xPath.extension().string());
+		std::filesystem::copy(xEntry.m_strFullPath, strNewPath);
+		xState.m_bDirectoryNeedsRefresh = true;
+	}
 
-			// Export image files to .ztxtr
-			static const char* aszExportableExtensions[] = { ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
-			bool bCanExport = false;
-			for (const char* szExt : aszExportableExtensions)
-			{
-				if (xEntry.m_strExtension == szExt)
-				{
-					bCanExport = true;
-					break;
-				}
-			}
+	// Export image files to .ztxtr
+	static const char* aszExportableExtensions[] = { ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
+	bool bCanExport = false;
+	for (const char* szExt : aszExportableExtensions)
+	{
+		if (xEntry.m_strExtension == szExt)
+		{
+			bCanExport = true;
+			break;
+		}
+	}
 
-			if (bCanExport && ImGui::MenuItem("Export to .ztxtr"))
-			{
-				if (xEntry.m_strExtension == ".tif" || xEntry.m_strExtension == ".tiff")
-				{
-					Zenith_Tools_TextureExport::ExportFromTifFile(xEntry.m_strFullPath);
-				}
-				else
-				{
-					// PNG/JPG - use existing export (extension without dot)
-					Zenith_Tools_TextureExport::ExportFromFile(
-						xEntry.m_strFullPath,
-						xEntry.m_strExtension.c_str() + 1,
-						TextureCompressionMode::Uncompressed);
-				}
-				xState.m_bDirectoryNeedsRefresh = true;
-			}
+	if (bCanExport && ImGui::MenuItem("Export to .ztxtr"))
+	{
+		if (xEntry.m_strExtension == ".tif" || xEntry.m_strExtension == ".tiff")
+		{
+			Zenith_Tools_TextureExport::ExportFromTifFile(xEntry.m_strFullPath);
 		}
 		else
 		{
-			if (ImGui::MenuItem("Delete Folder"))
-			{
-				// Only delete empty folders for safety
-				if (std::filesystem::is_empty(xEntry.m_strFullPath))
-				{
-					std::filesystem::remove(xEntry.m_strFullPath);
-					xState.m_bDirectoryNeedsRefresh = true;
-				}
-				else
-				{
-					Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Cannot delete non-empty folder");
-				}
-			}
+			// PNG/JPG - use existing export (extension without dot)
+			Zenith_Tools_TextureExport::ExportFromFile(
+				xEntry.m_strFullPath,
+				xEntry.m_strExtension.c_str() + 1,
+				TextureCompressionMode::Uncompressed);
 		}
-		ImGui::EndPopup();
+		xState.m_bDirectoryNeedsRefresh = true;
+	}
+}
+
+void Zenith_EditorPanelContentBrowser::RenderFolderContextMenu(const ContentBrowserEntry& xEntry, ContentBrowserState& xState)
+{
+	if (ImGui::MenuItem("Delete Folder"))
+	{
+		// Only delete empty folders for safety
+		if (std::filesystem::is_empty(xEntry.m_strFullPath))
+		{
+			std::filesystem::remove(xEntry.m_strFullPath);
+			xState.m_bDirectoryNeedsRefresh = true;
+		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Cannot delete non-empty folder");
+		}
 	}
 }
 
@@ -362,175 +374,147 @@ void Zenith_EditorPanelContentBrowser::HandleEntryDoubleClickOpen(const ContentB
 }
 
 //=============================================================================
-// Extracted helper: RenderTopBar
-// Navigation (back/forward/parent/refresh) + breadcrumbs + search + filter +
-// thumbnail size + view toggles, plus filter application based on search/
-// filter changes.
-//=============================================================================
-void Zenith_EditorPanelContentBrowser::RenderTopBar(ContentBrowserState& xState)
+// Back / Forward / Parent / Refresh — drives navigation history. The breadcrumb
+// trail follows on the same line via the existing RenderBreadcrumbs helper.
+static void RenderNavButtons(ContentBrowserState& xState)
 {
-	// Navigation buttons
-	bool bCanGoBack = xState.m_iHistoryIndex > 0;
-	bool bCanGoForward = xState.m_iHistoryIndex >= 0 &&
+	const bool bCanGoBack = xState.m_iHistoryIndex > 0;
+	const bool bCanGoForward = xState.m_iHistoryIndex >= 0 &&
 		xState.m_iHistoryIndex < static_cast<int>(xState.m_axNavigationHistory.size()) - 1;
 
-	// Back button
 	ImGui::BeginDisabled(!bCanGoBack);
 	if (ImGui::Button("<"))
 	{
 		xState.m_iHistoryIndex--;
-		NavigateToDirectory(xState, xState.m_axNavigationHistory[xState.m_iHistoryIndex], false);
+		Zenith_EditorPanelContentBrowser::NavigateToDirectory(xState, xState.m_axNavigationHistory[xState.m_iHistoryIndex], false);
 	}
 	ImGui::EndDisabled();
-	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-	{
-		ImGui::SetTooltip("Back");
-	}
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Back");
 
 	ImGui::SameLine();
-
-	// Forward button
 	ImGui::BeginDisabled(!bCanGoForward);
 	if (ImGui::Button(">"))
 	{
 		xState.m_iHistoryIndex++;
-		NavigateToDirectory(xState, xState.m_axNavigationHistory[xState.m_iHistoryIndex], false);
+		Zenith_EditorPanelContentBrowser::NavigateToDirectory(xState, xState.m_axNavigationHistory[xState.m_iHistoryIndex], false);
 	}
 	ImGui::EndDisabled();
-	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-	{
-		ImGui::SetTooltip("Forward");
-	}
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Forward");
 
 	ImGui::SameLine();
-
-	// Parent folder button
 	if (ImGui::Button("^"))
 	{
-		NavigateToParent(xState);
+		Zenith_EditorPanelContentBrowser::NavigateToParent(xState);
 	}
-	if (ImGui::IsItemHovered())
-	{
-		ImGui::SetTooltip("Go to Parent Folder");
-	}
+	if (ImGui::IsItemHovered()) ImGui::SetTooltip("Go to Parent Folder");
 
 	ImGui::SameLine();
-
-	// Refresh button
 	if (ImGui::Button("Refresh"))
 	{
 		xState.m_bDirectoryNeedsRefresh = true;
 	}
 
 	ImGui::SameLine();
-
-	// Breadcrumb navigation
 	RenderBreadcrumbs(xState);
+}
 
-	// Search and Filter bar
-	ImGui::Separator();
-
-	// Search input
+// Search input + asset-type combo + thumbnail-size slider (with Ctrl+Scroll
+// shortcut). Returns true if the search text or type filter changed this frame
+// so the caller can re-run filtering.
+static bool RenderSearchAndFilter(ContentBrowserState& xState)
+{
 	ImGui::SetNextItemWidth(200.0f);
-	bool bSearchChanged = ImGui::InputTextWithHint("##Search", "Search...", xState.m_szSearchBuffer, xState.m_uSearchBufferSize);
+	const bool bSearchChanged = ImGui::InputTextWithHint("##Search", "Search...", xState.m_szSearchBuffer, xState.m_uSearchBufferSize);
 
 	ImGui::SameLine();
 
-	// Asset type filter dropdown
 	const char* aszFilterTypes[] = { "All Types", "Textures", "Materials", "Meshes", "Models", "Prefabs", "Scenes", "Animations" };
 	ImGui::SetNextItemWidth(120.0f);
-	bool bFilterChanged = ImGui::Combo("##TypeFilter", &xState.m_iAssetTypeFilter, aszFilterTypes, IM_ARRAYSIZE(aszFilterTypes));
+	const bool bFilterChanged = ImGui::Combo("##TypeFilter", &xState.m_iAssetTypeFilter, aszFilterTypes, IM_ARRAYSIZE(aszFilterTypes));
+
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(100.0f);
+	ImGui::SliderFloat("##ThumbnailSize", &xState.m_fThumbnailSize, 40.0f, 200.0f, "%.0f");
+	if (ImGui::IsItemHovered()) ImGui::SetTooltip("Thumbnail Size (Ctrl+Scroll)");
+
+	if (ImGui::IsWindowHovered() && ImGui::GetIO().KeyCtrl)
+	{
+		const float fScroll = ImGui::GetIO().MouseWheel;
+		if (fScroll != 0.0f)
+		{
+			xState.m_fThumbnailSize = std::clamp(xState.m_fThumbnailSize + fScroll * 10.0f, 40.0f, 200.0f);
+		}
+	}
+
+	return bSearchChanged || bFilterChanged;
+}
+
+// Grid / List view toggle, with the active button styled with the
+// ImGuiCol_ButtonActive colour so the current mode is visible.
+static void RenderViewModeToggle(ContentBrowserState& xState)
+{
+	const bool bGridSelected = (xState.m_eViewMode == ContentBrowserViewMode::Grid);
+	if (bGridSelected) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+	if (ImGui::Button("Grid")) xState.m_eViewMode = ContentBrowserViewMode::Grid;
+	if (bGridSelected) ImGui::PopStyleColor();
 
 	ImGui::SameLine();
 
-	// Thumbnail size slider
-	ImGui::SetNextItemWidth(100.0f);
-	ImGui::SliderFloat("##ThumbnailSize", &xState.m_fThumbnailSize, 40.0f, 200.0f, "%.0f");
-	if (ImGui::IsItemHovered())
-	{
-		ImGui::SetTooltip("Thumbnail Size (Ctrl+Scroll)");
-	}
+	const bool bListSelected = (xState.m_eViewMode == ContentBrowserViewMode::List);
+	if (bListSelected) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+	if (ImGui::Button("List")) xState.m_eViewMode = ContentBrowserViewMode::List;
+	if (bListSelected) ImGui::PopStyleColor();
+}
 
-	// Ctrl+Scroll to adjust thumbnail size
-	if (ImGui::IsWindowHovered() && ImGui::GetIO().KeyCtrl)
+// Re-walk the directory contents and apply the current search + type filters.
+// Called when the search/filter UI changes or when the filtered list is empty
+// (initial population).
+static void ApplyContentFilter(ContentBrowserState& xState)
+{
+	xState.m_xFilteredContents.clear();
+	std::string strSearch(xState.m_szSearchBuffer);
+	std::transform(strSearch.begin(), strSearch.end(), strSearch.begin(), ::tolower);
+
+	for (const auto& xEntry : xState.m_xDirectoryContents)
 	{
-		float fScroll = ImGui::GetIO().MouseWheel;
-		if (fScroll != 0.0f)
+		if (!strSearch.empty())
 		{
-			xState.m_fThumbnailSize = std::clamp(
-				xState.m_fThumbnailSize + fScroll * 10.0f,
-				40.0f, 200.0f);
+			std::string strNameLower = xEntry.m_strName;
+			std::transform(strNameLower.begin(), strNameLower.end(), strNameLower.begin(), ::tolower);
+			if (strNameLower.find(strSearch) == std::string::npos) continue;
 		}
+
+		// Directories always pass the type filter.
+		if (xState.m_iAssetTypeFilter > 0 && !xEntry.m_bIsDirectory)
+		{
+			if (!Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(xState.m_iAssetTypeFilter, xEntry.m_strExtension)) continue;
+		}
+
+		xState.m_xFilteredContents.push_back(xEntry);
 	}
+}
+
+// Extracted top bar: nav buttons + breadcrumb + search/filter + view toggle,
+// then re-apply the filter if the user changed any inputs (or the list is
+// empty for a freshly opened directory).
+//=============================================================================
+void Zenith_EditorPanelContentBrowser::RenderTopBar(ContentBrowserState& xState)
+{
+	RenderNavButtons(xState);
+
+	ImGui::Separator();
+
+	const bool bFilterInputsChanged = RenderSearchAndFilter(xState);
 
 	ImGui::SameLine();
 	ImGui::TextDisabled("|");
 	ImGui::SameLine();
 
-	// View mode toggle buttons
-	bool bGridSelected = (xState.m_eViewMode == ContentBrowserViewMode::Grid);
-	if (bGridSelected)
-	{
-		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-	}
-	if (ImGui::Button("Grid"))
-	{
-		xState.m_eViewMode = ContentBrowserViewMode::Grid;
-	}
-	if (bGridSelected)
-	{
-		ImGui::PopStyleColor();
-	}
+	RenderViewModeToggle(xState);
 
-	ImGui::SameLine();
-
-	bool bListSelected = (xState.m_eViewMode == ContentBrowserViewMode::List);
-	if (bListSelected)
+	if (bFilterInputsChanged || xState.m_xFilteredContents.empty())
 	{
-		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-	}
-	if (ImGui::Button("List"))
-	{
-		xState.m_eViewMode = ContentBrowserViewMode::List;
-	}
-	if (bListSelected)
-	{
-		ImGui::PopStyleColor();
-	}
-
-	// Apply filtering
-	if (bSearchChanged || bFilterChanged || xState.m_xFilteredContents.empty())
-	{
-		xState.m_xFilteredContents.clear();
-		std::string strSearch(xState.m_szSearchBuffer);
-
-		// Convert search to lowercase for case-insensitive matching
-		std::transform(strSearch.begin(), strSearch.end(), strSearch.begin(), ::tolower);
-
-		for (const auto& xEntry : xState.m_xDirectoryContents)
-		{
-			// Search filter
-			if (!strSearch.empty())
-			{
-				std::string strNameLower = xEntry.m_strName;
-				std::transform(strNameLower.begin(), strNameLower.end(), strNameLower.begin(), ::tolower);
-				if (strNameLower.find(strSearch) == std::string::npos)
-				{
-					continue;
-				}
-			}
-
-			// Type filter (directories always pass)
-			if (xState.m_iAssetTypeFilter > 0 && !xEntry.m_bIsDirectory)
-			{
-				if (!MatchesAssetTypeFilter(xState.m_iAssetTypeFilter, xEntry.m_strExtension))
-				{
-					continue;
-				}
-			}
-
-			xState.m_xFilteredContents.push_back(xEntry);
-		}
+		ApplyContentFilter(xState);
 	}
 
 	ImGui::Separator();
@@ -573,100 +557,181 @@ void Zenith_EditorPanelContentBrowser::RenderCreateContextMenu(ContentBrowserSta
 }
 
 //=============================================================================
+// Extracted helper: RenderFileListEntry
+// Renders a single row inside the RenderFileList table.
+//=============================================================================
+void Zenith_EditorPanelContentBrowser::RenderFileListEntry(const ContentBrowserEntry& xEntry, ContentBrowserState& xState)
+{
+	ImGui::TableNextRow();
+
+	// Name column + selectable spanning all columns
+	ImGui::TableNextColumn();
+	const std::string strIcon = xEntry.m_bIsDirectory ? "[DIR] " : "";
+	const std::string strLabel = strIcon + xEntry.m_strName;
+
+	const ImGuiSelectableFlags eFlags = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick;
+	if (ImGui::Selectable(strLabel.c_str(), false, eFlags) && ImGui::IsMouseDoubleClicked(0))
+	{
+		if (xEntry.m_bIsDirectory)
+			NavigateToDirectory(xState, xEntry.m_strFullPath);
+		else
+			HandleEntryDoubleClickOpen(xEntry);
+	}
+
+	RenderEntryDragDropSource(xEntry);
+	RenderItemContextMenu(xEntry, xState);
+
+	// Type column
+	ImGui::TableNextColumn();
+	if (xEntry.m_bIsDirectory)
+	{
+		ImGui::TextDisabled("Folder");
+	}
+	else if (const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension))
+	{
+		ImGui::Text("%s", pxTypeInfo->m_szDisplayName);
+	}
+	else
+	{
+		ImGui::TextDisabled("File");
+	}
+
+	// Size column
+	ImGui::TableNextColumn();
+	if (!xEntry.m_bIsDirectory && xEntry.m_ulFileSize > 0)
+	{
+		char acBuffer[32];
+		FormatFileSize(xEntry.m_ulFileSize, acBuffer, sizeof(acBuffer));
+		ImGui::Text("%s", acBuffer);
+	}
+
+	// Extension column (skip leading dot)
+	ImGui::TableNextColumn();
+	if (!xEntry.m_bIsDirectory && !xEntry.m_strExtension.empty())
+	{
+		ImGui::Text("%s", xEntry.m_strExtension.c_str() + 1);
+	}
+}
+
+//=============================================================================
 // Extracted helper: RenderFileList
 // List (table) view of filtered directory contents.
 //=============================================================================
 void Zenith_EditorPanelContentBrowser::RenderFileList(ContentBrowserState& xState)
 {
-	// List view
-	if (ImGui::BeginTable("ContentBrowserList", 4,
+	if (!ImGui::BeginTable("ContentBrowserList", 4,
 		ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
 		ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY,
 		ImVec2(0, 0)))
 	{
-		ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-		ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-		ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-		ImGui::TableSetupColumn("Extension", ImGuiTableColumnFlags_WidthFixed, 70.0f);
-		ImGui::TableSetupScrollFreeze(0, 1);
-		ImGui::TableHeadersRow();
-
-		for (size_t i = 0; i < xState.m_xFilteredContents.size(); ++i)
-		{
-			const ContentBrowserEntry& xEntry = xState.m_xFilteredContents[i];
-			ImGui::PushID(static_cast<int>(i));
-
-			ImGui::TableNextRow();
-
-			// Name column
-			ImGui::TableNextColumn();
-			std::string strIcon = xEntry.m_bIsDirectory ? "[DIR] " : "";
-			std::string strLabel = strIcon + xEntry.m_strName;
-
-			ImGuiSelectableFlags eFlags = ImGuiSelectableFlags_SpanAllColumns |
-				ImGuiSelectableFlags_AllowDoubleClick;
-
-			if (ImGui::Selectable(strLabel.c_str(), false, eFlags))
-			{
-				if (ImGui::IsMouseDoubleClicked(0))
-				{
-					if (xEntry.m_bIsDirectory)
-					{
-						NavigateToDirectory(xState, xEntry.m_strFullPath);
-					}
-					else
-					{
-						HandleEntryDoubleClickOpen(xEntry);
-					}
-				}
-			}
-
-			// Drag source
-			RenderEntryDragDropSource(xEntry);
-
-			// Context menu
-			RenderItemContextMenu(xEntry, xState);
-
-			// Type column
-			ImGui::TableNextColumn();
-			if (xEntry.m_bIsDirectory)
-			{
-				ImGui::TextDisabled("Folder");
-			}
-			else
-			{
-				const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
-				if (pxTypeInfo)
-				{
-					ImGui::Text("%s", pxTypeInfo->m_szDisplayName);
-				}
-				else
-				{
-					ImGui::TextDisabled("File");
-				}
-			}
-
-			// Size column
-			ImGui::TableNextColumn();
-			if (!xEntry.m_bIsDirectory && xEntry.m_ulFileSize > 0)
-			{
-				char acBuffer[32];
-				FormatFileSize(xEntry.m_ulFileSize, acBuffer, sizeof(acBuffer));
-				ImGui::Text("%s", acBuffer);
-			}
-
-			// Extension column
-			ImGui::TableNextColumn();
-			if (!xEntry.m_bIsDirectory && !xEntry.m_strExtension.empty())
-			{
-				ImGui::Text("%s", xEntry.m_strExtension.c_str() + 1);
-			}
-
-			ImGui::PopID();
-		}
-
-		ImGui::EndTable();
+		return;
 	}
+
+	ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+	ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+	ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+	ImGui::TableSetupColumn("Extension", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+	ImGui::TableSetupScrollFreeze(0, 1);
+	ImGui::TableHeadersRow();
+
+	for (size_t i = 0; i < xState.m_xFilteredContents.size(); ++i)
+	{
+		ImGui::PushID(static_cast<int>(i));
+		RenderFileListEntry(xState.m_xFilteredContents[i], xState);
+		ImGui::PopID();
+	}
+
+	ImGui::EndTable();
+}
+
+// Resolve the icon text for a grid cell: directories show [DIR]; known file
+// types pull from the registry; unknown extensions render as [EXT] using the
+// uppercased extension. The caller's buffer holds the [EXT] text when needed
+// so the returned pointer stays valid.
+static const char* ResolveGridItemIcon(const ContentBrowserEntry& xEntry, char* szExtBuf, size_t uExtBufSize)
+{
+	if (xEntry.m_bIsDirectory) return "[DIR]";
+
+	const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
+	if (pxTypeInfo) return pxTypeInfo->m_szIconText;
+
+	std::string strExt = xEntry.m_strExtension;
+	if (!strExt.empty() && strExt[0] == '.') strExt = strExt.substr(1);
+	std::transform(strExt.begin(), strExt.end(), strExt.begin(), ::toupper);
+	snprintf(szExtBuf, uExtBufSize, "[%s]", strExt.c_str());
+	return szExtBuf;
+}
+
+// Render the icon / thumbnail / clickable button for a grid cell. Directories
+// navigate on click; texture files show a thumbnail (with fallback to text
+// icon if the thumbnail isn't ready); other file types show the text icon and
+// support drag-drop + double-click to open.
+static void RenderGridItemIcon(const ContentBrowserEntry& xEntry, const char* szIcon,
+	const ImVec2& xIconSize, ContentBrowserState& xState)
+{
+	if (xEntry.m_bIsDirectory)
+	{
+		if (ImGui::Button(szIcon, xIconSize))
+		{
+			Zenith_EditorPanelContentBrowser::NavigateToDirectory(xState, xEntry.m_strFullPath);
+		}
+		return;
+	}
+
+	bool bShowedImage = false;
+	if (xEntry.m_strExtension == ZENITH_TEXTURE_EXT)
+	{
+		Flux_ImGuiTextureHandle xThumbHandle = GetTextureThumbnail(xEntry.m_strFullPath);
+		if (xThumbHandle.IsValid())
+		{
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.5f, 0.5f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.2f, 0.2f, 0.4f, 0.7f));
+			ImGui::ImageButton("##texthumb",
+				(ImTextureID)Flux_ImGuiIntegration::GetImTextureID(xThumbHandle),
+				xIconSize);
+			ImGui::PopStyleColor(3);
+			bShowedImage = true;
+		}
+	}
+	if (!bShowedImage)
+	{
+		ImGui::Button(szIcon, xIconSize);
+	}
+
+	Zenith_EditorPanelContentBrowser::RenderEntryDragDropSource(xEntry);
+	if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+	{
+		Zenith_EditorPanelContentBrowser::HandleEntryDoubleClickOpen(xEntry);
+	}
+}
+
+// Hover tooltip: name + type/size for files, "Folder" for directories.
+static void RenderGridItemTooltip(const ContentBrowserEntry& xEntry)
+{
+	if (!ImGui::IsItemHovered()) return;
+	ImGui::BeginTooltip();
+	ImGui::Text("%s", xEntry.m_strName.c_str());
+	if (!xEntry.m_bIsDirectory)
+	{
+		const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
+		if (pxTypeInfo)
+		{
+			ImGui::Text("Type: %s", pxTypeInfo->m_szDisplayName);
+		}
+		else if (!xEntry.m_strExtension.empty())
+		{
+			ImGui::Text("Type: %s", xEntry.m_strExtension.c_str() + 1);
+		}
+		char acSizeBuffer[32];
+		FormatFileSize(xEntry.m_ulFileSize, acSizeBuffer, sizeof(acSizeBuffer));
+		ImGui::Text("Size: %s", acSizeBuffer);
+	}
+	else
+	{
+		ImGui::TextDisabled("Folder");
+	}
+	ImGui::EndTooltip();
 }
 
 //=============================================================================
@@ -675,11 +740,9 @@ void Zenith_EditorPanelContentBrowser::RenderFileList(ContentBrowserState& xStat
 //=============================================================================
 void Zenith_EditorPanelContentBrowser::RenderFileGrid(ContentBrowserState& xState, float fPanelWidth, float fCellSize)
 {
-	// Grid view
-	int iColumnCount = std::max(1, (int)(fPanelWidth / fCellSize));
+	const int iColumnCount = std::max(1, (int)(fPanelWidth / fCellSize));
+	if (!ImGui::BeginTable("ContentBrowserTable", iColumnCount)) return;
 
-	if (ImGui::BeginTable("ContentBrowserTable", iColumnCount))
-	{
 	for (size_t i = 0; i < xState.m_xFilteredContents.size(); ++i)
 	{
 		const ContentBrowserEntry& xEntry = xState.m_xFilteredContents[i];
@@ -687,132 +750,32 @@ void Zenith_EditorPanelContentBrowser::RenderFileGrid(ContentBrowserState& xStat
 		ImGui::TableNextColumn();
 		ImGui::PushID((int)i);
 
-		// Icon representation
-		const char* szIcon = "[DIR]";
-		static char szExtIcon[16];  // Static buffer for unknown extension icons
-		if (!xEntry.m_bIsDirectory)
-		{
-			const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
-			if (pxTypeInfo)
-			{
-				szIcon = pxTypeInfo->m_szIconText;
-			}
-			else
-			{
-				// Unknown type - show uppercase extension
-				std::string strExt = xEntry.m_strExtension;
-				if (!strExt.empty() && strExt[0] == '.')
-				{
-					strExt = strExt.substr(1);
-				}
-				std::transform(strExt.begin(), strExt.end(), strExt.begin(), ::toupper);
-				snprintf(szExtIcon, sizeof(szExtIcon), "[%s]", strExt.c_str());
-				szIcon = szExtIcon;
-			}
-		}
+		char acExtIcon[16];
+		const char* szIcon = ResolveGridItemIcon(xEntry, acExtIcon, sizeof(acExtIcon));
 
 		ImGui::BeginGroup();
+		const ImVec2 xIconSize(fCellSize - 10, fCellSize - 30);
+		RenderGridItemIcon(xEntry, szIcon, xIconSize, xState);
 
-		// Calculate icon/thumbnail size
-		ImVec2 xIconSize(fCellSize - 10, fCellSize - 30);
-		bool bShowedImage = false;
-
-		if (xEntry.m_bIsDirectory)
-		{
-			// Directory - click to enter
-			if (ImGui::Button(szIcon, xIconSize))
-			{
-				NavigateToDirectory(xState, xEntry.m_strFullPath);
-			}
-		}
-		else
-		{
-			// For texture files, try to show a thumbnail
-			if (xEntry.m_strExtension == ZENITH_TEXTURE_EXT)
-			{
-				Flux_ImGuiTextureHandle xThumbHandle = GetTextureThumbnail(xEntry.m_strFullPath);
-				if (xThumbHandle.IsValid())
-				{
-					// Show texture thumbnail as an image button
-					ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.5f, 0.5f));
-					ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.2f, 0.2f, 0.4f, 0.7f));
-					ImGui::ImageButton(
-						"##texthumb",
-						(ImTextureID)Flux_ImGuiIntegration::GetImTextureID(xThumbHandle),
-						xIconSize
-					);
-					ImGui::PopStyleColor(3);
-					bShowedImage = true;
-				}
-			}
-
-			// Fallback to text button if no image
-			if (!bShowedImage)
-			{
-				ImGui::Button(szIcon, xIconSize);
-			}
-
-			// Drag source for files
-			RenderEntryDragDropSource(xEntry);
-
-			// Double-click to open files in editor
-			if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-			{
-				HandleEntryDoubleClickOpen(xEntry);
-			}
-		}
-
-		// Context menu for individual items
 		RenderItemContextMenu(xEntry, xState);
 
-		// Display truncated filename below icon
-		// Calculate max chars based on cell width (~7 pixels per char at default font)
+		// Truncate filename to fit cell width (~7 px per char at default font).
 		std::string strDisplayName = xEntry.m_strName;
 		size_t uMaxChars = static_cast<size_t>((fCellSize - 10) / 7.0f);
-		uMaxChars = std::max(uMaxChars, static_cast<size_t>(8));  // Minimum 8 chars
+		uMaxChars = std::max(uMaxChars, static_cast<size_t>(8));
 		if (strDisplayName.length() > uMaxChars)
 		{
 			strDisplayName = strDisplayName.substr(0, uMaxChars - 3) + "...";
 		}
 		ImGui::TextWrapped("%s", strDisplayName.c_str());
 
-		// Enhanced tooltip with file info
-		if (ImGui::IsItemHovered())
-		{
-			ImGui::BeginTooltip();
-			ImGui::Text("%s", xEntry.m_strName.c_str());
-			if (!xEntry.m_bIsDirectory)
-			{
-				// Show type name from registry or raw extension
-				const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
-				if (pxTypeInfo)
-				{
-					ImGui::Text("Type: %s", pxTypeInfo->m_szDisplayName);
-				}
-				else if (!xEntry.m_strExtension.empty())
-				{
-					ImGui::Text("Type: %s", xEntry.m_strExtension.c_str() + 1);
-				}
-
-				// Show file size
-				char acSizeBuffer[32];
-				FormatFileSize(xEntry.m_ulFileSize, acSizeBuffer, sizeof(acSizeBuffer));
-				ImGui::Text("Size: %s", acSizeBuffer);
-			}
-			else
-			{
-				ImGui::TextDisabled("Folder");
-			}
-			ImGui::EndTooltip();
-		}
+		RenderGridItemTooltip(xEntry);
 
 		ImGui::EndGroup();
 		ImGui::PopID();
 	}
 
 	ImGui::EndTable();
-	}
 }
 
 //-----------------------------------------------------------------------------

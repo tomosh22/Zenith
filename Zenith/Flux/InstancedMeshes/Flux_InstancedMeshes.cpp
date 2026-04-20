@@ -306,6 +306,99 @@ void Flux_InstancedMeshes::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 	}
 }
 
+// Bind per-batch material, animation texture, push constants, and instance
+// buffers for the GBuffer pass. Caller must have bound the shared pipeline
+// and FrameConstants before invoking this.
+static void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup* pxGroup)
+{
+	Zenith_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
+	if (!pxMaterial)
+	{
+		pxMaterial = Flux_Graphics::s_pxBlankMaterial;
+	}
+
+	Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
+	const bool bHasVAT = (pxAnimTex != nullptr && pxAnimTex->HasGPUResources());
+
+	// Build and push material constants
+	InstancedMeshPushConstants xPushConstants;
+	xPushConstants.m_xModelMatrix = glm::identity<glm::mat4>();  // Per-instance in buffer
+	xPushConstants.m_xBaseColor = pxMaterial->GetBaseColor();
+	xPushConstants.m_xMaterialParams = Zenith_Maths::Vector4(
+		pxMaterial->GetMetallic(),
+		pxMaterial->GetRoughness(),
+		pxMaterial->GetAlphaCutoff(),
+		pxMaterial->GetOcclusionStrength()
+	);
+	const Zenith_Maths::Vector2& xTiling = pxMaterial->GetUVTiling();
+	const Zenith_Maths::Vector2& xOffset = pxMaterial->GetUVOffset();
+	xPushConstants.m_xUVParams = Zenith_Maths::Vector4(xTiling.x, xTiling.y, xOffset.x, xOffset.y);
+
+	if (bHasVAT)
+	{
+		xPushConstants.m_xAnimTexParams = Zenith_Maths::Vector4(
+			static_cast<float>(pxAnimTex->GetTextureWidth()),
+			static_cast<float>(pxAnimTex->GetTextureHeight()),
+			1.0f,  // enableVAT = true
+			0.0f   // unused
+		);
+	}
+	else
+	{
+		xPushConstants.m_xAnimTexParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);  // VAT disabled
+	}
+
+	xBinder.BindDrawConstants(s_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
+
+	// Bind material textures
+	xBinder.BindSRV(s_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
+	xBinder.BindSRV(s_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
+	xBinder.BindSRV(s_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
+	xBinder.BindSRV(s_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
+	xBinder.BindSRV(s_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
+
+	// Bind animation texture (VAT) if available, else bind blank texture
+	if (bHasVAT)
+	{
+		xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &pxAnimTex->GetPositionTexture()->m_xSRV);
+	}
+	else
+	{
+		xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &Flux_Graphics::s_pxWhiteTexture->m_xSRV);
+	}
+
+	// Bind instance buffers
+	xBinder.BindUAV_Buffer(s_xGBufferShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
+	xBinder.BindUAV_Buffer(s_xGBufferShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
+	xBinder.BindUAV_Buffer(s_xGBufferShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
+}
+
+// Emit the draw call(s) for one instance group. GPU-culling path uses an
+// indirect draw whose count was written by ExecuteCulling; CPU fallback
+// uses a direct instanced draw sized by the CPU-built visible list.
+static void IssueBatchDraw(Flux_CommandList* pxCmdList, Flux_InstanceGroup* pxGroup, Flux_MeshInstance* pxMesh, bool bUseGPUCulling)
+{
+	if (bUseGPUCulling)
+	{
+		// GPU culling: use indirect draw with count from visible count buffer
+		// The culling compute shader wrote the visible instance count to the indirect buffer
+		pxCmdList->AddCommand<Flux_CommandDrawIndexedIndirect>(
+			&pxGroup->GetIndirectBuffer(),
+			1,   // drawCount = 1 (single draw call)
+			0,   // offset = 0
+			20   // stride = sizeof(VkDrawIndexedIndirectCommand) = 20 bytes
+		);
+		return;
+	}
+
+	// CPU culling fallback: direct instanced draw
+	uint32_t uVisibleCount = pxGroup->GetVisibleCount();
+	if (uVisibleCount > 0)
+	{
+		pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMesh->GetNumIndices(), uVisibleCount);
+	}
+}
+
 void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!dbg_bEnableInstancedMeshes)
@@ -330,6 +423,8 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	s_uTotalInstances = 0;
 	s_uVisibleInstances = 0;
 
+	const bool bUseGPUCulling = s_bCullingEnabled && dbg_bEnableGPUCulling && s_bCullingInitialized;
+
 	for (size_t uGroup = 0; uGroup < s_apxInstanceGroups.size(); ++uGroup)
 	{
 		Flux_InstanceGroup* pxGroup = s_apxInstanceGroups[uGroup];
@@ -346,7 +441,6 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 
 		// When GPU culling is enabled, buffers are updated by the culling pass (ExecuteCulling)
 		// When disabled (CPU fallback), update buffers here including CPU-side visible list
-		bool bUseGPUCulling = s_bCullingEnabled && dbg_bEnableGPUCulling && s_bCullingInitialized;
 		if (!bUseGPUCulling)
 		{
 			// CPU fallback: UpdateGPUBuffers builds visible index list on CPU
@@ -357,91 +451,8 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMesh->GetVertexBuffer());
 		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMesh->GetIndexBuffer());
 
-		// Get material (fall back to blank if none)
-		Zenith_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
-		if (!pxMaterial)
-		{
-			pxMaterial = Flux_Graphics::s_pxBlankMaterial;
-		}
-
-		// Get animation texture (optional)
-		Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
-		bool bHasVAT = (pxAnimTex != nullptr && pxAnimTex->HasGPUResources());
-
-		// Build and push material constants
-		InstancedMeshPushConstants xPushConstants;
-		xPushConstants.m_xModelMatrix = glm::identity<glm::mat4>();  // Per-instance in buffer
-		xPushConstants.m_xBaseColor = pxMaterial->GetBaseColor();
-		xPushConstants.m_xMaterialParams = Zenith_Maths::Vector4(
-			pxMaterial->GetMetallic(),
-			pxMaterial->GetRoughness(),
-			pxMaterial->GetAlphaCutoff(),
-			pxMaterial->GetOcclusionStrength()
-		);
-		const Zenith_Maths::Vector2& xTiling = pxMaterial->GetUVTiling();
-		const Zenith_Maths::Vector2& xOffset = pxMaterial->GetUVOffset();
-		xPushConstants.m_xUVParams = Zenith_Maths::Vector4(xTiling.x, xTiling.y, xOffset.x, xOffset.y);
-
-		// Animation texture parameters
-		if (bHasVAT)
-		{
-			xPushConstants.m_xAnimTexParams = Zenith_Maths::Vector4(
-				static_cast<float>(pxAnimTex->GetTextureWidth()),
-				static_cast<float>(pxAnimTex->GetTextureHeight()),
-				1.0f,  // enableVAT = true
-				0.0f   // unused
-			);
-		}
-		else
-		{
-			xPushConstants.m_xAnimTexParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);  // VAT disabled
-		}
-
-		xBinder.BindDrawConstants(s_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
-
-		// Bind material textures
-		xBinder.BindSRV(s_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
-		xBinder.BindSRV(s_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
-		xBinder.BindSRV(s_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
-		xBinder.BindSRV(s_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
-		xBinder.BindSRV(s_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
-
-		// Bind animation texture (VAT) if available, else bind blank texture
-		if (bHasVAT)
-		{
-			xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &pxAnimTex->GetPositionTexture()->m_xSRV);
-		}
-		else
-		{
-			xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &Flux_Graphics::s_pxWhiteTexture->m_xSRV);
-		}
-
-		// Bind instance buffers
-		xBinder.BindUAV_Buffer(s_xGBufferShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xGBufferShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xGBufferShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
-
-		// Draw visible instances
-		if (bUseGPUCulling)
-		{
-			// GPU culling: use indirect draw with count from visible count buffer
-			// The culling compute shader wrote the visible instance count to the indirect buffer
-			pxCmdList->AddCommand<Flux_CommandDrawIndexedIndirect>(
-				&pxGroup->GetIndirectBuffer(),
-				1,   // drawCount = 1 (single draw call)
-				0,   // offset = 0
-				20   // stride = sizeof(VkDrawIndexedIndirectCommand) = 20 bytes
-			);
-		}
-		else
-		{
-			// CPU culling fallback: direct instanced draw
-			uint32_t uVisibleCount = pxGroup->GetVisibleCount();
-			if (uVisibleCount > 0)
-			{
-				pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMesh->GetNumIndices(), uVisibleCount);
-			}
-		}
+		BindBatchDescriptors(xBinder, pxGroup);
+		IssueBatchDraw(pxCmdList, pxGroup, pxMesh, bUseGPUCulling);
 
 		s_uTotalInstances += pxGroup->GetInstanceCount();
 		// Note: visible count is not accurate for GPU culling path (would need GPU readback)

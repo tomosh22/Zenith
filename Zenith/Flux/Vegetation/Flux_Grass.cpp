@@ -406,6 +406,110 @@ void Flux_Grass::UploadInstanceData()
 		s_axAllInstances.GetSize(), uUploadSize / (1024.0f * 1024.0f));
 }
 
+namespace
+{
+	// RNG bundle — one fixed-seed mt19937 shared across all per-blade distributions
+	// so calls that re-generate with the same terrain produce identical output.
+	struct GrassGenRng
+	{
+		std::mt19937 xRng{42};
+		std::uniform_real_distribution<float> xUniform01{0.0f, 1.0f};
+		std::uniform_real_distribution<float> xRotationDist{0.0f, 6.28318f};
+		std::uniform_real_distribution<float> xHeightDist{0.3f, 0.8f};
+		std::uniform_real_distribution<float> xWidthDist{0.02f, 0.05f};
+		std::uniform_real_distribution<float> xBendDist{0.0f, 0.3f};
+		std::uniform_int_distribution<u_int> xGreenDist{180, 255};
+		std::uniform_int_distribution<u_int> xColorOffset{0, 40};
+		std::uniform_real_distribution<float> xColorBlend{0.0f, 1.0f};
+	};
+
+	struct TriangleSamples
+	{
+		Zenith_Maths::Vector3 xPos0;
+		Zenith_Maths::Vector3 xPos1;
+		Zenith_Maths::Vector3 xPos2;
+		Zenith_Maths::Vector3 xNorm0;
+		Zenith_Maths::Vector3 xNorm1;
+		Zenith_Maths::Vector3 xNorm2;
+		float fLerp0;
+		float fLerp1;
+		float fLerp2;
+	};
+
+	// Grass density threshold - only place grass where MaterialLerp < this value.
+	// MaterialLerp = 0 means 100% material 0 (grass), 1 means 100% material 1 (rock/dirt).
+	constexpr float fGRASS_THRESHOLD = 0.5f;
+}
+
+// Generates blades for one triangle. Returns false once the global instance
+// limit is hit so the outer triangle loop can stop early.
+static bool GenerateBladesForTriangle(
+	const TriangleSamples& xTri,
+	u_int uNumBlades,
+	GrassGenRng& xRng,
+	u_int& uTotalBladesGenerated)
+{
+	for (u_int uBlade = 0; uBlade < uNumBlades; ++uBlade)
+	{
+		if (s_axAllInstances.GetSize() >= GrassConfig::uMAX_TOTAL_INSTANCES)
+		{
+			Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Hit instance limit (%u)", GrassConfig::uMAX_TOTAL_INSTANCES);
+			return false;
+		}
+
+		// Random barycentric coordinates (reflect if outside the triangle).
+		float fU = xRng.xUniform01(xRng.xRng);
+		float fV = xRng.xUniform01(xRng.xRng);
+		if (fU + fV > 1.0f)
+		{
+			fU = 1.0f - fU;
+			fV = 1.0f - fV;
+		}
+		float fW = 1.0f - fU - fV;
+
+		Zenith_Maths::Vector3 xPosition = xTri.xPos0 * fW + xTri.xPos1 * fU + xTri.xPos2 * fV;
+		Zenith_Maths::Vector3 xNormal = glm::normalize(xTri.xNorm0 * fW + xTri.xNorm1 * fU + xTri.xNorm2 * fV);
+
+		const float fLocalLerp = xTri.fLerp0 * fW + xTri.fLerp1 * fU + xTri.fLerp2 * fV;
+		if (fLocalLerp > fGRASS_THRESHOLD)
+			continue;
+
+		// Offset along normal to prevent z-fighting.
+		xPosition += xNormal * 0.01f;
+
+		GrassBladeInstance xInstance;
+		xInstance.m_xPosition = xPosition;
+		xInstance.m_fRotation = xRng.xRotationDist(xRng.xRng);
+		xInstance.m_fHeight = xRng.xHeightDist(xRng.xRng);
+		xInstance.m_fWidth = xRng.xWidthDist(xRng.xRng);
+		xInstance.m_fBend = xRng.xBendDist(xRng.xRng);
+
+		// ~15% of blades use a dry/yellowed palette for variety.
+		const float fBlend = xRng.xColorBlend(xRng.xRng);
+		const bool bDryGrass = fBlend < 0.15f;
+
+		u_int uR, uG, uB;
+		if (bDryGrass)
+		{
+			uR = 140 + xRng.xColorOffset(xRng.xRng);
+			uG = 150 + xRng.xColorOffset(xRng.xRng);
+			uB = 50 + xRng.xColorOffset(xRng.xRng) / 2;
+		}
+		else
+		{
+			const u_int uBaseGreen = xRng.xGreenDist(xRng.xRng);
+			uR = 40 + xRng.xColorOffset(xRng.xRng);
+			uG = uBaseGreen;
+			uB = 20 + xRng.xColorOffset(xRng.xRng) / 2;
+		}
+		xInstance.m_uColorTint = (255 << 24) | (uB << 16) | (uG << 8) | uR;
+
+		s_axAllInstances.PushBack(xInstance);
+		uTotalBladesGenerated++;
+	}
+	return true;
+}
+
 void Flux_Grass::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 {
 	// Validate terrain mesh has required data
@@ -426,32 +530,17 @@ void Flux_Grass::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Generating grass from terrain mesh (%u triangles)...", uNumTriangles);
 
-	// Clear existing instances
 	s_axAllInstances.Clear();
 	s_axChunks.Clear();
 	s_bInstancesGenerated = false;
 	s_bInstancesUploaded = false;
 
-	// Terrain data pointers
 	const Zenith_Maths::Vector3* pxPositions = xTerrainMesh.m_pxPositions;
 	const Zenith_Maths::Vector3* pxNormals = xTerrainMesh.m_pxNormals;
 	const float* pfMaterialLerps = xTerrainMesh.m_pfMaterialLerps;
 	const Flux_MeshGeometry::IndexType* puIndices = xTerrainMesh.m_puIndices;
 
-	// Random number generator for grass placement
-	std::mt19937 xRng(42);  // Fixed seed for reproducibility
-	std::uniform_real_distribution<float> xUniform01(0.0f, 1.0f);
-	std::uniform_real_distribution<float> xRotationDist(0.0f, 6.28318f);  // 0 to 2*PI
-	std::uniform_real_distribution<float> xHeightDist(0.3f, 0.8f);  // Blade height variation
-	std::uniform_real_distribution<float> xWidthDist(0.02f, 0.05f);  // Blade width
-	std::uniform_real_distribution<float> xBendDist(0.0f, 0.3f);  // Initial bend
-	std::uniform_int_distribution<u_int> xGreenDist(180, 255);   // Primary green variation
-	std::uniform_int_distribution<u_int> xColorOffset(0, 40);    // Color variation offset
-	std::uniform_real_distribution<float> xColorBlend(0.0f, 1.0f);  // For blending healthy/dry grass
-
-	// Grass density threshold - only place grass where MaterialLerp < this value
-	// MaterialLerp = 0 means 100% material 0 (grass), MaterialLerp = 1 means 100% material 1 (rock/dirt)
-	constexpr float fGrassThreshold = 0.5f;
+	GrassGenRng xRng;
 
 	// Target blades per square meter (adjusted by density scale)
 	const float fBladesPerSqm = static_cast<float>(GrassConfig::uBLADES_PER_SQM) * s_fDensityScale;
@@ -459,157 +548,65 @@ void Flux_Grass::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 	u_int uTotalTrianglesProcessed = 0;
 	u_int uTotalBladesGenerated = 0;
 
-	// Process each triangle
 	for (u_int uTri = 0; uTri < uNumTriangles; ++uTri)
 	{
 		const u_int uIdx0 = puIndices[uTri * 3 + 0];
 		const u_int uIdx1 = puIndices[uTri * 3 + 1];
 		const u_int uIdx2 = puIndices[uTri * 3 + 2];
 
-		const Zenith_Maths::Vector3& xPos0 = pxPositions[uIdx0];
-		const Zenith_Maths::Vector3& xPos1 = pxPositions[uIdx1];
-		const Zenith_Maths::Vector3& xPos2 = pxPositions[uIdx2];
+		TriangleSamples xTri;
+		xTri.xPos0 = pxPositions[uIdx0];
+		xTri.xPos1 = pxPositions[uIdx1];
+		xTri.xPos2 = pxPositions[uIdx2];
+		xTri.xNorm0 = pxNormals[uIdx0];
+		xTri.xNorm1 = pxNormals[uIdx1];
+		xTri.xNorm2 = pxNormals[uIdx2];
+		xTri.fLerp0 = pfMaterialLerps ? pfMaterialLerps[uIdx0] : 0.0f;
+		xTri.fLerp1 = pfMaterialLerps ? pfMaterialLerps[uIdx1] : 0.0f;
+		xTri.fLerp2 = pfMaterialLerps ? pfMaterialLerps[uIdx2] : 0.0f;
 
-		// Get material lerp values (if available)
-		float fLerp0 = pfMaterialLerps ? pfMaterialLerps[uIdx0] : 0.0f;
-		float fLerp1 = pfMaterialLerps ? pfMaterialLerps[uIdx1] : 0.0f;
-		float fLerp2 = pfMaterialLerps ? pfMaterialLerps[uIdx2] : 0.0f;
-
-		// Average material lerp for triangle
-		float fAvgLerp = (fLerp0 + fLerp1 + fLerp2) / 3.0f;
-
-		// Skip triangles that are mostly non-grass material
-		if (fAvgLerp > fGrassThreshold)
-		{
+		const float fAvgLerp = (xTri.fLerp0 + xTri.fLerp1 + xTri.fLerp2) / 3.0f;
+		if (fAvgLerp > fGRASS_THRESHOLD)
 			continue;
-		}
 
-		// Calculate triangle area using cross product
-		Zenith_Maths::Vector3 xEdge1 = xPos1 - xPos0;
-		Zenith_Maths::Vector3 xEdge2 = xPos2 - xPos0;
-		Zenith_Maths::Vector3 xCross = glm::cross(xEdge1, xEdge2);
-		float fArea = glm::length(xCross) * 0.5f;
+		const Zenith_Maths::Vector3 xEdge1 = xTri.xPos1 - xTri.xPos0;
+		const Zenith_Maths::Vector3 xEdge2 = xTri.xPos2 - xTri.xPos0;
+		const float fArea = glm::length(glm::cross(xEdge1, xEdge2)) * 0.5f;
 
-		// Skip degenerate triangles
 		if (fArea < 0.001f)
-		{
 			continue;
-		}
 
-		// Calculate number of blades based on area
-		// Reduce density based on material lerp (less grass as we approach threshold)
-		float fDensityMultiplier = 1.0f - (fAvgLerp / fGrassThreshold);
+		// Density falls off linearly as fAvgLerp approaches the threshold.
+		const float fDensityMultiplier = 1.0f - (fAvgLerp / fGRASS_THRESHOLD);
 		u_int uNumBlades = static_cast<u_int>(fArea * fBladesPerSqm * fDensityMultiplier);
-
-		// Cap blades per triangle to prevent overgeneration
 		uNumBlades = std::min(uNumBlades, 100u);
 
-		// Get triangle normals for interpolation
-		const Zenith_Maths::Vector3& xNorm0 = pxNormals[uIdx0];
-		const Zenith_Maths::Vector3& xNorm1 = pxNormals[uIdx1];
-		const Zenith_Maths::Vector3& xNorm2 = pxNormals[uIdx2];
-
-		// Generate blades using random barycentric coordinates
-		for (u_int uBlade = 0; uBlade < uNumBlades; ++uBlade)
-		{
-			// Stop if we've hit the instance limit
-			if (s_axAllInstances.GetSize() >= GrassConfig::uMAX_TOTAL_INSTANCES)
-			{
-				Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Hit instance limit (%u)", GrassConfig::uMAX_TOTAL_INSTANCES);
-				goto generation_complete;
-			}
-
-			// Random barycentric coordinates
-			float fU = xUniform01(xRng);
-			float fV = xUniform01(xRng);
-			if (fU + fV > 1.0f)
-			{
-				fU = 1.0f - fU;
-				fV = 1.0f - fV;
-			}
-			float fW = 1.0f - fU - fV;
-
-			// Interpolate position
-			Zenith_Maths::Vector3 xPosition = xPos0 * fW + xPos1 * fU + xPos2 * fV;
-
-			// Interpolate normal
-			Zenith_Maths::Vector3 xNormal = glm::normalize(xNorm0 * fW + xNorm1 * fU + xNorm2 * fV);
-
-			// Interpolate material lerp and use for additional filtering
-			float fLocalLerp = fLerp0 * fW + fLerp1 * fU + fLerp2 * fV;
-			if (fLocalLerp > fGrassThreshold)
-			{
-				continue;  // Skip this blade if local lerp is too high
-			}
-
-			// Offset position slightly along normal to prevent z-fighting
-			xPosition += xNormal * 0.01f;
-
-			// Create blade instance
-			GrassBladeInstance xInstance;
-			xInstance.m_xPosition = xPosition;
-			xInstance.m_fRotation = xRotationDist(xRng);
-			xInstance.m_fHeight = xHeightDist(xRng);
-			xInstance.m_fWidth = xWidthDist(xRng);
-			xInstance.m_fBend = xBendDist(xRng);
-
-			// Pack color tint with natural grass color variation
-			// Blend between healthy green and dry/yellowed grass for realism
-			float fBlend = xColorBlend(xRng);
-			bool bDryGrass = fBlend < 0.15f;  // ~15% of blades are dry/yellow
-
-			u_int uR, uG, uB;
-			if (bDryGrass)
-			{
-				// Dry/yellowed grass: more yellow-brown tones
-				uR = 140 + xColorOffset(xRng);    // 140-180
-				uG = 150 + xColorOffset(xRng);    // 150-190
-				uB = 50 + xColorOffset(xRng) / 2; // 50-70
-			}
-			else
-			{
-				// Healthy green grass with natural variation
-				u_int uBaseGreen = xGreenDist(xRng);  // 180-255
-				uR = 40 + xColorOffset(xRng);         // 40-80 (some red for warmth)
-				uG = uBaseGreen;                       // Primary green channel
-				uB = 20 + xColorOffset(xRng) / 2;     // 20-40 (low blue for grass)
-			}
-			xInstance.m_uColorTint = (255 << 24) | (uB << 16) | (uG << 8) | uR;
-
-			s_axAllInstances.PushBack(xInstance);
-			uTotalBladesGenerated++;
-		}
+		if (!GenerateBladesForTriangle(xTri, uNumBlades, xRng, uTotalBladesGenerated))
+			break;
 
 		uTotalTrianglesProcessed++;
 	}
 
-generation_complete:
 	s_bInstancesGenerated = true;
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Generated %u blades from %u triangles",
 		uTotalBladesGenerated, uTotalTrianglesProcessed);
 
-	// Shuffle instances to ensure even spatial distribution for LOD
-	// Without shuffling, instances are ordered by terrain triangle traversal,
-	// so drawing only the first N/4 instances (for LOD2) would show grass
-	// only in one area of the terrain. Shuffling ensures LOD reduction
-	// removes blades evenly across the entire terrain.
+	// Shuffle so LOD reduction (draw first N/4) spreads across the terrain
+	// instead of clustering into a corner.
 	if (s_axAllInstances.GetSize() > 1)
 	{
 		std::shuffle(s_axAllInstances.GetDataPointer(),
 			s_axAllInstances.GetDataPointer() + s_axAllInstances.GetSize(),
-			xRng);
+			xRng.xRng);
 		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Shuffled instances for even LOD distribution");
 	}
 
-	// Create a single chunk containing all instances for now
-	// (Future: subdivide into spatial chunks for better culling)
+	// Single chunk spanning every instance (future: subdivide for culling).
 	if (s_axAllInstances.GetSize() > 0)
 	{
-		// Calculate bounding sphere
 		Zenith_Maths::Vector3 xMinBounds(FLT_MAX);
 		Zenith_Maths::Vector3 xMaxBounds(-FLT_MAX);
-
 		for (u_int i = 0; i < s_axAllInstances.GetSize(); ++i)
 		{
 			const Zenith_Maths::Vector3& xPos = s_axAllInstances.Get(i).m_xPosition;
@@ -624,14 +621,10 @@ generation_complete:
 		xChunk.m_uInstanceCount = static_cast<u_int>(s_axAllInstances.GetSize());
 		xChunk.m_uLOD = 0;
 		xChunk.m_bVisible = true;
-
 		s_axChunks.PushBack(xChunk);
 	}
 
-	// Upload to GPU
 	UploadInstanceData();
-
-	// Initialize visibility
 	UpdateVisibleChunks();
 }
 

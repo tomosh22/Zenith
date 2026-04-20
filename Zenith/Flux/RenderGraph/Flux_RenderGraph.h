@@ -445,6 +445,20 @@ private:
     // other change that flips pool layout) doesn't leak the previous pool set.
     void ReleaseTransientAllocations();
 
+    // Aliasing-pool packer phases — split out of AssignAliasingGroups so each
+    // step is independently readable and testable. Run in order:
+    //   sort → pack → size.
+    // SortTransientsByLifetime: build sort-order over referenced transients,
+    //   ascending by m_uFirstWrite (matches classic interval-coloring order).
+    // PackTransientsIntoPools: greedy first-fit per memory signature; updates
+    //   each transient's m_uAliasPoolIndex and pushes into m_axAliasPools.
+    // ComputePoolSizes: per-pool size = max(occupant size); alignment = max
+    //   per-image alignment. All occupants bind at offset 0 (lifetimes proven
+    //   non-overlapping by the packer).
+    void SortTransientsByLifetime(Zenith_Vector<u_int>& axSortedIndices) const;
+    void PackTransientsIntoPools(const Zenith_Vector<u_int>& axSortedIndices);
+    void ComputePoolSizes();
+
     Zenith_Vector<Flux_RenderGraph_Pass*> m_xPasses;
     // #TODO: Replace std::unordered_map with engine hash map
     std::unordered_map<void*, Flux_RenderGraph_Resource> m_xResources;
@@ -510,6 +524,13 @@ private:
     void BuildResourceTraffic();
     void Validate() const;
     void ValidatePassMemoryFlagCompatibility(const Flux_RenderGraph_Pass* pxP) const;
+    // Validate phases — split out so the dispatcher reads as
+    // orphaned-reads → unused-transients → per-pass loop. Each helper asserts
+    // and logs on failure (no return value); they all run unconditionally.
+    void ValidateOrphanedReads() const;
+    void ValidateUnusedTransients() const;
+    void ValidatePassBasics(const Flux_RenderGraph_Pass* pxP) const;
+    void ValidatePassAttachmentCounts(const Flux_RenderGraph_Pass* pxP) const;
     // Walk m_xExecutionOrder, track per-(attachment, mip, layer) access state
     // for images and per-buffer access state for buffers, and synthesise
     // prologue Flux_RenderGraph_Barrier entries on each pass whose declared

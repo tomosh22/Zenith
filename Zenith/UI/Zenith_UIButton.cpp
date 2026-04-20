@@ -243,123 +243,125 @@ void Zenith_UIButton::UpdateVisualTransition(float fDt)
 	}
 }
 
-void Zenith_UIButton::Render(Zenith_UICanvas& xCanvas)
+void Zenith_UIButton::ResolveVisualState(float& fAlpha, UIStyle& xRenderStyle) const
 {
-	if (!m_bVisible)
-		return;
-
-	float fAlpha = GetEffectiveAlpha();
-	Zenith_Maths::Vector4 xBounds = GetScreenBounds();
-
-	// Override focus border color
-	UIStyle xRenderStyle = m_xCurrentStyle;
+	fAlpha = GetEffectiveAlpha();
+	xRenderStyle = m_xCurrentStyle;
 	if (m_bFocused)
 	{
 		xRenderStyle.m_xBorderColor = {1.0f, 1.0f, 1.0f, 1.0f};
 	}
+}
 
-	UIStyleRenderer::RenderStyledRect(xCanvas, xRenderStyle, xBounds, fAlpha);
+Zenith_UIButton::ButtonIconLayout Zenith_UIButton::CalculateIconTextPositions(const Zenith_Maths::Vector4& xBounds) const
+{
+	ButtonIconLayout xLayout;
 
-	// Determine icon texture
-	uint32_t uIconTextureID = 0;
-	bool bHasIcon = false;
 	if (m_xIconTexture.IsSet() && m_xIconSize.x > 0.f && m_xIconSize.y > 0.f)
 	{
 		Zenith_TextureAsset* pxIconTex = m_xIconTexture.Get();
 		if (pxIconTex && pxIconTex->IsValid() && pxIconTex->m_xSRV.m_xImageViewHandle.IsValid())
 		{
-			uIconTextureID = pxIconTex->m_xSRV.m_xImageViewHandle.AsUInt();
-			bHasIcon = true;
+			xLayout.bHasIcon = true;
 		}
 	}
 
-	float fBoundsW = xBounds.z - xBounds.x;
-	float fBoundsH = xBounds.w - xBounds.y;
-	float fCharWidth = m_fFontSize * fCHAR_SPACING;
-	float fTextWidth = m_strText.empty() ? 0.f : static_cast<float>(m_strText.length()) * fCharWidth;
-	float fTextHeight = m_fFontSize;
+	const float fBoundsW = xBounds.z - xBounds.x;
+	const float fBoundsH = xBounds.w - xBounds.y;
+	const float fCharWidth = m_fFontSize * fCHAR_SPACING;
+	const float fTextWidth = m_strText.empty() ? 0.f : static_cast<float>(m_strText.length()) * fCharWidth;
+	const float fTextHeight = m_fFontSize;
 
-	// Calculate icon and text positions based on placement
-	Zenith_Maths::Vector2 xIconPos = {0.f, 0.f};
-	Zenith_Maths::Vector2 xTextPos = {0.f, 0.f};
-
-	if (bHasIcon && m_eIconPlacement == IconPlacement::ICON_ONLY)
+	if (xLayout.bHasIcon && m_eIconPlacement == IconPlacement::ICON_ONLY)
 	{
-		// Icon centered, no text
-		xIconPos = {
+		xLayout.xIconPos = {
 			xBounds.x + (fBoundsW - m_xIconSize.x) * 0.5f,
 			xBounds.y + (fBoundsH - m_xIconSize.y) * 0.5f
 		};
+		return xLayout;
 	}
-	else if (bHasIcon && !m_strText.empty())
+
+	if (xLayout.bHasIcon && !m_strText.empty())
 	{
 		if (m_eIconPlacement == IconPlacement::LEFT || m_eIconPlacement == IconPlacement::RIGHT)
 		{
-			float fTotalW = m_xIconSize.x + m_fIconPadding + fTextWidth;
-			float fStartX = xBounds.x + (fBoundsW - fTotalW) * 0.5f;
-			float fCenterY = xBounds.y + fBoundsH * 0.5f;
+			const float fTotalW = m_xIconSize.x + m_fIconPadding + fTextWidth;
+			const float fStartX = xBounds.x + (fBoundsW - fTotalW) * 0.5f;
+			const float fCenterY = xBounds.y + fBoundsH * 0.5f;
 
 			if (m_eIconPlacement == IconPlacement::LEFT)
 			{
-				xIconPos = {fStartX, fCenterY - m_xIconSize.y * 0.5f};
-				xTextPos = {fStartX + m_xIconSize.x + m_fIconPadding, fCenterY - fTextHeight * 0.5f};
+				xLayout.xIconPos = {fStartX, fCenterY - m_xIconSize.y * 0.5f};
+				xLayout.xTextPos = {fStartX + m_xIconSize.x + m_fIconPadding, fCenterY - fTextHeight * 0.5f};
 			}
 			else
 			{
-				xTextPos = {fStartX, fCenterY - fTextHeight * 0.5f};
-				xIconPos = {fStartX + fTextWidth + m_fIconPadding, fCenterY - m_xIconSize.y * 0.5f};
+				xLayout.xTextPos = {fStartX, fCenterY - fTextHeight * 0.5f};
+				xLayout.xIconPos = {fStartX + fTextWidth + m_fIconPadding, fCenterY - m_xIconSize.y * 0.5f};
 			}
 		}
 		else // TOP or BOTTOM
 		{
-			float fTotalH = m_xIconSize.y + m_fIconPadding + fTextHeight;
-			float fStartY = xBounds.y + (fBoundsH - fTotalH) * 0.5f;
-			float fCenterX = xBounds.x + fBoundsW * 0.5f;
+			const float fTotalH = m_xIconSize.y + m_fIconPadding + fTextHeight;
+			const float fStartY = xBounds.y + (fBoundsH - fTotalH) * 0.5f;
+			const float fCenterX = xBounds.x + fBoundsW * 0.5f;
 
 			if (m_eIconPlacement == IconPlacement::TOP)
 			{
-				xIconPos = {fCenterX - m_xIconSize.x * 0.5f, fStartY};
-				xTextPos = {fCenterX - fTextWidth * 0.5f, fStartY + m_xIconSize.y + m_fIconPadding};
+				xLayout.xIconPos = {fCenterX - m_xIconSize.x * 0.5f, fStartY};
+				xLayout.xTextPos = {fCenterX - fTextWidth * 0.5f, fStartY + m_xIconSize.y + m_fIconPadding};
 			}
 			else
 			{
-				xTextPos = {fCenterX - fTextWidth * 0.5f, fStartY};
-				xIconPos = {fCenterX - m_xIconSize.x * 0.5f, fStartY + fTextHeight + m_fIconPadding};
+				xLayout.xTextPos = {fCenterX - fTextWidth * 0.5f, fStartY};
+				xLayout.xIconPos = {fCenterX - m_xIconSize.x * 0.5f, fStartY + fTextHeight + m_fIconPadding};
 			}
 		}
+		return xLayout;
 	}
-	else if (!m_strText.empty())
+
+	if (!m_strText.empty())
 	{
-		// Text only (no icon) — center text
-		xTextPos = {
+		xLayout.xTextPos = {
 			xBounds.x + (fBoundsW - fTextWidth) * 0.5f,
 			xBounds.y + (fBoundsH - fTextHeight) * 0.5f
 		};
 	}
+	return xLayout;
+}
 
-	// Render icon
-	if (bHasIcon && m_eIconPlacement != IconPlacement::ICON_ONLY)
+void Zenith_UIButton::Render(Zenith_UICanvas& xCanvas)
+{
+	if (!m_bVisible)
+		return;
+
+	float fAlpha;
+	UIStyle xRenderStyle;
+	ResolveVisualState(fAlpha, xRenderStyle);
+
+	const Zenith_Maths::Vector4 xBounds = GetScreenBounds();
+	UIStyleRenderer::RenderStyledRect(xCanvas, xRenderStyle, xBounds, fAlpha);
+
+	const ButtonIconLayout xLayout = CalculateIconTextPositions(xBounds);
+
+	if (xLayout.bHasIcon)
 	{
-		Zenith_Maths::Vector4 xIconBounds = {xIconPos.x, xIconPos.y, xIconPos.x + m_xIconSize.x, xIconPos.y + m_xIconSize.y};
-		Zenith_Maths::Vector4 xIconColor = {1.f, 1.f, 1.f, fAlpha};
+		const uint32_t uIconTextureID = m_xIconTexture.Get()->m_xSRV.m_xImageViewHandle.AsUInt();
+		const Zenith_Maths::Vector4 xIconBounds = {
+			xLayout.xIconPos.x, xLayout.xIconPos.y,
+			xLayout.xIconPos.x + m_xIconSize.x, xLayout.xIconPos.y + m_xIconSize.y
+		};
+		const Zenith_Maths::Vector4 xIconColor = {1.f, 1.f, 1.f, fAlpha};
 		xCanvas.SubmitQuadWithUV(xIconBounds, xIconColor, uIconTextureID, {0.f, 0.f}, {1.f, 1.f});
 	}
-	else if (bHasIcon && m_eIconPlacement == IconPlacement::ICON_ONLY)
-	{
-		Zenith_Maths::Vector4 xIconBounds = {xIconPos.x, xIconPos.y, xIconPos.x + m_xIconSize.x, xIconPos.y + m_xIconSize.y};
-		Zenith_Maths::Vector4 xIconColor = {1.f, 1.f, 1.f, fAlpha};
-		xCanvas.SubmitQuadWithUV(xIconBounds, xIconColor, uIconTextureID, {0.f, 0.f}, {1.f, 1.f});
-	}
 
-	// Render text (unless icon-only mode)
 	if (!m_strText.empty() && m_eIconPlacement != IconPlacement::ICON_ONLY)
 	{
-		// Text shadow
 		if (m_bTextShadowEnabled)
 		{
-			Zenith_Maths::Vector2 xShadowPos = {
-				xTextPos.x + m_xTextShadowOffset.x,
-				xTextPos.y + m_xTextShadowOffset.y
+			const Zenith_Maths::Vector2 xShadowPos = {
+				xLayout.xTextPos.x + m_xTextShadowOffset.x,
+				xLayout.xTextPos.y + m_xTextShadowOffset.y
 			};
 			Zenith_Maths::Vector4 xShadowColor = m_xTextShadowColor;
 			xShadowColor.a *= fAlpha;
@@ -368,7 +370,7 @@ void Zenith_UIButton::Render(Zenith_UICanvas& xCanvas)
 
 		Zenith_Maths::Vector4 xTextColor = m_xTextColor;
 		xTextColor.a *= fAlpha;
-		xCanvas.SubmitText(m_strText, xTextPos, m_fFontSize, xTextColor);
+		xCanvas.SubmitText(m_strText, xLayout.xTextPos, m_fFontSize, xTextColor);
 	}
 
 	Zenith_UIElement::Render(xCanvas);

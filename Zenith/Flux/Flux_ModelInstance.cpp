@@ -56,85 +56,10 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 		}
 	}
 
-	// Load each mesh and its materials
-	uint32_t uNumMeshBindings = pxAsset->GetNumMeshes();
+	const uint32_t uNumMeshBindings = pxAsset->GetNumMeshes();
 	for (uint32_t uMeshIdx = 0; uMeshIdx < uNumMeshBindings; uMeshIdx++)
 	{
-		const Zenith_ModelAsset::MeshMaterialBinding& xBinding = pxAsset->GetMeshBinding(uMeshIdx);
-
-		// Get mesh path from the MeshRef
-		std::string strMeshPath = xBinding.GetMeshPath();
-
-		// Load the mesh asset from registry via handle (handles ref counting automatically)
-		MeshHandle xMeshHandle(strMeshPath);
-		Zenith_MeshAsset* pxMeshAsset = xMeshHandle.Get();
-		if (!pxMeshAsset)
-		{
-			Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load mesh: %s", strMeshPath.c_str());
-			continue;
-		}
-		pxInstance->m_xLoadedMeshAssets.PushBack(std::move(xMeshHandle));
-
-		// Create GPU mesh instance from the mesh asset
-		// Pass skeleton for skinned meshes to apply bind pose transforms for static rendering
-		Flux_MeshInstance* pxMeshInstance = Flux_MeshInstance::CreateFromAsset(pxMeshAsset, pxInstance->m_xLoadedSkeletonAsset.Get());
-		if (!pxMeshInstance)
-		{
-			Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to create mesh instance from: %s", strMeshPath.c_str());
-			continue;
-		}
-		pxInstance->m_xMeshInstances.PushBack(pxMeshInstance);
-
-		// If the model has a skeleton, also create a skinned mesh instance
-		// for animated rendering (104-byte format with bone indices/weights)
-		// IMPORTANT: Always push to m_xSkinnedMeshInstances to keep indices aligned with m_xMeshInstances
-		if (pxInstance->m_pxSkeleton)
-		{
-			if (pxMeshAsset->HasSkinning())
-			{
-				Flux_MeshInstance* pxSkinnedMeshInstance = Flux_MeshInstance::CreateSkinnedFromAsset(pxMeshAsset);
-				if (pxSkinnedMeshInstance)
-				{
-					pxInstance->m_xSkinnedMeshInstances.PushBack(pxSkinnedMeshInstance);
-				}
-				else
-				{
-					Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to create skinned mesh instance from: %s", strMeshPath.c_str());
-					// Push nullptr to keep indices in sync
-					pxInstance->m_xSkinnedMeshInstances.PushBack(nullptr);
-				}
-			}
-			else
-			{
-				// Mesh doesn't have skinning data - push nullptr to keep indices in sync
-				pxInstance->m_xSkinnedMeshInstances.PushBack(nullptr);
-			}
-		}
-
-		// Load materials for this mesh via handles (handles manage ref counting)
-		uint32_t uNumMaterials = static_cast<uint32_t>(xBinding.m_xMaterials.GetSize());
-		for (uint32_t uMatIdx = 0; uMatIdx < uNumMaterials; uMatIdx++)
-		{
-			std::string strMaterialPath = xBinding.GetMaterialPath(uMatIdx);
-			MaterialHandle xMaterialHandle(strMaterialPath);
-
-			if (!xMaterialHandle.Get())
-			{
-				Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load material: %s", strMaterialPath.c_str());
-				// Use blank material as fallback - create new default material
-				xMaterialHandle.Set(Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>());
-			}
-
-			pxInstance->m_xMaterials.PushBack(std::move(xMaterialHandle));
-		}
-
-		// If no materials were specified, add a blank material
-		if (uNumMaterials == 0)
-		{
-			MaterialHandle xBlankHandle;
-			xBlankHandle.Set(Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>());
-			pxInstance->m_xMaterials.PushBack(std::move(xBlankHandle));
-		}
+		pxInstance->BuildSubMeshInstance(uMeshIdx, pxAsset);
 	}
 
 	Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Created instance with %u meshes, %u materials%s",
@@ -143,6 +68,68 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 		pxInstance->HasSkeleton() ? ", with skeleton" : "");
 
 	return pxInstance;
+}
+
+void Flux_ModelInstance::BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAsset* pxAsset)
+{
+	const Zenith_ModelAsset::MeshMaterialBinding& xBinding = pxAsset->GetMeshBinding(uMeshIdx);
+	const std::string strMeshPath = xBinding.GetMeshPath();
+
+	MeshHandle xMeshHandle(strMeshPath);
+	Zenith_MeshAsset* pxMeshAsset = xMeshHandle.Get();
+	if (!pxMeshAsset)
+	{
+		Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load mesh: %s", strMeshPath.c_str());
+		return;
+	}
+	m_xLoadedMeshAssets.PushBack(std::move(xMeshHandle));
+
+	// Pass skeleton for skinned meshes to apply bind pose transforms for static rendering.
+	Flux_MeshInstance* pxMeshInstance = Flux_MeshInstance::CreateFromAsset(pxMeshAsset, m_xLoadedSkeletonAsset.Get());
+	if (!pxMeshInstance)
+	{
+		Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to create mesh instance from: %s", strMeshPath.c_str());
+		return;
+	}
+	m_xMeshInstances.PushBack(pxMeshInstance);
+
+	// Keep m_xSkinnedMeshInstances aligned with m_xMeshInstances — always push an
+	// entry (possibly nullptr) for skeleton-bearing models so indices match up.
+	if (m_pxSkeleton)
+	{
+		Flux_MeshInstance* pxSkinned = nullptr;
+		if (pxMeshAsset->HasSkinning())
+		{
+			pxSkinned = Flux_MeshInstance::CreateSkinnedFromAsset(pxMeshAsset);
+			if (!pxSkinned)
+			{
+				Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to create skinned mesh instance from: %s", strMeshPath.c_str());
+			}
+		}
+		m_xSkinnedMeshInstances.PushBack(pxSkinned);
+	}
+
+	const uint32_t uNumMaterials = static_cast<uint32_t>(xBinding.m_xMaterials.GetSize());
+	for (uint32_t uMatIdx = 0; uMatIdx < uNumMaterials; uMatIdx++)
+	{
+		const std::string strMaterialPath = xBinding.GetMaterialPath(uMatIdx);
+		MaterialHandle xMaterialHandle(strMaterialPath);
+
+		if (!xMaterialHandle.Get())
+		{
+			Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load material: %s", strMaterialPath.c_str());
+			xMaterialHandle.Set(Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>());
+		}
+
+		m_xMaterials.PushBack(std::move(xMaterialHandle));
+	}
+
+	if (uNumMaterials == 0)
+	{
+		MaterialHandle xBlankHandle;
+		xBlankHandle.Set(Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>());
+		m_xMaterials.PushBack(std::move(xBlankHandle));
+	}
 }
 
 //------------------------------------------------------------------------------

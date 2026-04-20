@@ -241,6 +241,17 @@ private:
 	// Update path for skeleton instance
 	void UpdateWithSkeletonInstance(float fDt);
 
+	// UpdateWithSkeletonInstance phases — split out so the dispatcher reads as
+	// "multi-layer? → direct-play preview? → state machine? → bind pose".
+	// EvaluateAndComposeLayers: ticks all layers and composes them on top of
+	//   layer 0 (additive vs override-with-mask vs override-without-mask).
+	// UpdateDirectPlayPose: editor-only direct-clip preview (advance time,
+	//   sample clip into output pose, apply optional crossfade snapshot).
+	void EvaluateAndComposeLayers(float fDt);
+#ifdef ZENITH_TOOLS
+	void UpdateDirectPlayPose(float fDt);
+#endif
+
 	// Apply m_xOutputPose to skeleton instance and upload to GPU
 	void ApplyOutputPoseToSkeleton();
 

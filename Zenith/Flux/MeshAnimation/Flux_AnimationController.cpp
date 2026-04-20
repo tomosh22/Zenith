@@ -195,150 +195,140 @@ void Flux_AnimationController::Update(float fDt)
 #endif
 }
 
+// Multi-layer path: tick all layers, then compose layer 1+ on top of layer 0
+// using each layer's blend mode (additive / override / masked override).
+void Flux_AnimationController::EvaluateAndComposeLayers(float fDt)
+{
+	const uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
+
+	for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
+	{
+		m_xLayers.Get(i)->Update(fDt, *m_pxSkeletonAsset);
+	}
+
+	// Layer 0 is the base; later layers compose on top.
+	m_xOutputPose.CopyFrom(m_xLayers.Get(0)->GetOutputPose());
+
+	if (m_xTempBlendPose.GetNumBones() != uNumBones)
+		m_xTempBlendPose.Initialize(uNumBones);
+
+	for (uint32_t i = 1; i < m_xLayers.GetSize(); ++i)
+	{
+		Flux_AnimationLayer* pxLayer = m_xLayers.Get(i);
+		const float fWeight = pxLayer->GetWeight();
+		if (fWeight <= 0.0f) continue;
+
+		const Flux_SkeletonPose& xLayerPose = pxLayer->GetOutputPose();
+
+		if (pxLayer->GetBlendMode() == LAYER_BLEND_ADDITIVE)
+		{
+			Flux_SkeletonPose::AdditiveBlend(m_xTempBlendPose, m_xOutputPose, xLayerPose, fWeight);
+		}
+		else if (pxLayer->HasAvatarMask())
+		{
+			// Masked override: per-bone weights × layer weight.
+			const std::vector<float>& xWeights = pxLayer->GetAvatarMask().GetWeights();
+			m_xScaledMaskWeights.resize(xWeights.size());
+			for (size_t j = 0; j < xWeights.size(); ++j)
+				m_xScaledMaskWeights[j] = xWeights[j] * fWeight;
+			Flux_SkeletonPose::MaskedBlend(m_xTempBlendPose, m_xOutputPose, xLayerPose, m_xScaledMaskWeights);
+		}
+		else
+		{
+			// Full override: single-weight blend.
+			Flux_SkeletonPose::Blend(m_xTempBlendPose, m_xOutputPose, xLayerPose, fWeight);
+		}
+		m_xOutputPose.CopyFrom(m_xTempBlendPose);
+	}
+}
+
+#ifdef ZENITH_TOOLS
+// Editor-only direct-clip preview path: advance playback time (with looping or
+// clamping), seed the output pose with bind pose values (so untouched bones
+// keep bind pose rather than identity), sample the clip on top, and apply any
+// active crossfade snapshot.
+void Flux_AnimationController::UpdateDirectPlayPose(float fDt)
+{
+	Flux_AnimationClip* pxClip = m_pxDirectPlayNode->GetClip();
+	if (!pxClip) return;
+
+	float fCurrentTime = m_pxDirectPlayNode->GetCurrentTimestamp();
+	fCurrentTime += fDt * m_pxDirectPlayNode->GetPlaybackRate();
+
+	const float fDuration = pxClip->GetDuration();
+	if (fDuration > 0.0f)
+	{
+		if (pxClip->IsLooping())
+		{
+			fCurrentTime = fmod(fCurrentTime, fDuration);
+			if (fCurrentTime < 0.0f) fCurrentTime += fDuration;
+		}
+		else
+		{
+			fCurrentTime = glm::clamp(fCurrentTime, 0.0f, fDuration);
+		}
+	}
+	m_pxDirectPlayNode->SetCurrentTimestamp(fCurrentTime);
+
+	// Seed output pose with bind pose values. Bones without animation channels
+	// in this clip keep bind pose rather than identity.
+	const uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
+	for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
+	{
+		const Zenith_SkeletonAsset::Bone& xBone = m_pxSkeletonAsset->GetBone(i);
+		Flux_BoneLocalPose& xPose = m_xOutputPose.GetLocalPose(i);
+		xPose.m_xPosition = xBone.m_xBindPosition;
+		xPose.m_xRotation = xBone.m_xBindRotation;
+		xPose.m_xScale = xBone.m_xBindScale;
+	}
+
+	m_xOutputPose.SampleFromClip(*pxClip, fCurrentTime, *m_pxSkeletonAsset);
+
+	// Optional crossfade between direct clips — blends from the snapshot pose.
+	if (m_pxDirectTransition)
+	{
+		m_pxDirectTransition->Update(fDt);
+		if (m_pxDirectTransition->IsComplete())
+		{
+			delete m_pxDirectTransition;
+			m_pxDirectTransition = nullptr;
+		}
+		else
+		{
+			m_pxDirectTransition->Blend(m_xOutputPose, m_xOutputPose);
+		}
+	}
+}
+#endif
+
 void Flux_AnimationController::UpdateWithSkeletonInstance(float fDt)
 {
-	// This path handles animation for the new model instance system
-	// using Flux_SkeletonInstance instead of Flux_MeshGeometry
+	// Animation path for the new model-instance system (Flux_SkeletonInstance).
 
-	// Multi-layer path: evaluate all layers and compose
 	if (m_xLayers.GetSize() > 0)
 	{
-		uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
-
-		// Update all layers
-		for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
-		{
-			m_xLayers.Get(i)->Update(fDt, *m_pxSkeletonAsset);
-		}
-
-		// Start with layer 0 as the base
-		m_xOutputPose.CopyFrom(m_xLayers.Get(0)->GetOutputPose());
-
-		// Initialize cached temp pose if needed
-		if (m_xTempBlendPose.GetNumBones() != uNumBones)
-			m_xTempBlendPose.Initialize(uNumBones);
-
-		// Compose additional layers on top
-		for (uint32_t i = 1; i < m_xLayers.GetSize(); ++i)
-		{
-			Flux_AnimationLayer* pxLayer = m_xLayers.Get(i);
-			float fWeight = pxLayer->GetWeight();
-			if (fWeight <= 0.0f)
-				continue;
-
-			const Flux_SkeletonPose& xLayerPose = pxLayer->GetOutputPose();
-
-			if (pxLayer->GetBlendMode() == LAYER_BLEND_ADDITIVE)
-			{
-				// Additive: add layer's pose on top of current
-				Flux_SkeletonPose::AdditiveBlend(m_xTempBlendPose, m_xOutputPose, xLayerPose, fWeight);
-				m_xOutputPose.CopyFrom(m_xTempBlendPose);
-			}
-			else // LAYER_BLEND_OVERRIDE
-			{
-				if (pxLayer->HasAvatarMask())
-				{
-					// Masked override: blend based on per-bone weights
-					const std::vector<float>& xWeights = pxLayer->GetAvatarMask().GetWeights();
-
-					// Scale mask weights by layer weight using cached vector
-					m_xScaledMaskWeights.resize(xWeights.size());
-					for (size_t j = 0; j < xWeights.size(); ++j)
-						m_xScaledMaskWeights[j] = xWeights[j] * fWeight;
-
-					Flux_SkeletonPose::MaskedBlend(m_xTempBlendPose, m_xOutputPose, xLayerPose, m_xScaledMaskWeights);
-					m_xOutputPose.CopyFrom(m_xTempBlendPose);
-				}
-				else
-				{
-					// Full override: simple blend by weight
-					Flux_SkeletonPose::Blend(m_xTempBlendPose, m_xOutputPose, xLayerPose, fWeight);
-					m_xOutputPose.CopyFrom(m_xTempBlendPose);
-				}
-			}
-		}
-
+		EvaluateAndComposeLayers(fDt);
 		ApplyOutputPoseToSkeleton();
 		return;
 	}
 
 #ifdef ZENITH_TOOLS
-	// Handle direct clip playback (editor preview only, takes priority over state machine)
+	// Direct clip playback (editor preview) takes priority over the state machine.
 	if (m_pxDirectPlayNode)
 	{
-		Flux_AnimationClip* pxClip = m_pxDirectPlayNode->GetClip();
-		if (pxClip)
-		{
-			// Advance playback time
-			float fCurrentTime = m_pxDirectPlayNode->GetCurrentTimestamp();
-			fCurrentTime += fDt * m_pxDirectPlayNode->GetPlaybackRate();
-
-			// Handle looping
-			float fDuration = pxClip->GetDuration();
-			if (fDuration > 0.0f)
-			{
-				if (pxClip->IsLooping())
-				{
-					fCurrentTime = fmod(fCurrentTime, fDuration);
-					if (fCurrentTime < 0.0f)
-						fCurrentTime += fDuration;
-				}
-				else
-				{
-					fCurrentTime = glm::clamp(fCurrentTime, 0.0f, fDuration);
-				}
-			}
-
-			m_pxDirectPlayNode->SetCurrentTimestamp(fCurrentTime);
-
-			// Initialize output pose with bind pose values from skeleton
-			// This ensures bones WITHOUT animation channels keep their bind pose
-			// instead of getting identity values
-			uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
-			for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
-			{
-				const Zenith_SkeletonAsset::Bone& xBone = m_pxSkeletonAsset->GetBone(i);
-				Flux_BoneLocalPose& xPose = m_xOutputPose.GetLocalPose(i);
-				xPose.m_xPosition = xBone.m_xBindPosition;
-				xPose.m_xRotation = xBone.m_xBindRotation;
-				xPose.m_xScale = xBone.m_xBindScale;
-			}
-
-			// Sample the clip into the output pose using skeleton asset for bone mapping
-			// This overwrites bind pose values for bones that have animation channels
-			m_xOutputPose.SampleFromClip(*pxClip, fCurrentTime, *m_pxSkeletonAsset);
-
-			// If crossfading between direct clips, blend from the snapshot pose
-			if (m_pxDirectTransition)
-			{
-				m_pxDirectTransition->Update(fDt);
-				if (m_pxDirectTransition->IsComplete())
-				{
-					delete m_pxDirectTransition;
-					m_pxDirectTransition = nullptr;
-				}
-				else
-				{
-					m_pxDirectTransition->Blend(m_xOutputPose, m_xOutputPose);
-				}
-			}
-
-			ApplyOutputPoseToSkeleton();
-		}
+		UpdateDirectPlayPose(fDt);
+		ApplyOutputPoseToSkeleton();
+		return;
 	}
-	else
 #endif
+
 	if (m_pxStateMachine)
 	{
-		// State machine drives animation when no direct clip is playing
 		m_pxStateMachine->Update(fDt, m_xOutputPose, *m_pxSkeletonAsset);
 		ApplyOutputPoseToSkeleton();
 	}
-	else
-	{
-		// No animation playing - skeleton instance stays at bind pose
-		// (which was set when it was created)
-	}
+	// Otherwise: no animation playing — skeleton instance stays at the bind pose
+	// it was created with. No action needed.
 }
 
 void Flux_AnimationController::ApplyOutputPoseToSkeleton()

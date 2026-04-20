@@ -71,6 +71,12 @@ namespace Zenith_EditorPanelContentBrowser
 	 */
 	void RenderItemContextMenu(const ContentBrowserEntry& xEntry, ContentBrowserState& xState);
 
+	// Context-menu helpers split by entry type. Called from
+	// RenderItemContextMenu after BeginPopupContextItem succeeds.
+	void RenderCommonContextItems(const ContentBrowserEntry& xEntry);
+	void RenderFileContextMenu(const ContentBrowserEntry& xEntry, ContentBrowserState& xState);
+	void RenderFolderContextMenu(const ContentBrowserEntry& xEntry, ContentBrowserState& xState);
+
 	//-------------------------------------------------------------------------
 	// Private helpers used by Render() to keep the main dispatcher thin.
 	// Declared here so they can be forward-referenced from the header-level
@@ -100,6 +106,12 @@ namespace Zenith_EditorPanelContentBrowser
 	 * @param xState Reference to content browser state
 	 */
 	void RenderFileList(ContentBrowserState& xState);
+
+	/**
+	 * Render a single entry row inside the RenderFileList table. Handles the
+	 * name/type/size/extension columns plus selection and drag-drop wiring.
+	 */
+	void RenderFileListEntry(const ContentBrowserEntry& xEntry, ContentBrowserState& xState);
 
 	/**
 	 * Render the grid (thumbnail) view of the current directory contents.

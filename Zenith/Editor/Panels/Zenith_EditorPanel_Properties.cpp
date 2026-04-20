@@ -18,62 +18,51 @@
 // Displays properties for the selected entity and allows adding components.
 //=============================================================================
 
-namespace Zenith_EditorPanelProperties
+namespace
 {
-
-void Render(Zenith_Entity* pxSelectedEntity, Zenith_EntityID uPrimarySelectedEntityID)
-{
-	ImGui::Begin("Properties");
-
-	if (pxSelectedEntity)
+	void RenderSceneLabel(const Zenith_Entity& xEntity)
 	{
-		// Scene label (shows which scene this entity belongs to)
-		Zenith_Scene xEntityScene = pxSelectedEntity->GetScene();
-		if (xEntityScene.IsValid())
-		{
-			Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
-			const char* szSceneName = (xEntityScene == xPersistentScene) ?
-				"DontDestroyOnLoad" : xEntityScene.GetName().c_str();
-			ImGui::TextDisabled("Scene: %s", szSceneName);
-		}
+		Zenith_Scene xEntityScene = xEntity.GetScene();
+		if (!xEntityScene.IsValid())
+			return;
 
-		// Entity name editing
+		Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+		const char* szSceneName = (xEntityScene == xPersistentScene)
+			? "DontDestroyOnLoad"
+			: xEntityScene.GetName().c_str();
+		ImGui::TextDisabled("Scene: %s", szSceneName);
+	}
+
+	void RenderEntityNameEditor(Zenith_Entity& xEntity)
+	{
 		char nameBuffer[256];
-		strncpy_s(nameBuffer, sizeof(nameBuffer), pxSelectedEntity->GetName().c_str(), _TRUNCATE);
+		strncpy_s(nameBuffer, sizeof(nameBuffer), xEntity.GetName().c_str(), _TRUNCATE);
 		if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer)))
 		{
-			pxSelectedEntity->SetName(nameBuffer);
+			xEntity.SetName(nameBuffer);
 		}
+	}
 
-		ImGui::Separator();
-
-		//----------------------------------------------------------------------
-		// Component Properties Section
-		//----------------------------------------------------------------------
-		// Iterate over all registered components and render their properties
-		// if the selected entity has that component type.
-		//----------------------------------------------------------------------
+	void RenderComponentProperties(Zenith_Entity& xEntity)
+	{
 		Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
 		const auto& xEntries = xRegistry.GetEntries();
-
 		for (const Zenith_ComponentRegistryEntry& xEntry : xEntries)
 		{
-			// Check if entity has this component and render its properties panel
-			if (xEntry.m_pfnHasComponent(*pxSelectedEntity))
+			if (xEntry.m_pfnHasComponent(xEntity))
 			{
-				xEntry.m_pfnRenderPropertiesPanel(*pxSelectedEntity);
+				xEntry.m_pfnRenderPropertiesPanel(xEntity);
 			}
 		}
+	}
 
-		//----------------------------------------------------------------------
-		// Add Component Section
-		//----------------------------------------------------------------------
+	void RenderAddComponentSection(Zenith_Entity& xEntity, Zenith_EntityID uPrimarySelectedEntityID)
+	{
 		ImGui::Separator();
 		ImGui::Spacing();
 
-		// Center the button
-		float fButtonWidth = 200.0f;
-		float fWindowWidth = ImGui::GetWindowWidth();
+		const float fButtonWidth = 200.0f;
+		const float fWindowWidth = ImGui::GetWindowWidth();
 		ImGui::SetCursorPosX((fWindowWidth - fButtonWidth) * 0.5f);
 
 		if (ImGui::Button("Add Component", ImVec2(fButtonWidth, 0)))
@@ -82,48 +71,62 @@ void Render(Zenith_Entity* pxSelectedEntity, Zenith_EntityID uPrimarySelectedEnt
 			Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] Add Component button clicked for Entity %u", uPrimarySelectedEntityID);
 		}
 
-		// Add Component popup menu
-		if (ImGui::BeginPopup("AddComponentPopup"))
+		if (!ImGui::BeginPopup("AddComponentPopup"))
+			return;
+
+		Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+		const auto& xEntries = xRegistry.GetEntries();
+		bool bAnyAvailable = false;
+
+		for (size_t i = 0; i < xEntries.size(); ++i)
 		{
-			bool bAnyAvailable = false;
+			const Zenith_ComponentRegistryEntry& xEntry = xEntries[i];
+			const bool bHasComponent = xRegistry.EntityHasComponent(i, xEntity);
 
-			for (size_t i = 0; i < xEntries.size(); ++i)
+			if (bHasComponent)
 			{
-				const Zenith_ComponentRegistryEntry& xEntry = xEntries[i];
-
-				// Check if entity already has this component
-				bool bHasComponent = xRegistry.EntityHasComponent(i, *pxSelectedEntity);
-
-				if (bHasComponent)
+				ImGui::BeginDisabled();
+				ImGui::MenuItem(xEntry.m_strDisplayName.c_str(), nullptr, false, false);
+				ImGui::EndDisabled();
+			}
+			else
+			{
+				bAnyAvailable = true;
+				if (ImGui::MenuItem(xEntry.m_strDisplayName.c_str()))
 				{
-					// Show disabled/grayed out for components the entity already has
-					ImGui::BeginDisabled();
-					ImGui::MenuItem(xEntry.m_strDisplayName.c_str(), nullptr, false, false);
-					ImGui::EndDisabled();
-				}
-				else
-				{
-					bAnyAvailable = true;
-					if (ImGui::MenuItem(xEntry.m_strDisplayName.c_str()))
-					{
-						Zenith_Editor::AddComponentToSelected(xEntry.m_strDisplayName.c_str());
-					}
+					Zenith_Editor::AddComponentToSelected(xEntry.m_strDisplayName.c_str());
 				}
 			}
-
-			// If all components are already added, show a message
-			if (!bAnyAvailable)
-			{
-				ImGui::TextDisabled("All available components already added");
-			}
-
-			ImGui::EndPopup();
 		}
+
+		if (!bAnyAvailable)
+		{
+			ImGui::TextDisabled("All available components already added");
+		}
+
+		ImGui::EndPopup();
 	}
-	else
+}
+
+namespace Zenith_EditorPanelProperties
+{
+
+void Render(Zenith_Entity* pxSelectedEntity, Zenith_EntityID uPrimarySelectedEntityID)
+{
+	ImGui::Begin("Properties");
+
+	if (!pxSelectedEntity)
 	{
 		ImGui::Text("No entity selected");
+		ImGui::End();
+		return;
 	}
+
+	RenderSceneLabel(*pxSelectedEntity);
+	RenderEntityNameEditor(*pxSelectedEntity);
+	ImGui::Separator();
+	RenderComponentProperties(*pxSelectedEntity);
+	RenderAddComponentSection(*pxSelectedEntity, uPrimarySelectedEntityID);
 
 	ImGui::End();
 }

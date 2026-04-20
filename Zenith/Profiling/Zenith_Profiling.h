@@ -240,10 +240,22 @@ public:
 	static void BeginFrame();
 	static void EndFrame();
 	#ifdef ZENITH_TOOLS
+	// Persistent state for the Timeline panel — sliders, zoom, scroll, vertical scale.
+	// Bundled so callers hold one static instead of six, and so the renderer's
+	// signature stays trivial.
+	struct TimelineViewState
+	{
+		int m_iMinDepthToRender = 0;
+		int m_iMaxDepthToRender = 10;
+		int m_iMaxDepthToRenderSeparately = 3;
+		float m_fTimelineZoom = 1.0f;
+		float m_fTimelineScroll = 0.0f;
+		float m_fVerticalScale = 1.0f;
+	};
+
 	static void RenderToImGui();
 private:
-	static void RenderTimelineView(int& iMinDepthToRender, int& iMaxDepthToRender, int& iMaxDepthToRenderSeparately,
-	                                float& fTimelineZoom, float& fTimelineScroll, float& fVerticalScale, float fFrameDurationMs);
+	static void RenderTimelineView(TimelineViewState& xState);
 	static void RenderThreadBreakdown(float fFrameDurationMs, u_int& uThreadID);
 public:
 	#endif

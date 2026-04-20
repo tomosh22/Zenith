@@ -165,5 +165,11 @@ private:
 
 	// Windows watch thread function
 	static void WatchThreadFunc(const void* pUserData);
+
+	// Process one ReadDirectoryChangesW notification entry: convert the wide
+	// filename, resolve full path, filter ignored paths, translate the action
+	// into a FileChangeType, and enqueue a FileChangeEvent. Forward-declared
+	// as void* / DWORD to avoid pulling <Windows.h> into the header.
+	static void ProcessChangeNotification(void* pInfo, const std::string& strBasePath);
 #endif
 };

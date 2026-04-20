@@ -201,21 +201,20 @@ void Zenith_SelectionSystem::UpdateBoundingBoxes()
 {
 	s_xEntityBoundingBoxes.clear();
 
-	// Get all entities with model components from ALL loaded scenes
-	// This allows picking entities in any scene, not just the active one
-	Zenith_Vector<Zenith_ModelComponent*> xModelComponents;
-	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModelComponents);
-	
-	// TODO: Also handle entities without models but with other pickable components
-	// For example: cameras, lights, empty transform nodes, etc.
-	// These would need default bounding boxes (small cube at transform position)
-	
-	for (u_int i = 0; i < xModelComponents.GetSize(); ++i)
+	// Iterate every entity in every loaded scene via TransformComponent (every
+	// entity is guaranteed to have one — see EntityComponent/CLAUDE.md). This
+	// makes cameras, lights, and empty transform nodes pickable too;
+	// CalculateBoundingBox returns a small cube at the transform position when
+	// the entity has no ModelComponent.
+	Zenith_Vector<Zenith_TransformComponent*> xTransforms;
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_TransformComponent>(xTransforms);
+
+	for (u_int i = 0; i < xTransforms.GetSize(); ++i)
 	{
-		Zenith_ModelComponent* pxModel = xModelComponents.Get(i);
-		Zenith_Entity xEntity = pxModel->GetParentEntity();
+		Zenith_TransformComponent* pxTransform = xTransforms.Get(i);
+		Zenith_Entity xEntity = pxTransform->GetParentEntity();
 		Zenith_EntityID uEntityID = xEntity.GetEntityID();
-		
+
 		BoundingBox xBoundingBox = CalculateBoundingBox(&xEntity);
 		s_xEntityBoundingBoxes[uEntityID] = xBoundingBox;
 	}
@@ -250,12 +249,57 @@ BoundingBox Zenith_SelectionSystem::GetEntityBoundingBox(Zenith_Entity* pxEntity
 	return CalculateBoundingBox(pxEntity);
 }
 
+bool Zenith_SelectionSystem::TestEntityHit(Zenith_ModelComponent* pxModel,
+	const Zenith_Maths::Vector3& xRayOrigin,
+	const Zenith_Maths::Vector3& xRayDir,
+	float fMaxDistance,
+	float& fOutDistance)
+{
+	Zenith_Entity xEntity = pxModel->GetParentEntity();
+	const Zenith_EntityID uEntityID = xEntity.GetEntityID();
+
+	// AABB cull: reject before touching mesh data.
+	const auto it = s_xEntityBoundingBoxes.find(uEntityID);
+	if (it != s_xEntityBoundingBoxes.end())
+	{
+		float fBBoxDistance;
+		if (!it->second.Intersects(xRayOrigin, xRayDir, fBBoxDistance))
+			return false;
+		if (fBBoxDistance > fMaxDistance)
+			return false;
+	}
+
+	if (!xEntity.HasComponent<Zenith_TransformComponent>())
+		return false;
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	Zenith_Maths::Matrix4 xTransformMatrix;
+	xTransform.BuildModelMatrix(xTransformMatrix);
+
+	// Triangle-level raycast if we have a physics mesh; otherwise fall back to
+	// the AABB hit we already computed.
+	Flux_MeshGeometry* pxPhysicsMesh = pxModel->GetPhysicsMesh();
+	if (pxPhysicsMesh)
+	{
+		return RaycastPhysicsMesh(xRayOrigin, xRayDir, pxPhysicsMesh, xTransformMatrix, fOutDistance);
+	}
+
+	if (it == s_xEntityBoundingBoxes.end())
+		return false;
+
+	float fBBoxDistance;
+	if (!it->second.Intersects(xRayOrigin, xRayDir, fBBoxDistance))
+		return false;
+
+	fOutDistance = fBBoxDistance;
+	return true;
+}
+
 Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
 	float fClosestDistance = std::numeric_limits<float>::max();
 	Zenith_EntityID uClosestEntityID = INVALID_ENTITY_ID;
 
-	// Get all model components from ALL loaded scenes for detailed raycasting
 	Zenith_Vector<Zenith_ModelComponent*> xModelComponents;
 	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModelComponents);
 
@@ -265,64 +309,14 @@ Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector
 		if (!pxModel)
 			continue;
 
-		Zenith_Entity xEntity = pxModel->GetParentEntity();
-		Zenith_EntityID uEntityID = xEntity.GetEntityID();
-
-		// First, do a quick AABB test to cull entities
-		auto it = s_xEntityBoundingBoxes.find(uEntityID);
-		if (it != s_xEntityBoundingBoxes.end())
-		{
-			float fBBoxDistance;
-			if (!it->second.Intersects(rayOrigin, rayDir, fBBoxDistance))
-			{
-				// AABB miss - skip detailed test
-				continue;
-			}
-
-			// AABB hit - early out if already further than closest hit
-			if (fBBoxDistance > fClosestDistance)
-				continue;
-		}
-
-		// Get transform matrix for this entity
-		if (!xEntity.HasComponent<Zenith_TransformComponent>())
+		float fHitDistance;
+		if (!TestEntityHit(pxModel, rayOrigin, rayDir, fClosestDistance, fHitDistance))
 			continue;
 
-		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
-		Zenith_Maths::Matrix4 xTransformMatrix;
-		xTransform.BuildModelMatrix(xTransformMatrix);
-
-		// Detailed triangle-level raycast against physics mesh
-		Flux_MeshGeometry* pxPhysicsMesh = pxModel->GetPhysicsMesh();
-		if (pxPhysicsMesh)
+		if (fHitDistance < fClosestDistance)
 		{
-			float fHitDistance;
-			if (RaycastPhysicsMesh(rayOrigin, rayDir, pxPhysicsMesh, xTransformMatrix, fHitDistance))
-			{
-				if (fHitDistance < fClosestDistance)
-				{
-					fClosestDistance = fHitDistance;
-					uClosestEntityID = uEntityID;
-				}
-			}
-		}
-		else
-		{
-			// Fallback: Use AABB-only selection if no physics mesh
-			// (Already passed AABB test above)
-			auto itFallback = s_xEntityBoundingBoxes.find(uEntityID);
-			if (itFallback != s_xEntityBoundingBoxes.end())
-			{
-				float fBBoxDistance;
-				if (itFallback->second.Intersects(rayOrigin, rayDir, fBBoxDistance))
-				{
-					if (fBBoxDistance < fClosestDistance)
-					{
-						fClosestDistance = fBBoxDistance;
-						uClosestEntityID = uEntityID;
-					}
-				}
-			}
+			fClosestDistance = fHitDistance;
+			uClosestEntityID = pxModel->GetParentEntity().GetEntityID();
 		}
 	}
 
@@ -341,28 +335,18 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 	if (!pxSceneData)
 		return xBoundingBox;
 
-	// Check if entity has a model component
+	// Entities without a ModelComponent (cameras, lights, empty nodes) get a
+	// small picking cube centered at their transform position. Every entity is
+	// guaranteed to have a TransformComponent, so no further check is needed.
 	if (!pxSceneData->EntityHasComponent<Zenith_ModelComponent>(pxEntity->GetEntityID()))
 	{
-		// TODO: Handle entities without models
-		// Create default bounding box for non-renderable entities
-		// This allows picking cameras, lights, empty nodes, etc.
-		//
-		// APPROACH:
-		// 1. Check if entity has TransformComponent
-		// 2. If yes, create small cube (e.g., 1 unit) centered at position
-		// 3. If no transform, return empty/invalid bounding box
-		//
-		// EXAMPLE:
-		// if (xScene.EntityHasComponent<Zenith_TransformComponent>(pxEntity->GetEntityID()))
-		// {
-		//     auto& transform = xScene.GetComponentFromEntity<Zenith_TransformComponent>(pxEntity->GetEntityID());
-		//     Vector3 pos;
-		//     transform.GetPosition(pos);
-		//     xBoundingBox.m_xMin = pos - Vector3(0.5f);
-		//     xBoundingBox.m_xMax = pos + Vector3(0.5f);
-		// }
-
+		Zenith_TransformComponent& xTransform =
+			pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(pxEntity->GetEntityID());
+		Zenith_Maths::Vector3 xPos;
+		xTransform.GetPosition(xPos);
+		constexpr float fHalfExtent = 0.5f;
+		xBoundingBox.m_xMin = xPos - Zenith_Maths::Vector3(fHalfExtent);
+		xBoundingBox.m_xMax = xPos + Zenith_Maths::Vector3(fHalfExtent);
 		return xBoundingBox;
 	}
 

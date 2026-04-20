@@ -9,7 +9,6 @@
 #include "Zenith_PlatformGraphics_Include.h"
 #include <unordered_map> // #TODO: Replace with engine hash map
 #include <unordered_set> // #TODO: Replace with engine hash set when available
-#include <vector> // #TODO: Replace with Zenith_Vector (requires removing range-for and std::remove_if usage)
 #include <algorithm>
 
 // Registered pipeline info
@@ -26,7 +25,7 @@ struct RegisteredPipeline
 
 // Static data
 static Zenith_FileWatcher s_xFileWatcher;
-static std::vector<RegisteredPipeline> s_axRegisteredPipelines;
+static Zenith_Vector<RegisteredPipeline> s_axRegisteredPipelines;
 static std::unordered_set<std::string> s_xPendingReloadFiles;
 static Zenith_Mutex s_xMutex;
 static double s_fLastReloadTime = 0.0;
@@ -130,7 +129,7 @@ void Flux_ShaderHotReload::Shutdown()
 
 	{
 		Zenith_ScopedMutexLock xLock(s_xMutex);
-		s_axRegisteredPipelines.clear();
+		s_axRegisteredPipelines.Clear();
 		s_xPendingReloadFiles.clear();
 	}
 
@@ -211,35 +210,33 @@ void Flux_ShaderHotReload::MarkPipelinesForReload(const std::string& strChangedF
 {
 	Zenith_ScopedMutexLock xLock(s_xMutex);
 
-	for (RegisteredPipeline& xPipeline : s_axRegisteredPipelines)
+	// Detect header-file changes once — any .fxh/.hlsl/.slang change invalidates
+	// every pipeline since the dependency graph isn't tracked yet; the shader
+	// cache filters unnecessary recompilations downstream.
+	std::string strExt;
+	size_t ulDot = strChangedFile.rfind('.');
+	if (ulDot != std::string::npos)
 	{
-		bool bAffected = false;
+		strExt = strChangedFile.substr(ulDot);
+	}
+	const bool bIsHeaderChange = (strExt == ".fxh" || strExt == ".hlsl" || strExt == ".slang");
 
-		if (xPipeline.m_bIsCompute)
-		{
-			bAffected = PathMatches(xPipeline.m_strComputePath, strChangedFile);
-		}
-		else
-		{
-			bAffected = PathMatches(xPipeline.m_strVertPath, strChangedFile) ||
-						PathMatches(xPipeline.m_strFragPath, strChangedFile);
-		}
+	for (u_int u = 0; u < s_axRegisteredPipelines.GetSize(); ++u)
+	{
+		RegisteredPipeline& xPipeline = s_axRegisteredPipelines.Get(u);
+		bool bAffected = bIsHeaderChange;
 
-		// Also check if it's a header file that might be included
-		// Headers can affect any shader, so mark all for reload if a .fxh changes
-		std::string strExt;
-		size_t ulDot = strChangedFile.rfind('.');
-		if (ulDot != std::string::npos)
+		if (!bAffected)
 		{
-			strExt = strChangedFile.substr(ulDot);
-		}
-
-		if (strExt == ".fxh" || strExt == ".hlsl" || strExt == ".slang")
-		{
-			// For header files, we need to check dependencies
-			// For now, mark all pipelines as potentially affected
-			// The cache system will handle avoiding unnecessary recompilations
-			bAffected = true;
+			if (xPipeline.m_bIsCompute)
+			{
+				bAffected = PathMatches(xPipeline.m_strComputePath, strChangedFile);
+			}
+			else
+			{
+				bAffected = PathMatches(xPipeline.m_strVertPath, strChangedFile) ||
+							PathMatches(xPipeline.m_strFragPath, strChangedFile);
+			}
 		}
 
 		if (bAffected)
@@ -270,33 +267,34 @@ void Flux_ShaderHotReload::ProcessPendingReloads()
 	}
 
 	// Collect pipelines that need reload
-	std::vector<RegisteredPipeline*> axPipelinesToReload;
+	Zenith_Vector<RegisteredPipeline*> axPipelinesToReload;
 	{
 		Zenith_ScopedMutexLock xLock(s_xMutex);
-		for (RegisteredPipeline& xPipeline : s_axRegisteredPipelines)
+		for (u_int u = 0; u < s_axRegisteredPipelines.GetSize(); ++u)
 		{
+			RegisteredPipeline& xPipeline = s_axRegisteredPipelines.Get(u);
 			if (xPipeline.m_bNeedsReload)
 			{
-				axPipelinesToReload.push_back(&xPipeline);
+				axPipelinesToReload.PushBack(&xPipeline);
 			}
 		}
 	}
 
-	if (axPipelinesToReload.empty())
+	if (axPipelinesToReload.GetSize() == 0)
 	{
 		return;
 	}
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Reloading %u pipeline(s)...",
-			   static_cast<u_int>(axPipelinesToReload.size()));
+			   axPipelinesToReload.GetSize());
 
 	// Wait for GPU to be idle before recreating pipelines.
 	// Engine-typed wrapper rather than reaching into the backend's vk::Device.
 	Flux_PlatformAPI::WaitForGPUIdle();
 
-	// Reload each pipeline
-	for (RegisteredPipeline* pxPipeline : axPipelinesToReload)
+	for (u_int u = 0; u < axPipelinesToReload.GetSize(); ++u)
 	{
+		RegisteredPipeline* pxPipeline = axPipelinesToReload.Get(u);
 		bool bSuccess = false;
 
 		if (pxPipeline->m_pfnRecreate)
@@ -340,10 +338,9 @@ void Flux_ShaderHotReload::RegisterPipeline(Flux_Pipeline* pxPipeline,
 
 	Zenith_ScopedMutexLock xLock(s_xMutex);
 
-	// Check if already registered
-	for (const RegisteredPipeline& xExisting : s_axRegisteredPipelines)
+	for (u_int u = 0; u < s_axRegisteredPipelines.GetSize(); ++u)
 	{
-		if (xExisting.m_pxPipeline == pxPipeline)
+		if (s_axRegisteredPipelines.Get(u).m_pxPipeline == pxPipeline)
 		{
 			Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Pipeline already registered");
 			return;
@@ -358,7 +355,7 @@ void Flux_ShaderHotReload::RegisterPipeline(Flux_Pipeline* pxPipeline,
 	xPipeline.m_bIsCompute = false;
 	xPipeline.m_bNeedsReload = false;
 
-	s_axRegisteredPipelines.push_back(xPipeline);
+	s_axRegisteredPipelines.PushBack(xPipeline);
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Registered pipeline (%s + %s)",
 			   strVertPath.c_str(), strFragPath.c_str());
@@ -375,10 +372,9 @@ void Flux_ShaderHotReload::RegisterComputePipeline(Flux_Pipeline* pxPipeline,
 
 	Zenith_ScopedMutexLock xLock(s_xMutex);
 
-	// Check if already registered
-	for (const RegisteredPipeline& xExisting : s_axRegisteredPipelines)
+	for (u_int u = 0; u < s_axRegisteredPipelines.GetSize(); ++u)
 	{
-		if (xExisting.m_pxPipeline == pxPipeline)
+		if (s_axRegisteredPipelines.Get(u).m_pxPipeline == pxPipeline)
 		{
 			Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Pipeline already registered");
 			return;
@@ -392,7 +388,7 @@ void Flux_ShaderHotReload::RegisterComputePipeline(Flux_Pipeline* pxPipeline,
 	xPipeline.m_bIsCompute = true;
 	xPipeline.m_bNeedsReload = false;
 
-	s_axRegisteredPipelines.push_back(xPipeline);
+	s_axRegisteredPipelines.PushBack(xPipeline);
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Registered compute pipeline (%s)",
 			   strComputePath.c_str());
@@ -407,14 +403,18 @@ void Flux_ShaderHotReload::UnregisterPipeline(Flux_Pipeline* pxPipeline)
 
 	Zenith_ScopedMutexLock xLock(s_xMutex);
 
-	auto it = std::remove_if(s_axRegisteredPipelines.begin(), s_axRegisteredPipelines.end(),
-		[pxPipeline](const RegisteredPipeline& xPipeline) {
-			return xPipeline.m_pxPipeline == pxPipeline;
-		});
-
-	if (it != s_axRegisteredPipelines.end())
+	bool bRemoved = false;
+	for (u_int u = s_axRegisteredPipelines.GetSize(); u-- > 0; )
 	{
-		s_axRegisteredPipelines.erase(it, s_axRegisteredPipelines.end());
+		if (s_axRegisteredPipelines.Get(u).m_pxPipeline == pxPipeline)
+		{
+			s_axRegisteredPipelines.Remove(u);
+			bRemoved = true;
+		}
+	}
+
+	if (bRemoved)
+	{
 		Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Unregistered pipeline");
 	}
 }
@@ -431,9 +431,9 @@ void Flux_ShaderHotReload::ReloadAll()
 	// Mark all pipelines for reload
 	{
 		Zenith_ScopedMutexLock xLock(s_xMutex);
-		for (RegisteredPipeline& xPipeline : s_axRegisteredPipelines)
+		for (u_int u = 0; u < s_axRegisteredPipelines.GetSize(); ++u)
 		{
-			xPipeline.m_bNeedsReload = true;
+			s_axRegisteredPipelines.Get(u).m_bNeedsReload = true;
 		}
 	}
 

@@ -99,144 +99,132 @@ void Flux_StaticMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes(Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
+// Animated meshes (skeleton + at least one skinned mesh instance) are rendered
+// by Flux_AnimatedMeshes; this renderer skips them. Models with a skeleton but
+// NO skinning data still render here as static meshes.
+static bool IsAnimatedSkinnedModel(const Flux_ModelInstance& xModelInstance)
+{
+	if (!xModelInstance.HasSkeleton()) return false;
+	for (uint32_t u = 0; u < xModelInstance.GetNumMeshes(); u++)
+	{
+		if (xModelInstance.GetSkinnedMeshInstance(u) != nullptr) return true;
+	}
+	return false;
+}
+
+// Per-mesh draw used by both the new model-instance and legacy mesh-entry
+// branches. Bind material constants + SRVs, then emit the indexed draw.
+static void DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	const Zenith_Maths::Matrix4& xModelMatrix,
+	Zenith_MaterialAsset* pxMaterial,
+	u_int uIndexCount)
+{
+	MaterialDrawConstants xPushConstants;
+	BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
+	xBinder.BindDrawConstants(s_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
+
+	xBinder.BindSRV(s_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
+	xBinder.BindSRV(s_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
+	xBinder.BindSRV(s_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
+	xBinder.BindSRV(s_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
+	xBinder.BindSRV(s_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
+
+	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(uIndexCount);
+}
+
+static void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	Zenith_ModelComponent* pxModel, Flux_ModelInstance* pxModelInstance)
+{
+	// One-shot debug log: log the first static-model layout we render so we can
+	// diagnose missing/empty meshes by looking at the first frame's logs.
+	static bool ls_bLoggedOnce = false;
+	if (!ls_bLoggedOnce)
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "[StaticMeshes] Rendering static model - meshes: %u", pxModelInstance->GetNumMeshes());
+		for (uint32_t uDbg = 0; uDbg < pxModelInstance->GetNumMeshes(); uDbg++)
+		{
+			Flux_MeshInstance* pxDbgMesh = pxModelInstance->GetMeshInstance(uDbg);
+			if (pxDbgMesh)
+			{
+				Zenith_Log(LOG_CATEGORY_RENDERER, "[StaticMeshes]   Mesh %u: %u verts, %u indices",
+					uDbg, pxDbgMesh->GetNumVerts(), pxDbgMesh->GetNumIndices());
+			}
+			else
+			{
+				Zenith_Log(LOG_CATEGORY_RENDERER, "[StaticMeshes]   Mesh %u: NULL", uDbg);
+			}
+		}
+		ls_bLoggedOnce = true;
+	}
+
+	Zenith_Maths::Matrix4 xModelMatrix;
+	pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+
+	for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
+	{
+		Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
+		if (!pxMeshInstance) continue;
+
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+
+		Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
+		if (!pxMaterial) pxMaterial = Flux_Graphics::s_pxBlankMaterial;
+		Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
+
+		DrawStaticMesh(pxCmdList, xBinder, xModelMatrix, pxMaterial, pxMeshInstance->GetNumIndices());
+	}
+}
+
+// Legacy procedural-mesh branch (Games/ procedural meshes that haven't moved
+// to the model-instance system yet).
+static void RenderLegacyMeshEntries(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
+	Zenith_ModelComponent* pxModel)
+{
+	if (!pxModel->GetNumMeshEntries()) return;
+
+	Zenith_Maths::Matrix4 xModelMatrix;
+	pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+
+	for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
+	{
+		const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
+		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
+		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
+
+		Zenith_MaterialAsset& xMaterial = *pxModel->GetMaterialAtIndex(uMesh);
+		DrawStaticMesh(pxCmdList, xBinder, xModelMatrix, &xMaterial, xMesh.GetNumIndices());
+	}
+}
+
 void Flux_StaticMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
-	if (!dbg_bEnable)
-	{
-		return;
-	}
+	if (!dbg_bEnable) return;
 
 	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
 
-	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
-
-	// Bind FrameConstants once per command list (set 0 - per-frame data)
 	xBinder.BindCBV(s_xGBufferShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
 
-	static bool s_bLoggedOnce = false;
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ModelComponent* pxModel = xIt.GetData();
 
-		// New model instance system - only render static meshes (no skeleton)
-		// Animated meshes with skeletons are rendered by Flux_AnimatedMeshes
-		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
-		if (pxModelInstance)
+		// New model-instance system: skip skinned-animated models (rendered
+		// by Flux_AnimatedMeshes), draw everything else here.
+		if (Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance())
 		{
-			// Check if this model should be rendered by the animated mesh renderer
-			// A model is animated if it has a skeleton AND at least one skinned mesh instance
-			bool bHasSkinnedMeshes = false;
-			if (pxModelInstance->HasSkeleton())
-			{
-				for (uint32_t uCheck = 0; uCheck < pxModelInstance->GetNumMeshes(); uCheck++)
-				{
-					if (pxModelInstance->GetSkinnedMeshInstance(uCheck) != nullptr)
-					{
-						bHasSkinnedMeshes = true;
-						break;
-					}
-				}
-			}
-
-			// Skip models that have a skeleton AND skinned mesh data - they are rendered by Flux_AnimatedMeshes
-			// Models with a skeleton but NO skinning data are rendered here using static mesh instances
-			if (pxModelInstance->HasSkeleton() && bHasSkinnedMeshes)
-			{
-				continue;
-			}
-
-			if (!s_bLoggedOnce)
-			{
-				Zenith_Log(LOG_CATEGORY_RENDERER, "[StaticMeshes] Rendering static model - meshes: %u", pxModelInstance->GetNumMeshes());
-				for (uint32_t uDbg = 0; uDbg < pxModelInstance->GetNumMeshes(); uDbg++)
-				{
-					Flux_MeshInstance* pxDbgMesh = pxModelInstance->GetMeshInstance(uDbg);
-					if (pxDbgMesh)
-					{
-						Zenith_Log(LOG_CATEGORY_RENDERER, "[StaticMeshes]   Mesh %u: %u verts, %u indices", uDbg, pxDbgMesh->GetNumVerts(), pxDbgMesh->GetNumIndices());
-					}
-					else
-					{
-						Zenith_Log(LOG_CATEGORY_RENDERER, "[StaticMeshes]   Mesh %u: NULL", uDbg);
-					}
-				}
-				s_bLoggedOnce = true;
-			}
-
-			Zenith_Maths::Matrix4 xModelMatrix;
-			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
-
-			for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
-			{
-				Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
-				if (!pxMeshInstance)
-				{
-					continue;
-				}
-
-				pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
-				pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
-
-				Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
-				if (!pxMaterial)
-				{
-					pxMaterial = Flux_Graphics::s_pxBlankMaterial;
-				}
-				Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
-
-				// Build and push material constants (128 bytes) - uses scratch buffer in set 1
-				MaterialDrawConstants xPushConstants;
-				BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
-				xBinder.BindDrawConstants(s_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
-
-				// Bind set 1: material textures (named bindings)
-				xBinder.BindSRV(s_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
-				xBinder.BindSRV(s_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
-				xBinder.BindSRV(s_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
-				xBinder.BindSRV(s_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
-				xBinder.BindSRV(s_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
-
-				pxCmdList->AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
-			}
+			if (IsAnimatedSkinnedModel(*pxModelInstance)) continue;
+			RenderModelInstanceMeshes(pxCmdList, xBinder, pxModel, pxModelInstance);
 			continue;
 		}
 
-		// Legacy mesh entry system (procedural meshes from Games/)
-		//#TO_TODO: these 2 should probably be separate components
-		if (!pxModel->GetNumMeshEntries())
-		{
-			continue;
-		}
-
-		Zenith_Maths::Matrix4 xModelMatrix;
-		pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
-
-		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
-		{
-			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
-			pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
-			pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
-
-			Zenith_MaterialAsset& xMaterial = *pxModel->GetMaterialAtIndex(uMesh);
-
-			// Build and push material constants (128 bytes) - uses scratch buffer in set 1
-			MaterialDrawConstants xPushConstants;
-			BuildMaterialDrawConstants(xPushConstants, xModelMatrix, &xMaterial);
-			xBinder.BindDrawConstants(s_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
-
-			// Bind set 1: material textures (named bindings)
-			xBinder.BindSRV(s_xGBufferShader, "g_xDiffuseTex", &xMaterial.GetDiffuseTexture()->m_xSRV);
-			xBinder.BindSRV(s_xGBufferShader, "g_xNormalTex", &xMaterial.GetNormalTexture()->m_xSRV);
-			xBinder.BindSRV(s_xGBufferShader, "g_xRoughnessMetallicTex", &xMaterial.GetRoughnessMetallicTexture()->m_xSRV);
-			xBinder.BindSRV(s_xGBufferShader, "g_xOcclusionTex", &xMaterial.GetOcclusionTexture()->m_xSRV);
-			xBinder.BindSRV(s_xGBufferShader, "g_xEmissiveTex", &xMaterial.GetEmissiveTexture()->m_xSRV);
-
-			pxCmdList->AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
-		}
+		// Fallback: legacy procedural mesh entries.
+		// #TODO: these 2 should probably be separate components.
+		RenderLegacyMeshEntries(pxCmdList, xBinder, pxModel);
 	}
 }
 

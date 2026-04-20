@@ -126,6 +126,14 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
+private:
+	// ReadFromDataStream sub-paths — GUID-based model + per-override materials
+	// (v4+) vs legacy inline mesh entries. Kept private to keep the public
+	// serialization surface a single entry point.
+	void ReadModelInstanceWithMaterials(Zenith_DataStream& xStream, uint32_t uVersion);
+	void ReadLegacyMeshEntries(Zenith_DataStream& xStream);
+public:
+
 	//=========================================================================
 	// Procedural Mesh API
 	//=========================================================================

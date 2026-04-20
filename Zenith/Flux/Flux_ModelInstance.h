@@ -170,4 +170,8 @@ private:
 
 	// Track skeleton asset that was loaded (handle manages ref counting)
 	SkeletonHandle m_xLoadedSkeletonAsset;
+
+	// Called once per sub-mesh from CreateFromAsset — loads the mesh, creates static
+	// and (if applicable) skinned GPU instances, and resolves its material bindings.
+	void BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAsset* pxAsset);
 };

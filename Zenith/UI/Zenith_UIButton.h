@@ -133,6 +133,13 @@ public:
 #endif
 
 private:
+	struct ButtonIconLayout
+	{
+		Zenith_Maths::Vector2 xIconPos{0.f, 0.f};
+		Zenith_Maths::Vector2 xTextPos{0.f, 0.f};
+		bool bHasIcon = false;
+	};
+
 	// ========== Update helpers ==========
 	// Called from Update() — keep behaviour identical to the original monolithic flow.
 	void HandleFirstVisibleFrame();
@@ -143,6 +150,10 @@ private:
 	void HandleInputEvents(bool bInteractable, bool bHovered, bool bMouseDown);
 	void ResolveState(bool bHovered, bool bMouseDown);
 	void UpdateVisualTransition(float fDt);
+
+	// ========== Render helpers ==========
+	void ResolveVisualState(float& fAlpha, UIStyle& xRenderStyle) const;
+	ButtonIconLayout CalculateIconTextPositions(const Zenith_Maths::Vector4& xBounds) const;
 
 	// Callback
 	UIButtonCallback m_pfnOnClick = nullptr;

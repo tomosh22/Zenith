@@ -142,6 +142,15 @@ public:
 	vk::RenderPass m_xCurrentRenderPass;
 private:
 	void UpdateDescriptorSets();
+	// Walk the bindings for descriptor-set uDescSet and append per-binding write
+	// records into the caller-provided stack buffers. Counts are updated in place.
+	// Extracted from UpdateDescriptorSets so the outer cache/allocate/bind dance
+	// stays tight; this helper owns the per-binding-type → vk write mapping.
+	void BuildDescriptorWritesForSet(
+		u_int uDescSet,
+		vk::DescriptorBufferInfo* axBufferInfos, u_int& uNumBufferWrites,
+		vk::DescriptorImageInfo* axTexInfos, u_int& uNumTexWrites,
+		vk::WriteDescriptorSet* axWrites, u_int& uNumWrites);
 	std::vector<vk::CommandBuffer> m_xCmdBuffers;
 
 	Zenith_Vulkan_Pipeline* m_pxCurrentPipeline;

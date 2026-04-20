@@ -712,6 +712,12 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_AsyncLoad.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_Callbacks.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_Queries.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneOperation.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
@@ -839,6 +845,12 @@
       <Filter>Flux\Quads</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.cpp">
+      <Filter>Flux\RenderGraph</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Compilation.cpp">
+      <Filter>Flux\RenderGraph</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Execution.cpp">
       <Filter>Flux\RenderGraph</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\SDFs\Flux_SDFs.cpp">
@@ -979,6 +991,9 @@
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.cpp">
       <Filter>Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_ComputePipelineBuilder.cpp">
+      <Filter>Vulkan</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_ImGuiIntegration.cpp">
       <Filter>Vulkan</Filter>
     </ClCompile>
@@ -986,6 +1001,9 @@
       <Filter>Vulkan</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp">
+      <Filter>Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Shader.cpp">
       <Filter>Vulkan</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp">

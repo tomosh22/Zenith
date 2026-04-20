@@ -303,20 +303,97 @@ void Flux_TerrainStreamingManager::UnregisterTerrainBuffers()
 	s_bAABBsCached = false;
 }
 
+// For each active chunk: determine desired LOD; if HIGH-LOD is wanted but not
+// resident, stream it in. Bound by MAX_UPLOADS_PER_FRAME and a 2× attempt cap
+// (the latter prevents excessive disk I/O when many chunks need loading);
+// stops on the first allocation failure (buffer likely full / fragmented).
+void Flux_TerrainStreamingManager::RequestNearbyHighLOD(const Zenith_Maths::Vector3& xCameraPos)
+{
+	uint32_t uStreamsThisFrame = 0;
+	uint32_t uStreamAttemptsThisFrame = 0;
+	bool bAllocationFailed = false;
+
+	for (uint32_t uActiveIdx = 0; uActiveIdx < s_xActiveChunkIndices.size(); ++uActiveIdx)
+	{
+		if (uStreamsThisFrame >= MAX_UPLOADS_PER_FRAME || bAllocationFailed) break;
+		if (uStreamAttemptsThisFrame >= MAX_UPLOADS_PER_FRAME * 2) break;
+
+		const uint32_t uChunkIndex = s_xActiveChunkIndices[uActiveIdx];
+		const float fDistanceSq = GetChunkDistanceSq(uChunkIndex, xCameraPos);
+		const uint32_t uDesiredLOD = CalculateDesiredLOD(fDistanceSq);
+		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
+
+		if (uDesiredLOD != LOD_HIGH || xResidency.m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT) continue;
+
+		uStreamAttemptsThisFrame++;
+		if (StreamInLOD(uChunkIndex, LOD_HIGH))
+		{
+			uStreamsThisFrame++;
+			s_xStats.m_uStreamsThisFrame++;
+			s_bChunkDataDirty.store(true, std::memory_order_release);
+
+			if (dbg_bLogTerrainStreaming)
+			{
+				uint32_t uChunkX, uChunkY;
+				ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
+				Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Streamed in chunk (%u,%u) HIGH", uChunkX, uChunkY);
+			}
+		}
+		else
+		{
+			bAllocationFailed = true;
+			if (dbg_bLogTerrainStreaming)
+			{
+				uint32_t uChunkX, uChunkY;
+				ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
+				Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Stream failed for chunk (%u,%u), stopping this frame", uChunkX, uChunkY);
+			}
+		}
+	}
+}
+
+// Evict HIGH LOD chunks beyond the eviction threshold (HIGH range × hysteresis).
+// LOW LOD is always resident so eviction only applies to HIGH. Bounded by
+// MAX_EVICTIONS_PER_FRAME to avoid mass pop-in when the camera teleports.
+void Flux_TerrainStreamingManager::EvictDistantHighLOD(const Zenith_Maths::Vector3& xCameraPos)
+{
+	uint32_t uEvictionsThisFrame = 0;
+	const float fEvictionThreshold = LOD_HIGH_MAX_DISTANCE_SQ * LOD_EVICTION_HYSTERESIS;
+
+	for (uint32_t i = 0; i < TOTAL_CHUNKS && uEvictionsThisFrame < MAX_EVICTIONS_PER_FRAME; ++i)
+	{
+		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[i];
+		if (xResidency.m_aeStates[LOD_HIGH] != Flux_TerrainLODResidencyState::RESIDENT) continue;
+
+		const float fDistanceSq = GetChunkDistanceSq(i, xCameraPos);
+		if (fDistanceSq <= fEvictionThreshold) continue;
+
+		EvictLOD(i, LOD_HIGH);
+		uEvictionsThisFrame++;
+		s_xStats.m_uEvictionsThisFrame++;
+		s_bChunkDataDirty.store(true, std::memory_order_release);
+
+		if (dbg_bLogTerrainStreaming)
+		{
+			uint32_t uChunkX, uChunkY;
+			ChunkIndexToCoords(i, uChunkX, uChunkY);
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Evicted chunk (%u,%u) HIGH (dist=%.0f, threshold=%.0f)",
+				uChunkX, uChunkY, sqrtf(fDistanceSq), sqrtf(fEvictionThreshold));
+		}
+	}
+}
+
 void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& xCameraPos)
 {
-	if (!s_bInitialized || !s_pxTerrainComponent)
-		return;
+	if (!s_bInitialized || !s_pxTerrainComponent) return;
 
 	s_uCurrentFrame++;
 	s_xStats.m_uStreamsThisFrame = 0;
 	s_xStats.m_uEvictionsThisFrame = 0;
 	s_xLastCameraPos = xCameraPos;
 
-	// Check if camera moved to a new chunk
 	int32_t iCameraChunkX, iCameraChunkY;
 	WorldPosToChunkCoords(xCameraPos, iCameraChunkX, iCameraChunkY);
-
 	if (iCameraChunkX != s_iLastCameraChunkX || iCameraChunkY != s_iLastCameraChunkY)
 	{
 		RebuildActiveChunkSet(iCameraChunkX, iCameraChunkY);
@@ -329,96 +406,9 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 				iCameraChunkX, iCameraChunkY, s_xActiveChunkIndices.size());
 	}
 
-	// Process each active chunk: determine desired LOD and stream if needed
-	uint32_t uStreamsThisFrame = 0;
-	uint32_t uStreamAttemptsThisFrame = 0;
-	bool bAllocationFailed = false;  // Stop trying after first allocation failure (likely out of space)
+	RequestNearbyHighLOD(xCameraPos);
+	EvictDistantHighLOD(xCameraPos);
 
-	for (uint32_t uActiveIdx = 0; uActiveIdx < s_xActiveChunkIndices.size(); ++uActiveIdx)
-	{
-		// Stop if we've done enough successful streams or hit allocation failure
-		if (uStreamsThisFrame >= MAX_UPLOADS_PER_FRAME || bAllocationFailed)
-			break;
-
-		// Also limit total attempts to prevent excessive disk I/O
-		if (uStreamAttemptsThisFrame >= MAX_UPLOADS_PER_FRAME * 2)
-			break;
-
-		const uint32_t uChunkIndex = s_xActiveChunkIndices[uActiveIdx];
-
-		// Calculate distance to chunk center
-		float fDistanceSq = GetChunkDistanceSq(uChunkIndex, xCameraPos);
-
-		// Determine desired LOD based on distance
-		uint32_t uDesiredLOD = CalculateDesiredLOD(fDistanceSq);
-		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
-
-		// If desired LOD is HIGH and it's not resident, stream it in
-		if (uDesiredLOD == LOD_HIGH && xResidency.m_aeStates[LOD_HIGH] != Flux_TerrainLODResidencyState::RESIDENT)
-		{
-			uStreamAttemptsThisFrame++;
-
-			if (StreamInLOD(uChunkIndex, LOD_HIGH))
-			{
-				uStreamsThisFrame++;
-				s_xStats.m_uStreamsThisFrame++;
-				s_bChunkDataDirty.store(true, std::memory_order_release);
-
-				if (dbg_bLogTerrainStreaming)
-				{
-					uint32_t uChunkX, uChunkY;
-					ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
-					Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Streamed in chunk (%u,%u) HIGH", uChunkX, uChunkY);
-				}
-			}
-			else
-			{
-				// Allocation failed - stop trying this frame (buffer likely full/fragmented)
-				bAllocationFailed = true;
-
-				if (dbg_bLogTerrainStreaming)
-				{
-					uint32_t uChunkX, uChunkY;
-					ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
-					Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Stream failed for chunk (%u,%u), stopping this frame", uChunkX, uChunkY);
-				}
-			}
-		}
-	}
-
-	// Evict distant HIGH LODs that are no longer needed (LOW is always resident)
-	// Limit evictions per frame to avoid mass pop-in when camera teleports
-	uint32_t uEvictionsThisFrame = 0;
-	for (uint32_t i = 0; i < TOTAL_CHUNKS && uEvictionsThisFrame < MAX_EVICTIONS_PER_FRAME; ++i)
-	{
-		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[i];
-
-		// Only HIGH LOD can be evicted
-		if (xResidency.m_aeStates[LOD_HIGH] != Flux_TerrainLODResidencyState::RESIDENT)
-			continue;
-
-		float fDistanceSq = GetChunkDistanceSq(i, xCameraPos);
-
-		// Evict if chunk is well beyond HIGH LOD's range (with hysteresis)
-		float fEvictionThreshold = LOD_HIGH_MAX_DISTANCE_SQ * LOD_EVICTION_HYSTERESIS;
-		if (fDistanceSq > fEvictionThreshold)
-		{
-			EvictLOD(i, LOD_HIGH);
-			uEvictionsThisFrame++;
-			s_xStats.m_uEvictionsThisFrame++;
-			s_bChunkDataDirty.store(true, std::memory_order_release);
-
-			if (dbg_bLogTerrainStreaming)
-			{
-				uint32_t uChunkX, uChunkY;
-				ChunkIndexToCoords(i, uChunkX, uChunkY);
-				Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Evicted chunk (%u,%u) HIGH (dist=%.0f, threshold=%.0f)",
-					uChunkX, uChunkY, sqrtf(fDistanceSq), sqrtf(fEvictionThreshold));
-			}
-		}
-	}
-
-	// Update stats periodically
 	if (s_uCurrentFrame % 30 == 0)
 	{
 		UpdateStreamingStats();

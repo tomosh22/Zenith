@@ -46,15 +46,10 @@ bool Zenith_SceneManager::s_bIsPrefabInstantiating = false;
 Zenith_SceneManager::InitialSceneLoadFn Zenith_SceneManager::s_pfnInitialSceneLoad = nullptr;
 Zenith_Vector<Zenith_SceneManager::SceneNameEntry> Zenith_SceneManager::s_axLoadedSceneNames;
 uint64_t Zenith_SceneManager::s_ulNextLoadTimestamp = 1;
-Zenith_SceneManager::Zenith_CallbackList<Zenith_SceneManager::SceneChangedCallback> Zenith_SceneManager::s_xActiveSceneChangedCallbacks;
-Zenith_SceneManager::Zenith_CallbackList<Zenith_SceneManager::SceneLoadedCallback> Zenith_SceneManager::s_xSceneLoadedCallbacks;
-Zenith_SceneManager::Zenith_CallbackList<Zenith_SceneManager::SceneUnloadingCallback> Zenith_SceneManager::s_xSceneUnloadingCallbacks;
-Zenith_SceneManager::Zenith_CallbackList<Zenith_SceneManager::SceneUnloadedCallback> Zenith_SceneManager::s_xSceneUnloadedCallbacks;
-Zenith_SceneManager::Zenith_CallbackList<Zenith_SceneManager::SceneLoadStartedCallback> Zenith_SceneManager::s_xSceneLoadStartedCallbacks;
-Zenith_SceneManager::Zenith_CallbackList<Zenith_SceneManager::EntityPersistentCallback> Zenith_SceneManager::s_xEntityPersistentCallbacks;
-Zenith_SceneManager::CallbackHandle Zenith_SceneManager::s_ulNextCallbackHandle = 1;
-Zenith_Vector<Zenith_SceneManager::CallbackHandle> Zenith_SceneManager::s_axCallbacksPendingRemoval;
-uint32_t Zenith_SceneManager::s_uFiringCallbacksDepth = 0;
+// Callback-list statics (s_x*Callbacks, s_ulNextCallbackHandle,
+// s_axCallbacksPendingRemoval, s_uFiringCallbacksDepth) are defined in
+// Zenith_SceneManager_Callbacks.cpp alongside the template methods that
+// use them.
 Zenith_Vector<std::string> Zenith_SceneManager::s_axBuildIndexToPath;
 Zenith_Vector<std::string> Zenith_SceneManager::s_axCurrentlyLoadingPaths;
 Zenith_Vector<std::string> Zenith_SceneManager::s_axLifecycleLoadStack;
@@ -417,46 +412,8 @@ bool Zenith_SceneManager::IsSceneUpdatable(const Zenith_SceneData* pxData)
 	return pxData && pxData->m_bIsLoaded && pxData->m_bIsActivated && !pxData->m_bIsUnloading && !pxData->IsPaused();
 }
 
-uint32_t Zenith_SceneManager::GetLoadedSceneCount()
-{
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetLoadedSceneCount must be called from main thread");
-	uint32_t uCount = 0;
-	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
-	{
-		if (IsSceneVisibleToUser(i, s_axScenes.Get(i)))
-			uCount++;
-	}
-	// B6: return the real count. Previously this clamped to `max(1, count)` to imitate
-	// Unity's "always at least one scene", but Zenith permits a transient zero state
-	// (e.g. after UnloadAllNonPersistent, before the next LoadScene) — lying to callers
-	// caused them to iterate GetSceneAt(0) on an invalid index.
-	return uCount;
-}
-
-uint32_t Zenith_SceneManager::GetTotalSceneCount()
-{
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetTotalSceneCount must be called from main thread");
-	uint32_t uCount = 0;
-	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
-	{
-		if (s_axScenes.Get(i))
-		{
-			uCount++;
-		}
-	}
-	return uCount;
-}
-
-uint32_t Zenith_SceneManager::GetBuildSceneCount()
-{
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetBuildSceneCount must be called from main thread");
-	uint32_t uCount = 0;
-	for (u_int i = 0; i < s_axBuildIndexToPath.GetSize(); ++i)
-	{
-		if (!s_axBuildIndexToPath.Get(i).empty()) uCount++;
-	}
-	return uCount;
-}
+// Scene-count queries (GetLoadedSceneCount / GetTotalSceneCount /
+// GetBuildSceneCount) live in Zenith_SceneManager_Queries.cpp.
 
 //==========================================================================
 // Scene Creation
@@ -518,115 +475,9 @@ Zenith_Scene Zenith_SceneManager::CreateEmptyScene(const std::string& strName, b
 //==========================================================================
 // Scene Queries
 //==========================================================================
-
-Zenith_Scene Zenith_SceneManager::GetActiveScene()
-{
-	// Safe to call from worker threads during render task execution.
-	// All active scene changes complete before render tasks are submitted,
-	// and the task system's queue mutex provides the happens-before
-	// relationship for memory visibility on worker threads.
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || s_bRenderTasksActive, "GetActiveScene must be called from main thread or during render task execution");
-	const int iHandle = s_iActiveSceneHandle;
-	Zenith_Scene xScene;
-	xScene.m_iHandle = iHandle;
-	if (iHandle >= 0 && iHandle < static_cast<int>(s_axSceneGenerations.GetSize()))
-	{
-		xScene.m_uGeneration = s_axSceneGenerations.Get(iHandle);
-	}
-	return xScene;
-}
-
-Zenith_Scene Zenith_SceneManager::GetSceneAt(uint32_t uIndex)
-{
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneAt must be called from main thread");
-	Zenith_Scene xScene = MakeInvalidScene();
-
-	uint32_t uCurrent = 0;
-	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
-	{
-		if (!IsSceneVisibleToUser(i, s_axScenes.Get(i)))
-			continue;
-
-		if (uCurrent == uIndex)
-		{
-			xScene.m_iHandle = static_cast<int>(i);
-			xScene.m_uGeneration = s_axSceneGenerations.Get(i);
-			return xScene;
-		}
-		uCurrent++;
-	}
-	return xScene;
-}
-
-Zenith_Scene Zenith_SceneManager::GetSceneByBuildIndex(int iBuildIndex)
-{
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneByBuildIndex must be called from main thread");
-	Zenith_Scene xScene = MakeInvalidScene();
-
-	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
-	{
-		if (s_axScenes.Get(i) && s_axScenes.Get(i)->m_iBuildIndex == iBuildIndex
-			&& s_axScenes.Get(i)->m_bIsLoaded && !s_axScenes.Get(i)->m_bIsUnloading)
-		{
-			xScene.m_iHandle = static_cast<int>(i);
-			xScene.m_uGeneration = s_axSceneGenerations.Get(i);
-			return xScene;
-		}
-	}
-	return xScene;
-}
-
-Zenith_Scene Zenith_SceneManager::GetSceneByName(const std::string& strName)
-{
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneByName must be called from main thread");
-	Zenith_Scene xScene = MakeInvalidScene();
-
-	// Use name cache for O(n) scan over loaded scenes only (smaller than all scene slots)
-	for (u_int i = 0; i < s_axLoadedSceneNames.GetSize(); ++i)
-	{
-		const SceneNameEntry& xEntry = s_axLoadedSceneNames.Get(i);
-		const int iHandle = xEntry.m_iHandle;
-
-		// Verify scene is still valid and loaded
-		Zenith_SceneData* pxData = (iHandle >= 0 && iHandle < static_cast<int>(s_axScenes.GetSize())) ? s_axScenes.Get(iHandle) : nullptr;
-		if (!pxData || !pxData->m_bIsLoaded || pxData->m_bIsUnloading) continue;
-
-		const std::string& strSceneName = xEntry.m_strName;
-		bool bMatched = false;
-
-		// Exact match
-		if (strSceneName == strName)
-		{
-			bMatched = true;
-		}
-		else
-		{
-			// Unity: Also match by filename without path/extension
-			// e.g., "MyScene" matches "Levels/MyScene.zscen"
-			size_t uLastSlash = strSceneName.find_last_of("/\\");
-			size_t uStart = (uLastSlash == std::string::npos) ? 0 : uLastSlash + 1;
-			size_t uLastDot = strSceneName.find_last_of('.');
-			size_t uEnd = (uLastDot == std::string::npos || uLastDot < uStart) ?
-				strSceneName.size() : uLastDot;
-
-			std::string strBaseName = strSceneName.substr(uStart, uEnd - uStart);
-			if (strBaseName == strName)
-			{
-				bMatched = true;
-			}
-		}
-
-		// Unity behavior: silently return first match when multiple scenes have the same name
-		if (bMatched)
-		{
-			xScene.m_iHandle = iHandle;
-			xScene.m_uGeneration = s_axSceneGenerations.Get(iHandle);
-			return xScene;
-		}
-	}
-
-	return xScene;
-}
+// GetActiveScene, GetSceneAt, GetSceneByBuildIndex, GetSceneByName all live
+// in Zenith_SceneManager_Queries.cpp. GetSceneByPath stays here because it
+// depends on the file-local CanonicalizeScenePath helper above.
 
 Zenith_Scene Zenith_SceneManager::GetSceneByPath(const std::string& strPath)
 {
@@ -649,118 +500,187 @@ Zenith_Scene Zenith_SceneManager::GetSceneByPath(const std::string& strPath)
 	return xScene;
 }
 
-//==========================================================================
-// Build Settings Registry
-//==========================================================================
-
-void Zenith_SceneManager::RegisterSceneBuildIndex(int iBuildIndex, const std::string& strPath)
-{
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RegisterSceneBuildIndex must be called from main thread");
-
-	Zenith_Assert(iBuildIndex >= 0, "RegisterSceneBuildIndex: Build index must be non-negative");
-	const u_int uBuildIndex = static_cast<u_int>(iBuildIndex);
-	if (uBuildIndex < s_axBuildIndexToPath.GetSize() && !s_axBuildIndexToPath.Get(uBuildIndex).empty()
-		&& s_axBuildIndexToPath.Get(uBuildIndex) != strPath)
-	{
-		Zenith_Assert(false, "RegisterSceneBuildIndex: Build index %d already registered for '%s', cannot register for '%s'",
-			iBuildIndex, s_axBuildIndexToPath.Get(uBuildIndex).c_str(), strPath.c_str());
-		Zenith_Error(LOG_CATEGORY_SCENE,
-			"RegisterSceneBuildIndex: Build index %d already registered - ignoring duplicate",
-			iBuildIndex);
-		return;  // Don't overwrite existing registration
-	}
-	while (s_axBuildIndexToPath.GetSize() <= uBuildIndex) s_axBuildIndexToPath.PushBack(std::string());
-	s_axBuildIndexToPath.Get(uBuildIndex) = strPath;
-	Zenith_Log(LOG_CATEGORY_SCENE, "Registered scene build index %d -> %s", iBuildIndex, strPath.c_str());
-}
-
-void Zenith_SceneManager::ClearBuildIndexRegistry()
-{
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "ClearBuildIndexRegistry must be called from main thread");
-
-	s_axBuildIndexToPath.Clear();
-
-	// C12: Reset m_iBuildIndex on every loaded scene. Previously ClearBuildIndexRegistry
-	// wiped the path→index map but left loaded scenes with stale build-index values,
-	// so subsequent lookups via GetRegisteredScenePath(scene.GetBuildIndex()) would
-	// return empty strings or nonsense. Now the two are kept in sync.
-	uint32_t uScenesCleared = 0;
-	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
-	{
-		Zenith_SceneData* pxData = s_axScenes.Get(i);
-		if (pxData && pxData->m_iBuildIndex >= 0)
-		{
-			pxData->m_iBuildIndex = -1;
-			++uScenesCleared;
-		}
-	}
-
-	Zenith_Log(LOG_CATEGORY_SCENE, "Cleared scene build index registry (reset %u loaded-scene indices)", uScenesCleared);
-}
-
-static const std::string s_strEmptyBuildPath;
-
-const std::string& Zenith_SceneManager::GetRegisteredScenePath(int iBuildIndex)
-{
-	const u_int uBuildIndex = static_cast<u_int>(iBuildIndex);
-	if (iBuildIndex >= 0 && uBuildIndex < s_axBuildIndexToPath.GetSize())
-	{
-		return s_axBuildIndexToPath.Get(uBuildIndex);
-	}
-	return s_strEmptyBuildPath;
-}
-
-uint32_t Zenith_SceneManager::GetBuildIndexRegistrySize()
-{
-	return s_axBuildIndexToPath.GetSize();
-}
+// Build index registry (RegisterSceneBuildIndex / ClearBuildIndexRegistry /
+// GetRegisteredScenePath / GetBuildIndexRegistrySize) lives in
+// Zenith_SceneManager_Queries.cpp.
 
 //==========================================================================
 // Scene Loading (Synchronous)
 //==========================================================================
 
-Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_SceneLoadMode eMode)
+bool Zenith_SceneManager::ValidateLoadRequest(const std::string& strPath)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadScene must be called from main thread");
 
 	if (strPath.empty())
 	{
 		Zenith_Error(LOG_CATEGORY_SCENE, "LoadScene: Path is empty");
-		return MakeInvalidScene();
+		return false;
 	}
+	return true;
+}
 
-	// Unity parity: LoadScene called during script execution (Update/FixedUpdate/callbacks)
-	// is deferred to next frame's ProcessPendingAsyncLoads, matching Unity's
-	// EarlyUpdate.UpdatePreloading behavior. This prevents use-after-free when the
-	// calling entity's scene is destroyed by SCENE_LOAD_SINGLE.
-	//
-	// D.14 (finding 3.6): Return a "future" scene handle when auto-deferring so Unity-
-	// ported scripts that stash the result don't silently get INVALID_SCENE. For modes
-	// that complete synchronously inside LoadSceneAsync (SCENE_LOAD_ADDITIVE_WITHOUT_LOADING),
-	// we can retrieve the result scene immediately. For file-I/O modes, we return
-	// INVALID because the scene handle isn't known until Phase 1 runs next frame —
-	// document this in the warning so callers that need tracking switch to LoadSceneAsync.
-	if (s_bIsUpdating)
+// Unity parity: LoadScene called during script execution (Update/FixedUpdate/callbacks)
+// is deferred to next frame's ProcessPendingAsyncLoads, matching Unity's
+// EarlyUpdate.UpdatePreloading behavior. This prevents use-after-free when the
+// calling entity's scene is destroyed by SCENE_LOAD_SINGLE.
+//
+// D.14 (finding 3.6): Return a "future" scene handle when auto-deferring so Unity-
+// ported scripts that stash the result don't silently get INVALID_SCENE. For modes
+// that complete synchronously inside LoadSceneAsync (SCENE_LOAD_ADDITIVE_WITHOUT_LOADING),
+// we can retrieve the result scene immediately. For file-I/O modes, we return
+// INVALID because the scene handle isn't known until Phase 1 runs next frame —
+// document this in the warning so callers that need tracking switch to LoadSceneAsync.
+bool Zenith_SceneManager::HandleDeferredLoad(const std::string& strPath, Zenith_SceneLoadMode eMode, Zenith_Scene& xOutScene)
+{
+	if (!s_bIsUpdating)
+		return false;
+
+	if (eMode == SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)
 	{
-		if (eMode == SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)
-		{
-			Zenith_SceneOperationID ulOpID = LoadSceneAsync(strPath, eMode);
-			Zenith_SceneOperation* pxOp = GetOperation(ulOpID);
-			if (pxOp && pxOp->IsComplete() && !pxOp->HasFailed())
-			{
-				return pxOp->GetResultScene();
-			}
-			return Zenith_Scene::INVALID_SCENE;
-		}
-
-		Zenith_Warning(LOG_CATEGORY_SCENE,
-			"LoadScene('%s') called during Update — auto-deferring to LoadSceneAsync. "
-			"Sync return is INVALID_SCENE because the scene slot is not allocated until "
-			"the next frame's Phase 1 runs. Use LoadSceneAsync directly and retain the "
-			"operation ID if you need to track this load.", strPath.c_str());
-		LoadSceneAsync(strPath, eMode);
-		return Zenith_Scene::INVALID_SCENE;
+		Zenith_SceneOperationID ulOpID = LoadSceneAsync(strPath, eMode);
+		Zenith_SceneOperation* pxOp = GetOperation(ulOpID);
+		xOutScene = (pxOp && pxOp->IsComplete() && !pxOp->HasFailed())
+			? pxOp->GetResultScene()
+			: Zenith_Scene::INVALID_SCENE;
+		return true;
 	}
+
+	Zenith_Warning(LOG_CATEGORY_SCENE,
+		"LoadScene('%s') called during Update — auto-deferring to LoadSceneAsync. "
+		"Sync return is INVALID_SCENE because the scene slot is not allocated until "
+		"the next frame's Phase 1 runs. Use LoadSceneAsync directly and retain the "
+		"operation ID if you need to track this load.", strPath.c_str());
+	LoadSceneAsync(strPath, eMode);
+	xOutScene = Zenith_Scene::INVALID_SCENE;
+	return true;
+}
+
+bool Zenith_SceneManager::ValidateFileAndDetectCircular(const std::string& strPath, const std::string& strCanonicalPath, Zenith_SceneLoadMode eMode)
+{
+	// Check if file exists before proceeding (use original path for file access)
+	if (!Zenith_FileAccess::FileExists(strPath.c_str()))
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE, "LoadScene: File not found: %s", strPath.c_str());
+		return false;
+	}
+
+	// Circular load detection - prevent a scene from loading itself during OnAwake/OnStart
+	if (CheckCircularLoadDependency(strCanonicalPath))
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE, "Circular scene load detected: %s", strCanonicalPath.c_str());
+		return false;
+	}
+
+	// C10 (N9): guard against accidental deep recursion that isn't circular —
+	// e.g. a cascade of sceneLoaded handlers each triggering another load. The
+	// circular-detection vectors grow one entry per in-flight load; an unbounded
+	// cascade walks those vectors linearly and wastes cycles while obscuring
+	// the root cause in logs. 32 levels is far beyond any realistic load chain.
+	constexpr u_int uMAX_LOAD_DEPTH = 32;
+	Zenith_Assert(s_axCurrentlyLoadingPaths.GetSize() + s_axLifecycleLoadStack.GetSize() < uMAX_LOAD_DEPTH,
+		"LoadScene: scene-load recursion depth exceeded safe limit (%u). Check that "
+		"sceneLoaded / OnAwake handlers are not cascading scene loads without bound.",
+		uMAX_LOAD_DEPTH);
+
+	// CRITICAL: validate the new scene's file header BEFORE destroying the current world.
+	// SCENE_LOAD_SINGLE tears down all non-persistent scenes; if LoadFromFile later fails,
+	// the engine is left scene-less and unrecoverable. Peeking the header here makes the
+	// load rollback-safe: a corrupt or unsupported file is rejected before any teardown.
+	if (eMode == SCENE_LOAD_SINGLE && !Zenith_SceneData::ValidateFileHeader(strPath))
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE, "LoadScene(SINGLE): Invalid or unsupported scene file, aborting before teardown: '%s'", strPath.c_str());
+		return false;
+	}
+
+	return true;
+}
+
+void Zenith_SceneManager::PerformSingleModeTeardownAndSwap(Zenith_Scene xScene, Zenith_Scene xOldActiveBeforeTeardown)
+{
+	// A5: suppress intermediate ActiveSceneChanged dispatches during teardown so
+	// subscribers observe a single old → new transition at the end.
+	s_bSuppressActiveSceneChanged = true;
+	s_bHaveDeferredOldActive = false;
+	s_xDeferredOldActive = Zenith_Scene::INVALID_SCENE;
+
+	// Teardown order is critical:
+	// 1. ResetAllRenderSystems() - clears Flux render state from old scenes
+	// 2. UnloadAllNonPersistent(excluding staging) - destroys old scene entities
+	//    (colliders remove themselves from the physics world in their dtors)
+	// 3. Zenith_Physics::Reset() - catch-all: removes any residual bodies that
+	//    weren't owned by a ColliderComponent. Safe here because the staging
+	//    scene's colliders have NOT yet been promoted into the physics world
+	//    (deserialization happened in the same tick, but colliders register on
+	//    OnAwake which hasn't fired yet).
+	//
+	// NOTE: if a future change makes colliders register on AddComponent instead
+	// of OnAwake, Physics::Reset will wipe the staging scene's bodies too —
+	// revisit this ordering then.
+	ResetAllRenderSystems();
+	CancelAllPendingAsyncLoads();
+	UnloadAllNonPersistent(xScene.m_iHandle);
+	Zenith_Physics::Reset();
+	s_fFixedTimeAccumulator = 0.0f;
+
+	Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
+	s_iActiveSceneHandle = xScene.m_iHandle;
+
+	// Stop suppressing and emit the single consolidated ActiveSceneChanged.
+	s_bSuppressActiveSceneChanged = false;
+	Zenith_Scene xOldActive = xOldActiveBeforeTeardown.IsValid()
+		? xOldActiveBeforeTeardown
+		: (s_bHaveDeferredOldActive ? s_xDeferredOldActive : Zenith_Scene::INVALID_SCENE);
+	s_bHaveDeferredOldActive = false;
+	s_xDeferredOldActive = Zenith_Scene::INVALID_SCENE;
+
+	if (xOldActive != xScene)
+	{
+		FireActiveSceneChangedCallbacks(xOldActive, xScene);
+	}
+}
+
+void Zenith_SceneManager::DispatchLifecycleAndFire(Zenith_Scene xScene, Zenith_SceneData* pxSceneData, const std::string& strCanonicalPath, Zenith_SceneLoadMode eMode)
+{
+	// Unity behavior: Awake -> OnEnable -> sceneLoaded -> Start(next frame)
+	pxSceneData->DispatchAwakeForNewScene();
+	pxSceneData->DispatchEnableAndPendingStartsForNewScene();
+
+	// A10: Flip IsActivated after lifecycle completes but BEFORE SceneLoaded callbacks.
+	// Subscribers of SceneLoaded see a fully-activated scene; Awake/OnEnable handlers
+	// see IsActivated()==false (matches the async path at lines ~2009/~2078).
+	pxSceneData->m_bIsActivated = true;
+
+	// D.13 (finding 3.12): clear s_bIsLoadingScene BEFORE FireSceneLoadedCallbacks so
+	// subscribers see IsLoadingScene() == false during dispatch — the original B4 fix
+	// reverted because clearing BOTH this flag AND s_axCurrentlyLoadingPaths before
+	// the callback broke same-path re-entrant loads (the circular-load guard relies
+	// on the path vector, not the bool). The key insight: the two pieces of state have
+	// different contracts. s_bIsLoadingScene is "engine mid-load (for entity-lifecycle
+	// deferral purposes)"; s_axCurrentlyLoadingPaths is "paths already in flight (for
+	// circular-load detection)". They must be cleared at different times.
+	//
+	// Entities created from inside a SceneLoaded callback now correctly behave as
+	// runtime-created entities (immediate Awake/OnEnable via
+	// Zenith_SceneData::DispatchImmediateLifecycleForRuntime at the call site),
+	// not as "part of the scene being loaded" (batched Awake during the load pass).
+	s_bIsLoadingScene = false;
+
+	FireSceneLoadedCallbacks(xScene, eMode);
+
+	// Clear the path marker only AFTER callbacks so a handler that attempts to load
+	// the same scene hits the circular-load guard.
+	s_axCurrentlyLoadingPaths.EraseValue(strCanonicalPath);
+}
+
+Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_SceneLoadMode eMode)
+{
+	if (!ValidateLoadRequest(strPath))
+		return MakeInvalidScene();
+
+	Zenith_Scene xDeferredResult;
+	if (HandleDeferredLoad(strPath, eMode, xDeferredResult))
+		return xDeferredResult;
 
 	// Canonicalize path for consistent detection and storage
 	std::string strCanonicalPath = CanonicalizeScenePath(strPath);
@@ -799,40 +719,8 @@ Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_S
 		return xScene;
 	}
 
-	// Check if file exists before proceeding (use original path for file access)
-	if (!Zenith_FileAccess::FileExists(strPath.c_str()))
-	{
-		Zenith_Error(LOG_CATEGORY_SCENE, "LoadScene: File not found: %s", strPath.c_str());
+	if (!ValidateFileAndDetectCircular(strPath, strCanonicalPath, eMode))
 		return MakeInvalidScene();
-	}
-
-	// Circular load detection - prevent a scene from loading itself during OnAwake/OnStart
-	if (CheckCircularLoadDependency(strCanonicalPath))
-	{
-		Zenith_Error(LOG_CATEGORY_SCENE, "Circular scene load detected: %s", strCanonicalPath.c_str());
-		return MakeInvalidScene();
-	}
-
-	// C10 (N9): guard against accidental deep recursion that isn't circular —
-	// e.g. a cascade of sceneLoaded handlers each triggering another load. The
-	// circular-detection vectors grow one entry per in-flight load; an unbounded
-	// cascade walks those vectors linearly and wastes cycles while obscuring
-	// the root cause in logs. 32 levels is far beyond any realistic load chain.
-	constexpr u_int uMAX_LOAD_DEPTH = 32;
-	Zenith_Assert(s_axCurrentlyLoadingPaths.GetSize() + s_axLifecycleLoadStack.GetSize() < uMAX_LOAD_DEPTH,
-		"LoadScene: scene-load recursion depth exceeded safe limit (%u). Check that "
-		"sceneLoaded / OnAwake handlers are not cascading scene loads without bound.",
-		uMAX_LOAD_DEPTH);
-
-	// CRITICAL: validate the new scene's file header BEFORE destroying the current world.
-	// SCENE_LOAD_SINGLE tears down all non-persistent scenes; if LoadFromFile later fails,
-	// the engine is left scene-less and unrecoverable. Peeking the header here makes the
-	// load rollback-safe: a corrupt or unsupported file is rejected before any teardown.
-	if (eMode == SCENE_LOAD_SINGLE && !Zenith_SceneData::ValidateFileHeader(strPath))
-	{
-		Zenith_Error(LOG_CATEGORY_SCENE, "LoadScene(SINGLE): Invalid or unsupported scene file, aborting before teardown: '%s'", strPath.c_str());
-		return MakeInvalidScene();
-	}
 
 	s_axCurrentlyLoadingPaths.PushBack(strCanonicalPath);
 
@@ -898,77 +786,10 @@ Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_S
 	// Deserialization succeeded. SINGLE mode: NOW tear down the old world and swap.
 	if (eMode == SCENE_LOAD_SINGLE)
 	{
-		// A5: suppress intermediate ActiveSceneChanged dispatches during teardown so
-		// subscribers observe a single old → new transition at the end.
-		s_bSuppressActiveSceneChanged = true;
-		s_bHaveDeferredOldActive = false;
-		s_xDeferredOldActive = Zenith_Scene::INVALID_SCENE;
-
-		// Teardown order is critical:
-		// 1. ResetAllRenderSystems() - clears Flux render state from old scenes
-		// 2. UnloadAllNonPersistent(excluding staging) - destroys old scene entities
-		//    (colliders remove themselves from the physics world in their dtors)
-		// 3. Zenith_Physics::Reset() - catch-all: removes any residual bodies that
-		//    weren't owned by a ColliderComponent. Safe here because the staging
-		//    scene's colliders have NOT yet been promoted into the physics world
-		//    (deserialization happened in the same tick, but colliders register on
-		//    OnAwake which hasn't fired yet).
-		//
-		// NOTE: if a future change makes colliders register on AddComponent instead
-		// of OnAwake, Physics::Reset will wipe the staging scene's bodies too —
-		// revisit this ordering then.
-		ResetAllRenderSystems();
-		CancelAllPendingAsyncLoads();
-		UnloadAllNonPersistent(xScene.m_iHandle);
-		Zenith_Physics::Reset();
-		s_fFixedTimeAccumulator = 0.0f;
-
-		Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
-		s_iActiveSceneHandle = xScene.m_iHandle;
-
-		// Stop suppressing and emit the single consolidated ActiveSceneChanged.
-		s_bSuppressActiveSceneChanged = false;
-		Zenith_Scene xOldActive = xOldActiveBeforeTeardown.IsValid()
-			? xOldActiveBeforeTeardown
-			: (s_bHaveDeferredOldActive ? s_xDeferredOldActive : Zenith_Scene::INVALID_SCENE);
-		s_bHaveDeferredOldActive = false;
-		s_xDeferredOldActive = Zenith_Scene::INVALID_SCENE;
-
-		if (xOldActive != xScene)
-		{
-			FireActiveSceneChangedCallbacks(xOldActive, xScene);
-		}
+		PerformSingleModeTeardownAndSwap(xScene, xOldActiveBeforeTeardown);
 	}
 
-	// Unity behavior: Awake -> OnEnable -> sceneLoaded -> Start(next frame)
-	pxSceneData->DispatchAwakeForNewScene();
-	pxSceneData->DispatchEnableAndPendingStartsForNewScene();
-
-	// A10: Flip IsActivated after lifecycle completes but BEFORE SceneLoaded callbacks.
-	// Subscribers of SceneLoaded see a fully-activated scene; Awake/OnEnable handlers
-	// see IsActivated()==false (matches the async path at lines ~2009/~2078).
-	pxSceneData->m_bIsActivated = true;
-
-	// D.13 (finding 3.12): clear s_bIsLoadingScene BEFORE FireSceneLoadedCallbacks so
-	// subscribers see IsLoadingScene() == false during dispatch — the original B4 fix
-	// reverted because clearing BOTH this flag AND s_axCurrentlyLoadingPaths before
-	// the callback broke same-path re-entrant loads (the circular-load guard relies
-	// on the path vector, not the bool). The key insight: the two pieces of state have
-	// different contracts. s_bIsLoadingScene is "engine mid-load (for entity-lifecycle
-	// deferral purposes)"; s_axCurrentlyLoadingPaths is "paths already in flight (for
-	// circular-load detection)". They must be cleared at different times.
-	//
-	// Entities created from inside a SceneLoaded callback now correctly behave as
-	// runtime-created entities (immediate Awake/OnEnable via
-	// Zenith_SceneData::DispatchImmediateLifecycleForRuntime at the call site),
-	// not as "part of the scene being loaded" (batched Awake during the load pass).
-	s_bIsLoadingScene = false;
-
-	FireSceneLoadedCallbacks(xScene, eMode);
-
-	// Clear the path marker only AFTER callbacks so a handler that attempts to load
-	// the same scene hits the circular-load guard.
-	s_axCurrentlyLoadingPaths.EraseValue(strCanonicalPath);
+	DispatchLifecycleAndFire(xScene, pxSceneData, strCanonicalPath, eMode);
 	return xScene;
 }
 
@@ -1880,185 +1701,9 @@ Zenith_SceneOperationID Zenith_SceneManager::AllocateOperationID()
 	return s_ulNextOperationID++;
 }
 
-// Helper to allocate callback handles with overflow protection
-Zenith_SceneManager::CallbackHandle Zenith_SceneManager::AllocateCallbackHandle()
-{
-	// Wrap around on overflow (skip 0 which is INVALID_CALLBACK_HANDLE)
-	// Note: Collision with an active callback is astronomically unlikely - it would require
-	// a callback registered 18 quintillion registrations ago to still be active.
-	if (s_ulNextCallbackHandle == UINT64_MAX)
-	{
-		Zenith_Warning(LOG_CATEGORY_SCENE,
-			"Callback handle counter wrapped around after %llu registrations",
-			static_cast<unsigned long long>(s_ulNextCallbackHandle));
-		s_ulNextCallbackHandle = 1;  // Skip 0 (INVALID_CALLBACK_HANDLE)
-	}
-	return s_ulNextCallbackHandle++;
-}
-
-// Templatized callback list implementation
-template<typename TCallback>
-Zenith_SceneManager::CallbackHandle Zenith_SceneManager::Zenith_CallbackList<TCallback>::Register(TCallback pfn)
-{
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Callback registration must be on main thread");
-
-	// B7: warn when Register runs during an active Fire dispatch. The Fire loop
-	// captures the entry count at entry and does NOT pick up entries pushed mid-loop,
-	// so callers expecting their new callback to run THIS cycle will be surprised.
-	// Registering during dispatch is legal but the callback won't fire until next event.
-	if (s_uFiringCallbacksDepth > 0)
-	{
-		Zenith_Warning(LOG_CATEGORY_SCENE,
-			"Zenith_CallbackList::Register: called during callback dispatch (depth=%u). "
-			"The new callback will NOT fire for the currently-dispatching event; it fires on the next one.",
-			s_uFiringCallbacksDepth);
-	}
-
-	// Dedupe: if the same function pointer is already registered, return the existing
-	// handle instead of appending a duplicate. Prevents handlers firing twice when a
-	// subsystem accidentally subscribes the same free function more than once (e.g.
-	// double-init on hot reload, two systems wiring the same hook). Unregister only
-	// removes the first match, so a leaked duplicate would otherwise be impossible to
-	// tear down cleanly.
-	for (u_int i = 0; i < m_axEntries.GetSize(); ++i)
-	{
-		if (m_axEntries.Get(i).m_pfnCallback == pfn)
-		{
-			Zenith_Warning(LOG_CATEGORY_SCENE, "Zenith_CallbackList::Register: duplicate callback registration rejected; returning existing handle");
-			return m_axEntries.Get(i).m_ulHandle;
-		}
-	}
-
-	CallbackHandle ulHandle = AllocateCallbackHandle();
-	if (ulHandle == INVALID_CALLBACK_HANDLE) return ulHandle;
-	m_axEntries.PushBack({ ulHandle, pfn });
-	return ulHandle;
-}
-
-// C7 (F30): Deferred-unregister contract — what happens when Unregister is called
-// during callback dispatch.
-//
-// Contract:
-//   1. Unregister-during-Fire is SAFE and legal. The handle is queued in
-//      s_axCallbacksPendingRemoval; the entries vector is not mutated mid-loop.
-//   2. The callback matching the unregistered handle will NOT fire again for
-//      the CURRENT dispatch iteration (Fire() consults IsCallbackPendingRemoval
-//      before calling each entry).
-//   3. After the outermost Fire() finishes, ProcessPendingCallbackRemovals drains
-//      the queue and actually erases entries from m_axEntries, releasing the slot.
-//   4. A handle that has been unregistered-pending still OCCUPIES its slot until
-//      drain — so a re-register of the same pfn during dispatch observes the
-//      dedupe check and returns the soon-to-be-freed handle. This is the
-//      documented behaviour; callers who want to re-register cleanly should
-//      wait until after the dispatch completes.
-//   5. Re-entrant dispatch (Fire inside Fire) only drains pending removals when
-//      s_uFiringCallbacksDepth returns to 0. Nested dispatches see the pending
-//      entries as still occupying their slots; the skip-in-Fire behaviour at
-//      line 1755 handles the visibility correctly.
-template<typename TCallback>
-bool Zenith_SceneManager::Zenith_CallbackList<TCallback>::Unregister(CallbackHandle ulHandle)
-{
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Callback unregistration must be on main thread");
-
-	if (s_uFiringCallbacksDepth > 0)
-	{
-		s_axCallbacksPendingRemoval.PushBack(ulHandle);
-		return true;
-	}
-
-	for (u_int i = 0; i < m_axEntries.GetSize(); ++i)
-	{
-		if (m_axEntries.Get(i).m_ulHandle == ulHandle)
-		{
-			m_axEntries.Remove(i);
-			return true;
-		}
-	}
-	return false;
-}
-
-template<typename TCallback>
-template<typename... Args>
-void Zenith_SceneManager::Zenith_CallbackList<TCallback>::Fire(Args&&... args)
-{
-	s_uFiringCallbacksDepth++;
-
-	// D1: bound callback-dispatch re-entry. A handler that fires a scene event
-	// that re-enters the same callback list builds the depth counter; beyond
-	// a sane limit (16) something has gone into recursion and stack-overflow is
-	// imminent. Catch loudly instead of crashing.
-	constexpr u_int uMAX_CALLBACK_DEPTH = 16;
-	Zenith_Assert(s_uFiringCallbacksDepth <= uMAX_CALLBACK_DEPTH,
-		"Zenith_CallbackList::Fire: callback dispatch depth %u exceeded safe limit (%u). "
-		"A scene-callback handler is recursively triggering the same event type.",
-		s_uFiringCallbacksDepth, uMAX_CALLBACK_DEPTH);
-
-	const u_int uCount = m_axEntries.GetSize();
-	for (u_int i = 0; i < uCount; ++i)
-	{
-		if (!IsCallbackPendingRemoval(m_axEntries.Get(i).m_ulHandle))
-		{
-			m_axEntries.Get(i).m_pfnCallback(std::forward<Args>(args)...);
-		}
-	}
-
-	s_uFiringCallbacksDepth--;
-	if (s_uFiringCallbacksDepth == 0)
-	{
-		ProcessPendingCallbackRemovals();
-	}
-}
-
-// Register/Unregister/Fire one-liner wrappers
-Zenith_SceneManager::CallbackHandle Zenith_SceneManager::RegisterActiveSceneChangedCallback(SceneChangedCallback pfn) { return s_xActiveSceneChangedCallbacks.Register(pfn); }
-void Zenith_SceneManager::UnregisterActiveSceneChangedCallback(CallbackHandle ulHandle) { s_xActiveSceneChangedCallbacks.Unregister(ulHandle); }
-
-Zenith_SceneManager::CallbackHandle Zenith_SceneManager::RegisterSceneLoadedCallback(SceneLoadedCallback pfn) { return s_xSceneLoadedCallbacks.Register(pfn); }
-void Zenith_SceneManager::UnregisterSceneLoadedCallback(CallbackHandle ulHandle) { s_xSceneLoadedCallbacks.Unregister(ulHandle); }
-
-Zenith_SceneManager::CallbackHandle Zenith_SceneManager::RegisterSceneUnloadingCallback(SceneUnloadingCallback pfn) { return s_xSceneUnloadingCallbacks.Register(pfn); }
-void Zenith_SceneManager::UnregisterSceneUnloadingCallback(CallbackHandle ulHandle) { s_xSceneUnloadingCallbacks.Unregister(ulHandle); }
-
-Zenith_SceneManager::CallbackHandle Zenith_SceneManager::RegisterSceneUnloadedCallback(SceneUnloadedCallback pfn) { return s_xSceneUnloadedCallbacks.Register(pfn); }
-void Zenith_SceneManager::UnregisterSceneUnloadedCallback(CallbackHandle ulHandle) { s_xSceneUnloadedCallbacks.Unregister(ulHandle); }
-
-Zenith_SceneManager::CallbackHandle Zenith_SceneManager::RegisterSceneLoadStartedCallback(SceneLoadStartedCallback pfn) { return s_xSceneLoadStartedCallbacks.Register(pfn); }
-void Zenith_SceneManager::UnregisterSceneLoadStartedCallback(CallbackHandle ulHandle) { s_xSceneLoadStartedCallbacks.Unregister(ulHandle); }
-
-Zenith_SceneManager::CallbackHandle Zenith_SceneManager::RegisterEntityPersistentCallback(EntityPersistentCallback pfn) { return s_xEntityPersistentCallbacks.Register(pfn); }
-void Zenith_SceneManager::UnregisterEntityPersistentCallback(CallbackHandle ulHandle) { s_xEntityPersistentCallbacks.Unregister(ulHandle); }
-
-bool Zenith_SceneManager::IsCallbackPendingRemoval(CallbackHandle ulHandle)
-{
-	for (u_int i = 0; i < s_axCallbacksPendingRemoval.GetSize(); ++i)
-	{
-		if (s_axCallbacksPendingRemoval.Get(i) == ulHandle) return true;
-	}
-	return false;
-}
-
-void Zenith_SceneManager::ProcessPendingCallbackRemovals()
-{
-	for (u_int i = 0; i < s_axCallbacksPendingRemoval.GetSize(); ++i)
-	{
-		CallbackHandle ulHandle = s_axCallbacksPendingRemoval.Get(i);
-		// Callback handles are unique across all lists - stop on first match
-		if (s_xActiveSceneChangedCallbacks.Unregister(ulHandle)) continue;
-		if (s_xSceneLoadedCallbacks.Unregister(ulHandle)) continue;
-		if (s_xSceneUnloadingCallbacks.Unregister(ulHandle)) continue;
-		if (s_xSceneUnloadedCallbacks.Unregister(ulHandle)) continue;
-		if (s_xSceneLoadStartedCallbacks.Unregister(ulHandle)) continue;
-		s_xEntityPersistentCallbacks.Unregister(ulHandle);
-	}
-	s_axCallbacksPendingRemoval.Clear();
-}
-
-void Zenith_SceneManager::FireSceneLoadedCallbacks(Zenith_Scene xScene, Zenith_SceneLoadMode eMode) { s_xSceneLoadedCallbacks.Fire(xScene, eMode); }
-void Zenith_SceneManager::FireSceneUnloadingCallbacks(Zenith_Scene xScene) { s_xSceneUnloadingCallbacks.Fire(xScene); }
-void Zenith_SceneManager::FireSceneUnloadedCallbacks(Zenith_Scene xScene) { s_xSceneUnloadedCallbacks.Fire(xScene); }
-void Zenith_SceneManager::FireActiveSceneChangedCallbacks(Zenith_Scene xOld, Zenith_Scene xNew) { s_xActiveSceneChangedCallbacks.Fire(xOld, xNew); }
-void Zenith_SceneManager::FireSceneLoadStartedCallbacks(const std::string& strPath) { s_xSceneLoadStartedCallbacks.Fire(strPath); }
-void Zenith_SceneManager::FireEntityPersistentCallbacks(const Zenith_Entity& xEntity) { s_xEntityPersistentCallbacks.Fire(xEntity); }
+// Callback subsystem (AllocateCallbackHandle, Zenith_CallbackList templates,
+// Register/Unregister/Fire wrappers, IsCallbackPendingRemoval,
+// ProcessPendingCallbackRemovals) is defined in Zenith_SceneManager_Callbacks.cpp.
 
 //==========================================================================
 // Internal
@@ -2081,34 +1726,20 @@ void Zenith_SceneManager::Update(float fDt)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Update must be called from main thread");
 
-	// Process pending async loads with activation control
 	ProcessPendingAsyncLoads();
-
-	// Process pending async unloads (batch destruction)
 	ProcessPendingAsyncUnloads();
-
-	// Clean up completed operations that are no longer being polled
 	CleanupCompletedOperations();
 
 	// Mark as updating - any LoadScene/LoadSceneByIndex calls during script execution
 	// will route through LoadSceneAsync to defer to next frame (Unity parity)
 	s_bIsUpdating = true;
 
-	// E.20 (finding 3.21): collect updatable scenes once per frame, iterate the snapshot
-	// across the four update phases below. Previously each phase re-walked s_axScenes
-	// and re-evaluated IsSceneUpdatable on every slot (4 × O(slots)). A deferred
-	// LoadSceneAsync won't mutate s_axScenes mid-Update (all s_bIsUpdating-guarded
-	// mutations are routed to the next frame), so the snapshot stays accurate for the
-	// whole tick.
+	// E.20 (finding 3.21): collect updatable scenes once per frame; iterate the
+	// snapshot across the three phases below. A deferred LoadSceneAsync won't
+	// mutate s_axScenes mid-Update (all s_bIsUpdating-guarded mutations are
+	// routed to the next frame), so the snapshot stays accurate for the tick.
 	Zenith_Vector<Zenith_SceneData*> axUpdatable;
-	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
-	{
-		Zenith_SceneData* pxData = s_axScenes.Get(i);
-		if (IsSceneUpdatable(pxData))
-		{
-			axUpdatable.PushBack(pxData);
-		}
-	}
+	CollectUpdatableScenes(axUpdatable);
 
 	// Fixed timestep accumulation for FixedUpdate (50Hz by default, configurable via SetFixedTimestep)
 	// #TODO: Use scaled time when timeScale system is implemented (Unity's Time.fixedDeltaTime is affected by Time.timeScale)
@@ -2125,61 +1756,23 @@ void Zenith_SceneManager::Update(float fDt)
 		s_fFixedTimeAccumulator -= s_fFixedTimestep;
 	}
 
-	// Unity execution order: FixedUpdate -> Start -> Update -> LateUpdate
-	// Dispatch pending Start() calls after FixedUpdate but before Update
+	// Unity execution order: FixedUpdate -> Start -> Update -> LateUpdate.
 	for (u_int i = 0; i < axUpdatable.GetSize(); ++i)
 	{
 		axUpdatable.Get(i)->DispatchPendingStarts();
 	}
 
-	// Update all loaded scenes (skip paused and non-activated scenes)
 	for (u_int i = 0; i < axUpdatable.GetSize(); ++i)
 	{
 		axUpdatable.Get(i)->Update(fDt);
 	}
 
-	// Animation Update (parallel task system)
-	// Note: This runs after script updates to avoid vector resize issues
-	// when scripts add new model components
+	// Animation Update (parallel task system). Runs after script updates so
+	// scripts that add model components don't invalidate the collected pointers.
 	g_xAnimationsToUpdate.Clear();
-
-	// Collect animations from all loaded, non-paused scenes.
-	// IMPORTANT: pxModel->Update(fDt) must NOT create/destroy entities or add/remove
-	// ModelComponents. GetAllOfComponentType returns raw pointers into component pools;
-	// pool reallocation from entity/component mutations would invalidate these pointers.
 	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
 	{
-		Zenith_SceneData* pxData = s_axScenes.Get(i);
-		if (pxData && pxData->m_bIsLoaded && !pxData->m_bIsUnloading && !pxData->IsPaused())
-		{
-			Zenith_Vector<Zenith_ModelComponent*> xModels;
-			pxData->GetAllOfComponentType<Zenith_ModelComponent>(xModels);
-
-			for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
-			{
-				Zenith_ModelComponent* pxModel = xIt.GetData();
-
-				// Skip inactive entities to avoid unnecessary animation updates
-				// IsActiveInHierarchy checks both the entity's own flag and all parents,
-				// ensuring animations stop when a parent is disabled (Unity parity)
-				Zenith_Entity xEntity = pxModel->GetParentEntity();
-				if (!xEntity.IsActiveInHierarchy())
-				{
-					continue;
-				}
-
-				// Note: Skeletal animation is now handled by Zenith_AnimatorComponent::OnUpdate
-
-				// Legacy system: Collect animations for parallel update task
-				for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
-				{
-					if (Flux_MeshAnimation* pxAnim = pxModel->GetMeshGeometryAtIndex(uMesh).m_pxAnimation)
-					{
-						g_xAnimationsToUpdate.PushBack(pxAnim);
-					}
-				}
-			}
-		}
+		CollectAnimationsFromScene(s_axScenes.Get(i));
 	}
 
 	s_bIsUpdating = false;
@@ -2190,6 +1783,52 @@ void Zenith_SceneManager::Update(float fDt)
 		s_bAnimTasksActive = true;
 #endif
 		Zenith_TaskSystem::SubmitTaskArray(g_pxAnimUpdateTask);
+	}
+}
+
+void Zenith_SceneManager::CollectUpdatableScenes(Zenith_Vector<Zenith_SceneData*>& axOut)
+{
+	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
+	{
+		Zenith_SceneData* pxData = s_axScenes.Get(i);
+		if (IsSceneUpdatable(pxData))
+		{
+			axOut.PushBack(pxData);
+		}
+	}
+}
+
+void Zenith_SceneManager::CollectAnimationsFromScene(Zenith_SceneData* pxData)
+{
+	// IMPORTANT: caller has already advanced pxModel->Update(fDt). No entity or
+	// ModelComponent mutation is allowed between that call and this one —
+	// GetAllOfComponentType returns raw pointers into component pools, and any
+	// pool reallocation would invalidate them.
+	if (!pxData || !pxData->m_bIsLoaded || pxData->m_bIsUnloading || pxData->IsPaused())
+		return;
+
+	Zenith_Vector<Zenith_ModelComponent*> xModels;
+	pxData->GetAllOfComponentType<Zenith_ModelComponent>(xModels);
+
+	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
+	{
+		Zenith_ModelComponent* pxModel = xIt.GetData();
+
+		// Skip inactive entities (IsActiveInHierarchy walks parents so a disabled
+		// parent stops animation on its children, matching Unity semantics).
+		Zenith_Entity xEntity = pxModel->GetParentEntity();
+		if (!xEntity.IsActiveInHierarchy())
+			continue;
+
+		// Note: Skeletal animation is now handled by Zenith_AnimatorComponent::OnUpdate.
+		// Legacy mesh-animation collection for parallel update task below:
+		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
+		{
+			if (Flux_MeshAnimation* pxAnim = pxModel->GetMeshGeometryAtIndex(uMesh).m_pxAnimation)
+			{
+				g_xAnimationsToUpdate.PushBack(pxAnim);
+			}
+		}
 	}
 }
 

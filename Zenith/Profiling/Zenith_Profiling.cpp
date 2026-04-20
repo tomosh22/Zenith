@@ -123,12 +123,7 @@ void Zenith_Profiling::RenderToImGui()
 {
 	ImGui::Begin("Profiling");
 
-	static int ls_iMinDepthToRender = 0;
-	static int ls_iMaxDepthToRender = 10;
-	static int ls_iMaxDepthToRenderSeparately = 3;
-	static float ls_fTimelineZoom = 1.0f;
-	static float ls_fTimelineScroll = 0.0f;
-	static float ls_fVerticalScale = 1.0f;
+	static TimelineViewState ls_xTimelineState;
 	static bool ls_bShowStats = true;
 	static u_int ls_uSelectedThreadID = 0;
 
@@ -151,8 +146,7 @@ void Zenith_Profiling::RenderToImGui()
 	{
 		if (ImGui::BeginTabItem("Timeline"))
 		{
-			RenderTimelineView(ls_iMinDepthToRender, ls_iMaxDepthToRender, ls_iMaxDepthToRenderSeparately, 
-			                   ls_fTimelineZoom, ls_fTimelineScroll, ls_fVerticalScale, fFrameDurationMs);
+			RenderTimelineView(ls_xTimelineState);
 			ImGui::EndTabItem();
 		}
 
@@ -168,28 +162,160 @@ void Zenith_Profiling::RenderToImGui()
 	ImGui::End();
 }
 
-void Zenith_Profiling::RenderTimelineView(int& iMinDepthToRender, int& iMaxDepthToRender, int& iMaxDepthToRenderSeparately,
-                                          float& fTimelineZoom, float& fTimelineScroll, float& fVerticalScale, float)
+// Per-frame canvas + interaction context for the timeline event renderer. Holds
+// derived layout info (sizes, scaling) plus the cached colour/text-width arrays
+// so the inner loop doesn't need 15 individual parameters.
+struct TimelineRenderContext
+{
+	ImDrawList* pxDrawList;
+	ImVec2 xCanvasPos;
+	ImVec2 xCanvasMax;
+	ImVec2 xMousePos;
+	bool bIsHovered;
+	float fCanvasWidth;
+	float fCanvasTimeScale;
+	float fTimelineScroll;
+	float fThreadHeight;
+	float fRowHeight;
+	float fRowSpacing;
+	int iMinDepthToRender;
+	int iMaxDepthToRender;
+	int iMaxDepthToRenderSeparately;
+	const ImU32* axCachedColors;
+	const float* afCachedTextWidths;
+};
+
+struct TimelineHoveredEvent
+{
+	const Zenith_Profiling::Event* pEvent = nullptr;
+	float fDurationNs = 0.0f;
+};
+
+// Walk every thread × event in the previous frame, draw each visible event as a
+// coloured rect with optional label, and report which event the mouse hovers
+// (so the caller can render a tooltip outside the loop).
+static TimelineHoveredEvent RenderTimelineEvents(const TimelineRenderContext& xCtx)
+{
+	TimelineHoveredEvent xHovered;
+	for (const auto& [uThreadID, xEvents] : g_xPreviousFrameEvents)
+	{
+		const float fThreadBaseY = xCtx.xCanvasPos.y + uThreadID * xCtx.fThreadHeight;
+
+		char acLabel[64];
+		snprintf(acLabel, sizeof(acLabel), "Thread %u", uThreadID);
+		xCtx.pxDrawList->AddText(ImVec2(xCtx.xCanvasPos.x, fThreadBaseY), IM_COL32_WHITE, acLabel);
+
+		const u_int uEventCount = xEvents.GetSize();
+		for (u_int u = 0; u < uEventCount; ++u)
+		{
+			const Zenith_Profiling::Event& xEvent = xEvents.Get(uEventCount - u - 1);
+
+			if (xEvent.m_uDepth < static_cast<u_int>(xCtx.iMinDepthToRender) || xEvent.m_uDepth > static_cast<u_int>(xCtx.iMaxDepthToRender))
+				continue;
+
+			const u_int uRowIndex = (xEvent.m_uDepth <= static_cast<u_int>(xCtx.iMaxDepthToRenderSeparately))
+				? (xEvent.m_uDepth - static_cast<u_int>(xCtx.iMinDepthToRender))
+				: (static_cast<u_int>(xCtx.iMaxDepthToRenderSeparately) - static_cast<u_int>(xCtx.iMinDepthToRender));
+
+			const float fEventStartNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xBegin - g_xPreviousFrameStart).count());
+			const float fEventEndNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xEnd - g_xPreviousFrameStart).count());
+			const float fEventDurationNs = fEventEndNs - fEventStartNs;
+
+			const float fStartPx = (fEventStartNs * xCtx.fCanvasTimeScale) - xCtx.fTimelineScroll;
+			const float fEndPx = (fEventEndNs * xCtx.fCanvasTimeScale) - xCtx.fTimelineScroll;
+
+			if (fEndPx < 0.0f || fStartPx > xCtx.fCanvasWidth)
+				continue;
+
+			const float fRowY = fThreadBaseY + uRowIndex * (xCtx.fRowHeight + xCtx.fRowSpacing);
+			const ImVec2 xRectMin = ImVec2(xCtx.xCanvasPos.x + fStartPx, fRowY);
+			const ImVec2 xRectMax = ImVec2(xCtx.xCanvasPos.x + fEndPx, fRowY + xCtx.fRowHeight);
+
+			const ImVec2 xClampedMin = ImVec2(std::max(xRectMin.x, xCtx.xCanvasPos.x), xRectMin.y);
+			const ImVec2 xClampedMax = ImVec2(std::min(xRectMax.x, xCtx.xCanvasMax.x), xRectMax.y);
+
+			const bool bIsEventHovered = xCtx.bIsHovered &&
+				xCtx.xMousePos.x >= xClampedMin.x && xCtx.xMousePos.x <= xClampedMax.x &&
+				xCtx.xMousePos.y >= xClampedMin.y && xCtx.xMousePos.y <= xClampedMax.y;
+
+			const ImU32 uColor = bIsEventHovered
+				? IM_COL32(255, 255, 255, 255)
+				: xCtx.axCachedColors[xEvent.m_eIndex];
+
+			xCtx.pxDrawList->AddRectFilled(xClampedMin, xClampedMax, uColor, 3.0f);
+
+			const char* szDisplayName = xEvent.m_szLabel ? xEvent.m_szLabel : g_aszProfileNames[xEvent.m_eIndex];
+			const float fDisplayTextWidth = xEvent.m_szLabel
+				? ImGui::CalcTextSize(szDisplayName).x
+				: xCtx.afCachedTextWidths[xEvent.m_eIndex];
+			const float fRectWidth = xRectMax.x - xRectMin.x;
+			if (fDisplayTextWidth <= fRectWidth)
+			{
+				const ImVec2 xTextPos = ImVec2(std::max(xRectMin.x, xCtx.xCanvasPos.x), xRectMin.y);
+				const ImU32 uTextColor = bIsEventHovered ? IM_COL32(0, 0, 0, 255) : IM_COL32_WHITE;
+				xCtx.pxDrawList->AddText(xTextPos, uTextColor, szDisplayName);
+			}
+
+			if (bIsEventHovered)
+			{
+				xHovered.pEvent = &xEvent;
+				xHovered.fDurationNs = fEventDurationNs;
+			}
+		}
+	}
+	return xHovered;
+}
+
+static void RenderTimelineHoverTooltip(const TimelineHoveredEvent& xHovered, float fFrameDurationNs)
+{
+	if (xHovered.pEvent == nullptr) return;
+
+	ImGui::BeginTooltip();
+	const char* szHoveredName = xHovered.pEvent->m_szLabel ? xHovered.pEvent->m_szLabel : g_aszProfileNames[xHovered.pEvent->m_eIndex];
+	ImGui::Text("%s", szHoveredName);
+	ImGui::Separator();
+
+	const float fDurationUs = xHovered.fDurationNs / 1000.0f;
+	const float fDurationMs = fDurationUs / 1000.0f;
+
+	if (fDurationMs >= 1.0f)
+	{
+		ImGui::Text("Duration: %.3f ms", fDurationMs);
+	}
+	else
+	{
+		ImGui::Text("Duration: %.3f us", fDurationUs);
+	}
+
+	ImGui::Text("Depth: %u", xHovered.pEvent->m_uDepth);
+
+	const float fPercentOfFrame = (xHovered.fDurationNs / fFrameDurationNs) * 100.0f;
+	ImGui::Text("Frame %%: %.2f%%", fPercentOfFrame);
+
+	ImGui::EndTooltip();
+}
+
+void Zenith_Profiling::RenderTimelineView(TimelineViewState& xState)
 {
 	if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		ImGui::SliderInt("Min Depth to Render", &iMinDepthToRender, 0, 10);
-		ImGui::SliderInt("Max Depth to Render", &iMaxDepthToRender, 0, 20);
-		ImGui::SliderInt("Max Depth to Render Separately", &iMaxDepthToRenderSeparately, 0, 20);
-		ImGui::SliderFloat("Vertical Scale", &fVerticalScale, 0.5f, 4.0f, "%.1fx");
+		ImGui::SliderInt("Min Depth to Render", &xState.m_iMinDepthToRender, 0, 10);
+		ImGui::SliderInt("Max Depth to Render", &xState.m_iMaxDepthToRender, 0, 20);
+		ImGui::SliderInt("Max Depth to Render Separately", &xState.m_iMaxDepthToRenderSeparately, 0, 20);
+		ImGui::SliderFloat("Vertical Scale", &xState.m_fVerticalScale, 0.5f, 4.0f, "%.1fx");
 	}
 
-	iMaxDepthToRender = std::max(iMaxDepthToRender, iMinDepthToRender);
-	iMaxDepthToRenderSeparately = std::clamp(iMaxDepthToRenderSeparately, iMinDepthToRender, iMaxDepthToRender);
+	xState.m_iMaxDepthToRender = std::max(xState.m_iMaxDepthToRender, xState.m_iMinDepthToRender);
+	xState.m_iMaxDepthToRenderSeparately = std::clamp(xState.m_iMaxDepthToRenderSeparately, xState.m_iMinDepthToRender, xState.m_iMaxDepthToRender);
 
 	constexpr float fBASE_ROW_HEIGHT = 20.0f;
 	constexpr float fBASE_ROW_SPACING = 5.0f;
 	constexpr float fTHREAD_SPACING = 30.0f;
 
-	const float fRowHeight = fBASE_ROW_HEIGHT * fVerticalScale;
-	const float fRowSpacing = fBASE_ROW_SPACING * fVerticalScale;
+	const float fRowHeight = fBASE_ROW_HEIGHT * xState.m_fVerticalScale;
+	const float fRowSpacing = fBASE_ROW_SPACING * xState.m_fVerticalScale;
 
-	const u_int uSeparateRowCount = iMaxDepthToRenderSeparately - iMinDepthToRender + 1;
+	const u_int uSeparateRowCount = xState.m_iMaxDepthToRenderSeparately - xState.m_iMinDepthToRender + 1;
 	const u_int uRowsPerThread = uSeparateRowCount;
 	const float fThreadHeight = uRowsPerThread * (fRowHeight + fRowSpacing) + fTHREAD_SPACING;
 
@@ -197,38 +323,39 @@ void Zenith_Profiling::RenderTimelineView(int& iMinDepthToRender, int& iMaxDepth
 	const float fTotalHeight = static_cast<float>(g_xPreviousFrameEvents.size()) * fThreadHeight;
 
 	ImGui::BeginChild("Timeline", ImVec2(0, 0), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-	
+
 	ImGui::Dummy(ImVec2(fCanvasWidth, fTotalHeight));
 	ImDrawList* const pxDrawList = ImGui::GetWindowDrawList();
 	const ImVec2 xCanvasPos = ImGui::GetItemRectMin();
 	const ImVec2 xCanvasMax = ImGui::GetItemRectMax();
 	const bool bIsHovered = ImGui::IsItemHovered();
-	
+
 	if (bIsHovered)
 	{
 		if (ImGui::GetIO().MouseWheel != 0.0f)
 		{
-			const float fOldZoom = fTimelineZoom;
-			fTimelineZoom *= (1.0f + ImGui::GetIO().MouseWheel * 0.1f);
-			fTimelineZoom = std::clamp(fTimelineZoom, 0.1f, 100.0f);
-			
+			const float fOldZoom = xState.m_fTimelineZoom;
+			xState.m_fTimelineZoom *= (1.0f + ImGui::GetIO().MouseWheel * 0.1f);
+			xState.m_fTimelineZoom = std::clamp(xState.m_fTimelineZoom, 0.1f, 100.0f);
+
 			const float fMouseX = ImGui::GetMousePos().x - xCanvasPos.x;
-			const float fZoomRatio = fTimelineZoom / fOldZoom;
-			fTimelineScroll = (fTimelineScroll + fMouseX) * fZoomRatio - fMouseX;
-			fTimelineScroll = std::max(0.0f, fTimelineScroll);
+			const float fZoomRatio = xState.m_fTimelineZoom / fOldZoom;
+			xState.m_fTimelineScroll = (xState.m_fTimelineScroll + fMouseX) * fZoomRatio - fMouseX;
+			xState.m_fTimelineScroll = std::max(0.0f, xState.m_fTimelineScroll);
 		}
 
 		if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle))
 		{
-			fTimelineScroll -= ImGui::GetIO().MouseDelta.x;
-			fTimelineScroll = std::max(0.0f, fTimelineScroll);
+			xState.m_fTimelineScroll -= ImGui::GetIO().MouseDelta.x;
+			xState.m_fTimelineScroll = std::max(0.0f, xState.m_fTimelineScroll);
 		}
 	}
-	
+
 	static ImU32 ls_axCachedColors[ZENITH_PROFILE_INDEX__COUNT] = {0};
 	static float ls_afCachedTextWidths[ZENITH_PROFILE_INDEX__COUNT] = { 0.f };
 
-	//#TO_TODO: this should be in Initialise but ImGui hasn't been inited a that point
+	// Cached on first render rather than in Initialise() because ImGui isn't yet
+	// initialised when Zenith_Profiling::Initialise runs.
 	static bool ls_bOnce = true;
 	if (ls_bOnce)
 	{
@@ -242,208 +369,72 @@ void Zenith_Profiling::RenderTimelineView(int& iMinDepthToRender, int& iMaxDepth
 	}
 
 	const float fFrameDuration = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(g_xPreviousFrameEnd - g_xPreviousFrameStart).count());
-	const float fCanvasTimeScale = (fCanvasWidth * fTimelineZoom) / fFrameDuration;
+	const float fCanvasTimeScale = (fCanvasWidth * xState.m_fTimelineZoom) / fFrameDuration;
 
-	const ImVec2 xMousePos = ImGui::GetMousePos();
-	const Event* pHoveredEvent = nullptr;
-	float fHoveredEventDuration = 0.0f;
+	TimelineRenderContext xCtx;
+	xCtx.pxDrawList = pxDrawList;
+	xCtx.xCanvasPos = xCanvasPos;
+	xCtx.xCanvasMax = xCanvasMax;
+	xCtx.xMousePos = ImGui::GetMousePos();
+	xCtx.bIsHovered = bIsHovered;
+	xCtx.fCanvasWidth = fCanvasWidth;
+	xCtx.fCanvasTimeScale = fCanvasTimeScale;
+	xCtx.fTimelineScroll = xState.m_fTimelineScroll;
+	xCtx.fThreadHeight = fThreadHeight;
+	xCtx.fRowHeight = fRowHeight;
+	xCtx.fRowSpacing = fRowSpacing;
+	xCtx.iMinDepthToRender = xState.m_iMinDepthToRender;
+	xCtx.iMaxDepthToRender = xState.m_iMaxDepthToRender;
+	xCtx.iMaxDepthToRenderSeparately = xState.m_iMaxDepthToRenderSeparately;
+	xCtx.axCachedColors = ls_axCachedColors;
+	xCtx.afCachedTextWidths = ls_afCachedTextWidths;
 
-	for (const auto& [uThreadID, xEvents] : g_xPreviousFrameEvents)
-	{
-		const float fThreadBaseY = xCanvasPos.y + uThreadID * fThreadHeight;
-
-		char acLabel[64];
-		snprintf(acLabel, sizeof(acLabel), "Thread %u", uThreadID);
-		pxDrawList->AddText(ImVec2(xCanvasPos.x, fThreadBaseY), IM_COL32_WHITE, acLabel);
-
-		const u_int uEventCount = xEvents.GetSize();
-		for (u_int u = 0; u < uEventCount; ++u)
-		{
-			const Event& xEvent = xEvents.Get(uEventCount - u - 1);
-
-			if (xEvent.m_uDepth < static_cast<u_int>(iMinDepthToRender) || xEvent.m_uDepth > static_cast<u_int>(iMaxDepthToRender))
-				continue;
-
-			const u_int uRowIndex = (xEvent.m_uDepth <= static_cast<u_int>(iMaxDepthToRenderSeparately))
-				? (xEvent.m_uDepth - static_cast<u_int>(iMinDepthToRender))
-				: (static_cast<u_int>(iMaxDepthToRenderSeparately) - static_cast<u_int>(iMinDepthToRender));
-
-			const float fEventStartNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xBegin - g_xPreviousFrameStart).count());
-			const float fEventEndNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xEnd - g_xPreviousFrameStart).count());
-			const float fEventDurationNs = fEventEndNs - fEventStartNs;
-			
-			const float fStartPx = (fEventStartNs * fCanvasTimeScale) - fTimelineScroll;
-			const float fEndPx = (fEventEndNs * fCanvasTimeScale) - fTimelineScroll;
-			
-			if (fEndPx < 0.0f || fStartPx > fCanvasWidth)
-				continue;
-
-			const float fRowY = fThreadBaseY + uRowIndex * (fRowHeight + fRowSpacing);
-			const ImVec2 xRectMin = ImVec2(xCanvasPos.x + fStartPx, fRowY);
-			const ImVec2 xRectMax = ImVec2(xCanvasPos.x + fEndPx, fRowY + fRowHeight);
-
-			const ImVec2 xClampedMin = ImVec2(std::max(xRectMin.x, xCanvasPos.x), xRectMin.y);
-			const ImVec2 xClampedMax = ImVec2(std::min(xRectMax.x, xCanvasMax.x), xRectMax.y);
-
-			const bool bIsEventHovered = bIsHovered &&
-				xMousePos.x >= xClampedMin.x && xMousePos.x <= xClampedMax.x &&
-				xMousePos.y >= xClampedMin.y && xMousePos.y <= xClampedMax.y;
-
-			const ImU32 uColor = bIsEventHovered 
-				? IM_COL32(255, 255, 255, 255)
-				: ls_axCachedColors[xEvent.m_eIndex];
-			
-			pxDrawList->AddRectFilled(xClampedMin, xClampedMax, uColor, 3.0f);
-
-			const char* szDisplayName = xEvent.m_szLabel ? xEvent.m_szLabel : g_aszProfileNames[xEvent.m_eIndex];
-			const float fDisplayTextWidth = xEvent.m_szLabel
-				? ImGui::CalcTextSize(szDisplayName).x
-				: ls_afCachedTextWidths[xEvent.m_eIndex];
-			const float fRectWidth = xRectMax.x - xRectMin.x;
-			if (fDisplayTextWidth <= fRectWidth)
-			{
-				const ImVec2 xTextPos = ImVec2(std::max(xRectMin.x, xCanvasPos.x), xRectMin.y);
-				const ImU32 uTextColor = bIsEventHovered ? IM_COL32(0, 0, 0, 255) : IM_COL32_WHITE;
-				pxDrawList->AddText(xTextPos, uTextColor, szDisplayName);
-			}
-
-			if (bIsEventHovered)
-			{
-				pHoveredEvent = &xEvent;
-				fHoveredEventDuration = fEventDurationNs;
-			}
-		}
-	}
-
-	if (pHoveredEvent != nullptr)
-	{
-		ImGui::BeginTooltip();
-		const char* szHoveredName = pHoveredEvent->m_szLabel ? pHoveredEvent->m_szLabel : g_aszProfileNames[pHoveredEvent->m_eIndex];
-		ImGui::Text("%s", szHoveredName);
-		ImGui::Separator();
-		
-		const float fDurationUs = fHoveredEventDuration / 1000.0f;
-		const float fDurationMs = fDurationUs / 1000.0f;
-		
-		if (fDurationMs >= 1.0f)
-		{
-			ImGui::Text("Duration: %.3f ms", fDurationMs);
-		}
-		else
-		{
-			ImGui::Text("Duration: %.3f us", fDurationUs);
-		}
-		
-		ImGui::Text("Depth: %u", pHoveredEvent->m_uDepth);
-		
-		const float fPercentOfFrame = (fHoveredEventDuration / fFrameDuration) * 100.0f;
-		ImGui::Text("Frame %%: %.2f%%", fPercentOfFrame);
-		
-		ImGui::EndTooltip();
-	}
+	const TimelineHoveredEvent xHovered = RenderTimelineEvents(xCtx);
+	RenderTimelineHoverTooltip(xHovered, fFrameDuration);
 
 	ImGui::EndChild();
 }
 
-void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThreadID)
+// Hierarchy node built from a thread's profile events. Lives at file scope so the
+// data-build pass (BuildProfileHierarchy) and the render lambda inside
+// RenderThreadBreakdown share the same type without crossing translation units.
+struct ProfileNode
 {
-	// Thread selector
-	ImGui::Text("Select Thread:");
-	
-	// Build list of available threads
-	Zenith_Vector<u_int> xAvailableThreads;
-	for (const auto& [uID, xEvents] : g_xPreviousFrameEvents)
-	{
-		xAvailableThreads.PushBack(uID);
-	}
-	
-	// Sort thread IDs
-	std::sort(xAvailableThreads.GetDataPointer(), xAvailableThreads.GetDataPointer() + xAvailableThreads.GetSize());
-	
-	// Create combo box for thread selection
-	char acCurrentThreadLabel[64];
-	snprintf(acCurrentThreadLabel, sizeof(acCurrentThreadLabel), "Thread %u", uThreadID);
-	
-	if (ImGui::BeginCombo("Thread", acCurrentThreadLabel))
-	{
-		for (u_int u = 0; u < xAvailableThreads.GetSize(); ++u)
-		{
-			const u_int uID = xAvailableThreads.Get(u);
-			char acThreadLabel[64];
-			snprintf(acThreadLabel, sizeof(acThreadLabel), "Thread %u", uID);
-			
-			const bool bIsSelected = (uThreadID == uID);
-			if (ImGui::Selectable(acThreadLabel, bIsSelected))
-			{
-				uThreadID = uID;
-			}
-			
-			if (bIsSelected)
-			{
-				ImGui::SetItemDefaultFocus();
-			}
-		}
-		ImGui::EndCombo();
-	}
-	
-	ImGui::Separator();
+	Zenith_ProfileIndex eIndex;
+	float fTotalTimeMs;
+	float fSelfTimeMs;
+	u_int uCallCount;
+	u_int uDepth;
+	const Zenith_Profiling::Event* pEvent; // Original event for time comparisons.
+	Zenith_Vector<ProfileNode> xChildren;
 
-	// Find selected thread
-	auto xThreadIt = g_xPreviousFrameEvents.find(uThreadID);
-	
-	if (xThreadIt == g_xPreviousFrameEvents.end())
-	{
-		ImGui::Text("Thread %u not found in profiling data", uThreadID);
-		return;
-	}
+	ProfileNode() : eIndex(ZENITH_PROFILE_INDEX__COUNT), fTotalTimeMs(0.0f), fSelfTimeMs(0.0f), uCallCount(0), uDepth(0), pEvent(nullptr) {}
+};
 
-	const Zenith_Vector<Event>& xThreadEvents = xThreadIt->second;
-	
-	if (xThreadEvents.GetSize() == 0)
-	{
-		ImGui::Text("No events recorded for Thread %u", uThreadID);
-		return;
-	}
-
-	// Build hierarchical structure
-	struct ProfileNode
-	{
-		Zenith_ProfileIndex eIndex;
-		float fTotalTimeMs;
-		float fSelfTimeMs;
-		u_int uCallCount;
-		u_int uDepth;
-		const Event* pEvent; // Store pointer to original event for time comparisons
-		Zenith_Vector<ProfileNode> xChildren;
-		
-		ProfileNode() : eIndex(ZENITH_PROFILE_INDEX__COUNT), fTotalTimeMs(0.0f), fSelfTimeMs(0.0f), uCallCount(0), uDepth(0), pEvent(nullptr) {}
-	};
-
-	// First, create a sorted copy of events by start time
-	Zenith_Vector<const Event*> xSortedEvents;
+// Sort a thread's events by start time and assemble them into a parent/child tree
+// using the per-event depth field. Self-time is subtracted from the parent as each
+// child is added, so no second pass is needed.
+static Zenith_Vector<ProfileNode> BuildProfileHierarchy(const Zenith_Vector<Zenith_Profiling::Event>& xThreadEvents)
+{
+	Zenith_Vector<const Zenith_Profiling::Event*> xSortedEvents;
 	const u_int uEventCount = xThreadEvents.GetSize();
 	for (u_int u = 0; u < uEventCount; ++u)
 	{
 		xSortedEvents.PushBack(&xThreadEvents.Get(u));
 	}
-	
-	// Sort by start time
 	std::sort(xSortedEvents.GetDataPointer(), xSortedEvents.GetDataPointer() + xSortedEvents.GetSize(),
-		[](const Event* a, const Event* b) { return a->m_xBegin < b->m_xBegin; });
+		[](const Zenith_Profiling::Event* a, const Zenith_Profiling::Event* b) { return a->m_xBegin < b->m_xBegin; });
 
-	// Build hierarchy using depth information
-	// The depth field already tells us the nesting level, we just need to track the current parent at each depth
 	Zenith_Vector<ProfileNode> xRootNodes;
 	Zenith_Vector<ProfileNode*> xDepthStack; // xDepthStack[i] = current parent node at depth i
 	xDepthStack.Reserve(16);
-	
+
 	for (u_int u = 0; u < xSortedEvents.GetSize(); ++u)
 	{
-		const Event* pEvent = xSortedEvents.Get(u);
+		const Zenith_Profiling::Event* pEvent = xSortedEvents.Get(u);
 		const float fDurationNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(pEvent->m_xEnd - pEvent->m_xBegin).count());
 		const float fDurationMs = fDurationNs / 1000000.0f;
-		
-		// Create new node
+
 		ProfileNode xNode;
 		xNode.eIndex = pEvent->m_eIndex;
 		xNode.fTotalTimeMs = fDurationMs;
@@ -451,9 +442,8 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 		xNode.uCallCount = 1;
 		xNode.uDepth = pEvent->m_uDepth;
 		xNode.pEvent = pEvent;
-		
-		// First, pop any events from the stack that have already ended
-		// This prevents assigning children to expired parents
+
+		// Pop expired parents so children don't get attached to a closed scope.
 		while (xDepthStack.GetSize() > 0)
 		{
 			ProfileNode* pStackTop = xDepthStack.Get(xDepthStack.GetSize() - 1);
@@ -466,34 +456,26 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 				break;
 			}
 		}
-		
-		// Then trim stack to current depth (remove any entries at depth >= current)
+		// Trim stack to current depth (siblings at or above the new node's depth are done).
 		while (xDepthStack.GetSize() > pEvent->m_uDepth)
 		{
 			xDepthStack.Remove(xDepthStack.GetSize() - 1);
 		}
-		
-		// Add node based on depth
+
 		if (pEvent->m_uDepth == 0)
 		{
-			// Depth 0 = root node
 			xRootNodes.PushBack(xNode);
-			// Ensure stack is correct size for depth 0
 			while (xDepthStack.GetSize() > 0)
 			{
 				xDepthStack.Remove(xDepthStack.GetSize() - 1);
 			}
-			// Add this root node to stack at depth 0
 			xDepthStack.PushBack(&xRootNodes.Get(xRootNodes.GetSize() - 1));
 		}
 		else if (pEvent->m_uDepth > 0 && xDepthStack.GetSize() >= pEvent->m_uDepth)
 		{
-			// This is a child node, parent is at depth-1
 			ProfileNode* pParent = xDepthStack.Get(pEvent->m_uDepth - 1);
 			pParent->xChildren.PushBack(xNode);
 			pParent->fSelfTimeMs -= fDurationMs;
-			
-			// Ensure stack is the right size, then add this node
 			while (xDepthStack.GetSize() > pEvent->m_uDepth)
 			{
 				xDepthStack.Remove(xDepthStack.GetSize() - 1);
@@ -501,8 +483,153 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 			xDepthStack.PushBack(&pParent->xChildren.Get(pParent->xChildren.GetSize() - 1));
 		}
 	}
+	return xRootNodes;
+}
 
-	// Cache colors
+// Thread combo box for RenderThreadBreakdown — reads the current selection from
+// uThreadID and writes back any new selection.
+static void RenderThreadSelector(u_int& uThreadID)
+{
+	ImGui::Text("Select Thread:");
+
+	Zenith_Vector<u_int> xAvailableThreads;
+	for (const auto& [uID, xEvents] : g_xPreviousFrameEvents)
+	{
+		xAvailableThreads.PushBack(uID);
+	}
+	std::sort(xAvailableThreads.GetDataPointer(), xAvailableThreads.GetDataPointer() + xAvailableThreads.GetSize());
+
+	char acCurrentThreadLabel[64];
+	snprintf(acCurrentThreadLabel, sizeof(acCurrentThreadLabel), "Thread %u", uThreadID);
+
+	if (!ImGui::BeginCombo("Thread", acCurrentThreadLabel))
+		return;
+
+	for (u_int u = 0; u < xAvailableThreads.GetSize(); ++u)
+	{
+		const u_int uID = xAvailableThreads.Get(u);
+		char acThreadLabel[64];
+		snprintf(acThreadLabel, sizeof(acThreadLabel), "Thread %u", uID);
+
+		const bool bIsSelected = (uThreadID == uID);
+		if (ImGui::Selectable(acThreadLabel, bIsSelected))
+		{
+			uThreadID = uID;
+		}
+		if (bIsSelected)
+		{
+			ImGui::SetItemDefaultFocus();
+		}
+	}
+	ImGui::EndCombo();
+}
+
+struct ProfileRowContext
+{
+	float fFrameDurationMs;
+	u_int uThreadID;
+	const ImU32* pxCachedColors;
+	u_int uNodeIDCounter;
+};
+
+// Render a single ProfileNode row (6 columns). Recurses into children when open.
+// `uNodeIDCounter` is carried in-context so every node gets a unique ImGui ID.
+static void RenderProfileNodeRow(const ProfileNode& xNode, u_int uIndentLevel, ProfileRowContext& xCtx)
+{
+	const u_int uCurrentNodeID = xCtx.uNodeIDCounter++;
+
+	ImGui::TableNextRow();
+
+	// Color swatch
+	ImGui::TableSetColumnIndex(0);
+	ImDrawList* pxDrawList = ImGui::GetWindowDrawList();
+	const ImVec2 xCursorPos = ImGui::GetCursorScreenPos();
+	const float fSwatchSize = 16.0f;
+	const float fIndent = uIndentLevel * 20.0f;
+	pxDrawList->AddRectFilled(
+		ImVec2(xCursorPos.x + 2 + fIndent, xCursorPos.y + 2),
+		ImVec2(xCursorPos.x + fSwatchSize + fIndent, xCursorPos.y + fSwatchSize),
+		xCtx.pxCachedColors[xNode.eIndex],
+		2.0f
+	);
+	ImGui::Dummy(ImVec2(fSwatchSize + fIndent, fSwatchSize));
+
+	// Profile name (indented tree node)
+	ImGui::TableSetColumnIndex(1);
+	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + uIndentLevel * 20.0f);
+
+	const bool bHasChildren = xNode.xChildren.GetSize() > 0;
+	char acNodeID[128];
+	snprintf(acNodeID, sizeof(acNodeID), "###node_%u_%u", xCtx.uThreadID, uCurrentNodeID);
+
+	bool bNodeOpen = false;
+	if (bHasChildren)
+	{
+		bNodeOpen = ImGui::TreeNodeEx(acNodeID, ImGuiTreeNodeFlags_SpanFullWidth, "%s", g_aszProfileNames[xNode.eIndex]);
+	}
+	else
+	{
+		const ImGuiTreeNodeFlags eFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_SpanFullWidth;
+		ImGui::TreeNodeEx(acNodeID, eFlags, "%s", g_aszProfileNames[xNode.eIndex]);
+	}
+
+	// Total time
+	ImGui::TableSetColumnIndex(2);
+	if (xNode.fTotalTimeMs >= 1.0f)
+		ImGui::Text("%.3f ms", xNode.fTotalTimeMs);
+	else
+		ImGui::Text("%.3f us", xNode.fTotalTimeMs * 1000.0f);
+
+	// Self time
+	ImGui::TableSetColumnIndex(3);
+	if (xNode.fSelfTimeMs >= 1.0f)
+		ImGui::Text("%.3f ms", xNode.fSelfTimeMs);
+	else if (xNode.fSelfTimeMs >= 0.0f)
+		ImGui::Text("%.3f us", xNode.fSelfTimeMs * 1000.0f);
+	else
+		ImGui::Text("0.000 us");
+
+	// Percentage
+	ImGui::TableSetColumnIndex(4);
+	const float fPercentOfFrame = (xCtx.fFrameDurationMs > 0.0f) ? (xNode.fTotalTimeMs / xCtx.fFrameDurationMs) * 100.0f : 0.0f;
+	ImGui::Text("%.2f%%", fPercentOfFrame);
+
+	// Call count
+	ImGui::TableSetColumnIndex(5);
+	ImGui::Text("%u", xNode.uCallCount);
+
+	if (bNodeOpen && bHasChildren)
+	{
+		for (u_int i = 0; i < xNode.xChildren.GetSize(); ++i)
+		{
+			RenderProfileNodeRow(xNode.xChildren.Get(i), uIndentLevel + 1, xCtx);
+		}
+		ImGui::TreePop();
+	}
+}
+
+void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThreadID)
+{
+	RenderThreadSelector(uThreadID);
+	ImGui::Separator();
+
+	auto xThreadIt = g_xPreviousFrameEvents.find(uThreadID);
+	if (xThreadIt == g_xPreviousFrameEvents.end())
+	{
+		ImGui::Text("Thread %u not found in profiling data", uThreadID);
+		return;
+	}
+
+	const Zenith_Vector<Event>& xThreadEvents = xThreadIt->second;
+	if (xThreadEvents.GetSize() == 0)
+	{
+		ImGui::Text("No events recorded for Thread %u", uThreadID);
+		return;
+	}
+
+	Zenith_Vector<ProfileNode> xRootNodes = BuildProfileHierarchy(xThreadEvents);
+
+	// Cache colors — populated once on first call.
 	static ImU32 ls_axCachedColors[ZENITH_PROFILE_INDEX__COUNT] = {0};
 	static bool ls_bColorsInitialized = false;
 	if (!ls_bColorsInitialized)
@@ -515,121 +642,27 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 		ls_bColorsInitialized = true;
 	}
 
-	// Recursive function to render nodes
-	u_int uNodeIDCounter = 0;
-	std::function<void(const ProfileNode&, u_int)> RenderNode = [&](const ProfileNode& xNode, u_int uIndentLevel)
-	{
-		const u_int uCurrentNodeID = uNodeIDCounter++;
-		
-		ImGui::TableNextRow();
-		
-		// Color swatch
-		ImGui::TableSetColumnIndex(0);
-		ImDrawList* pxDrawList = ImGui::GetWindowDrawList();
-		const ImVec2 xCursorPos = ImGui::GetCursorScreenPos();
-		const float fSwatchSize = 16.0f;
-		const float fIndent = uIndentLevel * 20.0f;
-		pxDrawList->AddRectFilled(
-			ImVec2(xCursorPos.x + 2 + fIndent, xCursorPos.y + 2),
-			ImVec2(xCursorPos.x + fSwatchSize + fIndent, xCursorPos.y + fSwatchSize),
-			ls_axCachedColors[xNode.eIndex],
-			2.0f
-		);
-		ImGui::Dummy(ImVec2(fSwatchSize + fIndent, fSwatchSize));
-
-		// Profile name with indentation and tree node
-		ImGui::TableSetColumnIndex(1);
-		
-		// Set cursor position for proper indentation
-		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + uIndentLevel * 20.0f);
-		
-		bool bHasChildren = xNode.xChildren.GetSize() > 0;
-		bool bNodeOpen = false;
-		
-		// Create a stable ID using thread ID and node counter
-		char acNodeID[128];
-		snprintf(acNodeID, sizeof(acNodeID), "###node_%u_%u", uThreadID, uCurrentNodeID);
-		
-		if (bHasChildren)
-		{
-			// Use tree node for items with children
-			ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanFullWidth;
-			bNodeOpen = ImGui::TreeNodeEx(acNodeID, flags, "%s", g_aszProfileNames[xNode.eIndex]);
-		}
-		else
-		{
-			// Use tree node with Leaf flag for items without children
-			ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_SpanFullWidth;
-			ImGui::TreeNodeEx(acNodeID, flags, "%s", g_aszProfileNames[xNode.eIndex]);
-		}
-
-		// Total time
-		ImGui::TableSetColumnIndex(2);
-		if (xNode.fTotalTimeMs >= 1.0f)
-		{
-			ImGui::Text("%.3f ms", xNode.fTotalTimeMs);
-		}
-		else
-		{
-			ImGui::Text("%.3f us", xNode.fTotalTimeMs * 1000.0f);
-		}
-
-		// Self time
-		ImGui::TableSetColumnIndex(3);
-		if (xNode.fSelfTimeMs >= 1.0f)
-		{
-			ImGui::Text("%.3f ms", xNode.fSelfTimeMs);
-		}
-		else if (xNode.fSelfTimeMs >= 0.0f)
-		{
-			ImGui::Text("%.3f us", xNode.fSelfTimeMs * 1000.0f);
-		}
-		else
-		{
-			ImGui::Text("0.000 us");
-		}
-
-		// Percentage
-		ImGui::TableSetColumnIndex(4);
-		const float fPercentOfFrame = (fFrameDurationMs > 0.0f) ? (xNode.fTotalTimeMs / fFrameDurationMs) * 100.0f : 0.0f;
-		ImGui::Text("%.2f%%", fPercentOfFrame);
-
-		// Call count
-		ImGui::TableSetColumnIndex(5);
-		ImGui::Text("%u", xNode.uCallCount);
-
-		// Render children only if node is open
-		if (bNodeOpen && bHasChildren)
-		{
-			for (u_int i = 0; i < xNode.xChildren.GetSize(); ++i)
-			{
-				RenderNode(xNode.xChildren.Get(i), uIndentLevel + 1);
-			}
-			ImGui::TreePop();
-		}
-	};
-
-	// Table display
 	ImGui::Text("Thread %u - Hierarchical Breakdown", uThreadID);
 	ImGui::Separator();
-	
-	if (ImGui::BeginTable("ProfileBreakdown", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY))
+
+	if (!ImGui::BeginTable("ProfileBreakdown", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY))
+		return;
+
+	ImGui::TableSetupColumn("Color", ImGuiTableColumnFlags_WidthFixed, 20.0f);
+	ImGui::TableSetupColumn("Profile Name", ImGuiTableColumnFlags_WidthStretch);
+	ImGui::TableSetupColumn("Total Time", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+	ImGui::TableSetupColumn("Self Time", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+	ImGui::TableSetupColumn("% of Frame", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+	ImGui::TableSetupColumn("Call Count", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+	ImGui::TableHeadersRow();
+
+	ProfileRowContext xCtx{ fFrameDurationMs, uThreadID, ls_axCachedColors, 0u };
+	for (u_int i = 0; i < xRootNodes.GetSize(); ++i)
 	{
-		ImGui::TableSetupColumn("Color", ImGuiTableColumnFlags_WidthFixed, 20.0f);
-		ImGui::TableSetupColumn("Profile Name", ImGuiTableColumnFlags_WidthStretch);
-		ImGui::TableSetupColumn("Total Time", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-		ImGui::TableSetupColumn("Self Time", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-		ImGui::TableSetupColumn("% of Frame", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-		ImGui::TableSetupColumn("Call Count", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-		ImGui::TableHeadersRow();
-
-		for (u_int i = 0; i < xRootNodes.GetSize(); ++i)
-		{
-			RenderNode(xRootNodes.Get(i), 0);
-		}
-
-		ImGui::EndTable();
+		RenderProfileNodeRow(xRootNodes.Get(i), 0, xCtx);
 	}
+
+	ImGui::EndTable();
 }
 #endif
 

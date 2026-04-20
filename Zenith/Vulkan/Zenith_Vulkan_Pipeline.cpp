@@ -25,287 +25,7 @@ static std::unordered_map<Zenith_Vulkan_Pipeline*, Zenith_Vulkan_Shader*> s_xHot
 static std::unordered_map<Zenith_Vulkan_Pipeline*, Flux_PipelineSpecification> s_xHotReloadSpecMap;
 #endif
 
-void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::string& strFragment, const std::string&, const std::string& strDomain, const std::string& strHull)
-{
-#ifdef ZENITH_WINDOWS
-	// Use runtime compilation when Slang compiler is available (Windows only)
-	if (Flux_SlangCompiler::IsInitialised() && strDomain.empty() && strHull.empty())
-	{
-		m_strVertexPath = strVertex;
-		m_strFragmentPath = strFragment;
-
-		bool bSuccess = InitialiseFromSource(strVertex, strFragment);
-		Zenith_Assert(bSuccess, "Shader compilation failed: %s + %s", strVertex.c_str(), strFragment.c_str());
-		return;
-	}
-#endif
-
-	const std::string strExtension = ".spv";
-	std::string strShaderRoot(SHADER_SOURCE_ROOT);
-	m_pcVertShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strVertex + strExtension).c_str(), m_pcVertShaderCodeSize);
-	m_pcFragShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strFragment + strExtension).c_str(), m_pcFragShaderCodeSize);
-
-	Zenith_Assert(m_pcVertShaderCode != nullptr, "Failed to load precompiled shader: %s%s%s", strShaderRoot.c_str(), strVertex.c_str(), strExtension.c_str());
-	Zenith_Assert(m_pcFragShaderCode != nullptr, "Failed to load precompiled shader: %s%s%s", strShaderRoot.c_str(), strFragment.c_str(), strExtension.c_str());
-
-	m_uStageCount = 2;
-
-	if (strDomain.length())
-	{
-		Zenith_Assert(strHull.length(), "Found tesc but not tese");
-		m_pcTescShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strDomain + strExtension).c_str(), m_pcTescShaderCodeSize);
-		m_pcTeseShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strHull + strExtension).c_str(), m_pcTeseShaderCodeSize);
-		m_uStageCount = 4;
-		m_bTesselation = true;
-	}
-
-	m_xVertShaderModule = CreateShaderModule(m_pcVertShaderCode, m_pcVertShaderCodeSize);
-	m_xFragShaderModule = CreateShaderModule(m_pcFragShaderCode, m_pcFragShaderCodeSize);
-
-	m_xInfos = new vk::PipelineShaderStageCreateInfo[m_uStageCount];
-
-	m_xInfos[0].stage = vk::ShaderStageFlagBits::eVertex;
-	m_xInfos[0].module = m_xVertShaderModule;
-	m_xInfos[0].pName = "main";
-
-	m_xInfos[1].stage = vk::ShaderStageFlagBits::eFragment;
-	m_xInfos[1].module = m_xFragShaderModule;
-	m_xInfos[1].pName = "main";
-
-	if (m_bTesselation) {
-		m_xTescShaderModule = CreateShaderModule(m_pcTescShaderCode, m_pcTescShaderCodeSize);
-		m_xTeseShaderModule = CreateShaderModule(m_pcTeseShaderCode, m_pcTeseShaderCodeSize);
-
-		m_xInfos[2].stage = vk::ShaderStageFlagBits::eTessellationControl;
-		m_xInfos[2].module = m_xTescShaderModule;
-		m_xInfos[2].pName = "main";
-
-		m_xInfos[3].stage = vk::ShaderStageFlagBits::eTessellationEvaluation;
-		m_xInfos[3].module = m_xTeseShaderModule;
-		m_xInfos[3].pName = "main";
-	}
-
-	// Load pre-compiled reflection data
-	{
-		const std::string strReflExt = ".spv.refl";
-		Zenith_DataStream xVertReflStream;
-		xVertReflStream.ReadFromFile((strShaderRoot + strVertex + strReflExt).c_str());
-		if (xVertReflStream.IsValid())
-		{
-			Flux_ShaderReflection xVertRefl;
-			xVertRefl.ReadFromDataStream(xVertReflStream);
-			MergeReflection(xVertRefl);
-		}
-
-		Zenith_DataStream xFragReflStream;
-		xFragReflStream.ReadFromFile((strShaderRoot + strFragment + strReflExt).c_str());
-		if (xFragReflStream.IsValid())
-		{
-			Flux_ShaderReflection xFragRefl;
-			xFragRefl.ReadFromDataStream(xFragReflStream);
-			MergeReflection(xFragRefl);
-		}
-	}
-}
-
-void Zenith_Vulkan_Shader::InitialiseCompute(const std::string& strCompute)
-{
-#ifdef ZENITH_WINDOWS
-	// Use runtime compilation when Slang compiler is available (Windows only)
-	if (Flux_SlangCompiler::IsInitialised())
-	{
-		m_strComputePath = strCompute;
-		bool bSuccess = InitialiseComputeFromSource(strCompute);
-		Zenith_Assert(bSuccess, "Compute shader compilation failed: %s", strCompute.c_str());
-		return;
-	}
-#endif
-	// Load precompiled SPV
-	const std::string strExtension = ".spv";
-	std::string strShaderRoot(SHADER_SOURCE_ROOT);
-	m_pcCompShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strCompute + strExtension).c_str(), m_pcCompShaderCodeSize);
-	Zenith_Assert(m_pcCompShaderCode != nullptr, "Failed to load precompiled shader: %s%s", strCompute.c_str(), strExtension.c_str());
-	m_xCompShaderModule = CreateShaderModule(m_pcCompShaderCode, m_pcCompShaderCodeSize);
-	m_uStageCount = 1;
-
-	// Load pre-compiled reflection data
-	const std::string strReflExt = ".spv.refl";
-	Zenith_DataStream xReflStream;
-	xReflStream.ReadFromFile((strShaderRoot + strCompute + strReflExt).c_str());
-	if (xReflStream.IsValid())
-	{
-		m_xReflection.ReadFromDataStream(xReflStream);
-	}
-}
-
-Zenith_Vulkan_Shader::~Zenith_Vulkan_Shader()
-{
-	const vk::Device xDevice = Zenith_Vulkan::GetDevice();
-
-	vk::ShaderModule* apxModules[] = { &m_xVertShaderModule, &m_xFragShaderModule, &m_xTescShaderModule, &m_xTeseShaderModule, &m_xCompShaderModule };
-	for (vk::ShaderModule* pxModule : apxModules)
-	{
-		if (*pxModule)
-		{
-			xDevice.destroyShaderModule(*pxModule);
-			*pxModule = VK_NULL_HANDLE;
-		}
-	}
-
-	char** appcCodes[] = { &m_pcVertShaderCode, &m_pcFragShaderCode, &m_pcTescShaderCode, &m_pcTeseShaderCode, &m_pcCompShaderCode };
-	for (char** ppcCode : appcCodes)
-	{
-		delete[] *ppcCode;
-		*ppcCode = nullptr;
-	}
-
-	delete[] m_xInfos;
-	m_xInfos = nullptr;
-}
-
-void Zenith_Vulkan_Shader::FillShaderStageCreateInfo(vk::GraphicsPipelineCreateInfo& xPipelineCreateInfo) const
-{
-	xPipelineCreateInfo.setStageCount(m_uStageCount);
-	xPipelineCreateInfo.setPStages(m_xInfos);
-}
-
-vk::ShaderModule Zenith_Vulkan_Shader::CreateShaderModule(const char* szCode, uint64_t ulCodeLength)
-{
-	Zenith_Assert(strlen(szCode), "Shader code is empty");
-	vk::ShaderModuleCreateInfo xCreateInfo = vk::ShaderModuleCreateInfo()
-		.setCodeSize(ulCodeLength)
-		.setPCode(reinterpret_cast<const uint32_t*>(szCode));
-	return VkUnwrap(Zenith_Vulkan::GetDevice().createShaderModule(xCreateInfo));
-}
-
-void Zenith_Vulkan_Shader::MergeReflection(const Flux_ShaderReflection& xStageReflection)
-{
-	// Merge bindings from stage reflection into combined reflection
-	// Skip duplicates (same set/binding)
-	const Zenith_Vector<Flux_ReflectedBinding>& axNewBindings = xStageReflection.GetBindings();
-	for (u_int u = 0; u < axNewBindings.GetSize(); u++)
-	{
-		const Flux_ReflectedBinding& xNewBinding = axNewBindings.Get(u);
-
-		// Check if this binding already exists
-		bool bExists = false;
-		const Zenith_Vector<Flux_ReflectedBinding>& axExistingBindings = m_xReflection.GetBindings();
-		for (u_int e = 0; e < axExistingBindings.GetSize(); e++)
-		{
-			const Flux_ReflectedBinding& xExisting = axExistingBindings.Get(e);
-			if (xExisting.m_uSet == xNewBinding.m_uSet && xExisting.m_uBinding == xNewBinding.m_uBinding)
-			{
-				bExists = true;
-				break;
-			}
-		}
-
-		if (!bExists)
-		{
-			m_xReflection.AddBinding(xNewBinding);
-		}
-	}
-
-	// Rebuild the lookup map after merging
-	m_xReflection.BuildLookupMap();
-}
-
-#ifdef ZENITH_WINDOWS
-bool Zenith_Vulkan_Shader::InitialiseFromSource(const std::string& strVertexPath, const std::string& strFragmentPath)
-{
-	if (!Flux_SlangCompiler::IsInitialised())
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Slang compiler not initialized for runtime compilation");
-		return false;
-	}
-
-	// Store paths for hot reload
-	m_strVertexPath = strVertexPath;
-	m_strFragmentPath = strFragmentPath;
-
-	std::string strShaderRoot(SHADER_SOURCE_ROOT);
-
-	// Compile both shaders together using paired compilation
-	// This ensures Slang sees the full pipeline interface and preserves varyings
-	// that are output from vertex shader but conditionally used in fragment shader
-	// (e.g., when SHADOWS is defined and fragment shader wraps most code in #ifndef SHADOWS)
-	Flux_SlangGraphicsPipelineResult xPipelineResult;
-	if (!Flux_SlangCompiler::CompileGraphicsPipeline(strShaderRoot + strVertexPath, strShaderRoot + strFragmentPath, xPipelineResult))
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Failed to compile graphics pipeline: %s + %s - %s",
-				   strVertexPath.c_str(), strFragmentPath.c_str(), xPipelineResult.m_strError.c_str());
-		return false;
-	}
-
-	// Create shader modules from compiled SPIR-V
-	m_pcVertShaderCodeSize = xPipelineResult.m_axVertexSpirv.GetSize() * sizeof(uint32_t);
-	m_pcVertShaderCode = new char[m_pcVertShaderCodeSize];
-	memcpy(m_pcVertShaderCode, xPipelineResult.m_axVertexSpirv.GetDataPointer(), m_pcVertShaderCodeSize);
-
-	m_pcFragShaderCodeSize = xPipelineResult.m_axFragmentSpirv.GetSize() * sizeof(uint32_t);
-	m_pcFragShaderCode = new char[m_pcFragShaderCodeSize];
-	memcpy(m_pcFragShaderCode, xPipelineResult.m_axFragmentSpirv.GetDataPointer(), m_pcFragShaderCodeSize);
-
-	m_xVertShaderModule = CreateShaderModule(m_pcVertShaderCode, m_pcVertShaderCodeSize);
-	m_xFragShaderModule = CreateShaderModule(m_pcFragShaderCode, m_pcFragShaderCodeSize);
-
-	m_uStageCount = 2;
-	m_xInfos = new vk::PipelineShaderStageCreateInfo[m_uStageCount];
-
-	m_xInfos[0].stage = vk::ShaderStageFlagBits::eVertex;
-	m_xInfos[0].module = m_xVertShaderModule;
-	m_xInfos[0].pName = "main";
-
-	m_xInfos[1].stage = vk::ShaderStageFlagBits::eFragment;
-	m_xInfos[1].module = m_xFragShaderModule;
-	m_xInfos[1].pName = "main";
-
-	// Merge reflection data from both stages
-	MergeReflection(xPipelineResult.m_xVertexReflection);
-	MergeReflection(xPipelineResult.m_xFragmentReflection);
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Runtime compiled shader (paired): %s + %s (%u bindings)",
-			   strVertexPath.c_str(), strFragmentPath.c_str(), m_xReflection.GetBindings().GetSize());
-
-	return true;
-}
-
-bool Zenith_Vulkan_Shader::InitialiseComputeFromSource(const std::string& strComputePath)
-{
-	if (!Flux_SlangCompiler::IsInitialised())
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Slang compiler not initialized for runtime compilation");
-		return false;
-	}
-
-	std::string strShaderRoot(SHADER_SOURCE_ROOT);
-
-	// Compile compute shader
-	Flux_SlangCompileResult xResult;
-	if (!Flux_SlangCompiler::Compile(strShaderRoot + strComputePath, SLANG_SHADER_STAGE_COMPUTE, xResult))
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Failed to compile compute shader: %s - %s",
-				   strComputePath.c_str(), xResult.m_strError.c_str());
-		return false;
-	}
-
-	// Create shader module from compiled SPIR-V
-	m_pcCompShaderCodeSize = xResult.m_axSpirv.GetSize() * sizeof(uint32_t);
-	m_pcCompShaderCode = new char[m_pcCompShaderCodeSize];
-	memcpy(m_pcCompShaderCode, xResult.m_axSpirv.GetDataPointer(), m_pcCompShaderCodeSize);
-
-	m_xCompShaderModule = CreateShaderModule(m_pcCompShaderCode, m_pcCompShaderCodeSize);
-	m_uStageCount = 1;
-
-	// Store reflection data
-	m_xReflection = xResult.m_xReflection;
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Runtime compiled compute shader: %s (%u bindings)",
-			   strComputePath.c_str(), m_xReflection.GetBindings().GetSize());
-
-	return true;
-}
-#endif // ZENITH_WINDOWS
+// Zenith_Vulkan_Shader implementation lives in Zenith_Vulkan_Shader.cpp.
 
 class Zenith_Vulkan_DescriptorSetLayoutBuilder
 {
@@ -814,21 +534,14 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_Rend
 	return VkUnwrap(xDevice.createFramebuffer(framebufferInfo));
 }
 
-void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Flux_PipelineSpecification& xSpec)
+// Per-substruct builders extracted from FromSpecification. Each returns its
+// Vk struct by value. Builders whose struct holds pointers into a caller-
+// supplied array (color blend attachments, dynamic states) take those arrays
+// as out-params so the arrays outlive the returned struct.
+
+static vk::PipelineInputAssemblyStateCreateInfo BuildInputAssemblyState(const Flux_PipelineSpecification& xSpec)
 {
-	vk::GraphicsPipelineCreateInfo xPipelineInfo;
-
-#pragma region Shaders
-	xPipelineInfo.setStageCount(xSpec.m_pxShader->m_uStageCount);
-	xPipelineInfo.setPStages(xSpec.m_pxShader->m_xInfos);
-#pragma endregion
-
-#pragma region VertexDesc
-	std::vector<vk::VertexInputBindingDescription> xBindDescs;
-	std::vector<vk::VertexInputAttributeDescription> xAttrDescs;
-	vk::PipelineVertexInputStateCreateInfo xVertexDesc = VertexDescToVulkanDesc(xSpec.m_xVertexInputDesc, xBindDescs, xAttrDescs);
-
-	vk::PipelineInputAssemblyStateCreateInfo xTopology = vk::PipelineInputAssemblyStateCreateInfo();
+	vk::PipelineInputAssemblyStateCreateInfo xTopology;
 	switch (xSpec.m_xVertexInputDesc.m_eTopology)
 	{
 	case(MESH_TOPOLOGY_TRIANGLES):
@@ -838,17 +551,15 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 		xTopology.setTopology(vk::PrimitiveTopology::eTriangleList);
 		break;
 	}
+	return xTopology;
+}
 
-	xPipelineInfo.setPVertexInputState(&xVertexDesc);
-	xPipelineInfo.setPInputAssemblyState(&xTopology);
-#pragma endregion
-
-#pragma region BlendStates
-	vk::PipelineColorBlendStateCreateInfo xBlendInfo;
-	vk::PipelineColorBlendAttachmentState axBlendInfo[FLUX_MAX_TARGETS];
+static vk::PipelineColorBlendStateCreateInfo BuildColorBlendState(const Flux_PipelineSpecification& xSpec,
+	vk::PipelineColorBlendAttachmentState (&axOutBlendInfo)[FLUX_MAX_TARGETS])
+{
 	for (u_int u = 0; u < xSpec.m_uNumColourAttachments; u++)
 	{
-		axBlendInfo[u]
+		axOutBlendInfo[u]
 			.setColorWriteMask(
 				vk::ColorComponentFlagBits::eR |
 				vk::ColorComponentFlagBits::eG |
@@ -862,28 +573,24 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 			.setDstAlphaBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eDstBlendFactor))
 			.setDstColorBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eDstBlendFactor));
 	}
+	vk::PipelineColorBlendStateCreateInfo xBlendInfo;
 	xBlendInfo.setAttachmentCount(xSpec.m_uNumColourAttachments);
-	xBlendInfo.setPAttachments(axBlendInfo);
+	xBlendInfo.setPAttachments(axOutBlendInfo);
+	return xBlendInfo;
+}
 
-	xPipelineInfo.setPColorBlendState(&xBlendInfo);
-#pragma endregion
-
-#pragma region DepthStencilState
-	vk::PipelineDepthStencilStateCreateInfo xDepthStencilInfo = vk::PipelineDepthStencilStateCreateInfo()
+static vk::PipelineDepthStencilStateCreateInfo BuildDepthStencilState(const Flux_PipelineSpecification& xSpec)
+{
+	return vk::PipelineDepthStencilStateCreateInfo()
 		.setDepthCompareOp(VceCompareFuncToVkCompareFunc(xSpec.m_eDepthCompareFunc))
 		.setDepthTestEnable(xSpec.m_bDepthTestEnabled)
 		.setDepthWriteEnable(xSpec.m_bDepthWriteEnabled)
 		.setDepthBoundsTestEnable(false)
 		.setStencilTestEnable(false); //#TO_TODO: stencil
+}
 
-	xPipelineInfo.setPDepthStencilState(&xDepthStencilInfo);
-#pragma endregion
-
-#pragma region RenderPass
-	xPipelineInfo.setRenderPass(Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xSpec.m_aeColourAttachmentFormats, xSpec.m_uNumColourAttachments, xSpec.m_eDepthStencilFormat, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_RENDERTARGET));
-#pragma endregion
-
-#pragma region RasterState
+static vk::PipelineRasterizationStateCreateInfo BuildRasterizationState(const Flux_PipelineSpecification& xSpec)
+{
 	// Convert Flux CullMode to Vulkan CullModeFlagBits
 	vk::CullModeFlagBits eVkCullMode = vk::CullModeFlagBits::eNone;
 	switch (xSpec.m_eCullMode)
@@ -906,55 +613,94 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 			.setDepthBiasSlopeFactor(xSpec.m_fDepthBiasSlope)
 			.setDepthBiasClamp(xSpec.m_fDepthBiasClamp);
 	}
+	return xRasterInfo;
+}
 
-	xPipelineInfo.setPRasterizationState(&xRasterInfo);
-#pragma endregion
-
-#pragma region Viewport
-	vk::PipelineViewportStateCreateInfo xViewportInfo = vk::PipelineViewportStateCreateInfo()
+static vk::PipelineViewportStateCreateInfo BuildViewportState()
+{
+	return vk::PipelineViewportStateCreateInfo()
 		.setViewportCount(1)
 		.setScissorCount(1);
+}
 
-	xPipelineInfo.setPViewportState(&xViewportInfo);
-#pragma endregion
-
-#pragma region DynamicState
+static vk::PipelineDynamicStateCreateInfo BuildDynamicState(const Flux_PipelineSpecification& xSpec,
+	vk::DynamicState (&aeOutDynamicState)[4], u_int& uOutCount)
+{
 	// Viewport and scissor are always dynamic. Cull mode and depth bias are
 	// optionally dynamic per Flux_PipelineSpecification flags.
-	vk::DynamicState aeDynamicState[4] =
-	{
-		vk::DynamicState::eViewport,
-		vk::DynamicState::eScissor,
-	};
-	u_int uDynamicStateCount = 2;
+	aeOutDynamicState[0] = vk::DynamicState::eViewport;
+	aeOutDynamicState[1] = vk::DynamicState::eScissor;
+	uOutCount = 2;
 
 	if (xSpec.m_bDynamicCullMode)
 	{
-		aeDynamicState[uDynamicStateCount++] = vk::DynamicState::eCullMode;
+		aeOutDynamicState[uOutCount++] = vk::DynamicState::eCullMode;
 	}
 	if (xSpec.m_bDynamicDepthBias)
 	{
-		aeDynamicState[uDynamicStateCount++] = vk::DynamicState::eDepthBias;
+		aeOutDynamicState[uOutCount++] = vk::DynamicState::eDepthBias;
 	}
 
-	vk::PipelineDynamicStateCreateInfo xDynamicState = vk::PipelineDynamicStateCreateInfo()
-		.setDynamicStateCount(uDynamicStateCount)
-		.setPDynamicStates(aeDynamicState);
+	return vk::PipelineDynamicStateCreateInfo()
+		.setDynamicStateCount(uOutCount)
+		.setPDynamicStates(aeOutDynamicState);
+}
 
-	xPipelineInfo.setPDynamicState(&xDynamicState);
-#pragma endregion
-
-#pragma region Multisample
-	vk::PipelineMultisampleStateCreateInfo xMultisampleInfo = vk::PipelineMultisampleStateCreateInfo()
+static vk::PipelineMultisampleStateCreateInfo BuildMultisampleState()
+{
+	return vk::PipelineMultisampleStateCreateInfo()
 		.setRasterizationSamples(vk::SampleCountFlagBits::e1);
+}
 
+void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Flux_PipelineSpecification& xSpec)
+{
+	vk::GraphicsPipelineCreateInfo xPipelineInfo;
+
+	// Shaders
+	xPipelineInfo.setStageCount(xSpec.m_pxShader->m_uStageCount);
+	xPipelineInfo.setPStages(xSpec.m_pxShader->m_xInfos);
+
+	// Vertex input + topology
+	std::vector<vk::VertexInputBindingDescription> xBindDescs;
+	std::vector<vk::VertexInputAttributeDescription> xAttrDescs;
+	vk::PipelineVertexInputStateCreateInfo xVertexDesc = VertexDescToVulkanDesc(xSpec.m_xVertexInputDesc, xBindDescs, xAttrDescs);
+	vk::PipelineInputAssemblyStateCreateInfo xTopology = BuildInputAssemblyState(xSpec);
+	xPipelineInfo.setPVertexInputState(&xVertexDesc);
+	xPipelineInfo.setPInputAssemblyState(&xTopology);
+
+	// Color blend — attachment array lives here so the struct's pointer stays valid.
+	vk::PipelineColorBlendAttachmentState axBlendInfo[FLUX_MAX_TARGETS];
+	vk::PipelineColorBlendStateCreateInfo xBlendInfo = BuildColorBlendState(xSpec, axBlendInfo);
+	xPipelineInfo.setPColorBlendState(&xBlendInfo);
+
+	// Depth / stencil
+	vk::PipelineDepthStencilStateCreateInfo xDepthStencilInfo = BuildDepthStencilState(xSpec);
+	xPipelineInfo.setPDepthStencilState(&xDepthStencilInfo);
+
+	// Render pass
+	xPipelineInfo.setRenderPass(Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xSpec.m_aeColourAttachmentFormats, xSpec.m_uNumColourAttachments, xSpec.m_eDepthStencilFormat, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_RENDERTARGET));
+
+	// Rasterization
+	vk::PipelineRasterizationStateCreateInfo xRasterInfo = BuildRasterizationState(xSpec);
+	xPipelineInfo.setPRasterizationState(&xRasterInfo);
+
+	// Viewport (sizes are dynamic)
+	vk::PipelineViewportStateCreateInfo xViewportInfo = BuildViewportState();
+	xPipelineInfo.setPViewportState(&xViewportInfo);
+
+	// Dynamic state — backing array lives here.
+	vk::DynamicState aeDynamicState[4];
+	u_int uDynamicStateCount = 0;
+	vk::PipelineDynamicStateCreateInfo xDynamicState = BuildDynamicState(xSpec, aeDynamicState, uDynamicStateCount);
+	xPipelineInfo.setPDynamicState(&xDynamicState);
+
+	// Multisample
+	vk::PipelineMultisampleStateCreateInfo xMultisampleInfo = BuildMultisampleState();
 	xPipelineInfo.setPMultisampleState(&xMultisampleInfo);
-#pragma endregion
 
-#pragma region PipelineLayout
+	// Pipeline layout / root signature
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(xPipelineOut.m_xRootSig, xSpec.m_xPipelineLayout);
 	xPipelineInfo.setLayout(xPipelineOut.m_xRootSig.m_xLayout);
-#pragma endregion
 
 	xPipelineOut.m_xPipeline = VkUnwrap(Zenith_Vulkan::GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, xPipelineInfo));
 
@@ -1106,57 +852,4 @@ void Zenith_Vulkan_RootSigBuilder::FromReflection(Zenith_Vulkan_RootSig& xRootSi
 	xRootSigOut.m_xReflection = xReflection;
 }
 
-// ========== COMPUTE PIPELINE BUILDER IMPLEMENTATION ==========
-
-Zenith_Vulkan_ComputePipelineBuilder::Zenith_Vulkan_ComputePipelineBuilder()
-{
-}
-
-Zenith_Vulkan_ComputePipelineBuilder& Zenith_Vulkan_ComputePipelineBuilder::WithShader(const Zenith_Vulkan_Shader& shader)
-{
-	m_pxShader = &shader;
-	return *this;
-}
-
-Zenith_Vulkan_ComputePipelineBuilder& Zenith_Vulkan_ComputePipelineBuilder::WithLayout(vk::PipelineLayout layout)
-{
-	m_xLayout = layout;
-	return *this;
-}
-
-void Zenith_Vulkan_ComputePipelineBuilder::Build(Zenith_Vulkan_Pipeline& pipelineOut)
-{
-	Zenith_Assert(m_pxShader != nullptr, "Compute shader not set");
-	Zenith_Assert(m_xLayout != VK_NULL_HANDLE, "Pipeline layout not set");
-	
-	vk::PipelineShaderStageCreateInfo stageInfo = vk::PipelineShaderStageCreateInfo()
-		.setStage(vk::ShaderStageFlagBits::eCompute)
-		.setModule(m_pxShader->m_xCompShaderModule)
-		.setPName("main");
-	
-	vk::ComputePipelineCreateInfo pipelineInfo = vk::ComputePipelineCreateInfo()
-		.setStage(stageInfo)
-		.setLayout(m_xLayout);
-	
-	vk::Result result = Zenith_Vulkan::GetDevice().createComputePipelines(
-		VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipelineOut.m_xPipeline);
-	
-	if (result != vk::Result::eSuccess)
-	{
-		Zenith_Error(LOG_CATEGORY_VULKAN, "Failed to create compute pipeline");
-	}
-}
-
-void Zenith_Vulkan_ComputePipelineBuilder::BuildFromShader(Zenith_Vulkan_Pipeline& xPipelineOut,
-                                                           const Zenith_Vulkan_Shader& xShader,
-                                                           const Zenith_Vulkan_RootSig& xRootSig)
-{
-	Zenith_Vulkan_ComputePipelineBuilder xBuilder;
-	xBuilder.WithShader(xShader)
-	        .WithLayout(xRootSig.m_xLayout)
-	        .Build(xPipelineOut);
-	// Centralise the two-step build + root-sig stamp so every compute-pipeline
-	// construction site calls a single helper instead of manually chaining
-	// WithShader/WithLayout/Build and then remembering to copy the root sig.
-	xPipelineOut.m_xRootSig = xRootSig;
-}
+// Compute pipeline builder lives in Zenith_Vulkan_ComputePipelineBuilder.cpp.
