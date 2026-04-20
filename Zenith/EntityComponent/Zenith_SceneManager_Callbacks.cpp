@@ -62,21 +62,11 @@ Zenith_SceneManager::CallbackHandle Zenith_SceneManager::Zenith_CallbackList<TCa
 			s_uFiringCallbacksDepth);
 	}
 
-	// Dedupe: if the same function pointer is already registered, return the existing
-	// handle instead of appending a duplicate. Prevents handlers firing twice when a
-	// subsystem accidentally subscribes the same free function more than once (e.g.
-	// double-init on hot reload, two systems wiring the same hook). Unregister only
-	// removes the first match, so a leaked duplicate would otherwise be impossible to
-	// tear down cleanly.
-	for (u_int i = 0; i < m_axEntries.GetSize(); ++i)
-	{
-		if (m_axEntries.Get(i).m_pfnCallback == pfn)
-		{
-			Zenith_Warning(LOG_CATEGORY_SCENE, "Zenith_CallbackList::Register: duplicate callback registration rejected; returning existing handle");
-			return m_axEntries.Get(i).m_ulHandle;
-		}
-	}
-
+	// Unity parity: duplicate registrations are allowed. Each Register call allocates a
+	// fresh handle; Unregister(handle) removes exactly the registration that handle
+	// identifies (handle-based, not pfn-based), so duplicates can be torn down cleanly
+	// one handle at a time. This matches Unity's `sceneLoaded += Handler` firing the
+	// handler twice when subscribed twice.
 	CallbackHandle ulHandle = AllocateCallbackHandle();
 	if (ulHandle == INVALID_CALLBACK_HANDLE) return ulHandle;
 	m_axEntries.PushBack({ ulHandle, pfn });

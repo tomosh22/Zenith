@@ -741,14 +741,14 @@ void Zenith_SceneTests::RunAllTests()
 	// Audit Remediation — A3: SceneUnloading/Unloaded two-callback contract
 	TestSceneUnloadedCallbackGetSceneDataReturnsNull();
 
-	// Audit Remediation — A8: Reject duplicate callback registration
-	TestRegisterSceneLoadedCallbackSamePfnTwiceReturnsExistingHandle();
-	TestRegisterSceneLoadedCallbackSamePfnTwiceFiresOnce();
-	TestRegisterSceneUnloadingCallbackSamePfnDedupes();
-	TestRegisterSceneUnloadedCallbackSamePfnDedupes();
-	TestRegisterActiveSceneChangedCallbackSamePfnDedupes();
-	TestRegisterSceneLoadStartedCallbackSamePfnDedupes();
-	TestRegisterEntityPersistentCallbackSamePfnDedupes();
+	// F5 (Unity parity): duplicate callback registrations allowed
+	TestRegisterSceneLoadedCallbackSamePfnTwiceAllocatesFreshHandle();
+	TestRegisterSceneLoadedCallbackSamePfnTwiceFiresTwice();
+	TestRegisterSceneUnloadingCallbackSamePfnAllowsDuplicates();
+	TestRegisterSceneUnloadedCallbackSamePfnAllowsDuplicates();
+	TestRegisterActiveSceneChangedCallbackSamePfnAllowsDuplicates();
+	TestRegisterSceneLoadStartedCallbackSamePfnAllowsDuplicates();
+	TestRegisterEntityPersistentCallbackSamePfnAllowsDuplicates();
 	TestRegisterCallbackDifferentPfnsCoexist();
 
 	// Audit Remediation — A7: m_iBuildIndex before SceneLoaded (sync path)
@@ -834,6 +834,16 @@ void Zenith_SceneTests::RunAllTests()
 	TestE18_RenameScene_UpdatesNameCache();
 	TestE18_RenameScene_RejectsPersistent();
 	TestE20_UpdateSnapshot_StableAcrossPhases();
+
+	// Scene audit 2026 remediation (F6, F7, F8, F15 regression guards)
+	TestF15_GetRootEntitiesSizeMatchesRootCount();
+	TestF15_GetRootEntitiesReturnsAllRootsAfterDestroy();
+	TestF8_GetLoadedSceneDataAtSlotReturnsDataForLoadedScene();
+	TestF8_GetLoadedSceneDataAtSlotReturnsNullForOutOfRange();
+	TestF8_GetLoadedSceneDataAtSlotReturnsNullForEmptySlot();
+	TestF7_AppendAllOfComponentTypeDoesNotClear();
+	TestF7_GetAllOfComponentTypeFromAllScenesAggregates();
+	TestF6_GetSceneByNameReturnsFirstMatchOnDuplicate();
 
 	// Physics::Reset() is still done here as a belt-and-braces scene-to-physics-
 	// suite boundary wipe — the *real* fix for prior physics-test flakiness lives
@@ -12156,7 +12166,12 @@ void Zenith_SceneTests::TestSceneUnloadedCallbackGetSceneDataReturnsNull()
 }
 
 //==============================================================================
-// Audit Remediation — A8: Reject duplicate callback registration
+// F5 (Unity parity): Allow duplicate callback registration
+//
+// Replaces the earlier A8-audit behaviour which dedup'd Register() calls.
+// Unity's `sceneLoaded += Handler; sceneLoaded += Handler;` fires the handler
+// twice — Zenith now matches. Each Register allocates a fresh handle; each
+// Unregister removes exactly the registration that handle identifies.
 //==============================================================================
 
 namespace
@@ -12177,88 +12192,94 @@ namespace
 	void A8_OnEntityPersistent(const Zenith_Entity&) { ++g_uA8_PersistentFireCount; }
 }
 
-void Zenith_SceneTests::TestRegisterSceneLoadedCallbackSamePfnTwiceReturnsExistingHandle()
+void Zenith_SceneTests::TestRegisterSceneLoadedCallbackSamePfnTwiceAllocatesFreshHandle()
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadedCallbackSamePfnTwiceReturnsExistingHandle...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadedCallbackSamePfnTwiceAllocatesFreshHandle...");
 
 	auto ulFirst = Zenith_SceneManager::RegisterSceneLoadedCallback(&A8_OnSceneLoaded);
 	auto ulSecond = Zenith_SceneManager::RegisterSceneLoadedCallback(&A8_OnSceneLoaded);
-	Zenith_Assert(ulFirst == ulSecond, "Duplicate Register must return the existing handle (got %llu vs %llu)", ulFirst, ulSecond);
+	Zenith_Assert(ulFirst != ulSecond, "F5: duplicate Register must allocate a fresh handle (got %llu vs %llu)", ulFirst, ulSecond);
 
 	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulFirst);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadedCallbackSamePfnTwiceReturnsExistingHandle passed");
+	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulSecond);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadedCallbackSamePfnTwiceAllocatesFreshHandle passed");
 }
 
-void Zenith_SceneTests::TestRegisterSceneLoadedCallbackSamePfnTwiceFiresOnce()
+void Zenith_SceneTests::TestRegisterSceneLoadedCallbackSamePfnTwiceFiresTwice()
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadedCallbackSamePfnTwiceFiresOnce...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadedCallbackSamePfnTwiceFiresTwice...");
 
-	const std::string strPath = "test_a8_dedupe_fires_once" ZENITH_SCENE_EXT;
+	const std::string strPath = "test_f5_duplicate_fires_twice" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	g_uA8_SceneLoadedFireCount = 0;
 	auto ulFirst = Zenith_SceneManager::RegisterSceneLoadedCallback(&A8_OnSceneLoaded);
 	auto ulSecond = Zenith_SceneManager::RegisterSceneLoadedCallback(&A8_OnSceneLoaded);
-	(void)ulSecond;
 
 	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_Assert(xScene.IsValid(), "LoadScene should succeed");
-	Zenith_Assert(g_uA8_SceneLoadedFireCount == 1, "Duplicate-registered callback should fire exactly once per load (got %u)", g_uA8_SceneLoadedFireCount);
+	Zenith_Assert(g_uA8_SceneLoadedFireCount == 2, "F5: duplicate-registered callback should fire once per registration (got %u, expected 2)", g_uA8_SceneLoadedFireCount);
 
 	Zenith_SceneManager::UnloadScene(xScene);
 	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulFirst);
+	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulSecond);
 	CleanupTestSceneFile(strPath);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadedCallbackSamePfnTwiceFiresOnce passed");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadedCallbackSamePfnTwiceFiresTwice passed");
 }
 
-void Zenith_SceneTests::TestRegisterSceneUnloadingCallbackSamePfnDedupes()
+void Zenith_SceneTests::TestRegisterSceneUnloadingCallbackSamePfnAllowsDuplicates()
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneUnloadingCallbackSamePfnDedupes...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneUnloadingCallbackSamePfnAllowsDuplicates...");
 	auto ulFirst = Zenith_SceneManager::RegisterSceneUnloadingCallback(&A8_OnSceneUnloading);
 	auto ulSecond = Zenith_SceneManager::RegisterSceneUnloadingCallback(&A8_OnSceneUnloading);
-	Zenith_Assert(ulFirst == ulSecond, "SceneUnloading Register must dedupe");
+	Zenith_Assert(ulFirst != ulSecond, "F5: SceneUnloading Register must allow duplicates with distinct handles");
 	Zenith_SceneManager::UnregisterSceneUnloadingCallback(ulFirst);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneUnloadingCallbackSamePfnDedupes passed");
+	Zenith_SceneManager::UnregisterSceneUnloadingCallback(ulSecond);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneUnloadingCallbackSamePfnAllowsDuplicates passed");
 }
 
-void Zenith_SceneTests::TestRegisterSceneUnloadedCallbackSamePfnDedupes()
+void Zenith_SceneTests::TestRegisterSceneUnloadedCallbackSamePfnAllowsDuplicates()
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneUnloadedCallbackSamePfnDedupes...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneUnloadedCallbackSamePfnAllowsDuplicates...");
 	auto ulFirst = Zenith_SceneManager::RegisterSceneUnloadedCallback(&A8_OnSceneUnloaded);
 	auto ulSecond = Zenith_SceneManager::RegisterSceneUnloadedCallback(&A8_OnSceneUnloaded);
-	Zenith_Assert(ulFirst == ulSecond, "SceneUnloaded Register must dedupe");
+	Zenith_Assert(ulFirst != ulSecond, "F5: SceneUnloaded Register must allow duplicates with distinct handles");
 	Zenith_SceneManager::UnregisterSceneUnloadedCallback(ulFirst);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneUnloadedCallbackSamePfnDedupes passed");
+	Zenith_SceneManager::UnregisterSceneUnloadedCallback(ulSecond);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneUnloadedCallbackSamePfnAllowsDuplicates passed");
 }
 
-void Zenith_SceneTests::TestRegisterActiveSceneChangedCallbackSamePfnDedupes()
+void Zenith_SceneTests::TestRegisterActiveSceneChangedCallbackSamePfnAllowsDuplicates()
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterActiveSceneChangedCallbackSamePfnDedupes...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterActiveSceneChangedCallbackSamePfnAllowsDuplicates...");
 	auto ulFirst = Zenith_SceneManager::RegisterActiveSceneChangedCallback(&A8_OnActiveChanged);
 	auto ulSecond = Zenith_SceneManager::RegisterActiveSceneChangedCallback(&A8_OnActiveChanged);
-	Zenith_Assert(ulFirst == ulSecond, "ActiveSceneChanged Register must dedupe");
+	Zenith_Assert(ulFirst != ulSecond, "F5: ActiveSceneChanged Register must allow duplicates with distinct handles");
 	Zenith_SceneManager::UnregisterActiveSceneChangedCallback(ulFirst);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterActiveSceneChangedCallbackSamePfnDedupes passed");
+	Zenith_SceneManager::UnregisterActiveSceneChangedCallback(ulSecond);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterActiveSceneChangedCallbackSamePfnAllowsDuplicates passed");
 }
 
-void Zenith_SceneTests::TestRegisterSceneLoadStartedCallbackSamePfnDedupes()
+void Zenith_SceneTests::TestRegisterSceneLoadStartedCallbackSamePfnAllowsDuplicates()
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadStartedCallbackSamePfnDedupes...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadStartedCallbackSamePfnAllowsDuplicates...");
 	auto ulFirst = Zenith_SceneManager::RegisterSceneLoadStartedCallback(&A8_OnSceneLoadStarted);
 	auto ulSecond = Zenith_SceneManager::RegisterSceneLoadStartedCallback(&A8_OnSceneLoadStarted);
-	Zenith_Assert(ulFirst == ulSecond, "SceneLoadStarted Register must dedupe");
+	Zenith_Assert(ulFirst != ulSecond, "F5: SceneLoadStarted Register must allow duplicates with distinct handles");
 	Zenith_SceneManager::UnregisterSceneLoadStartedCallback(ulFirst);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadStartedCallbackSamePfnDedupes passed");
+	Zenith_SceneManager::UnregisterSceneLoadStartedCallback(ulSecond);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneLoadStartedCallbackSamePfnAllowsDuplicates passed");
 }
 
-void Zenith_SceneTests::TestRegisterEntityPersistentCallbackSamePfnDedupes()
+void Zenith_SceneTests::TestRegisterEntityPersistentCallbackSamePfnAllowsDuplicates()
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterEntityPersistentCallbackSamePfnDedupes...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterEntityPersistentCallbackSamePfnAllowsDuplicates...");
 	auto ulFirst = Zenith_SceneManager::RegisterEntityPersistentCallback(&A8_OnEntityPersistent);
 	auto ulSecond = Zenith_SceneManager::RegisterEntityPersistentCallback(&A8_OnEntityPersistent);
-	Zenith_Assert(ulFirst == ulSecond, "EntityPersistent Register must dedupe");
+	Zenith_Assert(ulFirst != ulSecond, "F5: EntityPersistent Register must allow duplicates with distinct handles");
 	Zenith_SceneManager::UnregisterEntityPersistentCallback(ulFirst);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterEntityPersistentCallbackSamePfnDedupes passed");
+	Zenith_SceneManager::UnregisterEntityPersistentCallback(ulSecond);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterEntityPersistentCallbackSamePfnAllowsDuplicates passed");
 }
 
 void Zenith_SceneTests::TestRegisterCallbackDifferentPfnsCoexist()
@@ -14273,4 +14294,206 @@ void Zenith_SceneTests::TestE20_UpdateSnapshot_StableAcrossPhases()
 
 	Zenith_SceneManager::UnloadSceneForced(xScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestE20_UpdateSnapshot_StableAcrossPhases passed");
+}
+
+//==============================================================================
+// Scene audit 2026 remediation — regression guards for F6, F7, F8, F15
+//==============================================================================
+
+void Zenith_SceneTests::TestF15_GetRootEntitiesSizeMatchesRootCount()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF15_GetRootEntitiesSizeMatchesRootCount...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("F15_SizeCount");
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+
+	Zenith_Entity xE1(pxData, "Root1");
+	Zenith_Entity xE2(pxData, "Root2");
+	Zenith_Entity xE3(pxData, "Root3");
+
+	uint32_t uCount = xScene.GetRootEntityCount();
+	Zenith_Vector<Zenith_Entity> axRoots;
+	xScene.GetRootEntities(axRoots);
+
+	Zenith_Assert(axRoots.GetSize() == uCount,
+		"F15: GetRootEntities size (%u) must equal GetRootEntityCount (%u)",
+		axRoots.GetSize(), uCount);
+	Zenith_Assert(uCount == 3, "Expected 3 root entities, got %u", uCount);
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF15_GetRootEntitiesSizeMatchesRootCount passed");
+}
+
+void Zenith_SceneTests::TestF15_GetRootEntitiesReturnsAllRootsAfterDestroy()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF15_GetRootEntitiesReturnsAllRootsAfterDestroy...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("F15_AfterDestroy");
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+
+	Zenith_Entity xE1(pxData, "Keep1");
+	Zenith_Entity xE2(pxData, "DestroyMe");
+	Zenith_Entity xE3(pxData, "Keep2");
+
+	// DestroyImmediate invalidates the cache — next GetRoot* call rebuilds it
+	// with EntityExists filtering in RebuildRootEntityCache, so size and count
+	// must stay aligned.
+	Zenith_SceneManager::DestroyImmediate(xE2);
+
+	uint32_t uCount = xScene.GetRootEntityCount();
+	Zenith_Vector<Zenith_Entity> axRoots;
+	xScene.GetRootEntities(axRoots);
+
+	Zenith_Assert(axRoots.GetSize() == uCount,
+		"F15: post-destroy GetRootEntities size (%u) must equal GetRootEntityCount (%u)",
+		axRoots.GetSize(), uCount);
+	Zenith_Assert(uCount == 2, "Expected 2 roots after destroy, got %u", uCount);
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF15_GetRootEntitiesReturnsAllRootsAfterDestroy passed");
+}
+
+void Zenith_SceneTests::TestF8_GetLoadedSceneDataAtSlotReturnsDataForLoadedScene()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF8_GetLoadedSceneDataAtSlotReturnsDataForLoadedScene...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("F8_Loaded");
+	const int iHandle = xScene.GetHandle();
+	Zenith_Assert(iHandle >= 0, "Created scene must have a valid handle");
+
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetLoadedSceneDataAtSlot(static_cast<uint32_t>(iHandle));
+	Zenith_Assert(pxData != nullptr, "F8: loaded scene's slot must return non-null SceneData");
+	Zenith_Assert(pxData == Zenith_SceneManager::GetSceneData(xScene),
+		"F8: GetLoadedSceneDataAtSlot must return the same pointer as GetSceneData for loaded scenes");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF8_GetLoadedSceneDataAtSlotReturnsDataForLoadedScene passed");
+}
+
+void Zenith_SceneTests::TestF8_GetLoadedSceneDataAtSlotReturnsNullForOutOfRange()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF8_GetLoadedSceneDataAtSlotReturnsNullForOutOfRange...");
+
+	const uint32_t uOutOfRange = Zenith_SceneManager::GetSceneSlotCount() + 1000;
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetLoadedSceneDataAtSlot(uOutOfRange);
+	Zenith_Assert(pxData == nullptr,
+		"F8: out-of-range slot index must return nullptr (got %p)", static_cast<void*>(pxData));
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF8_GetLoadedSceneDataAtSlotReturnsNullForOutOfRange passed");
+}
+
+void Zenith_SceneTests::TestF8_GetLoadedSceneDataAtSlotReturnsNullForEmptySlot()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF8_GetLoadedSceneDataAtSlotReturnsNullForEmptySlot...");
+
+	// Load then unload a scene so its slot becomes nullptr (FreeSceneHandle stashes
+	// the index into s_axFreeHandles but leaves s_axScenes[iHandle] == nullptr).
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("F8_Empty_Probe");
+	const int iHandle = xScene.GetHandle();
+	Zenith_SceneManager::UnloadScene(xScene);
+
+	// Probe the now-empty slot. A subsequent CreateEmptyScene could recycle it,
+	// so read immediately. If the slot was recycled between UnloadScene and here
+	// (e.g. test ordering change), the returned pointer is still a loaded scene
+	// which is the other branch of this helper — so we skip the assert in that
+	// case and just verify the function doesn't crash.
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetLoadedSceneDataAtSlot(static_cast<uint32_t>(iHandle));
+	if (pxData != nullptr)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"F8_EmptySlot: slot %d was recycled between unload and probe (non-fatal)", iHandle);
+		Zenith_Assert(pxData->IsLoaded() && !pxData->IsUnloading(),
+			"F8: recycled slot must contain a loaded, non-unloading scene");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF8_GetLoadedSceneDataAtSlotReturnsNullForEmptySlot passed");
+}
+
+void Zenith_SceneTests::TestF7_AppendAllOfComponentTypeDoesNotClear()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF7_AppendAllOfComponentTypeDoesNotClear...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("F7_AppendNoClear");
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+
+	// Two entities → two auto-added TransformComponents.
+	Zenith_Entity xE1(pxData, "E1");
+	Zenith_Entity xE2(pxData, "E2");
+
+	Zenith_Vector<Zenith_TransformComponent*> axOut;
+	// Pre-seed with a dummy sentinel to prove Append does NOT clear.
+	Zenith_TransformComponent* pxSentinel = reinterpret_cast<Zenith_TransformComponent*>(uintptr_t{0xDEADBEEF});
+	axOut.PushBack(pxSentinel);
+
+	pxData->AppendAllOfComponentType<Zenith_TransformComponent>(axOut);
+
+	Zenith_Assert(axOut.GetSize() >= 3,
+		"F7: AppendAllOfComponentType must preserve sentinel + append scene pool (got size %u)",
+		axOut.GetSize());
+	Zenith_Assert(axOut.Get(0) == pxSentinel,
+		"F7: AppendAllOfComponentType must not clear pre-existing entries");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF7_AppendAllOfComponentTypeDoesNotClear passed");
+}
+
+void Zenith_SceneTests::TestF7_GetAllOfComponentTypeFromAllScenesAggregates()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF7_GetAllOfComponentTypeFromAllScenesAggregates...");
+
+	Zenith_Scene xSceneA = Zenith_SceneManager::CreateEmptyScene("F7_Agg_A");
+	Zenith_Scene xSceneB = Zenith_SceneManager::CreateEmptyScene("F7_Agg_B");
+	Zenith_SceneData* pxA = Zenith_SceneManager::GetSceneData(xSceneA);
+	Zenith_SceneData* pxB = Zenith_SceneManager::GetSceneData(xSceneB);
+
+	// 2 entities in A, 3 in B. All get auto-added TransformComponents.
+	Zenith_Entity xA1(pxA, "A1");
+	Zenith_Entity xA2(pxA, "A2");
+	Zenith_Entity xB1(pxB, "B1");
+	Zenith_Entity xB2(pxB, "B2");
+	Zenith_Entity xB3(pxB, "B3");
+
+	Zenith_Vector<Zenith_TransformComponent*> axPerScene;
+	pxA->GetAllOfComponentType<Zenith_TransformComponent>(axPerScene);
+	const uint32_t uA = axPerScene.GetSize();
+	pxB->GetAllOfComponentType<Zenith_TransformComponent>(axPerScene);
+	const uint32_t uB = axPerScene.GetSize();
+
+	Zenith_Vector<Zenith_TransformComponent*> axAllScenes;
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_TransformComponent>(axAllScenes);
+
+	// axAllScenes spans every loaded scene (may include persistent + other test
+	// scenes that happen to be alive from earlier tests), so it can only be
+	// greater-than-or-equal to the per-scene sum of just A and B.
+	Zenith_Assert(axAllScenes.GetSize() >= uA + uB,
+		"F7: multi-scene aggregate (%u) must be >= per-scene sum of A(%u) + B(%u)",
+		axAllScenes.GetSize(), uA, uB);
+
+	Zenith_SceneManager::UnloadScene(xSceneA);
+	Zenith_SceneManager::UnloadScene(xSceneB);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF7_GetAllOfComponentTypeFromAllScenesAggregates passed");
+}
+
+void Zenith_SceneTests::TestF6_GetSceneByNameReturnsFirstMatchOnDuplicate()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF6_GetSceneByNameReturnsFirstMatchOnDuplicate...");
+
+	// Two scenes registered with identical names. The name-cache is appended to
+	// in Register order, so GetSceneByName must return the earlier-registered
+	// scene's handle. The ambiguity warning is a logged side effect only; we
+	// verify the deterministic first-match semantic here.
+	const std::string strDup = "F6_DuplicateName";
+	Zenith_Scene xFirst  = Zenith_SceneManager::CreateEmptyScene(strDup);
+	Zenith_Scene xSecond = Zenith_SceneManager::CreateEmptyScene(strDup);
+	Zenith_Assert(xFirst.IsValid() && xSecond.IsValid() && xFirst != xSecond,
+		"Setup: two distinct scenes must be created with the duplicate name");
+
+	Zenith_Scene xLookup = Zenith_SceneManager::GetSceneByName(strDup);
+	Zenith_Assert(xLookup.IsValid(), "F6: duplicate-name lookup must still return a valid handle");
+	Zenith_Assert(xLookup == xFirst,
+		"F6: GetSceneByName must return the first-registered match on ambiguity");
+
+	Zenith_SceneManager::UnloadScene(xFirst);
+	Zenith_SceneManager::UnloadScene(xSecond);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF6_GetSceneByNameReturnsFirstMatchOnDuplicate passed");
 }

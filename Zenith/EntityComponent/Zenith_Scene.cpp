@@ -124,15 +124,14 @@ void Zenith_Scene::GetRootEntities(Zenith_Vector<Zenith_Entity>& axOut) const
 		return;
 	}
 
-	// Use cached root entities for consistent performance
+	// GetCachedRootEntities rebuilds via RebuildRootEntityCache, which already
+	// filters with EntityExists. Skipping the redundant filter here keeps
+	// axOut.GetSize() equal to GetRootEntityCount() — otherwise a stale entry
+	// would quietly drop from the output while the count still advertised it.
 	Zenith_Vector<Zenith_EntityID> axRootIDs;
 	pxData->GetCachedRootEntities(axRootIDs);
 	for (u_int u = 0; u < axRootIDs.GetSize(); ++u)
 	{
-		Zenith_EntityID xID = axRootIDs.Get(u);
-		if (pxData->EntityExists(xID))
-		{
-			axOut.PushBack(pxData->GetEntity(xID));
-		}
+		axOut.PushBack(pxData->GetEntity(axRootIDs.Get(u)));
 	}
 }

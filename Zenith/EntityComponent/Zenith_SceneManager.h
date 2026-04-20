@@ -25,12 +25,15 @@ class Zenith_CameraComponent;
  * ZENITH EXTENSION:
  * - SCENE_LOAD_ADDITIVE_WITHOUT_LOADING has no Unity equivalent.
  *   Use this for procedurally generated scenes or runtime-created content.
+ *   PREFER `CreateEmptyScene(name)` for new code — it expresses the same
+ *   intent without routing through the file-load state machine, and avoids
+ *   the intersection rules with async deferral / LoadSceneAsyncByIndex.
  */
 enum Zenith_SceneLoadMode : uint8_t
 {
 	SCENE_LOAD_SINGLE = 0,                   // Unity: LoadSceneMode.Single - Unload existing non-persistent scenes, load new
 	SCENE_LOAD_ADDITIVE = 1,                 // Unity: LoadSceneMode.Additive - Keep existing scenes, add new scene
-	SCENE_LOAD_ADDITIVE_WITHOUT_LOADING = 2  // ZENITH EXTENSION: Create empty scene (for procedural content)
+	SCENE_LOAD_ADDITIVE_WITHOUT_LOADING = 2  // ZENITH EXTENSION: Create empty scene (prefer CreateEmptyScene for new code)
 };
 
 /**
@@ -101,6 +104,16 @@ static constexpr Zenith_SceneOperationID ZENITH_INVALID_OPERATION_ID = 0;
  *
  * - ActiveSceneChanged: Fires on SetActiveScene(), LoadScene(SINGLE), and scene unloads.
  *   This matches Unity's activeSceneChanged behavior.
+ *
+ * - SCENE_LOAD_SINGLE transition ordering differs from Unity. Zenith uses a
+ *   staging-scene atomic-swap: the new scene is fully deserialized while the
+ *   old scenes still exist, then the old scenes are torn down as a BATCH.
+ *   Subscribers therefore observe all `SceneUnloading`/`SceneUnloaded` callbacks
+ *   AFTER the new scene is prepared, not interleaved with it. Unity fires
+ *   `sceneUnloaded` per-scene as teardown progresses. If you need Unity's exact
+ *   cadence (e.g. for progress bars that count `sceneCount` descending), use
+ *   `UnloadSceneAsync` per old scene followed by `LoadSceneAsync` for the new —
+ *   the staging pattern only applies to sync/async `SINGLE` mode.
  *
  * IMPORTANT - ASSET MANAGEMENT:
  * Unlike Unity, Zenith does NOT automatically unload assets when scenes change.
@@ -191,7 +204,19 @@ public:
 	//==========================================================================
 
 	/**
-	 * Load scene synchronously (blocks until complete)
+	 * Load scene synchronously (blocks until complete).
+	 *
+	 * IMPORTANT — BEHAVIOUR WHEN CALLED DURING Update():
+	 * If invoked from a component OnUpdate/OnLateUpdate/etc., the call is
+	 * auto-deferred via LoadSceneAsync and returns INVALID_SCENE (the scene
+	 * slot is not allocated until Phase 1 runs next frame, so no handle can
+	 * be returned synchronously). A warning is logged. Callers that need to
+	 * track the load should invoke LoadSceneAsync directly and retain the
+	 * returned operation ID.
+	 *
+	 * Unity divergence: Unity returns a valid loading handle immediately even
+	 * during Update; Zenith returns INVALID in that case. See F9 in the scene
+	 * audit for why this is a deliberate simplification.
 	 */
 	static Zenith_Scene LoadScene(const std::string& strPath,
 		Zenith_SceneLoadMode eMode = SCENE_LOAD_SINGLE);
@@ -313,6 +338,13 @@ public:
 	/**
 	 * Merge all entities from source scene into target scene
 	 * Source scene is unloaded after transfer completes.
+	 *
+	 * Active-scene handling: if xSource is the active scene, xTarget is promoted
+	 * to active BEFORE teardown so the active handle never goes invalid during
+	 * the merge (differs from Unity, which throws ArgumentException instead).
+	 *
+	 * Fails if: either handle is invalid, xSource==xTarget, or xSource is the
+	 * persistent scene.
 	 *
 	 * @param xSource The scene to merge from (will be unloaded)
 	 * @param xTarget The scene to merge into
@@ -575,13 +607,20 @@ public:
 	static uint32_t GetAsyncUnloadBatchSize();
 
 	/**
-	 * Set the maximum number of concurrent async load operations (default: 8)
-	 * Loads beyond this limit will still proceed, but a warning will be logged.
+	 * Set the async-load warning threshold (default: 8).
+	 *
+	 * This is a WARNING THRESHOLD, not an enforced cap — loads beyond this count
+	 * still proceed. When the in-flight count crosses the threshold, a one-shot
+	 * Zenith_Warning is logged so callers notice unbounded queuing. Unity
+	 * behaves similarly (unbounded LoadSceneAsync), so "max concurrent" here
+	 * means "concurrent count at which to start warning", not "cap".
+	 *
+	 * To actually cap concurrency, gate submissions in the caller.
 	 */
 	static void SetMaxConcurrentAsyncLoads(uint32_t uMax);
 
 	/**
-	 * Get the maximum number of concurrent async loads
+	 * Get the current async-load warning threshold.
 	 */
 	static uint32_t GetMaxConcurrentAsyncLoads();
 
@@ -620,6 +659,23 @@ public:
 	 * Safe to call from render tasks.
 	 */
 	static Zenith_SceneData* GetSceneDataAtSlot(uint32_t uIndex);
+
+	/**
+	 * Get scene data at slot index ONLY if the scene is loaded and not unloading.
+	 *
+	 * Equivalent to:
+	 *   Zenith_SceneData* pxData = GetSceneDataAtSlot(uIndex);
+	 *   if (!pxData || !pxData->IsLoaded() || pxData->IsUnloading()) return nullptr;
+	 *   return pxData;
+	 *
+	 * Returns nullptr if the slot is empty, the scene is not fully loaded yet, or
+	 * the scene is in teardown. Prefer this over GetSceneDataAtSlot for iteration
+	 * from render systems / editor panels — it encapsulates the three safety
+	 * checks that every caller otherwise has to repeat.
+	 *
+	 * Safe to call from render tasks.
+	 */
+	static Zenith_SceneData* GetLoadedSceneDataAtSlot(uint32_t uIndex);
 
 	//==========================================================================
 	// Internal (Engine Use Only)
@@ -940,7 +996,12 @@ private:
 	static Zenith_Vector<AsyncLoadJob*> s_axAsyncJobs;
 	static bool s_bAsyncJobsNeedSort;
 	static void AsyncSceneLoadTask(void* pData);
-	static void CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude = nullptr);
+	// Returns the post-cancellation index of pxExclude in s_axAsyncJobs. If pxExclude
+	// is nullptr or not found, returns UINT32_MAX. Callers tracking a loop index over
+	// s_axAsyncJobs must update it from this return value instead of hard-coding 0
+	// (the surviving job is not always at index 0 — insertion-sort by priority can
+	// reorder in future refactors).
+	static u_int CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude = nullptr);
 	static void ProcessPendingAsyncLoads();
 	static void FailAsyncLoadOperation(Zenith_SceneOperation* pxOp);
 	static void CleanupAndRemoveAsyncJob(u_int uIndex);
@@ -957,7 +1018,8 @@ private:
 	};
 	static void SortAsyncJobsByPriority();
 	// uIndex is mutable: RunAsyncJobPhase1 may cancel peer jobs in SCENE_LOAD_SINGLE
-	// mode via CancelAllPendingAsyncLoads, after which the surviving job is at index 0.
+	// mode via CancelAllPendingAsyncLoads. Phase1 updates uIndex from the return
+	// value so the outer loop stays aligned with the surviving job's actual slot.
 	static bool HandleAsyncJobCancellation(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
 	static AsyncJobStepResult RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int& uIndex);
 	static AsyncJobStepResult RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
@@ -1009,18 +1071,16 @@ private:
 template<typename T>
 void Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes(Zenith_Vector<T*>& xOut)
 {
+	// Clear once, append from each scene directly into xOut — avoids the
+	// per-scene temporary vector + copy that previously allocated 1 Zenith_Vector
+	// per loaded scene per call, per render-system-frame.
 	xOut.Clear();
 	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
 	{
 		Zenith_SceneData* pxData = s_axScenes.Get(i);
 		if (pxData && pxData->IsLoaded() && !pxData->IsUnloading())
 		{
-			Zenith_Vector<T*> xTemp;
-			pxData->GetAllOfComponentType<T>(xTemp);
-			for (u_int j = 0; j < xTemp.GetSize(); ++j)
-			{
-				xOut.PushBack(xTemp.Get(j));
-			}
+			pxData->AppendAllOfComponentType<T>(xOut);
 		}
 	}
 }

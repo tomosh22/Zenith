@@ -112,7 +112,7 @@ void Zenith_SceneManager::CleanupCompletedOperations()
 	}
 }
 
-void Zenith_SceneManager::CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude)
+u_int Zenith_SceneManager::CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CancelAllPendingAsyncLoads must be called from main thread");
 
@@ -171,6 +171,15 @@ void Zenith_SceneManager::CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude)
 		FailAsyncLoadOperation(pxOp);
 		CleanupAndRemoveAsyncJob(static_cast<u_int>(i));
 	}
+
+	// Locate pxExclude's surviving slot. Linear scan is fine — s_axAsyncJobs is
+	// tiny (typically 1 entry after cancel) and this runs once per SINGLE-mode load.
+	if (pxExclude == nullptr) return UINT32_MAX;
+	for (u_int u = 0; u < s_axAsyncJobs.GetSize(); ++u)
+	{
+		if (s_axAsyncJobs.Get(u) == pxExclude) return u;
+	}
+	return UINT32_MAX;
 }
 
 void Zenith_SceneManager::FailAsyncLoadOperation(Zenith_SceneOperation* pxOp)
@@ -382,11 +391,13 @@ Zenith_SceneManager::RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneOperatio
 		s_xDeferredOldActive = Zenith_Scene::INVALID_SCENE;
 
 		ResetAllRenderSystems();
-		CancelAllPendingAsyncLoads(pxJob);
-		// pxJob is now the only element in s_axAsyncJobs — at index 0. Sync the
+		// CancelAllPendingAsyncLoads returns pxJob's post-cancel index. Sync the
 		// caller's loop index so subsequent CleanupAndRemoveAsyncJob(uIndex) calls
-		// hit the correct slot.
-		uIndex = 0;
+		// hit the correct slot, without assuming the surviving job is at index 0.
+		const u_int uPostCancelIndex = CancelAllPendingAsyncLoads(pxJob);
+		Zenith_Assert(uPostCancelIndex != UINT32_MAX,
+			"RunAsyncJobPhase1: surviving SINGLE-mode job vanished from s_axAsyncJobs during cancel");
+		uIndex = uPostCancelIndex;
 		UnloadAllNonPersistent();
 		Zenith_Physics::Reset();
 		s_fFixedTimeAccumulator = 0.0f;  // Unity behavior: reset on scene load

@@ -373,6 +373,12 @@ public:
 	template<typename T>
 	void GetAllOfComponentType(Zenith_Vector<T*>& xOut) const;
 
+	// Append-variant of GetAllOfComponentType: does NOT clear xOut first. Used by
+	// multi-scene iteration (GetAllOfComponentTypeFromAllScenes) to avoid a
+	// per-scene temp vector + copy. Appends this scene's pool entries to xOut.
+	template<typename T>
+	void AppendAllOfComponentType(Zenith_Vector<T*>& xOut) const;
+
 	template<typename T>
 	bool IsComponentHandleValid(const Zenith_ComponentHandle<T>& xHandle) const;
 
@@ -931,6 +937,13 @@ void Zenith_SceneData::GetAllOfComponentType(Zenith_Vector<T*>& xOut) const
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(), "GetAllOfComponentType must be called from main thread");
 	xOut.Clear();
+	AppendAllOfComponentType<T>(xOut);
+}
+
+template<typename T>
+void Zenith_SceneData::AppendAllOfComponentType(Zenith_Vector<T*>& xOut) const
+{
+	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(), "AppendAllOfComponentType must be called from main thread");
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
 	if (uTypeID >= m_xComponents.GetSize()) return;
 

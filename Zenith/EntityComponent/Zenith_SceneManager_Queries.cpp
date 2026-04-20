@@ -124,6 +124,8 @@ Zenith_Scene Zenith_SceneManager::GetSceneByName(const std::string& strName)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneByName must be called from main thread");
 	Zenith_Scene xScene = MakeInvalidScene();
+	int iFirstMatchHandle = -1;
+	bool bAmbiguous = false;
 
 	// Use name cache for O(n) scan over loaded scenes only (smaller than all scene slots)
 	for (u_int i = 0; i < s_axLoadedSceneNames.GetSize(); ++i)
@@ -160,15 +162,32 @@ Zenith_Scene Zenith_SceneManager::GetSceneByName(const std::string& strName)
 			}
 		}
 
-		// Unity behavior: silently return first match when multiple scenes have the same name
 		if (bMatched)
 		{
-			xScene.m_iHandle = iHandle;
-			xScene.m_uGeneration = s_axSceneGenerations.Get(iHandle);
-			return xScene;
+			if (iFirstMatchHandle < 0)
+			{
+				iFirstMatchHandle = iHandle;
+			}
+			else
+			{
+				bAmbiguous = true;
+				break;
+			}
 		}
 	}
 
+	if (bAmbiguous)
+	{
+		Zenith_Warning(LOG_CATEGORY_SCENE,
+			"GetSceneByName('%s'): more than one loaded scene matches; returning first. "
+			"Use GetSceneByPath for unique lookup.", strName.c_str());
+	}
+
+	if (iFirstMatchHandle >= 0)
+	{
+		xScene.m_iHandle = iFirstMatchHandle;
+		xScene.m_uGeneration = s_axSceneGenerations.Get(iFirstMatchHandle);
+	}
 	return xScene;
 }
 

@@ -663,8 +663,25 @@ void Zenith_SceneData::DispatchAwakeAndEnableForNewEntities(Zenith_Vector<Zenith
 		}
 		uIteration++;
 	}
-	Zenith_Assert(uIteration < uMAX_AWAKE_ITERATIONS || m_axNewlyCreatedEntities.GetSize() == 0,
-		"Awake iteration limit reached (%u) - infinite entity creation in Awake callbacks", uMAX_AWAKE_ITERATIONS);
+	if (uIteration >= uMAX_AWAKE_ITERATIONS && m_axNewlyCreatedEntities.GetSize() > 0)
+	{
+		// Runtime-path divergence from scene-load: we do NOT destroy the leftover
+		// entities the way DispatchAwakeForNewScene does. Leftover entities stay
+		// in m_axNewlyCreatedEntities and will receive OnAwake on the next Update()
+		// cycle — the scene is already active so there is no invariant that every
+		// entity be awake by a specific tick. That said, reaching this branch means
+		// an OnAwake handler is creating more entities than can drain in one frame,
+		// which will stall OnStart for those entities indefinitely if sustained.
+		Zenith_Assert(false,
+			"DispatchAwakeAndEnableForNewEntities: Awake iteration limit (%u) reached; "
+			"%u entities remain unawakened this frame. An OnAwake handler is chain-creating "
+			"entities faster than one frame can drain.",
+			uMAX_AWAKE_ITERATIONS, m_axNewlyCreatedEntities.GetSize());
+		Zenith_Error(LOG_CATEGORY_SCENE,
+			"DispatchAwakeAndEnableForNewEntities: %u entities deferred to next frame "
+			"after Awake wave limit (%u). OnStart for these entities will be delayed.",
+			m_axNewlyCreatedEntities.GetSize(), uMAX_AWAKE_ITERATIONS);
+	}
 }
 
 void Zenith_SceneData::QueuePendingStartsForNewEntities(const Zenith_Vector<Zenith_EntityID>& axAllNewEntities)

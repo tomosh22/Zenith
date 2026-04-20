@@ -746,15 +746,17 @@ private:
 	static void TestSceneUnloadedCallbackGetSceneDataReturnsNull();
 
 	//==========================================================================
-	// Audit Remediation — A8: Reject duplicate callback registration
+	// F5 (Unity parity): duplicate callback registrations are ALLOWED. Each
+	// Register allocates a fresh handle; each duplicate fires independently.
+	// (Inverts the earlier A8-audit behaviour, which dedup'd.)
 	//==========================================================================
-	static void TestRegisterSceneLoadedCallbackSamePfnTwiceReturnsExistingHandle();
-	static void TestRegisterSceneLoadedCallbackSamePfnTwiceFiresOnce();
-	static void TestRegisterSceneUnloadingCallbackSamePfnDedupes();
-	static void TestRegisterSceneUnloadedCallbackSamePfnDedupes();
-	static void TestRegisterActiveSceneChangedCallbackSamePfnDedupes();
-	static void TestRegisterSceneLoadStartedCallbackSamePfnDedupes();
-	static void TestRegisterEntityPersistentCallbackSamePfnDedupes();
+	static void TestRegisterSceneLoadedCallbackSamePfnTwiceAllocatesFreshHandle();
+	static void TestRegisterSceneLoadedCallbackSamePfnTwiceFiresTwice();
+	static void TestRegisterSceneUnloadingCallbackSamePfnAllowsDuplicates();
+	static void TestRegisterSceneUnloadedCallbackSamePfnAllowsDuplicates();
+	static void TestRegisterActiveSceneChangedCallbackSamePfnAllowsDuplicates();
+	static void TestRegisterSceneLoadStartedCallbackSamePfnAllowsDuplicates();
+	static void TestRegisterEntityPersistentCallbackSamePfnAllowsDuplicates();
 	static void TestRegisterCallbackDifferentPfnsCoexist();
 
 	//==========================================================================
@@ -902,4 +904,31 @@ private:
 	// Covered indirectly by all Update-pumping tests; explicit check that
 	// DispatchPendingStarts/Update see the same scene set as FixedUpdate.
 	static void TestE20_UpdateSnapshot_StableAcrossPhases();
+
+	//==========================================================================
+	// Scene audit 2026 remediation (F6, F7, F8, F15 — post-fix regression guards)
+	//==========================================================================
+
+	// F15 — GetRootEntities().GetSize() must equal GetRootEntityCount().
+	// Previously GetRootEntities ran a redundant EntityExists filter on the cache,
+	// so callers could see size < count if the cache was momentarily stale.
+	static void TestF15_GetRootEntitiesSizeMatchesRootCount();
+	static void TestF15_GetRootEntitiesReturnsAllRootsAfterDestroy();
+
+	// F8 — GetLoadedSceneDataAtSlot returns nullptr for empty slots, unloading
+	// scenes, and out-of-range indices; returns the SceneData pointer only for
+	// fully-loaded, non-unloading scenes.
+	static void TestF8_GetLoadedSceneDataAtSlotReturnsDataForLoadedScene();
+	static void TestF8_GetLoadedSceneDataAtSlotReturnsNullForOutOfRange();
+	static void TestF8_GetLoadedSceneDataAtSlotReturnsNullForEmptySlot();
+
+	// F7 — AppendAllOfComponentType appends to xOut without clearing it first,
+	// unlike GetAllOfComponentType which clears. Multi-scene aggregation relies
+	// on this to eliminate per-scene temporary vectors.
+	static void TestF7_AppendAllOfComponentTypeDoesNotClear();
+	static void TestF7_GetAllOfComponentTypeFromAllScenesAggregates();
+
+	// F6 — GetSceneByName returns the first match when multiple loaded scenes
+	// share a name; the one-shot warning is a side effect and not asserted here.
+	static void TestF6_GetSceneByNameReturnsFirstMatchOnDuplicate();
 };

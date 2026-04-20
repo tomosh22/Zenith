@@ -30,11 +30,16 @@
 ### Entity
 Wrapper around scene data pointer, entity ID, parent entity ID, and child entity ID vector. Entity names are stored in the scene data (not the entity) via `GetName()`/`SetName()` accessors that delegate to the scene.
 
+#### Why entity slots are global, not per-scene
+`s_axEntitySlots` in `Zenith_SceneData.h` is intentionally a process-wide static array, not a per-scene pool. This keeps `EntityID.m_uIndex` stable when an entity moves between scenes (via `MoveEntityToScene` or persistence), so cached `Zenith_EntityID` handles survive cross-scene transfers. The slot entry itself records the owning scene handle, so destination resolution stays correct.
+
+Safety: slot reuse uses a 32-bit generation counter. A stale handle's `IsValid()` check reads the current slot's generation and rejects the handle when they differ. Generation collision requires ~4B reuses of the same slot index, which is not a design concern.
+
 ### Scene Management (Multi-Scene Architecture)
 
 Zenith uses a multi-scene architecture inspired by Unity:
 
-- **Zenith_Scene** - Lightweight handle struct (`int m_iHandle`). Can be copied freely, used to reference scenes.
+- **Zenith_Scene** - Lightweight handle struct (`int m_iHandle` + `uint32_t m_uGeneration`). Can be copied freely, used to reference scenes. The generation counter lets `IsValid()` detect handles to scene slots that have been unloaded and recycled.
 - **Zenith_SceneData** - Internal class storing entities, components, and metadata. Not accessed directly by game code.
 - **Zenith_SceneManager** - Static manager for scene lifecycle (loading, unloading, queries, events).
 - **Zenith_SceneOperation** - Tracks async scene loading progress.
@@ -46,6 +51,7 @@ Multiple scenes can be loaded simultaneously (additive loading). One scene is "a
 |------|------|----------|
 | Single | `SCENE_LOAD_SINGLE` | Unload all non-persistent scenes, load new |
 | Additive | `SCENE_LOAD_ADDITIVE` | Keep existing scenes, add new |
+| Additive Without Loading | `SCENE_LOAD_ADDITIVE_WITHOUT_LOADING` | Create a new empty scene without reading from disk. Use for procedural/editor-new scenes. |
 
 ### Persistent Scene
 A special scene that is always loaded and never unloaded. Use `MarkEntityPersistent()` to move entities here. Entities in the persistent scene survive `SCENE_LOAD_SINGLE` operations.

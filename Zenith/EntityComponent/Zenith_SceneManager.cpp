@@ -422,6 +422,7 @@ bool Zenith_SceneManager::IsSceneUpdatable(const Zenith_SceneData* pxData)
 Zenith_Scene Zenith_SceneManager::CreateEmptyScene(const std::string& strName, bool bAllowSetActive)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CreateEmptyScene must be called from main thread");
+	Zenith_Assert(!s_bRenderTasksActive, "CreateEmptyScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	int iHandle = AllocateSceneHandle();
 
@@ -675,6 +676,9 @@ void Zenith_SceneManager::DispatchLifecycleAndFire(Zenith_Scene xScene, Zenith_S
 
 Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_SceneLoadMode eMode)
 {
+	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadScene must be called from main thread");
+	Zenith_Assert(!s_bRenderTasksActive, "LoadScene: scene mutation while render tasks are reading — render-task invariant violated");
+
 	if (!ValidateLoadRequest(strPath))
 		return MakeInvalidScene();
 
@@ -1076,6 +1080,7 @@ void Zenith_SceneManager::UnloadSceneForced(Zenith_Scene xScene)
 void Zenith_SceneManager::UnloadScene(Zenith_Scene xScene)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "UnloadScene must be called from main thread");
+	Zenith_Assert(!s_bRenderTasksActive, "UnloadScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	if (!CanUnloadScene(xScene))
 	{
@@ -1341,6 +1346,17 @@ Zenith_SceneData* Zenith_SceneManager::GetSceneDataAtSlot(uint32_t uIndex)
 	return s_axScenes.Get(uIndex);
 }
 
+Zenith_SceneData* Zenith_SceneManager::GetLoadedSceneDataAtSlot(uint32_t uIndex)
+{
+	Zenith_Assert(Zenith_Multithreading::IsMainThread() || s_bRenderTasksActive, "GetLoadedSceneDataAtSlot must be called from main thread or during render task execution");
+	if (uIndex >= s_axScenes.GetSize())
+		return nullptr;
+	Zenith_SceneData* pxData = s_axScenes.Get(uIndex);
+	if (!pxData || !pxData->IsLoaded() || pxData->IsUnloading())
+		return nullptr;
+	return pxData;
+}
+
 // Select best scene to become active when the current active scene is unloaded.
 // Unity behaviour: prefers the loaded scene with the lowest build index.
 // Falls back to the most recently loaded scene if none have build indices.
@@ -1497,6 +1513,7 @@ bool Zenith_SceneManager::MoveEntityInternal(Zenith_Entity& xEntity, Zenith_Scen
 bool Zenith_SceneManager::MoveEntityToScene(Zenith_Entity& xEntity, Zenith_Scene xTarget)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MoveEntityToScene must be called from main thread");
+	Zenith_Assert(!s_bRenderTasksActive, "MoveEntityToScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	if (!xEntity.IsValid())
 	{
@@ -1551,6 +1568,7 @@ bool Zenith_SceneManager::RenameScene(Zenith_Scene xScene, const std::string& st
 	// pxSceneData->m_strName left the cache stale — lookups by old name still hit, by
 	// new name missed. Now cache and data move together.
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RenameScene must be called from main thread");
+	Zenith_Assert(!s_bRenderTasksActive, "RenameScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	if (!xScene.IsValid())
 	{
@@ -1597,6 +1615,7 @@ bool Zenith_SceneManager::RenameScene(Zenith_Scene xScene, const std::string& st
 bool Zenith_SceneManager::MergeScenes(Zenith_Scene xSource, Zenith_Scene xTarget)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MergeScenes must be called from main thread");
+	Zenith_Assert(!s_bRenderTasksActive, "MergeScenes: scene mutation while render tasks are reading — render-task invariant violated");
 
 	Zenith_SceneData* pxSource = GetSceneData(xSource);
 	Zenith_SceneData* pxTarget = GetSceneData(xTarget);
@@ -2023,6 +2042,9 @@ void Zenith_SceneManager::ProcessPendingUnloads()
 
 void Zenith_SceneManager::UnloadAllNonPersistent(int iExcludeHandle)
 {
+	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "UnloadAllNonPersistent must be called from main thread");
+	Zenith_Assert(!s_bRenderTasksActive, "UnloadAllNonPersistent: scene mutation while render tasks are reading — render-task invariant violated");
+
 	// Cancel pending async unload jobs.
 	// C5: These jobs are being preempted by the synchronous UnloadAllNonPersistent
 	// path which itself unloads the scene. The unload IS completing (just via a
