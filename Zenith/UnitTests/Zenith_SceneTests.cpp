@@ -6821,11 +6821,10 @@ void Zenith_SceneTests::TestMultipleCallbacksSameType()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMultipleCallbacksSameType...");
 
 	static int s_iCount = 0;
-	s_iCount = 0;
 
-	auto pfn1 = [](Zenith_Scene, Zenith_SceneLoadMode) { s_iCount++; };
-	auto pfn2 = [](Zenith_Scene, Zenith_SceneLoadMode) { s_iCount++; };
-	auto pfn3 = [](Zenith_Scene, Zenith_SceneLoadMode) { s_iCount++; };
+	auto pfn1 = [](Zenith_Scene, Zenith_SceneLoadMode) { s_iCount+=1; };
+	auto pfn2 = [](Zenith_Scene, Zenith_SceneLoadMode) { s_iCount+=10; };
+	auto pfn3 = [](Zenith_Scene, Zenith_SceneLoadMode) { s_iCount+=100; };
 
 	auto h1 = Zenith_SceneManager::RegisterSceneLoadedCallback(pfn1);
 	auto h2 = Zenith_SceneManager::RegisterSceneLoadedCallback(pfn2);
@@ -6835,7 +6834,7 @@ void Zenith_SceneTests::TestMultipleCallbacksSameType()
 	CreateTestSceneFile(strPath);
 	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
 
-	Zenith_Assert(s_iCount == 3, "All 3 callbacks should fire (got %d)", s_iCount);
+	Zenith_Assert(s_iCount == 111, "All 3 callbacks should fire (got %d)", s_iCount);
 
 	Zenith_SceneManager::UnregisterSceneLoadedCallback(h1);
 	Zenith_SceneManager::UnregisterSceneLoadedCallback(h2);
@@ -12170,7 +12169,7 @@ namespace
 	static uint32_t g_uA8_PersistentFireCount = 0;
 
 	void A8_OnSceneLoaded(Zenith_Scene, Zenith_SceneLoadMode) { ++g_uA8_SceneLoadedFireCount; }
-	void A8_OnSceneLoadedAlt(Zenith_Scene, Zenith_SceneLoadMode) { ++g_uA8_SceneLoadedFireCount; }
+	void A8_OnSceneLoadedAlt(Zenith_Scene, Zenith_SceneLoadMode) { volatile int i = 1; if(i==1)++g_uA8_SceneLoadedFireCount; }
 	void A8_OnSceneUnloading(Zenith_Scene) { ++g_uA8_UnloadingFireCount; }
 	void A8_OnSceneUnloaded(Zenith_Scene) { ++g_uA8_UnloadedFireCount; }
 	void A8_OnActiveChanged(Zenith_Scene, Zenith_Scene) { ++g_uA8_ActiveChangedFireCount; }
