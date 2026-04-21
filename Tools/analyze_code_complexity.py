@@ -33,6 +33,34 @@ except ImportError:
     HAS_MATPLOTLIB = False
     print("Warning: matplotlib not found. Install with 'pip install matplotlib numpy' for visualizations.")
 
+# Optional tree-sitter parser — opt-in via `--parser tree-sitter`. Default
+# remains the regex parser so the tool stays stdlib-only out of the box.
+# We import lazily inside the helper so worker processes also initialize it.
+try:
+    import tree_sitter  # noqa: F401
+    import tree_sitter_cpp  # noqa: F401
+    HAS_TREE_SITTER = True
+except ImportError:
+    HAS_TREE_SITTER = False
+
+
+_TS_LANGUAGE = None
+_TS_PARSER = None
+
+
+def _get_ts_parser():
+    """Lazy-initialize (and cache per-process) the tree-sitter C++ parser."""
+    global _TS_LANGUAGE, _TS_PARSER
+    if _TS_PARSER is not None:
+        return _TS_PARSER
+    if not HAS_TREE_SITTER:
+        return None
+    from tree_sitter import Language, Parser
+    import tree_sitter_cpp as tscpp
+    _TS_LANGUAGE = Language(tscpp.language())
+    _TS_PARSER = Parser(_TS_LANGUAGE)
+    return _TS_PARSER
+
 
 # Control-flow keywords that open a nestable block and contribute to cognitive complexity.
 # Kept as a tuple so iteration order is stable; lookup via set for O(1).
@@ -58,9 +86,14 @@ _CASE_PATTERN: re.Pattern = re.compile(r'\bcase\b')
 _TECH_DEBT_PATTERN: re.Pattern = re.compile(
     r'\b(TODO|FIXME|HACK|XXX)\b[:\s]?[ \t]*(.{0,120}?)(?=$|\n)'
 )
+# Local `#include "..."` — system `<...>` includes are intentionally skipped
+# so the graph reflects only this codebase's internal coupling.
+_LOCAL_INCLUDE_PATTERN: re.Pattern = re.compile(r'^[ \t]*#[ \t]*include[ \t]*"([^"]+)"', re.MULTILINE)
 
 # Anti-pattern thresholds (overridable via --thresholds JSON). Values picked to be
 # loud enough that firing means something, quiet enough not to drown out signal.
+DEFAULT_LLM_MODEL = "claude-sonnet-4-6"
+
 DEFAULT_THRESHOLDS: Dict[str, float] = {
     'long_function_loc': 80,
     'very_long_function_loc': 200,
@@ -78,6 +111,12 @@ DEFAULT_THRESHOLDS: Dict[str, float] = {
     'god_file_funcs': 40,
     'extract_candidate_depth': 4,
     'extract_candidate_min_lines': 15,
+    # Priority score blend weights (must sum to 1.0).
+    'priority_weight_cognitive': 0.30,
+    'priority_weight_cyclomatic': 0.25,
+    'priority_weight_nesting': 0.20,
+    'priority_weight_length': 0.15,
+    'priority_weight_params': 0.10,
 }
 
 # Tag -> short human hint used in the markdown refactoring queue. Kept short and
@@ -169,6 +208,7 @@ class FileMetrics:
     # Populated during post-analysis; blends file-level metrics with the worst function
     # score so "one awful function in a small file" doesn't hide behind averages.
     priority_score: float = 0.0
+    priority_factors: Dict[str, float] = field(default_factory=dict)
     worst_function_score: float = 0.0
     # Tech-debt markers (TODO/FIXME/HACK/XXX); `tech_debt_markers` holds location+text.
     todo_count: int = 0
@@ -176,6 +216,18 @@ class FileMetrics:
     hack_count: int = 0
     tech_debt_markers: List[Dict] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)
+    # Include-graph coupling. `includes` is the basenames of `#include "..."` targets
+    # captured during parsing (system `<...>` includes are skipped — they're not
+    # part of this codebase). `fan_in` / `fan_out` / `in_cycle` are populated by
+    # `_compute_include_graph` after all files are analyzed.
+    includes: List[str] = field(default_factory=list)
+    fan_in: int = 0
+    fan_out: int = 0
+    in_cycle: bool = False
+    # Per-class LCOM5 cohesion + counts. Each entry: {name, start_line, method_count,
+    # field_count, lcom5}. Computed once per file in analyze_file; classes with <2
+    # inline methods or no `m_` fields are skipped (nothing to measure).
+    classes: List[Dict] = field(default_factory=list)
     
     @property
     def maintainability_index(self) -> float:
@@ -213,6 +265,14 @@ class DirectoryMetrics:
     avg_cyclomatic: float = 0
     avg_cognitive: float = 0
     avg_maintainability: float = 0
+    # Priority-score distribution across the directory's files. Unweighted mean is
+    # misleading when one godfile sits among many trivial files — use percentiles
+    # plus the worst file reference so "directory looks fine on average" can't hide
+    # a single catastrophic offender.
+    max_priority: float = 0.0
+    p90_priority: float = 0.0
+    p50_priority: float = 0.0
+    worst_file: str = ''
     total_functions: int = 0
     total_classes: int = 0
     files: List[FileMetrics] = field(default_factory=list)
@@ -235,8 +295,142 @@ class FunctionMetrics:
     case_count: int = 0
     # Populated during post-analysis; higher score = stronger refactoring candidate.
     priority_score: float = 0.0
+    # Per-dimension contribution (% of priority_score each dimension contributed).
+    # Keys: cognitive, cyclomatic, nesting, length, params. Sums to ~100 when score>0.
+    priority_factors: Dict[str, float] = field(default_factory=dict)
     tags: List[str] = field(default_factory=list)
     extract_candidates: List[Dict] = field(default_factory=list)
+    # Shingles for duplicate detection. Frozenset of 5-gram token tuples from
+    # the normalized body. Empty for functions below the min-token threshold.
+    shingles: frozenset = field(default_factory=frozenset)
+
+
+_PRIORITY_WEIGHTS: Dict[str, float] = {
+    'cognitive': 0.30,
+    'cyclomatic': 0.25,
+    'nesting': 0.20,
+    'length': 0.15,
+    'params': 0.10,
+}
+
+
+def _percentile(sorted_values: List[float], p: float) -> float:
+    """Linear-interpolation percentile. Input must be pre-sorted ascending."""
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    k = (len(sorted_values) - 1) * (p / 100.0)
+    lo = int(k)
+    hi = min(lo + 1, len(sorted_values) - 1)
+    return float(sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * (k - lo))
+
+
+# --- Duplicate detection --------------------------------------------------
+
+# Tokens worth matching literally (i.e. not collapsed to `_ID`). Anything that
+# appears in here keeps its identity so control-flow shape survives normalization.
+_DUP_KEEP_TOKENS: Set[str] = {
+    'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break',
+    'continue', 'return', 'goto', 'try', 'catch', 'throw',
+    'class', 'struct', 'enum', 'namespace', 'template', 'typename',
+    'public', 'private', 'protected', 'virtual', 'override', 'static',
+    'const', 'constexpr', 'inline', 'noexcept', 'new', 'delete', 'this',
+    'true', 'false', 'nullptr', 'auto', 'void',
+}
+_DUP_TOKEN_PATTERN = re.compile(
+    r'(\b[a-zA-Z_][a-zA-Z0-9_]*\b|'       # identifier / keyword
+    r'\b\d+\.?\d*[fFuUlL]*\b|'            # number
+    r'==|!=|<=|>=|<<|>>|&&|\|\||\+\+|--|->\*?|::|\.\*|'  # multi-char ops
+    r'[+\-*/%=<>!&|^~?:;,.(){}\[\]])'     # single-char punct/ops
+)
+
+_DUP_MIN_TOKENS = 30                   # skip tiny functions — too noisy
+_DUP_SHINGLE_SIZE = 5
+_DUP_JACCARD_THRESHOLD = 0.85
+
+
+def _tokenize_for_dedup(cleaned_code: str) -> List[str]:
+    """
+    Tokenize cleaned (comment-free, string-free) source for duplicate detection.
+
+    Identifiers outside `_DUP_KEEP_TOKENS` collapse to `_ID`, numbers collapse to
+    `_N`. This means two functions that differ only in variable names still match,
+    while keywords and operators preserve control-flow shape.
+    """
+    tokens: List[str] = []
+    for m in _DUP_TOKEN_PATTERN.finditer(cleaned_code):
+        tok = m.group(0)
+        first = tok[0]
+        if first.isalpha() or first == '_':
+            tokens.append(tok if tok in _DUP_KEEP_TOKENS else '_ID')
+        elif first.isdigit():
+            tokens.append('_N')
+        else:
+            tokens.append(tok)
+    return tokens
+
+
+def _shingle_set(tokens: List[str], n: int = _DUP_SHINGLE_SIZE) -> frozenset:
+    """Return the set of n-gram tuples drawn from `tokens`. Empty if too short.
+
+    Callers that guard with `_DUP_MIN_TOKENS` (>= 30) will never reach the
+    short-circuit here for n=5, so this is a belt-and-suspenders guard for
+    direct callers (e.g. tests) that may pass smaller token lists.
+    """
+    if len(tokens) < n:
+        return frozenset()
+    return frozenset(tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1))
+
+
+def _jaccard(a: frozenset, b: frozenset) -> float:
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    if inter == 0:
+        return 0.0
+    return inter / (len(a) + len(b) - inter)
+
+
+def _cluster_duplicates(
+    entries: List[Tuple[int, frozenset]],
+    threshold: float = _DUP_JACCARD_THRESHOLD,
+) -> List[List[int]]:
+    """
+    Union-find clustering: any two entries with Jaccard ≥ threshold land in the
+    same cluster. Input is (function_index, shingle_set). Returns list of
+    clusters of size ≥ 2, each as a list of indices sorted ascending.
+
+    Naive O(n²) pairwise — fine for the typical engine's 1K–5K functions.
+    """
+    parent: List[int] = list(range(len(entries)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for i in range(len(entries)):
+        _, si = entries[i]
+        if not si:
+            continue
+        for j in range(i + 1, len(entries)):
+            _, sj = entries[j]
+            if not sj:
+                continue
+            if _jaccard(si, sj) >= threshold:
+                union(i, j)
+
+    groups: Dict[int, List[int]] = defaultdict(list)
+    for i in range(len(entries)):
+        groups[find(i)].append(entries[i][0])
+    return [sorted(g) for g in groups.values() if len(g) >= 2]
 
 
 def compute_function_priority_score(
@@ -245,9 +439,10 @@ def compute_function_priority_score(
     max_nesting_depth: int,
     code_lines: int,
     param_count: int = 0,
-) -> float:
+    weights: Optional[Dict[str, float]] = None,
+) -> Tuple[float, Dict[str, float]]:
     """
-    Composite 0-100 priority score for refactoring a function.
+    Composite 0-100 priority score + per-dimension contribution breakdown.
 
     Blends cognitive complexity (the signal most correlated with human difficulty),
     cyclomatic complexity (branch count), nesting depth (visual indentation pain),
@@ -255,30 +450,44 @@ def compute_function_priority_score(
     threshold more doesn't matter more, and the cap is normalized to 0-1 before
     weighting — so the score is interpretable: 0 = clean, ~50 = starting to hurt,
     80+ = priority refactoring target.
+
+    Returns (score, factors) where `factors` maps dimension name -> % of the final
+    score it contributed (sums to ~100% when the score is nonzero). Lets a consumer
+    see at a glance whether to attack depth first or extraction first.
     """
-    cog_n = min(cognitive_complexity / 40.0, 1.0)
-    cc_n = min(cyclomatic_complexity / 30.0, 1.0)
-    nest_n = min(max_nesting_depth / 8.0, 1.0)
-    len_n = min(code_lines / 200.0, 1.0)
-    params_n = min(param_count / 8.0, 1.0)
-    return round(
-        (0.30 * cog_n + 0.25 * cc_n + 0.20 * nest_n + 0.15 * len_n + 0.10 * params_n) * 100.0,
-        1,
-    )
+    w = weights if weights is not None else _PRIORITY_WEIGHTS
+    normalised: Dict[str, float] = {
+        'cognitive': min(cognitive_complexity / 40.0, 1.0),
+        'cyclomatic': min(cyclomatic_complexity / 30.0, 1.0),
+        'nesting': min(max_nesting_depth / 8.0, 1.0),
+        'length': min(code_lines / 200.0, 1.0),
+        'params': min(param_count / 8.0, 1.0),
+    }
+    weighted: Dict[str, float] = {k: w[k] * normalised[k] for k in normalised}
+    total = sum(weighted.values())
+    score = round(total * 100.0, 1)
+
+    # Percentage contribution per dimension. When total is ~0, everything is 0%.
+    if total > 0:
+        factors = {k: round(100.0 * weighted[k] / total, 1) for k in weighted}
+    else:
+        factors = {k: 0.0 for k in weighted}
+    return score, factors
 
 
-def _analyze_file_worker(args: Tuple[str, str, Dict[str, float], List[str], bool]):
+def _analyze_file_worker(args: Tuple[str, str, Dict[str, float], List[str], bool, str]):
     """
     Process-pool worker. Must be a top-level function so it's picklable. Reconstructs
     a minimal CppAnalyzer in the child process, analyzes one file, and returns
     (FileMetrics, List[FunctionMetrics]) for the main process to merge.
     """
-    filepath_str, root_path, thresholds, ignore_macros, exclude_generated = args
+    filepath_str, root_path, thresholds, ignore_macros, exclude_generated, parser_backend = args
     analyzer = CppAnalyzer(
         root_path,
         thresholds=thresholds,
         ignore_macros=ignore_macros,
         exclude_generated=exclude_generated,
+        parser_backend=parser_backend,
     )
     # analyze_file populates analyzer.function_metrics as a side effect; capture the
     # slice that belongs to this file.
@@ -322,6 +531,7 @@ class CppAnalyzer:
         thresholds: Optional[Dict[str, float]] = None,
         ignore_macros: Optional[List[str]] = None,
         exclude_generated: bool = False,
+        parser_backend: str = 'regex',
     ):
         self.root_path = Path(root_path)
         self.exclude_dirs = set(exclude_dirs or [])
@@ -334,9 +544,26 @@ class CppAnalyzer:
             if self.ignore_macros else None
         )
         self.exclude_generated = exclude_generated
+        # Parser backend: 'regex' (default, stdlib-only) or 'tree-sitter' (opt-in).
+        # Tree-sitter handles nested templates, C++20 `requires`, function-try-blocks,
+        # and macro-generated signatures that the regex misses, at the cost of
+        # requiring `tree-sitter` + `tree-sitter-cpp` to be installed.
+        if parser_backend == 'tree-sitter' and not HAS_TREE_SITTER:
+            print("Warning: --parser tree-sitter requested but tree_sitter / "
+                  "tree_sitter_cpp not installed. Falling back to regex parser. "
+                  "Install with: pip install tree-sitter tree-sitter-cpp")
+            parser_backend = 'regex'
+        self.parser_backend = parser_backend
         self.file_metrics: List[FileMetrics] = []
         self.function_metrics: List[FunctionMetrics] = []
         self.directory_metrics: Dict[str, DirectoryMetrics] = {}
+        # Populated by _find_duplicates(); list of clusters, each cluster a list of
+        # (filepath, start_line, name, priority_score) for every function in the cluster.
+        self.duplicate_clusters: List[List[Dict]] = []
+        # Populated by _compute_include_graph(); list of include cycles as filepaths.
+        self.include_cycles: List[List[str]] = []
+        # Populated by generate_llm_suggestions() (if --llm-suggestions is used).
+        self.llm_suggestions: List[Dict] = []
         
     def should_exclude(self, path: Path) -> bool:
         """Check if path should be excluded"""
@@ -597,10 +824,13 @@ class CppAnalyzer:
         `1 + current_nesting`, logical operators (&& / ||) each add 1, `goto` adds 1.
 
         Nesting only increments for control-flow `{` — class/struct/namespace/function
-        bodies don't count. Detection is heuristic and handles:
-          - same-line: `if (x) {`  (brace follows `)`)
-          - multi-line: `if (x)` on one line, `{` on the next (via pending_control_flow)
-          - keyword + brace with no parens: `do {`, `try {`, `else {`
+        bodies and lambda/initializer braces don't count. A `{` is control flow when:
+          - multi-line: a keyword on an earlier line is still pending (pending_control_flow), or
+          - same-line: a control-flow keyword appears earlier on the same line before the `{`
+
+        An earlier version of this routine treated *any* `{` preceded by `)` as control
+        flow, which caused function bodies (`void f(int x) {`), lambdas (`[&]() { ... }`),
+        and initializer lists to inflate nesting counts. That heuristic was removed.
         """
         cognitive = 0
         nesting = 0
@@ -612,13 +842,17 @@ class CppAnalyzer:
             if not stripped:
                 continue
 
-            has_control_flow_on_line = False
+            # Count every control-flow keyword on the line — not just the first pattern
+            # that matches. Cost per keyword is (1 + line-start nesting); single-line
+            # nested keywords are thus undercounted slightly, but that's rare in C++
+            # and the error is bounded.
+            total_keywords = 0
             for pattern in _COGNITIVE_KEYWORD_PATTERNS:
-                if pattern.search(stripped):
-                    cognitive += 1 + nesting
-                    has_control_flow_on_line = True
-                    pending_control_flow = True
-                    break
+                total_keywords += len(pattern.findall(stripped))
+            has_control_flow_on_line = total_keywords > 0
+            if has_control_flow_on_line:
+                cognitive += total_keywords * (1 + nesting)
+                pending_control_flow = True
 
             cognitive += len(_LOGICAL_OP_PATTERN.findall(stripped))
             if _GOTO_PATTERN.search(stripped):
@@ -627,12 +861,6 @@ class CppAnalyzer:
             for i, ch in enumerate(stripped):
                 if ch == '{':
                     is_control_flow = pending_control_flow
-
-                    if not is_control_flow:
-                        before = stripped[:i].rstrip()
-                        if before.endswith(')'):
-                            is_control_flow = True
-
                     if not is_control_flow and has_control_flow_on_line:
                         before = stripped[:i].rstrip()
                         remaining = before.strip()
@@ -756,11 +984,20 @@ class CppAnalyzer:
 
     def _find_function_boundaries(self, code: str) -> List[Dict]:
         """
-        Find function boundaries via regex + brace matching.
+        Find function boundaries and dispatch to the configured parser backend.
 
         Returns a list of dicts with keys: name, start_line, end_line, start_pos,
-        brace_start, brace_end. Line numbers are 1-indexed. Regex is approximate
-        (see `_FUNC_PATTERN` comment for known limitations).
+        brace_start, brace_end. Line numbers are 1-indexed.
+        """
+        if self.parser_backend == 'tree-sitter':
+            return self._find_function_boundaries_ts(code)
+        return self._find_function_boundaries_regex(code)
+
+    def _find_function_boundaries_regex(self, code: str) -> List[Dict]:
+        """
+        Find function boundaries via regex + brace matching.
+
+        Approximate — see `_FUNC_PATTERN` comment for known limitations.
         """
         functions = []
         for match in self._FUNC_PATTERN.finditer(code):
@@ -799,6 +1036,113 @@ class CppAnalyzer:
                 'brace_end': pos - 1,
             })
 
+        return functions
+
+    @staticmethod
+    def _ts_extract_function_name(node, code_bytes: bytes) -> str:
+        """
+        Walk a tree-sitter function_definition node's declarator chain to find
+        the function name. Handles pointer/reference declarators, qualified names
+        (`Foo::Bar`), operator overloads, destructors, and constructor names.
+        Returns '' if the structure is unexpected.
+        """
+        # Find the function_declarator child, possibly nested in pointer/reference.
+        def _find_decl(n):
+            for child in n.children:
+                if child.type == 'function_declarator':
+                    return child
+                if child.type in ('pointer_declarator', 'reference_declarator'):
+                    found = _find_decl(child)
+                    if found is not None:
+                        return found
+            return None
+
+        decl = _find_decl(node)
+        if decl is None:
+            return ''
+        # The name is the first non-parameter-list child.
+        for child in decl.children:
+            if child.type == 'parameter_list':
+                break
+            if child.type in (
+                'identifier', 'field_identifier', 'qualified_identifier',
+                'destructor_name', 'operator_name', 'type_identifier',
+                'template_function',
+            ):
+                return code_bytes[child.start_byte:child.end_byte].decode(
+                    'utf-8', errors='ignore'
+                ).strip()
+        return ''
+
+    def _find_function_boundaries_ts(self, code: str) -> List[Dict]:
+        """
+        Find function boundaries using tree-sitter-cpp. Returns the same dict
+        shape as the regex variant so downstream code is parser-agnostic.
+
+        Covers constructs the regex misses: nested template args, C++20
+        `requires`, function-try-blocks, and most macro-generated signatures
+        (provided the expanded code is still valid C++). Lambdas inside function
+        bodies are deliberately not returned as top-level functions — they're
+        counted as part of their enclosing function, matching the regex path.
+        """
+        parser = _get_ts_parser()
+        if parser is None:
+            return self._find_function_boundaries_regex(code)
+
+        code_bytes = code.encode('utf-8', errors='replace')
+        tree = parser.parse(code_bytes)
+
+        # Tree-sitter returns byte offsets; downstream callers slice `code` as a
+        # str. On ASCII-only source (the common case) the offsets match, but to
+        # be correct we translate. Build the mapping lazily.
+        is_ascii = len(code_bytes) == len(code)
+
+        def b2c(byte_offset: int) -> int:
+            if is_ascii:
+                return byte_offset
+            # Decoding a prefix is O(n) but only called a few times per function.
+            return len(code_bytes[:byte_offset].decode('utf-8', errors='ignore'))
+
+        functions: List[Dict] = []
+        seen_ranges: Set[int] = set()  # dedupe by start_byte
+
+        # Recursive walk rather than a traversal cursor to stay simple. For a
+        # 2K-line file this is instant; for 50K-line files still well under 100ms.
+        def walk(node, inside_function: bool) -> None:
+            if node.type == 'function_definition':
+                if not inside_function:
+                    # Find the compound_statement (body); skip functions without a body
+                    # (e.g. `= default` / pure virtual / `= 0`).
+                    body = None
+                    for child in node.children:
+                        if child.type == 'compound_statement':
+                            body = child
+                            break
+                    if body is not None:
+                        name = self._ts_extract_function_name(node, code_bytes)
+                        if name and name not in self._CONTROL_FLOW_NAMES:
+                            start_byte = node.start_byte
+                            if start_byte not in seen_ranges:
+                                seen_ranges.add(start_byte)
+                                functions.append({
+                                    'name': name,
+                                    'start_line': node.start_point[0] + 1,
+                                    'end_line': body.end_point[0] + 1,
+                                    'start_pos': b2c(start_byte),
+                                    'brace_start': b2c(body.start_byte),
+                                    'brace_end': b2c(body.end_byte) - 1,
+                                })
+                # Nested lambdas/local functions are absorbed by the enclosing
+                # function body (matches regex behaviour).
+                for child in node.children:
+                    walk(child, True)
+                return
+            for child in node.children:
+                walk(child, inside_function)
+
+        walk(tree.root_node, False)
+        # Sort by start_byte for stable output.
+        functions.sort(key=lambda f: f['start_pos'])
         return functions
     
     def _calculate_function_complexities(self, code: str, func_boundaries: List[Dict], cleaned_code: str) -> List[FunctionMetrics]:
@@ -843,6 +1187,10 @@ class CppAnalyzer:
                 min_depth=int(self.thresholds['extract_candidate_depth']),
                 min_lines=int(self.thresholds['extract_candidate_min_lines']),
             )
+            # Shingles for duplicate detection. Skip tiny functions to cut noise.
+            tokens = _tokenize_for_dedup(func_cleaned)
+            if len(tokens) >= _DUP_MIN_TOKENS:
+                fm.shingles = _shingle_set(tokens)
             results.append(fm)
 
         return results
@@ -936,14 +1284,11 @@ class CppAnalyzer:
                         pending_control_flow = True
                         break
 
-            # Track depth over this line (at end-of-line).
+            # Track depth over this line (at end-of-line). Matches the logic in
+            # `_analyze_control_flow` so extract candidates and nesting agree.
             for i, ch in enumerate(stripped):
                 if ch == '{':
                     is_control_flow = pending_control_flow
-                    if not is_control_flow:
-                        before = stripped[:i].rstrip()
-                        if before.endswith(')'):
-                            is_control_flow = True
                     if not is_control_flow and line_has_keyword:
                         before = stripped[:i].rstrip()
                         remaining = before.strip()
@@ -1043,6 +1388,77 @@ class CppAnalyzer:
         """Count class/struct declarations in the code"""
         class_pattern = r'\b(?:class|struct)\s+\w+'
         return len(re.findall(class_pattern, cleaned_code))
+
+    # class/struct definitions that open a body: `class Foo : public Bar {` etc.
+    # Forward declarations (`class Foo;`) and template specializations are skipped
+    # by requiring the `{` opener. One-level base-class list is tolerated.
+    _CLASS_BODY_PATTERN: re.Pattern = re.compile(
+        r'\b(?:class|struct)\s+([A-Za-z_]\w*)'
+        r'(?:\s*:\s*(?:public|private|protected|virtual|[\w:<>,\s])+)?'
+        r'\s*\{',
+        re.MULTILINE,
+    )
+    _MEMBER_FIELD_PATTERN: re.Pattern = re.compile(r'\bm_\w+\b')
+
+    def _compute_class_lcom(self, cleaned_code: str) -> List[Dict]:
+        """
+        Compute per-class LCOM5 (Henderson-Sellers) cohesion using the engine's
+        strict `m_` member-variable convention as a shortcut — any `m_foo` reference
+        inside a method body counts as touching field `m_foo`.
+
+        LCOM5 = 1 - (sum over fields of distinct methods touching field) / (methods * fields)
+
+        Range 0..1. 0 = every method touches every field (tight cohesion, unlikely);
+        1 = no method touches any field (incohesive or stateless). Returns a list of
+        dicts {name, start_line, method_count, field_count, lcom5} per class, skipping
+        classes with <2 inline methods or no `m_*` fields (nothing to measure).
+
+        Scope approximations: nested classes are treated independently at their own
+        outer match; template specializations and friend definitions may be missed.
+        """
+        results: List[Dict] = []
+        for m in self._CLASS_BODY_PATTERN.finditer(cleaned_code):
+            name = m.group(1)
+            brace_pos = m.end() - 1
+            depth = 1
+            pos = brace_pos + 1
+            while pos < len(cleaned_code) and depth > 0:
+                if cleaned_code[pos] == '{':
+                    depth += 1
+                elif cleaned_code[pos] == '}':
+                    depth -= 1
+                pos += 1
+            if depth != 0:
+                continue  # unbalanced
+            body = cleaned_code[brace_pos + 1:pos - 1]
+            start_line = cleaned_code[:m.start()].count('\n') + 1
+
+            methods = self._find_function_boundaries(body)
+            if len(methods) < 2:
+                continue
+            all_fields: Set[str] = set(self._MEMBER_FIELD_PATTERN.findall(body))
+            if not all_fields:
+                continue
+
+            # Distinct methods touching each field.
+            field_to_methods: Dict[str, Set[int]] = defaultdict(set)
+            for mi, method in enumerate(methods):
+                method_body = body[method['brace_start']:method['brace_end'] + 1]
+                for field_name in self._MEMBER_FIELD_PATTERN.findall(method_body):
+                    if field_name in all_fields:
+                        field_to_methods[field_name].add(mi)
+
+            sum_accesses = sum(len(ms) for ms in field_to_methods.values())
+            denom = len(methods) * len(all_fields)
+            lcom5 = round(1.0 - (sum_accesses / denom), 3) if denom else 0.0
+            results.append({
+                'name': name,
+                'start_line': start_line,
+                'method_count': len(methods),
+                'field_count': len(all_fields),
+                'lcom5': lcom5,
+            })
+        return results
     
     def analyze_file(self, filepath: Path) -> FileMetrics:
         """Analyze a single source file"""
@@ -1077,6 +1493,14 @@ class CppAnalyzer:
         fixme_count = sum(1 for m in tech_debt if m['marker'] == 'FIXME')
         hack_count = sum(1 for m in tech_debt if m['marker'] in ('HACK', 'XXX'))
 
+        # Local include targets — basenames only so downstream matching is robust to
+        # path differences between includers (`#include "Flux/Foo.h"` vs just `"Foo.h"`).
+        includes = [Path(m).name for m in _LOCAL_INCLUDE_PATTERN.findall(code)]
+
+        # Per-class LCOM5 cohesion. Uses the cleaned code so comments/strings don't
+        # inflate method bodies or field references.
+        class_metrics = self._compute_class_lcom(cleaned_code)
+
         relative_path = str(filepath.relative_to(self.root_path))
         for fm in func_metrics:
             fm.filepath = relative_path
@@ -1098,6 +1522,8 @@ class CppAnalyzer:
             fixme_count=fixme_count,
             hack_count=hack_count,
             tech_debt_markers=tech_debt,
+            includes=includes,
+            classes=class_metrics,
         )
         return file_m
     
@@ -1123,7 +1549,8 @@ class CppAnalyzer:
             # bundle and reconstruct the analyzer in each worker; function_metrics come back
             # alongside FileMetrics via a top-level helper.
             args = [(str(f), str(self.root_path), dict(self.thresholds),
-                     list(self.ignore_macros), self.exclude_generated) for f in files]
+                     list(self.ignore_macros), self.exclude_generated,
+                     self.parser_backend) for f in files]
             with concurrent.futures.ProcessPoolExecutor(max_workers=worker_count) as executor:
                 for i, result in enumerate(executor.map(_analyze_file_worker, args)):
                     if (i + 1) % 50 == 0:
@@ -1140,6 +1567,8 @@ class CppAnalyzer:
 
         print(f"Analyzed {len(files)} files.")
         self._compute_priority_scores()
+        self._compute_include_graph()
+        self._find_duplicates()
         self._aggregate_by_directory()
 
     def _compute_priority_scores(self) -> None:
@@ -1150,14 +1579,22 @@ class CppAnalyzer:
         so "one awful function in a small file" doesn't hide behind averages. Uses 70/30
         weighting between file-intrinsic signals and the worst function's score.
         """
+        pw = {
+            'cognitive':  self.thresholds.get('priority_weight_cognitive',  _PRIORITY_WEIGHTS['cognitive']),
+            'cyclomatic': self.thresholds.get('priority_weight_cyclomatic', _PRIORITY_WEIGHTS['cyclomatic']),
+            'nesting':    self.thresholds.get('priority_weight_nesting',    _PRIORITY_WEIGHTS['nesting']),
+            'length':     self.thresholds.get('priority_weight_length',     _PRIORITY_WEIGHTS['length']),
+            'params':     self.thresholds.get('priority_weight_params',     _PRIORITY_WEIGHTS['params']),
+        }
         functions_by_file: Dict[str, List[FunctionMetrics]] = defaultdict(list)
         for fm in self.function_metrics:
-            fm.priority_score = compute_function_priority_score(
+            fm.priority_score, fm.priority_factors = compute_function_priority_score(
                 cognitive_complexity=fm.cognitive_complexity,
                 cyclomatic_complexity=fm.cyclomatic_complexity,
                 max_nesting_depth=fm.max_nesting_depth,
                 code_lines=fm.code_lines,
                 param_count=fm.param_count,
+                weights=pw,
             )
             fm.tags = self._tag_function(fm)
             functions_by_file[fm.filepath].append(fm)
@@ -1169,29 +1606,181 @@ class CppAnalyzer:
                     worst = func.priority_score
             file_m.worst_function_score = worst
 
-            file_intrinsic = compute_function_priority_score(
+            file_intrinsic, file_factors = compute_function_priority_score(
                 cognitive_complexity=file_m.cognitive_complexity,
                 cyclomatic_complexity=file_m.cyclomatic_complexity,
                 max_nesting_depth=file_m.max_nesting_depth,
                 code_lines=file_m.code_lines,
+                weights=pw,
             )
             # Scale file-intrinsic down a touch (files naturally score higher than
             # functions because they accumulate), then blend in the worst function.
             file_m.priority_score = round(0.7 * file_intrinsic + 0.3 * worst, 1)
+            # Factors reflect the intrinsic score's composition; the "worst-function"
+            # bump is reported separately via worst_function_score.
+            file_m.priority_factors = file_factors
             file_m.tags = self._tag_file(file_m)
     
+    def _compute_include_graph(self) -> None:
+        """
+        Populate `fan_in`, `fan_out`, `in_cycle` on every FileMetrics and store
+        detected cycles on `self.include_cycles`.
+
+        Matching is by basename: `#include "Flux/Foo.h"` and `#include "Foo.h"` both
+        point to `Foo.h`. If multiple files share a basename we link to all of them
+        (rare in Zenith but possible). System `<...>` includes are skipped at parse
+        time so they don't inflate fan-out.
+
+        Cycle detection uses Tarjan's SCC; any SCC of size ≥ 2, plus self-loops,
+        marks its members as `in_cycle`. Cycles matter because they're the strongest
+        single signal of architectural entanglement.
+        """
+        by_basename: Dict[str, List[int]] = defaultdict(list)
+        for i, fm in enumerate(self.file_metrics):
+            by_basename[Path(fm.filepath).name].append(i)
+
+        # Adjacency list: node index -> list of included node indices (deduped).
+        adj: List[List[int]] = [[] for _ in self.file_metrics]
+        for i, fm in enumerate(self.file_metrics):
+            seen: Set[int] = set()
+            for inc in fm.includes:
+                for target in by_basename.get(inc, ()):
+                    if target != i and target not in seen:
+                        seen.add(target)
+                        adj[i].append(target)
+            fm.fan_out = len(adj[i])
+
+        fan_in_count = [0] * len(self.file_metrics)
+        for i, targets in enumerate(adj):
+            for t in targets:
+                fan_in_count[t] += 1
+        for i, fm in enumerate(self.file_metrics):
+            fm.fan_in = fan_in_count[i]
+
+        # Tarjan's SCC (iterative to avoid recursion limits on large graphs).
+        index_counter = [0]
+        stack: List[int] = []
+        on_stack: List[bool] = [False] * len(self.file_metrics)
+        index: List[int] = [-1] * len(self.file_metrics)
+        lowlink: List[int] = [0] * len(self.file_metrics)
+        sccs: List[List[int]] = []
+
+        def strongconnect(start: int) -> None:
+            work: List[Tuple[int, int]] = [(start, 0)]
+            call_stack: List[int] = []
+            while work:
+                v, pi = work[-1]
+                if pi == 0:
+                    index[v] = index_counter[0]
+                    lowlink[v] = index_counter[0]
+                    index_counter[0] += 1
+                    stack.append(v)
+                    on_stack[v] = True
+                neighbours = adj[v]
+                if pi < len(neighbours):
+                    work[-1] = (v, pi + 1)
+                    w = neighbours[pi]
+                    if index[w] == -1:
+                        work.append((w, 0))
+                    elif on_stack[w]:
+                        if index[w] < lowlink[v]:
+                            lowlink[v] = index[w]
+                    continue
+                # Finished v — pop and update parent lowlink.
+                work.pop()
+                if call_stack:
+                    parent = call_stack[-1]
+                    if lowlink[v] < lowlink[parent]:
+                        lowlink[parent] = lowlink[v]
+                if lowlink[v] == index[v]:
+                    scc: List[int] = []
+                    while True:
+                        w = stack.pop()
+                        on_stack[w] = False
+                        scc.append(w)
+                        if w == v:
+                            break
+                    sccs.append(scc)
+                call_stack.append(v)
+            # Drain remaining call_stack parents — already processed via lowlink updates.
+
+        for v in range(len(self.file_metrics)):
+            if index[v] == -1:
+                strongconnect(v)
+
+        self.include_cycles: List[List[str]] = []
+        for scc in sccs:
+            is_cycle = len(scc) > 1
+            # Also flag self-loops (a file that somehow includes itself by basename).
+            if not is_cycle and scc and scc[0] in adj[scc[0]]:
+                is_cycle = True
+            if is_cycle:
+                for node in scc:
+                    self.file_metrics[node].in_cycle = True
+                self.include_cycles.append(
+                    sorted(self.file_metrics[n].filepath for n in scc)
+                )
+
+        # Largest cycles first for reporting.
+        self.include_cycles.sort(key=lambda c: -len(c))
+        if self.include_cycles:
+            print(f"  Found {len(self.include_cycles)} include cycle(s) "
+                  f"(SCC size >= 2 or self-loop).")
+
+    def _find_duplicates(self) -> None:
+        """
+        Populate `self.duplicate_clusters` with near-duplicate function groups.
+
+        Uses token-normalized 5-gram shingles + pairwise Jaccard clustering. Functions
+        below `_DUP_MIN_TOKENS` were already given empty shingle sets and are skipped.
+        Each cluster lists every member function with file/line/name/score so consumers
+        can act on the finding without a second pass.
+        """
+        entries: List[Tuple[int, frozenset]] = [
+            (i, fm.shingles) for i, fm in enumerate(self.function_metrics) if fm.shingles
+        ]
+        if len(entries) < 2:
+            self.duplicate_clusters = []
+            return
+
+        clusters = _cluster_duplicates(entries)
+        output: List[List[Dict]] = []
+        for group in clusters:
+            members: List[Dict] = []
+            for idx in group:
+                fm = self.function_metrics[idx]
+                members.append({
+                    'file': fm.filepath,
+                    'line': fm.start_line,
+                    'name': fm.name,
+                    'code_lines': fm.code_lines,
+                    'priority_score': fm.priority_score,
+                })
+            # Sort cluster members by priority desc so the most painful one leads.
+            members.sort(key=lambda m: -m['priority_score'])
+            output.append(members)
+        # Order clusters by size desc, then by leader's priority score.
+        output.sort(key=lambda c: (-len(c), -c[0]['priority_score']))
+        self.duplicate_clusters = output
+        if output:
+            print(f"  Found {len(output)} near-duplicate cluster(s) "
+                  f"(>= {int(_DUP_JACCARD_THRESHOLD * 100)}% Jaccard).")
+
     def _aggregate_by_directory(self) -> None:
         """Aggregate metrics by directory"""
         dir_files: Dict[str, List[FileMetrics]] = defaultdict(list)
-        
+
         for fm in self.file_metrics:
             dir_path = str(Path(fm.filepath).parent)
             dir_files[dir_path].append(fm)
-        
+
         for dir_path, files in dir_files.items():
             if not files:
                 continue
-            
+
+            priority_scores = sorted(f.priority_score for f in files)
+            worst_file_entry = max(files, key=lambda f: f.priority_score)
+
             dm = DirectoryMetrics(
                 path=dir_path,
                 file_count=len(files),
@@ -1202,6 +1791,10 @@ class CppAnalyzer:
                 avg_cyclomatic=sum(f.cyclomatic_complexity for f in files) / len(files),
                 avg_cognitive=sum(f.cognitive_complexity for f in files) / len(files),
                 avg_maintainability=sum(f.maintainability_index for f in files) / len(files),
+                max_priority=round(priority_scores[-1], 1),
+                p90_priority=round(_percentile(priority_scores, 90), 1),
+                p50_priority=round(_percentile(priority_scores, 50), 1),
+                worst_file=worst_file_entry.filepath,
                 total_functions=sum(f.function_count for f in files),
                 total_classes=sum(f.class_count for f in files),
                 files=files
@@ -1209,23 +1802,32 @@ class CppAnalyzer:
             self.directory_metrics[dir_path] = dm
     
     def get_summary(self) -> Dict:
-        """Get overall summary statistics"""
+        """
+        Get overall summary statistics.
+
+        Headline signal is the priority-score distribution across files — not MI, and
+        not Halstead "estimated bugs" / "time to program". Those exist as inputs to
+        priority scoring and in per-file CSV output only, not as headline numbers, because
+        MI's formula is dated (ADA/FORTRAN 1994) and Halstead B/T constants are 1977-era
+        estimates that sound authoritative without guiding any refactoring decision.
+        """
         if not self.file_metrics:
             return {}
 
         total_files = len(self.file_metrics)
         total_loc = sum(f.code_lines for f in self.file_metrics)
         total_lines = sum(f.total_lines for f in self.file_metrics)
-        avg_mi = sum(f.maintainability_index for f in self.file_metrics) / total_files
 
-        if avg_mi >= 80:
-            rating = "Excellent (highly maintainable)"
-        elif avg_mi >= 60:
-            rating = "Good (moderately maintainable)"
-        elif avg_mi >= 40:
-            rating = "Fair (somewhat difficult to maintain)"
-        else:
-            rating = "Poor (difficult to maintain)"
+        # Priority score distribution — the actionable headline.
+        priority_scores = sorted((f.priority_score for f in self.file_metrics), reverse=True)
+        high_count = sum(1 for s in priority_scores if s >= 70)
+        medium_count = sum(1 for s in priority_scores if 40 <= s < 70)
+        low_count = total_files - high_count - medium_count
+        high_pct = 100.0 * high_count / total_files if total_files else 0.0
+
+        sorted_asc = sorted(priority_scores)
+        p50 = _percentile(sorted_asc, 50)
+        p90 = _percentile(sorted_asc, 90)
 
         return {
             'total_files': total_files,
@@ -1237,13 +1839,14 @@ class CppAnalyzer:
             'max_cyclomatic': max(f.cyclomatic_complexity for f in self.file_metrics),
             'avg_cognitive': sum(f.cognitive_complexity for f in self.file_metrics) / total_files,
             'max_cognitive': max(f.cognitive_complexity for f in self.file_metrics),
-            'avg_maintainability': avg_mi,
-            'min_maintainability': min(f.maintainability_index for f in self.file_metrics),
             'total_functions': sum(f.function_count for f in self.file_metrics),
             'total_classes': sum(f.class_count for f in self.file_metrics),
-            'avg_halstead_volume': sum(f.halstead.volume for f in self.file_metrics) / total_files,
-            'total_estimated_bugs': sum(f.halstead.bugs_delivered for f in self.file_metrics),
-            'overall_rating': rating,
+            'priority_high_count': high_count,
+            'priority_medium_count': medium_count,
+            'priority_low_count': low_count,
+            'priority_high_pct': round(high_pct, 1),
+            'priority_p50': round(p50, 1),
+            'priority_p90': round(p90, 1),
         }
     
     def print_report(self) -> None:
@@ -1270,65 +1873,82 @@ class CppAnalyzer:
         print(f"  Max Cyclomatic:       {summary['max_cyclomatic']}")
         print(f"  Avg Cognitive:        {summary['avg_cognitive']:.2f}")
         print(f"  Max Cognitive:        {summary['max_cognitive']}")
-        print(f"  Avg Halstead Volume:  {summary['avg_halstead_volume']:.2f}")
-        print(f"  Est. Total Bugs:      {summary['total_estimated_bugs']:.2f}")
-        
-        print("\n=== MAINTAINABILITY ===")
+
+        print("\n=== PRIORITY SCORE DISTRIBUTION ===")
         print("-" * 40)
-        print(f"  Avg Maintainability Index: {summary['avg_maintainability']:.2f}")
-        print(f"  Min Maintainability Index: {summary['min_maintainability']:.2f}")
-        
-        mi_avg = summary['avg_maintainability']
-        if mi_avg >= 80:
-            rating = "Excellent (highly maintainable)"
-        elif mi_avg >= 60:
-            rating = "Good (moderately maintainable)"
-        elif mi_avg >= 40:
-            rating = "Fair (somewhat difficult to maintain)"
-        else:
-            rating = "Poor (difficult to maintain)"
-        print(f"  Overall Rating:       {rating}")
-        
-        # Directory breakdown
-        print("\n=== TOP DIRECTORIES BY CODE LINES ===")
+        print(f"  High priority (>=70): {summary['priority_high_count']} files "
+              f"({summary['priority_high_pct']:.1f}%)")
+        print(f"  Medium (40-69):       {summary['priority_medium_count']} files")
+        print(f"  Low (<40):            {summary['priority_low_count']} files")
+        print(f"  P50 file score:       {summary['priority_p50']}")
+        print(f"  P90 file score:       {summary['priority_p90']}")
+
+        # Directory breakdown — sort by worst-file priority_score, not by LOC.
+        print("\n=== TOP DIRECTORIES BY WORST FILE ===")
         print("-" * 40)
         sorted_dirs = sorted(
             self.directory_metrics.values(),
-            key=lambda d: d.code_lines,
+            key=lambda d: getattr(d, 'max_priority', 0.0),
             reverse=True
         )[:10]
-        
+
         for dm in sorted_dirs:
+            max_p = getattr(dm, 'max_priority', 0.0)
+            p50_p = getattr(dm, 'p50_priority', 0.0)
             print(f"  {dm.path}")
             print(f"    Files: {dm.file_count}, LOC: {dm.code_lines:,}, "
-                  f"Avg CC: {dm.avg_cyclomatic:.1f}, MI: {dm.avg_maintainability:.1f}")
-        
-        # Most complex files
-        print("\n=== TOP 10 MOST COMPLEX FILES (by Cyclomatic Complexity) ===")
+                  f"Max priority: {max_p:.1f}, P50: {p50_p:.1f}, Avg CC: {dm.avg_cyclomatic:.1f}")
+
+        # Files needing attention — by priority_score.
+        print("\n=== TOP 10 FILES NEEDING ATTENTION (by priority score) ===")
         print("-" * 40)
         sorted_files = sorted(
             self.file_metrics,
-            key=lambda f: f.cyclomatic_complexity,
+            key=lambda f: f.priority_score,
             reverse=True
         )[:10]
-        
+
         for fm in sorted_files:
             print(f"  {fm.filepath}")
-            print(f"    CC: {fm.cyclomatic_complexity}, Cognitive: {fm.cognitive_complexity}, "
-                  f"MI: {fm.maintainability_index:.1f}")
-        
-        # Lowest maintainability
-        print("\n=== TOP 10 FILES NEEDING ATTENTION (lowest Maintainability Index) ===")
-        print("-" * 40)
-        sorted_mi = sorted(
-            self.file_metrics,
-            key=lambda f: f.maintainability_index
+            print(f"    score={fm.priority_score:.1f}  CC={fm.cyclomatic_complexity}  "
+                  f"cog={fm.cognitive_complexity}  nesting={fm.max_nesting_depth}  "
+                  f"LOC={fm.code_lines}")
+
+        # Coupling — top fan-in + cycle count.
+        high_fanin = sorted(
+            [f for f in self.file_metrics if f.fan_in > 0],
+            key=lambda f: -f.fan_in
         )[:10]
-        
-        for fm in sorted_mi:
-            print(f"  {fm.filepath}")
-            print(f"    MI: {fm.maintainability_index:.1f}, CC: {fm.cyclomatic_complexity}, "
-                  f"LOC: {fm.code_lines}")
+        if high_fanin:
+            print("\n=== TOP 10 HIGH FAN-IN HEADERS ===")
+            print("-" * 40)
+            for f in high_fanin:
+                cycle = "  [in cycle]" if f.in_cycle else ""
+                print(f"  {f.filepath}  fan_in={f.fan_in}  fan_out={f.fan_out}{cycle}")
+        if self.include_cycles:
+            print(f"\n  Include cycles detected: {len(self.include_cycles)}")
+
+        # LLM-generated refactor suggestions (if --llm-suggestions was used).
+        if self.llm_suggestions:
+            print(f"\n=== AI REFACTOR SUGGESTIONS ({len(self.llm_suggestions)} function(s)) ===")
+            print("-" * 40)
+            for entry in self.llm_suggestions:
+                print(f"  {entry['file']}:{entry['line']}  {entry['name']}")
+                if entry.get('summary'):
+                    print(f"    {entry['summary']}")
+                for rec in entry.get('recommendations', [])[:3]:
+                    approach = rec.get('approach', '')
+                    lines = rec.get('target_lines', '?')
+                    print(f"    - {approach} (lines {lines})")
+
+        # Near-duplicate clusters — show leader of each of the top 10 clusters.
+        if self.duplicate_clusters:
+            print(f"\n=== NEAR-DUPLICATE CLUSTERS ({len(self.duplicate_clusters)} total) ===")
+            print("-" * 40)
+            for i, cluster in enumerate(self.duplicate_clusters[:10], 1):
+                leader = cluster[0]
+                print(f"  {i}. {len(cluster)} functions similar, led by:")
+                print(f"     {leader['file']}:{leader['line']}  {leader['name']}")
 
         # Per-function refactoring queue: the highest-ROI section for Claude/human
         # reviewers. Sorted by priority_score, formatted as `file:line` so it's
@@ -1346,6 +1966,11 @@ class CppAnalyzer:
                 print(f"      score={func.priority_score:.1f}  "
                       f"CC={func.cyclomatic_complexity}  cog={func.cognitive_complexity}  "
                       f"nesting={func.max_nesting_depth}  LOC={func.code_lines}")
+                if func.priority_factors:
+                    ordered = sorted(func.priority_factors.items(), key=lambda kv: -kv[1])
+                    factors_str = '  '.join(f"{k}={v:.0f}%" for k, v in ordered if v > 0)
+                    if factors_str:
+                        print(f"      breakdown: {factors_str}")
 
 
 class MetricsVisualizer:
@@ -1903,21 +2528,28 @@ class MetricsVisualizer:
         if not summary:
             return
 
-        # Find worst file
-        worst_mi_file = min(self.analyzer.file_metrics, key=lambda f: f.maintainability_index)
+        # Worst file is now the one with highest priority score — that's the "most
+        # in need of refactoring" signal, and the rest of the report ranks by it too.
+        worst_file = max(self.analyzer.file_metrics, key=lambda f: f.priority_score)
         max_cc_file = max(self.analyzer.file_metrics, key=lambda f: f.cyclomatic_complexity)
+
+        # Health colouring: priority is 0-100 where low is good. Invert for the
+        # shared thresholds below (65+ = good, 40-64 = moderate, <40 = poor).
+        inv_p50 = max(0.0, 100.0 - summary['priority_p50'])
+        inv_p90 = max(0.0, 100.0 - summary['priority_p90'])
+        inv_worst = max(0.0, 100.0 - worst_file.priority_score)
 
         metrics = [
             ('Total Files', f"{summary['total_files']:,}", None),
             ('Code Lines (SLOC)', f"{summary['total_code_lines']:,}", None),
-            ('Avg Maintainability', f"{summary['avg_maintainability']:.1f}",
-             summary['avg_maintainability']),
-            ('Worst MI File', f"{self._short_file_name(worst_mi_file.filepath)}\nMI: {worst_mi_file.maintainability_index:.1f}",
-             worst_mi_file.maintainability_index),
-            ('Max Cyclomatic', f"{summary['max_cyclomatic']}\n{self._short_file_name(max_cc_file.filepath)}",
-             100 - min(summary['max_cyclomatic'], 100)),  # invert so low = bad
-            ('Est. Total Bugs', f"{summary['total_estimated_bugs']:.1f}",
-             max(0, 100 - summary['total_estimated_bugs'])),  # invert
+            ('High-priority files',
+             f"{summary['priority_high_count']}\n({summary['priority_high_pct']:.1f}%)",
+             100 - summary['priority_high_pct']),
+            ('P50 file score', f"{summary['priority_p50']:.1f}", inv_p50),
+            ('P90 file score', f"{summary['priority_p90']:.1f}", inv_p90),
+            ('Worst file',
+             f"{self._short_file_name(worst_file.filepath)}\nscore: {worst_file.priority_score:.1f}",
+             inv_worst),
         ]
 
         fig = plt.figure(figsize=(16, 8))
@@ -2063,6 +2695,7 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
             'return_count': func.return_count,
             'case_count': func.case_count,
             'priority_score': func.priority_score,
+            'priority_factors': func.priority_factors,
             'tags': func.tags,
             'extract_candidates': func.extract_candidates,
         }
@@ -2085,7 +2718,12 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
             'halstead_effort': round(fm.halstead.effort, 2),
             'estimated_bugs': round(fm.halstead.bugs_delivered, 3),
             'priority_score': fm.priority_score,
+            'priority_factors': fm.priority_factors,
             'worst_function_score': fm.worst_function_score,
+            'fan_in': fm.fan_in,
+            'fan_out': fm.fan_out,
+            'in_cycle': fm.in_cycle,
+            'classes': fm.classes,
             'tags': fm.tags,
             'todo_count': fm.todo_count,
             'fixme_count': fm.fixme_count,
@@ -2100,11 +2738,11 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
             out['top_functions'] = [function_to_dict(f) for f in top]
         return out
 
-    # Ranked lists (top 20 each). `top_complex_files` and `lowest_maintainability_files`
+    # Ranked lists (top 20 each). `top_priority_files` and `top_complex_files`
     # embed per-file top functions so downstream consumers (including Claude) can see
     # which part of a file is the problem without a second pass.
+    top_priority = sorted(analyzer.file_metrics, key=lambda f: f.priority_score, reverse=True)[:20]
     top_complex = sorted(analyzer.file_metrics, key=lambda f: f.cyclomatic_complexity, reverse=True)[:20]
-    lowest_mi = sorted(analyzer.file_metrics, key=lambda f: f.maintainability_index)[:20]
     deepest_nesting = sorted(analyzer.file_metrics, key=lambda f: f.max_nesting_depth, reverse=True)[:20]
     largest = sorted(analyzer.file_metrics, key=lambda f: f.code_lines, reverse=True)[:20]
 
@@ -2115,9 +2753,20 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
         reverse=True,
     )[:50]
 
-    # Directories
+    # Low-cohesion classes: classes with LCOM5 >= 0.7 (at least one "split by
+    # responsibility" candidate). Include file path so the link is clickable.
+    low_cohesion: List[Dict] = []
+    for fm in analyzer.file_metrics:
+        for cls in fm.classes:
+            if cls['lcom5'] >= 0.7 and cls['method_count'] >= 3 and cls['field_count'] >= 3:
+                low_cohesion.append({**cls, 'file': fm.filepath})
+    low_cohesion.sort(key=lambda c: (-c['lcom5'], -c['method_count']))
+    low_cohesion = low_cohesion[:30]
+
+    # Directories — ranked by worst file, not code lines, so the first entries are
+    # the places that need attention.
     dir_list = []
-    for dm in sorted(analyzer.directory_metrics.values(), key=lambda d: d.code_lines, reverse=True):
+    for dm in sorted(analyzer.directory_metrics.values(), key=lambda d: d.max_priority, reverse=True):
         comment_ratio = dm.comment_lines / dm.code_lines if dm.code_lines > 0 else 0
         dir_list.append({
             'path': dm.path,
@@ -2129,6 +2778,10 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
             'avg_cyclomatic': round(dm.avg_cyclomatic, 2),
             'avg_cognitive': round(dm.avg_cognitive, 2),
             'avg_maintainability': round(dm.avg_maintainability, 2),
+            'max_priority': dm.max_priority,
+            'p90_priority': dm.p90_priority,
+            'p50_priority': dm.p50_priority,
+            'worst_file': dm.worst_file,
             'total_functions': dm.total_functions,
             'total_classes': dm.total_classes,
             'comment_ratio': round(comment_ratio, 4),
@@ -2156,9 +2809,13 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
         'summary': summary,
         'directories': dir_list,
         'function_hotspots': [function_to_dict(f) for f in function_hotspots],
+        'low_cohesion_classes': low_cohesion,
+        'llm_suggestions': analyzer.llm_suggestions,
+        'duplicate_clusters': analyzer.duplicate_clusters,
+        'include_cycles': analyzer.include_cycles,
         'tech_debt_markers': tech_debt[:500],
+        'top_priority_files': [file_to_dict(f, include_top_functions=True) for f in top_priority],
         'top_complex_files': [file_to_dict(f, include_top_functions=True) for f in top_complex],
-        'lowest_maintainability_files': [file_to_dict(f, include_top_functions=True) for f in lowest_mi],
         'deepest_nesting_files': [file_to_dict(f) for f in deepest_nesting],
         'largest_files': [file_to_dict(f) for f in largest],
         'all_files': [file_to_dict(f) for f in analyzer.file_metrics],
@@ -2207,9 +2864,10 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
                    f'Functions: **{summary["total_functions"]:,}**, Classes: **{summary["total_classes"]:,}**')
         out.append(f'- Avg Cyclomatic: **{summary["avg_cyclomatic"]:.1f}** (max {summary["max_cyclomatic"]}), '
                    f'Avg Cognitive: **{summary["avg_cognitive"]:.1f}** (max {summary["max_cognitive"]})')
-        out.append(f'- Avg Maintainability Index: **{summary["avg_maintainability"]:.1f}** '
-                   f'(min {summary["min_maintainability"]:.1f}) — {summary.get("overall_rating", "")}')
-        out.append(f'- Estimated bugs (Halstead B): **{summary["total_estimated_bugs"]:.1f}**')
+        out.append(f'- Priority score distribution: **{summary["priority_high_count"]}** high (>=70, '
+                   f'{summary["priority_high_pct"]:.1f}%), **{summary["priority_medium_count"]}** medium, '
+                   f'**{summary["priority_low_count"]}** low. P50={summary["priority_p50"]}, '
+                   f'P90={summary["priority_p90"]}.')
     out.append('')
 
     out.append('## Suggested refactoring queue (top 20 functions)\n')
@@ -2230,16 +2888,32 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
             f'nesting={func.max_nesting_depth}, LOC={func.code_lines}, '
             f'params={func.param_count}, returns={func.return_count}'
         )
+        if func.priority_factors:
+            # Show factors sorted by contribution so the dominant one is first.
+            ordered = sorted(func.priority_factors.items(), key=lambda kv: -kv[1])
+            factors_str = ', '.join(f'{k}={v:.0f}%' for k, v in ordered if v > 0)
+            if factors_str:
+                out.append(f'Score breakdown: {factors_str}')
         if func.extract_candidates:
             out.append('')
             out.append('Extract candidates:')
             for cand in func.extract_candidates[:3]:
                 out.append(f'- Lines {cand["start_line"]}-{cand["end_line"]} '
                            f'(depth {cand["peak_depth"]}+ for {cand["line_count"]} lines)')
-        suggestion = _suggest_refactor(func.tags)
-        if suggestion:
+            # Concrete refactor hint: point at the worst extract candidate (most lines,
+            # tie-broken by peak depth). Better than generic "flatten with guard clauses".
+            worst = max(func.extract_candidates, key=lambda c: (c['line_count'], c['peak_depth']))
             out.append('')
-            out.append(f'Suggested approach: {suggestion}.')
+            out.append(
+                f'Suggested approach: extract `{func.filepath}:{worst["start_line"]}-'
+                f'{worst["end_line"]}` (the depth-{worst["peak_depth"]}+ block of '
+                f'{worst["line_count"]} lines) into a helper.'
+            )
+        else:
+            suggestion = _suggest_refactor(func.tags)
+            if suggestion:
+                out.append('')
+                out.append(f'Suggested approach: {suggestion}.')
         out.append('')
 
     # File-level trouble spots
@@ -2247,16 +2921,96 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
     if tagged_files:
         out.append('## Tagged files\n')
         tagged_files.sort(key=lambda f: f.priority_score, reverse=True)
-        out.append('| File | Tags | Priority | MI | CC | Cog | LOC | Funcs |')
+        out.append('| File | Tags | Priority | CC | Cog | Nesting | LOC | Funcs |')
         out.append('| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |')
         for f in tagged_files[:25]:
             tags = ', '.join(f'`{t}`' for t in f.tags)
             out.append(
                 f'| `{f.filepath}` | {tags} | {f.priority_score:.1f} | '
-                f'{f.maintainability_index:.1f} | {f.cyclomatic_complexity} | '
-                f'{f.cognitive_complexity} | {f.code_lines} | {f.function_count} |'
+                f'{f.cyclomatic_complexity} | {f.cognitive_complexity} | '
+                f'{f.max_nesting_depth} | {f.code_lines} | {f.function_count} |'
             )
         out.append('')
+
+    # LLM-generated refactor suggestions (opt-in via --llm-suggestions).
+    if analyzer.llm_suggestions:
+        out.append(f'## AI-suggested refactors ({len(analyzer.llm_suggestions)} function(s))\n')
+        out.append('Generated by the Anthropic API. One structured recommendation per top '
+                   'hotspot; re-running with unchanged source hits the disk cache (no '
+                   'repeat API calls).\n')
+        for entry in analyzer.llm_suggestions:
+            out.append(f'### `{entry["file"]}:{entry["line"]}` — `{entry["name"]}` '
+                       f'(score {entry["priority_score"]:.1f})')
+            if entry.get('summary'):
+                out.append(f'**Summary:** {entry["summary"]}')
+            for rec in entry.get('recommendations', []):
+                out.append(f'- **{rec.get("approach", "")}** '
+                           f'(lines {rec.get("target_lines", "?")}): '
+                           f'{rec.get("expected_benefit", "")}')
+            out.append('')
+
+    # Low-cohesion classes — LCOM5 ≥ 0.7 means most methods touch few fields.
+    # These are classes that probably want splitting by responsibility.
+    low_cohesion: List[Dict] = []
+    for fm in analyzer.file_metrics:
+        for cls in fm.classes:
+            if cls['lcom5'] >= 0.7 and cls['method_count'] >= 3 and cls['field_count'] >= 3:
+                low_cohesion.append({**cls, 'file': fm.filepath})
+    low_cohesion.sort(key=lambda c: (-c['lcom5'], -c['method_count']))
+    if low_cohesion:
+        out.append('## Low-cohesion classes (LCOM5 >= 0.7, top 15)\n')
+        out.append('LCOM5 = 1 - (method/field touches) / (methods * fields). Near 1.0 means '
+                   'methods mostly use disjoint subsets of the fields — a split-responsibilities '
+                   'candidate.\n')
+        out.append('| Class | File | LCOM5 | Methods | Fields |')
+        out.append('| --- | --- | ---: | ---: | ---: |')
+        for c in low_cohesion[:15]:
+            out.append(
+                f'| `{c["name"]}` | `{c["file"]}:{c["start_line"]}` | '
+                f'{c["lcom5"]:.2f} | {c["method_count"]} | {c["field_count"]} |'
+            )
+        out.append('')
+
+    # Coupling hotspots — highest fan-in headers are the ones most widely depended on;
+    # changing them ripples through the codebase.
+    high_fanin = sorted(
+        [f for f in analyzer.file_metrics if f.fan_in > 0],
+        key=lambda f: -f.fan_in
+    )[:15]
+    if high_fanin:
+        out.append('## Coupling: highest fan-in (top 15)\n')
+        out.append('Files included by the most other files. High fan-in = change risk.\n')
+        out.append('| File | Fan-in | Fan-out | In cycle |')
+        out.append('| --- | ---: | ---: | :---: |')
+        for f in high_fanin:
+            cycle_mark = '**yes**' if f.in_cycle else ''
+            out.append(f'| `{f.filepath}` | {f.fan_in} | {f.fan_out} | {cycle_mark} |')
+        out.append('')
+
+    if analyzer.include_cycles:
+        out.append(f'## Include cycles ({len(analyzer.include_cycles)} total)\n')
+        out.append('Strongly-connected components in the `#include` graph. Any cycle means '
+                   'the files in it are mutually dependent — the clearest architectural red '
+                   'flag in a C++ codebase.\n')
+        for i, cycle in enumerate(analyzer.include_cycles[:10], 1):
+            out.append(f'### Cycle {i} ({len(cycle)} files)')
+            for path in cycle:
+                out.append(f'- `{path}`')
+            out.append('')
+
+    # Duplicate clusters — token-normalized Jaccard ≥ threshold. Each cluster is a
+    # group of functions that look near-identical at a shape level.
+    if analyzer.duplicate_clusters:
+        out.append(f'## Near-duplicate functions ({len(analyzer.duplicate_clusters)} cluster(s))\n')
+        out.append('Token-normalized Jaccard similarity over 5-gram shingles '
+                   f'(threshold >= {int(_DUP_JACCARD_THRESHOLD * 100)}%). Identifiers and '
+                   'numbers are normalized, so variables can differ without breaking a match.\n')
+        for i, cluster in enumerate(analyzer.duplicate_clusters[:20], 1):
+            out.append(f'### Cluster {i} ({len(cluster)} functions)')
+            for m in cluster:
+                out.append(f'- `{m["file"]}:{m["line"]}` — `{m["name"]}` '
+                           f'(score {m["priority_score"]:.1f}, LOC {m["code_lines"]})')
+            out.append('')
 
     # Tech-debt markers
     all_markers = [
@@ -2271,15 +3025,20 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
             out.append(f'- `{filepath}:{marker["line"]}` **{marker["marker"]}** {text}')
         out.append('')
 
-    # Directory overview
-    out.append('## Directories (top 15 by code lines)\n')
-    out.append('| Directory | Files | LOC | Avg CC | Avg Cog | Avg MI |')
-    out.append('| --- | ---: | ---: | ---: | ---: | ---: |')
-    dirs = sorted(analyzer.directory_metrics.values(), key=lambda d: d.code_lines, reverse=True)[:15]
+    # Directory overview — ranked by worst file so one godfile can't hide in a big dir.
+    out.append('## Directories (top 15 by worst file)\n')
+    out.append('| Directory | Files | LOC | Max priority | P50 priority | Avg CC | Worst file |')
+    out.append('| --- | ---: | ---: | ---: | ---: | ---: | --- |')
+    dirs = sorted(analyzer.directory_metrics.values(),
+                  key=lambda d: getattr(d, 'max_priority', 0.0), reverse=True)[:15]
     for d in dirs:
+        max_p = getattr(d, 'max_priority', 0.0)
+        p50_p = getattr(d, 'p50_priority', 0.0)
+        worst_file = getattr(d, 'worst_file', '')
         out.append(
             f'| `{d.path}` | {d.file_count} | {d.code_lines:,} | '
-            f'{d.avg_cyclomatic:.1f} | {d.avg_cognitive:.1f} | {d.avg_maintainability:.1f} |'
+            f'{max_p:.1f} | {p50_p:.1f} | {d.avg_cyclomatic:.1f} | '
+            f'`{worst_file}` |'
         )
     out.append('')
 
@@ -2291,55 +3050,779 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
     print(f"  Markdown report exported to: {md_path}")
 
 
-def apply_baseline(analyzer: CppAnalyzer, baseline_path: Path) -> Dict:
-    """
-    Compare current function hotspots against a baseline JSON produced by a previous run.
+_HTML_TEMPLATE = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Code Complexity Report</title>
+<style>
+:root {
+  --bg: #0f1419;
+  --panel: #1b2028;
+  --panel-2: #232a34;
+  --border: #2f3742;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #4393c3;
+  --good: #56d364;
+  --warn: #e3b341;
+  --bad: #f85149;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); }
+header { padding: 20px 32px; border-bottom: 1px solid var(--border); background: var(--panel); }
+header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+header .root { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+main { padding: 24px 32px; max-width: 1400px; margin: 0 auto; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 32px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+.card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.card .value { font-size: 28px; font-weight: 600; margin-top: 6px; }
+.card.bad .value { color: var(--bad); }
+.card.warn .value { color: var(--warn); }
+.card.good .value { color: var(--good); }
+section { margin-bottom: 40px; }
+section h2 { font-size: 18px; font-weight: 600; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+section .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.filter { margin-bottom: 12px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: inherit; width: 100%; max-width: 420px; }
+table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { background: var(--panel-2); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap; }
+th:hover { color: var(--text); }
+th .arrow { opacity: 0.4; font-size: 10px; margin-left: 4px; }
+th.sorted .arrow { opacity: 1; color: var(--accent); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--panel-2); }
+td.mono, td .path { font-family: var(--mono); font-size: 12px; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.bad { color: var(--bad); font-weight: 600; }
+td.warn { color: var(--warn); font-weight: 600; }
+td.good { color: var(--good); }
+.cluster, .cycle { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; margin-bottom: 8px; }
+.cluster summary, .cycle summary { cursor: pointer; font-weight: 600; }
+.cluster ul, .cycle ul { margin: 10px 0 0; padding-left: 20px; }
+.cluster li, .cycle li { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.factors { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 2px; }
+footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px 0 32px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Code Complexity Report</h1>
+  <div class="root" id="root-path"></div>
+</header>
+<main>
+  <section class="summary" id="summary"></section>
 
-    Returns a dict with 'regressions' (functions whose priority_score rose >=10 since
-    baseline) and 'improvements' (dropped >=10). Both lists include the function's
-    current metrics and the delta, sorted by absolute delta.
+  <section>
+    <h2>Refactoring queue <span id="hotspot-count"></span></h2>
+    <p class="hint">Top function hotspots by composite priority score. Click a column header to re-sort; type in the filter box to narrow the list.</p>
+    <input class="filter" id="hotspot-filter" placeholder="Filter by file or function name...">
+    <table id="hotspot-table"><thead></thead><tbody></tbody></table>
+  </section>
+
+  <section id="llm-section" hidden>
+    <h2>AI-suggested refactors <span id="llm-count"></span></h2>
+    <p class="hint">Generated by the Anthropic API on the top hotspots. Disk-cached &mdash; re-runs on unchanged code cost nothing.</p>
+    <div id="llm-list"></div>
+  </section>
+
+  <section id="low-cohesion-section" hidden>
+    <h2>Low-cohesion classes <span id="lcom-count"></span></h2>
+    <p class="hint">LCOM5 &ge; 0.7 — methods use mostly disjoint subsets of fields. Candidates to split by responsibility.</p>
+    <table id="lcom-table"><thead></thead><tbody></tbody></table>
+  </section>
+
+  <section id="coupling-section" hidden>
+    <h2>Coupling: highest fan-in</h2>
+    <p class="hint">Files most widely included. High fan-in = changes here ripple through the tree.</p>
+    <table id="fanin-table"><thead></thead><tbody></tbody></table>
+  </section>
+
+  <section id="cycles-section" hidden>
+    <h2>Include cycles <span id="cycle-count"></span></h2>
+    <p class="hint">Strongly-connected components in the <code>#include</code> graph. Any cycle is a direct architectural red flag.</p>
+    <div id="cycles-list"></div>
+  </section>
+
+  <section id="duplicates-section" hidden>
+    <h2>Near-duplicate functions <span id="dup-count"></span></h2>
+    <p class="hint">Token-normalized 5-gram Jaccard similarity. Variables can differ without breaking a match.</p>
+    <div id="dup-list"></div>
+  </section>
+
+  <section id="techdebt-section" hidden>
+    <h2>Tech-debt markers <span id="td-count"></span></h2>
+    <input class="filter" id="td-filter" placeholder="Filter by file or text...">
+    <table id="td-table"><thead></thead><tbody></tbody></table>
+  </section>
+</main>
+<footer>Generated by analyze_code_complexity.py &mdash; this file is self-contained.</footer>
+<script>
+const data = /*__DATA__*/;
+
+function setText(id, t) { const el = document.getElementById(id); if (el) el.textContent = t; }
+function show(id) { const el = document.getElementById(id); if (el) el.hidden = false; }
+function el(tag, attrs, children) {
+  const n = document.createElement(tag);
+  if (attrs) for (const k in attrs) { if (k === 'class') n.className = attrs[k]; else if (k === 'hidden') n.hidden = attrs[k]; else n.setAttribute(k, attrs[k]); }
+  if (children) for (const c of children) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  return n;
+}
+function scoreClass(v) { return v >= 70 ? 'bad' : v >= 40 ? 'warn' : 'good'; }
+
+// --- Summary ---
+setText('root-path', data.root || '');
+const s = data.summary || {};
+const summaryEl = document.getElementById('summary');
+const cards = [
+  ['Files', s.total_files, null],
+  ['Code lines', (s.total_code_lines || 0).toLocaleString(), null],
+  ['High-priority files', `${s.priority_high_count || 0} (${(s.priority_high_pct||0).toFixed(1)}%)`, (s.priority_high_pct || 0) >= 10 ? 'bad' : 'warn'],
+  ['P50 file score', s.priority_p50, scoreClass(s.priority_p50 || 0)],
+  ['P90 file score', s.priority_p90, scoreClass(s.priority_p90 || 0)],
+  ['Max cyclomatic', s.max_cyclomatic, s.max_cyclomatic > 50 ? 'bad' : s.max_cyclomatic > 20 ? 'warn' : 'good'],
+];
+for (const [label, value, cls] of cards) {
+  if (value === undefined || value === null) continue;
+  const card = el('div', { class: 'card' + (cls ? ' ' + cls : '') }, [
+    el('div', { class: 'label' }, [label]),
+    el('div', { class: 'value' }, [String(value)]),
+  ]);
+  summaryEl.appendChild(card);
+}
+
+// --- Sortable table helper ---
+function buildTable(tableEl, rows, columns, formatters) {
+  const thead = tableEl.querySelector('thead');
+  const tbody = tableEl.querySelector('tbody');
+  thead.innerHTML = '';
+  const hr = el('tr');
+  let sortCol = 0, sortAsc = false;
+  for (let i = 0; i < columns.length; i++) {
+    const th = el('th', {}, [columns[i].label, el('span', { class: 'arrow' }, ['\u25BC'])]);
+    th.addEventListener('click', () => {
+      if (sortCol === i) sortAsc = !sortAsc; else { sortCol = i; sortAsc = columns[i].numeric ? false : true; }
+      render();
+    });
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  let filter = '';
+
+  function render() {
+    const sorted = rows.slice().filter(r => {
+      if (!filter) return true;
+      return columns.some(c => String(r[c.key] || '').toLowerCase().includes(filter));
+    });
+    sorted.sort((a, b) => {
+      const av = a[columns[sortCol].key], bv = b[columns[sortCol].key];
+      const c = columns[sortCol].numeric ? (av || 0) - (bv || 0) : String(av || '').localeCompare(String(bv || ''));
+      return sortAsc ? c : -c;
+    });
+    // Update header arrow state
+    const ths = thead.querySelectorAll('th');
+    for (let i = 0; i < ths.length; i++) {
+      ths[i].classList.toggle('sorted', i === sortCol);
+      ths[i].querySelector('.arrow').textContent = sortCol === i ? (sortAsc ? '\u25B2' : '\u25BC') : '\u25BC';
+    }
+    tbody.innerHTML = '';
+    for (const r of sorted) {
+      const tr = el('tr');
+      for (const c of columns) {
+        const raw = r[c.key];
+        const td = el('td', { class: (c.numeric ? 'num ' : '') + (c.mono ? 'mono ' : '') + (c.colour ? c.colour(raw) || '' : '') });
+        if (formatters && formatters[c.key]) formatters[c.key](td, raw, r); else td.textContent = raw == null ? '' : String(raw);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+  render();
+  return { setFilter: v => { filter = (v || '').toLowerCase(); render(); } };
+}
+
+// --- Hotspots table ---
+const hotspots = data.function_hotspots || [];
+setText('hotspot-count', `(${hotspots.length})`);
+const hotspotTable = buildTable(
+  document.getElementById('hotspot-table'),
+  hotspots,
+  [
+    { key: 'priority_score', label: 'Score', numeric: true, colour: v => scoreClass(v) },
+    { key: 'file', label: 'File', mono: true },
+    { key: 'name', label: 'Function', mono: true },
+    { key: 'cyclomatic_complexity', label: 'CC', numeric: true },
+    { key: 'cognitive_complexity', label: 'Cog', numeric: true },
+    { key: 'max_nesting_depth', label: 'Nest', numeric: true },
+    { key: 'code_lines', label: 'LOC', numeric: true },
+  ],
+  {
+    file: (td, v, r) => { td.textContent = `${v}:${r.start_line}`; },
+    name: (td, v, r) => {
+      td.appendChild(document.createTextNode(v || ''));
+      if (r.priority_factors) {
+        const pf = Object.entries(r.priority_factors).filter(([,x]) => x > 0).sort((a,b) => b[1]-a[1]);
+        if (pf.length) {
+          const fact = el('div', { class: 'factors' }, [pf.map(([k,v]) => `${k}=${Math.round(v)}%`).join(' ')]);
+          td.appendChild(fact);
+        }
+      }
+    },
+  }
+);
+document.getElementById('hotspot-filter').addEventListener('input', e => hotspotTable.setFilter(e.target.value));
+
+// --- LLM suggestions ---
+const llm = data.llm_suggestions || [];
+if (llm.length) {
+  show('llm-section');
+  setText('llm-count', `(${llm.length})`);
+  const list = document.getElementById('llm-list');
+  for (const entry of llm) {
+    const recs = (entry.recommendations || []).map(r => el('li', {}, [
+      `${r.approach} (lines ${r.target_lines}): ${r.expected_benefit}`,
+    ]));
+    const d = el('details', { class: 'cluster' }, [
+      el('summary', {}, [`${entry.file}:${entry.line} \u2014 ${entry.name}`]),
+    ]);
+    if (entry.summary) d.appendChild(el('p', {}, [entry.summary]));
+    if (recs.length) d.appendChild(el('ul', {}, recs));
+    list.appendChild(d);
+  }
+}
+
+// --- Low-cohesion classes ---
+const lcom = data.low_cohesion_classes || [];
+if (lcom.length) {
+  show('low-cohesion-section');
+  setText('lcom-count', `(${lcom.length})`);
+  buildTable(
+    document.getElementById('lcom-table'),
+    lcom,
+    [
+      { key: 'lcom5', label: 'LCOM5', numeric: true, colour: v => v >= 0.85 ? 'bad' : 'warn' },
+      { key: 'name', label: 'Class', mono: true },
+      { key: 'file', label: 'File', mono: true },
+      { key: 'method_count', label: 'Methods', numeric: true },
+      { key: 'field_count', label: 'Fields', numeric: true },
+    ],
+    { file: (td, v, r) => { td.textContent = `${v}:${r.start_line}`; } }
+  );
+}
+
+// --- Coupling fan-in ---
+const files = data.all_files || [];
+const fanin = files.filter(f => f.fan_in > 0).sort((a,b) => b.fan_in - a.fan_in).slice(0, 30);
+if (fanin.length) {
+  show('coupling-section');
+  buildTable(
+    document.getElementById('fanin-table'),
+    fanin,
+    [
+      { key: 'fan_in', label: 'Fan-in', numeric: true, colour: v => v > 50 ? 'bad' : v > 20 ? 'warn' : 'good' },
+      { key: 'fan_out', label: 'Fan-out', numeric: true },
+      { key: 'filepath', label: 'File', mono: true },
+      { key: 'in_cycle', label: 'In cycle', colour: v => v ? 'bad' : '' },
+    ],
+    { in_cycle: (td, v) => { td.textContent = v ? 'yes' : ''; } }
+  );
+}
+
+// --- Include cycles ---
+const cycles = data.include_cycles || [];
+if (cycles.length) {
+  show('cycles-section');
+  setText('cycle-count', `(${cycles.length})`);
+  const list = document.getElementById('cycles-list');
+  for (const c of cycles.slice(0, 30)) {
+    const d = el('details', { class: 'cycle' }, [
+      el('summary', {}, [`Cycle of ${c.length} files`]),
+      el('ul', {}, c.map(p => el('li', {}, [p]))),
+    ]);
+    list.appendChild(d);
+  }
+}
+
+// --- Duplicate clusters ---
+const clusters = data.duplicate_clusters || [];
+if (clusters.length) {
+  show('duplicates-section');
+  setText('dup-count', `(${clusters.length} cluster${clusters.length === 1 ? '' : 's'})`);
+  const list = document.getElementById('dup-list');
+  for (let i = 0; i < Math.min(clusters.length, 50); i++) {
+    const c = clusters[i];
+    const items = c.map(m => el('li', {}, [`${m.file}:${m.line} \u2014 ${m.name} (score ${m.priority_score.toFixed(1)}, LOC ${m.code_lines})`]));
+    const d = el('details', { class: 'cluster' }, [
+      el('summary', {}, [`Cluster ${i + 1}: ${c.length} functions`]),
+      el('ul', {}, items),
+    ]);
+    list.appendChild(d);
+  }
+}
+
+// --- Tech debt ---
+const td = data.tech_debt_markers || [];
+if (td.length) {
+  show('techdebt-section');
+  setText('td-count', `(${td.length})`);
+  const tdTable = buildTable(
+    document.getElementById('td-table'),
+    td,
+    [
+      { key: 'marker', label: 'Kind', colour: v => v === 'FIXME' || v === 'HACK' ? 'bad' : 'warn' },
+      { key: 'file', label: 'File', mono: true },
+      { key: 'line', label: 'Line', numeric: true },
+      { key: 'text', label: 'Text' },
+    ],
+    { file: (td, v, r) => { td.textContent = `${v}:${r.line}`; } }
+  );
+  document.getElementById('td-filter').addEventListener('input', e => tdTable.setFilter(e.target.value));
+}
+</script>
+</body>
+</html>
+'''
+
+
+def export_html(analyzer: "CppAnalyzer", output_dir: Path) -> None:
+    """
+    Export a self-contained HTML dashboard. Embeds the full JSON report inline so
+    the file works offline, no CDN / external assets. Uses vanilla JS for sortable
+    tables and filter boxes — zero dependencies, reviewer opens the file and it
+    works everywhere.
+
+    The embedded JSON is the exact same payload as analysis_report.json so all
+    fields are available client-side; the page just chooses which to surface.
     """
     import json
-    try:
-        with open(baseline_path, 'r', encoding='utf-8') as f:
-            baseline = json.load(f)
-    except Exception as e:
-        print(f"  Warning: could not load baseline {baseline_path}: {e}")
-        return {'regressions': [], 'improvements': []}
+    # Reuse the JSON builder — write to a buffer, parse back, inject into template.
+    # Slightly wasteful but keeps the two exports perfectly in sync.
+    tmp = output_dir / '_html_data.json'
+    export_json(analyzer, output_dir)
+    json_path = output_dir / 'analysis_report.json'
+    data = json_path.read_text(encoding='utf-8')
+    # Add a `root` key for the dashboard header — the JSON report doesn't
+    # serialize root_path at the top level, so inject it here.
+    parsed = json.loads(data)
+    parsed['root'] = str(analyzer.root_path)
+    injected = json.dumps(parsed, default=str)
+    html = _HTML_TEMPLATE.replace('/*__DATA__*/', injected)
+    html_path = output_dir / 'analysis_report.html'
+    html_path.write_text(html, encoding='utf-8')
+    # Cleanup the unused temp file (never actually created — guard against it anyway).
+    if tmp.exists():
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    print(f"  HTML dashboard exported to: {html_path}")
 
-    # Index baseline functions by (file, name, start_line). start_line drift is possible
-    # after edits, so also fall back to (file, name) as a second index.
-    by_triple: Dict[Tuple[str, str, int], dict] = {}
-    by_pair: Dict[Tuple[str, str], dict] = {}
-    for func in baseline.get('function_hotspots', []):
-        triple = (func.get('file', ''), func.get('name', ''), int(func.get('start_line', 0)))
-        by_triple[triple] = func
-        by_pair.setdefault((triple[0], triple[1]), func)
 
-    regressions = []
-    improvements = []
+_SARIF_RULES: Dict[str, Dict[str, str]] = {
+    'priority-high': {
+        'name': 'HighPriorityRefactor',
+        'short': 'Function scored >=70 on composite priority index',
+        'level': 'warning',
+    },
+    'nesting-hell': {
+        'name': 'NestingHell',
+        'short': 'Deep nesting with few branches — flatten with guard clauses',
+        'level': 'warning',
+    },
+    'very-long-function': {
+        'name': 'VeryLongFunction',
+        'short': 'Function exceeds very-long-function threshold',
+        'level': 'warning',
+    },
+    'long-function': {
+        'name': 'LongFunction',
+        'short': 'Function exceeds long-function threshold',
+        'level': 'note',
+    },
+    'big-switch': {
+        'name': 'BigSwitch',
+        'short': 'Large switch — consider dispatch table or polymorphism',
+        'level': 'note',
+    },
+    'complex-branching': {
+        'name': 'ComplexBranching',
+        'short': 'High cyclomatic complexity — too many branches',
+        'level': 'warning',
+    },
+    'hard-to-follow': {
+        'name': 'HardToFollow',
+        'short': 'High cognitive complexity',
+        'level': 'warning',
+    },
+    'many-params': {
+        'name': 'ManyParameters',
+        'short': 'Long parameter list — introduce a parameter object',
+        'level': 'note',
+    },
+    'low-cohesion': {
+        'name': 'LowCohesion',
+        'short': 'Class has LCOM5 >= 0.7; methods use disjoint fields',
+        'level': 'warning',
+    },
+    'include-cycle': {
+        'name': 'IncludeCycle',
+        'short': 'File participates in an #include cycle',
+        'level': 'error',
+    },
+    'near-duplicate': {
+        'name': 'NearDuplicate',
+        'short': 'Near-duplicate function detected (Jaccard >= 85%)',
+        'level': 'note',
+    },
+}
+
+
+def export_sarif(analyzer: CppAnalyzer, output_dir: Path) -> None:
+    """
+    Export findings in SARIF 2.1.0 format so IDEs and GitHub Code Scanning can
+    consume them. Findings:
+      - one per function hotspot with priority_score >= 70 (rule: priority-high)
+      - one per tagged function per tag (rule: matching tag name)
+      - one per low-cohesion class (rule: low-cohesion)
+      - one per include-cycle member (rule: include-cycle)
+      - one per duplicate cluster leader (rule: near-duplicate)
+
+    SARIF's `ruleId` maps to `_SARIF_RULES`; each rule carries a level and short
+    description. Absolute paths are emitted only when the analyzer's filepaths
+    are already absolute; otherwise a relative `uri` is used with `uriBaseId`
+    pointing at the analysis root.
+    """
+    import json
+
+    rules = []
+    for rule_id, info in _SARIF_RULES.items():
+        rules.append({
+            'id': rule_id,
+            'name': info['name'],
+            'shortDescription': {'text': info['short']},
+            'defaultConfiguration': {'level': info['level']},
+        })
+
+    def _location(path: str, line: int) -> Dict:
+        return {
+            'physicalLocation': {
+                'artifactLocation': {'uri': path.replace('\\', '/'), 'uriBaseId': 'SRCROOT'},
+                'region': {'startLine': max(1, int(line or 1))},
+            }
+        }
+
+    results: List[Dict] = []
+
+    # High-priority functions + per-tag findings.
     for fm in analyzer.function_metrics:
-        prior = by_triple.get((fm.filepath, fm.name, fm.start_line)) \
-            or by_pair.get((fm.filepath, fm.name))
-        if prior is None:
+        if fm.priority_score >= 70:
+            results.append({
+                'ruleId': 'priority-high',
+                'level': _SARIF_RULES['priority-high']['level'],
+                'message': {
+                    'text': (
+                        f'{fm.name}: priority {fm.priority_score:.1f} '
+                        f'(CC={fm.cyclomatic_complexity}, cog={fm.cognitive_complexity}, '
+                        f'nesting={fm.max_nesting_depth}, LOC={fm.code_lines})'
+                    )
+                },
+                'locations': [_location(fm.filepath, fm.start_line)],
+            })
+        for tag in fm.tags:
+            if tag not in _SARIF_RULES:
+                continue
+            results.append({
+                'ruleId': tag,
+                'level': _SARIF_RULES[tag]['level'],
+                'message': {'text': f'{fm.name}: {_SARIF_RULES[tag]["short"]}'},
+                'locations': [_location(fm.filepath, fm.start_line)],
+            })
+
+    # Low-cohesion classes.
+    for fm in analyzer.file_metrics:
+        for cls in fm.classes:
+            if cls['lcom5'] >= 0.7 and cls['method_count'] >= 3 and cls['field_count'] >= 3:
+                results.append({
+                    'ruleId': 'low-cohesion',
+                    'level': _SARIF_RULES['low-cohesion']['level'],
+                    'message': {
+                        'text': (
+                            f'{cls["name"]}: LCOM5={cls["lcom5"]:.2f}, '
+                            f'{cls["method_count"]} methods, {cls["field_count"]} fields'
+                        )
+                    },
+                    'locations': [_location(fm.filepath, cls['start_line'])],
+                })
+
+    # Include cycles — one finding per file in each cycle.
+    for cycle in analyzer.include_cycles:
+        msg = f'In include cycle with {len(cycle)} file(s): ' + ', '.join(Path(p).name for p in cycle)
+        for path in cycle:
+            results.append({
+                'ruleId': 'include-cycle',
+                'level': _SARIF_RULES['include-cycle']['level'],
+                'message': {'text': msg},
+                'locations': [_location(path, 1)],
+            })
+
+    # Duplicate clusters — one finding on each member, tagged with leader ref.
+    for cluster in analyzer.duplicate_clusters:
+        if len(cluster) < 2:
             continue
-        prior_score = float(prior.get('priority_score', 0.0))
-        delta = fm.priority_score - prior_score
-        if abs(delta) < 10.0:
+        leader = cluster[0]
+        msg = (
+            f'Near-duplicate of {leader["name"]} at '
+            f'{leader["file"]}:{leader["line"]} — cluster size {len(cluster)}'
+        )
+        for member in cluster:
+            results.append({
+                'ruleId': 'near-duplicate',
+                'level': _SARIF_RULES['near-duplicate']['level'],
+                'message': {'text': msg},
+                'locations': [_location(member['file'], member['line'])],
+            })
+
+    sarif = {
+        '$schema': 'https://json.schemastore.org/sarif-2.1.0.json',
+        'version': '2.1.0',
+        'runs': [{
+            'tool': {
+                'driver': {
+                    'name': 'analyze_code_complexity',
+                    'version': JSON_SCHEMA_VERSION,
+                    'informationUri': 'https://sarifweb.azurewebsites.net/',
+                    'rules': rules,
+                }
+            },
+            'originalUriBaseIds': {
+                'SRCROOT': {'uri': str(analyzer.root_path).replace('\\', '/') + '/'}
+            },
+            'results': results,
+        }],
+    }
+
+    sarif_path = output_dir / 'analysis_report.sarif'
+    sarif_path.write_text(json.dumps(sarif, indent=2, default=str), encoding='utf-8')
+    print(f"  SARIF report exported to: {sarif_path}  ({len(results)} finding(s))")
+
+
+_LLM_SYSTEM_PROMPT = """You are a senior C++ engineer reviewing code for refactoring.
+
+You will be given a single function from a C++ codebase along with complexity metrics.
+Return a concise refactor recommendation as structured JSON.
+
+Rules:
+- Be concrete. Point at specific line ranges and patterns when possible.
+- Favour guard clauses / early returns, extract-method, strategy pattern, parameter objects.
+- Avoid generic advice like "flatten nesting" without saying how.
+- Prefer 1-3 high-value recommendations over a long list of minor ones.
+- If the function is complex because the domain is genuinely complex (state machine, parser,
+  codegen), say so and suggest only tractable changes.
+- Your output MUST be valid JSON matching the schema — no prose, no markdown fences.
+"""
+
+
+_LLM_OUTPUT_SCHEMA: Dict = {
+    "type": "object",
+    "properties": {
+        "summary": {
+            "type": "string",
+            "description": "One sentence describing the core problem with this function.",
+        },
+        "recommendations": {
+            "type": "array",
+            "description": "1-3 concrete refactor steps, ordered by impact.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "approach": {
+                        "type": "string",
+                        "description": "Specific refactor technique (e.g. 'extract method', 'guard clauses').",
+                    },
+                    "target_lines": {
+                        "type": "string",
+                        "description": "Line range in the source (e.g. '142-178') or 'whole function'.",
+                    },
+                    "expected_benefit": {
+                        "type": "string",
+                        "description": "What gets easier to read, test, or change.",
+                    },
+                },
+                "required": ["approach", "target_lines", "expected_benefit"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["summary", "recommendations"],
+    "additionalProperties": False,
+}
+
+
+def _read_function_source(root_path: Path, func: FunctionMetrics) -> Optional[str]:
+    """
+    Read the function's source text from the file. Returns lines [start_line, end_line]
+    joined, or None if the file can't be read or the range is invalid.
+    """
+    try:
+        file_path = Path(func.filepath)
+        if not file_path.is_absolute():
+            file_path = root_path / file_path
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+    start = max(0, func.start_line - 1)
+    end = min(len(lines), func.end_line)
+    if end <= start:
+        return None
+    return ''.join(lines[start:end])
+
+
+def generate_llm_suggestions(
+    analyzer: "CppAnalyzer",
+    root_path: Path,
+    max_functions: int,
+    model: str,
+    cache_path: Optional[Path],
+) -> List[Dict]:
+    """
+    Call the Anthropic API once per top-N function hotspot to get a concrete refactor
+    recommendation. Requires `ANTHROPIC_API_KEY` in the environment and the `anthropic`
+    package. Returns an empty list and prints a warning if either is missing.
+
+    Design choices:
+      - Sync calls (small responses, no benefit from streaming at max_tokens=2048).
+      - Prompt caching on the system block: identical across all N calls. On Sonnet 4.6
+        the minimum cacheable prefix is ~2K tokens, so a short prompt silently won't
+        cache — no error, just no savings. The hook is in place if the prompt grows.
+      - Adaptive thinking enabled: helps on complex-nesting cases, costs little on
+        simple ones.
+      - Disk-backed response cache keyed by SHA-256 of (filepath + source text). If the
+        function's source hasn't changed, we skip the API call. Delete the cache file
+        to force a re-run.
+      - Structured outputs via `output_config.format.json_schema` — response is
+        guaranteed to match the schema, no fragile regex parsing.
+    """
+    if not os.environ.get('ANTHROPIC_API_KEY'):
+        print("Warning: ANTHROPIC_API_KEY not set. Skipping --llm-suggestions.")
+        return []
+    try:
+        import anthropic
+    except ImportError:
+        print("Warning: anthropic SDK not installed. Skipping --llm-suggestions. "
+              "Install with: pip install anthropic")
+        return []
+
+    import hashlib
+    import json as _json
+
+    cache: Dict[str, Dict] = {}
+    if cache_path and cache_path.exists():
+        try:
+            cache = _json.loads(cache_path.read_text(encoding='utf-8'))
+        except (OSError, _json.JSONDecodeError):
+            cache = {}
+
+    client = anthropic.Anthropic()
+
+    hotspots = sorted(
+        analyzer.function_metrics,
+        key=lambda f: -f.priority_score,
+    )[:max_functions]
+
+    if not hotspots:
+        return []
+
+    print(f"  Requesting LLM refactor suggestions for {len(hotspots)} function(s)...")
+
+    results: List[Dict] = []
+    for i, fm in enumerate(hotspots, 1):
+        source = _read_function_source(root_path, fm)
+        if source is None:
+            print(f"  [{i}/{len(hotspots)}] skip {fm.name}: unable to read source")
             continue
+
+        source_hash = hashlib.sha256(
+            (fm.filepath + '\n' + source).encode('utf-8', errors='ignore')
+        ).hexdigest()
+        cache_key = f"{model}:{source_hash}"
+
+        if cache_key in cache:
+            print(f"  [{i}/{len(hotspots)}] cache hit: {fm.name}")
+            results.append(cache[cache_key])
+            continue
+
+        tag_str = ', '.join(fm.tags) if fm.tags else 'none'
+        user_prompt = (
+            f"File: {fm.filepath}\n"
+            f"Function: {fm.name}  (lines {fm.start_line}-{fm.end_line})\n"
+            f"Metrics: CC={fm.cyclomatic_complexity}, cognitive={fm.cognitive_complexity}, "
+            f"nesting={fm.max_nesting_depth}, LOC={fm.code_lines}, params={fm.param_count}\n"
+            f"Anti-pattern tags: {tag_str}\n\n"
+            f"Source:\n```cpp\n{source}\n```\n\n"
+            f"Return a JSON refactor recommendation matching the schema."
+        )
+
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=2048,
+                system=[
+                    {
+                        "type": "text",
+                        "text": _LLM_SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                messages=[{"role": "user", "content": user_prompt}],
+                output_config={
+                    "format": {
+                        "type": "json_schema",
+                        "schema": _LLM_OUTPUT_SCHEMA,
+                    }
+                },
+                thinking={"type": "adaptive"},
+            )
+        except anthropic.RateLimitError:
+            print(f"  [{i}/{len(hotspots)}] rate limited, stopping early.")
+            break
+        except anthropic.APIError as e:
+            print(f"  [{i}/{len(hotspots)}] API error on {fm.name}: {e}")
+            continue
+
+        text_block = next((b for b in response.content if getattr(b, 'type', '') == 'text'), None)
+        if not text_block:
+            print(f"  [{i}/{len(hotspots)}] no text block returned for {fm.name}")
+            continue
+
+        try:
+            parsed = _json.loads(text_block.text)
+        except _json.JSONDecodeError as e:
+            print(f"  [{i}/{len(hotspots)}] JSON parse failed for {fm.name}: {e}")
+            continue
+
         entry = {
             'file': fm.filepath,
             'line': fm.start_line,
             'name': fm.name,
-            'previous_score': prior_score,
-            'current_score': fm.priority_score,
-            'delta': round(delta, 1),
+            'priority_score': fm.priority_score,
+            'summary': parsed.get('summary', ''),
+            'recommendations': parsed.get('recommendations', []),
         }
-        (regressions if delta > 0 else improvements).append(entry)
+        results.append(entry)
+        cache[cache_key] = entry
+        print(f"  [{i}/{len(hotspots)}] got suggestion: {fm.name}")
 
-    regressions.sort(key=lambda e: -e['delta'])
-    improvements.sort(key=lambda e: e['delta'])
-    return {'regressions': regressions, 'improvements': improvements}
+    if cache_path:
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(_json.dumps(cache, indent=2), encoding='utf-8')
+        except OSError as e:
+            print(f"  Warning: couldn't write LLM cache to {cache_path}: {e}")
+
+    return results
 
 
 def check_fail_on(analyzer: CppAnalyzer, thresholds: Dict[str, float]) -> List[str]:
@@ -2394,7 +3877,7 @@ def main():
     parser.add_argument(
         '-e', '--exclude',
         nargs='+',
-        default=['Middleware', 'ThirdParty', 'External', 'vendor', 'build', 'Build', '.git'],
+        default=['Middleware', 'ThirdParty', 'External', 'vendor', 'build', 'Build', '.git', '.claude'],
         help='Directories to exclude from analysis'
     )
     parser.add_argument(
@@ -2421,6 +3904,18 @@ def main():
         '--no-md',
         action='store_true',
         help='Skip generating markdown report (generated by default)'
+    )
+    parser.add_argument(
+        '--html',
+        action='store_true',
+        help='Emit a self-contained interactive HTML dashboard (analysis_report.html). '
+             'Zero external dependencies — opens in any browser.'
+    )
+    parser.add_argument(
+        '--sarif',
+        action='store_true',
+        help='Emit a SARIF 2.1.0 findings report (analysis_report.sarif) for IDE / '
+             'GitHub Code Scanning integration.'
     )
     parser.add_argument(
         '--thresholds',
@@ -2454,17 +3949,43 @@ def main():
         help='Emit absolute filepaths in JSON (useful for consumers like Claude Code).'
     )
     parser.add_argument(
-        '--baseline',
-        metavar='PATH',
-        help='Path to a previous analysis_report.json; emit regressions/improvements '
-             'sections comparing the current run against it.'
-    )
-    parser.add_argument(
         '--workers',
         type=int,
         default=0,
         help='Number of worker processes for file analysis. 0 (default) = auto (parallel '
              'for >=200 files). 1 = force sequential.'
+    )
+    parser.add_argument(
+        '--parser',
+        choices=['regex', 'tree-sitter'],
+        default='regex',
+        help='Parser backend for function / class detection. "regex" (default) is '
+             'stdlib-only and approximate. "tree-sitter" is more accurate on nested '
+             'templates, C++20 `requires`, function-try-blocks, and macro-generated '
+             'signatures; requires `pip install tree-sitter tree-sitter-cpp`.'
+    )
+    parser.add_argument(
+        '--llm-suggestions',
+        action='store_true',
+        help='Call the Anthropic API to generate concrete refactor recommendations '
+             'for the top-N function hotspots. Requires `pip install anthropic` and '
+             'ANTHROPIC_API_KEY in the environment. Results are cached on disk so '
+             'repeat runs on unchanged code cost nothing.'
+    )
+    parser.add_argument(
+        '--llm-max',
+        type=int,
+        default=5,
+        metavar='N',
+        help='Max number of functions to request LLM suggestions for (default 5). '
+             'Ignored unless --llm-suggestions is set.'
+    )
+    parser.add_argument(
+        '--llm-model',
+        default=DEFAULT_LLM_MODEL,
+        metavar='MODEL',
+        help=f'Anthropic model ID to use for LLM suggestions (default {DEFAULT_LLM_MODEL}). '
+             'Ignored unless --llm-suggestions is set.'
     )
 
     args = parser.parse_args()
@@ -2495,7 +4016,10 @@ def main():
         thresholds=threshold_overrides,
         ignore_macros=args.ignore_macros,
         exclude_generated=args.exclude_generated,
+        parser_backend=args.parser,
     )
+    if analyzer.parser_backend == 'tree-sitter':
+        print("Using tree-sitter parser.")
     analyzer.analyze(workers=args.workers)
 
     if args.absolute_paths:
@@ -2504,6 +4028,17 @@ def main():
             fm.filepath = str((root_path / fm.filepath).resolve())
         for fm in analyzer.function_metrics:
             fm.filepath = str((root_path / fm.filepath).resolve())
+
+    if args.llm_suggestions:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = output_dir / 'llm_cache.json'
+        analyzer.llm_suggestions = generate_llm_suggestions(
+            analyzer,
+            root_path,
+            max_functions=args.llm_max,
+            model=args.llm_model,
+            cache_path=cache_path,
+        )
 
     analyzer.print_report()
 
@@ -2517,32 +4052,20 @@ def main():
         print("\nExporting markdown report...")
         export_markdown(analyzer, output_dir)
 
+    if args.html:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        print("\nExporting HTML dashboard...")
+        export_html(analyzer, output_dir)
+
+    if args.sarif:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        print("\nExporting SARIF report...")
+        export_sarif(analyzer, output_dir)
+
     if args.csv:
         output_dir.mkdir(parents=True, exist_ok=True)
         print("\nExporting CSV files...")
         export_csv(analyzer, output_dir)
-
-    # Baseline comparison (requires JSON output to be useful; also printed to stdout).
-    if args.baseline:
-        print(f"\nComparing against baseline: {args.baseline}")
-        diff = apply_baseline(analyzer, Path(args.baseline))
-        print(f"  Regressions: {len(diff['regressions'])} functions (score rose >=10)")
-        for entry in diff['regressions'][:10]:
-            print(f"    {entry['file']}:{entry['line']} {entry['name']} "
-                  f"{entry['previous_score']:.1f} -> {entry['current_score']:.1f} "
-                  f"(+{entry['delta']:.1f})")
-        print(f"  Improvements: {len(diff['improvements'])} functions (score fell >=10)")
-        for entry in diff['improvements'][:10]:
-            print(f"    {entry['file']}:{entry['line']} {entry['name']} "
-                  f"{entry['previous_score']:.1f} -> {entry['current_score']:.1f} "
-                  f"({entry['delta']:.1f})")
-        # Persist the diff next to the report so it's machine-readable.
-        if not args.no_json:
-            import json
-            diff_path = output_dir / 'analysis_baseline_diff.json'
-            with open(diff_path, 'w', encoding='utf-8') as f:
-                json.dump(diff, f, indent=2)
-            print(f"  Baseline diff saved to: {diff_path}")
 
     if not args.no_viz and HAS_MATPLOTLIB:
         output_dir.mkdir(parents=True, exist_ok=True)
