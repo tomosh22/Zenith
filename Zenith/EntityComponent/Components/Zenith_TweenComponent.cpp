@@ -291,138 +291,137 @@ void Zenith_TweenComponent::ScaleTo(Zenith_Entity& xEntity, const Zenith_Maths::
 #ifdef ZENITH_TOOLS
 void Zenith_TweenComponent::RenderPropertiesPanel()
 {
-	if (ImGui::CollapsingHeader("Tween", ImGuiTreeNodeFlags_DefaultOpen))
+	if (!ImGui::CollapsingHeader("Tween", ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+	RenderActiveTweensSection();
+	ImGui::Separator();
+	RenderAddTweenSection();
+}
+
+void Zenith_TweenComponent::RenderActiveTweensSection()
+{
+	ImGui::Text("Active Tweens: %u", m_xActiveTweens.GetSize());
+
+	for (uint32_t i = 0; i < m_xActiveTweens.GetSize(); ++i)
 	{
-		ImGui::Text("Active Tweens: %u", m_xActiveTweens.GetSize());
+		ImGui::PushID(static_cast<int>(i));
+		const Zenith_TweenInstance& xTween = m_xActiveTweens.Get(i);
 
-		// Display active tweens with progress bars
-		for (uint32_t i = 0; i < m_xActiveTweens.GetSize(); ++i)
+		const char* szProperty = "Unknown";
+		switch (xTween.m_eProperty)
 		{
-			ImGui::PushID(static_cast<int>(i));
-			const Zenith_TweenInstance& xTween = m_xActiveTweens.Get(i);
-
-			const char* szProperty = "Unknown";
-			switch (xTween.m_eProperty)
-			{
-			case TWEEN_PROPERTY_POSITION: szProperty = "Position"; break;
-			case TWEEN_PROPERTY_SCALE:    szProperty = "Scale"; break;
-			case TWEEN_PROPERTY_ROTATION: szProperty = "Rotation"; break;
-			}
-
-			float fProgress = xTween.GetNormalizedTime();
-			ImGui::Text("%s (%s)", szProperty, Zenith_GetEasingTypeName(xTween.m_eEasing));
-			ImGui::SameLine();
-			ImGui::ProgressBar(fProgress, ImVec2(-1.0f, 0.0f));
-
-			ImGui::PopID();
+		case TWEEN_PROPERTY_POSITION: szProperty = "Position"; break;
+		case TWEEN_PROPERTY_SCALE:    szProperty = "Scale"; break;
+		case TWEEN_PROPERTY_ROTATION: szProperty = "Rotation"; break;
 		}
 
-		if (m_xActiveTweens.GetSize() > 0)
-		{
-			if (ImGui::Button("Cancel All"))
-			{
-				CancelAll();
-			}
-		}
+		ImGui::Text("%s (%s)", szProperty, Zenith_GetEasingTypeName(xTween.m_eEasing));
+		ImGui::SameLine();
+		ImGui::ProgressBar(xTween.GetNormalizedTime(), ImVec2(-1.0f, 0.0f));
 
-		ImGui::Separator();
-
-		// Add Tween section
-		if (ImGui::TreeNode("Add Tween"))
-		{
-			static int ls_iProperty = 0;
-			static int ls_iEasing = 0;
-			static float ls_afFrom[3] = { 0.0f, 0.0f, 0.0f };
-			static float ls_afTo[3] = { 1.0f, 1.0f, 1.0f };
-			static float ls_fDuration = 1.0f;
-			static float ls_fDelay = 0.0f;
-			static bool ls_bLoop = false;
-			static bool ls_bPingPong = false;
-
-			const char* aszProperties[] = { "Position", "Scale", "Rotation" };
-			ImGui::Combo("Property", &ls_iProperty, aszProperties, 3);
-
-			ImGui::DragFloat3("From", ls_afFrom, 0.1f);
-			ImGui::DragFloat3("To", ls_afTo, 0.1f);
-			ImGui::DragFloat("Duration", &ls_fDuration, 0.05f, 0.01f, 60.0f, "%.2fs");
-
-			// Easing type combo
-			if (ImGui::BeginCombo("Easing", Zenith_GetEasingTypeName(static_cast<Zenith_EasingType>(ls_iEasing))))
-			{
-				for (int e = 0; e < EASING_COUNT; ++e)
-				{
-					bool bSelected = (ls_iEasing == e);
-					if (ImGui::Selectable(Zenith_GetEasingTypeName(static_cast<Zenith_EasingType>(e)), bSelected))
-					{
-						ls_iEasing = e;
-					}
-					if (bSelected)
-						ImGui::SetItemDefaultFocus();
-				}
-				ImGui::EndCombo();
-			}
-
-			ImGui::DragFloat("Delay", &ls_fDelay, 0.05f, 0.0f, 60.0f, "%.2fs");
-			ImGui::Checkbox("Loop", &ls_bLoop);
-			if (ls_bLoop)
-			{
-				ImGui::SameLine();
-				ImGui::Checkbox("Ping-Pong", &ls_bPingPong);
-			}
-
-			// Get current transform values button
-			if (ImGui::Button("From Current"))
-			{
-				Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
-				switch (ls_iProperty)
-				{
-				case 0: // Position
-				{
-					Zenith_Maths::Vector3 xPos;
-					xTransform.GetPosition(xPos);
-					ls_afFrom[0] = xPos.x; ls_afFrom[1] = xPos.y; ls_afFrom[2] = xPos.z;
-					break;
-				}
-				case 1: // Scale
-				{
-					Zenith_Maths::Vector3 xScale;
-					xTransform.GetScale(xScale);
-					ls_afFrom[0] = xScale.x; ls_afFrom[1] = xScale.y; ls_afFrom[2] = xScale.z;
-					break;
-				}
-				case 2: // Rotation
-				{
-					Zenith_Maths::Quat xRot;
-					xTransform.GetRotation(xRot);
-					Zenith_Maths::Vector3 xEuler = glm::degrees(glm::eulerAngles(xRot));
-					ls_afFrom[0] = xEuler.x; ls_afFrom[1] = xEuler.y; ls_afFrom[2] = xEuler.z;
-					break;
-				}
-				}
-			}
-
-			ImGui::SameLine();
-			if (ImGui::Button("Preview"))
-			{
-				Zenith_TweenInstance xTween;
-				xTween.m_eProperty = static_cast<Zenith_TweenProperty>(ls_iProperty);
-				xTween.m_eEasing = static_cast<Zenith_EasingType>(ls_iEasing);
-				xTween.m_xFrom = Zenith_Maths::Vector3(ls_afFrom[0], ls_afFrom[1], ls_afFrom[2]);
-				xTween.m_xTo = Zenith_Maths::Vector3(ls_afTo[0], ls_afTo[1], ls_afTo[2]);
-				xTween.m_fDuration = ls_fDuration;
-				xTween.m_fDelay = ls_fDelay;
-				xTween.m_bLoop = ls_bLoop;
-				xTween.m_bPingPong = ls_bPingPong;
-				if (ls_iProperty == 2) // Rotation - convert Euler to quaternions
-				{
-					xTween.m_xFromQuat = Zenith_Maths::Quat(glm::radians(xTween.m_xFrom));
-					xTween.m_xToQuat = Zenith_Maths::Quat(glm::radians(xTween.m_xTo));
-				}
-				m_xActiveTweens.PushBack(xTween);
-			}
-
-			ImGui::TreePop();
-		}
+		ImGui::PopID();
 	}
+
+	if (m_xActiveTweens.GetSize() > 0)
+	{
+		if (ImGui::Button("Cancel All")) CancelAll();
+	}
+}
+
+namespace
+{
+	// Populate an Euler/Vector3 "From" triple by reading the current transform
+	// component, converting rotation to Euler degrees.
+	void SampleCurrentTransformValue(Zenith_TransformComponent& xTransform, int iProperty, float afOut[3])
+	{
+		Zenith_Maths::Vector3 xValue(0.0f);
+		switch (iProperty)
+		{
+		case 0: // Position
+			xTransform.GetPosition(xValue);
+			break;
+		case 1: // Scale
+			xTransform.GetScale(xValue);
+			break;
+		case 2: // Rotation
+		{
+			Zenith_Maths::Quat xRot;
+			xTransform.GetRotation(xRot);
+			xValue = glm::degrees(glm::eulerAngles(xRot));
+			break;
+		}
+		}
+		afOut[0] = xValue.x; afOut[1] = xValue.y; afOut[2] = xValue.z;
+	}
+}
+
+void Zenith_TweenComponent::RenderAddTweenSection()
+{
+	if (!ImGui::TreeNode("Add Tween")) return;
+
+	static int ls_iProperty = 0;
+	static int ls_iEasing = 0;
+	static float ls_afFrom[3] = { 0.0f, 0.0f, 0.0f };
+	static float ls_afTo[3] = { 1.0f, 1.0f, 1.0f };
+	static float ls_fDuration = 1.0f;
+	static float ls_fDelay = 0.0f;
+	static bool ls_bLoop = false;
+	static bool ls_bPingPong = false;
+
+	const char* aszProperties[] = { "Position", "Scale", "Rotation" };
+	ImGui::Combo("Property", &ls_iProperty, aszProperties, 3);
+
+	ImGui::DragFloat3("From", ls_afFrom, 0.1f);
+	ImGui::DragFloat3("To", ls_afTo, 0.1f);
+	ImGui::DragFloat("Duration", &ls_fDuration, 0.05f, 0.01f, 60.0f, "%.2fs");
+
+	if (ImGui::BeginCombo("Easing", Zenith_GetEasingTypeName(static_cast<Zenith_EasingType>(ls_iEasing))))
+	{
+		for (int e = 0; e < EASING_COUNT; ++e)
+		{
+			bool bSelected = (ls_iEasing == e);
+			if (ImGui::Selectable(Zenith_GetEasingTypeName(static_cast<Zenith_EasingType>(e)), bSelected))
+			{
+				ls_iEasing = e;
+			}
+			if (bSelected) ImGui::SetItemDefaultFocus();
+		}
+		ImGui::EndCombo();
+	}
+
+	ImGui::DragFloat("Delay", &ls_fDelay, 0.05f, 0.0f, 60.0f, "%.2fs");
+	ImGui::Checkbox("Loop", &ls_bLoop);
+	if (ls_bLoop)
+	{
+		ImGui::SameLine();
+		ImGui::Checkbox("Ping-Pong", &ls_bPingPong);
+	}
+
+	if (ImGui::Button("From Current"))
+	{
+		SampleCurrentTransformValue(m_xParentEntity.GetComponent<Zenith_TransformComponent>(), ls_iProperty, ls_afFrom);
+	}
+
+	ImGui::SameLine();
+	if (ImGui::Button("Preview"))
+	{
+		Zenith_TweenInstance xTween;
+		xTween.m_eProperty = static_cast<Zenith_TweenProperty>(ls_iProperty);
+		xTween.m_eEasing = static_cast<Zenith_EasingType>(ls_iEasing);
+		xTween.m_xFrom = Zenith_Maths::Vector3(ls_afFrom[0], ls_afFrom[1], ls_afFrom[2]);
+		xTween.m_xTo = Zenith_Maths::Vector3(ls_afTo[0], ls_afTo[1], ls_afTo[2]);
+		xTween.m_fDuration = ls_fDuration;
+		xTween.m_fDelay = ls_fDelay;
+		xTween.m_bLoop = ls_bLoop;
+		xTween.m_bPingPong = ls_bPingPong;
+		if (ls_iProperty == 2) // Rotation - convert Euler to quaternions
+		{
+			xTween.m_xFromQuat = Zenith_Maths::Quat(glm::radians(xTween.m_xFrom));
+			xTween.m_xToQuat = Zenith_Maths::Quat(glm::radians(xTween.m_xTo));
+		}
+		m_xActiveTweens.PushBack(xTween);
+	}
+
+	ImGui::TreePop();
 }
 #endif

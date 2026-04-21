@@ -78,6 +78,13 @@ public:
     float GetTextWidth() const;
     float GetTextHeight() const;
 
+    // ========== Alignment Helpers (static, testable) ==========
+
+    // Resolve horizontal start X given left edge, element width, line width, and alignment.
+    static float ComputeHorizontalStartX(float fLeft, float fWidth, float fLineWidth, TextAlignment eAlignment);
+    // Resolve vertical start Y given top edge, element height, text height, and alignment.
+    static float ComputeVerticalStartY(float fTop, float fHeight, float fTextHeight, TextVerticalAlignment eAlignment);
+
     // ========== Overrides ==========
 
     virtual void Render(Zenith_UICanvas& xCanvas) override;
@@ -91,6 +98,13 @@ public:
 private:
     void RebuildWrappedText();
     const std::string& GetDisplayText() const { return m_fMaxWidth > 0.f ? m_strWrappedText : m_strText; }
+
+    // Submit text + optional shadow at the given position (shadow drawn behind).
+    void SubmitTextWithShadow(Zenith_UICanvas& xCanvas, const std::string& strText,
+                              const Zenith_Maths::Vector2& xPos, float fAlpha);
+    // Render each newline-separated line independently aligned within [fLeft, fLeft+fWidth].
+    void RenderMultilineAligned(Zenith_UICanvas& xCanvas, const std::string& strDisplay,
+                                float fLeft, float fWidth, float fStartY, float fAlpha);
 
     std::string m_strText;
     std::string m_strWrappedText;

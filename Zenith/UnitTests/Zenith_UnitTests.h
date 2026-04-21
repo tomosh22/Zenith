@@ -200,6 +200,14 @@ private:
 	static void TestBTSelectorRunning();
 	static void TestBTParallelRequireOne();
 	static void TestBTParallelRequireAll();
+	static void TestBTParallelAllRunning();
+	static void TestBTParallelNeitherPolicyMet();
+	static void TestBTParallelRequireOneAbortsRunning();
+	// Regression guard for the BTComposites refactor: when both policies are
+	// REQUIRE_ONE and a single tick returns SUCCESS and FAILURE simultaneously,
+	// SUCCESS must win (it's checked first). The refactor preserved this order
+	// but no prior test pinned it — flagged in code review.
+	static void TestBTParallelRequireOneSuccessWinsOverSimultaneousFailure();
 	static void TestBTInverter();
 	static void TestBTRepeaterCount();
 	static void TestBTCooldown();
@@ -407,6 +415,14 @@ private:
 	static void TestGizmosLineLinePerpendicular();
 	static void TestGizmosTangentFrame();
 
+	// Gizmo Unity-parity tests — verify GetEditableTransform resolves via the target
+	// entity's OWN scene, not the active scene (audit §3.17).
+	// See: https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.GetActiveScene.html
+	static void TestGizmoEditsPersistentEntityAcrossSceneLoad();
+	static void TestGizmoEditsEntityInAdditiveScene();
+	static void TestGizmoDragSurvivesActiveSceneChange();
+	static void TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget();
+
 	// Slang compiler helper tests (Windows only)
 #ifdef ZENITH_WINDOWS
 	static void TestSlangSplitFilePath();
@@ -433,6 +449,13 @@ private:
 	static void TestUIStyleLerpHalfway();
 	static void TestUIStyleLerpEndpoints();
 	static void TestUIStyleLerpShadowBool();
+
+	// UIText alignment helper tests
+	static void TestUITextHorizontalAlignment();
+	static void TestUITextVerticalAlignment();
+
+	// SlangCompiler helper tests
+	static void TestSlangIsBindingAlreadyPresent();
 
 	// Flux render-graph tests (declaration-phase only — compiling the graph
 	// requires Vulkan). The tests exercise pass registration, handle validity,

@@ -580,82 +580,57 @@ bool Flux_SlangCompiler::CompileGraphicsPipeline(const std::string& strVertexPat
 	return true;
 }
 
+bool Flux_SlangCompiler::TryExtractBindingFromParam(void* pxParamVoid, Flux_ReflectedBinding& xBindingOut)
+{
+	slang::VariableLayoutReflection* pxParam = static_cast<slang::VariableLayoutReflection*>(pxParamVoid);
+	if (!pxParam) return false;
+	slang::TypeLayoutReflection* pxTypeLayout = pxParam->getTypeLayout();
+	if (!pxTypeLayout) return false;
+	return ExtractParameterBinding(pxParam, pxTypeLayout, xBindingOut);
+}
+
+bool Flux_SlangCompiler::IsBindingAlreadyPresent(const Flux_ShaderReflection& xReflection, const Flux_ReflectedBinding& xCandidate)
+{
+	const auto& xBindings = xReflection.GetBindings();
+	for (u_int v = 0; v < xBindings.GetSize(); v++)
+	{
+		const Flux_ReflectedBinding& xExisting = xBindings.Get(v);
+		if (xExisting.m_uSet == xCandidate.m_uSet && xExisting.m_uBinding == xCandidate.m_uBinding) return true;
+	}
+	return false;
+}
+
 void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflection& xReflectionOut)
 {
 	slang::ProgramLayout* pxLayout = static_cast<slang::ProgramLayout*>(pxLayoutVoid);
 
-	u_int uParamCount = static_cast<u_int>(pxLayout->getParameterCount());
-	u_int uEntryPointCount = static_cast<u_int>(pxLayout->getEntryPointCount());
-
+	const u_int uParamCount = static_cast<u_int>(pxLayout->getParameterCount());
 	for (u_int u = 0; u < uParamCount; u++)
 	{
-		slang::VariableLayoutReflection* pxParam = pxLayout->getParameterByIndex(u);
-		if (!pxParam)
-		{
-			continue;
-		}
-
-		slang::TypeLayoutReflection* pxTypeLayout = pxParam->getTypeLayout();
-		if (!pxTypeLayout)
-		{
-			continue;
-		}
-
 		Flux_ReflectedBinding xBinding;
-		if (ExtractParameterBinding(pxParam, pxTypeLayout, xBinding))
+		if (TryExtractBindingFromParam(pxLayout->getParameterByIndex(u), xBinding))
 		{
 			xReflectionOut.AddBinding(xBinding);
 		}
 	}
 
-	// For combined graphics pipelines, also check entry-point-specific parameters
-	// Some resources may be reported per-entry-point rather than globally
+	// For combined graphics pipelines, also check entry-point-specific parameters.
+	// Some resources are reported per-entry-point rather than globally.
+	const u_int uEntryPointCount = static_cast<u_int>(pxLayout->getEntryPointCount());
 	for (u_int ep = 0; ep < uEntryPointCount; ep++)
 	{
 		slang::EntryPointLayout* pxEntryPoint = pxLayout->getEntryPointByIndex(ep);
-		if (!pxEntryPoint)
-		{
-			continue;
-		}
+		if (!pxEntryPoint) continue;
 
 		for (u_int u = 0; u < pxEntryPoint->getParameterCount(); u++)
 		{
-			slang::VariableLayoutReflection* pxParam = pxEntryPoint->getParameterByIndex(u);
-			if (!pxParam)
-			{
-				continue;
-			}
-
-			slang::TypeLayoutReflection* pxTypeLayout = pxParam->getTypeLayout();
-			if (!pxTypeLayout)
-			{
-				continue;
-			}
-
 			Flux_ReflectedBinding xBinding;
-			if (!ExtractParameterBinding(pxParam, pxTypeLayout, xBinding))
-			{
-				continue;
-			}
+			if (!TryExtractBindingFromParam(pxEntryPoint->getParameterByIndex(u), xBinding)) continue;
+			if (IsBindingAlreadyPresent(xReflectionOut, xBinding)) continue;
 
-			// Check if this binding already exists (avoid duplicates)
-			bool bExists = false;
-			for (u_int v = 0; v < xReflectionOut.GetBindings().GetSize(); v++)
-			{
-				const Flux_ReflectedBinding& xExisting = xReflectionOut.GetBindings().Get(v);
-				if (xExisting.m_uSet == xBinding.m_uSet && xExisting.m_uBinding == xBinding.m_uBinding)
-				{
-					bExists = true;
-					break;
-				}
-			}
-
-			if (!bExists)
-			{
-				Zenith_Log(LOG_CATEGORY_RENDERER, "  EP Binding: name='%s', set=%u, binding=%u, type=%d",
-					xBinding.m_strName.c_str(), xBinding.m_uSet, xBinding.m_uBinding, (int)xBinding.m_eType);
-				xReflectionOut.AddBinding(xBinding);
-			}
+			Zenith_Log(LOG_CATEGORY_RENDERER, "  EP Binding: name='%s', set=%u, binding=%u, type=%d",
+				xBinding.m_strName.c_str(), xBinding.m_uSet, xBinding.m_uBinding, (int)xBinding.m_eType);
+			xReflectionOut.AddBinding(xBinding);
 		}
 	}
 

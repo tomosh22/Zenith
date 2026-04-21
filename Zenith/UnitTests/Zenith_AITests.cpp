@@ -326,6 +326,100 @@ void Zenith_UnitTests::TestBTParallelRequireAll()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBTParallelRequireAll PASSED");
 }
 
+void Zenith_UnitTests::TestBTParallelAllRunning()
+{
+	// Every child returns RUNNING → neither policy met → Parallel returns RUNNING
+	// (rather than the default-to-FAILURE fallback for "all complete").
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Blackboard xBlackboard;
+
+	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ONE, Zenith_BTParallel::Policy::REQUIRE_ONE);
+	xParallel.AddChild(new MockBTNode(BTNodeStatus::RUNNING));
+	xParallel.AddChild(new MockBTNode(BTNodeStatus::RUNNING));
+	xParallel.AddChild(new MockBTNode(BTNodeStatus::RUNNING));
+
+	BTNodeStatus eResult = xParallel.Execute(xAgent, xBlackboard, 0.016f);
+	Zenith_Assert(eResult == BTNodeStatus::RUNNING, "All-running Parallel should return RUNNING");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBTParallelAllRunning PASSED");
+}
+
+void Zenith_UnitTests::TestBTParallelNeitherPolicyMet()
+{
+	// REQUIRE_ALL / REQUIRE_ALL with a mix of SUCCESS and FAILURE: neither
+	// policy is satisfied and no children are still running, so Parallel must
+	// fall through to the default-FAILURE case (was an edge case before the
+	// refactor; the extracted SuccessPolicyMet/FailurePolicyMet predicates
+	// preserve it).
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Blackboard xBlackboard;
+
+	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ALL, Zenith_BTParallel::Policy::REQUIRE_ALL);
+	xParallel.AddChild(new MockBTNode(BTNodeStatus::SUCCESS));
+	xParallel.AddChild(new MockBTNode(BTNodeStatus::FAILURE));
+
+	BTNodeStatus eResult = xParallel.Execute(xAgent, xBlackboard, 0.016f);
+	Zenith_Assert(eResult == BTNodeStatus::FAILURE,
+		"Parallel with neither REQUIRE_ALL policy met should default to FAILURE");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBTParallelNeitherPolicyMet PASSED");
+}
+
+void Zenith_UnitTests::TestBTParallelRequireOneAbortsRunning()
+{
+	// REQUIRE_ONE success should abort any remaining RUNNING children so the
+	// scheduler doesn't keep ticking them on the next frame.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Blackboard xBlackboard;
+
+	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ONE, Zenith_BTParallel::Policy::REQUIRE_ALL);
+	MockBTNode* pxRunning = new MockBTNode(BTNodeStatus::RUNNING);
+	xParallel.AddChild(new MockBTNode(BTNodeStatus::SUCCESS));
+	xParallel.AddChild(pxRunning);
+
+	const uint32_t uRunsBefore = pxRunning->m_uExecuteCount;
+	BTNodeStatus eResult = xParallel.Execute(xAgent, xBlackboard, 0.016f);
+	Zenith_Assert(eResult == BTNodeStatus::SUCCESS, "Parallel REQUIRE_ONE should succeed once one child succeeds");
+
+	// AbortRunningChildren calls OnAbort, NOT Execute, so the RUNNING child's
+	// m_uExecuteCount only reflects the one tick it got before the policy fired.
+	Zenith_Assert(pxRunning->m_uExecuteCount == uRunsBefore + 1,
+		"Aborted running child should have ticked exactly once this frame");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBTParallelRequireOneAbortsRunning PASSED");
+}
+
+void Zenith_UnitTests::TestBTParallelRequireOneSuccessWinsOverSimultaneousFailure()
+{
+	// Regression guard for the BTComposites helper-extraction refactor.
+	// When both success and failure policies are REQUIRE_ONE and a single tick
+	// produces both a SUCCESS and a FAILURE child, the node must return SUCCESS
+	// (success check runs first in Execute). The refactor preserved this order
+	// by splitting TickChildrenAndTally → SuccessPolicyMet → FailurePolicyMet,
+	// but no existing test pinned the simultaneous-mixed-outcome case.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
+	Zenith_Blackboard xBlackboard;
+
+	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ONE, Zenith_BTParallel::Policy::REQUIRE_ONE);
+	xParallel.AddChild(new MockBTNode(BTNodeStatus::SUCCESS));
+	xParallel.AddChild(new MockBTNode(BTNodeStatus::FAILURE));
+
+	BTNodeStatus eResult = xParallel.Execute(xAgent, xBlackboard, 0.016f);
+	Zenith_Assert(eResult == BTNodeStatus::SUCCESS,
+		"REQUIRE_ONE+REQUIRE_ONE with simultaneous SUCCESS and FAILURE must resolve to SUCCESS "
+		"(success policy is checked first).");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBTParallelRequireOneSuccessWinsOverSimultaneousFailure PASSED");
+}
+
 void Zenith_UnitTests::TestBTInverter()
 {
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
@@ -1010,7 +1104,7 @@ void Zenith_UnitTests::TestSightConeInRange()
 	Zenith_PerceptionSystem::SetSightConfig(xAgent.GetEntityID(), xConfig);
 
 	// Update perception
-	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
+	Zenith_PerceptionSystem::Update(0.1f);
 
 	// Check if target is perceived
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
@@ -1046,7 +1140,7 @@ void Zenith_UnitTests::TestSightConeOutOfRange()
 	xConfig.m_bRequireLineOfSight = false;
 
 	Zenith_PerceptionSystem::SetSightConfig(xAgent.GetEntityID(), xConfig);
-	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
+	Zenith_PerceptionSystem::Update(0.1f);
 
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
 		Zenith_PerceptionSystem::GetPerceivedTargets(xAgent.GetEntityID());
@@ -1082,7 +1176,7 @@ void Zenith_UnitTests::TestSightConeOutOfFOV()
 	xConfig.m_bRequireLineOfSight = false;
 
 	Zenith_PerceptionSystem::SetSightConfig(xAgent.GetEntityID(), xConfig);
-	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
+	Zenith_PerceptionSystem::Update(0.1f);
 
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
 		Zenith_PerceptionSystem::GetPerceivedTargets(xAgent.GetEntityID());
@@ -1133,7 +1227,7 @@ void Zenith_UnitTests::TestSightAwarenessGain()
 	// Update multiple times to gain awareness
 	for (int i = 0; i < 10; ++i)
 	{
-		Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
+		Zenith_PerceptionSystem::Update(0.1f);
 	}
 
 	float fAwareness = Zenith_PerceptionSystem::GetAwarenessOf(
@@ -1166,7 +1260,7 @@ void Zenith_UnitTests::TestHearingStimulusInRange()
 		20.0f, // Radius
 		xSource.GetEntityID());
 
-	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
+	Zenith_PerceptionSystem::Update(0.1f);
 
 	// Agent should have heard something
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
@@ -1207,7 +1301,7 @@ void Zenith_UnitTests::TestHearingStimulusOutOfRange()
 		10.0f, // Small radius
 		xSource.GetEntityID());
 
-	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
+	Zenith_PerceptionSystem::Update(0.1f);
 
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
 		Zenith_PerceptionSystem::GetPerceivedTargets(xAgent.GetEntityID());
@@ -1244,7 +1338,7 @@ void Zenith_UnitTests::TestMemoryRememberTarget()
 	xConfig.m_bRequireLineOfSight = false;
 
 	Zenith_PerceptionSystem::SetSightConfig(xAgent.GetEntityID(), xConfig);
-	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
+	Zenith_PerceptionSystem::Update(0.1f);
 
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
 		Zenith_PerceptionSystem::GetPerceivedTargets(xAgent.GetEntityID());
@@ -2443,14 +2537,92 @@ void Zenith_UnitTests::TestPathfindingPartialPath()
 
 void Zenith_UnitTests::TestCountWalkableSpans()
 {
-	// #TODO: Re-enable once CountWalkableSpans/WalkableSpanStats are restored to NavMeshGenerator
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCountWalkableSpans SKIPPED (function removed)");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCountWalkableSpans...");
+
+	// Build a minimal 2-column context with a known set of walkable spans, then
+	// verify GatherWalkableSpanStats reports the expected count and Y range.
+	Zenith_NavMeshGenerator::GenerationContext xCtx;
+	xCtx.m_xConfig.m_fCellHeight = 1.0f;
+	xCtx.m_xBoundsMin = { 0.0f, 0.0f, 0.0f };
+	xCtx.m_axColumns.PushBack(Zenith_NavMeshGenerator::HeightfieldColumn{});
+	xCtx.m_axColumns.PushBack(Zenith_NavMeshGenerator::HeightfieldColumn{});
+
+	// Column 0: one walkable span (areaType=1) at maxY=10, one unwalkable at 20.
+	Zenith_NavMeshGenerator::AddSpan(xCtx.m_axColumns.Get(0), 8, 10, 1);
+	Zenith_NavMeshGenerator::AddSpan(xCtx.m_axColumns.Get(0), 18, 20, 0);
+	// Column 1: one walkable span at maxY=5.
+	Zenith_NavMeshGenerator::AddSpan(xCtx.m_axColumns.Get(1), 3, 5, 1);
+
+	const Zenith_NavMeshGenerator::WalkableSpanStats xStats =
+		Zenith_NavMeshGenerator::GatherWalkableSpanStats(xCtx);
+
+	Zenith_Assert(xStats.m_uCount == 2, "Expected 2 walkable spans, got %u", xStats.m_uCount);
+	Zenith_Assert(xStats.m_fMinY == 5.0f, "Expected minY=5.0, got %.2f", xStats.m_fMinY);
+	Zenith_Assert(xStats.m_fMaxY == 10.0f, "Expected maxY=10.0, got %.2f", xStats.m_fMaxY);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCountWalkableSpans PASSED");
 }
 
 void Zenith_UnitTests::TestHasSufficientClearance()
 {
-	// #TODO: Re-enable once HasSufficientClearance is restored to NavMeshGenerator
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHasSufficientClearance SKIPPED (function removed)");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHasSufficientClearance...");
+
+	// Agent needs 4 cells of clearance (= fAgentHeight 3 / fCellHeight 1 + 1).
+	const int32_t iAgentHeightCells = 4;
+
+	// Helper to build a 2-span chain where the second span sits `iGap` cells above.
+	auto MakeSpanPair = [](int32_t iGap) -> Zenith_NavMeshGenerator::VoxelSpan*
+	{
+		auto* pxLower = new Zenith_NavMeshGenerator::VoxelSpan();
+		pxLower->m_uMinY = 0; pxLower->m_uMaxY = 10; pxLower->m_uAreaType = 1; pxLower->m_uRegion = 0;
+
+		auto* pxUpper = new Zenith_NavMeshGenerator::VoxelSpan();
+		pxUpper->m_uMinY = static_cast<uint16_t>(10 + iGap);
+		pxUpper->m_uMaxY = pxUpper->m_uMinY + 5;
+		pxUpper->m_uAreaType = 1;
+		pxUpper->m_uRegion = 0;
+		pxUpper->m_pxNext = nullptr;
+
+		pxLower->m_pxNext = pxUpper;
+		return pxLower;
+	};
+
+	auto FreeChain = [](Zenith_NavMeshGenerator::VoxelSpan* pxSpan)
+	{
+		while (pxSpan)
+		{
+			Zenith_NavMeshGenerator::VoxelSpan* pxNext = pxSpan->m_pxNext;
+			delete pxSpan;
+			pxSpan = pxNext;
+		}
+	};
+
+	// Gap = 2 (< 4): insufficient clearance.
+	{
+		Zenith_NavMeshGenerator::VoxelSpan* pxChain = MakeSpanPair(2);
+		Zenith_Assert(Zenith_NavMeshGenerator::HasInsufficientClearance(pxChain, iAgentHeightCells),
+			"Gap of 2 with agent height 4 should be flagged insufficient");
+		FreeChain(pxChain);
+	}
+
+	// Gap = 10 (> agent height): sufficient clearance.
+	{
+		Zenith_NavMeshGenerator::VoxelSpan* pxChain = MakeSpanPair(10);
+		Zenith_Assert(!Zenith_NavMeshGenerator::HasInsufficientClearance(pxChain, iAgentHeightCells),
+			"Gap of 10 with agent height 4 should be flagged sufficient");
+		FreeChain(pxChain);
+	}
+
+	// No span above: sufficient clearance (open sky).
+	{
+		auto* pxSolo = new Zenith_NavMeshGenerator::VoxelSpan();
+		pxSolo->m_uMinY = 0; pxSolo->m_uMaxY = 10; pxSolo->m_uAreaType = 1; pxSolo->m_pxNext = nullptr;
+		Zenith_Assert(!Zenith_NavMeshGenerator::HasInsufficientClearance(pxSolo, iAgentHeightCells),
+			"No span above should be sufficient clearance");
+		delete pxSolo;
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHasSufficientClearance PASSED");
 }
 
 void Zenith_UnitTests::TestMergeOverlappingSpans()

@@ -74,6 +74,49 @@ namespace
 		xNeighborNode.m_fFCost = fNewGCost + fHCost;
 		xOpenSet.push(xNeighborNode);
 	}
+
+	struct PathEndpoints
+	{
+		uint32_t m_uStartPoly = 0;
+		uint32_t m_uEndPoly = 0;
+		Zenith_Maths::Vector3 m_xStartProjected{ 0.0f };
+		Zenith_Maths::Vector3 m_xEndProjected{ 0.0f };
+	};
+
+	// Localise start and end positions to nearest nav-mesh polygons.
+	// Returns false (with an AI log) if either point can't be projected.
+	bool LocaliseEndpoints(const Zenith_NavMesh& xNavMesh,
+		const Zenith_Maths::Vector3& xStart,
+		const Zenith_Maths::Vector3& xEnd,
+		PathEndpoints& xOut)
+	{
+		if (!xNavMesh.FindNearestPolygon(xStart, xOut.m_uStartPoly, xOut.m_xStartProjected, 5.0f))
+		{
+			Zenith_Log(LOG_CATEGORY_AI, "Pathfinding: Start position not on navmesh");
+			return false;
+		}
+		if (!xNavMesh.FindNearestPolygon(xEnd, xOut.m_uEndPoly, xOut.m_xEndProjected, 5.0f))
+		{
+			Zenith_Log(LOG_CATEGORY_AI, "Pathfinding: End position not on navmesh");
+			return false;
+		}
+		return true;
+	}
+
+	// Walk the closed-list parent chain from uTerminalIndex back to the start
+	// node and emit a forward-order polygon path.
+	Zenith_Vector<uint32_t> ReconstructPolygonPath(const Zenith_Vector<AStarNode>& axClosedList, uint32_t uTerminalIndex)
+	{
+		Zenith_Vector<uint32_t> axPolygonPath;
+		uint32_t uTraceIndex = uTerminalIndex;
+		while (uTraceIndex != UINT32_MAX)
+		{
+			axPolygonPath.PushBack(axClosedList.Get(uTraceIndex).m_uPolygonIndex);
+			uTraceIndex = axClosedList.Get(uTraceIndex).m_uParentIndex;
+		}
+		axPolygonPath.Reverse();
+		return axPolygonPath;
+	}
 }
 
 Zenith_PathResult Zenith_Pathfinding::FindPath(const Zenith_NavMesh& xNavMesh,
@@ -117,30 +160,16 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 		return xResult;
 	}
 
-	// Find start and end polygons
-	uint32_t uStartPoly;
-	Zenith_Maths::Vector3 xStartProjected;
-	if (!xNavMesh.FindNearestPolygon(xStart, uStartPoly, xStartProjected, 5.0f))
-	{
-		Zenith_Log(LOG_CATEGORY_AI, "Pathfinding: Start position not on navmesh");
-		return xResult;
-	}
+	PathEndpoints xEndpoints;
+	if (!LocaliseEndpoints(xNavMesh, xStart, xEnd, xEndpoints)) return xResult;
 
-	uint32_t uEndPoly;
-	Zenith_Maths::Vector3 xEndProjected;
-	if (!xNavMesh.FindNearestPolygon(xEnd, uEndPoly, xEndProjected, 5.0f))
-	{
-		Zenith_Log(LOG_CATEGORY_AI, "Pathfinding: End position not on navmesh");
-		return xResult;
-	}
-
-	// Same polygon - direct path
-	if (uStartPoly == uEndPoly)
+	// Same polygon — direct path, no A* required.
+	if (xEndpoints.m_uStartPoly == xEndpoints.m_uEndPoly)
 	{
 		xResult.m_eStatus = Zenith_PathResult::Status::SUCCESS;
-		xResult.m_axWaypoints.PushBack(xStartProjected);
-		xResult.m_axWaypoints.PushBack(xEndProjected);
-		xResult.m_fTotalDistance = Zenith_Maths::Length(xEndProjected - xStartProjected);
+		xResult.m_axWaypoints.PushBack(xEndpoints.m_xStartProjected);
+		xResult.m_axWaypoints.PushBack(xEndpoints.m_xEndProjected);
+		xResult.m_fTotalDistance = Zenith_Maths::Length(xEndpoints.m_xEndProjected - xEndpoints.m_xStartProjected);
 		return xResult;
 	}
 
@@ -150,15 +179,16 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 	Zenith_Vector<AStarNode> axClosedList;
 
 	AStarNode xStartNode;
-	xStartNode.m_uPolygonIndex = uStartPoly;
+	xStartNode.m_uPolygonIndex = xEndpoints.m_uStartPoly;
 	xStartNode.m_uParentIndex = UINT32_MAX;
 	xStartNode.m_fGCost = 0.0f;
-	xStartNode.m_fHCost = Zenith_Maths::Length(xEndProjected - xStartProjected);
+	xStartNode.m_fHCost = Zenith_Maths::Length(xEndpoints.m_xEndProjected - xEndpoints.m_xStartProjected);
 	xStartNode.m_fFCost = xStartNode.m_fGCost + xStartNode.m_fHCost;
 	xOpenSet.push(xStartNode);
-	xOpenSetGCosts[uStartPoly] = 0.0f;
+	xOpenSetGCosts[xEndpoints.m_uStartPoly] = 0.0f;
 
-	uint32_t uBestPartialPoly = uStartPoly;
+	uint32_t uBestPartialPoly = xEndpoints.m_uStartPoly;
+	uint32_t uBestPartialClosedIndex = 0;
 	float fBestPartialDist = xStartNode.m_fHCost;
 
 	while (!xOpenSet.empty())
@@ -176,21 +206,15 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 		{
 			fBestPartialDist = xCurrent.m_fHCost;
 			uBestPartialPoly = xCurrent.m_uPolygonIndex;
+			uBestPartialClosedIndex = uCurrentClosedIndex;
 		}
 
-		if (xCurrent.m_uPolygonIndex == uEndPoly)
+		if (xCurrent.m_uPolygonIndex == xEndpoints.m_uEndPoly)
 		{
-			Zenith_Vector<uint32_t> axPolygonPath;
-			uint32_t uTraceIndex = uCurrentClosedIndex;
-			while (uTraceIndex != UINT32_MAX)
-			{
-				axPolygonPath.PushBack(axClosedList.Get(uTraceIndex).m_uPolygonIndex);
-				uTraceIndex = axClosedList.Get(uTraceIndex).m_uParentIndex;
-			}
-			axPolygonPath.Reverse();
-
 			xResult.m_eStatus = Zenith_PathResult::Status::SUCCESS;
-			BuildWaypointsFromPolygonPath(xNavMesh, axPolygonPath, xStartProjected, xEndProjected, xResult);
+			BuildWaypointsFromPolygonPath(xNavMesh,
+				ReconstructPolygonPath(axClosedList, uCurrentClosedIndex),
+				xEndpoints.m_xStartProjected, xEndpoints.m_xEndProjected, xResult);
 			return xResult;
 		}
 
@@ -210,32 +234,19 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 			const int32_t iNeighbor = xPoly.m_axNeighborIndices.Get(u);
 			if (iNeighbor < 0) continue;
 			ExpandNeighbor(static_cast<uint32_t>(iNeighbor), xCurrent, uCurrentClosedIndex,
-				xNavMesh, xCurrentCenter, xEndProjected,
+				xNavMesh, xCurrentCenter, xEndpoints.m_xEndProjected,
 				xOpenSet, xClosedSet, xOpenSetGCosts);
 		}
 	}
 
 	// No complete path — emit partial path to the closest node we expanded.
-	if (uBestPartialPoly == uStartPoly) return xResult;
+	if (uBestPartialPoly == xEndpoints.m_uStartPoly) return xResult;
 
-	for (uint32_t u = 0; u < axClosedList.GetSize(); ++u)
-	{
-		if (axClosedList.Get(u).m_uPolygonIndex != uBestPartialPoly) continue;
-
-		Zenith_Vector<uint32_t> axPolygonPath;
-		uint32_t uTraceIndex = u;
-		while (uTraceIndex != UINT32_MAX)
-		{
-			axPolygonPath.PushBack(axClosedList.Get(uTraceIndex).m_uPolygonIndex);
-			uTraceIndex = axClosedList.Get(uTraceIndex).m_uParentIndex;
-		}
-		axPolygonPath.Reverse();
-
-		xResult.m_eStatus = Zenith_PathResult::Status::PARTIAL;
-		const Zenith_NavMeshPolygon& xFinalPoly = xNavMesh.GetPolygon(uBestPartialPoly);
-		BuildWaypointsFromPolygonPath(xNavMesh, axPolygonPath, xStartProjected, xFinalPoly.m_xCenter, xResult);
-		break;
-	}
+	xResult.m_eStatus = Zenith_PathResult::Status::PARTIAL;
+	const Zenith_NavMeshPolygon& xFinalPoly = xNavMesh.GetPolygon(uBestPartialPoly);
+	BuildWaypointsFromPolygonPath(xNavMesh,
+		ReconstructPolygonPath(axClosedList, uBestPartialClosedIndex),
+		xEndpoints.m_xStartProjected, xFinalPoly.m_xCenter, xResult);
 
 	return xResult;
 }

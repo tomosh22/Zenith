@@ -39,16 +39,14 @@ void Zenith_PerceptionSystem::Reset()
 
 void Zenith_PerceptionSystem::Update(float fDt)
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (pxSceneData)
-	{
-		Update(fDt, *pxSceneData);
-	}
-}
-
-void Zenith_PerceptionSystem::Update(float fDt, Zenith_SceneData& xScene)
-{
+	// Audit §3.18 fix: no active-scene lookup here. Each agent resolves its
+	// own scene via GetSceneDataForEntity(EntityID) inside UpdateSightPerception
+	// and UpdateHearingPerception, so agents in the persistent scene or in
+	// additively-loaded scenes are perceived correctly. Matches Unity's
+	// SceneManager.GetActiveScene contract — "the active Scene has no impact on
+	// what Scenes are rendered" (and by extension, no impact on which entities
+	// are queried).
+	// Ref: https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.GetActiveScene.html
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PERCEPTION_UPDATE);
 
 	if (s_xAgentData.empty())
@@ -56,16 +54,9 @@ void Zenith_PerceptionSystem::Update(float fDt, Zenith_SceneData& xScene)
 		return;
 	}
 
-	// Update active sounds
 	UpdateActiveSounds(fDt);
-
-	// Update sight perception
-	UpdateSightPerception(fDt, xScene);
-
-	// Update hearing perception
+	UpdateSightPerception(fDt);
 	UpdateHearingPerception();
-
-	// Update memory decay
 	UpdateMemoryDecay(fDt);
 }
 
@@ -133,9 +124,12 @@ void Zenith_PerceptionSystem::EmitDamageStimulus(Zenith_EntityID xVictim,
 		pxTarget->m_uStimulusMask |= PERCEPTION_STIMULUS_DAMAGE;
 		pxTarget->m_bHostile = true;
 
-		// Get attacker position
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		// Audit §3.18 fix: resolve attacker's OWN scene via GetSceneDataForEntity.
+		// Previously used GetActiveScene which silently dropped attacker-position
+		// updates when the attacker lived in a non-active scene (persistent entity,
+		// additively-loaded scene, etc.). Ref: Unity's GameObject.scene contract —
+		// https://docs.unity3d.com/ScriptReference/GameObject-scene.html
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(xAttacker);
 		if (pxSceneData)
 		{
 			Zenith_Entity xAttackerEntity = pxSceneData->TryGetEntity(xAttacker);
@@ -273,7 +267,7 @@ Zenith_PerceptionSystem::SightEvaluation Zenith_PerceptionSystem::EvaluateSightF
 	return xResult;
 }
 
-void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_SceneData& xScene)
+void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PERCEPTION_SIGHT);
 
@@ -282,7 +276,14 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_SceneData&
 		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xPair.first);
 		AgentPerceptionData& xData = xPair.second;
 
-		Zenith_Entity xAgentEntity = xScene.TryGetEntity(xAgentID);
+		// Audit §3.18 fix: resolve agent's OWN scene — supports agents in any
+		// loaded scene, not just the active one.
+		Zenith_SceneData* pxAgentScene = Zenith_SceneManager::GetSceneDataForEntity(xAgentID);
+		if (!pxAgentScene)
+		{
+			continue;
+		}
+		Zenith_Entity xAgentEntity = pxAgentScene->TryGetEntity(xAgentID);
 		if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
 		{
 			continue;
@@ -317,7 +318,15 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_SceneData&
 				continue;
 			}
 
-			Zenith_Entity xTargetEntity = xScene.TryGetEntity(xTargetID);
+			// Audit §3.18 fix: resolve each target's own scene — cross-scene
+			// perception (e.g. a persistent player entity, or a target in an
+			// additively-loaded scene) now works as Unity would expect.
+			Zenith_SceneData* pxTargetScene = Zenith_SceneManager::GetSceneDataForEntity(xTargetID);
+			if (!pxTargetScene)
+			{
+				continue;
+			}
+			Zenith_Entity xTargetEntity = pxTargetScene->TryGetEntity(xTargetID);
 			if (!xTargetEntity.IsValid() || !xTargetEntity.HasComponent<Zenith_TransformComponent>())
 			{
 				continue;
@@ -385,19 +394,20 @@ bool Zenith_PerceptionSystem::EvaluateHearingForSound(
 
 void Zenith_PerceptionSystem::UpdateHearingPerception()
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (!pxSceneData)
-	{
-		return;
-	}
-
+	// Audit §3.18 fix: resolve each agent's OWN scene instead of the active
+	// scene — agents in persistent or additively-loaded scenes must still hear.
+	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
 	for (auto& xPair : s_xAgentData)
 	{
 		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xPair.first);
 		AgentPerceptionData& xData = xPair.second;
 
-		Zenith_Entity xAgentEntity = pxSceneData->TryGetEntity(xAgentID);
+		Zenith_SceneData* pxAgentScene = Zenith_SceneManager::GetSceneDataForEntity(xAgentID);
+		if (!pxAgentScene)
+		{
+			continue;
+		}
+		Zenith_Entity xAgentEntity = pxAgentScene->TryGetEntity(xAgentID);
 		if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
 		{
 			continue;

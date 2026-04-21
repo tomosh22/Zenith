@@ -60,6 +60,7 @@
 
 // UIStyle (for UIStyle tests)
 #include "UI/Zenith_UIStyle.h"
+#include "UI/Zenith_UIText.h"
 
 // Animation texture include (for VAT baking)
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
@@ -285,6 +286,10 @@ void Zenith_UnitTests::RunAllTests()
 	TestBTSelectorRunning();
 	TestBTParallelRequireOne();
 	TestBTParallelRequireAll();
+	TestBTParallelAllRunning();
+	TestBTParallelNeitherPolicyMet();
+	TestBTParallelRequireOneAbortsRunning();
+	TestBTParallelRequireOneSuccessWinsOverSimultaneousFailure();
 	TestBTInverter();
 	TestBTRepeaterCount();
 	TestBTCooldown();
@@ -520,6 +525,9 @@ void Zenith_UnitTests::RunAllTests()
 	TestUIStyleLerpHalfway();
 	TestUIStyleLerpEndpoints();
 	TestUIStyleLerpShadowBool();
+	TestUITextHorizontalAlignment();
+	TestUITextVerticalAlignment();
+	TestSlangIsBindingAlreadyPresent();
 
 	// Flux render-graph tests (declaration-phase only)
 	TestRenderGraphEmpty();
@@ -558,6 +566,12 @@ void Zenith_UnitTests::RunAllTests()
 	TestGizmosLineLineParallel();
 	TestGizmosLineLinePerpendicular();
 	TestGizmosTangentFrame();
+
+	// Gizmo Unity-parity tests (audit §3.17)
+	TestGizmoEditsPersistentEntityAcrossSceneLoad();
+	TestGizmoEditsEntityInAdditiveScene();
+	TestGizmoDragSurvivesActiveSceneChange();
+	TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget();
 
 	// Editor tests (only in tools builds)
 	Zenith_EditorTests::RunAllTests();
@@ -10912,6 +10926,164 @@ void Zenith_UnitTests::TestGizmosTangentFrame()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmosTangentFrame PASSED");
 }
 
+//=============================================================================
+// Gizmo Unity-parity tests (audit §3.17)
+//=============================================================================
+// These verify Flux_Gizmos::GetEditableTransform() resolves the target entity's
+// transform through the entity's OWN scene, not GetActiveScene(). Unity's
+// SceneManager.GetActiveScene is explicit: "the active Scene has no impact on
+// what Scenes are rendered" — and multi-scene editing lets the gizmo manipulate
+// any loaded entity regardless of which scene is active.
+// Refs:
+//   https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.GetActiveScene.html
+//   https://docs.unity3d.com/ScriptReference/GameObject-scene.html
+//   https://docs.unity3d.com/Manual/MultiSceneEditing.html
+//=============================================================================
+
+void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmoEditsPersistentEntityAcrossSceneLoad...");
+
+	// Snapshot active-scene + gizmo target so we can restore after the test.
+	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
+
+	// Create a short-lived scene, spawn an entity, mark it persistent. The entity
+	// now lives in the DontDestroyOnLoad scene, NOT the active scene.
+	Zenith_Scene xTempScene = Zenith_SceneManager::CreateEmptyScene("GizmoPersistHost");
+	Zenith_SceneData* pxTempData = Zenith_SceneManager::GetSceneData(xTempScene);
+	Zenith_Entity xEntity(pxTempData, "GizmoPersistTarget");
+	Zenith_SceneManager::MarkEntityPersistent(xEntity);
+
+	// Resolve the entity handle in the persistent scene.
+	Zenith_Scene xPersistent = Zenith_SceneManager::GetPersistentScene();
+	Zenith_SceneData* pxPersistentData = Zenith_SceneManager::GetSceneData(xPersistent);
+	Zenith_Entity xPersistentEntity = pxPersistentData->FindEntityByName("GizmoPersistTarget");
+	Zenith_Assert(xPersistentEntity.IsValid(), "Persistent entity lookup must succeed before gizmo resolve");
+
+	// Set the gizmo target to the persistent entity — stored as pointer to a stable
+	// local, matching how Zenith_Editor passes its static selected-entity.
+	Zenith_Entity xTargetCopy = xPersistentEntity;
+	Flux_Gizmos::SetTargetEntity(&xTargetCopy);
+
+	// Confirm the active scene is NOT the persistent scene (otherwise this test
+	// would still pass under the buggy pre-fix code).
+	Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
+	Zenith_Assert(xActive != xPersistent,
+		"Test setup requires active scene to differ from persistent scene");
+
+	// Fixed behaviour: GetEditableTransform() walks the entity's own scene and
+	// returns its transform. Under the buggy pre-fix code this returns nullptr
+	// because the persistent entity isn't in the active scene's component pool.
+	Zenith_TransformComponent* pxTransform = Flux_Gizmos::GetEditableTransform();
+	Zenith_Assert(pxTransform != nullptr,
+		"GetEditableTransform must resolve persistent entity via entity.GetSceneData() (Unity parity)");
+
+	// Verify the transform we got back is actually the persistent entity's.
+	Zenith_TransformComponent& xExpected =
+		pxPersistentData->GetComponentFromEntity<Zenith_TransformComponent>(xPersistentEntity.GetEntityID());
+	Zenith_Assert(pxTransform == &xExpected,
+		"Returned transform must belong to the persistent entity, not the active scene");
+
+	// Cleanup: clear target, destroy persistent entity, unload temp scene.
+	Flux_Gizmos::SetTargetEntity(nullptr);
+	Zenith_SceneManager::DestroyImmediate(xPersistentEntity);
+	Zenith_SceneManager::UnloadScene(xTempScene);
+	Zenith_SceneManager::SetActiveScene(xSavedActive);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmoEditsPersistentEntityAcrossSceneLoad PASSED");
+}
+
+void Zenith_UnitTests::TestGizmoEditsEntityInAdditiveScene()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmoEditsEntityInAdditiveScene...");
+
+	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
+
+	// Scene A — will be active.
+	Zenith_Scene xSceneA = Zenith_SceneManager::CreateEmptyScene("GizmoActiveScene");
+	Zenith_SceneManager::SetActiveScene(xSceneA);
+
+	// Scene B — additive, contains the target.
+	Zenith_Scene xSceneB = Zenith_SceneManager::CreateEmptyScene("GizmoAdditiveScene");
+	Zenith_SceneData* pxSceneBData = Zenith_SceneManager::GetSceneData(xSceneB);
+	Zenith_Entity xTarget(pxSceneBData, "AdditiveTarget");
+
+	// Confirm active scene really is A, not B.
+	Zenith_Assert(Zenith_SceneManager::GetActiveScene() == xSceneA,
+		"Test setup: active scene should be A, target lives in B");
+
+	Flux_Gizmos::SetTargetEntity(&xTarget);
+
+	Zenith_TransformComponent* pxTransform = Flux_Gizmos::GetEditableTransform();
+	Zenith_Assert(pxTransform != nullptr,
+		"Gizmo must resolve target in additively-loaded scene (Unity multi-scene editing parity)");
+
+	Zenith_TransformComponent& xExpected =
+		pxSceneBData->GetComponentFromEntity<Zenith_TransformComponent>(xTarget.GetEntityID());
+	Zenith_Assert(pxTransform == &xExpected,
+		"Returned transform must belong to Scene B's entity, not Scene A");
+
+	Flux_Gizmos::SetTargetEntity(nullptr);
+	Zenith_SceneManager::UnloadScene(xSceneB);
+	Zenith_SceneManager::UnloadScene(xSceneA);
+	Zenith_SceneManager::SetActiveScene(xSavedActive);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmoEditsEntityInAdditiveScene PASSED");
+}
+
+void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmoDragSurvivesActiveSceneChange...");
+
+	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
+
+	// Scene A contains the target; Scene B becomes active mid-"drag".
+	Zenith_Scene xSceneA = Zenith_SceneManager::CreateEmptyScene("GizmoDragSourceScene");
+	Zenith_Scene xSceneB = Zenith_SceneManager::CreateEmptyScene("GizmoDragOtherScene");
+	Zenith_SceneManager::SetActiveScene(xSceneA);
+
+	Zenith_SceneData* pxSceneAData = Zenith_SceneManager::GetSceneData(xSceneA);
+	Zenith_Entity xTarget(pxSceneAData, "DragTarget");
+
+	Flux_Gizmos::SetTargetEntity(&xTarget);
+
+	// Begin the "drag" while target's scene is active.
+	Zenith_TransformComponent* pxBefore = Flux_Gizmos::GetEditableTransform();
+	Zenith_Assert(pxBefore != nullptr, "Pre-switch gizmo resolve must succeed");
+
+	// Simulate the active-scene change mid-drag.
+	Zenith_SceneManager::SetActiveScene(xSceneB);
+	Zenith_Assert(Zenith_SceneManager::GetActiveScene() == xSceneB,
+		"Active scene should be B after SetActiveScene");
+
+	// Post-switch: gizmo must still resolve to Scene A's entity (Unity parity —
+	// active scene doesn't gate editability).
+	Zenith_TransformComponent* pxAfter = Flux_Gizmos::GetEditableTransform();
+	Zenith_Assert(pxAfter != nullptr,
+		"Gizmo must keep resolving target after active-scene change (Unity parity)");
+	Zenith_Assert(pxAfter == pxBefore,
+		"Gizmo transform must be identical across the active-scene switch (same underlying entity)");
+
+	Flux_Gizmos::SetTargetEntity(nullptr);
+	Zenith_SceneManager::UnloadScene(xSceneB);
+	Zenith_SceneManager::UnloadScene(xSceneA);
+	Zenith_SceneManager::SetActiveScene(xSavedActive);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmoDragSurvivesActiveSceneChange PASSED");
+}
+
+void Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget...");
+
+	// No target set — must return nullptr.
+	Flux_Gizmos::SetTargetEntity(nullptr);
+	Zenith_Assert(Flux_Gizmos::GetEditableTransform() == nullptr,
+		"GetEditableTransform must return nullptr when no target is set");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget PASSED");
+}
+
 #endif // ZENITH_TOOLS
 
 // ============================================================================
@@ -11699,4 +11871,115 @@ void Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback()
 	}
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameRingIndexInsideCallback PASSED");
+}
+
+//=============================================================================
+// UIText alignment helper tests
+//=============================================================================
+
+void Zenith_UnitTests::TestUITextHorizontalAlignment()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUITextHorizontalAlignment...");
+
+	const float fLeft = 100.0f;
+	const float fWidth = 200.0f;
+	const float fLineWidth = 80.0f;
+
+	const float fLeftX = Zenith_UI::Zenith_UIText::ComputeHorizontalStartX(
+		fLeft, fWidth, fLineWidth, Zenith_UI::TextAlignment::Left);
+	Zenith_Assert(std::abs(fLeftX - 100.0f) < 0.001f, "Left alignment should return fLeft (100), got %.2f", fLeftX);
+
+	const float fCenterX = Zenith_UI::Zenith_UIText::ComputeHorizontalStartX(
+		fLeft, fWidth, fLineWidth, Zenith_UI::TextAlignment::Center);
+	Zenith_Assert(std::abs(fCenterX - 160.0f) < 0.001f,
+		"Center alignment should return fLeft + (fWidth - fLineWidth)/2 = 160, got %.2f", fCenterX);
+
+	const float fRightX = Zenith_UI::Zenith_UIText::ComputeHorizontalStartX(
+		fLeft, fWidth, fLineWidth, Zenith_UI::TextAlignment::Right);
+	Zenith_Assert(std::abs(fRightX - 220.0f) < 0.001f,
+		"Right alignment should return fLeft + fWidth - fLineWidth = 220, got %.2f", fRightX);
+
+	// Edge: line wider than element — center and right produce negative offsets.
+	const float fOverflowCenter = Zenith_UI::Zenith_UIText::ComputeHorizontalStartX(
+		0.0f, 100.0f, 300.0f, Zenith_UI::TextAlignment::Center);
+	Zenith_Assert(std::abs(fOverflowCenter - (-100.0f)) < 0.001f,
+		"Center alignment with overflow should clamp to negative offset by design");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUITextHorizontalAlignment PASSED");
+}
+
+void Zenith_UnitTests::TestUITextVerticalAlignment()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUITextVerticalAlignment...");
+
+	const float fTop = 50.0f;
+	const float fHeight = 120.0f;
+	const float fTextHeight = 40.0f;
+
+	const float fTopY = Zenith_UI::Zenith_UIText::ComputeVerticalStartY(
+		fTop, fHeight, fTextHeight, Zenith_UI::TextVerticalAlignment::Top);
+	Zenith_Assert(std::abs(fTopY - 50.0f) < 0.001f, "Top alignment should return fTop (50), got %.2f", fTopY);
+
+	const float fMiddleY = Zenith_UI::Zenith_UIText::ComputeVerticalStartY(
+		fTop, fHeight, fTextHeight, Zenith_UI::TextVerticalAlignment::Middle);
+	Zenith_Assert(std::abs(fMiddleY - 90.0f) < 0.001f,
+		"Middle alignment should return fTop + (fHeight - fTextHeight)/2 = 90, got %.2f", fMiddleY);
+
+	const float fBottomY = Zenith_UI::Zenith_UIText::ComputeVerticalStartY(
+		fTop, fHeight, fTextHeight, Zenith_UI::TextVerticalAlignment::Bottom);
+	Zenith_Assert(std::abs(fBottomY - 130.0f) < 0.001f,
+		"Bottom alignment should return fTop + fHeight - fTextHeight = 130, got %.2f", fBottomY);
+
+	// Edge: text exactly fills the element — middle equals top equals 50.
+	const float fExactFitMiddle = Zenith_UI::Zenith_UIText::ComputeVerticalStartY(
+		50.0f, 40.0f, 40.0f, Zenith_UI::TextVerticalAlignment::Middle);
+	Zenith_Assert(std::abs(fExactFitMiddle - 50.0f) < 0.001f,
+		"Exact-fit middle alignment should equal fTop");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUITextVerticalAlignment PASSED");
+}
+
+//=============================================================================
+// SlangCompiler helper tests
+//=============================================================================
+
+void Zenith_UnitTests::TestSlangIsBindingAlreadyPresent()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSlangIsBindingAlreadyPresent...");
+
+	Flux_ShaderReflection xReflection;
+
+	Flux_ReflectedBinding xFirst;
+	xFirst.m_uSet = 0;
+	xFirst.m_uBinding = 2;
+	xFirst.m_strName = "g_xCameraBuffer";
+	xFirst.m_eType = BINDING_TYPE_BUFFER;
+	xReflection.AddBinding(xFirst);
+
+	// Same (set, binding) with a different name — still a duplicate.
+	Flux_ReflectedBinding xDup;
+	xDup.m_uSet = 0;
+	xDup.m_uBinding = 2;
+	xDup.m_strName = "g_xCameraBufferPerEntryPoint";
+	xDup.m_eType = BINDING_TYPE_BUFFER;
+	Zenith_Assert(Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDup),
+		"Binding with matching (set=0, binding=2) should be detected as already present");
+
+	// Different set, same binding slot — NOT a duplicate.
+	Flux_ReflectedBinding xDifferentSet;
+	xDifferentSet.m_uSet = 1;
+	xDifferentSet.m_uBinding = 2;
+	xDifferentSet.m_strName = "g_xOther";
+	Zenith_Assert(!Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDifferentSet),
+		"Binding in different descriptor set should not be flagged as duplicate");
+
+	// Same set, different binding slot — NOT a duplicate.
+	Flux_ReflectedBinding xDifferentSlot;
+	xDifferentSlot.m_uSet = 0;
+	xDifferentSlot.m_uBinding = 3;
+	xDifferentSlot.m_strName = "g_xAnother";
+	Zenith_Assert(!Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDifferentSlot),
+		"Binding at different slot should not be flagged as duplicate");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSlangIsBindingAlreadyPresent PASSED");
 }

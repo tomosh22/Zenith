@@ -2371,6 +2371,7 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_AsyncLoad.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_Callbacks.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_EntityOps.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_Queries.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneOperation.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />

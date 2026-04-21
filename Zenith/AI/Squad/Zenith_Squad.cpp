@@ -171,9 +171,11 @@ void Zenith_Squad::UpdateFormationPositions()
 		return;
 	}
 
-	// Get leader position and rotation
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	// Get leader position and rotation. Audit §3.18 fix: resolve leader's OWN
+	// scene. Squads whose leader was moved to the persistent scene (or any
+	// non-active scene) must still compute formation positions.
+	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_xLeaderID);
 	if (!pxSceneData)
 	{
 		return;
@@ -427,20 +429,22 @@ void Zenith_Squad::Update(float fDt)
 	// Update shared knowledge
 	UpdateSharedKnowledge(fDt);
 
-	// Validate members still exist
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (!pxSceneData)
-	{
-		return;
-	}
-
+	// Validate members still exist. Audit §3.18 fix: resolve each member's OWN
+	// scene — squads whose members span scenes (e.g. leader moved to persistent)
+	// were previously pruned as "invalid" when they were merely in another scene.
 	for (int32_t i = static_cast<int32_t>(m_axMembers.GetSize()) - 1; i >= 0; --i)
 	{
-		Zenith_Entity xEntity = pxSceneData->TryGetEntity(m_axMembers.Get(static_cast<uint32_t>(i)).m_xEntityID);
+		Zenith_EntityID xMemberID = m_axMembers.Get(static_cast<uint32_t>(i)).m_xEntityID;
+		Zenith_SceneData* pxMemberScene = Zenith_SceneManager::GetSceneDataForEntity(xMemberID);
+		if (!pxMemberScene)
+		{
+			RemoveMember(xMemberID);
+			continue;
+		}
+		Zenith_Entity xEntity = pxMemberScene->TryGetEntity(xMemberID);
 		if (!xEntity.IsValid())
 		{
-			RemoveMember(m_axMembers.Get(static_cast<uint32_t>(i)).m_xEntityID);
+			RemoveMember(xMemberID);
 		}
 	}
 }
@@ -533,8 +537,8 @@ void Zenith_Squad::DebugDraw() const
 		return;
 	}
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	// Audit §3.18 fix: resolve leader's OWN scene for debug draw.
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_xLeaderID);
 	if (!pxSceneData)
 	{
 		return;

@@ -352,97 +352,85 @@ void Zenith_NavMeshGenerator::RasterizeTriangle(
 	}
 }
 
+// Iterate every walkable span across all columns and report count + Y range.
+Zenith_NavMeshGenerator::WalkableSpanStats Zenith_NavMeshGenerator::GatherWalkableSpanStats(const GenerationContext& xContext)
+{
+	const float fCellHeight = xContext.m_xConfig.m_fCellHeight;
+	WalkableSpanStats xStats;
+	for (uint32_t u = 0; u < xContext.m_axColumns.GetSize(); ++u)
+	{
+		VoxelSpan* pxSpan = xContext.m_axColumns.Get(u).m_pxFirstSpan;
+		while (pxSpan)
+		{
+			if (pxSpan->m_uAreaType > 0)
+			{
+				++xStats.m_uCount;
+				const float fWorldY = xContext.m_xBoundsMin.y + pxSpan->m_uMaxY * fCellHeight;
+				xStats.m_fMinY = std::min(xStats.m_fMinY, fWorldY);
+				xStats.m_fMaxY = std::max(xStats.m_fMaxY, fWorldY);
+			}
+			pxSpan = pxSpan->m_pxNext;
+		}
+	}
+	return xStats;
+}
+
+// True if any span above pxSpan is close enough to block an agent — the
+// signal that pxSpan itself must be demoted to unwalkable.
+bool Zenith_NavMeshGenerator::HasInsufficientClearance(const VoxelSpan* pxSpan, int32_t iAgentHeightCells)
+{
+	// INVARIANT: spans in a column's linked list are Y-sorted ascending by m_uMinY.
+	// Callers in the voxelisation pipeline (rasterisation + MergeOverlappingSpans)
+	// insert in ascending Y order and never re-order afterwards. The
+	// `iGap > iAgentHeightCells * 2` early-return below relies on this: once a
+	// gap exceeds 2× agent height, subsequent spans can only be further above,
+	// so nothing closer than iAgentHeightCells can block clearance. Any future
+	// code that builds or mutates a span column must preserve Y-ascending order,
+	// or this early-return must be removed — without the invariant, a later span
+	// with smaller Y would produce a negative gap and spuriously report a
+	// collision.
+	const VoxelSpan* pxAbove = pxSpan->m_pxNext;
+	while (pxAbove)
+	{
+		const int32_t iGap = static_cast<int32_t>(pxAbove->m_uMinY)
+						   - static_cast<int32_t>(pxSpan->m_uMaxY);
+		if (iGap < iAgentHeightCells) return true;
+		// Gap already beyond 2× agent height — nothing further above can matter.
+		if (iGap > iAgentHeightCells * 2) return false;
+		pxAbove = pxAbove->m_pxNext;
+	}
+	return false;
+}
+
 bool Zenith_NavMeshGenerator::FilterWalkableSpans(GenerationContext& xContext)
 {
-	// Check clearance above each span - if there's an obstacle (span) above
-	// within agent height, this span is not walkable
-
-	const float fCellHeight = xContext.m_xConfig.m_fCellHeight;
+	// Check clearance above each span — if an obstacle exists within agent
+	// height, this span is not walkable.
 	const int32_t iAgentHeightCells = static_cast<int32_t>(
-		xContext.m_xConfig.m_fAgentHeight / fCellHeight) + 1;
+		xContext.m_xConfig.m_fAgentHeight / xContext.m_xConfig.m_fCellHeight) + 1;
 
-	// Debug: Count and log span heights before filtering
-	uint32_t uTotalSpansBefore = 0;
-	float fMinSpanY = FLT_MAX;
-	float fMaxSpanY = -FLT_MAX;
-	for (uint32_t u = 0; u < xContext.m_axColumns.GetSize(); ++u)
-	{
-		VoxelSpan* pxSpan = xContext.m_axColumns.Get(u).m_pxFirstSpan;
-		while (pxSpan)
-		{
-			if (pxSpan->m_uAreaType > 0)
-			{
-				++uTotalSpansBefore;
-				float fWorldY = xContext.m_xBoundsMin.y + pxSpan->m_uMaxY * fCellHeight;
-				fMinSpanY = std::min(fMinSpanY, fWorldY);
-				fMaxSpanY = std::max(fMaxSpanY, fWorldY);
-			}
-			pxSpan = pxSpan->m_pxNext;
-		}
-	}
+	const WalkableSpanStats xBefore = GatherWalkableSpanStats(xContext);
 	Zenith_Log(LOG_CATEGORY_AI, "FilterWalkableSpans: %u walkable spans before filtering, Y range [%.2f, %.2f]",
-		uTotalSpansBefore, fMinSpanY, fMaxSpanY);
+		xBefore.m_uCount, xBefore.m_fMinY, xBefore.m_fMaxY);
 
 	uint32_t uFilteredCount = 0;
-
 	for (uint32_t u = 0; u < xContext.m_axColumns.GetSize(); ++u)
 	{
 		VoxelSpan* pxSpan = xContext.m_axColumns.Get(u).m_pxFirstSpan;
 		while (pxSpan)
 		{
-			// Only check walkable spans (those with m_uAreaType > 0)
-			if (pxSpan->m_uAreaType > 0)
+			if (pxSpan->m_uAreaType > 0 && HasInsufficientClearance(pxSpan, iAgentHeightCells))
 			{
-				// Check if there's enough clearance above this span
-				VoxelSpan* pxAbove = pxSpan->m_pxNext;
-				while (pxAbove)
-				{
-					// Calculate gap between top of this span and bottom of span above
-					int32_t iGap = static_cast<int32_t>(pxAbove->m_uMinY) -
-								   static_cast<int32_t>(pxSpan->m_uMaxY);
-
-					if (iGap < iAgentHeightCells)
-					{
-						// Not enough clearance - mark as unwalkable
-						pxSpan->m_uAreaType = 0;
-						++uFilteredCount;
-						break;
-					}
-
-					// If gap is large enough, no need to check spans further above
-					if (iGap > iAgentHeightCells * 2)
-					{
-						break;
-					}
-
-					pxAbove = pxAbove->m_pxNext;
-				}
+				pxSpan->m_uAreaType = 0;
+				++uFilteredCount;
 			}
 			pxSpan = pxSpan->m_pxNext;
 		}
 	}
 
-	// Debug: Count and log span heights after filtering
-	uint32_t uTotalSpansAfter = 0;
-	float fMinSpanYAfter = FLT_MAX;
-	float fMaxSpanYAfter = -FLT_MAX;
-	for (uint32_t u = 0; u < xContext.m_axColumns.GetSize(); ++u)
-	{
-		VoxelSpan* pxSpan = xContext.m_axColumns.Get(u).m_pxFirstSpan;
-		while (pxSpan)
-		{
-			if (pxSpan->m_uAreaType > 0)
-			{
-				++uTotalSpansAfter;
-				float fWorldY = xContext.m_xBoundsMin.y + pxSpan->m_uMaxY * fCellHeight;
-				fMinSpanYAfter = std::min(fMinSpanYAfter, fWorldY);
-				fMaxSpanYAfter = std::max(fMaxSpanYAfter, fWorldY);
-			}
-			pxSpan = pxSpan->m_pxNext;
-		}
-	}
+	const WalkableSpanStats xAfter = GatherWalkableSpanStats(xContext);
 	Zenith_Log(LOG_CATEGORY_AI, "FilterWalkableSpans: Filtered %u spans, %u remaining, Y range [%.2f, %.2f]",
-		uFilteredCount, uTotalSpansAfter, fMinSpanYAfter, fMaxSpanYAfter);
+		uFilteredCount, xAfter.m_uCount, xAfter.m_fMinY, xAfter.m_fMaxY);
 	return true;
 }
 

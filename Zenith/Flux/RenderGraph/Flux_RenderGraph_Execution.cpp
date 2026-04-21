@@ -245,78 +245,76 @@ static bool IsGraphTrackedVRAMHandle(const Flux_RenderGraph* pxGraph, Flux_VRAMH
 	return false;
 }
 
+// Resolve a usage entry to its VRAM handle. Returns false if the usage kind
+// doesn't participate in cross-reference (neither image-like nor buffer).
+static bool TryGetDeclaredVRAMHandle(const Flux_RenderGraph_ResourceUsage& rxUsage, Flux_VRAMHandle& xOut)
+{
+	if (rxUsage.m_xResource.IsImageLike())
+	{
+		xOut = rxUsage.m_xResource.GetVRAMHandle();
+		return true;
+	}
+	if (rxUsage.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+	{
+		xOut = rxUsage.m_xResource.AsBuffer()->m_xVRAMHandle;
+		return true;
+	}
+	return false;
+}
+
+// Is this usage declaration compatible with a bind of the given direction?
+// bIsWrite   : true when binding as UAV-write (or read-modify-write).
+// bExpectReads: true when scanning the pass's read-list, false for write-list.
+static bool IsAccessCompatibleWithBind(const Flux_RenderGraph_ResourceUsage& rxUsage, bool bIsWrite, bool bExpectReads)
+{
+	if (bIsWrite)
+	{
+		if (bExpectReads)
+		{
+			// Read-list entry only qualifies when it's READWRITE_UAV (graph tracks it as a reader too).
+			return rxUsage.m_eAccess == RESOURCE_ACCESS_READWRITE_UAV;
+		}
+		return true;
+	}
+	if (!bExpectReads)
+	{
+		// Write-list entry only qualifies for a read-bind if it's a read-modify-write UAV.
+		return rxUsage.m_eAccess == RESOURCE_ACCESS_READWRITE_UAV;
+	}
+	return rxUsage.m_eAccess == RESOURCE_ACCESS_READ_SRV
+		|| rxUsage.m_eAccess == RESOURCE_ACCESS_READ_DEPTH
+		|| rxUsage.m_eAccess == RESOURCE_ACCESS_READWRITE_UAV;
+}
+
+// Scan one usage list (reads or writes) for an entry matching xVRAMHandle whose
+// declared access direction is compatible with the bind call.
+static bool ScanUsagesForMatch(const Zenith_Vector<Flux_RenderGraph_ResourceUsage>& rxUsages, Flux_VRAMHandle xVRAMHandle, bool bIsWrite, bool bExpectReads)
+{
+	for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(rxUsages); !it.Done(); it.Next())
+	{
+		const Flux_RenderGraph_ResourceUsage& rxUsage = it.GetData();
+		Flux_VRAMHandle xDeclHandle;
+		if (!TryGetDeclaredVRAMHandle(rxUsage, xDeclHandle)) continue;
+		if (!(xDeclHandle == xVRAMHandle)) continue;
+		if (IsAccessCompatibleWithBind(rxUsage, bIsWrite, bExpectReads)) return true;
+	}
+	return false;
+}
+
 void Flux_RenderGraph::AssertBoundResourceDeclared(Flux_VRAMHandle xVRAMHandle, bool bIsWrite, const char* szBindCall)
 {
 	const Flux_RenderGraph_Pass* pxPass = tls_pxCurrentRecordingPass;
-	if (pxPass == nullptr)
-	{
-		// Outside a render-graph recording window — e.g. Initialise-time binding
-		// path or unit test. Legal.
-		return;
-	}
-	if (!xVRAMHandle.IsValid())
-	{
-		// Null/invalid VRAM handle cannot be cross-referenced — likely the caller
-		// already asserted on a higher level (or bound a placeholder for a
-		// disabled feature). Skip silently; the Vulkan validator will catch
-		// actual unbound-descriptor usage.
-		return;
-	}
-
-	// Scan the pass's declared reads and writes for a resource whose image-like
-	// VRAM handle matches the bound view's VRAM handle. Buffers compare by the
-	// buffer pointer's VRAM handle too (Flux_Buffer::m_xVRAMHandle).
-	auto ScanUsages = [&](const Zenith_Vector<Flux_RenderGraph_ResourceUsage>& rxUsages, bool bExpectReads) -> bool
-	{
-		for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(rxUsages); !it.Done(); it.Next())
-		{
-			const Flux_RenderGraph_ResourceUsage& rxUsage = it.GetData();
-			Flux_VRAMHandle xDeclHandle;
-			if (rxUsage.m_xResource.IsImageLike())
-				xDeclHandle = rxUsage.m_xResource.GetVRAMHandle();
-			else if (rxUsage.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
-				xDeclHandle = rxUsage.m_xResource.AsBuffer()->m_xVRAMHandle;
-			else
-				continue;
-
-			if (!(xDeclHandle == xVRAMHandle)) continue;
-			// Match — enforce that the access direction is compatible with the bind call.
-			if (bIsWrite)
-			{
-				if (bExpectReads)
-				{
-					// Read-list entry; only READWRITE_UAV on the read side is meaningful,
-					// because the graph tracks it as a reader too.
-					if (rxUsage.m_eAccess == RESOURCE_ACCESS_READWRITE_UAV) return true;
-					continue;
-				}
-				return true;
-			}
-			else
-			{
-				// Read binding (SRV). Must be declared as a Read with SRV-compatible access
-				// OR as READWRITE_UAV (which implies both read and write).
-				if (!bExpectReads)
-				{
-					// Write-list entry — only READWRITE_UAV qualifies (read-modify-write).
-					if (rxUsage.m_eAccess == RESOURCE_ACCESS_READWRITE_UAV) return true;
-					continue;
-				}
-				if (rxUsage.m_eAccess == RESOURCE_ACCESS_READ_SRV
-				 || rxUsage.m_eAccess == RESOURCE_ACCESS_READ_DEPTH
-				 || rxUsage.m_eAccess == RESOURCE_ACCESS_READWRITE_UAV)
-					return true;
-				continue;
-			}
-		}
-		return false;
-	};
+	// Outside a recording window (e.g. Initialise-time bind / unit test) — legal.
+	if (pxPass == nullptr) return;
+	// Null/invalid handle cannot be cross-referenced; Vulkan validator catches real misuse.
+	if (!xVRAMHandle.IsValid()) return;
 
 	// Resource is legal to bind if either: it's declared in this pass's reads
 	// or writes, OR it's an external static asset not tracked by the graph
 	// (e.g. disk-loaded skybox, BRDF LUT, frame constants buffer). Only the
 	// "tracked but undeclared" case is the missed-dependency bug we catch.
-	const bool bDeclared = ScanUsages(pxPass->m_xReads, true) || ScanUsages(pxPass->m_xWrites, false);
+	const bool bDeclared = ScanUsagesForMatch(pxPass->m_xReads, xVRAMHandle, bIsWrite, true)
+	                    || ScanUsagesForMatch(pxPass->m_xWrites, xVRAMHandle, bIsWrite, false);
 	const bool bUntracked = !IsGraphTrackedVRAMHandle(tls_pxCurrentRecordingGraph, xVRAMHandle);
 
 	Zenith_Assert(bDeclared || bUntracked,

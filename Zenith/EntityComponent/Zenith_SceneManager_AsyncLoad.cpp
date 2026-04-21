@@ -599,6 +599,20 @@ void Zenith_SceneManager::ProcessPendingAsyncUnloads()
 			uint32_t uActualRemoved = uBefore - axEntities.GetSize();
 			pxJob->m_uDestroyedEntities += uActualRemoved;
 			uEntitiesThisFrame += uActualRemoved;
+
+			// Audit §3.5 fix: log a warning when a single RemoveEntity cascade
+			// destroys significantly more than the batch size — the frame-budget
+			// contract is a soft cap ("at least one subtree per frame") and a
+			// cascade that destroys >2x the batch tells QA they should retune
+			// s_uAsyncUnloadBatchSize or flatten the hierarchy.
+			if (uActualRemoved > 2 * s_uAsyncUnloadBatchSize)
+			{
+				Zenith_Warning(LOG_CATEGORY_SCENE,
+					"Async unload: single RemoveEntity destroyed %u entities, exceeding 2x "
+					"batch size (%u). Frame-budget cap is a soft ceiling; consider raising "
+					"SetAsyncUnloadBatchSize() or flattening the hierarchy under the subtree root.",
+					uActualRemoved, s_uAsyncUnloadBatchSize);
+			}
 		}
 
 		// Update progress using the initial entity count captured at job creation

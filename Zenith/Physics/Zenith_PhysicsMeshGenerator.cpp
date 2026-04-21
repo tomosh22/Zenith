@@ -752,16 +752,13 @@ iter, fCellSize,
 
 void Zenith_PhysicsMeshGenerator::DebugDrawAllPhysicsMeshes()
 {
-	// Get all model components in the current scene
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (!pxSceneData)
-	{
-		return;
-	}
-
+	// Audit §3.18 fix: iterate all loaded scenes, not just the active one.
+	// Physics debug visualisation should surface every loaded scene's model
+	// components — e.g. props in additively-loaded scenes, characters in the
+	// persistent scene. Ref: Unity's GameObject.scene contract —
+	// https://docs.unity3d.com/ScriptReference/GameObject-scene.html
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	pxSceneData->GetAllOfComponentType<Zenith_ModelComponent>(xModels);
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
 
 	static bool ls_bLoggedOnce = false;
 

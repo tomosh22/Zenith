@@ -61,6 +61,9 @@ void Zenith_EditorTests::RunAllTests()
 	TestUndoStackClearOnSceneChange();
 	TestRedoStackClearOnNewEdit();
 
+	// §3.18 — UndoSystem cross-scene
+	TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitch();
+
 	// Entity Hierarchy tests
 	TestEntityReparenting();
 	TestCreateChildEntity();
@@ -713,6 +716,74 @@ void Zenith_EditorTests::TestRedoStackClearOnNewEdit()
 	Zenith_Assert(!Zenith_UndoSystem::CanRedo(), "Redo stack should be empty");
 
 	EDITOR_TEST_END(TestRedoStackClearOnNewEdit);
+}
+
+void Zenith_EditorTests::TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitch()
+{
+	EDITOR_TEST_BEGIN(TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitch);
+
+	Zenith_UndoSystem::Clear();
+
+	// Snapshot saved active so we can restore at the end.
+	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
+
+	// Create Scene A (active), put an entity there, capture its old transform.
+	Zenith_Scene xSceneA = Zenith_SceneManager::CreateEmptyScene("Audit318_UndoSceneA");
+	Zenith_SceneManager::SetActiveScene(xSceneA);
+	Zenith_SceneData* pxSceneAData = Zenith_SceneManager::GetSceneData(xSceneA);
+	Zenith_Entity xTargetEntity(pxSceneAData, "Audit318_UndoTarget");
+	Zenith_EntityID xTargetID = xTargetEntity.GetEntityID();
+	Zenith_TransformComponent& xTransform = xTargetEntity.GetComponent<Zenith_TransformComponent>();
+
+	const Zenith_Maths::Vector3 xOldPos(0.0f, 0.0f, 0.0f);
+	const Zenith_Maths::Quat xOldRot(1.0f, 0.0f, 0.0f, 0.0f);
+	const Zenith_Maths::Vector3 xOldScale(1.0f, 1.0f, 1.0f);
+	const Zenith_Maths::Vector3 xNewPos(10.0f, 20.0f, 30.0f);
+	const Zenith_Maths::Quat xNewRot(1.0f, 0.0f, 0.0f, 0.0f);
+	const Zenith_Maths::Vector3 xNewScale(2.0f, 2.0f, 2.0f);
+
+	xTransform.SetPosition(xOldPos);
+	xTransform.SetRotation(xOldRot);
+	xTransform.SetScale(xOldScale);
+
+	// Record a TransformEdit command (commits to undo stack via Execute).
+	auto* pxCmd = new Zenith_UndoCommand_TransformEdit(xTargetID, xOldPos, xOldRot, xOldScale, xNewPos, xNewRot, xNewScale);
+	Zenith_UndoSystem::Execute(pxCmd);
+
+	// Verify the new position landed.
+	Zenith_Maths::Vector3 xPosAfterExecute;
+	xTransform.GetPosition(xPosAfterExecute);
+	Zenith_Assert(glm::length(xPosAfterExecute - xNewPos) < 0.001f,
+		"§3.18: Execute should apply the new transform");
+
+	// Create Scene B and make it active — this is the scenario that previously
+	// broke undo: the command captured Scene A's handle, then Ctrl+Z would
+	// route through GetSceneData(m_xScene) but the selection-layer semantics
+	// would fail silently. With the EntityID-based resolution, undo survives.
+	Zenith_Scene xSceneB = Zenith_SceneManager::CreateEmptyScene("Audit318_UndoSceneB");
+	Zenith_SceneManager::SetActiveScene(xSceneB);
+	Zenith_Assert(Zenith_SceneManager::GetActiveScene() == xSceneB,
+		"Setup: Scene B should be active before undo");
+
+	// Ctrl+Z — must restore Scene A's entity transform despite Scene B being active.
+	Zenith_UndoSystem::Undo();
+
+	Zenith_Maths::Vector3 xPosAfterUndo;
+	xTransform.GetPosition(xPosAfterUndo);
+	Zenith_Assert(glm::length(xPosAfterUndo - xOldPos) < 0.001f,
+		"§3.18: Undo must restore Scene A's entity transform even when Scene B is active "
+		"(Unity parity: object-scene is intrinsic via GetSceneDataForEntity)");
+
+	// Cleanup
+	Zenith_UndoSystem::Clear();
+	Zenith_SceneManager::UnloadScene(xSceneB);
+	Zenith_SceneManager::UnloadScene(xSceneA);
+	if (xSavedActive.IsValid())
+	{
+		Zenith_SceneManager::SetActiveScene(xSavedActive);
+	}
+
+	EDITOR_TEST_END(TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitch);
 }
 
 //------------------------------------------------------------------------------

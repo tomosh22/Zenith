@@ -715,6 +715,9 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_Callbacks.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_EntityOps.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_Queries.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>

@@ -61,4 +61,9 @@ public:
 private:
 	Zenith_Entity m_xParentEntity;
 	Zenith_Vector<Zenith_TweenInstance> m_xActiveTweens;
+
+#ifdef ZENITH_TOOLS
+	void RenderActiveTweensSection();
+	void RenderAddTweenSection();
+#endif
 };

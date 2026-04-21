@@ -85,8 +85,11 @@ public:
 
 	static void Initialise();
 	static void Shutdown();
+	// Ticks sight / hearing / damage / memory-decay for every registered agent.
+	// Each agent resolves its owning scene internally via GetSceneDataForEntity,
+	// so cross-scene perception (agents in additive or persistent scenes) works
+	// without a scene argument — matching Unity's GameObject.scene intrinsic.
 	static void Update(float fDt);
-	static void Update(float fDt, Zenith_SceneData& xScene);  // For testing with specific scene
 	static void Reset();
 
 	// ========== Agent Registration ==========
@@ -174,8 +177,11 @@ private:
 	static std::unordered_map<uint64_t, TargetInfo> s_xTargets; // #TODO: Replace with engine hash map
 	static Zenith_Vector<Zenith_SoundStimulus> s_axActiveSounds;
 
-	// Update helpers
-	static void UpdateSightPerception(float fDt, Zenith_SceneData& xScene);
+	// Update helpers. Audit §3.18: each agent/target resolves its own scene via
+	// GetSceneDataForEntity internally, so these helpers no longer take a scene
+	// parameter. The public Update(fDt, SceneData&) overload remains for API
+	// compatibility but ignores the scene argument.
+	static void UpdateSightPerception(float fDt);
 	static void UpdateHearingPerception();
 	static void UpdateMemoryDecay(float fDt);
 	static void UpdateActiveSounds(float fDt);

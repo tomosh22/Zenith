@@ -13,10 +13,9 @@
 Zenith_Vector<Zenith_UndoCommand*> Zenith_UndoSystem::s_xUndoStack;
 Zenith_Vector<Zenith_UndoCommand*> Zenith_UndoSystem::s_xRedoStack;
 
-Zenith_UndoCommand::Zenith_UndoCommand()
-	: m_xScene(Zenith_SceneManager::GetActiveScene())
-{
-}
+// Zenith_UndoCommand default constructor is now defaulted in the header.
+// Derived commands resolve their target scene via GetSceneDataForEntity(EntityID)
+// at Execute/Undo time — see audit §3.18 note in Zenith_UndoSystem.h.
 
 //------------------------------------------------------------------------------
 // Zenith_UndoSystem Implementation
@@ -178,7 +177,9 @@ Zenith_UndoCommand_TransformEdit::Zenith_UndoCommand_TransformEdit(
 
 void Zenith_UndoCommand_TransformEdit::Execute()
 {
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xScene);
+	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
+	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uEntityID);
 	if (!pxSceneData)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot execute transform edit");
@@ -208,7 +209,9 @@ void Zenith_UndoCommand_TransformEdit::Execute()
 
 void Zenith_UndoCommand_TransformEdit::Undo()
 {
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xScene);
+	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
+	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uEntityID);
 	if (!pxSceneData)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot undo transform edit");
@@ -257,7 +260,9 @@ Zenith_UndoCommand_CreateEntity::Zenith_UndoCommand_CreateEntity(
 
 void Zenith_UndoCommand_CreateEntity::Execute()
 {
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xScene);
+	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
+	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uEntityID);
 	if (!pxSceneData)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot execute create entity");
@@ -286,7 +291,9 @@ void Zenith_UndoCommand_CreateEntity::Execute()
 
 void Zenith_UndoCommand_CreateEntity::Undo()
 {
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xScene);
+	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
+	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uEntityID);
 	if (!pxSceneData)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot undo create entity");
@@ -320,7 +327,9 @@ Zenith_UndoCommand_DeleteEntity::Zenith_UndoCommand_DeleteEntity(Zenith_EntityID
 	: m_uEntityID(uEntityID)
 	, m_bDeleted(false)
 {
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xScene);
+	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
+	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uEntityID);
 	if (!pxSceneData)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot capture state for deletion");
@@ -350,7 +359,9 @@ Zenith_UndoCommand_DeleteEntity::Zenith_UndoCommand_DeleteEntity(Zenith_EntityID
 
 void Zenith_UndoCommand_DeleteEntity::Execute()
 {
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xScene);
+	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
+	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uEntityID);
 	if (!pxSceneData)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot delete entity");
@@ -373,7 +384,9 @@ void Zenith_UndoCommand_DeleteEntity::Execute()
 
 void Zenith_UndoCommand_DeleteEntity::Undo()
 {
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xScene);
+	// Audit §3.18 fix: resolve the entity's OWN scene so undo/redo survives
+	// active-scene switches, DontDestroyOnLoad moves, and cross-scene edits.
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uEntityID);
 	if (!pxSceneData)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: No active scene, cannot undo delete entity");

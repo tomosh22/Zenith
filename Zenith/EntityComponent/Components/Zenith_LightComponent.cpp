@@ -166,131 +166,134 @@ void Zenith_LightComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 #ifdef ZENITH_TOOLS
 void Zenith_LightComponent::RenderPropertiesPanel()
 {
-	if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
+	if (!ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+	const char* aszLightTypes[] = { "Point", "Spot", "Directional" };
+	int iLightType = static_cast<int>(m_eLightType);
+	if (ImGui::Combo("Light Type", &iLightType, aszLightTypes, LIGHT_TYPE_COUNT))
 	{
-		// Light type selection
-		const char* aszLightTypes[] = { "Point", "Spot", "Directional" };
-		int iLightType = static_cast<int>(m_eLightType);
-		if (ImGui::Combo("Light Type", &iLightType, aszLightTypes, LIGHT_TYPE_COUNT))
+		m_eLightType = static_cast<LIGHT_TYPE>(iLightType);
+	}
+
+	ImGui::Separator();
+
+	// Color picker (linear RGB space)
+	float afColor[3] = { m_xColor.x, m_xColor.y, m_xColor.z };
+	if (ImGui::ColorEdit3("Color (Linear)", afColor))
+	{
+		m_xColor = { afColor[0], afColor[1], afColor[2] };
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Color must be in LINEAR RGB space (not sRGB)");
+	}
+
+	RenderLightIntensity();
+
+	// Range (point/spot only) — max 10km to prevent extreme light volumes
+	if (m_eLightType != LIGHT_TYPE_DIRECTIONAL)
+	{
+		float fRange = m_fRange;
+		if (ImGui::DragFloat("Range", &fRange, 0.5f, 0.1f, 10000.0f, "%.1f m"))
 		{
-			m_eLightType = static_cast<LIGHT_TYPE>(iLightType);
+			SetRange(fRange);
 		}
+	}
 
-		ImGui::Separator();
+	if (m_eLightType == LIGHT_TYPE_SPOT)
+	{
+		RenderSpotParameters();
+	}
 
-		// Color picker (linear RGB space)
-		float afColor[3] = { m_xColor.x, m_xColor.y, m_xColor.z };
-		if (ImGui::ColorEdit3("Color (Linear)", afColor))
+	ImGui::Separator();
+
+	// Shadow toggle (reserved for future)
+	ImGui::BeginDisabled();
+	ImGui::Checkbox("Cast Shadows", &m_bCastShadows);
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	ImGui::TextDisabled("(Not implemented)");
+
+	ImGui::Separator();
+	ImGui::Text("Transform Offsets");
+	RenderTransformOffsets();
+}
+
+void Zenith_LightComponent::RenderLightIntensity()
+{
+	// Intensity uses different physical units per light type. Minimum 0 prevents
+	// subtractive lighting; max prevents overflow.
+	if (m_eLightType == LIGHT_TYPE_DIRECTIONAL)
+	{
+		if (ImGui::DragFloat("Intensity (lux)", &m_fIntensity, fUI_INTENSITY_DRAG_SPEED_LUX, 0.0f, fUI_MAX_INTENSITY_LUX, "%.0f"))
 		{
-			m_xColor = { afColor[0], afColor[1], afColor[2] };
+			m_fIntensity = Zenith_Maths::Clamp(m_fIntensity, 0.0f, fUI_MAX_INTENSITY_LUX);
 		}
 		if (ImGui::IsItemHovered())
 		{
-			ImGui::SetTooltip("Color must be in LINEAR RGB space (not sRGB)");
+			ImGui::SetTooltip("Illuminance in lux (lm/m^2)\nOvercast: ~1000, Cloudy: ~10000, Sun: ~100000");
 		}
-
-		// Intensity with physical units
-		// Minimum 0 to prevent subtractive lighting, maximum to prevent overflow
-		if (m_eLightType == LIGHT_TYPE_DIRECTIONAL)
+	}
+	else
+	{
+		if (ImGui::DragFloat("Intensity (lm)", &m_fIntensity, fUI_INTENSITY_DRAG_SPEED_LUMENS, 0.0f, fUI_MAX_INTENSITY_LUMENS, "%.0f"))
 		{
-			// Directional lights: lux (lm/m²)
-			if (ImGui::DragFloat("Intensity (lux)", &m_fIntensity, fUI_INTENSITY_DRAG_SPEED_LUX, 0.0f, fUI_MAX_INTENSITY_LUX, "%.0f"))
-			{
-				m_fIntensity = Zenith_Maths::Clamp(m_fIntensity, 0.0f, fUI_MAX_INTENSITY_LUX);
-			}
-			if (ImGui::IsItemHovered())
-			{
-				ImGui::SetTooltip("Illuminance in lux (lm/m^2)\nOvercast: ~1000, Cloudy: ~10000, Sun: ~100000");
-			}
+			m_fIntensity = Zenith_Maths::Clamp(m_fIntensity, 0.0f, fUI_MAX_INTENSITY_LUMENS);
 		}
-		else
+		if (ImGui::IsItemHovered())
 		{
-			// Point/Spot lights: lumens
-			if (ImGui::DragFloat("Intensity (lm)", &m_fIntensity, fUI_INTENSITY_DRAG_SPEED_LUMENS, 0.0f, fUI_MAX_INTENSITY_LUMENS, "%.0f"))
-			{
-				m_fIntensity = Zenith_Maths::Clamp(m_fIntensity, 0.0f, fUI_MAX_INTENSITY_LUMENS);
-			}
-			if (ImGui::IsItemHovered())
-			{
-				ImGui::SetTooltip("Luminous power in lumens\n60W bulb: ~800, Studio light: ~5000");
-			}
+			ImGui::SetTooltip("Luminous power in lumens\n60W bulb: ~800, Studio light: ~5000");
 		}
+	}
+}
 
-		// Range (for point/spot)
-		// Max 10km to prevent extreme light volumes
-		if (m_eLightType != LIGHT_TYPE_DIRECTIONAL)
+void Zenith_LightComponent::RenderSpotParameters()
+{
+	ImGui::Separator();
+	ImGui::Text("Spot Parameters");
+
+	float fInnerDeg = glm::degrees(m_fSpotInnerAngle);
+	float fOuterDeg = glm::degrees(m_fSpotOuterAngle);
+
+	// Min 0 degrees matches SetSpotInnerAngle clamping behavior
+	if (ImGui::SliderFloat("Inner Angle", &fInnerDeg, 0.0f, 89.0f, "%.1f deg"))
+	{
+		SetSpotInnerAngle(glm::radians(fInnerDeg));
+	}
+	// Min 1 degree to prevent degenerate cone
+	if (ImGui::SliderFloat("Outer Angle", &fOuterDeg, 1.0f, 90.0f, "%.1f deg"))
+	{
+		SetSpotOuterAngle(glm::radians(fOuterDeg));
+	}
+}
+
+void Zenith_LightComponent::RenderTransformOffsets()
+{
+	ImGui::Checkbox("Use Position Offset", &m_bUsePositionOffset);
+	if (m_bUsePositionOffset)
+	{
+		float afPos[3] = { m_xPositionOffset.x, m_xPositionOffset.y, m_xPositionOffset.z };
+		if (ImGui::DragFloat3("Position Offset", afPos, 0.1f))
 		{
-			float fRange = m_fRange;
-			if (ImGui::DragFloat("Range", &fRange, 0.5f, 0.1f, 10000.0f, "%.1f m"))
-			{
-				SetRange(fRange);  // Use setter for validation
-			}
+			m_xPositionOffset = { afPos[0], afPos[1], afPos[2] };
 		}
+	}
 
-		// Spot light specific
-		if (m_eLightType == LIGHT_TYPE_SPOT)
-		{
-			ImGui::Separator();
-			ImGui::Text("Spot Parameters");
+	// Direction offset applies to spot/directional only (point lights are omnidirectional).
+	if (m_eLightType == LIGHT_TYPE_POINT) return;
 
-			float fInnerDeg = glm::degrees(m_fSpotInnerAngle);
-			float fOuterDeg = glm::degrees(m_fSpotOuterAngle);
+	ImGui::Checkbox("Use Direction Offset", &m_bUseDirectionOffset);
+	if (!m_bUseDirectionOffset) return;
 
-			// Min 0 degrees matches SetSpotInnerAngle clamping behavior
-			if (ImGui::SliderFloat("Inner Angle", &fInnerDeg, 0.0f, 89.0f, "%.1f deg"))
-			{
-				SetSpotInnerAngle(glm::radians(fInnerDeg));
-			}
-			// Min 1 degree to prevent degenerate cone
-			if (ImGui::SliderFloat("Outer Angle", &fOuterDeg, 1.0f, 90.0f, "%.1f deg"))
-			{
-				SetSpotOuterAngle(glm::radians(fOuterDeg));
-			}
-		}
-
-		ImGui::Separator();
-
-		// Shadow toggle (reserved for future)
-		ImGui::BeginDisabled();
-		ImGui::Checkbox("Cast Shadows", &m_bCastShadows);
-		ImGui::EndDisabled();
-		ImGui::SameLine();
-		ImGui::TextDisabled("(Not implemented)");
-
-		ImGui::Separator();
-		ImGui::Text("Transform Offsets");
-
-		// Position offset
-		ImGui::Checkbox("Use Position Offset", &m_bUsePositionOffset);
-		if (m_bUsePositionOffset)
-		{
-			float afPos[3] = { m_xPositionOffset.x, m_xPositionOffset.y, m_xPositionOffset.z };
-			if (ImGui::DragFloat3("Position Offset", afPos, 0.1f))
-			{
-				m_xPositionOffset = { afPos[0], afPos[1], afPos[2] };
-			}
-		}
-
-		// Direction offset (for spot/directional)
-		if (m_eLightType != LIGHT_TYPE_POINT)
-		{
-			ImGui::Checkbox("Use Direction Offset", &m_bUseDirectionOffset);
-			if (m_bUseDirectionOffset)
-			{
-				// Display the normalized direction from GetWorldDirection()
-				Zenith_Maths::Vector3 xNormalized = GetWorldDirection();
-				float afDir[3] = { xNormalized.x, xNormalized.y, xNormalized.z };
-				if (ImGui::DragFloat3("Direction Offset", afDir, 0.01f))
-				{
-					// Use setter to normalize and store
-					SetWorldDirection({ afDir[0], afDir[1], afDir[2] });
-				}
-				if (ImGui::IsItemHovered())
-				{
-					ImGui::SetTooltip("Direction is automatically normalized");
-				}
-			}
-		}
+	Zenith_Maths::Vector3 xNormalized = GetWorldDirection();
+	float afDir[3] = { xNormalized.x, xNormalized.y, xNormalized.z };
+	if (ImGui::DragFloat3("Direction Offset", afDir, 0.01f))
+	{
+		SetWorldDirection({ afDir[0], afDir[1], afDir[2] });
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Direction is automatically normalized");
 	}
 }
 #endif

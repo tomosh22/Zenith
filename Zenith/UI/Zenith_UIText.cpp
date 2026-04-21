@@ -124,124 +124,108 @@ float Zenith_UIText::GetTextHeight() const
 
 // ========== Rendering ==========
 
+float Zenith_UIText::ComputeHorizontalStartX(float fLeft, float fWidth, float fLineWidth, TextAlignment eAlignment)
+{
+    // Overflow semantics (code-review note): when fLineWidth > fWidth, Center and
+    // Right alignment return an X less than fLeft. This is intentional —
+    // centred/right-aligned text wider than its container slides past the left
+    // edge by design, matching CSS `text-align`, Unity's UGUI Text, and every
+    // major UI framework. Clamping here would silently promote Center/Right to
+    // Left alignment on overflow, which is a surprising behaviour change rather
+    // than a fix. Callers that want hard clipping should configure the canvas
+    // clip rect or enable text wrapping; callers that want truncation should
+    // do it before measuring fLineWidth.
+    switch (eAlignment)
+    {
+    case TextAlignment::Center: return fLeft + (fWidth - fLineWidth) * 0.5f;
+    case TextAlignment::Right:  return fLeft + fWidth - fLineWidth;
+    case TextAlignment::Left:
+    default:                    return fLeft;
+    }
+}
+
+float Zenith_UIText::ComputeVerticalStartY(float fTop, float fHeight, float fTextHeight, TextVerticalAlignment eAlignment)
+{
+    switch (eAlignment)
+    {
+    case TextVerticalAlignment::Middle: return fTop + (fHeight - fTextHeight) * 0.5f;
+    case TextVerticalAlignment::Bottom: return fTop + fHeight - fTextHeight;
+    case TextVerticalAlignment::Top:
+    default:                            return fTop;
+    }
+}
+
+void Zenith_UIText::SubmitTextWithShadow(Zenith_UICanvas& xCanvas, const std::string& strText,
+                                         const Zenith_Maths::Vector2& xPos, float fAlpha)
+{
+    if (m_bShadowEnabled)
+    {
+        Zenith_Maths::Vector2 xShadowPos = { xPos.x + m_xShadowOffset.x, xPos.y + m_xShadowOffset.y };
+        Zenith_Maths::Vector4 xShadowColor = m_xShadowColor;
+        xShadowColor.a *= fAlpha;
+        xCanvas.SubmitText(strText, xShadowPos, m_fFontSize, xShadowColor);
+    }
+
+    Zenith_Maths::Vector4 xTextColor = m_xColor;
+    xTextColor.a *= fAlpha;
+    xCanvas.SubmitText(strText, xPos, m_fFontSize, xTextColor);
+}
+
+void Zenith_UIText::RenderMultilineAligned(Zenith_UICanvas& xCanvas, const std::string& strDisplay,
+                                           float fLeft, float fWidth, float fStartY, float fAlpha)
+{
+    const float fCharWidth = m_fFontSize * fCHAR_SPACING;
+    float fLineY = fStartY;
+    size_t uLineStart = 0;
+
+    while (uLineStart <= strDisplay.length())
+    {
+        size_t uLineEnd = strDisplay.find('\n', uLineStart);
+        if (uLineEnd == std::string::npos) uLineEnd = strDisplay.length();
+
+        const size_t uLineLen = uLineEnd - uLineStart;
+        if (uLineLen > 0)
+        {
+            const std::string strLine = strDisplay.substr(uLineStart, uLineLen);
+            const float fLineWidth = static_cast<float>(uLineLen) * fCharWidth;
+            const float fLineX = ComputeHorizontalStartX(fLeft, fWidth, fLineWidth, m_eAlignment);
+            SubmitTextWithShadow(xCanvas, strLine, { fLineX, fLineY }, fAlpha);
+        }
+
+        fLineY += m_fFontSize;
+        uLineStart = uLineEnd + 1;
+    }
+}
+
 void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
 {
-    if (!m_bVisible || m_strText.empty())
-        return;
+    if (!m_bVisible || m_strText.empty()) return;
 
     const std::string& strDisplay = GetDisplayText();
 
-    // Get our screen bounds
-    Zenith_Maths::Vector4 xBounds = GetScreenBounds();
-    float fLeft = xBounds.x;
-    float fTop = xBounds.y;
-    float fWidth = xBounds.z - xBounds.x;
-    float fHeight = xBounds.w - xBounds.y;
+    const Zenith_Maths::Vector4 xBounds = GetScreenBounds();
+    const float fLeft = xBounds.x;
+    const float fTop = xBounds.y;
+    const float fWidth = xBounds.z - xBounds.x;
+    const float fHeight = xBounds.w - xBounds.y;
 
-    float fTextHeight = GetTextHeight();
+    const float fStartY = ComputeVerticalStartY(fTop, fHeight, GetTextHeight(), m_eVerticalAlignment);
+    const float fAlpha = GetEffectiveAlpha();
 
-    // Vertical alignment within element bounds
-    float fStartY = fTop;
-    switch (m_eVerticalAlignment)
-    {
-    case TextVerticalAlignment::Top:
-        fStartY = fTop;
-        break;
-    case TextVerticalAlignment::Middle:
-        fStartY = fTop + (fHeight - fTextHeight) * 0.5f;
-        break;
-    case TextVerticalAlignment::Bottom:
-        fStartY = fTop + fHeight - fTextHeight;
-        break;
-    }
-
-    float fAlpha = GetEffectiveAlpha();
-    float fCharWidth = m_fFontSize * fCHAR_SPACING;
-
-    // For Center/Right alignment with multi-line text, render each line separately
-    // so each line is independently centered/right-aligned within the element bounds
-    bool bMultiLine = strDisplay.find('\n') != std::string::npos;
+    // Center/Right alignment with multi-line text renders each line independently so
+    // each is aligned within the element bounds. Left alignment or single-line text
+    // can submit the display string as one block.
+    const bool bMultiLine = strDisplay.find('\n') != std::string::npos;
     if (m_eAlignment != TextAlignment::Left && bMultiLine)
     {
-        float fLineY = fStartY;
-        size_t uLineStart = 0;
-
-        while (uLineStart <= strDisplay.length())
-        {
-            size_t uLineEnd = strDisplay.find('\n', uLineStart);
-            if (uLineEnd == std::string::npos)
-                uLineEnd = strDisplay.length();
-
-            size_t uLineLen = uLineEnd - uLineStart;
-            if (uLineLen > 0)
-            {
-                std::string strLine = strDisplay.substr(uLineStart, uLineLen);
-                float fLineWidth = static_cast<float>(uLineLen) * fCharWidth;
-
-                float fLineX = fLeft;
-                if (m_eAlignment == TextAlignment::Center)
-                    fLineX = fLeft + (fWidth - fLineWidth) * 0.5f;
-                else
-                    fLineX = fLeft + fWidth - fLineWidth;
-
-                Zenith_Maths::Vector2 xLinePos = { fLineX, fLineY };
-
-                if (m_bShadowEnabled)
-                {
-                    Zenith_Maths::Vector2 xShadowPos = {
-                        xLinePos.x + m_xShadowOffset.x,
-                        xLinePos.y + m_xShadowOffset.y
-                    };
-                    Zenith_Maths::Vector4 xShadowColor = m_xShadowColor;
-                    xShadowColor.a *= fAlpha;
-                    xCanvas.SubmitText(strLine, xShadowPos, m_fFontSize, xShadowColor);
-                }
-
-                Zenith_Maths::Vector4 xTextColor = m_xColor;
-                xTextColor.a *= fAlpha;
-                xCanvas.SubmitText(strLine, xLinePos, m_fFontSize, xTextColor);
-            }
-
-            fLineY += m_fFontSize;
-            uLineStart = uLineEnd + 1;
-        }
+        RenderMultilineAligned(xCanvas, strDisplay, fLeft, fWidth, fStartY, fAlpha);
     }
     else
     {
-        // Single line or Left alignment: render as a single block
-        float fTextWidth = GetTextWidth();
-        Zenith_Maths::Vector2 xTextPos = { fLeft, fStartY };
-
-        switch (m_eAlignment)
-        {
-        case TextAlignment::Left:
-            xTextPos.x = fLeft;
-            break;
-        case TextAlignment::Center:
-            xTextPos.x = fLeft + (fWidth - fTextWidth) * 0.5f;
-            break;
-        case TextAlignment::Right:
-            xTextPos.x = fLeft + fWidth - fTextWidth;
-            break;
-        }
-
-        if (m_bShadowEnabled)
-        {
-            Zenith_Maths::Vector2 xShadowPos = {
-                xTextPos.x + m_xShadowOffset.x,
-                xTextPos.y + m_xShadowOffset.y
-            };
-            Zenith_Maths::Vector4 xShadowColor = m_xShadowColor;
-            xShadowColor.a *= fAlpha;
-            xCanvas.SubmitText(strDisplay, xShadowPos, m_fFontSize, xShadowColor);
-        }
-
-        Zenith_Maths::Vector4 xTextColor = m_xColor;
-        xTextColor.a *= fAlpha;
-        xCanvas.SubmitText(strDisplay, xTextPos, m_fFontSize, xTextColor);
+        const float fLineX = ComputeHorizontalStartX(fLeft, fWidth, GetTextWidth(), m_eAlignment);
+        SubmitTextWithShadow(xCanvas, strDisplay, { fLineX, fStartY }, fAlpha);
     }
 
-    // Render children (if any)
     Zenith_UIElement::Render(xCanvas);
 }
 

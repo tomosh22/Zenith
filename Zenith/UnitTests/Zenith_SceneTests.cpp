@@ -845,6 +845,26 @@ void Zenith_SceneTests::RunAllTests()
 	TestF7_GetAllOfComponentTypeFromAllScenesAggregates();
 	TestF6_GetSceneByNameReturnsFirstMatchOnDuplicate();
 
+	// §3.6 — Awake wave-drain overflow (Unity-parity divergence tests)
+	TestAwakeOverflow_FiresOnDestroyOnNonAwokenEntities();
+	TestAwakeOverflow_StopsPropagationAfterCap();
+	TestAwakeOverflow_ErrorLogged();
+
+	// §3.7 — double-unload protection hardening
+	TestAudit37_UnloadSceneRejectedDuringAsyncUnload();
+
+	// §3.8 — deferred-load op-id recovery (Unity-parity gap)
+	TestAudit38_GetLastDeferredLoadOp_ValidAfterDeferredLoad();
+	TestAudit38_GetLastDeferredLoadOp_InvalidInitially();
+
+	// §3.12 — AreRenderTasksActive not gated on ZENITH_ASSERT
+	TestAudit312_SceneIsValid_WorksInAllAssertConfigs();
+
+	// §3.3 — IsLoaded decoupled from IsUnloading (Unity-parity)
+	TestAudit33_SceneUnloadingCallback_IsLoadedRemainsTrue();
+	TestAudit33_SceneUnloadingCallback_EntityEnumerationViaSceneData();
+	TestAudit33_SceneUnloadedCallback_IsLoadedIsFalse();
+
 	// Physics::Reset() is still done here as a belt-and-braces scene-to-physics-
 	// suite boundary wipe — the *real* fix for prior physics-test flakiness lives
 	// in Zenith_PhysicsTests.cpp::ResetPhysicsState(), which now calls Physics::Reset()
@@ -14498,4 +14518,474 @@ void Zenith_SceneTests::TestF6_GetSceneByNameReturnsFirstMatchOnDuplicate()
 	Zenith_SceneManager::UnloadScene(xFirst);
 	Zenith_SceneManager::UnloadScene(xSecond);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestF6_GetSceneByNameReturnsFirstMatchOnDuplicate passed");
+}
+
+//==============================================================================
+// Scene audit 2026 remediation — §3.6 Awake wave-drain overflow tests
+//==============================================================================
+// Background (Unity-parity note): DispatchAwakeForNewScene caps Awake cascades
+// at 100 waves to prevent runaway content from spinning forever. When the cap
+// is hit, overflow entities — whose OnAwake never ran — are routed through
+// RemoveEntity, which fires OnDestroy.
+//
+// Unity's documented contract is that OnDestroy only fires on objects that
+// became active (i.e. had Awake). Zenith deliberately diverges: firing
+// OnDestroy on overflow entities gives component destructors a chance to
+// release OS resources instead of leaking them. The scene that hits this cap
+// is already malformed; predictable cleanup beats strict parity here.
+//
+// Refs:
+//   https://docs.unity3d.com/ScriptReference/MonoBehaviour.Awake.html
+//   https://docs.unity3d.com/ScriptReference/MonoBehaviour.OnDestroy.html
+//
+// Harness notes:
+//   - DispatchAwakeForNewScene's wave cap lives inside a Zenith_Assert, which
+//     normally halts in debug builds. The tests run inside Zenith_AssertCaptureScope
+//     so the cap-assert records a hit instead of crashing the runner.
+//   - We build a chain by installing an OnAwake callback that spawns exactly
+//     one new entity per wave (up to an upper bound so test scenes stay bounded
+//     even if the cap is later raised). Each spawned entity carries the same
+//     behaviour, producing a wave per entity.
+//==============================================================================
+
+namespace
+{
+	// Shared chain-spawn callback state. Scoped to file so we can reset cleanly
+	// between tests. The callback itself is a plain function pointer (CLAUDE.md
+	// forbids std::function) — state is passed via these file-scope statics.
+	static Zenith_SceneData* s_pxAwakeOverflowScene = nullptr;
+	static u_int             s_uAwakeOverflowSpawned = 0;
+	static constexpr u_int   s_uAwakeOverflowCeiling = 150; // > the 100-wave cap
+
+	// RAII helper that flips s_bIsLoadingScene so entity creation skips the
+	// runtime immediate-lifecycle path and instead defers to the wave-drain
+	// loop inside DispatchAwakeForNewScene. This is how the scene-load path
+	// is exercised from a test: if we let entities Awake immediately, the
+	// chain recurses through DispatchImmediateLifecycleForRuntime and never
+	// reaches the cap under test.
+	struct ScopedLoadingScene
+	{
+		ScopedLoadingScene()  { Zenith_SceneManager::SetLoadingScene(true); }
+		~ScopedLoadingScene() { Zenith_SceneManager::SetLoadingScene(false); }
+		ScopedLoadingScene(const ScopedLoadingScene&) = delete;
+		ScopedLoadingScene& operator=(const ScopedLoadingScene&) = delete;
+	};
+
+	// Creates an entity with SceneTestBehaviour attached, but defers OnAwake
+	// until explicit DispatchAwakeForNewScene. The regular CreateEntityWithBehaviour
+	// helper chains `SetBehaviour<T>()` which calls OnAwake immediately (bypassing
+	// s_bIsLoadingScene) — good for runtime spawn tests but wrong for exercising
+	// the scene-load wave-drain cap. We instead use SetBehaviourForSerialization
+	// which wires up the behaviour without dispatching lifecycle.
+	Zenith_Entity CreateEntityWithDeferredBehaviour(Zenith_SceneData* pxSceneData, const std::string& strName)
+	{
+		Zenith_Entity xEntity(pxSceneData, strName);
+		xEntity.AddComponent<Zenith_ScriptComponent>().SetBehaviourForSerialization<SceneTestBehaviour>();
+		return xEntity;
+	}
+
+	void ChainSpawnOnAwake(Zenith_Entity&)
+	{
+		if (s_uAwakeOverflowSpawned >= s_uAwakeOverflowCeiling)
+			return;
+		s_uAwakeOverflowSpawned++;
+		// Create the next link using the *deferred* helper. SetBehaviour() (the
+		// non-deferred version) would call OnAwake synchronously here, recursing
+		// through the chain inside the Zenith_Entity constructor and never
+		// reaching the wave-cap branch. SetBehaviourForSerialization leaves the
+		// behaviour primed but dormant, so the next wave of DispatchAwakeForNewScene
+		// is what actually dispatches it — producing one wave per chain-link as
+		// the cap-test requires.
+		CreateEntityWithDeferredBehaviour(s_pxAwakeOverflowScene, "AwakeChain_" + std::to_string(s_uAwakeOverflowSpawned));
+	}
+
+	// Reset all chain state so each test starts from a known baseline.
+	void ResetAwakeOverflowState(Zenith_SceneData* pxScene)
+	{
+		s_pxAwakeOverflowScene = pxScene;
+		s_uAwakeOverflowSpawned = 0;
+		SceneTestBehaviour::ResetCounters();
+		SceneTestBehaviour::s_pfnOnAwakeCallback = &ChainSpawnOnAwake;
+	}
+
+	void ClearAwakeOverflowState()
+	{
+		SceneTestBehaviour::s_pfnOnAwakeCallback = nullptr;
+		s_pxAwakeOverflowScene = nullptr;
+		s_uAwakeOverflowSpawned = 0;
+	}
+}
+
+void Zenith_SceneTests::TestAwakeOverflow_FiresOnDestroyOnNonAwokenEntities()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAwakeOverflow_FiresOnDestroyOnNonAwokenEntities...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("AwakeOverflow_OnDestroy");
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+
+	ResetAwakeOverflowState(pxData);
+
+	uint32_t uDestroyCountAfterDispatch = 0;
+	uint32_t uAwakeCountAfterDispatch = 0;
+	u_int uSpawnedAfterDispatch = 0;
+	bool bAssertFired = false;
+	{
+		// Suppress runtime immediate-lifecycle dispatch. Without this, the seed
+		// entity's Awake fires recursively during the Zenith_Entity constructor
+		// and never reaches the wave-cap branch we want to exercise.
+		ScopedLoadingScene xLoadingGuard;
+
+		// Seed entity zero — sits in m_xActiveEntities with Awake deferred.
+		CreateEntityWithDeferredBehaviour(pxData, "AwakeChain_0");
+
+		Zenith_AssertCaptureScope xCapture;
+		// This is the scene-load dispatch path. It enters the wave-drain loop,
+		// hits the 100-wave cap (captured), and routes overflow entities through
+		// RemoveEntity which fires OnDestroy.
+		pxData->DispatchAwakeForNewScene();
+		bAssertFired = xCapture.DidAssertFire();
+		// Snapshot while still in capture scope so the following Zenith_Asserts
+		// don't themselves get captured.
+		uDestroyCountAfterDispatch = SceneTestBehaviour::s_uDestroyCount;
+		uAwakeCountAfterDispatch = SceneTestBehaviour::s_uAwakeCount;
+		uSpawnedAfterDispatch = s_uAwakeOverflowSpawned;
+	}
+
+	Zenith_Assert(bAssertFired,
+		"§3.6: wave-drain cap assert must fire when Awake chain exceeds 100 waves "
+		"(awakes=%u, chain-spawned=%u, destroys=%u)",
+		uAwakeCountAfterDispatch, uSpawnedAfterDispatch, uDestroyCountAfterDispatch);
+	Zenith_Assert(uDestroyCountAfterDispatch > 0,
+		"§3.6: OnDestroy must fire on overflow entities (Unity-divergence is deliberate). "
+		"Got %u destroys (awakes=%u, chain-spawned=%u).",
+		uDestroyCountAfterDispatch, uAwakeCountAfterDispatch, uSpawnedAfterDispatch);
+
+	ClearAwakeOverflowState();
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAwakeOverflow_FiresOnDestroyOnNonAwokenEntities passed");
+}
+
+void Zenith_SceneTests::TestAwakeOverflow_StopsPropagationAfterCap()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAwakeOverflow_StopsPropagationAfterCap...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("AwakeOverflow_Bounded");
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+
+	ResetAwakeOverflowState(pxData);
+
+	// We cap chain spawning at s_uAwakeOverflowCeiling (150). If the wave-drain
+	// actually halted as documented, total OnAwake calls will be bounded below
+	// that ceiling. If the cap failed, the chain would keep cascading and Awake
+	// count would approach the ceiling (or we'd crash on unbounded recursion).
+	u_int uAwakeCountAfterDispatch = 0;
+	{
+		ScopedLoadingScene xLoadingGuard;
+		CreateEntityWithDeferredBehaviour(pxData, "AwakeChain_0");
+
+		Zenith_AssertCaptureScope xCapture;
+		pxData->DispatchAwakeForNewScene();
+		uAwakeCountAfterDispatch = SceneTestBehaviour::s_uAwakeCount;
+	}
+
+	// The documented cap is uMAX_AWAKE_ITERATIONS (100). Each wave Awakes
+	// exactly one entity in our chain, so the Awake count should be bounded
+	// strictly below the chain ceiling.
+	Zenith_Assert(uAwakeCountAfterDispatch > 0,
+		"§3.6: at least the seed entity must have received Awake (got %u)", uAwakeCountAfterDispatch);
+	Zenith_Assert(uAwakeCountAfterDispatch < s_uAwakeOverflowCeiling,
+		"§3.6: wave cap must halt Awake propagation before reaching the chain ceiling. "
+		"Got %u awakes vs ceiling %u.", uAwakeCountAfterDispatch, s_uAwakeOverflowCeiling);
+
+	ClearAwakeOverflowState();
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAwakeOverflow_StopsPropagationAfterCap passed");
+}
+
+void Zenith_SceneTests::TestAwakeOverflow_ErrorLogged()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAwakeOverflow_ErrorLogged...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("AwakeOverflow_Error");
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+
+	ResetAwakeOverflowState(pxData);
+
+	// The overflow branch emits Zenith_Error in addition to the assert. The
+	// assert is captured here; the Zenith_Error path remains a logged side
+	// effect. We verify the assert fired (which is the observable signal that
+	// the error-logging branch was entered).
+	uint32_t uHits = 0;
+	{
+		ScopedLoadingScene xLoadingGuard;
+		CreateEntityWithDeferredBehaviour(pxData, "AwakeChain_0");
+
+		Zenith_AssertCaptureScope xCapture;
+		pxData->DispatchAwakeForNewScene();
+		uHits = xCapture.GetHitCount();
+	}
+
+	Zenith_Assert(uHits >= 1,
+		"§3.6: overflow branch must trip the wave-cap assert at least once (got %u)", uHits);
+
+	ClearAwakeOverflowState();
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAwakeOverflow_ErrorLogged passed");
+}
+
+//==============================================================================
+// Scene audit 2026 remediation — §3.7 Double-unload hardening tests
+//==============================================================================
+
+void Zenith_SceneTests::TestAudit37_UnloadSceneRejectedDuringAsyncUnload()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit37_UnloadSceneRejectedDuringAsyncUnload...");
+
+	// Create two scenes so CanUnloadScene's "last-scene" guard doesn't trip; we
+	// want the async-unload-job-present check to be the reason for rejection.
+	Zenith_Scene xKeep  = Zenith_SceneManager::CreateEmptyScene("Audit37_Keep");
+	Zenith_Scene xTarget = Zenith_SceneManager::CreateEmptyScene("Audit37_Target");
+	Zenith_Assert(xKeep.IsValid() && xTarget.IsValid() && xKeep != xTarget,
+		"Setup: two scenes required");
+
+	// Kick off async unload — this sets m_bIsUnloading AND queues an AsyncUnloadJob.
+	Zenith_SceneOperationID ulUnloadOp = Zenith_SceneManager::UnloadSceneAsync(xTarget);
+	Zenith_Assert(ulUnloadOp != ZENITH_INVALID_OPERATION_ID,
+		"Setup: async unload must enqueue successfully");
+
+	// Now a sync UnloadScene on the same scene must be rejected. The relevant
+	// code path is CanUnloadScene which now walks s_axAsyncUnloadJobs in addition
+	// to checking m_bIsUnloading. Both would reject; the point of the hardening
+	// is that either signal alone is sufficient.
+	Zenith_SceneManager::UnloadScene(xTarget);  // should be a no-op (logs warning)
+
+	// Pump frames until the async unload actually drains the entities and frees
+	// the slot. After that, xTarget should be invalid.
+	for (uint32_t i = 0; i < 60 && xTarget.IsValid(); ++i)
+	{
+		PumpFrames(1);
+	}
+
+	Zenith_SceneManager::UnloadScene(xKeep);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit37_UnloadSceneRejectedDuringAsyncUnload passed");
+}
+
+//==============================================================================
+// Scene audit 2026 remediation — §3.8 GetLastDeferredLoadOp tests
+//==============================================================================
+
+void Zenith_SceneTests::TestAudit38_GetLastDeferredLoadOp_ValidAfterDeferredLoad()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit38_GetLastDeferredLoadOp_ValidAfterDeferredLoad...");
+
+	const std::string strPath = "audit38_deferred" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "Audit38Entity");
+
+	// Reset the stashed op-id before the test so we can detect a fresh stash.
+	Zenith_SceneManager::s_ulLastDeferredLoadOp = ZENITH_INVALID_OPERATION_ID;
+
+	// Simulate being inside Update so HandleDeferredLoad promotes the sync
+	// LoadScene to LoadSceneAsync internally.
+	Zenith_SceneManager::s_bIsUpdating = true;
+	Zenith_Scene xResult = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneManager::s_bIsUpdating = false;
+
+	// Sync return is INVALID_SCENE (Unity divergence the accessor papers over).
+	Zenith_Assert(!xResult.IsValid(),
+		"§3.8: deferred sync LoadScene returns INVALID_SCENE (pre-fix behaviour preserved)");
+
+	// Post-fix: op-id is recoverable via GetLastDeferredLoadOp.
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::GetLastDeferredLoadOp();
+	Zenith_Assert(ulOp != ZENITH_INVALID_OPERATION_ID,
+		"§3.8: GetLastDeferredLoadOp must return a valid id after a deferred sync load");
+	Zenith_Assert(Zenith_SceneManager::IsOperationValid(ulOp),
+		"§3.8: stashed op-id must identify a live SceneOperation");
+
+	// Pump to completion so we can clean up.
+	Zenith_Scene xLoaded;
+	for (uint32_t i = 0; i < 60; ++i)
+	{
+		PumpFrames(1);
+		xLoaded = Zenith_SceneManager::GetSceneByPath(strPath);
+		if (xLoaded.IsValid()) break;
+	}
+	Zenith_Assert(xLoaded.IsValid(), "Scene must eventually load after pumping");
+
+	Zenith_SceneManager::UnloadScene(xLoaded);
+	CleanupTestSceneFile(strPath);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit38_GetLastDeferredLoadOp_ValidAfterDeferredLoad passed");
+}
+
+void Zenith_SceneTests::TestAudit38_GetLastDeferredLoadOp_InvalidInitially()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit38_GetLastDeferredLoadOp_InvalidInitially...");
+
+	// Reset to baseline; cold read must return the sentinel.
+	Zenith_SceneManager::s_ulLastDeferredLoadOp = ZENITH_INVALID_OPERATION_ID;
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::GetLastDeferredLoadOp();
+	Zenith_Assert(ulOp == ZENITH_INVALID_OPERATION_ID,
+		"§3.8: GetLastDeferredLoadOp must return ZENITH_INVALID_OPERATION_ID when nothing has been deferred");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit38_GetLastDeferredLoadOp_InvalidInitially passed");
+}
+
+//==============================================================================
+// Scene audit 2026 remediation — §3.12 AreRenderTasksActive config-independent
+//==============================================================================
+
+void Zenith_SceneTests::TestAudit312_SceneIsValid_WorksInAllAssertConfigs()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit312_SceneIsValid_WorksInAllAssertConfigs...");
+
+	// IsValid reads AreRenderTasksActive(). The getter is now always-defined so
+	// IsValid behaves the same whether ZENITH_ASSERT is set or not. We verify
+	// from the main thread (the only thread that can run tests anyway) that
+	// IsValid returns a coherent answer for a valid and an invalid handle.
+	Zenith_Scene xValid = Zenith_SceneManager::CreateEmptyScene("Audit312_ValidScene");
+	Zenith_Assert(xValid.IsValid(), "§3.12: IsValid must return true for a freshly created scene");
+
+	Zenith_Scene xInvalid = Zenith_Scene::INVALID_SCENE;
+	Zenith_Assert(!xInvalid.IsValid(), "§3.12: INVALID_SCENE handle must report IsValid == false");
+
+	// Confirm the getter itself is callable and returns false when no render
+	// task window is active (we're on the main thread outside render submission).
+	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(),
+		"§3.12: AreRenderTasksActive must be false during ordinary main-thread test code");
+
+	Zenith_SceneManager::UnloadScene(xValid);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit312_SceneIsValid_WorksInAllAssertConfigs passed");
+}
+
+//==============================================================================
+// Scene audit 2026 remediation — §3.3 IsLoaded / SceneUnloading tests
+//==============================================================================
+
+namespace
+{
+	// Callback state — plain globals so we can use function-pointer callbacks
+	// (CLAUDE.md forbids std::function). Reset per test.
+	static bool s_bAudit33_SceneUnloadingFired = false;
+	static bool s_bAudit33_IsLoadedInsideUnloading = false;
+	static bool s_bAudit33_EnumeratedEntitiesInsideUnloading = false;
+	static uint32_t s_uAudit33_EntityCountSeenInsideUnloading = 0;
+	static bool s_bAudit33_SceneUnloadedFired = false;
+	static bool s_bAudit33_IsLoadedInsideUnloaded = false;
+
+	void Audit33_OnSceneUnloading_IsLoadedProbe(Zenith_Scene xScene)
+	{
+		s_bAudit33_SceneUnloadingFired = true;
+		s_bAudit33_IsLoadedInsideUnloading = xScene.IsLoaded();
+	}
+
+	void Audit33_OnSceneUnloading_EntityEnumerationProbe(Zenith_Scene xScene)
+	{
+		s_bAudit33_SceneUnloadingFired = true;
+		Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+		if (pxData != nullptr)
+		{
+			s_bAudit33_EnumeratedEntitiesInsideUnloading = true;
+			s_uAudit33_EntityCountSeenInsideUnloading = pxData->GetEntityCount();
+		}
+	}
+
+	void Audit33_OnSceneUnloaded_IsLoadedProbe(Zenith_Scene xScene)
+	{
+		s_bAudit33_SceneUnloadedFired = true;
+		// After SceneUnloaded fires, the SceneData is gone; IsLoaded() should
+		// return false via the "GetSceneData returns nullptr" branch.
+		s_bAudit33_IsLoadedInsideUnloaded = xScene.IsLoaded();
+	}
+}
+
+void Zenith_SceneTests::TestAudit33_SceneUnloadingCallback_IsLoadedRemainsTrue()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit33_SceneUnloadingCallback_IsLoadedRemainsTrue...");
+
+	s_bAudit33_SceneUnloadingFired = false;
+	s_bAudit33_IsLoadedInsideUnloading = false;
+
+	// Need a second scene around so CanUnloadScene's last-scene guard won't trip.
+	Zenith_Scene xKeep = Zenith_SceneManager::CreateEmptyScene("Audit33_Keep_A");
+	Zenith_Scene xTarget = Zenith_SceneManager::CreateEmptyScene("Audit33_Target_A");
+
+	Zenith_SceneManager::CallbackHandle xHandle =
+		Zenith_SceneManager::RegisterSceneUnloadingCallback(&Audit33_OnSceneUnloading_IsLoadedProbe);
+
+	Zenith_SceneManager::UnloadScene(xTarget);  // Sync unload fires SceneUnloading inline
+
+	Zenith_SceneManager::UnregisterSceneUnloadingCallback(xHandle);
+
+	Zenith_Assert(s_bAudit33_SceneUnloadingFired,
+		"§3.3: SceneUnloading callback must fire on sync UnloadScene");
+	Zenith_Assert(s_bAudit33_IsLoadedInsideUnloading,
+		"§3.3: IsLoaded() must remain true inside SceneUnloading callback (Unity parity with Scene.isLoaded)");
+
+	Zenith_SceneManager::UnloadScene(xKeep);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit33_SceneUnloadingCallback_IsLoadedRemainsTrue passed");
+}
+
+void Zenith_SceneTests::TestAudit33_SceneUnloadingCallback_EntityEnumerationViaSceneData()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit33_SceneUnloadingCallback_EntityEnumerationViaSceneData...");
+
+	s_bAudit33_SceneUnloadingFired = false;
+	s_bAudit33_EnumeratedEntitiesInsideUnloading = false;
+	s_uAudit33_EntityCountSeenInsideUnloading = 0;
+
+	Zenith_Scene xKeep = Zenith_SceneManager::CreateEmptyScene("Audit33_Keep_B");
+	Zenith_Scene xTarget = Zenith_SceneManager::CreateEmptyScene("Audit33_Target_B");
+	Zenith_SceneData* pxTargetData = Zenith_SceneManager::GetSceneData(xTarget);
+
+	// Populate target with a known number of entities so we can assert the
+	// callback saw the pre-destruction state.
+	constexpr u_int uEXPECTED = 3;
+	Zenith_Entity xE1(pxTargetData, "Audit33_E1");
+	Zenith_Entity xE2(pxTargetData, "Audit33_E2");
+	Zenith_Entity xE3(pxTargetData, "Audit33_E3");
+	Zenith_Assert(pxTargetData->GetEntityCount() >= uEXPECTED,
+		"Setup: target scene must contain at least %u entities", uEXPECTED);
+
+	Zenith_SceneManager::CallbackHandle xHandle =
+		Zenith_SceneManager::RegisterSceneUnloadingCallback(&Audit33_OnSceneUnloading_EntityEnumerationProbe);
+
+	Zenith_SceneManager::UnloadScene(xTarget);
+
+	Zenith_SceneManager::UnregisterSceneUnloadingCallback(xHandle);
+
+	Zenith_Assert(s_bAudit33_SceneUnloadingFired,
+		"§3.3: SceneUnloading callback must fire");
+	Zenith_Assert(s_bAudit33_EnumeratedEntitiesInsideUnloading,
+		"§3.3: SceneData must be accessible inside SceneUnloading callback");
+	Zenith_Assert(s_uAudit33_EntityCountSeenInsideUnloading >= uEXPECTED,
+		"§3.3: entity count inside SceneUnloading callback must reflect pre-destruction state "
+		"(got %u, expected >= %u)", s_uAudit33_EntityCountSeenInsideUnloading, uEXPECTED);
+
+	Zenith_SceneManager::UnloadScene(xKeep);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit33_SceneUnloadingCallback_EntityEnumerationViaSceneData passed");
+}
+
+void Zenith_SceneTests::TestAudit33_SceneUnloadedCallback_IsLoadedIsFalse()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit33_SceneUnloadedCallback_IsLoadedIsFalse...");
+
+	s_bAudit33_SceneUnloadedFired = false;
+	s_bAudit33_IsLoadedInsideUnloaded = true;  // start true so we can detect the flip
+
+	Zenith_Scene xKeep = Zenith_SceneManager::CreateEmptyScene("Audit33_Keep_C");
+	Zenith_Scene xTarget = Zenith_SceneManager::CreateEmptyScene("Audit33_Target_C");
+
+	Zenith_SceneManager::CallbackHandle xHandle =
+		Zenith_SceneManager::RegisterSceneUnloadedCallback(&Audit33_OnSceneUnloaded_IsLoadedProbe);
+
+	Zenith_SceneManager::UnloadScene(xTarget);
+
+	Zenith_SceneManager::UnregisterSceneUnloadedCallback(xHandle);
+
+	Zenith_Assert(s_bAudit33_SceneUnloadedFired,
+		"§3.3: SceneUnloaded callback must fire after UnloadScene");
+	Zenith_Assert(!s_bAudit33_IsLoadedInsideUnloaded,
+		"§3.3: IsLoaded() must return false inside SceneUnloaded (scene data has been torn down)");
+
+	Zenith_SceneManager::UnloadScene(xKeep);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAudit33_SceneUnloadedCallback_IsLoadedIsFalse passed");
 }

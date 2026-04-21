@@ -115,110 +115,92 @@ void Zenith_BTParallel::OnEnter(Zenith_Entity& xAgent, Zenith_Blackboard& xBlack
 	}
 }
 
-BTNodeStatus Zenith_BTParallel::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+void Zenith_BTParallel::EnsureChildResultsInitialised(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard)
 {
-	// Lazy initialization if OnEnter wasn't called
-	if (m_axChildResults.GetSize() != GetChildCount())
-	{
-		m_axChildResults.Clear();
-		m_axChildResults.Reserve(GetChildCount());
-		for (uint32_t u = 0; u < GetChildCount(); ++u)
-		{
-			m_axChildResults.PushBack(BTNodeStatus::RUNNING);
-			GetChild(u)->OnEnter(xAgent, xBlackboard);
-		}
-	}
+	if (m_axChildResults.GetSize() == GetChildCount()) return;
 
-	uint32_t uSuccessCount = 0;
-	uint32_t uFailureCount = 0;
-	uint32_t uRunningCount = 0;
-
-	// Execute all children that are still running
+	m_axChildResults.Clear();
+	m_axChildResults.Reserve(GetChildCount());
 	for (uint32_t u = 0; u < GetChildCount(); ++u)
 	{
-		// Skip children that have already completed
+		m_axChildResults.PushBack(BTNodeStatus::RUNNING);
+		GetChild(u)->OnEnter(xAgent, xBlackboard);
+	}
+}
+
+Zenith_BTParallel::ChildStatusCounts Zenith_BTParallel::TickChildrenAndTally(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+{
+	ChildStatusCounts xCounts;
+	for (uint32_t u = 0; u < GetChildCount(); ++u)
+	{
+		// Already-completed children carry their status into the tally.
 		if (m_axChildResults.Get(u) != BTNodeStatus::RUNNING)
 		{
-			if (m_axChildResults.Get(u) == BTNodeStatus::SUCCESS)
-			{
-				++uSuccessCount;
-			}
-			else
-			{
-				++uFailureCount;
-			}
+			if (m_axChildResults.Get(u) == BTNodeStatus::SUCCESS) ++xCounts.m_uSuccess;
+			else ++xCounts.m_uFailure;
 			continue;
 		}
 
 		Zenith_BTNode* pxChild = GetChild(u);
-		BTNodeStatus eChildStatus = pxChild->Execute(xAgent, xBlackboard, fDt);
+		const BTNodeStatus eChildStatus = pxChild->Execute(xAgent, xBlackboard, fDt);
 		m_axChildResults.Get(u) = eChildStatus;
 
 		if (eChildStatus == BTNodeStatus::SUCCESS)
 		{
 			pxChild->OnExit(xAgent, xBlackboard);
-			++uSuccessCount;
+			++xCounts.m_uSuccess;
 		}
 		else if (eChildStatus == BTNodeStatus::FAILURE)
 		{
 			pxChild->OnExit(xAgent, xBlackboard);
-			++uFailureCount;
+			++xCounts.m_uFailure;
 		}
 		else
 		{
-			++uRunningCount;
+			++xCounts.m_uRunning;
 		}
 	}
+	return xCounts;
+}
 
-	// Check success policy
-	if (m_eSuccessPolicy == Policy::REQUIRE_ONE)
-	{
-		if (uSuccessCount > 0)
-		{
-			AbortRunningChildren(xAgent, xBlackboard);
-			m_eLastStatus = BTNodeStatus::SUCCESS;
-			return m_eLastStatus;
-		}
-	}
-	else // REQUIRE_ALL
-	{
-		if (uSuccessCount == GetChildCount())
-		{
-			m_eLastStatus = BTNodeStatus::SUCCESS;
-			return m_eLastStatus;
-		}
-	}
+bool Zenith_BTParallel::SuccessPolicyMet(const ChildStatusCounts& xCounts) const
+{
+	return m_eSuccessPolicy == Policy::REQUIRE_ONE
+		? xCounts.m_uSuccess > 0
+		: xCounts.m_uSuccess == GetChildCount();
+}
 
-	// Check failure policy
-	if (m_eFailurePolicy == Policy::REQUIRE_ONE)
-	{
-		if (uFailureCount > 0)
-		{
-			AbortRunningChildren(xAgent, xBlackboard);
-			m_eLastStatus = BTNodeStatus::FAILURE;
-			return m_eLastStatus;
-		}
-	}
-	else // REQUIRE_ALL
-	{
-		if (uFailureCount == GetChildCount())
-		{
-			m_eLastStatus = BTNodeStatus::FAILURE;
-			return m_eLastStatus;
-		}
-	}
+bool Zenith_BTParallel::FailurePolicyMet(const ChildStatusCounts& xCounts) const
+{
+	return m_eFailurePolicy == Policy::REQUIRE_ONE
+		? xCounts.m_uFailure > 0
+		: xCounts.m_uFailure == GetChildCount();
+}
 
-	// Still running if any children are running
-	if (uRunningCount > 0)
+BTNodeStatus Zenith_BTParallel::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+{
+	EnsureChildResultsInitialised(xAgent, xBlackboard);
+	const ChildStatusCounts xCounts = TickChildrenAndTally(xAgent, xBlackboard, fDt);
+
+	if (SuccessPolicyMet(xCounts))
 	{
-		m_eLastStatus = BTNodeStatus::RUNNING;
+		// REQUIRE_ONE success wins early — abort the rest. REQUIRE_ALL only
+		// succeeds when every child already completed, so nothing is running.
+		if (m_eSuccessPolicy == Policy::REQUIRE_ONE) AbortRunningChildren(xAgent, xBlackboard);
+		m_eLastStatus = BTNodeStatus::SUCCESS;
 		return m_eLastStatus;
 	}
 
-	// All children completed but neither success nor failure policy was met
-	// This happens when REQUIRE_ALL success but some failed, or vice versa
-	// Default to failure in this edge case
-	m_eLastStatus = BTNodeStatus::FAILURE;
+	if (FailurePolicyMet(xCounts))
+	{
+		if (m_eFailurePolicy == Policy::REQUIRE_ONE) AbortRunningChildren(xAgent, xBlackboard);
+		m_eLastStatus = BTNodeStatus::FAILURE;
+		return m_eLastStatus;
+	}
+
+	// Still running if any children are running; otherwise all completed but
+	// neither policy was met (e.g. REQUIRE_ALL success with some failures) — default to failure.
+	m_eLastStatus = xCounts.m_uRunning > 0 ? BTNodeStatus::RUNNING : BTNodeStatus::FAILURE;
 	return m_eLastStatus;
 }
 

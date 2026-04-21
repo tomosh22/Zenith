@@ -90,12 +90,88 @@ void Zenith_SceneData::DestroyEntityComponents(Zenith_EntityID xID)
 	Zenith_ComponentMetaRegistry::Get().RemoveAllComponents(xEntity);
 }
 
+void Zenith_SceneData::CollectResetHierarchy(Zenith_Vector<Zenith_EntityID>& axHierarchyOut)
+{
+	// Collect roots directly from m_xActiveEntities rather than relying on the cached
+	// list, because Reset() may run with entities whose TransformComponent has already
+	// been destroyed (e.g. TestSceneDisableDestroyHelpers) — and RebuildRootEntityCache
+	// asserts on IsRoot() which needs that component.
+	Zenith_Vector<Zenith_EntityID> axRoots;
+	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
+	{
+		Zenith_EntityID xID = m_xActiveEntities.Get(u);
+		if (!EntityExists(xID)) continue;
+		// No transform → no hierarchy → picked up by the sweep below.
+		if (!EntityHasComponent<Zenith_TransformComponent>(xID)) continue;
+		Zenith_Entity xEntity(this, xID);
+		if (xEntity.IsRoot()) axRoots.PushBack(xID);
+	}
+
+	for (u_int u = 0; u < axRoots.GetSize(); ++u)
+	{
+		CollectHierarchyDepthFirst(axRoots.Get(u), axHierarchyOut);
+	}
+
+	// Sweep: pick up active entities not reached by the root traversal. This covers
+	// (a) entities without a TransformComponent (treated as standalone), and (b) any
+	// transient mid-test state where an entity exists but is not attached to a root.
+	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
+	{
+		Zenith_EntityID xID = m_xActiveEntities.Get(u);
+		if (!EntityExists(xID)) continue;
+		bool bAlreadyCollected = false;
+		for (u_int v = 0; v < axHierarchyOut.GetSize(); ++v)
+		{
+			if (axHierarchyOut.Get(v) == xID) { bAlreadyCollected = true; break; }
+		}
+		if (!bAlreadyCollected) axHierarchyOut.PushBack(xID);
+	}
+}
+
+void Zenith_SceneData::DestroyComponentPools()
+{
+	for (Zenith_Vector<Zenith_ComponentPoolBase*>::Iterator xIt(m_xComponents); !xIt.Done(); xIt.Next())
+	{
+		Zenith_ComponentPoolBase* pxPool = xIt.GetData();
+		if (pxPool) delete pxPool;
+	}
+	m_xComponents.Clear();
+}
+
+void Zenith_SceneData::FreeGlobalSlotsForActiveEntities()
+{
+	for (u_int i = 0; i < m_xActiveEntities.GetSize(); ++i)
+	{
+		Zenith_EntityID xID = m_xActiveEntities.Get(i);
+		if (xID.m_uIndex >= s_axEntitySlots.GetSize()) continue;
+		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+		if (!xSlot.IsOccupied() || xSlot.m_uGeneration != xID.m_uGeneration) continue;
+		s_axEntityComponents.Get(xID.m_uIndex).clear();
+		xSlot.ReleaseSlot();
+		s_axFreeEntityIndices.PushBack(xID.m_uIndex);
+	}
+}
+
+void Zenith_SceneData::ClearSceneStateAfterReset()
+{
+	m_xActiveEntities.Clear();
+	m_axNewlyCreatedEntities.Clear();
+	m_axPendingStartEntities.Clear();
+	m_uPendingStartCount = 0;
+	m_xPendingDestruction.Clear();
+	m_axTimedDestructions.Clear();
+	m_bIsUpdating = false;
+	m_xMainCameraEntity = INVALID_ENTITY_ID;
+	m_axCachedRootEntities.Clear();
+	m_bRootEntitiesDirty = true;
+}
+
 void Zenith_SceneData::ResetEntitiesOnly()
 {
-	// C8: spell out the guidance. Entity reset destroys every entity in the scene —
-	// doing that mid-Update corrupts iteration of m_xActiveEntities. Same-scene
-	// self-unload is not supported; use LoadScene(SINGLE) or LoadSceneAsync to
-	// transition between scenes, and let the scene manager tear the old one down.
+	// C8: Entity reset destroys every entity in the scene — doing that mid-Update
+	// corrupts iteration of m_xActiveEntities. Same-scene self-unload is not
+	// supported; use LoadScene(SINGLE) or LoadSceneAsync to transition between
+	// scenes and let the scene manager tear the old one down.
 	Zenith_Assert(!m_bIsUpdating,
 		"ResetEntitiesOnly() called during Update — unload your scene via LoadScene(SINGLE) or "
 		"LoadSceneAsync, not from within OnUpdate/OnFixedUpdate. Same-scene self-"
@@ -106,60 +182,12 @@ void Zenith_SceneData::ResetEntitiesOnly()
 		"Reset(): scene mutation while render tasks are reading — render-task invariant violated");
 	m_bIsBeingDestroyed = true;
 
-	// Unity parity: Two-pass destruction in hierarchy-depth-first order.
-	//
-	// RemoveEntity() already walks children-before-parent via CollectHierarchyDepthFirst;
-	// Reset() previously iterated in reverse insertion order, which is close enough in
-	// most cases but breaks when children are created before their parent (possible with
-	// runtime reparenting, or serialization formats that don't guarantee root-first order).
-	// Using the same traversal as RemoveEntity keeps single-entity destruction and whole-
-	// scene teardown consistent, and guarantees every child is disabled/destroyed before
-	// its parent, matching Unity semantics.
-	// Collect roots directly from m_xActiveEntities rather than relying on the cached
-	// list, because Reset() may run with entities whose TransformComponent has already
-	// been destroyed (e.g. TestSceneDisableDestroyHelpers) — and RebuildRootEntityCache
-	// asserts on IsRoot() which needs that component.
-	Zenith_Vector<Zenith_EntityID> axRoots;
-	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
-	{
-		Zenith_EntityID xID = m_xActiveEntities.Get(u);
-		if (!EntityExists(xID)) continue;
-		if (!EntityHasComponent<Zenith_TransformComponent>(xID))
-		{
-			// No transform → no hierarchy → treat as its own root and handle via the
-			// sweep below, which appends it to axHierarchy.
-			continue;
-		}
-		Zenith_Entity xEntity(this, xID);
-		if (xEntity.IsRoot())
-		{
-			axRoots.PushBack(xID);
-		}
-	}
-
+	// Unity parity: two-pass destruction in hierarchy-depth-first order. The same
+	// traversal as RemoveEntity keeps single-entity destruction and whole-scene
+	// teardown consistent and guarantees every child is disabled/destroyed before
+	// its parent.
 	Zenith_Vector<Zenith_EntityID> axHierarchy;
-	for (u_int u = 0; u < axRoots.GetSize(); ++u)
-	{
-		CollectHierarchyDepthFirst(axRoots.Get(u), axHierarchy);
-	}
-
-	// Sweep: pick up any active entities not reached by the root traversal. This covers
-	// (a) entities without a TransformComponent (treated as standalone), and (b) any
-	// transient mid-test state where an entity exists but is not attached to a root.
-	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
-	{
-		Zenith_EntityID xID = m_xActiveEntities.Get(u);
-		if (!EntityExists(xID)) continue;
-		bool bAlreadyCollected = false;
-		for (u_int v = 0; v < axHierarchy.GetSize(); ++v)
-		{
-			if (axHierarchy.Get(v) == xID) { bAlreadyCollected = true; break; }
-		}
-		if (!bAlreadyCollected)
-		{
-			axHierarchy.PushBack(xID);
-		}
-	}
+	CollectResetHierarchy(axHierarchy);
 
 	// Pass 1: OnDisable for every entity while all data is still intact.
 	for (u_int u = 0; u < axHierarchy.GetSize(); ++u)
@@ -167,52 +195,16 @@ void Zenith_SceneData::ResetEntitiesOnly()
 		DisableEntity(axHierarchy.Get(u));
 	}
 
-	// Pass 2: OnDestroy + component removal in hierarchy-depth order. Components are
-	// removed in dependency-safe serialization order inside RemoveAllComponents.
+	// Pass 2: OnDestroy + component removal in hierarchy-depth order. Components
+	// are removed in dependency-safe serialization order inside RemoveAllComponents.
 	for (u_int u = 0; u < axHierarchy.GetSize(); ++u)
 	{
 		DestroyEntityComponents(axHierarchy.Get(u));
 	}
 
-	// Delete now-empty component pools
-	for (Zenith_Vector<Zenith_ComponentPoolBase*>::Iterator xIt(m_xComponents); !xIt.Done(); xIt.Next())
-	{
-		Zenith_ComponentPoolBase* pxPool = xIt.GetData();
-		if (pxPool)
-		{
-			delete pxPool;
-		}
-	}
-	m_xComponents.Clear();
-
-	// Free global slots for entities that belonged to this scene
-	for (u_int i = 0; i < m_xActiveEntities.GetSize(); ++i)
-	{
-		Zenith_EntityID xID = m_xActiveEntities.Get(i);
-		if (xID.m_uIndex < s_axEntitySlots.GetSize())
-		{
-			Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
-			if (xSlot.IsOccupied() && xSlot.m_uGeneration == xID.m_uGeneration)
-			{
-				s_axEntityComponents.Get(xID.m_uIndex).clear();
-				xSlot.ReleaseSlot();
-				s_axFreeEntityIndices.PushBack(xID.m_uIndex);
-			}
-		}
-	}
-
-	m_xActiveEntities.Clear();
-	m_axNewlyCreatedEntities.Clear();
-	m_axPendingStartEntities.Clear();
-	m_uPendingStartCount = 0;
-	m_xPendingDestruction.Clear();
-	m_axTimedDestructions.Clear();
-	m_bIsUpdating = false;
-	m_xMainCameraEntity = INVALID_ENTITY_ID;
-
-	// Clear root entity cache
-	m_axCachedRootEntities.Clear();
-	m_bRootEntitiesDirty = true;
+	DestroyComponentPools();
+	FreeGlobalSlotsForActiveEntities();
+	ClearSceneStateAfterReset();
 
 	m_bIsBeingDestroyed = false;
 }
@@ -890,6 +882,19 @@ void Zenith_SceneData::DispatchAwakeForNewScene()
 				// A scene that hits this path is malformed, so we're also not worried
 				// about recursive OnDestroy creating more entities — they'd just be
 				// swept by the same cleanup on the next scene load.
+				//
+				// Audit §3.6 note (Unity-parity divergence, deliberate): Unity's
+				// MonoBehaviour.OnDestroy only fires on objects that became active
+				// (i.e. had Awake). Zenith fires OnDestroy here on entities whose
+				// Awake never ran. That's a deliberate divergence: this branch only
+				// triggers on pathological content (100+ cascading Awake-creates-Awake
+				// waves), and routing overflow through RemoveEntity gives component
+				// destructors — especially those holding OS resources — a chance to
+				// clean up instead of silently leaking. The alternative (skip OnDestroy
+				// for strict Unity parity) would trade a predictable cleanup path for
+				// an invisible resource leak in an already-malformed scene.
+				// Refs: https://docs.unity3d.com/ScriptReference/MonoBehaviour.Awake.html
+				//       https://docs.unity3d.com/ScriptReference/MonoBehaviour.OnDestroy.html
 				Zenith_Vector<Zenith_EntityID> axUnawokenIDs;
 				for (u_int u = uWaveStart; u < uWaveEnd; ++u)
 				{

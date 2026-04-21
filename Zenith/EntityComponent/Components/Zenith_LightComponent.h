@@ -122,6 +122,12 @@ private:
 	// Unified validation for spot light angles - ensures constraints are met
 	void ValidateSpotAngles();
 
+#ifdef ZENITH_TOOLS
+	void RenderLightIntensity();
+	void RenderSpotParameters();
+	void RenderTransformOffsets();
+#endif
+
 	Zenith_Entity m_xParentEntity;
 
 	LIGHT_TYPE m_eLightType = LIGHT_TYPE_POINT;

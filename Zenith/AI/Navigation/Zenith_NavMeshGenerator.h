@@ -168,6 +168,16 @@ private:
 
 	static bool FilterWalkableSpans(GenerationContext& xContext);
 
+	// FilterWalkableSpans helpers.
+	struct WalkableSpanStats
+	{
+		uint32_t m_uCount = 0;
+		float m_fMinY = FLT_MAX;
+		float m_fMaxY = -FLT_MAX;
+	};
+	static WalkableSpanStats GatherWalkableSpanStats(const GenerationContext& xContext);
+	static bool HasInsufficientClearance(const VoxelSpan* pxSpan, int32_t iAgentHeightCells);
+
 	static bool BuildCompactHeightfield(GenerationContext& xContext);
 
 	static bool BuildRegions(GenerationContext& xContext);

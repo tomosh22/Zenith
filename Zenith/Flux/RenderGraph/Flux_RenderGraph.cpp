@@ -1681,43 +1681,41 @@ static BarrierDecision DecideBarrierNeeded(ResourceAccess eSrc,
     return xDecision;
 }
 
-void Flux_RenderGraph::SynthesizeBarriers()
+namespace
 {
-    for (u_int i = 0; i < m_xPasses.GetSize(); i++)
-        m_xPasses.Get(i)->m_xPrologueBarriers.Clear();
-
-    // Per-subresource image state map keyed on Flux_BarrierKey (ptr, mip, layer).
-    // Per-buffer state map keyed on Flux_Buffer* (no subresources on buffers,
-    // so the key is simpler). Both reset at function entry — barrier synthesis
-    // is rebuilt from scratch on every Compile / re-synth, never incrementally.
+    // Rolling per-subresource resource-access tracker used during barrier synthesis.
     // #TODO: Replace std::unordered_map with engine hash map.
-    std::unordered_map<Flux_BarrierKey, ResourceAccess> xState;
-    std::unordered_map<Flux_Buffer*,    ResourceAccess> xBufferState;
+    struct BarrierStateTracker
+    {
+        std::unordered_map<Flux_BarrierKey, ResourceAccess> m_xImageState;
+        std::unordered_map<Flux_Buffer*, ResourceAccess> m_xBufferState;
 
-    auto QueryState = [&](void* pRes, u_int uMip, u_int uLayer) -> ResourceAccess
-    {
-        const Flux_BarrierKey ulKey = MakeBarrierKey(pRes, uMip, uLayer);
-        auto it = xState.find(ulKey);
-        return (it == xState.end()) ? RESOURCE_ACCESS_UNDEFINED : it->second;
-    };
-    auto SetState = [&](void* pRes, u_int uMip, u_int uLayer, ResourceAccess e)
-    {
-        xState[MakeBarrierKey(pRes, uMip, uLayer)] = e;
+        ResourceAccess QueryImageState(void* pRes, u_int uMip, u_int uLayer) const
+        {
+            const Flux_BarrierKey ulKey = MakeBarrierKey(pRes, uMip, uLayer);
+            auto it = m_xImageState.find(ulKey);
+            return (it == m_xImageState.end()) ? RESOURCE_ACCESS_UNDEFINED : it->second;
+        }
+        void SetImageState(void* pRes, u_int uMip, u_int uLayer, ResourceAccess e)
+        {
+            m_xImageState[MakeBarrierKey(pRes, uMip, uLayer)] = e;
+        }
+        ResourceAccess QueryBufferState(Flux_Buffer* pxBuffer) const
+        {
+            auto it = m_xBufferState.find(pxBuffer);
+            return (it == m_xBufferState.end()) ? RESOURCE_ACCESS_UNDEFINED : it->second;
+        }
+        void SetBufferState(Flux_Buffer* pxBuffer, ResourceAccess e)
+        {
+            m_xBufferState[pxBuffer] = e;
+        }
     };
 
-    auto QueryBufferState = [&](Flux_Buffer* pxBuffer) -> ResourceAccess
-    {
-        auto it = xBufferState.find(pxBuffer);
-        return (it == xBufferState.end()) ? RESOURCE_ACCESS_UNDEFINED : it->second;
-    };
-    auto SetBufferState = [&](Flux_Buffer* pxBuffer, ResourceAccess e)
-    {
-        xBufferState[pxBuffer] = e;
-    };
-
-    auto ResolveSubresourceRange = [](const Flux_RenderGraph_ResourceUsage& rxUsage,
-                                      u_int& uOutBaseMip, u_int& uOutMipCount,
-                                      u_int& uOutBaseLayer, u_int& uOutLayerCount) -> bool
+    // Compute the subresource range for an image usage, honouring ALL_MIPS / ALL_LAYERS.
+    // Returns false if the usage isn't image-like.
+    bool ResolveSubresourceRange(const Flux_RenderGraph_ResourceUsage& rxUsage,
+                                 u_int& uOutBaseMip, u_int& uOutMipCount,
+                                 u_int& uOutBaseLayer, u_int& uOutLayerCount)
     {
         if (!rxUsage.m_xResource.IsImageLike()) return false;
         const Flux_SurfaceInfo& rxInfo = rxUsage.m_xResource.GetSurfaceInfo();
@@ -1726,65 +1724,49 @@ void Flux_RenderGraph::SynthesizeBarriers()
         uOutBaseLayer = rxUsage.m_uLayer;
         uOutLayerCount = (rxUsage.m_uLayerCount == FLUX_RG_ALL_LAYERS) ? rxInfo.m_uNumLayers : rxUsage.m_uLayerCount;
         return true;
-    };
+    }
 
     // Buffer barrier emission: pure memory + execution barriers (no layout
     // transitions). A barrier is needed any time either side is a write
     // (RAW, WAW, WAR); read-after-read collapses to no barrier. The
-    // single-Flux_RenderGraph_Barrier struct is reused with its mip/layer
-    // fields left at their defaults (0, 1, 0, 1) — the backend buffer-barrier
-    // emitter ignores them. See the struct's doc comment in the header.
-    auto ProcessBufferAccess = [&](Flux_RenderGraph_Pass* pxPass,
-                                   const Flux_RenderGraph_ResourceUsage& rxUsage)
+    // Flux_RenderGraph_Barrier mip/layer fields stay at their (0, 1, 0, 1)
+    // defaults — the backend buffer-barrier emitter ignores them.
+    void ProcessBufferAccess(Flux_RenderGraph_Pass* pxPass,
+                             const Flux_RenderGraph_ResourceUsage& rxUsage,
+                             BarrierStateTracker& xTracker)
     {
         Flux_Buffer* pxBuffer = rxUsage.m_xResource.AsBuffer();
         if (pxBuffer == nullptr) return;
         // Reject the resource if the underlying VRAM isn't allocated yet
-        // (shouldn't happen post-AllocateTransients but guards against
-        // future ordering bugs).
+        // (shouldn't happen post-AllocateTransients).
         if (!pxBuffer->m_xVRAMHandle.IsValid()) return;
 
         const ResourceAccess eRequired = RequiredPrePassAccess(rxUsage.m_eAccess);
-        const ResourceAccess ePost     = PostPassAccess(rxUsage.m_eAccess);
+        const ResourceAccess ePost = PostPassAccess(rxUsage.m_eAccess);
         const bool bWriteAccess = AccessIsWrite(rxUsage.m_eAccess);
 
-        const ResourceAccess eSrc = QueryBufferState(pxBuffer);
+        const ResourceAccess eSrc = xTracker.QueryBufferState(pxBuffer);
         const BarrierDecision xDecision = DecideBarrierNeeded(eSrc, eRequired, bWriteAccess, /*bIsBuffer*/ true);
         if (xDecision.m_bNeedsBarrier)
         {
             Flux_RenderGraph_Barrier xBarrier;
             xBarrier.m_xResource = rxUsage.m_xResource;
-            // mip/layer fields intentionally left at (0, 1, 0, 1) defaults —
-            // see Flux_RenderGraph_Barrier doc in the header.
             xBarrier.m_eSrcAccess = xDecision.m_eSrcAccess;
             xBarrier.m_eDstAccess = xDecision.m_eDstAccess;
             pxPass->m_xPrologueBarriers.PushBack(xBarrier);
         }
-        SetBufferState(pxBuffer, ePost);
-    };
+        xTracker.SetBufferState(pxBuffer, ePost);
+    }
 
-    // Process one declared (read or write) access on a subresource range.
-    // Emits a prologue barrier per (mip, layer) where current ≠ required OR
-    // either side is a write (WAW / RAW within matching layout still needs
-    // a memory barrier). Updates the per-subresource tracker. Buffer accesses
-    // are routed to ProcessBufferAccess instead.
-    auto ProcessAccess = [&](Flux_RenderGraph_Pass* pxPass,
-                             const Flux_RenderGraph_ResourceUsage& rxUsage)
+    // Image barrier emission: emits a prologue barrier per (mip, layer) where
+    // current layout ≠ required OR either side is a write. Updates per-subresource state.
+    void ProcessImageAccess(Flux_RenderGraph_Pass* pxPass,
+                            const Flux_RenderGraph_ResourceUsage& rxUsage,
+                            BarrierStateTracker& xTracker)
     {
-        if (rxUsage.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
-        {
-            ProcessBufferAccess(pxPass, rxUsage);
-            return;
-        }
-
         u_int uBaseMip, uMipCount, uBaseLayer, uLayerCount;
-        if (!ResolveSubresourceRange(rxUsage, uBaseMip, uMipCount, uBaseLayer, uLayerCount))
-            return;
+        if (!ResolveSubresourceRange(rxUsage, uBaseMip, uMipCount, uBaseLayer, uLayerCount)) return;
 
-        // Reject the resource if the underlying VRAM isn't allocated yet
-        // (shouldn't happen post-AllocateTransients but guards against
-        // future ordering bugs).
-        if (!rxUsage.m_xResource.IsImageLike()) return;
         Flux_VRAMHandle xHandle = rxUsage.m_xResource.GetVRAMHandle();
         if (!xHandle.IsValid()) return;
 
@@ -1797,7 +1779,7 @@ void Flux_RenderGraph::SynthesizeBarriers()
         {
             for (u_int uMip = uBaseMip; uMip < uBaseMip + uMipCount; uMip++)
             {
-                const ResourceAccess eSrc = QueryState(pRes, uMip, uLayer);
+                const ResourceAccess eSrc = xTracker.QueryImageState(pRes, uMip, uLayer);
                 const BarrierDecision xDecision = DecideBarrierNeeded(eSrc, eRequired, bWriteAccess, /*bIsBuffer*/ false);
                 if (xDecision.m_bNeedsBarrier)
                 {
@@ -1811,23 +1793,45 @@ void Flux_RenderGraph::SynthesizeBarriers()
                     xBarrier.m_eDstAccess = xDecision.m_eDstAccess;
                     pxPass->m_xPrologueBarriers.PushBack(xBarrier);
                 }
-                SetState(pRes, uMip, uLayer, ePost);
+                xTracker.SetImageState(pRes, uMip, uLayer, ePost);
             }
         }
-    };
+    }
+
+    // Dispatch a single usage to the buffer or image barrier path based on kind.
+    void ProcessUsageAccess(Flux_RenderGraph_Pass* pxPass,
+                            const Flux_RenderGraph_ResourceUsage& rxUsage,
+                            BarrierStateTracker& xTracker)
+    {
+        if (rxUsage.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+            ProcessBufferAccess(pxPass, rxUsage, xTracker);
+        else
+            ProcessImageAccess(pxPass, rxUsage, xTracker);
+    }
+}
+
+void Flux_RenderGraph::SynthesizeBarriers()
+{
+    for (u_int i = 0; i < m_xPasses.GetSize(); i++)
+        m_xPasses.Get(i)->m_xPrologueBarriers.Clear();
+
+    // Barrier synthesis rebuilds state from scratch on every Compile / re-synth,
+    // never incrementally. Per-subresource image state and per-buffer state live
+    // in the tracker.
+    BarrierStateTracker xTracker;
 
     for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(itE.GetData());
         if (!pxPass->m_bEnabled) continue;
 
-        // Reads first so READWRITE_UAV (which appears as a Read declaration when
-        // the caller used the read-modify-write convention) sets state to the
-        // RMW layout before any subsequent write tries to transition again.
+        // Reads first so READWRITE_UAV (appearing as a Read declaration when the
+        // caller used the read-modify-write convention) sets state to the RMW
+        // layout before any subsequent write tries to transition again.
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())
-            ProcessAccess(pxPass, it.GetData());
+            ProcessUsageAccess(pxPass, it.GetData(), xTracker);
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
-            ProcessAccess(pxPass, it.GetData());
+            ProcessUsageAccess(pxPass, it.GetData(), xTracker);
     }
 }
 

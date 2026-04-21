@@ -931,4 +931,58 @@ private:
 	// F6 — GetSceneByName returns the first match when multiple loaded scenes
 	// share a name; the one-shot warning is a side effect and not asserted here.
 	static void TestF6_GetSceneByNameReturnsFirstMatchOnDuplicate();
+
+	//==========================================================================
+	// Scene audit 2026 remediation (§3.6 — Awake wave-drain overflow)
+	//==========================================================================
+	// Pins the deliberate Unity divergence: when the 100-wave cap is hit during
+	// DispatchAwakeForNewScene, overflow entities are destroyed via RemoveEntity
+	// (which fires OnDestroy), even though their Awake never ran. Unity fires
+	// OnDestroy only on objects that became active — Zenith deliberately diverges
+	// to avoid silent resource leaks in malformed scenes.
+	// Refs: https://docs.unity3d.com/ScriptReference/MonoBehaviour.Awake.html
+	//       https://docs.unity3d.com/ScriptReference/MonoBehaviour.OnDestroy.html
+	static void TestAwakeOverflow_FiresOnDestroyOnNonAwokenEntities();
+	static void TestAwakeOverflow_StopsPropagationAfterCap();
+	static void TestAwakeOverflow_ErrorLogged();
+
+	//==========================================================================
+	// Scene audit 2026 remediation (§3.7 — double-unload protection hardening)
+	//==========================================================================
+	// CanUnloadScene now walks s_axAsyncUnloadJobs in addition to checking
+	// m_bIsUnloading. Belt-and-braces against any future refactor that might
+	// let the flag lag behind the job queue.
+	static void TestAudit37_UnloadSceneRejectedDuringAsyncUnload();
+
+	//==========================================================================
+	// Scene audit 2026 remediation (§3.8 — deferred-load op-id recovery)
+	//==========================================================================
+	// HandleDeferredLoad now stashes the LoadSceneAsync op-id so sync
+	// LoadScene-during-Update callers can retrieve it via GetLastDeferredLoadOp.
+	// Unity-parity gap: Unity's LoadScene returns a valid Scene immediately even
+	// from script Update; Zenith returns INVALID_SCENE + surfaces the op-id.
+	// Ref: https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.LoadScene.html
+	static void TestAudit38_GetLastDeferredLoadOp_ValidAfterDeferredLoad();
+	static void TestAudit38_GetLastDeferredLoadOp_InvalidInitially();
+
+	//==========================================================================
+	// Scene audit 2026 remediation (§3.12 — AreRenderTasksActive not gated on ZENITH_ASSERT)
+	//==========================================================================
+	// Zenith_Scene::IsValid() reads AreRenderTasksActive(). Previously gated
+	// only behind #ifdef ZENITH_ASSERT, this test pins that IsValid is callable
+	// (returns a consistent answer) regardless of assert configuration.
+	static void TestAudit312_SceneIsValid_WorksInAllAssertConfigs();
+
+	//==========================================================================
+	// Scene audit 2026 remediation (§3.3 — IsLoaded decoupled from IsUnloading)
+	//==========================================================================
+	// Zenith_Scene::IsLoaded() no longer reads m_bIsUnloading. During a
+	// SceneUnloading callback the scene data is still intact, so subscribers
+	// can enumerate entities and react before destruction. Matches Unity's
+	// Scene.isLoaded contract (stays true until the scene is actually removed
+	// from the SceneManager).
+	// Ref: https://docs.unity3d.com/ScriptReference/SceneManagement.Scene-isLoaded.html
+	static void TestAudit33_SceneUnloadingCallback_IsLoadedRemainsTrue();
+	static void TestAudit33_SceneUnloadingCallback_EntityEnumerationViaSceneData();
+	static void TestAudit33_SceneUnloadedCallback_IsLoadedIsFalse();
 };

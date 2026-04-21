@@ -748,6 +748,17 @@ private:
 	void DisableEntity(Zenith_EntityID xID);
 	void DestroyEntityComponents(Zenith_EntityID xID);
 
+	// ResetEntitiesOnly helpers — each is called exactly once from that function.
+	// Builds the destruction-order hierarchy: roots first (via depth-first expansion),
+	// then any active entities the walk missed (no-transform or detached).
+	void CollectResetHierarchy(Zenith_Vector<Zenith_EntityID>& axHierarchyOut);
+	// Deletes pool objects and clears the pool registry.
+	void DestroyComponentPools();
+	// Releases global entity slots allocated to this scene back to the free list.
+	void FreeGlobalSlotsForActiveEntities();
+	// Clears per-scene state vectors and flags after destruction completes.
+	void ClearSceneStateAfterReset();
+
 	// Shared deserialization helper
 	Zenith_EntityID ReadEntityFromDataStream(Zenith_DataStream& xStream, u_int uVersion,
 		std::unordered_map<uint32_t, Zenith_EntityID>& xFileIndexToNewID); // #TODO: Replace with engine hash map

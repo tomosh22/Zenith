@@ -97,7 +97,12 @@ static constexpr Zenith_SceneOperationID ZENITH_INVALID_OPERATION_ID = 0;
  *       xMyEntity.GetName(); // Safe - same EntityID, same handle
  *
  * - UnloadSceneAsync(): Spreads entity destruction over multiple frames
- *   (50 entities/frame by default) to avoid frame hitches on large scenes.
+ *   (50 entities/frame by default — see audit §3.5). This is a SOFT cap:
+ *   RemoveEntity recursively destroys a subtree in one call, so deep
+ *   hierarchies can temporarily exceed the per-frame budget. The guarantee
+ *   is "at least one subtree root per frame, not exact-N". A warning fires
+ *   when a single cascade destroys more than 2x the batch size so QA can
+ *   retune SetAsyncUnloadBatchSize() for their content.
  *
  * - Lifecycle timing: OnAwake and OnEnable are called during scene load.
  *   OnStart is deferred until the first Update() frame, matching Unity behavior.
@@ -172,6 +177,31 @@ public:
 
 	/**
 	 * Get the currently active scene.
+	 *
+	 * UNITY-PARITY CONTRACT — read this before calling.
+	 * The active scene has exactly two legitimate uses, mirroring Unity's
+	 * SceneManager.GetActiveScene (https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.GetActiveScene.html):
+	 *   1. Default destination for newly created entities / instantiated prefabs.
+	 *   2. Source of lighting / skybox / environment settings for the frame.
+	 *
+	 * NEVER use GetActiveScene() to resolve the owning scene of an existing entity.
+	 * EntityIDs are globally unique across all loaded scenes — an entity may live in
+	 * the persistent (DontDestroyOnLoad) scene, an additively-loaded scene, or any
+	 * non-active scene. The pattern
+	 *     Zenith_Scene xScene = GetActiveScene();
+	 *     Zenith_SceneData* pxData = GetSceneData(xScene);
+	 *     pxData->EntityHasComponent<T>(id);   // BUG: wrong scene for non-active entities
+	 * is the "active-scene-as-filter" anti-pattern. It silently returns false / nullptr
+	 * for any entity not in the active scene — breaking multi-scene editing, persistent
+	 * entities, and cross-scene gameplay. Unity's docs are explicit: "the active Scene
+	 * has no impact on what Scenes are rendered" — and by extension, no impact on which
+	 * entities can be queried or edited.
+	 *
+	 * Use these instead for EntityID → scene resolution:
+	 *   - Zenith_SceneManager::GetSceneDataForEntity(Zenith_EntityID) — free-function sites
+	 *   - Zenith_Entity::GetSceneData()                               — when entity is in scope
+	 *   - Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<T>() — cross-scene iteration
+	 *
 	 * Note: Safe to call from worker threads during render task execution.
 	 * The active scene handle is stable during this window because all scene changes
 	 * complete before render tasks are submitted, and the task system's queue mutex
@@ -190,12 +220,21 @@ public:
 	static Zenith_Scene GetSceneByBuildIndex(int iBuildIndex);
 
 	/**
-	 * Get scene by name
+	 * Get scene by name.
+	 *
+	 * Audit §3.4 note (Unity parity): when two or more loaded scenes share a
+	 * name (which CreateEmptyScene / RenameScene allow without explicit
+	 * deduplication), this function returns the first-registered match and
+	 * logs an ambiguity warning. Unity's SceneManager.GetSceneByName exhibits
+	 * the same "first match" behaviour. For deterministic lookup against a
+	 * potentially-ambiguous corpus, prefer GetSceneByPath(canonical-path),
+	 * which uses the scene's file path as a unique key.
 	 */
 	static Zenith_Scene GetSceneByName(const std::string& strName);
 
 	/**
-	 * Get scene by file path
+	 * Get scene by file path. Use this when names may collide (see
+	 * GetSceneByName note) — file paths are unique per loaded scene.
 	 */
 	static Zenith_Scene GetSceneByPath(const std::string& strPath);
 
@@ -261,6 +300,28 @@ public:
 	 * Use this to check validity before calling GetOperation() after delays.
 	 */
 	static bool IsOperationValid(Zenith_SceneOperationID ulID);
+
+	/**
+	 * Retrieve the operation ID created by the most recent deferred sync-load
+	 * auto-promotion. When sync `LoadScene(path, SINGLE)` is called inside an
+	 * `Update()` tick (where `s_bIsUpdating == true`), Zenith transparently
+	 * routes the call through `LoadSceneAsync` and the original caller receives
+	 * `INVALID_SCENE`. Call this immediately after that sync `LoadScene` returns
+	 * to recover the op-id and poll / subscribe for completion.
+	 *
+	 * Returns `ZENITH_INVALID_OPERATION_ID` if:
+	 *  - The previous `LoadScene` call did not trigger a deferred auto-promotion
+	 *    (it completed synchronously outside `Update`, or never happened).
+	 *  - The op-id has since been cleaned up (see `GetOperation` docstring for
+	 *    the ~60-frame cleanup window).
+	 *
+	 * Audit §3.8 — Unity-parity note: Unity's `LoadScene` returns a valid
+	 * `Scene` handle immediately even from script Update. Zenith's sync entry
+	 * point returns `INVALID_SCENE` on deferral, so this accessor surfaces the
+	 * op-id that was otherwise dropped inside `HandleDeferredLoad`.
+	 * Ref: https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.LoadScene.html
+	 */
+	static Zenith_SceneOperationID GetLastDeferredLoadOp();
 
 	//==========================================================================
 	// Scene Unloading
@@ -689,9 +750,20 @@ public:
 
 	/**
 	 * Access internal scene data (for engine systems)
+	 *
+	 * GetSceneData(Zenith_Scene) resolves a scene HANDLE to its backing SceneData. Do not
+	 * pair it with an EntityID to route a per-entity query — that is the active-scene-as-filter
+	 * anti-pattern described on GetActiveScene(). Use GetSceneDataForEntity(EntityID) when you
+	 * have an EntityID and want the owning scene; it walks the global entity slot table and
+	 * is immune to cross-scene moves.
 	 */
 	static Zenith_SceneData* GetSceneData(Zenith_Scene xScene);
 	static Zenith_SceneData* GetSceneDataByHandle(int iHandle);
+	/**
+	 * Resolve an EntityID to its owning scene's data. Prefer this over
+	 * GetSceneData(GetActiveScene()) for any EntityID-indexed lookup. Returns nullptr for
+	 * invalid / stale IDs (generation check) or when the owning scene has been unloaded.
+	 */
 	static Zenith_SceneData* GetSceneDataForEntity(Zenith_EntityID xID);
 
 	/**
@@ -851,15 +923,35 @@ private:
 	// Build index registry (indexed by build index - dense, non-negative)
 	static Zenith_Vector<std::string> s_axBuildIndexToPath;
 
+	// Audit §3.12: AreRenderTasksActive() is a const read used by Zenith_Scene::IsValid()
+	// (see Zenith_Scene.cpp). Previously the getter lived entirely inside
+	// `#ifdef ZENITH_ASSERT`, meaning IsValid() only compiled because MEMORY.md says
+	// ZENITH_ASSERT is always defined — a fragile coupling. The getter now always
+	// exists; the underlying flag and the setter stay debug-only because only the
+	// assert paths flip it.
 #ifdef ZENITH_ASSERT
 	static bool s_bRenderTasksActive;  // Debug-only: true between SubmitRenderTasks and WaitForAllRenderTasks
 	static bool s_bAnimTasksActive;    // Debug-only: true between SubmitTaskArray(animTask) and WaitUntilComplete
 public:
 	static void SetRenderTasksActive(bool b) { s_bRenderTasksActive = b; }
-	static bool AreRenderTasksActive() { return s_bRenderTasksActive; }
 	static void SetAnimTasksActive(bool b) { s_bAnimTasksActive = b; }
 private:
 #endif
+
+public:
+	// In ZENITH_ASSERT builds: returns the live flag. In non-assert builds:
+	// returns false because no render-task window is ever tracked. Callers treat
+	// "false" as "not in a render-task window" either way, so IsValid() logic
+	// stays correct across configs.
+	static bool AreRenderTasksActive()
+	{
+#ifdef ZENITH_ASSERT
+		return s_bRenderTasksActive;
+#else
+		return false;
+#endif
+	}
+private:
 
 	//==========================================================================
 	// Lifecycle / Update State
@@ -867,6 +959,9 @@ private:
 
 	static bool s_bIsUpdating;            // True inside Update(); LoadScene defers to async when set
 	static bool s_bIsLoadingScene;        // Suppresses immediate lifecycle dispatch during load
+	// Audit §3.8 — op-id stashed by HandleDeferredLoad when sync LoadScene is
+	// auto-promoted to async. Exposed via GetLastDeferredLoadOp().
+	static Zenith_SceneOperationID s_ulLastDeferredLoadOp;
 	static bool s_bIsPrefabInstantiating;
 	static float s_fFixedTimeAccumulator;
 	static float s_fFixedTimestep;                // Default 0.02 = 50Hz (Unity parity)

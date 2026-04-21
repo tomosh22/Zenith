@@ -144,8 +144,15 @@ Zenith_TransformComponent* Flux_Gizmos::GetEditableTransform()
 		return nullptr;
 	}
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	// Unity-parity fix (audit §3.17): resolve the gizmo target's transform through the
+	// target entity's OWN scene, not GetActiveScene(). EntityIDs are globally unique,
+	// so an entity may live in the persistent (DontDestroyOnLoad) scene or any
+	// additively-loaded scene. Unity's SceneManager.GetActiveScene docs are explicit:
+	// "the active Scene has no impact on what Scenes are rendered" — and multi-scene
+	// editing is first-class (https://docs.unity3d.com/Manual/MultiSceneEditing.html).
+	// Zenith_Entity::GetSceneData() walks the global slot table and survives cross-scene
+	// moves. As a bonus, this removes the sole render-task caller of GetActiveScene().
+	Zenith_SceneData* pxSceneData = s_pxTargetEntity->GetSceneData();
 	if (!pxSceneData)
 	{
 		return nullptr;

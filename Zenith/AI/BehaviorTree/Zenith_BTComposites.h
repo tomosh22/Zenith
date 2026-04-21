@@ -68,6 +68,22 @@ public:
 private:
 	void AbortRunningChildren(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard);
 
+	struct ChildStatusCounts
+	{
+		uint32_t m_uSuccess = 0;
+		uint32_t m_uFailure = 0;
+		uint32_t m_uRunning = 0;
+	};
+
+	// Ensure m_axChildResults has one entry per child and call OnEnter for each.
+	void EnsureChildResultsInitialised(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard);
+	// Tick every still-RUNNING child, update m_axChildResults, and tally totals.
+	ChildStatusCounts TickChildrenAndTally(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt);
+	// Has the success policy been satisfied by the current counts?
+	bool SuccessPolicyMet(const ChildStatusCounts& xCounts) const;
+	// Has the failure policy been satisfied by the current counts?
+	bool FailurePolicyMet(const ChildStatusCounts& xCounts) const;
+
 	Policy m_eSuccessPolicy = Policy::REQUIRE_ONE;
 	Policy m_eFailurePolicy = Policy::REQUIRE_ONE;
 

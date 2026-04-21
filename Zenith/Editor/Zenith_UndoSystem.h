@@ -17,7 +17,7 @@
 class Zenith_UndoCommand
 {
 public:
-	Zenith_UndoCommand();
+	Zenith_UndoCommand() = default;
 	virtual ~Zenith_UndoCommand() = default;
 
 	// Execute the command (modifies scene state)
@@ -29,10 +29,16 @@ public:
 	// Get human-readable description for UI
 	virtual const char* GetDescription() const = 0;
 
-protected:
-	// Scene captured at command creation time - ensures undo/redo operates on the correct
-	// scene even if the active scene has changed since the command was recorded
-	Zenith_Scene m_xScene;
+	// Audit §3.18 note: the base class no longer stores a Zenith_Scene captured
+	// at construction time. That approach broke across active-scene switches —
+	// a transform edit on an entity in Scene A, followed by SetActiveScene(B),
+	// followed by Ctrl+Z, would look for the entity in Scene A via the stored
+	// handle — but if the handle was replaced by a fresh active scene during
+	// an unload/reload cycle, the lookup failed silently. Derived commands now
+	// resolve the target scene dynamically via GetSceneDataForEntity(EntityID),
+	// using the entity's globally-unique ID + generation counter. Matches
+	// Unity's GameObject.scene pattern: objects carry their scene intrinsically.
+	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
 };
 
 //------------------------------------------------------------------------------

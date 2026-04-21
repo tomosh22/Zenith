@@ -142,7 +142,11 @@
       "Bash(python C:/tmp/analyze_cc.py)",
       "Bash(python C:/tmp/analyze_cc2.py)",
       "Bash(python C:/tmp/analyze_cc3.py)",
-      "Bash(python C:/tmp/analyze.py)"
+      "Bash(python C:/tmp/analyze.py)",
+      "Bash(python C:/dev/Zenith/Tools/analyze_code_complexity.py C:/dev/Zenith/Zenith --no-viz --workers 4 --exclude-generated --ignore-macros ZENITH_ASSERT Zenith_Assert Zenith_Warning Zenith_Error Zenith_Log -e Middleware ThirdParty External vendor build Build .git .claude -o C:/tmp/engine_cc_2026-04-21)",
+      "Bash(mkdir -p C:/dev/Zenith/complexity_reports/2026-04-21)",
+      "Bash(cp C:/tmp/engine_cc_2026-04-21/analysis_report.json C:/dev/Zenith/complexity_reports/2026-04-21/analysis_report.json)",
+      "Bash(python C:/tmp/synthesize.py)"
     ],
     "deny": [],
     "ask": []

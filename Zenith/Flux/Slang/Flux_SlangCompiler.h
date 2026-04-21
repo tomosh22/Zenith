@@ -136,6 +136,13 @@ private:
 	// Returns true if the parameter is a valid descriptor binding (not a varying).
 	static bool ExtractParameterBinding(void* pxParam, void* pxTypeLayout, Flux_ReflectedBinding& xBindingOut);
 
+	// Resolves a Slang VariableLayoutReflection* (passed as void*) to a binding.
+	// Returns false on null param, null type layout, or non-descriptor.
+	static bool TryExtractBindingFromParam(void* pxParamVoid, Flux_ReflectedBinding& xBindingOut);
+
+	// True if a binding with matching (set, binding) slot is already present.
+	static bool IsBindingAlreadyPresent(const Flux_ShaderReflection& xReflection, const Flux_ReflectedBinding& xCandidate);
+
 	static void ExtractReflection(void* pxEntryPointReflection, Flux_ShaderReflection& xReflectionOut);
 	static BindingType SlangTypeToBindingType(void* pxTypeLayout);
 };

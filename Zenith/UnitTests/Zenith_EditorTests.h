@@ -50,6 +50,17 @@ private:
 	static void TestRedoStackClearOnNewEdit();
 
 	//--------------------------------------------------------------------------
+	// Scene audit 2026 remediation — §3.18 UndoSystem cross-scene tests
+	//--------------------------------------------------------------------------
+	// The undo-command base no longer stores a Zenith_Scene captured at
+	// construction; derived commands resolve the target via GetSceneDataForEntity
+	// at Execute/Undo time. This pins that undo survives an active-scene switch
+	// between command creation and Ctrl+Z (Unity-parity: object-scene is
+	// intrinsic, not derived from SceneManager state).
+	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
+	static void TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitch();
+
+	//--------------------------------------------------------------------------
 	// Entity Hierarchy Tests
 	//--------------------------------------------------------------------------
 	static void TestEntityReparenting();
