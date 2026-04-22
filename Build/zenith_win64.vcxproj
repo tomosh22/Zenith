@@ -1072,6 +1072,8 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_TextureAsset.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_CircularQueue.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_HashMap.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_HashSet.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_MemoryPool.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_Vector.h" />
     <ClInclude Include="..\Zenith\Core\Callstack\Zenith_Callstack.h" />
@@ -1329,6 +1331,7 @@
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Buffer.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.h" />
+    <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Internal.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Platform.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.h" />

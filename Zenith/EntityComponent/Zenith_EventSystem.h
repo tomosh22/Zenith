@@ -1,6 +1,6 @@
 #pragma once
 
-#include <unordered_map>
+#include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_Vector.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "EntityComponent/Zenith_SceneData.h"
@@ -229,9 +229,8 @@ private:
 		Subscription& operator=(const Subscription&) = delete;
 	};
 
-	// #TODO: Replace std::unordered_map with engine hash map when available
-	std::unordered_map<Zenith_EventHandle, Subscription> m_xSubscriptions;
-	std::unordered_map<u_int, Zenith_Vector<Zenith_EventHandle>> m_xSubscribersByEventType;
+	Zenith_HashMap<Zenith_EventHandle, Subscription> m_xSubscriptions;
+	Zenith_HashMap<u_int, Zenith_Vector<Zenith_EventHandle>> m_xSubscribersByEventType;
 
 	Zenith_Vector<Zenith_EventBase*> m_axDeferredEvents;
 	Zenith_Mutex m_xDeferredMutex;
@@ -264,7 +263,7 @@ Zenith_EventHandle Zenith_EventDispatcher::Subscribe(void(*pfnCallback)(const TE
 	xSub.m_uEventTypeID = uEventTypeID;
 	xSub.m_pxCallback = new Zenith_CallbackWrapper<TEvent>(pfnCallback);
 
-	m_xSubscriptions[uHandle] = std::move(xSub);
+	m_xSubscriptions.Insert(uHandle, std::move(xSub));
 	m_xSubscribersByEventType[uEventTypeID].PushBack(uHandle);
 
 	return uHandle;
@@ -284,7 +283,7 @@ Zenith_EventHandle Zenith_EventDispatcher::SubscribeLambda(TCallback&& xCallback
 	xSub.m_pxCallback = new Zenith_LambdaCallbackWrapper<TEvent, std::decay_t<TCallback>>(
 		std::forward<TCallback>(xCallback));
 
-	m_xSubscriptions[uHandle] = std::move(xSub);
+	m_xSubscriptions.Insert(uHandle, std::move(xSub));
 	m_xSubscribersByEventType[uEventTypeID].PushBack(uHandle);
 
 	return uHandle;
@@ -295,8 +294,8 @@ void Zenith_EventDispatcher::Dispatch(const TEvent& xEvent)
 {
 	const u_int uEventTypeID = Zenith_EventTypeID::GetID<TEvent>();
 
-	auto xIt = m_xSubscribersByEventType.find(uEventTypeID);
-	if (xIt == m_xSubscribersByEventType.end())
+	const Zenith_Vector<Zenith_EventHandle>* pxLiveHandles = m_xSubscribersByEventType.TryGet(uEventTypeID);
+	if (pxLiveHandles == nullptr)
 	{
 		return;
 	}
@@ -305,12 +304,11 @@ void Zenith_EventDispatcher::Dispatch(const TEvent& xEvent)
 
 	// Snapshot handle vector before iterating - callbacks may Subscribe to this same event
 	// type, which would PushBack to the live vector and potentially reallocate it
-	const Zenith_Vector<Zenith_EventHandle>& axLiveHandles = xIt->second;
 	Zenith_Vector<Zenith_EventHandle> axHandles;
-	axHandles.Reserve(axLiveHandles.GetSize());
-	for (u_int u = 0; u < axLiveHandles.GetSize(); ++u)
+	axHandles.Reserve(pxLiveHandles->GetSize());
+	for (u_int u = 0; u < pxLiveHandles->GetSize(); ++u)
 	{
-		axHandles.PushBack(axLiveHandles.Get(u));
+		axHandles.PushBack(pxLiveHandles->Get(u));
 	}
 
 	const u_int uCount = axHandles.GetSize();
@@ -328,10 +326,9 @@ void Zenith_EventDispatcher::Dispatch(const TEvent& xEvent)
 		}
 		if (bPendingUnsubscribe) continue;
 
-		auto xSubIt = m_xSubscriptions.find(axHandles.Get(uIdx));
-		if (xSubIt != m_xSubscriptions.end())
+		if (Subscription* pxSub = m_xSubscriptions.TryGet(axHandles.Get(uIdx)))
 		{
-			xSubIt->second.m_pxCallback->Invoke(&xEvent);
+			pxSub->m_pxCallback->Invoke(&xEvent);
 		}
 	}
 
@@ -357,10 +354,6 @@ template<typename TEvent>
 u_int Zenith_EventDispatcher::GetSubscriberCount() const
 {
 	const u_int uEventTypeID = Zenith_EventTypeID::GetID<TEvent>();
-	auto xIt = m_xSubscribersByEventType.find(uEventTypeID);
-	if (xIt == m_xSubscribersByEventType.end())
-	{
-		return 0;
-	}
-	return xIt->second.GetSize();
+	const Zenith_Vector<Zenith_EventHandle>* pxHandles = m_xSubscribersByEventType.TryGet(uEventTypeID);
+	return pxHandles ? pxHandles->GetSize() : 0;
 }

@@ -20,23 +20,22 @@ void Zenith_EventDispatcher::Unsubscribe(Zenith_EventHandle uHandle)
 		return;
 	}
 
-	auto xIt = m_xSubscriptions.find(uHandle);
-	if (xIt == m_xSubscriptions.end())
+	const Subscription* pxSub = m_xSubscriptions.TryGet(uHandle);
+	if (pxSub == nullptr)
 	{
 		return;
 	}
 
-	const u_int uEventTypeID = xIt->second.m_uEventTypeID;
+	const u_int uEventTypeID = pxSub->m_uEventTypeID;
 
 	// Remove from subscribers list
-	auto xTypeIt = m_xSubscribersByEventType.find(uEventTypeID);
-	if (xTypeIt != m_xSubscribersByEventType.end())
+	if (Zenith_Vector<Zenith_EventHandle>* pxSubscribers = m_xSubscribersByEventType.TryGet(uEventTypeID))
 	{
-		xTypeIt->second.EraseValue(uHandle);
+		pxSubscribers->EraseValue(uHandle);
 	}
 
 	// Remove subscription
-	m_xSubscriptions.erase(xIt);
+	m_xSubscriptions.Remove(uHandle);
 }
 
 void Zenith_EventDispatcher::ProcessDeferredEvents()
@@ -58,8 +57,8 @@ void Zenith_EventDispatcher::ProcessDeferredEvents()
 
 void Zenith_EventDispatcher::ClearAllSubscriptions()
 {
-	m_xSubscriptions.clear();
-	m_xSubscribersByEventType.clear();
+	m_xSubscriptions.Clear();
+	m_xSubscribersByEventType.Clear();
 
 	// Also clear deferred events
 	m_xDeferredMutex.Lock();

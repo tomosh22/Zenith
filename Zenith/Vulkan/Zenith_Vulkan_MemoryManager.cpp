@@ -2,28 +2,24 @@
 #define VMA_IMPLEMENTATION
 
 #include "Zenith_Vulkan_MemoryManager.h"
+#include "Zenith_Vulkan_MemoryManager_Internal.h"
 #include "Zenith_Vulkan_CommandBuffer.h"
 
 #include "Zenith_Vulkan.h"
 
+#include "Collections/Zenith_HashMap.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
-#include <unordered_map> // #TODO: Replace with engine hash map
-
-// Probe cache entry + storage. Declared here (above Initialise / Shutdown,
-// which both reference s_xProbeCache) instead of next to ProbeImageMemoryRequirements
-// so the definition order compiles. The cache is cleared in Initialise and
-// Shutdown; populated lazily on misses inside ProbeImageMemoryRequirements.
-struct ProbeCacheEntry
-{
-	u_int64 m_ulSize      = 0;
-	u_int64 m_ulAlignment = 0;
-};
-static std::unordered_map<u_int64, ProbeCacheEntry> s_xProbeCache;
+// Probe cache storage. ProbeCacheEntry itself lives in
+// Zenith_Vulkan_MemoryManager_Internal.h so a future sibling TU (the
+// aliasing split from T2.1) can share the type. The cache is cleared in
+// Initialise and Shutdown; populated lazily on misses inside
+// ProbeImageMemoryRequirements.
+static Zenith_HashMap<u_int64, ProbeCacheEntry> s_xProbeCache;
 
 Zenith_Vulkan_CommandBuffer Zenith_Vulkan_MemoryManager::s_xCommandBuffer;
 VmaAllocator Zenith_Vulkan_MemoryManager::s_xAllocator;
@@ -101,7 +97,7 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	// Probe cache starts empty on each engine init. Populated lazily inside
 	// ProbeImageMemoryRequirements; the cache is valid for the device's
 	// lifetime and is cleared in Shutdown below.
-	s_xProbeCache.clear();
+	s_xProbeCache.Clear();
 
 	s_xCommandBuffer.Initialise(COMMANDTYPE_COPY);
 
@@ -299,14 +295,11 @@ void Zenith_Vulkan_MemoryManager::ProbeImageMemoryRequirements(const Flux_Surfac
 	// probe counts of ~20 per compile turn into zero Vulkan calls after the
 	// first compile.
 	const u_int64 ulSig = MakeProbeSignature(xInfo);
+	if (const ProbeCacheEntry* pxHit = s_xProbeCache.TryGet(ulSig))
 	{
-		auto it = s_xProbeCache.find(ulSig);
-		if (it != s_xProbeCache.end())
-		{
-			ulSizeOut      = it->second.m_ulSize;
-			ulAlignmentOut = it->second.m_ulAlignment;
-			return;
-		}
+		ulSizeOut      = pxHit->m_ulSize;
+		ulAlignmentOut = pxHit->m_ulAlignment;
+		return;
 	}
 
 	const vk::ImageCreateInfo xImageInfo = BuildAliasedImageCreateInfo(xInfo);
@@ -335,7 +328,7 @@ void Zenith_Vulkan_MemoryManager::ProbeImageMemoryRequirements(const Flux_Surfac
 	ProbeCacheEntry xEntry;
 	xEntry.m_ulSize      = ulSizeOut;
 	xEntry.m_ulAlignment = ulAlignmentOut;
-	s_xProbeCache[ulSig] = xEntry;
+	s_xProbeCache.Insert(ulSig, xEntry);
 }
 
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateAliasedImageVRAM(const Flux_SurfaceInfo& xInfo,
@@ -474,7 +467,7 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 
 	// Probe cache is tied to the VMA allocator's device lifetime; drop it now
 	// so a subsequent Initialise starts from a known empty state.
-	s_xProbeCache.clear();
+	s_xProbeCache.Clear();
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan memory manager shut down");
 }

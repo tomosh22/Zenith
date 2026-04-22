@@ -39,3 +39,35 @@ jobs:
       # Add additional options to the MSBuild command line here (like platform or verbosity level).
       # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
       run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=${{env.BUILD_PLATFORM}} ${{env.SOLUTION_FILE_PATH}}
+
+  complexity-gate:
+    # Runs analyze_code_complexity.py via CheckComplexity.bat against engine
+    # source. Gate thresholds are set at the current worst-case engine ceiling
+    # in Tools/CheckComplexity.bat (max-cc=100, max-cognitive=150, max-nesting=8,
+    # max-loc=900), so the tree passes today. A new PR that introduces a
+    # function above any threshold fails this job and must refactor before
+    # merging. Thresholds tighten progressively as Tier 2 refactors land.
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install tree-sitter parser
+      run: python -m pip install tree-sitter tree-sitter-cpp
+
+    - name: Run complexity gate
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      shell: cmd
+      run: Tools\CheckComplexity.bat --parser tree-sitter
+
+    - name: Upload complexity report on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: complexity-report
+        path: complexity_report_ci/
+        if-no-files-found: warn

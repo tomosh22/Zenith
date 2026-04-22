@@ -521,18 +521,24 @@ void Flux_DynamicLights::Initialise()
 	const u_int64 ulDirInstanceBufferSize = Flux_DynamicLights::uMAX_LIGHTS * sizeof(DirectionalLightInstance);
 
 	// Zero-initialize buffers to prevent garbage data on frame 0
-	std::vector<PointLightInstance> xZeroedPointLights(Flux_DynamicLights::uMAX_LIGHTS);
-	std::vector<SpotLightInstance> xZeroedSpotLights(Flux_DynamicLights::uMAX_LIGHTS);
-	std::vector<DirectionalLightInstance> xZeroedDirLights(Flux_DynamicLights::uMAX_LIGHTS);
+	Zenith_Vector<PointLightInstance>       xZeroedPointLights(Flux_DynamicLights::uMAX_LIGHTS);
+	Zenith_Vector<SpotLightInstance>        xZeroedSpotLights(Flux_DynamicLights::uMAX_LIGHTS);
+	Zenith_Vector<DirectionalLightInstance> xZeroedDirLights(Flux_DynamicLights::uMAX_LIGHTS);
+	for (u_int u = 0; u < Flux_DynamicLights::uMAX_LIGHTS; u++)
+	{
+		xZeroedPointLights.EmplaceBack();
+		xZeroedSpotLights.EmplaceBack();
+		xZeroedDirLights.EmplaceBack();
+	}
 
 	for (u_int i = 0; i < uNUM_LODS; ++i)
 	{
-		Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(xZeroedPointLights.data(), ulPointInstanceBufferSize, s_axPointLightInstanceBuffers[i]);
-		Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(xZeroedSpotLights.data(), ulSpotInstanceBufferSize, s_axSpotLightInstanceBuffers[i]);
+		Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(xZeroedPointLights.GetDataPointer(), ulPointInstanceBufferSize, s_axPointLightInstanceBuffers[i]);
+		Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(xZeroedSpotLights.GetDataPointer(), ulSpotInstanceBufferSize, s_axSpotLightInstanceBuffers[i]);
 		s_auPointLightInstanceCounts[i] = 0;
 		s_auSpotLightInstanceCounts[i] = 0;
 	}
-	Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(xZeroedDirLights.data(), ulDirInstanceBufferSize, s_xDirectionalLightInstanceBuffer);
+	Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(xZeroedDirLights.GetDataPointer(), ulDirInstanceBufferSize, s_xDirectionalLightInstanceBuffer);
 	s_uDirectionalLightInstanceCount = 0;
 
 	// Pre-allocate sort buffer to avoid per-frame allocations during priority sorting

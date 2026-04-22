@@ -608,9 +608,9 @@ void Flux_RenderGraph::Clear()
     m_xPasses.Clear();
     m_xResources.clear();
     m_xTraffic.clear();
-    m_xAttachmentNeedsClear.clear();
-    m_xAttachmentClearAssigned.clear();
-    m_xEdgeSet.clear();
+    m_xAttachmentNeedsClear.Clear();
+    m_xAttachmentClearAssigned.Clear();
+    m_xEdgeSet.Clear();
     m_xAdjacency.Clear();
     m_xInDegree.Clear();
     m_xExecutionOrder.Clear();
@@ -1455,7 +1455,7 @@ void Flux_RenderGraph::CollectClearRequirements()
     // clear-request, and the other 41 passes' (mip, face) subresources stayed
     // UNDEFINED at creation but the backend tried to transition them from
     // SHADER_READ_ONLY_OPTIMAL.
-    m_xAttachmentNeedsClear.clear();
+    m_xAttachmentNeedsClear.Clear();
     for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
@@ -1465,26 +1465,26 @@ void Flux_RenderGraph::CollectClearRequirements()
         {
             const Flux_RenderGraph_AttachmentRef& rxRef = pxPass->m_axColourAttachments[i];
             const Flux_BarrierKey ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
-            if (m_xAttachmentNeedsClear.find(ulKey) == m_xAttachmentNeedsClear.end())
-                m_xAttachmentNeedsClear[ulKey] = pxPass->m_bRequestsClear;
+            if (bool* pbExisting = m_xAttachmentNeedsClear.TryGet(ulKey))
+                *pbExisting = *pbExisting || pxPass->m_bRequestsClear;
             else
-                m_xAttachmentNeedsClear[ulKey] = m_xAttachmentNeedsClear[ulKey] || pxPass->m_bRequestsClear;
+                m_xAttachmentNeedsClear.Insert(ulKey, pxPass->m_bRequestsClear);
         }
         if (pxPass->m_xDepthStencil.IsValid())
         {
             const Flux_RenderGraph_AttachmentRef& rxDepth = pxPass->m_xDepthStencil;
             const Flux_BarrierKey ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
-            if (m_xAttachmentNeedsClear.find(ulKey) == m_xAttachmentNeedsClear.end())
-                m_xAttachmentNeedsClear[ulKey] = pxPass->m_bRequestsClear;
+            if (bool* pbExisting = m_xAttachmentNeedsClear.TryGet(ulKey))
+                *pbExisting = *pbExisting || pxPass->m_bRequestsClear;
             else
-                m_xAttachmentNeedsClear[ulKey] = m_xAttachmentNeedsClear[ulKey] || pxPass->m_bRequestsClear;
+                m_xAttachmentNeedsClear.Insert(ulKey, pxPass->m_bRequestsClear);
         }
     }
 }
 
 void Flux_RenderGraph::AssignClearFlags()
 {
-    m_xAttachmentClearAssigned.clear();
+    m_xAttachmentClearAssigned.Clear();
     for (Zenith_Vector<u_int>::Iterator it(m_xExecutionOrder); !it.Done(); it.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(it.GetData());
@@ -1495,15 +1495,13 @@ void Flux_RenderGraph::AssignClearFlags()
         {
             const Flux_RenderGraph_AttachmentRef& rxRef = pxPass->m_axColourAttachments[i];
             const Flux_BarrierKey ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
-            auto itNeed = m_xAttachmentNeedsClear.find(ulKey);
-            if (itNeed != m_xAttachmentNeedsClear.end() && itNeed->second) { bNeedsClear = true; break; }
+            if (const bool* pbNeed = m_xAttachmentNeedsClear.TryGet(ulKey); pbNeed && *pbNeed) { bNeedsClear = true; break; }
         }
         if (!bNeedsClear && pxPass->m_xDepthStencil.IsValid())
         {
             const Flux_RenderGraph_AttachmentRef& rxDepth = pxPass->m_xDepthStencil;
             const Flux_BarrierKey ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
-            auto itNeed = m_xAttachmentNeedsClear.find(ulKey);
-            if (itNeed != m_xAttachmentNeedsClear.end() && itNeed->second) bNeedsClear = true;
+            if (const bool* pbNeed = m_xAttachmentNeedsClear.TryGet(ulKey); pbNeed && *pbNeed) bNeedsClear = true;
         }
         if (!bNeedsClear) continue;
         bool bIsFirstWriter = false;
@@ -1511,15 +1509,15 @@ void Flux_RenderGraph::AssignClearFlags()
         {
             const Flux_RenderGraph_AttachmentRef& rxRef = pxPass->m_axColourAttachments[i];
             const Flux_BarrierKey ulKey = MakeBarrierKey(rxRef.m_xResource.GetVoidPtr(), rxRef.m_uMip, rxRef.m_uLayer);
-            if (m_xAttachmentClearAssigned.find(ulKey) == m_xAttachmentClearAssigned.end())
-            { m_xAttachmentClearAssigned.insert(ulKey); bIsFirstWriter = true; }
+            if (!m_xAttachmentClearAssigned.Contains(ulKey))
+            { m_xAttachmentClearAssigned.Insert(ulKey); bIsFirstWriter = true; }
         }
         if (pxPass->m_xDepthStencil.IsValid())
         {
             const Flux_RenderGraph_AttachmentRef& rxDepth = pxPass->m_xDepthStencil;
             const Flux_BarrierKey ulKey = MakeBarrierKey(rxDepth.m_xResource.GetVoidPtr(), rxDepth.m_uMip, rxDepth.m_uLayer);
-            if (m_xAttachmentClearAssigned.find(ulKey) == m_xAttachmentClearAssigned.end())
-            { m_xAttachmentClearAssigned.insert(ulKey); bIsFirstWriter = true; }
+            if (!m_xAttachmentClearAssigned.Contains(ulKey))
+            { m_xAttachmentClearAssigned.Insert(ulKey); bIsFirstWriter = true; }
         }
         pxPass->m_bClearTargets = bIsFirstWriter;
     }

@@ -113,7 +113,13 @@ public:
 	Flux_Pipeline* m_pxPipeline;
 };
 
-//#TO_TODO: I might vomit... this needs changing to avoid the branch
+// Command list entry for SetVertexBuffer. Accepts either a static or
+// dynamic vertex buffer via overload. The two constructors erase the source
+// type into a (payload, resolver) pair so operator() can execute without a
+// runtime branch; the resolver defers GetBuffer() to execution time, which
+// matters for Flux_DynamicVertexBuffer (GetBuffer() returns the current
+// frame's buffer, and the frame index may have advanced between command
+// recording and command execution).
 class Flux_CommandSetVertexBuffer
 {
 public:
@@ -123,19 +129,13 @@ public:
 	Flux_CommandSetVertexBuffer(const Flux_DynamicVertexBuffer* const pxDynamicVertexBuffer, const u_int uBindPoint = 0);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		if(m_pxVertexBuffer)
-		{
-			pxCmdBuf->SetVertexBuffer(*m_pxVertexBuffer, m_uBindPoint);
-		}
-		else
-		{
-		Zenith_Assert(m_pxDynamicVertexBuffer, "Missing vertex buffer");
-			pxCmdBuf->SetVertexBuffer(*m_pxDynamicVertexBuffer, m_uBindPoint);
-		}
+		m_pfnDispatch(pxCmdBuf, m_pvSource, m_uBindPoint);
 	}
 
-	const Flux_VertexBuffer* m_pxVertexBuffer;
-	const Flux_DynamicVertexBuffer* m_pxDynamicVertexBuffer;
+	using DispatchFn = void(*)(Flux_CommandBuffer*, const void*, u_int);
+
+	const void* m_pvSource;
+	DispatchFn m_pfnDispatch;
 	const u_int m_uBindPoint;
 };
 

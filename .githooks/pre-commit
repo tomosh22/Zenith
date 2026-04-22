@@ -1,0 +1,37 @@
+#!/bin/sh
+# Zenith pre-commit hook.
+#
+# Runs engine convention checks on the staged diff hunks only. The historical
+# backlog is ignored — only NEW additions are held to the rules.
+#
+# To activate this hook in your clone, run once:
+#     git config core.hooksPath .githooks
+#
+# To bypass for a single commit (rare; requires strong justification):
+#     git commit --no-verify
+#
+# Rules enforced (see Tools/check_conventions.py for the full list):
+#   - No std::vector / std::mutex in Zenith/
+#   - No std::unordered_map / std::unordered_set in Zenith/ without a
+#     "TODO: Replace with engine hash map" marker
+#   - New engine .cpp files must open with #include "Zenith.h"
+
+set -e
+
+# Prefer the Python on PATH; fall back to `py -3` on Windows if available.
+if command -v python >/dev/null 2>&1; then
+    PY=python
+elif command -v python3 >/dev/null 2>&1; then
+    PY=python3
+elif command -v py >/dev/null 2>&1; then
+    PY="py -3"
+else
+    echo "pre-commit: Python not found — cannot run convention checks." >&2
+    echo "Install Python 3 or bypass with --no-verify." >&2
+    exit 1
+fi
+
+# Resolve repo root so the script works regardless of where git invokes the hook from.
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+$PY "$REPO_ROOT/Tools/check_conventions.py" --staged

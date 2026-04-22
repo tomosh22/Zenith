@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Collections/Zenith_HashMap.h"
+#include "Collections/Zenith_HashSet.h"
 #include "Collections/Zenith_Vector.h"
 #include "Flux/Flux.h"
 #include <unordered_map> // #TODO: Replace with engine hash map
@@ -504,15 +506,12 @@ private:
     // SHADER_READ_ONLY_OPTIMAL → COLOR_ATTACHMENT_OPTIMAL on subresources that
     // were never written and are actually still in UNDEFINED layout — which
     // the Vulkan validator (correctly) rejects.
-    // #TODO: Replace std::unordered_map with engine hash map
-    std::unordered_map<Flux_BarrierKey, bool> m_xAttachmentNeedsClear;
-    // #TODO: Replace std::unordered_set with engine hash set
-    std::unordered_set<Flux_BarrierKey> m_xAttachmentClearAssigned;
+    Zenith_HashMap<Flux_BarrierKey, bool> m_xAttachmentNeedsClear;
+    Zenith_HashSet<Flux_BarrierKey> m_xAttachmentClearAssigned;
     // Edge-set key is (fromPassIdx << 32) | toPassIdx — pass indices only, no
     // pointer bits, so u_int64 is safe and doesn't need the Flux_BarrierKey
     // treatment.
-    // #TODO: Replace std::unordered_set with engine hash set
-    std::unordered_set<u_int64> m_xEdgeSet;
+    Zenith_HashSet<u_int64> m_xEdgeSet;
     Zenith_Vector<Zenith_Vector<u_int>> m_xAdjacency;
     Zenith_Vector<u_int> m_xInDegree;
     Zenith_Vector<u_int> m_xQueue;

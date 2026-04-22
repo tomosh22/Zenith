@@ -308,28 +308,28 @@ void Flux_InstanceGroup::UpdateGPUBuffers()
 	// Phase 1: Populate visible index buffer with sequential indices (no GPU culling)
 	// This will be replaced by compute shader output in Phase 2
 	{
-		std::vector<uint32_t> auVisibleIndices;
-		auVisibleIndices.reserve(m_uInstanceCount);
+		Zenith_Vector<uint32_t> auVisibleIndices;
+		auVisibleIndices.Reserve(m_uInstanceCount);
 
 		for (uint32_t i = 0; i < m_uCapacity; ++i)
 		{
 			// Only include enabled instances
 			if (m_axAnimData[i].m_uFlags != 0)
 			{
-				auVisibleIndices.push_back(i);
+				auVisibleIndices.PushBack(i);
 			}
 		}
 
-		if (!auVisibleIndices.empty())
+		if (auVisibleIndices.GetSize() > 0)
 		{
-			const size_t ulSize = auVisibleIndices.size() * sizeof(uint32_t);
+			const size_t ulSize = static_cast<size_t>(auVisibleIndices.GetSize()) * sizeof(uint32_t);
 			Flux_MemoryManager::UploadBufferData(
 				m_xVisibleIndexBuffer.GetBuffer().m_xVRAMHandle,
-				auVisibleIndices.data(),
+				auVisibleIndices.GetDataPointer(),
 				ulSize);
 		}
 
-		m_uVisibleCount = static_cast<uint32_t>(auVisibleIndices.size());
+		m_uVisibleCount = auVisibleIndices.GetSize();
 	}
 
 	// Clear dirty flags

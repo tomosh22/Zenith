@@ -230,3 +230,15 @@ The `Zenith_EventSystem` callback hierarchy (`Zenith_CallbackBase` → `Zenith_C
 3. **No Performance Benefit from std::function**: Replacing with `std::function<void(const void*)>` would just substitute explicit virtual dispatch with implicit virtual dispatch. The overhead is equivalent.
 
 4. **Current Design Is Type-Safe**: The callback wrappers know the exact event type at compile time, preserving type safety within the wrapper while providing runtime polymorphism for storage.
+
+### Why SceneManager.h and SceneData.h Include Each Other
+
+`Zenith_SceneData.h` includes `Zenith_SceneManager.h` (at the bottom) and `Zenith_SceneManager.h` includes `Zenith_SceneData.h`. The complexity analyzer flags this as a cycle; it is intentional and load-bearing.
+
+1. **Template bodies reference each other**: `SceneData`'s template methods call `Zenith_SceneManager::AreRenderTasksActive()`; `SceneManager`'s template methods call `pxData->AppendAllOfComponentType<T>()`. Each template's body needs the other class fully declared at the point of instantiation.
+
+2. **Trailing `#include` order is deliberate**: Each header defines its class body first, then includes the sibling at the end. By the time any consumer TU instantiates the templates, both class declarations are visible.
+
+3. **Safe by construction**: `#pragma once` guarantees each header is processed exactly once per TU. The cycle is only a textual artifact of the include graph — it is not a compile-time fragility.
+
+The original rationale is documented in-source at `Zenith_SceneData.h:838-851`. See the `T2.4` task in the active quality plan if the two headers are later split and the cycle broken; the target approach is extracting `Zenith_ComponentPool*` into a new header so neither SceneManager.h nor SceneData.h needs to depend on the other for component-pool types.

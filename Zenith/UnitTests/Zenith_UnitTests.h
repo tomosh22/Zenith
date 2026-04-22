@@ -37,6 +37,18 @@ private:
 	static void TestVectorSelfAssignment();
 	static void TestVectorRemoveSwap();
 
+	// HashMap / HashSet tests
+	static void TestHashMapBasic();
+	static void TestHashMapCollisions();
+	static void TestHashMapRehash();
+	static void TestHashMapTombstones();
+	static void TestHashMapIterator();
+	static void TestHashMapIteratorInvalidation();
+	static void TestHashMapCopyMove();
+	static void TestHashMapSerialization();
+	static void TestHashMapOperatorBracket();
+	static void TestHashSetBasic();
+
 	// DataStream edge case tests
 	static void TestDataStreamBoundsCheck();
 

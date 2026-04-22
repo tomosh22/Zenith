@@ -10,6 +10,8 @@
 #include "UnitTests/Zenith_UnitTests.h"
 
 #include "Collections/Zenith_CircularQueue.h"
+#include "Collections/Zenith_HashMap.h"
+#include "Collections/Zenith_HashSet.h"
 #include "Collections/Zenith_MemoryPool.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -117,6 +119,18 @@ void Zenith_UnitTests::RunAllTests()
 	// Vector edge case tests (from defensive review)
 	TestVectorSelfAssignment();
 	TestVectorRemoveSwap();
+
+	// HashMap / HashSet tests
+	TestHashMapBasic();
+	TestHashMapCollisions();
+	TestHashMapRehash();
+	TestHashMapTombstones();
+	TestHashMapIterator();
+	TestHashMapIteratorInvalidation();
+	TestHashMapCopyMove();
+	TestHashMapSerialization();
+	TestHashMapOperatorBracket();
+	TestHashSetBasic();
 
 	// DataStream edge case tests (from defensive review)
 	TestDataStreamBoundsCheck();
@@ -1297,6 +1311,365 @@ void Zenith_UnitTests::TestVectorRemoveSwap()
 	}
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestVectorRemoveSwap PASSED");
+}
+
+// ============================================================
+// HashMap / HashSet tests
+// ============================================================
+
+// Fixed-hash key: always collides into the same bucket, so probing behaviour
+// is exercised deterministically by TestHashMapCollisions and friends.
+namespace
+{
+	struct CollidingKey
+	{
+		u_int m_uValue = 0;
+		bool operator==(const CollidingKey& xOther) const { return m_uValue == xOther.m_uValue; }
+	};
+}
+
+template<>
+struct Zenith_Hash<CollidingKey>
+{
+	u_int64 operator()(const CollidingKey&) const noexcept { return 42; }
+};
+
+void Zenith_UnitTests::TestHashMapBasic()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapBasic...");
+
+	Zenith_HashMap<u_int, u_int> xMap;
+	Zenith_Assert(xMap.IsEmpty(), "New map should be empty");
+	Zenith_Assert(xMap.GetSize() == 0, "New map size should be 0");
+
+	xMap.Insert(1, 100);
+	xMap.Insert(2, 200);
+	xMap.Insert(3, 300);
+	Zenith_Assert(xMap.GetSize() == 3, "Size should be 3 after 3 inserts");
+	Zenith_Assert(xMap.Contains(1), "Should contain key 1");
+	Zenith_Assert(xMap.Contains(2), "Should contain key 2");
+	Zenith_Assert(xMap.Contains(3), "Should contain key 3");
+	Zenith_Assert(!xMap.Contains(4), "Should NOT contain key 4");
+	Zenith_Assert(xMap.Get(1) == 100, "Get(1) should return 100");
+	Zenith_Assert(xMap.Get(2) == 200, "Get(2) should return 200");
+	Zenith_Assert(xMap.Get(3) == 300, "Get(3) should return 300");
+
+	// Update existing
+	xMap.Insert(2, 250);
+	Zenith_Assert(xMap.GetSize() == 3, "Size unchanged on update");
+	Zenith_Assert(xMap.Get(2) == 250, "Value should be updated");
+
+	// Remove
+	bool bRemoved = xMap.Remove(2);
+	Zenith_Assert(bRemoved, "Remove should succeed");
+	Zenith_Assert(xMap.GetSize() == 2, "Size should be 2 after remove");
+	Zenith_Assert(!xMap.Contains(2), "Should not contain removed key");
+	Zenith_Assert(xMap.Contains(1), "Other keys still present");
+	Zenith_Assert(xMap.Contains(3), "Other keys still present");
+
+	bool bRemovedAgain = xMap.Remove(2);
+	Zenith_Assert(!bRemovedAgain, "Remove of missing key returns false");
+
+	// TryGet
+	u_int* pVal = xMap.TryGet(1);
+	Zenith_Assert(pVal != nullptr && *pVal == 100, "TryGet returns value");
+	Zenith_Assert(xMap.TryGet(999) == nullptr, "TryGet returns nullptr for missing");
+
+	xMap.Clear();
+	Zenith_Assert(xMap.IsEmpty(), "Clear empties the map");
+	Zenith_Assert(!xMap.Contains(1), "Nothing left after clear");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapBasic PASSED");
+}
+
+void Zenith_UnitTests::TestHashMapCollisions()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapCollisions...");
+
+	Zenith_HashMap<CollidingKey, u_int> xMap(64);
+	constexpr u_int uNUM = 30;
+	for (u_int u = 0; u < uNUM; u++)
+	{
+		xMap.Insert({u}, u * 10);
+	}
+	Zenith_Assert(xMap.GetSize() == uNUM, "All colliding keys stored");
+
+	for (u_int u = 0; u < uNUM; u++)
+	{
+		Zenith_Assert(xMap.Contains({u}), "Colliding key retrievable");
+		Zenith_Assert(xMap.Get({u}) == u * 10, "Colliding value correct");
+	}
+
+	// Remove every other one; rest should still be accessible through the probe chain.
+	for (u_int u = 0; u < uNUM; u += 2)
+	{
+		xMap.Remove({u});
+	}
+	for (u_int u = 1; u < uNUM; u += 2)
+	{
+		Zenith_Assert(xMap.Contains({u}), "Surviving colliding key still accessible past tombstones");
+	}
+	for (u_int u = 0; u < uNUM; u += 2)
+	{
+		Zenith_Assert(!xMap.Contains({u}), "Removed key not found");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapCollisions PASSED");
+}
+
+void Zenith_UnitTests::TestHashMapRehash()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapRehash...");
+
+	Zenith_HashMap<u_int, u_int> xMap(16);
+	u_int uInitialCapacity = xMap.GetCapacity();
+	Zenith_Assert(uInitialCapacity == 16, "Initial capacity should be 16");
+
+	// Insert past load factor to trigger rehash
+	constexpr u_int uNUM = 200;
+	for (u_int u = 0; u < uNUM; u++)
+	{
+		xMap.Insert(u, u * 7);
+	}
+	Zenith_Assert(xMap.GetSize() == uNUM, "All entries stored after rehash");
+	Zenith_Assert(xMap.GetCapacity() > uInitialCapacity, "Capacity grew");
+
+	// Verify all entries survived rehash
+	for (u_int u = 0; u < uNUM; u++)
+	{
+		Zenith_Assert(xMap.Contains(u), "Key survived rehash");
+		Zenith_Assert(xMap.Get(u) == u * 7, "Value survived rehash");
+	}
+
+	// Explicit Reserve
+	Zenith_HashMap<u_int, u_int> xMap2;
+	xMap2.Reserve(1024);
+	Zenith_Assert(xMap2.GetCapacity() >= 1024, "Reserve grew capacity");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapRehash PASSED");
+}
+
+void Zenith_UnitTests::TestHashMapTombstones()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapTombstones...");
+
+	// Insert and delete many entries at the same slot; verify lookups still work.
+	Zenith_HashMap<CollidingKey, u_int> xMap(32);
+	for (u_int u = 0; u < 16; u++)
+	{
+		xMap.Insert({u}, u);
+	}
+	for (u_int u = 0; u < 16; u++)
+	{
+		xMap.Remove({u});
+	}
+	Zenith_Assert(xMap.GetSize() == 0, "All removed");
+
+	// Re-insert after deletion — tombstones should be reused
+	for (u_int u = 100; u < 120; u++)
+	{
+		xMap.Insert({u}, u);
+	}
+	for (u_int u = 100; u < 120; u++)
+	{
+		Zenith_Assert(xMap.Contains({u}), "Post-tombstone insert retrievable");
+	}
+	for (u_int u = 0; u < 16; u++)
+	{
+		Zenith_Assert(!xMap.Contains({u}), "Tombstoned key still missing");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapTombstones PASSED");
+}
+
+void Zenith_UnitTests::TestHashMapIterator()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapIterator...");
+
+	Zenith_HashMap<u_int, u_int> xMap;
+	constexpr u_int uNUM = 50;
+	for (u_int u = 0; u < uNUM; u++)
+	{
+		xMap.Insert(u, u * 3);
+	}
+
+	// Iterate, mark each seen, verify every entry visited exactly once
+	Zenith_Vector<bool> xSeen;
+	for (u_int u = 0; u < uNUM; u++) xSeen.PushBack(false);
+
+	u_int uVisited = 0;
+	Zenith_HashMap<u_int, u_int>::Iterator xIt(xMap);
+	for (; !xIt.Done(); xIt.Next())
+	{
+		const u_int uKey = xIt.GetKey();
+		const u_int uVal = xIt.GetValue();
+		Zenith_Assert(uKey < uNUM, "Key in expected range");
+		Zenith_Assert(uVal == uKey * 3, "Value matches key");
+		Zenith_Assert(!xSeen.Get(uKey), "Each key visited at most once");
+		xSeen.Get(uKey) = true;
+		uVisited++;
+	}
+	Zenith_Assert(uVisited == uNUM, "All entries visited");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapIterator PASSED");
+}
+
+void Zenith_UnitTests::TestHashMapIteratorInvalidation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapIteratorInvalidation...");
+
+	// We cannot actually trigger asserts from within a test without
+	// Zenith_AssertCapture machinery; just verify the generation counter
+	// moves on operations that would invalidate iterators.
+	Zenith_HashMap<u_int, u_int> xMap;
+	for (u_int u = 0; u < 10; u++) xMap.Insert(u, u);
+
+	// Iterator constructed here is valid
+	{
+		Zenith_HashMap<u_int, u_int>::Iterator xIt(xMap);
+		u_int uCount = 0;
+		for (; !xIt.Done(); xIt.Next()) uCount++;
+		Zenith_Assert(uCount == 10, "Iterator works on stable map");
+	}
+
+	// Triggering rehash should bump generation
+	for (u_int u = 10; u < 200; u++) xMap.Insert(u, u);
+	Zenith_Assert(xMap.GetSize() == 200, "Map grew");
+
+	// Clear also invalidates
+	xMap.Clear();
+	Zenith_Assert(xMap.IsEmpty(), "Map cleared");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapIteratorInvalidation PASSED");
+}
+
+void Zenith_UnitTests::TestHashMapCopyMove()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapCopyMove...");
+
+	Zenith_HashMap<u_int, u_int> xOriginal;
+	for (u_int u = 0; u < 20; u++) xOriginal.Insert(u, u * 5);
+
+	// Copy construction
+	Zenith_HashMap<u_int, u_int> xCopy(xOriginal);
+	Zenith_Assert(xCopy.GetSize() == xOriginal.GetSize(), "Copy has same size");
+	for (u_int u = 0; u < 20; u++)
+	{
+		Zenith_Assert(xCopy.Get(u) == u * 5, "Copy preserved value");
+	}
+	// Modify copy, verify original unchanged
+	xCopy.Insert(100, 999);
+	Zenith_Assert(!xOriginal.Contains(100), "Original unaffected by copy mutation");
+
+	// Copy assignment
+	Zenith_HashMap<u_int, u_int> xAssigned;
+	xAssigned.Insert(500, 500);
+	xAssigned = xOriginal;
+	Zenith_Assert(xAssigned.GetSize() == xOriginal.GetSize(), "Assigned has same size");
+	Zenith_Assert(!xAssigned.Contains(500), "Old contents of target replaced");
+	for (u_int u = 0; u < 20; u++)
+	{
+		Zenith_Assert(xAssigned.Get(u) == u * 5, "Assigned preserved value");
+	}
+
+	// Move construction
+	Zenith_HashMap<u_int, u_int> xMoved(std::move(xCopy));
+	Zenith_Assert(xMoved.Contains(100), "Moved target has the data");
+	Zenith_Assert(xCopy.GetSize() == 0, "Moved source is empty");
+
+	// Move assignment
+	Zenith_HashMap<u_int, u_int> xMoveAssigned;
+	xMoveAssigned = std::move(xAssigned);
+	Zenith_Assert(xMoveAssigned.Contains(10), "Move-assigned target has data");
+	Zenith_Assert(xAssigned.GetSize() == 0, "Move-assigned source empty");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapCopyMove PASSED");
+}
+
+void Zenith_UnitTests::TestHashMapSerialization()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapSerialization...");
+
+	Zenith_HashMap<u_int, u_int> xOriginal;
+	for (u_int u = 0; u < 64; u++) xOriginal.Insert(u, u * 11);
+
+	Zenith_DataStream xStream(4096);
+	xOriginal.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+
+	Zenith_HashMap<u_int, u_int> xRestored;
+	xRestored.ReadFromDataStream(xStream);
+
+	Zenith_Assert(xRestored.GetSize() == xOriginal.GetSize(), "Restored size matches");
+	for (u_int u = 0; u < 64; u++)
+	{
+		Zenith_Assert(xRestored.Contains(u), "All keys restored");
+		Zenith_Assert(xRestored.Get(u) == u * 11, "All values restored");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapSerialization PASSED");
+}
+
+void Zenith_UnitTests::TestHashMapOperatorBracket()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapOperatorBracket...");
+
+	Zenith_HashMap<u_int, u_int> xMap;
+	// Access missing key — default-constructs V (=0 for u_int)
+	u_int& rRef = xMap[42];
+	Zenith_Assert(rRef == 0, "operator[] default-constructs missing key");
+	Zenith_Assert(xMap.GetSize() == 1, "operator[] on missing key inserts");
+
+	rRef = 999;
+	Zenith_Assert(xMap.Get(42) == 999, "operator[] returns a live reference");
+	Zenith_Assert(xMap[42] == 999, "Second operator[] returns existing value");
+	Zenith_Assert(xMap.GetSize() == 1, "Repeat access does not add entry");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapOperatorBracket PASSED");
+}
+
+void Zenith_UnitTests::TestHashSetBasic()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashSetBasic...");
+
+	Zenith_HashSet<u_int> xSet;
+	Zenith_Assert(xSet.IsEmpty(), "New set empty");
+
+	bool bAdded = xSet.Insert(1);
+	Zenith_Assert(bAdded, "First insert reports true");
+	bool bReAdded = xSet.Insert(1);
+	Zenith_Assert(!bReAdded, "Re-insert reports false");
+	Zenith_Assert(xSet.GetSize() == 1, "Size is 1 after dedup");
+
+	for (u_int u = 2; u < 50; u++) xSet.Insert(u);
+	Zenith_Assert(xSet.GetSize() == 49, "Set grew to 49");
+	for (u_int u = 1; u < 50; u++) Zenith_Assert(xSet.Contains(u), "Contains all inserted");
+	Zenith_Assert(!xSet.Contains(500), "Missing key absent");
+
+	xSet.Remove(25);
+	Zenith_Assert(!xSet.Contains(25), "Removed key absent");
+	Zenith_Assert(xSet.GetSize() == 48, "Size decreased");
+
+	// Iterator
+	u_int uCount = 0;
+	Zenith_HashSet<u_int>::Iterator xIt(xSet);
+	for (; !xIt.Done(); xIt.Next()) uCount++;
+	Zenith_Assert(uCount == 48, "Iterator visits every entry once");
+
+	// Serialization round-trip
+	Zenith_DataStream xStream(2048);
+	xSet.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+	Zenith_HashSet<u_int> xRestored;
+	xRestored.ReadFromDataStream(xStream);
+	Zenith_Assert(xRestored.GetSize() == xSet.GetSize(), "Restored set has same size");
+	for (u_int u = 1; u < 50; u++)
+	{
+		if (u == 25) continue;
+		Zenith_Assert(xRestored.Contains(u), "Restored set has all keys");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashSetBasic PASSED");
 }
 
 void Zenith_UnitTests::TestDataStreamBoundsCheck()

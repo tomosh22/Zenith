@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp20</CppLanguageStandard>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp20</CppLanguageStandard>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -844,6 +844,8 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_TextureAsset.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_CircularQueue.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_HashMap.h" />
+    <ClInclude Include="..\Zenith\Collections\Zenith_HashSet.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_MemoryPool.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_Vector.h" />
     <ClInclude Include="..\Zenith\Core\Callstack\Zenith_Callstack.h" />
@@ -1101,6 +1103,7 @@
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Buffer.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.h" />
+    <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Internal.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Platform.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.h" />

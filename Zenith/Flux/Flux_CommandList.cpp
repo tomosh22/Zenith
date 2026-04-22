@@ -9,9 +9,21 @@ Flux_CommandSetPipeline::Flux_CommandSetPipeline(Flux_Pipeline* pxPipeline)
 	Zenith_Assert(pxPipeline != nullptr, "Pipeline is null");
 }
 
+static void DispatchStaticVertexBuffer(Flux_CommandBuffer* pxCmdBuf, const void* pvSource, u_int uBindPoint)
+{
+	const Flux_VertexBuffer* pxVB = static_cast<const Flux_VertexBuffer*>(pvSource);
+	pxCmdBuf->SetVertexBuffer(*pxVB, uBindPoint);
+}
+
+static void DispatchDynamicVertexBuffer(Flux_CommandBuffer* pxCmdBuf, const void* pvSource, u_int uBindPoint)
+{
+	const Flux_DynamicVertexBuffer* pxVB = static_cast<const Flux_DynamicVertexBuffer*>(pvSource);
+	pxCmdBuf->SetVertexBuffer(*pxVB, uBindPoint);
+}
+
 Flux_CommandSetVertexBuffer::Flux_CommandSetVertexBuffer(const Flux_VertexBuffer* const pxVertexBuffer, const u_int uBindPoint)
-	: m_pxVertexBuffer(pxVertexBuffer)
-	, m_pxDynamicVertexBuffer(nullptr)
+	: m_pvSource(pxVertexBuffer)
+	, m_pfnDispatch(&DispatchStaticVertexBuffer)
 	, m_uBindPoint(uBindPoint)
 {
 	Zenith_Assert(pxVertexBuffer != nullptr, "Vertex buffer is null");
@@ -19,8 +31,8 @@ Flux_CommandSetVertexBuffer::Flux_CommandSetVertexBuffer(const Flux_VertexBuffer
 }
 
 Flux_CommandSetVertexBuffer::Flux_CommandSetVertexBuffer(const Flux_DynamicVertexBuffer* const pxDynamicVertexBuffer, const u_int uBindPoint)
-	: m_pxVertexBuffer(nullptr)
-	, m_pxDynamicVertexBuffer(pxDynamicVertexBuffer)
+	: m_pvSource(pxDynamicVertexBuffer)
+	, m_pfnDispatch(&DispatchDynamicVertexBuffer)
 	, m_uBindPoint(uBindPoint)
 {
 	Zenith_Assert(pxDynamicVertexBuffer != nullptr, "Dynamic vertex buffer is null");

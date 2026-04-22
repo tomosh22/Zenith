@@ -206,7 +206,8 @@ void Flux_VolumeFog::GenerateBlueNoiseTexture()
 
 	// Simple spatial filtering to approximate blue noise characteristics
 	// This applies a high-pass filter to reduce low-frequency content
-	std::vector<float> fTemp(uNumPixels);
+	Zenith_Vector<float> fTemp(uNumPixels);
+	for (u_int u = 0; u < uNumPixels; u++) fTemp.PushBack(0.0f);
 	for (u_int y = 0; y < uSize; y++)
 	{
 		for (u_int x = 0; x < uSize; x++)
@@ -227,14 +228,14 @@ void Flux_VolumeFog::GenerateBlueNoiseTexture()
 
 			// High-pass: center - average
 			float fAvg = fSum / 9.0f;
-			fTemp[y * uSize + x] = fCenter + (fCenter - fAvg) * 0.5f;
+			fTemp.Get(y * uSize + x) = fCenter + (fCenter - fAvg) * 0.5f;
 		}
 	}
 
 	// Write back normalized
 	for (u_int i = 0; i < uNumPixels; i++)
 	{
-		u_int8 uValue = static_cast<u_int8>(std::clamp(fTemp[i] * 255.0f, 0.0f, 255.0f));
+		u_int8 uValue = static_cast<u_int8>(std::clamp(fTemp.Get(i) * 255.0f, 0.0f, 255.0f));
 		pData[i * 4 + 0] = uValue;
 		pData[i * 4 + 1] = uValue;
 		pData[i * 4 + 2] = uValue;

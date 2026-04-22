@@ -197,7 +197,7 @@ void Flux_RenderGraph::InitAdjacencyData()
     m_xAdjacency.Clear(); m_xAdjacency.Reserve(uN);
     m_xInDegree.Clear(); m_xInDegree.Reserve(uN);
     for (u_int i = 0; i < uN; i++) { m_xAdjacency.EmplaceBack(); m_xInDegree.PushBack(0); }
-    m_xEdgeSet.clear();
+    m_xEdgeSet.Clear();
 }
 
 void Flux_RenderGraph::BuildAdjacencyFromTraffic()
@@ -255,9 +255,9 @@ void Flux_RenderGraph::AddWriterChainEdges(const Zenith_Vector<u_int>& axWriters
     for (u_int w = 0; w + 1 < axWriters.GetSize(); w++)
     {
         u_int64 ulKey = (static_cast<u_int64>(axWriters.Get(w)) << 32) | axWriters.Get(w + 1);
-        if (m_xEdgeSet.find(ulKey) == m_xEdgeSet.end())
+        if (!m_xEdgeSet.Contains(ulKey))
         {
-            m_xEdgeSet.insert(ulKey);
+            m_xEdgeSet.Insert(ulKey);
             m_xAdjacency.Get(axWriters.Get(w)).PushBack(axWriters.Get(w + 1));
             m_xInDegree.Get(axWriters.Get(w + 1))++;
         }
@@ -267,9 +267,9 @@ void Flux_RenderGraph::AddWriterChainEdges(const Zenith_Vector<u_int>& axWriters
 void Flux_RenderGraph::AddEdgeIfNew(u_int uFrom, u_int uTo)
 {
     u_int64 ulKey = (static_cast<u_int64>(uFrom) << 32) | uTo;
-    if (m_xEdgeSet.find(ulKey) == m_xEdgeSet.end())
+    if (!m_xEdgeSet.Contains(ulKey))
     {
-        m_xEdgeSet.insert(ulKey);
+        m_xEdgeSet.Insert(ulKey);
         m_xAdjacency.Get(uFrom).PushBack(uTo);
         m_xInDegree.Get(uTo)++;
     }
