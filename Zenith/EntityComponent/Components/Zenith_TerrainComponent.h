@@ -195,6 +195,15 @@ public:
 	// Helper method to load and combine all physics chunks
 	void LoadCombinedPhysicsGeometry();
 
+	// Version-dispatched material deserialization helpers. Split out of
+	// ReadFromDataStream so the top-level function reads as a short version
+	// table rather than 100+ lines of branching material setup.
+	void AssignTerrainMaterialSlot(u_int uSlot, const std::string& strEntityName, Zenith_DataStream& xStream);
+	void ReadMaterialsV3(const std::string& strEntityName, Zenith_DataStream& xStream);
+	void ReadMaterialsV2(const std::string& strEntityName, Zenith_DataStream& xStream);
+	void ReadMaterialsV1Legacy(Zenith_DataStream& xStream);
+	void BackfillMissingMaterialSlots(const std::string& strEntityName);
+
 #ifdef ZENITH_TOOLS
 	// Editor UI — main entry point; section helpers below.
 	void RenderPropertiesPanel();

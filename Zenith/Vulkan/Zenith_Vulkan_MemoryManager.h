@@ -15,7 +15,6 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include "Flux/Flux_Types.h"
-#include "Flux/Flux.h"
 
 class Zenith_Vulkan_VRAM;
 class Flux_VertexBuffer;

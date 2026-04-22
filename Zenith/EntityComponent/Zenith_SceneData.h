@@ -835,9 +835,20 @@ private:
 	Zenith_Vector<Zenith_ComponentPoolBase*> m_xComponents;
 };
 
-// Include SceneManager after class definition for template implementations
-// that need AreRenderTasksActive(). This is safe because SceneManager.h only
-// forward-declares SceneData (no circular dependency).
+// Structural note: SceneData.h and SceneManager.h are mutually recursive at
+// the template level. SceneData's template implementations call
+// Zenith_SceneManager::AreRenderTasksActive(); SceneManager's templates call
+// pxData->AppendAllOfComponentType<T>(). Each includes the other AFTER its
+// own class body so that, by the time the template bodies are compiled,
+// both class declarations are visible. `#pragma once` on both headers
+// guarantees each is processed exactly once per TU, regardless of the
+// include order chosen by the consumer.
+//
+// The include-graph cycle reported by the complexity analyzer is therefore
+// intentional and load-bearing. Removing it would require either breaking
+// the mutual template references (e.g., promoting the non-template helpers
+// to a standalone header) or moving to explicit instantiation, both of
+// which are larger architectural changes than the cycle warrants.
 #include "EntityComponent/Zenith_SceneManager.h"
 
 //==============================================================================

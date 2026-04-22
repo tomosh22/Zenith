@@ -6,29 +6,12 @@
 
 void Zenith_BTNode::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Write node name
-	uint32_t uNameLen = static_cast<uint32_t>(m_strNodeName.length());
-	xStream << uNameLen;
-	if (uNameLen > 0)
-	{
-		xStream.Write(m_strNodeName.data(), uNameLen);
-	}
+	xStream << m_strNodeName;
 }
 
 void Zenith_BTNode::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	// Read node name
-	uint32_t uNameLen = 0;
-	xStream >> uNameLen;
-	if (uNameLen > 0)
-	{
-		m_strNodeName.resize(uNameLen);
-		xStream.Read(m_strNodeName.data(), uNameLen);
-	}
-	else
-	{
-		m_strNodeName.clear();
-	}
+	xStream >> m_strNodeName;
 }
 
 // ========== Zenith_BTComposite ==========

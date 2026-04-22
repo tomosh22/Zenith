@@ -200,3 +200,64 @@ struct Flux_PipelineLayout
 	u_int m_uNumBindingGroups = 0;
 	Flux_BindingGroupLayout m_axBindingGroups[FLUX_MAX_BINDING_GROUPS];
 };
+
+// ============================================================================
+// Surface + resource view structs
+// Lived in Flux.h previously but moved here so backend-level headers (e.g.
+// Zenith_Vulkan_MemoryManager.h) can use them without pulling in Flux.h,
+// which transitively re-includes the platform graphics header and formed a
+// three-file include cycle (MemoryManager.h -> Flux.h -> PlatformGraphics_Include.h -> MemoryManager.h).
+// ============================================================================
+struct Flux_SurfaceInfo
+{
+	TextureFormat m_eFormat = TEXTURE_FORMAT_NONE;
+	TextureType m_eTextureType = TEXTURE_TYPE_2D;
+	u_int m_uWidth = 0;
+	u_int m_uHeight = 0;
+	u_int m_uDepth = 1;  // Used for 3D textures
+	u_int m_uNumMips = 1;
+	u_int m_uNumLayers = 1;  // Minimum 1 for valid Vulkan image
+	u_int m_uBaseLayer = 0;  // Base array layer for render target views (used for cubemap faces)
+	u_int m_uBaseMip = 0;    // Base mip level for render target views (used for roughness mip chain)
+	u_int m_uMemoryFlags = MEMORY_FLAGS__NONE;
+};
+
+struct Flux_ShaderResourceView
+{
+	Flux_ImageViewHandle m_xImageViewHandle;
+	Flux_VRAMHandle m_xVRAMHandle;
+	bool m_bIsDepthStencil = false;
+	u_int m_uBaseMip = 0;
+	u_int m_uMipCount = 1;
+};
+
+struct Flux_UnorderedAccessView_Texture
+{
+	Flux_ImageViewHandle m_xImageViewHandle;
+	Flux_VRAMHandle m_xVRAMHandle;
+	u_int m_uMipLevel = 0;
+};
+
+struct Flux_UnorderedAccessView_Buffer
+{
+	Flux_BufferDescriptorHandle m_xBufferDescHandle;
+	Flux_VRAMHandle m_xVRAMHandle;
+};
+
+struct Flux_RenderTargetView
+{
+	Flux_ImageViewHandle m_xImageViewHandle;
+	Flux_VRAMHandle m_xVRAMHandle;
+};
+
+struct Flux_DepthStencilView
+{
+	Flux_ImageViewHandle m_xImageViewHandle;
+	Flux_VRAMHandle m_xVRAMHandle;
+};
+
+struct Flux_ConstantBufferView
+{
+	Flux_BufferDescriptorHandle m_xBufferDescHandle;
+	Flux_VRAMHandle m_xVRAMHandle;
+};

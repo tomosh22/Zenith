@@ -87,116 +87,102 @@ void Zenith_Editor::InitializeEditorCamera()
 }
 
 //------------------------------------------------------------------------------
-// UpdateEditorCamera
+// UpdateEditorCamera helpers
 //------------------------------------------------------------------------------
-void Zenith_Editor::UpdateEditorCamera(float fDt)
+namespace
 {
-	if (!s_bEditorCameraInitialized)
-		return;
-
-	// Only update editor camera when in Stopped or Paused mode and viewport is focused
-	if (s_eEditorMode == EditorMode::Playing)
-		return;
-
-	if (!s_bViewportFocused)
-		return;
-
-	// Mouse look (Right click key held for camera rotation)
-	if (Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))
+	// Rotate a local-space direction by the editor camera's yaw only (keeps
+	// WASD movement on the horizontal plane), then scale by speed * dt. Used
+	// for W/S (forward/back) and A/D (strafe).
+	Zenith_Maths::Vector3 YawDirectionScaled(double fYaw, Zenith_Maths::Vector4 xLocal, float fSpeedDt)
 	{
-		Zenith_Maths::Vector2_64 xMouseDelta;
-		Zenith_Input::GetMouseDelta(xMouseDelta);
-
-		// Update yaw and pitch (values are stored in radians, matching camera component)
-		// Convert rotate speed from degrees to radians for consistency
-		const double fRotateSpeedRad = glm::radians(s_fEditorCameraRotateSpeed);
-		s_fEditorCameraYaw -= xMouseDelta.x * fRotateSpeedRad;
-		s_fEditorCameraPitch -= xMouseDelta.y * fRotateSpeedRad;
-
-		// Clamp pitch to prevent flipping (use radians like PlayerController_Behaviour)
-		s_fEditorCameraPitch = std::min(s_fEditorCameraPitch, glm::pi<double>() / 2.0);
-		s_fEditorCameraPitch = std::max(s_fEditorCameraPitch, -glm::pi<double>() / 2.0);
-
-		// Wrap yaw around 0 to 2π (like PlayerController_Behaviour)
-		if (s_fEditorCameraYaw < 0.0)
-		{
-			s_fEditorCameraYaw += Zenith_Maths::Pi * 2.0;
-		}
-		if (s_fEditorCameraYaw > Zenith_Maths::Pi * 2.0)
-		{
-			s_fEditorCameraYaw -= Zenith_Maths::Pi * 2.0;
-		}
-		// Yaw is already in radians, no conversion needed
+		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-fYaw, Zenith_Maths::Vector3_64(0, 1, 0));
+		Zenith_Maths::Vector4_64 xResult = xRotation * xLocal;
+		return Zenith_Maths::Vector3(xResult) * fSpeedDt;
 	}
+}
 
-	// Speed modifier (shift = faster)
+void Zenith_Editor::UpdateEditorCameraLook()
+{
+	if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))
+		return;
+
+	Zenith_Maths::Vector2_64 xMouseDelta;
+	Zenith_Input::GetMouseDelta(xMouseDelta);
+
+	// Yaw/pitch stored in radians (same convention as Zenith_CameraComponent).
+	const double fRotateSpeedRad = glm::radians(s_fEditorCameraRotateSpeed);
+	s_fEditorCameraYaw   -= xMouseDelta.x * fRotateSpeedRad;
+	s_fEditorCameraPitch -= xMouseDelta.y * fRotateSpeedRad;
+
+	// Clamp pitch to ±π/2 to prevent gimbal flip.
+	s_fEditorCameraPitch = std::clamp(s_fEditorCameraPitch, -glm::pi<double>() / 2.0, glm::pi<double>() / 2.0);
+
+	// Wrap yaw into [0, 2π).
+	constexpr double f2Pi = Zenith_Maths::Pi * 2.0;
+	if (s_fEditorCameraYaw < 0.0)  s_fEditorCameraYaw += f2Pi;
+	if (s_fEditorCameraYaw > f2Pi) s_fEditorCameraYaw -= f2Pi;
+}
+
+void Zenith_Editor::UpdateEditorCameraMovement(float fDt)
+{
+	if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))
+		return;
+
 	float fMoveSpeed = s_fEditorCameraMoveSpeed;
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_LEFT_SHIFT))
 		fMoveSpeed *= 3.0f;
 
-	// WASD movement (only when right click is held for FPS-style control)
-	// Movement uses only yaw (not pitch) to keep movement on horizontal plane
-	// This matches PlayerController_Behaviour behavior
-	if (Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))
-	{
-		if (Zenith_Input::IsKeyDown(ZENITH_KEY_W))
-		{
-			// Forward movement based on yaw only (stays level)
-			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-s_fEditorCameraYaw, Zenith_Maths::Vector3_64(0, 1, 0));
-			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, 1, 1);
-			s_xEditorCameraPosition += Zenith_Maths::Vector3(xResult) * fMoveSpeed * fDt;
-		}
-		if (Zenith_Input::IsKeyDown(ZENITH_KEY_S))
-		{
-			// Backward movement based on yaw only (stays level)
-			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-s_fEditorCameraYaw, Zenith_Maths::Vector3_64(0, 1, 0));
-			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, 1, 1);
-			s_xEditorCameraPosition -= Zenith_Maths::Vector3(xResult) * fMoveSpeed * fDt;
-		}
-		if (Zenith_Input::IsKeyDown(ZENITH_KEY_A))
-		{
-			// Left strafe based on yaw only (stays level)
-			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-s_fEditorCameraYaw, Zenith_Maths::Vector3_64(0, 1, 0));
-			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(-1, 0, 0, 1);
-			s_xEditorCameraPosition += Zenith_Maths::Vector3(xResult) * fMoveSpeed * fDt;
-		}
-		if (Zenith_Input::IsKeyDown(ZENITH_KEY_D))
-		{
-			// Right strafe based on yaw only (stays level)
-			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-s_fEditorCameraYaw, Zenith_Maths::Vector3_64(0, 1, 0));
-			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(-1, 0, 0, 1);
-			s_xEditorCameraPosition -= Zenith_Maths::Vector3(xResult) * fMoveSpeed * fDt;
-		}
-		if (Zenith_Input::IsKeyDown(ZENITH_KEY_Q))
-		{
-			// Vertical down (world space)
-			s_xEditorCameraPosition.y -= fMoveSpeed * fDt;
-		}
-		if (Zenith_Input::IsKeyDown(ZENITH_KEY_E))
-		{
-			// Vertical up (world space)
-			s_xEditorCameraPosition.y += fMoveSpeed * fDt;
-		}
-	}
+	const float fStep = fMoveSpeed * fDt;
+	const double fYaw = s_fEditorCameraYaw;
 
-	// Apply editor camera state to the scene's main camera
-	// (In stopped/paused mode, the game camera is being controlled by editor values)
-	if (s_uGameCameraEntity != INVALID_ENTITY_ID)
-	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (pxSceneData)
-		{
-			Zenith_Entity xCameraEntity = pxSceneData->TryGetEntity(s_uGameCameraEntity);
-			if (xCameraEntity.IsValid() && xCameraEntity.HasComponent<Zenith_CameraComponent>())
-			{
-				Zenith_CameraComponent& xCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
-				xCamera.SetPosition(s_xEditorCameraPosition);
-				xCamera.SetPitch(s_fEditorCameraPitch);
-				xCamera.SetYaw(s_fEditorCameraYaw);
-			}
-		}
-	}
+	if (Zenith_Input::IsKeyDown(ZENITH_KEY_W))
+		s_xEditorCameraPosition += YawDirectionScaled(fYaw, {0, 0,  1, 1}, fStep);
+	if (Zenith_Input::IsKeyDown(ZENITH_KEY_S))
+		s_xEditorCameraPosition -= YawDirectionScaled(fYaw, {0, 0,  1, 1}, fStep);
+	if (Zenith_Input::IsKeyDown(ZENITH_KEY_A))
+		s_xEditorCameraPosition += YawDirectionScaled(fYaw, {-1, 0, 0, 1}, fStep);
+	if (Zenith_Input::IsKeyDown(ZENITH_KEY_D))
+		s_xEditorCameraPosition -= YawDirectionScaled(fYaw, {-1, 0, 0, 1}, fStep);
+
+	if (Zenith_Input::IsKeyDown(ZENITH_KEY_Q))
+		s_xEditorCameraPosition.y -= fStep;
+	if (Zenith_Input::IsKeyDown(ZENITH_KEY_E))
+		s_xEditorCameraPosition.y += fStep;
+}
+
+void Zenith_Editor::ApplyEditorCameraToScene()
+{
+	if (s_uGameCameraEntity == INVALID_ENTITY_ID)
+		return;
+
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+		return;
+
+	Zenith_Entity xCameraEntity = pxSceneData->TryGetEntity(s_uGameCameraEntity);
+	if (!xCameraEntity.IsValid() || !xCameraEntity.HasComponent<Zenith_CameraComponent>())
+		return;
+
+	Zenith_CameraComponent& xCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
+	xCamera.SetPosition(s_xEditorCameraPosition);
+	xCamera.SetPitch   (s_fEditorCameraPitch);
+	xCamera.SetYaw     (s_fEditorCameraYaw);
+}
+
+//------------------------------------------------------------------------------
+// UpdateEditorCamera
+//------------------------------------------------------------------------------
+void Zenith_Editor::UpdateEditorCamera(float fDt)
+{
+	if (!s_bEditorCameraInitialized)  return;
+	if (s_eEditorMode == EditorMode::Playing)  return;  // Stopped/Paused only.
+	if (!s_bViewportFocused)  return;
+
+	UpdateEditorCameraLook();
+	UpdateEditorCameraMovement(fDt);
+	ApplyEditorCameraToScene();
 }
 
 //------------------------------------------------------------------------------

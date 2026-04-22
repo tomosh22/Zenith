@@ -115,68 +115,48 @@ void Zenith_BehaviorTree::Abort(Zenith_Entity& xAgent, Zenith_Blackboard& xBlack
 
 void Zenith_BehaviorTree::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Write tree name
-	uint32_t uNameLen = static_cast<uint32_t>(m_strName.length());
-	xStream << uNameLen;
-	if (uNameLen > 0)
-	{
-		xStream.Write(m_strName.data(), uNameLen);
-	}
+	xStream << m_strName;
 
-	// Write whether we have a root
-	bool bHasRoot = (m_pxRootNode != nullptr);
+	const bool bHasRoot = (m_pxRootNode != nullptr);
 	xStream << bHasRoot;
 
 	if (bHasRoot)
 	{
-		// Write root type name
+		// Root type name still written as length-prefixed raw C string because
+		// GetTypeName() returns const char* — wrapping in std::string would
+		// allocate per serialize. Keep the manual write.
 		const char* szTypeName = m_pxRootNode->GetTypeName();
-		uint32_t uTypeLen = static_cast<uint32_t>(strlen(szTypeName));
+		const uint32_t uTypeLen = static_cast<uint32_t>(strlen(szTypeName));
 		xStream << uTypeLen;
 		xStream.Write(szTypeName, uTypeLen);
 
-		// Write root data
 		m_pxRootNode->WriteToDataStream(xStream);
 	}
 }
 
 void Zenith_BehaviorTree::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	// Delete existing root
 	if (m_pxRootNode != nullptr)
 	{
 		delete m_pxRootNode;
 		m_pxRootNode = nullptr;
 	}
 
-	// Read tree name
-	uint32_t uNameLen = 0;
-	xStream >> uNameLen;
-	if (uNameLen > 0)
-	{
-		m_strName.resize(uNameLen);
-		xStream.Read(m_strName.data(), uNameLen);
-	}
-	else
-	{
-		m_strName.clear();
-	}
+	xStream >> m_strName;
 
-	// Read whether we have a root
 	bool bHasRoot = false;
 	xStream >> bHasRoot;
 
 	if (bHasRoot)
 	{
-		// Read root type name
 		uint32_t uTypeLen = 0;
 		xStream >> uTypeLen;
 		std::string strTypeName(uTypeLen, '\0');
 		xStream.Read(strTypeName.data(), uTypeLen);
 
-		// Note: Node creation requires a factory/registry
-		// For now, tree deserialization is handled by Zenith_BTSerializer
-		// which knows how to create nodes by type name
+		// Note: Node creation requires a factory/registry — actual deserialization
+		// is handled by Zenith_BTSerializer which knows how to create nodes by
+		// type name.
 	}
 
 	m_bFirstTick = true;

@@ -706,6 +706,9 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData_Serialization.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>

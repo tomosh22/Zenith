@@ -266,6 +266,43 @@ void Flux_Grass::GenerateGrassForChunk(GrassChunk& xChunk, const Zenith_Maths::V
 	xChunk.m_bVisible = false;
 }
 
+static bool Flux_Grass_IsChunkInFrustum(const GrassChunk& xChunk, const Zenith_Frustum& xFrustum)
+{
+	// Convert the chunk's bounding sphere into an AABB and test against the
+	// frustum. Kept as its own helper so UpdateVisibleChunks stays focused on
+	// the culling *policy* rather than the geometry plumbing.
+	Zenith_AABB xChunkAABB;
+	xChunkAABB.m_xMin = xChunk.m_xCenter - Zenith_Maths::Vector3(xChunk.m_fRadius);
+	xChunkAABB.m_xMax = xChunk.m_xCenter + Zenith_Maths::Vector3(xChunk.m_fRadius);
+	return Zenith_FrustumCulling::TestAABBFrustum(xFrustum, xChunkAABB);
+}
+
+static u_int Flux_Grass_PickChunkLOD(float fDistSq)
+{
+	// Pure function: distance squared to LOD index. Forced-LOD override is
+	// applied by the caller so this stays trivially testable.
+	constexpr float fLOD0DistSq = GrassConfig::fLOD0_DISTANCE * GrassConfig::fLOD0_DISTANCE;
+	constexpr float fLOD1DistSq = GrassConfig::fLOD1_DISTANCE * GrassConfig::fLOD1_DISTANCE;
+	constexpr float fLOD2DistSq = GrassConfig::fLOD2_DISTANCE * GrassConfig::fLOD2_DISTANCE;
+
+	if (fDistSq < fLOD0DistSq) return 0;
+	if (fDistSq < fLOD1DistSq) return 1;
+	if (fDistSq < fLOD2DistSq) return 2;
+	return 3;
+}
+
+static u_int Flux_Grass_InstanceCountForLOD(u_int uTotal, u_int uLOD)
+{
+	// LOD0 = 100%, LOD1 = 50%, LOD2 = 25%, LOD3+ = 12.5%.
+	switch (uLOD)
+	{
+	case 0: return uTotal;
+	case 1: return uTotal / 2;
+	case 2: return uTotal / 4;
+	default: return uTotal / 8;
+	}
+}
+
 void Flux_Grass::UpdateVisibleChunks()
 {
 	s_uVisibleBladeCount = 0;
@@ -276,13 +313,12 @@ void Flux_Grass::UpdateVisibleChunks()
 		return;
 	}
 
-	// Get camera position and frustum for culling
 	const Zenith_Maths::Vector3& xCamPos = Flux_Graphics::GetCameraPosition();
-	Zenith_Maths::Matrix4 xViewProj = Flux_Graphics::GetViewProjMatrix();
-
-	// Extract frustum planes for culling
+	const Zenith_Maths::Matrix4 xViewProj = Flux_Graphics::GetViewProjMatrix();
 	Zenith_Frustum xFrustum;
 	xFrustum.ExtractFromViewProjection(xViewProj);
+
+	const float fMaxDistSq = s_fMaxDistance * s_fMaxDistance;
 
 	for (u_int i = 0; i < s_axChunks.GetSize(); ++i)
 	{
@@ -294,77 +330,23 @@ void Flux_Grass::UpdateVisibleChunks()
 			continue;
 		}
 
-		// Distance culling
-		float fDistSq = glm::distance2(xCamPos, xChunk.m_xCenter);
-		float fMaxDistSq = s_fMaxDistance * s_fMaxDistance;
+		const float fDistSq = glm::distance2(xCamPos, xChunk.m_xCenter);
 
-		if (dbg_bGrassCullingEnabled && fDistSq > fMaxDistSq)
-		{
-			xChunk.m_bVisible = false;
-			continue;
-		}
-
-		// Frustum culling using AABB converted from bounding sphere
-		bool bInFrustum = true;
+		// Distance + frustum culling — both gated on the debug flag so forcing
+		// it off keeps everything visible for debug viewing.
 		if (dbg_bGrassCullingEnabled)
 		{
-			// Convert sphere to AABB for frustum testing
-			Zenith_AABB xChunkAABB;
-			xChunkAABB.m_xMin = xChunk.m_xCenter - Zenith_Maths::Vector3(xChunk.m_fRadius);
-			xChunkAABB.m_xMax = xChunk.m_xCenter + Zenith_Maths::Vector3(xChunk.m_fRadius);
-			bInFrustum = Zenith_FrustumCulling::TestAABBFrustum(xFrustum, xChunkAABB);
-		}
-
-		if (!bInFrustum)
-		{
-			xChunk.m_bVisible = false;
-			continue;
-		}
-
-		// LOD selection based on distance (using squared distances to avoid sqrt)
-		if (!dbg_bGrassFreezeLOD)
-		{
-			constexpr float fLOD0DistSq = GrassConfig::fLOD0_DISTANCE * GrassConfig::fLOD0_DISTANCE;
-			constexpr float fLOD1DistSq = GrassConfig::fLOD1_DISTANCE * GrassConfig::fLOD1_DISTANCE;
-			constexpr float fLOD2DistSq = GrassConfig::fLOD2_DISTANCE * GrassConfig::fLOD2_DISTANCE;
-
-			if (fDistSq < fLOD0DistSq)
+			if (fDistSq > fMaxDistSq || !Flux_Grass_IsChunkInFrustum(xChunk, xFrustum))
 			{
-				xChunk.m_uLOD = 0;
-			}
-			else if (fDistSq < fLOD1DistSq)
-			{
-				xChunk.m_uLOD = 1;
-			}
-			else if (fDistSq < fLOD2DistSq)
-			{
-				xChunk.m_uLOD = 2;
-			}
-			else
-			{
-				xChunk.m_uLOD = 3;
+				xChunk.m_bVisible = false;
+				continue;
 			}
 		}
-		else
-		{
-			xChunk.m_uLOD = dbg_uGrassForcedLOD;
-		}
 
+		xChunk.m_uLOD = dbg_bGrassFreezeLOD ? dbg_uGrassForcedLOD : Flux_Grass_PickChunkLOD(fDistSq);
 		xChunk.m_bVisible = true;
 
-		// Apply LOD-based density reduction
-		// LOD0 = 100%, LOD1 = 50%, LOD2 = 25%, LOD3 = 12.5%
-		u_int uLODInstanceCount = xChunk.m_uInstanceCount;
-		switch (xChunk.m_uLOD)
-		{
-		case 0: break;  // Full density
-		case 1: uLODInstanceCount = xChunk.m_uInstanceCount / 2; break;
-		case 2: uLODInstanceCount = xChunk.m_uInstanceCount / 4; break;
-		case 3: uLODInstanceCount = xChunk.m_uInstanceCount / 8; break;
-		default: uLODInstanceCount = xChunk.m_uInstanceCount / 8; break;
-		}
-
-		s_uVisibleBladeCount += uLODInstanceCount;
+		s_uVisibleBladeCount += Flux_Grass_InstanceCountForLOD(xChunk.m_uInstanceCount, xChunk.m_uLOD);
 		s_uActiveChunkCount++;
 	}
 }

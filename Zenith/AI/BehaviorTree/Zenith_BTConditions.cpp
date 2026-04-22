@@ -45,20 +45,13 @@ BTNodeStatus Zenith_BTCondition_HasTarget::Execute(Zenith_Entity&, Zenith_Blackb
 void Zenith_BTCondition_HasTarget::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
-
-	uint32_t uKeyLen = static_cast<uint32_t>(m_strTargetKey.length());
-	xStream << uKeyLen;
-	xStream.Write(m_strTargetKey.data(), uKeyLen);
+	xStream << m_strTargetKey;
 }
 
 void Zenith_BTCondition_HasTarget::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
-
-	uint32_t uKeyLen = 0;
-	xStream >> uKeyLen;
-	m_strTargetKey.resize(uKeyLen);
-	xStream.Read(m_strTargetKey.data(), uKeyLen);
+	xStream >> m_strTargetKey;
 }
 
 // ========== Zenith_BTCondition_InRange ==========
@@ -132,24 +125,15 @@ BTNodeStatus Zenith_BTCondition_InRange::Execute(Zenith_Entity& xAgent, Zenith_B
 void Zenith_BTCondition_InRange::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
-
 	xStream << m_fRange;
-
-	uint32_t uKeyLen = static_cast<uint32_t>(m_strTargetKey.length());
-	xStream << uKeyLen;
-	xStream.Write(m_strTargetKey.data(), uKeyLen);
+	xStream << m_strTargetKey;
 }
 
 void Zenith_BTCondition_InRange::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
-
 	xStream >> m_fRange;
-
-	uint32_t uKeyLen = 0;
-	xStream >> uKeyLen;
-	m_strTargetKey.resize(uKeyLen);
-	xStream.Read(m_strTargetKey.data(), uKeyLen);
+	xStream >> m_strTargetKey;
 }
 
 // ========== Zenith_BTCondition_CanSeeTarget ==========
@@ -186,23 +170,14 @@ BTNodeStatus Zenith_BTCondition_CanSeeTarget::Execute(Zenith_Entity& xAgent, Zen
 void Zenith_BTCondition_CanSeeTarget::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
-
-	uint32_t uKeyLen = static_cast<uint32_t>(m_strTargetKey.length());
-	xStream << uKeyLen;
-	xStream.Write(m_strTargetKey.data(), uKeyLen);
-
+	xStream << m_strTargetKey;
 	xStream << m_fMinAwareness;
 }
 
 void Zenith_BTCondition_CanSeeTarget::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
-
-	uint32_t uKeyLen = 0;
-	xStream >> uKeyLen;
-	m_strTargetKey.resize(uKeyLen);
-	xStream.Read(m_strTargetKey.data(), uKeyLen);
-
+	xStream >> m_strTargetKey;
 	xStream >> m_fMinAwareness;
 }
 
@@ -233,23 +208,14 @@ BTNodeStatus Zenith_BTCondition_BlackboardBool::Execute(Zenith_Entity&, Zenith_B
 void Zenith_BTCondition_BlackboardBool::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
-
-	uint32_t uKeyLen = static_cast<uint32_t>(m_strKey.length());
-	xStream << uKeyLen;
-	xStream.Write(m_strKey.data(), uKeyLen);
-
+	xStream << m_strKey;
 	xStream << m_bExpectedValue;
 }
 
 void Zenith_BTCondition_BlackboardBool::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
-
-	uint32_t uKeyLen = 0;
-	xStream >> uKeyLen;
-	m_strKey.resize(uKeyLen);
-	xStream.Read(m_strKey.data(), uKeyLen);
-
+	xStream >> m_strKey;
 	xStream >> m_bExpectedValue;
 }
 
@@ -297,11 +263,7 @@ BTNodeStatus Zenith_BTCondition_BlackboardCompare::Execute(Zenith_Entity&, Zenit
 void Zenith_BTCondition_BlackboardCompare::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
-
-	uint32_t uKeyLen = static_cast<uint32_t>(m_strKey.length());
-	xStream << uKeyLen;
-	xStream.Write(m_strKey.data(), uKeyLen);
-
+	xStream << m_strKey;
 	xStream << static_cast<uint8_t>(m_eComparison);
 	xStream << m_fValue;
 }
@@ -309,11 +271,7 @@ void Zenith_BTCondition_BlackboardCompare::WriteToDataStream(Zenith_DataStream& 
 void Zenith_BTCondition_BlackboardCompare::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
-
-	uint32_t uKeyLen = 0;
-	xStream >> uKeyLen;
-	m_strKey.resize(uKeyLen);
-	xStream.Read(m_strKey.data(), uKeyLen);
+	xStream >> m_strKey;
 
 	uint8_t uComp = 0;
 	xStream >> uComp;

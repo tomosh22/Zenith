@@ -48,27 +48,14 @@ void Zenith_BTAction_Wait::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
 	xStream << m_fDuration;
-
-	uint32_t uKeyLen = static_cast<uint32_t>(m_strDurationKey.length());
-	xStream << uKeyLen;
-	if (uKeyLen > 0)
-	{
-		xStream.Write(m_strDurationKey.data(), uKeyLen);
-	}
+	xStream << m_strDurationKey;
 }
 
 void Zenith_BTAction_Wait::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
 	xStream >> m_fDuration;
-
-	uint32_t uKeyLen = 0;
-	xStream >> uKeyLen;
-	if (uKeyLen > 0)
-	{
-		m_strDurationKey.resize(uKeyLen);
-		xStream.Read(m_strDurationKey.data(), uKeyLen);
-	}
+	xStream >> m_strDurationKey;
 }
 
 // ========== Zenith_BTAction_MoveTo ==========
@@ -155,23 +142,14 @@ BTNodeStatus Zenith_BTAction_MoveTo::Execute(Zenith_Entity& xAgent, Zenith_Black
 void Zenith_BTAction_MoveTo::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
-
-	uint32_t uKeyLen = static_cast<uint32_t>(m_strTargetKey.length());
-	xStream << uKeyLen;
-	xStream.Write(m_strTargetKey.data(), uKeyLen);
-
+	xStream << m_strTargetKey;
 	xStream << m_fAcceptanceRadius;
 }
 
 void Zenith_BTAction_MoveTo::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
-
-	uint32_t uKeyLen = 0;
-	xStream >> uKeyLen;
-	m_strTargetKey.resize(uKeyLen);
-	xStream.Read(m_strTargetKey.data(), uKeyLen);
-
+	xStream >> m_strTargetKey;
 	xStream >> m_fAcceptanceRadius;
 }
 
@@ -285,11 +263,7 @@ BTNodeStatus Zenith_BTAction_MoveToEntity::Execute(Zenith_Entity& xAgent, Zenith
 void Zenith_BTAction_MoveToEntity::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
-
-	uint32_t uKeyLen = static_cast<uint32_t>(m_strTargetKey.length());
-	xStream << uKeyLen;
-	xStream.Write(m_strTargetKey.data(), uKeyLen);
-
+	xStream << m_strTargetKey;
 	xStream << m_fAcceptanceRadius;
 	xStream << m_fRepathInterval;
 }
@@ -297,12 +271,7 @@ void Zenith_BTAction_MoveToEntity::WriteToDataStream(Zenith_DataStream& xStream)
 void Zenith_BTAction_MoveToEntity::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
-
-	uint32_t uKeyLen = 0;
-	xStream >> uKeyLen;
-	m_strTargetKey.resize(uKeyLen);
-	xStream.Read(m_strTargetKey.data(), uKeyLen);
-
+	xStream >> m_strTargetKey;
 	xStream >> m_fAcceptanceRadius;
 	xStream >> m_fRepathInterval;
 }
@@ -325,23 +294,14 @@ BTNodeStatus Zenith_BTAction_SetBlackboardBool::Execute(Zenith_Entity&, Zenith_B
 void Zenith_BTAction_SetBlackboardBool::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
-
-	uint32_t uKeyLen = static_cast<uint32_t>(m_strKey.length());
-	xStream << uKeyLen;
-	xStream.Write(m_strKey.data(), uKeyLen);
-
+	xStream << m_strKey;
 	xStream << m_bValue;
 }
 
 void Zenith_BTAction_SetBlackboardBool::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
-
-	uint32_t uKeyLen = 0;
-	xStream >> uKeyLen;
-	m_strKey.resize(uKeyLen);
-	xStream.Read(m_strKey.data(), uKeyLen);
-
+	xStream >> m_strKey;
 	xStream >> m_bValue;
 }
 
@@ -363,23 +323,14 @@ BTNodeStatus Zenith_BTAction_SetBlackboardFloat::Execute(Zenith_Entity&, Zenith_
 void Zenith_BTAction_SetBlackboardFloat::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
-
-	uint32_t uKeyLen = static_cast<uint32_t>(m_strKey.length());
-	xStream << uKeyLen;
-	xStream.Write(m_strKey.data(), uKeyLen);
-
+	xStream << m_strKey;
 	xStream << m_fValue;
 }
 
 void Zenith_BTAction_SetBlackboardFloat::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
-
-	uint32_t uKeyLen = 0;
-	xStream >> uKeyLen;
-	m_strKey.resize(uKeyLen);
-	xStream.Read(m_strKey.data(), uKeyLen);
-
+	xStream >> m_strKey;
 	xStream >> m_fValue;
 }
 
@@ -400,20 +351,13 @@ BTNodeStatus Zenith_BTAction_Log::Execute(Zenith_Entity& xAgent, Zenith_Blackboa
 void Zenith_BTAction_Log::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTLeaf::WriteToDataStream(xStream);
-
-	uint32_t uMsgLen = static_cast<uint32_t>(m_strMessage.length());
-	xStream << uMsgLen;
-	xStream.Write(m_strMessage.data(), uMsgLen);
+	xStream << m_strMessage;
 }
 
 void Zenith_BTAction_Log::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTLeaf::ReadFromDataStream(xStream);
-
-	uint32_t uMsgLen = 0;
-	xStream >> uMsgLen;
-	m_strMessage.resize(uMsgLen);
-	xStream.Read(m_strMessage.data(), uMsgLen);
+	xStream >> m_strMessage;
 }
 
 // ========== Zenith_BTAction_FindPrimaryTarget ==========

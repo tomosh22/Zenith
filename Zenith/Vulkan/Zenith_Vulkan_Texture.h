@@ -32,14 +32,9 @@ public:
 
 	void Reset();
 
-	static vk::Format ConvertToVkFormat_Colour(TextureFormat eFormat);
-	static vk::Format ConvertToVkFormat_DepthStencil(TextureFormat eFormat);
-	static vk::AttachmentLoadOp ConvertToVkLoadAction(LoadAction eAction);
-	static vk::AttachmentStoreOp ConvertToVkStoreAction(StoreAction eAction);
-
-	#if 0
-	static vk::ImageLayout ConvertToVkTargetUsage(RenderTargetUsage eUsage);
-	#endif
+	// Format/action converters live on Zenith_Vulkan (the single canonical
+	// source). Former duplicates on this class were dead copies — see
+	// Zenith_Vulkan::ConvertToVkFormat_Colour / _DepthStencil / ConvertToVkLoadAction / ConvertToVkStoreAction.
 
 	const vk::Image GetImage() const { return m_xImage; }
 	VkImage* GetImage_Ptr() { return &m_xImage; }

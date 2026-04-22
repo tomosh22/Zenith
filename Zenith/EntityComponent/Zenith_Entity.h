@@ -70,6 +70,12 @@ class Zenith_TransformComponent;
  * EntitySlot and accessed through this handle. This eliminates the
  * synchronization bugs that occurred when entity state was duplicated.
  *
+ * THREADING: A single Zenith_Entity instance is NOT safe to share across
+ * threads. The scene-data pointer and scene-handle fields are mutable and
+ * refreshed lazily by const accessors (IsValid / GetSceneData) when an
+ * entity moves between scenes, so concurrent reads on the same instance
+ * can race. Copy the handle per-thread, or re-resolve from EntityID.
+ *
  * Usage:
  *   Zenith_Entity xEntity = pxSceneData->GetEntity(entityID);
  *   xEntity.SetName("MyEntity");  // Modifies slot directly

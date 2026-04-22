@@ -143,42 +143,17 @@ void Zenith_AIAgentComponent::TickBehaviorTree(float fDt)
 
 void Zenith_AIAgentComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Write configuration
 	xStream << m_bEnabled;
 	xStream << m_fBehaviorUpdateInterval;
-
-	// Write behavior tree asset path
-	uint32_t uPathLen = static_cast<uint32_t>(m_strBehaviorTreeAsset.length());
-	xStream << uPathLen;
-	if (uPathLen > 0)
-	{
-		xStream.Write(m_strBehaviorTreeAsset.data(), uPathLen);
-	}
-
-	// Write blackboard state (optional, for save games)
+	xStream << m_strBehaviorTreeAsset;
 	m_xBlackboard.WriteToDataStream(xStream);
 }
 
 void Zenith_AIAgentComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	// Read configuration
 	xStream >> m_bEnabled;
 	xStream >> m_fBehaviorUpdateInterval;
-
-	// Read behavior tree asset path
-	uint32_t uPathLen = 0;
-	xStream >> uPathLen;
-	if (uPathLen > 0)
-	{
-		m_strBehaviorTreeAsset.resize(uPathLen);
-		xStream.Read(m_strBehaviorTreeAsset.data(), uPathLen);
-	}
-	else
-	{
-		m_strBehaviorTreeAsset.clear();
-	}
-
-	// Read blackboard state
+	xStream >> m_strBehaviorTreeAsset;
 	m_xBlackboard.ReadFromDataStream(xStream);
 }
 

@@ -115,6 +115,7 @@ private:
 	static void TestLoadSceneAsyncCompletionCallback();
 	static void TestLoadSceneAsyncGetResultScene();
 	static void TestLoadSceneAsyncPriority();
+	static void TestSceneOperationSetPriorityNoOpWhenSame();
 	static void TestLoadSceneAsyncByIndexValid();
 	static void TestLoadSceneAsyncMultiple();
 	static void TestLoadSceneAsyncSingleMode();
@@ -162,6 +163,8 @@ private:
 	static void TestEntityPersistentCallbackFires();
 	static void TestCallbackUnregister();
 	static void TestCallbackUnregisterDuringCallback();
+	static void TestCallbackHandleWrapNoCollision();
+	static void TestShutdownClearsAllStatics();
 	static void TestMultipleCallbacksFireInOrder();
 	static void TestCallbackHandleInvalid();
 
@@ -221,6 +224,7 @@ private:
 	static void TestAsyncLoadPriorityOrdering();
 	static void TestAsyncLoadCancellation();
 	static void TestAsyncAdditiveWithoutLoading();
+	static void TestAsyncAdditiveWithoutLoadingSchedulesNoAsyncJob();
 	static void TestBatchSizeValidation();
 
 	//==========================================================================
@@ -735,6 +739,7 @@ private:
 	static void TestValidateFileHeaderRejectsCorruptMagic();
 	static void TestValidateFileHeaderRejectsUnsupportedVersion();
 	static void TestValidateFileHeaderAcceptsValidFile();
+	static void TestValidateFileHeaderRejectsTruncatedFile();
 	static void TestLoadSceneSingleMissingFilePreservesCurrentScene();
 	static void TestLoadSceneSingleCorruptMagicRollsBack();
 	static void TestLoadSceneSingleCorruptMagicLeavesNoGhostScene();
@@ -776,6 +781,29 @@ private:
 	//==========================================================================
 	static void TestLoadSceneSingleFiresExactlyOneActiveSceneChanged();
 	static void TestLoadSceneSingleActiveSceneChangedReportsCorrectOldAndNew();
+
+	//==========================================================================
+	// MEDIUM-1: ActiveSceneChanged fires AFTER SceneUnloaded for both sync
+	// and async unload paths. Matches Unity ordering [Unloading, Unloaded,
+	// ActiveChanged].
+	//==========================================================================
+	static void TestAsyncUnloadActiveSceneChangedAfterSceneUnloaded();
+	static void TestSyncUnloadActiveSceneChangedAfterSceneUnloaded();
+
+	//==========================================================================
+	// HIGH-2 / HIGH-3: UnloadAllNonPersistent must not double-fire
+	// SceneUnloading for scenes already mid-async-unload, and must still
+	// pair SceneUnloaded on that cancel path.
+	//==========================================================================
+	static void TestUnloadAllNonPersistentNoDoubleUnloadingFire();
+	static void TestUnloadAllNonPersistentFiresSceneUnloadedOnCancel();
+
+	//==========================================================================
+	// HIGH-1: Unity lifecycle ordering — OnStart must fire before OnFixedUpdate
+	// within the same pump, both for sync and async loads.
+	//==========================================================================
+	static void TestFixedUpdateCalledAfterStartAsync();
+	static void TestFixedUpdateCalledAfterStartSync();
 
 	//==========================================================================
 	// Audit Remediation — A10: Sync-path m_bIsActivated gating

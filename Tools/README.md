@@ -103,6 +103,15 @@ Results are disk-cached in `<output>/llm_cache.json`, keyed by `<model>:<sha256 
 |---|---|
 | `--fail-on RULES` | Comma-separated thresholds that cause a non-zero exit when *any* function exceeds them. Keys: `max-cc`, `max-cognitive`, `max-nesting`, `max-loc`. Example: `--fail-on max-cc=30,max-nesting=8`. |
 
+**`CheckComplexity.bat`** — ready-to-run CI gate. Invokes the tool with engine-scoped excludes and thresholds pinned to the current worst-case engine ceiling, so a genuine regression fails the build but the existing code passes. Exit 0 on success, non-zero on regression. Intended to be wired into CI:
+
+```batch
+Tools\CheckComplexity.bat
+```
+
+Current thresholds (see script comments for rationale):
+`max-cc=100, max-cognitive=150, max-nesting=8, max-loc=900`.
+
 ## What the tool produces
 
 ### Default outputs (always)

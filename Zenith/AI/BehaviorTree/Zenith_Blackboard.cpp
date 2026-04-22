@@ -168,12 +168,7 @@ void Zenith_Blackboard::WriteToDataStream(Zenith_DataStream& xStream) const
 
 	for (const auto& xPair : m_xData)
 	{
-		// Write key
-		uint32_t uKeyLen = static_cast<uint32_t>(xPair.first.length());
-		xStream << uKeyLen;
-		xStream.Write(xPair.first.data(), uKeyLen);
-
-		// Write type
+		xStream << xPair.first;
 		xStream << static_cast<uint8_t>(xPair.second.m_eType);
 
 		// Write value based on type
@@ -210,11 +205,8 @@ void Zenith_Blackboard::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	for (uint32_t u = 0; u < uCount; ++u)
 	{
-		// Read key
-		uint32_t uKeyLen = 0;
-		xStream >> uKeyLen;
-		std::string strKey(uKeyLen, '\0');
-		xStream.Read(strKey.data(), uKeyLen);
+		std::string strKey;
+		xStream >> strKey;
 
 		// Read type
 		uint8_t uType = 0;

@@ -385,6 +385,13 @@ void Zenith_SceneManager::Shutdown()
 	s_axCurrentlyLoadingPaths.Clear();
 	s_axLifecycleLoadStack.Clear();
 	s_bAsyncJobsNeedSort = false;
+	s_bIsUpdating = false;
+	s_ulLastDeferredLoadOp = ZENITH_INVALID_OPERATION_ID;
+	s_pfnInitialSceneLoad = nullptr;
+	Zenith_SceneManagerDetail::s_bSuppressActiveSceneChanged = false;
+	Zenith_SceneManagerDetail::s_bHaveDeferredOldActive = false;
+	Zenith_SceneManagerDetail::s_xDeferredOldActive = Zenith_Scene{};
+	Zenith_SceneManagerDetail::s_iPendingBuildIndex = -1;
 
 	// Reset ID counters for deterministic behavior across Shutdown/Initialise cycles
 	s_ulNextLoadTimestamp = 1;
@@ -1515,6 +1522,18 @@ void Zenith_SceneManager::Update(float fDt)
 	Zenith_Vector<Zenith_SceneData*> axUpdatable;
 	CollectUpdatableScenes(axUpdatable);
 
+	// HIGH-1: Unity execution order is Awake -> OnEnable -> Start -> FixedUpdate
+	// -> Update -> LateUpdate. Flush pending Starts BEFORE the FixedUpdate
+	// accumulator — otherwise entities that land in PENDING_START via async
+	// Phase 2 (or any path that defers Start into Update) receive
+	// OnFixedUpdate(dt) on their very first pump without having received
+	// OnStart() yet. Must stay inside the s_bIsUpdating = true gate so deferred
+	// load/unload routing from user callbacks still works.
+	for (u_int i = 0; i < axUpdatable.GetSize(); ++i)
+	{
+		axUpdatable.Get(i)->DispatchPendingStarts();
+	}
+
 	// Fixed timestep accumulation for FixedUpdate (50Hz by default, configurable via SetFixedTimestep)
 	// #TODO: Use scaled time when timeScale system is implemented (Unity's Time.fixedDeltaTime is affected by Time.timeScale)
 	// Clamp delta time to prevent runaway FixedUpdate loops after long freezes or breakpoints
@@ -1528,12 +1547,6 @@ void Zenith_SceneManager::Update(float fDt)
 			axUpdatable.Get(i)->FixedUpdate(s_fFixedTimestep);
 		}
 		s_fFixedTimeAccumulator -= s_fFixedTimestep;
-	}
-
-	// Unity execution order: FixedUpdate -> Start -> Update -> LateUpdate.
-	for (u_int i = 0; i < axUpdatable.GetSize(); ++i)
-	{
-		axUpdatable.Get(i)->DispatchPendingStarts();
 	}
 
 	for (u_int i = 0; i < axUpdatable.GetSize(); ++i)
@@ -1800,6 +1813,12 @@ void Zenith_SceneManager::UnloadAllNonPersistent(int iExcludeHandle)
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "UnloadAllNonPersistent must be called from main thread");
 	Zenith_Assert(!s_bRenderTasksActive, "UnloadAllNonPersistent: scene mutation while render tasks are reading — render-task invariant violated");
 
+	// HIGH-2: track scene handles whose SceneUnloading callback has already
+	// fired via an in-flight async unload job. Without this, the Phase-1 walk
+	// below would fire SceneUnloading a second time for the same scene — Unity
+	// guarantees exactly-one Unloading per unload.
+	Zenith_Vector<int> axAsyncUnloadingAlreadyFired;
+
 	// Cancel pending async unload jobs.
 	// C5: These jobs are being preempted by the synchronous UnloadAllNonPersistent
 	// path which itself unloads the scene. The unload IS completing (just via a
@@ -1809,6 +1828,10 @@ void Zenith_SceneManager::UnloadAllNonPersistent(int iExcludeHandle)
 	for (u_int i = 0; i < s_axAsyncUnloadJobs.GetSize(); ++i)
 	{
 		AsyncUnloadJob* pxJob = s_axAsyncUnloadJobs.Get(i);
+		if (pxJob->m_bUnloadingCallbackFired)
+		{
+			axAsyncUnloadingAlreadyFired.PushBack(pxJob->m_iSceneHandle);
+		}
 		Zenith_SceneOperation* pxOp = pxJob->m_pxOperation;
 		// SetFailed(false) is the explicit "completed without error" state.
 		pxOp->SetFailed(false);
@@ -1846,10 +1869,27 @@ void Zenith_SceneManager::UnloadAllNonPersistent(int iExcludeHandle)
 	}
 
 	// Phase 1: Fire SceneUnloading callbacks BEFORE destruction
-	// This allows cleanup code to access scene data before it's destroyed
+	// This allows cleanup code to access scene data before it's destroyed.
+	// HIGH-2: skip scenes that already fired SceneUnloading via an in-flight
+	// async unload — firing it twice violates Unity's exactly-one guarantee.
+	// SceneUnloaded is always fired below in Phase 2 (HIGH-3 — cancel path
+	// must still pair Unloaded with the earlier Unloading).
 	for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
 	{
-		FireSceneUnloadingCallbacks(axScenesToUnload.Get(i));
+		const Zenith_Scene& xScene = axScenesToUnload.Get(i);
+		bool bSkipUnloading = false;
+		for (u_int j = 0; j < axAsyncUnloadingAlreadyFired.GetSize(); ++j)
+		{
+			if (axAsyncUnloadingAlreadyFired.Get(j) == xScene.m_iHandle)
+			{
+				bSkipUnloading = true;
+				break;
+			}
+		}
+		if (!bSkipUnloading)
+		{
+			FireSceneUnloadingCallbacks(xScene);
+		}
 	}
 
 	// Phase 2: Destroy scenes and fire SceneUnloaded callbacks AFTER destruction

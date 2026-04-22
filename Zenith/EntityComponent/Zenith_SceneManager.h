@@ -1010,6 +1010,7 @@ private:
 	static uint32_t s_uFiringCallbacksDepth;
 	static void ProcessPendingCallbackRemovals();
 	static bool IsCallbackPendingRemoval(CallbackHandle ulHandle);
+	static bool IsCallbackHandleInUse(CallbackHandle ulHandle);
 	static CallbackHandle AllocateCallbackHandle();
 
 	static void FireSceneLoadedCallbacks(Zenith_Scene xScene, Zenith_SceneLoadMode eMode);
@@ -1129,8 +1130,23 @@ private:
 		uint32_t m_uDestroyedEntities;
 		bool m_bUnloadingCallbackFired;
 
+		// MEDIUM-1: when we unload the active scene, the active-pointer swap
+		// happens early (so observers never see the dying scene as active)
+		// but the ActiveSceneChanged callback fire is DEFERRED until after
+		// SceneUnloaded, matching the sync-unload ordering. These fields hold
+		// the pending fire until then. Stored as raw handle+generation pairs
+		// so this header doesn't need to pull in Zenith_Scene.h.
+		bool m_bActiveSceneChangePending;
+		int m_iOldActiveHandle;
+		uint32_t m_uOldActiveGeneration;
+		int m_iNewActiveHandle;
+		uint32_t m_uNewActiveGeneration;
+
 		AsyncUnloadJob() : m_iSceneHandle(-1), m_uSceneGeneration(0), m_pxOperation(nullptr),
-			m_uTotalEntities(0), m_uDestroyedEntities(0), m_bUnloadingCallbackFired(false) {}
+			m_uTotalEntities(0), m_uDestroyedEntities(0), m_bUnloadingCallbackFired(false),
+			m_bActiveSceneChangePending(false),
+			m_iOldActiveHandle(-1), m_uOldActiveGeneration(0),
+			m_iNewActiveHandle(-1), m_uNewActiveGeneration(0) {}
 		~AsyncUnloadJob()
 		{
 			Zenith_Assert(Zenith_Multithreading::IsMainThread(), "AsyncUnloadJob must be deleted from main thread");

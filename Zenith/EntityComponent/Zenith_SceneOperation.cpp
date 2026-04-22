@@ -21,6 +21,10 @@ Zenith_Scene Zenith_SceneOperation::GetResultScene() const
 void Zenith_SceneOperation::SetPriority(int iPriority)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetPriority must be called from main thread");
+	if (iPriority == m_iPriority)
+	{
+		return;
+	}
 	m_iPriority = iPriority;
 	Zenith_SceneManager::NotifyAsyncJobPriorityChanged();
 }

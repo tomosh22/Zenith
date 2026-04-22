@@ -28,18 +28,49 @@ Zenith_SceneManager::CallbackHandle Zenith_SceneManager::s_ulNextCallbackHandle 
 Zenith_Vector<Zenith_SceneManager::CallbackHandle> Zenith_SceneManager::s_axCallbacksPendingRemoval;
 uint32_t Zenith_SceneManager::s_uFiringCallbacksDepth = 0;
 
+// Check whether a handle is currently live in any callback list. Used by
+// AllocateCallbackHandle on wrap to avoid collisions with long-lived callbacks.
+bool Zenith_SceneManager::IsCallbackHandleInUse(CallbackHandle ulHandle)
+{
+	for (u_int i = 0; i < s_xActiveSceneChangedCallbacks.m_axEntries.GetSize(); ++i)
+		if (s_xActiveSceneChangedCallbacks.m_axEntries.Get(i).m_ulHandle == ulHandle) return true;
+	for (u_int i = 0; i < s_xSceneLoadedCallbacks.m_axEntries.GetSize(); ++i)
+		if (s_xSceneLoadedCallbacks.m_axEntries.Get(i).m_ulHandle == ulHandle) return true;
+	for (u_int i = 0; i < s_xSceneUnloadingCallbacks.m_axEntries.GetSize(); ++i)
+		if (s_xSceneUnloadingCallbacks.m_axEntries.Get(i).m_ulHandle == ulHandle) return true;
+	for (u_int i = 0; i < s_xSceneUnloadedCallbacks.m_axEntries.GetSize(); ++i)
+		if (s_xSceneUnloadedCallbacks.m_axEntries.Get(i).m_ulHandle == ulHandle) return true;
+	for (u_int i = 0; i < s_xSceneLoadStartedCallbacks.m_axEntries.GetSize(); ++i)
+		if (s_xSceneLoadStartedCallbacks.m_axEntries.Get(i).m_ulHandle == ulHandle) return true;
+	for (u_int i = 0; i < s_xEntityPersistentCallbacks.m_axEntries.GetSize(); ++i)
+		if (s_xEntityPersistentCallbacks.m_axEntries.Get(i).m_ulHandle == ulHandle) return true;
+	return false;
+}
+
 // Helper to allocate callback handles with overflow protection
 Zenith_SceneManager::CallbackHandle Zenith_SceneManager::AllocateCallbackHandle()
 {
-	// Wrap around on overflow (skip 0 which is INVALID_CALLBACK_HANDLE)
-	// Note: Collision with an active callback is astronomically unlikely - it would require
-	// a callback registered 18 quintillion registrations ago to still be active.
+	// Wrap around on overflow (skip 0 which is INVALID_CALLBACK_HANDLE).
+	// Collision with a long-lived callback after wrap is astronomically unlikely
+	// but not impossible: scan forward from 1 until a free handle is found.
 	if (s_ulNextCallbackHandle == UINT64_MAX)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE,
 			"Callback handle counter wrapped around after %llu registrations",
 			static_cast<unsigned long long>(s_ulNextCallbackHandle));
 		s_ulNextCallbackHandle = 1;  // Skip 0 (INVALID_CALLBACK_HANDLE)
+
+		constexpr uint64_t ulScanLimit = 1ull << 20;
+		uint64_t ulScanned = 0;
+		while (ulScanned < ulScanLimit && IsCallbackHandleInUse(s_ulNextCallbackHandle))
+		{
+			++s_ulNextCallbackHandle;
+			++ulScanned;
+			if (s_ulNextCallbackHandle == 0) s_ulNextCallbackHandle = 1;
+		}
+		Zenith_Assert(!IsCallbackHandleInUse(s_ulNextCallbackHandle),
+			"AllocateCallbackHandle: wrap scan exhausted after %llu iterations",
+			static_cast<unsigned long long>(ulScanned));
 	}
 	return s_ulNextCallbackHandle++;
 }

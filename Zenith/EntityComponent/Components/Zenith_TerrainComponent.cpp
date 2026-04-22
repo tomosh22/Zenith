@@ -310,111 +310,110 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 	xStream << strSplatmapPath;
 }
 
-void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
+// ReadFromDataStream helpers — keep the top-level function focused on the
+// version dispatch by factoring the per-version material-read passes out.
+
+void Zenith_TerrainComponent::AssignTerrainMaterialSlot(u_int uSlot, const std::string& strEntityName, Zenith_DataStream& xStream)
 {
-	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
-	if (!Flux_TerrainStreamingManager::IsInitialized())
+	Zenith_Assert(uSlot < TERRAIN_MATERIAL_COUNT, "Terrain material slot %u out of range", uSlot);
+	if (Zenith_MaterialAsset* pxNewMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>())
 	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "ReadFromDataStream - Re-initializing streaming manager (was shut down)");
-		Flux_TerrainStreamingManager::Initialize();
-	}
-
-	// Read serialization version
-	uint32_t uVersion;
-	xStream >> uVersion;
-	
-	// Read physics geometry path (for reference, but we load all chunks below)
-	std::string strPhysicsGeometryPath;
-	xStream >> strPhysicsGeometryPath;
-
-	// Load and combine ALL physics chunks, same as the full constructor
-	// This is necessary for terrain colliders to cover the entire terrain, not just the first chunk
-	LoadCombinedPhysicsGeometry();
-
-	// Create fresh materials with descriptive names including entity name
-	std::string strEntityName = m_xParentEntity.GetName().empty() ?
-		("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
-
-	if (uVersion >= 3)
-	{
-		// Version 3: 4 materials + splatmap
-		for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
-		{
-			Zenith_MaterialAsset* pxNewMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-			if (pxNewMat)
-			{
-				pxNewMat->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
-				m_axMaterials[u].Set(pxNewMat);
-				pxNewMat->ReadFromDataStream(xStream);
-			}
-			else
-			{
-				Zenith_MaterialAsset xTempMat;
-				xTempMat.ReadFromDataStream(xStream);
-			}
-		}
-
-		// Read splatmap path
-		std::string strSplatmapPath;
-		xStream >> strSplatmapPath;
-		if (!strSplatmapPath.empty())
-		{
-			m_xSplatmap.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strSplatmapPath));
-		}
-	}
-	else if (uVersion >= 2)
-	{
-		// Version 2: 2 materials (backwards compat)
-		for (u_int u = 0; u < 2; u++)
-		{
-			Zenith_MaterialAsset* pxNewMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-			if (pxNewMat)
-			{
-				pxNewMat->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
-				m_axMaterials[u].Set(pxNewMat);
-				pxNewMat->ReadFromDataStream(xStream);
-			}
-			else
-			{
-				Zenith_MaterialAsset xTempMat;
-				xTempMat.ReadFromDataStream(xStream);
-			}
-		}
+		pxNewMat->SetName(strEntityName + "_Terrain_Mat" + std::to_string(uSlot));
+		m_axMaterials[uSlot].Set(pxNewMat);
+		pxNewMat->ReadFromDataStream(xStream);
 	}
 	else
 	{
-		// Version 1: Legacy format with only base colors
-		Zenith_Maths::Vector4 xMat0Color, xMat1Color;
-		xStream >> xMat0Color.x;
-		xStream >> xMat0Color.y;
-		xStream >> xMat0Color.z;
-		xStream >> xMat0Color.w;
-		xStream >> xMat1Color.x;
-		xStream >> xMat1Color.y;
-		xStream >> xMat1Color.z;
-		xStream >> xMat1Color.w;
+		// Registry couldn't allocate — still drain the stream so later data is aligned.
+		Zenith_MaterialAsset xTempMat;
+		xTempMat.ReadFromDataStream(xStream);
+	}
+}
 
-		if (m_axMaterials[0].GetDirect())
-			m_axMaterials[0].GetDirect()->SetBaseColor(xMat0Color);
-		if (m_axMaterials[1].GetDirect())
-			m_axMaterials[1].GetDirect()->SetBaseColor(xMat1Color);
+void Zenith_TerrainComponent::ReadMaterialsV3(const std::string& strEntityName, Zenith_DataStream& xStream)
+{
+	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
+	{
+		AssignTerrainMaterialSlot(u, strEntityName, xStream);
 	}
 
-	// Ensure all 4 material slots have valid assets (use blank material as fallback)
+	std::string strSplatmapPath;
+	xStream >> strSplatmapPath;
+	if (!strSplatmapPath.empty())
+	{
+		m_xSplatmap.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strSplatmapPath));
+	}
+}
+
+void Zenith_TerrainComponent::ReadMaterialsV2(const std::string& strEntityName, Zenith_DataStream& xStream)
+{
+	for (u_int u = 0; u < 2; u++)
+	{
+		AssignTerrainMaterialSlot(u, strEntityName, xStream);
+	}
+}
+
+void Zenith_TerrainComponent::ReadMaterialsV1Legacy(Zenith_DataStream& xStream)
+{
+	// Legacy format stored two base colors and no material assets.
+	// operator>> returns void, so each component gets its own statement.
+	Zenith_Maths::Vector4 xMat0Color, xMat1Color;
+	xStream >> xMat0Color.x;
+	xStream >> xMat0Color.y;
+	xStream >> xMat0Color.z;
+	xStream >> xMat0Color.w;
+	xStream >> xMat1Color.x;
+	xStream >> xMat1Color.y;
+	xStream >> xMat1Color.z;
+	xStream >> xMat1Color.w;
+
+	if (m_axMaterials[0].GetDirect()) m_axMaterials[0].GetDirect()->SetBaseColor(xMat0Color);
+	if (m_axMaterials[1].GetDirect()) m_axMaterials[1].GetDirect()->SetBaseColor(xMat1Color);
+}
+
+void Zenith_TerrainComponent::BackfillMissingMaterialSlots(const std::string& strEntityName)
+{
 	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 	{
 		if (!m_axMaterials[u].GetDirect())
 		{
-			Zenith_MaterialAsset* pxBlank = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-			if (pxBlank)
+			if (Zenith_MaterialAsset* pxBlank = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>())
 			{
 				pxBlank->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
 				m_axMaterials[u].Set(pxBlank);
 			}
 		}
 	}
+}
 
-	// CRITICAL: Initialize render resources (LOW LOD meshes, buffers, culling)
+void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	// Streaming manager may have been shut down after the previous terrain
+	// was destroyed — bring it back up before we touch chunks.
+	if (!Flux_TerrainStreamingManager::IsInitialized())
+	{
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "ReadFromDataStream - Re-initializing streaming manager (was shut down)");
+		Flux_TerrainStreamingManager::Initialize();
+	}
+
+	uint32_t uVersion;
+	xStream >> uVersion;
+
+	std::string strPhysicsGeometryPath;
+	xStream >> strPhysicsGeometryPath;  // Read-through; actual chunks loaded below.
+
+	LoadCombinedPhysicsGeometry();
+
+	const std::string strEntityName = m_xParentEntity.GetName().empty()
+		? ("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex))
+		: m_xParentEntity.GetName();
+
+	if      (uVersion >= 3) ReadMaterialsV3(strEntityName, xStream);
+	else if (uVersion >= 2) ReadMaterialsV2(strEntityName, xStream);
+	else                    ReadMaterialsV1Legacy(xStream);
+
+	BackfillMissingMaterialSlots(strEntityName);
+
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Initializing render resources...");
 	InitializeRenderResources();
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Render resources initialized successfully");

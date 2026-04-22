@@ -4,6 +4,7 @@
 #include "Zenith_DebugBreak.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneManager_Internal.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Zenith_Entity.h"
@@ -251,6 +252,7 @@ void Zenith_SceneTests::RunAllTests()
 	TestLoadSceneAsyncCompletionCallback();
 	TestLoadSceneAsyncGetResultScene();
 	TestLoadSceneAsyncPriority();
+	TestSceneOperationSetPriorityNoOpWhenSame();
 	TestLoadSceneAsyncByIndexValid();
 	TestLoadSceneAsyncMultiple();
 	TestLoadSceneAsyncSingleMode();
@@ -288,6 +290,8 @@ void Zenith_SceneTests::RunAllTests()
 	TestEntityPersistentCallbackFires();
 	TestCallbackUnregister();
 	TestCallbackUnregisterDuringCallback();
+	TestCallbackHandleWrapNoCollision();
+	TestShutdownClearsAllStatics();
 	TestMultipleCallbacksFireInOrder();
 	TestCallbackHandleInvalid();
 
@@ -335,6 +339,7 @@ void Zenith_SceneTests::RunAllTests()
 	TestAsyncLoadPriorityOrdering();
 	TestAsyncLoadCancellation();
 	TestAsyncAdditiveWithoutLoading();
+	TestAsyncAdditiveWithoutLoadingSchedulesNoAsyncJob();
 	TestBatchSizeValidation();
 
 	// NEW: Test Coverage Additions (from 2025-02 review)
@@ -733,6 +738,7 @@ void Zenith_SceneTests::RunAllTests()
 	TestValidateFileHeaderRejectsCorruptMagic();
 	TestValidateFileHeaderRejectsUnsupportedVersion();
 	TestValidateFileHeaderAcceptsValidFile();
+	TestValidateFileHeaderRejectsTruncatedFile();
 	TestLoadSceneSingleMissingFilePreservesCurrentScene();
 	TestLoadSceneSingleCorruptMagicRollsBack();
 	TestLoadSceneSingleCorruptMagicLeavesNoGhostScene();
@@ -762,6 +768,18 @@ void Zenith_SceneTests::RunAllTests()
 	// Audit Remediation — A5: Single ActiveSceneChanged per SINGLE load
 	TestLoadSceneSingleFiresExactlyOneActiveSceneChanged();
 	TestLoadSceneSingleActiveSceneChangedReportsCorrectOldAndNew();
+
+	// MEDIUM-1: ActiveSceneChanged must fire AFTER SceneUnloaded (sync + async parity)
+	TestAsyncUnloadActiveSceneChangedAfterSceneUnloaded();
+	TestSyncUnloadActiveSceneChangedAfterSceneUnloaded();
+
+	// HIGH-2 / HIGH-3: UnloadAllNonPersistent interaction with async-unload
+	TestUnloadAllNonPersistentNoDoubleUnloadingFire();
+	TestUnloadAllNonPersistentFiresSceneUnloadedOnCancel();
+
+	// HIGH-1: Unity lifecycle ordering within a single pump
+	TestFixedUpdateCalledAfterStartAsync();
+	TestFixedUpdateCalledAfterStartSync();
 
 	// Audit Remediation — A10: Sync-path m_bIsActivated gating
 	TestLoadSceneSyncIsActivatedFalseDuringAwake();
@@ -1938,6 +1956,38 @@ void Zenith_SceneTests::TestLoadSceneAsyncPriority()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncPriority passed");
 }
 
+void Zenith_SceneTests::TestSceneOperationSetPriorityNoOpWhenSame()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSceneOperationSetPriorityNoOpWhenSame...");
+
+	const std::string strPath = "test_async_setpriority_noop" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "Entity");
+
+	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOpID);
+	Zenith_Assert(pxOp != nullptr, "Operation should be valid");
+
+	pxOp->SetPriority(5);
+	Zenith_SceneManager::s_bAsyncJobsNeedSort = false;
+
+	pxOp->SetPriority(5);
+	Zenith_Assert(!Zenith_SceneManager::s_bAsyncJobsNeedSort,
+		"SetPriority with same value should not re-flag async sort");
+
+	pxOp->SetPriority(7);
+	Zenith_Assert(Zenith_SceneManager::s_bAsyncJobsNeedSort,
+		"SetPriority with new value should flag async sort");
+
+	PumpUntilComplete(pxOp);
+	if (!pxOp->HasFailed())
+	{
+		Zenith_SceneManager::UnloadScene(pxOp->GetResultScene());
+	}
+	CleanupTestSceneFile(strPath);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSceneOperationSetPriorityNoOpWhenSame passed");
+}
+
 void Zenith_SceneTests::TestLoadSceneAsyncByIndexValid()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncByIndexValid...");
@@ -2726,6 +2776,71 @@ void Zenith_SceneTests::TestCallbackHandleInvalid()
 	Zenith_SceneManager::UnregisterSceneUnloadedCallback(Zenith_SceneManager::INVALID_CALLBACK_HANDLE);
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCallbackHandleInvalid passed");
+}
+
+static void SceneTestWrapCallback_A(Zenith_Scene, Zenith_SceneLoadMode) {}
+static void SceneTestWrapCallback_B(Zenith_Scene, Zenith_SceneLoadMode) {}
+
+void Zenith_SceneTests::TestShutdownClearsAllStatics()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestShutdownClearsAllStatics...");
+
+	// Seed statics with non-default values, then Shutdown, then observe a clean slate.
+	Zenith_SceneManager::s_bIsLoadingScene = true;
+	Zenith_SceneManager::s_bIsUpdating = true;
+	Zenith_SceneManager::s_bAsyncJobsNeedSort = true;
+	Zenith_SceneManager::s_ulLastDeferredLoadOp = 42;
+	Zenith_SceneManagerDetail::s_bSuppressActiveSceneChanged = true;
+	Zenith_SceneManagerDetail::s_bHaveDeferredOldActive = true;
+	Zenith_SceneManagerDetail::s_iPendingBuildIndex = 99;
+
+	Zenith_SceneManager::Shutdown();
+	Zenith_SceneManager::Initialise();
+
+	Zenith_Assert(!Zenith_SceneManager::s_bIsLoadingScene,
+		"Shutdown should clear s_bIsLoadingScene");
+	Zenith_Assert(!Zenith_SceneManager::s_bIsUpdating,
+		"Shutdown should clear s_bIsUpdating");
+	Zenith_Assert(!Zenith_SceneManager::s_bAsyncJobsNeedSort,
+		"Shutdown should clear s_bAsyncJobsNeedSort");
+	Zenith_Assert(Zenith_SceneManager::s_ulLastDeferredLoadOp == ZENITH_INVALID_OPERATION_ID,
+		"Shutdown should clear s_ulLastDeferredLoadOp (got %llu)",
+		static_cast<unsigned long long>(Zenith_SceneManager::s_ulLastDeferredLoadOp));
+	Zenith_Assert(!Zenith_SceneManagerDetail::s_bSuppressActiveSceneChanged,
+		"Shutdown should clear s_bSuppressActiveSceneChanged");
+	Zenith_Assert(!Zenith_SceneManagerDetail::s_bHaveDeferredOldActive,
+		"Shutdown should clear s_bHaveDeferredOldActive");
+	Zenith_Assert(Zenith_SceneManagerDetail::s_iPendingBuildIndex == -1,
+		"Shutdown should clear s_iPendingBuildIndex (got %d)",
+		Zenith_SceneManagerDetail::s_iPendingBuildIndex);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestShutdownClearsAllStatics passed");
+}
+
+void Zenith_SceneTests::TestCallbackHandleWrapNoCollision()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCallbackHandleWrapNoCollision...");
+
+	Zenith_SceneManager::CallbackHandle ulPersistent =
+		Zenith_SceneManager::RegisterSceneLoadedCallback(&SceneTestWrapCallback_A);
+	Zenith_Assert(ulPersistent != Zenith_SceneManager::INVALID_CALLBACK_HANDLE,
+		"Persistent callback should register with a valid handle");
+
+	Zenith_SceneManager::s_ulNextCallbackHandle = UINT64_MAX;
+
+	Zenith_SceneManager::CallbackHandle ulAfterWrap =
+		Zenith_SceneManager::RegisterSceneLoadedCallback(&SceneTestWrapCallback_B);
+	Zenith_Assert(ulAfterWrap != Zenith_SceneManager::INVALID_CALLBACK_HANDLE,
+		"Post-wrap registration should return a valid handle");
+	Zenith_Assert(ulAfterWrap != ulPersistent,
+		"Post-wrap handle must differ from live callback's handle (got %llu vs %llu)",
+		static_cast<unsigned long long>(ulAfterWrap),
+		static_cast<unsigned long long>(ulPersistent));
+
+	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulAfterWrap);
+	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulPersistent);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCallbackHandleWrapNoCollision passed");
 }
 
 //==============================================================================
@@ -3737,6 +3852,40 @@ void Zenith_SceneTests::TestAsyncAdditiveWithoutLoading()
 	Zenith_SceneManager::UnloadScene(xScene);
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncAdditiveWithoutLoading passed");
+}
+
+void Zenith_SceneTests::TestAsyncAdditiveWithoutLoadingSchedulesNoAsyncJob()
+{
+	// MEDIUM-4 regression guard: LoadSceneAsync with SCENE_LOAD_ADDITIVE_WITHOUT_LOADING
+	// must NOT schedule any worker-thread file I/O. The path doesn't need to exist on
+	// disk, and s_axAsyncJobs must not grow.
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncAdditiveWithoutLoadingSchedulesNoAsyncJob...");
+
+	const uint32_t uJobsBefore = Zenith_SceneManager::s_axAsyncJobs.GetSize();
+
+	// Deliberately pick a path that does NOT exist. If the code path ever regressed
+	// to queue a file-read job, the missing file would either fail the op or at
+	// least schedule work we can detect via s_axAsyncJobs.
+	const std::string strPath = "definitely_not_on_disk_medium4" ZENITH_SCENE_EXT;
+	Zenith_Assert(!Zenith_FileAccess::FileExists(strPath.c_str()), "Precondition: path must not exist");
+
+	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOpID);
+	Zenith_Assert(pxOp != nullptr, "Operation should be valid");
+	Zenith_Assert(pxOp->IsComplete(), "ADDITIVE_WITHOUT_LOADING must complete synchronously");
+	Zenith_Assert(!pxOp->HasFailed(), "ADDITIVE_WITHOUT_LOADING must not fail on a missing path");
+	Zenith_Assert(pxOp->GetProgress() == 1.0f, "Progress must be 1.0 after the synchronous short-circuit");
+
+	const uint32_t uJobsAfter = Zenith_SceneManager::s_axAsyncJobs.GetSize();
+	Zenith_Assert(uJobsAfter == uJobsBefore,
+		"ADDITIVE_WITHOUT_LOADING must not push to s_axAsyncJobs (jobsBefore=%u jobsAfter=%u)",
+		uJobsBefore, uJobsAfter);
+
+	Zenith_Scene xScene = pxOp->GetResultScene();
+	Zenith_Assert(xScene.IsValid(), "Result scene should be valid");
+	Zenith_SceneManager::UnloadScene(xScene);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncAdditiveWithoutLoadingSchedulesNoAsyncJob passed");
 }
 
 void Zenith_SceneTests::TestBatchSizeValidation()
@@ -12037,6 +12186,36 @@ void Zenith_SceneTests::TestValidateFileHeaderAcceptsValidFile()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestValidateFileHeaderAcceptsValidFile passed");
 }
 
+void Zenith_SceneTests::TestValidateFileHeaderRejectsTruncatedFile()
+{
+	// Regression guard for LOW-3: ValidateFileHeader now reads only the first 8
+	// bytes via Zenith_FileAccess::ReadPrefix. A file shorter than the header
+	// must still be rejected — ReadPrefix's partial-read-as-failure contract
+	// replaces the old "full stream < ulMIN_HEADER_SIZE" check.
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestValidateFileHeaderRejectsTruncatedFile...");
+
+	const std::string strPath = "test_truncated_header" ZENITH_SCENE_EXT;
+
+	// Write only 4 bytes — half a header.
+	{
+		std::ofstream xOut(strPath, std::ios::binary | std::ios::trunc);
+		const uint32_t uMagic = Zenith_SceneData::uSCENE_MAGIC;
+		xOut.write(reinterpret_cast<const char*>(&uMagic), sizeof(uMagic));
+		xOut.close();
+	}
+	Zenith_Assert(!Zenith_SceneData::ValidateFileHeader(strPath), "ValidateFileHeader should reject a file shorter than the header");
+
+	// Empty file.
+	{
+		std::ofstream xOut(strPath, std::ios::binary | std::ios::trunc);
+		xOut.close();
+	}
+	Zenith_Assert(!Zenith_SceneData::ValidateFileHeader(strPath), "ValidateFileHeader should reject an empty file");
+
+	CleanupTestSceneFile(strPath);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestValidateFileHeaderRejectsTruncatedFile passed");
+}
+
 void Zenith_SceneTests::TestLoadSceneSingleMissingFilePreservesCurrentScene()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneSingleMissingFilePreservesCurrentScene...");
@@ -12574,6 +12753,394 @@ void Zenith_SceneTests::TestLoadSceneSingleActiveSceneChangedReportsCorrectOldAn
 	CleanupTestSceneFile(strFirst);
 	CleanupTestSceneFile(strSecond);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneSingleActiveSceneChangedReportsCorrectOldAndNew passed");
+}
+
+//==============================================================================
+// MEDIUM-1: ActiveSceneChanged fires AFTER SceneUnloaded, both sync and async.
+//==============================================================================
+
+namespace
+{
+	static Zenith_Vector<std::string> g_axMEDIUM1_Order;
+
+	void MEDIUM1_OnSceneUnloading(Zenith_Scene) { g_axMEDIUM1_Order.PushBack("unloading"); }
+	void MEDIUM1_OnSceneUnloaded(Zenith_Scene) { g_axMEDIUM1_Order.PushBack("unloaded"); }
+	void MEDIUM1_OnActiveSceneChanged(Zenith_Scene, Zenith_Scene) { g_axMEDIUM1_Order.PushBack("activeChanged"); }
+}
+
+void Zenith_SceneTests::TestAsyncUnloadActiveSceneChangedAfterSceneUnloaded()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncUnloadActiveSceneChangedAfterSceneUnloaded...");
+
+	// Two scenes additively loaded — A will be active and async-unloaded, B remains.
+	// The active-pointer swap must happen early (so observers never see a dying
+	// scene as active) but the ActiveSceneChanged callback must fire AFTER
+	// SceneUnloaded. Expected order for scene A's unload:
+	//   [unloading, unloaded, activeChanged]
+
+	const std::string strA = "medium1_async_A" ZENITH_SCENE_EXT;
+	const std::string strB = "medium1_async_B" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strA);
+	CreateTestSceneFile(strB);
+
+	Zenith_Scene xA = Zenith_SceneManager::LoadScene(strA, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xB = Zenith_SceneManager::LoadScene(strB, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneManager::SetActiveScene(xA);
+
+	g_axMEDIUM1_Order.Clear();
+	auto h1 = Zenith_SceneManager::RegisterSceneUnloadingCallback(MEDIUM1_OnSceneUnloading);
+	auto h2 = Zenith_SceneManager::RegisterSceneUnloadedCallback(MEDIUM1_OnSceneUnloaded);
+	auto h3 = Zenith_SceneManager::RegisterActiveSceneChangedCallback(MEDIUM1_OnActiveSceneChanged);
+
+	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::UnloadSceneAsync(xA);
+	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOpID);
+	Zenith_Assert(pxOp != nullptr, "UnloadSceneAsync should return a valid op");
+	PumpUntilComplete(pxOp);
+
+	Zenith_SceneManager::UnregisterSceneUnloadingCallback(h1);
+	Zenith_SceneManager::UnregisterSceneUnloadedCallback(h2);
+	Zenith_SceneManager::UnregisterActiveSceneChangedCallback(h3);
+
+	// Find the indices of the three events and assert strict ordering.
+	int iUnloading = -1, iUnloaded = -1, iActive = -1;
+	for (u_int u = 0; u < g_axMEDIUM1_Order.GetSize(); ++u)
+	{
+		const std::string& s = g_axMEDIUM1_Order.Get(u);
+		if (s == "unloading") iUnloading = static_cast<int>(u);
+		else if (s == "unloaded") iUnloaded = static_cast<int>(u);
+		else if (s == "activeChanged") iActive = static_cast<int>(u);
+	}
+	Zenith_Assert(iUnloading >= 0, "SceneUnloading callback must fire");
+	Zenith_Assert(iUnloaded >= 0, "SceneUnloaded callback must fire");
+	Zenith_Assert(iActive >= 0, "ActiveSceneChanged callback must fire");
+	Zenith_Assert(iUnloading < iUnloaded, "SceneUnloading must precede SceneUnloaded");
+	Zenith_Assert(iUnloaded < iActive, "MEDIUM-1: ActiveSceneChanged must fire AFTER SceneUnloaded on async-unload path");
+
+	// Cleanup
+	if (xB.IsValid()) Zenith_SceneManager::UnloadScene(xB);
+	CleanupTestSceneFile(strA);
+	CleanupTestSceneFile(strB);
+	g_axMEDIUM1_Order.Clear();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncUnloadActiveSceneChangedAfterSceneUnloaded passed");
+}
+
+void Zenith_SceneTests::TestSyncUnloadActiveSceneChangedAfterSceneUnloaded()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSyncUnloadActiveSceneChangedAfterSceneUnloaded...");
+
+	// Regression protection for the sync-unload path. The plan assumes this
+	// already holds; test guards against silent regression.
+
+	const std::string strA = "medium1_sync_A" ZENITH_SCENE_EXT;
+	const std::string strB = "medium1_sync_B" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strA);
+	CreateTestSceneFile(strB);
+
+	Zenith_Scene xA = Zenith_SceneManager::LoadScene(strA, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xB = Zenith_SceneManager::LoadScene(strB, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneManager::SetActiveScene(xA);
+
+	g_axMEDIUM1_Order.Clear();
+	auto h1 = Zenith_SceneManager::RegisterSceneUnloadingCallback(MEDIUM1_OnSceneUnloading);
+	auto h2 = Zenith_SceneManager::RegisterSceneUnloadedCallback(MEDIUM1_OnSceneUnloaded);
+	auto h3 = Zenith_SceneManager::RegisterActiveSceneChangedCallback(MEDIUM1_OnActiveSceneChanged);
+
+	Zenith_SceneManager::UnloadScene(xA);
+
+	Zenith_SceneManager::UnregisterSceneUnloadingCallback(h1);
+	Zenith_SceneManager::UnregisterSceneUnloadedCallback(h2);
+	Zenith_SceneManager::UnregisterActiveSceneChangedCallback(h3);
+
+	int iUnloading = -1, iUnloaded = -1, iActive = -1;
+	for (u_int u = 0; u < g_axMEDIUM1_Order.GetSize(); ++u)
+	{
+		const std::string& s = g_axMEDIUM1_Order.Get(u);
+		if (s == "unloading") iUnloading = static_cast<int>(u);
+		else if (s == "unloaded") iUnloaded = static_cast<int>(u);
+		else if (s == "activeChanged") iActive = static_cast<int>(u);
+	}
+	Zenith_Assert(iUnloading >= 0, "SceneUnloading callback must fire");
+	Zenith_Assert(iUnloaded >= 0, "SceneUnloaded callback must fire");
+	Zenith_Assert(iActive >= 0, "ActiveSceneChanged callback must fire");
+	Zenith_Assert(iUnloading < iUnloaded, "SceneUnloading must precede SceneUnloaded");
+	Zenith_Assert(iUnloaded < iActive, "MEDIUM-1 regression guard: sync-unload must fire ActiveSceneChanged AFTER SceneUnloaded");
+
+	if (xB.IsValid()) Zenith_SceneManager::UnloadScene(xB);
+	CleanupTestSceneFile(strA);
+	CleanupTestSceneFile(strB);
+	g_axMEDIUM1_Order.Clear();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSyncUnloadActiveSceneChangedAfterSceneUnloaded passed");
+}
+
+//==============================================================================
+// HIGH-2 / HIGH-3: UnloadAllNonPersistent must deduplicate SceneUnloading
+// against in-flight async-unload jobs, and still pair SceneUnloaded for them.
+//==============================================================================
+
+namespace
+{
+	// Per-scene fire counts keyed by scene handle (captured by the test
+	// harness via SceneUnloading, then matched to SceneUnloaded by handle
+	// which stays stable through both callbacks — FreeSceneHandle happens
+	// only AFTER SceneUnloaded fires).
+	struct HIGH23_CallbackCounts
+	{
+		int m_iHandle;
+		uint32_t m_uUnloading;
+		uint32_t m_uUnloaded;
+	};
+	static Zenith_Vector<HIGH23_CallbackCounts> g_axHIGH23_Counts;
+
+	static HIGH23_CallbackCounts& HIGH23_GetOrCreate(int iHandle)
+	{
+		for (u_int u = 0; u < g_axHIGH23_Counts.GetSize(); ++u)
+		{
+			if (g_axHIGH23_Counts.Get(u).m_iHandle == iHandle) return g_axHIGH23_Counts.Get(u);
+		}
+		HIGH23_CallbackCounts x;
+		x.m_iHandle = iHandle;
+		x.m_uUnloading = 0;
+		x.m_uUnloaded = 0;
+		g_axHIGH23_Counts.PushBack(x);
+		return g_axHIGH23_Counts.Get(g_axHIGH23_Counts.GetSize() - 1);
+	}
+
+	void HIGH23_OnSceneUnloading(Zenith_Scene xScene) { HIGH23_GetOrCreate(xScene.m_iHandle).m_uUnloading += 1; }
+	void HIGH23_OnSceneUnloaded(Zenith_Scene xScene)  { HIGH23_GetOrCreate(xScene.m_iHandle).m_uUnloaded  += 1; }
+
+	static uint32_t HIGH23_CountUnloading(int iHandle)
+	{
+		for (u_int u = 0; u < g_axHIGH23_Counts.GetSize(); ++u)
+		{
+			if (g_axHIGH23_Counts.Get(u).m_iHandle == iHandle) return g_axHIGH23_Counts.Get(u).m_uUnloading;
+		}
+		return 0;
+	}
+	static uint32_t HIGH23_CountUnloaded(int iHandle)
+	{
+		for (u_int u = 0; u < g_axHIGH23_Counts.GetSize(); ++u)
+		{
+			if (g_axHIGH23_Counts.Get(u).m_iHandle == iHandle) return g_axHIGH23_Counts.Get(u).m_uUnloaded;
+		}
+		return 0;
+	}
+}
+
+void Zenith_SceneTests::TestUnloadAllNonPersistentNoDoubleUnloadingFire()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUnloadAllNonPersistentNoDoubleUnloadingFire...");
+
+	const std::string strA = "high23_A" ZENITH_SCENE_EXT;
+	const std::string strB = "high23_B" ZENITH_SCENE_EXT;
+	const std::string strC = "high23_C" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strA, "A_entity");
+	CreateTestSceneFile(strB, "B_entity");
+	CreateTestSceneFile(strC, "C_entity");
+
+	Zenith_Scene xA = Zenith_SceneManager::LoadScene(strA, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xB = Zenith_SceneManager::LoadScene(strB, SCENE_LOAD_ADDITIVE);
+	const int iHandleA = xA.m_iHandle;
+	const int iHandleB = xB.m_iHandle;
+
+	g_axHIGH23_Counts.Clear();
+	auto h1 = Zenith_SceneManager::RegisterSceneUnloadingCallback(HIGH23_OnSceneUnloading);
+	auto h2 = Zenith_SceneManager::RegisterSceneUnloadedCallback(HIGH23_OnSceneUnloaded);
+
+	// Kick off async unload of A; pump exactly one frame to force the
+	// Phase-1 SceneUnloading callback to fire, leaving the job half-done
+	// in s_axAsyncUnloadJobs with m_bUnloadingCallbackFired == true.
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::UnloadSceneAsync(xA);
+	Zenith_Assert(Zenith_SceneManager::GetOperation(ulOp) != nullptr, "UnloadSceneAsync must return a valid op");
+	PumpFrames(1);
+	Zenith_Assert(HIGH23_CountUnloading(iHandleA) == 1, "After one frame, A should have fired SceneUnloading exactly once");
+
+	// Now trigger UnloadAllNonPersistent via SCENE_LOAD_SINGLE.
+	Zenith_SceneManager::LoadScene(strC, SCENE_LOAD_SINGLE);
+
+	// HIGH-2: A must NOT see a second SceneUnloading fire.
+	Zenith_Assert(HIGH23_CountUnloading(iHandleA) == 1,
+		"HIGH-2: A received %u SceneUnloading fires, expected exactly 1", HIGH23_CountUnloading(iHandleA));
+	// B was never async-unloaded, so it should see exactly one SceneUnloading via the SINGLE-mode teardown.
+	Zenith_Assert(HIGH23_CountUnloading(iHandleB) == 1,
+		"B received %u SceneUnloading fires, expected exactly 1", HIGH23_CountUnloading(iHandleB));
+
+	Zenith_SceneManager::UnregisterSceneUnloadingCallback(h1);
+	Zenith_SceneManager::UnregisterSceneUnloadedCallback(h2);
+
+	CleanupTestSceneFile(strA);
+	CleanupTestSceneFile(strB);
+	CleanupTestSceneFile(strC);
+	g_axHIGH23_Counts.Clear();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUnloadAllNonPersistentNoDoubleUnloadingFire passed");
+}
+
+void Zenith_SceneTests::TestUnloadAllNonPersistentFiresSceneUnloadedOnCancel()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUnloadAllNonPersistentFiresSceneUnloadedOnCancel...");
+
+	const std::string strA = "high23b_A" ZENITH_SCENE_EXT;
+	const std::string strB = "high23b_B" ZENITH_SCENE_EXT;
+	const std::string strC = "high23b_C" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strA, "A_entity");
+	CreateTestSceneFile(strB, "B_entity");
+	CreateTestSceneFile(strC, "C_entity");
+
+	Zenith_Scene xA = Zenith_SceneManager::LoadScene(strA, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xB = Zenith_SceneManager::LoadScene(strB, SCENE_LOAD_ADDITIVE);
+	const int iHandleA = xA.m_iHandle;
+	const int iHandleB = xB.m_iHandle;
+
+	g_axHIGH23_Counts.Clear();
+	auto h1 = Zenith_SceneManager::RegisterSceneUnloadingCallback(HIGH23_OnSceneUnloading);
+	auto h2 = Zenith_SceneManager::RegisterSceneUnloadedCallback(HIGH23_OnSceneUnloaded);
+
+	Zenith_SceneManager::UnloadSceneAsync(xA);
+	PumpFrames(1);  // fire A's SceneUnloading and partial destruction
+	Zenith_SceneManager::LoadScene(strC, SCENE_LOAD_SINGLE);
+
+	// HIGH-3: A's SceneUnloaded must still fire exactly once despite the
+	// async-unload being cancelled mid-flight.
+	Zenith_Assert(HIGH23_CountUnloaded(iHandleA) == 1,
+		"HIGH-3: A received %u SceneUnloaded fires, expected exactly 1 even after async-cancel",
+		HIGH23_CountUnloaded(iHandleA));
+	Zenith_Assert(HIGH23_CountUnloaded(iHandleB) == 1,
+		"B received %u SceneUnloaded fires, expected exactly 1", HIGH23_CountUnloaded(iHandleB));
+
+	Zenith_SceneManager::UnregisterSceneUnloadingCallback(h1);
+	Zenith_SceneManager::UnregisterSceneUnloadedCallback(h2);
+
+	CleanupTestSceneFile(strA);
+	CleanupTestSceneFile(strB);
+	CleanupTestSceneFile(strC);
+	g_axHIGH23_Counts.Clear();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUnloadAllNonPersistentFiresSceneUnloadedOnCancel passed");
+}
+
+//==============================================================================
+// HIGH-1: Unity lifecycle ordering — OnStart must fire before OnFixedUpdate
+// within the same pump. Prior bug: Update pump ran the FixedUpdate accumulator
+// loop BEFORE DispatchPendingStarts, so entities landing in PENDING_START via
+// async Phase 2 (or sync lifecycle dispatch) received OnFixedUpdate on their
+// first pump without having seen OnStart yet.
+//==============================================================================
+
+namespace
+{
+	static uint32_t g_uHIGH1_Tick = 0;
+	static uint32_t g_uHIGH1_StartTick = 0;
+	static uint32_t g_uHIGH1_FirstFixedTick = 0;
+
+	static void HIGH1_Reset()
+	{
+		g_uHIGH1_Tick = 0;
+		g_uHIGH1_StartTick = 0;
+		g_uHIGH1_FirstFixedTick = 0;
+	}
+
+	static void HIGH1_OnStart(Zenith_Entity&)
+	{
+		g_uHIGH1_StartTick = ++g_uHIGH1_Tick;
+	}
+
+	static void HIGH1_OnFixedUpdate(Zenith_Entity&, float)
+	{
+		if (g_uHIGH1_FirstFixedTick == 0)
+		{
+			g_uHIGH1_FirstFixedTick = ++g_uHIGH1_Tick;
+		}
+	}
+}
+
+void Zenith_SceneTests::TestFixedUpdateCalledAfterStartAsync()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFixedUpdateCalledAfterStartAsync...");
+
+	const std::string strPath = "high1_async_scene" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "HIGH1_AsyncEntity");
+
+	SceneTestBehaviour::ResetCounters();
+	HIGH1_Reset();
+	SceneTestBehaviour::s_pfnOnStartCallback = HIGH1_OnStart;
+	SceneTestBehaviour::s_pfnOnFixedUpdateCallback = HIGH1_OnFixedUpdate;
+
+	// CreateTestSceneFile saved a bare entity without a SceneTestBehaviour —
+	// we need to load the file and add the behaviour to the entity post-load
+	// so the ordering assertions have hooks. Do it by loading additively then
+	// attaching a script component before the first pump.
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOp);
+	Zenith_Assert(pxOp != nullptr, "LoadSceneAsync should return a valid op");
+	PumpUntilComplete(pxOp);
+
+	Zenith_Scene xScene = pxOp->GetResultScene();
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Assert(pxData != nullptr, "Loaded scene data must exist");
+
+	// Find the entity loaded from disk and attach the test behaviour. The
+	// behaviour will be Awoken/Started on the next pump cycle (runtime path
+	// uses DispatchImmediateLifecycleForRuntime on component add, so we
+	// instead reset the entity to land in PENDING_START by attaching in a
+	// fresh scene). For this ordering test we create a NEW entity with the
+	// behaviour — it goes through the full lifecycle starting on the next pump.
+	Zenith_Entity xBehavEntity = CreateEntityWithBehaviour(pxData, "HIGH1_AsyncBehaviour");
+	// NOTE: runtime-added entities dispatch Awake/OnEnable immediately and
+	// land in PENDING_START. They will see OnStart on the NEXT Update pump's
+	// DispatchPendingStarts call, and OnFixedUpdate only after the
+	// accumulator crosses the fixed-timestep. Pumping with dt >= fixed-timestep
+	// guarantees both fire in the same pump, exposing the ordering bug.
+	const float fDt = 0.05f;  // > fixedTimestep (0.02f) so FixedUpdate definitely fires
+	PumpFrames(1, fDt);
+
+	Zenith_Assert(g_uHIGH1_StartTick > 0, "HIGH-1: OnStart must fire during the pump");
+	Zenith_Assert(g_uHIGH1_FirstFixedTick > 0, "HIGH-1: OnFixedUpdate must fire during the pump");
+	Zenith_Assert(g_uHIGH1_StartTick < g_uHIGH1_FirstFixedTick,
+		"HIGH-1: OnStart (tick=%u) must fire before OnFixedUpdate (tick=%u) within a single pump [async path]",
+		g_uHIGH1_StartTick, g_uHIGH1_FirstFixedTick);
+
+	SceneTestBehaviour::s_pfnOnStartCallback = nullptr;
+	SceneTestBehaviour::s_pfnOnFixedUpdateCallback = nullptr;
+	Zenith_SceneManager::UnloadScene(xScene);
+	CleanupTestSceneFile(strPath);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFixedUpdateCalledAfterStartAsync passed");
+}
+
+void Zenith_SceneTests::TestFixedUpdateCalledAfterStartSync()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFixedUpdateCalledAfterStartSync...");
+
+	// Sync-path regression guard: even though the sync LoadScene dispatches
+	// Awake + OnEnable inline, OnStart is left to the next Update pump via
+	// PENDING_START. So the same ordering invariant applies: the pump must
+	// run Start before FixedUpdate.
+
+	SceneTestBehaviour::ResetCounters();
+	HIGH1_Reset();
+	SceneTestBehaviour::s_pfnOnStartCallback = HIGH1_OnStart;
+	SceneTestBehaviour::s_pfnOnFixedUpdateCallback = HIGH1_OnFixedUpdate;
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("HIGH1_SyncScene");
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+	CreateEntityWithBehaviour(pxData, "HIGH1_SyncBehaviour");
+
+	const float fDt = 0.05f;
+	PumpFrames(1, fDt);
+
+	Zenith_Assert(g_uHIGH1_StartTick > 0, "HIGH-1 sync: OnStart must fire during the pump");
+	Zenith_Assert(g_uHIGH1_FirstFixedTick > 0, "HIGH-1 sync: OnFixedUpdate must fire during the pump");
+	Zenith_Assert(g_uHIGH1_StartTick < g_uHIGH1_FirstFixedTick,
+		"HIGH-1 sync regression: OnStart (tick=%u) must fire before OnFixedUpdate (tick=%u) within a single pump",
+		g_uHIGH1_StartTick, g_uHIGH1_FirstFixedTick);
+
+	SceneTestBehaviour::s_pfnOnStartCallback = nullptr;
+	SceneTestBehaviour::s_pfnOnFixedUpdateCallback = nullptr;
+	Zenith_SceneManager::UnloadScene(xScene);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFixedUpdateCalledAfterStartSync passed");
 }
 
 //==============================================================================

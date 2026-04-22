@@ -43,6 +43,23 @@ namespace Zenith_FileAccess
 		return pcRet;
 	}
 
+	bool ReadPrefix(const char* szFilename, void* pBuffer, uint64_t ulSize)
+	{
+		if (pBuffer == nullptr || ulSize == 0)
+		{
+			return false;
+		}
+		std::ifstream xFile(szFilename, std::ios::binary);
+		if (!xFile.is_open())
+		{
+			return false;
+		}
+		xFile.read(static_cast<char*>(pBuffer), ulSize);
+		const bool bOK = (xFile.gcount() == static_cast<std::streamsize>(ulSize));
+		xFile.close();
+		return bOK;
+	}
+
 	void FreeFileData(char* pData)
 	{
 		Zenith_MemoryManagement::Deallocate(pData);

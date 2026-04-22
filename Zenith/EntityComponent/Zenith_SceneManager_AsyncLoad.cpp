@@ -565,13 +565,21 @@ void Zenith_SceneManager::ProcessPendingAsyncUnloads()
 			FireSceneUnloadingCallbacks(xScene);
 			pxJob->m_bUnloadingCallbackFired = true;
 
-			// If we're unloading the active scene, select a new one
+			// If we're unloading the active scene, swap the pointer NOW so observers
+			// never see a dying scene as active, but DEFER the ActiveSceneChanged
+			// callback fire until after SceneUnloaded (MEDIUM-1: match sync-unload
+			// ordering [Unloading, Unloaded, ActiveChanged] instead of the old
+			// [Unloading, ActiveChanged, Unloaded]).
 			if (xScene.m_iHandle == s_iActiveSceneHandle)
 			{
 				Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
 				s_iActiveSceneHandle = SelectNewActiveScene(xScene.m_iHandle);
 				Zenith_Scene xNewActive = GetActiveScene();
-				FireActiveSceneChangedCallbacks(xScene, xNewActive);
+				pxJob->m_iOldActiveHandle = xScene.m_iHandle;
+				pxJob->m_uOldActiveGeneration = xScene.m_uGeneration;
+				pxJob->m_iNewActiveHandle = xNewActive.m_iHandle;
+				pxJob->m_uNewActiveGeneration = xNewActive.m_uGeneration;
+				pxJob->m_bActiveSceneChangePending = true;
 			}
 		}
 
@@ -640,6 +648,21 @@ void Zenith_SceneManager::ProcessPendingAsyncUnloads()
 			FireSceneUnloadedCallbacks(xScene);
 
 			FreeSceneHandle(pxJob->m_iSceneHandle);
+
+			// MEDIUM-1: fire the deferred ActiveSceneChanged now, AFTER
+			// SceneUnloaded. Preserves the sync-unload ordering
+			// [Unloading, Unloaded, ActiveChanged] for async unloads too.
+			if (pxJob->m_bActiveSceneChangePending)
+			{
+				Zenith_Scene xOld;
+				xOld.m_iHandle = pxJob->m_iOldActiveHandle;
+				xOld.m_uGeneration = pxJob->m_uOldActiveGeneration;
+				Zenith_Scene xNew;
+				xNew.m_iHandle = pxJob->m_iNewActiveHandle;
+				xNew.m_uGeneration = pxJob->m_uNewActiveGeneration;
+				FireActiveSceneChangedCallbacks(xOld, xNew);
+				pxJob->m_bActiveSceneChangePending = false;
+			}
 
 			// Complete operation
 			pxOp->SetProgress(1.0f);

@@ -1854,6 +1854,7 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_EventSystem.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData_Serialization.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_AsyncLoad.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager_Callbacks.cpp" />

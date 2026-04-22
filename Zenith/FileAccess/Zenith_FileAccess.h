@@ -27,6 +27,13 @@ namespace Zenith_FileAccess
 	char* ReadFile(const char* szFilename);
 	char* ReadFile(const char* szFilename, uint64_t& ulSize);
 
+	// Read up to ulSize bytes from the start of szFilename into the caller-owned
+	// pBuffer. Returns true only if the file opened and at least ulSize bytes
+	// were read (partial reads are treated as failure). Intended for cheap
+	// header-peek operations (e.g. magic + version) — avoids allocating and
+	// reading the entire file just to inspect a prefix.
+	bool ReadPrefix(const char* szFilename, void* pBuffer, uint64_t ulSize);
+
 	// Free data returned by ReadFile
 	void FreeFileData(char* pData);
 

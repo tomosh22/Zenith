@@ -374,6 +374,11 @@ private:
 	// Editor camera control
 	static void InitializeEditorCamera();
 	static void UpdateEditorCamera(float fDt);
+	// UpdateEditorCamera implementation broken into focused steps so callers
+	// don't have to read 100+ lines of input-handling mixed with scene writes.
+	static void UpdateEditorCameraLook();
+	static void UpdateEditorCameraMovement(float fDt);
+	static void ApplyEditorCameraToScene();
 	static void SwitchToEditorCamera();
 	static void SwitchToGameCamera();
 	static void ResetEditorCameraToDefaults();

@@ -92,6 +92,46 @@ namespace Zenith_FileAccess
 		return pcRet;
 	}
 
+	bool ReadPrefix(const char* szFilename, void* pBuffer, uint64_t ulSize)
+	{
+		if (pBuffer == nullptr || ulSize == 0)
+		{
+			return false;
+		}
+
+		// Try AAssetManager first (APK assets)
+		if (s_pxAssetManager)
+		{
+			AAsset* pxAsset = AAssetManager_open(s_pxAssetManager, szFilename, AASSET_MODE_STREAMING);
+			if (pxAsset)
+			{
+				const off_t ulAssetLen = AAsset_getLength(pxAsset);
+				if (static_cast<uint64_t>(ulAssetLen) < ulSize)
+				{
+					AAsset_close(pxAsset);
+					return false;
+				}
+				const int iRead = AAsset_read(pxAsset, pBuffer, ulSize);
+				AAsset_close(pxAsset);
+				return iRead == static_cast<int>(ulSize);
+			}
+		}
+
+		// Fall back to filesystem
+		char acResolvedPath[ZENITH_MAX_PATH_LENGTH];
+		ResolveWritablePath(szFilename, acResolvedPath, ZENITH_MAX_PATH_LENGTH);
+
+		std::ifstream xFile(acResolvedPath, std::ios::binary);
+		if (!xFile.is_open())
+		{
+			return false;
+		}
+		xFile.read(static_cast<char*>(pBuffer), ulSize);
+		const bool bOK = (xFile.gcount() == static_cast<std::streamsize>(ulSize));
+		xFile.close();
+		return bOK;
+	}
+
 	void FreeFileData(char* pData)
 	{
 		Zenith_MemoryManagement::Deallocate(pData);

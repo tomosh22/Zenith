@@ -261,30 +261,13 @@ BTNodeStatus Zenith_BTConditionalLoop::Execute(Zenith_Entity& xAgent, Zenith_Bla
 void Zenith_BTConditionalLoop::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Zenith_BTDecorator::WriteToDataStream(xStream);
-
-	uint32_t uLen = static_cast<uint32_t>(m_strConditionKey.length());
-	xStream << uLen;
-	if (uLen > 0)
-	{
-		xStream.Write(m_strConditionKey.data(), uLen);
-	}
+	xStream << m_strConditionKey;
 }
 
 void Zenith_BTConditionalLoop::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	Zenith_BTDecorator::ReadFromDataStream(xStream);
-
-	uint32_t uLen = 0;
-	xStream >> uLen;
-	if (uLen > 0)
-	{
-		m_strConditionKey.resize(uLen);
-		xStream.Read(m_strConditionKey.data(), uLen);
-	}
-	else
-	{
-		m_strConditionKey.clear();
-	}
+	xStream >> m_strConditionKey;
 }
 
 // ========== Zenith_BTTimeLimit ==========
