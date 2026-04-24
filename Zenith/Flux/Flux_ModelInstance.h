@@ -7,6 +7,7 @@ class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
 class Zenith_MaterialAsset;
 class Flux_MeshInstance;
+class Flux_MeshGeometry;
 class Flux_SkeletonInstance;
 
 /**
@@ -65,6 +66,25 @@ public:
 	 * @return New model instance, or nullptr on failure
 	 */
 	static Flux_ModelInstance* CreateFromAsset(Zenith_ModelAsset* pxAsset);
+
+	/**
+	 * Create a procedural model instance that wraps raw Flux_MeshGeometry.
+	 * Used by code paths that build meshes at runtime (e.g. generated cubes,
+	 * sprites, per-game procedural content) without going through a .zmodel asset.
+	 * The geometry must outlive this instance (the instance does not own it).
+	 * @param xGeometry Procedural geometry (must have GPU buffers initialized)
+	 * @param xMaterial Material to use for the single sub-mesh
+	 * @return New model instance, or nullptr on failure
+	 */
+	static Flux_ModelInstance* CreateProcedural(Flux_MeshGeometry& xGeometry, Zenith_MaterialAsset& xMaterial);
+
+	/**
+	 * Append another procedural sub-mesh to this instance.
+	 * Produces a multi-sub-mesh model built from raw geometry.
+	 * @param xGeometry Procedural geometry (must have GPU buffers initialized)
+	 * @param xMaterial Material to use for this sub-mesh
+	 */
+	void AppendProceduralMesh(Flux_MeshGeometry& xGeometry, Zenith_MaterialAsset& xMaterial);
 
 	//--------------------------------------------------------------------------
 	// Lifecycle

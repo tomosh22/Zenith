@@ -210,10 +210,13 @@ void Zenith_Core::Zenith_MainLoop()
 	// to avoid building command lists with potentially incomplete scene state
 	if (bSubmitRenderWork)
 	{
-		// Queue physics mesh debug visualization for rendering (independent of game logic)
-		// This allows viewing physics meshes in editor even when paused/stopped
+		// Queue physics debug visualization only while the editor is stopped,
+		// so play mode doesn't flood the primitives pass.
 		#ifdef ZENITH_TOOLS
-		Zenith_PhysicsMeshGenerator::DebugDrawAllPhysicsMeshes();
+		if (Zenith_Editor::GetEditorMode() == EditorMode::Stopped)
+		{
+			Zenith_PhysicsMeshGenerator::QueuePhysicsDebugDraws();
+		}
 		#endif
 
 		// Render UI components - submits to Flux_Quads and Flux_Text

@@ -17,6 +17,7 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "Flux/Flux_ModelInstance.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
@@ -3554,9 +3555,9 @@ private:
 						if (xEntity.IsValid() && xEntity.HasComponent<Zenith_ModelComponent>())
 						{
 							Zenith_ModelComponent& xModel = xEntity.GetComponent<Zenith_ModelComponent>();
-							if (xModel.GetNumMeshEntries() > 0)
+							if (xModel.GetNumMeshes() > 0 && xModel.GetModelInstance())
 							{
-								xModel.GetMaterialHandleAtIndex(0).Set(pxNormalMaterial);
+								xModel.GetModelInstance()->SetMaterial(0, pxNormalMaterial);
 							}
 						}
 
@@ -3585,9 +3586,9 @@ private:
 						if (xEntity.IsValid() && xEntity.HasComponent<Zenith_ModelComponent>())
 						{
 							Zenith_ModelComponent& xModel = xEntity.GetComponent<Zenith_ModelComponent>();
-							if (xModel.GetNumMeshEntries() > 0)
+							if (xModel.GetNumMeshes() > 0 && xModel.GetModelInstance())
 							{
-								xModel.GetMaterialHandleAtIndex(0).Set(pxHighlightMaterial);
+								xModel.GetModelInstance()->SetMaterial(0, pxHighlightMaterial);
 							}
 						}
 

@@ -2,6 +2,7 @@
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -20,12 +21,9 @@ PhysicsMeshConfig g_xPhysicsMeshConfig = {
 	100,                         // m_uMinTriangles
 	10000,                       // m_uMaxTriangles
 	true,                        // m_bAutoGenerate: Automatically generate physics meshes on load
-	true,                        // m_bDebugDraw: Enable debug visualization by default in editor
 	Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)  // m_xDebugColor: Green
 };
 
-// Global debug flag for drawing all physics meshes
-bool g_bDebugDrawAllPhysicsMeshes = false;
 
 namespace
 {
@@ -171,7 +169,7 @@ const char* Zenith_PhysicsMeshGenerator::GetQualityName(PhysicsMeshQuality eQual
 }
 
 Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
-	const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
 	PhysicsMeshQuality eQuality)
 {
 	PhysicsMeshConfig xConfig = g_xPhysicsMeshConfig;
@@ -180,7 +178,7 @@ Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
 }
 
 Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(
-	const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
 	const PhysicsMeshConfig& xConfig)
 {
 	// Validate input
@@ -296,7 +294,7 @@ void Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(
 }
 
 void Zenith_PhysicsMeshGenerator::ComputeAABB(
-	const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
 	Zenith_Maths::Vector3& xMinOut,
 	Zenith_Maths::Vector3& xMaxOut)
 {
@@ -325,7 +323,7 @@ void Zenith_PhysicsMeshGenerator::ComputeAABB(
 }
 
 void Zenith_PhysicsMeshGenerator::CollectAllPositions(
-	const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
 	Zenith_Vector<Zenith_Maths::Vector3>& xPositionsOut)
 {
 	xPositionsOut.Clear();
@@ -436,7 +434,7 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::CreateMeshFromData(
 }
 
 Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateAABBMesh(
-	const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries)
+	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries)
 {
 	Zenith_Maths::Vector3 xMin, xMax;
 	ComputeAABB(xMeshGeometries, xMin, xMax);
@@ -458,7 +456,7 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateAABBMesh(
 
 // Simple quickhull-style convex hull implementation
 Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateConvexHullMesh(
-	const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries)
+	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries)
 {
 	Zenith_Vector<Zenith_Maths::Vector3> xAllPositions;
 	CollectAllPositions(xMeshGeometries, xAllPositions);
@@ -632,7 +630,7 @@ void Zenith_PhysicsMeshGenerator::ComputeVertexNormals(
 }
 
 Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateSimplifiedMesh(
-	const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+	const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
 	const PhysicsMeshConfig& xConfig)
 {
 	// Collect all positions and indices from all meshes
@@ -750,74 +748,38 @@ iter, fCellSize,
 	return CreateMeshFromData(xCurrentPositions, xCurrentIndices);
 }
 
-void Zenith_PhysicsMeshGenerator::DebugDrawAllPhysicsMeshes()
+void Zenith_PhysicsMeshGenerator::QueuePhysicsDebugDraws()
 {
+	Zenith_Vector<Zenith_ModelComponent*> xModels;
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
+
+	for (uint32_t i = 0; i < xModels.GetSize(); i++)
+	{
+		Zenith_ModelComponent* pxModel = xModels.Get(i);
+		if (!pxModel || !pxModel->GetDebugDrawPhysicsMesh())
+		{
+			continue;
+		}
+
+		pxModel->QueueDebugDrawPhysicsMesh(g_xPhysicsMeshConfig.m_xDebugColor);
+	}
 	// Audit §3.18 fix: iterate all loaded scenes, not just the active one.
 	// Physics debug visualisation should surface every loaded scene's model
 	// components — e.g. props in additively-loaded scenes, characters in the
 	// persistent scene. Ref: Unity's GameObject.scene contract —
 	// https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
 
-	static bool ls_bLoggedOnce = false;
+	Zenith_Vector<Zenith_ColliderComponent*> xColliders;
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ColliderComponent>(xColliders);
 
-	uint32_t uDrawnCount = 0;
-	for (uint32_t i = 0; i < xModels.GetSize(); i++)
+	for (uint32_t i = 0; i < xColliders.GetSize(); i++)
 	{
-		Zenith_ModelComponent* pxModel = xModels.Get(i);
-		if (!pxModel)
+		Zenith_ColliderComponent* pxCollider = xColliders.Get(i);
+		if (!pxCollider || !pxCollider->GetDebugDrawPhysicsMesh())
 		{
 			continue;
 		}
 
-		// Check if we should draw this model's physics mesh
-		bool bShouldDraw = g_bDebugDrawAllPhysicsMeshes || pxModel->GetDebugDrawPhysicsMesh();
-		if (!bShouldDraw)
-		{
-			continue;
-		}
-
-		// Check if the model has a physics mesh
-		const Flux_MeshGeometry* pxPhysicsMesh = pxModel->GetPhysicsMesh();
-		if (!pxPhysicsMesh)
-		{
-			continue;
-		}
-
-		// Get the transform matrix
-		Zenith_Entity xEntity = pxModel->GetParentEntity();
-		if (!xEntity.HasComponent<Zenith_TransformComponent>())
-		{
-			continue;
-		}
-
-		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
-		Zenith_Maths::Matrix4 xModelMatrix;
-		xTransform.BuildModelMatrix(xModelMatrix);
-
-		// Determine color
-		Zenith_Maths::Vector3 xColor = pxModel->GetDebugDrawColor();
-		if (g_bDebugDrawAllPhysicsMeshes && !pxModel->GetDebugDrawPhysicsMesh())
-		{
-			// Use global config color if globally enabled but not per-component
-			xColor = g_xPhysicsMeshConfig.m_xDebugColor;
-		}
-
-		// Draw the physics mesh
-		DebugDrawPhysicsMesh(pxPhysicsMesh, xModelMatrix, xColor);
-		uDrawnCount++;
-	}
-
-	// Log once when debug draw is first enabled
-	if ((g_bDebugDrawAllPhysicsMeshes || g_xPhysicsMeshConfig.m_bDebugDraw) && !ls_bLoggedOnce)
-	{
-		Zenith_Log(LOG_CATEGORY_PHYSICS, "[PhysicsDebugDraw] Debug drawing physics meshes for %u/%u model components",
-			uDrawnCount, xModels.GetSize());
-		ls_bLoggedOnce = true;
-	}
-	else if (!g_bDebugDrawAllPhysicsMeshes && !g_xPhysicsMeshConfig.m_bDebugDraw)
-	{
-		ls_bLoggedOnce = false;
+		pxCollider->QueueDebugDraw(g_xPhysicsMeshConfig.m_xDebugColor);
 	}
 }

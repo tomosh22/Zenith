@@ -33,15 +33,6 @@ class Zenith_ModelComponent
 {
 public:
 
-	//=========================================================================
-	// MeshEntry structure (for procedural mesh construction)
-	//=========================================================================
-	struct MeshEntry
-	{
-		Flux_MeshGeometry* m_pxGeometry;  // Not a registry asset - keep raw pointer
-		MaterialHandle m_xMaterial;
-	};
-
 	Zenith_ModelComponent(Zenith_Entity& xEntity)
 		: m_xParentEntity(xEntity)
 	{
@@ -99,7 +90,6 @@ public:
 
 	/**
 	 * Get mesh instance at index
-	 * Returns nullptr if using procedural mesh entries
 	 */
 	Flux_MeshInstance* GetMeshInstance(uint32_t uIndex) const;
 
@@ -115,7 +105,7 @@ public:
 
 	/**
 	 * Get skeleton instance
-	 * Returns nullptr if using procedural mesh entries or no skeleton
+	 * Returns nullptr if model has no skeleton
 	 */
 	Flux_SkeletonInstance* GetSkeletonInstance() const;
 
@@ -127,11 +117,8 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
-	// ReadFromDataStream sub-paths — GUID-based model + per-override materials
-	// (v4+) vs legacy inline mesh entries. Kept private to keep the public
-	// serialization surface a single entry point.
+	// ReadFromDataStream sub-path — GUID-based model + per-override materials.
 	void ReadModelInstanceWithMaterials(Zenith_DataStream& xStream, uint32_t uVersion);
-	void ReadLegacyMeshEntries(Zenith_DataStream& xStream);
 public:
 
 	//=========================================================================
@@ -139,43 +126,16 @@ public:
 	//=========================================================================
 
 	/**
-	 * Add a mesh entry for procedural/runtime mesh construction.
-	 * Use this when building models programmatically from already-loaded geometry and materials.
-	 * For loading assets from files, use LoadModel() with a .zmodel asset instead.
+	 * Add a procedural mesh to this component's model.
+	 * Used by code paths that build meshes at runtime (generated cubes, sprites,
+	 * per-game procedural content) without going through a .zmodel asset.
+	 * The first call constructs a procedural Flux_ModelInstance; subsequent
+	 * calls append additional sub-meshes. The caller owns the geometry and
+	 * must keep it alive for the lifetime of the component.
 	 */
-	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Zenith_MaterialAsset& xMaterial)
-	{
-		MeshEntry xEntry;
-		xEntry.m_pxGeometry = &xGeometry;
-		xEntry.m_xMaterial.Set(&xMaterial);
-		m_xMeshEntries.PushBack(std::move(xEntry));
-	}
-
-	// Mesh entry accessors (for procedural mesh system)
-	// Note: These assert that pointers are valid - callers should check entry validity first
-	Flux_MeshGeometry& GetMeshGeometryAtIndex(const uint32_t uIndex) const
-	{
-		Zenith_Assert(uIndex < m_xMeshEntries.GetSize(), "GetMeshGeometryAtIndex: Index %u out of bounds (size=%u)", uIndex, m_xMeshEntries.GetSize());
-		Flux_MeshGeometry* pxGeometry = m_xMeshEntries.Get(uIndex).m_pxGeometry;
-		Zenith_Assert(pxGeometry != nullptr, "GetMeshGeometryAtIndex: Geometry pointer is null at index %u", uIndex);
-		return *pxGeometry;
-	}
-	Zenith_MaterialAsset* GetMaterialAtIndex(const uint32_t uIndex) const
-	{
-		Zenith_Assert(uIndex < m_xMeshEntries.GetSize(), "GetMaterialAtIndex: Index %u out of bounds (size=%u)", uIndex, m_xMeshEntries.GetSize());
-		return m_xMeshEntries.Get(uIndex).m_xMaterial.GetDirect();
-	}
-	MaterialHandle& GetMaterialHandleAtIndex(const uint32_t uIndex)
-	{
-		Zenith_Assert(uIndex < m_xMeshEntries.GetSize(), "GetMaterialHandleAtIndex: Index %u out of bounds (size=%u)", uIndex, m_xMeshEntries.GetSize());
-		return m_xMeshEntries.Get(uIndex).m_xMaterial;
-	}
-	uint32_t GetNumMeshEntries() const { return m_xMeshEntries.GetSize(); }
+	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Zenith_MaterialAsset& xMaterial);
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
-
-	// Check if using model instance API vs procedural mesh entries
-	bool IsUsingModelInstance() const { return m_pxModelInstance != nullptr; }
 
 	//=========================================================================
 	// Physics Mesh
@@ -185,16 +145,10 @@ public:
 	void GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig);
 	Flux_MeshGeometry* GetPhysicsMesh() const;
 	bool HasPhysicsMesh() const { return m_pxPhysicsMeshAsset != nullptr; }
-	void ClearPhysicsMesh();
-
-	// Debug drawing control
 	void SetDebugDrawPhysicsMesh(bool bEnable) { m_bDebugDrawPhysicsMesh = bEnable; }
 	bool GetDebugDrawPhysicsMesh() const { return m_bDebugDrawPhysicsMesh; }
-	void SetDebugDrawColor(const Zenith_Maths::Vector3& xColor) { m_xDebugDrawColor = xColor; }
-	const Zenith_Maths::Vector3& GetDebugDrawColor() const { return m_xDebugDrawColor; }
-
-	// Call this to render debug physics mesh visualization (call each frame when enabled)
-	void DebugDrawPhysicsMesh();
+	void QueueDebugDrawPhysicsMesh(const Zenith_Maths::Vector3& xColor) const;
+	void ClearPhysicsMesh();
 
 #ifdef ZENITH_TOOLS
 	//--------------------------------------------------------------------------
@@ -214,7 +168,6 @@ private:
 	void RenderModelDropTargetSection();
 	void RenderManualLoadSection();
 	void RenderModelInstanceMaterialsSection();
-	void RenderProceduralMeshEntriesSection();
 	void RenderMeshMaterialSlots(uint32_t uMeshIdx, Zenith_MaterialAsset& xMaterial);
 public:
 #endif
@@ -236,14 +189,10 @@ public:
 	std::string m_strModelPath;
 
 	//=========================================================================
-	// Procedural Mesh System
+	// Physics Mesh
 	//=========================================================================
 
-	Zenith_Vector<MeshEntry> m_xMeshEntries;
 	Zenith_MeshGeometryAsset* m_pxPhysicsMeshAsset = nullptr;
-
-	// Debug draw settings
-	bool m_bDebugDrawPhysicsMesh = true;
-	Zenith_Maths::Vector3 m_xDebugDrawColor = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f); // Green
+	bool m_bDebugDrawPhysicsMesh = false;
 
 };

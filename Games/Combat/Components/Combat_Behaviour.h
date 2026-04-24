@@ -582,8 +582,8 @@ private:
 		{
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player model instance fallback to static mesh (modelPath empty=%s, hasModelInst=%s, hasSkeleton=%s)",
 				Combat::g_strStickFigureModelPath.empty() ? "yes" : "no",
-				xPlayerModel.IsUsingModelInstance() ? "yes" : "no",
-				xPlayerModel.IsUsingModelInstance() && xPlayerModel.HasSkeleton() ? "yes" : "no");
+				xPlayerModel.HasModel() ? "yes" : "no",
+				xPlayerModel.HasModel() && xPlayerModel.HasSkeleton() ? "yes" : "no");
 			xPlayerModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xPlayerMaterial.GetDirect());
 		}
 		else

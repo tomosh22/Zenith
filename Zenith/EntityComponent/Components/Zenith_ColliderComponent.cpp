@@ -7,7 +7,9 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "Flux/Primitives/Flux_Primitives.h"
 #include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "DataStream/Zenith_DataStream.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
@@ -33,11 +35,13 @@ Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_ColliderComponent&& xO
 	, m_xBodyID(xOther.m_xBodyID)
 	, m_eVolumeType(xOther.m_eVolumeType)
 	, m_eRigidBodyType(xOther.m_eRigidBodyType)
+	, m_bDebugDrawPhysicsMesh(xOther.m_bDebugDrawPhysicsMesh)
 	, m_pxTerrainMeshData(xOther.m_pxTerrainMeshData)
 {
 	// Nullify source so its destructor doesn't destroy the physics body
 	xOther.m_pxRigidBody = nullptr;
 	xOther.m_xBodyID = JPH::BodyID();  // Reset to invalid
+	xOther.m_bDebugDrawPhysicsMesh = false;
 	xOther.m_pxTerrainMeshData = nullptr;
 }
 
@@ -65,11 +69,13 @@ Zenith_ColliderComponent& Zenith_ColliderComponent::operator=(Zenith_ColliderCom
 		m_xBodyID = xOther.m_xBodyID;
 		m_eVolumeType = xOther.m_eVolumeType;
 		m_eRigidBodyType = xOther.m_eRigidBodyType;
+		m_bDebugDrawPhysicsMesh = xOther.m_bDebugDrawPhysicsMesh;
 		m_pxTerrainMeshData = xOther.m_pxTerrainMeshData;
 
 		// Nullify source
 		xOther.m_pxRigidBody = nullptr;
 		xOther.m_xBodyID = JPH::BodyID();
+		xOther.m_bDebugDrawPhysicsMesh = false;
 		xOther.m_pxTerrainMeshData = nullptr;
 	}
 	return *this;
@@ -115,6 +121,44 @@ namespace
 		if (xClamped.y < g_fMinColliderScale) xClamped.y = g_fMinColliderScale;
 		if (xClamped.z < g_fMinColliderScale) xClamped.z = g_fMinColliderScale;
 		return xClamped;
+	}
+
+	void AddWireBoxEdges(const Zenith_Maths::Vector3 axCorners[8], const Zenith_Maths::Vector3& xColor)
+	{
+		static constexpr uint32_t s_auEdgeIndices[] = {
+			0, 1, 1, 3, 3, 2, 2, 0,
+			4, 5, 5, 7, 7, 6, 6, 4,
+			0, 4, 1, 5, 2, 6, 3, 7
+		};
+
+		for (uint32_t u = 0; u < 12; ++u)
+		{
+			Flux_Primitives::AddLine(
+				axCorners[s_auEdgeIndices[u * 2 + 0]],
+				axCorners[s_auEdgeIndices[u * 2 + 1]],
+				xColor);
+		}
+	}
+
+	void BuildUnitCubeCorners(const Zenith_Maths::Matrix4& xModelMatrix, Zenith_Maths::Vector3 axCornersOut[8])
+	{
+		static const Zenith_Maths::Vector3 s_axLocalCorners[8] = {
+			Zenith_Maths::Vector3(-0.5f, -0.5f, -0.5f),
+			Zenith_Maths::Vector3( 0.5f, -0.5f, -0.5f),
+			Zenith_Maths::Vector3(-0.5f,  0.5f, -0.5f),
+			Zenith_Maths::Vector3( 0.5f,  0.5f, -0.5f),
+			Zenith_Maths::Vector3(-0.5f, -0.5f,  0.5f),
+			Zenith_Maths::Vector3( 0.5f, -0.5f,  0.5f),
+			Zenith_Maths::Vector3(-0.5f,  0.5f,  0.5f),
+			Zenith_Maths::Vector3( 0.5f,  0.5f,  0.5f)
+		};
+
+		for (uint32_t u = 0; u < 8; ++u)
+		{
+			const Zenith_Maths::Vector4 xWorld =
+				xModelMatrix * Zenith_Maths::Vector4(s_axLocalCorners[u], 1.0f);
+			axCornersOut[u] = Zenith_Maths::Vector3(xWorld.x, xWorld.y, xWorld.z);
+		}
 	}
 }
 
@@ -400,11 +444,110 @@ void Zenith_ColliderComponent::AddCapsuleCollider(float fRadius, float fHalfHeig
 	AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, eRigidBodyType);
 }
 
+void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColor) const
+{
+	Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+	Zenith_Maths::Vector3 xPosition;
+	Zenith_Maths::Vector3 xScale;
+	Zenith_Maths::Quat xRotation;
+	xTransform.GetPosition(xPosition);
+	xTransform.GetScale(xScale);
+	xTransform.GetRotation(xRotation);
+	xScale = ClampScale(xScale);
+
+	switch (m_eVolumeType)
+	{
+	case COLLISION_VOLUME_TYPE_AABB:
+		Flux_Primitives::AddWireframeCube(xPosition, xScale * 0.5f, xColor);
+		break;
+
+	case COLLISION_VOLUME_TYPE_OBB:
+	{
+		Zenith_Maths::Matrix4 xModelMatrix;
+		xTransform.BuildModelMatrix(xModelMatrix);
+		Zenith_Maths::Vector3 axCorners[8];
+		BuildUnitCubeCorners(xModelMatrix, axCorners);
+		AddWireBoxEdges(axCorners, xColor);
+		break;
+	}
+
+	case COLLISION_VOLUME_TYPE_SPHERE:
+	{
+		const float fRadius = std::max({ xScale.x, xScale.y, xScale.z }) * 0.5f;
+		Flux_Primitives::AddSphere(xPosition, fRadius, xColor);
+		break;
+	}
+
+	case COLLISION_VOLUME_TYPE_CAPSULE:
+	{
+		float fRadius;
+		float fHalfHeight;
+		if (m_bUseExplicitCapsuleDimensions)
+		{
+			fRadius = m_fExplicitCapsuleRadius;
+			fHalfHeight = m_fExplicitCapsuleHalfHeight;
+		}
+		else
+		{
+			fRadius = std::max(xScale.x, xScale.z) * 0.5f;
+			const float fHalfY = xScale.y * 0.5f;
+			fHalfHeight = std::max(g_fMinColliderScale, fHalfY - fRadius);
+			if (fHalfY <= fRadius)
+			{
+				fHalfHeight = g_fMinColliderScale;
+			}
+		}
+
+		const Zenith_Maths::Vector3 xAxis = Zenith_Maths::Normalize(
+			Zenith_Maths::RotateVector(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), xRotation));
+		const Zenith_Maths::Vector3 xStart = xPosition - xAxis * fHalfHeight;
+		const Zenith_Maths::Vector3 xEnd = xPosition + xAxis * fHalfHeight;
+		Flux_Primitives::AddCapsule(xStart, xEnd, fRadius, xColor);
+		break;
+	}
+
+	case COLLISION_VOLUME_TYPE_TERRAIN:
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_TerrainComponent>())
+		{
+			return;
+		}
+
+		Zenith_Maths::Matrix4 xModelMatrix;
+		xTransform.BuildModelMatrix(xModelMatrix);
+		const Zenith_TerrainComponent& xTerrain = m_xParentEntity.GetComponent<Zenith_TerrainComponent>();
+		Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(&xTerrain.GetPhysicsMeshGeometry(), xModelMatrix, xColor);
+		break;
+	}
+
+	case COLLISION_VOLUME_TYPE_MODEL_MESH:
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+		{
+			return;
+		}
+
+		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
+		const Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
+		if (!pxPhysicsMesh)
+		{
+			return;
+		}
+
+		Zenith_Maths::Matrix4 xModelMatrix;
+		xTransform.BuildModelMatrix(xModelMatrix);
+		Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(pxPhysicsMesh, xModelMatrix, xColor);
+		break;
+	}
+	}
+}
+
 void Zenith_ColliderComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	// Write collision volume type and rigid body type
 	xStream << static_cast<u_int>(m_eVolumeType);
 	xStream << static_cast<u_int>(m_eRigidBodyType);
+	xStream << m_bDebugDrawPhysicsMesh;
 
 	// Note: m_pxRigidBody and m_xBodyID are runtime-only physics handles
 	// They will be recreated by calling AddCollider during deserialization
@@ -423,6 +566,14 @@ void Zenith_ColliderComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	m_eVolumeType = static_cast<CollisionVolumeType>(uVolumeType);
 	m_eRigidBodyType = static_cast<RigidBodyType>(uRigidBodyType);
+	m_bDebugDrawPhysicsMesh = false;
+
+	// Older scenes only serialized the volume/body pair, so treat the debug
+	// flag as optional to remain backward compatible.
+	if (xStream.GetCursor() < xStream.GetSize())
+	{
+		xStream >> m_bDebugDrawPhysicsMesh;
+	}
 
 	// Call AddCollider to recreate the physics body
 	// This must be done after the entity and transform component are fully deserialized
@@ -545,6 +696,9 @@ void Zenith_ColliderComponent::RenderConfiguredColliderUI()
 	{
 		ImGui::Text("Body Type: %s", s_aszRigidBodyTypes[iCurrentRigidBodyType]);
 	}
+
+	ImGui::Checkbox("Draw Debug Collider", &m_bDebugDrawPhysicsMesh);
+	ImGui::TextDisabled("Shown only in stopped editor mode.");
 
 	if (m_eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC)
 	{

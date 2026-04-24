@@ -50,15 +50,11 @@ struct PhysicsMeshConfig
 	bool m_bAutoGenerate = true;
 	
 	// Debug rendering options
-	bool m_bDebugDraw = true;
 	Zenith_Maths::Vector3 m_xDebugColor = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f); // Green by default
 };
 
 // Global configuration (can be modified at runtime)
 extern PhysicsMeshConfig g_xPhysicsMeshConfig;
-
-// Global debug flag for drawing all physics meshes (controlled via debug variables)
-extern bool g_bDebugDrawAllPhysicsMeshes;
 
 class Zenith_PhysicsMeshGenerator
 {
@@ -71,14 +67,14 @@ public:
 	 * @return Registry-managed asset containing the physics mesh, or nullptr on failure
 	 */
 	static Zenith_MeshGeometryAsset* GeneratePhysicsMesh(
-		const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+		const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
 		PhysicsMeshQuality eQuality = PHYSICS_MESH_QUALITY_MEDIUM);
 
 	/**
 	 * Generate a physics mesh using the global configuration
 	 */
 	static Zenith_MeshGeometryAsset* GeneratePhysicsMeshWithConfig(
-		const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+		const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
 		const PhysicsMeshConfig& xConfig);
 
 	/**
@@ -95,11 +91,11 @@ public:
 		const Zenith_Maths::Vector3& xColor);
 
 	/**
-	 * Draw debug physics meshes for all model components in the current scene
-	 * Call this once per frame when debug drawing is enabled
-	 * Checks g_bDebugDrawAllPhysicsMeshes and individual component flags
+	 * Queue physics debug visualization for model physics meshes and collider
+	 * volumes in all loaded scenes. Call this once per frame from tools/editor
+	 * stopped mode.
 	 */
-	static void DebugDrawAllPhysicsMeshes();
+	static void QueuePhysicsDebugDraws();
 
 	/**
 	 * Get a string description of the quality level
@@ -114,28 +110,28 @@ private:
 	 * Creates a simple 12-triangle box that bounds all input geometry
 	 */
 	static Flux_MeshGeometry* GenerateAABBMesh(
-		const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries);
+		const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries);
 
 	/**
 	 * Generate a convex hull mesh (MEDIUM quality)
 	 * Uses quickhull algorithm to compute convex hull of all vertices
 	 */
 	static Flux_MeshGeometry* GenerateConvexHullMesh(
-		const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries);
+		const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries);
 
 	/**
 	 * Generate a simplified triangle mesh (HIGH quality)
 	 * Combines all meshes and applies vertex decimation
 	 */
 	static Flux_MeshGeometry* GenerateSimplifiedMesh(
-		const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+		const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
 		const PhysicsMeshConfig& xConfig);
 
 	/**
 	 * Compute AABB bounds from mesh geometries
 	 */
 	static void ComputeAABB(
-		const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+		const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
 		Zenith_Maths::Vector3& xMinOut,
 		Zenith_Maths::Vector3& xMaxOut);
 
@@ -143,7 +139,7 @@ private:
 	 * Collect all vertex positions from mesh geometries
 	 */
 	static void CollectAllPositions(
-		const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+		const Zenith_Vector<const Flux_MeshGeometry*>& xMeshGeometries,
 		Zenith_Vector<Zenith_Maths::Vector3>& xPositionsOut);
 
 	/**

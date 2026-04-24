@@ -1984,9 +1984,9 @@ private:
 		if (xPeg.HasComponent<Zenith_ModelComponent>())
 		{
 			Zenith_ModelComponent& xModel = xPeg.GetComponent<Zenith_ModelComponent>();
-			if (xModel.GetNumMeshEntries() > 0)
+			if (xModel.GetNumMeshes() > 0 && xModel.GetModelInstance())
 			{
-				xModel.GetMaterialHandleAtIndex(0).Set(xMaterial.GetDirect());
+				xModel.GetModelInstance()->SetMaterial(0, xMaterial.GetDirect());
 			}
 		}
 	}

@@ -279,17 +279,17 @@ void Zenith_AnimatorComponent::TryDiscoverSkeleton()
 		return;
 	}
 
-	if (!pxModel->IsUsingModelInstance())
+	if (!pxModel->HasModel())
 	{
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimatorComponent] TryDiscoverSkeleton: ModelComponent has no model instance (entity %u, meshEntries=%u)",
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimatorComponent] TryDiscoverSkeleton: ModelComponent has no model instance (entity %u, meshes=%u)",
 			m_xParentEntity.GetEntityID().m_uIndex, pxModel->GetNumMeshes());
 		return;
 	}
 
 	if (!pxModel->HasSkeleton())
 	{
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimatorComponent] TryDiscoverSkeleton: ModelComponent reports no skeleton (entity %u, hasModelInstance=%s)",
-			m_xParentEntity.GetEntityID().m_uIndex, pxModel->IsUsingModelInstance() ? "yes" : "no");
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimatorComponent] TryDiscoverSkeleton: ModelComponent reports no skeleton (entity %u, hasModel=%s)",
+			m_xParentEntity.GetEntityID().m_uIndex, pxModel->HasModel() ? "yes" : "no");
 		return;
 	}
 
@@ -318,7 +318,7 @@ void Zenith_AnimatorComponent::UpdateWorldMatrix()
 
 void Zenith_AnimatorComponent::SyncModelInstanceAnimation()
 {
-	if (m_pxCachedModelComponent && m_pxCachedModelComponent->IsUsingModelInstance())
+	if (m_pxCachedModelComponent && m_pxCachedModelComponent->HasModel())
 	{
 		Flux_ModelInstance* pxModelInstance = m_pxCachedModelComponent->GetModelInstance();
 		if (pxModelInstance && pxModelInstance->HasSkeleton())

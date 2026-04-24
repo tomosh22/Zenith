@@ -112,8 +112,8 @@ static bool IsAnimatedSkinnedModel(const Flux_ModelInstance& xModelInstance)
 	return false;
 }
 
-// Per-mesh draw used by both the new model-instance and legacy mesh-entry
-// branches. Bind material constants + SRVs, then emit the indexed draw.
+// Per-mesh draw helper. Binds material constants + SRVs, then emits the
+// indexed draw.
 static void DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Maths::Matrix4& xModelMatrix,
 	Zenith_MaterialAsset* pxMaterial,
@@ -176,27 +176,6 @@ static void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBi
 	}
 }
 
-// Legacy procedural-mesh branch (Games/ procedural meshes that haven't moved
-// to the model-instance system yet).
-static void RenderLegacyMeshEntries(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBinder,
-	Zenith_ModelComponent* pxModel)
-{
-	if (!pxModel->GetNumMeshEntries()) return;
-
-	Zenith_Maths::Matrix4 xModelMatrix;
-	pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
-
-	for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
-	{
-		const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
-		pxCmdList->AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
-		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
-
-		Zenith_MaterialAsset& xMaterial = *pxModel->GetMaterialAtIndex(uMesh);
-		DrawStaticMesh(pxCmdList, xBinder, xModelMatrix, &xMaterial, xMesh.GetNumIndices());
-	}
-}
-
 void Flux_StaticMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!dbg_bEnable) return;
@@ -212,28 +191,19 @@ void Flux_StaticMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ModelComponent* pxModel = xIt.GetData();
+		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
+		if (!pxModelInstance) continue;
 
-		// New model-instance system: skip skinned-animated models (rendered
-		// by Flux_AnimatedMeshes), draw everything else here.
-		if (Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance())
-		{
-			if (IsAnimatedSkinnedModel(*pxModelInstance)) continue;
-			RenderModelInstanceMeshes(pxCmdList, xBinder, pxModel, pxModelInstance);
-			continue;
-		}
+		// Skinned-animated models are rendered by Flux_AnimatedMeshes.
+		if (IsAnimatedSkinnedModel(*pxModelInstance)) continue;
 
-		// Fallback: legacy procedural mesh entries.
-		// #TODO: these 2 should probably be separate components.
-		RenderLegacyMeshEntries(pxCmdList, xBinder, pxModel);
+		RenderModelInstanceMeshes(pxCmdList, xBinder, pxModel, pxModelInstance);
 	}
 }
 
 void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
-	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(xCmdBuf);
-
-	// Bind FrameConstants once per command list (set 0 - per-frame data)
 	xBinder.BindCBV(s_xShadowShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
@@ -242,73 +212,26 @@ void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ModelComponent* pxModel = xIt.GetData();
-
-		// New model instance system - only render static meshes (no skeleton)
-		// Animated meshes with skeletons are rendered by Flux_AnimatedMeshes
 		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
-		if (pxModelInstance)
+		if (!pxModelInstance) continue;
+
+		// Skinned-animated models are rendered by Flux_AnimatedMeshes.
+		if (IsAnimatedSkinnedModel(*pxModelInstance)) continue;
+
+		Zenith_Maths::Matrix4 xModelMatrix;
+		pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+
+		for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
 		{
-			// Check if this model should be rendered by the animated mesh renderer
-			// A model is animated if it has a skeleton AND at least one skinned mesh instance
-			bool bHasSkinnedMeshes = false;
-			if (pxModelInstance->HasSkeleton())
-			{
-				for (uint32_t uCheck = 0; uCheck < pxModelInstance->GetNumMeshes(); uCheck++)
-				{
-					if (pxModelInstance->GetSkinnedMeshInstance(uCheck) != nullptr)
-					{
-						bHasSkinnedMeshes = true;
-						break;
-					}
-				}
-			}
+			Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
+			if (!pxMeshInstance) continue;
 
-			// Skip models that have a skeleton AND skinned mesh data - they are rendered by Flux_AnimatedMeshes
-			// Models with a skeleton but NO skinning data are rendered here using static mesh instances
-			if (pxModelInstance->HasSkeleton() && bHasSkinnedMeshes)
-			{
-				continue;
-			}
-
-			Zenith_Maths::Matrix4 xModelMatrix;
-			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
-
-			for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
-			{
-				Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
-				if (!pxMeshInstance)
-				{
-					continue;
-				}
-
-				xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
-				xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
-
-				xBinder.BindDrawConstants(s_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
-				xBinder.BindCBV(s_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
-				xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
-			}
-			continue;
-		}
-
-		// Legacy mesh entry system
-		//#TO_TODO: these 2 should probably be separate components
-		if (!pxModel->GetNumMeshEntries())
-		{
-			continue;
-		}
-		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
-		{
-			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
-			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
-			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
-
-			Zenith_Maths::Matrix4 xModelMatrix;
-			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
+			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
 			xBinder.BindDrawConstants(s_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
 			xBinder.BindCBV(s_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
-			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
+			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}
 	}
 }

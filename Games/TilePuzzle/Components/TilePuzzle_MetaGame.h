@@ -69,7 +69,7 @@ void UpdateCatCafeDisplayMaterial()
 		return;
 
 	Zenith_ModelComponent& xModel = m_xCatCafeDisplayEntity.GetComponent<Zenith_ModelComponent>();
-	xModel.m_xMeshEntries.Clear();
+	xModel.ClearModel();
 	xModel.AddMeshEntry(*TilePuzzle::g_pxCatMeshGeometry, *pxMaterial);
 }
 

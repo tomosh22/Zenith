@@ -9,6 +9,9 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Flux/Flux_ModelInstance.h"
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"
+#include "AssetHandling/Zenith_MeshAsset.h"
 #include "Maths/Zenith_Maths.h"
 #include <limits>
 
@@ -212,7 +215,7 @@ void Zenith_SelectionSystem::UpdateBoundingBoxes()
 	for (u_int i = 0; i < xTransforms.GetSize(); ++i)
 	{
 		Zenith_TransformComponent* pxTransform = xTransforms.Get(i);
-		Zenith_Entity xEntity = pxTransform->GetParentEntity();
+		Zenith_Entity xEntity = pxTransform->GetEntity();
 		Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 		BoundingBox xBoundingBox = CalculateBoundingBox(&xEntity);
@@ -373,29 +376,37 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 			xMax = glm::max(xMax, pPositions[v]);
 		}
 	}
-	else
+	else if (xModel.GetModelInstance())
 	{
-		// Fallback: Use render mesh if no physics mesh available
-		// Iterate through all mesh entries in the model
-		// A model can contain multiple sub-meshes (LODs, parts, etc.)
-		for (u_int i = 0; i < xModel.GetNumMeshEntries(); ++i)
+		// Use each sub-mesh's bounds: asset-backed meshes have pre-computed
+		// bind-pose bounds (good enough for editor picking on skinned meshes);
+		// procedurally-built meshes wrap a Flux_MeshGeometry whose positions we
+		// iterate directly.
+		Flux_ModelInstance* pxModelInst = xModel.GetModelInstance();
+		for (u_int u = 0; u < pxModelInst->GetNumMeshes(); ++u)
 		{
-			Flux_MeshGeometry& xGeometry = xModel.GetMeshGeometryAtIndex(i);
-
-			// Use the position array directly
-			// This is in model/local space, not world space
-			const Zenith_Maths::Vector3* pPositions = xGeometry.m_pxPositions;
-			const u_int uVertexCount = xGeometry.GetNumVerts();
-
-			if (!pPositions || uVertexCount == 0)
+			Flux_MeshInstance* pxMeshInst = pxModelInst->GetMeshInstance(u);
+			if (!pxMeshInst)
 				continue;
 
-			// Find min/max from positions
-			// This creates an axis-aligned bounding box in model space
-			for (u_int v = 0; v < uVertexCount; ++v)
+			if (Zenith_MeshAsset* pxMeshAsset = pxMeshInst->GetSourceAsset())
 			{
-				xMin = glm::min(xMin, pPositions[v]);
-				xMax = glm::max(xMax, pPositions[v]);
+				xMin = glm::min(xMin, pxMeshAsset->m_xBoundsMin);
+				xMax = glm::max(xMax, pxMeshAsset->m_xBoundsMax);
+				continue;
+			}
+
+			if (const Flux_MeshGeometry* pxGeometry = pxMeshInst->GetProceduralGeometry())
+			{
+				const Zenith_Maths::Vector3* pPositions = pxGeometry->m_pxPositions;
+				const u_int uVertexCount = pxGeometry->GetNumVerts();
+				if (!pPositions || uVertexCount == 0)
+					continue;
+				for (u_int v = 0; v < uVertexCount; ++v)
+				{
+					xMin = glm::min(xMin, pPositions[v]);
+					xMax = glm::max(xMax, pPositions[v]);
+				}
 			}
 		}
 	}

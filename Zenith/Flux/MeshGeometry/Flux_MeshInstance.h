@@ -4,6 +4,7 @@
 
 class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
+class Flux_MeshGeometry;
 
 /**
  * Flux_MeshInstance - GPU-aware runtime representation of a mesh
@@ -62,18 +63,35 @@ public:
 	static Flux_MeshInstance* CreateSkinnedFromAsset(Zenith_MeshAsset* pxAsset);
 
 	/**
+	 * Factory method to create from a procedural Flux_MeshGeometry
+	 * The instance holds a non-owning back-reference to the geometry and
+	 * proxies its GPU buffers/layout from there. The geometry must outlive
+	 * the instance; buffers must already be GPU-uploaded (LoadFromFile's
+	 * default, or GenerateUnitCube/FullscreenQuad).
+	 * @param pxGeometry Source geometry (must not be null)
+	 * @return Newly created instance, or nullptr on failure
+	 */
+	static Flux_MeshInstance* CreateFromGeometry(Flux_MeshGeometry* pxGeometry);
+
+	/**
 	 * Destroy GPU resources
 	 * Call this before deleting the instance if you need explicit cleanup timing
 	 */
 	void Destroy();
 
 	// Accessors
-	uint32_t GetNumVerts() const { return m_uNumVerts; }
-	uint32_t GetNumIndices() const { return m_uNumIndices; }
-	const Flux_BufferLayout& GetBufferLayout() const { return m_xBufferLayout; }
-	const Flux_VertexBuffer& GetVertexBuffer() const { return m_xVertexBuffer; }
-	const Flux_IndexBuffer& GetIndexBuffer() const { return m_xIndexBuffer; }
+	uint32_t GetNumVerts() const;
+	uint32_t GetNumIndices() const;
+	const Flux_BufferLayout& GetBufferLayout() const;
+	const Flux_VertexBuffer& GetVertexBuffer() const;
+	const Flux_IndexBuffer& GetIndexBuffer() const;
 	Zenith_MeshAsset* GetSourceAsset() const { return m_pxSourceAsset; }
+
+	/**
+	 * Get the procedural geometry back-reference (nullptr if asset-backed)
+	 * Used by physics and other systems that need raw CPU geometry data.
+	 */
+	const Flux_MeshGeometry* GetProceduralGeometry() const { return m_pxProceduralGeometry; }
 
 	/**
 	 * Check if this mesh has skinning/bone data
@@ -89,5 +107,9 @@ private:
 	uint32_t m_uNumIndices = 0;
 
 	Zenith_MeshAsset* m_pxSourceAsset = nullptr;
+	// Non-owning back-reference for procedural instances (see CreateFromGeometry).
+	// When non-null, buffer/layout accessors proxy to the geometry and Destroy()
+	// skips buffer teardown (the geometry owns them).
+	Flux_MeshGeometry* m_pxProceduralGeometry = nullptr;
 	bool m_bInitialized = false;
 };

@@ -1587,36 +1587,11 @@ void Zenith_SceneManager::CollectUpdatableScenes(Zenith_Vector<Zenith_SceneData*
 
 void Zenith_SceneManager::CollectAnimationsFromScene(Zenith_SceneData* pxData)
 {
-	// IMPORTANT: caller has already advanced pxModel->Update(fDt). No entity or
-	// ModelComponent mutation is allowed between that call and this one —
-	// GetAllOfComponentType returns raw pointers into component pools, and any
-	// pool reallocation would invalidate them.
-	if (!pxData || !pxData->m_bIsLoaded || pxData->m_bIsUnloading || pxData->IsPaused())
-		return;
-
-	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	pxData->GetAllOfComponentType<Zenith_ModelComponent>(xModels);
-
-	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
-	{
-		Zenith_ModelComponent* pxModel = xIt.GetData();
-
-		// Skip inactive entities (IsActiveInHierarchy walks parents so a disabled
-		// parent stops animation on its children, matching Unity semantics).
-		Zenith_Entity xEntity = pxModel->GetParentEntity();
-		if (!xEntity.IsActiveInHierarchy())
-			continue;
-
-		// Note: Skeletal animation is now handled by Zenith_AnimatorComponent::OnUpdate.
-		// Legacy mesh-animation collection for parallel update task below:
-		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
-		{
-			if (Flux_MeshAnimation* pxAnim = pxModel->GetMeshGeometryAtIndex(uMesh).m_pxAnimation)
-			{
-				g_xAnimationsToUpdate.PushBack(pxAnim);
-			}
-		}
-	}
+	// Skeletal animation is handled by Zenith_AnimatorComponent::OnUpdate; the
+	// legacy per-Flux_MeshGeometry animation collection was removed along with
+	// Zenith_ModelComponent::m_xMeshEntries. Kept as a no-op for now so the
+	// update-loop call site stays structurally familiar.
+	(void)pxData;
 }
 
 void Zenith_SceneManager::WaitForUpdateComplete()

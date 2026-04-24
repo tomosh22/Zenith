@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Flux_MeshInstance.h"
+#include "Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Flux/Flux.h"
@@ -65,11 +66,13 @@ Flux_MeshInstance::Flux_MeshInstance(Flux_MeshInstance&& xOther)
 	, m_uNumVerts(xOther.m_uNumVerts)
 	, m_uNumIndices(xOther.m_uNumIndices)
 	, m_pxSourceAsset(xOther.m_pxSourceAsset)
+	, m_pxProceduralGeometry(xOther.m_pxProceduralGeometry)
 	, m_bInitialized(xOther.m_bInitialized)
 {
 	xOther.m_uNumVerts = 0;
 	xOther.m_uNumIndices = 0;
 	xOther.m_pxSourceAsset = nullptr;
+	xOther.m_pxProceduralGeometry = nullptr;
 	xOther.m_bInitialized = false;
 }
 
@@ -85,14 +88,82 @@ Flux_MeshInstance& Flux_MeshInstance::operator=(Flux_MeshInstance&& xOther)
 		m_uNumVerts = xOther.m_uNumVerts;
 		m_uNumIndices = xOther.m_uNumIndices;
 		m_pxSourceAsset = xOther.m_pxSourceAsset;
+		m_pxProceduralGeometry = xOther.m_pxProceduralGeometry;
 		m_bInitialized = xOther.m_bInitialized;
 
 		xOther.m_uNumVerts = 0;
 		xOther.m_uNumIndices = 0;
 		xOther.m_pxSourceAsset = nullptr;
+		xOther.m_pxProceduralGeometry = nullptr;
 		xOther.m_bInitialized = false;
 	}
 	return *this;
+}
+
+uint32_t Flux_MeshInstance::GetNumVerts() const
+{
+	if (m_pxProceduralGeometry)
+	{
+		return m_pxProceduralGeometry->GetNumVerts();
+	}
+	return m_uNumVerts;
+}
+
+uint32_t Flux_MeshInstance::GetNumIndices() const
+{
+	if (m_pxProceduralGeometry)
+	{
+		return m_pxProceduralGeometry->GetNumIndices();
+	}
+	return m_uNumIndices;
+}
+
+const Flux_BufferLayout& Flux_MeshInstance::GetBufferLayout() const
+{
+	if (m_pxProceduralGeometry)
+	{
+		return m_pxProceduralGeometry->GetBufferLayout();
+	}
+	return m_xBufferLayout;
+}
+
+const Flux_VertexBuffer& Flux_MeshInstance::GetVertexBuffer() const
+{
+	if (m_pxProceduralGeometry)
+	{
+		return m_pxProceduralGeometry->GetVertexBuffer();
+	}
+	return m_xVertexBuffer;
+}
+
+const Flux_IndexBuffer& Flux_MeshInstance::GetIndexBuffer() const
+{
+	if (m_pxProceduralGeometry)
+	{
+		return m_pxProceduralGeometry->GetIndexBuffer();
+	}
+	return m_xIndexBuffer;
+}
+
+Flux_MeshInstance* Flux_MeshInstance::CreateFromGeometry(Flux_MeshGeometry* pxGeometry)
+{
+	Zenith_Assert(pxGeometry != nullptr, "Cannot create mesh instance from null geometry");
+	if (!pxGeometry)
+	{
+		return nullptr;
+	}
+
+	if (pxGeometry->GetNumVerts() == 0 || pxGeometry->GetNumIndices() == 0)
+	{
+		Zenith_Warning(LOG_CATEGORY_RENDERER, "Cannot create mesh instance from empty geometry");
+		return nullptr;
+	}
+
+	Flux_MeshInstance* pxInstance = new Flux_MeshInstance();
+	pxInstance->m_pxProceduralGeometry = pxGeometry;
+	// m_bInitialized stays false - the geometry owns the buffers, so Destroy()
+	// must not tear them down here.
+	return pxInstance;
 }
 
 Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset)
@@ -238,6 +309,8 @@ void Flux_MeshInstance::Destroy()
 		m_pxSourceAsset = nullptr;
 		m_bInitialized = false;
 	}
+	// Procedural instances don't own any GPU resources, just clear the back-reference.
+	m_pxProceduralGeometry = nullptr;
 }
 
 bool Flux_MeshInstance::HasSkinning() const

@@ -10,6 +10,7 @@
 #include "Editor/Zenith_Editor_MaterialUI.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_ModelInstance.h"
@@ -50,7 +51,7 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 
 	Zenith_Log(LOG_CATEGORY_MESH, "Loaded texture from: %s", szFilePath);
 
-	Zenith_MaterialAsset* pxOldMaterial = m_xMeshEntries.Get(uMeshIdx).m_xMaterial.GetDirect();
+	Zenith_MaterialAsset* pxOldMaterial = m_pxModelInstance ? m_pxModelInstance->GetMaterial(uMeshIdx) : nullptr;
 
 	Zenith_MaterialAsset* pxNewMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 	if (!pxNewMaterial)
@@ -102,7 +103,10 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 		break;
 	}
 
-	m_xMeshEntries.Get(uMeshIdx).m_xMaterial.Set(pxNewMaterial);
+	if (m_pxModelInstance)
+	{
+		m_pxModelInstance->SetMaterial(uMeshIdx, pxNewMaterial);
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -114,8 +118,6 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 	if (!ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
 		return;
 
-	ImGui::Checkbox("Draw Physics Mesh", &m_bDebugDrawPhysicsMesh);
-
 	ImGui::Separator();
 	RenderModelStatusSection();
 
@@ -126,30 +128,42 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 
 	ImGui::Separator();
 	RenderModelInstanceMaterialsSection();
-
-	RenderProceduralMeshEntriesSection();
 }
 
 //-----------------------------------------------------------------------------
-// Shows which mesh system is currently driving this component (new model
-// instance, procedural entries, or empty) along with a short summary.
+// Shows a short status summary (path, mesh count, skeleton flag) for the
+// currently-loaded model, or "No model loaded" when the component is empty.
 //-----------------------------------------------------------------------------
 void Zenith_ModelComponent::RenderModelStatusSection()
 {
 	if (m_pxModelInstance)
 	{
-		ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Using: New Model Instance System");
 		ImGui::Text("Model Path: %s", m_strModelPath.c_str());
 		ImGui::Text("Meshes: %u", m_pxModelInstance->GetNumMeshes());
 		ImGui::Text("Has Skeleton: %s", m_pxModelInstance->HasSkeleton() ? "Yes" : "No");
 	}
-	else if (m_xMeshEntries.GetSize() > 0)
-	{
-		ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.2f, 1.0f), "Using: Procedural Mesh Entries");
-	}
 	else
 	{
 		ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No model loaded");
+	}
+
+	ImGui::Text("Physics Mesh: %s", HasPhysicsMesh() ? "Generated" : "None");
+
+	if (!HasPhysicsMesh())
+	{
+		ImGui::BeginDisabled();
+	}
+
+	ImGui::Checkbox("Draw Debug Physics Mesh", &m_bDebugDrawPhysicsMesh);
+
+	if (!HasPhysicsMesh())
+	{
+		ImGui::EndDisabled();
+	}
+
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Shown only in stopped editor mode.");
 	}
 }
 
@@ -262,60 +276,6 @@ void Zenith_ModelComponent::RenderModelInstanceMaterialsSection()
 		else
 		{
 			ImGui::Text("Mesh %u: (no material)", uMeshIdx);
-		}
-
-		ImGui::PopID();
-	}
-}
-
-//-----------------------------------------------------------------------------
-// Per-mesh material UI for the legacy procedural mesh entries path. Shows
-// the source path (if any) and reuses the same texture slot widgets as the
-// model-instance section.
-//-----------------------------------------------------------------------------
-void Zenith_ModelComponent::RenderProceduralMeshEntriesSection()
-{
-	if (m_xMeshEntries.GetSize() > 0)
-	{
-		ImGui::Text("Procedural Mesh Entries (%u):", m_xMeshEntries.GetSize());
-	}
-	for (uint32_t uMeshIdx = 0; uMeshIdx < m_xMeshEntries.GetSize(); ++uMeshIdx)
-	{
-		ImGui::PushID(uMeshIdx + 1000);  // Offset ID to avoid conflict with model instance
-
-		Zenith_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uMeshIdx).m_xMaterial.GetDirect();
-
-		bool bExpanded = ImGui::TreeNode("MeshEntry", "Mesh %u: %s", uMeshIdx,
-			pxMaterial ? pxMaterial->GetName().c_str() : "(no material)");
-
-		if (pxMaterial)
-		{
-			ImGui::SameLine();
-			if (ImGui::SmallButton("Edit"))
-			{
-				Zenith_Editor::SelectMaterial(pxMaterial);
-			}
-		}
-
-		if (bExpanded)
-		{
-			Flux_MeshGeometry& xGeom = GetMeshGeometryAtIndex(uMeshIdx);
-			if (!xGeom.m_strSourcePath.empty())
-			{
-				ImGui::TextWrapped("Source: %s", xGeom.m_strSourcePath.c_str());
-			}
-
-			if (pxMaterial)
-			{
-				// Material properties (using shared utility)
-				Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMaterial, "ProceduralMesh");
-
-				ImGui::Separator();
-
-				RenderMeshMaterialSlots(uMeshIdx, *pxMaterial);
-			}
-
-			ImGui::TreePop();
 		}
 
 		ImGui::PopID();

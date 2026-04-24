@@ -35,11 +35,16 @@ public:
 	const JPH::BodyID& GetBodyID() const { return m_xBodyID; }
 	bool HasValidBody() const;
 	Zenith_EntityID GetEntityID() { return m_xParentEntity.GetEntityID(); }
+	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
+	CollisionVolumeType GetCollisionVolumeType() const { return m_eVolumeType; }
 	RigidBodyType GetRigidBodyType() const { return m_eRigidBodyType; }
+	void SetDebugDrawPhysicsMesh(bool bEnable) { m_bDebugDrawPhysicsMesh = bEnable; }
+	bool GetDebugDrawPhysicsMesh() const { return m_bDebugDrawPhysicsMesh; }
 
 	void AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType);
 	void AddCapsuleCollider(float fRadius, float fHalfHeight, RigidBodyType eRigidBodyType);
 	void RebuildCollider(); // Rebuild collider with current transform (e.g., after scale change)
+	void QueueDebugDraw(const Zenith_Maths::Vector3& xColor) const;
 
 #ifdef ZENITH_TOOLS
 	//--------------------------------------------------------------------------
@@ -79,6 +84,7 @@ private:
 	float m_fExplicitCapsuleRadius = 0.0f;
 	float m_fExplicitCapsuleHalfHeight = 0.0f;
 	bool m_bUseExplicitCapsuleDimensions = false;
+	bool m_bDebugDrawPhysicsMesh = false;
 
 	struct TerrainMeshData
 	{

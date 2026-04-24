@@ -9,6 +9,7 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -22,10 +23,12 @@ ZENITH_REGISTER_COMPONENT(Zenith_ModelComponent, "Model")
 // Version 3: New model instance system with .zmodel path
 // Version 4: GUID-based model references
 // Version 5: Material overrides for model instance
-static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION = 5;
+// Version 6: Removed legacy m_xMeshEntries path - single model-instance serialization
+// Version 7: Added model physics debug draw toggle
+static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION = 7;
+static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_UNIFIED = 6;
 static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_MATERIALS = 5;
-static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_GUID = 4;
-static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_PATH = 3;
+static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_DEBUG_DRAW = 7;
 
 //=============================================================================
 // Destructor
@@ -47,14 +50,13 @@ Zenith_ModelComponent::Zenith_ModelComponent(Zenith_ModelComponent&& xOther) noe
 	, m_pxModelInstance(xOther.m_pxModelInstance)
 	, m_xModel(std::move(xOther.m_xModel))
 	, m_strModelPath(std::move(xOther.m_strModelPath))
-	, m_xMeshEntries(std::move(xOther.m_xMeshEntries))
 	, m_pxPhysicsMeshAsset(xOther.m_pxPhysicsMeshAsset)
 	, m_bDebugDrawPhysicsMesh(xOther.m_bDebugDrawPhysicsMesh)
-	, m_xDebugDrawColor(xOther.m_xDebugDrawColor)
 {
 	// Nullify source pointers so its destructor doesn't delete our resources
 	xOther.m_pxModelInstance = nullptr;
 	xOther.m_pxPhysicsMeshAsset = nullptr;
+	xOther.m_bDebugDrawPhysicsMesh = false;
 }
 
 Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& xOther) noexcept
@@ -70,16 +72,31 @@ Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& 
 		m_pxModelInstance = xOther.m_pxModelInstance;
 		m_xModel = std::move(xOther.m_xModel);
 		m_strModelPath = std::move(xOther.m_strModelPath);
-		m_xMeshEntries = std::move(xOther.m_xMeshEntries);
 		m_pxPhysicsMeshAsset = xOther.m_pxPhysicsMeshAsset;
 		m_bDebugDrawPhysicsMesh = xOther.m_bDebugDrawPhysicsMesh;
-		m_xDebugDrawColor = xOther.m_xDebugDrawColor;
 
 		// Nullify source pointers
 		xOther.m_pxModelInstance = nullptr;
 		xOther.m_pxPhysicsMeshAsset = nullptr;
+		xOther.m_bDebugDrawPhysicsMesh = false;
 	}
 	return *this;
+}
+
+//=============================================================================
+// Procedural Mesh API
+//=============================================================================
+
+void Zenith_ModelComponent::AddMeshEntry(Flux_MeshGeometry& xGeometry, Zenith_MaterialAsset& xMaterial)
+{
+	if (!m_pxModelInstance)
+	{
+		m_pxModelInstance = Flux_ModelInstance::CreateProcedural(xGeometry, xMaterial);
+	}
+	else
+	{
+		m_pxModelInstance->AppendProceduralMesh(xGeometry, xMaterial);
+	}
 }
 
 //=============================================================================
@@ -189,36 +206,17 @@ void Zenith_ModelComponent::ClearModel()
 
 uint32_t Zenith_ModelComponent::GetNumMeshes() const
 {
-	if (m_pxModelInstance)
-	{
-		return m_pxModelInstance->GetNumMeshes();
-	}
-	// Fall back to procedural mesh entries
-	return m_xMeshEntries.GetSize();
+	return m_pxModelInstance ? m_pxModelInstance->GetNumMeshes() : 0;
 }
 
 Flux_MeshInstance* Zenith_ModelComponent::GetMeshInstance(uint32_t uIndex) const
 {
-	if (m_pxModelInstance)
-	{
-		return m_pxModelInstance->GetMeshInstance(uIndex);
-	}
-	// Legacy system doesn't use Flux_MeshInstance
-	return nullptr;
+	return m_pxModelInstance ? m_pxModelInstance->GetMeshInstance(uIndex) : nullptr;
 }
 
 Zenith_MaterialAsset* Zenith_ModelComponent::GetMaterial(uint32_t uIndex) const
 {
-	if (m_pxModelInstance)
-	{
-		return m_pxModelInstance->GetMaterial(uIndex);
-	}
-	// Fall back to procedural mesh entries
-	if (uIndex < m_xMeshEntries.GetSize())
-	{
-		return m_xMeshEntries.Get(uIndex).m_xMaterial.GetDirect();
-	}
-	return nullptr;
+	return m_pxModelInstance ? m_pxModelInstance->GetMaterial(uIndex) : nullptr;
 }
 
 bool Zenith_ModelComponent::HasSkeleton() const
@@ -245,75 +243,30 @@ Flux_SkeletonInstance* Zenith_ModelComponent::GetSkeletonInstance() const
 
 void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Write serialization version
 	xStream << MODEL_COMPONENT_SERIALIZE_VERSION;
 
-	// Check if using new model instance system
-	bool bUsingModelInstance = (m_pxModelInstance != nullptr || m_xModel.IsSet());
-	xStream << bUsingModelInstance;
+	// v6+: single model-instance serialization path.
+	m_xModel.WriteToDataStream(xStream);
 
-	if (bUsingModelInstance)
+	uint32_t uNumMaterials = m_pxModelInstance ? m_pxModelInstance->GetNumMaterials() : 0;
+	xStream << uNumMaterials;
+
+	for (uint32_t u = 0; u < uNumMaterials; u++)
 	{
-		// Version 4+: Write model GUID
-		m_xModel.WriteToDataStream(xStream);
-
-		// Version 5+: Write material overrides
-		uint32_t uNumMaterials = m_pxModelInstance ? m_pxModelInstance->GetNumMaterials() : 0;
-		xStream << uNumMaterials;
-
-		for (uint32_t u = 0; u < uNumMaterials; u++)
+		Zenith_MaterialAsset* pxMaterial = m_pxModelInstance->GetMaterial(u);
+		if (pxMaterial)
 		{
-			Zenith_MaterialAsset* pxMaterial = m_pxModelInstance->GetMaterial(u);
-			if (pxMaterial)
-			{
-				pxMaterial->WriteToDataStream(xStream);
-			}
-			else
-			{
-				// Write empty material placeholder - create temporary material for serialization
-				Zenith_MaterialAsset xEmptyMat;
-				xEmptyMat.SetName("Empty");
-				xEmptyMat.WriteToDataStream(xStream);
-			}
+			pxMaterial->WriteToDataStream(xStream);
+		}
+		else
+		{
+			Zenith_MaterialAsset xEmptyMat;
+			xEmptyMat.SetName("Empty");
+			xEmptyMat.WriteToDataStream(xStream);
 		}
 	}
-	else
-	{
-		// Legacy system: Write mesh entries
-		u_int uNumEntries = m_xMeshEntries.GetSize();
-		xStream << uNumEntries;
 
-		for (u_int u = 0; u < uNumEntries; u++)
-		{
-			const MeshEntry& xEntry = m_xMeshEntries.Get(u);
-
-			// Get mesh source path
-			std::string strMeshPath = xEntry.m_pxGeometry ? Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_pxGeometry->m_strSourcePath) : "";
-			xStream << strMeshPath;
-
-			// Serialize the entire material
-			Zenith_MaterialAsset* pxMaterial = xEntry.m_xMaterial.GetDirect();
-			if (pxMaterial)
-			{
-				pxMaterial->WriteToDataStream(xStream);
-			}
-			else
-			{
-				// Write empty material placeholder - create temporary material for serialization
-				Zenith_MaterialAsset xEmptyMat;
-				xEmptyMat.SetName("Empty");
-				xEmptyMat.WriteToDataStream(xStream);
-			}
-
-			// Serialize animation path if animation exists
-			std::string strAnimPath = "";
-			if (xEntry.m_pxGeometry && xEntry.m_pxGeometry->m_pxAnimation)
-			{
-				strAnimPath = Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_pxGeometry->m_pxAnimation->GetSourcePath());
-			}
-			xStream << strAnimPath;
-		}
-	}
+	xStream << m_bDebugDrawPhysicsMesh;
 }
 
 void Zenith_ModelComponent::ReadModelInstanceWithMaterials(Zenith_DataStream& xStream, uint32_t uVersion)
@@ -356,77 +309,32 @@ void Zenith_ModelComponent::ReadModelInstanceWithMaterials(Zenith_DataStream& xS
 			m_pxModelInstance->SetMaterial(u, pxMaterial);
 		}
 	}
-}
 
-void Zenith_ModelComponent::ReadLegacyMeshEntries(Zenith_DataStream& xStream)
-{
-	u_int uNumEntries;
-	xStream >> uNumEntries;
-
-	for (u_int u = 0; u < uNumEntries; u++)
+	if (uVersion >= MODEL_COMPONENT_SERIALIZE_VERSION_DEBUG_DRAW)
 	{
-		std::string strMeshPath;
-		xStream >> strMeshPath;
-
-		std::string strResolvedMeshPath = Zenith_AssetRegistry::ResolvePath(strMeshPath);
-
-		Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-		if (!pxMaterial)
-		{
-			// Skip animation path read even when material allocation failed
-			std::string strAnimPath;
-			xStream >> strAnimPath;
-			continue;
-		}
-
-		pxMaterial->SetName("Material");
-		pxMaterial->ReadFromDataStream(xStream);
-
-		std::string strAnimPath;
-		xStream >> strAnimPath;
-
-		if (strResolvedMeshPath.empty() || !Zenith_FileAccess::FileExists(strResolvedMeshPath.c_str()))
-			continue;  // material stays in registry with refcount 0, will be cleaned up later
-
-		Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
-		Flux_MeshGeometry::LoadFromFile(strResolvedMeshPath.c_str(), *pxGeometry);
-		pxGeometry->m_strSourcePath = strMeshPath;  // Preserve prefixed path for future serialization
-
-		MeshEntry xEntry;
-		xEntry.m_pxGeometry = pxGeometry;
-		xEntry.m_xMaterial.Set(pxMaterial);
-		m_xMeshEntries.PushBack(std::move(xEntry));
+		xStream >> m_bDebugDrawPhysicsMesh;
 	}
 }
 
 void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	// Clear existing data
 	ClearModel();
-	m_xMeshEntries.Clear();
 	m_xModel.Clear();
+	m_bDebugDrawPhysicsMesh = false;
 
 	uint32_t uVersion;
 	xStream >> uVersion;
 
-	if (uVersion < MODEL_COMPONENT_SERIALIZE_VERSION_GUID)
+	if (uVersion < MODEL_COMPONENT_SERIALIZE_VERSION_UNIFIED)
 	{
-		Zenith_Error(LOG_CATEGORY_MESH, "Unsupported legacy format version %u. Please re-save the scene.", uVersion);
+		Zenith_Error(LOG_CATEGORY_MESH,
+			"ModelComponent: unsupported pre-v%u scene format (version %u). "
+			"Re-save the scene in the editor to migrate to v%u.",
+			MODEL_COMPONENT_SERIALIZE_VERSION_UNIFIED, uVersion, MODEL_COMPONENT_SERIALIZE_VERSION_UNIFIED);
 		return;
 	}
 
-	// Version 4+: GUID-based model references
-	bool bUsingModelInstance;
-	xStream >> bUsingModelInstance;
-
-	if (bUsingModelInstance)
-	{
-		ReadModelInstanceWithMaterials(xStream, uVersion);
-	}
-	else
-	{
-		ReadLegacyMeshEntries(xStream);
-	}
+	ReadModelInstanceWithMaterials(xStream, uVersion);
 }
 
 //=============================================================================
@@ -440,47 +348,94 @@ void Zenith_ModelComponent::GeneratePhysicsMesh(PhysicsMeshQuality eQuality)
 	GeneratePhysicsMeshWithConfig(xConfig);
 }
 
+namespace
+{
+	// Builds a throwaway Flux_MeshGeometry holding positions + indices copied
+	// from a Zenith_MeshAsset, for feeding the physics generator. The physics
+	// generator only reads m_pxPositions / m_puIndices / counts, so no other
+	// attributes need to be populated.
+	// Caller owns the returned pointer and must delete it.
+	Flux_MeshGeometry* BuildTempGeometryFromAsset(const Zenith_MeshAsset* pxAsset)
+	{
+		if (!pxAsset)
+		{
+			return nullptr;
+		}
+
+		const uint32_t uNumVerts = pxAsset->GetNumVerts();
+		const uint32_t uNumIndices = pxAsset->GetNumIndices();
+		if (uNumVerts == 0 || uNumIndices == 0)
+		{
+			return nullptr;
+		}
+
+		Flux_MeshGeometry* pxGeom = new Flux_MeshGeometry();
+		pxGeom->m_uNumVerts = uNumVerts;
+		pxGeom->m_uNumIndices = uNumIndices;
+
+		pxGeom->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(
+			Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+		pxGeom->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(
+			Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
+
+		for (uint32_t v = 0; v < uNumVerts; v++)
+		{
+			pxGeom->m_pxPositions[v] = pxAsset->m_xPositions.Get(v);
+		}
+		for (uint32_t i = 0; i < uNumIndices; i++)
+		{
+			pxGeom->m_puIndices[i] = pxAsset->m_xIndices.Get(i);
+		}
+
+		return pxGeom;
+	}
+}
+
 void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig)
 {
-	// Clean up existing physics mesh
 	ClearPhysicsMesh();
 
-	// Collect mesh geometries from either model instance or procedural mesh entries
-	Zenith_Vector<Flux_MeshGeometry*> xMeshGeometries;
-
-	if (m_pxModelInstance)
+	if (!m_pxModelInstance || m_pxModelInstance->GetNumMeshes() == 0)
 	{
-		// New system: Get geometries from mesh instances
-		// TODO: Flux_MeshInstance needs to provide access to geometry or position data
-		// For now, physics mesh generation is not supported with new system
-		Zenith_Log(LOG_CATEGORY_PHYSICS, "Physics mesh generation not yet implemented for new model instance system");
+		Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no model instance");
 		return;
 	}
-	else
+
+	// Collect geometries from the model instance. Procedural meshes expose their
+	// source geometry directly; asset-backed meshes require a throwaway geometry
+	// populated from the mesh asset's positions/indices.
+	Zenith_Vector<const Flux_MeshGeometry*> xMeshGeometries;
+	Zenith_Vector<Flux_MeshGeometry*> xTempGeometries;
+
+	const uint32_t uNumMeshes = m_pxModelInstance->GetNumMeshes();
+	for (uint32_t uMesh = 0; uMesh < uNumMeshes; uMesh++)
 	{
-		// Legacy system
-		if (m_xMeshEntries.GetSize() == 0)
+		Flux_MeshInstance* pxMeshInstance = m_pxModelInstance->GetMeshInstance(uMesh);
+		if (!pxMeshInstance)
 		{
-			Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no mesh entries");
-			return;
+			continue;
 		}
 
-		for (uint32_t i = 0; i < m_xMeshEntries.GetSize(); i++)
+		if (const Flux_MeshGeometry* pxProcedural = pxMeshInstance->GetProceduralGeometry())
 		{
-			if (m_xMeshEntries.Get(i).m_pxGeometry)
-			{
-				xMeshGeometries.PushBack(m_xMeshEntries.Get(i).m_pxGeometry);
-			}
+			xMeshGeometries.PushBack(pxProcedural);
+			continue;
 		}
 
-		if (xMeshGeometries.GetSize() == 0)
+		if (Flux_MeshGeometry* pxTemp = BuildTempGeometryFromAsset(pxMeshInstance->GetSourceAsset()))
 		{
-			Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no valid geometries");
-			return;
+			xMeshGeometries.PushBack(pxTemp);
+			xTempGeometries.PushBack(pxTemp);
 		}
 	}
 
-	// Log current entity scale
+	if (xMeshGeometries.GetSize() == 0)
+	{
+		Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no valid geometries");
+		// Nothing to clean up - xTempGeometries is empty in this branch.
+		return;
+	}
+
 	if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
 	{
 		Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
@@ -490,7 +445,6 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 			xScale.x, xScale.y, xScale.z);
 	}
 
-	// Generate the physics mesh (returns registry-managed asset)
 	m_pxPhysicsMeshAsset = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xMeshGeometries, xConfig);
 
 	if (m_pxPhysicsMeshAsset)
@@ -511,6 +465,12 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 	{
 		Zenith_Error(LOG_CATEGORY_PHYSICS, "Failed to generate physics mesh for model");
 	}
+
+	// Release throwaway geometries now that the generator has produced its output.
+	for (uint32_t u = 0; u < xTempGeometries.GetSize(); u++)
+	{
+		delete xTempGeometries.Get(u);
+	}
 }
 
 void Zenith_ModelComponent::ClearPhysicsMesh()
@@ -524,30 +484,18 @@ Flux_MeshGeometry* Zenith_ModelComponent::GetPhysicsMesh() const
 	return m_pxPhysicsMeshAsset ? m_pxPhysicsMeshAsset->GetGeometry() : nullptr;
 }
 
-void Zenith_ModelComponent::DebugDrawPhysicsMesh()
+void Zenith_ModelComponent::QueueDebugDrawPhysicsMesh(const Zenith_Maths::Vector3& xColor) const
 {
-	Flux_MeshGeometry* pxPhysicsMesh = GetPhysicsMesh();
-	if (!m_bDebugDrawPhysicsMesh || !pxPhysicsMesh)
-	{
-		return;
-	}
-
-	if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+	const Flux_MeshGeometry* pxPhysicsMesh = GetPhysicsMesh();
+	if (!pxPhysicsMesh)
 	{
 		return;
 	}
 
 	Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
-	Zenith_Maths::Vector3 xScale;
-	xTransform.GetScale(xScale);
-
 	Zenith_Maths::Matrix4 xModelMatrix;
 	xTransform.BuildModelMatrix(xModelMatrix);
-
-	Zenith_Log(LOG_CATEGORY_PHYSICS, "DebugDraw: Entity scale (%.3f, %.3f, %.3f), verts=%u",
-		xScale.x, xScale.y, xScale.z, pxPhysicsMesh->GetNumVerts());
-
-	Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(pxPhysicsMesh, xModelMatrix, m_xDebugDrawColor);
+	Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(pxPhysicsMesh, xModelMatrix, xColor);
 }
 
 // Editor code for RenderPropertiesPanel and AssignTextureToSlot

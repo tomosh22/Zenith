@@ -6,6 +6,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/Flux_Graphics.h"
 
@@ -68,6 +69,36 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 		pxInstance->HasSkeleton() ? ", with skeleton" : "");
 
 	return pxInstance;
+}
+
+Flux_ModelInstance* Flux_ModelInstance::CreateProcedural(Flux_MeshGeometry& xGeometry, Zenith_MaterialAsset& xMaterial)
+{
+	Flux_ModelInstance* pxInstance = new Flux_ModelInstance();
+	pxInstance->AppendProceduralMesh(xGeometry, xMaterial);
+	return pxInstance;
+}
+
+void Flux_ModelInstance::AppendProceduralMesh(Flux_MeshGeometry& xGeometry, Zenith_MaterialAsset& xMaterial)
+{
+	Flux_MeshInstance* pxMeshInstance = Flux_MeshInstance::CreateFromGeometry(&xGeometry);
+	if (!pxMeshInstance)
+	{
+		Zenith_Warning(LOG_CATEGORY_RENDERER, "[ModelInstance] Failed to create procedural mesh instance");
+		return;
+	}
+
+	m_xMeshInstances.PushBack(pxMeshInstance);
+
+	// Keep skinned array aligned with static array if a skeleton is present.
+	// Procedural meshes have no skinning data, so push nullptr as a placeholder.
+	if (m_pxSkeleton)
+	{
+		m_xSkinnedMeshInstances.PushBack(nullptr);
+	}
+
+	MaterialHandle xMaterialHandle;
+	xMaterialHandle.Set(&xMaterial);
+	m_xMaterials.PushBack(std::move(xMaterialHandle));
 }
 
 void Flux_ModelInstance::BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAsset* pxAsset)

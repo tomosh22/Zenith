@@ -445,8 +445,6 @@ void Zenith_Physics::Update(float fDt)
 	// CRITICAL: Process deferred collision events AFTER physics update completes
 	// This ensures we're on the main thread and can safely access scene data
 	ProcessDeferredCollisionEvents();
-
-	Zenith_PhysicsMeshGenerator::DebugDrawAllPhysicsMeshes();
 }
 
 void Zenith_Physics::Reset()
