@@ -138,6 +138,23 @@ class Zenith_SceneManager
 
 public:
 	//==========================================================================
+	// Test Harness Reset
+	//==========================================================================
+#ifdef ZENITH_TESTING
+	/**
+	 * Reset SceneManager to a clean post-Initialise state for the next test.
+	 * Called by the test runner between tests so one test can't poison the
+	 * next via leaked flags, unloaded persistent scene, etc.
+	 *  - Clears s_bIsUpdating / s_bIsLoadingScene / s_bAsyncJobsNeedSort flags.
+	 *  - Unloads every non-persistent scene currently loaded.
+	 *  - If the persistent scene handle is invalid, re-initialises it.
+	 *  - Clears the active scene handle.
+	 * Never throws; never asserts on bad input (tests are already failing).
+	 */
+	static void ResetForNextTest();
+#endif
+
+	//==========================================================================
 	// Scene Count Queries
 	//==========================================================================
 

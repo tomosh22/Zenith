@@ -29,7 +29,7 @@ public abstract class ZenithBaseProject : Project
 
 	public ZenithBaseProject() : base(typeof(ZenithTarget))
 	{
-		SourceFilesExtensions = new Strings(".cpp", ".c", ".h", ".vert", ".frag", ".comp", ".tese", ".tesc", ".geom", ".fxh");
+		SourceFilesExtensions = new Strings(".cpp", ".c", ".h", ".inl", ".vert", ".frag", ".comp", ".tese", ".tesc", ".geom", ".fxh");
 		SourceFilesCompileExtensions = new Strings(".cpp", ".c");
 	}
 

@@ -274,3 +274,7 @@ void Zenith_Core::Zenith_MainLoop()
 	// N+1 for the next iteration — matches the old in-swapchain bump.
 	Flux_PerFrame::EndFrame();
 }
+
+#ifdef ZENITH_TESTING
+#include "Core/Zenith_UnitTests.Tests.inl"
+#endif

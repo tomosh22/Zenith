@@ -11,9 +11,11 @@
 class Zenith_AITests
 {
 public:
-	static void RunAllTests();
+	// RunAllTests removed - tests now auto-register via ZENITH_TEST macro.
+	// Methods remain as class members to preserve friend access to
+	// Zenith_NavMeshGenerator.
 
-private:
+public:
 	// Test helper data structure
 	struct TestCompactHF
 	{

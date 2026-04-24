@@ -1802,4 +1802,8 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 
 // Editor Camera System is implemented in Zenith_EditorCamera.cpp
 
+#ifdef ZENITH_TESTING
+#include "Editor/Zenith_Editor.Tests.inl"
+#endif
+
 #endif // ZENITH_TOOLS

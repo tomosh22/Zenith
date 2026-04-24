@@ -402,6 +402,59 @@ void Zenith_SceneManager::Shutdown()
 	Zenith_SceneData::ResetGlobalEntityStorage();
 }
 
+#ifdef ZENITH_TESTING
+void Zenith_SceneManager::ResetForNextTest()
+{
+	// Clear transient flags that might have been left true by a crashed or
+	// early-returning test.
+	s_bIsLoadingScene   = false;
+	s_bIsUpdating       = false;
+	s_bAsyncJobsNeedSort = false;
+	s_ulLastDeferredLoadOp = ZENITH_INVALID_OPERATION_ID;
+
+	// Wait for any in-flight async jobs from the previous test before we
+	// tear them down. Skipping this would leak worker threads.
+	for (u_int i = 0; i < s_axAsyncJobs.GetSize(); ++i)
+	{
+		AsyncLoadJob* pxJob = s_axAsyncJobs.Get(i);
+		if (pxJob && pxJob->m_pxTask)
+		{
+			pxJob->m_pxTask->WaitUntilComplete();
+		}
+		delete pxJob;
+	}
+	s_axAsyncJobs.Clear();
+	for (u_int i = 0; i < s_axAsyncUnloadJobs.GetSize(); ++i)
+	{
+		delete s_axAsyncUnloadJobs.Get(i);
+	}
+	s_axAsyncUnloadJobs.Clear();
+	for (u_int i = 0; i < s_axActiveOperations.GetSize(); ++i)
+	{
+		delete s_axActiveOperations.Get(i);
+	}
+	s_axActiveOperations.Clear();
+	s_axOperationMap.Clear();
+
+	// Full Shutdown() + Initialise() cycle. This is the same operation
+	// TestShutdownClearsAllStatics performs and it's the most reliable way
+	// to guarantee a pristine baseline — every scene is deleted, every
+	// cached handle is invalidated, the animation task is re-created, and
+	// the persistent scene is re-spawned. Subsequent tests then call
+	// Zenith_SceneData::ResetGlobalEntityStorage via Shutdown so no stale
+	// entity slot can dangle into the next test.
+	Shutdown();
+	Initialise();
+
+	// Many editor / AI / physics tests assume an active scene exists to
+	// create entities in. Provide one up-front so individual tests don't
+	// need to repeat the boilerplate. Tests that want their own scene
+	// simply overwrite the active handle via CreateEmptyScene or LoadScene.
+	Zenith_Scene xActive = CreateEmptyScene("TestHarnessDefaultScene");
+	s_iActiveSceneHandle = xActive.m_iHandle;
+}
+#endif // ZENITH_TESTING
+
 //==========================================================================
 // Scene Count Queries
 //==========================================================================
@@ -1945,4 +1998,8 @@ void Zenith_SceneManager::ResetAllRenderSystems()
 	Flux_Gizmos::Reset();
 #endif
 }
+
+#ifdef ZENITH_TESTING
+#include "EntityComponent/Zenith_SceneManager.Tests.inl"
+#endif
 

@@ -1,22 +1,19 @@
 #pragma once
 #include <fstream>
 #include "UnitTests/Zenith_SceneTests.h"
-#include "UnitTests/Zenith_PhysicsTests.h"
 #include "UnitTests/Zenith_AITests.h"
 
 class Zenith_UnitTests
 {
 public:
-	static void RunAllTests();
-
-	// Test infrastructure exposed publicly so RAII helpers in the test .cpp's
+	// Test infrastructure exposed publicly so RAII helpers in the test .inl files'
 	// anonymous namespace can call them (anonymous-namespace types are not
 	// friended by `friend class Zenith_UnitTests` declarations elsewhere).
 	struct PerFrameSnapshot;
 	static void SnapshotPerFrameAndReset(PerFrameSnapshot& xOut);
 	static void RestorePerFrame         (const PerFrameSnapshot& xIn);
 
-private:
+public:
 	static void TestDataStream();
 	static void TestMemoryManagement();
 	static void TestProfiling();
@@ -510,9 +507,3 @@ private:
 	static void TestFluxPerFrameCallbackUserDataPassed();
 	static void TestFluxPerFrameRingIndexInsideCallback();
 };
-
-// Include editor/tools-only tests separately as they are only available in ZENITH_TOOLS builds
-#ifdef ZENITH_TOOLS
-#include "Zenith_EditorTests.h"
-#include "Zenith_AutomationTests.h"
-#endif

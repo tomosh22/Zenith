@@ -401,3 +401,7 @@ void Zenith_Pathfinding::FindPathsBatch(PathRequest* pxRequests, uint32_t uNumRe
 	Zenith_TaskSystem::SubmitTaskArray(&xPathTask);
 	xPathTask.WaitUntilComplete();
 }
+
+#ifdef ZENITH_TESTING
+#include "AI/Navigation/Zenith_Pathfinding.Tests.inl"
+#endif

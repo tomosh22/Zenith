@@ -586,6 +586,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_String.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_TestFramework.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_Tween.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -964,28 +967,10 @@
     <ClCompile Include="..\Zenith\UI\Zenith_UIToggle.cpp">
       <Filter>UI</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\UnitTests\Zenith_AITests.cpp">
-      <Filter>UnitTests</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AssertCapture.cpp">
       <Filter>UnitTests</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\UnitTests\Zenith_AutomationTests.cpp">
-      <Filter>UnitTests</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.cpp">
-      <Filter>UnitTests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTests.cpp">
-      <Filter>UnitTests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\UnitTests\Zenith_PhysicsTests.cpp">
-      <Filter>UnitTests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\UnitTests\Zenith_SceneTests.cpp">
-      <Filter>UnitTests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\UnitTests\Zenith_UnitTests.cpp">
       <Filter>UnitTests</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan.cpp">
@@ -1176,6 +1161,9 @@
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FixedSizeFreeList.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FixedSizeFreeList.inl">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FPControlWord.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
     </ClInclude>
@@ -1200,6 +1188,9 @@
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystem.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystem.inl">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemSingleThreaded.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
     </ClInclude>
@@ -1215,6 +1206,9 @@
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LockFreeHashMap.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LockFreeHashMap.inl">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Memory.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
     </ClInclude>
@@ -1228,6 +1222,9 @@
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Profiler.h">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Profiler.inl">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Core\QuickSort.h">
@@ -1368,13 +1365,22 @@
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\BVec16.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\BVec16.inl">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
+    </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DMat44.h">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DMat44.inl">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Double3.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DVec3.h">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DVec3.inl">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DynMatrix.h">
@@ -1404,6 +1410,9 @@
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Mat44.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Mat44.inl">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
+    </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Math.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
@@ -1414,6 +1423,9 @@
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Quat.h">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Quat.inl">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Real.h">
@@ -1428,10 +1440,19 @@
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\UVec4.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\UVec4.inl">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
+    </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec3.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec3.inl">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
+    </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec4.h">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec4.inl">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Math</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vector.h">
@@ -1485,6 +1506,9 @@
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\Body.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
     </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\Body.inl">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
+    </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyAccess.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
     </ClInclude>
@@ -1525,6 +1549,9 @@
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionProperties.h">
+      <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionProperties.inl">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionQuality.h">
@@ -2052,6 +2079,9 @@
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\color4.h">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\color4.inl">
+      <Filter>Tools\Middleware\assimp\include\assimp</Filter>
+    </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\commonMetaData.h">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
@@ -2112,13 +2142,22 @@
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\material.h">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\material.inl">
+      <Filter>Tools\Middleware\assimp\include\assimp</Filter>
+    </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\MathFunctions.h">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\matrix3x3.h">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\matrix3x3.inl">
+      <Filter>Tools\Middleware\assimp\include\assimp</Filter>
+    </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\matrix4x4.h">
+      <Filter>Tools\Middleware\assimp\include\assimp</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\matrix4x4.inl">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\MemoryIOWrapper.h">
@@ -2151,6 +2190,9 @@
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\quaternion.h">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\quaternion.inl">
+      <Filter>Tools\Middleware\assimp\include\assimp</Filter>
+    </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\RemoveComments.h">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
@@ -2170,6 +2212,9 @@
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\SmoothingGroups.h">
+      <Filter>Tools\Middleware\assimp\include\assimp</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\SmoothingGroups.inl">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\SpatialSort.h">
@@ -2205,7 +2250,13 @@
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\vector2.h">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\vector2.inl">
+      <Filter>Tools\Middleware\assimp\include\assimp</Filter>
+    </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\vector3.h">
+      <Filter>Tools\Middleware\assimp\include\assimp</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\vector3.inl">
       <Filter>Tools\Middleware\assimp\include\assimp</Filter>
     </ClInclude>
     <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\version.h">
@@ -3078,7 +3129,13 @@
     <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.h">
       <Filter>AI\BehaviorTree</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.Tests.inl">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.h">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.Tests.inl">
       <Filter>AI\BehaviorTree</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.h">
@@ -3102,28 +3159,55 @@
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMesh.h">
       <Filter>AI\Navigation</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMesh.Tests.inl">
+      <Filter>AI\Navigation</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshAgent.h">
+      <Filter>AI\Navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshAgent.Tests.inl">
       <Filter>AI\Navigation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshGenerator.h">
       <Filter>AI\Navigation</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshGenerator.Tests.inl">
+      <Filter>AI\Navigation</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_Pathfinding.h">
+      <Filter>AI\Navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_Pathfinding.Tests.inl">
       <Filter>AI\Navigation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AI\Perception\Zenith_PerceptionSystem.h">
       <Filter>AI\Perception</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Perception\Zenith_PerceptionSystem.Tests.inl">
+      <Filter>AI\Perception</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AI\Squad\Zenith_Formation.h">
+      <Filter>AI\Squad</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Squad\Zenith_Formation.Tests.inl">
       <Filter>AI\Squad</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AI\Squad\Zenith_Squad.h">
       <Filter>AI\Squad</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Squad\Zenith_Squad.Tests.inl">
+      <Filter>AI\Squad</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AI\Squad\Zenith_TacticalPoint.h">
       <Filter>AI\Squad</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Squad\Zenith_TacticalPoint.Tests.inl">
+      <Filter>AI\Squad</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AI\Zenith_AIDebugVariables.h">
+      <Filter>AI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Zenith_AIDebugVariables.Tests.inl">
       <Filter>AI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.h">
@@ -3234,7 +3318,13 @@
     <ClInclude Include="..\Zenith\Core\Zenith_String.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_TestFramework.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_Tween.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_UnitTests.Tests.inl">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h">
@@ -3276,7 +3366,13 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_Editor.Tests.inl">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.Tests.inl">
       <Filter>Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h">
@@ -3352,6 +3448,9 @@
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.Tests.inl">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager_Internal.h">
@@ -3858,6 +3957,9 @@
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics.h">
       <Filter>Physics</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Physics\Zenith_Physics.Tests.inl">
+      <Filter>Physics</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h">
       <Filter>Physics</Filter>
     </ClInclude>
@@ -3924,16 +4026,7 @@
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AssertCapture.h">
       <Filter>UnitTests</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\UnitTests\Zenith_AutomationTests.h">
-      <Filter>UnitTests</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h">
-      <Filter>UnitTests</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTests.h">
-      <Filter>UnitTests</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\UnitTests\Zenith_PhysicsTests.h">
       <Filter>UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_SceneTests.h">

@@ -221,3 +221,7 @@ const char* GetSquadRoleName(SquadRole eRole)
 	default:                   return "Unknown";
 	}
 }
+
+#ifdef ZENITH_TESTING
+#include "AI/Squad/Zenith_Formation.Tests.inl"
+#endif

@@ -1,8 +1,5 @@
-#include "Zenith.h"
 
 #ifdef ZENITH_TOOLS
-
-#include "UnitTests/Zenith_AutomationTests.h"
 #include "UnitTests/Zenith_EditorTestFixture.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
@@ -30,152 +27,20 @@
 
 static void NoOp() {}
 
-void Zenith_AutomationTests::RunAllTests()
-{
-	// State Machine tests
-	TestInitialState();
-	TestBeginSetsRunning();
-	TestResetClearsState();
-
-	// Step Execution tests
-	TestStepExecutionOrder();
-	TestExecuteEmptyQueue();
-	TestCompletionAfterAllSteps();
-
-	// Entity Operation tests
-	TestCreateEntityStep();
-	TestEntitySelectionTracking();
-
-	// Component Operation tests
-	TestAddComponentStep();
-
-	// Transform Operation tests
-	TestSetTransformPositionStep();
-	TestSetTransformScaleStep();
-
-	// Camera Operation tests
-	TestSetCameraFOVStep();
-	TestSetCameraPitchYawStep();
-	TestSetCameraPositionStep();
-	TestSetAsMainCameraStep();
-
-	// Negative Path tests
-	TestAddInvalidComponentStep();
-
-	// Custom Step tests
-	TestCustomStepExecution();
-
-	// Scene Lifecycle tests
-	TestCreateSaveUnloadCycle();
-
-	// UI Operation tests
-	TestCreateUITextStep();
-	TestCreateUIButtonStep();
-	TestCreateUIRectStep();
-	TestSetUIPropertiesStep();
-	TestSetUIButtonStyleStep();
-
-	// UI Image tests
-	TestCreateUIImageStep();
-	TestSetUIImageTexturePathStep();
-
-	// Particle Config By Name tests
-	TestSetParticleConfigByNameStep();
-
-	// Script/Behaviour tests
-	TestSetBehaviourStep();
-	TestSetBehaviourForSerializationStep();
-
-	// Camera Extended tests
-	TestSetCameraNearFarAspectStep();
-
-	// Scene Round-Trip tests
-	TestSceneSaveLoadRoundTrip();
-
-	// Edge Case tests
-	TestResetDuringExecution();
-	TestBeginWithZeroSteps();
-	TestDoubleBeginWithoutReset();
-
-	// UIStyle Automation tests
-	TestSetUICornerRadiusStep();
-	TestSetUIGradientColorStep();
-	TestSetUIShadowStep();
-	TestSetUIShadowColorStep();
-	TestSetUIRectBorderStep();
-	TestSetUITextShadowStep();
-	TestSetUITextShadowColorStep();
-	TestSetUIButtonCornerRadiusStep();
-	TestSetUIButtonShadowStep();
-	TestSetUIButtonShadowColorStep();
-	TestSetUIButtonGradientColorStep();
-	TestSetUIButtonBorderColorStep();
-	TestSetUIButtonBorderThicknessStep();
-	TestSetUIButtonTransitionDurationStep();
-	TestSetUIButtonTextShadowStep();
-	TestSetUIButtonTextShadowColorStep();
-
-	// Group Alpha tests
-	TestGroupAlphaDefault();
-	TestGroupAlphaPropagation();
-	TestGroupInteractableDefault();
-	TestGroupInteractableParentDisabled();
-
-	// UIElement Background tests
-	TestSetUIBackgroundColorStep();
-	TestSetUIBackgroundCornerRadiusStep();
-	TestSetUIBackgroundBorderStep();
-
-	// Button Transition tests
-	TestButtonTransitionInitialState();
-
-	// Layout Group tests
-	TestCreateUILayoutGroupStep();
-	TestAddUIChildStep();
-	TestSetUILayoutDirectionStep();
-	TestSetUILayoutSpacingStep();
-	TestSetUILayoutChildAlignmentStep();
-	TestSetUILayoutPaddingStep();
-	TestSetUILayoutFitToContentStep();
-	TestSetUILayoutChildForceExpandStep();
-	TestSetUILayoutReverseStep();
-	TestLayoutHorizontalPositioning();
-	TestLayoutVerticalPositioning();
-	TestLayoutPaddingAffectsPositioning();
-	TestLayoutMiddleCenterAlignment();
-	TestLayoutUpperLeftAlignment();
-	TestLayoutLowerRightAlignment();
-	TestLayoutReverseArrangement();
-	TestLayoutChildForceExpand();
-	TestLayoutFitToContentResizing();
-	TestLayoutWithTextChild();
-	TestLayoutEmptyGroup();
-	TestLayoutSingleChild();
-	TestLayoutInvisibleChildrenSkipped();
-	TestLayoutSerializationRoundTrip();
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] All automation tests passed");
-}
-
 //=============================================================================
 // State Machine Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestInitialState()
+ZENITH_TEST(Automation, InitialState)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestInitialState...");
 
 	Zenith_EditorAutomation::Reset();
 
-	Zenith_Assert(!Zenith_EditorAutomation::IsRunning(), "Should not be running after reset");
-	Zenith_Assert(!Zenith_EditorAutomation::IsComplete(), "Should not be complete after reset");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsRunning(), "Should not be running after reset");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsComplete(), "Should not be complete after reset");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestInitialState passed");
 }
-
-void Zenith_AutomationTests::TestBeginSetsRunning()
+ZENITH_TEST(Automation, BeginSetsRunning)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBeginSetsRunning...");
 
 	Zenith_EditorAutomation::Reset();
 
@@ -183,32 +48,28 @@ void Zenith_AutomationTests::TestBeginSetsRunning()
 	Zenith_EditorAutomation::AddStep_Custom(&NoOp);
 	Zenith_EditorAutomation::Begin();
 
-	Zenith_Assert(Zenith_EditorAutomation::IsRunning(), "Should be running after Begin");
-	Zenith_Assert(!Zenith_EditorAutomation::IsComplete(), "Should not be complete right after Begin");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsRunning(), "Should be running after Begin");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsComplete(), "Should not be complete right after Begin");
 
 	Zenith_EditorAutomation::Reset();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestBeginSetsRunning passed");
 }
-
-void Zenith_AutomationTests::TestResetClearsState()
+ZENITH_TEST(Automation, ResetClearsState)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestResetClearsState...");
 
 	// Add steps and begin
 	Zenith_EditorAutomation::AddStep_Custom(&NoOp);
 	Zenith_EditorAutomation::AddStep_Custom(&NoOp);
 	Zenith_EditorAutomation::Begin();
 
-	Zenith_Assert(Zenith_EditorAutomation::IsRunning(), "Should be running");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsRunning(), "Should be running");
 
 	// Reset should clear everything
 	Zenith_EditorAutomation::Reset();
 
-	Zenith_Assert(!Zenith_EditorAutomation::IsRunning(), "Should not be running after Reset");
-	Zenith_Assert(!Zenith_EditorAutomation::IsComplete(), "Should not be complete after Reset");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsRunning(), "Should not be running after Reset");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsComplete(), "Should not be complete after Reset");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestResetClearsState passed");
 }
 
 //=============================================================================
@@ -217,10 +78,8 @@ void Zenith_AutomationTests::TestResetClearsState()
 
 static uint32_t s_uCustomStepCounter = 0;
 static void IncrementCounter() { s_uCustomStepCounter++; }
-
-void Zenith_AutomationTests::TestStepExecutionOrder()
+ZENITH_TEST(Automation, StepExecutionOrder)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStepExecutionOrder...");
 
 	Zenith_EditorAutomation::Reset();
 	s_uCustomStepCounter = 0;
@@ -234,42 +93,36 @@ void Zenith_AutomationTests::TestStepExecutionOrder()
 
 	// Execute steps one at a time
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(s_uCustomStepCounter == 1, "Counter should be 1 after first step");
-	Zenith_Assert(Zenith_EditorAutomation::IsRunning(), "Should still be running after first step");
+	ZENITH_ASSERT_EQ(s_uCustomStepCounter, 1, "Counter should be 1 after first step");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsRunning(), "Should still be running after first step");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(s_uCustomStepCounter == 2, "Counter should be 2 after second step");
-	Zenith_Assert(Zenith_EditorAutomation::IsRunning(), "Should still be running after second step");
+	ZENITH_ASSERT_EQ(s_uCustomStepCounter, 2, "Counter should be 2 after second step");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsRunning(), "Should still be running after second step");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(s_uCustomStepCounter == 3, "Counter should be 3 after third step");
-	Zenith_Assert(!Zenith_EditorAutomation::IsRunning(), "Should not be running after all steps");
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "Should be complete after all steps");
+	ZENITH_ASSERT_EQ(s_uCustomStepCounter, 3, "Counter should be 3 after third step");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsRunning(), "Should not be running after all steps");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "Should be complete after all steps");
 
 	Zenith_EditorAutomation::Reset();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestStepExecutionOrder passed");
 }
-
-void Zenith_AutomationTests::TestExecuteEmptyQueue()
+ZENITH_TEST(Automation, ExecuteEmptyQueue)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestExecuteEmptyQueue...");
 
 	Zenith_EditorAutomation::Reset();
 
 	// Calling ExecuteNextStep when not running should be a no-op
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(!Zenith_EditorAutomation::IsRunning(), "Should not be running");
-	Zenith_Assert(!Zenith_EditorAutomation::IsComplete(), "Should not be complete");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsRunning(), "Should not be running");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsComplete(), "Should not be complete");
 
 	Zenith_EditorAutomation::Reset();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestExecuteEmptyQueue passed");
 }
-
-void Zenith_AutomationTests::TestCompletionAfterAllSteps()
+ZENITH_TEST(Automation, CompletionAfterAllSteps)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCompletionAfterAllSteps...");
 
 	Zenith_EditorAutomation::Reset();
 	s_uCustomStepCounter = 0;
@@ -279,24 +132,22 @@ void Zenith_AutomationTests::TestCompletionAfterAllSteps()
 
 	// Execute the single step - completion detected immediately
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(s_uCustomStepCounter == 1, "Counter should be 1");
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "Should be complete");
-	Zenith_Assert(!Zenith_EditorAutomation::IsRunning(), "Should not be running");
+	ZENITH_ASSERT_EQ(s_uCustomStepCounter, 1, "Counter should be 1");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "Should be complete");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsRunning(), "Should not be running");
 
 	// Additional calls after completion should be no-ops
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "Should still be complete");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "Should still be complete");
 
 	Zenith_EditorAutomation::Reset();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestCompletionAfterAllSteps passed");
 }
 
 //=============================================================================
 // Entity Operation Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestCreateEntityStep()
+ZENITH_TEST(Automation, CreateEntityStep)
 {
 	EDITOR_TEST_BEGIN(TestCreateEntityStep);
 
@@ -311,17 +162,15 @@ void Zenith_AutomationTests::TestCreateEntityStep()
 
 	// Verify entity was created and selected
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have a selected entity after CreateEntity step");
-	Zenith_Assert(strcmp(pxEntity->GetName().c_str(), "AutoTestEntity") == 0,
-		"Created entity should be named 'AutoTestEntity'");
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "Should be complete after single step");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have a selected entity after CreateEntity step");
+	ZENITH_ASSERT_STREQ(pxEntity->GetName().c_str(), "AutoTestEntity", "Created entity should be named 'AutoTestEntity'");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "Should be complete after single step");
 
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestCreateEntityStep);
 }
-
-void Zenith_AutomationTests::TestEntitySelectionTracking()
+ZENITH_TEST(Automation, EntitySelectionTracking)
 {
 	EDITOR_TEST_BEGIN(TestEntitySelectionTracking);
 
@@ -336,24 +185,21 @@ void Zenith_AutomationTests::TestEntitySelectionTracking()
 	// Step 1: Create A
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selection after creating A");
-	Zenith_Assert(strcmp(pxEntity->GetName().c_str(), "AutoEntityA") == 0,
-		"Selection should be A after creating A");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selection after creating A");
+	ZENITH_ASSERT_STREQ(pxEntity->GetName().c_str(), "AutoEntityA", "Selection should be A after creating A");
 
 	// Step 2: Create B (auto-selects B)
 	Zenith_EditorAutomation::ExecuteNextStep();
 	pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selection after creating B");
-	Zenith_Assert(strcmp(pxEntity->GetName().c_str(), "AutoEntityB") == 0,
-		"Selection should be B after creating B");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selection after creating B");
+	ZENITH_ASSERT_STREQ(pxEntity->GetName().c_str(), "AutoEntityB", "Selection should be B after creating B");
 
 	// Step 3: Select A again
 	Zenith_EditorAutomation::ExecuteNextStep();
 	pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selection after selecting A");
-	Zenith_Assert(strcmp(pxEntity->GetName().c_str(), "AutoEntityA") == 0,
-		"Selection should be A after SelectEntity step");
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "Should be complete after last step");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selection after selecting A");
+	ZENITH_ASSERT_STREQ(pxEntity->GetName().c_str(), "AutoEntityA", "Selection should be A after SelectEntity step");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "Should be complete after last step");
 
 	Zenith_EditorAutomation::Reset();
 
@@ -363,8 +209,7 @@ void Zenith_AutomationTests::TestEntitySelectionTracking()
 //=============================================================================
 // Component Operation Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestAddComponentStep()
+ZENITH_TEST(Automation, AddComponentStep)
 {
 	EDITOR_TEST_BEGIN(TestAddComponentStep);
 
@@ -381,9 +226,8 @@ void Zenith_AutomationTests::TestAddComponentStep()
 
 	// Verify camera was added
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
-	Zenith_Assert(pxEntity->HasComponent<Zenith_CameraComponent>(),
-		"Entity should have CameraComponent after AddCamera step");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
+	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_CameraComponent>(), "Entity should have CameraComponent after AddCamera step");
 
 	// Advance to completion
 	Zenith_EditorAutomation::ExecuteNextStep();
@@ -395,8 +239,7 @@ void Zenith_AutomationTests::TestAddComponentStep()
 //=============================================================================
 // Transform Operation Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestSetTransformPositionStep()
+ZENITH_TEST(Automation, SetTransformPositionStep)
 {
 	EDITOR_TEST_BEGIN(TestSetTransformPositionStep);
 
@@ -410,23 +253,22 @@ void Zenith_AutomationTests::TestSetTransformPositionStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Set position
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_TransformComponent& xTransform = pxEntity->GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xPos;
 	xTransform.GetPosition(xPos);
 
-	Zenith_Assert(std::abs(xPos.x - 10.f) < 0.001f, "X position should be 10");
-	Zenith_Assert(std::abs(xPos.y - 20.f) < 0.001f, "Y position should be 20");
-	Zenith_Assert(std::abs(xPos.z - 30.f) < 0.001f, "Z position should be 30");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 10.f, 0.001f, "X position should be 10");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 20.f, 0.001f, "Y position should be 20");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.z, 30.f, 0.001f, "Z position should be 30");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetTransformPositionStep);
 }
-
-void Zenith_AutomationTests::TestSetTransformScaleStep()
+ZENITH_TEST(Automation, SetTransformScaleStep)
 {
 	EDITOR_TEST_BEGIN(TestSetTransformScaleStep);
 
@@ -440,15 +282,15 @@ void Zenith_AutomationTests::TestSetTransformScaleStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Set scale
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_TransformComponent& xTransform = pxEntity->GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xScale;
 	xTransform.GetScale(xScale);
 
-	Zenith_Assert(std::abs(xScale.x - 2.f) < 0.001f, "X scale should be 2");
-	Zenith_Assert(std::abs(xScale.y - 3.f) < 0.001f, "Y scale should be 3");
-	Zenith_Assert(std::abs(xScale.z - 4.f) < 0.001f, "Z scale should be 4");
+	ZENITH_ASSERT_EQ_FLOAT(xScale.x, 2.f, 0.001f, "X scale should be 2");
+	ZENITH_ASSERT_EQ_FLOAT(xScale.y, 3.f, 0.001f, "Y scale should be 3");
+	ZENITH_ASSERT_EQ_FLOAT(xScale.z, 4.f, 0.001f, "Z scale should be 4");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
@@ -459,8 +301,7 @@ void Zenith_AutomationTests::TestSetTransformScaleStep()
 //=============================================================================
 // Camera Operation Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestSetCameraFOVStep()
+ZENITH_TEST(Automation, SetCameraFOVStep)
 {
 	EDITOR_TEST_BEGIN(TestSetCameraFOVStep);
 
@@ -477,17 +318,16 @@ void Zenith_AutomationTests::TestSetCameraFOVStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Set FOV
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 	float fActual = pxEntity->GetComponent<Zenith_CameraComponent>().GetFOV();
-	Zenith_Assert(std::abs(fActual - fTargetFOV) < 0.001f, "FOV should match target");
+	ZENITH_ASSERT_EQ_FLOAT(fActual, fTargetFOV, 0.001f, "FOV should match target");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetCameraFOVStep);
 }
-
-void Zenith_AutomationTests::TestSetCameraPitchYawStep()
+ZENITH_TEST(Automation, SetCameraPitchYawStep)
 {
 	EDITOR_TEST_BEGIN(TestSetCameraPitchYawStep);
 
@@ -507,18 +347,17 @@ void Zenith_AutomationTests::TestSetCameraPitchYawStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Set yaw
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 	Zenith_CameraComponent& xCam = pxEntity->GetComponent<Zenith_CameraComponent>();
-	Zenith_Assert(std::abs(static_cast<float>(xCam.GetPitch()) - fTargetPitch) < 0.001f, "Pitch should match target");
-	Zenith_Assert(std::abs(static_cast<float>(xCam.GetYaw()) - fTargetYaw) < 0.001f, "Yaw should match target");
+	ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(xCam.GetPitch()), fTargetPitch, 0.001f, "Pitch should match target");
+	ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(xCam.GetYaw()), fTargetYaw, 0.001f, "Yaw should match target");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetCameraPitchYawStep);
 }
-
-void Zenith_AutomationTests::TestSetCameraPositionStep()
+ZENITH_TEST(Automation, SetCameraPositionStep)
 {
 	EDITOR_TEST_BEGIN(TestSetCameraPositionStep);
 
@@ -534,20 +373,19 @@ void Zenith_AutomationTests::TestSetCameraPositionStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Set position
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 	Zenith_Maths::Vector3 xPos;
 	pxEntity->GetComponent<Zenith_CameraComponent>().GetPosition(xPos);
-	Zenith_Assert(std::abs(xPos.x - 5.f) < 0.001f, "Camera X position should be 5");
-	Zenith_Assert(std::abs(xPos.y - 10.f) < 0.001f, "Camera Y position should be 10");
-	Zenith_Assert(std::abs(xPos.z - 15.f) < 0.001f, "Camera Z position should be 15");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 5.f, 0.001f, "Camera X position should be 5");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 10.f, 0.001f, "Camera Y position should be 10");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.z, 15.f, 0.001f, "Camera Z position should be 15");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetCameraPositionStep);
 }
-
-void Zenith_AutomationTests::TestSetAsMainCameraStep()
+ZENITH_TEST(Automation, SetAsMainCameraStep)
 {
 	EDITOR_TEST_BEGIN(TestSetAsMainCameraStep);
 
@@ -563,12 +401,11 @@ void Zenith_AutomationTests::TestSetAsMainCameraStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Set as main camera
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(pxEntity->GetEntityID());
-	Zenith_Assert(pxSceneData != nullptr, "Entity should be in a scene");
-	Zenith_Assert(pxSceneData->GetMainCameraEntity() == pxEntity->GetEntityID(),
-		"Entity should be the main camera");
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "Entity should be in a scene");
+	ZENITH_ASSERT_EQ(pxSceneData->GetMainCameraEntity(), pxEntity->GetEntityID(), "Entity should be the main camera");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
@@ -579,8 +416,7 @@ void Zenith_AutomationTests::TestSetAsMainCameraStep()
 //=============================================================================
 // Negative Path Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestAddInvalidComponentStep()
+ZENITH_TEST(Automation, AddInvalidComponentStep)
 {
 	EDITOR_TEST_BEGIN(TestAddInvalidComponentStep);
 
@@ -593,7 +429,7 @@ void Zenith_AutomationTests::TestAddInvalidComponentStep()
 
 	// Try to add a component with an invalid name directly through the editor API
 	bool bResult = Zenith_Editor::AddComponentToSelected("NonExistentComponent_XYZ");
-	Zenith_Assert(!bResult, "Adding invalid component should return false");
+	ZENITH_ASSERT_FALSE(bResult, "Adding invalid component should return false");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
@@ -607,10 +443,8 @@ void Zenith_AutomationTests::TestAddInvalidComponentStep()
 
 static bool s_bCustomStepExecuted = false;
 static void SetCustomFlag() { s_bCustomStepExecuted = true; }
-
-void Zenith_AutomationTests::TestCustomStepExecution()
+ZENITH_TEST(Automation, CustomStepExecution)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCustomStepExecution...");
 
 	Zenith_EditorAutomation::Reset();
 	s_bCustomStepExecuted = false;
@@ -618,24 +452,22 @@ void Zenith_AutomationTests::TestCustomStepExecution()
 	Zenith_EditorAutomation::AddStep_Custom(&SetCustomFlag);
 	Zenith_EditorAutomation::Begin();
 
-	Zenith_Assert(!s_bCustomStepExecuted, "Custom step should not execute before ExecuteNextStep");
+	ZENITH_ASSERT_FALSE(s_bCustomStepExecuted, "Custom step should not execute before ExecuteNextStep");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(s_bCustomStepExecuted, "Custom step function should have been called");
+	ZENITH_ASSERT_TRUE(s_bCustomStepExecuted, "Custom step function should have been called");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "Should be complete");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "Should be complete");
 
 	Zenith_EditorAutomation::Reset();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestCustomStepExecution passed");
 }
 
 //=============================================================================
 // Scene Lifecycle Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestCreateSaveUnloadCycle()
+ZENITH_TEST(Automation, CreateSaveUnloadCycle)
 {
 	EDITOR_TEST_BEGIN(TestCreateSaveUnloadCycle);
 
@@ -654,27 +486,25 @@ void Zenith_AutomationTests::TestCreateSaveUnloadCycle()
 	// Step 1: Create scene
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_Assert(xScene.IsValid(), "Active scene should be valid after CreateScene step");
+	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Active scene should be valid after CreateScene step");
 
 	// Step 2: Create entity
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have created entity in new scene");
-	Zenith_Assert(strcmp(pxEntity->GetName().c_str(), "AutoSceneEntity") == 0,
-		"Entity name should match");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have created entity in new scene");
+	ZENITH_ASSERT_STREQ(pxEntity->GetName().c_str(), "AutoSceneEntity", "Entity name should match");
 
 	// Step 3: Add camera
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(pxEntity->HasComponent<Zenith_CameraComponent>(),
-		"Entity should have camera component");
+	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_CameraComponent>(), "Entity should have camera component");
 
 	// Step 4: Save scene
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(std::filesystem::exists(szSavePath), "Scene file should exist after save");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(szSavePath), "Scene file should exist after save");
 
 	// Step 5: Unload scene
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "Should be complete after last step");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "Should be complete after last step");
 
 	// Clean up the temp scene file
 	std::filesystem::remove(szSavePath);
@@ -687,8 +517,7 @@ void Zenith_AutomationTests::TestCreateSaveUnloadCycle()
 //=============================================================================
 // UI Operation Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestCreateUITextStep()
+ZENITH_TEST(Automation, CreateUITextStep)
 {
 	EDITOR_TEST_BEGIN(TestCreateUITextStep);
 
@@ -704,21 +533,20 @@ void Zenith_AutomationTests::TestCreateUITextStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Create text
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
-	Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Entity should have UIComponent");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
+	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_UIComponent>(), "Entity should have UIComponent");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>("Label1");
-	Zenith_Assert(pxText != nullptr, "Should find UI text element 'Label1'");
-	Zenith_Assert(pxText->GetText() == "Hello", "Text content should be 'Hello'");
+	ZENITH_ASSERT_NOT_NULL(pxText, "Should find UI text element 'Label1'");
+	ZENITH_ASSERT_EQ(pxText->GetText(), "Hello", "Text content should be 'Hello'");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestCreateUITextStep);
 }
-
-void Zenith_AutomationTests::TestCreateUIButtonStep()
+ZENITH_TEST(Automation, CreateUIButtonStep)
 {
 	EDITOR_TEST_BEGIN(TestCreateUIButtonStep);
 
@@ -734,20 +562,19 @@ void Zenith_AutomationTests::TestCreateUIButtonStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Create button
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>("Btn1");
-	Zenith_Assert(pxButton != nullptr, "Should find UI button 'Btn1'");
-	Zenith_Assert(pxButton->GetText() == "Click Me", "Button text should be 'Click Me'");
+	ZENITH_ASSERT_NOT_NULL(pxButton, "Should find UI button 'Btn1'");
+	ZENITH_ASSERT_EQ(pxButton->GetText(), "Click Me", "Button text should be 'Click Me'");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestCreateUIButtonStep);
 }
-
-void Zenith_AutomationTests::TestCreateUIRectStep()
+ZENITH_TEST(Automation, CreateUIRectStep)
 {
 	EDITOR_TEST_BEGIN(TestCreateUIRectStep);
 
@@ -763,19 +590,18 @@ void Zenith_AutomationTests::TestCreateUIRectStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Create rect
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>("Rect1");
-	Zenith_Assert(pxRect != nullptr, "Should find UI rect 'Rect1'");
+	ZENITH_ASSERT_NOT_NULL(pxRect, "Should find UI rect 'Rect1'");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestCreateUIRectStep);
 }
-
-void Zenith_AutomationTests::TestSetUIPropertiesStep()
+ZENITH_TEST(Automation, SetUIPropertiesStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIPropertiesStep);
 
@@ -800,37 +626,36 @@ void Zenith_AutomationTests::TestSetUIPropertiesStep()
 	}
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>("Txt");
-	Zenith_Assert(pxText != nullptr, "Should find UI text 'Txt'");
+	ZENITH_ASSERT_NOT_NULL(pxText, "Should find UI text 'Txt'");
 
 	Zenith_Maths::Vector2 xPos = pxText->GetPosition();
-	Zenith_Assert(std::abs(xPos.x - 100.f) < 0.001f, "UI position X should be 100");
-	Zenith_Assert(std::abs(xPos.y - 200.f) < 0.001f, "UI position Y should be 200");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 100.f, 0.001f, "UI position X should be 100");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 200.f, 0.001f, "UI position Y should be 200");
 
 	Zenith_Maths::Vector2 xSize = pxText->GetSize();
-	Zenith_Assert(std::abs(xSize.x - 300.f) < 0.001f, "UI size W should be 300");
-	Zenith_Assert(std::abs(xSize.y - 50.f) < 0.001f, "UI size H should be 50");
+	ZENITH_ASSERT_EQ_FLOAT(xSize.x, 300.f, 0.001f, "UI size W should be 300");
+	ZENITH_ASSERT_EQ_FLOAT(xSize.y, 50.f, 0.001f, "UI size H should be 50");
 
-	Zenith_Assert(std::abs(pxText->GetFontSize() - 32.f) < 0.001f, "Font size should be 32");
+	ZENITH_ASSERT_EQ_FLOAT(pxText->GetFontSize(), 32.f, 0.001f, "Font size should be 32");
 
 	Zenith_Maths::Vector4 xColor = pxText->GetColor();
-	Zenith_Assert(std::abs(xColor.x - 1.f) < 0.001f, "Color R should be 1");
-	Zenith_Assert(std::abs(xColor.y - 0.f) < 0.001f, "Color G should be 0");
-	Zenith_Assert(std::abs(xColor.z - 0.f) < 0.001f, "Color B should be 0");
-	Zenith_Assert(std::abs(xColor.w - 1.f) < 0.001f, "Color A should be 1");
+	ZENITH_ASSERT_EQ_FLOAT(xColor.x, 1.f, 0.001f, "Color R should be 1");
+	ZENITH_ASSERT_EQ_FLOAT(xColor.y, 0.f, 0.001f, "Color G should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(xColor.z, 0.f, 0.001f, "Color B should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(xColor.w, 1.f, 0.001f, "Color A should be 1");
 
-	Zenith_Assert(!pxText->IsVisible(), "Element should not be visible");
+	ZENITH_ASSERT_FALSE(pxText->IsVisible(), "Element should not be visible");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIPropertiesStep);
 }
-
-void Zenith_AutomationTests::TestSetUIButtonStyleStep()
+ZENITH_TEST(Automation, SetUIButtonStyleStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIButtonStyleStep);
 
@@ -852,28 +677,25 @@ void Zenith_AutomationTests::TestSetUIButtonStyleStep()
 	}
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>("Btn");
-	Zenith_Assert(pxButton != nullptr, "Should find UI button 'Btn'");
+	ZENITH_ASSERT_NOT_NULL(pxButton, "Should find UI button 'Btn'");
 
 	Zenith_Maths::Vector4 xNormal = pxButton->GetNormalColor();
-	Zenith_Assert(std::abs(xNormal.x - 1.f) < 0.001f && std::abs(xNormal.y) < 0.001f &&
-		std::abs(xNormal.z) < 0.001f && std::abs(xNormal.w - 1.f) < 0.001f,
-		"Normal color should be red");
+	ZENITH_ASSERT_TRUE(std::abs(xNormal.x - 1.f) < 0.001f && std::abs(xNormal.y) < 0.001f &&
+		std::abs(xNormal.z) < 0.001f && std::abs(xNormal.w - 1.f) < 0.001f, "Normal color should be red");
 
 	Zenith_Maths::Vector4 xHover = pxButton->GetHoverColor();
-	Zenith_Assert(std::abs(xHover.x) < 0.001f && std::abs(xHover.y - 1.f) < 0.001f &&
-		std::abs(xHover.z) < 0.001f && std::abs(xHover.w - 1.f) < 0.001f,
-		"Hover color should be green");
+	ZENITH_ASSERT_TRUE(std::abs(xHover.x) < 0.001f && std::abs(xHover.y - 1.f) < 0.001f &&
+		std::abs(xHover.z) < 0.001f && std::abs(xHover.w - 1.f) < 0.001f, "Hover color should be green");
 
 	Zenith_Maths::Vector4 xPressed = pxButton->GetPressedColor();
-	Zenith_Assert(std::abs(xPressed.x) < 0.001f && std::abs(xPressed.y) < 0.001f &&
-		std::abs(xPressed.z - 1.f) < 0.001f && std::abs(xPressed.w - 1.f) < 0.001f,
-		"Pressed color should be blue");
+	ZENITH_ASSERT_TRUE(std::abs(xPressed.x) < 0.001f && std::abs(xPressed.y) < 0.001f &&
+		std::abs(xPressed.z - 1.f) < 0.001f && std::abs(xPressed.w - 1.f) < 0.001f, "Pressed color should be blue");
 
-	Zenith_Assert(std::abs(pxButton->GetFontSize() - 18.f) < 0.001f, "Button font size should be 18");
+	ZENITH_ASSERT_EQ_FLOAT(pxButton->GetFontSize(), 18.f, 0.001f, "Button font size should be 18");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
@@ -904,8 +726,7 @@ static void EnsureTestBehaviourRegistered()
 		s_bTestBehaviourRegistered = true;
 	}
 }
-
-void Zenith_AutomationTests::TestSetBehaviourStep()
+ZENITH_TEST(Automation, SetBehaviourStep)
 {
 	EDITOR_TEST_BEGIN(TestSetBehaviourStep);
 
@@ -923,22 +744,20 @@ void Zenith_AutomationTests::TestSetBehaviourStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Set behaviour
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
-	Zenith_Assert(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Entity should have ScriptComponent");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
+	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Entity should have ScriptComponent");
 
 	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
-	Zenith_Assert(xScript.GetBehaviourRaw() != nullptr, "Behaviour should be set");
-	Zenith_Assert(strcmp(xScript.GetBehaviourRaw()->GetBehaviourTypeName(), "AutomationTestBehaviour") == 0,
-		"Behaviour type name should be 'AutomationTestBehaviour'");
-	Zenith_Assert(s_bTestBehaviourAwakeCalled, "OnAwake should have been called by SetBehaviourOnSelected");
+	ZENITH_ASSERT_NOT_NULL(xScript.GetBehaviourRaw(), "Behaviour should be set");
+	ZENITH_ASSERT_STREQ(xScript.GetBehaviourRaw()->GetBehaviourTypeName(), "AutomationTestBehaviour", "Behaviour type name should be 'AutomationTestBehaviour'");
+	ZENITH_ASSERT_TRUE(s_bTestBehaviourAwakeCalled, "OnAwake should have been called by SetBehaviourOnSelected");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetBehaviourStep);
 }
-
-void Zenith_AutomationTests::TestSetBehaviourForSerializationStep()
+ZENITH_TEST(Automation, SetBehaviourForSerializationStep)
 {
 	EDITOR_TEST_BEGIN(TestSetBehaviourForSerializationStep);
 
@@ -956,14 +775,13 @@ void Zenith_AutomationTests::TestSetBehaviourForSerializationStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Set behaviour for serialization
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
-	Zenith_Assert(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Entity should have ScriptComponent");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
+	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Entity should have ScriptComponent");
 
 	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
-	Zenith_Assert(xScript.GetBehaviourRaw() != nullptr, "Behaviour should be set");
-	Zenith_Assert(strcmp(xScript.GetBehaviourRaw()->GetBehaviourTypeName(), "AutomationTestBehaviour") == 0,
-		"Behaviour type name should be 'AutomationTestBehaviour'");
-	Zenith_Assert(!s_bTestBehaviourAwakeCalled, "OnAwake should NOT have been called by SetBehaviourForSerializationOnSelected");
+	ZENITH_ASSERT_NOT_NULL(xScript.GetBehaviourRaw(), "Behaviour should be set");
+	ZENITH_ASSERT_STREQ(xScript.GetBehaviourRaw()->GetBehaviourTypeName(), "AutomationTestBehaviour", "Behaviour type name should be 'AutomationTestBehaviour'");
+	ZENITH_ASSERT_FALSE(s_bTestBehaviourAwakeCalled, "OnAwake should NOT have been called by SetBehaviourForSerializationOnSelected");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
@@ -974,8 +792,7 @@ void Zenith_AutomationTests::TestSetBehaviourForSerializationStep()
 //=============================================================================
 // Camera Extended Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestSetCameraNearFarAspectStep()
+ZENITH_TEST(Automation, SetCameraNearFarAspectStep)
 {
 	EDITOR_TEST_BEGIN(TestSetCameraNearFarAspectStep);
 
@@ -995,12 +812,12 @@ void Zenith_AutomationTests::TestSetCameraNearFarAspectStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Aspect
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_CameraComponent& xCam = pxEntity->GetComponent<Zenith_CameraComponent>();
-	Zenith_Assert(std::abs(xCam.GetNearPlane() - 0.5f) < 0.001f, "Near plane should be 0.5");
-	Zenith_Assert(std::abs(xCam.GetFarPlane() - 500.f) < 0.1f, "Far plane should be 500");
-	Zenith_Assert(std::abs(xCam.GetAspectRatio() - 1.5f) < 0.001f, "Aspect ratio should be 1.5");
+	ZENITH_ASSERT_EQ_FLOAT(xCam.GetNearPlane(), 0.5f, 0.001f, "Near plane should be 0.5");
+	ZENITH_ASSERT_EQ_FLOAT(xCam.GetFarPlane(), 500.f, 0.1f, "Far plane should be 500");
+	ZENITH_ASSERT_EQ_FLOAT(xCam.GetAspectRatio(), 1.5f, 0.001f, "Aspect ratio should be 1.5");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
@@ -1011,8 +828,7 @@ void Zenith_AutomationTests::TestSetCameraNearFarAspectStep()
 //=============================================================================
 // Scene Round-Trip Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestSceneSaveLoadRoundTrip()
+ZENITH_TEST(Automation, SceneSaveLoadRoundTrip)
 {
 	EDITOR_TEST_BEGIN(TestSceneSaveLoadRoundTrip);
 
@@ -1035,30 +851,30 @@ void Zenith_AutomationTests::TestSceneSaveLoadRoundTrip()
 	{
 		Zenith_EditorAutomation::ExecuteNextStep();
 	}
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "Should be complete after last step");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "Should be complete after last step");
 
 	// Verify file exists
-	Zenith_Assert(std::filesystem::exists(szSavePath), "Scene file should exist after save");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(szSavePath), "Scene file should exist after save");
 
 	// Load the saved scene and verify contents survived serialization
 	Zenith_Scene xLoadedScene = Zenith_SceneManager::LoadScene(szSavePath, SCENE_LOAD_ADDITIVE);
-	Zenith_Assert(xLoadedScene.IsValid(), "Loaded scene should be valid");
+	ZENITH_ASSERT_TRUE(xLoadedScene.IsValid(), "Loaded scene should be valid");
 
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xLoadedScene);
-	Zenith_Assert(pxSceneData != nullptr, "Should have scene data");
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "Should have scene data");
 
 	Zenith_Entity xEntity = pxSceneData->FindEntityByName("RTEntity");
-	Zenith_Assert(xEntity.IsValid(), "Should find entity 'RTEntity' in loaded scene");
-	Zenith_Assert(xEntity.HasComponent<Zenith_CameraComponent>(), "Entity should have camera component");
+	ZENITH_ASSERT_TRUE(xEntity.IsValid(), "Should find entity 'RTEntity' in loaded scene");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_CameraComponent>(), "Entity should have camera component");
 
 	Zenith_CameraComponent& xCam = xEntity.GetComponent<Zenith_CameraComponent>();
-	Zenith_Assert(std::abs(xCam.GetFOV() - 1.5f) < 0.001f, "Camera FOV should survive round-trip");
+	ZENITH_ASSERT_EQ_FLOAT(xCam.GetFOV(), 1.5f, 0.001f, "Camera FOV should survive round-trip");
 
 	Zenith_Maths::Vector3 xPos;
 	xCam.GetPosition(xPos);
-	Zenith_Assert(std::abs(xPos.x - 1.f) < 0.001f, "Camera pos X should survive round-trip");
-	Zenith_Assert(std::abs(xPos.y - 2.f) < 0.001f, "Camera pos Y should survive round-trip");
-	Zenith_Assert(std::abs(xPos.z - 3.f) < 0.001f, "Camera pos Z should survive round-trip");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 1.f, 0.001f, "Camera pos X should survive round-trip");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 2.f, 0.001f, "Camera pos Y should survive round-trip");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.z, 3.f, 0.001f, "Camera pos Z should survive round-trip");
 
 	// Cleanup
 	Zenith_SceneManager::UnloadScene(xLoadedScene);
@@ -1072,10 +888,8 @@ void Zenith_AutomationTests::TestSceneSaveLoadRoundTrip()
 //=============================================================================
 // Edge Case Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestResetDuringExecution()
+ZENITH_TEST(Automation, ResetDuringExecution)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestResetDuringExecution...");
 
 	Zenith_EditorAutomation::Reset();
 	s_uCustomStepCounter = 0;
@@ -1088,43 +902,37 @@ void Zenith_AutomationTests::TestResetDuringExecution()
 
 	// Execute only 1 step
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(s_uCustomStepCounter == 1, "Counter should be 1 after first step");
-	Zenith_Assert(Zenith_EditorAutomation::IsRunning(), "Should still be running");
+	ZENITH_ASSERT_EQ(s_uCustomStepCounter, 1, "Counter should be 1 after first step");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsRunning(), "Should still be running");
 
 	// Reset mid-sequence
 	Zenith_EditorAutomation::Reset();
-	Zenith_Assert(!Zenith_EditorAutomation::IsRunning(), "Should not be running after mid-execution Reset");
-	Zenith_Assert(!Zenith_EditorAutomation::IsComplete(), "Should not be complete after mid-execution Reset");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsRunning(), "Should not be running after mid-execution Reset");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsComplete(), "Should not be complete after mid-execution Reset");
 
 	// Counter should not advance further
-	Zenith_Assert(s_uCustomStepCounter == 1, "Counter should still be 1 after Reset");
+	ZENITH_ASSERT_EQ(s_uCustomStepCounter, 1, "Counter should still be 1 after Reset");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestResetDuringExecution passed");
 }
-
-void Zenith_AutomationTests::TestBeginWithZeroSteps()
+ZENITH_TEST(Automation, BeginWithZeroSteps)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBeginWithZeroSteps...");
 
 	Zenith_EditorAutomation::Reset();
 
 	// Begin with no steps queued
 	Zenith_EditorAutomation::Begin();
-	Zenith_Assert(Zenith_EditorAutomation::IsRunning(), "Should be running after Begin even with 0 steps");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsRunning(), "Should be running after Begin even with 0 steps");
 
 	// First ExecuteNextStep should detect empty queue and complete immediately
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(!Zenith_EditorAutomation::IsRunning(), "Should not be running after empty queue detected");
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "Should be complete after empty queue detected");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsRunning(), "Should not be running after empty queue detected");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "Should be complete after empty queue detected");
 
 	Zenith_EditorAutomation::Reset();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestBeginWithZeroSteps passed");
 }
-
-void Zenith_AutomationTests::TestDoubleBeginWithoutReset()
+ZENITH_TEST(Automation, DoubleBeginWithoutReset)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDoubleBeginWithoutReset...");
 
 	Zenith_EditorAutomation::Reset();
 	s_uCustomStepCounter = 0;
@@ -1133,29 +941,27 @@ void Zenith_AutomationTests::TestDoubleBeginWithoutReset()
 	Zenith_EditorAutomation::AddStep_Custom(&IncrementCounter);
 	Zenith_EditorAutomation::Begin();
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "First sequence should be complete");
-	Zenith_Assert(s_uCustomStepCounter == 1, "Counter should be 1 after first sequence");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "First sequence should be complete");
+	ZENITH_ASSERT_EQ(s_uCustomStepCounter, 1, "Counter should be 1 after first sequence");
 
 	// Second Begin without Reset - queue was cleared on completion, so this starts fresh
 	Zenith_EditorAutomation::AddStep_Custom(&IncrementCounter);
 	Zenith_EditorAutomation::Begin();
-	Zenith_Assert(Zenith_EditorAutomation::IsRunning(), "Should be running after second Begin");
-	Zenith_Assert(!Zenith_EditorAutomation::IsComplete(), "Should not be complete after second Begin");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsRunning(), "Should be running after second Begin");
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::IsComplete(), "Should not be complete after second Begin");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_Assert(s_uCustomStepCounter == 2, "Counter should be 2 after second sequence");
-	Zenith_Assert(Zenith_EditorAutomation::IsComplete(), "Second sequence should be complete");
+	ZENITH_ASSERT_EQ(s_uCustomStepCounter, 2, "Counter should be 2 after second sequence");
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::IsComplete(), "Second sequence should be complete");
 
 	Zenith_EditorAutomation::Reset();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestDoubleBeginWithoutReset passed");
 }
 
 //=============================================================================
 // UI Image Operation Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestCreateUIImageStep()
+ZENITH_TEST(Automation, CreateUIImageStep)
 {
 	EDITOR_TEST_BEGIN(TestCreateUIImageStep);
 
@@ -1171,21 +977,19 @@ void Zenith_AutomationTests::TestCreateUIImageStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Create image
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UIImage* pxImage = xUI.FindElement<Zenith_UI::Zenith_UIImage>("Img1");
-	Zenith_Assert(pxImage != nullptr, "Should find UI image 'Img1'");
-	Zenith_Assert(pxImage->GetType() == Zenith_UI::UIElementType::Image,
-		"Element type should be Image");
+	ZENITH_ASSERT_NOT_NULL(pxImage, "Should find UI image 'Img1'");
+	ZENITH_ASSERT_EQ(pxImage->GetType(), Zenith_UI::UIElementType::Image, "Element type should be Image");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestCreateUIImageStep);
 }
-
-void Zenith_AutomationTests::TestSetUIImageTexturePathStep()
+ZENITH_TEST(Automation, SetUIImageTexturePathStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIImageTexturePathStep);
 
@@ -1202,13 +1006,12 @@ void Zenith_AutomationTests::TestSetUIImageTexturePathStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UIImage* pxImage = xUI.FindElement<Zenith_UI::Zenith_UIImage>("TexImg");
-	Zenith_Assert(pxImage != nullptr, "Should find UI image 'TexImg'");
-	Zenith_Assert(pxImage->GetTexturePath() == "engine:Textures/Font/FontAtlas.ztxtr",
-		"Texture path should be set");
+	ZENITH_ASSERT_NOT_NULL(pxImage, "Should find UI image 'TexImg'");
+	ZENITH_ASSERT_EQ(pxImage->GetTexturePath(), "engine:Textures/Font/FontAtlas.ztxtr", "Texture path should be set");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
@@ -1219,8 +1022,7 @@ void Zenith_AutomationTests::TestSetUIImageTexturePathStep()
 //=============================================================================
 // Particle Config By Name Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestSetParticleConfigByNameStep()
+ZENITH_TEST(Automation, SetParticleConfigByNameStep)
 {
 	EDITOR_TEST_BEGIN(TestSetParticleConfigByNameStep);
 
@@ -1241,18 +1043,14 @@ void Zenith_AutomationTests::TestSetParticleConfigByNameStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
-	Zenith_Assert(pxEntity->HasComponent<Zenith_ParticleEmitterComponent>(),
-		"Entity should have ParticleEmitterComponent");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
+	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_ParticleEmitterComponent>(), "Entity should have ParticleEmitterComponent");
 
 	Zenith_ParticleEmitterComponent& xEmitter =
 		pxEntity->GetComponent<Zenith_ParticleEmitterComponent>();
-	Zenith_Assert(xEmitter.GetConfig() != nullptr,
-		"Particle emitter should have config assigned");
-	Zenith_Assert(xEmitter.GetConfig()->m_uBurstCount == 42,
-		"Config burst count should be 42");
-	Zenith_Assert(!xEmitter.IsEmitting(),
-		"Emitter should not be emitting");
+	ZENITH_ASSERT_NOT_NULL(xEmitter.GetConfig(), "Particle emitter should have config assigned");
+	ZENITH_ASSERT_EQ(xEmitter.GetConfig()->m_uBurstCount, 42, "Config burst count should be 42");
+	ZENITH_ASSERT_FALSE(xEmitter.IsEmitting(), "Emitter should not be emitting");
 
 	// Cleanup
 	Flux_ParticleEmitterConfig::Unregister("AutoTestConfig");
@@ -1266,8 +1064,7 @@ void Zenith_AutomationTests::TestSetParticleConfigByNameStep()
 //=============================================================================
 // Layout Group Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestCreateUILayoutGroupStep()
+ZENITH_TEST(Automation, CreateUILayoutGroupStep)
 {
 	EDITOR_TEST_BEGIN(TestCreateUILayoutGroupStep);
 
@@ -1283,29 +1080,28 @@ void Zenith_AutomationTests::TestCreateUILayoutGroupStep()
 	Zenith_EditorAutomation::ExecuteNextStep(); // Create layout group
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("TestLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group 'TestLayout'");
-	Zenith_Assert(pxLayout->GetType() == Zenith_UI::UIElementType::LayoutGroup, "Element type should be LayoutGroup");
-	Zenith_Assert(pxLayout->GetDirection() == Zenith_UI::LayoutDirection::Horizontal, "Default direction should be Horizontal");
-	Zenith_Assert(pxLayout->GetChildAlignment() == Zenith_UI::ChildAlignment::MiddleCenter, "Default child alignment should be MiddleCenter");
-	Zenith_Assert(std::abs(pxLayout->GetSpacing()) < 0.001f, "Default spacing should be 0");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group 'TestLayout'");
+	ZENITH_ASSERT_EQ(pxLayout->GetType(), Zenith_UI::UIElementType::LayoutGroup, "Element type should be LayoutGroup");
+	ZENITH_ASSERT_EQ(pxLayout->GetDirection(), Zenith_UI::LayoutDirection::Horizontal, "Default direction should be Horizontal");
+	ZENITH_ASSERT_EQ(pxLayout->GetChildAlignment(), Zenith_UI::ChildAlignment::MiddleCenter, "Default child alignment should be MiddleCenter");
+	ZENITH_ASSERT_LT(std::abs(pxLayout->GetSpacing()), 0.001f, "Default spacing should be 0");
 	Zenith_Maths::Vector4 xPad = pxLayout->GetPadding();
-	Zenith_Assert(std::abs(xPad.x) < 0.001f && std::abs(xPad.y) < 0.001f && std::abs(xPad.z) < 0.001f && std::abs(xPad.w) < 0.001f, "Default padding should be all zeros");
-	Zenith_Assert(pxLayout->GetFitToContent() == true, "Default fit-to-content should be true");
-	Zenith_Assert(pxLayout->GetChildForceExpandWidth() == false, "Default childForceExpandWidth should be false");
-	Zenith_Assert(pxLayout->GetChildForceExpandHeight() == false, "Default childForceExpandHeight should be false");
-	Zenith_Assert(pxLayout->GetReverseArrangement() == false, "Default reverseArrangement should be false");
+	ZENITH_ASSERT_TRUE(std::abs(xPad.x) < 0.001f && std::abs(xPad.y) < 0.001f && std::abs(xPad.z) < 0.001f && std::abs(xPad.w) < 0.001f, "Default padding should be all zeros");
+	ZENITH_ASSERT_EQ(pxLayout->GetFitToContent(), true, "Default fit-to-content should be true");
+	ZENITH_ASSERT_EQ(pxLayout->GetChildForceExpandWidth(), false, "Default childForceExpandWidth should be false");
+	ZENITH_ASSERT_EQ(pxLayout->GetChildForceExpandHeight(), false, "Default childForceExpandHeight should be false");
+	ZENITH_ASSERT_EQ(pxLayout->GetReverseArrangement(), false, "Default reverseArrangement should be false");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestCreateUILayoutGroupStep);
 }
-
-void Zenith_AutomationTests::TestAddUIChildStep()
+ZENITH_TEST(Automation, AddUIChildStep)
 {
 	EDITOR_TEST_BEGIN(TestAddUIChildStep);
 
@@ -1324,24 +1120,23 @@ void Zenith_AutomationTests::TestAddUIChildStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("Parent");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group 'Parent'");
-	Zenith_Assert(pxLayout->GetChildCount() == 2, "Layout group should have 2 children");
-	Zenith_Assert(pxLayout->GetChild(0)->GetName() == "Child1", "First child should be 'Child1'");
-	Zenith_Assert(pxLayout->GetChild(1)->GetName() == "Child2", "Second child should be 'Child2'");
-	Zenith_Assert(pxLayout->GetChild(0)->GetParent() == pxLayout, "Child1 parent should be layout group");
-	Zenith_Assert(pxLayout->GetChild(1)->GetParent() == pxLayout, "Child2 parent should be layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group 'Parent'");
+	ZENITH_ASSERT_EQ(pxLayout->GetChildCount(), 2, "Layout group should have 2 children");
+	ZENITH_ASSERT_EQ(pxLayout->GetChild(0)->GetName(), "Child1", "First child should be 'Child1'");
+	ZENITH_ASSERT_EQ(pxLayout->GetChild(1)->GetName(), "Child2", "Second child should be 'Child2'");
+	ZENITH_ASSERT_EQ(pxLayout->GetChild(0)->GetParent(), pxLayout, "Child1 parent should be layout group");
+	ZENITH_ASSERT_EQ(pxLayout->GetChild(1)->GetParent(), pxLayout, "Child2 parent should be layout group");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestAddUIChildStep);
 }
-
-void Zenith_AutomationTests::TestSetUILayoutDirectionStep()
+ZENITH_TEST(Automation, SetUILayoutDirectionStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUILayoutDirectionStep);
 
@@ -1357,20 +1152,19 @@ void Zenith_AutomationTests::TestSetUILayoutDirectionStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("DirLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
-	Zenith_Assert(pxLayout->GetDirection() == Zenith_UI::LayoutDirection::Vertical, "Direction should be Vertical");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
+	ZENITH_ASSERT_EQ(pxLayout->GetDirection(), Zenith_UI::LayoutDirection::Vertical, "Direction should be Vertical");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUILayoutDirectionStep);
 }
-
-void Zenith_AutomationTests::TestSetUILayoutSpacingStep()
+ZENITH_TEST(Automation, SetUILayoutSpacingStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUILayoutSpacingStep);
 
@@ -1386,20 +1180,19 @@ void Zenith_AutomationTests::TestSetUILayoutSpacingStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("SpaceLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
-	Zenith_Assert(std::abs(pxLayout->GetSpacing() - 15.f) < 0.001f, "Spacing should be 15");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSpacing(), 15.f, 0.001f, "Spacing should be 15");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUILayoutSpacingStep);
 }
-
-void Zenith_AutomationTests::TestSetUILayoutChildAlignmentStep()
+ZENITH_TEST(Automation, SetUILayoutChildAlignmentStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUILayoutChildAlignmentStep);
 
@@ -1415,20 +1208,19 @@ void Zenith_AutomationTests::TestSetUILayoutChildAlignmentStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("AlignLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
-	Zenith_Assert(pxLayout->GetChildAlignment() == Zenith_UI::ChildAlignment::UpperLeft, "Child alignment should be UpperLeft");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
+	ZENITH_ASSERT_EQ(pxLayout->GetChildAlignment(), Zenith_UI::ChildAlignment::UpperLeft, "Child alignment should be UpperLeft");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUILayoutChildAlignmentStep);
 }
-
-void Zenith_AutomationTests::TestSetUILayoutPaddingStep()
+ZENITH_TEST(Automation, SetUILayoutPaddingStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUILayoutPaddingStep);
 
@@ -1444,24 +1236,23 @@ void Zenith_AutomationTests::TestSetUILayoutPaddingStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("PadLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 	Zenith_Maths::Vector4 xPadding = pxLayout->GetPadding();
-	Zenith_Assert(std::abs(xPadding.x - 10.f) < 0.001f, "Padding left should be 10");
-	Zenith_Assert(std::abs(xPadding.y - 20.f) < 0.001f, "Padding top should be 20");
-	Zenith_Assert(std::abs(xPadding.z - 30.f) < 0.001f, "Padding right should be 30");
-	Zenith_Assert(std::abs(xPadding.w - 40.f) < 0.001f, "Padding bottom should be 40");
+	ZENITH_ASSERT_EQ_FLOAT(xPadding.x, 10.f, 0.001f, "Padding left should be 10");
+	ZENITH_ASSERT_EQ_FLOAT(xPadding.y, 20.f, 0.001f, "Padding top should be 20");
+	ZENITH_ASSERT_EQ_FLOAT(xPadding.z, 30.f, 0.001f, "Padding right should be 30");
+	ZENITH_ASSERT_EQ_FLOAT(xPadding.w, 40.f, 0.001f, "Padding bottom should be 40");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUILayoutPaddingStep);
 }
-
-void Zenith_AutomationTests::TestSetUILayoutFitToContentStep()
+ZENITH_TEST(Automation, SetUILayoutFitToContentStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUILayoutFitToContentStep);
 
@@ -1477,20 +1268,19 @@ void Zenith_AutomationTests::TestSetUILayoutFitToContentStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("FitLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
-	Zenith_Assert(pxLayout->GetFitToContent() == false, "FitToContent should be false");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
+	ZENITH_ASSERT_EQ(pxLayout->GetFitToContent(), false, "FitToContent should be false");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUILayoutFitToContentStep);
 }
-
-void Zenith_AutomationTests::TestSetUILayoutChildForceExpandStep()
+ZENITH_TEST(Automation, SetUILayoutChildForceExpandStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUILayoutChildForceExpandStep);
 
@@ -1506,21 +1296,20 @@ void Zenith_AutomationTests::TestSetUILayoutChildForceExpandStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("ExpandLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
-	Zenith_Assert(pxLayout->GetChildForceExpandWidth() == true, "ChildForceExpandWidth should be true");
-	Zenith_Assert(pxLayout->GetChildForceExpandHeight() == false, "ChildForceExpandHeight should be false");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
+	ZENITH_ASSERT_EQ(pxLayout->GetChildForceExpandWidth(), true, "ChildForceExpandWidth should be true");
+	ZENITH_ASSERT_EQ(pxLayout->GetChildForceExpandHeight(), false, "ChildForceExpandHeight should be false");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUILayoutChildForceExpandStep);
 }
-
-void Zenith_AutomationTests::TestSetUILayoutReverseStep()
+ZENITH_TEST(Automation, SetUILayoutReverseStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUILayoutReverseStep);
 
@@ -1536,20 +1325,19 @@ void Zenith_AutomationTests::TestSetUILayoutReverseStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("RevLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
-	Zenith_Assert(pxLayout->GetReverseArrangement() == true, "ReverseArrangement should be true");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
+	ZENITH_ASSERT_EQ(pxLayout->GetReverseArrangement(), true, "ReverseArrangement should be true");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUILayoutReverseStep);
 }
-
-void Zenith_AutomationTests::TestLayoutHorizontalPositioning()
+ZENITH_TEST(Automation, LayoutHorizontalPositioning)
 {
 	EDITOR_TEST_BEGIN(TestLayoutHorizontalPositioning);
 
@@ -1577,11 +1365,11 @@ void Zenith_AutomationTests::TestLayoutHorizontalPositioning()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("HLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	// Trigger layout recalculation
 	pxLayout->Update(0.f);
@@ -1590,22 +1378,21 @@ void Zenith_AutomationTests::TestLayoutHorizontalPositioning()
 	Zenith_UI::Zenith_UIElement* pxB = pxLayout->GetChild(1);
 	Zenith_UI::Zenith_UIElement* pxC = pxLayout->GetChild(2);
 
-	Zenith_Assert(std::abs(pxA->GetPosition().x - 0.f) < 0.001f, "Child A position.x should be 0");
-	Zenith_Assert(std::abs(pxB->GetPosition().x - 60.f) < 0.001f, "Child B position.x should be 60 (50 + 10 spacing)");
-	Zenith_Assert(std::abs(pxC->GetPosition().x - 150.f) < 0.001f, "Child C position.x should be 150 (60 + 80 + 10)");
+	ZENITH_ASSERT_EQ_FLOAT(pxA->GetPosition().x, 0.f, 0.001f, "Child A position.x should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(pxB->GetPosition().x, 60.f, 0.001f, "Child B position.x should be 60 (50 + 10 spacing)");
+	ZENITH_ASSERT_EQ_FLOAT(pxC->GetPosition().x, 150.f, 0.001f, "Child C position.x should be 150 (60 + 80 + 10)");
 
 	// Fit-to-content: total width = 50 + 10 + 80 + 10 + 60 = 210
-	Zenith_Assert(std::abs(pxLayout->GetSize().x - 210.f) < 0.001f, "Layout width should be 210");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().x, 210.f, 0.001f, "Layout width should be 210");
 	// Max child height = 40
-	Zenith_Assert(std::abs(pxLayout->GetSize().y - 40.f) < 0.001f, "Layout height should be 40");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().y, 40.f, 0.001f, "Layout height should be 40");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutHorizontalPositioning);
 }
-
-void Zenith_AutomationTests::TestLayoutVerticalPositioning()
+ZENITH_TEST(Automation, LayoutVerticalPositioning)
 {
 	EDITOR_TEST_BEGIN(TestLayoutVerticalPositioning);
 
@@ -1630,32 +1417,31 @@ void Zenith_AutomationTests::TestLayoutVerticalPositioning()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("VLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
 	Zenith_UI::Zenith_UIElement* pxA = pxLayout->GetChild(0);
 	Zenith_UI::Zenith_UIElement* pxB = pxLayout->GetChild(1);
 
-	Zenith_Assert(std::abs(pxA->GetPosition().y - 0.f) < 0.001f, "Child A position.y should be 0");
-	Zenith_Assert(std::abs(pxB->GetPosition().y - 25.f) < 0.001f, "Child B position.y should be 25 (20 + 5 spacing)");
+	ZENITH_ASSERT_EQ_FLOAT(pxA->GetPosition().y, 0.f, 0.001f, "Child A position.y should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(pxB->GetPosition().y, 25.f, 0.001f, "Child B position.y should be 25 (20 + 5 spacing)");
 
 	// Fit-to-content: total height = 20 + 5 + 30 = 55
-	Zenith_Assert(std::abs(pxLayout->GetSize().y - 55.f) < 0.001f, "Layout height should be 55");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().y, 55.f, 0.001f, "Layout height should be 55");
 	// Max child width = 100
-	Zenith_Assert(std::abs(pxLayout->GetSize().x - 100.f) < 0.001f, "Layout width should be 100");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().x, 100.f, 0.001f, "Layout width should be 100");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutVerticalPositioning);
 }
-
-void Zenith_AutomationTests::TestLayoutPaddingAffectsPositioning()
+ZENITH_TEST(Automation, LayoutPaddingAffectsPositioning)
 {
 	EDITOR_TEST_BEGIN(TestLayoutPaddingAffectsPositioning);
 
@@ -1678,29 +1464,28 @@ void Zenith_AutomationTests::TestLayoutPaddingAffectsPositioning()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("PadPosLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
 	Zenith_UI::Zenith_UIElement* pxChild = pxLayout->GetChild(0);
-	Zenith_Assert(std::abs(pxChild->GetPosition().x - 10.f) < 0.001f, "Child position.x should be 10 (left padding)");
-	Zenith_Assert(std::abs(pxChild->GetPosition().y - 20.f) < 0.001f, "Child position.y should be 20 (top padding)");
+	ZENITH_ASSERT_EQ_FLOAT(pxChild->GetPosition().x, 10.f, 0.001f, "Child position.x should be 10 (left padding)");
+	ZENITH_ASSERT_EQ_FLOAT(pxChild->GetPosition().y, 20.f, 0.001f, "Child position.y should be 20 (top padding)");
 
 	// Layout size should include padding: 10 + 50 + 0 = 60, 20 + 30 + 0 = 50
-	Zenith_Assert(std::abs(pxLayout->GetSize().x - 60.f) < 0.001f, "Layout width should include padding");
-	Zenith_Assert(std::abs(pxLayout->GetSize().y - 50.f) < 0.001f, "Layout height should include padding");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().x, 60.f, 0.001f, "Layout width should include padding");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().y, 50.f, 0.001f, "Layout height should include padding");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutPaddingAffectsPositioning);
 }
-
-void Zenith_AutomationTests::TestLayoutMiddleCenterAlignment()
+ZENITH_TEST(Automation, LayoutMiddleCenterAlignment)
 {
 	EDITOR_TEST_BEGIN(TestLayoutMiddleCenterAlignment);
 
@@ -1722,25 +1507,24 @@ void Zenith_AutomationTests::TestLayoutMiddleCenterAlignment()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("MCLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
 	Zenith_UI::Zenith_UIElement* pxChild = pxLayout->GetChild(0);
 	// Cross-axis (vertical) should be centered: (100 - 30) / 2 = 35
-	Zenith_Assert(std::abs(pxChild->GetPosition().y - 35.f) < 0.001f, "Child position.y should be 35 (centered on cross axis)");
+	ZENITH_ASSERT_EQ_FLOAT(pxChild->GetPosition().y, 35.f, 0.001f, "Child position.y should be 35 (centered on cross axis)");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutMiddleCenterAlignment);
 }
-
-void Zenith_AutomationTests::TestLayoutUpperLeftAlignment()
+ZENITH_TEST(Automation, LayoutUpperLeftAlignment)
 {
 	EDITOR_TEST_BEGIN(TestLayoutUpperLeftAlignment);
 
@@ -1762,25 +1546,24 @@ void Zenith_AutomationTests::TestLayoutUpperLeftAlignment()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("ULLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
 	Zenith_UI::Zenith_UIElement* pxChild = pxLayout->GetChild(0);
 	// Upper = top-aligned, cross-axis Y should be 0
-	Zenith_Assert(std::abs(pxChild->GetPosition().y - 0.f) < 0.001f, "Child position.y should be 0 (top-aligned)");
+	ZENITH_ASSERT_EQ_FLOAT(pxChild->GetPosition().y, 0.f, 0.001f, "Child position.y should be 0 (top-aligned)");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutUpperLeftAlignment);
 }
-
-void Zenith_AutomationTests::TestLayoutLowerRightAlignment()
+ZENITH_TEST(Automation, LayoutLowerRightAlignment)
 {
 	EDITOR_TEST_BEGIN(TestLayoutLowerRightAlignment);
 
@@ -1802,25 +1585,24 @@ void Zenith_AutomationTests::TestLayoutLowerRightAlignment()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("LRLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
 	Zenith_UI::Zenith_UIElement* pxChild = pxLayout->GetChild(0);
 	// Lower = bottom-aligned, cross-axis Y should be 100 - 30 = 70
-	Zenith_Assert(std::abs(pxChild->GetPosition().y - 70.f) < 0.001f, "Child position.y should be 70 (bottom-aligned)");
+	ZENITH_ASSERT_EQ_FLOAT(pxChild->GetPosition().y, 70.f, 0.001f, "Child position.y should be 70 (bottom-aligned)");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutLowerRightAlignment);
 }
-
-void Zenith_AutomationTests::TestLayoutReverseArrangement()
+ZENITH_TEST(Automation, LayoutReverseArrangement)
 {
 	EDITOR_TEST_BEGIN(TestLayoutReverseArrangement);
 
@@ -1846,11 +1628,11 @@ void Zenith_AutomationTests::TestLayoutReverseArrangement()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("RevArrLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
@@ -1858,16 +1640,15 @@ void Zenith_AutomationTests::TestLayoutReverseArrangement()
 	Zenith_UI::Zenith_UIElement* pxB = pxLayout->GetChild(1);
 
 	// Reversed: B is placed first (position.x == 0), then A (position.x == 90)
-	Zenith_Assert(std::abs(pxB->GetPosition().x - 0.f) < 0.001f, "Child B should be placed first at x=0 (reversed)");
-	Zenith_Assert(std::abs(pxA->GetPosition().x - 90.f) < 0.001f, "Child A should be placed second at x=90 (reversed)");
+	ZENITH_ASSERT_EQ_FLOAT(pxB->GetPosition().x, 0.f, 0.001f, "Child B should be placed first at x=0 (reversed)");
+	ZENITH_ASSERT_EQ_FLOAT(pxA->GetPosition().x, 90.f, 0.001f, "Child A should be placed second at x=90 (reversed)");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutReverseArrangement);
 }
-
-void Zenith_AutomationTests::TestLayoutChildForceExpand()
+ZENITH_TEST(Automation, LayoutChildForceExpand)
 {
 	EDITOR_TEST_BEGIN(TestLayoutChildForceExpand);
 
@@ -1894,11 +1675,11 @@ void Zenith_AutomationTests::TestLayoutChildForceExpand()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("ForceExpLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
@@ -1906,18 +1687,17 @@ void Zenith_AutomationTests::TestLayoutChildForceExpand()
 	Zenith_UI::Zenith_UIElement* pxB = pxLayout->GetChild(1);
 
 	// Each child should get 300/2 = 150 width
-	Zenith_Assert(std::abs(pxA->GetSize().x - 150.f) < 0.001f, "Child A width should be 150 (force expanded)");
-	Zenith_Assert(std::abs(pxB->GetSize().x - 150.f) < 0.001f, "Child B width should be 150 (force expanded)");
-	Zenith_Assert(std::abs(pxA->GetPosition().x - 0.f) < 0.001f, "Child A position.x should be 0");
-	Zenith_Assert(std::abs(pxB->GetPosition().x - 150.f) < 0.001f, "Child B position.x should be 150");
+	ZENITH_ASSERT_EQ_FLOAT(pxA->GetSize().x, 150.f, 0.001f, "Child A width should be 150 (force expanded)");
+	ZENITH_ASSERT_EQ_FLOAT(pxB->GetSize().x, 150.f, 0.001f, "Child B width should be 150 (force expanded)");
+	ZENITH_ASSERT_EQ_FLOAT(pxA->GetPosition().x, 0.f, 0.001f, "Child A position.x should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(pxB->GetPosition().x, 150.f, 0.001f, "Child B position.x should be 150");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutChildForceExpand);
 }
-
-void Zenith_AutomationTests::TestLayoutFitToContentResizing()
+ZENITH_TEST(Automation, LayoutFitToContentResizing)
 {
 	EDITOR_TEST_BEGIN(TestLayoutFitToContentResizing);
 
@@ -1942,17 +1722,17 @@ void Zenith_AutomationTests::TestLayoutFitToContentResizing()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("FitResLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
 	// First check: width = 100 + 10 + 80 = 190, height = 40
 	float fFirstWidth = pxLayout->GetSize().x;
-	Zenith_Assert(std::abs(fFirstWidth - 190.f) < 0.001f, "Initial layout width should be 190");
+	ZENITH_ASSERT_EQ_FLOAT(fFirstWidth, 190.f, 0.001f, "Initial layout width should be 190");
 
 	// Now add another child directly (not via automation, since we're mid-test)
 	Zenith_UI::Zenith_UIRect* pxNewChild = new Zenith_UI::Zenith_UIRect("FitC");
@@ -1964,16 +1744,15 @@ void Zenith_AutomationTests::TestLayoutFitToContentResizing()
 
 	// After adding 60px child: width = 100 + 10 + 80 + 10 + 60 = 260
 	float fSecondWidth = pxLayout->GetSize().x;
-	Zenith_Assert(fSecondWidth > fFirstWidth, "Layout width should grow after adding child");
-	Zenith_Assert(std::abs(fSecondWidth - 260.f) < 0.001f, "New layout width should be 260");
+	ZENITH_ASSERT_GT(fSecondWidth, fFirstWidth, "Layout width should grow after adding child");
+	ZENITH_ASSERT_EQ_FLOAT(fSecondWidth, 260.f, 0.001f, "New layout width should be 260");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutFitToContentResizing);
 }
-
-void Zenith_AutomationTests::TestLayoutWithTextChild()
+ZENITH_TEST(Automation, LayoutWithTextChild)
 {
 	EDITOR_TEST_BEGIN(TestLayoutWithTextChild);
 
@@ -1998,36 +1777,35 @@ void Zenith_AutomationTests::TestLayoutWithTextChild()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("TextLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
 	Zenith_UI::Zenith_UIText* pxText = static_cast<Zenith_UI::Zenith_UIText*>(pxLayout->GetChild(1));
-	Zenith_Assert(pxText != nullptr, "Should find text child");
+	ZENITH_ASSERT_NOT_NULL(pxText, "Should find text child");
 
 	// Text width should be calculated from GetTextWidth()
 	float fExpectedTextWidth = pxText->GetTextWidth();
-	Zenith_Assert(fExpectedTextWidth > 0.f, "Text width should be positive");
+	ZENITH_ASSERT_GT(fExpectedTextWidth, 0.f, "Text width should be positive");
 
 	// Image (36px) + spacing (8px) + text width = total layout width
 	float fExpectedWidth = 36.f + 8.f + fExpectedTextWidth;
-	Zenith_Assert(std::abs(pxLayout->GetSize().x - fExpectedWidth) < 0.001f, "Layout width should include text width");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().x, fExpectedWidth, 0.001f, "Layout width should include text width");
 
 	// Non-text children should be shifted up by the glyph correction when text siblings exist
 	Zenith_UI::Zenith_UIElement* pxImgChild = pxLayout->GetChild(0);
-	Zenith_Assert(pxImgChild->GetPosition().y < pxText->GetPosition().y, "Image should be shifted up relative to text for glyph alignment");
+	ZENITH_ASSERT_LT(pxImgChild->GetPosition().y, pxText->GetPosition().y, "Image should be shifted up relative to text for glyph alignment");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutWithTextChild);
 }
-
-void Zenith_AutomationTests::TestLayoutEmptyGroup()
+ZENITH_TEST(Automation, LayoutEmptyGroup)
 {
 	EDITOR_TEST_BEGIN(TestLayoutEmptyGroup);
 
@@ -2044,26 +1822,25 @@ void Zenith_AutomationTests::TestLayoutEmptyGroup()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("EmptyLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	// Should not crash with no children
 	pxLayout->Update(0.f);
 
 	// With fit-to-content, size should be padding only: (5+15, 10+20) = (20, 30)
-	Zenith_Assert(std::abs(pxLayout->GetSize().x - 20.f) < 0.001f, "Empty layout width should be paddingLeft + paddingRight");
-	Zenith_Assert(std::abs(pxLayout->GetSize().y - 30.f) < 0.001f, "Empty layout height should be paddingTop + paddingBottom");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().x, 20.f, 0.001f, "Empty layout width should be paddingLeft + paddingRight");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().y, 30.f, 0.001f, "Empty layout height should be paddingTop + paddingBottom");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutEmptyGroup);
 }
-
-void Zenith_AutomationTests::TestLayoutSingleChild()
+ZENITH_TEST(Automation, LayoutSingleChild)
 {
 	EDITOR_TEST_BEGIN(TestLayoutSingleChild);
 
@@ -2085,29 +1862,28 @@ void Zenith_AutomationTests::TestLayoutSingleChild()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("SingleLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
 	Zenith_UI::Zenith_UIElement* pxChild = pxLayout->GetChild(0);
-	Zenith_Assert(std::abs(pxChild->GetPosition().x - 0.f) < 0.001f, "Single child position.x should be 0");
-	Zenith_Assert(std::abs(pxChild->GetPosition().y - 0.f) < 0.001f, "Single child position.y should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(pxChild->GetPosition().x, 0.f, 0.001f, "Single child position.x should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(pxChild->GetPosition().y, 0.f, 0.001f, "Single child position.y should be 0");
 
 	// Spacing should have no effect with only 1 child: width = 50, not 50 + 100
-	Zenith_Assert(std::abs(pxLayout->GetSize().x - 50.f) < 0.001f, "Layout width should be 50 (spacing has no effect with 1 child)");
-	Zenith_Assert(std::abs(pxLayout->GetSize().y - 30.f) < 0.001f, "Layout height should be 30");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().x, 50.f, 0.001f, "Layout width should be 50 (spacing has no effect with 1 child)");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().y, 30.f, 0.001f, "Layout height should be 30");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutSingleChild);
 }
-
-void Zenith_AutomationTests::TestLayoutInvisibleChildrenSkipped()
+ZENITH_TEST(Automation, LayoutInvisibleChildrenSkipped)
 {
 	EDITOR_TEST_BEGIN(TestLayoutInvisibleChildrenSkipped);
 
@@ -2136,31 +1912,30 @@ void Zenith_AutomationTests::TestLayoutInvisibleChildrenSkipped()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("InvisLayout");
-	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	ZENITH_ASSERT_NOT_NULL(pxLayout, "Should find layout group");
 
 	pxLayout->Update(0.f);
 
 	Zenith_UI::Zenith_UIElement* pxA = pxLayout->GetChild(0);
 	Zenith_UI::Zenith_UIElement* pxC = pxLayout->GetChild(2);
 
-	Zenith_Assert(std::abs(pxA->GetPosition().x - 0.f) < 0.001f, "Child A position.x should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(pxA->GetPosition().x, 0.f, 0.001f, "Child A position.x should be 0");
 	// B is invisible, so C follows A directly: 50 + 10 = 60
-	Zenith_Assert(std::abs(pxC->GetPosition().x - 60.f) < 0.001f, "Child C position.x should be 60 (B skipped)");
+	ZENITH_ASSERT_EQ_FLOAT(pxC->GetPosition().x, 60.f, 0.001f, "Child C position.x should be 60 (B skipped)");
 
 	// Layout width = 50 + 10 + 60 = 120 (B excluded)
-	Zenith_Assert(std::abs(pxLayout->GetSize().x - 120.f) < 0.001f, "Layout width should be 120 (invisible child excluded)");
+	ZENITH_ASSERT_EQ_FLOAT(pxLayout->GetSize().x, 120.f, 0.001f, "Layout width should be 120 (invisible child excluded)");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutInvisibleChildrenSkipped);
 }
-
-void Zenith_AutomationTests::TestLayoutSerializationRoundTrip()
+ZENITH_TEST(Automation, LayoutSerializationRoundTrip)
 {
 	EDITOR_TEST_BEGIN(TestLayoutSerializationRoundTrip);
 
@@ -2190,35 +1965,35 @@ void Zenith_AutomationTests::TestLayoutSerializationRoundTrip()
 	xLoaded.ReadFromDataStream(xWriteStream);
 
 	// Verify all properties match
-	Zenith_Assert(xLoaded.GetDirection() == Zenith_UI::LayoutDirection::Vertical, "Serialized direction should be Vertical");
-	Zenith_Assert(xLoaded.GetChildAlignment() == Zenith_UI::ChildAlignment::LowerRight, "Serialized child alignment should be LowerRight");
+	ZENITH_ASSERT_EQ(xLoaded.GetDirection(), Zenith_UI::LayoutDirection::Vertical, "Serialized direction should be Vertical");
+	ZENITH_ASSERT_EQ(xLoaded.GetChildAlignment(), Zenith_UI::ChildAlignment::LowerRight, "Serialized child alignment should be LowerRight");
 
 	Zenith_Maths::Vector4 xPad = xLoaded.GetPadding();
-	Zenith_Assert(std::abs(xPad.x - 10.f) < 0.001f, "Serialized padding left should be 10");
-	Zenith_Assert(std::abs(xPad.y - 20.f) < 0.001f, "Serialized padding top should be 20");
-	Zenith_Assert(std::abs(xPad.z - 30.f) < 0.001f, "Serialized padding right should be 30");
-	Zenith_Assert(std::abs(xPad.w - 40.f) < 0.001f, "Serialized padding bottom should be 40");
+	ZENITH_ASSERT_EQ_FLOAT(xPad.x, 10.f, 0.001f, "Serialized padding left should be 10");
+	ZENITH_ASSERT_EQ_FLOAT(xPad.y, 20.f, 0.001f, "Serialized padding top should be 20");
+	ZENITH_ASSERT_EQ_FLOAT(xPad.z, 30.f, 0.001f, "Serialized padding right should be 30");
+	ZENITH_ASSERT_EQ_FLOAT(xPad.w, 40.f, 0.001f, "Serialized padding bottom should be 40");
 
-	Zenith_Assert(std::abs(xLoaded.GetSpacing() - 15.f) < 0.001f, "Serialized spacing should be 15");
-	Zenith_Assert(xLoaded.GetChildForceExpandWidth() == true, "Serialized childForceExpandWidth should be true");
-	Zenith_Assert(xLoaded.GetChildForceExpandHeight() == false, "Serialized childForceExpandHeight should be false");
-	Zenith_Assert(xLoaded.GetReverseArrangement() == true, "Serialized reverseArrangement should be true");
-	Zenith_Assert(xLoaded.GetFitToContent() == false, "Serialized fitToContent should be false");
+	ZENITH_ASSERT_EQ_FLOAT(xLoaded.GetSpacing(), 15.f, 0.001f, "Serialized spacing should be 15");
+	ZENITH_ASSERT_EQ(xLoaded.GetChildForceExpandWidth(), true, "Serialized childForceExpandWidth should be true");
+	ZENITH_ASSERT_EQ(xLoaded.GetChildForceExpandHeight(), false, "Serialized childForceExpandHeight should be false");
+	ZENITH_ASSERT_EQ(xLoaded.GetReverseArrangement(), true, "Serialized reverseArrangement should be true");
+	ZENITH_ASSERT_EQ(xLoaded.GetFitToContent(), false, "Serialized fitToContent should be false");
 
 	// Also verify base class properties survived
 	Zenith_Maths::Vector2 xSize = xLoaded.GetSize();
-	Zenith_Assert(std::abs(xSize.x - 400.f) < 0.001f, "Serialized size.x should be 400");
-	Zenith_Assert(std::abs(xSize.y - 300.f) < 0.001f, "Serialized size.y should be 300");
+	ZENITH_ASSERT_EQ_FLOAT(xSize.x, 400.f, 0.001f, "Serialized size.x should be 400");
+	ZENITH_ASSERT_EQ_FLOAT(xSize.y, 300.f, 0.001f, "Serialized size.y should be 300");
 
 	Zenith_Maths::Vector2 xPos = xLoaded.GetPosition();
-	Zenith_Assert(std::abs(xPos.x - 50.f) < 0.001f, "Serialized position.x should be 50");
-	Zenith_Assert(std::abs(xPos.y - 60.f) < 0.001f, "Serialized position.y should be 60");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 50.f, 0.001f, "Serialized position.x should be 50");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 60.f, 0.001f, "Serialized position.y should be 60");
 
 	Zenith_Maths::Vector4 xColor = xLoaded.GetColor();
-	Zenith_Assert(std::abs(xColor.x - 0.5f) < 0.001f, "Serialized color.r should be 0.5");
-	Zenith_Assert(std::abs(xColor.y - 0.6f) < 0.001f, "Serialized color.g should be 0.6");
-	Zenith_Assert(std::abs(xColor.z - 0.7f) < 0.001f, "Serialized color.b should be 0.7");
-	Zenith_Assert(std::abs(xColor.w - 0.8f) < 0.001f, "Serialized color.a should be 0.8");
+	ZENITH_ASSERT_EQ_FLOAT(xColor.x, 0.5f, 0.001f, "Serialized color.r should be 0.5");
+	ZENITH_ASSERT_EQ_FLOAT(xColor.y, 0.6f, 0.001f, "Serialized color.g should be 0.6");
+	ZENITH_ASSERT_EQ_FLOAT(xColor.z, 0.7f, 0.001f, "Serialized color.b should be 0.7");
+	ZENITH_ASSERT_EQ_FLOAT(xColor.w, 0.8f, 0.001f, "Serialized color.a should be 0.8");
 
 	Zenith_EditorAutomation::Reset();
 
@@ -2228,8 +2003,7 @@ void Zenith_AutomationTests::TestLayoutSerializationRoundTrip()
 //=============================================================================
 // UIStyle Automation Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestSetUICornerRadiusStep()
+ZENITH_TEST(Automation, SetUICornerRadiusStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUICornerRadiusStep);
 
@@ -2244,20 +2018,19 @@ void Zenith_AutomationTests::TestSetUICornerRadiusStep()
 		Zenith_EditorAutomation::ExecuteNextStep();
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	auto* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>("TestRect");
-	Zenith_Assert(pxRect != nullptr, "Should find UI rect");
-	Zenith_Assert(std::abs(pxRect->GetStyle().m_fCornerRadius - 12.0f) < 0.001f, "Corner radius should be 12");
+	ZENITH_ASSERT_NOT_NULL(pxRect, "Should find UI rect");
+	ZENITH_ASSERT_EQ_FLOAT(pxRect->GetStyle().m_fCornerRadius, 12.0f, 0.001f, "Corner radius should be 12");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUICornerRadiusStep);
 }
-
-void Zenith_AutomationTests::TestSetUIGradientColorStep()
+ZENITH_TEST(Automation, SetUIGradientColorStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIGradientColorStep);
 
@@ -2273,17 +2046,16 @@ void Zenith_AutomationTests::TestSetUIGradientColorStep()
 
 	auto* pxRect = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIRect>("TestRect");
-	Zenith_Assert(pxRect != nullptr, "Should find UI rect");
-	Zenith_Assert(std::abs(pxRect->GetStyle().m_xGradientBottomColor.x - 0.5f) < 0.001f, "Gradient R should be 0.5");
-	Zenith_Assert(std::abs(pxRect->GetStyle().m_xGradientBottomColor.y - 0.3f) < 0.001f, "Gradient G should be 0.3");
+	ZENITH_ASSERT_NOT_NULL(pxRect, "Should find UI rect");
+	ZENITH_ASSERT_EQ_FLOAT(pxRect->GetStyle().m_xGradientBottomColor.x, 0.5f, 0.001f, "Gradient R should be 0.5");
+	ZENITH_ASSERT_EQ_FLOAT(pxRect->GetStyle().m_xGradientBottomColor.y, 0.3f, 0.001f, "Gradient G should be 0.3");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIGradientColorStep);
 }
-
-void Zenith_AutomationTests::TestSetUIShadowStep()
+ZENITH_TEST(Automation, SetUIShadowStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIShadowStep);
 
@@ -2299,19 +2071,18 @@ void Zenith_AutomationTests::TestSetUIShadowStep()
 
 	auto* pxRect = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIRect>("TestRect");
-	Zenith_Assert(pxRect != nullptr, "Should find UI rect");
-	Zenith_Assert(pxRect->GetStyle().m_bShadowEnabled == true, "Shadow should be enabled");
-	Zenith_Assert(std::abs(pxRect->GetStyle().m_xShadowOffset.x - 3.0f) < 0.001f, "Shadow offset X should be 3");
-	Zenith_Assert(std::abs(pxRect->GetStyle().m_xShadowOffset.y - 4.0f) < 0.001f, "Shadow offset Y should be 4");
-	Zenith_Assert(std::abs(pxRect->GetStyle().m_fShadowSpread - 2.0f) < 0.001f, "Shadow spread should be 2");
+	ZENITH_ASSERT_NOT_NULL(pxRect, "Should find UI rect");
+	ZENITH_ASSERT_EQ(pxRect->GetStyle().m_bShadowEnabled, true, "Shadow should be enabled");
+	ZENITH_ASSERT_EQ_FLOAT(pxRect->GetStyle().m_xShadowOffset.x, 3.0f, 0.001f, "Shadow offset X should be 3");
+	ZENITH_ASSERT_EQ_FLOAT(pxRect->GetStyle().m_xShadowOffset.y, 4.0f, 0.001f, "Shadow offset Y should be 4");
+	ZENITH_ASSERT_EQ_FLOAT(pxRect->GetStyle().m_fShadowSpread, 2.0f, 0.001f, "Shadow spread should be 2");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIShadowStep);
 }
-
-void Zenith_AutomationTests::TestSetUIShadowColorStep()
+ZENITH_TEST(Automation, SetUIShadowColorStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIShadowColorStep);
 
@@ -2327,17 +2098,16 @@ void Zenith_AutomationTests::TestSetUIShadowColorStep()
 
 	auto* pxRect = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIRect>("TestRect");
-	Zenith_Assert(pxRect != nullptr, "Should find UI rect");
-	Zenith_Assert(std::abs(pxRect->GetStyle().m_xShadowColor.x - 0.1f) < 0.001f, "Shadow color R");
-	Zenith_Assert(std::abs(pxRect->GetStyle().m_xShadowColor.w - 0.5f) < 0.001f, "Shadow color A");
+	ZENITH_ASSERT_NOT_NULL(pxRect, "Should find UI rect");
+	ZENITH_ASSERT_EQ_FLOAT(pxRect->GetStyle().m_xShadowColor.x, 0.1f, 0.001f, "Shadow color R");
+	ZENITH_ASSERT_EQ_FLOAT(pxRect->GetStyle().m_xShadowColor.w, 0.5f, 0.001f, "Shadow color A");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIShadowColorStep);
 }
-
-void Zenith_AutomationTests::TestSetUIRectBorderStep()
+ZENITH_TEST(Automation, SetUIRectBorderStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIRectBorderStep);
 
@@ -2353,17 +2123,16 @@ void Zenith_AutomationTests::TestSetUIRectBorderStep()
 
 	auto* pxRect = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIRect>("TestRect");
-	Zenith_Assert(pxRect != nullptr, "Should find UI rect");
-	Zenith_Assert(std::abs(pxRect->GetStyle().m_xBorderColor.x - 0.5f) < 0.001f, "Border color R");
-	Zenith_Assert(std::abs(pxRect->GetStyle().m_fBorderThickness - 3.0f) < 0.001f, "Border thickness should be 3");
+	ZENITH_ASSERT_NOT_NULL(pxRect, "Should find UI rect");
+	ZENITH_ASSERT_EQ_FLOAT(pxRect->GetStyle().m_xBorderColor.x, 0.5f, 0.001f, "Border color R");
+	ZENITH_ASSERT_EQ_FLOAT(pxRect->GetStyle().m_fBorderThickness, 3.0f, 0.001f, "Border thickness should be 3");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIRectBorderStep);
 }
-
-void Zenith_AutomationTests::TestSetUITextShadowStep()
+ZENITH_TEST(Automation, SetUITextShadowStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUITextShadowStep);
 
@@ -2379,15 +2148,14 @@ void Zenith_AutomationTests::TestSetUITextShadowStep()
 
 	auto* pxText = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIText>("TestText");
-	Zenith_Assert(pxText != nullptr, "Should find UI text");
+	ZENITH_ASSERT_NOT_NULL(pxText, "Should find UI text");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUITextShadowStep);
 }
-
-void Zenith_AutomationTests::TestSetUITextShadowColorStep()
+ZENITH_TEST(Automation, SetUITextShadowColorStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUITextShadowColorStep);
 
@@ -2403,15 +2171,14 @@ void Zenith_AutomationTests::TestSetUITextShadowColorStep()
 
 	auto* pxText = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIText>("TestText");
-	Zenith_Assert(pxText != nullptr, "Should find UI text");
+	ZENITH_ASSERT_NOT_NULL(pxText, "Should find UI text");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUITextShadowColorStep);
 }
-
-void Zenith_AutomationTests::TestSetUIButtonCornerRadiusStep()
+ZENITH_TEST(Automation, SetUIButtonCornerRadiusStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIButtonCornerRadiusStep);
 
@@ -2427,18 +2194,17 @@ void Zenith_AutomationTests::TestSetUIButtonCornerRadiusStep()
 
 	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
-	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
-	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_fCornerRadius - 16.0f) < 0.001f, "Normal corner radius should be 16");
-	Zenith_Assert(std::abs(pxBtn->GetHoveredStyle().m_fCornerRadius - 16.0f) < 0.001f, "Hovered corner radius should be 16");
-	Zenith_Assert(std::abs(pxBtn->GetPressedStyle().m_fCornerRadius - 16.0f) < 0.001f, "Pressed corner radius should be 16");
+	ZENITH_ASSERT_NOT_NULL(pxBtn, "Should find UI button");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetNormalStyle().m_fCornerRadius, 16.0f, 0.001f, "Normal corner radius should be 16");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetHoveredStyle().m_fCornerRadius, 16.0f, 0.001f, "Hovered corner radius should be 16");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetPressedStyle().m_fCornerRadius, 16.0f, 0.001f, "Pressed corner radius should be 16");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIButtonCornerRadiusStep);
 }
-
-void Zenith_AutomationTests::TestSetUIButtonShadowStep()
+ZENITH_TEST(Automation, SetUIButtonShadowStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIButtonShadowStep);
 
@@ -2454,18 +2220,17 @@ void Zenith_AutomationTests::TestSetUIButtonShadowStep()
 
 	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
-	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
-	Zenith_Assert(pxBtn->GetNormalStyle().m_bShadowEnabled == true, "Shadow should be enabled on all states");
-	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_xShadowOffset.x - 3.0f) < 0.001f, "Shadow offset X");
-	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_fShadowSpread - 2.0f) < 0.001f, "Shadow spread");
+	ZENITH_ASSERT_NOT_NULL(pxBtn, "Should find UI button");
+	ZENITH_ASSERT_EQ(pxBtn->GetNormalStyle().m_bShadowEnabled, true, "Shadow should be enabled on all states");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetNormalStyle().m_xShadowOffset.x, 3.0f, 0.001f, "Shadow offset X");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetNormalStyle().m_fShadowSpread, 2.0f, 0.001f, "Shadow spread");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIButtonShadowStep);
 }
-
-void Zenith_AutomationTests::TestSetUIButtonShadowColorStep()
+ZENITH_TEST(Automation, SetUIButtonShadowColorStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIButtonShadowColorStep);
 
@@ -2481,16 +2246,15 @@ void Zenith_AutomationTests::TestSetUIButtonShadowColorStep()
 
 	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
-	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
-	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_xShadowColor.w - 0.3f) < 0.001f, "Shadow color A should be 0.3");
+	ZENITH_ASSERT_NOT_NULL(pxBtn, "Should find UI button");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetNormalStyle().m_xShadowColor.w, 0.3f, 0.001f, "Shadow color A should be 0.3");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIButtonShadowColorStep);
 }
-
-void Zenith_AutomationTests::TestSetUIButtonGradientColorStep()
+ZENITH_TEST(Automation, SetUIButtonGradientColorStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIButtonGradientColorStep);
 
@@ -2506,17 +2270,16 @@ void Zenith_AutomationTests::TestSetUIButtonGradientColorStep()
 
 	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
-	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
-	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_xGradientBottomColor.x - 0.2f) < 0.001f, "Gradient R");
-	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_xGradientBottomColor.y - 0.4f) < 0.001f, "Gradient G");
+	ZENITH_ASSERT_NOT_NULL(pxBtn, "Should find UI button");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetNormalStyle().m_xGradientBottomColor.x, 0.2f, 0.001f, "Gradient R");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetNormalStyle().m_xGradientBottomColor.y, 0.4f, 0.001f, "Gradient G");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIButtonGradientColorStep);
 }
-
-void Zenith_AutomationTests::TestSetUIButtonBorderColorStep()
+ZENITH_TEST(Automation, SetUIButtonBorderColorStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIButtonBorderColorStep);
 
@@ -2532,18 +2295,17 @@ void Zenith_AutomationTests::TestSetUIButtonBorderColorStep()
 
 	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
-	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
-	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_xBorderColor.x - 0.3f) < 0.001f, "Border color R");
-	Zenith_Assert(std::abs(pxBtn->GetHoveredStyle().m_xBorderColor.y - 0.5f) < 0.001f, "Hover border color G");
-	Zenith_Assert(std::abs(pxBtn->GetPressedStyle().m_xBorderColor.z - 0.7f) < 0.001f, "Pressed border color B");
+	ZENITH_ASSERT_NOT_NULL(pxBtn, "Should find UI button");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetNormalStyle().m_xBorderColor.x, 0.3f, 0.001f, "Border color R");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetHoveredStyle().m_xBorderColor.y, 0.5f, 0.001f, "Hover border color G");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetPressedStyle().m_xBorderColor.z, 0.7f, 0.001f, "Pressed border color B");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIButtonBorderColorStep);
 }
-
-void Zenith_AutomationTests::TestSetUIButtonBorderThicknessStep()
+ZENITH_TEST(Automation, SetUIButtonBorderThicknessStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIButtonBorderThicknessStep);
 
@@ -2559,16 +2321,15 @@ void Zenith_AutomationTests::TestSetUIButtonBorderThicknessStep()
 
 	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
-	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
-	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_fBorderThickness - 3.0f) < 0.001f, "Border thickness should be 3");
+	ZENITH_ASSERT_NOT_NULL(pxBtn, "Should find UI button");
+	ZENITH_ASSERT_EQ_FLOAT(pxBtn->GetNormalStyle().m_fBorderThickness, 3.0f, 0.001f, "Border thickness should be 3");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIButtonBorderThicknessStep);
 }
-
-void Zenith_AutomationTests::TestSetUIButtonTransitionDurationStep()
+ZENITH_TEST(Automation, SetUIButtonTransitionDurationStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIButtonTransitionDurationStep);
 
@@ -2584,15 +2345,14 @@ void Zenith_AutomationTests::TestSetUIButtonTransitionDurationStep()
 
 	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
-	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+	ZENITH_ASSERT_NOT_NULL(pxBtn, "Should find UI button");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIButtonTransitionDurationStep);
 }
-
-void Zenith_AutomationTests::TestSetUIButtonTextShadowStep()
+ZENITH_TEST(Automation, SetUIButtonTextShadowStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIButtonTextShadowStep);
 
@@ -2608,15 +2368,14 @@ void Zenith_AutomationTests::TestSetUIButtonTextShadowStep()
 
 	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
-	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+	ZENITH_ASSERT_NOT_NULL(pxBtn, "Should find UI button");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetUIButtonTextShadowStep);
 }
-
-void Zenith_AutomationTests::TestSetUIButtonTextShadowColorStep()
+ZENITH_TEST(Automation, SetUIButtonTextShadowColorStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIButtonTextShadowColorStep);
 
@@ -2632,7 +2391,7 @@ void Zenith_AutomationTests::TestSetUIButtonTextShadowColorStep()
 
 	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
 		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
-	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+	ZENITH_ASSERT_NOT_NULL(pxBtn, "Should find UI button");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
@@ -2643,19 +2402,17 @@ void Zenith_AutomationTests::TestSetUIButtonTextShadowColorStep()
 //=============================================================================
 // Group Alpha Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestGroupAlphaDefault()
+ZENITH_TEST(Automation, GroupAlphaDefault)
 {
 	EDITOR_TEST_BEGIN(TestGroupAlphaDefault);
 
 	Zenith_UI::Zenith_UIRect xRect("TestRect");
-	Zenith_Assert(std::abs(xRect.GetGroupAlpha() - 1.0f) < 0.001f, "Default group alpha should be 1.0");
-	Zenith_Assert(std::abs(xRect.GetEffectiveAlpha() - 1.0f) < 0.001f, "Default effective alpha should be 1.0");
+	ZENITH_ASSERT_EQ_FLOAT(xRect.GetGroupAlpha(), 1.0f, 0.001f, "Default group alpha should be 1.0");
+	ZENITH_ASSERT_EQ_FLOAT(xRect.GetEffectiveAlpha(), 1.0f, 0.001f, "Default effective alpha should be 1.0");
 
 	EDITOR_TEST_END(TestGroupAlphaDefault);
 }
-
-void Zenith_AutomationTests::TestGroupAlphaPropagation()
+ZENITH_TEST(Automation, GroupAlphaPropagation)
 {
 	EDITOR_TEST_BEGIN(TestGroupAlphaPropagation);
 
@@ -2667,16 +2424,16 @@ void Zenith_AutomationTests::TestGroupAlphaPropagation()
 	xChild.AddChild(&xGrandchild);
 
 	// Default: all alpha 1.0
-	Zenith_Assert(std::abs(xGrandchild.GetEffectiveAlpha() - 1.0f) < 0.001f, "Default effective alpha should be 1.0");
+	ZENITH_ASSERT_EQ_FLOAT(xGrandchild.GetEffectiveAlpha(), 1.0f, 0.001f, "Default effective alpha should be 1.0");
 
 	// Set parent alpha to 0.5
 	xParent.SetGroupAlpha(0.5f);
-	Zenith_Assert(std::abs(xChild.GetEffectiveAlpha() - 0.5f) < 0.001f, "Child inherits parent alpha 0.5");
-	Zenith_Assert(std::abs(xGrandchild.GetEffectiveAlpha() - 0.5f) < 0.001f, "Grandchild inherits parent alpha 0.5");
+	ZENITH_ASSERT_EQ_FLOAT(xChild.GetEffectiveAlpha(), 0.5f, 0.001f, "Child inherits parent alpha 0.5");
+	ZENITH_ASSERT_EQ_FLOAT(xGrandchild.GetEffectiveAlpha(), 0.5f, 0.001f, "Grandchild inherits parent alpha 0.5");
 
 	// Set child alpha to 0.5 (effective = 0.5 * 0.5 = 0.25)
 	xChild.SetGroupAlpha(0.5f);
-	Zenith_Assert(std::abs(xGrandchild.GetEffectiveAlpha() - 0.25f) < 0.001f, "Grandchild: 0.5 * 0.5 = 0.25");
+	ZENITH_ASSERT_EQ_FLOAT(xGrandchild.GetEffectiveAlpha(), 0.25f, 0.001f, "Grandchild: 0.5 * 0.5 = 0.25");
 
 	// Cleanup hierarchy
 	xChild.RemoveChild(&xGrandchild);
@@ -2684,21 +2441,19 @@ void Zenith_AutomationTests::TestGroupAlphaPropagation()
 
 	EDITOR_TEST_END(TestGroupAlphaPropagation);
 }
-
-void Zenith_AutomationTests::TestGroupInteractableDefault()
+ZENITH_TEST(Automation, GroupInteractableDefault)
 {
 	EDITOR_TEST_BEGIN(TestGroupInteractableDefault);
 
 	Zenith_UI::Zenith_UIRect xRect("TestRect");
-	Zenith_Assert(xRect.IsGroupInteractable() == true, "Default interactable should be true");
+	ZENITH_ASSERT_EQ(xRect.IsGroupInteractable(), true, "Default interactable should be true");
 
 	xRect.SetGroupInteractable(false);
-	Zenith_Assert(xRect.IsGroupInteractable() == false, "Interactable should be false after setting");
+	ZENITH_ASSERT_EQ(xRect.IsGroupInteractable(), false, "Interactable should be false after setting");
 
 	EDITOR_TEST_END(TestGroupInteractableDefault);
 }
-
-void Zenith_AutomationTests::TestGroupInteractableParentDisabled()
+ZENITH_TEST(Automation, GroupInteractableParentDisabled)
 {
 	EDITOR_TEST_BEGIN(TestGroupInteractableParentDisabled);
 
@@ -2707,14 +2462,14 @@ void Zenith_AutomationTests::TestGroupInteractableParentDisabled()
 
 	xParent.AddChild(&xChild);
 
-	Zenith_Assert(xChild.IsGroupInteractable() == true, "Child default interactable should be true");
+	ZENITH_ASSERT_EQ(xChild.IsGroupInteractable(), true, "Child default interactable should be true");
 
 	xParent.SetGroupInteractable(false);
-	Zenith_Assert(xChild.IsGroupInteractable() == false, "Child should not be interactable when parent is disabled");
+	ZENITH_ASSERT_EQ(xChild.IsGroupInteractable(), false, "Child should not be interactable when parent is disabled");
 
 	// Child's own flag is still true, just parent overrides
 	xParent.SetGroupInteractable(true);
-	Zenith_Assert(xChild.IsGroupInteractable() == true, "Child should be interactable when parent re-enabled");
+	ZENITH_ASSERT_EQ(xChild.IsGroupInteractable(), true, "Child should be interactable when parent re-enabled");
 
 	xParent.RemoveChild(&xChild);
 
@@ -2724,8 +2479,7 @@ void Zenith_AutomationTests::TestGroupInteractableParentDisabled()
 //=============================================================================
 // UIElement Background Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestSetUIBackgroundColorStep()
+ZENITH_TEST(Automation, SetUIBackgroundColorStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIBackgroundColorStep);
 
@@ -2741,15 +2495,14 @@ void Zenith_AutomationTests::TestSetUIBackgroundColorStep()
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	auto* pxGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("TestGroup");
-	Zenith_Assert(pxGroup->HasBackground(), "Background must be enabled");
-	Zenith_Assert(std::abs(pxGroup->GetBackgroundStyle().m_xFillColor.x - 0.1f) < 0.001f, "Bg color R");
-	Zenith_Assert(std::abs(pxGroup->GetBackgroundStyle().m_xFillColor.w - 0.5f) < 0.001f, "Bg color A");
+	ZENITH_ASSERT_TRUE(pxGroup->HasBackground(), "Background must be enabled");
+	ZENITH_ASSERT_EQ_FLOAT(pxGroup->GetBackgroundStyle().m_xFillColor.x, 0.1f, 0.001f, "Bg color R");
+	ZENITH_ASSERT_EQ_FLOAT(pxGroup->GetBackgroundStyle().m_xFillColor.w, 0.5f, 0.001f, "Bg color A");
 
 	Zenith_EditorAutomation::Reset();
 	EDITOR_TEST_END(TestSetUIBackgroundColorStep);
 }
-
-void Zenith_AutomationTests::TestSetUIBackgroundCornerRadiusStep()
+ZENITH_TEST(Automation, SetUIBackgroundCornerRadiusStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIBackgroundCornerRadiusStep);
 
@@ -2766,13 +2519,12 @@ void Zenith_AutomationTests::TestSetUIBackgroundCornerRadiusStep()
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	auto* pxGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("TestGroup");
-	Zenith_Assert(std::abs(pxGroup->GetBackgroundStyle().m_fCornerRadius - 16.0f) < 0.001f, "Bg corner radius must be 16");
+	ZENITH_ASSERT_EQ_FLOAT(pxGroup->GetBackgroundStyle().m_fCornerRadius, 16.0f, 0.001f, "Bg corner radius must be 16");
 
 	Zenith_EditorAutomation::Reset();
 	EDITOR_TEST_END(TestSetUIBackgroundCornerRadiusStep);
 }
-
-void Zenith_AutomationTests::TestSetUIBackgroundBorderStep()
+ZENITH_TEST(Automation, SetUIBackgroundBorderStep)
 {
 	EDITOR_TEST_BEGIN(TestSetUIBackgroundBorderStep);
 
@@ -2789,8 +2541,8 @@ void Zenith_AutomationTests::TestSetUIBackgroundBorderStep()
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	auto* pxGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("TestGroup");
-	Zenith_Assert(std::abs(pxGroup->GetBackgroundStyle().m_xBorderColor.x - 0.3f) < 0.001f, "Bg border R");
-	Zenith_Assert(std::abs(pxGroup->GetBackgroundStyle().m_fBorderThickness - 2.0f) < 0.001f, "Bg border thickness");
+	ZENITH_ASSERT_EQ_FLOAT(pxGroup->GetBackgroundStyle().m_xBorderColor.x, 0.3f, 0.001f, "Bg border R");
+	ZENITH_ASSERT_EQ_FLOAT(pxGroup->GetBackgroundStyle().m_fBorderThickness, 2.0f, 0.001f, "Bg border thickness");
 
 	Zenith_EditorAutomation::Reset();
 	EDITOR_TEST_END(TestSetUIBackgroundBorderStep);
@@ -2799,20 +2551,19 @@ void Zenith_AutomationTests::TestSetUIBackgroundBorderStep()
 //=============================================================================
 // Button Transition Tests
 //=============================================================================
-
-void Zenith_AutomationTests::TestButtonTransitionInitialState()
+ZENITH_TEST(Automation, ButtonTransitionInitialState)
 {
 	EDITOR_TEST_BEGIN(TestButtonTransitionInitialState);
 
 	Zenith_UI::Zenith_UIButton xButton("Test", "TestBtn");
 
 	// Initial state should be NORMAL
-	Zenith_Assert(xButton.GetState() == Zenith_UI::Zenith_UIButton::ButtonState::NORMAL, "Initial state should be NORMAL");
+	ZENITH_ASSERT_EQ(xButton.GetState(), Zenith_UI::Zenith_UIButton::ButtonState::NORMAL, "Initial state should be NORMAL");
 
 	// Normal style fill should match what was set in constructor
-	Zenith_Assert(std::abs(xButton.GetNormalStyle().m_xFillColor.x - 0.25f) < 0.001f, "Normal fill R should be 0.25");
-	Zenith_Assert(std::abs(xButton.GetHoveredStyle().m_xFillColor.x - 0.35f) < 0.001f, "Hovered fill R should be 0.35");
-	Zenith_Assert(std::abs(xButton.GetPressedStyle().m_xFillColor.x - 0.15f) < 0.001f, "Pressed fill R should be 0.15");
+	ZENITH_ASSERT_EQ_FLOAT(xButton.GetNormalStyle().m_xFillColor.x, 0.25f, 0.001f, "Normal fill R should be 0.25");
+	ZENITH_ASSERT_EQ_FLOAT(xButton.GetHoveredStyle().m_xFillColor.x, 0.35f, 0.001f, "Hovered fill R should be 0.35");
+	ZENITH_ASSERT_EQ_FLOAT(xButton.GetPressedStyle().m_xFillColor.x, 0.15f, 0.001f, "Pressed fill R should be 0.15");
 
 	EDITOR_TEST_END(TestButtonTransitionInitialState);
 }

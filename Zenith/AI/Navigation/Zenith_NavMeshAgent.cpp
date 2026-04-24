@@ -337,3 +337,7 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 	}
 }
 #endif
+
+#ifdef ZENITH_TESTING
+#include "AI/Navigation/Zenith_NavMeshAgent.Tests.inl"
+#endif

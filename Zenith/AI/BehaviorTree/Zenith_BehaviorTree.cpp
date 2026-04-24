@@ -186,3 +186,7 @@ bool Zenith_BehaviorTree::SaveToFile(const Zenith_BehaviorTree&, const std::stri
 	Zenith_Log(LOG_CATEGORY_AI, "WARNING: BehaviorTree::SaveToFile not implemented. Path: %s", strPath.c_str());
 	return false;
 }
+
+#ifdef ZENITH_TESTING
+#include "AI/BehaviorTree/Zenith_BehaviorTree.Tests.inl"
+#endif

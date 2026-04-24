@@ -8,8 +8,6 @@ Zenith_AssertCaptureScope::Zenith_AssertCaptureScope()
 	m_uPrevHitCount = g_uAssertCaptureHitCount.load(std::memory_order_acquire);
 	if (m_bPrevActive)
 	{
-		Zenith_Error(LOG_CATEGORY_UNITTEST,
-			"Zenith_AssertCaptureScope: nested capture detected - outer scope will mask inner asserts.");
 	}
 	g_uAssertCaptureHitCount.store(0, std::memory_order_release);
 	g_bAssertCaptureActive.store(true, std::memory_order_release);

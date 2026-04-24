@@ -1306,4 +1306,8 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+#ifdef ZENITH_TESTING
+#include "Editor/Zenith_EditorAutomation.Tests.inl"
+#endif
+
 #endif // ZENITH_TOOLS

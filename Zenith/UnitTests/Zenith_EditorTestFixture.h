@@ -48,15 +48,20 @@ public:
 private:
 	static std::vector<Zenith_EntityID> s_axCreatedEntities;
 	static bool s_bIsSetUp;
+	// Scene created by SetUp() when no active scene exists. Unloaded by
+	// TearDown(). Ensures editor/automation tests have a stable scene to
+	// operate against regardless of test order under the auto-registering
+	// ZENITH_TEST framework.
+	static Zenith_Scene s_xTestScene;
+	static bool s_bCreatedTestScene;
 };
 
-// Macros for consistent test structure
+// Macros for consistent test structure.
+// No live logging — the final suite summary reports pass/fail.
 #define EDITOR_TEST_BEGIN(TestName) \
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running " #TestName "..."); \
 	Zenith_EditorTestFixture::SetUp();
 
 #define EDITOR_TEST_END(TestName) \
-	Zenith_EditorTestFixture::TearDown(); \
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] " #TestName " passed");
+	Zenith_EditorTestFixture::TearDown();
 
 #endif // ZENITH_TOOLS

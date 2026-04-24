@@ -12,6 +12,8 @@
 
 std::vector<Zenith_EntityID> Zenith_EditorTestFixture::s_axCreatedEntities;
 bool Zenith_EditorTestFixture::s_bIsSetUp = false;
+Zenith_Scene Zenith_EditorTestFixture::s_xTestScene;
+bool Zenith_EditorTestFixture::s_bCreatedTestScene = false;
 
 void Zenith_EditorTestFixture::SetUp()
 {
@@ -19,6 +21,20 @@ void Zenith_EditorTestFixture::SetUp()
 	if (s_bIsSetUp)
 	{
 		TearDown();
+	}
+
+	// Ensure an active scene exists. Under the auto-registering ZENITH_TEST
+	// framework, tests run in linker-dependent order and previous tests may
+	// have unloaded the only active scene. Create a fresh empty scene here
+	// and tear it down in TearDown() so each editor/automation test starts
+	// from a clean, known scene state.
+	s_bCreatedTestScene = false;
+	Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
+	if (!xActive.IsValid() || Zenith_SceneManager::GetSceneData(xActive) == nullptr)
+	{
+		s_xTestScene = Zenith_SceneManager::CreateEmptyScene("EditorTestFixtureScene");
+		Zenith_SceneManager::SetActiveScene(s_xTestScene);
+		s_bCreatedTestScene = true;
 	}
 
 	// Enable mock input for tests
@@ -41,11 +57,14 @@ void Zenith_EditorTestFixture::TearDown()
 	// Clean up created entities (in reverse order to handle hierarchies)
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	for (auto it = s_axCreatedEntities.rbegin(); it != s_axCreatedEntities.rend(); ++it)
+	if (pxSceneData != nullptr)
 	{
-		if (it->IsValid() && pxSceneData->EntityExists(*it))
+		for (auto it = s_axCreatedEntities.rbegin(); it != s_axCreatedEntities.rend(); ++it)
 		{
-			pxSceneData->RemoveEntity(*it);
+			if (it->IsValid() && pxSceneData->EntityExists(*it))
+			{
+				pxSceneData->RemoveEntity(*it);
+			}
 		}
 	}
 	s_axCreatedEntities.clear();
@@ -55,6 +74,14 @@ void Zenith_EditorTestFixture::TearDown()
 
 	// Disable mock input
 	Zenith_InputSimulator::Disable();
+
+	// Unload the test scene we created so the next test starts fresh.
+	if (s_bCreatedTestScene && s_xTestScene.IsValid())
+	{
+		Zenith_SceneManager::UnloadSceneForced(s_xTestScene);
+		s_xTestScene = Zenith_Scene();
+		s_bCreatedTestScene = false;
+	}
 
 	s_bIsSetUp = false;
 }

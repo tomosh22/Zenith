@@ -154,6 +154,8 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 #define ZENITH_DEBUG_VARIABLES
 #endif
 
+#define ZENITH_TESTING
+
 // ZENITH_DEBUG_VARIABLES is a strict subset of ZENITH_TOOLS — the block above
 // is the ONLY site that defines it, and it only runs when ZENITH_TOOLS is
 // already active. Any future define of ZENITH_DEBUG_VARIABLES from a build
@@ -245,3 +247,6 @@ extern const char* Project_GetGameAssetsDirectory();
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "Memory/Zenith_MemoryManagement.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+
+// Unit test framework - macros compile to no-ops when ZENITH_TESTING is undefined.
+#include "Core/Zenith_TestFramework.h"

@@ -82,3 +82,7 @@ namespace Zenith_AIDebugVariables
 #endif
 	}
 }
+
+#ifdef ZENITH_TESTING
+#include "AI/Zenith_AIDebugVariables.Tests.inl"
+#endif

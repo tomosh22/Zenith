@@ -19,9 +19,11 @@
 class Zenith_SceneTests
 {
 public:
-	static void RunAllTests();
+	// RunAllTests removed - tests now auto-register via ZENITH_TEST macro.
+	// Methods remain as class members to preserve friend access to
+	// Zenith_SceneManager / Zenith_SceneData / Zenith_SceneOperation.
 
-private:
+public:
 	//==========================================================================
 	// Helper Functions
 	//==========================================================================

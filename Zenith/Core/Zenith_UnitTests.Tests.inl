@@ -1,4 +1,4 @@
-#include "Zenith.h"
+#include "UnitTests/Zenith_UnitTests.h"
 
 // Tests use `friend class Zenith_UnitTests` injection (see Flux_ShaderBinder.h,
 // Flux_PerFrame.h) to inspect private state. The coupling is intentional and
@@ -7,8 +7,6 @@
 // pin. A future refactor may replace the friend declarations with a
 // test-only `*_Internal.h` header if the coupling starts to leak, but until
 // the interface grows the friend declarations are the cheapest option.
-#include "UnitTests/Zenith_UnitTests.h"
-
 #include "Collections/Zenith_CircularQueue.h"
 #include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_HashSet.h"
@@ -93,512 +91,12 @@
 #endif
 
 #ifdef ZENITH_TOOLS
-#include "UnitTests/Zenith_EditorTests.h"
-#include "UnitTests/Zenith_AutomationTests.h"
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #endif
 
-void Zenith_UnitTests::RunAllTests()
-{
-	TestDataStream();
-	TestMemoryManagement();
-	TestProfiling();
-	TestVector();
-	TestVectorFind();
-	TestVectorErase();
-	TestVectorZeroCapacityResize();
-	TestMemoryPool();
-	TestMemoryPoolExhaustion();
+ZENITH_TEST(Core, DataStream) { Zenith_UnitTests::TestDataStream(); }
 
-	// CircularQueue tests
-	TestCircularQueueBasic();
-	TestCircularQueueWrapping();
-	TestCircularQueueFull();
-	TestCircularQueueNonPOD();
-
-	// Vector edge case tests (from defensive review)
-	TestVectorSelfAssignment();
-	TestVectorRemoveSwap();
-
-	// HashMap / HashSet tests
-	TestHashMapBasic();
-	TestHashMapCollisions();
-	TestHashMapRehash();
-	TestHashMapTombstones();
-	TestHashMapIterator();
-	TestHashMapIteratorInvalidation();
-	TestHashMapCopyMove();
-	TestHashMapSerialization();
-	TestHashMapOperatorBracket();
-	TestHashSetBasic();
-
-	// DataStream edge case tests (from defensive review)
-	TestDataStreamBoundsCheck();
-
-	// Scene serialization tests
-	TestComponentSerialization();
-	TestEntitySerialization();
-#ifndef ZENITH_ANDROID // These tests use raw std::filesystem/std::ifstream with relative paths
-	TestSceneSerialization();
-	TestSceneRoundTrip();
-#endif
-	TestSceneDisableDestroyHelpers();
-
-	// Animation system tests
-	TestBoneLocalPoseBlending();
-	TestSkeletonPoseOperations();
-	TestAnimationParameters();
-	TestTransitionConditions();
-	TestAnimationStateMachine();
-	TestIKChainSetup();
-	TestAnimationSerialization();
-	TestBlendTreeNodes();
-	TestCrossFadeTransition();
-
-	// Additional animation tests
-	TestAnimationClipChannels();
-	TestBlendSpace1D();
-	TestBlendSpace2D();
-	TestBlendTreeEvaluation();
-	TestBlendTreeSerialization();
-	TestBlendTreeWriteReadChildNode();
-	TestBlendTreeEvaluateChildOrReset();
-	TestBlendTreeSelectGetSelectedChild();
-	TestFABRIKSolver();
-	TestIKSafeNormalize();
-	TestIKFindPerpendicularAxis();
-	TestIKConstrainBoneLength();
-	TestAnimationEvents();
-	TestBoneMasking();
-
-	// Animation state machine integration tests
-	TestStateMachineUpdateLoop();
-	TestTriggerConsumptionInTransitions();
-	TestExitTimeTransitions();
-	TestTransitionPriority();
-	TestStateLifecycleCallbacks();
-	TestMultipleTransitionConditions();
-
-	// Asset pipeline tests
-	TestMeshAssetLoading();
-	TestBindPoseVertexPositions();
-	TestAnimatedVertexPositions();
-
-	// ECS bug fix tests (Phase 1)
-	TestComponentRemovalIndexUpdate();
-	TestComponentSwapAndPop();
-	TestMultipleComponentRemoval();
-	TestComponentRemovalWithManyEntities();
-	TestEntityNameFromScene();
-	TestEntityCopyPreservesAccess();
-
-	// ECS reflection system tests (Phase 2)
-	TestComponentMetaRegistration();
-	TestComponentMetaSerialization();
-	TestComponentMetaDeserialization();
-	TestComponentMetaTypeIDConsistency();
-
-	// ECS lifecycle hooks tests (Phase 3)
-	TestLifecycleHookDetection();
-	TestLifecycleOnAwake();
-	TestLifecycleOnStart();
-	TestLifecycleOnUpdate();
-	TestLifecycleOnDestroy();
-	TestLifecycleDispatchOrder();
-	TestLifecycleEntityCreationDuringCallback();
-	TestDispatchFullLifecycleInit();
-
-	// ECS query system tests (Phase 4)
-	TestQuerySingleComponent();
-	TestQueryMultipleComponents();
-	TestQueryNoMatches();
-	TestQueryCount();
-	TestQueryFirstAndAny();
-
-	// ECS event system tests (Phase 5)
-	TestEventSubscribeDispatch();
-	TestEventUnsubscribe();
-	TestEventDeferredQueue();
-	TestEventMultipleSubscribers();
-	TestEventClearSubscriptions();
-
-	// Entity hierarchy tests
-	TestEntityAddChild();
-	TestEntityRemoveChild();
-	TestEntityGetChildren();
-	TestEntityReparenting();
-	TestEntityChildCleanupOnDelete();
-	TestEntityHierarchySerialization();
-
-	// ECS safety tests (circular hierarchy, camera safety)
-	TestCircularHierarchyPrevention();
-	TestSelfParentingPrevention();
-	TestTryGetMainCameraWhenNotSet();
-	TestDeepHierarchyBuildModelMatrix();
-	TestLocalSceneDestruction();
-	TestLocalSceneWithHierarchy();
-
-	// Prefab system tests
-	TestPrefabCreateFromEntity();
-	TestPrefabInstantiation();
-#ifndef ZENITH_ANDROID // Uses raw std::filesystem::remove with relative paths
-	TestPrefabSaveLoadRoundTrip();
-#endif
-	TestPrefabOverrides();
-	TestPrefabVariantCreation();
-
-	// Async asset loading tests
-	TestAsyncLoadState();
-	TestAsyncLoadRequest();
-	TestAsyncLoadCompletion();
-
-	// DataAsset system tests
-	TestDataAssetRegistration();
-#ifndef ZENITH_ANDROID // These tests use raw std::filesystem with relative paths
-	TestDataAssetCreateAndSave();
-	TestDataAssetLoad();
-	TestDataAssetRoundTrip();
-#endif
-
-	// Stick figure animation tests
-	TestStickFigureSkeletonCreation();
-	TestStickFigureMeshCreation();
-	TestStickFigureIdleAnimation();
-	TestStickFigureWalkAnimation();
-	TestStickFigureRunAnimation();
-	TestStickFigureAnimationBlending();
-
-	// Stick figure IK tests
-	TestStickFigureArmIK();
-	TestStickFigureLegIK();
-	TestStickFigureIKWithAnimation();
-
-#ifndef ZENITH_ANDROID // Asset verification tests use std::filesystem::exists with local paths
-	// Stick figure asset export (creates reusable assets for game projects)
-	TestStickFigureAssetExport();
-
-	// Procedural tree asset export (for instanced mesh testing with VAT)
-	TestProceduralTreeAssetExport();
-#endif
-
-	// AI System tests - Blackboard
-	TestBlackboardBasicTypes();
-	TestBlackboardVector3();
-	TestBlackboardEntityID();
-	TestBlackboardHasKey();
-	TestBlackboardClear();
-	TestBlackboardDefaultValues();
-	TestBlackboardOverwrite();
-	TestBlackboardSerialization();
-
-	// AI System tests - Behavior Tree
-	TestBTSequenceAllSuccess();
-	TestBTSequenceFirstFails();
-	TestBTSequenceRunning();
-	TestBTSelectorFirstSucceeds();
-	TestBTSelectorAllFail();
-	TestBTSelectorRunning();
-	TestBTParallelRequireOne();
-	TestBTParallelRequireAll();
-	TestBTParallelAllRunning();
-	TestBTParallelNeitherPolicyMet();
-	TestBTParallelRequireOneAbortsRunning();
-	TestBTParallelRequireOneSuccessWinsOverSimultaneousFailure();
-	TestBTInverter();
-	TestBTRepeaterCount();
-	TestBTCooldown();
-	TestBTSucceeder();
-	TestBTNodeOwnership();
-
-	// AI System tests - NavMesh
-	TestNavMeshPolygonCreation();
-	TestNavMeshAdjacency();
-	TestNavMeshFindNearestPolygon();
-	TestNavMeshIsPointOnMesh();
-	TestNavMeshRaycast();
-	TestNavMeshFindNearestPolygonInCell();
-	TestNavMeshComputePolygonBounds();
-	TestPathfindingStraightLine();
-	TestPathfindingAroundObstacle();
-	TestPathfindingNoPath();
-	TestPathfindingSmoothing();
-
-	// AI System tests - NavMesh Agent
-	TestNavAgentSetDestination();
-	TestNavAgentMovement();
-	TestNavAgentArrival();
-	TestNavAgentStop();
-	TestNavAgentSpeedSettings();
-	TestNavAgentRemainingDistanceBounds();
-	TestPathfindingNoDuplicateWaypoints();
-	TestPathfindingBatchProcessing();
-	TestPathfindingPartialPath();
-
-	// NavMesh Generator helper tests
-	TestCountWalkableSpans();
-	TestHasSufficientClearance();
-	TestMergeOverlappingSpans();
-
-	// Physics mesh generator helper tests
-	TestFindExtremeVertexIndices();
-	TestComputeAABBFromPositions();
-	TestComputeVertexNormals();
-
-	// AI System tests - Perception
-	TestSightConeInRange();
-	TestSightConeOutOfRange();
-	TestSightConeOutOfFOV();
-	TestSightAwarenessGain();
-	TestHearingStimulusInRange();
-	TestHearingStimulusAttenuation();
-	TestHearingStimulusOutOfRange();
-	TestMemoryRememberTarget();
-	TestMemoryDecay();
-
-	// AI System tests - Squad
-	TestSquadAddRemoveMember();
-	TestSquadRoleAssignment();
-	TestSquadLeaderSelection();
-	TestFormationLine();
-	TestFormationWedge();
-	TestFormationWorldPositions();
-	TestSquadSharedKnowledge();
-
-	// AI System tests - Tactical Points
-	TestTacticalPointRegistration();
-	TestTacticalPointCoverScoring();
-	TestTacticalPointFlankScoring();
-	TestFindBestPointNoPointsActive();
-	TestFindBestPointOutOfRange();
-
-	// AI System tests - Tactical Point refactoring tests
-	TestGetEntityPositionValid();
-	TestGetEntityPositionInvalid();
-	TestFindBestPointNoMatches();
-	TestFindBestPointSelectsHighest();
-	TestScoreCoverDistance();
-	TestScoreFlankAngle();
-	TestScoreOverwatchElevation();
-
-	// AI System tests - Debug Variables
-	TestTacticalPointDebugColor();
-	TestSquadDebugRoleColor();
-	TestSharedTargetUpdate();
-	TestSharedTargetUnknown();
-	TestFormationSlotsLeaderFirst();
-	TestFormationSlotsRoleMatching();
-
-	// Squad order helper and alive status refactoring tests
-	TestSquadPositionOrder();
-	TestSquadTargetOrderClearsPosition();
-	TestSquadSimpleOrderClearsAll();
-	TestSquadDeadMemberTriggersLeaderReassign();
-	TestSquadAliveMemberPreservesLeader();
-
-	// Asset Handle tests (operator bool fix for procedural assets)
-	TestAssetHandleProceduralBoolConversion();
-	TestAssetHandlePathBasedBoolConversion();
-	TestAssetHandleEmptyBoolConversion();
-	TestAssetHandleSetStoresRef();
-	TestAssetHandleCopySemantics();
-	TestAssetHandleMoveSemantics();
-	TestAssetHandleSetPathReleasesRef();
-	TestAssetHandleClearReleasesRef();
-	TestAssetHandleProceduralComparison();
-
-	// Model Instance Material tests (GBuffer rendering bug fix)
-#ifndef ZENITH_ANDROID // Depends on StickFigure mesh asset generated by Windows tools
-	TestModelInstanceMaterialSetAndGet();
-#endif
-	TestMaterialHandleCopyPreservesCachedPointer();
-
-	// Any-State Transition tests
-	TestAnyStateTransitionFires();
-	TestAnyStateTransitionSkipsSelf();
-	TestAnyStateTransitionPriority();
-
-	// AnimatorStateInfo tests
-	TestStateInfoStateName();
-	TestStateInfoNormalizedTime();
-
-	// CrossFade tests
-	TestCrossFadeToState();
-	TestCrossFadeToCurrentState();
-
-	// Sub-State Machine tests
-	TestSubStateMachineCreation();
-	TestSubStateMachineSharedParameters();
-
-	// Animation Layer tests
-	TestLayerCreation();
-	TestLayerWeightZero();
-
-	// Tween system tests - Easing
-	TestEasingLinear();
-	TestEasingEndpoints();
-	TestEasingQuadOut();
-	TestEasingBounceOut();
-
-	// Tween system tests - TweenInstance
-	TestTweenInstanceProgress();
-	TestTweenInstanceCompletion();
-	TestTweenInstanceDelay();
-
-	// Tween system tests - TweenComponent
-	TestTweenComponentScaleTo();
-	TestTweenComponentPositionTo();
-	TestTweenComponentMultiple();
-	TestTweenComponentCallback();
-	TestTweenComponentLoop();
-	TestTweenComponentPingPong();
-	TestTweenComponentCancel();
-
-	// Sub-SM transition evaluation test (verifies BUG 1 fix)
-	TestSubStateMachineTransitionEvaluation();
-
-	// CrossFade edge cases
-	TestCrossFadeNonExistentState();
-	TestCrossFadeInstant();
-
-	// Tween rotation
-	TestTweenComponentRotation();
-
-	// Bug regression tests (from code review)
-	TestTriggerNotConsumedOnPartialConditionMatch();
-	TestResolveClipReferencesRecursive();
-	TestTweenDelayWithLoop();
-	TestTweenCallbackReentrant();
-	TestTweenDuplicatePropertyCancels();
-
-	// Code review round 2 - bug fix regression tests
-	TestSubStateMachineTransitionBlendPose();
-	TestRotationTweenShortestPath();
-	TestTransitionInterruption();
-	TestTransitionNonInterruptible();
-	TestCancelByPropertyKeepsOthers();
-	TestCrossFadeWhileTransitioning();
-	TestTweenLoopValueReset();
-
-	// Code review round 3 - Bug 1 regression test + serialization round-trips
-	TestTriggerNotConsumedWhenBlockedByPriority();
-	TestAnimationLayerSerialization();
-	TestAnyStateTransitionSerialization();
-	TestSubStateMachineSerialization();
-
-	// Code review round 4 - bug fix validation tests
-	TestHasAnimationContentWithLayers();
-	TestInitializeRetroactiveLayerPoses();
-	TestResolveClipReferencesBlendSpace2D();
-	TestResolveClipReferencesSelect();
-	TestLayerCompositionOverrideBlend();
-
-	// Code review round 5 - additional coverage
-	TestLayerCompositionAdditiveBlend();
-	TestLayerMaskedOverrideBlend();
-	TestPingPongAsymmetricEasing();
-	TestTransitionCompletionFramePose();
-	TestStateMachineUpdateNoStates();
-	TestStateMachineAutoInitDefaultState();
-
-	// Scene Management System tests (in separate file)
-	Zenith_SceneTests::RunAllTests();
-
-	// Physics System tests (in separate file)
-	Zenith_PhysicsTests::RunAllTests();
-
-	// Terrain streaming tests
-	TestChunkDistanceSymmetry();
-	TestChunkDistanceZero();
-
-	// Slang compiler helper tests (Windows only - Slang not available on Android)
-#ifdef ZENITH_WINDOWS
-	TestSlangSplitFilePath();
-	TestSlangSplitFilePathEdgeCases();
-#endif
-
-	// Animation state machine helper tests
-	TestParamSerializationFloat();
-	TestParamSerializationBoolTrigger();
-	TestCompareNumericGreater();
-	TestCompareNumericLessEqual();
-	TestPriorityInsertionMiddle();
-	TestPriorityInsertionEmpty();
-
-	// Vulkan Memory Manager refactoring tests
-	TestImageViewType3D();
-	TestImageViewTypeCube();
-	TestImageViewTypeDefault2D();
-	TestDestroySkipsInvalidHandle();
-
-	// AI extracted-helper tests (in separate file)
-	Zenith_AITests::RunAllTests();
-
-	// UIStyle tests
-	TestUIStyleDefaultValues();
-	TestUIStyleLerpIdentity();
-	TestUIStyleLerpHalfway();
-	TestUIStyleLerpEndpoints();
-	TestUIStyleLerpShadowBool();
-	TestUITextHorizontalAlignment();
-	TestUITextVerticalAlignment();
-	TestSlangIsBindingAlreadyPresent();
-
-	// Flux render-graph tests (declaration-phase only)
-	TestRenderGraphEmpty();
-	TestRenderGraphPassHandles();
-	TestRenderGraphTransientGeneration();
-	TestRenderGraphSetEnabled();
-	TestRenderGraphBufferBarrierRMW();
-
-	// Transient-aliasing signature tests
-	TestAliasSignatureIdenticalDescs();
-	TestAliasSignatureDifferentFormat();
-	TestAliasSignatureDifferentMemoryFlags();
-	TestAliasSignatureDifferentTextureType();
-	TestAliasSignatureDepthVsColour();
-	TestAliasSignatureIgnoresDimensions();
-
-	// Flux_ShaderBinder name-cache tests
-	TestBinderNameCacheFirstLookupMisses();
-	TestBinderNameCacheRepeatLookupHits();
-	TestBinderNameCacheDifferentReflectionMisses();
-	TestBinderNameCacheDifferentNameMisses();
-	TestBinderNameCacheRoundRobinReplacement();
-	TestBinderNameCacheTypeStoredCorrectly();
-
-	// Flux_PerFrame ring-scheduler tests
-	TestFluxPerFrameFrameCounterAdvances();
-	TestFluxPerFrameRingIndexWraps();
-	TestFluxPerFrameBeginCallbackFires();
-	TestFluxPerFrameEndCallbackFires();
-	TestFluxPerFrameCallbackOrderPreserved();
-	TestFluxPerFrameCallbackUserDataPassed();
-	TestFluxPerFrameRingIndexInsideCallback();
-
-#ifdef ZENITH_TOOLS
-	// Gizmo math helper tests
-	TestGizmosLineLineParallel();
-	TestGizmosLineLinePerpendicular();
-	TestGizmosTangentFrame();
-
-	// Gizmo Unity-parity tests (audit §3.17)
-	TestGizmoEditsPersistentEntityAcrossSceneLoad();
-	TestGizmoEditsEntityInAdditiveScene();
-	TestGizmoDragSurvivesActiveSceneChange();
-	TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget();
-
-	// Editor tests (only in tools builds)
-	Zenith_EditorTests::RunAllTests();
-
-	// Automation system tests
-	Zenith_AutomationTests::RunAllTests();
-#endif
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "All Unit Tests Passed");
-}
-
-void Zenith_UnitTests::TestDataStream()
-{
+void Zenith_UnitTests::TestDataStream(){
 	Zenith_DataStream xStream(1);
 
 	const char* szTestData = "This is a test string";
@@ -615,31 +113,32 @@ void Zenith_UnitTests::TestDataStream()
 
 	char acTestData[uTestDataLen];
 	xStream.ReadData(acTestData, uTestDataLen);
-	Zenith_Assert(!strcmp(acTestData, szTestData));
+	ZENITH_ASSERT_STREQ(acTestData, szTestData);
 
 	uint32_t u5;
 	xStream >> u5;
-	Zenith_Assert(u5 == 5);
+	ZENITH_ASSERT_EQ(u5, 5);
 
 	float f2000;
 	xStream >> f2000;
-	Zenith_Assert(f2000 == 2000.f);
+	ZENITH_ASSERT_EQ(f2000, 2000.f);
 
 	Zenith_Maths::Vector3 x123;
 	xStream >> x123;
-	Zenith_Assert(x123 == Zenith_Maths::Vector3(1, 2, 3));
+	ZENITH_ASSERT_EQ(x123, Zenith_Maths::Vector3(1, 2, 3));
 
 	std::unordered_map<std::string, std::pair<uint32_t, uint64_t>> xUnorderedMap;
 	xStream >> xUnorderedMap;
-	Zenith_Assert((xUnorderedMap.at("Test") == std::pair<uint32_t, uint64_t>(20, 100)));
+	ZENITH_ASSERT_TRUE((xUnorderedMap.at("Test") == std::pair<uint32_t, uint64_t>(20, 100)));
 
 	std::vector<double> xVector;
 	xStream >> xVector;
-	Zenith_Assert(xVector.at(0) == 3245. && xVector.at(1) == -1119.);
+	ZENITH_ASSERT_TRUE(xVector.at(0) == 3245. && xVector.at(1) == -1119.);
 }
 
-void Zenith_UnitTests::TestMemoryManagement()
-{
+ZENITH_TEST(Core, MemoryManagement) { Zenith_UnitTests::TestMemoryManagement(); }
+
+void Zenith_UnitTests::TestMemoryManagement(){
 	int* piTest = new int[10];
 	delete[] piTest;
 }
@@ -655,19 +154,20 @@ static void Test(void* pData)
 	xTestData.m_uOut = xTestData.m_uIn;
 }
 
-void Zenith_UnitTests::TestProfiling()
-{
+ZENITH_TEST(Core, Profiling) { Zenith_UnitTests::TestProfiling(); }
+
+void Zenith_UnitTests::TestProfiling(){
 	constexpr Zenith_ProfileIndex eIndex0 = ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES;
 	constexpr Zenith_ProfileIndex eIndex1 = ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES;
 
 	Zenith_Profiling::BeginFrame();
 	
 	Zenith_Profiling::BeginProfile(eIndex0);
-	Zenith_Assert(Zenith_Profiling::GetCurrentIndex() == eIndex0, "Profiling index wasn't set correctly");
+	ZENITH_ASSERT_EQ(Zenith_Profiling::GetCurrentIndex(), eIndex0, "Profiling index wasn't set correctly");
 	Zenith_Profiling::BeginProfile(eIndex1);
-	Zenith_Assert(Zenith_Profiling::GetCurrentIndex() == eIndex1, "Profiling index wasn't set correctly");
+	ZENITH_ASSERT_EQ(Zenith_Profiling::GetCurrentIndex(), eIndex1, "Profiling index wasn't set correctly");
 	Zenith_Profiling::EndProfile(eIndex1);
-	Zenith_Assert(Zenith_Profiling::GetCurrentIndex() == eIndex0, "Profiling index wasn't set correctly");
+	ZENITH_ASSERT_EQ(Zenith_Profiling::GetCurrentIndex(), eIndex0, "Profiling index wasn't set correctly");
 	Zenith_Profiling::EndProfile(eIndex0);
 
 	TestData xTest0 = { 0, ~0u }, xTest1 = { 1, ~0u }, xTest2 = { 2, ~0u };
@@ -681,9 +181,9 @@ void Zenith_UnitTests::TestProfiling()
 	pxTask1->WaitUntilComplete();
 	pxTask2->WaitUntilComplete();
 
-	Zenith_Assert(xTest0.Validate(), "");
-	Zenith_Assert(xTest1.Validate(), "");
-	Zenith_Assert(xTest2.Validate(), "");
+	ZENITH_ASSERT_TRUE(xTest0.Validate(), "");
+	ZENITH_ASSERT_TRUE(xTest1.Validate(), "");
+	ZENITH_ASSERT_TRUE(xTest2.Validate(), "");
 
 	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = Zenith_Profiling::GetEvents();
 	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(Zenith_Multithreading::GetCurrentThreadID());
@@ -691,9 +191,9 @@ void Zenith_UnitTests::TestProfiling()
 	(void)xEvents.at(pxTask1->GetCompletedThreadID());
 	(void)xEvents.at(pxTask2->GetCompletedThreadID());
 
-	Zenith_Assert(xEventsMain.GetSize() == 8, "Expected 8 events, have %zu", xEvents.size());
-	Zenith_Assert(xEventsMain.Get(0).m_eIndex == eIndex1, "Wrong profile index");
-	Zenith_Assert(xEventsMain.Get(1).m_eIndex == eIndex0, "Wrong profile index");
+	ZENITH_ASSERT_EQ(xEventsMain.GetSize(), 8, "Expected 8 events, have %zu", xEvents.size());
+	ZENITH_ASSERT_EQ(xEventsMain.Get(0).m_eIndex, eIndex1, "Wrong profile index");
+	ZENITH_ASSERT_EQ(xEventsMain.Get(1).m_eIndex, eIndex0, "Wrong profile index");
 
 	delete pxTask0;
 	delete pxTask1;
@@ -702,8 +202,9 @@ void Zenith_UnitTests::TestProfiling()
 	Zenith_Profiling::EndFrame();
 }
 
-void Zenith_UnitTests::TestVector()
-{
+ZENITH_TEST(Core, Vector) { Zenith_UnitTests::TestVector(); }
+
+void Zenith_UnitTests::TestVector(){
 	constexpr u_int uNUM_TESTS = 1024;
 
 	Zenith_Vector<u_int> xUIntVector(1);
@@ -711,27 +212,27 @@ void Zenith_UnitTests::TestVector()
 	for (u_int u = 0; u < uNUM_TESTS / 2; u++)
 	{
 		xUIntVector.PushBack(u);
-		Zenith_Assert(xUIntVector.GetFront() == 0);
-		Zenith_Assert(xUIntVector.GetBack() == u);
+		ZENITH_ASSERT_EQ(xUIntVector.GetFront(), 0);
+		ZENITH_ASSERT_EQ(xUIntVector.GetBack(), u);
 	}
 
 	for (u_int u = uNUM_TESTS / 2; u < uNUM_TESTS; u++)
 	{
 		xUIntVector.EmplaceBack((u_int&&)u_int(u));
-		Zenith_Assert(xUIntVector.GetFront() == 0);
-		Zenith_Assert(xUIntVector.GetBack() == u);
+		ZENITH_ASSERT_EQ(xUIntVector.GetFront(), 0);
+		ZENITH_ASSERT_EQ(xUIntVector.GetBack(), u);
 	}
 
 	for (u_int u = 0; u < uNUM_TESTS; u++)
 	{
-		Zenith_Assert(xUIntVector.Get(u) == u);
+		ZENITH_ASSERT_EQ(xUIntVector.Get(u), u);
 	}
 
 	constexpr u_int uNUM_REMOVALS = uNUM_TESTS / 10;
 	for (u_int u = 0; u < uNUM_REMOVALS; u++)
 	{
 		xUIntVector.Remove(uNUM_TESTS / 2);
-		Zenith_Assert(xUIntVector.Get(uNUM_TESTS / 2) == uNUM_TESTS / 2 + u + 1);
+		ZENITH_ASSERT_EQ(xUIntVector.Get(uNUM_TESTS / 2), uNUM_TESTS / 2 + u + 1);
 	}
 
 	Zenith_Vector<u_int> xCopy0 = xUIntVector;
@@ -741,12 +242,12 @@ void Zenith_UnitTests::TestVector()
 	{
 		for (u_int u = 0; u < uNUM_TESTS / 2; u++)
 		{
-			Zenith_Assert(xVector.Get(u) == u);
+			ZENITH_ASSERT_EQ(xVector.Get(u), u);
 		}
 
 		for (u_int u = uNUM_TESTS / 2; u < uNUM_TESTS - uNUM_REMOVALS; u++)
 		{
-			Zenith_Assert(xVector.Get(u) == u + uNUM_REMOVALS);
+			ZENITH_ASSERT_EQ(xVector.Get(u), u + uNUM_REMOVALS);
 		}
 	};
 
@@ -755,8 +256,9 @@ void Zenith_UnitTests::TestVector()
 	xTest(xCopy1);
 }
 
-void Zenith_UnitTests::TestVectorFind()
-{
+ZENITH_TEST(Core, VectorFind) { Zenith_UnitTests::TestVectorFind(); }
+
+void Zenith_UnitTests::TestVectorFind(){
 	Zenith_Vector<u_int> xVector;
 
 	for (u_int u = 0; u < 5; u++)
@@ -765,35 +267,36 @@ void Zenith_UnitTests::TestVectorFind()
 	}
 
 	u_int uIndex = xVector.Find(20);
-	Zenith_Assert(uIndex == 2, "TestVectorFind: Expected to find 20 at index 2");
+	ZENITH_ASSERT_EQ(uIndex, 2, "TestVectorFind: Expected to find 20 at index 2");
 
 	uIndex = xVector.Find(25);
-	Zenith_Assert(uIndex == xVector.GetSize(), "TestVectorFind: Expected not to find 25");
+	ZENITH_ASSERT_EQ(uIndex, xVector.GetSize(), "TestVectorFind: Expected not to find 25");
 
 	uIndex = xVector.Find(0);
-	Zenith_Assert(uIndex == 0, "TestVectorFind: Expected to find 0 at index 0");
+	ZENITH_ASSERT_EQ(uIndex, 0, "TestVectorFind: Expected to find 0 at index 0");
 
 	uIndex = xVector.Find(40);
-	Zenith_Assert(uIndex == 4, "TestVectorFind: Expected to find 40 at index 4");
+	ZENITH_ASSERT_EQ(uIndex, 4, "TestVectorFind: Expected to find 40 at index 4");
 
-	Zenith_Assert(xVector.Contains(30), "TestVectorFind: Expected Contains(30) to be true");
-	Zenith_Assert(!xVector.Contains(35), "TestVectorFind: Expected Contains(35) to be false");
+	ZENITH_ASSERT_TRUE(xVector.Contains(30), "TestVectorFind: Expected Contains(30) to be true");
+	ZENITH_ASSERT_FALSE(xVector.Contains(35), "TestVectorFind: Expected Contains(35) to be false");
 
 	uIndex = xVector.FindIf([](const u_int& u) { return u > 15; });
-	Zenith_Assert(uIndex == 2, "TestVectorFind: Expected FindIf(>15) to find index 2");
+	ZENITH_ASSERT_EQ(uIndex, 2, "TestVectorFind: Expected FindIf(>15) to find index 2");
 
 	uIndex = xVector.FindIf([](const u_int& u) { return u > 100; });
-	Zenith_Assert(uIndex == xVector.GetSize(), "TestVectorFind: Expected FindIf(>100) to not find anything");
+	ZENITH_ASSERT_EQ(uIndex, xVector.GetSize(), "TestVectorFind: Expected FindIf(>100) to not find anything");
 
 	Zenith_Vector<u_int> xEmptyVector;
 	uIndex = xEmptyVector.Find(0);
-	Zenith_Assert(uIndex == 0, "TestVectorFind: Expected Find on empty vector to return 0 (size)");
+	ZENITH_ASSERT_EQ(uIndex, 0, "TestVectorFind: Expected Find on empty vector to return 0 (size)");
 
 	Zenith_Log(LOG_CATEGORY_CORE, "TestVectorFind passed");
 }
 
-void Zenith_UnitTests::TestVectorErase()
-{
+ZENITH_TEST(Core, VectorErase) { Zenith_UnitTests::TestVectorErase(); }
+
+void Zenith_UnitTests::TestVectorErase(){
 	{
 		Zenith_Vector<u_int> xVector;
 		for (u_int u = 0; u < 5; u++)
@@ -802,14 +305,14 @@ void Zenith_UnitTests::TestVectorErase()
 		}
 
 		bool bErased = xVector.EraseValue(20);
-		Zenith_Assert(bErased, "TestVectorErase: Expected EraseValue(20) to return true");
-		Zenith_Assert(xVector.GetSize() == 4, "TestVectorErase: Expected size to be 4 after erase");
-		Zenith_Assert(!xVector.Contains(20), "TestVectorErase: Expected 20 to no longer be in vector");
+		ZENITH_ASSERT_TRUE(bErased, "TestVectorErase: Expected EraseValue(20) to return true");
+		ZENITH_ASSERT_EQ(xVector.GetSize(), 4, "TestVectorErase: Expected size to be 4 after erase");
+		ZENITH_ASSERT_FALSE(xVector.Contains(20), "TestVectorErase: Expected 20 to no longer be in vector");
 
-		Zenith_Assert(xVector.Get(0) == 0, "TestVectorErase: Expected index 0 to be 0");
-		Zenith_Assert(xVector.Get(1) == 10, "TestVectorErase: Expected index 1 to be 10");
-		Zenith_Assert(xVector.Get(2) == 30, "TestVectorErase: Expected index 2 to be 30");
-		Zenith_Assert(xVector.Get(3) == 40, "TestVectorErase: Expected index 3 to be 40");
+		ZENITH_ASSERT_EQ(xVector.Get(0), 0, "TestVectorErase: Expected index 0 to be 0");
+		ZENITH_ASSERT_EQ(xVector.Get(1), 10, "TestVectorErase: Expected index 1 to be 10");
+		ZENITH_ASSERT_EQ(xVector.Get(2), 30, "TestVectorErase: Expected index 2 to be 30");
+		ZENITH_ASSERT_EQ(xVector.Get(3), 40, "TestVectorErase: Expected index 3 to be 40");
 	}
 
 	{
@@ -818,8 +321,8 @@ void Zenith_UnitTests::TestVectorErase()
 		xVector.PushBack(20);
 
 		bool bErased = xVector.EraseValue(15);
-		Zenith_Assert(!bErased, "TestVectorErase: Expected EraseValue(15) to return false");
-		Zenith_Assert(xVector.GetSize() == 2, "TestVectorErase: Expected size to remain 2");
+		ZENITH_ASSERT_FALSE(bErased, "TestVectorErase: Expected EraseValue(15) to return false");
+		ZENITH_ASSERT_EQ(xVector.GetSize(), 2, "TestVectorErase: Expected size to remain 2");
 	}
 
 	{
@@ -830,9 +333,9 @@ void Zenith_UnitTests::TestVectorErase()
 		}
 
 		bool bErased = xVector.Erase(2);
-		Zenith_Assert(bErased, "TestVectorErase: Expected Erase(2) to return true");
-		Zenith_Assert(xVector.GetSize() == 4, "TestVectorErase: Expected size to be 4");
-		Zenith_Assert(xVector.Get(2) == 3, "TestVectorErase: Expected index 2 to now be 3");
+		ZENITH_ASSERT_TRUE(bErased, "TestVectorErase: Expected Erase(2) to return true");
+		ZENITH_ASSERT_EQ(xVector.GetSize(), 4, "TestVectorErase: Expected size to be 4");
+		ZENITH_ASSERT_EQ(xVector.Get(2), 3, "TestVectorErase: Expected index 2 to now be 3");
 	}
 
 	{
@@ -840,14 +343,14 @@ void Zenith_UnitTests::TestVectorErase()
 		xVector.PushBack(10);
 
 		bool bErased = xVector.Erase(5);
-		Zenith_Assert(!bErased, "TestVectorErase: Expected Erase(5) to return false");
-		Zenith_Assert(xVector.GetSize() == 1, "TestVectorErase: Expected size to remain 1");
+		ZENITH_ASSERT_FALSE(bErased, "TestVectorErase: Expected Erase(5) to return false");
+		ZENITH_ASSERT_EQ(xVector.GetSize(), 1, "TestVectorErase: Expected size to remain 1");
 	}
 
 	{
 		Zenith_Vector<u_int> xEmptyVector;
 		bool bErased = xEmptyVector.EraseValue(0);
-		Zenith_Assert(!bErased, "TestVectorErase: Expected EraseValue on empty vector to return false");
+		ZENITH_ASSERT_FALSE(bErased, "TestVectorErase: Expected EraseValue on empty vector to return false");
 	}
 
 	{
@@ -857,8 +360,8 @@ void Zenith_UnitTests::TestVectorErase()
 		xVector.PushBack(3);
 
 		xVector.EraseValue(1);
-		Zenith_Assert(xVector.GetSize() == 2, "TestVectorErase: Expected size 2 after erasing first");
-		Zenith_Assert(xVector.Get(0) == 2, "TestVectorErase: Expected first element to now be 2");
+		ZENITH_ASSERT_EQ(xVector.GetSize(), 2, "TestVectorErase: Expected size 2 after erasing first");
+		ZENITH_ASSERT_EQ(xVector.Get(0), 2, "TestVectorErase: Expected first element to now be 2");
 	}
 
 	{
@@ -868,15 +371,16 @@ void Zenith_UnitTests::TestVectorErase()
 		xVector.PushBack(3);
 
 		xVector.EraseValue(3);
-		Zenith_Assert(xVector.GetSize() == 2, "TestVectorErase: Expected size 2 after erasing last");
-		Zenith_Assert(xVector.GetBack() == 2, "TestVectorErase: Expected last element to now be 2");
+		ZENITH_ASSERT_EQ(xVector.GetSize(), 2, "TestVectorErase: Expected size 2 after erasing last");
+		ZENITH_ASSERT_EQ(xVector.GetBack(), 2, "TestVectorErase: Expected last element to now be 2");
 	}
 
 	Zenith_Log(LOG_CATEGORY_CORE, "TestVectorErase passed");
 }
 
-void Zenith_UnitTests::TestVectorZeroCapacityResize()
-{
+ZENITH_TEST(Core, VectorZeroCapacityResize) { Zenith_UnitTests::TestVectorZeroCapacityResize(); }
+
+void Zenith_UnitTests::TestVectorZeroCapacityResize(){
 	// Test 1: PushBack on moved-from vector (capacity becomes 0 after move)
 	{
 		Zenith_Vector<u_int> xSource;
@@ -888,14 +392,14 @@ void Zenith_UnitTests::TestVectorZeroCapacityResize()
 		Zenith_Vector<u_int> xDest = std::move(xSource);
 
 		// Source should now have capacity 0
-		Zenith_Assert(xSource.GetCapacity() == 0, "TestVectorZeroCapacityResize: Moved-from vector should have capacity 0");
-		Zenith_Assert(xSource.GetSize() == 0, "TestVectorZeroCapacityResize: Moved-from vector should have size 0");
+		ZENITH_ASSERT_EQ(xSource.GetCapacity(), 0, "TestVectorZeroCapacityResize: Moved-from vector should have capacity 0");
+		ZENITH_ASSERT_EQ(xSource.GetSize(), 0, "TestVectorZeroCapacityResize: Moved-from vector should have size 0");
 
 		// PushBack on moved-from vector should work (was causing infinite loop before fix)
 		xSource.PushBack(42);
-		Zenith_Assert(xSource.GetSize() == 1, "TestVectorZeroCapacityResize: Size should be 1 after PushBack");
-		Zenith_Assert(xSource.Get(0) == 42, "TestVectorZeroCapacityResize: Element should be 42");
-		Zenith_Assert(xSource.GetCapacity() > 0, "TestVectorZeroCapacityResize: Capacity should be > 0 after PushBack");
+		ZENITH_ASSERT_EQ(xSource.GetSize(), 1, "TestVectorZeroCapacityResize: Size should be 1 after PushBack");
+		ZENITH_ASSERT_EQ(xSource.Get(0), 42, "TestVectorZeroCapacityResize: Element should be 42");
+		ZENITH_ASSERT_GT(xSource.GetCapacity(), 0, "TestVectorZeroCapacityResize: Capacity should be > 0 after PushBack");
 	}
 
 	// Test 2: EmplaceBack on moved-from vector
@@ -906,8 +410,8 @@ void Zenith_UnitTests::TestVectorZeroCapacityResize()
 
 		// EmplaceBack should also work on zero-capacity vector
 		xSource.EmplaceBack(200);
-		Zenith_Assert(xSource.GetSize() == 1, "TestVectorZeroCapacityResize: Size should be 1 after EmplaceBack");
-		Zenith_Assert(xSource.Get(0) == 200, "TestVectorZeroCapacityResize: Element should be 200");
+		ZENITH_ASSERT_EQ(xSource.GetSize(), 1, "TestVectorZeroCapacityResize: Size should be 1 after EmplaceBack");
+		ZENITH_ASSERT_EQ(xSource.Get(0), 200, "TestVectorZeroCapacityResize: Element should be 200");
 	}
 
 	// Test 3: Move assignment leaves source at capacity 0
@@ -919,12 +423,12 @@ void Zenith_UnitTests::TestVectorZeroCapacityResize()
 		Zenith_Vector<u_int> xDest;
 		xDest = std::move(xSource);
 
-		Zenith_Assert(xSource.GetCapacity() == 0, "TestVectorZeroCapacityResize: Move-assigned source should have capacity 0");
+		ZENITH_ASSERT_EQ(xSource.GetCapacity(), 0, "TestVectorZeroCapacityResize: Move-assigned source should have capacity 0");
 
 		// Should be able to reuse the moved-from vector
 		xSource.PushBack(99);
-		Zenith_Assert(xSource.GetSize() == 1, "TestVectorZeroCapacityResize: Reused vector should have size 1");
-		Zenith_Assert(xSource.Get(0) == 99, "TestVectorZeroCapacityResize: Reused vector element should be 99");
+		ZENITH_ASSERT_EQ(xSource.GetSize(), 1, "TestVectorZeroCapacityResize: Reused vector should have size 1");
+		ZENITH_ASSERT_EQ(xSource.Get(0), 99, "TestVectorZeroCapacityResize: Reused vector element should be 99");
 	}
 
 	// Test 4: Multiple PushBacks after move to ensure proper capacity growth
@@ -939,10 +443,10 @@ void Zenith_UnitTests::TestVectorZeroCapacityResize()
 			xSource.PushBack(u);
 		}
 
-		Zenith_Assert(xSource.GetSize() == 100, "TestVectorZeroCapacityResize: Size should be 100 after many PushBacks");
+		ZENITH_ASSERT_EQ(xSource.GetSize(), 100, "TestVectorZeroCapacityResize: Size should be 100 after many PushBacks");
 		for (u_int u = 0; u < 100; u++)
 		{
-			Zenith_Assert(xSource.Get(u) == u, "TestVectorZeroCapacityResize: Elements should match");
+			ZENITH_ASSERT_EQ(xSource.Get(u), u, "TestVectorZeroCapacityResize: Elements should match");
 		}
 	}
 
@@ -969,36 +473,37 @@ public:
 };
 u_int MemoryPoolTest::s_uCount = 0;
 
-void Zenith_UnitTests::TestMemoryPool()
-{
+ZENITH_TEST(Core, MemoryPool) { Zenith_UnitTests::TestMemoryPool(); }
+
+void Zenith_UnitTests::TestMemoryPool(){
 	constexpr u_int uPOOL_SIZE = 128;
 	Zenith_MemoryPool<MemoryPoolTest, uPOOL_SIZE> xPool;
 	MemoryPoolTest* apxTest[uPOOL_SIZE];
 
-	Zenith_Assert(MemoryPoolTest::s_uCount == 0);
+	ZENITH_ASSERT_EQ(MemoryPoolTest::s_uCount, 0);
 
 	for (u_int u = 0; u < uPOOL_SIZE / 2; u++)
 	{
 		u_int uTest;
 		apxTest[u] = xPool.Allocate(uTest);
-		Zenith_Assert(MemoryPoolTest::s_uCount == u + 1);
-		Zenith_Assert(apxTest[u]->m_uTest == u + 1);
-		Zenith_Assert(uTest == u + 1);
+		ZENITH_ASSERT_EQ(MemoryPoolTest::s_uCount, u + 1);
+		ZENITH_ASSERT_EQ(apxTest[u]->m_uTest, u + 1);
+		ZENITH_ASSERT_EQ(uTest, u + 1);
 	}
 
 	for (u_int u = 0; u < uPOOL_SIZE / 4; u++)
 	{
-		Zenith_Assert(apxTest[u]->m_uTest == u + 1);
+		ZENITH_ASSERT_EQ(apxTest[u]->m_uTest, u + 1);
 		xPool.Deallocate(apxTest[u]);
-		Zenith_Assert(MemoryPoolTest::s_uCount == (uPOOL_SIZE / 2) - u - 1);
+		ZENITH_ASSERT_EQ(MemoryPoolTest::s_uCount, (uPOOL_SIZE / 2) - u - 1);
 	}
 
-	Zenith_Assert(MemoryPoolTest::s_uCount == uPOOL_SIZE / 4);
+	ZENITH_ASSERT_EQ(MemoryPoolTest::s_uCount, uPOOL_SIZE / 4);
 }
 
-void Zenith_UnitTests::TestMemoryPoolExhaustion()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMemoryPoolExhaustion...");
+ZENITH_TEST(Core, MemoryPoolExhaustion) { Zenith_UnitTests::TestMemoryPoolExhaustion(); }
+
+void Zenith_UnitTests::TestMemoryPoolExhaustion(){
 
 	constexpr u_int uPOOL_SIZE = 4;
 	Zenith_MemoryPool<u_int, uPOOL_SIZE> xPool;
@@ -1008,23 +513,23 @@ void Zenith_UnitTests::TestMemoryPoolExhaustion()
 	for (u_int u = 0; u < uPOOL_SIZE; u++)
 	{
 		apxSlots[u] = xPool.Allocate(u);
-		Zenith_Assert(apxSlots[u] != nullptr, "Allocation %u should succeed", u);
+		ZENITH_ASSERT_NOT_NULL(apxSlots[u], "Allocation %u should succeed", u);
 	}
 
 	// Pool should be full
-	Zenith_Assert(xPool.IsFull(), "Pool should be full after allocating all slots");
+	ZENITH_ASSERT_TRUE(xPool.IsFull(), "Pool should be full after allocating all slots");
 
 	// Next allocation should return nullptr (graceful exhaustion)
 	u_int* pxOverflow = xPool.Allocate(999u);
-	Zenith_Assert(pxOverflow == nullptr, "Pool exhaustion should return nullptr, not crash");
+	ZENITH_ASSERT_NULL(pxOverflow, "Pool exhaustion should return nullptr, not crash");
 
 	// Deallocate one and verify we can allocate again
 	xPool.Deallocate(apxSlots[0]);
-	Zenith_Assert(!xPool.IsFull(), "Pool should not be full after deallocation");
+	ZENITH_ASSERT_FALSE(xPool.IsFull(), "Pool should not be full after deallocation");
 
 	u_int* pxReuse = xPool.Allocate(42u);
-	Zenith_Assert(pxReuse != nullptr, "Should be able to allocate after deallocation");
-	Zenith_Assert(*pxReuse == 42, "Reused slot should have correct value");
+	ZENITH_ASSERT_NOT_NULL(pxReuse, "Should be able to allocate after deallocation");
+	ZENITH_ASSERT_EQ(*pxReuse, 42, "Reused slot should have correct value");
 
 	// Cleanup remaining allocations
 	for (u_int u = 1; u < uPOOL_SIZE; u++)
@@ -1033,59 +538,57 @@ void Zenith_UnitTests::TestMemoryPoolExhaustion()
 	}
 	xPool.Deallocate(pxReuse);
 
-	Zenith_Assert(xPool.IsEmpty(), "Pool should be empty after deallocating all");
+	ZENITH_ASSERT_TRUE(xPool.IsEmpty(), "Pool should be empty after deallocating all");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMemoryPoolExhaustion PASSED");
 }
 
 // ============================================================================
 // CIRCULAR QUEUE TESTS
 // ============================================================================
 
-void Zenith_UnitTests::TestCircularQueueBasic()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCircularQueueBasic...");
+ZENITH_TEST(Core, CircularQueueBasic) { Zenith_UnitTests::TestCircularQueueBasic(); }
+
+void Zenith_UnitTests::TestCircularQueueBasic(){
 
 	constexpr u_int uCAPACITY = 8;
 	Zenith_CircularQueue<u_int, uCAPACITY> xQueue;
 
 	// Initial state
-	Zenith_Assert(xQueue.IsEmpty(), "Queue should start empty");
-	Zenith_Assert(!xQueue.IsFull(), "Queue should not start full");
-	Zenith_Assert(xQueue.GetSize() == 0, "Queue should have size 0");
-	Zenith_Assert(xQueue.GetCapacity() == uCAPACITY, "Queue capacity should be %u", uCAPACITY);
+	ZENITH_ASSERT_TRUE(xQueue.IsEmpty(), "Queue should start empty");
+	ZENITH_ASSERT_FALSE(xQueue.IsFull(), "Queue should not start full");
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), 0, "Queue should have size 0");
+	ZENITH_ASSERT_EQ(xQueue.GetCapacity(), uCAPACITY, "Queue capacity should be %u", uCAPACITY);
 
 	// Enqueue and dequeue
 	for (u_int u = 0; u < uCAPACITY / 2; u++)
 	{
 		bool bEnqueued = xQueue.Enqueue(u * 10);
-		Zenith_Assert(bEnqueued, "Enqueue %u should succeed", u);
-		Zenith_Assert(xQueue.GetSize() == u + 1, "Size should be %u", u + 1);
+		ZENITH_ASSERT_TRUE(bEnqueued, "Enqueue %u should succeed", u);
+		ZENITH_ASSERT_EQ(xQueue.GetSize(), u + 1, "Size should be %u", u + 1);
 	}
 
 	u_int uVal = 0;
 	for (u_int u = 0; u < uCAPACITY / 2; u++)
 	{
 		bool bDequeued = xQueue.Dequeue(uVal);
-		Zenith_Assert(bDequeued, "Dequeue %u should succeed", u);
-		Zenith_Assert(uVal == u * 10, "Dequeued value should be %u, got %u", u * 10, uVal);
+		ZENITH_ASSERT_TRUE(bDequeued, "Dequeue %u should succeed", u);
+		ZENITH_ASSERT_EQ(uVal, u * 10, "Dequeued value should be %u, got %u", u * 10, uVal);
 	}
 
-	Zenith_Assert(xQueue.IsEmpty(), "Queue should be empty after dequeue all");
+	ZENITH_ASSERT_TRUE(xQueue.IsEmpty(), "Queue should be empty after dequeue all");
 
 	// Test Peek
 	xQueue.Enqueue(123u);
 	bool bPeeked = xQueue.Peek(uVal);
-	Zenith_Assert(bPeeked, "Peek should succeed");
-	Zenith_Assert(uVal == 123, "Peek should return front value");
-	Zenith_Assert(xQueue.GetSize() == 1, "Peek should not remove element");
+	ZENITH_ASSERT_TRUE(bPeeked, "Peek should succeed");
+	ZENITH_ASSERT_EQ(uVal, 123, "Peek should return front value");
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), 1, "Peek should not remove element");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularQueueBasic PASSED");
 }
 
-void Zenith_UnitTests::TestCircularQueueWrapping()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCircularQueueWrapping...");
+ZENITH_TEST(Core, CircularQueueWrapping) { Zenith_UnitTests::TestCircularQueueWrapping(); }
+
+void Zenith_UnitTests::TestCircularQueueWrapping(){
 
 	constexpr u_int uCAPACITY = 4;
 	Zenith_CircularQueue<u_int, uCAPACITY> xQueue;
@@ -1108,26 +611,25 @@ void Zenith_UnitTests::TestCircularQueueWrapping()
 	for (u_int u = 0; u < uCAPACITY / 2; u++)
 	{
 		bool bEnqueued = xQueue.Enqueue(100 + u);
-		Zenith_Assert(bEnqueued, "Enqueue after wrap should succeed");
+		ZENITH_ASSERT_TRUE(bEnqueued, "Enqueue after wrap should succeed");
 	}
 
-	Zenith_Assert(xQueue.IsFull(), "Queue should be full after wrapping");
+	ZENITH_ASSERT_TRUE(xQueue.IsFull(), "Queue should be full after wrapping");
 
 	// Verify FIFO order is maintained across wrap
 	u_int auExpected[] = { 2, 3, 100, 101 };  // Original 2,3 + new 100,101
 	for (u_int u = 0; u < uCAPACITY; u++)
 	{
 		bool bDequeued = xQueue.Dequeue(uVal);
-		Zenith_Assert(bDequeued, "Dequeue %u should succeed", u);
-		Zenith_Assert(uVal == auExpected[u], "Value %u should be %u, got %u", u, auExpected[u], uVal);
+		ZENITH_ASSERT_TRUE(bDequeued, "Dequeue %u should succeed", u);
+		ZENITH_ASSERT_EQ(uVal, auExpected[u], "Value %u should be %u, got %u", u, auExpected[u], uVal);
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularQueueWrapping PASSED");
 }
 
-void Zenith_UnitTests::TestCircularQueueFull()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCircularQueueFull...");
+ZENITH_TEST(Core, CircularQueueFull) { Zenith_UnitTests::TestCircularQueueFull(); }
+
+void Zenith_UnitTests::TestCircularQueueFull(){
 
 	constexpr u_int uCAPACITY = 4;
 	Zenith_CircularQueue<u_int, uCAPACITY> xQueue;
@@ -1136,30 +638,29 @@ void Zenith_UnitTests::TestCircularQueueFull()
 	for (u_int u = 0; u < uCAPACITY; u++)
 	{
 		bool bEnqueued = xQueue.Enqueue(u);
-		Zenith_Assert(bEnqueued, "Enqueue within capacity should succeed");
+		ZENITH_ASSERT_TRUE(bEnqueued, "Enqueue within capacity should succeed");
 	}
 
-	Zenith_Assert(xQueue.IsFull(), "Queue should be full");
-	Zenith_Assert(xQueue.GetSize() == uCAPACITY, "Size should equal capacity");
+	ZENITH_ASSERT_TRUE(xQueue.IsFull(), "Queue should be full");
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), uCAPACITY, "Size should equal capacity");
 
 	// Attempt to enqueue when full - should fail gracefully
 	bool bOverflow = xQueue.Enqueue(999u);
-	Zenith_Assert(!bOverflow, "Enqueue when full should return false");
-	Zenith_Assert(xQueue.GetSize() == uCAPACITY, "Size should remain at capacity");
+	ZENITH_ASSERT_FALSE(bOverflow, "Enqueue when full should return false");
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), uCAPACITY, "Size should remain at capacity");
 
 	// Dequeue from empty queue should fail
 	xQueue.Clear();
-	Zenith_Assert(xQueue.IsEmpty(), "Queue should be empty after Clear");
+	ZENITH_ASSERT_TRUE(xQueue.IsEmpty(), "Queue should be empty after Clear");
 
 	u_int uVal = 0;
 	bool bUnderflow = xQueue.Dequeue(uVal);
-	Zenith_Assert(!bUnderflow, "Dequeue from empty should return false");
+	ZENITH_ASSERT_FALSE(bUnderflow, "Dequeue from empty should return false");
 
 	// Peek from empty should fail
 	bool bPeekEmpty = xQueue.Peek(uVal);
-	Zenith_Assert(!bPeekEmpty, "Peek from empty should return false");
+	ZENITH_ASSERT_FALSE(bPeekEmpty, "Peek from empty should return false");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularQueueFull PASSED");
 }
 
 // Helper class for testing non-POD destructor behavior
@@ -1181,9 +682,9 @@ public:
 };
 u_int TestDestructorCounter::s_uDestructorCallCount = 0;
 
-void Zenith_UnitTests::TestCircularQueueNonPOD()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCircularQueueNonPOD...");
+ZENITH_TEST(Core, CircularQueueNonPOD) { Zenith_UnitTests::TestCircularQueueNonPOD(); }
+
+void Zenith_UnitTests::TestCircularQueueNonPOD(){
 
 	TestDestructorCounter::ResetCounter();
 
@@ -1195,33 +696,30 @@ void Zenith_UnitTests::TestCircularQueueNonPOD()
 		xQueue.Enqueue(TestDestructorCounter(2));
 		xQueue.Enqueue(TestDestructorCounter(3));
 
-		Zenith_Assert(xQueue.GetSize() == 3, "Queue should have 3 elements");
+		ZENITH_ASSERT_EQ(xQueue.GetSize(), 3, "Queue should have 3 elements");
 
 		// Dequeue and verify destructor was called
 		u_int uPreDequeueCount = TestDestructorCounter::s_uDestructorCallCount;
 		TestDestructorCounter xOut;
 		bool bSuccess = xQueue.Dequeue(xOut);
-		Zenith_Assert(bSuccess, "Dequeue should succeed");
-		Zenith_Assert(xOut.m_iValue == 1, "Dequeued value should be 1");
+		ZENITH_ASSERT_TRUE(bSuccess, "Dequeue should succeed");
+		ZENITH_ASSERT_EQ(xOut.m_iValue, 1, "Dequeued value should be 1");
 		// After dequeue: destructor called on slot + reconstruct creates new object
 		// The slot's destructor should have been called
-		Zenith_Assert(TestDestructorCounter::s_uDestructorCallCount > uPreDequeueCount,
-			"Destructor should be called during Dequeue for non-POD types");
+		ZENITH_ASSERT_GT(TestDestructorCounter::s_uDestructorCallCount, uPreDequeueCount, "Destructor should be called during Dequeue for non-POD types");
 
 		// Clear and verify all destructors called
 		uPreDequeueCount = TestDestructorCounter::s_uDestructorCallCount;
 		xQueue.Clear();
-		Zenith_Assert(xQueue.IsEmpty(), "Queue should be empty after Clear");
-		Zenith_Assert(TestDestructorCounter::s_uDestructorCallCount > uPreDequeueCount,
-			"Destructors should be called during Clear");
+		ZENITH_ASSERT_TRUE(xQueue.IsEmpty(), "Queue should be empty after Clear");
+		ZENITH_ASSERT_GT(TestDestructorCounter::s_uDestructorCallCount, uPreDequeueCount, "Destructors should be called during Clear");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularQueueNonPOD PASSED");
 }
 
-void Zenith_UnitTests::TestVectorSelfAssignment()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestVectorSelfAssignment...");
+ZENITH_TEST(Core, VectorSelfAssignment) { Zenith_UnitTests::TestVectorSelfAssignment(); }
+
+void Zenith_UnitTests::TestVectorSelfAssignment(){
 
 	// Test copy self-assignment
 	{
@@ -1233,10 +731,10 @@ void Zenith_UnitTests::TestVectorSelfAssignment()
 		// Self-assignment should be a no-op, not crash
 		xVec = xVec;
 
-		Zenith_Assert(xVec.GetSize() == 3, "Size should be unchanged after self-assignment");
-		Zenith_Assert(xVec.Get(0) == 1, "Element 0 should be unchanged");
-		Zenith_Assert(xVec.Get(1) == 2, "Element 1 should be unchanged");
-		Zenith_Assert(xVec.Get(2) == 3, "Element 2 should be unchanged");
+		ZENITH_ASSERT_EQ(xVec.GetSize(), 3, "Size should be unchanged after self-assignment");
+		ZENITH_ASSERT_EQ(xVec.Get(0), 1, "Element 0 should be unchanged");
+		ZENITH_ASSERT_EQ(xVec.Get(1), 2, "Element 1 should be unchanged");
+		ZENITH_ASSERT_EQ(xVec.Get(2), 3, "Element 2 should be unchanged");
 	}
 
 	// Test move self-assignment
@@ -1248,17 +746,16 @@ void Zenith_UnitTests::TestVectorSelfAssignment()
 		// Move self-assignment should also be safe
 		xVec = std::move(xVec);
 
-		Zenith_Assert(xVec.GetSize() == 2, "Size should be unchanged after move self-assignment");
-		Zenith_Assert(xVec.Get(0) == 10, "Element 0 should be unchanged");
-		Zenith_Assert(xVec.Get(1) == 20, "Element 1 should be unchanged");
+		ZENITH_ASSERT_EQ(xVec.GetSize(), 2, "Size should be unchanged after move self-assignment");
+		ZENITH_ASSERT_EQ(xVec.Get(0), 10, "Element 0 should be unchanged");
+		ZENITH_ASSERT_EQ(xVec.Get(1), 20, "Element 1 should be unchanged");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestVectorSelfAssignment PASSED");
 }
 
-void Zenith_UnitTests::TestVectorRemoveSwap()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestVectorRemoveSwap...");
+ZENITH_TEST(Core, VectorRemoveSwap) { Zenith_UnitTests::TestVectorRemoveSwap(); }
+
+void Zenith_UnitTests::TestVectorRemoveSwap(){
 
 	// Test basic RemoveSwap
 	{
@@ -1271,10 +768,10 @@ void Zenith_UnitTests::TestVectorRemoveSwap()
 		// Remove element at index 0 - last element (4) should be swapped in
 		xVec.RemoveSwap(0);
 
-		Zenith_Assert(xVec.GetSize() == 3, "Size should be 3 after RemoveSwap");
-		Zenith_Assert(xVec.Get(0) == 4, "Element at index 0 should be swapped from end");
-		Zenith_Assert(xVec.Get(1) == 2, "Element at index 1 should be unchanged");
-		Zenith_Assert(xVec.Get(2) == 3, "Element at index 2 should be unchanged");
+		ZENITH_ASSERT_EQ(xVec.GetSize(), 3, "Size should be 3 after RemoveSwap");
+		ZENITH_ASSERT_EQ(xVec.Get(0), 4, "Element at index 0 should be swapped from end");
+		ZENITH_ASSERT_EQ(xVec.Get(1), 2, "Element at index 1 should be unchanged");
+		ZENITH_ASSERT_EQ(xVec.Get(2), 3, "Element at index 2 should be unchanged");
 	}
 
 	// Test RemoveSwap on last element (no swap needed)
@@ -1287,9 +784,9 @@ void Zenith_UnitTests::TestVectorRemoveSwap()
 		// Remove last element
 		xVec.RemoveSwap(2);
 
-		Zenith_Assert(xVec.GetSize() == 2, "Size should be 2 after RemoveSwap on last");
-		Zenith_Assert(xVec.Get(0) == 1, "Element 0 unchanged");
-		Zenith_Assert(xVec.Get(1) == 2, "Element 1 unchanged");
+		ZENITH_ASSERT_EQ(xVec.GetSize(), 2, "Size should be 2 after RemoveSwap on last");
+		ZENITH_ASSERT_EQ(xVec.Get(0), 1, "Element 0 unchanged");
+		ZENITH_ASSERT_EQ(xVec.Get(1), 2, "Element 1 unchanged");
 	}
 
 	// Test EraseValueSwap
@@ -1300,17 +797,16 @@ void Zenith_UnitTests::TestVectorRemoveSwap()
 		xVec.PushBack(30);
 
 		bool bErased = xVec.EraseValueSwap(20);
-		Zenith_Assert(bErased, "EraseValueSwap should return true for existing value");
-		Zenith_Assert(xVec.GetSize() == 2, "Size should be 2");
-		Zenith_Assert(xVec.Contains(10), "Should still contain 10");
-		Zenith_Assert(xVec.Contains(30), "Should still contain 30");
-		Zenith_Assert(!xVec.Contains(20), "Should NOT contain 20");
+		ZENITH_ASSERT_TRUE(bErased, "EraseValueSwap should return true for existing value");
+		ZENITH_ASSERT_EQ(xVec.GetSize(), 2, "Size should be 2");
+		ZENITH_ASSERT_TRUE(xVec.Contains(10), "Should still contain 10");
+		ZENITH_ASSERT_TRUE(xVec.Contains(30), "Should still contain 30");
+		ZENITH_ASSERT_FALSE(xVec.Contains(20), "Should NOT contain 20");
 
 		bool bNotErased = xVec.EraseValueSwap(999);
-		Zenith_Assert(!bNotErased, "EraseValueSwap should return false for non-existent value");
+		ZENITH_ASSERT_FALSE(bNotErased, "EraseValueSwap should return false for non-existent value");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestVectorRemoveSwap PASSED");
 }
 
 // ============================================================
@@ -1334,57 +830,56 @@ struct Zenith_Hash<CollidingKey>
 	u_int64 operator()(const CollidingKey&) const noexcept { return 42; }
 };
 
-void Zenith_UnitTests::TestHashMapBasic()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapBasic...");
+ZENITH_TEST(Core, HashMapBasic) { Zenith_UnitTests::TestHashMapBasic(); }
+
+void Zenith_UnitTests::TestHashMapBasic(){
 
 	Zenith_HashMap<u_int, u_int> xMap;
-	Zenith_Assert(xMap.IsEmpty(), "New map should be empty");
-	Zenith_Assert(xMap.GetSize() == 0, "New map size should be 0");
+	ZENITH_ASSERT_TRUE(xMap.IsEmpty(), "New map should be empty");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), 0, "New map size should be 0");
 
 	xMap.Insert(1, 100);
 	xMap.Insert(2, 200);
 	xMap.Insert(3, 300);
-	Zenith_Assert(xMap.GetSize() == 3, "Size should be 3 after 3 inserts");
-	Zenith_Assert(xMap.Contains(1), "Should contain key 1");
-	Zenith_Assert(xMap.Contains(2), "Should contain key 2");
-	Zenith_Assert(xMap.Contains(3), "Should contain key 3");
-	Zenith_Assert(!xMap.Contains(4), "Should NOT contain key 4");
-	Zenith_Assert(xMap.Get(1) == 100, "Get(1) should return 100");
-	Zenith_Assert(xMap.Get(2) == 200, "Get(2) should return 200");
-	Zenith_Assert(xMap.Get(3) == 300, "Get(3) should return 300");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), 3, "Size should be 3 after 3 inserts");
+	ZENITH_ASSERT_TRUE(xMap.Contains(1), "Should contain key 1");
+	ZENITH_ASSERT_TRUE(xMap.Contains(2), "Should contain key 2");
+	ZENITH_ASSERT_TRUE(xMap.Contains(3), "Should contain key 3");
+	ZENITH_ASSERT_FALSE(xMap.Contains(4), "Should NOT contain key 4");
+	ZENITH_ASSERT_EQ(xMap.Get(1), 100, "Get(1) should return 100");
+	ZENITH_ASSERT_EQ(xMap.Get(2), 200, "Get(2) should return 200");
+	ZENITH_ASSERT_EQ(xMap.Get(3), 300, "Get(3) should return 300");
 
 	// Update existing
 	xMap.Insert(2, 250);
-	Zenith_Assert(xMap.GetSize() == 3, "Size unchanged on update");
-	Zenith_Assert(xMap.Get(2) == 250, "Value should be updated");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), 3, "Size unchanged on update");
+	ZENITH_ASSERT_EQ(xMap.Get(2), 250, "Value should be updated");
 
 	// Remove
 	bool bRemoved = xMap.Remove(2);
-	Zenith_Assert(bRemoved, "Remove should succeed");
-	Zenith_Assert(xMap.GetSize() == 2, "Size should be 2 after remove");
-	Zenith_Assert(!xMap.Contains(2), "Should not contain removed key");
-	Zenith_Assert(xMap.Contains(1), "Other keys still present");
-	Zenith_Assert(xMap.Contains(3), "Other keys still present");
+	ZENITH_ASSERT_TRUE(bRemoved, "Remove should succeed");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), 2, "Size should be 2 after remove");
+	ZENITH_ASSERT_FALSE(xMap.Contains(2), "Should not contain removed key");
+	ZENITH_ASSERT_TRUE(xMap.Contains(1), "Other keys still present");
+	ZENITH_ASSERT_TRUE(xMap.Contains(3), "Other keys still present");
 
 	bool bRemovedAgain = xMap.Remove(2);
-	Zenith_Assert(!bRemovedAgain, "Remove of missing key returns false");
+	ZENITH_ASSERT_FALSE(bRemovedAgain, "Remove of missing key returns false");
 
 	// TryGet
 	u_int* pVal = xMap.TryGet(1);
-	Zenith_Assert(pVal != nullptr && *pVal == 100, "TryGet returns value");
-	Zenith_Assert(xMap.TryGet(999) == nullptr, "TryGet returns nullptr for missing");
+	ZENITH_ASSERT_TRUE(pVal != nullptr && *pVal == 100, "TryGet returns value");
+	ZENITH_ASSERT_NULL(xMap.TryGet(999), "TryGet returns nullptr for missing");
 
 	xMap.Clear();
-	Zenith_Assert(xMap.IsEmpty(), "Clear empties the map");
-	Zenith_Assert(!xMap.Contains(1), "Nothing left after clear");
+	ZENITH_ASSERT_TRUE(xMap.IsEmpty(), "Clear empties the map");
+	ZENITH_ASSERT_FALSE(xMap.Contains(1), "Nothing left after clear");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapBasic PASSED");
 }
 
-void Zenith_UnitTests::TestHashMapCollisions()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapCollisions...");
+ZENITH_TEST(Core, HashMapCollisions) { Zenith_UnitTests::TestHashMapCollisions(); }
+
+void Zenith_UnitTests::TestHashMapCollisions(){
 
 	Zenith_HashMap<CollidingKey, u_int> xMap(64);
 	constexpr u_int uNUM = 30;
@@ -1392,12 +887,12 @@ void Zenith_UnitTests::TestHashMapCollisions()
 	{
 		xMap.Insert({u}, u * 10);
 	}
-	Zenith_Assert(xMap.GetSize() == uNUM, "All colliding keys stored");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), uNUM, "All colliding keys stored");
 
 	for (u_int u = 0; u < uNUM; u++)
 	{
-		Zenith_Assert(xMap.Contains({u}), "Colliding key retrievable");
-		Zenith_Assert(xMap.Get({u}) == u * 10, "Colliding value correct");
+		ZENITH_ASSERT_TRUE(xMap.Contains({u}), "Colliding key retrievable");
+		ZENITH_ASSERT_EQ(xMap.Get({u}), u * 10, "Colliding value correct");
 	}
 
 	// Remove every other one; rest should still be accessible through the probe chain.
@@ -1407,23 +902,22 @@ void Zenith_UnitTests::TestHashMapCollisions()
 	}
 	for (u_int u = 1; u < uNUM; u += 2)
 	{
-		Zenith_Assert(xMap.Contains({u}), "Surviving colliding key still accessible past tombstones");
+		ZENITH_ASSERT_TRUE(xMap.Contains({u}), "Surviving colliding key still accessible past tombstones");
 	}
 	for (u_int u = 0; u < uNUM; u += 2)
 	{
-		Zenith_Assert(!xMap.Contains({u}), "Removed key not found");
+		ZENITH_ASSERT_FALSE(xMap.Contains({u}), "Removed key not found");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapCollisions PASSED");
 }
 
-void Zenith_UnitTests::TestHashMapRehash()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapRehash...");
+ZENITH_TEST(Core, HashMapRehash) { Zenith_UnitTests::TestHashMapRehash(); }
+
+void Zenith_UnitTests::TestHashMapRehash(){
 
 	Zenith_HashMap<u_int, u_int> xMap(16);
 	u_int uInitialCapacity = xMap.GetCapacity();
-	Zenith_Assert(uInitialCapacity == 16, "Initial capacity should be 16");
+	ZENITH_ASSERT_EQ(uInitialCapacity, 16, "Initial capacity should be 16");
 
 	// Insert past load factor to trigger rehash
 	constexpr u_int uNUM = 200;
@@ -1431,27 +925,26 @@ void Zenith_UnitTests::TestHashMapRehash()
 	{
 		xMap.Insert(u, u * 7);
 	}
-	Zenith_Assert(xMap.GetSize() == uNUM, "All entries stored after rehash");
-	Zenith_Assert(xMap.GetCapacity() > uInitialCapacity, "Capacity grew");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), uNUM, "All entries stored after rehash");
+	ZENITH_ASSERT_GT(xMap.GetCapacity(), uInitialCapacity, "Capacity grew");
 
 	// Verify all entries survived rehash
 	for (u_int u = 0; u < uNUM; u++)
 	{
-		Zenith_Assert(xMap.Contains(u), "Key survived rehash");
-		Zenith_Assert(xMap.Get(u) == u * 7, "Value survived rehash");
+		ZENITH_ASSERT_TRUE(xMap.Contains(u), "Key survived rehash");
+		ZENITH_ASSERT_EQ(xMap.Get(u), u * 7, "Value survived rehash");
 	}
 
 	// Explicit Reserve
 	Zenith_HashMap<u_int, u_int> xMap2;
 	xMap2.Reserve(1024);
-	Zenith_Assert(xMap2.GetCapacity() >= 1024, "Reserve grew capacity");
+	ZENITH_ASSERT_GE(xMap2.GetCapacity(), 1024, "Reserve grew capacity");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapRehash PASSED");
 }
 
-void Zenith_UnitTests::TestHashMapTombstones()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapTombstones...");
+ZENITH_TEST(Core, HashMapTombstones) { Zenith_UnitTests::TestHashMapTombstones(); }
+
+void Zenith_UnitTests::TestHashMapTombstones(){
 
 	// Insert and delete many entries at the same slot; verify lookups still work.
 	Zenith_HashMap<CollidingKey, u_int> xMap(32);
@@ -1463,7 +956,7 @@ void Zenith_UnitTests::TestHashMapTombstones()
 	{
 		xMap.Remove({u});
 	}
-	Zenith_Assert(xMap.GetSize() == 0, "All removed");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), 0, "All removed");
 
 	// Re-insert after deletion — tombstones should be reused
 	for (u_int u = 100; u < 120; u++)
@@ -1472,19 +965,18 @@ void Zenith_UnitTests::TestHashMapTombstones()
 	}
 	for (u_int u = 100; u < 120; u++)
 	{
-		Zenith_Assert(xMap.Contains({u}), "Post-tombstone insert retrievable");
+		ZENITH_ASSERT_TRUE(xMap.Contains({u}), "Post-tombstone insert retrievable");
 	}
 	for (u_int u = 0; u < 16; u++)
 	{
-		Zenith_Assert(!xMap.Contains({u}), "Tombstoned key still missing");
+		ZENITH_ASSERT_FALSE(xMap.Contains({u}), "Tombstoned key still missing");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapTombstones PASSED");
 }
 
-void Zenith_UnitTests::TestHashMapIterator()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapIterator...");
+ZENITH_TEST(Core, HashMapIterator) { Zenith_UnitTests::TestHashMapIterator(); }
+
+void Zenith_UnitTests::TestHashMapIterator(){
 
 	Zenith_HashMap<u_int, u_int> xMap;
 	constexpr u_int uNUM = 50;
@@ -1503,20 +995,19 @@ void Zenith_UnitTests::TestHashMapIterator()
 	{
 		const u_int uKey = xIt.GetKey();
 		const u_int uVal = xIt.GetValue();
-		Zenith_Assert(uKey < uNUM, "Key in expected range");
-		Zenith_Assert(uVal == uKey * 3, "Value matches key");
-		Zenith_Assert(!xSeen.Get(uKey), "Each key visited at most once");
+		ZENITH_ASSERT_LT(uKey, uNUM, "Key in expected range");
+		ZENITH_ASSERT_EQ(uVal, uKey * 3, "Value matches key");
+		ZENITH_ASSERT_FALSE(xSeen.Get(uKey), "Each key visited at most once");
 		xSeen.Get(uKey) = true;
 		uVisited++;
 	}
-	Zenith_Assert(uVisited == uNUM, "All entries visited");
+	ZENITH_ASSERT_EQ(uVisited, uNUM, "All entries visited");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapIterator PASSED");
 }
 
-void Zenith_UnitTests::TestHashMapIteratorInvalidation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapIteratorInvalidation...");
+ZENITH_TEST(Core, HashMapIteratorInvalidation) { Zenith_UnitTests::TestHashMapIteratorInvalidation(); }
+
+void Zenith_UnitTests::TestHashMapIteratorInvalidation(){
 
 	// We cannot actually trigger asserts from within a test without
 	// Zenith_AssertCapture machinery; just verify the generation counter
@@ -1529,66 +1020,64 @@ void Zenith_UnitTests::TestHashMapIteratorInvalidation()
 		Zenith_HashMap<u_int, u_int>::Iterator xIt(xMap);
 		u_int uCount = 0;
 		for (; !xIt.Done(); xIt.Next()) uCount++;
-		Zenith_Assert(uCount == 10, "Iterator works on stable map");
+		ZENITH_ASSERT_EQ(uCount, 10, "Iterator works on stable map");
 	}
 
 	// Triggering rehash should bump generation
 	for (u_int u = 10; u < 200; u++) xMap.Insert(u, u);
-	Zenith_Assert(xMap.GetSize() == 200, "Map grew");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), 200, "Map grew");
 
 	// Clear also invalidates
 	xMap.Clear();
-	Zenith_Assert(xMap.IsEmpty(), "Map cleared");
+	ZENITH_ASSERT_TRUE(xMap.IsEmpty(), "Map cleared");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapIteratorInvalidation PASSED");
 }
 
-void Zenith_UnitTests::TestHashMapCopyMove()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapCopyMove...");
+ZENITH_TEST(Core, HashMapCopyMove) { Zenith_UnitTests::TestHashMapCopyMove(); }
+
+void Zenith_UnitTests::TestHashMapCopyMove(){
 
 	Zenith_HashMap<u_int, u_int> xOriginal;
 	for (u_int u = 0; u < 20; u++) xOriginal.Insert(u, u * 5);
 
 	// Copy construction
 	Zenith_HashMap<u_int, u_int> xCopy(xOriginal);
-	Zenith_Assert(xCopy.GetSize() == xOriginal.GetSize(), "Copy has same size");
+	ZENITH_ASSERT_EQ(xCopy.GetSize(), xOriginal.GetSize(), "Copy has same size");
 	for (u_int u = 0; u < 20; u++)
 	{
-		Zenith_Assert(xCopy.Get(u) == u * 5, "Copy preserved value");
+		ZENITH_ASSERT_EQ(xCopy.Get(u), u * 5, "Copy preserved value");
 	}
 	// Modify copy, verify original unchanged
 	xCopy.Insert(100, 999);
-	Zenith_Assert(!xOriginal.Contains(100), "Original unaffected by copy mutation");
+	ZENITH_ASSERT_FALSE(xOriginal.Contains(100), "Original unaffected by copy mutation");
 
 	// Copy assignment
 	Zenith_HashMap<u_int, u_int> xAssigned;
 	xAssigned.Insert(500, 500);
 	xAssigned = xOriginal;
-	Zenith_Assert(xAssigned.GetSize() == xOriginal.GetSize(), "Assigned has same size");
-	Zenith_Assert(!xAssigned.Contains(500), "Old contents of target replaced");
+	ZENITH_ASSERT_EQ(xAssigned.GetSize(), xOriginal.GetSize(), "Assigned has same size");
+	ZENITH_ASSERT_FALSE(xAssigned.Contains(500), "Old contents of target replaced");
 	for (u_int u = 0; u < 20; u++)
 	{
-		Zenith_Assert(xAssigned.Get(u) == u * 5, "Assigned preserved value");
+		ZENITH_ASSERT_EQ(xAssigned.Get(u), u * 5, "Assigned preserved value");
 	}
 
 	// Move construction
 	Zenith_HashMap<u_int, u_int> xMoved(std::move(xCopy));
-	Zenith_Assert(xMoved.Contains(100), "Moved target has the data");
-	Zenith_Assert(xCopy.GetSize() == 0, "Moved source is empty");
+	ZENITH_ASSERT_TRUE(xMoved.Contains(100), "Moved target has the data");
+	ZENITH_ASSERT_EQ(xCopy.GetSize(), 0, "Moved source is empty");
 
 	// Move assignment
 	Zenith_HashMap<u_int, u_int> xMoveAssigned;
 	xMoveAssigned = std::move(xAssigned);
-	Zenith_Assert(xMoveAssigned.Contains(10), "Move-assigned target has data");
-	Zenith_Assert(xAssigned.GetSize() == 0, "Move-assigned source empty");
+	ZENITH_ASSERT_TRUE(xMoveAssigned.Contains(10), "Move-assigned target has data");
+	ZENITH_ASSERT_EQ(xAssigned.GetSize(), 0, "Move-assigned source empty");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapCopyMove PASSED");
 }
 
-void Zenith_UnitTests::TestHashMapSerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapSerialization...");
+ZENITH_TEST(Core, HashMapSerialization) { Zenith_UnitTests::TestHashMapSerialization(); }
+
+void Zenith_UnitTests::TestHashMapSerialization(){
 
 	Zenith_HashMap<u_int, u_int> xOriginal;
 	for (u_int u = 0; u < 64; u++) xOriginal.Insert(u, u * 11);
@@ -1600,61 +1089,59 @@ void Zenith_UnitTests::TestHashMapSerialization()
 	Zenith_HashMap<u_int, u_int> xRestored;
 	xRestored.ReadFromDataStream(xStream);
 
-	Zenith_Assert(xRestored.GetSize() == xOriginal.GetSize(), "Restored size matches");
+	ZENITH_ASSERT_EQ(xRestored.GetSize(), xOriginal.GetSize(), "Restored size matches");
 	for (u_int u = 0; u < 64; u++)
 	{
-		Zenith_Assert(xRestored.Contains(u), "All keys restored");
-		Zenith_Assert(xRestored.Get(u) == u * 11, "All values restored");
+		ZENITH_ASSERT_TRUE(xRestored.Contains(u), "All keys restored");
+		ZENITH_ASSERT_EQ(xRestored.Get(u), u * 11, "All values restored");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapSerialization PASSED");
 }
 
-void Zenith_UnitTests::TestHashMapOperatorBracket()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashMapOperatorBracket...");
+ZENITH_TEST(Core, HashMapOperatorBracket) { Zenith_UnitTests::TestHashMapOperatorBracket(); }
+
+void Zenith_UnitTests::TestHashMapOperatorBracket(){
 
 	Zenith_HashMap<u_int, u_int> xMap;
 	// Access missing key — default-constructs V (=0 for u_int)
 	u_int& rRef = xMap[42];
-	Zenith_Assert(rRef == 0, "operator[] default-constructs missing key");
-	Zenith_Assert(xMap.GetSize() == 1, "operator[] on missing key inserts");
+	ZENITH_ASSERT_EQ(rRef, 0, "operator[] default-constructs missing key");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), 1, "operator[] on missing key inserts");
 
 	rRef = 999;
-	Zenith_Assert(xMap.Get(42) == 999, "operator[] returns a live reference");
-	Zenith_Assert(xMap[42] == 999, "Second operator[] returns existing value");
-	Zenith_Assert(xMap.GetSize() == 1, "Repeat access does not add entry");
+	ZENITH_ASSERT_EQ(xMap.Get(42), 999, "operator[] returns a live reference");
+	ZENITH_ASSERT_EQ(xMap[42], 999, "Second operator[] returns existing value");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), 1, "Repeat access does not add entry");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashMapOperatorBracket PASSED");
 }
 
-void Zenith_UnitTests::TestHashSetBasic()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHashSetBasic...");
+ZENITH_TEST(Core, HashSetBasic) { Zenith_UnitTests::TestHashSetBasic(); }
+
+void Zenith_UnitTests::TestHashSetBasic(){
 
 	Zenith_HashSet<u_int> xSet;
-	Zenith_Assert(xSet.IsEmpty(), "New set empty");
+	ZENITH_ASSERT_TRUE(xSet.IsEmpty(), "New set empty");
 
 	bool bAdded = xSet.Insert(1);
-	Zenith_Assert(bAdded, "First insert reports true");
+	ZENITH_ASSERT_TRUE(bAdded, "First insert reports true");
 	bool bReAdded = xSet.Insert(1);
-	Zenith_Assert(!bReAdded, "Re-insert reports false");
-	Zenith_Assert(xSet.GetSize() == 1, "Size is 1 after dedup");
+	ZENITH_ASSERT_FALSE(bReAdded, "Re-insert reports false");
+	ZENITH_ASSERT_EQ(xSet.GetSize(), 1, "Size is 1 after dedup");
 
 	for (u_int u = 2; u < 50; u++) xSet.Insert(u);
-	Zenith_Assert(xSet.GetSize() == 49, "Set grew to 49");
-	for (u_int u = 1; u < 50; u++) Zenith_Assert(xSet.Contains(u), "Contains all inserted");
-	Zenith_Assert(!xSet.Contains(500), "Missing key absent");
+	ZENITH_ASSERT_EQ(xSet.GetSize(), 49, "Set grew to 49");
+	for (u_int u = 1; u < 50; u++) ZENITH_ASSERT_TRUE(xSet.Contains(u), "Contains all inserted");
+	ZENITH_ASSERT_FALSE(xSet.Contains(500), "Missing key absent");
 
 	xSet.Remove(25);
-	Zenith_Assert(!xSet.Contains(25), "Removed key absent");
-	Zenith_Assert(xSet.GetSize() == 48, "Size decreased");
+	ZENITH_ASSERT_FALSE(xSet.Contains(25), "Removed key absent");
+	ZENITH_ASSERT_EQ(xSet.GetSize(), 48, "Size decreased");
 
 	// Iterator
 	u_int uCount = 0;
 	Zenith_HashSet<u_int>::Iterator xIt(xSet);
 	for (; !xIt.Done(); xIt.Next()) uCount++;
-	Zenith_Assert(uCount == 48, "Iterator visits every entry once");
+	ZENITH_ASSERT_EQ(uCount, 48, "Iterator visits every entry once");
 
 	// Serialization round-trip
 	Zenith_DataStream xStream(2048);
@@ -1662,19 +1149,18 @@ void Zenith_UnitTests::TestHashSetBasic()
 	xStream.SetCursor(0);
 	Zenith_HashSet<u_int> xRestored;
 	xRestored.ReadFromDataStream(xStream);
-	Zenith_Assert(xRestored.GetSize() == xSet.GetSize(), "Restored set has same size");
+	ZENITH_ASSERT_EQ(xRestored.GetSize(), xSet.GetSize(), "Restored set has same size");
 	for (u_int u = 1; u < 50; u++)
 	{
 		if (u == 25) continue;
-		Zenith_Assert(xRestored.Contains(u), "Restored set has all keys");
+		ZENITH_ASSERT_TRUE(xRestored.Contains(u), "Restored set has all keys");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHashSetBasic PASSED");
 }
 
-void Zenith_UnitTests::TestDataStreamBoundsCheck()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDataStreamBoundsCheck...");
+ZENITH_TEST(Core, DataStreamBoundsCheck) { Zenith_UnitTests::TestDataStreamBoundsCheck(); }
+
+void Zenith_UnitTests::TestDataStreamBoundsCheck(){
 
 	// Test SkipBytes bounds checking
 	{
@@ -1688,20 +1174,19 @@ void Zenith_UnitTests::TestDataStreamBoundsCheck()
 		xStream.SetCursor(0);
 		u_int uRead;
 		xStream >> uRead;
-		Zenith_Assert(uRead == 42, "Read value should match written value");
+		ZENITH_ASSERT_EQ(uRead, 42, "Read value should match written value");
 
 		// Test valid skip
 		xStream.SetCursor(0);
 		xStream.SkipBytes(sizeof(u_int));
-		Zenith_Assert(xStream.GetCursor() == sizeof(u_int), "Cursor should advance by skip amount");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), sizeof(u_int), "Cursor should advance by skip amount");
 
 		// Test skip to exactly end (valid edge case)
 		xStream.SetCursor(96);
 		xStream.SkipBytes(4);  // Should clamp to size (100)
-		Zenith_Assert(xStream.GetCursor() <= xStream.GetSize(), "Cursor should not exceed data size");
+		ZENITH_ASSERT_LE(xStream.GetCursor(), xStream.GetSize(), "Cursor should not exceed data size");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDataStreamBoundsCheck PASSED");
 }
 
 // ============================================================================
@@ -1712,9 +1197,8 @@ void Zenith_UnitTests::TestDataStreamBoundsCheck()
  * Test individual component serialization round-trip
  * Verifies that each component can save and load its data correctly
  */
-void Zenith_UnitTests::TestComponentSerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestComponentSerialization...");
+ZENITH_TEST(ECS, ComponentSerialization) { Zenith_UnitTests::TestComponentSerialization(); }
+void Zenith_UnitTests::TestComponentSerialization(){
 
 	// Create a temporary scene through SceneManager
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentSerializationScene");
@@ -1751,13 +1235,11 @@ void Zenith_UnitTests::TestComponentSerialization()
 		xTransform2.GetRotation(xLoadedRot);
 		xTransform2.GetScale(xLoadedScale);
 
-		Zenith_Assert(xLoadedPos == xGroundTruthPos, "TransformComponent position mismatch");
-		Zenith_Assert(xLoadedRot.x == xGroundTruthRot.x && xLoadedRot.y == xGroundTruthRot.y &&
-					  xLoadedRot.z == xGroundTruthRot.z && xLoadedRot.w == xGroundTruthRot.w,
-					  "TransformComponent rotation mismatch");
-		Zenith_Assert(xLoadedScale == xGroundTruthScale, "TransformComponent scale mismatch");
+		ZENITH_ASSERT_EQ(xLoadedPos, xGroundTruthPos, "TransformComponent position mismatch");
+		ZENITH_ASSERT_TRUE(xLoadedRot.x == xGroundTruthRot.x && xLoadedRot.y == xGroundTruthRot.y &&
+					  xLoadedRot.z == xGroundTruthRot.z && xLoadedRot.w == xGroundTruthRot.w, "TransformComponent rotation mismatch");
+		ZENITH_ASSERT_EQ(xLoadedScale, xGroundTruthScale, "TransformComponent scale mismatch");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ TransformComponent serialization passed");
 	}
 
 	// Test CameraComponent
@@ -1798,30 +1280,27 @@ void Zenith_UnitTests::TestComponentSerialization()
 		Zenith_Maths::Vector3 xLoadedPos;
 		xCamera2.GetPosition(xLoadedPos);
 
-		Zenith_Assert(xLoadedPos == xGroundTruthPos, "CameraComponent position mismatch");
-		Zenith_Assert(xCamera2.GetPitch() == fGroundTruthPitch, "CameraComponent pitch mismatch");
-		Zenith_Assert(xCamera2.GetYaw() == fGroundTruthYaw, "CameraComponent yaw mismatch");
-		Zenith_Assert(xCamera2.GetFOV() == fGroundTruthFOV, "CameraComponent FOV mismatch");
-		Zenith_Assert(xCamera2.GetNearPlane() == fGroundTruthNear, "CameraComponent near plane mismatch");
-		Zenith_Assert(xCamera2.GetFarPlane() == fGroundTruthFar, "CameraComponent far plane mismatch");
-		Zenith_Assert(xCamera2.GetAspectRatio() == fGroundTruthAspect, "CameraComponent aspect ratio mismatch");
+		ZENITH_ASSERT_EQ(xLoadedPos, xGroundTruthPos, "CameraComponent position mismatch");
+		ZENITH_ASSERT_EQ(xCamera2.GetPitch(), fGroundTruthPitch, "CameraComponent pitch mismatch");
+		ZENITH_ASSERT_EQ(xCamera2.GetYaw(), fGroundTruthYaw, "CameraComponent yaw mismatch");
+		ZENITH_ASSERT_EQ(xCamera2.GetFOV(), fGroundTruthFOV, "CameraComponent FOV mismatch");
+		ZENITH_ASSERT_EQ(xCamera2.GetNearPlane(), fGroundTruthNear, "CameraComponent near plane mismatch");
+		ZENITH_ASSERT_EQ(xCamera2.GetFarPlane(), fGroundTruthFar, "CameraComponent far plane mismatch");
+		ZENITH_ASSERT_EQ(xCamera2.GetAspectRatio(), fGroundTruthAspect, "CameraComponent aspect ratio mismatch");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ CameraComponent serialization passed");
 	}
 
 	// Clean up test scene
 	Zenith_SceneManager::UnloadScene(xTestScene);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComponentSerialization completed successfully");
 }
 
 /**
  * Test entity serialization round-trip
  * Verifies that entities with multiple components can be serialized and restored
  */
-void Zenith_UnitTests::TestEntitySerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEntitySerialization...");
+ZENITH_TEST(ECS, EntitySerialization) { Zenith_UnitTests::TestEntitySerialization(); }
+void Zenith_UnitTests::TestEntitySerialization(){
 
 	// Create a temporary scene through SceneManager
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestEntitySerializationScene");
@@ -1857,31 +1336,31 @@ void Zenith_UnitTests::TestEntitySerialization()
 	xLoadedEntity.ReadFromDataStream(xStream);
 
 	// Verify entity name was restored (EntityID is assigned by scene, not serialized)
-	Zenith_Assert(xLoadedEntity.GetName() == strExpectedName, "Entity name mismatch");
+	ZENITH_ASSERT_EQ(xLoadedEntity.GetName(), strExpectedName, "Entity name mismatch");
 
 	// Verify components were restored
-	Zenith_Assert(xLoadedEntity.HasComponent<Zenith_TransformComponent>(), "TransformComponent not restored");
-	Zenith_Assert(xLoadedEntity.HasComponent<Zenith_CameraComponent>(), "CameraComponent not restored");
+	ZENITH_ASSERT_TRUE(xLoadedEntity.HasComponent<Zenith_TransformComponent>(), "TransformComponent not restored");
+	ZENITH_ASSERT_TRUE(xLoadedEntity.HasComponent<Zenith_CameraComponent>(), "CameraComponent not restored");
 
 	// Verify transform data
 	Zenith_TransformComponent& xLoadedTransform = xLoadedEntity.GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xLoadedPos;
 	xLoadedTransform.GetPosition(xLoadedPos);
-	Zenith_Assert(xLoadedPos.x == 10.0f && xLoadedPos.y == 20.0f && xLoadedPos.z == 30.0f, "Entity transform position mismatch");
+	ZENITH_ASSERT_TRUE(xLoadedPos.x == 10.0f && xLoadedPos.y == 20.0f && xLoadedPos.z == 30.0f, "Entity transform position mismatch");
 
 	// Clean up test scene
 	Zenith_SceneManager::UnloadScene(xTestScene);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntitySerialization completed successfully");
 }
 
 /**
  * Test full scene serialization
  * Verifies that entire scenes with multiple entities can be saved to disk
  */
-void Zenith_UnitTests::TestSceneSerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSceneSerialization...");
+#ifndef ZENITH_ANDROID // Uses raw std::filesystem/std::ifstream with relative paths
+ZENITH_TEST(Scene, SceneSerialization) { Zenith_UnitTests::TestSceneSerialization(); }
+#endif
+void Zenith_UnitTests::TestSceneSerialization(){
 
 	// Create a test scene through SceneManager
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestSceneSerializationScene");
@@ -1913,31 +1392,30 @@ void Zenith_UnitTests::TestSceneSerialization()
 	pxSceneData->SaveToFile(strTestScenePath);
 
 	// Verify file exists
-	Zenith_Assert(std::filesystem::exists(strTestScenePath), "Scene file was not created");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strTestScenePath), "Scene file was not created");
 
 	// Verify file has content
 	std::ifstream xFile(strTestScenePath, std::ios::binary | std::ios::ate);
-	Zenith_Assert(xFile.is_open(), "Could not open saved scene file");
+	ZENITH_ASSERT_TRUE(xFile.is_open(), "Could not open saved scene file");
 	const std::streamsize ulFileSize = xFile.tellg();
 	xFile.close();
-	Zenith_Assert(ulFileSize > 0, "Scene file is empty");
-	Zenith_Assert(ulFileSize > 16, "Scene file is suspiciously small (header + metadata should be >16 bytes)");
+	ZENITH_ASSERT_GT(ulFileSize, 0, "Scene file is empty");
+	ZENITH_ASSERT_GT(ulFileSize, 16, "Scene file is suspiciously small (header + metadata should be >16 bytes)");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Scene file size: %lld bytes", ulFileSize);
 
 	// Clean up test scene
 	Zenith_SceneManager::UnloadScene(xTestScene);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSceneSerialization completed successfully");
 }
 
 /**
  * Test complete round-trip: save scene, clear, load scene, verify
  * This is the most comprehensive test - ensures data integrity across full save/load cycle
  */
-void Zenith_UnitTests::TestSceneRoundTrip()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSceneRoundTrip...");
+#ifndef ZENITH_ANDROID // Uses raw std::filesystem/std::ifstream with relative paths
+ZENITH_TEST(Scene, SceneRoundTrip) { Zenith_UnitTests::TestSceneRoundTrip(); }
+#endif
+void Zenith_UnitTests::TestSceneRoundTrip(){
 
 	const std::string strTestScenePath = "unit_test_roundtrip" ZENITH_SCENE_EXT;
 
@@ -1992,16 +1470,14 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	// ========================================================================
 
 	pxSceneData->SaveToFile(strTestScenePath);
-	Zenith_Assert(std::filesystem::exists(strTestScenePath), "Scene file was not created during round-trip test");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Scene saved to disk");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strTestScenePath), "Scene file was not created during round-trip test");
 
 	// ========================================================================
 	// STEP 3: CLEAR GROUND TRUTH SCENE (simulate application restart)
 	// ========================================================================
 
 	pxSceneData->Reset();
-	Zenith_Assert(pxSceneData->GetEntityCount() == 0, "Scene was not properly cleared");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Scene cleared");
+	ZENITH_ASSERT_EQ(pxSceneData->GetEntityCount(), 0, "Scene was not properly cleared");
 
 	// ========================================================================
 	// STEP 4: LOAD SCENE FROM DISK
@@ -2010,38 +1486,33 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	Zenith_Scene xLoadedScene = Zenith_SceneManager::CreateEmptyScene("LoadedTestScene");
 	Zenith_SceneData* pxLoadedSceneData = Zenith_SceneManager::GetSceneData(xLoadedScene);
 	pxLoadedSceneData->LoadFromFile(strTestScenePath);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Scene loaded from disk");
 
 	// ========================================================================
 	// STEP 5: VERIFY LOADED SCENE MATCHES GROUND TRUTH
 	// ========================================================================
 
 	// Verify entity count
-	Zenith_Assert(pxLoadedSceneData->GetEntityCount() == uGroundTruthEntityCount,
-				  "Loaded scene entity count mismatch (expected %u, got %u)",
-				  uGroundTruthEntityCount, pxLoadedSceneData->GetEntityCount());
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Entity count verified (%u entities)", uGroundTruthEntityCount);
+	ZENITH_ASSERT_EQ(pxLoadedSceneData->GetEntityCount(), uGroundTruthEntityCount, "Loaded scene entity count mismatch (expected %u, got %u)", uGroundTruthEntityCount, pxLoadedSceneData->GetEntityCount());
 
 	// Verify Camera Entity (look up by name - EntityIDs are runtime-only, not persistent across save/load)
 	Zenith_Entity xLoadedCamera = pxLoadedSceneData->FindEntityByName("MainCamera");
-	Zenith_Assert(xLoadedCamera.IsValid(), "Camera entity not found after round-trip");
-	Zenith_Assert(xLoadedCamera.GetName() == "MainCamera", "Camera entity name mismatch");
-	Zenith_Assert(xLoadedCamera.HasComponent<Zenith_CameraComponent>(), "Camera entity missing CameraComponent");
+	ZENITH_ASSERT_TRUE(xLoadedCamera.IsValid(), "Camera entity not found after round-trip");
+	ZENITH_ASSERT_EQ(xLoadedCamera.GetName(), "MainCamera", "Camera entity name mismatch");
+	ZENITH_ASSERT_TRUE(xLoadedCamera.HasComponent<Zenith_CameraComponent>(), "Camera entity missing CameraComponent");
 
 	Zenith_CameraComponent& xLoadedCameraComp = xLoadedCamera.GetComponent<Zenith_CameraComponent>();
 	Zenith_Maths::Vector3 xLoadedCameraPos;
 	xLoadedCameraComp.GetPosition(xLoadedCameraPos);
-	Zenith_Assert(xLoadedCameraPos == xCameraPos, "Camera position mismatch");
-	Zenith_Assert(xLoadedCameraComp.GetPitch() == fCameraPitch, "Camera pitch mismatch");
-	Zenith_Assert(xLoadedCameraComp.GetYaw() == fCameraYaw, "Camera yaw mismatch");
-	Zenith_Assert(xLoadedCameraComp.GetFOV() == fCameraFOV, "Camera FOV mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Camera entity verified");
+	ZENITH_ASSERT_EQ(xLoadedCameraPos, xCameraPos, "Camera position mismatch");
+	ZENITH_ASSERT_EQ(xLoadedCameraComp.GetPitch(), fCameraPitch, "Camera pitch mismatch");
+	ZENITH_ASSERT_EQ(xLoadedCameraComp.GetYaw(), fCameraYaw, "Camera yaw mismatch");
+	ZENITH_ASSERT_EQ(xLoadedCameraComp.GetFOV(), fCameraFOV, "Camera FOV mismatch");
 
 	// Verify Entity 1 (look up by name - EntityIDs are runtime-only, not persistent across save/load)
 	Zenith_Entity xLoadedEntity1 = pxLoadedSceneData->FindEntityByName("TestEntity1");
-	Zenith_Assert(xLoadedEntity1.IsValid(), "Entity1 not found after round-trip");
-	Zenith_Assert(xLoadedEntity1.GetName() == "TestEntity1", "Entity1 name mismatch");
-	Zenith_Assert(xLoadedEntity1.HasComponent<Zenith_TransformComponent>(), "Entity1 missing TransformComponent");
+	ZENITH_ASSERT_TRUE(xLoadedEntity1.IsValid(), "Entity1 not found after round-trip");
+	ZENITH_ASSERT_EQ(xLoadedEntity1.GetName(), "TestEntity1", "Entity1 name mismatch");
+	ZENITH_ASSERT_TRUE(xLoadedEntity1.HasComponent<Zenith_TransformComponent>(), "Entity1 missing TransformComponent");
 
 	Zenith_TransformComponent& xLoadedTransform1 = xLoadedEntity1.GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xLoadedPos1, xLoadedScale1;
@@ -2050,30 +1521,27 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	xLoadedTransform1.GetRotation(xLoadedRot1);
 	xLoadedTransform1.GetScale(xLoadedScale1);
 
-	Zenith_Assert(xLoadedPos1 == xEntity1Pos, "Entity1 position mismatch");
-	Zenith_Assert(xLoadedRot1.x == xEntity1Rot.x && xLoadedRot1.y == xEntity1Rot.y &&
+	ZENITH_ASSERT_EQ(xLoadedPos1, xEntity1Pos, "Entity1 position mismatch");
+	ZENITH_ASSERT_TRUE(xLoadedRot1.x == xEntity1Rot.x && xLoadedRot1.y == xEntity1Rot.y &&
 				  xLoadedRot1.z == xEntity1Rot.z && xLoadedRot1.w == xEntity1Rot.w, "Entity1 rotation mismatch");
-	Zenith_Assert(xLoadedScale1 == xEntity1Scale, "Entity1 scale mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Entity1 verified");
+	ZENITH_ASSERT_EQ(xLoadedScale1, xEntity1Scale, "Entity1 scale mismatch");
 
 	// Verify Entity 2 (look up by name - EntityIDs are runtime-only, not persistent across save/load)
 	Zenith_Entity xLoadedEntity2 = pxLoadedSceneData->FindEntityByName("TestEntity2");
-	Zenith_Assert(xLoadedEntity2.IsValid(), "Entity2 not found after round-trip");
-	Zenith_Assert(xLoadedEntity2.GetName() == "TestEntity2", "Entity2 name mismatch");
-	Zenith_Assert(xLoadedEntity2.HasComponent<Zenith_TransformComponent>(), "Entity2 missing TransformComponent");
+	ZENITH_ASSERT_TRUE(xLoadedEntity2.IsValid(), "Entity2 not found after round-trip");
+	ZENITH_ASSERT_EQ(xLoadedEntity2.GetName(), "TestEntity2", "Entity2 name mismatch");
+	ZENITH_ASSERT_TRUE(xLoadedEntity2.HasComponent<Zenith_TransformComponent>(), "Entity2 missing TransformComponent");
 
 	Zenith_TransformComponent& xLoadedTransform2 = xLoadedEntity2.GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xLoadedPos2;
 	xLoadedTransform2.GetPosition(xLoadedPos2);
-	Zenith_Assert(xLoadedPos2 == xEntity2Pos, "Entity2 position mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Entity2 verified");
+	ZENITH_ASSERT_EQ(xLoadedPos2, xEntity2Pos, "Entity2 position mismatch");
 
 	// Verify main camera reference
 	Zenith_CameraComponent& xMainCamera = pxLoadedSceneData->GetMainCamera();
 	Zenith_Maths::Vector3 xMainCameraPos;
 	xMainCamera.GetPosition(xMainCameraPos);
-	Zenith_Assert(xMainCameraPos == xCameraPos, "Main camera reference mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Main camera reference verified");
+	ZENITH_ASSERT_EQ(xMainCameraPos, xCameraPos, "Main camera reference mismatch");
 
 
 	// ========================================================================
@@ -2086,19 +1554,18 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 
 	// Clean up test file
 	std::filesystem::remove(strTestScenePath);
-	Zenith_Assert(!std::filesystem::exists(strTestScenePath), "Test scene file was not cleaned up");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(strTestScenePath), "Test scene file was not cleaned up");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSceneRoundTrip completed successfully - full data integrity verified!");
 }
 
-void Zenith_UnitTests::TestSceneDisableDestroyHelpers()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSceneDisableDestroyHelpers...");
+ZENITH_TEST(Scene, SceneDisableDestroyHelpers) { Zenith_UnitTests::TestSceneDisableDestroyHelpers(); }
+
+void Zenith_UnitTests::TestSceneDisableDestroyHelpers(){
 
 	// Create a test scene with entities
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestDisableDestroyScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
-	Zenith_Assert(pxSceneData != nullptr, "Test scene should be created");
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "Test scene should be created");
 
 	// Test DisableEntity with invalid ID — should not crash
 	pxSceneData->DisableEntity(INVALID_ENTITY_ID);
@@ -2109,22 +1576,21 @@ void Zenith_UnitTests::TestSceneDisableDestroyHelpers()
 	// Create an entity and verify DisableEntity/DestroyEntityComponents work
 	Zenith_Entity xEntity(pxSceneData, "TestEntity1");
 	Zenith_EntityID xID = xEntity.GetEntityID();
-	Zenith_Assert(pxSceneData->EntityExists(xID), "Entity should exist");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(xID), "Entity should exist");
 
 	// DisableEntity on a non-enabled-dispatched entity should be a no-op
 	pxSceneData->DisableEntity(xID);
-	Zenith_Assert(pxSceneData->EntityExists(xID), "Entity should still exist after DisableEntity");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(xID), "Entity should still exist after DisableEntity");
 
 	// DestroyEntityComponents removes all components
 	pxSceneData->DestroyEntityComponents(xID);
 
 	// Entity slot still exists (components removed but slot not freed)
-	Zenith_Assert(pxSceneData->EntityExists(xID), "Entity slot should still exist after DestroyEntityComponents");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(xID), "Entity slot should still exist after DestroyEntityComponents");
 
 	// Clean up
 	Zenith_SceneManager::UnloadScene(xTestScene);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSceneDisableDestroyHelpers PASSED");
 }
 
 // ============================================================================
@@ -2164,20 +1630,15 @@ static bool QuatEquals(const Zenith_Maths::Quat& a, const Zenith_Maths::Quat& b,
  * Test Flux_BoneLocalPose blending operations
  * Verifies linear blend, additive blend, and identity pose
  */
-void Zenith_UnitTests::TestBoneLocalPoseBlending()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBoneLocalPoseBlending...");
+ZENITH_TEST(Animation, BoneLocalPoseBlending) { Zenith_UnitTests::TestBoneLocalPoseBlending(); }
+void Zenith_UnitTests::TestBoneLocalPoseBlending(){
 
 	// Test Identity pose
 	{
 		Flux_BoneLocalPose xIdentity = Flux_BoneLocalPose::Identity();
-		Zenith_Assert(Vec3Equals(xIdentity.m_xPosition, Zenith_Maths::Vector3(0.0f)),
-			"Identity pose position should be zero");
-		Zenith_Assert(QuatEquals(xIdentity.m_xRotation, Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f)),
-			"Identity pose rotation should be identity quaternion");
-		Zenith_Assert(Vec3Equals(xIdentity.m_xScale, Zenith_Maths::Vector3(1.0f)),
-			"Identity pose scale should be one");
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Identity pose test passed");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xIdentity.m_xPosition, Zenith_Maths::Vector3(0.0f)), "Identity pose position should be zero");
+		ZENITH_ASSERT_TRUE(QuatEquals(xIdentity.m_xRotation, Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f)), "Identity pose rotation should be identity quaternion");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xIdentity.m_xScale, Zenith_Maths::Vector3(1.0f)), "Identity pose scale should be one");
 	}
 
 	// Test linear blend
@@ -2194,28 +1655,21 @@ void Zenith_UnitTests::TestBoneLocalPoseBlending()
 
 		// Test t=0 (should return A)
 		Flux_BoneLocalPose xBlend0 = Flux_BoneLocalPose::Blend(xPoseA, xPoseB, 0.0f);
-		Zenith_Assert(Vec3Equals(xBlend0.m_xPosition, xPoseA.m_xPosition),
-			"Blend at t=0 should return pose A position");
-		Zenith_Assert(Vec3Equals(xBlend0.m_xScale, xPoseA.m_xScale),
-			"Blend at t=0 should return pose A scale");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xBlend0.m_xPosition, xPoseA.m_xPosition), "Blend at t=0 should return pose A position");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xBlend0.m_xScale, xPoseA.m_xScale), "Blend at t=0 should return pose A scale");
 
 		// Test t=1 (should return B)
 		Flux_BoneLocalPose xBlend1 = Flux_BoneLocalPose::Blend(xPoseA, xPoseB, 1.0f);
-		Zenith_Assert(Vec3Equals(xBlend1.m_xPosition, xPoseB.m_xPosition),
-			"Blend at t=1 should return pose B position");
-		Zenith_Assert(Vec3Equals(xBlend1.m_xScale, xPoseB.m_xScale),
-			"Blend at t=1 should return pose B scale");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xBlend1.m_xPosition, xPoseB.m_xPosition), "Blend at t=1 should return pose B position");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xBlend1.m_xScale, xPoseB.m_xScale), "Blend at t=1 should return pose B scale");
 
 		// Test t=0.5 (should return midpoint)
 		Flux_BoneLocalPose xBlend05 = Flux_BoneLocalPose::Blend(xPoseA, xPoseB, 0.5f);
 		Zenith_Maths::Vector3 xExpectedPos(5.0f, 10.0f, 15.0f);
 		Zenith_Maths::Vector3 xExpectedScale(1.5f, 1.5f, 1.5f);
-		Zenith_Assert(Vec3Equals(xBlend05.m_xPosition, xExpectedPos),
-			"Blend at t=0.5 should return midpoint position");
-		Zenith_Assert(Vec3Equals(xBlend05.m_xScale, xExpectedScale),
-			"Blend at t=0.5 should return midpoint scale");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xBlend05.m_xPosition, xExpectedPos), "Blend at t=0.5 should return midpoint position");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xBlend05.m_xScale, xExpectedScale), "Blend at t=0.5 should return midpoint scale");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Linear blend test passed");
 	}
 
 	// Test additive blend
@@ -2233,10 +1687,8 @@ void Zenith_UnitTests::TestBoneLocalPoseBlending()
 		// Additive blend with weight 1.0 should add the delta
 		Flux_BoneLocalPose xResult = Flux_BoneLocalPose::AdditiveBlend(xBase, xAdditive, 1.0f);
 		Zenith_Maths::Vector3 xExpectedPos(8.0f, 8.0f, 8.0f); // 5 + 3
-		Zenith_Assert(Vec3Equals(xResult.m_xPosition, xExpectedPos),
-			"Additive blend should add delta position");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xResult.m_xPosition, xExpectedPos), "Additive blend should add delta position");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Additive blend test passed");
 	}
 
 	// Test ToMatrix conversion
@@ -2249,33 +1701,27 @@ void Zenith_UnitTests::TestBoneLocalPoseBlending()
 		Zenith_Maths::Matrix4 xMatrix = xPose.ToMatrix();
 
 		// Check translation is in 4th column
-		Zenith_Assert(FloatEquals(xMatrix[3][0], 1.0f) &&
+		ZENITH_ASSERT_TRUE(FloatEquals(xMatrix[3][0], 1.0f) &&
 					  FloatEquals(xMatrix[3][1], 2.0f) &&
-					  FloatEquals(xMatrix[3][2], 3.0f),
-			"Matrix translation should match pose position");
+					  FloatEquals(xMatrix[3][2], 3.0f), "Matrix translation should match pose position");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ ToMatrix conversion test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBoneLocalPoseBlending completed successfully");
 }
 
 /**
  * Test Flux_SkeletonPose operations
  * Verifies initialization, reset, and copy operations
  */
-void Zenith_UnitTests::TestSkeletonPoseOperations()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSkeletonPoseOperations...");
+ZENITH_TEST(Animation, SkeletonPoseOperations) { Zenith_UnitTests::TestSkeletonPoseOperations(); }
+void Zenith_UnitTests::TestSkeletonPoseOperations(){
 
 	// Test initialization
 	{
 		Flux_SkeletonPose xPose;
 		xPose.Initialize(50);
 
-		Zenith_Assert(xPose.GetNumBones() == 50,
-			"Skeleton pose should have 50 bones after initialization");
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Initialization test passed");
+		ZENITH_ASSERT_EQ(xPose.GetNumBones(), 50, "Skeleton pose should have 50 bones after initialization");
 	}
 
 	// Test Reset
@@ -2293,12 +1739,9 @@ void Zenith_UnitTests::TestSkeletonPoseOperations()
 
 		// Verify reset to identity
 		const Flux_BoneLocalPose& xResetBone = xPose.GetLocalPose(0);
-		Zenith_Assert(Vec3Equals(xResetBone.m_xPosition, Zenith_Maths::Vector3(0.0f)),
-			"Reset should set position to zero");
-		Zenith_Assert(Vec3Equals(xResetBone.m_xScale, Zenith_Maths::Vector3(1.0f)),
-			"Reset should set scale to one");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xResetBone.m_xPosition, Zenith_Maths::Vector3(0.0f)), "Reset should set position to zero");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xResetBone.m_xScale, Zenith_Maths::Vector3(1.0f)), "Reset should set scale to one");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Reset test passed");
 	}
 
 	// Test CopyFrom
@@ -2312,12 +1755,9 @@ void Zenith_UnitTests::TestSkeletonPoseOperations()
 		xPoseB.Initialize(5);
 		xPoseB.CopyFrom(xPoseA);
 
-		Zenith_Assert(Vec3Equals(xPoseB.GetLocalPose(0).m_xPosition, Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f)),
-			"CopyFrom should copy bone 0 position");
-		Zenith_Assert(Vec3Equals(xPoseB.GetLocalPose(1).m_xPosition, Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f)),
-			"CopyFrom should copy bone 1 position");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xPoseB.GetLocalPose(0).m_xPosition, Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f)), "CopyFrom should copy bone 0 position");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xPoseB.GetLocalPose(1).m_xPosition, Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f)), "CopyFrom should copy bone 1 position");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ CopyFrom test passed");
 	}
 
 	// Test static Blend
@@ -2332,115 +1772,95 @@ void Zenith_UnitTests::TestSkeletonPoseOperations()
 
 		Flux_SkeletonPose::Blend(xPoseOut, xPoseA, xPoseB, 0.5f);
 
-		Zenith_Assert(Vec3Equals(xPoseOut.GetLocalPose(0).m_xPosition, Zenith_Maths::Vector3(5.0f, 5.0f, 5.0f)),
-			"Skeleton blend should interpolate bone positions");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xPoseOut.GetLocalPose(0).m_xPosition, Zenith_Maths::Vector3(5.0f, 5.0f, 5.0f)), "Skeleton blend should interpolate bone positions");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Static blend test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSkeletonPoseOperations completed successfully");
 }
 
 /**
  * Test Flux_AnimationParameters
  * Verifies parameter add, set, get, and trigger consumption
  */
-void Zenith_UnitTests::TestAnimationParameters()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnimationParameters...");
+ZENITH_TEST(Animation, AnimationParameters) { Zenith_UnitTests::TestAnimationParameters(); }
+void Zenith_UnitTests::TestAnimationParameters(){
 
 	Flux_AnimationParameters xParams;
 
 	// Test Float parameter
 	{
 		xParams.AddFloat("Speed", 5.0f);
-		Zenith_Assert(xParams.HasParameter("Speed"), "Should have Speed parameter");
-		Zenith_Assert(FloatEquals(xParams.GetFloat("Speed"), 5.0f),
-			"Speed default should be 5.0");
+		ZENITH_ASSERT_TRUE(xParams.HasParameter("Speed"), "Should have Speed parameter");
+		ZENITH_ASSERT_TRUE(FloatEquals(xParams.GetFloat("Speed"), 5.0f), "Speed default should be 5.0");
 
 		xParams.SetFloat("Speed", 10.0f);
-		Zenith_Assert(FloatEquals(xParams.GetFloat("Speed"), 10.0f),
-			"Speed should be updated to 10.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xParams.GetFloat("Speed"), 10.0f), "Speed should be updated to 10.0");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Float parameter test passed");
 	}
 
 	// Test Int parameter
 	{
 		xParams.AddInt("Health", 100);
-		Zenith_Assert(xParams.HasParameter("Health"), "Should have Health parameter");
-		Zenith_Assert(xParams.GetInt("Health") == 100, "Health default should be 100");
+		ZENITH_ASSERT_TRUE(xParams.HasParameter("Health"), "Should have Health parameter");
+		ZENITH_ASSERT_EQ(xParams.GetInt("Health"), 100, "Health default should be 100");
 
 		xParams.SetInt("Health", 50);
-		Zenith_Assert(xParams.GetInt("Health") == 50, "Health should be updated to 50");
+		ZENITH_ASSERT_EQ(xParams.GetInt("Health"), 50, "Health should be updated to 50");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Int parameter test passed");
 	}
 
 	// Test Bool parameter
 	{
 		xParams.AddBool("IsRunning", false);
-		Zenith_Assert(xParams.HasParameter("IsRunning"), "Should have IsRunning parameter");
-		Zenith_Assert(xParams.GetBool("IsRunning") == false, "IsRunning default should be false");
+		ZENITH_ASSERT_TRUE(xParams.HasParameter("IsRunning"), "Should have IsRunning parameter");
+		ZENITH_ASSERT_EQ(xParams.GetBool("IsRunning"), false, "IsRunning default should be false");
 
 		xParams.SetBool("IsRunning", true);
-		Zenith_Assert(xParams.GetBool("IsRunning") == true, "IsRunning should be updated to true");
+		ZENITH_ASSERT_EQ(xParams.GetBool("IsRunning"), true, "IsRunning should be updated to true");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Bool parameter test passed");
 	}
 
 	// Test Trigger parameter
 	{
 		xParams.AddTrigger("Jump");
-		Zenith_Assert(xParams.HasParameter("Jump"), "Should have Jump trigger");
+		ZENITH_ASSERT_TRUE(xParams.HasParameter("Jump"), "Should have Jump trigger");
 
 		// Trigger not set initially
-		Zenith_Assert(xParams.ConsumeTrigger("Jump") == false,
-			"Trigger should not be set initially");
+		ZENITH_ASSERT_EQ(xParams.ConsumeTrigger("Jump"), false, "Trigger should not be set initially");
 
 		// Set trigger
 		xParams.SetTrigger("Jump");
-		Zenith_Assert(xParams.ConsumeTrigger("Jump") == true,
-			"Trigger should be set after SetTrigger");
+		ZENITH_ASSERT_EQ(xParams.ConsumeTrigger("Jump"), true, "Trigger should be set after SetTrigger");
 
 		// Trigger should be consumed (reset)
-		Zenith_Assert(xParams.ConsumeTrigger("Jump") == false,
-			"Trigger should be reset after consumption");
+		ZENITH_ASSERT_EQ(xParams.ConsumeTrigger("Jump"), false, "Trigger should be reset after consumption");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Trigger parameter test passed");
 	}
 
 	// Test RemoveParameter
 	{
-		Zenith_Assert(xParams.HasParameter("Speed"), "Speed should exist");
+		ZENITH_ASSERT_TRUE(xParams.HasParameter("Speed"), "Speed should exist");
 		xParams.RemoveParameter("Speed");
-		Zenith_Assert(!xParams.HasParameter("Speed"), "Speed should be removed");
+		ZENITH_ASSERT_FALSE(xParams.HasParameter("Speed"), "Speed should be removed");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ RemoveParameter test passed");
 	}
 
 	// Test GetParameterType
 	{
-		Zenith_Assert(xParams.GetParameterType("Health") == Flux_AnimationParameters::ParamType::Int,
-			"Health should be Int type");
-		Zenith_Assert(xParams.GetParameterType("IsRunning") == Flux_AnimationParameters::ParamType::Bool,
-			"IsRunning should be Bool type");
-		Zenith_Assert(xParams.GetParameterType("Jump") == Flux_AnimationParameters::ParamType::Trigger,
-			"Jump should be Trigger type");
+		ZENITH_ASSERT_EQ(xParams.GetParameterType("Health"), Flux_AnimationParameters::ParamType::Int, "Health should be Int type");
+		ZENITH_ASSERT_EQ(xParams.GetParameterType("IsRunning"), Flux_AnimationParameters::ParamType::Bool, "IsRunning should be Bool type");
+		ZENITH_ASSERT_EQ(xParams.GetParameterType("Jump"), Flux_AnimationParameters::ParamType::Trigger, "Jump should be Trigger type");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ GetParameterType test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnimationParameters completed successfully");
 }
 
 /**
  * Test Flux_TransitionCondition evaluation
  * Verifies all comparison operators with different parameter types
  */
-void Zenith_UnitTests::TestTransitionConditions()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTransitionConditions...");
+ZENITH_TEST(Animation, TransitionConditions) { Zenith_UnitTests::TestTransitionConditions(); }
+void Zenith_UnitTests::TestTransitionConditions(){
 
 	Flux_AnimationParameters xParams;
 	xParams.AddFloat("Speed", 5.0f);
@@ -2456,14 +1876,11 @@ void Zenith_UnitTests::TestTransitionConditions()
 		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
 		xCond.m_fThreshold = 3.0f;
 
-		Zenith_Assert(xCond.Evaluate(xParams) == true,
-			"Speed 5.0 > 3.0 should be true");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), true, "Speed 5.0 > 3.0 should be true");
 
 		xCond.m_fThreshold = 6.0f;
-		Zenith_Assert(xCond.Evaluate(xParams) == false,
-			"Speed 5.0 > 6.0 should be false");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), false, "Speed 5.0 > 6.0 should be false");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Float Greater condition test passed");
 	}
 
 	// Test Float Less condition
@@ -2474,10 +1891,8 @@ void Zenith_UnitTests::TestTransitionConditions()
 		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
 		xCond.m_fThreshold = 10.0f;
 
-		Zenith_Assert(xCond.Evaluate(xParams) == true,
-			"Speed 5.0 < 10.0 should be true");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), true, "Speed 5.0 < 10.0 should be true");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Float Less condition test passed");
 	}
 
 	// Test Int Equal condition
@@ -2488,14 +1903,11 @@ void Zenith_UnitTests::TestTransitionConditions()
 		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Int;
 		xCond.m_iThreshold = 100;
 
-		Zenith_Assert(xCond.Evaluate(xParams) == true,
-			"Health 100 == 100 should be true");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), true, "Health 100 == 100 should be true");
 
 		xCond.m_iThreshold = 50;
-		Zenith_Assert(xCond.Evaluate(xParams) == false,
-			"Health 100 == 50 should be false");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), false, "Health 100 == 50 should be false");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Int Equal condition test passed");
 	}
 
 	// Test Int LessEqual condition
@@ -2506,14 +1918,11 @@ void Zenith_UnitTests::TestTransitionConditions()
 		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Int;
 		xCond.m_iThreshold = 100;
 
-		Zenith_Assert(xCond.Evaluate(xParams) == true,
-			"Health 100 <= 100 should be true");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), true, "Health 100 <= 100 should be true");
 
 		xCond.m_iThreshold = 50;
-		Zenith_Assert(xCond.Evaluate(xParams) == false,
-			"Health 100 <= 50 should be false");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), false, "Health 100 <= 50 should be false");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Int LessEqual condition test passed");
 	}
 
 	// Test Bool condition
@@ -2524,14 +1933,11 @@ void Zenith_UnitTests::TestTransitionConditions()
 		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Bool;
 		xCond.m_bThreshold = true;
 
-		Zenith_Assert(xCond.Evaluate(xParams) == true,
-			"IsGrounded true == true should be true");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), true, "IsGrounded true == true should be true");
 
 		xCond.m_bThreshold = false;
-		Zenith_Assert(xCond.Evaluate(xParams) == false,
-			"IsGrounded true == false should be false");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), false, "IsGrounded true == false should be false");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Bool condition test passed");
 	}
 
 	// Test Trigger condition (Equal to true means trigger is set)
@@ -2542,26 +1948,21 @@ void Zenith_UnitTests::TestTransitionConditions()
 		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
 		xCond.m_bThreshold = true;
 
-		Zenith_Assert(xCond.Evaluate(xParams) == false,
-			"Attack trigger not set should be false");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), false, "Attack trigger not set should be false");
 
 		xParams.SetTrigger("Attack");
-		Zenith_Assert(xCond.Evaluate(xParams) == true,
-			"Attack trigger set should be true");
+		ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), true, "Attack trigger set should be true");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Trigger condition test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransitionConditions completed successfully");
 }
 
 /**
  * Test Flux_AnimationStateMachine
  * Verifies state creation, transitions, and state changes
  */
-void Zenith_UnitTests::TestAnimationStateMachine()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnimationStateMachine...");
+ZENITH_TEST(Animation, AnimationStateMachine) { Zenith_UnitTests::TestAnimationStateMachine(); }
+void Zenith_UnitTests::TestAnimationStateMachine(){
 
 	Flux_AnimationStateMachine xStateMachine("TestSM");
 
@@ -2571,44 +1972,38 @@ void Zenith_UnitTests::TestAnimationStateMachine()
 		Flux_AnimationState* pxWalkState = xStateMachine.AddState("Walk");
 		Flux_AnimationState* pxRunState = xStateMachine.AddState("Run");
 
-		Zenith_Assert(pxIdleState != nullptr, "Idle state should be created");
-		Zenith_Assert(pxWalkState != nullptr, "Walk state should be created");
-		Zenith_Assert(pxRunState != nullptr, "Run state should be created");
+		ZENITH_ASSERT_NOT_NULL(pxIdleState, "Idle state should be created");
+		ZENITH_ASSERT_NOT_NULL(pxWalkState, "Walk state should be created");
+		ZENITH_ASSERT_NOT_NULL(pxRunState, "Run state should be created");
 
-		Zenith_Assert(xStateMachine.HasState("Idle"), "Should have Idle state");
-		Zenith_Assert(xStateMachine.HasState("Walk"), "Should have Walk state");
-		Zenith_Assert(xStateMachine.HasState("Run"), "Should have Run state");
-		Zenith_Assert(!xStateMachine.HasState("Jump"), "Should not have Jump state");
+		ZENITH_ASSERT_TRUE(xStateMachine.HasState("Idle"), "Should have Idle state");
+		ZENITH_ASSERT_TRUE(xStateMachine.HasState("Walk"), "Should have Walk state");
+		ZENITH_ASSERT_TRUE(xStateMachine.HasState("Run"), "Should have Run state");
+		ZENITH_ASSERT_FALSE(xStateMachine.HasState("Jump"), "Should not have Jump state");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ State creation test passed");
 	}
 
 	// Test default state
 	{
 		xStateMachine.SetDefaultState("Idle");
-		Zenith_Assert(xStateMachine.GetDefaultStateName() == "Idle",
-			"Default state should be Idle");
+		ZENITH_ASSERT_EQ(xStateMachine.GetDefaultStateName(), "Idle", "Default state should be Idle");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Default state test passed");
 	}
 
 	// Test SetState (force state change)
 	{
 		xStateMachine.SetState("Idle");
-		Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
-			"Current state should be Idle");
+		ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Idle", "Current state should be Idle");
 
 		xStateMachine.SetState("Walk");
-		Zenith_Assert(xStateMachine.GetCurrentStateName() == "Walk",
-			"Current state should be Walk after SetState");
+		ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Walk", "Current state should be Walk after SetState");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ SetState test passed");
 	}
 
 	// Test adding transitions
 	{
 		Flux_AnimationState* pxIdleState = xStateMachine.GetState("Idle");
-		Zenith_Assert(pxIdleState != nullptr, "Should retrieve Idle state");
+		ZENITH_ASSERT_NOT_NULL(pxIdleState, "Should retrieve Idle state");
 
 		Flux_StateTransition xTransition;
 		xTransition.m_strTargetStateName = "Walk";
@@ -2624,12 +2019,9 @@ void Zenith_UnitTests::TestAnimationStateMachine()
 
 		pxIdleState->AddTransition(xTransition);
 
-		Zenith_Assert(pxIdleState->GetTransitions().GetSize() == 1,
-			"Idle state should have 1 transition");
-		Zenith_Assert(pxIdleState->GetTransitions().Get(0).m_strTargetStateName == "Walk",
-			"Transition should target Walk state");
+		ZENITH_ASSERT_EQ(pxIdleState->GetTransitions().GetSize(), 1, "Idle state should have 1 transition");
+		ZENITH_ASSERT_EQ(pxIdleState->GetTransitions().Get(0).m_strTargetStateName, "Walk", "Transition should target Walk state");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Transition creation test passed");
 	}
 
 	// Test parameters
@@ -2637,44 +2029,35 @@ void Zenith_UnitTests::TestAnimationStateMachine()
 		xStateMachine.GetParameters().AddFloat("Speed", 0.0f);
 		xStateMachine.GetParameters().AddBool("IsGrounded", true);
 
-		Zenith_Assert(xStateMachine.GetParameters().HasParameter("Speed"),
-			"Parameters should have Speed");
-		Zenith_Assert(xStateMachine.GetParameters().HasParameter("IsGrounded"),
-			"Parameters should have IsGrounded");
+		ZENITH_ASSERT_TRUE(xStateMachine.GetParameters().HasParameter("Speed"), "Parameters should have Speed");
+		ZENITH_ASSERT_TRUE(xStateMachine.GetParameters().HasParameter("IsGrounded"), "Parameters should have IsGrounded");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Parameters integration test passed");
 	}
 
 	// Test state removal
 	{
 		xStateMachine.RemoveState("Run");
-		Zenith_Assert(!xStateMachine.HasState("Run"), "Run state should be removed");
+		ZENITH_ASSERT_FALSE(xStateMachine.HasState("Run"), "Run state should be removed");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ State removal test passed");
 	}
 
 	// Test name
 	{
-		Zenith_Assert(xStateMachine.GetName() == "TestSM",
-			"State machine name should be TestSM");
+		ZENITH_ASSERT_EQ(xStateMachine.GetName(), "TestSM", "State machine name should be TestSM");
 
 		xStateMachine.SetName("RenamedSM");
-		Zenith_Assert(xStateMachine.GetName() == "RenamedSM",
-			"State machine name should be RenamedSM");
+		ZENITH_ASSERT_EQ(xStateMachine.GetName(), "RenamedSM", "State machine name should be RenamedSM");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Name test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnimationStateMachine completed successfully");
 }
 
 /**
  * Test Flux_IKChain and Flux_IKSolver setup
  * Verifies chain creation, target management, and helper functions
  */
-void Zenith_UnitTests::TestIKChainSetup()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestIKChainSetup...");
+ZENITH_TEST(Animation, IKChainSetup) { Zenith_UnitTests::TestIKChainSetup(); }
+void Zenith_UnitTests::TestIKChainSetup(){
 
 	Flux_IKSolver xSolver;
 
@@ -2682,23 +2065,21 @@ void Zenith_UnitTests::TestIKChainSetup()
 	{
 		Flux_IKChain xLegChain = Flux_IKSolver::CreateLegChain("LeftLeg", "Hip_L", "Knee_L", "Ankle_L");
 
-		Zenith_Assert(xLegChain.m_strName == "LeftLeg", "Chain name should be LeftLeg");
-		Zenith_Assert(xLegChain.m_xBoneNames.size() == 3, "Leg chain should have 3 bones");
-		Zenith_Assert(xLegChain.m_xBoneNames[0] == "Hip_L", "First bone should be Hip_L");
-		Zenith_Assert(xLegChain.m_xBoneNames[1] == "Knee_L", "Second bone should be Knee_L");
-		Zenith_Assert(xLegChain.m_xBoneNames[2] == "Ankle_L", "Third bone should be Ankle_L");
+		ZENITH_ASSERT_EQ(xLegChain.m_strName, "LeftLeg", "Chain name should be LeftLeg");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.size(), 3, "Leg chain should have 3 bones");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[0], "Hip_L", "First bone should be Hip_L");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[1], "Knee_L", "Second bone should be Knee_L");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[2], "Ankle_L", "Third bone should be Ankle_L");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ CreateLegChain test passed");
 	}
 
 	// Test arm chain creation
 	{
 		Flux_IKChain xArmChain = Flux_IKSolver::CreateArmChain("RightArm", "Shoulder_R", "Elbow_R", "Wrist_R");
 
-		Zenith_Assert(xArmChain.m_strName == "RightArm", "Chain name should be RightArm");
-		Zenith_Assert(xArmChain.m_xBoneNames.size() == 3, "Arm chain should have 3 bones");
+		ZENITH_ASSERT_EQ(xArmChain.m_strName, "RightArm", "Chain name should be RightArm");
+		ZENITH_ASSERT_EQ(xArmChain.m_xBoneNames.size(), 3, "Arm chain should have 3 bones");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ CreateArmChain test passed");
 	}
 
 	// Test spine chain creation
@@ -2706,10 +2087,9 @@ void Zenith_UnitTests::TestIKChainSetup()
 		std::vector<std::string> xSpineBones = { "Spine1", "Spine2", "Spine3", "Neck" };
 		Flux_IKChain xSpineChain = Flux_IKSolver::CreateSpineChain("Spine", xSpineBones);
 
-		Zenith_Assert(xSpineChain.m_strName == "Spine", "Chain name should be Spine");
-		Zenith_Assert(xSpineChain.m_xBoneNames.size() == 4, "Spine chain should have 4 bones");
+		ZENITH_ASSERT_EQ(xSpineChain.m_strName, "Spine", "Chain name should be Spine");
+		ZENITH_ASSERT_EQ(xSpineChain.m_xBoneNames.size(), 4, "Spine chain should have 4 bones");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ CreateSpineChain test passed");
 	}
 
 	// Test adding chains to solver
@@ -2720,11 +2100,10 @@ void Zenith_UnitTests::TestIKChainSetup()
 		xSolver.AddChain(xLeftLeg);
 		xSolver.AddChain(xRightLeg);
 
-		Zenith_Assert(xSolver.HasChain("LeftLeg"), "Solver should have LeftLeg chain");
-		Zenith_Assert(xSolver.HasChain("RightLeg"), "Solver should have RightLeg chain");
-		Zenith_Assert(!xSolver.HasChain("LeftArm"), "Solver should not have LeftArm chain");
+		ZENITH_ASSERT_TRUE(xSolver.HasChain("LeftLeg"), "Solver should have LeftLeg chain");
+		ZENITH_ASSERT_TRUE(xSolver.HasChain("RightLeg"), "Solver should have RightLeg chain");
+		ZENITH_ASSERT_FALSE(xSolver.HasChain("LeftArm"), "Solver should not have LeftArm chain");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ AddChain test passed");
 	}
 
 	// Test target management
@@ -2736,59 +2115,51 @@ void Zenith_UnitTests::TestIKChainSetup()
 
 		xSolver.SetTarget("LeftLeg", xTarget);
 
-		Zenith_Assert(xSolver.HasTarget("LeftLeg"), "Solver should have LeftLeg target");
-		Zenith_Assert(!xSolver.HasTarget("RightLeg"), "Solver should not have RightLeg target");
+		ZENITH_ASSERT_TRUE(xSolver.HasTarget("LeftLeg"), "Solver should have LeftLeg target");
+		ZENITH_ASSERT_FALSE(xSolver.HasTarget("RightLeg"), "Solver should not have RightLeg target");
 
 		const Flux_IKTarget* pxTarget = xSolver.GetTarget("LeftLeg");
-		Zenith_Assert(pxTarget != nullptr, "Should retrieve LeftLeg target");
-		Zenith_Assert(Vec3Equals(pxTarget->m_xPosition, Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f)),
-			"Target position should match");
-		Zenith_Assert(FloatEquals(pxTarget->m_fWeight, 0.75f), "Target weight should be 0.75");
+		ZENITH_ASSERT_NOT_NULL(pxTarget, "Should retrieve LeftLeg target");
+		ZENITH_ASSERT_TRUE(Vec3Equals(pxTarget->m_xPosition, Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f)), "Target position should match");
+		ZENITH_ASSERT_TRUE(FloatEquals(pxTarget->m_fWeight, 0.75f), "Target weight should be 0.75");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Target management test passed");
 	}
 
 	// Test ClearTarget
 	{
 		xSolver.ClearTarget("LeftLeg");
-		Zenith_Assert(!xSolver.HasTarget("LeftLeg"), "LeftLeg target should be cleared");
+		ZENITH_ASSERT_FALSE(xSolver.HasTarget("LeftLeg"), "LeftLeg target should be cleared");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ ClearTarget test passed");
 	}
 
 	// Test RemoveChain
 	{
 		xSolver.RemoveChain("LeftLeg");
-		Zenith_Assert(!xSolver.HasChain("LeftLeg"), "LeftLeg chain should be removed");
-		Zenith_Assert(xSolver.HasChain("RightLeg"), "RightLeg chain should still exist");
+		ZENITH_ASSERT_FALSE(xSolver.HasChain("LeftLeg"), "LeftLeg chain should be removed");
+		ZENITH_ASSERT_TRUE(xSolver.HasChain("RightLeg"), "RightLeg chain should still exist");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ RemoveChain test passed");
 	}
 
 	// Test GetChain
 	{
 		Flux_IKChain* pxChain = xSolver.GetChain("RightLeg");
-		Zenith_Assert(pxChain != nullptr, "Should retrieve RightLeg chain");
-		Zenith_Assert(pxChain->m_strName == "RightLeg", "Chain name should be RightLeg");
+		ZENITH_ASSERT_NOT_NULL(pxChain, "Should retrieve RightLeg chain");
+		ZENITH_ASSERT_EQ(pxChain->m_strName, "RightLeg", "Chain name should be RightLeg");
 
 		// Modify via pointer
 		pxChain->m_uMaxIterations = 20;
-		Zenith_Assert(xSolver.GetChain("RightLeg")->m_uMaxIterations == 20,
-			"Chain modification should persist");
+		ZENITH_ASSERT_EQ(xSolver.GetChain("RightLeg")->m_uMaxIterations, 20, "Chain modification should persist");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ GetChain test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIKChainSetup completed successfully");
 }
 
 /**
  * Test animation system serialization
  * Verifies round-trip serialization for animation data structures
  */
-void Zenith_UnitTests::TestAnimationSerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnimationSerialization...");
+ZENITH_TEST(Animation, AnimationSerialization) { Zenith_UnitTests::TestAnimationSerialization(); }
+void Zenith_UnitTests::TestAnimationSerialization(){
 
 	// Test AnimationParameters serialization
 	{
@@ -2806,12 +2177,11 @@ void Zenith_UnitTests::TestAnimationSerialization()
 		Flux_AnimationParameters xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(xLoaded.HasParameter("Speed"), "Should have Speed param");
-		Zenith_Assert(FloatEquals(xLoaded.GetFloat("Speed"), 5.5f), "Speed should be 5.5");
-		Zenith_Assert(xLoaded.GetInt("Combo") == 3, "Combo should be 3");
-		Zenith_Assert(xLoaded.GetBool("IsJumping") == true, "IsJumping should be true");
+		ZENITH_ASSERT_TRUE(xLoaded.HasParameter("Speed"), "Should have Speed param");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.GetFloat("Speed"), 5.5f), "Speed should be 5.5");
+		ZENITH_ASSERT_EQ(xLoaded.GetInt("Combo"), 3, "Combo should be 3");
+		ZENITH_ASSERT_EQ(xLoaded.GetBool("IsJumping"), true, "IsJumping should be true");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ AnimationParameters serialization test passed");
 	}
 
 	// Test TransitionCondition serialization
@@ -2829,12 +2199,10 @@ void Zenith_UnitTests::TestAnimationSerialization()
 		Flux_TransitionCondition xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(xLoaded.m_strParameterName == "Speed", "Parameter name should match");
-		Zenith_Assert(xLoaded.m_eCompareOp == Flux_TransitionCondition::CompareOp::GreaterEqual,
-			"Compare op should match");
-		Zenith_Assert(FloatEquals(xLoaded.m_fThreshold, 3.14f), "Threshold should match");
+		ZENITH_ASSERT_EQ(xLoaded.m_strParameterName, "Speed", "Parameter name should match");
+		ZENITH_ASSERT_EQ(xLoaded.m_eCompareOp, Flux_TransitionCondition::CompareOp::GreaterEqual, "Compare op should match");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.m_fThreshold, 3.14f), "Threshold should match");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ TransitionCondition serialization test passed");
 	}
 
 	// Test IKChain serialization
@@ -2852,16 +2220,14 @@ void Zenith_UnitTests::TestAnimationSerialization()
 		Flux_IKChain xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(xLoaded.m_strName == "TestLeg", "Chain name should match");
-		Zenith_Assert(xLoaded.m_xBoneNames.size() == 3, "Should have 3 bones");
-		Zenith_Assert(xLoaded.m_xBoneNames[0] == "Hip", "First bone should be Hip");
-		Zenith_Assert(xLoaded.m_uMaxIterations == 15, "Max iterations should match");
-		Zenith_Assert(FloatEquals(xLoaded.m_fTolerance, 0.005f), "Tolerance should match");
-		Zenith_Assert(xLoaded.m_bUsePoleVector == true, "Use pole vector should match");
-		Zenith_Assert(Vec3Equals(xLoaded.m_xPoleVector, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)),
-			"Pole vector should match");
+		ZENITH_ASSERT_EQ(xLoaded.m_strName, "TestLeg", "Chain name should match");
+		ZENITH_ASSERT_EQ(xLoaded.m_xBoneNames.size(), 3, "Should have 3 bones");
+		ZENITH_ASSERT_EQ(xLoaded.m_xBoneNames[0], "Hip", "First bone should be Hip");
+		ZENITH_ASSERT_EQ(xLoaded.m_uMaxIterations, 15, "Max iterations should match");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.m_fTolerance, 0.005f), "Tolerance should match");
+		ZENITH_ASSERT_EQ(xLoaded.m_bUsePoleVector, true, "Use pole vector should match");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xLoaded.m_xPoleVector, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)), "Pole vector should match");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ IKChain serialization test passed");
 	}
 
 	// Test JointConstraint serialization
@@ -2879,14 +2245,11 @@ void Zenith_UnitTests::TestAnimationSerialization()
 		Flux_JointConstraint xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(xLoaded.m_eType == Flux_JointConstraint::ConstraintType::Hinge,
-			"Constraint type should be Hinge");
-		Zenith_Assert(Vec3Equals(xLoaded.m_xHingeAxis, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)),
-			"Hinge axis should match");
-		Zenith_Assert(FloatEquals(xLoaded.m_fMinAngle, -1.5f), "Min angle should match");
-		Zenith_Assert(FloatEquals(xLoaded.m_fMaxAngle, 0.0f), "Max angle should match");
+		ZENITH_ASSERT_EQ(xLoaded.m_eType, Flux_JointConstraint::ConstraintType::Hinge, "Constraint type should be Hinge");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xLoaded.m_xHingeAxis, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)), "Hinge axis should match");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.m_fMinAngle, -1.5f), "Min angle should match");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.m_fMaxAngle, 0.0f), "Max angle should match");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ JointConstraint serialization test passed");
 	}
 
 	// Test BoneMask serialization
@@ -2903,11 +2266,10 @@ void Zenith_UnitTests::TestAnimationSerialization()
 		Flux_BoneMask xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(FloatEquals(xLoaded.GetBoneWeight(0), 1.0f), "Bone 0 weight should be 1.0");
-		Zenith_Assert(FloatEquals(xLoaded.GetBoneWeight(1), 0.5f), "Bone 1 weight should be 0.5");
-		Zenith_Assert(FloatEquals(xLoaded.GetBoneWeight(2), 0.0f), "Bone 2 weight should be 0.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.GetBoneWeight(0), 1.0f), "Bone 0 weight should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.GetBoneWeight(1), 0.5f), "Bone 1 weight should be 0.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.GetBoneWeight(2), 0.0f), "Bone 2 weight should be 0.0");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BoneMask serialization test passed");
 	}
 
 	// Test AnimationClipMetadata serialization
@@ -2927,90 +2289,81 @@ void Zenith_UnitTests::TestAnimationSerialization()
 		Flux_AnimationClipMetadata xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(xLoaded.m_strName == "TestClip", "Clip name should match");
-		Zenith_Assert(FloatEquals(xLoaded.m_fDuration, 2.5f), "Duration should match");
-		Zenith_Assert(xLoaded.m_uTicksPerSecond == 30, "Ticks per second should match");
-		Zenith_Assert(xLoaded.m_bLooping == false, "Looping should be false");
-		Zenith_Assert(FloatEquals(xLoaded.m_fBlendInTime, 0.2f), "Blend in time should match");
-		Zenith_Assert(FloatEquals(xLoaded.m_fBlendOutTime, 0.3f), "Blend out time should match");
+		ZENITH_ASSERT_EQ(xLoaded.m_strName, "TestClip", "Clip name should match");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.m_fDuration, 2.5f), "Duration should match");
+		ZENITH_ASSERT_EQ(xLoaded.m_uTicksPerSecond, 30, "Ticks per second should match");
+		ZENITH_ASSERT_EQ(xLoaded.m_bLooping, false, "Looping should be false");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.m_fBlendInTime, 0.2f), "Blend in time should match");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.m_fBlendOutTime, 0.3f), "Blend out time should match");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ AnimationClipMetadata serialization test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnimationSerialization completed successfully");
 }
 
 /**
  * Test blend tree node types
  * Verifies blend tree node creation and factory method
  */
-void Zenith_UnitTests::TestBlendTreeNodes()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeNodes...");
+ZENITH_TEST(Animation, BlendTreeNodes) { Zenith_UnitTests::TestBlendTreeNodes(); }
+void Zenith_UnitTests::TestBlendTreeNodes(){
 
 	// Test Clip node
 	{
 		Flux_BlendTreeNode_Clip xClipNode(nullptr, 1.0f);
-		Zenith_Assert(std::string(xClipNode.GetNodeTypeName()) == "Clip", "Type name should be Clip");
-		Zenith_Assert(FloatEquals(xClipNode.GetPlaybackRate(), 1.0f), "Playback rate should be 1.0");
+		ZENITH_ASSERT_EQ(std::string(xClipNode.GetNodeTypeName()), "Clip", "Type name should be Clip");
+		ZENITH_ASSERT_TRUE(FloatEquals(xClipNode.GetPlaybackRate(), 1.0f), "Playback rate should be 1.0");
 
 		xClipNode.SetPlaybackRate(1.5f);
-		Zenith_Assert(FloatEquals(xClipNode.GetPlaybackRate(), 1.5f), "Playback rate should be 1.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xClipNode.GetPlaybackRate(), 1.5f), "Playback rate should be 1.5");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Clip node test passed");
 	}
 
 	// Test Blend node
 	{
 		Flux_BlendTreeNode_Blend xBlendNode;
-		Zenith_Assert(std::string(xBlendNode.GetNodeTypeName()) == "Blend", "Type name should be Blend");
+		ZENITH_ASSERT_EQ(std::string(xBlendNode.GetNodeTypeName()), "Blend", "Type name should be Blend");
 
 		xBlendNode.SetBlendWeight(0.75f);
-		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 0.75f), "Blend weight should be 0.75");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendNode.GetBlendWeight(), 0.75f), "Blend weight should be 0.75");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend node test passed");
 	}
 
 	// Test BlendSpace1D node
 	{
 		Flux_BlendTreeNode_BlendSpace1D xBlendSpace;
-		Zenith_Assert(std::string(xBlendSpace.GetNodeTypeName()) == "BlendSpace1D", "Type name should be BlendSpace1D");
+		ZENITH_ASSERT_EQ(std::string(xBlendSpace.GetNodeTypeName()), "BlendSpace1D", "Type name should be BlendSpace1D");
 
 		xBlendSpace.SetParameter(0.5f);
-		Zenith_Assert(FloatEquals(xBlendSpace.GetParameter(), 0.5f), "Parameter should be 0.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendSpace.GetParameter(), 0.5f), "Parameter should be 0.5");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BlendSpace1D node test passed");
 	}
 
 	// Test BlendSpace2D node
 	{
 		Flux_BlendTreeNode_BlendSpace2D xBlendSpace;
-		Zenith_Assert(std::string(xBlendSpace.GetNodeTypeName()) == "BlendSpace2D", "Type name should be BlendSpace2D");
+		ZENITH_ASSERT_EQ(std::string(xBlendSpace.GetNodeTypeName()), "BlendSpace2D", "Type name should be BlendSpace2D");
 
 		Zenith_Maths::Vector2 xParams(0.3f, 0.7f);
 		xBlendSpace.SetParameter(xParams);
 		const Zenith_Maths::Vector2& xRetrieved = xBlendSpace.GetParameter();
-		Zenith_Assert(FloatEquals(xRetrieved.x, 0.3f) && FloatEquals(xRetrieved.y, 0.7f),
-			"Parameters should be (0.3, 0.7)");
+		ZENITH_ASSERT_TRUE(FloatEquals(xRetrieved.x, 0.3f) && FloatEquals(xRetrieved.y, 0.7f), "Parameters should be (0.3, 0.7)");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BlendSpace2D node test passed");
 	}
 
 	// Test Additive node
 	{
 		Flux_BlendTreeNode_Additive xAdditiveNode;
-		Zenith_Assert(std::string(xAdditiveNode.GetNodeTypeName()) == "Additive", "Type name should be Additive");
+		ZENITH_ASSERT_EQ(std::string(xAdditiveNode.GetNodeTypeName()), "Additive", "Type name should be Additive");
 
 		xAdditiveNode.SetAdditiveWeight(0.5f);
-		Zenith_Assert(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 0.5f), "Additive weight should be 0.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 0.5f), "Additive weight should be 0.5");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Additive node test passed");
 	}
 
 	// Test Select node
 	{
 		Flux_BlendTreeNode_Select xSelectNode;
-		Zenith_Assert(std::string(xSelectNode.GetNodeTypeName()) == "Select", "Type name should be Select");
+		ZENITH_ASSERT_EQ(std::string(xSelectNode.GetNodeTypeName()), "Select", "Type name should be Select");
 
 		// Add some children before setting selected index
 		xSelectNode.AddChild(new Flux_BlendTreeNode_Clip(nullptr, 1.0f));
@@ -3018,72 +2371,66 @@ void Zenith_UnitTests::TestBlendTreeNodes()
 		xSelectNode.AddChild(new Flux_BlendTreeNode_Clip(nullptr, 1.0f));
 
 		xSelectNode.SetSelectedIndex(2);
-		Zenith_Assert(xSelectNode.GetSelectedIndex() == 2, "Selected index should be 2");
+		ZENITH_ASSERT_EQ(xSelectNode.GetSelectedIndex(), 2, "Selected index should be 2");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Select node test passed");
 	}
 
 	// Test factory method
 	{
 		Flux_BlendTreeNode* pxClip = Flux_BlendTreeNode::CreateFromTypeName("Clip");
-		Zenith_Assert(pxClip != nullptr, "Factory should create Clip node");
-		Zenith_Assert(std::string(pxClip->GetNodeTypeName()) == "Clip", "Created node should be Clip type");
+		ZENITH_ASSERT_NOT_NULL(pxClip, "Factory should create Clip node");
+		ZENITH_ASSERT_EQ(std::string(pxClip->GetNodeTypeName()), "Clip", "Created node should be Clip type");
 		delete pxClip;
 
 		Flux_BlendTreeNode* pxBlend = Flux_BlendTreeNode::CreateFromTypeName("Blend");
-		Zenith_Assert(pxBlend != nullptr, "Factory should create Blend node");
-		Zenith_Assert(std::string(pxBlend->GetNodeTypeName()) == "Blend", "Created node should be Blend type");
+		ZENITH_ASSERT_NOT_NULL(pxBlend, "Factory should create Blend node");
+		ZENITH_ASSERT_EQ(std::string(pxBlend->GetNodeTypeName()), "Blend", "Created node should be Blend type");
 		delete pxBlend;
 
 		Flux_BlendTreeNode* pxBlendSpace1D = Flux_BlendTreeNode::CreateFromTypeName("BlendSpace1D");
-		Zenith_Assert(pxBlendSpace1D != nullptr, "Factory should create BlendSpace1D node");
-		Zenith_Assert(std::string(pxBlendSpace1D->GetNodeTypeName()) == "BlendSpace1D", "Created node should be BlendSpace1D type");
+		ZENITH_ASSERT_NOT_NULL(pxBlendSpace1D, "Factory should create BlendSpace1D node");
+		ZENITH_ASSERT_EQ(std::string(pxBlendSpace1D->GetNodeTypeName()), "BlendSpace1D", "Created node should be BlendSpace1D type");
 		delete pxBlendSpace1D;
 
 		Flux_BlendTreeNode* pxBlendSpace2D = Flux_BlendTreeNode::CreateFromTypeName("BlendSpace2D");
-		Zenith_Assert(pxBlendSpace2D != nullptr, "Factory should create BlendSpace2D node");
-		Zenith_Assert(std::string(pxBlendSpace2D->GetNodeTypeName()) == "BlendSpace2D", "Created node should be BlendSpace2D type");
+		ZENITH_ASSERT_NOT_NULL(pxBlendSpace2D, "Factory should create BlendSpace2D node");
+		ZENITH_ASSERT_EQ(std::string(pxBlendSpace2D->GetNodeTypeName()), "BlendSpace2D", "Created node should be BlendSpace2D type");
 		delete pxBlendSpace2D;
 
 		Flux_BlendTreeNode* pxAdditive = Flux_BlendTreeNode::CreateFromTypeName("Additive");
-		Zenith_Assert(pxAdditive != nullptr, "Factory should create Additive node");
-		Zenith_Assert(std::string(pxAdditive->GetNodeTypeName()) == "Additive", "Created node should be Additive type");
+		ZENITH_ASSERT_NOT_NULL(pxAdditive, "Factory should create Additive node");
+		ZENITH_ASSERT_EQ(std::string(pxAdditive->GetNodeTypeName()), "Additive", "Created node should be Additive type");
 		delete pxAdditive;
 
 		Flux_BlendTreeNode* pxMasked = Flux_BlendTreeNode::CreateFromTypeName("Masked");
-		Zenith_Assert(pxMasked != nullptr, "Factory should create Masked node");
-		Zenith_Assert(std::string(pxMasked->GetNodeTypeName()) == "Masked", "Created node should be Masked type");
+		ZENITH_ASSERT_NOT_NULL(pxMasked, "Factory should create Masked node");
+		ZENITH_ASSERT_EQ(std::string(pxMasked->GetNodeTypeName()), "Masked", "Created node should be Masked type");
 		delete pxMasked;
 
 		Flux_BlendTreeNode* pxSelect = Flux_BlendTreeNode::CreateFromTypeName("Select");
-		Zenith_Assert(pxSelect != nullptr, "Factory should create Select node");
-		Zenith_Assert(std::string(pxSelect->GetNodeTypeName()) == "Select", "Created node should be Select type");
+		ZENITH_ASSERT_NOT_NULL(pxSelect, "Factory should create Select node");
+		ZENITH_ASSERT_EQ(std::string(pxSelect->GetNodeTypeName()), "Select", "Created node should be Select type");
 		delete pxSelect;
 
 		Flux_BlendTreeNode* pxInvalid = Flux_BlendTreeNode::CreateFromTypeName("InvalidType");
-		Zenith_Assert(pxInvalid == nullptr, "Factory should return nullptr for invalid type");
+		ZENITH_ASSERT_NULL(pxInvalid, "Factory should return nullptr for invalid type");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Factory method test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeNodes completed successfully");
 }
 
 /**
  * Test cross-fade transition
  * Verifies transition timing and blend weight calculations
  */
-void Zenith_UnitTests::TestCrossFadeTransition()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeTransition...");
+ZENITH_TEST(Animation, CrossFadeTransition) { Zenith_UnitTests::TestCrossFadeTransition(); }
+void Zenith_UnitTests::TestCrossFadeTransition(){
 
 	// Test initial state
 	{
 		Flux_CrossFadeTransition xTransition;
-		Zenith_Assert(xTransition.IsComplete() == true,
-			"Transition should be complete initially (no duration set)");
+		ZENITH_ASSERT_EQ(xTransition.IsComplete(), true, "Transition should be complete initially (no duration set)");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Initial state test passed");
 	}
 
 	// Test Start and Update
@@ -3095,29 +2442,22 @@ void Zenith_UnitTests::TestCrossFadeTransition()
 		Flux_CrossFadeTransition xTransition;
 		xTransition.Start(xFromPose, 1.0f); // 1 second transition
 
-		Zenith_Assert(xTransition.IsComplete() == false,
-			"Transition should not be complete after Start");
-		Zenith_Assert(FloatEquals(xTransition.GetBlendWeight(), 0.0f, 0.01f),
-			"Blend weight should be 0 at start");
+		ZENITH_ASSERT_EQ(xTransition.IsComplete(), false, "Transition should not be complete after Start");
+		ZENITH_ASSERT_TRUE(FloatEquals(xTransition.GetBlendWeight(), 0.0f, 0.01f), "Blend weight should be 0 at start");
 
 		// Update halfway
 		xTransition.Update(0.5f);
-		Zenith_Assert(xTransition.IsComplete() == false,
-			"Transition should not be complete at 0.5s");
+		ZENITH_ASSERT_EQ(xTransition.IsComplete(), false, "Transition should not be complete at 0.5s");
 		// With EaseInOut, 0.5 normalized time might not be exactly 0.5 blend weight
 		// but should be close for symmetrical easing
 		float fMidWeight = xTransition.GetBlendWeight();
-		Zenith_Assert(fMidWeight > 0.3f && fMidWeight < 0.7f,
-			"Blend weight at midpoint should be roughly 0.5");
+		ZENITH_ASSERT_TRUE(fMidWeight > 0.3f && fMidWeight < 0.7f, "Blend weight at midpoint should be roughly 0.5");
 
 		// Update to completion
 		xTransition.Update(0.6f); // Total 1.1s, should be complete
-		Zenith_Assert(xTransition.IsComplete() == true,
-			"Transition should be complete after 1.1s");
-		Zenith_Assert(FloatEquals(xTransition.GetBlendWeight(), 1.0f),
-			"Blend weight should be 1.0 when complete");
+		ZENITH_ASSERT_EQ(xTransition.IsComplete(), true, "Transition should be complete after 1.1s");
+		ZENITH_ASSERT_TRUE(FloatEquals(xTransition.GetBlendWeight(), 1.0f), "Blend weight should be 1.0 when complete");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Start and Update test passed");
 	}
 
 	// Test different easing types
@@ -3131,8 +2471,7 @@ void Zenith_UnitTests::TestCrossFadeTransition()
 			xTransition.SetEasing(Flux_CrossFadeTransition::EasingType::Linear);
 			xTransition.Start(xFromPose, 1.0f);
 			xTransition.Update(0.5f);
-			Zenith_Assert(FloatEquals(xTransition.GetBlendWeight(), 0.5f),
-				"Linear easing should give 0.5 at midpoint");
+			ZENITH_ASSERT_TRUE(FloatEquals(xTransition.GetBlendWeight(), 0.5f), "Linear easing should give 0.5 at midpoint");
 		}
 
 		// Test EaseIn easing
@@ -3142,8 +2481,7 @@ void Zenith_UnitTests::TestCrossFadeTransition()
 			xTransition.Start(xFromPose, 1.0f);
 			xTransition.Update(0.5f);
 			float fWeight = xTransition.GetBlendWeight();
-			Zenith_Assert(fWeight < 0.5f,
-				"EaseIn should give weight < 0.5 at midpoint");
+			ZENITH_ASSERT_LT(fWeight, 0.5f, "EaseIn should give weight < 0.5 at midpoint");
 		}
 
 		// Test EaseOut easing
@@ -3153,11 +2491,9 @@ void Zenith_UnitTests::TestCrossFadeTransition()
 			xTransition.Start(xFromPose, 1.0f);
 			xTransition.Update(0.5f);
 			float fWeight = xTransition.GetBlendWeight();
-			Zenith_Assert(fWeight > 0.5f,
-				"EaseOut should give weight > 0.5 at midpoint");
+			ZENITH_ASSERT_GT(fWeight, 0.5f, "EaseOut should give weight > 0.5 at midpoint");
 		}
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Easing types test passed");
 	}
 
 	// Test Blend operation
@@ -3179,22 +2515,18 @@ void Zenith_UnitTests::TestCrossFadeTransition()
 		xOutPose.Initialize(1);
 		xTransition.Blend(xOutPose, xTargetPose);
 
-		Zenith_Assert(Vec3Equals(xOutPose.GetLocalPose(0).m_xPosition, Zenith_Maths::Vector3(5.0f, 5.0f, 5.0f)),
-			"Blend should interpolate position to midpoint");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xOutPose.GetLocalPose(0).m_xPosition, Zenith_Maths::Vector3(5.0f, 5.0f, 5.0f)), "Blend should interpolate position to midpoint");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend operation test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeTransition completed successfully");
 }
 
 /**
  * Test Animation Clip Channels
  * Verifies clip metadata and event handling
  */
-void Zenith_UnitTests::TestAnimationClipChannels()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnimationClipChannels...");
+ZENITH_TEST(Animation, AnimationClipChannels) { Zenith_UnitTests::TestAnimationClipChannels(); }
+void Zenith_UnitTests::TestAnimationClipChannels(){
 
 	// Test clip metadata
 	{
@@ -3206,14 +2538,13 @@ void Zenith_UnitTests::TestAnimationClipChannels()
 		xMetadata.m_fBlendInTime = 0.2f;
 		xMetadata.m_fBlendOutTime = 0.15f;
 
-		Zenith_Assert(xMetadata.m_strName == "TestClip", "Name should be 'TestClip'");
-		Zenith_Assert(FloatEquals(xMetadata.m_fDuration, 2.5f), "Duration should be 2.5");
-		Zenith_Assert(xMetadata.m_uTicksPerSecond == 30, "Ticks per second should be 30");
-		Zenith_Assert(xMetadata.m_bLooping == true, "Looping should be true");
-		Zenith_Assert(FloatEquals(xMetadata.m_fBlendInTime, 0.2f), "Blend in time should be 0.2");
-		Zenith_Assert(FloatEquals(xMetadata.m_fBlendOutTime, 0.15f), "Blend out time should be 0.15");
+		ZENITH_ASSERT_EQ(xMetadata.m_strName, "TestClip", "Name should be 'TestClip'");
+		ZENITH_ASSERT_TRUE(FloatEquals(xMetadata.m_fDuration, 2.5f), "Duration should be 2.5");
+		ZENITH_ASSERT_EQ(xMetadata.m_uTicksPerSecond, 30, "Ticks per second should be 30");
+		ZENITH_ASSERT_EQ(xMetadata.m_bLooping, true, "Looping should be true");
+		ZENITH_ASSERT_TRUE(FloatEquals(xMetadata.m_fBlendInTime, 0.2f), "Blend in time should be 0.2");
+		ZENITH_ASSERT_TRUE(FloatEquals(xMetadata.m_fBlendOutTime, 0.15f), "Blend out time should be 0.15");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Clip metadata test passed");
 	}
 
 	// Test animation clip with events
@@ -3237,13 +2568,12 @@ void Zenith_UnitTests::TestAnimationClipChannels()
 		xClip.AddEvent(xEvent2);
 
 		const std::vector<Flux_AnimationEvent>& xEvents = xClip.GetEvents();
-		Zenith_Assert(xEvents.size() == 2, "Should have 2 events");
-		Zenith_Assert(xEvents[0].m_strEventName == "LeftFootDown", "First event should be LeftFootDown");
-		Zenith_Assert(xEvents[1].m_strEventName == "RightFootDown", "Second event should be RightFootDown");
-		Zenith_Assert(FloatEquals(xEvents[0].m_fNormalizedTime, 0.25f), "First event time should be 0.25");
-		Zenith_Assert(FloatEquals(xEvents[1].m_fNormalizedTime, 0.75f), "Second event time should be 0.75");
+		ZENITH_ASSERT_EQ(xEvents.size(), 2, "Should have 2 events");
+		ZENITH_ASSERT_EQ(xEvents[0].m_strEventName, "LeftFootDown", "First event should be LeftFootDown");
+		ZENITH_ASSERT_EQ(xEvents[1].m_strEventName, "RightFootDown", "Second event should be RightFootDown");
+		ZENITH_ASSERT_TRUE(FloatEquals(xEvents[0].m_fNormalizedTime, 0.25f), "First event time should be 0.25");
+		ZENITH_ASSERT_TRUE(FloatEquals(xEvents[1].m_fNormalizedTime, 0.75f), "Second event time should be 0.75");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Animation clip events test passed");
 	}
 
 	// Test animation clip collection
@@ -3261,43 +2591,37 @@ void Zenith_UnitTests::TestAnimationClipChannels()
 		xCollection.AddClip(pxClip2);
 		xCollection.AddClip(pxClip3);
 
-		Zenith_Assert(xCollection.GetClipCount() == 3, "Should have 3 clips");
-		Zenith_Assert(xCollection.HasClip("Idle"), "Should have Idle clip");
-		Zenith_Assert(xCollection.HasClip("Walk"), "Should have Walk clip");
-		Zenith_Assert(xCollection.HasClip("Run"), "Should have Run clip");
-		Zenith_Assert(!xCollection.HasClip("Jump"), "Should not have Jump clip");
+		ZENITH_ASSERT_EQ(xCollection.GetClipCount(), 3, "Should have 3 clips");
+		ZENITH_ASSERT_TRUE(xCollection.HasClip("Idle"), "Should have Idle clip");
+		ZENITH_ASSERT_TRUE(xCollection.HasClip("Walk"), "Should have Walk clip");
+		ZENITH_ASSERT_TRUE(xCollection.HasClip("Run"), "Should have Run clip");
+		ZENITH_ASSERT_FALSE(xCollection.HasClip("Jump"), "Should not have Jump clip");
 
 		const Flux_AnimationClip* pxRetrieved = xCollection.GetClip("Walk");
-		Zenith_Assert(pxRetrieved != nullptr, "Should retrieve Walk clip");
-		Zenith_Assert(pxRetrieved->GetName() == "Walk", "Retrieved clip name should be Walk");
+		ZENITH_ASSERT_NOT_NULL(pxRetrieved, "Should retrieve Walk clip");
+		ZENITH_ASSERT_EQ(pxRetrieved->GetName(), "Walk", "Retrieved clip name should be Walk");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Animation clip collection test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnimationClipChannels completed successfully");
 }
 
 /**
  * Test BlendSpace1D calculations
  * Verifies blend space sample point selection and blending
  */
-void Zenith_UnitTests::TestBlendSpace1D()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendSpace1D...");
+ZENITH_TEST(Animation, BlendSpace1D) { Zenith_UnitTests::TestBlendSpace1D(); }
+void Zenith_UnitTests::TestBlendSpace1D(){
 
 	// Test parameter setting
 	{
 		Flux_BlendTreeNode_BlendSpace1D xBlendSpace;
 
 		xBlendSpace.SetParameter(-0.5f);
-		Zenith_Assert(FloatEquals(xBlendSpace.GetParameter(), -0.5f),
-			"Parameter should accept negative values");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendSpace.GetParameter(), -0.5f), "Parameter should accept negative values");
 
 		xBlendSpace.SetParameter(1.5f);
-		Zenith_Assert(FloatEquals(xBlendSpace.GetParameter(), 1.5f),
-			"Parameter should accept values > 1");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendSpace.GetParameter(), 1.5f), "Parameter should accept values > 1");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Parameter range test passed");
 	}
 
 	// Test blend point addition
@@ -3314,12 +2638,11 @@ void Zenith_UnitTests::TestBlendSpace1D()
 		xBlendSpace.AddBlendPoint(pxClip3, 1.0f);
 
 		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace1D::BlendPoint>& xPoints = xBlendSpace.GetBlendPoints();
-		Zenith_Assert(xPoints.GetSize() == 3, "Should have 3 blend points");
-		Zenith_Assert(FloatEquals(xPoints.Get(0).m_fPosition, 0.0f), "First point position should be 0.0");
-		Zenith_Assert(FloatEquals(xPoints.Get(1).m_fPosition, 0.5f), "Second point position should be 0.5");
-		Zenith_Assert(FloatEquals(xPoints.Get(2).m_fPosition, 1.0f), "Third point position should be 1.0");
+		ZENITH_ASSERT_EQ(xPoints.GetSize(), 3, "Should have 3 blend points");
+		ZENITH_ASSERT_TRUE(FloatEquals(xPoints.Get(0).m_fPosition, 0.0f), "First point position should be 0.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xPoints.Get(1).m_fPosition, 0.5f), "Second point position should be 0.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xPoints.Get(2).m_fPosition, 1.0f), "Third point position should be 1.0");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend point addition test passed");
 	}
 
 	// Test blend point sorting
@@ -3338,23 +2661,20 @@ void Zenith_UnitTests::TestBlendSpace1D()
 		xBlendSpace.SortBlendPoints();
 
 		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace1D::BlendPoint>& xPoints = xBlendSpace.GetBlendPoints();
-		Zenith_Assert(FloatEquals(xPoints.Get(0).m_fPosition, 0.0f), "After sorting, first should be 0.0");
-		Zenith_Assert(FloatEquals(xPoints.Get(1).m_fPosition, 0.5f), "After sorting, second should be 0.5");
-		Zenith_Assert(FloatEquals(xPoints.Get(2).m_fPosition, 1.0f), "After sorting, third should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xPoints.Get(0).m_fPosition, 0.0f), "After sorting, first should be 0.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xPoints.Get(1).m_fPosition, 0.5f), "After sorting, second should be 0.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xPoints.Get(2).m_fPosition, 1.0f), "After sorting, third should be 1.0");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend point sorting test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendSpace1D completed successfully");
 }
 
 /**
  * Test BlendSpace2D blend tree node
  * Verifies 2D parameter blending, point management, and triangulation
  */
-void Zenith_UnitTests::TestBlendSpace2D()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendSpace2D...");
+ZENITH_TEST(Animation, BlendSpace2D) { Zenith_UnitTests::TestBlendSpace2D(); }
+void Zenith_UnitTests::TestBlendSpace2D(){
 
 	// Test 2D parameter setting
 	{
@@ -3363,10 +2683,8 @@ void Zenith_UnitTests::TestBlendSpace2D()
 		Zenith_Maths::Vector2 xParams(-0.5f, 0.75f);
 		xBlendSpace.SetParameter(xParams);
 		const Zenith_Maths::Vector2& xRetrieved = xBlendSpace.GetParameter();
-		Zenith_Assert(FloatEquals(xRetrieved.x, -0.5f) && FloatEquals(xRetrieved.y, 0.75f),
-			"Parameters should be (-0.5, 0.75)");
+		ZENITH_ASSERT_TRUE(FloatEquals(xRetrieved.x, -0.5f) && FloatEquals(xRetrieved.y, 0.75f), "Parameters should be (-0.5, 0.75)");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Parameter setting test passed");
 	}
 
 	// Test blend point addition
@@ -3384,7 +2702,6 @@ void Zenith_UnitTests::TestBlendSpace2D()
 		xBlendSpace.AddBlendPoint(pxClip3, Zenith_Maths::Vector2(0.0f, 1.0f));
 		xBlendSpace.AddBlendPoint(pxClip4, Zenith_Maths::Vector2(1.0f, 1.0f));
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend point addition test passed");
 	}
 
 	// Test triangulation computation
@@ -3403,19 +2720,16 @@ void Zenith_UnitTests::TestBlendSpace2D()
 		// Compute triangulation
 		xBlendSpace.ComputeTriangulation();
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Triangulation computation test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendSpace2D completed successfully");
 }
 
 /**
  * Test blend tree node evaluation
  * Verifies that Evaluate() produces valid poses for all blend tree node types
  */
-void Zenith_UnitTests::TestBlendTreeEvaluation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeEvaluation...");
+ZENITH_TEST(Animation, BlendTreeEvaluation) { Zenith_UnitTests::TestBlendTreeEvaluation(); }
+void Zenith_UnitTests::TestBlendTreeEvaluation(){
 
 	// Test Blend node evaluation at different weights
 	{
@@ -3430,24 +2744,23 @@ void Zenith_UnitTests::TestBlendTreeEvaluation()
 
 		// Test weight at 0.0 (should favor child A)
 		xBlendNode.SetBlendWeight(0.0f);
-		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 0.0f), "Blend weight should be 0.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendNode.GetBlendWeight(), 0.0f), "Blend weight should be 0.0");
 
 		// Test weight at 1.0 (should favor child B)
 		xBlendNode.SetBlendWeight(1.0f);
-		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 1.0f), "Blend weight should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendNode.GetBlendWeight(), 1.0f), "Blend weight should be 1.0");
 
 		// Test weight at 0.5 (equal blend)
 		xBlendNode.SetBlendWeight(0.5f);
-		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 0.5f), "Blend weight should be 0.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendNode.GetBlendWeight(), 0.5f), "Blend weight should be 0.5");
 
 		// Test weight clamping
 		xBlendNode.SetBlendWeight(1.5f);
-		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 1.0f), "Blend weight should clamp to 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendNode.GetBlendWeight(), 1.0f), "Blend weight should clamp to 1.0");
 
 		xBlendNode.SetBlendWeight(-0.5f);
-		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 0.0f), "Blend weight should clamp to 0.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendNode.GetBlendWeight(), 0.0f), "Blend weight should clamp to 0.0");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend node evaluation test passed");
 	}
 
 	// Test Additive node evaluation
@@ -3462,17 +2775,16 @@ void Zenith_UnitTests::TestBlendTreeEvaluation()
 
 		// Test weight at 0.0 (no additive effect)
 		xAdditiveNode.SetAdditiveWeight(0.0f);
-		Zenith_Assert(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 0.0f), "Additive weight should be 0.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 0.0f), "Additive weight should be 0.0");
 
 		// Test weight at 1.0 (full additive effect)
 		xAdditiveNode.SetAdditiveWeight(1.0f);
-		Zenith_Assert(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 1.0f), "Additive weight should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 1.0f), "Additive weight should be 1.0");
 
 		// Test weight clamping
 		xAdditiveNode.SetAdditiveWeight(2.0f);
-		Zenith_Assert(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 1.0f), "Additive weight should clamp to 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 1.0f), "Additive weight should clamp to 1.0");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Additive node evaluation test passed");
 	}
 
 	// Test Masked node evaluation
@@ -3494,11 +2806,10 @@ void Zenith_UnitTests::TestBlendTreeEvaluation()
 		xMaskedNode.SetBoneMask(xMask);
 
 		const Flux_BoneMask& xRetrieved = xMaskedNode.GetBoneMask();
-		Zenith_Assert(FloatEquals(xRetrieved.GetBoneWeight(0), 1.0f), "Bone 0 weight should be 1.0");
-		Zenith_Assert(FloatEquals(xRetrieved.GetBoneWeight(1), 0.5f), "Bone 1 weight should be 0.5");
-		Zenith_Assert(FloatEquals(xRetrieved.GetBoneWeight(2), 0.0f), "Bone 2 weight should be 0.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xRetrieved.GetBoneWeight(0), 1.0f), "Bone 0 weight should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xRetrieved.GetBoneWeight(1), 0.5f), "Bone 1 weight should be 0.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xRetrieved.GetBoneWeight(2), 0.0f), "Bone 2 weight should be 0.0");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Masked node evaluation test passed");
 	}
 
 	// Test Select node evaluation
@@ -3515,15 +2826,14 @@ void Zenith_UnitTests::TestBlendTreeEvaluation()
 
 		// Test selecting different children
 		xSelectNode.SetSelectedIndex(0);
-		Zenith_Assert(xSelectNode.GetSelectedIndex() == 0, "Selected index should be 0");
+		ZENITH_ASSERT_EQ(xSelectNode.GetSelectedIndex(), 0, "Selected index should be 0");
 
 		xSelectNode.SetSelectedIndex(1);
-		Zenith_Assert(xSelectNode.GetSelectedIndex() == 1, "Selected index should be 1");
+		ZENITH_ASSERT_EQ(xSelectNode.GetSelectedIndex(), 1, "Selected index should be 1");
 
 		xSelectNode.SetSelectedIndex(2);
-		Zenith_Assert(xSelectNode.GetSelectedIndex() == 2, "Selected index should be 2");
+		ZENITH_ASSERT_EQ(xSelectNode.GetSelectedIndex(), 2, "Selected index should be 2");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Select node evaluation test passed");
 	}
 
 	// Test BlendSpace1D evaluation with blend points
@@ -3541,15 +2851,14 @@ void Zenith_UnitTests::TestBlendTreeEvaluation()
 
 		// Test parameter at different values
 		xBlendSpace.SetParameter(0.0f);
-		Zenith_Assert(FloatEquals(xBlendSpace.GetParameter(), 0.0f), "Parameter should be 0.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendSpace.GetParameter(), 0.0f), "Parameter should be 0.0");
 
 		xBlendSpace.SetParameter(0.25f);
-		Zenith_Assert(FloatEquals(xBlendSpace.GetParameter(), 0.25f), "Parameter should be 0.25");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendSpace.GetParameter(), 0.25f), "Parameter should be 0.25");
 
 		xBlendSpace.SetParameter(1.0f);
-		Zenith_Assert(FloatEquals(xBlendSpace.GetParameter(), 1.0f), "Parameter should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xBlendSpace.GetParameter(), 1.0f), "Parameter should be 1.0");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BlendSpace1D evaluation test passed");
 	}
 
 	// Test BlendSpace2D evaluation
@@ -3568,27 +2877,22 @@ void Zenith_UnitTests::TestBlendTreeEvaluation()
 		// Test parameter at different 2D values
 		xBlendSpace.SetParameter(Zenith_Maths::Vector2(0.0f, 0.0f));
 		const Zenith_Maths::Vector2& xParam0 = xBlendSpace.GetParameter();
-		Zenith_Assert(FloatEquals(xParam0.x, 0.0f) && FloatEquals(xParam0.y, 0.0f),
-			"Parameter should be (0, 0)");
+		ZENITH_ASSERT_TRUE(FloatEquals(xParam0.x, 0.0f) && FloatEquals(xParam0.y, 0.0f), "Parameter should be (0, 0)");
 
 		xBlendSpace.SetParameter(Zenith_Maths::Vector2(0.5f, 0.5f));
 		const Zenith_Maths::Vector2& xParam1 = xBlendSpace.GetParameter();
-		Zenith_Assert(FloatEquals(xParam1.x, 0.5f) && FloatEquals(xParam1.y, 0.5f),
-			"Parameter should be (0.5, 0.5)");
+		ZENITH_ASSERT_TRUE(FloatEquals(xParam1.x, 0.5f) && FloatEquals(xParam1.y, 0.5f), "Parameter should be (0.5, 0.5)");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BlendSpace2D evaluation test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeEvaluation completed successfully");
 }
 
 /**
  * Test blend tree node serialization
  * Verifies round-trip serialization for all blend tree node types
  */
-void Zenith_UnitTests::TestBlendTreeSerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeSerialization...");
+ZENITH_TEST(Animation, BlendTreeSerialization) { Zenith_UnitTests::TestBlendTreeSerialization(); }
+void Zenith_UnitTests::TestBlendTreeSerialization(){
 
 	// Test Clip node serialization
 	{
@@ -3603,10 +2907,9 @@ void Zenith_UnitTests::TestBlendTreeSerialization()
 		Flux_BlendTreeNode_Clip xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(FloatEquals(xLoaded.GetPlaybackRate(), 1.5f), "Playback rate should be 1.5");
-		Zenith_Assert(xLoaded.GetClipName() == "TestClip", "Clip name should be 'TestClip'");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.GetPlaybackRate(), 1.5f), "Playback rate should be 1.5");
+		ZENITH_ASSERT_EQ(xLoaded.GetClipName(), "TestClip", "Clip name should be 'TestClip'");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Clip node serialization test passed");
 	}
 
 	// Test Blend node serialization
@@ -3623,9 +2926,8 @@ void Zenith_UnitTests::TestBlendTreeSerialization()
 		Flux_BlendTreeNode_Blend xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(FloatEquals(xLoaded.GetBlendWeight(), 0.75f), "Blend weight should be 0.75");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.GetBlendWeight(), 0.75f), "Blend weight should be 0.75");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend node serialization test passed");
 	}
 
 	// Test BlendSpace1D node serialization
@@ -3641,9 +2943,8 @@ void Zenith_UnitTests::TestBlendTreeSerialization()
 		Flux_BlendTreeNode_BlendSpace1D xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(FloatEquals(xLoaded.GetParameter(), 0.65f), "Parameter should be 0.65");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.GetParameter(), 0.65f), "Parameter should be 0.65");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BlendSpace1D node serialization test passed");
 	}
 
 	// Test BlendSpace2D node serialization
@@ -3660,10 +2961,8 @@ void Zenith_UnitTests::TestBlendTreeSerialization()
 		xLoaded.ReadFromDataStream(xStream);
 
 		const Zenith_Maths::Vector2& xParam = xLoaded.GetParameter();
-		Zenith_Assert(FloatEquals(xParam.x, 0.3f) && FloatEquals(xParam.y, 0.8f),
-			"Parameter should be (0.3, 0.8)");
+		ZENITH_ASSERT_TRUE(FloatEquals(xParam.x, 0.3f) && FloatEquals(xParam.y, 0.8f), "Parameter should be (0.3, 0.8)");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BlendSpace2D node serialization test passed");
 	}
 
 	// Test Additive node serialization
@@ -3679,9 +2978,8 @@ void Zenith_UnitTests::TestBlendTreeSerialization()
 		Flux_BlendTreeNode_Additive xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(FloatEquals(xLoaded.GetAdditiveWeight(), 0.45f), "Additive weight should be 0.45");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoaded.GetAdditiveWeight(), 0.45f), "Additive weight should be 0.45");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Additive node serialization test passed");
 	}
 
 	// Test Masked node serialization
@@ -3702,11 +3000,10 @@ void Zenith_UnitTests::TestBlendTreeSerialization()
 		xLoaded.ReadFromDataStream(xStream);
 
 		const Flux_BoneMask& xLoadedMask = xLoaded.GetBoneMask();
-		Zenith_Assert(FloatEquals(xLoadedMask.GetBoneWeight(0), 1.0f), "Bone 0 weight should be 1.0");
-		Zenith_Assert(FloatEquals(xLoadedMask.GetBoneWeight(1), 0.5f), "Bone 1 weight should be 0.5");
-		Zenith_Assert(FloatEquals(xLoadedMask.GetBoneWeight(2), 0.25f), "Bone 2 weight should be 0.25");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoadedMask.GetBoneWeight(0), 1.0f), "Bone 0 weight should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoadedMask.GetBoneWeight(1), 0.5f), "Bone 1 weight should be 0.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xLoadedMask.GetBoneWeight(2), 0.25f), "Bone 2 weight should be 0.25");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Masked node serialization test passed");
 	}
 
 	// Test Select node serialization
@@ -3726,17 +3023,15 @@ void Zenith_UnitTests::TestBlendTreeSerialization()
 		Flux_BlendTreeNode_Select xLoaded;
 		xLoaded.ReadFromDataStream(xStream);
 
-		Zenith_Assert(xLoaded.GetSelectedIndex() == 2, "Selected index should be 2");
+		ZENITH_ASSERT_EQ(xLoaded.GetSelectedIndex(), 2, "Selected index should be 2");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Select node serialization test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeSerialization completed successfully");
 }
 
-void Zenith_UnitTests::TestBlendTreeWriteReadChildNode()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeWriteReadChildNode...");
+ZENITH_TEST(Animation, BlendTreeWriteReadChildNode) { Zenith_UnitTests::TestBlendTreeWriteReadChildNode(); }
+
+void Zenith_UnitTests::TestBlendTreeWriteReadChildNode(){
 
 	// Test writing and reading a null child
 	{
@@ -3744,7 +3039,7 @@ void Zenith_UnitTests::TestBlendTreeWriteReadChildNode()
 		Flux_BlendTreeNode::WriteChildNode(xStream, nullptr);
 		xStream.SetCursor(0);
 		Flux_BlendTreeNode* pxResult = Flux_BlendTreeNode::ReadChildNode(xStream);
-		Zenith_Assert(pxResult == nullptr, "Null child should deserialize as null");
+		ZENITH_ASSERT_NULL(pxResult, "Null child should deserialize as null");
 	}
 
 	// Test writing and reading a Clip node child
@@ -3758,12 +3053,12 @@ void Zenith_UnitTests::TestBlendTreeWriteReadChildNode()
 		xStream.SetCursor(0);
 
 		Flux_BlendTreeNode* pxResult = Flux_BlendTreeNode::ReadChildNode(xStream);
-		Zenith_Assert(pxResult != nullptr, "Clip child should deserialize as non-null");
-		Zenith_Assert(std::string(pxResult->GetNodeTypeName()) == "Clip", "Should deserialize as Clip type");
+		ZENITH_ASSERT_NOT_NULL(pxResult, "Clip child should deserialize as non-null");
+		ZENITH_ASSERT_EQ(std::string(pxResult->GetNodeTypeName()), "Clip", "Should deserialize as Clip type");
 
 		Flux_BlendTreeNode_Clip* pxClipResult = static_cast<Flux_BlendTreeNode_Clip*>(pxResult);
-		Zenith_Assert(pxClipResult->GetPlaybackRate() == 2.5f, "Playback rate should be preserved");
-		Zenith_Assert(pxClipResult->GetClipName() == "TestClip", "Clip name should be preserved");
+		ZENITH_ASSERT_EQ(pxClipResult->GetPlaybackRate(), 2.5f, "Playback rate should be preserved");
+		ZENITH_ASSERT_EQ(pxClipResult->GetClipName(), "TestClip", "Clip name should be preserved");
 
 		delete pxResult;
 	}
@@ -3782,24 +3077,23 @@ void Zenith_UnitTests::TestBlendTreeWriteReadChildNode()
 		xStream.SetCursor(0);
 
 		Flux_BlendTreeNode* pxResult = Flux_BlendTreeNode::ReadChildNode(xStream);
-		Zenith_Assert(pxResult != nullptr, "Blend child should deserialize");
-		Zenith_Assert(std::string(pxResult->GetNodeTypeName()) == "Blend", "Should be Blend type");
+		ZENITH_ASSERT_NOT_NULL(pxResult, "Blend child should deserialize");
+		ZENITH_ASSERT_EQ(std::string(pxResult->GetNodeTypeName()), "Blend", "Should be Blend type");
 
 		Flux_BlendTreeNode_Blend* pxBlendResult = static_cast<Flux_BlendTreeNode_Blend*>(pxResult);
-		Zenith_Assert(pxBlendResult->GetBlendWeight() == 0.75f, "Blend weight should be preserved");
-		Zenith_Assert(pxBlendResult->GetChildA() != nullptr, "ChildA should exist");
-		Zenith_Assert(pxBlendResult->GetChildB() != nullptr, "ChildB should exist");
+		ZENITH_ASSERT_EQ(pxBlendResult->GetBlendWeight(), 0.75f, "Blend weight should be preserved");
+		ZENITH_ASSERT_NOT_NULL(pxBlendResult->GetChildA(), "ChildA should exist");
+		ZENITH_ASSERT_NOT_NULL(pxBlendResult->GetChildB(), "ChildB should exist");
 
 		delete pxResult;
 		// pxClipA and pxClipB owned by xBlend, freed in its destructor
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeWriteReadChildNode PASSED");
 }
 
-void Zenith_UnitTests::TestBlendTreeEvaluateChildOrReset()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeEvaluateChildOrReset...");
+ZENITH_TEST(Animation, BlendTreeEvaluateChildOrReset) { Zenith_UnitTests::TestBlendTreeEvaluateChildOrReset(); }
+
+void Zenith_UnitTests::TestBlendTreeEvaluateChildOrReset(){
 
 	// Test with null child — pose should be reset
 	{
@@ -3819,17 +3113,16 @@ void Zenith_UnitTests::TestBlendTreeEvaluateChildOrReset()
 		// No clip set, but should not crash
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeEvaluateChildOrReset PASSED");
 }
 
-void Zenith_UnitTests::TestBlendTreeSelectGetSelectedChild()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeSelectGetSelectedChild...");
+ZENITH_TEST(Animation, BlendTreeSelectGetSelectedChild) { Zenith_UnitTests::TestBlendTreeSelectGetSelectedChild(); }
+
+void Zenith_UnitTests::TestBlendTreeSelectGetSelectedChild(){
 
 	Flux_BlendTreeNode_Select xSelect;
 
 	// Empty select — should return null
-	Zenith_Assert(xSelect.GetSelectedChild() == nullptr, "Empty select should return null");
+	ZENITH_ASSERT_NULL(xSelect.GetSelectedChild(), "Empty select should return null");
 
 	// Add children and test valid indices
 	Flux_BlendTreeNode_Clip* pxClip0 = new Flux_BlendTreeNode_Clip();
@@ -3844,31 +3137,29 @@ void Zenith_UnitTests::TestBlendTreeSelectGetSelectedChild()
 	xSelect.AddChild(pxClip2);
 
 	// Default index is 0
-	Zenith_Assert(xSelect.GetSelectedChild() == pxClip0, "Index 0 should return first child");
+	ZENITH_ASSERT_EQ(xSelect.GetSelectedChild(), pxClip0, "Index 0 should return first child");
 
 	// Change selection
 	xSelect.SetSelectedIndex(2);
-	Zenith_Assert(xSelect.GetSelectedChild() == pxClip2, "Index 2 should return third child");
+	ZENITH_ASSERT_EQ(xSelect.GetSelectedChild(), pxClip2, "Index 2 should return third child");
 
 	// Out-of-bounds index (negative) — SetSelectedIndex won't change it
 	// but test boundary: manually force an invalid index to verify GetSelectedChild handles it
 	xSelect.SetSelectedIndex(1);
-	Zenith_Assert(xSelect.GetSelectedChild() == pxClip1, "Index 1 should return second child");
+	ZENITH_ASSERT_EQ(xSelect.GetSelectedChild(), pxClip1, "Index 1 should return second child");
 
 	// Verify IsFinished/GetNormalizedTime use GetSelectedChild properly
-	Zenith_Assert(xSelect.GetNormalizedTime() == 0.0f, "Clip with no data should have 0 time");
-	Zenith_Assert(xSelect.IsFinished() == false, "Clip with null m_pxClip returns false");
+	ZENITH_ASSERT_EQ(xSelect.GetNormalizedTime(), 0.0f, "Clip with no data should have 0 time");
+	ZENITH_ASSERT_EQ(xSelect.IsFinished(), false, "Clip with null m_pxClip returns false");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeSelectGetSelectedChild PASSED");
 }
 
 /**
  * Test FABRIK IK Solver
  * Verifies IK chain setup and solving iterations
  */
-void Zenith_UnitTests::TestFABRIKSolver()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestFABRIKSolver...");
+ZENITH_TEST(Core, FABRIKSolver) { Zenith_UnitTests::TestFABRIKSolver(); }
+void Zenith_UnitTests::TestFABRIKSolver(){
 
 	// Test basic IK chain creation
 	{
@@ -3881,15 +3172,14 @@ void Zenith_UnitTests::TestFABRIKSolver()
 		xChain.m_xBoneNames.push_back("Wrist");
 
 		xSolver.AddChain(xChain);
-		Zenith_Assert(xSolver.HasChain("RightArm"), "Solver should have RightArm chain");
-		Zenith_Assert(!xSolver.HasChain("LeftArm"), "Solver should not have LeftArm chain");
+		ZENITH_ASSERT_TRUE(xSolver.HasChain("RightArm"), "Solver should have RightArm chain");
+		ZENITH_ASSERT_FALSE(xSolver.HasChain("LeftArm"), "Solver should not have LeftArm chain");
 
 		const Flux_IKChain* pxRetrieved = xSolver.GetChain("RightArm");
-		Zenith_Assert(pxRetrieved != nullptr, "Should retrieve chain");
-		Zenith_Assert(pxRetrieved->m_strName == "RightArm", "Chain name should match");
-		Zenith_Assert(pxRetrieved->m_xBoneNames.size() == 3, "Should have 3 bones");
+		ZENITH_ASSERT_NOT_NULL(pxRetrieved, "Should retrieve chain");
+		ZENITH_ASSERT_EQ(pxRetrieved->m_strName, "RightArm", "Chain name should match");
+		ZENITH_ASSERT_EQ(pxRetrieved->m_xBoneNames.size(), 3, "Should have 3 bones");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Chain creation test passed");
 	}
 
 	// Test IK target setting
@@ -3904,13 +3194,11 @@ void Zenith_UnitTests::TestFABRIKSolver()
 		xSolver.SetTarget("RightHand", xTarget);
 
 		const Flux_IKTarget* pxRetrieved = xSolver.GetTarget("RightHand");
-		Zenith_Assert(pxRetrieved != nullptr, "Should retrieve target");
-		Zenith_Assert(Vec3Equals(pxRetrieved->m_xPosition, Zenith_Maths::Vector3(5.0f, 3.0f, 0.0f)),
-			"Target position should match");
-		Zenith_Assert(FloatEquals(pxRetrieved->m_fWeight, 0.8f), "Target weight should be 0.8");
-		Zenith_Assert(pxRetrieved->m_bEnabled == true, "Target should be enabled");
+		ZENITH_ASSERT_NOT_NULL(pxRetrieved, "Should retrieve target");
+		ZENITH_ASSERT_TRUE(Vec3Equals(pxRetrieved->m_xPosition, Zenith_Maths::Vector3(5.0f, 3.0f, 0.0f)), "Target position should match");
+		ZENITH_ASSERT_TRUE(FloatEquals(pxRetrieved->m_fWeight, 0.8f), "Target weight should be 0.8");
+		ZENITH_ASSERT_EQ(pxRetrieved->m_bEnabled, true, "Target should be enabled");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ IK target setting test passed");
 	}
 
 	// Test IK target clearing
@@ -3922,12 +3210,11 @@ void Zenith_UnitTests::TestFABRIKSolver()
 		xTarget.m_bEnabled = true;
 
 		xSolver.SetTarget("TestChain", xTarget);
-		Zenith_Assert(xSolver.HasTarget("TestChain"), "Target should exist");
+		ZENITH_ASSERT_TRUE(xSolver.HasTarget("TestChain"), "Target should exist");
 
 		xSolver.ClearTarget("TestChain");
-		Zenith_Assert(!xSolver.HasTarget("TestChain"), "Target should be cleared");
+		ZENITH_ASSERT_FALSE(xSolver.HasTarget("TestChain"), "Target should be cleared");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ IK target clearing test passed");
 	}
 
 	// Test chain parameters
@@ -3937,10 +3224,9 @@ void Zenith_UnitTests::TestFABRIKSolver()
 		xChain.m_uMaxIterations = 20;
 		xChain.m_fTolerance = 0.001f;
 
-		Zenith_Assert(xChain.m_uMaxIterations == 20, "Max iterations should be 20");
-		Zenith_Assert(FloatEquals(xChain.m_fTolerance, 0.001f), "Tolerance should be 0.001");
+		ZENITH_ASSERT_EQ(xChain.m_uMaxIterations, 20, "Max iterations should be 20");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_fTolerance, 0.001f), "Tolerance should be 0.001");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Chain parameters test passed");
 	}
 
 	// Test chain with pole vector
@@ -3951,43 +3237,38 @@ void Zenith_UnitTests::TestFABRIKSolver()
 		xChain.m_bUsePoleVector = true;
 		xChain.m_strPoleTargetBone = "KneeTarget";
 
-		Zenith_Assert(Vec3Equals(xChain.m_xPoleVector, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f)),
-			"Pole vector should be (0,0,1)");
-		Zenith_Assert(xChain.m_bUsePoleVector == true, "Use pole vector should be true");
-		Zenith_Assert(xChain.m_strPoleTargetBone == "KneeTarget", "Pole target bone should be KneeTarget");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xChain.m_xPoleVector, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f)), "Pole vector should be (0,0,1)");
+		ZENITH_ASSERT_EQ(xChain.m_bUsePoleVector, true, "Use pole vector should be true");
+		ZENITH_ASSERT_EQ(xChain.m_strPoleTargetBone, "KneeTarget", "Pole target bone should be KneeTarget");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Pole vector test passed");
 	}
 
 	// Test helper chain creation functions
 	{
 		Flux_IKChain xLegChain = Flux_IKSolver::CreateLegChain("RightLeg", "Hip", "Knee", "Ankle");
-		Zenith_Assert(xLegChain.m_strName == "RightLeg", "Leg chain name should be RightLeg");
-		Zenith_Assert(xLegChain.m_xBoneNames.size() == 3, "Leg chain should have 3 bones");
-		Zenith_Assert(xLegChain.m_xBoneNames[0] == "Hip", "First bone should be Hip");
-		Zenith_Assert(xLegChain.m_xBoneNames[1] == "Knee", "Second bone should be Knee");
-		Zenith_Assert(xLegChain.m_xBoneNames[2] == "Ankle", "Third bone should be Ankle");
+		ZENITH_ASSERT_EQ(xLegChain.m_strName, "RightLeg", "Leg chain name should be RightLeg");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames.size(), 3, "Leg chain should have 3 bones");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[0], "Hip", "First bone should be Hip");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[1], "Knee", "Second bone should be Knee");
+		ZENITH_ASSERT_EQ(xLegChain.m_xBoneNames[2], "Ankle", "Third bone should be Ankle");
 
 		Flux_IKChain xArmChain = Flux_IKSolver::CreateArmChain("LeftArm", "Shoulder", "Elbow", "Wrist");
-		Zenith_Assert(xArmChain.m_strName == "LeftArm", "Arm chain name should be LeftArm");
-		Zenith_Assert(xArmChain.m_xBoneNames.size() == 3, "Arm chain should have 3 bones");
+		ZENITH_ASSERT_EQ(xArmChain.m_strName, "LeftArm", "Arm chain name should be LeftArm");
+		ZENITH_ASSERT_EQ(xArmChain.m_xBoneNames.size(), 3, "Arm chain should have 3 bones");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Helper chain creation test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFABRIKSolver completed successfully");
 }
 
-void Zenith_UnitTests::TestIKSafeNormalize()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestIKSafeNormalize...");
+ZENITH_TEST(Animation, IKSafeNormalize) { Zenith_UnitTests::TestIKSafeNormalize(); }
+
+void Zenith_UnitTests::TestIKSafeNormalize(){
 
 	// Normal vector should be normalized to unit length
 	{
 		Zenith_Maths::Vector3 xVec(3.0f, 0.0f, 0.0f);
 		Zenith_Maths::Vector3 xResult = Flux_IKSolver::SafeNormalize(xVec);
-		Zenith_Assert(Vec3Equals(xResult, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)),
-			"SafeNormalize of (3,0,0) should be (1,0,0)");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xResult, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)), "SafeNormalize of (3,0,0) should be (1,0,0)");
 	}
 
 	// Zero vector should return fallback
@@ -3995,8 +3276,7 @@ void Zenith_UnitTests::TestIKSafeNormalize()
 		Zenith_Maths::Vector3 xZero(0.0f, 0.0f, 0.0f);
 		Zenith_Maths::Vector3 xFallback(0.0f, 1.0f, 0.0f);
 		Zenith_Maths::Vector3 xResult = Flux_IKSolver::SafeNormalize(xZero, xFallback);
-		Zenith_Assert(Vec3Equals(xResult, xFallback),
-			"SafeNormalize of zero vector should return fallback");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xResult, xFallback), "SafeNormalize of zero vector should return fallback");
 	}
 
 	// Near-zero vector (below epsilon) should return fallback
@@ -4004,16 +3284,14 @@ void Zenith_UnitTests::TestIKSafeNormalize()
 		Zenith_Maths::Vector3 xTiny(0.00001f, 0.0f, 0.0f);
 		Zenith_Maths::Vector3 xFallback(0.0f, 0.0f, 1.0f);
 		Zenith_Maths::Vector3 xResult = Flux_IKSolver::SafeNormalize(xTiny, xFallback);
-		Zenith_Assert(Vec3Equals(xResult, xFallback),
-			"SafeNormalize of near-zero vector should return fallback");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xResult, xFallback), "SafeNormalize of near-zero vector should return fallback");
 	}
 
 	// Default fallback is zero vector
 	{
 		Zenith_Maths::Vector3 xZero(0.0f, 0.0f, 0.0f);
 		Zenith_Maths::Vector3 xResult = Flux_IKSolver::SafeNormalize(xZero);
-		Zenith_Assert(Vec3Equals(xResult, Zenith_Maths::Vector3(0.0f)),
-			"SafeNormalize with default fallback should return zero vector");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xResult, Zenith_Maths::Vector3(0.0f)), "SafeNormalize with default fallback should return zero vector");
 	}
 
 	// Arbitrary direction should be unit length
@@ -4021,27 +3299,23 @@ void Zenith_UnitTests::TestIKSafeNormalize()
 		Zenith_Maths::Vector3 xVec(1.0f, 2.0f, 3.0f);
 		Zenith_Maths::Vector3 xResult = Flux_IKSolver::SafeNormalize(xVec);
 		float fLen = glm::length(xResult);
-		Zenith_Assert(FloatEquals(fLen, 1.0f),
-			"SafeNormalize should produce unit-length vector");
+		ZENITH_ASSERT_TRUE(FloatEquals(fLen, 1.0f), "SafeNormalize should produce unit-length vector");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIKSafeNormalize PASSED");
 }
 
-void Zenith_UnitTests::TestIKFindPerpendicularAxis()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestIKFindPerpendicularAxis...");
+ZENITH_TEST(Animation, IKFindPerpendicularAxis) { Zenith_UnitTests::TestIKFindPerpendicularAxis(); }
+
+void Zenith_UnitTests::TestIKFindPerpendicularAxis(){
 
 	// Axis-aligned input: X axis
 	{
 		Zenith_Maths::Vector3 xAxis(1.0f, 0.0f, 0.0f);
 		Zenith_Maths::Vector3 xPerp = Flux_IKSolver::FindPerpendicularAxis(xAxis);
 		float fDot = glm::dot(xPerp, xAxis);
-		Zenith_Assert(FloatEquals(fDot, 0.0f, 0.001f),
-			"Perpendicular axis should be orthogonal to X axis");
+		ZENITH_ASSERT_TRUE(FloatEquals(fDot, 0.0f, 0.001f), "Perpendicular axis should be orthogonal to X axis");
 		float fLen = glm::length(xPerp);
-		Zenith_Assert(FloatEquals(fLen, 1.0f, 0.001f),
-			"Perpendicular axis should be unit length");
+		ZENITH_ASSERT_TRUE(FloatEquals(fLen, 1.0f, 0.001f), "Perpendicular axis should be unit length");
 	}
 
 	// Axis-aligned input: Y axis
@@ -4049,8 +3323,7 @@ void Zenith_UnitTests::TestIKFindPerpendicularAxis()
 		Zenith_Maths::Vector3 xAxis(0.0f, 1.0f, 0.0f);
 		Zenith_Maths::Vector3 xPerp = Flux_IKSolver::FindPerpendicularAxis(xAxis);
 		float fDot = glm::dot(xPerp, xAxis);
-		Zenith_Assert(FloatEquals(fDot, 0.0f, 0.001f),
-			"Perpendicular axis should be orthogonal to Y axis");
+		ZENITH_ASSERT_TRUE(FloatEquals(fDot, 0.0f, 0.001f), "Perpendicular axis should be orthogonal to Y axis");
 	}
 
 	// Axis-aligned input: Z axis
@@ -4058,8 +3331,7 @@ void Zenith_UnitTests::TestIKFindPerpendicularAxis()
 		Zenith_Maths::Vector3 xAxis(0.0f, 0.0f, 1.0f);
 		Zenith_Maths::Vector3 xPerp = Flux_IKSolver::FindPerpendicularAxis(xAxis);
 		float fDot = glm::dot(xPerp, xAxis);
-		Zenith_Assert(FloatEquals(fDot, 0.0f, 0.001f),
-			"Perpendicular axis should be orthogonal to Z axis");
+		ZENITH_ASSERT_TRUE(FloatEquals(fDot, 0.0f, 0.001f), "Perpendicular axis should be orthogonal to Z axis");
 	}
 
 	// Arbitrary input
@@ -4067,19 +3339,16 @@ void Zenith_UnitTests::TestIKFindPerpendicularAxis()
 		Zenith_Maths::Vector3 xAxis = glm::normalize(Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
 		Zenith_Maths::Vector3 xPerp = Flux_IKSolver::FindPerpendicularAxis(xAxis);
 		float fDot = glm::dot(xPerp, xAxis);
-		Zenith_Assert(FloatEquals(fDot, 0.0f, 0.001f),
-			"Perpendicular axis should be orthogonal to arbitrary input");
+		ZENITH_ASSERT_TRUE(FloatEquals(fDot, 0.0f, 0.001f), "Perpendicular axis should be orthogonal to arbitrary input");
 		float fLen = glm::length(xPerp);
-		Zenith_Assert(FloatEquals(fLen, 1.0f, 0.001f),
-			"Perpendicular axis should be unit length for arbitrary input");
+		ZENITH_ASSERT_TRUE(FloatEquals(fLen, 1.0f, 0.001f), "Perpendicular axis should be unit length for arbitrary input");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIKFindPerpendicularAxis PASSED");
 }
 
-void Zenith_UnitTests::TestIKConstrainBoneLength()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestIKConstrainBoneLength...");
+ZENITH_TEST(Animation, IKConstrainBoneLength) { Zenith_UnitTests::TestIKConstrainBoneLength(); }
+
+void Zenith_UnitTests::TestIKConstrainBoneLength(){
 
 	// Child along X axis at distance 5, constrain to length 3
 	{
@@ -4089,11 +3358,9 @@ void Zenith_UnitTests::TestIKConstrainBoneLength()
 
 		Zenith_Maths::Vector3 xResult = Flux_IKSolver::ConstrainBoneLength(xChild, xParent, fLength);
 		float fDist = glm::length(xResult - xParent);
-		Zenith_Assert(FloatEquals(fDist, fLength),
-			"Output distance should match target length (shrink)");
+		ZENITH_ASSERT_TRUE(FloatEquals(fDist, fLength), "Output distance should match target length (shrink)");
 		// Direction should be preserved
-		Zenith_Assert(Vec3Equals(glm::normalize(xResult - xParent), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)),
-			"Direction should be preserved when constraining bone length");
+		ZENITH_ASSERT_TRUE(Vec3Equals(glm::normalize(xResult - xParent), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)), "Direction should be preserved when constraining bone length");
 	}
 
 	// Child closer than target length, should extend
@@ -4104,8 +3371,7 @@ void Zenith_UnitTests::TestIKConstrainBoneLength()
 
 		Zenith_Maths::Vector3 xResult = Flux_IKSolver::ConstrainBoneLength(xChild, xParent, fLength);
 		float fDist = glm::length(xResult - xParent);
-		Zenith_Assert(FloatEquals(fDist, fLength),
-			"Output distance should match target length (extend)");
+		ZENITH_ASSERT_TRUE(FloatEquals(fDist, fLength), "Output distance should match target length (extend)");
 	}
 
 	// Non-axis-aligned direction
@@ -4116,8 +3382,7 @@ void Zenith_UnitTests::TestIKConstrainBoneLength()
 
 		Zenith_Maths::Vector3 xResult = Flux_IKSolver::ConstrainBoneLength(xChild, xParent, fLength);
 		float fDist = glm::length(xResult - xParent);
-		Zenith_Assert(FloatEquals(fDist, fLength, 0.001f),
-			"Output distance should match target length for arbitrary positions");
+		ZENITH_ASSERT_TRUE(FloatEquals(fDist, fLength, 0.001f), "Output distance should match target length for arbitrary positions");
 	}
 
 	// Child at exact distance (no change needed)
@@ -4128,22 +3393,18 @@ void Zenith_UnitTests::TestIKConstrainBoneLength()
 
 		Zenith_Maths::Vector3 xResult = Flux_IKSolver::ConstrainBoneLength(xChild, xParent, fLength);
 		float fDist = glm::length(xResult - xParent);
-		Zenith_Assert(FloatEquals(fDist, fLength),
-			"Output distance should match when already at correct length");
-		Zenith_Assert(Vec3Equals(xResult, xChild, 0.001f),
-			"Position should not change when already at correct length");
+		ZENITH_ASSERT_TRUE(FloatEquals(fDist, fLength), "Output distance should match when already at correct length");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xResult, xChild, 0.001f), "Position should not change when already at correct length");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIKConstrainBoneLength PASSED");
 }
 
 /**
  * Test Animation Events
  * Verifies event registration and triggering
  */
-void Zenith_UnitTests::TestAnimationEvents()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnimationEvents...");
+ZENITH_TEST(Core, AnimationEvents) { Zenith_UnitTests::TestAnimationEvents(); }
+void Zenith_UnitTests::TestAnimationEvents(){
 
 	// Test event data structure
 	{
@@ -4152,11 +3413,10 @@ void Zenith_UnitTests::TestAnimationEvents()
 		xEvent.m_fNormalizedTime = 0.25f;
 		xEvent.m_xData = Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, 0.5f);
 
-		Zenith_Assert(xEvent.m_strEventName == "FootStep", "Event name should be 'FootStep'");
-		Zenith_Assert(FloatEquals(xEvent.m_fNormalizedTime, 0.25f), "Normalized time should be 0.25");
-		Zenith_Assert(FloatEquals(xEvent.m_xData.x, 1.0f), "Event data x should be 1.0");
+		ZENITH_ASSERT_EQ(xEvent.m_strEventName, "FootStep", "Event name should be 'FootStep'");
+		ZENITH_ASSERT_TRUE(FloatEquals(xEvent.m_fNormalizedTime, 0.25f), "Normalized time should be 0.25");
+		ZENITH_ASSERT_TRUE(FloatEquals(xEvent.m_xData.x, 1.0f), "Event data x should be 1.0");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Event data structure test passed");
 	}
 
 	// Test event collection in clip
@@ -4176,11 +3436,10 @@ void Zenith_UnitTests::TestAnimationEvents()
 		xClip.AddEvent(xEvent2);
 
 		const std::vector<Flux_AnimationEvent>& xEvents = xClip.GetEvents();
-		Zenith_Assert(xEvents.size() == 2, "Should have 2 events");
-		Zenith_Assert(xEvents[0].m_strEventName == "LeftFoot", "First event should be LeftFoot");
-		Zenith_Assert(xEvents[1].m_strEventName == "RightFoot", "Second event should be RightFoot");
+		ZENITH_ASSERT_EQ(xEvents.size(), 2, "Should have 2 events");
+		ZENITH_ASSERT_EQ(xEvents[0].m_strEventName, "LeftFoot", "First event should be LeftFoot");
+		ZENITH_ASSERT_EQ(xEvents[1].m_strEventName, "RightFoot", "Second event should be RightFoot");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Event collection test passed");
 	}
 
 	// Test event time ordering
@@ -4196,23 +3455,20 @@ void Zenith_UnitTests::TestAnimationEvents()
 				return a.m_fNormalizedTime < b.m_fNormalizedTime;
 			});
 
-		Zenith_Assert(FloatEquals(xEvents[0].m_fNormalizedTime, 0.1f), "First should be 0.1");
-		Zenith_Assert(FloatEquals(xEvents[1].m_fNormalizedTime, 0.5f), "Second should be 0.5");
-		Zenith_Assert(FloatEquals(xEvents[2].m_fNormalizedTime, 0.9f), "Third should be 0.9");
+		ZENITH_ASSERT_TRUE(FloatEquals(xEvents[0].m_fNormalizedTime, 0.1f), "First should be 0.1");
+		ZENITH_ASSERT_TRUE(FloatEquals(xEvents[1].m_fNormalizedTime, 0.5f), "Second should be 0.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xEvents[2].m_fNormalizedTime, 0.9f), "Third should be 0.9");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Event time ordering test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnimationEvents completed successfully");
 }
 
 /**
  * Test Bone Masking
  * Verifies bone mask creation and application
  */
-void Zenith_UnitTests::TestBoneMasking()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBoneMasking...");
+ZENITH_TEST(Animation, BoneMasking) { Zenith_UnitTests::TestBoneMasking(); }
+void Zenith_UnitTests::TestBoneMasking(){
 
 	// Test mask creation with bone indices
 	{
@@ -4225,13 +3481,12 @@ void Zenith_UnitTests::TestBoneMasking()
 		xMask.SetBoneWeight(3, 0.8f);  // Shoulder_R
 		xMask.SetBoneWeight(4, 0.2f);  // Hips
 
-		Zenith_Assert(FloatEquals(xMask.GetBoneWeight(0), 1.0f), "Bone 0 weight should be 1.0");
-		Zenith_Assert(FloatEquals(xMask.GetBoneWeight(1), 1.0f), "Bone 1 weight should be 1.0");
-		Zenith_Assert(FloatEquals(xMask.GetBoneWeight(2), 0.8f), "Bone 2 weight should be 0.8");
-		Zenith_Assert(FloatEquals(xMask.GetBoneWeight(3), 0.8f), "Bone 3 weight should be 0.8");
-		Zenith_Assert(FloatEquals(xMask.GetBoneWeight(4), 0.2f), "Bone 4 weight should be 0.2");
+		ZENITH_ASSERT_TRUE(FloatEquals(xMask.GetBoneWeight(0), 1.0f), "Bone 0 weight should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xMask.GetBoneWeight(1), 1.0f), "Bone 1 weight should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xMask.GetBoneWeight(2), 0.8f), "Bone 2 weight should be 0.8");
+		ZENITH_ASSERT_TRUE(FloatEquals(xMask.GetBoneWeight(3), 0.8f), "Bone 3 weight should be 0.8");
+		ZENITH_ASSERT_TRUE(FloatEquals(xMask.GetBoneWeight(4), 0.2f), "Bone 4 weight should be 0.2");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Mask creation test passed");
 	}
 
 	// Test weight access
@@ -4240,19 +3495,18 @@ void Zenith_UnitTests::TestBoneMasking()
 		xMask.SetBoneWeight(5, 0.75f);
 
 		float fWeight = xMask.GetBoneWeight(5);
-		Zenith_Assert(FloatEquals(fWeight, 0.75f), "Weight should be 0.75");
+		ZENITH_ASSERT_TRUE(FloatEquals(fWeight, 0.75f), "Weight should be 0.75");
 
 		const std::vector<float>& xWeights = xMask.GetWeights();
-		Zenith_Assert(xWeights.size() >= 6, "Should have at least 6 weights");
-		Zenith_Assert(FloatEquals(xWeights[5], 0.75f), "Weight at index 5 should be 0.75");
+		ZENITH_ASSERT_GE(xWeights.size(), 6, "Should have at least 6 weights");
+		ZENITH_ASSERT_TRUE(FloatEquals(xWeights[5], 0.75f), "Weight at index 5 should be 0.75");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Weight access test passed");
 	}
 
 	// Test masked blend node setup
 	{
 		Flux_BlendTreeNode_Masked xMaskedNode;
-		Zenith_Assert(std::string(xMaskedNode.GetNodeTypeName()) == "Masked", "Type name should be 'Masked'");
+		ZENITH_ASSERT_EQ(std::string(xMaskedNode.GetNodeTypeName()), "Masked", "Type name should be 'Masked'");
 
 		Flux_BoneMask xMask;
 		xMask.SetBoneWeight(0, 1.0f);
@@ -4260,10 +3514,9 @@ void Zenith_UnitTests::TestBoneMasking()
 
 		xMaskedNode.SetBoneMask(xMask);
 		const Flux_BoneMask& xRetrievedMask = xMaskedNode.GetBoneMask();
-		Zenith_Assert(FloatEquals(xRetrievedMask.GetBoneWeight(0), 1.0f), "Retrieved mask bone 0 should be 1.0");
-		Zenith_Assert(FloatEquals(xRetrievedMask.GetBoneWeight(1), 0.5f), "Retrieved mask bone 1 should be 0.5");
+		ZENITH_ASSERT_TRUE(FloatEquals(xRetrievedMask.GetBoneWeight(0), 1.0f), "Retrieved mask bone 0 should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xRetrievedMask.GetBoneWeight(1), 0.5f), "Retrieved mask bone 1 should be 0.5");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Masked blend node setup test passed");
 	}
 
 	// Test masked blend with different poses
@@ -4283,10 +3536,8 @@ void Zenith_UnitTests::TestBoneMasking()
 		Flux_SkeletonPose::MaskedBlend(xResult, xBasePose, xOverridePose, xBoneWeights);
 
 		// Result should have base pose for bones 0,1 and override pose for bones 2,3,4
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Masked blend test passed");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBoneMasking completed successfully");
 }
 
 //=============================================================================
@@ -4389,9 +3640,8 @@ static Zenith_Maths::Vector3 ComputeSkinnedPosition(
  * Test mesh asset loading
  * Verifies that mesh assets load correctly with expected vertex count and data
  */
-void Zenith_UnitTests::TestMeshAssetLoading()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMeshAssetLoading...");
+ZENITH_TEST(Asset, MeshAssetLoading) { Zenith_UnitTests::TestMeshAssetLoading(); }
+void Zenith_UnitTests::TestMeshAssetLoading(){
 
 	// Test loading a mesh asset
 	{
@@ -4400,43 +3650,35 @@ void Zenith_UnitTests::TestMeshAssetLoading()
 
 		if (pxMeshAsset == nullptr)
 		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  ! Skipping test - mesh asset not found at %s", strMeshPath.c_str());
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  ! Please export ArmChain.gltf through the asset pipeline first");
 			return;
 		}
 
-		Zenith_Assert(pxMeshAsset != nullptr, "Failed to load mesh asset");
-		Zenith_Assert(pxMeshAsset->GetNumVerts() == 24, "Expected 24 vertices (8 per bone * 3 bones)");
-		Zenith_Assert(pxMeshAsset->GetNumIndices() > 0, "Mesh should have indices");
+		ZENITH_ASSERT_NOT_NULL(pxMeshAsset, "Failed to load mesh asset");
+		ZENITH_ASSERT_EQ(pxMeshAsset->GetNumVerts(), 24, "Expected 24 vertices (8 per bone * 3 bones)");
+		ZENITH_ASSERT_GT(pxMeshAsset->GetNumIndices(), 0, "Mesh should have indices");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Mesh asset loaded with %u vertices and %u indices",
-			pxMeshAsset->GetNumVerts(), pxMeshAsset->GetNumIndices());
 
 		// Verify first vertex position (raw, local to bone)
 		const Zenith_Maths::Vector3& xFirstPos = pxMeshAsset->m_xPositions.Get(0);
-		Zenith_Assert(FloatEquals(xFirstPos.x, -0.25f, 0.01f), "Vertex 0 X mismatch");
-		Zenith_Assert(FloatEquals(xFirstPos.y, 0.0f, 0.01f), "Vertex 0 Y mismatch");
-		Zenith_Assert(FloatEquals(xFirstPos.z, -0.25f, 0.01f), "Vertex 0 Z mismatch");
+		ZENITH_ASSERT_TRUE(FloatEquals(xFirstPos.x, -0.25f, 0.01f), "Vertex 0 X mismatch");
+		ZENITH_ASSERT_TRUE(FloatEquals(xFirstPos.y, 0.0f, 0.01f), "Vertex 0 Y mismatch");
+		ZENITH_ASSERT_TRUE(FloatEquals(xFirstPos.z, -0.25f, 0.01f), "Vertex 0 Z mismatch");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ First vertex position verified");
 
 		// Verify skinning data exists
-		Zenith_Assert(pxMeshAsset->m_xBoneIndices.GetSize() == 24, "Should have bone indices for all vertices");
-		Zenith_Assert(pxMeshAsset->m_xBoneWeights.GetSize() == 24, "Should have bone weights for all vertices");
+		ZENITH_ASSERT_EQ(pxMeshAsset->m_xBoneIndices.GetSize(), 24, "Should have bone indices for all vertices");
+		ZENITH_ASSERT_EQ(pxMeshAsset->m_xBoneWeights.GetSize(), 24, "Should have bone weights for all vertices");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Skinning data present");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMeshAssetLoading completed successfully");
 }
 
 /**
  * Test bind pose vertex positions
  * Verifies that applying bind pose skinning produces correct vertex positions
  */
-void Zenith_UnitTests::TestBindPoseVertexPositions()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBindPoseVertexPositions...");
+ZENITH_TEST(Core, BindPoseVertexPositions) { Zenith_UnitTests::TestBindPoseVertexPositions(); }
+void Zenith_UnitTests::TestBindPoseVertexPositions(){
 
 	const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0.zmesh";
 	const std::string strSkelPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain.zskel";
@@ -4446,22 +3688,13 @@ void Zenith_UnitTests::TestBindPoseVertexPositions()
 
 	if (pxMesh == nullptr || pxSkel == nullptr)
 	{
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ! Skipping test - assets not found");
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ! Please export ArmChain.gltf through the asset pipeline first");
 		return;
 	}
 
-	Zenith_Assert(pxMesh != nullptr && pxSkel != nullptr, "Failed to load assets");
-	Zenith_Assert(pxSkel->GetNumBones() == 3, "Expected 3 bones");
+	ZENITH_ASSERT_TRUE(pxMesh != nullptr && pxSkel != nullptr, "Failed to load assets");
+	ZENITH_ASSERT_EQ(pxSkel->GetNumBones(), 3, "Expected 3 bones");
 
-	// Log bone hierarchy for debugging
-	for (uint32_t i = 0; i < pxSkel->GetNumBones(); i++)
-	{
-		const Zenith_SkeletonAsset::Bone& xBone = pxSkel->GetBone(i);
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Bone %u: %s, parent=%d, bindPos=(%.2f, %.2f, %.2f)",
-			i, xBone.m_strName.c_str(), xBone.m_iParentIndex,
-			xBone.m_xBindPosition.x, xBone.m_xBindPosition.y, xBone.m_xBindPosition.z);
-	}
+	// (Bone hierarchy debug logging removed with the rest of unit-test logging.)
 
 	// Test vertex 0 (Root bone at origin)
 	{
@@ -4472,15 +3705,10 @@ void Zenith_UnitTests::TestBindPoseVertexPositions()
 		Zenith_Maths::Vector3 xSkinnedPos = ComputeBindPosePosition(
 			xLocalPos, xBoneIdx, xBoneWgt, pxSkel);
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Vertex 0: local=(%.3f, %.3f, %.3f) -> skinned=(%.3f, %.3f, %.3f)",
-			xLocalPos.x, xLocalPos.y, xLocalPos.z,
-			xSkinnedPos.x, xSkinnedPos.y, xSkinnedPos.z);
 
 		// Root bone at origin - expected position is approximately the local position
-		Zenith_Assert(Vec3Equals(xSkinnedPos, Zenith_Maths::Vector3(-0.25f, 0.0f, -0.25f), 0.1f),
-			"Vertex 0 bind pose position mismatch");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xSkinnedPos, Zenith_Maths::Vector3(-0.25f, 0.0f, -0.25f), 0.1f), "Vertex 0 bind pose position mismatch");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Root bone vertex (0) bind pose verified");
 	}
 
 	// Test vertex 8 (UpperArm bone at Y+2)
@@ -4492,15 +3720,10 @@ void Zenith_UnitTests::TestBindPoseVertexPositions()
 		Zenith_Maths::Vector3 xSkinnedPos = ComputeBindPosePosition(
 			xLocalPos, xBoneIdx, xBoneWgt, pxSkel);
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Vertex 8: local=(%.3f, %.3f, %.3f) -> skinned=(%.3f, %.3f, %.3f)",
-			xLocalPos.x, xLocalPos.y, xLocalPos.z,
-			xSkinnedPos.x, xSkinnedPos.y, xSkinnedPos.z);
 
 		// UpperArm bone at Y+2 - expected position should be offset by bone transform
-		Zenith_Assert(Vec3Equals(xSkinnedPos, Zenith_Maths::Vector3(-0.25f, 2.0f, -0.25f), 0.1f),
-			"Vertex 8 bind pose position mismatch");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xSkinnedPos, Zenith_Maths::Vector3(-0.25f, 2.0f, -0.25f), 0.1f), "Vertex 8 bind pose position mismatch");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ UpperArm bone vertex (8) bind pose verified");
 	}
 
 	// Test vertex 16 (Forearm bone at Y+4)
@@ -4512,27 +3735,20 @@ void Zenith_UnitTests::TestBindPoseVertexPositions()
 		Zenith_Maths::Vector3 xSkinnedPos = ComputeBindPosePosition(
 			xLocalPos, xBoneIdx, xBoneWgt, pxSkel);
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Vertex 16: local=(%.3f, %.3f, %.3f) -> skinned=(%.3f, %.3f, %.3f)",
-			xLocalPos.x, xLocalPos.y, xLocalPos.z,
-			xSkinnedPos.x, xSkinnedPos.y, xSkinnedPos.z);
 
 		// Forearm bone at Y+4 - expected position should be offset by bone transform
-		Zenith_Assert(Vec3Equals(xSkinnedPos, Zenith_Maths::Vector3(-0.25f, 4.0f, -0.25f), 0.1f),
-			"Vertex 16 bind pose position mismatch");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xSkinnedPos, Zenith_Maths::Vector3(-0.25f, 4.0f, -0.25f), 0.1f), "Vertex 16 bind pose position mismatch");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Forearm bone vertex (16) bind pose verified");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBindPoseVertexPositions completed successfully");
 }
 
 /**
  * Test animated vertex positions
  * Verifies that animation skinning produces correct vertex positions at various timestamps
  */
-void Zenith_UnitTests::TestAnimatedVertexPositions()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnimatedVertexPositions...");
+ZENITH_TEST(Core, AnimatedVertexPositions) { Zenith_UnitTests::TestAnimatedVertexPositions(); }
+void Zenith_UnitTests::TestAnimatedVertexPositions(){
 
 	const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0.zmesh";
 	const std::string strSkelPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain.zskel";
@@ -4545,23 +3761,19 @@ void Zenith_UnitTests::TestAnimatedVertexPositions()
 
 	if (pxMesh == nullptr || pxSkel == nullptr)
 	{
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ! Skipping test - mesh/skeleton assets not found");
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ! Please export ArmChain.gltf through the asset pipeline first");
 		return;
 	}
 
 	if (pxClip == nullptr)
 	{
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ! Skipping animation test - animation clip not found");
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ! Animation file: %s", strAnimPath.c_str());
 		// Still test bind pose without animation
 	}
 
-	Zenith_Assert(pxMesh != nullptr && pxSkel != nullptr, "Failed to load test assets");
+	ZENITH_ASSERT_TRUE(pxMesh != nullptr && pxSkel != nullptr, "Failed to load test assets");
 
 	// Create skeleton instance for animation (CPU-only, no GPU buffer needed for unit tests)
 	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
-	Zenith_Assert(pxSkelInst != nullptr, "Failed to create skeleton instance");
+	ZENITH_ASSERT_NOT_NULL(pxSkelInst, "Failed to create skeleton instance");
 
 	// Test at t=0.0 (should match bind pose)
 	{
@@ -4575,35 +3787,16 @@ void Zenith_UnitTests::TestAnimatedVertexPositions()
 		Zenith_Maths::Vector3 xSkinned = ComputeSkinnedPosition(
 			xLocalPos, xBoneIdx, xBoneWgt, pxSkelInst);
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  t=0.0: Vertex 16 skinned position = (%.3f, %.3f, %.3f)",
-			xSkinned.x, xSkinned.y, xSkinned.z);
 
 		// At t=0, should match bind pose
-		Zenith_Assert(Vec3Equals(xSkinned, Zenith_Maths::Vector3(-0.25f, 4.0f, -0.25f), 0.1f),
-			"Vertex 16 at t=0 should match bind pose");
+		ZENITH_ASSERT_TRUE(Vec3Equals(xSkinned, Zenith_Maths::Vector3(-0.25f, 4.0f, -0.25f), 0.1f), "Vertex 16 at t=0 should match bind pose");
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Animation t=0.0 (bind pose) verified");
 	}
 
 	// Test with animation if clip is available
 	if (pxClip != nullptr)
 	{
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Animation clip '%s' loaded, duration: %.2f sec",
-			pxClip->GetName().c_str(), pxClip->GetDuration());
-
-		// Debug: Print bone channels in clip
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Animation bone channels:");
-		for (const auto& xPair : pxClip->GetBoneChannels())
-		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "    - '%s'", xPair.first.c_str());
-		}
-
-		// Debug: Print skeleton bone names
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Skeleton bone names:");
-		for (uint32_t i = 0; i < pxSkel->GetNumBones(); i++)
-		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "    - [%u] '%s'", i, pxSkel->GetBone(i).m_strName.c_str());
-		}
+		// (Channel / bone-name debug logging removed with the rest of unit-test logging.)
 
 		// Test at t=0.5 (45 degree rotation)
 		{
@@ -4616,17 +3809,13 @@ void Zenith_UnitTests::TestAnimatedVertexPositions()
 			Zenith_Maths::Vector3 xSkinned = ComputeSkinnedPosition(
 				xLocalPos, xBoneIdx, xBoneWgt, pxSkelInst);
 
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  t=0.5: Vertex 16 skinned position = (%.3f, %.3f, %.3f)",
-				xSkinned.x, xSkinned.y, xSkinned.z);
 
 			// At t=0.5, forearm should be rotated 45 degrees around Z
 			// Vertex offset from bone (-0.25, 0, -0.25) rotates to (-0.177, -0.177, -0.25)
 			// Add bone world position (0, 4, 0) = (-0.177, 3.823, -0.25)
 			Zenith_Maths::Vector3 xExpected(-0.177f, 3.823f, -0.25f);
-			Zenith_Assert(Vec3Equals(xSkinned, xExpected, 0.1f),
-				"Vertex 16 at t=0.5 position mismatch");
+			ZENITH_ASSERT_TRUE(Vec3Equals(xSkinned, xExpected, 0.1f), "Vertex 16 at t=0.5 position mismatch");
 
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Animation t=0.5 (45-degree rotation) verified");
 		}
 
 		// Test at t=1.0 (90 degree rotation)
@@ -4640,24 +3829,19 @@ void Zenith_UnitTests::TestAnimatedVertexPositions()
 			Zenith_Maths::Vector3 xSkinned = ComputeSkinnedPosition(
 				xLocalPos, xBoneIdx, xBoneWgt, pxSkelInst);
 
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  t=1.0: Vertex 16 skinned position = (%.3f, %.3f, %.3f)",
-				xSkinned.x, xSkinned.y, xSkinned.z);
 
 			// At t=1.0, forearm should be rotated 90 degrees around Z
 			// Vertex offset from bone (-0.25, 0, -0.25) rotates to (0, -0.25, -0.25)
 			// Add bone world position (0, 4, 0) = (0, 3.75, -0.25)
 			Zenith_Maths::Vector3 xExpected(0.0f, 3.75f, -0.25f);
-			Zenith_Assert(Vec3Equals(xSkinned, xExpected, 0.1f),
-				"Vertex 16 at t=1.0 position mismatch");
+			ZENITH_ASSERT_TRUE(Vec3Equals(xSkinned, xExpected, 0.1f), "Vertex 16 at t=1.0 position mismatch");
 
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Animation t=1.0 (90-degree rotation) verified");
 		}
 	}
 
 	// Cleanup
 	delete pxSkelInst;
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnimatedVertexPositions completed successfully");
 }
 
 //------------------------------------------------------------------------------
@@ -4993,46 +4177,42 @@ static Flux_AnimationClip* CreateRunAnimation()
 // Stick Figure Animation Tests
 //------------------------------------------------------------------------------
 
-void Zenith_UnitTests::TestStickFigureSkeletonCreation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureSkeletonCreation...");
+ZENITH_TEST(Core, StickFigureSkeletonCreation) { Zenith_UnitTests::TestStickFigureSkeletonCreation(); }
+
+void Zenith_UnitTests::TestStickFigureSkeletonCreation(){
 
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
 
 	// Verify bone count
-	Zenith_Assert(pxSkel->GetNumBones() == STICK_BONE_COUNT, "Expected 16 bones");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Skeleton has %u bones", pxSkel->GetNumBones());
+	ZENITH_ASSERT_EQ(pxSkel->GetNumBones(), STICK_BONE_COUNT, "Expected 16 bones");
 
 	// Verify bone names exist
-	Zenith_Assert(pxSkel->HasBone("Root"), "Missing Root bone");
-	Zenith_Assert(pxSkel->HasBone("Spine"), "Missing Spine bone");
-	Zenith_Assert(pxSkel->HasBone("Head"), "Missing Head bone");
-	Zenith_Assert(pxSkel->HasBone("LeftUpperArm"), "Missing LeftUpperArm bone");
-	Zenith_Assert(pxSkel->HasBone("LeftFoot"), "Missing LeftFoot bone");
+	ZENITH_ASSERT_TRUE(pxSkel->HasBone("Root"), "Missing Root bone");
+	ZENITH_ASSERT_TRUE(pxSkel->HasBone("Spine"), "Missing Spine bone");
+	ZENITH_ASSERT_TRUE(pxSkel->HasBone("Head"), "Missing Head bone");
+	ZENITH_ASSERT_TRUE(pxSkel->HasBone("LeftUpperArm"), "Missing LeftUpperArm bone");
+	ZENITH_ASSERT_TRUE(pxSkel->HasBone("LeftFoot"), "Missing LeftFoot bone");
 
 	// Verify parent hierarchy
-	Zenith_Assert(pxSkel->GetBone(STICK_BONE_ROOT).m_iParentIndex == -1, "Root should have no parent");
-	Zenith_Assert(pxSkel->GetBone(STICK_BONE_SPINE).m_iParentIndex == STICK_BONE_ROOT, "Spine parent should be Root");
-	Zenith_Assert(pxSkel->GetBone(STICK_BONE_HEAD).m_iParentIndex == STICK_BONE_NECK, "Head parent should be Neck");
-	Zenith_Assert(pxSkel->GetBone(STICK_BONE_LEFT_HAND).m_iParentIndex == STICK_BONE_LEFT_LOWER_ARM, "LeftHand parent should be LeftLowerArm");
+	ZENITH_ASSERT_EQ(pxSkel->GetBone(STICK_BONE_ROOT).m_iParentIndex, -1, "Root should have no parent");
+	ZENITH_ASSERT_EQ(pxSkel->GetBone(STICK_BONE_SPINE).m_iParentIndex, STICK_BONE_ROOT, "Spine parent should be Root");
+	ZENITH_ASSERT_EQ(pxSkel->GetBone(STICK_BONE_HEAD).m_iParentIndex, STICK_BONE_NECK, "Head parent should be Neck");
+	ZENITH_ASSERT_EQ(pxSkel->GetBone(STICK_BONE_LEFT_HAND).m_iParentIndex, STICK_BONE_LEFT_LOWER_ARM, "LeftHand parent should be LeftLowerArm");
 
 	// Verify bind pose world positions
 	Zenith_Maths::Vector3 xHeadPos = Zenith_Maths::Vector3(pxSkel->GetBone(STICK_BONE_HEAD).m_xBindPoseModel[3]);
-	Zenith_Assert(Vec3Equals(xHeadPos, Zenith_Maths::Vector3(0, 1.4f, 0), 0.01f), "Head world position mismatch");
+	ZENITH_ASSERT_TRUE(Vec3Equals(xHeadPos, Zenith_Maths::Vector3(0, 1.4f, 0), 0.01f), "Head world position mismatch");
 
 	Zenith_Maths::Vector3 xLeftFootPos = Zenith_Maths::Vector3(pxSkel->GetBone(STICK_BONE_LEFT_FOOT).m_xBindPoseModel[3]);
-	Zenith_Assert(Vec3Equals(xLeftFootPos, Zenith_Maths::Vector3(-0.15f, -1.0f, 0), 0.01f), "LeftFoot world position mismatch");
+	ZENITH_ASSERT_TRUE(Vec3Equals(xLeftFootPos, Zenith_Maths::Vector3(-0.15f, -1.0f, 0), 0.01f), "LeftFoot world position mismatch");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Head world position: (%.2f, %.2f, %.2f)", xHeadPos.x, xHeadPos.y, xHeadPos.z);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  LeftFoot world position: (%.2f, %.2f, %.2f)", xLeftFootPos.x, xLeftFootPos.y, xLeftFootPos.z);
 
 	delete pxSkel;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureSkeletonCreation completed successfully");
 }
 
-void Zenith_UnitTests::TestStickFigureMeshCreation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureMeshCreation...");
+ZENITH_TEST(Core, StickFigureMeshCreation) { Zenith_UnitTests::TestStickFigureMeshCreation(); }
+
+void Zenith_UnitTests::TestStickFigureMeshCreation(){
 
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
 	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
@@ -5041,148 +4221,135 @@ void Zenith_UnitTests::TestStickFigureMeshCreation()
 	const uint32_t uExpectedVerts = STICK_BONE_COUNT * 8;  // 128
 	const uint32_t uExpectedIndices = STICK_BONE_COUNT * 36;  // 576
 
-	Zenith_Assert(pxMesh->GetNumVerts() == uExpectedVerts, "Expected 128 vertices");
-	Zenith_Assert(pxMesh->GetNumIndices() == uExpectedIndices, "Expected 576 indices");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Mesh has %u vertices and %u indices", pxMesh->GetNumVerts(), pxMesh->GetNumIndices());
+	ZENITH_ASSERT_EQ(pxMesh->GetNumVerts(), uExpectedVerts, "Expected 128 vertices");
+	ZENITH_ASSERT_EQ(pxMesh->GetNumIndices(), uExpectedIndices, "Expected 576 indices");
 
 	// Verify skinning weights
-	Zenith_Assert(pxMesh->m_xBoneIndices.GetSize() == uExpectedVerts, "Bone indices count mismatch");
-	Zenith_Assert(pxMesh->m_xBoneWeights.GetSize() == uExpectedVerts, "Bone weights count mismatch");
+	ZENITH_ASSERT_EQ(pxMesh->m_xBoneIndices.GetSize(), uExpectedVerts, "Bone indices count mismatch");
+	ZENITH_ASSERT_EQ(pxMesh->m_xBoneWeights.GetSize(), uExpectedVerts, "Bone weights count mismatch");
 
 	// Check that each vertex is 100% weighted to one bone
 	for (uint32_t v = 0; v < uExpectedVerts; v++)
 	{
 		const glm::vec4& xWeights = pxMesh->m_xBoneWeights.Get(v);
-		Zenith_Assert(FloatEquals(xWeights.x, 1.0f, 0.001f), "Vertex weight should be 1.0");
-		Zenith_Assert(FloatEquals(xWeights.y, 0.0f, 0.001f), "Secondary weight should be 0.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xWeights.x, 1.0f, 0.001f), "Vertex weight should be 1.0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xWeights.y, 0.0f, 0.001f), "Secondary weight should be 0.0");
 	}
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  All vertices have correct skinning weights");
 
 	// Verify bounds
-	Zenith_Assert(pxMesh->GetBoundsMin().y < -0.9f, "Bounds min Y should be below -0.9");
-	Zenith_Assert(pxMesh->GetBoundsMax().y > 1.3f, "Bounds max Y should be above 1.3");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Bounds: min=(%.2f, %.2f, %.2f), max=(%.2f, %.2f, %.2f)",
-		pxMesh->GetBoundsMin().x, pxMesh->GetBoundsMin().y, pxMesh->GetBoundsMin().z,
-		pxMesh->GetBoundsMax().x, pxMesh->GetBoundsMax().y, pxMesh->GetBoundsMax().z);
+	ZENITH_ASSERT_LT(pxMesh->GetBoundsMin().y, -0.9f, "Bounds min Y should be below -0.9");
+	ZENITH_ASSERT_GT(pxMesh->GetBoundsMax().y, 1.3f, "Bounds max Y should be above 1.3");
 
 	delete pxMesh;
 	delete pxSkel;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureMeshCreation completed successfully");
 }
 
-void Zenith_UnitTests::TestStickFigureIdleAnimation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureIdleAnimation...");
+ZENITH_TEST(Core, StickFigureIdleAnimation) { Zenith_UnitTests::TestStickFigureIdleAnimation(); }
+
+void Zenith_UnitTests::TestStickFigureIdleAnimation(){
 
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
 	Flux_AnimationClip* pxClip = CreateIdleAnimation();
 
-	Zenith_Assert(pxClip->GetName() == "Idle", "Animation name should be 'Idle'");
-	Zenith_Assert(FloatEquals(pxClip->GetDuration(), 2.0f, 0.01f), "Duration should be 2.0 seconds");
-	Zenith_Assert(pxClip->GetTicksPerSecond() == 24, "Ticks per second should be 24");
-	Zenith_Assert(pxClip->HasBoneChannel("Spine"), "Should have Spine bone channel");
+	ZENITH_ASSERT_EQ(pxClip->GetName(), "Idle", "Animation name should be 'Idle'");
+	ZENITH_ASSERT_TRUE(FloatEquals(pxClip->GetDuration(), 2.0f, 0.01f), "Duration should be 2.0 seconds");
+	ZENITH_ASSERT_EQ(pxClip->GetTicksPerSecond(), 24, "Ticks per second should be 24");
+	ZENITH_ASSERT_TRUE(pxClip->HasBoneChannel("Spine"), "Should have Spine bone channel");
 
 	// Sample spine position at different times
 	const Flux_BoneChannel* pxSpineChannel = pxClip->GetBoneChannel("Spine");
-	Zenith_Assert(pxSpineChannel != nullptr, "Spine channel should exist");
+	ZENITH_ASSERT_NOT_NULL(pxSpineChannel, "Spine channel should exist");
 
 	// t=0: position should be (0, 0.5, 0)
 	Zenith_Maths::Vector3 xPos0 = pxSpineChannel->SamplePosition(0.0f);
-	Zenith_Assert(Vec3Equals(xPos0, Zenith_Maths::Vector3(0, 0.5f, 0), 0.01f), "Spine position at t=0 mismatch");
+	ZENITH_ASSERT_TRUE(Vec3Equals(xPos0, Zenith_Maths::Vector3(0, 0.5f, 0), 0.01f), "Spine position at t=0 mismatch");
 
 	// t=24 ticks (1 second): position should be (0, 0.52, 0)
 	Zenith_Maths::Vector3 xPos1 = pxSpineChannel->SamplePosition(24.0f);
-	Zenith_Assert(Vec3Equals(xPos1, Zenith_Maths::Vector3(0, 0.52f, 0), 0.01f), "Spine position at t=1s mismatch");
+	ZENITH_ASSERT_TRUE(Vec3Equals(xPos1, Zenith_Maths::Vector3(0, 0.52f, 0), 0.01f), "Spine position at t=1s mismatch");
 
 	// t=12 ticks (0.5 seconds): position should be interpolated to (0, 0.51, 0)
 	Zenith_Maths::Vector3 xPos05 = pxSpineChannel->SamplePosition(12.0f);
-	Zenith_Assert(Vec3Equals(xPos05, Zenith_Maths::Vector3(0, 0.51f, 0), 0.01f), "Spine position at t=0.5s mismatch");
+	ZENITH_ASSERT_TRUE(Vec3Equals(xPos05, Zenith_Maths::Vector3(0, 0.51f, 0), 0.01f), "Spine position at t=0.5s mismatch");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Spine Y at t=0: %.3f, t=0.5s: %.3f, t=1s: %.3f",
-		xPos0.y, xPos05.y, xPos1.y);
 
 	delete pxClip;
 	delete pxSkel;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureIdleAnimation completed successfully");
 }
 
-void Zenith_UnitTests::TestStickFigureWalkAnimation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureWalkAnimation...");
+ZENITH_TEST(Core, StickFigureWalkAnimation) { Zenith_UnitTests::TestStickFigureWalkAnimation(); }
+
+void Zenith_UnitTests::TestStickFigureWalkAnimation(){
 
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
 	Flux_AnimationClip* pxClip = CreateWalkAnimation();
 
-	Zenith_Assert(pxClip->GetName() == "Walk", "Animation name should be 'Walk'");
-	Zenith_Assert(FloatEquals(pxClip->GetDuration(), 1.0f, 0.01f), "Duration should be 1.0 second");
+	ZENITH_ASSERT_EQ(pxClip->GetName(), "Walk", "Animation name should be 'Walk'");
+	ZENITH_ASSERT_TRUE(FloatEquals(pxClip->GetDuration(), 1.0f, 0.01f), "Duration should be 1.0 second");
 
 	// Verify left upper leg rotation at t=0 (should be 30 degrees around X for forward/backward swing)
 	const Flux_BoneChannel* pxLeftLegChannel = pxClip->GetBoneChannel("LeftUpperLeg");
-	Zenith_Assert(pxLeftLegChannel != nullptr, "LeftUpperLeg channel should exist");
+	ZENITH_ASSERT_NOT_NULL(pxLeftLegChannel, "LeftUpperLeg channel should exist");
 
 	Zenith_Maths::Quat xExpected30 = glm::angleAxis(glm::radians(30.0f), Zenith_Maths::Vector3(1, 0, 0));
 	Zenith_Maths::Quat xSampled = pxLeftLegChannel->SampleRotation(0.0f);
-	Zenith_Assert(QuatEquals(xSampled, xExpected30, 0.01f), "LeftUpperLeg rotation at t=0 should be 30 deg");
+	ZENITH_ASSERT_TRUE(QuatEquals(xSampled, xExpected30, 0.01f), "LeftUpperLeg rotation at t=0 should be 30 deg");
 
 	// Verify right upper leg is opposite phase at t=0 (-30 degrees)
 	const Flux_BoneChannel* pxRightLegChannel = pxClip->GetBoneChannel("RightUpperLeg");
-	Zenith_Assert(pxRightLegChannel != nullptr, "RightUpperLeg channel should exist");
+	ZENITH_ASSERT_NOT_NULL(pxRightLegChannel, "RightUpperLeg channel should exist");
 
 	Zenith_Maths::Quat xExpectedMinus30 = glm::angleAxis(glm::radians(-30.0f), Zenith_Maths::Vector3(1, 0, 0));
 	Zenith_Maths::Quat xSampledRight = pxRightLegChannel->SampleRotation(0.0f);
-	Zenith_Assert(QuatEquals(xSampledRight, xExpectedMinus30, 0.01f), "RightUpperLeg rotation at t=0 should be -30 deg");
+	ZENITH_ASSERT_TRUE(QuatEquals(xSampledRight, xExpectedMinus30, 0.01f), "RightUpperLeg rotation at t=0 should be -30 deg");
 
 	// Verify arm swing
 	const Flux_BoneChannel* pxLeftArmChannel = pxClip->GetBoneChannel("LeftUpperArm");
-	Zenith_Assert(pxLeftArmChannel != nullptr, "LeftUpperArm channel should exist");
+	ZENITH_ASSERT_NOT_NULL(pxLeftArmChannel, "LeftUpperArm channel should exist");
 
 	Zenith_Maths::Quat xExpectedArm = glm::angleAxis(glm::radians(-20.0f), Zenith_Maths::Vector3(1, 0, 0));
 	Zenith_Maths::Quat xSampledArm = pxLeftArmChannel->SampleRotation(0.0f);
-	Zenith_Assert(QuatEquals(xSampledArm, xExpectedArm, 0.01f), "LeftUpperArm rotation at t=0 should be -20 deg");
+	ZENITH_ASSERT_TRUE(QuatEquals(xSampledArm, xExpectedArm, 0.01f), "LeftUpperArm rotation at t=0 should be -20 deg");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Walk animation keyframes verified");
 
 	delete pxClip;
 	delete pxSkel;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureWalkAnimation completed successfully");
 }
 
-void Zenith_UnitTests::TestStickFigureRunAnimation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureRunAnimation...");
+ZENITH_TEST(Core, StickFigureRunAnimation) { Zenith_UnitTests::TestStickFigureRunAnimation(); }
+
+void Zenith_UnitTests::TestStickFigureRunAnimation(){
 
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
 	Flux_AnimationClip* pxClip = CreateRunAnimation();
 
-	Zenith_Assert(pxClip->GetName() == "Run", "Animation name should be 'Run'");
-	Zenith_Assert(FloatEquals(pxClip->GetDuration(), 0.5f, 0.01f), "Duration should be 0.5 seconds");
+	ZENITH_ASSERT_EQ(pxClip->GetName(), "Run", "Animation name should be 'Run'");
+	ZENITH_ASSERT_TRUE(FloatEquals(pxClip->GetDuration(), 0.5f, 0.01f), "Duration should be 0.5 seconds");
 
 	// Verify left upper leg rotation at t=0 (should be 45 degrees around X - more exaggerated)
 	const Flux_BoneChannel* pxLeftLegChannel = pxClip->GetBoneChannel("LeftUpperLeg");
-	Zenith_Assert(pxLeftLegChannel != nullptr, "LeftUpperLeg channel should exist");
+	ZENITH_ASSERT_NOT_NULL(pxLeftLegChannel, "LeftUpperLeg channel should exist");
 
 	Zenith_Maths::Quat xExpected45 = glm::angleAxis(glm::radians(45.0f), Zenith_Maths::Vector3(1, 0, 0));
 	Zenith_Maths::Quat xSampled = pxLeftLegChannel->SampleRotation(0.0f);
-	Zenith_Assert(QuatEquals(xSampled, xExpected45, 0.01f), "LeftUpperLeg rotation at t=0 should be 45 deg");
+	ZENITH_ASSERT_TRUE(QuatEquals(xSampled, xExpected45, 0.01f), "LeftUpperLeg rotation at t=0 should be 45 deg");
 
 	// Verify arm swing (35 degrees around X - more exaggerated than walk)
 	const Flux_BoneChannel* pxLeftArmChannel = pxClip->GetBoneChannel("LeftUpperArm");
-	Zenith_Assert(pxLeftArmChannel != nullptr, "LeftUpperArm channel should exist");
+	ZENITH_ASSERT_NOT_NULL(pxLeftArmChannel, "LeftUpperArm channel should exist");
 
 	Zenith_Maths::Quat xExpectedArm = glm::angleAxis(glm::radians(-35.0f), Zenith_Maths::Vector3(1, 0, 0));
 	Zenith_Maths::Quat xSampledArm = pxLeftArmChannel->SampleRotation(0.0f);
-	Zenith_Assert(QuatEquals(xSampledArm, xExpectedArm, 0.01f), "LeftUpperArm rotation at t=0 should be -35 deg");
+	ZENITH_ASSERT_TRUE(QuatEquals(xSampledArm, xExpectedArm, 0.01f), "LeftUpperArm rotation at t=0 should be -35 deg");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Run animation keyframes verified (more exaggerated than walk)");
 
 	delete pxClip;
 	delete pxSkel;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureRunAnimation completed successfully");
 }
 
-void Zenith_UnitTests::TestStickFigureAnimationBlending()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureAnimationBlending...");
+ZENITH_TEST(Core, StickFigureAnimationBlending) { Zenith_UnitTests::TestStickFigureAnimationBlending(); }
+
+void Zenith_UnitTests::TestStickFigureAnimationBlending(){
 
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
 	Flux_AnimationClip* pxWalkClip = CreateWalkAnimation();
@@ -5201,10 +4368,6 @@ void Zenith_UnitTests::TestStickFigureAnimationBlending()
 	const Flux_BoneLocalPose& xWalkLegPose = xWalkPose.GetLocalPose(STICK_BONE_LEFT_UPPER_LEG);
 	const Flux_BoneLocalPose& xRunLegPose = xRunPose.GetLocalPose(STICK_BONE_LEFT_UPPER_LEG);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Walk leg rotation: (%.3f, %.3f, %.3f, %.3f)",
-		xWalkLegPose.m_xRotation.w, xWalkLegPose.m_xRotation.x, xWalkLegPose.m_xRotation.y, xWalkLegPose.m_xRotation.z);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Run leg rotation: (%.3f, %.3f, %.3f, %.3f)",
-		xRunLegPose.m_xRotation.w, xRunLegPose.m_xRotation.x, xRunLegPose.m_xRotation.y, xRunLegPose.m_xRotation.z);
 
 	// Test blending at different factors
 	float afBlendFactors[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
@@ -5218,25 +4381,22 @@ void Zenith_UnitTests::TestStickFigureAnimationBlending()
 		const Flux_BoneLocalPose& xBlendedLeg = xBlendedPose.GetLocalPose(STICK_BONE_LEFT_UPPER_LEG);
 		Zenith_Maths::Quat xExpected = glm::slerp(xWalkLegPose.m_xRotation, xRunLegPose.m_xRotation, fBlend);
 
-		Zenith_Assert(QuatEquals(xBlendedLeg.m_xRotation, xExpected, 0.01f),
-			"Blended rotation mismatch at factor %.2f", fBlend);
+		ZENITH_ASSERT_TRUE(QuatEquals(xBlendedLeg.m_xRotation, xExpected, 0.01f), "Blended rotation mismatch at factor %.2f", fBlend);
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Blend %.2f: leg rotation verified", fBlend);
 	}
 
 	delete pxRunClip;
 	delete pxWalkClip;
 	delete pxSkel;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureAnimationBlending completed successfully");
 }
 
 //------------------------------------------------------------------------------
 // Stick Figure IK Tests
 //------------------------------------------------------------------------------
 
-void Zenith_UnitTests::TestStickFigureArmIK()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureArmIK...");
+ZENITH_TEST(Core, StickFigureArmIK) { Zenith_UnitTests::TestStickFigureArmIK(); }
+
+void Zenith_UnitTests::TestStickFigureArmIK(){
 
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
 	Flux_IKSolver xSolver;
@@ -5248,10 +4408,9 @@ void Zenith_UnitTests::TestStickFigureArmIK()
 	xSolver.AddChain(xLeftArm);
 	xSolver.AddChain(xRightArm);
 
-	Zenith_Assert(xSolver.HasChain("LeftArm"), "Solver should have LeftArm chain");
-	Zenith_Assert(xSolver.HasChain("RightArm"), "Solver should have RightArm chain");
+	ZENITH_ASSERT_TRUE(xSolver.HasChain("LeftArm"), "Solver should have LeftArm chain");
+	ZENITH_ASSERT_TRUE(xSolver.HasChain("RightArm"), "Solver should have RightArm chain");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Created arm IK chains");
 
 	// Test setting targets
 	Flux_IKTarget xTarget;
@@ -5260,25 +4419,23 @@ void Zenith_UnitTests::TestStickFigureArmIK()
 	xTarget.m_bEnabled = true;
 
 	xSolver.SetTarget("LeftArm", xTarget);
-	Zenith_Assert(xSolver.HasTarget("LeftArm"), "Solver should have LeftArm target");
+	ZENITH_ASSERT_TRUE(xSolver.HasTarget("LeftArm"), "Solver should have LeftArm target");
 
 	const Flux_IKTarget* pxStoredTarget = xSolver.GetTarget("LeftArm");
-	Zenith_Assert(pxStoredTarget != nullptr, "Should be able to retrieve target");
-	Zenith_Assert(Vec3Equals(pxStoredTarget->m_xPosition, xTarget.m_xPosition, 0.001f), "Target position mismatch");
+	ZENITH_ASSERT_NOT_NULL(pxStoredTarget, "Should be able to retrieve target");
+	ZENITH_ASSERT_TRUE(Vec3Equals(pxStoredTarget->m_xPosition, xTarget.m_xPosition, 0.001f), "Target position mismatch");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  IK target set and retrieved successfully");
 
 	// Clear target
 	xSolver.ClearTarget("LeftArm");
-	Zenith_Assert(!xSolver.HasTarget("LeftArm"), "Target should be cleared");
+	ZENITH_ASSERT_FALSE(xSolver.HasTarget("LeftArm"), "Target should be cleared");
 
 	delete pxSkel;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureArmIK completed successfully");
 }
 
-void Zenith_UnitTests::TestStickFigureLegIK()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureLegIK...");
+ZENITH_TEST(Core, StickFigureLegIK) { Zenith_UnitTests::TestStickFigureLegIK(); }
+
+void Zenith_UnitTests::TestStickFigureLegIK(){
 
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
 	Flux_IKSolver xSolver;
@@ -5290,15 +4447,14 @@ void Zenith_UnitTests::TestStickFigureLegIK()
 	xSolver.AddChain(xLeftLeg);
 	xSolver.AddChain(xRightLeg);
 
-	Zenith_Assert(xSolver.HasChain("LeftLeg"), "Solver should have LeftLeg chain");
-	Zenith_Assert(xSolver.HasChain("RightLeg"), "Solver should have RightLeg chain");
+	ZENITH_ASSERT_TRUE(xSolver.HasChain("LeftLeg"), "Solver should have LeftLeg chain");
+	ZENITH_ASSERT_TRUE(xSolver.HasChain("RightLeg"), "Solver should have RightLeg chain");
 
 	// Verify chain bone count
 	const Flux_IKChain* pxLeftLegChain = xSolver.GetChain("LeftLeg");
-	Zenith_Assert(pxLeftLegChain != nullptr, "Should be able to retrieve LeftLeg chain");
-	Zenith_Assert(pxLeftLegChain->m_xBoneNames.size() == 3, "Leg chain should have 3 bones");
+	ZENITH_ASSERT_NOT_NULL(pxLeftLegChain, "Should be able to retrieve LeftLeg chain");
+	ZENITH_ASSERT_EQ(pxLeftLegChain->m_xBoneNames.size(), 3, "Leg chain should have 3 bones");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Leg IK chains created with %zu bones each", pxLeftLegChain->m_xBoneNames.size());
 
 	// Test setting targets for both legs
 	Flux_IKTarget xLeftTarget;
@@ -5314,18 +4470,16 @@ void Zenith_UnitTests::TestStickFigureLegIK()
 	xSolver.SetTarget("LeftLeg", xLeftTarget);
 	xSolver.SetTarget("RightLeg", xRightTarget);
 
-	Zenith_Assert(xSolver.HasTarget("LeftLeg"), "Solver should have LeftLeg target");
-	Zenith_Assert(xSolver.HasTarget("RightLeg"), "Solver should have RightLeg target");
+	ZENITH_ASSERT_TRUE(xSolver.HasTarget("LeftLeg"), "Solver should have LeftLeg target");
+	ZENITH_ASSERT_TRUE(xSolver.HasTarget("RightLeg"), "Solver should have RightLeg target");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Both leg targets set successfully");
 
 	delete pxSkel;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureLegIK completed successfully");
 }
 
-void Zenith_UnitTests::TestStickFigureIKWithAnimation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureIKWithAnimation...");
+ZENITH_TEST(Core, StickFigureIKWithAnimation) { Zenith_UnitTests::TestStickFigureIKWithAnimation(); }
+
+void Zenith_UnitTests::TestStickFigureIKWithAnimation(){
 
 	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
 	Flux_AnimationClip* pxWalkClip = CreateWalkAnimation();
@@ -5341,7 +4495,6 @@ void Zenith_UnitTests::TestStickFigureIKWithAnimation()
 	float fMidStride = 0.5f * pxWalkClip->GetTicksPerSecond(); // 12 ticks
 	xAnimPose.SampleFromClip(*pxWalkClip, fMidStride, *pxSkel);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Sampled walk animation at mid-stride (t=0.5s)");
 
 	// Set IK target
 	Flux_IKTarget xFootTarget;
@@ -5358,21 +4511,19 @@ void Zenith_UnitTests::TestStickFigureIKWithAnimation()
 		xWeightedTarget.m_fWeight = fWeight;
 		xSolver.SetTarget("LeftLeg", xWeightedTarget);
 
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  IK weight %.1f: target set", fWeight);
 	}
 
 	delete pxWalkClip;
 	delete pxSkel;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureIKWithAnimation completed successfully");
 }
 
 //------------------------------------------------------------------------------
 // Animation State Machine Integration Tests
 //------------------------------------------------------------------------------
 
-void Zenith_UnitTests::TestStateMachineUpdateLoop()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateMachineUpdateLoop...");
+ZENITH_TEST(Animation, StateMachineUpdateLoop) { Zenith_UnitTests::TestStateMachineUpdateLoop(); }
+
+void Zenith_UnitTests::TestStateMachineUpdateLoop(){
 
 	// Create state machine with Idle and Walk states
 	Flux_AnimationStateMachine xStateMachine("TestSM");
@@ -5419,17 +4570,13 @@ void Zenith_UnitTests::TestStateMachineUpdateLoop()
 
 	// Initial update - should be in Idle
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
-		"Should start in Idle state");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Initial state is Idle");
+	ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Idle", "Should start in Idle state");
 
 	// Set Speed > 0.1, update - transition should start
 	xStateMachine.GetParameters().SetFloat("Speed", 0.5f);
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(xStateMachine.IsTransitioning() == true,
-		"Should be transitioning after condition met");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transition started when Speed > 0.1");
+	ZENITH_ASSERT_EQ(xStateMachine.IsTransitioning(), true, "Should be transitioning after condition met");
 
 	// Continue updating until transition completes
 	for (int i = 0; i < 20; ++i)
@@ -5437,18 +4584,14 @@ void Zenith_UnitTests::TestStateMachineUpdateLoop()
 		xStateMachine.Update(0.016f, xPose, xSkeleton);
 	}
 
-	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Walk",
-		"Should be in Walk state after transition completes");
-	Zenith_Assert(xStateMachine.IsTransitioning() == false,
-		"Transition should be complete");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Arrived at Walk state after transition");
+	ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Walk", "Should be in Walk state after transition completes");
+	ZENITH_ASSERT_EQ(xStateMachine.IsTransitioning(), false, "Transition should be complete");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateMachineUpdateLoop completed successfully");
 }
 
-void Zenith_UnitTests::TestTriggerConsumptionInTransitions()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTriggerConsumptionInTransitions...");
+ZENITH_TEST(Core, TriggerConsumptionInTransitions) { Zenith_UnitTests::TestTriggerConsumptionInTransitions(); }
+
+void Zenith_UnitTests::TestTriggerConsumptionInTransitions(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -5476,28 +4619,23 @@ void Zenith_UnitTests::TestTriggerConsumptionInTransitions()
 
 	// Initial state
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle", "Should start in Idle");
+	ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Idle", "Should start in Idle");
 
 	// Set trigger
 	xStateMachine.GetParameters().SetTrigger("Attack");
 
 	// Update - trigger should be consumed and transition should start
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xStateMachine.IsTransitioning() == true,
-		"Transition should start after trigger set");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transition started on trigger");
+	ZENITH_ASSERT_EQ(xStateMachine.IsTransitioning(), true, "Transition should start after trigger set");
 
 	// Trigger should be consumed - trying to consume again should return false
-	Zenith_Assert(xStateMachine.GetParameters().ConsumeTrigger("Attack") == false,
-		"Trigger should have been consumed by transition");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Trigger was consumed");
+	ZENITH_ASSERT_EQ(xStateMachine.GetParameters().ConsumeTrigger("Attack"), false, "Trigger should have been consumed by transition");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTriggerConsumptionInTransitions completed successfully");
 }
 
-void Zenith_UnitTests::TestExitTimeTransitions()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestExitTimeTransitions...");
+ZENITH_TEST(Core, ExitTimeTransitions) { Zenith_UnitTests::TestExitTimeTransitions(); }
+
+void Zenith_UnitTests::TestExitTimeTransitions(){
 
 	// Test the CanTransition method with exit time
 	Flux_AnimationParameters xParams;
@@ -5511,28 +4649,21 @@ void Zenith_UnitTests::TestExitTimeTransitions()
 
 	// Test before exit time
 	bool bCanTransBefore = xTrans.CanTransition(xParams, 0.5f);
-	Zenith_Assert(bCanTransBefore == false,
-		"Should not transition before exit time (0.5 < 0.8)");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Cannot transition before exit time");
+	ZENITH_ASSERT_EQ(bCanTransBefore, false, "Should not transition before exit time (0.5 < 0.8)");
 
 	// Test at exit time
 	bool bCanTransAt = xTrans.CanTransition(xParams, 0.8f);
-	Zenith_Assert(bCanTransAt == true,
-		"Should transition at exit time (0.8 >= 0.8)");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Can transition at exit time");
+	ZENITH_ASSERT_EQ(bCanTransAt, true, "Should transition at exit time (0.8 >= 0.8)");
 
 	// Test after exit time
 	bool bCanTransAfter = xTrans.CanTransition(xParams, 0.95f);
-	Zenith_Assert(bCanTransAfter == true,
-		"Should transition after exit time (0.95 >= 0.8)");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Can transition after exit time");
+	ZENITH_ASSERT_EQ(bCanTransAfter, true, "Should transition after exit time (0.95 >= 0.8)");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestExitTimeTransitions completed successfully");
 }
 
-void Zenith_UnitTests::TestTransitionPriority()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTransitionPriority...");
+ZENITH_TEST(Animation, TransitionPriority) { Zenith_UnitTests::TestTransitionPriority(); }
+
+void Zenith_UnitTests::TestTransitionPriority(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -5579,9 +4710,7 @@ void Zenith_UnitTests::TestTransitionPriority()
 
 	// Verify transitions are sorted by priority
 	const Zenith_Vector<Flux_StateTransition>& xTransitions = pxIdle->GetTransitions();
-	Zenith_Assert(xTransitions.Get(0).m_iPriority >= xTransitions.Get(1).m_iPriority,
-		"Transitions should be sorted by priority (higher first)");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transitions sorted by priority");
+	ZENITH_ASSERT_GE(xTransitions.Get(0).m_iPriority, xTransitions.Get(1).m_iPriority, "Transitions should be sorted by priority (higher first)");
 
 	// Set both conditions true - Attack should win due to priority
 	xStateMachine.SetDefaultState("Idle");
@@ -5596,16 +4725,13 @@ void Zenith_UnitTests::TestTransitionPriority()
 	for (int i = 0; i < 10; ++i)
 		xStateMachine.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Attack",
-		"Higher priority transition (Attack) should be chosen over Walk");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Higher priority transition won");
+	ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Attack", "Higher priority transition (Attack) should be chosen over Walk");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransitionPriority completed successfully");
 }
 
-void Zenith_UnitTests::TestStateLifecycleCallbacks()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateLifecycleCallbacks...");
+ZENITH_TEST(Core, StateLifecycleCallbacks) { Zenith_UnitTests::TestStateLifecycleCallbacks(); }
+
+void Zenith_UnitTests::TestStateLifecycleCallbacks(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -5650,29 +4776,25 @@ void Zenith_UnitTests::TestStateLifecycleCallbacks()
 
 	// Test OnEnter via SetState
 	xStateMachine.SetState("StateA");
-	Zenith_Assert(xCallbackData.m_bEnterCalled == true, "OnEnter should be called on SetState");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnEnter called on SetState");
+	ZENITH_ASSERT_EQ(xCallbackData.m_bEnterCalled, true, "OnEnter should be called on SetState");
 
 	// Test OnUpdate
 	xCallbackData.m_bUpdateCalled = false;
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xCallbackData.m_bUpdateCalled == true, "OnUpdate should be called during Update");
-	Zenith_Assert(FloatEquals(xCallbackData.m_fUpdateDt, 0.016f, 0.001f), "OnUpdate should receive delta time");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnUpdate called with correct delta time");
+	ZENITH_ASSERT_EQ(xCallbackData.m_bUpdateCalled, true, "OnUpdate should be called during Update");
+	ZENITH_ASSERT_TRUE(FloatEquals(xCallbackData.m_fUpdateDt, 0.016f, 0.001f), "OnUpdate should receive delta time");
 
 	// Test OnExit via transition
 	xCallbackData.m_bExitCalled = false;
 	xStateMachine.GetParameters().SetTrigger("Next");
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xCallbackData.m_bExitCalled == true, "OnExit should be called when starting transition");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnExit called on transition");
+	ZENITH_ASSERT_EQ(xCallbackData.m_bExitCalled, true, "OnExit should be called when starting transition");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateLifecycleCallbacks completed successfully");
 }
 
-void Zenith_UnitTests::TestMultipleTransitionConditions()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultipleTransitionConditions...");
+ZENITH_TEST(Core, MultipleTransitionConditions) { Zenith_UnitTests::TestMultipleTransitionConditions(); }
+
+void Zenith_UnitTests::TestMultipleTransitionConditions(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -5717,46 +4839,39 @@ void Zenith_UnitTests::TestMultipleTransitionConditions()
 	xStateMachine.GetParameters().SetBool("IsGrounded", false);
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
-		"Should stay in Idle when only Speed condition met");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] No transition when only Speed > 5");
+	ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Idle", "Should stay in Idle when only Speed condition met");
 
 	// Only IsGrounded true - should NOT transition
 	xStateMachine.GetParameters().SetFloat("Speed", 2.0f);
 	xStateMachine.GetParameters().SetBool("IsGrounded", true);
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
-		"Should stay in Idle when only IsGrounded condition met");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] No transition when only IsGrounded true");
+	ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Idle", "Should stay in Idle when only IsGrounded condition met");
 
 	// Both conditions true - SHOULD transition
 	xStateMachine.GetParameters().SetFloat("Speed", 10.0f);
 	xStateMachine.GetParameters().SetBool("IsGrounded", true);
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(xStateMachine.IsTransitioning() == true,
-		"Should start transition when ALL conditions met");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transition started when all conditions met");
+	ZENITH_ASSERT_EQ(xStateMachine.IsTransitioning(), true, "Should start transition when ALL conditions met");
 
 	// Complete transition
 	for (int i = 0; i < 10; ++i)
 		xStateMachine.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Run",
-		"Should be in Run state after transition");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Arrived at Run state");
+	ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Run", "Should be in Run state after transition");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMultipleTransitionConditions completed successfully");
 }
 
 //------------------------------------------------------------------------------
 // Stick Figure Asset Export Test
 //------------------------------------------------------------------------------
 
-void Zenith_UnitTests::TestStickFigureAssetExport()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureAssetExport (verification only)...");
+#ifndef ZENITH_ANDROID // Asset verification uses std::filesystem with local paths
+ZENITH_TEST(Core, StickFigureAssetExport) { Zenith_UnitTests::TestStickFigureAssetExport(); }
+#endif
+
+void Zenith_UnitTests::TestStickFigureAssetExport(){
 
 	// Assets are generated by GenerateTestAssets() called earlier in main()
 	// This test verifies the assets were created correctly and can be loaded
@@ -5774,56 +4889,47 @@ void Zenith_UnitTests::TestStickFigureAssetExport()
 	std::string strRunPath = strOutputDir + "StickFigure_Run.zanim";
 
 	// Verify files exist
-	Zenith_Assert(std::filesystem::exists(strSkelPath), "Skeleton file should exist");
-	Zenith_Assert(std::filesystem::exists(strMeshAssetPath), "Mesh asset file should exist");
-	Zenith_Assert(std::filesystem::exists(strIdlePath), "Idle animation file should exist");
-	Zenith_Assert(std::filesystem::exists(strWalkPath), "Walk animation file should exist");
-	Zenith_Assert(std::filesystem::exists(strRunPath), "Run animation file should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strSkelPath), "Skeleton file should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strMeshAssetPath), "Mesh asset file should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strIdlePath), "Idle animation file should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strWalkPath), "Walk animation file should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strRunPath), "Run animation file should exist");
 
 	// Reload and verify skeleton
 	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
-	Zenith_Assert(pxReloadedSkel != nullptr, "Should be able to reload skeleton");
-	Zenith_Assert(pxReloadedSkel->GetNumBones() == uExpectedBoneCount, "Reloaded skeleton should have 16 bones");
-	Zenith_Assert(pxReloadedSkel->HasBone("LeftUpperArm"), "Reloaded skeleton should have LeftUpperArm bone");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded skeleton verified: %u bones", pxReloadedSkel->GetNumBones());
+	ZENITH_ASSERT_NOT_NULL(pxReloadedSkel, "Should be able to reload skeleton");
+	ZENITH_ASSERT_EQ(pxReloadedSkel->GetNumBones(), uExpectedBoneCount, "Reloaded skeleton should have 16 bones");
+	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("LeftUpperArm"), "Reloaded skeleton should have LeftUpperArm bone");
 
 	// Reload and verify mesh asset format
 	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshAssetPath);
-	Zenith_Assert(pxReloadedMesh != nullptr, "Should be able to reload mesh asset");
-	Zenith_Assert(pxReloadedMesh->GetNumVerts() == uExpectedVertCount, "Reloaded mesh vertex count mismatch");
-	Zenith_Assert(pxReloadedMesh->GetNumIndices() == uExpectedIndexCount, "Reloaded mesh index count mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded mesh asset verified: %u verts, %u indices",
-		pxReloadedMesh->GetNumVerts(), pxReloadedMesh->GetNumIndices());
+	ZENITH_ASSERT_NOT_NULL(pxReloadedMesh, "Should be able to reload mesh asset");
+	ZENITH_ASSERT_EQ(pxReloadedMesh->GetNumVerts(), uExpectedVertCount, "Reloaded mesh vertex count mismatch");
+	ZENITH_ASSERT_EQ(pxReloadedMesh->GetNumIndices(), uExpectedIndexCount, "Reloaded mesh index count mismatch");
 
 #ifdef ZENITH_TOOLS
 	// Reload and verify Flux_MeshGeometry format
 	Flux_MeshGeometry xReloadedGeometry;
 	Flux_MeshGeometry::LoadFromFile((strOutputDir + "StickFigure.zmesh").c_str(), xReloadedGeometry, 0, false);
-	Zenith_Assert(xReloadedGeometry.GetNumVerts() == uExpectedVertCount, "Reloaded geometry vertex count mismatch");
-	Zenith_Assert(xReloadedGeometry.GetNumIndices() == uExpectedIndexCount, "Reloaded geometry index count mismatch");
-	Zenith_Assert(xReloadedGeometry.GetNumBones() == uExpectedBoneCount, "Reloaded geometry bone count mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded mesh geometry verified: %u verts, %u indices, %u bones",
-		xReloadedGeometry.GetNumVerts(), xReloadedGeometry.GetNumIndices(), xReloadedGeometry.GetNumBones());
+	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumVerts(), uExpectedVertCount, "Reloaded geometry vertex count mismatch");
+	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumIndices(), uExpectedIndexCount, "Reloaded geometry index count mismatch");
+	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumBones(), uExpectedBoneCount, "Reloaded geometry bone count mismatch");
 #endif
 
 	// Reload and verify animations
 	Zenith_AnimationAsset* pxReloadedIdleAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strIdlePath);
-	Zenith_Assert(pxReloadedIdleAsset != nullptr && pxReloadedIdleAsset->GetClip() != nullptr, "Should be able to reload idle animation");
-	Zenith_Assert(pxReloadedIdleAsset->GetClip()->GetName() == "Idle", "Reloaded idle animation name mismatch");
-	Zenith_Assert(FloatEquals(pxReloadedIdleAsset->GetClip()->GetDuration(), 2.0f, 0.01f), "Reloaded idle duration mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded idle animation verified: duration=%.1fs", pxReloadedIdleAsset->GetClip()->GetDuration());
+	ZENITH_ASSERT_TRUE(pxReloadedIdleAsset != nullptr && pxReloadedIdleAsset->GetClip() != nullptr, "Should be able to reload idle animation");
+	ZENITH_ASSERT_EQ(pxReloadedIdleAsset->GetClip()->GetName(), "Idle", "Reloaded idle animation name mismatch");
+	ZENITH_ASSERT_TRUE(FloatEquals(pxReloadedIdleAsset->GetClip()->GetDuration(), 2.0f, 0.01f), "Reloaded idle duration mismatch");
 
 	Zenith_AnimationAsset* pxReloadedWalkAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strWalkPath);
-	Zenith_Assert(pxReloadedWalkAsset != nullptr && pxReloadedWalkAsset->GetClip() != nullptr, "Should be able to reload walk animation");
-	Zenith_Assert(pxReloadedWalkAsset->GetClip()->GetName() == "Walk", "Reloaded walk animation name mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded walk animation verified");
+	ZENITH_ASSERT_TRUE(pxReloadedWalkAsset != nullptr && pxReloadedWalkAsset->GetClip() != nullptr, "Should be able to reload walk animation");
+	ZENITH_ASSERT_EQ(pxReloadedWalkAsset->GetClip()->GetName(), "Walk", "Reloaded walk animation name mismatch");
 
 	Zenith_AnimationAsset* pxReloadedRunAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strRunPath);
-	Zenith_Assert(pxReloadedRunAsset != nullptr && pxReloadedRunAsset->GetClip() != nullptr, "Should be able to reload run animation");
-	Zenith_Assert(pxReloadedRunAsset->GetClip()->GetName() == "Run", "Reloaded run animation name mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded run animation verified");
+	ZENITH_ASSERT_TRUE(pxReloadedRunAsset != nullptr && pxReloadedRunAsset->GetClip() != nullptr, "Should be able to reload run animation");
+	ZENITH_ASSERT_EQ(pxReloadedRunAsset->GetClip()->GetName(), "Run", "Reloaded run animation name mismatch");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureAssetExport verification completed successfully");
 }
 
 //------------------------------------------------------------------------------
@@ -5834,9 +4940,8 @@ void Zenith_UnitTests::TestStickFigureAssetExport()
  * Test that component indices remain valid after another entity's component is removed.
  * This tests the swap-and-pop fix for the component removal data corruption bug.
  */
-void Zenith_UnitTests::TestComponentRemovalIndexUpdate()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestComponentRemovalIndexUpdate...");
+ZENITH_TEST(ECS, ComponentRemovalIndexUpdate) { Zenith_UnitTests::TestComponentRemovalIndexUpdate(); }
+void Zenith_UnitTests::TestComponentRemovalIndexUpdate(){
 
 	// Create a test scene through SceneManager
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentRemovalIndexUpdateScene");
@@ -5859,24 +4964,21 @@ void Zenith_UnitTests::TestComponentRemovalIndexUpdate()
 	// Verify Entity1 still has correct data
 	Zenith_Maths::Vector3 xPos1;
 	xEntity1.GetComponent<Zenith_TransformComponent>().GetPosition(xPos1);
-	Zenith_Assert(xPos1.x == 1.0f, "TestComponentRemovalIndexUpdate: Entity1 position corrupted after Entity2 removal");
+	ZENITH_ASSERT_EQ(xPos1.x, 1.0f, "TestComponentRemovalIndexUpdate: Entity1 position corrupted after Entity2 removal");
 
 	// Verify Entity3 still has correct data (this entity's index likely changed due to swap-and-pop)
 	Zenith_Maths::Vector3 xPos3;
 	xEntity3.GetComponent<Zenith_TransformComponent>().GetPosition(xPos3);
-	Zenith_Assert(xPos3.x == xExpectedPos3.x && xPos3.y == xExpectedPos3.y && xPos3.z == xExpectedPos3.z,
-		"TestComponentRemovalIndexUpdate: Entity3 position corrupted after Entity2 removal");
+	ZENITH_ASSERT_TRUE(xPos3.x == xExpectedPos3.x && xPos3.y == xExpectedPos3.y && xPos3.z == xExpectedPos3.z, "TestComponentRemovalIndexUpdate: Entity3 position corrupted after Entity2 removal");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComponentRemovalIndexUpdate completed successfully");
 }
 
 /**
  * Test that swap-and-pop removal preserves all component data correctly.
  */
-void Zenith_UnitTests::TestComponentSwapAndPop()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestComponentSwapAndPop...");
+ZENITH_TEST(ECS, ComponentSwapAndPop) { Zenith_UnitTests::TestComponentSwapAndPop(); }
+void Zenith_UnitTests::TestComponentSwapAndPop(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentSwapAndPopScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -5905,13 +5007,11 @@ void Zenith_UnitTests::TestComponentSwapAndPop()
 	{
 		if (i == 1) continue; // Removed
 
-		Zenith_Assert(xEntities[i].HasComponent<Zenith_TransformComponent>(),
-			"TestComponentSwapAndPop: Entity lost its TransformComponent unexpectedly");
+		ZENITH_ASSERT_TRUE(xEntities[i].HasComponent<Zenith_TransformComponent>(), "TestComponentSwapAndPop: Entity lost its TransformComponent unexpectedly");
 
 		Zenith_Maths::Vector3 xPos;
 		xEntities[i].GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-		Zenith_Assert(xPos.x == static_cast<float>(i * 10),
-			"TestComponentSwapAndPop: Entity position data corrupted after swap-and-pop");
+		ZENITH_ASSERT_EQ(xPos.x, static_cast<float>(i * 10), "TestComponentSwapAndPop: Entity position data corrupted after swap-and-pop");
 	}
 
 	// Remove entity at index 0 (another swap-and-pop)
@@ -5922,20 +5022,17 @@ void Zenith_UnitTests::TestComponentSwapAndPop()
 	{
 		Zenith_Maths::Vector3 xPos;
 		xEntities[i].GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-		Zenith_Assert(xPos.x == static_cast<float>(i * 10),
-			"TestComponentSwapAndPop: Entity position corrupted after second removal");
+		ZENITH_ASSERT_EQ(xPos.x, static_cast<float>(i * 10), "TestComponentSwapAndPop: Entity position corrupted after second removal");
 	}
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComponentSwapAndPop completed successfully");
 }
 
 /**
  * Test removing multiple components from multiple entities in sequence.
  */
-void Zenith_UnitTests::TestMultipleComponentRemoval()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultipleComponentRemoval...");
+ZENITH_TEST(Core, MultipleComponentRemoval) { Zenith_UnitTests::TestMultipleComponentRemoval(); }
+void Zenith_UnitTests::TestMultipleComponentRemoval(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestMultipleComponentRemovalScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -5965,33 +5062,28 @@ void Zenith_UnitTests::TestMultipleComponentRemoval()
 	xEntity1.RemoveComponent<Zenith_CameraComponent>();
 
 	// Verify Entity2 still has its camera
-	Zenith_Assert(xEntity2.HasComponent<Zenith_CameraComponent>(),
-		"TestMultipleComponentRemoval: Entity2 lost CameraComponent");
+	ZENITH_ASSERT_TRUE(xEntity2.HasComponent<Zenith_CameraComponent>(), "TestMultipleComponentRemoval: Entity2 lost CameraComponent");
 
 	// Remove Entity2's collider
 	xEntity2.RemoveComponent<Zenith_ColliderComponent>();
 
 	// Verify Entity3 still has collider
-	Zenith_Assert(xEntity3.HasComponent<Zenith_ColliderComponent>(),
-		"TestMultipleComponentRemoval: Entity3 lost ColliderComponent");
+	ZENITH_ASSERT_TRUE(xEntity3.HasComponent<Zenith_ColliderComponent>(), "TestMultipleComponentRemoval: Entity3 lost ColliderComponent");
 
 	// Remove Entity2's camera
 	xEntity2.RemoveComponent<Zenith_CameraComponent>();
 
 	// Verify Entity3 still has collider with correct data
-	Zenith_Assert(xEntity3.HasComponent<Zenith_ColliderComponent>(),
-		"TestMultipleComponentRemoval: Entity3 lost ColliderComponent after camera removal");
+	ZENITH_ASSERT_TRUE(xEntity3.HasComponent<Zenith_ColliderComponent>(), "TestMultipleComponentRemoval: Entity3 lost ColliderComponent after camera removal");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMultipleComponentRemoval completed successfully");
 }
 
 /**
  * Stress test component removal with many entities.
  */
-void Zenith_UnitTests::TestComponentRemovalWithManyEntities()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestComponentRemovalWithManyEntities...");
+ZENITH_TEST(ECS, ComponentRemovalWithManyEntities) { Zenith_UnitTests::TestComponentRemovalWithManyEntities(); }
+void Zenith_UnitTests::TestComponentRemovalWithManyEntities(){
 
 	constexpr u_int NUM_ENTITIES = 1000;
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentRemovalWithManyEntitiesScene");
@@ -6017,25 +5109,21 @@ void Zenith_UnitTests::TestComponentRemovalWithManyEntities()
 	// Verify remaining entities have correct data
 	for (u_int i = 1; i < NUM_ENTITIES; i += 2)
 	{
-		Zenith_Assert(xEntities[i].HasComponent<Zenith_TransformComponent>(),
-			"TestComponentRemovalWithManyEntities: Entity lost TransformComponent");
+		ZENITH_ASSERT_TRUE(xEntities[i].HasComponent<Zenith_TransformComponent>(), "TestComponentRemovalWithManyEntities: Entity lost TransformComponent");
 
 		Zenith_Maths::Vector3 xPos;
 		xEntities[i].GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-		Zenith_Assert(xPos.x == static_cast<float>(i),
-			"TestComponentRemovalWithManyEntities: Entity position corrupted");
+		ZENITH_ASSERT_EQ(xPos.x, static_cast<float>(i), "TestComponentRemovalWithManyEntities: Entity position corrupted");
 	}
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComponentRemovalWithManyEntities completed successfully (tested %u entities)", NUM_ENTITIES);
 }
 
 /**
  * Test that entity names are stored in the scene and accessible via GetName()/SetName().
  */
-void Zenith_UnitTests::TestEntityNameFromScene()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEntityNameFromScene...");
+ZENITH_TEST(ECS, EntityNameFromScene) { Zenith_UnitTests::TestEntityNameFromScene(); }
+void Zenith_UnitTests::TestEntityNameFromScene(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestEntityNameFromSceneScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6044,27 +5132,21 @@ void Zenith_UnitTests::TestEntityNameFromScene()
 	Zenith_Entity xEntity(pxSceneData, "TestEntityName");
 
 	// Verify GetName() returns the correct name
-	Zenith_Assert(xEntity.GetName() == "TestEntityName",
-		"TestEntityNameFromScene: GetName() returned wrong name");
+	ZENITH_ASSERT_EQ(xEntity.GetName(), "TestEntityName", "TestEntityNameFromScene: GetName() returned wrong name");
 
 	// Change name via SetName()
 	xEntity.SetName("RenamedEntity");
-	Zenith_Assert(xEntity.GetName() == "RenamedEntity",
-		"TestEntityNameFromScene: SetName() did not update name");
+	ZENITH_ASSERT_EQ(xEntity.GetName(), "RenamedEntity", "TestEntityNameFromScene: SetName() did not update name");
 
 	// Verify name is accessible through the scene's entity API
-	Zenith_Assert(pxSceneData->GetEntity(xEntity.GetEntityID()).GetName() == "RenamedEntity",
-		"TestEntityNameFromScene: Entity in scene does not have correct name");
+	ZENITH_ASSERT_EQ(pxSceneData->GetEntity(xEntity.GetEntityID()).GetName(), "RenamedEntity", "TestEntityNameFromScene: Entity in scene does not have correct name");
 
 	// Create another entity and verify names don't interfere
 	Zenith_Entity xEntity2(pxSceneData, "SecondEntity");
-	Zenith_Assert(xEntity.GetName() == "RenamedEntity",
-		"TestEntityNameFromScene: First entity name changed after creating second");
-	Zenith_Assert(xEntity2.GetName() == "SecondEntity",
-		"TestEntityNameFromScene: Second entity has wrong name");
+	ZENITH_ASSERT_EQ(xEntity.GetName(), "RenamedEntity", "TestEntityNameFromScene: First entity name changed after creating second");
+	ZENITH_ASSERT_EQ(xEntity2.GetName(), "SecondEntity", "TestEntityNameFromScene: Second entity has wrong name");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityNameFromScene completed successfully");
 }
 
 /**
@@ -6072,9 +5154,8 @@ void Zenith_UnitTests::TestEntityNameFromScene()
  * Since Entity is now just a lightweight handle (scene pointer + IDs),
  * copies should reference the same underlying component data.
  */
-void Zenith_UnitTests::TestEntityCopyPreservesAccess()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEntityCopyPreservesAccess...");
+ZENITH_TEST(ECS, EntityCopyPreservesAccess) { Zenith_UnitTests::TestEntityCopyPreservesAccess(); }
+void Zenith_UnitTests::TestEntityCopyPreservesAccess(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestEntityCopyPreservesAccessScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6088,14 +5169,12 @@ void Zenith_UnitTests::TestEntityCopyPreservesAccess()
 	Zenith_Entity xCopy = xOriginal;
 
 	// Verify copy has same entity ID
-	Zenith_Assert(xCopy.GetEntityID() == xOriginal.GetEntityID(),
-		"TestEntityCopyPreservesAccess: Copy has different entity ID");
+	ZENITH_ASSERT_EQ(xCopy.GetEntityID(), xOriginal.GetEntityID(), "TestEntityCopyPreservesAccess: Copy has different entity ID");
 
 	// Verify copy can access the same component data
 	Zenith_Maths::Vector3 xCopyPos;
 	xCopy.GetComponent<Zenith_TransformComponent>().GetPosition(xCopyPos);
-	Zenith_Assert(xCopyPos.x == 42.0f && xCopyPos.y == 43.0f && xCopyPos.z == 44.0f,
-		"TestEntityCopyPreservesAccess: Copy cannot access component data");
+	ZENITH_ASSERT_TRUE(xCopyPos.x == 42.0f && xCopyPos.y == 43.0f && xCopyPos.z == 44.0f, "TestEntityCopyPreservesAccess: Copy cannot access component data");
 
 	// Modify via copy, verify original sees change
 	xCopy.GetComponent<Zenith_TransformComponent>().SetPosition(
@@ -6103,15 +5182,12 @@ void Zenith_UnitTests::TestEntityCopyPreservesAccess()
 
 	Zenith_Maths::Vector3 xOriginalPos;
 	xOriginal.GetComponent<Zenith_TransformComponent>().GetPosition(xOriginalPos);
-	Zenith_Assert(xOriginalPos.x == 100.0f && xOriginalPos.y == 200.0f && xOriginalPos.z == 300.0f,
-		"TestEntityCopyPreservesAccess: Original did not see modification via copy");
+	ZENITH_ASSERT_TRUE(xOriginalPos.x == 100.0f && xOriginalPos.y == 200.0f && xOriginalPos.z == 300.0f, "TestEntityCopyPreservesAccess: Original did not see modification via copy");
 
 	// Verify name access works on copy
-	Zenith_Assert(xCopy.GetName() == "OriginalEntity",
-		"TestEntityCopyPreservesAccess: Copy cannot access entity name");
+	ZENITH_ASSERT_EQ(xCopy.GetName(), "OriginalEntity", "TestEntityCopyPreservesAccess: Copy cannot access entity name");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityCopyPreservesAccess completed successfully");
 }
 
 //------------------------------------------------------------------------------
@@ -6122,39 +5198,31 @@ void Zenith_UnitTests::TestEntityCopyPreservesAccess()
  * Test that all component types are registered with the ComponentMeta registry.
  * Verifies the registration macro and registry initialization work correctly.
  */
-void Zenith_UnitTests::TestComponentMetaRegistration()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestComponentMetaRegistration...");
+ZENITH_TEST(ECS, ComponentMetaRegistration) { Zenith_UnitTests::TestComponentMetaRegistration(); }
+void Zenith_UnitTests::TestComponentMetaRegistration(){
 
 	const auto& xMetasSorted = Zenith_ComponentMetaRegistry::Get().GetAllMetasSorted();
 
 	// Verify we have the expected number of component types (8 components)
-	Zenith_Assert(xMetasSorted.size() >= 8,
-		"TestComponentMetaRegistration: Expected at least 8 registered component types");
+	ZENITH_ASSERT_GE(xMetasSorted.size(), 8, "TestComponentMetaRegistration: Expected at least 8 registered component types");
 
 	// Verify Transform is registered
 	const Zenith_ComponentMeta* pxTransformMeta =
 		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Transform");
-	Zenith_Assert(pxTransformMeta != nullptr,
-		"TestComponentMetaRegistration: Transform not registered");
-	Zenith_Assert(pxTransformMeta->m_pfnCreate != nullptr,
-		"TestComponentMetaRegistration: Transform has no create function");
-	Zenith_Assert(pxTransformMeta->m_pfnHasComponent != nullptr,
-		"TestComponentMetaRegistration: Transform has no hasComponent function");
+	ZENITH_ASSERT_NOT_NULL(pxTransformMeta, "TestComponentMetaRegistration: Transform not registered");
+	ZENITH_ASSERT_NOT_NULL(pxTransformMeta->m_pfnCreate, "TestComponentMetaRegistration: Transform has no create function");
+	ZENITH_ASSERT_NOT_NULL(pxTransformMeta->m_pfnHasComponent, "TestComponentMetaRegistration: Transform has no hasComponent function");
 
 	// Verify Camera is registered
 	const Zenith_ComponentMeta* pxCameraMeta =
 		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Camera");
-	Zenith_Assert(pxCameraMeta != nullptr,
-		"TestComponentMetaRegistration: Camera not registered");
+	ZENITH_ASSERT_NOT_NULL(pxCameraMeta, "TestComponentMetaRegistration: Camera not registered");
 
 	// Verify Model is registered
 	const Zenith_ComponentMeta* pxModelMeta =
 		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Model");
-	Zenith_Assert(pxModelMeta != nullptr,
-		"TestComponentMetaRegistration: Model not registered");
+	ZENITH_ASSERT_NOT_NULL(pxModelMeta, "TestComponentMetaRegistration: Model not registered");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComponentMetaRegistration completed successfully");
 }
 
 /**
@@ -6162,9 +5230,8 @@ void Zenith_UnitTests::TestComponentMetaRegistration()
  * Creates an entity with components, serializes via registry, deserializes
  * and verifies the data is preserved.
  */
-void Zenith_UnitTests::TestComponentMetaSerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestComponentMetaSerialization...");
+ZENITH_TEST(ECS, ComponentMetaSerialization) { Zenith_UnitTests::TestComponentMetaSerialization(); }
+void Zenith_UnitTests::TestComponentMetaSerialization(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentMetaSerializationScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6192,7 +5259,6 @@ void Zenith_UnitTests::TestComponentMetaSerialization()
 	// The deserialization test will verify the data is correct
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComponentMetaSerialization completed successfully");
 }
 
 /**
@@ -6200,9 +5266,8 @@ void Zenith_UnitTests::TestComponentMetaSerialization()
  * Serializes an entity, creates a new entity, deserializes onto it,
  * and verifies the components match.
  */
-void Zenith_UnitTests::TestComponentMetaDeserialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestComponentMetaDeserialization...");
+ZENITH_TEST(ECS, ComponentMetaDeserialization) { Zenith_UnitTests::TestComponentMetaDeserialization(); }
+void Zenith_UnitTests::TestComponentMetaDeserialization(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestComponentMetaDeserializationScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6228,20 +5293,17 @@ void Zenith_UnitTests::TestComponentMetaDeserialization()
 	// Verify transform was copied
 	Zenith_Maths::Vector3 xNewPos;
 	xNew.GetComponent<Zenith_TransformComponent>().GetPosition(xNewPos);
-	Zenith_Assert(xNewPos.x == 111.0f && xNewPos.y == 222.0f && xNewPos.z == 333.0f,
-		"TestComponentMetaDeserialization: Deserialized transform position is wrong");
+	ZENITH_ASSERT_TRUE(xNewPos.x == 111.0f && xNewPos.y == 222.0f && xNewPos.z == 333.0f, "TestComponentMetaDeserialization: Deserialized transform position is wrong");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComponentMetaDeserialization completed successfully");
 }
 
 /**
  * Test that TypeID is consistent for the same component type.
  * Verifies that registering and looking up uses consistent type IDs.
  */
-void Zenith_UnitTests::TestComponentMetaTypeIDConsistency()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestComponentMetaTypeIDConsistency...");
+ZENITH_TEST(ECS, ComponentMetaTypeIDConsistency) { Zenith_UnitTests::TestComponentMetaTypeIDConsistency(); }
+void Zenith_UnitTests::TestComponentMetaTypeIDConsistency(){
 
 	// Get meta for Transform
 	const Zenith_ComponentMeta* pxMeta1 =
@@ -6250,24 +5312,20 @@ void Zenith_UnitTests::TestComponentMetaTypeIDConsistency()
 		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Transform");
 
 	// Verify same pointer returned
-	Zenith_Assert(pxMeta1 == pxMeta2,
-		"TestComponentMetaTypeIDConsistency: Different meta pointers for same type");
+	ZENITH_ASSERT_EQ(pxMeta1, pxMeta2, "TestComponentMetaTypeIDConsistency: Different meta pointers for same type");
 
 	// Verify serialization order is set correctly (Transform should be first)
-	Zenith_Assert(pxMeta1->m_uSerializationOrder == 0,
-		"TestComponentMetaTypeIDConsistency: Transform serialization order is not 0");
+	ZENITH_ASSERT_EQ(pxMeta1->m_uSerializationOrder, 0, "TestComponentMetaTypeIDConsistency: Transform serialization order is not 0");
 
 	// Verify all metas in sorted list have increasing serialization order
 	const auto& xMetasSorted = Zenith_ComponentMetaRegistry::Get().GetAllMetasSorted();
 	u_int uPrevOrder = 0;
 	for (size_t i = 1; i < xMetasSorted.size(); ++i)
 	{
-		Zenith_Assert(xMetasSorted[i]->m_uSerializationOrder >= uPrevOrder,
-			"TestComponentMetaTypeIDConsistency: Metas not sorted by serialization order");
+		ZENITH_ASSERT_GE(xMetasSorted[i]->m_uSerializationOrder, uPrevOrder, "TestComponentMetaTypeIDConsistency: Metas not sorted by serialization order");
 		uPrevOrder = xMetasSorted[i]->m_uSerializationOrder;
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComponentMetaTypeIDConsistency completed successfully");
 }
 
 //------------------------------------------------------------------------------
@@ -6279,31 +5337,23 @@ void Zenith_UnitTests::TestComponentMetaTypeIDConsistency()
  * Verifies that the HasOnAwake, HasOnUpdate, etc. concepts correctly detect
  * whether a component type implements the hook methods.
  */
-void Zenith_UnitTests::TestLifecycleHookDetection()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLifecycleHookDetection...");
+ZENITH_TEST(ECS, LifecycleHookDetection) { Zenith_UnitTests::TestLifecycleHookDetection(); }
+void Zenith_UnitTests::TestLifecycleHookDetection(){
 
 	// Transform doesn't implement lifecycle hooks, so all hooks should be nullptr
 	const Zenith_ComponentMeta* pxTransformMeta =
 		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Transform");
-	Zenith_Assert(pxTransformMeta != nullptr,
-		"TestLifecycleHookDetection: Transform not registered");
+	ZENITH_ASSERT_NOT_NULL(pxTransformMeta, "TestLifecycleHookDetection: Transform not registered");
 
 	// Transform shouldn't have lifecycle hooks (it doesn't implement them)
-	Zenith_Assert(pxTransformMeta->m_pfnOnAwake == nullptr,
-		"TestLifecycleHookDetection: Transform has OnAwake hook (shouldn't)");
-	Zenith_Assert(pxTransformMeta->m_pfnOnStart == nullptr,
-		"TestLifecycleHookDetection: Transform has OnStart hook (shouldn't)");
-	Zenith_Assert(pxTransformMeta->m_pfnOnUpdate == nullptr,
-		"TestLifecycleHookDetection: Transform has OnUpdate hook (shouldn't)");
-	Zenith_Assert(pxTransformMeta->m_pfnOnDestroy == nullptr,
-		"TestLifecycleHookDetection: Transform has OnDestroy hook (shouldn't)");
+	ZENITH_ASSERT_NULL(pxTransformMeta->m_pfnOnAwake, "TestLifecycleHookDetection: Transform has OnAwake hook (shouldn't)");
+	ZENITH_ASSERT_NULL(pxTransformMeta->m_pfnOnStart, "TestLifecycleHookDetection: Transform has OnStart hook (shouldn't)");
+	ZENITH_ASSERT_NULL(pxTransformMeta->m_pfnOnUpdate, "TestLifecycleHookDetection: Transform has OnUpdate hook (shouldn't)");
+	ZENITH_ASSERT_NULL(pxTransformMeta->m_pfnOnDestroy, "TestLifecycleHookDetection: Transform has OnDestroy hook (shouldn't)");
 
 	// Verify registry is finalized
-	Zenith_Assert(Zenith_ComponentMetaRegistry::Get().IsInitialized(),
-		"TestLifecycleHookDetection: Registry not initialized");
+	ZENITH_ASSERT_TRUE(Zenith_ComponentMetaRegistry::Get().IsInitialized(), "TestLifecycleHookDetection: Registry not initialized");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLifecycleHookDetection completed successfully");
 }
 
 /**
@@ -6311,9 +5361,8 @@ void Zenith_UnitTests::TestLifecycleHookDetection()
  * Since our existing components don't implement OnAwake, we verify dispatch
  * doesn't crash and completes successfully.
  */
-void Zenith_UnitTests::TestLifecycleOnAwake()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLifecycleOnAwake...");
+ZENITH_TEST(ECS, LifecycleOnAwake) { Zenith_UnitTests::TestLifecycleOnAwake(); }
+void Zenith_UnitTests::TestLifecycleOnAwake(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestLifecycleOnAwakeScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6324,19 +5373,16 @@ void Zenith_UnitTests::TestLifecycleOnAwake()
 	Zenith_ComponentMetaRegistry::Get().DispatchOnAwake(xEntity);
 
 	// Verify entity is still valid
-	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
-		"TestLifecycleOnAwake: Entity lost TransformComponent after dispatch");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "TestLifecycleOnAwake: Entity lost TransformComponent after dispatch");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLifecycleOnAwake completed successfully");
 }
 
 /**
  * Test that DispatchOnStart correctly calls OnStart on components that have it.
  */
-void Zenith_UnitTests::TestLifecycleOnStart()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLifecycleOnStart...");
+ZENITH_TEST(ECS, LifecycleOnStart) { Zenith_UnitTests::TestLifecycleOnStart(); }
+void Zenith_UnitTests::TestLifecycleOnStart(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestLifecycleOnStartScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6346,19 +5392,16 @@ void Zenith_UnitTests::TestLifecycleOnStart()
 	Zenith_ComponentMetaRegistry::Get().DispatchOnStart(xEntity);
 
 	// Verify entity is still valid
-	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
-		"TestLifecycleOnStart: Entity lost TransformComponent after dispatch");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "TestLifecycleOnStart: Entity lost TransformComponent after dispatch");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLifecycleOnStart completed successfully");
 }
 
 /**
  * Test that DispatchOnUpdate correctly calls OnUpdate on components that have it.
  */
-void Zenith_UnitTests::TestLifecycleOnUpdate()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLifecycleOnUpdate...");
+ZENITH_TEST(ECS, LifecycleOnUpdate) { Zenith_UnitTests::TestLifecycleOnUpdate(); }
+void Zenith_UnitTests::TestLifecycleOnUpdate(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestLifecycleOnUpdateScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6369,19 +5412,16 @@ void Zenith_UnitTests::TestLifecycleOnUpdate()
 	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, fDt);
 
 	// Verify entity is still valid
-	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
-		"TestLifecycleOnUpdate: Entity lost TransformComponent after dispatch");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "TestLifecycleOnUpdate: Entity lost TransformComponent after dispatch");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLifecycleOnUpdate completed successfully");
 }
 
 /**
  * Test that DispatchOnDestroy correctly calls OnDestroy on components that have it.
  */
-void Zenith_UnitTests::TestLifecycleOnDestroy()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLifecycleOnDestroy...");
+ZENITH_TEST(ECS, LifecycleOnDestroy) { Zenith_UnitTests::TestLifecycleOnDestroy(); }
+void Zenith_UnitTests::TestLifecycleOnDestroy(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestLifecycleOnDestroyScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6395,26 +5435,22 @@ void Zenith_UnitTests::TestLifecycleOnDestroy()
 	Zenith_ComponentMetaRegistry::Get().DispatchOnDestroy(xEntity);
 
 	// Verify entity is still valid (OnDestroy doesn't remove components)
-	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
-		"TestLifecycleOnDestroy: Entity lost TransformComponent after dispatch");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "TestLifecycleOnDestroy: Entity lost TransformComponent after dispatch");
 
 	// Verify data is intact
 	Zenith_Maths::Vector3 xPos;
 	xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-	Zenith_Assert(xPos.x == 1.0f && xPos.y == 2.0f && xPos.z == 3.0f,
-		"TestLifecycleOnDestroy: Component data corrupted after dispatch");
+	ZENITH_ASSERT_TRUE(xPos.x == 1.0f && xPos.y == 2.0f && xPos.z == 3.0f, "TestLifecycleOnDestroy: Component data corrupted after dispatch");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLifecycleOnDestroy completed successfully");
 }
 
 /**
  * Test that lifecycle dispatch respects component serialization order.
  * Components with lower serialization order should have their hooks called first.
  */
-void Zenith_UnitTests::TestLifecycleDispatchOrder()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLifecycleDispatchOrder...");
+ZENITH_TEST(ECS, LifecycleDispatchOrder) { Zenith_UnitTests::TestLifecycleDispatchOrder(); }
+void Zenith_UnitTests::TestLifecycleDispatchOrder(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestLifecycleDispatchOrderScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6432,13 +5468,10 @@ void Zenith_UnitTests::TestLifecycleDispatchOrder()
 	Zenith_ComponentMetaRegistry::Get().DispatchOnDestroy(xEntity);
 
 	// Verify all components are still valid
-	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
-		"TestLifecycleDispatchOrder: Entity lost TransformComponent");
-	Zenith_Assert(xEntity.HasComponent<Zenith_CameraComponent>(),
-		"TestLifecycleDispatchOrder: Entity lost CameraComponent");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "TestLifecycleDispatchOrder: Entity lost TransformComponent");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_CameraComponent>(), "TestLifecycleDispatchOrder: Entity lost CameraComponent");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLifecycleDispatchOrder completed successfully");
 }
 
 /**
@@ -6453,9 +5486,8 @@ void Zenith_UnitTests::TestLifecycleDispatchOrder()
  * 2. Use separate loops for each lifecycle stage
  * 3. Re-fetch entity references before each callback
  */
-void Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLifecycleEntityCreationDuringCallback...");
+ZENITH_TEST(ECS, LifecycleEntityCreationDuringCallback) { Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback(); }
+void Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -6497,22 +5529,17 @@ void Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback()
 			Zenith_Entity xEntityRefreshed = pxSceneData->GetEntity(xEntityID);
 
 			// Verify the entity is still accessible
-			Zenith_Assert(xEntityRefreshed.HasComponent<Zenith_TransformComponent>(),
-				"TestLifecycleEntityCreationDuringCallback: Entity lost TransformComponent after sibling creation");
+			ZENITH_ASSERT_TRUE(xEntityRefreshed.HasComponent<Zenith_TransformComponent>(), "TestLifecycleEntityCreationDuringCallback: Entity lost TransformComponent after sibling creation");
 		}
 	}
 
 	// Verify original entity is still valid
-	Zenith_Assert(pxSceneData->EntityExists(xInitialID),
-		"TestLifecycleEntityCreationDuringCallback: Initial entity was invalidated");
-	Zenith_Assert(pxSceneData->GetEntity(xInitialID).GetName() == "InitialEntity",
-		"TestLifecycleEntityCreationDuringCallback: Initial entity name corrupted");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(xInitialID), "TestLifecycleEntityCreationDuringCallback: Initial entity was invalidated");
+	ZENITH_ASSERT_EQ(pxSceneData->GetEntity(xInitialID).GetName(), "InitialEntity", "TestLifecycleEntityCreationDuringCallback: Initial entity name corrupted");
 
 	// Verify entities were created (proves reallocation happened)
-	Zenith_Assert(pxSceneData->GetEntityCount() > uInitialCount + 1,
-		"TestLifecycleEntityCreationDuringCallback: New entities were not created");
+	ZENITH_ASSERT_GT(pxSceneData->GetEntityCount(), uInitialCount + 1, "TestLifecycleEntityCreationDuringCallback: New entities were not created");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLifecycleEntityCreationDuringCallback completed successfully");
 }
 
 /**
@@ -6521,9 +5548,8 @@ void Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback()
  * This is the shared helper function that both the editor and other code
  * should use to dispatch lifecycle callbacks safely.
  */
-void Zenith_UnitTests::TestDispatchFullLifecycleInit()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDispatchFullLifecycleInit...");
+ZENITH_TEST(Core, DispatchFullLifecycleInit) { Zenith_UnitTests::TestDispatchFullLifecycleInit(); }
+void Zenith_UnitTests::TestDispatchFullLifecycleInit(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -6542,39 +5568,29 @@ void Zenith_UnitTests::TestDispatchFullLifecycleInit()
 	Zenith_SceneManager::DispatchFullLifecycleInit();
 
 	// Verify all original entities are still valid and accessible
-	Zenith_Assert(pxSceneData->EntityExists(xID1),
-		"TestDispatchFullLifecycleInit: Entity1 was invalidated");
-	Zenith_Assert(pxSceneData->EntityExists(xID2),
-		"TestDispatchFullLifecycleInit: Entity2 was invalidated");
-	Zenith_Assert(pxSceneData->EntityExists(xID3),
-		"TestDispatchFullLifecycleInit: Entity3 was invalidated");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(xID1), "TestDispatchFullLifecycleInit: Entity1 was invalidated");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(xID2), "TestDispatchFullLifecycleInit: Entity2 was invalidated");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(xID3), "TestDispatchFullLifecycleInit: Entity3 was invalidated");
 
 	// Verify entities are still accessible with correct data
-	Zenith_Assert(pxSceneData->GetEntity(xID1).GetName() == "LifecycleInitEntity1",
-		"TestDispatchFullLifecycleInit: Entity1 name corrupted");
-	Zenith_Assert(pxSceneData->GetEntity(xID2).GetName() == "LifecycleInitEntity2",
-		"TestDispatchFullLifecycleInit: Entity2 name corrupted");
-	Zenith_Assert(pxSceneData->GetEntity(xID3).GetName() == "LifecycleInitEntity3",
-		"TestDispatchFullLifecycleInit: Entity3 name corrupted");
+	ZENITH_ASSERT_EQ(pxSceneData->GetEntity(xID1).GetName(), "LifecycleInitEntity1", "TestDispatchFullLifecycleInit: Entity1 name corrupted");
+	ZENITH_ASSERT_EQ(pxSceneData->GetEntity(xID2).GetName(), "LifecycleInitEntity2", "TestDispatchFullLifecycleInit: Entity2 name corrupted");
+	ZENITH_ASSERT_EQ(pxSceneData->GetEntity(xID3).GetName(), "LifecycleInitEntity3", "TestDispatchFullLifecycleInit: Entity3 name corrupted");
 
 	// Verify components are intact
-	Zenith_Assert(pxSceneData->GetEntity(xID1).HasComponent<Zenith_TransformComponent>(),
-		"TestDispatchFullLifecycleInit: Entity1 lost TransformComponent");
-	Zenith_Assert(pxSceneData->GetEntity(xID2).HasComponent<Zenith_TransformComponent>(),
-		"TestDispatchFullLifecycleInit: Entity2 lost TransformComponent");
-	Zenith_Assert(pxSceneData->GetEntity(xID3).HasComponent<Zenith_TransformComponent>(),
-		"TestDispatchFullLifecycleInit: Entity3 lost TransformComponent");
+	ZENITH_ASSERT_TRUE(pxSceneData->GetEntity(xID1).HasComponent<Zenith_TransformComponent>(), "TestDispatchFullLifecycleInit: Entity1 lost TransformComponent");
+	ZENITH_ASSERT_TRUE(pxSceneData->GetEntity(xID2).HasComponent<Zenith_TransformComponent>(), "TestDispatchFullLifecycleInit: Entity2 lost TransformComponent");
+	ZENITH_ASSERT_TRUE(pxSceneData->GetEntity(xID3).HasComponent<Zenith_TransformComponent>(), "TestDispatchFullLifecycleInit: Entity3 lost TransformComponent");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDispatchFullLifecycleInit completed successfully");
 }
 
 //------------------------------------------------------------------------------
 // ECS Query System Tests (Phase 4)
 //------------------------------------------------------------------------------
 
-void Zenith_UnitTests::TestQuerySingleComponent()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestQuerySingleComponent...");
+ZENITH_TEST(ECS, QuerySingleComponent) { Zenith_UnitTests::TestQuerySingleComponent(); }
+
+void Zenith_UnitTests::TestQuerySingleComponent(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestQuerySingleComponentScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6596,8 +5612,7 @@ void Zenith_UnitTests::TestQuerySingleComponent()
 			uTransformCount++;
 		});
 
-	Zenith_Assert(uTransformCount == 3,
-		"TestQuerySingleComponent: Expected 3 entities with TransformComponent");
+	ZENITH_ASSERT_EQ(uTransformCount, 3, "TestQuerySingleComponent: Expected 3 entities with TransformComponent");
 
 	// Query for CameraComponent - should return 2 entities
 	u_int uCameraCount = 0;
@@ -6606,16 +5621,14 @@ void Zenith_UnitTests::TestQuerySingleComponent()
 			uCameraCount++;
 		});
 
-	Zenith_Assert(uCameraCount == 2,
-		"TestQuerySingleComponent: Expected 2 entities with CameraComponent");
+	ZENITH_ASSERT_EQ(uCameraCount, 2, "TestQuerySingleComponent: Expected 2 entities with CameraComponent");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestQuerySingleComponent completed successfully");
 }
 
-void Zenith_UnitTests::TestQueryMultipleComponents()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestQueryMultipleComponents...");
+ZENITH_TEST(ECS, QueryMultipleComponents) { Zenith_UnitTests::TestQueryMultipleComponents(); }
+
+void Zenith_UnitTests::TestQueryMultipleComponents(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestQueryMultipleComponentsScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6647,23 +5660,20 @@ void Zenith_UnitTests::TestQueryMultipleComponents()
 			xPositions.push_back(xPos.x);
 		});
 
-	Zenith_Assert(uMatchCount == 2,
-		"TestQueryMultipleComponents: Expected 2 entities with both Transform and Camera");
+	ZENITH_ASSERT_EQ(uMatchCount, 2, "TestQueryMultipleComponents: Expected 2 entities with both Transform and Camera");
 
 	// Verify we got entities 1 and 3 (positions 1.0 and 3.0)
 	bool bFoundEntity1 = std::find(xPositions.begin(), xPositions.end(), 1.0f) != xPositions.end();
 	bool bFoundEntity3 = std::find(xPositions.begin(), xPositions.end(), 3.0f) != xPositions.end();
 
-	Zenith_Assert(bFoundEntity1 && bFoundEntity3,
-		"TestQueryMultipleComponents: Did not find expected entities");
+	ZENITH_ASSERT_TRUE(bFoundEntity1 && bFoundEntity3, "TestQueryMultipleComponents: Did not find expected entities");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestQueryMultipleComponents completed successfully");
 }
 
-void Zenith_UnitTests::TestQueryNoMatches()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestQueryNoMatches...");
+ZENITH_TEST(ECS, QueryNoMatches) { Zenith_UnitTests::TestQueryNoMatches(); }
+
+void Zenith_UnitTests::TestQueryNoMatches(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestQueryNoMatchesScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6678,26 +5688,22 @@ void Zenith_UnitTests::TestQueryNoMatches()
 			uCount++;
 		});
 
-	Zenith_Assert(uCount == 0,
-		"TestQueryNoMatches: Expected 0 entities with CameraComponent");
+	ZENITH_ASSERT_EQ(uCount, 0, "TestQueryNoMatches: Expected 0 entities with CameraComponent");
 
 	// Verify Any() returns false
 	bool bHasAny = pxSceneData->Query<Zenith_CameraComponent>().Any();
-	Zenith_Assert(!bHasAny,
-		"TestQueryNoMatches: Any() should return false for empty query");
+	ZENITH_ASSERT_FALSE(bHasAny, "TestQueryNoMatches: Any() should return false for empty query");
 
 	// Verify First() returns INVALID_ENTITY_ID
 	Zenith_EntityID uFirst = pxSceneData->Query<Zenith_CameraComponent>().First();
-	Zenith_Assert(uFirst == INVALID_ENTITY_ID,
-		"TestQueryNoMatches: First() should return INVALID_ENTITY_ID for empty query");
+	ZENITH_ASSERT_EQ(uFirst, INVALID_ENTITY_ID, "TestQueryNoMatches: First() should return INVALID_ENTITY_ID for empty query");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestQueryNoMatches completed successfully");
 }
 
-void Zenith_UnitTests::TestQueryCount()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestQueryCount...");
+ZENITH_TEST(ECS, QueryCount) { Zenith_UnitTests::TestQueryCount(); }
+
+void Zenith_UnitTests::TestQueryCount(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestQueryCountScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6716,26 +5722,22 @@ void Zenith_UnitTests::TestQueryCount()
 
 	// Test Count() for TransformComponent (all 5)
 	u_int uTransformCount = pxSceneData->Query<Zenith_TransformComponent>().Count();
-	Zenith_Assert(uTransformCount == 5,
-		"TestQueryCount: Expected 5 entities with TransformComponent");
+	ZENITH_ASSERT_EQ(uTransformCount, 5, "TestQueryCount: Expected 5 entities with TransformComponent");
 
 	// Test Count() for CameraComponent (3)
 	u_int uCameraCount = pxSceneData->Query<Zenith_CameraComponent>().Count();
-	Zenith_Assert(uCameraCount == 3,
-		"TestQueryCount: Expected 3 entities with CameraComponent");
+	ZENITH_ASSERT_EQ(uCameraCount, 3, "TestQueryCount: Expected 3 entities with CameraComponent");
 
 	// Test Count() for both components (3)
 	u_int uBothCount = pxSceneData->Query<Zenith_TransformComponent, Zenith_CameraComponent>().Count();
-	Zenith_Assert(uBothCount == 3,
-		"TestQueryCount: Expected 3 entities with both Transform and Camera");
+	ZENITH_ASSERT_EQ(uBothCount, 3, "TestQueryCount: Expected 3 entities with both Transform and Camera");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestQueryCount completed successfully");
 }
 
-void Zenith_UnitTests::TestQueryFirstAndAny()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestQueryFirstAndAny...");
+ZENITH_TEST(ECS, QueryFirstAndAny) { Zenith_UnitTests::TestQueryFirstAndAny(); }
+
+void Zenith_UnitTests::TestQueryFirstAndAny(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestQueryFirstAndAnyScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -6750,25 +5752,20 @@ void Zenith_UnitTests::TestQueryFirstAndAny()
 
 	// Test Any() returns true when there are matches
 	bool bHasCamera = pxSceneData->Query<Zenith_CameraComponent>().Any();
-	Zenith_Assert(bHasCamera,
-		"TestQueryFirstAndAny: Any() should return true when matches exist");
+	ZENITH_ASSERT_TRUE(bHasCamera, "TestQueryFirstAndAny: Any() should return true when matches exist");
 
 	// Test First() returns a valid entity ID
 	Zenith_EntityID uFirstCamera = pxSceneData->Query<Zenith_CameraComponent>().First();
-	Zenith_Assert(uFirstCamera != INVALID_ENTITY_ID,
-		"TestQueryFirstAndAny: First() should return valid ID when matches exist");
+	ZENITH_ASSERT_NE(uFirstCamera, INVALID_ENTITY_ID, "TestQueryFirstAndAny: First() should return valid ID when matches exist");
 
 	// Verify the first match actually has the component
-	Zenith_Assert(pxSceneData->EntityHasComponent<Zenith_CameraComponent>(uFirstCamera),
-		"TestQueryFirstAndAny: First() returned entity without expected component");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityHasComponent<Zenith_CameraComponent>(uFirstCamera), "TestQueryFirstAndAny: First() returned entity without expected component");
 
 	// Test First() for TransformComponent returns the first entity ID (1)
 	Zenith_EntityID uFirstTransform = pxSceneData->Query<Zenith_TransformComponent>().First();
-	Zenith_Assert(uFirstTransform != INVALID_ENTITY_ID,
-		"TestQueryFirstAndAny: First() should return valid ID for TransformComponent");
+	ZENITH_ASSERT_NE(uFirstTransform, INVALID_ENTITY_ID, "TestQueryFirstAndAny: First() should return valid ID for TransformComponent");
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestQueryFirstAndAny completed successfully");
 }
 
 //------------------------------------------------------------------------------
@@ -6791,9 +5788,9 @@ static void TestEventCallback(const TestEvent_Custom& xEvent)
 	s_uTestEventLastValue = xEvent.m_uValue;
 }
 
-void Zenith_UnitTests::TestEventSubscribeDispatch()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEventSubscribeDispatch...");
+ZENITH_TEST(ECS, EventSubscribeDispatch) { Zenith_UnitTests::TestEventSubscribeDispatch(); }
+
+void Zenith_UnitTests::TestEventSubscribeDispatch(){
 
 	// Clear any existing state
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
@@ -6803,28 +5800,24 @@ void Zenith_UnitTests::TestEventSubscribeDispatch()
 	// Subscribe to test event
 	Zenith_EventHandle uHandle = Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&TestEventCallback);
 
-	Zenith_Assert(uHandle != INVALID_EVENT_HANDLE,
-		"TestEventSubscribeDispatch: Subscribe should return valid handle");
+	ZENITH_ASSERT_NE(uHandle, INVALID_EVENT_HANDLE, "TestEventSubscribeDispatch: Subscribe should return valid handle");
 
 	// Dispatch event
 	TestEvent_Custom xEvent;
 	xEvent.m_uValue = 42;
 	Zenith_EventDispatcher::Get().Dispatch(xEvent);
 
-	Zenith_Assert(s_uTestEventCallCount == 1,
-		"TestEventSubscribeDispatch: Callback should be called once");
-	Zenith_Assert(s_uTestEventLastValue == 42,
-		"TestEventSubscribeDispatch: Callback should receive correct value");
+	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 1, "TestEventSubscribeDispatch: Callback should be called once");
+	ZENITH_ASSERT_EQ(s_uTestEventLastValue, 42, "TestEventSubscribeDispatch: Callback should receive correct value");
 
 	// Cleanup
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEventSubscribeDispatch completed successfully");
 }
 
-void Zenith_UnitTests::TestEventUnsubscribe()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEventUnsubscribe...");
+ZENITH_TEST(ECS, EventUnsubscribe) { Zenith_UnitTests::TestEventUnsubscribe(); }
+
+void Zenith_UnitTests::TestEventUnsubscribe(){
 
 	// Clear any existing state
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
@@ -6835,16 +5828,14 @@ void Zenith_UnitTests::TestEventUnsubscribe()
 
 	// Verify subscription count
 	u_int uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
-	Zenith_Assert(uCount == 1,
-		"TestEventUnsubscribe: Should have 1 subscriber after subscribe");
+	ZENITH_ASSERT_EQ(uCount, 1, "TestEventUnsubscribe: Should have 1 subscriber after subscribe");
 
 	// Unsubscribe
 	Zenith_EventDispatcher::Get().Unsubscribe(uHandle);
 
 	// Verify subscription count
 	uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
-	Zenith_Assert(uCount == 0,
-		"TestEventUnsubscribe: Should have 0 subscribers after unsubscribe");
+	ZENITH_ASSERT_EQ(uCount, 0, "TestEventUnsubscribe: Should have 0 subscribers after unsubscribe");
 
 	// Dispatch event - callback should NOT be called
 	s_uTestEventCallCount = 0;
@@ -6852,18 +5843,16 @@ void Zenith_UnitTests::TestEventUnsubscribe()
 	xEvent.m_uValue = 100;
 	Zenith_EventDispatcher::Get().Dispatch(xEvent);
 
-	Zenith_Assert(s_uTestEventCallCount == 0,
-		"TestEventUnsubscribe: Callback should not be called after unsubscribe");
+	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 0, "TestEventUnsubscribe: Callback should not be called after unsubscribe");
 
 	// Cleanup
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEventUnsubscribe completed successfully");
 }
 
-void Zenith_UnitTests::TestEventDeferredQueue()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEventDeferredQueue...");
+ZENITH_TEST(ECS, EventDeferredQueue) { Zenith_UnitTests::TestEventDeferredQueue(); }
+
+void Zenith_UnitTests::TestEventDeferredQueue(){
 
 	// Clear any existing state
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
@@ -6879,17 +5868,14 @@ void Zenith_UnitTests::TestEventDeferredQueue()
 	Zenith_EventDispatcher::Get().QueueEvent(xEvent);
 
 	// Verify callback not called yet
-	Zenith_Assert(s_uTestEventCallCount == 0,
-		"TestEventDeferredQueue: Callback should not be called before ProcessDeferredEvents");
+	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 0, "TestEventDeferredQueue: Callback should not be called before ProcessDeferredEvents");
 
 	// Process deferred events
 	Zenith_EventDispatcher::Get().ProcessDeferredEvents();
 
 	// Verify callback was called
-	Zenith_Assert(s_uTestEventCallCount == 1,
-		"TestEventDeferredQueue: Callback should be called after ProcessDeferredEvents");
-	Zenith_Assert(s_uTestEventLastValue == 99,
-		"TestEventDeferredQueue: Callback should receive correct value");
+	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 1, "TestEventDeferredQueue: Callback should be called after ProcessDeferredEvents");
+	ZENITH_ASSERT_EQ(s_uTestEventLastValue, 99, "TestEventDeferredQueue: Callback should receive correct value");
 
 	// Queue and process multiple events
 	s_uTestEventCallCount = 0;
@@ -6899,18 +5885,15 @@ void Zenith_UnitTests::TestEventDeferredQueue()
 	Zenith_EventDispatcher::Get().QueueEvent(xEvent2);
 	Zenith_EventDispatcher::Get().QueueEvent(xEvent3);
 
-	Zenith_Assert(s_uTestEventCallCount == 0,
-		"TestEventDeferredQueue: Callbacks should not be called before processing");
+	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 0, "TestEventDeferredQueue: Callbacks should not be called before processing");
 
 	Zenith_EventDispatcher::Get().ProcessDeferredEvents();
 
-	Zenith_Assert(s_uTestEventCallCount == 2,
-		"TestEventDeferredQueue: Both callbacks should be called after processing");
+	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 2, "TestEventDeferredQueue: Both callbacks should be called after processing");
 
 	// Cleanup
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEventDeferredQueue completed successfully");
 }
 
 // Static variables for multiple subscriber test
@@ -6927,9 +5910,9 @@ static void MultiSubscriber2(const TestEvent_Custom& /*xEvent*/)
 	s_uMultiSub2Count++;
 }
 
-void Zenith_UnitTests::TestEventMultipleSubscribers()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEventMultipleSubscribers...");
+ZENITH_TEST(ECS, EventMultipleSubscribers) { Zenith_UnitTests::TestEventMultipleSubscribers(); }
+
+void Zenith_UnitTests::TestEventMultipleSubscribers(){
 
 	// Clear any existing state
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
@@ -6942,18 +5925,15 @@ void Zenith_UnitTests::TestEventMultipleSubscribers()
 
 	// Verify subscriber count
 	u_int uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
-	Zenith_Assert(uCount == 2,
-		"TestEventMultipleSubscribers: Should have 2 subscribers");
+	ZENITH_ASSERT_EQ(uCount, 2, "TestEventMultipleSubscribers: Should have 2 subscribers");
 
 	// Dispatch event
 	TestEvent_Custom xEvent;
 	xEvent.m_uValue = 10;
 	Zenith_EventDispatcher::Get().Dispatch(xEvent);
 
-	Zenith_Assert(s_uMultiSub1Count == 1,
-		"TestEventMultipleSubscribers: Subscriber1 should be called once");
-	Zenith_Assert(s_uMultiSub2Count == 1,
-		"TestEventMultipleSubscribers: Subscriber2 should be called once");
+	ZENITH_ASSERT_EQ(s_uMultiSub1Count, 1, "TestEventMultipleSubscribers: Subscriber1 should be called once");
+	ZENITH_ASSERT_EQ(s_uMultiSub2Count, 1, "TestEventMultipleSubscribers: Subscriber2 should be called once");
 
 	// Unsubscribe first callback
 	Zenith_EventDispatcher::Get().Unsubscribe(uHandle1);
@@ -6961,20 +5941,17 @@ void Zenith_UnitTests::TestEventMultipleSubscribers()
 	// Dispatch again
 	Zenith_EventDispatcher::Get().Dispatch(xEvent);
 
-	Zenith_Assert(s_uMultiSub1Count == 1,
-		"TestEventMultipleSubscribers: Subscriber1 should not be called after unsubscribe");
-	Zenith_Assert(s_uMultiSub2Count == 2,
-		"TestEventMultipleSubscribers: Subscriber2 should be called again");
+	ZENITH_ASSERT_EQ(s_uMultiSub1Count, 1, "TestEventMultipleSubscribers: Subscriber1 should not be called after unsubscribe");
+	ZENITH_ASSERT_EQ(s_uMultiSub2Count, 2, "TestEventMultipleSubscribers: Subscriber2 should be called again");
 
 	// Cleanup
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEventMultipleSubscribers completed successfully");
 }
 
-void Zenith_UnitTests::TestEventClearSubscriptions()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEventClearSubscriptions...");
+ZENITH_TEST(ECS, EventClearSubscriptions) { Zenith_UnitTests::TestEventClearSubscriptions(); }
+
+void Zenith_UnitTests::TestEventClearSubscriptions(){
 
 	// Clear any existing state
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
@@ -6987,16 +5964,14 @@ void Zenith_UnitTests::TestEventClearSubscriptions()
 
 	// Verify subscriber count
 	u_int uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
-	Zenith_Assert(uCount == 3,
-		"TestEventClearSubscriptions: Should have 3 subscribers");
+	ZENITH_ASSERT_EQ(uCount, 3, "TestEventClearSubscriptions: Should have 3 subscribers");
 
 	// Clear all subscriptions
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
 
 	// Verify subscriber count is now 0
 	uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
-	Zenith_Assert(uCount == 0,
-		"TestEventClearSubscriptions: Should have 0 subscribers after clear");
+	ZENITH_ASSERT_EQ(uCount, 0, "TestEventClearSubscriptions: Should have 0 subscribers after clear");
 
 	// Dispatch event - no callbacks should be called
 	s_uTestEventCallCount = 0;
@@ -7005,19 +5980,17 @@ void Zenith_UnitTests::TestEventClearSubscriptions()
 	TestEvent_Custom xEvent;
 	Zenith_EventDispatcher::Get().Dispatch(xEvent);
 
-	Zenith_Assert(s_uTestEventCallCount == 0 && s_uMultiSub1Count == 0 && s_uMultiSub2Count == 0,
-		"TestEventClearSubscriptions: No callbacks should be called after clear");
+	ZENITH_ASSERT_TRUE(s_uTestEventCallCount == 0 && s_uMultiSub1Count == 0 && s_uMultiSub2Count == 0, "TestEventClearSubscriptions: No callbacks should be called after clear");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEventClearSubscriptions completed successfully");
 }
 
 //------------------------------------------------------------------------------
 // Entity Hierarchy Tests
 //------------------------------------------------------------------------------
 
-void Zenith_UnitTests::TestEntityAddChild()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEntityAddChild...");
+ZENITH_TEST(ECS, EntityAddChild) { Zenith_UnitTests::TestEntityAddChild(); }
+
+void Zenith_UnitTests::TestEntityAddChild(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7030,8 +6003,8 @@ void Zenith_UnitTests::TestEntityAddChild()
 	Zenith_EntityID uChildID = xChild.GetEntityID();
 
 	// Initially, both should have no children
-	Zenith_Assert(xParent.GetChildCount() == 0, "TestEntityAddChild: Parent should have no children initially");
-	Zenith_Assert(!xParent.HasChildren(), "TestEntityAddChild: HasChildren should be false");
+	ZENITH_ASSERT_EQ(xParent.GetChildCount(), 0, "TestEntityAddChild: Parent should have no children initially");
+	ZENITH_ASSERT_FALSE(xParent.HasChildren(), "TestEntityAddChild: HasChildren should be false");
 
 	// Add child using SetParent
 	xChild.SetParent(uParentID);
@@ -7040,18 +6013,17 @@ void Zenith_UnitTests::TestEntityAddChild()
 	Zenith_Entity xChildRef = pxSceneData->GetEntity(uChildID);
 	Zenith_Entity xParentRef = pxSceneData->GetEntity(uParentID);
 
-	Zenith_Assert(xChildRef.GetParentEntityID() == uParentID, "TestEntityAddChild: Child should have parent ID set");
-	Zenith_Assert(xChildRef.HasParent(), "TestEntityAddChild: Child HasParent should be true");
-	Zenith_Assert(xParentRef.GetChildCount() == 1, "TestEntityAddChild: Parent should have 1 child");
-	Zenith_Assert(xParentRef.HasChildren(), "TestEntityAddChild: Parent HasChildren should be true");
-	Zenith_Assert(xParentRef.GetChildEntityIDs().Get(0) == uChildID, "TestEntityAddChild: Parent's child should be correct ID");
+	ZENITH_ASSERT_EQ(xChildRef.GetParentEntityID(), uParentID, "TestEntityAddChild: Child should have parent ID set");
+	ZENITH_ASSERT_TRUE(xChildRef.HasParent(), "TestEntityAddChild: Child HasParent should be true");
+	ZENITH_ASSERT_EQ(xParentRef.GetChildCount(), 1, "TestEntityAddChild: Parent should have 1 child");
+	ZENITH_ASSERT_TRUE(xParentRef.HasChildren(), "TestEntityAddChild: Parent HasChildren should be true");
+	ZENITH_ASSERT_EQ(xParentRef.GetChildEntityIDs().Get(0), uChildID, "TestEntityAddChild: Parent's child should be correct ID");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityAddChild completed successfully");
 }
 
-void Zenith_UnitTests::TestEntityRemoveChild()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEntityRemoveChild...");
+ZENITH_TEST(ECS, EntityRemoveChild) { Zenith_UnitTests::TestEntityRemoveChild(); }
+
+void Zenith_UnitTests::TestEntityRemoveChild(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7065,7 +6037,7 @@ void Zenith_UnitTests::TestEntityRemoveChild()
 
 	// Set parent
 	xChild.SetParent(uParentID);
-	Zenith_Assert(xParent.GetChildCount() == 1, "TestEntityRemoveChild: Parent should have 1 child");
+	ZENITH_ASSERT_EQ(xParent.GetChildCount(), 1, "TestEntityRemoveChild: Parent should have 1 child");
 
 	// Remove parent (unparent child)
 	xChild.SetParent(INVALID_ENTITY_ID);
@@ -7074,17 +6046,16 @@ void Zenith_UnitTests::TestEntityRemoveChild()
 	Zenith_Entity xChildRef = pxSceneData->GetEntity(uChildID);
 	Zenith_Entity xParentRef = pxSceneData->GetEntity(uParentID);
 
-	Zenith_Assert(!xChildRef.HasParent(), "TestEntityRemoveChild: Child should no longer have parent");
-	Zenith_Assert(xChildRef.GetParentEntityID() == INVALID_ENTITY_ID, "TestEntityRemoveChild: Child parent ID should be INVALID");
-	Zenith_Assert(xParentRef.GetChildCount() == 0, "TestEntityRemoveChild: Parent should have no children");
-	Zenith_Assert(!xParentRef.HasChildren(), "TestEntityRemoveChild: Parent HasChildren should be false");
+	ZENITH_ASSERT_FALSE(xChildRef.HasParent(), "TestEntityRemoveChild: Child should no longer have parent");
+	ZENITH_ASSERT_EQ(xChildRef.GetParentEntityID(), INVALID_ENTITY_ID, "TestEntityRemoveChild: Child parent ID should be INVALID");
+	ZENITH_ASSERT_EQ(xParentRef.GetChildCount(), 0, "TestEntityRemoveChild: Parent should have no children");
+	ZENITH_ASSERT_FALSE(xParentRef.HasChildren(), "TestEntityRemoveChild: Parent HasChildren should be false");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityRemoveChild completed successfully");
 }
 
-void Zenith_UnitTests::TestEntityGetChildren()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEntityGetChildren...");
+ZENITH_TEST(ECS, EntityGetChildren) { Zenith_UnitTests::TestEntityGetChildren(); }
+
+void Zenith_UnitTests::TestEntityGetChildren(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7107,7 +6078,7 @@ void Zenith_UnitTests::TestEntityGetChildren()
 
 	// Verify all children are tracked
 	Zenith_Entity xParentRef = pxSceneData->GetEntity(uParentID);
-	Zenith_Assert(xParentRef.GetChildCount() == 3, "TestEntityGetChildren: Parent should have 3 children");
+	ZENITH_ASSERT_EQ(xParentRef.GetChildCount(), 3, "TestEntityGetChildren: Parent should have 3 children");
 
 	Zenith_Vector<Zenith_EntityID> xChildren = xParentRef.GetChildEntityIDs();
 	bool bFoundChild1 = false, bFoundChild2 = false, bFoundChild3 = false;
@@ -7117,14 +6088,13 @@ void Zenith_UnitTests::TestEntityGetChildren()
 		if (xChildren.Get(i) == uChild2ID) bFoundChild2 = true;
 		if (xChildren.Get(i) == uChild3ID) bFoundChild3 = true;
 	}
-	Zenith_Assert(bFoundChild1 && bFoundChild2 && bFoundChild3, "TestEntityGetChildren: All children should be in list");
+	ZENITH_ASSERT_TRUE(bFoundChild1 && bFoundChild2 && bFoundChild3, "TestEntityGetChildren: All children should be in list");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityGetChildren completed successfully");
 }
 
-void Zenith_UnitTests::TestEntityReparenting()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEntityReparenting...");
+ZENITH_TEST(ECS, EntityReparenting) { Zenith_UnitTests::TestEntityReparenting(); }
+
+void Zenith_UnitTests::TestEntityReparenting(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7140,22 +6110,21 @@ void Zenith_UnitTests::TestEntityReparenting()
 
 	// Parent to A
 	xChild.SetParent(uParentAID);
-	Zenith_Assert(xParentA.GetChildCount() == 1, "TestEntityReparenting: ParentA should have 1 child");
-	Zenith_Assert(xParentB.GetChildCount() == 0, "TestEntityReparenting: ParentB should have 0 children");
-	Zenith_Assert(xChild.GetParentEntityID() == uParentAID, "TestEntityReparenting: Child should be parented to A");
+	ZENITH_ASSERT_EQ(xParentA.GetChildCount(), 1, "TestEntityReparenting: ParentA should have 1 child");
+	ZENITH_ASSERT_EQ(xParentB.GetChildCount(), 0, "TestEntityReparenting: ParentB should have 0 children");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParentAID, "TestEntityReparenting: Child should be parented to A");
 
 	// Reparent to B
 	xChild.SetParent(uParentBID);
-	Zenith_Assert(xParentA.GetChildCount() == 0, "TestEntityReparenting: ParentA should now have 0 children");
-	Zenith_Assert(xParentB.GetChildCount() == 1, "TestEntityReparenting: ParentB should now have 1 child");
-	Zenith_Assert(xChild.GetParentEntityID() == uParentBID, "TestEntityReparenting: Child should be parented to B");
+	ZENITH_ASSERT_EQ(xParentA.GetChildCount(), 0, "TestEntityReparenting: ParentA should now have 0 children");
+	ZENITH_ASSERT_EQ(xParentB.GetChildCount(), 1, "TestEntityReparenting: ParentB should now have 1 child");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParentBID, "TestEntityReparenting: Child should be parented to B");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityReparenting completed successfully");
 }
 
-void Zenith_UnitTests::TestEntityChildCleanupOnDelete()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEntityChildCleanupOnDelete...");
+ZENITH_TEST(ECS, EntityChildCleanupOnDelete) { Zenith_UnitTests::TestEntityChildCleanupOnDelete(); }
+
+void Zenith_UnitTests::TestEntityChildCleanupOnDelete(){
 
 	// Note: This test documents expected behavior for entity deletion
 	// In a real implementation, deleting a parent would need to handle children
@@ -7173,18 +6142,17 @@ void Zenith_UnitTests::TestEntityChildCleanupOnDelete()
 	// Set parent
 	xChild.SetParent(uParentID);
 
-	Zenith_Assert(xParent.GetChildCount() == 1, "TestEntityChildCleanupOnDelete: Should have child");
+	ZENITH_ASSERT_EQ(xParent.GetChildCount(), 1, "TestEntityChildCleanupOnDelete: Should have child");
 
 	// Unparent before any deletion (good practice)
 	xChild.SetParent(INVALID_ENTITY_ID);
-	Zenith_Assert(xParent.GetChildCount() == 0, "TestEntityChildCleanupOnDelete: Should have no children after unparent");
+	ZENITH_ASSERT_EQ(xParent.GetChildCount(), 0, "TestEntityChildCleanupOnDelete: Should have no children after unparent");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityChildCleanupOnDelete completed successfully");
 }
 
-void Zenith_UnitTests::TestEntityHierarchySerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEntityHierarchySerialization...");
+ZENITH_TEST(ECS, EntityHierarchySerialization) { Zenith_UnitTests::TestEntityHierarchySerialization(); }
+
+void Zenith_UnitTests::TestEntityHierarchySerialization(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7212,7 +6180,7 @@ void Zenith_UnitTests::TestEntityHierarchySerialization()
 
 	// Children are stored in scene, so parent ID should serialize
 	// The parent's child list is rebuilt when children are loaded and call SetParent
-	Zenith_Assert(xLoadedParent.IsRoot(), "TestEntityHierarchySerialization: Loaded parent should be root");
+	ZENITH_ASSERT_TRUE(xLoadedParent.IsRoot(), "TestEntityHierarchySerialization: Loaded parent should be root");
 
 	// Serialize child entity
 	Zenith_DataStream xChildStream(256);
@@ -7227,19 +6195,17 @@ void Zenith_UnitTests::TestEntityHierarchySerialization()
 	// The actual parent relationship is only rebuilt during full scene loading
 	// So we verify the pending index matches the original parent's index
 	Zenith_TransformComponent& xLoadedChildTransform = xLoadedChild.GetComponent<Zenith_TransformComponent>();
-	Zenith_Assert(xLoadedChildTransform.GetPendingParentFileIndex() == uParentID.m_uIndex,
-		"TestEntityHierarchySerialization: Loaded child should have parent file index preserved");
+	ZENITH_ASSERT_EQ(xLoadedChildTransform.GetPendingParentFileIndex(), uParentID.m_uIndex, "TestEntityHierarchySerialization: Loaded child should have parent file index preserved");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityHierarchySerialization completed successfully");
 }
 
 //------------------------------------------------------------------------------
 // Prefab System Tests
 //------------------------------------------------------------------------------
 
-void Zenith_UnitTests::TestPrefabCreateFromEntity()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPrefabCreateFromEntity...");
+ZENITH_TEST(Prefab, PrefabCreateFromEntity) { Zenith_UnitTests::TestPrefabCreateFromEntity(); }
+
+void Zenith_UnitTests::TestPrefabCreateFromEntity(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7254,16 +6220,15 @@ void Zenith_UnitTests::TestPrefabCreateFromEntity()
 	Zenith_Prefab xPrefab;
 	bool bSuccess = xPrefab.CreateFromEntity(xEntity, "TestPrefab");
 
-	Zenith_Assert(bSuccess, "TestPrefabCreateFromEntity: CreateFromEntity should succeed");
-	Zenith_Assert(xPrefab.IsValid(), "TestPrefabCreateFromEntity: Prefab should be valid");
-	Zenith_Assert(xPrefab.GetName() == "TestPrefab", "TestPrefabCreateFromEntity: Prefab name should match");
+	ZENITH_ASSERT_TRUE(bSuccess, "TestPrefabCreateFromEntity: CreateFromEntity should succeed");
+	ZENITH_ASSERT_TRUE(xPrefab.IsValid(), "TestPrefabCreateFromEntity: Prefab should be valid");
+	ZENITH_ASSERT_EQ(xPrefab.GetName(), "TestPrefab", "TestPrefabCreateFromEntity: Prefab name should match");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPrefabCreateFromEntity completed successfully");
 }
 
-void Zenith_UnitTests::TestPrefabInstantiation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPrefabInstantiation...");
+ZENITH_TEST(Prefab, PrefabInstantiation) { Zenith_UnitTests::TestPrefabInstantiation(); }
+
+void Zenith_UnitTests::TestPrefabInstantiation(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7281,25 +6246,24 @@ void Zenith_UnitTests::TestPrefabInstantiation()
 	Zenith_Entity xInstance = xPrefab.Instantiate(pxSceneData, "PrefabInstance");
 
 	// Verify instance has the transform values from prefab
-	Zenith_Assert(xInstance.HasComponent<Zenith_TransformComponent>(),
-		"TestPrefabInstantiation: Instance should have transform component");
+	ZENITH_ASSERT_TRUE(xInstance.HasComponent<Zenith_TransformComponent>(), "TestPrefabInstantiation: Instance should have transform component");
 
 	Zenith_TransformComponent& xInstanceTransform = xInstance.GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xPos;
 	xInstanceTransform.GetPosition(xPos);
 
 	// Position should match source
-	Zenith_Assert(std::abs(xPos.x - 5.0f) < 0.001f &&
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 5.0f) < 0.001f &&
 	              std::abs(xPos.y - 10.0f) < 0.001f &&
-	              std::abs(xPos.z - 15.0f) < 0.001f,
-		"TestPrefabInstantiation: Instance position should match prefab source");
+	              std::abs(xPos.z - 15.0f) < 0.001f, "TestPrefabInstantiation: Instance position should match prefab source");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPrefabInstantiation completed successfully");
 }
 
-void Zenith_UnitTests::TestPrefabSaveLoadRoundTrip()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPrefabSaveLoadRoundTrip...");
+#ifndef ZENITH_ANDROID // Uses raw std::filesystem::remove with relative paths
+ZENITH_TEST(Prefab, PrefabSaveLoadRoundTrip) { Zenith_UnitTests::TestPrefabSaveLoadRoundTrip(); }
+#endif
+
+void Zenith_UnitTests::TestPrefabSaveLoadRoundTrip(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7315,15 +6279,14 @@ void Zenith_UnitTests::TestPrefabSaveLoadRoundTrip()
 
 	std::string strTempPath = "test_roundtrip.zpfb";
 	bool bSaved = xPrefab.SaveToFile(strTempPath);
-	Zenith_Assert(bSaved, "TestPrefabSaveLoadRoundTrip: Save should succeed");
+	ZENITH_ASSERT_TRUE(bSaved, "TestPrefabSaveLoadRoundTrip: Save should succeed");
 
 	// Load prefab via registry
 	Zenith_Prefab* pxLoadedPrefab = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strTempPath);
-	Zenith_Assert(pxLoadedPrefab != nullptr, "TestPrefabSaveLoadRoundTrip: Load should succeed");
+	ZENITH_ASSERT_NOT_NULL(pxLoadedPrefab, "TestPrefabSaveLoadRoundTrip: Load should succeed");
 	Zenith_Prefab& xLoadedPrefab = *pxLoadedPrefab;
-	Zenith_Assert(xLoadedPrefab.IsValid(), "TestPrefabSaveLoadRoundTrip: Loaded prefab should be valid");
-	Zenith_Assert(xLoadedPrefab.GetName() == "RoundTripPrefab",
-		"TestPrefabSaveLoadRoundTrip: Loaded prefab name should match");
+	ZENITH_ASSERT_TRUE(xLoadedPrefab.IsValid(), "TestPrefabSaveLoadRoundTrip: Loaded prefab should be valid");
+	ZENITH_ASSERT_EQ(xLoadedPrefab.GetName(), "RoundTripPrefab", "TestPrefabSaveLoadRoundTrip: Loaded prefab name should match");
 
 	// Instantiate loaded prefab
 	Zenith_Entity xInstance = xLoadedPrefab.Instantiate(pxSceneData, "LoadedInstance");
@@ -7331,20 +6294,18 @@ void Zenith_UnitTests::TestPrefabSaveLoadRoundTrip()
 	Zenith_Maths::Vector3 xPos;
 	xInstanceTransform.GetPosition(xPos);
 
-	Zenith_Assert(std::abs(xPos.x - 100.0f) < 0.001f &&
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 100.0f) < 0.001f &&
 	              std::abs(xPos.y - 200.0f) < 0.001f &&
-	              std::abs(xPos.z - 300.0f) < 0.001f,
-		"TestPrefabSaveLoadRoundTrip: Instance position should match original");
+	              std::abs(xPos.z - 300.0f) < 0.001f, "TestPrefabSaveLoadRoundTrip: Instance position should match original");
 
 	// Cleanup temp file
 	std::filesystem::remove(strTempPath);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPrefabSaveLoadRoundTrip completed successfully");
 }
 
-void Zenith_UnitTests::TestPrefabOverrides()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPrefabOverrides...");
+ZENITH_TEST(Prefab, PrefabOverrides) { Zenith_UnitTests::TestPrefabOverrides(); }
+
+void Zenith_UnitTests::TestPrefabOverrides(){
 
 	Zenith_Prefab xPrefab;
 
@@ -7358,11 +6319,9 @@ void Zenith_UnitTests::TestPrefabOverrides()
 
 	// Verify override was added
 	const Zenith_Vector<Zenith_PropertyOverride>& xOverrides = xPrefab.GetOverrides();
-	Zenith_Assert(xOverrides.GetSize() == 1, "TestPrefabOverrides: Should have 1 override");
-	Zenith_Assert(xOverrides.Get(0).m_strComponentName == "Transform",
-		"TestPrefabOverrides: Override component name should match");
-	Zenith_Assert(xOverrides.Get(0).m_strPropertyPath == "Position.x",
-		"TestPrefabOverrides: Override property path should match");
+	ZENITH_ASSERT_EQ(xOverrides.GetSize(), 1, "TestPrefabOverrides: Should have 1 override");
+	ZENITH_ASSERT_EQ(xOverrides.Get(0).m_strComponentName, "Transform", "TestPrefabOverrides: Override component name should match");
+	ZENITH_ASSERT_EQ(xOverrides.Get(0).m_strPropertyPath, "Position.x", "TestPrefabOverrides: Override property path should match");
 
 	// Add another override with same path (should replace)
 	Zenith_PropertyOverride xOverride2;
@@ -7373,20 +6332,17 @@ void Zenith_UnitTests::TestPrefabOverrides()
 	xPrefab.AddOverride(std::move(xOverride2));
 
 	// Should still be 1 override (replaced)
-	Zenith_Assert(xPrefab.GetOverrides().GetSize() == 1,
-		"TestPrefabOverrides: Should still have 1 override after replace");
+	ZENITH_ASSERT_EQ(xPrefab.GetOverrides().GetSize(), 1, "TestPrefabOverrides: Should still have 1 override after replace");
 
 	// Clear overrides
 	xPrefab.ClearOverrides();
-	Zenith_Assert(xPrefab.GetOverrides().GetSize() == 0,
-		"TestPrefabOverrides: Should have 0 overrides after clear");
+	ZENITH_ASSERT_EQ(xPrefab.GetOverrides().GetSize(), 0, "TestPrefabOverrides: Should have 0 overrides after clear");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPrefabOverrides completed successfully");
 }
 
-void Zenith_UnitTests::TestPrefabVariantCreation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPrefabVariantCreation...");
+ZENITH_TEST(Prefab, PrefabVariantCreation) { Zenith_UnitTests::TestPrefabVariantCreation(); }
+
+void Zenith_UnitTests::TestPrefabVariantCreation(){
 
 	// Create a base prefab handle (mock - path-based reference)
 	std::string strBasePrefabPath = "test_base_prefab.zpfb";
@@ -7396,51 +6352,45 @@ void Zenith_UnitTests::TestPrefabVariantCreation()
 	Zenith_Prefab xVariant;
 	bool bSuccess = xVariant.CreateAsVariant(xBasePrefabHandle, "VariantPrefab");
 
-	Zenith_Assert(bSuccess, "TestPrefabVariantCreation: CreateAsVariant should succeed");
-	Zenith_Assert(xVariant.IsVariant(), "TestPrefabVariantCreation: Should be marked as variant");
-	Zenith_Assert(xVariant.GetBasePrefab().IsSet(), "TestPrefabVariantCreation: Should have base prefab set");
-	Zenith_Assert(xVariant.GetBasePrefab().GetPath() == strBasePrefabPath,
-		"TestPrefabVariantCreation: Base prefab path should match");
+	ZENITH_ASSERT_TRUE(bSuccess, "TestPrefabVariantCreation: CreateAsVariant should succeed");
+	ZENITH_ASSERT_TRUE(xVariant.IsVariant(), "TestPrefabVariantCreation: Should be marked as variant");
+	ZENITH_ASSERT_TRUE(xVariant.GetBasePrefab().IsSet(), "TestPrefabVariantCreation: Should have base prefab set");
+	ZENITH_ASSERT_EQ(xVariant.GetBasePrefab().GetPath(), strBasePrefabPath, "TestPrefabVariantCreation: Base prefab path should match");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPrefabVariantCreation completed successfully");
 }
 
 //==============================================================================
 // Async Asset Loading Tests
 //==============================================================================
 
-void Zenith_UnitTests::TestAsyncLoadState()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAsyncLoadState...");
+ZENITH_TEST(Asset, AsyncLoadState) { Zenith_UnitTests::TestAsyncLoadState(); }
+
+void Zenith_UnitTests::TestAsyncLoadState(){
 
 	// Test that default state is UNLOADED for unknown paths
 	std::string strUnknownPath = "game:NonExistent/Unknown.ztex";
 	AssetLoadState eState = Zenith_AsyncAssetLoader::GetLoadState(strUnknownPath);
-	Zenith_Assert(eState == AssetLoadState::UNLOADED, "TestAsyncLoadState: Unknown path should be UNLOADED");
+	ZENITH_ASSERT_EQ(eState, AssetLoadState::UNLOADED, "TestAsyncLoadState: Unknown path should be UNLOADED");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadState completed successfully");
 }
 
-void Zenith_UnitTests::TestAsyncLoadRequest()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAsyncLoadRequest...");
+ZENITH_TEST(Asset, AsyncLoadRequest) { Zenith_UnitTests::TestAsyncLoadRequest(); }
+
+void Zenith_UnitTests::TestAsyncLoadRequest(){
 
 	// Cancel any pending loads to reset state
 	Zenith_AsyncAssetLoader::CancelAllPendingLoads();
-	Zenith_Assert(!Zenith_AsyncAssetLoader::HasPendingLoads(),
-		"TestAsyncLoadRequest: After cancel, should have no pending loads");
+	ZENITH_ASSERT_FALSE(Zenith_AsyncAssetLoader::HasPendingLoads(), "TestAsyncLoadRequest: After cancel, should have no pending loads");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadRequest completed successfully");
 }
 
-void Zenith_UnitTests::TestAsyncLoadCompletion()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAsyncLoadCompletion...");
+ZENITH_TEST(Asset, AsyncLoadCompletion) { Zenith_UnitTests::TestAsyncLoadCompletion(); }
+
+void Zenith_UnitTests::TestAsyncLoadCompletion(){
 
 	// Test ProcessCompletedLoads doesn't crash with no pending loads
 	Zenith_AsyncAssetLoader::ProcessCompletedLoads();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadCompletion completed successfully");
 }
 
 //==============================================================================
@@ -7472,34 +6422,35 @@ public:
 	}
 };
 
-void Zenith_UnitTests::TestDataAssetRegistration()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDataAssetRegistration...");
+ZENITH_TEST(Asset, DataAssetRegistration) { Zenith_UnitTests::TestDataAssetRegistration(); }
+
+void Zenith_UnitTests::TestDataAssetRegistration(){
 
 	// Register the test serializable asset type
 	Zenith_AssetRegistry::RegisterAssetType<TestSerializableAsset>();
 
 	// Verify it was registered
 	bool bRegistered = Zenith_AssetRegistry::IsSerializableTypeRegistered("TestSerializableAsset");
-	Zenith_Assert(bRegistered, "TestDataAssetRegistration: TestSerializableAsset should be registered");
+	ZENITH_ASSERT_TRUE(bRegistered, "TestDataAssetRegistration: TestSerializableAsset should be registered");
 
 	// Verify unknown type is not registered
 	bool bUnknown = Zenith_AssetRegistry::IsSerializableTypeRegistered("UnknownType");
-	Zenith_Assert(!bUnknown, "TestDataAssetRegistration: Unknown type should not be registered");
+	ZENITH_ASSERT_FALSE(bUnknown, "TestDataAssetRegistration: Unknown type should not be registered");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDataAssetRegistration completed successfully");
 }
 
-void Zenith_UnitTests::TestDataAssetCreateAndSave()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDataAssetCreateAndSave...");
+#ifndef ZENITH_ANDROID // Uses raw std::filesystem with relative paths
+ZENITH_TEST(Asset, DataAssetCreateAndSave) { Zenith_UnitTests::TestDataAssetCreateAndSave(); }
+#endif
+
+void Zenith_UnitTests::TestDataAssetCreateAndSave(){
 
 	// Ensure type is registered
 	Zenith_AssetRegistry::RegisterAssetType<TestSerializableAsset>();
 
 	// Create a new instance via factory
 	TestSerializableAsset* pxAsset = Zenith_AssetRegistry::Get().Create<TestSerializableAsset>();
-	Zenith_Assert(pxAsset != nullptr, "TestDataAssetCreateAndSave: Failed to create TestSerializableAsset");
+	ZENITH_ASSERT_NOT_NULL(pxAsset, "TestDataAssetCreateAndSave: Failed to create TestSerializableAsset");
 
 	// Set some values
 	pxAsset->m_iTestValue = 100;
@@ -7510,82 +6461,112 @@ void Zenith_UnitTests::TestDataAssetCreateAndSave()
 	std::string strTestPath = "TestData/test_data_asset.zdata";
 	std::filesystem::create_directories("TestData");
 	bool bSaved = Zenith_AssetRegistry::Get().Save(pxAsset, strTestPath);
-	Zenith_Assert(bSaved, "TestDataAssetCreateAndSave: Failed to save TestSerializableAsset");
+	ZENITH_ASSERT_TRUE(bSaved, "TestDataAssetCreateAndSave: Failed to save TestSerializableAsset");
 
 	// Verify file exists
 	bool bExists = std::filesystem::exists(strTestPath);
-	Zenith_Assert(bExists, "TestDataAssetCreateAndSave: Saved file should exist");
+	ZENITH_ASSERT_TRUE(bExists, "TestDataAssetCreateAndSave: Saved file should exist");
 
-	// Note: Asset is managed by registry cache
+	// Clean up so no stale file or cache entry leaks into another test.
+	Zenith_AssetRegistry::Get().Unload(strTestPath);
+	std::filesystem::remove(strTestPath);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDataAssetCreateAndSave completed successfully");
 }
 
-void Zenith_UnitTests::TestDataAssetLoad()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDataAssetLoad...");
+#ifndef ZENITH_ANDROID // Uses raw std::filesystem with relative paths
+ZENITH_TEST(Asset, DataAssetLoad) { Zenith_UnitTests::TestDataAssetLoad(); }
+#endif
+
+void Zenith_UnitTests::TestDataAssetLoad(){
+
+	// Self-contained: save an asset first, then unload and reload from disk.
+	// Previously this assumed TestDataAssetCreateAndSave ran immediately before;
+	// under ZENITH_TEST auto-registration test order is linker-dependent.
+	Zenith_AssetRegistry::RegisterAssetType<TestSerializableAsset>();
+	const std::string strTestPath = "TestData/test_data_asset.zdata";
+	std::filesystem::create_directories("TestData");
+
+	TestSerializableAsset* pxAsset = Zenith_AssetRegistry::Get().Create<TestSerializableAsset>(strTestPath);
+	ZENITH_ASSERT_NOT_NULL(pxAsset, "TestDataAssetLoad: Failed to create asset for setup");
+	if (pxAsset == nullptr) return;
+	pxAsset->m_iTestValue    = 100;
+	pxAsset->m_fTestFloat    = 2.71828f;
+	pxAsset->m_strTestString = "ModifiedValue";
+	bool bSaved = Zenith_AssetRegistry::Get().Save(pxAsset, strTestPath);
+	ZENITH_ASSERT_TRUE(bSaved, "TestDataAssetLoad: Failed to save setup asset");
 
 	// Unload to force reload from disk
-	Zenith_AssetRegistry::Get().Unload("TestData/test_data_asset.zdata");
+	Zenith_AssetRegistry::Get().Unload(strTestPath);
 
-	// Load the asset saved in previous test
-	std::string strTestPath = "TestData/test_data_asset.zdata";
+	// Load the asset just saved
 	TestSerializableAsset* pxLoaded = Zenith_AssetRegistry::Get().Get<TestSerializableAsset>(strTestPath);
-	Zenith_Assert(pxLoaded != nullptr, "TestDataAssetLoad: Failed to load TestSerializableAsset");
+	ZENITH_ASSERT_NOT_NULL(pxLoaded, "TestDataAssetLoad: Failed to load TestSerializableAsset");
+	if (pxLoaded == nullptr) return;
 
 	// Verify loaded values match what we saved
-	Zenith_Assert(pxLoaded->m_iTestValue == 100,
-		"TestDataAssetLoad: Loaded int value should match saved value");
-	Zenith_Assert(std::abs(pxLoaded->m_fTestFloat - 2.71828f) < 0.0001f,
-		"TestDataAssetLoad: Loaded float value should match saved value");
-	Zenith_Assert(pxLoaded->m_strTestString == "ModifiedValue",
-		"TestDataAssetLoad: Loaded string should match saved value");
+	ZENITH_ASSERT_EQ(pxLoaded->m_iTestValue, 100, "TestDataAssetLoad: Loaded int value should match saved value");
+	ZENITH_ASSERT_EQ_FLOAT(pxLoaded->m_fTestFloat, 2.71828f, 0.0001f, "TestDataAssetLoad: Loaded float value should match saved value");
+	ZENITH_ASSERT_EQ(pxLoaded->m_strTestString, "ModifiedValue", "TestDataAssetLoad: Loaded string should match saved value");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDataAssetLoad completed successfully");
+	// Clean up so no stale file or cache entry leaks into another test.
+	Zenith_AssetRegistry::Get().Unload(strTestPath);
+	std::filesystem::remove(strTestPath);
+
 }
 
-void Zenith_UnitTests::TestDataAssetRoundTrip()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDataAssetRoundTrip...");
+#ifndef ZENITH_ANDROID // Uses raw std::filesystem with relative paths
+ZENITH_TEST(Asset, DataAssetRoundTrip) { Zenith_UnitTests::TestDataAssetRoundTrip(); }
+#endif
+
+void Zenith_UnitTests::TestDataAssetRoundTrip(){
 
 	// Ensure type is registered
 	Zenith_AssetRegistry::RegisterAssetType<TestSerializableAsset>();
 
+	// Self-contained: ensure the target directory exists. Earlier tests may
+	// have removed it during their own cleanup, and under ZENITH_TEST auto
+	// registration there's no guarantee this test runs after the one that
+	// creates TestData/.
+	const std::string strPath = "TestData/round_trip_test.zdata";
+	std::filesystem::create_directories("TestData");
+
 	// Create with unique values
 	TestSerializableAsset* pxOriginal = Zenith_AssetRegistry::Get().Create<TestSerializableAsset>();
-	pxOriginal->m_iTestValue = -999;
-	pxOriginal->m_fTestFloat = 123.456f;
+	ZENITH_ASSERT_NOT_NULL(pxOriginal, "TestDataAssetRoundTrip: Failed to create original asset");
+	if (pxOriginal == nullptr) return;
+	pxOriginal->m_iTestValue    = -999;
+	pxOriginal->m_fTestFloat    = 123.456f;
 	pxOriginal->m_strTestString = "RoundTripTest";
 
 	// Save (adds to cache)
-	std::string strPath = "TestData/round_trip_test.zdata";
-	Zenith_AssetRegistry::Get().Save(pxOriginal, strPath);
+	bool bSaved = Zenith_AssetRegistry::Get().Save(pxOriginal, strPath);
+	ZENITH_ASSERT_TRUE(bSaved, "TestDataAssetRoundTrip: Save failed");
+	if (!bSaved) return;
 
 	// Unload to force reload from disk
 	Zenith_AssetRegistry::Get().Unload(strPath);
 
 	// Load
 	TestSerializableAsset* pxLoaded = Zenith_AssetRegistry::Get().Get<TestSerializableAsset>(strPath);
-	Zenith_Assert(pxLoaded != nullptr, "TestDataAssetRoundTrip: Failed to load");
-	Zenith_Assert(pxLoaded->m_iTestValue == -999, "TestDataAssetRoundTrip: Int mismatch");
-	Zenith_Assert(std::abs(pxLoaded->m_fTestFloat - 123.456f) < 0.001f, "TestDataAssetRoundTrip: Float mismatch");
-	Zenith_Assert(pxLoaded->m_strTestString == "RoundTripTest", "TestDataAssetRoundTrip: String mismatch");
+	ZENITH_ASSERT_NOT_NULL(pxLoaded, "TestDataAssetRoundTrip: Failed to load");
+	if (pxLoaded == nullptr) return;
+	ZENITH_ASSERT_EQ(pxLoaded->m_iTestValue, -999, "TestDataAssetRoundTrip: Int mismatch");
+	ZENITH_ASSERT_EQ_FLOAT(pxLoaded->m_fTestFloat, 123.456f, 0.001f, "TestDataAssetRoundTrip: Float mismatch");
+	ZENITH_ASSERT_EQ(pxLoaded->m_strTestString, "RoundTripTest", "TestDataAssetRoundTrip: String mismatch");
 
 	// Clean up test files
-	std::filesystem::remove("TestData/test_data_asset.zdata");
-	std::filesystem::remove("TestData/round_trip_test.zdata");
-	std::filesystem::remove("TestData");
+	Zenith_AssetRegistry::Get().Unload(strPath);
+	std::filesystem::remove(strPath);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDataAssetRoundTrip completed successfully");
 }
 
 //=============================================================================
 // ECS Safety Tests (Circular Hierarchy, Camera Safety)
 //=============================================================================
 
-void Zenith_UnitTests::TestCircularHierarchyPrevention()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCircularHierarchyPrevention...");
+ZENITH_TEST(Core, CircularHierarchyPrevention) { Zenith_UnitTests::TestCircularHierarchyPrevention(); }
+
+void Zenith_UnitTests::TestCircularHierarchyPrevention(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7604,28 +6585,27 @@ void Zenith_UnitTests::TestCircularHierarchyPrevention()
 	xC.SetParent(uB);  // C is child of B
 
 	// Verify initial hierarchy
-	Zenith_Assert(xB.HasParent(), "TestCircularHierarchyPrevention: B should have parent");
-	Zenith_Assert(xB.GetParentEntityID() == uA, "TestCircularHierarchyPrevention: B's parent should be A");
-	Zenith_Assert(xC.GetParentEntityID() == uB, "TestCircularHierarchyPrevention: C's parent should be B");
+	ZENITH_ASSERT_TRUE(xB.HasParent(), "TestCircularHierarchyPrevention: B should have parent");
+	ZENITH_ASSERT_EQ(xB.GetParentEntityID(), uA, "TestCircularHierarchyPrevention: B's parent should be A");
+	ZENITH_ASSERT_EQ(xC.GetParentEntityID(), uB, "TestCircularHierarchyPrevention: C's parent should be B");
 
 	// Try to parent A to C (would create cycle: A -> B -> C -> A)
 	// This should be rejected by the circular hierarchy check
 	xA.SetParent(uC);
 
 	// A should still be root (circular parenting rejected)
-	Zenith_Assert(!xA.HasParent(), "TestCircularHierarchyPrevention: Circular parent should be rejected - A should remain root");
+	ZENITH_ASSERT_FALSE(xA.HasParent(), "TestCircularHierarchyPrevention: Circular parent should be rejected - A should remain root");
 
 	// Clean up
 	Zenith_SceneManager::DestroyImmediate(xC);
 	Zenith_SceneManager::DestroyImmediate(xB);
 	Zenith_SceneManager::DestroyImmediate(xA);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularHierarchyPrevention completed successfully");
 }
 
-void Zenith_UnitTests::TestSelfParentingPrevention()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSelfParentingPrevention...");
+ZENITH_TEST(Core, SelfParentingPrevention) { Zenith_UnitTests::TestSelfParentingPrevention(); }
+
+void Zenith_UnitTests::TestSelfParentingPrevention(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7635,23 +6615,22 @@ void Zenith_UnitTests::TestSelfParentingPrevention()
 	Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 	// Verify initially root
-	Zenith_Assert(!xEntity.HasParent(), "TestSelfParentingPrevention: Entity should start as root");
+	ZENITH_ASSERT_FALSE(xEntity.HasParent(), "TestSelfParentingPrevention: Entity should start as root");
 
 	// Try to parent entity to itself
 	xEntity.SetParent(uEntityID);
 
 	// Should still be root (self-parenting rejected)
-	Zenith_Assert(!xEntity.HasParent(), "TestSelfParentingPrevention: Self-parenting should be rejected");
+	ZENITH_ASSERT_FALSE(xEntity.HasParent(), "TestSelfParentingPrevention: Self-parenting should be rejected");
 
 	// Clean up
 	Zenith_SceneManager::DestroyImmediate(xEntity);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSelfParentingPrevention completed successfully");
 }
 
-void Zenith_UnitTests::TestTryGetMainCameraWhenNotSet()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTryGetMainCameraWhenNotSet...");
+ZENITH_TEST(Core, TryGetMainCameraWhenNotSet) { Zenith_UnitTests::TestTryGetMainCameraWhenNotSet(); }
+
+void Zenith_UnitTests::TestTryGetMainCameraWhenNotSet(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7664,7 +6643,7 @@ void Zenith_UnitTests::TestTryGetMainCameraWhenNotSet()
 
 	// TryGetMainCamera should return nullptr when no camera is set
 	Zenith_CameraComponent* pxCamera = pxSceneData->TryGetMainCamera();
-	Zenith_Assert(pxCamera == nullptr, "TestTryGetMainCameraWhenNotSet: TryGetMainCamera should return nullptr when no camera set");
+	ZENITH_ASSERT_NULL(pxCamera, "TestTryGetMainCameraWhenNotSet: TryGetMainCamera should return nullptr when no camera set");
 
 	// Restore previous camera
 	if (uPreviousCamera != INVALID_ENTITY_ID && pxSceneData->EntityExists(uPreviousCamera))
@@ -7672,12 +6651,11 @@ void Zenith_UnitTests::TestTryGetMainCameraWhenNotSet()
 		pxSceneData->SetMainCameraEntity(uPreviousCamera);
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTryGetMainCameraWhenNotSet completed successfully");
 }
 
-void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDeepHierarchyBuildModelMatrix...");
+ZENITH_TEST(Core, DeepHierarchyBuildModelMatrix) { Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix(); }
+
+void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix(){
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -7711,7 +6689,7 @@ void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix()
 		uActualDepth++;
 		uCurrent = pxSceneData->GetEntity(uCurrent).GetParentEntityID();
 	}
-	Zenith_Assert(uActualDepth == DEPTH - 1, "TestDeepHierarchyBuildModelMatrix: Hierarchy depth should be %u, got %u", DEPTH - 1, uActualDepth);
+	ZENITH_ASSERT_EQ(uActualDepth, DEPTH - 1, "TestDeepHierarchyBuildModelMatrix: Hierarchy depth should be %u, got %u", DEPTH - 1, uActualDepth);
 
 	// BuildModelMatrix should work without infinite loop
 	Zenith_Maths::Matrix4 xMatrix;
@@ -7727,7 +6705,6 @@ void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix()
 		Zenith_SceneManager::DestroyImmediate(xEntity);
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDeepHierarchyBuildModelMatrix completed successfully");
 }
 
 /**
@@ -7735,9 +6712,8 @@ void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix()
  * This tests the fix for TransformComponent destructor accessing the wrong scene
  * when a local test scene is destroyed (not s_xCurrentScene).
  */
-void Zenith_UnitTests::TestLocalSceneDestruction()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLocalSceneDestruction...");
+ZENITH_TEST(Core, LocalSceneDestruction) { Zenith_UnitTests::TestLocalSceneDestruction(); }
+void Zenith_UnitTests::TestLocalSceneDestruction(){
 
 	// Create a scene through SceneManager (not the active scene)
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("LocalDestructionTestScene");
@@ -7758,16 +6734,14 @@ void Zenith_UnitTests::TestLocalSceneDestruction()
 	// which returned the wrong scene, causing memory corruption
 	Zenith_SceneManager::UnloadScene(xTestScene);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLocalSceneDestruction completed successfully");
 }
 
 /**
  * Test that local scene destruction with parent-child hierarchy doesn't crash.
  * This is a more complex test that includes hierarchy relationships.
  */
-void Zenith_UnitTests::TestLocalSceneWithHierarchy()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLocalSceneWithHierarchy...");
+ZENITH_TEST(Core, LocalSceneWithHierarchy) { Zenith_UnitTests::TestLocalSceneWithHierarchy(); }
+void Zenith_UnitTests::TestLocalSceneWithHierarchy(){
 
 	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("LocalHierarchyTestScene");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
@@ -7787,19 +6761,15 @@ void Zenith_UnitTests::TestLocalSceneWithHierarchy()
 		&xParent.GetComponent<Zenith_TransformComponent>());
 
 	// Verify hierarchy was set up correctly
-	Zenith_Assert(xChild1.GetComponent<Zenith_TransformComponent>().HasParent(),
-		"TestLocalSceneWithHierarchy: Child1 should have parent");
-	Zenith_Assert(xChild2.GetComponent<Zenith_TransformComponent>().HasParent(),
-		"TestLocalSceneWithHierarchy: Child2 should have parent");
-	Zenith_Assert(xParent.GetComponent<Zenith_TransformComponent>().GetChildCount() == 2,
-		"TestLocalSceneWithHierarchy: Parent should have 2 children");
+	ZENITH_ASSERT_TRUE(xChild1.GetComponent<Zenith_TransformComponent>().HasParent(), "TestLocalSceneWithHierarchy: Child1 should have parent");
+	ZENITH_ASSERT_TRUE(xChild2.GetComponent<Zenith_TransformComponent>().HasParent(), "TestLocalSceneWithHierarchy: Child2 should have parent");
+	ZENITH_ASSERT_EQ(xParent.GetComponent<Zenith_TransformComponent>().GetChildCount(), 2, "TestLocalSceneWithHierarchy: Parent should have 2 children");
 
 	// Unload the scene - destructor should handle hierarchy cleanup safely
 	// Without the fix, DetachFromParent/DetachAllChildren would crash trying to
 	// access the global scene instead of this scene
 	Zenith_SceneManager::UnloadScene(xTestScene);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLocalSceneWithHierarchy completed successfully");
 }
 
 //------------------------------------------------------------------------------
@@ -7825,9 +6795,10 @@ enum TreeBone
  * Test procedural tree asset loading and verification
  * Assets are generated by GenerateTestAssets() called earlier in main()
  */
-void Zenith_UnitTests::TestProceduralTreeAssetExport()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestProceduralTreeAssetExport (verification only)...");
+#ifndef ZENITH_ANDROID // Asset verification uses std::filesystem with local paths
+ZENITH_TEST(Core, ProceduralTreeAssetExport) { Zenith_UnitTests::TestProceduralTreeAssetExport(); }
+#endif
+void Zenith_UnitTests::TestProceduralTreeAssetExport(){
 
 	// Assets are generated by GenerateTestAssets() called earlier in main()
 	// This test verifies the assets were created correctly and can be loaded
@@ -7843,55 +6814,46 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport()
 	std::string strSwayPath = strOutputDir + "Tree_Sway.zanim";
 
 	// Verify files exist
-	Zenith_Assert(std::filesystem::exists(strSkelPath), "Skeleton file should exist");
-	Zenith_Assert(std::filesystem::exists(strMeshAssetPath), "Mesh asset file should exist");
-	Zenith_Assert(std::filesystem::exists(strSwayPath), "Sway animation file should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strSkelPath), "Skeleton file should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strMeshAssetPath), "Mesh asset file should exist");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strSwayPath), "Sway animation file should exist");
 
 	// Reload and verify skeleton
 	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
-	Zenith_Assert(pxReloadedSkel != nullptr, "Should be able to reload skeleton");
-	Zenith_Assert(pxReloadedSkel->GetNumBones() == uExpectedBoneCount, "Reloaded skeleton should have 9 bones");
-	Zenith_Assert(pxReloadedSkel->HasBone("TrunkLower"), "Reloaded skeleton should have TrunkLower bone");
-	Zenith_Assert(pxReloadedSkel->HasBone("Branch1"), "Reloaded skeleton should have Branch1 bone");
-	Zenith_Assert(pxReloadedSkel->HasBone("Leaves0"), "Reloaded skeleton should have Leaves0 bone");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded skeleton verified: %u bones", pxReloadedSkel->GetNumBones());
+	ZENITH_ASSERT_NOT_NULL(pxReloadedSkel, "Should be able to reload skeleton");
+	ZENITH_ASSERT_EQ(pxReloadedSkel->GetNumBones(), uExpectedBoneCount, "Reloaded skeleton should have 9 bones");
+	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("TrunkLower"), "Reloaded skeleton should have TrunkLower bone");
+	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("Branch1"), "Reloaded skeleton should have Branch1 bone");
+	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("Leaves0"), "Reloaded skeleton should have Leaves0 bone");
 
 	// Reload and verify mesh asset format
 	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshAssetPath);
-	Zenith_Assert(pxReloadedMesh != nullptr, "Should be able to reload mesh asset");
-	Zenith_Assert(pxReloadedMesh->GetNumVerts() == uExpectedVertCount, "Reloaded mesh vertex count mismatch");
-	Zenith_Assert(pxReloadedMesh->GetNumIndices() == uExpectedIndexCount, "Reloaded mesh index count mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded mesh asset verified: %u verts, %u indices",
-		pxReloadedMesh->GetNumVerts(), pxReloadedMesh->GetNumIndices());
+	ZENITH_ASSERT_NOT_NULL(pxReloadedMesh, "Should be able to reload mesh asset");
+	ZENITH_ASSERT_EQ(pxReloadedMesh->GetNumVerts(), uExpectedVertCount, "Reloaded mesh vertex count mismatch");
+	ZENITH_ASSERT_EQ(pxReloadedMesh->GetNumIndices(), uExpectedIndexCount, "Reloaded mesh index count mismatch");
 
 #ifdef ZENITH_TOOLS
 	// Reload and verify Flux_MeshGeometry format
 	Flux_MeshGeometry xReloadedGeometry;
 	Flux_MeshGeometry::LoadFromFile((strOutputDir + "Tree.zmesh").c_str(), xReloadedGeometry, 0, false);
-	Zenith_Assert(xReloadedGeometry.GetNumVerts() == uExpectedVertCount, "Reloaded geometry vertex count mismatch");
-	Zenith_Assert(xReloadedGeometry.GetNumIndices() == uExpectedIndexCount, "Reloaded geometry index count mismatch");
-	Zenith_Assert(xReloadedGeometry.GetNumBones() == uExpectedBoneCount, "Reloaded geometry bone count mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded mesh geometry verified: %u verts, %u indices, %u bones",
-		xReloadedGeometry.GetNumVerts(), xReloadedGeometry.GetNumIndices(), xReloadedGeometry.GetNumBones());
+	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumVerts(), uExpectedVertCount, "Reloaded geometry vertex count mismatch");
+	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumIndices(), uExpectedIndexCount, "Reloaded geometry index count mismatch");
+	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumBones(), uExpectedBoneCount, "Reloaded geometry bone count mismatch");
 
 	// Reload and verify VAT
 	Flux_AnimationTexture* pxReloadedVAT = Flux_AnimationTexture::LoadFromFile(strOutputDir + "Tree_Sway.zanmt");
-	Zenith_Assert(pxReloadedVAT != nullptr, "Should be able to reload VAT");
-	Zenith_Assert(pxReloadedVAT->GetVertexCount() == uExpectedVertCount, "Reloaded VAT vertex count mismatch");
-	Zenith_Assert(pxReloadedVAT->GetNumAnimations() == 1, "Reloaded VAT should have 1 animation");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded VAT verified: %u vertices, %u animations, %u frames",
-		pxReloadedVAT->GetVertexCount(), pxReloadedVAT->GetNumAnimations(), pxReloadedVAT->GetFramesPerAnimation());
+	ZENITH_ASSERT_NOT_NULL(pxReloadedVAT, "Should be able to reload VAT");
+	ZENITH_ASSERT_EQ(pxReloadedVAT->GetVertexCount(), uExpectedVertCount, "Reloaded VAT vertex count mismatch");
+	ZENITH_ASSERT_EQ(pxReloadedVAT->GetNumAnimations(), 1, "Reloaded VAT should have 1 animation");
 	delete pxReloadedVAT;
 #endif
 
 	// Reload and verify animation
 	Zenith_AnimationAsset* pxReloadedSwayAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strSwayPath);
-	Zenith_Assert(pxReloadedSwayAsset != nullptr && pxReloadedSwayAsset->GetClip() != nullptr, "Should be able to reload sway animation");
-	Zenith_Assert(pxReloadedSwayAsset->GetClip()->GetName() == "Sway", "Reloaded sway animation name mismatch");
-	Zenith_Assert(FloatEquals(pxReloadedSwayAsset->GetClip()->GetDuration(), 2.0f, 0.01f), "Reloaded sway duration mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded sway animation verified: duration=%.1fs", pxReloadedSwayAsset->GetClip()->GetDuration());
+	ZENITH_ASSERT_TRUE(pxReloadedSwayAsset != nullptr && pxReloadedSwayAsset->GetClip() != nullptr, "Should be able to reload sway animation");
+	ZENITH_ASSERT_EQ(pxReloadedSwayAsset->GetClip()->GetName(), "Sway", "Reloaded sway animation name mismatch");
+	ZENITH_ASSERT_TRUE(FloatEquals(pxReloadedSwayAsset->GetClip()->GetDuration(), 2.0f, 0.01f), "Reloaded sway duration mismatch");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestProceduralTreeAssetExport verification completed successfully");
 }
 
 //=============================================================================
@@ -7902,9 +6864,9 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport()
 
 #include "AssetHandling/Zenith_MaterialAsset.h"
 
-void Zenith_UnitTests::TestAssetHandleProceduralBoolConversion()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleProceduralBoolConversion...");
+ZENITH_TEST(Asset, AssetHandleProceduralBoolConversion) { Zenith_UnitTests::TestAssetHandleProceduralBoolConversion(); }
+
+void Zenith_UnitTests::TestAssetHandleProceduralBoolConversion(){
 
 	// Create a procedural material via registry
 	auto& xRegistry = Zenith_AssetRegistry::Get();
@@ -7917,13 +6879,13 @@ void Zenith_UnitTests::TestAssetHandleProceduralBoolConversion()
 
 	// The key fix: operator bool() should return true for procedural assets
 	// Previously it only checked if path was set, which is empty for procedural assets
-	Zenith_Assert(static_cast<bool>(xHandle), "Procedural asset handle should be valid (operator bool)");
-	Zenith_Assert(xHandle.GetDirect() == pxMaterial, "GetDirect() should return the procedural material");
-	Zenith_Assert(xHandle.IsLoaded(), "IsLoaded() should return true for procedural asset");
+	ZENITH_ASSERT_TRUE(static_cast<bool>(xHandle), "Procedural asset handle should be valid (operator bool)");
+	ZENITH_ASSERT_EQ(xHandle.GetDirect(), pxMaterial, "GetDirect() should return the procedural material");
+	ZENITH_ASSERT_TRUE(xHandle.IsLoaded(), "IsLoaded() should return true for procedural asset");
 
 	// Path should be empty for procedural assets
-	Zenith_Assert(xHandle.GetPath().empty(), "Procedural asset should have empty path");
-	Zenith_Assert(!xHandle.IsSet(), "IsSet() should return false (no path) for procedural asset");
+	ZENITH_ASSERT_TRUE(xHandle.GetPath().empty(), "Procedural asset should have empty path");
+	ZENITH_ASSERT_FALSE(xHandle.IsSet(), "IsSet() should return false (no path) for procedural asset");
 
 	// Guard pattern that was broken before the fix:
 	// if (!xHandle) { return; } // This would incorrectly return for procedural assets
@@ -7932,44 +6894,42 @@ void Zenith_UnitTests::TestAssetHandleProceduralBoolConversion()
 	{
 		bGuardPassed = true;
 	}
-	Zenith_Assert(bGuardPassed, "Guard pattern 'if (xHandle)' should pass for procedural asset");
+	ZENITH_ASSERT_TRUE(bGuardPassed, "Guard pattern 'if (xHandle)' should pass for procedural asset");
 
 	// Cleanup is automatic via handle destructor
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleProceduralBoolConversion passed");
 }
 
-void Zenith_UnitTests::TestAssetHandlePathBasedBoolConversion()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandlePathBasedBoolConversion...");
+ZENITH_TEST(Asset, AssetHandlePathBasedBoolConversion) { Zenith_UnitTests::TestAssetHandlePathBasedBoolConversion(); }
+
+void Zenith_UnitTests::TestAssetHandlePathBasedBoolConversion(){
 
 	// Create a handle with a path (simulating a file-based asset)
 	MaterialHandle xHandle;
 	xHandle.SetPath("game:Materials/TestMaterial.zmat");
 
 	// operator bool() should return true when path is set
-	Zenith_Assert(static_cast<bool>(xHandle), "Path-based handle should be valid (operator bool)");
-	Zenith_Assert(xHandle.IsSet(), "IsSet() should return true for path-based handle");
-	Zenith_Assert(!xHandle.GetPath().empty(), "GetPath() should return the path");
+	ZENITH_ASSERT_TRUE(static_cast<bool>(xHandle), "Path-based handle should be valid (operator bool)");
+	ZENITH_ASSERT_TRUE(xHandle.IsSet(), "IsSet() should return true for path-based handle");
+	ZENITH_ASSERT_FALSE(xHandle.GetPath().empty(), "GetPath() should return the path");
 
 	// Note: Get() would try to load from registry which may not exist in test
 	// We're testing the bool conversion, not the loading
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandlePathBasedBoolConversion passed");
 }
 
-void Zenith_UnitTests::TestAssetHandleEmptyBoolConversion()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleEmptyBoolConversion...");
+ZENITH_TEST(Asset, AssetHandleEmptyBoolConversion) { Zenith_UnitTests::TestAssetHandleEmptyBoolConversion(); }
+
+void Zenith_UnitTests::TestAssetHandleEmptyBoolConversion(){
 
 	// Default-constructed handle should be invalid
 	MaterialHandle xHandle;
 
-	Zenith_Assert(!static_cast<bool>(xHandle), "Empty handle should be invalid (operator bool)");
-	Zenith_Assert(!xHandle.IsSet(), "Empty handle IsSet() should be false");
-	Zenith_Assert(!xHandle.IsLoaded(), "Empty handle IsLoaded() should be false");
-	Zenith_Assert(xHandle.GetPath().empty(), "Empty handle path should be empty");
-	Zenith_Assert(xHandle.GetDirect() == nullptr, "Empty handle GetDirect() should return nullptr");
+	ZENITH_ASSERT_FALSE(static_cast<bool>(xHandle), "Empty handle should be invalid (operator bool)");
+	ZENITH_ASSERT_FALSE(xHandle.IsSet(), "Empty handle IsSet() should be false");
+	ZENITH_ASSERT_FALSE(xHandle.IsLoaded(), "Empty handle IsLoaded() should be false");
+	ZENITH_ASSERT_TRUE(xHandle.GetPath().empty(), "Empty handle path should be empty");
+	ZENITH_ASSERT_NULL(xHandle.GetDirect(), "Empty handle GetDirect() should return nullptr");
 
 	// Guard pattern should correctly skip empty handles
 	bool bGuardSkipped = true;
@@ -7977,14 +6937,13 @@ void Zenith_UnitTests::TestAssetHandleEmptyBoolConversion()
 	{
 		bGuardSkipped = false;
 	}
-	Zenith_Assert(bGuardSkipped, "Guard pattern 'if (xHandle)' should skip empty handle");
+	ZENITH_ASSERT_TRUE(bGuardSkipped, "Guard pattern 'if (xHandle)' should skip empty handle");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleEmptyBoolConversion passed");
 }
 
-void Zenith_UnitTests::TestAssetHandleSetStoresRef()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleSetStoresRef...");
+ZENITH_TEST(Asset, AssetHandleSetStoresRef) { Zenith_UnitTests::TestAssetHandleSetStoresRef(); }
+
+void Zenith_UnitTests::TestAssetHandleSetStoresRef(){
 
 	// This tests that Set() properly increments reference count
 	auto& xRegistry = Zenith_AssetRegistry::Get();
@@ -7998,25 +6957,21 @@ void Zenith_UnitTests::TestAssetHandleSetStoresRef()
 		xHandle.Set(pxMaterial);
 
 		// Ref count should increase after Set()
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
-			"Set() should increment ref count");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount + 1, "Set() should increment ref count");
 
 		// Copy handle should also increment ref count
 		MaterialHandle xHandleCopy = xHandle;
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 2,
-			"Handle copy should increment ref count");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount + 2, "Handle copy should increment ref count");
 	}
 	// After handles go out of scope, ref count should be back to initial
 
-	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
-		"Ref count should return to initial after handles destroyed");
+	ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount, "Ref count should return to initial after handles destroyed");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleSetStoresRef passed");
 }
 
-void Zenith_UnitTests::TestAssetHandleCopySemantics()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleCopySemantics...");
+ZENITH_TEST(Asset, AssetHandleCopySemantics) { Zenith_UnitTests::TestAssetHandleCopySemantics(); }
+
+void Zenith_UnitTests::TestAssetHandleCopySemantics(){
 
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
@@ -8028,21 +6983,18 @@ void Zenith_UnitTests::TestAssetHandleCopySemantics()
 	{
 		MaterialHandle xHandle1;
 		xHandle1.Set(pxMaterial);
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
-			"Set() should increment ref count");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount + 1, "Set() should increment ref count");
 
 		// Copy constructor
 		MaterialHandle xHandle2(xHandle1);
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 2,
-			"Copy constructor should increment ref count");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount + 2, "Copy constructor should increment ref count");
 
 		// Both handles should return the same pointer
-		Zenith_Assert(xHandle1.GetDirect() == pxMaterial, "Handle1 should return original pointer");
-		Zenith_Assert(xHandle2.GetDirect() == pxMaterial, "Handle2 should return original pointer");
+		ZENITH_ASSERT_EQ(xHandle1.GetDirect(), pxMaterial, "Handle1 should return original pointer");
+		ZENITH_ASSERT_EQ(xHandle2.GetDirect(), pxMaterial, "Handle2 should return original pointer");
 	}
 
-	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
-		"Ref count should return to initial after copy handles destroyed");
+	ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount, "Ref count should return to initial after copy handles destroyed");
 
 	// Test copy assignment
 	{
@@ -8055,26 +7007,21 @@ void Zenith_UnitTests::TestAssetHandleCopySemantics()
 
 		MaterialHandle xHandle2;
 		xHandle2.Set(pxMaterial2);
-		Zenith_Assert(pxMaterial2->GetRefCount() == uMat2InitialRef + 1,
-			"Material2 ref count after Set()");
+		ZENITH_ASSERT_EQ(pxMaterial2->GetRefCount(), uMat2InitialRef + 1, "Material2 ref count after Set()");
 
 		// Copy assignment - should release old, acquire new
 		xHandle2 = xHandle1;
-		Zenith_Assert(pxMaterial2->GetRefCount() == uMat2InitialRef,
-			"Copy assignment should release old material");
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 2,
-			"Copy assignment should increment new material ref");
+		ZENITH_ASSERT_EQ(pxMaterial2->GetRefCount(), uMat2InitialRef, "Copy assignment should release old material");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount + 2, "Copy assignment should increment new material ref");
 	}
 
-	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
-		"Ref count should return to initial after all handles destroyed");
+	ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount, "Ref count should return to initial after all handles destroyed");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleCopySemantics passed");
 }
 
-void Zenith_UnitTests::TestAssetHandleMoveSemantics()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleMoveSemantics...");
+ZENITH_TEST(Asset, AssetHandleMoveSemantics) { Zenith_UnitTests::TestAssetHandleMoveSemantics(); }
+
+void Zenith_UnitTests::TestAssetHandleMoveSemantics(){
 
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
@@ -8086,21 +7033,18 @@ void Zenith_UnitTests::TestAssetHandleMoveSemantics()
 	{
 		MaterialHandle xHandle1;
 		xHandle1.Set(pxMaterial);
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
-			"Set() should increment ref count");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount + 1, "Set() should increment ref count");
 
 		// Move constructor - should NOT change ref count
 		MaterialHandle xHandle2(std::move(xHandle1));
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
-			"Move constructor should NOT change ref count");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount + 1, "Move constructor should NOT change ref count");
 
 		// Source handle should be nullified
-		Zenith_Assert(!xHandle1.IsLoaded(), "Moved-from handle should not be loaded");
-		Zenith_Assert(xHandle2.GetDirect() == pxMaterial, "Moved-to handle should have pointer");
+		ZENITH_ASSERT_FALSE(xHandle1.IsLoaded(), "Moved-from handle should not be loaded");
+		ZENITH_ASSERT_EQ(xHandle2.GetDirect(), pxMaterial, "Moved-to handle should have pointer");
 	}
 
-	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
-		"Ref count should return to initial after moved handle destroyed");
+	ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount, "Ref count should return to initial after moved handle destroyed");
 
 	// Test move assignment
 	{
@@ -8116,22 +7060,18 @@ void Zenith_UnitTests::TestAssetHandleMoveSemantics()
 
 		// Move assignment - should release old, take ownership of new
 		xHandle2 = std::move(xHandle1);
-		Zenith_Assert(pxMaterial2->GetRefCount() == uMat2InitialRef,
-			"Move assignment should release old material");
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
-			"Move assignment should NOT increment new material ref");
-		Zenith_Assert(!xHandle1.IsLoaded(), "Moved-from handle should not be loaded");
+		ZENITH_ASSERT_EQ(pxMaterial2->GetRefCount(), uMat2InitialRef, "Move assignment should release old material");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount + 1, "Move assignment should NOT increment new material ref");
+		ZENITH_ASSERT_FALSE(xHandle1.IsLoaded(), "Moved-from handle should not be loaded");
 	}
 
-	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
-		"Ref count should return to initial after all handles destroyed");
+	ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount, "Ref count should return to initial after all handles destroyed");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleMoveSemantics passed");
 }
 
-void Zenith_UnitTests::TestAssetHandleSetPathReleasesRef()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleSetPathReleasesRef...");
+ZENITH_TEST(Asset, AssetHandleSetPathReleasesRef) { Zenith_UnitTests::TestAssetHandleSetPathReleasesRef(); }
+
+void Zenith_UnitTests::TestAssetHandleSetPathReleasesRef(){
 
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
@@ -8142,25 +7082,22 @@ void Zenith_UnitTests::TestAssetHandleSetPathReleasesRef()
 	{
 		MaterialHandle xHandle;
 		xHandle.Set(pxMaterial);
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
-			"Set() should increment ref count");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount + 1, "Set() should increment ref count");
 
 		// SetPath should release the old cached pointer
 		xHandle.SetPath("game:Materials/NonExistent.zmat");
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
-			"SetPath() should release old cached ref");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount, "SetPath() should release old cached ref");
 
 		// Handle is now path-based, not loaded
-		Zenith_Assert(!xHandle.IsLoaded(), "After SetPath, handle should not be loaded");
-		Zenith_Assert(xHandle.IsSet(), "After SetPath, handle should have path set");
+		ZENITH_ASSERT_FALSE(xHandle.IsLoaded(), "After SetPath, handle should not be loaded");
+		ZENITH_ASSERT_TRUE(xHandle.IsSet(), "After SetPath, handle should have path set");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleSetPathReleasesRef passed");
 }
 
-void Zenith_UnitTests::TestAssetHandleClearReleasesRef()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleClearReleasesRef...");
+ZENITH_TEST(Asset, AssetHandleClearReleasesRef) { Zenith_UnitTests::TestAssetHandleClearReleasesRef(); }
+
+void Zenith_UnitTests::TestAssetHandleClearReleasesRef(){
 
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
@@ -8171,26 +7108,23 @@ void Zenith_UnitTests::TestAssetHandleClearReleasesRef()
 	{
 		MaterialHandle xHandle;
 		xHandle.Set(pxMaterial);
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
-			"Set() should increment ref count");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount + 1, "Set() should increment ref count");
 
 		// Clear should release the ref
 		xHandle.Clear();
-		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
-			"Clear() should release ref");
+		ZENITH_ASSERT_EQ(pxMaterial->GetRefCount(), uInitialRefCount, "Clear() should release ref");
 
 		// Handle should be empty
-		Zenith_Assert(!xHandle.IsLoaded(), "After Clear, handle should not be loaded");
-		Zenith_Assert(!xHandle.IsSet(), "After Clear, handle should not have path set");
-		Zenith_Assert(!static_cast<bool>(xHandle), "After Clear, operator bool should return false");
+		ZENITH_ASSERT_FALSE(xHandle.IsLoaded(), "After Clear, handle should not be loaded");
+		ZENITH_ASSERT_FALSE(xHandle.IsSet(), "After Clear, handle should not have path set");
+		ZENITH_ASSERT_FALSE(static_cast<bool>(xHandle), "After Clear, operator bool should return false");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleClearReleasesRef passed");
 }
 
-void Zenith_UnitTests::TestAssetHandleProceduralComparison()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleProceduralComparison...");
+ZENITH_TEST(Asset, AssetHandleProceduralComparison) { Zenith_UnitTests::TestAssetHandleProceduralComparison(); }
+
+void Zenith_UnitTests::TestAssetHandleProceduralComparison(){
 
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 
@@ -8211,21 +7145,17 @@ void Zenith_UnitTests::TestAssetHandleProceduralComparison()
 	xHandle1Copy.Set(pxMaterial1);
 
 	// Different procedural assets should NOT compare equal
-	Zenith_Assert(!(xHandle1 == xHandle2),
-		"Different procedural assets should not be equal");
-	Zenith_Assert(xHandle1 != xHandle2,
-		"Different procedural assets should compare not-equal");
+	ZENITH_ASSERT_FALSE(xHandle1 == xHandle2, "Different procedural assets should not be equal");
+	ZENITH_ASSERT_NE(xHandle1, xHandle2, "Different procedural assets should compare not-equal");
 
 	// Same procedural asset should compare equal
-	Zenith_Assert(xHandle1 == xHandle1Copy,
-		"Same procedural asset should be equal");
-	Zenith_Assert(!(xHandle1 != xHandle1Copy),
-		"Same procedural asset should not compare not-equal");
+	ZENITH_ASSERT_EQ(xHandle1, xHandle1Copy, "Same procedural asset should be equal");
+	ZENITH_ASSERT_FALSE(xHandle1 != xHandle1Copy, "Same procedural asset should not compare not-equal");
 
 	// Empty handles should compare equal
 	MaterialHandle xEmpty1;
 	MaterialHandle xEmpty2;
-	Zenith_Assert(xEmpty1 == xEmpty2, "Empty handles should be equal");
+	ZENITH_ASSERT_EQ(xEmpty1, xEmpty2, "Empty handles should be equal");
 
 	// Test path-based comparison still works
 	MaterialHandle xPath1;
@@ -8237,23 +7167,23 @@ void Zenith_UnitTests::TestAssetHandleProceduralComparison()
 	MaterialHandle xPath3;
 	xPath3.SetPath("game:Materials/Different.zmat");
 
-	Zenith_Assert(xPath1 == xPath2, "Same path should be equal");
-	Zenith_Assert(xPath1 != xPath3, "Different paths should not be equal");
+	ZENITH_ASSERT_EQ(xPath1, xPath2, "Same path should be equal");
+	ZENITH_ASSERT_NE(xPath1, xPath3, "Different paths should not be equal");
 
 	// Procedural vs path-based should not be equal (even if both valid)
-	Zenith_Assert(xHandle1 != xPath1,
-		"Procedural and path-based handles should not be equal");
+	ZENITH_ASSERT_NE(xHandle1, xPath1, "Procedural and path-based handles should not be equal");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleProceduralComparison passed");
 }
 
 //=============================================================================
 // Model Instance Material Tests (GBuffer rendering bug fix)
 //=============================================================================
 
-void Zenith_UnitTests::TestModelInstanceMaterialSetAndGet()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestModelInstanceMaterialSetAndGet...");
+#ifndef ZENITH_ANDROID // Depends on Windows-generated StickFigure mesh asset
+ZENITH_TEST(Asset, ModelInstanceMaterialSetAndGet) { Zenith_UnitTests::TestModelInstanceMaterialSetAndGet(); }
+#endif
+
+void Zenith_UnitTests::TestModelInstanceMaterialSetAndGet(){
 
 	// Create a procedural material (same pattern as Combat game)
 	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
@@ -8273,32 +7203,28 @@ void Zenith_UnitTests::TestModelInstanceMaterialSetAndGet()
 
 	// Create model instance
 	Flux_ModelInstance* pxInstance = Flux_ModelInstance::CreateFromAsset(pxModelAsset);
-	Zenith_Assert(pxInstance != nullptr, "Failed to create model instance");
+	ZENITH_ASSERT_NOT_NULL(pxInstance, "Failed to create model instance");
 
 	// Model should have at least 1 material slot (blank default added by CreateFromAsset)
-	Zenith_Assert(pxInstance->GetNumMaterials() >= 1,
-		"Model instance should have at least 1 material slot");
+	ZENITH_ASSERT_GE(pxInstance->GetNumMaterials(), 1, "Model instance should have at least 1 material slot");
 
 	// Override material at index 0
 	pxInstance->SetMaterial(0, pxMaterial);
 
 	// CRITICAL TEST: GetMaterial must return the material we just set
 	Zenith_MaterialAsset* pxRetrieved = pxInstance->GetMaterial(0);
-	Zenith_Assert(pxRetrieved != nullptr,
-		"GetMaterial(0) returned nullptr after SetMaterial - this causes GBuffer rendering to skip the mesh");
-	Zenith_Assert(pxRetrieved == pxMaterial,
-		"GetMaterial(0) did not return the same pointer that was passed to SetMaterial");
+	ZENITH_ASSERT_NOT_NULL(pxRetrieved, "GetMaterial(0) returned nullptr after SetMaterial - this causes GBuffer rendering to skip the mesh");
+	ZENITH_ASSERT_EQ(pxRetrieved, pxMaterial, "GetMaterial(0) did not return the same pointer that was passed to SetMaterial");
 
 	// Cleanup
 	pxInstance->Destroy();
 	delete pxInstance;
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestModelInstanceMaterialSetAndGet passed");
 }
 
-void Zenith_UnitTests::TestMaterialHandleCopyPreservesCachedPointer()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMaterialHandleCopyPreservesCachedPointer...");
+ZENITH_TEST(Core, MaterialHandleCopyPreservesCachedPointer) { Zenith_UnitTests::TestMaterialHandleCopyPreservesCachedPointer(); }
+
+void Zenith_UnitTests::TestMaterialHandleCopyPreservesCachedPointer(){
 
 	// Create a procedural material and store in handle (like Combat::g_xEnemyMaterial)
 	MaterialHandle xOriginal;
@@ -8307,30 +7233,27 @@ void Zenith_UnitTests::TestMaterialHandleCopyPreservesCachedPointer()
 	xOriginal.Set(pxMaterial);
 
 	// Verify original handle works
-	Zenith_Assert(xOriginal.GetDirect() == pxMaterial, "Original handle should return the material");
+	ZENITH_ASSERT_EQ(xOriginal.GetDirect(), pxMaterial, "Original handle should return the material");
 
 	// Copy to another handle (like m_xEnemyMaterial = Combat::g_xEnemyMaterial)
 	MaterialHandle xCopy = xOriginal;
 
 	// CRITICAL TEST: Copy must preserve the cached pointer
-	Zenith_Assert(xCopy.GetDirect() != nullptr,
-		"Copied handle returned nullptr - copy assignment failed to preserve cached pointer");
-	Zenith_Assert(xCopy.GetDirect() == pxMaterial,
-		"Copied handle returned different pointer than original");
+	ZENITH_ASSERT_NOT_NULL(xCopy.GetDirect(), "Copied handle returned nullptr - copy assignment failed to preserve cached pointer");
+	ZENITH_ASSERT_EQ(xCopy.GetDirect(), pxMaterial, "Copied handle returned different pointer than original");
 
 	// Verify original still works after copy
-	Zenith_Assert(xOriginal.GetDirect() == pxMaterial, "Original handle should still work after copy");
+	ZENITH_ASSERT_EQ(xOriginal.GetDirect(), pxMaterial, "Original handle should still work after copy");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMaterialHandleCopyPreservesCachedPointer passed");
 }
 
 //=============================================================================
 // Any-State Transition Tests
 //=============================================================================
 
-void Zenith_UnitTests::TestAnyStateTransitionFires()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnyStateTransitionFires...");
+ZENITH_TEST(Core, AnyStateTransitionFires) { Zenith_UnitTests::TestAnyStateTransitionFires(); }
+
+void Zenith_UnitTests::TestAnyStateTransitionFires(){
 
 	Flux_AnimationStateMachine xSM("TestSM");
 	xSM.AddState("Idle");
@@ -8360,21 +7283,20 @@ void Zenith_UnitTests::TestAnyStateTransitionFires()
 	Zenith_SkeletonAsset xSkel;
 	xSM.Update(0.0f, xPose, xSkel);
 
-	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "Should start in Idle");
 
 	// Fire trigger
 	xSM.GetParameters().SetTrigger("HitTrigger");
 	xSM.Update(0.016f, xPose, xSkel);
 
 	// Should be transitioning to Hit
-	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning after trigger");
+	ZENITH_ASSERT_TRUE(xSM.IsTransitioning(), "Should be transitioning after trigger");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnyStateTransitionFires passed");
 }
 
-void Zenith_UnitTests::TestAnyStateTransitionSkipsSelf()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnyStateTransitionSkipsSelf...");
+ZENITH_TEST(Core, AnyStateTransitionSkipsSelf) { Zenith_UnitTests::TestAnyStateTransitionSkipsSelf(); }
+
+void Zenith_UnitTests::TestAnyStateTransitionSkipsSelf(){
 
 	Flux_AnimationStateMachine xSM("TestSM");
 	xSM.AddState("Idle");
@@ -8403,15 +7325,14 @@ void Zenith_UnitTests::TestAnyStateTransitionSkipsSelf()
 	xSM.Update(0.016f, xPose, xSkel);
 
 	// Should NOT be transitioning (self-loop skipped)
-	Zenith_Assert(!xSM.IsTransitioning(), "Any-state should skip self-loop");
-	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should remain in Idle");
+	ZENITH_ASSERT_FALSE(xSM.IsTransitioning(), "Any-state should skip self-loop");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "Should remain in Idle");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnyStateTransitionSkipsSelf passed");
 }
 
-void Zenith_UnitTests::TestAnyStateTransitionPriority()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnyStateTransitionPriority...");
+ZENITH_TEST(Core, AnyStateTransitionPriority) { Zenith_UnitTests::TestAnyStateTransitionPriority(); }
+
+void Zenith_UnitTests::TestAnyStateTransitionPriority(){
 
 	Flux_AnimationStateMachine xSM("TestSM");
 	xSM.AddState("Idle");
@@ -8456,20 +7377,19 @@ void Zenith_UnitTests::TestAnyStateTransitionPriority()
 
 	// Verify priority ordering
 	const Zenith_Vector<Flux_StateTransition>& xAny = xSM.GetAnyStateTransitions();
-	Zenith_Assert(xAny.GetSize() == 2, "Should have 2 any-state transitions");
-	Zenith_Assert(xAny.Get(0).m_iPriority == 100, "First should be highest priority (Death)");
-	Zenith_Assert(xAny.Get(1).m_iPriority == 10, "Second should be lower priority (Hit)");
+	ZENITH_ASSERT_EQ(xAny.GetSize(), 2, "Should have 2 any-state transitions");
+	ZENITH_ASSERT_EQ(xAny.Get(0).m_iPriority, 100, "First should be highest priority (Death)");
+	ZENITH_ASSERT_EQ(xAny.Get(1).m_iPriority, 10, "Second should be lower priority (Hit)");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnyStateTransitionPriority passed");
 }
 
 //=============================================================================
 // AnimatorStateInfo Tests
 //=============================================================================
 
-void Zenith_UnitTests::TestStateInfoStateName()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateInfoStateName...");
+ZENITH_TEST(Core, StateInfoStateName) { Zenith_UnitTests::TestStateInfoStateName(); }
+
+void Zenith_UnitTests::TestStateInfoStateName(){
 
 	Flux_AnimationStateMachine xSM("TestSM");
 	xSM.AddState("Idle");
@@ -8482,15 +7402,14 @@ void Zenith_UnitTests::TestStateInfoStateName()
 	xSM.Update(0.0f, xPose, xSkel);
 
 	Flux_AnimatorStateInfo xInfo = xSM.GetCurrentStateInfo();
-	Zenith_Assert(xInfo.IsName("Idle"), "State name should be Idle");
-	Zenith_Assert(!xInfo.IsName("Walk"), "State name should not be Walk");
+	ZENITH_ASSERT_TRUE(xInfo.IsName("Idle"), "State name should be Idle");
+	ZENITH_ASSERT_FALSE(xInfo.IsName("Walk"), "State name should not be Walk");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateInfoStateName passed");
 }
 
-void Zenith_UnitTests::TestStateInfoNormalizedTime()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateInfoNormalizedTime...");
+ZENITH_TEST(Core, StateInfoNormalizedTime) { Zenith_UnitTests::TestStateInfoNormalizedTime(); }
+
+void Zenith_UnitTests::TestStateInfoNormalizedTime(){
 
 	Flux_AnimationStateMachine xSM("TestSM");
 	xSM.AddState("Idle");
@@ -8503,18 +7422,17 @@ void Zenith_UnitTests::TestStateInfoNormalizedTime()
 	xSM.Update(0.0f, xPose, xSkel);
 
 	Flux_AnimatorStateInfo xInfo = xSM.GetCurrentStateInfo();
-	Zenith_Assert(xInfo.m_fNormalizedTime >= 0.0f, "Normalized time should be >= 0");
+	ZENITH_ASSERT_GE(xInfo.m_fNormalizedTime, 0.0f, "Normalized time should be >= 0");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateInfoNormalizedTime passed");
 }
 
 //=============================================================================
 // CrossFade Tests
 //=============================================================================
 
-void Zenith_UnitTests::TestCrossFadeToState()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeToState...");
+ZENITH_TEST(Animation, CrossFadeToState) { Zenith_UnitTests::TestCrossFadeToState(); }
+
+void Zenith_UnitTests::TestCrossFadeToState(){
 
 	Flux_AnimationStateMachine xSM("TestSM");
 	xSM.AddState("Idle");
@@ -8526,19 +7444,18 @@ void Zenith_UnitTests::TestCrossFadeToState()
 	Zenith_SkeletonAsset xSkel;
 	xSM.Update(0.0f, xPose, xSkel);
 
-	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "Should start in Idle");
 
 	// CrossFade to Walk (no conditions needed)
 	xSM.CrossFade("Walk", 0.2f);
 
-	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning after CrossFade");
+	ZENITH_ASSERT_TRUE(xSM.IsTransitioning(), "Should be transitioning after CrossFade");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeToState passed");
 }
 
-void Zenith_UnitTests::TestCrossFadeToCurrentState()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeToCurrentState...");
+ZENITH_TEST(Animation, CrossFadeToCurrentState) { Zenith_UnitTests::TestCrossFadeToCurrentState(); }
+
+void Zenith_UnitTests::TestCrossFadeToCurrentState(){
 
 	Flux_AnimationStateMachine xSM("TestSM");
 	xSM.AddState("Idle");
@@ -8551,34 +7468,32 @@ void Zenith_UnitTests::TestCrossFadeToCurrentState()
 
 	// CrossFade to current state should be a no-op
 	xSM.CrossFade("Idle", 0.2f);
-	Zenith_Assert(!xSM.IsTransitioning(), "CrossFade to current state should be no-op");
+	ZENITH_ASSERT_FALSE(xSM.IsTransitioning(), "CrossFade to current state should be no-op");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeToCurrentState passed");
 }
 
 //=============================================================================
 // Sub-State Machine Tests
 //=============================================================================
 
-void Zenith_UnitTests::TestSubStateMachineCreation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSubStateMachineCreation...");
+ZENITH_TEST(Core, SubStateMachineCreation) { Zenith_UnitTests::TestSubStateMachineCreation(); }
+
+void Zenith_UnitTests::TestSubStateMachineCreation(){
 
 	Flux_AnimationState xState("Locomotion");
 
-	Zenith_Assert(!xState.IsSubStateMachine(), "Should not be sub-SM initially");
+	ZENITH_ASSERT_FALSE(xState.IsSubStateMachine(), "Should not be sub-SM initially");
 
 	Flux_AnimationStateMachine* pxSubSM = xState.CreateSubStateMachine("LocomotionSM");
-	Zenith_Assert(pxSubSM != nullptr, "Sub-SM should be created");
-	Zenith_Assert(xState.IsSubStateMachine(), "Should be sub-SM after creation");
-	Zenith_Assert(pxSubSM->GetName() == "LocomotionSM", "Sub-SM name should match");
+	ZENITH_ASSERT_NOT_NULL(pxSubSM, "Sub-SM should be created");
+	ZENITH_ASSERT_TRUE(xState.IsSubStateMachine(), "Should be sub-SM after creation");
+	ZENITH_ASSERT_EQ(pxSubSM->GetName(), "LocomotionSM", "Sub-SM name should match");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSubStateMachineCreation passed");
 }
 
-void Zenith_UnitTests::TestSubStateMachineSharedParameters()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSubStateMachineSharedParameters...");
+ZENITH_TEST(Core, SubStateMachineSharedParameters) { Zenith_UnitTests::TestSubStateMachineSharedParameters(); }
+
+void Zenith_UnitTests::TestSubStateMachineSharedParameters(){
 
 	Flux_AnimationStateMachine xParentSM("ParentSM");
 	xParentSM.GetParameters().AddFloat("Speed", 0.0f);
@@ -8592,81 +7507,76 @@ void Zenith_UnitTests::TestSubStateMachineSharedParameters()
 
 	// Setting a parameter on parent should be visible in child
 	xParentSM.GetParameters().SetFloat("Speed", 5.0f);
-	Zenith_Assert(pxSubSM->GetParameters().GetFloat("Speed") == 5.0f,
-		"Child should see parent's parameter value");
+	ZENITH_ASSERT_EQ(pxSubSM->GetParameters().GetFloat("Speed"), 5.0f, "Child should see parent's parameter value");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSubStateMachineSharedParameters passed");
 }
 
 //=============================================================================
 // Animation Layer Tests
 //=============================================================================
 
-void Zenith_UnitTests::TestLayerCreation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLayerCreation...");
+ZENITH_TEST(Animation, LayerCreation) { Zenith_UnitTests::TestLayerCreation(); }
+
+void Zenith_UnitTests::TestLayerCreation(){
 
 	Flux_AnimationController xController;
 
-	Zenith_Assert(!xController.HasLayers(), "Should have no layers initially");
-	Zenith_Assert(xController.GetLayerCount() == 0, "Layer count should be 0");
+	ZENITH_ASSERT_FALSE(xController.HasLayers(), "Should have no layers initially");
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 0, "Layer count should be 0");
 
 	Flux_AnimationLayer* pxBase = xController.AddLayer("Base");
-	Zenith_Assert(pxBase != nullptr, "Base layer should be created");
-	Zenith_Assert(xController.HasLayers(), "Should have layers after adding");
-	Zenith_Assert(xController.GetLayerCount() == 1, "Layer count should be 1");
-	Zenith_Assert(pxBase->GetName() == "Base", "Layer name should match");
-	Zenith_Assert(pxBase->GetWeight() == 1.0f, "Default weight should be 1.0");
-	Zenith_Assert(pxBase->GetBlendMode() == LAYER_BLEND_OVERRIDE, "Default blend mode should be Override");
+	ZENITH_ASSERT_NOT_NULL(pxBase, "Base layer should be created");
+	ZENITH_ASSERT_TRUE(xController.HasLayers(), "Should have layers after adding");
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 1, "Layer count should be 1");
+	ZENITH_ASSERT_EQ(pxBase->GetName(), "Base", "Layer name should match");
+	ZENITH_ASSERT_EQ(pxBase->GetWeight(), 1.0f, "Default weight should be 1.0");
+	ZENITH_ASSERT_EQ(pxBase->GetBlendMode(), LAYER_BLEND_OVERRIDE, "Default blend mode should be Override");
 
 	Flux_AnimationLayer* pxUpperBody = xController.AddLayer("UpperBody");
-	Zenith_Assert(xController.GetLayerCount() == 2, "Layer count should be 2");
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 2, "Layer count should be 2");
 	pxUpperBody->SetBlendMode(LAYER_BLEND_ADDITIVE);
-	Zenith_Assert(pxUpperBody->GetBlendMode() == LAYER_BLEND_ADDITIVE, "Blend mode should be Additive");
+	ZENITH_ASSERT_EQ(pxUpperBody->GetBlendMode(), LAYER_BLEND_ADDITIVE, "Blend mode should be Additive");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLayerCreation passed");
 }
 
-void Zenith_UnitTests::TestLayerWeightZero()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLayerWeightZero...");
+ZENITH_TEST(Animation, LayerWeightZero) { Zenith_UnitTests::TestLayerWeightZero(); }
+
+void Zenith_UnitTests::TestLayerWeightZero(){
 
 	Flux_AnimationLayer xLayer("Test");
 	xLayer.SetWeight(0.0f);
-	Zenith_Assert(xLayer.GetWeight() == 0.0f, "Weight should be 0");
+	ZENITH_ASSERT_EQ(xLayer.GetWeight(), 0.0f, "Weight should be 0");
 
 	xLayer.SetWeight(0.5f);
-	Zenith_Assert(xLayer.GetWeight() == 0.5f, "Weight should be 0.5");
+	ZENITH_ASSERT_EQ(xLayer.GetWeight(), 0.5f, "Weight should be 0.5");
 
 	// Clamping test
 	xLayer.SetWeight(2.0f);
-	Zenith_Assert(xLayer.GetWeight() == 1.0f, "Weight should be clamped to 1.0");
+	ZENITH_ASSERT_EQ(xLayer.GetWeight(), 1.0f, "Weight should be clamped to 1.0");
 
 	xLayer.SetWeight(-1.0f);
-	Zenith_Assert(xLayer.GetWeight() == 0.0f, "Weight should be clamped to 0.0");
+	ZENITH_ASSERT_EQ(xLayer.GetWeight(), 0.0f, "Weight should be clamped to 0.0");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLayerWeightZero passed");
 }
 
 //=============================================================================
 // Tween System Tests - Easing Functions
 //=============================================================================
 
-void Zenith_UnitTests::TestEasingLinear()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEasingLinear...");
+ZENITH_TEST(Tween, EasingLinear) { Zenith_UnitTests::TestEasingLinear(); }
 
-	Zenith_Assert(Zenith_ApplyEasing(EASING_LINEAR, 0.0f) == 0.0f, "Linear easing at 0 should be 0");
-	Zenith_Assert(Zenith_ApplyEasing(EASING_LINEAR, 0.5f) == 0.5f, "Linear easing at 0.5 should be 0.5");
-	Zenith_Assert(Zenith_ApplyEasing(EASING_LINEAR, 1.0f) == 1.0f, "Linear easing at 1 should be 1");
-	Zenith_Assert(Zenith_ApplyEasing(EASING_LINEAR, 0.25f) == 0.25f, "Linear easing at 0.25 should be 0.25");
+void Zenith_UnitTests::TestEasingLinear(){
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEasingLinear passed");
+	ZENITH_ASSERT_EQ(Zenith_ApplyEasing(EASING_LINEAR, 0.0f), 0.0f, "Linear easing at 0 should be 0");
+	ZENITH_ASSERT_EQ(Zenith_ApplyEasing(EASING_LINEAR, 0.5f), 0.5f, "Linear easing at 0.5 should be 0.5");
+	ZENITH_ASSERT_EQ(Zenith_ApplyEasing(EASING_LINEAR, 1.0f), 1.0f, "Linear easing at 1 should be 1");
+	ZENITH_ASSERT_EQ(Zenith_ApplyEasing(EASING_LINEAR, 0.25f), 0.25f, "Linear easing at 0.25 should be 0.25");
+
 }
 
-void Zenith_UnitTests::TestEasingEndpoints()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEasingEndpoints...");
+ZENITH_TEST(Tween, EasingEndpoints) { Zenith_UnitTests::TestEasingEndpoints(); }
+
+void Zenith_UnitTests::TestEasingEndpoints(){
 
 	const float fEpsilon = 0.001f;
 
@@ -8677,52 +7587,49 @@ void Zenith_UnitTests::TestEasingEndpoints()
 		float fAtZero = Zenith_ApplyEasing(eType, 0.0f);
 		float fAtOne = Zenith_ApplyEasing(eType, 1.0f);
 
-		Zenith_Assert(glm::abs(fAtZero) < fEpsilon, "Easing at 0 should be ~0");
-		Zenith_Assert(glm::abs(fAtOne - 1.0f) < fEpsilon, "Easing at 1 should be ~1");
+		ZENITH_ASSERT_LT(glm::abs(fAtZero), fEpsilon, "Easing at 0 should be ~0");
+		ZENITH_ASSERT_LT(glm::abs(fAtOne - 1.0f), fEpsilon, "Easing at 1 should be ~1");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEasingEndpoints passed");
 }
 
-void Zenith_UnitTests::TestEasingQuadOut()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEasingQuadOut...");
+ZENITH_TEST(Tween, EasingQuadOut) { Zenith_UnitTests::TestEasingQuadOut(); }
+
+void Zenith_UnitTests::TestEasingQuadOut(){
 
 	// QuadOut starts fast, ends slow
 	// At midpoint, output should be > 0.5 (since it's decelerating)
 	float fMid = Zenith_ApplyEasing(EASING_QUAD_OUT, 0.5f);
-	Zenith_Assert(fMid > 0.5f, "QuadOut at 0.5 should be > 0.5 (decelerating curve)");
-	Zenith_Assert(fMid < 1.0f, "QuadOut at 0.5 should be < 1.0");
+	ZENITH_ASSERT_GT(fMid, 0.5f, "QuadOut at 0.5 should be > 0.5 (decelerating curve)");
+	ZENITH_ASSERT_LT(fMid, 1.0f, "QuadOut at 0.5 should be < 1.0");
 
 	// Quarter point should also show deceleration
 	float fQuarter = Zenith_ApplyEasing(EASING_QUAD_OUT, 0.25f);
-	Zenith_Assert(fQuarter > 0.25f, "QuadOut at 0.25 should be > 0.25");
+	ZENITH_ASSERT_GT(fQuarter, 0.25f, "QuadOut at 0.25 should be > 0.25");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEasingQuadOut passed");
 }
 
-void Zenith_UnitTests::TestEasingBounceOut()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEasingBounceOut...");
+ZENITH_TEST(Tween, EasingBounceOut) { Zenith_UnitTests::TestEasingBounceOut(); }
+
+void Zenith_UnitTests::TestEasingBounceOut(){
 
 	// BounceOut should have values between 0 and 1 at midpoints
 	float fMid = Zenith_ApplyEasing(EASING_BOUNCE_OUT, 0.5f);
-	Zenith_Assert(fMid >= 0.0f && fMid <= 1.0f, "BounceOut at 0.5 should be in [0,1]");
+	ZENITH_ASSERT_TRUE(fMid >= 0.0f && fMid <= 1.0f, "BounceOut at 0.5 should be in [0,1]");
 
 	// BounceOut at 0.9 should be close to 1.0 (near the end)
 	float fNearEnd = Zenith_ApplyEasing(EASING_BOUNCE_OUT, 0.95f);
-	Zenith_Assert(fNearEnd > 0.8f, "BounceOut near end should be close to 1.0");
+	ZENITH_ASSERT_GT(fNearEnd, 0.8f, "BounceOut near end should be close to 1.0");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEasingBounceOut passed");
 }
 
 //=============================================================================
 // Tween System Tests - TweenInstance
 //=============================================================================
 
-void Zenith_UnitTests::TestTweenInstanceProgress()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenInstanceProgress...");
+ZENITH_TEST(Tween, TweenInstanceProgress) { Zenith_UnitTests::TestTweenInstanceProgress(); }
+
+void Zenith_UnitTests::TestTweenInstanceProgress(){
 
 	Zenith_TweenInstance xTween;
 	xTween.m_eEasing = EASING_LINEAR;
@@ -8730,42 +7637,40 @@ void Zenith_UnitTests::TestTweenInstanceProgress()
 	xTween.m_fDelay = 0.0f;
 
 	xTween.m_fElapsed = 0.0f;
-	Zenith_Assert(xTween.GetNormalizedTime() == 0.0f, "At elapsed 0, normalized time should be 0");
+	ZENITH_ASSERT_EQ(xTween.GetNormalizedTime(), 0.0f, "At elapsed 0, normalized time should be 0");
 
 	xTween.m_fElapsed = 1.0f;
 	float fHalf = xTween.GetNormalizedTime();
-	Zenith_Assert(glm::abs(fHalf - 0.5f) < 0.001f, "At elapsed 1 of duration 2, normalized time should be 0.5");
+	ZENITH_ASSERT_LT(glm::abs(fHalf - 0.5f), 0.001f, "At elapsed 1 of duration 2, normalized time should be 0.5");
 
 	xTween.m_fElapsed = 2.0f;
-	Zenith_Assert(glm::abs(xTween.GetNormalizedTime() - 1.0f) < 0.001f, "At elapsed 2 of duration 2, normalized time should be 1.0");
+	ZENITH_ASSERT_LT(glm::abs(xTween.GetNormalizedTime() - 1.0f), 0.001f, "At elapsed 2 of duration 2, normalized time should be 1.0");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenInstanceProgress passed");
 }
 
-void Zenith_UnitTests::TestTweenInstanceCompletion()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenInstanceCompletion...");
+ZENITH_TEST(Tween, TweenInstanceCompletion) { Zenith_UnitTests::TestTweenInstanceCompletion(); }
+
+void Zenith_UnitTests::TestTweenInstanceCompletion(){
 
 	// Completion is determined by normalized time reaching 1.0
 	Zenith_TweenInstance xTween;
 	xTween.m_fDuration = 1.0f;
 	xTween.m_fElapsed = 0.0f;
-	Zenith_Assert(xTween.GetNormalizedTime() < 1.0f, "New tween should not be complete");
+	ZENITH_ASSERT_LT(xTween.GetNormalizedTime(), 1.0f, "New tween should not be complete");
 
 	xTween.m_fElapsed = 1.0f;
-	Zenith_Assert(glm::abs(xTween.GetNormalizedTime() - 1.0f) < 0.001f, "Elapsed == Duration should give normalized time 1.0");
+	ZENITH_ASSERT_LT(glm::abs(xTween.GetNormalizedTime() - 1.0f), 0.001f, "Elapsed == Duration should give normalized time 1.0");
 
 	// Zero duration should give normalized time 1.0
 	Zenith_TweenInstance xZeroDuration;
 	xZeroDuration.m_fDuration = 0.0f;
-	Zenith_Assert(glm::abs(xZeroDuration.GetNormalizedTime() - 1.0f) < 0.001f, "Zero duration tween should have normalized time 1.0");
+	ZENITH_ASSERT_LT(glm::abs(xZeroDuration.GetNormalizedTime() - 1.0f), 0.001f, "Zero duration tween should have normalized time 1.0");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenInstanceCompletion passed");
 }
 
-void Zenith_UnitTests::TestTweenInstanceDelay()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenInstanceDelay...");
+ZENITH_TEST(Tween, TweenInstanceDelay) { Zenith_UnitTests::TestTweenInstanceDelay(); }
+
+void Zenith_UnitTests::TestTweenInstanceDelay(){
 
 	Zenith_TweenInstance xTween;
 	xTween.m_eEasing = EASING_LINEAR;
@@ -8774,27 +7679,26 @@ void Zenith_UnitTests::TestTweenInstanceDelay()
 
 	// During delay, normalized time should be 0
 	xTween.m_fElapsed = 0.3f;
-	Zenith_Assert(xTween.GetNormalizedTime() == 0.0f, "During delay, normalized time should be 0");
+	ZENITH_ASSERT_EQ(xTween.GetNormalizedTime(), 0.0f, "During delay, normalized time should be 0");
 
 	// After delay, should start progressing
 	xTween.m_fElapsed = 1.0f;  // 0.5 delay + 0.5 active = halfway
 	float fT = xTween.GetNormalizedTime();
-	Zenith_Assert(glm::abs(fT - 0.5f) < 0.001f, "After delay with 0.5s active, should be at 0.5");
+	ZENITH_ASSERT_LT(glm::abs(fT - 0.5f), 0.001f, "After delay with 0.5s active, should be at 0.5");
 
 	// After delay + full duration
 	xTween.m_fElapsed = 1.5f;  // 0.5 delay + 1.0 active = done
-	Zenith_Assert(glm::abs(xTween.GetNormalizedTime() - 1.0f) < 0.001f, "After delay + duration, should be at 1.0");
+	ZENITH_ASSERT_LT(glm::abs(xTween.GetNormalizedTime() - 1.0f), 0.001f, "After delay + duration, should be at 1.0");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenInstanceDelay passed");
 }
 
 //=============================================================================
 // Tween System Tests - TweenComponent
 //=============================================================================
 
-void Zenith_UnitTests::TestTweenComponentScaleTo()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentScaleTo...");
+ZENITH_TEST(Tween, TweenComponentScaleTo) { Zenith_UnitTests::TestTweenComponentScaleTo(); }
+
+void Zenith_UnitTests::TestTweenComponentScaleTo(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenScaleTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -8808,30 +7712,29 @@ void Zenith_UnitTests::TestTweenComponentScaleTo()
 	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
 	xTween.TweenScale(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 1.0f, EASING_LINEAR);
 
-	Zenith_Assert(xTween.HasActiveTweens(), "Should have active tweens");
-	Zenith_Assert(xTween.GetActiveTweenCount() == 1, "Should have 1 active tween");
+	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "Should have active tweens");
+	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 1, "Should have 1 active tween");
 
 	// Simulate halfway
 	xTween.OnUpdate(0.5f);
 	Zenith_Maths::Vector3 xScale;
 	xTransform.GetScale(xScale);
-	Zenith_Assert(glm::abs(xScale.x - 0.5f) < 0.01f, "Scale X should be ~0.5 at halfway");
-	Zenith_Assert(glm::abs(xScale.y - 0.5f) < 0.01f, "Scale Y should be ~0.5 at halfway");
+	ZENITH_ASSERT_LT(glm::abs(xScale.x - 0.5f), 0.01f, "Scale X should be ~0.5 at halfway");
+	ZENITH_ASSERT_LT(glm::abs(xScale.y - 0.5f), 0.01f, "Scale Y should be ~0.5 at halfway");
 
 	// Simulate to completion
 	xTween.OnUpdate(0.5f);
 	xTransform.GetScale(xScale);
-	Zenith_Assert(glm::abs(xScale.x) < 0.01f, "Scale X should be ~0.0 at completion");
+	ZENITH_ASSERT_LT(glm::abs(xScale.x), 0.01f, "Scale X should be ~0.0 at completion");
 
-	Zenith_Assert(!xTween.HasActiveTweens(), "Tween should be removed after completion");
+	ZENITH_ASSERT_FALSE(xTween.HasActiveTweens(), "Tween should be removed after completion");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentScaleTo passed");
 }
 
-void Zenith_UnitTests::TestTweenComponentPositionTo()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentPositionTo...");
+ZENITH_TEST(Tween, TweenComponentPositionTo) { Zenith_UnitTests::TestTweenComponentPositionTo(); }
+
+void Zenith_UnitTests::TestTweenComponentPositionTo(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenPosTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -8848,20 +7751,19 @@ void Zenith_UnitTests::TestTweenComponentPositionTo()
 	xTween.OnUpdate(0.5f);
 	Zenith_Maths::Vector3 xPos;
 	xTransform.GetPosition(xPos);
-	Zenith_Assert(glm::abs(xPos.x - 5.0f) < 0.01f, "Position X should be ~5.0 at halfway");
+	ZENITH_ASSERT_LT(glm::abs(xPos.x - 5.0f), 0.01f, "Position X should be ~5.0 at halfway");
 
 	// Complete
 	xTween.OnUpdate(0.5f);
 	xTransform.GetPosition(xPos);
-	Zenith_Assert(glm::abs(xPos.x - 10.0f) < 0.01f, "Position X should be ~10.0 at completion");
+	ZENITH_ASSERT_LT(glm::abs(xPos.x - 10.0f), 0.01f, "Position X should be ~10.0 at completion");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentPositionTo passed");
 }
 
-void Zenith_UnitTests::TestTweenComponentMultiple()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentMultiple...");
+ZENITH_TEST(Tween, TweenComponentMultiple) { Zenith_UnitTests::TestTweenComponentMultiple(); }
+
+void Zenith_UnitTests::TestTweenComponentMultiple(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenMultiTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -8876,7 +7778,7 @@ void Zenith_UnitTests::TestTweenComponentMultiple()
 	xTween.TweenPosition(Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f), 1.0f, EASING_LINEAR);
 	xTween.TweenScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f), 1.0f, EASING_LINEAR);
 
-	Zenith_Assert(xTween.GetActiveTweenCount() == 2, "Should have 2 active tweens");
+	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 2, "Should have 2 active tweens");
 
 	// Both should complete
 	xTween.OnUpdate(1.0f);
@@ -8884,17 +7786,16 @@ void Zenith_UnitTests::TestTweenComponentMultiple()
 	Zenith_Maths::Vector3 xPos, xScale;
 	xTransform.GetPosition(xPos);
 	xTransform.GetScale(xScale);
-	Zenith_Assert(glm::abs(xPos.x - 10.0f) < 0.01f, "Position should have reached target");
-	Zenith_Assert(glm::abs(xScale.x - 2.0f) < 0.01f, "Scale should have reached target");
-	Zenith_Assert(!xTween.HasActiveTweens(), "Both tweens should be complete");
+	ZENITH_ASSERT_LT(glm::abs(xPos.x - 10.0f), 0.01f, "Position should have reached target");
+	ZENITH_ASSERT_LT(glm::abs(xScale.x - 2.0f), 0.01f, "Scale should have reached target");
+	ZENITH_ASSERT_FALSE(xTween.HasActiveTweens(), "Both tweens should be complete");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentMultiple passed");
 }
 
-void Zenith_UnitTests::TestTweenComponentCallback()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentCallback...");
+ZENITH_TEST(Tween, TweenComponentCallback) { Zenith_UnitTests::TestTweenComponentCallback(); }
+
+void Zenith_UnitTests::TestTweenComponentCallback(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenCallbackTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -8910,19 +7811,18 @@ void Zenith_UnitTests::TestTweenComponentCallback()
 		*static_cast<bool*>(pUserData) = true;
 	}, &bCallbackFired);
 
-	Zenith_Assert(!bCallbackFired, "Callback should not have fired yet");
+	ZENITH_ASSERT_FALSE(bCallbackFired, "Callback should not have fired yet");
 
 	// Complete the tween
 	xTween.OnUpdate(0.5f);
-	Zenith_Assert(bCallbackFired, "Callback should have fired on completion");
+	ZENITH_ASSERT_TRUE(bCallbackFired, "Callback should have fired on completion");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentCallback passed");
 }
 
-void Zenith_UnitTests::TestTweenComponentLoop()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentLoop...");
+ZENITH_TEST(Tween, TweenComponentLoop) { Zenith_UnitTests::TestTweenComponentLoop(); }
+
+void Zenith_UnitTests::TestTweenComponentLoop(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenLoopTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -8938,22 +7838,21 @@ void Zenith_UnitTests::TestTweenComponentLoop()
 
 	// Complete one cycle
 	xTween.OnUpdate(1.0f);
-	Zenith_Assert(xTween.HasActiveTweens(), "Looping tween should still be active after completion");
+	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "Looping tween should still be active after completion");
 
 	// After loop reset, another update should work
 	xTween.OnUpdate(0.5f);
 	Zenith_Maths::Vector3 xScale;
 	xTransform.GetScale(xScale);
 	// Should be interpolating from start again
-	Zenith_Assert(xTween.HasActiveTweens(), "Looping tween should still be active");
+	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "Looping tween should still be active");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentLoop passed");
 }
 
-void Zenith_UnitTests::TestTweenComponentPingPong()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentPingPong...");
+ZENITH_TEST(Tween, TweenComponentPingPong) { Zenith_UnitTests::TestTweenComponentPingPong(); }
+
+void Zenith_UnitTests::TestTweenComponentPingPong(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenPingPongTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -8969,21 +7868,20 @@ void Zenith_UnitTests::TestTweenComponentPingPong()
 
 	// Forward pass: 0 -> 1
 	xTween.OnUpdate(1.0f);
-	Zenith_Assert(xTween.HasActiveTweens(), "PingPong tween should still be active");
+	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "PingPong tween should still be active");
 
 	// Reverse pass halfway: should be going 1 -> 0, at 0.5 should be ~0.5
 	xTween.OnUpdate(0.5f);
 	Zenith_Maths::Vector3 xScale;
 	xTransform.GetScale(xScale);
-	Zenith_Assert(glm::abs(xScale.x - 0.5f) < 0.1f, "PingPong reverse at halfway should be ~0.5");
+	ZENITH_ASSERT_LT(glm::abs(xScale.x - 0.5f), 0.1f, "PingPong reverse at halfway should be ~0.5");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentPingPong passed");
 }
 
-void Zenith_UnitTests::TestTweenComponentCancel()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentCancel...");
+ZENITH_TEST(Tween, TweenComponentCancel) { Zenith_UnitTests::TestTweenComponentCancel(); }
+
+void Zenith_UnitTests::TestTweenComponentCancel(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenCancelTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -8996,23 +7894,22 @@ void Zenith_UnitTests::TestTweenComponentCancel()
 	xTween.TweenScale(Zenith_Maths::Vector3(0.0f), 1.0f, EASING_LINEAR);
 	xTween.TweenPosition(Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f), 1.0f, EASING_LINEAR);
 
-	Zenith_Assert(xTween.GetActiveTweenCount() == 2, "Should have 2 active tweens");
+	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 2, "Should have 2 active tweens");
 
 	xTween.CancelAll();
-	Zenith_Assert(!xTween.HasActiveTweens(), "After CancelAll, no tweens should be active");
-	Zenith_Assert(xTween.GetActiveTweenCount() == 0, "Active count should be 0");
+	ZENITH_ASSERT_FALSE(xTween.HasActiveTweens(), "After CancelAll, no tweens should be active");
+	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 0, "Active count should be 0");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentCancel passed");
 }
 
 //=============================================================================
 // Sub-SM Transition Evaluation (BUG 1 regression test)
 //=============================================================================
 
-void Zenith_UnitTests::TestSubStateMachineTransitionEvaluation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSubStateMachineTransitionEvaluation...");
+ZENITH_TEST(Core, SubStateMachineTransitionEvaluation) { Zenith_UnitTests::TestSubStateMachineTransitionEvaluation(); }
+
+void Zenith_UnitTests::TestSubStateMachineTransitionEvaluation(){
 
 	// Create parent SM with a speed parameter
 	Flux_AnimationStateMachine xParentSM("ParentSM");
@@ -9048,32 +7945,30 @@ void Zenith_UnitTests::TestSubStateMachineTransitionEvaluation()
 	Zenith_SkeletonAsset xSkel;
 
 	pxSubSM->Update(0.0f, xPose, xSkel);
-	Zenith_Assert(pxSubSM->GetCurrentStateName() == "Walk", "Sub-SM should start in Walk");
+	ZENITH_ASSERT_EQ(pxSubSM->GetCurrentStateName(), "Walk", "Sub-SM should start in Walk");
 
 	// Set parent parameter Speed > 3.0 - sub-SM should see it through shared parameters
 	xParentSM.GetParameters().SetFloat("Speed", 5.0f);
 
 	// Update sub-SM - transition should evaluate against shared (parent) parameters
 	pxSubSM->Update(0.016f, xPose, xSkel);
-	Zenith_Assert(pxSubSM->IsTransitioning(), "Sub-SM should be transitioning Walk->Run via shared parameters");
+	ZENITH_ASSERT_TRUE(pxSubSM->IsTransitioning(), "Sub-SM should be transitioning Walk->Run via shared parameters");
 
 	// Complete transition
 	for (int i = 0; i < 20; ++i)
 		pxSubSM->Update(0.016f, xPose, xSkel);
 
-	Zenith_Assert(pxSubSM->GetCurrentStateName() == "Run",
-		"Sub-SM should have transitioned to Run using parent's Speed parameter");
+	ZENITH_ASSERT_EQ(pxSubSM->GetCurrentStateName(), "Run", "Sub-SM should have transitioned to Run using parent's Speed parameter");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSubStateMachineTransitionEvaluation passed");
 }
 
 //=============================================================================
 // CrossFade Edge Cases
 //=============================================================================
 
-void Zenith_UnitTests::TestCrossFadeNonExistentState()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeNonExistentState...");
+ZENITH_TEST(Animation, CrossFadeNonExistentState) { Zenith_UnitTests::TestCrossFadeNonExistentState(); }
+
+void Zenith_UnitTests::TestCrossFadeNonExistentState(){
 
 	Flux_AnimationStateMachine xSM("TestSM");
 	xSM.AddState("Idle");
@@ -9084,19 +7979,18 @@ void Zenith_UnitTests::TestCrossFadeNonExistentState()
 	Zenith_SkeletonAsset xSkel;
 	xSM.Update(0.0f, xPose, xSkel);
 
-	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "Should start in Idle");
 
 	// CrossFade to non-existent state should silently do nothing
 	xSM.CrossFade("NonExistent", 0.15f);
-	Zenith_Assert(!xSM.IsTransitioning(), "Should NOT be transitioning to non-existent state");
-	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should still be in Idle");
+	ZENITH_ASSERT_FALSE(xSM.IsTransitioning(), "Should NOT be transitioning to non-existent state");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "Should still be in Idle");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeNonExistentState passed");
 }
 
-void Zenith_UnitTests::TestCrossFadeInstant()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeInstant...");
+ZENITH_TEST(Animation, CrossFadeInstant) { Zenith_UnitTests::TestCrossFadeInstant(); }
+
+void Zenith_UnitTests::TestCrossFadeInstant(){
 
 	Flux_AnimationStateMachine xSM("TestSM");
 	xSM.AddState("Idle");
@@ -9108,25 +8002,24 @@ void Zenith_UnitTests::TestCrossFadeInstant()
 	Zenith_SkeletonAsset xSkel;
 	xSM.Update(0.0f, xPose, xSkel);
 
-	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "Should start in Idle");
 
 	// CrossFade with zero duration - should transition immediately on next update
 	xSM.CrossFade("Run", 0.0f);
 	xSM.Update(0.001f, xPose, xSkel);
 
 	// With duration=0, the cross-fade should complete immediately
-	Zenith_Assert(xSM.GetCurrentStateName() == "Run", "Zero-duration crossfade should complete immediately");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Run", "Zero-duration crossfade should complete immediately");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeInstant passed");
 }
 
 //=============================================================================
 // Tween Rotation Test
 //=============================================================================
 
-void Zenith_UnitTests::TestTweenComponentRotation()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentRotation...");
+ZENITH_TEST(Tween, TweenComponentRotation) { Zenith_UnitTests::TestTweenComponentRotation(); }
+
+void Zenith_UnitTests::TestTweenComponentRotation(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenRotationTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9140,11 +8033,11 @@ void Zenith_UnitTests::TestTweenComponentRotation()
 	// Tween rotation to 90 degrees around Y axis over 1 second
 	xTween.TweenRotation(Zenith_Maths::Vector3(0.0f, 90.0f, 0.0f), 1.0f, EASING_LINEAR);
 
-	Zenith_Assert(xTween.HasActiveTweens(), "Should have active rotation tween");
+	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "Should have active rotation tween");
 
 	// Update to completion
 	xTween.OnUpdate(1.0f);
-	Zenith_Assert(!xTween.HasActiveTweens(), "Rotation tween should be complete");
+	ZENITH_ASSERT_FALSE(xTween.HasActiveTweens(), "Rotation tween should be complete");
 
 	// Verify rotation was applied - get the euler angles back
 	Zenith_Maths::Quat xRot;
@@ -9152,19 +8045,18 @@ void Zenith_UnitTests::TestTweenComponentRotation()
 	Zenith_Maths::Vector3 xEuler = glm::degrees(glm::eulerAngles(xRot));
 
 	// Y rotation should be approximately 90 degrees
-	Zenith_Assert(glm::abs(xEuler.y - 90.0f) < 1.0f, "Y rotation should be ~90 degrees");
+	ZENITH_ASSERT_LT(glm::abs(xEuler.y - 90.0f), 1.0f, "Y rotation should be ~90 degrees");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentRotation passed");
 }
 
 //=============================================================================
 // Bug Regression Tests (from code review)
 //=============================================================================
 
-void Zenith_UnitTests::TestTriggerNotConsumedOnPartialConditionMatch()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTriggerNotConsumedOnPartialConditionMatch...");
+ZENITH_TEST(Core, TriggerNotConsumedOnPartialConditionMatch) { Zenith_UnitTests::TestTriggerNotConsumedOnPartialConditionMatch(); }
+
+void Zenith_UnitTests::TestTriggerNotConsumedOnPartialConditionMatch(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -9200,34 +8092,27 @@ void Zenith_UnitTests::TestTriggerNotConsumedOnPartialConditionMatch()
 
 	// Initial state
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle", "Should start in Idle");
+	ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Idle", "Should start in Idle");
 
 	// Set trigger but NOT HasWeapon - transition should fail, trigger should NOT be consumed
 	xStateMachine.GetParameters().SetTrigger("Attack");
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
-		"Should stay in Idle - HasWeapon is false");
-	Zenith_Assert(xStateMachine.GetParameters().PeekTrigger("Attack") == true,
-		"Trigger should NOT be consumed when other conditions fail");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Trigger preserved when bool condition fails");
+	ZENITH_ASSERT_EQ(xStateMachine.GetCurrentStateName(), "Idle", "Should stay in Idle - HasWeapon is false");
+	ZENITH_ASSERT_EQ(xStateMachine.GetParameters().PeekTrigger("Attack"), true, "Trigger should NOT be consumed when other conditions fail");
 
 	// Now set HasWeapon - trigger should still be set, transition should fire
 	xStateMachine.GetParameters().SetBool("HasWeapon", true);
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(xStateMachine.IsTransitioning() == true,
-		"Transition should start now that all conditions are met");
-	Zenith_Assert(xStateMachine.GetParameters().PeekTrigger("Attack") == false,
-		"Trigger should be consumed after successful transition");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Trigger consumed only on successful transition");
+	ZENITH_ASSERT_EQ(xStateMachine.IsTransitioning(), true, "Transition should start now that all conditions are met");
+	ZENITH_ASSERT_EQ(xStateMachine.GetParameters().PeekTrigger("Attack"), false, "Trigger should be consumed after successful transition");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTriggerNotConsumedOnPartialConditionMatch passed");
 }
 
-void Zenith_UnitTests::TestResolveClipReferencesRecursive()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestResolveClipReferencesRecursive...");
+ZENITH_TEST(Core, ResolveClipReferencesRecursive) { Zenith_UnitTests::TestResolveClipReferencesRecursive(); }
+
+void Zenith_UnitTests::TestResolveClipReferencesRecursive(){
 
 	// Create a clip collection with two clips
 	Flux_AnimationClipCollection xCollection;
@@ -9241,11 +8126,11 @@ void Zenith_UnitTests::TestResolveClipReferencesRecursive()
 	// Create a Blend node with two Clip children (clip pointers null, names set)
 	Flux_BlendTreeNode_Clip* pxClipA = new Flux_BlendTreeNode_Clip();
 	pxClipA->SetClipName("Idle");
-	Zenith_Assert(pxClipA->GetClip() == nullptr, "Clip A should be unresolved");
+	ZENITH_ASSERT_NULL(pxClipA->GetClip(), "Clip A should be unresolved");
 
 	Flux_BlendTreeNode_Clip* pxClipB = new Flux_BlendTreeNode_Clip();
 	pxClipB->SetClipName("Walk");
-	Zenith_Assert(pxClipB->GetClip() == nullptr, "Clip B should be unresolved");
+	ZENITH_ASSERT_NULL(pxClipB->GetClip(), "Clip B should be unresolved");
 
 	Flux_BlendTreeNode_Blend* pxBlend = new Flux_BlendTreeNode_Blend(pxClipA, pxClipB, 0.5f);
 
@@ -9258,18 +8143,14 @@ void Zenith_UnitTests::TestResolveClipReferencesRecursive()
 	// Resolve - should recursively resolve both child clips
 	xSM.ResolveClipReferences(&xCollection);
 
-	Zenith_Assert(pxClipA->GetClip() == pxIdleClip,
-		"Clip A should be resolved to Idle clip");
-	Zenith_Assert(pxClipB->GetClip() == pxWalkClip,
-		"Clip B should be resolved to Walk clip");
+	ZENITH_ASSERT_EQ(pxClipA->GetClip(), pxIdleClip, "Clip A should be resolved to Idle clip");
+	ZENITH_ASSERT_EQ(pxClipB->GetClip(), pxWalkClip, "Clip B should be resolved to Walk clip");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Blend tree children resolved recursively");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestResolveClipReferencesRecursive passed");
 }
 
-void Zenith_UnitTests::TestTweenDelayWithLoop()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenDelayWithLoop...");
+ZENITH_TEST(Tween, TweenDelayWithLoop) { Zenith_UnitTests::TestTweenDelayWithLoop(); }
+
+void Zenith_UnitTests::TestTweenDelayWithLoop(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenDelayLoopTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9289,38 +8170,32 @@ void Zenith_UnitTests::TestTweenDelayWithLoop()
 	xTween.OnUpdate(0.5f);
 	Zenith_Maths::Vector3 xScale;
 	xTransform.GetScale(xScale);
-	Zenith_Assert(glm::abs(xScale.x - 1.0f) < 0.01f, "Scale should be unchanged during delay");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] No change during delay");
+	ZENITH_ASSERT_LT(glm::abs(xScale.x - 1.0f), 0.01f, "Scale should be unchanged during delay");
 
 	// After delay, at midpoint of tween (total elapsed = 1.25, activeTime = 0.25, t = 0.5)
 	xTween.OnUpdate(0.75f);
 	xTransform.GetScale(xScale);
-	Zenith_Assert(xScale.x > 1.0f, "Scale should be interpolating after delay");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Interpolating after delay");
+	ZENITH_ASSERT_GT(xScale.x, 1.0f, "Scale should be interpolating after delay");
 
 	// Complete first loop (total elapsed = 1.75, activeTime = 0.75, t >= 1.0, loop triggers)
 	// Loop resets elapsed to delay (1.0), tween stays active
 	xTween.OnUpdate(0.5f);
-	Zenith_Assert(xTween.HasActiveTweens(), "Looping tween should still be active");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Tween still active after first loop");
+	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "Looping tween should still be active");
 
 	// After loop reset, a small update should restart interpolation from the beginning
 	// elapsed goes from 1.0 to 1.1, activeTime = 0.1, t = 0.1/0.5 = 0.2
 	// scale = lerp(1.0, 2.0, 0.2) = 1.2
 	xTween.OnUpdate(0.1f);
 	xTransform.GetScale(xScale);
-	Zenith_Assert(glm::abs(xScale.x - 1.2f) < 0.05f,
-		"After loop, tween should restart interpolation from beginning (expected ~1.2)");
-	Zenith_Assert(xTween.HasActiveTweens(), "Looping tween should still be active");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Tween restarts correctly after loop");
+	ZENITH_ASSERT_LT(glm::abs(xScale.x - 1.2f), 0.05f, "After loop, tween should restart interpolation from beginning (expected ~1.2)");
+	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "Looping tween should still be active");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenDelayWithLoop passed");
 }
 
-void Zenith_UnitTests::TestTweenCallbackReentrant()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenCallbackReentrant...");
+ZENITH_TEST(Tween, TweenCallbackReentrant) { Zenith_UnitTests::TestTweenCallbackReentrant(); }
+
+void Zenith_UnitTests::TestTweenCallbackReentrant(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenReentrantTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9352,18 +8227,16 @@ void Zenith_UnitTests::TestTweenCallbackReentrant()
 	// Complete the first tween - callback should fire and create a new tween
 	xTween.OnUpdate(0.5f);
 
-	Zenith_Assert(xData.m_bCallbackFired, "Callback should have fired");
-	Zenith_Assert(xTween.HasActiveTweens(), "New tween should have been created by callback");
-	Zenith_Assert(xTween.GetActiveTweenCount() == 1, "Should have exactly 1 active tween");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Re-entrant tween creation from callback works");
+	ZENITH_ASSERT_TRUE(xData.m_bCallbackFired, "Callback should have fired");
+	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "New tween should have been created by callback");
+	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 1, "Should have exactly 1 active tween");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenCallbackReentrant passed");
 }
 
-void Zenith_UnitTests::TestTweenDuplicatePropertyCancels()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenDuplicatePropertyCancels...");
+ZENITH_TEST(Tween, TweenDuplicatePropertyCancels) { Zenith_UnitTests::TestTweenDuplicatePropertyCancels(); }
+
+void Zenith_UnitTests::TestTweenDuplicatePropertyCancels(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenDuplicateTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9377,33 +8250,28 @@ void Zenith_UnitTests::TestTweenDuplicatePropertyCancels()
 
 	// Create first scale tween
 	xTween.TweenScale(Zenith_Maths::Vector3(2.0f), 1.0f, EASING_LINEAR);
-	Zenith_Assert(xTween.GetActiveTweenCount() == 1, "Should have 1 active tween");
+	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 1, "Should have 1 active tween");
 
 	// Create second scale tween - should cancel the first
 	xTween.TweenScale(Zenith_Maths::Vector3(3.0f), 0.5f, EASING_LINEAR);
-	Zenith_Assert(xTween.GetActiveTweenCount() == 1,
-		"Should still have 1 active tween - duplicate cancelled");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Duplicate property tween cancelled");
+	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 1, "Should still have 1 active tween - duplicate cancelled");
 
 	// Complete the second tween
 	xTween.OnUpdate(0.5f);
 	Zenith_Maths::Vector3 xScale;
 	xTransform.GetScale(xScale);
-	Zenith_Assert(glm::abs(xScale.x - 3.0f) < 0.01f,
-		"Should reach target of second tween");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Second tween completes to correct target");
+	ZENITH_ASSERT_LT(glm::abs(xScale.x - 3.0f), 0.01f, "Should reach target of second tween");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenDuplicatePropertyCancels passed");
 }
 
 //=============================================================================
 // Code Review Round 2 - Bug Fix Regression Tests
 //=============================================================================
 
-void Zenith_UnitTests::TestSubStateMachineTransitionBlendPose()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSubStateMachineTransitionBlendPose...");
+ZENITH_TEST(Core, SubStateMachineTransitionBlendPose) { Zenith_UnitTests::TestSubStateMachineTransitionBlendPose(); }
+
+void Zenith_UnitTests::TestSubStateMachineTransitionBlendPose(){
 
 	// Create skeleton with 2 bones for pose verification
 	Zenith_SkeletonAsset xSkeleton;
@@ -9436,26 +8304,24 @@ void Zenith_UnitTests::TestSubStateMachineTransitionBlendPose()
 
 	// Initialize
 	xParentSM.Update(0.0f, xPose, xSkeleton);
-	Zenith_Assert(xParentSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+	ZENITH_ASSERT_EQ(xParentSM.GetCurrentStateName(), "Idle", "Should start in Idle");
 
 	// Trigger transition to sub-SM state
 	xParentSM.GetParameters().SetTrigger("GoLocomotion");
 	xParentSM.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xParentSM.IsTransitioning(), "Should be transitioning to Locomotion sub-SM");
+	ZENITH_ASSERT_TRUE(xParentSM.IsTransitioning(), "Should be transitioning to Locomotion sub-SM");
 
 	// Update during transition - the target pose should NOT be identity/reset
 	// (This was Bug #1 - UpdateTransition didn't evaluate sub-SM targets)
 	xParentSM.Update(0.016f, xPose, xSkeleton);
 	// The key check: the pose should not be all-zero (identity reset)
 	// A proper sub-SM update would produce the Walk state's pose
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transition to sub-SM state evaluates target pose");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSubStateMachineTransitionBlendPose passed");
 }
 
-void Zenith_UnitTests::TestRotationTweenShortestPath()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestRotationTweenShortestPath...");
+ZENITH_TEST(Core, RotationTweenShortestPath) { Zenith_UnitTests::TestRotationTweenShortestPath(); }
+
+void Zenith_UnitTests::TestRotationTweenShortestPath(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenRotShortestTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9477,8 +8343,7 @@ void Zenith_UnitTests::TestRotationTweenShortestPath()
 
 	// Verify it's a valid unit quaternion
 	float fLength = glm::length(xRot);
-	Zenith_Assert(glm::abs(fLength - 1.0f) < 0.01f, "Quaternion should be unit length");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Rotation tween produces valid quaternion at midpoint");
+	ZENITH_ASSERT_LT(glm::abs(fLength - 1.0f), 0.01f, "Quaternion should be unit length");
 
 	// Complete the tween
 	xTween.OnUpdate(0.5f);
@@ -9488,18 +8353,16 @@ void Zenith_UnitTests::TestRotationTweenShortestPath()
 	Zenith_Maths::Vector3 xEuler = glm::degrees(glm::eulerAngles(xRot));
 	// Accept either ~270 or ~-90 (equivalent rotations)
 	bool bCorrect = (glm::abs(xEuler.y - 270.0f) < 2.0f) || (glm::abs(xEuler.y + 90.0f) < 2.0f);
-	Zenith_Assert(bCorrect, "Final rotation should be ~270 or ~-90 degrees Y");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Rotation tween reaches correct final angle");
+	ZENITH_ASSERT_TRUE(bCorrect, "Final rotation should be ~270 or ~-90 degrees Y");
 
-	Zenith_Assert(!xTween.HasActiveTweens(), "Tween should be complete");
+	ZENITH_ASSERT_FALSE(xTween.HasActiveTweens(), "Tween should be complete");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRotationTweenShortestPath passed");
 }
 
-void Zenith_UnitTests::TestTransitionInterruption()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTransitionInterruption...");
+ZENITH_TEST(Animation, TransitionInterruption) { Zenith_UnitTests::TestTransitionInterruption(); }
+
+void Zenith_UnitTests::TestTransitionInterruption(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -9549,28 +8412,24 @@ void Zenith_UnitTests::TestTransitionInterruption()
 	xSM.Update(0.0f, xPose, xSkeleton);
 	xSM.GetParameters().SetFloat("Speed", 5.0f);
 	xSM.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning Idle -> Walk");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Walk transition started");
+	ZENITH_ASSERT_TRUE(xSM.IsTransitioning(), "Should be transitioning Idle -> Walk");
 
 	// Fire Death trigger while transitioning - should interrupt
 	xSM.GetParameters().SetTrigger("DeathTrigger");
 	xSM.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning to Death (interrupted Walk)");
+	ZENITH_ASSERT_TRUE(xSM.IsTransitioning(), "Should be transitioning to Death (interrupted Walk)");
 
 	// Complete the Death transition
 	for (int i = 0; i < 20; ++i)
 		xSM.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(xSM.GetCurrentStateName() == "Death",
-		"Should have reached Death state after interrupting Walk transition");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Death transition interrupted Walk transition");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Death", "Should have reached Death state after interrupting Walk transition");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransitionInterruption passed");
 }
 
-void Zenith_UnitTests::TestTransitionNonInterruptible()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTransitionNonInterruptible...");
+ZENITH_TEST(Animation, TransitionNonInterruptible) { Zenith_UnitTests::TestTransitionNonInterruptible(); }
+
+void Zenith_UnitTests::TestTransitionNonInterruptible(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -9618,12 +8477,12 @@ void Zenith_UnitTests::TestTransitionNonInterruptible()
 	xSM.Update(0.0f, xPose, xSkeleton);
 	xSM.GetParameters().SetTrigger("AttackTrigger");
 	xSM.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning Idle -> SpecialAttack");
+	ZENITH_ASSERT_TRUE(xSM.IsTransitioning(), "Should be transitioning Idle -> SpecialAttack");
 
 	// Try to interrupt with Death - should NOT work (non-interruptible)
 	xSM.GetParameters().SetTrigger("DeathTrigger");
 	xSM.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xSM.IsTransitioning(), "Should still be transitioning (non-interruptible)");
+	ZENITH_ASSERT_TRUE(xSM.IsTransitioning(), "Should still be transitioning (non-interruptible)");
 
 	// Complete the SpecialAttack transition
 	for (int i = 0; i < 100; ++i)
@@ -9631,16 +8490,13 @@ void Zenith_UnitTests::TestTransitionNonInterruptible()
 
 	// Should be in SpecialAttack - the Death trigger couldn't interrupt, and there's no
 	// Death transition from SpecialAttack state, so the unconsumed trigger has no effect
-	Zenith_Assert(xSM.GetCurrentStateName() == "SpecialAttack",
-		"Non-interruptible transition should complete to SpecialAttack, not Death");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Non-interruptible transition was not interrupted");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "SpecialAttack", "Non-interruptible transition should complete to SpecialAttack, not Death");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransitionNonInterruptible passed");
 }
 
-void Zenith_UnitTests::TestCancelByPropertyKeepsOthers()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCancelByPropertyKeepsOthers...");
+ZENITH_TEST(Core, CancelByPropertyKeepsOthers) { Zenith_UnitTests::TestCancelByPropertyKeepsOthers(); }
+
+void Zenith_UnitTests::TestCancelByPropertyKeepsOthers(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenCancelPropTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9654,30 +8510,29 @@ void Zenith_UnitTests::TestCancelByPropertyKeepsOthers()
 	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
 	xTween.TweenPosition(Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f), 1.0f, EASING_LINEAR);
 	xTween.TweenScale(Zenith_Maths::Vector3(2.0f), 1.0f, EASING_LINEAR);
-	Zenith_Assert(xTween.GetActiveTweenCount() == 2, "Should have 2 active tweens");
+	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 2, "Should have 2 active tweens");
 
 	// Cancel only position
 	xTween.CancelByProperty(TWEEN_PROPERTY_POSITION);
-	Zenith_Assert(xTween.GetActiveTweenCount() == 1, "Should have 1 active tween after cancelling position");
+	ZENITH_ASSERT_EQ(xTween.GetActiveTweenCount(), 1, "Should have 1 active tween after cancelling position");
 
 	// Complete remaining scale tween
 	xTween.OnUpdate(1.0f);
 	Zenith_Maths::Vector3 xScale;
 	xTransform.GetScale(xScale);
-	Zenith_Assert(glm::abs(xScale.x - 2.0f) < 0.01f, "Scale tween should still complete");
+	ZENITH_ASSERT_LT(glm::abs(xScale.x - 2.0f), 0.01f, "Scale tween should still complete");
 
 	// Position should not have changed (was cancelled)
 	Zenith_Maths::Vector3 xPos;
 	xTransform.GetPosition(xPos);
-	Zenith_Assert(glm::abs(xPos.x) < 0.01f, "Position should not have changed after cancel");
+	ZENITH_ASSERT_LT(glm::abs(xPos.x), 0.01f, "Position should not have changed after cancel");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCancelByPropertyKeepsOthers passed");
 }
 
-void Zenith_UnitTests::TestCrossFadeWhileTransitioning()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeWhileTransitioning...");
+ZENITH_TEST(Animation, CrossFadeWhileTransitioning) { Zenith_UnitTests::TestCrossFadeWhileTransitioning(); }
+
+void Zenith_UnitTests::TestCrossFadeWhileTransitioning(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -9691,34 +8546,31 @@ void Zenith_UnitTests::TestCrossFadeWhileTransitioning()
 	xSM.SetDefaultState("Idle");
 
 	xSM.Update(0.0f, xPose, xSkeleton);
-	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "Should start in Idle");
 
 	// Start a CrossFade to Walk
 	xSM.CrossFade("Walk", 1.0f);
-	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning to Walk");
+	ZENITH_ASSERT_TRUE(xSM.IsTransitioning(), "Should be transitioning to Walk");
 
 	// Update halfway through
 	xSM.Update(0.5f, xPose, xSkeleton);
-	Zenith_Assert(xSM.IsTransitioning(), "Should still be transitioning");
+	ZENITH_ASSERT_TRUE(xSM.IsTransitioning(), "Should still be transitioning");
 
 	// Force CrossFade to Run during the Walk transition
 	xSM.CrossFade("Run", 0.1f);
-	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning to Run now");
+	ZENITH_ASSERT_TRUE(xSM.IsTransitioning(), "Should be transitioning to Run now");
 
 	// Complete the Run transition
 	for (int i = 0; i < 20; ++i)
 		xSM.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(xSM.GetCurrentStateName() == "Run",
-		"CrossFade during transition should redirect to Run");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] CrossFade during active transition works");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Run", "CrossFade during transition should redirect to Run");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeWhileTransitioning passed");
 }
 
-void Zenith_UnitTests::TestTweenLoopValueReset()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenLoopValueReset...");
+ZENITH_TEST(Tween, TweenLoopValueReset) { Zenith_UnitTests::TestTweenLoopValueReset(); }
+
+void Zenith_UnitTests::TestTweenLoopValueReset(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenLoopResetTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9736,34 +8588,30 @@ void Zenith_UnitTests::TestTweenLoopValueReset()
 	xTween.OnUpdate(1.0f);
 	Zenith_Maths::Vector3 xScale;
 	xTransform.GetScale(xScale);
-	Zenith_Assert(xTween.HasActiveTweens(), "Should still be active (looping)");
+	ZENITH_ASSERT_TRUE(xTween.HasActiveTweens(), "Should still be active (looping)");
 
 	// Small step into second loop - value should restart from 1.0
 	// After loop reset: elapsed = delay(0) + 0.1 = 0.1, t = 0.1/1.0 = 0.1
 	// scale = lerp(1.0, 2.0, 0.1) = 1.1
 	xTween.OnUpdate(0.1f);
 	xTransform.GetScale(xScale);
-	Zenith_Assert(glm::abs(xScale.x - 1.1f) < 0.05f,
-		"After loop reset, scale should restart from beginning (~1.1)");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Loop correctly resets interpolation value");
+	ZENITH_ASSERT_LT(glm::abs(xScale.x - 1.1f), 0.05f, "After loop reset, scale should restart from beginning (~1.1)");
 
 	// Continue to halfway through second loop
 	xTween.OnUpdate(0.4f);
 	xTransform.GetScale(xScale);
-	Zenith_Assert(glm::abs(xScale.x - 1.5f) < 0.05f,
-		"Halfway through second loop should be ~1.5");
+	ZENITH_ASSERT_LT(glm::abs(xScale.x - 1.5f), 0.05f, "Halfway through second loop should be ~1.5");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenLoopValueReset passed");
 }
 
 //=============================================================================
 // Bug 1 Regression: Trigger not consumed when blocked by active transition priority
 //=============================================================================
 
-void Zenith_UnitTests::TestTriggerNotConsumedWhenBlockedByPriority()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTriggerNotConsumedWhenBlockedByPriority...");
+ZENITH_TEST(Core, TriggerNotConsumedWhenBlockedByPriority) { Zenith_UnitTests::TestTriggerNotConsumedWhenBlockedByPriority(); }
+
+void Zenith_UnitTests::TestTriggerNotConsumedWhenBlockedByPriority(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -9812,13 +8660,12 @@ void Zenith_UnitTests::TestTriggerNotConsumedWhenBlockedByPriority()
 
 	// Initialize
 	xSM.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "Should start in Idle");
 
 	// Start the high-priority Idle->Walk transition
 	xSM.GetParameters().SetFloat("Speed", 1.0f);
 	xSM.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning to Walk");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] High-priority transition to Walk started");
+	ZENITH_ASSERT_TRUE(xSM.IsTransitioning(), "Should be transitioning to Walk");
 
 	// Now fire the lower-priority DeathTrigger while Walk transition is active
 	xSM.GetParameters().SetTrigger("DeathTrigger");
@@ -9826,9 +8673,7 @@ void Zenith_UnitTests::TestTriggerNotConsumedWhenBlockedByPriority()
 
 	// The death transition should NOT have interrupted (priority 100 < 200)
 	// AND the trigger should NOT have been consumed
-	Zenith_Assert(xSM.GetParameters().PeekTrigger("DeathTrigger") == true,
-		"DeathTrigger should NOT be consumed when blocked by higher-priority active transition");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Trigger preserved when blocked by priority");
+	ZENITH_ASSERT_EQ(xSM.GetParameters().PeekTrigger("DeathTrigger"), true, "DeathTrigger should NOT be consumed when blocked by higher-priority active transition");
 
 	// Complete the Walk transition (1.0s) and let the preserved trigger fire
 	// Once Walk completes, the DeathTrigger (still set) fires immediately,
@@ -9838,22 +8683,18 @@ void Zenith_UnitTests::TestTriggerNotConsumedWhenBlockedByPriority()
 
 	// The preserved trigger should have fired after Walk completed,
 	// transitioning us through to Death
-	Zenith_Assert(xSM.GetCurrentStateName() == "Death",
-		"Preserved DeathTrigger should fire after Walk transition completes, reaching Death");
-	Zenith_Assert(xSM.GetParameters().PeekTrigger("DeathTrigger") == false,
-		"DeathTrigger should be consumed after successful transition");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Trigger fires after blocking transition completes, reached Death");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Death", "Preserved DeathTrigger should fire after Walk transition completes, reaching Death");
+	ZENITH_ASSERT_EQ(xSM.GetParameters().PeekTrigger("DeathTrigger"), false, "DeathTrigger should be consumed after successful transition");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTriggerNotConsumedWhenBlockedByPriority passed");
 }
 
 //=============================================================================
 // Serialization Round-Trip: Animation Layer
 //=============================================================================
 
-void Zenith_UnitTests::TestAnimationLayerSerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnimationLayerSerialization...");
+ZENITH_TEST(Animation, AnimationLayerSerialization) { Zenith_UnitTests::TestAnimationLayerSerialization(); }
+
+void Zenith_UnitTests::TestAnimationLayerSerialization(){
 
 	// Create a layer with all configurable properties
 	Flux_AnimationLayer xOriginal("UpperBody");
@@ -9881,28 +8722,25 @@ void Zenith_UnitTests::TestAnimationLayerSerialization()
 	xLoaded.ReadFromDataStream(xStream);
 
 	// Verify
-	Zenith_Assert(xLoaded.GetName() == "UpperBody", "Layer name should round-trip");
-	Zenith_Assert(glm::abs(xLoaded.GetWeight() - 0.75f) < 0.001f, "Layer weight should round-trip");
-	Zenith_Assert(xLoaded.GetBlendMode() == LAYER_BLEND_ADDITIVE, "Layer blend mode should round-trip");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Layer properties round-trip");
+	ZENITH_ASSERT_EQ(xLoaded.GetName(), "UpperBody", "Layer name should round-trip");
+	ZENITH_ASSERT_LT(glm::abs(xLoaded.GetWeight() - 0.75f), 0.001f, "Layer weight should round-trip");
+	ZENITH_ASSERT_EQ(xLoaded.GetBlendMode(), LAYER_BLEND_ADDITIVE, "Layer blend mode should round-trip");
 
 	// Verify state machine survived (use pointer getter to avoid auto-creation)
 	const Flux_AnimationStateMachine* pxLoadedSM = xLoaded.GetStateMachinePtr();
-	Zenith_Assert(pxLoadedSM != nullptr, "Layer should have a state machine after deserialization");
-	Zenith_Assert(pxLoadedSM->GetDefaultStateName() == "Idle", "SM default state should round-trip");
-	Zenith_Assert(pxLoadedSM->GetParameters().HasParameter("AimWeight"), "SM parameters should round-trip");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Layer state machine round-trip");
+	ZENITH_ASSERT_NOT_NULL(pxLoadedSM, "Layer should have a state machine after deserialization");
+	ZENITH_ASSERT_EQ(pxLoadedSM->GetDefaultStateName(), "Idle", "SM default state should round-trip");
+	ZENITH_ASSERT_TRUE(pxLoadedSM->GetParameters().HasParameter("AimWeight"), "SM parameters should round-trip");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnimationLayerSerialization passed");
 }
 
 //=============================================================================
 // Serialization Round-Trip: Any-State Transitions
 //=============================================================================
 
-void Zenith_UnitTests::TestAnyStateTransitionSerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnyStateTransitionSerialization...");
+ZENITH_TEST(Core, AnyStateTransitionSerialization) { Zenith_UnitTests::TestAnyStateTransitionSerialization(); }
+
+void Zenith_UnitTests::TestAnyStateTransitionSerialization(){
 
 	Flux_AnimationStateMachine xOriginal("TestSM");
 	xOriginal.AddState("Idle");
@@ -9952,7 +8790,7 @@ void Zenith_UnitTests::TestAnyStateTransitionSerialization()
 
 	// Verify any-state transitions survived
 	const Zenith_Vector<Flux_StateTransition>& xAnyState = xLoaded.GetAnyStateTransitions();
-	Zenith_Assert(xAnyState.GetSize() == 2, "Should have 2 any-state transitions after deserialization");
+	ZENITH_ASSERT_EQ(xAnyState.GetSize(), 2, "Should have 2 any-state transitions after deserialization");
 
 	// Find the Hit and Death transitions (order may differ after deserialization)
 	bool bFoundHit = false, bFoundDeath = false;
@@ -9961,41 +8799,38 @@ void Zenith_UnitTests::TestAnyStateTransitionSerialization()
 		const Flux_StateTransition& xTrans = xAnyState.Get(i);
 		if (xTrans.m_strTargetStateName == "Hit")
 		{
-			Zenith_Assert(xTrans.m_iPriority == 10, "Hit transition priority should round-trip");
-			Zenith_Assert(glm::abs(xTrans.m_fTransitionDuration - 0.15f) < 0.001f, "Hit transition duration should round-trip");
-			Zenith_Assert(xTrans.m_bInterruptible == true, "Hit interruptible flag should round-trip");
-			Zenith_Assert(xTrans.m_xConditions.GetSize() == 1, "Hit should have 1 condition");
+			ZENITH_ASSERT_EQ(xTrans.m_iPriority, 10, "Hit transition priority should round-trip");
+			ZENITH_ASSERT_LT(glm::abs(xTrans.m_fTransitionDuration - 0.15f), 0.001f, "Hit transition duration should round-trip");
+			ZENITH_ASSERT_EQ(xTrans.m_bInterruptible, true, "Hit interruptible flag should round-trip");
+			ZENITH_ASSERT_EQ(xTrans.m_xConditions.GetSize(), 1, "Hit should have 1 condition");
 			bFoundHit = true;
 		}
 		else if (xTrans.m_strTargetStateName == "Death")
 		{
-			Zenith_Assert(xTrans.m_iPriority == 100, "Death transition priority should round-trip");
-			Zenith_Assert(glm::abs(xTrans.m_fTransitionDuration - 0.2f) < 0.001f, "Death transition duration should round-trip");
-			Zenith_Assert(xTrans.m_bInterruptible == false, "Death interruptible flag should round-trip");
-			Zenith_Assert(xTrans.m_xConditions.GetSize() == 1, "Death should have 1 condition");
+			ZENITH_ASSERT_EQ(xTrans.m_iPriority, 100, "Death transition priority should round-trip");
+			ZENITH_ASSERT_LT(glm::abs(xTrans.m_fTransitionDuration - 0.2f), 0.001f, "Death transition duration should round-trip");
+			ZENITH_ASSERT_EQ(xTrans.m_bInterruptible, false, "Death interruptible flag should round-trip");
+			ZENITH_ASSERT_EQ(xTrans.m_xConditions.GetSize(), 1, "Death should have 1 condition");
 			bFoundDeath = true;
 		}
 	}
-	Zenith_Assert(bFoundHit, "Hit any-state transition should survive round-trip");
-	Zenith_Assert(bFoundDeath, "Death any-state transition should survive round-trip");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Any-state transitions round-trip");
+	ZENITH_ASSERT_TRUE(bFoundHit, "Hit any-state transition should survive round-trip");
+	ZENITH_ASSERT_TRUE(bFoundDeath, "Death any-state transition should survive round-trip");
 
 	// Verify states and parameters survived too
-	Zenith_Assert(xLoaded.GetDefaultStateName() == "Idle", "Default state should round-trip");
-	Zenith_Assert(xLoaded.GetParameters().HasParameter("HitTrigger"), "HitTrigger param should round-trip");
-	Zenith_Assert(xLoaded.GetParameters().HasParameter("DeathTrigger"), "DeathTrigger param should round-trip");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] States and parameters round-trip");
+	ZENITH_ASSERT_EQ(xLoaded.GetDefaultStateName(), "Idle", "Default state should round-trip");
+	ZENITH_ASSERT_TRUE(xLoaded.GetParameters().HasParameter("HitTrigger"), "HitTrigger param should round-trip");
+	ZENITH_ASSERT_TRUE(xLoaded.GetParameters().HasParameter("DeathTrigger"), "DeathTrigger param should round-trip");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnyStateTransitionSerialization passed");
 }
 
 //=============================================================================
 // Serialization Round-Trip: Sub-State Machines
 //=============================================================================
 
-void Zenith_UnitTests::TestSubStateMachineSerialization()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSubStateMachineSerialization...");
+ZENITH_TEST(Core, SubStateMachineSerialization) { Zenith_UnitTests::TestSubStateMachineSerialization(); }
+
+void Zenith_UnitTests::TestSubStateMachineSerialization(){
 
 	Flux_AnimationStateMachine xOriginal("ParentSM");
 	xOriginal.AddState("Idle");
@@ -10012,7 +8847,7 @@ void Zenith_UnitTests::TestSubStateMachineSerialization()
 
 	// Add a transition inside the sub-SM
 	Flux_AnimationState* pxWalk = pxSubSM->GetState("Walk");
-	Zenith_Assert(pxWalk != nullptr, "Walk state should exist in sub-SM");
+	ZENITH_ASSERT_NOT_NULL(pxWalk, "Walk state should exist in sub-SM");
 	{
 		Flux_StateTransition xTrans;
 		xTrans.m_strTargetStateName = "Run";
@@ -10037,64 +8872,57 @@ void Zenith_UnitTests::TestSubStateMachineSerialization()
 	xLoaded.ReadFromDataStream(xStream);
 
 	// Verify parent SM
-	Zenith_Assert(xLoaded.GetName() == "ParentSM", "Parent SM name should round-trip");
-	Zenith_Assert(xLoaded.GetDefaultStateName() == "Idle", "Parent default state should round-trip");
-	Zenith_Assert(xLoaded.GetParameters().HasParameter("Speed"), "Parent params should round-trip");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Parent SM round-trip");
+	ZENITH_ASSERT_EQ(xLoaded.GetName(), "ParentSM", "Parent SM name should round-trip");
+	ZENITH_ASSERT_EQ(xLoaded.GetDefaultStateName(), "Idle", "Parent default state should round-trip");
+	ZENITH_ASSERT_TRUE(xLoaded.GetParameters().HasParameter("Speed"), "Parent params should round-trip");
 
 	// Verify sub-state machine exists
 	Flux_AnimationState* pxLoadedLoco = xLoaded.GetState("Locomotion");
-	Zenith_Assert(pxLoadedLoco != nullptr, "Locomotion state should exist");
-	Zenith_Assert(pxLoadedLoco->IsSubStateMachine(), "Locomotion should be a sub-state machine");
+	ZENITH_ASSERT_NOT_NULL(pxLoadedLoco, "Locomotion state should exist");
+	ZENITH_ASSERT_TRUE(pxLoadedLoco->IsSubStateMachine(), "Locomotion should be a sub-state machine");
 
 	Flux_AnimationStateMachine* pxLoadedSubSM = pxLoadedLoco->GetSubStateMachine();
-	Zenith_Assert(pxLoadedSubSM != nullptr, "Sub-SM pointer should be valid");
-	Zenith_Assert(pxLoadedSubSM->GetName() == "LocomotionSM", "Sub-SM name should round-trip");
-	Zenith_Assert(pxLoadedSubSM->GetDefaultStateName() == "Walk", "Sub-SM default state should round-trip");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Sub-state machine round-trip");
+	ZENITH_ASSERT_NOT_NULL(pxLoadedSubSM, "Sub-SM pointer should be valid");
+	ZENITH_ASSERT_EQ(pxLoadedSubSM->GetName(), "LocomotionSM", "Sub-SM name should round-trip");
+	ZENITH_ASSERT_EQ(pxLoadedSubSM->GetDefaultStateName(), "Walk", "Sub-SM default state should round-trip");
 
 	// Verify sub-SM states and transitions
 	Flux_AnimationState* pxLoadedWalk = pxLoadedSubSM->GetState("Walk");
-	Zenith_Assert(pxLoadedWalk != nullptr, "Walk state should exist in deserialized sub-SM");
-	Zenith_Assert(pxLoadedSubSM->GetState("Run") != nullptr, "Run state should exist in deserialized sub-SM");
+	ZENITH_ASSERT_NOT_NULL(pxLoadedWalk, "Walk state should exist in deserialized sub-SM");
+	ZENITH_ASSERT_NOT_NULL(pxLoadedSubSM->GetState("Run"), "Run state should exist in deserialized sub-SM");
 
 	const Zenith_Vector<Flux_StateTransition>& xLoadedTrans = pxLoadedWalk->GetTransitions();
-	Zenith_Assert(xLoadedTrans.GetSize() == 1, "Walk should have 1 transition after deserialization");
-	Zenith_Assert(xLoadedTrans.Get(0).m_strTargetStateName == "Run", "Transition target should be Run");
-	Zenith_Assert(glm::abs(xLoadedTrans.Get(0).m_fTransitionDuration - 0.2f) < 0.001f, "Transition duration should round-trip");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Sub-SM transitions round-trip");
+	ZENITH_ASSERT_EQ(xLoadedTrans.GetSize(), 1, "Walk should have 1 transition after deserialization");
+	ZENITH_ASSERT_EQ(xLoadedTrans.Get(0).m_strTargetStateName, "Run", "Transition target should be Run");
+	ZENITH_ASSERT_LT(glm::abs(xLoadedTrans.Get(0).m_fTransitionDuration - 0.2f), 0.001f, "Transition duration should round-trip");
 
 	// Verify sub-SM parameters
-	Zenith_Assert(pxLoadedSubSM->GetParameters().HasParameter("SubSpeed"), "Sub-SM params should round-trip");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Sub-SM parameters round-trip");
+	ZENITH_ASSERT_TRUE(pxLoadedSubSM->GetParameters().HasParameter("SubSpeed"), "Sub-SM params should round-trip");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSubStateMachineSerialization passed");
 }
 
 //=============================================================================
 // Code Review Round 4 - Bug Fix Validation Tests
 //=============================================================================
 
-void Zenith_UnitTests::TestHasAnimationContentWithLayers()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHasAnimationContentWithLayers...");
+ZENITH_TEST(Core, HasAnimationContentWithLayers) { Zenith_UnitTests::TestHasAnimationContentWithLayers(); }
+
+void Zenith_UnitTests::TestHasAnimationContentWithLayers(){
 
 	Flux_AnimationController xController;
 
 	// No content initially
-	Zenith_Assert(!xController.HasAnimationContent(), "Should have no content initially");
+	ZENITH_ASSERT_FALSE(xController.HasAnimationContent(), "Should have no content initially");
 
 	// Add a layer (no clips, no root state machine)
 	xController.AddLayer("Base");
-	Zenith_Assert(xController.HasAnimationContent(),
-		"Should report content when layers are present");
+	ZENITH_ASSERT_TRUE(xController.HasAnimationContent(), "Should report content when layers are present");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHasAnimationContentWithLayers passed");
 }
 
-void Zenith_UnitTests::TestInitializeRetroactiveLayerPoses()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestInitializeRetroactiveLayerPoses...");
+ZENITH_TEST(Core, InitializeRetroactiveLayerPoses) { Zenith_UnitTests::TestInitializeRetroactiveLayerPoses(); }
+
+void Zenith_UnitTests::TestInitializeRetroactiveLayerPoses(){
 
 	// Create a skeleton asset with a few bones
 	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
@@ -10112,25 +8940,21 @@ void Zenith_UnitTests::TestInitializeRetroactiveLayerPoses()
 	Flux_AnimationLayer* pxLayer = xController.AddLayer("Base");
 
 	// Layer pose should be uninitialized (0 bones)
-	Zenith_Assert(pxLayer->GetOutputPose().GetNumBones() == 0,
-		"Layer pose should be uninitialized before Initialize()");
+	ZENITH_ASSERT_EQ(pxLayer->GetOutputPose().GetNumBones(), 0, "Layer pose should be uninitialized before Initialize()");
 
 	// Initialize should retroactively initialize the layer pose
 	xController.Initialize(pxSkelInst);
 
-	Zenith_Assert(pxLayer->GetOutputPose().GetNumBones() == 2,
-		"Layer pose should have 2 bones after retroactive Initialize()");
+	ZENITH_ASSERT_EQ(pxLayer->GetOutputPose().GetNumBones(), 2, "Layer pose should have 2 bones after retroactive Initialize()");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Layer added before Initialize() gets retroactive pose init");
 
 	delete pxSkelInst;
 	delete pxSkel;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestInitializeRetroactiveLayerPoses passed");
 }
 
-void Zenith_UnitTests::TestResolveClipReferencesBlendSpace2D()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestResolveClipReferencesBlendSpace2D...");
+ZENITH_TEST(Core, ResolveClipReferencesBlendSpace2D) { Zenith_UnitTests::TestResolveClipReferencesBlendSpace2D(); }
+
+void Zenith_UnitTests::TestResolveClipReferencesBlendSpace2D(){
 
 	// Create clip collection
 	Flux_AnimationClipCollection xCollection;
@@ -10144,11 +8968,11 @@ void Zenith_UnitTests::TestResolveClipReferencesBlendSpace2D()
 	// Create BlendSpace2D with two clip nodes as blend points
 	Flux_BlendTreeNode_Clip* pxNodeA = new Flux_BlendTreeNode_Clip();
 	pxNodeA->SetClipName("ClipA");
-	Zenith_Assert(pxNodeA->GetClip() == nullptr, "Clip A should be unresolved");
+	ZENITH_ASSERT_NULL(pxNodeA->GetClip(), "Clip A should be unresolved");
 
 	Flux_BlendTreeNode_Clip* pxNodeB = new Flux_BlendTreeNode_Clip();
 	pxNodeB->SetClipName("ClipB");
-	Zenith_Assert(pxNodeB->GetClip() == nullptr, "Clip B should be unresolved");
+	ZENITH_ASSERT_NULL(pxNodeB->GetClip(), "Clip B should be unresolved");
 
 	Flux_BlendTreeNode_BlendSpace2D* pxBS2D = new Flux_BlendTreeNode_BlendSpace2D();
 	pxBS2D->AddBlendPoint(pxNodeA, Zenith_Maths::Vector2(0.0f, 0.0f));
@@ -10163,18 +8987,14 @@ void Zenith_UnitTests::TestResolveClipReferencesBlendSpace2D()
 	// Resolve
 	xSM.ResolveClipReferences(&xCollection);
 
-	Zenith_Assert(pxNodeA->GetClip() == pxClipA,
-		"BlendSpace2D clip A should be resolved");
-	Zenith_Assert(pxNodeB->GetClip() == pxClipB,
-		"BlendSpace2D clip B should be resolved");
+	ZENITH_ASSERT_EQ(pxNodeA->GetClip(), pxClipA, "BlendSpace2D clip A should be resolved");
+	ZENITH_ASSERT_EQ(pxNodeB->GetClip(), pxClipB, "BlendSpace2D clip B should be resolved");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] BlendSpace2D blend point clips resolved recursively");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestResolveClipReferencesBlendSpace2D passed");
 }
 
-void Zenith_UnitTests::TestResolveClipReferencesSelect()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestResolveClipReferencesSelect...");
+ZENITH_TEST(Core, ResolveClipReferencesSelect) { Zenith_UnitTests::TestResolveClipReferencesSelect(); }
+
+void Zenith_UnitTests::TestResolveClipReferencesSelect(){
 
 	// Create clip collection
 	Flux_AnimationClipCollection xCollection;
@@ -10188,11 +9008,11 @@ void Zenith_UnitTests::TestResolveClipReferencesSelect()
 	// Create Select node with two clip children
 	Flux_BlendTreeNode_Clip* pxNodeA = new Flux_BlendTreeNode_Clip();
 	pxNodeA->SetClipName("SelectA");
-	Zenith_Assert(pxNodeA->GetClip() == nullptr, "Clip A should be unresolved");
+	ZENITH_ASSERT_NULL(pxNodeA->GetClip(), "Clip A should be unresolved");
 
 	Flux_BlendTreeNode_Clip* pxNodeB = new Flux_BlendTreeNode_Clip();
 	pxNodeB->SetClipName("SelectB");
-	Zenith_Assert(pxNodeB->GetClip() == nullptr, "Clip B should be unresolved");
+	ZENITH_ASSERT_NULL(pxNodeB->GetClip(), "Clip B should be unresolved");
 
 	Flux_BlendTreeNode_Select* pxSelect = new Flux_BlendTreeNode_Select();
 	pxSelect->AddChild(pxNodeA);
@@ -10207,18 +9027,14 @@ void Zenith_UnitTests::TestResolveClipReferencesSelect()
 	// Resolve
 	xSM.ResolveClipReferences(&xCollection);
 
-	Zenith_Assert(pxNodeA->GetClip() == pxClipA,
-		"Select child clip A should be resolved");
-	Zenith_Assert(pxNodeB->GetClip() == pxClipB,
-		"Select child clip B should be resolved");
+	ZENITH_ASSERT_EQ(pxNodeA->GetClip(), pxClipA, "Select child clip A should be resolved");
+	ZENITH_ASSERT_EQ(pxNodeB->GetClip(), pxClipB, "Select child clip B should be resolved");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Select node children clips resolved recursively");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestResolveClipReferencesSelect passed");
 }
 
-void Zenith_UnitTests::TestLayerCompositionOverrideBlend()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLayerCompositionOverrideBlend...");
+ZENITH_TEST(Animation, LayerCompositionOverrideBlend) { Zenith_UnitTests::TestLayerCompositionOverrideBlend(); }
+
+void Zenith_UnitTests::TestLayerCompositionOverrideBlend(){
 
 	// Create a simple 2-bone skeleton
 	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
@@ -10287,26 +9103,22 @@ void Zenith_UnitTests::TestLayerCompositionOverrideBlend()
 
 	float fExpectedX = 1.0f;
 	float fTolerance = 0.01f;
-	Zenith_Assert(glm::abs(xRootPose.m_xPosition.x - fExpectedX) < fTolerance,
-		"Root X should be ~1.0 (blend of 0.0 and 2.0 at weight 0.5), got %.3f", xRootPose.m_xPosition.x);
+	ZENITH_ASSERT_LT(glm::abs(xRootPose.m_xPosition.x - fExpectedX), fTolerance, "Root X should be ~1.0 (blend of 0.0 and 2.0 at weight 0.5), got %.3f", xRootPose.m_xPosition.x);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Layer override blend at 0.5 weight produces correct lerp (%.3f)",
-		xRootPose.m_xPosition.x);
 
 	delete pxSkelInst;
 	delete pxSkel;
 	delete pxClipA;
 	delete pxClipB;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLayerCompositionOverrideBlend passed");
 }
 
 //=============================================================================
 // Code review round 5 - additional coverage
 //=============================================================================
 
-void Zenith_UnitTests::TestLayerCompositionAdditiveBlend()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLayerCompositionAdditiveBlend...");
+ZENITH_TEST(Animation, LayerCompositionAdditiveBlend) { Zenith_UnitTests::TestLayerCompositionAdditiveBlend(); }
+
+void Zenith_UnitTests::TestLayerCompositionAdditiveBlend(){
 
 	// Create a simple 2-bone skeleton
 	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
@@ -10371,21 +9183,18 @@ void Zenith_UnitTests::TestLayerCompositionAdditiveBlend()
 	const Flux_BoneLocalPose& xRootPose = xOutput.GetLocalPose(0);
 
 	// Additive result should be greater than base alone
-	Zenith_Assert(xRootPose.m_xPosition.x > 1.0f + 0.01f,
-		"Additive layer should increase root X beyond base (1.0), got %.3f", xRootPose.m_xPosition.x);
+	ZENITH_ASSERT_GT(xRootPose.m_xPosition.x, 1.0f + 0.01f, "Additive layer should increase root X beyond base (1.0), got %.3f", xRootPose.m_xPosition.x);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Additive layer adds delta on top of base (result: %.3f)", xRootPose.m_xPosition.x);
 
 	delete pxSkelInst;
 	delete pxSkel;
 	delete pxClipBase;
 	delete pxClipAdd;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLayerCompositionAdditiveBlend passed");
 }
 
-void Zenith_UnitTests::TestLayerMaskedOverrideBlend()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLayerMaskedOverrideBlend...");
+ZENITH_TEST(Animation, LayerMaskedOverrideBlend) { Zenith_UnitTests::TestLayerMaskedOverrideBlend(); }
+
+void Zenith_UnitTests::TestLayerMaskedOverrideBlend(){
 
 	// Create 3-bone skeleton
 	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
@@ -10480,29 +9289,24 @@ void Zenith_UnitTests::TestLayerMaskedOverrideBlend()
 	float fTolerance = 0.01f;
 
 	// Root (mask weight 0): should remain at base (0, 0, 0)
-	Zenith_Assert(glm::abs(xOutput.GetLocalPose(0).m_xPosition.x - 0.0f) < fTolerance,
-		"Root (mask=0) should stay at base 0.0, got %.3f", xOutput.GetLocalPose(0).m_xPosition.x);
+	ZENITH_ASSERT_LT(glm::abs(xOutput.GetLocalPose(0).m_xPosition.x - 0.0f), fTolerance, "Root (mask=0) should stay at base 0.0, got %.3f", xOutput.GetLocalPose(0).m_xPosition.x);
 
 	// Upper (mask weight 1): should be fully overridden to (4, 0, 0)
-	Zenith_Assert(glm::abs(xOutput.GetLocalPose(1).m_xPosition.x - 4.0f) < fTolerance,
-		"Upper (mask=1) should be overridden to 4.0, got %.3f", xOutput.GetLocalPose(1).m_xPosition.x);
+	ZENITH_ASSERT_LT(glm::abs(xOutput.GetLocalPose(1).m_xPosition.x - 4.0f), fTolerance, "Upper (mask=1) should be overridden to 4.0, got %.3f", xOutput.GetLocalPose(1).m_xPosition.x);
 
 	// Lower (mask weight 0): should remain at base (0, 0, 0)
-	Zenith_Assert(glm::abs(xOutput.GetLocalPose(2).m_xPosition.x - 0.0f) < fTolerance,
-		"Lower (mask=0) should stay at base 0.0, got %.3f", xOutput.GetLocalPose(2).m_xPosition.x);
+	ZENITH_ASSERT_LT(glm::abs(xOutput.GetLocalPose(2).m_xPosition.x - 0.0f), fTolerance, "Lower (mask=0) should stay at base 0.0, got %.3f", xOutput.GetLocalPose(2).m_xPosition.x);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Masked override only affects bone with mask weight > 0");
 
 	delete pxSkelInst;
 	delete pxSkel;
 	delete pxClipBase;
 	delete pxClipOverride;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLayerMaskedOverrideBlend passed");
 }
 
-void Zenith_UnitTests::TestPingPongAsymmetricEasing()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPingPongAsymmetricEasing...");
+ZENITH_TEST(Core, PingPongAsymmetricEasing) { Zenith_UnitTests::TestPingPongAsymmetricEasing(); }
+
+void Zenith_UnitTests::TestPingPongAsymmetricEasing(){
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("PingPongEasingTest");
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
@@ -10522,8 +9326,7 @@ void Zenith_UnitTests::TestPingPongAsymmetricEasing()
 	Zenith_Maths::Vector3 xScale;
 	xTransform.GetScale(xScale);
 	float fForwardHalf = xScale.x;
-	Zenith_Assert(glm::abs(fForwardHalf - 0.25f) < 0.05f,
-		"Forward QuadIn at 0.5 should be ~0.25, got %.3f", fForwardHalf);
+	ZENITH_ASSERT_LT(glm::abs(fForwardHalf - 0.25f), 0.05f, "Forward QuadIn at 0.5 should be ~0.25, got %.3f", fForwardHalf);
 
 	// Complete forward pass
 	xTween.OnUpdate(0.5f);
@@ -10534,20 +9337,16 @@ void Zenith_UnitTests::TestPingPongAsymmetricEasing()
 	xTween.OnUpdate(0.5f);
 	xTransform.GetScale(xScale);
 	float fReverseHalf = xScale.x;
-	Zenith_Assert(fReverseHalf > 0.5f,
-		"Reverse QuadIn at 0.5 should be > 0.5 (mirrored curve), got %.3f", fReverseHalf);
-	Zenith_Assert(glm::abs(fReverseHalf - 0.75f) < 0.05f,
-		"Reverse QuadIn at 0.5 should be ~0.75 (1.0 - 0.25), got %.3f", fReverseHalf);
+	ZENITH_ASSERT_GT(fReverseHalf, 0.5f, "Reverse QuadIn at 0.5 should be > 0.5 (mirrored curve), got %.3f", fReverseHalf);
+	ZENITH_ASSERT_LT(glm::abs(fReverseHalf - 0.75f), 0.05f, "Reverse QuadIn at 0.5 should be ~0.75 (1.0 - 0.25), got %.3f", fReverseHalf);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Forward=%.3f, Reverse=%.3f (mirrored correctly)", fForwardHalf, fReverseHalf);
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPingPongAsymmetricEasing passed");
 }
 
-void Zenith_UnitTests::TestTransitionCompletionFramePose()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTransitionCompletionFramePose...");
+ZENITH_TEST(Animation, TransitionCompletionFramePose) { Zenith_UnitTests::TestTransitionCompletionFramePose(); }
+
+void Zenith_UnitTests::TestTransitionCompletionFramePose(){
 
 	// Create 2-bone skeleton
 	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
@@ -10645,23 +9444,20 @@ void Zenith_UnitTests::TestTransitionCompletionFramePose()
 		fPrev = fCurr;
 	}
 
-	Zenith_Assert(bSmooth, "Post-transition frames should be smooth (no large jumps)");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Post-transition frames are smooth");
+	ZENITH_ASSERT_TRUE(bSmooth, "Post-transition frames should be smooth (no large jumps)");
 
 	// Verify we're actually in StateB (clip position should be positive, increasing)
-	Zenith_Assert(fPrev > 0.0f, "Position should be positive (in StateB clip range)");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] State machine is in target state (pos=%.3f)", fPrev);
+	ZENITH_ASSERT_GT(fPrev, 0.0f, "Position should be positive (in StateB clip range)");
 
 	delete pxSkelInst;
 	delete pxSkel;
 	delete pxClipA;
 	delete pxClipB;
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransitionCompletionFramePose passed");
 }
 
-void Zenith_UnitTests::TestStateMachineUpdateNoStates()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateMachineUpdateNoStates...");
+ZENITH_TEST(Animation, StateMachineUpdateNoStates) { Zenith_UnitTests::TestStateMachineUpdateNoStates(); }
+
+void Zenith_UnitTests::TestStateMachineUpdateNoStates(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -10674,15 +9470,14 @@ void Zenith_UnitTests::TestStateMachineUpdateNoStates()
 	// Update should not crash and should reset pose
 	xSM.Update(0.016f, xPose, xSkeleton);
 
-	Zenith_Assert(!xSM.IsTransitioning(), "Empty SM should not be transitioning");
-	Zenith_Assert(xSM.GetCurrentStateName().empty(), "Empty SM should have no current state");
+	ZENITH_ASSERT_FALSE(xSM.IsTransitioning(), "Empty SM should not be transitioning");
+	ZENITH_ASSERT_TRUE(xSM.GetCurrentStateName().empty(), "Empty SM should have no current state");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateMachineUpdateNoStates passed");
 }
 
-void Zenith_UnitTests::TestStateMachineAutoInitDefaultState()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateMachineAutoInitDefaultState...");
+ZENITH_TEST(Animation, StateMachineAutoInitDefaultState) { Zenith_UnitTests::TestStateMachineAutoInitDefaultState(); }
+
+void Zenith_UnitTests::TestStateMachineAutoInitDefaultState(){
 
 	Zenith_SkeletonAsset xSkeleton;
 	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
@@ -10695,74 +9490,70 @@ void Zenith_UnitTests::TestStateMachineAutoInitDefaultState()
 	xSM.SetDefaultState("Idle");
 
 	// Before Update, no current state
-	Zenith_Assert(xSM.GetCurrentStateName().empty(), "Should have no current state before first Update");
+	ZENITH_ASSERT_TRUE(xSM.GetCurrentStateName().empty(), "Should have no current state before first Update");
 
 	// First Update should auto-initialize to default state
 	xSM.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should auto-init to default state 'Idle'");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "Should auto-init to default state 'Idle'");
 
 	// Subsequent Update should stay in Idle (no transitions configured)
 	xSM.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should remain in Idle");
+	ZENITH_ASSERT_EQ(xSM.GetCurrentStateName(), "Idle", "Should remain in Idle");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateMachineAutoInitDefaultState passed");
 }
 
 #ifdef ZENITH_WINDOWS
-void Zenith_UnitTests::TestSlangSplitFilePath()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSlangSplitFilePath...");
+ZENITH_TEST(Slang, SlangSplitFilePath) { Zenith_UnitTests::TestSlangSplitFilePath(); }
+void Zenith_UnitTests::TestSlangSplitFilePath(){
 
 	std::string strFileName, strDirectory;
 
 	// Basic forward-slash path
 	Flux_SlangCompiler::SplitFilePath("shaders/vertex/basic.vert", strFileName, strDirectory);
-	Zenith_Assert(strFileName == "basic.vert", "Forward-slash filename should be 'basic.vert'");
-	Zenith_Assert(strDirectory == "shaders/vertex", "Forward-slash directory should be 'shaders/vertex'");
+	ZENITH_ASSERT_EQ(strFileName, "basic.vert", "Forward-slash filename should be 'basic.vert'");
+	ZENITH_ASSERT_EQ(strDirectory, "shaders/vertex", "Forward-slash directory should be 'shaders/vertex'");
 
 	// Path with no directory (just a filename)
 	Flux_SlangCompiler::SplitFilePath("shader.frag", strFileName, strDirectory);
-	Zenith_Assert(strFileName == "shader.frag", "No-directory filename should be 'shader.frag'");
-	Zenith_Assert(strDirectory == ".", "No-directory path should default to '.'");
+	ZENITH_ASSERT_EQ(strFileName, "shader.frag", "No-directory filename should be 'shader.frag'");
+	ZENITH_ASSERT_EQ(strDirectory, ".", "No-directory path should default to '.'");
 
 	// Backslash path (Windows-style)
 	Flux_SlangCompiler::SplitFilePath("C:\\shaders\\compute\\blur.comp", strFileName, strDirectory);
-	Zenith_Assert(strFileName == "blur.comp", "Backslash filename should be 'blur.comp'");
-	Zenith_Assert(strDirectory == "C:\\shaders\\compute", "Backslash directory should be 'C:\\shaders\\compute'");
+	ZENITH_ASSERT_EQ(strFileName, "blur.comp", "Backslash filename should be 'blur.comp'");
+	ZENITH_ASSERT_EQ(strDirectory, "C:\\shaders\\compute", "Backslash directory should be 'C:\\shaders\\compute'");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSlangSplitFilePath PASSED");
 }
 
-void Zenith_UnitTests::TestSlangSplitFilePathEdgeCases()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSlangSplitFilePathEdgeCases...");
+ZENITH_TEST(Slang, SlangSplitFilePathEdgeCases) { Zenith_UnitTests::TestSlangSplitFilePathEdgeCases(); }
+
+void Zenith_UnitTests::TestSlangSplitFilePathEdgeCases(){
 
 	std::string strFileName, strDirectory;
 
 	// Empty string
 	Flux_SlangCompiler::SplitFilePath("", strFileName, strDirectory);
-	Zenith_Assert(strFileName == "", "Empty path filename should be empty");
-	Zenith_Assert(strDirectory == ".", "Empty path directory should default to '.'");
+	ZENITH_ASSERT_EQ(strFileName, "", "Empty path filename should be empty");
+	ZENITH_ASSERT_EQ(strDirectory, ".", "Empty path directory should default to '.'");
 
 	// Just a filename with no extension
 	Flux_SlangCompiler::SplitFilePath("Makefile", strFileName, strDirectory);
-	Zenith_Assert(strFileName == "Makefile", "Plain filename should be 'Makefile'");
-	Zenith_Assert(strDirectory == ".", "Plain filename directory should default to '.'");
+	ZENITH_ASSERT_EQ(strFileName, "Makefile", "Plain filename should be 'Makefile'");
+	ZENITH_ASSERT_EQ(strDirectory, ".", "Plain filename directory should default to '.'");
 
 	// Trailing separator
 	Flux_SlangCompiler::SplitFilePath("shaders/vertex/", strFileName, strDirectory);
-	Zenith_Assert(strFileName == "", "Trailing separator should produce empty filename");
-	Zenith_Assert(strDirectory == "shaders/vertex", "Trailing separator directory should be 'shaders/vertex'");
+	ZENITH_ASSERT_EQ(strFileName, "", "Trailing separator should produce empty filename");
+	ZENITH_ASSERT_EQ(strDirectory, "shaders/vertex", "Trailing separator directory should be 'shaders/vertex'");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSlangSplitFilePathEdgeCases PASSED");
 }
 #endif
 
 // ========== Animation State Machine Helper Tests ==========
 
-void Zenith_UnitTests::TestParamSerializationFloat()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestParamSerializationFloat...");
+ZENITH_TEST(Core, ParamSerializationFloat) { Zenith_UnitTests::TestParamSerializationFloat(); }
+
+void Zenith_UnitTests::TestParamSerializationFloat(){
 
 	Flux_AnimationParameters xParams;
 	xParams.AddFloat("Speed", 3.14f);
@@ -10777,17 +9568,16 @@ void Zenith_UnitTests::TestParamSerializationFloat()
 	Flux_AnimationParameters xLoaded;
 	xLoaded.ReadFromDataStream(xReadStream);
 
-	Zenith_Assert(xLoaded.HasParameter("Speed"), "Speed param should exist after round-trip");
-	Zenith_Assert(xLoaded.GetFloat("Speed") == 3.14f, "Speed should be 3.14f");
-	Zenith_Assert(xLoaded.HasParameter("Combo"), "Combo param should exist after round-trip");
-	Zenith_Assert(xLoaded.GetInt("Combo") == 42, "Combo should be 42");
+	ZENITH_ASSERT_TRUE(xLoaded.HasParameter("Speed"), "Speed param should exist after round-trip");
+	ZENITH_ASSERT_EQ(xLoaded.GetFloat("Speed"), 3.14f, "Speed should be 3.14f");
+	ZENITH_ASSERT_TRUE(xLoaded.HasParameter("Combo"), "Combo param should exist after round-trip");
+	ZENITH_ASSERT_EQ(xLoaded.GetInt("Combo"), 42, "Combo should be 42");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestParamSerializationFloat PASSED");
 }
 
-void Zenith_UnitTests::TestParamSerializationBoolTrigger()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestParamSerializationBoolTrigger...");
+ZENITH_TEST(Core, ParamSerializationBoolTrigger) { Zenith_UnitTests::TestParamSerializationBoolTrigger(); }
+
+void Zenith_UnitTests::TestParamSerializationBoolTrigger(){
 
 	Flux_AnimationParameters xParams;
 	xParams.AddBool("Grounded", true);
@@ -10801,15 +9591,14 @@ void Zenith_UnitTests::TestParamSerializationBoolTrigger()
 	Flux_AnimationParameters xLoaded;
 	xLoaded.ReadFromDataStream(xReadStream);
 
-	Zenith_Assert(xLoaded.GetBool("Grounded") == true, "Grounded should be true");
-	Zenith_Assert(xLoaded.PeekTrigger("Jump") == true, "Jump trigger should be set");
+	ZENITH_ASSERT_EQ(xLoaded.GetBool("Grounded"), true, "Grounded should be true");
+	ZENITH_ASSERT_EQ(xLoaded.PeekTrigger("Jump"), true, "Jump trigger should be set");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestParamSerializationBoolTrigger PASSED");
 }
 
-void Zenith_UnitTests::TestCompareNumericGreater()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCompareNumericGreater...");
+ZENITH_TEST(Core, CompareNumericGreater) { Zenith_UnitTests::TestCompareNumericGreater(); }
+
+void Zenith_UnitTests::TestCompareNumericGreater(){
 
 	Flux_AnimationParameters xParams;
 	xParams.AddFloat("Speed", 5.0f);
@@ -10820,17 +9609,16 @@ void Zenith_UnitTests::TestCompareNumericGreater()
 	xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
 	xCond.m_fThreshold = 3.0f;
 
-	Zenith_Assert(xCond.Evaluate(xParams) == true, "5.0 > 3.0 should be true");
+	ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), true, "5.0 > 3.0 should be true");
 
 	xCond.m_fThreshold = 5.0f;
-	Zenith_Assert(xCond.Evaluate(xParams) == false, "5.0 > 5.0 should be false");
+	ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), false, "5.0 > 5.0 should be false");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCompareNumericGreater PASSED");
 }
 
-void Zenith_UnitTests::TestCompareNumericLessEqual()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCompareNumericLessEqual...");
+ZENITH_TEST(Core, CompareNumericLessEqual) { Zenith_UnitTests::TestCompareNumericLessEqual(); }
+
+void Zenith_UnitTests::TestCompareNumericLessEqual(){
 
 	Flux_AnimationParameters xParams;
 	xParams.AddInt("Health", 10);
@@ -10841,17 +9629,16 @@ void Zenith_UnitTests::TestCompareNumericLessEqual()
 	xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::LessEqual;
 	xCond.m_iThreshold = 10;
 
-	Zenith_Assert(xCond.Evaluate(xParams) == true, "10 <= 10 should be true");
+	ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), true, "10 <= 10 should be true");
 
 	xCond.m_iThreshold = 5;
-	Zenith_Assert(xCond.Evaluate(xParams) == false, "10 <= 5 should be false");
+	ZENITH_ASSERT_EQ(xCond.Evaluate(xParams), false, "10 <= 5 should be false");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCompareNumericLessEqual PASSED");
 }
 
-void Zenith_UnitTests::TestPriorityInsertionMiddle()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPriorityInsertionMiddle...");
+ZENITH_TEST(Core, PriorityInsertionMiddle) { Zenith_UnitTests::TestPriorityInsertionMiddle(); }
+
+void Zenith_UnitTests::TestPriorityInsertionMiddle(){
 
 	Flux_AnimationState xState("TestState");
 
@@ -10872,17 +9659,16 @@ void Zenith_UnitTests::TestPriorityInsertionMiddle()
 	xState.AddTransition(xMid);
 
 	const Zenith_Vector<Flux_StateTransition>& xTransitions = xState.GetTransitions();
-	Zenith_Assert(xTransitions.GetSize() == 3, "Should have 3 transitions");
-	Zenith_Assert(xTransitions.Get(0).m_strTargetStateName == "High", "First should be High (priority 10)");
-	Zenith_Assert(xTransitions.Get(1).m_strTargetStateName == "Mid", "Second should be Mid (priority 5)");
-	Zenith_Assert(xTransitions.Get(2).m_strTargetStateName == "Low", "Third should be Low (priority 1)");
+	ZENITH_ASSERT_EQ(xTransitions.GetSize(), 3, "Should have 3 transitions");
+	ZENITH_ASSERT_EQ(xTransitions.Get(0).m_strTargetStateName, "High", "First should be High (priority 10)");
+	ZENITH_ASSERT_EQ(xTransitions.Get(1).m_strTargetStateName, "Mid", "Second should be Mid (priority 5)");
+	ZENITH_ASSERT_EQ(xTransitions.Get(2).m_strTargetStateName, "Low", "Third should be Low (priority 1)");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPriorityInsertionMiddle PASSED");
 }
 
-void Zenith_UnitTests::TestPriorityInsertionEmpty()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPriorityInsertionEmpty...");
+ZENITH_TEST(Core, PriorityInsertionEmpty) { Zenith_UnitTests::TestPriorityInsertionEmpty(); }
+
+void Zenith_UnitTests::TestPriorityInsertionEmpty(){
 
 	Flux_AnimationStateMachine xSM("TestSM");
 
@@ -10893,18 +9679,17 @@ void Zenith_UnitTests::TestPriorityInsertionEmpty()
 	xSM.AddAnyStateTransition(xTrans);
 
 	const Zenith_Vector<Flux_StateTransition>& xAny = xSM.GetAnyStateTransitions();
-	Zenith_Assert(xAny.GetSize() == 1, "Should have 1 any-state transition");
-	Zenith_Assert(xAny.Get(0).m_iPriority == 7, "Priority should be 7");
-	Zenith_Assert(xAny.Get(0).m_strTargetStateName == "Target", "Target name should match");
+	ZENITH_ASSERT_EQ(xAny.GetSize(), 1, "Should have 1 any-state transition");
+	ZENITH_ASSERT_EQ(xAny.Get(0).m_iPriority, 7, "Priority should be 7");
+	ZENITH_ASSERT_EQ(xAny.Get(0).m_strTargetStateName, "Target", "Target name should match");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPriorityInsertionEmpty PASSED");
 }
 
 // ========== Terrain Streaming Tests ==========
 
-void Zenith_UnitTests::TestChunkDistanceSymmetry()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestChunkDistanceSymmetry...");
+ZENITH_TEST(Terrain, ChunkDistanceSymmetry) { Zenith_UnitTests::TestChunkDistanceSymmetry(); }
+
+void Zenith_UnitTests::TestChunkDistanceSymmetry(){
 
 	// Use two distinct chunks: (2,3) and (5,7)
 	const uint32_t uChunkA = Flux_TerrainStreamingManager::ChunkCoordsToIndex(2, 3);
@@ -10936,19 +9721,18 @@ void Zenith_UnitTests::TestChunkDistanceSymmetry()
 
 	// Squared distance is symmetric: |A-B|^2 == |B-A|^2
 	float fDifference = fabsf(fDistAToB - fDistBToA);
-	Zenith_Assert(fDifference < 0.001f, "Chunk distance should be symmetric (A->B == B->A), diff=%.6f", fDifference);
+	ZENITH_ASSERT_LT(fDifference, 0.001f, "Chunk distance should be symmetric (A->B == B->A), diff=%.6f", fDifference);
 
 	// Restore original state
 	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkA] = xOrigA;
 	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkB] = xOrigB;
 	Flux_TerrainStreamingManager::s_bAABBsCached = bOrigAABBsCached;
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestChunkDistanceSymmetry PASSED");
 }
 
-void Zenith_UnitTests::TestChunkDistanceZero()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestChunkDistanceZero...");
+ZENITH_TEST(Terrain, ChunkDistanceZero) { Zenith_UnitTests::TestChunkDistanceZero(); }
+
+void Zenith_UnitTests::TestChunkDistanceZero(){
 
 	const uint32_t uChunkIndex = Flux_TerrainStreamingManager::ChunkCoordsToIndex(4, 4);
 
@@ -10967,20 +9751,19 @@ void Zenith_UnitTests::TestChunkDistanceZero()
 	Zenith_Maths::Vector3 xChunkCenter = Flux_TerrainStreamingManager::GetChunkCenter(4, 4);
 	float fDistanceSq = Flux_TerrainStreamingManager::GetChunkDistanceSq(uChunkIndex, xChunkCenter);
 
-	Zenith_Assert(fDistanceSq < 0.001f, "Distance from chunk center to itself should be ~0, got %.6f", fDistanceSq);
+	ZENITH_ASSERT_LT(fDistanceSq, 0.001f, "Distance from chunk center to itself should be ~0, got %.6f", fDistanceSq);
 
 	// Restore original state
 	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkIndex] = xOrig;
 	Flux_TerrainStreamingManager::s_bAABBsCached = bOrigAABBsCached;
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestChunkDistanceZero PASSED");
 }
 
 // ========== Vulkan Memory Manager Tests ==========
 
-void Zenith_UnitTests::TestImageViewType3D()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestImageViewType3D...");
+ZENITH_TEST(Vulkan, ImageViewType3D) { Zenith_UnitTests::TestImageViewType3D(); }
+
+void Zenith_UnitTests::TestImageViewType3D(){
 
 	Flux_SurfaceInfo xInfo;
 	xInfo.m_eTextureType = TEXTURE_TYPE_3D;
@@ -10990,14 +9773,13 @@ void Zenith_UnitTests::TestImageViewType3D()
 	xInfo.m_uNumLayers = 1;
 
 	vk::ImageViewType eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfo);
-	Zenith_Assert(eResult == vk::ImageViewType::e3D, "Expected VK_IMAGE_VIEW_TYPE_3D for 3D texture");
+	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::e3D, "Expected VK_IMAGE_VIEW_TYPE_3D for 3D texture");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestImageViewType3D PASSED");
 }
 
-void Zenith_UnitTests::TestImageViewTypeCube()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestImageViewTypeCube...");
+ZENITH_TEST(Vulkan, ImageViewTypeCube) { Zenith_UnitTests::TestImageViewTypeCube(); }
+
+void Zenith_UnitTests::TestImageViewTypeCube(){
 
 	Flux_SurfaceInfo xInfoCube;
 	xInfoCube.m_eTextureType = TEXTURE_TYPE_CUBE;
@@ -11006,7 +9788,7 @@ void Zenith_UnitTests::TestImageViewTypeCube()
 	xInfoCube.m_uNumLayers = 6;
 
 	vk::ImageViewType eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfoCube);
-	Zenith_Assert(eResult == vk::ImageViewType::eCube, "Expected VK_IMAGE_VIEW_TYPE_CUBE for cubemap texture");
+	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::eCube, "Expected VK_IMAGE_VIEW_TYPE_CUBE for cubemap texture");
 
 	Flux_SurfaceInfo xInfoSixLayers;
 	xInfoSixLayers.m_eTextureType = TEXTURE_TYPE_2D;
@@ -11015,14 +9797,13 @@ void Zenith_UnitTests::TestImageViewTypeCube()
 	xInfoSixLayers.m_uNumLayers = 6;
 
 	eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfoSixLayers);
-	Zenith_Assert(eResult == vk::ImageViewType::eCube, "Expected VK_IMAGE_VIEW_TYPE_CUBE for 6-layer 2D texture");
+	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::eCube, "Expected VK_IMAGE_VIEW_TYPE_CUBE for 6-layer 2D texture");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestImageViewTypeCube PASSED");
 }
 
-void Zenith_UnitTests::TestImageViewTypeDefault2D()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestImageViewTypeDefault2D...");
+ZENITH_TEST(Vulkan, ImageViewTypeDefault2D) { Zenith_UnitTests::TestImageViewTypeDefault2D(); }
+
+void Zenith_UnitTests::TestImageViewTypeDefault2D(){
 
 	Flux_SurfaceInfo xInfo;
 	xInfo.m_eTextureType = TEXTURE_TYPE_2D;
@@ -11031,55 +9812,52 @@ void Zenith_UnitTests::TestImageViewTypeDefault2D()
 	xInfo.m_uNumLayers = 1;
 
 	vk::ImageViewType eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfo);
-	Zenith_Assert(eResult == vk::ImageViewType::e2D, "Expected VK_IMAGE_VIEW_TYPE_2D for standard 2D texture");
+	ZENITH_ASSERT_EQ(eResult, vk::ImageViewType::e2D, "Expected VK_IMAGE_VIEW_TYPE_2D for standard 2D texture");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestImageViewTypeDefault2D PASSED");
 }
 
-void Zenith_UnitTests::TestDestroySkipsInvalidHandle()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDestroySkipsInvalidHandle...");
+ZENITH_TEST(Vulkan, DestroySkipsInvalidHandle) { Zenith_UnitTests::TestDestroySkipsInvalidHandle(); }
+
+void Zenith_UnitTests::TestDestroySkipsInvalidHandle(){
 
 	Flux_VRAMHandle xInvalidHandle;
-	Zenith_Assert(!xInvalidHandle.IsValid(), "Default-constructed handle should be invalid");
+	ZENITH_ASSERT_FALSE(xInvalidHandle.IsValid(), "Default-constructed handle should be invalid");
 
 	Flux_VertexBuffer xBuffer;
 	Zenith_Vulkan_MemoryManager::DestroyVertexBuffer(xBuffer);
 
 	Flux_ImageViewHandle xInvalidViewHandle;
-	Zenith_Assert(!xInvalidViewHandle.IsValid(), "Default-constructed image view handle should be invalid");
+	ZENITH_ASSERT_FALSE(xInvalidViewHandle.IsValid(), "Default-constructed image view handle should be invalid");
 
 	Zenith_Vulkan_MemoryManager::QueueImageViewDeletion(xInvalidViewHandle);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDestroySkipsInvalidHandle PASSED");
 }
 
 //=============================================================================
 // UIStyle tests
 //=============================================================================
 
-void Zenith_UnitTests::TestUIStyleDefaultValues()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUIStyleDefaultValues...");
+ZENITH_TEST(UI, UIStyleDefaultValues) { Zenith_UnitTests::TestUIStyleDefaultValues(); }
+
+void Zenith_UnitTests::TestUIStyleDefaultValues(){
 
 	Zenith_UI::UIStyle xStyle;
-	Zenith_Assert(std::abs(xStyle.m_xFillColor.x - 1.0f) < 0.001f, "Default fill R should be 1");
-	Zenith_Assert(std::abs(xStyle.m_xFillColor.y - 1.0f) < 0.001f, "Default fill G should be 1");
-	Zenith_Assert(std::abs(xStyle.m_xFillColor.z - 1.0f) < 0.001f, "Default fill B should be 1");
-	Zenith_Assert(std::abs(xStyle.m_xFillColor.w - 1.0f) < 0.001f, "Default fill A should be 1");
-	Zenith_Assert(xStyle.m_xGradientBottomColor.x < 0.0f, "Default gradient should be sentinel (-1)");
-	Zenith_Assert(std::abs(xStyle.m_fBorderThickness) < 0.001f, "Default border thickness should be 0");
-	Zenith_Assert(std::abs(xStyle.m_fCornerRadius) < 0.001f, "Default corner radius should be 0");
-	Zenith_Assert(!xStyle.m_bShadowEnabled, "Default shadow should be disabled");
-	Zenith_Assert(std::abs(xStyle.m_xShadowOffset.x - 4.0f) < 0.001f, "Default shadow offset X should be 4");
-	Zenith_Assert(std::abs(xStyle.m_fShadowSpread - 4.0f) < 0.001f, "Default shadow spread should be 4");
+	ZENITH_ASSERT_EQ_FLOAT(xStyle.m_xFillColor.x, 1.0f, 0.001f, "Default fill R should be 1");
+	ZENITH_ASSERT_EQ_FLOAT(xStyle.m_xFillColor.y, 1.0f, 0.001f, "Default fill G should be 1");
+	ZENITH_ASSERT_EQ_FLOAT(xStyle.m_xFillColor.z, 1.0f, 0.001f, "Default fill B should be 1");
+	ZENITH_ASSERT_EQ_FLOAT(xStyle.m_xFillColor.w, 1.0f, 0.001f, "Default fill A should be 1");
+	ZENITH_ASSERT_LT(xStyle.m_xGradientBottomColor.x, 0.0f, "Default gradient should be sentinel (-1)");
+	ZENITH_ASSERT_LT(std::abs(xStyle.m_fBorderThickness), 0.001f, "Default border thickness should be 0");
+	ZENITH_ASSERT_LT(std::abs(xStyle.m_fCornerRadius), 0.001f, "Default corner radius should be 0");
+	ZENITH_ASSERT_FALSE(xStyle.m_bShadowEnabled, "Default shadow should be disabled");
+	ZENITH_ASSERT_EQ_FLOAT(xStyle.m_xShadowOffset.x, 4.0f, 0.001f, "Default shadow offset X should be 4");
+	ZENITH_ASSERT_EQ_FLOAT(xStyle.m_fShadowSpread, 4.0f, 0.001f, "Default shadow spread should be 4");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUIStyleDefaultValues PASSED");
 }
 
-void Zenith_UnitTests::TestUIStyleLerpIdentity()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUIStyleLerpIdentity...");
+ZENITH_TEST(UI, UIStyleLerpIdentity) { Zenith_UnitTests::TestUIStyleLerpIdentity(); }
+
+void Zenith_UnitTests::TestUIStyleLerpIdentity(){
 
 	Zenith_UI::UIStyle xStyle;
 	xStyle.m_xFillColor = {0.5f, 0.3f, 0.1f, 1.0f};
@@ -11087,17 +9865,16 @@ void Zenith_UnitTests::TestUIStyleLerpIdentity()
 	xStyle.m_fBorderThickness = 2.0f;
 
 	Zenith_UI::UIStyle xResult = Zenith_UI::UIStyle::Lerp(xStyle, xStyle, 0.5f);
-	Zenith_Assert(std::abs(xResult.m_xFillColor.x - 0.5f) < 0.001f, "Lerp identity fill R");
-	Zenith_Assert(std::abs(xResult.m_xFillColor.y - 0.3f) < 0.001f, "Lerp identity fill G");
-	Zenith_Assert(std::abs(xResult.m_fCornerRadius - 10.0f) < 0.001f, "Lerp identity corner radius");
-	Zenith_Assert(std::abs(xResult.m_fBorderThickness - 2.0f) < 0.001f, "Lerp identity border thickness");
+	ZENITH_ASSERT_EQ_FLOAT(xResult.m_xFillColor.x, 0.5f, 0.001f, "Lerp identity fill R");
+	ZENITH_ASSERT_EQ_FLOAT(xResult.m_xFillColor.y, 0.3f, 0.001f, "Lerp identity fill G");
+	ZENITH_ASSERT_EQ_FLOAT(xResult.m_fCornerRadius, 10.0f, 0.001f, "Lerp identity corner radius");
+	ZENITH_ASSERT_EQ_FLOAT(xResult.m_fBorderThickness, 2.0f, 0.001f, "Lerp identity border thickness");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUIStyleLerpIdentity PASSED");
 }
 
-void Zenith_UnitTests::TestUIStyleLerpHalfway()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUIStyleLerpHalfway...");
+ZENITH_TEST(UI, UIStyleLerpHalfway) { Zenith_UnitTests::TestUIStyleLerpHalfway(); }
+
+void Zenith_UnitTests::TestUIStyleLerpHalfway(){
 
 	Zenith_UI::UIStyle xA;
 	xA.m_xFillColor = {1.0f, 0.0f, 0.0f, 1.0f};
@@ -11112,19 +9889,18 @@ void Zenith_UnitTests::TestUIStyleLerpHalfway()
 	xB.m_fShadowSpread = 8.0f;
 
 	Zenith_UI::UIStyle xResult = Zenith_UI::UIStyle::Lerp(xA, xB, 0.5f);
-	Zenith_Assert(std::abs(xResult.m_xFillColor.x - 0.5f) < 0.001f, "Halfway fill R should be 0.5");
-	Zenith_Assert(std::abs(xResult.m_xFillColor.y - 0.5f) < 0.001f, "Halfway fill G should be 0.5");
-	Zenith_Assert(std::abs(xResult.m_xFillColor.z) < 0.001f, "Halfway fill B should be 0");
-	Zenith_Assert(std::abs(xResult.m_fCornerRadius - 10.0f) < 0.001f, "Halfway corner radius should be 10");
-	Zenith_Assert(std::abs(xResult.m_fBorderThickness - 2.0f) < 0.001f, "Halfway border thickness should be 2");
-	Zenith_Assert(std::abs(xResult.m_fShadowSpread - 4.0f) < 0.001f, "Halfway shadow spread should be 4");
+	ZENITH_ASSERT_EQ_FLOAT(xResult.m_xFillColor.x, 0.5f, 0.001f, "Halfway fill R should be 0.5");
+	ZENITH_ASSERT_EQ_FLOAT(xResult.m_xFillColor.y, 0.5f, 0.001f, "Halfway fill G should be 0.5");
+	ZENITH_ASSERT_LT(std::abs(xResult.m_xFillColor.z), 0.001f, "Halfway fill B should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(xResult.m_fCornerRadius, 10.0f, 0.001f, "Halfway corner radius should be 10");
+	ZENITH_ASSERT_EQ_FLOAT(xResult.m_fBorderThickness, 2.0f, 0.001f, "Halfway border thickness should be 2");
+	ZENITH_ASSERT_EQ_FLOAT(xResult.m_fShadowSpread, 4.0f, 0.001f, "Halfway shadow spread should be 4");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUIStyleLerpHalfway PASSED");
 }
 
-void Zenith_UnitTests::TestUIStyleLerpEndpoints()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUIStyleLerpEndpoints...");
+ZENITH_TEST(UI, UIStyleLerpEndpoints) { Zenith_UnitTests::TestUIStyleLerpEndpoints(); }
+
+void Zenith_UnitTests::TestUIStyleLerpEndpoints(){
 
 	Zenith_UI::UIStyle xA;
 	xA.m_xFillColor = {1.0f, 0.0f, 0.0f, 1.0f};
@@ -11136,22 +9912,21 @@ void Zenith_UnitTests::TestUIStyleLerpEndpoints()
 
 	// t=0 should return A
 	Zenith_UI::UIStyle xAt0 = Zenith_UI::UIStyle::Lerp(xA, xB, 0.0f);
-	Zenith_Assert(std::abs(xAt0.m_xFillColor.x - 1.0f) < 0.001f, "t=0 fill R should be 1");
-	Zenith_Assert(std::abs(xAt0.m_xFillColor.z) < 0.001f, "t=0 fill B should be 0");
-	Zenith_Assert(std::abs(xAt0.m_fCornerRadius - 5.0f) < 0.001f, "t=0 corner radius should be 5");
+	ZENITH_ASSERT_EQ_FLOAT(xAt0.m_xFillColor.x, 1.0f, 0.001f, "t=0 fill R should be 1");
+	ZENITH_ASSERT_LT(std::abs(xAt0.m_xFillColor.z), 0.001f, "t=0 fill B should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(xAt0.m_fCornerRadius, 5.0f, 0.001f, "t=0 corner radius should be 5");
 
 	// t=1 should return B
 	Zenith_UI::UIStyle xAt1 = Zenith_UI::UIStyle::Lerp(xA, xB, 1.0f);
-	Zenith_Assert(std::abs(xAt1.m_xFillColor.x) < 0.001f, "t=1 fill R should be 0");
-	Zenith_Assert(std::abs(xAt1.m_xFillColor.z - 1.0f) < 0.001f, "t=1 fill B should be 1");
-	Zenith_Assert(std::abs(xAt1.m_fCornerRadius - 25.0f) < 0.001f, "t=1 corner radius should be 25");
+	ZENITH_ASSERT_LT(std::abs(xAt1.m_xFillColor.x), 0.001f, "t=1 fill R should be 0");
+	ZENITH_ASSERT_EQ_FLOAT(xAt1.m_xFillColor.z, 1.0f, 0.001f, "t=1 fill B should be 1");
+	ZENITH_ASSERT_EQ_FLOAT(xAt1.m_fCornerRadius, 25.0f, 0.001f, "t=1 corner radius should be 25");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUIStyleLerpEndpoints PASSED");
 }
 
-void Zenith_UnitTests::TestUIStyleLerpShadowBool()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUIStyleLerpShadowBool...");
+ZENITH_TEST(UI, UIStyleLerpShadowBool) { Zenith_UnitTests::TestUIStyleLerpShadowBool(); }
+
+void Zenith_UnitTests::TestUIStyleLerpShadowBool(){
 
 	Zenith_UI::UIStyle xA;
 	xA.m_bShadowEnabled = true;
@@ -11161,17 +9936,16 @@ void Zenith_UnitTests::TestUIStyleLerpShadowBool()
 
 	// t < 0.5 should follow A
 	Zenith_UI::UIStyle xResult1 = Zenith_UI::UIStyle::Lerp(xA, xB, 0.3f);
-	Zenith_Assert(xResult1.m_bShadowEnabled == true, "t<0.5 shadow should follow A (true)");
+	ZENITH_ASSERT_EQ(xResult1.m_bShadowEnabled, true, "t<0.5 shadow should follow A (true)");
 
 	// t >= 0.5 should follow B
 	Zenith_UI::UIStyle xResult2 = Zenith_UI::UIStyle::Lerp(xA, xB, 0.7f);
-	Zenith_Assert(xResult2.m_bShadowEnabled == false, "t>=0.5 shadow should follow B (false)");
+	ZENITH_ASSERT_EQ(xResult2.m_bShadowEnabled, false, "t>=0.5 shadow should follow B (false)");
 
 	// Verify boundary: t=0.5 should follow B
 	Zenith_UI::UIStyle xResult3 = Zenith_UI::UIStyle::Lerp(xA, xB, 0.5f);
-	Zenith_Assert(xResult3.m_bShadowEnabled == false, "t=0.5 shadow should follow B (false)");
+	ZENITH_ASSERT_EQ(xResult3.m_bShadowEnabled, false, "t=0.5 shadow should follow B (false)");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUIStyleLerpShadowBool PASSED");
 }
 
 //=============================================================================
@@ -11179,9 +9953,9 @@ void Zenith_UnitTests::TestUIStyleLerpShadowBool()
 //=============================================================================
 #ifdef ZENITH_TOOLS
 
-void Zenith_UnitTests::TestGizmosLineLineParallel()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmosLineLineParallel...");
+ZENITH_TEST(Gizmos, GizmosLineLineParallel) { Zenith_UnitTests::TestGizmosLineLineParallel(); }
+
+void Zenith_UnitTests::TestGizmosLineLineParallel(){
 
 	// Two parallel lines along the X axis should return false (degenerate)
 	Zenith_Maths::Vector3 xAxisOrigin(0, 0, 0);
@@ -11191,24 +9965,23 @@ void Zenith_UnitTests::TestGizmosLineLineParallel()
 
 	float fOutT = 0.0f;
 	bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
-	Zenith_Assert(!bResult, "Parallel lines should return false");
+	ZENITH_ASSERT_FALSE(bResult, "Parallel lines should return false");
 
 	// Also test with opposite direction (anti-parallel)
 	xRayDir = Zenith_Maths::Vector3(-1, 0, 0);
 	bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
-	Zenith_Assert(!bResult, "Anti-parallel lines should return false");
+	ZENITH_ASSERT_FALSE(bResult, "Anti-parallel lines should return false");
 
 	// Near-parallel lines (very small angle) should also return false
 	xRayDir = glm::normalize(Zenith_Maths::Vector3(1, 0.00001f, 0));
 	bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
-	Zenith_Assert(!bResult, "Near-parallel lines should return false");
+	ZENITH_ASSERT_FALSE(bResult, "Near-parallel lines should return false");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmosLineLineParallel PASSED");
 }
 
-void Zenith_UnitTests::TestGizmosLineLinePerpendicular()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmosLineLinePerpendicular...");
+ZENITH_TEST(Gizmos, GizmosLineLinePerpendicular) { Zenith_UnitTests::TestGizmosLineLinePerpendicular(); }
+
+void Zenith_UnitTests::TestGizmosLineLinePerpendicular(){
 
 	// Axis along X, ray along Y passing through origin - closest point at t=0
 	{
@@ -11219,8 +9992,8 @@ void Zenith_UnitTests::TestGizmosLineLinePerpendicular()
 
 		float fOutT = -999.0f;
 		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
-		Zenith_Assert(bResult, "Perpendicular lines should return true");
-		Zenith_Assert(glm::abs(fOutT) < 0.001f, "Closest point on axis should be at t=0");
+		ZENITH_ASSERT_TRUE(bResult, "Perpendicular lines should return true");
+		ZENITH_ASSERT_LT(glm::abs(fOutT), 0.001f, "Closest point on axis should be at t=0");
 	}
 
 	// Axis along X at origin, ray along Z passing through (3, 2, -5) going +Z
@@ -11233,8 +10006,8 @@ void Zenith_UnitTests::TestGizmosLineLinePerpendicular()
 
 		float fOutT = -999.0f;
 		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
-		Zenith_Assert(bResult, "Perpendicular lines should return true");
-		Zenith_Assert(glm::abs(fOutT - 3.0f) < 0.001f, "Closest point should be at t=3");
+		ZENITH_ASSERT_TRUE(bResult, "Perpendicular lines should return true");
+		ZENITH_ASSERT_LT(glm::abs(fOutT - 3.0f), 0.001f, "Closest point should be at t=3");
 	}
 
 	// Axis along Y starting at (5,0,0), ray along X starting at (0,7,3)
@@ -11247,16 +10020,15 @@ void Zenith_UnitTests::TestGizmosLineLinePerpendicular()
 
 		float fOutT = -999.0f;
 		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
-		Zenith_Assert(bResult, "Perpendicular lines should return true");
-		Zenith_Assert(glm::abs(fOutT - 7.0f) < 0.001f, "Closest point should be at t=7");
+		ZENITH_ASSERT_TRUE(bResult, "Perpendicular lines should return true");
+		ZENITH_ASSERT_LT(glm::abs(fOutT - 7.0f), 0.001f, "Closest point should be at t=7");
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmosLineLinePerpendicular PASSED");
 }
 
-void Zenith_UnitTests::TestGizmosTangentFrame()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmosTangentFrame...");
+ZENITH_TEST(Gizmos, GizmosTangentFrame) { Zenith_UnitTests::TestGizmosTangentFrame(); }
+
+void Zenith_UnitTests::TestGizmosTangentFrame(){
 
 	auto TestAxis = [](const Zenith_Maths::Vector3& xAxis, const char* pszName)
 	{
@@ -11265,23 +10037,23 @@ void Zenith_UnitTests::TestGizmosTangentFrame()
 
 		// Tangent should be perpendicular to axis
 		float fDotAxisTangent = glm::abs(glm::dot(xAxis, xTangent));
-		Zenith_Assert(fDotAxisTangent < 0.001f, "Tangent must be perpendicular to axis (%s)", pszName);
+		ZENITH_ASSERT_LT(fDotAxisTangent, 0.001f, "Tangent must be perpendicular to axis (%s)", pszName);
 
 		// Bitangent should be perpendicular to axis
 		float fDotAxisBitangent = glm::abs(glm::dot(xAxis, xBitangent));
-		Zenith_Assert(fDotAxisBitangent < 0.001f, "Bitangent must be perpendicular to axis (%s)", pszName);
+		ZENITH_ASSERT_LT(fDotAxisBitangent, 0.001f, "Bitangent must be perpendicular to axis (%s)", pszName);
 
 		// Tangent should be perpendicular to bitangent
 		float fDotTangentBitangent = glm::abs(glm::dot(xTangent, xBitangent));
-		Zenith_Assert(fDotTangentBitangent < 0.001f, "Tangent and bitangent must be perpendicular (%s)", pszName);
+		ZENITH_ASSERT_LT(fDotTangentBitangent, 0.001f, "Tangent and bitangent must be perpendicular (%s)", pszName);
 
 		// Tangent should be unit length
 		float fTangentLen = glm::length(xTangent);
-		Zenith_Assert(glm::abs(fTangentLen - 1.0f) < 0.001f, "Tangent must be unit length (%s)", pszName);
+		ZENITH_ASSERT_LT(glm::abs(fTangentLen - 1.0f), 0.001f, "Tangent must be unit length (%s)", pszName);
 
 		// Bitangent should be unit length (cross of unit axis and unit tangent)
 		float fBitangentLen = glm::length(xBitangent);
-		Zenith_Assert(glm::abs(fBitangentLen - 1.0f) < 0.001f, "Bitangent must be unit length (%s)", pszName);
+		ZENITH_ASSERT_LT(glm::abs(fBitangentLen - 1.0f), 0.001f, "Bitangent must be unit length (%s)", pszName);
 	};
 
 	// Test all three cardinal axes
@@ -11296,7 +10068,6 @@ void Zenith_UnitTests::TestGizmosTangentFrame()
 	TestAxis(glm::normalize(Zenith_Maths::Vector3(0.95f, 0.1f, 0.0f)), "Near-X axis");
 	TestAxis(glm::normalize(Zenith_Maths::Vector3(0.1f, 0.95f, 0.0f)), "Near-Y axis");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmosTangentFrame PASSED");
 }
 
 //=============================================================================
@@ -11313,9 +10084,9 @@ void Zenith_UnitTests::TestGizmosTangentFrame()
 //   https://docs.unity3d.com/Manual/MultiSceneEditing.html
 //=============================================================================
 
-void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmoEditsPersistentEntityAcrossSceneLoad...");
+ZENITH_TEST(Core, GizmoEditsPersistentEntityAcrossSceneLoad) { Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(); }
+
+void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 
 	// Snapshot active-scene + gizmo target so we can restore after the test.
 	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
@@ -11331,7 +10102,7 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad()
 	Zenith_Scene xPersistent = Zenith_SceneManager::GetPersistentScene();
 	Zenith_SceneData* pxPersistentData = Zenith_SceneManager::GetSceneData(xPersistent);
 	Zenith_Entity xPersistentEntity = pxPersistentData->FindEntityByName("GizmoPersistTarget");
-	Zenith_Assert(xPersistentEntity.IsValid(), "Persistent entity lookup must succeed before gizmo resolve");
+	ZENITH_ASSERT_TRUE(xPersistentEntity.IsValid(), "Persistent entity lookup must succeed before gizmo resolve");
 
 	// Set the gizmo target to the persistent entity — stored as pointer to a stable
 	// local, matching how Zenith_Editor passes its static selected-entity.
@@ -11341,21 +10112,18 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad()
 	// Confirm the active scene is NOT the persistent scene (otherwise this test
 	// would still pass under the buggy pre-fix code).
 	Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-	Zenith_Assert(xActive != xPersistent,
-		"Test setup requires active scene to differ from persistent scene");
+	ZENITH_ASSERT_NE(xActive, xPersistent, "Test setup requires active scene to differ from persistent scene");
 
 	// Fixed behaviour: GetEditableTransform() walks the entity's own scene and
 	// returns its transform. Under the buggy pre-fix code this returns nullptr
 	// because the persistent entity isn't in the active scene's component pool.
 	Zenith_TransformComponent* pxTransform = Flux_Gizmos::GetEditableTransform();
-	Zenith_Assert(pxTransform != nullptr,
-		"GetEditableTransform must resolve persistent entity via entity.GetSceneData() (Unity parity)");
+	ZENITH_ASSERT_NOT_NULL(pxTransform, "GetEditableTransform must resolve persistent entity via entity.GetSceneData() (Unity parity)");
 
 	// Verify the transform we got back is actually the persistent entity's.
 	Zenith_TransformComponent& xExpected =
 		pxPersistentData->GetComponentFromEntity<Zenith_TransformComponent>(xPersistentEntity.GetEntityID());
-	Zenith_Assert(pxTransform == &xExpected,
-		"Returned transform must belong to the persistent entity, not the active scene");
+	ZENITH_ASSERT_EQ(pxTransform, &xExpected, "Returned transform must belong to the persistent entity, not the active scene");
 
 	// Cleanup: clear target, destroy persistent entity, unload temp scene.
 	Flux_Gizmos::SetTargetEntity(nullptr);
@@ -11363,12 +10131,11 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad()
 	Zenith_SceneManager::UnloadScene(xTempScene);
 	Zenith_SceneManager::SetActiveScene(xSavedActive);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmoEditsPersistentEntityAcrossSceneLoad PASSED");
 }
 
-void Zenith_UnitTests::TestGizmoEditsEntityInAdditiveScene()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmoEditsEntityInAdditiveScene...");
+ZENITH_TEST(Core, GizmoEditsEntityInAdditiveScene) { Zenith_UnitTests::TestGizmoEditsEntityInAdditiveScene(); }
+
+void Zenith_UnitTests::TestGizmoEditsEntityInAdditiveScene(){
 
 	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
 
@@ -11382,31 +10149,27 @@ void Zenith_UnitTests::TestGizmoEditsEntityInAdditiveScene()
 	Zenith_Entity xTarget(pxSceneBData, "AdditiveTarget");
 
 	// Confirm active scene really is A, not B.
-	Zenith_Assert(Zenith_SceneManager::GetActiveScene() == xSceneA,
-		"Test setup: active scene should be A, target lives in B");
+	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetActiveScene(), xSceneA, "Test setup: active scene should be A, target lives in B");
 
 	Flux_Gizmos::SetTargetEntity(&xTarget);
 
 	Zenith_TransformComponent* pxTransform = Flux_Gizmos::GetEditableTransform();
-	Zenith_Assert(pxTransform != nullptr,
-		"Gizmo must resolve target in additively-loaded scene (Unity multi-scene editing parity)");
+	ZENITH_ASSERT_NOT_NULL(pxTransform, "Gizmo must resolve target in additively-loaded scene (Unity multi-scene editing parity)");
 
 	Zenith_TransformComponent& xExpected =
 		pxSceneBData->GetComponentFromEntity<Zenith_TransformComponent>(xTarget.GetEntityID());
-	Zenith_Assert(pxTransform == &xExpected,
-		"Returned transform must belong to Scene B's entity, not Scene A");
+	ZENITH_ASSERT_EQ(pxTransform, &xExpected, "Returned transform must belong to Scene B's entity, not Scene A");
 
 	Flux_Gizmos::SetTargetEntity(nullptr);
 	Zenith_SceneManager::UnloadScene(xSceneB);
 	Zenith_SceneManager::UnloadScene(xSceneA);
 	Zenith_SceneManager::SetActiveScene(xSavedActive);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmoEditsEntityInAdditiveScene PASSED");
 }
 
-void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmoDragSurvivesActiveSceneChange...");
+ZENITH_TEST(Core, GizmoDragSurvivesActiveSceneChange) { Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(); }
+
+void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(){
 
 	Zenith_Scene xSavedActive = Zenith_SceneManager::GetActiveScene();
 
@@ -11422,39 +10185,33 @@ void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange()
 
 	// Begin the "drag" while target's scene is active.
 	Zenith_TransformComponent* pxBefore = Flux_Gizmos::GetEditableTransform();
-	Zenith_Assert(pxBefore != nullptr, "Pre-switch gizmo resolve must succeed");
+	ZENITH_ASSERT_NOT_NULL(pxBefore, "Pre-switch gizmo resolve must succeed");
 
 	// Simulate the active-scene change mid-drag.
 	Zenith_SceneManager::SetActiveScene(xSceneB);
-	Zenith_Assert(Zenith_SceneManager::GetActiveScene() == xSceneB,
-		"Active scene should be B after SetActiveScene");
+	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetActiveScene(), xSceneB, "Active scene should be B after SetActiveScene");
 
 	// Post-switch: gizmo must still resolve to Scene A's entity (Unity parity —
 	// active scene doesn't gate editability).
 	Zenith_TransformComponent* pxAfter = Flux_Gizmos::GetEditableTransform();
-	Zenith_Assert(pxAfter != nullptr,
-		"Gizmo must keep resolving target after active-scene change (Unity parity)");
-	Zenith_Assert(pxAfter == pxBefore,
-		"Gizmo transform must be identical across the active-scene switch (same underlying entity)");
+	ZENITH_ASSERT_NOT_NULL(pxAfter, "Gizmo must keep resolving target after active-scene change (Unity parity)");
+	ZENITH_ASSERT_EQ(pxAfter, pxBefore, "Gizmo transform must be identical across the active-scene switch (same underlying entity)");
 
 	Flux_Gizmos::SetTargetEntity(nullptr);
 	Zenith_SceneManager::UnloadScene(xSceneB);
 	Zenith_SceneManager::UnloadScene(xSceneA);
 	Zenith_SceneManager::SetActiveScene(xSavedActive);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmoDragSurvivesActiveSceneChange PASSED");
 }
 
-void Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget...");
+ZENITH_TEST(Core, GizmoGetEditableTransform_ReturnsNullForInvalidTarget) { Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget(); }
+
+void Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget(){
 
 	// No target set — must return nullptr.
 	Flux_Gizmos::SetTargetEntity(nullptr);
-	Zenith_Assert(Flux_Gizmos::GetEditableTransform() == nullptr,
-		"GetEditableTransform must return nullptr when no target is set");
+	ZENITH_ASSERT_NULL(Flux_Gizmos::GetEditableTransform(), "GetEditableTransform must return nullptr when no target is set");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget PASSED");
 }
 
 #endif // ZENITH_TOOLS
@@ -11474,44 +10231,45 @@ void Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget
 
 static void EmptyRecordCallback(Flux_CommandList*, void*) {}
 
-void Zenith_UnitTests::TestRenderGraphEmpty()
-{
+ZENITH_TEST(Core, RenderGraphEmpty) { Zenith_UnitTests::TestRenderGraphEmpty(); }
+
+void Zenith_UnitTests::TestRenderGraphEmpty(){
 	Flux_RenderGraph xGraph;
 
-	Zenith_Assert(xGraph.GetPasses().GetSize() == 0, "Fresh graph has no passes");
-	Zenith_Assert(xGraph.IsDirty(), "Fresh Flux_RenderGraph starts in dirty state (m_bDirty default-initialised to true)");
+	ZENITH_ASSERT_EQ(xGraph.GetPasses().GetSize(), 0, "Fresh graph has no passes");
+	ZENITH_ASSERT_TRUE(xGraph.IsDirty(), "Fresh Flux_RenderGraph starts in dirty state (m_bDirty default-initialised to true)");
 
 	xGraph.MarkDirty();
-	Zenith_Assert(xGraph.IsDirty(), "After MarkDirty, IsDirty == true");
+	ZENITH_ASSERT_TRUE(xGraph.IsDirty(), "After MarkDirty, IsDirty == true");
 
 	xGraph.Clear();
-	Zenith_Assert(xGraph.GetPasses().GetSize() == 0, "Clear leaves graph empty");
+	ZENITH_ASSERT_EQ(xGraph.GetPasses().GetSize(), 0, "Clear leaves graph empty");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRenderGraphEmpty PASSED");
 }
 
-void Zenith_UnitTests::TestRenderGraphPassHandles()
-{
+ZENITH_TEST(Core, RenderGraphPassHandles) { Zenith_UnitTests::TestRenderGraphPassHandles(); }
+
+void Zenith_UnitTests::TestRenderGraphPassHandles(){
 	Flux_RenderGraph xGraph;
 
 	Flux_PassHandle xPassA = xGraph.AddPass("A", EmptyRecordCallback);
 	Flux_PassHandle xPassB = xGraph.AddPass("B", EmptyRecordCallback);
 
-	Zenith_Assert(xPassA.IsValid(), "PassA handle valid");
-	Zenith_Assert(xPassB.IsValid(), "PassB handle valid");
-	Zenith_Assert(xPassA != xPassB, "Different passes produce different handles");
-	Zenith_Assert(xPassA.m_uGeneration == xPassB.m_uGeneration, "Handles from same graph generation match");
-	Zenith_Assert(xGraph.GetPasses().GetSize() == 2, "Graph has two passes");
+	ZENITH_ASSERT_TRUE(xPassA.IsValid(), "PassA handle valid");
+	ZENITH_ASSERT_TRUE(xPassB.IsValid(), "PassB handle valid");
+	ZENITH_ASSERT_NE(xPassA, xPassB, "Different passes produce different handles");
+	ZENITH_ASSERT_EQ(xPassA.m_uGeneration, xPassB.m_uGeneration, "Handles from same graph generation match");
+	ZENITH_ASSERT_EQ(xGraph.GetPasses().GetSize(), 2, "Graph has two passes");
 
 	// Invalid handle is false-valued.
 	Flux_PassHandle xBad;
-	Zenith_Assert(!xBad.IsValid(), "Default-constructed handle is invalid");
+	ZENITH_ASSERT_FALSE(xBad.IsValid(), "Default-constructed handle is invalid");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRenderGraphPassHandles PASSED");
 }
 
-void Zenith_UnitTests::TestRenderGraphTransientGeneration()
-{
+ZENITH_TEST(Core, RenderGraphTransientGeneration) { Zenith_UnitTests::TestRenderGraphTransientGeneration(); }
+
+void Zenith_UnitTests::TestRenderGraphTransientGeneration(){
 	Flux_RenderGraph xGraph;
 
 	Flux_TransientTextureDesc xDesc;
@@ -11521,7 +10279,7 @@ void Zenith_UnitTests::TestRenderGraphTransientGeneration()
 	xDesc.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
 
 	Flux_TransientHandle xH0 = xGraph.CreateTransient(xDesc);
-	Zenith_Assert(xH0.IsValid(), "CreateTransient returns a valid handle");
+	ZENITH_ASSERT_TRUE(xH0.IsValid(), "CreateTransient returns a valid handle");
 
 	const u_int uGenBefore = xH0.m_uGeneration;
 
@@ -11529,27 +10287,25 @@ void Zenith_UnitTests::TestRenderGraphTransientGeneration()
 	xGraph.Clear();
 
 	Flux_TransientHandle xH1 = xGraph.CreateTransient(xDesc);
-	Zenith_Assert(xH1.IsValid(), "Handle after Clear is still valid");
-	Zenith_Assert(xH1.m_uGeneration != uGenBefore,
-		"Clear() bumps graph generation so old handles fail AssertTransientHandleValid");
+	ZENITH_ASSERT_TRUE(xH1.IsValid(), "Handle after Clear is still valid");
+	ZENITH_ASSERT_NE(xH1.m_uGeneration, uGenBefore, "Clear() bumps graph generation so old handles fail AssertTransientHandleValid");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRenderGraphTransientGeneration PASSED");
 }
 
-void Zenith_UnitTests::TestRenderGraphSetEnabled()
-{
+ZENITH_TEST(Core, RenderGraphSetEnabled) { Zenith_UnitTests::TestRenderGraphSetEnabled(); }
+
+void Zenith_UnitTests::TestRenderGraphSetEnabled(){
 	Flux_RenderGraph xGraph;
 
 	Flux_PassHandle xPass = xGraph.AddPass("Togglable", EmptyRecordCallback);
-	Zenith_Assert(xGraph.GetPasses().Get(xPass.m_uIndex)->m_bEnabled, "Pass enabled by default");
+	ZENITH_ASSERT_TRUE(xGraph.GetPasses().Get(xPass.m_uIndex)->m_bEnabled, "Pass enabled by default");
 
 	xGraph.SetEnabled(xPass, false);
-	Zenith_Assert(!xGraph.GetPasses().Get(xPass.m_uIndex)->m_bEnabled, "SetEnabled(false) disables pass");
+	ZENITH_ASSERT_FALSE(xGraph.GetPasses().Get(xPass.m_uIndex)->m_bEnabled, "SetEnabled(false) disables pass");
 
 	xGraph.SetEnabled(xPass, true);
-	Zenith_Assert(xGraph.GetPasses().Get(xPass.m_uIndex)->m_bEnabled, "SetEnabled(true) re-enables pass");
+	ZENITH_ASSERT_TRUE(xGraph.GetPasses().Get(xPass.m_uIndex)->m_bEnabled, "SetEnabled(true) re-enables pass");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRenderGraphSetEnabled PASSED");
 }
 
 // Verify that two consecutive compute passes RMW-ing the same Flux_ReadWriteBuffer
@@ -11557,8 +10313,8 @@ void Zenith_UnitTests::TestRenderGraphSetEnabled()
 // pure CPU once m_xExecutionOrder is populated; we bypass Compile (which would
 // allocate VRAM via Flux_RenderAttachmentBuilder and need a Vulkan device) by
 // poking m_xExecutionOrder directly via the Zenith_UnitTests friend access.
-void Zenith_UnitTests::TestRenderGraphBufferBarrierRMW()
-{
+ZENITH_TEST(Core, RenderGraphBufferBarrierRMW) { Zenith_UnitTests::TestRenderGraphBufferBarrierRMW(); }
+void Zenith_UnitTests::TestRenderGraphBufferBarrierRMW(){
 	Flux_RenderGraph xGraph;
 
 	// Fake-valid VRAM handle and non-zero size on the buffer so the graph's
@@ -11596,9 +10352,7 @@ void Zenith_UnitTests::TestRenderGraphBufferBarrierRMW()
 		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
 			uABufferBarriers++;
 	}
-	Zenith_Assert(uABufferBarriers == 1,
-		"TestRenderGraphBufferBarrierRMW: pass A expected 1 buffer barrier (UNDEFINED→RW), got %u",
-		uABufferBarriers);
+	ZENITH_ASSERT_EQ(uABufferBarriers, 1, "TestRenderGraphBufferBarrierRMW: pass A expected 1 buffer barrier (UNDEFINED→RW), got %u", uABufferBarriers);
 
 	// Pass B is the second writer — must have exactly ONE buffer barrier
 	// (RW→RW write-after-write). This is the load-bearing assertion that
@@ -11614,21 +10368,12 @@ void Zenith_UnitTests::TestRenderGraphBufferBarrierRMW()
 			pxBBarrier = &rxBar;
 		}
 	}
-	Zenith_Assert(uBBufferBarriers == 1,
-		"TestRenderGraphBufferBarrierRMW: pass B expected 1 buffer barrier (RW→RW WAW), got %u",
-		uBBufferBarriers);
-	Zenith_Assert(pxBBarrier != nullptr,
-		"TestRenderGraphBufferBarrierRMW: pass B buffer barrier missing");
-	Zenith_Assert(pxBBarrier->m_eSrcAccess == RESOURCE_ACCESS_READWRITE_UAV,
-		"TestRenderGraphBufferBarrierRMW: pass B src access expected READWRITE_UAV, got %d",
-		(int)pxBBarrier->m_eSrcAccess);
-	Zenith_Assert(pxBBarrier->m_eDstAccess == RESOURCE_ACCESS_READWRITE_UAV,
-		"TestRenderGraphBufferBarrierRMW: pass B dst access expected READWRITE_UAV, got %d",
-		(int)pxBBarrier->m_eDstAccess);
-	Zenith_Assert(pxBBarrier->m_xResource.AsBuffer() == &xBuffer.GetBuffer(),
-		"TestRenderGraphBufferBarrierRMW: pass B barrier targets wrong buffer");
+	ZENITH_ASSERT_EQ(uBBufferBarriers, 1, "TestRenderGraphBufferBarrierRMW: pass B expected 1 buffer barrier (RW→RW WAW), got %u", uBBufferBarriers);
+	ZENITH_ASSERT_NOT_NULL(pxBBarrier, "TestRenderGraphBufferBarrierRMW: pass B buffer barrier missing");
+	ZENITH_ASSERT_EQ(pxBBarrier->m_eSrcAccess, RESOURCE_ACCESS_READWRITE_UAV, "TestRenderGraphBufferBarrierRMW: pass B src access expected READWRITE_UAV, got %d", (int)pxBBarrier->m_eSrcAccess);
+	ZENITH_ASSERT_EQ(pxBBarrier->m_eDstAccess, RESOURCE_ACCESS_READWRITE_UAV, "TestRenderGraphBufferBarrierRMW: pass B dst access expected READWRITE_UAV, got %d", (int)pxBBarrier->m_eDstAccess);
+	ZENITH_ASSERT_EQ(pxBBarrier->m_xResource.AsBuffer(), &xBuffer.GetBuffer(), "TestRenderGraphBufferBarrierRMW: pass B barrier targets wrong buffer");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRenderGraphBufferBarrierRMW PASSED");
 }
 
 // ============================================================================
@@ -11656,64 +10401,55 @@ namespace
 	}
 }
 
-void Zenith_UnitTests::TestAliasSignatureIdenticalDescs()
-{
+ZENITH_TEST(Core, AliasSignatureIdenticalDescs) { Zenith_UnitTests::TestAliasSignatureIdenticalDescs(); }
+
+void Zenith_UnitTests::TestAliasSignatureIdenticalDescs(){
 	const Flux_TransientTextureDesc xA = DefaultDesc();
 	const Flux_TransientTextureDesc xB = DefaultDesc();
-	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) ==
-	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
-	              "Identical descs must produce identical signatures");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureIdenticalDescs PASSED");
+	ZENITH_ASSERT_EQ(Flux_RenderGraph::MakeTransientMemorySignature(xA), Flux_RenderGraph::MakeTransientMemorySignature(xB), "Identical descs must produce identical signatures");
 }
 
-void Zenith_UnitTests::TestAliasSignatureDifferentFormat()
-{
+ZENITH_TEST(Core, AliasSignatureDifferentFormat) { Zenith_UnitTests::TestAliasSignatureDifferentFormat(); }
+
+void Zenith_UnitTests::TestAliasSignatureDifferentFormat(){
 	Flux_TransientTextureDesc xA = DefaultDesc();
 	Flux_TransientTextureDesc xB = DefaultDesc();
 	xB.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
-	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) !=
-	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
-	              "Different format must produce different signature");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureDifferentFormat PASSED");
+	ZENITH_ASSERT_NE(Flux_RenderGraph::MakeTransientMemorySignature(xA), Flux_RenderGraph::MakeTransientMemorySignature(xB), "Different format must produce different signature");
 }
 
-void Zenith_UnitTests::TestAliasSignatureDifferentMemoryFlags()
-{
+ZENITH_TEST(Core, AliasSignatureDifferentMemoryFlags) { Zenith_UnitTests::TestAliasSignatureDifferentMemoryFlags(); }
+
+void Zenith_UnitTests::TestAliasSignatureDifferentMemoryFlags(){
 	Flux_TransientTextureDesc xA = DefaultDesc();
 	Flux_TransientTextureDesc xB = DefaultDesc();
 	xB.m_uMemoryFlags = xA.m_uMemoryFlags | (1u << MEMORY_FLAGS__UNORDERED_ACCESS);
-	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) !=
-	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
-	              "Adding UAV bit must produce different signature");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureDifferentMemoryFlags PASSED");
+	ZENITH_ASSERT_NE(Flux_RenderGraph::MakeTransientMemorySignature(xA), Flux_RenderGraph::MakeTransientMemorySignature(xB), "Adding UAV bit must produce different signature");
 }
 
-void Zenith_UnitTests::TestAliasSignatureDifferentTextureType()
-{
+ZENITH_TEST(Core, AliasSignatureDifferentTextureType) { Zenith_UnitTests::TestAliasSignatureDifferentTextureType(); }
+
+void Zenith_UnitTests::TestAliasSignatureDifferentTextureType(){
 	Flux_TransientTextureDesc xA = DefaultDesc();
 	Flux_TransientTextureDesc xB = DefaultDesc();
 	xB.m_eTextureType = TEXTURE_TYPE_3D;
 	xB.m_uDepth       = 64;
-	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) !=
-	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
-	              "Different texture type (2D vs 3D) must produce different signature");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureDifferentTextureType PASSED");
+	ZENITH_ASSERT_NE(Flux_RenderGraph::MakeTransientMemorySignature(xA), Flux_RenderGraph::MakeTransientMemorySignature(xB), "Different texture type (2D vs 3D) must produce different signature");
 }
 
-void Zenith_UnitTests::TestAliasSignatureDepthVsColour()
-{
+ZENITH_TEST(Core, AliasSignatureDepthVsColour) { Zenith_UnitTests::TestAliasSignatureDepthVsColour(); }
+
+void Zenith_UnitTests::TestAliasSignatureDepthVsColour(){
 	Flux_TransientTextureDesc xA = DefaultDesc();
 	Flux_TransientTextureDesc xB = DefaultDesc();
 	xB.m_bIsDepthStencil = true;
 	xB.m_eFormat         = TEXTURE_FORMAT_D32_SFLOAT;
-	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) !=
-	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
-	              "Depth-stencil flag must produce different signature than colour");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureDepthVsColour PASSED");
+	ZENITH_ASSERT_NE(Flux_RenderGraph::MakeTransientMemorySignature(xA), Flux_RenderGraph::MakeTransientMemorySignature(xB), "Depth-stencil flag must produce different signature than colour");
 }
 
-void Zenith_UnitTests::TestAliasSignatureIgnoresDimensions()
-{
+ZENITH_TEST(Core, AliasSignatureIgnoresDimensions) { Zenith_UnitTests::TestAliasSignatureIgnoresDimensions(); }
+
+void Zenith_UnitTests::TestAliasSignatureIgnoresDimensions(){
 	// Two descs differing ONLY in width/height/mip-count must have matching
 	// signatures. The packer handles size variation by computing pool size =
 	// max(occupant size); the signature is about memory-requirement class.
@@ -11722,10 +10458,7 @@ void Zenith_UnitTests::TestAliasSignatureIgnoresDimensions()
 	xB.m_uWidth   = 3840;
 	xB.m_uHeight  = 2160;
 	xB.m_uNumMips = 8;
-	Zenith_Assert(Flux_RenderGraph::MakeTransientMemorySignature(xA) ==
-	              Flux_RenderGraph::MakeTransientMemorySignature(xB),
-	              "Dimensions and mip count must NOT affect signature");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAliasSignatureIgnoresDimensions PASSED");
+	ZENITH_ASSERT_EQ(Flux_RenderGraph::MakeTransientMemorySignature(xA), Flux_RenderGraph::MakeTransientMemorySignature(xB), "Dimensions and mip count must NOT affect signature");
 }
 
 // ============================================================================
@@ -11774,8 +10507,9 @@ namespace
 	}
 }
 
-void Zenith_UnitTests::TestBinderNameCacheFirstLookupMisses()
-{
+ZENITH_TEST(Core, BinderNameCacheFirstLookupMisses) { Zenith_UnitTests::TestBinderNameCacheFirstLookupMisses(); }
+
+void Zenith_UnitTests::TestBinderNameCacheFirstLookupMisses(){
 	Flux_ShaderReflection xReflection;
 	const BindingSpec axSpecs[] = {
 		{ "FrameConstants", BINDING_TYPE_BUFFER, 0, 0 },
@@ -11788,27 +10522,26 @@ void Zenith_UnitTests::TestBinderNameCacheFirstLookupMisses()
 	// Cache starts empty — every slot's reflection-ptr is null.
 	for (u_int u = 0; u < Flux_ShaderBinder::NAME_CACHE_SIZE; u++)
 	{
-		Zenith_Assert(xBinder.m_axNameCache[u].m_pxReflection == nullptr,
-			"Fresh binder cache slot %u must be empty", u);
+		ZENITH_ASSERT_NULL(xBinder.m_axNameCache[u].m_pxReflection, "Fresh binder cache slot %u must be empty", u);
 	}
 
 	const char* szName = "FrameConstants";
 	const Flux_ShaderBinder::ResolvedBinding xR = xBinder.ResolveNamedBinding(&xReflection, szName);
 
-	Zenith_Assert(xR.m_eType == BINDING_TYPE_BUFFER, "First lookup returns the right type");
-	Zenith_Assert(xR.m_xHandle.m_uSet == 0 && xR.m_xHandle.m_uBinding == 0, "First lookup returns the right handle");
+	ZENITH_ASSERT_EQ(xR.m_eType, BINDING_TYPE_BUFFER, "First lookup returns the right type");
+	ZENITH_ASSERT_TRUE(xR.m_xHandle.m_uSet == 0 && xR.m_xHandle.m_uBinding == 0, "First lookup returns the right handle");
 
 	// Slot 0 should now hold the entry; slots 1..7 still empty.
-	Zenith_Assert(xBinder.m_axNameCache[0].m_pxReflection == &xReflection, "First entry stored at slot 0");
-	Zenith_Assert(xBinder.m_axNameCache[0].m_szName == szName, "First entry stores the literal pointer");
-	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "Round-robin slot advances after a miss");
-	Zenith_Assert(xBinder.m_axNameCache[1].m_pxReflection == nullptr, "Slot 1 still empty after one miss");
+	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[0].m_pxReflection, &xReflection, "First entry stored at slot 0");
+	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[0].m_szName, szName, "First entry stores the literal pointer");
+	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "Round-robin slot advances after a miss");
+	ZENITH_ASSERT_NULL(xBinder.m_axNameCache[1].m_pxReflection, "Slot 1 still empty after one miss");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheFirstLookupMisses PASSED");
 }
 
-void Zenith_UnitTests::TestBinderNameCacheRepeatLookupHits()
-{
+ZENITH_TEST(Core, BinderNameCacheRepeatLookupHits) { Zenith_UnitTests::TestBinderNameCacheRepeatLookupHits(); }
+
+void Zenith_UnitTests::TestBinderNameCacheRepeatLookupHits(){
 	Flux_ShaderReflection xReflection;
 	const BindingSpec axSpecs[] = {
 		{ "g_xDepthTex", BINDING_TYPE_TEXTURE, 0, 1 },
@@ -11822,26 +10555,26 @@ void Zenith_UnitTests::TestBinderNameCacheRepeatLookupHits()
 
 	// First call — cache miss.
 	xBinder.ResolveNamedBinding(&xReflection, szName);
-	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "Slot advanced after first miss");
+	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "Slot advanced after first miss");
 
 	// Second call with the same string-literal pointer — cache hit. The
 	// next-cache-slot should NOT advance (no new entry written).
 	xBinder.ResolveNamedBinding(&xReflection, szName);
-	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "Cache hit does not advance the next-cache-slot counter");
-	Zenith_Assert(xBinder.m_axNameCache[1].m_pxReflection == nullptr, "Cache hit does not populate slot 1");
+	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "Cache hit does not advance the next-cache-slot counter");
+	ZENITH_ASSERT_NULL(xBinder.m_axNameCache[1].m_pxReflection, "Cache hit does not populate slot 1");
 
 	// Hammer the resolver — all hits, no new slot writes.
 	for (u_int u = 0; u < 100; u++)
 	{
 		xBinder.ResolveNamedBinding(&xReflection, szName);
 	}
-	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "Many cache hits in a row never advance the slot counter");
+	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "Many cache hits in a row never advance the slot counter");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheRepeatLookupHits PASSED");
 }
 
-void Zenith_UnitTests::TestBinderNameCacheDifferentReflectionMisses()
-{
+ZENITH_TEST(Core, BinderNameCacheDifferentReflectionMisses) { Zenith_UnitTests::TestBinderNameCacheDifferentReflectionMisses(); }
+
+void Zenith_UnitTests::TestBinderNameCacheDifferentReflectionMisses(){
 	// Two reflections with the same binding name. Same name-literal pointer
 	// across both calls. Expectation: distinct reflection pointers force two
 	// cache entries (the cache key is (reflection*, name*), not just name*).
@@ -11859,19 +10592,19 @@ void Zenith_UnitTests::TestBinderNameCacheDifferentReflectionMisses()
 	const char* szName = "Shared";
 
 	xBinder.ResolveNamedBinding(&xReflectionA, szName);
-	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "First call (reflection A) populates slot 0");
+	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "First call (reflection A) populates slot 0");
 
 	xBinder.ResolveNamedBinding(&xReflectionB, szName);
-	Zenith_Assert(xBinder.m_uNextCacheSlot == 2, "Different reflection forces a cache miss → slot 1 populated");
+	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 2, "Different reflection forces a cache miss → slot 1 populated");
 
-	Zenith_Assert(xBinder.m_axNameCache[0].m_pxReflection == &xReflectionA, "Slot 0 stores reflection A");
-	Zenith_Assert(xBinder.m_axNameCache[1].m_pxReflection == &xReflectionB, "Slot 1 stores reflection B");
+	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[0].m_pxReflection, &xReflectionA, "Slot 0 stores reflection A");
+	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[1].m_pxReflection, &xReflectionB, "Slot 1 stores reflection B");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheDifferentReflectionMisses PASSED");
 }
 
-void Zenith_UnitTests::TestBinderNameCacheDifferentNameMisses()
-{
+ZENITH_TEST(Core, BinderNameCacheDifferentNameMisses) { Zenith_UnitTests::TestBinderNameCacheDifferentNameMisses(); }
+
+void Zenith_UnitTests::TestBinderNameCacheDifferentNameMisses(){
 	// Single reflection with two bindings. Two different name-literal pointers
 	// → two distinct cache entries even within the same reflection.
 	Flux_ShaderReflection xReflection;
@@ -11885,16 +10618,16 @@ void Zenith_UnitTests::TestBinderNameCacheDifferentNameMisses()
 	Flux_ShaderBinder xBinder(xCmdList);
 
 	xBinder.ResolveNamedBinding(&xReflection, "First");
-	Zenith_Assert(xBinder.m_uNextCacheSlot == 1, "First name occupies slot 0");
+	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 1, "First name occupies slot 0");
 
 	xBinder.ResolveNamedBinding(&xReflection, "Second");
-	Zenith_Assert(xBinder.m_uNextCacheSlot == 2, "Second name occupies slot 1");
+	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 2, "Second name occupies slot 1");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheDifferentNameMisses PASSED");
 }
 
-void Zenith_UnitTests::TestBinderNameCacheRoundRobinReplacement()
-{
+ZENITH_TEST(Core, BinderNameCacheRoundRobinReplacement) { Zenith_UnitTests::TestBinderNameCacheRoundRobinReplacement(); }
+
+void Zenith_UnitTests::TestBinderNameCacheRoundRobinReplacement(){
 	// Fill the cache to NAME_CACHE_SIZE-1 misses (one under the overflow
 	// threshold), verify the slot counter advances correctly, and verify the
 	// contents land in the expected slots. The Nth miss (N==NAME_CACHE_SIZE)
@@ -11918,23 +10651,22 @@ void Zenith_UnitTests::TestBinderNameCacheRoundRobinReplacement()
 	for (u_int u = 0; u < Flux_ShaderBinder::NAME_CACHE_SIZE - 1; u++)
 	{
 		xBinder.ResolveNamedBinding(&xReflection, axSpecs[u].m_szName);
-		Zenith_Assert(xBinder.m_uNextCacheSlot == u + 1, "Slot counter advances after each miss");
+		ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, u + 1, "Slot counter advances after each miss");
 	}
-	Zenith_Assert(xBinder.m_axNameCache[0].m_szName == axSpecs[0].m_szName, "Slot 0 holds the first name");
+	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[0].m_szName, axSpecs[0].m_szName, "Slot 0 holds the first name");
 
 	// The last miss that keeps us inside the overflow budget — exactly
 	// NAME_CACHE_SIZE unique resolves filled the cache, slot counter wraps
 	// to 0 (though no eviction has happened yet).
 	xBinder.ResolveNamedBinding(&xReflection, axSpecs[Flux_ShaderBinder::NAME_CACHE_SIZE - 1].m_szName);
-	Zenith_Assert(xBinder.m_uNextCacheSlot == 0, "After NAME_CACHE_SIZE unique misses, slot counter wraps to 0");
-	Zenith_Assert(xBinder.m_uUniqueResolves == Flux_ShaderBinder::NAME_CACHE_SIZE,
-		"Unique resolve counter matches cache capacity after full fill");
+	ZENITH_ASSERT_EQ(xBinder.m_uNextCacheSlot, 0, "After NAME_CACHE_SIZE unique misses, slot counter wraps to 0");
+	ZENITH_ASSERT_EQ(xBinder.m_uUniqueResolves, Flux_ShaderBinder::NAME_CACHE_SIZE, "Unique resolve counter matches cache capacity after full fill");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheRoundRobinReplacement PASSED");
 }
 
-void Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly()
-{
+ZENITH_TEST(Core, BinderNameCacheTypeStoredCorrectly) { Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly(); }
+
+void Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly(){
 	// Verify the cached entry stores the reflected BindingType so the per-call
 	// type assertion in BindCBV/BindSRV/etc. has the data it needs without
 	// going back to the reflection on a hit.
@@ -11955,18 +10687,17 @@ void Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly()
 	const Flux_ShaderBinder::ResolvedBinding xR2 = xBinder.ResolveNamedBinding(&xReflection, "StorTex");
 	const Flux_ShaderBinder::ResolvedBinding xR3 = xBinder.ResolveNamedBinding(&xReflection, "StorBuf");
 
-	Zenith_Assert(xR0.m_eType == BINDING_TYPE_BUFFER,         "Buf resolves to BINDING_TYPE_BUFFER");
-	Zenith_Assert(xR1.m_eType == BINDING_TYPE_TEXTURE,        "Tex resolves to BINDING_TYPE_TEXTURE");
-	Zenith_Assert(xR2.m_eType == BINDING_TYPE_STORAGE_IMAGE,  "StorTex resolves to BINDING_TYPE_STORAGE_IMAGE");
-	Zenith_Assert(xR3.m_eType == BINDING_TYPE_STORAGE_BUFFER, "StorBuf resolves to BINDING_TYPE_STORAGE_BUFFER");
+	ZENITH_ASSERT_EQ(xR0.m_eType, BINDING_TYPE_BUFFER, "Buf resolves to BINDING_TYPE_BUFFER");
+	ZENITH_ASSERT_EQ(xR1.m_eType, BINDING_TYPE_TEXTURE, "Tex resolves to BINDING_TYPE_TEXTURE");
+	ZENITH_ASSERT_EQ(xR2.m_eType, BINDING_TYPE_STORAGE_IMAGE, "StorTex resolves to BINDING_TYPE_STORAGE_IMAGE");
+	ZENITH_ASSERT_EQ(xR3.m_eType, BINDING_TYPE_STORAGE_BUFFER, "StorBuf resolves to BINDING_TYPE_STORAGE_BUFFER");
 
 	// And the cached slots should mirror that.
-	Zenith_Assert(xBinder.m_axNameCache[0].m_eType == BINDING_TYPE_BUFFER,         "Slot 0 cached type == BUFFER");
-	Zenith_Assert(xBinder.m_axNameCache[1].m_eType == BINDING_TYPE_TEXTURE,        "Slot 1 cached type == TEXTURE");
-	Zenith_Assert(xBinder.m_axNameCache[2].m_eType == BINDING_TYPE_STORAGE_IMAGE,  "Slot 2 cached type == STORAGE_IMAGE");
-	Zenith_Assert(xBinder.m_axNameCache[3].m_eType == BINDING_TYPE_STORAGE_BUFFER, "Slot 3 cached type == STORAGE_BUFFER");
+	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[0].m_eType, BINDING_TYPE_BUFFER, "Slot 0 cached type == BUFFER");
+	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[1].m_eType, BINDING_TYPE_TEXTURE, "Slot 1 cached type == TEXTURE");
+	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[2].m_eType, BINDING_TYPE_STORAGE_IMAGE, "Slot 2 cached type == STORAGE_IMAGE");
+	ZENITH_ASSERT_EQ(xBinder.m_axNameCache[3].m_eType, BINDING_TYPE_STORAGE_BUFFER, "Slot 3 cached type == STORAGE_BUFFER");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBinderNameCacheTypeStoredCorrectly PASSED");
 }
 
 // ============================================================================
@@ -12066,64 +10797,63 @@ namespace
 
 	void TestBeginCallback_OrderTagA(u_int /*uRingIndex*/, void* /*pUserData*/)
 	{
-		Zenith_Assert(g_uTestCallOrderCount < 16, "Test call-order overflow");
+		ZENITH_ASSERT_LT(g_uTestCallOrderCount, 16, "Test call-order overflow");
 		g_auTestCallOrder[g_uTestCallOrderCount++] = 'A';
 	}
 
 	void TestBeginCallback_OrderTagB(u_int /*uRingIndex*/, void* /*pUserData*/)
 	{
-		Zenith_Assert(g_uTestCallOrderCount < 16, "Test call-order overflow");
+		ZENITH_ASSERT_LT(g_uTestCallOrderCount, 16, "Test call-order overflow");
 		g_auTestCallOrder[g_uTestCallOrderCount++] = 'B';
 	}
 
 	void TestBeginCallback_OrderTagC(u_int /*uRingIndex*/, void* /*pUserData*/)
 	{
-		Zenith_Assert(g_uTestCallOrderCount < 16, "Test call-order overflow");
+		ZENITH_ASSERT_LT(g_uTestCallOrderCount, 16, "Test call-order overflow");
 		g_auTestCallOrder[g_uTestCallOrderCount++] = 'C';
 	}
 }
 
-void Zenith_UnitTests::TestFluxPerFrameFrameCounterAdvances()
-{
+ZENITH_TEST(Core, FluxPerFrameFrameCounterAdvances) { Zenith_UnitTests::TestFluxPerFrameFrameCounterAdvances(); }
+
+void Zenith_UnitTests::TestFluxPerFrameFrameCounterAdvances(){
 	PerFrameScopedReset xReset;
 
-	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == 0, "Counter starts at 0");
-	Zenith_Assert(Flux_PerFrame::GetRingIndex()    == 0, "Ring index starts at 0");
+	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), 0, "Counter starts at 0");
+	ZENITH_ASSERT_EQ(Flux_PerFrame::GetRingIndex(), 0, "Ring index starts at 0");
 
 	// BeginFrame does NOT advance the counter — only EndFrame does. This
 	// matches the pre-extraction behaviour where the swapchain bumped its
 	// index inside EndFrame, so the same slot is used by Begin and End of
 	// the same frame.
 	Flux_PerFrame::BeginFrame();
-	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == 0, "BeginFrame does not advance the counter");
+	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), 0, "BeginFrame does not advance the counter");
 
 	Flux_PerFrame::EndFrame();
-	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == 1, "EndFrame advances the counter by 1");
+	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), 1, "EndFrame advances the counter by 1");
 
 	for (u_int u = 0; u < 5; u++)
 	{
 		Flux_PerFrame::BeginFrame();
 		Flux_PerFrame::EndFrame();
 	}
-	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == 6, "Five Begin/End pairs advance the counter to 6");
+	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), 6, "Five Begin/End pairs advance the counter to 6");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameFrameCounterAdvances PASSED");
 }
 
-void Zenith_UnitTests::TestFluxPerFrameRingIndexWraps()
-{
+ZENITH_TEST(Core, FluxPerFrameRingIndexWraps) { Zenith_UnitTests::TestFluxPerFrameRingIndexWraps(); }
+
+void Zenith_UnitTests::TestFluxPerFrameRingIndexWraps(){
 	PerFrameScopedReset xReset;
 
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		Zenith_Assert(Flux_PerFrame::GetRingIndex() == u % MAX_FRAMES_IN_FLIGHT,
-			"Ring index at counter %u is %u, expected %u",
-			u, Flux_PerFrame::GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT);
+		ZENITH_ASSERT_EQ(Flux_PerFrame::GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT, "Ring index at counter %u is %u, expected %u", u, Flux_PerFrame::GetRingIndex(), u % MAX_FRAMES_IN_FLIGHT);
 		Flux_PerFrame::EndFrame();
 	}
 	// After MAX_FRAMES_IN_FLIGHT EndFrames the counter is at MAX, ring index wraps to 0.
-	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == MAX_FRAMES_IN_FLIGHT, "Counter is at MAX_FRAMES_IN_FLIGHT");
-	Zenith_Assert(Flux_PerFrame::GetRingIndex()    == 0, "Ring index wraps to 0 after MAX_FRAMES_IN_FLIGHT EndFrames");
+	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), MAX_FRAMES_IN_FLIGHT, "Counter is at MAX_FRAMES_IN_FLIGHT");
+	ZENITH_ASSERT_EQ(Flux_PerFrame::GetRingIndex(), 0, "Ring index wraps to 0 after MAX_FRAMES_IN_FLIGHT EndFrames");
 
 	// Drive several full cycles and confirm the modulo continues to hold.
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT * 3 + 1; u++)
@@ -12131,48 +10861,47 @@ void Zenith_UnitTests::TestFluxPerFrameRingIndexWraps()
 		Flux_PerFrame::EndFrame();
 	}
 	const u_int uExpectedCounter = MAX_FRAMES_IN_FLIGHT + (MAX_FRAMES_IN_FLIGHT * 3 + 1);
-	Zenith_Assert(Flux_PerFrame::GetFrameCounter() == uExpectedCounter, "Counter total tracks correctly");
-	Zenith_Assert(Flux_PerFrame::GetRingIndex()    == uExpectedCounter % MAX_FRAMES_IN_FLIGHT,
-		"Ring index continues to be counter %% MAX_FRAMES_IN_FLIGHT");
+	ZENITH_ASSERT_EQ(Flux_PerFrame::GetFrameCounter(), uExpectedCounter, "Counter total tracks correctly");
+	ZENITH_ASSERT_EQ(Flux_PerFrame::GetRingIndex(), uExpectedCounter % MAX_FRAMES_IN_FLIGHT, "Ring index continues to be counter %% MAX_FRAMES_IN_FLIGHT");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameRingIndexWraps PASSED");
 }
 
-void Zenith_UnitTests::TestFluxPerFrameBeginCallbackFires()
-{
+ZENITH_TEST(Core, FluxPerFrameBeginCallbackFires) { Zenith_UnitTests::TestFluxPerFrameBeginCallbackFires(); }
+
+void Zenith_UnitTests::TestFluxPerFrameBeginCallbackFires(){
 	PerFrameScopedReset xReset;
 
 	g_uTestBeginCallCount = 0;
 	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_IncCount, nullptr);
 
 	Flux_PerFrame::BeginFrame();
-	Zenith_Assert(g_uTestBeginCallCount == 1, "Begin callback fires once per BeginFrame");
+	ZENITH_ASSERT_EQ(g_uTestBeginCallCount, 1, "Begin callback fires once per BeginFrame");
 
 	Flux_PerFrame::BeginFrame();
 	Flux_PerFrame::BeginFrame();
-	Zenith_Assert(g_uTestBeginCallCount == 3, "Begin callback fires every BeginFrame");
+	ZENITH_ASSERT_EQ(g_uTestBeginCallCount, 3, "Begin callback fires every BeginFrame");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameBeginCallbackFires PASSED");
 }
 
-void Zenith_UnitTests::TestFluxPerFrameEndCallbackFires()
-{
+ZENITH_TEST(Core, FluxPerFrameEndCallbackFires) { Zenith_UnitTests::TestFluxPerFrameEndCallbackFires(); }
+
+void Zenith_UnitTests::TestFluxPerFrameEndCallbackFires(){
 	PerFrameScopedReset xReset;
 
 	g_uTestEndCallCount = 0;
 	Flux_PerFrame::RegisterEndFrameCallback(&TestEndCallback_IncCount, nullptr);
 
 	Flux_PerFrame::EndFrame();
-	Zenith_Assert(g_uTestEndCallCount == 1, "End callback fires once per EndFrame");
+	ZENITH_ASSERT_EQ(g_uTestEndCallCount, 1, "End callback fires once per EndFrame");
 
 	Flux_PerFrame::EndFrame();
-	Zenith_Assert(g_uTestEndCallCount == 2, "End callback fires every EndFrame");
+	ZENITH_ASSERT_EQ(g_uTestEndCallCount, 2, "End callback fires every EndFrame");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameEndCallbackFires PASSED");
 }
 
-void Zenith_UnitTests::TestFluxPerFrameCallbackOrderPreserved()
-{
+ZENITH_TEST(Core, FluxPerFrameCallbackOrderPreserved) { Zenith_UnitTests::TestFluxPerFrameCallbackOrderPreserved(); }
+
+void Zenith_UnitTests::TestFluxPerFrameCallbackOrderPreserved(){
 	PerFrameScopedReset xReset;
 
 	g_uTestCallOrderCount = 0;
@@ -12182,16 +10911,16 @@ void Zenith_UnitTests::TestFluxPerFrameCallbackOrderPreserved()
 
 	Flux_PerFrame::BeginFrame();
 
-	Zenith_Assert(g_uTestCallOrderCount == 3, "All three begin callbacks fired");
-	Zenith_Assert(g_auTestCallOrder[0] == 'A', "First registered (A) fires first");
-	Zenith_Assert(g_auTestCallOrder[1] == 'B', "Second registered (B) fires second");
-	Zenith_Assert(g_auTestCallOrder[2] == 'C', "Third registered (C) fires third");
+	ZENITH_ASSERT_EQ(g_uTestCallOrderCount, 3, "All three begin callbacks fired");
+	ZENITH_ASSERT_EQ(g_auTestCallOrder[0], 'A', "First registered (A) fires first");
+	ZENITH_ASSERT_EQ(g_auTestCallOrder[1], 'B', "Second registered (B) fires second");
+	ZENITH_ASSERT_EQ(g_auTestCallOrder[2], 'C', "Third registered (C) fires third");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameCallbackOrderPreserved PASSED");
 }
 
-void Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed()
-{
+ZENITH_TEST(Core, FluxPerFrameCallbackUserDataPassed) { Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed(); }
+
+void Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed(){
 	PerFrameScopedReset xReset;
 
 	int iSentinelOnStack = 0xC0DE;
@@ -12199,8 +10928,7 @@ void Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed()
 	Flux_PerFrame::RegisterBeginFrameCallback(&TestBeginCallback_IncCount, &iSentinelOnStack);
 
 	Flux_PerFrame::BeginFrame();
-	Zenith_Assert(g_pTestLastUserData == &iSentinelOnStack,
-		"Begin callback receives the user-data pointer it was registered with");
+	ZENITH_ASSERT_EQ(g_pTestLastUserData, &iSentinelOnStack, "Begin callback receives the user-data pointer it was registered with");
 
 	int iSentinelTwo = 0xBEEF;
 	g_pTestLastUserData = nullptr;
@@ -12211,14 +10939,13 @@ void Zenith_UnitTests::TestFluxPerFrameCallbackUserDataPassed()
 	// Begin fires first inside EndFrame? No — begin callbacks only fire in
 	// BeginFrame. So only the end callback fired here, and it wrote the
 	// end-callback's user-data pointer.
-	Zenith_Assert(g_pTestLastUserData == &iSentinelTwo,
-		"End callback receives the user-data pointer it was registered with");
+	ZENITH_ASSERT_EQ(g_pTestLastUserData, &iSentinelTwo, "End callback receives the user-data pointer it was registered with");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameCallbackUserDataPassed PASSED");
 }
 
-void Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback()
-{
+ZENITH_TEST(Core, FluxPerFrameRingIndexInsideCallback) { Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback(); }
+
+void Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback(){
 	PerFrameScopedReset xReset;
 
 	g_uTestLastBeginRing = UINT32_MAX;
@@ -12233,26 +10960,21 @@ void Zenith_UnitTests::TestFluxPerFrameRingIndexInsideCallback()
 		const u_int uExpectedRing = u % MAX_FRAMES_IN_FLIGHT;
 
 		Flux_PerFrame::BeginFrame();
-		Zenith_Assert(g_uTestLastBeginRing == uExpectedRing,
-			"Begin callback at frame %u observed ring %u, expected %u",
-			u, g_uTestLastBeginRing, uExpectedRing);
+		ZENITH_ASSERT_EQ(g_uTestLastBeginRing, uExpectedRing, "Begin callback at frame %u observed ring %u, expected %u", u, g_uTestLastBeginRing, uExpectedRing);
 
 		Flux_PerFrame::EndFrame();
-		Zenith_Assert(g_uTestLastEndRing == uExpectedRing,
-			"End callback at frame %u observed ring %u, expected %u",
-			u, g_uTestLastEndRing, uExpectedRing);
+		ZENITH_ASSERT_EQ(g_uTestLastEndRing, uExpectedRing, "End callback at frame %u observed ring %u, expected %u", u, g_uTestLastEndRing, uExpectedRing);
 	}
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFluxPerFrameRingIndexInsideCallback PASSED");
 }
 
 //=============================================================================
 // UIText alignment helper tests
 //=============================================================================
 
-void Zenith_UnitTests::TestUITextHorizontalAlignment()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUITextHorizontalAlignment...");
+ZENITH_TEST(Core, UITextHorizontalAlignment) { Zenith_UnitTests::TestUITextHorizontalAlignment(); }
+
+void Zenith_UnitTests::TestUITextHorizontalAlignment(){
 
 	const float fLeft = 100.0f;
 	const float fWidth = 200.0f;
@@ -12260,30 +10982,26 @@ void Zenith_UnitTests::TestUITextHorizontalAlignment()
 
 	const float fLeftX = Zenith_UI::Zenith_UIText::ComputeHorizontalStartX(
 		fLeft, fWidth, fLineWidth, Zenith_UI::TextAlignment::Left);
-	Zenith_Assert(std::abs(fLeftX - 100.0f) < 0.001f, "Left alignment should return fLeft (100), got %.2f", fLeftX);
+	ZENITH_ASSERT_EQ_FLOAT(fLeftX, 100.0f, 0.001f, "Left alignment should return fLeft (100), got %.2f", fLeftX);
 
 	const float fCenterX = Zenith_UI::Zenith_UIText::ComputeHorizontalStartX(
 		fLeft, fWidth, fLineWidth, Zenith_UI::TextAlignment::Center);
-	Zenith_Assert(std::abs(fCenterX - 160.0f) < 0.001f,
-		"Center alignment should return fLeft + (fWidth - fLineWidth)/2 = 160, got %.2f", fCenterX);
+	ZENITH_ASSERT_EQ_FLOAT(fCenterX, 160.0f, 0.001f, "Center alignment should return fLeft + (fWidth - fLineWidth)/2 = 160, got %.2f", fCenterX);
 
 	const float fRightX = Zenith_UI::Zenith_UIText::ComputeHorizontalStartX(
 		fLeft, fWidth, fLineWidth, Zenith_UI::TextAlignment::Right);
-	Zenith_Assert(std::abs(fRightX - 220.0f) < 0.001f,
-		"Right alignment should return fLeft + fWidth - fLineWidth = 220, got %.2f", fRightX);
+	ZENITH_ASSERT_EQ_FLOAT(fRightX, 220.0f, 0.001f, "Right alignment should return fLeft + fWidth - fLineWidth = 220, got %.2f", fRightX);
 
 	// Edge: line wider than element — center and right produce negative offsets.
 	const float fOverflowCenter = Zenith_UI::Zenith_UIText::ComputeHorizontalStartX(
 		0.0f, 100.0f, 300.0f, Zenith_UI::TextAlignment::Center);
-	Zenith_Assert(std::abs(fOverflowCenter - (-100.0f)) < 0.001f,
-		"Center alignment with overflow should clamp to negative offset by design");
+	ZENITH_ASSERT_EQ_FLOAT(fOverflowCenter, (-100.0f), 0.001f, "Center alignment with overflow should clamp to negative offset by design");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUITextHorizontalAlignment PASSED");
 }
 
-void Zenith_UnitTests::TestUITextVerticalAlignment()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUITextVerticalAlignment...");
+ZENITH_TEST(Core, UITextVerticalAlignment) { Zenith_UnitTests::TestUITextVerticalAlignment(); }
+
+void Zenith_UnitTests::TestUITextVerticalAlignment(){
 
 	const float fTop = 50.0f;
 	const float fHeight = 120.0f;
@@ -12291,34 +11009,30 @@ void Zenith_UnitTests::TestUITextVerticalAlignment()
 
 	const float fTopY = Zenith_UI::Zenith_UIText::ComputeVerticalStartY(
 		fTop, fHeight, fTextHeight, Zenith_UI::TextVerticalAlignment::Top);
-	Zenith_Assert(std::abs(fTopY - 50.0f) < 0.001f, "Top alignment should return fTop (50), got %.2f", fTopY);
+	ZENITH_ASSERT_EQ_FLOAT(fTopY, 50.0f, 0.001f, "Top alignment should return fTop (50), got %.2f", fTopY);
 
 	const float fMiddleY = Zenith_UI::Zenith_UIText::ComputeVerticalStartY(
 		fTop, fHeight, fTextHeight, Zenith_UI::TextVerticalAlignment::Middle);
-	Zenith_Assert(std::abs(fMiddleY - 90.0f) < 0.001f,
-		"Middle alignment should return fTop + (fHeight - fTextHeight)/2 = 90, got %.2f", fMiddleY);
+	ZENITH_ASSERT_EQ_FLOAT(fMiddleY, 90.0f, 0.001f, "Middle alignment should return fTop + (fHeight - fTextHeight)/2 = 90, got %.2f", fMiddleY);
 
 	const float fBottomY = Zenith_UI::Zenith_UIText::ComputeVerticalStartY(
 		fTop, fHeight, fTextHeight, Zenith_UI::TextVerticalAlignment::Bottom);
-	Zenith_Assert(std::abs(fBottomY - 130.0f) < 0.001f,
-		"Bottom alignment should return fTop + fHeight - fTextHeight = 130, got %.2f", fBottomY);
+	ZENITH_ASSERT_EQ_FLOAT(fBottomY, 130.0f, 0.001f, "Bottom alignment should return fTop + fHeight - fTextHeight = 130, got %.2f", fBottomY);
 
 	// Edge: text exactly fills the element — middle equals top equals 50.
 	const float fExactFitMiddle = Zenith_UI::Zenith_UIText::ComputeVerticalStartY(
 		50.0f, 40.0f, 40.0f, Zenith_UI::TextVerticalAlignment::Middle);
-	Zenith_Assert(std::abs(fExactFitMiddle - 50.0f) < 0.001f,
-		"Exact-fit middle alignment should equal fTop");
+	ZENITH_ASSERT_EQ_FLOAT(fExactFitMiddle, 50.0f, 0.001f, "Exact-fit middle alignment should equal fTop");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUITextVerticalAlignment PASSED");
 }
 
 //=============================================================================
 // SlangCompiler helper tests
 //=============================================================================
 
-void Zenith_UnitTests::TestSlangIsBindingAlreadyPresent()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSlangIsBindingAlreadyPresent...");
+ZENITH_TEST(Slang, SlangIsBindingAlreadyPresent) { Zenith_UnitTests::TestSlangIsBindingAlreadyPresent(); }
+
+void Zenith_UnitTests::TestSlangIsBindingAlreadyPresent(){
 
 	Flux_ShaderReflection xReflection;
 
@@ -12335,24 +11049,20 @@ void Zenith_UnitTests::TestSlangIsBindingAlreadyPresent()
 	xDup.m_uBinding = 2;
 	xDup.m_strName = "g_xCameraBufferPerEntryPoint";
 	xDup.m_eType = BINDING_TYPE_BUFFER;
-	Zenith_Assert(Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDup),
-		"Binding with matching (set=0, binding=2) should be detected as already present");
+	ZENITH_ASSERT_TRUE(Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDup), "Binding with matching (set=0, binding=2) should be detected as already present");
 
 	// Different set, same binding slot — NOT a duplicate.
 	Flux_ReflectedBinding xDifferentSet;
 	xDifferentSet.m_uSet = 1;
 	xDifferentSet.m_uBinding = 2;
 	xDifferentSet.m_strName = "g_xOther";
-	Zenith_Assert(!Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDifferentSet),
-		"Binding in different descriptor set should not be flagged as duplicate");
+	ZENITH_ASSERT_FALSE(Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDifferentSet), "Binding in different descriptor set should not be flagged as duplicate");
 
 	// Same set, different binding slot — NOT a duplicate.
 	Flux_ReflectedBinding xDifferentSlot;
 	xDifferentSlot.m_uSet = 0;
 	xDifferentSlot.m_uBinding = 3;
 	xDifferentSlot.m_strName = "g_xAnother";
-	Zenith_Assert(!Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDifferentSlot),
-		"Binding at different slot should not be flagged as duplicate");
+	ZENITH_ASSERT_FALSE(Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDifferentSlot), "Binding at different slot should not be flagged as duplicate");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSlangIsBindingAlreadyPresent PASSED");
 }

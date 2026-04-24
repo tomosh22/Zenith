@@ -970,3 +970,7 @@ void Zenith_SquadManager::DebugDrawAllSquads()
 	}
 }
 #endif
+
+#ifdef ZENITH_TESTING
+#include "AI/Squad/Zenith_Squad.Tests.inl"
+#endif

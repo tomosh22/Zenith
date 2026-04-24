@@ -911,3 +911,7 @@ void Zenith_NavMesh::DebugDraw() const
 	}
 }
 #endif
+
+#ifdef ZENITH_TESTING
+#include "AI/Navigation/Zenith_NavMesh.Tests.inl"
+#endif

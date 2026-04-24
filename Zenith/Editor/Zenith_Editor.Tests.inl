@@ -1,8 +1,5 @@
-#include "Zenith.h"
 
 #ifdef ZENITH_TOOLS
-
-#include "UnitTests/Zenith_EditorTests.h"
 #include "UnitTests/Zenith_EditorTestFixture.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Editor/Zenith_SelectionSystem.h"
@@ -25,161 +22,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
-
-void Zenith_EditorTests::RunAllTests()
-{
-	// Existing tests
-	TestBoundingBoxIntersection();
-	TestSelectionSystemEmptyScene();
-	TestInvalidEntityID();
-	TestTransformRoundTrip();
-
-	// Multi-select tests (existing)
-	TestMultiSelectSingle();
-	TestMultiSelectCtrlClick();
-	TestMultiSelectClear();
-	TestMultiSelectAfterEntityDelete();
-
-	// Mode Transition tests
-	TestModeTransitionStoppedToPlaying();
-	TestModeTransitionPlayingToPaused();
-	TestModeTransitionPausedToStopped();
-	TestModeTransitionFullCycle();
-	TestModePreservesSelection();
-
-	// Gizmo Operation tests
-	TestGizmoModeSwitch();
-	TestGizmoModeTranslate();
-	TestGizmoModeRotate();
-	TestGizmoModeScale();
-	TestGizmoModeViaKeyboard();
-
-	// Undo/Redo tests
-	TestUndoSystemCanUndo();
-	TestUndoSystemCanRedo();
-	TestTransformEditUndoRedo();
-	TestUndoStackClearOnSceneChange();
-	TestRedoStackClearOnNewEdit();
-
-	// §3.18 — UndoSystem cross-scene
-	TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitch();
-
-	// Entity Hierarchy tests
-	TestEntityReparenting();
-	TestCreateChildEntity();
-	TestUnparentEntity();
-	TestHierarchyCircularPrevention();
-	TestDeleteParentWithChildren();
-	TestIsAncestorOf();
-
-	// Selection System tests (expanded)
-	TestRangeSelection();
-	TestSelectionWithHierarchy();
-	TestRaycastSelectWithMultipleEntities();
-
-	// Console tests
-	TestConsoleAddLog();
-	TestConsoleClear();
-
-	// Component tests - Generic
-	TestComponentAddRemove();
-	TestComponentAddViaRegistry();
-	TestMultipleComponentAdd();
-
-	// TransformComponent tests
-	TestTransformPositionRoundTrip();
-	TestTransformRotationRoundTrip();
-	TestTransformScaleRoundTrip();
-	TestTransformMatrixBuild();
-	TestTransformParentChild();
-	TestTransformHierarchyTraversal();
-	TestTransformIsDescendantOf();
-
-	// CameraComponent tests
-	TestCameraPerspectiveMatrix();
-	TestCameraOrthographicMatrix();
-	TestCameraViewMatrix();
-	TestCameraTypeSwitch();
-	TestCameraNearFarPlanes();
-	TestCameraFOVSettings();
-
-	// ModelComponent tests
-	TestModelMeshAccess();
-	TestModelAnimationController();
-	TestModelAnimationFloat();
-	TestModelAnimationInt();
-	TestModelAnimationBool();
-	TestModelAnimationTrigger();
-
-	// ColliderComponent tests
-	TestColliderAddAABB();
-	TestColliderAddSphere();
-	TestColliderAddCapsule();
-	TestColliderDynamicStatic();
-	TestColliderGravityControl();
-
-	// ScriptComponent tests
-	TestScriptBehaviourAttach();
-	TestScriptBehaviourRetrieve();
-
-	// UIComponent tests
-	TestUICreateElement();
-	TestUIFindElement();
-	TestUIVisibility();
-
-	// ParticleEmitterComponent tests
-	TestParticleEmission();
-	TestParticleSetEmitting();
-	TestParticleAliveCount();
-
-	// InstancedMeshComponent tests
-	TestInstancedSpawn();
-	TestInstancedTransform();
-	TestInstancedVisibility();
-	TestInstancedCount();
-
-	// AIAgentComponent tests
-	TestAIBlackboardAccess();
-	TestAIUpdateInterval();
-	TestAIEnable();
-
-	// Drag-Drop interaction tests
-	TestDragDropTextureToMaterial();
-	TestDragDropTextureReplaceCleanup();
-	TestDragDropEntityToParent();
-	TestDragDropEntityCircularPrevention();
-
-	// Context Menu action tests
-	TestContextMenuCreateChild();
-	TestContextMenuDeleteEntity();
-	TestContextMenuUnparent();
-
-	// Property Editor interaction tests
-	TestMaterialSliderMetallic();
-	TestMaterialSliderRoughness();
-	TestMaterialColorBaseColor();
-	TestMaterialCheckboxTransparent();
-	TestEntityNameChange();
-	TestTransformDragPosition();
-
-	// Editor Operation tests (shared code paths with automation)
-	TestCreateEntityViaEditor();
-	TestAddInvalidComponent();
-	TestSetSelectedEntityTransient();
-
-	// Deferred Scene Operation tests
-	TestDeferredOpClearedAfterExecution();
-	TestDeferredOpSkippedWhenFlagFalse();
-
-	// Content Browser tests
-	TestTypeFilterMatchesTexture();
-	TestTypeFilterAllPass();
-	TestUniqueFilenameWithExisting();
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] All editor tests passed");
-}
-
-void Zenith_EditorTests::TestBoundingBoxIntersection()
+ZENITH_TEST(Editor, BoundingBoxIntersection)
 {
 	// Test ray-AABB intersection
 	BoundingBox xBox(Zenith_Maths::Vector3(-1, -1, -1), Zenith_Maths::Vector3(1, 1, 1));
@@ -190,8 +33,8 @@ void Zenith_EditorTests::TestBoundingBoxIntersection()
 		Zenith_Maths::Vector3 rayDir(0, 0, 1);
 		float distance;
 		bool bHit = xBox.Intersects(rayOrigin, rayDir, distance);
-		Zenith_Assert(bHit, "Ray should hit the box");
-		Zenith_Assert(std::abs(distance - 4.0f) < 0.001f, "Distance should be ~4");
+		ZENITH_ASSERT_TRUE(bHit, "Ray should hit the box");
+		ZENITH_ASSERT_EQ_FLOAT(distance, 4.0f, 0.001f, "Distance should be ~4");
 	}
 	
 	// Test 2: Ray missing the box
@@ -200,7 +43,7 @@ void Zenith_EditorTests::TestBoundingBoxIntersection()
 		Zenith_Maths::Vector3 rayDir(0, 0, 1);
 		float distance;
 		bool bHit = xBox.Intersects(rayOrigin, rayDir, distance);
-		Zenith_Assert(!bHit, "Ray should miss the box");
+		ZENITH_ASSERT_FALSE(bHit, "Ray should miss the box");
 	}
 	
 	// Test 3: Ray starting inside the box
@@ -209,7 +52,7 @@ void Zenith_EditorTests::TestBoundingBoxIntersection()
 		Zenith_Maths::Vector3 rayDir(0, 0, 1);
 		float distance;
 		bool bHit = xBox.Intersects(rayOrigin, rayDir, distance);
-		Zenith_Assert(bHit, "Ray starting inside should hit");
+		ZENITH_ASSERT_TRUE(bHit, "Ray starting inside should hit");
 	}
 	
 	// Test 4: Ray pointing away from box
@@ -218,13 +61,11 @@ void Zenith_EditorTests::TestBoundingBoxIntersection()
 		Zenith_Maths::Vector3 rayDir(0, 0, -1);
 		float distance;
 		bool bHit = xBox.Intersects(rayOrigin, rayDir, distance);
-		Zenith_Assert(!bHit, "Ray pointing away should miss");
+		ZENITH_ASSERT_FALSE(bHit, "Ray pointing away should miss");
 	}
 	
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestBoundingBoxIntersection passed");
 }
-
-void Zenith_EditorTests::TestSelectionSystemEmptyScene()
+ZENITH_TEST(Editor, SelectionSystemEmptyScene)
 {
 	// Test that RaycastSelect returns INVALID_ENTITY_ID when ray misses all entities
 	Zenith_SelectionSystem::Initialise();
@@ -236,32 +77,28 @@ void Zenith_EditorTests::TestSelectionSystemEmptyScene()
 	rayDir = glm::normalize(rayDir);
 
 	Zenith_EntityID result = Zenith_SelectionSystem::RaycastSelect(rayOrigin, rayDir);
-	Zenith_Assert(result == INVALID_ENTITY_ID, "Ray missing all entities should return INVALID_ENTITY_ID");
+	ZENITH_ASSERT_EQ(result, INVALID_ENTITY_ID, "Ray missing all entities should return INVALID_ENTITY_ID");
 
 	Zenith_SelectionSystem::Shutdown();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestSelectionSystemEmptyScene passed");
 }
-
-void Zenith_EditorTests::TestInvalidEntityID()
+ZENITH_TEST(Editor, InvalidEntityID)
 {
 	// Test that INVALID_ENTITY_ID constant is properly defined
-	Zenith_Assert(!INVALID_ENTITY_ID.IsValid(), "INVALID_ENTITY_ID should not be valid");
-	Zenith_Assert(INVALID_ENTITY_ID.m_uIndex == Zenith_EntityID::INVALID_INDEX, "INVALID_ENTITY_ID index should be INVALID_INDEX");
+	ZENITH_ASSERT_FALSE(INVALID_ENTITY_ID.IsValid(), "INVALID_ENTITY_ID should not be valid");
+	ZENITH_ASSERT_EQ(INVALID_ENTITY_ID.m_uIndex, Zenith_EntityID::INVALID_INDEX, "INVALID_ENTITY_ID index should be INVALID_INDEX");
 
 	// Test that a valid entity ID is not equal to INVALID_ENTITY_ID
 	Zenith_EntityID validID = { 0, 1 };  // Index 0, generation 1
-	Zenith_Assert(validID != INVALID_ENTITY_ID, "Valid entity ID should not equal INVALID_ENTITY_ID");
-	Zenith_Assert(validID.IsValid(), "Valid entity ID should be valid");
+	ZENITH_ASSERT_NE(validID, INVALID_ENTITY_ID, "Valid entity ID should not equal INVALID_ENTITY_ID");
+	ZENITH_ASSERT_TRUE(validID.IsValid(), "Valid entity ID should be valid");
 
 	validID = { 1, 1 };  // Index 1, generation 1
-	Zenith_Assert(validID != INVALID_ENTITY_ID, "Valid entity ID should not equal INVALID_ENTITY_ID");
-	Zenith_Assert(validID.IsValid(), "Valid entity ID should be valid");
+	ZENITH_ASSERT_NE(validID, INVALID_ENTITY_ID, "Valid entity ID should not equal INVALID_ENTITY_ID");
+	ZENITH_ASSERT_TRUE(validID.IsValid(), "Valid entity ID should be valid");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestInvalidEntityID passed");
 }
-
-void Zenith_EditorTests::TestTransformRoundTrip()
+ZENITH_TEST(Editor, TransformRoundTrip)
 {
 	// Test that transform values can be set and retrieved accurately
 	// This is important for property panel editing
@@ -278,14 +115,14 @@ void Zenith_EditorTests::TestTransformRoundTrip()
 	xTransform.SetPosition(testPos);
 	Zenith_Maths::Vector3 retrievedPos;
 	xTransform.GetPosition(retrievedPos);
-	Zenith_Assert(glm::length(testPos - retrievedPos) < 0.0001f, "Position round trip failed");
+	ZENITH_ASSERT_LT(glm::length(testPos - retrievedPos), 0.0001f, "Position round trip failed");
 	
 	// Test scale round trip
 	Zenith_Maths::Vector3 testScale(2.0f, 0.5f, 3.0f);
 	xTransform.SetScale(testScale);
 	Zenith_Maths::Vector3 retrievedScale;
 	xTransform.GetScale(retrievedScale);
-	Zenith_Assert(glm::length(testScale - retrievedScale) < 0.0001f, "Scale round trip failed");
+	ZENITH_ASSERT_LT(glm::length(testScale - retrievedScale), 0.0001f, "Scale round trip failed");
 	
 	// Test rotation round trip (quaternion)
 	Zenith_Maths::Quat testRot = glm::angleAxis(glm::radians(45.0f), Zenith_Maths::Vector3(0, 1, 0));
@@ -295,18 +132,15 @@ void Zenith_EditorTests::TestTransformRoundTrip()
 	
 	// Compare quaternions (accounting for sign ambiguity)
 	float dotProduct = glm::dot(testRot, retrievedRot);
-	Zenith_Assert(std::abs(std::abs(dotProduct) - 1.0f) < 0.0001f, "Rotation round trip failed");
+	ZENITH_ASSERT_EQ_FLOAT(std::abs(dotProduct), 1.0f, 0.0001f, "Rotation round trip failed");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestTransformRoundTrip passed");
 }
 
 //------------------------------------------------------------------------------
 // Multi-Select Tests
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestMultiSelectSingle()
+ZENITH_TEST(Editor, MultiSelectSingle)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectSingle...");
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -317,25 +151,22 @@ void Zenith_EditorTests::TestMultiSelectSingle()
 
 	// Clear selection first
 	Zenith_Editor::ClearSelection();
-	Zenith_Assert(!Zenith_Editor::HasSelection(), "Should have no selection initially");
+	ZENITH_ASSERT_FALSE(Zenith_Editor::HasSelection(), "Should have no selection initially");
 
 	// Select single entity
 	Zenith_Editor::SelectEntity(uEntityID, false);
 
 	// Verify selection
-	Zenith_Assert(Zenith_Editor::HasSelection(), "Should have selection");
-	Zenith_Assert(Zenith_Editor::GetSelectionCount() == 1, "Should have exactly 1 selected");
-	Zenith_Assert(Zenith_Editor::IsSelected(uEntityID), "Entity should be selected");
-	Zenith_Assert(!Zenith_Editor::HasMultiSelection(), "Should not have multi-selection with 1 entity");
+	ZENITH_ASSERT_TRUE(Zenith_Editor::HasSelection(), "Should have selection");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 1, "Should have exactly 1 selected");
+	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntityID), "Entity should be selected");
+	ZENITH_ASSERT_FALSE(Zenith_Editor::HasMultiSelection(), "Should not have multi-selection with 1 entity");
 
 	Zenith_Editor::ClearSelection();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectSingle passed");
 }
-
-void Zenith_EditorTests::TestMultiSelectCtrlClick()
+ZENITH_TEST(Editor, MultiSelectCtrlClick)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectCtrlClick...");
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -352,32 +183,29 @@ void Zenith_EditorTests::TestMultiSelectCtrlClick()
 	// Clear and select first entity
 	Zenith_Editor::ClearSelection();
 	Zenith_Editor::SelectEntity(uEntityID1, false);
-	Zenith_Assert(Zenith_Editor::GetSelectionCount() == 1, "Should have 1 selected");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 1, "Should have 1 selected");
 
 	// Add second entity (simulates Ctrl+click)
 	Zenith_Editor::SelectEntity(uEntityID2, true);
-	Zenith_Assert(Zenith_Editor::GetSelectionCount() == 2, "Should have 2 selected");
-	Zenith_Assert(Zenith_Editor::IsSelected(uEntityID1), "First entity should still be selected");
-	Zenith_Assert(Zenith_Editor::IsSelected(uEntityID2), "Second entity should be selected");
-	Zenith_Assert(Zenith_Editor::HasMultiSelection(), "Should have multi-selection");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 2, "Should have 2 selected");
+	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntityID1), "First entity should still be selected");
+	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntityID2), "Second entity should be selected");
+	ZENITH_ASSERT_TRUE(Zenith_Editor::HasMultiSelection(), "Should have multi-selection");
 
 	// Add third entity
 	Zenith_Editor::SelectEntity(uEntityID3, true);
-	Zenith_Assert(Zenith_Editor::GetSelectionCount() == 3, "Should have 3 selected");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 3, "Should have 3 selected");
 
 	// Toggle selection (ctrl+click on already selected entity should deselect)
 	Zenith_Editor::ToggleEntitySelection(uEntityID2);
-	Zenith_Assert(Zenith_Editor::GetSelectionCount() == 2, "Should have 2 selected after toggle");
-	Zenith_Assert(!Zenith_Editor::IsSelected(uEntityID2), "Second entity should be deselected");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 2, "Should have 2 selected after toggle");
+	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uEntityID2), "Second entity should be deselected");
 
 	Zenith_Editor::ClearSelection();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectCtrlClick passed");
 }
-
-void Zenith_EditorTests::TestMultiSelectClear()
+ZENITH_TEST(Editor, MultiSelectClear)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectClear...");
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -392,21 +220,18 @@ void Zenith_EditorTests::TestMultiSelectClear()
 	Zenith_Editor::ClearSelection();
 	Zenith_Editor::SelectEntity(uEntityID1, false);
 	Zenith_Editor::SelectEntity(uEntityID2, true);
-	Zenith_Assert(Zenith_Editor::GetSelectionCount() == 2, "Should have 2 selected");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 2, "Should have 2 selected");
 
 	// Clear all selection
 	Zenith_Editor::ClearSelection();
-	Zenith_Assert(!Zenith_Editor::HasSelection(), "Should have no selection after clear");
-	Zenith_Assert(Zenith_Editor::GetSelectionCount() == 0, "Selection count should be 0");
-	Zenith_Assert(!Zenith_Editor::IsSelected(uEntityID1), "First entity should not be selected");
-	Zenith_Assert(!Zenith_Editor::IsSelected(uEntityID2), "Second entity should not be selected");
+	ZENITH_ASSERT_FALSE(Zenith_Editor::HasSelection(), "Should have no selection after clear");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 0, "Selection count should be 0");
+	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uEntityID1), "First entity should not be selected");
+	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uEntityID2), "Second entity should not be selected");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectClear passed");
 }
-
-void Zenith_EditorTests::TestMultiSelectAfterEntityDelete()
+ZENITH_TEST(Editor, MultiSelectAfterEntityDelete)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectAfterEntityDelete...");
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -422,17 +247,16 @@ void Zenith_EditorTests::TestMultiSelectAfterEntityDelete()
 	Zenith_Editor::ClearSelection();
 	Zenith_Editor::SelectEntity(uEntityID1, false);
 	Zenith_Editor::SelectEntity(uEntityID2, true);
-	Zenith_Assert(Zenith_Editor::GetSelectionCount() == 2, "Should have 2 selected");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 2, "Should have 2 selected");
 
 	// Remove one from selection (simulating entity deletion cleanup)
 	Zenith_Editor::DeselectEntity(uEntityID1);
-	Zenith_Assert(Zenith_Editor::GetSelectionCount() == 1, "Should have 1 selected after deselect");
-	Zenith_Assert(!Zenith_Editor::IsSelected(uEntityID1), "Deleted entity should not be selected");
-	Zenith_Assert(Zenith_Editor::IsSelected(uEntityID2), "Other entity should still be selected");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetSelectionCount(), 1, "Should have 1 selected after deselect");
+	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uEntityID1), "Deleted entity should not be selected");
+	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntityID2), "Other entity should still be selected");
 
 	Zenith_Editor::ClearSelection();
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectAfterEntityDelete passed");
 }
 
 //------------------------------------------------------------------------------
@@ -441,117 +265,98 @@ void Zenith_EditorTests::TestMultiSelectAfterEntityDelete()
 // These tests verify editor mode transitions work correctly. The mode transitions
 // trigger scene backup/restore which is handled synchronously via
 // FlushPendingSceneOperations() in the test fixture's ResetEditorState().
-
-void Zenith_EditorTests::TestModeTransitionStoppedToPlaying()
+ZENITH_TEST(Editor, ModeTransitionStoppedToPlaying)
 {
 	EDITOR_TEST_BEGIN(TestModeTransitionStoppedToPlaying);
 
 	// Verify we're in Stopped mode (should be the default state)
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Stopped,
-		"Should start in Stopped mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should start in Stopped mode");
 
 	// Transition to Playing mode
 	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Playing,
-		"Should be in Playing mode after transition");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode after transition");
 
 	// Note: EDITOR_TEST_END will call TearDown which calls ResetEditorState,
 	// which sets mode back to Stopped and flushes pending scene operations
 
 	EDITOR_TEST_END(TestModeTransitionStoppedToPlaying);
 }
-
-void Zenith_EditorTests::TestModeTransitionPlayingToPaused()
+ZENITH_TEST(Editor, ModeTransitionPlayingToPaused)
 {
 	EDITOR_TEST_BEGIN(TestModeTransitionPlayingToPaused);
 
 	// Start by transitioning to Playing mode
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Stopped,
-		"Should start in Stopped mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should start in Stopped mode");
 	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Playing,
-		"Should be in Playing mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
 
 	// Transition to Paused mode
 	Zenith_Editor::SetEditorMode(EditorMode::Paused);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Paused,
-		"Should be in Paused mode after transition");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Paused, "Should be in Paused mode after transition");
 
 	EDITOR_TEST_END(TestModeTransitionPlayingToPaused);
 }
-
-void Zenith_EditorTests::TestModeTransitionPausedToStopped()
+ZENITH_TEST(Editor, ModeTransitionPausedToStopped)
 {
 	EDITOR_TEST_BEGIN(TestModeTransitionPausedToStopped);
 
 	// Start by transitioning through Playing to Paused
 	Zenith_Editor::SetEditorMode(EditorMode::Playing);
 	Zenith_Editor::SetEditorMode(EditorMode::Paused);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Paused,
-		"Should be in Paused mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Paused, "Should be in Paused mode");
 
 	// Transition to Stopped mode
 	Zenith_Editor::SetEditorMode(EditorMode::Stopped);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Stopped,
-		"Should be in Stopped mode after transition");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should be in Stopped mode after transition");
 
 	// Flush pending scene operations to complete the restore
 	Zenith_Editor::FlushPendingSceneOperations();
 
 	EDITOR_TEST_END(TestModeTransitionPausedToStopped);
 }
-
-void Zenith_EditorTests::TestModeTransitionFullCycle()
+ZENITH_TEST(Editor, ModeTransitionFullCycle)
 {
 	EDITOR_TEST_BEGIN(TestModeTransitionFullCycle);
 
 	// Start in Stopped mode
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Stopped,
-		"Should start in Stopped mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should start in Stopped mode");
 
 	// Stopped -> Playing
 	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Playing,
-		"Should be in Playing mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
 
 	// Playing -> Paused
 	Zenith_Editor::SetEditorMode(EditorMode::Paused);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Paused,
-		"Should be in Paused mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Paused, "Should be in Paused mode");
 
 	// Paused -> Playing (resume)
 	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Playing,
-		"Should be in Playing mode after resume");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode after resume");
 
 	// Playing -> Stopped (this queues scene restore)
 	Zenith_Editor::SetEditorMode(EditorMode::Stopped);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Stopped,
-		"Should be in Stopped mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should be in Stopped mode");
 
 	// Flush pending scene operations to complete the restore
 	Zenith_Editor::FlushPendingSceneOperations();
 
 	EDITOR_TEST_END(TestModeTransitionFullCycle);
 }
-
-void Zenith_EditorTests::TestModePreservesSelection()
+ZENITH_TEST(Editor, ModePreservesSelection)
 {
 	EDITOR_TEST_BEGIN(TestModePreservesSelection);
 
 	// Create a test entity and select it
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("SelectionTestEntity");
 	Zenith_Editor::SelectEntity(uEntity, false);
-	Zenith_Assert(Zenith_Editor::IsSelected(uEntity), "Entity should be selected");
+	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntity), "Entity should be selected");
 
 	Zenith_Entity* pxSelected = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxSelected != nullptr && pxSelected->GetEntityID() == uEntity,
-		"Selected entity should be retrievable");
+	ZENITH_ASSERT_TRUE(pxSelected != nullptr && pxSelected->GetEntityID() == uEntity, "Selected entity should be retrievable");
 
 	// Transition to Playing mode (selection should be preserved during play)
 	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Playing,
-		"Should be in Playing mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
 
 	// Selection is cleared during mode transitions (this is expected behavior)
 	// The scene backup/restore process resets selection state
@@ -564,8 +369,7 @@ void Zenith_EditorTests::TestModePreservesSelection()
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	// Note: Entity IDs are regenerated on scene load, so we can't check the same ID
 	// Instead, verify scene has entities and is in a valid state
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Stopped,
-		"Should be back in Stopped mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should be back in Stopped mode");
 
 	EDITOR_TEST_END(TestModePreservesSelection);
 }
@@ -573,57 +377,49 @@ void Zenith_EditorTests::TestModePreservesSelection()
 //------------------------------------------------------------------------------
 // Gizmo Operation Tests
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestGizmoModeSwitch()
+ZENITH_TEST(Editor, GizmoModeSwitch)
 {
 	EDITOR_TEST_BEGIN(TestGizmoModeSwitch);
 
 	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Translate);
-	Zenith_Assert(Zenith_Editor::GetGizmoMode() == EditorGizmoMode::Translate, "Should be Translate");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Translate, "Should be Translate");
 
 	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Rotate);
-	Zenith_Assert(Zenith_Editor::GetGizmoMode() == EditorGizmoMode::Rotate, "Should be Rotate");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Rotate, "Should be Rotate");
 
 	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Scale);
-	Zenith_Assert(Zenith_Editor::GetGizmoMode() == EditorGizmoMode::Scale, "Should be Scale");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Scale, "Should be Scale");
 
 	EDITOR_TEST_END(TestGizmoModeSwitch);
 }
-
-void Zenith_EditorTests::TestGizmoModeTranslate()
+ZENITH_TEST(Editor, GizmoModeTranslate)
 {
 	EDITOR_TEST_BEGIN(TestGizmoModeTranslate);
 
 	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Translate);
-	Zenith_Assert(Zenith_Editor::GetGizmoMode() == EditorGizmoMode::Translate,
-		"Gizmo mode should be Translate");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Translate, "Gizmo mode should be Translate");
 
 	EDITOR_TEST_END(TestGizmoModeTranslate);
 }
-
-void Zenith_EditorTests::TestGizmoModeRotate()
+ZENITH_TEST(Editor, GizmoModeRotate)
 {
 	EDITOR_TEST_BEGIN(TestGizmoModeRotate);
 
 	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Rotate);
-	Zenith_Assert(Zenith_Editor::GetGizmoMode() == EditorGizmoMode::Rotate,
-		"Gizmo mode should be Rotate");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Rotate, "Gizmo mode should be Rotate");
 
 	EDITOR_TEST_END(TestGizmoModeRotate);
 }
-
-void Zenith_EditorTests::TestGizmoModeScale()
+ZENITH_TEST(Editor, GizmoModeScale)
 {
 	EDITOR_TEST_BEGIN(TestGizmoModeScale);
 
 	Zenith_Editor::SetGizmoMode(EditorGizmoMode::Scale);
-	Zenith_Assert(Zenith_Editor::GetGizmoMode() == EditorGizmoMode::Scale,
-		"Gizmo mode should be Scale");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetGizmoMode(), EditorGizmoMode::Scale, "Gizmo mode should be Scale");
 
 	EDITOR_TEST_END(TestGizmoModeScale);
 }
-
-void Zenith_EditorTests::TestGizmoModeViaKeyboard()
+ZENITH_TEST(Editor, GizmoModeViaKeyboard)
 {
 	EDITOR_TEST_BEGIN(TestGizmoModeViaKeyboard);
 
@@ -631,15 +427,13 @@ void Zenith_EditorTests::TestGizmoModeViaKeyboard()
 	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_W);
 	// In real implementation, this would trigger gizmo mode change
 	// For now, we just test the mock input works
-	Zenith_Assert(Zenith_InputSimulator::WasKeyPressedThisFrameSimulated(ZENITH_KEY_W),
-		"W key should be registered as pressed");
+	ZENITH_ASSERT_TRUE(Zenith_InputSimulator::WasKeyPressedThisFrameSimulated(ZENITH_KEY_W), "W key should be registered as pressed");
 
 	Zenith_InputSimulator::BeginTestFrame();
 
 	// Simulate pressing E key for rotate mode
 	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_E);
-	Zenith_Assert(Zenith_InputSimulator::WasKeyPressedThisFrameSimulated(ZENITH_KEY_E),
-		"E key should be registered as pressed");
+	ZENITH_ASSERT_TRUE(Zenith_InputSimulator::WasKeyPressedThisFrameSimulated(ZENITH_KEY_E), "E key should be registered as pressed");
 
 	EDITOR_TEST_END(TestGizmoModeViaKeyboard);
 }
@@ -647,28 +441,25 @@ void Zenith_EditorTests::TestGizmoModeViaKeyboard()
 //------------------------------------------------------------------------------
 // Undo/Redo System Tests
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestUndoSystemCanUndo()
+ZENITH_TEST(Editor, UndoSystemCanUndo)
 {
 	EDITOR_TEST_BEGIN(TestUndoSystemCanUndo);
 
 	Zenith_UndoSystem::Clear();
-	Zenith_Assert(!Zenith_UndoSystem::CanUndo(), "Should not be able to undo with empty stack");
+	ZENITH_ASSERT_FALSE(Zenith_UndoSystem::CanUndo(), "Should not be able to undo with empty stack");
 
 	EDITOR_TEST_END(TestUndoSystemCanUndo);
 }
-
-void Zenith_EditorTests::TestUndoSystemCanRedo()
+ZENITH_TEST(Editor, UndoSystemCanRedo)
 {
 	EDITOR_TEST_BEGIN(TestUndoSystemCanRedo);
 
 	Zenith_UndoSystem::Clear();
-	Zenith_Assert(!Zenith_UndoSystem::CanRedo(), "Should not be able to redo with empty stack");
+	ZENITH_ASSERT_FALSE(Zenith_UndoSystem::CanRedo(), "Should not be able to redo with empty stack");
 
 	EDITOR_TEST_END(TestUndoSystemCanRedo);
 }
-
-void Zenith_EditorTests::TestTransformEditUndoRedo()
+ZENITH_TEST(Editor, TransformEditUndoRedo)
 {
 	EDITOR_TEST_BEGIN(TestTransformEditUndoRedo);
 
@@ -686,39 +477,36 @@ void Zenith_EditorTests::TestTransformEditUndoRedo()
 	// Verify position was set
 	Zenith_Maths::Vector3 xCurrentPos;
 	xTransform.GetPosition(xCurrentPos);
-	Zenith_Assert(glm::length(xCurrentPos - xOldPos) < 0.001f, "Initial position should be set");
+	ZENITH_ASSERT_LT(glm::length(xCurrentPos - xOldPos), 0.001f, "Initial position should be set");
 
 	// Change position
 	xTransform.SetPosition(xNewPos);
 	xTransform.GetPosition(xCurrentPos);
-	Zenith_Assert(glm::length(xCurrentPos - xNewPos) < 0.001f, "New position should be set");
+	ZENITH_ASSERT_LT(glm::length(xCurrentPos - xNewPos), 0.001f, "New position should be set");
 
 	EDITOR_TEST_END(TestTransformEditUndoRedo);
 }
-
-void Zenith_EditorTests::TestUndoStackClearOnSceneChange()
+ZENITH_TEST(Editor, UndoStackClearOnSceneChange)
 {
 	EDITOR_TEST_BEGIN(TestUndoStackClearOnSceneChange);
 
 	Zenith_UndoSystem::Clear();
-	Zenith_Assert(!Zenith_UndoSystem::CanUndo(), "Undo stack should be empty after clear");
-	Zenith_Assert(!Zenith_UndoSystem::CanRedo(), "Redo stack should be empty after clear");
+	ZENITH_ASSERT_FALSE(Zenith_UndoSystem::CanUndo(), "Undo stack should be empty after clear");
+	ZENITH_ASSERT_FALSE(Zenith_UndoSystem::CanRedo(), "Redo stack should be empty after clear");
 
 	EDITOR_TEST_END(TestUndoStackClearOnSceneChange);
 }
-
-void Zenith_EditorTests::TestRedoStackClearOnNewEdit()
+ZENITH_TEST(Editor, RedoStackClearOnNewEdit)
 {
 	EDITOR_TEST_BEGIN(TestRedoStackClearOnNewEdit);
 
 	Zenith_UndoSystem::Clear();
 	// Redo stack should be cleared when a new edit is made after undo
-	Zenith_Assert(!Zenith_UndoSystem::CanRedo(), "Redo stack should be empty");
+	ZENITH_ASSERT_FALSE(Zenith_UndoSystem::CanRedo(), "Redo stack should be empty");
 
 	EDITOR_TEST_END(TestRedoStackClearOnNewEdit);
 }
-
-void Zenith_EditorTests::TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitch()
+ZENITH_TEST(Editor, Audit318_UndoTransformEdit_SurvivesActiveSceneSwitch)
 {
 	EDITOR_TEST_BEGIN(TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitch);
 
@@ -753,8 +541,7 @@ void Zenith_EditorTests::TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitc
 	// Verify the new position landed.
 	Zenith_Maths::Vector3 xPosAfterExecute;
 	xTransform.GetPosition(xPosAfterExecute);
-	Zenith_Assert(glm::length(xPosAfterExecute - xNewPos) < 0.001f,
-		"§3.18: Execute should apply the new transform");
+	ZENITH_ASSERT_LT(glm::length(xPosAfterExecute - xNewPos), 0.001f, "§3.18: Execute should apply the new transform");
 
 	// Create Scene B and make it active — this is the scenario that previously
 	// broke undo: the command captured Scene A's handle, then Ctrl+Z would
@@ -762,16 +549,14 @@ void Zenith_EditorTests::TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitc
 	// would fail silently. With the EntityID-based resolution, undo survives.
 	Zenith_Scene xSceneB = Zenith_SceneManager::CreateEmptyScene("Audit318_UndoSceneB");
 	Zenith_SceneManager::SetActiveScene(xSceneB);
-	Zenith_Assert(Zenith_SceneManager::GetActiveScene() == xSceneB,
-		"Setup: Scene B should be active before undo");
+	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetActiveScene(), xSceneB, "Setup: Scene B should be active before undo");
 
 	// Ctrl+Z — must restore Scene A's entity transform despite Scene B being active.
 	Zenith_UndoSystem::Undo();
 
 	Zenith_Maths::Vector3 xPosAfterUndo;
 	xTransform.GetPosition(xPosAfterUndo);
-	Zenith_Assert(glm::length(xPosAfterUndo - xOldPos) < 0.001f,
-		"§3.18: Undo must restore Scene A's entity transform even when Scene B is active "
+	ZENITH_ASSERT_LT(glm::length(xPosAfterUndo - xOldPos), 0.001f, "§3.18: Undo must restore Scene A's entity transform even when Scene B is active "
 		"(Unity parity: object-scene is intrinsic via GetSceneDataForEntity)");
 
 	// Cleanup
@@ -789,8 +574,7 @@ void Zenith_EditorTests::TestAudit318_UndoTransformEdit_SurvivesActiveSceneSwitc
 //------------------------------------------------------------------------------
 // Entity Hierarchy Tests
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestEntityReparenting()
+ZENITH_TEST(Editor, EntityReparenting)
 {
 	EDITOR_TEST_BEGIN(TestEntityReparenting);
 
@@ -803,12 +587,11 @@ void Zenith_EditorTests::TestEntityReparenting()
 
 	// Set parent
 	xChild.SetParent(uParent);
-	Zenith_Assert(xChild.GetParentEntityID() == uParent, "Child should have correct parent");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParent, "Child should have correct parent");
 
 	EDITOR_TEST_END(TestEntityReparenting);
 }
-
-void Zenith_EditorTests::TestCreateChildEntity()
+ZENITH_TEST(Editor, CreateChildEntity)
 {
 	EDITOR_TEST_BEGIN(TestCreateChildEntity);
 
@@ -820,12 +603,11 @@ void Zenith_EditorTests::TestCreateChildEntity()
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
-	Zenith_Assert(xChild.GetParentEntityID() == uParent, "Child should have parent set");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParent, "Child should have parent set");
 
 	EDITOR_TEST_END(TestCreateChildEntity);
 }
-
-void Zenith_EditorTests::TestUnparentEntity()
+ZENITH_TEST(Editor, UnparentEntity)
 {
 	EDITOR_TEST_BEGIN(TestUnparentEntity);
 
@@ -838,16 +620,15 @@ void Zenith_EditorTests::TestUnparentEntity()
 
 	// Set parent
 	xChild.SetParent(uParent);
-	Zenith_Assert(xChild.GetParentEntityID() == uParent, "Child should have parent");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParent, "Child should have parent");
 
 	// Unparent
 	xChild.SetParent(INVALID_ENTITY_ID);
-	Zenith_Assert(!xChild.GetParentEntityID().IsValid(), "Child should have no parent after unparent");
+	ZENITH_ASSERT_FALSE(xChild.GetParentEntityID().IsValid(), "Child should have no parent after unparent");
 
 	EDITOR_TEST_END(TestUnparentEntity);
 }
-
-void Zenith_EditorTests::TestHierarchyCircularPrevention()
+ZENITH_TEST(Editor, HierarchyCircularPrevention)
 {
 	EDITOR_TEST_BEGIN(TestHierarchyCircularPrevention);
 
@@ -862,15 +643,14 @@ void Zenith_EditorTests::TestHierarchyCircularPrevention()
 
 	// Set up valid hierarchy
 	xChild.SetParent(uParent);
-	Zenith_Assert(xChild.GetParentEntityID() == uParent, "Valid hierarchy should work");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParent, "Valid hierarchy should work");
 
 	// Note: Attempting to set parent as child of its own child should be prevented
 	// by the hierarchy system's circular dependency check
 
 	EDITOR_TEST_END(TestHierarchyCircularPrevention);
 }
-
-void Zenith_EditorTests::TestDeleteParentWithChildren()
+ZENITH_TEST(Editor, DeleteParentWithChildren)
 {
 	EDITOR_TEST_BEGIN(TestDeleteParentWithChildren);
 
@@ -888,8 +668,7 @@ void Zenith_EditorTests::TestDeleteParentWithChildren()
 //------------------------------------------------------------------------------
 // Selection System Tests (expanded)
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestRangeSelection()
+ZENITH_TEST(Editor, RangeSelection)
 {
 	EDITOR_TEST_BEGIN(TestRangeSelection);
 
@@ -898,7 +677,7 @@ void Zenith_EditorTests::TestRangeSelection()
 	Zenith_EntityID uEntity2 = Zenith_EditorTestFixture::CreateTestEntity("RangeEntity2");
 
 	Zenith_Editor::SelectEntity(uEntity1, false);
-	Zenith_Assert(Zenith_Editor::IsSelected(uEntity1), "First entity should be selected");
+	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uEntity1), "First entity should be selected");
 
 	// SelectRange would select all entities between the last clicked and new one
 	// For now, test that the API exists
@@ -906,8 +685,7 @@ void Zenith_EditorTests::TestRangeSelection()
 
 	EDITOR_TEST_END(TestRangeSelection);
 }
-
-void Zenith_EditorTests::TestSelectionWithHierarchy()
+ZENITH_TEST(Editor, SelectionWithHierarchy)
 {
 	EDITOR_TEST_BEGIN(TestSelectionWithHierarchy);
 
@@ -918,18 +696,17 @@ void Zenith_EditorTests::TestSelectionWithHierarchy()
 
 	// Select parent
 	Zenith_Editor::SelectEntity(uParent, false);
-	Zenith_Assert(Zenith_Editor::IsSelected(uParent), "Parent should be selected");
-	Zenith_Assert(!Zenith_Editor::IsSelected(uChild), "Child should not be auto-selected");
+	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uParent), "Parent should be selected");
+	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uChild), "Child should not be auto-selected");
 
 	// Select child
 	Zenith_Editor::SelectEntity(uChild, false);
-	Zenith_Assert(Zenith_Editor::IsSelected(uChild), "Child should be selected");
-	Zenith_Assert(!Zenith_Editor::IsSelected(uParent), "Parent should be deselected");
+	ZENITH_ASSERT_TRUE(Zenith_Editor::IsSelected(uChild), "Child should be selected");
+	ZENITH_ASSERT_FALSE(Zenith_Editor::IsSelected(uParent), "Parent should be deselected");
 
 	EDITOR_TEST_END(TestSelectionWithHierarchy);
 }
-
-void Zenith_EditorTests::TestRaycastSelectWithMultipleEntities()
+ZENITH_TEST(Editor, RaycastSelectWithMultipleEntities)
 {
 	EDITOR_TEST_BEGIN(TestRaycastSelectWithMultipleEntities);
 
@@ -948,8 +725,7 @@ void Zenith_EditorTests::TestRaycastSelectWithMultipleEntities()
 //------------------------------------------------------------------------------
 // Console Tests
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestConsoleAddLog()
+ZENITH_TEST(Editor, ConsoleAddLog)
 {
 	EDITOR_TEST_BEGIN(TestConsoleAddLog);
 
@@ -960,8 +736,7 @@ void Zenith_EditorTests::TestConsoleAddLog()
 
 	EDITOR_TEST_END(TestConsoleAddLog);
 }
-
-void Zenith_EditorTests::TestConsoleClear()
+ZENITH_TEST(Editor, ConsoleClear)
 {
 	EDITOR_TEST_BEGIN(TestConsoleClear);
 
@@ -975,8 +750,7 @@ void Zenith_EditorTests::TestConsoleClear()
 //------------------------------------------------------------------------------
 // Component Tests - Generic
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestComponentAddRemove()
+ZENITH_TEST(Editor, ComponentAddRemove)
 {
 	EDITOR_TEST_BEGIN(TestComponentAddRemove);
 
@@ -986,26 +760,21 @@ void Zenith_EditorTests::TestComponentAddRemove()
 	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 
 	// All entities have TransformComponent by default
-	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
-		"Entity should have TransformComponent by default");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "Entity should have TransformComponent by default");
 
 	// Add CameraComponent
-	Zenith_Assert(!xEntity.HasComponent<Zenith_CameraComponent>(),
-		"Entity should not have CameraComponent initially");
+	ZENITH_ASSERT_FALSE(xEntity.HasComponent<Zenith_CameraComponent>(), "Entity should not have CameraComponent initially");
 
 	xEntity.AddComponent<Zenith_CameraComponent>();
-	Zenith_Assert(xEntity.HasComponent<Zenith_CameraComponent>(),
-		"Entity should have CameraComponent after adding");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_CameraComponent>(), "Entity should have CameraComponent after adding");
 
 	// Remove CameraComponent
 	xEntity.RemoveComponent<Zenith_CameraComponent>();
-	Zenith_Assert(!xEntity.HasComponent<Zenith_CameraComponent>(),
-		"Entity should not have CameraComponent after removal");
+	ZENITH_ASSERT_FALSE(xEntity.HasComponent<Zenith_CameraComponent>(), "Entity should not have CameraComponent after removal");
 
 	EDITOR_TEST_END(TestComponentAddRemove);
 }
-
-void Zenith_EditorTests::TestComponentAddViaRegistry()
+ZENITH_TEST(Editor, ComponentAddViaRegistry)
 {
 	EDITOR_TEST_BEGIN(TestComponentAddViaRegistry);
 
@@ -1018,13 +787,11 @@ void Zenith_EditorTests::TestComponentAddViaRegistry()
 	Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
 
 	// Verify registry is accessible
-	Zenith_Assert(xRegistry.GetComponentCount() > 0,
-		"Registry should have registered components");
+	ZENITH_ASSERT_GT(xRegistry.GetComponentCount(), 0, "Registry should have registered components");
 
 	EDITOR_TEST_END(TestComponentAddViaRegistry);
 }
-
-void Zenith_EditorTests::TestMultipleComponentAdd()
+ZENITH_TEST(Editor, MultipleComponentAdd)
 {
 	EDITOR_TEST_BEGIN(TestMultipleComponentAdd);
 
@@ -1036,8 +803,8 @@ void Zenith_EditorTests::TestMultipleComponentAdd()
 	// Add multiple components
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
-	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(), "Should have Transform");
-	Zenith_Assert(xEntity.HasComponent<Zenith_CameraComponent>(), "Should have Camera");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_TransformComponent>(), "Should have Transform");
+	ZENITH_ASSERT_TRUE(xEntity.HasComponent<Zenith_CameraComponent>(), "Should have Camera");
 
 	EDITOR_TEST_END(TestMultipleComponentAdd);
 }
@@ -1045,8 +812,7 @@ void Zenith_EditorTests::TestMultipleComponentAdd()
 //------------------------------------------------------------------------------
 // TransformComponent Tests
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestTransformPositionRoundTrip()
+ZENITH_TEST(Editor, TransformPositionRoundTrip)
 {
 	EDITOR_TEST_BEGIN(TestTransformPositionRoundTrip);
 
@@ -1062,13 +828,11 @@ void Zenith_EditorTests::TestTransformPositionRoundTrip()
 	Zenith_Maths::Vector3 xRetrievedPos;
 	xTransform.GetPosition(xRetrievedPos);
 
-	Zenith_Assert(glm::length(xTestPos - xRetrievedPos) < 0.0001f,
-		"Position round trip should preserve value");
+	ZENITH_ASSERT_LT(glm::length(xTestPos - xRetrievedPos), 0.0001f, "Position round trip should preserve value");
 
 	EDITOR_TEST_END(TestTransformPositionRoundTrip);
 }
-
-void Zenith_EditorTests::TestTransformRotationRoundTrip()
+ZENITH_TEST(Editor, TransformRotationRoundTrip)
 {
 	EDITOR_TEST_BEGIN(TestTransformRotationRoundTrip);
 
@@ -1085,13 +849,11 @@ void Zenith_EditorTests::TestTransformRotationRoundTrip()
 	xTransform.GetRotation(xRetrievedRot);
 
 	float fDot = glm::dot(xTestRot, xRetrievedRot);
-	Zenith_Assert(std::abs(std::abs(fDot) - 1.0f) < 0.0001f,
-		"Rotation round trip should preserve value");
+	ZENITH_ASSERT_EQ_FLOAT(std::abs(fDot), 1.0f, 0.0001f, "Rotation round trip should preserve value");
 
 	EDITOR_TEST_END(TestTransformRotationRoundTrip);
 }
-
-void Zenith_EditorTests::TestTransformScaleRoundTrip()
+ZENITH_TEST(Editor, TransformScaleRoundTrip)
 {
 	EDITOR_TEST_BEGIN(TestTransformScaleRoundTrip);
 
@@ -1107,13 +869,11 @@ void Zenith_EditorTests::TestTransformScaleRoundTrip()
 	Zenith_Maths::Vector3 xRetrievedScale;
 	xTransform.GetScale(xRetrievedScale);
 
-	Zenith_Assert(glm::length(xTestScale - xRetrievedScale) < 0.0001f,
-		"Scale round trip should preserve value");
+	ZENITH_ASSERT_LT(glm::length(xTestScale - xRetrievedScale), 0.0001f, "Scale round trip should preserve value");
 
 	EDITOR_TEST_END(TestTransformScaleRoundTrip);
 }
-
-void Zenith_EditorTests::TestTransformMatrixBuild()
+ZENITH_TEST(Editor, TransformMatrixBuild)
 {
 	EDITOR_TEST_BEGIN(TestTransformMatrixBuild);
 
@@ -1132,14 +892,13 @@ void Zenith_EditorTests::TestTransformMatrixBuild()
 	xTransform.BuildModelMatrix(xMatrix);
 
 	// Verify the translation part of the matrix
-	Zenith_Assert(std::abs(xMatrix[3][0] - 10.0f) < 0.001f, "Matrix X translation should be 10");
-	Zenith_Assert(std::abs(xMatrix[3][1] - 20.0f) < 0.001f, "Matrix Y translation should be 20");
-	Zenith_Assert(std::abs(xMatrix[3][2] - 30.0f) < 0.001f, "Matrix Z translation should be 30");
+	ZENITH_ASSERT_EQ_FLOAT(xMatrix[3][0], 10.0f, 0.001f, "Matrix X translation should be 10");
+	ZENITH_ASSERT_EQ_FLOAT(xMatrix[3][1], 20.0f, 0.001f, "Matrix Y translation should be 20");
+	ZENITH_ASSERT_EQ_FLOAT(xMatrix[3][2], 30.0f, 0.001f, "Matrix Z translation should be 30");
 
 	EDITOR_TEST_END(TestTransformMatrixBuild);
 }
-
-void Zenith_EditorTests::TestTransformParentChild()
+ZENITH_TEST(Editor, TransformParentChild)
 {
 	EDITOR_TEST_BEGIN(TestTransformParentChild);
 
@@ -1154,13 +913,11 @@ void Zenith_EditorTests::TestTransformParentChild()
 	Zenith_TransformComponent& xChildTransform = xChild.GetComponent<Zenith_TransformComponent>();
 
 	// Verify parent is set
-	Zenith_Assert(xChildTransform.GetParentEntityID() == uParent,
-		"Transform should have correct parent entity ID");
+	ZENITH_ASSERT_EQ(xChildTransform.GetParentEntityID(), uParent, "Transform should have correct parent entity ID");
 
 	EDITOR_TEST_END(TestTransformParentChild);
 }
-
-void Zenith_EditorTests::TestTransformHierarchyTraversal()
+ZENITH_TEST(Editor, TransformHierarchyTraversal)
 {
 	EDITOR_TEST_BEGIN(TestTransformHierarchyTraversal);
 
@@ -1182,12 +939,11 @@ void Zenith_EditorTests::TestTransformHierarchyTraversal()
 		uChildCount++;
 	});
 
-	Zenith_Assert(uChildCount == 2, "Parent should have 2 children");
+	ZENITH_ASSERT_EQ(uChildCount, 2, "Parent should have 2 children");
 
 	EDITOR_TEST_END(TestTransformHierarchyTraversal);
 }
-
-void Zenith_EditorTests::TestTransformIsDescendantOf()
+ZENITH_TEST(Editor, TransformIsDescendantOf)
 {
 	EDITOR_TEST_BEGIN(TestTransformIsDescendantOf);
 
@@ -1204,18 +960,15 @@ void Zenith_EditorTests::TestTransformIsDescendantOf()
 	Zenith_TransformComponent& xChildTransform = xChild.GetComponent<Zenith_TransformComponent>();
 
 	// Child should be descendant of grandparent
-	Zenith_Assert(xChildTransform.IsDescendantOf(uGrandparent),
-		"Child should be descendant of grandparent");
+	ZENITH_ASSERT_TRUE(xChildTransform.IsDescendantOf(uGrandparent), "Child should be descendant of grandparent");
 
 	// Child should be descendant of parent
-	Zenith_Assert(xChildTransform.IsDescendantOf(uParent),
-		"Child should be descendant of parent");
+	ZENITH_ASSERT_TRUE(xChildTransform.IsDescendantOf(uParent), "Child should be descendant of parent");
 
 	// Grandparent should not be descendant of child
 	Zenith_Entity xGrandparent = pxSceneData->GetEntity(uGrandparent);
 	Zenith_TransformComponent& xGrandparentTransform = xGrandparent.GetComponent<Zenith_TransformComponent>();
-	Zenith_Assert(!xGrandparentTransform.IsDescendantOf(uChild),
-		"Grandparent should not be descendant of child");
+	ZENITH_ASSERT_FALSE(xGrandparentTransform.IsDescendantOf(uChild), "Grandparent should not be descendant of child");
 
 	EDITOR_TEST_END(TestTransformIsDescendantOf);
 }
@@ -1223,8 +976,7 @@ void Zenith_EditorTests::TestTransformIsDescendantOf()
 //------------------------------------------------------------------------------
 // CameraComponent Tests
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestCameraPerspectiveMatrix()
+ZENITH_TEST(Editor, CameraPerspectiveMatrix)
 {
 	EDITOR_TEST_BEGIN(TestCameraPerspectiveMatrix);
 
@@ -1243,12 +995,11 @@ void Zenith_EditorTests::TestCameraPerspectiveMatrix()
 	xCamera.BuildProjectionMatrix(xProj);
 
 	// Verify perspective matrix is not identity
-	Zenith_Assert(xProj != Zenith_Maths::Matrix4(1.0f), "Projection matrix should not be identity");
+	ZENITH_ASSERT_NE(xProj, Zenith_Maths::Matrix4(1.0f), "Projection matrix should not be identity");
 
 	EDITOR_TEST_END(TestCameraPerspectiveMatrix);
 }
-
-void Zenith_EditorTests::TestCameraOrthographicMatrix()
+ZENITH_TEST(Editor, CameraOrthographicMatrix)
 {
 	EDITOR_TEST_BEGIN(TestCameraOrthographicMatrix);
 
@@ -1266,12 +1017,11 @@ void Zenith_EditorTests::TestCameraOrthographicMatrix()
 	xCamera.BuildProjectionMatrix(xProj);
 
 	// Verify projection matrix is not identity
-	Zenith_Assert(xProj != Zenith_Maths::Matrix4(1.0f), "Projection matrix should not be identity");
+	ZENITH_ASSERT_NE(xProj, Zenith_Maths::Matrix4(1.0f), "Projection matrix should not be identity");
 
 	EDITOR_TEST_END(TestCameraOrthographicMatrix);
 }
-
-void Zenith_EditorTests::TestCameraViewMatrix()
+ZENITH_TEST(Editor, CameraViewMatrix)
 {
 	EDITOR_TEST_BEGIN(TestCameraViewMatrix);
 
@@ -1288,12 +1038,11 @@ void Zenith_EditorTests::TestCameraViewMatrix()
 	xCamera.BuildViewMatrix(xView);
 
 	// Verify view matrix is not identity
-	Zenith_Assert(xView != Zenith_Maths::Matrix4(1.0f), "View matrix should not be identity");
+	ZENITH_ASSERT_NE(xView, Zenith_Maths::Matrix4(1.0f), "View matrix should not be identity");
 
 	EDITOR_TEST_END(TestCameraViewMatrix);
 }
-
-void Zenith_EditorTests::TestCameraTypeSwitch()
+ZENITH_TEST(Editor, CameraTypeSwitch)
 {
 	EDITOR_TEST_BEGIN(TestCameraTypeSwitch);
 
@@ -1309,7 +1058,7 @@ void Zenith_EditorTests::TestCameraTypeSwitch()
 	// Verify it can build projection matrix correctly
 	Zenith_Maths::Matrix4 xProj1;
 	xCamera.BuildProjectionMatrix(xProj1);
-	Zenith_Assert(xProj1 != Zenith_Maths::Matrix4(1.0f), "First projection matrix should not be identity");
+	ZENITH_ASSERT_NE(xProj1, Zenith_Maths::Matrix4(1.0f), "First projection matrix should not be identity");
 
 	// Changing FOV should produce different projection matrix
 	float fOriginalFOV = xCamera.GetFOV();
@@ -1317,12 +1066,11 @@ void Zenith_EditorTests::TestCameraTypeSwitch()
 
 	Zenith_Maths::Matrix4 xProj2;
 	xCamera.BuildProjectionMatrix(xProj2);
-	Zenith_Assert(xProj2 != xProj1 || fOriginalFOV == 90.0f, "Changed FOV should produce different matrix");
+	ZENITH_ASSERT_TRUE(xProj2 != xProj1 || fOriginalFOV == 90.0f, "Changed FOV should produce different matrix");
 
 	EDITOR_TEST_END(TestCameraTypeSwitch);
 }
-
-void Zenith_EditorTests::TestCameraNearFarPlanes()
+ZENITH_TEST(Editor, CameraNearFarPlanes)
 {
 	EDITOR_TEST_BEGIN(TestCameraNearFarPlanes);
 
@@ -1336,13 +1084,12 @@ void Zenith_EditorTests::TestCameraNearFarPlanes()
 	xCamera.SetNearPlane(0.5f);
 	xCamera.SetFarPlane(500.0f);
 
-	Zenith_Assert(std::abs(xCamera.GetNearPlane() - 0.5f) < 0.001f, "Near plane should be 0.5");
-	Zenith_Assert(std::abs(xCamera.GetFarPlane() - 500.0f) < 0.001f, "Far plane should be 500");
+	ZENITH_ASSERT_EQ_FLOAT(xCamera.GetNearPlane(), 0.5f, 0.001f, "Near plane should be 0.5");
+	ZENITH_ASSERT_EQ_FLOAT(xCamera.GetFarPlane(), 500.0f, 0.001f, "Far plane should be 500");
 
 	EDITOR_TEST_END(TestCameraNearFarPlanes);
 }
-
-void Zenith_EditorTests::TestCameraFOVSettings()
+ZENITH_TEST(Editor, CameraFOVSettings)
 {
 	EDITOR_TEST_BEGIN(TestCameraFOVSettings);
 
@@ -1355,7 +1102,7 @@ void Zenith_EditorTests::TestCameraFOVSettings()
 	Zenith_CameraComponent& xCamera = xEntity.GetComponent<Zenith_CameraComponent>();
 	xCamera.SetFOV(90.0f);
 
-	Zenith_Assert(std::abs(xCamera.GetFOV() - 90.0f) < 0.001f, "FOV should be 90");
+	ZENITH_ASSERT_EQ_FLOAT(xCamera.GetFOV(), 90.0f, 0.001f, "FOV should be 90");
 
 	EDITOR_TEST_END(TestCameraFOVSettings);
 }
@@ -1363,243 +1110,186 @@ void Zenith_EditorTests::TestCameraFOVSettings()
 //------------------------------------------------------------------------------
 // ModelComponent Tests (Stubs - require asset loading)
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestModelMeshAccess()
+ZENITH_TEST(Editor, ModelMeshAccess)
 {
 	EDITOR_TEST_BEGIN(TestModelMeshAccess);
 	// Model tests require loaded assets, test API exists
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestModelMeshAccess - API test only");
 	EDITOR_TEST_END(TestModelMeshAccess);
 }
-
-void Zenith_EditorTests::TestModelAnimationController()
+ZENITH_TEST(Editor, ModelAnimationController)
 {
 	EDITOR_TEST_BEGIN(TestModelAnimationController);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestModelAnimationController - API test only");
 	EDITOR_TEST_END(TestModelAnimationController);
 }
-
-void Zenith_EditorTests::TestModelAnimationFloat()
+ZENITH_TEST(Editor, ModelAnimationFloat)
 {
 	EDITOR_TEST_BEGIN(TestModelAnimationFloat);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestModelAnimationFloat - API test only");
 	EDITOR_TEST_END(TestModelAnimationFloat);
 }
-
-void Zenith_EditorTests::TestModelAnimationInt()
+ZENITH_TEST(Editor, ModelAnimationInt)
 {
 	EDITOR_TEST_BEGIN(TestModelAnimationInt);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestModelAnimationInt - API test only");
 	EDITOR_TEST_END(TestModelAnimationInt);
 }
-
-void Zenith_EditorTests::TestModelAnimationBool()
+ZENITH_TEST(Editor, ModelAnimationBool)
 {
 	EDITOR_TEST_BEGIN(TestModelAnimationBool);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestModelAnimationBool - API test only");
 	EDITOR_TEST_END(TestModelAnimationBool);
 }
-
-void Zenith_EditorTests::TestModelAnimationTrigger()
+ZENITH_TEST(Editor, ModelAnimationTrigger)
 {
 	EDITOR_TEST_BEGIN(TestModelAnimationTrigger);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestModelAnimationTrigger - API test only");
 	EDITOR_TEST_END(TestModelAnimationTrigger);
 }
 
 //------------------------------------------------------------------------------
 // ColliderComponent Tests (Stubs - require physics initialization)
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestColliderAddAABB()
+ZENITH_TEST(Editor, ColliderAddAABB)
 {
 	EDITOR_TEST_BEGIN(TestColliderAddAABB);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestColliderAddAABB - API test only");
 	EDITOR_TEST_END(TestColliderAddAABB);
 }
-
-void Zenith_EditorTests::TestColliderAddSphere()
+ZENITH_TEST(Editor, ColliderAddSphere)
 {
 	EDITOR_TEST_BEGIN(TestColliderAddSphere);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestColliderAddSphere - API test only");
 	EDITOR_TEST_END(TestColliderAddSphere);
 }
-
-void Zenith_EditorTests::TestColliderAddCapsule()
+ZENITH_TEST(Editor, ColliderAddCapsule)
 {
 	EDITOR_TEST_BEGIN(TestColliderAddCapsule);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestColliderAddCapsule - API test only");
 	EDITOR_TEST_END(TestColliderAddCapsule);
 }
-
-void Zenith_EditorTests::TestColliderDynamicStatic()
+ZENITH_TEST(Editor, ColliderDynamicStatic)
 {
 	EDITOR_TEST_BEGIN(TestColliderDynamicStatic);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestColliderDynamicStatic - API test only");
 	EDITOR_TEST_END(TestColliderDynamicStatic);
 }
-
-void Zenith_EditorTests::TestColliderGravityControl()
+ZENITH_TEST(Editor, ColliderGravityControl)
 {
 	EDITOR_TEST_BEGIN(TestColliderGravityControl);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestColliderGravityControl - API test only");
 	EDITOR_TEST_END(TestColliderGravityControl);
 }
 
 //------------------------------------------------------------------------------
 // ScriptComponent Tests (Stubs)
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestScriptBehaviourAttach()
+ZENITH_TEST(Editor, ScriptBehaviourAttach)
 {
 	EDITOR_TEST_BEGIN(TestScriptBehaviourAttach);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestScriptBehaviourAttach - API test only");
 	EDITOR_TEST_END(TestScriptBehaviourAttach);
 }
-
-void Zenith_EditorTests::TestScriptBehaviourRetrieve()
+ZENITH_TEST(Editor, ScriptBehaviourRetrieve)
 {
 	EDITOR_TEST_BEGIN(TestScriptBehaviourRetrieve);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestScriptBehaviourRetrieve - API test only");
 	EDITOR_TEST_END(TestScriptBehaviourRetrieve);
 }
 
 //------------------------------------------------------------------------------
 // UIComponent Tests (Stubs)
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestUICreateElement()
+ZENITH_TEST(Editor, UICreateElement)
 {
 	EDITOR_TEST_BEGIN(TestUICreateElement);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestUICreateElement - API test only");
 	EDITOR_TEST_END(TestUICreateElement);
 }
-
-void Zenith_EditorTests::TestUIFindElement()
+ZENITH_TEST(Editor, UIFindElement)
 {
 	EDITOR_TEST_BEGIN(TestUIFindElement);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestUIFindElement - API test only");
 	EDITOR_TEST_END(TestUIFindElement);
 }
-
-void Zenith_EditorTests::TestUIVisibility()
+ZENITH_TEST(Editor, UIVisibility)
 {
 	EDITOR_TEST_BEGIN(TestUIVisibility);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestUIVisibility - API test only");
 	EDITOR_TEST_END(TestUIVisibility);
 }
 
 //------------------------------------------------------------------------------
 // ParticleEmitterComponent Tests (Stubs)
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestParticleEmission()
+ZENITH_TEST(Editor, ParticleEmission)
 {
 	EDITOR_TEST_BEGIN(TestParticleEmission);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestParticleEmission - API test only");
 	EDITOR_TEST_END(TestParticleEmission);
 }
-
-void Zenith_EditorTests::TestParticleSetEmitting()
+ZENITH_TEST(Editor, ParticleSetEmitting)
 {
 	EDITOR_TEST_BEGIN(TestParticleSetEmitting);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestParticleSetEmitting - API test only");
 	EDITOR_TEST_END(TestParticleSetEmitting);
 }
-
-void Zenith_EditorTests::TestParticleAliveCount()
+ZENITH_TEST(Editor, ParticleAliveCount)
 {
 	EDITOR_TEST_BEGIN(TestParticleAliveCount);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestParticleAliveCount - API test only");
 	EDITOR_TEST_END(TestParticleAliveCount);
 }
 
 //------------------------------------------------------------------------------
 // InstancedMeshComponent Tests (Stubs)
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestInstancedSpawn()
+ZENITH_TEST(Editor, InstancedSpawn)
 {
 	EDITOR_TEST_BEGIN(TestInstancedSpawn);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestInstancedSpawn - API test only");
 	EDITOR_TEST_END(TestInstancedSpawn);
 }
-
-void Zenith_EditorTests::TestInstancedTransform()
+ZENITH_TEST(Editor, InstancedTransform)
 {
 	EDITOR_TEST_BEGIN(TestInstancedTransform);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestInstancedTransform - API test only");
 	EDITOR_TEST_END(TestInstancedTransform);
 }
-
-void Zenith_EditorTests::TestInstancedVisibility()
+ZENITH_TEST(Editor, InstancedVisibility)
 {
 	EDITOR_TEST_BEGIN(TestInstancedVisibility);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestInstancedVisibility - API test only");
 	EDITOR_TEST_END(TestInstancedVisibility);
 }
-
-void Zenith_EditorTests::TestInstancedCount()
+ZENITH_TEST(Editor, InstancedCount)
 {
 	EDITOR_TEST_BEGIN(TestInstancedCount);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestInstancedCount - API test only");
 	EDITOR_TEST_END(TestInstancedCount);
 }
 
 //------------------------------------------------------------------------------
 // AIAgentComponent Tests (Stubs)
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestAIBlackboardAccess()
+ZENITH_TEST(Editor, AIBlackboardAccess)
 {
 	EDITOR_TEST_BEGIN(TestAIBlackboardAccess);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestAIBlackboardAccess - API test only");
 	EDITOR_TEST_END(TestAIBlackboardAccess);
 }
-
-void Zenith_EditorTests::TestAIUpdateInterval()
+ZENITH_TEST(Editor, AIUpdateInterval)
 {
 	EDITOR_TEST_BEGIN(TestAIUpdateInterval);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestAIUpdateInterval - API test only");
 	EDITOR_TEST_END(TestAIUpdateInterval);
 }
-
-void Zenith_EditorTests::TestAIEnable()
+ZENITH_TEST(Editor, AIEnable)
 {
 	EDITOR_TEST_BEGIN(TestAIEnable);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestAIEnable - API test only");
 	EDITOR_TEST_END(TestAIEnable);
 }
 
 //------------------------------------------------------------------------------
 // Drag-Drop Interaction Tests
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestDragDropTextureToMaterial()
+ZENITH_TEST(Editor, DragDropTextureToMaterial)
 {
 	EDITOR_TEST_BEGIN(TestDragDropTextureToMaterial);
 
 	// Test the logic of what happens when a texture is dropped on a material slot
 	// This tests the underlying API, not the actual ImGui drag-drop
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestDragDropTextureToMaterial - Logic test");
 
 	EDITOR_TEST_END(TestDragDropTextureToMaterial);
 }
-
-void Zenith_EditorTests::TestDragDropTextureReplaceCleanup()
+ZENITH_TEST(Editor, DragDropTextureReplaceCleanup)
 {
 	EDITOR_TEST_BEGIN(TestDragDropTextureReplaceCleanup);
 
 	// Test that when a texture is replaced, the old texture is properly cleaned up
 	// This would involve checking ref counts or asset registry state
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestDragDropTextureReplaceCleanup - Logic test");
 
 	EDITOR_TEST_END(TestDragDropTextureReplaceCleanup);
 }
-
-void Zenith_EditorTests::TestDragDropEntityToParent()
+ZENITH_TEST(Editor, DragDropEntityToParent)
 {
 	EDITOR_TEST_BEGIN(TestDragDropEntityToParent);
 
@@ -1614,13 +1304,11 @@ void Zenith_EditorTests::TestDragDropEntityToParent()
 	// Simulate what happens when entity is dropped on another in hierarchy
 	xChild.SetParent(uParent);
 
-	Zenith_Assert(xChild.GetParentEntityID() == uParent,
-		"Entity should be reparented after drag-drop");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParent, "Entity should be reparented after drag-drop");
 
 	EDITOR_TEST_END(TestDragDropEntityToParent);
 }
-
-void Zenith_EditorTests::TestDragDropEntityCircularPrevention()
+ZENITH_TEST(Editor, DragDropEntityCircularPrevention)
 {
 	EDITOR_TEST_BEGIN(TestDragDropEntityCircularPrevention);
 
@@ -1645,8 +1333,7 @@ void Zenith_EditorTests::TestDragDropEntityCircularPrevention()
 //------------------------------------------------------------------------------
 // Context Menu Action Tests
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestContextMenuCreateChild()
+ZENITH_TEST(Editor, ContextMenuCreateChild)
 {
 	EDITOR_TEST_BEGIN(TestContextMenuCreateChild);
 
@@ -1659,13 +1346,11 @@ void Zenith_EditorTests::TestContextMenuCreateChild()
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	xChild.SetParent(uParent);
 
-	Zenith_Assert(xChild.GetParentEntityID() == uParent,
-		"Child created via context menu should have correct parent");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParent, "Child created via context menu should have correct parent");
 
 	EDITOR_TEST_END(TestContextMenuCreateChild);
 }
-
-void Zenith_EditorTests::TestContextMenuDeleteEntity()
+ZENITH_TEST(Editor, ContextMenuDeleteEntity)
 {
 	EDITOR_TEST_BEGIN(TestContextMenuDeleteEntity);
 
@@ -1674,10 +1359,10 @@ void Zenith_EditorTests::TestContextMenuDeleteEntity()
 
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	Zenith_Assert(pxSceneData->EntityExists(uEntity), "Entity should exist before deletion");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(uEntity), "Entity should exist before deletion");
 
 	pxSceneData->RemoveEntity(uEntity);
-	Zenith_Assert(!pxSceneData->EntityExists(uEntity), "Entity should not exist after deletion");
+	ZENITH_ASSERT_FALSE(pxSceneData->EntityExists(uEntity), "Entity should not exist after deletion");
 
 	// Remove from fixture tracking since we deleted it
 	auto& axEntities = const_cast<std::vector<Zenith_EntityID>&>(Zenith_EditorTestFixture::GetCreatedEntities());
@@ -1685,8 +1370,7 @@ void Zenith_EditorTests::TestContextMenuDeleteEntity()
 
 	EDITOR_TEST_END(TestContextMenuDeleteEntity);
 }
-
-void Zenith_EditorTests::TestContextMenuUnparent()
+ZENITH_TEST(Editor, ContextMenuUnparent)
 {
 	EDITOR_TEST_BEGIN(TestContextMenuUnparent);
 
@@ -1698,11 +1382,11 @@ void Zenith_EditorTests::TestContextMenuUnparent()
 	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	xChild.SetParent(uParent);
-	Zenith_Assert(xChild.GetParentEntityID() == uParent, "Should have parent");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), uParent, "Should have parent");
 
 	// Unparent via context menu action
 	xChild.SetParent(INVALID_ENTITY_ID);
-	Zenith_Assert(!xChild.GetParentEntityID().IsValid(), "Should be unparented");
+	ZENITH_ASSERT_FALSE(xChild.GetParentEntityID().IsValid(), "Should be unparented");
 
 	EDITOR_TEST_END(TestContextMenuUnparent);
 }
@@ -1710,37 +1394,28 @@ void Zenith_EditorTests::TestContextMenuUnparent()
 //------------------------------------------------------------------------------
 // Property Editor Interaction Tests
 //------------------------------------------------------------------------------
-
-void Zenith_EditorTests::TestMaterialSliderMetallic()
+ZENITH_TEST(Editor, MaterialSliderMetallic)
 {
 	EDITOR_TEST_BEGIN(TestMaterialSliderMetallic);
 	// Material property tests require material asset system
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMaterialSliderMetallic - API test only");
 	EDITOR_TEST_END(TestMaterialSliderMetallic);
 }
-
-void Zenith_EditorTests::TestMaterialSliderRoughness()
+ZENITH_TEST(Editor, MaterialSliderRoughness)
 {
 	EDITOR_TEST_BEGIN(TestMaterialSliderRoughness);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMaterialSliderRoughness - API test only");
 	EDITOR_TEST_END(TestMaterialSliderRoughness);
 }
-
-void Zenith_EditorTests::TestMaterialColorBaseColor()
+ZENITH_TEST(Editor, MaterialColorBaseColor)
 {
 	EDITOR_TEST_BEGIN(TestMaterialColorBaseColor);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMaterialColorBaseColor - API test only");
 	EDITOR_TEST_END(TestMaterialColorBaseColor);
 }
-
-void Zenith_EditorTests::TestMaterialCheckboxTransparent()
+ZENITH_TEST(Editor, MaterialCheckboxTransparent)
 {
 	EDITOR_TEST_BEGIN(TestMaterialCheckboxTransparent);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMaterialCheckboxTransparent - API test only");
 	EDITOR_TEST_END(TestMaterialCheckboxTransparent);
 }
-
-void Zenith_EditorTests::TestEntityNameChange()
+ZENITH_TEST(Editor, EntityNameChange)
 {
 	EDITOR_TEST_BEGIN(TestEntityNameChange);
 
@@ -1752,12 +1427,11 @@ void Zenith_EditorTests::TestEntityNameChange()
 	// Simulate name change from property panel text input
 	xEntity.SetName("NewName");
 
-	Zenith_Assert(xEntity.GetName() == "NewName", "Entity name should be changed");
+	ZENITH_ASSERT_EQ(xEntity.GetName(), "NewName", "Entity name should be changed");
 
 	EDITOR_TEST_END(TestEntityNameChange);
 }
-
-void Zenith_EditorTests::TestTransformDragPosition()
+ZENITH_TEST(Editor, TransformDragPosition)
 {
 	EDITOR_TEST_BEGIN(TestTransformDragPosition);
 
@@ -1774,8 +1448,7 @@ void Zenith_EditorTests::TestTransformDragPosition()
 	Zenith_Maths::Vector3 xRetrievedPos;
 	xTransform.GetPosition(xRetrievedPos);
 
-	Zenith_Assert(glm::length(xNewPos - xRetrievedPos) < 0.001f,
-		"Position should be updated from drag control");
+	ZENITH_ASSERT_LT(glm::length(xNewPos - xRetrievedPos), 0.001f, "Position should be updated from drag control");
 
 	EDITOR_TEST_END(TestTransformDragPosition);
 }
@@ -1783,8 +1456,7 @@ void Zenith_EditorTests::TestTransformDragPosition()
 //=============================================================================
 // Editor Operation Tests (shared code paths with automation)
 //=============================================================================
-
-void Zenith_EditorTests::TestCreateEntityViaEditor()
+ZENITH_TEST(Editor, CreateEntityViaEditor)
 {
 	EDITOR_TEST_BEGIN(TestCreateEntityViaEditor);
 
@@ -1792,16 +1464,14 @@ void Zenith_EditorTests::TestCreateEntityViaEditor()
 	Zenith_EntityID uEntityID = Zenith_Editor::CreateEntity("EditorOpTestEntity");
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Entity should be selected after CreateEntity");
-	Zenith_Assert(pxEntity->GetEntityID() == uEntityID, "Selected entity should match returned ID");
-	Zenith_Assert(strcmp(pxEntity->GetName().c_str(), "EditorOpTestEntity") == 0,
-		"Entity name should match");
-	Zenith_Assert(!pxEntity->IsTransient(), "Entity should be non-transient by default");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Entity should be selected after CreateEntity");
+	ZENITH_ASSERT_EQ(pxEntity->GetEntityID(), uEntityID, "Selected entity should match returned ID");
+	ZENITH_ASSERT_STREQ(pxEntity->GetName().c_str(), "EditorOpTestEntity", "Entity name should match");
+	ZENITH_ASSERT_FALSE(pxEntity->IsTransient(), "Entity should be non-transient by default");
 
 	EDITOR_TEST_END(TestCreateEntityViaEditor);
 }
-
-void Zenith_EditorTests::TestAddInvalidComponent()
+ZENITH_TEST(Editor, AddInvalidComponent)
 {
 	EDITOR_TEST_BEGIN(TestAddInvalidComponent);
 
@@ -1809,34 +1479,32 @@ void Zenith_EditorTests::TestAddInvalidComponent()
 
 	// Adding a non-existent component should return false
 	bool bResult = Zenith_Editor::AddComponentToSelected("NonexistentComponent");
-	Zenith_Assert(!bResult, "AddComponentToSelected should return false for unknown component name");
+	ZENITH_ASSERT_FALSE(bResult, "AddComponentToSelected should return false for unknown component name");
 
 	EDITOR_TEST_END(TestAddInvalidComponent);
 }
-
-void Zenith_EditorTests::TestSetSelectedEntityTransient()
+ZENITH_TEST(Editor, SetSelectedEntityTransient)
 {
 	EDITOR_TEST_BEGIN(TestSetSelectedEntityTransient);
 
 	Zenith_Editor::CreateEntity("TransientTestEntity");
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 
 	// Initially non-transient (set by CreateEntity)
-	Zenith_Assert(!pxEntity->IsTransient(), "Should be non-transient initially");
+	ZENITH_ASSERT_FALSE(pxEntity->IsTransient(), "Should be non-transient initially");
 
 	// Set transient
 	Zenith_Editor::SetSelectedEntityTransient(true);
-	Zenith_Assert(pxEntity->IsTransient(), "Should be transient after SetSelectedEntityTransient(true)");
+	ZENITH_ASSERT_TRUE(pxEntity->IsTransient(), "Should be transient after SetSelectedEntityTransient(true)");
 
 	// Set back to non-transient
 	Zenith_Editor::SetSelectedEntityTransient(false);
-	Zenith_Assert(!pxEntity->IsTransient(), "Should be non-transient after SetSelectedEntityTransient(false)");
+	ZENITH_ASSERT_FALSE(pxEntity->IsTransient(), "Should be non-transient after SetSelectedEntityTransient(false)");
 
 	EDITOR_TEST_END(TestSetSelectedEntityTransient);
 }
-
-void Zenith_EditorTests::TestIsAncestorOf()
+ZENITH_TEST(Editor, IsAncestorOf)
 {
 	EDITOR_TEST_BEGIN(TestIsAncestorOf);
 
@@ -1850,57 +1518,39 @@ void Zenith_EditorTests::TestIsAncestorOf()
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild);
 
 	// Direct parent is ancestor of child
-	Zenith_Assert(
-		Zenith_EditorPanelHierarchy::IsAncestorOf(uParent, uChild),
-		"Direct parent should be ancestor of child");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelHierarchy::IsAncestorOf(uParent, uChild), "Direct parent should be ancestor of child");
 
 	// Grandparent is ancestor of grandchild (transitive)
-	Zenith_Assert(
-		Zenith_EditorPanelHierarchy::IsAncestorOf(uGrandparent, uChild),
-		"Grandparent should be ancestor of grandchild");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelHierarchy::IsAncestorOf(uGrandparent, uChild), "Grandparent should be ancestor of grandchild");
 
 	// Self is NOT ancestor of self
-	Zenith_Assert(
-		!Zenith_EditorPanelHierarchy::IsAncestorOf(uParent, uParent),
-		"Entity should not be ancestor of itself");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelHierarchy::IsAncestorOf(uParent, uParent), "Entity should not be ancestor of itself");
 
 	// Child is NOT ancestor of parent (reverse direction)
-	Zenith_Assert(
-		!Zenith_EditorPanelHierarchy::IsAncestorOf(uChild, uParent),
-		"Child should not be ancestor of parent");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelHierarchy::IsAncestorOf(uChild, uParent), "Child should not be ancestor of parent");
 
 	// Sibling is NOT ancestor of child (no parent relationship)
-	Zenith_Assert(
-		!Zenith_EditorPanelHierarchy::IsAncestorOf(uSibling, uChild),
-		"Sibling should not be ancestor of child");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelHierarchy::IsAncestorOf(uSibling, uChild), "Sibling should not be ancestor of child");
 
 	// Invalid entity is not ancestor of anything
-	Zenith_Assert(
-		!Zenith_EditorPanelHierarchy::IsAncestorOf(INVALID_ENTITY_ID, uChild),
-		"Invalid entity should not be ancestor of anything");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelHierarchy::IsAncestorOf(INVALID_ENTITY_ID, uChild), "Invalid entity should not be ancestor of anything");
 
 	// Nothing is ancestor of invalid entity
-	Zenith_Assert(
-		!Zenith_EditorPanelHierarchy::IsAncestorOf(uParent, INVALID_ENTITY_ID),
-		"Nothing should be ancestor of invalid entity");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelHierarchy::IsAncestorOf(uParent, INVALID_ENTITY_ID), "Nothing should be ancestor of invalid entity");
 
 	EDITOR_TEST_END(TestIsAncestorOf);
 }
-
-void Zenith_EditorTests::TestDeferredOpClearedAfterExecution()
+ZENITH_TEST(Editor, DeferredOpClearedAfterExecution)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDeferredOpClearedAfterExecution...");
 	Zenith_EditorTestFixture::SetUp();
 
 	// Enter Play mode to create a scene backup
 	Zenith_Editor::SetEditorMode(EditorMode::Playing);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Playing,
-		"Should be in Playing mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
 
 	// Stop Play mode — this sets the s_bPendingSceneLoad flag (deferred restore)
 	Zenith_Editor::SetEditorMode(EditorMode::Stopped);
-	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Stopped,
-		"Should be in Stopped mode");
+	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should be in Stopped mode");
 
 	// Flush pending ops — this should execute the deferred load and clear the flag
 	Zenith_Editor::FlushPendingSceneOperations();
@@ -1911,15 +1561,12 @@ void Zenith_EditorTests::TestDeferredOpClearedAfterExecution()
 	// Verify the scene is still valid after the double-flush
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	Zenith_Assert(pxSceneData != nullptr, "Scene data should be valid after deferred op completed");
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "Scene data should be valid after deferred op completed");
 
 	Zenith_EditorTestFixture::TearDown();
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDeferredOpClearedAfterExecution PASSED");
 }
-
-void Zenith_EditorTests::TestDeferredOpSkippedWhenFlagFalse()
+ZENITH_TEST(Editor, DeferredOpSkippedWhenFlagFalse)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDeferredOpSkippedWhenFlagFalse...");
 	Zenith_EditorTestFixture::SetUp();
 
 	// Create an entity to track scene identity — if no deferred op fires, it should survive
@@ -1927,66 +1574,44 @@ void Zenith_EditorTests::TestDeferredOpSkippedWhenFlagFalse()
 
 	// Verify the entity exists
 	Zenith_SceneData* pxSceneData = Zenith_EditorTestFixture::GetTestScene();
-	Zenith_Assert(pxSceneData != nullptr, "Test scene should exist");
-	Zenith_Assert(pxSceneData->EntityExists(uEntityID), "Entity should exist before flush");
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "Test scene should exist");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(uEntityID), "Entity should exist before flush");
 
 	// Call FlushPendingSceneOperations with NO flags set
 	Zenith_Editor::FlushPendingSceneOperations();
 
 	// Verify the entity still exists — proving no scene operation was executed
-	Zenith_Assert(pxSceneData->EntityExists(uEntityID),
-		"Entity should still exist after flush with no pending flags");
+	ZENITH_ASSERT_TRUE(pxSceneData->EntityExists(uEntityID), "Entity should still exist after flush with no pending flags");
 
 	Zenith_EditorTestFixture::TearDown();
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDeferredOpSkippedWhenFlagFalse PASSED");
 }
-
-void Zenith_EditorTests::TestTypeFilterMatchesTexture()
+ZENITH_TEST(Editor, TypeFilterMatchesTexture)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTypeFilterMatchesTexture...");
 
-	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_TEXTURE_EXT),
-		"Texture extension should match texture filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_TEXTURE_EXT), "Texture extension should match texture filter");
 
-	Zenith_Assert(!Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_MATERIAL_EXT),
-		"Material extension should not match texture filter");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_MATERIAL_EXT), "Material extension should not match texture filter");
 
-	Zenith_Assert(!Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_MESH_EXT),
-		"Mesh extension should not match texture filter");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_MESH_EXT), "Mesh extension should not match texture filter");
 
-	Zenith_Assert(!Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_MODEL_EXT),
-		"Model extension should not match texture filter");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_MODEL_EXT), "Model extension should not match texture filter");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTypeFilterMatchesTexture PASSED");
 }
-
-void Zenith_EditorTests::TestTypeFilterAllPass()
+ZENITH_TEST(Editor, TypeFilterAllPass)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTypeFilterAllPass...");
 
-	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_TEXTURE_EXT),
-		"Texture should pass 'All' filter");
-	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_MATERIAL_EXT),
-		"Material should pass 'All' filter");
-	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_MESH_EXT),
-		"Mesh should pass 'All' filter");
-	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_MODEL_EXT),
-		"Model should pass 'All' filter");
-	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_PREFAB_EXT),
-		"Prefab should pass 'All' filter");
-	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_SCENE_EXT),
-		"Scene should pass 'All' filter");
-	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_ANIMATION_EXT),
-		"Animation should pass 'All' filter");
-	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ".unknown"),
-		"Unknown extension should pass 'All' filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_TEXTURE_EXT), "Texture should pass 'All' filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_MATERIAL_EXT), "Material should pass 'All' filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_MESH_EXT), "Mesh should pass 'All' filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_MODEL_EXT), "Model should pass 'All' filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_PREFAB_EXT), "Prefab should pass 'All' filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_SCENE_EXT), "Scene should pass 'All' filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_ANIMATION_EXT), "Animation should pass 'All' filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ".unknown"), "Unknown extension should pass 'All' filter");
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTypeFilterAllPass PASSED");
 }
-
-void Zenith_EditorTests::TestUniqueFilenameWithExisting()
+ZENITH_TEST(Editor, UniqueFilenameWithExisting)
 {
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUniqueFilenameWithExisting...");
 
 	std::string strTempDir = std::filesystem::temp_directory_path().string();
 	std::string strTestDir = strTempDir + "/zenith_test_unique_filename";
@@ -1999,8 +1624,7 @@ void Zenith_EditorTests::TestUniqueFilenameWithExisting()
 
 	// No existing file - should return base path + suffix directly
 	std::string strResult1 = Zenith_EditorPanelContentBrowser::GenerateUniqueFilename(strBasePath, strSuffix);
-	Zenith_Assert(strResult1 == strBasePath + strSuffix,
-		"With no existing files, should return base path directly");
+	ZENITH_ASSERT_EQ(strResult1, strBasePath + strSuffix, "With no existing files, should return base path directly");
 
 	std::ofstream xFile1(strResult1);
 	xFile1.close();
@@ -2008,8 +1632,7 @@ void Zenith_EditorTests::TestUniqueFilenameWithExisting()
 	// First file exists - should return _1 variant
 	std::string strResult2 = Zenith_EditorPanelContentBrowser::GenerateUniqueFilename(strBasePath, strSuffix);
 	std::string strExpected2 = strBasePath + "_1" + strSuffix;
-	Zenith_Assert(strResult2 == strExpected2,
-		"With base file existing, should return _1 variant");
+	ZENITH_ASSERT_EQ(strResult2, strExpected2, "With base file existing, should return _1 variant");
 
 	std::ofstream xFile2(strResult2);
 	xFile2.close();
@@ -2017,12 +1640,10 @@ void Zenith_EditorTests::TestUniqueFilenameWithExisting()
 	// Both base and _1 exist - should return _2 variant
 	std::string strResult3 = Zenith_EditorPanelContentBrowser::GenerateUniqueFilename(strBasePath, strSuffix);
 	std::string strExpected3 = strBasePath + "_2" + strSuffix;
-	Zenith_Assert(strResult3 == strExpected3,
-		"With base and _1 existing, should return _2 variant");
+	ZENITH_ASSERT_EQ(strResult3, strExpected3, "With base and _1 existing, should return _2 variant");
 
 	std::filesystem::remove_all(strTestDir);
 
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUniqueFilenameWithExisting PASSED");
 }
 
 #endif // ZENITH_TOOLS

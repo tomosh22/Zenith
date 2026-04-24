@@ -1014,3 +1014,7 @@ const char* GetTacticalPointTypeName(TacticalPointType eType)
 	default:                                 return "Unknown";
 	}
 }
+
+#ifdef ZENITH_TESTING
+#include "AI/Squad/Zenith_TacticalPoint.Tests.inl"
+#endif

@@ -646,3 +646,7 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 	}
 }
 #endif
+
+#ifdef ZENITH_TESTING
+#include "AI/Perception/Zenith_PerceptionSystem.Tests.inl"
+#endif

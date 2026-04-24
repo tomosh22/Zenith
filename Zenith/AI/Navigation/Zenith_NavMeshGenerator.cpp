@@ -1027,3 +1027,7 @@ void Zenith_NavMeshGenerator::FreeHeightfield(GenerationContext& xContext)
 		xContext.m_axColumns.Get(u).m_pxFirstSpan = nullptr;
 	}
 }
+
+#ifdef ZENITH_TESTING
+#include "AI/Navigation/Zenith_NavMeshGenerator.Tests.inl"
+#endif

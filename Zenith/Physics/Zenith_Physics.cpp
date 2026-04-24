@@ -780,3 +780,7 @@ void Zenith_Physics::PhysicsContactListener::OnContactRemoved(const JPH::SubShap
 
 	QueueCollisionEventInternal(xEntityID1, xEntityID2, COLLISION_EVENT_TYPE_EXIT);
 }
+
+#ifdef ZENITH_TESTING
+#include "Physics/Zenith_Physics.Tests.inl"
+#endif

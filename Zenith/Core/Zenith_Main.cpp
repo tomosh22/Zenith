@@ -23,7 +23,6 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Zenith_OS_Include.h"
 
-
 #ifdef ZENITH_TOOLS
 extern void ExportAllMeshes();
 extern void ExportAllTextures();
@@ -130,7 +129,9 @@ void Zenith_Core::Zenith_Init()
 
 	// Run unit tests BEFORE loading the game scene
 	// This ensures tests don't corrupt game entities - scene loads fresh after tests
-	Zenith_UnitTests::RunAllTests();
+#ifdef ZENITH_TESTING
+	Zenith_TestRunner::Instance().RunAllTests();
+#endif
 
 #ifdef ZENITH_TOOLS
 	// Initialize game-specific resources (geometry, materials, prefabs, particle configs)
