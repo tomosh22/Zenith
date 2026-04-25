@@ -923,7 +923,7 @@ void Zenith_Vulkan_CommandBuffer::RenderImGui()
 #endif
 }
 
-#ifdef ZENITH_DEBUG
+#ifdef ZENITH_FLUX_PROFILING
 void Zenith_Vulkan_CommandBuffer::BeginDebugMarker(const char* szName)
 {
 	vk::DebugUtilsLabelEXT xLabel = vk::DebugUtilsLabelEXT()

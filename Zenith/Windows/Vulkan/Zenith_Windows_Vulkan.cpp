@@ -13,7 +13,7 @@ namespace Zenith_Vulkan_Platform
 		const char** pszGLFWExtensions = glfwGetRequiredInstanceExtensions(&uGLFWExtensionCount);
 		std::vector<const char*> xExtensions(pszGLFWExtensions, pszGLFWExtensions + uGLFWExtensionCount);
 
-#ifdef ZENITH_DEBUG
+#ifdef ZENITH_FLUX_PROFILING
 		xExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 

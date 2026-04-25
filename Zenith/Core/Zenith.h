@@ -156,6 +156,14 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 
 #define ZENITH_TESTING
 
+// Enables GPU debug markers (RenderDoc / Nsight / PIX pass labels) and pulls
+// in the supporting machinery they require: the VK_EXT_debug_utils instance
+// extension and vk::DispatchLoaderDynamic. Always defined for now; can be
+// undefined in a strict shipping configuration if marker overhead is ever
+// measured to matter. Decoupled from ZENITH_DEBUG so the validation messenger
+// (noisy, debug-only) stays orthogonal to the marker pipeline.
+#define ZENITH_FLUX_PROFILING
+
 // ZENITH_DEBUG_VARIABLES is a strict subset of ZENITH_TOOLS — the block above
 // is the ONLY site that defines it, and it only runs when ZENITH_TOOLS is
 // already active. Any future define of ZENITH_DEBUG_VARIABLES from a build

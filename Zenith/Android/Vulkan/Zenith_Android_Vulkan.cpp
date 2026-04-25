@@ -16,7 +16,7 @@ namespace Zenith_Vulkan_Platform
 		xExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 		xExtensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
 
-#ifdef ZENITH_DEBUG
+#ifdef ZENITH_FLUX_PROFILING
 		xExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 

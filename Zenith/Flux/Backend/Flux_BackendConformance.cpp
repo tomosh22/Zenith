@@ -75,6 +75,10 @@ static_assert(FluxBackendResourceBinding       <Zenith_Vulkan_CommandBuffer>,
 	"Zenith_Vulkan_CommandBuffer does not satisfy FluxBackendResourceBinding");
 static_assert(FluxBackendDynamicState          <Zenith_Vulkan_CommandBuffer>,
 	"Zenith_Vulkan_CommandBuffer does not satisfy FluxBackendDynamicState");
+#ifdef ZENITH_FLUX_PROFILING
+static_assert(FluxBackendDebugMarkers          <Zenith_Vulkan_CommandBuffer>,
+	"Zenith_Vulkan_CommandBuffer does not satisfy FluxBackendDebugMarkers");
+#endif
 
 static_assert(FluxBackendSync                  <Zenith_Vulkan_CommandBuffer>,
 	"Zenith_Vulkan_CommandBuffer does not satisfy FluxBackendSync");

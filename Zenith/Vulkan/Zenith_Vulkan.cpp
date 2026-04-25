@@ -123,7 +123,7 @@ static const char* s_aszDeviceExtensions[] = {
 
 vk::Instance Zenith_Vulkan::s_xInstance;
 vk::DebugUtilsMessengerEXT Zenith_Vulkan::s_xDebugMessenger;
-#ifdef ZENITH_DEBUG
+#ifdef ZENITH_FLUX_PROFILING
 vk::DispatchLoaderDynamic Zenith_Vulkan::s_xDispatchLoader;
 #endif
 vk::SurfaceKHR Zenith_Vulkan::s_xSurface;
@@ -200,7 +200,7 @@ void Zenith_Vulkan::Initialise()
 	LogFormatSupport();
 	CreateQueueFamilies();
 	CreateDevice();
-#ifdef ZENITH_DEBUG
+#ifdef ZENITH_FLUX_PROFILING
 	s_xDispatchLoader = vk::DispatchLoaderDynamic(s_xInstance, vkGetInstanceProcAddr, s_xDevice, vkGetDeviceProcAddr);
 #endif
 	CreateCommandPools();

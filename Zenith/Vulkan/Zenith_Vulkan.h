@@ -112,6 +112,8 @@ public:
 	static void CreateInstance();
 #ifdef ZENITH_DEBUG
 	static void CreateDebugMessenger();
+#endif
+#ifdef ZENITH_FLUX_PROFILING
 	static vk::DispatchLoaderDynamic& GetDispatchLoader() { return s_xDispatchLoader; }
 #endif
 	static void CreateSurface();
@@ -209,7 +211,7 @@ private:
 		const vk::DebugUtilsMessengerCallbackDataEXT* pxCallbackData,
 		void* pUserData);
 	static vk::DebugUtilsMessengerEXT s_xDebugMessenger;
-#ifdef ZENITH_DEBUG
+#ifdef ZENITH_FLUX_PROFILING
 	static vk::DispatchLoaderDynamic s_xDispatchLoader;
 #endif
 	static vk::SurfaceKHR s_xSurface;

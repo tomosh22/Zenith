@@ -136,11 +136,42 @@ concept FluxBackendDynamicState = requires(
 	{ xRec.SetDepthBias(fConstantBias, fSlopeBias, fClampBias)                                 } -> std::same_as<void>;
 };
 
-// Umbrella concept. Composes all seven sub-concepts. A backend that claims
+// GPU debug-marker pair, emitted once per Flux_CommandList from
+// IterateCommands() so RenderDoc / Nsight / PIX show one labelled group per
+// logical pass. Gated on ZENITH_FLUX_PROFILING — the methods, calls, concept
+// and conformance assert all evaporate together in profiling-off builds (same
+// pattern as FluxBackendImGuiTools / ZENITH_TOOLS).
+//
+// Cross-backend contract: each Flux_CommandList corresponds to one logical
+// pass (one render-graph pass for graphics, one standalone compute list, etc.)
+// and IterateCommands() runs inside whatever pass / encoder scope the backend
+// has open at that point — graphics passes are bracketed by BeginRenderPass /
+// EndRenderPass on the same Flux_CommandBuffer, compute passes have no render
+// pass but are still recorded into the active backend command buffer.
+//
+// Vulkan satisfies the contract via vkCmdBegin/EndDebugUtilsLabelEXT (allowed
+// anywhere inside an open command buffer, both in and out of render passes).
+//
+// A future Metal backend will need to route Begin/EndDebugMarker to the
+// currently-active MTL*CommandEncoder (pushDebugGroup: / popDebugGroup),
+// because Metal markers are encoder-scoped. The "encoder is active when
+// IterateCommands() runs" property holds today, so the Metal mapping is
+// mechanical.
+#ifdef ZENITH_FLUX_PROFILING
+template <typename T>
+concept FluxBackendDebugMarkers = requires(T& xRec, const char* szName)
+{
+	{ xRec.BeginDebugMarker(szName)                                                            } -> std::same_as<void>;
+	{ xRec.EndDebugMarker()                                                                    } -> std::same_as<void>;
+};
+#endif
+
+// Umbrella concept. Composes the sub-concepts. A backend that claims
 // to be a full command recorder (i.e. participates in the conformance
 // static_assert in Flux_BackendConformance.cpp) must satisfy every slice;
 // a future backend can pick individual sub-concepts to implement partial
-// support.
+// support. FluxBackendDebugMarkers participates only in ZENITH_FLUX_PROFILING
+// builds, mirroring the methods + conformance assert.
 template <typename T>
 concept FluxBackendCommandRecorder =
 	FluxBackendRecordingLifecycle <T> &&
@@ -150,4 +181,7 @@ concept FluxBackendCommandRecorder =
 	FluxBackendIndirectDraws      <T> &&
 	FluxBackendCompute            <T> &&
 	FluxBackendResourceBinding    <T> &&
+#ifdef ZENITH_FLUX_PROFILING
+	FluxBackendDebugMarkers       <T> &&
+#endif
 	FluxBackendDynamicState       <T>;

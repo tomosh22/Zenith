@@ -133,7 +133,7 @@ public:
 	void RenderImGui();
 	void SetCurrentRenderPass(vk::RenderPass xRenderPass) { m_xCurrentRenderPass = xRenderPass; }
 
-#ifdef ZENITH_DEBUG
+#ifdef ZENITH_FLUX_PROFILING
 	void BeginDebugMarker(const char* szName);
 	void EndDebugMarker();
 #endif
