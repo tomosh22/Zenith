@@ -16,6 +16,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Flux/Flux_MaterialBinding.h"
@@ -27,7 +28,6 @@ static Flux_Pipeline s_xGBufferPipeline;
 static Flux_Shader s_xShadowShader;
 static Flux_Pipeline s_xShadowPipeline;
 
-DEBUGVAR bool dbg_bEnable = true;
 
 void Flux_StaticMeshes::Initialise()
 {
@@ -84,7 +84,6 @@ void Flux_StaticMeshes::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Static Meshes" }, dbg_bEnable);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_StaticMeshes initialised");
@@ -178,7 +177,7 @@ static void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBi
 
 void Flux_StaticMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
-	if (!dbg_bEnable) return;
+	if (!Zenith_GraphicsOptions::Get().m_bStaticMeshesEnabled) return;
 
 	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
 

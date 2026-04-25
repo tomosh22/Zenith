@@ -15,6 +15,7 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -62,8 +63,6 @@ static bool s_bCullingEnabled = true;  // GPU culling enabled by default
 static uint32_t s_uTotalInstances = 0;
 static uint32_t s_uVisibleInstances = 0;
 
-DEBUGVAR bool dbg_bEnableInstancedMeshes = true;
-DEBUGVAR bool dbg_bEnableGPUCulling = true;  // GPU culling enabled
 
 //=============================================================================
 // Initialise / Shutdown
@@ -146,8 +145,6 @@ void Flux_InstancedMeshes::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Instanced Meshes" }, dbg_bEnableInstancedMeshes);
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Instanced GPU Culling" }, dbg_bEnableGPUCulling);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes initialised (GPU culling enabled)");
@@ -238,7 +235,7 @@ void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 void Flux_InstancedMeshes::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 {
 	// Check if GPU culling should run
-	if (!s_bCullingInitialized || !s_bCullingEnabled || !dbg_bEnableGPUCulling)
+	if (!s_bCullingInitialized || !s_bCullingEnabled || !Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled)
 	{
 		return;
 	}
@@ -401,7 +398,7 @@ static void IssueBatchDraw(Flux_CommandList* pxCmdList, Flux_InstanceGroup* pxGr
 
 void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
-	if (!dbg_bEnableInstancedMeshes)
+	if (!Zenith_GraphicsOptions::Get().m_bInstancedMeshesEnabled)
 	{
 		return;
 	}
@@ -423,7 +420,7 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	s_uTotalInstances = 0;
 	s_uVisibleInstances = 0;
 
-	const bool bUseGPUCulling = s_bCullingEnabled && dbg_bEnableGPUCulling && s_bCullingInitialized;
+	const bool bUseGPUCulling = s_bCullingEnabled && Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled && s_bCullingInitialized;
 
 	for (size_t uGroup = 0; uGroup < s_apxInstanceGroups.size(); ++uGroup)
 	{
@@ -462,7 +459,7 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 
 void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
-	if (!dbg_bEnableInstancedMeshes)
+	if (!Zenith_GraphicsOptions::Get().m_bInstancedMeshesEnabled)
 	{
 		return;
 	}

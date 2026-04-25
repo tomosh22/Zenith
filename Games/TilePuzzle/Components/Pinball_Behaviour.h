@@ -43,6 +43,7 @@
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Skybox/Flux_Skybox.h"
+#include "Core/Zenith_GraphicsOptions.h"
 
 #include "DataStream/Zenith_DataStream.h"
 
@@ -571,7 +572,7 @@ public:
 			Flux_HDR::SetBloomIntensity(0.8f);
 			Flux_HDR::SetBloomThreshold(0.8f);
 			Flux_HDR::SetExposure(1.2f);
-			Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector4(0.02f, 0.02f, 0.06f, 1.0f);
+			Zenith_GraphicsOptions::Get().m_xSkyboxColour = Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f);
 
 			CreatePlayfield();
 			SpawnBall();
@@ -609,7 +610,7 @@ public:
 				Flux_HDR::SetBloomIntensity(0.8f);
 				Flux_HDR::SetBloomThreshold(0.8f);
 				Flux_HDR::SetExposure(1.2f);
-				Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector4(0.02f, 0.02f, 0.06f, 1.0f);
+				Zenith_GraphicsOptions::Get().m_xSkyboxColour = Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f);
 
 				CreatePlayfield();
 				SpawnBall();
@@ -847,7 +848,7 @@ private:
 		Flux_HDR::SetBloomIntensity(0.5f);
 		Flux_HDR::SetBloomThreshold(1.0f);
 		Flux_HDR::SetExposure(1.0f);
-		Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector4(0.f, 0.f, 0.f, 0.f);
+		Zenith_GraphicsOptions::Get().m_xSkyboxColour = Zenith_Maths::Vector3(0.f, 0.f, 0.f);
 
 		DetermineCurrentGate();
 		m_eState = PINBALL_STATE_GATE_SELECT;
@@ -2436,7 +2437,7 @@ private:
 			Flux_HDR::SetBloomIntensity(0.8f);
 			Flux_HDR::SetBloomThreshold(0.8f);
 			Flux_HDR::SetExposure(1.2f);
-			Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector4(0.02f, 0.02f, 0.06f, 1.0f);
+			Zenith_GraphicsOptions::Get().m_xSkyboxColour = Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f);
 
 			CreatePlayfield();
 			SpawnBall();
@@ -2466,7 +2467,7 @@ private:
 			Flux_HDR::SetBloomIntensity(0.8f);
 			Flux_HDR::SetBloomThreshold(0.8f);
 			Flux_HDR::SetExposure(1.2f);
-			Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector4(0.02f, 0.02f, 0.06f, 1.0f);
+			Zenith_GraphicsOptions::Get().m_xSkyboxColour = Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f);
 
 			CreatePlayfield();
 			SpawnBall();

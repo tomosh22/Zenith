@@ -7,6 +7,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
@@ -14,8 +15,6 @@ static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
 static Flux_DynamicVertexBuffer s_xInstanceBuffer;
-
-DEBUGVAR bool dbg_bEnable = true;
 
 Flux_Quads::Quad Flux_Quads::s_axQuadsToRender[FLUX_MAX_QUADS_PER_FRAME];
 uint32_t Flux_Quads::s_uQuadRenderIndex;
@@ -53,10 +52,6 @@ void Flux_Quads::Initialise()
 
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), s_xInstanceBuffer, false);
 
-#ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Quads" }, dbg_bEnable);
-#endif
-
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads initialised");
 }
 
@@ -73,7 +68,7 @@ void Flux_Quads::UploadInstanceData()
 
 void Flux_Quads::Render(void*)
 {
-	if (!dbg_bEnable)
+	if (!Zenith_GraphicsOptions::Get().m_bQuadsEnabled)
 	{
 		return;
 	}
@@ -84,7 +79,7 @@ void Flux_Quads::Render(void*)
 void Flux_Quads::ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bEnable || s_uQuadRenderIndex == 0)
+	if (!Zenith_GraphicsOptions::Get().m_bQuadsEnabled || s_uQuadRenderIndex == 0)
 	{
 		return;
 	}
@@ -115,7 +110,7 @@ void Flux_Quads::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 void Flux_Quads::UploadQuad(const Quad& xQuad)
 {
-	if (!dbg_bEnable)
+	if (!Zenith_GraphicsOptions::Get().m_bQuadsEnabled)
 	{
 		return;
 	}

@@ -7,11 +7,11 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Zenith_PlatformGraphics_Include.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 // Static member definitions
 u_int Flux_HiZ::s_uMipCount = 0;
-bool Flux_HiZ::s_bEnabled = true;
 bool Flux_HiZ::s_bInitialised = false;
 
 // Graph-owned transient — backing Flux_RenderAttachment is allocated and
@@ -21,9 +21,6 @@ static Flux_RenderGraph* s_pxGraph = nullptr;
 
 // HiZ format.
 static constexpr TextureFormat HIZ_FORMAT = TEXTURE_FORMAT_R32G32_SFLOAT;
-
-// Debug variables
-DEBUGVAR bool dbg_bHiZEnable = true;
 
 // Compute shader and pipeline
 static Flux_Shader g_xComputeShader;
@@ -79,7 +76,6 @@ void Flux_HiZ::Initialise()
 	Flux_ComputePipelineBuilder::BuildFromShader(g_xComputePipeline, g_xComputeShader, g_xComputeRootSig);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Flux", "HiZ", "Enable" }, dbg_bHiZEnable);
 	// Texture debug registrations are deferred — the transient's SRVs don't
 	// exist until the graph allocates its backing image during Compile().
 	// AddTexture would store a pointer into the not-yet-created transient.
@@ -236,5 +232,5 @@ Flux_UnorderedAccessView_Texture& Flux_HiZ::GetMipUAV(u_int uMip)
 
 bool Flux_HiZ::IsEnabled()
 {
-	return dbg_bHiZEnable && s_bInitialised;
+	return Zenith_GraphicsOptions::Get().m_bHiZEnabled && s_bInitialised;
 }

@@ -6,6 +6,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "UI/Zenith_UICanvas.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -40,7 +41,6 @@ static uint32_t s_uBgCharCount = 0;
 static uint32_t s_uFgCharCount = 0;
 static uint32_t s_uTotalCharCount = 0;
 
-DEBUGVAR bool dbg_bEnable = true;
 DEBUGVAR float dbg_fTextSize = 100.f;
 
 void Flux_Text::Initialise()
@@ -84,7 +84,6 @@ void Flux_Text::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Text" }, dbg_bEnable);
 	Zenith_DebugVariables::AddFloat({ "Text", "Size" }, dbg_fTextSize, 0, 1000);
 #endif
 
@@ -220,7 +219,7 @@ uint32_t Flux_Text::UploadChars()
 
 void Flux_Text::Render(void*)
 {
-	if (!dbg_bEnable)
+	if (!Zenith_GraphicsOptions::Get().m_bTextEnabled)
 	{
 		return;
 	}
@@ -231,7 +230,7 @@ void Flux_Text::Render(void*)
 static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bEnable)
+	if (!Zenith_GraphicsOptions::Get().m_bTextEnabled)
 	{
 		return;
 	}

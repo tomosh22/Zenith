@@ -10,6 +10,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Zenith_PlatformGraphics_Include.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 // Shaders and pipelines
@@ -29,11 +30,6 @@ static Flux_RenderGraph* s_pxGraph = nullptr;
 
 // SSAO render target format (half-res single-channel).
 static constexpr TextureFormat SSAO_FORMAT = TEXTURE_FORMAT_R8_UNORM;
-
-bool Flux_SSAO::s_bEnabled = true;
-
-DEBUGVAR bool dbg_bEnable = true;
-DEBUGVAR bool dbg_bBlurEnable = true;
 
 static struct SSAOGenerateConstants
 {
@@ -103,13 +99,11 @@ void Flux_SSAO::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "SSAO" }, dbg_bEnable);
 	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Radius" }, dbg_xGenerateConstants.m_fRadius, 0.01f, 2.f);
 	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Bias" }, dbg_xGenerateConstants.m_fBias, 0.01f, 2.f);
 	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Intensity" }, dbg_xGenerateConstants.m_fIntensity, 0.01f, 2.f);
 	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Kernel Size" }, dbg_xGenerateConstants.m_fKernelSize, 8.f, 64.f);
 
-	Zenith_DebugVariables::AddBoolean({ "Render", "SSAO", "Blur", "Enable" }, dbg_bBlurEnable);
 	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Blur", "Spatial Sigma" }, dbg_xBlurConstants.m_fSpatialSigma, 0.5f, 4.f);
 	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Blur", "Depth Sigma" }, dbg_xBlurConstants.m_fDepthSigma, 0.005f, 0.1f);
 	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Blur", "Normal Sigma" }, dbg_xBlurConstants.m_fNormalSigma, 0.1f, 1.f);
@@ -134,7 +128,7 @@ void Flux_SSAO::Shutdown()
 
 static void ExecuteSSAOGenerate(Flux_CommandList* pxCommandList, void*)
 {
-	if (!dbg_bEnable || !Flux_SSAO::s_bEnabled)
+	if (!Zenith_GraphicsOptions::Get().m_bSSAOEnabled)
 		return;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xGeneratePipeline);
@@ -152,7 +146,8 @@ static void ExecuteSSAOGenerate(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteSSAOBlur(Flux_CommandList* pxCommandList, void*)
 {
-	if (!dbg_bEnable || !Flux_SSAO::s_bEnabled || !dbg_bBlurEnable)
+	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+	if (!xOpts.m_bSSAOEnabled || !xOpts.m_bSSAOBlurEnabled)
 		return;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xBlurPipeline);
@@ -170,7 +165,8 @@ static void ExecuteSSAOBlur(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteSSAOUpsample(Flux_CommandList* pxCommandList, void*)
 {
-	if (!dbg_bEnable || !Flux_SSAO::s_bEnabled)
+	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+	if (!xOpts.m_bSSAOEnabled)
 		return;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xUpsamplePipeline);
@@ -178,7 +174,7 @@ static void ExecuteSSAOUpsample(Flux_CommandList* pxCommandList, void*)
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	if (dbg_bBlurEnable)
+	if (xOpts.m_bSSAOBlurEnabled)
 		xBinder.BindSRV(s_xUpsampleShader, "g_xOcclusionTex", &GetBlurred().SRV());
 	else
 		xBinder.BindSRV(s_xUpsampleShader, "g_xOcclusionTex", &GetRawOcclusion().SRV());

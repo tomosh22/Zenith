@@ -8,6 +8,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Collections/Zenith_Vector.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 #include <cmath>
@@ -42,7 +43,6 @@ static Flux_IndexBuffer s_xLineIndexBuffer;
 static u_int s_uLineIndexCount = 0;
 
 // Debug variables
-DEBUGVAR bool dbg_bEnablePrimitives = true;
 
 // ========== INSTANCE DATA STRUCTURES ==========
 
@@ -543,7 +543,6 @@ void Flux_Primitives::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Primitives" }, dbg_bEnablePrimitives);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives initialised");
@@ -907,7 +906,7 @@ static void RenderTrianglePrimitives(Flux_CommandList* pxCmdList, Flux_ShaderBin
 
 void Flux_Primitives::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
-	if (!dbg_bEnablePrimitives)
+	if (!Zenith_GraphicsOptions::Get().m_bPrimitivesEnabled)
 	{
 		return;
 	}

@@ -9,11 +9,6 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Fog/Flux_Fog.h"
-#include "Flux/SSAO/Flux_SSAO.h"
-#include "Flux/SSR/Flux_SSR.h"
-#include "Flux/SSGI/Flux_SSGI.h"
-#include "Flux/Skybox/Flux_Skybox.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorAutomation.h"
@@ -42,13 +37,11 @@ extern void Project_RegisterEditorAutomationSteps();
 #endif
 extern void Project_LoadInitialScene();
 
-static Zenith_GraphicsOptions s_xGraphicsOptions;
-
 void Zenith_Core::Zenith_Init()
 {
 	// Populate graphics options from the game project FIRST
-	// Must happen before any Flux initialisation reads from s_xGraphicsOptions
-	Project_SetGraphicsOptions(s_xGraphicsOptions);
+	// Must happen before any Flux initialisation reads from Zenith_GraphicsOptions::Get()
+	Project_SetGraphicsOptions(Zenith_GraphicsOptions::Get());
 
 	// CRITICAL: Memory tracking must be initialized FIRST to capture all allocations
 	Zenith_MemoryManagement::Initialise();
@@ -109,15 +102,8 @@ void Zenith_Core::Zenith_Init()
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::LateInitialise...");
 	Flux::LateInitialise();
 
-	// Apply project graphics options
-	Flux_Fog::s_bEnabled = s_xGraphicsOptions.m_bFogEnabled;
-	Flux_SSR::s_bEnabled = s_xGraphicsOptions.m_bSSREnabled;
-	Flux_SSAO::s_bEnabled = s_xGraphicsOptions.m_bSSAOEnabled;
-	Flux_SSGI::s_bEnabled = s_xGraphicsOptions.m_bSSGIEnabled;
-	Flux_Skybox::s_bEnabled = s_xGraphicsOptions.m_bSkyboxEnabled;
-	Flux_Skybox::s_xOverrideColour = s_xGraphicsOptions.m_xSkyboxColour;
-
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
+	Zenith_GraphicsOptions::RegisterDebugVariables();
 	Zenith_Editor::Initialise();
 	Zenith_DebugVariables::AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
 	Zenith_DebugVariables::AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
@@ -203,8 +189,8 @@ void Zenith_Core::Zenith_Main()
 {
 	// Graphics options are populated inside Zenith_Init() for all platforms
 	// but we need window dimensions before that, so call it here too (idempotent)
-	Project_SetGraphicsOptions(s_xGraphicsOptions);
-	Zenith_Window::Inititalise("Zenith", s_xGraphicsOptions.m_uWindowWidth, s_xGraphicsOptions.m_uWindowHeight);
+	Project_SetGraphicsOptions(Zenith_GraphicsOptions::Get());
+	Zenith_Window::Inititalise("Zenith", Zenith_GraphicsOptions::Get().m_uWindowWidth, Zenith_GraphicsOptions::Get().m_uWindowHeight);
 	Zenith_Init();
 
 	while (!Zenith_Window::GetInstance()->ShouldClose())

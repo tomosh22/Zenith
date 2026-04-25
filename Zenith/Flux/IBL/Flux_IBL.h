@@ -86,11 +86,8 @@ public:
 	static const Flux_ShaderResourceView& GetIrradianceMapSRV();
 	static const Flux_ShaderResourceView& GetPrefilteredMapSRV();
 
-	// Configuration
-	static void SetEnabled(bool bEnabled);
+	// Configuration (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
 	static void SetIntensity(float fIntensity);
-	static void SetDiffuseEnabled(bool bEnabled);
-	static void SetSpecularEnabled(bool bEnabled);
 
 	// Getters
 	static bool IsEnabled();
@@ -164,11 +161,8 @@ private:
 	static Flux_Shader s_xIrradianceConvolveShader;
 	static Flux_Shader s_xPrefilterShader;
 
-	// Configuration state
-	static bool s_bEnabled;
+	// Configuration state (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
 	static float s_fIntensity;
-	static bool s_bDiffuseEnabled;
-	static bool s_bSpecularEnabled;
 
 	// Dirty flags
 	static bool s_bFirstGeneration;  // True until first full generation completes

@@ -68,11 +68,9 @@ public:
 
 	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	// Configuration
-	static void SetEnabled(bool bEnabled);
+	// Configuration (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
 	static void SetDensityScale(float fScale);
 	static void SetMaxDistance(float fDistance);
-	static void SetWindEnabled(bool bEnabled);
 	static void SetWindStrength(float fStrength);
 	static void SetWindDirection(const Zenith_Maths::Vector2& xDirection);
 
@@ -118,11 +116,9 @@ private:
 	static u_int s_uVisibleBladeCount;
 	static u_int s_uActiveChunkCount;
 
-	// Configuration state
-	static bool s_bEnabled;
+	// Configuration state (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
 	static float s_fDensityScale;
 	static float s_fMaxDistance;
-	static bool s_bWindEnabled;
 	static float s_fWindStrength;
 	static Zenith_Maths::Vector2 s_xWindDirection;
 

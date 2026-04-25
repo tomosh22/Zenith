@@ -12,10 +12,9 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-
-bool Flux_Fog::s_bEnabled = true;
 
 // Render graph pass indices for dynamic enable/disable
 static Flux_PassHandle s_xSimpleFogPass;
@@ -29,8 +28,6 @@ static u_int s_uLastFogTechnique = UINT32_MAX;
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
-DEBUGVAR bool dbg_bEnable = true;
-DEBUGVAR u_int dbg_uVolFogTechnique = 0;  // 0 = Simple, 1 = Froxel, 2 = Raymarch, 3 = God Rays
 u_int dbg_uVolFogDebugMode = 0;  // Debug visualization mode (non-static for external linkage)
 
 static struct Flux_FogConstants
@@ -72,8 +69,6 @@ void Flux_Fog::Initialise()
 	Flux_FroxelFog::Initialise();
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Fog" }, dbg_bEnable);
-	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Technique" }, dbg_uVolFogTechnique, 0, 3);
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Debug Mode" }, dbg_uVolFogDebugMode, 0, 23);
 	Zenith_DebugVariables::AddVector3({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour_Falloff, 0., 1.);
 	Zenith_DebugVariables::AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.02);
@@ -98,17 +93,18 @@ void Flux_Fog::Reset()
 
 void Flux_Fog::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 {
-	if (dbg_uVolFogTechnique == s_uLastFogTechnique)
+	const u_int uTechnique = Zenith_GraphicsOptions::Get().m_uVolFogTechnique;
+	if (uTechnique == s_uLastFogTechnique)
 		return;
 
-	s_uLastFogTechnique = dbg_uVolFogTechnique;
+	s_uLastFogTechnique = uTechnique;
 
-	xGraph.SetEnabled(s_xSimpleFogPass, dbg_uVolFogTechnique == 0);
-	xGraph.SetEnabled(s_xFroxelInjectPass, dbg_uVolFogTechnique == 1);
-	xGraph.SetEnabled(s_xFroxelLightPass, dbg_uVolFogTechnique == 1);
-	xGraph.SetEnabled(s_xFroxelApplyPass, dbg_uVolFogTechnique == 1);
-	xGraph.SetEnabled(s_xRaymarchPass, dbg_uVolFogTechnique == 2);
-	xGraph.SetEnabled(s_xGodRaysPass, dbg_uVolFogTechnique == 3);
+	xGraph.SetEnabled(s_xSimpleFogPass, uTechnique == 0);
+	xGraph.SetEnabled(s_xFroxelInjectPass, uTechnique == 1);
+	xGraph.SetEnabled(s_xFroxelLightPass, uTechnique == 1);
+	xGraph.SetEnabled(s_xFroxelApplyPass, uTechnique == 1);
+	xGraph.SetEnabled(s_xRaymarchPass, uTechnique == 2);
+	xGraph.SetEnabled(s_xGodRaysPass, uTechnique == 3);
 
 	// Force a full recompile. SetPassEnabled's cheap m_bEnabledMaskDirty path
 	// only re-resolves per-target-setup clear ownership; it does NOT rebuild
@@ -130,7 +126,7 @@ void Flux_Fog::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 void Flux_Fog::ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bEnable || !s_bEnabled)
+	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
 	{
 		return;
 	}
@@ -151,7 +147,7 @@ void Flux_Fog::ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData
 void Flux_Fog::ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bEnable || !s_bEnabled)
+	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
 	{
 		return;
 	}
@@ -161,7 +157,7 @@ void Flux_Fog::ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserD
 void Flux_Fog::ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bEnable || !s_bEnabled)
+	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
 	{
 		return;
 	}
@@ -171,7 +167,7 @@ void Flux_Fog::ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserDa
 void Flux_Fog::ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bEnable || !s_bEnabled)
+	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
 	{
 		return;
 	}
@@ -181,7 +177,7 @@ void Flux_Fog::ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserDa
 void Flux_Fog::ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bEnable || !s_bEnabled)
+	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
 	{
 		return;
 	}
@@ -191,7 +187,7 @@ void Flux_Fog::ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
 void Flux_Fog::ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bEnable || !s_bEnabled)
+	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
 	{
 		return;
 	}

@@ -52,6 +52,7 @@
 
 #include "Collections/Zenith_Vector.h"
 #include "Flux/Skybox/Flux_Skybox.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -2664,7 +2665,7 @@ private:
 		TryShowTutorial();
 
 		// Set background color based on difficulty tier
-		Flux_Skybox::s_xOverrideColour = GetBackgroundColorForLevel(m_uCurrentLevelNumber);
+		Zenith_GraphicsOptions::Get().m_xSkyboxColour = GetBackgroundColorForLevel(m_uCurrentLevelNumber);
 	}
 
 	void ResetLevel()

@@ -16,6 +16,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Flux/Flux_MaterialBinding.h"
@@ -26,8 +27,6 @@ static Flux_Pipeline s_xGBufferPipeline;
 
 static Flux_Shader s_xShadowShader;
 static Flux_Pipeline s_xShadowPipeline;
-
-DEBUGVAR bool dbg_bEnable = true;
 
 void Flux_AnimatedMeshes::Initialise()
 {
@@ -86,10 +85,6 @@ void Flux_AnimatedMeshes::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
 	}
 
-#ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Animated Meshes" }, dbg_bEnable);
-#endif
-
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "Flux_AnimatedMeshes initialised");
 }
 
@@ -104,7 +99,7 @@ void Flux_AnimatedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 void Flux_AnimatedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
-	if (!dbg_bEnable)
+	if (!Zenith_GraphicsOptions::Get().m_bAnimatedMeshesEnabled)
 	{
 		return;
 	}

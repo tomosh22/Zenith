@@ -8,6 +8,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Zenith_PlatformGraphics_Include.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 // Maximum particles across all GPU emitters
@@ -76,7 +77,6 @@ struct ParticleComputeConstants
 	Zenith_Maths::Vector4 m_xGravity;  // xyz=gravity, w=drag
 };
 
-DEBUGVAR bool dbg_bEnableGPUParticles = true;
 
 void Flux_ParticleGPU::Initialise()
 {
@@ -120,10 +120,6 @@ void Flux_ParticleGPU::Initialise()
 	// Allocate CPU staging buffer for spawning
 	s_pxStagingBuffer = new Flux_Particle[s_uMaxGPUParticles];
 	s_uStagingBufferSize = s_uMaxGPUParticles;
-
-#ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "GPU Particles" }, dbg_bEnableGPUParticles);
-#endif
 
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_ParticleGPU initialised (max %u particles)", s_uMaxGPUParticles);
 }
@@ -357,7 +353,7 @@ void Flux_ParticleGPU::ProcessPendingSpawns()
 
 void Flux_ParticleGPU::PreExecuteCompute()
 {
-	if (!dbg_bEnableGPUParticles || s_axEmitters.GetSize() == 0)
+	if (!Zenith_GraphicsOptions::Get().m_bGPUParticlesEnabled || s_axEmitters.GetSize() == 0)
 		return;
 
 	// CPU-side work that must run before parallel recording
@@ -374,7 +370,7 @@ void Flux_ParticleGPU::PreExecuteCompute()
 
 void Flux_ParticleGPU::DispatchCompute(Flux_CommandList* pxCmdList)
 {
-	if (!dbg_bEnableGPUParticles || s_axEmitters.GetSize() == 0)
+	if (!Zenith_GraphicsOptions::Get().m_bGPUParticlesEnabled || s_axEmitters.GetSize() == 0)
 		return;
 
 	float fDt = Zenith_Core::GetDt();

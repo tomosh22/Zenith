@@ -29,6 +29,5 @@ public:
 	static u_int s_uMipCount;
 
 private:
-	static bool s_bEnabled;
 	static bool s_bInitialised;
 };

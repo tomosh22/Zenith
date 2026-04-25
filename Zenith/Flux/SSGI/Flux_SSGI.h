@@ -39,9 +39,6 @@ public:
 	static bool IsEnabled();
 	static bool IsInitialised();
 
-	// Configuration
-	static bool s_bEnabled;
-
 	// Attachment accessors
 	static Flux_RenderAttachment& GetRawResultAttachment();
 	static Flux_RenderAttachment& GetResolvedAttachment();

@@ -7,6 +7,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/HDR/Flux_HDR.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
@@ -27,7 +28,6 @@ struct SphereData
 	Sphere m_axSpheres[s_uMaxSpheres];
 } s_axSphereData;
 
-DEBUGVAR bool dbg_bEnable = true;
 
 void Flux_SDFs::Initialise()
 {
@@ -52,7 +52,6 @@ void Flux_SDFs::Initialise()
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), s_xSpheresBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "SDFs" }, dbg_bEnable);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs initialised");
@@ -84,7 +83,7 @@ void UploadSpheres()
 
 void Flux_SDFs::Render(void*)
 {
-	if (!dbg_bEnable)
+	if (!Zenith_GraphicsOptions::Get().m_bSDFsEnabled)
 	{
 		return;
 	}
@@ -95,7 +94,7 @@ void Flux_SDFs::Render(void*)
 void Flux_SDFs::ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bEnable)
+	if (!Zenith_GraphicsOptions::Get().m_bSDFsEnabled)
 	{
 		return;
 	}

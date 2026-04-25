@@ -10,6 +10,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 // Graph-owned transient handles — backing Flux_RenderAttachments are allocated
@@ -24,11 +25,9 @@ static Flux_RenderGraph* s_pxGraph = nullptr;
 static constexpr TextureFormat SSGI_FORMAT = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 
 // Static member definitions
-bool Flux_SSGI::s_bEnabled = true;
 bool Flux_SSGI::s_bInitialised = false;
 
 // Debug variables
-DEBUGVAR bool dbg_bSSGIEnable = false;
 DEBUGVAR u_int dbg_uDebugMode = SSGI_DEBUG_NONE;
 
 static struct SSGIConstants
@@ -48,6 +47,8 @@ static struct SSGIConstants
 } dbg_xSSGIConstants;
 
 // Denoise constants - joint bilateral filter parameters
+// m_bEnabled is populated from Zenith_GraphicsOptions before each shader bind so
+// the GPU sees the same value the CPU gating reads.
 static struct SSGIDenoiseConstants
 {
 	float m_fSpatialSigma = 2.0f;       // Spatial Gaussian sigma (pixels)
@@ -55,7 +56,7 @@ static struct SSGIDenoiseConstants
 	float m_fNormalSigma = 0.5f;        // Normal threshold (1 - dot product range)
 	float m_fAlbedoSigma = 0.1f;        // Albedo threshold (color distance)
 	u_int m_uKernelRadius = 4;          // Filter radius in pixels (4 = 9x9 kernel)
-	u_int m_bEnabled = 1;               // Enable/disable denoise pass
+	u_int m_bEnabled = 1;               // Mirrors GraphicsOptions::m_bSSGIDenoiseEnabled
 	float _pad0;
 	float _pad1;
 } dbg_xSSGIDenoiseConstants;
@@ -123,7 +124,6 @@ void Flux_SSGI::Initialise()
 		"SSGI/Flux_SSGI_Denoise.frag", SSGI_FORMAT);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Flux", "SSGI", "Enable" }, dbg_bSSGIEnable);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "DebugMode" }, dbg_uDebugMode, 0, SSGI_DEBUG_COUNT - 1);
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Intensity" }, dbg_xSSGIConstants.m_fIntensity, 0.0f, 2.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "MaxDistance" }, dbg_xSSGIConstants.m_fMaxDistance, 1.0f, 100.0f);
@@ -138,7 +138,6 @@ void Flux_SSGI::Initialise()
 	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSGI", "Textures", "Denoised" }, &DebugGetDenoisedSRV);
 
 	// Denoise debug variables
-	Zenith_DebugVariables::AddBoolean({ "Flux", "SSGI", "Denoise", "Enable" }, reinterpret_cast<bool&>(dbg_xSSGIDenoiseConstants.m_bEnabled));
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "Denoise", "KernelRadius" }, dbg_xSSGIDenoiseConstants.m_uKernelRadius, 1, 8);
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Denoise", "SpatialSigma" }, dbg_xSSGIDenoiseConstants.m_fSpatialSigma, 0.5f, 4.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Denoise", "DepthSigma" }, dbg_xSSGIDenoiseConstants.m_fDepthSigma, 0.01f, 0.1f);
@@ -176,7 +175,7 @@ static void UpdateSSGIConstants()
 
 static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 {
-	if (!dbg_bSSGIEnable || !Flux_SSGI::s_bEnabled || !Flux_SSGI::IsInitialised() || !Flux_HiZ::IsEnabled())
+	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
 		return;
 
 	UpdateSSGIConstants();
@@ -203,7 +202,7 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 {
-	if (!dbg_bSSGIEnable || !Flux_SSGI::s_bEnabled || !Flux_SSGI::IsInitialised() || !Flux_HiZ::IsEnabled())
+	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
 		return;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xUpsamplePipeline);
@@ -221,7 +220,7 @@ static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteSSGIDenoise(Flux_CommandList* pxCommandList, void*)
 {
-	if (!dbg_bSSGIEnable || !Flux_SSGI::s_bEnabled || !Flux_SSGI::IsInitialised() || !Flux_HiZ::IsEnabled())
+	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
 		return;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xDenoisePipeline);
@@ -231,6 +230,7 @@ static void ExecuteSSGIDenoise(Flux_CommandList* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
+	dbg_xSSGIDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
 	xBinder.BindDrawConstants(s_xDenoiseShader, "PushConstants", &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
 	xBinder.BindSRV(s_xDenoiseShader, "g_xSSGITex", &Flux_SSGI::GetResolvedAttachment().SRV());
@@ -242,10 +242,10 @@ static void ExecuteSSGIDenoise(Flux_CommandList* pxCommandList, void*)
 }
 
 // Handle for the denoise pass so ApplyDenoiseSelectionToGraph can toggle its
-// enable bit when the denoise debug variable changes.
+// enable bit when GraphicsOptions::m_bSSGIDenoiseEnabled changes.
 static Flux_PassHandle s_xDenoisePass;
 // Last value seen by ApplyDenoiseSelectionToGraph — change triggers a graph rebuild.
-static u_int s_uLastDenoiseEnabled = 1;
+static bool s_bLastDenoiseEnabled = true;
 // Handle committed at SetupRenderGraph exit. GetSSGIHandle asserts the live
 // toggle still resolves to this handle — any runtime toggle without a matching
 // Flux::RequestGraphRebuild() trips at the point of the mistake.
@@ -301,18 +301,19 @@ void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.ReadsTransient (s_xResolvedHandle,                                         RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(s_xDenoisedHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
 
-	xGraph.SetEnabled(s_xDenoisePass, dbg_xSSGIDenoiseConstants.m_bEnabled != 0);
-	s_uLastDenoiseEnabled = dbg_xSSGIDenoiseConstants.m_bEnabled;
+	const bool bDenoise = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled;
+	xGraph.SetEnabled(s_xDenoisePass, bDenoise);
+	s_bLastDenoiseEnabled = bDenoise;
 
 	// Commit the handle the deferred pass will now read. GetSSGIHandle asserts
 	// against this value — any runtime toggle without a matching
 	// Flux::RequestGraphRebuild() trips at the point of the mistake.
-	s_xCommittedSSGIHandle = dbg_xSSGIDenoiseConstants.m_bEnabled ? s_xDenoisedHandle : s_xResolvedHandle;
+	s_xCommittedSSGIHandle = bDenoise ? s_xDenoisedHandle : s_xResolvedHandle;
 }
 
 void Flux_SSGI::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 {
-	if (dbg_xSSGIDenoiseConstants.m_bEnabled == s_uLastDenoiseEnabled)
+	if (Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled == s_bLastDenoiseEnabled)
 		return;
 
 	// Full graph rebuild — see Flux_SSR::ApplyBlurSelectionToGraph for the same
@@ -323,7 +324,7 @@ void Flux_SSGI::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 
 Flux_TransientHandle Flux_SSGI::GetSSGIHandle()
 {
-	const Flux_TransientHandle xLive = dbg_xSSGIDenoiseConstants.m_bEnabled ? s_xDenoisedHandle : s_xResolvedHandle;
+	const Flux_TransientHandle xLive = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? s_xDenoisedHandle : s_xResolvedHandle;
 	Zenith_Assert(!s_xCommittedSSGIHandle.IsValid() || xLive == s_xCommittedSSGIHandle,
 		"Flux_SSGI::GetSSGIHandle: live handle (idx=%u gen=%u) disagrees with the handle committed at SetupRenderGraph exit (idx=%u gen=%u). "
 		"Denoise toggle changed without Flux::RequestGraphRebuild() being called in ApplyDenoiseSelectionToGraph — "
@@ -337,14 +338,14 @@ Flux_ShaderResourceView& Flux_SSGI::GetSSGISRV()
 {
 	// Must match GetSSGIHandle so bind-time-declared-access assertions see the
 	// same resource the graph has a Read declared on.
-	if (dbg_xSSGIDenoiseConstants.m_bEnabled)
+	if (Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled)
 		return GetDenoisedAttachment().SRV();
 	return GetResolvedAttachment().SRV();
 }
 
 bool Flux_SSGI::IsEnabled()
 {
-	return dbg_bSSGIEnable && s_bEnabled && s_bInitialised;
+	return Zenith_GraphicsOptions::Get().m_bSSGIEnabled && s_bInitialised;
 }
 
 bool Flux_SSGI::IsInitialised()

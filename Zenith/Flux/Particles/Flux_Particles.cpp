@@ -17,6 +17,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
@@ -26,8 +27,6 @@ static Flux_Pipeline s_xPipelineAdditive;
 
 static Flux_DynamicVertexBuffer s_xInstanceBufferAlpha;
 static Flux_DynamicVertexBuffer s_xInstanceBufferAdditive;
-
-DEBUGVAR bool dbg_bEnable = true;
 
 // Maximum particles across all emitters
 static constexpr uint32_t s_uMaxParticles = 4096;
@@ -88,10 +87,6 @@ void Flux_Particles::Initialise()
 		Zenith_Log(LOG_CATEGORY_PARTICLES, "Warning: Failed to load particle texture, using white texture");
 		s_pxParticleTexture = Flux_Graphics::s_pxWhiteTexture;
 	}
-
-#ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Particles" }, dbg_bEnable);
-#endif
 
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles initialised (max %u particles)", s_uMaxParticles);
 }
@@ -178,7 +173,7 @@ static void UploadInstanceData()
 
 void Flux_Particles::Render(void*)
 {
-	if (!dbg_bEnable)
+	if (!Zenith_GraphicsOptions::Get().m_bCPUParticlesEnabled)
 	{
 		return;
 	}
@@ -194,7 +189,7 @@ void Flux_Particles::Render(void*)
 void Flux_Particles::ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bEnable)
+	if (!Zenith_GraphicsOptions::Get().m_bCPUParticlesEnabled)
 	{
 		return;
 	}

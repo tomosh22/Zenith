@@ -2,6 +2,7 @@
 
 #include "Flux/Shadows/Flux_Shadows.h"
 
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Graphics.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -23,7 +24,6 @@ static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 
 static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
 
-DEBUGVAR bool dbg_bEnabled = true;
 DEBUGVAR float dbg_fZMultiplier = 8.f;
 
 static Flux_RenderAttachment& GetCSM(u_int uIndex)
@@ -93,7 +93,6 @@ void Flux_Shadows::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({"Render", "Enable", "Shadows"}, dbg_bEnabled);
 	Zenith_DebugVariables::AddFloat({"Render", "Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
 #endif
 }
@@ -126,7 +125,7 @@ static void PreExecuteShadowMatrices(void*)
 	// CPU-side shadow matrix update runs once per frame on the main thread
 	// before parallel cascade recording begins. Runs as a Prepare callback on
 	// cascade 0 so the cascade Execute callbacks can then record in parallel.
-	if (!dbg_bEnabled)
+	if (!Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
 	{
 		return;
 	}
@@ -135,7 +134,7 @@ static void PreExecuteShadowMatrices(void*)
 
 static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserData)
 {
-	if (!dbg_bEnabled)
+	if (!Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
 	{
 		return;
 	}
@@ -214,7 +213,7 @@ Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
 
 Flux_ShaderResourceView& Flux_Shadows::GetCSMSRV(const uint32_t u)
 {
-	return dbg_bEnabled ? GetCSM(u).SRV() : Flux_Graphics::s_pxWhiteTexture->m_xSRV;
+	return Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? GetCSM(u).SRV() : Flux_Graphics::s_pxWhiteTexture->m_xSRV;
 }
 
 Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)

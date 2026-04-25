@@ -10,6 +10,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Core/Zenith_GraphicsOptions.h"
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -31,18 +32,13 @@ Flux_Shader Flux_Skybox::s_xCubemapShader;
 Flux_Shader Flux_Skybox::s_xAtmosphereShader;
 Flux_Shader Flux_Skybox::s_xAerialPerspectiveShader;
 
-bool Flux_Skybox::s_bAtmosphereEnabled = false;
 float Flux_Skybox::s_fSunIntensity = AtmosphereConfig::fSUN_INTENSITY;
 float Flux_Skybox::s_fRayleighScale = 1.0f;
 float Flux_Skybox::s_fMieScale = 1.0f;
 float Flux_Skybox::s_fMieG = AtmosphereConfig::fMIE_G;
-bool Flux_Skybox::s_bAerialPerspectiveEnabled = true;  // Must match dbg_bAerialEnabled default
 float Flux_Skybox::s_fAerialPerspectiveStrength = 1.0f;
 
 Flux_DynamicConstantBuffer Flux_Skybox::s_xAtmosphereConstantsBuffer;
-
-bool Flux_Skybox::s_bEnabled = true;
-Zenith_Maths::Vector3 Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector3(0.f);
 
 Flux_Pipeline Flux_Skybox::s_xSolidColourPipeline;
 Flux_Shader Flux_Skybox::s_xSolidColourShader;
@@ -82,13 +78,11 @@ struct AtmosphereConstants
 static AtmosphereConstants s_xAtmosphereConstants;
 
 // Debug variables
-bool dbg_bAtmosphereEnable = false;
 u_int dbg_uSkyboxDebugMode = SKYBOX_DEBUG_NONE;
 float dbg_fSunIntensity = AtmosphereConfig::fSUN_INTENSITY;
 float dbg_fRayleighScale = 1.0f;
 float dbg_fMieScale = 1.0f;
 float dbg_fMieG = AtmosphereConfig::fMIE_G;
-bool dbg_bAerialEnabled = true;
 float dbg_fAerialStrength = 1.0f;
 u_int dbg_uSkySamples = AtmosphereConfig::uDEFAULT_SKY_SAMPLES;
 u_int dbg_uLightSamples = AtmosphereConfig::uDEFAULT_LIGHT_SAMPLES;
@@ -222,10 +216,11 @@ void Flux_Skybox::DestroyRenderTargets()
 
 static void PreExecuteSkybox(void*)
 {
+	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
 	// Upload buffer data sequentially before parallel recording
-	if (!Flux_Skybox::s_bEnabled)
+	if (!xOpts.m_bSkyboxEnabled)
 	{
-		s_xSolidColourConstants.m_xColour = Zenith_Maths::Vector4(Flux_Skybox::s_xOverrideColour, 1.f);
+		s_xSolidColourConstants.m_xColour = Zenith_Maths::Vector4(xOpts.m_xSkyboxColour, 1.f);
 		Flux_MemoryManager::UploadBufferData(Flux_Skybox::s_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
 	}
 	else if (Flux_Skybox::IsAtmosphereEnabled())
@@ -262,7 +257,7 @@ static void PreExecuteSkybox(void*)
 
 static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_Skybox::s_bEnabled)
+	if (!Zenith_GraphicsOptions::Get().m_bSkyboxEnabled)
 	{
 		// Solid colour override (buffer uploaded in PreExecuteSkybox)
 
@@ -355,22 +350,20 @@ void Flux_Skybox::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)
 		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 }
 
-// Setters
-void Flux_Skybox::SetAtmosphereEnabled(bool bEnabled) { s_bAtmosphereEnabled = bEnabled; }
+// Setters (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
 void Flux_Skybox::SetSunIntensity(float fIntensity) { s_fSunIntensity = fIntensity; }
 void Flux_Skybox::SetRayleighScale(float fScale) { s_fRayleighScale = fScale; }
 void Flux_Skybox::SetMieScale(float fScale) { s_fMieScale = fScale; }
 void Flux_Skybox::SetMieG(float fG) { s_fMieG = fG; }
-void Flux_Skybox::SetAerialPerspectiveEnabled(bool bEnabled) { s_bAerialPerspectiveEnabled = bEnabled; }
 void Flux_Skybox::SetAerialPerspectiveStrength(float fStrength) { s_fAerialPerspectiveStrength = fStrength; }
 
 // Getters
-bool Flux_Skybox::IsAtmosphereEnabled() { return s_bAtmosphereEnabled; }
+bool Flux_Skybox::IsAtmosphereEnabled() { return Zenith_GraphicsOptions::Get().m_bSkyboxAtmosphereEnabled; }
 float Flux_Skybox::GetSunIntensity() { return s_fSunIntensity; }
 float Flux_Skybox::GetRayleighScale() { return s_fRayleighScale; }
 float Flux_Skybox::GetMieScale() { return s_fMieScale; }
 float Flux_Skybox::GetMieG() { return s_fMieG; }
-bool Flux_Skybox::IsAerialPerspectiveEnabled() { return s_bAerialPerspectiveEnabled; }
+bool Flux_Skybox::IsAerialPerspectiveEnabled() { return Zenith_GraphicsOptions::Get().m_bSkyboxAerialPerspectiveEnabled; }
 float Flux_Skybox::GetAerialPerspectiveStrength() { return s_fAerialPerspectiveStrength; }
 
 Flux_ShaderResourceView& Flux_Skybox::GetTransmittanceLUTSRV()
@@ -381,13 +374,11 @@ Flux_ShaderResourceView& Flux_Skybox::GetTransmittanceLUTSRV()
 #ifdef ZENITH_DEBUG_VARIABLES
 void Flux_Skybox::RegisterDebugVariables()
 {
-	Zenith_DebugVariables::AddBoolean({ "Flux", "Skybox", "Atmosphere Enable" }, dbg_bAtmosphereEnable);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "Skybox", "DebugMode" }, dbg_uSkyboxDebugMode, 0, SKYBOX_DEBUG_COUNT - 1);
 	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "SunIntensity" }, dbg_fSunIntensity, 1.0f, 100.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "RayleighScale" }, dbg_fRayleighScale, 0.0f, 5.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "MieScale" }, dbg_fMieScale, 0.0f, 5.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "MieG" }, dbg_fMieG, 0.0f, 0.99f);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "Skybox", "AerialPerspective" }, dbg_bAerialEnabled);
 	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "AerialStrength" }, dbg_fAerialStrength, 0.0f, 5.0f);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "Skybox", "SkySamples" }, dbg_uSkySamples, 4, 64);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "Skybox", "LightSamples" }, dbg_uLightSamples, 2, 32);

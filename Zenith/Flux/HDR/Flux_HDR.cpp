@@ -10,6 +10,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Zenith_PlatformGraphics_Include.h"
 #include "Core/Zenith_Core.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "UI/Zenith_UICanvas.h"
 
 #ifdef ZENITH_TOOLS
@@ -49,8 +50,6 @@ float Flux_HDR::s_fExposure = 1.0f;
 float Flux_HDR::s_fBloomIntensity = 0.5f;
 float Flux_HDR::s_fBloomThreshold = 1.0f;
 ToneMappingOperator Flux_HDR::s_eToneMappingOperator = TONEMAPPING_ACES;
-bool Flux_HDR::s_bBloomEnabled = true;
-bool Flux_HDR::s_bAutoExposure = true;
 
 float Flux_HDR::s_fCurrentExposure = 1.0f;
 float Flux_HDR::s_fAverageLuminance = 0.18f;
@@ -77,8 +76,6 @@ Flux_RootSig Flux_HDR::s_xAdaptationRootSig;
 
 DEBUGVAR u_int dbg_uHDRDebugMode = HDR_DEBUG_NONE;
 DEBUGVAR float dbg_fHDRExposure = 1.0f;
-DEBUGVAR bool dbg_bHDRAutoExposure = true;   // Must match s_bAutoExposure default
-DEBUGVAR bool dbg_bHDRBloomEnabled = true;   // Must match s_bBloomEnabled default
 DEBUGVAR float dbg_fHDRBloomIntensity = 0.5f;
 DEBUGVAR float dbg_fHDRBloomThreshold = 1.0f;
 DEBUGVAR u_int dbg_uHDRToneMappingOperator = TONEMAPPING_ACES;
@@ -139,11 +136,9 @@ struct AdaptationConstants
 void Flux_HDR::SyncDebugVariables()
 {
 	s_fExposure = dbg_fHDRExposure;
-	s_bBloomEnabled = dbg_bHDRBloomEnabled;
 	s_fBloomIntensity = dbg_fHDRBloomIntensity;
 	s_fBloomThreshold = dbg_fHDRBloomThreshold;
 	s_eToneMappingOperator = static_cast<ToneMappingOperator>(dbg_uHDRToneMappingOperator);
-	s_bAutoExposure = dbg_bHDRAutoExposure;
 	s_fAdaptationSpeed = dbg_fHDRAdaptationSpeed;
 	s_fTargetLuminance = dbg_fHDRTargetLuminance;
 	s_fMinExposure = dbg_fHDRMinExposure;
@@ -298,8 +293,9 @@ void Flux_HDR::PreExecuteLuminanceHistogram(void* pUserData)
 	// pass that reads them. This replaces the old RENDER_ORDER_MEMORY_UPDATE
 	// invariant that the static_assert in EndFrame used to enforce.
 	SyncDebugVariables();
-	bool bAutoExposureJustEnabled = s_bAutoExposure && !s_bAutoExposureWasEnabled;
-	s_bAutoExposureWasEnabled = s_bAutoExposure;
+	const bool bAutoExposure = Zenith_GraphicsOptions::Get().m_bHDRAutoExposureEnabled;
+	bool bAutoExposureJustEnabled = bAutoExposure && !s_bAutoExposureWasEnabled;
+	s_bAutoExposureWasEnabled = bAutoExposure;
 	if (bAutoExposureJustEnabled && s_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
 		float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
@@ -310,7 +306,7 @@ void Flux_HDR::PreExecuteLuminanceHistogram(void* pUserData)
 	}
 
 	// Clear histogram buffer before compute (only when auto-exposure or histogram visualization is active)
-	if ((s_bAutoExposure || dbg_bHDRShowHistogram) && s_xHistogramBuffer.GetBuffer().m_xVRAMHandle.IsValid())
+	if ((bAutoExposure || dbg_bHDRShowHistogram) && s_xHistogramBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
 		static u_int auZeroHistogram[256] = { 0 };
 		Flux_MemoryManager::UploadBufferData(
@@ -524,11 +520,11 @@ void Flux_HDR::ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserDa
 	(void)pUserData;
 	ToneMappingConstants xConsts;
 	xConsts.m_fExposure = s_fExposure;
-	xConsts.m_fBloomIntensity = s_bBloomEnabled ? s_fBloomIntensity : 0.0f;
+	xConsts.m_fBloomIntensity = Zenith_GraphicsOptions::Get().m_bHDRBloomEnabled ? s_fBloomIntensity : 0.0f;
 	xConsts.m_uToneMappingOperator = static_cast<u_int>(s_eToneMappingOperator);
 	xConsts.m_uDebugMode = dbg_uHDRDebugMode;
 	xConsts.m_bShowHistogram = dbg_bHDRShowHistogram ? 1 : 0;
-	xConsts.m_bAutoExposure = s_bAutoExposure ? 1 : 0;
+	xConsts.m_bAutoExposure = Zenith_GraphicsOptions::Get().m_bHDRAutoExposureEnabled ? 1 : 0;
 	xConsts.m_uPad0 = 0;
 	xConsts.m_uPad1 = 0;
 
@@ -685,11 +681,6 @@ void Flux_HDR::SetExposure(float fExposure)
 	s_fExposure = std::clamp(fExposure, 0.01f, 100.0f);
 }
 
-void Flux_HDR::SetBloomEnabled(bool bEnabled)
-{
-	s_bBloomEnabled = bEnabled;
-}
-
 void Flux_HDR::SetBloomIntensity(float fIntensity)
 {
 	s_fBloomIntensity = std::clamp(fIntensity, 0.0f, 10.0f);
@@ -710,11 +701,6 @@ float Flux_HDR::GetAverageLuminance()
 	return s_fAverageLuminance;
 }
 
-void Flux_HDR::SetAutoExposureEnabled(bool bEnabled)
-{
-	s_bAutoExposure = bEnabled;
-}
-
 void Flux_HDR::SetAdaptationSpeed(float fSpeed)
 {
 	s_fAdaptationSpeed = fSpeed;
@@ -733,7 +719,7 @@ void Flux_HDR::SetExposureRange(float fMin, float fMax)
 
 bool Flux_HDR::IsAutoExposureEnabled()
 {
-	return s_bAutoExposure;
+	return Zenith_GraphicsOptions::Get().m_bHDRAutoExposureEnabled;
 }
 
 float Flux_HDR::GetAdaptationSpeed()
@@ -757,7 +743,8 @@ bool Flux_HDR::IsEnabled()
 {
 	// HDR pipeline is always active (tone mapping always runs)
 	// This returns true if any HDR post-processing features are enabled
-	return dbg_bHDRAutoExposure || dbg_bHDRBloomEnabled;
+	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+	return xOpts.m_bHDRAutoExposureEnabled || xOpts.m_bHDRBloomEnabled;
 }
 
 #ifdef ZENITH_TOOLS
@@ -765,8 +752,6 @@ void Flux_HDR::RegisterDebugVariables()
 {
 	Zenith_DebugVariables::AddUInt32({ "Flux", "HDR", "DebugMode" }, dbg_uHDRDebugMode, 0, HDR_DEBUG_COUNT - 1);
 	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "Exposure" }, dbg_fHDRExposure, 0.01f, 10.0f);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "HDR", "AutoExposure" }, dbg_bHDRAutoExposure);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "HDR", "BloomEnabled" }, dbg_bHDRBloomEnabled);
 	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "BloomIntensity" }, dbg_fHDRBloomIntensity, 0.0f, 2.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "BloomThreshold" }, dbg_fHDRBloomThreshold, 0.0f, 5.0f);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "HDR", "ToneMappingOperator" }, dbg_uHDRToneMappingOperator, 0, TONEMAPPING_COUNT - 1);

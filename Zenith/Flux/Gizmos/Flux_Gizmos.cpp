@@ -2,6 +2,7 @@
 
 #ifdef ZENITH_TOOLS
 
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -30,7 +31,6 @@ static constexpr float GIZMO_INTERACTION_LENGTH_MULTIPLIER = 1.0f; // FIXED: Was
 static constexpr float GIZMO_AUTO_SCALE_DISTANCE = 5.0f;     // Distance at which gizmo is 1.0 scale
 
 // Debug variables
-DEBUGVAR bool dbg_bRenderGizmos = true;
 DEBUGVAR float dbg_fGizmoAlpha = 1.0f;
 
 // Static member initialization
@@ -95,7 +95,6 @@ void Flux_Gizmos::Initialise()
 	GenerateScaleGizmoGeometry();
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({"Editor", "Gizmos", "Render"}, dbg_bRenderGizmos);
 	Zenith_DebugVariables::AddFloat({"Editor", "Gizmos", "Alpha"}, dbg_fGizmoAlpha, 0.0f, 1.0f);
 #endif
 
@@ -238,7 +237,7 @@ void Flux_Gizmos::ComputeTangentFrame(const Zenith_Maths::Vector3& xAxis, Zenith
 void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!dbg_bRenderGizmos)
+	if (!Zenith_GraphicsOptions::Get().m_bGizmosEnabled)
 	{
 		return;
 	}

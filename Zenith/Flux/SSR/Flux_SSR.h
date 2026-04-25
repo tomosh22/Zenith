@@ -51,9 +51,6 @@ public:
 	static bool IsEnabled();
 	static bool IsInitialised();
 
-	// Configuration
-	static bool s_bEnabled;
-
 	// Attachment accessors
 	static Flux_RenderAttachment& GetRayMarchAttachment();
 	static Flux_RenderAttachment& GetResolvedAttachment();

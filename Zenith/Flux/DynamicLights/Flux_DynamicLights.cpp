@@ -14,6 +14,7 @@
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Maths/Zenith_FrustumCulling.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 #include <cmath>
@@ -48,7 +49,6 @@ static constexpr float fDEFAULT_LOD2_THRESHOLD = 30.0f;   // Switch to LOD2 belo
 #ifdef ZENITH_DEBUG_VARIABLES
 DEBUGVAR float dbg_fLightLOD1Threshold = fDEFAULT_LOD1_THRESHOLD;
 DEBUGVAR float dbg_fLightLOD2Threshold = fDEFAULT_LOD2_THRESHOLD;
-DEBUGVAR bool dbg_bShowDynamicLights = true;
 #ifdef ZENITH_TOOLS
 DEBUGVAR bool dbg_bShowDroppedLights = false;
 #endif
@@ -590,7 +590,6 @@ void Flux_DynamicLights::Initialise()
 	s_bInitialised = true;
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Dynamic Lights" }, dbg_bShowDynamicLights);
 	Zenith_DebugVariables::AddFloat({ "Render", "Dynamic Lights", "LOD1 Threshold" }, dbg_fLightLOD1Threshold, 10.0f, 500.0f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Dynamic Lights", "LOD2 Threshold" }, dbg_fLightLOD2Threshold, 5.0f, 200.0f);
 #endif
@@ -957,12 +956,10 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 		return;
 	}
 
-#ifdef ZENITH_DEBUG_VARIABLES
-	if (!dbg_bShowDynamicLights)
+	if (!Zenith_GraphicsOptions::Get().m_bDynamicLightsVisible)
 	{
 		return;
 	}
-#endif
 
 	Flux_DynamicLights::GatherLightsFromScene();
 

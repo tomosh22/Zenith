@@ -13,6 +13,7 @@
 #include "Zenith_PlatformGraphics_Include.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Maths/Zenith_FrustumCulling.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include <random>
 #include <algorithm>
 
@@ -32,10 +33,8 @@ Zenith_Vector<GrassChunk> Flux_Grass::s_axChunks;
 u_int Flux_Grass::s_uVisibleBladeCount = 0;
 u_int Flux_Grass::s_uActiveChunkCount = 0;
 
-bool Flux_Grass::s_bEnabled = true;
 float Flux_Grass::s_fDensityScale = 1.0f;
 float Flux_Grass::s_fMaxDistance = GrassConfig::fMAX_DISTANCE;
-bool Flux_Grass::s_bWindEnabled = true;
 float Flux_Grass::s_fWindStrength = 1.0f;
 Zenith_Maths::Vector2 Flux_Grass::s_xWindDirection = glm::normalize(Zenith_Maths::Vector2(1.0f, 0.2f));
 
@@ -51,13 +50,10 @@ struct GrassConstants
 static GrassConstants s_xGrassConstants;
 
 // Debug variables
-DEBUGVAR bool dbg_bGrassEnable = true;
 DEBUGVAR u_int dbg_uGrassDebugMode = GRASS_DEBUG_NONE;
 DEBUGVAR float dbg_fGrassDensityScale = 1.0f;
 DEBUGVAR float dbg_fGrassMaxDistance = GrassConfig::fMAX_DISTANCE;
-DEBUGVAR bool dbg_bGrassWindEnabled = true;
 DEBUGVAR float dbg_fGrassWindStrength = 1.0f;
-DEBUGVAR bool dbg_bGrassCullingEnabled = true;
 DEBUGVAR bool dbg_bGrassShowChunkGrid = false;
 DEBUGVAR bool dbg_bGrassFreezeLOD = false;
 DEBUGVAR u_int dbg_uGrassForcedLOD = 0;
@@ -192,16 +188,15 @@ void Flux_Grass::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 void Flux_Grass::ExecuteRender(Flux_CommandList* pxCmdList, void*)
 {
-	if (!dbg_bGrassEnable || !s_bInstancesUploaded)
+	const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+	if (!xOpts.m_bGrassEnabled || !s_bInstancesUploaded)
 	{
 		return;
 	}
 
-	// Sync debug variables
-	s_bEnabled = dbg_bGrassEnable;
+	// Sync debug variables (continuous parameters)
 	s_fDensityScale = dbg_fGrassDensityScale;
 	s_fMaxDistance = dbg_fGrassMaxDistance;
-	s_bWindEnabled = dbg_bGrassWindEnabled;
 	s_fWindStrength = dbg_fGrassWindStrength;
 
 	// Update visibility and LOD each frame
@@ -222,7 +217,7 @@ void Flux_Grass::ExecuteRender(Flux_CommandList* pxCmdList, void*)
 	s_xGrassConstants.m_xWindParams = Zenith_Maths::Vector4(
 		s_xWindDirection.x,
 		s_xWindDirection.y,
-		s_bWindEnabled ? s_fWindStrength : 0.0f,
+		xOpts.m_bGrassWindEnabled ? s_fWindStrength : 0.0f,
 		fTime);
 
 	s_xGrassConstants.m_xGrassParams = Zenith_Maths::Vector4(
@@ -332,9 +327,9 @@ void Flux_Grass::UpdateVisibleChunks()
 
 		const float fDistSq = glm::distance2(xCamPos, xChunk.m_xCenter);
 
-		// Distance + frustum culling — both gated on the debug flag so forcing
-		// it off keeps everything visible for debug viewing.
-		if (dbg_bGrassCullingEnabled)
+		// Distance + frustum culling — both gated on the GraphicsOptions toggle so
+		// forcing it off keeps everything visible for debug viewing.
+		if (Zenith_GraphicsOptions::Get().m_bGrassCullingEnabled)
 		{
 			if (fDistSq > fMaxDistSq || !Flux_Grass_IsChunkInFrustum(xChunk, xFrustum))
 			{
@@ -610,11 +605,7 @@ void Flux_Grass::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 	UpdateVisibleChunks();
 }
 
-// Setters with input validation
-void Flux_Grass::SetEnabled(bool bEnabled)
-{
-	s_bEnabled = bEnabled;
-}
+// Setters with input validation (continuous parameters; on/off lives in Zenith_GraphicsOptions)
 void Flux_Grass::SetDensityScale(float fScale)
 {
 	s_fDensityScale = std::clamp(fScale, 0.0f, 10.0f);
@@ -622,10 +613,6 @@ void Flux_Grass::SetDensityScale(float fScale)
 void Flux_Grass::SetMaxDistance(float fDistance)
 {
 	s_fMaxDistance = std::clamp(fDistance, 10.0f, 1000.0f);
-}
-void Flux_Grass::SetWindEnabled(bool bEnabled)
-{
-	s_bWindEnabled = bEnabled;
 }
 void Flux_Grass::SetWindStrength(float fStrength)
 {
@@ -645,10 +632,10 @@ void Flux_Grass::SetWindDirection(const Zenith_Maths::Vector2& xDirection)
 }
 
 // Getters
-bool Flux_Grass::IsEnabled() { return s_bEnabled; }
+bool Flux_Grass::IsEnabled() { return Zenith_GraphicsOptions::Get().m_bGrassEnabled; }
 float Flux_Grass::GetDensityScale() { return s_fDensityScale; }
 float Flux_Grass::GetMaxDistance() { return s_fMaxDistance; }
-bool Flux_Grass::IsWindEnabled() { return s_bWindEnabled; }
+bool Flux_Grass::IsWindEnabled() { return Zenith_GraphicsOptions::Get().m_bGrassWindEnabled; }
 float Flux_Grass::GetWindStrength() { return s_fWindStrength; }
 const Zenith_Maths::Vector2& Flux_Grass::GetWindDirection() { return s_xWindDirection; }
 
@@ -660,13 +647,10 @@ float Flux_Grass::GetBufferUsageMB() { return (s_uVisibleBladeCount * sizeof(Gra
 #ifdef ZENITH_TOOLS
 void Flux_Grass::RegisterDebugVariables()
 {
-	Zenith_DebugVariables::AddBoolean({ "Flux", "Grass", "Enable" }, dbg_bGrassEnable);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "Grass", "DebugMode" }, dbg_uGrassDebugMode, 0, GRASS_DEBUG_COUNT - 1);
 	Zenith_DebugVariables::AddFloat({ "Flux", "Grass", "DensityScale" }, dbg_fGrassDensityScale, 0.0f, 5.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "Grass", "MaxDistance" }, dbg_fGrassMaxDistance, 50.0f, 500.0f);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "Grass", "WindEnabled" }, dbg_bGrassWindEnabled);
 	Zenith_DebugVariables::AddFloat({ "Flux", "Grass", "WindStrength" }, dbg_fGrassWindStrength, 0.0f, 5.0f);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "Grass", "CullingEnabled" }, dbg_bGrassCullingEnabled);
 	Zenith_DebugVariables::AddBoolean({ "Flux", "Grass", "ShowChunkGrid" }, dbg_bGrassShowChunkGrid);
 	Zenith_DebugVariables::AddBoolean({ "Flux", "Grass", "FreezeLOD" }, dbg_bGrassFreezeLOD);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "Grass", "ForcedLOD" }, dbg_uGrassForcedLOD, 0, 3);

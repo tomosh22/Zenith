@@ -53,7 +53,6 @@ public:
 
 	static void SetToneMappingOperator(ToneMappingOperator eOperator);
 	static void SetExposure(float fExposure);
-	static void SetBloomEnabled(bool bEnabled);
 	static void SetBloomIntensity(float fIntensity);
 	static void SetBloomThreshold(float fThreshold);
 
@@ -64,8 +63,7 @@ public:
 	// Attachment accessor for bloom chain (returns transient or owned)
 	static Flux_RenderAttachment& GetBloomChainAttachment(u_int uIndex);
 
-	// Auto-exposure control
-	static void SetAutoExposureEnabled(bool bEnabled);
+	// Auto-exposure control (continuous parameters; on/off lives in Zenith_GraphicsOptions)
 	static void SetAdaptationSpeed(float fSpeed);
 	static void SetTargetLuminance(float fLuminance);
 	static void SetExposureRange(float fMin, float fMax);
@@ -111,8 +109,6 @@ private:
 	static float s_fBloomIntensity;
 	static float s_fBloomThreshold;
 	static ToneMappingOperator s_eToneMappingOperator;
-	static bool s_bBloomEnabled;
-	static bool s_bAutoExposure;
 
 	static float s_fCurrentExposure;
 	static float s_fAverageLuminance;

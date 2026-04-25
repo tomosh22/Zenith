@@ -10,6 +10,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 // Graph-owned transient handles — backing Flux_RenderAttachments are allocated
@@ -23,12 +24,9 @@ static Flux_RenderGraph* s_pxGraph = nullptr;
 static constexpr TextureFormat SSR_FORMAT = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 
 // Static member definitions
-bool Flux_SSR::s_bEnabled = true;
 bool Flux_SSR::s_bInitialised = false;
 
 // Debug variables
-DEBUGVAR bool dbg_bSSREnable = true;
-DEBUGVAR bool dbg_bRoughnessBlur = true;
 DEBUGVAR u_int dbg_uDebugMode = SSR_DEBUG_NONE;
 
 static struct SSRConstants
@@ -107,8 +105,6 @@ void Flux_SSR::Initialise()
 		"SSR/Flux_SSR_Resolve.frag", SSR_FORMAT);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Flux", "SSR", "Enable" }, dbg_bSSREnable);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "SSR", "RoughnessBlur" }, dbg_bRoughnessBlur);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "DebugMode" }, dbg_uDebugMode, 0, 100);  // Extended range for diagnostic mode 99
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSR", "Intensity" }, dbg_xSSRConstants.m_fIntensity, 0.0f, 2.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSR", "MaxDistance" }, dbg_xSSRConstants.m_fMaxDistance, 1.0f, 100.0f);
@@ -160,7 +156,7 @@ static void UpdateSSRConstants()
 
 static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 {
-	if (!dbg_bSSREnable || !Flux_SSR::s_bEnabled || !Flux_SSR::IsInitialised() || !Flux_HiZ::IsEnabled())
+	if (!Flux_SSR::IsEnabled() || !Flux_HiZ::IsEnabled())
 		return;
 
 	UpdateSSRConstants();
@@ -187,7 +183,7 @@ static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteSSRResolve(Flux_CommandList* pxCommandList, void*)
 {
-	if (!dbg_bSSREnable || !Flux_SSR::s_bEnabled || !Flux_SSR::IsInitialised() || !Flux_HiZ::IsEnabled() || !dbg_bRoughnessBlur)
+	if (!Flux_SSR::IsEnabled() || !Flux_HiZ::IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xResolvePipeline);
@@ -209,7 +205,7 @@ static void ExecuteSSRResolve(Flux_CommandList* pxCommandList, void*)
 }
 
 // Handle for the resolve pass so ApplyBlurSelectionToGraph can toggle its
-// enable bit when dbg_bRoughnessBlur changes.
+// enable bit when m_bSSRRoughnessBlurEnabled changes.
 static Flux_PassHandle s_xResolvePass;
 // Last value seen by ApplyBlurSelectionToGraph — change triggers a graph rebuild.
 static bool s_bLastBlurEnabled = true;
@@ -243,7 +239,7 @@ void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.WritesTransient(s_xRayMarchHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
 
 	// Resolve pass — roughness-weighted blur; clear. Registered unconditionally;
-	// ApplyBlurSelectionToGraph toggles its enable bit based on dbg_bRoughnessBlur.
+	// ApplyBlurSelectionToGraph toggles its enable bit based on m_bSSRRoughnessBlurEnabled.
 	s_xResolvePass = xGraph.AddPass("SSR Resolve", ExecuteSSRResolve)
 		.ClearTargets()
 		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
@@ -252,19 +248,20 @@ void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.ReadsTransient (s_xRayMarchHandle,                                         RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(s_xResolvedHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
 
-	xGraph.SetEnabled(s_xResolvePass, dbg_bRoughnessBlur);
-	s_bLastBlurEnabled = dbg_bRoughnessBlur;
+	const bool bRoughnessBlur = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled;
+	xGraph.SetEnabled(s_xResolvePass, bRoughnessBlur);
+	s_bLastBlurEnabled = bRoughnessBlur;
 
 	// Commit the handle the deferred pass will now read. GetReflectionHandle
 	// asserts against this value on every call — any runtime toggle without a
 	// matching Flux::RequestGraphRebuild() will trip at the point of the
 	// mistake, not downstream in Validate() or AssertBoundResourceDeclared.
-	s_xCommittedReflectionHandle = dbg_bRoughnessBlur ? s_xResolvedHandle : s_xRayMarchHandle;
+	s_xCommittedReflectionHandle = bRoughnessBlur ? s_xResolvedHandle : s_xRayMarchHandle;
 }
 
 void Flux_SSR::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 {
-	if (dbg_bRoughnessBlur == s_bLastBlurEnabled)
+	if (Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled == s_bLastBlurEnabled)
 		return;
 
 	// Full graph rebuild — not just xGraph.MarkDirty() — because
@@ -276,9 +273,9 @@ void Flux_SSR::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 	// execute callback binding an SRV the graph hasn't transitioned).
 	// Flux::RequestGraphRebuild() re-runs every subsystem's SetupRenderGraph
 	// on the next frame, so the deferred pass's declared Read resolves to the
-	// handle matching the new dbg_bRoughnessBlur value. SetupRenderGraph above
-	// will also re-seed s_xCommittedReflectionHandle and re-set the resolve
-	// pass's enable bit.
+	// handle matching the new m_bSSRRoughnessBlurEnabled value. SetupRenderGraph
+	// above will also re-seed s_xCommittedReflectionHandle and re-set the
+	// resolve pass's enable bit.
 	Flux::RequestGraphRebuild();
 }
 
@@ -286,10 +283,10 @@ Flux_TransientHandle Flux_SSR::GetReflectionHandle()
 {
 	// Blur on → deferred reads the resolved (blurred) output.
 	// Blur off → deferred reads the raw ray-march result directly.
-	const Flux_TransientHandle xLive = dbg_bRoughnessBlur ? s_xResolvedHandle : s_xRayMarchHandle;
+	const Flux_TransientHandle xLive = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? s_xResolvedHandle : s_xRayMarchHandle;
 	Zenith_Assert(!s_xCommittedReflectionHandle.IsValid() || xLive == s_xCommittedReflectionHandle,
 		"Flux_SSR::GetReflectionHandle: live handle (idx=%u gen=%u) disagrees with the handle committed at SetupRenderGraph exit (idx=%u gen=%u). "
-		"dbg_bRoughnessBlur changed without Flux::RequestGraphRebuild() being called in ApplyBlurSelectionToGraph — "
+		"m_bSSRRoughnessBlurEnabled changed without Flux::RequestGraphRebuild() being called in ApplyBlurSelectionToGraph — "
 		"MarkDirty() alone does not re-run SetupRenderGraph, so the deferred pass's declared Read is stale.",
 		xLive.m_uIndex, xLive.m_uGeneration,
 		s_xCommittedReflectionHandle.m_uIndex, s_xCommittedReflectionHandle.m_uGeneration);
@@ -300,14 +297,14 @@ Flux_ShaderResourceView& Flux_SSR::GetReflectionSRV()
 {
 	// Must match GetReflectionHandle so bind-time-declared-access assertions
 	// see the same resource the graph has a Read declared on.
-	if (dbg_bRoughnessBlur)
+	if (Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return GetResolvedAttachment().SRV();
 	return GetRayMarchAttachment().SRV();
 }
 
 bool Flux_SSR::IsEnabled()
 {
-	return dbg_bSSREnable && s_bEnabled && s_bInitialised;
+	return Zenith_GraphicsOptions::Get().m_bSSREnabled && s_bInitialised;
 }
 
 bool Flux_SSR::IsInitialised()

@@ -13,6 +13,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -51,7 +52,6 @@ struct TerrainConstants
 } s_xTerrainConstants;
 static Flux_DynamicConstantBuffer s_xTerrainConstantsBuffer;
 
-DEBUGVAR bool dbg_bEnableTerrain = true;
 bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
@@ -145,7 +145,6 @@ void Flux_Terrain::Initialise()
 		), s_xTerrainConstantsBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Terrain" }, dbg_bEnableTerrain);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
@@ -242,7 +241,7 @@ void Flux_Terrain::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 	// CPU-side update (was in PreRenderUpdate/SubmitRenderToGBufferTask)
 	PreRenderUpdate();
 
-	if (!dbg_bEnableTerrain)
+	if (!Zenith_GraphicsOptions::Get().m_bTerrainEnabled)
 	{
 		return;
 	}
@@ -266,7 +265,7 @@ void Flux_Terrain::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 
 void Flux_Terrain::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
-	if (!dbg_bEnableTerrain)
+	if (!Zenith_GraphicsOptions::Get().m_bTerrainEnabled)
 	{
 		return;
 	}

@@ -9,6 +9,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Skybox/Flux_Skybox.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "Core/Zenith_GraphicsOptions.h"
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -30,10 +31,7 @@ Flux_Shader Flux_IBL::s_xBRDFLUTShader;
 Flux_Shader Flux_IBL::s_xIrradianceConvolveShader;
 Flux_Shader Flux_IBL::s_xPrefilterShader;
 
-bool Flux_IBL::s_bEnabled = true;
 float Flux_IBL::s_fIntensity = 1.0f;
-bool Flux_IBL::s_bDiffuseEnabled = true;
-bool Flux_IBL::s_bSpecularEnabled = true;
 bool Flux_IBL::s_bSkyIBLDirty = true;
 bool Flux_IBL::s_bIBLReady = false;  // Set true after BRDF LUT AND sky IBL are generated
 bool Flux_IBL::s_bFirstGeneration = true;  // First generation must be non-amortized
@@ -504,30 +502,18 @@ const Flux_ShaderResourceView& Flux_IBL::GetPrefilteredMapSRV()
 	return s_xPrefilteredMap.SRV();
 }
 
-// Setters
-void Flux_IBL::SetEnabled(bool bEnabled)
-{
-	s_bEnabled = bEnabled;
-}
+// Setters (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
 void Flux_IBL::SetIntensity(float fIntensity)
 {
 	s_fIntensity = fIntensity;
 }
-void Flux_IBL::SetDiffuseEnabled(bool bEnabled)
-{
-	s_bDiffuseEnabled = bEnabled;
-}
-void Flux_IBL::SetSpecularEnabled(bool bEnabled)
-{
-	s_bSpecularEnabled = bEnabled;
-}
 
-// Getters - return actual state variables (synced from debug variables in ExecuteIBLUpdate)
-bool Flux_IBL::IsEnabled() { return s_bEnabled; }
+// Getters
+bool Flux_IBL::IsEnabled() { return Zenith_GraphicsOptions::Get().m_bIBLEnabled; }
 bool Flux_IBL::IsReady() { return s_bIBLReady; }
 float Flux_IBL::GetIntensity() { return s_fIntensity; }
-bool Flux_IBL::IsDiffuseEnabled() { return s_bDiffuseEnabled; }
-bool Flux_IBL::IsSpecularEnabled() { return s_bSpecularEnabled; }
+bool Flux_IBL::IsDiffuseEnabled() { return Zenith_GraphicsOptions::Get().m_bIBLDiffuseEnabled; }
+bool Flux_IBL::IsSpecularEnabled() { return Zenith_GraphicsOptions::Get().m_bIBLSpecularEnabled; }
 bool Flux_IBL::IsShowBRDFLUT() { return dbg_bIBLShowBRDFLUT; }
 bool Flux_IBL::IsForceRoughness() { return dbg_bIBLForceRoughness; }
 float Flux_IBL::GetForcedRoughness() { return dbg_fIBLForcedRoughness; }

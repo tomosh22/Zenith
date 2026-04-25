@@ -78,13 +78,11 @@ public:
 	// in place so the writer-chain topological ordering is correct.
 	static void SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph);
 
-	// Atmosphere configuration
-	static void SetAtmosphereEnabled(bool bEnabled);
+	// Atmosphere configuration (continuous parameters; on/off lives in Zenith_GraphicsOptions)
 	static void SetSunIntensity(float fIntensity);
 	static void SetRayleighScale(float fScale);
 	static void SetMieScale(float fScale);
 	static void SetMieG(float fG);
-	static void SetAerialPerspectiveEnabled(bool bEnabled);
 	static void SetAerialPerspectiveStrength(float fStrength);
 
 	// Getters
@@ -98,10 +96,6 @@ public:
 
 	// Access transmittance LUT for other systems (IBL, fog)
 	static Flux_ShaderResourceView& GetTransmittanceLUTSRV();
-
-	// Skybox override (solid colour when disabled)
-	static bool s_bEnabled;
-	static Zenith_Maths::Vector3 s_xOverrideColour;
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	static void RegisterDebugVariables();
@@ -134,13 +128,11 @@ private:
 	static Flux_RenderAttachment s_xTransmittanceLUT;
 	static bool s_bLUTNeedsUpdate;
 
-	// Atmosphere configuration state
-	static bool s_bAtmosphereEnabled;
+	// Atmosphere configuration state (continuous parameters)
 	static float s_fSunIntensity;
 	static float s_fRayleighScale;
 	static float s_fMieScale;
 	static float s_fMieG;
-	static bool s_bAerialPerspectiveEnabled;
 	static float s_fAerialPerspectiveStrength;
 
 };
