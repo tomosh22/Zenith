@@ -21,6 +21,10 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include <vector>
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 //=============================================================================
 // Push Constants for Instanced Meshes (128 bytes)
 // Different from MaterialDrawConstants - has animation params instead of emissive
@@ -68,11 +72,11 @@ static uint32_t s_uVisibleInstances = 0;
 // Initialise / Shutdown
 //=============================================================================
 
-void Flux_InstancedMeshes::Initialise()
+void Flux_InstancedMeshes::BuildPipelines()
 {
 	// Load shaders
-	s_xGBufferShader.Initialise("InstancedMeshes/Flux_InstancedMeshes_ToGBuffer.vert", "InstancedMeshes/Flux_InstancedMeshes_ToGBuffer.frag");
-	s_xShadowShader.Initialise("InstancedMeshes/Flux_InstancedMeshes_ToShadowMap.vert", "InstancedMeshes/Flux_InstancedMeshes_ToShadowMap.frag");
+	s_xGBufferShader.Initialise(FluxShaderProgram::InstancedMesh_ToGBuffer);
+	s_xShadowShader.Initialise(FluxShaderProgram::InstancedMesh_ToShadowmap);
 
 	// Vertex input description - same as static meshes (position, UV, normal, tangent, bitangent, color)
 	Flux_VertexInputDescription xVertexDesc;
@@ -124,7 +128,7 @@ void Flux_InstancedMeshes::Initialise()
 
 	// Culling compute pipeline
 	{
-		s_xCullingShader.InitialiseCompute("InstancedMeshes/Flux_InstanceCulling.comp");
+		s_xCullingShader.Initialise(FluxShaderProgram::InstanceCulling);
 
 		// Build compute root signature from shader reflection
 		const Flux_ShaderReflection& xCullingReflection = s_xCullingShader.GetReflection();
@@ -137,12 +141,26 @@ void Flux_InstancedMeshes::Initialise()
 			.Build(s_xCullingPipeline);
 
 		s_xCullingPipeline.m_xRootSig = s_xCullingRootSig;
-
-		// Initialize culling constants buffer
-		Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), s_xCullingConstantsBuffer);
-
-		s_bCullingInitialized = true;
 	}
+}
+
+void Flux_InstancedMeshes::Initialise()
+{
+	BuildPipelines();
+
+	// One-time setup that hot-reload must NOT repeat (would leak VRAM).
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), s_xCullingConstantsBuffer);
+	s_bCullingInitialized = true;
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::InstancedMesh_ToGBuffer,
+		FluxShaderProgram::InstancedMesh_ToShadowmap,
+		FluxShaderProgram::InstanceCulling,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_InstancedMeshes::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 #endif
@@ -472,8 +490,8 @@ void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Fl
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(xCmdBuf);
 
-	// Bind FrameConstants once per command list
-	xBinder.BindCBV(s_xShadowShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	// Shadow pass: DrawConstants + ShadowMatrix + transform/visible-index
+	// SSBOs only — Slang reflection won't show FrameConstants.
 
 	for (size_t uGroup = 0; uGroup < s_apxInstanceGroups.size(); ++uGroup)
 	{

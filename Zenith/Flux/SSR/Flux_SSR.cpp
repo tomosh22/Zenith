@@ -12,6 +12,9 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
 
 // Graph-owned transient handles — backing Flux_RenderAttachments are allocated
 // and destroyed by the render graph, sized from the descriptors set in
@@ -92,17 +95,29 @@ static const Flux_ShaderResourceView* DebugGetResolvedSRV()
 }
 #endif
 
-void Flux_SSR::Initialise()
+void Flux_SSR::BuildPipelines()
 {
-	// Initialize ray march shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xRayMarchShader, s_xRayMarchPipeline,
-		"SSR/Flux_SSR_RayMarch.frag", SSR_FORMAT);
+		FluxShaderProgram::SSR_RayMarch, SSR_FORMAT);
 
-	// Initialize resolve shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xResolveShader, s_xResolvePipeline,
-		"SSR/Flux_SSR_Resolve.frag", SSR_FORMAT);
+		FluxShaderProgram::SSR_Resolve, SSR_FORMAT);
+}
+
+void Flux_SSR::Initialise()
+{
+	BuildPipelines();
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::SSR_RayMarch,
+		FluxShaderProgram::SSR_Resolve,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_SSR::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "DebugMode" }, dbg_uDebugMode, 0, 100);  // Extended range for diagnostic mode 99

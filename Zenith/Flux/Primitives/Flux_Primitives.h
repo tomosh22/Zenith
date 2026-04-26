@@ -30,6 +30,7 @@ public:
 	 * Called once at engine startup from Flux::LateInitialise()
 	 */
 	static void Initialise();
+	static void BuildPipelines();
 
 	/**
 	 * Shutdown the primitives renderer

@@ -29,8 +29,23 @@ public abstract class ZenithBaseProject : Project
 
 	public ZenithBaseProject() : base(typeof(ZenithTarget))
 	{
-		SourceFilesExtensions = new Strings(".cpp", ".c", ".h", ".inl", ".vert", ".frag", ".comp", ".tese", ".tesc", ".geom", ".fxh");
+		SourceFilesExtensions = new Strings(".cpp", ".c", ".h", ".inl", ".slang");
 		SourceFilesCompileExtensions = new Strings(".cpp", ".c");
+
+		// Strip generated-artifact directories from project membership.
+		// `.slang` discovery used to pick up Slang's auto-extracted standard
+		// modules under `output/.../slang-standard-module-*/*.slang` because
+		// those files live below SourceRootPath; their presence varies per
+		// configuration and disappears on a clean checkout, so they don't
+		// belong in the project. Same applies to obj/, .vs/, .git/, and the
+		// AGDE / Gradle build trees under Android/app/build/intermediates —
+		// all pure generated state.
+		SourceFilesExcludeRegex.Add(@"\\output\\");
+		SourceFilesExcludeRegex.Add(@"\\obj\\");
+		SourceFilesExcludeRegex.Add(@"\\\.vs\\");
+		SourceFilesExcludeRegex.Add(@"\\\.git\\");
+		SourceFilesExcludeRegex.Add(@"\\Android\\app\\build\\");
+		SourceFilesExcludeRegex.Add(@"\\Android\\\.gradle\\");
 	}
 
 	// Configure platform-specific file excludes (called during configuration)

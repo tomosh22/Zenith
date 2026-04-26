@@ -70,6 +70,7 @@ public:
 	static void Initialise();
 	static void Shutdown();
 	static void Reset();
+	static void BuildPipelines();
 
 	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 	// Aerial perspective is a separate registration because it must run AFTER

@@ -29,6 +29,7 @@ class Flux_RaymarchFog
 {
 public:
 	static void Initialise();
+	static void BuildPipelines();
 	static void Reset();
 	static void Render(Flux_CommandList* pxCommandList);
 };

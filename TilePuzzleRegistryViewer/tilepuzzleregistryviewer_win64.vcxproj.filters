@@ -28,18 +28,6 @@
     <ClInclude Include="..\Middleware\imgui-docking\backends\imgui_impl_win32.h">
       <Filter>Middleware\imgui-docking\backends</Filter>
     </ClInclude>
-    <ClInclude Include="..\Middleware\imgui-docking\backends\sdlgpu3\shader.frag">
-      <Filter>Middleware\imgui-docking\backends\sdlgpu3</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\imgui-docking\backends\sdlgpu3\shader.vert">
-      <Filter>Middleware\imgui-docking\backends\sdlgpu3</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\imgui-docking\backends\vulkan\glsl_shader.frag">
-      <Filter>Middleware\imgui-docking\backends\vulkan</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\imgui-docking\backends\vulkan\glsl_shader.vert">
-      <Filter>Middleware\imgui-docking\backends\vulkan</Filter>
-    </ClInclude>
     <ClInclude Include="..\Middleware\imgui-docking\imconfig.h">
       <Filter>Middleware\imgui-docking</Filter>
     </ClInclude>
@@ -68,12 +56,6 @@
     </Filter>
     <Filter Include="Middleware\imgui-docking\backends">
       <UniqueIdentifier>{25eca6d2-1521-1c5a-0765-f719ba0131a3}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\imgui-docking\backends\sdlgpu3">
-      <UniqueIdentifier>{1f778a42-06b4-f1aa-6195-19d48c1212be}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\imgui-docking\backends\vulkan">
-      <UniqueIdentifier>{b42d0075-05c5-02d3-4820-862d8af1478c}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

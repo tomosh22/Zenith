@@ -15,6 +15,9 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
 
 // Render graph pass indices for dynamic enable/disable
 static Flux_PassHandle s_xSimpleFogPass;
@@ -39,10 +42,9 @@ static struct Flux_FogConstants
 	float m_fPad[3] = { 0.f, 0.f, 0.f };
 } dbg_xConstants;
 
-void Flux_Fog::Initialise()
+void Flux_Fog::BuildPipelines()
 {
-	// Initialize simple fog shader
-	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_Fog.frag");
+	s_xShader.Initialise(FluxShaderProgram::Fog_Simple);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -59,6 +61,11 @@ void Flux_Fog::Initialise()
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+}
+
+void Flux_Fog::Initialise()
+{
+	BuildPipelines();
 
 	// Initialize shared volumetric fog infrastructure
 	Flux_VolumeFog::Initialise();
@@ -67,6 +74,14 @@ void Flux_Fog::Initialise()
 	Flux_GodRaysFog::Initialise();
 	Flux_RaymarchFog::Initialise();
 	Flux_FroxelFog::Initialise();
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Fog_Simple,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Fog::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Debug Mode" }, dbg_uVolFogDebugMode, 0, 23);

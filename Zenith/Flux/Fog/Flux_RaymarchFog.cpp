@@ -12,6 +12,10 @@
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
@@ -47,9 +51,9 @@ DEBUGVAR float dbg_fRaymarchShadowConeRadius = 0.002f; // Cone spread - controls
 
 static Flux_RaymarchConstants s_xConstants;
 
-void Flux_RaymarchFog::Initialise()
+void Flux_RaymarchFog::BuildPipelines()
 {
-	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_RaymarchFog.frag");
+	s_xShader.Initialise(FluxShaderProgram::Fog_Raymarch);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -72,6 +76,11 @@ void Flux_RaymarchFog::Initialise()
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+}
+
+void Flux_RaymarchFog::Initialise()
+{
+	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Raymarch", "Step Count" }, dbg_uRaymarchSteps, 8, 256);
@@ -83,6 +92,14 @@ void Flux_RaymarchFog::Initialise()
 	// Volumetric shadow parameters (unified with Froxel fog)
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Shadow Bias" }, dbg_fRaymarchShadowBias, 0.0001f, 0.01f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Shadow Cone Radius" }, dbg_fRaymarchShadowConeRadius, 0.0001f, 0.01f);
+#endif
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Fog_Raymarch,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_RaymarchFog::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_RaymarchFog initialised");

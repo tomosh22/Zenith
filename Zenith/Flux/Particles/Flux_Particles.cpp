@@ -21,6 +21,10 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipelineAlpha;
 static Flux_Pipeline s_xPipelineAdditive;
@@ -40,9 +44,9 @@ static uint32_t s_uAdditiveInstanceCount = 0;
 
 static Zenith_TextureAsset* s_pxParticleTexture = nullptr;
 
-void Flux_Particles::Initialise()
+void Flux_Particles::BuildPipelines()
 {
-	s_xShader.Initialise("Particles/Flux_Particles.vert", "Particles/Flux_Particles.frag");
+	s_xShader.Initialise(FluxShaderProgram::Particles);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -76,6 +80,16 @@ void Flux_Particles::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipelineAdditive, xPipelineSpec);
 
+	// Rebuild the GPU compute pipeline alongside the rasterisation ones so a
+	// shader edit to either Particles.slang or ParticleUpdate.slang triggers a
+	// single coordinated rebuild.
+	Flux_ParticleGPU::BuildPipelines();
+}
+
+void Flux_Particles::Initialise()
+{
+	BuildPipelines();
+
 	// Allocate instance buffers for both blend modes
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBufferAlpha, false);
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBufferAdditive, false);
@@ -87,6 +101,15 @@ void Flux_Particles::Initialise()
 		Zenith_Log(LOG_CATEGORY_PARTICLES, "Warning: Failed to load particle texture, using white texture");
 		s_pxParticleTexture = Flux_Graphics::s_pxWhiteTexture;
 	}
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Particles,
+		FluxShaderProgram::ParticleUpdate,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Particles::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles initialised (max %u particles)", s_uMaxParticles);
 }

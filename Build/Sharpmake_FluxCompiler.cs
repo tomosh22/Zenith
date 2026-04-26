@@ -52,10 +52,11 @@ public class FluxCompilerProject : ZenithBaseProject
 		conf.LibraryPaths.Add(RootPath + "/Middleware/slang/lib");
 		conf.LibraryFiles.Add("slang.lib");
 
-		// Copy Slang DLLs to output directory
+		// Copy Slang DLLs to output directory. slang-glslang.dll was needed
+		// only by the legacy ICompileRequest path with `enableGLSL = true`;
+		// engine is Slang-only post-migration so we ship slang.dll only.
 		string slangBinPath = Path.GetFullPath(Path.Combine(SharpmakeCsPath, "..", "Middleware", "slang", "bin"));
 		conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\slang.dll\" \"$(OutDir)\"");
-		conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\slang-glslang.dll\" \"$(OutDir)\"");
 
 		// Output executable
 		conf.Output = Configuration.OutputType.Exe;

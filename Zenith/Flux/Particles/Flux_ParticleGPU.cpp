@@ -78,10 +78,10 @@ struct ParticleComputeConstants
 };
 
 
-void Flux_ParticleGPU::Initialise()
+void Flux_ParticleGPU::BuildPipelines()
 {
 	// Initialize compute shader
-	s_xComputeShader.InitialiseCompute("Particles/Flux_ParticleUpdate.comp");
+	s_xComputeShader.Initialise(FluxShaderProgram::ParticleUpdate);
 
 	// Build compute root signature from shader reflection
 	const Flux_ShaderReflection& xReflection = s_xComputeShader.GetReflection();
@@ -91,6 +91,11 @@ void Flux_ParticleGPU::Initialise()
 	// + the root-sig assignment so engine code never touches vk::PipelineLayout
 	// or the m_xRootSig member directly).
 	Flux_ComputePipelineBuilder::BuildFromShader(s_xComputePipeline, s_xComputeShader, s_xComputeRootSig);
+}
+
+void Flux_ParticleGPU::Initialise()
+{
+	BuildPipelines();
 
 	// Allocate particle buffers (double-buffered)
 	Flux_MemoryManager::InitialiseReadWriteBuffer(
@@ -397,11 +402,11 @@ void Flux_ParticleGPU::DispatchCompute(Flux_CommandList* pxCmdList)
 	}
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindUAV_Buffer(s_xComputeShader, "g_xInputParticles", &xInputBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(s_xComputeShader, "g_xOutputParticles", &xOutputBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(s_xComputeShader, "g_xInstances", &s_xInstanceBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(s_xComputeShader, "g_xCounter", &s_xCounterBuffer.GetUAV());
-	xBinder.BindDrawConstants(s_xComputeShader, "pc", &xConstants, sizeof(xConstants));
+	xBinder.BindUAV_Buffer(s_xComputeShader, "InputParticles",  &xInputBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(s_xComputeShader, "OutputParticles", &xOutputBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(s_xComputeShader, "InstanceBuffer",  &s_xInstanceBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(s_xComputeShader, "aliveCount",      &s_xCounterBuffer.GetUAV());
+	xBinder.BindDrawConstants(s_xComputeShader, "PushConstants", &xConstants, sizeof(xConstants));
 
 	uint32_t uWorkgroups = (s_uTotalAllocatedParticles + s_uWorkgroupSize - 1) / s_uWorkgroupSize;
 	pxCmdList->AddCommand<Flux_CommandDispatch>(uWorkgroups, 1, 1);

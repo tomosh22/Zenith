@@ -9,6 +9,7 @@ class Flux_Terrain
 {
 public:
 	static void Initialise();
+	static void BuildPipelines();
 	static void Shutdown();
 	static void Reset();  // Clear state when scene resets (e.g., Play/Stop transitions)
 

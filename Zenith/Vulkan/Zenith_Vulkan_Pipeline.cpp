@@ -15,15 +15,10 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "FileAccess/Zenith_FileAccess.h"
 #include "DataStream/Zenith_DataStream.h"
 
-#ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_ShaderHotReload.h"
-#include <unordered_map>
-
-// File-scope maps for hot reload - stores shader pointers and pipeline specs
-// so the hot reload callback can access them
-static std::unordered_map<Zenith_Vulkan_Pipeline*, Zenith_Vulkan_Shader*> s_xHotReloadShaderMap;
-static std::unordered_map<Zenith_Vulkan_Pipeline*, Flux_PipelineSpecification> s_xHotReloadSpecMap;
-#endif
+// Hot-reload state was removed when the Slang migration retired the
+// .vert/.frag string-pair path. Slang hot reload is tracked as a
+// follow-up — it'll need a .slang file watcher that maps edits back to
+// FluxShaderProgram IDs.
 
 // Zenith_Vulkan_Shader implementation lives in Zenith_Vulkan_Shader.cpp.
 
@@ -215,38 +210,54 @@ Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder()
 
 Zenith_Vulkan_Pipeline::~Zenith_Vulkan_Pipeline()
 {
+	Reset();
+}
+
+void Zenith_Vulkan_Pipeline::Reset()
+{
 	const vk::Device xDevice = Zenith_Vulkan::GetDevice();
 
-	// Destroy pipeline if valid
 	if (m_xPipeline)
 	{
 		xDevice.destroyPipeline(m_xPipeline);
 		m_xPipeline = VK_NULL_HANDLE;
 	}
 
-	// Destroy render pass if valid
 	if (m_xRenderPass)
 	{
 		xDevice.destroyRenderPass(m_xRenderPass);
 		m_xRenderPass = VK_NULL_HANDLE;
 	}
 
-	// Destroy root signature resources
 	if (m_xRootSig.m_xLayout)
 	{
 		xDevice.destroyPipelineLayout(m_xRootSig.m_xLayout);
 		m_xRootSig.m_xLayout = VK_NULL_HANDLE;
 	}
 
-	// Destroy descriptor set layouts
 	for (u_int u = 0; u < m_xRootSig.m_uNumBindingGroups && u < FLUX_MAX_BINDINGS_PER_GROUP; u++)
 	{
-		if (m_xRootSig.m_axDescSetLayouts[u])
+		if (m_xRootSig.m_axDescSetLayouts[u] && m_xRootSig.m_abOwnsDescSetLayout[u])
 		{
 			xDevice.destroyDescriptorSetLayout(m_xRootSig.m_axDescSetLayouts[u]);
-			m_xRootSig.m_axDescSetLayouts[u] = VK_NULL_HANDLE;
+		}
+		// Always clear the slot, including borrowed layouts — the next
+		// FromSpecification stamps a fresh handle (and ownership flag) into
+		// every slot it uses.
+		m_xRootSig.m_axDescSetLayouts[u] = VK_NULL_HANDLE;
+		m_xRootSig.m_abOwnsDescSetLayout[u] = false;
+	}
+
+	// Reset binding-type matrix and group count to default-constructed state
+	for (u_int i = 0; i < FLUX_MAX_BINDINGS_PER_GROUP; i++)
+	{
+		for (u_int j = 0; j < FLUX_MAX_BINDINGS_PER_GROUP; j++)
+		{
+			m_xRootSig.m_axBindingTypes[i][j] = BINDING_TYPE_MAX;
 		}
 	}
+	m_xRootSig.m_uNumBindingGroups = UINT32_MAX;
+	m_xRootSig.m_xReflection = Flux_ShaderReflection();
 }
 
 Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDepthState(vk::CompareOp op, bool depthEnabled, bool writeEnabled, bool stencilEnabled)
@@ -654,6 +665,11 @@ static vk::PipelineMultisampleStateCreateInfo BuildMultisampleState()
 
 void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Flux_PipelineSpecification& xSpec)
 {
+	// Idempotent: tear down any existing GPU handles in xPipelineOut so the
+	// hot-reload path (which re-runs subsystem build code on .slang change)
+	// doesn't leak the previous vk::Pipeline / RenderPass / RootSig.
+	xPipelineOut.Reset();
+
 	vk::GraphicsPipelineCreateInfo xPipelineInfo;
 
 	// Shaders
@@ -704,72 +720,30 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 
 	xPipelineOut.m_xPipeline = VkUnwrap(Zenith_Vulkan::GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, xPipelineInfo));
 
-#ifdef ZENITH_TOOLS
-	// Register pipeline for hot reload if shader has source paths
-	if (!xSpec.m_pxShader->m_strVertexPath.empty() && !xSpec.m_pxShader->m_strFragmentPath.empty())
-	{
-		// Store shader pointer and pipeline spec in file-scope maps for hot reload callback
-		s_xHotReloadShaderMap[&xPipelineOut] = const_cast<Zenith_Vulkan_Shader*>(xSpec.m_pxShader);
-		s_xHotReloadSpecMap[&xPipelineOut] = xSpec;
-
-		Flux_ShaderHotReload::RegisterPipeline(&xPipelineOut,
-			xSpec.m_pxShader->m_strVertexPath, xSpec.m_pxShader->m_strFragmentPath,
-			[](Zenith_Vulkan_Pipeline* pxPipeline, const std::string& strVertPath, const std::string& strFragPath) -> bool
-			{
-				// Get the shader and spec for this pipeline from file-scope maps
-				auto itShader = s_xHotReloadShaderMap.find(pxPipeline);
-				auto itSpec = s_xHotReloadSpecMap.find(pxPipeline);
-				if (itShader == s_xHotReloadShaderMap.end() || itSpec == s_xHotReloadSpecMap.end())
-				{
-					Zenith_Error(LOG_CATEGORY_RENDERER, "Hot reload failed: Pipeline not found in maps");
-					return false;
-				}
-
-				Zenith_Vulkan_Shader* pxShader = itShader->second;
-				Flux_PipelineSpecification& xSpec = itSpec->second;
-
-				// Recompile the shader from source
-				if (!pxShader->InitialiseFromSource(strVertPath, strFragPath))
-				{
-					Zenith_Error(LOG_CATEGORY_RENDERER, "Hot reload failed: Shader compilation failed");
-					return false;
-				}
-
-				// Destroy the old pipeline
-				if (pxPipeline->m_xPipeline)
-				{
-					Zenith_Vulkan::GetDevice().destroyPipeline(pxPipeline->m_xPipeline);
-					pxPipeline->m_xPipeline = nullptr;
-				}
-
-				// Destroy the old root sig resources
-				if (pxPipeline->m_xRootSig.m_xLayout)
-				{
-					Zenith_Vulkan::GetDevice().destroyPipelineLayout(pxPipeline->m_xRootSig.m_xLayout);
-					pxPipeline->m_xRootSig.m_xLayout = nullptr;
-				}
-				for (u_int i = 0; i < pxPipeline->m_xRootSig.m_uNumBindingGroups; i++)
-				{
-					if (pxPipeline->m_xRootSig.m_axDescSetLayouts[i])
-					{
-						Zenith_Vulkan::GetDevice().destroyDescriptorSetLayout(pxPipeline->m_xRootSig.m_axDescSetLayouts[i]);
-						pxPipeline->m_xRootSig.m_axDescSetLayouts[i] = nullptr;
-					}
-				}
-
-				// Recreate the pipeline with updated shader
-				Zenith_Vulkan_PipelineBuilder::FromSpecification(*pxPipeline, xSpec);
-
-				Zenith_Log(LOG_CATEGORY_RENDERER, "Hot reload succeeded for pipeline: %s + %s",
-						   strVertPath.c_str(), strFragPath.c_str());
-				return true;
-			});
-	}
-#endif
+	// Hot-reload registration lives at the subsystem level — each subsystem's
+	// Initialise() calls Flux_ShaderHotReload::RegisterSubsystem with its
+	// own BuildPipelines callback, and the watcher in Flux_ShaderHotReload
+	// fires those callbacks on .slang edits. Pipeline-level registration
+	// here would need to know which programs the pipeline was built from,
+	// which the spec doesn't carry — keeping it at the subsystem level lets
+	// each owner phrase the rebuild precisely.
 }
 
 void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_PipelineLayout& xSpec)
 {
+	// Clear stale binding metadata — hot-reload reuses static Flux_RootSig
+	// objects, so the previous build's m_axBindingTypes survives unless we
+	// wipe it here before re-populating from the new spec. (Reset on the
+	// owning Flux_Pipeline is best-effort; some compute paths build a root
+	// sig as a separate object.)
+	for (u_int i = 0; i < FLUX_MAX_BINDINGS_PER_GROUP; i++)
+	{
+		for (u_int j = 0; j < FLUX_MAX_BINDINGS_PER_GROUP; j++)
+		{
+			xRootSigOut.m_axBindingTypes[i][j] = BINDING_TYPE_MAX;
+		}
+	}
+
 	xRootSigOut.m_uNumBindingGroups = xSpec.m_uNumBindingGroups;
 	for (u_int uDescSet = 0; uDescSet < xSpec.m_uNumBindingGroups; uDescSet++)
 	{
@@ -777,7 +751,9 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 
 		if (xLayout.m_axBindings[0].m_eType == BINDING_TYPE_UNBOUNDED_TEXTURES)
 		{
-			xRootSigOut.m_axDescSetLayouts[uDescSet] = Zenith_Vulkan::GetBindlessTexturesDescriptorSetLayout();
+			// Borrowed handle — Pipeline::Reset must skip its destruction.
+			xRootSigOut.m_axDescSetLayouts[uDescSet]    = Zenith_Vulkan::GetBindlessTexturesDescriptorSetLayout();
+			xRootSigOut.m_abOwnsDescSetLayout[uDescSet] = false;
 			continue;
 		}
 
@@ -827,7 +803,8 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 		xInfo.setPBindings(axBindings);
 		xInfo.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool);
 
-		xRootSigOut.m_axDescSetLayouts[uDescSet] = VkUnwrap(Zenith_Vulkan::GetDevice().createDescriptorSetLayout(xInfo));
+		xRootSigOut.m_axDescSetLayouts[uDescSet]    = VkUnwrap(Zenith_Vulkan::GetDevice().createDescriptorSetLayout(xInfo));
+		xRootSigOut.m_abOwnsDescSetLayout[uDescSet] = true;
 	}
 	// Push constants replaced with scratch buffer system - no push constant ranges needed
 	vk::PipelineLayoutCreateInfo xPipelineLayoutInfo = vk::PipelineLayoutCreateInfo()

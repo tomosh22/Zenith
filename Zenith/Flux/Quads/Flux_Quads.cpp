@@ -11,6 +11,10 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
@@ -19,9 +23,9 @@ static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 Flux_Quads::Quad Flux_Quads::s_axQuadsToRender[FLUX_MAX_QUADS_PER_FRAME];
 uint32_t Flux_Quads::s_uQuadRenderIndex;
 
-void Flux_Quads::Initialise()
+void Flux_Quads::BuildPipelines()
 {
-	s_xShader.Initialise("Quads/Flux_Quads.vert", "Quads/Flux_Quads.frag");
+	s_xShader.Initialise(FluxShaderProgram::Quads);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -49,8 +53,21 @@ void Flux_Quads::Initialise()
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+}
+
+void Flux_Quads::Initialise()
+{
+	BuildPipelines();
 
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), s_xInstanceBuffer, false);
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Quads,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Quads::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads initialised");
 }

@@ -16,6 +16,7 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Maths/Zenith_Maths_Intersections.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Flux/Slang/Flux_ShaderHotReload.h"
 
 // Constants
 static constexpr float GIZMO_BASE_SIZE = 1.0f;
@@ -54,10 +55,10 @@ Zenith_Vector<Flux_Gizmos::GizmoGeometry> Flux_Gizmos::s_xTranslateGeometry;
 Zenith_Vector<Flux_Gizmos::GizmoGeometry> Flux_Gizmos::s_xRotateGeometry;
 Zenith_Vector<Flux_Gizmos::GizmoGeometry> Flux_Gizmos::s_xScaleGeometry;
 
-void Flux_Gizmos::Initialise()
+void Flux_Gizmos::BuildPipelines()
 {
 	// Load shaders
-	s_xShader.Initialise("Gizmos/Flux_Gizmos.vert", "Gizmos/Flux_Gizmos.frag");
+	s_xShader.Initialise(FluxShaderProgram::Gizmos);
 
 	// Create pipeline specification
 	Flux_PipelineSpecification xSpec;
@@ -88,6 +89,11 @@ void Flux_Gizmos::Initialise()
 
 	// Build pipeline
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xSpec);
+}
+
+void Flux_Gizmos::Initialise()
+{
+	BuildPipelines();
 
 	// Generate gizmo geometry
 	GenerateTranslationGizmoGeometry();
@@ -97,6 +103,12 @@ void Flux_Gizmos::Initialise()
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddFloat({"Editor", "Gizmos", "Alpha"}, dbg_fGizmoAlpha, 0.0f, 1.0f);
 #endif
+
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Gizmos,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Gizmos::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 
 	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos initialised");
 }

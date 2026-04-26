@@ -85,10 +85,12 @@
 // Terrain streaming (for chunk distance tests)
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 
-// Slang compiler (for SplitFilePath helper tests) - Windows only
-#ifdef ZENITH_WINDOWS
+// Slang reflection schema + codegen. Both headers are platform-neutral
+// (Slang DLL access is gated inside the .cpp via ZENITH_WINDOWS), so the
+// reflection v2 round-trip and codegen-determinism tests below run on AGDE
+// too — they exercise pure-CPU serialisation and string-builder logic.
 #include "Flux/Slang/Flux_SlangCompiler.h"
-#endif
+#include "Flux/Slang/Flux_CodeGenerator.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
@@ -9502,53 +9504,6 @@ void Zenith_UnitTests::TestStateMachineAutoInitDefaultState(){
 
 }
 
-#ifdef ZENITH_WINDOWS
-ZENITH_TEST(Slang, SlangSplitFilePath) { Zenith_UnitTests::TestSlangSplitFilePath(); }
-void Zenith_UnitTests::TestSlangSplitFilePath(){
-
-	std::string strFileName, strDirectory;
-
-	// Basic forward-slash path
-	Flux_SlangCompiler::SplitFilePath("shaders/vertex/basic.vert", strFileName, strDirectory);
-	ZENITH_ASSERT_EQ(strFileName, "basic.vert", "Forward-slash filename should be 'basic.vert'");
-	ZENITH_ASSERT_EQ(strDirectory, "shaders/vertex", "Forward-slash directory should be 'shaders/vertex'");
-
-	// Path with no directory (just a filename)
-	Flux_SlangCompiler::SplitFilePath("shader.frag", strFileName, strDirectory);
-	ZENITH_ASSERT_EQ(strFileName, "shader.frag", "No-directory filename should be 'shader.frag'");
-	ZENITH_ASSERT_EQ(strDirectory, ".", "No-directory path should default to '.'");
-
-	// Backslash path (Windows-style)
-	Flux_SlangCompiler::SplitFilePath("C:\\shaders\\compute\\blur.comp", strFileName, strDirectory);
-	ZENITH_ASSERT_EQ(strFileName, "blur.comp", "Backslash filename should be 'blur.comp'");
-	ZENITH_ASSERT_EQ(strDirectory, "C:\\shaders\\compute", "Backslash directory should be 'C:\\shaders\\compute'");
-
-}
-
-ZENITH_TEST(Slang, SlangSplitFilePathEdgeCases) { Zenith_UnitTests::TestSlangSplitFilePathEdgeCases(); }
-
-void Zenith_UnitTests::TestSlangSplitFilePathEdgeCases(){
-
-	std::string strFileName, strDirectory;
-
-	// Empty string
-	Flux_SlangCompiler::SplitFilePath("", strFileName, strDirectory);
-	ZENITH_ASSERT_EQ(strFileName, "", "Empty path filename should be empty");
-	ZENITH_ASSERT_EQ(strDirectory, ".", "Empty path directory should default to '.'");
-
-	// Just a filename with no extension
-	Flux_SlangCompiler::SplitFilePath("Makefile", strFileName, strDirectory);
-	ZENITH_ASSERT_EQ(strFileName, "Makefile", "Plain filename should be 'Makefile'");
-	ZENITH_ASSERT_EQ(strDirectory, ".", "Plain filename directory should default to '.'");
-
-	// Trailing separator
-	Flux_SlangCompiler::SplitFilePath("shaders/vertex/", strFileName, strDirectory);
-	ZENITH_ASSERT_EQ(strFileName, "", "Trailing separator should produce empty filename");
-	ZENITH_ASSERT_EQ(strDirectory, "shaders/vertex", "Trailing separator directory should be 'shaders/vertex'");
-
-}
-#endif
-
 // ========== Animation State Machine Helper Tests ==========
 
 ZENITH_TEST(Core, ParamSerializationFloat) { Zenith_UnitTests::TestParamSerializationFloat(); }
@@ -11027,42 +10982,590 @@ void Zenith_UnitTests::TestUITextVerticalAlignment(){
 }
 
 //=============================================================================
-// SlangCompiler helper tests
+// Slang reflection v2 round-trip tests
+//
+// Pin the binary on-disk format of the .spv.refl sidecar so a future schema
+// bump has to come with an explicit version handler. Reflection is consumed
+// by RootSigBuilder + name-keyed binders at runtime and by the C++ codegen
+// at FluxCompiler time, so a silent format break would manifest as either
+// "GetBinding(...) failed" spam at startup or static_assert sizeof/offsetof
+// failures in generated headers — both annoying to diagnose. These tests
+// run on every platform (no Slang compiler dependency).
 //=============================================================================
 
-ZENITH_TEST(Slang, SlangIsBindingAlreadyPresent) { Zenith_UnitTests::TestSlangIsBindingAlreadyPresent(); }
+ZENITH_TEST(Slang, ReflectionV2RoundTrip) { Zenith_UnitTests::TestReflectionV2RoundTrip(); }
 
-void Zenith_UnitTests::TestSlangIsBindingAlreadyPresent(){
+void Zenith_UnitTests::TestReflectionV2RoundTrip(){
 
-	Flux_ShaderReflection xReflection;
+	Flux_ShaderReflection xWrite;
 
-	Flux_ReflectedBinding xFirst;
-	xFirst.m_uSet = 0;
-	xFirst.m_uBinding = 2;
-	xFirst.m_strName = "g_xCameraBuffer";
-	xFirst.m_eType = BINDING_TYPE_BUFFER;
-	xReflection.AddBinding(xFirst);
+	Flux_ReflectedBinding xCB;
+	xCB.m_eType                 = BINDING_TYPE_BUFFER;
+	xCB.m_uSet                  = 0;
+	xCB.m_uBinding              = 0;
+	xCB.m_strName               = "FrameConstants";
+	xCB.m_uSize                 = 256;
+	xCB.m_eResourceKind         = FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+	xCB.m_uDescriptorCount      = 1;
+	xCB.m_uStageMask            = FLUX_SHADER_STAGE_BIT_VERTEX | FLUX_SHADER_STAGE_BIT_FRAGMENT;
+	xCB.m_strParameterBlockPath = "frame";
+	{
+		Flux_ReflectedField xF;
+		xF.m_strName     = "m_xViewMat";
+		xF.m_uOffset     = 0;
+		xF.m_uSize       = 64;
+		xF.m_uArrayCount = 1;
+		xF.m_strTypeName = "float4x4";
+		xCB.m_axFields.PushBack(xF);
+	}
+	{
+		Flux_ReflectedField xF;
+		xF.m_strName     = "m_xCameraPos_Pad";
+		xF.m_uOffset     = 64;
+		xF.m_uSize       = 16;
+		xF.m_uArrayCount = 1;
+		xF.m_strTypeName = "float4";
+		xCB.m_axFields.PushBack(xF);
+	}
+	xWrite.AddBinding(xCB);
 
-	// Same (set, binding) with a different name — still a duplicate.
-	Flux_ReflectedBinding xDup;
-	xDup.m_uSet = 0;
-	xDup.m_uBinding = 2;
-	xDup.m_strName = "g_xCameraBufferPerEntryPoint";
-	xDup.m_eType = BINDING_TYPE_BUFFER;
-	ZENITH_ASSERT_TRUE(Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDup), "Binding with matching (set=0, binding=2) should be detected as already present");
+	Flux_ReflectedBinding xTex;
+	xTex.m_eType            = BINDING_TYPE_TEXTURE;
+	xTex.m_uSet             = 1;
+	xTex.m_uBinding         = 3;
+	xTex.m_strName          = "g_xAlbedoTex";
+	xTex.m_uSize            = 0;
+	xTex.m_eResourceKind    = FLUX_RESOURCE_KIND_TEXTURE;
+	xTex.m_uDescriptorCount = 1;
+	xTex.m_uStageMask       = FLUX_SHADER_STAGE_BIT_FRAGMENT;
+	xWrite.AddBinding(xTex);
 
-	// Different set, same binding slot — NOT a duplicate.
-	Flux_ReflectedBinding xDifferentSet;
-	xDifferentSet.m_uSet = 1;
-	xDifferentSet.m_uBinding = 2;
-	xDifferentSet.m_strName = "g_xOther";
-	ZENITH_ASSERT_FALSE(Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDifferentSet), "Binding in different descriptor set should not be flagged as duplicate");
+	Flux_ReflectedBinding xUav;
+	xUav.m_eType            = BINDING_TYPE_STORAGE_BUFFER;
+	xUav.m_uSet             = 0;
+	xUav.m_uBinding         = 5;
+	xUav.m_strName          = "g_axHistogram";
+	xUav.m_uSize            = 0;
+	xUav.m_eResourceKind    = FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER;
+	xUav.m_uDescriptorCount = 1;
+	xUav.m_uStageMask       = FLUX_SHADER_STAGE_BIT_COMPUTE;
+	xWrite.AddBinding(xUav);
 
-	// Same set, different binding slot — NOT a duplicate.
-	Flux_ReflectedBinding xDifferentSlot;
-	xDifferentSlot.m_uSet = 0;
-	xDifferentSlot.m_uBinding = 3;
-	xDifferentSlot.m_strName = "g_xAnother";
-	ZENITH_ASSERT_FALSE(Flux_SlangCompiler::IsBindingAlreadyPresent(xReflection, xDifferentSlot), "Binding at different slot should not be flagged as duplicate");
+	Zenith_DataStream xStream(2048);
+	xWrite.WriteToDataStream(xStream);
+
+	xStream.SetCursor(0);
+	Flux_ShaderReflection xRead;
+	xRead.ReadFromDataStream(xStream);
+
+	const Zenith_Vector<Flux_ReflectedBinding>& axBindings = xRead.GetBindings();
+	ZENITH_ASSERT_EQ(axBindings.GetSize(), 3, "Round-trip should produce three bindings");
+
+	const Flux_ReflectedBinding& xCBOut = axBindings.Get(0);
+	ZENITH_ASSERT_EQ(xCBOut.m_strName, "FrameConstants", "CB name should round-trip");
+	ZENITH_ASSERT_EQ(xCBOut.m_uSet, 0, "CB set should round-trip");
+	ZENITH_ASSERT_EQ(xCBOut.m_uBinding, 0, "CB binding slot should round-trip");
+	ZENITH_ASSERT_EQ(xCBOut.m_uSize, 256, "CB size should round-trip");
+	ZENITH_ASSERT_EQ((int)xCBOut.m_eResourceKind, (int)FLUX_RESOURCE_KIND_CONSTANT_BUFFER, "CB resource kind should round-trip");
+	ZENITH_ASSERT_EQ(xCBOut.m_uStageMask, (FLUX_SHADER_STAGE_BIT_VERTEX | FLUX_SHADER_STAGE_BIT_FRAGMENT), "CB stage mask should round-trip");
+	ZENITH_ASSERT_EQ(xCBOut.m_strParameterBlockPath, "frame", "CB parameter-block path should round-trip");
+	ZENITH_ASSERT_EQ(xCBOut.m_axFields.GetSize(), 2, "CB should have two reflected fields");
+
+	const Flux_ReflectedField& xField0 = xCBOut.m_axFields.Get(0);
+	ZENITH_ASSERT_EQ(xField0.m_strName, "m_xViewMat", "Field 0 name should round-trip");
+	ZENITH_ASSERT_EQ(xField0.m_uOffset, 0, "Field 0 offset should round-trip");
+	ZENITH_ASSERT_EQ(xField0.m_uSize, 64, "Field 0 size should round-trip");
+	ZENITH_ASSERT_EQ(xField0.m_strTypeName, "float4x4", "Field 0 type name should round-trip");
+
+	const Flux_ReflectedField& xField1 = xCBOut.m_axFields.Get(1);
+	ZENITH_ASSERT_EQ(xField1.m_uOffset, 64, "Field 1 offset should round-trip");
+	ZENITH_ASSERT_EQ(xField1.m_strTypeName, "float4", "Field 1 type name should round-trip");
+
+	const Flux_ReflectedBinding& xTexOut = axBindings.Get(1);
+	ZENITH_ASSERT_EQ((int)xTexOut.m_eResourceKind, (int)FLUX_RESOURCE_KIND_TEXTURE, "Texture resource kind should round-trip");
+	ZENITH_ASSERT_EQ(xTexOut.m_uStageMask, (u_int)FLUX_SHADER_STAGE_BIT_FRAGMENT, "Texture stage mask should round-trip");
+
+	const Flux_ReflectedBinding& xUavOut = axBindings.Get(2);
+	ZENITH_ASSERT_EQ((int)xUavOut.m_eResourceKind, (int)FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, "RW structured buffer resource kind should round-trip");
+	ZENITH_ASSERT_EQ(xUavOut.m_uStageMask, (u_int)FLUX_SHADER_STAGE_BIT_COMPUTE, "Compute stage mask should round-trip");
+
+}
+
+ZENITH_TEST(Slang, ReflectionV2EmptyRoundTrip) { Zenith_UnitTests::TestReflectionV2EmptyRoundTrip(); }
+
+void Zenith_UnitTests::TestReflectionV2EmptyRoundTrip(){
+
+	// A program with no bindings is valid (e.g. a vertex shader that only
+	// reads a push constant). The on-disk format must round-trip cleanly
+	// with zero entries — if it doesn't, magic/version handling is broken.
+	Flux_ShaderReflection xEmpty;
+
+	Zenith_DataStream xStream(64);
+	xEmpty.WriteToDataStream(xStream);
+
+	xStream.SetCursor(0);
+	Flux_ShaderReflection xRead;
+	xRead.ReadFromDataStream(xStream);
+
+	ZENITH_ASSERT_EQ(xRead.GetBindings().GetSize(), 0, "Empty reflection should produce zero bindings");
+
+}
+
+ZENITH_TEST(Slang, ReflectionV2UnboundedDescriptorCount) { Zenith_UnitTests::TestReflectionV2UnboundedDescriptorCount(); }
+
+void Zenith_UnitTests::TestReflectionV2UnboundedDescriptorCount(){
+
+	// Unbounded descriptor arrays serialise descriptor count as 0 (the
+	// runtime treats 0 as "use VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_-
+	// COUNT_BIT"). Confirm the literal zero round-trips and that 1 stays 1
+	// — boundaries either side of the sentinel.
+	Flux_ShaderReflection xWrite;
+
+	Flux_ReflectedBinding xUnbounded;
+	xUnbounded.m_eType            = BINDING_TYPE_UNBOUNDED_TEXTURES;
+	xUnbounded.m_uSet             = 2;
+	xUnbounded.m_uBinding         = 0;
+	xUnbounded.m_strName          = "g_axBindlessTextures";
+	xUnbounded.m_eResourceKind    = FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY;
+	xUnbounded.m_uDescriptorCount = 0;
+	xUnbounded.m_uStageMask       = FLUX_SHADER_STAGE_BIT_FRAGMENT;
+	xWrite.AddBinding(xUnbounded);
+
+	Flux_ReflectedBinding xBounded;
+	xBounded.m_eType            = BINDING_TYPE_TEXTURE;
+	xBounded.m_uSet             = 0;
+	xBounded.m_uBinding         = 1;
+	xBounded.m_strName          = "g_xBoundedTex";
+	xBounded.m_eResourceKind    = FLUX_RESOURCE_KIND_TEXTURE;
+	xBounded.m_uDescriptorCount = 1;
+	xWrite.AddBinding(xBounded);
+
+	Zenith_DataStream xStream(512);
+	xWrite.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+
+	Flux_ShaderReflection xRead;
+	xRead.ReadFromDataStream(xStream);
+	const Zenith_Vector<Flux_ReflectedBinding>& axOut = xRead.GetBindings();
+	ZENITH_ASSERT_EQ(axOut.GetSize(), 2, "Should round-trip both bindings");
+	ZENITH_ASSERT_EQ(axOut.Get(0).m_uDescriptorCount, 0, "Unbounded descriptor count should round-trip as 0");
+	ZENITH_ASSERT_EQ(axOut.Get(1).m_uDescriptorCount, 1, "Bounded descriptor count should round-trip as 1");
+
+}
+
+ZENITH_TEST(Slang, ReflectionV2NamedLookupAfterDeserialise) { Zenith_UnitTests::TestReflectionV2NamedLookupAfterDeserialise(); }
+
+void Zenith_UnitTests::TestReflectionV2NamedLookupAfterDeserialise(){
+
+	// ReadFromDataStream calls BuildLookupMap at the end so callers can
+	// immediately use GetBinding(name). Pin that contract — the runtime
+	// binder relies on it (no explicit Build call after ReadFromFile).
+	Flux_ShaderReflection xWrite;
+
+	Flux_ReflectedBinding xA;
+	xA.m_eType         = BINDING_TYPE_BUFFER;
+	xA.m_uSet          = 0;
+	xA.m_uBinding      = 0;
+	xA.m_strName       = "FrameConstants";
+	xA.m_eResourceKind = FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+	xWrite.AddBinding(xA);
+
+	Flux_ReflectedBinding xB;
+	xB.m_eType         = BINDING_TYPE_TEXTURE;
+	xB.m_uSet          = 1;
+	xB.m_uBinding      = 7;
+	xB.m_strName       = "g_xAlbedoTex";
+	xB.m_eResourceKind = FLUX_RESOURCE_KIND_TEXTURE;
+	xWrite.AddBinding(xB);
+
+	Zenith_DataStream xStream(512);
+	xWrite.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+
+	Flux_ShaderReflection xRead;
+	xRead.ReadFromDataStream(xStream);
+
+	const Flux_ReflectedBinding* pxFrame  = xRead.GetBinding("FrameConstants");
+	const Flux_ReflectedBinding* pxAlbedo = xRead.GetBinding("g_xAlbedoTex");
+	const Flux_ReflectedBinding* pxMissing = xRead.GetBinding("DoesNotExist");
+
+	ZENITH_ASSERT_TRUE(pxFrame != nullptr, "FrameConstants should be locatable by name after deserialise");
+	ZENITH_ASSERT_TRUE(pxAlbedo != nullptr, "g_xAlbedoTex should be locatable by name after deserialise");
+	ZENITH_ASSERT_TRUE(pxMissing == nullptr, "Missing binding should return nullptr, not stale entry");
+
+	if (pxFrame)  { ZENITH_ASSERT_EQ(pxFrame->m_uSet, 0, "Frame lookup should resolve to set=0"); }
+	if (pxAlbedo) { ZENITH_ASSERT_EQ(pxAlbedo->m_uBinding, 7, "Albedo lookup should resolve to binding=7"); }
+
+}
+
+//=============================================================================
+// Codegen determinism tests
+//
+// The generator emits C++ headers consumed by engine code with static_asserts
+// on sizeof / offsetof, so the relationship between Slang reflection and the
+// emitted struct must be byte-stable. These tests pin:
+//   - the program-enum content matches the registry (per-program line + COUNT)
+//   - subsystem-header content is byte-identical when called twice with the
+//     same inputs (no map ordering, no hash randomisation, no timestamps)
+//   - reflected bindings show up as kName/kSet/kBinding/kDescriptorCount lines
+//   - CB bindings emit a struct + static_asserts on size and per-field offsets
+//   - non-identifier characters in resource names get sanitised so generated
+//     C++ stays valid
+//=============================================================================
+
+ZENITH_TEST(Codegen, CodegenDeterministicDoubleRun) { Zenith_UnitTests::TestCodegenDeterministicDoubleRun(); }
+
+void Zenith_UnitTests::TestCodegenDeterministicDoubleRun(){
+
+	// Build a tiny synthetic registry-flavoured input: one program, one CB
+	// binding with two fields, one texture binding. Run the generator twice
+	// over it and confirm byte-identical output. If anything in the path
+	// (std::unordered_map iteration, snprintf locale, std::vector growth)
+	// introduces nondeterminism, this is the test that catches it.
+	Flux_ShaderReflection xRefl;
+
+	Flux_ReflectedBinding xCB;
+	xCB.m_eType            = BINDING_TYPE_BUFFER;
+	xCB.m_uSet             = 0;
+	xCB.m_uBinding         = 0;
+	xCB.m_strName          = "FrameConstants";
+	xCB.m_uSize            = 80;
+	xCB.m_eResourceKind    = FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+	xCB.m_uDescriptorCount = 1;
+	{
+		Flux_ReflectedField xF;
+		xF.m_strName     = "m_xViewMat";
+		xF.m_uOffset     = 0;
+		xF.m_uSize       = 64;
+		xF.m_uArrayCount = 1;
+		xF.m_strTypeName = "float4x4";
+		xCB.m_axFields.PushBack(xF);
+	}
+	{
+		Flux_ReflectedField xF;
+		xF.m_strName     = "m_xCameraPos_Pad";
+		xF.m_uOffset     = 64;
+		xF.m_uSize       = 16;
+		xF.m_uArrayCount = 1;
+		xF.m_strTypeName = "float4";
+		xCB.m_axFields.PushBack(xF);
+	}
+	xRefl.AddBinding(xCB);
+
+	Flux_ReflectedBinding xTex;
+	xTex.m_eType            = BINDING_TYPE_TEXTURE;
+	xTex.m_uSet             = 1;
+	xTex.m_uBinding         = 3;
+	xTex.m_strName          = "g_xAlbedoTex";
+	xTex.m_eResourceKind    = FLUX_RESOURCE_KIND_TEXTURE;
+	xTex.m_uDescriptorCount = 1;
+	xRefl.AddBinding(xTex);
+	xRefl.BuildLookupMap();
+
+	Flux_CodeGenerator::ProgramReflection xPR;
+	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxReflection = &xRefl;
+
+	const std::string strFirst  = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestPilot", &xPR, 1);
+	const std::string strSecond = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestPilot", &xPR, 1);
+
+	ZENITH_ASSERT_EQ(strFirst, strSecond, "Codegen must produce byte-identical output across runs with identical input");
+	ZENITH_ASSERT_TRUE(!strFirst.empty(), "Codegen output should not be empty");
+
+	// Program-enum content is independent of input data (it's a function of
+	// the registry), so the same double-run check applies.
+	const std::string strEnum1 = Flux_CodeGenerator::BuildProgramEnumContent();
+	const std::string strEnum2 = Flux_CodeGenerator::BuildProgramEnumContent();
+	ZENITH_ASSERT_EQ(strEnum1, strEnum2, "Program enum content must be deterministic");
+
+	// Sanity: enum should at least include one program name and the COUNT
+	// terminator (the registry must have at least one entry for the engine
+	// to link).
+	ZENITH_ASSERT_TRUE(strEnum1.find("enum class FluxShaderProgram") != std::string::npos, "Enum content should declare FluxShaderProgram");
+	ZENITH_ASSERT_TRUE(strEnum1.find("COUNT") != std::string::npos, "Enum content should include COUNT terminator");
+
+}
+
+ZENITH_TEST(Codegen, CodegenContainsBindingMetadata) { Zenith_UnitTests::TestCodegenContainsBindingMetadata(); }
+
+void Zenith_UnitTests::TestCodegenContainsBindingMetadata(){
+
+	// Pin the binding-metadata emission shape — a name, set, binding, and
+	// descriptor-count line per reflected resource. The runtime root-sig
+	// builder doesn't read these constants today (it goes through reflection
+	// directly), but downstream code that imports the generated header to
+	// avoid string-keyed lookups depends on them being stable.
+	Flux_ShaderReflection xRefl;
+
+	Flux_ReflectedBinding xTex;
+	xTex.m_eType            = BINDING_TYPE_TEXTURE;
+	xTex.m_uSet             = 1;
+	xTex.m_uBinding         = 7;
+	xTex.m_strName          = "g_xAlbedoTex";
+	xTex.m_eResourceKind    = FLUX_RESOURCE_KIND_TEXTURE;
+	xTex.m_uDescriptorCount = 1;
+	xRefl.AddBinding(xTex);
+	xRefl.BuildLookupMap();
+
+	Flux_CodeGenerator::ProgramReflection xPR;
+	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxReflection = &xRefl;
+
+	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestMetadata", &xPR, 1);
+
+	ZENITH_ASSERT_TRUE(str.find("kg_xAlbedoTex_Name = \"g_xAlbedoTex\"") != std::string::npos, "kName constant should reflect the original binding name");
+	ZENITH_ASSERT_TRUE(str.find("kg_xAlbedoTex_Set = 1") != std::string::npos, "kSet constant should reflect the binding's descriptor set");
+	ZENITH_ASSERT_TRUE(str.find("kg_xAlbedoTex_Binding = 7") != std::string::npos, "kBinding constant should reflect the binding slot");
+	ZENITH_ASSERT_TRUE(str.find("kg_xAlbedoTex_DescriptorCount = 1") != std::string::npos, "kDescriptorCount should reflect the descriptor count");
+	ZENITH_ASSERT_TRUE(str.find("// kind: Texture") != std::string::npos, "Resource kind comment should be present");
+
+}
+
+ZENITH_TEST(Codegen, CodegenEmitsCBStructWithStaticAsserts) { Zenith_UnitTests::TestCodegenEmitsCBStructWithStaticAsserts(); }
+
+void Zenith_UnitTests::TestCodegenEmitsCBStructWithStaticAsserts(){
+
+	// CB / parameter-block bindings emit a C++ struct mirror with size and
+	// per-field offset asserts. This is the GPU<->CPU layout fence — without
+	// the asserts, an offsetof drift would silently corrupt every shader read
+	// at runtime. Pin that the asserts get emitted with the right numbers.
+	Flux_ShaderReflection xRefl;
+
+	Flux_ReflectedBinding xCB;
+	xCB.m_eType            = BINDING_TYPE_BUFFER;
+	xCB.m_uSet             = 0;
+	xCB.m_uBinding         = 0;
+	xCB.m_strName          = "MyConstants";
+	xCB.m_uSize            = 80;
+	xCB.m_eResourceKind    = FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+	xCB.m_uDescriptorCount = 1;
+	{
+		// Field names match Slang/HLSL reflection (no engine 'm_' prefix —
+		// the generator prepends 'm_x' on emission).
+		Flux_ReflectedField xF;
+		xF.m_strName     = "viewMat";
+		xF.m_uOffset     = 0;
+		xF.m_uSize       = 64;
+		xF.m_uArrayCount = 1;
+		xF.m_strTypeName = "float4x4";
+		xCB.m_axFields.PushBack(xF);
+	}
+	{
+		Flux_ReflectedField xF;
+		xF.m_strName     = "cameraPos";
+		xF.m_uOffset     = 64;
+		xF.m_uSize       = 16;
+		xF.m_uArrayCount = 1;
+		xF.m_strTypeName = "float4";
+		xCB.m_axFields.PushBack(xF);
+	}
+	xRefl.AddBinding(xCB);
+	xRefl.BuildLookupMap();
+
+	Flux_CodeGenerator::ProgramReflection xPR;
+	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxReflection = &xRefl;
+
+	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestStruct", &xPR, 1);
+
+	ZENITH_ASSERT_TRUE(str.find("struct MyConstants_CB") != std::string::npos, "Should emit struct mirror for CB binding");
+	ZENITH_ASSERT_TRUE(str.find("glm::mat4 m_xviewMat") != std::string::npos, "float4x4 field should map to glm::mat4 with 'm_x' prefix");
+	ZENITH_ASSERT_TRUE(str.find("glm::vec4 m_xcameraPos") != std::string::npos, "float4 field should map to glm::vec4 with 'm_x' prefix");
+	ZENITH_ASSERT_TRUE(str.find("static_assert(sizeof(MyConstants_CB) == 80") != std::string::npos, "Should static_assert struct size matches reflected CB size");
+	ZENITH_ASSERT_TRUE(str.find("static_assert(offsetof(MyConstants_CB, m_xviewMat) == 0") != std::string::npos, "Should static_assert viewMat offset");
+	ZENITH_ASSERT_TRUE(str.find("static_assert(offsetof(MyConstants_CB, m_xcameraPos) == 64") != std::string::npos, "Should static_assert cameraPos offset");
+
+}
+
+ZENITH_TEST(Codegen, CodegenScalarHungarianPrefixes) { Zenith_UnitTests::TestCodegenScalarHungarianPrefixes(); }
+
+void Zenith_UnitTests::TestCodegenScalarHungarianPrefixes(){
+
+	// Scalar fields use type-specific Hungarian prefixes (`m_f` float,
+	// `m_u` uint, `m_i` int, `m_b` bool); vec/mat fields use `m_x`. Pin
+	// the prefix-vs-type mapping so a future refactor that changes the
+	// table flips the offsetof assert names too.
+	Flux_ShaderReflection xRefl;
+
+	Flux_ReflectedBinding xCB;
+	xCB.m_eType            = BINDING_TYPE_BUFFER;
+	xCB.m_uSet             = 0;
+	xCB.m_uBinding         = 0;
+	xCB.m_strName          = "ScalarConstants";
+	xCB.m_uSize            = 32;
+	xCB.m_eResourceKind    = FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+	xCB.m_uDescriptorCount = 1;
+	{
+		Flux_ReflectedField xF; xF.m_strName = "intensity";   xF.m_uOffset = 0;  xF.m_uSize = 4; xF.m_uArrayCount = 1; xF.m_strTypeName = "float";
+		xCB.m_axFields.PushBack(xF);
+	}
+	{
+		Flux_ReflectedField xF; xF.m_strName = "frameIndex";  xF.m_uOffset = 4;  xF.m_uSize = 4; xF.m_uArrayCount = 1; xF.m_strTypeName = "uint";
+		xCB.m_axFields.PushBack(xF);
+	}
+	{
+		Flux_ReflectedField xF; xF.m_strName = "delta";       xF.m_uOffset = 8;  xF.m_uSize = 4; xF.m_uArrayCount = 1; xF.m_strTypeName = "int";
+		xCB.m_axFields.PushBack(xF);
+	}
+	{
+		Flux_ReflectedField xF; xF.m_strName = "enableShadows"; xF.m_uOffset = 12; xF.m_uSize = 4; xF.m_uArrayCount = 1; xF.m_strTypeName = "bool";
+		xCB.m_axFields.PushBack(xF);
+	}
+	{
+		Flux_ReflectedField xF; xF.m_strName = "tint";        xF.m_uOffset = 16; xF.m_uSize = 16; xF.m_uArrayCount = 1; xF.m_strTypeName = "float4";
+		xCB.m_axFields.PushBack(xF);
+	}
+	xRefl.AddBinding(xCB);
+	xRefl.BuildLookupMap();
+
+	Flux_CodeGenerator::ProgramReflection xPR;
+	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxReflection = &xRefl;
+
+	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestPrefixes", &xPR, 1);
+
+	ZENITH_ASSERT_TRUE(str.find("float m_fintensity")            != std::string::npos, "float should use 'm_f' prefix");
+	ZENITH_ASSERT_TRUE(str.find("unsigned int m_uframeIndex")    != std::string::npos, "uint should use 'm_u' prefix");
+	ZENITH_ASSERT_TRUE(str.find("int m_idelta")                  != std::string::npos, "int should use 'm_i' prefix");
+	ZENITH_ASSERT_TRUE(str.find("unsigned int m_benableShadows") != std::string::npos, "bool should use 'm_b' prefix and unsigned-int storage");
+	ZENITH_ASSERT_TRUE(str.find("glm::vec4 m_xtint")             != std::string::npos, "vec4 should use 'm_x' prefix");
+
+	// offsetof asserts must reference the same Hungarian-prefixed name.
+	ZENITH_ASSERT_TRUE(str.find("offsetof(ScalarConstants_CB, m_fintensity)")     != std::string::npos, "offsetof should use 'm_f' name");
+	ZENITH_ASSERT_TRUE(str.find("offsetof(ScalarConstants_CB, m_uframeIndex)")    != std::string::npos, "offsetof should use 'm_u' name");
+	ZENITH_ASSERT_TRUE(str.find("offsetof(ScalarConstants_CB, m_idelta)")         != std::string::npos, "offsetof should use 'm_i' name");
+	ZENITH_ASSERT_TRUE(str.find("offsetof(ScalarConstants_CB, m_benableShadows)") != std::string::npos, "offsetof should use 'm_b' name");
+	ZENITH_ASSERT_TRUE(str.find("offsetof(ScalarConstants_CB, m_xtint)")          != std::string::npos, "offsetof should use 'm_x' name");
+
+}
+
+ZENITH_TEST(Codegen, CodegenInsertsTrailingPadding) { Zenith_UnitTests::TestCodegenInsertsTrailingPadding(); }
+
+void Zenith_UnitTests::TestCodegenInsertsTrailingPadding(){
+
+	// Reproduces the ComputeTest case: an unmapped vector field with
+	// reflected size 8 inside a CB whose total size is 16 (std140 rounds
+	// the CB up to 16-byte alignment). Without trailing padding the
+	// emitted struct would be 8 bytes and the size_assert would fail at
+	// host compile time.
+	Flux_ShaderReflection xRefl;
+
+	Flux_ReflectedBinding xCB;
+	xCB.m_eType            = BINDING_TYPE_BUFFER;
+	xCB.m_uSet             = 0;
+	xCB.m_uBinding         = 0;
+	xCB.m_strName          = "PaddedCB";
+	xCB.m_uSize            = 16;
+	xCB.m_eResourceKind    = FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+	xCB.m_uDescriptorCount = 1;
+	{
+		Flux_ReflectedField xF;
+		xF.m_strName     = "imageSize";
+		xF.m_uOffset     = 0;
+		xF.m_uSize       = 8;
+		xF.m_uArrayCount = 2;
+		xF.m_strTypeName = "vector"; // unmapped — falls into byte-buffer branch
+		xCB.m_axFields.PushBack(xF);
+	}
+	xRefl.AddBinding(xCB);
+	xRefl.BuildLookupMap();
+
+	Flux_CodeGenerator::ProgramReflection xPR;
+	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxReflection = &xRefl;
+
+	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestPad", &xPR, 1);
+
+	ZENITH_ASSERT_TRUE(str.find("unsigned char m_aimageSize[8]") != std::string::npos, "Should emit byte-buffer for unmapped vector");
+	ZENITH_ASSERT_TRUE(str.find("m_aPad_8[8]") != std::string::npos, "Should emit 8-byte trailing pad to bring struct from 8 to 16");
+	ZENITH_ASSERT_TRUE(str.find("static_assert(sizeof(PaddedCB_CB) == 16") != std::string::npos, "size_assert should match reflected CB size");
+
+}
+
+ZENITH_TEST(Codegen, CodegenInsertsInteriorPadding) { Zenith_UnitTests::TestCodegenInsertsInteriorPadding(); }
+
+void Zenith_UnitTests::TestCodegenInsertsInteriorPadding(){
+
+	// std140 pads vec3 to 16 bytes. Slang surfaces a `float3` field at
+	// offset 0 with size 12, then a `float` at offset 16 — there's a
+	// 4-byte hole between. Pin that the generator emits the hole as a
+	// pad member so offsetof of the trailing field still resolves to 16.
+	Flux_ShaderReflection xRefl;
+
+	Flux_ReflectedBinding xCB;
+	xCB.m_eType            = BINDING_TYPE_BUFFER;
+	xCB.m_uSet             = 0;
+	xCB.m_uBinding         = 0;
+	xCB.m_strName          = "InteriorPadCB";
+	xCB.m_uSize            = 32;
+	xCB.m_eResourceKind    = FLUX_RESOURCE_KIND_CONSTANT_BUFFER;
+	xCB.m_uDescriptorCount = 1;
+	{
+		Flux_ReflectedField xF;
+		xF.m_strName     = "direction";
+		xF.m_uOffset     = 0;
+		xF.m_uSize       = 12;
+		xF.m_uArrayCount = 1;
+		xF.m_strTypeName = "float3";
+		xCB.m_axFields.PushBack(xF);
+	}
+	{
+		Flux_ReflectedField xF;
+		xF.m_strName     = "intensity";
+		xF.m_uOffset     = 16;     // std140 hole at [12,16)
+		xF.m_uSize       = 4;
+		xF.m_uArrayCount = 1;
+		xF.m_strTypeName = "float";
+		xCB.m_axFields.PushBack(xF);
+	}
+	xRefl.AddBinding(xCB);
+	xRefl.BuildLookupMap();
+
+	Flux_CodeGenerator::ProgramReflection xPR;
+	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxReflection = &xRefl;
+
+	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestInterior", &xPR, 1);
+
+	ZENITH_ASSERT_TRUE(str.find("glm::vec3 m_xdirection") != std::string::npos, "float3 should map to glm::vec3");
+	ZENITH_ASSERT_TRUE(str.find("m_aPad_12[4]") != std::string::npos, "Should emit 4-byte interior pad after vec3");
+	ZENITH_ASSERT_TRUE(str.find("float m_fintensity") != std::string::npos, "float should map to float");
+	ZENITH_ASSERT_TRUE(str.find("m_aPad_20[12]") != std::string::npos, "Should emit 12-byte trailing pad up to 32 bytes");
+	ZENITH_ASSERT_TRUE(str.find("offsetof(InteriorPadCB_CB, m_fintensity) == 16") != std::string::npos, "intensity offset should still be 16 after padding insertion");
+
+}
+
+ZENITH_TEST(Codegen, CodegenSanitisesIdentifiers) { Zenith_UnitTests::TestCodegenSanitisesIdentifiers(); }
+
+void Zenith_UnitTests::TestCodegenSanitisesIdentifiers(){
+
+	// Resource names in shader source can theoretically contain dots (for
+	// parameter-block paths, e.g. "frame.lights"), spaces, or leading digits.
+	// These would be invalid C++ identifiers verbatim, so the generator
+	// sanitises them. Pin the sanitisation rule so a future generator change
+	// can't silently break downstream callers.
+	Flux_ShaderReflection xRefl;
+
+	Flux_ReflectedBinding xWeird;
+	xWeird.m_eType            = BINDING_TYPE_TEXTURE;
+	xWeird.m_uSet             = 0;
+	xWeird.m_uBinding         = 0;
+	xWeird.m_strName          = "frame.lights"; // contains a dot
+	xWeird.m_eResourceKind    = FLUX_RESOURCE_KIND_TEXTURE;
+	xWeird.m_uDescriptorCount = 1;
+	xRefl.AddBinding(xWeird);
+	xRefl.BuildLookupMap();
+
+	Flux_CodeGenerator::ProgramReflection xPR;
+	xPR.m_eId = static_cast<FluxShaderProgram>(0);
+	xPR.m_pxReflection = &xRefl;
+
+	const std::string str = Flux_CodeGenerator::BuildSubsystemHeaderContent("CodegenTestIdentifier", &xPR, 1);
+
+	// The constant identifier should have the dot replaced with underscore;
+	// the kName string literal should keep the original shader-side name so
+	// runtime lookups still work.
+	ZENITH_ASSERT_TRUE(str.find("kframe_lights_Name = \"frame.lights\"") != std::string::npos, "Sanitised identifier should replace '.' with '_' but kName literal should preserve original");
+	ZENITH_ASSERT_TRUE(str.find("frame.lights_Set") == std::string::npos, "Generated identifier should never contain raw '.'");
 
 }

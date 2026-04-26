@@ -63,6 +63,7 @@ public:
 	~Flux_Grass() = delete;
 
 	static void Initialise();
+	static void BuildPipelines();
 	static void Shutdown();
 	static void Reset();
 

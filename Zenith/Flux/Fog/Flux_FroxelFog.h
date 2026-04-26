@@ -35,6 +35,7 @@ public:
 	~Flux_FroxelFog() = delete;
 
 	static void Initialise();
+	static void BuildPipelines();
 	static void Reset();
 
 	// Called from Flux_Fog::SetupRenderGraph to create transients and set state.

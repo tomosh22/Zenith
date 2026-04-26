@@ -19,6 +19,7 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
 
@@ -101,13 +102,10 @@ void CreateGrassBladeMesh()
 	Flux_MemoryManager::InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xGrassBladeMesh.m_xIndexBuffer);
 }
 
-void Flux_Grass::Initialise()
+void Flux_Grass::BuildPipelines()
 {
-	CreateGrassBladeMesh();
-	CreateBuffers();
-
 	// Initialize grass shader
-	s_xGrassShader.Initialise("Vegetation/Flux_Grass.vert", "Vegetation/Flux_Grass.frag");
+	s_xGrassShader.Initialise(FluxShaderProgram::Grass);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -128,12 +126,26 @@ void Flux_Grass::Initialise()
 	s_xGrassShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xGrassPipeline, xPipelineSpec);
+}
+
+void Flux_Grass::Initialise()
+{
+	CreateGrassBladeMesh();
+	CreateBuffers();
+
+	BuildPipelines();
 
 	// Initialize constants buffer
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xGrassConstants, sizeof(GrassConstants), s_xGrassConstantsBuffer);
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
+
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Grass,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Grass::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass Initialised");
@@ -242,7 +254,7 @@ void Flux_Grass::ExecuteRender(Flux_CommandList* pxCmdList, void*)
 		Flux_ShaderBinder xBinder(*pxCmdList);
 		xBinder.BindCBV(s_xGrassShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindCBV(s_xGrassShader, "GrassConstants", &s_xGrassConstantsBuffer.GetCBV());
-		xBinder.BindUAV_Buffer(s_xGrassShader, "g_xInstances", &s_xInstanceBuffer.GetUAV());
+		xBinder.BindUAV_Buffer(s_xGrassShader, "InstanceBuffer", &s_xInstanceBuffer.GetUAV());
 	}
 
 	// Draw instanced grass (6 indices per blade, s_uVisibleBladeCount instances)

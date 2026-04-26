@@ -2,6 +2,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Shaders/Generated/FluxShaderProgram.h"
 #include "Zenith_PlatformGraphics_Include.h"
 
 // Concept group: pipeline / shader / root signature construction.
@@ -12,23 +13,18 @@
 // that references the shader; ComputePipelineBuilder cooperates with all
 // three).
 
-// ---- Shader: load pre-compiled SPIR-V (or backend equivalent), expose
-// reflection. The const-correctness of GetReflection matters because the
-// binder caches a reflection pointer.
+// ---- Shader: initialise from a shader program ID (resolved against the
+// Slang registry — graphics or compute is determined by the registry entry's
+// populated entry-point fields), expose linked reflection. The const-
+// correctness of GetReflection matters because the binder caches a
+// reflection pointer.
 template <typename T>
 concept FluxBackendShader = requires(
 	T& xShader,
 	const T& xCShader,
-	const std::string& xVertexPath,
-	const std::string& xFragmentPath,
-	const std::string& xGeometryPath,
-	const std::string& xTessControlPath,
-	const std::string& xTessEvalPath,
-	const std::string& xComputePath)
+	FluxShaderProgram eProgram)
 {
-	{ xShader.Initialise(xVertexPath, xFragmentPath, xGeometryPath,
-	                     xTessControlPath, xTessEvalPath)                      } -> std::same_as<void>;
-	{ xShader.InitialiseCompute(xComputePath)                                  } -> std::same_as<void>;
+	{ xShader.Initialise(eProgram)                                             } -> std::same_as<void>;
 	{ xCShader.GetReflection()                                                 } -> std::same_as<const Flux_ShaderReflection&>;
 };
 

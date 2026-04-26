@@ -33,6 +33,7 @@ public:
 	};
 
 	static void Initialise();
+	static void BuildPipelines();
 	static void Shutdown();
 
 	static void Render(void*);

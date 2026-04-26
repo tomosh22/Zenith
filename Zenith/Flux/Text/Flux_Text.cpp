@@ -14,6 +14,10 @@
 #include "Zenith_OS_Include.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
@@ -43,9 +47,9 @@ static uint32_t s_uTotalCharCount = 0;
 
 DEBUGVAR float dbg_fTextSize = 100.f;
 
-void Flux_Text::Initialise()
+void Flux_Text::BuildPipelines()
 {
-	s_xShader.Initialise("Text/Flux_Text.vert", "Text/Flux_Text.frag");
+	s_xShader.Initialise(FluxShaderProgram::Text);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -71,6 +75,11 @@ void Flux_Text::Initialise()
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+}
+
+void Flux_Text::Initialise()
+{
+	BuildPipelines();
 
 	//#TO_TODO: need to experiment with this, not sure which will be faster
 	constexpr bool bDeviceLocal = false;
@@ -85,6 +94,14 @@ void Flux_Text::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddFloat({ "Text", "Size" }, dbg_fTextSize, 0, 1000);
+#endif
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Text,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Text::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text initialised");

@@ -21,6 +21,10 @@
 #include <algorithm>
 #include <vector>
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 // ========== CONFIGURATION CONSTANTS ==========
 
 // Direction vector normalization epsilon (prevents NaN from zero-length vectors)
@@ -485,6 +489,52 @@ static float CalculateLightPriority(const Zenith_Maths::Vector3& xLightPos, floa
 
 // ========== PUBLIC API ==========
 
+void Flux_DynamicLights::BuildPipelines()
+{
+	// Load volume shaders
+	s_xVolumeShader.Initialise(FluxShaderProgram::DynamicLights);
+
+	const Flux_ShaderReflection& xReflection = s_xVolumeShader.GetReflection();
+
+	// Define vertex layout (Position only - compact format)
+	Flux_VertexInputDescription xVertexDesc;
+	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Position only
+	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
+
+	// Base pipeline specification (shared settings)
+	Flux_PipelineSpecification xPipelineSpec;
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
+	xPipelineSpec.m_uNumColourAttachments = 1;
+	xPipelineSpec.m_pxShader = &s_xVolumeShader;
+	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+
+	// Pipeline layout from shader reflection
+	xReflection.PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+
+	// ADDITIVE BLENDING - adds light contribution to existing deferred output
+	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = true;
+	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
+
+	// Depth testing disabled because we need to sample the depth buffer as a texture
+	// to reconstruct world position. Using it as both depth attachment and shader resource
+	// causes Vulkan layout conflicts. The shader's range check handles pixel rejection.
+	xPipelineSpec.m_bDepthTestEnabled = false;
+	xPipelineSpec.m_bDepthWriteEnabled = false;
+
+	// PIPELINE 1: Point/Spot lights - Front-face culling (render back faces only)
+	// When camera is outside: back faces render, shader samples G-buffer depth
+	// When camera is inside: back faces are visible, same shader logic applies
+	xPipelineSpec.m_eCullMode = CULL_MODE_FRONT;
+	Flux_PipelineBuilder::FromSpecification(s_xVolumePipeline, xPipelineSpec);
+
+	// PIPELINE 2: Directional lights - Back-face culling (render front faces)
+	// Fullscreen quads have front faces toward camera, so we cull back faces
+	xPipelineSpec.m_eCullMode = CULL_MODE_BACK;
+	Flux_PipelineBuilder::FromSpecification(s_xDirectionalPipeline, xPipelineSpec);
+}
+
 void Flux_DynamicLights::Initialise()
 {
 	// Generate light volume meshes at multiple LOD levels
@@ -544,48 +594,7 @@ void Flux_DynamicLights::Initialise()
 	// Pre-allocate sort buffer to avoid per-frame allocations during priority sorting
 	s_xSortBuffer.Reserve(Flux_DynamicLights::uMAX_LIGHTS * 2);
 
-	// Load volume shaders
-	s_xVolumeShader.Initialise("DynamicLights/Flux_DynamicLights.vert", "DynamicLights/Flux_DynamicLights.frag");
-
-	const Flux_ShaderReflection& xReflection = s_xVolumeShader.GetReflection();
-
-	// Define vertex layout (Position only - compact format)
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Position only
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-
-	// Base pipeline specification (shared settings)
-	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
-	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_pxShader = &s_xVolumeShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
-
-	// Pipeline layout from shader reflection
-	xReflection.PopulateLayout(xPipelineSpec.m_xPipelineLayout);
-
-	// ADDITIVE BLENDING - adds light contribution to existing deferred output
-	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = true;
-	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
-	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
-
-	// Depth testing disabled because we need to sample the depth buffer as a texture
-	// to reconstruct world position. Using it as both depth attachment and shader resource
-	// causes Vulkan layout conflicts. The shader's range check handles pixel rejection.
-	xPipelineSpec.m_bDepthTestEnabled = false;
-	xPipelineSpec.m_bDepthWriteEnabled = false;
-
-	// PIPELINE 1: Point/Spot lights - Front-face culling (render back faces only)
-	// When camera is outside: back faces render, shader samples G-buffer depth
-	// When camera is inside: back faces are visible, same shader logic applies
-	xPipelineSpec.m_eCullMode = CULL_MODE_FRONT;
-	Flux_PipelineBuilder::FromSpecification(s_xVolumePipeline, xPipelineSpec);
-
-	// PIPELINE 2: Directional lights - Back-face culling (render front faces)
-	// Fullscreen quads have front faces toward camera, so we cull back faces
-	xPipelineSpec.m_eCullMode = CULL_MODE_BACK;
-	Flux_PipelineBuilder::FromSpecification(s_xDirectionalPipeline, xPipelineSpec);
+	BuildPipelines();
 
 	s_bInitialised = true;
 
@@ -596,6 +605,14 @@ void Flux_DynamicLights::Initialise()
 
 #if defined(ZENITH_TOOLS) && defined(ZENITH_DEBUG_VARIABLES)
 	Zenith_DebugVariables::AddBoolean({ "Render", "Dynamic Lights", "Show Dropped Lights" }, dbg_bShowDroppedLights);
+#endif
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::DynamicLights,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_DynamicLights::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DynamicLights initialised (light volume rendering with %u LOD levels)", uNUM_LODS);
@@ -1026,7 +1043,9 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 			xTypeConstant.m_uPad0 = 0;
 			xTypeConstant.m_uPad1 = 0;
 			xTypeConstant.m_uPad2 = 0;
-			xBinder.BindDrawConstants(s_xVolumeShader, "pushConstants", &xTypeConstant, sizeof(LightTypePushConstant));
+			// Slang reflection keys on the variable name (PushConstants), not
+		// the GLSL block-instance name (pushConstants).
+		xBinder.BindDrawConstants(s_xVolumeShader, "PushConstants", &xTypeConstant, sizeof(LightTypePushConstant));
 
 			for (u_int uLOD = 0; uLOD < uNUM_LODS; ++uLOD)
 			{
@@ -1074,7 +1093,9 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 			xTypeConstant.m_uPad0 = 0;
 			xTypeConstant.m_uPad1 = 0;
 			xTypeConstant.m_uPad2 = 0;
-			xBinder.BindDrawConstants(s_xVolumeShader, "pushConstants", &xTypeConstant, sizeof(LightTypePushConstant));
+			// Slang reflection keys on the variable name (PushConstants), not
+		// the GLSL block-instance name (pushConstants).
+		xBinder.BindDrawConstants(s_xVolumeShader, "PushConstants", &xTypeConstant, sizeof(LightTypePushConstant));
 
 			for (u_int uLOD = 0; uLOD < uNUM_LODS; ++uLOD)
 			{
@@ -1111,7 +1132,9 @@ static void ExecuteDynamicLights(Flux_CommandList* pxCommandList, void*)
 		xTypeConstant.m_uPad0 = 0;
 		xTypeConstant.m_uPad1 = 0;
 		xTypeConstant.m_uPad2 = 0;
-		xBinder.BindDrawConstants(s_xVolumeShader, "pushConstants", &xTypeConstant, sizeof(LightTypePushConstant));
+		// Slang reflection keys on the variable name (PushConstants), not
+		// the GLSL block-instance name (pushConstants).
+		xBinder.BindDrawConstants(s_xVolumeShader, "PushConstants", &xTypeConstant, sizeof(LightTypePushConstant));
 
 		// Bind storage buffer for directional lights
 		xBinder.BindUAV_Buffer(s_xVolumeShader, "DirectionalLightBuffer", &s_xDirectionalLightInstanceBuffer.GetUAV());

@@ -22,16 +22,20 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 static Flux_Shader s_xGBufferShader;
 static Flux_Pipeline s_xGBufferPipeline;
 
 static Flux_Shader s_xShadowShader;
 static Flux_Pipeline s_xShadowPipeline;
 
-void Flux_AnimatedMeshes::Initialise()
+void Flux_AnimatedMeshes::BuildPipelines()
 {
-	s_xGBufferShader.Initialise("AnimatedMeshes/Flux_AnimatedMeshes_ToGBuffer.vert", "AnimatedMeshes/Flux_AnimatedMeshes_ToGBuffer.frag");
-	s_xShadowShader.Initialise("AnimatedMeshes/Flux_AnimatedMeshes_ToShadowmap.vert", "AnimatedMeshes/Flux_AnimatedMeshes_ToShadowmap.frag");
+	s_xGBufferShader.Initialise(FluxShaderProgram::AnimatedMesh_ToGBuffer);
+	s_xShadowShader.Initialise(FluxShaderProgram::AnimatedMesh_ToShadowmap);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -84,6 +88,20 @@ void Flux_AnimatedMeshes::Initialise()
 
 		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
 	}
+}
+
+void Flux_AnimatedMeshes::Initialise()
+{
+	BuildPipelines();
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::AnimatedMesh_ToGBuffer,
+		FluxShaderProgram::AnimatedMesh_ToShadowmap,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_AnimatedMeshes::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "Flux_AnimatedMeshes initialised");
 }
@@ -200,8 +218,9 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flu
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(xCmdBuf);
 
-	// Bind FrameConstants once per command list (set 0 - per-frame data)
-	xBinder.BindCBV(s_xShadowShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	// Shadow pass uses Bones + DrawConstants + ShadowMatrix; the Slang
+	// version reflects only what's actually read, so binding FrameConstants
+	// here would fail the name lookup.
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);

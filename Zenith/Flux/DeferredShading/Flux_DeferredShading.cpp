@@ -12,6 +12,9 @@
 #include "Flux/SSGI/Flux_SSGI.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -21,15 +24,14 @@ DEBUGVAR bool dbg_bVisualiseCSMs = false;
 DEBUGVAR u_int dbg_uDeferredShadingDebugMode = 0;  // 0=normal, 1=cyan, 2=depth, 3=diffuse
 DEBUGVAR float dbg_fAmbientFallbackIntensity = 0.03f;  // Ambient when IBL disabled (0.01-0.1 typical)
 
-void Flux_DeferredShading::Initialise()
+void Flux_DeferredShading::BuildPipelines()
 {
-	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "DeferredShading/Flux_DeferredShading.frag");
+	s_xShader.Initialise(FluxShaderProgram::DeferredShading);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	Flux_PipelineSpecification xPipelineSpec;
-	// Render to HDR target for proper HDR lighting pipeline (tone mapping converts to final output)
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_pxShader = &s_xShader;
@@ -45,12 +47,25 @@ void Flux_DeferredShading::Initialise()
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+}
+
+void Flux_DeferredShading::Initialise()
+{
+	BuildPipelines();
 
 	#ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Shadows", "Visualise CSMs" }, dbg_bVisualiseCSMs);
 	Zenith_DebugVariables::AddUInt32({ "Render", "DeferredShading", "DebugMode" }, dbg_uDeferredShadingDebugMode, 0, 3);
 	Zenith_DebugVariables::AddFloat({ "Render", "DeferredShading", "AmbientFallback" }, dbg_fAmbientFallbackIntensity, 0.0f, 0.2f);
 	#endif
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::DeferredShading,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_DeferredShading::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DeferredShading initialised");
 }

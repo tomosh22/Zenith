@@ -15,13 +15,70 @@ struct Flux_BindingHandle
 	bool IsValid() const { return m_uSet != UINT32_MAX && m_uBinding != UINT32_MAX; }
 };
 
+// Stage mask bit flags. Used in Flux_ReflectedBinding::m_uStageMask to record
+// which shader stages reference a resource. Bit values match a fresh enum, not
+// vk::ShaderStageFlagBits, so the .spv.refl format stays backend-neutral.
+enum FluxShaderStageBit : u_int
+{
+	FLUX_SHADER_STAGE_BIT_VERTEX                 = 1u << 0,
+	FLUX_SHADER_STAGE_BIT_FRAGMENT               = 1u << 1,
+	FLUX_SHADER_STAGE_BIT_COMPUTE                = 1u << 2,
+	FLUX_SHADER_STAGE_BIT_TESS_CONTROL           = 1u << 3,
+	FLUX_SHADER_STAGE_BIT_TESS_EVAL              = 1u << 4,
+	FLUX_SHADER_STAGE_BIT_GEOMETRY               = 1u << 5,
+};
+
+// Finer-grained resource taxonomy for reflection v2. The legacy BindingType
+// (BINDING_TYPE_BUFFER / TEXTURE / STORAGE_BUFFER / STORAGE_IMAGE / ...) is
+// kept for backward compatibility with the existing pipeline-layout code; this
+// new enum carries the distinctions Slang reflection actually exposes so the
+// codegen and future backends can project the right descriptor types.
+enum FluxResourceKind : u_int
+{
+	FLUX_RESOURCE_KIND_UNKNOWN                = 0,
+	FLUX_RESOURCE_KIND_CONSTANT_BUFFER        = 1,  // cbuffer / uniform block
+	FLUX_RESOURCE_KIND_STRUCTURED_BUFFER      = 2,  // StructuredBuffer<T> (read-only SSBO)
+	FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER   = 3,  // RWStructuredBuffer<T>
+	FLUX_RESOURCE_KIND_BYTE_ADDRESS_BUFFER    = 4,
+	FLUX_RESOURCE_KIND_RW_BYTE_ADDRESS_BUFFER = 5,
+	FLUX_RESOURCE_KIND_TEXTURE                = 6,  // Texture2D etc. (separate texture)
+	FLUX_RESOURCE_KIND_RW_TEXTURE             = 7,  // RWTexture2D etc. (storage image)
+	FLUX_RESOURCE_KIND_SAMPLER                = 8,  // SamplerState
+	FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER = 9,  // Sampler2D / sampler2D
+	FLUX_RESOURCE_KIND_ACCELERATION_STRUCTURE = 10,
+	FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY = 11,
+	FLUX_RESOURCE_KIND_PARAMETER_BLOCK        = 12,  // ParameterBlock<T>
+};
+
+// One reflected field within a constant-buffer / parameter-block layout.
+// Captured at codegen time so the generator can emit C++ structs whose
+// sizeof / offsetof match the GPU side bit-for-bit.
+struct Flux_ReflectedField
+{
+	std::string m_strName;
+	u_int       m_uOffset       = 0;
+	u_int       m_uSize         = 0;
+	u_int       m_uArrayCount   = 1;  // 1 for scalars, >1 for fixed arrays, 0 for unbounded
+	std::string m_strTypeName;        // e.g. "float4x4", "uint", "DirectionalLight"
+};
+
 struct Flux_ReflectedBinding
 {
+	// Legacy fields (reflection v1) — still authoritative for the existing
+	// FromReflection layout code. New code should prefer m_eResourceKind.
 	BindingType m_eType = BINDING_TYPE_MAX;
-	u_int m_uSet = 0;
-	u_int m_uBinding = 0;
+	u_int       m_uSet = 0;
+	u_int       m_uBinding = 0;
 	std::string m_strName;
-	u_int m_uSize = 0;
+	u_int       m_uSize = 0;
+
+	// Reflection v2 additions. Default values mean "v1 source"; a v1 .spv.refl
+	// file deserialised by v2 readers leaves these at their defaults.
+	FluxResourceKind            m_eResourceKind     = FLUX_RESOURCE_KIND_UNKNOWN;
+	u_int                       m_uDescriptorCount  = 1;     // 0 = unbounded
+	u_int                       m_uStageMask        = 0;     // FluxShaderStageBit bitmask
+	std::string                 m_strParameterBlockPath;     // e.g. "frame.lights" — empty for top-level
+	Zenith_Vector<Flux_ReflectedField> m_axFields;            // populated for CB/PB only
 };
 
 class Flux_ShaderReflection
@@ -56,42 +113,30 @@ private:
 	std::unordered_map<std::string, u_int> m_xBindingMap;
 };
 
-enum SlangShaderStage
+// Description for a Slang program compile. One module file (mega-file per
+// subsystem) with one or more named entry points. Empty entry-point strings
+// mean "this stage is not present in this program". This is the public input
+// to Flux_SlangCompiler::CompileProgram and matches the registry schema.
+struct Flux_SlangProgramDesc
 {
-	SLANG_SHADER_STAGE_VERTEX,
-	SLANG_SHADER_STAGE_FRAGMENT,
-	SLANG_SHADER_STAGE_COMPUTE,
-	SLANG_SHADER_STAGE_TESSELLATION_CONTROL,
-	SLANG_SHADER_STAGE_TESSELLATION_EVALUATION,
-	SLANG_SHADER_STAGE_GEOMETRY
+	const char* m_szModuleName    = nullptr;  // module path relative to a search root (no extension)
+	const char* m_szVertexEntry   = nullptr;
+	const char* m_szFragmentEntry = nullptr;
+	const char* m_szComputeEntry  = nullptr;
+	const char* m_szTargetProfile = "spirv_1_3";
 };
 
-// Source language enum (maps to SlangSourceLanguage)
-enum SlangSourceLanguageType
+// Compiled artifacts for a multi-entry program. Each populated SPIR-V vector
+// matches a populated entry-point name in the matching desc. Reflection here
+// is the linked program's reflection (single source of truth), not per-stage.
+struct Flux_SlangProgramResult
 {
-	SLANG_LANG_UNKNOWN = 0,
-	SLANG_LANG_SLANG = 1,
-	SLANG_LANG_GLSL = 5,
-	SLANG_LANG_DEFAULT = SLANG_LANG_GLSL  // Default to GLSL for compatibility
-};
-
-struct Flux_SlangCompileResult
-{
-	bool m_bSuccess = false;
-	std::string m_strError;
-	Zenith_Vector<uint32_t> m_axSpirv;
-	Flux_ShaderReflection m_xReflection;
-};
-
-// Result for paired graphics pipeline compilation
-struct Flux_SlangGraphicsPipelineResult
-{
-	bool m_bSuccess = false;
-	std::string m_strError;
+	bool                  m_bSuccess = false;
+	std::string           m_strError;
 	Zenith_Vector<uint32_t> m_axVertexSpirv;
 	Zenith_Vector<uint32_t> m_axFragmentSpirv;
-	Flux_ShaderReflection m_xVertexReflection;
-	Flux_ShaderReflection m_xFragmentReflection;
+	Zenith_Vector<uint32_t> m_axComputeSpirv;
+	Flux_ShaderReflection m_xReflection;
 };
 
 class Flux_SlangCompiler
@@ -102,47 +147,20 @@ public:
 	static void Shutdown();
 	static bool IsInitialised();
 
-	static bool Compile(const std::string& strPath, SlangShaderStage eStage, Flux_SlangCompileResult& xResultOut);
+	// Modern Slang compile path. Loads xDesc.m_szModuleName as a Slang module
+	// from the configured search paths, finds the named entry points,
+	// composes/links them, and emits SPIR-V plus linked reflection. Search
+	// paths come from ::AddSearchPath. Slang is the only supported source
+	// language post-migration — there is no GLSL fallback.
+	static bool CompileProgram(const Flux_SlangProgramDesc& xDesc, Flux_SlangProgramResult& xResultOut);
 
-	static bool CompileFromSource(const std::string& strSource, const std::string& strEntryPoint,
-								   SlangShaderStage eStage, Flux_SlangCompileResult& xResultOut,
-								   const char* szSourceName = nullptr, const char* szDirectory = nullptr,
-								   SlangSourceLanguageType eLanguage = SLANG_LANG_DEFAULT);
+	// Add a search path used by CompileProgram's session for module imports.
+	// Call before CompileProgram. The compiler keeps a session-scoped list;
+	// adding the same path twice is harmless.
+	static void AddSearchPath(const char* szPath);
 
-	// Compile vertex and fragment shaders together in a single request.
-	// This ensures Slang preserves interface variables (varyings) between stages,
-	// preventing optimization from removing unused inputs in the fragment shader.
-	static bool CompileGraphicsPipeline(const std::string& strVertexPath, const std::string& strFragmentPath,
-										 Flux_SlangGraphicsPipelineResult& xResultOut);
-
-private:
-	// Splits a file path into directory and filename at the last '/' or '\'.
-	// If no separator is found, strDirectoryOut is "." and strFileNameOut is the full path.
-	static void SplitFilePath(const std::string& strPath, std::string& strFileNameOut, std::string& strDirectoryOut);
-
-	// Creates a Slang compile request configured with SPIR-V target, search paths, and compiler flags.
-	// Returns the request pointer via pxRequestOut and the target index via iTargetIndexOut.
-	// Returns false and populates strErrorOut on failure.
-	static bool CreateConfiguredCompileRequest(void*& pxRequestOut, int& iTargetIndexOut,
-											   const char* const* aszSearchPaths, u_int uSearchPathCount,
-											   std::string& strErrorOut);
-
-	// Extracts SPIR-V code from a compiled entry point blob into axSpirvOut.
-	// Returns false and populates strErrorOut on failure.
-	static bool ExtractSpirvBlob(void* pxRequest, int iEntryPoint, int iTargetIndex,
-								 Zenith_Vector<uint32_t>& axSpirvOut, std::string& strErrorOut);
-
-	// Extracts a single parameter's binding info from reflection data.
-	// Returns true if the parameter is a valid descriptor binding (not a varying).
-	static bool ExtractParameterBinding(void* pxParam, void* pxTypeLayout, Flux_ReflectedBinding& xBindingOut);
-
-	// Resolves a Slang VariableLayoutReflection* (passed as void*) to a binding.
-	// Returns false on null param, null type layout, or non-descriptor.
-	static bool TryExtractBindingFromParam(void* pxParamVoid, Flux_ReflectedBinding& xBindingOut);
-
-	// True if a binding with matching (set, binding) slot is already present.
-	static bool IsBindingAlreadyPresent(const Flux_ShaderReflection& xReflection, const Flux_ReflectedBinding& xCandidate);
-
-	static void ExtractReflection(void* pxEntryPointReflection, Flux_ShaderReflection& xReflectionOut);
+	// Map a Slang TypeLayoutReflection (passed as void*) to the engine's
+	// legacy BindingType taxonomy. Public so the v2 reflection helper at
+	// file scope in the .cpp can reuse it.
 	static BindingType SlangTypeToBindingType(void* pxTypeLayout);
 };

@@ -432,12 +432,6 @@ public:
 	static void TestGizmoDragSurvivesActiveSceneChange();
 	static void TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget();
 
-	// Slang compiler helper tests (Windows only)
-#ifdef ZENITH_WINDOWS
-	static void TestSlangSplitFilePath();
-	static void TestSlangSplitFilePathEdgeCases();
-#endif
-
 	// Animation state machine helper tests
 	static void TestParamSerializationFloat();
 	static void TestParamSerializationBoolTrigger();
@@ -463,8 +457,20 @@ public:
 	static void TestUITextHorizontalAlignment();
 	static void TestUITextVerticalAlignment();
 
-	// SlangCompiler helper tests
-	static void TestSlangIsBindingAlreadyPresent();
+	// Slang reflection v2 round-trip tests
+	static void TestReflectionV2RoundTrip();
+	static void TestReflectionV2EmptyRoundTrip();
+	static void TestReflectionV2UnboundedDescriptorCount();
+	static void TestReflectionV2NamedLookupAfterDeserialise();
+
+	// Codegen determinism tests (Slang -> C++ header generator)
+	static void TestCodegenDeterministicDoubleRun();
+	static void TestCodegenContainsBindingMetadata();
+	static void TestCodegenEmitsCBStructWithStaticAsserts();
+	static void TestCodegenSanitisesIdentifiers();
+	static void TestCodegenScalarHungarianPrefixes();
+	static void TestCodegenInsertsTrailingPadding();
+	static void TestCodegenInsertsInteriorPadding();
 
 	// Flux render-graph tests (declaration-phase only — compiling the graph
 	// requires Vulkan). The tests exercise pass registration, handle validity,

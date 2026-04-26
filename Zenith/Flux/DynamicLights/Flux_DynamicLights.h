@@ -7,6 +7,7 @@ class Flux_DynamicLights
 {
 public:
 	static void Initialise();
+	static void BuildPipelines();
 	static void Shutdown();
 	static void Reset();
 

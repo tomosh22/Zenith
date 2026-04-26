@@ -41,6 +41,13 @@ public:
 	static void Shutdown();
 	static void Reset();
 
+	// Re-runs all pipeline + shader build code without touching one-time
+	// state (VRAM buffers, debug variables). Wired into Flux_ShaderHotReload
+	// so editing any HDR .slang refreshes the pipelines next frame. Safe to
+	// call repeatedly: the pipeline builders Reset their output before
+	// rebuilding so no GPU handles leak.
+	static void BuildPipelines();
+
 	// Must be called BEFORE other subsystems' SetupRenderGraph — many subsystems
 	// write to GetHDRSceneTarget() and need the transient handle to exist.
 	static void SetupTransients(Flux_RenderGraph& xGraph);
@@ -88,7 +95,6 @@ public:
 
 private:
 	static void SyncDebugVariables();
-	static void InitializeAutoExposure();
 	// Render graph callbacks
 	static void PreExecuteLuminanceHistogram(void* pUserData);
 	static void ExecuteLuminanceHistogram(Flux_CommandList* pxCommandList, void* pUserData);

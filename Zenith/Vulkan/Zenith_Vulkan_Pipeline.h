@@ -12,6 +12,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Types.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Shaders/Generated/FluxShaderProgram.h"
 
 struct Flux_BlendState;
 struct Flux_PipelineSpecification;
@@ -23,17 +24,27 @@ class Zenith_Vulkan_Shader
 public:
 	Zenith_Vulkan_Shader() = default;
 
-	// Load pre-compiled SPIR-V from disk
-	void Initialise(const std::string& strVertex, const std::string& strFragment, const std::string& strGeometry = "", const std::string& strDomain = "", const std::string& strHull = "");
-	void InitialiseCompute(const std::string& strCompute);
+	// Typed program-ID init. On Windows with the Slang compiler available,
+	// compiles the program at runtime; otherwise loads precompiled .spv +
+	// .spv.refl artifacts. Asserts the program is registered.
+	void Initialise(FluxShaderProgram eProgram);
 
 #ifdef ZENITH_WINDOWS
-	// Compile from source at runtime (Windows only, requires Slang compiler)
-	bool InitialiseFromSource(const std::string& strVertexPath, const std::string& strFragmentPath);
-	bool InitialiseComputeFromSource(const std::string& strComputePath);
+	// Runtime program-ID compile via Flux_SlangCompiler::CompileProgram.
+	bool InitialiseFromProgramSource(FluxShaderProgram eProgram);
 #endif
 
+	// Offline path: load precompiled .spv + .spv.refl per stage from disk
+	// using the program's registry-derived artifact stems.
+	bool InitialiseFromProgramArtifacts(FluxShaderProgram eProgram);
+
 	~Zenith_Vulkan_Shader();
+
+	// Destroy GPU shader modules and free SPIR-V code buffers without
+	// destroying the C++ object — leaves the shader in the same state as a
+	// freshly default-constructed instance, so a subsequent Initialise(...)
+	// is leak-free. Used by the hot-reload path.
+	void Reset();
 
 	// Get combined reflection data for all shader stages
 	const Flux_ShaderReflection& GetReflection() const { return m_xReflection; }
@@ -68,11 +79,6 @@ public:
 	vk::ShaderModule m_xTescShaderModule;
 	vk::ShaderModule m_xTeseShaderModule;
 	vk::ShaderModule m_xCompShaderModule;
-
-	// Shader paths for hot reload (ZENITH_TOOLS only)
-	std::string m_strVertexPath;
-	std::string m_strFragmentPath;
-	std::string m_strComputePath;
 
 private:
 	// Combined reflection data from all shader stages
@@ -116,6 +122,11 @@ public:
 
 	vk::PipelineLayout m_xLayout;
 	vk::DescriptorSetLayout m_axDescSetLayouts[FLUX_MAX_BINDINGS_PER_GROUP];
+	// Per-slot ownership flag — false means the layout is borrowed (e.g. the
+	// shared bindless texture layout from Zenith_Vulkan), so Pipeline::Reset
+	// must NOT destroy it. True means we created it via vkCreateDescriptor-
+	// SetLayout and own its lifetime.
+	bool m_abOwnsDescSetLayout[FLUX_MAX_BINDINGS_PER_GROUP] = {};
 	BindingType m_axBindingTypes[FLUX_MAX_BINDINGS_PER_GROUP][FLUX_MAX_BINDINGS_PER_GROUP];
 	u_int m_uNumBindingGroups = UINT32_MAX;
 
@@ -131,6 +142,12 @@ public:
 	Zenith_Vulkan_RootSig m_xRootSig;
 
 	~Zenith_Vulkan_Pipeline();
+
+	// Destroy the vk::Pipeline, render pass, and root-signature handles
+	// without destroying the C++ object — leaves the pipeline in its
+	// default-constructed state ready for re-population by another
+	// FromSpecification / BuildFromShader. Used by the hot-reload path.
+	void Reset();
 
 	
 

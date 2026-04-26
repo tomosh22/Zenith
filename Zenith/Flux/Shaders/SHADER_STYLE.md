@@ -1,19 +1,37 @@
 # Shader Coding Style Guide
 
-Conventions for GLSL shader source files in `Zenith/Flux/Shaders/`.
+Conventions for Slang shader source files in `Zenith/Flux/Shaders/`. Slang is
+the only supported source language post-migration; the legacy GLSL paths
+(`.vert`/`.frag`/`.comp`/`.fxh`) and the `enableGLSL` Slang flag have been
+removed.
 
 ## File Naming
 
-- `Flux_<Subsystem>_<Purpose>.<ext>` (e.g., `Flux_StaticMeshes_ToGBuffer.vert`)
-- Extensions: `.vert`, `.frag`, `.comp`, `.tesc`, `.tese`, `.geom` for entry points; `.fxh` for headers
+- `Flux_<Subsystem>_<Purpose>.slang` (e.g., `Flux_StaticMesh_ToGBuffer.slang`).
+- One `.slang` mega-file per subsystem with multiple named entry points where
+  the variants are closely related (e.g. mesh static / animated / instanced
+  share constants and helpers).
+- Shared modules live under `Common/` (`Common.Frame`, `Common.PBR`,
+  `Common.GBuffer`, `Common.Material`, …) and are imported via `import`.
+
+## Entry Points
+
+- Vertex entry: `vsMain`. Fragment entry: `psMain`. Compute entry: `csMain`.
+- Multi-variant programs may suffix the variant (`vsMainStatic`, `vsMainAnimated`,
+  …). The Slang shader registry (`Flux_ShaderRegistry`) records the entry-point
+  names alongside the module path; runtime code looks programs up by
+  `FluxShaderProgram` IDs generated into `Flux/Shaders/Generated/`.
+- Slang's per-entry SPIR-V emitter renames each entry point to `main` in the
+  emitted blob; the engine binds the Vulkan-visible name `"main"` regardless
+  of the source-level name.
 
 ## Variable Naming (Hungarian Prefix)
 
 | Prefix | Scope / Type | Example |
 |--------|-------------|---------|
-| `g_` | Global uniform / buffer | `g_xViewMat`, `g_xSunDir_Pad` |
-| `a_` | Vertex attribute (`in`) | `a_xPosition`, `a_xUV` |
-| `o_` | Varying output (`out`) | `o_xNormal`, `o_fBitangentSign` |
+| `g_` | Global parameter (uniform / buffer / texture / sampler) | `g_xFrame`, `g_xAlbedoTex` |
+| `a_` | Vertex stage input | `a_xPosition`, `a_xUV` |
+| `o_` | Inter-stage varying output | `o_xNormalWS`, `o_fBitangentSign` |
 | `x` | vec / mat / struct | `xWorldPos`, `xNormalMatrix` |
 | `f` | float | `fDepth`, `fRoughness` |
 | `u` | uint | `uMipLevel`, `uInstanceID` |
@@ -21,38 +39,39 @@ Conventions for GLSL shader source files in `Zenith/Flux/Shaders/`.
 | `b` | bool | `bUseVAT` |
 | `ax` | array of vec/struct | `axOffsets`, `axShadowMats` |
 
-## Uniform Block Naming
+## Constant Buffers and Parameter Blocks
 
-- Frame-level constants: `FrameConstants` (set 0, binding 0) via `Common.fxh`
-- Per-draw material data: `DrawConstants` (set 1, binding 0) via `DrawConstants.fxh`
-- Subsystem-specific blocks: use descriptive names (`SSAOGenerateConstants`, `LightConstants`)
+- Frame-level data lives in `Common.Frame`'s `FrameConstants` cbuffer (set 0,
+  binding 0). Per-draw / per-material data lives in `Common.DrawConstants` and
+  `Common.Material`.
+- Subsystem-specific blocks are `cbuffer` declarations named
+  `<Subsystem>Constants` (e.g. `SSAOGenerateConstants`).
+- Resource bindings come out as flat `set/binding` slots in reflection;
+  `ParameterBlock<T>` from Slang is used where it cleanly groups related
+  resources by update rate, but the engine binder still keys on the resource
+  name.
+- Matrix layout: `defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR`
+  is set at session creation so HLSL-syntax matrices match the std140
+  GLM-uploaded layout. Don't transpose at the call site.
 
-## Include Guards
+## Include / Import
 
-All `.fxh` files must have `#ifndef / #define / #endif` guards:
-```glsl
-#ifndef MY_HEADER_FXH
-#define MY_HEADER_FXH
-// content
-#endif // MY_HEADER_FXH
-```
+- Slang `import Common.Frame;` replaces the old `#include "Common.fxh"`. The
+  `Flux_SlangCompiler` adds `Zenith/Flux/Shaders/` as a search root, so module
+  names are relative to that directory with `.` for path separators.
+- There is no `#ifndef` guard pattern — Slang modules are first-class units.
 
 ## Variant Pattern
 
-Shader variants use the entry-point-file pattern:
-```glsl
-// Flux_Mesh_Static_ToGBuffer.vert
-#version 450 core
-#define MESH_STATIC
-#include "../Meshes/Mesh_Vert.fxh"
-```
-
-The shared `.fxh` body uses `#ifdef MESH_STATIC / MESH_ANIMATED / MESH_INSTANCED` to switch code paths. The `#define SHADOWS` pattern works the same way for shadow-pass variants.
+Multiple named entry points in a single `.slang` file replace the GLSL
+`#define VARIANT` pattern. Each variant is registered as its own
+`FluxShaderProgram` ID with its own entry-point name; the registry resolves
+which entries get emitted.
 
 ## Compute Shader Documentation
 
-Every `.comp` file must include a header block:
-```glsl
+Every compute entry point should include a banner comment:
+```slang
 // ============================================================================
 // <Purpose — one line>
 // Workgroup: <NxMxK> (<thread count> threads — <rationale>)
@@ -60,7 +79,14 @@ Every `.comp` file must include a header block:
 //
 // <2-3 sentence description of what the shader does>
 // ============================================================================
+[numthreads(N, M, K)]
+void csMain(...) { ... }
 ```
+
+Use `[numthreads(...)]` (HLSL syntax). For texture sampling inside compute,
+prefer `SampleLevel(uv, mip)` over `Sample(uv)` — implicit derivatives in a
+compute thread require `ComputeDerivativeGroupQuadsKHR` and Slang will fail
+to lower without it.
 
 ## Descriptor Set Convention
 
@@ -71,9 +97,17 @@ General pattern:
 - **Set 1**: per-draw (material block, textures, instance buffers)
 - **Set 2+**: reserved for subsystem-specific extensions
 
+## Vertex-Stage Buffer Reads
+
+Storage-buffer reads from a vertex shader require Vulkan
+`vertexPipelineStoresAndAtomics` if Slang emits them as RW. Use
+`StructuredBuffer<T>` (read-only — Slang emits `NonWritable`) instead of
+`RWStructuredBuffer<T>` whenever the vertex stage only reads the buffer.
+
 ## Code Style
 
 - Tabs for indentation (matching C++ convention)
-- Opening braces on same line for functions and control flow
-- Constants as `const float` / `const int` with SCREAMING_SNAKE or descriptive names
-- Prefer helper functions in `.fxh` headers over inline duplication
+- Opening braces on the same line for functions and control flow
+- Constants as `static const` with descriptive names
+- Helper functions live in shared modules under `Common/`; prefer importing
+  over inline duplication

@@ -22,6 +22,10 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 static Flux_Shader s_xGBufferShader;
 static Flux_Pipeline s_xGBufferPipeline;
 
@@ -29,11 +33,10 @@ static Flux_Shader s_xShadowShader;
 static Flux_Pipeline s_xShadowPipeline;
 
 
-void Flux_StaticMeshes::Initialise()
+void Flux_StaticMeshes::BuildPipelines()
 {
-
-	s_xGBufferShader.Initialise("StaticMeshes/Flux_StaticMeshes_ToGBuffer.vert", "StaticMeshes/Flux_StaticMeshes_ToGBuffer.frag");
-	s_xShadowShader.Initialise("StaticMeshes/Flux_StaticMeshes_ToShadowmap.vert", "StaticMeshes/Flux_StaticMeshes_ToShadowmap.frag");
+	s_xGBufferShader.Initialise(FluxShaderProgram::StaticMesh_ToGBuffer);
+	s_xShadowShader.Initialise(FluxShaderProgram::StaticMesh_ToShadowmap);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -82,6 +85,20 @@ void Flux_StaticMeshes::Initialise()
 
 		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
 	}
+}
+
+void Flux_StaticMeshes::Initialise()
+{
+	BuildPipelines();
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::StaticMesh_ToGBuffer,
+		FluxShaderProgram::StaticMesh_ToShadowmap,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_StaticMeshes::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 #endif
@@ -203,7 +220,11 @@ void Flux_StaticMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	Flux_ShaderBinder xBinder(xCmdBuf);
-	xBinder.BindCBV(s_xShadowShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	// Shadow pass binds only DrawConstants + ShadowMatrix. Slang reflection
+	// drops bindings that the shader doesn't actually reference (this
+	// program imports Common.Frame but reads no FrameConstants field), so
+	// FrameConstants doesn't appear in the reflected layout — binding it
+	// here would fail the name lookup.
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);

@@ -2,89 +2,84 @@
 
 #ifdef ZENITH_TOOLS
 
-#include <string>
-#include <functional>
-#include "Zenith_PlatformGraphics_Include.h"
+#include "Flux/Shaders/Generated/FluxShaderProgram.h"
 
-struct Flux_PipelineSpecification;
-
-// Callback signature for pipeline recreation
-// Called when a shader's source files have changed and the pipeline needs recreation
-// Parameters: pipeline pointer, vertex path, fragment path (or compute path)
-// Returns true if recreation succeeded
-using PipelineRecreateCallback = std::function<bool(Flux_Pipeline*, const std::string&, const std::string&)>;
-
-// Hot reload manager for shaders (ZENITH_TOOLS only)
-// Watches shader source files and triggers recompilation when files change
+// Hot reload manager for Slang shaders (ZENITH_TOOLS only).
+//
+// Watches the shader source root for .slang changes and asks each registered
+// subsystem to rebuild its pipelines. Module → program mapping is resolved
+// via Flux_ShaderRegistry; a change to a shared module under Common/
+// (Common.Frame, Common.PBR, …) marks every registered program as stale
+// because the import graph isn't tracked yet — rebuilding is cheap relative
+// to a full FluxCompiler run, so the over-reload is acceptable for now.
+//
+// Subsystems register all their FluxShaderProgram IDs against a single
+// no-arg rebuild callback. Multiple programs sharing the same callback are
+// de-duplicated each Update pass, so a Common/ touch fires each subsystem's
+// callback exactly once even though it marks every program.
 //
 // Usage:
-//   // At init time:
+//   // At init time (already wired in Flux::LateInitialise):
 //   Flux_ShaderHotReload::Initialise();
 //
-//   // Register pipelines for hot reload:
-//   Flux_ShaderHotReload::RegisterPipeline(&myPipeline, "path/to/vert.vert", "path/to/frag.frag",
-//       [](Flux_Pipeline* p, const std::string& v, const std::string& f) {
-//           // Recreate pipeline with new shaders
-//           return true;
-//       });
+//   // Inside a subsystem's Initialise(), after the first build:
+//   static const FluxShaderProgram s_axMyPrograms[] = {
+//       FluxShaderProgram::Foo,
+//       FluxShaderProgram::Bar,
+//   };
+//   Flux_ShaderHotReload::RegisterSubsystem(&Flux_Foo::BuildPipelines,
+//       s_axMyPrograms, sizeof(s_axMyPrograms) / sizeof(s_axMyPrograms[0]));
 //
-//   // In main loop (once per frame):
+//   // Once per frame at a safe sync point (already wired in Zenith_Vulkan):
 //   Flux_ShaderHotReload::Update();
-//
-//   // On shutdown:
-//   Flux_ShaderHotReload::Shutdown();
-//
 class Flux_ShaderHotReload
 {
 public:
-	// Initialize the hot reload system (starts file watcher)
+	// Function-pointer callback. Engine convention forbids std::function.
+	// Subsystems hold their pipeline state in file-static globals so a
+	// no-arg callback is sufficient.
+	using ProgramRebuildCallback = void (*)();
+
 	static void Initialise();
-
-	// Shutdown the hot reload system
 	static void Shutdown();
-
-	// Check if hot reload is enabled
 	static bool IsEnabled() { return s_bEnabled; }
-
-	// Enable/disable hot reload at runtime
 	static void SetEnabled(bool bEnabled);
 
-	// Check for pending reloads and apply them
-	// Should be called once per frame, preferably at a safe point (e.g., after GPU idle)
+	// Drains pending file-change notifications and fires callbacks for any
+	// programs whose source changed. Must be called from the main thread at
+	// a safe sync point — invokes Flux_PlatformAPI::WaitForGPUIdle before
+	// firing callbacks so subsystem rebuilds can free pipeline objects.
 	static void Update();
 
-	// Register a graphics pipeline for hot reload
-	// strVertPath, strFragPath: Shader source paths (relative to SHADER_SOURCE_ROOT)
-	// pfnRecreate: Callback to recreate the pipeline when shaders change
-	static void RegisterPipeline(Flux_Pipeline* pxPipeline,
-								  const std::string& strVertPath,
-								  const std::string& strFragPath,
-								  PipelineRecreateCallback pfnRecreate);
+	// Register a single program against a rebuild callback. Multiple
+	// programs may share the same callback; the dispatcher de-duplicates so
+	// the callback fires at most once per Update pass even when multiple of
+	// its programs are marked stale.
+	static void RegisterProgram(FluxShaderProgram eProgram,
+								 ProgramRebuildCallback pfnRebuild);
 
-	// Register a compute pipeline for hot reload
-	static void RegisterComputePipeline(Flux_Pipeline* pxPipeline,
-										 const std::string& strComputePath,
-										 PipelineRecreateCallback pfnRecreate);
+	// Convenience: register a batch of programs against the same callback
+	// in one call. Typical use: a subsystem registers every FluxShaderProgram
+	// it owns against its BuildPipelines() helper.
+	static void RegisterSubsystem(ProgramRebuildCallback pfnRebuild,
+								   const FluxShaderProgram* axPrograms,
+								   u_int uCount);
 
-	// Unregister a pipeline (call before destroying the pipeline)
-	static void UnregisterPipeline(Flux_Pipeline* pxPipeline);
+	// Unregister a program (call before tearing down the pipeline that owns
+	// the user data — otherwise the next Update could fire into freed state).
+	static void UnregisterProgram(FluxShaderProgram eProgram);
 
-	// Force reload all registered pipelines
+	// Force rebuild of every registered program. Useful when the user pokes
+	// a debug button or a global include changes outside the watch root.
 	static void ReloadAll();
 
-	// Get statistics
 	static u_int GetReloadCount() { return s_uReloadCount; }
 	static u_int GetFailedReloadCount() { return s_uFailedReloadCount; }
 
 private:
-	// Handle file change notification from file watcher
-	static void OnFileChanged(const std::string& strPath, int eChangeType);
-
-	// Process pending reloads
+	static void OnFileChanged(const char* szPath, int eChangeType);
 	static void ProcessPendingReloads();
-
-	// Find pipelines affected by a changed file (including headers)
-	static void MarkPipelinesForReload(const std::string& strChangedFile);
+	static void MarkProgramsForReload(const char* szChangedFile);
 
 	static bool s_bInitialised;
 	static bool s_bEnabled;

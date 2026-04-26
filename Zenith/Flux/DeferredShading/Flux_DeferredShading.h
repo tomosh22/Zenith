@@ -6,6 +6,7 @@ class Flux_DeferredShading
 {
 public:
 	static void Initialise();
+	static void BuildPipelines();
 
 	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 };

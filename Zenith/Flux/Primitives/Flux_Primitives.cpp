@@ -13,6 +13,10 @@
 
 #include <cmath>
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 // ========== STATIC DATA ==========
 
 // Shaders and pipelines
@@ -451,6 +455,51 @@ static void GenerateUnitLine(Zenith_Vector<PrimitiveVertex>& xVertices, Zenith_V
 
 // ========== PUBLIC API ==========
 
+void Flux_Primitives::BuildPipelines()
+{
+	// Load shaders
+	s_xPrimitivesShader.Initialise(FluxShaderProgram::Primitives);
+
+	// Define vertex layout (Position, Normal, Color)
+	Flux_VertexInputDescription xVertexDesc;
+	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Position
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Normal
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Color (unused, from push constant)
+	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
+
+	// Build GBuffer pipeline (solid shading)
+	Flux_PipelineSpecification xPipelineSpec;
+	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
+	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
+	xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
+	xPipelineSpec.m_pxShader = &s_xPrimitivesShader;
+	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+
+	s_xPrimitivesShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+
+	// Standard depth testing for opaque geometry
+	xPipelineSpec.m_bDepthTestEnabled = true;
+	xPipelineSpec.m_bDepthWriteEnabled = true;
+	xPipelineSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
+
+	// Blending disabled (opaque)
+	for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
+	{
+		xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+		xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+		xBlendState.m_bBlendEnabled = false;
+	}
+
+	Flux_PipelineBuilder::FromSpecification(s_xPrimitivesPipeline, xPipelineSpec);
+
+	// Wireframe variant
+	xPipelineSpec.m_bWireframe = true;
+	Flux_PipelineBuilder::FromSpecification(s_xPrimitivesWireframePipeline, xPipelineSpec);
+}
+
 void Flux_Primitives::Initialise()
 {
 	// Generate procedural meshes
@@ -487,49 +536,7 @@ void Flux_Primitives::Initialise()
 	Flux_MemoryManager::InitialiseVertexBuffer(xVertices.GetDataPointer(), xVertices.GetSize() * sizeof(PrimitiveVertex), s_xLineVertexBuffer);
 	Flux_MemoryManager::InitialiseIndexBuffer(xIndices.GetDataPointer(), xIndices.GetSize() * sizeof(u_int), s_xLineIndexBuffer);
 
-	// Load shaders
-	s_xPrimitivesShader.Initialise("Primitives/Flux_Primitives.vert", "Primitives/Flux_Primitives.frag");
-
-	// Define vertex layout (Position, Normal, Color)
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Position
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Normal
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Color (unused, from push constant)
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-
-	// Build GBuffer pipeline (solid shading)
-	{
-		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE] = MRT_FORMAT_DIFFUSE;
-		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
-		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
-		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
-		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-		xPipelineSpec.m_pxShader = &s_xPrimitivesShader;
-		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
-
-		s_xPrimitivesShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
-
-		// Standard depth testing for opaque geometry
-		xPipelineSpec.m_bDepthTestEnabled = true;
-		xPipelineSpec.m_bDepthWriteEnabled = true;
-		xPipelineSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
-
-		// Blending disabled (opaque)
-		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
-		{
-			xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
-			xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
-			xBlendState.m_bBlendEnabled = false;
-		}
-
-		Flux_PipelineBuilder::FromSpecification(s_xPrimitivesPipeline, xPipelineSpec);
-
-		// Wireframe variant
-		xPipelineSpec.m_bWireframe = true;
-		Flux_PipelineBuilder::FromSpecification(s_xPrimitivesWireframePipeline, xPipelineSpec);
-	}
+	BuildPipelines();
 
 	// Pre-allocate triangle buffers (dynamic vertex buffer, static index buffer)
 	// This avoids recreating GPU buffers every frame which causes memory leaks
@@ -543,6 +550,14 @@ void Flux_Primitives::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
+#endif
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Primitives,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Primitives::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives initialised");
@@ -735,7 +750,8 @@ static void EmitPrimitiveDraw(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xB
 	xPushConstant.m_xColor = xColor;
 	xPushConstant.m_fPadding = 0.0f;
 
-	xBinder.BindDrawConstants(s_xPrimitivesShader, "pushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
+	// Slang reflection keys on the variable name, not the GLSL block instance.
+	xBinder.BindDrawConstants(s_xPrimitivesShader, "PrimitivePushConstant", &xPushConstant, sizeof(PrimitivePushConstant));
 	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(uIndexCount);
 }
 

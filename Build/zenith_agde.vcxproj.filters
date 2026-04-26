@@ -874,10 +874,16 @@
     <ClCompile Include="..\Zenith\Flux\Skybox\Flux_Skybox.cpp">
       <Filter>Flux\Skybox</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_CodeGenerator.cpp">
+      <Filter>Flux\Slang</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.cpp">
       <Filter>Flux\Slang</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.cpp">
+      <Filter>Flux\Slang</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderRegistry.cpp">
       <Filter>Flux\Slang</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.cpp">
@@ -1050,18 +1056,6 @@
     <ClInclude Include="..\Middleware\imgui-docking\backends\imgui_impl_win32.h">
       <Filter>Middleware\imgui-docking\backends</Filter>
     </ClInclude>
-    <ClInclude Include="..\Middleware\imgui-docking\backends\sdlgpu3\shader.frag">
-      <Filter>Middleware\imgui-docking\backends\sdlgpu3</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\imgui-docking\backends\sdlgpu3\shader.vert">
-      <Filter>Middleware\imgui-docking\backends\sdlgpu3</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\imgui-docking\backends\vulkan\glsl_shader.frag">
-      <Filter>Middleware\imgui-docking\backends\vulkan</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\imgui-docking\backends\vulkan\glsl_shader.vert">
-      <Filter>Middleware\imgui-docking\backends\vulkan</Filter>
-    </ClInclude>
     <ClInclude Include="..\Middleware\imgui-docking\imconfig.h">
       <Filter>Middleware\imgui-docking</Filter>
     </ClInclude>
@@ -1085,39 +1079,6 @@
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL\VertexConstants.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\FontPixelShader.frag">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\FontVertexShader.vert">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\LinePixelShader.frag">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\LineVertexShader.vert">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\TriangleDepthPixelShader.frag">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\TriangleDepthVertexShader.vert">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\TrianglePixelShader.frag">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\TriangleVertexShader.vert">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\UIPixelShader.frag">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\UIPixelShaderUntextured.frag">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\UIVertexShader.vert">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\VertexConstants.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
@@ -3630,268 +3591,259 @@
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFs.h">
       <Filter>Flux\SDFs</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToGBuffer.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToGBuffer.slang">
       <Filter>Flux\Shaders\AnimatedMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToGBuffer.vert">
+    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToShadowmap.slang">
       <Filter>Flux\Shaders\AnimatedMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToShadowmap.frag">
-      <Filter>Flux\Shaders\AnimatedMeshes</Filter>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\Atmosphere.slang">
+      <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToShadowmap.vert">
-      <Filter>Flux\Shaders\AnimatedMeshes</Filter>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\DrawConstants.slang">
+      <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Common.fxh">
-      <Filter>Flux\Shaders</Filter>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\Frame.slang">
+      <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest.comp">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\Fullscreen.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\GBuffer.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\Material.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\PBR.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest.slang">
       <Filter>Flux\Shaders\ComputeTest</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.slang">
       <Filter>Flux\Shaders\ComputeTest</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.vert">
-      <Filter>Flux\Shaders\ComputeTest</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\DeferredShading_IBL.fxh">
+    <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.slang">
       <Filter>Flux\Shaders\DeferredShading</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\DeferredShading_Lighting.fxh">
-      <Filter>Flux\Shaders\DeferredShading</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\DeferredShading_Shadows.fxh">
-      <Filter>Flux\Shaders\DeferredShading</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag">
-      <Filter>Flux\Shaders\DeferredShading</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\DrawConstants.fxh">
-      <Filter>Flux\Shaders</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.slang">
       <Filter>Flux\Shaders\DynamicLights</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.vert">
-      <Filter>Flux\Shaders\DynamicLights</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Flux_Fullscreen_UV.vert">
-      <Filter>Flux\Shaders</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Flux_TexturedQuad.frag">
-      <Filter>Flux\Shaders</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_Fog.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_Fog.slang">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Apply.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Apply.slang">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Inject.comp">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Inject.slang">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Light.comp">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Light.slang">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_GodRays.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_GodRays.slang">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_NoiseCommon.fxh">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_RaymarchFog.slang">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_RaymarchFog.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_TemporalFog_Resolve.slang">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_TemporalFog_Resolve.comp">
-      <Filter>Flux\Shaders\Fog</Filter>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\AnimatedMeshes.h">
+      <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_VolumetricCommon.fxh">
-      <Filter>Flux\Shaders\Fog</Filter>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\ComputeTest.h">
+      <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\GBufferCommon.fxh">
-      <Filter>Flux\Shaders</Filter>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\DeferredShading.h">
+      <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\DynamicLights.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\FluxShaderProgram.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Fog.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Gizmos.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\HDR.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\HiZ.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\IBL.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\InstancedMeshes.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Particles.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Primitives.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Quads.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\SDFs.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Skybox.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\SSAO.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\SSGI.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\SSR.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\StaticMeshes.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Terrain.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Text.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Vegetation.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Water.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.slang">
       <Filter>Flux\Shaders\Gizmos</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert">
-      <Filter>Flux\Shaders\Gizmos</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_Adaptation.comp">
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_Adaptation.slang">
       <Filter>Flux\Shaders\HDR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomDownsample.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomDownsample.slang">
       <Filter>Flux\Shaders\HDR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomThreshold.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomThreshold.slang">
       <Filter>Flux\Shaders\HDR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomUpsample.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomUpsample.slang">
       <Filter>Flux\Shaders\HDR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_Luminance.comp">
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_Luminance.slang">
       <Filter>Flux\Shaders\HDR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_ToneMapping.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_ToneMapping.slang">
       <Filter>Flux\Shaders\HDR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\HiZ\Flux_HiZ_Generate.comp">
+    <ClInclude Include="..\Zenith\Flux\Shaders\HiZ\Flux_HiZ_Generate.slang">
       <Filter>Flux\Shaders\HiZ</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_BRDFIntegration.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_BRDFIntegration.slang">
       <Filter>Flux\Shaders\IBL</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_IBLCommon.fxh">
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_IrradianceConvolution.slang">
       <Filter>Flux\Shaders\IBL</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_IrradianceConvolution.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_PrefilterEnvMap.slang">
       <Filter>Flux\Shaders\IBL</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_PrefilterEnvMap.frag">
-      <Filter>Flux\Shaders\IBL</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceCulling.comp">
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceCulling.slang">
       <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToGBuffer.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMesh_ToGBuffer.slang">
       <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToGBuffer.vert">
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMesh_ToShadowmap.slang">
       <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToShadowMap.frag">
-      <Filter>Flux\Shaders\InstancedMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToShadowMap.vert">
-      <Filter>Flux\Shaders\InstancedMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialCommon.fxh">
-      <Filter>Flux\Shaders</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Meshes\Mesh_Frag.fxh">
-      <Filter>Flux\Shaders\Meshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Meshes\Mesh_Vert.fxh">
-      <Filter>Flux\Shaders\Meshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.slang">
       <Filter>Flux\Shaders\Particles</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.vert">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_ParticleUpdate.slang">
       <Filter>Flux\Shaders\Particles</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_ParticleUpdate.comp">
-      <Filter>Flux\Shaders\Particles</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\PBRConstants.fxh">
-      <Filter>Flux\Shaders</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.slang">
       <Filter>Flux\Shaders\Primitives</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.vert">
-      <Filter>Flux\Shaders\Primitives</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_Quads.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_Quads.slang">
       <Filter>Flux\Shaders\Quads</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_Quads.vert">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_TexturedQuad.slang">
       <Filter>Flux\Shaders\Quads</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.slang">
       <Filter>Flux\Shaders\SDFs</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AerialPerspective.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AerialPerspective.slang">
       <Filter>Flux\Shaders\Skybox</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Atmosphere.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Atmosphere.slang">
       <Filter>Flux\Shaders\Skybox</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AtmosphereCommon.fxh">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.slang">
       <Filter>Flux\Shaders\Skybox</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_SkyboxSolidColour.slang">
       <Filter>Flux\Shaders\Skybox</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_SkyboxSolidColour.frag">
-      <Filter>Flux\Shaders\Skybox</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.slang">
       <Filter>Flux\Shaders\SSAO</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Blur.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Blur.slang">
       <Filter>Flux\Shaders\SSAO</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Upsample.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Upsample.slang">
       <Filter>Flux\Shaders\SSAO</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Denoise.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Denoise.slang">
       <Filter>Flux\Shaders\SSGI</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.slang">
       <Filter>Flux\Shaders\SSGI</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.slang">
       <Filter>Flux\Shaders\SSGI</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.slang">
       <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Resolve.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Resolve.slang">
       <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToGBuffer.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToGBuffer.slang">
       <Filter>Flux\Shaders\StaticMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToGBuffer.vert">
+    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToShadowmap.slang">
       <Filter>Flux\Shaders\StaticMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToShadowmap.frag">
-      <Filter>Flux\Shaders\StaticMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToShadowmap.vert">
-      <Filter>Flux\Shaders\StaticMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.comp">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.slang">
       <Filter>Flux\Shaders\Terrain</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_FragCommon.fxh">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.slang">
       <Filter>Flux\Shaders\Terrain</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.slang">
       <Filter>Flux\Shaders\Terrain</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.vert">
-      <Filter>Flux\Shaders\Terrain</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.frag">
-      <Filter>Flux\Shaders\Terrain</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.vert">
-      <Filter>Flux\Shaders\Terrain</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_VertCommon.fxh">
-      <Filter>Flux\Shaders\Terrain</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Text\Flux_Text.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Text\Flux_Text.slang">
       <Filter>Flux\Shaders\Text</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Text\Flux_Text.vert">
-      <Filter>Flux\Shaders\Text</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.slang">
       <Filter>Flux\Shaders\Vegetation</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.vert">
-      <Filter>Flux\Shaders\Vegetation</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Wind.fxh">
-      <Filter>Flux\Shaders\Vegetation</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.frag">
-      <Filter>Flux\Shaders\Water</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.vert">
+    <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.slang">
       <Filter>Flux\Shaders\Water</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shadows\Flux_Shadows.h">
@@ -3900,10 +3852,16 @@
     <ClInclude Include="..\Zenith\Flux\Skybox\Flux_Skybox.h">
       <Filter>Flux\Skybox</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_CodeGenerator.h">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.h">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.h">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderRegistry.h">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h">
@@ -4235,6 +4193,9 @@
     <Filter Include="Flux\Shaders\AnimatedMeshes">
       <UniqueIdentifier>{8f44994f-bb49-ad0f-3b7f-a61cceb4e752}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\Shaders\Common">
+      <UniqueIdentifier>{69171996-a11b-940f-8826-64d9fb56053a}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\Shaders\ComputeTest">
       <UniqueIdentifier>{613a55c0-df80-e2bf-eb95-76784e3786a6}</UniqueIdentifier>
     </Filter>
@@ -4246,6 +4207,9 @@
     </Filter>
     <Filter Include="Flux\Shaders\Fog">
       <UniqueIdentifier>{388c15d2-6ab2-d541-f830-80baba4418ff}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Shaders\Generated">
+      <UniqueIdentifier>{b6fc1072-c3b4-3224-2a5d-1e9e81a465c0}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\Gizmos">
       <UniqueIdentifier>{01cd4a62-90c0-b695-ef95-56f0663ca794}</UniqueIdentifier>
@@ -4261,9 +4225,6 @@
     </Filter>
     <Filter Include="Flux\Shaders\InstancedMeshes">
       <UniqueIdentifier>{b314e0cc-c57a-cfb4-9281-f0bd3ebfb433}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Flux\Shaders\Meshes">
-      <UniqueIdentifier>{0ccfc8ef-5e0f-f523-bf44-e3e26190921a}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\Particles">
       <UniqueIdentifier>{4ebcffad-75d4-aa28-cf01-3889f4480f8b}</UniqueIdentifier>
@@ -4423,12 +4384,6 @@
     </Filter>
     <Filter Include="Middleware\imgui-docking\backends">
       <UniqueIdentifier>{25eca6d2-1521-1c5a-0765-f719ba0131a3}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\imgui-docking\backends\sdlgpu3">
-      <UniqueIdentifier>{1f778a42-06b4-f1aa-6195-19d48c1212be}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\imgui-docking\backends\vulkan">
-      <UniqueIdentifier>{b42d0075-05c5-02d3-4820-862d8af1478c}</UniqueIdentifier>
     </Filter>
     <Filter Include="Physics">
       <UniqueIdentifier>{e999ae50-54c3-c246-580e-4b540b0fd104}</UniqueIdentifier>

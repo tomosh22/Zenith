@@ -12,6 +12,9 @@
 #include "Zenith_PlatformGraphics_Include.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
 
 // Shaders and pipelines
 static Flux_Shader s_xGenerateShader;
@@ -77,19 +80,19 @@ static const Flux_ShaderResourceView* DebugGetBlurredSRV()
 
 // ---- Init / Shutdown ----
 
-void Flux_SSAO::Initialise()
+void Flux_SSAO::BuildPipelines()
 {
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xGenerateShader, s_xGeneratePipeline,
-		"SSAO/Flux_SSAO.frag", SSAO_FORMAT);
+		FluxShaderProgram::SSAO_Main, SSAO_FORMAT);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xBlurShader, s_xBlurPipeline,
-		"SSAO/Flux_SSAO_Blur.frag", SSAO_FORMAT);
+		FluxShaderProgram::SSAO_Blur, SSAO_FORMAT);
 
 	{
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			s_xUpsampleShader, "SSAO/Flux_SSAO_Upsample.frag", HDR_SCENE_FORMAT);
+			s_xUpsampleShader, FluxShaderProgram::SSAO_Upsample, HDR_SCENE_FORMAT);
 
 		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ZERO;
@@ -97,6 +100,21 @@ void Flux_SSAO::Initialise()
 
 		Flux_PipelineBuilder::FromSpecification(s_xUpsamplePipeline, xSpec);
 	}
+}
+
+void Flux_SSAO::Initialise()
+{
+	BuildPipelines();
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::SSAO_Main,
+		FluxShaderProgram::SSAO_Blur,
+		FluxShaderProgram::SSAO_Upsample,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_SSAO::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Radius" }, dbg_xGenerateConstants.m_fRadius, 0.01f, 2.f);

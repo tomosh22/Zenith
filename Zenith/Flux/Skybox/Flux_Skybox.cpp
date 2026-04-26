@@ -14,6 +14,7 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
 
@@ -87,13 +88,8 @@ float dbg_fAerialStrength = 1.0f;
 u_int dbg_uSkySamples = AtmosphereConfig::uDEFAULT_SKY_SAMPLES;
 u_int dbg_uLightSamples = AtmosphereConfig::uDEFAULT_LIGHT_SAMPLES;
 
-void Flux_Skybox::Initialise()
+void Flux_Skybox::BuildPipelines()
 {
-	CreateRenderTargets();
-
-	// Initialize atmosphere constants buffer
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), s_xAtmosphereConstantsBuffer);
-
 	// ========== Cubemap skybox pipeline (MRT with no blending) ==========
 	{
 		Flux_PipelineSpecification xSpec;
@@ -101,9 +97,8 @@ void Flux_Skybox::Initialise()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
-		// skybox renders to MRT colour only, no depth (default TEXTURE_FORMAT_NONE)
 		xSpec.m_pxShader = &s_xCubemapShader;
-		s_xCubemapShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_Skybox.frag");
+		s_xCubemapShader.Initialise(FluxShaderProgram::SkyboxCubemap);
 		s_xCubemapShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
 		{
@@ -121,9 +116,8 @@ void Flux_Skybox::Initialise()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
-		// skybox renders to MRT colour only, no depth (default TEXTURE_FORMAT_NONE)
 		xSpec.m_pxShader = &s_xSolidColourShader;
-		s_xSolidColourShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_SkyboxSolidColour.frag");
+		s_xSolidColourShader.Initialise(FluxShaderProgram::SkyboxSolidColour);
 		s_xSolidColourShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
 		{
@@ -134,12 +128,6 @@ void Flux_Skybox::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xSolidColourPipeline, xSpec);
 	}
 
-	// Initialize solid colour constants buffer
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xSolidColourConstants, sizeof(SkyboxOverrideConstants), s_xSolidColourConstantsBuffer);
-
-	// Use the global cubemap texture pointer set during initialization in Zenith_Main.cpp
-	s_pxCubemapTexture = Flux_Graphics::s_pxCubemapTexture;
-
 	// ========== Atmosphere sky pipeline ==========
 	{
 		Flux_PipelineSpecification xSpec;
@@ -147,9 +135,8 @@ void Flux_Skybox::Initialise()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
-		// skybox renders to MRT colour only, no depth (default TEXTURE_FORMAT_NONE)
 		xSpec.m_pxShader = &s_xAtmosphereShader;
-		s_xAtmosphereShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_Atmosphere.frag");
+		s_xAtmosphereShader.Initialise(FluxShaderProgram::SkyboxAtmosphere);
 		s_xAtmosphereShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		Flux_PipelineBuilder::FromSpecification(s_xAtmospherePipeline, xSpec);
 	}
@@ -159,15 +146,40 @@ void Flux_Skybox::Initialise()
 		Flux_PipelineSpecification xSpec;
 		xSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 		xSpec.m_uNumColourAttachments = 1;
-		// skybox renders to MRT colour only, no depth (default TEXTURE_FORMAT_NONE)
 		xSpec.m_pxShader = &s_xAerialPerspectiveShader;
-		s_xAerialPerspectiveShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_AerialPerspective.frag");
+		s_xAerialPerspectiveShader.Initialise(FluxShaderProgram::SkyboxAerialPerspective);
 		s_xAerialPerspectiveShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
 		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 		Flux_PipelineBuilder::FromSpecification(s_xAerialPerspectivePipeline, xSpec);
 	}
+}
+
+void Flux_Skybox::Initialise()
+{
+	CreateRenderTargets();
+
+	// Atmosphere & solid-colour CB allocations are one-time — kept in
+	// Initialise so hot-reload's BuildPipelines() doesn't leak them.
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), s_xAtmosphereConstantsBuffer);
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xSolidColourConstants, sizeof(SkyboxOverrideConstants), s_xSolidColourConstantsBuffer);
+
+	BuildPipelines();
+
+	// Use the global cubemap texture pointer set during initialization in Zenith_Main.cpp
+	s_pxCubemapTexture = Flux_Graphics::s_pxCubemapTexture;
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::SkyboxCubemap,
+		FluxShaderProgram::SkyboxSolidColour,
+		FluxShaderProgram::SkyboxAtmosphere,
+		FluxShaderProgram::SkyboxAerialPerspective,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Skybox::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	RegisterDebugVariables();

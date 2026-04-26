@@ -12,6 +12,9 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
 
 // Graph-owned transient handles — backing Flux_RenderAttachments are allocated
 // and destroyed by the render graph, sized from the descriptors set in
@@ -106,22 +109,34 @@ static const Flux_ShaderResourceView* DebugGetDenoisedSRV()
 }
 #endif
 
-void Flux_SSGI::Initialise()
+void Flux_SSGI::BuildPipelines()
 {
-	// Initialize ray march shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xRayMarchShader, s_xRayMarchPipeline,
-		"SSGI/Flux_SSGI_RayMarch.frag", SSGI_FORMAT);
+		FluxShaderProgram::SSGI_RayMarch, SSGI_FORMAT);
 
-	// Initialize upsample shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xUpsampleShader, s_xUpsamplePipeline,
-		"SSGI/Flux_SSGI_Upsample.frag", SSGI_FORMAT);
+		FluxShaderProgram::SSGI_Upsample, SSGI_FORMAT);
 
-	// Initialize denoise shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xDenoiseShader, s_xDenoisePipeline,
-		"SSGI/Flux_SSGI_Denoise.frag", SSGI_FORMAT);
+		FluxShaderProgram::SSGI_Denoise, SSGI_FORMAT);
+}
+
+void Flux_SSGI::Initialise()
+{
+	BuildPipelines();
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::SSGI_RayMarch,
+		FluxShaderProgram::SSGI_Upsample,
+		FluxShaderProgram::SSGI_Denoise,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_SSGI::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "DebugMode" }, dbg_uDebugMode, 0, SSGI_DEBUG_COUNT - 1);

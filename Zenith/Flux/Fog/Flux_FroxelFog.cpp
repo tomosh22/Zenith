@@ -14,6 +14,10 @@
 #include "Zenith_PlatformGraphics_Include.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 // Compute pipelines
 static Flux_Shader s_xInjectShader;
 static Flux_Pipeline s_xInjectPipeline;
@@ -125,10 +129,10 @@ static Flux_RenderAttachment& GetScatteringGridInternal()
 	return s_pxGraph->GetTransientAttachment(s_xScatteringGridHandle);
 }
 
-void Flux_FroxelFog::Initialise()
+void Flux_FroxelFog::BuildPipelines()
 {
 	// Initialize inject compute shader
-	s_xInjectShader.InitialiseCompute("Fog/Flux_FroxelFog_Inject.comp");
+	s_xInjectShader.Initialise(FluxShaderProgram::Fog_FroxelInject);
 
 	// Build inject root signature from shader reflection
 	Flux_RootSigBuilder::FromReflection(s_xInjectRootSig, s_xInjectShader.GetReflection());
@@ -141,7 +145,7 @@ void Flux_FroxelFog::Initialise()
 	s_xInjectPipeline.m_xRootSig = s_xInjectRootSig;
 
 	// Initialize light compute shader
-	s_xLightShader.InitialiseCompute("Fog/Flux_FroxelFog_Light.comp");
+	s_xLightShader.Initialise(FluxShaderProgram::Fog_FroxelLight);
 
 	// Build light root signature from shader reflection
 	Flux_RootSigBuilder::FromReflection(s_xLightRootSig, s_xLightShader.GetReflection());
@@ -154,7 +158,7 @@ void Flux_FroxelFog::Initialise()
 	s_xLightPipeline.m_xRootSig = s_xLightRootSig;
 
 	// Initialize apply fragment shader
-	s_xApplyShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_FroxelFog_Apply.frag");
+	s_xApplyShader.Initialise(FluxShaderProgram::Fog_FroxelApply);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -177,6 +181,11 @@ void Flux_FroxelFog::Initialise()
 	xApplySpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
 	Flux_PipelineBuilder::FromSpecification(s_xApplyPipeline, xApplySpec);
+}
+
+void Flux_FroxelFog::Initialise()
+{
+	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Froxel", "Debug Slice Index" }, dbg_uFroxelDebugSlice, 0, 63);
@@ -189,6 +198,20 @@ void Flux_FroxelFog::Initialise()
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Height Falloff" }, dbg_fFroxelHeightFalloff, 0.001f, 0.1f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Shadow Bias" }, dbg_fVolShadowBias, 0.0001f, 0.01f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Shadow Cone Radius" }, dbg_fVolShadowConeRadius, 0.0001f, 0.01f);
+#endif
+
+#ifdef ZENITH_TOOLS
+	// Fog_TemporalResolve listed by the wiring task is registered in
+	// Flux_ShaderRegistry but never built — this subsystem is spatial-only
+	// per Flux/Fog/CLAUDE.md, so only the three pipelines this Initialise
+	// actually constructs are wired into hot reload.
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Fog_FroxelInject,
+		FluxShaderProgram::Fog_FroxelLight,
+		FluxShaderProgram::Fog_FroxelApply,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_FroxelFog::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_FroxelFog initialised (%ux%ux%u grid)", FROXEL_WIDTH, FROXEL_HEIGHT, FROXEL_DEPTH);

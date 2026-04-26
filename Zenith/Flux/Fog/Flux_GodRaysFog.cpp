@@ -10,6 +10,10 @@
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
@@ -40,9 +44,9 @@ DEBUGVAR float dbg_fGodRaysWeight = 0.5f;
 // Cached constants for push constant
 static Flux_GodRaysConstants s_xConstants;
 
-void Flux_GodRaysFog::Initialise()
+void Flux_GodRaysFog::BuildPipelines()
 {
-	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_GodRays.frag");
+	s_xShader.Initialise(FluxShaderProgram::Fog_GodRays);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -65,6 +69,11 @@ void Flux_GodRaysFog::Initialise()
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+}
+
+void Flux_GodRaysFog::Initialise()
+{
+	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "God Rays", "Sample Count" }, dbg_uGodRaysSamples, 8, 128);
@@ -72,6 +81,14 @@ void Flux_GodRaysFog::Initialise()
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "God Rays", "Exposure" }, dbg_fGodRaysExposure, 0.0f, 1.0f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "God Rays", "Density" }, dbg_fGodRaysDensity, 0.0f, 2.0f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "God Rays", "Weight" }, dbg_fGodRaysWeight, 0.0f, 1.0f);
+#endif
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Fog_GodRays,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_GodRaysFog::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_GodRaysFog initialised");

@@ -138,7 +138,10 @@ void Zenith_Vulkan_Swapchain::InitialiseCopyToFramebufferCommands()
 {
 	s_xCopyToFramebufferCmd.Initialise();
 
-	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Flux_TexturedQuad.frag");
+	// Pilot Slang program — replaces the GLSL pair Flux_Fullscreen_UV.vert +
+	// Flux_TexturedQuad.frag. Resolves to Quads/Flux_TexturedQuad.slang via
+	// Flux_ShaderRegistry.
+	s_xShader.Initialise(FluxShaderProgram::TexturedQuad);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;

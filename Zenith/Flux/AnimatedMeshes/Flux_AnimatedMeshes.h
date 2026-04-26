@@ -7,6 +7,7 @@ class Flux_AnimatedMeshes
 {
 public:
 	static void Initialise();
+	static void BuildPipelines();
 
 	static void RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
 

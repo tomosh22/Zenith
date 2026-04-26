@@ -9,6 +9,9 @@
 #include "Zenith_PlatformGraphics_Include.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
 
 // Static member definitions
 u_int Flux_HiZ::s_uMipCount = 0;
@@ -57,6 +60,14 @@ static void UpdateMipCountFromSwapchain()
 	Flux_HiZ::s_uMipCount = std::min(Flux_HiZ::s_uMipCount, Flux_HiZ::uHIZ_MAX_MIPS);
 }
 
+void Flux_HiZ::BuildPipelines()
+{
+	// HiZ_Generate is a compute-only program in the Slang registry.
+	g_xComputeShader.Initialise(FluxShaderProgram::HiZ_Generate);
+	Flux_RootSigBuilder::FromReflection(g_xComputeRootSig, g_xComputeShader.GetReflection());
+	Flux_ComputePipelineBuilder::BuildFromShader(g_xComputePipeline, g_xComputeShader, g_xComputeRootSig);
+}
+
 void Flux_HiZ::Initialise()
 {
 	UpdateMipCountFromSwapchain();
@@ -64,21 +75,14 @@ void Flux_HiZ::Initialise()
 	static_assert(FLUX_MAX_MIPS >= uHIZ_MAX_MIPS,
 		"FLUX_MAX_MIPS must be >= uHIZ_MAX_MIPS");
 
-	// Load compute shader
-	g_xComputeShader.InitialiseCompute("HiZ/Flux_HiZ_Generate.comp");
+	BuildPipelines();
 
-	// Build root signature from shader reflection
-	Flux_RootSigBuilder::FromReflection(g_xComputeRootSig, g_xComputeShader.GetReflection());
-
-	// Build compute pipeline (one-call helper — wraps WithShader/WithLayout/Build
-	// + the root-sig assignment so engine code never touches the vk::PipelineLayout
-	// inside Flux_RootSig or the m_xRootSig member of Flux_Pipeline).
-	Flux_ComputePipelineBuilder::BuildFromShader(g_xComputePipeline, g_xComputeShader, g_xComputeRootSig);
-
-#ifdef ZENITH_DEBUG_VARIABLES
-	// Texture debug registrations are deferred — the transient's SRVs don't
-	// exist until the graph allocates its backing image during Compile().
-	// AddTexture would store a pointer into the not-yet-created transient.
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::HiZ_Generate,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_HiZ::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	// Resize callback: recompute mip count. The graph owns the transient

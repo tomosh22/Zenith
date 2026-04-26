@@ -5,6 +5,7 @@
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Types.h"
 #include "Flux/Flux_CommandList.h"
+#include "Flux/Shaders/Generated/FluxShaderProgram.h"
 #include "Multithreading/Zenith_Multithreading.h"
 
 // Flux_SurfaceInfo and view structs (Flux_ShaderResourceView, Flux_*View)
@@ -501,22 +502,21 @@ class Flux_PipelineHelper
 public:
 	Flux_PipelineHelper() = delete;
 
-	// Initialises a shader and builds a fullscreen pipeline with no depth test/write.
-	// Covers the common case used by HDR, SSR, SSGI, IBL, etc.
+	// Initialises a shader from the Slang program registry and builds a
+	// fullscreen pipeline with no depth test/write. Covers the common case
+	// used by HDR, SSR, SSGI, IBL, SSAO etc.
 	static void BuildFullscreenPipeline(
 		Flux_Shader& xShader,
 		Flux_Pipeline& xPipeline,
-		const char* szFragShader,
+		FluxShaderProgram eProgram,
 		TextureFormat eColourFormat,
-		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE,
-		const char* szVertShader = "Flux_Fullscreen_UV.vert");
+		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE);
 
 	// Creates a pre-populated fullscreen spec without building.
 	// Use when you need to customise blend states or other settings before building.
 	static Flux_PipelineSpecification CreateFullscreenSpec(
 		Flux_Shader& xShader,
-		const char* szFragShader,
+		FluxShaderProgram eProgram,
 		TextureFormat eColourFormat,
-		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE,
-		const char* szVertShader = "Flux_Fullscreen_UV.vert");
+		TextureFormat eDepthStencilFormat = TEXTURE_FORMAT_NONE);
 };

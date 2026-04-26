@@ -15,6 +15,7 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
 // Strongly-typed per-pass user data: each downsample / upsample pass is given
@@ -145,38 +146,82 @@ void Flux_HDR::SyncDebugVariables()
 	s_fMaxExposure = dbg_fHDRMaxExposure;
 }
 
-void Flux_HDR::Initialise()
+void Flux_HDR::BuildPipelines()
 {
-	// Initialize tone mapping shader and pipeline
+	// Tone mapping — Slang-registered (HDR_ToneMapping). Five tone curves
+	// + debug overlays in a single fragment program.
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xToneMappingShader, s_xToneMappingPipeline,
-		"HDR/Flux_ToneMapping.frag", FINAL_RT_FORMAT);
+		FluxShaderProgram::HDR_ToneMapping, FINAL_RT_FORMAT);
 
-	// Initialize bloom threshold shader and pipeline (use constant format)
+	// Bloom passes — all migrated to the Slang shader registry. They share
+	// Common.Fullscreen for vsMain so a single .slang module per pass holds
+	// both stages.
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xBloomThresholdShader, s_xBloomThresholdPipeline,
-		"HDR/Flux_BloomThreshold.frag", BLOOM_FORMAT);
+		FluxShaderProgram::BloomThreshold, BLOOM_FORMAT);
 
-	// Initialize bloom downsample shader and pipeline (use constant format)
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		s_xBloomDownsampleShader, s_xBloomDownsamplePipeline,
-		"HDR/Flux_BloomDownsample.frag", BLOOM_FORMAT);
+		FluxShaderProgram::BloomDownsample, BLOOM_FORMAT);
 
-	// Initialize bloom upsample shader and pipeline (additive blending, use constant format)
 	{
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			s_xBloomUpsampleShader, "HDR/Flux_BloomUpsample.frag", BLOOM_FORMAT);
+			s_xBloomUpsampleShader, FluxShaderProgram::BloomUpsample, BLOOM_FORMAT);
 		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 		Flux_PipelineBuilder::FromSpecification(s_xBloomUpsamplePipeline, xSpec);
 	}
 
-	// Initialize auto-exposure compute pipelines
-	InitializeAutoExposure();
+	// Auto-exposure compute pipelines — shader Initialise + RootSig +
+	// ComputePipelineBuilder. The VRAM buffers (s_xHistogramBuffer /
+	// s_xExposureBuffer) live in Initialise and are not touched here.
+	s_xLuminanceHistogramShader.Initialise(FluxShaderProgram::HDR_Luminance);
+	Flux_RootSigBuilder::FromReflection(s_xLuminanceRootSig, s_xLuminanceHistogramShader.GetReflection());
+	Flux_ComputePipelineBuilder::BuildFromShader(s_xLuminanceHistogramPipeline,
+		s_xLuminanceHistogramShader, s_xLuminanceRootSig);
+
+	s_xAdaptationShader.Initialise(FluxShaderProgram::HDR_Adaptation);
+	Flux_RootSigBuilder::FromReflection(s_xAdaptationRootSig, s_xAdaptationShader.GetReflection());
+	Flux_ComputePipelineBuilder::BuildFromShader(s_xAdaptationPipeline,
+		s_xAdaptationShader, s_xAdaptationRootSig);
+}
+
+void Flux_HDR::Initialise()
+{
+	BuildPipelines();
+
+	// One-time setup that hot-reload must NOT repeat (would leak VRAM /
+	// double-register debug variables).
+	{
+		// Histogram buffer (256 bins of u_int).
+		u_int auZeroHistogram[256] = { 0 };
+		Flux_MemoryManager::InitialiseReadWriteBuffer(auZeroHistogram, 256 * sizeof(u_int), s_xHistogramBuffer);
+		Zenith_Assert(s_xHistogramBuffer.GetBuffer().m_xVRAMHandle.IsValid(),
+			"Flux_HDR: Failed to create histogram buffer");
+
+		// Exposure buffer (4 floats: avgLum, currentExp, targetExp, pad).
+		float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
+		Flux_MemoryManager::InitialiseReadWriteBuffer(afInitialExposure, 4 * sizeof(float), s_xExposureBuffer);
+		Zenith_Assert(s_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid(),
+			"Flux_HDR: Failed to create exposure buffer");
+	}
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
+
+	// Hot reload — every HDR shader reloads via BuildPipelines().
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::HDR_ToneMapping,
+		FluxShaderProgram::BloomThreshold,
+		FluxShaderProgram::BloomDownsample,
+		FluxShaderProgram::BloomUpsample,
+		FluxShaderProgram::HDR_Luminance,
+		FluxShaderProgram::HDR_Adaptation,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_HDR::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	// Render targets are graph-owned transients, created in SetupTransients.
@@ -225,62 +270,9 @@ void Flux_HDR::Reset()
 }
 
 
-void Flux_HDR::InitializeAutoExposure()
-{
-	// Create histogram buffer (256 bins, each uint32)
-	// Initialize with zeros
-	u_int auZeroHistogram[256] = { 0 };
-	Flux_MemoryManager::InitialiseReadWriteBuffer(auZeroHistogram, 256 * sizeof(u_int), Flux_HDR::s_xHistogramBuffer);
-
-	// Validate histogram buffer creation
-	if (!Flux_HDR::s_xHistogramBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-	{
-		Zenith_Error(LOG_CATEGORY_RENDERER, "Flux_HDR: Failed to create histogram buffer");
-		return;
-	}
-
-	// Create exposure buffer (4 floats: avgLum, currentExp, targetExp, pad)
-	// Initialize with default values
-	float afInitialExposure[4] = { 0.18f, 1.0f, 1.0f, 0.0f };
-	Flux_MemoryManager::InitialiseReadWriteBuffer(afInitialExposure, 4 * sizeof(float), Flux_HDR::s_xExposureBuffer);
-
-	// Validate exposure buffer creation
-	if (!Flux_HDR::s_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid())
-	{
-		Zenith_Error(LOG_CATEGORY_RENDERER, "Flux_HDR: Failed to create exposure buffer");
-		return;
-	}
-
-	// Initialize luminance histogram compute shader
-	Flux_HDR::s_xLuminanceHistogramShader.InitialiseCompute("HDR/Flux_Luminance.comp");
-
-	// Build luminance histogram root signature from shader reflection
-	const Flux_ShaderReflection& xLuminanceReflection = Flux_HDR::s_xLuminanceHistogramShader.GetReflection();
-	Flux_RootSigBuilder::FromReflection(Flux_HDR::s_xLuminanceRootSig, xLuminanceReflection);
-
-	// Build luminance histogram pipeline
-	Flux_ComputePipelineBuilder xLuminanceBuilder;
-	xLuminanceBuilder.WithShader(Flux_HDR::s_xLuminanceHistogramShader)
-		.WithLayout(Flux_HDR::s_xLuminanceRootSig.m_xLayout)
-		.Build(Flux_HDR::s_xLuminanceHistogramPipeline);
-	Flux_HDR::s_xLuminanceHistogramPipeline.m_xRootSig = Flux_HDR::s_xLuminanceRootSig;
-
-	// Initialize adaptation compute shader
-	Flux_HDR::s_xAdaptationShader.InitialiseCompute("HDR/Flux_Adaptation.comp");
-
-	// Build adaptation root signature from shader reflection
-	const Flux_ShaderReflection& xAdaptationReflection = Flux_HDR::s_xAdaptationShader.GetReflection();
-	Flux_RootSigBuilder::FromReflection(Flux_HDR::s_xAdaptationRootSig, xAdaptationReflection);
-
-	// Build adaptation pipeline
-	Flux_ComputePipelineBuilder xAdaptationBuilder;
-	xAdaptationBuilder.WithShader(Flux_HDR::s_xAdaptationShader)
-		.WithLayout(Flux_HDR::s_xAdaptationRootSig.m_xLayout)
-		.Build(Flux_HDR::s_xAdaptationPipeline);
-	Flux_HDR::s_xAdaptationPipeline.m_xRootSig = Flux_HDR::s_xAdaptationRootSig;
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_HDR: Auto-exposure compute pipelines initialized");
-}
+// InitializeAutoExposure() inlined into BuildPipelines() (compute pipelines)
+// and Initialise() (one-time VRAM buffer creation) — split was needed so
+// hot-reload can rebuild the compute pipelines without leaking the buffers.
 
 void Flux_HDR::PreExecuteLuminanceHistogram(void* pUserData)
 {
@@ -536,8 +528,10 @@ void Flux_HDR::ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserDa
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		xBinder.BindSRV(s_xToneMappingShader, "g_xHDRTex", &GetHDRSceneTarget().SRV());
 		xBinder.BindSRV(s_xToneMappingShader, "g_xBloomTex", &GetBloomChainAttachment(0).SRV());
-		xBinder.BindUAV_Buffer(s_xToneMappingShader, "HistogramBuffer", &s_xHistogramBuffer.GetUAV());
-		xBinder.BindUAV_Buffer(s_xToneMappingShader, "ExposureBuffer", &s_xExposureBuffer.GetUAV());
+		// Slang reflection keys on the variable name (not the GLSL block
+		// name) — match the names declared in Flux_ToneMapping.slang.
+		xBinder.BindUAV_Buffer(s_xToneMappingShader, "g_auHistogram",   &s_xHistogramBuffer.GetUAV());
+		xBinder.BindUAV_Buffer(s_xToneMappingShader, "g_afExposureData", &s_xExposureBuffer.GetUAV());
 		xBinder.BindDrawConstants(s_xToneMappingShader, "ToneMappingConstants", &xConsts, sizeof(ToneMappingConstants));
 	}
 

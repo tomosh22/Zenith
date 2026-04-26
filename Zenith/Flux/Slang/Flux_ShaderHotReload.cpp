@@ -3,139 +3,103 @@
 #ifdef ZENITH_TOOLS
 
 #include "Flux/Slang/Flux_ShaderHotReload.h"
+#include "Flux/Slang/Flux_ShaderRegistry.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Core/Zenith_FileWatcher.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Zenith_PlatformGraphics_Include.h"
-#include <unordered_map> // #TODO: Replace with engine hash map
-#include <unordered_set> // #TODO: Replace with engine hash set when available
 #include <algorithm>
+#include <string>
+#include <unordered_set> // #TODO: Replace with engine hash set
 
-// Registered pipeline info
-struct RegisteredPipeline
+struct RegisteredProgram
 {
-	Flux_Pipeline* m_pxPipeline = nullptr;
-	std::string m_strVertPath;
-	std::string m_strFragPath;     // Empty for compute
-	std::string m_strComputePath;  // Empty for graphics
-	PipelineRecreateCallback m_pfnRecreate;
-	bool m_bNeedsReload = false;
-	bool m_bIsCompute = false;
+	FluxShaderProgram                            m_eProgram   = FluxShaderProgram::COUNT;
+	Flux_ShaderHotReload::ProgramRebuildCallback m_pfnRebuild = nullptr;
+	bool                                         m_bNeedsReload = false;
 };
 
-// Static data
-static Zenith_FileWatcher s_xFileWatcher;
-static Zenith_Vector<RegisteredPipeline> s_axRegisteredPipelines;
-static std::unordered_set<std::string> s_xPendingReloadFiles;
-static Zenith_Mutex s_xMutex;
-static double s_fLastReloadTime = 0.0;
-static constexpr double fRELOAD_DEBOUNCE_TIME = 0.5; // Seconds to wait before reloading (debounce rapid saves)
+static Zenith_FileWatcher                 s_xFileWatcher;
+static Zenith_Vector<RegisteredProgram>   s_axRegistered;
+static std::unordered_set<std::string>    s_xPendingChanges;
+static Zenith_Mutex                       s_xMutex;
 
-bool Flux_ShaderHotReload::s_bInitialised = false;
-bool Flux_ShaderHotReload::s_bEnabled = true;
-u_int Flux_ShaderHotReload::s_uReloadCount = 0;
-u_int Flux_ShaderHotReload::s_uFailedReloadCount = 0;
+bool   Flux_ShaderHotReload::s_bInitialised      = false;
+bool   Flux_ShaderHotReload::s_bEnabled          = true;
+u_int  Flux_ShaderHotReload::s_uReloadCount      = 0;
+u_int  Flux_ShaderHotReload::s_uFailedReloadCount = 0;
 
-// Normalize path for comparison
 static std::string NormalizePath(const std::string& strPath)
 {
-	std::string strNormalized = strPath;
-	for (char& c : strNormalized)
+	std::string strNorm = strPath;
+	for (char& c : strNorm)
 	{
-		if (c == '\\')
-		{
-			c = '/';
-		}
+		if (c == '\\') c = '/';
 	}
-	// Convert to lowercase for case-insensitive comparison on Windows
-	std::transform(strNormalized.begin(), strNormalized.end(), strNormalized.begin(), ::tolower);
-	return strNormalized;
+	std::transform(strNorm.begin(), strNorm.end(), strNorm.begin(), ::tolower);
+	return strNorm;
 }
 
-// Check if a shader path matches a changed file (handles relative vs absolute paths)
-static bool PathMatches(const std::string& strShaderPath, const std::string& strChangedFile)
+// True if szPath ends with `<m_szModuleName>.slang` (case-insensitive). The
+// registry stores module names without an extension and with `/` separators
+// already, so suffix-matching against a normalised path is exact.
+static bool ProgramMatchesPath(const Flux_ShaderRegistryEntry& xEntry, const std::string& strNormPath)
 {
-	std::string strNormalizedShader = NormalizePath(strShaderPath);
-	std::string strNormalizedChanged = NormalizePath(strChangedFile);
+	if (!xEntry.m_szModuleName) return false;
+	std::string strModule = xEntry.m_szModuleName;
+	std::string strSuffix = NormalizePath(strModule) + ".slang";
+	if (strNormPath.size() < strSuffix.size()) return false;
+	return strNormPath.compare(strNormPath.size() - strSuffix.size(), strSuffix.size(), strSuffix) == 0;
+}
 
-	// Direct match
-	if (strNormalizedShader == strNormalizedChanged)
-	{
-		return true;
-	}
-
-	// Check if changed file ends with shader path (relative match)
-	if (strNormalizedChanged.length() >= strNormalizedShader.length())
-	{
-		size_t ulOffset = strNormalizedChanged.length() - strNormalizedShader.length();
-		if (strNormalizedChanged.substr(ulOffset) == strNormalizedShader)
-		{
-			return true;
-		}
-	}
-
-	// Check if shader path ends with changed file
-	if (strNormalizedShader.length() >= strNormalizedChanged.length())
-	{
-		size_t ulOffset = strNormalizedShader.length() - strNormalizedChanged.length();
-		if (strNormalizedShader.substr(ulOffset) == strNormalizedChanged)
-		{
-			return true;
-		}
-	}
-
+// True if the changed file lives under the Common/ shared-module folder. A
+// change there can affect any program transitively, so we flag everything.
+// File-watcher hands us relative paths (no leading slash), so check both the
+// "starts with common/" and "contains /common/" cases.
+static bool IsSharedModulePath(const std::string& strNormPath)
+{
+	if (strNormPath.rfind("common/", 0) == 0) return true;       // starts with
+	if (strNormPath.find("/common/") != std::string::npos) return true;
 	return false;
 }
 
 void Flux_ShaderHotReload::Initialise()
 {
-	if (s_bInitialised)
-	{
-		return;
-	}
+	if (s_bInitialised) return;
 
-	// Start watching the shader source directory
-	std::string strShaderRoot(SHADER_SOURCE_ROOT);
-
-	bool bStarted = s_xFileWatcher.Start(strShaderRoot, true,
+	std::string strRoot(SHADER_SOURCE_ROOT);
+	const bool bStarted = s_xFileWatcher.Start(strRoot, true,
 		[](const std::string& strPath, FileChangeType eType)
 		{
-			// Forward to our handler, converting enum to int
-			OnFileChanged(strPath, static_cast<int>(eType));
+			OnFileChanged(strPath.c_str(), static_cast<int>(eType));
 		});
 
 	if (!bStarted)
 	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Failed to start file watcher for %s", strShaderRoot.c_str());
+		Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Failed to start file watcher for %s", strRoot.c_str());
 		return;
 	}
 
-	s_bInitialised = true;
-	s_bEnabled = true;
-	s_uReloadCount = 0;
-	s_uFailedReloadCount = 0;
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload initialized - watching: %s", strShaderRoot.c_str());
+	s_bInitialised        = true;
+	s_bEnabled            = true;
+	s_uReloadCount        = 0;
+	s_uFailedReloadCount  = 0;
+	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload initialised — watching %s", strRoot.c_str());
 }
 
 void Flux_ShaderHotReload::Shutdown()
 {
-	if (!s_bInitialised)
-	{
-		return;
-	}
+	if (!s_bInitialised) return;
 
 	s_xFileWatcher.Stop();
-
 	{
 		Zenith_ScopedMutexLock xLock(s_xMutex);
-		s_axRegisteredPipelines.Clear();
-		s_xPendingReloadFiles.clear();
+		s_axRegistered.Clear();
+		s_xPendingChanges.clear();
 	}
 
 	s_bInitialised = false;
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload shutdown - Reloads: %u, Failed: %u",
+	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload shutdown — reloads:%u failed:%u",
 			   s_uReloadCount, s_uFailedReloadCount);
 }
 
@@ -147,301 +111,180 @@ void Flux_ShaderHotReload::SetEnabled(bool bEnabled)
 
 void Flux_ShaderHotReload::Update()
 {
-	if (!s_bInitialised || !s_bEnabled)
-	{
-		return;
-	}
-
-	// Update file watcher to process OS notifications
+	if (!s_bInitialised || !s_bEnabled) return;
 	s_xFileWatcher.Update();
-
-	// Process pending reloads with debouncing
 	ProcessPendingReloads();
 }
 
-void Flux_ShaderHotReload::OnFileChanged(const std::string& strPath, int eChangeType)
+void Flux_ShaderHotReload::OnFileChanged(const char* szPath, int eChangeType)
 {
-	// Only care about modifications
-	FileChangeType eType = static_cast<FileChangeType>(eChangeType);
-	if (eType != FileChangeType::Modified)
-	{
-		return;
-	}
+	if (static_cast<FileChangeType>(eChangeType) != FileChangeType::Modified) return;
+	if (!szPath || !szPath[0]) return;
 
-	// Check if this is a shader file (by extension)
-	std::string strExt;
-	size_t ulDot = strPath.rfind('.');
-	if (ulDot != std::string::npos)
-	{
-		strExt = strPath.substr(ulDot);
-	}
+	std::string strPath = szPath;
+	const size_t ulDot = strPath.rfind('.');
+	if (ulDot == std::string::npos) return;
+	const std::string strExt = strPath.substr(ulDot);
+	if (strExt != ".slang") return;
 
-	// Shader extensions we care about
-	static const char* aszShaderExtensions[] = {
-		".vert", ".frag", ".comp", ".tesc", ".tese", ".geom",
-		".fxh", ".slang", ".hlsl", ".glsl"
-	};
-
-	bool bIsShader = false;
-	for (const char* szExt : aszShaderExtensions)
-	{
-		if (strExt == szExt)
-		{
-			bIsShader = true;
-			break;
-		}
-	}
-
-	if (!bIsShader)
-	{
-		return;
-	}
-
-	// Add to pending reload set
 	{
 		Zenith_ScopedMutexLock xLock(s_xMutex);
-		s_xPendingReloadFiles.insert(strPath);
+		s_xPendingChanges.insert(strPath);
 	}
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: File changed: %s", strPath.c_str());
+	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: detected change %s", szPath);
 }
 
-void Flux_ShaderHotReload::MarkPipelinesForReload(const std::string& strChangedFile)
+void Flux_ShaderHotReload::MarkProgramsForReload(const char* szChangedFile)
 {
+	const std::string strNorm = NormalizePath(szChangedFile);
+	const bool bShared = IsSharedModulePath(strNorm);
+
 	Zenith_ScopedMutexLock xLock(s_xMutex);
-
-	// Detect header-file changes once — any .fxh/.hlsl/.slang change invalidates
-	// every pipeline since the dependency graph isn't tracked yet; the shader
-	// cache filters unnecessary recompilations downstream.
-	std::string strExt;
-	size_t ulDot = strChangedFile.rfind('.');
-	if (ulDot != std::string::npos)
+	for (u_int u = 0; u < s_axRegistered.GetSize(); u++)
 	{
-		strExt = strChangedFile.substr(ulDot);
-	}
-	const bool bIsHeaderChange = (strExt == ".fxh" || strExt == ".hlsl" || strExt == ".slang");
+		RegisteredProgram& xReg = s_axRegistered.Get(u);
+		if (xReg.m_eProgram >= FluxShaderProgram::COUNT) continue;
 
-	for (u_int u = 0; u < s_axRegisteredPipelines.GetSize(); ++u)
-	{
-		RegisteredPipeline& xPipeline = s_axRegisteredPipelines.Get(u);
-		bool bAffected = bIsHeaderChange;
-
-		if (!bAffected)
+		if (bShared)
 		{
-			if (xPipeline.m_bIsCompute)
-			{
-				bAffected = PathMatches(xPipeline.m_strComputePath, strChangedFile);
-			}
-			else
-			{
-				bAffected = PathMatches(xPipeline.m_strVertPath, strChangedFile) ||
-							PathMatches(xPipeline.m_strFragPath, strChangedFile);
-			}
+			xReg.m_bNeedsReload = true;
+			continue;
 		}
 
-		if (bAffected)
+		const Flux_ShaderRegistryEntry& xEntry = Flux_ShaderRegistry::GetProgram(xReg.m_eProgram);
+		if (ProgramMatchesPath(xEntry, strNorm))
 		{
-			xPipeline.m_bNeedsReload = true;
+			xReg.m_bNeedsReload = true;
 		}
 	}
 }
 
 void Flux_ShaderHotReload::ProcessPendingReloads()
 {
-	// Check if we have pending files
-	std::unordered_set<std::string> xFilesToProcess;
+	std::unordered_set<std::string> xChanges;
 	{
 		Zenith_ScopedMutexLock xLock(s_xMutex);
-		if (s_xPendingReloadFiles.empty())
-		{
-			return;
-		}
-		xFilesToProcess = std::move(s_xPendingReloadFiles);
-		s_xPendingReloadFiles.clear();
+		if (s_xPendingChanges.empty()) return;
+		xChanges = std::move(s_xPendingChanges);
+		s_xPendingChanges.clear();
 	}
 
-	// Mark affected pipelines
-	for (const std::string& strFile : xFilesToProcess)
+	for (const std::string& strFile : xChanges)
 	{
-		MarkPipelinesForReload(strFile);
+		MarkProgramsForReload(strFile.c_str());
 	}
 
-	// Collect pipelines that need reload
-	Zenith_Vector<RegisteredPipeline*> axPipelinesToReload;
+	// Snapshot unique callbacks outside the lock so they can do anything
+	// they like (including registering more programs) without recursive-
+	// mutex concerns. Subsystems register every program they own against
+	// the same callback pointer — dedup keeps a `Common.Frame` change from
+	// firing each subsystem's rebuild N times.
+	Zenith_Vector<Flux_ShaderHotReload::ProgramRebuildCallback> axCallbacks;
 	{
 		Zenith_ScopedMutexLock xLock(s_xMutex);
-		for (u_int u = 0; u < s_axRegisteredPipelines.GetSize(); ++u)
+		for (u_int u = 0; u < s_axRegistered.GetSize(); u++)
 		{
-			RegisteredPipeline& xPipeline = s_axRegisteredPipelines.Get(u);
-			if (xPipeline.m_bNeedsReload)
+			RegisteredProgram& xReg = s_axRegistered.Get(u);
+			if (!xReg.m_bNeedsReload) continue;
+			xReg.m_bNeedsReload = false;
+			if (!xReg.m_pfnRebuild) continue;
+
+			// O(N^2) dedup is fine — N is registered programs, ~50 today
+			// and callbacks are coarse-grained.
+			bool bAlreadyQueued = false;
+			for (u_int v = 0; v < axCallbacks.GetSize(); v++)
 			{
-				axPipelinesToReload.PushBack(&xPipeline);
+				if (axCallbacks.Get(v) == xReg.m_pfnRebuild)
+				{
+					bAlreadyQueued = true;
+					break;
+				}
 			}
+			if (!bAlreadyQueued) axCallbacks.PushBack(xReg.m_pfnRebuild);
 		}
 	}
 
-	if (axPipelinesToReload.GetSize() == 0)
-	{
-		return;
-	}
+	if (axCallbacks.GetSize() == 0) return;
 
-	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Reloading %u pipeline(s)...",
-			   axPipelinesToReload.GetSize());
+	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: firing %u rebuild callback(s)…",
+			   axCallbacks.GetSize());
 
-	// Wait for GPU to be idle before recreating pipelines.
-	// Engine-typed wrapper rather than reaching into the backend's vk::Device.
+	// Pipelines tear-down through QueueVRAMDeletion etc, but the actual
+	// vk::Pipeline destruction must wait for the GPU to release in-flight
+	// references. Subsystems' rebuild callbacks expect the GPU to be idle.
 	Flux_PlatformAPI::WaitForGPUIdle();
 
-	for (u_int u = 0; u < axPipelinesToReload.GetSize(); ++u)
+	for (u_int u = 0; u < axCallbacks.GetSize(); u++)
 	{
-		RegisteredPipeline* pxPipeline = axPipelinesToReload.Get(u);
-		bool bSuccess = false;
-
-		if (pxPipeline->m_pfnRecreate)
-		{
-			if (pxPipeline->m_bIsCompute)
-			{
-				bSuccess = pxPipeline->m_pfnRecreate(pxPipeline->m_pxPipeline,
-					pxPipeline->m_strComputePath, "");
-			}
-			else
-			{
-				bSuccess = pxPipeline->m_pfnRecreate(pxPipeline->m_pxPipeline,
-					pxPipeline->m_strVertPath, pxPipeline->m_strFragPath);
-			}
-		}
-
-		if (bSuccess)
-		{
-			s_uReloadCount++;
-			Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Reloaded pipeline successfully");
-		}
-		else
-		{
-			s_uFailedReloadCount++;
-			Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Failed to reload pipeline");
-		}
-
-		pxPipeline->m_bNeedsReload = false;
+		axCallbacks.Get(u)();
+		s_uReloadCount++;
 	}
 }
 
-void Flux_ShaderHotReload::RegisterPipeline(Flux_Pipeline* pxPipeline,
-											 const std::string& strVertPath,
-											 const std::string& strFragPath,
-											 PipelineRecreateCallback pfnRecreate)
+void Flux_ShaderHotReload::RegisterProgram(FluxShaderProgram eProgram,
+											ProgramRebuildCallback pfnRebuild)
 {
-	if (!s_bInitialised)
-	{
-		return;
-	}
+	// Subsystems may register before Flux_ShaderHotReload::Initialise runs
+	// (Flux::LateInitialise calls Initialise() AFTER subsystem inits in the
+	// current ordering). The registration list is a static-storage container
+	// that's safe to append to before Initialise; once the watcher starts,
+	// any pre-registered callbacks fire normally on file changes.
+	if (!pfnRebuild) return;
+	if (eProgram >= FluxShaderProgram::COUNT) return;
 
 	Zenith_ScopedMutexLock xLock(s_xMutex);
-
-	for (u_int u = 0; u < s_axRegisteredPipelines.GetSize(); ++u)
+	for (u_int u = 0; u < s_axRegistered.GetSize(); u++)
 	{
-		if (s_axRegisteredPipelines.Get(u).m_pxPipeline == pxPipeline)
+		RegisteredProgram& xReg = s_axRegistered.Get(u);
+		if (xReg.m_eProgram == eProgram)
 		{
-			Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Pipeline already registered");
+			xReg.m_pfnRebuild = pfnRebuild;
 			return;
 		}
 	}
 
-	RegisteredPipeline xPipeline;
-	xPipeline.m_pxPipeline = pxPipeline;
-	xPipeline.m_strVertPath = strVertPath;
-	xPipeline.m_strFragPath = strFragPath;
-	xPipeline.m_pfnRecreate = pfnRecreate;
-	xPipeline.m_bIsCompute = false;
-	xPipeline.m_bNeedsReload = false;
-
-	s_axRegisteredPipelines.PushBack(xPipeline);
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Registered pipeline (%s + %s)",
-			   strVertPath.c_str(), strFragPath.c_str());
+	RegisteredProgram xNew;
+	xNew.m_eProgram   = eProgram;
+	xNew.m_pfnRebuild = pfnRebuild;
+	s_axRegistered.PushBack(xNew);
 }
 
-void Flux_ShaderHotReload::RegisterComputePipeline(Flux_Pipeline* pxPipeline,
-													const std::string& strComputePath,
-													PipelineRecreateCallback pfnRecreate)
+void Flux_ShaderHotReload::RegisterSubsystem(ProgramRebuildCallback pfnRebuild,
+											  const FluxShaderProgram* axPrograms,
+											  u_int uCount)
 {
-	if (!s_bInitialised)
+	if (!pfnRebuild || !axPrograms) return;
+	for (u_int u = 0; u < uCount; u++)
 	{
-		return;
+		RegisterProgram(axPrograms[u], pfnRebuild);
 	}
-
-	Zenith_ScopedMutexLock xLock(s_xMutex);
-
-	for (u_int u = 0; u < s_axRegisteredPipelines.GetSize(); ++u)
-	{
-		if (s_axRegisteredPipelines.Get(u).m_pxPipeline == pxPipeline)
-		{
-			Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Pipeline already registered");
-			return;
-		}
-	}
-
-	RegisteredPipeline xPipeline;
-	xPipeline.m_pxPipeline = pxPipeline;
-	xPipeline.m_strComputePath = strComputePath;
-	xPipeline.m_pfnRecreate = pfnRecreate;
-	xPipeline.m_bIsCompute = true;
-	xPipeline.m_bNeedsReload = false;
-
-	s_axRegisteredPipelines.PushBack(xPipeline);
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Registered compute pipeline (%s)",
-			   strComputePath.c_str());
 }
 
-void Flux_ShaderHotReload::UnregisterPipeline(Flux_Pipeline* pxPipeline)
+void Flux_ShaderHotReload::UnregisterProgram(FluxShaderProgram eProgram)
 {
-	if (!s_bInitialised)
-	{
-		return;
-	}
-
+	// Mirrors RegisterProgram — operates on the static registration list,
+	// which is safe before Initialise / after Shutdown.
 	Zenith_ScopedMutexLock xLock(s_xMutex);
-
-	bool bRemoved = false;
-	for (u_int u = s_axRegisteredPipelines.GetSize(); u-- > 0; )
+	for (u_int u = s_axRegistered.GetSize(); u-- > 0; )
 	{
-		if (s_axRegisteredPipelines.Get(u).m_pxPipeline == pxPipeline)
+		if (s_axRegistered.Get(u).m_eProgram == eProgram)
 		{
-			s_axRegisteredPipelines.Remove(u);
-			bRemoved = true;
+			s_axRegistered.Remove(u);
 		}
-	}
-
-	if (bRemoved)
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Unregistered pipeline");
 	}
 }
 
 void Flux_ShaderHotReload::ReloadAll()
 {
-	if (!s_bInitialised)
+	if (!s_bInitialised) return;
+	Zenith_ScopedMutexLock xLock(s_xMutex);
+	for (u_int u = 0; u < s_axRegistered.GetSize(); u++)
 	{
-		return;
+		s_axRegistered.Get(u).m_bNeedsReload = true;
 	}
-
-	Zenith_Log(LOG_CATEGORY_RENDERER, "ShaderHotReload: Force reloading all pipelines...");
-
-	// Mark all pipelines for reload
-	{
-		Zenith_ScopedMutexLock xLock(s_xMutex);
-		for (u_int u = 0; u < s_axRegisteredPipelines.GetSize(); ++u)
-		{
-			s_axRegisteredPipelines.Get(u).m_bNeedsReload = true;
-		}
-	}
-
-	// Add a dummy file to trigger processing
-	{
-		Zenith_ScopedMutexLock xLock(s_xMutex);
-		s_xPendingReloadFiles.insert("__force_reload__");
-	}
+	// Force ProcessPendingReloads to run by stamping a sentinel — without it
+	// the early-out (`if pending empty return`) skips the rebuild scan.
+	s_xPendingChanges.insert("__force_reload__");
 }
 
 #endif // ZENITH_TOOLS

@@ -57,23 +57,21 @@ static void Flux_FinalLayoutTransitionNoOp(Flux_CommandList*, void*)
 void Flux_PipelineHelper::BuildFullscreenPipeline(
 	Flux_Shader& xShader,
 	Flux_Pipeline& xPipeline,
-	const char* szFragShader,
+	FluxShaderProgram eProgram,
 	TextureFormat eColourFormat,
-	TextureFormat eDepthStencilFormat,
-	const char* szVertShader)
+	TextureFormat eDepthStencilFormat)
 {
-	Flux_PipelineSpecification xSpec = CreateFullscreenSpec(xShader, szFragShader, eColourFormat, eDepthStencilFormat, szVertShader);
+	Flux_PipelineSpecification xSpec = CreateFullscreenSpec(xShader, eProgram, eColourFormat, eDepthStencilFormat);
 	Flux_PipelineBuilder::FromSpecification(xPipeline, xSpec);
 }
 
 Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpec(
 	Flux_Shader& xShader,
-	const char* szFragShader,
+	FluxShaderProgram eProgram,
 	TextureFormat eColourFormat,
-	TextureFormat eDepthStencilFormat,
-	const char* szVertShader)
+	TextureFormat eDepthStencilFormat)
 {
-	xShader.Initialise(szVertShader, szFragShader);
+	xShader.Initialise(eProgram);
 
 	Flux_PipelineSpecification xSpec;
 	xSpec.m_aeColourAttachmentFormats[0] = eColourFormat;
@@ -137,16 +135,29 @@ void Flux::LateInitialise()
 #ifdef ZENITH_WINDOWS
 	// Initialize Slang compiler before any shader loading
 	Flux_SlangCompiler::Initialise();
+	// Tell the modern session API where to resolve `loadModule` paths from.
+	// Required for FluxShaderProgram-based runtime compilation; the legacy
+	// per-file paths embed their own search root via spAddSearchPath.
+	Flux_SlangCompiler::AddSearchPath(SHADER_SOURCE_ROOT);
 #endif
 
 	Flux_Swapchain::Initialise();
+
+#ifdef ZENITH_TOOLS
+	// Bring up the hot-reload watcher BEFORE any subsystem Initialise() so
+	// the RegisterSubsystem calls inside those Initialise bodies see a live
+	// watcher. (The static registration list is also safe to append to
+	// before Initialise, but starting the file watcher early means the
+	// `firing N rebuild callback(s)` log line picks up edits made even
+	// during engine boot.)
+	Flux_ShaderHotReload::Initialise();
+#endif
 
 	Flux_Graphics::Initialise();
 	Flux_HDR::Initialise();  // Must be before DeferredShading - deferred renders to HDR target
 #ifdef ZENITH_TOOLS
 	Flux_PlatformAPI::InitialiseImGui();
 	Flux_Gizmos::Initialise();
-	Flux_ShaderHotReload::Initialise();
 #endif
 	Flux_Shadows::Initialise();
 	Flux_Skybox::Initialise();       // Cubemap skybox + procedural atmosphere

@@ -13,6 +13,7 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
 // Static member definitions
@@ -63,27 +64,39 @@ DEBUGVAR bool dbg_bIBLForceRoughness = false;
 DEBUGVAR float dbg_fIBLForcedRoughness = 0.5f;
 DEBUGVAR bool dbg_bIBLRegenerateBRDFLUT = false;
 
+void Flux_IBL::BuildPipelines()
+{
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		s_xBRDFLUTShader, s_xBRDFLUTPipeline,
+		FluxShaderProgram::IBL_BRDFIntegration, s_xBRDFLUT.m_xSurfaceInfo.m_eFormat);
+
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		s_xIrradianceConvolveShader, s_xIrradianceConvolvePipeline,
+		FluxShaderProgram::IBL_IrradianceConvolution, s_xIrradianceMap.m_xSurfaceInfo.m_eFormat);
+
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		s_xPrefilterShader, s_xPrefilterPipeline,
+		FluxShaderProgram::IBL_PrefilterEnvMap, s_xPrefilteredMap.m_xSurfaceInfo.m_eFormat);
+}
+
 void Flux_IBL::Initialise()
 {
 	CreateRenderTargets();
-
-	// Initialize BRDF LUT shader and pipeline
-	Flux_PipelineHelper::BuildFullscreenPipeline(
-		s_xBRDFLUTShader, s_xBRDFLUTPipeline,
-		"IBL/Flux_BRDFIntegration.frag", s_xBRDFLUT.m_xSurfaceInfo.m_eFormat);
-
-	// Initialize irradiance convolution shader and pipeline
-	Flux_PipelineHelper::BuildFullscreenPipeline(
-		s_xIrradianceConvolveShader, s_xIrradianceConvolvePipeline,
-		"IBL/Flux_IrradianceConvolution.frag", s_xIrradianceMap.m_xSurfaceInfo.m_eFormat);
-
-	// Initialize prefilter shader and pipeline
-	Flux_PipelineHelper::BuildFullscreenPipeline(
-		s_xPrefilterShader, s_xPrefilterPipeline,
-		"IBL/Flux_PrefilterEnvMap.frag", s_xPrefilteredMap.m_xSurfaceInfo.m_eFormat);
+	BuildPipelines();
 
 #ifdef ZENITH_TOOLS
 	RegisterDebugVariables();
+
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::IBL_BRDFIntegration,
+		FluxShaderProgram::IBL_IrradianceConvolution,
+		FluxShaderProgram::IBL_PrefilterEnvMap,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_IBL::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+
+	// On hot reload, the IBL convolutions need re-running too — flag them as
+	// dirty so the next frame regenerates the irradiance + prefilter cubemaps.
 #endif
 
 	// BRDF LUT will be generated on first frame via render graph ExecuteIBLUpdate()
@@ -296,10 +309,8 @@ void Flux_IBL::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
 	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
 	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	{
-		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(s_xBRDFLUTShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	}
+	// BRDF integration only reads its UV input; the Slang version exposes no
+	// CBs in reflection so no binder calls are needed before the draw.
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
 	s_bBRDFLUTGenerated = true;
 }

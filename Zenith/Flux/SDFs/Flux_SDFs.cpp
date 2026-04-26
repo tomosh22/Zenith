@@ -11,6 +11,10 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
@@ -29,9 +33,9 @@ struct SphereData
 } s_axSphereData;
 
 
-void Flux_SDFs::Initialise()
+void Flux_SDFs::BuildPipelines()
 {
-	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "SDFs/Flux_SDFs.frag");
+	s_xShader.Initialise(FluxShaderProgram::SDFs);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -48,10 +52,23 @@ void Flux_SDFs::Initialise()
 	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+}
+
+void Flux_SDFs::Initialise()
+{
+	BuildPipelines();
 
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), s_xSpheresBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
+#endif
+
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::SDFs,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_SDFs::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs initialised");

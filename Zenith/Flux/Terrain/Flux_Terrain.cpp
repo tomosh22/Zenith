@@ -20,6 +20,10 @@
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#endif
+
 static Zenith_Vector<Zenith_TerrainComponent*> g_xTerrainComponentsToRender;
 
 static Flux_Shader s_xTerrainGBufferShader;
@@ -58,11 +62,10 @@ DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
 DEBUGVAR bool dbg_bLogTerrainMetrics = false;  // Log terrain performance metrics
 u_int dbg_uDebugMode = 0;  // Debug visualization mode (0=Off, 1=LOD, 2=Normals, 3=UVs, etc.)
 
-void Flux_Terrain::Initialise()
+void Flux_Terrain::BuildPipelines()
 {
-
-	s_xTerrainGBufferShader.Initialise("Terrain/Flux_Terrain_ToGBuffer.vert", "Terrain/Flux_Terrain_ToGBuffer.frag");
-	s_xTerrainShadowShader.Initialise("Terrain/Flux_Terrain_ToShadowmap.vert", "Terrain/Flux_Terrain_ToShadowmap.frag");
+	s_xTerrainGBufferShader.Initialise(FluxShaderProgram::Terrain_ToGBuffer);
+	s_xTerrainShadowShader.Initialise(FluxShaderProgram::Terrain_ToShadowmap);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -114,9 +117,9 @@ void Flux_Terrain::Initialise()
 
 		Flux_PipelineBuilder::FromSpecification(s_xTerrainShadowPipeline, xShadowPipelineSpec);
 	}
-	
+
 	{
-		s_xWaterShader.Initialise("Water/Flux_Water.vert", "Water/Flux_Water.frag");
+		s_xWaterShader.Initialise(FluxShaderProgram::Water);
 
 		Flux_VertexInputDescription xWaterVertexDesc;
 		xWaterVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -138,6 +141,26 @@ void Flux_Terrain::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xWaterPipeline, xPipelineSpec);
 	}
 
+	// ========== GPU-Driven Terrain Culling Compute Pipeline ==========
+	s_xCullingShader.Initialise(FluxShaderProgram::TerrainCulling);
+
+	// Build compute root signature from shader reflection
+	const Flux_ShaderReflection& xCullingReflection = s_xCullingShader.GetReflection();
+	Flux_RootSigBuilder::FromReflection(s_xCullingRootSig, xCullingReflection);
+
+	// Build compute pipeline
+	Flux_ComputePipelineBuilder xCullingBuilder;
+	xCullingBuilder.WithShader(s_xCullingShader)
+		.WithLayout(s_xCullingRootSig.m_xLayout)
+		.Build(s_xCullingPipeline);
+
+	s_xCullingPipeline.m_xRootSig = s_xCullingRootSig;
+}
+
+void Flux_Terrain::Initialise()
+{
+	BuildPipelines();
+
 	// Use the global water normal texture pointer set during initialization in Zenith_Main.cpp
 	s_pxWaterNormalTexture = Flux_Graphics::s_pxWaterNormalTexture;
 
@@ -153,26 +176,16 @@ void Flux_Terrain::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Log Metrics" }, dbg_bLogTerrainMetrics);
 #endif
 
-	// ========== Initialize GPU-Driven Terrain Culling Compute Pipeline ==========
-	// Moved from Flux_TerrainCulling::Initialise() to centralize pipeline ownership
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain - Initializing terrain culling compute pipeline");
-
-	s_xCullingShader.InitialiseCompute("Terrain/Flux_TerrainCulling.comp");
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain - Loaded terrain culling compute shader");
-
-	// Build compute root signature from shader reflection
-	const Flux_ShaderReflection& xCullingReflection = s_xCullingShader.GetReflection();
-	Flux_RootSigBuilder::FromReflection(s_xCullingRootSig, xCullingReflection);
-
-	// Build compute pipeline
-	Flux_ComputePipelineBuilder xCullingBuilder;
-	xCullingBuilder.WithShader(s_xCullingShader)
-		.WithLayout(s_xCullingRootSig.m_xLayout)
-		.Build(s_xCullingPipeline);
-
-	s_xCullingPipeline.m_xRootSig = s_xCullingRootSig;
-
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain - Built terrain culling compute pipeline");
+#ifdef ZENITH_TOOLS
+	static const FluxShaderProgram s_axPrograms[] = {
+		FluxShaderProgram::Terrain_ToGBuffer,
+		FluxShaderProgram::Terrain_ToShadowmap,
+		FluxShaderProgram::TerrainCulling,
+		FluxShaderProgram::Water,
+	};
+	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Terrain::BuildPipelines,
+		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
+#endif
 
 	// ========== Initialize Terrain Streaming Manager ==========
 	Flux_TerrainStreamingManager::Initialize();
