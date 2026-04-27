@@ -2,6 +2,12 @@
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="..\Combat.cpp" />
+    <ClCompile Include="..\Components\Combat_EnemyBehaviour.cpp">
+      <Filter>Components</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Components\Combat_PlayerBehaviour.cpp">
+      <Filter>Components</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\Combat_AnimationController.h">
@@ -19,10 +25,16 @@
     <ClInclude Include="..\Components\Combat_EnemyAI.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\Combat_EnemyBehaviour.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\Combat_HitDetection.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Combat_IKController.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Combat_PlayerBehaviour.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\Combat_PlayerController.h">

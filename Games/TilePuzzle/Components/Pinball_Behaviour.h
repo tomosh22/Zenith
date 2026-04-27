@@ -1345,7 +1345,7 @@ private:
 
 		// Attach collision behaviour to receive OnCollisionEnter callbacks
 		Zenith_ScriptComponent& xScript = xBall.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviour<Pinball_BallBehaviour>();
+		xScript.AddScript<Pinball_BallBehaviour>();
 
 		m_xBallEntityID = xBall.GetEntityID();
 	}
@@ -1559,7 +1559,7 @@ private:
 		if (!xBall.HasComponent<Zenith_ScriptComponent>())
 			return;
 
-		Pinball_BallBehaviour* pxBallBehaviour = xBall.GetComponent<Zenith_ScriptComponent>().GetBehaviour<Pinball_BallBehaviour>();
+		Pinball_BallBehaviour* pxBallBehaviour = xBall.GetComponent<Zenith_ScriptComponent>().GetScript<Pinball_BallBehaviour>();
 		if (!pxBallBehaviour)
 			return;
 

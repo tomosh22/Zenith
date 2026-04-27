@@ -635,11 +635,11 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 
 void Project_RegisterScriptBehaviours()
 {
-	// Initialize resources at startup
+	// Behaviour registration is now automatic via the ZENITH_BEHAVIOUR_TYPE_NAME macro's
+	// static initializer (runs at program startup before main()). This function remains as
+	// the per-game lifecycle hook for early CPU-only resource initialization that must
+	// happen before any scene load (TOOLS or non-TOOLS builds).
 	InitializeCombatResources();
-
-	// Register behaviors
-	Combat_Behaviour::RegisterBehaviour();
 }
 
 void Project_Shutdown()
@@ -675,8 +675,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.0f, 0.0f);
 	Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.0f, 50.0f);
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Combat_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("Combat_Behaviour");
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
 
@@ -753,8 +752,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIAlignment("Status", static_cast<int>(Zenith_UI::TextAlignment::Center));
 	Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
 
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Combat_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("Combat_Behaviour");
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
 

@@ -169,8 +169,7 @@ void Project_RegisterScriptBehaviours()
 	Zenith_AIDebugVariables::Initialise();
 #endif
 
-	// Register behaviours
-	AIShowcase_Behaviour::RegisterBehaviour();
+	// AIShowcase_Behaviour auto-registers via ZENITH_BEHAVIOUR_TYPE_NAME
 }
 
 void Project_Shutdown()
@@ -213,8 +212,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.f, 50.f);
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("AIShowcase_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("AIShowcase_Behaviour");
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
 
@@ -273,8 +271,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
 
 	// Script
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("AIShowcase_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("AIShowcase_Behaviour");
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/AIShowcase" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
 

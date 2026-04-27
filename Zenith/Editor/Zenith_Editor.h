@@ -26,6 +26,7 @@ enum class ContentBrowserViewMode
 #define DRAGDROP_PAYLOAD_PREFAB   "ZENITH_PREFAB"
 #define DRAGDROP_PAYLOAD_MODEL    "ZENITH_MODEL"
 #define DRAGDROP_PAYLOAD_ANIMATION "ZENITH_ANIMATION"
+#define DRAGDROP_PAYLOAD_SCRIPT_ASSET "ZSCRIPT_ASSET"
 #define DRAGDROP_PAYLOAD_FILE_GENERIC "ZENITH_FILE_GENERIC"
 
 // Content browser file entry
@@ -220,13 +221,15 @@ public:
 	/// Corresponds to: Properties panel > Camera section > "Set As Main Camera" button.
 	static void SetSelectedAsMainCamera();
 
-	/// Corresponds to: Properties panel > Script section > behaviour combo box selection.
-	/// Destroys existing behaviour (with OnDestroy), creates + awakes new one, marks entity awoken.
-	static void SetBehaviourOnSelected(const char* szBehaviourName);
+	/// Append a script slot to the selected entity at runtime (Unity-style: multiple scripts allowed).
+	/// Adds the ScriptComponent if missing. Calls OnAwake on the new behaviour, marks entity awoken.
+	/// Used by editor drag-drop and the "Add Script" popup in the script properties panel.
+	static void AttachScriptToSelectedAndAwake(const char* szBehaviourTypeName);
 
-	/// Corresponds to: serialization-time behaviour assignment (no lifecycle hooks called).
-	/// Destroys existing behaviour (no OnDestroy), creates new one without OnAwake.
-	static void SetBehaviourForSerializationOnSelected(const char* szBehaviourName);
+	/// Append a script slot for build-time scene serialization (no lifecycle hooks called).
+	/// Adds the ScriptComponent if missing. Lifecycle dispatched when scene enters Play mode.
+	/// Used by EditorAutomation's ATTACH_SCRIPT action.
+	static void AttachScriptForSerializationToSelected(const char* szBehaviourTypeName);
 
 	/// Corresponds to: File > New Scene menu item.
 	/// Creates empty scene, sets active, clears selection.

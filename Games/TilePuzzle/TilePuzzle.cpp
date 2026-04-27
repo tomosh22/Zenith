@@ -1569,12 +1569,8 @@ void Project_RegisterScriptBehaviours()
 {
 	Zenith_SaveData::Initialise("TilePuzzle");
 	InitializeTilePuzzleResources();
-	TilePuzzle_Behaviour::RegisterBehaviour();
-	Pinball_Behaviour::RegisterBehaviour();
-
-#ifdef ZENITH_INPUT_SIMULATOR
-	TilePuzzle_AutoTest::RegisterBehaviour();
-#endif
+	// TilePuzzle_Behaviour, Pinball_Behaviour, and TilePuzzle_AutoTest auto-register
+	// via ZENITH_BEHAVIOUR_TYPE_NAME (no explicit calls needed).
 }
 
 void Project_Shutdown()
@@ -2630,8 +2626,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_AddUIChild("CreditsOverlay", "CreditsDismissText");
 
 	// Script
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("TilePuzzle_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("TilePuzzle_Behaviour");
 
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
@@ -2916,8 +2911,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SelectEntity("GameManager");
 
 	// Script
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("TilePuzzle_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("TilePuzzle_Behaviour");
 
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
@@ -3063,8 +3057,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_AddUIChild("TutorialOverlay", "TutorialHintText");
 
 	// Script
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Pinball_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("Pinball_Behaviour");
 
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
@@ -3098,7 +3091,7 @@ void Project_LoadInitialScene()
 		Zenith_Entity xTestEntity(pxSceneData, "AutoTestRunner");
 		Zenith_SceneManager::MarkEntityPersistent(xTestEntity);
 		Zenith_ScriptComponent& xScript = xTestEntity.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviour<TilePuzzle_AutoTest>();
+		xScript.AddScript<TilePuzzle_AutoTest>();
 
 #ifdef ZENITH_TOOLS
 		// Switch editor to Playing mode so SceneManager::Update runs

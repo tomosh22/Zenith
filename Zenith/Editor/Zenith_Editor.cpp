@@ -1615,65 +1615,48 @@ void Zenith_Editor::SetSelectedAsMainCamera()
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Set entity '%s' as main camera", pxEntity->GetName().c_str());
 }
 
-void Zenith_Editor::SetBehaviourOnSelected(const char* szBehaviourName)
+void Zenith_Editor::AttachScriptToSelectedAndAwake(const char* szBehaviourTypeName)
 {
 	Zenith_Entity* pxEntity = GetSelectedEntity();
 	Zenith_Assert(pxEntity, "No entity selected");
-	Zenith_Assert(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Selected entity has no ScriptComponent");
 
+	if (!pxEntity->HasComponent<Zenith_ScriptComponent>())
+	{
+		pxEntity->AddComponent<Zenith_ScriptComponent>();
+	}
+
+	Zenith_Assert(Zenith_ScriptAsset::HasFactory(szBehaviourTypeName),
+		"No registered behaviour '%s'", szBehaviourTypeName);
+
+	const std::string strAssetPath = Zenith_ScriptAsset::MakeAssetPath(szBehaviourTypeName);
 	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
+	Zenith_ScriptBehaviour* pxBehaviour = xScript.AddScriptByAssetPath(strAssetPath.c_str());
+	Zenith_Assert(pxBehaviour, "Failed to attach script '%s'", szBehaviourTypeName);
 
-	// Delete existing behaviour if any
-	if (xScript.GetBehaviourRaw())
-	{
-		xScript.GetBehaviourRaw()->OnDestroy();
-		delete xScript.GetBehaviourRaw();
-		xScript.SetBehaviourRaw(nullptr);
-	}
-
-	// Create new behaviour by name
-	xScript.SetBehaviourRaw(Zenith_BehaviourRegistry::Get().CreateBehaviour(szBehaviourName, *pxEntity));
-	Zenith_Assert(xScript.GetBehaviourRaw(), "Failed to create behaviour: %s", szBehaviourName);
-
-	xScript.SetBehaviourParentEntity(*pxEntity);
-	xScript.GetBehaviourRaw()->OnAwake();
-
-	// Mark entity as awoken to prevent duplicate dispatch in Scene::Update()
-	if (pxEntity->IsValid())
-	{
-		Zenith_SceneData* pxSceneData = pxEntity->GetSceneData();
-		if (pxSceneData)
-		{
-			pxSceneData->MarkEntityAwoken(pxEntity->GetEntityID());
-		}
-	}
-
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Set behaviour '%s' on entity '%s'", szBehaviourName, pxEntity->GetName().c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Attached script '%s' to entity '%s' (%u total)",
+		szBehaviourTypeName, pxEntity->GetName().c_str(), xScript.GetScriptCount());
 }
 
-void Zenith_Editor::SetBehaviourForSerializationOnSelected(const char* szBehaviourName)
+void Zenith_Editor::AttachScriptForSerializationToSelected(const char* szBehaviourTypeName)
 {
 	Zenith_Entity* pxEntity = GetSelectedEntity();
 	Zenith_Assert(pxEntity, "No entity selected");
-	Zenith_Assert(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Selected entity has no ScriptComponent");
 
-	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
-
-	// Delete existing behaviour if any (no lifecycle hooks — serialization mode)
-	if (xScript.GetBehaviourRaw())
+	if (!pxEntity->HasComponent<Zenith_ScriptComponent>())
 	{
-		delete xScript.GetBehaviourRaw();
-		xScript.SetBehaviourRaw(nullptr);
+		pxEntity->AddComponent<Zenith_ScriptComponent>();
 	}
 
-	// Create new behaviour by name — no OnAwake, matching SetBehaviourForSerialization<T>()
-	xScript.SetBehaviourRaw(Zenith_BehaviourRegistry::Get().CreateBehaviour(szBehaviourName, *pxEntity));
-	Zenith_Assert(xScript.GetBehaviourRaw(), "Failed to create behaviour: %s", szBehaviourName);
+	Zenith_Assert(Zenith_ScriptAsset::HasFactory(szBehaviourTypeName),
+		"No registered behaviour '%s'", szBehaviourTypeName);
 
-	xScript.SetBehaviourParentEntity(*pxEntity);
-	// OnAwake is NOT called — lifecycle hooks will be dispatched when Play mode is entered
+	const std::string strAssetPath = Zenith_ScriptAsset::MakeAssetPath(szBehaviourTypeName);
+	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
+	Zenith_ScriptBehaviour* pxBehaviour = xScript.AddScriptForSerializationByAssetPath(strAssetPath.c_str());
+	Zenith_Assert(pxBehaviour, "Failed to attach script for serialization '%s'", szBehaviourTypeName);
 
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Set behaviour for serialization '%s' on entity '%s'", szBehaviourName, pxEntity->GetName().c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Attached script for serialization '%s' to entity '%s' (%u total)",
+		szBehaviourTypeName, pxEntity->GetName().c_str(), xScript.GetScriptCount());
 }
 
 void Zenith_Editor::CreateNewScene(const char* szName)

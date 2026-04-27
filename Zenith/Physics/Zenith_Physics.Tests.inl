@@ -58,7 +58,7 @@ public:
 		s_xLastCollisionExitOther = xOtherID;
 	}
 
-	const char* GetBehaviourTypeName() const override { return "PhysicsTestBehaviour"; }
+	ZENITH_BEHAVIOUR_TYPE_NAME_INTERNAL(PhysicsTestBehaviour)
 };
 
 uint32_t PhysicsTestBehaviour::s_uCollisionEnterCount = 0;
@@ -589,12 +589,12 @@ ZENITH_TEST(Physics, CollisionEnterCallback)
 	Zenith_Entity xFloor = CreatePhysicsBox(pxSceneData, "Floor",
 		Zenith_Maths::Vector3(0, 0, 0), Zenith_Maths::Vector3(10, 0.5f, 10),
 		RIGIDBODY_TYPE_STATIC);
-	xFloor.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PhysicsTestBehaviour>();
+	xFloor.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
 
 	// Dynamic sphere that will fall onto the floor
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "FallingSphere",
 		Zenith_Maths::Vector3(0, 3, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
-	xSphere.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PhysicsTestBehaviour>();
+	xSphere.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
 
 	// Step enough frames for sphere to hit the floor
 	StepPhysics(120);
@@ -614,12 +614,12 @@ ZENITH_TEST(Physics, CollisionStayCallback)
 	Zenith_Entity xFloor = CreatePhysicsBox(pxSceneData, "Floor",
 		Zenith_Maths::Vector3(0, 0, 0), Zenith_Maths::Vector3(10, 0.5f, 10),
 		RIGIDBODY_TYPE_STATIC);
-	xFloor.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PhysicsTestBehaviour>();
+	xFloor.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
 
 	// Dynamic sphere close to floor so it hits quickly
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "StaySphere",
 		Zenith_Maths::Vector3(0, 2, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
-	xSphere.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PhysicsTestBehaviour>();
+	xSphere.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
 
 	// Step many frames - after initial contact, stay events should fire each frame
 	StepPhysics(180);
@@ -639,13 +639,13 @@ ZENITH_TEST(Physics, CollisionExitCallback)
 	Zenith_Entity xFloor = CreatePhysicsBox(pxSceneData, "Floor",
 		Zenith_Maths::Vector3(0, 0, 0), Zenith_Maths::Vector3(10, 0.5f, 10),
 		RIGIDBODY_TYPE_STATIC);
-	xFloor.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PhysicsTestBehaviour>();
+	xFloor.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
 
 	// Dynamic sphere close to floor
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "ExitSphere",
 		Zenith_Maths::Vector3(0, 2, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	xSphere.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PhysicsTestBehaviour>();
+	xSphere.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
 
 	// Step until collision
 	StepPhysics(60);
@@ -672,12 +672,12 @@ ZENITH_TEST(Physics, CollisionEventBothEntitiesReceive)
 	Zenith_Entity xFloor = CreatePhysicsBox(pxSceneData, "Floor",
 		Zenith_Maths::Vector3(0, 0, 0), Zenith_Maths::Vector3(10, 0.5f, 10),
 		RIGIDBODY_TYPE_STATIC);
-	xFloor.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PhysicsTestBehaviour>();
+	xFloor.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
 
 	// Falling sphere with behaviour
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "BothSphere",
 		Zenith_Maths::Vector3(0, 3, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
-	xSphere.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PhysicsTestBehaviour>();
+	xSphere.AddComponent<Zenith_ScriptComponent>().AddScript<PhysicsTestBehaviour>();
 
 	StepPhysics(120);
 

@@ -36,6 +36,7 @@ static const EditorFileTypeInfo s_axKnownFileTypes[] = {
 	{ ZENITH_PREFAB_EXT,     "[PRE]", "Prefab",    DRAGDROP_PAYLOAD_PREFAB },
 	{ ZENITH_SCENE_EXT,      "[SCN]", "Scene",     DRAGDROP_PAYLOAD_FILE_GENERIC },
 	{ ZENITH_ANIMATION_EXT,  "[ANM]", "Animation", DRAGDROP_PAYLOAD_ANIMATION },
+	{ ZENITH_SCRIPT_EXT,     "[SCR]", "Script",    DRAGDROP_PAYLOAD_SCRIPT_ASSET },
 };
 
 const EditorFileTypeInfo* GetFileTypeInfo(const std::string& strExtension)

@@ -140,9 +140,8 @@ enum class Zenith_EditorActionType
 	CREATE_UI_SCROLL_VIEW,
 	SET_UI_SCROLL_VIEW_CONTENT_SIZE,
 
-	// Script (via Zenith_Editor::SetBehaviourOnSelected / SetBehaviourForSerializationOnSelected)
-	SET_BEHAVIOUR,
-	SET_BEHAVIOUR_FOR_SERIALIZATION,
+	// Script (via Zenith_Editor::AttachScriptForSerializationToSelected)
+	ATTACH_SCRIPT,
 
 	// Particles
 	SET_PARTICLE_CONFIG,
@@ -219,7 +218,8 @@ public:
 	// Convenience wrappers for common components
 	static void AddStep_AddCamera() { AddStep_AddComponent("Camera"); }
 	static void AddStep_AddUI() { AddStep_AddComponent("UI"); }
-	static void AddStep_AddScript() { AddStep_AddComponent("Script"); }
+	// AddStep_AddScript removed - use AddStep_AttachScript("Foo_Behaviour") instead.
+	// AttachScript implicitly adds the ScriptComponent if missing.
 	static void AddStep_AddParticleEmitter() { AddStep_AddComponent("ParticleEmitter"); }
 	static void AddStep_AddCollider() { AddStep_AddComponent("Collider"); }
 	static void AddStep_AddModel() { AddStep_AddComponent("Model"); }
@@ -346,8 +346,11 @@ public:
 	//--------------------------------------------------------------------------
 	// Script Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetBehaviour(const char* szBehaviourName);
-	static void AddStep_SetBehaviourForSerialization(const char* szBehaviourName);
+	// AttachScript adds a script slot (and the ScriptComponent if missing) to the selected
+	// entity. The behaviour type name resolves deterministically to "game:Scripts/<TypeName>.zscript".
+	// Like the old AddStep_SetBehaviourForSerialization, this does NOT call OnAwake -
+	// lifecycle is dispatched on first frame / Play mode entry.
+	static void AddStep_AttachScript(const char* szBehaviourTypeName);
 
 	//--------------------------------------------------------------------------
 	// Particle Step Helpers

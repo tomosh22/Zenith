@@ -15,7 +15,7 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_TerrainComponent` | Heightmap-based terrain with streaming |
 | `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering |
 | `Zenith_ParticleEmitterComponent` | Particle effect emitters |
-| `Zenith_ScriptComponent` | Custom behavior attachment via ScriptBehaviour |
+| `Zenith_ScriptComponent` | Custom behavior attachment (Unity-style: multiple scripts per entity, .zscript asset files) |
 | `Zenith_UIComponent` | UI element support |
 
 ## Creating a New Component

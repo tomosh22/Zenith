@@ -43,6 +43,11 @@
 **/Build/output
 /output/*
 /obj/*
+# Catch project-root obj/ dirs (e.g. TilePuzzleLevelGen/obj, TilePuzzleRegistryViewer/obj)
+# whose FileListAbsolute.txt files contain machine-local absolute paths.
+**/obj/
+# Per-session Claude worktrees should stay local
+.claude/worktrees/
 /*vs/*
 .vs/
 /Middleware/VulkanSDK/1.4.313.1/Lib/*

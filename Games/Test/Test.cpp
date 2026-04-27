@@ -43,9 +43,8 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 
 void Project_RegisterScriptBehaviours()
 {
-	PlayerController_Behaviour::RegisterBehaviour();
-	HookesLaw_Behaviour::RegisterBehaviour();
-	RotationBehaviour_Behaviour::RegisterBehaviour();
+	// All behaviours auto-register via ZENITH_BEHAVIOUR_TYPE_NAME (no explicit calls needed).
+	// Function retained as a per-game lifecycle hook called during engine startup.
 }
 
 void Project_Shutdown()

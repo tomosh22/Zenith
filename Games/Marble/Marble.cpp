@@ -263,7 +263,7 @@ void Project_RegisterScriptBehaviours()
 	// Initialize resources at startup
 	InitializeMarbleResources();
 
-	Marble_Behaviour::RegisterBehaviour();
+	// Marble_Behaviour auto-registers via ZENITH_BEHAVIOUR_TYPE_NAME
 }
 
 void Project_Shutdown()
@@ -304,8 +304,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuQuit", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuQuit", 0.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUISize("MenuQuit", 200.f, 50.f);
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Marble_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("Marble_Behaviour");
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
 
@@ -374,8 +373,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", 90.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.2f, 1.f, 0.2f, 1.f);
 
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Marble_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("Marble_Behaviour");
 
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Marble" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();

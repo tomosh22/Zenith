@@ -96,7 +96,7 @@ public:
 		s_xLastDestroyedEntity = GetEntity().GetEntityID();
 		if (s_pfnOnDestroyCallback) s_pfnOnDestroyCallback(GetEntity());
 	}
-	const char* GetBehaviourTypeName() const override { return "SceneTestBehaviour"; }
+	ZENITH_BEHAVIOUR_TYPE_NAME_INTERNAL(SceneTestBehaviour)
 };
 
 uint32_t SceneTestBehaviour::s_uAwakeCount = 0;
@@ -124,7 +124,7 @@ void(*SceneTestBehaviour::s_pfnOnDisableCallback)(Zenith_Entity&) = nullptr;
 static Zenith_Entity CreateEntityWithBehaviour(Zenith_SceneData* pxSceneData, const std::string& strName)
 {
 	Zenith_Entity xEntity(pxSceneData, strName);
-	xEntity.AddComponent<Zenith_ScriptComponent>().SetBehaviour<SceneTestBehaviour>();
+	xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<SceneTestBehaviour>();
 	return xEntity;
 }
 
@@ -7398,7 +7398,7 @@ void Zenith_SceneTests::TestMultiComponentEntityMove(){
 
 	// Add multiple component types
 	xEntity.AddComponent<Zenith_CameraComponent>();
-	xEntity.AddComponent<Zenith_ScriptComponent>().SetBehaviour<SceneTestBehaviour>();
+	xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<SceneTestBehaviour>();
 
 	// Set transform position for data integrity check
 	Zenith_Maths::Vector3 xPos = { 5.0f, 10.0f, 15.0f };
@@ -8646,7 +8646,7 @@ void Zenith_SceneTests::TestComponentPoolGrowthMultipleTypes(){
 	{
 		Zenith_Entity xEntity(pxData, "Multi_" + std::to_string(i));
 		xEntity.AddComponent<Zenith_CameraComponent>();
-		xEntity.AddComponent<Zenith_ScriptComponent>().SetBehaviour<SceneTestBehaviour>();
+		xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<SceneTestBehaviour>();
 		axIDs.PushBack(xEntity.GetEntityID());
 	}
 
@@ -12369,7 +12369,7 @@ namespace
 
 	static void CreateTestEntityWithBehaviour(Zenith_SceneData* pxData)
 	{
-		// Use SetBehaviourForSerialization (not SetBehaviour) because SetBehaviour<T>()
+		// Use AddScriptForSerialization (not AddScript) because AddScript<T>()
 		// fires OnAwake immediately on attach, which — combined with a recursive-spawn
 		// callback — would infinite-loop before our wave-drain logic runs. The
 		// serialization variant attaches dormantly and lets DispatchAwakeForNewScene
@@ -12377,7 +12377,7 @@ namespace
 		// The caller also sets s_bIsLoadingScene, so entity construction does not
 		// trigger DispatchImmediateLifecycleForRuntime.
 		Zenith_Entity xEntity(pxData, "awake_spawned");
-		xEntity.AddComponent<Zenith_ScriptComponent>().SetBehaviourForSerialization<SceneTestBehaviour>();
+		xEntity.AddComponent<Zenith_ScriptComponent>().AddScriptForSerialization<SceneTestBehaviour>();
 	}
 }
 
@@ -13730,14 +13730,14 @@ namespace
 
 	// Creates an entity with SceneTestBehaviour attached, but defers OnAwake
 	// until explicit DispatchAwakeForNewScene. The regular CreateEntityWithBehaviour
-	// helper chains `SetBehaviour<T>()` which calls OnAwake immediately (bypassing
+	// helper chains `AddScript<T>()` which calls OnAwake immediately (bypassing
 	// s_bIsLoadingScene) — good for runtime spawn tests but wrong for exercising
-	// the scene-load wave-drain cap. We instead use SetBehaviourForSerialization
+	// the scene-load wave-drain cap. We instead use AddScriptForSerialization
 	// which wires up the behaviour without dispatching lifecycle.
 	Zenith_Entity CreateEntityWithDeferredBehaviour(Zenith_SceneData* pxSceneData, const std::string& strName)
 	{
 		Zenith_Entity xEntity(pxSceneData, strName);
-		xEntity.AddComponent<Zenith_ScriptComponent>().SetBehaviourForSerialization<SceneTestBehaviour>();
+		xEntity.AddComponent<Zenith_ScriptComponent>().AddScriptForSerialization<SceneTestBehaviour>();
 		return xEntity;
 	}
 
@@ -13746,10 +13746,10 @@ namespace
 		if (s_uAwakeOverflowSpawned >= s_uAwakeOverflowCeiling)
 			return;
 		s_uAwakeOverflowSpawned++;
-		// Create the next link using the *deferred* helper. SetBehaviour() (the
+		// Create the next link using the *deferred* helper. AddScript() (the
 		// non-deferred version) would call OnAwake synchronously here, recursing
 		// through the chain inside the Zenith_Entity constructor and never
-		// reaching the wave-cap branch. SetBehaviourForSerialization leaves the
+		// reaching the wave-cap branch. AddScriptForSerialization leaves the
 		// behaviour primed but dormant, so the next wave of DispatchAwakeForNewScene
 		// is what actually dispatches it — producing one wave per chain-link as
 		// the cap-test requires.

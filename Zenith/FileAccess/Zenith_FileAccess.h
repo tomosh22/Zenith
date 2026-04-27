@@ -6,6 +6,7 @@
 #define ZENITH_PREFAB_EXT		".zprfb"
 #define ZENITH_SCENE_EXT		".zscen"
 #define ZENITH_PARTICLES_EXT	".zptcl"
+#define ZENITH_SCRIPT_EXT		".zscript"
 
 #define ZENITH_MAX_PATH_LENGTH 1024
 

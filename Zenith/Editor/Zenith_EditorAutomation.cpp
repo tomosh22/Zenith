@@ -378,8 +378,7 @@ void Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor   (const char* 
 
 // -- Script --
 
-void Zenith_EditorAutomation::AddStep_SetBehaviour                (const char* szBehaviourName) { Push(s_axActions, ActionType::SET_BEHAVIOUR,                   szBehaviourName); }
-void Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization(const char* szBehaviourName) { Push(s_axActions, ActionType::SET_BEHAVIOUR_FOR_SERIALIZATION, szBehaviourName); }
+void Zenith_EditorAutomation::AddStep_AttachScript                (const char* szBehaviourTypeName) { Push(s_axActions, ActionType::ATTACH_SCRIPT, szBehaviourTypeName); }
 
 // -- Particles --
 
@@ -1206,12 +1205,8 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	//--------------------------------------------------------------------------
 	// Script operations
 	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::SET_BEHAVIOUR:
-		Zenith_Editor::SetBehaviourOnSelected(xAction.m_szArg1);
-		break;
-
-	case Zenith_EditorActionType::SET_BEHAVIOUR_FOR_SERIALIZATION:
-		Zenith_Editor::SetBehaviourForSerializationOnSelected(xAction.m_szArg1);
+	case Zenith_EditorActionType::ATTACH_SCRIPT:
+		Zenith_Editor::AttachScriptForSerializationToSelected(xAction.m_szArg1);
 		break;
 
 	//--------------------------------------------------------------------------

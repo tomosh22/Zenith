@@ -640,7 +640,7 @@ void Project_RegisterScriptBehaviours()
 	// Initialize resources at startup
 	InitializeSurvivalResources();
 
-	Survival_Behaviour::RegisterBehaviour();
+	// Survival_Behaviour auto-registers via ZENITH_BEHAVIOUR_TYPE_NAME
 }
 
 void Project_Shutdown()
@@ -676,8 +676,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.f, 50.f);
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Survival_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("Survival_Behaviour");
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
 
@@ -820,8 +819,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.2f, 1.f, 0.2f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
 
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Survival_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("Survival_Behaviour");
 
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Survival" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();

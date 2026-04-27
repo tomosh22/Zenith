@@ -42,7 +42,7 @@ class TilePuzzle_AutoTest : public Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
 public:
-	ZENITH_BEHAVIOUR_TYPE_NAME(TilePuzzle_AutoTest)
+	ZENITH_BEHAVIOUR_TYPE_NAME_INTERNAL(TilePuzzle_AutoTest)
 
 	TilePuzzle_AutoTest() = delete;
 	TilePuzzle_AutoTest(Zenith_Entity& /*xParentEntity*/)
@@ -924,7 +924,7 @@ private:
 				continue;
 
 			Zenith_ScriptComponent& xScript = xEntity.GetComponent<Zenith_ScriptComponent>();
-			TilePuzzle_Behaviour* pxBehaviour = xScript.GetBehaviour<TilePuzzle_Behaviour>();
+			TilePuzzle_Behaviour* pxBehaviour = xScript.GetScript<TilePuzzle_Behaviour>();
 			if (pxBehaviour)
 				return pxBehaviour;
 		}
@@ -1736,7 +1736,7 @@ private:
 			if (!xEntity.HasComponent<Zenith_ScriptComponent>())
 				continue;
 			Zenith_ScriptComponent& xScript = xEntity.GetComponent<Zenith_ScriptComponent>();
-			Pinball_Behaviour* pxBehaviour = xScript.GetBehaviour<Pinball_Behaviour>();
+			Pinball_Behaviour* pxBehaviour = xScript.GetScript<Pinball_Behaviour>();
 			if (pxBehaviour)
 				return pxBehaviour;
 		}

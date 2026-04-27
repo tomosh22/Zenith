@@ -39,14 +39,12 @@
 
 // Include combat modules
 #include "Combat_Config.h"
-#include "Combat_PlayerController.h"
-#include "Combat_AnimationController.h"
-#include "Combat_IKController.h"
-#include "Combat_HitDetection.h"
 #include "Combat_DamageSystem.h"
-#include "Combat_EnemyAI.h"
+#include "Combat_EnemyAI.h"             // for Combat_EnemyConfig (passed to per-enemy script)
 #include "Combat_QueryHelper.h"
 #include "Combat_UIManager.h"
+#include "Combat_PlayerBehaviour.h"     // attached to player entity in CreateArena
+#include "Combat_EnemyBehaviour.h"      // attached to each enemy in SpawnEnemies
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 
 #include <random>
@@ -116,10 +114,7 @@ public:
 
 	Combat_Behaviour() = delete;
 	Combat_Behaviour(Zenith_Entity&)
-		: m_eGameState(Combat_GameState::MAIN_MENU)
-		, m_uTotalEnemies(3)
-		, m_uComboCount(0)
-		, m_fComboTimer(0.0f)
+		: m_uTotalEnemies(3)
 		, m_iFocusIndex(0)
 		, m_xRng(std::random_device{}())
 	{
@@ -134,7 +129,10 @@ public:
 	void OnAwake() ZENITH_FINAL override
 	{
 		// Clear stale state from previous play sessions
-		m_xEnemyManager.Reset();
+		s_uPlayerEntityID = INVALID_ENTITY_ID;
+		s_axEnemyEntityIDs.clear();
+		s_uComboCount = 0;
+		s_fComboTimer = 0.0f;
 		m_xLevelEntities = Combat_LevelEntities();
 
 		s_axDeferredDamageEvents.clear();
@@ -186,7 +184,7 @@ public:
 		{
 			pxPlayButton->SetOnClick(&OnPlayClicked, this);
 			// Start in menu state
-			m_eGameState = Combat_GameState::MAIN_MENU;
+			SetGameState(Combat_GameState::MAIN_MENU);
 			m_iFocusIndex = 0;
 			SetMenuVisible(true);
 			SetHUDVisible(false);
@@ -200,7 +198,7 @@ public:
 
 	void OnStart() ZENITH_FINAL override
 	{
-		if (m_eGameState == Combat_GameState::MAIN_MENU)
+		if (s_eGameState == Combat_GameState::MAIN_MENU)
 		{
 			SetMenuVisible(true);
 			SetHUDVisible(false);
@@ -213,7 +211,7 @@ public:
 		if (m_xArenaScene.IsValid())
 			UpdateWallLights(fDt);
 
-		switch (m_eGameState)
+		switch (s_eGameState)
 		{
 		case Combat_GameState::MAIN_MENU:
 			UpdateMenuInput();
@@ -222,7 +220,7 @@ public:
 		case Combat_GameState::PLAYING:
 			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
-				m_eGameState = Combat_GameState::PAUSED;
+				SetGameState(Combat_GameState::PAUSED);
 				Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
 				UpdateUI();
 				return;
@@ -238,9 +236,10 @@ public:
 				return;
 			}
 
+			// GameManager only ticks GAME-WIDE state. Per-entity work (player movement,
+			// enemy AI) lives on Combat_PlayerBehaviour and Combat_EnemyBehaviour and is
+			// dispatched via their own OnUpdate hooks - the engine routes those for us.
 			Combat_DamageSystem::Update(fDt);
-			UpdatePlayer(fDt);
-			m_xEnemyManager.Update(fDt);
 			ProcessDeferredEvents();
 			UpdateComboTimer(fDt);
 			CheckGameState();
@@ -252,7 +251,7 @@ public:
 		case Combat_GameState::PAUSED:
 			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
-				m_eGameState = Combat_GameState::PLAYING;
+				SetGameState(Combat_GameState::PLAYING);
 				Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
 			}
 			else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
@@ -288,17 +287,17 @@ public:
 		ImGui::Separator();
 
 		const char* szStates[] = { "MENU", "PLAYING", "PAUSED", "VICTORY", "GAME OVER" };
-		ImGui::Text("State: %s", szStates[static_cast<int>(m_eGameState)]);
+		ImGui::Text("State: %s", szStates[static_cast<int>(s_eGameState)]);
 
-		if (m_eGameState != Combat_GameState::MAIN_MENU)
+		if (s_eGameState != Combat_GameState::MAIN_MENU)
 		{
-			ImGui::Text("Player Health: %.0f", Combat_DamageSystem::GetHealth(m_xLevelEntities.m_uPlayerEntityID));
-			ImGui::Text("Enemies Alive: %u / %u", m_xEnemyManager.GetAliveCount(), m_uTotalEnemies);
-			ImGui::Text("Combo: %u", m_uComboCount);
+			ImGui::Text("Player Health: %.0f", Combat_DamageSystem::GetHealth(s_uPlayerEntityID));
+			ImGui::Text("Enemies Alive: %u / %u", CountAliveEnemies(), m_uTotalEnemies);
+			ImGui::Text("Combo: %u", s_uComboCount);
 		}
 
 		ImGui::Separator();
-		if (m_eGameState == Combat_GameState::MAIN_MENU)
+		if (s_eGameState == Combat_GameState::MAIN_MENU)
 		{
 			if (ImGui::Button("Start Game"))
 				StartGame();
@@ -366,18 +365,15 @@ private:
 
 		Combat_DamageSystem::Initialize();
 
+		// Per-entity Combat_PlayerBehaviour and Combat_EnemyBehaviour are attached to
+		// each spawned entity in CreateArena/SpawnEnemies, so the central script no longer
+		// needs to maintain controller/animation/IK state itself.
 		CreateArena(pxSceneData);
 		SpawnEnemies();
-		InitializePlayerAnimation();
 
-		m_xPlayerController.m_fMoveSpeed = 5.0f;
-		m_xPlayerController.m_fLightAttackDuration = 0.3f;
-		m_xPlayerController.m_fHeavyAttackDuration = 0.6f;
-		m_xPlayerHitDetection.SetOwner(m_xLevelEntities.m_uPlayerEntityID);
-
-		m_eGameState = Combat_GameState::PLAYING;
-		m_uComboCount = 0;
-		m_fComboTimer = 0.0f;
+		SetGameState(Combat_GameState::PLAYING);
+		s_uComboCount = 0;
+		s_fComboTimer = 0.0f;
 		m_fWallLightTime = 0.0f;
 	}
 
@@ -389,15 +385,18 @@ private:
 			Zenith_SceneManager::UnloadScene(m_xArenaScene);
 		m_xArenaScene = Zenith_Scene();
 
-		m_xEnemyManager.Reset();
-		m_xPlayerController.Reset();
-		m_xPlayerAnimController.Reset();
-		m_xPlayerIKController.Reset();
-		m_xPlayerHitDetection.DeactivateHitbox();
+		// The per-entity scripts unregister themselves on OnDestroy when the arena scene
+		// unloads. Clearing the registry here is just belt-and-braces in case unload is
+		// asynchronous and the next StartGame() arrives before the destroys settle.
+		s_uPlayerEntityID = INVALID_ENTITY_ID;
+		s_axEnemyEntityIDs.clear();
+		s_uComboCount = 0;
+		s_fComboTimer = 0.0f;
 		Combat_DamageSystem::Reset();
 		s_axDeferredDamageEvents.clear();
 		s_axDeferredDeathEvents.clear();
 
+		SetGameState(Combat_GameState::MAIN_MENU);
 		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
@@ -413,23 +412,18 @@ private:
 		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
 
 		Combat_DamageSystem::Reset();
-		m_xEnemyManager.Reset();
+		s_uPlayerEntityID = INVALID_ENTITY_ID;
+		s_axEnemyEntityIDs.clear();
+		s_uComboCount = 0;
+		s_fComboTimer = 0.0f;
 		s_axDeferredDamageEvents.clear();
 		s_axDeferredDeathEvents.clear();
-		m_xPlayerController.Reset();
-		m_xPlayerAnimController.Reset();
-		m_xPlayerIKController.Reset();
-		m_xPlayerHitDetection.DeactivateHitbox();
 
 		Combat_DamageSystem::Initialize();
 		CreateArena(pxSceneData);
 		SpawnEnemies();
-		InitializePlayerAnimation();
-		m_xPlayerHitDetection.SetOwner(m_xLevelEntities.m_uPlayerEntityID);
 
-		m_eGameState = Combat_GameState::PLAYING;
-		m_uComboCount = 0;
-		m_fComboTimer = 0.0f;
+		SetGameState(Combat_GameState::PLAYING);
 		m_fWallLightTime = 0.0f;
 	}
 
@@ -601,6 +595,11 @@ private:
 		m_xLevelEntities.m_uPlayerEntityID = xPlayer.GetEntityID();
 		Combat_DamageSystem::RegisterEntity(xPlayer.GetEntityID(), 100.0f, 0.2f);
 
+		// Attach the per-entity player script. Its OnAwake registers with this GameManager
+		// (Combat_Behaviour::RegisterPlayer), and OnUpdate ticks the player's controller /
+		// animation / IK / hit detection - the GameManager no longer drives those.
+		xPlayer.AddComponent<Zenith_ScriptComponent>().AddScript<Combat_PlayerBehaviour>();
+
 		// Create hit spark emitter in arena scene
 		Zenith_Entity xHitSparkEmitter(pxSceneData, "HitSparkEmitter");
 		Zenith_ParticleEmitterComponent& xEmitter = xHitSparkEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
@@ -614,22 +613,8 @@ private:
 		Combat::g_uHitSparkEmitterID = INVALID_ENTITY_ID;
 	}
 
-	void InitializePlayerAnimation()
-	{
-		if (!m_xArenaScene.IsValid())
-			return;
-
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
-		if (!pxSceneData->EntityExists(m_xLevelEntities.m_uPlayerEntityID))
-			return;
-
-		Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xLevelEntities.m_uPlayerEntityID);
-		if (!xPlayer.HasComponent<Zenith_AnimatorComponent>())
-			return;
-
-		Zenith_AnimatorComponent& xAnimator = xPlayer.GetComponent<Zenith_AnimatorComponent>();
-		m_xPlayerAnimController.Initialize(xAnimator);
-	}
+	// (InitializePlayerAnimation removed - Combat_PlayerBehaviour::OnStart now owns
+	// initialising the player's animation controller from its own AnimatorComponent.)
 
 	void SpawnEnemies()
 	{
@@ -674,7 +659,7 @@ private:
 			}
 
 			// Add AnimatorComponent for skeletal animation (auto-discovers skeleton from ModelComponent)
-			Zenith_AnimatorComponent& xEnemyAnimator = xEnemy.AddComponent<Zenith_AnimatorComponent>();
+			xEnemy.AddComponent<Zenith_AnimatorComponent>();
 
 			Zenith_ColliderComponent& xCollider = xEnemy.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCapsuleCollider(0.27f, 0.54f, RIGIDBODY_TYPE_DYNAMIC);
@@ -684,13 +669,20 @@ private:
 
 			Combat_DamageSystem::RegisterEntity(xEnemy.GetEntityID(), 50.0f, 0.0f);
 
+			// Attach the per-entity enemy script. Its OnAwake registers with this GameManager
+			// (Combat_Behaviour::RegisterEnemy) and OnUpdate ticks one Combat_EnemyAI - the
+			// GameManager no longer holds a Combat_EnemyManager.
 			Combat_EnemyConfig xConfig;
 			xConfig.m_fMoveSpeed = 3.0f;
 			xConfig.m_fAttackDamage = 15.0f;
 			xConfig.m_fAttackRange = 1.5f;
 			xConfig.m_fAttackCooldown = 1.5f;
 
-			m_xEnemyManager.RegisterEnemy(xEnemy.GetEntityID(), xConfig, &xEnemyAnimator);
+			Combat_EnemyBehaviour* pxEnemyScript = xEnemy.AddComponent<Zenith_ScriptComponent>().AddScript<Combat_EnemyBehaviour>();
+			if (pxEnemyScript)
+			{
+				pxEnemyScript->SetConfig(xConfig);
+			}
 		}
 	}
 
@@ -698,70 +690,8 @@ private:
 	// Player Update
 	// ========================================================================
 
-	void UpdatePlayer(float fDt)
-	{
-		if (!m_xArenaScene.IsValid())
-			return;
-
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
-		if (!pxSceneData->EntityExists(m_xLevelEntities.m_uPlayerEntityID))
-			return;
-
-		Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xLevelEntities.m_uPlayerEntityID);
-		if (!xPlayer.HasComponent<Zenith_TransformComponent>() ||
-			!xPlayer.HasComponent<Zenith_ColliderComponent>())
-			return;
-
-		Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
-		Zenith_ColliderComponent& xCollider = xPlayer.GetComponent<Zenith_ColliderComponent>();
-
-		if (xCollider.HasValidBody())
-		{
-			Zenith_Physics::EnforceUpright(xCollider.GetBodyID());
-		}
-
-		if (Combat_DamageSystem::IsDead(m_xLevelEntities.m_uPlayerEntityID))
-		{
-			m_xPlayerController.TriggerDeath();
-		}
-
-		m_xPlayerController.Update(xTransform, xCollider, fDt);
-		m_xPlayerAnimController.UpdateFromPlayerState(m_xPlayerController);
-
-		bool bCanUseIK = !m_xPlayerController.IsDodging() &&
-			m_xPlayerController.GetState() != Combat_PlayerState::DEAD;
-		m_xPlayerIKController.UpdateWithAutoTarget(xTransform, m_xLevelEntities.m_uPlayerEntityID, 0.0f, bCanUseIK, fDt);
-
-		UpdatePlayerAttack(xTransform);
-	}
-
-	void UpdatePlayerAttack(Zenith_TransformComponent& xTransform)
-	{
-		if (m_xPlayerController.WasAttackJustStarted())
-		{
-			Combat_AttackType eType = m_xPlayerController.GetCurrentAttackType();
-			float fDamage = (eType == Combat_AttackType::HEAVY) ? 25.0f : 10.0f;
-			float fRange = (eType == Combat_AttackType::HEAVY) ? 2.0f : 1.5f;
-			uint32_t uCombo = m_xPlayerController.GetComboCount();
-
-			m_xPlayerHitDetection.ActivateHitbox(fDamage, fRange, uCombo, uCombo > 1);
-		}
-
-		if (m_xPlayerController.IsAttacking() && m_xPlayerAnimController.IsAttackHitFrame())
-		{
-			uint32_t uHits = m_xPlayerHitDetection.Update(xTransform);
-			if (uHits > 0)
-			{
-				m_uComboCount = m_xPlayerController.GetComboCount();
-				m_fComboTimer = 2.0f;
-			}
-		}
-
-		if (!m_xPlayerController.IsAttacking())
-		{
-			m_xPlayerHitDetection.DeactivateHitbox();
-		}
-	}
+	// (UpdatePlayer / UpdatePlayerAttack removed - Combat_PlayerBehaviour::OnUpdate
+	//  now owns these per-frame responsibilities for the player entity directly.)
 
 	// ========================================================================
 	// Event Handlers
@@ -784,15 +714,9 @@ private:
 
 	void OnDamageEvent(const Combat_DamageEvent& xEvent)
 	{
-		if (xEvent.m_uTargetEntityID == m_xLevelEntities.m_uPlayerEntityID)
-		{
-			m_xPlayerController.TriggerHitStun();
-		}
-		else
-		{
-			m_xEnemyManager.TriggerHitStunForEntity(xEvent.m_uTargetEntityID);
-		}
-
+		// Per-entity scripts (Combat_PlayerBehaviour / Combat_EnemyBehaviour) subscribe
+		// to Combat_DamageEvent themselves and handle their own hit-stun. The GameManager
+		// only owns the world-effect side of damage: spawning hit particles.
 		SpawnHitParticles(xEvent);
 	}
 
@@ -838,13 +762,14 @@ private:
 
 	void OnDeathEvent(const Combat_DeathEvent& xEvent)
 	{
-		if (xEvent.m_uEntityID == m_xLevelEntities.m_uPlayerEntityID)
+		if (xEvent.m_uEntityID == s_uPlayerEntityID)
 		{
-			m_eGameState = Combat_GameState::GAME_OVER;
+			SetGameState(Combat_GameState::GAME_OVER);
 		}
 		else if (m_xArenaScene.IsValid())
 		{
-			// Timed destruction for dead enemies (corpse auto-cleanup after 3s)
+			// Timed destruction for dead enemies (corpse auto-cleanup after 3s).
+			// The Combat_EnemyBehaviour's OnDestroy will unregister it from s_axEnemyEntityIDs.
 			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
 			if (pxSceneData && pxSceneData->EntityExists(xEvent.m_uEntityID))
 			{
@@ -866,12 +791,12 @@ private:
 
 		// Get player position from arena scene
 		Zenith_Maths::Vector3 xPlayerPos(0.0f);
-		if (m_xArenaScene.IsValid())
+		if (m_xArenaScene.IsValid() && s_uPlayerEntityID != INVALID_ENTITY_ID)
 		{
 			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
-			if (pxSceneData && pxSceneData->EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+			if (pxSceneData && pxSceneData->EntityExists(s_uPlayerEntityID))
 			{
-				Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xLevelEntities.m_uPlayerEntityID);
+				Zenith_Entity xPlayer = pxSceneData->GetEntity(s_uPlayerEntityID);
 				xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
 			}
 		}
@@ -898,26 +823,42 @@ private:
 
 	void UpdateComboTimer(float fDt)
 	{
-		if (m_fComboTimer > 0.0f)
+		// Combat_PlayerBehaviour pushes combo state via NotifyComboHit after a successful
+		// hit; we just tick its timer down here.
+		TickComboTimer(fDt);
+	}
+
+	// Game state mutator. Static so per-entity scripts (Combat_PlayerBehaviour /
+	// Combat_EnemyBehaviour) can read it via IsInPlayingState() / GetGameState() without
+	// needing a GameManager instance handle.
+	static void SetGameState(Combat_GameState eState)
+	{
+		s_eGameState = eState;
+	}
+
+	uint32_t CountAliveEnemies() const
+	{
+		uint32_t uAlive = 0;
+		for (Zenith_EntityID uID : s_axEnemyEntityIDs)
 		{
-			m_fComboTimer -= fDt;
-			if (m_fComboTimer <= 0.0f)
+			if (!Combat_DamageSystem::IsDead(uID))
 			{
-				m_uComboCount = 0;
+				++uAlive;
 			}
 		}
+		return uAlive;
 	}
 
 	void CheckGameState()
 	{
-		if (m_xEnemyManager.GetAliveCount() == 0)
+		if (CountAliveEnemies() == 0 && !s_axEnemyEntityIDs.empty())
 		{
-			m_eGameState = Combat_GameState::VICTORY;
+			SetGameState(Combat_GameState::VICTORY);
 		}
 
-		if (Combat_DamageSystem::IsDead(m_xLevelEntities.m_uPlayerEntityID))
+		if (s_uPlayerEntityID != INVALID_ENTITY_ID && Combat_DamageSystem::IsDead(s_uPlayerEntityID))
 		{
-			m_eGameState = Combat_GameState::GAME_OVER;
+			SetGameState(Combat_GameState::GAME_OVER);
 		}
 	}
 
@@ -932,17 +873,17 @@ private:
 
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
-		float fPlayerHealth = Combat_DamageSystem::GetHealth(m_xLevelEntities.m_uPlayerEntityID);
-		float fPlayerMaxHealth = Combat_DamageSystem::GetMaxHealth(m_xLevelEntities.m_uPlayerEntityID);
+		float fPlayerHealth = Combat_DamageSystem::GetHealth(s_uPlayerEntityID);
+		float fPlayerMaxHealth = Combat_DamageSystem::GetMaxHealth(s_uPlayerEntityID);
 
 		Combat_UIManager::UpdateAll(
 			xUI,
 			fPlayerHealth,
 			fPlayerMaxHealth,
-			m_uComboCount,
-			m_xEnemyManager.GetAliveCount(),
+			s_uComboCount,
+			CountAliveEnemies(),
 			m_uTotalEnemies,
-			m_eGameState);
+			s_eGameState);
 	}
 
 	// ========================================================================
@@ -1032,10 +973,10 @@ private:
 
 		static constexpr float fBarHeightOffset = 2.3f;
 
-		// Player health bar
-		if (pxSceneData->EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+		// Player health bar (uses static registry: Combat_PlayerBehaviour::OnAwake registers itself)
+		if (s_uPlayerEntityID != INVALID_ENTITY_ID && pxSceneData->EntityExists(s_uPlayerEntityID))
 		{
-			Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xLevelEntities.m_uPlayerEntityID);
+			Zenith_Entity xPlayer = pxSceneData->GetEntity(s_uPlayerEntityID);
 			if (xPlayer.HasComponent<Zenith_TransformComponent>())
 			{
 				Zenith_Maths::Vector3 xWorldPos;
@@ -1045,20 +986,18 @@ private:
 				Zenith_Maths::Vector2 xScreenPos;
 				if (WorldToScreen(xWorldPos, xViewMatrix, xProjMatrix, xScreenPos))
 				{
-					float fHealthPercent = Combat_DamageSystem::GetHealthPercent(m_xLevelEntities.m_uPlayerEntityID);
+					float fHealthPercent = Combat_DamageSystem::GetHealthPercent(s_uPlayerEntityID);
 					RenderHealthBarQuad(xScreenPos, fHealthPercent, 80, 10);
 				}
 			}
 		}
 
-		// Enemy health bars
-		for (const Combat_EnemyAI& xEnemy : m_xEnemyManager.GetEnemies())
+		// Enemy health bars - iterate the registry (alive enemies registered by their behaviours).
+		for (Zenith_EntityID uEnemyID : s_axEnemyEntityIDs)
 		{
-			Zenith_EntityID uEnemyID = xEnemy.GetEntityID();
 			if (!pxSceneData->EntityExists(uEnemyID))
 				continue;
-
-			if (!xEnemy.IsAlive())
+			if (Combat_DamageSystem::IsDead(uEnemyID))
 				continue;
 
 			Zenith_Entity xEnemyEntity = pxSceneData->GetEntity(uEnemyID);
@@ -1142,10 +1081,7 @@ private:
 	// Member Variables
 	// ========================================================================
 
-	Combat_GameState m_eGameState;
 	uint32_t m_uTotalEnemies;
-	uint32_t m_uComboCount;
-	float m_fComboTimer;
 	float m_fWallLightTime = 0.0f;
 	int32_t m_iFocusIndex;
 
@@ -1154,17 +1090,11 @@ private:
 	// Scene handle for the arena
 	Zenith_Scene m_xArenaScene;
 
-	// Level entities (in arena scene)
+	// Level entities (in arena scene). The player ID and enemy IDs in here are
+	// mirrored by the static registry below (s_uPlayerEntityID / s_axEnemyEntityIDs)
+	// which is the canonical source of truth - this struct is kept for the wall-light
+	// list and the spawner's bookkeeping.
 	Combat_LevelEntities m_xLevelEntities;
-
-	// Player systems
-	Combat_PlayerController m_xPlayerController;
-	Combat_AnimationController m_xPlayerAnimController;
-	Combat_IKController m_xPlayerIKController;
-	Combat_HitDetection m_xPlayerHitDetection;
-
-	// Enemy manager
-	Combat_EnemyManager m_xEnemyManager;
 
 	// Static event handles
 	static inline Zenith_EventHandle s_uDamageEventHandle = INVALID_EVENT_HANDLE;
@@ -1175,6 +1105,71 @@ private:
 	static inline std::vector<Combat_DeathEvent> s_axDeferredDeathEvents;
 
 public:
+	// ========================================================================
+	// Static GameManager state, shared with per-entity scripts
+	// ========================================================================
+	//
+	// Per-entity scripts (Combat_PlayerBehaviour, Combat_EnemyBehaviour) call into these
+	// statics from their OnAwake / OnUpdate / OnDestroy hooks to register themselves and
+	// to gate work on the game being in PLAYING. Combat_Behaviour writes the state from
+	// its lifecycle methods (StartGame, ResetGame, ReturnToMenu, OnUpdate's pause/resume).
+	//
+	// Static rather than per-instance because (a) there's only ever one Combat_Behaviour
+	// in a scene by design, and (b) the per-entity scripts need to read the state without
+	// holding a pointer to the GameManager instance.
+
+	static inline Zenith_EntityID s_uPlayerEntityID = INVALID_ENTITY_ID;
+	static inline std::vector<Zenith_EntityID> s_axEnemyEntityIDs;
+	static inline Combat_GameState s_eGameState = Combat_GameState::MAIN_MENU;
+	static inline uint32_t s_uComboCount = 0;
+	static inline float    s_fComboTimer = 0.0f;
+
+	static void RegisterPlayer(Zenith_EntityID uEntityID) { s_uPlayerEntityID = uEntityID; }
+	static void UnregisterPlayer(Zenith_EntityID uEntityID)
+	{
+		if (s_uPlayerEntityID == uEntityID)
+		{
+			s_uPlayerEntityID = INVALID_ENTITY_ID;
+		}
+	}
+	static Zenith_EntityID GetPlayerEntityID() { return s_uPlayerEntityID; }
+
+	static void RegisterEnemy(Zenith_EntityID uEntityID) { s_axEnemyEntityIDs.push_back(uEntityID); }
+	static void UnregisterEnemy(Zenith_EntityID uEntityID)
+	{
+		for (size_t i = 0; i < s_axEnemyEntityIDs.size(); ++i)
+		{
+			if (s_axEnemyEntityIDs[i] == uEntityID)
+			{
+				s_axEnemyEntityIDs.erase(s_axEnemyEntityIDs.begin() + i);
+				return;
+			}
+		}
+	}
+	static const std::vector<Zenith_EntityID>& GetEnemyEntityIDs() { return s_axEnemyEntityIDs; }
+
+	static bool IsInPlayingState() { return s_eGameState == Combat_GameState::PLAYING; }
+	static Combat_GameState GetGameState() { return s_eGameState; }
+
+	static void NotifyComboHit(uint32_t uComboCount, float fTimer = 2.0f)
+	{
+		s_uComboCount = uComboCount;
+		s_fComboTimer = fTimer;
+	}
+	static uint32_t GetComboCount() { return s_uComboCount; }
+	static float    GetComboTimer() { return s_fComboTimer; }
+	static void     TickComboTimer(float fDt)
+	{
+		if (s_fComboTimer > 0.0f)
+		{
+			s_fComboTimer -= fDt;
+			if (s_fComboTimer <= 0.0f)
+			{
+				s_uComboCount = 0;
+			}
+		}
+	}
+
 	// Resource pointers (set in OnAwake from globals)
 	Flux_MeshGeometry* m_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;

@@ -712,81 +712,43 @@ static bool s_bTestBehaviourAwakeCalled = false;
 class AutomationTestBehaviour : public Zenith_ScriptBehaviour
 {
 public:
-	ZENITH_BEHAVIOUR_TYPE_NAME(AutomationTestBehaviour)
+	ZENITH_BEHAVIOUR_TYPE_NAME_INTERNAL(AutomationTestBehaviour)
 	AutomationTestBehaviour(Zenith_Entity& xEntity) { m_xParentEntity = xEntity; }
 	void OnAwake() override { s_bTestBehaviourAwakeCalled = true; }
 };
 
-static bool s_bTestBehaviourRegistered = false;
-static void EnsureTestBehaviourRegistered()
+// AutomationTestBehaviour auto-registers via the macro's static initializer.
+// No explicit registration call needed.
+ZENITH_TEST(Automation, AttachScriptStep)
 {
-	if (!s_bTestBehaviourRegistered)
-	{
-		AutomationTestBehaviour::RegisterBehaviour();
-		s_bTestBehaviourRegistered = true;
-	}
-}
-ZENITH_TEST(Automation, SetBehaviourStep)
-{
-	EDITOR_TEST_BEGIN(TestSetBehaviourStep);
+	EDITOR_TEST_BEGIN(TestAttachScriptStep);
 
-	EnsureTestBehaviourRegistered();
-	Zenith_EditorAutomation::Reset();
-	s_bTestBehaviourAwakeCalled = false;
-
-	Zenith_EditorAutomation::AddStep_CreateEntity("AutoScriptEntity");
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviour("AutomationTestBehaviour");
-	Zenith_EditorAutomation::Begin();
-
-	Zenith_EditorAutomation::ExecuteNextStep(); // Create entity
-	Zenith_EditorAutomation::ExecuteNextStep(); // Add script
-	Zenith_EditorAutomation::ExecuteNextStep(); // Set behaviour
-
-	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
-	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
-	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Entity should have ScriptComponent");
-
-	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
-	ZENITH_ASSERT_NOT_NULL(xScript.GetBehaviourRaw(), "Behaviour should be set");
-	ZENITH_ASSERT_STREQ(xScript.GetBehaviourRaw()->GetBehaviourTypeName(), "AutomationTestBehaviour", "Behaviour type name should be 'AutomationTestBehaviour'");
-	ZENITH_ASSERT_TRUE(s_bTestBehaviourAwakeCalled, "OnAwake should have been called by SetBehaviourOnSelected");
-
-	Zenith_EditorAutomation::ExecuteNextStep();
-	Zenith_EditorAutomation::Reset();
-
-	EDITOR_TEST_END(TestSetBehaviourStep);
-}
-ZENITH_TEST(Automation, SetBehaviourForSerializationStep)
-{
-	EDITOR_TEST_BEGIN(TestSetBehaviourForSerializationStep);
-
-	EnsureTestBehaviourRegistered();
 	Zenith_EditorAutomation::Reset();
 	s_bTestBehaviourAwakeCalled = false;
 
 	Zenith_EditorAutomation::AddStep_CreateEntity("AutoSerEntity");
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("AutomationTestBehaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("AutomationTestBehaviour");
 	Zenith_EditorAutomation::Begin();
 
 	Zenith_EditorAutomation::ExecuteNextStep(); // Create entity
-	Zenith_EditorAutomation::ExecuteNextStep(); // Add script
-	Zenith_EditorAutomation::ExecuteNextStep(); // Set behaviour for serialization
+	Zenith_EditorAutomation::ExecuteNextStep(); // Attach script (adds ScriptComponent + slot, no OnAwake)
 
 	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
 	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
 	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Entity should have ScriptComponent");
 
 	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
-	ZENITH_ASSERT_NOT_NULL(xScript.GetBehaviourRaw(), "Behaviour should be set");
-	ZENITH_ASSERT_STREQ(xScript.GetBehaviourRaw()->GetBehaviourTypeName(), "AutomationTestBehaviour", "Behaviour type name should be 'AutomationTestBehaviour'");
-	ZENITH_ASSERT_FALSE(s_bTestBehaviourAwakeCalled, "OnAwake should NOT have been called by SetBehaviourForSerializationOnSelected");
+	ZENITH_ASSERT_EQ(xScript.GetScriptCount(), 1u, "Should have exactly one script slot");
+
+	Zenith_ScriptBehaviour* pxBehaviour = xScript.GetScriptAt(0);
+	ZENITH_ASSERT_NOT_NULL(pxBehaviour, "Slot behaviour should be set");
+	ZENITH_ASSERT_STREQ(pxBehaviour->GetBehaviourTypeName(), "AutomationTestBehaviour", "Behaviour type name should be 'AutomationTestBehaviour'");
+	ZENITH_ASSERT_FALSE(s_bTestBehaviourAwakeCalled, "OnAwake should NOT have been called by AttachScriptForSerializationToSelected");
 
 	Zenith_EditorAutomation::ExecuteNextStep();
 	Zenith_EditorAutomation::Reset();
 
-	EDITOR_TEST_END(TestSetBehaviourForSerializationStep);
+	EDITOR_TEST_END(TestAttachScriptStep);
 }
 
 //=============================================================================

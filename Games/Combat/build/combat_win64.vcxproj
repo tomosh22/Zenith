@@ -461,14 +461,18 @@
     <ClInclude Include="..\Components\Combat_Config.h" />
     <ClInclude Include="..\Components\Combat_DamageSystem.h" />
     <ClInclude Include="..\Components\Combat_EnemyAI.h" />
+    <ClInclude Include="..\Components\Combat_EnemyBehaviour.h" />
     <ClInclude Include="..\Components\Combat_HitDetection.h" />
     <ClInclude Include="..\Components\Combat_IKController.h" />
+    <ClInclude Include="..\Components\Combat_PlayerBehaviour.h" />
     <ClInclude Include="..\Components\Combat_PlayerController.h" />
     <ClInclude Include="..\Components\Combat_QueryHelper.h" />
     <ClInclude Include="..\Components\Combat_UIManager.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Combat.cpp" />
+    <ClCompile Include="..\Components\Combat_EnemyBehaviour.cpp" />
+    <ClCompile Include="..\Components\Combat_PlayerBehaviour.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

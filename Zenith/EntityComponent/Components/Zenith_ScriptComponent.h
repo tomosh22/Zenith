@@ -3,12 +3,17 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include <unordered_map>
+#include "AssetHandling/Zenith_ScriptAsset.h"
+#include "Collections/Zenith_Vector.h"
+#include "DataStream/Zenith_DataStream.h"
 #include <string>
+#include <cstring>
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #endif
+
+class Zenith_DataStream;
 
 class Zenith_ScriptBehaviour {
 	friend class Zenith_ScriptComponent;
@@ -95,261 +100,286 @@ protected:
 	Zenith_Entity m_xParentEntity;
 };
 
-// Forward declaration
-class Zenith_DataStream;
-
-// Factory function type for creating behaviors
-typedef Zenith_ScriptBehaviour* (*BehaviourFactoryFunc)(Zenith_Entity&);
-
-// Behaviour registry for serialization support
-class Zenith_BehaviourRegistry
-{
-public:
-	static Zenith_BehaviourRegistry& Get()
-	{
-		static Zenith_BehaviourRegistry s_xInstance;
-		return s_xInstance;
-	}
-
-	// Register a behavior type with the factory
-	void RegisterBehaviour(const char* szTypeName, BehaviourFactoryFunc fnFactory)
-	{
-		m_xFactoryMap[szTypeName] = fnFactory;
-	}
-
-	// Create a behavior by type name
-	Zenith_ScriptBehaviour* CreateBehaviour(const char* szTypeName, Zenith_Entity& xEntity)
-	{
-		auto it = m_xFactoryMap.find(szTypeName);
-		if (it != m_xFactoryMap.end())
-		{
-			return it->second(xEntity);
-		}
-		return nullptr;
-	}
-
-	bool HasBehaviour(const char* szTypeName) const
-	{
-		return m_xFactoryMap.find(szTypeName) != m_xFactoryMap.end();
-	}
-
-	// Get all registered behavior names
-	std::vector<std::string> GetRegisteredBehaviourNames() const
-	{
-		std::vector<std::string> xNames;
-		for (const auto& pair : m_xFactoryMap)
-		{
-			xNames.push_back(pair.first);
-		}
-		return xNames;
-	}
-
-private:
-	std::unordered_map<std::string, BehaviourFactoryFunc> m_xFactoryMap;
-};
-
-// Helper macro to define a behavior with serialization support
+//--------------------------------------------------------------------------
+// Auto-registration macro
+//--------------------------------------------------------------------------
+//
+// Usage: place ZENITH_BEHAVIOUR_TYPE_NAME(MyBehaviour) inside the class body.
+//
+// This generates:
+//   - GetBehaviourTypeName() returning "MyBehaviour"
+//   - CreateInstance(entity) factory function
+//   - A static inline bool initialized via a registration lambda. The lambda
+//     runs at program startup (before main()) and registers the factory with
+//     Zenith_ScriptAsset's static factory map. This replaces the old per-game
+//     XYZ_Behaviour::RegisterBehaviour() calls.
+//
+// The TU containing this macro must be linked into the final binary for
+// auto-registration to take effect. Each game's Components/*.cpp files are
+// compiled directly into the game executable, so this is automatic.
+//
 #define ZENITH_BEHAVIOUR_TYPE_NAME(TypeName) \
 	virtual const char* GetBehaviourTypeName() const override { return #TypeName; } \
+	static const char* GetBehaviourTypeNameStatic() { return #TypeName; } \
 	static Zenith_ScriptBehaviour* CreateInstance(Zenith_Entity& xEntity) { return new TypeName(xEntity); } \
-	static void RegisterBehaviour() { Zenith_BehaviourRegistry::Get().RegisterBehaviour(#TypeName, &TypeName::CreateInstance); }
+	static inline const bool s_bAutoRegistered_##TypeName = []() { \
+		Zenith_ScriptAsset::RegisterFactory(#TypeName, &TypeName::CreateInstance); \
+		return true; \
+	}();
+
+// Variant for test fixtures and runtime-only behaviours. The factory is registered the
+// same way, so AddScript<T> / AttachScript / serialization all work. The behaviour is
+// excluded from SyncRegisteredTypesToDisk and from the editor's "Add Script" popup, so
+// no .zscript file gets written into game:Scripts/ for it. Use this for behaviours
+// declared inside *.Tests.inl, ZENITH_TESTING-only fixtures, or behaviours that are
+// only created programmatically and shouldn't appear as user-facing assets. See P2.4.
+#define ZENITH_BEHAVIOUR_TYPE_NAME_INTERNAL(TypeName) \
+	virtual const char* GetBehaviourTypeName() const override { return #TypeName; } \
+	static const char* GetBehaviourTypeNameStatic() { return #TypeName; } \
+	static Zenith_ScriptBehaviour* CreateInstance(Zenith_Entity& xEntity) { return new TypeName(xEntity); } \
+	static inline const bool s_bAutoRegistered_##TypeName = []() { \
+		Zenith_ScriptAsset::RegisterFactoryInternal(#TypeName, &TypeName::CreateInstance); \
+		return true; \
+	}();
+
+//--------------------------------------------------------------------------
+// Zenith_ScriptSlot - one attached script behaviour on an entity.
+//
+// A slot is "unresolved" when the C++ behaviour for its type isn't available
+// in this build (compiled out, renamed, or temporarily unregistered). The slot
+// keeps the asset path, the saved type name, and the raw serialized parameter
+// bytes verbatim so a later save preserves the attachment - opening and
+// re-saving a scene in a build missing a behaviour does NOT silently drop it.
+//--------------------------------------------------------------------------
+struct Zenith_ScriptSlot
+{
+	std::string             m_strScriptAssetPath;     // "game:Scripts/Foo.zscript"; empty for runtime-only / no asset
+	std::string             m_strBehaviourTypeName;   // canonical type name (set whether resolved or not)
+	Zenith_ScriptBehaviour* m_pxBehaviour = nullptr;  // null when unresolved (factory missing)
+	Zenith_DataStream       m_xPendingParams;         // raw param bytes preserved when unresolved
+	bool                    m_bMarkedForRemoval = false;  // set by RemoveScriptAt during dispatch; flushed post-dispatch
+
+	Zenith_ScriptSlot() = default;
+
+	~Zenith_ScriptSlot()
+	{
+		// Memory cleanup only - OnDestroy is dispatched separately by the component
+		// in reverse slot order (Unity convention).
+		delete m_pxBehaviour;
+	}
+
+	bool IsResolved() const { return m_pxBehaviour != nullptr; }
+
+	// Move-only - vector storage requires this
+	Zenith_ScriptSlot(const Zenith_ScriptSlot&) = delete;
+	Zenith_ScriptSlot& operator=(const Zenith_ScriptSlot&) = delete;
+
+	Zenith_ScriptSlot(Zenith_ScriptSlot&& xOther) noexcept
+		: m_strScriptAssetPath(std::move(xOther.m_strScriptAssetPath))
+		, m_strBehaviourTypeName(std::move(xOther.m_strBehaviourTypeName))
+		, m_pxBehaviour(xOther.m_pxBehaviour)
+		, m_xPendingParams(std::move(xOther.m_xPendingParams))
+		, m_bMarkedForRemoval(xOther.m_bMarkedForRemoval)
+	{
+		xOther.m_pxBehaviour = nullptr;
+		xOther.m_bMarkedForRemoval = false;
+	}
+
+	Zenith_ScriptSlot& operator=(Zenith_ScriptSlot&& xOther) noexcept
+	{
+		if (this != &xOther)
+		{
+			delete m_pxBehaviour;
+			m_strScriptAssetPath = std::move(xOther.m_strScriptAssetPath);
+			m_strBehaviourTypeName = std::move(xOther.m_strBehaviourTypeName);
+			m_pxBehaviour = xOther.m_pxBehaviour;
+			m_xPendingParams = std::move(xOther.m_xPendingParams);
+			m_bMarkedForRemoval = xOther.m_bMarkedForRemoval;
+			xOther.m_pxBehaviour = nullptr;
+			xOther.m_bMarkedForRemoval = false;
+		}
+		return *this;
+	}
+};
+
+//--------------------------------------------------------------------------
+// Zenith_ScriptComponent - holds one or more script behaviour instances.
+//--------------------------------------------------------------------------
+//
+// Mirrors Unity's MonoBehaviour-on-GameObject pattern: an entity can have
+// many scripts attached, each an independent instance with its own state.
+//
 class Zenith_ScriptComponent
 {
 public:
+	Zenith_ScriptComponent(Zenith_Entity& xEntity) : m_xParentEntity(xEntity) {}
 
-	Zenith_ScriptComponent(Zenith_Entity& xEntity) : m_xParentEntity(xEntity) {};
-	~Zenith_ScriptComponent() {
-		if (m_pxScriptBehaviour)
-		{
-			// OnDestroy is NOT called here - the lifecycle system (RemoveAllComponents) owns that dispatch
-			// The destructor only handles memory cleanup
-			delete m_pxScriptBehaviour;
-		}
+	~Zenith_ScriptComponent()
+	{
+		// Memory cleanup only - OnDestroy is dispatched separately by the lifecycle
+		// system (RemoveAllComponents) BEFORE this destructor runs.
+		// Slot destructors handle behaviour deletion.
 	}
 
-	// Move semantics - required for component pool operations
+	// Move-only
+	Zenith_ScriptComponent(const Zenith_ScriptComponent&) = delete;
+	Zenith_ScriptComponent& operator=(const Zenith_ScriptComponent&) = delete;
+
 	Zenith_ScriptComponent(Zenith_ScriptComponent&& xOther) noexcept
-		: m_pxScriptBehaviour(xOther.m_pxScriptBehaviour)
+		: m_axSlots(std::move(xOther.m_axSlots))
 		, m_xParentEntity(xOther.m_xParentEntity)
+#ifdef ZENITH_TOOLS
+		, m_iPendingRemoveIndex(xOther.m_iPendingRemoveIndex)
+#endif
 	{
-		xOther.m_pxScriptBehaviour = nullptr;  // Nullify source
+#ifdef ZENITH_TOOLS
+		xOther.m_iPendingRemoveIndex = -1;
+#endif
 	}
 
 	Zenith_ScriptComponent& operator=(Zenith_ScriptComponent&& xOther) noexcept
 	{
 		if (this != &xOther)
 		{
-			// Clean up our existing behaviour (OnDestroy not called - lifecycle system owns that)
-			if (m_pxScriptBehaviour)
-			{
-				delete m_pxScriptBehaviour;
-			}
-
-			// Take ownership from source
-			m_pxScriptBehaviour = xOther.m_pxScriptBehaviour;
+			m_axSlots = std::move(xOther.m_axSlots);
 			m_xParentEntity = xOther.m_xParentEntity;
-
-			// Nullify source
-			xOther.m_pxScriptBehaviour = nullptr;
+#ifdef ZENITH_TOOLS
+			m_iPendingRemoveIndex = xOther.m_iPendingRemoveIndex;
+			xOther.m_iPendingRemoveIndex = -1;
+#endif
 		}
 		return *this;
 	}
 
-	// Disable copy semantics - component should only be moved
-	Zenith_ScriptComponent(const Zenith_ScriptComponent&) = delete;
-	Zenith_ScriptComponent& operator=(const Zenith_ScriptComponent&) = delete;
+	//----------------------------------------------------------------------
+	// Slot accessors
+	//----------------------------------------------------------------------
 
-	// Accessors for behaviour pointer (prefer these over direct member access)
-	Zenith_ScriptBehaviour* GetBehaviourRaw() { return m_pxScriptBehaviour; }
-	const Zenith_ScriptBehaviour* GetBehaviourRaw() const { return m_pxScriptBehaviour; }
-	void SetBehaviourRaw(Zenith_ScriptBehaviour* pxBehaviour) { m_pxScriptBehaviour = pxBehaviour; }
+	uint32_t GetScriptCount() const { return m_axSlots.GetSize(); }
 
-	Zenith_ScriptBehaviour* m_pxScriptBehaviour = nullptr;
-
-	Zenith_Entity m_xParentEntity;
-
-	/**
-	 * OnAwake - Called at RUNTIME when behavior is attached.
-	 * NOT called during scene deserialization.
-	 */
-	void OnAwake() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnAwake(); }
-
-	/**
-	 * OnStart - Called before first update, for ALL entities (including loaded ones).
-	 * This is dispatched by Zenith_Scene during the first frame an entity is active.
-	 */
-	void OnStart() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnStart(); }
-
-	/**
-	 * OnUpdate - Called every frame.
-	 */
-	void OnUpdate(float fDt) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnUpdate(fDt); }
-
-	/**
-	 * OnEnable - Called when entity becomes active in hierarchy.
-	 */
-	void OnEnable() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnEnable(); }
-
-	/**
-	 * OnDisable - Called when entity becomes inactive in hierarchy.
-	 */
-	void OnDisable() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnDisable(); }
-
-	/**
-	 * OnFixedUpdate - Called at fixed timestep intervals.
-	 */
-	void OnFixedUpdate(float fDt) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnFixedUpdate(fDt); }
-
-	/**
-	 * OnLateUpdate - Called after all OnUpdate calls in a frame.
-	 */
-	void OnLateUpdate(float fDt) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnLateUpdate(fDt); }
-
-	/**
-	 * OnDestroy - Called when component is destroyed.
-	 */
-	void OnDestroy() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnDestroy(); }
-
-	// Physics collision event dispatch
-	void OnCollisionEnter(Zenith_Entity xOther) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCollisionEnter(xOther); }
-	void OnCollisionStay(Zenith_Entity xOther) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCollisionStay(xOther); }
-	void OnCollisionExit(Zenith_EntityID uOtherID) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCollisionExit(uOtherID); }
-
-	/**
-	 * SetBehaviour - Attach a behaviour to this component at runtime.
-	 * Calls OnAwake() immediately and marks entity as awoken.
-	 * Use this when creating entities during gameplay.
-	 */
-	template<typename T>
-	void SetBehaviour()
+	Zenith_ScriptBehaviour* GetScriptAt(uint32_t uIndex)
 	{
-		m_pxScriptBehaviour = new T(m_xParentEntity);
-		m_pxScriptBehaviour->m_xParentEntity = m_xParentEntity;
-		m_pxScriptBehaviour->OnAwake();
+		Zenith_Assert(uIndex < m_axSlots.GetSize(), "Zenith_ScriptComponent: GetScriptAt index out of range");
+		return m_axSlots.Get(uIndex).m_pxBehaviour;
+	}
 
-		// Mark entity as awoken to prevent duplicate dispatch in Scene::Update()
-		if (m_xParentEntity.IsValid())
+	const char* GetScriptAssetPathAt(uint32_t uIndex) const
+	{
+		Zenith_Assert(uIndex < m_axSlots.GetSize(), "Zenith_ScriptComponent: GetScriptAssetPathAt index out of range");
+		return m_axSlots.Get(uIndex).m_strScriptAssetPath.c_str();
+	}
+
+	//----------------------------------------------------------------------
+	// Runtime add (Unity-style: APPEND, calls OnAwake, marks entity awoken)
+	//----------------------------------------------------------------------
+
+	template<typename T>
+	T* AddScript()
+	{
+		T* pxBehaviour = new T(m_xParentEntity);
+		pxBehaviour->m_xParentEntity = m_xParentEntity;
+		AppendSlotInternal(Zenith_ScriptAsset::MakeAssetPath(pxBehaviour->GetBehaviourTypeName()), pxBehaviour);
+
+		pxBehaviour->OnAwake();
+		MarkParentAwokenIfValid();
+		return pxBehaviour;
+	}
+
+	// Resolves the asset path through Zenith_AssetRegistry, instantiates via the bound factory,
+	// and attaches as a new slot. Calls OnAwake. Returns the new behaviour or nullptr on failure.
+	Zenith_ScriptBehaviour* AddScriptByAssetPath(const char* szAssetPath);
+
+	//----------------------------------------------------------------------
+	// Editor / serialization add (no OnAwake - lifecycle deferred)
+	//----------------------------------------------------------------------
+
+	template<typename T>
+	T* AddScriptForSerialization()
+	{
+		T* pxBehaviour = new T(m_xParentEntity);
+		pxBehaviour->m_xParentEntity = m_xParentEntity;
+		AppendSlotInternal(Zenith_ScriptAsset::MakeAssetPath(pxBehaviour->GetBehaviourTypeName()), pxBehaviour);
+		// OnAwake intentionally NOT called - dispatched when scene enters Play mode / on first frame
+		return pxBehaviour;
+	}
+
+	Zenith_ScriptBehaviour* AddScriptForSerializationByAssetPath(const char* szAssetPath);
+
+	//----------------------------------------------------------------------
+	// Removal
+	//----------------------------------------------------------------------
+
+	void RemoveScriptAt(uint32_t uIndex);
+	void RemoveAllScripts();
+
+	//----------------------------------------------------------------------
+	// Convenience lookup - returns first slot whose behaviour type matches T
+	//----------------------------------------------------------------------
+
+	template<typename T>
+	T* GetScript()
+	{
+		// Linear scan by registered type name. Cheap because slot counts are tiny (typically 1-3).
+		const char* szWantedName = T::GetBehaviourTypeNameStatic();
+		for (uint32_t u = 0; u < m_axSlots.GetSize(); ++u)
 		{
-			Zenith_SceneData* pxSceneData = m_xParentEntity.GetSceneData();
-			if (pxSceneData)
+			Zenith_ScriptBehaviour* pxBehaviour = m_axSlots.Get(u).m_pxBehaviour;
+			if (pxBehaviour && std::strcmp(pxBehaviour->GetBehaviourTypeName(), szWantedName) == 0)
 			{
-				pxSceneData->MarkEntityAwoken(m_xParentEntity.GetEntityID());
+				return static_cast<T*>(pxBehaviour);
 			}
 		}
+		return nullptr;
 	}
 
-	/**
-	 * SetBehaviourForSerialization - Attach a behaviour for scene setup/serialization.
-	 * Does NOT call OnAwake() - lifecycle hooks will be called when Play mode is entered.
-	 * Use this in Project_LoadInitialScene to set up behaviors that will be serialized.
-	 */
-	template<typename T>
-	void SetBehaviourForSerialization()
-	{
-		m_pxScriptBehaviour = new T(m_xParentEntity);
-		m_pxScriptBehaviour->m_xParentEntity = m_xParentEntity;
-		// OnAwake is NOT called - will be dispatched when entering Play mode
-	}
+	//----------------------------------------------------------------------
+	// Lifecycle hooks - iterate all slots
+	//----------------------------------------------------------------------
 
-	// Sets m_xParentEntity on the current behaviour (friend access to Zenith_ScriptBehaviour)
-	// Used by Zenith_Editor when attaching behaviours by name
-	void SetBehaviourParentEntity(Zenith_Entity& xEntity)
-	{
-		if (m_pxScriptBehaviour)
-		{
-			m_pxScriptBehaviour->m_xParentEntity = xEntity;
-		}
-	}
+	void OnAwake();
+	void OnStart();
+	void OnEnable();
+	void OnDisable();
+	void OnUpdate(float fDt);
+	void OnFixedUpdate(float fDt);
+	void OnLateUpdate(float fDt);
+	void OnDestroy();
+	void OnCollisionEnter(Zenith_Entity xOther);
+	void OnCollisionStay(Zenith_Entity xOther);
+	void OnCollisionExit(Zenith_EntityID uOtherID);
 
-	template<typename T>
-	T* GetBehaviour()
-	{
-		return static_cast<T*>(m_pxScriptBehaviour);
-	}
+	//----------------------------------------------------------------------
+	// Serialization (multi-slot format, version 2)
+	//----------------------------------------------------------------------
 
-	// Serialization methods for Zenith_DataStream
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 #ifdef ZENITH_TOOLS
-	// Editor UI
 	void RenderPropertiesPanel();
+#endif
+
+	// Drains any slots marked for removal during dispatch. Called automatically at the end of
+	// each lifecycle hook; safe to call externally too. Marked slots have their behaviour's
+	// OnDestroy invoked then are erased from the slot vector.
+	void FlushPendingRemovals();
+
+	// True iff a dispatch is currently in progress on ANY ScriptComponent. RemoveScriptAt
+	// uses this to decide whether to delete immediately or defer via m_bMarkedForRemoval.
+	// Tracked via a file-scope counter (not a member) so that even if `this` is invalidated
+	// mid-dispatch by a pool resize, the counter stays consistent.
+	static bool IsDispatchInProgress();
 
 private:
-	void RenderBehaviourSelector();
-	void RenderActiveBehaviour();
-	void ClearCurrentBehaviour();
+	void AppendSlotInternal(const std::string& strAssetPath, Zenith_ScriptBehaviour* pxBehaviour);
+	void AppendUnresolvedSlotInternal(const std::string& strAssetPath,
+	                                  const std::string& strBehaviourTypeName,
+	                                  Zenith_DataStream&& xPendingParams);
+	void MarkParentAwokenIfValid();
+
+	Zenith_Vector<Zenith_ScriptSlot> m_axSlots;
+	Zenith_Entity                    m_xParentEntity;
+#ifdef ZENITH_TOOLS
+	int32_t                          m_iPendingRemoveIndex = -1;  // deferred remove from UI
 #endif
-
 };
-
-#if 0
-
-class PlayerController : public ScriptBehaviour {
-public:
-	PlayerController(ScriptComponent* pxScriptComponent) : m_xScriptComponent(*pxScriptComponent) {}
-	~PlayerController() override {
-	}
-
-	enum GuidRefernceIndices {
-		Terrain0_0
-	};
-	ScriptComponent& m_xScriptComponent;
-	bool m_bIsOnGround;
-	virtual void OnCreate() override {
-		m_bIsOnGround = false;
-	}
-	virtual void OnUpdate(float fDt) override {
-	}
-	virtual void OnCollision(Entity xOther, Physics::CollisionEventType eCollisionType) override {
-		if (xOther.GetGuid().m_uGuid == m_axGuidRefs[Terrain0_0
-		].m_uGuid) {
-			if (eCollisionType == Physics::CollisionEventType::Exit)
-				m_bIsOnGround = false;
-			else if (eCollisionType == Physics::CollisionEventType::Start || eCollisionType == Physics::CollisionEventType::Stay)
-				m_bIsOnGround = true;
-		}
-	}
-	virtual std::string GetBehaviourType() override { return "PlayerController"; }
-};
-#endif

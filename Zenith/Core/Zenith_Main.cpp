@@ -2,6 +2,7 @@
 #include "Zenith_Core.h"
 
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_ScriptAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -112,6 +113,15 @@ void Zenith_Core::Zenith_Init()
 #endif
 
 	Project_RegisterScriptBehaviours();
+
+#ifdef ZENITH_TOOLS
+	// Sync registered script behaviours to disk: write missing game:Scripts/<TypeName>.zscript
+	// files for each behaviour that auto-registered via the ZENITH_BEHAVIOUR_TYPE_NAME macro,
+	// and rename orphan .zscript files (whose behaviour is no longer registered) to .stale.
+	// Must run AFTER static-init / Project_RegisterScriptBehaviours and BEFORE the test runner
+	// (so tests can resolve .zscript assets via Zenith_AssetRegistry::Get) and before any scene load.
+	Zenith_ScriptAsset::SyncRegisteredTypesToDisk();
+#endif
 
 	// Run unit tests BEFORE loading the game scene
 	// This ensures tests don't corrupt game entities - scene loads fresh after tests

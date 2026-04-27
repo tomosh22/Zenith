@@ -170,14 +170,44 @@ Zenith_EventDispatcher::Get().ProcessDeferredEvents(); // Call from main thread
 - `Zenith_Event_ComponentAdded` - Fired when component is added
 - `Zenith_Event_ComponentRemoved` - Fired when component is removed
 
-## Script Components
+## Script Components (Unity-style)
 
-Custom behaviors use factory pattern for serialization. Behaviors must:
+Custom behaviors use the Zenith_ScriptComponent + Zenith_ScriptAsset pattern:
+
 1. Inherit from `Zenith_ScriptBehaviour`
-2. Use `ZENITH_BEHAVIOUR_TYPE_NAME(ClassName)` macro
-3. Register via `RegisterBehaviour()` before scene load
+2. Place `ZENITH_BEHAVIOUR_TYPE_NAME(ClassName)` inside the class body
+3. **Auto-registration is automatic** - no explicit `RegisterBehaviour()` call needed. The macro generates a `static inline` initializer that registers the C++ factory with `Zenith_ScriptAsset` at program startup, before main().
 
-Callbacks: `OnAwake()`, `OnStart()`, `OnEnable()`, `OnDisable()`, `OnUpdate(float)`, `OnFixedUpdate(float)`, `OnLateUpdate(float)`, `OnDestroy()`, `OnCollisionEnter(Zenith_Entity)`, `OnCollisionStay(Zenith_Entity)`, `OnCollisionExit(Zenith_EntityID)`
+Each entity has at most one `Zenith_ScriptComponent`, but the component can hold **multiple script slots** (Unity-style). Each slot stores an asset path (`game:Scripts/<TypeName>.zscript`) plus a behaviour instance with its own serialized parameters.
+
+### Attaching scripts
+
+- Runtime (calls OnAwake, marks entity awoken):
+  - `xScript.AddScript<MyBehaviour>()` — append a new slot of type T
+  - `xScript.AddScriptByAssetPath("game:Scripts/Foo.zscript")` — append from an asset path
+- Build-time / scene serialization (no OnAwake):
+  - `xScript.AddScriptForSerialization<MyBehaviour>()`
+  - `xScript.AddScriptForSerializationByAssetPath(...)`
+- EditorAutomation: `Zenith_EditorAutomation::AddStep_AttachScript("MyBehaviour")`
+
+### Querying attached scripts
+
+- `xScript.GetScriptCount()` returns slot count
+- `xScript.GetScriptAt(uIndex)` returns a `Zenith_ScriptBehaviour*`
+- `xScript.GetScript<MyBehaviour>()` returns the first slot whose behaviour matches type T (linear scan), or nullptr
+
+### Removal
+
+- `xScript.RemoveScriptAt(uIndex)` — calls OnDestroy on the slot, then deletes
+- `xScript.RemoveAllScripts()` — calls OnDestroy in REVERSE slot order, then clears
+
+### Asset files
+
+`Zenith_ScriptAsset::SyncRegisteredTypesToDisk()` runs once at TOOLS-build startup (called from `Zenith_Main.cpp`). It writes `<GAME_ASSETS_DIR>/Scripts/<TypeName>.zscript` for each registered behaviour. Orphan `.zscript` files (no matching C++ behaviour) are renamed to `.stale` rather than deleted.
+
+### Lifecycle callbacks
+
+`OnAwake()`, `OnStart()`, `OnEnable()`, `OnDisable()`, `OnUpdate(float)`, `OnFixedUpdate(float)`, `OnLateUpdate(float)`, `OnDestroy()`, `OnCollisionEnter(Zenith_Entity)`, `OnCollisionStay(Zenith_Entity)`, `OnCollisionExit(Zenith_EntityID)`. The component dispatches each hook to all attached slots in insertion order. `OnDestroy` fires in REVERSE order (Unity convention).
 
 ## Key Concepts
 

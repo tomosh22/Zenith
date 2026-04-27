@@ -668,8 +668,7 @@ void Project_RegisterScriptBehaviours()
 	// Initialize resources at startup
 	InitializeExplorationResources();
 
-	// Register the main game behavior
-	Exploration_Behaviour::RegisterBehaviour();
+	// Exploration_Behaviour auto-registers via ZENITH_BEHAVIOUR_TYPE_NAME (no explicit call needed)
 }
 
 void Project_Shutdown()
@@ -723,8 +722,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.f, 50.f);
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Exploration_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("Exploration_Behaviour");
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
 
@@ -738,8 +736,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetCameraFar(10000.0f);
 	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
 	// HUD UI is created by Exploration_UIManager in OnStart
-	Zenith_EditorAutomation::AddStep_AddScript();
-	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Exploration_Behaviour");
+	Zenith_EditorAutomation::AddStep_AttachScript("Exploration_Behaviour");
 	// NOTE: Procedural world generation (terrain + vegetation) cannot be decomposed into
 	// atomic editor steps. This is an intentional exception to the one-action-per-step rule.
 	Zenith_EditorAutomation::AddStep_Custom(&Exploration_GenerateTerrainDataWrapper);
