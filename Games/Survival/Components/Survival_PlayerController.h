@@ -91,9 +91,9 @@ public:
 		float fSpeed,
 		float fDt)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(uPlayerEntityID))
+		// C1: resolve owning scene from the player's entity id.
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uPlayerEntityID);
+		if (!pxSceneData)
 			return;
 
 		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);
@@ -174,9 +174,9 @@ public:
 	 */
 	static Zenith_Maths::Vector3 GetPlayerPosition(Zenith_EntityID uPlayerEntityID)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(uPlayerEntityID))
+		// C1: resolve owning scene from the player's entity id.
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uPlayerEntityID);
+		if (!pxSceneData)
 			return Zenith_Maths::Vector3(0.f);
 
 		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);
@@ -195,13 +195,15 @@ public:
 		Zenith_EntityID uPlayerEntityID,
 		Zenith_EntityID uTargetEntityID)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(uPlayerEntityID) || !pxSceneData->EntityExists(uTargetEntityID))
+		// C1: resolve owning scenes from the entity ids — player and target
+		// could legitimately live in different scenes.
+		Zenith_SceneData* pxPlayerData = Zenith_SceneManager::GetSceneDataForEntity(uPlayerEntityID);
+		Zenith_SceneData* pxTargetData = Zenith_SceneManager::GetSceneDataForEntity(uTargetEntityID);
+		if (!pxPlayerData || !pxTargetData)
 			return FLT_MAX;
 
-		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);
-		Zenith_Entity xTarget = pxSceneData->GetEntity(uTargetEntityID);
+		Zenith_Entity xPlayer = pxPlayerData->GetEntity(uPlayerEntityID);
+		Zenith_Entity xTarget = pxTargetData->GetEntity(uTargetEntityID);
 
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>() ||
 			!xTarget.HasComponent<Zenith_TransformComponent>())
@@ -242,10 +244,9 @@ public:
 		float fSmoothSpeed,
 		float fDt)
 	{
-		// Get player from active scene (world scene)
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(uPlayerEntityID))
+		// C1: resolve owning scene from the player's entity id.
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uPlayerEntityID);
+		if (!pxSceneData)
 			return;
 
 		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);

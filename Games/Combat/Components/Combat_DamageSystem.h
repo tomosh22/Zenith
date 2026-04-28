@@ -314,9 +314,10 @@ public:
 
 			// Get death position
 			Zenith_Maths::Vector3 xDeathPos(0.0f);
-			Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-			if (pxSceneData->EntityExists(uTargetID))
+			// C1: resolve owning scene from the target entity id rather than
+			// assuming it lives in the active scene.
+			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uTargetID);
+			if (pxSceneData)
 			{
 				Zenith_Entity xEntity = pxSceneData->GetEntity(uTargetID);
 				if (xEntity.HasComponent<Zenith_TransformComponent>())
@@ -380,9 +381,9 @@ private:
 	static void ApplyKnockback(Zenith_EntityID uEntityID, const Zenith_Maths::Vector3& xDirection,
 		float fForce, float fResistance)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(uEntityID))
+		// C1: resolve owning scene from the entity id.
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uEntityID);
+		if (!pxSceneData)
 			return;
 
 		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);

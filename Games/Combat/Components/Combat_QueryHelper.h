@@ -62,9 +62,11 @@ public:
 	 */
 	static bool IsPlayer(Zenith_EntityID uEntityID)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(uEntityID))
+		// C1: resolve owning scene via the entity ID instead of assuming the
+		// caller's entity lives in the active scene — works across additive
+		// scenes and persistent entities alike.
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uEntityID);
+		if (!pxSceneData)
 			return false;
 
 		const std::string& strName = pxSceneData->GetEntity(uEntityID).GetName();
@@ -76,9 +78,8 @@ public:
 	 */
 	static bool IsEnemy(Zenith_EntityID uEntityID)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(uEntityID))
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uEntityID);
+		if (!pxSceneData)
 			return false;
 
 		const std::string& strName = pxSceneData->GetEntity(uEntityID).GetName();
@@ -90,9 +91,8 @@ public:
 	 */
 	static bool IsArena(Zenith_EntityID uEntityID)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(uEntityID))
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uEntityID);
+		if (!pxSceneData)
 			return false;
 
 		const std::string& strName = pxSceneData->GetEntity(uEntityID).GetName();
@@ -133,8 +133,11 @@ public:
 		if (uPlayerID == INVALID_ENTITY_ID)
 			return Zenith_Maths::Vector3(0.0f);
 
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		// C1: resolve owning scene via the entity id (the player may live in
+		// an additive scene or in DontDestroyOnLoad).
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uPlayerID);
+		if (!pxSceneData)
+			return Zenith_Maths::Vector3(0.0f);
 		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerID);
 
 		Zenith_Maths::Vector3 xPos;
@@ -299,9 +302,9 @@ public:
 	 */
 	static bool GetEntityPosition(Zenith_EntityID uEntityID, Zenith_Maths::Vector3& xOutPos)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(uEntityID))
+		// C1: resolve owning scene via the entity id, not the active scene.
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uEntityID);
+		if (!pxSceneData)
 			return false;
 
 		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);

@@ -15,6 +15,7 @@
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Core/Zenith_Core.h"
 #include "Physics/Zenith_Physics.h"
+#include "Prefab/Zenith_Prefab.h"
 #include <filesystem>
 #include <chrono>
 #include <fstream>
@@ -454,7 +455,7 @@ void Zenith_SceneTests::TestGetSceneByPath(){
 	CreateTestSceneFile(strPath);
 
 	// Load the scene (this sets m_strPath via LoadFromFile)
-	Zenith_Scene xTestScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xTestScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xTestScene.IsValid(), "Scene should load successfully");
 
 	// Query by path
@@ -484,7 +485,7 @@ void Zenith_SceneTests::TestLoadSceneSingle(){
 	CreateTestSceneFile(strPath);
 
 	// Load in single mode
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 
 	ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "Loaded scene should be valid");
 
@@ -503,7 +504,7 @@ void Zenith_SceneTests::TestLoadSceneAdditive(){
 	uint32_t uCountBefore = Zenith_SceneManager::GetLoadedSceneCount();
 
 	// Load in additive mode
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 
 	ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "Loaded scene should be valid");
 
@@ -524,7 +525,7 @@ void Zenith_SceneTests::TestLoadSceneReturnsHandle(){
 	CreateTestSceneFile(strPath);
 
 	// Load and verify handle
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "LoadScene should return valid handle");
 	ZENITH_ASSERT_GE(xLoaded.m_iHandle, 0, "Handle should be non-negative");
 
@@ -707,7 +708,7 @@ void Zenith_SceneTests::TestPersistentEntitySurvivesLoad(){
 	CreateTestSceneFile(strPath);
 
 	// Load scene in single mode (should unload non-persistent scenes)
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 
 	// Persistent entity should still exist
 	Zenith_Entity xAfterLoad = pxPersistentData->GetEntity(xID);
@@ -766,7 +767,7 @@ void Zenith_SceneTests::TestSceneLoadedCallbackFires(){
 	s_bCallbackFired = false;
 
 	// Load from file - this should fire the callback
-	Zenith_Scene xLoadedScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoadedScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 
 	ZENITH_ASSERT_TRUE(s_bCallbackFired, "Scene loaded callback should fire on LoadScene");
 	ZENITH_ASSERT_EQ(s_xLoadedScene, xLoadedScene, "Callback should receive the loaded scene");
@@ -890,7 +891,7 @@ void Zenith_SceneTests::TestSceneLoadUnloadCycle(){
 	// Perform multiple load/unload cycles
 	for (int i = 0; i < 3; ++i)
 	{
-		Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+		Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 		ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "Load should succeed on each cycle");
 
 		Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xLoaded);
@@ -1201,13 +1202,13 @@ void Zenith_SceneTests::TestSceneOperationSetPriorityNoOpWhenSame(){
 	ZENITH_ASSERT_NOT_NULL(pxOp, "Operation should be valid");
 
 	pxOp->SetPriority(5);
-	Zenith_SceneManager::s_bAsyncJobsNeedSort = false;
+	Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort = false;
 
 	pxOp->SetPriority(5);
-	ZENITH_ASSERT_FALSE(Zenith_SceneManager::s_bAsyncJobsNeedSort, "SetPriority with same value should not re-flag async sort");
+	ZENITH_ASSERT_FALSE(Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort, "SetPriority with same value should not re-flag async sort");
 
 	pxOp->SetPriority(7);
-	ZENITH_ASSERT_TRUE(Zenith_SceneManager::s_bAsyncJobsNeedSort, "SetPriority with new value should flag async sort");
+	ZENITH_ASSERT_TRUE(Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort, "SetPriority with new value should flag async sort");
 
 	PumpUntilComplete(pxOp);
 	if (!pxOp->HasFailed())
@@ -1510,7 +1511,7 @@ void Zenith_SceneTests::TestGetSceneByBuildIndex(){
 	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex, strPath);
 
 	// Load the scene by build index (this sets m_iBuildIndex on the scene data)
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneByIndex(iBuildIndex, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(iBuildIndex, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "LoadSceneByIndex should return valid scene");
 
 	// Query by build index should find it
@@ -1545,7 +1546,7 @@ void Zenith_SceneTests::TestLoadSceneByIndexSync(){
 	CreateTestSceneFile(strPath);
 	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex, strPath);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneByIndex(iBuildIndex, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(iBuildIndex, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "LoadSceneByIndex should return valid scene");
 
 	// Cleanup
@@ -1817,7 +1818,7 @@ void Zenith_SceneTests::TestSceneLoadStartedCallbackFires(){
 	CreateTestSceneFile(strPath);
 
 	s_bCallbackFired = false;
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 
 	ZENITH_ASSERT_TRUE(s_bCallbackFired, "SceneLoadStarted callback should fire");
 	ZENITH_ASSERT_EQ(s_strLoadPath, strPath, "Callback should receive correct path");
@@ -1881,7 +1882,7 @@ void Zenith_SceneTests::TestCallbackUnregister(){
 	s_iCallCount = 0;
 
 	// First load - should fire
-	Zenith_Scene xScene1 = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene1 = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_EQ(s_iCallCount, 1, "Callback should fire once");
 
 	// Unregister
@@ -1889,7 +1890,7 @@ void Zenith_SceneTests::TestCallbackUnregister(){
 	Zenith_SceneManager::UnloadScene(xScene1);
 
 	// Second load - should not fire
-	Zenith_Scene xScene2 = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene2 = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_EQ(s_iCallCount, 1, "Callback should not fire after unregister");
 
 	Zenith_SceneManager::UnloadScene(xScene2);
@@ -1918,13 +1919,13 @@ void Zenith_SceneTests::TestCallbackUnregisterDuringCallback(){
 	s_bCallbackFired = false;
 
 	// This should not crash
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(s_bCallbackFired, "Callback should fire");
 
 	// Subsequent loads should not fire the callback
 	s_bCallbackFired = false;
 	Zenith_SceneManager::UnloadScene(xScene);
-	Zenith_Scene xScene2 = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene2 = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_FALSE(s_bCallbackFired, "Callback should not fire after self-unregister");
 
 	Zenith_SceneManager::UnloadScene(xScene2);
@@ -1955,7 +1956,7 @@ void Zenith_SceneTests::TestMultipleCallbacksFireInOrder(){
 
 	s_axCallOrder.clear();
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 
 	ZENITH_ASSERT_EQ(s_axCallOrder.size(), 2, "Both callbacks should fire");
 	ZENITH_ASSERT_TRUE(s_axCallOrder[0] == 1 && s_axCallOrder[1] == 2, "Callbacks should fire in registration order");
@@ -1987,24 +1988,24 @@ ZENITH_TEST(Scene, ShutdownClearsAllStatics) { Zenith_SceneTests::TestShutdownCl
 void Zenith_SceneTests::TestShutdownClearsAllStatics(){
 
 	// Seed statics with non-default values, then Shutdown, then observe a clean slate.
-	Zenith_SceneManager::s_bIsLoadingScene = true;
-	Zenith_SceneManager::s_bIsUpdating = true;
-	Zenith_SceneManager::s_bAsyncJobsNeedSort = true;
-	Zenith_SceneManager::s_ulLastDeferredLoadOp = 42;
-	Zenith_SceneManagerDetail::s_bSuppressActiveSceneChanged = true;
-	Zenith_SceneManagerDetail::s_bHaveDeferredOldActive = true;
-	Zenith_SceneManagerDetail::s_iPendingBuildIndex = 99;
+	Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = true;
+	Zenith_SceneLifecycleScheduler::s_bIsUpdating = true;
+	Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort = true;
+	Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp = 42;
+	Zenith_SceneCallbackBus::SetActiveSceneSuppressedForTest(true);
+	Zenith_SceneCallbackBus::SetDeferredOldActive(Zenith_Scene::INVALID_SCENE);
+	Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex = 99;
 
 	Zenith_SceneManager::Shutdown();
 	Zenith_SceneManager::Initialise();
 
-	ZENITH_ASSERT_FALSE(Zenith_SceneManager::s_bIsLoadingScene, "Shutdown should clear s_bIsLoadingScene");
-	ZENITH_ASSERT_FALSE(Zenith_SceneManager::s_bIsUpdating, "Shutdown should clear s_bIsUpdating");
-	ZENITH_ASSERT_FALSE(Zenith_SceneManager::s_bAsyncJobsNeedSort, "Shutdown should clear s_bAsyncJobsNeedSort");
-	ZENITH_ASSERT_EQ(Zenith_SceneManager::s_ulLastDeferredLoadOp, ZENITH_INVALID_OPERATION_ID, "Shutdown should clear s_ulLastDeferredLoadOp (got %llu)", static_cast<unsigned long long>(Zenith_SceneManager::s_ulLastDeferredLoadOp));
-	ZENITH_ASSERT_FALSE(Zenith_SceneManagerDetail::s_bSuppressActiveSceneChanged, "Shutdown should clear s_bSuppressActiveSceneChanged");
-	ZENITH_ASSERT_FALSE(Zenith_SceneManagerDetail::s_bHaveDeferredOldActive, "Shutdown should clear s_bHaveDeferredOldActive");
-	ZENITH_ASSERT_EQ(Zenith_SceneManagerDetail::s_iPendingBuildIndex, -1, "Shutdown should clear s_iPendingBuildIndex (got %d)", Zenith_SceneManagerDetail::s_iPendingBuildIndex);
+	ZENITH_ASSERT_FALSE(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene, "Shutdown should clear s_bIsLoadingScene");
+	ZENITH_ASSERT_FALSE(Zenith_SceneLifecycleScheduler::s_bIsUpdating, "Shutdown should clear s_bIsUpdating");
+	ZENITH_ASSERT_FALSE(Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort, "Shutdown should clear s_bAsyncJobsNeedSort");
+	ZENITH_ASSERT_EQ(Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp, ZENITH_INVALID_OPERATION_ID, "Shutdown should clear s_ulLastDeferredLoadOp (got %llu)", static_cast<unsigned long long>(Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp));
+	ZENITH_ASSERT_FALSE(Zenith_SceneCallbackBus::IsActiveSceneSuppressed(), "Shutdown should clear suppression flag");
+	ZENITH_ASSERT_FALSE(Zenith_SceneCallbackBus::HasDeferredOldActive(), "Shutdown should clear deferred old active");
+	ZENITH_ASSERT_EQ(Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex, -1, "Shutdown should clear s_iPendingBuildIndex (got %d)", Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex);
 
 }
 
@@ -2016,7 +2017,7 @@ void Zenith_SceneTests::TestCallbackHandleWrapNoCollision(){
 		Zenith_SceneManager::RegisterSceneLoadedCallback(&SceneTestWrapCallback_A);
 	ZENITH_ASSERT_NE(ulPersistent, Zenith_SceneManager::INVALID_CALLBACK_HANDLE, "Persistent callback should register with a valid handle");
 
-	Zenith_SceneManager::s_ulNextCallbackHandle = UINT64_MAX;
+	Zenith_SceneCallbackBus::SetNextCallbackHandleForTest(UINT64_MAX);
 
 	Zenith_SceneManager::CallbackHandle ulAfterWrap =
 		Zenith_SceneManager::RegisterSceneLoadedCallback(&SceneTestWrapCallback_B);
@@ -2299,7 +2300,7 @@ void Zenith_SceneTests::TestGetSceneByNameFilenameMatch(){
 	CreateTestSceneFile(strPath);
 
 	// Load the scene
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 
 	// Should be findable by filename without path/extension (Unity parity: GetSceneByName strips path/ext)
 	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByName(strFilename);
@@ -2382,7 +2383,7 @@ void Zenith_SceneTests::TestInvalidScenePropertyAccess(){
 	const std::string strPath = "test_stale_access" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene should be valid after load");
 
 	// Unload and keep the old handle
@@ -2534,7 +2535,7 @@ void Zenith_SceneTests::TestWasLoadedAdditively(){
 	CreateTestSceneFile(strPath);
 
 	// Load scene in SINGLE mode - should not have been loaded additively
-	Zenith_Scene xSingleScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xSingleScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xSingleScene.IsValid(), "Scene should load");
 	ZENITH_ASSERT_FALSE(xSingleScene.WasLoadedAdditively(), "Scene loaded with SINGLE mode should not have been loaded additively");
 
@@ -2543,7 +2544,7 @@ void Zenith_SceneTests::TestWasLoadedAdditively(){
 	CreateTestSceneFile(strPath2);
 
 	// Load scene in ADDITIVE mode - should have been loaded additively
-	Zenith_Scene xAdditiveScene = Zenith_SceneManager::LoadScene(strPath2, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xAdditiveScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath2, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xAdditiveScene.IsValid(), "Additive scene should load");
 	ZENITH_ASSERT_TRUE(xAdditiveScene.WasLoadedAdditively(), "Scene loaded with ADDITIVE mode should have been loaded additively");
 
@@ -2735,33 +2736,26 @@ ZENITH_TEST(Scene, MarkEntityPersistentNonRoot) { Zenith_SceneTests::TestMarkEnt
 
 void Zenith_SceneTests::TestMarkEntityPersistentNonRoot(){
 
-	// Unity behavior: DontDestroyOnLoad on a non-root entity moves the ROOT
-	// of the hierarchy to the persistent scene, keeping parent-child intact.
-
+	// B5: strict root-only contract. MarkEntityPersistent must reject a
+	// non-root entity. Pre-B5 it silently walked to the root and promoted
+	// the whole subtree; that auto-promotion is gone.
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("PersistentNonRootTest");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
 	Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
-	Zenith_SceneData* pxPersistentData = Zenith_SceneManager::GetSceneData(xPersistentScene);
 
-	// Create parent-child hierarchy
 	Zenith_Entity xParent(pxData, "Parent");
 	Zenith_Entity xChild(pxData, "Child");
 	xChild.SetParent(xParent.GetEntityID());
 
-	// Verify child has parent before
-	ZENITH_ASSERT_TRUE(xChild.GetParentEntityID().IsValid(), "Child should have parent before MarkEntityPersistent");
-
-	// Mark child as persistent - Unity walks up to root and moves entire hierarchy
 	Zenith_SceneManager::MarkEntityPersistent(xChild);
 
-	// Verify both parent and child were moved to persistent scene
-	ZENITH_ASSERT_EQ(xParent.GetSceneData(), pxPersistentData, "Parent (root) should be in persistent scene");
-	ZENITH_ASSERT_EQ(xChild.GetSceneData(), pxPersistentData, "Child should be in persistent scene");
+	// Rejection contract: neither entity moved scenes.
+	ZENITH_ASSERT_EQ(xParent.GetScene(), xScene, "Parent must remain in original scene after rejection");
+	ZENITH_ASSERT_EQ(xChild.GetScene(), xScene, "Child must remain in original scene after rejection");
+	ZENITH_ASSERT_NE(xParent.GetScene(), xPersistentScene, "Parent must NOT be in persistent scene");
+	ZENITH_ASSERT_NE(xChild.GetScene(), xPersistentScene, "Child must NOT be in persistent scene");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), xParent.GetEntityID(), "Parent-child link must be intact");
 
-	// Verify parent-child relationship is preserved
-	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), xParent.GetEntityID(), "Child should still have parent after move");
-
-	// Cleanup
 	Zenith_SceneManager::UnloadScene(xScene);
 
 }
@@ -2838,7 +2832,7 @@ void Zenith_SceneTests::TestSceneLoadedCallbackOrder(){
 	const std::string strPath = "test_callback_order" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene should load successfully");
 
 	// Verify callbacks fired in registration order
@@ -3018,7 +3012,7 @@ void Zenith_SceneTests::TestAsyncAdditiveWithoutLoadingSchedulesNoAsyncJob(){
 	// must NOT schedule any worker-thread file I/O. The path doesn't need to exist on
 	// disk, and s_axAsyncJobs must not grow.
 
-	const uint32_t uJobsBefore = Zenith_SceneManager::s_axAsyncJobs.GetSize();
+	const uint32_t uJobsBefore = Zenith_SceneOperationQueue::s_axAsyncJobs.GetSize();
 
 	// Deliberately pick a path that does NOT exist. If the code path ever regressed
 	// to queue a file-read job, the missing file would either fail the op or at
@@ -3033,7 +3027,7 @@ void Zenith_SceneTests::TestAsyncAdditiveWithoutLoadingSchedulesNoAsyncJob(){
 	ZENITH_ASSERT_FALSE(pxOp->HasFailed(), "ADDITIVE_WITHOUT_LOADING must not fail on a missing path");
 	ZENITH_ASSERT_EQ(pxOp->GetProgress(), 1.0f, "Progress must be 1.0 after the synchronous short-circuit");
 
-	const uint32_t uJobsAfter = Zenith_SceneManager::s_axAsyncJobs.GetSize();
+	const uint32_t uJobsAfter = Zenith_SceneOperationQueue::s_axAsyncJobs.GetSize();
 	ZENITH_ASSERT_EQ(uJobsAfter, uJobsBefore, "ADDITIVE_WITHOUT_LOADING must not push to s_axAsyncJobs (jobsBefore=%u jobsAfter=%u)", uJobsBefore, uJobsAfter);
 
 	Zenith_Scene xScene = pxOp->GetResultScene();
@@ -3094,12 +3088,12 @@ void Zenith_SceneTests::TestCircularAsyncLoadFromLifecycle(){
 			{
 				s_bAttempted = true;
 				// Re-entrant load of the same scene - should be detected as circular
-				s_xCircularResult = Zenith_SceneManager::LoadScene("test_circular_lifecycle" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
+				s_xCircularResult = Zenith_SceneManager::LoadSceneBlockingForBootstrap("test_circular_lifecycle" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 			}
 		}
 	);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strTestPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strTestPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Initial scene load should succeed");
 
 	// The re-entrant LoadScene should have been rejected as circular
@@ -3120,7 +3114,7 @@ void Zenith_SceneTests::TestAsyncLoadDuringAsyncUnloadSameScene(){
 	CreateTestSceneFile(strTestPath, "TestEntity");
 
 	// Load the scene synchronously first
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strTestPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strTestPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Initial load should succeed");
 
 	// Start async unload
@@ -3218,7 +3212,7 @@ void Zenith_SceneTests::TestCallbackExceptionHandling(){
 	ls_bCallback1Fired = false;
 	ls_bCallback2Fired = false;
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strTestPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strTestPath, SCENE_LOAD_ADDITIVE);
 
 	// Both callbacks should have fired
 	ZENITH_ASSERT_TRUE(ls_bCallback1Fired, "Callback 1 should have fired");
@@ -3247,7 +3241,7 @@ void Zenith_SceneTests::TestMalformedSceneFile(){
 	}
 
 	// Attempt to load the malformed scene - should fail gracefully
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strTestPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strTestPath, SCENE_LOAD_ADDITIVE);
 
 	// The scene may or may not be valid depending on error handling,
 	// but the system should not crash
@@ -4488,7 +4482,7 @@ void Zenith_SceneTests::TestScenePathCanonicalization(){
 	CreateTestSceneFile(strPath);
 
 	// Load with canonical path
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene should load with canonical path");
 
 	// Query with backslashes - should find the same scene
@@ -4554,7 +4548,7 @@ ZENITH_TEST(Scene, LoadSceneNonExistentFile) { Zenith_SceneTests::TestLoadSceneN
 
 void Zenith_SceneTests::TestLoadSceneNonExistentFile(){
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("nonexistent_scene_12345" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap("nonexistent_scene_12345" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_FALSE(xScene.IsValid(), "LoadScene with non-existent file should return invalid scene");
 
 }
@@ -4604,33 +4598,31 @@ ZENITH_TEST(Scene, MarkPersistentWalksToRoot) { Zenith_SceneTests::TestMarkPersi
 
 void Zenith_SceneTests::TestMarkPersistentWalksToRoot(){
 
+	// B5: pre-B5 this test asserted that DontDestroyOnLoad on a grandchild
+	// silently walked to the root and promoted the whole subtree. Under the
+	// new strict root-only contract, the same call must be rejected — the
+	// grandchild has a parent, so MarkEntityPersistent (via DontDestroyOnLoad)
+	// leaves every entity in the original scene.
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("PersistentRootWalk");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
 
-	// Create a 3-level hierarchy: Root -> Child -> Grandchild
 	Zenith_Entity xRoot(pxData, "Root");
 	Zenith_Entity xChild(pxData, "Child");
 	Zenith_Entity xGrandchild(pxData, "Grandchild");
 	xChild.SetParent(xRoot.GetEntityID());
 	xGrandchild.SetParent(xChild.GetEntityID());
 
-	// Call DontDestroyOnLoad on the GRANDCHILD - should walk to root
 	xGrandchild.DontDestroyOnLoad();
 
-	// All three should now be in the persistent scene
 	Zenith_Scene xPersistent = Zenith_SceneManager::GetPersistentScene();
-	Zenith_SceneData* pxPersistentData = Zenith_SceneManager::GetSceneData(xPersistent);
 
-	Zenith_Entity xRootCheck = pxPersistentData->TryGetEntity(xRoot.GetEntityID());
-	Zenith_Entity xChildCheck = pxPersistentData->TryGetEntity(xChild.GetEntityID());
-	Zenith_Entity xGrandchildCheck = pxPersistentData->TryGetEntity(xGrandchild.GetEntityID());
+	ZENITH_ASSERT_EQ(xRoot.GetScene(), xScene, "Root must remain in original scene after rejection");
+	ZENITH_ASSERT_EQ(xChild.GetScene(), xScene, "Child must remain in original scene after rejection");
+	ZENITH_ASSERT_EQ(xGrandchild.GetScene(), xScene, "Grandchild must remain in original scene after rejection");
+	ZENITH_ASSERT_NE(xRoot.GetScene(), xPersistent, "Root must NOT be in persistent scene");
+	ZENITH_ASSERT_NE(xChild.GetScene(), xPersistent, "Child must NOT be in persistent scene");
+	ZENITH_ASSERT_NE(xGrandchild.GetScene(), xPersistent, "Grandchild must NOT be in persistent scene");
 
-	ZENITH_ASSERT_TRUE(xRootCheck.IsValid(), "Root should be in persistent scene");
-	ZENITH_ASSERT_TRUE(xChildCheck.IsValid(), "Child should be in persistent scene");
-	ZENITH_ASSERT_TRUE(xGrandchildCheck.IsValid(), "Grandchild should be in persistent scene");
-
-	// Clean up persistent entities
-	Zenith_SceneManager::DestroyImmediate(xRoot);
 	Zenith_SceneManager::UnloadScene(xScene);
 }
 
@@ -5593,7 +5585,7 @@ void Zenith_SceneTests::TestSyncLoadCancelsAsyncLoads(){
 	ZENITH_ASSERT_NE(ulOpID, ZENITH_INVALID_OPERATION_ID, "Async load should return valid ID");
 
 	// Sync load with SINGLE mode should cancel pending async loads
-	Zenith_Scene xSyncScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xSyncScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 
 	// The async operation should be completed or cancelled
 	// After sync load, the operation may have been cleaned up
@@ -5681,7 +5673,7 @@ void Zenith_SceneTests::TestAsyncUnloadThenReload(){
 	CreateTestSceneFile(strPath);
 
 	// Load scene
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Initial load should succeed");
 
 	// Async unload
@@ -5690,7 +5682,7 @@ void Zenith_SceneTests::TestAsyncUnloadThenReload(){
 	if (pxUnloadOp) PumpUntilComplete(pxUnloadOp);
 
 	// Sync reload of same path should work
-	Zenith_Scene xReloaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xReloaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xReloaded.IsValid(), "Reload after async unload should succeed");
 
 	Zenith_SceneManager::UnloadScene(xReloaded);
@@ -5826,13 +5818,13 @@ void Zenith_SceneTests::TestSceneLoadedCallbackLoadsAnotherScene(){
 	auto pfnCallback = [](Zenith_Scene, Zenith_SceneLoadMode) {
 		if (!s_xNestedScene.IsValid())
 		{
-			s_xNestedScene = Zenith_SceneManager::LoadScene(s_strPath2, SCENE_LOAD_ADDITIVE);
+			s_xNestedScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(s_strPath2, SCENE_LOAD_ADDITIVE);
 		}
 	};
 
 	Zenith_SceneManager::CallbackHandle ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(pfnCallback);
 
-	Zenith_Scene xScene1 = Zenith_SceneManager::LoadScene(strPath1, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene1 = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath1, SCENE_LOAD_ADDITIVE);
 
 	// No crash, no infinite loop
 	ZENITH_ASSERT_TRUE(xScene1.IsValid(), "First scene should load");
@@ -5861,7 +5853,7 @@ void Zenith_SceneTests::TestSceneUnloadedCallbackLoadsScene(){
 
 	Zenith_SceneManager::CallbackHandle ulHandle = Zenith_SceneManager::RegisterSceneUnloadedCallback(pfnCallback);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneManager::UnloadScene(xScene);
 
 	ZENITH_ASSERT_TRUE(s_bCallbackFired, "SceneUnloaded callback should fire");
@@ -5944,7 +5936,7 @@ void Zenith_SceneTests::TestRegisterCallbackDuringDispatch(){
 
 	std::string strPath = "unit_test_cb_dispatch" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 
 	ZENITH_ASSERT_TRUE(s_bFirstFired, "First callback should fire");
 	// Second callback registered during dispatch should NOT fire in same dispatch
@@ -5981,7 +5973,7 @@ void Zenith_SceneTests::TestSingleModeCallbackOrder(){
 	auto h4 = Zenith_SceneManager::RegisterSceneLoadedCallback(pfnLoaded);
 	auto h5 = Zenith_SceneManager::RegisterActiveSceneChangedCallback(pfnActiveChanged);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 
 	// Verify that callbacks fired in some order (loadStarted should be first)
 	ZENITH_ASSERT_GT(s_axCallOrder.GetSize(), 0, "At least some callbacks should have fired");
@@ -6013,7 +6005,7 @@ void Zenith_SceneTests::TestMultipleCallbacksSameType(){
 
 	std::string strPath = "unit_test_multi_cb" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 
 	ZENITH_ASSERT_EQ(s_iCount, 111, "All 3 callbacks should fire (got %d)", s_iCount);
 
@@ -6133,7 +6125,7 @@ void Zenith_SceneTests::TestPersistentSceneSurvivesSingleLoad(){
 	Zenith_SceneManager::MarkEntityPersistent(xPersistent);
 
 	// Load with SINGLE mode - should unload everything except persistent
-	Zenith_Scene xNewScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xNewScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 
 	// Persistent entity should still exist
 	Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
@@ -6166,7 +6158,7 @@ void Zenith_SceneTests::TestMultipleEntitiesPersistent(){
 	Zenith_SceneManager::MarkEntityPersistent(xE2);
 	Zenith_SceneManager::MarkEntityPersistent(xE3);
 
-	Zenith_Scene xNew = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xNew = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 
 	Zenith_Scene xPersistScene = Zenith_SceneManager::GetPersistentScene();
 	Zenith_SceneData* pxPersist = Zenith_SceneManager::GetSceneData(xPersistScene);
@@ -6331,7 +6323,7 @@ void Zenith_SceneTests::TestFixedUpdateAccumulatorResetOnSingleLoad(){
 	PumpFrames(5);
 
 	// Load SINGLE mode - should reset accumulator
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 
 	// After SINGLE load, first frame's FixedUpdate count should be based on
 	// just that frame's dt (no accumulated time from before)
@@ -6667,7 +6659,7 @@ void Zenith_SceneTests::TestSaveLoadEntityCount(){
 	pxData->SaveToFile(strPath);
 	Zenith_SceneManager::UnloadScene(xScene);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	ZENITH_ASSERT_EQ(pxLoadedData->GetEntityCount(), uExpectedCount, "Entity count should be preserved (expected %u, got %u)", uExpectedCount, pxLoadedData->GetEntityCount());
@@ -6694,7 +6686,7 @@ void Zenith_SceneTests::TestSaveLoadHierarchy(){
 	pxData->SaveToFile(strPath);
 	Zenith_SceneManager::UnloadScene(xScene);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	// Find the loaded entities and verify hierarchy
@@ -6729,7 +6721,7 @@ void Zenith_SceneTests::TestSaveLoadTransformData(){
 	pxData->SaveToFile(strPath);
 	Zenith_SceneManager::UnloadScene(xScene);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	Zenith_Entity xLoadedEntity = pxLoadedData->FindEntityByName("TransformEntity");
@@ -6764,7 +6756,7 @@ void Zenith_SceneTests::TestSaveLoadMainCamera(){
 	pxData->SaveToFile(strPath);
 	Zenith_SceneManager::UnloadScene(xScene);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	// Main camera should be restored
@@ -6796,7 +6788,7 @@ void Zenith_SceneTests::TestSaveLoadTransientExcluded(){
 	pxData->SaveToFile(strPath);
 	Zenith_SceneManager::UnloadScene(xScene);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	Zenith_Entity xFoundPersistent = pxLoadedData->FindEntityByName("PersistentEntity");
@@ -6823,7 +6815,7 @@ void Zenith_SceneTests::TestSaveLoadEmptyScene(){
 	Zenith_SceneManager::UnloadScene(xScene);
 
 	// Load it back
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	ZENITH_ASSERT_EQ(pxLoadedData->GetEntityCount(), 0, "Empty scene should have 0 entities after load");
@@ -7136,7 +7128,7 @@ ZENITH_TEST(Scene, LoadSceneEmptyPath) { Zenith_SceneTests::TestLoadSceneEmptyPa
 void Zenith_SceneTests::TestLoadSceneEmptyPath(){
 
 	// Loading with empty path should handle gracefully (no crash)
-	Zenith_Scene xResult = Zenith_SceneManager::LoadScene("", SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xResult = Zenith_SceneManager::LoadSceneBlockingForBootstrap("", SCENE_LOAD_ADDITIVE);
 
 	// Should return invalid scene handle
 	ZENITH_ASSERT_FALSE(xResult.IsValid(), "Loading empty path should return invalid scene");
@@ -8076,7 +8068,7 @@ void Zenith_SceneTests::TestTransientEntityNotSaved(){
 	Zenith_SceneManager::UnloadScene(xScene);
 
 	// Reload and verify
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	Zenith_Entity xFoundPersistent = pxLoadedData->FindEntityByName("WillBeSaved");
@@ -8165,7 +8157,7 @@ void Zenith_SceneTests::TestMainCameraPreservedOnSceneSave(){
 	Zenith_SceneManager::UnloadScene(xScene);
 
 	// Reload and verify
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	Zenith_CameraComponent* pxCam = pxLoadedData->TryGetMainCamera();
@@ -8316,7 +8308,7 @@ void Zenith_SceneTests::TestSaveLoadDisabledEntity(){
 	pxData->SaveToFile(strPath);
 	Zenith_SceneManager::UnloadScene(xScene);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	// Engine serialization does not persist enabled/disabled state.
@@ -8348,7 +8340,7 @@ void Zenith_SceneTests::TestSaveLoadEntityNames(){
 	pxData->SaveToFile(strPath);
 	Zenith_SceneManager::UnloadScene(xScene);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	ZENITH_ASSERT_TRUE(pxLoadedData->FindEntityByName("Alpha").IsValid(), "Alpha should be found");
@@ -8379,7 +8371,7 @@ void Zenith_SceneTests::TestSaveLoadMultipleComponentTypes(){
 	pxData->SaveToFile(strPath);
 	Zenith_SceneManager::UnloadScene(xScene);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	Zenith_Entity xLoadedEntity = pxLoadedData->FindEntityByName("MultiCompEntity");
@@ -8418,7 +8410,7 @@ void Zenith_SceneTests::TestSaveLoadParentChildOrder(){
 	pxData->SaveToFile(strPath);
 	Zenith_SceneManager::UnloadScene(xScene);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxLoadedData = Zenith_SceneManager::GetSceneData(xLoaded);
 
 	Zenith_Entity xLoadedParent = pxLoadedData->FindEntityByName("Parent");
@@ -8450,7 +8442,7 @@ void Zenith_SceneTests::TestAsyncUnloadingSceneSkipsUpdate(){
 	const std::string strPath = "test_async_unload_update" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "AsyncUnloadEntity");
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
 
 	SceneTestBehaviour::ResetCounters();
@@ -8517,7 +8509,7 @@ void Zenith_SceneTests::TestEntityExistsDuringAsyncUnload(){
 	const std::string strPath = "test_exists_async" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "ExistEntity");
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
 
 	// Create multiple entities so async unload takes multiple frames
@@ -8713,7 +8705,7 @@ void Zenith_SceneTests::TestPersistentEntityLifecycleContinues(){
 	uint32_t uUpdatesBefore = SceneTestBehaviour::s_uUpdateCount;
 
 	// Load a new scene in SINGLE mode (unloads old scene but not persistent)
-	Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 	PumpFrames(1);
 
 	// Persistent entity should continue getting updates
@@ -10200,7 +10192,7 @@ ZENITH_TEST(Scene, CanonicalizeDotSlashPrefix) { Zenith_SceneTests::TestCanonica
 void Zenith_SceneTests::TestCanonicalizeDotSlashPrefix(){
 
 	CreateTestSceneFile("test_dotslash" ZENITH_SCENE_EXT);
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("./test_dotslash" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap("./test_dotslash" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene loaded with ./ prefix should be valid");
 
 	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_dotslash" ZENITH_SCENE_EXT);
@@ -10220,7 +10212,7 @@ void Zenith_SceneTests::TestCanonicalizeParentResolution(){
 	CreateTestSceneFile("test_parent_res" ZENITH_SCENE_EXT);
 
 	// Load with ../ in path
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("sub/../test_parent_res" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap("sub/../test_parent_res" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene loaded with ../ path should be valid");
 
 	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_parent_res" ZENITH_SCENE_EXT);
@@ -10237,7 +10229,7 @@ ZENITH_TEST(Scene, CanonicalizeDoubleSlash) { Zenith_SceneTests::TestCanonicaliz
 void Zenith_SceneTests::TestCanonicalizeDoubleSlash(){
 
 	CreateTestSceneFile("test_doubleslash" ZENITH_SCENE_EXT);
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(".//test_doubleslash" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(".//test_doubleslash" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene loaded with // should be valid");
 
 	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_doubleslash" ZENITH_SCENE_EXT);
@@ -10254,7 +10246,7 @@ ZENITH_TEST(Scene, CanonicalizeAlreadyCanonical) { Zenith_SceneTests::TestCanoni
 void Zenith_SceneTests::TestCanonicalizeAlreadyCanonical(){
 
 	CreateTestSceneFile("test_canonical" ZENITH_SCENE_EXT);
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("test_canonical" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap("test_canonical" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene loaded with clean path should be valid");
 
 	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_canonical" ZENITH_SCENE_EXT);
@@ -10271,7 +10263,7 @@ ZENITH_TEST(Scene, GetSceneByPathNonCanonical) { Zenith_SceneTests::TestGetScene
 void Zenith_SceneTests::TestGetSceneByPathNonCanonical(){
 
 	CreateTestSceneFile("test_noncanon" ZENITH_SCENE_EXT);
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("test_noncanon" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap("test_noncanon" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 
 	// Query with backslash + .\ prefix (Windows-style) - should canonicalize to "test_noncanon.zscen"
 	Zenith_Scene xFoundBackslash = Zenith_SceneManager::GetSceneByPath(".\\test_noncanon" ZENITH_SCENE_EXT);
@@ -10535,11 +10527,11 @@ void Zenith_SceneTests::TestSyncLoadSingleModeTwice(){
 	CreateTestSceneFile("test_twice" ZENITH_SCENE_EXT, "TwiceEntity");
 
 	// First SINGLE load - unloads all non-persistent, loads new scene
-	Zenith_Scene xFirst = Zenith_SceneManager::LoadScene("test_twice" ZENITH_SCENE_EXT, SCENE_LOAD_SINGLE);
+	Zenith_Scene xFirst = Zenith_SceneManager::LoadSceneBlockingForBootstrap("test_twice" ZENITH_SCENE_EXT, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xFirst.IsValid(), "First SINGLE load should succeed");
 
 	// Second SINGLE load of same file - should unload xFirst, load new scene
-	Zenith_Scene xSecond = Zenith_SceneManager::LoadScene("test_twice" ZENITH_SCENE_EXT, SCENE_LOAD_SINGLE);
+	Zenith_Scene xSecond = Zenith_SceneManager::LoadSceneBlockingForBootstrap("test_twice" ZENITH_SCENE_EXT, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xSecond.IsValid(), "Second SINGLE load should succeed");
 
 	// First scene handle should now be stale (it was unloaded by the second SINGLE load)
@@ -10558,10 +10550,10 @@ void Zenith_SceneTests::TestAdditiveLoadAlreadyLoadedScene(){
 
 	CreateTestSceneFile("test_dup_additive" ZENITH_SCENE_EXT, "DupEntity");
 
-	Zenith_Scene xFirst = Zenith_SceneManager::LoadScene("test_dup_additive" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xFirst = Zenith_SceneManager::LoadSceneBlockingForBootstrap("test_dup_additive" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	uint32_t uCountAfterFirst = Zenith_SceneManager::GetLoadedSceneCount();
 
-	Zenith_Scene xSecond = Zenith_SceneManager::LoadScene("test_dup_additive" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xSecond = Zenith_SceneManager::LoadSceneBlockingForBootstrap("test_dup_additive" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xSecond.IsValid(), "Second additive load should succeed");
 	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetLoadedSceneCount(), uCountAfterFirst + 1, "Additive load of same file should create separate scene (no dedup)");
 	ZENITH_ASSERT_NE(xFirst, xSecond, "Two additive loads should produce different scene handles");
@@ -10586,9 +10578,11 @@ void Zenith_SceneTests::TestInitialOnEnableFiresOnce(){
 
 	// Suppress immediate lifecycle so ScriptComponent is present before batch dispatch
 	// (mirrors what happens during scene file loading)
-	Zenith_SceneManager::SetPrefabInstantiating(true);
-	Zenith_Entity xEntity = CreateEntityWithBehaviour(pxData, "InitEnable");
-	Zenith_SceneManager::SetPrefabInstantiating(false);
+	Zenith_Entity xEntity;
+	{
+		Zenith_SceneManager::PrefabInstantiationGuard xPrefabGuard;
+		xEntity = CreateEntityWithBehaviour(pxData, "InitEnable");
+	}
 
 	pxData->DispatchLifecycleForNewScene();
 
@@ -10709,15 +10703,15 @@ void Zenith_SceneTests::TestLoadSceneDeferredDuringUpdate(){
 	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex1, strPath1);
 
 	// Load scene 0 synchronously (s_bIsUpdating is false)
-	Zenith_Scene xScene0 = Zenith_SceneManager::LoadSceneByIndex(iBuildIndex0, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene0 = Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(iBuildIndex0, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene0.IsValid(), "Scene 0 should load synchronously");
 	Zenith_SceneManager::SetActiveScene(xScene0);
 
 	// Simulate being inside Update - set s_bIsUpdating = true
-	Zenith_SceneManager::s_bIsUpdating = true;
+	Zenith_SceneLifecycleScheduler::s_bIsUpdating = true;
 
 	// LoadSceneByIndex during update should defer (return invalid handle)
-	Zenith_Scene xScene1 = Zenith_SceneManager::LoadSceneByIndex(iBuildIndex1, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene1 = Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(iBuildIndex1, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_FALSE(xScene1.IsValid(), "Deferred load should return invalid scene handle");
 
 	// Scene 0 should still be active (load was queued, not processed)
@@ -10725,7 +10719,7 @@ void Zenith_SceneTests::TestLoadSceneDeferredDuringUpdate(){
 	ZENITH_ASSERT_EQ(xActive, xScene0, "Active scene should still be scene 0 after deferred load");
 
 	// End the simulated update
-	Zenith_SceneManager::s_bIsUpdating = false;
+	Zenith_SceneLifecycleScheduler::s_bIsUpdating = false;
 
 	// Pump frames until the async load completes (worker thread reads file, then
 	// ProcessPendingAsyncLoads activates the scene on the next Update call)
@@ -10759,10 +10753,10 @@ void Zenith_SceneTests::TestLoadSceneSyncOutsideUpdate(){
 	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex, strPath);
 
 	// Verify s_bIsUpdating is false (outside Update)
-	ZENITH_ASSERT_FALSE(Zenith_SceneManager::s_bIsUpdating, "s_bIsUpdating should be false outside Update");
+	ZENITH_ASSERT_FALSE(Zenith_SceneLifecycleScheduler::s_bIsUpdating, "s_bIsUpdating should be false outside Update");
 
 	// Load should be synchronous and return a valid handle
-	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneByIndex(iBuildIndex, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(iBuildIndex, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "LoadSceneByIndex outside Update should return valid scene immediately");
 
 	// Cleanup
@@ -10795,11 +10789,11 @@ ZENITH_TEST(Scene, CircularLoadNoMatch) { Zenith_SceneTests::TestCircularLoadNoM
 void Zenith_SceneTests::TestCircularLoadNoMatch(){
 
 	// Ensure the currently loading paths list is empty (clean state)
-	ZENITH_ASSERT_EQ(Zenith_SceneManager::s_axCurrentlyLoadingPaths.GetSize(), 0, "Currently loading paths should be empty at test start");
-	ZENITH_ASSERT_EQ(Zenith_SceneManager::s_axLifecycleLoadStack.GetSize(), 0, "Lifecycle load stack should be empty at test start");
+	ZENITH_ASSERT_EQ(Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths.GetSize(), 0, "Currently loading paths should be empty at test start");
+	ZENITH_ASSERT_EQ(Zenith_SceneLifecycleScheduler::s_axLifecycleLoadStack.GetSize(), 0, "Lifecycle load stack should be empty at test start");
 
 	// A path not in the pending load list should not be detected as circular
-	bool bResult = Zenith_SceneManager::CheckCircularLoadDependency("NonExistent/TestScene.zscen");
+	bool bResult = Zenith_SceneLifecycleScheduler::IsCircularLoadDependency("NonExistent/TestScene.zscen");
 	ZENITH_ASSERT_FALSE(bResult, "CheckCircularLoadDependency should return false when path is not in pending loads");
 
 }
@@ -10811,30 +10805,30 @@ void Zenith_SceneTests::TestCircularLoadWithMatch(){
 	const std::string strTestPath = "TestCircular/MyScene.zscen";
 
 	// Ensure clean state
-	ZENITH_ASSERT_EQ(Zenith_SceneManager::s_axCurrentlyLoadingPaths.GetSize(), 0, "Currently loading paths should be empty at test start");
+	ZENITH_ASSERT_EQ(Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths.GetSize(), 0, "Currently loading paths should be empty at test start");
 
 	// Add a path to the currently loading paths list
-	Zenith_SceneManager::s_axCurrentlyLoadingPaths.PushBack(strTestPath);
+	Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths.PushBack(strTestPath);
 
 	// The same path should be detected as circular
-	bool bResult = Zenith_SceneManager::CheckCircularLoadDependency(strTestPath);
+	bool bResult = Zenith_SceneLifecycleScheduler::IsCircularLoadDependency(strTestPath);
 	ZENITH_ASSERT_TRUE(bResult, "CheckCircularLoadDependency should return true when path matches a pending load");
 
 	// A different path should not be detected as circular
-	bool bDifferent = Zenith_SceneManager::CheckCircularLoadDependency("Other/Scene.zscen");
+	bool bDifferent = Zenith_SceneLifecycleScheduler::IsCircularLoadDependency("Other/Scene.zscen");
 	ZENITH_ASSERT_FALSE(bDifferent, "CheckCircularLoadDependency should return false for a different path");
 
 	// Cleanup: remove the test path
-	Zenith_SceneManager::s_axCurrentlyLoadingPaths.EraseValue(strTestPath);
+	Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths.EraseValue(strTestPath);
 
 	// Also test the lifecycle load stack path
-	Zenith_SceneManager::s_axLifecycleLoadStack.PushBack(strTestPath);
+	Zenith_SceneLifecycleScheduler::s_axLifecycleLoadStack.PushBack(strTestPath);
 
-	bResult = Zenith_SceneManager::CheckCircularLoadDependency(strTestPath);
+	bResult = Zenith_SceneLifecycleScheduler::IsCircularLoadDependency(strTestPath);
 	ZENITH_ASSERT_TRUE(bResult, "CheckCircularLoadDependency should detect path in lifecycle load stack");
 
 	// Cleanup
-	Zenith_SceneManager::s_axLifecycleLoadStack.EraseValue(strTestPath);
+	Zenith_SceneLifecycleScheduler::s_axLifecycleLoadStack.EraseValue(strTestPath);
 
 }
 
@@ -11004,13 +10998,13 @@ void Zenith_SceneTests::TestLoadSceneSingleMissingFilePreservesCurrentScene(){
 	const std::string strGoodPath = "test_rollback_good" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strGoodPath, "RollbackGoodEntity");
 
-	Zenith_Scene xGood = Zenith_SceneManager::LoadScene(strGoodPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xGood = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strGoodPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xGood.IsValid(), "Baseline good scene should load");
 	const int iGoodHandle = xGood.m_iHandle;
 	const uint32_t uLoadedBefore = Zenith_SceneManager::GetLoadedSceneCount();
 
 	// Attempt to load a missing file in SINGLE mode — must not destroy the current world.
-	Zenith_Scene xFailed = Zenith_SceneManager::LoadScene("missing_rollback_target_xyz" ZENITH_SCENE_EXT, SCENE_LOAD_SINGLE);
+	Zenith_Scene xFailed = Zenith_SceneManager::LoadSceneBlockingForBootstrap("missing_rollback_target_xyz" ZENITH_SCENE_EXT, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_FALSE(xFailed.IsValid(), "LoadScene(SINGLE) with missing file must return INVALID_SCENE");
 
 	Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
@@ -11032,16 +11026,27 @@ void Zenith_SceneTests::TestLoadSceneSingleCorruptMagicRollsBack(){
 	CreateTestSceneFile(strGoodPath, "GoodEntityForRollback");
 	WriteHeaderOnlyBytes(strCorruptPath, 0xBADF00D5, 5);
 
-	Zenith_Scene xGood = Zenith_SceneManager::LoadScene(strGoodPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xGood = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strGoodPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xGood.IsValid(), "Baseline good scene should load");
 	const int iGoodHandle = xGood.m_iHandle;
 
-	Zenith_Scene xFailed = Zenith_SceneManager::LoadScene(strCorruptPath, SCENE_LOAD_SINGLE);
+	// B3 guardrail: snapshot the auto-UnloadUnusedAssets counter AFTER the good
+	// load (which legitimately fires it once) so we can prove the corrupt-magic
+	// SINGLE load below does NOT fire it. Header validation must reject the
+	// file before the teardown-and-swap path runs.
+	const uint32_t uUnusedAssetsCallsBeforeCorrupt = Zenith_SceneManager::GetUnloadUnusedAssetsCallCount();
+
+	Zenith_Scene xFailed = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strCorruptPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_FALSE(xFailed.IsValid(), "LoadScene(SINGLE) with corrupt magic must return INVALID_SCENE");
 
 	Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
 	ZENITH_ASSERT_TRUE(xActive.IsValid(), "Active scene must survive corrupt-magic SINGLE load");
 	ZENITH_ASSERT_EQ(xActive.m_iHandle, iGoodHandle, "Active scene handle must be unchanged after corrupt-magic SINGLE load");
+
+	const uint32_t uUnusedAssetsCallsAfterCorrupt = Zenith_SceneManager::GetUnloadUnusedAssetsCallCount();
+	ZENITH_ASSERT_EQ(uUnusedAssetsCallsAfterCorrupt, uUnusedAssetsCallsBeforeCorrupt,
+		"Corrupt SINGLE load must NOT fire UnloadUnusedAssets — failure path aborts before teardown (before=%u after=%u)",
+		uUnusedAssetsCallsBeforeCorrupt, uUnusedAssetsCallsAfterCorrupt);
 
 	CleanupTestSceneFile(strGoodPath);
 	CleanupTestSceneFile(strCorruptPath);
@@ -11056,11 +11061,11 @@ void Zenith_SceneTests::TestLoadSceneSingleCorruptMagicLeavesNoGhostScene(){
 	CreateTestSceneFile(strGoodPath);
 	WriteHeaderOnlyBytes(strCorruptPath, 0x00000000, 5);
 
-	Zenith_SceneManager::LoadScene(strGoodPath, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strGoodPath, SCENE_LOAD_SINGLE);
 	const uint32_t uTotalBefore = Zenith_SceneManager::GetTotalSceneCount();
 	const uint32_t uLoadedBefore = Zenith_SceneManager::GetLoadedSceneCount();
 
-	Zenith_Scene xFailed = Zenith_SceneManager::LoadScene(strCorruptPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xFailed = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strCorruptPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_FALSE(xFailed.IsValid(), "Corrupt file must return INVALID_SCENE");
 
 	const uint32_t uTotalAfter = Zenith_SceneManager::GetTotalSceneCount();
@@ -11081,7 +11086,7 @@ void Zenith_SceneTests::TestLoadSceneSingleCorruptMagicPreservesActiveScene(){
 	CreateTestSceneFile(strGoodPath, "ActivePreservedEntity");
 	WriteHeaderOnlyBytes(strCorruptPath, 0xDEADDEAD, 4);
 
-	Zenith_Scene xGood = Zenith_SceneManager::LoadScene(strGoodPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xGood = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strGoodPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xGood.IsValid(), "Baseline good scene must load");
 	Zenith_SceneData* pxGood = Zenith_SceneManager::GetSceneData(xGood);
 	ZENITH_ASSERT_NOT_NULL(pxGood, "Loaded scene data must be accessible");
@@ -11091,7 +11096,7 @@ void Zenith_SceneTests::TestLoadSceneSingleCorruptMagicPreservesActiveScene(){
 	// does not mutate the active scene's state", not "the scene must have entities".
 	const uint32_t uEntitiesBefore = pxGood->GetEntityCount();
 
-	Zenith_SceneManager::LoadScene(strCorruptPath, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strCorruptPath, SCENE_LOAD_SINGLE);
 
 	Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
 	ZENITH_ASSERT_EQ(xActive, xGood, "Active scene should still be the original good scene");
@@ -11192,7 +11197,7 @@ void Zenith_SceneTests::TestRegisterSceneLoadedCallbackSamePfnTwiceFiresTwice(){
 	auto ulFirst = Zenith_SceneManager::RegisterSceneLoadedCallback(&A8_OnSceneLoaded);
 	auto ulSecond = Zenith_SceneManager::RegisterSceneLoadedCallback(&A8_OnSceneLoaded);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "LoadScene should succeed");
 	ZENITH_ASSERT_EQ(g_uA8_SceneLoadedFireCount, 2, "F5: duplicate-registered callback should fire once per registration (got %u, expected 2)", g_uA8_SceneLoadedFireCount);
 
@@ -11265,7 +11270,7 @@ void Zenith_SceneTests::TestRegisterCallbackDifferentPfnsCoexist(){
 	auto ulB = Zenith_SceneManager::RegisterSceneLoadedCallback(&A8_OnSceneLoadedAlt);
 	ZENITH_ASSERT_NE(ulA, ulB, "Different function pointers must get different handles");
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "LoadScene should succeed");
 	ZENITH_ASSERT_EQ(g_uA8_SceneLoadedFireCount, 2, "Two distinct callbacks should both fire (got %u)", g_uA8_SceneLoadedFireCount);
 
@@ -11301,7 +11306,7 @@ void Zenith_SceneTests::TestLoadSceneByIndexSyncCallbackSeesCorrectBuildIndex(){
 	g_iA7_BuildIndexSeenInCallback = -999;
 	auto ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(&A7_CaptureBuildIndex);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneByIndex(iRegisteredIndex, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(iRegisteredIndex, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "LoadSceneByIndex should succeed");
 	ZENITH_ASSERT_EQ(g_iA7_BuildIndexSeenInCallback, iRegisteredIndex, "SceneLoaded callback must observe correct build index (got %d, expected %d)", g_iA7_BuildIndexSeenInCallback, iRegisteredIndex);
 
@@ -11469,13 +11474,13 @@ void Zenith_SceneTests::TestLoadSceneSingleFiresExactlyOneActiveSceneChanged(){
 	CreateTestSceneFile(strFirst, "FirstEntity");
 	CreateTestSceneFile(strSecond, "SecondEntity");
 
-	Zenith_Scene xFirst = Zenith_SceneManager::LoadScene(strFirst, SCENE_LOAD_SINGLE);
+	Zenith_Scene xFirst = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strFirst, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xFirst.IsValid(), "First scene must load");
 
 	g_uA5_ActiveSceneChangedFireCount = 0;
 	auto ulHandle = Zenith_SceneManager::RegisterActiveSceneChangedCallback(&A5_OnActiveChanged);
 
-	Zenith_Scene xSecond = Zenith_SceneManager::LoadScene(strSecond, SCENE_LOAD_SINGLE);
+	Zenith_Scene xSecond = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strSecond, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xSecond.IsValid(), "Second scene must load");
 	ZENITH_ASSERT_EQ(g_uA5_ActiveSceneChangedFireCount, 1, "LoadScene(SINGLE) must fire exactly one ActiveSceneChanged (got %u)", g_uA5_ActiveSceneChangedFireCount);
 
@@ -11493,7 +11498,7 @@ void Zenith_SceneTests::TestLoadSceneSingleActiveSceneChangedReportsCorrectOldAn
 	CreateTestSceneFile(strFirst);
 	CreateTestSceneFile(strSecond);
 
-	Zenith_Scene xFirst = Zenith_SceneManager::LoadScene(strFirst, SCENE_LOAD_SINGLE);
+	Zenith_Scene xFirst = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strFirst, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xFirst.IsValid(), "First scene must load");
 
 	g_uA5_ActiveSceneChangedFireCount = 0;
@@ -11501,7 +11506,7 @@ void Zenith_SceneTests::TestLoadSceneSingleActiveSceneChangedReportsCorrectOldAn
 	g_xA5_LastNewActive = Zenith_Scene::INVALID_SCENE;
 	auto ulHandle = Zenith_SceneManager::RegisterActiveSceneChangedCallback(&A5_OnActiveChanged);
 
-	Zenith_Scene xSecond = Zenith_SceneManager::LoadScene(strSecond, SCENE_LOAD_SINGLE);
+	Zenith_Scene xSecond = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strSecond, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xSecond.IsValid(), "Second scene must load");
 	ZENITH_ASSERT_EQ(g_uA5_ActiveSceneChangedFireCount, 1, "Exactly one callback");
 	ZENITH_ASSERT_EQ(g_xA5_LastOldActive, xFirst, "Old active should be the pre-teardown scene, not an intermediate fallback");
@@ -11540,8 +11545,8 @@ void Zenith_SceneTests::TestAsyncUnloadActiveSceneChangedAfterSceneUnloaded(){
 	CreateTestSceneFile(strA);
 	CreateTestSceneFile(strB);
 
-	Zenith_Scene xA = Zenith_SceneManager::LoadScene(strA, SCENE_LOAD_ADDITIVE);
-	Zenith_Scene xB = Zenith_SceneManager::LoadScene(strB, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xA = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strA, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xB = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strB, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneManager::SetActiveScene(xA);
 
 	g_axMEDIUM1_Order.Clear();
@@ -11593,8 +11598,8 @@ void Zenith_SceneTests::TestSyncUnloadActiveSceneChangedAfterSceneUnloaded(){
 	CreateTestSceneFile(strA);
 	CreateTestSceneFile(strB);
 
-	Zenith_Scene xA = Zenith_SceneManager::LoadScene(strA, SCENE_LOAD_ADDITIVE);
-	Zenith_Scene xB = Zenith_SceneManager::LoadScene(strB, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xA = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strA, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xB = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strB, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneManager::SetActiveScene(xA);
 
 	g_axMEDIUM1_Order.Clear();
@@ -11694,8 +11699,8 @@ void Zenith_SceneTests::TestUnloadAllNonPersistentNoDoubleUnloadingFire(){
 	CreateTestSceneFile(strB, "B_entity");
 	CreateTestSceneFile(strC, "C_entity");
 
-	Zenith_Scene xA = Zenith_SceneManager::LoadScene(strA, SCENE_LOAD_ADDITIVE);
-	Zenith_Scene xB = Zenith_SceneManager::LoadScene(strB, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xA = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strA, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xB = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strB, SCENE_LOAD_ADDITIVE);
 	const int iHandleA = xA.m_iHandle;
 	const int iHandleB = xB.m_iHandle;
 
@@ -11712,7 +11717,7 @@ void Zenith_SceneTests::TestUnloadAllNonPersistentNoDoubleUnloadingFire(){
 	ZENITH_ASSERT_EQ(HIGH23_CountUnloading(iHandleA), 1, "After one frame, A should have fired SceneUnloading exactly once");
 
 	// Now trigger UnloadAllNonPersistent via SCENE_LOAD_SINGLE.
-	Zenith_SceneManager::LoadScene(strC, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strC, SCENE_LOAD_SINGLE);
 
 	// HIGH-2: A must NOT see a second SceneUnloading fire.
 	ZENITH_ASSERT_EQ(HIGH23_CountUnloading(iHandleA), 1, "HIGH-2: A received %u SceneUnloading fires, expected exactly 1", HIGH23_CountUnloading(iHandleA));
@@ -11740,8 +11745,8 @@ void Zenith_SceneTests::TestUnloadAllNonPersistentFiresSceneUnloadedOnCancel(){
 	CreateTestSceneFile(strB, "B_entity");
 	CreateTestSceneFile(strC, "C_entity");
 
-	Zenith_Scene xA = Zenith_SceneManager::LoadScene(strA, SCENE_LOAD_ADDITIVE);
-	Zenith_Scene xB = Zenith_SceneManager::LoadScene(strB, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xA = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strA, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xB = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strB, SCENE_LOAD_ADDITIVE);
 	const int iHandleA = xA.m_iHandle;
 	const int iHandleB = xB.m_iHandle;
 
@@ -11751,7 +11756,7 @@ void Zenith_SceneTests::TestUnloadAllNonPersistentFiresSceneUnloadedOnCancel(){
 
 	Zenith_SceneManager::UnloadSceneAsync(xA);
 	PumpFrames(1);  // fire A's SceneUnloading and partial destruction
-	Zenith_SceneManager::LoadScene(strC, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strC, SCENE_LOAD_SINGLE);
 
 	// HIGH-3: A's SceneUnloaded must still fire exactly once despite the
 	// async-unload being cancelled mid-flight.
@@ -11942,7 +11947,7 @@ void Zenith_SceneTests::TestLoadSceneSyncIsActivatedFalseDuringAwake(){
 			s_bSawIsActivatedFalseDuringLoadStarted = true;
 		});
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene must load");
 	ZENITH_ASSERT_TRUE(s_bSawIsActivatedFalseDuringLoadStarted, "SceneLoadStarted must fire before load completes");
 
@@ -11960,7 +11965,7 @@ void Zenith_SceneTests::TestLoadSceneSyncIsActivatedTrueWhenSceneLoadedCallbackF
 	g_bA10_SawIsActivatedTrueInSceneLoaded = false;
 	auto ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(&A10_OnSceneLoaded_CheckActivated);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene must load");
 	ZENITH_ASSERT_TRUE(g_bA10_SawIsActivatedTrueInSceneLoaded, "Sync path: IsActivated() must be true by the time SceneLoaded callback fires");
 
@@ -12000,7 +12005,7 @@ void Zenith_SceneTests::TestSelectNewActiveSceneNeverFallsBackToPersistent(){
 	Zenith_Scene xPersistent = Zenith_SceneManager::GetPersistentScene();
 
 	// Load a scene, confirm it's active.
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "Scene must load");
 	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetActiveScene(), xLoaded, "Loaded scene should be active");
 
@@ -12012,7 +12017,7 @@ void Zenith_SceneTests::TestSelectNewActiveSceneNeverFallsBackToPersistent(){
 
 	// Restore a valid active scene so subsequent tests (physics, etc.) don't inherit
 	// the transient "no active scene" state.
-	Zenith_SceneManager::LoadScene(strRestorePath, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strRestorePath, SCENE_LOAD_SINGLE);
 
 	CleanupTestSceneFile(strPath);
 	CleanupTestSceneFile(strRestorePath);
@@ -12027,7 +12032,7 @@ void Zenith_SceneTests::TestGetActiveSceneAfterUnloadAllNonPersistentIsInvalid()
 	CreateTestSceneFile(strPath);
 	CreateTestSceneFile(strRestorePath);
 
-	Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xLoaded = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xLoaded.IsValid(), "Scene must load");
 
 	Zenith_SceneManager::UnloadAllNonPersistent();
@@ -12036,7 +12041,7 @@ void Zenith_SceneTests::TestGetActiveSceneAfterUnloadAllNonPersistentIsInvalid()
 	ZENITH_ASSERT_FALSE(xActive.IsValid(), "GetActiveScene must return INVALID_SCENE after UnloadAllNonPersistent (not persistent fallback)");
 
 	// Restore state so subsequent tests don't inherit INVALID active.
-	Zenith_SceneManager::LoadScene(strRestorePath, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strRestorePath, SCENE_LOAD_SINGLE);
 
 	CleanupTestSceneFile(strPath);
 	CleanupTestSceneFile(strRestorePath);
@@ -12068,7 +12073,7 @@ void Zenith_SceneTests::TestSceneLoadedCallbackSeesIsLoadingSceneFalse(){
 	g_bB4_SawIsLoadingSceneFalseInCallback = false;
 	auto ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(&B4_OnSceneLoaded);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Load should succeed");
 	ZENITH_ASSERT_TRUE(g_bB4_SawIsLoadingSceneFalseInCallback, "SceneLoaded callback must observe IsLoadingScene()==false (sync path)");
 
@@ -12093,7 +12098,7 @@ void Zenith_SceneTests::TestGetLoadedSceneCountAfterUnloadAllReturnsZero(){
 	CreateTestSceneFile(strRestorePath);
 
 	const uint32_t uBefore = Zenith_SceneManager::GetLoadedSceneCount();
-	Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
 	const uint32_t uAfterLoad = Zenith_SceneManager::GetLoadedSceneCount();
 	ZENITH_ASSERT_EQ(uAfterLoad, uBefore + 1, "Count must increase by exactly 1 after additive load (before=%u, after=%u)", uBefore, uAfterLoad);
 
@@ -12104,7 +12109,7 @@ void Zenith_SceneTests::TestGetLoadedSceneCountAfterUnloadAllReturnsZero(){
 	ZENITH_ASSERT_LE(uAfterUnload, uBefore, "Count after UnloadAllNonPersistent must not exceed pre-test count (got %u > %u)", uAfterUnload, uBefore);
 
 	// Restore state.
-	Zenith_SceneManager::LoadScene(strRestorePath, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strRestorePath, SCENE_LOAD_SINGLE);
 
 	CleanupTestSceneFile(strPath);
 	CleanupTestSceneFile(strRestorePath);
@@ -12137,7 +12142,7 @@ void Zenith_SceneTests::TestClearBuildIndexRegistryResetsLoadedSceneIndices(){
 	const int iRegisteredIndex = 42;
 	Zenith_SceneManager::RegisterSceneBuildIndex(iRegisteredIndex, strPath);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneByIndex(iRegisteredIndex, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(iRegisteredIndex, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "LoadSceneByIndex should succeed");
 	ZENITH_ASSERT_EQ(xScene.GetBuildIndex(), iRegisteredIndex, "Loaded scene must have expected build index");
 
@@ -12148,7 +12153,7 @@ void Zenith_SceneTests::TestClearBuildIndexRegistryResetsLoadedSceneIndices(){
 	Zenith_SceneManager::UnloadScene(xScene);
 
 	// Restore state for subsequent tests (main-menu build index registration etc.)
-	Zenith_SceneManager::LoadScene(strRestorePath, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strRestorePath, SCENE_LOAD_SINGLE);
 
 	CleanupTestSceneFile(strPath);
 	CleanupTestSceneFile(strRestorePath);
@@ -12410,7 +12415,7 @@ void Zenith_SceneTests::TestDispatchAwakeBoundedWavesCompletesNormally(){
 	u_int uEntityCount = 0;
 	uint32_t uAwakeCount = 0;
 	{
-		Zenith_SceneManager::LifecycleDeferralGuard xDeferral(Zenith_SceneManager::s_bIsLoadingScene);
+		Zenith_SceneManager::LifecycleDeferralGuard xDeferral(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
 		CreateTestEntityWithBehaviour(pxData);
 		Zenith_SceneManager::DispatchFullLifecycleInit();
 		uEntityCount = pxData->GetEntityCount();
@@ -12444,7 +12449,7 @@ void Zenith_SceneTests::TestDispatchAwakeRunawayCreationDestroysUnawakenedEntiti
 	{
 		// Keep s_bIsLoadingScene true for the whole dispatch so OnAwake-spawned
 		// entities don't trigger DispatchImmediateLifecycleForRuntime (infinite recursion).
-		Zenith_SceneManager::LifecycleDeferralGuard xDeferral(Zenith_SceneManager::s_bIsLoadingScene);
+		Zenith_SceneManager::LifecycleDeferralGuard xDeferral(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
 		CreateTestEntityWithBehaviour(pxData);
 
 		// Capture so the wave-limit assert doesn't halt the runner.
@@ -12484,7 +12489,7 @@ void Zenith_SceneTests::TestDispatchAwakeRunawayCreationAllSurvivorsAwoken(){
 	bool bAllSurvivorsAwoken = true;
 	u_int uSurvivorCount     = 0;
 	{
-		Zenith_SceneManager::LifecycleDeferralGuard xDeferral(Zenith_SceneManager::s_bIsLoadingScene);
+		Zenith_SceneManager::LifecycleDeferralGuard xDeferral(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
 		CreateTestEntityWithBehaviour(pxData);
 
 		Zenith_AssertCaptureScope xCapture;
@@ -12672,7 +12677,7 @@ void Zenith_SceneTests::TestLoadSceneAdditiveWithoutLoadingFiresSceneLoaded(){
 	g_uF3FireCount = 0;
 	auto ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(&F3SceneLoadedCallback);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("F3_AdditiveWithoutLoading", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap("F3_AdditiveWithoutLoading", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 
 	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulHandle);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "ADDITIVE_WITHOUT_LOADING should return a valid scene");
@@ -12689,7 +12694,7 @@ void Zenith_SceneTests::TestLoadSceneAdditiveWithoutLoadingSceneLoadedReceivesCr
 	g_xF3LastLoadedScene = Zenith_Scene::INVALID_SCENE;
 	auto ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(&F3SceneLoadedCallback);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("F3_CreatedScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap("F3_CreatedScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 
 	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulHandle);
 	ZENITH_ASSERT_EQ(g_xF3LastLoadedScene, xScene, "SceneLoaded callback must receive the created scene (expected handle=%d gen=%u, got handle=%d gen=%u)", xScene.m_iHandle, xScene.m_uGeneration, g_xF3LastLoadedScene.m_iHandle, g_xF3LastLoadedScene.m_uGeneration);
@@ -12705,7 +12710,7 @@ void Zenith_SceneTests::TestLoadSceneAdditiveWithoutLoadingSceneLoadedModeIsAddi
 	g_eF3LastLoadedMode = SCENE_LOAD_SINGLE;  // reset to sentinel
 	auto ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(&F3SceneLoadedCallback);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("F3_ModeIsAdditive", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap("F3_ModeIsAdditive", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 
 	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulHandle);
 	ZENITH_ASSERT_EQ(g_eF3LastLoadedMode, SCENE_LOAD_ADDITIVE, "Unity parity: CreateScene-style loads must dispatch with LoadSceneMode.Additive (got mode=%d)", static_cast<int>(g_eF3LastLoadedMode));
@@ -12759,7 +12764,7 @@ void Zenith_SceneTests::TestLoadSceneAdditiveWithoutLoadingCallbackSeesIsLoading
 	g_bF3IsLoadingSceneObserved = false;
 	auto ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(&F3_IsLoadingCallback);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("F3_IsLoadingFlag", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap("F3_IsLoadingFlag", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 
 	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulHandle);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "ADDITIVE_WITHOUT_LOADING should return a valid scene");
@@ -12808,15 +12813,15 @@ void Zenith_SceneTests::TestAsyncLoadJobStoresCreatedSceneGeneration(){
 	// Find the job and verify its generation field matches the current slot generation.
 	// Tests are friended on Zenith_SceneManager, so we can read s_axAsyncJobs directly.
 	bool bFoundJob = false;
-	for (u_int i = 0; i < Zenith_SceneManager::s_axAsyncJobs.GetSize(); ++i)
+	for (u_int i = 0; i < Zenith_SceneOperationQueue::s_axAsyncJobs.GetSize(); ++i)
 	{
-		Zenith_SceneManager::AsyncLoadJob* pxJob = Zenith_SceneManager::s_axAsyncJobs.Get(i);
+		Zenith_SceneOperationQueue::AsyncLoadJob* pxJob = Zenith_SceneOperationQueue::s_axAsyncJobs.Get(i);
 		if (pxJob->m_pxOperation != pxOp) continue;
 		bFoundJob = true;
 
 		ZENITH_ASSERT_GE(pxJob->m_iCreatedSceneHandle, 0, "Phase 1 should have produced a valid scene handle");
 		const int iHandle = pxJob->m_iCreatedSceneHandle;
-		const uint32_t uCurrentGen = Zenith_SceneManager::s_axSceneGenerations.Get(iHandle);
+		const uint32_t uCurrentGen = Zenith_SceneRegistry::s_axSceneGenerations.Get(iHandle);
 		ZENITH_ASSERT_EQ(pxJob->m_uCreatedSceneGeneration, uCurrentGen, "AsyncLoadJob must store the scene's actual generation (stored=%u, current=%u)", pxJob->m_uCreatedSceneGeneration, uCurrentGen);
 		ZENITH_ASSERT_NE(pxJob->m_uCreatedSceneGeneration, 0, "Stored generation must be non-zero (handles start at generation 1)");
 		break;
@@ -12861,7 +12866,7 @@ void Zenith_SceneTests::TestUnloadSceneLastSceneReturnsSilentlyButSceneRemains()
 	const std::string strPath = "test_b1_sync_last_scene" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "B1SyncLast");
 
-	Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 	Zenith_Scene xScene = Zenith_SceneManager::GetSceneByPath(strPath);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Test scene should be loaded");
 
@@ -12885,7 +12890,7 @@ void Zenith_SceneTests::TestUnloadSceneAsyncLastSceneReturnsFailedOp(){
 	const std::string strPath = "test_b1_async_last_scene" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "B1AsyncLast");
 
-	Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 	Zenith_Scene xScene = Zenith_SceneManager::GetSceneByPath(strPath);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Test scene should be loaded");
 
@@ -12940,7 +12945,7 @@ void Zenith_SceneTests::TestSelectNewActiveSceneNoEligibleWarns(){
 	// Persistent scene exists but cannot be fallback; other scenes (test-fixture
 	// restore scene) may still be loaded. So just assert the return is either -1
 	// or a non-persistent handle.
-	ZENITH_ASSERT_NE(iResult, Zenith_SceneManager::s_iPersistentSceneHandle, "SelectNewActiveScene must never return the persistent scene handle (got %d)", iResult);
+	ZENITH_ASSERT_NE(iResult, Zenith_SceneRegistry::s_iPersistentSceneHandle, "SelectNewActiveScene must never return the persistent scene handle (got %d)", iResult);
 
 }
 
@@ -12951,7 +12956,7 @@ void Zenith_SceneTests::TestUnloadSceneAsyncLastSceneDoesNotFireSceneUnloaded(){
 	const std::string strPath = "test_b1_no_spurious_callback" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "B1NoCallback");
 
-	Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 	Zenith_Scene xScene = Zenith_SceneManager::GetSceneByPath(strPath);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Test scene should be loaded");
 
@@ -13086,7 +13091,7 @@ void Zenith_SceneTests::TestB4_LoadSceneByIndex_AdditiveWithoutLoading_Preserves
 	const int iBuildIndex = 42;
 	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex, "B4_Procedural");
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneByIndex(iBuildIndex, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(iBuildIndex, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "ADDITIVE_WITHOUT_LOADING must return a valid scene");
 	ZENITH_ASSERT_EQ(xScene.GetBuildIndex(), iBuildIndex, "Build index dropped: expected %d, got %d", iBuildIndex, xScene.GetBuildIndex());
 
@@ -13193,7 +13198,7 @@ void Zenith_SceneTests::TestD12_LoadSceneSingle_InvalidBody_PreservesOldScene(){
 	// Set up a valid "old" scene that we want to prove survives a failed SINGLE load.
 	const std::string strGood = "d12_good" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strGood, "D12Old");
-	Zenith_Scene xOld = Zenith_SceneManager::LoadScene(strGood, SCENE_LOAD_SINGLE);
+	Zenith_Scene xOld = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strGood, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xOld.IsValid(), "Old scene must load cleanly");
 
 	// Craft a file with INVALID MAGIC so ValidateFileHeader rejects it pre-teardown.
@@ -13215,7 +13220,7 @@ void Zenith_SceneTests::TestD12_LoadSceneSingle_InvalidBody_PreservesOldScene(){
 		xOut.write(reinterpret_cast<const char*>(&uVersion), sizeof(uVersion));
 	}
 
-	Zenith_Scene xResult = Zenith_SceneManager::LoadScene(strBad, SCENE_LOAD_SINGLE);
+	Zenith_Scene xResult = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strBad, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_FALSE(xResult.IsValid(), "Failed load must return INVALID_SCENE");
 
 	// D.12 atomic-swap invariant: old scene is STILL ACTIVE because teardown was never
@@ -13240,7 +13245,7 @@ void Zenith_SceneTests::TestD11_LoadSceneAsyncSingle_ActivationPaused_KeepsOldSc
 	CreateTestSceneFile(strOld, "D11Old");
 	CreateTestSceneFile(strNew, "D11New");
 
-	Zenith_Scene xOld = Zenith_SceneManager::LoadScene(strOld, SCENE_LOAD_SINGLE);
+	Zenith_Scene xOld = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strOld, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xOld.IsValid(), "Old scene must load");
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strNew, SCENE_LOAD_SINGLE);
@@ -13287,7 +13292,7 @@ void Zenith_SceneTests::TestD11_LoadSceneAsyncSingle_ActivationResumed_AtomicSwa
 	CreateTestSceneFile(strOld, "D11Old2");
 	CreateTestSceneFile(strNew, "D11New2");
 
-	Zenith_Scene xOld = Zenith_SceneManager::LoadScene(strOld, SCENE_LOAD_SINGLE);
+	Zenith_Scene xOld = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strOld, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xOld.IsValid(), "Old scene must load");
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strNew, SCENE_LOAD_SINGLE);
@@ -13320,7 +13325,7 @@ void Zenith_SceneTests::TestD13_IsLoadingSceneFalseInsideSceneLoadedSingle(){
 	g_iD13Probe_IsLoadingScene_Sync = -1;
 	auto ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(&D13_OnSceneLoaded_Sync);
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_SINGLE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
 	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene must load");
 	ZENITH_ASSERT_EQ(g_iD13Probe_IsLoadingScene_Sync, 0, "IsLoadingScene() must be false inside sceneLoaded (D.13 contract)");
 
@@ -13414,8 +13419,8 @@ void Zenith_SceneTests::TestE16_UnloadSceneAsync_ResultSceneIsInvalid(){
 	const std::string strB = "e16_victim" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strA, "E16Keep");
 	CreateTestSceneFile(strB, "E16Victim");
-	Zenith_Scene xA = Zenith_SceneManager::LoadScene(strA, SCENE_LOAD_SINGLE);
-	Zenith_Scene xB = Zenith_SceneManager::LoadScene(strB, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xA = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strA, SCENE_LOAD_SINGLE);
+	Zenith_Scene xB = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strB, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xA.IsValid() && xB.IsValid(), "Both scenes must load");
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::UnloadSceneAsync(xB);
@@ -13714,19 +13719,12 @@ namespace
 	static u_int             s_uAwakeOverflowSpawned = 0;
 	static constexpr u_int   s_uAwakeOverflowCeiling = 150; // > the 100-wave cap
 
-	// RAII helper that flips s_bIsLoadingScene so entity creation skips the
-	// runtime immediate-lifecycle path and instead defers to the wave-drain
-	// loop inside DispatchAwakeForNewScene. This is how the scene-load path
-	// is exercised from a test: if we let entities Awake immediately, the
-	// chain recurses through DispatchImmediateLifecycleForRuntime and never
-	// reaches the cap under test.
-	struct ScopedLoadingScene
-	{
-		ScopedLoadingScene()  { Zenith_SceneManager::SetLoadingScene(true); }
-		~ScopedLoadingScene() { Zenith_SceneManager::SetLoadingScene(false); }
-		ScopedLoadingScene(const ScopedLoadingScene&) = delete;
-		ScopedLoadingScene& operator=(const ScopedLoadingScene&) = delete;
-	};
+	// Use Zenith_SceneManager::LifecycleDeferralGuard with the scheduler flag to
+	// flip s_bIsLoadingScene so entity creation skips the runtime immediate-
+	// lifecycle path and defers to the wave-drain loop inside
+	// DispatchAwakeForNewScene. Without this, entity creation chains recurse
+	// through DispatchImmediateLifecycleForRuntime and never reach the cap
+	// under test.
 
 	// Creates an entity with SceneTestBehaviour attached, but defers OnAwake
 	// until explicit DispatchAwakeForNewScene. The regular CreateEntityWithBehaviour
@@ -13790,7 +13788,7 @@ void Zenith_SceneTests::TestAwakeOverflow_FiresOnDestroyOnNonAwokenEntities(){
 		// Suppress runtime immediate-lifecycle dispatch. Without this, the seed
 		// entity's Awake fires recursively during the Zenith_Entity constructor
 		// and never reaches the wave-cap branch we want to exercise.
-		ScopedLoadingScene xLoadingGuard;
+		Zenith_SceneManager::LifecycleDeferralGuard xLoadingGuard(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
 
 		// Seed entity zero — sits in m_xActiveEntities with Awake deferred.
 		CreateEntityWithDeferredBehaviour(pxData, "AwakeChain_0");
@@ -13832,7 +13830,7 @@ void Zenith_SceneTests::TestAwakeOverflow_StopsPropagationAfterCap(){
 	// count would approach the ceiling (or we'd crash on unbounded recursion).
 	u_int uAwakeCountAfterDispatch = 0;
 	{
-		ScopedLoadingScene xLoadingGuard;
+		Zenith_SceneManager::LifecycleDeferralGuard xLoadingGuard(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
 		CreateEntityWithDeferredBehaviour(pxData, "AwakeChain_0");
 
 		Zenith_AssertCaptureScope xCapture;
@@ -13866,7 +13864,7 @@ void Zenith_SceneTests::TestAwakeOverflow_ErrorLogged(){
 	// the error-logging branch was entered).
 	uint32_t uHits = 0;
 	{
-		ScopedLoadingScene xLoadingGuard;
+		Zenith_SceneManager::LifecycleDeferralGuard xLoadingGuard(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
 		CreateEntityWithDeferredBehaviour(pxData, "AwakeChain_0");
 
 		Zenith_AssertCaptureScope xCapture;
@@ -13926,13 +13924,13 @@ void Zenith_SceneTests::TestAudit38_GetLastDeferredLoadOp_ValidAfterDeferredLoad
 	CreateTestSceneFile(strPath, "Audit38Entity");
 
 	// Reset the stashed op-id before the test so we can detect a fresh stash.
-	Zenith_SceneManager::s_ulLastDeferredLoadOp = ZENITH_INVALID_OPERATION_ID;
+	Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp = ZENITH_INVALID_OPERATION_ID;
 
 	// Simulate being inside Update so HandleDeferredLoad promotes the sync
 	// LoadScene to LoadSceneAsync internally.
-	Zenith_SceneManager::s_bIsUpdating = true;
-	Zenith_Scene xResult = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
-	Zenith_SceneManager::s_bIsUpdating = false;
+	Zenith_SceneLifecycleScheduler::s_bIsUpdating = true;
+	Zenith_Scene xResult = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneLifecycleScheduler::s_bIsUpdating = false;
 
 	// Sync return is INVALID_SCENE (Unity divergence the accessor papers over).
 	ZENITH_ASSERT_FALSE(xResult.IsValid(), "§3.8: deferred sync LoadScene returns INVALID_SCENE (pre-fix behaviour preserved)");
@@ -13961,7 +13959,7 @@ ZENITH_TEST(Scene, Audit38_GetLastDeferredLoadOp_InvalidInitially) { Zenith_Scen
 void Zenith_SceneTests::TestAudit38_GetLastDeferredLoadOp_InvalidInitially(){
 
 	// Reset to baseline; cold read must return the sentinel.
-	Zenith_SceneManager::s_ulLastDeferredLoadOp = ZENITH_INVALID_OPERATION_ID;
+	Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp = ZENITH_INVALID_OPERATION_ID;
 	Zenith_SceneOperationID ulOp = Zenith_SceneManager::GetLastDeferredLoadOp();
 	ZENITH_ASSERT_EQ(ulOp, ZENITH_INVALID_OPERATION_ID, "§3.8: GetLastDeferredLoadOp must return ZENITH_INVALID_OPERATION_ID when nothing has been deferred");
 
@@ -14113,4 +14111,1027 @@ void Zenith_SceneTests::TestAudit33_SceneUnloadedCallback_IsLoadedIsFalse(){
 	ZENITH_ASSERT_FALSE(s_bAudit33_IsLoadedInsideUnloaded, "§3.3: IsLoaded() must return false inside SceneUnloaded (scene data has been torn down)");
 
 	Zenith_SceneManager::UnloadScene(xKeep);
+}
+
+//=============================================================================
+// B1: Unity helper APIs
+//=============================================================================
+
+ZENITH_TEST(Scene, B1_CreateSceneRejectsDuplicateName) { Zenith_SceneTests::TestB1_CreateSceneRejectsDuplicateName(); }
+
+void Zenith_SceneTests::TestB1_CreateSceneRejectsDuplicateName(){
+
+	// CreateScene must reject a name that's already in the loaded scene set.
+	const std::string strName = "B1_DuplicateName";
+	Zenith_Scene xFirst = Zenith_SceneManager::CreateScene(strName);
+	ZENITH_ASSERT_TRUE(xFirst.IsValid(), "First CreateScene must succeed");
+
+	Zenith_AssertCaptureScope xCapture;
+	Zenith_Scene xSecond = Zenith_SceneManager::CreateScene(strName);
+	ZENITH_ASSERT_FALSE(xSecond.IsValid(), "Second CreateScene with the same name must return INVALID_SCENE");
+	ZENITH_ASSERT_GE(xCapture.GetHitCount(), 1u, "Duplicate-name rejection must surface an error log");
+
+	Zenith_SceneManager::UnloadScene(xFirst);
+}
+
+ZENITH_TEST(Scene, B1_CreateSceneRejectsEmptyName) { Zenith_SceneTests::TestB1_CreateSceneRejectsEmptyName(); }
+
+void Zenith_SceneTests::TestB1_CreateSceneRejectsEmptyName(){
+
+	// Empty name is rejected — CreateScene differs from CreateEmptyScene which
+	// permits any name (including empty) for backwards compatibility.
+	Zenith_AssertCaptureScope xCapture;
+	Zenith_Scene xResult = Zenith_SceneManager::CreateScene("");
+	ZENITH_ASSERT_FALSE(xResult.IsValid(), "CreateScene(empty) must return INVALID_SCENE");
+	ZENITH_ASSERT_GE(xCapture.GetHitCount(), 1u, "Empty-name rejection must surface an error log");
+}
+
+ZENITH_TEST(Scene, B1_CreateEntityTargetsActiveSceneWhenNotLoading) { Zenith_SceneTests::TestB1_CreateEntityTargetsActiveSceneWhenNotLoading(); }
+
+void Zenith_SceneTests::TestB1_CreateEntityTargetsActiveSceneWhenNotLoading(){
+
+	// With no SceneCreationTargetScope active, CreateEntity must land in the
+	// active scene — Unity's default behaviour outside of a load.
+	Zenith_Scene xActive = Zenith_SceneManager::CreateEmptyScene("B1_DefaultActive");
+	Zenith_SceneManager::SetActiveScene(xActive);
+
+	// Create a sibling additive scene that should NOT receive the entity — this
+	// is the regression guard against "creates land in the most recently loaded
+	// scene" or similar accidents.
+	Zenith_Scene xOther = Zenith_SceneManager::CreateEmptyScene("B1_DefaultOther");
+	Zenith_SceneData* pxActiveData = Zenith_SceneManager::GetSceneData(xActive);
+	Zenith_SceneData* pxOtherData = Zenith_SceneManager::GetSceneData(xOther);
+
+	const u_int uActiveBefore = pxActiveData->GetEntityCount();
+	const u_int uOtherBefore = pxOtherData->GetEntityCount();
+
+	Zenith_Entity xEntity = Zenith_SceneManager::CreateEntity("B1_DefaultEntity");
+	ZENITH_ASSERT_TRUE(xEntity.IsValid(), "CreateEntity must produce a valid entity when an active scene exists");
+	ZENITH_ASSERT_EQ(xEntity.GetSceneData(), pxActiveData, "CreateEntity must place the entity in the active scene");
+	ZENITH_ASSERT_EQ(pxActiveData->GetEntityCount(), uActiveBefore + 1, "Active scene must gain exactly one entity");
+	ZENITH_ASSERT_EQ(pxOtherData->GetEntityCount(), uOtherBefore, "Sibling scene must remain untouched");
+
+	Zenith_SceneManager::UnloadScene(xOther);
+	Zenith_SceneManager::UnloadScene(xActive);
+}
+
+ZENITH_TEST(Scene, B1_CreateEntityTargetsLoadingSceneDuringActivation) { Zenith_SceneTests::TestB1_CreateEntityTargetsLoadingSceneDuringActivation(); }
+
+void Zenith_SceneTests::TestB1_CreateEntityTargetsLoadingSceneDuringActivation(){
+
+	// While a SceneCreationTargetScope is open, CreateEntity must target the
+	// scoped scene rather than the active one. Mirrors the wiring in
+	// LoadScene / RunAsyncJobPhase1 / RunAsyncJobPhase2.
+	Zenith_Scene xActive = Zenith_SceneManager::CreateEmptyScene("B1_LoadingActive");
+	Zenith_SceneManager::SetActiveScene(xActive);
+
+	Zenith_Scene xLoading = Zenith_SceneManager::CreateEmptyScene("B1_LoadingTarget");
+	Zenith_SceneData* pxActiveData = Zenith_SceneManager::GetSceneData(xActive);
+	Zenith_SceneData* pxLoadingData = Zenith_SceneManager::GetSceneData(xLoading);
+
+	const u_int uActiveBefore = pxActiveData->GetEntityCount();
+	const u_int uLoadingBefore = pxLoadingData->GetEntityCount();
+
+	{
+		Zenith_SceneManager::SceneCreationTargetScope xScope(xLoading);
+		Zenith_Entity xEntity = Zenith_SceneManager::CreateEntity("B1_LoadingEntity");
+		ZENITH_ASSERT_TRUE(xEntity.IsValid(), "CreateEntity must produce a valid entity inside a creation-target scope");
+		ZENITH_ASSERT_EQ(xEntity.GetSceneData(), pxLoadingData, "CreateEntity must target the scoped scene, not the active scene");
+	}
+
+	ZENITH_ASSERT_EQ(pxLoadingData->GetEntityCount(), uLoadingBefore + 1, "Scoped scene must receive the new entity");
+	ZENITH_ASSERT_EQ(pxActiveData->GetEntityCount(), uActiveBefore, "Active scene must remain untouched while a scope was open");
+
+	// After the scope closes, CreateEntity returns to active-scene targeting.
+	Zenith_Entity xPostScopeEntity = Zenith_SceneManager::CreateEntity("B1_PostScopeEntity");
+	ZENITH_ASSERT_EQ(xPostScopeEntity.GetSceneData(), pxActiveData, "After the scope closes, CreateEntity must fall back to the active scene");
+
+	Zenith_SceneManager::UnloadScene(xLoading);
+	Zenith_SceneManager::UnloadScene(xActive);
+}
+
+ZENITH_TEST(Scene, B1_InstantiateActiveSceneOverload) { Zenith_SceneTests::TestB1_InstantiateActiveSceneOverload(); }
+
+void Zenith_SceneTests::TestB1_InstantiateActiveSceneOverload(){
+
+	// Zenith_Prefab::Instantiate(name) — no explicit scene — targets
+	// GetDefaultCreationScene(), which is the active scene when no scope is open.
+	Zenith_Scene xActive = Zenith_SceneManager::CreateEmptyScene("B1_PrefabActive");
+	Zenith_SceneManager::SetActiveScene(xActive);
+	Zenith_SceneData* pxActiveData = Zenith_SceneManager::GetSceneData(xActive);
+
+	// Build a source entity to derive the prefab from.
+	Zenith_Entity xSource(pxActiveData, "B1_PrefabSource");
+	Zenith_Prefab xPrefab;
+	const bool bCreated = xPrefab.CreateFromEntity(xSource, "B1_TestPrefab");
+	ZENITH_ASSERT_TRUE(bCreated, "Prefab::CreateFromEntity must succeed on a freshly-created entity");
+
+	const u_int uBefore = pxActiveData->GetEntityCount();
+	Zenith_Entity xInstance = xPrefab.Instantiate("B1_PrefabInstance");
+	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "Prefab::Instantiate(name) must produce a valid entity when an active scene exists");
+	ZENITH_ASSERT_EQ(xInstance.GetSceneData(), pxActiveData, "Prefab::Instantiate(name) must target the default creation scene (active)");
+	ZENITH_ASSERT_EQ(pxActiveData->GetEntityCount(), uBefore + 1, "Active scene must gain exactly one entity from Instantiate");
+
+	Zenith_SceneManager::UnloadScene(xActive);
+}
+
+//=============================================================================
+// B2: Unity AsyncOperation queue-stall behind activation-paused head
+//=============================================================================
+
+ZENITH_TEST(Scene, B2_AsyncLoadQueueStallsBehindActivationPausedHead) { Zenith_SceneTests::TestB2_AsyncLoadQueueStallsBehindActivationPausedHead(); }
+
+void Zenith_SceneTests::TestB2_AsyncLoadQueueStallsBehindActivationPausedHead(){
+
+	// Two ADDITIVE async loads. Pause the head at activation. The second load
+	// must not advance to its own activation-paused state or complete while
+	// the head is held — Unity AsyncOperation queue-stall semantics.
+	const std::string strPath1 = "test_b2_stall_head" ZENITH_SCENE_EXT;
+	const std::string strPath2 = "test_b2_stall_behind" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath1, "B2Head");
+	CreateTestSceneFile(strPath2, "B2Behind");
+
+	Zenith_SceneOperationID ulOp1 = Zenith_SceneManager::LoadSceneAsync(strPath1, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOp2 = Zenith_SceneManager::LoadSceneAsync(strPath2, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperation* pxOp1 = Zenith_SceneManager::GetOperation(ulOp1);
+	Zenith_SceneOperation* pxOp2 = Zenith_SceneManager::GetOperation(ulOp2);
+	ZENITH_ASSERT_TRUE(pxOp1 != nullptr && pxOp2 != nullptr, "Both async load ops must be valid");
+
+	// Hold the head at activation. Phase 2 will pause at fPROGRESS_ACTIVATION_PAUSED (0.9).
+	pxOp1->SetActivationAllowed(false);
+
+	// Pump until the head reaches activation pause.
+	const float fDt = 1.0f / 60.0f;
+	for (int i = 0; i < 200 && pxOp1->GetProgress() < 0.9f; ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+	ZENITH_ASSERT_GE(pxOp1->GetProgress(), 0.9f, "Head op must reach activation-paused milestone (got %.3f)", pxOp1->GetProgress());
+	ZENITH_ASSERT_FALSE(pxOp1->IsComplete(), "Head op must not complete while activation is held");
+
+	// Pump additional frames so a working gate has its chance to be wrong —
+	// without the stall, op2 would also reach 0.9 within a few ticks.
+	for (int i = 0; i < 30; ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+
+	ZENITH_ASSERT_FALSE(pxOp2->IsComplete(), "Behind-head op must not complete while the head is paused");
+	ZENITH_ASSERT_LT(pxOp2->GetProgress(), 0.85f,
+		"Behind-head op must not reach the activation-paused milestone while the head is held (got %.3f)",
+		pxOp2->GetProgress());
+
+	// Resume the head, both should complete.
+	pxOp1->SetActivationAllowed(true);
+	PumpUntilComplete(pxOp1);
+	PumpUntilComplete(pxOp2);
+
+	ZENITH_ASSERT_TRUE(pxOp1->IsComplete() && pxOp2->IsComplete(), "Both ops must complete after head is resumed");
+
+	Zenith_SceneManager::UnloadScene(pxOp1->GetResultScene());
+	Zenith_SceneManager::UnloadScene(pxOp2->GetResultScene());
+	CleanupTestSceneFile(strPath1);
+	CleanupTestSceneFile(strPath2);
+}
+
+ZENITH_TEST(Scene, B2_AsyncUnloadQueueStallsBehindActivationPausedLoadHead) { Zenith_SceneTests::TestB2_AsyncUnloadQueueStallsBehindActivationPausedLoadHead(); }
+
+void Zenith_SceneTests::TestB2_AsyncUnloadQueueStallsBehindActivationPausedLoadHead(){
+
+	// An async unload submitted while a load head is activation-paused must not
+	// progress until the head resumes. Verifies the stall affects the unload
+	// queue too, not just the load queue.
+	Zenith_Scene xToUnload = Zenith_SceneManager::CreateEmptyScene("B2_UnloadTarget");
+
+	// Add an entity so the unload has progress to make once it starts running.
+	Zenith_SceneData* pxUnloadData = Zenith_SceneManager::GetSceneData(xToUnload);
+	new Zenith_Entity(pxUnloadData, "B2_UnloadEntity");
+	const u_int uEntitiesBefore = pxUnloadData->GetEntityCount();
+	ZENITH_ASSERT_GT(uEntitiesBefore, 0u, "Precondition: target scene should have at least one entity");
+
+	const std::string strPath = "test_b2_unload_stall_load" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "B2LoadHead");
+
+	Zenith_SceneOperationID ulLoadOp = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperation* pxLoadOp = Zenith_SceneManager::GetOperation(ulLoadOp);
+	ZENITH_ASSERT_NOT_NULL(pxLoadOp, "Load op must be valid");
+	pxLoadOp->SetActivationAllowed(false);
+
+	// Pump until the load head is paused at activation.
+	const float fDt = 1.0f / 60.0f;
+	for (int i = 0; i < 200 && pxLoadOp->GetProgress() < 0.9f; ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+	ZENITH_ASSERT_GE(pxLoadOp->GetProgress(), 0.9f, "Load head must reach activation-paused milestone");
+
+	// Submit an async unload behind the paused head.
+	Zenith_SceneOperationID ulUnloadOp = Zenith_SceneManager::UnloadSceneAsync(xToUnload);
+	Zenith_SceneOperation* pxUnloadOp = Zenith_SceneManager::GetOperation(ulUnloadOp);
+	ZENITH_ASSERT_NOT_NULL(pxUnloadOp, "Unload op must be valid");
+
+	// Pump more frames. With the stall in place, the unload should not start.
+	for (int i = 0; i < 30; ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+
+	ZENITH_ASSERT_FALSE(pxUnloadOp->IsComplete(), "Async unload must not complete while load head is activation-paused");
+	ZENITH_ASSERT_TRUE(pxUnloadData->GetEntityCount() == uEntitiesBefore,
+		"Async unload must not destroy entities while load head is activation-paused (entities before=%u, now=%u)",
+		uEntitiesBefore, pxUnloadData->GetEntityCount());
+
+	// Resume the load head; both ops should now complete.
+	pxLoadOp->SetActivationAllowed(true);
+	PumpUntilComplete(pxLoadOp);
+	PumpUntilComplete(pxUnloadOp);
+
+	ZENITH_ASSERT_TRUE(pxLoadOp->IsComplete(), "Load op must complete after resume");
+	ZENITH_ASSERT_TRUE(pxUnloadOp->IsComplete(), "Unload op must complete after resume");
+
+	Zenith_SceneManager::UnloadScene(pxLoadOp->GetResultScene());
+	CleanupTestSceneFile(strPath);
+}
+
+ZENITH_TEST(Scene, B2_QueueResumesWhenHeadActivationAllowed) { Zenith_SceneTests::TestB2_QueueResumesWhenHeadActivationAllowed(); }
+
+void Zenith_SceneTests::TestB2_QueueResumesWhenHeadActivationAllowed(){
+
+	// End-to-end resume: head + behind-head load + behind-head unload all
+	// stalled, then a single SetActivationAllowed(true) on the head must
+	// drain the entire queue without any further intervention.
+	Zenith_Scene xToUnload = Zenith_SceneManager::CreateEmptyScene("B2_ResumeUnloadTarget");
+	new Zenith_Entity(Zenith_SceneManager::GetSceneData(xToUnload), "B2_ResumeUnloadEntity");
+
+	const std::string strPath1 = "test_b2_resume_head" ZENITH_SCENE_EXT;
+	const std::string strPath2 = "test_b2_resume_behind" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath1, "B2ResumeHead");
+	CreateTestSceneFile(strPath2, "B2ResumeBehind");
+
+	Zenith_SceneOperationID ulOp1 = Zenith_SceneManager::LoadSceneAsync(strPath1, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOp2 = Zenith_SceneManager::LoadSceneAsync(strPath2, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperation* pxOp1 = Zenith_SceneManager::GetOperation(ulOp1);
+	Zenith_SceneOperation* pxOp2 = Zenith_SceneManager::GetOperation(ulOp2);
+
+	pxOp1->SetActivationAllowed(false);
+
+	const float fDt = 1.0f / 60.0f;
+	for (int i = 0; i < 200 && pxOp1->GetProgress() < 0.9f; ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+	ZENITH_ASSERT_GE(pxOp1->GetProgress(), 0.9f, "Head op must reach activation-paused milestone");
+
+	// Now submit the unload BEHIND the paused head.
+	Zenith_SceneOperationID ulUnloadOp = Zenith_SceneManager::UnloadSceneAsync(xToUnload);
+	Zenith_SceneOperation* pxUnloadOp = Zenith_SceneManager::GetOperation(ulUnloadOp);
+
+	// Confirm everything is stalled.
+	for (int i = 0; i < 20; ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+	ZENITH_ASSERT_FALSE(pxOp1->IsComplete(), "Head must still be paused");
+	ZENITH_ASSERT_FALSE(pxOp2->IsComplete(), "Behind-head load must still be stalled");
+	ZENITH_ASSERT_FALSE(pxUnloadOp->IsComplete(), "Behind-head unload must still be stalled");
+
+	// Single trigger releases the entire queue.
+	pxOp1->SetActivationAllowed(true);
+
+	for (int i = 0; i < 200 && (!pxOp1->IsComplete() || !pxOp2->IsComplete() || !pxUnloadOp->IsComplete()); ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+
+	ZENITH_ASSERT_TRUE(pxOp1->IsComplete(), "Head op must complete after resume");
+	ZENITH_ASSERT_TRUE(pxOp2->IsComplete(), "Behind-head load must complete after resume");
+	ZENITH_ASSERT_TRUE(pxUnloadOp->IsComplete(), "Behind-head unload must complete after resume");
+
+	Zenith_SceneManager::UnloadScene(pxOp1->GetResultScene());
+	Zenith_SceneManager::UnloadScene(pxOp2->GetResultScene());
+	CleanupTestSceneFile(strPath1);
+	CleanupTestSceneFile(strPath2);
+}
+
+//=============================================================================
+// B3: SCENE_LOAD_SINGLE auto-fires Resources.UnloadUnusedAssets
+//=============================================================================
+
+ZENITH_TEST(Scene, B3_SingleModeSyncLoadFiresUnloadUnusedAssets) { Zenith_SceneTests::TestB3_SingleModeSyncLoadFiresUnloadUnusedAssets(); }
+
+void Zenith_SceneTests::TestB3_SingleModeSyncLoadFiresUnloadUnusedAssets(){
+
+	// Sync LoadScene(SINGLE) must auto-fire UnloadUnusedAssets exactly once
+	// during the teardown-and-swap step, after UnloadAllNonPersistent runs.
+	const std::string strPath = "test_b3_sync_single" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "B3SyncSingle");
+
+	const uint32_t uBefore = Zenith_SceneManager::GetUnloadUnusedAssetsCallCount();
+
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_SINGLE);
+	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Sync SINGLE load must succeed");
+
+	const uint32_t uAfter = Zenith_SceneManager::GetUnloadUnusedAssetsCallCount();
+	ZENITH_ASSERT_EQ(uAfter - uBefore, 1u,
+		"Sync LoadScene(SINGLE) must auto-fire UnloadUnusedAssets exactly once (before=%u after=%u)",
+		uBefore, uAfter);
+
+	CleanupTestSceneFile(strPath);
+}
+
+ZENITH_TEST(Scene, B3_SingleModeAsyncLoadFiresUnloadUnusedAssets) { Zenith_SceneTests::TestB3_SingleModeAsyncLoadFiresUnloadUnusedAssets(); }
+
+void Zenith_SceneTests::TestB3_SingleModeAsyncLoadFiresUnloadUnusedAssets(){
+
+	// Async LoadSceneAsync(SINGLE) must auto-fire UnloadUnusedAssets in Phase 1
+	// teardown, mirroring the sync path.
+	const std::string strPath = "test_b3_async_single" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "B3AsyncSingle");
+
+	const uint32_t uBefore = Zenith_SceneManager::GetUnloadUnusedAssetsCallCount();
+
+	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_SINGLE);
+	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOpID);
+	PumpUntilComplete(pxOp);
+	ZENITH_ASSERT_TRUE(pxOp->GetResultScene().IsValid(), "Async SINGLE load must succeed");
+
+	const uint32_t uAfter = Zenith_SceneManager::GetUnloadUnusedAssetsCallCount();
+	ZENITH_ASSERT_EQ(uAfter - uBefore, 1u,
+		"Async LoadSceneAsync(SINGLE) must auto-fire UnloadUnusedAssets exactly once (before=%u after=%u)",
+		uBefore, uAfter);
+
+	CleanupTestSceneFile(strPath);
+}
+
+ZENITH_TEST(Scene, B3_AdditiveLoadDoesNotFireUnloadUnusedAssets) { Zenith_SceneTests::TestB3_AdditiveLoadDoesNotFireUnloadUnusedAssets(); }
+
+void Zenith_SceneTests::TestB3_AdditiveLoadDoesNotFireUnloadUnusedAssets(){
+
+	// SCENE_LOAD_ADDITIVE must NOT fire UnloadUnusedAssets. Verifies both sync
+	// and async additive paths are untouched by the B3 wiring.
+	const std::string strSyncPath = "test_b3_additive_sync" ZENITH_SCENE_EXT;
+	const std::string strAsyncPath = "test_b3_additive_async" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strSyncPath, "B3AdditiveSync");
+	CreateTestSceneFile(strAsyncPath, "B3AdditiveAsync");
+
+	const uint32_t uBefore = Zenith_SceneManager::GetUnloadUnusedAssetsCallCount();
+
+	Zenith_Scene xSync = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strSyncPath, SCENE_LOAD_ADDITIVE);
+	ZENITH_ASSERT_TRUE(xSync.IsValid(), "Sync ADDITIVE load must succeed");
+
+	Zenith_SceneOperationID ulAsyncOpID = Zenith_SceneManager::LoadSceneAsync(strAsyncPath, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperation* pxAsyncOp = Zenith_SceneManager::GetOperation(ulAsyncOpID);
+	PumpUntilComplete(pxAsyncOp);
+	ZENITH_ASSERT_TRUE(pxAsyncOp->GetResultScene().IsValid(), "Async ADDITIVE load must succeed");
+
+	const uint32_t uAfter = Zenith_SceneManager::GetUnloadUnusedAssetsCallCount();
+	ZENITH_ASSERT_EQ(uAfter, uBefore,
+		"SCENE_LOAD_ADDITIVE (sync + async) must NOT fire UnloadUnusedAssets (before=%u after=%u)",
+		uBefore, uAfter);
+
+	Zenith_SceneManager::UnloadScene(xSync);
+	Zenith_SceneManager::UnloadScene(pxAsyncOp->GetResultScene());
+	CleanupTestSceneFile(strSyncPath);
+	CleanupTestSceneFile(strAsyncPath);
+}
+
+//=============================================================================
+// B4.B: queue-and-defer LoadScene + re-entrancy guards
+//=============================================================================
+
+ZENITH_TEST(Scene, B4_LoadSceneFromSceneLoadedCallbackQueuesAndDoesNotRecurse) { Zenith_SceneTests::TestB4_LoadSceneFromSceneLoadedCallbackQueuesAndDoesNotRecurse(); }
+
+void Zenith_SceneTests::TestB4_LoadSceneFromSceneLoadedCallbackQueuesAndDoesNotRecurse(){
+
+	// Regression for the depth-17 callback recursion that B4.B initially
+	// exposed: a SceneLoaded handler calling LoadScene while the firing op
+	// is mid-Phase-2 must NOT re-enter ProcessPendingAsyncLoads (which would
+	// re-fire the same callback, blowing the bus's depth-16 safety limit).
+	// Instead, the inner LoadScene must queue the new op, return INVALID,
+	// and let the outer pump (or a subsequent Update tick) drain it.
+	const std::string strPath1 = "test_b4_callback_outer" ZENITH_SCENE_EXT;
+	const std::string strPath2 = "test_b4_callback_inner" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath1, "B4CallbackOuter");
+	CreateTestSceneFile(strPath2, "B4CallbackInner");
+
+	// Callback state is plumbed through file-static state so the lambda can
+	// be a function-pointer callback (no std::function).
+	static Zenith_SceneOperationID s_ulInnerOpID = ZENITH_INVALID_OPERATION_ID;
+	static std::string s_strInnerPath;
+	s_ulInnerOpID = ZENITH_INVALID_OPERATION_ID;
+	s_strInnerPath = strPath2;
+
+	auto pfnCallback = [](Zenith_Scene, Zenith_SceneLoadMode) {
+		if (s_ulInnerOpID == ZENITH_INVALID_OPERATION_ID)
+		{
+			// Queue-and-defer LoadScene from inside the callback. Must NOT
+			// recurse; must just queue and stash the op id.
+			Zenith_SceneManager::LoadScene(s_strInnerPath, SCENE_LOAD_ADDITIVE);
+			s_ulInnerOpID = Zenith_SceneManager::GetLastDeferredLoadOp();
+		}
+	};
+	Zenith_SceneManager::CallbackHandle ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(pfnCallback);
+
+	// Capture any runtime asserts (e.g., callback-depth limit) so the test
+	// can observe them rather than aborting the runner.
+	uint32_t uHitsAroundOuterLoad = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		Zenith_Scene xOuter = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath1, SCENE_LOAD_ADDITIVE);
+		uHitsAroundOuterLoad = xCapture.GetHitCount();
+
+		ZENITH_ASSERT_TRUE(xOuter.IsValid(), "Outer load must succeed");
+		ZENITH_ASSERT_NE(s_ulInnerOpID, ZENITH_INVALID_OPERATION_ID,
+			"SceneLoaded callback must have queued an inner load (op-id surfaced via GetLastDeferredLoadOp)");
+
+		Zenith_SceneManager::UnloadScene(xOuter);
+	}
+	ZENITH_ASSERT_EQ(uHitsAroundOuterLoad, 0u,
+		"No runtime assertions (e.g., callback-depth limit) may fire while a SceneLoaded callback queues a nested LoadScene");
+
+	// Drive the inner op to completion. With the outer op finished, the
+	// queue is no longer mid-process, so a normal pump completes the inner.
+	Zenith_SceneOperation* pxInnerOp = Zenith_SceneManager::GetOperation(s_ulInnerOpID);
+	ZENITH_ASSERT_NOT_NULL(pxInnerOp, "Inner op must still exist after the outer load returned");
+	PumpUntilComplete(pxInnerOp);
+	ZENITH_ASSERT_TRUE(pxInnerOp->IsComplete(), "Inner op must complete after a normal pump");
+	ZENITH_ASSERT_FALSE(pxInnerOp->HasFailed(), "Inner op must not fail");
+	const Zenith_Scene xInner = pxInnerOp->GetResultScene();
+	ZENITH_ASSERT_TRUE(xInner.IsValid(), "Inner op must produce a valid scene handle");
+
+	Zenith_SceneManager::UnregisterSceneLoadedCallback(ulHandle);
+	Zenith_SceneManager::UnloadScene(xInner);
+	CleanupTestSceneFile(strPath1);
+	CleanupTestSceneFile(strPath2);
+}
+
+ZENITH_TEST(Scene, B4_LoadSceneReturnsInvalidImmediately) { Zenith_SceneTests::TestB4_LoadSceneReturnsInvalidImmediately(); }
+
+void Zenith_SceneTests::TestB4_LoadSceneReturnsInvalidImmediately(){
+
+	// Contract: the queue-and-defer LoadScene returns Zenith_Scene::INVALID_SCENE
+	// regardless of the load mode. The op is queued but not necessarily complete.
+	const std::string strPath = "test_b4_returns_invalid" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "B4ReturnsInvalid");
+
+	Zenith_Scene xResult = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	ZENITH_ASSERT_FALSE(xResult.IsValid(), "LoadScene must return INVALID_SCENE — completion is deferred");
+
+	// Drain to leave the suite clean.
+	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::GetLastDeferredLoadOp();
+	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOpID);
+	if (pxOp)
+	{
+		PumpUntilComplete(pxOp);
+		if (pxOp->GetResultScene().IsValid())
+			Zenith_SceneManager::UnloadScene(pxOp->GetResultScene());
+	}
+	CleanupTestSceneFile(strPath);
+}
+
+ZENITH_TEST(Scene, B4_LoadSceneCompletesOnlyDuringUpdate) { Zenith_SceneTests::TestB4_LoadSceneCompletesOnlyDuringUpdate(); }
+
+void Zenith_SceneTests::TestB4_LoadSceneCompletesOnlyDuringUpdate(){
+
+	// Contract: LoadScene queues the op via LoadSceneAsync; completion happens
+	// during a subsequent Zenith_SceneManager::Update tick. Without pumping
+	// Update, the op stays in flight (file I/O is on a worker thread; even if
+	// the file already loaded, Phase 1 dispatch is a main-thread step).
+	const std::string strPath = "test_b4_completes_during_update" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "B4CompletesUpdate");
+
+	Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::GetLastDeferredLoadOp();
+	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOpID);
+	ZENITH_ASSERT_NOT_NULL(pxOp, "LoadScene must queue an async op recoverable via GetLastDeferredLoadOp");
+	ZENITH_ASSERT_FALSE(pxOp->IsComplete(),
+		"Phase 1 has not yet run; op must NOT be complete before any Update tick");
+
+	// Pump and observe completion.
+	PumpUntilComplete(pxOp);
+	ZENITH_ASSERT_TRUE(pxOp->IsComplete(), "Op must be complete after pumping Update");
+	ZENITH_ASSERT_FALSE(pxOp->HasFailed(), "Load must succeed");
+	ZENITH_ASSERT_TRUE(pxOp->GetResultScene().IsValid(), "Result scene must be valid after completion");
+
+	Zenith_SceneManager::UnloadScene(pxOp->GetResultScene());
+	CleanupTestSceneFile(strPath);
+}
+
+ZENITH_TEST(Scene, B4_LoadSceneFlushesPriorAsyncOps) { Zenith_SceneTests::TestB4_LoadSceneFlushesPriorAsyncOps(); }
+
+void Zenith_SceneTests::TestB4_LoadSceneFlushesPriorAsyncOps(){
+
+	// Contract: a TOP-LEVEL LoadScene (not from inside a callback or Update)
+	// flushes all in-flight async load + unload ops to completion before
+	// queueing its own. Mirrors Unity's documented behaviour. The re-entrant
+	// case is covered separately by the callback-recursion test, which
+	// intentionally skips the flush.
+	const std::string strPriorPath = "test_b4_flush_prior" ZENITH_SCENE_EXT;
+	const std::string strBlockingPath = "test_b4_flush_blocking" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPriorPath, "B4FlushPrior");
+	CreateTestSceneFile(strBlockingPath, "B4FlushBlocking");
+
+	// Submit an async load and pause it at activation so it's still in flight
+	// when the next LoadScene call happens. The flush must release the pause
+	// and drive the prior op to completion before queueing the new one.
+	Zenith_SceneOperationID ulPriorOpID = Zenith_SceneManager::LoadSceneAsync(strPriorPath, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperation* pxPriorOp = Zenith_SceneManager::GetOperation(ulPriorOpID);
+	ZENITH_ASSERT_NOT_NULL(pxPriorOp, "Prior async op must be valid");
+	pxPriorOp->SetActivationAllowed(false);
+
+	// Pump until the prior op reaches activation pause (~0.9).
+	const float fDt = 1.0f / 60.0f;
+	for (int i = 0; i < 200 && pxPriorOp->GetProgress() < 0.9f; ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+	ZENITH_ASSERT_GE(pxPriorOp->GetProgress(), 0.9f, "Prior op must be pinned at activation pause");
+	ZENITH_ASSERT_FALSE(pxPriorOp->IsComplete(), "Prior op must not be complete before the flush");
+
+	// Top-level LoadScene — must flush the prior op even though activation was paused.
+	Zenith_SceneManager::LoadScene(strBlockingPath, SCENE_LOAD_ADDITIVE);
+
+	ZENITH_ASSERT_TRUE(pxPriorOp->IsComplete(), "Prior op must be complete after the flush");
+	ZENITH_ASSERT_TRUE(pxPriorOp->IsActivationAllowed(), "Flush must release the activation pause");
+
+	// Pump the new op to completion for cleanup.
+	Zenith_SceneOperationID ulNewOpID = Zenith_SceneManager::GetLastDeferredLoadOp();
+	Zenith_SceneOperation* pxNewOp = Zenith_SceneManager::GetOperation(ulNewOpID);
+	if (pxNewOp)
+	{
+		PumpUntilComplete(pxNewOp);
+		if (pxNewOp->GetResultScene().IsValid())
+			Zenith_SceneManager::UnloadScene(pxNewOp->GetResultScene());
+	}
+	if (pxPriorOp->GetResultScene().IsValid())
+		Zenith_SceneManager::UnloadScene(pxPriorOp->GetResultScene());
+	CleanupTestSceneFile(strPriorPath);
+	CleanupTestSceneFile(strBlockingPath);
+}
+
+ZENITH_TEST(Scene, B4_LoadSceneDeferredOpRecoverableViaGetLastDeferred) { Zenith_SceneTests::TestB4_LoadSceneDeferredOpRecoverableViaGetLastDeferred(); }
+
+void Zenith_SceneTests::TestB4_LoadSceneDeferredOpRecoverableViaGetLastDeferred(){
+
+	// Contract: GetLastDeferredLoadOp returns the op id for the most recently
+	// queued LoadScene call, allowing callers to track the deferred load.
+	const std::string strPath = "test_b4_get_last_deferred" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "B4GetLastDeferred");
+
+	const Zenith_SceneOperationID ulPriorLast = Zenith_SceneManager::GetLastDeferredLoadOp();
+
+	Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+	const Zenith_SceneOperationID ulNewLast = Zenith_SceneManager::GetLastDeferredLoadOp();
+
+	ZENITH_ASSERT_NE(ulNewLast, ulPriorLast, "GetLastDeferredLoadOp must change after LoadScene queues a new op");
+	ZENITH_ASSERT_NE(ulNewLast, ZENITH_INVALID_OPERATION_ID, "Returned op id must be a real operation handle");
+
+	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulNewLast);
+	ZENITH_ASSERT_NOT_NULL(pxOp, "GetOperation(GetLastDeferredLoadOp()) must resolve to the queued op");
+
+	PumpUntilComplete(pxOp);
+	ZENITH_ASSERT_TRUE(pxOp->GetResultScene().IsValid(), "Resolved op must yield a valid scene after completion");
+
+	Zenith_SceneManager::UnloadScene(pxOp->GetResultScene());
+	CleanupTestSceneFile(strPath);
+}
+
+ZENITH_TEST(Scene, B4_LoadSceneBlockingCompletesSynchronouslyAtBootstrap) { Zenith_SceneTests::TestB4_LoadSceneBlockingCompletesSynchronouslyAtBootstrap(); }
+
+void Zenith_SceneTests::TestB4_LoadSceneBlockingCompletesSynchronouslyAtBootstrap(){
+
+	// Contract: LoadSceneBlockingForBootstrap pumps Update internally so it
+	// returns a real Zenith_Scene handle to the caller — the bootstrap path
+	// gets back a synchronous-feeling load even though the underlying engine
+	// is queue-and-defer. Tests run pre-main-loop so IsBootstrapLoadContext
+	// holds.
+	const std::string strPath = "test_b4_blocking_bootstrap" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "B4BlockingBootstrap");
+
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strPath, SCENE_LOAD_ADDITIVE);
+	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Blocking variant must return a valid scene synchronously");
+
+	// The op id is recoverable too — and must be complete since the helper pumped.
+	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::GetLastDeferredLoadOp();
+	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOpID);
+	ZENITH_ASSERT_NOT_NULL(pxOp, "Blocking variant must still set GetLastDeferredLoadOp");
+	ZENITH_ASSERT_TRUE(pxOp->IsComplete(), "Blocking variant must drive the op to completion before returning");
+	ZENITH_ASSERT_FALSE(pxOp->HasFailed(), "Blocking variant load must succeed");
+	ZENITH_ASSERT_EQ(pxOp->GetResultScene(), xScene, "Returned scene must match the op's result scene");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	CleanupTestSceneFile(strPath);
+}
+
+//=============================================================================
+// B5: MarkEntityPersistent strict root-only
+//=============================================================================
+
+ZENITH_TEST(Scene, B5_MarkEntityPersistentRejectsNonRoot) { Zenith_SceneTests::TestB5_MarkEntityPersistentRejectsNonRoot(); }
+
+void Zenith_SceneTests::TestB5_MarkEntityPersistentRejectsNonRoot(){
+
+	// B5: a child entity passed to MarkEntityPersistent must be rejected with
+	// no scene change. Pre-B5 the call silently auto-walked to the root and
+	// promoted the entire subtree; that auto-promotion is gone.
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("B5_RejectsNonRoot");
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xPersistent = Zenith_SceneManager::GetPersistentScene();
+
+	Zenith_Entity xRoot(pxData, "B5_Root");
+	Zenith_Entity xChild(pxData, "B5_Child");
+	xChild.SetParent(xRoot.GetEntityID());
+	const Zenith_EntityID xRootID = xRoot.GetEntityID();
+
+	Zenith_SceneManager::MarkEntityPersistent(xChild);
+
+	// Verify scene ownership unchanged for both entities.
+	ZENITH_ASSERT_EQ(xRoot.GetScene(), xScene, "Root must remain in original scene");
+	ZENITH_ASSERT_EQ(xChild.GetScene(), xScene, "Child must remain in original scene");
+	ZENITH_ASSERT_NE(xRoot.GetScene(), xPersistent, "Root must NOT have moved to persistent scene");
+	ZENITH_ASSERT_NE(xChild.GetScene(), xPersistent, "Child must NOT have moved to persistent scene");
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), xRootID, "Parent-child relationship must be intact after rejection");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+}
+
+ZENITH_TEST(Scene, B5_MarkEntityPersistentSucceedsOnRoot) { Zenith_SceneTests::TestB5_MarkEntityPersistentSucceedsOnRoot(); }
+
+void Zenith_SceneTests::TestB5_MarkEntityPersistentSucceedsOnRoot(){
+
+	// B5: marking a ROOT persistent must succeed and pull the entire subtree
+	// (root + descendants) along with it. This is the Unity-compatible
+	// invariant the strict semantic preserves: callers walk to root first,
+	// then MarkEntityPersistent moves the whole tree because MoveEntityToScene
+	// recurses into children — children follow their root automatically.
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("B5_SucceedsOnRoot");
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Scene xPersistent = Zenith_SceneManager::GetPersistentScene();
+
+	// 3-level tree: Root -> Child -> Grandchild.
+	Zenith_Entity xRoot(pxData, "B5_RootEntity");
+	Zenith_Entity xChild(pxData, "B5_ChildEntity");
+	Zenith_Entity xGrandchild(pxData, "B5_GrandchildEntity");
+	xChild.SetParent(xRoot.GetEntityID());
+	xGrandchild.SetParent(xChild.GetEntityID());
+
+	const Zenith_EntityID xRootID = xRoot.GetEntityID();
+	const Zenith_EntityID xChildID = xChild.GetEntityID();
+
+	Zenith_SceneManager::MarkEntityPersistent(xRoot);
+
+	// Root + both descendants must all be in the persistent scene now.
+	ZENITH_ASSERT_EQ(xRoot.GetScene(), xPersistent, "Root must move to persistent scene");
+	ZENITH_ASSERT_EQ(xChild.GetScene(), xPersistent, "Child must follow root into persistent scene");
+	ZENITH_ASSERT_EQ(xGrandchild.GetScene(), xPersistent, "Grandchild must follow root into persistent scene");
+	ZENITH_ASSERT_NE(xRoot.GetScene(), xScene, "Root must no longer be in original scene");
+	ZENITH_ASSERT_NE(xChild.GetScene(), xScene, "Child must no longer be in original scene");
+	ZENITH_ASSERT_NE(xGrandchild.GetScene(), xScene, "Grandchild must no longer be in original scene");
+
+	// Hierarchy preserved across the move.
+	ZENITH_ASSERT_EQ(xChild.GetParentEntityID(), xRootID, "Child's parent ref must survive the move");
+	ZENITH_ASSERT_EQ(xGrandchild.GetParentEntityID(), xChildID, "Grandchild's parent ref must survive the move");
+
+	(void)pxData; // pxData reference kept for symmetry with other tests; unused.
+
+	// Cleanup: destroying the root tears down the whole subtree.
+	Zenith_SceneManager::DestroyImmediate(xRoot);
+	Zenith_SceneManager::UnloadScene(xScene);
+}
+
+//=============================================================================
+// C1: GetSceneDataForEntity multi-scene resolution
+//=============================================================================
+
+ZENITH_TEST(Scene, C1_GetSceneDataForEntityResolvesAcrossScenes) { Zenith_SceneTests::TestC1_GetSceneDataForEntityResolvesAcrossScenes(); }
+
+void Zenith_SceneTests::TestC1_GetSceneDataForEntityResolvesAcrossScenes(){
+
+	// C1: GetSceneDataForEntity must return the entity's actual owning scene
+	// data, regardless of which scene happens to be active. Game ownership
+	// lookups migrated off `GetSceneData(GetActiveScene())->EntityExists(uID)`
+	// onto `GetSceneDataForEntity(uID)` rely on this contract holding for:
+	//   * the active scene
+	//   * an additive (non-active) scene
+	//   * the persistent (DontDestroyOnLoad) scene
+	// Crucially, the returned pointer must MATCH the entity's actual owning
+	// scene — not merely satisfy `EntityExists` (which reads the global slot
+	// table, see B5).
+	Zenith_Scene xActive = Zenith_SceneManager::CreateEmptyScene("C1_ActiveScene");
+	Zenith_SceneManager::SetActiveScene(xActive);
+	Zenith_Scene xAdditive = Zenith_SceneManager::CreateEmptyScene("C1_AdditiveScene");
+	Zenith_Scene xPersistent = Zenith_SceneManager::GetPersistentScene();
+
+	Zenith_SceneData* pxActiveData = Zenith_SceneManager::GetSceneData(xActive);
+	Zenith_SceneData* pxAdditiveData = Zenith_SceneManager::GetSceneData(xAdditive);
+	Zenith_SceneData* pxPersistentData = Zenith_SceneManager::GetSceneData(xPersistent);
+
+	Zenith_Entity xActiveEntity(pxActiveData, "C1_ActiveEntity");
+	Zenith_Entity xAdditiveEntity(pxAdditiveData, "C1_AdditiveEntity");
+	Zenith_Entity xPersistentEntity(pxActiveData, "C1_PersistentEntity");
+	Zenith_SceneManager::MarkEntityPersistent(xPersistentEntity);
+
+	const Zenith_EntityID xActiveID = xActiveEntity.GetEntityID();
+	const Zenith_EntityID xAdditiveID = xAdditiveEntity.GetEntityID();
+	const Zenith_EntityID xPersistentID = xPersistentEntity.GetEntityID();
+
+	// Each entity must resolve to its own scene data, not the active one.
+	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetSceneDataForEntity(xActiveID), pxActiveData,
+		"Active-scene entity must resolve to active scene data");
+	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetSceneDataForEntity(xAdditiveID), pxAdditiveData,
+		"Additive-scene entity must resolve to additive scene data, not active");
+	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetSceneDataForEntity(xPersistentID), pxPersistentData,
+		"Persistent entity must resolve to persistent scene data, not active");
+
+	// And the returned data must NOT be the wrong scene, even though
+	// EntityExists would happily return true on any of the three scene-data
+	// pointers (process-wide slot table — that's exactly the trap C1 fixes).
+	ZENITH_ASSERT_NE(Zenith_SceneManager::GetSceneDataForEntity(xAdditiveID), pxActiveData,
+		"Additive entity must NOT resolve to active scene");
+	ZENITH_ASSERT_NE(Zenith_SceneManager::GetSceneDataForEntity(xPersistentID), pxActiveData,
+		"Persistent entity must NOT resolve to active scene");
+
+	// Invalid entity id resolves to nullptr.
+	Zenith_EntityID xInvalid;
+	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetSceneDataForEntity(xInvalid),
+		static_cast<Zenith_SceneData*>(nullptr),
+		"Invalid entity id must resolve to nullptr");
+
+	// Cleanup.
+	Zenith_SceneManager::DestroyImmediate(xPersistentEntity);
+	Zenith_SceneManager::UnloadScene(xAdditive);
+	Zenith_SceneManager::UnloadScene(xActive);
+}
+
+//=============================================================================
+// B4.B P1: blocking-load re-entrancy via async-unload callbacks
+//=============================================================================
+
+ZENITH_TEST(Scene, B4_LoadSceneFromSceneUnloadingCallbackQueuesAndDoesNotRecurse) { Zenith_SceneTests::TestB4_LoadSceneFromSceneUnloadingCallbackQueuesAndDoesNotRecurse(); }
+
+void Zenith_SceneTests::TestB4_LoadSceneFromSceneUnloadingCallbackQueuesAndDoesNotRecurse(){
+
+	// Regression for the P1 unload re-entrancy hazard: a SceneUnloading
+	// handler that calls a blocking LoadScene must NOT cause the inner
+	// CompletePriorOperationsForBlockingLoad to re-enter ProcessPendingAsyncUnloads.
+	// The firing job is still in s_axAsyncUnloadJobs at this point; an
+	// inner pass would advance entity destruction or refire the unloading
+	// callback. The unload-depth guard must skip the flush, the inner
+	// LoadScene must queue, and m_bUnloadingCallbackFired must be set
+	// before the dispatch so even a stray re-entry sees it.
+	const std::string strLoadPath = "test_b4_unloading_callback_load" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strLoadPath, "B4UnloadingCallbackLoad");
+
+	// Scene that will be async-unloaded.
+	Zenith_Scene xToUnload = Zenith_SceneManager::CreateEmptyScene("B4_SceneToUnload");
+	new Zenith_Entity(Zenith_SceneManager::GetSceneData(xToUnload), "DyingEntity");
+
+	static Zenith_SceneOperationID s_ulInnerOpID = ZENITH_INVALID_OPERATION_ID;
+	static uint32_t s_uUnloadingFireCount = 0;
+	static std::string s_strInnerLoadPath;
+	s_ulInnerOpID = ZENITH_INVALID_OPERATION_ID;
+	s_uUnloadingFireCount = 0;
+	s_strInnerLoadPath = strLoadPath;
+
+	auto pfnUnloadingCallback = [](Zenith_Scene) {
+		++s_uUnloadingFireCount;
+		// Queue-and-defer LoadScene from inside the callback. The flush
+		// must early-return (re-entrancy guard); the new op must still be
+		// queued and recoverable via GetLastDeferredLoadOp.
+		Zenith_SceneManager::LoadScene(s_strInnerLoadPath, SCENE_LOAD_ADDITIVE);
+		s_ulInnerOpID = Zenith_SceneManager::GetLastDeferredLoadOp();
+	};
+	Zenith_SceneManager::CallbackHandle ulHandle =
+		Zenith_SceneManager::RegisterSceneUnloadingCallback(pfnUnloadingCallback);
+
+	uint32_t uHits = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		Zenith_SceneOperationID ulUnloadOp = Zenith_SceneManager::UnloadSceneAsync(xToUnload);
+		Zenith_SceneOperation* pxUnloadOp = Zenith_SceneManager::GetOperation(ulUnloadOp);
+		ZENITH_ASSERT_NOT_NULL(pxUnloadOp, "Async unload op must be valid");
+		PumpUntilComplete(pxUnloadOp);
+		uHits = xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(s_uUnloadingFireCount, 1u, "SceneUnloading callback must fire exactly once (no duplicate via re-entry)");
+	ZENITH_ASSERT_NE(s_ulInnerOpID, ZENITH_INVALID_OPERATION_ID, "Inner LoadScene must have queued an op recoverable via GetLastDeferredLoadOp");
+	ZENITH_ASSERT_EQ(uHits, 0u, "No runtime asserts (e.g., callback-depth limit) may fire while a SceneUnloading callback queues a nested LoadScene");
+
+	// Drain the inner op to completion.
+	Zenith_SceneOperation* pxInnerOp = Zenith_SceneManager::GetOperation(s_ulInnerOpID);
+	ZENITH_ASSERT_NOT_NULL(pxInnerOp, "Inner op must still exist after async unload returned");
+	PumpUntilComplete(pxInnerOp);
+	ZENITH_ASSERT_TRUE(pxInnerOp->IsComplete(), "Inner op must complete after pumping");
+	ZENITH_ASSERT_FALSE(pxInnerOp->HasFailed(), "Inner load must not fail");
+	const Zenith_Scene xInner = pxInnerOp->GetResultScene();
+	ZENITH_ASSERT_TRUE(xInner.IsValid(), "Inner load must produce a valid scene");
+
+	Zenith_SceneManager::UnregisterSceneUnloadingCallback(ulHandle);
+	Zenith_SceneManager::UnloadScene(xInner);
+	CleanupTestSceneFile(strLoadPath);
+}
+
+ZENITH_TEST(Scene, B4_LoadSceneFromSceneUnloadedCallbackQueuesAndDoesNotDoubleDelete) { Zenith_SceneTests::TestB4_LoadSceneFromSceneUnloadedCallbackQueuesAndDoesNotDoubleDelete(); }
+
+void Zenith_SceneTests::TestB4_LoadSceneFromSceneUnloadedCallbackQueuesAndDoesNotDoubleDelete(){
+
+	// Regression for the use-after-free + double-delete hazard in the
+	// SceneUnloaded path: by the time SceneUnloaded fires, pxSceneData has
+	// been deleted but the unload job is still in s_axAsyncUnloadJobs. An
+	// inner pass triggered by a callback-driven blocking LoadScene would
+	// take the "scene already gone" branch, free the job and remove it
+	// from the vector — leaving the outer pass's pxJob pointer dangling.
+	// The unload-depth guard prevents that re-entry. Test passes if the
+	// process completes the unload without crashing or asserting.
+	const std::string strLoadPath = "test_b4_unloaded_callback_load" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strLoadPath, "B4UnloadedCallbackLoad");
+
+	Zenith_Scene xToUnload = Zenith_SceneManager::CreateEmptyScene("B4_UnloadedSceneToUnload");
+	new Zenith_Entity(Zenith_SceneManager::GetSceneData(xToUnload), "DyingEntity");
+
+	static Zenith_SceneOperationID s_ulInnerOpID = ZENITH_INVALID_OPERATION_ID;
+	static uint32_t s_uUnloadedFireCount = 0;
+	static std::string s_strInnerLoadPath;
+	s_ulInnerOpID = ZENITH_INVALID_OPERATION_ID;
+	s_uUnloadedFireCount = 0;
+	s_strInnerLoadPath = strLoadPath;
+
+	auto pfnUnloadedCallback = [](Zenith_Scene) {
+		++s_uUnloadedFireCount;
+		Zenith_SceneManager::LoadScene(s_strInnerLoadPath, SCENE_LOAD_ADDITIVE);
+		s_ulInnerOpID = Zenith_SceneManager::GetLastDeferredLoadOp();
+	};
+	Zenith_SceneManager::CallbackHandle ulHandle =
+		Zenith_SceneManager::RegisterSceneUnloadedCallback(pfnUnloadedCallback);
+
+	uint32_t uHits = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		Zenith_SceneOperationID ulUnloadOp = Zenith_SceneManager::UnloadSceneAsync(xToUnload);
+		Zenith_SceneOperation* pxUnloadOp = Zenith_SceneManager::GetOperation(ulUnloadOp);
+		ZENITH_ASSERT_NOT_NULL(pxUnloadOp, "Async unload op must be valid");
+		PumpUntilComplete(pxUnloadOp);
+		uHits = xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(s_uUnloadedFireCount, 1u, "SceneUnloaded callback must fire exactly once (no duplicate via re-entry)");
+	ZENITH_ASSERT_NE(s_ulInnerOpID, ZENITH_INVALID_OPERATION_ID, "Inner LoadScene must have queued an op recoverable via GetLastDeferredLoadOp");
+	ZENITH_ASSERT_EQ(uHits, 0u, "No runtime asserts may fire while a SceneUnloaded callback queues a nested LoadScene");
+
+	// Drain inner op.
+	Zenith_SceneOperation* pxInnerOp = Zenith_SceneManager::GetOperation(s_ulInnerOpID);
+	ZENITH_ASSERT_NOT_NULL(pxInnerOp, "Inner op must still exist");
+	PumpUntilComplete(pxInnerOp);
+	ZENITH_ASSERT_TRUE(pxInnerOp->IsComplete(), "Inner op must complete after pumping");
+	const Zenith_Scene xInner = pxInnerOp->GetResultScene();
+	ZENITH_ASSERT_TRUE(xInner.IsValid(), "Inner load must produce a valid scene");
+
+	Zenith_SceneManager::UnregisterSceneUnloadedCallback(ulHandle);
+	Zenith_SceneManager::UnloadScene(xInner);
+	CleanupTestSceneFile(strLoadPath);
+}
+
+//=============================================================================
+// B4.B P2: blocking pumps wait for worker file reads explicitly
+//=============================================================================
+
+ZENITH_TEST(Scene, B4_BlockingLoadFlushesPriorAsyncWithoutBusyPoll) { Zenith_SceneTests::TestB4_BlockingLoadFlushesPriorAsyncWithoutBusyPoll(); }
+
+void Zenith_SceneTests::TestB4_BlockingLoadFlushesPriorAsyncWithoutBusyPoll(){
+
+	// Regression for the P2 worker-IO wait. Submit an async load, then
+	// immediately call a blocking load on a different file. The blocking
+	// helper's flush-prior-async stage must explicitly wait for the prior
+	// op's worker file read (via WaitForPendingFileReadsForBlockingPump)
+	// rather than busy-polling Update(0.0f) until the worker happens to
+	// finish. Observable: after the blocking call returns, both the prior
+	// async op and the blocking op are complete, and neither file-load
+	// flag is still false.
+	const std::string strPriorPath = "test_b4_p2_prior" ZENITH_SCENE_EXT;
+	const std::string strBlockingPath = "test_b4_p2_blocking" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPriorPath, "B4P2Prior");
+	CreateTestSceneFile(strBlockingPath, "B4P2Blocking");
+
+	// Submit the prior async load. Don't pump it — leave its file read
+	// in flight on the worker thread.
+	Zenith_SceneOperationID ulPriorOpID = Zenith_SceneManager::LoadSceneAsync(strPriorPath, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperation* pxPriorOp = Zenith_SceneManager::GetOperation(ulPriorOpID);
+	ZENITH_ASSERT_NOT_NULL(pxPriorOp, "Prior async op must be valid");
+
+	// Top-level blocking call. Internally:
+	//   1. CompletePriorOperationsForBlockingLoad → drains prior async ops
+	//      (waits on each in-flight worker file read explicitly before
+	//      pumping the phase machine).
+	//   2. Queues this load.
+	//   3. PumpDeferredLoadUntilComplete → waits on this load's worker
+	//      read explicitly, then pumps Update.
+	Zenith_Scene xBlocking = Zenith_SceneManager::LoadSceneBlockingForBootstrap(strBlockingPath, SCENE_LOAD_ADDITIVE);
+	ZENITH_ASSERT_TRUE(xBlocking.IsValid(), "Blocking load must succeed");
+
+	// After the blocking call returns, the prior op must also be complete
+	// (the flush drained it). If the flush had relied on iMAX_ITERS-bounded
+	// busy-polling and the worker hadn't finished yet, this would fail.
+	ZENITH_ASSERT_TRUE(pxPriorOp->IsComplete(), "Prior async op must be complete after the blocking flush");
+	ZENITH_ASSERT_FALSE(pxPriorOp->HasFailed(), "Prior async op must not fail");
+	ZENITH_ASSERT_TRUE(pxPriorOp->GetResultScene().IsValid(), "Prior async op must produce a valid scene");
+
+	Zenith_SceneManager::UnloadScene(pxPriorOp->GetResultScene());
+	Zenith_SceneManager::UnloadScene(xBlocking);
+	CleanupTestSceneFile(strPriorPath);
+	CleanupTestSceneFile(strBlockingPath);
+}
+
+//=============================================================================
+// B2 P1: ADDITIVE head that transitions to activation-paused mid-pass must
+// stall the queue for the rest of that pass too.
+//=============================================================================
+
+ZENITH_TEST(Scene, B2_AdditiveHeadStallsBehindMidPassActivationPause) { Zenith_SceneTests::TestB2_AdditiveHeadStallsBehindMidPassActivationPause(); }
+
+void Zenith_SceneTests::TestB2_AdditiveHeadStallsBehindMidPassActivationPause(){
+
+	// Regression for the B2-followup queue-stall hazard. The original B2
+	// fix snapshotted bBlockedByPausedHead at function entry — but an
+	// ADDITIVE head only enters the activation-paused state inside Phase 2
+	// (Phase 1 doesn't gate on activation for ADDITIVE). On the same Update
+	// pass that completes the head's file I/O, Phase 1 deserializes, falls
+	// through to Phase 2, and Phase 2 returns Waiting at the 0.9 milestone.
+	// If the predicate isn't recomputed, the cached `false` lets later jobs
+	// advance — violating the queue-stall contract and potentially activating
+	// scenes out of order. The fix recomputes after each head step.
+	const std::string strPathA = "test_b2_followup_head" ZENITH_SCENE_EXT;
+	const std::string strPathB = "test_b2_followup_behind" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPathA, "B2FollowupHead");
+	CreateTestSceneFile(strPathB, "B2FollowupBehind");
+
+	// Submit A and B as ADDITIVE async loads (priorities default → FIFO).
+	Zenith_SceneOperationID ulOpA = Zenith_SceneManager::LoadSceneAsync(strPathA, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOpB = Zenith_SceneManager::LoadSceneAsync(strPathB, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperation* pxOpA = Zenith_SceneManager::GetOperation(ulOpA);
+	Zenith_SceneOperation* pxOpB = Zenith_SceneManager::GetOperation(ulOpB);
+	ZENITH_ASSERT_TRUE(pxOpA != nullptr && pxOpB != nullptr, "Both async ops must be valid");
+
+	// Hold A at activation. B is NOT held — without the mid-pass recompute,
+	// B would race past the activation-paused head on the same Update tick
+	// where A's Phase 2 first hits 0.9.
+	pxOpA->SetActivationAllowed(false);
+
+	// Pump until A reaches activation pause. With the fix, B stays stalled.
+	const float fDt = 1.0f / 60.0f;
+	for (int i = 0; i < 200 && pxOpA->GetProgress() < 0.9f; ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+	ZENITH_ASSERT_GE(pxOpA->GetProgress(), 0.9f, "Head op A must reach activation-paused milestone (got %.3f)", pxOpA->GetProgress());
+	ZENITH_ASSERT_FALSE(pxOpA->IsComplete(), "Head op A must not complete while activation is held");
+
+	// Pump additional frames to give a broken gate the chance to be wrong —
+	// without the recompute, B would race ahead and complete (or at least
+	// reach 0.9) on the same pass A first paused.
+	for (int i = 0; i < 30; ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+
+	ZENITH_ASSERT_FALSE(pxOpB->IsComplete(), "Behind-head op B must not complete while ADDITIVE head A is paused");
+	ZENITH_ASSERT_LT(pxOpB->GetProgress(), 0.85f,
+		"Behind-head op B must not reach the activation-paused milestone while head A is held (got %.3f)",
+		pxOpB->GetProgress());
+
+	// Resume A and verify A completes before B (FIFO under equal priority,
+	// queue-stall contract preserved).
+	pxOpA->SetActivationAllowed(true);
+
+	// Pump until A completes — B is still stalled until A's Phase 2 finishes
+	// and removes A from the queue.
+	for (int i = 0; i < 200 && !pxOpA->IsComplete(); ++i)
+	{
+		Zenith_SceneManager::Update(fDt);
+		Zenith_SceneManager::WaitForUpdateComplete();
+	}
+	ZENITH_ASSERT_TRUE(pxOpA->IsComplete(), "A must complete after resume");
+
+	// Snapshot B's completion state at the moment A completed. Order
+	// requirement: A finishes before B (B at most equal-stage at this point).
+	ZENITH_ASSERT_TRUE(pxOpA->IsComplete(), "A must be complete by the time B is allowed to advance");
+
+	// Pump until B completes.
+	PumpUntilComplete(pxOpB);
+	ZENITH_ASSERT_TRUE(pxOpB->IsComplete(), "B must complete after A");
+
+	Zenith_SceneManager::UnloadScene(pxOpA->GetResultScene());
+	Zenith_SceneManager::UnloadScene(pxOpB->GetResultScene());
+	CleanupTestSceneFile(strPathA);
+	CleanupTestSceneFile(strPathB);
 }

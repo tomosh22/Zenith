@@ -819,7 +819,7 @@ ZENITH_TEST(Automation, SceneSaveLoadRoundTrip)
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(szSavePath), "Scene file should exist after save");
 
 	// Load the saved scene and verify contents survived serialization
-	Zenith_Scene xLoadedScene = Zenith_SceneManager::LoadScene(szSavePath, SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xLoadedScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(szSavePath, SCENE_LOAD_ADDITIVE);
 	ZENITH_ASSERT_TRUE(xLoadedScene.IsValid(), "Loaded scene should be valid");
 
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xLoadedScene);

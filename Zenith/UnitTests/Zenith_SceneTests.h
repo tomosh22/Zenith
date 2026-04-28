@@ -1015,4 +1015,66 @@ public:
 	static void TestAudit33_SceneUnloadingCallback_IsLoadedRemainsTrue();
 	static void TestAudit33_SceneUnloadingCallback_EntityEnumerationViaSceneData();
 	static void TestAudit33_SceneUnloadedCallback_IsLoadedIsFalse();
+
+	//==========================================================================
+	// B1: Unity helper APIs (CreateScene, CreateEntity, Prefab::Instantiate
+	// overload, SceneCreationTargetScope routing)
+	//==========================================================================
+	static void TestB1_CreateSceneRejectsDuplicateName();
+	static void TestB1_CreateSceneRejectsEmptyName();
+	static void TestB1_CreateEntityTargetsActiveSceneWhenNotLoading();
+	static void TestB1_CreateEntityTargetsLoadingSceneDuringActivation();
+	static void TestB1_InstantiateActiveSceneOverload();
+
+	//==========================================================================
+	// B2: Unity AsyncOperation queue-stall behind activation-paused head
+	//==========================================================================
+	static void TestB2_AsyncLoadQueueStallsBehindActivationPausedHead();
+	static void TestB2_AsyncUnloadQueueStallsBehindActivationPausedLoadHead();
+	static void TestB2_QueueResumesWhenHeadActivationAllowed();
+
+	//==========================================================================
+	// B3: SCENE_LOAD_SINGLE auto-fires Resources.UnloadUnusedAssets
+	//==========================================================================
+	static void TestB3_SingleModeSyncLoadFiresUnloadUnusedAssets();
+	static void TestB3_SingleModeAsyncLoadFiresUnloadUnusedAssets();
+	static void TestB3_AdditiveLoadDoesNotFireUnloadUnusedAssets();
+
+	//==========================================================================
+	// B4.B + B4.C: queue-and-defer LoadScene contract coverage
+	// (the callback test below also satisfies "LoadSceneBlockingDoesNotReenterDuringCallbacks")
+	//==========================================================================
+	static void TestB4_LoadSceneFromSceneLoadedCallbackQueuesAndDoesNotRecurse();
+	static void TestB4_LoadSceneReturnsInvalidImmediately();
+	static void TestB4_LoadSceneCompletesOnlyDuringUpdate();
+	static void TestB4_LoadSceneFlushesPriorAsyncOps();
+	static void TestB4_LoadSceneDeferredOpRecoverableViaGetLastDeferred();
+	static void TestB4_LoadSceneBlockingCompletesSynchronouslyAtBootstrap();
+
+	//==========================================================================
+	// B5: MarkEntityPersistent strict root-only
+	//==========================================================================
+	static void TestB5_MarkEntityPersistentRejectsNonRoot();
+	static void TestB5_MarkEntityPersistentSucceedsOnRoot();
+
+	//==========================================================================
+	// C1: GetSceneDataForEntity multi-scene resolution
+	//==========================================================================
+	static void TestC1_GetSceneDataForEntityResolvesAcrossScenes();
+
+	//==========================================================================
+	// B4.B P1: blocking-load re-entrancy via async-unload callbacks
+	//==========================================================================
+	static void TestB4_LoadSceneFromSceneUnloadingCallbackQueuesAndDoesNotRecurse();
+	static void TestB4_LoadSceneFromSceneUnloadedCallbackQueuesAndDoesNotDoubleDelete();
+
+	//==========================================================================
+	// B4.B P2: blocking pumps wait for worker file reads explicitly
+	//==========================================================================
+	static void TestB4_BlockingLoadFlushesPriorAsyncWithoutBusyPoll();
+
+	//==========================================================================
+	// B2 P1: ADDITIVE head transitioning into activation-paused mid-pass
+	//==========================================================================
+	static void TestB2_AdditiveHeadStallsBehindMidPassActivationPause();
 };

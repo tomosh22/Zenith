@@ -757,10 +757,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_UnloadScene();
 
 	// ---- Final scene loading ----
-	Zenith_EditorAutomation::AddStep_SetInitialSceneLoadCallback(&Project_LoadInitialScene);
-	Zenith_EditorAutomation::AddStep_SetLoadingScene(true);
-	Zenith_EditorAutomation::AddStep_Custom(&Project_LoadInitialScene);
-	Zenith_EditorAutomation::AddStep_SetLoadingScene(false);
+	Zenith_EditorAutomation::AddStep_LoadInitialScene(&Project_LoadInitialScene);
 }
 #endif
 
@@ -768,5 +765,5 @@ void Project_LoadInitialScene()
 {
 	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT);
-	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
 }

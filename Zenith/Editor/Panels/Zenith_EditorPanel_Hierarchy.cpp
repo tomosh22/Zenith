@@ -74,7 +74,7 @@ static void HandleSceneFileDragDrop()
 		std::string strPath(pxFilePayload->m_szFilePath);
 		if (strPath.ends_with(ZENITH_SCENE_EXT))
 		{
-			Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
+			Zenith_SceneManager::LoadSceneBlocking_ToolsOnly(strPath, SCENE_LOAD_ADDITIVE);
 		}
 	}
 }
@@ -141,7 +141,20 @@ static void RenderEntityContextMenu(
 		{
 			if (ImGui::MenuItem("Move to DontDestroyOnLoad"))
 			{
-				Zenith_SceneManager::MarkEntityPersistent(xEntity);
+				// B5: MarkEntityPersistent is strict root-only. Walk up to the
+				// hierarchy root from the right-clicked entity so the whole
+				// subtree (root + descendants) gets promoted, matching the
+				// user's "move this group to DontDestroyOnLoad" intent.
+				Zenith_Entity xRoot = xEntity;
+				Zenith_SceneData* pxRootScene = xRoot.GetSceneData();
+				while (pxRootScene && xRoot.GetParentEntityID().IsValid())
+				{
+					Zenith_EntityID xParentID = xRoot.GetParentEntityID();
+					if (!pxRootScene->EntityExists(xParentID)) break;
+					xRoot = pxRootScene->GetEntity(xParentID);
+					pxRootScene = xRoot.GetSceneData();
+				}
+				Zenith_SceneManager::MarkEntityPersistent(xRoot);
 			}
 		}
 

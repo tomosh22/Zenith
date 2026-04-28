@@ -1,21 +1,25 @@
 #include "Zenith.h"
 
+#include "EntityComponent/Internal/Zenith_SceneEntityOwnership.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneData.h"
+#include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistry.h"
+#include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
 
 //==========================================================================
-// Zenith_SceneManager — cross-scene entity operations
+// Zenith_SceneEntityOwnership — implementations.
 //
-// Carved out of Zenith_SceneManager.cpp to keep the main TU focused on
-// scene lifecycle (load/unload/active). The functions here move entities
-// between scenes, rename scenes, merge scenes, and manage persistent-scene
-// membership. All are static members of Zenith_SceneManager and access the
-// statics declared in the main TU.
+// Cross-scene entity moves, scene merges, DontDestroyOnLoad promotion, and
+// entity destruction. Public Zenith_SceneManager methods forward into this
+// class. Entity-state mutation reads/writes Zenith_SceneData privates via
+// `friend class Zenith_SceneEntityOwnership`.
 //==========================================================================
 
-bool Zenith_SceneManager::MoveEntityInternal(Zenith_Entity& xEntity, Zenith_SceneData* pxTargetData)
+bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zenith_SceneData* pxTargetData)
 {
 	Zenith_SceneData* pxSourceData = xEntity.GetSceneData();
 	if (!pxSourceData || pxSourceData == pxTargetData)
@@ -111,10 +115,10 @@ bool Zenith_SceneManager::MoveEntityInternal(Zenith_Entity& xEntity, Zenith_Scen
 	return true;
 }
 
-bool Zenith_SceneManager::MoveEntityToScene(Zenith_Entity& xEntity, Zenith_Scene xTarget)
+bool Zenith_SceneEntityOwnership::MoveEntityToScene(Zenith_Entity& xEntity, Zenith_Scene xTarget)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MoveEntityToScene must be called from main thread");
-	Zenith_Assert(!s_bRenderTasksActive, "MoveEntityToScene: scene mutation while render tasks are reading — render-task invariant violated");
+	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(), "MoveEntityToScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	if (!xEntity.IsValid())
 	{
@@ -128,7 +132,7 @@ bool Zenith_SceneManager::MoveEntityToScene(Zenith_Entity& xEntity, Zenith_Scene
 		return false;
 	}
 
-	Zenith_SceneData* pxTargetData = GetSceneData(xTarget);
+	Zenith_SceneData* pxTargetData = Zenith_SceneRegistry::GetSceneData(xTarget);
 	if (!pxTargetData)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "MoveEntityToScene: Invalid target scene data");
@@ -162,64 +166,13 @@ bool Zenith_SceneManager::MoveEntityToScene(Zenith_Entity& xEntity, Zenith_Scene
 	return MoveEntityInternal(xEntity, pxTargetData);
 }
 
-bool Zenith_SceneManager::RenameScene(Zenith_Scene xScene, const std::string& strNewName)
-{
-	// E.18 / finding 3.15: the scene-name cache (s_axLoadedSceneNames) is an O(1) lookup
-	// shortcut for GetSceneByName. Before this API, renaming via friend access to
-	// pxSceneData->m_strName left the cache stale — lookups by old name still hit, by
-	// new name missed. Now cache and data move together.
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RenameScene must be called from main thread");
-	Zenith_Assert(!s_bRenderTasksActive, "RenameScene: scene mutation while render tasks are reading — render-task invariant violated");
-
-	if (!xScene.IsValid())
-	{
-		Zenith_Warning(LOG_CATEGORY_SCENE, "RenameScene: invalid scene handle");
-		return false;
-	}
-
-	if (xScene.m_iHandle == s_iPersistentSceneHandle)
-	{
-		Zenith_Warning(LOG_CATEGORY_SCENE, "RenameScene: cannot rename the persistent scene");
-		return false;
-	}
-
-	Zenith_SceneData* pxSceneData = GetSceneData(xScene);
-	if (!pxSceneData)
-	{
-		Zenith_Warning(LOG_CATEGORY_SCENE, "RenameScene: scene data not found");
-		return false;
-	}
-
-	pxSceneData->m_strName = strNewName;
-
-	// Update cache entry in place. Matches how AddToSceneNameCache writes — the list
-	// is short (one entry per loaded scene), so linear scan is cheap.
-	for (u_int i = 0; i < s_axLoadedSceneNames.GetSize(); ++i)
-	{
-		if (s_axLoadedSceneNames.Get(i).m_iHandle == xScene.m_iHandle)
-		{
-			s_axLoadedSceneNames.Get(i).m_strName = strNewName;
-			pxSceneData->MarkDirty();
-			return true;
-		}
-	}
-
-	// Cache entry missing — shouldn't happen for a valid loaded scene, but be defensive.
-	Zenith_Warning(LOG_CATEGORY_SCENE,
-		"RenameScene: scene handle %d is loaded but has no cache entry — appending one",
-		xScene.m_iHandle);
-	AddToSceneNameCache(xScene.m_iHandle, strNewName);
-	pxSceneData->MarkDirty();
-	return true;
-}
-
-bool Zenith_SceneManager::MergeScenes(Zenith_Scene xSource, Zenith_Scene xTarget)
+bool Zenith_SceneEntityOwnership::MergeScenes(Zenith_Scene xSource, Zenith_Scene xTarget)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MergeScenes must be called from main thread");
-	Zenith_Assert(!s_bRenderTasksActive, "MergeScenes: scene mutation while render tasks are reading — render-task invariant violated");
+	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(), "MergeScenes: scene mutation while render tasks are reading — render-task invariant violated");
 
-	Zenith_SceneData* pxSource = GetSceneData(xSource);
-	Zenith_SceneData* pxTarget = GetSceneData(xTarget);
+	Zenith_SceneData* pxSource = Zenith_SceneRegistry::GetSceneData(xSource);
+	Zenith_SceneData* pxTarget = Zenith_SceneRegistry::GetSceneData(xTarget);
 
 	if (!pxSource || !pxTarget)
 	{
@@ -234,16 +187,16 @@ bool Zenith_SceneManager::MergeScenes(Zenith_Scene xSource, Zenith_Scene xTarget
 	}
 
 	// Cannot merge from the persistent scene
-	if (xSource.m_iHandle == s_iPersistentSceneHandle)
+	if (xSource.m_iHandle == Zenith_SceneRegistry::s_iPersistentSceneHandle)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "MergeScenes: Cannot merge from persistent scene");
 		return false;
 	}
 
 	// Unity behavior: If source is active, target becomes active
-	if (xSource.m_iHandle == s_iActiveSceneHandle)
+	if (xSource.m_iHandle == Zenith_SceneRegistry::s_iActiveSceneHandle)
 	{
-		SetActiveScene(xTarget);
+		Zenith_SceneManager::SetActiveScene(xTarget);
 	}
 
 	// Get all root entities from source
@@ -258,7 +211,7 @@ bool Zenith_SceneManager::MergeScenes(Zenith_Scene xSource, Zenith_Scene xTarget
 	}
 
 	// Unload the now-empty source scene (forced - bypasses last-scene guard since source is empty)
-	UnloadSceneForced(xSource);
+	Zenith_SceneManager::UnloadSceneForced(xSource);
 	return true;
 }
 
@@ -266,40 +219,102 @@ bool Zenith_SceneManager::MergeScenes(Zenith_Scene xSource, Zenith_Scene xTarget
 // Entity Persistence
 //==========================================================================
 
-void Zenith_SceneManager::MarkEntityPersistent(Zenith_Entity& xEntity)
+void Zenith_SceneEntityOwnership::MarkEntityPersistent(Zenith_Entity& xEntity)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityPersistent must be called from main thread");
 
 	if (!xEntity.IsValid()) return;
 
-	// Unity parity: DontDestroyOnLoad moves the ROOT of the hierarchy,
-	// not just the target entity. Walk up to find the root.
-	Zenith_Entity xRoot = xEntity;
-	while (xRoot.GetParentEntityID().IsValid())
+	// B5: strict root-only semantics. Unity's DontDestroyOnLoad operates on
+	// root GameObjects only — children survive because their root survives.
+	// Pre-B5 Zenith silently walked up to the root, which masked caller bugs
+	// (e.g., a script calling DontDestroyOnLoad() on `this` from a child
+	// component would unexpectedly promote the entire parent chain). The
+	// editor hierarchy panel and other callers that want subtree promotion
+	// now walk to the root explicitly at the call site.
+	if (xEntity.GetParentEntityID().IsValid())
 	{
-		Zenith_SceneData* pxSceneData = xRoot.GetSceneData();
-		if (!pxSceneData) break;
-		Zenith_EntityID xParentID = xRoot.GetParentEntityID();
-		if (!pxSceneData->EntityExists(xParentID)) break;
-		xRoot = pxSceneData->GetEntity(xParentID);
+		Zenith_Error(LOG_CATEGORY_SCENE,
+			"MarkEntityPersistent: entity '%s' is not a root (has parent EntityID idx=%u gen=%u). "
+			"Walk to the root explicitly before calling, or use SetParent(INVALID_ENTITY_ID) to detach. "
+			"Children of a root automatically follow when the root is moved.",
+			xEntity.GetName().c_str(),
+			xEntity.GetParentEntityID().m_uIndex,
+			xEntity.GetParentEntityID().m_uGeneration);
+		return;
 	}
 
-	Zenith_Scene xPersistent = GetPersistentScene();
-	MoveEntityToScene(xRoot, xPersistent);
+	Zenith_Scene xPersistent = Zenith_SceneRegistry::GetPersistentScene();
+	MoveEntityToScene(xEntity, xPersistent);
 
 	// Fire callback AFTER transfer so the entity reference is valid in the new scene
 	// Note: Unity's DontDestroyOnLoad doesn't have a callback; this is a Zenith extension
-	FireEntityPersistentCallbacks(xRoot);
+	Zenith_SceneCallbackBus::FireEntityPersistent(xEntity);
 }
 
-Zenith_Scene Zenith_SceneManager::GetPersistentScene()
+//==========================================================================
+// Entity destruction
+//==========================================================================
+
+void Zenith_SceneEntityOwnership::Destroy(Zenith_Entity& xEntity)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetPersistentScene must be called from main thread");
-	Zenith_Scene xScene;
-	xScene.m_iHandle = s_iPersistentSceneHandle;
-	if (s_iPersistentSceneHandle >= 0 && s_iPersistentSceneHandle < static_cast<int>(s_axSceneGenerations.GetSize()))
+	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Destroy must be called from main thread");
+
+	if (!xEntity.IsValid()) return;
+
+	Zenith_SceneData* pxSceneData = xEntity.GetSceneData();
+	if (pxSceneData)
 	{
-		xScene.m_uGeneration = s_axSceneGenerations.Get(s_iPersistentSceneHandle);
+		pxSceneData->MarkForDestruction(xEntity.GetEntityID());
 	}
-	return xScene;
+}
+
+void Zenith_SceneEntityOwnership::Destroy(Zenith_Entity& xEntity, float fDelay)
+{
+	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Destroy must be called from main thread");
+
+	if (!xEntity.IsValid()) return;
+
+	if (fDelay <= 0.0f)
+	{
+		Destroy(xEntity);
+		return;
+	}
+
+	Zenith_SceneData* pxSceneData = xEntity.GetSceneData();
+	if (pxSceneData)
+	{
+		pxSceneData->MarkForTimedDestruction(xEntity.GetEntityID(), fDelay);
+	}
+}
+
+void Zenith_SceneEntityOwnership::DestroyImmediate(Zenith_Entity& xEntity)
+{
+	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "DestroyImmediate must be called from main thread");
+
+	if (!xEntity.IsValid()) return;
+
+	Zenith_SceneData* pxSceneData = xEntity.GetSceneData();
+	if (pxSceneData)
+	{
+		Zenith_EntityID xEntityID = xEntity.GetEntityID();
+
+		// Clear from pending destruction if present (use global slot flag).
+		if (xEntityID.m_uIndex < Zenith_SceneData::s_axEntitySlots.GetSize())
+		{
+			Zenith_SceneData::s_axEntitySlots.Get(xEntityID.m_uIndex).m_bMarkedForDestruction = false;
+		}
+
+		// Remove from pending destruction list to prevent stale processing.
+		pxSceneData->m_xPendingDestruction.EraseValue(xEntityID);
+
+		// Detach from parent (Unity parity: DestroyImmediate(child) decreases
+		// parent.transform.childCount immediately).
+		Zenith_Entity xLocalEntity(pxSceneData, xEntityID);
+		xLocalEntity.GetComponent<Zenith_TransformComponent>().DetachFromParent();
+
+		// RemoveEntity handles child destruction recursively and dispatches
+		// OnDisable/OnDestroy for every entity (including children).
+		pxSceneData->RemoveEntity(xEntityID);
+	}
 }

@@ -585,7 +585,7 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
 		Flux::ClearPendingCommandLists();
 
-		Zenith_SceneManager::LoadSceneByIndex(s_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
+		Zenith_SceneManager::LoadSceneByIndexBlocking_ToolsOnly(s_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Registered scene (build index %d) loaded", s_iPendingRegisteredSceneBuildIndex);
 
 		ClearSelection();
@@ -607,7 +607,7 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		}
 		Flux::ClearPendingCommandLists();
 
-		Zenith_SceneManager::LoadScene(s_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
+		Zenith_SceneManager::LoadSceneBlocking_ToolsOnly(s_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from file: %s", s_strPendingSceneLoadFromFilePath.c_str());
 
 		ClearSelection();

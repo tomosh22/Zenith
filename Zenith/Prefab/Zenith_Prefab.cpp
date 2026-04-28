@@ -236,11 +236,14 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData, const st
 
 	std::string strName = strEntityName.empty() ? m_strName : strEntityName;
 
-	// Suppress immediate lifecycle dispatch in Entity constructor - we dispatch after all components are added
-	Zenith_SceneManager::SetPrefabInstantiating(true);
-	Zenith_Entity xEntity(pxSceneData, strName);
-	DeserializeComponents(xEntity);
-	Zenith_SceneManager::SetPrefabInstantiating(false);
+	// Suppress immediate lifecycle dispatch in Entity constructor - we dispatch after all components are added.
+	// PrefabInstantiationGuard restores the prior value, so nested prefab instantiation works correctly.
+	Zenith_Entity xEntity;
+	{
+		Zenith_SceneManager::PrefabInstantiationGuard xPrefabGuard;
+		xEntity = Zenith_Entity(pxSceneData, strName);
+		DeserializeComponents(xEntity);
+	}
 
 	// Dispatch lifecycle hooks with all components present (Unity-style: per-entity, immediately after creation)
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
@@ -254,6 +257,30 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData, const st
 	pxSceneData->MarkEntityAwoken(xEntity.GetEntityID());
 
 	return xEntity;
+}
+
+Zenith_Entity Zenith_Prefab::Instantiate(const std::string& strEntityName) const
+{
+	const Zenith_Scene xTarget = Zenith_SceneManager::GetDefaultCreationScene();
+	if (!xTarget.IsValid())
+	{
+		Zenith_Error(LOG_CATEGORY_PREFAB,
+			"Prefab::Instantiate('%s'): no creation target available "
+			"(no active scene and no SceneCreationTargetScope)",
+			m_strName.c_str());
+		return Zenith_Entity();
+	}
+
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTarget);
+	if (!pxSceneData)
+	{
+		Zenith_Error(LOG_CATEGORY_PREFAB,
+			"Prefab::Instantiate('%s'): default creation scene (handle=%d gen=%u) is not loaded",
+			m_strName.c_str(), xTarget.m_iHandle, xTarget.m_uGeneration);
+		return Zenith_Entity();
+	}
+
+	return Instantiate(pxSceneData, strEntityName);
 }
 
 bool Zenith_Prefab::ApplyToEntity(Zenith_Entity& xEntity) const

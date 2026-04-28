@@ -431,6 +431,10 @@ private:
 
 	friend class Zenith_Entity;
 	friend class Zenith_SceneManager;
+	friend class Zenith_SceneRegistry;            // A2: registry methods read scene-data privates (m_bIsLoaded, m_strPath, ...)
+	friend class Zenith_SceneOperationQueue;      // A3: queue runs Awake/Enable dispatch and reads loaded-state privates
+	friend class Zenith_SceneLifecycleScheduler;  // A4: scheduler iterates loaded scenes and dispatches lifecycle
+	friend class Zenith_SceneEntityOwnership;     // A5: entity-ownership methods mutate active/pending-start/timed-destruction lists
 	friend class Zenith_SceneTests;
 	friend class Zenith_UnitTests;
 	friend class Zenith_ComponentMetaRegistry;

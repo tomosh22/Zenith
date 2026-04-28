@@ -195,9 +195,10 @@ public:
 	 */
 	static bool GetEntityPosition(Zenith_EntityID uEntityID, Zenith_Maths::Vector3& xPosOut)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(uEntityID))
+		// C1: resolve owning scene from the entity id rather than the active
+		// scene — entity may legitimately live in a non-active scene.
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(uEntityID);
+		if (!pxSceneData)
 			return false;
 
 		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);

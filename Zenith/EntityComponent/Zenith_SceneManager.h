@@ -24,10 +24,16 @@ class Zenith_CameraComponent;
  *
  * ZENITH EXTENSION:
  * - SCENE_LOAD_ADDITIVE_WITHOUT_LOADING has no Unity equivalent.
- *   Use this for procedurally generated scenes or runtime-created content.
  *   PREFER `CreateEmptyScene(name)` for new code — it expresses the same
- *   intent without routing through the file-load state machine, and avoids
- *   the intersection rules with async deferral / LoadSceneAsyncByIndex.
+ *   intent without routing through the file-load state machine.
+ *
+ *   Status (A6.4): no production callers exist; the mode is exercised only
+ *   by its own regression-guard tests in Zenith_SceneManager.Tests.inl. A
+ *   future cleanup will either retire the mode entirely (delete the enum
+ *   value + implementation + regression tests as a unit) or formalize it as
+ *   a documented test-fixture-only API. A `[[deprecated]]` attribute is NOT
+ *   added here because warnings-as-errors would fail the build on the
+ *   regression-guard tests.
  */
 enum Zenith_SceneLoadMode : uint8_t
 {
@@ -77,8 +83,14 @@ static constexpr Zenith_SceneOperationID ZENITH_INVALID_OPERATION_ID = 0;
  * +----------------------------------+------------------+--------------------------------+
  *
  * Example usage:
- *   // Synchronous load
- *   Zenith_Scene xScene = Zenith_SceneManager::LoadScene("Level.zscen", SCENE_LOAD_SINGLE);
+ *   // Gameplay transition (queue-and-defer; completes on the next Update tick).
+ *   // Return value is INVALID_SCENE; retrieve the operation via
+ *   // Zenith_SceneManager::GetLastDeferredLoadOp() if you need to track it.
+ *   Zenith_SceneManager::LoadScene("Level.zscen", SCENE_LOAD_SINGLE);
+ *
+ *   // Bootstrap (pre-main-loop). Pumps Update internally; returns a real Scene.
+ *   Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(
+ *       "Level.zscen", SCENE_LOAD_SINGLE);
  *
  *   // Asynchronous load with progress
  *   Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync("Level.zscen");
@@ -135,6 +147,7 @@ class Zenith_SceneManager
 {
 	friend class Zenith_SceneData;  // For lifecycle context access
 	friend class Zenith_SceneTests; // For unit test access to s_bIsUpdating
+	friend class Zenith_SceneOperationQueue; // A3+: queue calls private UnloadAllNonPersistent during SINGLE-mode teardown
 
 public:
 	//==========================================================================
@@ -187,6 +200,26 @@ public:
 	// bAllowSetActive=false to prevent auto-activation — used internally when creating
 	// the persistent DontDestroyOnLoad scene (A6).
 	static Zenith_Scene CreateEmptyScene(const std::string& strName, bool bAllowSetActive = true);
+
+	/**
+	 * Unity-parity CreateScene. Validates the name (rejects empty + duplicates)
+	 * before delegating to CreateEmptyScene(name, true). Returns INVALID_SCENE
+	 * on rejection and logs an error; CreateEmptyScene retains its permissive
+	 * behaviour for legacy callers.
+	 *
+	 * Reference: https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.CreateScene.html
+	 */
+	static Zenith_Scene CreateScene(const std::string& strName);
+
+	/**
+	 * Create an entity in GetDefaultCreationScene() — the top of the
+	 * SceneCreationTargetScope stack if a load is in progress, otherwise the
+	 * active scene. Logs an error and returns a default-constructed (invalid)
+	 * Zenith_Entity when no creation target exists (no active scene + no
+	 * scope). Mirrors Unity's contract that GameObjects created during scene
+	 * deserialization / SceneLoaded land in the loading scene.
+	 */
+	static Zenith_Entity CreateEntity(const std::string& strName);
 
 	//==========================================================================
 	// Scene Queries
@@ -256,32 +289,89 @@ public:
 	static Zenith_Scene GetSceneByPath(const std::string& strPath);
 
 	//==========================================================================
-	// Scene Loading (Synchronous)
+	// Scene Loading (Queue-and-defer — gameplay transitions)
 	//==========================================================================
 
 	/**
-	 * Load scene synchronously (blocks until complete).
+	 * Queue-and-defer scene load (B4). Forces all in-flight async operations
+	 * to complete first (Unity flush-prior-async semantic), then queues the
+	 * load via LoadSceneAsync. The new scene's lifecycle (Awake / OnEnable /
+	 * SceneLoaded) fires during a subsequent Zenith_SceneManager::Update tick.
 	 *
-	 * IMPORTANT — BEHAVIOUR WHEN CALLED DURING Update():
-	 * If invoked from a component OnUpdate/OnLateUpdate/etc., the call is
-	 * auto-deferred via LoadSceneAsync and returns INVALID_SCENE (the scene
-	 * slot is not allocated until Phase 1 runs next frame, so no handle can
-	 * be returned synchronously). A warning is logged. Callers that need to
-	 * track the load should invoke LoadSceneAsync directly and retain the
-	 * returned operation ID.
+	 * RETURN VALUE: always Zenith_Scene::INVALID_SCENE. The scene handle is
+	 * not knowable until Phase 1 runs next tick. Callers that need to track
+	 * the load:
+	 *   * Use Zenith_SceneManager::GetLastDeferredLoadOp() and resolve via
+	 *     GetOperation(opId)->GetResultScene() once IsComplete() is true.
+	 *   * Or use LoadSceneAsync directly and retain the operation ID.
+	 *   * Bootstrap and editor-tool code: prefer LoadSceneBlockingForBootstrap
+	 *     / LoadSceneBlocking_ToolsOnly which pump Update and return a real
+	 *     scene handle.
 	 *
-	 * Unity divergence: Unity returns a valid loading handle immediately even
-	 * during Update; Zenith returns INVALID in that case. See F9 in the scene
-	 * audit for why this is a deliberate simplification.
+	 * RE-ENTRANCY: when invoked from inside a SceneLoaded handler (or any
+	 * context where ProcessPendingAsyncLoads is mid-iteration, or
+	 * IsUpdating() is true), the prior-flush is skipped — the queue is
+	 * mid-process and re-pumping it would re-fire the same callback.
+	 * The op is still queued and recoverable via GetLastDeferredLoadOp().
 	 */
 	static Zenith_Scene LoadScene(const std::string& strPath,
 		Zenith_SceneLoadMode eMode = SCENE_LOAD_SINGLE);
 
 	/**
-	 * Load scene by build index synchronously
+	 * Queue-and-defer scene load by build index. Same contract as LoadScene
+	 * (returns INVALID_SCENE; op is recoverable via GetLastDeferredLoadOp).
 	 */
 	static Zenith_Scene LoadSceneByIndex(int iBuildIndex,
 		Zenith_SceneLoadMode eMode = SCENE_LOAD_SINGLE);
+
+	//==========================================================================
+	// Scene Loading (Blocking — bootstrap / tools only)
+	//==========================================================================
+
+	/**
+	 * Bootstrap-only blocking scene load. Use from per-game
+	 * Project_LoadInitialScene wrappers. Two legitimate call sites:
+	 *   * Non-tools bootstrap: Zenith_Main.cpp calls Project_LoadInitialScene
+	 *     before Zenith_MainLoop starts.
+	 *   * Tools editor automation: the LOAD_INITIAL_SCENE step replays
+	 *     Project_LoadInitialScene as the final automation action. This runs
+	 *     inside the main loop but under a LifecycleDeferralGuard.
+	 *
+	 * Asserts that either the main loop has not yet started OR a
+	 * LifecycleDeferralGuard is currently on the stack (i.e.,
+	 * IsLoadingScene()). Gameplay calls from script Update have neither and
+	 * fail loudly — those callers must use LoadSceneAsync.
+	 */
+	static Zenith_Scene LoadSceneBlockingForBootstrap(const std::string& strPath,
+		Zenith_SceneLoadMode eMode = SCENE_LOAD_SINGLE);
+
+	/**
+	 * Bootstrap-only blocking load by build index. Same contract as
+	 * LoadSceneBlockingForBootstrap; provided because per-game bootstrap
+	 * registers build indices before loading the initial scene.
+	 */
+	static Zenith_Scene LoadSceneByIndexBlockingForBootstrap(int iBuildIndex,
+		Zenith_SceneLoadMode eMode = SCENE_LOAD_SINGLE);
+
+#ifdef ZENITH_TOOLS
+	/**
+	 * Editor-only blocking scene load. Used by editor commands (Open Scene,
+	 * Play/Stop transitions, hierarchy drag-drop) where the editor is allowed
+	 * to block on a user-initiated action. Compiled out of non-tools builds.
+	 *
+	 * No main-loop guard — the editor runs inside the main loop and is
+	 * permitted to block on its own commands.
+	 */
+	static Zenith_Scene LoadSceneBlocking_ToolsOnly(const std::string& strPath,
+		Zenith_SceneLoadMode eMode = SCENE_LOAD_SINGLE);
+
+	/**
+	 * Editor-only blocking load by build index. Same contract as
+	 * LoadSceneBlocking_ToolsOnly.
+	 */
+	static Zenith_Scene LoadSceneByIndexBlocking_ToolsOnly(int iBuildIndex,
+		Zenith_SceneLoadMode eMode = SCENE_LOAD_SINGLE);
+#endif
 
 	//==========================================================================
 	// Scene Loading (Asynchronous)
@@ -319,23 +409,23 @@ public:
 	static bool IsOperationValid(Zenith_SceneOperationID ulID);
 
 	/**
-	 * Retrieve the operation ID created by the most recent deferred sync-load
-	 * auto-promotion. When sync `LoadScene(path, SINGLE)` is called inside an
-	 * `Update()` tick (where `s_bIsUpdating == true`), Zenith transparently
-	 * routes the call through `LoadSceneAsync` and the original caller receives
-	 * `INVALID_SCENE`. Call this immediately after that sync `LoadScene` returns
-	 * to recover the op-id and poll / subscribe for completion.
+	 * Retrieve the operation ID for the most recent `LoadScene` /
+	 * `LoadSceneByIndex` call. Post-B4 these are queue-and-defer always: they
+	 * return `INVALID_SCENE` and stash the op-id here, where callers can pick
+	 * it up to poll / subscribe for completion (or to feed into
+	 * `LoadSceneBlockingForBootstrap` / `LoadSceneBlocking_ToolsOnly` which
+	 * pump Update internally).
 	 *
 	 * Returns `ZENITH_INVALID_OPERATION_ID` if:
-	 *  - The previous `LoadScene` call did not trigger a deferred auto-promotion
-	 *    (it completed synchronously outside `Update`, or never happened).
+	 *  - No `LoadScene*` call has been made yet, or the runtime was just reset.
 	 *  - The op-id has since been cleaned up (see `GetOperation` docstring for
 	 *    the ~60-frame cleanup window).
 	 *
-	 * Audit §3.8 — Unity-parity note: Unity's `LoadScene` returns a valid
-	 * `Scene` handle immediately even from script Update. Zenith's sync entry
-	 * point returns `INVALID_SCENE` on deferral, so this accessor surfaces the
-	 * op-id that was otherwise dropped inside `HandleDeferredLoad`.
+	 * Unity-parity reference: Unity's `LoadScene` returns a `Scene` handle
+	 * directly even from script Update. Zenith decoupled the return value
+	 * from the underlying op so callers explicitly opt into the right
+	 * synchronization model (queue-and-defer for gameplay, blocking helpers
+	 * for bootstrap / tools).
 	 * Ref: https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.LoadScene.html
 	 */
 	static Zenith_SceneOperationID GetLastDeferredLoadOp();
@@ -624,6 +714,17 @@ public:
 	 */
 	static void UnloadUnusedAssets();
 
+#ifdef ZENITH_TESTING
+	/**
+	 * Test-only call counter for UnloadUnusedAssets. Incremented on every
+	 * call (manual or auto-fired by SCENE_LOAD_SINGLE teardown). Reset to 0
+	 * by ResetForNextTest. Used by B3 regression tests to assert that
+	 * SCENE_LOAD_SINGLE auto-fires UnloadUnusedAssets and SCENE_LOAD_ADDITIVE
+	 * does not.
+	 */
+	static uint32_t GetUnloadUnusedAssetsCallCount();
+#endif
+
 	//==========================================================================
 	// Build Settings Registry
 	//==========================================================================
@@ -761,7 +862,7 @@ public:
 
 	static void Initialise();
 	static void Shutdown();
-	static void NotifyAsyncJobPriorityChanged() { s_bAsyncJobsNeedSort = true; }
+	static void NotifyAsyncJobPriorityChanged();  // forwarder to Zenith_SceneOperationQueue
 	static void Update(float fDt);
 	static void WaitForUpdateComplete();
 
@@ -794,33 +895,143 @@ public:
 	static bool IsLoadingScene();
 
 	/**
-	 * Set prefab instantiating flag
+	 * True while a PrefabInstantiationGuard is on the stack (post-A6.3 the
+	 * guard is the only writer of Zenith_SceneLifecycleScheduler::
+	 * s_bIsPrefabInstantiating). Read accessor backing
+	 * Zenith_SceneLifecycleContext::IsPrefabInstantiating(); subsystems must
+	 * read through the context, not this method directly.
 	 */
-	static void SetPrefabInstantiating(bool b);
+	static bool IsPrefabInstantiating();
 
 	/**
-	 * Set scene loading flag (suppresses immediate lifecycle dispatch in entity constructors)
+	 * True during Zenith_SceneManager::Update(). Read accessor backing
+	 * Zenith_SceneLifecycleContext::IsUpdating(); subsystems must read through
+	 * the context, not this method directly.
 	 */
-	static void SetLoadingScene(bool b);
+	static bool IsUpdating();
 
 	/**
-	 * RAII guard for lifecycle deferral flags.
-	 * Ensures the flag is reset even if an exception or early return occurs.
+	 * True between the start of a SCENE_LOAD_SINGLE teardown and the consolidated
+	 * old->new ActiveSceneChanged dispatch. Read accessor backing
+	 * Zenith_SceneLifecycleContext::IsActiveSceneSuppressed().
+	 */
+	static bool IsActiveSceneSuppressed();
+
+	/**
+	 * Pending build-index parked by LoadSceneByIndex / LoadSceneAsyncByIndex.
+	 * -1 when no index is currently being staged. Read accessor backing
+	 * Zenith_SceneLifecycleContext::GetPendingBuildIndex().
+	 */
+	static int GetPendingBuildIndex();
+
+	/**
+	 * True when the canonical path is already being loaded (file-I/O stack or
+	 * lifecycle dispatch stack). Public accessor backing
+	 * Zenith_SceneLifecycleContext::IsCircularLoadDependency(); forwards to the
+	 * private CheckCircularLoadDependency helper.
+	 */
+	static bool IsCircularLoadDependency(const std::string& strCanonicalPath);
+
+	/**
+	 * RAII guard for lifecycle-deferral flags. Save/restore semantics: stores the
+	 * flag's prior value on construction and restores it on destruction, so nested
+	 * guards stack correctly (scene loading nested inside a deferral, prefab
+	 * instantiation inside a load, etc.).
 	 * Usage: Zenith_SceneManager::LifecycleDeferralGuard xGuard(s_bIsLoadingScene);
 	 */
 	struct LifecycleDeferralGuard
 	{
 		bool& m_bFlag;
-		LifecycleDeferralGuard(bool& bFlag) : m_bFlag(bFlag) { m_bFlag = true; }
-		~LifecycleDeferralGuard() { m_bFlag = false; }
+		bool  m_bPrevValue;
+		LifecycleDeferralGuard(bool& bFlag) : m_bFlag(bFlag), m_bPrevValue(bFlag) { m_bFlag = true; }
+		~LifecycleDeferralGuard() { m_bFlag = m_bPrevValue; }
 		LifecycleDeferralGuard(const LifecycleDeferralGuard&) = delete;
 		LifecycleDeferralGuard& operator=(const LifecycleDeferralGuard&) = delete;
 	};
 
 	/**
-	 * Dispatch lifecycle init for all loaded scenes
+	 * RAII guard for prefab instantiation. Sets IsPrefabInstantiating=true on
+	 * construction and restores the prior value on destruction. Save/restore
+	 * semantics support nested prefab instantiation (a prefab whose components
+	 * spawn child prefabs).
+	 *
+	 * After A6.3, this is the only writer of Zenith_SceneLifecycleScheduler::
+	 * s_bIsPrefabInstantiating in production code.
+	 */
+	struct PrefabInstantiationGuard
+	{
+		PrefabInstantiationGuard();
+		~PrefabInstantiationGuard();
+		PrefabInstantiationGuard(const PrefabInstantiationGuard&) = delete;
+		PrefabInstantiationGuard& operator=(const PrefabInstantiationGuard&) = delete;
+	private:
+		bool m_bPrevValue;
+	};
+
+	/**
+	 * RAII guard for the engine's frame-update phase. Sets IsUpdating=true on
+	 * construction and restores the prior value on destruction. Used by
+	 * Zenith_Core to mark the UI-update span where script-driven scene loads
+	 * must defer to the next frame.
+	 *
+	 * After A6.3, this is the only writer of Zenith_SceneLifecycleScheduler::
+	 * s_bIsUpdating in production code.
+	 */
+	struct SceneUpdateDeferralGuard
+	{
+		SceneUpdateDeferralGuard();
+		~SceneUpdateDeferralGuard();
+		SceneUpdateDeferralGuard(const SceneUpdateDeferralGuard&) = delete;
+		SceneUpdateDeferralGuard& operator=(const SceneUpdateDeferralGuard&) = delete;
+	private:
+		bool m_bPrevValue;
+	};
+
+	/**
+	 * RAII guard that pushes a scene onto the explicit creation-target stack.
+	 * While in scope, GetDefaultCreationScene() returns this scene (or the
+	 * top-most nested scope) instead of the active scene. Wraps the load /
+	 * deserialization / activation paths so entities created as a side effect
+	 * of those operations land in the scene being materialized rather than
+	 * leaking into whatever scene happened to be active when the load began.
+	 *
+	 * Stack-based, so nested loads (a SceneLoaded callback that itself loads
+	 * another scene) push/pop correctly without losing the outer target.
+	 */
+	struct SceneCreationTargetScope
+	{
+		explicit SceneCreationTargetScope(Zenith_Scene xScene);
+		~SceneCreationTargetScope();
+		SceneCreationTargetScope(const SceneCreationTargetScope&) = delete;
+		SceneCreationTargetScope& operator=(const SceneCreationTargetScope&) = delete;
+	};
+
+	/**
+	 * Set by Zenith_Core::Zenith_MainLoop driver — true just before the main
+	 * loop's while(...) starts iterating, false once it exits. Read by
+	 * LoadSceneBlockingForBootstrap to assert bootstrap-only invocation.
+	 * Production code other than the engine bootstrap should never call this.
+	 */
+	static void SetMainLoopRunning(bool bRunning);
+
+	/**
+	 * Returns the scene that GetDefaultCreationScene-aware APIs should target.
+	 * Top of the SceneCreationTargetScope stack if any scope is active;
+	 * otherwise the active scene. May return INVALID_SCENE when no creation
+	 * scope is open and no scene is active (e.g. during Initialise before the
+	 * persistent scene is created).
+	 */
+	static Zenith_Scene GetDefaultCreationScene();
+
+#ifdef ZENITH_TESTING
+	/**
+	 * Dispatch lifecycle init for all loaded scenes. Test-only — used by unit
+	 * tests that build a scene via deferred entity creation and need to drive
+	 * the Awake/OnEnable phase explicitly (mirrors what the per-frame Update
+	 * does after a load completes). Not callable from production code.
 	 */
 	static void DispatchFullLifecycleInit();
+#endif
 
 	/**
 	 * Register the initial scene load callback (called by platform main to set Project_LoadInitialScene)
@@ -838,15 +1049,15 @@ public:
 	static void ResetAllRenderSystems();
 
 	/**
-	 * Mark that we're inside a frame update phase (script execution, UI callbacks, etc.)
-	 * While true, LoadScene/LoadSceneByIndex route through async to defer to next frame.
-	 * Set by SceneManager::Update internally, and by the main loop around UI update.
-	 */
-	static void SetIsUpdating(bool b) { s_bIsUpdating = b; }
-
-	/**
-	 * Unload a scene bypassing the "last scene" guard.
-	 * Used by editor backup restore where the guard would prevent cleanup.
+	 * Editor / test recovery only. Unloads a scene bypassing the "last loaded
+	 * scene" guard that normally prevents the manager from being left with no
+	 * active scene. Used by:
+	 *   * Editor backup restore (Play -> Stop), where the new scene is loaded
+	 *     immediately after this call so the no-active-scene window is brief.
+	 *   * Test fixture teardown that needs a clean slate even when only one
+	 *     scene remains.
+	 * Production gameplay code MUST use UnloadScene / UnloadSceneAsync, which
+	 * preserves the at-least-one-scene invariant the lifecycle systems rely on.
 	 */
 	static void UnloadSceneForced(Zenith_Scene xScene);
 
@@ -855,7 +1066,7 @@ private:
 	// Internal Helpers
 	//==========================================================================
 
-	static bool MoveEntityInternal(Zenith_Entity& xEntity, Zenith_SceneData* pxTargetData);
+	// A5: MoveEntityInternal moved to Zenith_SceneEntityOwnership (private).
 	static bool IsSceneVisibleToUser(u_int uSlotIndex, const Zenith_SceneData* pxData);
 	static bool IsSceneUpdatable(const Zenith_SceneData* pxData);
 	static int SelectNewActiveScene(int iExcludeHandle = -1);
@@ -864,8 +1075,8 @@ private:
 
 	// Per-frame helpers called from Update(). Split out to flatten Update()'s
 	// nesting — the animation collection walk was five levels deep inline.
-	static void CollectUpdatableScenes(Zenith_Vector<Zenith_SceneData*>& axOut);
-	static void CollectAnimationsFromScene(Zenith_SceneData* pxData);
+	// A4: CollectUpdatableScenes / CollectAnimationsFromScene moved to
+	// Zenith_SceneLifecycleScheduler.cpp's anonymous namespace.
 
 	/**
 	 * Create and return an invalid scene handle (handle=-1, generation=0).
@@ -878,7 +1089,8 @@ private:
 	 * Used by LoadScene and LoadSceneAsync to prevent circular scene loads.
 	 * @return true if the path is already being loaded (circular dependency detected)
 	 */
-	static bool CheckCircularLoadDependency(const std::string& strCanonicalPath);
+	// A4: CheckCircularLoadDependency body migrated to
+	// Zenith_SceneLifecycleScheduler::IsCircularLoadDependency.
 
 	/**
 	 * Fire unloading/unloaded callbacks and select a new active scene if needed.
@@ -889,56 +1101,26 @@ private:
 	static void FireUnloadCallbacksAndSelectNewActive(int iHandle, Zenith_Scene xScene);
 
 	//==========================================================================
-	// LoadScene helpers — carved out so LoadScene reads as an orchestration
-	// shell instead of a 250-line multi-phase body. See LoadScene for the
-	// ordering contract that ties these together.
+	// LoadScene helpers. Pre-B4 LoadScene was a multi-phase synchronous body
+	// using HandleDeferredLoad / ValidateFileAndDetectCircular /
+	// PerformSingleModeTeardownAndSwap / DispatchLifecycleAndFire as Phase
+	// helpers. B4 collapsed LoadScene into a queue-and-defer thin facade —
+	// the multi-phase work now lives in
+	// Zenith_SceneOperationQueue::RunAsyncJobPhase1/2. ValidateLoadRequest
+	// stayed as the only top-of-LoadScene precondition check.
 	//==========================================================================
 
-	// Phase 1: pre-condition checks. Returns false if the caller must bail
-	// with MakeInvalidScene().
 	static bool ValidateLoadRequest(const std::string& strPath);
 
-	// Phase 2: if called from inside an Update (s_bIsUpdating), defer to the
-	// async path. Returns true when the load was handled (caller must return
-	// xOutScene); false means continue synchronously.
-	static bool HandleDeferredLoad(const std::string& strPath, Zenith_SceneLoadMode eMode, Zenith_Scene& xOutScene);
-
-	// Phase 3: file-existence / circular-load / recursion-depth / SINGLE-mode
-	// header validation. Returns false if the caller must bail.
-	static bool ValidateFileAndDetectCircular(const std::string& strPath, const std::string& strCanonicalPath, Zenith_SceneLoadMode eMode);
-
-	// Phase 4b: SINGLE-mode teardown + swap. Called only after a successful
-	// staging-scene deserialization. Fires the consolidated ActiveSceneChanged.
-	static void PerformSingleModeTeardownAndSwap(Zenith_Scene xScene, Zenith_Scene xOldActiveBeforeTeardown);
-
-	// Phase 5: Awake / OnEnable / IsActivated flip / SceneLoaded callbacks /
-	// clear loading path. Runs after the scene is fully deserialized.
-	static void DispatchLifecycleAndFire(Zenith_Scene xScene, Zenith_SceneData* pxSceneData, const std::string& strCanonicalPath, Zenith_SceneLoadMode eMode);
-
 	//==========================================================================
-	// Scene Storage
+	// Scene storage / name cache / build-index registry — moved to
+	// Zenith_SceneRegistry post-A2b. Manager-internal lifecycle code references
+	// Zenith_SceneRegistry::s_* directly. The two helpers below stay as public
+	// forwarders for one-line historical call sites in CreateEmptyScene etc.
 	//==========================================================================
 
-	static Zenith_Vector<Zenith_SceneData*> s_axScenes;
-	static Zenith_Vector<uint32_t> s_axSceneGenerations;  // Generation counters for stale handle detection
-	static Zenith_Vector<int> s_axFreeHandles;
-	static int s_iActiveSceneHandle;
-	static int s_iPersistentSceneHandle;
-	static uint64_t s_ulNextLoadTimestamp;  // For selecting most recently loaded scene when active is unloaded
-
-	// Scene name cache for O(1) lookup by name
-	// #TODO: Replace with engine hash map when available
-	struct SceneNameEntry
-	{
-		std::string m_strName;
-		int m_iHandle;
-	};
-	static Zenith_Vector<SceneNameEntry> s_axLoadedSceneNames;
 	static void AddToSceneNameCache(int iHandle, const std::string& strName);
 	static void RemoveFromSceneNameCache(int iHandle);
-
-	// Build index registry (indexed by build index - dense, non-negative)
-	static Zenith_Vector<std::string> s_axBuildIndexToPath;
 
 	// Audit §3.12: AreRenderTasksActive() is a const read used by Zenith_Scene::IsValid()
 	// (see Zenith_Scene.cpp). Previously the getter lived entirely inside
@@ -971,64 +1153,25 @@ public:
 private:
 
 	//==========================================================================
-	// Lifecycle / Update State
+	// Lifecycle / Update State — moved to Zenith_SceneLifecycleScheduler post-A4.
+	// Public manager methods forward into the scheduler.
 	//==========================================================================
 
-	static bool s_bIsUpdating;            // True inside Update(); LoadScene defers to async when set
-	static bool s_bIsLoadingScene;        // Suppresses immediate lifecycle dispatch during load
-	// Audit §3.8 — op-id stashed by HandleDeferredLoad when sync LoadScene is
-	// auto-promoted to async. Exposed via GetLastDeferredLoadOp().
-	static Zenith_SceneOperationID s_ulLastDeferredLoadOp;
-	static bool s_bIsPrefabInstantiating;
-	static float s_fFixedTimeAccumulator;
-	static float s_fFixedTimestep;                // Default 0.02 = 50Hz (Unity parity)
-
-	static InitialSceneLoadFn s_pfnInitialSceneLoad;
-
-	// Circular load detection (small sets - linear scan is fine)
-	static Zenith_Vector<std::string> s_axCurrentlyLoadingPaths;
-	static Zenith_Vector<std::string> s_axLifecycleLoadStack;  // Scenes in lifecycle dispatch (OnAwake/OnEnable)
+	// Push/Pop lifecycle context — Zenith_SceneData.cpp calls these directly via
+	// the manager's public API. Body forwards to the scheduler.
 	static void PushLifecycleContext(const std::string& strCanonicalPath);
 	static void PopLifecycleContext(const std::string& strCanonicalPath);
 
 	//==========================================================================
 	// Callback System
+	//
+	// Lists, handle allocator, deferred-removal queue, dispatch-depth counter
+	// and active-scene-changed suppression flags now live in
+	// Zenith_SceneCallbackBus (Internal/Zenith_SceneCallbackBus.{h,cpp}).
+	// The Fire* methods below remain as thin forwarders so internal call
+	// sites in this header's TU and sibling SceneManager TUs don't need to
+	// change.
 	//==========================================================================
-
-	template<typename T>
-	struct CallbackEntry
-	{
-		CallbackHandle m_ulHandle;
-		T m_pfnCallback;
-	};
-
-	template<typename TCallback>
-	struct Zenith_CallbackList
-	{
-		Zenith_Vector<CallbackEntry<TCallback>> m_axEntries;
-
-		CallbackHandle Register(TCallback pfn);
-		bool Unregister(CallbackHandle ulHandle);
-
-		template<typename... Args>
-		void Fire(Args&&... args);
-	};
-
-	static Zenith_CallbackList<SceneChangedCallback> s_xActiveSceneChangedCallbacks;
-	static Zenith_CallbackList<SceneLoadedCallback> s_xSceneLoadedCallbacks;
-	static Zenith_CallbackList<SceneUnloadingCallback> s_xSceneUnloadingCallbacks;
-	static Zenith_CallbackList<SceneUnloadedCallback> s_xSceneUnloadedCallbacks;
-	static Zenith_CallbackList<SceneLoadStartedCallback> s_xSceneLoadStartedCallbacks;
-	static Zenith_CallbackList<EntityPersistentCallback> s_xEntityPersistentCallbacks;
-	static CallbackHandle s_ulNextCallbackHandle;
-
-	// Deferred callback removal to prevent issues when unregistering during callback dispatch
-	static Zenith_Vector<CallbackHandle> s_axCallbacksPendingRemoval;
-	static uint32_t s_uFiringCallbacksDepth;
-	static void ProcessPendingCallbackRemovals();
-	static bool IsCallbackPendingRemoval(CallbackHandle ulHandle);
-	static bool IsCallbackHandleInUse(CallbackHandle ulHandle);
-	static CallbackHandle AllocateCallbackHandle();
 
 	static void FireSceneLoadedCallbacks(Zenith_Scene xScene, Zenith_SceneLoadMode eMode);
 	static void FireSceneUnloadingCallbacks(Zenith_Scene xScene);
@@ -1038,139 +1181,15 @@ private:
 	static void FireEntityPersistentCallbacks(const Zenith_Entity& xEntity);
 
 	//==========================================================================
-	// Async Operations
+	// Async Operations — moved to Zenith_SceneOperationQueue post-A3.
+	//
+	// State (operation map, async load + unload jobs, async config knobs) and
+	// internal pipeline (phase machines, cancellation, cleanup, sort) live in
+	// Internal/Zenith_SceneOperationQueue.{h,cpp}. The public manager methods
+	// below are forwarders or keep their bodies on the manager but reference
+	// Zenith_SceneOperationQueue::s_*.
 	//==========================================================================
 
-	static Zenith_Vector<Zenith_SceneOperation*> s_axActiveOperations;
-	static uint32_t s_uAsyncUnloadBatchSize;      // Entities destroyed per frame during async unload (default 50)
-	static uint32_t s_uMaxConcurrentAsyncLoads;    // Maximum concurrent async loads (default 8)
-
-	// Operation ID tracking (few active at any time - linear scan)
-	// #TODO: Replace with engine hash map
-	struct OperationMapEntry
-	{
-		uint64_t m_ulOperationID = 0;
-		Zenith_SceneOperation* m_pxOperation = nullptr;
-	};
-	static Zenith_Vector<OperationMapEntry> s_axOperationMap;
-	static uint64_t s_ulNextOperationID;
-	static Zenith_SceneOperationID AllocateOperationID();
-	static void CleanupCompletedOperations();
-
-	// File load milestones (used instead of atomic float for better ordering guarantees)
-	enum class FileLoadMilestone : uint8_t
-	{
-		IDLE = 0,
-		FILE_READ_STARTED = 10,     // Maps to 0.1 progress
-		FILE_READ_COMPLETE = 70     // Maps to 0.7 progress
-	};
-
-	// Async loading job - file I/O on worker thread, scene creation on main thread
-	struct AsyncLoadJob
-	{
-		enum class LoadPhase : uint8_t
-		{
-			WAITING_FOR_FILE,     // File I/O on worker thread
-			DESERIALIZED,         // Scene created and deserialized, waiting for activation
-		};
-
-		std::string m_strPath;           // Original path for file I/O
-		std::string m_strCanonicalPath;  // Canonical path for tracking/cleanup
-		Zenith_SceneLoadMode m_eMode;
-		int m_iBuildIndex;                   // Build index if loaded by index, -1 otherwise
-		Zenith_SceneOperation* m_pxOperation;  // Owned by s_axActiveOperations
-		std::atomic<bool> m_bFileLoadComplete;
-		std::atomic<FileLoadMilestone> m_eMilestone;  // File read progress milestones
-		Zenith_DataStream* m_pxLoadedData;  // Owned, delete when done
-		Zenith_Task* m_pxTask;              // Task for worker thread execution
-		LoadPhase m_ePhase;                 // Current load phase (main thread only)
-		int m_iCreatedSceneHandle;          // Scene handle after deserialization (-1 until created)
-		// A5: generation captured at scene-creation time. Cancellation/finalization paths
-		// compare against the current s_axSceneGenerations entry before dereferencing —
-		// if they differ, the slot was recycled (scene unloaded + replacement loaded into
-		// the same handle) and touching m_iCreatedSceneHandle would corrupt the wrong scene.
-		uint32_t m_uCreatedSceneGeneration;
-
-		// A5: Pre-teardown active scene captured so Phase 2 can fire a single consolidated
-		// ActiveSceneChanged (old→new) instead of two (old→fallback, fallback→new). Stored
-		// as handle+generation rather than Zenith_Scene to avoid making this header depend
-		// on Zenith_Scene.h (keeps forward-decl usable). -1 handle means "no snapshot yet".
-		int m_iSingleModeOldActiveHandle;
-		uint32_t m_uSingleModeOldActiveGeneration;
-
-		AsyncLoadJob() : m_iBuildIndex(-1), m_pxOperation(nullptr), m_bFileLoadComplete(false), m_eMilestone(FileLoadMilestone::IDLE), m_pxLoadedData(nullptr), m_pxTask(nullptr), m_ePhase(LoadPhase::WAITING_FOR_FILE), m_iCreatedSceneHandle(-1), m_uCreatedSceneGeneration(0), m_iSingleModeOldActiveHandle(-1), m_uSingleModeOldActiveGeneration(0) {}
-		~AsyncLoadJob()
-		{
-			Zenith_Assert(Zenith_Multithreading::IsMainThread(), "AsyncLoadJob must be deleted from main thread");
-			delete m_pxLoadedData;
-			delete m_pxTask;
-		}
-	};
-	static Zenith_Vector<AsyncLoadJob*> s_axAsyncJobs;
-	static bool s_bAsyncJobsNeedSort;
-	static void AsyncSceneLoadTask(void* pData);
-	// Returns the post-cancellation index of pxExclude in s_axAsyncJobs. If pxExclude
-	// is nullptr or not found, returns UINT32_MAX. Callers tracking a loop index over
-	// s_axAsyncJobs must update it from this return value instead of hard-coding 0
-	// (the surviving job is not always at index 0 — insertion-sort by priority can
-	// reorder in future refactors).
-	static u_int CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude = nullptr);
-	static void ProcessPendingAsyncLoads();
-	static void FailAsyncLoadOperation(Zenith_SceneOperation* pxOp);
-	static void CleanupAndRemoveAsyncJob(u_int uIndex);
-
-	// ProcessPendingAsyncLoads helpers. Each step returns one of these to tell the
-	// outer per-job loop how to advance — job-removal paths all funnel through
-	// CleanupAndRemoveAsyncJob which is why the outer loop needs the hint rather
-	// than deriving it from the returned bool.
-	enum class AsyncJobStepResult
-	{
-		Removed,     // job removed this iteration; do NOT advance index
-		Waiting,     // job still pending; advance to next job
-		FallThrough, // step complete; try the next phase on the SAME job this iteration
-	};
-	static void SortAsyncJobsByPriority();
-	// uIndex is mutable: RunAsyncJobPhase1 may cancel peer jobs in SCENE_LOAD_SINGLE
-	// mode via CancelAllPendingAsyncLoads. Phase1 updates uIndex from the return
-	// value so the outer loop stays aligned with the surviving job's actual slot.
-	static bool HandleAsyncJobCancellation(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
-	static AsyncJobStepResult RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int& uIndex);
-	static AsyncJobStepResult RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
-
-	// Async unloading job - destruction spread across frames
-	struct AsyncUnloadJob
-	{
-		int m_iSceneHandle;
-		uint32_t m_uSceneGeneration;
-		Zenith_SceneOperation* m_pxOperation;
-		uint32_t m_uTotalEntities;
-		uint32_t m_uDestroyedEntities;
-		bool m_bUnloadingCallbackFired;
-
-		// MEDIUM-1: when we unload the active scene, the active-pointer swap
-		// happens early (so observers never see the dying scene as active)
-		// but the ActiveSceneChanged callback fire is DEFERRED until after
-		// SceneUnloaded, matching the sync-unload ordering. These fields hold
-		// the pending fire until then. Stored as raw handle+generation pairs
-		// so this header doesn't need to pull in Zenith_Scene.h.
-		bool m_bActiveSceneChangePending;
-		int m_iOldActiveHandle;
-		uint32_t m_uOldActiveGeneration;
-		int m_iNewActiveHandle;
-		uint32_t m_uNewActiveGeneration;
-
-		AsyncUnloadJob() : m_iSceneHandle(-1), m_uSceneGeneration(0), m_pxOperation(nullptr),
-			m_uTotalEntities(0), m_uDestroyedEntities(0), m_bUnloadingCallbackFired(false),
-			m_bActiveSceneChangePending(false),
-			m_iOldActiveHandle(-1), m_uOldActiveGeneration(0),
-			m_iNewActiveHandle(-1), m_uNewActiveGeneration(0) {}
-		~AsyncUnloadJob()
-		{
-			Zenith_Assert(Zenith_Multithreading::IsMainThread(), "AsyncUnloadJob must be deleted from main thread");
-		}
-	};
-	static Zenith_Vector<AsyncUnloadJob*> s_axAsyncUnloadJobs;
-	static void ProcessPendingAsyncUnloads();
 	static uint32_t CountScenesBeingAsyncUnloaded();
 
 	//==========================================================================
@@ -1187,6 +1206,24 @@ private:
 	static void UnloadAllNonPersistent(int iExcludeHandle = -1);
 };
 
+// Include the registry header BEFORE SceneData.h so the manager's template
+// body below sees Zenith_SceneRegistry's full class declaration (with public
+// query API). SceneData.h's `friend class Zenith_SceneRegistry` would otherwise
+// inject a forward declaration that the template can't resolve members against.
+#include "EntityComponent/Internal/Zenith_SceneRegistry.h"
+
+// A3: same rationale as the registry include above. Manager.cpp's public async
+// API methods and lifecycle code reference Zenith_SceneOperationQueue::s_*
+// directly; they need the full class declaration here so name lookup succeeds.
+#include "EntityComponent/Internal/Zenith_SceneOperationQueue.h"
+
+// A4: same rationale. Manager-internal lifecycle code references
+// Zenith_SceneLifecycleScheduler::s_* directly.
+#include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
+
+// A5: cross-scene entity moves, merges, persistent promotion, destruction.
+#include "EntityComponent/Internal/Zenith_SceneEntityOwnership.h"
+
 // Include SceneData after class definition for template implementations
 // that need the full Zenith_SceneData type. This is safe because SceneData.h
 // includes SceneManager.h after its own class definition (no circular issue).
@@ -1196,17 +1233,20 @@ private:
 // Template implementations
 // ============================================================================
 
+// Iterate all loaded scenes via the registry's public accessors instead of
+// touching slot storage directly. Keeps the template body free of any assumption
+// about where the storage lives — works whether s_axScenes is on the manager
+// (A2a) or on the registry (post-A2b).
 template<typename T>
 void Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes(Zenith_Vector<T*>& xOut)
 {
-	// Clear once, append from each scene directly into xOut — avoids the
-	// per-scene temporary vector + copy that previously allocated 1 Zenith_Vector
-	// per loaded scene per call, per render-system-frame.
 	xOut.Clear();
-	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
+
+	const uint32_t uSlotCount = Zenith_SceneRegistry::GetSceneSlotCount();
+	for (uint32_t uIndex = 0; uIndex < uSlotCount; ++uIndex)
 	{
-		Zenith_SceneData* pxData = s_axScenes.Get(i);
-		if (pxData && pxData->IsLoaded() && !pxData->IsUnloading())
+		Zenith_SceneData* pxData = Zenith_SceneRegistry::GetLoadedSceneDataAtSlot(uIndex);
+		if (pxData)
 		{
 			pxData->AppendAllOfComponentType<T>(xOut);
 		}

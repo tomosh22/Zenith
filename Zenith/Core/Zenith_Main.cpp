@@ -144,9 +144,10 @@ void Zenith_Core::Zenith_Init()
 	// Run a tools build first to generate .zscen files
 	Flux_MemoryManager::BeginFrame();
 	Zenith_SceneManager::SetInitialSceneLoadCallback(&Project_LoadInitialScene);
-	Zenith_SceneManager::SetLoadingScene(true);
-	Project_LoadInitialScene();
-	Zenith_SceneManager::SetLoadingScene(false);
+	{
+		Zenith_SceneManager::LifecycleDeferralGuard xLoadingGuard(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
+		Project_LoadInitialScene();
+	}
 	Flux_MemoryManager::EndFrame(false);
 	Zenith_Assert(Zenith_SceneManager::GetActiveScene().IsValid(),
 		"No scene loaded. Run a ZENITH_TOOLS build first to generate .zscen files.");
@@ -203,6 +204,11 @@ void Zenith_Core::Zenith_Main()
 	Zenith_Window::Inititalise("Zenith", Zenith_GraphicsOptions::Get().m_uWindowWidth, Zenith_GraphicsOptions::Get().m_uWindowHeight);
 	Zenith_Init();
 
+	// B4: signal that the main loop is now running. Read by
+	// LoadSceneBlockingForBootstrap to assert it's only invoked during
+	// bootstrap (Zenith_Init or earlier), never from gameplay code.
+	Zenith_SceneManager::SetMainLoopRunning(true);
+
 	while (!Zenith_Window::GetInstance()->ShouldClose())
 	{
 		Zenith_Profiling::BeginFrame();
@@ -210,6 +216,7 @@ void Zenith_Core::Zenith_Main()
 		Zenith_Profiling::EndFrame();
 	}
 
+	Zenith_SceneManager::SetMainLoopRunning(false);
 	Zenith_Shutdown();
 	delete Zenith_Window::GetInstance();
 }

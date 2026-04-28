@@ -234,6 +234,9 @@ private:
 	// Scene manager needs access to internal state
 	friend class Zenith_SceneManager;
 
+	// A3: queue runs the phase machines that mutate operation state directly.
+	friend class Zenith_SceneOperationQueue;
+
 	// Unit tests exercise the generation-capture invariant directly (F8 regression).
 	friend class Zenith_SceneTests;
 

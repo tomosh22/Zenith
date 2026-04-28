@@ -444,9 +444,10 @@ private:
 
 	void HandleMovement(float fDt)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(m_uPlayerEntityID))
+		// C1: resolve owning scene from the player's entity id rather than
+		// assuming it lives in the active scene (player may be persistent).
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uPlayerEntityID);
+		if (!pxSceneData)
 			return;
 
 		Zenith_Maths::Vector3 xCamPos = Survival_CameraController::GetCameraPosition();
@@ -822,9 +823,9 @@ private:
 			return;
 
 		// Reset player position
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (pxSceneData->EntityExists(m_uPlayerEntityID))
+		// C1: resolve owning scene from the player's entity id.
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uPlayerEntityID);
+		if (pxSceneData)
 		{
 			Zenith_Entity xPlayer = pxSceneData->GetEntity(m_uPlayerEntityID);
 			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(

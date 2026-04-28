@@ -5,9 +5,9 @@
 // Zenith_SceneData lives here: SaveToFile, LoadFromFile, LoadFromDataStream,
 // ValidateFileHeader, ReadEntityFromDataStream.
 //
-// Peer split files follow the same pattern used by Zenith_SceneManager
-// (Zenith_SceneManager_AsyncLoad.cpp, _Callbacks.cpp, _EntityOps.cpp,
-// _Queries.cpp).
+// (Originally one of several peer-split files alongside the Phase A
+// pre-extraction Zenith_SceneManager_*.cpp set; those siblings have since
+// been replaced by the EntityComponent/Internal/ subsystem TUs.)
 
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -217,6 +217,17 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 		"Zenith_SceneData::LoadFromDataStream: scene is not empty (entityCount=%u). "
 		"Load against a fresh scene (CreateEmptyScene) or call ResetEntitiesOnly() first.",
 		m_xActiveEntities.GetSize());
+
+	// B1: route GetDefaultCreationScene-aware APIs at the scene being deserialized
+	// for the duration of this call. Defense-in-depth: the sync LoadScene body and
+	// async Phase 1 already open an outer scope around their CreateEmptyScene/
+	// LoadFromDataStream pair, but direct callers (editor backup restore, tests
+	// rebuilding state from a stream) shouldn't have to know about the contract.
+	// Save/restore stack semantics make the redundant push harmless under nesting.
+	Zenith_Scene xSelf;
+	xSelf.m_iHandle = m_iHandle;
+	xSelf.m_uGeneration = m_uGeneration;
+	Zenith_SceneManager::SceneCreationTargetScope xCreationTargetScope(xSelf);
 
 	// Validate stream has minimum header data (magic + version = 8 bytes)
 	static constexpr uint64_t ulMIN_HEADER_SIZE = sizeof(u_int) * 2;

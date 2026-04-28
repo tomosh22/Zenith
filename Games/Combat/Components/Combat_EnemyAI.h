@@ -121,9 +121,9 @@ public:
 	 */
 	void Update(float fDt)
 	{
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(m_uEntityID))
+		// C1: resolve owning scene from the enemy's entity id.
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_uEntityID);
+		if (!pxSceneData)
 			return;
 
 		Zenith_Entity xEntity = pxSceneData->GetEntity(m_uEntityID);

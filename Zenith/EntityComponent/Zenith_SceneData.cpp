@@ -802,7 +802,7 @@ void Zenith_SceneData::DispatchImmediateLifecycleForRuntime(Zenith_EntityID xID)
 {
 	// Unity parity: Awake/OnEnable fire immediately when an entity is created at runtime.
 	// During scene loading and prefab instantiation, lifecycle is dispatched in batch.
-	if (Zenith_SceneManager::s_bIsLoadingScene || Zenith_SceneManager::s_bIsPrefabInstantiating)
+	if (Zenith_SceneLifecycleScheduler::s_bIsLoadingScene || Zenith_SceneLifecycleScheduler::s_bIsPrefabInstantiating)
 		return;
 
 	DispatchAwakeForEntity(xID);

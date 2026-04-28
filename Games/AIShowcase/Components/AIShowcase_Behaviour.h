@@ -679,9 +679,9 @@ private:
 		// Register cover points around obstacles
 		for (uint32_t u = 0; u < m_uObstacleCount; ++u)
 		{
-			Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-			if (!pxSceneData->EntityExists(m_axObstacleIDs[u]))
+			// C1: resolve owning scene from the obstacle's entity id.
+			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_axObstacleIDs[u]);
+			if (!pxSceneData)
 				continue;
 
 			Zenith_Entity xObstacle = pxSceneData->GetEntity(m_axObstacleIDs[u]);
@@ -767,9 +767,9 @@ private:
 			return;
 		}
 
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData->EntityExists(m_xPlayerEntity))
+		// C1: resolve owning scene from the player's entity id.
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(m_xPlayerEntity);
+		if (!pxSceneData)
 			return;
 
 		// Movement

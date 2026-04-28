@@ -224,16 +224,17 @@ void Zenith_Core::Zenith_MainLoop()
 		// Collects from ALL loaded scenes (persistent entity UI + game scene UI)
 		// Mark as updating so UI callbacks (e.g. button click -> LoadSceneByIndex)
 		// defer scene loads instead of destroying scenes mid-iteration
-		Zenith_SceneManager::SetIsUpdating(true);
-		Zenith_Vector<Zenith_UIComponent*> xUIComponents;
-		Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
-		for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
 		{
-			Zenith_UIComponent* const pxUI = xIt.GetData();
-			pxUI->Update(Zenith_Core::GetDt());
-			pxUI->Render();
+			Zenith_SceneManager::SceneUpdateDeferralGuard xUpdateGuard;
+			Zenith_Vector<Zenith_UIComponent*> xUIComponents;
+			Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
+			for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
+			{
+				Zenith_UIComponent* const pxUI = xIt.GetData();
+				pxUI->Update(Zenith_Core::GetDt());
+				pxUI->Render();
+			}
 		}
-		Zenith_SceneManager::SetIsUpdating(false);
 
 		// W22: ordering constraint documented on Flux_RenderGraph::Execute.
 		#ifdef ZENITH_TOOLS

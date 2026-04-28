@@ -100,7 +100,7 @@ void Zenith_Editor::RenderFileMenu()
 				ZENITH_SCENE_EXT + 1);
 			if (!strFilePath.empty())
 			{
-				Zenith_SceneManager::LoadScene(strFilePath, SCENE_LOAD_ADDITIVE);
+				Zenith_SceneManager::LoadSceneBlocking_ToolsOnly(strFilePath, SCENE_LOAD_ADDITIVE);
 				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded additively: %s", strFilePath.c_str());
 			}
 #endif

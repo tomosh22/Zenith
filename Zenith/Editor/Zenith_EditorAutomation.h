@@ -19,8 +19,7 @@
 // access component setters directly — matching what the properties panel
 // does after ImGui widget interaction. Scene-level operations that have
 // no ImGui UI equivalent (RegisterSceneBuildIndex, LoadSceneByIndex,
-// SetLoadingScene, SetInitialSceneLoadCallback) call Zenith_SceneManager
-// directly.
+// LoadInitialScene) call Zenith_SceneManager directly.
 //=============================================================================
 
 // Forward declarations
@@ -155,8 +154,11 @@ enum class Zenith_EditorActionType
 	ADD_MESH_ENTRY,
 
 	// Scene loading
-	SET_LOADING_SCENE,
-	SET_INITIAL_SCENE_LOAD_CALLBACK,
+	LOAD_INITIAL_SCENE,                 // Combined: registers the initial-scene-load callback,
+	                                    // then invokes it once under a lifecycle-deferral guard.
+	                                    // Replaces the SET_LOADING_SCENE(true) + CUSTOM +
+	                                    // SET_LOADING_SCENE(false) triplet plus the separate
+	                                    // SET_INITIAL_SCENE_LOAD_CALLBACK step.
 
 	// Custom step (game-specific logic as function pointer)
 	CUSTOM_STEP,
@@ -372,8 +374,14 @@ public:
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers
 	//--------------------------------------------------------------------------
-	static void AddStep_SetLoadingScene(bool bLoading);
-	static void AddStep_SetInitialSceneLoadCallback(void (*pfnCallback)());
+
+	// Combined initial-scene-load step. Registers pfnCallback as the
+	// initial-scene-load callback (used by editor restart), then invokes the
+	// callback under a lifecycle-deferral guard so entity creation during the
+	// load defers OnAwake/OnEnable until DispatchFullLifecycleInit fires.
+	// Replaces the SetInitialSceneLoadCallback + SetLoadingScene(true) +
+	// Custom + SetLoadingScene(false) sequence.
+	static void AddStep_LoadInitialScene(void (*pfnCallback)());
 
 	//--------------------------------------------------------------------------
 	// Custom Step (for game-specific operations)

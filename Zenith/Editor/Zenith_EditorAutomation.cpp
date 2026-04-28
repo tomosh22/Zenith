@@ -396,12 +396,10 @@ void Zenith_EditorAutomation::AddStep_AddMeshEntry(Flux_MeshGeometry* pxGeometry
 
 // -- Scene Loading --
 
-void Zenith_EditorAutomation::AddStep_SetLoadingScene(bool bLoading) { Push(s_axActions, ActionType::SET_LOADING_SCENE, bLoading); }
-
-void Zenith_EditorAutomation::AddStep_SetInitialSceneLoadCallback(void (*pfnCallback)())
+void Zenith_EditorAutomation::AddStep_LoadInitialScene(void (*pfnCallback)())
 {
 	Zenith_EditorAction xAction = {};
-	xAction.m_eType = Zenith_EditorActionType::SET_INITIAL_SCENE_LOAD_CALLBACK;
+	xAction.m_eType = Zenith_EditorActionType::LOAD_INITIAL_SCENE;
 	xAction.m_pfnFunc = pfnCallback;
 	s_axActions.PushBack(xAction);
 }
@@ -1275,13 +1273,17 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	//--------------------------------------------------------------------------
 	// Scene loading operations
 	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::SET_LOADING_SCENE:
-		Zenith_SceneManager::SetLoadingScene(xAction.m_bArg);
-		break;
-
-	case Zenith_EditorActionType::SET_INITIAL_SCENE_LOAD_CALLBACK:
+	case Zenith_EditorActionType::LOAD_INITIAL_SCENE:
 	{
+		Zenith_Assert(xAction.m_pfnFunc, "Null function pointer for LOAD_INITIAL_SCENE");
+		// Register the initial-scene-load callback so the editor's Play/Stop
+		// cycle can re-run it later. Then invoke it once under a lifecycle
+		// deferral guard so DispatchFullLifecycleInit owns Awake/OnEnable order.
 		Zenith_SceneManager::SetInitialSceneLoadCallback(xAction.m_pfnFunc);
+		{
+			Zenith_SceneManager::LifecycleDeferralGuard xGuard(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
+			xAction.m_pfnFunc();
+		}
 		break;
 	}
 
