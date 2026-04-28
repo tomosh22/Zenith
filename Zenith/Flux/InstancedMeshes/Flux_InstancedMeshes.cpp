@@ -244,9 +244,10 @@ void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	// Pass 2: GBuffer render
 	xGraph.AddPass("Instanced Meshes GBuffer", ExecuteGBuffer)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
 		.DependsOn(xCullingPass);
 }
 

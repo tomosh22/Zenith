@@ -249,6 +249,7 @@ private:
 
 	struct StagingBufferMetadata {
 		vk::Buffer m_xBuffer;
+		size_t m_uDestOffset;
 	};
 
 	struct StagingMemoryAllocation {

@@ -524,7 +524,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 	// Create and submit task array for parallel command buffer recording
 	// Enable submitting thread joining to utilize the main thread
 	Zenith_TaskArray xRecordingTask(
-		ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS,
+		ZENITH_PROFILE_INDEX__VULKAN_RECORD_COMMAND_BUFFERS,
 		RecordCommandBuffersTask,
 		&xWorkDistribution,
 		FLUX_NUM_WORKER_THREADS,

@@ -811,9 +811,10 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 	
 	Flux_TerrainStreamingManager::BuildChunkDataForGPU(pxChunkData);
 	
-	// CRITICAL: Use UploadBufferDataAtOffset which is synchronous (waits for GPU copy completion)
-	// The regular UploadBufferData is deferred and would not be visible to the compute shader
-	// that runs in the same frame
+	// Same-frame visibility relies on the deferred memory-submit happening before
+	// the render submit (the render queue waits on the memory semaphore), so the
+	// compute culling pass sees this upload's bytes in the same frame without a
+	// CPU fence wait.
 	Flux_MemoryManager::UploadBufferDataAtOffset(
 		m_xChunkDataBuffer.GetBuffer().m_xVRAMHandle,
 		pxChunkData,
@@ -872,9 +873,9 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList, co
 	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
 	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
 
-	// CRITICAL: Use UploadBufferDataAtOffset (synchronous) so the compute shader
-	// dispatched in the same frame reads the correct frustum planes and visible count.
-	// The regular UploadBufferData is deferred and would not be visible this frame.
+	// Same-frame visibility: memory-submit runs before render-submit and the
+	// render queue waits on the memory semaphore, so the compute shader
+	// dispatched this frame reads the bytes uploaded here.
 	Flux_MemoryManager::UploadBufferDataAtOffset(m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
 
 	// Reset visible chunk counter to 0

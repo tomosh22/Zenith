@@ -218,10 +218,12 @@ void Flux_Terrain::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	Flux_PassHandle xCullingPass = xGraph.AddPass("Terrain Culling Compute", ExecuteCulling);
 
 	xGraph.AddPass("Terrain GBuffer", ExecuteGBuffer)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.DependsOn(xCullingPass);
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(Flux_Graphics::GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
+		.DependsOn(xCullingPass)
+		.Prepare(PreRenderUpdate);
 }
 
 void Flux_Terrain::PreRenderUpdate()
@@ -251,9 +253,6 @@ void Flux_Terrain::PreRenderUpdate()
 
 void Flux_Terrain::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 {
-	// CPU-side update (was in PreRenderUpdate/SubmitRenderToGBufferTask)
-	PreRenderUpdate();
-
 	if (!Zenith_GraphicsOptions::Get().m_bTerrainEnabled)
 	{
 		return;

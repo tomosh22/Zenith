@@ -66,6 +66,7 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_FLUSH,
 	ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU,
 	ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS,
+	ZENITH_PROFILE_INDEX__VULKAN_RECORD_COMMAND_BUFFERS,
 	
 
 	ZENITH_PROFILE_INDEX__VISIBILITY_CHECK,
@@ -155,6 +156,7 @@ static const char* g_aszProfileNames[]
 	"Vulkan Memory Manager Flush",
 	"Vulkan Wait For GPU",
 	"Vulkan Reset Descriptor Pools",
+	"Vulkan Record Command Buffers",
 
 	"Visibility Check",
 

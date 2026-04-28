@@ -1391,6 +1391,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 		StagingMemoryAllocation xAllocation;
 		xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
 		xAllocation.m_xBufferMetadata.m_xBuffer = pxVRAM->GetBuffer();
+		xAllocation.m_xBufferMetadata.m_uDestOffset = 0;
 		xAllocation.m_uSize = uSize;
 		xAllocation.m_uOffset = s_uNextFreeStagingOffset;
 		s_xStagingAllocations.PushBack(xAllocation);
@@ -1518,8 +1519,9 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 	}
 	else
 	{
-		// For device-local memory, use staging buffer with destination offset
-		// Handle large uploads in chunks
+		if (uSize == 0)
+			return;
+
 		const uint8_t* pSrcData = static_cast<const uint8_t*>(pData);
 		size_t uRemainingSize = uSize;
 		size_t uCurrentSrcOffset = 0;
@@ -1527,32 +1529,30 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 
 		while (uRemainingSize > 0)
 		{
-			// Calculate chunk size (leave headroom for alignment)
 			const size_t uChunkSize = (std::min)(uRemainingSize, g_uStagingPoolSize - 4096);
 
 			s_xMutex.Lock();
 
-			// Ensure staging buffer has space
-			if (s_uNextFreeStagingOffset != 0)
-			{
+			if (s_uNextFreeStagingOffset + uChunkSize > g_uStagingPoolSize)
 				HandleStagingBufferFull();
-			}
 
-			// Copy data to staging buffer
-			void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, 0, uChunkSize));
+			StagingMemoryAllocation xAllocation;
+			xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
+			xAllocation.m_xBufferMetadata.m_xBuffer = pxVRAM->GetBuffer();
+			xAllocation.m_xBufferMetadata.m_uDestOffset = uCurrentDestOffset;
+			xAllocation.m_uSize = uChunkSize;
+			xAllocation.m_uOffset = s_uNextFreeStagingOffset;
+			s_xStagingAllocations.PushBack(xAllocation);
+
+			void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uChunkSize));
 			memcpy(pMap, pSrcData + uCurrentSrcOffset, uChunkSize);
 			xDevice.unmapMemory(s_xStagingMem);
 
-			// Issue copy command with destination offset
-			vk::BufferCopy xCopyRegion(0, uCurrentDestOffset, uChunkSize);
-			s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, pxVRAM->GetBuffer(), xCopyRegion);
+			s_uNextFreeStagingOffset += uChunkSize;
+			s_uNextFreeStagingOffset = ALIGN(s_uNextFreeStagingOffset, 8);
 
-			// Flush and wait
-			s_xCommandBuffer.EndAndCpuWait(false);
-			s_xCommandBuffer.BeginRecording();
 			s_xMutex.Unlock();
 
-			// Move to next chunk
 			uCurrentSrcOffset += uChunkSize;
 			uCurrentDestOffset += uChunkSize;
 			uRemainingSize -= uChunkSize;
@@ -1614,10 +1614,36 @@ void Zenith_Vulkan_MemoryManager::GenerateMipmapsAndTransitionToShaderRead(vk::I
 	}
 }
 
+static void EmitTransferWriteBarrier(vk::CommandBuffer& xCmdBuffer, vk::Buffer xBuffer, vk::DeviceSize uOffset, vk::DeviceSize uSize)
+{
+	vk::BufferMemoryBarrier xBarrier = vk::BufferMemoryBarrier()
+		.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+		.setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+		.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+		.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+		.setBuffer(xBuffer)
+		.setOffset(uOffset)
+		.setSize(uSize);
+
+	xCmdBuffer.pipelineBarrier(
+		vk::PipelineStageFlagBits::eTransfer,
+		vk::PipelineStageFlagBits::eTransfer,
+		vk::DependencyFlags(),
+		0, nullptr,
+		1, &xBarrier,
+		0, nullptr);
+}
+
 void Zenith_Vulkan_MemoryManager::FlushStagingBufferAllocation(const StagingMemoryAllocation& xAlloc)
 {
 	const StagingBufferMetadata& xMeta = xAlloc.m_xBufferMetadata;
-	vk::BufferCopy xCopyRegion(xAlloc.m_uOffset, 0, xAlloc.m_uSize);
+	const vk::DeviceSize uSrcOffset = static_cast<vk::DeviceSize>(xAlloc.m_uOffset);
+	const vk::DeviceSize uDestOffset = static_cast<vk::DeviceSize>(xMeta.m_uDestOffset);
+	const vk::DeviceSize uSize = static_cast<vk::DeviceSize>(xAlloc.m_uSize);
+
+	EmitTransferWriteBarrier(s_xCommandBuffer.GetCurrentCmdBuffer(), xMeta.m_xBuffer, uDestOffset, uSize);
+
+	vk::BufferCopy xCopyRegion(uSrcOffset, uDestOffset, uSize);
 	s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, xMeta.m_xBuffer, xCopyRegion);
 }
 
@@ -1721,6 +1747,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		StagingMemoryAllocation xAllocation;
 		xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
 		xAllocation.m_xBufferMetadata.m_xBuffer = xDestBuffer;
+		xAllocation.m_xBufferMetadata.m_uDestOffset = uCurrentOffset;
 		xAllocation.m_uSize = uChunkSize;
 		xAllocation.m_uOffset = 0; // Always use offset 0 since we flush between chunks
 		s_xStagingAllocations.PushBack(xAllocation);
@@ -1729,6 +1756,8 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, 0, uChunkSize));
 		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
 		xDevice.unmapMemory(s_xStagingMem);
+
+		EmitTransferWriteBarrier(s_xCommandBuffer.GetCurrentCmdBuffer(), xDestBuffer, uCurrentOffset, uChunkSize);
 
 		vk::BufferCopy xCopyRegion(0, uCurrentOffset, uChunkSize);
 		s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, xDestBuffer, xCopyRegion);
