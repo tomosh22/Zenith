@@ -620,8 +620,23 @@ void Zenith_Vulkan::CreateInstance()
 	// this fatal is fixed by AccessMaskForLayout in
 	// Zenith_Vulkan_CommandBuffer.cpp::CreateImageBarrier.
 #ifdef ZENITH_DEBUG
+	// Validation features turned on for the debug build:
+	//   eSynchronizationValidation — flags missing buffer/image memory barriers,
+	//     queue-family acquire/release omissions, host-write/shader-read mismatches.
+	//   eGpuAssisted               — instruments shader code at runtime and
+	//     reports out-of-bounds buffer reads/writes, which is exactly the class
+	//     of bug behind a "device lost" on a malformed indirect command's
+	//     firstIndex/vertexOffset.
+	//   eGpuAssistedReserveBindingSlot — required companion to eGpuAssisted;
+	//     reserves a descriptor binding for the validation runtime to write its
+	//     error log into. Must be enabled together or the layer rejects the pair.
+	//   eBestPractices             — non-fatal warnings about API misuse that
+	//     often correlates with subtle correctness issues.
 	const vk::ValidationFeatureEnableEXT axEnabledFeatures[] = {
 		vk::ValidationFeatureEnableEXT::eSynchronizationValidation,
+		//vk::ValidationFeatureEnableEXT::eGpuAssisted,
+		//vk::ValidationFeatureEnableEXT::eGpuAssistedReserveBindingSlot,
+		//vk::ValidationFeatureEnableEXT::eBestPractices,
 	};
 	vk::ValidationFeaturesEXT xValidationFeatures = vk::ValidationFeaturesEXT()
 		.setEnabledValidationFeatureCount(static_cast<uint32_t>(std::size(axEnabledFeatures)))
@@ -853,6 +868,14 @@ void Zenith_Vulkan::CreateDevice()
 		.setTessellationShader(VK_TRUE)
 		.setDepthBiasClamp(VK_TRUE)
 		.setMultiDrawIndirect(VK_TRUE)
+		// Required so the terrain compute shader can write a non-zero
+		// firstInstance to its indirect draw commands. firstInstance carries
+		// the stable per-chunk index that the terrain vertex shader reads via
+		// SV_StartInstanceLocation to look up LODLevelBuffer[chunkIndex] —
+		// without this feature, any non-zero firstInstance in an indirect
+		// draw is undefined behaviour (manifests as holes / device-lost on
+		// chunks past the first).
+		.setDrawIndirectFirstInstance(VK_TRUE)
 		.setFillModeNonSolid(VK_TRUE);
 
 

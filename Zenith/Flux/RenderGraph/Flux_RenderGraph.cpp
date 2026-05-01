@@ -33,11 +33,14 @@ static bool IsReadAccess(ResourceAccess eAccess)
         case RESOURCE_ACCESS_READ_SRV:
         case RESOURCE_ACCESS_READ_DEPTH:
         case RESOURCE_ACCESS_READWRITE_UAV:
+        case RESOURCE_ACCESS_READ_INDIRECT_ARG:
+        case RESOURCE_ACCESS_READ_BUFFER_SRV:
             return true;
         case RESOURCE_ACCESS_UNDEFINED:
         case RESOURCE_ACCESS_WRITE_RTV:
         case RESOURCE_ACCESS_WRITE_DSV:
         case RESOURCE_ACCESS_WRITE_UAV:
+        case RESOURCE_ACCESS_HOST_TRANSFER_WRITE:
             return false;
     }
     Zenith_Assert(false, "IsReadAccess: unknown ResourceAccess %d", (int)eAccess);
@@ -52,10 +55,13 @@ static bool IsWriteAccess(ResourceAccess eAccess)
         case RESOURCE_ACCESS_WRITE_DSV:
         case RESOURCE_ACCESS_WRITE_UAV:
         case RESOURCE_ACCESS_READWRITE_UAV:
+        case RESOURCE_ACCESS_HOST_TRANSFER_WRITE:
             return true;
         case RESOURCE_ACCESS_UNDEFINED:
         case RESOURCE_ACCESS_READ_SRV:
         case RESOURCE_ACCESS_READ_DEPTH:
+        case RESOURCE_ACCESS_READ_INDIRECT_ARG:
+        case RESOURCE_ACCESS_READ_BUFFER_SRV:
             return false;
     }
     Zenith_Assert(false, "IsWriteAccess: unknown ResourceAccess %d", (int)eAccess);
@@ -68,14 +74,25 @@ static bool IsAccessLegalForKind(ResourceAccess eAccess, Flux_GraphResourceKind 
     {
         case Flux_GraphResourceKind::Image:
         case Flux_GraphResourceKind::ImageCube:
-            // Image-like resources support every texture access mode.
-            return eAccess != RESOURCE_ACCESS_UNDEFINED;
+            // Image-like resources support every texture access mode. The two
+            // buffer-only access values are explicitly rejected so a misuse
+            // (declaring an indirect-arg read on an image) trips immediately
+            // instead of silently passing barrier synthesis.
+            return eAccess != RESOURCE_ACCESS_UNDEFINED
+                && eAccess != RESOURCE_ACCESS_READ_INDIRECT_ARG
+                && eAccess != RESOURCE_ACCESS_READ_BUFFER_SRV;
         case Flux_GraphResourceKind::Buffer:
             // Buffers can't be render targets or depth-stencil attachments; they
-            // support SRV (structured read), UAV (compute write), and read-modify-write UAV.
+            // support SRV (structured read), UAV (compute write), read-modify-write
+            // UAV, plus the buffer-only access modes for indirect-arg reads,
+            // read-only structured buffers, and host transfer writes (synthetic
+            // predecessor for staging-buffer uploads — see Flux_Enums.h).
             return eAccess == RESOURCE_ACCESS_READ_SRV
                 || eAccess == RESOURCE_ACCESS_WRITE_UAV
-                || eAccess == RESOURCE_ACCESS_READWRITE_UAV;
+                || eAccess == RESOURCE_ACCESS_READWRITE_UAV
+                || eAccess == RESOURCE_ACCESS_READ_INDIRECT_ARG
+                || eAccess == RESOURCE_ACCESS_READ_BUFFER_SRV
+                || eAccess == RESOURCE_ACCESS_HOST_TRANSFER_WRITE;
     }
     return false;
 }
@@ -84,13 +101,16 @@ static const char* AccessToString(ResourceAccess eAccess)
 {
     switch (eAccess)
     {
-        case RESOURCE_ACCESS_UNDEFINED:      return "UNDEFINED";
-        case RESOURCE_ACCESS_READ_SRV:       return "READ_SRV";
-        case RESOURCE_ACCESS_READ_DEPTH:     return "READ_DEPTH";
-        case RESOURCE_ACCESS_WRITE_RTV:      return "WRITE_RTV";
-        case RESOURCE_ACCESS_WRITE_DSV:      return "WRITE_DSV";
-        case RESOURCE_ACCESS_WRITE_UAV:      return "WRITE_UAV";
-        case RESOURCE_ACCESS_READWRITE_UAV:  return "READWRITE_UAV";
+        case RESOURCE_ACCESS_UNDEFINED:           return "UNDEFINED";
+        case RESOURCE_ACCESS_READ_SRV:            return "READ_SRV";
+        case RESOURCE_ACCESS_READ_DEPTH:          return "READ_DEPTH";
+        case RESOURCE_ACCESS_WRITE_RTV:           return "WRITE_RTV";
+        case RESOURCE_ACCESS_WRITE_DSV:           return "WRITE_DSV";
+        case RESOURCE_ACCESS_WRITE_UAV:           return "WRITE_UAV";
+        case RESOURCE_ACCESS_READWRITE_UAV:      return "READWRITE_UAV";
+        case RESOURCE_ACCESS_READ_INDIRECT_ARG:   return "READ_INDIRECT_ARG";
+        case RESOURCE_ACCESS_READ_BUFFER_SRV:     return "READ_BUFFER_SRV";
+        case RESOURCE_ACCESS_HOST_TRANSFER_WRITE: return "HOST_TRANSFER_WRITE";
     }
     return "???";
 }
@@ -1601,13 +1621,16 @@ static ResourceAccess RequiredPrePassAccess(ResourceAccess eAccess)
 {
     switch (eAccess)
     {
-        case RESOURCE_ACCESS_READ_SRV:        return RESOURCE_ACCESS_READ_SRV;        // SHADER_READ_ONLY
-        case RESOURCE_ACCESS_READ_DEPTH:      return RESOURCE_ACCESS_READ_DEPTH;      // DEPTH_READ_ONLY
-        case RESOURCE_ACCESS_WRITE_RTV:       return RESOURCE_ACCESS_WRITE_RTV;       // COLOR_ATTACHMENT
-        case RESOURCE_ACCESS_WRITE_DSV:       return RESOURCE_ACCESS_WRITE_DSV;       // DEPTH_STENCIL_ATTACHMENT
-        case RESOURCE_ACCESS_WRITE_UAV:       return RESOURCE_ACCESS_WRITE_UAV;       // GENERAL
-        case RESOURCE_ACCESS_READWRITE_UAV:   return RESOURCE_ACCESS_READWRITE_UAV;   // GENERAL
-        case RESOURCE_ACCESS_UNDEFINED:       return RESOURCE_ACCESS_UNDEFINED;
+        case RESOURCE_ACCESS_READ_SRV:           return RESOURCE_ACCESS_READ_SRV;           // SHADER_READ_ONLY
+        case RESOURCE_ACCESS_READ_DEPTH:         return RESOURCE_ACCESS_READ_DEPTH;         // DEPTH_READ_ONLY
+        case RESOURCE_ACCESS_WRITE_RTV:          return RESOURCE_ACCESS_WRITE_RTV;          // COLOR_ATTACHMENT
+        case RESOURCE_ACCESS_WRITE_DSV:          return RESOURCE_ACCESS_WRITE_DSV;          // DEPTH_STENCIL_ATTACHMENT
+        case RESOURCE_ACCESS_WRITE_UAV:          return RESOURCE_ACCESS_WRITE_UAV;          // GENERAL
+        case RESOURCE_ACCESS_READWRITE_UAV:      return RESOURCE_ACCESS_READWRITE_UAV;      // GENERAL
+        case RESOURCE_ACCESS_READ_INDIRECT_ARG:  return RESOURCE_ACCESS_READ_INDIRECT_ARG;  // buffer-only, no layout
+        case RESOURCE_ACCESS_READ_BUFFER_SRV:    return RESOURCE_ACCESS_READ_BUFFER_SRV;    // buffer-only, no layout
+        case RESOURCE_ACCESS_HOST_TRANSFER_WRITE: return RESOURCE_ACCESS_HOST_TRANSFER_WRITE; // buffer-only, never appears as a destination
+        case RESOURCE_ACCESS_UNDEFINED:          return RESOURCE_ACCESS_UNDEFINED;
     }
     Zenith_Assert(false, "RequiredPrePassAccess: unknown access %d", (int)eAccess);
     return RESOURCE_ACCESS_UNDEFINED;
@@ -1649,7 +1672,8 @@ static bool AccessIsWrite(ResourceAccess e)
     return e == RESOURCE_ACCESS_WRITE_RTV
         || e == RESOURCE_ACCESS_WRITE_DSV
         || e == RESOURCE_ACCESS_WRITE_UAV
-        || e == RESOURCE_ACCESS_READWRITE_UAV;
+        || e == RESOURCE_ACCESS_READWRITE_UAV
+        || e == RESOURCE_ACCESS_HOST_TRANSFER_WRITE;
 }
 
 // File-local result of DecideBarrierNeeded. Unifies the image and buffer
@@ -1818,6 +1842,19 @@ void Flux_RenderGraph::SynthesizeBarriers()
     // in the tracker.
     BarrierStateTracker xTracker;
 
+    // Seed buffer state for any buffers that were host-written between this
+    // synth and the previous one. The first pass that reads such a buffer
+    // gets a TransferWrite→ShaderRead barrier emitted in its prologue —
+    // memory availability for the host transfer write that the memory-submit
+    // semaphore covers only execution-wise. See MarkBufferHostWritten and the
+    // RESOURCE_ACCESS_HOST_TRANSFER_WRITE comment in Flux_Enums.h.
+    for (u_int u = 0; u < m_xHostWrittenBuffers.GetSize(); u++)
+    {
+        Flux_Buffer* pxBuf = m_xHostWrittenBuffers.Get(u);
+        if (pxBuf != nullptr) xTracker.SetBufferState(pxBuf, RESOURCE_ACCESS_HOST_TRANSFER_WRITE);
+    }
+    m_xHostWrittenBuffers.Clear();
+
     for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(itE.GetData());
@@ -1830,6 +1867,54 @@ void Flux_RenderGraph::SynthesizeBarriers()
             ProcessUsageAccess(pxPass, it.GetData(), xTracker);
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
             ProcessUsageAccess(pxPass, it.GetData(), xTracker);
+    }
+}
+
+void Flux_RenderGraph::MarkBufferHostWritten(const Flux_Buffer& xBuffer)
+{
+    Flux_Buffer* pxBuf = const_cast<Flux_Buffer*>(&xBuffer);
+    // Idempotent within a frame — the same buffer can be marked multiple
+    // times safely (e.g. if multiple uploaders touch it before the consumer
+    // pass runs).
+    bool bAlreadyHostWritten = false;
+    for (u_int u = 0; u < m_xHostWrittenBuffers.GetSize(); u++)
+    {
+        if (m_xHostWrittenBuffers.Get(u) == pxBuf) { bAlreadyHostWritten = true; break; }
+    }
+    if (!bAlreadyHostWritten) m_xHostWrittenBuffers.PushBack(pxBuf);
+
+    // Persistent record so the orphaned-read validator knows this buffer's
+    // writes happen outside the graph and Read declarations are legal even
+    // without a graph-side writer. Idempotent — the set stabilises after
+    // the first frame in which each buffer is marked.
+    for (u_int u = 0; u < m_xExternallyWrittenBuffers.GetSize(); u++)
+    {
+        if (m_xExternallyWrittenBuffers.Get(u) == pxBuf) return;
+    }
+    m_xExternallyWrittenBuffers.PushBack(pxBuf);
+}
+
+void Flux_RenderGraph::UnmarkBufferHostWritten(const Flux_Buffer& xBuffer)
+{
+    Flux_Buffer* pxBuf = const_cast<Flux_Buffer*>(&xBuffer);
+    for (u_int u = 0; u < m_xExternallyWrittenBuffers.GetSize(); u++)
+    {
+        if (m_xExternallyWrittenBuffers.Get(u) == pxBuf)
+        {
+            m_xExternallyWrittenBuffers.RemoveSwap(u);
+            break;
+        }
+    }
+    // Also drop any pending per-frame seed for this buffer — uncommon since
+    // teardown typically happens between frames, but guards against the
+    // teardown-during-Prepare case.
+    for (u_int u = 0; u < m_xHostWrittenBuffers.GetSize(); u++)
+    {
+        if (m_xHostWrittenBuffers.Get(u) == pxBuf)
+        {
+            m_xHostWrittenBuffers.RemoveSwap(u);
+            break;
+        }
     }
 }
 

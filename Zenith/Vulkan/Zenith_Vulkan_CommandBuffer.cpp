@@ -216,6 +216,28 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 				.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
 		}
 
+		// SRV buffer → storage buffer (read-only StructuredBuffer<T>). The
+		// Vulkan descriptor type is identical to UAV buffer — read/write
+		// distinction is enforced at the render-graph access-declaration
+		// layer and the binder, not at the descriptor write. Slot validity
+		// is signalled by m_abSRV_BuffersActive[u] (NOT m_xVRAMHandle.IsValid),
+		// because BeginRecording / cache-clear memset the binding table to
+		// zero and a Flux_VRAMHandle of value 0 reports IsValid()==true
+		// (its sentinel is UINT32_MAX). The bool array memsets cleanly to
+		// false and only flips true when BindSRV_Buffer is called.
+		if (m_xBindings[uDescSet].m_abSRV_BuffersActive[u])
+		{
+			const Flux_ShaderResourceView_Buffer& rxSRV_Buffer = m_xBindings[uDescSet].m_xSRV_Buffers[u];
+			axBufferInfos[uNumBufferWrites] = Zenith_Vulkan_MemoryManager::GetBufferDescriptor(rxSRV_Buffer.m_xBufferDescHandle);
+			axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+				.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+				.setDstSet(m_axCurrentDescSet[uDescSet])
+				.setDstBinding(u)
+				.setDstArrayElement(0)
+				.setDescriptorCount(1)
+				.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
+		}
+
 		// CBV → uniform buffer (or storage buffer if the binding type says so).
 		const Flux_ConstantBufferView* const pxCBV = m_xBindings[uDescSet].m_xCBVs[u];
 		if (pxCBV)
@@ -493,6 +515,17 @@ void Zenith_Vulkan_CommandBuffer::BindUAV_Buffer(const Flux_UnorderedAccessView_
 	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
 }
 
+void Zenith_Vulkan_CommandBuffer::BindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, uint32_t uBindPoint)
+{
+	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
+	Zenith_Assert(xSRV.m_xVRAMHandle.IsValid(), "Invalid SRV buffer (no VRAM handle)");
+	Zenith_Assert(xSRV.m_xBufferDescHandle.IsValid(), "Invalid SRV buffer (no descriptor handle)");
+	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
+	m_xBindings[m_uCurrentBindFreq].m_xSRV_Buffers[uBindPoint]        = xSRV;
+	m_xBindings[m_uCurrentBindFreq].m_abSRV_BuffersActive[uBindPoint] = true;
+	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint]         = nullptr;
+}
+
 void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_BINDING_GROUPS, "Haven't called BeginBind");
@@ -713,6 +746,34 @@ void Flux_ResourceAccessToVulkan(ResourceAccess eAccess, bool bIsDepth,
 		eOutLayout = vk::ImageLayout::eGeneral;
 		eOutAccess = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
 		eOutStage  = vk::PipelineStageFlagBits::eComputeShader;
+		break;
+	case RESOURCE_ACCESS_READ_INDIRECT_ARG:
+		// Buffer-only — layout is irrelevant. The barrier targets the GPU
+		// command processor reading VkDrawIndexedIndirectCommand / dispatch args.
+		eOutLayout = vk::ImageLayout::eUndefined;
+		eOutAccess = vk::AccessFlagBits::eIndirectCommandRead;
+		eOutStage  = vk::PipelineStageFlagBits::eDrawIndirect;
+		break;
+	case RESOURCE_ACCESS_READ_BUFFER_SRV:
+		// Buffer-only read-only SSBO (StructuredBuffer<T>). The graph carries no
+		// stage discrimination on the read side, so union the stages an SSBO
+		// might be sampled from. Conservative but correct.
+		eOutLayout = vk::ImageLayout::eUndefined;
+		eOutAccess = vk::AccessFlagBits::eShaderRead;
+		eOutStage  = vk::PipelineStageFlagBits::eVertexShader
+		           | vk::PipelineStageFlagBits::eFragmentShader
+		           | vk::PipelineStageFlagBits::eComputeShader;
+		break;
+	case RESOURCE_ACCESS_HOST_TRANSFER_WRITE:
+		// Buffer-only — synthetic predecessor for a host-issued
+		// vkCmdCopyBuffer (staging upload). The corresponding write happens
+		// on the memory queue (or the staging-flush command buffer); we just
+		// need a srcAccess/srcStage pair that the next reader can transition
+		// from to satisfy memory availability + visibility. See the comment
+		// at RESOURCE_ACCESS_HOST_TRANSFER_WRITE in Flux_Enums.h.
+		eOutLayout = vk::ImageLayout::eUndefined;
+		eOutAccess = vk::AccessFlagBits::eTransferWrite;
+		eOutStage  = vk::PipelineStageFlagBits::eTransfer;
 		break;
 	default:
 		Zenith_Assert(false, "ResourceAccessToVulkan: unhandled access enum %d", (int)eAccess);

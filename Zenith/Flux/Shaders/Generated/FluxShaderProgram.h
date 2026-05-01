@@ -55,13 +55,14 @@ enum class FluxShaderProgram : unsigned int
 	Terrain_ToGBuffer = 43,
 	Terrain_ToShadowmap = 44,
 	TerrainCulling = 45,
-	Grass = 46,
-	DynamicLights = 47,
-	Particles = 48,
-	ParticleUpdate = 49,
-	Water = 50,
-	ComputeTest = 51,
-	ComputeTest_Display = 52,
+	TerrainResetCounters = 46,
+	Grass = 47,
+	DynamicLights = 48,
+	Particles = 49,
+	ParticleUpdate = 50,
+	Water = 51,
+	ComputeTest = 52,
+	ComputeTest_Display = 53,
 
 	COUNT
 };

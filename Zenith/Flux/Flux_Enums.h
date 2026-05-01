@@ -36,6 +36,9 @@ enum ResourceAccess
 	RESOURCE_ACCESS_WRITE_DSV,          // Depth attachment write
 	RESOURCE_ACCESS_WRITE_UAV,          // Compute/storage write
 	RESOURCE_ACCESS_READWRITE_UAV,      // Compute read-modify-write
+	RESOURCE_ACCESS_READ_INDIRECT_ARG,  // Buffer-only: indirect-draw / dispatch-indirect arguments read by the GPU command processor.
+	RESOURCE_ACCESS_READ_BUFFER_SRV,    // Buffer-only: read-only StructuredBuffer<T> SSBO (vs. RW counterpart in WRITE_UAV / READWRITE_UAV).
+	RESOURCE_ACCESS_HOST_TRANSFER_WRITE, // Buffer-only: synthetic predecessor for a host-issued vkCmdCopyBuffer (staging upload). Lets the next pass that reads the buffer get a TransferWrite@eTransfer → ShaderRead barrier emitted in its prologue. Pushed into the live state map by Flux_RenderGraph::MarkBufferHostWritten — never appears in a pass's read/write list.
 };
 
 enum TextureFormat

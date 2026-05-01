@@ -393,7 +393,11 @@ void Zenith_TerrainComponent::CleanupPriorGenerationForRegenerate()
 	DestroyCullingResources();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Unregistering terrain buffers from streaming manager...");
-	Flux_TerrainStreamingManager::UnregisterTerrainBuffers();
+	// Component-aware overload — the legacy no-arg form resolves through
+	// s_pxPrimary, which on a non-primary terrain would unregister the
+	// wrong state and leave THIS component still in the registry pointing
+	// at buffers we're about to destroy.
+	Flux_TerrainStreamingManager::UnregisterTerrainBuffers(this);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing unified buffers...");
 	Flux_MemoryManager::DestroyVertexBuffer(m_xUnifiedVertexBuffer);
@@ -434,7 +438,7 @@ void Zenith_TerrainComponent::RenderDebugVisualizationSection()
 	static const char* aszDebugModeNames[] = {
 		"Off", "LOD Level", "World Normals", "UVs", "Material Blend",
 		"Roughness", "Metallic", "Occlusion", "World Position", "Chunk Grid",
-		"Tangent", "Bitangent Sign"
+		"Tangent", "Bitangent Sign", "Source Chunk Hash"
 	};
 	u_int& uDebugMode = Flux_Terrain::GetDebugMode();
 	int iDebugMode = static_cast<int>(uDebugMode);
@@ -449,7 +453,12 @@ void Zenith_TerrainComponent::RenderDebugVisualizationSection()
 	ImGui::Separator();
 
 	ImGui::Text("Streaming Statistics");
-	const Flux_TerrainStreamingManager::StreamingStats& xStats = Flux_TerrainStreamingManager::GetStats();
+	// Component-aware: pull this terrain's own stats. Falls back to a zeroed
+	// snapshot if streaming state isn't yet initialised (component just
+	// constructed, not yet registered).
+	static const Flux_TerrainStreamingManager::StreamingStats kxZeroStats{};
+	const Flux_TerrainStreamingState* pxState = m_pxStreamingState;
+	const Flux_TerrainStreamingManager::StreamingStats& xStats = pxState ? pxState->m_xStats : kxZeroStats;
 
 	ImGui::Text("HIGH LOD Chunks: %u / %u", xStats.m_uHighLODChunksResident, TOTAL_CHUNKS);
 	ImGui::Text("Streams This Frame: %u", xStats.m_uStreamsThisFrame);

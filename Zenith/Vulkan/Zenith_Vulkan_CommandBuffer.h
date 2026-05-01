@@ -17,6 +17,7 @@ struct Flux_Buffer;
 class Flux_ReadWriteBuffer;
 struct Flux_ConstantBufferView;
 struct Flux_ShaderResourceView;
+struct Flux_ShaderResourceView_Buffer;
 struct Flux_UnorderedAccessView_Texture;
 struct Flux_UnorderedAccessView_Buffer;
 struct Flux_RenderTargetView;
@@ -40,6 +41,20 @@ struct ScratchBufferBinding {
 
 struct DescSetBindings {
 	const Flux_ShaderResourceView* m_xSRVs[FLUX_MAX_BINDINGS_PER_GROUP];
+	// Read-only structured-buffer SSBO slots. Stored by value (not pointer) so
+	// the staging is self-contained even if the source Flux_ReadWriteBuffer's
+	// lifetime ends between BindSRV_Buffer and the next descriptor update.
+	//
+	// Slot validity uses the parallel bool array below, NOT
+	// m_xVRAMHandle.IsValid(): BeginRecording / BeginBind clear this struct
+	// via memset(0), which sets every byte to 0 — and a Flux_VRAMHandle of 0
+	// reports IsValid()==true (its sentinel for "unset" is UINT32_MAX, set
+	// only by the default constructor). With memset zeroing, every slot
+	// would otherwise look "valid" and the descriptor-update path would
+	// emit storage-buffer writes for binding slots the layout reserves for
+	// uniform buffers, tripping VK_DESCRIPTOR_TYPE mismatch validation.
+	Flux_ShaderResourceView_Buffer m_xSRV_Buffers[FLUX_MAX_BINDINGS_PER_GROUP];
+	bool                           m_abSRV_BuffersActive[FLUX_MAX_BINDINGS_PER_GROUP];
 	const Flux_UnorderedAccessView_Texture* m_xUAV_Textures[FLUX_MAX_BINDINGS_PER_GROUP];
 	const Flux_UnorderedAccessView_Buffer* m_xUAV_Buffers[FLUX_MAX_BINDINGS_PER_GROUP];
 	const Flux_ConstantBufferView* m_xCBVs[FLUX_MAX_BINDINGS_PER_GROUP];
@@ -75,6 +90,7 @@ public:
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	
 	void BindSRV(const Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
+	void BindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, uint32_t uBindPoint);
 	void BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, uint32_t uBindPoint);
 	void BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, uint32_t uBindPoint);
 	void BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint);

@@ -19,6 +19,10 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Zenith_OS_Include.h"
 
+#ifdef ZENITH_WINDOWS
+#include <cstring>
+#endif
+
 #ifdef ZENITH_TOOLS
 extern void ExportAllMeshes();
 extern void ExportAllTextures();
@@ -37,6 +41,20 @@ extern void Project_InitializeResources();
 extern void Project_RegisterEditorAutomationSteps();
 #endif
 extern void Project_LoadInitialScene();
+
+static bool Zenith_HasCommandLineFlag(const char* szFlag)
+{
+#ifdef ZENITH_WINDOWS
+	for (int i = 1; i < __argc; i++)
+	{
+		if (std::strcmp(__argv[i], szFlag) == 0)
+			return true;
+	}
+#else
+	(void)szFlag;
+#endif
+	return false;
+}
 
 void Zenith_Core::Zenith_Init()
 {
@@ -62,11 +80,18 @@ void Zenith_Core::Zenith_Init()
 	Zenith_AssetRegistry::Initialize();
 
 #ifdef ZENITH_TOOLS
-	ExportAllMeshes();
-	ExportAllTextures();
-	//ExportHeightmap();
-	ExportDefaultFontAtlas();  // Generate font atlas from TTF
-	GenerateTestAssets();      // Generate procedural test assets (StickFigure, Tree)
+	if (Zenith_HasCommandLineFlag("--skip-tool-exports"))
+	{
+		Zenith_Log(LOG_CATEGORY_CORE, "Tool asset exports skipped by --skip-tool-exports");
+	}
+	else
+	{
+		ExportAllMeshes();
+		ExportAllTextures();
+		//ExportHeightmap();
+		ExportDefaultFontAtlas();  // Generate font atlas from TTF
+		GenerateTestAssets();      // Generate procedural test assets (StickFigure, Tree)
+	}
 #endif
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::EarlyInitialise...");
@@ -126,7 +151,14 @@ void Zenith_Core::Zenith_Init()
 	// Run unit tests BEFORE loading the game scene
 	// This ensures tests don't corrupt game entities - scene loads fresh after tests
 #ifdef ZENITH_TESTING
-	Zenith_TestRunner::Instance().RunAllTests();
+	if (Zenith_HasCommandLineFlag("--skip-unit-tests"))
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "Unit tests skipped by --skip-unit-tests");
+	}
+	else
+	{
+		Zenith_TestRunner::Instance().RunAllTests();
+	}
 #endif
 
 #ifdef ZENITH_TOOLS

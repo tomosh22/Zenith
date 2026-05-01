@@ -96,23 +96,57 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	float3 toCamera    = CameraBuffer.cameraPosition.xyz - chunkCenter;
 	float  distSq      = dot(toCamera, toCamera);
 
-	uint lodLevel = SelectLOD(distSq);
-	LODData selectedLOD = ChunkBuffer[chunkIndex].lods[lodLevel];
-	if (selectedLOD.indexCount == 0) return; // skip invalid/empty LOD
+	// GPU-side LOD-selection hysteresis. SelectLOD's bare comparison
+	//   distSq >= LOD_HIGH_MAX_DIST_SQ
+	// has zero hysteresis — float-precision drift in dot(toCamera,...) for
+	// chunks at the threshold radius (~1 km) flips the result frame-to-frame
+	// and produces visible red↔green flicker in the LOD-debug visualisation
+	// even when streaming is steady-state stable. Read the prior frame's
+	// LOD as a stickiness bias inside a ±1% band around the threshold; CPU
+	// streaming guarantees HIGH is still resident within 1.5× of threshold
+	// (eviction hysteresis), so binding to the prior LOD inside this much
+	// narrower band is safe — the chunk is guaranteed to have valid HIGH
+	// geometry if priorLOD says it did. First-frame value is zero (HIGH)
+	// from the nullptr-initialised buffer; converges within one frame.
+	uint priorLOD     = LODLevelBuffer[chunkIndex];
+	uint requestedLOD = SelectLOD(distSq);
+	const float fHysteresisLow  = LOD_HIGH_MAX_DIST_SQ * 0.99;
+	const float fHysteresisHigh = LOD_HIGH_MAX_DIST_SQ * 1.01;
+	if (priorLOD == 0u && distSq < fHysteresisHigh) requestedLOD = 0u;
+	if (priorLOD == 1u && distSq > fHysteresisLow ) requestedLOD = 1u;
+
+	// Explicit LOD fallback. The CPU-side BuildChunkDataForGPU leaves
+	// non-resident LOD slots at indexCount==0 (no longer falsifies HIGH
+	// with LOW's allocation), so when the camera asks for HIGH but it
+	// hasn't streamed in yet we drop to LOW here and record the *actual*
+	// LOD that drew. That keeps the LODLevelBuffer debug visualisation
+	// truthful: red/green colour matches the geometry vertex density.
+	uint actualLOD    = requestedLOD;
+	LODData selectedLOD = ChunkBuffer[chunkIndex].lods[actualLOD];
+
+	if (selectedLOD.indexCount == 0u && requestedLOD == 0u)
+	{
+		// HIGH unavailable — fall back to LOW (always-resident).
+		actualLOD = 1u;
+		selectedLOD = ChunkBuffer[chunkIndex].lods[actualLOD];
+	}
+
+	if (selectedLOD.indexCount == 0u) return; // both LODs empty → skip
 
 	uint outIndex;
 	InterlockedAdd(visibleCount[0], 1u, outIndex);
 
-	// Write the indirect draw + LOD level. firstInstance is repurposed
-	// as the lod-index slot the vertex shader reads back from
-	// LODLevelBuffer (the visualization channel).
+	// Write the indirect draw + LOD level. firstInstance is the stable
+	// chunk id, so the vertex shader indexes LODLevelBuffer by chunk rather
+	// than by compacted draw slot. That keeps debug colour stable even when
+	// draw compaction order changes frame-to-frame.
 	DrawIndexedIndirectCommand cmd;
 	cmd.indexCount    = selectedLOD.indexCount;
 	cmd.instanceCount = 1u;
 	cmd.firstIndex    = selectedLOD.firstIndex;
 	cmd.vertexOffset  = (int)selectedLOD.vertexOffset;
-	cmd.firstInstance = outIndex;
+	cmd.firstInstance = chunkIndex;
 	IndirectCommandBuffer[outIndex] = cmd;
 
-	LODLevelBuffer[outIndex] = lodLevel;
+	LODLevelBuffer[chunkIndex] = actualLOD;
 }

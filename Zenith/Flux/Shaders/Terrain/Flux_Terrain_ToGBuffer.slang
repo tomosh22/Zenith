@@ -5,7 +5,7 @@
 // attributes come in pre-packed (SNORM10:10:10:2 for normal + tangent)
 // — Vulkan auto-unpacks to float4. Position is already in world space
 // (terrain is static, no model matrix). Vertex stage reads its own LOD
-// level from a per-draw storage buffer.
+// level from a per-chunk storage buffer keyed by firstInstance.
 //
 // Splatmap RGBA selects between four materials (grass / rock / dirt /
 // sand by convention). Each material has its own diffuse / normal /
@@ -42,6 +42,12 @@ struct VsOut
 	float3 worldTangent       : TEXCOORD3;
 	nointerpolation uint lodLevel : TEXCOORD4;
 	float  bitangentSign      : TEXCOORD5;
+	// Source chunk index (= firstInstance from the indirect draw command).
+	// Flat-interpolated so debug mode 12 paints the entire triangle with the
+	// colour of its issuing chunk — required to identify which chunk is
+	// producing a stretched / nonsensical triangle, since worldPos.xz varies
+	// across the surface (which is exactly the symptom we're hunting).
+	nointerpolation uint chunkIndex : TEXCOORD6;
 };
 
 // Per-frame UV scale lives at set=0 binding=1 (FrameConstants takes
@@ -56,7 +62,9 @@ struct TerrainConstantsLayout { float g_fUVScale; };
 [[vk::binding(1, 1)]] StructuredBuffer<uint> LODLevelBuffer;
 
 [shader("vertex")]
-VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID)
+VsOut vsMain(VsIn input,
+             uint instanceId : SV_InstanceID,
+             uint startInstance : SV_StartInstanceLocation)
 {
 	VsOut o;
 	float3 xWorldPos = input.a_xPosition; // terrain is static, no model matrix
@@ -68,10 +76,18 @@ VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID)
 	// Bitangent sign was pre-computed at export and packed into tangent.w.
 	o.bitangentSign = input.a_xTangentPacked.w >= 0.0 ? 1.0 : -1.0;
 
-	// gl_InstanceIndex == firstInstance for terrain (instanceCount=1,
-	// instanceID=0). Reads through nointerpolation so only the provoking
-	// vertex pays the storage-buffer fetch cost.
-	o.lodLevel = LODLevelBuffer[instanceId];
+	// Slang's SV_InstanceID compiles to SPIR-V BuiltIn InstanceId, which is
+	// the instance number within the draw (0 to instanceCount-1) and does
+	// NOT include firstInstance. The terrain culling shader writes
+	// firstInstance = chunkIndex per draw command, so we add SV_StartInstance-
+	// Location (== BaseInstance == firstInstance) to recover the chunk id.
+	// Without this, every chunk reads LODLevelBuffer[0], so the LOD
+	// visualisation shows the colour for chunk 0 across the whole terrain
+	// (the long-running "red/green flicker" symptom) and the source-chunk
+	// debug visualisation paints everything black (chunk 0's hash).
+	uint uChunkId = startInstance + instanceId;
+	o.lodLevel = LODLevelBuffer[uChunkId];
+	o.chunkIndex = uChunkId;
 
 	o.position = mul(FrameConstants.g_xViewProjMat, float4(xWorldPos, 1.0));
 	return o;
@@ -164,6 +180,29 @@ GBufferOut fsMain(VsOut input)
 			}
 			case 10u: xDebugColor = input.worldTangent * 0.5 + 0.5; break;
 			case 11u: xDebugColor = input.bitangentSign > 0.0 ? float3(1.0, 0.0, 0.0) : float3(0.0, 0.0, 1.0); break;
+			case 12u:
+			{
+				// Source-chunk visualisation — flat-shade each triangle with
+				// a colour hashed from its source chunk index. A stretched
+				// triangle covers many world positions but came from a
+				// single chunk; this mode paints the whole stretched area
+				// with that chunk's signature colour, making the culprit
+				// obvious. Bit-reverse-style mixing produces high-contrast
+				// colours for adjacent chunks (chunk N and chunk N+1 share
+				// almost no bits in the output channels), so neighbours are
+				// visually distinct even when the spike's source chunk is
+				// next to non-spike chunks. A small bias keeps the result
+				// well above pure black (chunk 0 → mid-grey, not invisible).
+				uint h = input.chunkIndex + 1u;
+				uint hr = (h * 2654435769u) >> 8u;  // golden-ratio mix → R
+				uint hg = (h * 1597334677u) >> 8u;  // arbitrary prime  → G
+				uint hb = (h * 2246822519u) >> 8u;  // arbitrary prime  → B
+				xDebugColor = float3(
+					0.25 + 0.75 * float(hr & 0xFFu) / 255.0,
+					0.25 + 0.75 * float(hg & 0xFFu) / 255.0,
+					0.25 + 0.75 * float(hb & 0xFFu) / 255.0);
+				break;
+			}
 			default: break;
 		}
 		if (bHandled)

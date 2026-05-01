@@ -21,13 +21,16 @@ static const char* AccessToString(ResourceAccess eAccess)
 {
     switch (eAccess)
     {
-        case RESOURCE_ACCESS_UNDEFINED:      return "UNDEFINED";
-        case RESOURCE_ACCESS_READ_SRV:       return "READ_SRV";
-        case RESOURCE_ACCESS_READ_DEPTH:     return "READ_DEPTH";
-        case RESOURCE_ACCESS_WRITE_RTV:      return "WRITE_RTV";
-        case RESOURCE_ACCESS_WRITE_DSV:      return "WRITE_DSV";
-        case RESOURCE_ACCESS_WRITE_UAV:      return "WRITE_UAV";
-        case RESOURCE_ACCESS_READWRITE_UAV:  return "READWRITE_UAV";
+        case RESOURCE_ACCESS_UNDEFINED:           return "UNDEFINED";
+        case RESOURCE_ACCESS_READ_SRV:            return "READ_SRV";
+        case RESOURCE_ACCESS_READ_DEPTH:          return "READ_DEPTH";
+        case RESOURCE_ACCESS_WRITE_RTV:           return "WRITE_RTV";
+        case RESOURCE_ACCESS_WRITE_DSV:           return "WRITE_DSV";
+        case RESOURCE_ACCESS_WRITE_UAV:           return "WRITE_UAV";
+        case RESOURCE_ACCESS_READWRITE_UAV:      return "READWRITE_UAV";
+        case RESOURCE_ACCESS_READ_INDIRECT_ARG:   return "READ_INDIRECT_ARG";
+        case RESOURCE_ACCESS_READ_BUFFER_SRV:     return "READ_BUFFER_SRV";
+        case RESOURCE_ACCESS_HOST_TRANSFER_WRITE: return "HOST_TRANSFER_WRITE";
     }
     return "???";
 }
@@ -37,6 +40,20 @@ void Flux_RenderGraph::ValidateOrphanedReads() const
     for (auto& xPair : m_xTraffic)
     {
         if (xPair.second.m_xReaders.GetSize() == 0 || xPair.second.m_xWriters.GetSize() != 0) continue;
+
+        // Buffers registered via MarkBufferHostWritten are produced outside the
+        // graph (host uploads), so a Read with no graph-side writer is legitimate.
+        // Skip the orphaned-read assertion for these.
+        bool bExternallyWritten = false;
+        for (u_int u = 0; u < m_xExternallyWrittenBuffers.GetSize(); u++)
+        {
+            if (static_cast<void*>(m_xExternallyWrittenBuffers.Get(u)) == xPair.first)
+            {
+                bExternallyWritten = true;
+                break;
+            }
+        }
+        if (bExternallyWritten) continue;
 
         auto it = m_xResources.find(xPair.first);
         const char* sz = (it != m_xResources.end()) ? it->second.m_xResource.GetName().c_str() : "<unknown>";

@@ -244,6 +244,17 @@ struct Flux_UnorderedAccessView_Buffer
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
+// Read-only structured-buffer view (StructuredBuffer<T> in Slang). Distinct
+// type from Flux_UnorderedAccessView_Buffer so the binder dispatch and the
+// render-graph access classification can tell read-only from read-write at
+// compile time, even though the underlying Vulkan descriptor is the same
+// (vk::DescriptorType::eStorageBuffer).
+struct Flux_ShaderResourceView_Buffer
+{
+	Flux_BufferDescriptorHandle m_xBufferDescHandle;
+	Flux_VRAMHandle m_xVRAMHandle;
+};
+
 struct Flux_RenderTargetView
 {
 	Flux_ImageViewHandle m_xImageViewHandle;

@@ -32,6 +32,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
@@ -9641,6 +9642,13 @@ void Zenith_UnitTests::TestPriorityInsertionEmpty(){
 }
 
 // ========== Terrain Streaming Tests ==========
+//
+// Construct a stack-local Flux_TerrainStreamingState and exercise the
+// distance / center math helpers directly. Avoids touching the manager's
+// primary state so the tests don't pollute or rely on engine init order;
+// Zenith_UnitTests is friended into Flux_TerrainStreamingManager so the
+// state-taking private helpers (GetChunkCenter, GetChunkDistanceSq) are
+// callable here.
 
 ZENITH_TEST(Terrain, ChunkDistanceSymmetry) { Zenith_UnitTests::TestChunkDistanceSymmetry(); }
 
@@ -9650,38 +9658,29 @@ void Zenith_UnitTests::TestChunkDistanceSymmetry(){
 	const uint32_t uChunkA = Flux_TerrainStreamingManager::ChunkCoordsToIndex(2, 3);
 	const uint32_t uChunkB = Flux_TerrainStreamingManager::ChunkCoordsToIndex(5, 7);
 
-	// Save original state
-	bool bOrigAABBsCached = Flux_TerrainStreamingManager::s_bAABBsCached;
-	Zenith_AABB xOrigA = Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkA];
-	Zenith_AABB xOrigB = Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkB];
-
-	// Set up test AABBs so GetChunkCenter uses the cached path
-	Flux_TerrainStreamingManager::s_bAABBsCached = true;
-	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkA] = Zenith_AABB(
+	// Build a synthetic streaming state with cached AABBs for the two chunks.
+	Flux_TerrainStreamingState xState;
+	xState.m_bAABBsCached = true;
+	xState.m_axChunkAABBs[uChunkA] = Zenith_AABB(
 		Zenith_Maths::Vector3(100.0f, 0.0f, 200.0f),
 		Zenith_Maths::Vector3(164.0f, 100.0f, 264.0f)
 	);
-	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkB] = Zenith_AABB(
+	xState.m_axChunkAABBs[uChunkB] = Zenith_AABB(
 		Zenith_Maths::Vector3(300.0f, 0.0f, 400.0f),
 		Zenith_Maths::Vector3(364.0f, 100.0f, 464.0f)
 	);
 
 	// Get chunk centers
-	Zenith_Maths::Vector3 xCenterA = Flux_TerrainStreamingManager::GetChunkCenter(2, 3);
-	Zenith_Maths::Vector3 xCenterB = Flux_TerrainStreamingManager::GetChunkCenter(5, 7);
+	Zenith_Maths::Vector3 xCenterA = Flux_TerrainStreamingManager::GetChunkCenter(xState, 2, 3);
+	Zenith_Maths::Vector3 xCenterB = Flux_TerrainStreamingManager::GetChunkCenter(xState, 5, 7);
 
 	// Distance from A's center to chunk B should equal distance from B's center to chunk A
-	float fDistAToB = Flux_TerrainStreamingManager::GetChunkDistanceSq(uChunkB, xCenterA);
-	float fDistBToA = Flux_TerrainStreamingManager::GetChunkDistanceSq(uChunkA, xCenterB);
+	float fDistAToB = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uChunkB, xCenterA);
+	float fDistBToA = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uChunkA, xCenterB);
 
 	// Squared distance is symmetric: |A-B|^2 == |B-A|^2
 	float fDifference = fabsf(fDistAToB - fDistBToA);
 	ZENITH_ASSERT_LT(fDifference, 0.001f, "Chunk distance should be symmetric (A->B == B->A), diff=%.6f", fDifference);
-
-	// Restore original state
-	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkA] = xOrigA;
-	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkB] = xOrigB;
-	Flux_TerrainStreamingManager::s_bAABBsCached = bOrigAABBsCached;
 
 }
 
@@ -9691,27 +9690,247 @@ void Zenith_UnitTests::TestChunkDistanceZero(){
 
 	const uint32_t uChunkIndex = Flux_TerrainStreamingManager::ChunkCoordsToIndex(4, 4);
 
-	// Save original state
-	bool bOrigAABBsCached = Flux_TerrainStreamingManager::s_bAABBsCached;
-	Zenith_AABB xOrig = Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkIndex];
-
-	// Set up a known AABB
-	Flux_TerrainStreamingManager::s_bAABBsCached = true;
-	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkIndex] = Zenith_AABB(
+	// Synthetic state with one cached AABB.
+	Flux_TerrainStreamingState xState;
+	xState.m_bAABBsCached = true;
+	xState.m_axChunkAABBs[uChunkIndex] = Zenith_AABB(
 		Zenith_Maths::Vector3(200.0f, 0.0f, 200.0f),
 		Zenith_Maths::Vector3(264.0f, 100.0f, 264.0f)
 	);
 
 	// Camera at exact chunk center should give distance 0
-	Zenith_Maths::Vector3 xChunkCenter = Flux_TerrainStreamingManager::GetChunkCenter(4, 4);
-	float fDistanceSq = Flux_TerrainStreamingManager::GetChunkDistanceSq(uChunkIndex, xChunkCenter);
+	Zenith_Maths::Vector3 xChunkCenter = Flux_TerrainStreamingManager::GetChunkCenter(xState, 4, 4);
+	float fDistanceSq = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uChunkIndex, xChunkCenter);
 
 	ZENITH_ASSERT_LT(fDistanceSq, 0.001f, "Distance from chunk center to itself should be ~0, got %.6f", fDistanceSq);
 
-	// Restore original state
-	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkIndex] = xOrig;
-	Flux_TerrainStreamingManager::s_bAABBsCached = bOrigAABBsCached;
+}
 
+// Per-component streaming state isolation. Two Flux_TerrainStreamingState
+// instances own independent dirty flags; flipping one must not change the
+// other. Regression test for the pre-refactor "global dirty flag" bug where
+// a streaming change on one terrain forced re-upload on every other.
+ZENITH_TEST(Terrain, StreamingDirtyFlagPerState) { Zenith_UnitTests::TestTerrainStreamingDirtyFlagPerState(); }
+void Zenith_UnitTests::TestTerrainStreamingDirtyFlagPerState(){
+	Flux_TerrainStreamingState xStateA;
+	Flux_TerrainStreamingState xStateB;
+
+	// std::atomic<T>::load is [[nodiscard]] — store into locals before
+	// asserting so the macro expansion can't fall foul of /WX.
+
+	// Both default-init to dirty=true.
+	bool bA = xStateA.m_bChunkDataDirty.load(std::memory_order_acquire);
+	bool bB = xStateB.m_bChunkDataDirty.load(std::memory_order_acquire);
+	ZENITH_ASSERT(bA, "State A must default to dirty=true");
+	ZENITH_ASSERT(bB, "State B must default to dirty=true");
+
+	xStateA.m_bChunkDataDirty.store(false, std::memory_order_release);
+	bA = xStateA.m_bChunkDataDirty.load(std::memory_order_acquire);
+	bB = xStateB.m_bChunkDataDirty.load(std::memory_order_acquire);
+	ZENITH_ASSERT(!bA, "State A should be clean after store(false)");
+	ZENITH_ASSERT(bB,  "State B's dirty flag must be unaffected by changes to state A");
+
+	xStateB.m_bChunkDataDirty.store(false, std::memory_order_release);
+	xStateA.m_bChunkDataDirty.store(true, std::memory_order_release);
+	bA = xStateA.m_bChunkDataDirty.load(std::memory_order_acquire);
+	bB = xStateB.m_bChunkDataDirty.load(std::memory_order_acquire);
+	ZENITH_ASSERT(bA,  "State A re-dirtied");
+	ZENITH_ASSERT(!bB, "State B must stay clean while A was re-dirtied");
+}
+
+// Mutating one state's residency table must not leak into another state's.
+// Regression test for the pre-refactor global s_axChunkResidency array.
+ZENITH_TEST(Terrain, StreamingResidencyIsolatedBetweenStates) { Zenith_UnitTests::TestTerrainStreamingResidencyIsolatedBetweenStates(); }
+void Zenith_UnitTests::TestTerrainStreamingResidencyIsolatedBetweenStates(){
+	Flux_TerrainStreamingState xStateA;
+	Flux_TerrainStreamingState xStateB;
+
+	const uint32_t uChunkIndex = Flux_TerrainStreamingManager::ChunkCoordsToIndex(7, 11);
+	// Both states start with all chunks NOT_LOADED.
+	ZENITH_ASSERT_EQ(xStateA.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::NOT_LOADED, "State A chunk must start NOT_LOADED");
+	ZENITH_ASSERT_EQ(xStateB.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::NOT_LOADED, "State B chunk must start NOT_LOADED");
+
+	xStateA.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_HIGH] = Flux_TerrainLODResidencyState::RESIDENT;
+	xStateA.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_HIGH].m_uVertexOffset = 1234;
+	xStateA.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_HIGH].m_uVertexCount  = 64;
+
+	ZENITH_ASSERT_EQ(xStateA.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::RESIDENT, "State A chunk should be RESIDENT after mutation");
+	ZENITH_ASSERT_EQ(xStateB.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::NOT_LOADED, "State B chunk must remain NOT_LOADED");
+	ZENITH_ASSERT_EQ(xStateB.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_HIGH].m_uVertexOffset, 0u, "State B's allocation offset must not pick up state A's mutation");
+}
+
+// SquaredHysteresis is a pure constexpr that returns linear^2; verifies the
+// threshold conversion that fixed the eviction-radius bug (was multiplying
+// LOD_*_DISTANCE_SQ by a linear ratio, producing √ratio× radius).
+ZENITH_TEST(Terrain, HysteresisSquaredDistance) { Zenith_UnitTests::TestTerrainHysteresisSquaredDistance(); }
+void Zenith_UnitTests::TestTerrainHysteresisSquaredDistance(){
+	ZENITH_ASSERT_LT(fabsf(Flux_TerrainConfig::SquaredHysteresis(1.0f) - 1.0f),  0.0001f, "SquaredHysteresis(1.0) should be 1.0");
+	ZENITH_ASSERT_LT(fabsf(Flux_TerrainConfig::SquaredHysteresis(1.5f) - 2.25f), 0.0001f, "SquaredHysteresis(1.5) should be 2.25 (used by main eviction)");
+	ZENITH_ASSERT_LT(fabsf(Flux_TerrainConfig::SquaredHysteresis(1.2f) - 1.44f), 0.0001f, "SquaredHysteresis(1.2) should be 1.44 (used by forced eviction)");
+	ZENITH_ASSERT_LT(fabsf(Flux_TerrainConfig::SquaredHysteresis(2.0f) - 4.0f),  0.0001f, "SquaredHysteresis(2.0) should be 4.0");
+
+	// Spot-check that the eviction threshold lands at the documented radius.
+	// 1.5×R linear == 2.25×R² squared. Distance comparisons in the streaming
+	// code work in squared-distance space, so this matches the actual gating.
+	const float fLinearR        = 1000.0f;
+	const float fSquaredR       = fLinearR * fLinearR;
+	const float fEvictThreshold = fSquaredR * Flux_TerrainConfig::SquaredHysteresis(1.5f);
+	const float fExpectedAt15R  = (1.5f * fLinearR) * (1.5f * fLinearR);
+	ZENITH_ASSERT_LT(fabsf(fEvictThreshold - fExpectedAt15R), 0.01f, "Eviction threshold must equal (1.5×R)² in squared space");
+}
+
+// Active-set rebuild sorts ascending by squared distance to the camera so
+// the per-frame streaming budget favours nearby chunks. Builds a synthetic
+// state with cached AABBs across a 3×3 region and verifies the output is
+// non-decreasing in distance.
+ZENITH_TEST(Terrain, ActiveSetSortedNearestFirst) { Zenith_UnitTests::TestTerrainActiveSetSortedNearestFirst(); }
+void Zenith_UnitTests::TestTerrainActiveSetSortedNearestFirst(){
+	Flux_TerrainStreamingState xState;
+	xState.m_bAABBsCached = true;
+	xState.m_uActiveChunkRadius = 1;  // 3×3 block around camera
+
+	// Camera in the middle of chunk (5,5) (world Y irrelevant — chunk
+	// centers use y from the AABB midpoint).
+	const Zenith_Maths::Vector3 xCameraPos(
+		(5.0f + 0.5f) * Flux_TerrainConfig::CHUNK_SIZE_WORLD,
+		32.0f,
+		(5.0f + 0.5f) * Flux_TerrainConfig::CHUNK_SIZE_WORLD);
+
+	// Populate cached AABBs for chunks (4..6, 4..6).
+	for (uint32_t cx = 4; cx <= 6; ++cx)
+	{
+		for (uint32_t cy = 4; cy <= 6; ++cy)
+		{
+			const uint32_t uIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(cx, cy);
+			xState.m_axChunkAABBs[uIdx] = Zenith_AABB(
+				Zenith_Maths::Vector3(static_cast<float>(cx)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 0.0f,        static_cast<float>(cy)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD),
+				Zenith_Maths::Vector3(static_cast<float>(cx + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 64.0f,       static_cast<float>(cy + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD));
+		}
+	}
+
+	Flux_TerrainStreamingManager::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
+
+	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices.size(), (size_t)9, "Active set with radius 1 should hold 9 chunks (3×3)");
+
+	float fPrevDistSq = -1.0f;
+	for (size_t u = 0; u < xState.m_xActiveChunkIndices.size(); ++u)
+	{
+		const uint32_t uIdx       = xState.m_xActiveChunkIndices[u];
+		const float    fDistanceSq = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uIdx, xCameraPos);
+		ZENITH_ASSERT(fDistanceSq + 0.0001f >= fPrevDistSq, "Active set must be non-decreasing in distance, entry %zu broke ordering", u);
+		fPrevDistSq = fDistanceSq;
+	}
+}
+
+// The first entry of the sorted active set must be the chunk under the
+// camera (squared distance ~0). Companion to the non-decreasing check.
+ZENITH_TEST(Terrain, ActiveSetCenterIndexFirst) { Zenith_UnitTests::TestTerrainActiveSetCenterIndexFirst(); }
+void Zenith_UnitTests::TestTerrainActiveSetCenterIndexFirst(){
+	Flux_TerrainStreamingState xState;
+	xState.m_bAABBsCached = true;
+	xState.m_uActiveChunkRadius = 1;
+
+	const Zenith_Maths::Vector3 xCameraPos(
+		(5.0f + 0.5f) * Flux_TerrainConfig::CHUNK_SIZE_WORLD,
+		32.0f,
+		(5.0f + 0.5f) * Flux_TerrainConfig::CHUNK_SIZE_WORLD);
+
+	for (uint32_t cx = 4; cx <= 6; ++cx)
+	{
+		for (uint32_t cy = 4; cy <= 6; ++cy)
+		{
+			const uint32_t uIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(cx, cy);
+			xState.m_axChunkAABBs[uIdx] = Zenith_AABB(
+				Zenith_Maths::Vector3(static_cast<float>(cx)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 0.0f,        static_cast<float>(cy)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD),
+				Zenith_Maths::Vector3(static_cast<float>(cx + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 64.0f,       static_cast<float>(cy + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD));
+		}
+	}
+
+	Flux_TerrainStreamingManager::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
+
+	ZENITH_ASSERT(xState.m_xActiveChunkIndices.size() > 0, "Active set must be non-empty");
+	const uint32_t uExpectedCenter = Flux_TerrainStreamingManager::ChunkCoordsToIndex(5, 5);
+	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices[0], uExpectedCenter, "First entry of sorted active set must be the chunk under the camera");
+}
+
+// Terrain assets can be authored/exported with world-space AABBs offset from
+// origin. Streaming must therefore use the nearest cached AABB as the active
+// set centre instead of assuming cameraWorld / CHUNK_WORLD_SIZE maps directly
+// to chunk coordinates.
+ZENITH_TEST(Terrain, ActiveSetUsesNearestAABBForOffsetTerrain) { Zenith_UnitTests::TestTerrainActiveSetUsesNearestAABBForOffsetTerrain(); }
+void Zenith_UnitTests::TestTerrainActiveSetUsesNearestAABBForOffsetTerrain(){
+	Flux_TerrainStreamingState xState;
+	xState.m_bAABBsCached = true;
+	xState.m_uActiveChunkRadius = 1;
+
+	const float fChunkSize = Flux_TerrainConfig::CHUNK_SIZE_WORLD;
+	for (uint32_t cx = 0; cx < Flux_TerrainConfig::CHUNK_GRID_SIZE; ++cx)
+	{
+		for (uint32_t cy = 0; cy < Flux_TerrainConfig::CHUNK_GRID_SIZE; ++cy)
+		{
+			const uint32_t uIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(cx, cy);
+			const float fBaseX = 100000.0f + static_cast<float>(cx) * fChunkSize;
+			const float fBaseZ = 100000.0f + static_cast<float>(cy) * fChunkSize;
+			xState.m_axChunkAABBs[uIdx] = Zenith_AABB(
+				Zenith_Maths::Vector3(fBaseX, 0.0f, fBaseZ),
+				Zenith_Maths::Vector3(fBaseX + fChunkSize, 64.0f, fBaseZ + fChunkSize));
+		}
+	}
+
+	const uint32_t uTargetX = 10;
+	const uint32_t uTargetY = 12;
+	const uint32_t uTargetIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(uTargetX, uTargetY);
+	xState.m_axChunkAABBs[uTargetIdx] = Zenith_AABB(
+		Zenith_Maths::Vector3(-512.0f, 0.0f, -256.0f),
+		Zenith_Maths::Vector3(-448.0f, 64.0f, -192.0f));
+
+	const Zenith_Maths::Vector3 xCameraPos(-480.0f, 32.0f, -224.0f);
+	int32_t iChunkX = -1;
+	int32_t iChunkY = -1;
+	uint32_t uNearestIdx = UINT32_MAX;
+	Flux_TerrainStreamingManager::ResolveCameraChunkCoords(xState, xCameraPos, iChunkX, iChunkY, uNearestIdx);
+
+	ZENITH_ASSERT_EQ(uNearestIdx, uTargetIdx, "AABB nearest-chunk selection should pick the offset target chunk");
+	ZENITH_ASSERT_EQ(iChunkX, static_cast<int32_t>(uTargetX), "Resolved camera chunk X should come from nearest AABB");
+	ZENITH_ASSERT_EQ(iChunkY, static_cast<int32_t>(uTargetY), "Resolved camera chunk Y should come from nearest AABB");
+
+	Flux_TerrainStreamingManager::RebuildActiveChunkSet(xState, iChunkX, iChunkY, xCameraPos);
+	ZENITH_ASSERT(xState.m_xActiveChunkIndices.size() > 0, "Offset active set should be non-empty");
+	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices[0], uTargetIdx, "Nearest offset chunk should be first in the sorted active set");
+}
+
+// When LOW residency is populated for every chunk, chunk-data generation
+// should report zero LOW-empty chunks. This locks down the hole diagnostic:
+// a nonzero count points at missing/invalid LOW metadata rather than culling
+// or indirect-count lifetime.
+ZENITH_TEST(Terrain, ChunkDataNoLowZeroWhenLowResident) { Zenith_UnitTests::TestTerrainChunkDataNoLowZeroWhenLowResident(); }
+void Zenith_UnitTests::TestTerrainChunkDataNoLowZeroWhenLowResident(){
+	Flux_TerrainStreamingState xState;
+	xState.m_bAABBsCached = true;
+
+	for (uint32_t uChunkIndex = 0; uChunkIndex < Flux_TerrainConfig::TOTAL_CHUNKS; ++uChunkIndex)
+	{
+		uint32_t uChunkX, uChunkY;
+		Flux_TerrainStreamingManager::ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
+		xState.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_LOW] = Flux_TerrainLODResidencyState::RESIDENT;
+		xState.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_LOW].m_uVertexOffset = uChunkIndex * 4u;
+		xState.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_LOW].m_uVertexCount = 4u;
+		xState.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_LOW].m_uIndexOffset = uChunkIndex * 6u;
+		xState.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_LOW].m_uIndexCount = 6u;
+		xState.m_axChunkAABBs[uChunkIndex] = Zenith_AABB(
+			Zenith_Maths::Vector3(static_cast<float>(uChunkX) * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 0.0f, static_cast<float>(uChunkY) * Flux_TerrainConfig::CHUNK_SIZE_WORLD),
+			Zenith_Maths::Vector3(static_cast<float>(uChunkX + 1u) * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 64.0f, static_cast<float>(uChunkY + 1u) * Flux_TerrainConfig::CHUNK_SIZE_WORLD));
+	}
+
+	ZENITH_ASSERT_EQ(Flux_TerrainStreamingManager::CountLowZeroChunks(xState), 0u, "LOW zero-count diagnostic should be zero when all LOW chunks are resident with indices");
+
+	Zenith_TerrainChunkData* pxChunkData = new Zenith_TerrainChunkData[Flux_TerrainConfig::TOTAL_CHUNKS];
+	Flux_TerrainStreamingManager::BuildChunkDataForGPU_Internal(xState, pxChunkData);
+	for (uint32_t uChunkIndex = 0; uChunkIndex < Flux_TerrainConfig::TOTAL_CHUNKS; ++uChunkIndex)
+	{
+		ZENITH_ASSERT_EQ(pxChunkData[uChunkIndex].m_axLODs[LOD_LOW].m_uIndexCount, 6u, "Generated chunk data LOW index count should match populated residency");
+	}
+	delete[] pxChunkData;
 }
 
 // ========== Vulkan Memory Manager Tests ==========
@@ -10328,6 +10547,96 @@ void Zenith_UnitTests::TestRenderGraphBufferBarrierRMW(){
 	ZENITH_ASSERT_EQ(pxBBarrier->m_eSrcAccess, RESOURCE_ACCESS_READWRITE_UAV, "TestRenderGraphBufferBarrierRMW: pass B src access expected READWRITE_UAV, got %d", (int)pxBBarrier->m_eSrcAccess);
 	ZENITH_ASSERT_EQ(pxBBarrier->m_eDstAccess, RESOURCE_ACCESS_READWRITE_UAV, "TestRenderGraphBufferBarrierRMW: pass B dst access expected READWRITE_UAV, got %d", (int)pxBBarrier->m_eDstAccess);
 	ZENITH_ASSERT_EQ(pxBBarrier->m_xResource.AsBuffer(), &xBuffer.GetBuffer(), "TestRenderGraphBufferBarrierRMW: pass B barrier targets wrong buffer");
+
+}
+
+// Pass A writes the buffer (terrain culling compute), pass B reads it as
+// indirect arguments (terrain GBuffer's DrawIndexedIndirectCount). Verifies
+// that the new RESOURCE_ACCESS_READ_INDIRECT_ARG access correctly drives the
+// graph to synthesise a compute→indirect-arg buffer barrier on the consumer.
+ZENITH_TEST(Core, RenderGraphIndirectArgBarrier) { Zenith_UnitTests::TestRenderGraphIndirectArgBarrier(); }
+void Zenith_UnitTests::TestRenderGraphIndirectArgBarrier(){
+	Flux_RenderGraph xGraph;
+
+	Flux_ReadWriteBuffer xBuffer;
+	xBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+	xBuffer.GetBuffer().m_ulSize = 256;
+
+	Flux_PassHandle xPassA = xGraph.AddPass("CullingWrites", EmptyRecordCallback);
+	xGraph.WriteBuffer(xPassA, xBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+
+	Flux_PassHandle xPassB = xGraph.AddPass("GBufferReadsIndirectArgs", EmptyRecordCallback);
+	xGraph.ReadBuffer(xPassB, xBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xPassA.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xPassB.m_uIndex);
+
+	xGraph.SynthesizeBarriers();
+
+	const Flux_RenderGraph_Pass* pxB = xGraph.GetPasses().Get(xPassB.m_uIndex);
+
+	u_int uBufferBarriers = 0;
+	const Flux_RenderGraph_Barrier* pxBarrier = nullptr;
+	for (u_int u = 0; u < pxB->m_xPrologueBarriers.GetSize(); u++)
+	{
+		const Flux_RenderGraph_Barrier& rxBar = pxB->m_xPrologueBarriers.Get(u);
+		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
+			uBufferBarriers++;
+			pxBarrier = &rxBar;
+		}
+	}
+	ZENITH_ASSERT_EQ(uBufferBarriers, 1, "TestRenderGraphIndirectArgBarrier: GBuffer pass expected 1 buffer barrier (compute-write -> indirect-arg-read), got %u", uBufferBarriers);
+	ZENITH_ASSERT_NOT_NULL(pxBarrier, "TestRenderGraphIndirectArgBarrier: GBuffer pass buffer barrier missing");
+	ZENITH_ASSERT_EQ(pxBarrier->m_eSrcAccess, RESOURCE_ACCESS_WRITE_UAV, "TestRenderGraphIndirectArgBarrier: src expected WRITE_UAV, got %d", (int)pxBarrier->m_eSrcAccess);
+	ZENITH_ASSERT_EQ(pxBarrier->m_eDstAccess, RESOURCE_ACCESS_READ_INDIRECT_ARG, "TestRenderGraphIndirectArgBarrier: dst expected READ_INDIRECT_ARG, got %d", (int)pxBarrier->m_eDstAccess);
+	ZENITH_ASSERT_EQ(pxBarrier->m_xResource.AsBuffer(), &xBuffer.GetBuffer(), "TestRenderGraphIndirectArgBarrier: barrier targets wrong buffer");
+
+}
+
+// Pass A writes the buffer (terrain culling compute writes LODLevelBuffer),
+// pass B reads it as a read-only structured buffer (GBuffer vertex shader
+// samples LODLevelBuffer). Verifies RESOURCE_ACCESS_READ_BUFFER_SRV drives
+// a compute-write -> shader-read barrier on the consumer pass.
+ZENITH_TEST(Core, RenderGraphStorageBufferSRVBarrier) { Zenith_UnitTests::TestRenderGraphStorageBufferSRVBarrier(); }
+void Zenith_UnitTests::TestRenderGraphStorageBufferSRVBarrier(){
+	Flux_RenderGraph xGraph;
+
+	Flux_ReadWriteBuffer xBuffer;
+	xBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+	xBuffer.GetBuffer().m_ulSize = 256;
+
+	Flux_PassHandle xPassA = xGraph.AddPass("CullingWritesLOD", EmptyRecordCallback);
+	xGraph.WriteBuffer(xPassA, xBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+
+	Flux_PassHandle xPassB = xGraph.AddPass("GBufferReadsLODSRV", EmptyRecordCallback);
+	xGraph.ReadBuffer(xPassB, xBuffer.GetBuffer(), RESOURCE_ACCESS_READ_BUFFER_SRV);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xPassA.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xPassB.m_uIndex);
+
+	xGraph.SynthesizeBarriers();
+
+	const Flux_RenderGraph_Pass* pxB = xGraph.GetPasses().Get(xPassB.m_uIndex);
+
+	u_int uBufferBarriers = 0;
+	const Flux_RenderGraph_Barrier* pxBarrier = nullptr;
+	for (u_int u = 0; u < pxB->m_xPrologueBarriers.GetSize(); u++)
+	{
+		const Flux_RenderGraph_Barrier& rxBar = pxB->m_xPrologueBarriers.Get(u);
+		if (rxBar.m_xResource.GetKind() == Flux_GraphResourceKind::Buffer)
+		{
+			uBufferBarriers++;
+			pxBarrier = &rxBar;
+		}
+	}
+	ZENITH_ASSERT_EQ(uBufferBarriers, 1, "TestRenderGraphStorageBufferSRVBarrier: GBuffer pass expected 1 buffer barrier (compute-write -> SRV-read), got %u", uBufferBarriers);
+	ZENITH_ASSERT_NOT_NULL(pxBarrier, "TestRenderGraphStorageBufferSRVBarrier: GBuffer pass buffer barrier missing");
+	ZENITH_ASSERT_EQ(pxBarrier->m_eSrcAccess, RESOURCE_ACCESS_WRITE_UAV, "TestRenderGraphStorageBufferSRVBarrier: src expected WRITE_UAV, got %d", (int)pxBarrier->m_eSrcAccess);
+	ZENITH_ASSERT_EQ(pxBarrier->m_eDstAccess, RESOURCE_ACCESS_READ_BUFFER_SRV, "TestRenderGraphStorageBufferSRVBarrier: dst expected READ_BUFFER_SRV, got %d", (int)pxBarrier->m_eDstAccess);
+	ZENITH_ASSERT_EQ(pxBarrier->m_xResource.AsBuffer(), &xBuffer.GetBuffer(), "TestRenderGraphStorageBufferSRVBarrier: barrier targets wrong buffer");
 
 }
 

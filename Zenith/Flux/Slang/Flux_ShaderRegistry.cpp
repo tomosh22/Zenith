@@ -613,6 +613,21 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		"spirv_1_3",
 		"Terrain",
 	},
+	// Single-thread compute that zeroes the per-terrain visible-count
+	// buffer. Runs as its own render-graph pass (DependsOn: culling) so
+	// the graph can emit the UAV→UAV barrier against the culling
+	// dispatch's atomic increments. See the slang module for why this
+	// can't be folded into the culling shader as a thread-0 trick.
+	{
+		FluxShaderProgram::TerrainResetCounters,
+		"TerrainResetCounters",
+		"Terrain/Flux_TerrainResetCounters",
+		nullptr,
+		nullptr,
+		"csMain",
+		"spirv_1_3",
+		"Terrain",
+	},
 
 	// Per-instance grass blade rendering with layered-wave wind, distance
 	// fade, wrap lighting + translucency. Forward (HDR-blended).

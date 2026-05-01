@@ -17,8 +17,11 @@ public:
 
 	static void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	// CPU-side per-frame update (streaming, LOD, culling dispatch)
-	static void PreRenderUpdate();
+	// CPU-side per-frame update (streaming, LOD, culling dispatch). Signature
+	// matches Flux_RenderGraph_OnPrepareFunc = void(*)(void*) so the render
+	// graph can wire it as a Prepare callback. The void* user-data slot is
+	// unused (the function reads global / scene state directly).
+	static void PreRenderUpdate(void* pUserData);
 
 	static Flux_Pipeline& GetShadowPipeline();
 	static Flux_DynamicConstantBuffer& GetTerrainConstantsBuffer();
@@ -33,6 +36,7 @@ public:
 	static bool& GetWireframeMode();
 
 private:
+	static void ExecuteResetCounters(Flux_CommandList* pxCmdList, void* pUserData);
 	static void ExecuteCulling(Flux_CommandList* pxCmdList, void* pUserData);
 	static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
 };

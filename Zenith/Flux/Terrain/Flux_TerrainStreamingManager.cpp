@@ -15,31 +15,9 @@ using namespace Flux_TerrainConfig;
 DEBUGVAR bool dbg_bLogTerrainStreaming = false;
 
 // ========== Static Member Definitions ==========
-bool Flux_TerrainStreamingManager::s_bInitialized = false;
-uint32_t Flux_TerrainStreamingManager::s_uCurrentFrame = 0;
-Zenith_TerrainComponent* Flux_TerrainStreamingManager::s_pxTerrainComponent = nullptr;
-
-Flux_TerrainBufferAllocator Flux_TerrainStreamingManager::s_xVertexAllocator;
-Flux_TerrainBufferAllocator Flux_TerrainStreamingManager::s_xIndexAllocator;
-Flux_TerrainChunkResidency Flux_TerrainStreamingManager::s_axChunkResidency[TOTAL_CHUNKS];
-Zenith_AABB Flux_TerrainStreamingManager::s_axChunkAABBs[TOTAL_CHUNKS];
-bool Flux_TerrainStreamingManager::s_bAABBsCached = false;
-std::atomic<bool> Flux_TerrainStreamingManager::s_bChunkDataDirty{true};
-Zenith_TerrainChunkData* Flux_TerrainStreamingManager::s_pxCachedChunkData = nullptr;
-
-Zenith_Maths::Vector3 Flux_TerrainStreamingManager::s_xLastCameraPos = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
-int32_t Flux_TerrainStreamingManager::s_iLastCameraChunkX = INT32_MIN;
-int32_t Flux_TerrainStreamingManager::s_iLastCameraChunkY = INT32_MIN;
-std::vector<uint32_t> Flux_TerrainStreamingManager::s_xActiveChunkIndices;
-uint32_t Flux_TerrainStreamingManager::s_uActiveChunkRadius = 16;
-
-Flux_TerrainStreamingManager::StreamingStats Flux_TerrainStreamingManager::s_xStats;
-
-// ========== HIGH LOD Chunk Size Cache ==========
-// Cached size of a typical HIGH LOD chunk (set after first successful load)
-// Used to pre-check available space before expensive disk I/O
-static uint32_t s_uCachedHighLODVertexCount = 0;
-static uint32_t s_uCachedHighLODIndexCount = 0;
+bool                                       Flux_TerrainStreamingManager::s_bInitialized = false;
+Zenith_Vector<Flux_TerrainStreamingState*> Flux_TerrainStreamingManager::s_xRegistry;
+Zenith_Mutex                               Flux_TerrainStreamingManager::s_xRegistryMutex;
 
 // ========== Buffer Allocator Implementation ==========
 // Best-fit allocator with coalescing. Free list sorted by offset.
@@ -171,7 +149,66 @@ void Flux_TerrainBufferAllocator::Free(uint32_t uOffset, uint32_t uSize)
 	}
 }
 
+// ========== Streaming State Implementation ==========
+
+void Flux_TerrainStreamingState::Initialize(Zenith_TerrainComponent* pxOwner)
+{
+	m_pxOwner = pxOwner;
+
+	// Pre-allocate chunk data scratch buffer for GPU upload.
+	if (!m_pxCachedChunkData)
+		m_pxCachedChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
+
+	m_xActiveChunkIndices.clear();
+	m_xActiveChunkIndices.reserve(1024);
+
+	m_xLastCameraPos    = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
+	m_iLastCameraChunkX = INT32_MIN;
+	m_iLastCameraChunkY = INT32_MIN;
+	m_uCurrentFrame     = 0;
+	m_bChunkDataDirty.store(true, std::memory_order_release);
+
+	m_uCachedHighLODVertexCount = 0;
+	m_uCachedHighLODIndexCount  = 0;
+
+	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
+		for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
+			m_axChunkResidency[i].m_aeStates[uLOD] = Flux_TerrainLODResidencyState::NOT_LOADED;
+
+	m_bAABBsCached = false;
+
+	m_xStats = Flux_TerrainStreamingStats();
+	m_xStats.m_uVertexBufferTotalMB = STREAMING_VERTEX_BUFFER_SIZE_MB;
+	m_xStats.m_uIndexBufferTotalMB  = STREAMING_INDEX_BUFFER_SIZE_MB;
+}
+
+void Flux_TerrainStreamingState::Shutdown()
+{
+	m_pxOwner = nullptr;
+
+	if (m_pxCachedChunkData)
+	{
+		delete[] m_pxCachedChunkData;
+		m_pxCachedChunkData = nullptr;
+	}
+
+	m_xActiveChunkIndices.clear();
+	m_xVertexAllocator.Reset();
+	m_xIndexAllocator.Reset();
+	m_bAABBsCached = false;
+
+	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
+		for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
+			m_axChunkResidency[i].m_aeStates[uLOD] = Flux_TerrainLODResidencyState::NOT_LOADED;
+}
+
 // ========== Streaming Manager Implementation ==========
+//
+// Mini-Checkpoint B: the manager no longer owns any streaming state.
+// Each Zenith_TerrainComponent allocates and owns its own
+// Flux_TerrainStreamingState; the manager keeps a non-owning registry
+// of those states plus a "primary" pointer for legacy single-terrain
+// public APIs that don't take a component argument.
 
 void Flux_TerrainStreamingManager::Initialize()
 {
@@ -179,38 +216,6 @@ void Flux_TerrainStreamingManager::Initialize()
 		return;
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager::Initialize()");
-
-	// Initialize stats
-	s_xStats = StreamingStats();
-	s_xStats.m_uVertexBufferTotalMB = STREAMING_VERTEX_BUFFER_SIZE_MB;
-	s_xStats.m_uIndexBufferTotalMB = STREAMING_INDEX_BUFFER_SIZE_MB;
-
-	// Pre-allocate chunk data buffer
-	s_pxCachedChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
-	s_xActiveChunkIndices.reserve(1024);
-
-	// Reset state
-	s_xLastCameraPos = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
-	s_iLastCameraChunkX = INT32_MIN;
-	s_iLastCameraChunkY = INT32_MIN;
-	s_uCurrentFrame = 0;
-	s_bChunkDataDirty.store(true, std::memory_order_release);
-	s_pxTerrainComponent = nullptr;
-
-	// Reset cached chunk size (will be recalculated on first successful stream)
-	s_uCachedHighLODVertexCount = 0;
-	s_uCachedHighLODIndexCount = 0;
-
-	// Clear chunk residency - all LODs start as NOT_LOADED
-	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
-	{
-		for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
-		{
-			s_axChunkResidency[i].m_aeStates[uLOD] = Flux_TerrainLODResidencyState::NOT_LOADED;
-		}
-	}
-
-	s_bAABBsCached = false;
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Log Streaming" }, dbg_bLogTerrainStreaming);
@@ -227,18 +232,17 @@ void Flux_TerrainStreamingManager::Shutdown()
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager::Shutdown()");
 
-	s_pxTerrainComponent = nullptr;
+	s_xRegistryMutex.Lock();
+	// All terrain components must have been destroyed (and unregistered)
+	// before the manager shuts down. A non-empty registry means a leak —
+	// component destructor not running, or unregister wired to the wrong
+	// state. Loud failure is better than dangling pointers.
+	Zenith_Assert(s_xRegistry.GetSize() == 0,
+		"Flux_TerrainStreamingManager::Shutdown: %u terrain(s) still registered — destroy components before shutting down the manager",
+		s_xRegistry.GetSize());
+	s_xRegistry.Clear();
+	s_xRegistryMutex.Unlock();
 
-	if (s_pxCachedChunkData)
-	{
-		delete[] s_pxCachedChunkData;
-		s_pxCachedChunkData = nullptr;
-	}
-
-	s_xActiveChunkIndices.clear();
-	s_xVertexAllocator.Reset();
-	s_xIndexAllocator.Reset();
-	s_bAABBsCached = false;
 	s_bInitialized = false;
 }
 
@@ -246,91 +250,177 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponen
 {
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager::RegisterTerrainBuffers()");
 
-	s_pxTerrainComponent = pxTerrainComponent;
+	Zenith_Assert(pxTerrainComponent != nullptr, "RegisterTerrainBuffers: null component");
+	Zenith_Assert(pxTerrainComponent->m_pxStreamingState != nullptr,
+		"RegisterTerrainBuffers: component has no streaming state — constructor should have allocated one");
 
-	// Initialize allocators for the streaming region (after LOW LOD)
-	const uint32_t uMaxStreamingVertices = static_cast<uint32_t>(STREAMING_VERTEX_BUFFER_SIZE / s_pxTerrainComponent->m_uVertexStride);
-	const uint32_t uMaxStreamingIndices = static_cast<uint32_t>(STREAMING_INDEX_BUFFER_SIZE / sizeof(uint32_t));
+	Flux_TerrainStreamingState& xState = *pxTerrainComponent->m_pxStreamingState;
+	xState.m_pxOwner = pxTerrainComponent;
 
-	s_xVertexAllocator.Initialize(uMaxStreamingVertices, "StreamingVertices");
-	s_xIndexAllocator.Initialize(uMaxStreamingIndices, "StreamingIndices");
+	s_xRegistryMutex.Lock();
+	// Idempotent: re-registering an already-registered terrain refreshes its
+	// allocators / AABBs (e.g. terrain regenerate path) without double-pushing.
+	bool bAlreadyRegistered = false;
+	for (u_int u = 0; u < s_xRegistry.GetSize(); u++)
+	{
+		if (s_xRegistry.Get(u) == &xState) { bAlreadyRegistered = true; break; }
+	}
+	if (!bAlreadyRegistered)
+	{
+		s_xRegistry.PushBack(&xState);
+	}
+	s_xRegistryMutex.Unlock();
+
+	// Initialize allocators for the streaming region (after LOW LOD).
+	const uint32_t uMaxStreamingVertices = static_cast<uint32_t>(STREAMING_VERTEX_BUFFER_SIZE / pxTerrainComponent->m_uVertexStride);
+	const uint32_t uMaxStreamingIndices  = static_cast<uint32_t>(STREAMING_INDEX_BUFFER_SIZE / sizeof(uint32_t));
+
+	xState.m_xVertexAllocator.Initialize(uMaxStreamingVertices, "StreamingVertices");
+	xState.m_xIndexAllocator .Initialize(uMaxStreamingIndices,  "StreamingIndices");
 
 	// Initialize LOW LOD as RESIDENT for all chunks using pre-computed data
-	// (vertex/index counts and AABBs were collected during LOW LOD loading in InitializeRenderResources)
+	// (vertex/index counts and AABBs were collected during LOW LOD loading
+	// in InitializeRenderResources).
 	uint32_t uCurrentLowLODVertexOffset = 0;
-	uint32_t uCurrentLowLODIndexOffset = 0;
+	uint32_t uCurrentLowLODIndexOffset  = 0;
 
 	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
 	{
 		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; ++y)
 		{
 			uint32_t uChunkIndex = ChunkCoordsToIndex(x, y);
-			Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
+			Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
 			const Flux_TerrainChunkInitData& xInitData = pxChunkInitData[uChunkIndex];
 
 			// Mark LOW LOD as resident with its allocation info
 			xResidency.m_aeStates[LOD_LOW] = Flux_TerrainLODResidencyState::RESIDENT;
 			xResidency.m_axAllocations[LOD_LOW].m_uVertexOffset = uCurrentLowLODVertexOffset;
-			xResidency.m_axAllocations[LOD_LOW].m_uVertexCount = xInitData.m_uVertexCount;
-			xResidency.m_axAllocations[LOD_LOW].m_uIndexOffset = uCurrentLowLODIndexOffset;
-			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount = xInitData.m_uIndexCount;
+			xResidency.m_axAllocations[LOD_LOW].m_uVertexCount  = xInitData.m_uVertexCount;
+			xResidency.m_axAllocations[LOD_LOW].m_uIndexOffset  = uCurrentLowLODIndexOffset;
+			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount   = xInitData.m_uIndexCount;
 
 			uCurrentLowLODVertexOffset += xInitData.m_uVertexCount;
-			uCurrentLowLODIndexOffset += xInitData.m_uIndexCount;
+			uCurrentLowLODIndexOffset  += xInitData.m_uIndexCount;
 
 			// HIGH LOD starts as NOT_LOADED
 			xResidency.m_aeStates[LOD_HIGH] = Flux_TerrainLODResidencyState::NOT_LOADED;
 
 			// Cache AABB from pre-computed data
-			s_axChunkAABBs[uChunkIndex] = xInitData.m_xAABB;
+			xState.m_axChunkAABBs[uChunkIndex] = xInitData.m_xAABB;
 		}
 	}
-	s_bAABBsCached = true;
+	xState.m_bAABBsCached = true;
+
+	// New terrain GPU buffers are about to feed into the render graph; the
+	// next graph compile must rebuild SetupRenderGraph so the per-component
+	// Read/Write declarations pick up this terrain's buffers.
+	Flux::RequestGraphRebuild();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain buffers registered: LOW LOD resident for all %u chunks (zero redundant file reads)", TOTAL_CHUNKS);
 }
 
-void Flux_TerrainStreamingManager::UnregisterTerrainBuffers()
+void Flux_TerrainStreamingManager::UnregisterTerrainBuffers(Zenith_TerrainComponent* pxTerrainComponent)
 {
-	s_pxTerrainComponent = nullptr;
-	s_xVertexAllocator.Reset();
-	s_xIndexAllocator.Reset();
+	if (pxTerrainComponent == nullptr || pxTerrainComponent->m_pxStreamingState == nullptr) return;
 
+	Flux_TerrainStreamingState* pxState = pxTerrainComponent->m_pxStreamingState;
+
+	s_xRegistryMutex.Lock();
+	// Remove the component's state from the registry (only — never touch
+	// other states; that was the cross-terrain-clearing bug fixed by this
+	// refactor).
+	for (u_int u = 0; u < s_xRegistry.GetSize(); u++)
+	{
+		if (s_xRegistry.Get(u) == pxState)
+		{
+			s_xRegistry.RemoveSwap(u);
+			break;
+		}
+	}
+	s_xRegistryMutex.Unlock();
+
+	// Reset only this component's state. The component's destructor calls
+	// state Shutdown / delete after returning from here.
+	pxState->m_pxOwner = nullptr;
+	pxState->m_xVertexAllocator.Reset();
+	pxState->m_xIndexAllocator.Reset();
 	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
 		for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
-			s_axChunkResidency[i].m_aeStates[uLOD] = Flux_TerrainLODResidencyState::NOT_LOADED;
+			pxState->m_axChunkResidency[i].m_aeStates[uLOD] = Flux_TerrainLODResidencyState::NOT_LOADED;
+	pxState->m_bAABBsCached = false;
 
-	s_bAABBsCached = false;
+	// Terrain GPU buffers are about to be queued for deferred deletion; the
+	// next graph compile must drop their references from SetupRenderGraph.
+	Flux::RequestGraphRebuild();
+}
+
+Flux_TerrainStreamingState* Flux_TerrainStreamingManager::GetStateFor(const Zenith_TerrainComponent* pxComp)
+{
+	return pxComp ? pxComp->m_pxStreamingState : nullptr;
+}
+
+// --- Component-aware GPU-data overloads ---------------------------------
+
+bool Flux_TerrainStreamingManager::IsChunkDataDirty(const Zenith_TerrainComponent* pxTerrainComponent)
+{
+	if (!s_bInitialized || pxTerrainComponent == nullptr || pxTerrainComponent->m_pxStreamingState == nullptr) return false;
+	return pxTerrainComponent->m_pxStreamingState->m_bChunkDataDirty.load(std::memory_order_acquire);
+}
+
+void Flux_TerrainStreamingManager::ClearChunkDataDirty(const Zenith_TerrainComponent* pxTerrainComponent)
+{
+	if (pxTerrainComponent == nullptr || pxTerrainComponent->m_pxStreamingState == nullptr) return;
+	pxTerrainComponent->m_pxStreamingState->m_bChunkDataDirty.store(false, std::memory_order_release);
+}
+
+Zenith_TerrainChunkData* Flux_TerrainStreamingManager::GetCachedChunkDataBuffer(const Zenith_TerrainComponent* pxTerrainComponent)
+{
+	if (pxTerrainComponent == nullptr || pxTerrainComponent->m_pxStreamingState == nullptr) return nullptr;
+	return pxTerrainComponent->m_pxStreamingState->m_pxCachedChunkData;
 }
 
 // For each active chunk: determine desired LOD; if HIGH-LOD is wanted but not
 // resident, stream it in. Bound by MAX_UPLOADS_PER_FRAME and a 2× attempt cap
-// (the latter prevents excessive disk I/O when many chunks need loading);
-// stops on the first allocation failure (buffer likely full / fragmented).
-void Flux_TerrainStreamingManager::RequestNearbyHighLOD(const Zenith_Maths::Vector3& xCameraPos)
+// (the latter prevents excessive disk I/O when many chunks need loading).
+// MissingOrInvalidSource is non-fatal — the loop skips that chunk and
+// continues. Only a real AllocationFailure (allocator full even after
+// eviction) stops the loop for the frame.
+void Flux_TerrainStreamingManager::RequestNearbyHighLOD(Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3& xCameraPos, StreamingFrameDiagnostics& xDiagnostics)
 {
-	uint32_t uStreamsThisFrame = 0;
+	uint32_t uStreamsThisFrame        = 0;
 	uint32_t uStreamAttemptsThisFrame = 0;
-	bool bAllocationFailed = false;
+	bool     bAllocationFailed        = false;
 
-	for (uint32_t uActiveIdx = 0; uActiveIdx < s_xActiveChunkIndices.size(); ++uActiveIdx)
+	xDiagnostics.m_uActiveCount = static_cast<uint32_t>(xState.m_xActiveChunkIndices.size());
+
+	for (uint32_t uActiveIdx = 0; uActiveIdx < xState.m_xActiveChunkIndices.size(); ++uActiveIdx)
 	{
 		if (uStreamsThisFrame >= MAX_UPLOADS_PER_FRAME || bAllocationFailed) break;
 		if (uStreamAttemptsThisFrame >= MAX_UPLOADS_PER_FRAME * 2) break;
 
-		const uint32_t uChunkIndex = s_xActiveChunkIndices[uActiveIdx];
-		const float fDistanceSq = GetChunkDistanceSq(uChunkIndex, xCameraPos);
+		const uint32_t uChunkIndex = xState.m_xActiveChunkIndices[uActiveIdx];
+		const float    fDistanceSq = GetChunkDistanceSq(xState, uChunkIndex, xCameraPos);
 		const uint32_t uDesiredLOD = CalculateDesiredLOD(fDistanceSq);
-		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
+		Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
 
-		if (uDesiredLOD != LOD_HIGH || xResidency.m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT) continue;
+		if (uDesiredLOD != LOD_HIGH) continue;
+
+		xDiagnostics.m_uDesiredHighCount++;
+		if (xResidency.m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT)
+		{
+			xDiagnostics.m_uAlreadyResidentHighCount++;
+			continue;
+		}
 
 		uStreamAttemptsThisFrame++;
-		if (StreamInLOD(uChunkIndex, LOD_HIGH))
+		xDiagnostics.m_uStreamAttempts++;
+		const Flux_TerrainStreamInResult eRes = StreamInLOD(xState, uChunkIndex, LOD_HIGH);
+		if (eRes == Flux_TerrainStreamInResult::Success)
 		{
 			uStreamsThisFrame++;
-			s_xStats.m_uStreamsThisFrame++;
-			s_bChunkDataDirty.store(true, std::memory_order_release);
+			xDiagnostics.m_uStreamSuccesses++;
+			xState.m_xStats.m_uStreamsThisFrame++;
+			xState.m_bChunkDataDirty.store(true, std::memory_order_release);
 
 			if (dbg_bLogTerrainStreaming)
 			{
@@ -339,14 +429,30 @@ void Flux_TerrainStreamingManager::RequestNearbyHighLOD(const Zenith_Maths::Vect
 				Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Streamed in chunk (%u,%u) HIGH", uChunkX, uChunkY);
 			}
 		}
-		else
+		else if (eRes == Flux_TerrainStreamInResult::MissingOrInvalidSource)
 		{
+			xDiagnostics.m_uMissingSourceCount++;
+			// Skip this chunk and keep going. Don't increment uStreamsThisFrame
+			// (no GPU upload happened) and don't flip bAllocationFailed (the
+			// allocator is fine; the source is just missing/invalid). The
+			// uStreamAttemptsThisFrame cap above still guards against
+			// pathological "every chunk missing" disk-thrash.
+			if (dbg_bLogTerrainStreaming)
+			{
+				uint32_t uChunkX, uChunkY;
+				ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
+				Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Skipped chunk (%u,%u) HIGH — source missing or invalid", uChunkX, uChunkY);
+			}
+		}
+		else  // AllocationFailure
+		{
+			xDiagnostics.m_uAllocationFailureCount++;
 			bAllocationFailed = true;
 			if (dbg_bLogTerrainStreaming)
 			{
 				uint32_t uChunkX, uChunkY;
 				ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
-				Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Stream failed for chunk (%u,%u), stopping this frame", uChunkX, uChunkY);
+				Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Allocation failed for chunk (%u,%u), stopping this frame", uChunkX, uChunkY);
 			}
 		}
 	}
@@ -355,23 +461,27 @@ void Flux_TerrainStreamingManager::RequestNearbyHighLOD(const Zenith_Maths::Vect
 // Evict HIGH LOD chunks beyond the eviction threshold (HIGH range × hysteresis).
 // LOW LOD is always resident so eviction only applies to HIGH. Bounded by
 // MAX_EVICTIONS_PER_FRAME to avoid mass pop-in when the camera teleports.
-void Flux_TerrainStreamingManager::EvictDistantHighLOD(const Zenith_Maths::Vector3& xCameraPos)
+void Flux_TerrainStreamingManager::EvictDistantHighLOD(Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3& xCameraPos)
 {
 	uint32_t uEvictionsThisFrame = 0;
-	const float fEvictionThreshold = LOD_HIGH_MAX_DISTANCE_SQ * LOD_EVICTION_HYSTERESIS;
+	// LOD_EVICTION_HYSTERESIS is a linear ratio; the threshold lives in
+	// squared-distance space so square the ratio before multiplying. The
+	// previous code multiplied by the linear ratio and silently produced
+	// √1.5 ≈ 1.225× radius instead of the documented 1.5×.
+	const float fEvictionThreshold = LOD_HIGH_MAX_DISTANCE_SQ * SquaredHysteresis(LOD_EVICTION_HYSTERESIS);
 
 	for (uint32_t i = 0; i < TOTAL_CHUNKS && uEvictionsThisFrame < MAX_EVICTIONS_PER_FRAME; ++i)
 	{
-		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[i];
+		Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[i];
 		if (xResidency.m_aeStates[LOD_HIGH] != Flux_TerrainLODResidencyState::RESIDENT) continue;
 
-		const float fDistanceSq = GetChunkDistanceSq(i, xCameraPos);
+		const float fDistanceSq = GetChunkDistanceSq(xState, i, xCameraPos);
 		if (fDistanceSq <= fEvictionThreshold) continue;
 
-		EvictLOD(i, LOD_HIGH);
+		EvictLOD(xState, i, LOD_HIGH);
 		uEvictionsThisFrame++;
-		s_xStats.m_uEvictionsThisFrame++;
-		s_bChunkDataDirty.store(true, std::memory_order_release);
+		xState.m_xStats.m_uEvictionsThisFrame++;
+		xState.m_bChunkDataDirty.store(true, std::memory_order_release);
 
 		if (dbg_bLogTerrainStreaming)
 		{
@@ -383,54 +493,98 @@ void Flux_TerrainStreamingManager::EvictDistantHighLOD(const Zenith_Maths::Vecto
 	}
 }
 
-void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& xCameraPos)
+void Flux_TerrainStreamingManager::UpdateStreamingForTerrain(Zenith_TerrainComponent* pxTerrainComponent, const Zenith_Maths::Vector3& xCameraPos)
 {
-	if (!s_bInitialized || !s_pxTerrainComponent) return;
+	if (!s_bInitialized)
+	{
+		if (dbg_bLogTerrainStreaming)
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] UpdateStreamingForTerrain early-out: streaming manager not initialized");
+		return;
+	}
+	if (pxTerrainComponent == nullptr)
+	{
+		if (dbg_bLogTerrainStreaming)
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] UpdateStreamingForTerrain early-out: null component");
+		return;
+	}
+	if (pxTerrainComponent->m_pxStreamingState == nullptr)
+	{
+		if (dbg_bLogTerrainStreaming)
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] UpdateStreamingForTerrain early-out: component %p has null streaming state", static_cast<void*>(pxTerrainComponent));
+		return;
+	}
+	Flux_TerrainStreamingState& xState = *pxTerrainComponent->m_pxStreamingState;
+	if (xState.m_pxOwner == nullptr)
+	{
+		if (dbg_bLogTerrainStreaming)
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] UpdateStreamingForTerrain early-out: component %p streaming state is unregistered", static_cast<void*>(pxTerrainComponent));
+		return;
+	}
+	if (xState.m_pxOwner != pxTerrainComponent)
+	{
+		if (dbg_bLogTerrainStreaming)
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] UpdateStreamingForTerrain early-out: component %p owns state registered to %p", static_cast<void*>(pxTerrainComponent), static_cast<void*>(xState.m_pxOwner));
+		return;
+	}
 
-	s_uCurrentFrame++;
-	s_xStats.m_uStreamsThisFrame = 0;
-	s_xStats.m_uEvictionsThisFrame = 0;
-	s_xLastCameraPos = xCameraPos;
+	xState.m_uCurrentFrame++;
+	xState.m_xStats.m_uStreamsThisFrame   = 0;
+	xState.m_xStats.m_uEvictionsThisFrame = 0;
+	xState.m_xLastCameraPos = xCameraPos;
 
 	int32_t iCameraChunkX, iCameraChunkY;
-	WorldPosToChunkCoords(xCameraPos, iCameraChunkX, iCameraChunkY);
-	if (iCameraChunkX != s_iLastCameraChunkX || iCameraChunkY != s_iLastCameraChunkY)
+	StreamingFrameDiagnostics xDiagnostics;
+	ResolveCameraChunkCoords(xState, xCameraPos, iCameraChunkX, iCameraChunkY, xDiagnostics.m_uNearestChunkIndex);
+	if (iCameraChunkX != xState.m_iLastCameraChunkX || iCameraChunkY != xState.m_iLastCameraChunkY)
 	{
-		RebuildActiveChunkSet(iCameraChunkX, iCameraChunkY);
-		s_iLastCameraChunkX = iCameraChunkX;
-		s_iLastCameraChunkY = iCameraChunkY;
-		s_bChunkDataDirty.store(true, std::memory_order_release);
+		RebuildActiveChunkSet(xState, iCameraChunkX, iCameraChunkY, xCameraPos);
+		xState.m_iLastCameraChunkX = iCameraChunkX;
+		xState.m_iLastCameraChunkY = iCameraChunkY;
+		xState.m_bChunkDataDirty.store(true, std::memory_order_release);
 
 		if (dbg_bLogTerrainStreaming)
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Camera moved to chunk (%d,%d), active set: %zu chunks",
-				iCameraChunkX, iCameraChunkY, s_xActiveChunkIndices.size());
+				iCameraChunkX, iCameraChunkY, xState.m_xActiveChunkIndices.size());
 	}
 
-	RequestNearbyHighLOD(xCameraPos);
-	EvictDistantHighLOD(xCameraPos);
+	RequestNearbyHighLOD(xState, xCameraPos, xDiagnostics);
+	EvictDistantHighLOD(xState, xCameraPos);
+	xDiagnostics.m_uActiveCount = static_cast<uint32_t>(xState.m_xActiveChunkIndices.size());
+	xDiagnostics.m_uLowZeroCount = CountLowZeroChunks(xState);
+	xDiagnostics.m_uHighResidentCount = CountHighResidentChunks(xState);
 
-	if (s_uCurrentFrame % 30 == 0)
+	if (xState.m_uCurrentFrame % 30 == 0)
 	{
-		UpdateStreamingStats();
+		UpdateStreamingStats(xState);
 	}
+
+#pragma warning ( push )
+#pragma warning (disable : 4127)
+	if (dbg_bLogTerrainStreaming && (xState.m_uCurrentFrame == 1 || (xState.m_uCurrentFrame % 60) == 0))
+	{
+		LogStreamingHeartbeat(xState, xCameraPos, iCameraChunkX, iCameraChunkY, xDiagnostics);
+		if (xDiagnostics.m_uLowZeroCount > 0)
+			LogLowZeroChunkCoordinates(xState);
+	}
+#pragma warning ( pop )
 }
 
-void Flux_TerrainStreamingManager::UpdateStreamingStats()
+void Flux_TerrainStreamingManager::UpdateStreamingStats(Flux_TerrainStreamingState& xState)
 {
 	uint32_t uHighLODResident = 0;
 	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
-		if (s_axChunkResidency[i].m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT)
+		if (xState.m_axChunkResidency[i].m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT)
 			uHighLODResident++;
 
-	s_xStats.m_uHighLODChunksResident = uHighLODResident;
+	xState.m_xStats.m_uHighLODChunksResident = uHighLODResident;
 
-	const uint32_t uVertexBytesUsed = (s_xVertexAllocator.GetTotalSpace() - s_xVertexAllocator.GetUnusedSpace()) * VERTEX_STRIDE_BYTES;
-	const uint32_t uIndexBytesUsed = (s_xIndexAllocator.GetTotalSpace() - s_xIndexAllocator.GetUnusedSpace()) * 4;
+	const uint32_t uVertexBytesUsed = (xState.m_xVertexAllocator.GetTotalSpace() - xState.m_xVertexAllocator.GetUnusedSpace()) * VERTEX_STRIDE_BYTES;
+	const uint32_t uIndexBytesUsed  = (xState.m_xIndexAllocator.GetTotalSpace()  - xState.m_xIndexAllocator.GetUnusedSpace())  * 4;
 
-	s_xStats.m_uVertexBufferUsedMB = uVertexBytesUsed / (1024 * 1024);
-	s_xStats.m_uIndexBufferUsedMB = uIndexBytesUsed / (1024 * 1024);
-	s_xStats.m_uVertexFragments = s_xVertexAllocator.GetFragmentationCount();
-	s_xStats.m_uIndexFragments = s_xIndexAllocator.GetFragmentationCount();
+	xState.m_xStats.m_uVertexBufferUsedMB = uVertexBytesUsed / (1024 * 1024);
+	xState.m_xStats.m_uIndexBufferUsedMB  = uIndexBytesUsed / (1024 * 1024);
+	xState.m_xStats.m_uVertexFragments    = xState.m_xVertexAllocator.GetFragmentationCount();
+	xState.m_xStats.m_uIndexFragments     = xState.m_xIndexAllocator.GetFragmentationCount();
 }
 
 uint32_t Flux_TerrainStreamingManager::CalculateDesiredLOD(float fDistanceSq)
@@ -438,63 +592,70 @@ uint32_t Flux_TerrainStreamingManager::CalculateDesiredLOD(float fDistanceSq)
 	return (fDistanceSq < LOD_HIGH_MAX_DISTANCE_SQ) ? LOD_HIGH : LOD_LOW;
 }
 
-bool Flux_TerrainStreamingManager::TryAllocateStreamingSpace(uint32_t uNumVerts, uint32_t uNumIndices, const Zenith_Maths::Vector3& xCameraPos, StreamingAllocation& xAllocOut)
+bool Flux_TerrainStreamingManager::TryAllocateStreamingSpace(Flux_TerrainStreamingState& xState, uint32_t uNumVerts, uint32_t uNumIndices, const Zenith_Maths::Vector3& xCameraPos, StreamingAllocation& xAllocOut)
 {
-	uint32_t uVertexOffset = s_xVertexAllocator.Allocate(uNumVerts);
-	uint32_t uIndexOffset = s_xIndexAllocator.Allocate(uNumIndices);
+	uint32_t uVertexOffset = xState.m_xVertexAllocator.Allocate(uNumVerts);
+	uint32_t uIndexOffset  = xState.m_xIndexAllocator .Allocate(uNumIndices);
 
 	if (uVertexOffset == UINT32_MAX || uIndexOffset == UINT32_MAX)
 	{
 		// Clean up any partial allocation before eviction attempt
-		if (uVertexOffset != UINT32_MAX)
-			s_xVertexAllocator.Free(uVertexOffset, uNumVerts);
-		if (uIndexOffset != UINT32_MAX)
-			s_xIndexAllocator.Free(uIndexOffset, uNumIndices);
+		if (uVertexOffset != UINT32_MAX) xState.m_xVertexAllocator.Free(uVertexOffset, uNumVerts);
+		if (uIndexOffset  != UINT32_MAX) xState.m_xIndexAllocator .Free(uIndexOffset,  uNumIndices);
 
 		// Try to evict distant chunks to free space
-		if (!EvictToMakeSpace(uNumVerts, uNumIndices, xCameraPos))
+		if (!EvictToMakeSpace(xState, uNumVerts, uNumIndices, xCameraPos))
 			return false;
 
 		// Retry allocation after eviction
-		uVertexOffset = s_xVertexAllocator.Allocate(uNumVerts);
-		uIndexOffset = s_xIndexAllocator.Allocate(uNumIndices);
+		uVertexOffset = xState.m_xVertexAllocator.Allocate(uNumVerts);
+		uIndexOffset  = xState.m_xIndexAllocator .Allocate(uNumIndices);
 
 		if (uVertexOffset == UINT32_MAX || uIndexOffset == UINT32_MAX)
 		{
-			if (uVertexOffset != UINT32_MAX)
-				s_xVertexAllocator.Free(uVertexOffset, uNumVerts);
-			if (uIndexOffset != UINT32_MAX)
-				s_xIndexAllocator.Free(uIndexOffset, uNumIndices);
-
+			if (uVertexOffset != UINT32_MAX) xState.m_xVertexAllocator.Free(uVertexOffset, uNumVerts);
+			if (uIndexOffset  != UINT32_MAX) xState.m_xIndexAllocator .Free(uIndexOffset,  uNumIndices);
 			return false;
 		}
 	}
 
 	xAllocOut.m_uVertexOffset = uVertexOffset;
-	xAllocOut.m_uIndexOffset = uIndexOffset;
+	xAllocOut.m_uIndexOffset  = uIndexOffset;
 	return true;
 }
 
-bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uLODLevel)
+Flux_TerrainStreamInResult Flux_TerrainStreamingManager::StreamInLOD(Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, uint32_t uLODLevel)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_STREAM_IN_LOD);
 
-	if (!s_bInitialized || !s_pxTerrainComponent)
-		return false;
+	if (!s_bInitialized || !xState.m_pxOwner)
+		return Flux_TerrainStreamInResult::AllocationFailure;
 
-	// Only HIGH LOD can be streamed (LOW is always resident)
+	// Only HIGH LOD can be streamed (LOW is always resident). Treat as a
+	// configuration error rather than a missing source.
 	if (uLODLevel != LOD_HIGH)
-		return false;
+		return Flux_TerrainStreamInResult::AllocationFailure;
 
-	// Pre-check: If we know the typical chunk size, check if there's enough space
-	// before doing expensive disk I/O. All HIGH LOD chunks are roughly the same size.
-	if (s_uCachedHighLODVertexCount > 0 && s_uCachedHighLODIndexCount > 0)
+	// Pre-check: if we know the typical chunk size, check whether there's
+	// enough space before doing expensive disk I/O. All HIGH LOD chunks are
+	// roughly the same size, so the cached count is a good predictor.
+	// Previously this returned failure outright when the allocator was tight;
+	// now it routes through EvictToMakeSpace first and only refuses if even
+	// eviction can't free enough space — matches the eviction-aware retry in
+	// TryAllocateStreamingSpace and avoids dropping chunks the allocator
+	// could have made room for.
+	if (xState.m_uCachedHighLODVertexCount > 0 && xState.m_uCachedHighLODIndexCount > 0)
 	{
-		if (s_xVertexAllocator.GetUnusedSpace() < s_uCachedHighLODVertexCount ||
-			s_xIndexAllocator.GetUnusedSpace() < s_uCachedHighLODIndexCount)
+		if (xState.m_xVertexAllocator.GetUnusedSpace() < xState.m_uCachedHighLODVertexCount ||
+			xState.m_xIndexAllocator .GetUnusedSpace() < xState.m_uCachedHighLODIndexCount)
 		{
-			// Not enough space - skip disk I/O entirely
-			return false;
+			if (!EvictToMakeSpace(xState,
+				xState.m_uCachedHighLODVertexCount,
+				xState.m_uCachedHighLODIndexCount,
+				xState.m_xLastCameraPos))
+			{
+				return Flux_TerrainStreamInResult::AllocationFailure;
+			}
 		}
 	}
 
@@ -507,89 +668,101 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	// Check if file exists
 	std::ifstream lodFile(strChunkPath);
 	if (!lodFile.good())
-		return false;
+		return Flux_TerrainStreamInResult::MissingOrInvalidSource;
 
 	// Load mesh to get size requirements, false so we don't upload to GPU
 	Flux_MeshGeometry xChunkMesh;
 	Flux_MeshGeometry::LoadFromFile(strChunkPath.c_str(), xChunkMesh, 0, false);
 	if (xChunkMesh.GetNumVerts() == 0)
-		return false;
+		return Flux_TerrainStreamInResult::MissingOrInvalidSource;
 
-	const uint32_t uNumVerts = xChunkMesh.GetNumVerts();
+	const uint32_t uNumVerts   = xChunkMesh.GetNumVerts();
 	const uint32_t uNumIndices = xChunkMesh.GetNumIndices();
 
 	// Cache the chunk size for future pre-checks (all chunks are roughly the same size)
-	if (s_uCachedHighLODVertexCount == 0)
+	if (xState.m_uCachedHighLODVertexCount == 0)
 	{
-		s_uCachedHighLODVertexCount = uNumVerts;
-		s_uCachedHighLODIndexCount = uNumIndices;
+		xState.m_uCachedHighLODVertexCount = uNumVerts;
+		xState.m_uCachedHighLODIndexCount  = uNumIndices;
 	}
 
 	// Try to allocate streaming space (handles eviction and retry internally)
 	StreamingAllocation xAlloc;
-	if (!TryAllocateStreamingSpace(uNumVerts, uNumIndices, s_xLastCameraPos, xAlloc))
-		return false;
+	if (!TryAllocateStreamingSpace(xState, uNumVerts, uNumIndices, xState.m_xLastCameraPos, xAlloc))
+		return Flux_TerrainStreamInResult::AllocationFailure;
 
 	// Calculate absolute offsets in unified buffer (streaming region starts after LOW LOD)
-	const uint32_t uAbsoluteVertexOffset = s_pxTerrainComponent->m_uLowLODVertexCount + xAlloc.m_uVertexOffset;
-	const uint32_t uAbsoluteIndexOffset = s_pxTerrainComponent->m_uLowLODIndexCount + xAlloc.m_uIndexOffset;
+	const Zenith_TerrainComponent* const pxOwner = xState.m_pxOwner;
+	const uint32_t uAbsoluteVertexOffset = pxOwner->m_uLowLODVertexCount + xAlloc.m_uVertexOffset;
+	const uint32_t uAbsoluteIndexOffset  = pxOwner->m_uLowLODIndexCount  + xAlloc.m_uIndexOffset;
 
 	// Calculate byte offsets
-	const uint32_t uVertexStride = s_pxTerrainComponent->m_uVertexStride;
-	const uint64_t ulVertexDataSize = static_cast<uint64_t>(uNumVerts) * uVertexStride;
+	const uint32_t uVertexStride       = pxOwner->m_uVertexStride;
+	const uint64_t ulVertexDataSize    = static_cast<uint64_t>(uNumVerts)   * uVertexStride;
 	const uint64_t ulVertexOffsetBytes = static_cast<uint64_t>(uAbsoluteVertexOffset) * uVertexStride;
-	const uint64_t ulIndexDataSize = static_cast<uint64_t>(uNumIndices) * sizeof(uint32_t);
-	const uint64_t ulIndexOffsetBytes = static_cast<uint64_t>(uAbsoluteIndexOffset) * sizeof(uint32_t);
+	const uint64_t ulIndexDataSize     = static_cast<uint64_t>(uNumIndices) * sizeof(uint32_t);
+	const uint64_t ulIndexOffsetBytes  = static_cast<uint64_t>(uAbsoluteIndexOffset)  * sizeof(uint32_t);
 
 	// Upload to GPU
 	Flux_MemoryManager::UploadBufferDataAtOffset(
-		s_pxTerrainComponent->GetUnifiedVertexBuffer().GetBuffer().m_xVRAMHandle,
+		pxOwner->GetUnifiedVertexBuffer().GetBuffer().m_xVRAMHandle,
 		xChunkMesh.m_pVertexData,
 		ulVertexDataSize,
 		ulVertexOffsetBytes
 	);
 
 	Flux_MemoryManager::UploadBufferDataAtOffset(
-		s_pxTerrainComponent->GetUnifiedIndexBuffer().GetBuffer().m_xVRAMHandle,
+		pxOwner->GetUnifiedIndexBuffer().GetBuffer().m_xVRAMHandle,
 		xChunkMesh.m_puIndices,
 		ulIndexDataSize,
 		ulIndexOffsetBytes
 	);
 
 	// Update residency
-	Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
+	Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
 	xResidency.m_axAllocations[uLODLevel].m_uVertexOffset = uAbsoluteVertexOffset;
-	xResidency.m_axAllocations[uLODLevel].m_uVertexCount = uNumVerts;
-	xResidency.m_axAllocations[uLODLevel].m_uIndexOffset = uAbsoluteIndexOffset;
-	xResidency.m_axAllocations[uLODLevel].m_uIndexCount = uNumIndices;
+	xResidency.m_axAllocations[uLODLevel].m_uVertexCount  = uNumVerts;
+	xResidency.m_axAllocations[uLODLevel].m_uIndexOffset  = uAbsoluteIndexOffset;
+	xResidency.m_axAllocations[uLODLevel].m_uIndexCount   = uNumIndices;
 	xResidency.m_aeStates[uLODLevel] = Flux_TerrainLODResidencyState::RESIDENT;
 
 	// xChunkMesh automatically destroyed when going out of scope
-	return true;
+	return Flux_TerrainStreamInResult::Success;
 }
 
-void Flux_TerrainStreamingManager::EvictLOD(uint32_t uChunkIndex, uint32_t uLODLevel)
+void Flux_TerrainStreamingManager::EvictLOD(Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, uint32_t uLODLevel)
 {
-	if (!s_bInitialized || !s_pxTerrainComponent)
+	if (!s_bInitialized || !xState.m_pxOwner)
 		return;
 
-	Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
+	Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
 
 	if (xResidency.m_aeStates[uLODLevel] != Flux_TerrainLODResidencyState::RESIDENT)
 		return;
 
 	// Free allocations (convert absolute to relative offsets)
 	Flux_TerrainLODAllocation& xAlloc = xResidency.m_axAllocations[uLODLevel];
-	const uint32_t uRelativeVertexOffset = xAlloc.m_uVertexOffset - s_pxTerrainComponent->m_uLowLODVertexCount;
-	const uint32_t uRelativeIndexOffset = xAlloc.m_uIndexOffset - s_pxTerrainComponent->m_uLowLODIndexCount;
+	const uint32_t uRelativeVertexOffset = xAlloc.m_uVertexOffset - xState.m_pxOwner->m_uLowLODVertexCount;
+	const uint32_t uRelativeIndexOffset  = xAlloc.m_uIndexOffset  - xState.m_pxOwner->m_uLowLODIndexCount;
 
-	s_xVertexAllocator.Free(uRelativeVertexOffset, xAlloc.m_uVertexCount);
-	s_xIndexAllocator.Free(uRelativeIndexOffset, xAlloc.m_uIndexCount);
+	xState.m_xVertexAllocator.Free(uRelativeVertexOffset, xAlloc.m_uVertexCount);
+	xState.m_xIndexAllocator .Free(uRelativeIndexOffset,  xAlloc.m_uIndexCount);
 
 	xResidency.m_aeStates[uLODLevel] = Flux_TerrainLODResidencyState::NOT_LOADED;
+
+	// Mark the chunk-data buffer dirty so the next UpdateChunkLODAllocations
+	// re-uploads with this chunk's lods[uLOD] zeroed. Critical for the
+	// EvictToMakeSpace path: it calls EvictLOD in a loop without setting
+	// dirty itself. Without this, the chunk buffer keeps stale RESIDENT
+	// entries for chunks that have been evicted, the compute keeps reading
+	// the stale offsets, and the slot-reuse-by-another-chunk produces the
+	// "stretched triangle to the previous chunk's location" spike. The
+	// EvictDistantHighLOD path already sets dirty redundantly at its call
+	// site — that's harmless and stays.
+	xState.m_bChunkDataDirty.store(true, std::memory_order_release);
 }
 
-bool Flux_TerrainStreamingManager::EvictToMakeSpace(uint32_t uVertexSpaceNeeded, uint32_t uIndexSpaceNeeded, const Zenith_Maths::Vector3& xCameraPos)
+bool Flux_TerrainStreamingManager::EvictToMakeSpace(Flux_TerrainStreamingState& xState, uint32_t uVertexSpaceNeeded, uint32_t uIndexSpaceNeeded, const Zenith_Maths::Vector3& xCameraPos)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_EVICT);
 
@@ -597,23 +770,26 @@ bool Flux_TerrainStreamingManager::EvictToMakeSpace(uint32_t uVertexSpaceNeeded,
 	struct EvictionCandidate
 	{
 		uint32_t m_uChunkIndex;
-		float m_fDistanceSq;
+		float    m_fDistanceSq;
 	};
 
 	std::vector<EvictionCandidate> candidates;
 
 	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
 	{
-		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[i];
+		Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[i];
 
 		// Only HIGH LOD can be evicted
 		if (xResidency.m_aeStates[LOD_HIGH] != Flux_TerrainLODResidencyState::RESIDENT)
 			continue;
 
-		float fDistanceSq = GetChunkDistanceSq(i, xCameraPos);
+		float fDistanceSq = GetChunkDistanceSq(xState, i, xCameraPos);
 
-		// Only consider for eviction if beyond HIGH LOD's range
-		if (fDistanceSq > LOD_HIGH_MAX_DISTANCE_SQ * LOD_FORCED_EVICTION_HYSTERESIS)
+		// Only consider for eviction if beyond HIGH LOD's range. Same fix as
+		// EvictDistantHighLOD: square the linear hysteresis ratio so the
+		// threshold matches the documented 1.2× radius (was effectively
+		// √1.2 ≈ 1.095×).
+		if (fDistanceSq > LOD_HIGH_MAX_DISTANCE_SQ * SquaredHysteresis(LOD_FORCED_EVICTION_HYSTERESIS))
 		{
 			EvictionCandidate candidate;
 			candidate.m_uChunkIndex = i;
@@ -632,7 +808,7 @@ bool Flux_TerrainStreamingManager::EvictToMakeSpace(uint32_t uVertexSpaceNeeded,
 
 	// Evict until we have enough space
 	uint32_t uVertexSpaceFreed = 0;
-	uint32_t uIndexSpaceFreed = 0;
+	uint32_t uIndexSpaceFreed  = 0;
 	uint32_t uEvictionsThisCall = 0;
 
 	for (const EvictionCandidate& candidate : candidates)
@@ -643,52 +819,26 @@ bool Flux_TerrainStreamingManager::EvictToMakeSpace(uint32_t uVertexSpaceNeeded,
 		if (uEvictionsThisCall >= MAX_EVICTIONS_PER_FRAME)
 			break;
 
-		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[candidate.m_uChunkIndex];
-		Flux_TerrainLODAllocation& xAlloc = xResidency.m_axAllocations[LOD_HIGH];
+		Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[candidate.m_uChunkIndex];
+		Flux_TerrainLODAllocation&  xAlloc     = xResidency.m_axAllocations[LOD_HIGH];
 
 		uVertexSpaceFreed += xAlloc.m_uVertexCount;
-		uIndexSpaceFreed += xAlloc.m_uIndexCount;
+		uIndexSpaceFreed  += xAlloc.m_uIndexCount;
 
-		EvictLOD(candidate.m_uChunkIndex, LOD_HIGH);
+		EvictLOD(xState, candidate.m_uChunkIndex, LOD_HIGH);
 		uEvictionsThisCall++;
 	}
 
 	return (uVertexSpaceFreed >= uVertexSpaceNeeded && uIndexSpaceFreed >= uIndexSpaceNeeded);
 }
 
-Flux_TerrainLODResidencyState Flux_TerrainStreamingManager::GetResidencyState(uint32_t uChunkX, uint32_t uChunkY, uint32_t uLODLevel)
+Zenith_Maths::Vector3 Flux_TerrainStreamingManager::GetChunkCenter(const Flux_TerrainStreamingState& xState, uint32_t uChunkX, uint32_t uChunkY)
 {
-	if (!s_bInitialized)
-		return Flux_TerrainLODResidencyState::NOT_LOADED;
-
 	uint32_t uChunkIndex = ChunkCoordsToIndex(uChunkX, uChunkY);
-	return s_axChunkResidency[uChunkIndex].m_aeStates[uLODLevel];
-}
 
-bool Flux_TerrainStreamingManager::GetLODAllocation(uint32_t uChunkX, uint32_t uChunkY, uint32_t uLODLevel, Flux_TerrainLODAllocation& xAllocOut)
-{
-	if (!s_bInitialized)
-		return false;
-
-	uint32_t uChunkIndex = ChunkCoordsToIndex(uChunkX, uChunkY);
-	const Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
-
-	if (xResidency.m_aeStates[uLODLevel] == Flux_TerrainLODResidencyState::RESIDENT)
+	if (xState.m_bAABBsCached)
 	{
-		xAllocOut = xResidency.m_axAllocations[uLODLevel];
-		return true;
-	}
-
-	return false;
-}
-
-Zenith_Maths::Vector3 Flux_TerrainStreamingManager::GetChunkCenter(uint32_t uChunkX, uint32_t uChunkY)
-{
-	uint32_t uChunkIndex = ChunkCoordsToIndex(uChunkX, uChunkY);
-
-	if (s_bAABBsCached)
-	{
-		const Zenith_AABB& xAABB = s_axChunkAABBs[uChunkIndex];
+		const Zenith_AABB& xAABB = xState.m_axChunkAABBs[uChunkIndex];
 		return (xAABB.m_xMin + xAABB.m_xMax) * 0.5f;
 	}
 
@@ -700,11 +850,11 @@ Zenith_Maths::Vector3 Flux_TerrainStreamingManager::GetChunkCenter(uint32_t uChu
 	return Zenith_Maths::Vector3(fX, fY, fZ);
 }
 
-float Flux_TerrainStreamingManager::GetChunkDistanceSq(uint32_t uChunkIndex, const Zenith_Maths::Vector3& xWorldPos)
+float Flux_TerrainStreamingManager::GetChunkDistanceSq(const Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, const Zenith_Maths::Vector3& xWorldPos)
 {
 	uint32_t uChunkX, uChunkY;
 	ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
-	Zenith_Maths::Vector3 xChunkCenter = GetChunkCenter(uChunkX, uChunkY);
+	Zenith_Maths::Vector3 xChunkCenter = GetChunkCenter(xState, uChunkX, uChunkY);
 	return glm::distance2(xWorldPos, xChunkCenter);
 }
 
@@ -720,51 +870,208 @@ void Flux_TerrainStreamingManager::WorldPosToChunkCoords(const Zenith_Maths::Vec
 	if (iChunkY >= static_cast<int32_t>(CHUNK_GRID_SIZE)) iChunkY = static_cast<int32_t>(CHUNK_GRID_SIZE - 1);
 }
 
-void Flux_TerrainStreamingManager::RebuildActiveChunkSet(int32_t iCameraChunkX, int32_t iCameraChunkY)
+uint32_t Flux_TerrainStreamingManager::FindNearestChunkByAABB(const Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3& xWorldPos)
 {
-	s_xActiveChunkIndices.clear();
+	uint32_t uBestChunkIndex = 0;
+	float fBestDistanceSq = FLT_MAX;
 
-	const int32_t iRadius = static_cast<int32_t>(s_uActiveChunkRadius);
+	for (uint32_t uChunkIndex = 0; uChunkIndex < TOTAL_CHUNKS; ++uChunkIndex)
+	{
+		const float fDistanceSq = GetChunkDistanceSq(xState, uChunkIndex, xWorldPos);
+		if (fDistanceSq < fBestDistanceSq)
+		{
+			fBestDistanceSq = fDistanceSq;
+			uBestChunkIndex = uChunkIndex;
+		}
+	}
+
+	return uBestChunkIndex;
+}
+
+void Flux_TerrainStreamingManager::ResolveCameraChunkCoords(const Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3& xWorldPos, int32_t& iChunkX, int32_t& iChunkY, uint32_t& uNearestChunkIndex)
+{
+	if (xState.m_bAABBsCached)
+	{
+		uNearestChunkIndex = FindNearestChunkByAABB(xState, xWorldPos);
+		uint32_t uChunkX, uChunkY;
+		ChunkIndexToCoords(uNearestChunkIndex, uChunkX, uChunkY);
+		iChunkX = static_cast<int32_t>(uChunkX);
+		iChunkY = static_cast<int32_t>(uChunkY);
+		return;
+	}
+
+	WorldPosToChunkCoords(xWorldPos, iChunkX, iChunkY);
+	uNearestChunkIndex = ChunkCoordsToIndex(static_cast<uint32_t>(iChunkX), static_cast<uint32_t>(iChunkY));
+}
+
+uint32_t Flux_TerrainStreamingManager::CountLowZeroChunks(const Flux_TerrainStreamingState& xState)
+{
+	uint32_t uLowZeroCount = 0;
+	for (uint32_t uChunkIndex = 0; uChunkIndex < TOTAL_CHUNKS; ++uChunkIndex)
+	{
+		const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
+		if (xResidency.m_aeStates[LOD_LOW] != Flux_TerrainLODResidencyState::RESIDENT ||
+			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount == 0)
+		{
+			uLowZeroCount++;
+		}
+	}
+	return uLowZeroCount;
+}
+
+uint32_t Flux_TerrainStreamingManager::CountHighResidentChunks(const Flux_TerrainStreamingState& xState)
+{
+	uint32_t uHighResidentCount = 0;
+	for (uint32_t uChunkIndex = 0; uChunkIndex < TOTAL_CHUNKS; ++uChunkIndex)
+	{
+		if (xState.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT)
+			uHighResidentCount++;
+	}
+	return uHighResidentCount;
+}
+
+void Flux_TerrainStreamingManager::LogLowZeroChunkCoordinates(const Flux_TerrainStreamingState& xState, uint32_t uMaxToLog)
+{
+	uint32_t uLogged = 0;
+	for (uint32_t uChunkIndex = 0; uChunkIndex < TOTAL_CHUNKS; ++uChunkIndex)
+	{
+		const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
+		if (xResidency.m_aeStates[LOD_LOW] == Flux_TerrainLODResidencyState::RESIDENT &&
+			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount != 0)
+		{
+			continue;
+		}
+
+		uint32_t uChunkX, uChunkY;
+		ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
+		Zenith_Log(LOG_CATEGORY_TERRAIN,
+			"[Terrain] LOW zero-count chunk (%u,%u): state=%u, indexCount=%u",
+			uChunkX, uChunkY,
+			static_cast<uint32_t>(xResidency.m_aeStates[LOD_LOW]),
+			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount);
+
+		uLogged++;
+		if (uLogged >= uMaxToLog)
+		{
+			const uint32_t uTotal = CountLowZeroChunks(xState);
+			if (uTotal > uLogged)
+				Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] LOW zero-count chunk log truncated: %u more chunk(s)", uTotal - uLogged);
+			return;
+		}
+	}
+}
+
+void Flux_TerrainStreamingManager::LogStreamingHeartbeat(const Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3& xCameraPos, int32_t iCameraChunkX, int32_t iCameraChunkY, const StreamingFrameDiagnostics& xDiagnostics)
+{
+	uint32_t uNearestChunkX, uNearestChunkY;
+	ChunkIndexToCoords(xDiagnostics.m_uNearestChunkIndex, uNearestChunkX, uNearestChunkY);
+
+	Zenith_Log(LOG_CATEGORY_TERRAIN,
+		"[Terrain] Streaming heartbeat owner=%p camera=(%.1f, %.1f, %.1f) cameraChunk=(%d,%d) nearestChunk=(%u,%u) active=%u desiredHigh=%u alreadyResidentHigh=%u attempts=%u successes=%u missing=%u allocFailures=%u LOWZero=%u HIGHResident=%u",
+		static_cast<void*>(xState.m_pxOwner),
+		xCameraPos.x, xCameraPos.y, xCameraPos.z,
+		iCameraChunkX, iCameraChunkY,
+		uNearestChunkX, uNearestChunkY,
+		xDiagnostics.m_uActiveCount,
+		xDiagnostics.m_uDesiredHighCount,
+		xDiagnostics.m_uAlreadyResidentHighCount,
+		xDiagnostics.m_uStreamAttempts,
+		xDiagnostics.m_uStreamSuccesses,
+		xDiagnostics.m_uMissingSourceCount,
+		xDiagnostics.m_uAllocationFailureCount,
+		xDiagnostics.m_uLowZeroCount,
+		xDiagnostics.m_uHighResidentCount);
+}
+
+void Flux_TerrainStreamingManager::RebuildActiveChunkSet(Flux_TerrainStreamingState& xState, int32_t iCameraChunkX, int32_t iCameraChunkY, const Zenith_Maths::Vector3& xCameraPos)
+{
+	xState.m_xActiveChunkIndices.clear();
+
+	const int32_t iRadius  = static_cast<int32_t>(xState.m_uActiveChunkRadius);
 	const int32_t iGridMax = static_cast<int32_t>(CHUNK_GRID_SIZE - 1);
-	
+
 	// Calculate bounds (avoid Windows min/max macro conflicts)
 	int32_t iMinX = iCameraChunkX - iRadius;
 	int32_t iMaxX = iCameraChunkX + iRadius;
 	int32_t iMinY = iCameraChunkY - iRadius;
 	int32_t iMaxY = iCameraChunkY + iRadius;
-	
+
 	if (iMinX < 0) iMinX = 0;
 	if (iMaxX > iGridMax) iMaxX = iGridMax;
 	if (iMinY < 0) iMinY = 0;
 	if (iMaxY > iGridMax) iMaxY = iGridMax;
 
+	// Build (chunk, distSq) pairs over the rectangle, sort ascending, then
+	// drop the indices into the active vector. Sorting nearest-first means
+	// the per-frame MAX_UPLOADS_PER_FRAME budget gets spent on chunks the
+	// camera can actually see, instead of being burned on the corner of the
+	// raster-order rectangle. Sort runs once per rebuild (rebuild fires only
+	// when the camera crosses a chunk boundary), not per frame.
+	struct ChunkDist { uint32_t m_uChunkIndex; float m_fDistSq; };
+	std::vector<ChunkDist> xCandidates;
+	const int32_t iWidth  = iMaxX - iMinX + 1;
+	const int32_t iHeight = iMaxY - iMinY + 1;
+	if (iWidth > 0 && iHeight > 0)
+	{
+		xCandidates.reserve(static_cast<size_t>(iWidth) * static_cast<size_t>(iHeight));
+	}
 	for (int32_t x = iMinX; x <= iMaxX; ++x)
+	{
 		for (int32_t y = iMinY; y <= iMaxY; ++y)
-			s_xActiveChunkIndices.push_back(ChunkCoordsToIndex(static_cast<uint32_t>(x), static_cast<uint32_t>(y)));
+		{
+			const uint32_t uChunkIndex = ChunkCoordsToIndex(static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+			ChunkDist xCD;
+			xCD.m_uChunkIndex = uChunkIndex;
+			xCD.m_fDistSq     = GetChunkDistanceSq(xState, uChunkIndex, xCameraPos);
+			xCandidates.push_back(xCD);
+		}
+	}
+	std::sort(xCandidates.begin(), xCandidates.end(), [](const ChunkDist& a, const ChunkDist& b)
+	{
+		return a.m_fDistSq < b.m_fDistSq;
+	});
+	xState.m_xActiveChunkIndices.reserve(xCandidates.size());
+	for (const ChunkDist& xCD : xCandidates)
+		xState.m_xActiveChunkIndices.push_back(xCD.m_uChunkIndex);
 }
 
-void Flux_TerrainStreamingManager::BuildChunkDataForGPU(Zenith_TerrainChunkData* pxChunkDataOut)
+// Shared body for BuildChunkDataForGPU: walks one state's chunk residency
+// and emits per-chunk GPU data. Both the component-aware overload and the
+// legacy primary-resolving overload route through here so the chunk-data
+// shape lives in one place.
+void Flux_TerrainStreamingManager::BuildChunkDataForGPU_Internal(const Flux_TerrainStreamingState& xState, Zenith_TerrainChunkData* pxChunkDataOut)
 {
-	if (!s_bInitialized)
-		return;
+	// Diagnostic counters — should let us tell the difference between
+	// "LOW geometry never loaded" and "HIGH streaming isn't catching up".
+	// Logged at most once every 30 frames to avoid spam.
+	uint32_t uLowZeroCountChunks    = 0;  // expected: 0 for healthy terrain
+	uint32_t uHighResidentChunks    = 0;  // expected: climbs near camera
 
 	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
 	{
 		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; ++y)
 		{
-			uint32_t uChunkIndex = ChunkCoordsToIndex(x, y);
-			const Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
+			uint32_t uChunkIndex = x * CHUNK_GRID_SIZE + y;
+			const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
 			Zenith_TerrainChunkData& xChunkData = pxChunkDataOut[uChunkIndex];
 
 			// Set AABB
-			if (s_bAABBsCached)
+			if (xState.m_bAABBsCached)
 			{
-				const Zenith_AABB& xAABB = s_axChunkAABBs[uChunkIndex];
+				const Zenith_AABB& xAABB = xState.m_axChunkAABBs[uChunkIndex];
 				xChunkData.m_xAABBMin = Zenith_Maths::Vector4(xAABB.m_xMin, 0.0f);
 				xChunkData.m_xAABBMax = Zenith_Maths::Vector4(xAABB.m_xMax, 0.0f);
 			}
 
-			// Set LOD data (HIGH and LOW)
+			// Set LOD data (HIGH and LOW). Slots without a resident
+			// allocation are zeroed out — the GPU compute shader's explicit
+			// fallback handles "requested HIGH, only LOW available" by
+			// re-reading the LOW slot, and writes the *actual* drawn LOD
+			// into LODLevelBuffer so the debug visualisation matches the
+			// geometry the indirect draw consumes. The previous code
+			// falsified non-resident slots by copying LOW's allocation
+			// into the HIGH slot, which caused the LOD-debug colour and
+			// the actually-drawn vertex density to disagree.
 			for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
 			{
 				xChunkData.m_axLODs[uLOD].m_fMaxDistance = LOD_MAX_DISTANCE_SQ[uLOD];
@@ -784,13 +1091,41 @@ void Flux_TerrainStreamingManager::BuildChunkDataForGPU(Zenith_TerrainChunkData*
 				}
 				else
 				{
-					// Fall back to LOW LOD (always resident)
-					const Flux_TerrainLODAllocation& xLowAlloc = xResidency.m_axAllocations[LOD_LOW];
-					xChunkData.m_axLODs[uLOD].m_uFirstIndex = xLowAlloc.m_uIndexOffset;
-					xChunkData.m_axLODs[uLOD].m_uIndexCount = xLowAlloc.m_uIndexCount;
+					// Zero out — shader's "indexCount == 0 → fall back / skip" path
+					// takes over. Do NOT overwrite with LOW's allocation: that
+					// makes the LODLevelBuffer read disagree with the geometry
+					// the indirect draw actually consumes.
+					xChunkData.m_axLODs[uLOD].m_uFirstIndex   = 0;
+					xChunkData.m_axLODs[uLOD].m_uIndexCount   = 0;
 					xChunkData.m_axLODs[uLOD].m_uVertexOffset = 0;
 				}
 			}
+
+			if (xChunkData.m_axLODs[LOD_LOW].m_uIndexCount == 0)
+				uLowZeroCountChunks++;
+			if (xResidency.m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT)
+				uHighResidentChunks++;
 		}
 	}
+
+	// Diagnostic surface — only fires when the streaming logger is on, so
+	// it doesn't spam the normal log. LOW zero-count chunks should be 0;
+	// any other value points directly at "the visible holes in the terrain
+	// are LOW geometry that never loaded". HIGH resident climbing near the
+	// camera (and back to 0 far from it) is the steady-state expectation.
+	if (dbg_bLogTerrainStreaming)
+	{
+		Zenith_Log(LOG_CATEGORY_TERRAIN,
+			"[Terrain] BuildChunkDataForGPU: LOW zero-count=%u (expect 0), HIGH resident=%u",
+			uLowZeroCountChunks, uHighResidentChunks);
+		if (uLowZeroCountChunks > 0)
+			LogLowZeroChunkCoordinates(xState);
+	}
+}
+
+void Flux_TerrainStreamingManager::BuildChunkDataForGPU(const Zenith_TerrainComponent* pxTerrainComponent, Zenith_TerrainChunkData* pxChunkDataOut)
+{
+	if (!s_bInitialized || pxTerrainComponent == nullptr || pxTerrainComponent->m_pxStreamingState == nullptr)
+		return;
+	BuildChunkDataForGPU_Internal(*pxTerrainComponent->m_pxStreamingState, pxChunkDataOut);
 }

@@ -23,12 +23,17 @@ static Zenith_HashMap<u_int64, ProbeCacheEntry> s_xProbeCache;
 
 Zenith_Vulkan_CommandBuffer Zenith_Vulkan_MemoryManager::s_xCommandBuffer;
 VmaAllocator Zenith_Vulkan_MemoryManager::s_xAllocator;
-vk::Buffer Zenith_Vulkan_MemoryManager::s_xStagingBuffer;
-vk::DeviceMemory Zenith_Vulkan_MemoryManager::s_xStagingMem;
-Zenith_Vector<Zenith_Vulkan_MemoryManager::StagingMemoryAllocation> Zenith_Vulkan_MemoryManager::s_xStagingAllocations;
+Zenith_Vulkan_MemoryManager::PerFrameStaging Zenith_Vulkan_MemoryManager::s_axStaging[MAX_FRAMES_IN_FLIGHT];
 Zenith_Vector<Zenith_Vulkan_MemoryManager::PendingVRAMDeletion> Zenith_Vulkan_MemoryManager::s_xPendingDeletions;
 
-size_t Zenith_Vulkan_MemoryManager::s_uNextFreeStagingOffset = 0;
+Zenith_Vulkan_MemoryManager::PerFrameStaging& Zenith_Vulkan_MemoryManager::CurrentStaging()
+{
+	const u_int uFrameIndex = Flux_Swapchain::GetCurrentFrameIndex();
+	Zenith_Assert(uFrameIndex < MAX_FRAMES_IN_FLIGHT,
+		"CurrentStaging: frame index %u out of range (max %u). Swapchain not initialised before staging access?",
+		uFrameIndex, MAX_FRAMES_IN_FLIGHT);
+	return s_axStaging[uFrameIndex];
+}
 
 u_int64 Zenith_Vulkan_MemoryManager::s_ulImageMemoryUsed = 0;
 u_int64 Zenith_Vulkan_MemoryManager::s_ulBufferMemoryUsed = 0;
@@ -46,34 +51,60 @@ void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	const vk::PhysicalDevice& xPhysicalDevice = Zenith_Vulkan::GetPhysicalDevice();
+	const vk::PhysicalDeviceMemoryProperties xMemProps = xPhysicalDevice.getMemoryProperties();
 
-	vk::BufferCreateInfo xInfo = vk::BufferCreateInfo()
-		.setSize(g_uStagingPoolSize)
-		.setUsage(vk::BufferUsageFlagBits::eTransferSrc)
-		.setSharingMode(vk::SharingMode::eExclusive);
+	// Staging is a host-coherent memcpy target — every upload path here maps
+	// the slot's memory, memcpys data, and unmaps. Without HOST_COHERENT we'd
+	// need explicit vkFlushMappedMemoryRanges calls after every memcpy and a
+	// matching vkInvalidateMappedMemoryRanges before the GPU reads (none of
+	// which the upload paths do today). Require both bits in the predicate.
+	//
+	// The previous predicate read
+	//     (props & HostVisible | HostCoherent) == (HostVisible | HostCoherent)
+	// which due to operator precedence evaluates as
+	//     ((props & HostVisible) | HostCoherent) == (HostVisible | HostCoherent)
+	// — i.e. it forced the right-hand bits onto the left without actually
+	// testing for HOST_COHERENT, so a HOST_VISIBLE-only memory type would
+	// silently pass. Parenthesised correctly below.
+	const vk::MemoryPropertyFlags eRequired =
+		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
 
-	vk::Buffer xBuffer = VkUnwrap(xDevice.createBuffer(xInfo));
-	s_xStagingBuffer = xBuffer;
-
-	vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(xBuffer);
-
-	uint32_t memoryType = ~0u;
-	for (uint32_t i = 0; i < xPhysicalDevice.getMemoryProperties().memoryTypeCount; i++)
+	for (u_int uSlot = 0; uSlot < MAX_FRAMES_IN_FLIGHT; uSlot++)
 	{
-		if ((xRequirements.memoryTypeBits & (1 << i)) && (xPhysicalDevice.getMemoryProperties().memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent) == vk::MemoryPropertyFlags(vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent))
+		PerFrameStaging& xSlot = s_axStaging[uSlot];
+
+		vk::BufferCreateInfo xInfo = vk::BufferCreateInfo()
+			.setSize(g_uStagingPoolSize)
+			.setUsage(vk::BufferUsageFlagBits::eTransferSrc)
+			.setSharingMode(vk::SharingMode::eExclusive);
+
+		xSlot.m_xBuffer = VkUnwrap(xDevice.createBuffer(xInfo));
+
+		const vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(xSlot.m_xBuffer);
+
+		uint32_t uMemoryType = ~0u;
+		for (uint32_t i = 0; i < xMemProps.memoryTypeCount; i++)
 		{
-			memoryType = i;
+			if (!(xRequirements.memoryTypeBits & (1u << i))) continue;
+			if ((xMemProps.memoryTypes[i].propertyFlags & eRequired) != eRequired) continue;
+			uMemoryType = i;
 			break;
 		}
+		Zenith_Assert(uMemoryType != ~0u,
+			"InitialiseStagingBuffer: no HOST_VISIBLE | HOST_COHERENT memory type satisfies the staging buffer's memoryTypeBits mask");
+
+		const vk::MemoryAllocateInfo xAllocInfo = vk::MemoryAllocateInfo()
+			.setAllocationSize(ALIGN(xRequirements.size, 4096))
+			.setMemoryTypeIndex(uMemoryType);
+
+		xSlot.m_xMemory = VkUnwrap(xDevice.allocateMemory(xAllocInfo));
+		VkCheck(xDevice.bindBufferMemory(xSlot.m_xBuffer, xSlot.m_xMemory, 0));
+
+		xSlot.m_uNextFreeOffset      = 0;
+		xSlot.m_uHighWaterMark       = 0;
+		xSlot.m_uMidFrameFlushCount  = 0;
+		xSlot.m_xAllocations.Clear();
 	}
-	Zenith_Assert(memoryType != ~0u, "couldn't find physical memory type");
-
-	vk::MemoryAllocateInfo xAllocInfo = vk::MemoryAllocateInfo()
-		.setAllocationSize(ALIGN(xRequirements.size, 4096))
-		.setMemoryTypeIndex(memoryType);
-
-	s_xStagingMem = VkUnwrap(xDevice.allocateMemory(xAllocInfo));
-	VkCheck(xDevice.bindBufferMemory(xBuffer, s_xStagingMem, 0));
 }
 
 void Zenith_Vulkan_MemoryManager::Initialise()
@@ -107,6 +138,25 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	Zenith_DebugVariables::AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Image Memory Used" }, s_ulImageMemoryUsed);
 	Zenith_DebugVariables::AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Buffer Memory Used" }, s_ulBufferMemoryUsed);
 	Zenith_DebugVariables::AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Total Memory Used" }, s_ulMemoryUsed);
+
+	// Per-slot staging counters. The high-water mark surfaces how close the
+	// bump allocator is getting to the pool size (any value approaching
+	// g_uStagingPoolSize indicates pressure that could trigger mid-frame
+	// flushes); the flush count is a direct read of how often the staging-full
+	// path fired on each slot since boot.
+	for (u_int uSlot = 0; uSlot < MAX_FRAMES_IN_FLIGHT; uSlot++)
+	{
+		PerFrameStaging& xSlot = s_axStaging[uSlot];
+		const std::string strSlotLabel = "Slot " + std::to_string(uSlot);
+		// AddUInt64_ReadOnly takes a uint64_t&. size_t is uint64_t on x64,
+		// but reinterpret to be safe across platforms.
+		Zenith_DebugVariables::AddUInt64_ReadOnly(
+			{ "Vulkan", "Memory Manager", "Staging", strSlotLabel, "High Water Mark (bytes)" },
+			reinterpret_cast<uint64_t&>(xSlot.m_uHighWaterMark));
+		Zenith_DebugVariables::AddUInt32_ReadOnly(
+			{ "Vulkan", "Memory Manager", "Staging", strSlotLabel, "Mid-Frame Flushes" },
+			xSlot.m_uMidFrameFlushCount);
+	}
 	#endif
 
 	// Register the deferred-VRAM-deletion countdown as an end-frame callback.
@@ -441,16 +491,26 @@ void Zenith_Vulkan_MemoryManager::Shutdown()
 	}
 	xVRAMRegistry.clear();
 
-	// Destroy staging buffer
-	if (s_xStagingBuffer)
+	// Destroy per-frame staging buffers + memory blocks. Each slot owns its
+	// own pair so this teardown loop must visit all of them; relying on a
+	// single shared pair would leave MFIF-1 buffers leaked.
+	for (u_int uSlot = 0; uSlot < MAX_FRAMES_IN_FLIGHT; uSlot++)
 	{
-		xDevice.destroyBuffer(s_xStagingBuffer);
-		s_xStagingBuffer = nullptr;
-	}
-	if (s_xStagingMem)
-	{
-		xDevice.freeMemory(s_xStagingMem);
-		s_xStagingMem = nullptr;
+		PerFrameStaging& xSlot = s_axStaging[uSlot];
+		if (xSlot.m_xBuffer)
+		{
+			xDevice.destroyBuffer(xSlot.m_xBuffer);
+			xSlot.m_xBuffer = nullptr;
+		}
+		if (xSlot.m_xMemory)
+		{
+			xDevice.freeMemory(xSlot.m_xMemory);
+			xSlot.m_xMemory = nullptr;
+		}
+		xSlot.m_uNextFreeOffset      = 0;
+		xSlot.m_uHighWaterMark       = 0;
+		xSlot.m_uMidFrameFlushCount  = 0;
+		xSlot.m_xAllocations.Clear();
 	}
 
 	// Destroy per-frame scratch buffers that bypass the VRAM registry
@@ -713,9 +773,20 @@ void Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer(const void* pData, s
 	xBufferInfo.setOffset(0);
 	xBufferInfo.setRange(uSize);
 
+	const Flux_BufferDescriptorHandle xBufferDescHandle = RegisterBufferDescriptor(xBufferInfo);
+
 	Flux_UnorderedAccessView_Buffer& xUAV = xBufferOut.GetUAV();
-	xUAV.m_xBufferDescHandle = RegisterBufferDescriptor(xBufferInfo);
+	xUAV.m_xBufferDescHandle = xBufferDescHandle;
 	xUAV.m_xVRAMHandle = xHandle;
+
+	// Mirror the same descriptor / VRAM handles into the read-only SSBO view.
+	// vk::DescriptorType::eStorageBuffer is identical for StructuredBuffer<T>
+	// and RWStructuredBuffer<T>; the distinct CPU view type only exists so the
+	// render-graph access classifier and the shader binder can tell apart the
+	// read-only and read-write paths.
+	Flux_ShaderResourceView_Buffer& xSRV = xBufferOut.GetSRV();
+	xSRV.m_xBufferDescHandle = xBufferDescHandle;
+	xSRV.m_xVRAMHandle = xHandle;
 
 	if (pData)
 	{
@@ -743,9 +814,20 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer(const void* p
 		xBufferInfo.setOffset(0);
 		xBufferInfo.setRange(uSize);
 
+		const Flux_BufferDescriptorHandle xBufferDescHandle = RegisterBufferDescriptor(xBufferInfo);
+
 		Flux_UnorderedAccessView_Buffer& xUAV = xBufferOut.GetUAVForFrameInFlight(u);
-		xUAV.m_xBufferDescHandle = RegisterBufferDescriptor(xBufferInfo);
+		xUAV.m_xBufferDescHandle = xBufferDescHandle;
 		xUAV.m_xVRAMHandle = xHandle;
+
+		// Mirror the same descriptor / VRAM handles into the read-only SSBO view.
+		// vk::DescriptorType::eStorageBuffer is identical for StructuredBuffer<T>
+		// and RWStructuredBuffer<T>; the distinct CPU view type only exists so the
+		// render-graph access classifier and the shader binder can tell apart the
+		// read-only and read-write paths.
+		Flux_ShaderResourceView_Buffer& xSRV = xBufferOut.GetSRVForFrameInFlight(u);
+		xSRV.m_xBufferDescHandle = xBufferDescHandle;
+		xSRV.m_xVRAMHandle = xHandle;
 
 		if (pData)
 		{
@@ -1025,8 +1107,12 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 		}
 		else
 		{
-			// Upload via staging buffer
-			if (s_uNextFreeStagingOffset + ulDataSize > g_uStagingPoolSize)
+			// Upload via the current frame's staging slot. CurrentStaging()
+			// resolves to s_axStaging[CurrentFrameIndex], so the bump-allocate
+			// + memcpy + queue-copy sequence below only ever touches the
+			// memory the GPU is allowed to consume in this frame.
+			PerFrameStaging& xStaging = CurrentStaging();
+			if (xStaging.m_uNextFreeOffset + ulDataSize > g_uStagingPoolSize)
 			{
 				HandleStagingBufferFull();
 			}
@@ -1042,15 +1128,17 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 			xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfoCopy.m_uNumLayers;
 			xStagingAlloc.m_xTextureMetadata.m_eFormat = xInfoCopy.m_eFormat;
 			xStagingAlloc.m_uSize = ulDataSize;
-			xStagingAlloc.m_uOffset = s_uNextFreeStagingOffset;
-			s_xStagingAllocations.PushBack(xStagingAlloc);
+			xStagingAlloc.m_uOffset = xStaging.m_uNextFreeOffset;
+			xStaging.m_xAllocations.PushBack(xStagingAlloc);
 
-			void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, ulDataSize));
+			void* pMap = VkUnwrap(xDevice.mapMemory(xStaging.m_xMemory, xStaging.m_uNextFreeOffset, ulDataSize));
 			memcpy(pMap, pData, ulDataSize);
-			xDevice.unmapMemory(s_xStagingMem);
-			s_uNextFreeStagingOffset += ulDataSize;
+			xDevice.unmapMemory(xStaging.m_xMemory);
+			xStaging.m_uNextFreeOffset += ulDataSize;
 			// Align to 8 bytes for compressed texture formats (BC1, BC3, etc.)
-			s_uNextFreeStagingOffset = ALIGN(s_uNextFreeStagingOffset, 8);
+			xStaging.m_uNextFreeOffset = ALIGN(xStaging.m_uNextFreeOffset, 8);
+			if (xStaging.m_uNextFreeOffset > xStaging.m_uHighWaterMark)
+				xStaging.m_uHighWaterMark = xStaging.m_uNextFreeOffset;
 		}
 		s_xMutex.Unlock();
 	}
@@ -1383,7 +1471,8 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 			return;
 		}
 
-		if (s_uNextFreeStagingOffset + uSize > g_uStagingPoolSize)
+		PerFrameStaging& xStaging = CurrentStaging();
+		if (xStaging.m_uNextFreeOffset + uSize > g_uStagingPoolSize)
 		{
 			HandleStagingBufferFull();
 		}
@@ -1393,15 +1482,17 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 		xAllocation.m_xBufferMetadata.m_xBuffer = pxVRAM->GetBuffer();
 		xAllocation.m_xBufferMetadata.m_uDestOffset = 0;
 		xAllocation.m_uSize = uSize;
-		xAllocation.m_uOffset = s_uNextFreeStagingOffset;
-		s_xStagingAllocations.PushBack(xAllocation);
+		xAllocation.m_uOffset = xStaging.m_uNextFreeOffset;
+		xStaging.m_xAllocations.PushBack(xAllocation);
 
-		void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uSize));
+		void* pMap = VkUnwrap(xDevice.mapMemory(xStaging.m_xMemory, xStaging.m_uNextFreeOffset, uSize));
 		memcpy(pMap, pData, uSize);
-		xDevice.unmapMemory(s_xStagingMem);
-		s_uNextFreeStagingOffset += uSize;
+		xDevice.unmapMemory(xStaging.m_xMemory);
+		xStaging.m_uNextFreeOffset += uSize;
 		// Align to 8 bytes for consistency and compressed texture support
-		s_uNextFreeStagingOffset = ALIGN(s_uNextFreeStagingOffset, 8);
+		xStaging.m_uNextFreeOffset = ALIGN(xStaging.m_uNextFreeOffset, 8);
+		if (xStaging.m_uNextFreeOffset > xStaging.m_uHighWaterMark)
+			xStaging.m_uHighWaterMark = xStaging.m_uNextFreeOffset;
 	}
 	s_xMutex.Unlock();
 }
@@ -1533,23 +1624,31 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 
 			s_xMutex.Lock();
 
-			if (s_uNextFreeStagingOffset + uChunkSize > g_uStagingPoolSize)
+			PerFrameStaging& xStaging = CurrentStaging();
+			if (xStaging.m_uNextFreeOffset + uChunkSize > g_uStagingPoolSize)
 				HandleStagingBufferFull();
+
+			// Re-resolve after the potential mid-frame flush — HandleStagingBufferFull
+			// resets the slot's offset but keeps the slot identity, so the
+			// reference is still valid.
+			PerFrameStaging& xStagingPost = CurrentStaging();
 
 			StagingMemoryAllocation xAllocation;
 			xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
 			xAllocation.m_xBufferMetadata.m_xBuffer = pxVRAM->GetBuffer();
 			xAllocation.m_xBufferMetadata.m_uDestOffset = uCurrentDestOffset;
 			xAllocation.m_uSize = uChunkSize;
-			xAllocation.m_uOffset = s_uNextFreeStagingOffset;
-			s_xStagingAllocations.PushBack(xAllocation);
+			xAllocation.m_uOffset = xStagingPost.m_uNextFreeOffset;
+			xStagingPost.m_xAllocations.PushBack(xAllocation);
 
-			void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uChunkSize));
+			void* pMap = VkUnwrap(xDevice.mapMemory(xStagingPost.m_xMemory, xStagingPost.m_uNextFreeOffset, uChunkSize));
 			memcpy(pMap, pSrcData + uCurrentSrcOffset, uChunkSize);
-			xDevice.unmapMemory(s_xStagingMem);
+			xDevice.unmapMemory(xStagingPost.m_xMemory);
 
-			s_uNextFreeStagingOffset += uChunkSize;
-			s_uNextFreeStagingOffset = ALIGN(s_uNextFreeStagingOffset, 8);
+			xStagingPost.m_uNextFreeOffset += uChunkSize;
+			xStagingPost.m_uNextFreeOffset = ALIGN(xStagingPost.m_uNextFreeOffset, 8);
+			if (xStagingPost.m_uNextFreeOffset > xStagingPost.m_uHighWaterMark)
+				xStagingPost.m_uHighWaterMark = xStagingPost.m_uNextFreeOffset;
 
 			s_xMutex.Unlock();
 
@@ -1643,8 +1742,10 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBufferAllocation(const StagingMemo
 
 	EmitTransferWriteBarrier(s_xCommandBuffer.GetCurrentCmdBuffer(), xMeta.m_xBuffer, uDestOffset, uSize);
 
+	// Source comes from the current frame's staging slot — the same slot the
+	// allocation was bumped from in UploadBufferData / UploadBufferDataAtOffset.
 	vk::BufferCopy xCopyRegion(uSrcOffset, uDestOffset, uSize);
-	s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, xMeta.m_xBuffer, xCopyRegion);
+	s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(CurrentStaging().m_xBuffer, xMeta.m_xBuffer, xCopyRegion);
 }
 
 void Zenith_Vulkan_MemoryManager::FlushStagingTextureAllocation(const StagingMemoryAllocation& xAlloc)
@@ -1676,7 +1777,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingTextureAllocation(const StagingMem
 		.setImageOffset({ 0, 0, 0 })
 		.setImageExtent({ xMeta.m_uWidth, xMeta.m_uHeight, xMeta.m_uDepth });
 
-	s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(s_xStagingBuffer, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
+	s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(CurrentStaging().m_xBuffer, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
 	// Generate mipmaps (via blit for non-compressed) and transition to shader-read
 	const bool bIsCompressed = IsCompressedFormat(xMeta.m_eFormat);
@@ -1690,9 +1791,13 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_FLUSH);
 
-	for (u_int i = 0; i < s_xStagingAllocations.GetSize(); i++)
+	// Flush only the current frame slot's pending allocations. Other slots
+	// own their own allocation lists and offsets — they get flushed when the
+	// ring index lands on them in a future frame's EndFrame.
+	PerFrameStaging& xStaging = CurrentStaging();
+	for (u_int i = 0; i < xStaging.m_xAllocations.GetSize(); i++)
 	{
-		const StagingMemoryAllocation& xAlloc = s_xStagingAllocations.Get(i);
+		const StagingMemoryAllocation& xAlloc = xStaging.m_xAllocations.Get(i);
 		if (xAlloc.m_eType == ALLOCATION_TYPE_BUFFER)
 		{
 			FlushStagingBufferAllocation(xAlloc);
@@ -1703,8 +1808,8 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 		}
 	}
 
-	s_xStagingAllocations.Clear();
-	s_uNextFreeStagingOffset = 0;
+	xStaging.m_xAllocations.Clear();
+	xStaging.m_uNextFreeOffset = 0;
 }
 
 // Callers MUST hold s_xMutex and this function MUST NOT take it — EndFrame()
@@ -1712,9 +1817,25 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 // mutex (FlushStagingBuffer and BeginRecording do GPU work lock-free). Adding
 // a lock here, or to any function reached from here, will deadlock every
 // staging upload path because Zenith_Mutex is non-recursive.
+//
+// EndFrame(false) flushes the *current slot's* pending allocations and ends
+// the wrapper's command buffer; BeginFrame restarts recording. The slot
+// identity (the chosen index in s_axStaging) does not change across this —
+// the swapchain's current frame index only advances on a real frame
+// boundary, not when we mid-frame-flush. So callers that re-resolve
+// CurrentStaging() after this returns get the same slot back, just with
+// m_uNextFreeOffset reset to 0.
 void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull()
 {
-	//Zenith_Log("Staging buffer full, flushing");
+	const u_int uFrameSlot = Flux_Swapchain::GetCurrentFrameIndex();
+	PerFrameStaging& xSlot = s_axStaging[uFrameSlot];
+	xSlot.m_uMidFrameFlushCount++;
+	Zenith_Log(LOG_CATEGORY_VULKAN,
+		"Staging buffer full on slot %u (offset=%llu / pool=%llu, mid-frame flush #%u). Forcing mid-frame submit.",
+		uFrameSlot,
+		static_cast<unsigned long long>(xSlot.m_uNextFreeOffset),
+		static_cast<unsigned long long>(g_uStagingPoolSize),
+		xSlot.m_uMidFrameFlushCount);
 	EndFrame(false);
 	BeginFrame();
 }
@@ -1737,8 +1858,11 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 
 		s_xMutex.Lock();
 
-		// Ensure staging buffer is empty
-		if (s_uNextFreeStagingOffset != 0)
+		PerFrameStaging& xStaging = CurrentStaging();
+		// Ensure the current slot is empty before this synchronous chunk; this
+		// path issues an EndAndCpuWait per chunk, so the slot's bump allocator
+		// always returns to zero between iterations.
+		if (xStaging.m_uNextFreeOffset != 0)
 		{
 			HandleStagingBufferFull();
 		}
@@ -1750,23 +1874,23 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		xAllocation.m_xBufferMetadata.m_uDestOffset = uCurrentOffset;
 		xAllocation.m_uSize = uChunkSize;
 		xAllocation.m_uOffset = 0; // Always use offset 0 since we flush between chunks
-		s_xStagingAllocations.PushBack(xAllocation);
+		xStaging.m_xAllocations.PushBack(xAllocation);
 
 		// Map, copy, and unmap
-		void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, 0, uChunkSize));
+		void* pMap = VkUnwrap(xDevice.mapMemory(xStaging.m_xMemory, 0, uChunkSize));
 		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
-		xDevice.unmapMemory(s_xStagingMem);
+		xDevice.unmapMemory(xStaging.m_xMemory);
 
 		EmitTransferWriteBarrier(s_xCommandBuffer.GetCurrentCmdBuffer(), xDestBuffer, uCurrentOffset, uChunkSize);
 
 		vk::BufferCopy xCopyRegion(0, uCurrentOffset, uChunkSize);
-		s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, xDestBuffer, xCopyRegion);
+		s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(xStaging.m_xBuffer, xDestBuffer, xCopyRegion);
 
 		s_xCommandBuffer.EndAndCpuWait(false);
 
 		// Clear staging allocations after flush
-		s_xStagingAllocations.Clear();
-		s_uNextFreeStagingOffset = 0;
+		xStaging.m_xAllocations.Clear();
+		xStaging.m_uNextFreeOffset = 0;
 
 		// Move to next chunk
 		uCurrentOffset += uChunkSize;
@@ -1817,18 +1941,20 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 
 		s_xMutex.Lock();
 
-		// Ensure staging buffer is empty
-		if (s_uNextFreeStagingOffset != 0)
+		// Ensure the current slot's staging is empty before this chunk row
+		if (CurrentStaging().m_uNextFreeOffset != 0)
 		{
 			s_xMutex.Unlock();
 			HandleStagingBufferFull();
 			s_xMutex.Lock();
 		}
 
+		PerFrameStaging& xStaging = CurrentStaging();
+
 		// Map, copy, and unmap
-		void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, 0, uChunkSize));
+		void* pMap = VkUnwrap(xDevice.mapMemory(xStaging.m_xMemory, 0, uChunkSize));
 		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
-		xDevice.unmapMemory(s_xStagingMem);
+		xDevice.unmapMemory(xStaging.m_xMemory);
 
 		s_xMutex.Unlock();
 
@@ -1847,7 +1973,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 			.setImageOffset({ 0, static_cast<int32_t>(uRowInLayer), 0 })
 			.setImageExtent({ uWidth, uRemainingRows, 1 });
 
-		s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(s_xStagingBuffer, xDestImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
+		s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(xStaging.m_xBuffer, xDestImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
 		uCurrentOffset += uChunkSize;
 		uCurrentRow += uRemainingRows;
@@ -1862,9 +1988,12 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	// Execute and wait
 	s_xCommandBuffer.EndAndCpuWait(false);
 
-	// Clean up
-	s_xStagingAllocations.Clear();
-	s_uNextFreeStagingOffset = 0;
+	// Clean up the current slot
+	{
+		PerFrameStaging& xStaging = CurrentStaging();
+		xStaging.m_xAllocations.Clear();
+		xStaging.m_uNextFreeOffset = 0;
+	}
 
 	// Restart command buffer for next operations
 	s_xCommandBuffer.BeginRecording();

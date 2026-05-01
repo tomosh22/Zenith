@@ -231,4 +231,14 @@ namespace Flux_Generated_Terrain
 		// kind: RWStructuredBuffer
 	}
 
+	// ----- TerrainResetCounters (Terrain/Flux_TerrainResetCounters) -----
+	namespace TerrainResetCounters
+	{
+		inline constexpr const char* kvisibleCount_Name = "visibleCount";
+		inline constexpr unsigned int kvisibleCount_Set = 0;
+		inline constexpr unsigned int kvisibleCount_Binding = 0;
+		inline constexpr unsigned int kvisibleCount_DescriptorCount = 1;
+		// kind: RWStructuredBuffer
+	}
+
 }

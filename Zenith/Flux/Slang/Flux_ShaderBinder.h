@@ -56,6 +56,14 @@ public:
 	// Bind a storage-buffer UAV. Asserts the reflected type is BINDING_TYPE_STORAGE_BUFFER.
 	void BindUAV_Buffer   (const Flux_Shader& xShader, const char* szName, const Flux_UnorderedAccessView_Buffer*   pxUAV);
 
+	// Bind a read-only structured-buffer SSBO (StructuredBuffer<T> in Slang).
+	// Asserts the reflected binding type is BINDING_TYPE_STORAGE_BUFFER. Calls
+	// AssertBoundResourceDeclared with bIsWrite=false so the graph rejects a
+	// missing RESOURCE_ACCESS_READ_BUFFER_SRV declaration — the read/write
+	// distinction is enforced at the graph-access layer, since the underlying
+	// Vulkan descriptor (eStorageBuffer) is shared with the read-write path.
+	void BindSRV_Buffer   (const Flux_Shader& xShader, const char* szName, const Flux_ShaderResourceView_Buffer&    xSRV);
+
 	// Push small inline constants via the per-frame scratch UBO system. The
 	// scratch slot is identified by a binding name in xShader's reflection
 	// (typically "pushConstants" or similar). Asserts the reflected type is

@@ -167,6 +167,29 @@ class Flux_ReadWriteBuffer : public Flux_SingleBufferBase<Flux_UnorderedAccessVi
 {
 public:
 	Flux_UnorderedAccessView_Buffer& GetUAV() { return m_xView; }
+	const Flux_UnorderedAccessView_Buffer& GetUAV() const { return m_xView; }
+
+	// Read-only structured-buffer view, populated alongside m_xView at buffer
+	// init time (see Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer).
+	// The Vulkan descriptor is identical for read-only and read-write SSBOs;
+	// the distinct view type lets render-graph access declarations and the
+	// shader binder route through the read-only path without claiming a write.
+	Flux_ShaderResourceView_Buffer& GetSRV() { return m_xSRVView; }
+	const Flux_ShaderResourceView_Buffer& GetSRV() const { return m_xSRVView; }
+
+	// Override the base Reset() so both views are cleared alongside the buffer.
+	// The base only clears m_xBuffer (and m_xView via the TView template); the
+	// SRV mirror lives outside the base's TView slot, so it must be explicitly
+	// reset here to avoid handle leaks across buffer destroy/recreate cycles.
+	void Reset()
+	{
+		Flux_SingleBufferBase<Flux_UnorderedAccessView_Buffer>::Reset();
+		m_xView    = Flux_UnorderedAccessView_Buffer{};
+		m_xSRVView = Flux_ShaderResourceView_Buffer{};
+	}
+
+private:
+	Flux_ShaderResourceView_Buffer m_xSRVView;
 };
 
 class Flux_DynamicVertexBuffer : public Flux_FrameIndexedBufferBase<Flux_NoView> {};
@@ -203,4 +226,38 @@ public:
 		Zenith_FluxBuffers_Detail::AssertFrameIndex(uFrame);
 		return m_axViews[uFrame];
 	}
+
+	// Read-only structured-buffer view, populated alongside the UAV at buffer
+	// init time (see Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer).
+	// The Vulkan descriptor is identical for read-only and read-write SSBOs;
+	// the distinct view type lets render-graph access declarations and the
+	// shader binder route through the read-only path without claiming a write.
+	// Mirrors the same SRV shape that Flux_ReadWriteBuffer exposes.
+	const Flux_ShaderResourceView_Buffer& GetSRV() const
+	{
+		return m_axSRVViews[Zenith_FluxBuffers_Detail::CurrentFrameIndex()];
+	}
+	Flux_ShaderResourceView_Buffer& GetSRV()
+	{
+		return m_axSRVViews[Zenith_FluxBuffers_Detail::CurrentFrameIndex()];
+	}
+
+	Flux_ShaderResourceView_Buffer& GetSRVForFrameInFlight(const u_int uFrame)
+	{
+		Zenith_FluxBuffers_Detail::AssertFrameIndex(uFrame);
+		return m_axSRVViews[uFrame];
+	}
+
+	void Reset()
+	{
+		Flux_FrameIndexedBufferBase<Flux_UnorderedAccessView_Buffer>::Reset();
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+		{
+			m_axViews[u]    = Flux_UnorderedAccessView_Buffer{};
+			m_axSRVViews[u] = Flux_ShaderResourceView_Buffer{};
+		}
+	}
+
+private:
+	Flux_ShaderResourceView_Buffer m_axSRVViews[MAX_FRAMES_IN_FLIGHT];
 };

@@ -197,6 +197,18 @@ public class ExplorationGameProject : GameProject
 	}
 }
 
+// RenderTest game project - Procedural terrain render test
+[Sharpmake.Generate]
+public class RenderTestGameProject : GameProject
+{
+	public override string GameName => "RenderTest";
+
+	public RenderTestGameProject() : base()
+	{
+		// RenderTest-specific configuration if needed
+	}
+}
+
 // Survival game project - Task System + Multi-Feature showcase
 [Sharpmake.Generate]
 public class SurvivalGameProject : GameProject

@@ -387,6 +387,29 @@ public:
                u_int uLayer = 0, u_int uLayerCount = 1);
     void ReadBuffer(Flux_PassHandle xPass, Flux_Buffer& xBuffer, ResourceAccess eAccess);
     void WriteBuffer(Flux_PassHandle xPass, Flux_Buffer& xBuffer, ResourceAccess eAccess);
+
+    // Per-frame: tell the graph that a buffer was just host-written (typically
+    // via Flux_MemoryManager::UploadBufferDataAtOffset during a Prepare
+    // callback). The next Synthesize cycle seeds the buffer's barrier-tracker
+    // state with RESOURCE_ACCESS_HOST_TRANSFER_WRITE, so the first pass that
+    // declares it as a read gets a TransferWrite@eTransfer → ShaderRead@…
+    // buffer-memory barrier emitted in its prologue. Without this, the
+    // synthesizer assumes the buffer's prior state is whatever the previous
+    // frame's last pass left behind (or UNDEFINED on the first frame), and
+    // the barrier emitted misses TRANSFER_WRITE on the src access mask —
+    // memory availability for the host transfer write is never published.
+    //
+    // Also adds the buffer to a persistent "externally-written" set so the
+    // orphaned-read validator (which runs at Compile time, before the first
+    // Prepare callback) doesn't trip on Read declarations whose writers live
+    // outside the graph. Idempotent on both lists.
+    void MarkBufferHostWritten(const Flux_Buffer& xBuffer);
+
+    // Drop a buffer from the externally-written set. Call from teardown
+    // paths (e.g. terrain DestroyCullingResources) so the validator
+    // doesn't end up exempting an address that gets reused by a different,
+    // legitimately-orphaned buffer.
+    void UnmarkBufferHostWritten(const Flux_Buffer& xBuffer);
     void ReadTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_READ_SRV);
     void WriteTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_WRITE_RTV);
     void ReadTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount);
@@ -473,6 +496,21 @@ private:
     // evaluated inside Compile. The backend capability may be cached on the
     // first Compile to avoid querying every frame.
     bool m_bAliasingEnabled = true;
+    // Per-frame list of buffers that were just host-written. Populated by
+    // MarkBufferHostWritten (typically from a Prepare callback after an
+    // UploadBufferDataAtOffset). Consumed by Execute, which re-runs
+    // SynthesizeBarriers with these buffers' barrier-tracker state seeded
+    // to RESOURCE_ACCESS_HOST_TRANSFER_WRITE so the next reader gets a
+    // TransferWrite→ShaderRead barrier emitted in its prologue. Cleared
+    // after each re-synth.
+    Zenith_Vector<Flux_Buffer*> m_xHostWrittenBuffers;
+    // Persistent set of buffers known to be externally-written (host
+    // uploads, etc.). Populated alongside m_xHostWrittenBuffers by
+    // MarkBufferHostWritten and never cleared until graph Clear(). The
+    // orphaned-read validator skips these because their writes
+    // legitimately happen outside the render graph — Read declarations on
+    // them aren't a "missing producer" wiring bug.
+    Zenith_Vector<Flux_Buffer*> m_xExternallyWrittenBuffers;
     // Incremented on every Clear(). Flux_PassHandle and Flux_TransientHandle
     // both carry this value; APIs that take a handle assert the handle's
     // generation matches the current graph generation so stale handles

@@ -207,6 +207,15 @@ JPH::Shape* Zenith_ColliderComponent::CreateTerrainShape()
 {
 	Zenith_Assert(m_xParentEntity.HasComponent<Zenith_TerrainComponent>(), "Can't have a terrain collider without a terrain component");
 	const Zenith_TerrainComponent& xTerrain = m_xParentEntity.GetComponent<Zenith_TerrainComponent>();
+	// Terrain physics geometry can be absent if the underlying chunk meshes
+	// failed to load (the all-failed path in LoadCombinedPhysicsGeometry
+	// intentionally leaves m_pxPhysicsGeometry null). Skip body creation
+	// in that case rather than dereferencing through a null pointer.
+	if (!xTerrain.HasPhysicsGeometry())
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS, "Zenith_ColliderComponent::CreateTerrainShape: terrain has no physics geometry; skipping body creation");
+		return nullptr;
+	}
 	const Flux_MeshGeometry& xMesh = xTerrain.GetPhysicsMeshGeometry();
 
 	// Copy mesh data into our owned storage so the physics body outlives the
@@ -392,6 +401,17 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 
 	if (pxShape == nullptr)
 	{
+		// Terrain has an advertised "no physics geometry" path: when every
+		// chunk's source mesh failed to load, CreateTerrainShape returns
+		// nullptr (it already logged a warning). Treat that as a quiet
+		// no-op rather than a fatal — the terrain renders nothing AND has
+		// no body, but the engine shouldn't assert. Other shape paths still
+		// trip on null because they don't have a documented "skip" mode.
+		if (eVolumeType == COLLISION_VOLUME_TYPE_TERRAIN)
+		{
+			Zenith_Log(LOG_CATEGORY_PHYSICS, "Zenith_ColliderComponent::AddCollider: skipping terrain body — no physics geometry available");
+			return;
+		}
 		Zenith_Log(LOG_CATEGORY_PHYSICS, "ERROR: Failed to create shape for volume type %d", static_cast<int>(eVolumeType));
 		Zenith_Assert(false, "Failed to create physics shape - unhandled volume type?");
 		return;
@@ -516,7 +536,12 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 		Zenith_Maths::Matrix4 xModelMatrix;
 		xTransform.BuildModelMatrix(xModelMatrix);
 		const Zenith_TerrainComponent& xTerrain = m_xParentEntity.GetComponent<Zenith_TerrainComponent>();
-		Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(&xTerrain.GetPhysicsMeshGeometry(), xModelMatrix, xColor);
+		// Same null-tolerance contract as CreateTerrainShape — skip the
+		// debug draw if the physics geometry never loaded.
+		if (xTerrain.HasPhysicsGeometry())
+		{
+			Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(&xTerrain.GetPhysicsMeshGeometry(), xModelMatrix, xColor);
+		}
 		break;
 	}
 

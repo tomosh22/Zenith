@@ -418,6 +418,21 @@ public:
 	// Terrain streaming tests
 	static void TestChunkDistanceSymmetry();
 	static void TestChunkDistanceZero();
+	// Per-component streaming-state isolation. Each Zenith_TerrainComponent
+	// owns its own Flux_TerrainStreamingState; touching one state's dirty
+	// flag or residency must not affect another's.
+	static void TestTerrainStreamingDirtyFlagPerState();
+	static void TestTerrainStreamingResidencyIsolatedBetweenStates();
+	// SquaredHysteresis(linear) returns linear*linear so the eviction
+	// threshold matches the documented linear radius (the previous bug
+	// applied a linear ratio directly to a squared threshold).
+	static void TestTerrainHysteresisSquaredDistance();
+	// RebuildActiveChunkSet sorts by squared distance to camera so the
+	// per-frame streaming budget favours nearby chunks.
+	static void TestTerrainActiveSetSortedNearestFirst();
+	static void TestTerrainActiveSetCenterIndexFirst();
+	static void TestTerrainActiveSetUsesNearestAABBForOffsetTerrain();
+	static void TestTerrainChunkDataNoLowZeroWhenLowResident();
 
 	// Gizmo math helper tests (ZENITH_TOOLS only)
 	static void TestGizmosLineLineParallel();
@@ -480,6 +495,13 @@ public:
 	static void TestRenderGraphTransientGeneration();
 	static void TestRenderGraphSetEnabled();
 	static void TestRenderGraphBufferBarrierRMW();
+	// Compute-write -> indirect-arg-read barrier (terrain culling writes
+	// indirect/count buffers, GBuffer pass reads them via DrawIndexedIndirectCount).
+	static void TestRenderGraphIndirectArgBarrier();
+	// Compute-write -> read-only structured-buffer barrier (terrain culling
+	// writes the LOD level buffer, GBuffer vertex shader samples it as
+	// StructuredBuffer<uint>).
+	static void TestRenderGraphStorageBufferSRVBarrier();
 
 	// Transient-aliasing signature tests. The signature is pure pointer math
 	// over the transient descriptor; no Vulkan required.

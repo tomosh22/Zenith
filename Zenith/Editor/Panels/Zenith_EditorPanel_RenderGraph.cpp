@@ -16,12 +16,14 @@ namespace Zenith_EditorPanelRenderGraph
 	{
 		switch (eAccess)
 		{
-		case RESOURCE_ACCESS_READ_SRV:          return "SRV";
+		case RESOURCE_ACCESS_READ_SRV:           return "SRV";
 		case RESOURCE_ACCESS_WRITE_RTV:          return "RTV";
 		case RESOURCE_ACCESS_WRITE_UAV:          return "UAV";
 		case RESOURCE_ACCESS_READ_DEPTH:         return "Depth SRV";
 		case RESOURCE_ACCESS_WRITE_DSV:          return "Depth WTV";
-		case RESOURCE_ACCESS_READWRITE_UAV:     return "UAV ReadWrite";
+		case RESOURCE_ACCESS_READWRITE_UAV:      return "UAV ReadWrite";
+		case RESOURCE_ACCESS_READ_INDIRECT_ARG:  return "Indirect Arg";
+		case RESOURCE_ACCESS_READ_BUFFER_SRV:    return "Buffer SRV";
 		case RESOURCE_ACCESS_UNDEFINED:          return "Undefined";
 		default:                                return "Unknown";
 		}

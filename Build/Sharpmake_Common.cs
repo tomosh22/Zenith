@@ -187,6 +187,7 @@ public class ZenithSolution : Solution
 		conf.AddProject<RunnerGameProject>(target);
 		conf.AddProject<CombatGameProject>(target);
 		conf.AddProject<ExplorationGameProject>(target);
+		conf.AddProject<RenderTestGameProject>(target);
 		conf.AddProject<SurvivalGameProject>(target);
 		conf.AddProject<TilePuzzleGameProject>(target);
 		conf.AddProject<AIShowcaseGameProject>(target);

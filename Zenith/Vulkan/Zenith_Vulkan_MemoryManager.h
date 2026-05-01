@@ -254,7 +254,7 @@ private:
 
 	struct StagingMemoryAllocation {
 		StagingMemoryAllocation() : m_eType(ALLOCATION_TYPE_COUNT), m_uSize(0), m_uOffset(0) {}
-		
+
 		AllocationType m_eType;
 		union {
 			StagingBufferMetadata m_xBufferMetadata;
@@ -263,7 +263,34 @@ private:
 		size_t m_uSize;
 		size_t m_uOffset;
 	};
-	static Zenith_Vector<StagingMemoryAllocation> s_xStagingAllocations;
+
+	// Per-frame staging state. Each in-flight frame slot owns its own staging
+	// buffer + memory + bump allocator + pending-allocation list, so CPU writes
+	// for slot K can never touch staging memory the GPU is still consuming for
+	// slot K+1's in-flight transfer. The per-frame fence already serialises
+	// same-slot reuse (slot K's frame N+MFIF can't begin until slot K's frame
+	// N is complete), and frame indexing covers the cross-slot case.
+	//
+	// Sized to MAX_FRAMES_IN_FLIGHT * g_uStagingPoolSize total — 1 GiB on
+	// Windows (MFIF=2) and 2 GiB on Android (MFIF=4). Android sizing should
+	// be tuned in a follow-up; this patch targets Windows RenderTest stability.
+	struct PerFrameStaging {
+		vk::Buffer       m_xBuffer;
+		vk::DeviceMemory m_xMemory;
+		size_t           m_uNextFreeOffset = 0;
+		Zenith_Vector<StagingMemoryAllocation> m_xAllocations;
+		// Debug counters, surfaced via debug variables so the engine can
+		// observe whether the bump allocator is approaching the pool size and
+		// how often mid-frame flushes are firing on each slot.
+		size_t           m_uHighWaterMark      = 0;
+		uint32_t         m_uMidFrameFlushCount = 0;
+	};
+	static PerFrameStaging s_axStaging[MAX_FRAMES_IN_FLIGHT];
+
+	// Resolves to the staging slot for the current in-flight frame. Both the
+	// CPU memcpy path and the GPU vkCmdCopyBuffer recording path target the
+	// same slot, so a single accessor centralises the lookup.
+	static PerFrameStaging& CurrentStaging();
 
 	// Staging flush helpers (split by allocation type for readability)
 	static void FlushStagingBufferAllocation(const StagingMemoryAllocation& xAlloc);
@@ -288,12 +315,21 @@ private:
 	static Zenith_Vector<PendingVRAMDeletion> s_xPendingDeletions;
 
 	static VmaAllocator s_xAllocator;
-	static vk::Buffer s_xStagingBuffer;
-	static vk::DeviceMemory s_xStagingMem;
 
+	// Per-frame staging state lives in s_axStaging above. The single-buffer
+	// fields that used to live here (s_xStagingBuffer, s_xStagingMem,
+	// s_uNextFreeStagingOffset, s_xStagingAllocations) were the source of a
+	// CPU-vs-GPU race on the shared staging memory across in-flight frames.
+	// All staged upload paths now route through CurrentStaging().
+
+	// Single command-buffer wrapper is intentional: Zenith_Vulkan_CommandBuffer
+	// already owns a per-frame VkCommandBuffer internally and resolves
+	// GetCurrentCmdBuffer() to the current frame's slot via BeginRecording.
+	// So one wrapper spanning all frames is equivalent to per-frame wrappers
+	// for our recording pattern, and avoids a duplication that would buy
+	// nothing. Promote to per-frame only if the wrapper's other state (the
+	// descriptor cache, binding state) ever needs slot isolation.
 	static Zenith_Vulkan_CommandBuffer s_xCommandBuffer;
-
-	static size_t s_uNextFreeStagingOffset;
 
 	static Zenith_Mutex s_xMutex;
 

@@ -79,6 +79,14 @@ Flux_CommandBindUAV_Buffer::Flux_CommandBindUAV_Buffer(const Flux_UnorderedAcces
 	Zenith_Assert(pxUAV->m_xVRAMHandle.IsValid(), "UAV buffer has invalid VRAM handle");
 }
 
+Flux_CommandBindSRV_Buffer::Flux_CommandBindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, const u_int uBindPoint)
+	: m_xSRV(xSRV)
+	, m_uBindPoint(uBindPoint)
+{
+	Zenith_Assert(xSRV.m_xVRAMHandle.IsValid(), "SRV buffer has invalid VRAM handle");
+	Zenith_Assert(xSRV.m_xBufferDescHandle.IsValid(), "SRV buffer has invalid descriptor handle");
+}
+
 Flux_CommandDrawIndexedIndirect::Flux_CommandDrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, u_int uDrawCount, u_int uOffset, u_int uStride)
 	: m_pxIndirectBuffer(pxIndirectBuffer)
 	, m_uDrawCount(uDrawCount)

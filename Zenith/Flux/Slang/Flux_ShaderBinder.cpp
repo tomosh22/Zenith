@@ -149,6 +149,24 @@ void Flux_ShaderBinder::BindUAV_Buffer(const Flux_Shader& xShader, const char* s
 	m_xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(pxUAV, xResolved.m_xHandle.m_uBinding);
 }
 
+void Flux_ShaderBinder::BindSRV_Buffer(const Flux_Shader& xShader, const char* szName, const Flux_ShaderResourceView_Buffer& xSRV)
+{
+	const ResolvedBinding xResolved = ResolveNamedBinding(&xShader.GetReflection(), szName);
+	// Read-only StructuredBuffer<T> shares the BINDING_TYPE_STORAGE_BUFFER
+	// reflection slot with RWStructuredBuffer<T>; the read/write distinction
+	// is enforced by the render-graph access declaration the bind site picked
+	// (RESOURCE_ACCESS_READ_BUFFER_SRV vs WRITE_UAV / READWRITE_UAV).
+	Zenith_Assert(xResolved.m_eType == BINDING_TYPE_STORAGE_BUFFER,
+		"Flux_ShaderBinder::BindSRV_Buffer: binding '%s' has reflected type %d, expected BINDING_TYPE_STORAGE_BUFFER (%d). Wrong Bind* overload for this binding?",
+		szName, static_cast<int>(xResolved.m_eType), static_cast<int>(BINDING_TYPE_STORAGE_BUFFER));
+	Zenith_Assert(xSRV.m_xVRAMHandle.IsValid(), "Flux_ShaderBinder::BindSRV_Buffer: invalid SRV VRAM handle for binding '%s'", szName);
+	Zenith_Assert(xSRV.m_xBufferDescHandle.IsValid(), "Flux_ShaderBinder::BindSRV_Buffer: invalid SRV descriptor handle for binding '%s'", szName);
+	Flux_RenderGraph::AssertBoundResourceDeclared(xSRV.m_xVRAMHandle, /*bIsWrite*/false, "BindSRV_Buffer");
+
+	EnsureSet(xResolved.m_xHandle.m_uSet);
+	m_xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(xSRV, xResolved.m_xHandle.m_uBinding);
+}
+
 void Flux_ShaderBinder::BindDrawConstants(const Flux_Shader& xShader, const char* szName, const void* pData, u_int uSize)
 {
 	const ResolvedBinding xResolved = ResolveNamedBinding(&xShader.GetReflection(), szName);

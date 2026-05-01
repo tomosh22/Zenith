@@ -8,6 +8,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 #include <fstream>
 
@@ -31,15 +32,30 @@ void Zenith_TerrainComponent::DecrementInstanceCount()
 	{
 		s_uInstanceCount--;
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent instance count: %u (decremented)", s_uInstanceCount);
-
-		// When the last terrain component is destroyed, shut down the streaming manager
-		// to free the unified vertex/index buffers
-		if (s_uInstanceCount == 0)
-		{
-			Zenith_Log(LOG_CATEGORY_TERRAIN, "Last Zenith_TerrainComponent destroyed - shutting down streaming manager");
-			Flux_TerrainStreamingManager::Shutdown();
-		}
 	}
+	// Note: the previous "shut down the streaming manager when last terrain
+	// is destroyed" side effect was removed when state ownership moved onto
+	// the component. The manager no longer owns any per-terrain state, so
+	// there is nothing to free here — each component frees its own state in
+	// the destructor. The instance counter stays as a debug aid.
+}
+
+// Default constructor for deserialization. Out-of-line so the per-terrain
+// Flux_TerrainStreamingState (forward-declared in the component header) can
+// be allocated here with the full type visible from the manager header.
+Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_Entity& xEntity)
+	: m_xParentEntity(xEntity)
+	, m_pxPhysicsGeometry(nullptr)
+	, m_bCullingResourcesInitialized(false)
+{
+	IncrementInstanceCount();
+
+	// Each terrain owns its own streaming state. Initialise() pre-allocates
+	// the cached chunk-data scratch buffer and resets per-frame counters;
+	// the allocators get sized later in RegisterTerrainBuffers (it has the
+	// vertex stride needed to derive vertex-count budgets).
+	m_pxStreamingState = new Flux_TerrainStreamingState();
+	m_pxStreamingState->Initialize(this);
 }
 
 Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial0, Zenith_MaterialAsset& xMaterial1, Zenith_Entity& xEntity)
@@ -52,6 +68,11 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	, m_uLowLODIndexCount(0)
 {
 	IncrementInstanceCount();
+
+	// Allocate this terrain's own streaming state — same pattern as the
+	// default (deserialization) constructor.
+	m_pxStreamingState = new Flux_TerrainStreamingState();
+	m_pxStreamingState->Initialize(this);
 
 	// Store material handles (auto ref-counting)
 	m_axMaterials[0].Set(&xMaterial0);
@@ -71,10 +92,10 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 		}
 	}
 
-	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
+	// Ensure streaming manager is initialized — defensive, normally
+	// Flux_Terrain::Initialise() does this once at engine startup.
 	if (!Flux_TerrainStreamingManager::IsInitialized())
 	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Re-initializing streaming manager (was shut down)");
 		Flux_TerrainStreamingManager::Initialize();
 	}
 
@@ -261,8 +282,17 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 {
 	DestroyCullingResources();
 
-	// Unregister buffers from streaming manager before destroying them
-	Flux_TerrainStreamingManager::UnregisterTerrainBuffers();
+	// Take this terrain out of the manager's registry FIRST so no concurrent
+	// PreRenderUpdate iteration can pick up a state that's about to be freed.
+	// Then tear down and free the per-terrain state.
+	Flux_TerrainStreamingManager::UnregisterTerrainBuffers(this);
+
+	if (m_pxStreamingState)
+	{
+		m_pxStreamingState->Shutdown();
+		delete m_pxStreamingState;
+		m_pxStreamingState = nullptr;
+	}
 
 	// Destroy owned unified buffers
 	Flux_MemoryManager::DestroyVertexBuffer(m_xUnifiedVertexBuffer);
@@ -275,7 +305,6 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 
 	// MaterialHandle members (m_axMaterials[]) auto-release when destroyed
 
-	// Decrement instance count - this may trigger streaming manager shutdown if last instance
 	DecrementInstanceCount();
 }
 
@@ -423,6 +452,13 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 void Zenith_TerrainComponent::InitializeRenderResources()
 {
+	// Reset the unusable flag at the start of each load attempt so the
+	// editor's regenerate/retry path can recover after the missing chunk
+	// files are produced. Without this, a stale "unusable" set by a
+	// previous failed load would short-circuit the retry even when the
+	// new files load fine.
+	m_bTerrainGeometryUnusable = false;
+
 	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
 	if (!Flux_TerrainStreamingManager::IsInitialized())
 	{
@@ -446,6 +482,20 @@ void Zenith_TerrainComponent::InitializeRenderResources()
 	Flux_TerrainChunkInitData* pxChunkInitData = new Flux_TerrainChunkInitData[TOTAL_CHUNKS];
 	Flux_MeshGeometry* pxLowLODGeometry = nullptr;
 	LoadAndCombineLowLODChunks(uLowLODTotalVerts, uLowLODTotalIndices, pxChunkInitData, pxLowLODGeometry);
+
+	// LoadAndCombineLowLODChunks flips m_bTerrainGeometryUnusable when
+	// chunk (0,0) is missing — without it we have no canonical vertex
+	// layout to size the unified buffer with. Bail out cleanly so the
+	// component lands in the "renders nothing, no physics body" state
+	// instead of crashing partway through buffer creation.
+	if (m_bTerrainGeometryUnusable)
+	{
+		delete pxLowLODGeometry;
+		delete[] pxChunkInitData;
+		Zenith_Error(LOG_CATEGORY_TERRAIN,
+			"Zenith_TerrainComponent::InitializeRenderResources - skipping unified-buffer / streaming / culling init because terrain geometry is unusable");
+		return;
+	}
 
 	InitializeUnifiedBuffers(*pxLowLODGeometry);
 
@@ -502,12 +552,27 @@ void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, u
 {
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading LOW LOD meshes for all %u chunks...", TOTAL_CHUNKS);
 
-	// Load first chunk to get buffer layout (stored as owned pointer for later cleanup)
+	// Load chunk (0,0) first — its buffer layout sets the global vertex
+	// stride, so without it the rest of the geometry pipeline can't size
+	// itself. Any failure here flips the unusable flag and the caller
+	// (InitializeRenderResources) bails out before allocating the unified
+	// buffer or registering with the streaming manager.
 	pxLowLODGeometryOut = new Flux_MeshGeometry();
 	Flux_MeshGeometry::LoadFromFile(
 		(std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_LOW_0_0" ZENITH_MESH_EXT).c_str(), *pxLowLODGeometryOut,
 		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
 	Flux_MeshGeometry& xLowLODGeometry = *pxLowLODGeometryOut;
+
+	if (xLowLODGeometry.GetNumVerts() == 0)
+	{
+		Zenith_Error(LOG_CATEGORY_TERRAIN,
+			"Terrain LOW LOD chunk (0,0) failed to load (Render_LOW_0_0%s missing or empty). Marking terrain geometry unusable; this terrain will not render and will not produce a physics body.",
+			ZENITH_MESH_EXT);
+		m_bTerrainGeometryUnusable = true;
+		// pxChunkInitData entries stay at their default-initialised zero
+		// counts / default AABB. No further work to do — caller will bail.
+		return;
+	}
 
 	m_uVertexStride = xLowLODGeometry.GetBufferLayout().GetStride();
 
@@ -560,6 +625,22 @@ void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, u
 				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
 
 			const uint32_t uChunkIndex = Flux_TerrainConfig::ChunkCoordsToIndex(x, y);
+
+			// A failed load (file missing, parse error, empty mesh) leaves
+			// xChunkMesh at zero verts. Log the warning and skip Combine —
+			// the init data entry stays at its default-initialised zero
+			// counts + default AABB so the GPU compute shader's
+			// "indexCount == 0 → return" early-out renders the chunk as
+			// nothing, and the streaming offset bookkeeping stays consistent
+			// (this chunk simply contributes no vertices/indices to the
+			// combined LOW LOD buffer).
+			if (xChunkMesh.GetNumVerts() == 0)
+			{
+				Zenith_Warning(LOG_CATEGORY_TERRAIN,
+					"Terrain LOW LOD chunk (%u,%u) source mesh missing or empty — chunk will render empty.", x, y);
+				continue;
+			}
+
 			pxChunkInitData[uChunkIndex].m_uVertexCount = xChunkMesh.GetNumVerts();
 			pxChunkInitData[uChunkIndex].m_uIndexCount = xChunkMesh.GetNumIndices();
 			if (xChunkMesh.m_pxPositions)
@@ -631,14 +712,37 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 		return;  // Already loaded
 	}
 
+	// If render geometry is already known to be unusable, there's no
+	// physics body to build either — without chunk (0,0) we don't know
+	// the canonical mesh layout. Leave m_pxPhysicsGeometry null and let
+	// callers gate on HasPhysicsGeometry().
+	if (m_bTerrainGeometryUnusable)
+	{
+		Zenith_Warning(LOG_CATEGORY_TERRAIN,
+			"Skipping physics geometry load — terrain geometry already marked unusable.");
+		return;
+	}
+
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading and combining all physics chunks...");
 
-	// Load first physics chunk
+	// Load chunk (0,0) — its layout sizes the pre-allocated combined buffer.
+	// If this load fails we can't usefully size or combine anything else;
+	// drop the half-built geometry and bail.
 	m_pxPhysicsGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::LoadFromFile(
 		(std::string(Project_GetGameAssetsDirectory()) + "Terrain/Physics_0_0" ZENITH_MESH_EXT).c_str(),
 		*m_pxPhysicsGeometry,
 		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
+
+	if (m_pxPhysicsGeometry->GetNumVerts() == 0)
+	{
+		Zenith_Error(LOG_CATEGORY_TERRAIN,
+			"Terrain physics chunk (0,0) failed to load (Physics_0_0%s missing or empty). Terrain will have no physics body.",
+			ZENITH_MESH_EXT);
+		delete m_pxPhysicsGeometry;
+		m_pxPhysicsGeometry = nullptr;
+		return;
+	}
 
 	Flux_MeshGeometry& xPhysicsGeometry = *m_pxPhysicsGeometry;
 
@@ -656,7 +760,11 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 	xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
 	xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
 
-	// Combine remaining physics chunks
+	// Combine remaining physics chunks. A failed per-chunk load is non-fatal:
+	// we skip it (don't Combine) so the resulting mesh is missing that
+	// region but stays watertight elsewhere. Substituting degenerate
+	// triangles for missing regions risks tripping Jolt's mesh validation.
+	uint32_t uSkippedChunks = 0;
 	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
 	{
 		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
@@ -670,13 +778,21 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 				xTerrainPhysicsMesh,
 				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
 
+			if (xTerrainPhysicsMesh.GetNumVerts() == 0)
+			{
+				Zenith_Warning(LOG_CATEGORY_TERRAIN,
+					"Terrain physics chunk (%u,%u) source mesh missing or empty — region skipped from combined physics body.", x, y);
+				uSkippedChunks++;
+				continue;
+			}
+
 			Flux_MeshGeometry::Combine(xPhysicsGeometry, xTerrainPhysicsMesh);
 			// xTerrainPhysicsMesh automatically destroyed when going out of scope
 		}
 	}
 
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "Physics mesh combined: %u vertices, %u indices",
-		xPhysicsGeometry.GetNumVerts(), xPhysicsGeometry.GetNumIndices());
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Physics mesh combined: %u vertices, %u indices (%u chunk(s) skipped)",
+		xPhysicsGeometry.GetNumVerts(), xPhysicsGeometry.GetNumIndices(), uSkippedChunks);
 }
 
 // ========== GPU-Driven Culling Implementation ==========
@@ -722,17 +838,43 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 		m_xVisibleCountBuffer
 	);
 
-	// LOD level buffer (one uint32_t per potential draw call)
-	Flux_MemoryManager::InitialiseReadWriteBuffer(
-		nullptr,
-		sizeof(uint32_t) * TOTAL_CHUNKS,
-		m_xLODLevelBuffer
-	);
+	// LOD level buffer (one uint32_t per potential draw call). Zero-initialise
+	// so the GPU LOD hysteresis (Flux_TerrainCulling.slang reads
+	// LODLevelBuffer[chunkIndex] as priorLOD before writing) sees a
+	// deterministic 0 (== HIGH) on the first frame instead of whatever
+	// VRAM the allocator handed us. Garbage values can't trigger the
+	// hysteresis branches (they require priorLOD == 0 or 1) but a zero-
+	// init buffer makes the first-frame behaviour predictable.
+	{
+		uint32_t* pZero = new uint32_t[TOTAL_CHUNKS];
+		memset(pZero, 0, sizeof(uint32_t) * TOTAL_CHUNKS);
+		Flux_MemoryManager::InitialiseReadWriteBuffer(
+			pZero,
+			sizeof(uint32_t) * TOTAL_CHUNKS,
+			m_xLODLevelBuffer
+		);
+		delete[] pZero;
+	}
 
 	// Build chunk data (AABBs + LOD metadata) and upload to GPU
 	BuildChunkData();
 
 	m_bCullingResourcesInitialized = true;
+
+	// New per-terrain GPU buffers (chunk data, indirect, count, LOD level)
+	// just appeared. Flux_Terrain::SetupRenderGraph reads
+	// m_bCullingResourcesInitialized when declaring per-component buffer
+	// dependencies, so the next graph compile must rebuild to pick them up.
+	Flux::RequestGraphRebuild();
+
+	// Note: m_xChunkDataBuffer no longer needs MarkBufferHostWritten here.
+	// It's now a Flux_DynamicReadWriteBuffer (frame-indexed, host-visible),
+	// and is intentionally not declared in the render graph for the same
+	// reason m_xFrustumPlanesBuffer isn't — declaring a frame-indexed buffer
+	// via GetBuffer() at compile time locks the graph to frame 0's instance.
+	// vkSubmit's implicit host-write-available barrier covers visibility for
+	// host-coherent buffers without a manual TransferWrite→ShaderRead
+	// barrier, which only the staged-upload path required.
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Culling resources initialized with %u terrain chunks, %u LOD levels", TOTAL_CHUNKS, LOD_COUNT);
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - LOD distances: HIGH<%.1f, LOW=always",
@@ -746,8 +888,18 @@ void Zenith_TerrainComponent::DestroyCullingResources()
 		return;
 	}
 
-	// Cleanup GPU resources - queue for deferred deletion to avoid destroying in-use resources
-	Flux_MemoryManager::DestroyReadWriteBuffer(m_xChunkDataBuffer);
+	// Drop the rebuild flag BEFORE queueing buffer destruction so the next
+	// graph compile rebuilds SetupRenderGraph against the new (smaller) set
+	// of live terrain components. The deferred-destroy path
+	// (QueueVRAMDeletion + MAX_FRAMES_IN_FLIGHT+1 grace) keeps the buffers
+	// alive long enough for any in-flight command lists to finish reading
+	// them before the GPU side actually frees the memory.
+	Flux::RequestGraphRebuild();
+
+	// Cleanup GPU resources - queue for deferred deletion to avoid destroying in-use resources.
+	// Chunk data buffer is frame-indexed; DestroyDynamicReadWriteBuffer queues
+	// every frame slot for deferred deletion.
+	Flux_MemoryManager::DestroyDynamicReadWriteBuffer(m_xChunkDataBuffer);
 	Flux_MemoryManager::DestroyDynamicConstantBuffer(m_xFrustumPlanesBuffer);
 	Flux_MemoryManager::DestroyIndirectBuffer(m_xIndirectDrawBuffer);
 	Flux_MemoryManager::DestroyIndirectBuffer(m_xVisibleCountBuffer);
@@ -762,14 +914,20 @@ void Zenith_TerrainComponent::BuildChunkData()
 {
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent::BuildChunkData() - Building chunk data using streaming manager");
 
-	// Get chunk data from streaming manager (includes AABBs and current LOD allocations)
+	// Get chunk data from streaming manager (includes AABBs and current LOD
+	// allocations) — component-aware overload routes through this terrain's
+	// own state, no cross-terrain pollution.
 	Zenith_TerrainChunkData* pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
-	Flux_TerrainStreamingManager::BuildChunkDataForGPU(pxChunkData);
+	Flux_TerrainStreamingManager::BuildChunkDataForGPU(this, pxChunkData);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Chunk data retrieved from streaming manager for %u chunks", TOTAL_CHUNKS);
 
-	// Upload chunk data to GPU
-	Flux_MemoryManager::InitialiseReadWriteBuffer(
+	// Allocate the per-frame buffers. InitialiseDynamicReadWriteBuffer also
+	// performs the initial upload into every frame's slot, so the GPU has
+	// valid chunk metadata in slot 0 by the time the first frame's compute
+	// runs (the orphan-read validator in the render graph would otherwise
+	// trip on a Read declaration with no preceding writer).
+	Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(
 		pxChunkData,
 		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
 		m_xChunkDataBuffer
@@ -789,46 +947,66 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 		return;  // Terrain not ready for rendering yet
 	}
 
-	// OPTIMIZATION: Skip GPU upload if chunk data hasn't changed
-	if (!Flux_TerrainStreamingManager::IsChunkDataDirty())
-	{
-		return;  // No changes since last upload
-	}
-	
+	// The per-component dirty-flag short-circuit used to live here:
+	//
+	//   if (!Flux_TerrainStreamingManager::IsChunkDataDirty(this)) return;
+	//
+	// It produced a steady-state "stretched-triangle to a previously-resident
+	// chunk's slot" spike. Disabling the short-circuit and re-uploading every
+	// frame eliminates the spike; a full audit of every m_axChunkResidency
+	// mutation site failed to identify which state-change path was leaking
+	// (StreamInLOD, EvictLOD, RegisterTerrainBuffers, RequestNearbyHighLOD,
+	// EvictDistantHighLOD, RebuildActiveChunkSet, EvictToMakeSpace all set
+	// m_bChunkDataDirty by code inspection). Rather than ship a flaky cache,
+	// we always rebuild + upload — the chunk buffer is one TerrainChunkData
+	// struct (64 bytes) per chunk × TOTAL_CHUNKS = 256 KB per terrain per
+	// frame, which at 60 fps is ~15 MB/s of memory-queue bandwidth. That's
+	// negligible against the streaming-region budget (256 MB vertex / 64 MB
+	// index) and well below the staging buffer chunk size, so the upload
+	// stays in a single staging slot.
+	//
+	// The dirty-flag setters in the streaming manager are kept (harmless
+	// dead state) so that revisiting this optimisation later doesn't have
+	// to re-thread the flag through every call site.
+
 	// DEBUG: Log when we're updating chunk allocations
 	static uint32_t s_uUpdateCount = 0;
 	s_uUpdateCount++;
 
-	// OPTIMIZATION: Use pre-allocated buffer from streaming manager to avoid heap allocation
-	Zenith_TerrainChunkData* pxChunkData = Flux_TerrainStreamingManager::GetCachedChunkDataBuffer();
+	// OPTIMIZATION: Use this terrain's pre-allocated cached buffer to avoid
+	// per-frame heap allocation.
+	Zenith_TerrainChunkData* pxChunkData = Flux_TerrainStreamingManager::GetCachedChunkDataBuffer(this);
 	bool bUsedCachedBuffer = (pxChunkData != nullptr);
-	
+
 	if (pxChunkData == nullptr)
 	{
 		// Fallback to allocation if cached buffer not available (shouldn't happen)
 		pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
 	}
-	
-	Flux_TerrainStreamingManager::BuildChunkDataForGPU(pxChunkData);
-	
-	// Same-frame visibility relies on the deferred memory-submit happening before
-	// the render submit (the render queue waits on the memory semaphore), so the
-	// compute culling pass sees this upload's bytes in the same frame without a
-	// CPU fence wait.
+
+	Flux_TerrainStreamingManager::BuildChunkDataForGPU(this, pxChunkData);
+
+	// Upload to the CURRENT FRAME's chunk-data buffer slot. m_xChunkDataBuffer
+	// is frame-indexed, so GetBuffer() resolves to the current ring-slot's
+	// buffer; the previous frame slot's buffer is owned by the GPU work still
+	// in flight on the other slot and must not be touched. The host-visible
+	// memory residency means the write goes direct (no staging) and vkSubmit's
+	// implicit host-write-available barrier carries the visibility into the
+	// compute read on the render queue.
 	Flux_MemoryManager::UploadBufferDataAtOffset(
 		m_xChunkDataBuffer.GetBuffer().m_xVRAMHandle,
 		pxChunkData,
 		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
 		0  // Offset 0 - replace entire buffer
 	);
-	
+
 	if (!bUsedCachedBuffer)
 	{
 		delete[] pxChunkData;
 	}
-	
-	// Clear dirty flag after successful upload
-	Flux_TerrainStreamingManager::ClearChunkDataDirty();
+
+	// Clear THIS terrain's dirty flag after successful upload.
+	Flux_TerrainStreamingManager::ClearChunkDataDirty(this);
 }
 
 void Zenith_TerrainComponent::ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Zenith_FrustumPlaneGPU* pxOutPlanes)
@@ -847,20 +1025,17 @@ void Zenith_TerrainComponent::ExtractFrustumPlanes(const Zenith_Maths::Matrix4& 
 	}
 }
 
-void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList, const Zenith_Maths::Matrix4& xViewProjMatrix)
+void Zenith_TerrainComponent::UploadFrustumPlanesForFrame(const Zenith_Maths::Matrix4& xViewProjMatrix)
 {
 	if (!m_bCullingResourcesInitialized)
 	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "ERROR: Zenith_TerrainComponent::UpdateCullingAndLod() called before InitializeCullingResources()");
 		return;
 	}
 
-	// Extract frustum planes and camera position, upload to GPU
 	Zenith_CameraDataGPU xCameraData;
 	Zenith_Frustum xFrustum;
 	xFrustum.ExtractFromViewProjection(xViewProjMatrix);
 
-	// Convert frustum to GPU format
 	for (int i = 0; i < 6; ++i)
 	{
 		xCameraData.m_axFrustumPlanes[i].m_xNormalAndDistance = Zenith_Maths::Vector4(
@@ -869,29 +1044,36 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList, co
 		);
 	}
 
-	// Add camera position for distance-based sorting and LOD selection
-	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
+	const Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
 	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
 
-	// Same-frame visibility: memory-submit runs before render-submit and the
-	// render queue waits on the memory semaphore, so the compute shader
-	// dispatched this frame reads the bytes uploaded here.
 	Flux_MemoryManager::UploadBufferDataAtOffset(m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
+}
 
-	// Reset visible chunk counter to 0
-	uint32_t uZero = 0;
-	Flux_MemoryManager::UploadBufferDataAtOffset(m_xVisibleCountBuffer.GetBuffer().m_xVRAMHandle, &uZero, sizeof(uint32_t), 0);
+void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList)
+{
+	if (!m_bCullingResourcesInitialized)
+	{
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "ERROR: Zenith_TerrainComponent::UpdateCullingAndLod() called before InitializeCullingResources()");
+		return;
+	}
 
-	// IMPORTANT: Assumes the terrain culling compute pipeline is already bound by Flux_Terrain
-	// We only record buffer bindings and dispatch here
+	// IMPORTANT: Assumes the terrain culling compute pipeline is already bound by Flux_Terrain.
+	// Frustum planes + camera position were uploaded in PreRenderUpdate; visible-count was
+	// zeroed by the dedicated reset pass that this pass DependsOn. We only record bindings
+	// and the dispatch here.
 
-	// Bind descriptor set 0 with all buffers
+	// Bind descriptor set 0 with all buffers. ChunkBuffer is reflected as
+	// StructuredBuffer<TerrainChunkData> (read-only) so it goes through the
+	// SRV-buffer path. m_xChunkDataBuffer is frame-indexed, so GetSRV()
+	// resolves to the current frame's SRV — the same slot CPU just wrote to
+	// in PreRenderUpdate via UpdateChunkLODAllocations.
 	xCmdList.AddCommand<Flux_CommandBeginBind>(0);
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xChunkDataBuffer.GetUAV(), 0);          // Chunk data (read)
-	xCmdList.AddCommand<Flux_CommandBindCBV>(&m_xFrustumPlanesBuffer.GetCBV(), 1);             // Frustum planes (read)
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xIndirectDrawBuffer.GetUAV(), 2);       // Indirect commands (write)
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xVisibleCountBuffer.GetUAV(), 3);       // Visible count (read/write atomic)
-	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xLODLevelBuffer.GetUAV(), 4);           // LOD levels (write)
+	xCmdList.AddCommand<Flux_CommandBindSRV_Buffer>(m_xChunkDataBuffer.GetSRV(), 0);            // Chunk data (read-only StructuredBuffer)
+	xCmdList.AddCommand<Flux_CommandBindCBV>(&m_xFrustumPlanesBuffer.GetCBV(), 1);              // Frustum planes (read)
+	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xIndirectDrawBuffer.GetUAV(), 2);        // Indirect commands (write)
+	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xVisibleCountBuffer.GetUAV(), 3);        // Visible count (read/write atomic)
+	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xLODLevelBuffer.GetUAV(), 4);            // LOD levels (read-modify-write for hysteresis)
 
 	// Dispatch compute shader
 	// We have TOTAL_CHUNKS chunks, with local_size_x=64 we need (TOTAL_CHUNKS + 63) / 64 workgroups

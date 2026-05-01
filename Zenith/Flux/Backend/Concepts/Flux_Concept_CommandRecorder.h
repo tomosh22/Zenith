@@ -110,6 +110,7 @@ concept FluxBackendResourceBinding = requires(
 	void* pData,
 	size_t sz,
 	const Flux_ShaderResourceView* pxSRV,
+	const Flux_ShaderResourceView_Buffer& xSRVBuf,
 	const Flux_UnorderedAccessView_Texture* pxUAVTex,
 	const Flux_UnorderedAccessView_Buffer* pxUAVBuf,
 	const Flux_ConstantBufferView* pxCBV,
@@ -117,6 +118,7 @@ concept FluxBackendResourceBinding = requires(
 {
 	{ xRec.BeginBind(uDescSet)                                                                 } -> std::same_as<void>;
 	{ xRec.BindSRV(pxSRV, uBinding, pxSampler)                                                 } -> std::same_as<void>;
+	{ xRec.BindSRV_Buffer(xSRVBuf, uBinding)                                                   } -> std::same_as<void>;
 	{ xRec.BindCBV(pxCBV, uBinding)                                                            } -> std::same_as<void>;
 	{ xRec.BindUAV_Texture(pxUAVTex, uBinding)                                                 } -> std::same_as<void>;
 	{ xRec.BindUAV_Buffer(pxUAVBuf, uBinding)                                                  } -> std::same_as<void>;

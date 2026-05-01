@@ -16,6 +16,7 @@ using namespace Flux_TerrainConfig;
 // Forward declarations
 class Flux_CommandList;
 struct Flux_TerrainChunkInitData;
+struct Flux_TerrainStreamingState;
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentRegistry.h"
@@ -55,15 +56,12 @@ struct Zenith_CameraDataGPU
 class Zenith_TerrainComponent
 {
 public:
-	// Default constructor for deserialization
-	// ReadFromDataStream will populate all members from saved data
-	Zenith_TerrainComponent(Zenith_Entity& xEntity)
-		: m_xParentEntity(xEntity)
-		, m_pxPhysicsGeometry(nullptr)
-		, m_bCullingResourcesInitialized(false)
-	{
-		IncrementInstanceCount();
-	};
+	// Default constructor for deserialization. ReadFromDataStream populates
+	// the rest of the members from the saved data; defined out-of-line in
+	// the .cpp so the per-terrain Flux_TerrainStreamingState (forward-
+	// declared above) can be allocated here without pulling its full
+	// definition into this header.
+	Zenith_TerrainComponent(Zenith_Entity& xEntity);
 
 	// Full constructor for runtime creation
 	Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial0, Zenith_MaterialAsset& xMaterial1, Zenith_Entity& xEntity);
@@ -79,6 +77,19 @@ public:
 	const Flux_VertexBuffer& GetUnifiedVertexBuffer() const { return m_xUnifiedVertexBuffer; }
 	const Flux_IndexBuffer& GetUnifiedIndexBuffer() const { return m_xUnifiedIndexBuffer; }
 
+	// Returns true once render geometry is in a usable state. Set to false
+	// only when the LOW LOD load for chunk (0,0) — the canonical chunk
+	// whose vertex layout sets the global stride — fails. Downstream code
+	// (streaming registration, culling resource init, render-graph
+	// declarations) is gated on this so an unusable terrain renders as
+	// nothing instead of crashing.
+	bool IsRenderGeometryUsable() const { return !m_bTerrainGeometryUnusable; }
+
+	// Physics geometry can be absent if every chunk's source mesh failed to
+	// load. Callers that dereference GetPhysicsMeshGeometry() must gate on
+	// this query — the alternative is a crash on the first physics body
+	// build for the terrain.
+	bool HasPhysicsGeometry() const { return m_pxPhysicsGeometry != nullptr; }
 	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const { return *m_pxPhysicsGeometry; }
 	// Material accessors (4-material palette)
 	static constexpr u_int TERRAIN_MATERIAL_COUNT = 4;
@@ -114,6 +125,17 @@ public:
 	void DestroyCullingResources();
 
 	/**
+	 * Upload this frame's camera frustum planes + position to the per-component
+	 * frustum-planes constant buffer. Called once per frame from
+	 * Flux_Terrain::PreRenderUpdate (Prepare phase) so the host transfer
+	 * write is colocated with the chunk-data upload — both are then visible
+	 * to the render-graph barrier synthesiser via MarkBufferHostWritten.
+	 *
+	 * @param xViewProjMatrix Camera view-projection matrix for frustum extraction
+	 */
+	void UploadFrustumPlanesForFrame(const Zenith_Maths::Matrix4& xViewProjMatrix);
+
+	/**
 	 * Update culling and LOD selection for this terrain component
 	 * Records a compute dispatch to the provided command list
 	 *
@@ -121,9 +143,8 @@ public:
 	 * before calling this method. This method only records dispatch commands and buffer bindings.
 	 *
 	 * @param xCmdList Command list to record dispatch commands into
-	 * @param xViewProjMatrix Camera view-projection matrix for frustum extraction
 	 */
-	void UpdateCullingAndLod(Flux_CommandList& xCmdList, const Zenith_Maths::Matrix4& xViewProjMatrix);
+	void UpdateCullingAndLod(Flux_CommandList& xCmdList);
 
 	/**
 	 * Get the indirect draw buffer for rendering
@@ -172,15 +193,43 @@ public:
 	uint32_t m_uLowLODVertexCount = 0;   // Vertices reserved for LOW LOD at buffer start
 	uint32_t m_uLowLODIndexCount = 0;    // Indices reserved for LOW LOD at buffer start
 
+	// Set by LoadAndCombineLowLODChunks when chunk (0,0)'s LOW LOD source
+	// fails to load. Without (0,0) we have no canonical vertex layout, so
+	// the rest of the render geometry pipeline (unified buffers, streaming
+	// registration, culling resources) is intentionally short-circuited.
+	bool m_bTerrainGeometryUnusable = false;
+
 	// ========== GPU-Driven Culling State ==========
 	bool m_bCullingResourcesInitialized = false;
 
+	// Per-component streaming state. Heap-allocated by the constructors
+	// (forward-declared type so this header doesn't need the full struct).
+	// Owned by this component — the manager keeps a non-owning pointer to
+	// the same instance in its registry / primary slot. Destroyed in the
+	// destructor after UnregisterTerrainBuffers(this) takes it out of the
+	// registry so cross-thread access via the manager can't see a dead
+	// state.
+	Flux_TerrainStreamingState* m_pxStreamingState = nullptr;
+
 	// GPU buffers for culling
-	Flux_ReadWriteBuffer m_xChunkDataBuffer;        // Chunk AABB + LOD metadata (read-only in compute)
+	// Frame-indexed (one Flux_Buffer per frame in flight). The buffer is
+	// rebuilt + host-uploaded every frame in UpdateChunkLODAllocations, so
+	// frame N+1's CPU write to the underlying memory must not race against
+	// frame N's GPU compute read. A single shared buffer would race here:
+	// even though the per-frame fence at BeginFrame guarantees the slot's
+	// previous use is complete, slot K's frame N+2 CPU work runs concurrently
+	// with slot K+1's frame N+1 GPU work — and they hit the same shared
+	// chunk-data memory. Frame indexing closes that race entirely (one buffer
+	// per frame slot, CPU only ever writes the slot whose fence we just
+	// waited on). Memory residency is host-visible (see
+	// Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer), so the
+	// upload skips the staging buffer too — eliminating the staging-reuse
+	// race that the previous staged-upload path was exposed to.
+	Flux_DynamicReadWriteBuffer m_xChunkDataBuffer;
 	Flux_IndirectBuffer m_xIndirectDrawBuffer;      // Indirect draw commands (written by compute)
 	Flux_DynamicConstantBuffer m_xFrustumPlanesBuffer; // Camera frustum + position (read-only in compute)
 	Flux_IndirectBuffer m_xVisibleCountBuffer;      // Atomic counter for visible chunks
-	Flux_ReadWriteBuffer m_xLODLevelBuffer;         // LOD level for each draw call (visualization)
+	Flux_ReadWriteBuffer m_xLODLevelBuffer;         // LOD level for each chunk (visualization)
 
 	// Helper methods for culling
 	void BuildChunkData();

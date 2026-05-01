@@ -84,11 +84,20 @@ static constexpr uint32_t MAX_QUEUE_SIZE = 256;
 // Camera movement threshold before re-evaluating LODs (squared distance)
 static constexpr float CAMERA_MOVE_THRESHOLD_SQ = 100.0f;  // ~10m movement
 
-// LOD hysteresis factors - prevent thrashing at LOD boundaries
-// Eviction threshold: chunks must move beyond this to be evicted in the main distance-based loop
-// Forced eviction threshold: used by EvictToMakeSpace when buffer is full (tighter = more aggressive)
+// LOD hysteresis factors - prevent thrashing at LOD boundaries.
+// These constants are LINEAR distance ratios (e.g. 1.5x means evict beyond
+// 1.5 × LOD-range linear distance). Distance comparisons in the streaming
+// code work in squared-distance space, so multiply LOD_*_DISTANCE_SQ by
+// SquaredHysteresis(linear) — never by the linear constant directly. The
+// previous code applied 1.5f to a squared threshold, which gave √1.5 ≈
+// 1.225× (and 1.2f → ≈1.095×), narrower than intended.
 static constexpr float LOD_EVICTION_HYSTERESIS = 1.5f;        // 50% beyond LOD threshold for main eviction
 static constexpr float LOD_FORCED_EVICTION_HYSTERESIS = 1.2f;  // 20% beyond LOD threshold for forced eviction
+
+// Convert a linear-distance hysteresis ratio to its squared counterpart so
+// it can be applied to a squared-distance threshold without distorting the
+// effective radius.
+inline constexpr float SquaredHysteresis(float fLinear) { return fLinear * fLinear; }
 
 // Active chunk radius - only consider chunks within this many chunks of camera
 // Reduces streaming updates from 4096 to ~1024 chunks

@@ -111,6 +111,16 @@ void Flux_RenderGraph::Execute()
 		m_bEnabledMaskDirty = false;
 	}
 	CallPrepareCallbacks();
+	// Prepare callbacks may have called MarkBufferHostWritten (for buffers
+	// host-uploaded this frame). If so, re-run SynthesizeBarriers so the next
+	// reader of each marked buffer gets a TransferWrite→ShaderRead barrier.
+	// The host-written list is consumed inside SynthesizeBarriers — it stays
+	// empty across frames where no host upload happens, so this is a no-op
+	// in the common case.
+	if (m_xHostWrittenBuffers.GetSize() > 0)
+	{
+		SynthesizeBarriers();
+	}
 	RecordCommandLists();
 	SubmitRecordedLists();
 }
@@ -281,9 +291,13 @@ static bool IsAccessCompatibleWithBind(const Flux_RenderGraph_ResourceUsage& rxU
 		// Write-list entry only qualifies for a read-bind if it's a read-modify-write UAV.
 		return rxUsage.m_eAccess == RESOURCE_ACCESS_READWRITE_UAV;
 	}
+	// READ_BUFFER_SRV is a shader-bind read mode (StructuredBuffer<T>); accept it.
+	// READ_INDIRECT_ARG is GPU-command-processor only — never satisfies a shader
+	// bind, so it is intentionally absent from this list.
 	return rxUsage.m_eAccess == RESOURCE_ACCESS_READ_SRV
 		|| rxUsage.m_eAccess == RESOURCE_ACCESS_READ_DEPTH
-		|| rxUsage.m_eAccess == RESOURCE_ACCESS_READWRITE_UAV;
+		|| rxUsage.m_eAccess == RESOURCE_ACCESS_READWRITE_UAV
+		|| rxUsage.m_eAccess == RESOURCE_ACCESS_READ_BUFFER_SRV;
 }
 
 // Scan one usage list (reads or writes) for an entry matching xVRAMHandle whose

@@ -15,6 +15,8 @@
  */
 
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "Collections/Zenith_Vector.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 #include "Maths/Zenith_Maths.h"
@@ -144,15 +146,30 @@ namespace Exploration_TerrainExplorer
 	}
 
 	/**
+	 * Find the first registered terrain component (the helper functions below
+	 * are component-aware now that the streaming manager owns no per-terrain
+	 * state of its own — Exploration only has one terrain in the scene, so
+	 * "first found" matches the old single-terrain behaviour).
+	 */
+	inline Zenith_TerrainComponent* GetFirstTerrainComponent()
+	{
+		Zenith_Vector<Zenith_TerrainComponent*> xTerrains;
+		Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(xTerrains);
+		return xTerrains.GetSize() > 0 ? xTerrains.Get(0) : nullptr;
+	}
+
+	/**
 	 * Get streaming statistics from the terrain system
 	 */
 	inline StreamingStats GetStreamingStats()
 	{
 		StreamingStats xStats;
 
-		if (Flux_TerrainStreamingManager::IsInitialized())
+		Zenith_TerrainComponent* pxTerrain = GetFirstTerrainComponent();
+		Flux_TerrainStreamingState* pxState = Flux_TerrainStreamingManager::GetStateFor(pxTerrain);
+		if (pxState != nullptr)
 		{
-			const auto& xEngineStats = Flux_TerrainStreamingManager::GetStats();
+			const Flux_TerrainStreamingStats& xEngineStats = pxState->m_xStats;
 			xStats.m_uHighLODChunksResident = xEngineStats.m_uHighLODChunksResident;
 			xStats.m_uStreamsThisFrame = xEngineStats.m_uStreamsThisFrame;
 			xStats.m_uEvictionsThisFrame = xEngineStats.m_uEvictionsThisFrame;
@@ -173,16 +190,17 @@ namespace Exploration_TerrainExplorer
 		if (!IsChunkValid(iChunkX, iChunkY))
 			return LOD_ALWAYS_RESIDENT;
 
-		if (!Flux_TerrainStreamingManager::IsInitialized())
-			return LOD_ALWAYS_RESIDENT;
+		Zenith_TerrainComponent* pxTerrain = GetFirstTerrainComponent();
+		Flux_TerrainStreamingState* pxState = Flux_TerrainStreamingManager::GetStateFor(pxTerrain);
+		if (pxState == nullptr) return LOD_ALWAYS_RESIDENT;
+
+		const uint32_t uChunkIndex = ChunkCoordsToIndex(
+			static_cast<uint32_t>(iChunkX), static_cast<uint32_t>(iChunkY));
 
 		// Check which LODs are resident, return highest quality
 		for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
 		{
-			if (Flux_TerrainStreamingManager::GetResidencyState(
-					static_cast<uint32_t>(iChunkX),
-					static_cast<uint32_t>(iChunkY),
-					uLOD) == Flux_TerrainLODResidencyState::RESIDENT)
+			if (pxState->m_axChunkResidency[uChunkIndex].m_aeStates[uLOD] == Flux_TerrainLODResidencyState::RESIDENT)
 			{
 				return uLOD;
 			}

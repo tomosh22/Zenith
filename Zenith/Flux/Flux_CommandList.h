@@ -18,6 +18,7 @@ struct Flux_RenderAttachment;
 	X(SET_INDEX_BUFFER,            Flux_CommandSetIndexBuffer) \
 	X(BEGIN_BIND,                  Flux_CommandBeginBind) \
 	X(BIND_SRV,                    Flux_CommandBindSRV) \
+	X(BIND_SRV_BUFFER,             Flux_CommandBindSRV_Buffer) \
 	X(BIND_UAV_TEXTURE,            Flux_CommandBindUAV_Texture) \
 	X(BIND_UAV_BUFFER,             Flux_CommandBindUAV_Buffer) \
 	X(BIND_CBV,                    Flux_CommandBindCBV) \
@@ -220,6 +221,28 @@ public:
 	}
 	const Flux_UnorderedAccessView_Buffer* m_pxUAV;
 	const u_int m_uBindPoint;
+};
+
+// Bind a read-only structured-buffer SSBO (StructuredBuffer<T> in Slang). The
+// underlying Vulkan descriptor is the same eStorageBuffer write that
+// Flux_CommandBindUAV_Buffer emits — the distinct command type lets the
+// render-graph access path treat the bind as a read so a missing
+// RESOURCE_ACCESS_READ_BUFFER_SRV declaration trips the bind-time assertion
+// instead of silently passing as a write. The view is stored by value so the
+// command is self-contained even if the source Flux_ReadWriteBuffer's GetSRV()
+// reference is rebound between record and execute.
+class Flux_CommandBindSRV_Buffer
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_SRV_BUFFER;
+
+	Flux_CommandBindSRV_Buffer(const Flux_ShaderResourceView_Buffer& xSRV, const u_int uBindPoint);
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->BindSRV_Buffer(m_xSRV, m_uBindPoint);
+	}
+	Flux_ShaderResourceView_Buffer m_xSRV;
+	const u_int                    m_uBindPoint;
 };
 
 class Flux_CommandDraw
