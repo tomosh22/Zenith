@@ -1062,7 +1062,8 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Blur.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Upsample.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Denoise.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_DenoiseH.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_DenoiseV.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.slang" />
@@ -1070,6 +1071,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToGBuffer.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToShadowmap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainResetCounters.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Text\Flux_Text.slang" />

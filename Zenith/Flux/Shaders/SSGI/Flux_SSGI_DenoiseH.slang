@@ -1,17 +1,27 @@
 // =====================================================================
-// Flux_SSGI_Denoise — Slang module.
+// Flux_SSGI_DenoiseH — Slang module.
 //
-// Subsystem: SSGI. Joint bilateral denoise on the upsampled SSGI
-// result. Edges are preserved by combining four weights:
-//   * spatial (Gaussian over pixel distance)
+// Subsystem: SSGI. Horizontal half of the separable joint-bilateral
+// denoise. Pairs with Flux_SSGI_DenoiseV — DenoiseH reads the upsampled
+// SSGI and writes a horizontal-blurred intermediate; DenoiseV reads
+// that intermediate and writes the final denoised output.
+//
+// Edges are preserved by combining four weights:
+//   * spatial (Gaussian over pixel distance along the axis)
 //   * depth   (Gaussian over depth-relative difference)
 //   * normal  (Gaussian over 1 - dot(n_p, n_q))
 //   * albedo  (Gaussian over RGB distance — material boundary preservation)
 //
-// Multiplicative combination ensures any single mismatch suppresses
-// the sample. Slot 1 is the CB (matches the GLSL layout); slots 2-4
-// are the G-buffer / depth attachments. Slot 0 is the upsampled SSGI
-// input — kept first to mirror the legacy declaration order.
+// Strict bilateral non-separability is mathematically present but
+// visually negligible at this kernel size; FidelityFX CACAO and most
+// other engines do exactly this.
+//
+// Slot layout matches the previous 2D denoise:
+//   binding 0: g_xSSGITex (input)
+//   binding 1: PushConstants (shared layout — see DenoisePushConstantsLayout)
+//   binding 2: g_xDepthTex
+//   binding 3: g_xNormalsTex
+//   binding 4: g_xAlbedoTex
 // =====================================================================
 
 import Common.Fullscreen;
@@ -73,42 +83,39 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	float  fAccumWeight      = 0.0;
 	int    iRadius           = (int)PushConstants.u_uKernelRadius;
 
-	for (int iY = -iRadius; iY <= iRadius; iY++)
+	// Horizontal pass — sample only along X.
+	for (int i = -iRadius; i <= iRadius; i++)
 	{
-		for (int iX = -iRadius; iX <= iRadius; iX++)
-		{
-			float2 xOffset   = float2((float)iX, (float)iY);
-			float2 xSampleUV = clamp(input.uv + xOffset * xTexelSize, float2(0.001), float2(0.999));
+		float2 xOffset   = float2((float)i, 0.0);
+		float2 xSampleUV = clamp(input.uv + xOffset * xTexelSize, float2(0.001), float2(0.999));
 
-			float4 xSampleSSGI    = g_xSSGITex.Sample(xSampleUV);
-			float  fSampleDepth   = g_xDepthTex.Sample(xSampleUV).r;
-			float3 xSampleNormal  = DecodeNormal(g_xNormalsTex.Sample(xSampleUV).rgb);
-			float3 xSampleAlbedo  = g_xAlbedoTex.Sample(xSampleUV).rgb;
+		float4 xSampleSSGI    = g_xSSGITex.Sample(xSampleUV);
+		float  fSampleDepth   = g_xDepthTex.Sample(xSampleUV).r;
+		float3 xSampleNormal  = DecodeNormal(g_xNormalsTex.Sample(xSampleUV).rgb);
+		float3 xSampleAlbedo  = g_xAlbedoTex.Sample(xSampleUV).rgb;
 
-			if (fSampleDepth >= DENOISE_SKY_THRESHOLD) continue;
+		if (fSampleDepth >= DENOISE_SKY_THRESHOLD) continue;
 
-			float fSpatialDist   = length(xOffset);
-			float fSpatialWeight = GaussianWeight(fSpatialDist, PushConstants.u_fSpatialSigma);
+		float fSpatialDist   = abs((float)i);
+		float fSpatialWeight = GaussianWeight(fSpatialDist, PushConstants.u_fSpatialSigma);
 
-			float fDepthDiff   = abs(fSampleDepth - fCenterDepth);
-			float fDepthWeight = GaussianWeight(fDepthDiff, fDepthSigmaAbs);
+		float fDepthDiff   = abs(fSampleDepth - fCenterDepth);
+		float fDepthWeight = GaussianWeight(fDepthDiff, fDepthSigmaAbs);
 
-			float fNormalDot   = max(dot(xCenterNormal, xSampleNormal), 0.0);
-			float fNormalDiff  = 1.0 - fNormalDot;
-			float fNormalWeight = GaussianWeight(fNormalDiff, PushConstants.u_fNormalSigma);
+		float fNormalDot   = max(dot(xCenterNormal, xSampleNormal), 0.0);
+		float fNormalDiff  = 1.0 - fNormalDot;
+		float fNormalWeight = GaussianWeight(fNormalDiff, PushConstants.u_fNormalSigma);
 
-			float fAlbedoDiff   = length(xSampleAlbedo - xCenterAlbedo);
-			float fAlbedoWeight = GaussianWeight(fAlbedoDiff, PushConstants.u_fAlbedoSigma);
+		float fAlbedoDiff   = length(xSampleAlbedo - xCenterAlbedo);
+		float fAlbedoWeight = GaussianWeight(fAlbedoDiff, PushConstants.u_fAlbedoSigma);
 
-			// Multiplicative combination: any single mismatch (different
-			// surface, different material, different geometry) suppresses
-			// the sample's contribution.
-			float fWeight = fSpatialWeight * fDepthWeight * fNormalWeight * fAlbedoWeight;
+		// Multiplicative combination — any single mismatch suppresses the
+		// sample's contribution.
+		float fWeight = fSpatialWeight * fDepthWeight * fNormalWeight * fAlbedoWeight;
 
-			xAccumColour     += xSampleSSGI.rgb * fWeight;
-			fAccumConfidence += xSampleSSGI.a   * fWeight;
-			fAccumWeight     += fWeight;
-		}
+		xAccumColour     += xSampleSSGI.rgb * fWeight;
+		fAccumConfidence += xSampleSSGI.a   * fWeight;
+		fAccumWeight     += fWeight;
 	}
 
 	if (fAccumWeight > DENOISE_MIN_WEIGHT)

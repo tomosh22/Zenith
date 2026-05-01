@@ -12,6 +12,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Profiling/Zenith_Profiling.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
@@ -21,11 +22,25 @@
 // SetupRenderGraph.
 static Flux_TransientHandle s_xRawResultHandle;
 static Flux_TransientHandle s_xResolvedHandle;
+// Intermediate target between the H and V denoise sub-passes.
+static Flux_TransientHandle s_xDenoiseHHandle;
 static Flux_TransientHandle s_xDenoisedHandle;
 static Flux_RenderGraph* s_pxGraph = nullptr;
 
 // SSGI render target format.
 static constexpr TextureFormat SSGI_FORMAT = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
+
+// Raymarch is rendered at (full / divisor) resolution, then bilateral-upsampled.
+// Quarter-res (4) is the default — diffuse GI is low-frequency so the visual
+// difference is small while the cost is 4× cheaper than half-res. The bilateral
+// upsample's edge weighting handles the larger reconstruction footprint.
+//   2 = half-res    (sharper, costlier — old default)
+//   4 = quarter-res (default, big perf win)
+//   8 = eighth-res  (very fast, visible blockiness)
+static u_int s_uRayMarchResolutionDivisor = 4u;
+// Tracks the value SetupRenderGraph used; if the debug var diverges, request a
+// graph rebuild so the transient is recreated at the new dimensions.
+static u_int s_uLastResolutionDivisor    = 4u;
 
 // Static member definitions
 bool Flux_SSGI::s_bInitialised = false;
@@ -38,27 +53,35 @@ static struct SSGIConstants
 	float m_fIntensity = 1.0f;          // GI intensity multiplier [0-2]
 	float m_fMaxDistance = 30.0f;       // Maximum ray march distance in world units
 	float m_fThickness = 0.5f;          // Surface thickness for hit detection
-	u_int m_uStepCount = 32;            // Ray march steps (HiZ traversal iterations)
+	u_int m_uStepCount = 24;            // Ray march steps (HiZ traversal iterations). Lowered from 32 — most rays hit early and the rest hit screen edges fast.
 	u_int m_uFrameIndex = 0;            // For noise variation
 	u_int m_uHiZMipCount = 1;           // Filled from Flux_HiZ
 	u_int m_uDebugMode = 0;
-	float m_fRoughnessThreshold = 0.0f; // Below this, skip SSGI (0 = process all)
+	// Below this roughness, skip SSGI (very-smooth diffuse-GI rays alias badly;
+	// SSR takes those). 0.05 = leave dielectric mirrors to SSR; everything else
+	// goes through SSGI.
+	float m_fRoughnessThreshold = 0.05f;
 	u_int m_uStartMip = 4;              // Starting mip for HiZ traversal
-	u_int m_uRaysPerPixel = 3;          // Number of hemisphere samples per pixel (1-8, default 3)
-	float _pad0;
+	u_int m_uRaysPerPixel = 2;          // Hemisphere samples per pixel (1-8). Lowered from 3 with separable denoise.
+	// Base binary-search iteration count (calibrated for 1080p). The effective
+	// count bound to the GPU is computed in UpdateSSGIConstants — the base is
+	// bumped at higher resolutions and clamped to 6.
+	u_int m_uBinarySearchIterations = 2;
 	float _pad1;
 } dbg_xSSGIConstants;
 
-// Denoise constants - joint bilateral filter parameters
+// Denoise constants - joint bilateral filter parameters. Shared between the
+// horizontal and vertical sub-passes — the layout is identical, only the
+// inner-loop direction differs in the shader.
 // m_bEnabled is populated from Zenith_GraphicsOptions before each shader bind so
 // the GPU sees the same value the CPU gating reads.
 static struct SSGIDenoiseConstants
 {
-	float m_fSpatialSigma = 2.0f;       // Spatial Gaussian sigma (pixels)
+	float m_fSpatialSigma = 1.5f;       // Spatial Gaussian sigma (pixels). Tighter for the smaller separable kernel.
 	float m_fDepthSigma = 0.02f;        // Depth threshold (fraction of local depth)
 	float m_fNormalSigma = 0.5f;        // Normal threshold (1 - dot product range)
 	float m_fAlbedoSigma = 0.1f;        // Albedo threshold (color distance)
-	u_int m_uKernelRadius = 4;          // Filter radius in pixels (4 = 9x9 kernel)
+	u_int m_uKernelRadius = 3;          // Filter radius in pixels per axis (separable, 3 = 7-tap × 2 passes).
 	u_int m_bEnabled = 1;               // Mirrors GraphicsOptions::m_bSSGIDenoiseEnabled
 	float _pad0;
 	float _pad1;
@@ -67,10 +90,14 @@ static struct SSGIDenoiseConstants
 // Shaders and pipelines
 static Flux_Shader s_xRayMarchShader;
 static Flux_Shader s_xUpsampleShader;
-static Flux_Shader s_xDenoiseShader;
+// Denoise is split into two separable sub-passes (H then V) for a cheap
+// approximation of the 2D joint bilateral. Both share the same CB layout.
+static Flux_Shader s_xDenoiseHShader;
+static Flux_Shader s_xDenoiseVShader;
 static Flux_Pipeline s_xRayMarchPipeline;
 static Flux_Pipeline s_xUpsamplePipeline;
-static Flux_Pipeline s_xDenoisePipeline;
+static Flux_Pipeline s_xDenoiseHPipeline;
+static Flux_Pipeline s_xDenoiseVPipeline;
 
 Flux_RenderAttachment& Flux_SSGI::GetRawResultAttachment()
 {
@@ -120,8 +147,12 @@ void Flux_SSGI::BuildPipelines()
 		FluxShaderProgram::SSGI_Upsample, SSGI_FORMAT);
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
-		s_xDenoiseShader, s_xDenoisePipeline,
-		FluxShaderProgram::SSGI_Denoise, SSGI_FORMAT);
+		s_xDenoiseHShader, s_xDenoiseHPipeline,
+		FluxShaderProgram::SSGI_DenoiseH, SSGI_FORMAT);
+
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		s_xDenoiseVShader, s_xDenoiseVPipeline,
+		FluxShaderProgram::SSGI_DenoiseV, SSGI_FORMAT);
 }
 
 void Flux_SSGI::Initialise()
@@ -132,7 +163,8 @@ void Flux_SSGI::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::SSGI_RayMarch,
 		FluxShaderProgram::SSGI_Upsample,
-		FluxShaderProgram::SSGI_Denoise,
+		FluxShaderProgram::SSGI_DenoiseH,
+		FluxShaderProgram::SSGI_DenoiseV,
 	};
 	Flux_ShaderHotReload::RegisterSubsystem(&Flux_SSGI::BuildPipelines,
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
@@ -146,13 +178,20 @@ void Flux_SSGI::Initialise()
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "StepCount" }, dbg_xSSGIConstants.m_uStepCount, 8, 128);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "StartMip" }, dbg_xSSGIConstants.m_uStartMip, 0, 10);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "RaysPerPixel" }, dbg_xSSGIConstants.m_uRaysPerPixel, 1, 8);
+	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "RoughnessThreshold" }, dbg_xSSGIConstants.m_fRoughnessThreshold, 0.0f, 1.0f);
+	// Raymarch resolution divisor (full / divisor). Triggers a graph rebuild on change.
+	// 2=half, 4=quarter (default), 8=eighth. Quality vs perf knob.
+	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "ResolutionDivisor" }, s_uRayMarchResolutionDivisor, 2, 8);
+	// Base 1080p iteration count — UpdateSSGIConstants bumps the bound value
+	// at higher resolutions and clamps to 6.
+	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "BinarySearchIterations" }, dbg_xSSGIConstants.m_uBinarySearchIterations, 1, 6);
 	// Transient-SRV previews: AddTextureCallback re-resolves through s_pxGraph
 	// each ImGui draw so the preview survives graph rebuilds (resize, toggle).
 	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSGI", "Textures", "Raw" },      &DebugGetRawSRV);
 	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSGI", "Textures", "Resolved" }, &DebugGetResolvedSRV);
 	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSGI", "Textures", "Denoised" }, &DebugGetDenoisedSRV);
 
-	// Denoise debug variables
+	// Denoise debug variables. KernelRadius is per-axis: total separable footprint is (2r+1) along H then V.
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSGI", "Denoise", "KernelRadius" }, dbg_xSSGIDenoiseConstants.m_uKernelRadius, 1, 8);
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Denoise", "SpatialSigma" }, dbg_xSSGIDenoiseConstants.m_fSpatialSigma, 0.5f, 4.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "SSGI", "Denoise", "DepthSigma" }, dbg_xSSGIDenoiseConstants.m_fDepthSigma, 0.01f, 0.1f);
@@ -177,6 +216,19 @@ void Flux_SSGI::Shutdown()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI shut down");
 }
 
+// Pulled out of UpdateSSGIConstants so the executes can build a per-frame
+// snapshot without mutating the debug-var-bound storage (which the ImGui UI
+// reads/writes every frame). The base value is the user-tuned 1080p target;
+// the effective value is bumped for higher screen resolutions and clamped.
+static u_int ComputeEffectiveBinarySearchIterations()
+{
+	const u_int uBase = dbg_xSSGIConstants.m_uBinarySearchIterations;
+	const u_int uW    = Flux_Swapchain::GetWidth();
+	const u_int uBumped = uBase + (uW > 1920u ? 1u : 0u) + (uW > 2560u ? 1u : 0u);
+	// Ceiling at 6 — diffuse GI doesn't need finer than ~1/64 px sub-pixel hits.
+	return uBumped > 6u ? 6u : uBumped;
+}
+
 static void UpdateSSGIConstants()
 {
 	dbg_xSSGIConstants.m_uDebugMode = dbg_uDebugMode;
@@ -193,6 +245,8 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
 		return;
 
+	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
+
 	UpdateSSGIConstants();
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xRayMarchPipeline);
@@ -202,8 +256,15 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
+	// Bind a frame-local snapshot so the resolution-bumped iteration count
+	// goes to the GPU without mutating dbg_xSSGIConstants (which the debug-var
+	// system reads back into ImGui every frame — a write here would surprise
+	// the user with a different value than they typed).
+	SSGIConstants xFrameConstants = dbg_xSSGIConstants;
+	xFrameConstants.m_uBinarySearchIterations = ComputeEffectiveBinarySearchIterations();
+
 	xBinder.BindCBV(s_xRayMarchShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindDrawConstants(s_xRayMarchShader, "SSGIConstants", &dbg_xSSGIConstants, sizeof(SSGIConstants));
+	xBinder.BindDrawConstants(s_xRayMarchShader, "SSGIConstants", &xFrameConstants, sizeof(SSGIConstants));
 
 	xBinder.BindSRV(s_xRayMarchShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(s_xRayMarchShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
@@ -220,6 +281,8 @@ static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
 		return;
 
+	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
+
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xUpsamplePipeline);
 
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
@@ -233,12 +296,17 @@ static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-static void ExecuteSSGIDenoise(Flux_CommandList* pxCommandList, void*)
+// Horizontal denoise sub-pass — reads the upsampled SSGI, writes the H
+// intermediate. The same constants drive both H and V; the inner loop
+// direction is the only difference between the two shaders.
+static void ExecuteSSGIDenoiseH(Flux_CommandList* pxCommandList, void*)
 {
 	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xDenoisePipeline);
+	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
+
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xDenoiseHPipeline);
 
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
@@ -246,19 +314,47 @@ static void ExecuteSSGIDenoise(Flux_CommandList* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	dbg_xSSGIDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(s_xDenoiseShader, "PushConstants", &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
+	xBinder.BindDrawConstants(s_xDenoiseHShader, "PushConstants", &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
-	xBinder.BindSRV(s_xDenoiseShader, "g_xSSGITex", &Flux_SSGI::GetResolvedAttachment().SRV());
-	xBinder.BindSRV(s_xDenoiseShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xDenoiseShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xDenoiseShader, "g_xAlbedoTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(s_xDenoiseHShader, "g_xSSGITex",    &Flux_SSGI::GetResolvedAttachment().SRV());
+	xBinder.BindSRV(s_xDenoiseHShader, "g_xDepthTex",   Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(s_xDenoiseHShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(s_xDenoiseHShader, "g_xAlbedoTex",  Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-// Handle for the denoise pass so ApplyDenoiseSelectionToGraph can toggle its
-// enable bit when GraphicsOptions::m_bSSGIDenoiseEnabled changes.
-static Flux_PassHandle s_xDenoisePass;
+// Vertical denoise sub-pass — reads the H intermediate, writes the final
+// denoised result that deferred shading consumes.
+static void ExecuteSSGIDenoiseV(Flux_CommandList* pxCommandList, void*)
+{
+	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
+		return;
+
+	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
+
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xDenoiseVPipeline);
+
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+
+	Flux_ShaderBinder xBinder(*pxCommandList);
+
+	dbg_xSSGIDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
+	xBinder.BindDrawConstants(s_xDenoiseVShader, "PushConstants", &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
+
+	xBinder.BindSRV(s_xDenoiseVShader, "g_xSSGITex",    &s_pxGraph->GetTransientAttachment(s_xDenoiseHHandle).SRV());
+	xBinder.BindSRV(s_xDenoiseVShader, "g_xDepthTex",   Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(s_xDenoiseVShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(s_xDenoiseVShader, "g_xAlbedoTex",  Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
+}
+
+// Handles for the H/V denoise sub-passes so ApplyDenoiseSelectionToGraph can
+// toggle them together when GraphicsOptions::m_bSSGIDenoiseEnabled changes.
+static Flux_PassHandle s_xDenoisePassH;
+static Flux_PassHandle s_xDenoisePassV;
 // Last value seen by ApplyDenoiseSelectionToGraph — change triggers a graph rebuild.
 static bool s_bLastDenoiseEnabled = true;
 // Handle committed at SetupRenderGraph exit. GetSSGIHandle asserts the live
@@ -272,21 +368,28 @@ void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	const u_int uFullWidth  = Flux_Swapchain::GetWidth();
 	const u_int uFullHeight = Flux_Swapchain::GetHeight();
-	const u_int uHalfWidth  = uFullWidth  / 2;
-	const u_int uHalfHeight = uFullHeight / 2;
+	// Raymarch target resolution = full / s_uRayMarchResolutionDivisor. Track the
+	// value used so ApplyDenoiseSelectionToGraph can detect runtime changes.
+	const u_int uDivisor    = s_uRayMarchResolutionDivisor < 2u ? 2u : s_uRayMarchResolutionDivisor;
+	s_uLastResolutionDivisor = uDivisor;
+	const u_int uRayWidth   = uFullWidth  / uDivisor;
+	const u_int uRayHeight  = uFullHeight / uDivisor;
 
-	// Raw result is half-res; resolved / denoised are full-res.
-	Flux_TransientTextureDesc xHalf;
-	xHalf.m_uWidth       = uHalfWidth;
-	xHalf.m_uHeight      = uHalfHeight;
-	xHalf.m_eFormat      = SSGI_FORMAT;
-	xHalf.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-	s_xRawResultHandle = xGraph.CreateTransient(xHalf);
+	// Raw result is at the divisor's resolution; resolved / denoised are full-res.
+	Flux_TransientTextureDesc xRayDesc;
+	xRayDesc.m_uWidth       = uRayWidth;
+	xRayDesc.m_uHeight      = uRayHeight;
+	xRayDesc.m_eFormat      = SSGI_FORMAT;
+	xRayDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
+	s_xRawResultHandle = xGraph.CreateTransient(xRayDesc);
 
-	Flux_TransientTextureDesc xFull = xHalf;
+	Flux_TransientTextureDesc xFull = xRayDesc;
 	xFull.m_uWidth  = uFullWidth;
 	xFull.m_uHeight = uFullHeight;
 	s_xResolvedHandle = xGraph.CreateTransient(xFull);
+	// Intermediate between the H and V denoise sub-passes — same dimensions
+	// and format as the resolved/denoised targets.
+	s_xDenoiseHHandle = xGraph.CreateTransient(xFull);
 	s_xDenoisedHandle = xGraph.CreateTransient(xFull);
 
 	// RayMarch pass (half-res) — reads G-Buffer + HiZ, writes raw result.
@@ -306,18 +409,28 @@ void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.ReadsTransient (s_xRawResultHandle,                  RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(s_xResolvedHandle,                   RESOURCE_ACCESS_WRITE_RTV);
 
-	// Denoise pass — joint bilateral filter. Registered unconditionally;
-	// ApplyDenoiseSelectionToGraph toggles its enable bit.
-	s_xDenoisePass = xGraph.AddPass("SSGI Denoise", ExecuteSSGIDenoise)
+	// Separable joint-bilateral denoise — split into horizontal then vertical
+	// sub-passes. Registered unconditionally; ApplyDenoiseSelectionToGraph
+	// toggles both enable bits together when m_bSSGIDenoiseEnabled changes.
+	s_xDenoisePassH = xGraph.AddPass("SSGI Denoise H", ExecuteSSGIDenoiseH)
 		.ClearTargets()
 		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient (s_xResolvedHandle,                                         RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(s_xDenoiseHHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
+
+	s_xDenoisePassV = xGraph.AddPass("SSGI Denoise V", ExecuteSSGIDenoiseV)
+		.ClearTargets()
+		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (s_xDenoiseHHandle,                                         RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(s_xDenoisedHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
 
 	const bool bDenoise = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled;
-	xGraph.SetEnabled(s_xDenoisePass, bDenoise);
+	xGraph.SetEnabled(s_xDenoisePassH, bDenoise);
+	xGraph.SetEnabled(s_xDenoisePassV, bDenoise);
 	s_bLastDenoiseEnabled = bDenoise;
 
 	// Commit the handle the deferred pass will now read. GetSSGIHandle asserts
@@ -328,12 +441,16 @@ void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 void Flux_SSGI::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 {
-	if (Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled == s_bLastDenoiseEnabled)
+	const bool bDenoiseChanged    = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled != s_bLastDenoiseEnabled;
+	const bool bResolutionChanged = s_uRayMarchResolutionDivisor != s_uLastResolutionDivisor;
+
+	if (!bDenoiseChanged && !bResolutionChanged)
 		return;
 
 	// Full graph rebuild — see Flux_SSR::ApplyBlurSelectionToGraph for the same
 	// rationale. MarkDirty() alone would leave Flux_DeferredShading reading the
-	// stale transient handle captured at the previous SetupRenderGraph.
+	// stale transient handle captured at the previous SetupRenderGraph; same
+	// applies if the raymarch transient's dimensions change.
 	Flux::RequestGraphRebuild();
 }
 

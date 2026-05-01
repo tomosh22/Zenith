@@ -29,8 +29,9 @@ static const float SSGI_MIN_SCREEN_TRACE_DIST     = 0.01;
 static const float SSGI_MAX_SCREEN_DIST           = 0.6;
 static const float SSGI_SKY_DEPTH_THRESHOLD       = 0.9999;
 static const float SSGI_STEP_SIZE_MULTIPLIER      = 2.0;
-static const int   SSGI_BINARY_SEARCH_ITERATIONS  = 4;
 static const float SSGI_BINARY_SEARCH_TOLERANCE   = 0.001;
+// Iterations are tunable via SSGIConstants.u_uBinarySearchIterations (set
+// adaptively by the C++ side from base + resolution bumps).
 // Roughness-driven mip clamping — match SSR's cone-tracing approach.
 // Diffuse GI is broader than specular so we use a smaller scale.
 static const float SSGI_ROUGHNESS_MIP_SCALE       = 2.0;
@@ -45,6 +46,12 @@ static const float SSGI_MIN_CONFIDENCE            = 0.02;
 static const float SSGI_DISTANCE_FADE_START       = 0.4;
 static const float SSGI_DISTANCE_FADE_END         = 0.9;
 static const float SSGI_HORIZON_FADE_SCALE        = 5.0;
+// Skip the very-rough end of the roughness range — IBL diffuse dominates
+// there and SSGI noise costs more than it contributes.
+static const float SSGI_ROUGH_GATE                = 0.95;
+// Average per-ray confidence above which the multi-ray loop short-circuits.
+// Remaining rays would contribute marginally; bail to save the work.
+static const float SSGI_EARLY_EXIT_CONFIDENCE     = 0.95;
 
 // Debug-mode constants
 static const uint SSGI_DEBUG_NONE                 = 0u;
@@ -66,7 +73,7 @@ struct SSGIConstantsLayout
 	float u_fRoughnessThreshold;
 	uint  u_uStartMip;
 	uint  u_uRaysPerPixel;
-	float _pad0;
+	uint  u_uBinarySearchIterations;
 	float _pad1;
 };
 [[vk::binding(1, 0)]] ConstantBuffer<SSGIConstantsLayout> SSGIConstants;
@@ -272,7 +279,8 @@ float4 RayMarch(float3 xViewOrigin,
 					float fSearchStart = fPrevT;
 					float fSearchEnd   = fT;
 
-					for (int j = 0; j < SSGI_BINARY_SEARCH_ITERATIONS; j++)
+					int iBinarySearchIterations = (int)SSGIConstants.u_uBinarySearchIterations;
+					for (int j = 0; j < iBinarySearchIterations; j++)
 					{
 						if (abs(fSearchEnd - fSearchStart) < SSGI_BINARY_SEARCH_TOLERANCE) break;
 
@@ -377,6 +385,9 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 
 	// Skip very-smooth surfaces — SSR handles them better.
 	if (fRoughness < SSGIConstants.u_fRoughnessThreshold) return float4(0.0, 0.0, 0.0, 0.0);
+	// Skip very-rough surfaces — IBL diffuse dominates so SSGI noise isn't
+	// worth its cost at this end of the range.
+	if (fRoughness > SSGI_ROUGH_GATE) return float4(0.0, 0.0, 0.0, 0.0);
 
 	float3 xViewPos    = GetViewPosFromDepth(input.uv, fDepth);
 	float3 xViewNormal = normalize(mul((float3x3)FrameConstants.g_xViewMat, xWorldNormal));
@@ -413,6 +424,11 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 			xAccumulatedColour     += xIndirectColour * xHitResult.w;
 			fAccumulatedConfidence += xHitResult.w;
 			uValidHits++;
+
+			// Early-out — if average confidence is already high the remaining
+			// rays contribute marginally. Saves work whenever RaysPerPixel > 1.
+			if ((fAccumulatedConfidence / (float)uValidHits) > SSGI_EARLY_EXIT_CONFIDENCE)
+				break;
 		}
 	}
 

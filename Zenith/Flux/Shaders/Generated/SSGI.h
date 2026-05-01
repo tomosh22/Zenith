@@ -28,8 +28,58 @@ namespace Flux_Generated_SSGI
 		// kind: CombinedTextureSampler
 	}
 
-	// ----- SSGI_Denoise (SSGI/Flux_SSGI_Denoise) -----
-	namespace SSGI_Denoise
+	// ----- SSGI_DenoiseH (SSGI/Flux_SSGI_DenoiseH) -----
+	namespace SSGI_DenoiseH
+	{
+		inline constexpr const char* kg_xSSGITex_Name = "g_xSSGITex";
+		inline constexpr unsigned int kg_xSSGITex_Set = 0;
+		inline constexpr unsigned int kg_xSSGITex_Binding = 0;
+		inline constexpr unsigned int kg_xSSGITex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kPushConstants_Name = "PushConstants";
+		inline constexpr unsigned int kPushConstants_Set = 0;
+		inline constexpr unsigned int kPushConstants_Binding = 1;
+		inline constexpr unsigned int kPushConstants_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		struct PushConstants_CB
+		{
+			float m_fu_fSpatialSigma; // slang=float offset=0
+			float m_fu_fDepthSigma; // slang=float offset=4
+			float m_fu_fNormalSigma; // slang=float offset=8
+			float m_fu_fAlbedoSigma; // slang=float offset=12
+			unsigned int m_uu_uKernelRadius; // slang=uint offset=16
+			unsigned int m_uu_bEnabled; // slang=uint offset=20
+			float m_f_pad0; // slang=float offset=24
+			float m_f_pad1; // slang=float offset=28
+		};
+		static_assert(sizeof(PushConstants_CB) == 32, "PushConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fSpatialSigma) == 0, "PushConstants.u_fSpatialSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fDepthSigma) == 4, "PushConstants.u_fDepthSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fNormalSigma) == 8, "PushConstants.u_fNormalSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fAlbedoSigma) == 12, "PushConstants.u_fAlbedoSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_uu_uKernelRadius) == 16, "PushConstants.u_uKernelRadius offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_uu_bEnabled) == 20, "PushConstants.u_bEnabled offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_f_pad0) == 24, "PushConstants._pad0 offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_f_pad1) == 28, "PushConstants._pad1 offset drifted from Slang reflection");
+		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
+		inline constexpr unsigned int kg_xDepthTex_Set = 0;
+		inline constexpr unsigned int kg_xDepthTex_Binding = 2;
+		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xNormalsTex_Name = "g_xNormalsTex";
+		inline constexpr unsigned int kg_xNormalsTex_Set = 0;
+		inline constexpr unsigned int kg_xNormalsTex_Binding = 3;
+		inline constexpr unsigned int kg_xNormalsTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xAlbedoTex_Name = "g_xAlbedoTex";
+		inline constexpr unsigned int kg_xAlbedoTex_Set = 0;
+		inline constexpr unsigned int kg_xAlbedoTex_Binding = 4;
+		inline constexpr unsigned int kg_xAlbedoTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+	}
+
+	// ----- SSGI_DenoiseV (SSGI/Flux_SSGI_DenoiseV) -----
+	namespace SSGI_DenoiseV
 	{
 		inline constexpr const char* kg_xSSGITex_Name = "g_xSSGITex";
 		inline constexpr unsigned int kg_xSSGITex_Set = 0;
@@ -98,7 +148,7 @@ namespace Flux_Generated_SSGI
 			float m_fu_fRoughnessThreshold; // slang=float offset=28
 			unsigned int m_uu_uStartMip; // slang=uint offset=32
 			unsigned int m_uu_uRaysPerPixel; // slang=uint offset=36
-			float m_f_pad0; // slang=float offset=40
+			unsigned int m_uu_uBinarySearchIterations; // slang=uint offset=40
 			float m_f_pad1; // slang=float offset=44
 		};
 		static_assert(sizeof(SSGIConstants_CB) == 48, "SSGIConstants_CB size drifted from Slang reflection");
@@ -112,7 +162,7 @@ namespace Flux_Generated_SSGI
 		static_assert(offsetof(SSGIConstants_CB, m_fu_fRoughnessThreshold) == 28, "SSGIConstants.u_fRoughnessThreshold offset drifted from Slang reflection");
 		static_assert(offsetof(SSGIConstants_CB, m_uu_uStartMip) == 32, "SSGIConstants.u_uStartMip offset drifted from Slang reflection");
 		static_assert(offsetof(SSGIConstants_CB, m_uu_uRaysPerPixel) == 36, "SSGIConstants.u_uRaysPerPixel offset drifted from Slang reflection");
-		static_assert(offsetof(SSGIConstants_CB, m_f_pad0) == 40, "SSGIConstants._pad0 offset drifted from Slang reflection");
+		static_assert(offsetof(SSGIConstants_CB, m_uu_uBinarySearchIterations) == 40, "SSGIConstants.u_uBinarySearchIterations offset drifted from Slang reflection");
 		static_assert(offsetof(SSGIConstants_CB, m_f_pad1) == 44, "SSGIConstants._pad1 offset drifted from Slang reflection");
 		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
 		inline constexpr unsigned int kg_xDepthTex_Set = 0;

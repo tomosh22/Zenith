@@ -4,10 +4,15 @@
 
 The SSGI (Screen Space Global Illumination) system provides real-time indirect diffuse lighting by ray marching through the Hi-Z depth buffer. Multiple rays per pixel sample the hemisphere above each surface, accumulating bounced light from nearby geometry.
 
-The system uses a three-pass architecture:
+The system uses a four-pass architecture:
 1. **Ray March** (half-res) - Multi-ray hemisphere sampling with HiZ acceleration
 2. **Upsample** - Bilateral upsample from half to full resolution
-3. **Denoise** - Joint bilateral filter for edge-aware noise reduction
+3. **Denoise H** - Horizontal half of the separable joint bilateral filter
+4. **Denoise V** - Vertical half of the separable joint bilateral filter
+
+The denoise is **separable**: O(2r) cost per pixel instead of O(r²) by running a
+1D blur along X then along Y. Strict bilateral non-separability is mathematically
+present but visually negligible at this kernel size.
 
 ## Architecture
 
@@ -17,7 +22,7 @@ The system uses a three-pass architecture:
 RENDER_ORDER_HIZ_GENERATE      <- Depth pyramid (required dependency)
 RENDER_ORDER_SSGI_RAYMARCH     <- Multi-ray hemisphere sampling
 RENDER_ORDER_SSGI_UPSAMPLE     <- Bilateral upsample to full-res
-RENDER_ORDER_SSGI_DENOISE      <- Joint bilateral denoising
+RENDER_ORDER_SSGI_DENOISE      <- Separable joint bilateral (H then V)
 RENDER_ORDER_APPLY_LIGHTING    <- Deferred shading (consumes SSGI)
 ```
 
@@ -27,9 +32,10 @@ RENDER_ORDER_APPLY_LIGHTING    <- Deferred shading (consumes SSGI)
 |------|---------|
 | [Flux_SSGI.h](Flux_SSGI.h) | Class declaration, debug mode enum |
 | [Flux_SSGI.cpp](Flux_SSGI.cpp) | Implementation, pipeline setup, render passes |
-| [../Shaders/SSGI/Flux_SSGI_RayMarch.frag](../Shaders/SSGI/Flux_SSGI_RayMarch.frag) | HiZ ray marching, hemisphere sampling |
-| [../Shaders/SSGI/Flux_SSGI_Upsample.frag](../Shaders/SSGI/Flux_SSGI_Upsample.frag) | Bilateral upsample shader |
-| [../Shaders/SSGI/Flux_SSGI_Denoise.frag](../Shaders/SSGI/Flux_SSGI_Denoise.frag) | Joint bilateral filter shader |
+| [../Shaders/SSGI/Flux_SSGI_RayMarch.slang](../Shaders/SSGI/Flux_SSGI_RayMarch.slang) | HiZ ray marching, hemisphere sampling |
+| [../Shaders/SSGI/Flux_SSGI_Upsample.slang](../Shaders/SSGI/Flux_SSGI_Upsample.slang) | Bilateral upsample shader |
+| [../Shaders/SSGI/Flux_SSGI_DenoiseH.slang](../Shaders/SSGI/Flux_SSGI_DenoiseH.slang) | Separable joint bilateral — horizontal half |
+| [../Shaders/SSGI/Flux_SSGI_DenoiseV.slang](../Shaders/SSGI/Flux_SSGI_DenoiseV.slang) | Separable joint bilateral — vertical half (final output) |
 
 ## Implementation Details
 
@@ -39,7 +45,8 @@ RENDER_ORDER_APPLY_LIGHTING    <- Deferred shading (consumes SSGI)
 |--------|------------|--------|---------|
 | `s_xRawResult` | Half | RGBA16F | RGB = indirect color, A = confidence |
 | `s_xResolved` | Full | RGBA16F | Upsampled result |
-| `s_xDenoised` | Full | RGBA16F | Final denoised output |
+| `s_xDenoiseH` | Full | RGBA16F | Horizontal-blurred intermediate (between H and V) |
+| `s_xDenoised` | Full | RGBA16F | Final denoised output (V pass result) |
 
 ### Pass 1: Ray Marching
 
@@ -71,9 +78,12 @@ RENDER_ORDER_APPLY_LIGHTING    <- Deferred shading (consumes SSGI)
 
 **Output:** `s_xResolved` (full-resolution RGBA16F)
 
-### Pass 3: Joint Bilateral Denoise
+### Pass 3 / 4: Separable Joint Bilateral Denoise (H then V)
 
-**Purpose:** Reduce noise while preserving geometric and material edges
+**Purpose:** Reduce noise while preserving geometric and material edges. Split
+into two 1D sub-passes for O(2r) total cost instead of O(r²). Each sub-pass
+shares the exact same `DenoisePushConstantsLayout` constant buffer; only the
+inner-loop direction (`xOffset = (i, 0)` vs `(0, i)`) differs.
 
 **Algorithm:**
 The joint bilateral filter computes weights based on four factors:
@@ -139,27 +149,39 @@ public:
 
 ### Ray Marching
 
-| Path | Type | Range | Description |
-|------|------|-------|-------------|
-| `Flux/SSGI/Enable` | bool | - | Enable/disable SSGI |
-| `Flux/SSGI/DebugMode` | uint | 0-4 | Visualization mode |
-| `Flux/SSGI/Intensity` | float | 0-2 | GI intensity multiplier |
-| `Flux/SSGI/MaxDistance` | float | 1-100 | Max ray distance (world units) |
-| `Flux/SSGI/Thickness` | float | 0.01-2 | Surface thickness for hits |
-| `Flux/SSGI/StepCount` | uint | 8-128 | HiZ traversal iterations |
-| `Flux/SSGI/StartMip` | uint | 0-10 | Starting HiZ mip level |
-| `Flux/SSGI/RaysPerPixel` | uint | 1-8 | Hemisphere samples per pixel |
+| Path | Type | Range | Default | Description |
+|------|------|-------|---------|-------------|
+| `Flux/SSGI/Enable` | bool | - | true | Enable/disable SSGI |
+| `Flux/SSGI/DebugMode` | uint | 0-4 | 0 | Visualization mode |
+| `Flux/SSGI/Intensity` | float | 0-2 | 1.0 | GI intensity multiplier |
+| `Flux/SSGI/MaxDistance` | float | 1-100 | 30.0 | Max ray distance (world units) |
+| `Flux/SSGI/Thickness` | float | 0.01-2 | 0.5 | Surface thickness for hits |
+| `Flux/SSGI/StepCount` | uint | 8-128 | **24** | HiZ traversal iterations (most rays hit early or exit screen) |
+| `Flux/SSGI/StartMip` | uint | 0-10 | 4 | Starting HiZ mip level |
+| `Flux/SSGI/RaysPerPixel` | uint | 1-8 | **2** | Hemisphere samples per pixel (lowered with separable denoise) |
+| `Flux/SSGI/RoughnessThreshold` | float | 0-1 | **0.05** | Below this: skip SSGI (SSR handles smoother surfaces) |
+| `Flux/SSGI/BinarySearchIterations` | uint | 1-6 | **2** | Hit-refinement iterations (1080p base; auto-bumped to 3 at 1440p, 4 at 4K, ceiling 6) |
+| `Flux/SSGI/ResolutionDivisor` | uint | 2-8 | **4** | Raymarch render target = full / divisor. 2=half, 4=quarter (default), 8=eighth. Triggers a graph rebuild on change. |
+
+A fixed upper roughness gate of `0.95` lives in the shader (named constant
+`SSGI_ROUGH_GATE`) — above this, SSGI bails since IBL diffuse dominates. The
+multi-ray loop also early-exits when average per-ray confidence exceeds `0.95`
+(`SSGI_EARLY_EXIT_CONFIDENCE`).
 
 ### Denoising
 
-| Path | Type | Range | Description |
-|------|------|-------|-------------|
-| `Flux/SSGI/Denoise/Enable` | bool | - | Enable denoise pass |
-| `Flux/SSGI/Denoise/KernelRadius` | uint | 1-8 | Filter radius (pixels) |
-| `Flux/SSGI/Denoise/SpatialSigma` | float | 0.5-4 | Spatial Gaussian sigma |
-| `Flux/SSGI/Denoise/DepthSigma` | float | 0.01-0.1 | Depth threshold (% of depth) |
-| `Flux/SSGI/Denoise/NormalSigma` | float | 0.1-1 | Normal threshold |
-| `Flux/SSGI/Denoise/AlbedoSigma` | float | 0.05-0.5 | Albedo threshold |
+`KernelRadius` is **per-axis**: the H pass blurs a `(2r+1)`-tap line, then V
+does the same orthogonally. Total separable footprint is `(2r+1)+(2r+1)` taps
+vs `(2r+1)²` for the old non-separable kernel.
+
+| Path | Type | Range | Default | Description |
+|------|------|-------|---------|-------------|
+| `Flux/SSGI/Denoise/Enable` | bool | - | true | Enable both H and V passes |
+| `Flux/SSGI/Denoise/KernelRadius` | uint | 1-8 | **3** | Per-axis filter radius (pixels) |
+| `Flux/SSGI/Denoise/SpatialSigma` | float | 0.5-4 | **1.5** | Spatial Gaussian sigma (tighter for the smaller separable kernel) |
+| `Flux/SSGI/Denoise/DepthSigma` | float | 0.01-0.1 | 0.02 | Depth threshold (% of depth) |
+| `Flux/SSGI/Denoise/NormalSigma` | float | 0.1-1 | 0.5 | Normal threshold |
+| `Flux/SSGI/Denoise/AlbedoSigma` | float | 0.05-0.5 | 0.1 | Albedo threshold |
 
 ### Debug Textures
 
@@ -197,11 +219,12 @@ Minimum confidence is clamped to 0.02 to prevent black holes.
 
 ### Noise vs Performance
 
-| Setting | Low Quality | Balanced | High Quality |
-|---------|------------|----------|--------------|
-| RaysPerPixel | 1-2 | 3-4 | 6-8 |
-| KernelRadius | 2 | 4 | 6 |
-| StepCount | 16 | 32 | 64 |
+| Setting | Low Quality | Balanced (default) | High Quality |
+|---------|------------|--------------------|--------------|
+| RaysPerPixel | 1 | 2 | 4-8 |
+| KernelRadius (per-axis) | 1-2 | 3 | 5-8 |
+| StepCount | 16 | 32 | 48-64 |
+| BinarySearchIterations | 1 | 2 | 3-4 |
 
 ### Edge Preservation
 
@@ -218,9 +241,19 @@ Minimum confidence is clamped to 0.02 to prevent black holes.
 
 | Pass | Resolution | Approximate Cost (1080p) | Notes |
 |------|------------|--------------------------|-------|
-| Ray March | Half | ~1.5ms | Scales with RaysPerPixel |
-| Upsample | Full | ~0.2ms | Fixed cost |
-| Denoise | Full | ~0.3ms | Scales with KernelRadius^2 |
+| Ray March | Quarter (default) | ~0.3ms | Scales linearly with pixel count: half-res ≈ 4× cost, full-res ≈ 16×. Early-exits at ≥0.95 average confidence. Step count default lowered 32→24. |
+| Upsample | Full | ~0.2ms | Bilateral 2×2 from quarter-res — wider reconstruction footprint than from half-res, but bilateral edge weighting keeps silhouettes sharp |
+| Denoise H | Full | ~0.1ms | Linear in KernelRadius (was O(r²) before separable split) |
+| Denoise V | Full | ~0.1ms | Linear in KernelRadius |
+| **Total (defaults)** | — | **~0.7ms** | Down from ~2.0ms baseline |
+
+GPU cost scales roughly linearly with the number of raymarch pixels — at 4K
+quarter-res = 1920×1080, at 1080p quarter-res = 480×270. If quarter-res is too
+blocky on low-resolution displays, set `Flux/SSGI/ResolutionDivisor` to 2.
+
+CPU-side per-pass timing is wrapped under `ZENITH_PROFILE_INDEX__FLUX_SSGI` —
+see the ImGui profiling overlay for live numbers. GPU-side timing requires an
+external tool (RenderDoc) until the engine grows GPU timestamp queries.
 
 ## Known Limitations
 
@@ -228,7 +261,7 @@ Minimum confidence is clamped to 0.02 to prevent black holes.
 2. **Single bounce**: Only captures one indirect bounce
 3. **Thin geometry**: May miss very thin objects
 4. **Temporal coherence**: No temporal accumulation (may exhibit shimmer)
-5. **Large kernels**: Denoise kernel > 8 pixels becomes expensive
+5. **Large kernels**: Denoise kernel > 8 pixels becomes expensive (linear after the separable split, but still scales). At very large radii, the loss of strict bilateral non-separability can cause subtle softening at corners.
 
 ## Dependencies
 

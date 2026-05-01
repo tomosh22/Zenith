@@ -209,13 +209,27 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		"SSGI",
 	},
 
-	// SSGI joint bilateral denoise. Combines spatial / depth / normal /
-	// albedo weights to suppress noise without bleeding across surface,
-	// material, or geometry edges.
+	// SSGI separable joint bilateral denoise — horizontal half. Pairs with
+	// SSGI_DenoiseV; together they approximate a 2D joint bilateral with
+	// O(2r) cost instead of O(r²). Strict bilateral non-separability is
+	// negligible at this kernel size.
 	{
-		FluxShaderProgram::SSGI_Denoise,
-		"SSGI_Denoise",
-		"SSGI/Flux_SSGI_Denoise",
+		FluxShaderProgram::SSGI_DenoiseH,
+		"SSGI_DenoiseH",
+		"SSGI/Flux_SSGI_DenoiseH",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"SSGI",
+	},
+
+	// SSGI separable joint bilateral denoise — vertical half. Reads the
+	// horizontal-blurred intermediate and writes the final denoised SSGI.
+	{
+		FluxShaderProgram::SSGI_DenoiseV,
+		"SSGI_DenoiseV",
+		"SSGI/Flux_SSGI_DenoiseV",
 		"vsMain",
 		"fsMain",
 		nullptr,

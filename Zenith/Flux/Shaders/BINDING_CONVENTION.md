@@ -74,7 +74,8 @@ at **different** set/binding locations (not the per-draw material block):
 | DynamicLights | 0 | 8 | varies | Light volume transform |
 | HiZ_Generate | 0 | 2 | varies | Mip generation params |
 | Particles | 0 | 1 | varies | Particle system params |
-| SSGI_Denoise | 0 | 1 | varies | Denoise kernel params |
+| SSGI_DenoiseH | 0 | 1 | 32B | Denoise kernel params (separable, horizontal) |
+| SSGI_DenoiseV | 0 | 1 | 32B | Denoise kernel params (separable, vertical) — same layout as H |
 
 These share only the "PushConstants" name, not the layout. Phase 2 rename
 (`PushConstants` -> `DrawConstants`) applies only to the mesh material block;

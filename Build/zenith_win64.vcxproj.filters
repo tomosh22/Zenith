@@ -3834,7 +3834,10 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO_Upsample.slang">
       <Filter>Flux\Shaders\SSAO</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Denoise.slang">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_DenoiseH.slang">
+      <Filter>Flux\Shaders\SSGI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_DenoiseV.slang">
       <Filter>Flux\Shaders\SSGI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.slang">
@@ -3856,6 +3859,9 @@
       <Filter>Flux\Shaders\StaticMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.slang">
+      <Filter>Flux\Shaders\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainResetCounters.slang">
       <Filter>Flux\Shaders\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.slang">
