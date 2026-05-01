@@ -512,6 +512,22 @@ public:
 	static void TestAliasSignatureDepthVsColour();
 	static void TestAliasSignatureIgnoresDimensions();
 
+	// Transient-aliasing lifetime + packer tests. These bypass Compile()
+	// (which allocates VRAM) by manually populating m_xExecutionOrder via
+	// the Zenith_UnitTests friend access, then invoking the lifetime and
+	// packing phases directly on the CPU. Cover regressions for: pass-
+	// declaration-index-vs-topological-order confusion in the packer
+	// (the SSR/SSGI bug), multi-write transient last-use tracking,
+	// disabled-pass exclusion from lifetimes, and idempotency of the
+	// recompute path used at Execute when m_bEnabledMaskDirty.
+	static void TestRenderGraphLifetimeUsesTopologicalOrder();
+	static void TestRenderGraphAliasingTopoOrderInterleaved();
+	static void TestRenderGraphMultiWriteLastUse();
+	static void TestRenderGraphAliasingMultiWriteOverlap();
+	static void TestRenderGraphDisabledPassExcludedFromLifetimes();
+	static void TestRenderGraphLifetimeRecomputeIdempotent();
+	static void TestRenderGraphAliasingBarrierUsesTopologicalLastUse();
+
 	// Flux_ShaderBinder name-cache tests. Exercise the pointer-identity cache
 	// inside Flux_ShaderBinder via a synthetic Flux_ShaderReflection (no live
 	// Vulkan device required — the resolver path takes a reflection pointer

@@ -95,6 +95,16 @@ struct SSRConstantsLayout
 	uint  u_uFrameIndex;
 	uint  u_uBinarySearchIterations;
 	float u_fContactHardeningDist;
+	// Half-res ray-march output dimensions — populated CPU-side, never
+	// queried with GetDimensions in the shader (project convention).
+	float u_fHalfResWidth;
+	float u_fHalfResHeight;
+	float u_fRcpHalfResWidth;
+	float u_fRcpHalfResHeight;
+	float u_fPad0;
+	// Cached HiZ per-mip dimensions: xy = (w, h), zw = (1/w, 1/h).
+	// Replaces inner-loop GetDimensions calls.
+	float4 u_axHiZMipSizes[12];
 };
 [[vk::binding(1, 0)]] ConstantBuffer<SSRConstantsLayout> SSRConstants;
 [[vk::binding(2, 0)]] Sampler2D g_xDepthTex;
@@ -193,10 +203,10 @@ float4 RayMarch(float3 xViewOrigin,
 								  fSafeStartZ + xReflectDir.z * fEstimatedRayDist);
 	float fInvZEnd         = 1.0 / fEstimatedEndZ;
 
-	uint uW0, uH0, uMips0;
-	g_xHiZTex.GetDimensions(0, uW0, uH0, uMips0);
-	float2 xScreenSize = float2((float)uW0, (float)uH0);
-	float2 xTexelSize  = 1.0 / xScreenSize;
+	// Mip 0 dimensions from the cached CBV array — never query the
+	// texture itself (project convention: dims flow through the CBV).
+	float2 xScreenSize = SSRConstants.u_axHiZMipSizes[0].xy;
+	float2 xTexelSize  = SSRConstants.u_axHiZMipSizes[0].zw;
 
 	int   iCurrentMip   = (int)min(SSRConstants.u_uStartMip, SSRConstants.u_uHiZMipCount - 1u);
 	float fT            = 0.0;
@@ -213,10 +223,9 @@ float4 RayMarch(float3 xViewOrigin,
 		if (xSampleUV.x < 0.0 || xSampleUV.x > 1.0 ||
 			xSampleUV.y < 0.0 || xSampleUV.y > 1.0) break;
 
-		uint uMW, uMH, uMipsM;
-		g_xHiZTex.GetDimensions(iCurrentMip, uMW, uMH, uMipsM);
-		float2 xMipSize    = float2((float)uMW, (float)uMH);
-		float2 xHalfTexel  = 0.5 / xMipSize;
+		// Inner loop hot path — read mip dims from the cached CBV array.
+		float2 xMipSize   = SSRConstants.u_axHiZMipSizes[iCurrentMip].xy;
+		float2 xHalfTexel = SSRConstants.u_axHiZMipSizes[iCurrentMip].zw * 0.5;
 		float2 xClampedUV  = clamp(xSampleUV, xHalfTexel, 1.0 - xHalfTexel);
 		float2 xHiZSample  = g_xHiZTex.SampleLevel(xClampedUV, (float)iCurrentMip).rg;
 		float  fMinDepth   = xHiZSample.r;

@@ -34,14 +34,14 @@ static const float SSR_RESOLVE_CONTACT_SCALE_MIN  = 0.2;
 static const float SSR_RESOLVE_MIN_BLUR_RADIUS    = 1.0;
 
 // Kernel.
-static const float SSR_RESOLVE_MAX_KERNEL_SIZE    = 4.0; // 9x9 base, up to 17x17 with depth-scale
+static const float SSR_RESOLVE_MAX_KERNEL_SIZE    = 3.0; // 7x7 base, up to ~21x21 with depth-scale
 static const float SSR_RESOLVE_KERNEL_DIVISOR     = 8.0;
 static const float SSR_RESOLVE_SIGMA_SCALE        = 0.5;
 
 // Depth-adaptive kernel — distant surfaces get larger kernels.
 static const float SSR_RESOLVE_DEPTH_SCALE_FAR    = 0.1;
 static const float SSR_RESOLVE_DEPTH_SCALE_MIN    = 0.5;
-static const float SSR_RESOLVE_DEPTH_SCALE_MAX    = 2.0;
+static const float SSR_RESOLVE_DEPTH_SCALE_MAX    = 1.5;
 
 static const float SSR_RESOLVE_EDGE_GRADIENT_SCALE = 10.0;
 
@@ -55,6 +55,9 @@ static const float SSR_RESOLVE_DEPTH_SIGMA_FRACTION = 0.02;
 
 static const float SSR_RESOLVE_REFERENCE_HEIGHT   = 1080.0;
 
+// Layout must match the CPU SSRConstants struct (and the RayMarch shader's
+// layout) end-to-end since they share the same CBV. Resolve doesn't actually
+// read every field, but the binding layout must be consistent across users.
 struct SSRConstantsLayout
 {
 	float u_fIntensity;
@@ -65,6 +68,15 @@ struct SSRConstantsLayout
 	uint  u_uDebugMode;
 	uint  u_uHiZMipCount;
 	uint  u_uStartMip;
+	uint  u_uFrameIndex;
+	uint  u_uBinarySearchIterations;
+	float u_fContactHardeningDist;
+	float u_fHalfResWidth;
+	float u_fHalfResHeight;
+	float u_fRcpHalfResWidth;
+	float u_fRcpHalfResHeight;
+	float u_fPad0;
+	float4 u_axHiZMipSizes[12];
 };
 [[vk::binding(1, 0)]] ConstantBuffer<SSRConstantsLayout> SSRConstants;
 [[vk::binding(2, 0)]] Sampler2D g_xRayMarchTex;

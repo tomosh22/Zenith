@@ -6,16 +6,17 @@ The SSR (Screen Space Reflections) system provides real-time reflections by ray 
 
 ## Architecture
 
-### Render Order
+### Three-pass pipeline (mirrors SSGI)
 
 ```
 RENDER_ORDER_HIZ_GENERATE      <- Depth pyramid (required dependency)
-RENDER_ORDER_SSR_RAYMARCH      <- Ray marching pass
-RENDER_ORDER_SSR_RESOLVE       <- Roughness-based blur
+RENDER_ORDER_SSR_RAYMARCH      <- Ray marching pass (HALF-res)
+RENDER_ORDER_SSR_UPSAMPLE      <- Bilateral upsample to full-res
+RENDER_ORDER_SSR_RESOLVE       <- Roughness-based blur (optional)
 RENDER_ORDER_APPLY_LIGHTING    <- Deferred shading (consumes SSR)
 ```
 
-SSR runs after Hi-Z generation but before deferred lighting, allowing reflections to be incorporated into BRDF evaluation.
+The ray-march pass runs at **half resolution** for ~75% pixel-shader cost reduction; the upsample pass reconstructs the full-resolution output via depth-weighted bilateral 2x2 sampling. The resolve pass remains optional (gated on `m_bSSRRoughnessBlurEnabled`); when disabled the deferred shader reads the upsampled output directly — never the raw half-res raymarch.
 
 ### Files
 
@@ -23,19 +24,29 @@ SSR runs after Hi-Z generation but before deferred lighting, allowing reflection
 |------|---------|
 | [Flux_SSR.h](Flux_SSR.h) | Class declaration, debug mode enum |
 | [Flux_SSR.cpp](Flux_SSR.cpp) | Implementation, pipeline setup |
-| [../Shaders/SSR/Flux_SSR_RayMarch.frag](../Shaders/SSR/Flux_SSR_RayMarch.frag) | Ray marching fragment shader |
-| [../Shaders/SSR/Flux_SSR_Resolve.frag](../Shaders/SSR/Flux_SSR_Resolve.frag) | Roughness blur fragment shader |
+| [../Shaders/SSR/Flux_SSR_RayMarch.slang](../Shaders/SSR/Flux_SSR_RayMarch.slang) | Half-res HiZ ray marching |
+| [../Shaders/SSR/Flux_SSR_Upsample.slang](../Shaders/SSR/Flux_SSR_Upsample.slang) | Depth-weighted bilateral 2x2 upsample (half→full) |
+| [../Shaders/SSR/Flux_SSR_Resolve.slang](../Shaders/SSR/Flux_SSR_Resolve.slang) | Roughness blur (optional) |
+
+### Constants buffer
+
+`SSRConstants` is a CBV (`Flux_DynamicConstantBuffer`), not push constants — required because the cached HiZ mip-size array (`u_axHiZMipSizes[12]`) exceeds the 128-byte push limit, and to honour the project convention of passing texture dimensions through the constant buffer rather than calling `GetDimensions` inside shaders. Uploaded once per frame in the RayMarch pass; bound by all three SSR passes.
+
+The CBV holds (in addition to tuning fields):
+- Half-res output dimensions (`u_fHalfResWidth/Height`, `u_fRcpHalfResWidth/Height`) — read by the upsample shader to find the half-res neighbourhood without `GetDimensions(g_xSSRTex)`.
+- Cached HiZ per-mip dimensions (`u_axHiZMipSizes[12].xyzw` = w, h, 1/w, 1/h) — read by the ray-march loop to pick the right texel size at each mip level without `GetDimensions(g_xHiZTex, mip, ...)` in the inner loop.
 
 ## Implementation Details
 
 ### Render Targets
 
-| Target | Format | Purpose |
-|--------|--------|---------|
-| `s_xRayMarchResult` | RGBA16F | RGB = reflected color, A = hit confidence |
-| `s_xResolvedReflection` | RGBA16F | Blurred reflection for rough surfaces |
+| Target | Resolution | Format | Purpose |
+|--------|------------|--------|---------|
+| `s_xRayMarch` | Half | RGBA16F | RGB = reflected color, A = hit confidence |
+| `s_xUpsampled` | Full | RGBA16F | Bilateral upsample to full-res (always-on) |
+| `s_xResolved` | Full | RGBA16F | Blurred reflection for rough surfaces (optional) |
 
-### Pass 1: Ray Marching
+### Pass 1: Ray Marching (half-res)
 
 **Inputs:**
 - G-Buffer normals (`MRT_INDEX_NORMALSAMBIENT`)
@@ -55,18 +66,29 @@ SSR runs after Hi-Z generation but before deferred lighting, allowing reflection
 
 **Output:** `s_xRayMarchResult` (RGBA16F)
 
-### Pass 2: Resolve/Blur
+### Pass 2: Bilateral Upsample (half→full)
 
-**Purpose:** Apply roughness-based bilateral blur for rough surfaces
+**Purpose:** Reconstruct full-res reflections from the half-res ray-march output, edge-aware via depth weights.
 
 **Algorithm:**
-- Roughness < 0.1: pass through (mirror-like)
-- Roughness >= 0.1: 9-tap bilateral blur weighted by:
-  - Gaussian spatial falloff
-  - Normal similarity (edge preservation)
-  - Hit confidence
+- 2x2 bilinear sample around the full-res pixel's half-res footprint
+- Depth-weighted bilateral filter (depth-relative sigma — 2% of local depth)
+- Sky pixels short-circuit to zero
+- Half-res dimensions read from the SSR CBV (no in-shader `GetDimensions`)
 
-**Output:** `s_xResolvedReflection` (RGBA16F)
+**Output:** `s_xUpsampled` (full-resolution RGBA16F). This is the "no roughness blur" final output — deferred reads it directly when `m_bSSRRoughnessBlurEnabled` is off.
+
+### Pass 3: Resolve/Blur (optional, full-res)
+
+**Purpose:** Apply roughness-based bilateral blur for rough surfaces. Reads the upsampled output (not the raw raymarch).
+
+**Algorithm:**
+- Roughness < 0.15: pass through (mirror-like — already full-res from upsample)
+- Roughness > 0.7: pass through (very rough — IBL handles it)
+- 0.15 ≤ roughness ≤ 0.7: bilateral blur weighted by spatial Gaussian, normal similarity, depth, and hit confidence
+- Kernel up to 7x7 base, ~21x21 with depth-scale (`SSR_RESOLVE_MAX_KERNEL_SIZE = 3`, `SSR_RESOLVE_DEPTH_SCALE_MAX = 1.5`)
+
+**Output:** `s_xResolved` (RGBA16F)
 
 ### Deferred Shading Integration
 
@@ -116,19 +138,21 @@ public:
 
 ## Debug Variables
 
-| Path | Type | Range | Description |
-|------|------|-------|-------------|
-| `Flux/SSR/Enable` | bool | - | Enable/disable SSR |
-| `Flux/SSR/UseGBufferColor` | bool | - | Sample G-Buffer diffuse vs last frame HDR |
-| `Flux/SSR/RoughnessBlur` | bool | - | Enable resolve pass blur |
-| `Flux/SSR/DebugMode` | uint | 0-8 | Visualization mode |
-| `Flux/SSR/Intensity` | float | 0-2 | Reflection intensity multiplier |
-| `Flux/SSR/MaxDistance` | float | 1-100 | Max ray march distance (world units) |
-| `Flux/SSR/MaxRoughness` | float | 0-1 | Skip SSR above this roughness |
-| `Flux/SSR/StepCount` | uint | 8-128 | Ray march iterations |
-| `Flux/SSR/Thickness` | float | 0.01-1 | Surface thickness for hit detection |
-| `Flux/SSR/Textures/RayMarch` | texture | - | Raw ray march result |
-| `Flux/SSR/Textures/Resolved` | texture | - | Blurred result |
+| Path | Type | Range | Default | Description |
+|------|------|-------|---------|-------------|
+| `Flux/SSR/Enable` | bool | - | true | Enable/disable SSR |
+| `Flux/SSR/RoughnessBlur` | bool | - | true | Enable resolve pass blur (graphics options) |
+| `Flux/SSR/DebugMode` | uint | 0-100 | 0 | Visualization mode (99 = solid magenta proof-of-life) |
+| `Flux/SSR/Intensity` | float | 0-2 | 1.0 | Reflection intensity multiplier |
+| `Flux/SSR/MaxDistance` | float | 1-100 | 50.0 | Max ray march distance (world units) |
+| `Flux/SSR/MaxRoughness` | float | 0-1 | 1.0 | Skip SSR above this roughness |
+| `Flux/SSR/StepCount` | uint | 8-256 | **32** | Ray march iterations (lowered from 64; HiZ acceleration converges quickly) |
+| `Flux/SSR/StartMip` | uint | 0-10 | 5 | Starting HiZ mip level for hierarchical traversal |
+| `Flux/SSR/Thickness` | float | 0.01-1 | 0.5 | Surface thickness for hit detection (m) |
+| `Flux/SSR/ContactHardeningDist` | float | 0.5-10 | 2.0 | World-space distance over which contact-hardening confidence ramps in (m) |
+| `Flux/SSR/Textures/RayMarch` | texture | - | - | Raw half-res ray-march result |
+| `Flux/SSR/Textures/Upsampled` | texture | - | - | Bilateral upsample (full-res, pre-blur) |
+| `Flux/SSR/Textures/Resolved` | texture | - | - | Blurred result (full-res, when RoughnessBlur is on) |
 
 ## Debug Visualization Modes
 
@@ -171,10 +195,12 @@ fConfidence = fEdgeFade * fDistanceFade * fDepthConfidence * fBackfaceConfidence
 
 ## Performance Considerations
 
-- **Step Count:** Higher = better quality, more expensive
-- **MaxRoughness:** Skip very rough surfaces (use IBL only)
-- **RoughnessBlur:** Adds ~25% cost for resolve pass
-- **Resolution:** Can render at half-res for significant savings
+- **Half-res ray march:** Dominant cost saving — ~75% pixel-shader reduction vs the historical full-res implementation. All quality tuning happens against the half-res baseline.
+- **Step Count (default 32):** Higher = better quality, more expensive. With HiZ acceleration plus binary-search refinement, 32 is sufficient for most scenes. Match SSGI's default.
+- **Binary search iterations:** Auto-scales 4 (≤1080p) / 5 (>1080p). Half-res origins make sub-1/16-pixel precision wasted.
+- **MaxRoughness:** Skip very rough surfaces (use IBL only).
+- **RoughnessBlur:** Adds ~10-15% cost for resolve pass at default kernel size 3 (capped at ~21x21 with depth-scale).
+- **HiZ mip dimensions:** Cached in the SSR CBV (`u_axHiZMipSizes[12]`) so the ray-march inner loop never calls `GetDimensions` — eliminates per-iteration driver overhead.
 
 ## Known Limitations
 

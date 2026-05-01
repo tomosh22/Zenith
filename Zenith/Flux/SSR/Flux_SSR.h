@@ -53,8 +53,9 @@ public:
 	static bool IsInitialised();
 
 	// Attachment accessors
-	static Flux_RenderAttachment& GetRayMarchAttachment();
-	static Flux_RenderAttachment& GetResolvedAttachment();
+	static Flux_RenderAttachment& GetRayMarchAttachment();   // half-res
+	static Flux_RenderAttachment& GetUpsampledAttachment();  // full-res, bilateral-upsampled
+	static Flux_RenderAttachment& GetResolvedAttachment();   // full-res, after roughness blur
 
 private:
 	static bool s_bInitialised;

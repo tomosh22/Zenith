@@ -34,9 +34,14 @@ namespace Flux_Generated_SSR
 			unsigned int m_uu_uFrameIndex; // slang=uint offset=32
 			unsigned int m_uu_uBinarySearchIterations; // slang=uint offset=36
 			float m_fu_fContactHardeningDist; // slang=float offset=40
-			unsigned char m_aPad_44[4];
+			float m_fu_fHalfResWidth; // slang=float offset=44
+			float m_fu_fHalfResHeight; // slang=float offset=48
+			float m_fu_fRcpHalfResWidth; // slang=float offset=52
+			float m_fu_fRcpHalfResHeight; // slang=float offset=56
+			float m_fu_fPad0; // slang=float offset=60
+			unsigned char m_au_axHiZMipSizes[192]; // slang=Array offset=64 arrayCount=12 (no C++ mapping)
 		};
-		static_assert(sizeof(SSRConstants_CB) == 48, "SSRConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(SSRConstants_CB) == 256, "SSRConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fIntensity) == 0, "SSRConstants.u_fIntensity offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxDistance) == 4, "SSRConstants.u_fMaxDistance offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxRoughness) == 8, "SSRConstants.u_fMaxRoughness offset drifted from Slang reflection");
@@ -48,6 +53,11 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(SSRConstants_CB, m_uu_uFrameIndex) == 32, "SSRConstants.u_uFrameIndex offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uBinarySearchIterations) == 36, "SSRConstants.u_uBinarySearchIterations offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fContactHardeningDist) == 40, "SSRConstants.u_fContactHardeningDist offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fHalfResWidth) == 44, "SSRConstants.u_fHalfResWidth offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fHalfResHeight) == 48, "SSRConstants.u_fHalfResHeight offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResWidth) == 52, "SSRConstants.u_fRcpHalfResWidth offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResHeight) == 56, "SSRConstants.u_fRcpHalfResHeight offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fPad0) == 60, "SSRConstants.u_fPad0 offset drifted from Slang reflection");
 		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
 		inline constexpr unsigned int kg_xDepthTex_Set = 0;
 		inline constexpr unsigned int kg_xDepthTex_Binding = 2;
@@ -123,8 +133,17 @@ namespace Flux_Generated_SSR
 			unsigned int m_uu_uDebugMode; // slang=uint offset=20
 			unsigned int m_uu_uHiZMipCount; // slang=uint offset=24
 			unsigned int m_uu_uStartMip; // slang=uint offset=28
+			unsigned int m_uu_uFrameIndex; // slang=uint offset=32
+			unsigned int m_uu_uBinarySearchIterations; // slang=uint offset=36
+			float m_fu_fContactHardeningDist; // slang=float offset=40
+			float m_fu_fHalfResWidth; // slang=float offset=44
+			float m_fu_fHalfResHeight; // slang=float offset=48
+			float m_fu_fRcpHalfResWidth; // slang=float offset=52
+			float m_fu_fRcpHalfResHeight; // slang=float offset=56
+			float m_fu_fPad0; // slang=float offset=60
+			unsigned char m_au_axHiZMipSizes[192]; // slang=Array offset=64 arrayCount=12 (no C++ mapping)
 		};
-		static_assert(sizeof(SSRConstants_CB) == 32, "SSRConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(SSRConstants_CB) == 256, "SSRConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fIntensity) == 0, "SSRConstants.u_fIntensity offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxDistance) == 4, "SSRConstants.u_fMaxDistance offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxRoughness) == 8, "SSRConstants.u_fMaxRoughness offset drifted from Slang reflection");
@@ -133,6 +152,14 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(SSRConstants_CB, m_uu_uDebugMode) == 20, "SSRConstants.u_uDebugMode offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uHiZMipCount) == 24, "SSRConstants.u_uHiZMipCount offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_uu_uStartMip) == 28, "SSRConstants.u_uStartMip offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uFrameIndex) == 32, "SSRConstants.u_uFrameIndex offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uBinarySearchIterations) == 36, "SSRConstants.u_uBinarySearchIterations offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fContactHardeningDist) == 40, "SSRConstants.u_fContactHardeningDist offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fHalfResWidth) == 44, "SSRConstants.u_fHalfResWidth offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fHalfResHeight) == 48, "SSRConstants.u_fHalfResHeight offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResWidth) == 52, "SSRConstants.u_fRcpHalfResWidth offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResHeight) == 56, "SSRConstants.u_fRcpHalfResHeight offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fPad0) == 60, "SSRConstants.u_fPad0 offset drifted from Slang reflection");
 		inline constexpr const char* kg_xRayMarchTex_Name = "g_xRayMarchTex";
 		inline constexpr unsigned int kg_xRayMarchTex_Set = 0;
 		inline constexpr unsigned int kg_xRayMarchTex_Binding = 2;
@@ -178,6 +205,63 @@ namespace Flux_Generated_SSR
 		static_assert(sizeof(FrameConstants_CB) == 464, "FrameConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(FrameConstants_CB, m_ug_bQuadUtilisationAnalysis) == 448, "FrameConstants.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+	}
+
+	// ----- SSR_Upsample (SSR/Flux_SSR_Upsample) -----
+	namespace SSR_Upsample
+	{
+		inline constexpr const char* kSSRConstants_Name = "SSRConstants";
+		inline constexpr unsigned int kSSRConstants_Set = 0;
+		inline constexpr unsigned int kSSRConstants_Binding = 0;
+		inline constexpr unsigned int kSSRConstants_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		struct SSRConstants_CB
+		{
+			float m_fu_fIntensity; // slang=float offset=0
+			float m_fu_fMaxDistance; // slang=float offset=4
+			float m_fu_fMaxRoughness; // slang=float offset=8
+			float m_fu_fThickness; // slang=float offset=12
+			unsigned int m_uu_uStepCount; // slang=uint offset=16
+			unsigned int m_uu_uDebugMode; // slang=uint offset=20
+			unsigned int m_uu_uHiZMipCount; // slang=uint offset=24
+			unsigned int m_uu_uStartMip; // slang=uint offset=28
+			unsigned int m_uu_uFrameIndex; // slang=uint offset=32
+			unsigned int m_uu_uBinarySearchIterations; // slang=uint offset=36
+			float m_fu_fContactHardeningDist; // slang=float offset=40
+			float m_fu_fHalfResWidth; // slang=float offset=44
+			float m_fu_fHalfResHeight; // slang=float offset=48
+			float m_fu_fRcpHalfResWidth; // slang=float offset=52
+			float m_fu_fRcpHalfResHeight; // slang=float offset=56
+			float m_fu_fPad0; // slang=float offset=60
+			unsigned char m_au_axHiZMipSizes[192]; // slang=Array offset=64 arrayCount=12 (no C++ mapping)
+		};
+		static_assert(sizeof(SSRConstants_CB) == 256, "SSRConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fIntensity) == 0, "SSRConstants.u_fIntensity offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxDistance) == 4, "SSRConstants.u_fMaxDistance offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxRoughness) == 8, "SSRConstants.u_fMaxRoughness offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fThickness) == 12, "SSRConstants.u_fThickness offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uStepCount) == 16, "SSRConstants.u_uStepCount offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uDebugMode) == 20, "SSRConstants.u_uDebugMode offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uHiZMipCount) == 24, "SSRConstants.u_uHiZMipCount offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uStartMip) == 28, "SSRConstants.u_uStartMip offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uFrameIndex) == 32, "SSRConstants.u_uFrameIndex offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uBinarySearchIterations) == 36, "SSRConstants.u_uBinarySearchIterations offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fContactHardeningDist) == 40, "SSRConstants.u_fContactHardeningDist offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fHalfResWidth) == 44, "SSRConstants.u_fHalfResWidth offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fHalfResHeight) == 48, "SSRConstants.u_fHalfResHeight offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResWidth) == 52, "SSRConstants.u_fRcpHalfResWidth offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResHeight) == 56, "SSRConstants.u_fRcpHalfResHeight offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_fu_fPad0) == 60, "SSRConstants.u_fPad0 offset drifted from Slang reflection");
+		inline constexpr const char* kg_xSSRTex_Name = "g_xSSRTex";
+		inline constexpr unsigned int kg_xSSRTex_Set = 0;
+		inline constexpr unsigned int kg_xSSRTex_Binding = 1;
+		inline constexpr unsigned int kg_xSSRTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
+		inline constexpr unsigned int kg_xDepthTex_Set = 0;
+		inline constexpr unsigned int kg_xDepthTex_Binding = 2;
+		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
 	}
 
 }

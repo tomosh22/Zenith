@@ -30,8 +30,19 @@ struct Flux_RenderGraph_ResourceUsage
 struct Flux_RenderGraph_Resource
 {
     Flux_GraphResource m_xResource;
+    // All three values are TOPOLOGICAL ORDER indices (positions in
+    // m_xExecutionOrder), populated by ComputeResourceLifetimes. The aliasing
+    // packer compares them as execution-time-ordered intervals; pass-
+    // declaration indices would mis-rank passes from different subsystems
+    // that interleave during topological sort.
     u_int m_uFirstWrite = UINT32_MAX;
-    u_int m_uLastRead = UINT32_MAX;
+    u_int m_uLastRead   = UINT32_MAX;
+    // Last write. Distinct from m_uFirstWrite for transients that are
+    // written multiple times (e.g. UAV ping-pong patterns). m_uLastUse
+    // on TransientResource is max(m_uLastRead, m_uLastWrite) so the
+    // packer / aliasing-barrier pass treats the lifetime as covering
+    // every actual access, not just up to the first write.
+    u_int m_uLastWrite  = UINT32_MAX;
 };
 
 // Per-(resource, subresource) state transition emitted by the graph as a
@@ -431,10 +442,16 @@ private:
         // Lifetime data populated by ComputeTransientLifetimes after Compile's
         // resource-lifetime pass. Both fields are UINT32_MAX iff the transient
         // was never referenced by any enabled pass (the single sentinel meaning).
-        // When referenced, m_uFirstWrite is the first pass that writes it and
-        // m_uLastUse is the last pass that reads OR writes it — for a write-only
-        // transient m_uLastUse == m_uFirstWrite, so the aliasing packer can
-        // compare lifetimes without special-casing the "never read" case.
+        // When referenced, m_uFirstWrite is the topological position of the
+        // first writing pass; m_uLastUse is the topological position of the
+        // last access, taking the max across last-read AND last-write so
+        // multi-write transients (UAV ping-pong patterns) extend their
+        // lifetime through every actual write — pre-fix the field collapsed
+        // to last-read only and the packer would silently alias other
+        // transients into the period between the first read and the final
+        // write. For a write-only single-writer transient m_uLastUse ==
+        // m_uFirstWrite, so the aliasing packer can compare lifetimes without
+        // special-casing the "never read" case.
         u_int m_uFirstWrite = UINT32_MAX;
         u_int m_uLastUse    = UINT32_MAX;
         // Aliasing packer output (populated by AssignAliasingGroups). UINT32_MAX

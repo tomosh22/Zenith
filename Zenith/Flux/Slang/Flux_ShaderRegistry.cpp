@@ -278,6 +278,21 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		"SSR",
 	},
 
+	// SSR bilateral upsample pass. Half-res ray-march output + full-res
+	// depth → full-res RGBA16F (RGB = reflection colour, A = confidence).
+	// Texture dimensions come from the SSR CBV — no GetDimensions inside
+	// the shader.
+	{
+		FluxShaderProgram::SSR_Upsample,
+		"SSR_Upsample",
+		"SSR/Flux_SSR_Upsample",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"SSR",
+	},
+
 	// Simple distance-based fog with Henyey-Greenstein sun scatter. First
 	// shader to depend on Common.Volumetric — proves the volumetric module
 	// import path before tackling the heavier froxel/raymarch fog.

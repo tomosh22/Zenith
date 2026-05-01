@@ -10726,6 +10726,429 @@ void Zenith_UnitTests::TestAliasSignatureIgnoresDimensions(){
 }
 
 // ============================================================================
+// Flux render-graph lifetime + aliasing-packer tests
+// ============================================================================
+// These exercise ComputeResourceLifetimes / ComputeTransientLifetimes /
+// SortTransientsByLifetime / PackTransientsIntoPools / SynthesizeAliasingBarriers
+// without going through Compile() (which allocates VRAM). Pattern:
+//   - construct passes + transients, declare reads/writes
+//   - manually populate m_xExecutionOrder via friend access (bypassing toposort)
+//   - invoke the lifetime + packing phases directly
+//   - inspect TransientResource state and emitted aliasing barriers
+//
+// The friend access to m_axTransients, m_xResources, m_xExecutionOrder is granted
+// by `friend class Zenith_UnitTests` in Flux_RenderGraph.h.
+
+namespace
+{
+	// Full-res RGBA16F transient desc, SRV-readable + RTV-writable. Matches
+	// the signature used by SSR upsampled / SSGI resolved (the transients
+	// at the centre of the original aliasing bug).
+	Flux_TransientTextureDesc RGTestColorDesc()
+	{
+		Flux_TransientTextureDesc xDesc;
+		xDesc.m_uWidth          = 256;
+		xDesc.m_uHeight         = 256;
+		xDesc.m_uDepth          = 1;
+		xDesc.m_uNumMips        = 1;
+		xDesc.m_eFormat         = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
+		xDesc.m_eTextureType    = TEXTURE_TYPE_2D;
+		xDesc.m_uMemoryFlags    = (1u << MEMORY_FLAGS__SHADER_READ);
+		xDesc.m_bIsDepthStencil = false;
+		return xDesc;
+	}
+
+	// Same as RGTestColorDesc but also UAV-writable, for UAV multi-write
+	// scenarios (RWTexture2D ping-pong patterns).
+	Flux_TransientTextureDesc RGTestColorUAVDesc()
+	{
+		Flux_TransientTextureDesc xDesc = RGTestColorDesc();
+		xDesc.m_uMemoryFlags |= (1u << MEMORY_FLAGS__UNORDERED_ACCESS);
+		return xDesc;
+	}
+}
+
+// Lifetime values must be TOPOLOGICAL ORDER positions (positions in
+// m_xExecutionOrder), not pass-declaration indices. Constructed with
+// declaration order REVERSED relative to execution order so the two
+// disagree everywhere — a regression to pass-index storage would fail
+// every assertion.
+ZENITH_TEST(Core, RenderGraphLifetimeUsesTopologicalOrder) { Zenith_UnitTests::TestRenderGraphLifetimeUsesTopologicalOrder(); }
+
+void Zenith_UnitTests::TestRenderGraphLifetimeUsesTopologicalOrder(){
+	Flux_RenderGraph xGraph;
+
+	Flux_TransientTextureDesc xDesc = RGTestColorDesc();
+	Flux_TransientHandle xT = xGraph.CreateTransient(xDesc);
+
+	// Pass indices 0..3 in declaration order. Execution order will be
+	// [P3, P2, P1, P0], so topo position(P3)=0 and pass-index(P3)=3 — the
+	// two number spaces are inverses, making any pass-index leak detectable.
+	Flux_PassHandle xP0 = xGraph.AddPass("P0_Read",  EmptyRecordCallback);
+	Flux_PassHandle xP1 = xGraph.AddPass("P1",       EmptyRecordCallback);
+	Flux_PassHandle xP2 = xGraph.AddPass("P2",       EmptyRecordCallback);
+	Flux_PassHandle xP3 = xGraph.AddPass("P3_Write", EmptyRecordCallback);
+
+	xGraph.WriteTransient(xP3, xT, RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.ReadTransient (xP0, xT, RESOURCE_ACCESS_READ_SRV);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xP3.m_uIndex);  // topo 0 (writer first)
+	xGraph.m_xExecutionOrder.PushBack(xP2.m_uIndex);  // topo 1
+	xGraph.m_xExecutionOrder.PushBack(xP1.m_uIndex);  // topo 2
+	xGraph.m_xExecutionOrder.PushBack(xP0.m_uIndex);  // topo 3 (reader last)
+
+	xGraph.ComputeResourceLifetimes();
+
+	Flux_RenderGraph::TransientResource* pxT = xGraph.m_axTransients.Get(xT.m_uIndex);
+	void* pTKey = static_cast<void*>(&pxT->m_xAttachment);
+	auto itRes = xGraph.m_xResources.find(pTKey);
+	ZENITH_ASSERT_TRUE(itRes != xGraph.m_xResources.end(), "T must be tracked in m_xResources");
+
+	const Flux_RenderGraph_Resource& xRes = itRes->second;
+	ZENITH_ASSERT_EQ(xRes.m_uFirstWrite, 0u,
+		"first-write must be the topological position of the writer (topo 0 = P3 at exec[0]), not the writer's pass index (3). Got %u",
+		xRes.m_uFirstWrite);
+	ZENITH_ASSERT_EQ(xRes.m_uLastWrite, 0u,
+		"last-write must also be topo 0 for a single-writer transient. Got %u",
+		xRes.m_uLastWrite);
+	ZENITH_ASSERT_EQ(xRes.m_uLastRead, 3u,
+		"last-read must be the topological position of the reader (topo 3 = P0 at exec[3]), not the reader's pass index (0). Got %u",
+		xRes.m_uLastRead);
+}
+
+// SSR/SSGI regression: two transients with identical memory signature whose
+// pass-index lifetimes don't overlap, but whose topological-order lifetimes
+// DO. Pre-fix, the packer used pass indices and aliased them, causing one
+// subsystem's writes to trample the other's data between writes and reads.
+ZENITH_TEST(Core, RenderGraphAliasingTopoOrderInterleaved) { Zenith_UnitTests::TestRenderGraphAliasingTopoOrderInterleaved(); }
+
+void Zenith_UnitTests::TestRenderGraphAliasingTopoOrderInterleaved(){
+	Flux_RenderGraph xGraph;
+
+	Flux_TransientTextureDesc xDesc = RGTestColorDesc();
+	Flux_TransientHandle xT_A = xGraph.CreateTransient(xDesc);
+	Flux_TransientHandle xT_B = xGraph.CreateTransient(xDesc);
+
+	// Subsystem A declares first (pass indices 0, 1), subsystem B second
+	// (pass indices 2, 3). With no cross-deps, BFS toposort produces
+	// [PA1, PB1, PA2, PB2] — A and B writers issue side-by-side, then their
+	// readers. By PASS INDEX: T_A=[0,1], T_B=[2,3] (no overlap, packer would
+	// alias). By TOPO: T_A=[0,2], T_B=[1,3] (overlapping, must NOT alias).
+	Flux_PassHandle xPA1 = xGraph.AddPass("A1_Write", EmptyRecordCallback);
+	xGraph.WriteTransient(xPA1, xT_A, RESOURCE_ACCESS_WRITE_RTV);
+
+	Flux_PassHandle xPA2 = xGraph.AddPass("A2_Read",  EmptyRecordCallback);
+	xGraph.ReadTransient (xPA2, xT_A, RESOURCE_ACCESS_READ_SRV);
+
+	Flux_PassHandle xPB1 = xGraph.AddPass("B1_Write", EmptyRecordCallback);
+	xGraph.WriteTransient(xPB1, xT_B, RESOURCE_ACCESS_WRITE_RTV);
+
+	Flux_PassHandle xPB2 = xGraph.AddPass("B2_Read",  EmptyRecordCallback);
+	xGraph.ReadTransient (xPB2, xT_B, RESOURCE_ACCESS_READ_SRV);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xPA1.m_uIndex);  // topo 0
+	xGraph.m_xExecutionOrder.PushBack(xPB1.m_uIndex);  // topo 1
+	xGraph.m_xExecutionOrder.PushBack(xPA2.m_uIndex);  // topo 2
+	xGraph.m_xExecutionOrder.PushBack(xPB2.m_uIndex);  // topo 3
+
+	xGraph.ComputeResourceLifetimes();
+	xGraph.ComputeTransientLifetimes();
+
+	Flux_RenderGraph::TransientResource* pxT_A = xGraph.m_axTransients.Get(xT_A.m_uIndex);
+	Flux_RenderGraph::TransientResource* pxT_B = xGraph.m_axTransients.Get(xT_B.m_uIndex);
+
+	ZENITH_ASSERT_EQ(pxT_A->m_uFirstWrite, 0u, "T_A first-write at topo 0");
+	ZENITH_ASSERT_EQ(pxT_A->m_uLastUse,    2u, "T_A last-use at topo 2 (PA2 read)");
+	ZENITH_ASSERT_EQ(pxT_B->m_uFirstWrite, 1u, "T_B first-write at topo 1");
+	ZENITH_ASSERT_EQ(pxT_B->m_uLastUse,    3u, "T_B last-use at topo 3 (PB2 read)");
+
+	Zenith_Vector<u_int> axSorted;
+	xGraph.SortTransientsByLifetime(axSorted);
+	xGraph.PackTransientsIntoPools(axSorted);
+
+	ZENITH_ASSERT_NE(pxT_A->m_uAliasPoolIndex, UINT32_MAX, "T_A assigned to a pool");
+	ZENITH_ASSERT_NE(pxT_B->m_uAliasPoolIndex, UINT32_MAX, "T_B assigned to a pool");
+	ZENITH_ASSERT_NE(pxT_A->m_uAliasPoolIndex, pxT_B->m_uAliasPoolIndex,
+		"REGRESSION GUARD (SSR/SSGI bug): T_A topo lifetime [0,2] and T_B [1,3] OVERLAP — packer must place them in different pools. "
+		"If this fires, ComputeResourceLifetimes is back to storing pass-declaration indices instead of topological positions, "
+		"and one subsystem's writes will trample the other's transient memory between its first-use and last-use. "
+		"T_A pool=%u, T_B pool=%u",
+		pxT_A->m_uAliasPoolIndex, pxT_B->m_uAliasPoolIndex);
+}
+
+// Multi-write transient: write at P0, read at P1, write again at P2.
+// Pre-fix, m_uLastUse = m_uLastRead = 1 (P1's read), missing the later
+// write at P2. Post-fix, m_uLastUse = max(last_read, last_write) = 2.
+ZENITH_TEST(Core, RenderGraphMultiWriteLastUse) { Zenith_UnitTests::TestRenderGraphMultiWriteLastUse(); }
+
+void Zenith_UnitTests::TestRenderGraphMultiWriteLastUse(){
+	Flux_RenderGraph xGraph;
+
+	Flux_TransientTextureDesc xDesc = RGTestColorUAVDesc();
+	Flux_TransientHandle xT = xGraph.CreateTransient(xDesc);
+
+	Flux_PassHandle xP0 = xGraph.AddPass("P0_Write", EmptyRecordCallback);
+	xGraph.WriteTransient(xP0, xT, RESOURCE_ACCESS_WRITE_UAV);
+
+	Flux_PassHandle xP1 = xGraph.AddPass("P1_Read",  EmptyRecordCallback);
+	xGraph.ReadTransient (xP1, xT, RESOURCE_ACCESS_READ_SRV);
+
+	Flux_PassHandle xP2 = xGraph.AddPass("P2_Write", EmptyRecordCallback);
+	xGraph.WriteTransient(xP2, xT, RESOURCE_ACCESS_WRITE_UAV);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xP0.m_uIndex);  // topo 0
+	xGraph.m_xExecutionOrder.PushBack(xP1.m_uIndex);  // topo 1
+	xGraph.m_xExecutionOrder.PushBack(xP2.m_uIndex);  // topo 2
+
+	xGraph.ComputeResourceLifetimes();
+	xGraph.ComputeTransientLifetimes();
+
+	Flux_RenderGraph::TransientResource* pxT = xGraph.m_axTransients.Get(xT.m_uIndex);
+
+	ZENITH_ASSERT_EQ(pxT->m_uFirstWrite, 0u, "first-write at topo 0");
+	ZENITH_ASSERT_EQ(pxT->m_uLastUse, 2u,
+		"REGRESSION GUARD: m_uLastUse must cover the LATER write at topo 2, not stop at the read at topo 1. "
+		"Pre-fix, only m_uFirstWrite + m_uLastRead were tracked; the second write was invisible to the packer, "
+		"so a same-signature transient starting between topo 1 and topo 2 could be aliased into the same pool "
+		"and have its writes trampled by the second write. Got %u",
+		pxT->m_uLastUse);
+}
+
+// Two transients of identical signature where T1 has a multi-write pattern
+// (write, read, write again) and T2's lifetime falls between T1's read and
+// T1's later write. Pre-fix, T1's lifetime stopped at the read; the packer
+// would alias T2 into T1's pool and T2's writes would trample memory the
+// later T1 write needs. Post-fix, T1's full lifetime covers the later write
+// and the packer keeps them in separate pools.
+ZENITH_TEST(Core, RenderGraphAliasingMultiWriteOverlap) { Zenith_UnitTests::TestRenderGraphAliasingMultiWriteOverlap(); }
+
+void Zenith_UnitTests::TestRenderGraphAliasingMultiWriteOverlap(){
+	Flux_RenderGraph xGraph;
+
+	// Same desc → same memory signature, so the packer is free to consider
+	// them as alias candidates. Both UAV-capable so the multi-write side is
+	// legal and we share the same memory-flag bits across both transients.
+	Flux_TransientTextureDesc xDesc = RGTestColorUAVDesc();
+	Flux_TransientHandle xT1 = xGraph.CreateTransient(xDesc);
+	Flux_TransientHandle xT2 = xGraph.CreateTransient(xDesc);
+
+	Flux_PassHandle xP0 = xGraph.AddPass("P0_T1Write", EmptyRecordCallback);
+	xGraph.WriteTransient(xP0, xT1, RESOURCE_ACCESS_WRITE_UAV);
+
+	Flux_PassHandle xP1 = xGraph.AddPass("P1_T1Read",  EmptyRecordCallback);
+	xGraph.ReadTransient (xP1, xT1, RESOURCE_ACCESS_READ_SRV);
+
+	Flux_PassHandle xP2 = xGraph.AddPass("P2_T2Write", EmptyRecordCallback);
+	xGraph.WriteTransient(xP2, xT2, RESOURCE_ACCESS_WRITE_UAV);
+
+	Flux_PassHandle xP3 = xGraph.AddPass("P3_T2Read",  EmptyRecordCallback);
+	xGraph.ReadTransient (xP3, xT2, RESOURCE_ACCESS_READ_SRV);
+
+	Flux_PassHandle xP4 = xGraph.AddPass("P4_T1Write", EmptyRecordCallback);
+	xGraph.WriteTransient(xP4, xT1, RESOURCE_ACCESS_WRITE_UAV);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xP0.m_uIndex);  // topo 0
+	xGraph.m_xExecutionOrder.PushBack(xP1.m_uIndex);  // topo 1
+	xGraph.m_xExecutionOrder.PushBack(xP2.m_uIndex);  // topo 2
+	xGraph.m_xExecutionOrder.PushBack(xP3.m_uIndex);  // topo 3
+	xGraph.m_xExecutionOrder.PushBack(xP4.m_uIndex);  // topo 4
+
+	xGraph.ComputeResourceLifetimes();
+	xGraph.ComputeTransientLifetimes();
+
+	Flux_RenderGraph::TransientResource* pxT1 = xGraph.m_axTransients.Get(xT1.m_uIndex);
+	Flux_RenderGraph::TransientResource* pxT2 = xGraph.m_axTransients.Get(xT2.m_uIndex);
+
+	ZENITH_ASSERT_EQ(pxT1->m_uLastUse, 4u,
+		"T1 last-use must extend through the second write at topo 4 (last_write=4 > last_read=1)");
+	ZENITH_ASSERT_EQ(pxT2->m_uFirstWrite, 2u, "T2 first-write at topo 2");
+	ZENITH_ASSERT_EQ(pxT2->m_uLastUse,    3u, "T2 last-use at topo 3");
+
+	Zenith_Vector<u_int> axSorted;
+	xGraph.SortTransientsByLifetime(axSorted);
+	xGraph.PackTransientsIntoPools(axSorted);
+
+	ZENITH_ASSERT_NE(pxT1->m_uAliasPoolIndex, pxT2->m_uAliasPoolIndex,
+		"REGRESSION GUARD: T1 [0,4] and T2 [2,3] OVERLAP — packer must keep them in different pools. "
+		"If this fires, m_uLastUse is back to ignoring multi-write extensions and T2's writes will trample "
+		"the pool memory T1 needs for its second write. T1 pool=%u, T2 pool=%u",
+		pxT1->m_uAliasPoolIndex, pxT2->m_uAliasPoolIndex);
+}
+
+// Disabled passes must not contribute to lifetime tracking. Critical for the
+// runtime SetEnabled path (Execute re-runs ComputeResourceLifetimes when
+// m_bEnabledMaskDirty); the compile-time path is also implicitly correct
+// because TopologicalSort already filters disabled passes from
+// m_xExecutionOrder.
+ZENITH_TEST(Core, RenderGraphDisabledPassExcludedFromLifetimes) { Zenith_UnitTests::TestRenderGraphDisabledPassExcludedFromLifetimes(); }
+
+void Zenith_UnitTests::TestRenderGraphDisabledPassExcludedFromLifetimes(){
+	Flux_RenderGraph xGraph;
+
+	Flux_TransientTextureDesc xDesc = RGTestColorDesc();
+	Flux_TransientHandle xT = xGraph.CreateTransient(xDesc);
+
+	Flux_PassHandle xP0 = xGraph.AddPass("P0_Write",        EmptyRecordCallback);
+	xGraph.WriteTransient(xP0, xT, RESOURCE_ACCESS_WRITE_RTV);
+
+	Flux_PassHandle xP1 = xGraph.AddPass("P1_Read",         EmptyRecordCallback);
+	xGraph.ReadTransient (xP1, xT, RESOURCE_ACCESS_READ_SRV);
+
+	Flux_PassHandle xP2 = xGraph.AddPass("P2_ReadDisabled", EmptyRecordCallback);
+	xGraph.ReadTransient (xP2, xT, RESOURCE_ACCESS_READ_SRV);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xP0.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xP1.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xP2.m_uIndex);
+
+	// Phase 1: all passes enabled — last-use extends through P2.
+	xGraph.ComputeResourceLifetimes();
+	xGraph.ComputeTransientLifetimes();
+
+	Flux_RenderGraph::TransientResource* pxT = xGraph.m_axTransients.Get(xT.m_uIndex);
+	ZENITH_ASSERT_EQ(pxT->m_uLastUse, 2u, "all enabled: last-use at topo 2");
+
+	// Phase 2: disable P2 and recompute. Lifetime must shrink.
+	xGraph.m_xPasses.Get(xP2.m_uIndex)->m_bEnabled = false;
+	xGraph.ComputeResourceLifetimes();
+	xGraph.ComputeTransientLifetimes();
+
+	ZENITH_ASSERT_EQ(pxT->m_uLastUse, 1u,
+		"REGRESSION GUARD: P2 disabled — last-use must drop to topo 1 (P1's read). If this fires, "
+		"ComputeResourceLifetimes lost the pxPass->m_bEnabled check and is folding disabled-pass accesses "
+		"into lifetime values, which will mis-direct SynthesizeAliasingBarriers' src-access lookup at Execute time. "
+		"Got %u",
+		pxT->m_uLastUse);
+}
+
+// ComputeResourceLifetimes must be safe to call multiple times — it's invoked
+// from Compile() and again from Execute() when m_bEnabledMaskDirty triggers a
+// barrier re-synth. Repeated calls with no enable changes must produce
+// identical output (no accumulation of sentinel-vs-real-value confusion, no
+// drift in m_uLastWrite tracking when entries already exist in m_xResources).
+ZENITH_TEST(Core, RenderGraphLifetimeRecomputeIdempotent) { Zenith_UnitTests::TestRenderGraphLifetimeRecomputeIdempotent(); }
+
+void Zenith_UnitTests::TestRenderGraphLifetimeRecomputeIdempotent(){
+	Flux_RenderGraph xGraph;
+
+	Flux_TransientTextureDesc xDesc = RGTestColorUAVDesc();
+	Flux_TransientHandle xT = xGraph.CreateTransient(xDesc);
+
+	Flux_PassHandle xP0 = xGraph.AddPass("P0_Write", EmptyRecordCallback);
+	xGraph.WriteTransient(xP0, xT, RESOURCE_ACCESS_WRITE_UAV);
+
+	Flux_PassHandle xP1 = xGraph.AddPass("P1_Read",  EmptyRecordCallback);
+	xGraph.ReadTransient (xP1, xT, RESOURCE_ACCESS_READ_SRV);
+
+	Flux_PassHandle xP2 = xGraph.AddPass("P2_Write", EmptyRecordCallback);
+	xGraph.WriteTransient(xP2, xT, RESOURCE_ACCESS_WRITE_UAV);
+
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xP0.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xP1.m_uIndex);
+	xGraph.m_xExecutionOrder.PushBack(xP2.m_uIndex);
+
+	xGraph.ComputeResourceLifetimes();
+	xGraph.ComputeTransientLifetimes();
+
+	Flux_RenderGraph::TransientResource* pxT = xGraph.m_axTransients.Get(xT.m_uIndex);
+	const u_int uFirstWrite_1 = pxT->m_uFirstWrite;
+	const u_int uLastUse_1    = pxT->m_uLastUse;
+
+	// Call again without changing anything. Values must match exactly —
+	// the reset loop at the top of ComputeResourceLifetimes guarantees this.
+	xGraph.ComputeResourceLifetimes();
+	xGraph.ComputeTransientLifetimes();
+
+	ZENITH_ASSERT_EQ(pxT->m_uFirstWrite, uFirstWrite_1,
+		"ComputeResourceLifetimes must be idempotent — first-write drifted between calls (was %u, now %u)",
+		uFirstWrite_1, pxT->m_uFirstWrite);
+	ZENITH_ASSERT_EQ(pxT->m_uLastUse, uLastUse_1,
+		"ComputeResourceLifetimes must be idempotent — last-use drifted between calls (was %u, now %u)",
+		uLastUse_1, pxT->m_uLastUse);
+	ZENITH_ASSERT_EQ(pxT->m_uFirstWrite, 0u, "first-write at topo 0");
+	ZENITH_ASSERT_EQ(pxT->m_uLastUse,    2u, "last-use at topo 2 (multi-write)");
+}
+
+// SynthesizeAliasingBarriers must translate m_uLastUse (topological order) back
+// to a pass index via m_xExecutionOrder.Get(...) when calling
+// FindAccessForTransientInPass — that lambda searches the pass's reads/writes
+// keyed by pass index. A regression that used m_uLastUse directly as a pass
+// index would index into the wrong pass and either return a wrong access or
+// trip FindAccessForTransientInPass's "transient not found" assert.
+ZENITH_TEST(Core, RenderGraphAliasingBarrierUsesTopologicalLastUse) { Zenith_UnitTests::TestRenderGraphAliasingBarrierUsesTopologicalLastUse(); }
+
+void Zenith_UnitTests::TestRenderGraphAliasingBarrierUsesTopologicalLastUse(){
+	Flux_RenderGraph xGraph;
+
+	Flux_TransientTextureDesc xDesc = RGTestColorDesc();
+	Flux_TransientHandle xT1 = xGraph.CreateTransient(xDesc);
+	Flux_TransientHandle xT2 = xGraph.CreateTransient(xDesc);
+
+	// T1 [topo 0,1], T2 [topo 2,3]. Non-overlapping → packer aliases.
+	// Critical: declaration order is REVERSED relative to execution order
+	// for T1's passes (declare T1's reader BEFORE T1's writer) so any
+	// lingering pass-index-as-topo confusion would resolve T1's last-use
+	// to the wrong pass.
+	Flux_PassHandle xPT1Read  = xGraph.AddPass("T1Read",  EmptyRecordCallback);  // pass idx 0
+	Flux_PassHandle xPT1Write = xGraph.AddPass("T1Write", EmptyRecordCallback);  // pass idx 1
+	Flux_PassHandle xPT2Write = xGraph.AddPass("T2Write", EmptyRecordCallback);  // pass idx 2
+	Flux_PassHandle xPT2Read  = xGraph.AddPass("T2Read",  EmptyRecordCallback);  // pass idx 3
+
+	xGraph.WriteTransient(xPT1Write, xT1, RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.ReadTransient (xPT1Read,  xT1, RESOURCE_ACCESS_READ_SRV);
+	xGraph.WriteTransient(xPT2Write, xT2, RESOURCE_ACCESS_WRITE_RTV);
+	xGraph.ReadTransient (xPT2Read,  xT2, RESOURCE_ACCESS_READ_SRV);
+
+	// Execution order has T1Write FIRST despite its higher pass index — pass
+	// index 1 lives at topo position 0, pass index 0 lives at topo position 1.
+	xGraph.m_xExecutionOrder.Clear();
+	xGraph.m_xExecutionOrder.PushBack(xPT1Write.m_uIndex);  // topo 0
+	xGraph.m_xExecutionOrder.PushBack(xPT1Read.m_uIndex);   // topo 1
+	xGraph.m_xExecutionOrder.PushBack(xPT2Write.m_uIndex);  // topo 2
+	xGraph.m_xExecutionOrder.PushBack(xPT2Read.m_uIndex);   // topo 3
+
+	xGraph.ComputeResourceLifetimes();
+	xGraph.ComputeTransientLifetimes();
+
+	Zenith_Vector<u_int> axSorted;
+	xGraph.SortTransientsByLifetime(axSorted);
+	xGraph.PackTransientsIntoPools(axSorted);
+
+	Flux_RenderGraph::TransientResource* pxT1 = xGraph.m_axTransients.Get(xT1.m_uIndex);
+	Flux_RenderGraph::TransientResource* pxT2 = xGraph.m_axTransients.Get(xT2.m_uIndex);
+
+	ZENITH_ASSERT_EQ(pxT1->m_uAliasPoolIndex, pxT2->m_uAliasPoolIndex,
+		"setup precondition: T1 [0,1] and T2 [2,3] non-overlapping, packer must alias them");
+
+	xGraph.SynthesizeAliasingBarriers();
+
+	// T2's first-writer pass takes over the pool. It should emit exactly one
+	// aliasing barrier with src access = T1's last access (READ_SRV at T1Read,
+	// topo 1). If the topo→pass-idx translation regressed and the barrier
+	// pulled access from "pass at index 1" (which is T1Write, NOT T1Read),
+	// m_eSrcAccess would come back as WRITE_RTV instead of READ_SRV.
+	Flux_RenderGraph_Pass* pxPT2Write = xGraph.GetPasses().Get(xPT2Write.m_uIndex);
+	ZENITH_ASSERT_EQ(pxPT2Write->m_xAliasingBarriers.GetSize(), 1,
+		"T2's first-write pass must emit exactly 1 aliasing barrier (the hand-off from T1)");
+
+	const Flux_RenderGraph_AliasingBarrier& xBar = pxPT2Write->m_xAliasingBarriers.Get(0u);
+	ZENITH_ASSERT_EQ(xBar.m_eSrcAccess, RESOURCE_ACCESS_READ_SRV,
+		"REGRESSION GUARD: aliasing barrier src access must be T1's last access (READ_SRV at topo 1, pass idx 0). "
+		"If this returns WRITE_RTV, SynthesizeAliasingBarriers used pxPrior->m_uLastUse directly as a pass index "
+		"instead of going through m_xExecutionOrder.Get(uPriorLastTopo) — and the SSGI corruption bug returns. "
+		"Got %d (expected %d)",
+		(int)xBar.m_eSrcAccess, (int)RESOURCE_ACCESS_READ_SRV);
+	ZENITH_ASSERT_EQ(xBar.m_eDstAccess, RESOURCE_ACCESS_WRITE_RTV,
+		"aliasing barrier dst access must be T2's first access (WRITE_RTV at topo 2). Got %d", (int)xBar.m_eDstAccess);
+}
+
+// ============================================================================
 // Flux_ShaderBinder name-cache tests
 // ============================================================================
 // Exercise the pointer-identity cache via a synthetic Flux_ShaderReflection.

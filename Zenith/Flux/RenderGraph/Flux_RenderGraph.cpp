@@ -325,7 +325,8 @@ void Flux_RenderGraph::TrackResource(const Flux_GraphResource& xResource)
         Flux_RenderGraph_Resource xRes;
         xRes.m_xResource = xResource;
         xRes.m_uFirstWrite = UINT32_MAX;
-        xRes.m_uLastRead = UINT32_MAX;
+        xRes.m_uLastRead   = UINT32_MAX;
+        xRes.m_uLastWrite  = UINT32_MAX;
         m_xResources[pRes] = xRes;
     }
 }
@@ -1007,17 +1008,53 @@ void Flux_RenderGraph::BuildResourceTraffic()
 
 void Flux_RenderGraph::ComputeResourceLifetimes()
 {
-    for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
+    // Lifetime values are stored as TOPOLOGICAL ORDER indices (positions in
+    // m_xExecutionOrder), NOT pass-declaration indices. The aliasing packer
+    // treats m_uFirstWrite / m_uLastRead / m_uLastWrite as execution-time-
+    // ordered values (T1 ends before T2 starts ⇒ they can share memory),
+    // and that's only true if we use the topological position. Two passes
+    // from different subsystems may have non-overlapping pass indices but
+    // interleave in execution order — for example SSR_Upsample (pass idx 2)
+    // can run between SSGI_Upsample (pass idx 5) and SSGI_DenoiseH (pass
+    // idx 6), making the SSR upsampled and SSGI resolved transients look
+    // non-overlapping by declaration index when they actually overlap in
+    // execution. Pre-fix, that caused the packer to alias them, and SSR's
+    // writes trampled SSGI's resolved buffer before DenoiseH could read it.
+    //
+    // Disabled-pass handling: this function is callable both at Compile
+    // time (where m_xExecutionOrder contains only enabled passes — the
+    // disabled-pass check is a no-op) and at Execute time when
+    // m_bEnabledMaskDirty triggers a barrier re-synth. In the latter case
+    // we MUST skip disabled passes so lifetimes reflect what will actually
+    // run this frame; otherwise SynthesizeAliasingBarriers would resolve
+    // pxPrior->m_uLastUse to a disabled pass and read a src access that
+    // doesn't reflect the resource's true GPU state.
+    //
+    // The reset loop at the top makes this idempotent — every call rebuilds
+    // lifetimes from scratch rather than accumulating onto stale state.
+
+    for (auto& xPair : m_xResources)
+    {
+        xPair.second.m_uFirstWrite = UINT32_MAX;
+        xPair.second.m_uLastRead   = UINT32_MAX;
+        xPair.second.m_uLastWrite  = UINT32_MAX;
+    }
+
+    u_int uTopo = 0;
+    for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next(), ++uTopo)
     {
         u_int uPassIdx = itE.GetData();
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(uPassIdx);
+        if (!pxPass->m_bEnabled) continue;
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
         {
             const Flux_RenderGraph_ResourceUsage& xWrite = it.GetData();
             void* pRes = xWrite.m_xResource.GetVoidPtr();
             auto itRes = m_xResources.find(pRes);
             Zenith_Assert(itRes != m_xResources.end(), "Flux_RenderGraph::ComputeResourceLifetimes: resource not tracked");
-            if (uPassIdx < itRes->second.m_uFirstWrite) itRes->second.m_uFirstWrite = uPassIdx;
+            if (uTopo < itRes->second.m_uFirstWrite) itRes->second.m_uFirstWrite = uTopo;
+            if (itRes->second.m_uLastWrite == UINT32_MAX || uTopo > itRes->second.m_uLastWrite)
+                itRes->second.m_uLastWrite = uTopo;
         }
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())
         {
@@ -1025,8 +1062,8 @@ void Flux_RenderGraph::ComputeResourceLifetimes()
             void* pRes = xRead.m_xResource.GetVoidPtr();
             auto itRes = m_xResources.find(pRes);
             Zenith_Assert(itRes != m_xResources.end(), "Flux_RenderGraph::ComputeResourceLifetimes: resource not tracked");
-            if (itRes->second.m_uLastRead == UINT32_MAX || uPassIdx > itRes->second.m_uLastRead)
-                itRes->second.m_uLastRead = uPassIdx;
+            if (itRes->second.m_uLastRead == UINT32_MAX || uTopo > itRes->second.m_uLastRead)
+                itRes->second.m_uLastRead = uTopo;
         }
     }
 }
@@ -1154,7 +1191,13 @@ void Flux_RenderGraph::SynthesizeAliasingBarriers()
     for (u_int p = 0; p < m_axAliasPools.GetSize(); p++)
         axCurrent.PushBack(PoolCurrentOccupant{});
 
-    for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
+    // Lifetime values on TransientResource are TOPOLOGICAL ORDER indices
+    // (see ComputeResourceLifetimes for why). Iterate by topological order
+    // and compare m_uFirstWrite / m_uLastUse against uTopo, then translate
+    // back to pass indices when calling FindAccessForTransientInPass
+    // (which looks pass usage up by pass index).
+    u_int uTopo = 0;
+    for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next(), ++uTopo)
     {
         const u_int uPassIdx = itE.GetData();
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(uPassIdx);
@@ -1164,7 +1207,7 @@ void Flux_RenderGraph::SynthesizeAliasingBarriers()
         {
             TransientResource* pxT = m_axTransients.Get(u);
             if (pxT->m_uAliasPoolIndex == UINT32_MAX) continue;  // standalone
-            if (pxT->m_uFirstWrite != uPassIdx) continue;         // not its first-use pass
+            if (pxT->m_uFirstWrite != uTopo) continue;            // not its first-use pass (topo order)
 
             const u_int uPool = pxT->m_uAliasPoolIndex;
             const u_int uPriorOccupant = axCurrent.Get(uPool).m_uTransientIndex;
@@ -1177,10 +1220,11 @@ void Flux_RenderGraph::SynthesizeAliasingBarriers()
                 // pre-fix this overwrote a single scalar pair and lost all
                 // but the last src/dst mask.
                 const TransientResource* pxPrior = m_axTransients.Get(uPriorOccupant);
-                const u_int uPriorLastPass = pxPrior->m_uLastUse;
+                const u_int uPriorLastTopo = pxPrior->m_uLastUse;
+                const u_int uPriorLastPassIdx = m_xExecutionOrder.Get(uPriorLastTopo);
                 Flux_RenderGraph_AliasingBarrier xBarrier;
-                xBarrier.m_eSrcAccess = FindAccessForTransientInPass(pxPrior, uPriorLastPass);
-                xBarrier.m_eDstAccess = FindAccessForTransientInPass(pxT,    uPassIdx);
+                xBarrier.m_eSrcAccess = FindAccessForTransientInPass(pxPrior, uPriorLastPassIdx);
+                xBarrier.m_eDstAccess = FindAccessForTransientInPass(pxT,     uPassIdx);
                 xBarrier.m_bSrcIsDepth = (xBarrier.m_eSrcAccess == RESOURCE_ACCESS_WRITE_DSV
                                        || xBarrier.m_eSrcAccess == RESOURCE_ACCESS_READ_DEPTH);
                 xBarrier.m_bDstIsDepth = (xBarrier.m_eDstAccess == RESOURCE_ACCESS_WRITE_DSV
@@ -1224,10 +1268,15 @@ void Flux_RenderGraph::ComputeTransientLifetimes()
     // sentinel UINT32_MAX — the packer treats those as not-referenced and
     // skips them.
     //
-    // m_uLastUse collapses "last read" and "last write, never read" into one
-    // non-sentinel value: for a write-only transient the lifetime ends at
-    // the write pass, not at UINT32_MAX. This lets the pool overlap check
-    // use a single clean comparison instead of a UINT32_MAX special case.
+    // m_uLastUse is the max of {last read, last write}, both topological-
+    // order indices. For a transient with multiple writes (e.g. a UAV
+    // ping-pong target), the last write must extend the lifetime — using
+    // first-write here would let the packer alias a second transient into
+    // the period between the first write and a later write, and the second
+    // transient's writes would then trample the first transient's late
+    // writes. For a write-only transient (no reads) the lifetime collapses
+    // to the last write so the packer's strict-greater overlap check
+    // doesn't need a UINT32_MAX special case.
     for (u_int u = 0; u < m_axTransients.GetSize(); u++)
     {
         TransientResource* pxT = m_axTransients.Get(u);
@@ -1242,13 +1291,20 @@ void Flux_RenderGraph::ComputeTransientLifetimes()
         if (itRes == m_xResources.end())
             continue;
 
-        pxT->m_uFirstWrite = itRes->second.m_uFirstWrite;
-        // Write-only transients have m_uLastRead == UINT32_MAX in the raw
-        // lifetime record; fold that into m_uFirstWrite so m_uLastUse is a
-        // real pass index whenever the transient is referenced at all.
-        pxT->m_uLastUse    = (itRes->second.m_uLastRead != UINT32_MAX)
-                             ? itRes->second.m_uLastRead
-                             : pxT->m_uFirstWrite;
+        const Flux_RenderGraph_Resource& xRes = itRes->second;
+        pxT->m_uFirstWrite = xRes.m_uFirstWrite;
+
+        // Last-use = max(last read, last write), tolerant of UINT32_MAX
+        // sentinels on either side. Falls back to m_uFirstWrite if both
+        // are sentinel (which only happens if the transient was tracked
+        // via TrackResource but had every access stripped — e.g. all its
+        // writers/readers were disabled when ComputeResourceLifetimes ran).
+        u_int uLastUse = pxT->m_uFirstWrite;
+        if (xRes.m_uLastRead != UINT32_MAX && (uLastUse == UINT32_MAX || xRes.m_uLastRead > uLastUse))
+            uLastUse = xRes.m_uLastRead;
+        if (xRes.m_uLastWrite != UINT32_MAX && (uLastUse == UINT32_MAX || xRes.m_uLastWrite > uLastUse))
+            uLastUse = xRes.m_uLastWrite;
+        pxT->m_uLastUse = uLastUse;
     }
 }
 
