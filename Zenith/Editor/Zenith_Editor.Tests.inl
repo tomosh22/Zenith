@@ -1548,7 +1548,7 @@ ZENITH_TEST(Editor, DeferredOpClearedAfterExecution)
 	Zenith_Editor::SetEditorMode(EditorMode::Playing);
 	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Playing, "Should be in Playing mode");
 
-	// Stop Play mode — this sets the s_bPendingSceneLoad flag (deferred restore)
+	// Stop Play mode — this queues a deferred scene-load via the editor state's deferred-ops
 	Zenith_Editor::SetEditorMode(EditorMode::Stopped);
 	ZENITH_ASSERT_EQ(Zenith_Editor::GetEditorMode(), EditorMode::Stopped, "Should be in Stopped mode");
 

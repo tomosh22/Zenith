@@ -35,11 +35,14 @@ class Zenith_DataStream;
  *   // Set from prefixed path
  *   m_xDiffuseTexture = TextureHandle("game:Textures/diffuse.ztxtr");
  *
- *   // Retrieve file-based assets via registry (the ONLY way)
- *   Zenith_TextureAsset* pTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xDiffuseTexture.GetPath());
+ *   // Resolve a file-based handle (lazy loads on first call, caches afterwards)
+ *   Zenith_TextureAsset* pTexture = m_xDiffuseTexture.Resolve();
  *
  *   // Retrieve procedural assets (created via reg.Create<T>() and stored with Set())
  *   Zenith_TextureAsset* pTexture = m_xDiffuseTexture.GetDirect();
+ *
+ *   // Equivalent to Resolve(), but explicit about the registry call:
+ *   Zenith_TextureAsset* pTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xDiffuseTexture.GetPath());
  *
  *   // Check if valid
  *   if (m_xMesh) { ... }
@@ -143,9 +146,24 @@ public:
 	/**
 	 * Get the directly stored pointer (for procedural assets set via Set()).
 	 * Returns nullptr for file-based handles that have not been loaded.
-	 * For file-based assets, use Zenith_AssetRegistry::Get().Get<T>(GetPath()) instead.
+	 * For file-based assets, use Resolve() (or Zenith_AssetRegistry::Get().Get<T>(GetPath())) instead.
 	 */
 	T* GetDirect() const { return m_pxCached; }
+
+	/**
+	 * Resolve the asset for this handle, loading from the registry on demand.
+	 *
+	 * - For file-based handles, returns the cached pointer if already loaded;
+	 *   otherwise calls Zenith_AssetRegistry::Get<T>(GetPath()), caches the
+	 *   result, and returns it.
+	 * - For procedural handles populated via Set(), returns the stored pointer.
+	 * - Returns nullptr if the path is empty AND no procedural pointer was set,
+	 *   or if the registry load fails.
+	 *
+	 * This is the default accessor for game/component code. Prefer it over the
+	 * two-step `Zenith_AssetRegistry::Get().Get<T>(handle.GetPath())` pattern.
+	 */
+	T* Resolve() const { return Get(); }
 
 	/**
 	 * Bool conversion - true if handle references a valid asset

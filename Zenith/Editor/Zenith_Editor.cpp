@@ -137,21 +137,11 @@ Zenith_Maths::Vector2 Zenith_Editor::s_xViewportSize = { 1280, 720 };
 Zenith_Maths::Vector2 Zenith_Editor::s_xViewportPos = { 0, 0 };
 bool Zenith_Editor::s_bViewportHovered = false;
 bool Zenith_Editor::s_bViewportFocused = false;
-bool Zenith_Editor::s_bHasSceneBackup = false;
-std::string Zenith_Editor::s_strBackupScenePath = "";
-int Zenith_Editor::s_iBackupSceneHandle = -1;
-std::string Zenith_Editor::s_strBackupSceneName = "";
-std::string Zenith_Editor::s_strBackupOriginalPath = "";
-int Zenith_Editor::s_iBackupBuildIndex = -1;
-bool Zenith_Editor::s_bPendingSceneLoad = false;
-std::string Zenith_Editor::s_strPendingSceneLoadPath = "";
-bool Zenith_Editor::s_bPendingSceneSave = false;
-std::string Zenith_Editor::s_strPendingSceneSavePath = "";
-bool Zenith_Editor::s_bPendingSceneReset = false;
-bool Zenith_Editor::s_bPendingRegisteredSceneLoad = false;
-int Zenith_Editor::s_iPendingRegisteredSceneBuildIndex = -1;
-bool Zenith_Editor::s_bPendingSceneLoadFromFile = false;
-std::string Zenith_Editor::s_strPendingSceneLoadFromFilePath = "";
+// Deferred operations + play-mode scene backup state. Migrated from individual
+// statics into Zenith_EditorDeferredOpsState / Zenith_EditorPlayBackupState
+// per the staged EditorState wire-in. Defaults come from the struct field
+// initialisers; this single instance replaces 15 prior class statics.
+namespace { Zenith_EditorState s_xEditorState; }
 
 // Content Browser state
 std::string Zenith_Editor::s_strCurrentDirectory;
@@ -493,9 +483,9 @@ bool Zenith_Editor::Update()
 bool Zenith_Editor::ProcessDeferredSceneOperations()
 {
 	// Handle pending scene reset
-	if (s_bPendingSceneReset)
+	if (s_xEditorState.m_xDeferredOps.m_bPendingSceneReset)
 	{
-		s_bPendingSceneReset = false;
+		s_xEditorState.m_xDeferredOps.m_bPendingSceneReset = false;
 
 		// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
 		// This matches the synchronization used for scene loading
@@ -540,9 +530,9 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 	}
 
 	// Handle pending scene save
-	if (s_bPendingSceneSave)
+	if (s_xEditorState.m_xDeferredOps.m_bPendingSceneSave)
 	{
-		s_bPendingSceneSave = false;
+		s_xEditorState.m_xDeferredOps.m_bPendingSceneSave = false;
 
 		try
 		{
@@ -551,8 +541,8 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 			if (pxSceneData)
 			{
-				pxSceneData->SaveToFile(s_strPendingSceneSavePath);
-				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved to %s", s_strPendingSceneSavePath.c_str());
+				pxSceneData->SaveToFile(s_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved to %s", s_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.c_str());
 			}
 		}
 		catch (const std::exception& e)
@@ -560,19 +550,19 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 			Zenith_Log(LOG_CATEGORY_EDITOR, "Failed to save scene: %s", e.what());
 		}
 
-		s_strPendingSceneSavePath.clear();
+		s_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.clear();
 	}
 
 	// Handle pending scene load (with backup-restore detection)
-	if (s_bPendingSceneLoad)
+	if (s_xEditorState.m_xDeferredOps.m_bPendingSceneLoad)
 	{
 		return HandlePendingSceneLoad();
 	}
 
 	// Handle pending registered scene load (from toolbar dropdown)
-	if (s_bPendingRegisteredSceneLoad)
+	if (s_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad)
 	{
-		s_bPendingRegisteredSceneLoad = false;
+		s_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad = false;
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading registered scene...");
 		Flux_PlatformAPI::WaitForGPUIdle();
@@ -586,8 +576,8 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
 		Flux::ClearPendingCommandLists();
 
-		Zenith_SceneManager::LoadSceneByIndexBlocking_ToolsOnly(s_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Registered scene (build index %d) loaded", s_iPendingRegisteredSceneBuildIndex);
+		Zenith_SceneManager::LoadSceneByIndexBlocking_ToolsOnly(s_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Registered scene (build index %d) loaded", s_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex);
 
 		ClearSelection();
 		Zenith_UndoSystem::Clear();
@@ -597,9 +587,9 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 	}
 
 	// Handle pending scene load from file path (content browser double-click)
-	if (s_bPendingSceneLoadFromFile)
+	if (s_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile)
 	{
-		s_bPendingSceneLoadFromFile = false;
+		s_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile = false;
 
 		Flux_PlatformAPI::WaitForGPUIdle();
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
@@ -608,13 +598,13 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 		}
 		Flux::ClearPendingCommandLists();
 
-		Zenith_SceneManager::LoadSceneBlocking_ToolsOnly(s_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from file: %s", s_strPendingSceneLoadFromFilePath.c_str());
+		Zenith_SceneManager::LoadSceneBlocking_ToolsOnly(s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from file: %s", s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath.c_str());
 
 		ClearSelection();
 		Zenith_UndoSystem::Clear();
 		s_uGameCameraEntity = INVALID_ENTITY_ID;
-		s_strPendingSceneLoadFromFilePath.clear();
+		s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath.clear();
 
 		return false;
 	}
@@ -624,7 +614,7 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 
 bool Zenith_Editor::HandlePendingSceneLoad()
 {
-	s_bPendingSceneLoad = false;
+	s_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = false;
 
 	// W14: Render graph Execute() is now synchronous on the main thread, so only GPU idle is needed.
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading scene...");
@@ -646,7 +636,7 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 
 	// Safe to load now - no render tasks active, GPU idle, old resources deleted
 
-	bool bIsBackupRestore = s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath;
+	bool bIsBackupRestore = s_xEditorState.m_xPlayBackup.m_bHasBackup && s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath == s_xEditorState.m_xPlayBackup.m_strBackupScenePath;
 
 	// When restoring from backup (editor Stop), clean up all game scenes and persistent entities.
 	// The backup handle may be stale - games using SCENE_LOAD_SINGLE during Play destroy
@@ -686,14 +676,14 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 		}
 
 		// 4. Create fresh scene with the original name and restore metadata
-		Zenith_Scene xRestoredScene = Zenith_SceneManager::CreateEmptyScene(s_strBackupSceneName);
+		Zenith_Scene xRestoredScene = Zenith_SceneManager::CreateEmptyScene(s_xEditorState.m_xPlayBackup.m_strBackupSceneName);
 		Zenith_SceneManager::SetActiveScene(xRestoredScene);
 
 		Zenith_SceneData* pxRestoredData = Zenith_SceneManager::GetSceneData(xRestoredScene);
 		if (pxRestoredData)
 		{
-			pxRestoredData->m_strPath = s_strBackupOriginalPath;
-			pxRestoredData->m_iBuildIndex = s_iBackupBuildIndex;
+			pxRestoredData->m_strPath = s_xEditorState.m_xPlayBackup.m_strBackupOriginalPath;
+			pxRestoredData->m_iBuildIndex = s_xEditorState.m_xPlayBackup.m_iBackupBuildIndex;
 		}
 	}
 
@@ -702,9 +692,9 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 	if (pxSceneData)
 	{
-		pxSceneData->LoadFromFile(s_strPendingSceneLoadPath);
+		pxSceneData->LoadFromFile(s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
 	}
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
 
 	// Clear selection as entity pointers are now invalid
 	ClearSelection();
@@ -718,13 +708,13 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 	if (bIsBackupRestore)
 	{
 		// Delete the temporary backup file
-		std::filesystem::remove(s_strBackupScenePath);
-		s_bHasSceneBackup = false;
-		s_strBackupScenePath = "";
-		s_iBackupSceneHandle = -1;
-		s_strBackupSceneName = "";
-		s_strBackupOriginalPath = "";
-		s_iBackupBuildIndex = -1;
+		std::filesystem::remove(s_xEditorState.m_xPlayBackup.m_strBackupScenePath);
+		s_xEditorState.m_xPlayBackup.m_bHasBackup = false;
+		s_xEditorState.m_xPlayBackup.m_strBackupScenePath = "";
+		s_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = -1;
+		s_xEditorState.m_xPlayBackup.m_strBackupSceneName = "";
+		s_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = "";
+		s_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = -1;
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Backup scene file cleaned up");
 	}
 
@@ -733,7 +723,7 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 		SwitchToEditorCamera();
 	}
 
-	s_strPendingSceneLoadPath.clear();
+	s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.clear();
 
 	return false;
 }
@@ -1044,7 +1034,7 @@ bool Zenith_Editor::EnterPlayMode()
 {
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Entering Play Mode");
 
-	s_strBackupScenePath = std::filesystem::temp_directory_path().string() + "/zenith_scene_backup" ZENITH_SCENE_EXT;
+	s_xEditorState.m_xPlayBackup.m_strBackupScenePath = std::filesystem::temp_directory_path().string() + "/zenith_scene_backup" ZENITH_SCENE_EXT;
 
 	// Persistent entities only — transient entities have runtime-only resources
 	// (procedural meshes) that can't serialise, and behaviour scripts will
@@ -1058,14 +1048,14 @@ bool Zenith_Editor::EnterPlayMode()
 		return false;
 	}
 
-	pxSceneData->SaveToFile(s_strBackupScenePath, false);
-	s_bHasSceneBackup = true;
-	s_iBackupSceneHandle = xActiveScene.m_iHandle;
-	s_strBackupSceneName = pxSceneData->GetName();
-	s_strBackupOriginalPath = pxSceneData->GetPath();
-	s_iBackupBuildIndex = pxSceneData->GetBuildIndex();
+	pxSceneData->SaveToFile(s_xEditorState.m_xPlayBackup.m_strBackupScenePath, false);
+	s_xEditorState.m_xPlayBackup.m_bHasBackup = true;
+	s_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = xActiveScene.m_iHandle;
+	s_xEditorState.m_xPlayBackup.m_strBackupSceneName = pxSceneData->GetName();
+	s_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = pxSceneData->GetPath();
+	s_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = pxSceneData->GetBuildIndex();
 
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene state backed up to: %s", s_strBackupScenePath.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene state backed up to: %s", s_xEditorState.m_xPlayBackup.m_strBackupScenePath.c_str());
 
 	s_uGameCameraEntity = pxSceneData->GetMainCameraEntity();
 	if (s_uGameCameraEntity == INVALID_ENTITY_ID)
@@ -1139,12 +1129,12 @@ void Zenith_Editor::EnterStopMode()
 {
 	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Stopping Play Mode");
 
-	if (s_bHasSceneBackup && !s_strBackupScenePath.empty())
+	if (s_xEditorState.m_xPlayBackup.m_bHasBackup && !s_xEditorState.m_xPlayBackup.m_strBackupScenePath.empty())
 	{
-		s_bPendingSceneLoad = true;
-		s_strPendingSceneLoadPath = s_strBackupScenePath;
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene restore queued for next frame: %s", s_strBackupScenePath.c_str());
-		// s_bHasSceneBackup / s_strBackupScenePath cleared in Update() after the load completes.
+		s_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = true;
+		s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath = s_xEditorState.m_xPlayBackup.m_strBackupScenePath;
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene restore queued for next frame: %s", s_xEditorState.m_xPlayBackup.m_strBackupScenePath.c_str());
+		// s_xEditorState.m_xPlayBackup.m_bHasBackup / s_xEditorState.m_xPlayBackup.m_strBackupScenePath cleared in Update() after the load completes.
 	}
 	else
 	{
@@ -1189,14 +1179,14 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 
 void Zenith_Editor::RequestLoadRegisteredScene(int iBuildIndex)
 {
-	s_bPendingRegisteredSceneLoad = true;
-	s_iPendingRegisteredSceneBuildIndex = iBuildIndex;
+	s_xEditorState.m_xDeferredOps.m_bPendingRegisteredSceneLoad = true;
+	s_xEditorState.m_xDeferredOps.m_iPendingRegisteredSceneBuildIndex = iBuildIndex;
 }
 
 void Zenith_Editor::RequestLoadSceneFromFile(const std::string& strPath)
 {
-	s_bPendingSceneLoadFromFile = true;
-	s_strPendingSceneLoadFromFilePath = strPath;
+	s_xEditorState.m_xDeferredOps.m_bPendingSceneLoadFromFile = true;
+	s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadFromFilePath = strPath;
 }
 
 // Synchronously flush the staging buffer, wait for GPU idle, drain deferred
@@ -1222,8 +1212,8 @@ void Zenith_Editor::WaitForGPUAndFlushDeferred(const char* szReason)
 // selection and undo history (entity IDs become invalid after Reset).
 void Zenith_Editor::HandlePendingSceneReset()
 {
-	if (!s_bPendingSceneReset) return;
-	s_bPendingSceneReset = false;
+	if (!s_xEditorState.m_xDeferredOps.m_bPendingSceneReset) return;
+	s_xEditorState.m_xDeferredOps.m_bPendingSceneReset = false;
 
 	WaitForGPUAndFlushDeferred("scene reset");
 
@@ -1244,8 +1234,8 @@ void Zenith_Editor::HandlePendingSceneReset()
 // Pending scene save: write the active scene's contents to disk.
 void Zenith_Editor::HandlePendingSceneSave()
 {
-	if (!s_bPendingSceneSave) return;
-	s_bPendingSceneSave = false;
+	if (!s_xEditorState.m_xDeferredOps.m_bPendingSceneSave) return;
+	s_xEditorState.m_xDeferredOps.m_bPendingSceneSave = false;
 
 	try
 	{
@@ -1253,8 +1243,8 @@ void Zenith_Editor::HandlePendingSceneSave()
 		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 		if (pxSceneData)
 		{
-			pxSceneData->SaveToFile(s_strPendingSceneSavePath);
-			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene saved to %s", s_strPendingSceneSavePath.c_str());
+			pxSceneData->SaveToFile(s_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath);
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene saved to %s", s_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.c_str());
 		}
 	}
 	catch (const std::exception& e)
@@ -1262,7 +1252,7 @@ void Zenith_Editor::HandlePendingSceneSave()
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Failed to save scene: %s", e.what());
 	}
 
-	s_strPendingSceneSavePath.clear();
+	s_xEditorState.m_xDeferredOps.m_strPendingSceneSavePath.clear();
 }
 
 // Pending scene load: flush GPU; if this is the editor's stop-mode backup
@@ -1272,12 +1262,12 @@ void Zenith_Editor::HandlePendingSceneSave()
 // scene and load the file into it. Also handles plain (non-backup) loads.
 void Zenith_Editor::HandlePendingSceneLoadDeferred()
 {
-	if (!s_bPendingSceneLoad) return;
-	s_bPendingSceneLoad = false;
+	if (!s_xEditorState.m_xDeferredOps.m_bPendingSceneLoad) return;
+	s_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = false;
 
 	WaitForGPUAndFlushDeferred("scene load");
 
-	const bool bIsBackupRestore = s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath;
+	const bool bIsBackupRestore = s_xEditorState.m_xPlayBackup.m_bHasBackup && s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath == s_xEditorState.m_xPlayBackup.m_strBackupScenePath;
 
 	if (bIsBackupRestore)
 	{
@@ -1310,14 +1300,14 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 		}
 
 		// 4. Create a fresh scene with the original name and restore metadata.
-		Zenith_Scene xRestoredScene = Zenith_SceneManager::CreateEmptyScene(s_strBackupSceneName);
+		Zenith_Scene xRestoredScene = Zenith_SceneManager::CreateEmptyScene(s_xEditorState.m_xPlayBackup.m_strBackupSceneName);
 		Zenith_SceneManager::SetActiveScene(xRestoredScene);
 
 		Zenith_SceneData* pxRestoredData = Zenith_SceneManager::GetSceneData(xRestoredScene);
 		if (pxRestoredData)
 		{
-			pxRestoredData->m_strPath = s_strBackupOriginalPath;
-			pxRestoredData->m_iBuildIndex = s_iBackupBuildIndex;
+			pxRestoredData->m_strPath = s_xEditorState.m_xPlayBackup.m_strBackupOriginalPath;
+			pxRestoredData->m_iBuildIndex = s_xEditorState.m_xPlayBackup.m_iBackupBuildIndex;
 		}
 	}
 
@@ -1325,9 +1315,9 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 	if (pxSceneData)
 	{
-		pxSceneData->LoadFromFile(s_strPendingSceneLoadPath);
+		pxSceneData->LoadFromFile(s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
 	}
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene loaded from %s", s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
 
 	ClearSelection();
 	Zenith_UndoSystem::Clear();
@@ -1335,13 +1325,13 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 
 	if (bIsBackupRestore)
 	{
-		std::filesystem::remove(s_strBackupScenePath);
-		s_bHasSceneBackup = false;
-		s_strBackupScenePath = "";
-		s_iBackupSceneHandle = -1;
-		s_strBackupSceneName = "";
-		s_strBackupOriginalPath = "";
-		s_iBackupBuildIndex = -1;
+		std::filesystem::remove(s_xEditorState.m_xPlayBackup.m_strBackupScenePath);
+		s_xEditorState.m_xPlayBackup.m_bHasBackup = false;
+		s_xEditorState.m_xPlayBackup.m_strBackupScenePath = "";
+		s_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = -1;
+		s_xEditorState.m_xPlayBackup.m_strBackupSceneName = "";
+		s_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = "";
+		s_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = -1;
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Backup scene file cleaned up");
 	}
 
@@ -1350,7 +1340,7 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 		SwitchToEditorCamera();
 	}
 
-	s_strPendingSceneLoadPath.clear();
+	s_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.clear();
 }
 
 void Zenith_Editor::FlushPendingSceneOperations()

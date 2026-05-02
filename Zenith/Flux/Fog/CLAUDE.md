@@ -111,15 +111,17 @@ Located in `Shaders/Fog/`:
 | `Flux_FroxelFog_Light.comp` | Lighting accumulation |
 | `Flux_FroxelFog_Apply.frag` | Froxel application |
 
-## Render Order
+## Pass placement
 
-Render orders in `Flux_Enums.h`:
+Volume fog registers three passes with the render graph; ordering comes from declared Read/Write dependencies, not from any enum:
 
-```
-RENDER_ORDER_VOLUMEFOG_INJECT    → Density injection (compute)
-RENDER_ORDER_VOLUMEFOG_LIGHT     → Lighting pass (compute)
-RENDER_ORDER_FOG                 → Application pass (existing)
-```
+| Pass | Type | Reads | Writes |
+|------|------|-------|--------|
+| Density injection | compute | (input parameters only) | froxel density volume |
+| Lighting pass | compute | froxel density volume, shadow cascades | froxel lit volume |
+| Application pass | graphics | froxel lit volume, scene depth | HDR scene |
+
+The application pass naturally runs after deferred shading writes the HDR scene and before tonemap reads it.
 
 ## Architecture
 

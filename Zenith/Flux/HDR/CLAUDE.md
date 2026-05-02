@@ -60,16 +60,18 @@ All HDR render targets are graph-owned transients declared in
 | `GetHDRSceneTargetSetup()` | Color-only (deferred shading, SSAO, fog) |
 | `GetHDRSceneTargetSetupWithDepth()` | With depth (particles, SDFs) |
 
-## Render Order
+## Pass placement
 
-The HDR system uses these render orders defined in `Flux_Enums.h`:
+HDR registers these passes with the render graph; ordering is derived from Read/Write declarations, not from any enum.
 
-```cpp
-RENDER_ORDER_HDR_LUMINANCE,    // Luminance histogram (future)
-RENDER_ORDER_HDR_ADAPTATION,   // Auto-exposure adaptation (future)
-RENDER_ORDER_HDR_BLOOM,        // Bloom passes
-RENDER_ORDER_HDR_TONEMAP,      // Final tone mapping to LDR
-```
+| Pass | Status | Reads | Writes |
+|------|--------|-------|--------|
+| Luminance histogram | future | HDR scene | luminance buffer |
+| Exposure adaptation | future | luminance buffer | exposure constant |
+| Bloom (downsample + blur + composite) | active | HDR scene | bloom mip chain |
+| Tonemap (HDR → LDR) | active | HDR scene, bloom output, exposure | swapchain LDR target |
+
+The tonemap pass naturally runs after anything that writes the HDR scene (deferred shading, SSAO, fog, particles) and before anything that reads the LDR target (UI text, UI quads, ImGui).
 
 ## Tone Mapping Operators
 
@@ -137,12 +139,12 @@ Flux_HDR::Initialise();        // Creates HDR targets
 
 ### Render to HDR (no depth):
 ```cpp
-Flux::SubmitCommandList(&cmdList, Flux_HDR::GetHDRSceneTargetSetup(), RENDER_ORDER_XYZ);
+Flux::SubmitCommandList(&cmdList, Flux_HDR::GetHDRSceneTargetSetup());
 ```
 
 ### Render to HDR (with depth):
 ```cpp
-Flux::SubmitCommandList(&cmdList, Flux_HDR::GetHDRSceneTargetSetupWithDepth(), RENDER_ORDER_XYZ);
+Flux::SubmitCommandList(&cmdList, Flux_HDR::GetHDRSceneTargetSetupWithDepth());
 ```
 
 ### Access HDR texture for sampling:

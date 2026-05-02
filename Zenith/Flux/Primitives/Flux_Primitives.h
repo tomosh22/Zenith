@@ -6,9 +6,10 @@
 /**
  * Flux_Primitives - Debug primitive renderer
  *
- * Renders simple debug shapes (spheres, cubes, lines, etc.) into the GBuffer
- * at RENDER_ORDER_PRIMITIVES. All primitives are generated procedurally at runtime
- * and rendered using shared vertex/index buffers with per-instance transforms.
+ * Renders simple debug shapes (spheres, cubes, lines, etc.) into the GBuffer.
+ * Pass placement is via render-graph Read/Write declarations (no ordering enum).
+ * All primitives are generated procedurally at runtime and rendered using shared
+ * vertex/index buffers with per-instance transforms.
  *
  * Usage:
  *   Flux_Primitives::AddSphere(position, radius, color);

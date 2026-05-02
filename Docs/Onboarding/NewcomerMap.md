@@ -88,6 +88,36 @@ After those five, you'll be ready for the harder ones in any order:
 
 ---
 
+## 3.5 Where the Real Implementation Lives
+
+Two subsystems hide their implementation behind a public-facing facade. If you're searching for "who actually does X", look here.
+
+### ECS — `Zenith_SceneManager` is a static facade
+
+`Zenith_SceneManager` exposes ~120 static methods. Most are one-line forwarders to one of six `Internal/` subsystems. To trace any operation:
+
+| Concern in SceneManager | Owner in `EntityComponent/Internal/` |
+|---|---|
+| Scene slot table, generations, name cache | `Zenith_SceneRegistry` |
+| Scene callbacks (`Loaded`, `Unloading`, `ActiveSceneChanged`) | `Zenith_SceneCallbackBus` |
+| Async load/unload queue, operation IDs | `Zenith_SceneOperationQueue` |
+| Per-frame `Update`, OnAwake/OnEnable/OnStart/OnUpdate dispatch, lifecycle flags | `Zenith_SceneLifecycleScheduler` |
+| `MoveEntityToScene`, persistent entities, slot ownership | `Zenith_SceneEntityOwnership` |
+| Per-frame lifecycle state container (read-side surface) | `Zenith_SceneLifecycleContext` |
+
+Boundary contracts and re-entrancy rules: see [EntityComponent/Internal/ARCHITECTURE.md](../../Zenith/EntityComponent/Internal/ARCHITECTURE.md).
+
+### Flux renderer — every subsystem registers passes with the render graph
+
+`Flux/CLAUDE.md` lists each subsystem (StaticMeshes, Shadows, DeferredShading, SSR, SSGI, HiZ, Fog, etc.) but the real "what runs and when" question is answered by:
+
+- **The render graph** at [Flux/RenderGraph/CLAUDE.md](../../Zenith/Flux/RenderGraph/CLAUDE.md) — Setup -> Compile -> Execute lifecycle, fluent builder API, barrier synthesis, transient aliasing.
+- **The Print Pass Order debug button** (`Render/RenderGraph/Print Pass Order` in the debug variables panel) — dumps the live topologically-sorted pass list for the current frame. Faster than tracing source code when you only need the answer to "does pass A run before pass B?".
+
+Each subsystem's CLAUDE.md describes its passes' Reads/Writes — that's the input to the topological sort. There is no `RenderOrder` enum and no caller-supplied ordering token.
+
+---
+
 ## 4. Safe First Areas
 
 If you want a starter task to get familiar with the build, these areas are well-isolated and unlikely to break anything else:
@@ -129,7 +159,7 @@ Common "huh?" moments and how to read them.
 
 - **`Flux_CommandBuffer` has no class definition you can jump to.** It's a `using` alias declared in `Zenith/Vulkan/Zenith_PlatformGraphics_Include.h:22-33`, mapping to `Zenith_Vulkan_CommandBuffer`. Search by the underlying name.
 - **`Zenith_SceneData` looks like the wrong place for ECS ownership** — it's the actual storage, exposed only to `Zenith_SceneManager`. Game code uses `Zenith_Scene` and `Zenith_Entity` handles.
-- **`Zenith_SceneManager.h` is huge (1254 lines).** The line `// Internal (Engine Use Only)` (~line 860) divides public API from internal forwarders into helpers in `EntityComponent/Internal/`. Read the public half first.
+- **`Zenith_SceneManager.h` is split across three sibling headers.** The top file (`Zenith_SceneManager.h`) holds only the public game-facing API. Engine internals live in `Zenith_SceneManagerInternal.h`; nested RAII guards in `Zenith_SceneManagerGuards.h`. Both are included from inside the class body, so call sites resolve unchanged. Read the public header first; reach for the internal one only when working on the engine itself.
 - **There is no `std::function` anywhere.** Engine convention forbids it for performance. Callbacks are raw function pointers (e.g. `Zenith_TaskFunction`, `UIButtonCallback`).
 - **`Zenith_Vector<T>` is not `std::vector<T>` and has no STL iterators.** Use index-based loops or its own `Iterator` class. Methods: `PushBack`, `GetSize`, `Get`, `Clear`, `Remove`, `EraseValue`, `RemoveSwap`.
 - **`std::mutex` doesn't appear** — it's `Zenith_Mutex` (alias for `Zenith_Windows_Mutex`). Method names are `Lock`, `TryLock`, `Unlock`.
@@ -142,3 +172,5 @@ Common "huh?" moments and how to read them.
 ## Updates
 
 This map is intended to be edited as you discover things newcomers need to know. If you spent more than 10 minutes confused by something that should have been obvious, add it to **Known Sharp Edges** or **Where Things Aren't What They Look Like** — that's exactly what those sections are for.
+
+For a record of past concerns surfaced by newcomer exploration and how each was resolved, see [JuniorExplorationFollowup.md](JuniorExplorationFollowup.md).

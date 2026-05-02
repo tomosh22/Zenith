@@ -5,6 +5,19 @@
 #include <string>
 #include <unordered_map>
 
+// =============================================================================
+// STATUS: NOT IMPLEMENTED
+// -----------------------------------------------------------------------------
+// All AsyncLoadAsset<T> specialisations in Zenith_AsyncAssetLoader.cpp stub-
+// return nullptr after a one-shot warning log. The request queue, completion
+// callbacks, and task dispatch scaffolding below exist, but the per-type GPU
+// hand-off (texture staging, mesh buffer creation, etc.) is not done.
+//
+// Use Zenith_AssetRegistry::Get<T>(path) for ALL asset access. Do not write
+// code that depends on async completion. See AssetHandling/CLAUDE.md for the
+// implementation status.
+// =============================================================================
+
 /**
  * Asset load state enum - tracks the loading progress of an asset
  */

@@ -76,15 +76,18 @@ class Zenith_TextureAsset : public Zenith_Asset
 ### Loading Textures
 
 ```cpp
-// Always retrieve assets via the registry
-Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(path);
+// Preferred: resolve the handle directly. Lazy-loads on first call and caches.
+Zenith_TextureAsset* pTex = handle.Resolve();
+
+// Equivalent two-step form (still supported, but more verbose):
+Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(handle.GetPath());
 ```
 
-Asset handles (`TextureHandle`, `MaterialHandle`, etc.) store paths and manage ref-counting, but
-asset retrieval must go through the registry. Use `handle.GetPath()` to obtain the path, then
-pass it to `Zenith_AssetRegistry::Get().Get<T>()`. For procedural assets (created via
-`reg.Create<T>()` and stored with `handle.Set(ptr)`), use `handle.GetDirect()` to retrieve the
-pointer directly.
+Asset handles (`TextureHandle`, `MaterialHandle`, etc.) store paths and manage ref-counting.
+
+- **`handle.Resolve()`** — default accessor for file-based handles. Returns the cached pointer if loaded; otherwise calls into `Zenith_AssetRegistry`, caches, and returns. Returns `nullptr` if path is empty and no procedural pointer was set, or if the load fails. Use this in game / component code unless you specifically need one of the alternatives below.
+- **`handle.GetDirect()`** — for procedural assets created via `reg.Create<T>()` and stored with `handle.Set(ptr)`. Returns the stored pointer without going through the registry. Returns `nullptr` for file-based handles that have not been loaded yet.
+- **`Zenith_AssetRegistry::Get().Get<T>(handle.GetPath())`** — explicit two-step form. Equivalent to `Resolve()` but verbose; use when you want the registry call to be obvious at the call site.
 
 ## Material Assets (Zenith_MaterialAsset)
 
@@ -270,6 +273,6 @@ AssetHandling/
 
 ## Async loading status
 
-`Zenith_AsyncAssetLoader` is **not yet implemented**. The framework (request queue, completion callbacks, task dispatch) is wired up end-to-end, but the per-type `AsyncLoadAsset<T>` specialisations all stub-return `nullptr` after a one-shot warning log. Calling `LoadAsync<T>()` will currently fail to deliver the asset.
+> **Async asset loading is NOT IMPLEMENTED.** Calling `LoadAsync<T>()` for any asset type currently logs a one-shot warning and returns `nullptr`. **Use `Zenith_AssetRegistry::Get<T>(path)` for all asset access.** Do not write code that depends on async completion.
 
-Use `Zenith_AssetRegistry::Get<T>(path)` for synchronous loading. The async path will become functional once each `AsyncLoadAsset<T>` specialisation in `Zenith_AsyncAssetLoader.cpp` is implemented; the GPU-resource hand-off is the hard part (textures need staging buffers + main-thread upload, meshes need GPU buffer creation on the main thread, prefabs touch the scene graph).
+The scaffolding (request queue, completion callbacks, task dispatch) exists in `Zenith_AsyncAssetLoader.h/cpp`, but every per-type `AsyncLoadAsset<T>` specialisation is a stub. The async path will become functional once each specialisation is implemented; the hard part is the GPU-resource hand-off (textures need staging buffers + main-thread upload, meshes need GPU buffer creation on the main thread, prefabs touch the scene graph).

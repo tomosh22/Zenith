@@ -20,8 +20,18 @@ static std::chrono::time_point<std::chrono::high_resolution_clock> g_xFrameEnd;
 static std::chrono::time_point<std::chrono::high_resolution_clock> g_xPreviousFrameStart;
 static std::chrono::time_point<std::chrono::high_resolution_clock> g_xPreviousFrameEnd;
 
-DEBUGVAR bool dbg_bPaused = false;
-static bool g_bIsPaused = false;
+// Pause has two flags because the ImGui checkbox can be toggled mid-frame, but
+// pause must take effect at frame boundary for the recorded events to be
+// internally consistent.
+//
+//   dbg_bPauseRequested - written by the ImGui checkbox / debug variable. Live.
+//   g_bPauseEffective   - latched at EndFrame. Read by Begin/EndFrame and the
+//                         BeginProfile/EndProfile fast-path.
+//
+// EndFrame compares the two: on a request->effective transition it still closes
+// the in-flight TOTAL_FRAME scope so the displayed final frame is well-formed.
+DEBUGVAR bool dbg_bPauseRequested = false;
+static bool g_bPauseEffective = false;
 
 void Zenith_Profiling::Initialise()
 {
@@ -43,7 +53,7 @@ void Zenith_Profiling::RegisterThread()
 
 void Zenith_Profiling::BeginFrame()
 {
-	if (g_bIsPaused) return;
+	if (g_bPauseEffective) return;
 
 	{
 		Zenith_ScopedMutexLock_T xLock(g_xEventsMutex);
@@ -64,15 +74,15 @@ void Zenith_Profiling::BeginFrame()
 
 void Zenith_Profiling::EndFrame()
 {
-	if (dbg_bPaused != g_bIsPaused)
+	if (dbg_bPauseRequested != g_bPauseEffective)
 	{
 		EndProfile(ZENITH_PROFILE_INDEX__TOTAL_FRAME);
 		g_xFrameEnd = std::chrono::high_resolution_clock::now();
-		g_bIsPaused = dbg_bPaused;
+		g_bPauseEffective = dbg_bPauseRequested;
 		return;
 	}
-	g_bIsPaused = dbg_bPaused;
-	if (g_bIsPaused) return;
+	g_bPauseEffective = dbg_bPauseRequested;
+	if (g_bPauseEffective) return;
 
 	EndProfile(ZENITH_PROFILE_INDEX__TOTAL_FRAME);
 	g_xFrameEnd = std::chrono::high_resolution_clock::now();
@@ -139,7 +149,7 @@ void Zenith_Profiling::RenderToImGui()
 	}
 
 	// Global controls available in all tabs
-	ImGui::Checkbox("Paused", &dbg_bPaused);
+	ImGui::Checkbox("Paused", &dbg_bPauseRequested);
 	ImGui::Separator();
 
 	if (ImGui::BeginTabBar("ProfilingTabs"))
@@ -411,19 +421,82 @@ struct ProfileNode
 	ProfileNode() : eIndex(ZENITH_PROFILE_INDEX__COUNT), fTotalTimeMs(0.0f), fSelfTimeMs(0.0f), uCallCount(0), uDepth(0), pEvent(nullptr) {}
 };
 
-// Sort a thread's events by start time and assemble them into a parent/child tree
-// using the per-event depth field. Self-time is subtracted from the parent as each
-// child is added, so no second pass is needed.
-static Zenith_Vector<ProfileNode> BuildProfileHierarchy(const Zenith_Vector<Zenith_Profiling::Event>& xThreadEvents)
+// Sort a thread's events by start-timestamp. Stable order is required because the
+// hierarchy reconstruction below assumes that, within a depth, events appear in
+// the order they were entered.
+static Zenith_Vector<const Zenith_Profiling::Event*> SortEventsByStart(const Zenith_Vector<Zenith_Profiling::Event>& xThreadEvents)
 {
-	Zenith_Vector<const Zenith_Profiling::Event*> xSortedEvents;
+	Zenith_Vector<const Zenith_Profiling::Event*> xSorted;
 	const u_int uEventCount = xThreadEvents.GetSize();
 	for (u_int u = 0; u < uEventCount; ++u)
 	{
-		xSortedEvents.PushBack(&xThreadEvents.Get(u));
+		xSorted.PushBack(&xThreadEvents.Get(u));
 	}
-	std::sort(xSortedEvents.GetDataPointer(), xSortedEvents.GetDataPointer() + xSortedEvents.GetSize(),
+	std::sort(xSorted.GetDataPointer(), xSorted.GetDataPointer() + xSorted.GetSize(),
 		[](const Zenith_Profiling::Event* a, const Zenith_Profiling::Event* b) { return a->m_xBegin < b->m_xBegin; });
+	return xSorted;
+}
+
+// Build a leaf ProfileNode from a single event. Self-time starts equal to total
+// time; it is reduced as children are added in the main loop.
+static ProfileNode MakeNodeFromEvent(const Zenith_Profiling::Event* pEvent)
+{
+	const float fDurationNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(pEvent->m_xEnd - pEvent->m_xBegin).count());
+	const float fDurationMs = fDurationNs / 1000000.0f;
+
+	ProfileNode xNode;
+	xNode.eIndex = pEvent->m_eIndex;
+	xNode.fTotalTimeMs = fDurationMs;
+	xNode.fSelfTimeMs = fDurationMs;
+	xNode.uCallCount = 1;
+	xNode.uDepth = pEvent->m_uDepth;
+	xNode.pEvent = pEvent;
+	return xNode;
+}
+
+// Pop entries from the depth stack whose scope ended before the new event begins.
+// These are completed siblings/parents and must not collect further children.
+static void PopExpiredScopes(Zenith_Vector<ProfileNode*>& xDepthStack, const Zenith_Profiling::Event* pNewEvent)
+{
+	while (xDepthStack.GetSize() > 0)
+	{
+		const ProfileNode* pStackTop = xDepthStack.Get(xDepthStack.GetSize() - 1);
+		if (pStackTop->pEvent->m_xEnd <= pNewEvent->m_xBegin)
+		{
+			xDepthStack.Remove(xDepthStack.GetSize() - 1);
+		}
+		else
+		{
+			break;
+		}
+	}
+}
+
+// Trim the stack so its size matches the requested depth. Anything beyond that
+// depth is a sibling at or below the new event's level and must be removed
+// before the new event becomes the active scope at its depth.
+static void TrimStackToDepth(Zenith_Vector<ProfileNode*>& xDepthStack, u_int uDepth)
+{
+	while (xDepthStack.GetSize() > uDepth)
+	{
+		xDepthStack.Remove(xDepthStack.GetSize() - 1);
+	}
+}
+
+// Sort a thread's events by start time and assemble them into a parent/child tree
+// using the per-event depth field. Self-time is subtracted from the parent as each
+// child is added, so no second pass is needed.
+//
+// Algorithm:
+//   For each event in start-time order:
+//     1) Pop any scope on the depth stack that has already ended (PopExpiredScopes).
+//     2) Trim the stack to the new event's depth so we have the correct parent.
+//     3) Either push as a root (depth 0) or attach to the parent at depth-1,
+//        subtracting our duration from the parent's self-time.
+//     4) Push the new node as the active scope at its depth.
+static Zenith_Vector<ProfileNode> BuildProfileHierarchy(const Zenith_Vector<Zenith_Profiling::Event>& xThreadEvents)
+{
+	const Zenith_Vector<const Zenith_Profiling::Event*> xSortedEvents = SortEventsByStart(xThreadEvents);
 
 	Zenith_Vector<ProfileNode> xRootNodes;
 	Zenith_Vector<ProfileNode*> xDepthStack; // xDepthStack[i] = current parent node at depth i
@@ -432,54 +505,23 @@ static Zenith_Vector<ProfileNode> BuildProfileHierarchy(const Zenith_Vector<Zeni
 	for (u_int u = 0; u < xSortedEvents.GetSize(); ++u)
 	{
 		const Zenith_Profiling::Event* pEvent = xSortedEvents.Get(u);
-		const float fDurationNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(pEvent->m_xEnd - pEvent->m_xBegin).count());
-		const float fDurationMs = fDurationNs / 1000000.0f;
+		ProfileNode xNode = MakeNodeFromEvent(pEvent);
 
-		ProfileNode xNode;
-		xNode.eIndex = pEvent->m_eIndex;
-		xNode.fTotalTimeMs = fDurationMs;
-		xNode.fSelfTimeMs = fDurationMs;
-		xNode.uCallCount = 1;
-		xNode.uDepth = pEvent->m_uDepth;
-		xNode.pEvent = pEvent;
-
-		// Pop expired parents so children don't get attached to a closed scope.
-		while (xDepthStack.GetSize() > 0)
-		{
-			ProfileNode* pStackTop = xDepthStack.Get(xDepthStack.GetSize() - 1);
-			if (pStackTop->pEvent->m_xEnd <= pEvent->m_xBegin)
-			{
-				xDepthStack.Remove(xDepthStack.GetSize() - 1);
-			}
-			else
-			{
-				break;
-			}
-		}
-		// Trim stack to current depth (siblings at or above the new node's depth are done).
-		while (xDepthStack.GetSize() > pEvent->m_uDepth)
-		{
-			xDepthStack.Remove(xDepthStack.GetSize() - 1);
-		}
+		PopExpiredScopes(xDepthStack, pEvent);
+		TrimStackToDepth(xDepthStack, pEvent->m_uDepth);
 
 		if (pEvent->m_uDepth == 0)
 		{
 			xRootNodes.PushBack(xNode);
-			while (xDepthStack.GetSize() > 0)
-			{
-				xDepthStack.Remove(xDepthStack.GetSize() - 1);
-			}
+			TrimStackToDepth(xDepthStack, 0);
 			xDepthStack.PushBack(&xRootNodes.Get(xRootNodes.GetSize() - 1));
 		}
-		else if (pEvent->m_uDepth > 0 && xDepthStack.GetSize() >= pEvent->m_uDepth)
+		else if (xDepthStack.GetSize() >= pEvent->m_uDepth)
 		{
 			ProfileNode* pParent = xDepthStack.Get(pEvent->m_uDepth - 1);
 			pParent->xChildren.PushBack(xNode);
-			pParent->fSelfTimeMs -= fDurationMs;
-			while (xDepthStack.GetSize() > pEvent->m_uDepth)
-			{
-				xDepthStack.Remove(xDepthStack.GetSize() - 1);
-			}
+			pParent->fSelfTimeMs -= xNode.fTotalTimeMs;
+			TrimStackToDepth(xDepthStack, pEvent->m_uDepth);
 			xDepthStack.PushBack(&pParent->xChildren.Get(pParent->xChildren.GetSize() - 1));
 		}
 	}
@@ -680,7 +722,7 @@ static Zenith_Vector<Zenith_Profiling::Event>& GetOrCreateThreadEvents()
 
 void Zenith_Profiling::BeginProfile(const Zenith_ProfileIndex eIndex, const char* szLabel)
 {
-	if (g_bIsPaused) return;
+	if (g_bPauseEffective) return;
 
 	Zenith_Assert(tl_g_uCurrentDepth < uMAX_PROFILE_DEPTH, "Profiling has nested too far");
 
@@ -693,7 +735,7 @@ void Zenith_Profiling::BeginProfile(const Zenith_ProfileIndex eIndex, const char
 
 void Zenith_Profiling::EndProfile(const Zenith_ProfileIndex eIndex)
 {
-	if (g_bIsPaused) return;
+	if (g_bPauseEffective) return;
 
 	Zenith_Assert(tl_g_uCurrentDepth > 0, "Ending profiling but it never started");
 	Zenith_Assert(tl_g_aeIndices[tl_g_uCurrentDepth - 1] == eIndex, "Expecting to end profile index %u but %u was found", eIndex, tl_g_aeIndices[tl_g_uCurrentDepth]);

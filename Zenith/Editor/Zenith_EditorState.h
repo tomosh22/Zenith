@@ -63,9 +63,13 @@ struct Zenith_EditorDeferredOpsState
 
 	bool m_bPendingSceneReset = false;
 
-	// Scene backup for play mode
-	bool m_bHasSceneBackup = false;
-	std::string m_strBackupScenePath;
+	// Loading a registered scene by build index
+	bool m_bPendingRegisteredSceneLoad = false;
+	int m_iPendingRegisteredSceneBuildIndex = -1;
+
+	// Loading a scene from an arbitrary file path
+	bool m_bPendingSceneLoadFromFile = false;
+	std::string m_strPendingSceneLoadFromFilePath;
 
 	void Reset()
 	{
@@ -74,6 +78,34 @@ struct Zenith_EditorDeferredOpsState
 		m_bPendingSceneSave = false;
 		m_strPendingSceneSavePath.clear();
 		m_bPendingSceneReset = false;
+		m_bPendingRegisteredSceneLoad = false;
+		m_iPendingRegisteredSceneBuildIndex = -1;
+		m_bPendingSceneLoadFromFile = false;
+		m_strPendingSceneLoadFromFilePath.clear();
+	}
+};
+
+//-----------------------------------------------------------------------------
+// Play-mode Scene Backup State
+// Captured on Stopped -> Playing, restored on Playing -> Stopped.
+//-----------------------------------------------------------------------------
+struct Zenith_EditorPlayBackupState
+{
+	bool m_bHasBackup = false;
+	std::string m_strBackupScenePath;
+	int m_iBackupSceneHandle = -1;
+	std::string m_strBackupSceneName;
+	std::string m_strBackupOriginalPath;
+	int m_iBackupBuildIndex = -1;
+
+	void Reset()
+	{
+		m_bHasBackup = false;
+		m_strBackupScenePath.clear();
+		m_iBackupSceneHandle = -1;
+		m_strBackupSceneName.clear();
+		m_strBackupOriginalPath.clear();
+		m_iBackupBuildIndex = -1;
 	}
 };
 
@@ -173,6 +205,7 @@ struct Zenith_EditorState
 	Zenith_EditorSelectionState m_xSelection;
 	Zenith_EditorViewportState m_xViewport;
 	Zenith_EditorDeferredOpsState m_xDeferredOps;
+	Zenith_EditorPlayBackupState m_xPlayBackup;
 	Zenith_EditorContentBrowserState m_xContentBrowser;
 	Zenith_EditorConsoleState m_xConsole;
 	Zenith_EditorCameraState m_xCamera;

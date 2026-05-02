@@ -3,7 +3,11 @@
 ## Files
 
 ### Core
-- `Zenith_SceneManager.h/cpp` - Static facade over the five `Internal/` subsystems below; multi-scene management
+- `Zenith_SceneManager.h/cpp` - Static facade over the `Internal/` subsystems below; multi-scene management. The class declaration is split across three sibling headers so the top file stays focused on the public game-facing API:
+  - `Zenith_SceneManager.h` — public API only (Load/Unload/Get*/MoveEntityToScene/callbacks).
+  - `Zenith_SceneManagerInternal.h` — engine-internal section (Initialise / Shutdown / Update / GetSceneData / lifecycle-state read accessors / Fire*Callbacks / private implementation block).
+  - `Zenith_SceneManagerGuards.h` — nested RAII scope-guard types (LifecycleDeferralGuard, PrefabInstantiationGuard, SceneUpdateDeferralGuard, SceneCreationTargetScope).
+  - The two sibling headers are included from inside `class Zenith_SceneManager` so all members remain class-static. Existing call sites resolve unchanged.
 - `Zenith_SceneData.h/cpp` - Internal scene storage (entity pools, components, metadata)
 - `Zenith_Scene.h/cpp` - Lightweight scene handle struct
 - `Zenith_SceneOperation.h/cpp` - Async scene operation tracking
@@ -24,7 +28,18 @@ SceneManager is a thin static facade — most of its work is forwarded to subsys
 - `Internal/Zenith_SceneEntityOwnership.h/cpp` - Entity slot ownership across scene moves
 - `Internal/Zenith_SceneLifecycleContext.h` - Per-frame lifecycle state container
 
-If a SceneManager method is a one-line forwarder, the real implementation lives in the matching `Internal/` file.
+If a SceneManager method is a one-line forwarder, the real implementation lives in the matching `Internal/` file. Use this table to jump directly to the owner:
+
+| What you're looking for | Owning subsystem |
+|---|---|
+| Scene slot table, scene-name lookup, generation counters | `Zenith_SceneRegistry` |
+| Scene callbacks (`SceneLoaded`, `SceneUnloading`, `ActiveSceneChanged`, `EntityPersistent`, `SceneLoadStarted`) | `Zenith_SceneCallbackBus` |
+| Async load/unload operation queue, `Zenith_SceneOperationID`, async config knobs | `Zenith_SceneOperationQueue` |
+| Per-frame `Update`, OnAwake / OnEnable / OnStart / OnUpdate / OnLateUpdate / OnFixedUpdate dispatch, lifecycle deferral flags, fixed-timestep accumulator | `Zenith_SceneLifecycleScheduler` |
+| `MoveEntityToScene`, `MarkEntityPersistent`, entity slot ownership across scene moves, `DontDestroyOnLoad` | `Zenith_SceneEntityOwnership` |
+| Per-frame lifecycle state container (read-side surface for the scheduler) | `Zenith_SceneLifecycleContext` |
+
+The full boundary contracts (which subsystem may write what state, the LoadScene queue-and-defer flow, re-entrancy rules, Unity-parity invariants) are in [Internal/ARCHITECTURE.md](Internal/ARCHITECTURE.md).
 
 ### Components (in Components/ subdirectory)
 - `Zenith_TransformComponent` - Position, rotation, scale

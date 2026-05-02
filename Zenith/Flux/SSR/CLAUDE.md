@@ -8,15 +8,17 @@ The SSR (Screen Space Reflections) system provides real-time reflections by ray 
 
 ### Three-pass pipeline (mirrors SSGI)
 
-```
-RENDER_ORDER_HIZ_GENERATE      <- Depth pyramid (required dependency)
-RENDER_ORDER_SSR_RAYMARCH      <- Ray marching pass (HALF-res)
-RENDER_ORDER_SSR_UPSAMPLE      <- Bilateral upsample to full-res
-RENDER_ORDER_SSR_RESOLVE       <- Roughness-based blur (optional)
-RENDER_ORDER_APPLY_LIGHTING    <- Deferred shading (consumes SSR)
-```
+The render graph schedules these passes via Read/Write declarations; there is no explicit ordering enum. Typical resolved order:
 
-The ray-march pass runs at **half resolution** for ~75% pixel-shader cost reduction; the upsample pass reconstructs the full-resolution output via depth-weighted bilateral 2x2 sampling. The resolve pass remains optional (gated on `m_bSSRRoughnessBlurEnabled`); when disabled the deferred shader reads the upsampled output directly — never the raw half-res raymarch.
+| Pass | Reads | Writes |
+|------|-------|--------|
+| HiZ generation | scene depth | HiZ chain (mip pyramid) |
+| SSR raymarch (half-res) | HiZ chain, G-buffer normals/material | SSR raymarch target (half-res) |
+| SSR upsample | SSR raymarch (half-res), depth | SSR full-res target |
+| SSR resolve (optional) | SSR full-res | SSR full-res (in-place blur) |
+| Deferred shading | SSR full-res, G-buffer, IBL | HDR scene |
+
+The raymarch pass runs at **half resolution** for ~75% pixel-shader cost reduction; the upsample pass reconstructs the full-resolution output via depth-weighted bilateral 2x2 sampling. The resolve pass remains optional (gated on `m_bSSRRoughnessBlurEnabled`); when disabled the deferred shader reads the upsampled output directly — never the raw half-res raymarch.
 
 ### Files
 

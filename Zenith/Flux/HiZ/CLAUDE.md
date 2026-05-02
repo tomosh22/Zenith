@@ -6,17 +6,14 @@ The Hi-Z (Hierarchical Z-Buffer) system generates a depth pyramid from the main 
 
 ## Architecture
 
-### Render Order
+### Pass placement
 
-```
-RENDER_ORDER_FOLIAGE
-RENDER_ORDER_HIZ_GENERATE    <- Hi-Z mip chain generation (compute)
-RENDER_ORDER_SSR_RAYMARCH
-RENDER_ORDER_SSR_RESOLVE
-RENDER_ORDER_APPLY_LIGHTING
-```
+The HiZ generation pass declares `Reads(scene depth)` and `Writes(HiZ chain)`. Because the render graph topo-sorts on declared dependencies, it automatically runs:
 
-Hi-Z runs after all opaque geometry is rendered but before any effects that need depth hierarchy.
+- **after** any pass that writes to scene depth (terrain, opaque static meshes, animated meshes, foliage)
+- **before** any pass that reads the HiZ chain (SSR raymarch, SSGI raymarch, future occlusion-culling)
+
+There is no explicit ordering enum — the dependency declarations alone produce the correct placement.
 
 ### Files
 

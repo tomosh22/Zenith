@@ -282,8 +282,8 @@ void Flux_HDR::PreExecuteLuminanceHistogram(void* pUserData)
 	// command buffer. EndFrame() submits that CB and signals s_xMemorySemaphore,
 	// which the subsequent render submission waits on, so any uploads issued
 	// from a Phase-0 OnPrepare callback are guaranteed to be visible before any
-	// pass that reads them. This replaces the old RENDER_ORDER_MEMORY_UPDATE
-	// invariant that the static_assert in EndFrame used to enforce.
+	// pass that reads them. This replaces the old explicit memory-update
+	// ordering token that the static_assert in EndFrame used to enforce.
 	SyncDebugVariables();
 	const bool bAutoExposure = Zenith_GraphicsOptions::Get().m_bHDRAutoExposureEnabled;
 	bool bAutoExposureJustEnabled = bAutoExposure && !s_bAutoExposureWasEnabled;

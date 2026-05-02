@@ -1,12 +1,71 @@
 # Flux Rendering System
 
+## Render Pipeline at a Glance
+
+A typical frame compiles into roughly this topologically-sorted order. The render graph derives the order from each pass's declared Reads/Writes — this is **not** a hardcoded sequence and individual subsystems can be enabled/disabled without changing the rest. Click `Render/RenderGraph/Print Pass Order` in the debug variables panel to dump the live order at runtime.
+
+```
++-----------------------------+
+| Frame begin                 |
++-----------------------------+
+              |
+              v
++-----------------------------+    Cascaded Shadow Maps (4 cascades)
+| Shadow cascades             |--> writes shadow depth targets
++-----------------------------+
+              |
+              v
++-----------------------------+    G-buffer build
+| Terrain                     |\
+| StaticMeshes                | >--> writes MRT diffuse / normals+ambient / material + scene depth
+| AnimatedMeshes              |/
+| Vegetation (foliage)        |
++-----------------------------+
+              |
+              v
++-----------------------------+    Screen-space effects
+| SSAO                        |
+| HiZ generation              |
+| SSR (raymarch / upsample)   |
+| SSGI (raymarch / denoise)   |
++-----------------------------+
+              |
+              v
++-----------------------------+    Lighting
+| DeferredShading             |--> reads G-buffer + shadows + IBL + SSR + SSGI, writes HDR scene
+| Skybox                      |
+| Volumetric Fog              |
+| Particles                   |
+| Primitives (debug)          |
++-----------------------------+
+              |
+              v
++-----------------------------+    HDR -> LDR
+| HDR Bloom + Tonemap         |--> reads HDR scene, writes swapchain LDR
++-----------------------------+
+              |
+              v
++-----------------------------+    Overlays (LDR)
+| UI quads / text             |
+| Editor gizmos (tools build) |
+| ImGui (tools build)         |
++-----------------------------+
+              |
+              v
++-----------------------------+
+| Present                     |
++-----------------------------+
+```
+
+For the full graph lifecycle (Setup -> Compile -> Execute), barrier synthesis, the fluent builder API, and the Print Pass Order debug button, see [RenderGraph/CLAUDE.md](RenderGraph/CLAUDE.md).
+
 ## Files
 
 ### Core
 - `Flux.h/cpp` - Main rendering infrastructure, pipeline specification, `Flux_SurfaceInfo`
 - `Flux_Buffers.h/cpp` - Buffer management
 - `Flux_CommandList.h/cpp` - Command list recording
-- `Flux_Enums.h` - Rendering enums including RenderOrder
+- `Flux_Enums.h` - Rendering enums (CommandType, ResourceAccess, TextureFormat, BlendFactor, DepthCompareFunc, MeshTopology, ShaderDataType, BindingType, LoadAction, StoreAction, MRTIndex, etc.)
 - `Flux_Graphics.h/cpp` - Global graphics state, frame constants
 - `Flux_RenderTargets.h/cpp` - Render target management
 - `Flux_Types.h` - Type definitions, `IsCompressedFormat()` helper
@@ -38,8 +97,14 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 ### Command List System
 Platform-agnostic command recording. Commands stored sequentially in dynamically-sized buffer. `AddCommand<T>()` template adds commands, `IterateCommands()` executes them on platform command buffer.
 
-### Render Order
-`RenderOrder` enum in `Flux_Enums.h` defines execution order. Passed to `Flux::SubmitCommandList()`. GPU executes commands in order from beginning to end.
+### Pass Execution Order
+There is no `RenderOrder` enum and no caller-supplied ordering token. Pass execution order is computed at frame boundary by `Flux_RenderGraph::Compile()`:
+
+1. Each pass declares the resources it `Reads()`/`Writes()`/`DependsOn()` via the fluent `AddPass()` builder.
+2. `Compile()` builds a dependency adjacency from those declarations and runs Kahn's topological sort.
+3. Resource transitions (image layout / buffer access) are then synthesized automatically as barriers between consecutive passes.
+
+`Flux::SubmitCommandList()` queues a recorded `Flux_CommandList` for the platform backend's worker-thread iteration; submission order is determined by the topo sort, not by call order at submit time. See `Flux/RenderGraph/CLAUDE.md` for the full graph lifecycle and the **Print Pass Order** debug button which dumps the current frame's resolved order.
 
 ### Command List Reset
 `Reset(bool bClearTargets)` clears command list for new frame. Reuses buffer allocation. Parameter controls whether render targets are cleared on render pass begin (true) or contents preserved (false for multi-pass rendering).

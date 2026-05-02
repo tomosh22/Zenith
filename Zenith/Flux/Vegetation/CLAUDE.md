@@ -125,17 +125,18 @@ The wind system uses layered sine waves for natural movement: primary wave (larg
 
 Density reduction happens at generation time by skipping blades based on distance to camera.
 
-## Render Order
+## Pass placement
 
-Grass renders during the foliage pass:
+Grass renders in the foliage pass, which declares:
 
-```cpp
-RENDER_ORDER_FOLIAGE   // After opaque meshes, before fog
-```
+- `Reads(scene depth)` — for early-Z testing against terrain
+- `Writes(G-buffer MRTs, scene depth)` — appends grass fragments to the deferred G-buffer
 
-This ensures:
+Topological sort places the foliage pass **after** the opaque mesh / terrain passes (they write the depth and G-buffer first) and **before** any pass that reads completed G-buffer attachments (HiZ generation, deferred shading, fog application). There is no explicit ordering enum.
+
+This placement gives:
 - Proper depth testing against terrain
-- Grass receives fog/aerial perspective
+- Grass receives fog / aerial perspective in the deferred lighting pass
 - Can cast shadows (future)
 
 ## Integration Points

@@ -3,38 +3,51 @@
 // =============================================================================
 // Navigation guide
 // -----------------------------------------------------------------------------
-// This file is large (>1200 lines). The class itself is a static facade over
-// five subsystems in Zenith/EntityComponent/Internal/. To avoid getting lost,
-// jump to the section you need:
+// Zenith_SceneManager is a static facade over six subsystems in
+// Zenith/EntityComponent/Internal/. The class declaration is split across
+// three headers so this top file stays focused on the public game-facing API:
 //
-//   ~ line  10  Forward declarations + Zenith_SceneLoadMode enum
-//   ~ line 145  Class declaration begins (Zenith_SceneManager)
-//   ~ line 152  Public API:
-//                 • Test harness reset (#ifdef ZENITH_TESTING)
-//                 • Scene loading (Load/Unload/Async/Bootstrap)
-//                 • Scene queries (GetActiveScene / GetSceneData / etc.)
-//                 • Active-scene management
-//                 • Entity helpers (MoveEntityToScene / etc.)
-//                 • Callbacks (Loaded / Unloading / ActiveSceneChanged)
-//   ~ line 860  Internal (Engine Use Only) — forwarders to:
-//                 - Zenith_SceneRegistry          (slot table + generations)
-//                 - Zenith_SceneCallbackBus       (event dispatch)
-//                 - Zenith_SceneOperationQueue    (async scene ops)
-//                 - Zenith_SceneLifecycleScheduler(OnAwake/OnEnable/etc.)
-//                 - Zenith_SceneEntityOwnership   (entity slot ownership)
-//                 - Zenith_SceneLifecycleContext  (per-frame lifecycle state)
-//   ~ line 1064 First private block (helpers + state)
-//   ~ line 1134 Nested types: PrefabInstantiationGuard,
-//                 LifecycleDeferralGuard, SceneUpdateDeferralGuard,
-//                 SceneCreationTargetScope, PendingBuildIndexGuard
-//   ~ line 1230 #include of Zenith_SceneData.h (deliberate cycle — see below)
-//   ~ line 1234 Template-method bodies that need full SceneData visibility
+//   Zenith_SceneManager.h          (this file) — public API only
+//   Zenith_SceneManagerInternal.h  — engine-internal section: Initialise /
+//                                    Shutdown / Update / GetSceneData /
+//                                    lifecycle-state read accessors /
+//                                    Fire*Callbacks / unload helpers / the
+//                                    private implementation block.
+//   Zenith_SceneManagerGuards.h    — nested RAII scope-guard types
+//                                    (LifecycleDeferralGuard,
+//                                     PrefabInstantiationGuard,
+//                                     SceneUpdateDeferralGuard,
+//                                     SceneCreationTargetScope).
 //
-// Why is SceneData.h included AT THE BOTTOM, after the class definition?
+// The two sibling headers are included from inside `class Zenith_SceneManager`
+// so all members remain class-static. Existing call sites that resolve names
+// via `Zenith_SceneManager::Foo` continue to compile unchanged — there is no
+// behavioural difference, only a file-organisation one.
+//
+// Public API sections (this file):
+//   - Test harness reset (#ifdef ZENITH_TESTING)
+//   - Scene loading (Load/Unload/Async/Bootstrap)
+//   - Scene queries (GetActiveScene / GetSceneData / etc.)
+//   - Active-scene management
+//   - Entity helpers (MoveEntityToScene / etc.)
+//   - Callbacks (Loaded / Unloading / ActiveSceneChanged)
+//
+// Internal subsystems delegated to (full mapping in EntityComponent/CLAUDE.md
+// and Internal/ARCHITECTURE.md):
+//   - Zenith_SceneRegistry           (slot table + generations + name cache)
+//   - Zenith_SceneCallbackBus        (event dispatch)
+//   - Zenith_SceneOperationQueue     (async scene ops)
+//   - Zenith_SceneLifecycleScheduler (OnAwake/OnEnable/Update/etc.)
+//   - Zenith_SceneEntityOwnership    (entity slot ownership across moves)
+//   - Zenith_SceneLifecycleContext   (per-frame lifecycle state read surface)
+//
+// Why is Zenith_SceneData.h included AT THE BOTTOM, after the class definition?
 // SceneData.h ALSO includes this file at its bottom — the cycle is intentional
 // and load-bearing. Each header is `#pragma once` and finishes its class body
 // before pulling in the sibling, so any TU eventually sees both classes fully
-// defined. Don't "fix" the cycle by removing one of the includes.
+// defined. Don't "fix" the cycle by removing one of the includes. The
+// canonical follow-up is the documented `T2.4` task: extract the
+// Zenith_ComponentPool* types so neither header depends on the other for them.
 // =============================================================================
 
 #include "Collections/Zenith_Vector.h"
@@ -893,354 +906,12 @@ public:
 	 */
 	static Zenith_SceneData* GetLoadedSceneDataAtSlot(uint32_t uIndex);
 
-	//==========================================================================
-	// Internal (Engine Use Only)
-	//==========================================================================
-
-	static void Initialise();
-	static void Shutdown();
-	static void NotifyAsyncJobPriorityChanged();  // forwarder to Zenith_SceneOperationQueue
-	static void Update(float fDt);
-	static void WaitForUpdateComplete();
-
-	/**
-	 * Access internal scene data (for engine systems)
-	 *
-	 * GetSceneData(Zenith_Scene) resolves a scene HANDLE to its backing SceneData. Do not
-	 * pair it with an EntityID to route a per-entity query — that is the active-scene-as-filter
-	 * anti-pattern described on GetActiveScene(). Use GetSceneDataForEntity(EntityID) when you
-	 * have an EntityID and want the owning scene; it walks the global entity slot table and
-	 * is immune to cross-scene moves.
-	 */
-	static Zenith_SceneData* GetSceneData(Zenith_Scene xScene);
-	static Zenith_SceneData* GetSceneDataByHandle(int iHandle);
-	/**
-	 * Resolve an EntityID to its owning scene's data. Prefer this over
-	 * GetSceneData(GetActiveScene()) for any EntityID-indexed lookup. Returns nullptr for
-	 * invalid / stale IDs (generation check) or when the owning scene has been unloaded.
-	 */
-	static Zenith_SceneData* GetSceneDataForEntity(Zenith_EntityID xID);
-
-	/**
-	 * Build a full scene handle (with generation) from an internal handle index
-	 */
-	static Zenith_Scene GetSceneFromHandle(int iHandle);
-
-	/**
-	 * Check if scene is loading (for asset management)
-	 */
-	static bool IsLoadingScene();
-
-	/**
-	 * True while a PrefabInstantiationGuard is on the stack (post-A6.3 the
-	 * guard is the only writer of Zenith_SceneLifecycleScheduler::
-	 * s_bIsPrefabInstantiating). Read accessor backing
-	 * Zenith_SceneLifecycleContext::IsPrefabInstantiating(); subsystems must
-	 * read through the context, not this method directly.
-	 */
-	static bool IsPrefabInstantiating();
-
-	/**
-	 * True during Zenith_SceneManager::Update(). Read accessor backing
-	 * Zenith_SceneLifecycleContext::IsUpdating(); subsystems must read through
-	 * the context, not this method directly.
-	 */
-	static bool IsUpdating();
-
-	/**
-	 * True between the start of a SCENE_LOAD_SINGLE teardown and the consolidated
-	 * old->new ActiveSceneChanged dispatch. Read accessor backing
-	 * Zenith_SceneLifecycleContext::IsActiveSceneSuppressed().
-	 */
-	static bool IsActiveSceneSuppressed();
-
-	/**
-	 * Pending build-index parked by LoadSceneByIndex / LoadSceneAsyncByIndex.
-	 * -1 when no index is currently being staged. Read accessor backing
-	 * Zenith_SceneLifecycleContext::GetPendingBuildIndex().
-	 */
-	static int GetPendingBuildIndex();
-
-	/**
-	 * True when the canonical path is already being loaded (file-I/O stack or
-	 * lifecycle dispatch stack). Public accessor backing
-	 * Zenith_SceneLifecycleContext::IsCircularLoadDependency(); forwards to the
-	 * private CheckCircularLoadDependency helper.
-	 */
-	static bool IsCircularLoadDependency(const std::string& strCanonicalPath);
-
-	/**
-	 * RAII guard for lifecycle-deferral flags. Save/restore semantics: stores the
-	 * flag's prior value on construction and restores it on destruction, so nested
-	 * guards stack correctly (scene loading nested inside a deferral, prefab
-	 * instantiation inside a load, etc.).
-	 * Usage: Zenith_SceneManager::LifecycleDeferralGuard xGuard(s_bIsLoadingScene);
-	 */
-	struct LifecycleDeferralGuard
-	{
-		bool& m_bFlag;
-		bool  m_bPrevValue;
-		LifecycleDeferralGuard(bool& bFlag) : m_bFlag(bFlag), m_bPrevValue(bFlag) { m_bFlag = true; }
-		~LifecycleDeferralGuard() { m_bFlag = m_bPrevValue; }
-		LifecycleDeferralGuard(const LifecycleDeferralGuard&) = delete;
-		LifecycleDeferralGuard& operator=(const LifecycleDeferralGuard&) = delete;
-	};
-
-	/**
-	 * RAII guard for prefab instantiation. Sets IsPrefabInstantiating=true on
-	 * construction and restores the prior value on destruction. Save/restore
-	 * semantics support nested prefab instantiation (a prefab whose components
-	 * spawn child prefabs).
-	 *
-	 * After A6.3, this is the only writer of Zenith_SceneLifecycleScheduler::
-	 * s_bIsPrefabInstantiating in production code.
-	 */
-	struct PrefabInstantiationGuard
-	{
-		PrefabInstantiationGuard();
-		~PrefabInstantiationGuard();
-		PrefabInstantiationGuard(const PrefabInstantiationGuard&) = delete;
-		PrefabInstantiationGuard& operator=(const PrefabInstantiationGuard&) = delete;
-	private:
-		bool m_bPrevValue;
-	};
-
-	/**
-	 * RAII guard for the engine's frame-update phase. Sets IsUpdating=true on
-	 * construction and restores the prior value on destruction. Used by
-	 * Zenith_Core to mark the UI-update span where script-driven scene loads
-	 * must defer to the next frame.
-	 *
-	 * After A6.3, this is the only writer of Zenith_SceneLifecycleScheduler::
-	 * s_bIsUpdating in production code.
-	 */
-	struct SceneUpdateDeferralGuard
-	{
-		SceneUpdateDeferralGuard();
-		~SceneUpdateDeferralGuard();
-		SceneUpdateDeferralGuard(const SceneUpdateDeferralGuard&) = delete;
-		SceneUpdateDeferralGuard& operator=(const SceneUpdateDeferralGuard&) = delete;
-	private:
-		bool m_bPrevValue;
-	};
-
-	/**
-	 * RAII guard that pushes a scene onto the explicit creation-target stack.
-	 * While in scope, GetDefaultCreationScene() returns this scene (or the
-	 * top-most nested scope) instead of the active scene. Wraps the load /
-	 * deserialization / activation paths so entities created as a side effect
-	 * of those operations land in the scene being materialized rather than
-	 * leaking into whatever scene happened to be active when the load began.
-	 *
-	 * Stack-based, so nested loads (a SceneLoaded callback that itself loads
-	 * another scene) push/pop correctly without losing the outer target.
-	 */
-	struct SceneCreationTargetScope
-	{
-		explicit SceneCreationTargetScope(Zenith_Scene xScene);
-		~SceneCreationTargetScope();
-		SceneCreationTargetScope(const SceneCreationTargetScope&) = delete;
-		SceneCreationTargetScope& operator=(const SceneCreationTargetScope&) = delete;
-	};
-
-	/**
-	 * Set by Zenith_Core::Zenith_MainLoop driver — true just before the main
-	 * loop's while(...) starts iterating, false once it exits. Read by
-	 * LoadSceneBlockingForBootstrap to assert bootstrap-only invocation.
-	 * Production code other than the engine bootstrap should never call this.
-	 */
-	static void SetMainLoopRunning(bool bRunning);
-
-	/**
-	 * Returns the scene that GetDefaultCreationScene-aware APIs should target.
-	 * Top of the SceneCreationTargetScope stack if any scope is active;
-	 * otherwise the active scene. May return INVALID_SCENE when no creation
-	 * scope is open and no scene is active (e.g. during Initialise before the
-	 * persistent scene is created).
-	 */
-	static Zenith_Scene GetDefaultCreationScene();
-
-#ifdef ZENITH_TESTING
-	/**
-	 * Dispatch lifecycle init for all loaded scenes. Test-only — used by unit
-	 * tests that build a scene via deferred entity creation and need to drive
-	 * the Awake/OnEnable phase explicitly (mirrors what the per-frame Update
-	 * does after a load completes). Not callable from production code.
-	 */
-	static void DispatchFullLifecycleInit();
-#endif
-
-	/**
-	 * Register the initial scene load callback (called by platform main to set Project_LoadInitialScene)
-	 * Used by the editor to re-run initial scene setup after Play/Stop cycle
-	 */
-	typedef void(*InitialSceneLoadFn)();
-	static void SetInitialSceneLoadCallback(InitialSceneLoadFn pfnCallback);
-	static InitialSceneLoadFn GetInitialSceneLoadCallback();
-
-	/**
-	 * Reset all Flux render systems (called before scene teardown)
-	 * Must be called before UnloadScene/UnloadAllNonPersistent when doing
-	 * a full scene swap, to clear Flux system state before entity destruction.
-	 */
-	static void ResetAllRenderSystems();
-
-	/**
-	 * Editor / test recovery only. Unloads a scene bypassing the "last loaded
-	 * scene" guard that normally prevents the manager from being left with no
-	 * active scene. Used by:
-	 *   * Editor backup restore (Play -> Stop), where the new scene is loaded
-	 *     immediately after this call so the no-active-scene window is brief.
-	 *   * Test fixture teardown that needs a clean slate even when only one
-	 *     scene remains.
-	 * Production gameplay code MUST use UnloadScene / UnloadSceneAsync, which
-	 * preserves the at-least-one-scene invariant the lifecycle systems rely on.
-	 */
-	static void UnloadSceneForced(Zenith_Scene xScene);
-
-private:
-	//==========================================================================
-	// Internal Helpers
-	//==========================================================================
-
-	// A5: MoveEntityInternal moved to Zenith_SceneEntityOwnership (private).
-	static bool IsSceneVisibleToUser(u_int uSlotIndex, const Zenith_SceneData* pxData);
-	static bool IsSceneUpdatable(const Zenith_SceneData* pxData);
-	static int SelectNewActiveScene(int iExcludeHandle = -1);
-	static int AllocateSceneHandle();
-	static void FreeSceneHandle(int iHandle);
-
-	// Per-frame helpers called from Update(). Split out to flatten Update()'s
-	// nesting — the animation collection walk was five levels deep inline.
-	// A4: CollectUpdatableScenes / CollectAnimationsFromScene moved to
-	// Zenith_SceneLifecycleScheduler.cpp's anonymous namespace.
-
-	/**
-	 * Create and return an invalid scene handle (handle=-1, generation=0).
-	 * Used by query and load functions to return a sentinel when a scene cannot be found or loaded.
-	 */
-	static Zenith_Scene MakeInvalidScene();
-
-	/**
-	 * Check if the given canonical path is already in the pending load list or lifecycle stack.
-	 * Used by LoadScene and LoadSceneAsync to prevent circular scene loads.
-	 * @return true if the path is already being loaded (circular dependency detected)
-	 */
-	// A4: CheckCircularLoadDependency body migrated to
-	// Zenith_SceneLifecycleScheduler::IsCircularLoadDependency.
-
-	/**
-	 * Fire unloading/unloaded callbacks and select a new active scene if needed.
-	 * Used by UnloadSceneInternal to consolidate the callback+active-scene-selection logic.
-	 * @param iHandle The scene handle being unloaded
-	 * @param xScene The scene being unloaded (with valid generation for callbacks)
-	 */
-	static void FireUnloadCallbacksAndSelectNewActive(int iHandle, Zenith_Scene xScene);
-
-	//==========================================================================
-	// LoadScene helpers. Pre-B4 LoadScene was a multi-phase synchronous body
-	// using HandleDeferredLoad / ValidateFileAndDetectCircular /
-	// PerformSingleModeTeardownAndSwap / DispatchLifecycleAndFire as Phase
-	// helpers. B4 collapsed LoadScene into a queue-and-defer thin facade —
-	// the multi-phase work now lives in
-	// Zenith_SceneOperationQueue::RunAsyncJobPhase1/2. ValidateLoadRequest
-	// stayed as the only top-of-LoadScene precondition check.
-	//==========================================================================
-
-	static bool ValidateLoadRequest(const std::string& strPath);
-
-	//==========================================================================
-	// Scene storage / name cache / build-index registry — moved to
-	// Zenith_SceneRegistry post-A2b. Manager-internal lifecycle code references
-	// Zenith_SceneRegistry::s_* directly. The two helpers below stay as public
-	// forwarders for one-line historical call sites in CreateEmptyScene etc.
-	//==========================================================================
-
-	static void AddToSceneNameCache(int iHandle, const std::string& strName);
-	static void RemoveFromSceneNameCache(int iHandle);
-
-	// Audit §3.12: AreRenderTasksActive() is a const read used by Zenith_Scene::IsValid()
-	// (see Zenith_Scene.cpp). Previously the getter lived entirely inside
-	// `#ifdef ZENITH_ASSERT`, meaning IsValid() only compiled because MEMORY.md says
-	// ZENITH_ASSERT is always defined — a fragile coupling. The getter now always
-	// exists; the underlying flag and the setter stay debug-only because only the
-	// assert paths flip it.
-#ifdef ZENITH_ASSERT
-	static bool s_bRenderTasksActive;  // Debug-only: true between SubmitRenderTasks and WaitForAllRenderTasks
-	static bool s_bAnimTasksActive;    // Debug-only: true between SubmitTaskArray(animTask) and WaitUntilComplete
-public:
-	static void SetRenderTasksActive(bool b) { s_bRenderTasksActive = b; }
-	static void SetAnimTasksActive(bool b) { s_bAnimTasksActive = b; }
-private:
-#endif
-
-public:
-	// In ZENITH_ASSERT builds: returns the live flag. In non-assert builds:
-	// returns false because no render-task window is ever tracked. Callers treat
-	// "false" as "not in a render-task window" either way, so IsValid() logic
-	// stays correct across configs.
-	static bool AreRenderTasksActive()
-	{
-#ifdef ZENITH_ASSERT
-		return s_bRenderTasksActive;
-#else
-		return false;
-#endif
-	}
-private:
-
-	//==========================================================================
-	// Lifecycle / Update State — moved to Zenith_SceneLifecycleScheduler post-A4.
-	// Public manager methods forward into the scheduler.
-	//==========================================================================
-
-	// Push/Pop lifecycle context — Zenith_SceneData.cpp calls these directly via
-	// the manager's public API. Body forwards to the scheduler.
-	static void PushLifecycleContext(const std::string& strCanonicalPath);
-	static void PopLifecycleContext(const std::string& strCanonicalPath);
-
-	//==========================================================================
-	// Callback System
-	//
-	// Lists, handle allocator, deferred-removal queue, dispatch-depth counter
-	// and active-scene-changed suppression flags now live in
-	// Zenith_SceneCallbackBus (Internal/Zenith_SceneCallbackBus.{h,cpp}).
-	// The Fire* methods below remain as thin forwarders so internal call
-	// sites in this header's TU and sibling SceneManager TUs don't need to
-	// change.
-	//==========================================================================
-
-	static void FireSceneLoadedCallbacks(Zenith_Scene xScene, Zenith_SceneLoadMode eMode);
-	static void FireSceneUnloadingCallbacks(Zenith_Scene xScene);
-	static void FireSceneUnloadedCallbacks(Zenith_Scene xScene);
-	static void FireActiveSceneChangedCallbacks(Zenith_Scene xOld, Zenith_Scene xNew);
-	static void FireSceneLoadStartedCallbacks(const std::string& strPath);
-	static void FireEntityPersistentCallbacks(const Zenith_Entity& xEntity);
-
-	//==========================================================================
-	// Async Operations — moved to Zenith_SceneOperationQueue post-A3.
-	//
-	// State (operation map, async load + unload jobs, async config knobs) and
-	// internal pipeline (phase machines, cancellation, cleanup, sort) live in
-	// Internal/Zenith_SceneOperationQueue.{h,cpp}. The public manager methods
-	// below are forwarders or keep their bodies on the manager but reference
-	// Zenith_SceneOperationQueue::s_*.
-	//==========================================================================
-
-	static uint32_t CountScenesBeingAsyncUnloaded();
-
-	//==========================================================================
-	// Unload Helpers
-	//==========================================================================
-
-	static bool CanUnloadScene(Zenith_Scene xScene);
-	static void UnloadSceneInternal(Zenith_Scene xScene);
-	static void ProcessPendingUnloads();
-	// iExcludeHandle: optional scene-slot index to skip (in addition to the persistent
-	// scene). D.12 uses this to keep the staging scene alive while the old world is
-	// torn down during an atomic-swap sync LoadScene(SINGLE). Pass -1 (the default)
-	// for the original "unload every non-persistent scene" behaviour.
-	static void UnloadAllNonPersistent(int iExcludeHandle = -1);
+	// Engine-internal section: Initialise / Shutdown / Update / GetSceneData /
+	// lifecycle-state read accessors / Fire*Callbacks / Unload helpers / etc.,
+	// plus the full private implementation block. Moved to a sibling header so
+	// this file stays focused on the public game-facing API. Existing call
+	// sites resolve unchanged because the declarations remain class members.
+	#include "EntityComponent/Zenith_SceneManagerInternal.h"
 };
 
 // Include the registry header BEFORE SceneData.h so the manager's template

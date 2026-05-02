@@ -16,15 +16,18 @@ present but visually negligible at this kernel size.
 
 ## Architecture
 
-### Render Order
+### Pass dependencies
 
-```
-RENDER_ORDER_HIZ_GENERATE      <- Depth pyramid (required dependency)
-RENDER_ORDER_SSGI_RAYMARCH     <- Multi-ray hemisphere sampling
-RENDER_ORDER_SSGI_UPSAMPLE     <- Bilateral upsample to full-res
-RENDER_ORDER_SSGI_DENOISE      <- Separable joint bilateral (H then V)
-RENDER_ORDER_APPLY_LIGHTING    <- Deferred shading (consumes SSGI)
-```
+The render graph schedules these passes via Read/Write declarations; there is no explicit ordering enum. Typical resolved order:
+
+| Pass | Reads | Writes |
+|------|-------|--------|
+| HiZ generation | scene depth | HiZ chain (mip pyramid) |
+| SSGI raymarch | HiZ chain, G-buffer (normals, diffuse) | SSGI raymarch target |
+| SSGI upsample | SSGI raymarch, depth | SSGI full-res |
+| SSGI denoise H | SSGI full-res, depth | SSGI denoise intermediate |
+| SSGI denoise V | SSGI denoise intermediate, depth | SSGI final |
+| Deferred shading | SSGI final, G-buffer, IBL | HDR scene |
 
 ### Files
 
