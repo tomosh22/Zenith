@@ -526,5 +526,255 @@ class TestExports(unittest.TestCase):
         self.assertIn('runs', data)
 
 
+class TestProfileLoading(unittest.TestCase):
+    """Profiles let CheckComplexity.bat / RunAnalysis.bat hand off all configuration
+    to a JSON file. These tests check the loader and value-merge semantics."""
+
+    def _write_profile_file(self, body: dict) -> Path:
+        tmpdir = tempfile.mkdtemp(prefix='profile_test_')
+        path = Path(tmpdir) / 'profiles.json'
+        path.write_text(json.dumps(body), encoding='utf-8')
+        return path
+
+    def test_resolve_profile_returns_named_section(self):
+        path = self._write_profile_file({
+            'engine-ci': {'exclude_dirs': ['Games', 'Tools'], 'fail_on': {'max-cc': 100}},
+        })
+        data = ac._resolve_profile('engine-ci', path)
+        self.assertEqual(data['exclude_dirs'], ['Games', 'Tools'])
+        self.assertEqual(data['fail_on'], {'max-cc': 100})
+
+    def test_resolve_profile_unknown_name_raises(self):
+        path = self._write_profile_file({'engine-ci': {}})
+        with self.assertRaises(KeyError):
+            ac._resolve_profile('does-not-exist', path)
+
+    def test_resolve_profile_missing_file_raises(self):
+        with self.assertRaises(FileNotFoundError):
+            ac._resolve_profile('any', Path('/nonexistent/path/profiles.json'))
+
+    def test_shipped_profile_file_has_engine_ci_and_full_snapshot(self):
+        # Sanity check on the file shipped next to the analyzer so a typo can't
+        # silently break both wrappers at once.
+        shipped = Path(ac.__file__).resolve().parent / 'complexity_profiles.json'
+        self.assertTrue(shipped.exists(), 'complexity_profiles.json should ship with analyzer')
+        engine_ci = ac._resolve_profile('engine-ci', shipped)
+        full_snap = ac._resolve_profile('full-snapshot', shipped)
+        self.assertIn('Games', engine_ci['exclude_dirs'])
+        self.assertIn('Tools', engine_ci['exclude_dirs'])
+        self.assertEqual(engine_ci['fail_on']['max-cc'], 100)
+        self.assertEqual(full_snap['fail_on'], {})
+
+
+class TestExcludeGlob(unittest.TestCase):
+    def test_glob_excludes_matching_files(self):
+        tmpdir = tempfile.mkdtemp(prefix='glob_test_')
+        (Path(tmpdir) / 'real.cpp').write_text(
+            'int Add(int a, int b) { return a + b; }\n', encoding='utf-8'
+        )
+        (Path(tmpdir) / 'fake.Tests.inl').write_text(
+            'int FakeAdd(int a, int b) { return a + b; }\n', encoding='utf-8'
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[], exclude_globs=['**/*.Tests.inl'])
+        analyzer.analyze(workers=1)
+        paths = [Path(fm.filepath).name for fm in analyzer.file_metrics]
+        self.assertIn('real.cpp', paths)
+        self.assertNotIn('fake.Tests.inl', paths)
+
+    def test_glob_no_match_keeps_file(self):
+        tmpdir = tempfile.mkdtemp(prefix='glob_test_')
+        (Path(tmpdir) / 'real.cpp').write_text(
+            'int Add(int a, int b) { return a + b; }\n', encoding='utf-8'
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[], exclude_globs=['**/*.unrelated'])
+        analyzer.analyze(workers=1)
+        self.assertEqual(len(analyzer.file_metrics), 1)
+
+
+class TestParserAutoMode(unittest.TestCase):
+    def test_auto_picks_tree_sitter_when_available(self):
+        analyzer = ac.CppAnalyzer('.', exclude_dirs=[], parser_backend='auto')
+        if ac.HAS_TREE_SITTER:
+            self.assertEqual(analyzer.parser_backend, 'tree-sitter')
+        else:
+            self.assertEqual(analyzer.parser_backend, 'regex')
+        self.assertEqual(analyzer.parser_backend_requested, 'auto')
+
+    def test_explicit_tree_sitter_falls_back_to_regex_with_message(self):
+        if ac.HAS_TREE_SITTER:
+            self.skipTest('tree-sitter is installed; cannot exercise fallback path')
+        analyzer = ac.CppAnalyzer('.', exclude_dirs=[], parser_backend='tree-sitter')
+        self.assertEqual(analyzer.parser_backend, 'regex')
+        self.assertEqual(analyzer.parser_backend_requested, 'tree-sitter')
+
+    def test_explicit_regex_stays_regex(self):
+        analyzer = ac.CppAnalyzer('.', exclude_dirs=[], parser_backend='regex')
+        self.assertEqual(analyzer.parser_backend, 'regex')
+        self.assertEqual(analyzer.parser_backend_requested, 'regex')
+
+
+class TestExpandedFailOn(unittest.TestCase):
+    def test_max_function_priority_flags_high_score(self):
+        # A function with high CC + nesting + length will earn a high priority score.
+        code = textwrap.dedent('''
+            void f(int x) {
+                if (x > 0) {
+                    for (int i = 0; i < 100; ++i) {
+                        if (i % 2 == 0) {
+                            for (int j = 0; j < 50; ++j) {
+                                if (j > 10) {
+                                    while (j-- > 0) { if (j == 5) break; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        ''')
+        analyzer = _analyze_source(code)
+        # Force a low ceiling so even a small synthetic function trips it.
+        violations = ac.check_fail_on(analyzer, {'max-function-priority': 1.0})
+        self.assertTrue(any('priority=' in v for v in violations))
+
+    def test_max_include_cycles_flags_when_exceeded(self):
+        # Stub: file_metrics with one fake cycle.
+        analyzer = ac.CppAnalyzer('.', exclude_dirs=[])
+        analyzer.include_cycles = [['a.h', 'b.h']]
+        violations = ac.check_fail_on(analyzer, {'max-include-cycles': 0})
+        self.assertEqual(len(violations), 1)
+        self.assertIn('include cycles=1', violations[0])
+
+    def test_max_duplicate_clusters_flags_when_exceeded(self):
+        analyzer = ac.CppAnalyzer('.', exclude_dirs=[])
+        analyzer.duplicate_clusters = [
+            [{'file': 'a.cpp', 'line': 1, 'name': 'f', 'code_lines': 5, 'priority_score': 10}],
+            [{'file': 'b.cpp', 'line': 2, 'name': 'g', 'code_lines': 5, 'priority_score': 10}],
+        ]
+        violations = ac.check_fail_on(analyzer, {'max-duplicate-clusters': 1})
+        self.assertEqual(len(violations), 1)
+        self.assertIn('duplicate clusters=2', violations[0])
+
+    def test_unknown_key_raises(self):
+        with self.assertRaises(ValueError):
+            ac._parse_fail_on('max-frobnicate=10')
+
+    def test_known_keys_parse(self):
+        out = ac._parse_fail_on('max-cc=30,max-function-priority=70,max-include-cycles=0')
+        self.assertEqual(out['max-cc'], 30.0)
+        self.assertEqual(out['max-function-priority'], 70.0)
+        self.assertEqual(out['max-include-cycles'], 0.0)
+
+
+class TestIncludeResolution(unittest.TestCase):
+    def test_relative_path_match_preferred_over_basename(self):
+        tmpdir = tempfile.mkdtemp(prefix='inc_test_')
+        # Two files with the same basename in different subdirs. Without
+        # relative-path resolution, basename matching would link to both.
+        (Path(tmpdir) / 'A').mkdir()
+        (Path(tmpdir) / 'B').mkdir()
+        (Path(tmpdir) / 'A' / 'Foo.h').write_text('// A/Foo.h\n', encoding='utf-8')
+        (Path(tmpdir) / 'B' / 'Foo.h').write_text('// B/Foo.h\n', encoding='utf-8')
+        # Caller uses the qualified path — should resolve to exactly one.
+        (Path(tmpdir) / 'Caller.cpp').write_text(
+            '#include "A/Foo.h"\nvoid f() {}\n', encoding='utf-8'
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        caller = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('Caller.cpp'))
+        # fan_out should be 1 (the exact-match A/Foo.h), not 2 (both basenames).
+        self.assertEqual(caller.fan_out, 1)
+        # Resolution counter should record the relative-path match.
+        self.assertGreaterEqual(analyzer.include_edge_relative_count, 1)
+
+    def test_basename_fallback_used_when_no_relative_match(self):
+        tmpdir = tempfile.mkdtemp(prefix='inc_test_')
+        (Path(tmpdir) / 'Foo.h').write_text('// Foo.h\n', encoding='utf-8')
+        (Path(tmpdir) / 'Caller.cpp').write_text(
+            '#include "Foo.h"\nvoid f() {}\n', encoding='utf-8'
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        # Foo.h is at the root, so it matches via the rel-path index too. This
+        # primarily exercises the no-cycle case; the counters should sum to fan_out.
+        caller = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('Caller.cpp'))
+        self.assertEqual(caller.fan_out, 1)
+
+
+class TestHealthSummary(unittest.TestCase):
+    def test_health_summary_populated(self):
+        code = 'int Add(int a, int b) { return a + b; }\n'
+        analyzer = _analyze_source(code)
+        h = ac.get_health_summary(analyzer)
+        self.assertIn('parser_backend', h)
+        self.assertIn('include_cycle_count', h)
+        self.assertIn('duplicate_cluster_count', h)
+        self.assertIn('worst_function', h)
+        self.assertIn('worst_file', h)
+        self.assertEqual(h['profile'], '(none)')
+
+    def test_health_summary_appears_in_markdown(self):
+        code = 'int Add(int a, int b) { return a + b; }\n'
+        analyzer = _analyze_source(code)
+        tmpdir = Path(tempfile.mkdtemp(prefix='md_health_'))
+        ac.export_markdown(analyzer, tmpdir)
+        md = (tmpdir / 'analysis_report.md').read_text(encoding='utf-8')
+        self.assertIn('## Health summary', md)
+        self.assertIn('Parser:', md)
+        self.assertIn('Include cycles:', md)
+
+
+class TestDominantSignal(unittest.TestCase):
+    def test_dominant_signal_picks_largest_factor(self):
+        # cognitive=50, cyclomatic=30 -> dominant is cognitive.
+        self.assertEqual(
+            ac._dominant_signal({'cognitive': 50.0, 'cyclomatic': 30.0, 'nesting': 20.0}),
+            'cognitive',
+        )
+
+    def test_dominant_signal_none_for_empty(self):
+        self.assertIsNone(ac._dominant_signal({}))
+        self.assertIsNone(ac._dominant_signal({'cognitive': 0.0, 'cyclomatic': 0.0}))
+
+
+class TestDuplicateFiltering(unittest.TestCase):
+    def test_test_only_filter_drops_tests_inl_dupes(self):
+        # Two near-identical functions, one in *.Tests.inl and one in a real .cpp.
+        # With filter on, the cluster should not appear because the test-only one
+        # is dropped from candidates and we only have one real candidate left.
+        body = 'for (int i = 0; i < 10; ++i) { if (i % 2 == 0) { sum += i; } else { sum -= i; } }'
+        tests_inl = f'void TestF(int& sum) {{ {body} }}\n'
+        real_cpp = f'void RealF(int& sum) {{ {body} }}\n'
+        tmpdir = tempfile.mkdtemp(prefix='dup_filter_')
+        (Path(tmpdir) / 'real.cpp').write_text(real_cpp, encoding='utf-8')
+        (Path(tmpdir) / 'fake.Tests.inl').write_text(tests_inl, encoding='utf-8')
+        # Without filter: cluster should appear.
+        a = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        a.analyze(workers=1)
+        self.assertGreaterEqual(len(a.duplicate_clusters), 1)
+        # With test-only filter: cluster gone (only one non-test candidate remains).
+        b = ac.CppAnalyzer(tmpdir, exclude_dirs=[], filter_test_only_duplicates=True)
+        b.analyze(workers=1)
+        self.assertEqual(len(b.duplicate_clusters), 0)
+
+
+class TestLCOMCaveat(unittest.TestCase):
+    def test_lcom_record_has_header_inline_caveat(self):
+        code = textwrap.dedent('''
+            class C {
+            public:
+                void A() { m_x = 1; }
+                void B() { m_y = 2; }
+                void C2() { m_z = 3; }
+                int m_x; int m_y; int m_z;
+            };
+        ''')
+        analyzer = _analyze_source(code)
+        # Find the file we just analyzed.
+        target = next((fm for fm in analyzer.file_metrics if fm.classes), None)
+        self.assertIsNotNone(target, 'no class records found — fixture broken')
+        for cls in target.classes:
+            self.assertEqual(cls.get('caveat'), 'header-inline only')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,0 +1,59 @@
+{
+    "_doc": "Profiles for analyze_code_complexity.py. Selected with --profile <name>. Each profile sets exclude_dirs (path-segment names), exclude_globs (full-path glob patterns), ignore_macros, and fail_on thresholds. Explicit CLI flags override profile values. Profiles do NOT introduce git history, baselines, or cross-run state — the analyzer remains snapshot-only.",
+
+    "engine-ci": {
+        "description": "Production engine code only. Used by CheckComplexity.bat as a CI gate. Excludes games, tools, test fixtures, and vendor code so a wide gameplay dispatch or a UnitTests RunAllTests doesn't poison the gate. Test-only files (*.Tests.inl) are dropped via exclude_globs. Thresholds are checked-in ceilings of the current worst-case engine code, NOT aspirational targets — the gate keeps things from getting worse, not the definition of clean code.",
+        "exclude_dirs": [
+            "Games",
+            "Tools",
+            "TilePuzzleLevelGen",
+            "TilePuzzleRegistryViewer",
+            "UnitTests",
+            "Middleware",
+            "ThirdParty",
+            "External",
+            "vendor",
+            "build",
+            "Build",
+            ".git",
+            ".claude",
+            ".codex_tmp"
+        ],
+        "exclude_globs": [
+            "**/*.Tests.inl"
+        ],
+        "ignore_macros": [
+            "ZENITH_ASSERT"
+        ],
+        "fail_on": {
+            "max-cc": 100,
+            "max-cognitive": 150,
+            "max-nesting": 8,
+            "max-loc": 900
+        },
+        "filter_low_priority_duplicates": true,
+        "filter_test_only_duplicates": true
+    },
+
+    "full-snapshot": {
+        "description": "Whole-repo health snapshot. Used by RunAnalysis.bat. Includes games, tools, and tests but excludes vendor/build directories. Informational only — never blocks CI. No fail-on thresholds.",
+        "exclude_dirs": [
+            "Middleware",
+            "ThirdParty",
+            "External",
+            "vendor",
+            "build",
+            "Build",
+            ".git",
+            ".claude",
+            ".codex_tmp"
+        ],
+        "exclude_globs": [],
+        "ignore_macros": [
+            "ZENITH_ASSERT"
+        ],
+        "fail_on": {},
+        "filter_low_priority_duplicates": false,
+        "filter_test_only_duplicates": false
+    }
+}

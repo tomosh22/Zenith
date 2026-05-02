@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import math
+import fnmatch
 import argparse
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -218,9 +219,12 @@ class FileMetrics:
     tags: List[str] = field(default_factory=list)
     # Include-graph coupling. `includes` is the basenames of `#include "..."` targets
     # captured during parsing (system `<...>` includes are skipped — they're not
-    # part of this codebase). `fan_in` / `fan_out` / `in_cycle` are populated by
-    # `_compute_include_graph` after all files are analyzed.
+    # part of this codebase). `include_paths` is the raw include strings so the
+    # include-graph builder can prefer exact relative-path resolution and only fall
+    # back to basename matching when needed. `fan_in` / `fan_out` / `in_cycle` are
+    # populated by `_compute_include_graph` after all files are analyzed.
     includes: List[str] = field(default_factory=list)
+    include_paths: List[str] = field(default_factory=list)
     fan_in: int = 0
     fan_out: int = 0
     in_cycle: bool = False
@@ -531,10 +535,15 @@ class CppAnalyzer:
         thresholds: Optional[Dict[str, float]] = None,
         ignore_macros: Optional[List[str]] = None,
         exclude_generated: bool = False,
-        parser_backend: str = 'regex',
+        parser_backend: str = 'auto',
+        exclude_globs: Optional[List[str]] = None,
+        filter_low_priority_duplicates: bool = False,
+        filter_test_only_duplicates: bool = False,
+        profile_name: Optional[str] = None,
     ):
         self.root_path = Path(root_path)
         self.exclude_dirs = set(exclude_dirs or [])
+        self.exclude_globs: List[str] = list(exclude_globs or [])
         self.thresholds: Dict[str, float] = dict(DEFAULT_THRESHOLDS)
         if thresholds:
             self.thresholds.update(thresholds)
@@ -544,16 +553,17 @@ class CppAnalyzer:
             if self.ignore_macros else None
         )
         self.exclude_generated = exclude_generated
-        # Parser backend: 'regex' (default, stdlib-only) or 'tree-sitter' (opt-in).
+        self.filter_low_priority_duplicates = filter_low_priority_duplicates
+        self.filter_test_only_duplicates = filter_test_only_duplicates
+        self.profile_name = profile_name
+        # Parser backend: 'auto' (default, picks tree-sitter if available else regex),
+        # 'regex' (stdlib-only, approximate), or 'tree-sitter' (accurate, requires deps).
         # Tree-sitter handles nested templates, C++20 `requires`, function-try-blocks,
-        # and macro-generated signatures that the regex misses, at the cost of
-        # requiring `tree-sitter` + `tree-sitter-cpp` to be installed.
-        if parser_backend == 'tree-sitter' and not HAS_TREE_SITTER:
-            print("Warning: --parser tree-sitter requested but tree_sitter / "
-                  "tree_sitter_cpp not installed. Falling back to regex parser. "
-                  "Install with: pip install tree-sitter tree-sitter-cpp")
-            parser_backend = 'regex'
-        self.parser_backend = parser_backend
+        # and macro-generated signatures that the regex misses.
+        self.parser_backend_requested: str = parser_backend
+        self.parser_caveats: List[str] = []
+        resolved = self._resolve_parser_backend(parser_backend)
+        self.parser_backend = resolved
         self.file_metrics: List[FileMetrics] = []
         self.function_metrics: List[FunctionMetrics] = []
         self.directory_metrics: Dict[str, DirectoryMetrics] = {}
@@ -562,14 +572,55 @@ class CppAnalyzer:
         self.duplicate_clusters: List[List[Dict]] = []
         # Populated by _compute_include_graph(); list of include cycles as filepaths.
         self.include_cycles: List[List[str]] = []
+        # Counts of include edges resolved by exact relative path vs basename-only fallback.
+        # Reported in the health summary so consumers can judge cycle confidence.
+        self.include_edge_relative_count: int = 0
+        self.include_edge_basename_count: int = 0
         # Populated by generate_llm_suggestions() (if --llm-suggestions is used).
         self.llm_suggestions: List[Dict] = []
+
+    @staticmethod
+    def _resolve_parser_backend(requested: str) -> str:
+        """
+        Resolve a parser-backend request to the actual backend that will be used.
+        Logs a caveat if the requested backend isn't available so reports stay honest
+        about what ran (no silent fallbacks).
+        """
+        if requested == 'auto':
+            return 'tree-sitter' if HAS_TREE_SITTER else 'regex'
+        if requested == 'tree-sitter' and not HAS_TREE_SITTER:
+            print("Warning: --parser tree-sitter requested but tree_sitter / "
+                  "tree_sitter_cpp not installed. Falling back to regex parser. "
+                  "Install with: pip install tree-sitter tree-sitter-cpp")
+            return 'regex'
+        return requested
         
     def should_exclude(self, path: Path) -> bool:
-        """Check if path should be excluded"""
+        """
+        Check if a path (relative to `root_path`) should be excluded. Two filters:
+        - `exclude_dirs`: any path segment that matches a name in the set is excluded
+          (catches whole subtrees regardless of nesting).
+        - `exclude_globs`: full-path glob patterns. Standard `**/<pat>` form is also
+          tried with the leading `**/` stripped so a top-level file matches just like
+          a nested one (fnmatch's `*` already matches `/`, so the suffix variant
+          covers both depths). Forward- and back-slash forms are both tried so
+          Windows-style paths work without surprises.
+        """
         for part in path.parts:
             if part in self.exclude_dirs:
                 return True
+        if self.exclude_globs:
+            posix = path.as_posix()
+            native = str(path)
+            for pat in self.exclude_globs:
+                if fnmatch.fnmatch(posix, pat) or fnmatch.fnmatch(native, pat):
+                    return True
+                # Top-level convenience: "**/x" should also match a file named "x"
+                # that lives at the root, not just one in a subdirectory.
+                if pat.startswith('**/'):
+                    suffix = pat[3:]
+                    if fnmatch.fnmatch(posix, suffix) or fnmatch.fnmatch(native, suffix):
+                        return True
         return False
     
     _SOURCE_EXTENSIONS: Set[str] = frozenset({
@@ -1457,6 +1508,12 @@ class CppAnalyzer:
                 'method_count': len(methods),
                 'field_count': len(all_fields),
                 'lcom5': lcom5,
+                # LCOM5 is computed from inline-defined methods only; method bodies
+                # that live in a separate .cpp file aren't visible at this scope.
+                # Consumers should treat this as a header-inline cohesion signal,
+                # not a full-class score. Marker is constant for now but kept on
+                # the record so future scope improvements can flip it.
+                'caveat': 'header-inline only',
             })
         return results
     
@@ -1493,9 +1550,13 @@ class CppAnalyzer:
         fixme_count = sum(1 for m in tech_debt if m['marker'] == 'FIXME')
         hack_count = sum(1 for m in tech_debt if m['marker'] in ('HACK', 'XXX'))
 
-        # Local include targets — basenames only so downstream matching is robust to
-        # path differences between includers (`#include "Flux/Foo.h"` vs just `"Foo.h"`).
-        includes = [Path(m).name for m in _LOCAL_INCLUDE_PATTERN.findall(code)]
+        # Local include targets. Capture both the basename (robust to path differences
+        # between includers — `#include "Flux/Foo.h"` vs just `"Foo.h"`) and the raw
+        # include string so the include-graph builder can prefer exact relative-path
+        # resolution and only fall back to basename matching when needed.
+        raw_includes = _LOCAL_INCLUDE_PATTERN.findall(code)
+        includes = [Path(m).name for m in raw_includes]
+        include_paths = list(raw_includes)
 
         # Per-class LCOM5 cohesion. Uses the cleaned code so comments/strings don't
         # inflate method bodies or field references.
@@ -1523,6 +1584,7 @@ class CppAnalyzer:
             hack_count=hack_count,
             tech_debt_markers=tech_debt,
             includes=includes,
+            include_paths=include_paths,
             classes=class_metrics,
         )
         return file_m
@@ -1626,29 +1688,77 @@ class CppAnalyzer:
         Populate `fan_in`, `fan_out`, `in_cycle` on every FileMetrics and store
         detected cycles on `self.include_cycles`.
 
-        Matching is by basename: `#include "Flux/Foo.h"` and `#include "Foo.h"` both
-        point to `Foo.h`. If multiple files share a basename we link to all of them
-        (rare in Zenith but possible). System `<...>` includes are skipped at parse
-        time so they don't inflate fan-out.
+        Resolution is two-tier:
+          1. **Relative-path match (high confidence)**: the raw `#include` string is
+             matched against an index of file relative paths AND against suffixes of
+             those paths. `#include "Flux/Foo.h"` resolves uniquely to the file whose
+             relative path ends with `Flux/Foo.h`.
+          2. **Basename fallback (low confidence)**: if step 1 finds no match we fall
+             back to basename matching (`Foo.h` -> any file named `Foo.h`). Edges
+             resolved this way are counted in `include_edge_basename_count` so the
+             health summary can flag low-confidence cycles. System `<...>` includes
+             are skipped at parse time so they don't inflate fan-out.
 
-        Cycle detection uses Tarjan's SCC; any SCC of size ≥ 2, plus self-loops,
+        Cycle detection uses Tarjan's SCC; any SCC of size >= 2, plus self-loops,
         marks its members as `in_cycle`. Cycles matter because they're the strongest
         single signal of architectural entanglement.
         """
+        # Index files by basename and by relative path (normalized to forward slashes).
         by_basename: Dict[str, List[int]] = defaultdict(list)
+        by_rel_path: Dict[str, int] = {}
+        # Suffix index for partial relative matches: every suffix that starts at a
+        # path boundary maps to its file. Lets `#include "Flux/Foo.h"` match a file
+        # at `Engine/Flux/Foo.h`. Stored only for unambiguous suffixes (one file per
+        # suffix); ambiguous suffixes fall through to basename.
+        suffix_owners: Dict[str, Set[int]] = defaultdict(set)
         for i, fm in enumerate(self.file_metrics):
+            posix = Path(fm.filepath).as_posix()
             by_basename[Path(fm.filepath).name].append(i)
+            by_rel_path[posix] = i
+            parts = posix.split('/')
+            for k in range(1, len(parts)):
+                suffix_owners['/'.join(parts[k:])].add(i)
+
+        relative_count = 0
+        basename_count = 0
 
         # Adjacency list: node index -> list of included node indices (deduped).
         adj: List[List[int]] = [[] for _ in self.file_metrics]
         for i, fm in enumerate(self.file_metrics):
             seen: Set[int] = set()
-            for inc in fm.includes:
-                for target in by_basename.get(inc, ()):
-                    if target != i and target not in seen:
-                        seen.add(target)
-                        adj[i].append(target)
+            # `include_paths` holds raw include strings; `includes` is basenames. Older
+            # data without include_paths still works because we fall back to basenames.
+            raw_paths = fm.include_paths or fm.includes
+            for raw, base in zip(raw_paths, fm.includes):
+                norm = raw.replace('\\', '/').lstrip('./')
+                target: Optional[int] = None
+                resolved_via_relative = False
+                # Tier 1: exact relative-path match.
+                if norm in by_rel_path:
+                    target = by_rel_path[norm]
+                    resolved_via_relative = True
+                # Tier 1b: unambiguous suffix match (for headers included via partial
+                # subpath like "Flux/Foo.h" pointing at Engine/Flux/Foo.h).
+                elif norm in suffix_owners and len(suffix_owners[norm]) == 1:
+                    target = next(iter(suffix_owners[norm]))
+                    resolved_via_relative = True
+                if target is not None and target != i and target not in seen:
+                    seen.add(target)
+                    adj[i].append(target)
+                    if resolved_via_relative:
+                        relative_count += 1
+                    continue
+                # Tier 2: basename fallback (low confidence — link to all files
+                # sharing the basename, which is rare in Zenith but possible).
+                for tgt in by_basename.get(base, ()):
+                    if tgt != i and tgt not in seen:
+                        seen.add(tgt)
+                        adj[i].append(tgt)
+                        basename_count += 1
             fm.fan_out = len(adj[i])
+
+        self.include_edge_relative_count = relative_count
+        self.include_edge_basename_count = basename_count
 
         fan_in_count = [0] * len(self.file_metrics)
         for i, targets in enumerate(adj):
@@ -1736,9 +1846,34 @@ class CppAnalyzer:
         Each cluster lists every member function with file/line/name/score so consumers
         can act on the finding without a second pass.
         """
-        entries: List[Tuple[int, frozenset]] = [
-            (i, fm.shingles) for i, fm in enumerate(self.function_metrics) if fm.shingles
-        ]
+        # Optional filtering: profiles can drop low-priority and test-only functions
+        # from duplicate detection so engine-CI doesn't drown in shape-matches between
+        # trivial getters or ZENITH_TEST wrappers. Filters are conservative — they
+        # only kick in when a profile explicitly opts in.
+        def _is_test_only(filepath: str) -> bool:
+            posix = Path(filepath).as_posix()
+            return (
+                posix.endswith('.Tests.inl')
+                or '/UnitTests/' in posix
+                or posix.startswith('UnitTests/')
+                or '/tests/' in posix
+                or posix.startswith('tests/')
+            )
+
+        # Priority floor below which we ignore matches; tuned to skip cosmetic dupes
+        # (one-line getters / wrappers always shape-match each other) without dropping
+        # genuine refactor candidates.
+        _DUP_PRIORITY_FLOOR = 15.0
+
+        entries: List[Tuple[int, frozenset]] = []
+        for i, fm in enumerate(self.function_metrics):
+            if not fm.shingles:
+                continue
+            if self.filter_test_only_duplicates and _is_test_only(fm.filepath):
+                continue
+            if self.filter_low_priority_duplicates and fm.priority_score < _DUP_PRIORITY_FLOOR:
+                continue
+            entries.append((i, fm.shingles))
         if len(entries) < 2:
             self.duplicate_clusters = []
             return
@@ -2696,6 +2831,7 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
             'case_count': func.case_count,
             'priority_score': func.priority_score,
             'priority_factors': func.priority_factors,
+            'dominant_signal': _dominant_signal(func.priority_factors),
             'tags': func.tags,
             'extract_candidates': func.extract_candidates,
         }
@@ -2806,6 +2942,7 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
         'schema_version': JSON_SCHEMA_VERSION,
         'caveats': JSON_CAVEATS,
         'thresholds': analyzer.thresholds,
+        'health_summary': get_health_summary(analyzer),
         'summary': summary,
         'directories': dir_list,
         'function_hotspots': [function_to_dict(f) for f in function_hotspots],
@@ -2854,10 +2991,40 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
     quotable in a PR comment and every file reference is a markdown link to `file:line`.
     """
     summary = analyzer.get_summary()
+    health = get_health_summary(analyzer)
     out: List[str] = []
     out.append('# Code Complexity Report\n')
     out.append(f'Root: `{analyzer.root_path}`\n')
     out.append('')
+
+    # Health summary first — the digest a reviewer can scan in five seconds before
+    # deciding whether to drill into the per-function queue below. Always present so
+    # the structure stays predictable across runs.
+    out.append('## Health summary\n')
+    if health:
+        out.append(f'- Profile: `{health["profile"]}`')
+        out.append(f'- Parser: `{health["parser_backend"]}` '
+                   f'(requested `{health["parser_backend_requested"]}`)')
+        out.append(f'- High-priority files (score >= 70): **{health["high_priority_file_count"]}**')
+        out.append(f'- P90 file priority: **{health["p90_file_priority"]}**')
+        out.append(f'- Include cycles: **{health["include_cycle_count"]}**')
+        out.append(f'- Duplicate clusters: **{health["duplicate_cluster_count"]}**')
+        rel = health["include_edges_relative"]
+        base = health["include_edges_basename"]
+        total = rel + base
+        if total > 0:
+            base_pct = 100.0 * base / total
+            out.append(f'- Include edges resolved: {rel} relative-path (high confidence), '
+                       f'{base} basename-only (low confidence, {base_pct:.0f}%)')
+        if health['worst_function']:
+            wf = health['worst_function']
+            out.append(f'- Worst function: `{wf["file"]}:{wf["line"]}` `{wf["name"]}` '
+                       f'(score {wf["priority_score"]:.1f})')
+        if health['worst_file']:
+            wf = health['worst_file']
+            out.append(f'- Worst file: `{wf["file"]}` (score {wf["priority_score"]:.1f})')
+    out.append('')
+
     out.append('## Summary\n')
     if summary:
         out.append(f'- Files: **{summary["total_files"]:,}**, SLOC: **{summary["total_code_lines"]:,}**, '
@@ -2881,6 +3048,9 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
     for i, func in enumerate(top_funcs, 1):
         loc_ref = f'`{func.filepath}:{func.start_line}`'
         out.append(f'### {i}. {loc_ref} — `{func.name}` (score: {func.priority_score:.1f})')
+        dominant = _dominant_signal(func.priority_factors)
+        if dominant:
+            out.append(f'Dominant signal: **{dominant}**')
         if func.tags:
             out.append('Tags: ' + ', '.join(f'`{t}`' for t in func.tags))
         out.append(
@@ -2961,7 +3131,9 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
         out.append('## Low-cohesion classes (LCOM5 >= 0.7, top 15)\n')
         out.append('LCOM5 = 1 - (method/field touches) / (methods * fields). Near 1.0 means '
                    'methods mostly use disjoint subsets of the fields — a split-responsibilities '
-                   'candidate.\n')
+                   'candidate. **Caveat: header-inline only.** Method bodies that live in '
+                   'separate `.cpp` files are invisible at this scope, so this is a '
+                   'header-inline cohesion signal, not a full-class score.\n')
         out.append('| Class | File | LCOM5 | Methods | Fields |')
         out.append('| --- | --- | ---: | ---: | ---: |')
         for c in low_cohesion[:15]:
@@ -3825,16 +3997,34 @@ def generate_llm_suggestions(
     return results
 
 
+_FAIL_ON_KEYS: Tuple[str, ...] = (
+    'max-cc', 'max-cognitive', 'max-nesting', 'max-loc',
+    'max-function-priority', 'max-file-priority',
+    'max-include-cycles', 'max-duplicate-clusters',
+)
+
+
 def check_fail_on(analyzer: CppAnalyzer, thresholds: Dict[str, float]) -> List[str]:
     """
-    Return a list of violation messages for functions exceeding the given thresholds.
-    Empty list means no violations. Used to gate CI on quality regressions.
+    Return a list of violation messages for the given thresholds. Empty list means no
+    violations. Used to gate CI on quality regressions.
+
+    Per-function rules (`max-cc`, `max-cognitive`, `max-nesting`, `max-loc`,
+    `max-function-priority`) walk every function. Per-file rules (`max-file-priority`)
+    walk every file. Aggregate rules (`max-include-cycles`, `max-duplicate-clusters`)
+    check repository-wide counts so a profile can fail builds when architectural
+    health deteriorates regardless of any single function.
     """
     violations: List[str] = []
     max_cc = thresholds.get('max-cc')
     max_cog = thresholds.get('max-cognitive')
     max_nesting = thresholds.get('max-nesting')
     max_loc = thresholds.get('max-loc')
+    max_fn_priority = thresholds.get('max-function-priority')
+    max_file_priority = thresholds.get('max-file-priority')
+    max_cycles = thresholds.get('max-include-cycles')
+    max_dupes = thresholds.get('max-duplicate-clusters')
+
     for fm in analyzer.function_metrics:
         ref = f'{fm.filepath}:{fm.start_line} {fm.name}'
         if max_cc is not None and fm.cyclomatic_complexity > max_cc:
@@ -3845,11 +4035,40 @@ def check_fail_on(analyzer: CppAnalyzer, thresholds: Dict[str, float]) -> List[s
             violations.append(f'{ref}: nesting={fm.max_nesting_depth} exceeds max-nesting={int(max_nesting)}')
         if max_loc is not None and fm.code_lines > max_loc:
             violations.append(f'{ref}: LOC={fm.code_lines} exceeds max-loc={int(max_loc)}')
+        if max_fn_priority is not None and fm.priority_score > max_fn_priority:
+            violations.append(
+                f'{ref}: priority={fm.priority_score:.1f} exceeds '
+                f'max-function-priority={max_fn_priority:g}'
+            )
+
+    if max_file_priority is not None:
+        for fm in analyzer.file_metrics:
+            if fm.priority_score > max_file_priority:
+                violations.append(
+                    f'{fm.filepath}: file priority={fm.priority_score:.1f} exceeds '
+                    f'max-file-priority={max_file_priority:g}'
+                )
+
+    if max_cycles is not None and len(analyzer.include_cycles) > max_cycles:
+        violations.append(
+            f'include cycles={len(analyzer.include_cycles)} exceeds '
+            f'max-include-cycles={int(max_cycles)}'
+        )
+
+    if max_dupes is not None and len(analyzer.duplicate_clusters) > max_dupes:
+        violations.append(
+            f'duplicate clusters={len(analyzer.duplicate_clusters)} exceeds '
+            f'max-duplicate-clusters={int(max_dupes)}'
+        )
+
     return violations
 
 
 def _parse_fail_on(raw: str) -> Dict[str, float]:
-    """Parse `--fail-on max-cc=30,max-nesting=8` into a dict."""
+    """
+    Parse `--fail-on max-cc=30,max-nesting=8` into a dict. Unknown keys raise so a
+    typo'd flag fails loudly rather than silently disabling a gate.
+    """
     out: Dict[str, float] = {}
     if not raw:
         return out
@@ -3860,8 +4079,97 @@ def _parse_fail_on(raw: str) -> Dict[str, float]:
         if '=' not in item:
             raise ValueError(f"Expected KEY=VALUE in --fail-on, got: {item!r}")
         k, v = item.split('=', 1)
-        out[k.strip()] = float(v.strip())
+        key = k.strip()
+        if key not in _FAIL_ON_KEYS:
+            raise ValueError(
+                f"Unknown --fail-on key: {key!r}. Valid keys: {', '.join(_FAIL_ON_KEYS)}"
+            )
+        out[key] = float(v.strip())
     return out
+
+
+def _resolve_profile(profile_name: str, profile_path: Optional[Path] = None) -> Dict:
+    """
+    Load a named profile from a JSON file. Profiles live in `complexity_profiles.json`
+    next to the analyzer by default; pass `profile_path` to override. Raises with a
+    clear message when the file or profile name is missing.
+    """
+    import json
+    if profile_path is None:
+        profile_path = Path(__file__).resolve().parent / 'complexity_profiles.json'
+    if not profile_path.exists():
+        raise FileNotFoundError(f"Profile file not found: {profile_path}")
+    with open(profile_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    if profile_name not in data:
+        available = ', '.join(k for k in data if not k.startswith('_'))
+        raise KeyError(
+            f"Profile {profile_name!r} not found in {profile_path}. "
+            f"Available: {available}"
+        )
+    return data[profile_name]
+
+
+def get_health_summary(analyzer: CppAnalyzer) -> Dict:
+    """
+    One-glance health digest. Headline numbers a reviewer needs before drilling into
+    the report: how many files are bad, how widespread, how many cycles, how many
+    duplicate clusters, and the worst-offender at function and file scope.
+    """
+    if not analyzer.file_metrics:
+        return {}
+
+    high_priority_files = [f for f in analyzer.file_metrics if f.priority_score >= 70]
+    file_scores = sorted((f.priority_score for f in analyzer.file_metrics))
+    p90_file = round(_percentile(file_scores, 90), 1) if file_scores else 0.0
+
+    worst_func: Optional[FunctionMetrics] = None
+    if analyzer.function_metrics:
+        worst_func = max(analyzer.function_metrics, key=lambda f: f.priority_score)
+
+    worst_file: Optional[FileMetrics] = None
+    if analyzer.file_metrics:
+        worst_file = max(analyzer.file_metrics, key=lambda f: f.priority_score)
+
+    return {
+        'parser_backend': analyzer.parser_backend,
+        'parser_backend_requested': analyzer.parser_backend_requested,
+        'profile': analyzer.profile_name or '(none)',
+        'high_priority_file_count': len(high_priority_files),
+        'p90_file_priority': p90_file,
+        'include_cycle_count': len(analyzer.include_cycles),
+        'duplicate_cluster_count': len(analyzer.duplicate_clusters),
+        'include_edges_relative': analyzer.include_edge_relative_count,
+        'include_edges_basename': analyzer.include_edge_basename_count,
+        'worst_function': (
+            {
+                'name': worst_func.name,
+                'file': worst_func.filepath,
+                'line': worst_func.start_line,
+                'priority_score': worst_func.priority_score,
+            }
+            if worst_func
+            else None
+        ),
+        'worst_file': (
+            {
+                'file': worst_file.filepath,
+                'priority_score': worst_file.priority_score,
+            }
+            if worst_file
+            else None
+        ),
+    }
+
+
+def _dominant_signal(priority_factors: Dict[str, float]) -> Optional[str]:
+    """Return the priority-factor key with the largest contribution, or None."""
+    if not priority_factors:
+        return None
+    items = [(k, v) for k, v in priority_factors.items() if v > 0]
+    if not items:
+        return None
+    return max(items, key=lambda kv: kv[1])[0]
 
 
 def main():
@@ -3875,10 +4183,36 @@ def main():
         help='Root path of the codebase to analyze (default: current directory)'
     )
     parser.add_argument(
+        '--profile',
+        metavar='NAME',
+        help='Named profile from complexity_profiles.json (e.g. engine-ci, full-snapshot). '
+             'A profile pre-populates --exclude, --exclude-glob, --ignore-macros, --fail-on, '
+             'and duplicate-filter flags. Explicit CLI flags after --profile override profile '
+             'values for scalars and append to lists. The analyzer remains snapshot-only — '
+             'profiles do not introduce git history or baselines.'
+    )
+    parser.add_argument(
+        '--profile-file',
+        metavar='PATH',
+        help='Override the profile JSON path (default: Tools/complexity_profiles.json '
+             'next to this script).'
+    )
+    parser.add_argument(
         '-e', '--exclude',
         nargs='+',
-        default=['Middleware', 'ThirdParty', 'External', 'vendor', 'build', 'Build', '.git', '.claude'],
-        help='Directories to exclude from analysis'
+        default=None,
+        help='Directories to exclude from analysis. If --profile is set, CLI values are '
+             'APPENDED to the profile list. Default (no profile): '
+             'Middleware ThirdParty External vendor build Build .git .claude'
+    )
+    parser.add_argument(
+        '--exclude-glob',
+        action='append',
+        default=None,
+        metavar='GLOB',
+        help='Glob pattern (full relative path) to exclude. Repeatable. Examples: '
+             '--exclude-glob "**/*.Tests.inl" --exclude-glob "Generated/**". '
+             'If --profile is set, CLI values are APPENDED to the profile list.'
     )
     parser.add_argument(
         '-o', '--output',
@@ -3926,17 +4260,20 @@ def main():
         '--ignore-macros',
         nargs='+',
         metavar='NAME',
-        default=[],
+        default=None,
         help='Macro names whose balanced MACRO(...) invocations are stripped before '
              'CC/cognitive scanning. Useful for assertion macros (e.g. --ignore-macros '
-             'ZENITH_ASSERT assert).'
+             'ZENITH_ASSERT assert). If --profile is set, CLI values APPEND to profile list.'
     )
     parser.add_argument(
         '--fail-on',
         metavar='RULES',
-        help='Comma-separated thresholds that cause a non-zero exit when exceeded by any '
-             'function. Keys: max-cc, max-cognitive, max-nesting, max-loc. '
-             'Example: --fail-on max-cc=30,max-nesting=8'
+        help='Comma-separated thresholds that cause a non-zero exit when exceeded. '
+             'Per-function keys: max-cc, max-cognitive, max-nesting, max-loc, '
+             'max-function-priority. Per-file: max-file-priority. Aggregate: '
+             'max-include-cycles, max-duplicate-clusters. Example: '
+             '--fail-on max-cc=30,max-nesting=8,max-include-cycles=0. '
+             'Replaces (does not merge with) any profile fail_on.'
     )
     parser.add_argument(
         '--exclude-generated',
@@ -3957,12 +4294,14 @@ def main():
     )
     parser.add_argument(
         '--parser',
-        choices=['regex', 'tree-sitter'],
-        default='regex',
-        help='Parser backend for function / class detection. "regex" (default) is '
-             'stdlib-only and approximate. "tree-sitter" is more accurate on nested '
-             'templates, C++20 `requires`, function-try-blocks, and macro-generated '
-             'signatures; requires `pip install tree-sitter tree-sitter-cpp`.'
+        choices=['auto', 'regex', 'tree-sitter'],
+        default='auto',
+        help='Parser backend for function / class detection. "auto" (default) uses '
+             'tree-sitter when its deps are installed and falls back to regex otherwise. '
+             '"regex" is stdlib-only and approximate. "tree-sitter" is more accurate on '
+             'nested templates, C++20 `requires`, function-try-blocks, and macro-generated '
+             'signatures; requires `pip install tree-sitter tree-sitter-cpp`. The actual '
+             'backend used is recorded in the report alongside any caveats.'
     )
     parser.add_argument(
         '--llm-suggestions',
@@ -3993,6 +4332,40 @@ def main():
     root_path = Path(args.path).resolve()
     output_dir = Path(args.output).resolve()
 
+    # Resolve a profile (if any) and merge it into per-flag values. Profile values are
+    # the BASE; explicit CLI flags override scalars and append to lists. Profiles let
+    # CheckComplexity.bat / RunAnalysis.bat hand off all configuration to a single
+    # JSON file rather than an ever-growing list of bat-script flags.
+    _DEFAULT_EXCLUDES = ['Middleware', 'ThirdParty', 'External', 'vendor', 'build', 'Build', '.git', '.claude']
+    profile_data: Dict = {}
+    if args.profile:
+        profile_path = Path(args.profile_file).resolve() if args.profile_file else None
+        profile_data = _resolve_profile(args.profile, profile_path)
+        print(f"Using profile: {args.profile}")
+
+    profile_excludes = list(profile_data.get('exclude_dirs', []))
+    profile_globs = list(profile_data.get('exclude_globs', []))
+    profile_macros = list(profile_data.get('ignore_macros', []))
+    profile_fail_on = dict(profile_data.get('fail_on', {}))
+    profile_filter_low = bool(profile_data.get('filter_low_priority_duplicates', False))
+    profile_filter_test = bool(profile_data.get('filter_test_only_duplicates', False))
+
+    if args.exclude is None:
+        exclude_dirs = profile_excludes if profile_excludes else list(_DEFAULT_EXCLUDES)
+    else:
+        # CLI append-on-profile, replace-default.
+        exclude_dirs = (profile_excludes + list(args.exclude)) if profile_excludes else list(args.exclude)
+
+    if args.exclude_glob is None:
+        exclude_globs = list(profile_globs)
+    else:
+        exclude_globs = profile_globs + list(args.exclude_glob)
+
+    if args.ignore_macros is None:
+        ignore_macros = list(profile_macros)
+    else:
+        ignore_macros = (profile_macros + list(args.ignore_macros)) if profile_macros else list(args.ignore_macros)
+
     # Load optional threshold overrides.
     threshold_overrides: Optional[Dict[str, float]] = None
     if args.thresholds:
@@ -4001,25 +4374,42 @@ def main():
             threshold_overrides = json.load(f)
         print(f"Loaded threshold overrides from: {args.thresholds}")
 
-    fail_on_rules = _parse_fail_on(args.fail_on) if args.fail_on else {}
+    # CLI --fail-on REPLACES profile fail_on (don't merge — would silently weaken gates).
+    if args.fail_on:
+        fail_on_rules = _parse_fail_on(args.fail_on)
+    else:
+        fail_on_rules = {}
+        for k, v in profile_fail_on.items():
+            if k not in _FAIL_ON_KEYS:
+                raise ValueError(
+                    f"Profile {args.profile!r} has unknown fail_on key {k!r}. "
+                    f"Valid keys: {', '.join(_FAIL_ON_KEYS)}"
+                )
+            fail_on_rules[k] = float(v)
 
     print(f"Analyzing codebase at: {root_path}")
-    print(f"Excluding directories: {', '.join(args.exclude)}")
-    if args.ignore_macros:
-        print(f"Ignoring macros: {', '.join(args.ignore_macros)}")
+    print(f"Excluding directories: {', '.join(exclude_dirs)}")
+    if exclude_globs:
+        print(f"Excluding globs: {', '.join(exclude_globs)}")
+    if ignore_macros:
+        print(f"Ignoring macros: {', '.join(ignore_macros)}")
     if args.exclude_generated:
         print("Skipping generated files.")
 
     analyzer = CppAnalyzer(
         str(root_path),
-        exclude_dirs=args.exclude,
+        exclude_dirs=exclude_dirs,
+        exclude_globs=exclude_globs,
         thresholds=threshold_overrides,
-        ignore_macros=args.ignore_macros,
+        ignore_macros=ignore_macros,
         exclude_generated=args.exclude_generated,
         parser_backend=args.parser,
+        filter_low_priority_duplicates=profile_filter_low,
+        filter_test_only_duplicates=profile_filter_test,
+        profile_name=args.profile,
     )
-    if analyzer.parser_backend == 'tree-sitter':
-        print("Using tree-sitter parser.")
+    print(f"Parser backend: {analyzer.parser_backend} "
+          f"(requested: {analyzer.parser_backend_requested})")
     analyzer.analyze(workers=args.workers)
 
     if args.absolute_paths:
