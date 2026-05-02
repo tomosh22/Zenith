@@ -4,6 +4,22 @@
 #include "Multithreading/Zenith_Multithreading.h"
 #include "Profiling/Zenith_Profiling.h"
 
+// ----------------------------------------------------------------------------
+// TaskSystem dependency model
+//
+// This is a flat task pool, NOT a dependency graph. Tasks do not wait on each
+// other and there is no DependsOn(...) API. To order work, the caller blocks
+// on WaitUntilComplete() of the predecessor task before submitting the next:
+//
+//     Zenith_TaskSystem::SubmitTask(&xTaskA);
+//     xTaskA.WaitUntilComplete();              // serialise A before B
+//     Zenith_TaskSystem::SubmitTask(&xTaskB);
+//
+// Use Zenith_TaskArray for data-parallel work where each invocation is
+// independent. Use multiple Zenith_Task submissions when the work items can
+// run concurrently but should all complete before a barrier (wait on each).
+// ----------------------------------------------------------------------------
+
 using Zenith_TaskFunction = void(*)(void* pData);
 using Zenith_TaskArrayFunction = void(*)(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
 
@@ -57,13 +73,13 @@ public:
 		m_bSubmitted.store(false, std::memory_order_release);
 	}
 
-	// Reset for task reuse
-	// NOTE: For simple tasks, no-op since there are no counters to reset
-	// The m_bSubmitted flag is automatically reset by WaitUntilComplete
+	// Reset for task reuse.
+	// Simple tasks have no per-invocation counters, so this base implementation
+	// is empty. The m_bSubmitted flag IS cleared, but by WaitUntilComplete()
+	// (see line ~57) — not here. Zenith_TaskArray::Reset() overrides this to
+	// also clear its invocation/completion counters.
 	void Reset()
 	{
-		// No counters to reset for simple tasks
-		// m_bSubmitted is reset in WaitUntilComplete
 	}
 
 	const Zenith_ProfileIndex GetProfileIndex() const
@@ -92,11 +108,11 @@ class Zenith_TaskArray : public Zenith_Task
 {
 public:
 	Zenith_TaskArray() = delete;
-	Zenith_TaskArray(Zenith_ProfileIndex eProfileIndex, Zenith_TaskArrayFunction pfnFunc, void* pData, u_int uNumInvocations, bool bSubmittingThreadJoins = false)
+	Zenith_TaskArray(Zenith_ProfileIndex eProfileIndex, Zenith_TaskArrayFunction pfnFunc, void* pData, u_int uNumInvocations, bool bCallingThreadParticipates = false)
 		: Zenith_Task(eProfileIndex, pData)  // Use protected constructor (no pfnFunc)
 		, m_pfnArrayFunc(pfnFunc)
 		, m_uNumInvocations(uNumInvocations)
-		, m_bSubmittingThreadJoins(bSubmittingThreadJoins)
+		, m_bCallingThreadParticipates(bCallingThreadParticipates)
 		, m_uInvocationCounter(0)
 		, m_uCompletionCounter(0)
 	{
@@ -136,16 +152,25 @@ public:
 		return m_uNumInvocations;
 	}
 
+	// If true, the thread that calls SubmitTaskArray() participates as a worker
+	// on this array (instead of returning immediately). Useful when the calling
+	// thread would otherwise idle waiting for completion.
+	const bool GetCallingThreadParticipates() const
+	{
+		return m_bCallingThreadParticipates;
+	}
+
+	// Backward-compatible name. Prefer GetCallingThreadParticipates() in new code.
 	const bool GetSubmittingThreadJoins() const
 	{
-		return m_bSubmittingThreadJoins;
+		return GetCallingThreadParticipates();
 	}
 
 private:
 
 	Zenith_TaskArrayFunction m_pfnArrayFunc;
 	u_int m_uNumInvocations;
-	bool m_bSubmittingThreadJoins;
+	bool m_bCallingThreadParticipates;
 	std::atomic<u_int> m_uInvocationCounter;
 	std::atomic<u_int> m_uCompletionCounter;
 };

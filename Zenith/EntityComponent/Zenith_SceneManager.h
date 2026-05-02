@@ -1,5 +1,42 @@
 #pragma once
 
+// =============================================================================
+// Navigation guide
+// -----------------------------------------------------------------------------
+// This file is large (>1200 lines). The class itself is a static facade over
+// five subsystems in Zenith/EntityComponent/Internal/. To avoid getting lost,
+// jump to the section you need:
+//
+//   ~ line  10  Forward declarations + Zenith_SceneLoadMode enum
+//   ~ line 145  Class declaration begins (Zenith_SceneManager)
+//   ~ line 152  Public API:
+//                 • Test harness reset (#ifdef ZENITH_TESTING)
+//                 • Scene loading (Load/Unload/Async/Bootstrap)
+//                 • Scene queries (GetActiveScene / GetSceneData / etc.)
+//                 • Active-scene management
+//                 • Entity helpers (MoveEntityToScene / etc.)
+//                 • Callbacks (Loaded / Unloading / ActiveSceneChanged)
+//   ~ line 860  Internal (Engine Use Only) — forwarders to:
+//                 - Zenith_SceneRegistry          (slot table + generations)
+//                 - Zenith_SceneCallbackBus       (event dispatch)
+//                 - Zenith_SceneOperationQueue    (async scene ops)
+//                 - Zenith_SceneLifecycleScheduler(OnAwake/OnEnable/etc.)
+//                 - Zenith_SceneEntityOwnership   (entity slot ownership)
+//                 - Zenith_SceneLifecycleContext  (per-frame lifecycle state)
+//   ~ line 1064 First private block (helpers + state)
+//   ~ line 1134 Nested types: PrefabInstantiationGuard,
+//                 LifecycleDeferralGuard, SceneUpdateDeferralGuard,
+//                 SceneCreationTargetScope, PendingBuildIndexGuard
+//   ~ line 1230 #include of Zenith_SceneData.h (deliberate cycle — see below)
+//   ~ line 1234 Template-method bodies that need full SceneData visibility
+//
+// Why is SceneData.h included AT THE BOTTOM, after the class definition?
+// SceneData.h ALSO includes this file at its bottom — the cycle is intentional
+// and load-bearing. Each header is `#pragma once` and finishes its class body
+// before pulling in the sibling, so any TU eventually sees both classes fully
+// defined. Don't "fix" the cycle by removing one of the includes.
+// =============================================================================
+
 #include "Collections/Zenith_Vector.h"
 #include <atomic>
 #include <string>

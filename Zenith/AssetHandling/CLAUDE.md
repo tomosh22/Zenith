@@ -264,6 +264,12 @@ AssetHandling/
   Zenith_ModelAsset.h/cpp     - Model container (meshes + skeleton + materials)
   Zenith_AnimationAsset.h/cpp - Animation clips
   Zenith_MeshGeometryAsset.h/cpp  - Wrapper for Flux_MeshGeometry
-  Zenith_AsyncAssetLoader.h/cpp   - Background asset loading
+  Zenith_AsyncAssetLoader.h/cpp   - Background asset loading (NOT YET IMPLEMENTED — see below)
   Zenith_FileWatcher.h/cpp        - File system change watching
 ```
+
+## Async loading status
+
+`Zenith_AsyncAssetLoader` is **not yet implemented**. The framework (request queue, completion callbacks, task dispatch) is wired up end-to-end, but the per-type `AsyncLoadAsset<T>` specialisations all stub-return `nullptr` after a one-shot warning log. Calling `LoadAsync<T>()` will currently fail to deliver the asset.
+
+Use `Zenith_AssetRegistry::Get<T>(path)` for synchronous loading. The async path will become functional once each `AsyncLoadAsset<T>` specialisation in `Zenith_AsyncAssetLoader.cpp` is implemented; the GPU-resource hand-off is the hard part (textures need staging buffers + main-thread upload, meshes need GPU buffer creation on the main thread, prefabs touch the scene graph).

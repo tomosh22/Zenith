@@ -127,4 +127,18 @@ private:
 
 	void SerializeComponents(Zenith_Entity& xEntity);
 	void DeserializeComponents(Zenith_Entity& xEntity) const;
+
+	// Recursive helper for Instantiate. Walks the base-prefab chain, applies
+	// overrides on top, and tracks visited prefabs to abort on cycles.
+	// Lifecycle dispatch (OnAwake / OnEnable) is performed by the public
+	// Instantiate() once after the recursion unwinds — never by this helper.
+	Zenith_Entity InstantiateInternal(
+		Zenith_SceneData* pxSceneData,
+		const std::string& strEntityName,
+		Zenith_Vector<const Zenith_Prefab*>& axVisited) const;
+
+	// Returns true if the proposed base prefab would form a cycle when set
+	// as this prefab's base (i.e. the proposed base reaches `this` through
+	// its own ancestor chain, or IS `this`).
+	bool WouldFormVariantCycle(const PrefabHandle& xProposedBase) const;
 };

@@ -18,6 +18,28 @@
 
 ZENITH_REGISTER_COMPONENT(Zenith_ModelComponent, "Model")
 
+void Zenith_ModelComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
+{
+	// "Model" is STATEFUL — overriding the asset handle alone would leave the
+	// previously-loaded Flux_ModelInstance pointing at the base prefab's mesh,
+	// because LoadModel is what creates the instance from a path. Use the
+	// CUSTOM macro to deserialise a ModelHandle, extract its path, and call
+	// LoadModel so the runtime model instance gets rebuilt for the new asset.
+	//
+	// (Material slot overrides would need per-mesh-section reflection that
+	// doesn't yet exist — see ComponentMeta.h header docs.)
+	ZENITH_REGISTER_COMPONENT_PROPERTY_CUSTOM(
+		Zenith_ModelComponent, "Model", axProperties,
+		{
+			ModelHandle xHandle;
+			xValue >> xHandle;
+			if (!xHandle.GetPath().empty())
+			{
+				pxComp->LoadModel(xHandle.GetPath());
+			}
+		});
+}
+
 
 // Serialization version for ModelComponent
 // Version 3: New model instance system with .zmodel path

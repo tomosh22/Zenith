@@ -4,6 +4,12 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
 
+// Forward declarations for RegisterProperties() — full definition lives in
+// Zenith_ComponentMeta.h, which we cannot include here without a cycle
+// (ComponentMeta -> Scene -> SceneData -> TransformComponent).
+template<typename T> class Zenith_Vector;
+struct Zenith_PropertyDescriptor;
+
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -20,6 +26,10 @@ public:
 	// Serialization methods for Zenith_DataStream
 	void WriteToDataStream(Zenith_DataStream& xStream);
 	void ReadFromDataStream(Zenith_DataStream& xStream);
+
+	// Property registration for prefab variant overrides. The reflection layer
+	// in Zenith_ComponentMeta calls this once at component-type registration.
+	static void RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties);
 
 	void SetPosition(const Zenith_Maths::Vector3& xPos);
 	void SetRotation(const Zenith_Maths::Quat& xRot);

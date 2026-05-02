@@ -178,6 +178,33 @@ public:
 	static void TestPrefabSaveLoadRoundTrip();
 	static void TestPrefabOverrides();
 	static void TestPrefabVariantCreation();
+	static void TestPrefabVariantInstantiate();
+	static void TestPrefabVariantCycleRejected();
+	static void TestPrefabVariantNestedPathSkipped();
+	static void TestPrefabVariantOverrideApplies();
+	static void TestPrefabVariantChain();
+	// Coverage gaps from the test audit
+	static void TestPrefabApplyToEntity();
+	static void TestPrefabApplyVariantToEntity();
+	static void TestPrefabMoveConstructor();
+	static void TestPrefabMoveAssignment();
+	static void TestPrefabVariantRoundTripWithOverrides();
+	static void TestPrefabMultipleOverridesSameComponent();
+	static void TestPrefabClearOverridesReverts();
+	static void TestPrefabCreateAsVariantWithUnsetHandle();
+	static void TestPrefabInstantiateNullSceneData();
+	static void TestPrefabLoadCorruptedFile();
+	static void TestPrefabLoadFromDeletedFile();
+	static void TestPrefabSelfVariantRejected();
+	static void TestPrefabInstantiateNamesEntity();
+	static void TestPrefabVariantInstantiateLifecycleOnceAtTop();
+	static void TestPrefabVariantPositionOverrideSyncsPhysicsBody();
+	static void TestPrefabVariantScaleOverrideRebuildsCollider();
+	static void TestTaskArrayCallingThreadParticipates();
+	static void TestTaskReuseAfterWait();
+
+	// RenderGraph diagnostic accessor
+	static void TestRenderGraphPassOrderDescription();
 
 	// Async asset loading tests
 	static void TestAsyncLoadState();

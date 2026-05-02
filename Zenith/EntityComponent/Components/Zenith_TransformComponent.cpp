@@ -15,6 +15,26 @@
 
 ZENITH_REGISTER_COMPONENT(Zenith_TransformComponent, "Transform")
 
+void Zenith_TransformComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
+{
+	// Use SETTER form — Transform's setters are STATEFUL:
+	//   - SetPosition / SetRotation route through Jolt BodyInterface when a
+	//     ColliderComponent is present, so the physics body stays in sync.
+	//   - SetScale regenerates the physics mesh and rebuilds the collider
+	//     when ModelComponent / ColliderComponent are present.
+	// A raw field write would leave physics + cached collider geometry pointing
+	// at the pre-override value, which is the bug code review caught.
+	ZENITH_REGISTER_COMPONENT_PROPERTY_SETTER(
+		Zenith_TransformComponent, &Zenith_TransformComponent::SetPosition,
+		Zenith_Maths::Vector3, "Position", axProperties);
+	ZENITH_REGISTER_COMPONENT_PROPERTY_SETTER(
+		Zenith_TransformComponent, &Zenith_TransformComponent::SetRotation,
+		Zenith_Maths::Quat, "Rotation", axProperties);
+	ZENITH_REGISTER_COMPONENT_PROPERTY_SETTER(
+		Zenith_TransformComponent, &Zenith_TransformComponent::SetScale,
+		Zenith_Maths::Vector3, "Scale", axProperties);
+}
+
 Zenith_TransformComponent::Zenith_TransformComponent(Zenith_Entity& xEntity)
 	: m_xOwningEntity(xEntity)
 {

@@ -153,6 +153,18 @@ enum class Zenith_EditorActionType
 	// Model
 	ADD_MESH_ENTRY,
 
+	// Prefab variant authoring (Phase 3 of the readability plan).
+	// CREATE_PREFAB_FROM_SELECTED captures the currently-selected entity into a
+	// new Zenith_Prefab and writes it to disk. CREATE_PREFAB_VARIANT loads a base
+	// prefab through the asset registry and writes a derived variant that
+	// inherits from it. ADD_PREFAB_VARIANT_OVERRIDE_VEC3 appends a single
+	// Vector3 override to an on-disk variant. INSTANTIATE_PREFAB reads a prefab
+	// from disk and instantiates it into the active scene, selecting the result.
+	CREATE_PREFAB_FROM_SELECTED,
+	CREATE_PREFAB_VARIANT,
+	ADD_PREFAB_VARIANT_OVERRIDE_VEC3,
+	INSTANTIATE_PREFAB,
+
 	// Scene loading
 	LOAD_INITIAL_SCENE,                 // Combined: registers the initial-scene-load callback,
 	                                    // then invokes it once under a lifecycle-deferral guard.
@@ -370,6 +382,53 @@ public:
 	// Model Step Helpers
 	//--------------------------------------------------------------------------
 	static void AddStep_AddMeshEntry(Flux_MeshGeometry* pxGeometry, Zenith_MaterialAsset* pxMaterial);
+
+	//--------------------------------------------------------------------------
+	// Prefab Variant Step Helpers
+	//
+	// All path arguments must point to static storage (string literals or static
+	// const arrays) — same lifetime contract as every other AddStep_* string.
+	// These four steps cover the full variant authoring loop:
+	//
+	//   1. AddStep_CreatePrefabFromSelected — capture selected entity to .zpfb
+	//   2. AddStep_CreatePrefabVariant       — derive a variant from a base path
+	//   3. AddStep_AddPrefabVariantOverrideVec3 — append a Vector3 override
+	//   4. AddStep_InstantiatePrefab         — load + instantiate into scene
+	//
+	// Steps 1-3 read/write through the asset registry, so saves/loads stay
+	// consistent with editor and runtime code paths.
+	//--------------------------------------------------------------------------
+
+	// Capture the currently-selected entity into a prefab and save it to disk.
+	// The prefab's logical name (used by Instantiate when no override is given)
+	// is szPrefabName; the file is written to szSavePath.
+	static void AddStep_CreatePrefabFromSelected(const char* szPrefabName, const char* szSavePath);
+
+	// Create a new variant prefab inheriting from szBasePath and save it to
+	// szSavePath. The base must already exist on disk (typically created by a
+	// preceding AddStep_CreatePrefabFromSelected). Variant authoring failures
+	// (cycle detection, missing base) assert.
+	static void AddStep_CreatePrefabVariant(
+		const char* szVariantName,
+		const char* szBasePath,
+		const char* szSavePath);
+
+	// Append a Vector3 property override to the variant prefab at szPrefabPath
+	// and save the file back to disk. Reuses Zenith_ComponentMetaRegistry's
+	// flat-name property reflection — see ComponentMeta.h for the supported
+	// property names (currently "Position", "Rotation", "Scale" on Transform,
+	// "Color"/"Intensity"/etc. on Light, and so on).
+	static void AddStep_AddPrefabVariantOverrideVec3(
+		const char* szPrefabPath,
+		const char* szComponentName,
+		const char* szPropertyName,
+		float fX, float fY, float fZ);
+
+	// Load the prefab at szPrefabPath through the asset registry and instantiate
+	// it into the active scene. The new entity is selected so subsequent
+	// transform/component steps target it. Pass an empty entity name to fall
+	// back to the prefab's own name.
+	static void AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityName);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers

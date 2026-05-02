@@ -49,6 +49,27 @@ public:
 	static void Shutdown();
 	static void EndFrame();
 
+	// ----------------------------------------------------------------------------------
+	// CRITICAL ALLOCATION CONSISTENCY RULE
+	//
+	// Allocate()/Reallocate()/Deallocate() use malloc/realloc/free under the hood.
+	// new/new[] and delete/delete[] go through the overloaded operators above (which,
+	// when ZENITH_MEMORY_MANAGEMENT_ENABLED is set, route through the tracking layer).
+	//
+	// Never mix the two strategies on the same pointer. Reallocate() on a new[]-allocated
+	// pointer (or Deallocate() on it) is undefined behaviour, even if it appears to work.
+	//
+	//   WRONG:  T* p = new T[count];                 // heap corruption
+	//           p = (T*)Reallocate(p, newSize);
+	//
+	//   RIGHT:  T* p = (T*)Allocate(count * sizeof(T));
+	//           p = (T*)Reallocate(p, newSize);
+	//           Deallocate(p);
+	//
+	// See Core/CLAUDE.md "Allocation Consistency" for the broader rationale and which
+	// engine systems (e.g. Flux_MeshGeometry) rely on this convention.
+	// ----------------------------------------------------------------------------------
+
 	// Core allocation functions (always available)
 	static void* Allocate(size_t ullSize);
 	static void* AllocateAligned(size_t ullSize, size_t ulAlignment);

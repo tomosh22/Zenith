@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp20</CppLanguageStandard>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp20</CppLanguageStandard>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -895,6 +895,7 @@
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_RenderGraph.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_VariantEditor.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.Tests.inl" />
@@ -926,6 +927,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.inl" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h" />
@@ -1005,7 +1007,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_LightClustering.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_Fog.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Apply.slang" />
@@ -1834,6 +1835,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_VariantEditor.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>

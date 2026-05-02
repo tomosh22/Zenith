@@ -64,6 +64,14 @@ namespace Combat
 	Zenith_Prefab* g_pxArenaPrefab = nullptr;
 	Zenith_Prefab* g_pxArenaWallPrefab = nullptr;  // Wall segment with candle and flame
 
+	// Enemy variant prefabs — three size tiers that share the base enemy template
+	// but each apply a different Transform.Scale override at instantiation.
+	// uENEMY_VARIANT_COUNT is declared in Combat_Behaviour.h to keep both extern
+	// declarations and definitions in sync.
+	Zenith_Prefab* g_apxEnemyVariants[uENEMY_VARIANT_COUNT] = { nullptr, nullptr, nullptr };
+	const char* g_aszEnemyVariantNames[uENEMY_VARIANT_COUNT] = { "EnemyWeak", "EnemyNormal", "EnemyStrong" };
+	const float g_afEnemyVariantScales[uENEMY_VARIANT_COUNT] = { 0.7f, 0.9f, 1.1f };
+
 	// Particle effects
 	Flux_ParticleEmitterConfig* g_pxHitSparkConfig = nullptr;
 	Zenith_EntityID g_uHitSparkEmitterID = INVALID_ENTITY_ID;
@@ -149,6 +157,12 @@ static void CleanupCombatResources()
 	g_pxPlayerPrefab = nullptr;
 	delete g_pxEnemyPrefab;
 	g_pxEnemyPrefab = nullptr;
+
+	for (u_int u = 0; u < uENEMY_VARIANT_COUNT; ++u)
+	{
+		delete g_apxEnemyVariants[u];
+		g_apxEnemyVariants[u] = nullptr;
+	}
 	delete g_pxArenaPrefab;
 	g_pxArenaPrefab = nullptr;
 	delete g_pxArenaWallPrefab;
@@ -556,12 +570,38 @@ static void InitializeCombatResources()
 		Zenith_SceneManager::Destroy(xPlayerTemplate);
 	}
 
-	// Enemy prefab
+	// Enemy prefab + three Scale variants demonstrating the variant override system.
+	// The base prefab is saved to disk and re-loaded through the asset registry so
+	// the variants get a proper path-based PrefabHandle that resolves on
+	// Instantiate. Each variant overrides Transform.Scale to a different value
+	// (0.7 / 0.9 / 1.1) so the three enemy tiers visibly differ in size.
 	{
 		Zenith_Entity xEnemyTemplate(pxSceneData, "EnemyTemplate");
 		g_pxEnemyPrefab = new Zenith_Prefab();
 		g_pxEnemyPrefab->CreateFromEntity(xEnemyTemplate, "Enemy");
 		Zenith_SceneManager::Destroy(xEnemyTemplate);
+
+		// Persist the base to disk so PrefabHandle("EnemyBase.zpfb") resolves
+		// through the registry. Cheap relative-path write; the file is owned by
+		// the launch and effectively transient.
+		const std::string strBasePath = "EnemyBase.zpfb";
+		g_pxEnemyPrefab->SaveToFile(strBasePath);
+		Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+
+		// Build the three Scale variants in memory.
+		PrefabHandle xBaseHandle(strBasePath);
+		for (u_int u = 0; u < uENEMY_VARIANT_COUNT; ++u)
+		{
+			g_apxEnemyVariants[u] = new Zenith_Prefab();
+			g_apxEnemyVariants[u]->CreateAsVariant(xBaseHandle, g_aszEnemyVariantNames[u]);
+
+			Zenith_PropertyOverride xOv;
+			xOv.m_strComponentName = "Transform";
+			xOv.m_strPropertyPath  = "Scale";
+			const float f = g_afEnemyVariantScales[u];
+			xOv.m_xValue << Zenith_Maths::Vector3(f, f, f);
+			g_apxEnemyVariants[u]->AddOverride(std::move(xOv));
+		}
 	}
 
 	// Arena prefab (for floor)

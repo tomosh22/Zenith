@@ -14,6 +14,10 @@ class Flux_ModelInstance;
 class Flux_MeshInstance;
 class Flux_SkeletonInstance;
 
+// Forward declarations for RegisterProperties (cycle-avoidance — see TransformComponent.h).
+template<typename T> class Zenith_Vector;
+struct Zenith_PropertyDescriptor;
+
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -39,6 +43,10 @@ public:
 	};
 
 	~Zenith_ModelComponent();
+
+	// Property registration for prefab-variant overrides. The reflection layer
+	// in Zenith_ComponentMeta calls this once at component-type registration.
+	static void RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties);
 
 	// Move semantics - required for component pool operations
 	Zenith_ModelComponent(Zenith_ModelComponent&& xOther) noexcept;

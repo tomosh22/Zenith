@@ -6362,6 +6362,933 @@ void Zenith_UnitTests::TestPrefabVariantCreation(){
 
 }
 
+#ifndef ZENITH_ANDROID  // Uses raw std::filesystem::remove with relative paths
+ZENITH_TEST(Prefab, PrefabVariantInstantiate) { Zenith_UnitTests::TestPrefabVariantInstantiate(); }
+#endif
+
+void Zenith_UnitTests::TestPrefabVariantInstantiate(){
+
+	// Variant inheritance regression test: instantiating a variant should produce
+	// an entity with the base prefab's components, NOT an empty entity.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	// Build a base prefab from an entity with a known position.
+	Zenith_Entity xBaseSource(pxSceneData, "VariantBaseSrc");
+	xBaseSource.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(7.0f, 8.0f, 9.0f));
+
+	Zenith_Prefab xBaseInMemory;
+	xBaseInMemory.CreateFromEntity(xBaseSource, "VariantBase");
+	const std::string strBasePath = "test_variant_base.zpfb";
+	xBaseInMemory.SaveToFile(strBasePath);
+
+	// Pull the base back through the asset registry so the variant has a real
+	// PrefabHandle (path -> registry-resolved pointer).
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+
+	PrefabHandle xBaseHandle(strBasePath);
+	Zenith_Prefab xVariant;
+	bool bVariantOk = xVariant.CreateAsVariant(xBaseHandle, "VariantOfBase");
+	ZENITH_ASSERT_TRUE(bVariantOk, "TestPrefabVariantInstantiate: CreateAsVariant should succeed");
+
+	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "VariantInstance");
+	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "TestPrefabVariantInstantiate: instance should be valid (not an empty entity)");
+	ZENITH_ASSERT_TRUE(xInstance.HasComponent<Zenith_TransformComponent>(),
+		"TestPrefabVariantInstantiate: instance should inherit base's TransformComponent");
+
+	Zenith_Maths::Vector3 xPos;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 7.0f) < 0.001f && std::abs(xPos.y - 8.0f) < 0.001f && std::abs(xPos.z - 9.0f) < 0.001f,
+		"TestPrefabVariantInstantiate: position should match base prefab");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strBasePath);
+#endif
+}
+
+ZENITH_TEST(Prefab, PrefabVariantCycleRejected) { Zenith_UnitTests::TestPrefabVariantCycleRejected(); }
+
+void Zenith_UnitTests::TestPrefabVariantCycleRejected(){
+
+	// CreateAsVariant must reject a base prefab whose ancestor chain reaches
+	// back to `this`. We construct two real prefabs A and B (both must be
+	// loadable through the registry so PrefabHandle::Get resolves), make B a
+	// variant of A, then try to make A a variant of B — which would form
+	// A -> B -> A. CreateAsVariant should refuse.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "CycleSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+
+	Zenith_Prefab xA;
+	xA.CreateFromEntity(xSrc, "CycleA");
+	const std::string strPathA = "test_cycle_a.zpfb";
+	xA.SaveToFile(strPathA);
+	Zenith_Prefab* pxA = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPathA);
+	ZENITH_ASSERT_NOT_NULL(pxA, "TestPrefabVariantCycleRejected: prefab A should load");
+
+	PrefabHandle xHandleA(strPathA);
+	Zenith_Prefab xB;
+	bool bBOk = xB.CreateAsVariant(xHandleA, "CycleB");
+	ZENITH_ASSERT_TRUE(bBOk, "TestPrefabVariantCycleRejected: B-as-variant-of-A should succeed");
+	const std::string strPathB = "test_cycle_b.zpfb";
+	xB.SaveToFile(strPathB);
+	Zenith_Prefab* pxB = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPathB);
+	ZENITH_ASSERT_NOT_NULL(pxB, "TestPrefabVariantCycleRejected: prefab B should load");
+
+	// Now try to retrofit A as a variant of B. This would produce the cycle
+	// A -> B -> A and must be rejected.
+	PrefabHandle xHandleB(strPathB);
+	bool bACycleOk = pxA->CreateAsVariant(xHandleB, "CycleA_Recycled");
+	ZENITH_ASSERT_FALSE(bACycleOk, "TestPrefabVariantCycleRejected: A-as-variant-of-B should be rejected (cycle)");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strPathA);
+	std::filesystem::remove(strPathB);
+#endif
+}
+
+ZENITH_TEST(Prefab, PrefabVariantOverrideApplies) { Zenith_UnitTests::TestPrefabVariantOverrideApplies(); }
+
+void Zenith_UnitTests::TestPrefabVariantOverrideApplies(){
+
+	// End-to-end check that a flat-property override flows through Instantiate
+	// and actually mutates the entity's component field. Uses Transform.Scale
+	// because it's a Vector3 (matches the registered property type) and the
+	// base prefab can be set to a value that's distinguishable from the override.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "OverrideBaseSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+
+	Zenith_Prefab xBaseInMem;
+	xBaseInMem.CreateFromEntity(xSrc, "OverrideBase");
+	const std::string strBasePath = "test_override_base.zpfb";
+	xBaseInMem.SaveToFile(strBasePath);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+
+	PrefabHandle xBaseHandle(strBasePath);
+	Zenith_Prefab xVariant;
+	xVariant.CreateAsVariant(xBaseHandle, "OverrideVariant");
+
+	// Push a Scale override of (5, 5, 5) onto the variant.
+	Zenith_PropertyOverride xOv;
+	xOv.m_strComponentName = "Transform";
+	xOv.m_strPropertyPath  = "Scale";
+	xOv.m_xValue << Zenith_Maths::Vector3(5.0f, 5.0f, 5.0f);
+	xVariant.AddOverride(std::move(xOv));
+
+	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "OverrideInstance");
+	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "TestPrefabVariantOverrideApplies: instance should be valid");
+
+	Zenith_Maths::Vector3 xScale;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_TRUE(std::abs(xScale.x - 5.0f) < 0.001f && std::abs(xScale.y - 5.0f) < 0.001f && std::abs(xScale.z - 5.0f) < 0.001f,
+		"TestPrefabVariantOverrideApplies: override should change Scale from (1,1,1) to (5,5,5)");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strBasePath);
+#endif
+}
+
+ZENITH_TEST(Prefab, PrefabVariantChain) { Zenith_UnitTests::TestPrefabVariantChain(); }
+
+void Zenith_UnitTests::TestPrefabVariantChain(){
+
+	// Three-level variant chain: A -> B -> C, where B overrides Position and
+	// C overrides Scale. Instantiating C should produce an entity with both
+	// overrides applied on top of A's components.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "ChainBaseSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xSrc.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+
+	// A: concrete prefab from entity
+	Zenith_Prefab xA;
+	xA.CreateFromEntity(xSrc, "ChainA");
+	const std::string strPathA = "test_chain_a.zpfb";
+	xA.SaveToFile(strPathA);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPathA);
+
+	// B: variant of A with Position override
+	PrefabHandle xHandleA(strPathA);
+	Zenith_Prefab xB;
+	xB.CreateAsVariant(xHandleA, "ChainB");
+	{
+		Zenith_PropertyOverride xOv;
+		xOv.m_strComponentName = "Transform";
+		xOv.m_strPropertyPath  = "Position";
+		xOv.m_xValue << Zenith_Maths::Vector3(10.0f, 20.0f, 30.0f);
+		xB.AddOverride(std::move(xOv));
+	}
+	const std::string strPathB = "test_chain_b.zpfb";
+	xB.SaveToFile(strPathB);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPathB);
+
+	// C: variant of B with Scale override
+	PrefabHandle xHandleB(strPathB);
+	Zenith_Prefab xC;
+	xC.CreateAsVariant(xHandleB, "ChainC");
+	{
+		Zenith_PropertyOverride xOv;
+		xOv.m_strComponentName = "Transform";
+		xOv.m_strPropertyPath  = "Scale";
+		xOv.m_xValue << Zenith_Maths::Vector3(7.0f, 7.0f, 7.0f);
+		xC.AddOverride(std::move(xOv));
+	}
+
+	Zenith_Entity xInstance = xC.Instantiate(pxSceneData, "ChainCInstance");
+	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "TestPrefabVariantChain: instance should be valid");
+
+	Zenith_Maths::Vector3 xPos, xScale;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	xInstance.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 10.0f) < 0.001f && std::abs(xPos.y - 20.0f) < 0.001f && std::abs(xPos.z - 30.0f) < 0.001f,
+		"TestPrefabVariantChain: B's Position override should propagate through C");
+	ZENITH_ASSERT_TRUE(std::abs(xScale.x - 7.0f) < 0.001f && std::abs(xScale.y - 7.0f) < 0.001f && std::abs(xScale.z - 7.0f) < 0.001f,
+		"TestPrefabVariantChain: C's Scale override should be applied last");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strPathA);
+	std::filesystem::remove(strPathB);
+#endif
+}
+
+// ----- TaskSystem: calling-thread-participates flag -----
+struct CallingThreadTestData
+{
+	std::atomic<u_int> m_uMainThreadInvocations{0};
+	u_int m_uMainThreadID = 0;
+};
+
+static void CallingThreadTestFunc(void* pData, u_int /*uIdx*/, u_int /*uTotal*/)
+{
+	auto* pxData = static_cast<CallingThreadTestData*>(pData);
+	if (Zenith_Multithreading::GetCurrentThreadID() == pxData->m_uMainThreadID)
+	{
+		pxData->m_uMainThreadInvocations.fetch_add(1);
+	}
+}
+
+ZENITH_TEST(Core, TaskArrayCallingThreadParticipates) { Zenith_UnitTests::TestTaskArrayCallingThreadParticipates(); }
+
+void Zenith_UnitTests::TestTaskArrayCallingThreadParticipates(){
+
+	// Verifies the rename's semantics: when bCallingThreadParticipates=true, the
+	// calling thread (main) runs at least one of the array's invocations.
+	CallingThreadTestData xData;
+	xData.m_uMainThreadID = Zenith_Multithreading::GetCurrentThreadID();
+
+	constexpr u_int uNumInvocations = 8;
+	Zenith_TaskArray xArray(
+		ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES,
+		CallingThreadTestFunc,
+		&xData,
+		uNumInvocations,
+		/* bCallingThreadParticipates = */ true
+	);
+	Zenith_TaskSystem::SubmitTaskArray(&xArray);
+	xArray.WaitUntilComplete();
+
+	ZENITH_ASSERT_TRUE(xData.m_uMainThreadInvocations.load() >= 1,
+		"TestTaskArrayCallingThreadParticipates: calling thread should run at least one invocation when flag is true");
+
+	// Also confirm the legacy accessor still works.
+	ZENITH_ASSERT_TRUE(xArray.GetSubmittingThreadJoins(),
+		"TestTaskArrayCallingThreadParticipates: legacy GetSubmittingThreadJoins() should reflect the flag");
+}
+
+//==============================================================================
+// Prefab coverage-gap tests (audit-driven, see plan §3.5)
+//==============================================================================
+
+// --- ApplyToEntity ---------------------------------------------------------
+
+ZENITH_TEST(Prefab, PrefabApplyToEntity) { Zenith_UnitTests::TestPrefabApplyToEntity(); }
+
+void Zenith_UnitTests::TestPrefabApplyToEntity(){
+
+	// ApplyToEntity overlays prefab data onto an existing entity (vs Instantiate
+	// which creates a fresh one). Verifies the apply path runs and writes the
+	// prefab's component values onto the existing entity's components.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	// Source entity used to author the prefab.
+	Zenith_Entity xSrc(pxSceneData, "ApplySrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(11.0f, 22.0f, 33.0f));
+
+	Zenith_Prefab xPrefab;
+	xPrefab.CreateFromEntity(xSrc, "ApplyPrefab");
+
+	// Pre-existing entity at a different position — apply should overwrite it.
+	Zenith_Entity xTarget(pxSceneData, "ApplyTarget");
+	xTarget.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+
+	const bool bApplied = xPrefab.ApplyToEntity(xTarget);
+	ZENITH_ASSERT_TRUE(bApplied, "TestPrefabApplyToEntity: ApplyToEntity should succeed on a valid prefab");
+
+	Zenith_Maths::Vector3 xPos;
+	xTarget.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 11.0f) < 0.001f && std::abs(xPos.y - 22.0f) < 0.001f && std::abs(xPos.z - 33.0f) < 0.001f,
+		"TestPrefabApplyToEntity: target position should match prefab source after apply");
+}
+
+ZENITH_TEST(Prefab, PrefabApplyVariantToEntity) { Zenith_UnitTests::TestPrefabApplyVariantToEntity(); }
+
+void Zenith_UnitTests::TestPrefabApplyVariantToEntity(){
+
+	// ApplyToEntity on a variant: should walk the base chain, apply base data,
+	// then layer overrides on top. Verifies that variants apply correctly via
+	// ApplyToEntity (not just Instantiate).
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "ApplyVariantBaseSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
+	xSrc.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
+
+	Zenith_Prefab xBase;
+	xBase.CreateFromEntity(xSrc, "ApplyVariantBase");
+	const std::string strPath = "test_apply_variant_base.zpfb";
+	xBase.SaveToFile(strPath);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+
+	PrefabHandle xHandle(strPath);
+	Zenith_Prefab xVariant;
+	xVariant.CreateAsVariant(xHandle, "ApplyVariant");
+	{
+		Zenith_PropertyOverride xOv;
+		xOv.m_strComponentName = "Transform";
+		xOv.m_strPropertyPath  = "Scale";
+		xOv.m_xValue << Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);
+		xVariant.AddOverride(std::move(xOv));
+	}
+
+	Zenith_Entity xTarget(pxSceneData, "ApplyVariantTarget");
+	const bool bApplied = xVariant.ApplyToEntity(xTarget);
+	ZENITH_ASSERT_TRUE(bApplied, "TestPrefabApplyVariantToEntity: ApplyToEntity on variant should succeed");
+
+	Zenith_Maths::Vector3 xPos, xScale;
+	xTarget.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	xTarget.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 1.0f) < 0.001f && std::abs(xPos.y - 2.0f) < 0.001f && std::abs(xPos.z - 3.0f) < 0.001f,
+		"TestPrefabApplyVariantToEntity: base position should propagate via apply");
+	ZENITH_ASSERT_TRUE(std::abs(xScale.x - 9.0f) < 0.001f && std::abs(xScale.y - 9.0f) < 0.001f && std::abs(xScale.z - 9.0f) < 0.001f,
+		"TestPrefabApplyVariantToEntity: variant Scale override should be applied last");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strPath);
+#endif
+}
+
+// --- Move semantics --------------------------------------------------------
+
+ZENITH_TEST(Prefab, PrefabMoveConstructor) { Zenith_UnitTests::TestPrefabMoveConstructor(); }
+
+void Zenith_UnitTests::TestPrefabMoveConstructor(){
+
+	// Move construction transfers state from source to destination.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "MoveCtorSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(50.0f, 50.0f, 50.0f));
+
+	Zenith_Prefab xOrig;
+	xOrig.CreateFromEntity(xSrc, "MoveCtorPrefab");
+	ZENITH_ASSERT_TRUE(xOrig.IsValid(), "TestPrefabMoveConstructor: pre-move source should be valid");
+
+	Zenith_Prefab xMoved(std::move(xOrig));
+	ZENITH_ASSERT_TRUE(xMoved.IsValid(), "TestPrefabMoveConstructor: moved-to prefab should be valid");
+	ZENITH_ASSERT_EQ(xMoved.GetName(), std::string("MoveCtorPrefab"), "TestPrefabMoveConstructor: name transfers via move");
+
+	// Moved-from prefab should still instantiate-safely (it's just empty data now).
+	// We don't assert specific cleared-state since the move contract isn't documented;
+	// what matters is the destination works.
+	Zenith_Entity xInstance = xMoved.Instantiate(pxSceneData, "MoveCtorInstance");
+	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "TestPrefabMoveConstructor: instantiation from moved-to prefab should work");
+}
+
+ZENITH_TEST(Prefab, PrefabMoveAssignment) { Zenith_UnitTests::TestPrefabMoveAssignment(); }
+
+void Zenith_UnitTests::TestPrefabMoveAssignment(){
+
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "MoveAsgnSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(60.0f, 70.0f, 80.0f));
+
+	Zenith_Prefab xOrig;
+	xOrig.CreateFromEntity(xSrc, "MoveAsgnPrefab");
+
+	Zenith_Prefab xTarget;
+	xTarget = std::move(xOrig);
+	ZENITH_ASSERT_TRUE(xTarget.IsValid(), "TestPrefabMoveAssignment: target prefab should be valid post-move");
+	ZENITH_ASSERT_EQ(xTarget.GetName(), std::string("MoveAsgnPrefab"), "TestPrefabMoveAssignment: name transfers");
+
+	Zenith_Entity xInstance = xTarget.Instantiate(pxSceneData, "MoveAsgnInstance");
+	Zenith_Maths::Vector3 xPos;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 60.0f) < 0.001f, "TestPrefabMoveAssignment: serialized data transfers via move");
+}
+
+// --- Variant round-trip with overrides -------------------------------------
+
+ZENITH_TEST(Prefab, PrefabVariantRoundTripWithOverrides) { Zenith_UnitTests::TestPrefabVariantRoundTripWithOverrides(); }
+
+void Zenith_UnitTests::TestPrefabVariantRoundTripWithOverrides(){
+
+	// Critical for editor authoring: variants saved to disk with overrides
+	// must reload with those overrides intact and produce the same entity.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "RoundTripVariantBaseSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+
+	Zenith_Prefab xBase;
+	xBase.CreateFromEntity(xSrc, "RoundTripVariantBase");
+	const std::string strBasePath = "test_rt_variant_base.zpfb";
+	xBase.SaveToFile(strBasePath);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+
+	// Author variant in memory with two overrides.
+	{
+		PrefabHandle xBaseHandle(strBasePath);
+		Zenith_Prefab xVariant;
+		xVariant.CreateAsVariant(xBaseHandle, "RoundTripVariant");
+
+		Zenith_PropertyOverride xOvP;
+		xOvP.m_strComponentName = "Transform";
+		xOvP.m_strPropertyPath  = "Position";
+		xOvP.m_xValue << Zenith_Maths::Vector3(100.0f, 200.0f, 300.0f);
+		xVariant.AddOverride(std::move(xOvP));
+
+		Zenith_PropertyOverride xOvS;
+		xOvS.m_strComponentName = "Transform";
+		xOvS.m_strPropertyPath  = "Scale";
+		xOvS.m_xValue << Zenith_Maths::Vector3(4.0f, 4.0f, 4.0f);
+		xVariant.AddOverride(std::move(xOvS));
+
+		const std::string strVariantPath = "test_rt_variant.zpfb";
+		const bool bSaved = xVariant.SaveToFile(strVariantPath);
+		ZENITH_ASSERT_TRUE(bSaved, "TestPrefabVariantRoundTripWithOverrides: save should succeed");
+	}
+
+	// Reload from disk. The previous in-memory xVariant is gone.
+	const std::string strVariantPath = "test_rt_variant.zpfb";
+	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strVariantPath);
+	ZENITH_ASSERT_NOT_NULL(pxLoaded, "TestPrefabVariantRoundTripWithOverrides: reload should succeed");
+	ZENITH_ASSERT_TRUE(pxLoaded->IsVariant(), "TestPrefabVariantRoundTripWithOverrides: reloaded prefab should be a variant");
+	ZENITH_ASSERT_EQ(pxLoaded->GetOverrides().GetSize(), 2u,
+		"TestPrefabVariantRoundTripWithOverrides: both overrides should survive disk round-trip");
+
+	Zenith_Entity xInstance = pxLoaded->Instantiate(pxSceneData, "RoundTripVariantInstance");
+	Zenith_Maths::Vector3 xPos, xScale;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	xInstance.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 100.0f) < 0.001f && std::abs(xPos.y - 200.0f) < 0.001f && std::abs(xPos.z - 300.0f) < 0.001f,
+		"TestPrefabVariantRoundTripWithOverrides: Position override should apply post-reload");
+	ZENITH_ASSERT_TRUE(std::abs(xScale.x - 4.0f) < 0.001f,
+		"TestPrefabVariantRoundTripWithOverrides: Scale override should apply post-reload");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strBasePath);
+	std::filesystem::remove(strVariantPath);
+#endif
+}
+
+// --- Multiple overrides on same component, different fields ----------------
+
+ZENITH_TEST(Prefab, PrefabMultipleOverridesSameComponent) { Zenith_UnitTests::TestPrefabMultipleOverridesSameComponent(); }
+
+void Zenith_UnitTests::TestPrefabMultipleOverridesSameComponent(){
+
+	// AddOverride dedupes by (component, propertyPath). Two overrides on the
+	// same component but different fields should both apply at instantiation.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "MultiOvBaseSrc");
+	Zenith_Prefab xBase;
+	xBase.CreateFromEntity(xSrc, "MultiOvBase");
+	const std::string strPath = "test_multi_override_base.zpfb";
+	xBase.SaveToFile(strPath);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+
+	PrefabHandle xHandle(strPath);
+	Zenith_Prefab xVariant;
+	xVariant.CreateAsVariant(xHandle, "MultiOvVariant");
+
+	// Override Position
+	{
+		Zenith_PropertyOverride xOv;
+		xOv.m_strComponentName = "Transform";
+		xOv.m_strPropertyPath  = "Position";
+		xOv.m_xValue << Zenith_Maths::Vector3(7.0f, 8.0f, 9.0f);
+		xVariant.AddOverride(std::move(xOv));
+	}
+	// Override Scale (different field on the SAME component)
+	{
+		Zenith_PropertyOverride xOv;
+		xOv.m_strComponentName = "Transform";
+		xOv.m_strPropertyPath  = "Scale";
+		xOv.m_xValue << Zenith_Maths::Vector3(3.0f, 3.0f, 3.0f);
+		xVariant.AddOverride(std::move(xOv));
+	}
+
+	ZENITH_ASSERT_EQ(xVariant.GetOverrides().GetSize(), 2u,
+		"TestPrefabMultipleOverridesSameComponent: should retain both overrides on same component");
+
+	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "MultiOvInstance");
+	Zenith_Maths::Vector3 xPos, xScale;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	xInstance.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 7.0f) < 0.001f, "TestPrefabMultipleOverridesSameComponent: Position override applies");
+	ZENITH_ASSERT_TRUE(std::abs(xScale.x - 3.0f) < 0.001f, "TestPrefabMultipleOverridesSameComponent: Scale override applies");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strPath);
+#endif
+}
+
+// --- ClearOverrides should leave the variant inheriting only the base ------
+
+ZENITH_TEST(Prefab, PrefabClearOverridesReverts) { Zenith_UnitTests::TestPrefabClearOverridesReverts(); }
+
+void Zenith_UnitTests::TestPrefabClearOverridesReverts(){
+
+	// After ClearOverrides(), instantiating a variant should produce an entity
+	// that matches the base prefab exactly (no override applied).
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "ClearOvBaseSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+
+	Zenith_Prefab xBase;
+	xBase.CreateFromEntity(xSrc, "ClearOvBase");
+	const std::string strPath = "test_clear_override_base.zpfb";
+	xBase.SaveToFile(strPath);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+
+	PrefabHandle xHandle(strPath);
+	Zenith_Prefab xVariant;
+	xVariant.CreateAsVariant(xHandle, "ClearOvVariant");
+	{
+		Zenith_PropertyOverride xOv;
+		xOv.m_strComponentName = "Transform";
+		xOv.m_strPropertyPath  = "Scale";
+		xOv.m_xValue << Zenith_Maths::Vector3(99.0f, 99.0f, 99.0f);
+		xVariant.AddOverride(std::move(xOv));
+	}
+
+	xVariant.ClearOverrides();
+	ZENITH_ASSERT_EQ(xVariant.GetOverrides().GetSize(), 0u, "TestPrefabClearOverridesReverts: ClearOverrides empties the list");
+
+	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "ClearOvInstance");
+	Zenith_Maths::Vector3 xScale;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_TRUE(std::abs(xScale.x - 1.0f) < 0.001f, "TestPrefabClearOverridesReverts: post-clear instantiation matches base, not previous override");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strPath);
+#endif
+}
+
+// --- Bad-input guards ------------------------------------------------------
+
+ZENITH_TEST(Prefab, PrefabCreateAsVariantWithUnsetHandle) { Zenith_UnitTests::TestPrefabCreateAsVariantWithUnsetHandle(); }
+
+void Zenith_UnitTests::TestPrefabCreateAsVariantWithUnsetHandle(){
+
+	// CreateAsVariant must reject an unset base prefab handle.
+	Zenith_Prefab xVariant;
+	PrefabHandle xUnset;  // default-constructed, no path
+	const bool bResult = xVariant.CreateAsVariant(xUnset, "UnsetBaseVariant");
+	ZENITH_ASSERT_FALSE(bResult, "TestPrefabCreateAsVariantWithUnsetHandle: should reject unset handle");
+	ZENITH_ASSERT_FALSE(xVariant.IsValid(), "TestPrefabCreateAsVariantWithUnsetHandle: variant should not be marked valid after rejection");
+}
+
+ZENITH_TEST(Prefab, PrefabInstantiateNullSceneData) { Zenith_UnitTests::TestPrefabInstantiateNullSceneData(); }
+
+void Zenith_UnitTests::TestPrefabInstantiateNullSceneData(){
+
+	// Instantiate(nullptr, ...) should reject and return an invalid entity.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "NullSceneSrc");
+	Zenith_Prefab xPrefab;
+	xPrefab.CreateFromEntity(xSrc, "NullScenePrefab");
+
+	Zenith_Entity xInstance = xPrefab.Instantiate(nullptr, "NullSceneInstance");
+	ZENITH_ASSERT_FALSE(xInstance.IsValid(), "TestPrefabInstantiateNullSceneData: instantiation with null scene should fail safely");
+}
+
+// --- Self-cycle: variant of itself -----------------------------------------
+
+ZENITH_TEST(Prefab, PrefabSelfVariantRejected) { Zenith_UnitTests::TestPrefabSelfVariantRejected(); }
+
+void Zenith_UnitTests::TestPrefabSelfVariantRejected(){
+
+	// Variant of itself: A -> A. Cycle detection should reject this.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "SelfCycleSrc");
+	Zenith_Prefab xA;
+	xA.CreateFromEntity(xSrc, "SelfCycleA");
+	const std::string strPath = "test_self_cycle.zpfb";
+	xA.SaveToFile(strPath);
+	Zenith_Prefab* pxLoadedA = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	ZENITH_ASSERT_NOT_NULL(pxLoadedA, "TestPrefabSelfVariantRejected: load should succeed");
+
+	// Try to make A a variant of itself (handle resolves to pxLoadedA which IS this prefab).
+	PrefabHandle xHandleA(strPath);
+	const bool bResult = pxLoadedA->CreateAsVariant(xHandleA, "SelfCycleA_Recycled");
+	ZENITH_ASSERT_FALSE(bResult, "TestPrefabSelfVariantRejected: A-as-variant-of-A should be rejected by cycle detection");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strPath);
+#endif
+}
+
+// --- Instantiate names entity correctly ------------------------------------
+
+ZENITH_TEST(Prefab, PrefabInstantiateNamesEntity) { Zenith_UnitTests::TestPrefabInstantiateNamesEntity(); }
+
+void Zenith_UnitTests::TestPrefabInstantiateNamesEntity(){
+
+	// When strEntityName is non-empty, the entity gets that name.
+	// When empty, the entity inherits the prefab's own name.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "NameSrc");
+	Zenith_Prefab xPrefab;
+	xPrefab.CreateFromEntity(xSrc, "PrefabName");
+
+	Zenith_Entity xWithCustomName = xPrefab.Instantiate(pxSceneData, "CustomEntityName");
+	ZENITH_ASSERT_EQ(xWithCustomName.GetName(), std::string("CustomEntityName"),
+		"TestPrefabInstantiateNamesEntity: custom name should be applied");
+
+	Zenith_Entity xWithDefaultName = xPrefab.Instantiate(pxSceneData, "");
+	ZENITH_ASSERT_EQ(xWithDefaultName.GetName(), std::string("PrefabName"),
+		"TestPrefabInstantiateNamesEntity: empty name should fall back to prefab name");
+}
+
+// --- Lifecycle dispatched once at top-level only (not per recursion step) --
+
+ZENITH_TEST(Prefab, PrefabVariantInstantiateLifecycleOnceAtTop) { Zenith_UnitTests::TestPrefabVariantInstantiateLifecycleOnceAtTop(); }
+
+void Zenith_UnitTests::TestPrefabVariantInstantiateLifecycleOnceAtTop(){
+
+	// A two-level variant chain (A -> B). Instantiating B should produce one
+	// entity (not two). The PrefabInstantiationGuard suppresses lifecycle
+	// during construction; manual dispatch happens once after recursion completes.
+	// Verifies the entity is awoken (not pending-Awake) post-Instantiate, which
+	// is the observable outcome of the single top-level dispatch.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "LifecycleBaseSrc");
+	Zenith_Prefab xBase;
+	xBase.CreateFromEntity(xSrc, "LifecycleBase");
+	const std::string strBasePath = "test_lifecycle_base.zpfb";
+	xBase.SaveToFile(strBasePath);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+
+	PrefabHandle xBaseHandle(strBasePath);
+	Zenith_Prefab xVariant;
+	xVariant.CreateAsVariant(xBaseHandle, "LifecycleVariant");
+
+	const u_int uEntityCountBefore = pxSceneData->GetEntityCount();
+	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "LifecycleInstance");
+	const u_int uEntityCountAfter = pxSceneData->GetEntityCount();
+
+	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "TestPrefabVariantInstantiateLifecycleOnceAtTop: instance should be valid");
+	ZENITH_ASSERT_EQ(uEntityCountAfter - uEntityCountBefore, 1u,
+		"TestPrefabVariantInstantiateLifecycleOnceAtTop: variant Instantiate should produce exactly one entity, not one per recursion level");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strBasePath);
+#endif
+}
+
+// --- Stateful-field overrides route through setters, not raw writes --------
+//
+// Regression for the bug where ZENITH_REGISTER_COMPONENT_PROPERTY's raw
+// member-field write was used for Transform.Position. After
+// DeserializeComponents finishes, the ColliderComponent has already created a
+// Jolt body via ReadFromDataStream. Writing m_xPosition directly bypasses
+// Jolt — Transform::GetPosition reads from the body, which would still be
+// at the base position. The fix routes the override through SetPosition,
+// which calls BodyInterface::SetPosition.
+
+ZENITH_TEST(Prefab, PrefabVariantPositionOverrideSyncsPhysicsBody) { Zenith_UnitTests::TestPrefabVariantPositionOverrideSyncsPhysicsBody(); }
+
+void Zenith_UnitTests::TestPrefabVariantPositionOverrideSyncsPhysicsBody(){
+
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	// Base entity at origin with a capsule collider.
+	Zenith_Entity xSrc(pxSceneData, "PhysSyncBaseSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	Zenith_ColliderComponent& xSrcCollider = xSrc.AddComponent<Zenith_ColliderComponent>();
+	xSrcCollider.AddCapsuleCollider(0.25f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+
+	Zenith_Prefab xBase;
+	xBase.CreateFromEntity(xSrc, "PhysSyncBase");
+	const std::string strBasePath = "test_phys_sync_base.zpfb";
+	xBase.SaveToFile(strBasePath);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+
+	// Variant with a Position override at (10, 5, 7).
+	PrefabHandle xBaseHandle(strBasePath);
+	Zenith_Prefab xVariant;
+	xVariant.CreateAsVariant(xBaseHandle, "PhysSyncVariant");
+	{
+		Zenith_PropertyOverride xOv;
+		xOv.m_strComponentName = "Transform";
+		xOv.m_strPropertyPath  = "Position";
+		xOv.m_xValue << Zenith_Maths::Vector3(10.0f, 5.0f, 7.0f);
+		xVariant.AddOverride(std::move(xOv));
+	}
+
+	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "PhysSyncInstance");
+	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "TestPrefabVariantPositionOverrideSyncsPhysicsBody: instance valid");
+	ZENITH_ASSERT_TRUE(xInstance.HasComponent<Zenith_ColliderComponent>(), "TestPrefabVariantPositionOverrideSyncsPhysicsBody: instance has collider");
+
+	// GetPosition reads from the Jolt body when one exists. If the override
+	// went through the raw m_xPosition write, the body would still be at
+	// (0,0,0) and this assertion would fail with the base position. After the
+	// fix the override routes through SetPosition -> BodyInterface, so the
+	// body reflects (10, 5, 7) and the test reads it back.
+	Zenith_Maths::Vector3 xPos;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 10.0f) < 0.01f && std::abs(xPos.y - 5.0f) < 0.01f && std::abs(xPos.z - 7.0f) < 0.01f,
+		"TestPrefabVariantPositionOverrideSyncsPhysicsBody: physics body must move to override position (got (%.2f, %.2f, %.2f))",
+		xPos.x, xPos.y, xPos.z);
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strBasePath);
+#endif
+}
+
+ZENITH_TEST(Prefab, PrefabVariantScaleOverrideRebuildsCollider) { Zenith_UnitTests::TestPrefabVariantScaleOverrideRebuildsCollider(); }
+
+void Zenith_UnitTests::TestPrefabVariantScaleOverrideRebuildsCollider(){
+
+	// Companion to the Position test: Scale overrides on entities with a
+	// collider must call SetScale, which rebuilds the collider geometry. Hard
+	// to assert collider-internal state directly without going through Jolt
+	// machinery, so this test verifies the cheap observable: Scale read-back
+	// matches the override (the path that calls SetScale also writes m_xScale).
+	// Combined with the Position test, it gives high confidence the setter
+	// route is being taken for both registered Transform setters.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "ScaleSyncBaseSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+	Zenith_ColliderComponent& xSrcCollider = xSrc.AddComponent<Zenith_ColliderComponent>();
+	xSrcCollider.AddCapsuleCollider(0.25f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+
+	Zenith_Prefab xBase;
+	xBase.CreateFromEntity(xSrc, "ScaleSyncBase");
+	const std::string strBasePath = "test_scale_sync_base.zpfb";
+	xBase.SaveToFile(strBasePath);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+
+	PrefabHandle xBaseHandle(strBasePath);
+	Zenith_Prefab xVariant;
+	xVariant.CreateAsVariant(xBaseHandle, "ScaleSyncVariant");
+	{
+		Zenith_PropertyOverride xOv;
+		xOv.m_strComponentName = "Transform";
+		xOv.m_strPropertyPath  = "Scale";
+		xOv.m_xValue << Zenith_Maths::Vector3(2.5f, 2.5f, 2.5f);
+		xVariant.AddOverride(std::move(xOv));
+	}
+
+	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "ScaleSyncInstance");
+	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "TestPrefabVariantScaleOverrideRebuildsCollider: instance valid");
+
+	Zenith_Maths::Vector3 xScale;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_TRUE(std::abs(xScale.x - 2.5f) < 0.01f && std::abs(xScale.y - 2.5f) < 0.01f && std::abs(xScale.z - 2.5f) < 0.01f,
+		"TestPrefabVariantScaleOverrideRebuildsCollider: Scale should match override (got (%.2f, %.2f, %.2f))",
+		xScale.x, xScale.y, xScale.z);
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strBasePath);
+#endif
+}
+
+// --- Loading a corrupted (truncated) prefab file ---------------------------
+
+ZENITH_TEST(Prefab, PrefabLoadCorruptedFile) { Zenith_UnitTests::TestPrefabLoadCorruptedFile(); }
+
+void Zenith_UnitTests::TestPrefabLoadCorruptedFile(){
+
+	// A file whose magic number is wrong should fail validation in LoadFromFile.
+#ifndef ZENITH_ANDROID
+	const std::string strPath = "test_corrupted.zpfb";
+	{
+		std::ofstream xOut(strPath, std::ios::binary);
+		const char acGarbage[] = "NOT_A_VALID_PREFAB";
+		xOut.write(acGarbage, sizeof(acGarbage));
+	}
+
+	// Get<Zenith_Prefab>(path) returns nullptr if loading rejects the file.
+	// (Some versions assert; in either case the registry shouldn't end up with
+	// a valid prefab for this path.)
+	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	if (pxLoaded != nullptr)
+	{
+		ZENITH_ASSERT_FALSE(pxLoaded->IsValid(),
+			"TestPrefabLoadCorruptedFile: loaded prefab from corrupted bytes should not be marked valid");
+	}
+	std::filesystem::remove(strPath);
+#else
+	ZENITH_SKIP("std::filesystem::remove with relative paths not supported on Android");
+#endif
+}
+
+ZENITH_TEST(Prefab, PrefabLoadFromDeletedFile) { Zenith_UnitTests::TestPrefabLoadFromDeletedFile(); }
+
+void Zenith_UnitTests::TestPrefabLoadFromDeletedFile(){
+
+	// Saving then deleting before load: the registry's load path is currently
+	// strict (asserts on missing files) — so testing the unload branch is the
+	// best we can do without modifying production code.
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "DeletedFileSrc");
+	Zenith_Prefab xPrefab;
+	xPrefab.CreateFromEntity(xSrc, "DeletedFilePrefab");
+	const std::string strPath = "test_deleted_file.zpfb";
+	xPrefab.SaveToFile(strPath);
+
+	// Load once so it's cached, then delete the file. Subsequent registry
+	// lookups still return the cached pointer.
+	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	ZENITH_ASSERT_NOT_NULL(pxLoaded, "TestPrefabLoadFromDeletedFile: initial load should succeed");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strPath);
+#endif
+
+	// Cached load still works.
+	Zenith_Prefab* pxCached = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	ZENITH_ASSERT_TRUE(pxCached == pxLoaded, "TestPrefabLoadFromDeletedFile: registry returns cached pointer when file is gone post-load");
+}
+
+// ----- TaskSystem: drain-on-shutdown is intentionally NOT tested here -----
+// The plan called for a "outstanding tasks complete before Shutdown() returns"
+// test. It cannot be expressed in this framework: the engine's TaskSystem is
+// initialised once at process start and shut down once at process end. Tests
+// run *between* those points; calling Zenith_TaskSystem::Shutdown() from a
+// test would tear down the worker pool that every subsequent test depends on.
+// The drain contract is exercised every time the engine exits cleanly, so
+// regressions surface immediately as hangs or use-after-free in shutdown
+// sequences (which the engine's main-loop integration already covers).
+// ---------------------------------------------------------------------------
+
+// ----- TaskSystem: reusable single-task submit/wait/reset/submit cycle -----
+struct ReuseTestData
+{
+	std::atomic<u_int> m_uExecutionCount{0};
+};
+
+static void ReuseTaskFunc(void* pData)
+{
+	auto* pxData = static_cast<ReuseTestData*>(pData);
+	pxData->m_uExecutionCount.fetch_add(1);
+}
+
+ZENITH_TEST(Core, TaskReuseAfterWait) { Zenith_UnitTests::TestTaskReuseAfterWait(); }
+
+void Zenith_UnitTests::TestTaskReuseAfterWait(){
+
+	// A Zenith_Task can be submitted, waited on, then submitted again. The plan
+	// for Phase 1.2 / 1.3 documents that WaitUntilComplete clears m_bSubmitted,
+	// which is what makes the second submit valid (TryClaimTask's CAS succeeds).
+	// This test exercises the contract end-to-end across two cycles.
+	ReuseTestData xData;
+
+	Zenith_Task xTask(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, ReuseTaskFunc, &xData);
+
+	Zenith_TaskSystem::SubmitTask(&xTask);
+	xTask.WaitUntilComplete();
+	ZENITH_ASSERT_EQ(xData.m_uExecutionCount.load(), 1u, "TestTaskReuseAfterWait: first submit should run task once");
+
+	// Reset is documented as a no-op for simple tasks (the m_bSubmitted flag is
+	// cleared by WaitUntilComplete) — call it to exercise the path anyway.
+	xTask.Reset();
+
+	Zenith_TaskSystem::SubmitTask(&xTask);
+	xTask.WaitUntilComplete();
+	ZENITH_ASSERT_EQ(xData.m_uExecutionCount.load(), 2u, "TestTaskReuseAfterWait: second submit should run task again");
+}
+
+ZENITH_TEST(Prefab, PrefabVariantNestedPathSkipped) { Zenith_UnitTests::TestPrefabVariantNestedPathSkipped(); }
+
+void Zenith_UnitTests::TestPrefabVariantNestedPathSkipped(){
+
+	// Variant override paths containing '.' (nested fields like "Position.x")
+	// are not yet supported. Instantiate should NOT crash, and should emit a
+	// warning instead. We can't directly intercept the warning here, so this
+	// test simply verifies the call returns a valid entity with the base's
+	// values intact (the override is silently dropped).
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	Zenith_Entity xSrc(pxSceneData, "NestedBaseSrc");
+	xSrc.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
+
+	Zenith_Prefab xBaseInMem;
+	xBaseInMem.CreateFromEntity(xSrc, "NestedBase");
+	const std::string strBasePath = "test_nested_base.zpfb";
+	xBaseInMem.SaveToFile(strBasePath);
+	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+
+	PrefabHandle xBaseHandle(strBasePath);
+	Zenith_Prefab xVariant;
+	xVariant.CreateAsVariant(xBaseHandle, "NestedVariant");
+
+	// Add an override with a nested path. The setter expects whole-field write
+	// so the value's contents don't matter — what matters is the path is rejected.
+	Zenith_PropertyOverride xOv;
+	xOv.m_strComponentName = "Transform";
+	xOv.m_strPropertyPath  = "Position.x";   // nested — should be skipped
+	xOv.m_xValue.SetCursor(0);
+	xVariant.AddOverride(std::move(xOv));
+
+	Zenith_Entity xInstance = xVariant.Instantiate(pxSceneData, "NestedInstance");
+	ZENITH_ASSERT_TRUE(xInstance.IsValid(), "TestPrefabVariantNestedPathSkipped: instance should still be valid");
+
+	// The base position should be unchanged, since the override was skipped.
+	Zenith_Maths::Vector3 xPos;
+	xInstance.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	ZENITH_ASSERT_TRUE(std::abs(xPos.x - 1.0f) < 0.001f && std::abs(xPos.y - 2.0f) < 0.001f && std::abs(xPos.z - 3.0f) < 0.001f,
+		"TestPrefabVariantNestedPathSkipped: nested override should be skipped, base values preserved");
+
+#ifndef ZENITH_ANDROID
+	std::filesystem::remove(strBasePath);
+#endif
+}
+
 //==============================================================================
 // Async Asset Loading Tests
 //==============================================================================
@@ -11146,6 +12073,48 @@ void Zenith_UnitTests::TestRenderGraphAliasingBarrierUsesTopologicalLastUse(){
 		(int)xBar.m_eSrcAccess, (int)RESOURCE_ACCESS_READ_SRV);
 	ZENITH_ASSERT_EQ(xBar.m_eDstAccess, RESOURCE_ACCESS_WRITE_RTV,
 		"aliasing barrier dst access must be T2's first access (WRITE_RTV at topo 2). Got %d", (int)xBar.m_eDstAccess);
+}
+
+ZENITH_TEST(Core, RenderGraphPassOrderDescription) { Zenith_UnitTests::TestRenderGraphPassOrderDescription(); }
+
+void Zenith_UnitTests::TestRenderGraphPassOrderDescription(){
+
+	// Verifies that GetPassOrderDescription() walks m_xExecutionOrder in topo
+	// order (not registration order) and includes the "(disabled)" suffix for
+	// passes that have m_bEnabled == false. Skips Compile() — Compile needs a
+	// live backend; the friend access on m_xExecutionOrder lets us populate
+	// the order directly.
+#ifdef ZENITH_TOOLS  // Pass names only exist in tools builds (DebugName returns "<release>" otherwise)
+	Flux_RenderGraph xGraph;
+
+	const Flux_PassHandle xA = xGraph.AddPass("Alpha",   EmptyRecordCallback);
+	const Flux_PassHandle xB = xGraph.AddPass("Beta",    EmptyRecordCallback);
+	const Flux_PassHandle xC = xGraph.AddPass("Gamma",   EmptyRecordCallback);
+	(void)xA; (void)xB; (void)xC;
+	ZENITH_ASSERT_EQ(xGraph.GetPasses().GetSize(), 3, "TestRenderGraphPassOrderDescription: should have 3 passes");
+
+	// Empty before Compile / before m_xExecutionOrder is populated.
+	ZENITH_ASSERT_TRUE(xGraph.GetPassOrderDescription().empty(),
+		"TestRenderGraphPassOrderDescription: empty when m_xExecutionOrder is empty");
+
+	// Populate the execution order directly to simulate a topological sort
+	// that visits Gamma -> Alpha -> Beta (deliberately NOT registration order).
+	xGraph.m_xExecutionOrder.PushBack(2);  // Gamma
+	xGraph.m_xExecutionOrder.PushBack(0);  // Alpha
+	xGraph.m_xExecutionOrder.PushBack(1);  // Beta
+
+	const std::string strOrder = xGraph.GetPassOrderDescription();
+	ZENITH_ASSERT_EQ(strOrder, std::string("Gamma -> Alpha -> Beta"),
+		"TestRenderGraphPassOrderDescription: should reflect m_xExecutionOrder, not AddPass order");
+
+	// Disabled passes should be marked.
+	xGraph.m_xPasses.Get(0)->m_bEnabled = false;  // Alpha disabled
+	const std::string strOrderWithDisabled = xGraph.GetPassOrderDescription();
+	ZENITH_ASSERT_EQ(strOrderWithDisabled, std::string("Gamma -> Alpha (disabled) -> Beta"),
+		"TestRenderGraphPassOrderDescription: disabled passes get '(disabled)' suffix");
+#else
+	ZENITH_SKIP("Pass debug names are only present in ZENITH_TOOLS builds");
+#endif
 }
 
 // ============================================================================

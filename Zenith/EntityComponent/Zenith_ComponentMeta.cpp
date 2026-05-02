@@ -54,6 +54,45 @@ const Zenith_ComponentMeta* Zenith_ComponentMetaRegistry::GetMetaByName(const st
 	return nullptr;
 }
 
+bool Zenith_ComponentMetaRegistry::SetComponentProperty(
+	Zenith_Entity& xEntity,
+	const std::string& strComponentName,
+	const std::string& strPropertyName,
+	Zenith_DataStream& xValue) const
+{
+	const Zenith_ComponentMeta* pxMeta = GetMetaByName(strComponentName);
+	if (pxMeta == nullptr)
+	{
+		Zenith_Warning(LOG_CATEGORY_ECS, "SetComponentProperty: unknown component type '%s'", strComponentName.c_str());
+		return false;
+	}
+	if (pxMeta->m_pfnGetRaw == nullptr)
+	{
+		Zenith_Warning(LOG_CATEGORY_ECS, "SetComponentProperty: component '%s' has no GetRaw accessor (not registered correctly)", strComponentName.c_str());
+		return false;
+	}
+	void* pxComp = pxMeta->m_pfnGetRaw(xEntity);
+	if (pxComp == nullptr)
+	{
+		Zenith_Warning(LOG_CATEGORY_ECS, "SetComponentProperty: entity does not have component '%s'", strComponentName.c_str());
+		return false;
+	}
+	for (u_int i = 0; i < pxMeta->m_axProperties.GetSize(); ++i)
+	{
+		const Zenith_PropertyDescriptor& xDesc = pxMeta->m_axProperties.Get(i);
+		if (xDesc.m_strName == strPropertyName)
+		{
+			xValue.SetCursor(0);
+			xDesc.m_pfnSetter(pxComp, xValue);
+			return true;
+		}
+	}
+	Zenith_Warning(LOG_CATEGORY_ECS,
+		"SetComponentProperty: component '%s' has no registered property '%s'. (Did the component implement RegisterProperties? Are nested paths used?)",
+		strComponentName.c_str(), strPropertyName.c_str());
+	return false;
+}
+
 void Zenith_ComponentMetaRegistry::FinalizeRegistration()
 {
 	// Ensure built-in components are registered

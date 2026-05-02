@@ -183,7 +183,7 @@ public:
 			ParallelNodeUpdateFunction,
 			&s_xNodeUpdateData,
 			uNumNodes,
-			true  // Submitting thread joins (main thread helps with work)
+			true  // Calling thread participates (main thread helps with work)
 		);
 
 		Zenith_TaskSystem::SubmitTaskArray(s_pxNodeUpdateTaskArray);

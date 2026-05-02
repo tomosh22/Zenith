@@ -623,6 +623,27 @@ void Flux_RenderGraph::SetPrepare(Flux_PassHandle xPass, Flux_RenderGraph_OnPrep
 
 void Flux_RenderGraph::MarkDirty() { m_bDirty = true; }
 
+std::string Flux_RenderGraph::GetPassOrderDescription() const
+{
+    std::string strResult;
+    strResult.reserve(m_xExecutionOrder.GetSize() * 32);
+    for (u_int i = 0; i < m_xExecutionOrder.GetSize(); ++i)
+    {
+        const u_int uPassIndex = m_xExecutionOrder.Get(i);
+        const Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(uPassIndex);
+        if (i > 0)
+        {
+            strResult += " -> ";
+        }
+        strResult += pxPass->DebugName();
+        if (!pxPass->m_bEnabled)
+        {
+            strResult += " (disabled)";
+        }
+    }
+    return strResult;
+}
+
 void Flux_RenderGraph::Clear()
 {
     for (u_int i = 0; i < m_xPasses.GetSize(); i++) delete m_xPasses.Get(i);

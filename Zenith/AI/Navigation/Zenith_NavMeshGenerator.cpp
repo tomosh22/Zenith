@@ -278,6 +278,14 @@ bool Zenith_NavMeshGenerator::ComputeBounds(
 	return true;
 }
 
+// ============================================================================
+// PHASE 2: VOXELIZATION
+// Rasterise input triangles into the 3D heightfield grid. Each triangle
+// produces voxel spans at every (x,z) cell its XZ projection covers, with the
+// span's Y range derived from the triangle's Y at that cell. Walkable spans
+// are tagged based on the triangle's normal (slope test in IsWalkableSlope).
+// Output: xContext.m_axColumns populated with span lists (still unfiltered).
+// ============================================================================
 bool Zenith_NavMeshGenerator::VoxelizeTriangles(
 	const Zenith_Vector<Zenith_Maths::Vector3>& axVertices,
 	const Zenith_Vector<uint32_t>& axIndices,
@@ -402,6 +410,13 @@ bool Zenith_NavMeshGenerator::HasInsufficientClearance(const VoxelSpan* pxSpan, 
 	return false;
 }
 
+// ============================================================================
+// PHASE 3: WALKABILITY FILTER
+// Remove walkable tags from spans that don't satisfy the agent's geometric
+// constraints: insufficient vertical clearance above the span (HasInsufficientClearance)
+// or step heights that exceed m_fMaxStepHeight to neighbouring spans.
+// Output: xContext columns where only truly walkable spans keep the walkable flag.
+// ============================================================================
 bool Zenith_NavMeshGenerator::FilterWalkableSpans(GenerationContext& xContext)
 {
 	// Check clearance above each span — if an obstacle exists within agent
@@ -434,6 +449,14 @@ bool Zenith_NavMeshGenerator::FilterWalkableSpans(GenerationContext& xContext)
 	return true;
 }
 
+// ============================================================================
+// PHASE 4: COMPACT HEIGHTFIELD
+// Pack the surviving walkable spans into a flat, cache-friendly array indexed
+// by (x, z). The linked-list span representation from voxelization is convenient
+// to build but slow to flood-fill; the compact form is what BuildRegions and
+// TraceContours operate on.
+// Output: xContext.m_axCompactSpans + per-cell (x,z) index ranges.
+// ============================================================================
 bool Zenith_NavMeshGenerator::BuildCompactHeightfield(GenerationContext& xContext)
 {
 	// Count only WALKABLE spans (m_uAreaType > 0)
@@ -503,6 +526,16 @@ bool Zenith_NavMeshGenerator::BuildCompactHeightfield(GenerationContext& xContex
 	return true;
 }
 
+// ============================================================================
+// PHASE 5: REGION FLOOD-FILL
+// Group connected walkable spans into regions by 4-neighbour flood-fill on the
+// compact heightfield (FloodFillRegion does the actual recursion). Each region
+// gets a unique 16-bit ID stored on every span in m_uRegion. A "region" here is
+// a connected component of walkable cells — in a fuller Recast pipeline this
+// would also incorporate distance-field watershed, but a simple flood fill is
+// sufficient for current needs.
+// Output: xContext.m_axCompactSpans with m_uRegion populated per span.
+// ============================================================================
 bool Zenith_NavMeshGenerator::BuildRegions(GenerationContext& xContext)
 {
 	// Simplified region building using flood fill
@@ -599,8 +632,15 @@ void Zenith_NavMeshGenerator::CollectRegionContour(GenerationContext& xContext, 
 	}
 }
 
-// Simplified contour tracing — for each region, collect a boundary-vertex
-// polygon. A full implementation would use marching squares or similar.
+// ============================================================================
+// PHASE 6: CONTOUR TRACING
+// For each region, walk its boundary (cells with at least one neighbour in a
+// different region) and collect the boundary vertices into a polygon. This
+// extracts a simple polygon outline per region. A full implementation would
+// use marching squares for cleaner contours; this one collects boundary cells
+// directly.
+// Output: per-region contour polygon ready for triangulation in Phase 7.
+// ============================================================================
 bool Zenith_NavMeshGenerator::TraceContours(GenerationContext& xContext)
 {
 	uint16_t uMaxRegion = 0;
@@ -626,6 +666,24 @@ bool Zenith_NavMeshGenerator::TraceContours(GenerationContext& xContext)
 	return true;
 }
 
+// ============================================================================
+// PHASE 7: POLYGON MESH ASSEMBLY
+// Triangulate the per-region contours from Phase 6 into convex polygons in
+// world space. This is the final output consumed by Zenith_NavMesh / pathfinding.
+//
+// **CRITICAL: WINDING ORDER**
+// All polygons MUST use counter-clockwise (CCW) winding when viewed from above
+// (Y-up). CCW + Y-up produces upward-facing normals (Y > 0). Clockwise winding
+// inverts the normal (Y < 0), which:
+//   - flips debug visualisation (polygons render below the floor)
+//   - breaks IsPointOnNavMesh / FindNearestPolygon spatial queries
+//   - breaks pathfinding edge tests
+// See Navigation/CLAUDE.md "Polygon Winding Order (Critical)" for the exact
+// vertex ordering expected.
+//
+// All walkable spans are processed (not just topmost) — a column may have
+// floor + raised obstacle-top spans, both of which become valid polygons.
+// ============================================================================
 bool Zenith_NavMeshGenerator::BuildPolygonMesh(GenerationContext& xContext)
 {
 	const float fCellSize = xContext.m_xConfig.m_fCellSize;

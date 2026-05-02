@@ -445,7 +445,7 @@ public:
 	// Inserted in topological order by Flux_RenderGraph::Execute Phase 2 only.
 	static Zenith_Vector<Flux_CommandListEntry> s_xPendingCommandLists;
 private:
-	friend class Flux_PlatformAPI;
+	friend class Zenith_Vulkan;  // Flux_PlatformAPI alias resolves to this
 
 	static uint32_t s_uFrameCounter;
 	static Zenith_Vector<void(*)()> s_xResChangeCallbacks;

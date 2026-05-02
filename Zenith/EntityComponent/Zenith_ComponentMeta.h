@@ -7,12 +7,42 @@
 
 // Include Scene.h to get Entity template implementations (they're defined there)
 #include "EntityComponent/Zenith_Scene.h"
+#include "Collections/Zenith_Vector.h"
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #endif
 
 class Zenith_DataStream;
+
+//------------------------------------------------------------------------------
+// Property reflection (used by prefab variant overrides)
+//
+// A property descriptor names a single field on a component and provides a
+// type-erased setter that reads the new value from a Zenith_DataStream and
+// writes it into the component instance. Components opt in by implementing:
+//
+//     static void RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProps)
+//     {
+//         ZENITH_REGISTER_COMPONENT_PROPERTY(MyComponent, m_xField, "FieldName")(axProps);
+//     }
+//
+// Components that don't implement RegisterProperties simply have an empty
+// property list, so they don't support variant overrides.
+//
+// First iteration supports FLAT property names only (e.g. "Position"). Nested
+// paths like "Position.x" are detected by the caller (Zenith_Prefab) and
+// emit a warning instead of being applied — they need a sub-field walker
+// that doesn't yet exist.
+//------------------------------------------------------------------------------
+
+using PropertySetterFn = void(*)(void* pxComponent, Zenith_DataStream& xValue);
+
+struct Zenith_PropertyDescriptor
+{
+	std::string m_strName;          // e.g. "Position"
+	PropertySetterFn m_pfnSetter;   // Reads from xValue and writes into the component
+};
 
 //------------------------------------------------------------------------------
 // Function pointer types for type-erased component operations
@@ -35,6 +65,10 @@ using ComponentDeserializeFn = void(*)(Zenith_Entity&, Zenith_DataStream&);
 
 // Transfer (move-construct) a component from source scene to target scene
 using ComponentTransferFn = void(*)(Zenith_EntityID, Zenith_SceneData*, Zenith_SceneData*);
+
+// Get a void* to the component on this entity (or nullptr if absent).
+// Used by SetComponentProperty for type-erased property writes.
+using ComponentGetRawFn = void*(*)(Zenith_Entity&);
 
 //------------------------------------------------------------------------------
 // Lifecycle hook function pointer types
@@ -74,6 +108,11 @@ concept HasOnFixedUpdate = requires(T& t, float fDt) { { t.OnFixedUpdate(fDt) } 
 template<typename T>
 concept HasOnDestroy = requires(T& t) { { t.OnDestroy() } -> std::same_as<void>; };
 
+template<typename T>
+concept HasRegisterProperties = requires(Zenith_Vector<Zenith_PropertyDescriptor>& a) {
+	{ T::RegisterProperties(a) } -> std::same_as<void>;
+};
+
 //------------------------------------------------------------------------------
 // Component metadata structure
 //------------------------------------------------------------------------------
@@ -90,6 +129,11 @@ struct Zenith_ComponentMeta
 	ComponentSerializeFn m_pfnSerialize = nullptr;
 	ComponentDeserializeFn m_pfnDeserialize = nullptr;
 	ComponentTransferFn m_pfnTransferComponent = nullptr;
+	ComponentGetRawFn m_pfnGetRaw = nullptr;
+
+	// Properties exposed for prefab-variant override application.
+	// Empty for components that don't implement RegisterProperties.
+	Zenith_Vector<Zenith_PropertyDescriptor> m_axProperties;
 
 	// Lifecycle hooks (nullptr if component doesn't implement the hook)
 	ComponentLifecycleFn m_pfnOnAwake = nullptr;    // Called when component is created
@@ -146,6 +190,20 @@ public:
 
 	// Remove all components from an entity (calls OnDestroy for each)
 	void RemoveAllComponents(Zenith_Entity& xEntity) const;
+
+	// ========== Property Reflection ==========
+
+	// Apply a single property override to a component on the entity.
+	// Reads the value from xValue (rewinds the stream cursor first) and writes
+	// it into the component's field via the registered setter.
+	// Returns false if the component or property is not registered.
+	// Note: caller is responsible for rejecting nested paths ("Position.x") —
+	// this API supports flat names only.
+	bool SetComponentProperty(
+		Zenith_Entity& xEntity,
+		const std::string& strComponentName,
+		const std::string& strPropertyName,
+		Zenith_DataStream& xValue) const;
 
 	// ========== Lifecycle Hook Dispatch ==========
 
@@ -274,6 +332,13 @@ static void OnDestroyWrapper(Zenith_Entity& xEntity)
 	xEntity.GetComponent<T>().OnDestroy();
 }
 
+template<typename T>
+static void* ComponentGetRawWrapper(Zenith_Entity& xEntity)
+{
+	if (!xEntity.HasComponent<T>()) return nullptr;
+	return &xEntity.GetComponent<T>();
+}
+
 //------------------------------------------------------------------------------
 // RegisterComponent - detects and assigns lifecycle hooks via C++20 concepts
 //------------------------------------------------------------------------------
@@ -290,6 +355,15 @@ void Zenith_ComponentMetaRegistry::RegisterComponent(const std::string& strTypeN
 	xMeta.m_pfnSerialize = &ComponentSerializeWrapper<T>;
 	xMeta.m_pfnDeserialize = &ComponentDeserializeWrapper<T>;
 	xMeta.m_pfnTransferComponent = &ComponentTransferWrapper<T>;
+	xMeta.m_pfnGetRaw = &ComponentGetRawWrapper<T>;
+
+	// If the component implements RegisterProperties, give it a chance to
+	// declare its overrideable fields. Components without the static method
+	// simply have an empty m_axProperties.
+	if constexpr (HasRegisterProperties<T>)
+	{
+		T::RegisterProperties(xMeta.m_axProperties);
+	}
 
 	// Detect and assign lifecycle hooks using C++20 concepts
 	// Hook pointers remain nullptr if component doesn't implement the hook
@@ -354,3 +428,82 @@ void Zenith_ComponentMetaRegistry::RegisterComponent(const std::string& strTypeN
 		}; \
 		static ComponentType##_AutoRegister s_x##ComponentType##_AutoRegister; \
 	}
+
+//------------------------------------------------------------------------------
+// Property registration macros
+//
+// Use inside a static T::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& a)
+// method on a component to declare overrideable fields.
+//
+// CHOOSE THE RIGHT MACRO based on whether writing the field has side effects:
+//
+//   PROPERTY        — raw member-field write. Use ONLY for plain data fields
+//                     where the renderer/physics/etc. re-reads the value each
+//                     frame (e.g. Light::m_xColor, Light::m_fIntensity). The
+//                     setter performs `xValue >> field;` and nothing else.
+//
+//   PROPERTY_SETTER — invokes a member function with the deserialised value.
+//                     Use for STATEFUL fields whose written value drives derived
+//                     runtime state — physics body sync, asset loading, mesh
+//                     regeneration, etc. Examples: Transform::SetPosition (which
+//                     calls Jolt BodyInterface), Transform::SetScale (rebuilds
+//                     colliders). A raw field write would corrupt the entity by
+//                     leaving runtime state pointing at the old value.
+//
+//   PROPERTY_CUSTOM — accepts a hand-written lambda body. Use when neither
+//                     macro fits — e.g. when the deserialised value type
+//                     differs from what the setter expects (Model takes a path
+//                     string but the override stores a ModelHandle).
+//
+// Example:
+//   static void RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& a) {
+//       // Stateful: must use SetPosition so physics body syncs.
+//       ZENITH_REGISTER_COMPONENT_PROPERTY_SETTER(
+//           Zenith_TransformComponent, &Zenith_TransformComponent::SetPosition,
+//           Zenith_Maths::Vector3, "Position", a);
+//
+//       // Plain data: raw write is fine.
+//       ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_xColor, "Color", a);
+//   }
+//------------------------------------------------------------------------------
+#define ZENITH_REGISTER_COMPONENT_PROPERTY(ComponentType, MemberField, Name, AxPropertiesVar)              \
+	do                                                                                                     \
+	{                                                                                                      \
+		Zenith_PropertyDescriptor xDesc;                                                                   \
+		xDesc.m_strName = Name;                                                                            \
+		xDesc.m_pfnSetter = [](void* pxComp, Zenith_DataStream& xValue) {                                  \
+			xValue >> static_cast<ComponentType*>(pxComp)->MemberField;                                    \
+		};                                                                                                 \
+		(AxPropertiesVar).PushBack(xDesc);                                                                 \
+	} while (0)
+
+#define ZENITH_REGISTER_COMPONENT_PROPERTY_SETTER(ComponentType, MemberFn, ValueType, Name, AxPropertiesVar) \
+	do                                                                                                       \
+	{                                                                                                        \
+		Zenith_PropertyDescriptor xDesc;                                                                     \
+		xDesc.m_strName = Name;                                                                              \
+		xDesc.m_pfnSetter = [](void* pxComp, Zenith_DataStream& xValue) {                                    \
+			ValueType xVal;                                                                                  \
+			xValue >> xVal;                                                                                  \
+			(static_cast<ComponentType*>(pxComp)->*MemberFn)(xVal);                                          \
+		};                                                                                                   \
+		(AxPropertiesVar).PushBack(xDesc);                                                                   \
+	} while (0)
+
+// Hand-written-body variant. Inside Body, the parameters available are:
+//   ComponentType* pxComp     (typed component pointer)
+//   Zenith_DataStream& xValue (override value stream, cursor at start)
+// Use when the override's wire-format type and the component's setter take
+// different types (e.g. ModelHandle in the stream, std::string into LoadModel).
+#define ZENITH_REGISTER_COMPONENT_PROPERTY_CUSTOM(ComponentType, Name, AxPropertiesVar, Body)              \
+	do                                                                                                     \
+	{                                                                                                      \
+		Zenith_PropertyDescriptor xDesc;                                                                   \
+		xDesc.m_strName = Name;                                                                            \
+		xDesc.m_pfnSetter = [](void* pxRawComp, Zenith_DataStream& xValue) {                               \
+			ComponentType* pxComp = static_cast<ComponentType*>(pxRawComp);                                \
+			(void)pxComp; (void)xValue;                                                                    \
+			Body                                                                                           \
+		};                                                                                                 \
+		(AxPropertiesVar).PushBack(xDesc);                                                                 \
+	} while (0)

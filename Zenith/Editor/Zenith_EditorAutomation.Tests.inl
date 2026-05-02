@@ -22,6 +22,9 @@
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "Prefab/Zenith_Prefab.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "Maths/Zenith_Maths.h"
 #include <cmath>
 #include <filesystem>
 
@@ -2528,6 +2531,501 @@ ZENITH_TEST(Automation, ButtonTransitionInitialState)
 	ZENITH_ASSERT_EQ_FLOAT(xButton.GetPressedStyle().m_xFillColor.x, 0.15f, 0.001f, "Pressed fill R should be 0.15");
 
 	EDITOR_TEST_END(TestButtonTransitionInitialState);
+}
+
+//=============================================================================
+// Prefab Variant Authoring via Automation
+//=============================================================================
+// These tests exercise the four new variant-authoring action types
+// (CREATE_PREFAB_FROM_SELECTED, CREATE_PREFAB_VARIANT,
+// ADD_PREFAB_VARIANT_OVERRIDE_VEC3, INSTANTIATE_PREFAB) end-to-end.
+// Each test composes them as a step queue, runs the queue, and asserts on
+// the resulting on-disk file or instantiated entity. Files are deleted in
+// the cleanup tail of each test.
+//
+// Path strings passed to AddStep_* must be static-storage. Tests use string
+// literals and `static const char*` aliases to satisfy that contract.
+//=============================================================================
+
+ZENITH_TEST(Automation, CreatePrefabFromSelectedStep)
+{
+	EDITOR_TEST_BEGIN(TestAutomationCreatePrefabFromSelected);
+
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szSavePath = "auto_create_from_selected.zpfb";
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoPrefabSrc");
+	Zenith_EditorAutomation::AddStep_SetTransformPosition(11.f, 22.f, 33.f);
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("AutoPrefabName", szSavePath);
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(szSavePath),
+		"CreatePrefabFromSelected: save file should exist on disk");
+
+	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(szSavePath);
+	ZENITH_ASSERT_NOT_NULL(pxLoaded, "CreatePrefabFromSelected: registry should resolve saved prefab");
+	ZENITH_ASSERT_EQ(pxLoaded->GetName(), std::string("AutoPrefabName"),
+		"CreatePrefabFromSelected: prefab name should match step argument");
+	ZENITH_ASSERT_FALSE(pxLoaded->IsVariant(),
+		"CreatePrefabFromSelected: base prefab should not be a variant");
+
+	std::filesystem::remove(szSavePath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationCreatePrefabFromSelected);
+}
+
+ZENITH_TEST(Automation, CreatePrefabVariantStep)
+{
+	EDITOR_TEST_BEGIN(TestAutomationCreatePrefabVariant);
+
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szBasePath    = "auto_variant_base.zpfb";
+	static const char* szVariantPath = "auto_variant_child.zpfb";
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoVariantBaseSrc");
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("AutoVariantBase", szBasePath);
+	Zenith_EditorAutomation::AddStep_CreatePrefabVariant("AutoVariantChild", szBasePath, szVariantPath);
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(szVariantPath);
+	ZENITH_ASSERT_NOT_NULL(pxVariant, "CreatePrefabVariant: variant should reload from disk");
+	ZENITH_ASSERT_TRUE(pxVariant->IsVariant(),
+		"CreatePrefabVariant: derived prefab should be marked as a variant");
+	ZENITH_ASSERT_EQ(pxVariant->GetName(), std::string("AutoVariantChild"),
+		"CreatePrefabVariant: variant name should match");
+	ZENITH_ASSERT_EQ(pxVariant->GetBasePrefab().GetPath(), std::string(szBasePath),
+		"CreatePrefabVariant: base path should match");
+	ZENITH_ASSERT_EQ(pxVariant->GetOverrides().GetSize(), 0u,
+		"CreatePrefabVariant: a fresh variant has no overrides");
+
+	std::filesystem::remove(szBasePath);
+	std::filesystem::remove(szVariantPath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationCreatePrefabVariant);
+}
+
+ZENITH_TEST(Automation, AddPrefabVariantOverrideStep)
+{
+	EDITOR_TEST_BEGIN(TestAutomationAddPrefabVariantOverride);
+
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szBasePath    = "auto_override_base.zpfb";
+	static const char* szVariantPath = "auto_override_variant.zpfb";
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoOvBaseSrc");
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("AutoOvBase", szBasePath);
+	Zenith_EditorAutomation::AddStep_CreatePrefabVariant("AutoOvVariant", szBasePath, szVariantPath);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szVariantPath, "Transform", "Position", 5.f, 6.f, 7.f);
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(szVariantPath);
+	ZENITH_ASSERT_NOT_NULL(pxVariant, "AddPrefabVariantOverride: variant should be loadable post-step");
+	ZENITH_ASSERT_EQ(pxVariant->GetOverrides().GetSize(), 1u,
+		"AddPrefabVariantOverride: should have exactly one override after the step");
+	ZENITH_ASSERT_EQ(pxVariant->GetOverrides().Get(0).m_strComponentName, std::string("Transform"),
+		"AddPrefabVariantOverride: component name should round-trip");
+	ZENITH_ASSERT_EQ(pxVariant->GetOverrides().Get(0).m_strPropertyPath, std::string("Position"),
+		"AddPrefabVariantOverride: property path should round-trip");
+
+	std::filesystem::remove(szBasePath);
+	std::filesystem::remove(szVariantPath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationAddPrefabVariantOverride);
+}
+
+ZENITH_TEST(Automation, InstantiatePrefabStep)
+{
+	EDITOR_TEST_BEGIN(TestAutomationInstantiatePrefab);
+
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szBasePath = "auto_instantiate_base.zpfb";
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoInstSrc");
+	Zenith_EditorAutomation::AddStep_SetTransformPosition(1.f, 2.f, 3.f);
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("AutoInstPrefab", szBasePath);
+	Zenith_EditorAutomation::AddStep_InstantiatePrefab(szBasePath, "AutoInstClone");
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	// The instantiate step selects the new entity; it should be valid + named.
+	Zenith_Entity* pxInstance = Zenith_Editor::GetSelectedEntity();
+	ZENITH_ASSERT_NOT_NULL(pxInstance, "InstantiatePrefab: instantiated entity should be selected");
+	ZENITH_ASSERT_EQ(pxInstance->GetName(), std::string("AutoInstClone"),
+		"InstantiatePrefab: instance should carry the szEntityName argument");
+
+	Zenith_Maths::Vector3 xPos;
+	pxInstance->GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 1.f, 0.001f, "InstantiatePrefab: position X should match source");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 2.f, 0.001f, "InstantiatePrefab: position Y should match source");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.z, 3.f, 0.001f, "InstantiatePrefab: position Z should match source");
+
+	std::filesystem::remove(szBasePath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationInstantiatePrefab);
+}
+
+ZENITH_TEST(Automation, FullVariantWorkflow_PositionOverride)
+{
+	EDITOR_TEST_BEGIN(TestAutomationFullVariantWorkflowPosition);
+
+	// End-to-end: build entity, capture prefab, derive variant, override
+	// Position, instantiate variant, verify the override won.
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szBasePath    = "auto_workflow_pos_base.zpfb";
+	static const char* szVariantPath = "auto_workflow_pos_variant.zpfb";
+
+	// Build a base entity at the origin.
+	Zenith_EditorAutomation::AddStep_CreateEntity("WorkflowPosSrc");
+	Zenith_EditorAutomation::AddStep_SetTransformPosition(0.f, 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("WorkflowPosBase", szBasePath);
+
+	// Derive a variant that overrides Position.
+	Zenith_EditorAutomation::AddStep_CreatePrefabVariant("WorkflowPosVariant", szBasePath, szVariantPath);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szVariantPath, "Transform", "Position", 50.f, 60.f, 70.f);
+
+	// Instantiate the variant — Position override should win.
+	Zenith_EditorAutomation::AddStep_InstantiatePrefab(szVariantPath, "WorkflowPosInstance");
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	Zenith_Entity* pxInstance = Zenith_Editor::GetSelectedEntity();
+	ZENITH_ASSERT_NOT_NULL(pxInstance, "FullVariantWorkflow: variant instance should be selected");
+	Zenith_Maths::Vector3 xPos;
+	pxInstance->GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 50.f, 0.001f, "FullVariantWorkflow: variant Position override X should win");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 60.f, 0.001f, "FullVariantWorkflow: variant Position override Y should win");
+	ZENITH_ASSERT_EQ_FLOAT(xPos.z, 70.f, 0.001f, "FullVariantWorkflow: variant Position override Z should win");
+
+	std::filesystem::remove(szBasePath);
+	std::filesystem::remove(szVariantPath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationFullVariantWorkflowPosition);
+}
+
+ZENITH_TEST(Automation, FullVariantWorkflow_ScaleOverride)
+{
+	EDITOR_TEST_BEGIN(TestAutomationFullVariantWorkflowScale);
+
+	// Same as the Position workflow, but using a Scale override — exercises
+	// a different registered Transform property and confirms the SetTransformScale
+	// on the source isn't accidentally what's getting saved.
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szBasePath    = "auto_workflow_scale_base.zpfb";
+	static const char* szVariantPath = "auto_workflow_scale_variant.zpfb";
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("WorkflowScaleSrc");
+	Zenith_EditorAutomation::AddStep_SetTransformScale(1.f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("WorkflowScaleBase", szBasePath);
+	Zenith_EditorAutomation::AddStep_CreatePrefabVariant("WorkflowScaleVariant", szBasePath, szVariantPath);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szVariantPath, "Transform", "Scale", 4.f, 5.f, 6.f);
+	Zenith_EditorAutomation::AddStep_InstantiatePrefab(szVariantPath, "WorkflowScaleInstance");
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	Zenith_Entity* pxInstance = Zenith_Editor::GetSelectedEntity();
+	ZENITH_ASSERT_NOT_NULL(pxInstance, "FullVariantWorkflowScale: instance should be selected");
+	Zenith_Maths::Vector3 xScale;
+	pxInstance->GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_EQ_FLOAT(xScale.x, 4.f, 0.001f, "FullVariantWorkflowScale: Scale X should match override");
+	ZENITH_ASSERT_EQ_FLOAT(xScale.y, 5.f, 0.001f, "FullVariantWorkflowScale: Scale Y should match override");
+	ZENITH_ASSERT_EQ_FLOAT(xScale.z, 6.f, 0.001f, "FullVariantWorkflowScale: Scale Z should match override");
+
+	std::filesystem::remove(szBasePath);
+	std::filesystem::remove(szVariantPath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationFullVariantWorkflowScale);
+}
+
+ZENITH_TEST(Automation, FullVariantWorkflow_MultipleOverrides)
+{
+	EDITOR_TEST_BEGIN(TestAutomationMultipleOverrides);
+
+	// Two overrides on the same component (Position + Scale on Transform) —
+	// both should apply to the instantiated entity.
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szBasePath    = "auto_workflow_multi_base.zpfb";
+	static const char* szVariantPath = "auto_workflow_multi_variant.zpfb";
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("MultiSrc");
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("MultiBase", szBasePath);
+	Zenith_EditorAutomation::AddStep_CreatePrefabVariant("MultiVariant", szBasePath, szVariantPath);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szVariantPath, "Transform", "Position", 9.f, 18.f, 27.f);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szVariantPath, "Transform", "Scale", 3.f, 3.f, 3.f);
+	Zenith_EditorAutomation::AddStep_InstantiatePrefab(szVariantPath, "MultiInstance");
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	Zenith_Entity* pxInstance = Zenith_Editor::GetSelectedEntity();
+	ZENITH_ASSERT_NOT_NULL(pxInstance, "MultipleOverrides: instance should be selected");
+	Zenith_Maths::Vector3 xPos, xScale;
+	pxInstance->GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	pxInstance->GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 9.f, 0.001f,   "MultipleOverrides: Position X");
+	ZENITH_ASSERT_EQ_FLOAT(xScale.x, 3.f, 0.001f, "MultipleOverrides: Scale X");
+
+	std::filesystem::remove(szBasePath);
+	std::filesystem::remove(szVariantPath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationMultipleOverrides);
+}
+
+ZENITH_TEST(Automation, VariantChainViaAutomation)
+{
+	EDITOR_TEST_BEGIN(TestAutomationVariantChain);
+
+	// Three-level chain A -> B -> C built entirely through automation steps.
+	// B overrides Position, C overrides Scale. Instantiating C should produce
+	// an entity that inherits A's components plus both overrides.
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szPathA = "auto_chain_a.zpfb";
+	static const char* szPathB = "auto_chain_b.zpfb";
+	static const char* szPathC = "auto_chain_c.zpfb";
+
+	// A: base prefab from a fresh entity
+	Zenith_EditorAutomation::AddStep_CreateEntity("ChainAutoSrc");
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("ChainAutoA", szPathA);
+
+	// B: variant of A with Position override
+	Zenith_EditorAutomation::AddStep_CreatePrefabVariant("ChainAutoB", szPathA, szPathB);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szPathB, "Transform", "Position", 100.f, 200.f, 300.f);
+
+	// C: variant of B with Scale override
+	Zenith_EditorAutomation::AddStep_CreatePrefabVariant("ChainAutoC", szPathB, szPathC);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szPathC, "Transform", "Scale", 8.f, 8.f, 8.f);
+
+	// Instantiate C and verify both overrides win.
+	Zenith_EditorAutomation::AddStep_InstantiatePrefab(szPathC, "ChainAutoCInstance");
+
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	Zenith_Entity* pxInstance = Zenith_Editor::GetSelectedEntity();
+	ZENITH_ASSERT_NOT_NULL(pxInstance, "VariantChain: instance should be selected");
+	Zenith_Maths::Vector3 xPos, xScale;
+	pxInstance->GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	pxInstance->GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 100.f, 0.001f, "VariantChain: B's Position override should propagate via C");
+	ZENITH_ASSERT_EQ_FLOAT(xScale.x, 8.f,  0.001f, "VariantChain: C's Scale override should win");
+
+	std::filesystem::remove(szPathA);
+	std::filesystem::remove(szPathB);
+	std::filesystem::remove(szPathC);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationVariantChain);
+}
+
+ZENITH_TEST(Automation, InstantiatePrefabUsesPrefabNameWhenEmpty)
+{
+	EDITOR_TEST_BEGIN(TestAutomationInstantiateEmptyName);
+
+	// Empty entity name -> the instantiate step falls back to the prefab's name.
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szPath = "auto_empty_name.zpfb";
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("EmptyNameSrc");
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("EmptyNamePrefab", szPath);
+	Zenith_EditorAutomation::AddStep_InstantiatePrefab(szPath, "");
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	Zenith_Entity* pxInstance = Zenith_Editor::GetSelectedEntity();
+	ZENITH_ASSERT_NOT_NULL(pxInstance, "InstantiatePrefabEmpty: should still produce a valid entity");
+	ZENITH_ASSERT_EQ(pxInstance->GetName(), std::string("EmptyNamePrefab"),
+		"InstantiatePrefabEmpty: instance should fall back to the prefab's own name");
+
+	std::filesystem::remove(szPath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationInstantiateEmptyName);
+}
+
+ZENITH_TEST(Automation, InstantiateBaseAndVariantBothWork)
+{
+	EDITOR_TEST_BEGIN(TestAutomationInstantiateBaseAndVariant);
+
+	// Same base prefab can be instantiated alongside its variant; they should
+	// produce two distinct entities with different transforms.
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szBasePath    = "auto_both_base.zpfb";
+	static const char* szVariantPath = "auto_both_variant.zpfb";
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("BothSrc");
+	Zenith_EditorAutomation::AddStep_SetTransformScale(1.f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("BothBase", szBasePath);
+
+	Zenith_EditorAutomation::AddStep_CreatePrefabVariant("BothVariant", szBasePath, szVariantPath);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szVariantPath, "Transform", "Scale", 5.f, 5.f, 5.f);
+
+	// Instantiate the base — Scale should remain (1, 1, 1).
+	Zenith_EditorAutomation::AddStep_InstantiatePrefab(szBasePath, "BothBaseInstance");
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+	{
+		Zenith_Entity* pxBaseInstance = Zenith_Editor::GetSelectedEntity();
+		ZENITH_ASSERT_NOT_NULL(pxBaseInstance, "BaseAndVariant: base instance should exist");
+		Zenith_Maths::Vector3 xBaseScale;
+		pxBaseInstance->GetComponent<Zenith_TransformComponent>().GetScale(xBaseScale);
+		ZENITH_ASSERT_EQ_FLOAT(xBaseScale.x, 1.f, 0.001f, "BaseAndVariant: base scale should be 1");
+	}
+	// Snapshot the EntityID by VALUE — Zenith_Editor::GetSelectedEntity() returns
+	// a pointer to a singleton selection slot, so re-reading the pointer after a
+	// new selection would just give us the new ID. Compare IDs, not pointers.
+	const Zenith_EntityID xBaseInstanceID = Zenith_Editor::GetSelectedEntity()->GetEntityID();
+
+	// Now instantiate the variant — Scale should be 5.
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_InstantiatePrefab(szVariantPath, "BothVariantInstance");
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+	Zenith_Entity* pxVariantInstance = Zenith_Editor::GetSelectedEntity();
+	ZENITH_ASSERT_NOT_NULL(pxVariantInstance, "BaseAndVariant: variant instance should exist");
+	const Zenith_EntityID xVariantInstanceID = pxVariantInstance->GetEntityID();
+	Zenith_Maths::Vector3 xVariantScale;
+	pxVariantInstance->GetComponent<Zenith_TransformComponent>().GetScale(xVariantScale);
+	ZENITH_ASSERT_EQ_FLOAT(xVariantScale.x, 5.f, 0.001f, "BaseAndVariant: variant scale should match override");
+
+	// Two distinct entities.
+	ZENITH_ASSERT_NE(xBaseInstanceID, xVariantInstanceID,
+		"BaseAndVariant: base and variant instances should be distinct entities");
+
+	std::filesystem::remove(szBasePath);
+	std::filesystem::remove(szVariantPath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationInstantiateBaseAndVariant);
+}
+
+ZENITH_TEST(Automation, OverrideAccumulatesAcrossSteps)
+{
+	EDITOR_TEST_BEGIN(TestAutomationOverrideAccumulates);
+
+	// Two separate AddPrefabVariantOverrideVec3 steps on the same variant
+	// should accumulate (not replace) — counts and ordering verified via the
+	// loaded variant's GetOverrides() vector.
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szBasePath    = "auto_accum_base.zpfb";
+	static const char* szVariantPath = "auto_accum_variant.zpfb";
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AccumSrc");
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("AccumBase", szBasePath);
+	Zenith_EditorAutomation::AddStep_CreatePrefabVariant("AccumVariant", szBasePath, szVariantPath);
+
+	// Two distinct (component, property) pairs — both should land.
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szVariantPath, "Transform", "Position", 1.f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szVariantPath, "Transform", "Scale", 2.f, 2.f, 2.f);
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(szVariantPath);
+	ZENITH_ASSERT_NOT_NULL(pxVariant, "OverrideAccumulates: variant should reload from disk");
+	ZENITH_ASSERT_EQ(pxVariant->GetOverrides().GetSize(), 2u,
+		"OverrideAccumulates: two distinct overrides should both persist");
+
+	std::filesystem::remove(szBasePath);
+	std::filesystem::remove(szVariantPath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationOverrideAccumulates);
+}
+
+ZENITH_TEST(Automation, SamePropertyOverrideTwiceReplaces)
+{
+	EDITOR_TEST_BEGIN(TestAutomationSamePropertyReplaces);
+
+	// AddOverride dedupes by (component, propertyPath). Two AddOverrideVec3
+	// steps with identical component + property should produce ONE override
+	// — the last value wins.
+	Zenith_EditorAutomation::Reset();
+
+	static const char* szBasePath    = "auto_replace_base.zpfb";
+	static const char* szVariantPath = "auto_replace_variant.zpfb";
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("ReplaceSrc");
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("ReplaceBase", szBasePath);
+	Zenith_EditorAutomation::AddStep_CreatePrefabVariant("ReplaceVariant", szBasePath, szVariantPath);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szVariantPath, "Transform", "Scale", 2.f, 2.f, 2.f);
+	Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+		szVariantPath, "Transform", "Scale", 7.f, 7.f, 7.f);
+	Zenith_EditorAutomation::AddStep_InstantiatePrefab(szVariantPath, "ReplaceInstance");
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+	}
+
+	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(szVariantPath);
+	ZENITH_ASSERT_NOT_NULL(pxVariant, "SamePropertyReplaces: variant should reload");
+	ZENITH_ASSERT_EQ(pxVariant->GetOverrides().GetSize(), 1u,
+		"SamePropertyReplaces: same (component, property) should not duplicate");
+
+	Zenith_Entity* pxInstance = Zenith_Editor::GetSelectedEntity();
+	ZENITH_ASSERT_NOT_NULL(pxInstance, "SamePropertyReplaces: instance should exist");
+	Zenith_Maths::Vector3 xScale;
+	pxInstance->GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_EQ_FLOAT(xScale.x, 7.f, 0.001f, "SamePropertyReplaces: last-wins on duplicate path");
+
+	std::filesystem::remove(szBasePath);
+	std::filesystem::remove(szVariantPath);
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestAutomationSamePropertyReplaces);
 }
 
 #endif // ZENITH_TOOLS

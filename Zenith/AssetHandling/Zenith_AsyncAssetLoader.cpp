@@ -160,7 +160,25 @@ void Zenith_AsyncAssetLoader::SubmitLoadRequest(const LoadRequest& xRequest)
 
 //------------------------------------------------------------------------------
 // Asset type loader specializations
-// These are called on worker threads
+//
+// Async loading is currently not implemented for any asset type. The original
+// design called for worker-thread loading with a main-thread completion
+// callback (see header docs and Zenith_AsyncAssetLoader::LoadAsync), but the
+// per-type loaders below all stub-return nullptr after logging once.
+//
+// Reasons it isn't implemented yet (kept here so newcomers know it isn't an
+// oversight to "just fill in"):
+//   - Textures: GPU upload paths aren't thread-safe; would need staging buffers
+//     and a deferred GPU-side completion step.
+//   - Materials: reference textures, so async-loading them recursively triggers
+//     the texture problem.
+//   - Meshes / models: CPU-side parse is async-safe, but the GPU buffer
+//     creation isn't.
+//   - Prefabs: deserialise into the scene graph, which is main-thread-only.
+//
+// Callers should use the synchronous Zenith_AssetRegistry::Get<T>(path) path
+// until this is implemented. The async path is wired up end-to-end so a future
+// implementation only needs to fill in these per-type loaders.
 //------------------------------------------------------------------------------
 
 // Forward declarations of asset types
@@ -170,47 +188,31 @@ class Zenith_MeshAsset;
 class Zenith_ModelAsset;
 class Zenith_Prefab;
 
-// Texture loader
-template<>
-void* AsyncLoadAsset<Zenith_TextureAsset>(const std::string&)
+namespace
 {
-	// Note: Texture loading may require GPU access which isn't thread-safe
-	// For now, return nullptr and let the sync path handle it
-	// A full implementation would use staging buffers
-	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_TextureAsset>: Async texture loading not yet implemented, use sync load");
-	return nullptr;
+	// Single point that logs "not implemented" for every per-type stub. Logged
+	// once per process per type so a frame-rate-loop call site doesn't spam.
+	void* LogAsyncNotImplemented(const char* szTypeName)
+	{
+		static std::unordered_map<std::string, bool> s_xLogged;
+		static Zenith_Mutex s_xMutex;
+		Zenith_ScopedMutexLock xLock(s_xMutex);
+		if (s_xLogged.find(szTypeName) == s_xLogged.end())
+		{
+			s_xLogged[szTypeName] = true;
+			Zenith_Warning(LOG_CATEGORY_ASSET,
+				"AsyncLoadAsset<%s>: not implemented. Use Zenith_AssetRegistry::Get<%s>(path) for synchronous load. (Logged once per type.)",
+				szTypeName, szTypeName);
+		}
+		return nullptr;
+	}
 }
 
-// Material loader
-template<>
-void* AsyncLoadAsset<Zenith_MaterialAsset>(const std::string&)
+template<> void* AsyncLoadAsset<Zenith_TextureAsset>(const std::string&)  { return LogAsyncNotImplemented("Zenith_TextureAsset"); }
+template<> void* AsyncLoadAsset<Zenith_MaterialAsset>(const std::string&) { return LogAsyncNotImplemented("Zenith_MaterialAsset"); }
+template<> void* AsyncLoadAsset<Zenith_MeshAsset>(const std::string&)     { return LogAsyncNotImplemented("Zenith_MeshAsset"); }
+template<> void* AsyncLoadAsset<Zenith_ModelAsset>(const std::string&)    { return LogAsyncNotImplemented("Zenith_ModelAsset"); }
+template<> void* AsyncLoadAsset<Zenith_Prefab>(const std::string&)
 {
-	// Materials may reference textures, making them complex to load async
-	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_MaterialAsset>: Async material loading not yet implemented");
-	return nullptr;
-}
-
-// Mesh loader
-template<>
-void* AsyncLoadAsset<Zenith_MeshAsset>(const std::string&)
-{
-	// Mesh data can be loaded on background thread, but GPU upload needs main thread
-	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_MeshAsset>: Async mesh loading not yet implemented");
-	return nullptr;
-}
-
-// Model loader
-template<>
-void* AsyncLoadAsset<Zenith_ModelAsset>(const std::string&)
-{
-	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_ModelAsset>: Async model loading not yet implemented");
-	return nullptr;
-}
-
-// Prefab loader
-template<>
-void* AsyncLoadAsset<Zenith_Prefab>(const std::string&)
-{
-	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_Prefab>: Async prefab loading not yet implemented");
-	return nullptr;
+	return LogAsyncNotImplemented("Zenith_Prefab");
 }

@@ -9,6 +9,10 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
+// Forward declarations for RegisterProperties (cycle-avoidance — see TransformComponent.h).
+template<typename T> class Zenith_Vector;
+struct Zenith_PropertyDescriptor;
+
 // Light type enumeration
 // Note: Values must not change for serialization compatibility
 enum LIGHT_TYPE : u_int
@@ -58,6 +62,9 @@ class Zenith_LightComponent
 public:
 	Zenith_LightComponent(Zenith_Entity& xEntity);
 	~Zenith_LightComponent() = default;
+
+	// Property registration for prefab-variant overrides.
+	static void RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties);
 
 	// Serialization
 	void WriteToDataStream(Zenith_DataStream& xStream) const;

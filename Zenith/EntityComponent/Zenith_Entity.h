@@ -106,6 +106,12 @@ public:
 
 	//--------------------------------------------------------------------------
 	// Component Operations (unchanged API)
+	//
+	// Template bodies for the methods below live in Zenith_Entity.inl. The .inl
+	// is included from Zenith_Scene.h after Zenith_SceneData is defined (the
+	// bodies need access to component pools that Zenith_Entity.h alone cannot
+	// see). Any TU that wants to call these templates must include
+	// Zenith_Scene.h, not just Zenith_Entity.h.
 	//--------------------------------------------------------------------------
 
 	template<typename T, typename... Args>

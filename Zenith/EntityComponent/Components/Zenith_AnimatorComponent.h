@@ -4,11 +4,18 @@
 
 class Zenith_ModelComponent;
 
+// Forward declarations for RegisterProperties (cycle-avoidance — see TransformComponent.h).
+template<typename T> class Zenith_Vector;
+struct Zenith_PropertyDescriptor;
+
 class Zenith_AnimatorComponent
 {
 public:
 	Zenith_AnimatorComponent(Zenith_Entity& xEntity);
 	~Zenith_AnimatorComponent();
+
+	// Property registration for prefab-variant overrides.
+	static void RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties);
 
 	// Move semantics (required for component pools)
 	Zenith_AnimatorComponent(Zenith_AnimatorComponent&& xOther) noexcept;

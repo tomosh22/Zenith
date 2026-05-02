@@ -216,15 +216,15 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 		return;
 	}
 
-	const bool bSubmittingThreadJoins = pxTaskArray->GetSubmittingThreadJoins();
-	const u_int uTasksForWorkers = bSubmittingThreadJoins
+	const bool bCallingThreadParticipates = pxTaskArray->GetCallingThreadParticipates();
+	const u_int uTasksForWorkers = bCallingThreadParticipates
 		? (uNumInvocations > 0 ? uNumInvocations - 1 : 0)
 		: uNumInvocations;
 
 	EnqueueAndSignal(pxTaskArray, uTasksForWorkers);
 
-	// Submitting thread executes one invocation if joining
-	if (bSubmittingThreadJoins && uNumInvocations > 0)
+	// Calling thread executes one invocation if it's participating
+	if (bCallingThreadParticipates && uNumInvocations > 0)
 	{
 		pxTaskArray->DoTask();
 	}

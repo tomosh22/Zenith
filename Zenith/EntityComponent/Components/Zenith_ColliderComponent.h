@@ -13,11 +13,18 @@ namespace JPH
 	class BodyID;
 }
 
+// Forward declarations for RegisterProperties (cycle-avoidance — see TransformComponent.h).
+template<typename T> class Zenith_Vector;
+struct Zenith_PropertyDescriptor;
+
 class Zenith_ColliderComponent {
 public:
 	Zenith_ColliderComponent() = delete;
 	Zenith_ColliderComponent(Zenith_Entity& xEntity);
 	~Zenith_ColliderComponent();
+
+	// Property registration for prefab-variant overrides.
+	static void RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties);
 
 	// Move constructor - transfers ownership of physics body
 	// Critical for component pool reallocation to not destroy bodies

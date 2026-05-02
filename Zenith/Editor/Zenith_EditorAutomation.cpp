@@ -15,6 +15,10 @@
 #include "UI/Zenith_UI.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "Prefab/Zenith_Prefab.h"
+#include "Maths/Zenith_Maths.h"
+#include "DataStream/Zenith_DataStream.h"
 
 //=============================================================================
 // Static member definitions
@@ -393,6 +397,55 @@ void Zenith_EditorAutomation::AddStep_AddColliderShape(int iVolumeType, int iBod
 // -- Model --
 
 void Zenith_EditorAutomation::AddStep_AddMeshEntry(Flux_MeshGeometry* pxGeometry, Zenith_MaterialAsset* pxMaterial) { Push(s_axActions, ActionType::ADD_MESH_ENTRY, pxGeometry, pxMaterial); }
+
+// -- Prefab Variant Authoring --
+
+void Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected(const char* szPrefabName, const char* szSavePath)
+{
+	Push(s_axActions, ActionType::CREATE_PREFAB_FROM_SELECTED, szPrefabName, szSavePath);
+}
+
+void Zenith_EditorAutomation::AddStep_CreatePrefabVariant(
+	const char* szVariantName,
+	const char* szBasePath,
+	const char* szSavePath)
+{
+	// CREATE_PREFAB_VARIANT needs THREE strings (name + base path + save path),
+	// one more than the Push helpers cover. Stash the third in m_pArg as a
+	// const char* — the action struct is purely declarative so this is safe
+	// (m_pArg already serves variable-meaning string/pointer roles for other
+	// step types).
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType  = ActionType::CREATE_PREFAB_VARIANT;
+	xAction.m_szArg1 = szVariantName;
+	xAction.m_szArg2 = szBasePath;
+	xAction.m_pArg   = const_cast<char*>(szSavePath);
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
+	const char* szPrefabPath,
+	const char* szComponentName,
+	const char* szPropertyName,
+	float fX, float fY, float fZ)
+{
+	// Uses both static-storage strings and m_pArg (property name) — same
+	// pattern as CREATE_PREFAB_VARIANT — plus the float triple.
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType     = ActionType::ADD_PREFAB_VARIANT_OVERRIDE_VEC3;
+	xAction.m_szArg1    = szPrefabPath;
+	xAction.m_szArg2    = szComponentName;
+	xAction.m_pArg      = const_cast<char*>(szPropertyName);
+	xAction.m_afArgs[0] = fX;
+	xAction.m_afArgs[1] = fY;
+	xAction.m_afArgs[2] = fZ;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityName)
+{
+	Push(s_axActions, ActionType::INSTANTIATE_PREFAB, szPrefabPath, szEntityName);
+}
 
 // -- Scene Loading --
 
@@ -1267,6 +1320,102 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Assert(pxGeometry, "Null geometry for ADD_MESH_ENTRY");
 		Zenith_Assert(pxMaterial, "Null material for ADD_MESH_ENTRY");
 		pxEntity->GetComponent<Zenith_ModelComponent>().AddMeshEntry(*pxGeometry, *pxMaterial);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// Prefab variant authoring
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::CREATE_PREFAB_FROM_SELECTED:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for CREATE_PREFAB_FROM_SELECTED");
+		Zenith_Assert(xAction.m_szArg1, "Null prefab name for CREATE_PREFAB_FROM_SELECTED");
+		Zenith_Assert(xAction.m_szArg2, "Null save path for CREATE_PREFAB_FROM_SELECTED");
+
+		Zenith_Prefab xPrefab;
+		const bool bCreated = xPrefab.CreateFromEntity(*pxEntity, xAction.m_szArg1);
+		Zenith_Assert(bCreated, "CreateFromEntity failed for '%s'", xAction.m_szArg1);
+		const bool bSaved = xPrefab.SaveToFile(xAction.m_szArg2);
+		Zenith_Assert(bSaved, "SaveToFile failed for '%s'", xAction.m_szArg2);
+
+		// Force-cache through the registry so subsequent steps that look the
+		// path up via PrefabHandle resolve cheaply (no disk re-read on every
+		// CreateAsVariant cycle check).
+		Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(xAction.m_szArg2);
+		break;
+	}
+
+	case Zenith_EditorActionType::CREATE_PREFAB_VARIANT:
+	{
+		Zenith_Assert(xAction.m_szArg1, "Null variant name for CREATE_PREFAB_VARIANT");
+		Zenith_Assert(xAction.m_szArg2, "Null base path for CREATE_PREFAB_VARIANT");
+		const char* szSavePath = static_cast<const char*>(xAction.m_pArg);
+		Zenith_Assert(szSavePath, "Null save path for CREATE_PREFAB_VARIANT");
+
+		// Make sure the base prefab is loaded so PrefabHandle's cycle check
+		// can resolve it. The cycle detector deliberately does NOT trigger a
+		// disk load (see Zenith_Prefab::WouldFormVariantCycle) — we have to
+		// prime the registry here.
+		Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(xAction.m_szArg2);
+
+		PrefabHandle xBaseHandle(xAction.m_szArg2);
+		Zenith_Prefab xVariant;
+		const bool bCreated = xVariant.CreateAsVariant(xBaseHandle, xAction.m_szArg1);
+		Zenith_Assert(bCreated, "CreateAsVariant failed for '%s' (base '%s')",
+			xAction.m_szArg1, xAction.m_szArg2);
+		const bool bSaved = xVariant.SaveToFile(szSavePath);
+		Zenith_Assert(bSaved, "SaveToFile failed for variant '%s' at '%s'",
+			xAction.m_szArg1, szSavePath);
+
+		Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(szSavePath);
+		break;
+	}
+
+	case Zenith_EditorActionType::ADD_PREFAB_VARIANT_OVERRIDE_VEC3:
+	{
+		Zenith_Assert(xAction.m_szArg1, "Null prefab path for ADD_PREFAB_VARIANT_OVERRIDE_VEC3");
+		Zenith_Assert(xAction.m_szArg2, "Null component name for ADD_PREFAB_VARIANT_OVERRIDE_VEC3");
+		const char* szPropertyName = static_cast<const char*>(xAction.m_pArg);
+		Zenith_Assert(szPropertyName, "Null property name for ADD_PREFAB_VARIANT_OVERRIDE_VEC3");
+
+		// Modifying a prefab held by the registry is safe because Zenith_Prefab*
+		// is the same pointer the registry caches — adding an override mutates
+		// in-memory state, then SaveToFile rewrites the .zpfb. Callers that load
+		// the file again get the updated overrides.
+		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(xAction.m_szArg1);
+		Zenith_Assert(pxPrefab, "Could not load prefab '%s' for override", xAction.m_szArg1);
+
+		Zenith_PropertyOverride xOv;
+		xOv.m_strComponentName = xAction.m_szArg2;
+		xOv.m_strPropertyPath  = szPropertyName;
+		xOv.m_xValue << Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]);
+		pxPrefab->AddOverride(std::move(xOv));
+
+		const bool bSaved = pxPrefab->SaveToFile(xAction.m_szArg1);
+		Zenith_Assert(bSaved, "SaveToFile failed after AddOverride for '%s'", xAction.m_szArg1);
+		break;
+	}
+
+	case Zenith_EditorActionType::INSTANTIATE_PREFAB:
+	{
+		Zenith_Assert(xAction.m_szArg1, "Null prefab path for INSTANTIATE_PREFAB");
+
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_Assert(xActiveScene.IsValid(), "INSTANTIATE_PREFAB requires an active scene");
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Assert(pxSceneData, "Active scene data was null in INSTANTIATE_PREFAB");
+
+		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(xAction.m_szArg1);
+		Zenith_Assert(pxPrefab, "Could not load prefab '%s' for instantiation", xAction.m_szArg1);
+
+		const char* szEntityName = (xAction.m_szArg2 != nullptr) ? xAction.m_szArg2 : "";
+		Zenith_Entity xEntity = pxPrefab->Instantiate(pxSceneData, szEntityName);
+		Zenith_Assert(xEntity.IsValid(), "Instantiate returned invalid entity for '%s'", xAction.m_szArg1);
+
+		// Mirror the editor's normal selection behaviour after entity creation
+		// so subsequent transform/component steps target the new entity.
+		Zenith_Editor::SelectEntity(xEntity.GetEntityID());
 		break;
 	}
 

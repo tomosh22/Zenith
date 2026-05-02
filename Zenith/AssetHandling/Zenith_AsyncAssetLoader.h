@@ -32,6 +32,19 @@ using AssetLoaderFn = void*(*)(const std::string& strPath);
 /**
  * Zenith_AsyncAssetLoader - Manages asynchronous asset loading
  *
+ * !!! NOT YET IMPLEMENTED !!!
+ *
+ * The async-loading framework (request queue, completion callbacks, task
+ * dispatch) is wired up end-to-end, but the per-type AsyncLoadAsset<T>
+ * specialisations all stub-return nullptr after a one-shot warning log.
+ * Calling LoadAsync<T>() will currently fail to deliver the asset.
+ *
+ * For now, use Zenith_AssetRegistry::Get<T>(path) for synchronous loading.
+ * See Zenith_AsyncAssetLoader.cpp for the per-type rationale on why each
+ * type is harder to async-load than it might first appear.
+ *
+ * --- Original design (kept for reference once implementation lands) ---
+ *
  * This class provides async loading capabilities using the task system.
  * Assets are loaded on worker threads and callbacks are invoked on the main thread.
  *

@@ -203,7 +203,7 @@ survival.exe
 
 ### Performance Considerations
 - Task array distributes work across all worker threads
-- Main thread can join work with `bSubmittingThreadJoins = true`
+- Main thread can join work with `bCallingThreadParticipates = true` (the legacy name `bSubmittingThreadJoins` still works as a constructor argument since it's positional)
 - Queries iterate only valid entities (not max entity ID range)
 - Resource manager uses fixed array to avoid allocations
 

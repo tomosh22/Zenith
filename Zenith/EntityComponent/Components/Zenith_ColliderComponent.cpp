@@ -23,6 +23,24 @@
 
 ZENITH_REGISTER_COMPONENT(Zenith_ColliderComponent, "Collider")
 
+void Zenith_ColliderComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
+{
+	// Intentionally registers no overrideable properties.
+	//
+	// All ColliderComponent fields are STATEFUL: the Jolt body, shape, mass,
+	// layer, and capsule dimensions are baked into the Jolt simulation when
+	// AddCollider() / ReadFromDataStream() runs. After that, mutating the raw
+	// fields does NOT update the body — Jolt won't see the change. Properly
+	// applying a variant override would require destroying and recreating the
+	// body via BodyInterface, mid-Instantiate, which is invasive and out of
+	// scope for the current property reflection layer.
+	//
+	// If you need different colliders per variant, override at the prefab
+	// level (different .zpfb with a different ColliderComponent serialisation),
+	// not via the override list.
+	(void)axProperties;
+}
+
 Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_Entity& xEntity)
 	: m_xParentEntity(xEntity)
 	, m_xBodyID(JPH::BodyID())

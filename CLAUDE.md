@@ -4,6 +4,8 @@
 
 C++20 game engine with custom ECS, Vulkan-based renderer (Flux), and multi-threaded task system.
 
+> **New to the codebase?** Read [Docs/Onboarding/NewcomerMap.md](Docs/Onboarding/NewcomerMap.md) first — it covers startup flow, recommended reading order, and the sharp edges that trip up first-timers.
+
 ## Directory Structure
 
 ```

@@ -3,15 +3,28 @@
 ## Files
 
 ### Core
-- `Zenith_SceneManager.h/cpp` - Static scene manager, multi-scene support, scene loading/unloading
+- `Zenith_SceneManager.h/cpp` - Static facade over the five `Internal/` subsystems below; multi-scene management
 - `Zenith_SceneData.h/cpp` - Internal scene storage (entity pools, components, metadata)
 - `Zenith_Scene.h/cpp` - Lightweight scene handle struct
 - `Zenith_SceneOperation.h/cpp` - Async scene operation tracking
 - `Zenith_Entity.h/cpp` - Entity wrapper class (scene pointer + entity ID + parent ID + child entity vector)
-- `Zenith_ComponentMeta.h/cpp` - Component reflection/registration system with type-erased operations
+- `Zenith_Entity.inl` - Template bodies for `AddComponent` / `GetComponent` / etc. (included from Zenith_Scene.h)
+- `Zenith_ComponentMeta.h/cpp` - Component reflection/registration system with type-erased operations + property reflection
 - `Zenith_ComponentRegistry.h/cpp` - Component type registration for editor UI
 - `Zenith_Query.h` - Multi-component entity queries
 - `Zenith_EventSystem.h/cpp` - Type-safe event dispatcher with deferred queue
+
+### Internal/
+SceneManager is a thin static facade — most of its work is forwarded to subsystems that live in `Internal/`. Newcomers often miss this directory:
+
+- `Internal/Zenith_SceneRegistry.h/cpp` - Scene slot table, generation counters, slot freelist
+- `Internal/Zenith_SceneCallbackBus.h/cpp` - Scene event dispatch (Loaded / Unloading / ActiveSceneChanged)
+- `Internal/Zenith_SceneOperationQueue.h/cpp` - Async load/unload operation queue
+- `Internal/Zenith_SceneLifecycleScheduler.h/cpp` - OnAwake / OnEnable / OnStart / OnUpdate dispatch
+- `Internal/Zenith_SceneEntityOwnership.h/cpp` - Entity slot ownership across scene moves
+- `Internal/Zenith_SceneLifecycleContext.h` - Per-frame lifecycle state container
+
+If a SceneManager method is a one-line forwarder, the real implementation lives in the matching `Internal/` file.
 
 ### Components (in Components/ subdirectory)
 - `Zenith_TransformComponent` - Position, rotation, scale

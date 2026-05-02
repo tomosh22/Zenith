@@ -62,6 +62,11 @@ public:
 
 	// ========== Navigation ==========
 
+	// The NavMeshAgent pointer is non-owning. Lifetime is managed externally
+	// (typically by the navigation system or a parent component that creates
+	// agents alongside the navmesh). Setting/clearing this pointer never
+	// allocates or frees the underlying agent — callers are responsible for
+	// nulling it before the agent it points to is destroyed.
 	void SetNavMeshAgent(Zenith_NavMeshAgent* pxAgent) { m_pxNavMeshAgent = pxAgent; }
 	Zenith_NavMeshAgent* GetNavMeshAgent() const { return m_pxNavMeshAgent; }
 
@@ -98,6 +103,7 @@ private:
 	Zenith_Entity m_xParentEntity;
 	Zenith_Blackboard m_xBlackboard;
 	Zenith_BehaviorTree* m_pxBehaviorTree = nullptr;
+	// Non-owning. See SetNavMeshAgent() for ownership rules.
 	Zenith_NavMeshAgent* m_pxNavMeshAgent = nullptr;
 
 	// Behavior tree tick rate control

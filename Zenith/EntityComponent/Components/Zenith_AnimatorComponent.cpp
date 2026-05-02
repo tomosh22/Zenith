@@ -8,6 +8,16 @@
 
 ZENITH_REGISTER_COMPONENT(Zenith_AnimatorComponent, "Animator")
 
+void Zenith_AnimatorComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
+{
+	// Whole-controller override. Flux_AnimationController has WriteToDataStream
+	// and ReadFromDataStream, so DataStream's `>>` SFINAE dispatch hands the
+	// payload to its deserialiser. Variant overrides typically use this to
+	// swap the entire animation graph on a per-instance basis (e.g. enemy
+	// variants that share a base mesh but differ only in their animator).
+	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_AnimatorComponent, m_xController, "Controller", axProperties);
+}
+
 //=============================================================================
 // Constructor / Destructor
 //=============================================================================

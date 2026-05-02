@@ -11,6 +11,7 @@
 
 #include "Panels/Zenith_EditorPanel_Memory.h"
 #include "Panels/Zenith_EditorPanel_RenderGraph.h"
+#include "Panels/Zenith_EditorPanel_VariantEditor.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -200,6 +201,11 @@ void Zenith_Editor::RenderViewMenu()
 		if (ImGui::MenuItem("Render Graph", nullptr, Zenith_EditorPanelRenderGraph::IsVisible()))
 		{
 			Zenith_EditorPanelRenderGraph::SetVisible(!Zenith_EditorPanelRenderGraph::IsVisible());
+		}
+
+		if (ImGui::MenuItem("Variant Editor", nullptr, Zenith_EditorPanelVariantEditor::IsVisible()))
+		{
+			Zenith_EditorPanelVariantEditor::SetVisible(!Zenith_EditorPanelVariantEditor::IsVisible());
 		}
 
 		ImGui::Separator();

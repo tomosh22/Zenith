@@ -201,6 +201,21 @@ void Flux::LateInitialise()
 	// change triggers MarkDirty so the next Compile rebuilds the pool layout.
 	Zenith_DebugVariables::AddBoolean({ "Render", "RenderGraph", "Transient Aliasing" }, dbg_bTransientAliasing);
 
+	// Click-to-log button: prints the compiled render-graph pass order. Useful
+	// for newcomers asking "what runs when?" — the answer is the topological
+	// sort of the pass DAG, not the order of AddPass() calls in SetupRenderGraph.
+	Zenith_DebugVariables::AddButton({ "Render", "RenderGraph", "Print Pass Order" }, []() {
+		if (Flux::s_pxRenderGraph != nullptr)
+		{
+			const std::string strOrder = Flux::s_pxRenderGraph->GetPassOrderDescription();
+			Zenith_Log(LOG_CATEGORY_RENDERER, "Render-graph pass order: %s", strOrder.c_str());
+		}
+		else
+		{
+			Zenith_Warning(LOG_CATEGORY_RENDERER, "Render graph not initialised yet — try again after the first frame.");
+		}
+	});
+
 	// MRT / depth / HDR / bloom transient previews. Registered once here (not in
 	// SetupTransients, which re-runs on resize) and resolve the current SRV
 	// via callback every ImGui draw — rebuilds that invalidate the underlying

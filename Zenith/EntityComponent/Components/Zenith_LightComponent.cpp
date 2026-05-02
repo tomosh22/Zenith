@@ -7,6 +7,22 @@
 
 ZENITH_REGISTER_COMPONENT(Zenith_LightComponent, "Light")
 
+void Zenith_LightComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
+{
+	// LIGHT_TYPE is intentionally omitted — its DataStream `>>` path goes through
+	// u_int+static_cast (see WriteToDataStream / ReadFromDataStream), which the
+	// generic property-setter macro doesn't model. Variants that need a
+	// different light type should override at the prefab level instead.
+	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_xColor,            "Color",            axProperties);
+	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_fIntensity,        "Intensity",        axProperties);
+	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_fRange,            "Range",            axProperties);
+	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_fSpotInnerAngle,   "SpotInnerAngle",   axProperties);
+	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_fSpotOuterAngle,   "SpotOuterAngle",   axProperties);
+	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_bCastShadows,      "CastShadows",      axProperties);
+	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_xPositionOffset,   "PositionOffset",   axProperties);
+	ZENITH_REGISTER_COMPONENT_PROPERTY(Zenith_LightComponent, m_xDirectionOffset,  "DirectionOffset",  axProperties);
+}
+
 // Serialization version history:
 // Version 1: Initial implementation
 static constexpr u_int uLIGHT_COMPONENT_VERSION = 1;

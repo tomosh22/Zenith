@@ -1,7 +1,40 @@
 #include "Zenith.h"
 #include "Prefab/Zenith_Prefab.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Zenith_SceneManager.h"
+
+namespace
+{
+	// Resolve a PrefabHandle to its concrete Zenith_Prefab*, handling both
+	// procedural (cached) and file-based (registry-loaded) cases. Returns null
+	// if the handle is unset or fails to load.
+	// Triggers a registry load on miss — DO NOT call from cycle-detection
+	// hot paths that should be side-effect-free.
+	Zenith_Prefab* ResolvePrefabHandle(const PrefabHandle& xHandle)
+	{
+		if (xHandle.GetDirect() != nullptr) return xHandle.GetDirect();
+		if (xHandle.IsSet())
+		{
+			return Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(xHandle.GetPath());
+		}
+		return nullptr;
+	}
+
+	// Side-effect-free variant: returns the prefab only if it's already cached
+	// on the handle or already loaded in the registry. Never triggers a load.
+	// Used by WouldFormVariantCycle so checking for cycles never has the side
+	// effect of pulling assets off disk (which would assert on missing files).
+	Zenith_Prefab* TryGetLoadedPrefab(const PrefabHandle& xHandle)
+	{
+		if (xHandle.GetDirect() != nullptr) return xHandle.GetDirect();
+		if (xHandle.IsSet() && Zenith_AssetRegistry::Get().IsLoaded(xHandle.GetPath()))
+		{
+			return Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(xHandle.GetPath());
+		}
+		return nullptr;
+	}
+}
 
 //=============================================================================
 // PropertyOverride Implementation
@@ -95,6 +128,14 @@ bool Zenith_Prefab::CreateAsVariant(const PrefabHandle& xBasePrefab, const std::
 		return false;
 	}
 
+	if (WouldFormVariantCycle(xBasePrefab))
+	{
+		Zenith_Error(LOG_CATEGORY_PREFAB,
+			"Cannot create variant '%s': base prefab would form a cycle (variant chain reaches back to this prefab).",
+			strVariantName.c_str());
+		return false;
+	}
+
 	m_strName = strVariantName;
 	m_xBasePrefab = xBasePrefab;
 	m_xOverrides.Clear();
@@ -102,6 +143,30 @@ bool Zenith_Prefab::CreateAsVariant(const PrefabHandle& xBasePrefab, const std::
 
 	// Variants don't store component data - they inherit from base
 	m_bIsValid = true;
+	return true;
+}
+
+bool Zenith_Prefab::WouldFormVariantCycle(const PrefabHandle& xProposedBase) const
+{
+	// Walk the proposed base's ancestor chain using ONLY the cached pointer
+	// (GetDirect) — never trigger a registry load here. Cycle detection at
+	// CreateAsVariant time should not have a side effect of loading prefabs
+	// off disk, and an unloaded ancestor cannot be the start of a cycle that
+	// reaches `this` without being loaded first. The runtime path in
+	// InstantiateInternal has its own visited-set guard that catches anything
+	// that slips through (e.g. a corrupted on-disk variant chain).
+	constexpr u_int uMAX_VARIANT_CHAIN_DEPTH = 64;
+
+	PrefabHandle xCursor = xProposedBase;
+	for (u_int u = 0; u < uMAX_VARIANT_CHAIN_DEPTH; ++u)
+	{
+		Zenith_Prefab* pxAncestor = TryGetLoadedPrefab(xCursor);
+		if (pxAncestor == nullptr) return false;
+		if (pxAncestor == this) return true;
+		xCursor = pxAncestor->m_xBasePrefab;
+	}
+	Zenith_Warning(LOG_CATEGORY_PREFAB,
+		"Variant chain exceeded depth %u during cycle check — assuming cycle.", uMAX_VARIANT_CHAIN_DEPTH);
 	return true;
 }
 
@@ -234,18 +299,23 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData, const st
 		return Zenith_Entity();
 	}
 
-	std::string strName = strEntityName.empty() ? m_strName : strEntityName;
-
-	// Suppress immediate lifecycle dispatch in Entity constructor - we dispatch after all components are added.
-	// PrefabInstantiationGuard restores the prior value, so nested prefab instantiation works correctly.
+	// Suppress immediate lifecycle dispatch in Entity constructor across the entire
+	// recursive chain. PrefabInstantiationGuard restores the prior value when it
+	// goes out of scope; the manual dispatch below fires once after recursion completes.
 	Zenith_Entity xEntity;
 	{
 		Zenith_SceneManager::PrefabInstantiationGuard xPrefabGuard;
-		xEntity = Zenith_Entity(pxSceneData, strName);
-		DeserializeComponents(xEntity);
+		Zenith_Vector<const Zenith_Prefab*> axVisited;
+		xEntity = InstantiateInternal(pxSceneData, strEntityName, axVisited);
 	}
 
-	// Dispatch lifecycle hooks with all components present (Unity-style: per-entity, immediately after creation)
+	if (!xEntity.IsValid())
+	{
+		return xEntity;  // Inner call already logged the failure reason.
+	}
+
+	// Dispatch lifecycle hooks with all components present (Unity-style: per-entity,
+	// immediately after creation). Done once at the top level, not per recursion step.
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 	xRegistry.DispatchOnAwake(xEntity);
 	if (xEntity.IsEnabled())
@@ -256,6 +326,71 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData, const st
 	// Mark as awoken so Update() doesn't dispatch again
 	pxSceneData->MarkEntityAwoken(xEntity.GetEntityID());
 
+	return xEntity;
+}
+
+Zenith_Entity Zenith_Prefab::InstantiateInternal(
+	Zenith_SceneData* pxSceneData,
+	const std::string& strEntityName,
+	Zenith_Vector<const Zenith_Prefab*>& axVisited) const
+{
+	// Cycle guard. CreateAsVariant rejects cycles at construction time, but a
+	// hand-crafted or corrupted .zprfb on disk could still load with one.
+	for (u_int u = 0; u < axVisited.GetSize(); ++u)
+	{
+		if (axVisited.Get(u) == this)
+		{
+			Zenith_Error(LOG_CATEGORY_PREFAB,
+				"Variant cycle detected while instantiating '%s'. Aborting.", m_strName.c_str());
+			return Zenith_Entity();
+		}
+	}
+	axVisited.PushBack(this);
+
+	if (m_xBasePrefab.IsSet())
+	{
+		// Variant path: instantiate the base, then apply our overrides on top.
+		Zenith_Prefab* pxBase = ResolvePrefabHandle(m_xBasePrefab);
+		if (pxBase == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_PREFAB,
+				"Variant '%s' references a base prefab that could not be loaded.",
+				m_strName.c_str());
+			return Zenith_Entity();
+		}
+
+		Zenith_Entity xEntity = pxBase->InstantiateInternal(pxSceneData, strEntityName, axVisited);
+		if (!xEntity.IsValid())
+		{
+			return xEntity;
+		}
+
+		// Apply overrides on top of the base entity. Skip nested paths — flat
+		// names only in this iteration (see Zenith_ComponentMeta.h header docs).
+		Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+		for (u_int u = 0; u < m_xOverrides.GetSize(); ++u)
+		{
+			const Zenith_PropertyOverride& xOv = m_xOverrides.Get(u);
+			if (xOv.m_strPropertyPath.find('.') != std::string::npos)
+			{
+				Zenith_Warning(LOG_CATEGORY_PREFAB,
+					"Variant '%s': override path '%s' uses nested fields, which are not yet supported. Skipping.",
+					m_strName.c_str(), xOv.m_strPropertyPath.c_str());
+				continue;
+			}
+			xRegistry.SetComponentProperty(
+				xEntity,
+				xOv.m_strComponentName,
+				xOv.m_strPropertyPath,
+				const_cast<Zenith_DataStream&>(xOv.m_xValue));
+		}
+		return xEntity;
+	}
+
+	// Non-variant path: create entity from this prefab's component data.
+	std::string strName = strEntityName.empty() ? m_strName : strEntityName;
+	Zenith_Entity xEntity(pxSceneData, strName);
+	DeserializeComponents(xEntity);
 	return xEntity;
 }
 
@@ -291,8 +426,43 @@ bool Zenith_Prefab::ApplyToEntity(Zenith_Entity& xEntity) const
 		return false;
 	}
 
-	DeserializeComponents(xEntity);
+	// For variants, apply the base prefab first then layer our overrides on top.
+	// Cycle protection is bounded by chain depth (see WouldFormVariantCycle).
+	if (m_xBasePrefab.IsSet())
+	{
+		Zenith_Prefab* pxBase = ResolvePrefabHandle(m_xBasePrefab);
+		if (pxBase == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_PREFAB,
+				"Variant '%s' references a base prefab that could not be loaded.", m_strName.c_str());
+			return false;
+		}
+		if (!pxBase->ApplyToEntity(xEntity))
+		{
+			return false;
+		}
 
+		Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+		for (u_int u = 0; u < m_xOverrides.GetSize(); ++u)
+		{
+			const Zenith_PropertyOverride& xOv = m_xOverrides.Get(u);
+			if (xOv.m_strPropertyPath.find('.') != std::string::npos)
+			{
+				Zenith_Warning(LOG_CATEGORY_PREFAB,
+					"Variant '%s': override path '%s' uses nested fields, which are not yet supported. Skipping.",
+					m_strName.c_str(), xOv.m_strPropertyPath.c_str());
+				continue;
+			}
+			xRegistry.SetComponentProperty(
+				xEntity,
+				xOv.m_strComponentName,
+				xOv.m_strPropertyPath,
+				const_cast<Zenith_DataStream&>(xOv.m_xValue));
+		}
+		return true;
+	}
+
+	DeserializeComponents(xEntity);
 	return true;
 }
 
@@ -301,7 +471,9 @@ void Zenith_Prefab::DeserializeComponents(Zenith_Entity& xEntity) const
 	Zenith_DataStream& xStream = const_cast<Zenith_DataStream&>(m_xComponentData);
 	xStream.SetCursor(0);
 
-	// Skip the header (magic, version, name)
+	// Consume the header (magic, version, name) to advance the stream cursor
+	// past it before the component reader runs. The values aren't validated
+	// here — SaveToFile/LoadFromFile own the integrity checks.
 	u_int uMagic, uVersion;
 	std::string strName;
 	xStream >> uMagic;

@@ -358,6 +358,13 @@ public:
     const Zenith_Vector<u_int>& GetExecutionOrder() const { return m_xExecutionOrder; }
     const std::unordered_map<void*, Flux_RenderGraph_Resource>& GetResources() const { return m_xResources; }
 
+    // Human-readable list of passes in their compiled execution order. Format is
+    // "PassA -> PassB -> PassC ...". Disabled passes are suffixed " (disabled)".
+    // Returns the empty string before the first Compile(). Useful for answering
+    // "what runs when?" without manually tracing the topological sort —
+    // surfaced via the "Flux/PrintPassOrder" debug button.
+    std::string GetPassOrderDescription() const;
+
     // --- Current-pass thread-local context --------------------------------
     // Set around each pfnOnRecord callback by Flux_RenderGraph_RecordPassTask.
     // Enables bind-time assertions ("is the resource I'm about to bind declared

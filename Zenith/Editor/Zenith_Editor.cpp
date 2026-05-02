@@ -55,6 +55,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Panels/Zenith_EditorPanel_Properties.h"
 #include "Panels/Zenith_EditorPanel_RenderGraph.h"
 #include "Panels/Zenith_EditorPanel_Toolbar.h"
+#include "Panels/Zenith_EditorPanel_VariantEditor.h"
 #include "Panels/Zenith_EditorPanel_Viewport.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -822,6 +823,7 @@ void Zenith_Editor::Render()
 #endif
 
 	Zenith_EditorPanelRenderGraph::Render();
+	Zenith_EditorPanelVariantEditor::Render();
 
 	// Animation state machine editor
 	// Zenith_AnimationStateMachineEditor::Render();  // TEMPORARILY DISABLED

@@ -628,6 +628,9 @@
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.cpp">
       <Filter>Editor\Panels</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_VariantEditor.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.cpp">
       <Filter>Editor\Panels</Filter>
     </ClCompile>
@@ -3336,6 +3339,9 @@
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.h">
       <Filter>Editor\Panels</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_VariantEditor.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.h">
       <Filter>Editor\Panels</Filter>
     </ClInclude>
@@ -3427,6 +3433,9 @@
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.inl">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h">
@@ -3665,9 +3674,6 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.slang">
       <Filter>Flux\Shaders\DeferredShading</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.slang">
-      <Filter>Flux\Shaders\DynamicLights</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_LightClustering.slang">
       <Filter>Flux\Shaders\DynamicLights</Filter>
