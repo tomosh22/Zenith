@@ -671,16 +671,18 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		"Vegetation",
 	},
 
-	// Deferred dynamic-light volumes (point / spot / directional). Cook-
-	// Torrance against the G-buffer with multi-scatter compensation —
-	// keeps energy in line with the static deferred lighting.
+	// Clustered deferred light culling — compute. One thread per cluster
+	// (16x9x24 = 3456), tests sphere-vs-AABB for each light, writes per-
+	// cluster index lists consumed by the deferred-shading fragment shader.
+	// Replaces the old per-light-volume rasterisation pass (which was
+	// GPU-bound from disabled depth testing + redundant G-buffer sampling).
 	{
-		FluxShaderProgram::DynamicLights,
-		"DynamicLights",
-		"DynamicLights/Flux_DynamicLights",
-		"vsMain",
-		"fsMain",
+		FluxShaderProgram::LightClustering,
+		"LightClustering",
+		"DynamicLights/Flux_LightClustering",
 		nullptr,
+		nullptr,
+		"csMain",
 		"spirv_1_3",
 		"DynamicLights",
 	},

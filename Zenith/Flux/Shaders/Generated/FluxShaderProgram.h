@@ -59,7 +59,7 @@ enum class FluxShaderProgram : unsigned int
 	TerrainCulling = 47,
 	TerrainResetCounters = 48,
 	Grass = 49,
-	DynamicLights = 50,
+	LightClustering = 50,
 	Particles = 51,
 	ParticleUpdate = 52,
 	Water = 53,

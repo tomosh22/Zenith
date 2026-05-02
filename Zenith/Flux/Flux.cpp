@@ -31,6 +31,7 @@
 #include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/Vegetation/Flux_Grass.h"
 #include "Flux/DynamicLights/Flux_DynamicLights.h"
+#include "Flux/DynamicLights/Flux_LightClustering.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -171,8 +172,9 @@ void Flux::LateInitialise()
 	Flux_HiZ::Initialise();          // Hi-Z depth pyramid (needed by SSR)
 	Flux_SSR::Initialise();          // Screen-space reflections (uses Hi-Z, needed by DeferredShading)
 	Flux_SSGI::Initialise();         // Screen-space GI (uses Hi-Z, needed by DeferredShading)
-	Flux_DeferredShading::Initialise();
-	Flux_DynamicLights::Initialise();  // Dynamic point/spot/directional lights (after DeferredShading)
+	Flux_DynamicLights::Initialise();   // Light gather + upload (front-end for clustered deferred)
+	Flux_LightClustering::Initialise(); // Per-cluster light culling compute (must precede DeferredShading)
+	Flux_DeferredShading::Initialise(); // Reads cluster buffers + light buffer in fragment shader
 	Flux_SSAO::Initialise();
 	Flux_Fog::Initialise();
 	Flux_SDFs::Initialise();
@@ -273,8 +275,12 @@ void Flux::SetupRenderGraph()
 	Flux_SSGI::SetupRenderGraph(*s_pxRenderGraph);
 
 	// Lighting & composition
+	// Clustering runs first — its outputs (per-cluster light index lists) are
+	// read by the deferred-shading fragment shader. The graph orders these via
+	// .ReadsBuffer / .WritesBuffer declarations, but registering in this order
+	// keeps the source-side intent explicit.
+	Flux_LightClustering::SetupRenderGraph(*s_pxRenderGraph);
 	Flux_DeferredShading::SetupRenderGraph(*s_pxRenderGraph);
-	Flux_DynamicLights::SetupRenderGraph(*s_pxRenderGraph);
 	// Aerial perspective runs after DeferredShading — it blends scattering on
 	// top of the already-lit HDR scene. Registering here keeps the writer-chain
 	// topological order correct.
@@ -324,7 +330,8 @@ void Flux::Shutdown()
 	Flux_SDFs::Shutdown();
 	// Flux_Fog, Flux_DeferredShading - no Shutdown() methods
 	Flux_SSAO::Shutdown();           // SSAO render targets
-	Flux_DynamicLights::Shutdown();  // Dynamic lights (after DeferredShading in init order)
+	Flux_LightClustering::Shutdown(); // Cluster compute pass (frees cluster buffers)
+	Flux_DynamicLights::Shutdown();   // Light gather front-end (frees unified light buffer)
 	Flux_SSGI::Shutdown();         // Before HiZ (SSGI uses Hi-Z)
 	Flux_SSR::Shutdown();          // Before HiZ (SSR uses Hi-Z)
 	Flux_HiZ::Shutdown();          // Hi-Z depth pyramid

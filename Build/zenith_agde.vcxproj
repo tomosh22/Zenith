@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -945,6 +945,7 @@
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Sync.h" />
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h" />
     <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.h" />
+    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_LightClustering.h" />
     <ClInclude Include="..\Zenith\Flux\Flux.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Backend.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Buffers.h" />
@@ -997,6 +998,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Frame.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Fullscreen.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\GBuffer.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\Lighting.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Material.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\PBR.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang" />
@@ -1004,6 +1006,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_LightClustering.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_Fog.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Apply.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Inject.slang" />
@@ -1068,6 +1071,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Resolve.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Upsample.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToGBuffer.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToShadowmap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.slang" />
@@ -1902,6 +1906,7 @@
     <ClCompile Include="..\Zenith\Flux\Backend\Flux_BackendConformance.cpp" />
     <ClCompile Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp" />
     <ClCompile Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.cpp" />
+    <ClCompile Include="..\Zenith\Flux\DynamicLights\Flux_LightClustering.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Buffers.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_CommandList.cpp" />

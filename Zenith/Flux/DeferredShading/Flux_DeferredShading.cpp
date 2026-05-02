@@ -10,6 +10,8 @@
 #include "Flux/IBL/Flux_IBL.h"
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSGI/Flux_SSGI.h"
+#include "Flux/DynamicLights/Flux_DynamicLights.h"
+#include "Flux/DynamicLights/Flux_LightClustering.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #ifdef ZENITH_TOOLS
@@ -132,6 +134,17 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 		xBinder.BindSRV(s_xShader, "g_xSSGITex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
+	// Clustered dynamic lights — buffers populated by Flux_LightClustering.
+	// All three are statically referenced by the shader, so all must be
+	// bound regardless of whether dynamic lights exist this frame (the
+	// fragment shader's cluster loop runs zero iterations when count = 0).
+	xBinder.BindSRV_Buffer(s_xShader, "LightBuffer",
+		Flux_DynamicLights::GetLightBufferSRV());
+	xBinder.BindSRV_Buffer(s_xShader, "ClusterLightCounts",
+		Flux_LightClustering::GetClusterLightCountsSRV());
+	xBinder.BindSRV_Buffer(s_xShader, "ClusterLightIndices",
+		Flux_LightClustering::GetClusterLightIndicesSRV());
+
 	// Pass constants to shader
 	struct DeferredShadingConstants
 	{
@@ -190,6 +203,23 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		Flux_RenderAttachment* pxDepthStencil;
 		Flux_Shadows::GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
 		xGraph.Read(xPass, *pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
+	}
+
+	// Clustered-deferred cluster-output buffers — declaring the reads
+	// here causes the graph to order this pass after Flux_LightClustering's
+	// compute writes, with the necessary UAV→SRV barrier emitted
+	// automatically. The LightBuffer itself is NOT graph-tracked: it's a
+	// frame-indexed Flux_DynamicReadWriteBuffer whose GetBuffer() returns
+	// a different physical pointer each frame, so any pointer captured
+	// here would be stale on subsequent frames. Visibility of its
+	// host-side upload is covered by vkQueueSubmit's implicit host-write
+	// barrier instead.
+	if (Flux_LightClustering::IsInitialised())
+	{
+		xGraph.ReadBuffer(xPass, Flux_LightClustering::GetClusterLightCountsBuffer().GetBuffer(),
+			RESOURCE_ACCESS_READ_SRV);
+		xGraph.ReadBuffer(xPass, Flux_LightClustering::GetClusterLightIndicesBuffer().GetBuffer(),
+			RESOURCE_ACCESS_READ_SRV);
 	}
 
 	// SSR / SSGI single-handle declarations. The subsystem decides which of

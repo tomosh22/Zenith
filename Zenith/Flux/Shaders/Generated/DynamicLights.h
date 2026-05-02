@@ -13,66 +13,41 @@
 
 namespace Flux_Generated_DynamicLights
 {
-	// ----- DynamicLights (DynamicLights/Flux_DynamicLights) -----
-	namespace DynamicLights
+	// ----- LightClustering (DynamicLights/Flux_LightClustering) -----
+	namespace LightClustering
 	{
-		inline constexpr const char* kPointLightBuffer_Name = "PointLightBuffer";
-		inline constexpr unsigned int kPointLightBuffer_Set = 0;
-		inline constexpr unsigned int kPointLightBuffer_Binding = 1;
-		inline constexpr unsigned int kPointLightBuffer_DescriptorCount = 1;
+		inline constexpr const char* kLightBuffer_Name = "LightBuffer";
+		inline constexpr unsigned int kLightBuffer_Set = 0;
+		inline constexpr unsigned int kLightBuffer_Binding = 1;
+		inline constexpr unsigned int kLightBuffer_DescriptorCount = 1;
 		// kind: StructuredBuffer
-		inline constexpr const char* kSpotLightBuffer_Name = "SpotLightBuffer";
-		inline constexpr unsigned int kSpotLightBuffer_Set = 0;
-		inline constexpr unsigned int kSpotLightBuffer_Binding = 6;
-		inline constexpr unsigned int kSpotLightBuffer_DescriptorCount = 1;
-		// kind: StructuredBuffer
-		inline constexpr const char* kDirectionalLightBuffer_Name = "DirectionalLightBuffer";
-		inline constexpr unsigned int kDirectionalLightBuffer_Set = 0;
-		inline constexpr unsigned int kDirectionalLightBuffer_Binding = 7;
-		inline constexpr unsigned int kDirectionalLightBuffer_DescriptorCount = 1;
-		// kind: StructuredBuffer
+		inline constexpr const char* kClusterLightCounts_Name = "ClusterLightCounts";
+		inline constexpr unsigned int kClusterLightCounts_Set = 0;
+		inline constexpr unsigned int kClusterLightCounts_Binding = 2;
+		inline constexpr unsigned int kClusterLightCounts_DescriptorCount = 1;
+		// kind: RWStructuredBuffer
+		inline constexpr const char* kClusterLightIndices_Name = "ClusterLightIndices";
+		inline constexpr unsigned int kClusterLightIndices_Set = 0;
+		inline constexpr unsigned int kClusterLightIndices_Binding = 3;
+		inline constexpr unsigned int kClusterLightIndices_DescriptorCount = 1;
+		// kind: RWStructuredBuffer
 		inline constexpr const char* kPushConstants_Name = "PushConstants";
 		inline constexpr unsigned int kPushConstants_Set = 0;
-		inline constexpr unsigned int kPushConstants_Binding = 8;
+		inline constexpr unsigned int kPushConstants_Binding = 4;
 		inline constexpr unsigned int kPushConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
 		struct PushConstants_CB
 		{
-			unsigned int m_um_uLightType; // slang=uint offset=0
+			unsigned int m_um_uLightCount; // slang=uint offset=0
 			unsigned int m_um_uPad0; // slang=uint offset=4
 			unsigned int m_um_uPad1; // slang=uint offset=8
 			unsigned int m_um_uPad2; // slang=uint offset=12
 		};
 		static_assert(sizeof(PushConstants_CB) == 16, "PushConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(PushConstants_CB, m_um_uLightType) == 0, "PushConstants.m_uLightType offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_um_uLightCount) == 0, "PushConstants.m_uLightCount offset drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_um_uPad0) == 4, "PushConstants.m_uPad0 offset drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_um_uPad1) == 8, "PushConstants.m_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(PushConstants_CB, m_um_uPad2) == 12, "PushConstants.m_uPad2 offset drifted from Slang reflection");
-		inline constexpr const char* kg_xDiffuseTex_Name = "g_xDiffuseTex";
-		inline constexpr unsigned int kg_xDiffuseTex_Set = 0;
-		inline constexpr unsigned int kg_xDiffuseTex_Binding = 2;
-		inline constexpr unsigned int kg_xDiffuseTex_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-		inline constexpr const char* kg_xNormalsAmbientTex_Name = "g_xNormalsAmbientTex";
-		inline constexpr unsigned int kg_xNormalsAmbientTex_Set = 0;
-		inline constexpr unsigned int kg_xNormalsAmbientTex_Binding = 3;
-		inline constexpr unsigned int kg_xNormalsAmbientTex_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-		inline constexpr const char* kg_xMaterialTex_Name = "g_xMaterialTex";
-		inline constexpr unsigned int kg_xMaterialTex_Set = 0;
-		inline constexpr unsigned int kg_xMaterialTex_Binding = 4;
-		inline constexpr unsigned int kg_xMaterialTex_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
-		inline constexpr unsigned int kg_xDepthTex_Set = 0;
-		inline constexpr unsigned int kg_xDepthTex_Binding = 5;
-		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
-		inline constexpr const char* kg_xBRDFLUT_Name = "g_xBRDFLUT";
-		inline constexpr unsigned int kg_xBRDFLUT_Set = 0;
-		inline constexpr unsigned int kg_xBRDFLUT_Binding = 9;
-		inline constexpr unsigned int kg_xBRDFLUT_DescriptorCount = 1;
-		// kind: CombinedTextureSampler
 		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
 		inline constexpr unsigned int kFrameConstants_Set = 0;
 		inline constexpr unsigned int kFrameConstants_Binding = 0;

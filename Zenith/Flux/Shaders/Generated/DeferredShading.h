@@ -154,6 +154,21 @@ namespace Flux_Generated_DeferredShading
 		inline constexpr unsigned int kg_xSSGITex_Binding = 18;
 		inline constexpr unsigned int kg_xSSGITex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr const char* kLightBuffer_Name = "LightBuffer";
+		inline constexpr unsigned int kLightBuffer_Set = 0;
+		inline constexpr unsigned int kLightBuffer_Binding = 19;
+		inline constexpr unsigned int kLightBuffer_DescriptorCount = 1;
+		// kind: StructuredBuffer
+		inline constexpr const char* kClusterLightCounts_Name = "ClusterLightCounts";
+		inline constexpr unsigned int kClusterLightCounts_Set = 0;
+		inline constexpr unsigned int kClusterLightCounts_Binding = 20;
+		inline constexpr unsigned int kClusterLightCounts_DescriptorCount = 1;
+		// kind: StructuredBuffer
+		inline constexpr const char* kClusterLightIndices_Name = "ClusterLightIndices";
+		inline constexpr unsigned int kClusterLightIndices_Set = 0;
+		inline constexpr unsigned int kClusterLightIndices_Binding = 21;
+		inline constexpr unsigned int kClusterLightIndices_DescriptorCount = 1;
+		// kind: StructuredBuffer
 		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
 		inline constexpr unsigned int kFrameConstants_Set = 0;
 		inline constexpr unsigned int kFrameConstants_Binding = 0;

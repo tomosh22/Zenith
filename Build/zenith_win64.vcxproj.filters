@@ -754,6 +754,9 @@
     <ClCompile Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.cpp">
       <Filter>Flux\DynamicLights</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\DynamicLights\Flux_LightClustering.cpp">
+      <Filter>Flux\DynamicLights</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
@@ -3483,6 +3486,9 @@
     <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.h">
       <Filter>Flux\DynamicLights</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_LightClustering.h">
+      <Filter>Flux\DynamicLights</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux.h">
       <Filter>Flux</Filter>
     </ClInclude>
@@ -3639,6 +3645,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\GBuffer.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\Lighting.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Material.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
@@ -3658,6 +3667,9 @@
       <Filter>Flux\Shaders\DeferredShading</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.slang">
+      <Filter>Flux\Shaders\DynamicLights</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_LightClustering.slang">
       <Filter>Flux\Shaders\DynamicLights</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_Fog.slang">
@@ -3850,6 +3862,9 @@
       <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Resolve.slang">
+      <Filter>Flux\Shaders\SSR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Upsample.slang">
       <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToGBuffer.slang">

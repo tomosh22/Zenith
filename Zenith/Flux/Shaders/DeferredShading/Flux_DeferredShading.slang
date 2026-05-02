@@ -17,6 +17,7 @@
 import Common.Fullscreen;
 import Common.Frame;
 import Common.PBR;
+import Common.Lighting;
 
 struct DeferredShadingConstantsLayout
 {
@@ -59,6 +60,13 @@ struct ShadowMatrixLayout { float4x4 m_xMat; };
 [[vk::binding(16, 0)]] SamplerCube g_xPrefilteredMap;
 [[vk::binding(17, 0)]] Sampler2D   g_xSSRTex;
 [[vk::binding(18, 0)]] Sampler2D   g_xSSGITex;
+
+// Clustered dynamic lights — populated each frame by Flux_LightClustering.
+// LightBuffer is the full list (point + spot + directional, type-tagged).
+// The cluster buffers index into LightBuffer per-pixel.
+[[vk::binding(19, 0)]] StructuredBuffer<LightInstance> LightBuffer;
+[[vk::binding(20, 0)]] StructuredBuffer<uint>          ClusterLightCounts;
+[[vk::binding(21, 0)]] StructuredBuffer<uint>          ClusterLightIndices;
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
@@ -403,6 +411,29 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		if (xLight.m_xColour.a > LIGHT_INTENSITY_THRESHOLD)
 			CookTorrance_Directional(xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, xWorldPos);
 		xColour.rgb = xIBLAmbient + (xColour.rgb - xIBLAmbient) * fShadowFactor;
+	}
+
+	// Clustered dynamic lights — point, spot, and any non-sun
+	// directional lights. Inserted AFTER the sun-shadow resolution
+	// (so CSM shadows don't accidentally attenuate dynamic lights, which
+	// have nothing to do with the sun shadow map) and BEFORE emissive
+	// (which is unlit by design).
+	{
+		float fViewZ = DepthToViewZ(input.uv, fDepth);
+		uint3 xClusterCoord = ClusterCoordFromUVDepth(input.uv, fViewZ);
+		uint  uClusterIdx   = ClusterIndex(xClusterCoord);
+		uint  uLightCount   = ClusterLightCounts[uClusterIdx];
+
+		float3 xDynLights = float3(0.0, 0.0, 0.0);
+		for (uint i = 0u; i < uLightCount; ++i)
+		{
+			uint uLightIdx = ClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
+			LightInstance xL = LightBuffer[uLightIdx];
+			xDynLights += EvaluateLight(xL, xWorldPos, xNormal, xViewDir,
+			                            xDiffuse.rgb, fMetallic, fRoughness,
+			                            g_xBRDFLUT);
+		}
+		xColour.rgb += xDynLights;
 	}
 
 	// Emissive bypasses lighting and shadows entirely.
