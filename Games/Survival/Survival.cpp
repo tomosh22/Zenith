@@ -365,7 +365,7 @@ static void InitializeSurvivalResources()
 #endif
 
 	// Custom sphere - tracked through registry
-	g_pxSphereAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	g_pxSphereAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
 	Flux_MeshGeometry* pxSphere = new Flux_MeshGeometry();
 	GenerateUVSphere(*pxSphere, 0.5f, 16, 12);
 	g_pxSphereAsset->SetGeometry(pxSphere);
@@ -377,7 +377,7 @@ static void InitializeSurvivalResources()
 #endif
 
 	// Custom capsule - tracked through registry
-	g_pxCapsuleAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	g_pxCapsuleAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
 	Flux_MeshGeometry* pxCapsule = new Flux_MeshGeometry();
 	GenerateCapsule(*pxCapsule, 0.3f, 1.6f, 12, 6);
 	g_pxCapsuleAsset->SetGeometry(pxCapsule);
@@ -402,33 +402,32 @@ static void InitializeSurvivalResources()
 	TextureHandle xStoneTextureHandle = ExportColoredTexture(strTexturesDir + "/Stone.ztex", 100, 100, 110);       // Gray stone item
 
 	// Create materials with texture paths (properly serializable)
-	auto& xRegistry = Zenith_AssetRegistry::Get();
 
-	g_xPlayerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xPlayerMaterial.GetDirect()->SetName("SurvivalPlayer");
 	g_xPlayerMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Player.ztex");
 
-	g_xGroundMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xGroundMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xGroundMaterial.GetDirect()->SetName("SurvivalGround");
 	g_xGroundMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Ground.ztex");
 
-	g_xTreeMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xTreeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xTreeMaterial.GetDirect()->SetName("SurvivalTree");
 	g_xTreeMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Tree.ztex");
 
-	g_xRockMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xRockMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xRockMaterial.GetDirect()->SetName("SurvivalRock");
 	g_xRockMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Rock.ztex");
 
-	g_xBerryMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xBerryMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xBerryMaterial.GetDirect()->SetName("SurvivalBerry");
 	g_xBerryMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Berry.ztex");
 
-	g_xWoodMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xWoodMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xWoodMaterial.GetDirect()->SetName("SurvivalWood");
 	g_xWoodMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Wood.ztex");
 
-	g_xStoneMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xStoneMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xStoneMaterial.GetDirect()->SetName("SurvivalStone");
 	g_xStoneMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Stone.ztex");
 

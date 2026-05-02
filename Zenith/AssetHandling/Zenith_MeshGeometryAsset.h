@@ -15,7 +15,7 @@ class Flux_MeshGeometry;
  *
  * Usage:
  *   // Load from file
- *   Zenith_MeshGeometryAsset* pMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshGeometryAsset>("game:Meshes/level.zmesh");
+ *   Zenith_MeshGeometryAsset* pMesh = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>("game:Meshes/level.zmesh");
  *   Flux_MeshGeometry* pGeom = pMesh->GetGeometry();
  *
  *   // Create primitive (cached by type)

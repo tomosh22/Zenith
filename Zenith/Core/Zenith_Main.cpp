@@ -107,7 +107,7 @@ void Zenith_Core::Zenith_Init()
 		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after Flux::EarlyInitialise()
 
 		// Load cubemap texture
-		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 		if (Flux_Graphics::s_pxCubemapTexture)
 		{
 			Flux_Graphics::s_pxCubemapTexture->LoadCubemapFromFiles(
@@ -121,7 +121,7 @@ void Zenith_Core::Zenith_Init()
 		}
 
 		// Load water normal texture
-		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT);
+		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT);
 
 		Flux_MemoryManager::EndFrame(false);
 	}

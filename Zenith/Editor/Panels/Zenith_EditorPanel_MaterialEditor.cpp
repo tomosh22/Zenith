@@ -119,7 +119,7 @@ void Zenith_EditorPanelMaterialEditor::RenderToolbarSection()
 	// Create New Material button
 	if (ImGui::Button("Create New Material"))
 	{
-		Zenith_MaterialAsset* pNewMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pNewMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		if (pNewMaterial)
 		{
 			Zenith_Editor::SelectMaterial(pNewMaterial);
@@ -138,7 +138,7 @@ void Zenith_EditorPanelMaterialEditor::RenderToolbarSection()
 			ZENITH_MATERIAL_EXT);
 		if (!strFilePath.empty())
 		{
-			Zenith_MaterialAsset* pMaterial = Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(strFilePath);
+			Zenith_MaterialAsset* pMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(strFilePath);
 			if (pMaterial)
 			{
 				Zenith_Editor::SelectMaterial(pMaterial);

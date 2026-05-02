@@ -147,7 +147,7 @@ static void InitializeMarbleResources()
 	using namespace Marble;
 
 	// Create sphere geometry (custom radius - tracked through registry)
-	g_pxSphereAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	g_pxSphereAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
 	Flux_MeshGeometry* pxSphereGeom = new Flux_MeshGeometry();
 	GenerateUVSphere(*pxSphereGeom, 0.5f, 16, 12);
 	g_pxSphereAsset->SetGeometry(pxSphereGeom);
@@ -161,28 +161,27 @@ static void InitializeMarbleResources()
 	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
 
 	// Create materials with grid texture and BaseColor
-	auto& xRegistry = Zenith_AssetRegistry::Get();
-	g_xBallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xBallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xBallMaterial.GetDirect()->SetName("MarbleBall");
 	g_xBallMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 	g_xBallMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
 
-	g_xPlatformMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xPlatformMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xPlatformMaterial.GetDirect()->SetName("MarblePlatform");
 	g_xPlatformMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 	g_xPlatformMaterial.GetDirect()->SetBaseColor({ 102.f/255.f, 102.f/255.f, 102.f/255.f, 1.f });
 
-	g_xGoalMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xGoalMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xGoalMaterial.GetDirect()->SetName("MarbleGoal");
 	g_xGoalMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 	g_xGoalMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	g_xCollectibleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xCollectibleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xCollectibleMaterial.GetDirect()->SetName("MarbleCollectible");
 	g_xCollectibleMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 	g_xCollectibleMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 215.f/255.f, 0.f/255.f, 1.f });
 
-	g_xFloorMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xFloorMaterial.GetDirect()->SetName("MarbleFloor");
 	g_xFloorMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 	g_xFloorMaterial.GetDirect()->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });

@@ -20,7 +20,7 @@ class Zenith_SkeletonAsset;
  *
  * Usage:
  *   // Load from file
- *   Zenith_MeshAsset* pMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>("Assets/mesh.zmesh");
+ *   Zenith_MeshAsset* pMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>("Assets/mesh.zmesh");
  *
  *   // Get GPU buffers for rendering (uploads if needed)
  *   pMesh->EnsureGPUBuffers();

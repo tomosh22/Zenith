@@ -18,12 +18,12 @@
  *
  * Usage:
  *   // In Sokoban_Behaviour::OnAwake():
- *   m_pxConfig = Zenith_AssetRegistry::Get().Get<Sokoban_Config>("game:Config/SokobanConfig.zdata");
+ *   m_pxConfig = Zenith_AssetRegistry::Get<Sokoban_Config>("game:Config/SokobanConfig.zdata");
  *
  *   // Or create programmatically:
- *   Sokoban_Config* pxConfig = Zenith_AssetRegistry::Get().Create<Sokoban_Config>();
+ *   Sokoban_Config* pxConfig = Zenith_AssetRegistry::Create<Sokoban_Config>();
  *   pxConfig->m_uMinGridSize = 10;
- *   Zenith_AssetRegistry::Get().Save(pxConfig, "game:Config/HardMode.zdata");
+ *   Zenith_AssetRegistry::Save(pxConfig, "game:Config/HardMode.zdata");
  */
 class Sokoban_Config : public Zenith_Asset
 {

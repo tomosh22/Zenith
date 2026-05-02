@@ -19,7 +19,7 @@
  *
  * Usage:
  *   // Load from registry
- *   Zenith_SkeletonAsset* pSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>("Assets/skeleton.zskel");
+ *   Zenith_SkeletonAsset* pSkel = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>("Assets/skeleton.zskel");
  *
  * Note: Per-entity animation state (current pose, skinning matrices, GPU buffer) is stored
  * in Flux_SkeletonInstance, not in this asset class. This asset contains only the shared

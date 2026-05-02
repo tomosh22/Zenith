@@ -114,7 +114,7 @@ static std::string ExtractBehaviourTypeNameFromAssetPath(const char* szAssetPath
 // or stale asset pointing at a now-different C++ class). See P2.3 in the rework review.
 static Zenith_ScriptBehaviour* CreateBehaviourFromAssetPath(const char* szAssetPath, Zenith_Entity& xEntity)
 {
-	Zenith_ScriptAsset* pxAsset = Zenith_AssetRegistry::Get().Get<Zenith_ScriptAsset>(szAssetPath);
+	Zenith_ScriptAsset* pxAsset = Zenith_AssetRegistry::Get<Zenith_ScriptAsset>(szAssetPath);
 	if (pxAsset)
 	{
 		// Asset loaded - trust its declared behaviour. If the C++ behaviour is
@@ -542,7 +542,7 @@ void Zenith_ScriptComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 		if (!strPath.empty())
 		{
-			pxAsset = Zenith_AssetRegistry::Get().Get<Zenith_ScriptAsset>(strPath);
+			pxAsset = Zenith_AssetRegistry::Get<Zenith_ScriptAsset>(strPath);
 			if (pxAsset && pxAsset->IsRegistered())
 			{
 				pxBehaviour = pxAsset->CreateInstance(m_xParentEntity);

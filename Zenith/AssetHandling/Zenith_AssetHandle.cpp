@@ -31,7 +31,7 @@ Zenith_TextureAsset* Zenith_AssetHandle<Zenith_TextureAsset>::Get() const
 	}
 
 	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_strPath);
+	m_pxCached = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_strPath);
 	if (m_pxCached)
 	{
 		m_pxCached->AddRef();
@@ -85,7 +85,7 @@ Zenith_MaterialAsset* Zenith_AssetHandle<Zenith_MaterialAsset>::Get() const
 	}
 
 	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(m_strPath);
+	m_pxCached = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(m_strPath);
 	if (m_pxCached)
 	{
 		m_pxCached->AddRef();
@@ -109,7 +109,7 @@ Zenith_MeshAsset* Zenith_AssetHandle<Zenith_MeshAsset>::Get() const
 	}
 
 	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(m_strPath);
+	m_pxCached = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(m_strPath);
 	if (m_pxCached)
 	{
 		m_pxCached->AddRef();
@@ -133,7 +133,7 @@ Zenith_SkeletonAsset* Zenith_AssetHandle<Zenith_SkeletonAsset>::Get() const
 	}
 
 	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(m_strPath);
+	m_pxCached = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(m_strPath);
 	if (m_pxCached)
 	{
 		m_pxCached->AddRef();
@@ -157,7 +157,7 @@ Zenith_ModelAsset* Zenith_AssetHandle<Zenith_ModelAsset>::Get() const
 	}
 
 	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_ModelAsset>(m_strPath);
+	m_pxCached = Zenith_AssetRegistry::Get<Zenith_ModelAsset>(m_strPath);
 	if (m_pxCached)
 	{
 		m_pxCached->AddRef();
@@ -258,7 +258,7 @@ Zenith_Prefab* Zenith_AssetHandle<Zenith_Prefab>::Get() const
 	}
 
 	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(m_strPath);
+	m_pxCached = Zenith_AssetRegistry::Get<Zenith_Prefab>(m_strPath);
 	if (m_pxCached)
 	{
 		m_pxCached->AddRef();
@@ -304,7 +304,7 @@ Zenith_AnimationAsset* Zenith_AssetHandle<Zenith_AnimationAsset>::Get() const
 	}
 
 	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(m_strPath);
+	m_pxCached = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>(m_strPath);
 	if (m_pxCached)
 	{
 		m_pxCached->AddRef();
@@ -350,7 +350,7 @@ Zenith_MeshGeometryAsset* Zenith_AssetHandle<Zenith_MeshGeometryAsset>::Get() co
 	}
 
 	// Load from registry
-	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_MeshGeometryAsset>(m_strPath);
+	m_pxCached = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(m_strPath);
 	if (m_pxCached)
 	{
 		m_pxCached->AddRef();

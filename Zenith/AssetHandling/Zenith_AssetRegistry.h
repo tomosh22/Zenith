@@ -69,25 +69,18 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath);
  *   Zenith_AssetRegistry::SetEngineAssetsDir(ENGINE_ASSETS_DIR);
  *   Zenith_AssetRegistry::Initialize();
  *
- *   // Get singleton
- *   auto& reg = Zenith_AssetRegistry::Get();
- *
  *   // Load asset from file (using prefixed path)
- *   Zenith_TextureAsset* pTex = reg.Get<Zenith_TextureAsset>("game:Textures/diffuse.ztex");
+ *   Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("game:Textures/diffuse.ztex");
  *
  *   // Create procedural asset
- *   Zenith_MeshAsset* pMesh = reg.Create<Zenith_MeshAsset>();
+ *   Zenith_MeshAsset* pMesh = Zenith_AssetRegistry::Create<Zenith_MeshAsset>();
  *
  *   // Cleanup
- *   reg.UnloadUnused();  // Free assets with ref count 0
+ *   Zenith_AssetRegistry::UnloadUnused();  // Free assets with ref count 0
  */
 class Zenith_AssetRegistry
 {
 public:
-	/**
-	 * Get the singleton instance
-	 */
-	static Zenith_AssetRegistry& Get();
 
 	//--------------------------------------------------------------------------
 	// Path Resolution
@@ -153,18 +146,18 @@ public:
 
 	/**
 	 * Get an asset by path, loading if necessary
-	 * @param strPath Path to the asset file
+	 * @param strPath Path to the asset file (e.g., "game:Textures/diffuse.ztxtr")
 	 * @return Pointer to the asset, or nullptr on failure
 	 */
 	template<typename T>
-	T* Get(const std::string& strPath);
+	static T* Get(const std::string& strPath);
 
 	/**
 	 * Create a new procedural asset
 	 * @return Pointer to the new asset with a generated path
 	 */
 	template<typename T>
-	T* Create();
+	static T* Create();
 
 	/**
 	 * Create a new procedural asset with a specific path
@@ -173,14 +166,17 @@ public:
 	 * @return Pointer to the new asset
 	 */
 	template<typename T>
-	T* Create(const std::string& strPath);
+	static T* Create(const std::string& strPath);
 
 	/**
 	 * Check if an asset is loaded
 	 * @param strPath Path to check
 	 * @return true if asset is currently loaded
 	 */
-	bool IsLoaded(const std::string& strPath) const;
+	static bool IsLoaded(const std::string& strPath)
+	{
+		return s_pxInstance->IsLoadedInternal(strPath);
+	}
 
 	//--------------------------------------------------------------------------
 	// Asset Unloading
@@ -191,18 +187,27 @@ public:
 	 * WARNING: This will delete the asset even if ref count > 0
 	 * @param strPath Path of asset to unload
 	 */
-	void Unload(const std::string& strPath);
+	static void Unload(const std::string& strPath)
+	{
+		s_pxInstance->UnloadInternal(strPath);
+	}
 
 	/**
 	 * Unload all assets with ref count 0
 	 * Call this periodically (e.g., during scene transitions) to free unused assets
 	 */
-	void UnloadUnused();
+	static void UnloadUnused()
+	{
+		s_pxInstance->UnloadUnusedInternal();
+	}
 
 	/**
 	 * Unload all assets (call at shutdown)
 	 */
-	void UnloadAll();
+	static void UnloadAll()
+	{
+		s_pxInstance->UnloadAllInternal();
+	}
 
 	//--------------------------------------------------------------------------
 	// Serializable Asset Support (.zdata files)
@@ -259,14 +264,20 @@ public:
 	 * @param strPath Path to save to (prefixed or absolute)
 	 * @return true on success
 	 */
-	bool Save(Zenith_Asset* pxAsset, const std::string& strPath);
+	static bool Save(Zenith_Asset* pxAsset, const std::string& strPath)
+	{
+		return s_pxInstance->SaveInternal(pxAsset, strPath);
+	}
 
 	/**
 	 * Save a serializable asset to its current path
 	 * @param pxAsset Asset to save (must have a non-procedural path set)
 	 * @return true on success
 	 */
-	bool Save(Zenith_Asset* pxAsset);
+	static bool Save(Zenith_Asset* pxAsset)
+	{
+		return s_pxInstance->SaveInternal(pxAsset);
+	}
 
 	//--------------------------------------------------------------------------
 	// Diagnostics
@@ -275,17 +286,26 @@ public:
 	/**
 	 * Get number of loaded assets
 	 */
-	uint32_t GetLoadedAssetCount() const;
+	static uint32_t GetLoadedAssetCount()
+	{
+		return s_pxInstance->GetLoadedAssetCountInternal();
+	}
 
 	/**
 	 * Enable/disable lifecycle logging
 	 */
-	void EnableLifecycleLogging(bool bEnable) { m_bLifecycleLogging = bEnable; }
+	static void EnableLifecycleLogging(bool bEnable)
+	{
+		s_pxInstance->m_bLifecycleLogging = bEnable;
+	}
 
 	/**
 	 * Log all loaded assets (for debugging memory leaks)
 	 */
-	void LogLoadedAssets() const;
+	static void LogLoadedAssets()
+	{
+		s_pxInstance->LogLoadedAssetsInternal();
+	}
 
 private:
 	Zenith_AssetRegistry() = default;
@@ -302,10 +322,18 @@ private:
 	using AssetLoaderFn = std::function<Zenith_Asset*(const std::string&)>;
 	void RegisterLoader(Zenith_TypeIndex xType, AssetLoaderFn pfnLoader);
 
-	// Internal getter for non-template code
+	// Internal implementations (called via static public wrappers)
 	Zenith_Asset* GetInternal(Zenith_TypeIndex xType, const std::string& strPath);
 	Zenith_Asset* CreateInternal(Zenith_TypeIndex xType);
 	Zenith_Asset* CreateInternal(Zenith_TypeIndex xType, const std::string& strPath);
+	bool IsLoadedInternal(const std::string& strPath) const;
+	void UnloadInternal(const std::string& strPath);
+	void UnloadUnusedInternal();
+	void UnloadAllInternal();
+	uint32_t GetLoadedAssetCountInternal() const;
+	void LogLoadedAssetsInternal() const;
+	bool SaveInternal(Zenith_Asset* pxAsset, const std::string& strPath);
+	bool SaveInternal(Zenith_Asset* pxAsset);
 
 	// Generate a unique path for procedural assets
 	std::string GenerateProceduralPath(const std::string& strPrefix);
@@ -349,17 +377,17 @@ private:
 template<typename T>
 T* Zenith_AssetRegistry::Get(const std::string& strPath)
 {
-	return static_cast<T*>(GetInternal(Zenith_TypeIndex::Of<T>(), strPath));
+	return static_cast<T*>(s_pxInstance->GetInternal(Zenith_TypeIndex::Of<T>(), strPath));
 }
 
 template<typename T>
 T* Zenith_AssetRegistry::Create()
 {
-	return static_cast<T*>(CreateInternal(Zenith_TypeIndex::Of<T>()));
+	return static_cast<T*>(s_pxInstance->CreateInternal(Zenith_TypeIndex::Of<T>()));
 }
 
 template<typename T>
 T* Zenith_AssetRegistry::Create(const std::string& strPath)
 {
-	return static_cast<T*>(CreateInternal(Zenith_TypeIndex::Of<T>(), strPath));
+	return static_cast<T*>(s_pxInstance->CreateInternal(Zenith_TypeIndex::Of<T>(), strPath));
 }

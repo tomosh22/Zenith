@@ -860,11 +860,10 @@ private:
 
 	void CreateMaterials()
 	{
-		auto& xRegistry = Zenith_AssetRegistry::Get();
 		Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
 
 		// Ball - cat-themed orange, metallic chrome
-		m_xBallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+		m_xBallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		m_xBallMaterial.GetDirect()->SetName("PinballBall");
 		m_xBallMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xBallMaterial.GetDirect()->SetBaseColor({ 0.95f, 0.6f, 0.2f, 1.f });
@@ -874,7 +873,7 @@ private:
 		m_xBallMaterial.GetDirect()->SetEmissiveIntensity(0.8f);
 
 		// Walls - dark steel blue with PBR textures
-		m_xWallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+		m_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		m_xWallMaterial.GetDirect()->SetName("PinballWall");
 		m_xWallMaterial.GetDirect()->SetBaseColor({ 0.15f, 0.18f, 0.3f, 1.f });
 		if (TilePuzzle::g_pxPinballWallDiffuseTex)
@@ -885,7 +884,7 @@ private:
 			m_xWallMaterial.GetDirect()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballWallRMTex);
 
 		// Wall trim - neon blue emissive for boundary walls
-		m_xWallTrimMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+		m_xWallTrimMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		m_xWallTrimMaterial.GetDirect()->SetName("PinballWallTrim");
 		m_xWallTrimMaterial.GetDirect()->SetBaseColor({ 0.1f, 0.15f, 0.4f, 1.f });
 		if (TilePuzzle::g_pxPinballWallDiffuseTex)
@@ -896,7 +895,7 @@ private:
 			m_xWallTrimMaterial.GetDirect()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballWallRMTex);
 
 		// Pegs - warm paw-themed with PBR bumper textures
-		m_xObstacleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+		m_xObstacleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		m_xObstacleMaterial.GetDirect()->SetName("PinballObstacle");
 		m_xObstacleMaterial.GetDirect()->SetBaseColor({ 0.55f, 0.35f, 0.3f, 1.f });
 		if (TilePuzzle::g_pxPinballBumperDiffuseTex)
@@ -907,7 +906,7 @@ private:
 			m_xObstacleMaterial.GetDirect()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballBumperRMTex);
 
 		// Plunger - red with chrome shaft texture
-		m_xPlungerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+		m_xPlungerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		m_xPlungerMaterial.GetDirect()->SetName("PinballPlunger");
 		m_xPlungerMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xPlungerMaterial.GetDirect()->SetBaseColor({ 0.8f, 0.15f, 0.15f, 1.f });
@@ -917,7 +916,7 @@ private:
 			m_xPlungerMaterial.GetDirect()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballPlungerRMTex);
 
 		// Target - bright green with chevron texture
-		m_xTargetMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+		m_xTargetMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		m_xTargetMaterial.GetDirect()->SetName("PinballTarget");
 		m_xTargetMaterial.GetDirect()->SetBaseColor({ 0.1f, 0.8f, 0.2f, 1.f });
 		m_xTargetMaterial.GetDirect()->SetEmissiveColor(Zenith_Maths::Vector3(0.1f, 0.8f, 0.2f));
@@ -928,7 +927,7 @@ private:
 			m_xTargetMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 
 		// Floor - dark wood playfield with PBR textures
-		m_xFloorMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+		m_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		m_xFloorMaterial.GetDirect()->SetName("PinballFloor");
 		m_xFloorMaterial.GetDirect()->SetBaseColor({ 1.f, 1.f, 1.f, 1.f });
 		m_xFloorMaterial.GetDirect()->SetEmissiveColor(Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f));
@@ -941,7 +940,7 @@ private:
 			m_xFloorMaterial.GetDirect()->SetRoughnessMetallicTextureDirectly(TilePuzzle::g_pxPinballFloorRMTex);
 
 		// Lit peg material - warm glow for hit pegs
-		m_xPegHitMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+		m_xPegHitMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		m_xPegHitMaterial.GetDirect()->SetName("PinballPegHit");
 		m_xPegHitMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xPegHitMaterial.GetDirect()->SetBaseColor({ 0.7f, 0.5f, 0.4f, 1.f });
@@ -951,7 +950,7 @@ private:
 		m_xPegHitMaterial.GetDirect()->SetEmissiveIntensity(2.0f);
 
 		// Flash peg material - bright warm emissive spike for the moment of impact
-		m_xPegFlashMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+		m_xPegFlashMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		m_xPegFlashMaterial.GetDirect()->SetName("PinballPegFlash");
 		m_xPegFlashMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xPegFlashMaterial.GetDirect()->SetBaseColor({ 1.0f, 0.8f, 0.5f, 1.f });

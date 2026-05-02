@@ -23,7 +23,7 @@ Inherits from `Zenith_Asset`, managed by `Zenith_AssetRegistry` via `PrefabHandl
 
 **Persistence:**
 - `SaveToFile(strPath)` - Saves to `.zprfb` binary file
-- Loading via `Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(path)`
+- Loading via `Zenith_AssetRegistry::Get<Zenith_Prefab>(path)`
 
 ### Variant System
 - Variants store a `PrefabHandle` to their base prefab plus a list of `Zenith_PropertyOverride`

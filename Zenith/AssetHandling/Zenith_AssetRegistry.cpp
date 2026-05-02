@@ -180,12 +180,6 @@ Zenith_Mutex_NoProfiling& Zenith_AssetRegistry::GetSerializableTypeRegistryMutex
 	return s_xMutex;
 }
 
-Zenith_AssetRegistry& Zenith_AssetRegistry::Get()
-{
-	Zenith_Assert(s_pxInstance != nullptr, "Zenith_AssetRegistry not initialized! Call Initialize() first.");
-	return *s_pxInstance;
-}
-
 void Zenith_AssetRegistry::SetGameAssetsDir(const std::string& strPath)
 {
 	s_strGameAssetsDir = strPath;
@@ -372,13 +366,13 @@ void Zenith_AssetRegistry::Shutdown()
 	}
 }
 
-bool Zenith_AssetRegistry::IsLoaded(const std::string& strPath) const
+bool Zenith_AssetRegistry::IsLoadedInternal(const std::string& strPath) const
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 	return m_xAssetsByPath.find(strPath) != m_xAssetsByPath.end();
 }
 
-void Zenith_AssetRegistry::Unload(const std::string& strPath)
+void Zenith_AssetRegistry::UnloadInternal(const std::string& strPath)
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
@@ -397,7 +391,7 @@ void Zenith_AssetRegistry::Unload(const std::string& strPath)
 	}
 }
 
-void Zenith_AssetRegistry::UnloadUnused()
+void Zenith_AssetRegistry::UnloadUnusedInternal()
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
@@ -429,7 +423,7 @@ void Zenith_AssetRegistry::UnloadUnused()
 	}
 }
 
-void Zenith_AssetRegistry::UnloadAll()
+void Zenith_AssetRegistry::UnloadAllInternal()
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
@@ -452,13 +446,13 @@ void Zenith_AssetRegistry::UnloadAll()
 	m_xAssetsByPath.clear();
 }
 
-uint32_t Zenith_AssetRegistry::GetLoadedAssetCount() const
+uint32_t Zenith_AssetRegistry::GetLoadedAssetCountInternal() const
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 	return static_cast<uint32_t>(m_xAssetsByPath.size());
 }
 
-void Zenith_AssetRegistry::LogLoadedAssets() const
+void Zenith_AssetRegistry::LogLoadedAssetsInternal() const
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
@@ -613,7 +607,7 @@ bool Zenith_AssetRegistry::IsSerializableTypeRegistered(const char* szTypeName)
 	return GetSerializableTypeRegistry().find(szTypeName) != GetSerializableTypeRegistry().end();
 }
 
-bool Zenith_AssetRegistry::Save(Zenith_Asset* pxAsset, const std::string& strPath)
+bool Zenith_AssetRegistry::SaveInternal(Zenith_Asset* pxAsset, const std::string& strPath)
 {
 	if (!pxAsset)
 	{
@@ -685,7 +679,7 @@ bool Zenith_AssetRegistry::Save(Zenith_Asset* pxAsset, const std::string& strPat
 	return true;
 }
 
-bool Zenith_AssetRegistry::Save(Zenith_Asset* pxAsset)
+bool Zenith_AssetRegistry::SaveInternal(Zenith_Asset* pxAsset)
 {
 	if (!pxAsset)
 	{

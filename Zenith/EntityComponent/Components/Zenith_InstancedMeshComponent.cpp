@@ -117,7 +117,7 @@ void Zenith_InstancedMeshComponent::SetMaterial(Zenith_MaterialAsset* pxMaterial
 void Zenith_InstancedMeshComponent::LoadMaterial(const std::string& strPath)
 {
 	m_xMaterial.SetPath(strPath);  // Store path for serialization
-	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(strPath);
+	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(strPath);
 	if (pxMaterial == nullptr)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "[InstancedMeshComponent] Failed to load material: %s", strPath.c_str());
@@ -167,7 +167,7 @@ void Zenith_InstancedMeshComponent::LoadMesh(const std::string& strPath)
 
 	// Load mesh asset via handle (handles ref counting automatically)
 	m_xMeshAsset.SetPath(strPath);
-	Zenith_MeshAsset* pxMeshAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strPath);
+	Zenith_MeshAsset* pxMeshAsset = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strPath);
 	if (pxMeshAsset == nullptr)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "[InstancedMeshComponent] Failed to load mesh asset: %s", strPath.c_str());
@@ -522,7 +522,7 @@ void Zenith_InstancedMeshComponent::ReadFromDataStream(Zenith_DataStream& xStrea
 		if (bHasProceduralMaterial && strMaterialPath.empty())
 		{
 			// Create a new procedural material and deserialize its data
-			Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+			Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 			if (pxMaterial)
 			{
 				pxMaterial->ReadFromDataStream(xStream);

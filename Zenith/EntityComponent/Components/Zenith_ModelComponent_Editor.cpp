@@ -42,7 +42,7 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 	using namespace Zenith_Editor_MaterialUI;
 
 	// Validate texture can be loaded via registry
-	Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(szFilePath);
+	Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(szFilePath);
 	if (!pxTexture)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "Failed to load texture: %s", szFilePath);
@@ -53,7 +53,7 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 
 	Zenith_MaterialAsset* pxOldMaterial = m_pxModelInstance ? m_pxModelInstance->GetMaterial(uMeshIdx) : nullptr;
 
-	Zenith_MaterialAsset* pxNewMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxNewMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	if (!pxNewMaterial)
 	{
 		Zenith_Error(LOG_CATEGORY_MATERIAL, "Failed to create new material instance");

@@ -16,7 +16,7 @@ namespace
 		if (xHandle.GetDirect() != nullptr) return xHandle.GetDirect();
 		if (xHandle.IsSet())
 		{
-			return Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(xHandle.GetPath());
+			return Zenith_AssetRegistry::Get<Zenith_Prefab>(xHandle.GetPath());
 		}
 		return nullptr;
 	}
@@ -28,9 +28,9 @@ namespace
 	Zenith_Prefab* TryGetLoadedPrefab(const PrefabHandle& xHandle)
 	{
 		if (xHandle.GetDirect() != nullptr) return xHandle.GetDirect();
-		if (xHandle.IsSet() && Zenith_AssetRegistry::Get().IsLoaded(xHandle.GetPath()))
+		if (xHandle.IsSet() && Zenith_AssetRegistry::IsLoaded(xHandle.GetPath()))
 		{
-			return Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(xHandle.GetPath());
+			return Zenith_AssetRegistry::Get<Zenith_Prefab>(xHandle.GetPath());
 		}
 		return nullptr;
 	}

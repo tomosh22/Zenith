@@ -68,13 +68,13 @@ namespace
 	{
 		if (szPath == nullptr || szPath[0] == '\0') return nullptr;
 		// IsLoaded gate: avoid triggering a registry load that asserts on missing files.
-		if (Zenith_AssetRegistry::Get().IsLoaded(szPath))
+		if (Zenith_AssetRegistry::IsLoaded(szPath))
 		{
-			return Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(szPath);
+			return Zenith_AssetRegistry::Get<Zenith_Prefab>(szPath);
 		}
 		// Path may be valid but unloaded; attempt the load. Worst case the
 		// registry will warn or fail silently — the user retries.
-		return Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(szPath);
+		return Zenith_AssetRegistry::Get<Zenith_Prefab>(szPath);
 	}
 
 	void RenderHeaderHelp()

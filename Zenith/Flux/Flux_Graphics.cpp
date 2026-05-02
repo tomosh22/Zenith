@@ -78,7 +78,7 @@ void Flux_Graphics::Initialise()
 	u_int8 aucWhiteBlankTexData[] = { 255,255,255,255 };
 
 	// Create white texture
-	s_pxWhiteTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	s_pxWhiteTexture = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 	if (s_pxWhiteTexture)
 	{
 		s_pxWhiteTexture->CreateFromData(aucWhiteBlankTexData, xTexInfo, false);
@@ -87,7 +87,7 @@ void Flux_Graphics::Initialise()
 	u_int8 aucBlackBlankTexData[] = { 0,0,0,0 };
 
 	// Create black texture
-	s_pxBlackTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	s_pxBlackTexture = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 	if (s_pxBlackTexture)
 	{
 		s_pxBlackTexture->CreateFromData(aucBlackBlankTexData, xTexInfo, false);
@@ -127,14 +127,14 @@ void Flux_Graphics::Initialise()
 	}
 
 	// Create grid texture
-	s_pxGridTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	s_pxGridTexture = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 	if (s_pxGridTexture)
 	{
 		s_pxGridTexture->CreateFromData(aucGridTexData, xGridTexInfo, false);
 	}
 
 	// Create blank material for use as fallback throughout the engine
-	s_pxBlankMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+	s_pxBlankMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	if (s_pxBlankMaterial)
 	{
 		s_pxBlankMaterial->SetName("BlankMaterial");

@@ -250,7 +250,7 @@ Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithCo
 	// Wrap in asset for registry tracking
 	if (pxResult)
 	{
-		Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+		Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
 		pxAsset->SetGeometry(pxResult);
 		return pxAsset;
 	}

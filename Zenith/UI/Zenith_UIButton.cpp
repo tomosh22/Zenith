@@ -78,7 +78,7 @@ void Zenith_UIButton::SetIconTexturePath(const std::string& strPath)
 	m_xIconTexture.SetPath(strPath);
 	if (m_xIconTexture.IsSet())
 	{
-		Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xIconTexture.GetPath()); // trigger load
+		Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xIconTexture.GetPath()); // trigger load
 	}
 }
 
@@ -259,7 +259,7 @@ Zenith_UIButton::ButtonIconLayout Zenith_UIButton::CalculateIconTextPositions(co
 
 	if (m_xIconTexture.IsSet() && m_xIconSize.x > 0.f && m_xIconSize.y > 0.f)
 	{
-		Zenith_TextureAsset* pxIconTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xIconTexture.GetPath());
+		Zenith_TextureAsset* pxIconTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xIconTexture.GetPath());
 		if (pxIconTex && pxIconTex->IsValid() && pxIconTex->m_xSRV.m_xImageViewHandle.IsValid())
 		{
 			xLayout.bHasIcon = true;
@@ -347,7 +347,7 @@ void Zenith_UIButton::Render(Zenith_UICanvas& xCanvas)
 	if (xLayout.bHasIcon)
 	{
 		Zenith_TextureAsset* pxIconTex = !m_xIconTexture.GetPath().empty()
-			? Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xIconTexture.GetPath())
+			? Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xIconTexture.GetPath())
 			: m_xIconTexture.GetDirect();
 		const uint32_t uIconTextureID = (pxIconTex && pxIconTex->IsValid())
 			? pxIconTex->m_xSRV.m_xImageViewHandle.AsUInt()

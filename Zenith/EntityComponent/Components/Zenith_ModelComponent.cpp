@@ -151,7 +151,7 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	ClearModel();
 
 	// Load model asset via registry
-	Zenith_ModelAsset* pxAsset = Zenith_AssetRegistry::Get().Get<Zenith_ModelAsset>(strLocalPath);
+	Zenith_ModelAsset* pxAsset = Zenith_AssetRegistry::Get<Zenith_ModelAsset>(strLocalPath);
 	if (!pxAsset)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "Failed to load model asset from: %s", strLocalPath.c_str());
@@ -318,7 +318,7 @@ void Zenith_ModelComponent::ReadModelInstanceWithMaterials(Zenith_DataStream& xS
 
 	for (uint32_t u = 0; u < uNumMaterials; u++)
 	{
-		Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		if (!pxMaterial)
 			continue;
 

@@ -42,7 +42,7 @@ class Zenith_DataStream;
  *   Zenith_TextureAsset* pTexture = m_xDiffuseTexture.GetDirect();
  *
  *   // Equivalent to Resolve(), but explicit about the registry call:
- *   Zenith_TextureAsset* pTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xDiffuseTexture.GetPath());
+ *   Zenith_TextureAsset* pTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xDiffuseTexture.GetPath());
  *
  *   // Check if valid
  *   if (m_xMesh) { ... }
@@ -146,7 +146,7 @@ public:
 	/**
 	 * Get the directly stored pointer (for procedural assets set via Set()).
 	 * Returns nullptr for file-based handles that have not been loaded.
-	 * For file-based assets, use Resolve() (or Zenith_AssetRegistry::Get().Get<T>(GetPath())) instead.
+	 * For file-based assets, use Resolve() (or Zenith_AssetRegistry::Get<T>(GetPath())) instead.
 	 */
 	T* GetDirect() const { return m_pxCached; }
 
@@ -161,7 +161,7 @@ public:
 	 *   or if the registry load fails.
 	 *
 	 * This is the default accessor for game/component code. Prefer it over the
-	 * two-step `Zenith_AssetRegistry::Get().Get<T>(handle.GetPath())` pattern.
+	 * two-step `Zenith_AssetRegistry::Get<T>(handle.GetPath())` pattern.
 	 */
 	T* Resolve() const { return Get(); }
 

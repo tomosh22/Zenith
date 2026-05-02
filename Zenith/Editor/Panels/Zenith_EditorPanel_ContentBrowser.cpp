@@ -184,7 +184,7 @@ static Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath)
 	xEntry.m_bLoadAttempted = true;
 
 	xEntry.m_xTexture.SetPath(strPath);
-	Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(strPath);
+	Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(strPath);
 	if (pxTexture && pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
 	{
 		xEntry.m_xImGuiHandle = Flux_ImGuiIntegration::RegisterTexture(
@@ -362,7 +362,7 @@ void Zenith_EditorPanelContentBrowser::HandleEntryDoubleClickOpen(const ContentB
 	if (xEntry.m_strExtension == ZENITH_MATERIAL_EXT)
 	{
 		Zenith_MaterialAsset* pMaterial =
-			Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(xEntry.m_strFullPath);
+			Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(xEntry.m_strFullPath);
 		if (pMaterial)
 		{
 			Zenith_Editor::SelectMaterial(pMaterial);
@@ -543,7 +543,7 @@ void Zenith_EditorPanelContentBrowser::RenderCreateContextMenu(ContentBrowserSta
 			{
 				// Create new material
 				std::string strNewMaterial = GenerateUniqueFilename(xState.m_strCurrentDirectory + "/NewMaterial", ZENITH_MATERIAL_EXT);
-				Zenith_MaterialAsset* pxNewMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+				Zenith_MaterialAsset* pxNewMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 				if (pxNewMat)
 				{
 					pxNewMat->SetName("NewMaterial");

@@ -293,7 +293,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetDiffuseTexture()
 	{
 		return m_pxDirectDiffuse;
 	}
-	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xDiffuseTexture.GetPath());
+	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xDiffuseTexture.GetPath());
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
@@ -303,7 +303,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetNormalTexture()
 	{
 		return m_pxDirectNormal;
 	}
-	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xNormalTexture.GetPath());
+	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xNormalTexture.GetPath());
 	return pTex ? pTex : GetDefaultNormalTexture();
 }
 
@@ -313,7 +313,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetRoughnessMetallicTexture()
 	{
 		return m_pxDirectRoughnessMetallic;
 	}
-	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xRoughnessMetallicTexture.GetPath());
+	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xRoughnessMetallicTexture.GetPath());
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
@@ -323,7 +323,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetOcclusionTexture()
 	{
 		return m_pxDirectOcclusion;
 	}
-	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xOcclusionTexture.GetPath());
+	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xOcclusionTexture.GetPath());
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
@@ -333,7 +333,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetEmissiveTexture()
 	{
 		return m_pxDirectEmissive;
 	}
-	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_xEmissiveTexture.GetPath());
+	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xEmissiveTexture.GetPath());
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
@@ -354,7 +354,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetDefaultNormalTexture()
 void Zenith_MaterialAsset::InitializeDefaults()
 {
 	// Create default white texture (1x1 white pixel)
-	s_pxDefaultWhite = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	s_pxDefaultWhite = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 	{
 		uint32_t uWhite = 0xFFFFFFFF;
 		Flux_SurfaceInfo xInfo;
@@ -367,7 +367,7 @@ void Zenith_MaterialAsset::InitializeDefaults()
 	}
 
 	// Create default normal texture (1x1 flat normal: 0.5, 0.5, 1.0)
-	s_pxDefaultNormal = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	s_pxDefaultNormal = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 	{
 		uint32_t uNormal = 0xFFFF8080; // RGBA: 0.5, 0.5, 1.0, 1.0 in 8-bit (128, 128, 255, 255)
 		Flux_SurfaceInfo xInfo;

@@ -211,7 +211,7 @@ void Zenith_ScriptAsset::SyncRegisteredTypesToDisk()
 
 		// Construct the asset and save it via the registry's standard pipeline
 		Zenith_ScriptAsset xAsset(strTypeName.c_str(), xPair.second);
-		if (!Zenith_AssetRegistry::Get().Save(&xAsset, strAssetPath))
+		if (!Zenith_AssetRegistry::Save(&xAsset, strAssetPath))
 		{
 			Zenith_Log(LOG_CATEGORY_ASSET,
 				"Zenith_ScriptAsset::SyncRegisteredTypesToDisk: Failed to save '%s'",

@@ -17,17 +17,14 @@ The **unified asset management system** for all asset types. This singleton prov
 ### Usage
 
 ```cpp
-// Get singleton
-auto& reg = Zenith_AssetRegistry::Get();
-
 // Load asset from file (returns cached if already loaded)
-Zenith_TextureAsset* pTex = reg.Get<Zenith_TextureAsset>("Assets/tex.ztxtr");
+Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("Assets/tex.ztxtr");
 
 // Create procedural asset (generates unique path like "procedural://texture_0")
-Zenith_TextureAsset* pProc = reg.Create<Zenith_TextureAsset>();
+Zenith_TextureAsset* pProc = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 
 // Cleanup unused assets
-reg.UnloadUnused();  // Free assets with ref count 0
+Zenith_AssetRegistry::UnloadUnused();  // Free assets with ref count 0
 ```
 
 ### Initialization Order
@@ -79,15 +76,15 @@ class Zenith_TextureAsset : public Zenith_Asset
 // Preferred: resolve the handle directly. Lazy-loads on first call and caches.
 Zenith_TextureAsset* pTex = handle.Resolve();
 
-// Equivalent two-step form (still supported, but more verbose):
-Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(handle.GetPath());
+// Equivalent explicit form (still supported, but more verbose):
+Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(handle.GetPath());
 ```
 
 Asset handles (`TextureHandle`, `MaterialHandle`, etc.) store paths and manage ref-counting.
 
 - **`handle.Resolve()`** — default accessor for file-based handles. Returns the cached pointer if loaded; otherwise calls into `Zenith_AssetRegistry`, caches, and returns. Returns `nullptr` if path is empty and no procedural pointer was set, or if the load fails. Use this in game / component code unless you specifically need one of the alternatives below.
-- **`handle.GetDirect()`** — for procedural assets created via `reg.Create<T>()` and stored with `handle.Set(ptr)`. Returns the stored pointer without going through the registry. Returns `nullptr` for file-based handles that have not been loaded yet.
-- **`Zenith_AssetRegistry::Get().Get<T>(handle.GetPath())`** — explicit two-step form. Equivalent to `Resolve()` but verbose; use when you want the registry call to be obvious at the call site.
+- **`handle.GetDirect()`** — for procedural assets created via `Get().Create<T>()` and stored with `handle.Set(ptr)`. Returns the stored pointer without going through the registry. Returns `nullptr` for file-based handles that have not been loaded yet.
+- **`Zenith_AssetRegistry::Get<T>(handle.GetPath())`** — explicit static form. Equivalent to `Resolve()` but verbose; use when you want the registry call to be obvious at the call site.
 
 ## Material Assets (Zenith_MaterialAsset)
 
@@ -97,7 +94,7 @@ Materials store textures and rendering properties.
 
 ```cpp
 // Create via registry
-Zenith_MaterialAsset* pMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+Zenith_MaterialAsset* pMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 
 // Set textures (stores path for serialization)
 pMat->SetDiffuseTexturePath("Assets/diffuse.ztxtr");
@@ -230,7 +227,7 @@ Inherit from `Zenith_Asset`, add `ZENITH_ASSET_TYPE_NAME(ClassName)` macro, impl
 
 ### 2. Use the Asset
 
-Load via `Zenith_AssetRegistry::Get().Get<MyConfig>("game:path.zdata")` (returns cached if loaded), create programmatically via `Create<MyConfig>()`, save with `Save(pxAsset, "game:path.zdata")`.
+Load via `Zenith_AssetRegistry::Get<MyConfig>("game:path.zdata")` (returns cached if loaded), create programmatically via `Create<MyConfig>()`, save with `Save(pxAsset, "game:path.zdata")`.
 
 ### Path Prefixes
 

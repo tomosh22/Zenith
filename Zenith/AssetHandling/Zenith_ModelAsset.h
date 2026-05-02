@@ -27,7 +27,7 @@ class Zenith_MaterialAsset;
  *
  * Usage:
  *   // Load from registry
- *   Zenith_ModelAsset* pModel = Zenith_AssetRegistry::Get().Get<Zenith_ModelAsset>("Assets/model.zmodel");
+ *   Zenith_ModelAsset* pModel = Zenith_AssetRegistry::Get<Zenith_ModelAsset>("Assets/model.zmodel");
  *
  */
 class Zenith_ModelAsset : public Zenith_Asset

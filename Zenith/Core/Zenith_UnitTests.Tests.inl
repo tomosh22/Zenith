@@ -3649,7 +3649,7 @@ void Zenith_UnitTests::TestMeshAssetLoading(){
 	// Test loading a mesh asset
 	{
 		const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0.zmesh";
-		Zenith_MeshAsset* pxMeshAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshPath);
+		Zenith_MeshAsset* pxMeshAsset = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshPath);
 
 		if (pxMeshAsset == nullptr)
 		{
@@ -3686,8 +3686,8 @@ void Zenith_UnitTests::TestBindPoseVertexPositions(){
 	const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0.zmesh";
 	const std::string strSkelPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain.zskel";
 
-	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshPath);
-	Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
+	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshPath);
+	Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(strSkelPath);
 
 	if (pxMesh == nullptr || pxSkel == nullptr)
 	{
@@ -3757,9 +3757,9 @@ void Zenith_UnitTests::TestAnimatedVertexPositions(){
 	const std::string strSkelPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain.zskel";
 	const std::string strAnimPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_ForearmRotate.zanim";
 
-	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshPath);
-	Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
-	Zenith_AnimationAsset* pxAnimAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strAnimPath);
+	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshPath);
+	Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(strSkelPath);
+	Zenith_AnimationAsset* pxAnimAsset = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>(strAnimPath);
 	Flux_AnimationClip* pxClip = pxAnimAsset ? pxAnimAsset->GetClip() : nullptr;
 
 	if (pxMesh == nullptr || pxSkel == nullptr)
@@ -4899,13 +4899,13 @@ void Zenith_UnitTests::TestStickFigureAssetExport(){
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(strRunPath), "Run animation file should exist");
 
 	// Reload and verify skeleton
-	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
+	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(strSkelPath);
 	ZENITH_ASSERT_NOT_NULL(pxReloadedSkel, "Should be able to reload skeleton");
 	ZENITH_ASSERT_EQ(pxReloadedSkel->GetNumBones(), uExpectedBoneCount, "Reloaded skeleton should have 16 bones");
 	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("LeftUpperArm"), "Reloaded skeleton should have LeftUpperArm bone");
 
 	// Reload and verify mesh asset format
-	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshAssetPath);
+	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshAssetPath);
 	ZENITH_ASSERT_NOT_NULL(pxReloadedMesh, "Should be able to reload mesh asset");
 	ZENITH_ASSERT_EQ(pxReloadedMesh->GetNumVerts(), uExpectedVertCount, "Reloaded mesh vertex count mismatch");
 	ZENITH_ASSERT_EQ(pxReloadedMesh->GetNumIndices(), uExpectedIndexCount, "Reloaded mesh index count mismatch");
@@ -4920,16 +4920,16 @@ void Zenith_UnitTests::TestStickFigureAssetExport(){
 #endif
 
 	// Reload and verify animations
-	Zenith_AnimationAsset* pxReloadedIdleAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strIdlePath);
+	Zenith_AnimationAsset* pxReloadedIdleAsset = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>(strIdlePath);
 	ZENITH_ASSERT_TRUE(pxReloadedIdleAsset != nullptr && pxReloadedIdleAsset->GetClip() != nullptr, "Should be able to reload idle animation");
 	ZENITH_ASSERT_EQ(pxReloadedIdleAsset->GetClip()->GetName(), "Idle", "Reloaded idle animation name mismatch");
 	ZENITH_ASSERT_TRUE(FloatEquals(pxReloadedIdleAsset->GetClip()->GetDuration(), 2.0f, 0.01f), "Reloaded idle duration mismatch");
 
-	Zenith_AnimationAsset* pxReloadedWalkAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strWalkPath);
+	Zenith_AnimationAsset* pxReloadedWalkAsset = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>(strWalkPath);
 	ZENITH_ASSERT_TRUE(pxReloadedWalkAsset != nullptr && pxReloadedWalkAsset->GetClip() != nullptr, "Should be able to reload walk animation");
 	ZENITH_ASSERT_EQ(pxReloadedWalkAsset->GetClip()->GetName(), "Walk", "Reloaded walk animation name mismatch");
 
-	Zenith_AnimationAsset* pxReloadedRunAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strRunPath);
+	Zenith_AnimationAsset* pxReloadedRunAsset = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>(strRunPath);
 	ZENITH_ASSERT_TRUE(pxReloadedRunAsset != nullptr && pxReloadedRunAsset->GetClip() != nullptr, "Should be able to reload run animation");
 	ZENITH_ASSERT_EQ(pxReloadedRunAsset->GetClip()->GetName(), "Run", "Reloaded run animation name mismatch");
 
@@ -6285,7 +6285,7 @@ void Zenith_UnitTests::TestPrefabSaveLoadRoundTrip(){
 	ZENITH_ASSERT_TRUE(bSaved, "TestPrefabSaveLoadRoundTrip: Save should succeed");
 
 	// Load prefab via registry
-	Zenith_Prefab* pxLoadedPrefab = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strTempPath);
+	Zenith_Prefab* pxLoadedPrefab = Zenith_AssetRegistry::Get<Zenith_Prefab>(strTempPath);
 	ZENITH_ASSERT_NOT_NULL(pxLoadedPrefab, "TestPrefabSaveLoadRoundTrip: Load should succeed");
 	Zenith_Prefab& xLoadedPrefab = *pxLoadedPrefab;
 	ZENITH_ASSERT_TRUE(xLoadedPrefab.IsValid(), "TestPrefabSaveLoadRoundTrip: Loaded prefab should be valid");
@@ -6384,7 +6384,7 @@ void Zenith_UnitTests::TestPrefabVariantInstantiate(){
 
 	// Pull the base back through the asset registry so the variant has a real
 	// PrefabHandle (path -> registry-resolved pointer).
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strBasePath);
 
 	PrefabHandle xBaseHandle(strBasePath);
 	Zenith_Prefab xVariant;
@@ -6425,7 +6425,7 @@ void Zenith_UnitTests::TestPrefabVariantCycleRejected(){
 	xA.CreateFromEntity(xSrc, "CycleA");
 	const std::string strPathA = "test_cycle_a.zpfb";
 	xA.SaveToFile(strPathA);
-	Zenith_Prefab* pxA = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPathA);
+	Zenith_Prefab* pxA = Zenith_AssetRegistry::Get<Zenith_Prefab>(strPathA);
 	ZENITH_ASSERT_NOT_NULL(pxA, "TestPrefabVariantCycleRejected: prefab A should load");
 
 	PrefabHandle xHandleA(strPathA);
@@ -6434,7 +6434,7 @@ void Zenith_UnitTests::TestPrefabVariantCycleRejected(){
 	ZENITH_ASSERT_TRUE(bBOk, "TestPrefabVariantCycleRejected: B-as-variant-of-A should succeed");
 	const std::string strPathB = "test_cycle_b.zpfb";
 	xB.SaveToFile(strPathB);
-	Zenith_Prefab* pxB = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPathB);
+	Zenith_Prefab* pxB = Zenith_AssetRegistry::Get<Zenith_Prefab>(strPathB);
 	ZENITH_ASSERT_NOT_NULL(pxB, "TestPrefabVariantCycleRejected: prefab B should load");
 
 	// Now try to retrofit A as a variant of B. This would produce the cycle
@@ -6467,7 +6467,7 @@ void Zenith_UnitTests::TestPrefabVariantOverrideApplies(){
 	xBaseInMem.CreateFromEntity(xSrc, "OverrideBase");
 	const std::string strBasePath = "test_override_base.zpfb";
 	xBaseInMem.SaveToFile(strBasePath);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strBasePath);
 
 	PrefabHandle xBaseHandle(strBasePath);
 	Zenith_Prefab xVariant;
@@ -6512,7 +6512,7 @@ void Zenith_UnitTests::TestPrefabVariantChain(){
 	xA.CreateFromEntity(xSrc, "ChainA");
 	const std::string strPathA = "test_chain_a.zpfb";
 	xA.SaveToFile(strPathA);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPathA);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strPathA);
 
 	// B: variant of A with Position override
 	PrefabHandle xHandleA(strPathA);
@@ -6527,7 +6527,7 @@ void Zenith_UnitTests::TestPrefabVariantChain(){
 	}
 	const std::string strPathB = "test_chain_b.zpfb";
 	xB.SaveToFile(strPathB);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPathB);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strPathB);
 
 	// C: variant of B with Scale override
 	PrefabHandle xHandleB(strPathB);
@@ -6657,7 +6657,7 @@ void Zenith_UnitTests::TestPrefabApplyVariantToEntity(){
 	xBase.CreateFromEntity(xSrc, "ApplyVariantBase");
 	const std::string strPath = "test_apply_variant_base.zpfb";
 	xBase.SaveToFile(strPath);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strPath);
 
 	PrefabHandle xHandle(strPath);
 	Zenith_Prefab xVariant;
@@ -6757,7 +6757,7 @@ void Zenith_UnitTests::TestPrefabVariantRoundTripWithOverrides(){
 	xBase.CreateFromEntity(xSrc, "RoundTripVariantBase");
 	const std::string strBasePath = "test_rt_variant_base.zpfb";
 	xBase.SaveToFile(strBasePath);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strBasePath);
 
 	// Author variant in memory with two overrides.
 	{
@@ -6784,7 +6784,7 @@ void Zenith_UnitTests::TestPrefabVariantRoundTripWithOverrides(){
 
 	// Reload from disk. The previous in-memory xVariant is gone.
 	const std::string strVariantPath = "test_rt_variant.zpfb";
-	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strVariantPath);
+	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get<Zenith_Prefab>(strVariantPath);
 	ZENITH_ASSERT_NOT_NULL(pxLoaded, "TestPrefabVariantRoundTripWithOverrides: reload should succeed");
 	ZENITH_ASSERT_TRUE(pxLoaded->IsVariant(), "TestPrefabVariantRoundTripWithOverrides: reloaded prefab should be a variant");
 	ZENITH_ASSERT_EQ(pxLoaded->GetOverrides().GetSize(), 2u,
@@ -6821,7 +6821,7 @@ void Zenith_UnitTests::TestPrefabMultipleOverridesSameComponent(){
 	xBase.CreateFromEntity(xSrc, "MultiOvBase");
 	const std::string strPath = "test_multi_override_base.zpfb";
 	xBase.SaveToFile(strPath);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strPath);
 
 	PrefabHandle xHandle(strPath);
 	Zenith_Prefab xVariant;
@@ -6877,7 +6877,7 @@ void Zenith_UnitTests::TestPrefabClearOverridesReverts(){
 	xBase.CreateFromEntity(xSrc, "ClearOvBase");
 	const std::string strPath = "test_clear_override_base.zpfb";
 	xBase.SaveToFile(strPath);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strPath);
 
 	PrefabHandle xHandle(strPath);
 	Zenith_Prefab xVariant;
@@ -6948,7 +6948,7 @@ void Zenith_UnitTests::TestPrefabSelfVariantRejected(){
 	xA.CreateFromEntity(xSrc, "SelfCycleA");
 	const std::string strPath = "test_self_cycle.zpfb";
 	xA.SaveToFile(strPath);
-	Zenith_Prefab* pxLoadedA = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	Zenith_Prefab* pxLoadedA = Zenith_AssetRegistry::Get<Zenith_Prefab>(strPath);
 	ZENITH_ASSERT_NOT_NULL(pxLoadedA, "TestPrefabSelfVariantRejected: load should succeed");
 
 	// Try to make A a variant of itself (handle resolves to pxLoadedA which IS this prefab).
@@ -7004,7 +7004,7 @@ void Zenith_UnitTests::TestPrefabVariantInstantiateLifecycleOnceAtTop(){
 	xBase.CreateFromEntity(xSrc, "LifecycleBase");
 	const std::string strBasePath = "test_lifecycle_base.zpfb";
 	xBase.SaveToFile(strBasePath);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strBasePath);
 
 	PrefabHandle xBaseHandle(strBasePath);
 	Zenith_Prefab xVariant;
@@ -7050,7 +7050,7 @@ void Zenith_UnitTests::TestPrefabVariantPositionOverrideSyncsPhysicsBody(){
 	xBase.CreateFromEntity(xSrc, "PhysSyncBase");
 	const std::string strBasePath = "test_phys_sync_base.zpfb";
 	xBase.SaveToFile(strBasePath);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strBasePath);
 
 	// Variant with a Position override at (10, 5, 7).
 	PrefabHandle xBaseHandle(strBasePath);
@@ -7107,7 +7107,7 @@ void Zenith_UnitTests::TestPrefabVariantScaleOverrideRebuildsCollider(){
 	xBase.CreateFromEntity(xSrc, "ScaleSyncBase");
 	const std::string strBasePath = "test_scale_sync_base.zpfb";
 	xBase.SaveToFile(strBasePath);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strBasePath);
 
 	PrefabHandle xBaseHandle(strBasePath);
 	Zenith_Prefab xVariant;
@@ -7152,7 +7152,7 @@ void Zenith_UnitTests::TestPrefabLoadCorruptedFile(){
 	// Get<Zenith_Prefab>(path) returns nullptr if loading rejects the file.
 	// (Some versions assert; in either case the registry shouldn't end up with
 	// a valid prefab for this path.)
-	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get<Zenith_Prefab>(strPath);
 	if (pxLoaded != nullptr)
 	{
 		ZENITH_ASSERT_FALSE(pxLoaded->IsValid(),
@@ -7182,7 +7182,7 @@ void Zenith_UnitTests::TestPrefabLoadFromDeletedFile(){
 
 	// Load once so it's cached, then delete the file. Subsequent registry
 	// lookups still return the cached pointer.
-	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get<Zenith_Prefab>(strPath);
 	ZENITH_ASSERT_NOT_NULL(pxLoaded, "TestPrefabLoadFromDeletedFile: initial load should succeed");
 
 #ifndef ZENITH_ANDROID
@@ -7190,7 +7190,7 @@ void Zenith_UnitTests::TestPrefabLoadFromDeletedFile(){
 #endif
 
 	// Cached load still works.
-	Zenith_Prefab* pxCached = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strPath);
+	Zenith_Prefab* pxCached = Zenith_AssetRegistry::Get<Zenith_Prefab>(strPath);
 	ZENITH_ASSERT_TRUE(pxCached == pxLoaded, "TestPrefabLoadFromDeletedFile: registry returns cached pointer when file is gone post-load");
 }
 
@@ -7261,7 +7261,7 @@ void Zenith_UnitTests::TestPrefabVariantNestedPathSkipped(){
 	xBaseInMem.CreateFromEntity(xSrc, "NestedBase");
 	const std::string strBasePath = "test_nested_base.zpfb";
 	xBaseInMem.SaveToFile(strBasePath);
-	Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+	Zenith_AssetRegistry::Get<Zenith_Prefab>(strBasePath);
 
 	PrefabHandle xBaseHandle(strBasePath);
 	Zenith_Prefab xVariant;
@@ -7379,7 +7379,7 @@ void Zenith_UnitTests::TestDataAssetCreateAndSave(){
 	Zenith_AssetRegistry::RegisterAssetType<TestSerializableAsset>();
 
 	// Create a new instance via factory
-	TestSerializableAsset* pxAsset = Zenith_AssetRegistry::Get().Create<TestSerializableAsset>();
+	TestSerializableAsset* pxAsset = Zenith_AssetRegistry::Create<TestSerializableAsset>();
 	ZENITH_ASSERT_NOT_NULL(pxAsset, "TestDataAssetCreateAndSave: Failed to create TestSerializableAsset");
 
 	// Set some values
@@ -7390,7 +7390,7 @@ void Zenith_UnitTests::TestDataAssetCreateAndSave(){
 	// Save to file
 	std::string strTestPath = "TestData/test_data_asset.zdata";
 	std::filesystem::create_directories("TestData");
-	bool bSaved = Zenith_AssetRegistry::Get().Save(pxAsset, strTestPath);
+	bool bSaved = Zenith_AssetRegistry::Save(pxAsset, strTestPath);
 	ZENITH_ASSERT_TRUE(bSaved, "TestDataAssetCreateAndSave: Failed to save TestSerializableAsset");
 
 	// Verify file exists
@@ -7398,7 +7398,7 @@ void Zenith_UnitTests::TestDataAssetCreateAndSave(){
 	ZENITH_ASSERT_TRUE(bExists, "TestDataAssetCreateAndSave: Saved file should exist");
 
 	// Clean up so no stale file or cache entry leaks into another test.
-	Zenith_AssetRegistry::Get().Unload(strTestPath);
+	Zenith_AssetRegistry::Unload(strTestPath);
 	std::filesystem::remove(strTestPath);
 
 }
@@ -7416,20 +7416,20 @@ void Zenith_UnitTests::TestDataAssetLoad(){
 	const std::string strTestPath = "TestData/test_data_asset.zdata";
 	std::filesystem::create_directories("TestData");
 
-	TestSerializableAsset* pxAsset = Zenith_AssetRegistry::Get().Create<TestSerializableAsset>(strTestPath);
+	TestSerializableAsset* pxAsset = Zenith_AssetRegistry::Create<TestSerializableAsset>(strTestPath);
 	ZENITH_ASSERT_NOT_NULL(pxAsset, "TestDataAssetLoad: Failed to create asset for setup");
 	if (pxAsset == nullptr) return;
 	pxAsset->m_iTestValue    = 100;
 	pxAsset->m_fTestFloat    = 2.71828f;
 	pxAsset->m_strTestString = "ModifiedValue";
-	bool bSaved = Zenith_AssetRegistry::Get().Save(pxAsset, strTestPath);
+	bool bSaved = Zenith_AssetRegistry::Save(pxAsset, strTestPath);
 	ZENITH_ASSERT_TRUE(bSaved, "TestDataAssetLoad: Failed to save setup asset");
 
 	// Unload to force reload from disk
-	Zenith_AssetRegistry::Get().Unload(strTestPath);
+	Zenith_AssetRegistry::Unload(strTestPath);
 
 	// Load the asset just saved
-	TestSerializableAsset* pxLoaded = Zenith_AssetRegistry::Get().Get<TestSerializableAsset>(strTestPath);
+	TestSerializableAsset* pxLoaded = Zenith_AssetRegistry::Get<TestSerializableAsset>(strTestPath);
 	ZENITH_ASSERT_NOT_NULL(pxLoaded, "TestDataAssetLoad: Failed to load TestSerializableAsset");
 	if (pxLoaded == nullptr) return;
 
@@ -7439,7 +7439,7 @@ void Zenith_UnitTests::TestDataAssetLoad(){
 	ZENITH_ASSERT_EQ(pxLoaded->m_strTestString, "ModifiedValue", "TestDataAssetLoad: Loaded string should match saved value");
 
 	// Clean up so no stale file or cache entry leaks into another test.
-	Zenith_AssetRegistry::Get().Unload(strTestPath);
+	Zenith_AssetRegistry::Unload(strTestPath);
 	std::filesystem::remove(strTestPath);
 
 }
@@ -7461,7 +7461,7 @@ void Zenith_UnitTests::TestDataAssetRoundTrip(){
 	std::filesystem::create_directories("TestData");
 
 	// Create with unique values
-	TestSerializableAsset* pxOriginal = Zenith_AssetRegistry::Get().Create<TestSerializableAsset>();
+	TestSerializableAsset* pxOriginal = Zenith_AssetRegistry::Create<TestSerializableAsset>();
 	ZENITH_ASSERT_NOT_NULL(pxOriginal, "TestDataAssetRoundTrip: Failed to create original asset");
 	if (pxOriginal == nullptr) return;
 	pxOriginal->m_iTestValue    = -999;
@@ -7469,15 +7469,15 @@ void Zenith_UnitTests::TestDataAssetRoundTrip(){
 	pxOriginal->m_strTestString = "RoundTripTest";
 
 	// Save (adds to cache)
-	bool bSaved = Zenith_AssetRegistry::Get().Save(pxOriginal, strPath);
+	bool bSaved = Zenith_AssetRegistry::Save(pxOriginal, strPath);
 	ZENITH_ASSERT_TRUE(bSaved, "TestDataAssetRoundTrip: Save failed");
 	if (!bSaved) return;
 
 	// Unload to force reload from disk
-	Zenith_AssetRegistry::Get().Unload(strPath);
+	Zenith_AssetRegistry::Unload(strPath);
 
 	// Load
-	TestSerializableAsset* pxLoaded = Zenith_AssetRegistry::Get().Get<TestSerializableAsset>(strPath);
+	TestSerializableAsset* pxLoaded = Zenith_AssetRegistry::Get<TestSerializableAsset>(strPath);
 	ZENITH_ASSERT_NOT_NULL(pxLoaded, "TestDataAssetRoundTrip: Failed to load");
 	if (pxLoaded == nullptr) return;
 	ZENITH_ASSERT_EQ(pxLoaded->m_iTestValue, -999, "TestDataAssetRoundTrip: Int mismatch");
@@ -7485,7 +7485,7 @@ void Zenith_UnitTests::TestDataAssetRoundTrip(){
 	ZENITH_ASSERT_EQ(pxLoaded->m_strTestString, "RoundTripTest", "TestDataAssetRoundTrip: String mismatch");
 
 	// Clean up test files
-	Zenith_AssetRegistry::Get().Unload(strPath);
+	Zenith_AssetRegistry::Unload(strPath);
 	std::filesystem::remove(strPath);
 
 }
@@ -7749,7 +7749,7 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport(){
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(strSwayPath), "Sway animation file should exist");
 
 	// Reload and verify skeleton
-	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
+	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(strSkelPath);
 	ZENITH_ASSERT_NOT_NULL(pxReloadedSkel, "Should be able to reload skeleton");
 	ZENITH_ASSERT_EQ(pxReloadedSkel->GetNumBones(), uExpectedBoneCount, "Reloaded skeleton should have 9 bones");
 	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("TrunkLower"), "Reloaded skeleton should have TrunkLower bone");
@@ -7757,7 +7757,7 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport(){
 	ZENITH_ASSERT_TRUE(pxReloadedSkel->HasBone("Leaves0"), "Reloaded skeleton should have Leaves0 bone");
 
 	// Reload and verify mesh asset format
-	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshAssetPath);
+	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshAssetPath);
 	ZENITH_ASSERT_NOT_NULL(pxReloadedMesh, "Should be able to reload mesh asset");
 	ZENITH_ASSERT_EQ(pxReloadedMesh->GetNumVerts(), uExpectedVertCount, "Reloaded mesh vertex count mismatch");
 	ZENITH_ASSERT_EQ(pxReloadedMesh->GetNumIndices(), uExpectedIndexCount, "Reloaded mesh index count mismatch");
@@ -7779,7 +7779,7 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport(){
 #endif
 
 	// Reload and verify animation
-	Zenith_AnimationAsset* pxReloadedSwayAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strSwayPath);
+	Zenith_AnimationAsset* pxReloadedSwayAsset = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>(strSwayPath);
 	ZENITH_ASSERT_TRUE(pxReloadedSwayAsset != nullptr && pxReloadedSwayAsset->GetClip() != nullptr, "Should be able to reload sway animation");
 	ZENITH_ASSERT_EQ(pxReloadedSwayAsset->GetClip()->GetName(), "Sway", "Reloaded sway animation name mismatch");
 	ZENITH_ASSERT_TRUE(FloatEquals(pxReloadedSwayAsset->GetClip()->GetDuration(), 2.0f, 0.01f), "Reloaded sway duration mismatch");
@@ -7799,8 +7799,7 @@ ZENITH_TEST(Asset, AssetHandleProceduralBoolConversion) { Zenith_UnitTests::Test
 void Zenith_UnitTests::TestAssetHandleProceduralBoolConversion(){
 
 	// Create a procedural material via registry
-	auto& xRegistry = Zenith_AssetRegistry::Get();
-	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxMaterial->SetName("TestProceduralMaterial");
 
 	// Create a handle and set it via Set() (procedural path)
@@ -7876,8 +7875,7 @@ ZENITH_TEST(Asset, AssetHandleSetStoresRef) { Zenith_UnitTests::TestAssetHandleS
 void Zenith_UnitTests::TestAssetHandleSetStoresRef(){
 
 	// This tests that Set() properly increments reference count
-	auto& xRegistry = Zenith_AssetRegistry::Get();
-	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxMaterial->SetName("TestRefCountMaterial");
 
 	uint32_t uInitialRefCount = pxMaterial->GetRefCount();
@@ -7903,8 +7901,7 @@ ZENITH_TEST(Asset, AssetHandleCopySemantics) { Zenith_UnitTests::TestAssetHandle
 
 void Zenith_UnitTests::TestAssetHandleCopySemantics(){
 
-	auto& xRegistry = Zenith_AssetRegistry::Get();
-	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxMaterial->SetName("TestCopyMaterial");
 
 	uint32_t uInitialRefCount = pxMaterial->GetRefCount();
@@ -7931,7 +7928,7 @@ void Zenith_UnitTests::TestAssetHandleCopySemantics(){
 		MaterialHandle xHandle1;
 		xHandle1.Set(pxMaterial);
 
-		Zenith_MaterialAsset* pxMaterial2 = xRegistry.Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMaterial2 = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		pxMaterial2->SetName("TestCopyMaterial2");
 		uint32_t uMat2InitialRef = pxMaterial2->GetRefCount();
 
@@ -7953,8 +7950,7 @@ ZENITH_TEST(Asset, AssetHandleMoveSemantics) { Zenith_UnitTests::TestAssetHandle
 
 void Zenith_UnitTests::TestAssetHandleMoveSemantics(){
 
-	auto& xRegistry = Zenith_AssetRegistry::Get();
-	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxMaterial->SetName("TestMoveMaterial");
 
 	uint32_t uInitialRefCount = pxMaterial->GetRefCount();
@@ -7981,7 +7977,7 @@ void Zenith_UnitTests::TestAssetHandleMoveSemantics(){
 		MaterialHandle xHandle1;
 		xHandle1.Set(pxMaterial);
 
-		Zenith_MaterialAsset* pxMaterial2 = xRegistry.Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMaterial2 = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		pxMaterial2->SetName("TestMoveMaterial2");
 		uint32_t uMat2InitialRef = pxMaterial2->GetRefCount();
 
@@ -8003,8 +7999,7 @@ ZENITH_TEST(Asset, AssetHandleSetPathReleasesRef) { Zenith_UnitTests::TestAssetH
 
 void Zenith_UnitTests::TestAssetHandleSetPathReleasesRef(){
 
-	auto& xRegistry = Zenith_AssetRegistry::Get();
-	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxMaterial->SetName("TestSetPathMaterial");
 
 	uint32_t uInitialRefCount = pxMaterial->GetRefCount();
@@ -8029,8 +8024,7 @@ ZENITH_TEST(Asset, AssetHandleClearReleasesRef) { Zenith_UnitTests::TestAssetHan
 
 void Zenith_UnitTests::TestAssetHandleClearReleasesRef(){
 
-	auto& xRegistry = Zenith_AssetRegistry::Get();
-	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxMaterial->SetName("TestClearMaterial");
 
 	uint32_t uInitialRefCount = pxMaterial->GetRefCount();
@@ -8056,13 +8050,11 @@ ZENITH_TEST(Asset, AssetHandleProceduralComparison) { Zenith_UnitTests::TestAsse
 
 void Zenith_UnitTests::TestAssetHandleProceduralComparison(){
 
-	auto& xRegistry = Zenith_AssetRegistry::Get();
-
 	// Create two different procedural materials
-	Zenith_MaterialAsset* pxMaterial1 = xRegistry.Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMaterial1 = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxMaterial1->SetName("TestCompare1");
 
-	Zenith_MaterialAsset* pxMaterial2 = xRegistry.Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMaterial2 = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxMaterial2->SetName("TestCompare2");
 
 	MaterialHandle xHandle1;
@@ -8116,11 +8108,11 @@ ZENITH_TEST(Asset, ModelInstanceMaterialSetAndGet) { Zenith_UnitTests::TestModel
 void Zenith_UnitTests::TestModelInstanceMaterialSetAndGet(){
 
 	// Create a procedural material (same pattern as Combat game)
-	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxMaterial->SetName("TestMaterial");
 
 	// Create model asset with no default materials (reproduces Combat enemy scenario)
-	Zenith_ModelAsset* pxModelAsset = Zenith_AssetRegistry::Get().Create<Zenith_ModelAsset>();
+	Zenith_ModelAsset* pxModelAsset = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
 	pxModelAsset->SetName("TestModel");
 
 	// Try to add StickFigure mesh if available
@@ -8158,7 +8150,7 @@ void Zenith_UnitTests::TestMaterialHandleCopyPreservesCachedPointer(){
 
 	// Create a procedural material and store in handle (like Combat::g_xEnemyMaterial)
 	MaterialHandle xOriginal;
-	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	pxMaterial->SetName("TestProceduralMaterial");
 	xOriginal.Set(pxMaterial);
 

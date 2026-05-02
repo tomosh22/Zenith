@@ -15,11 +15,11 @@ class Flux_AnimationClip;
  *
  * Usage:
  *   // Load from file
- *   Zenith_AnimationAsset* pAnim = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>("game:Anims/walk.zanim");
+ *   Zenith_AnimationAsset* pAnim = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>("game:Anims/walk.zanim");
  *   Flux_AnimationClip* pClip = pAnim->GetClip();
  *
  *   // Create procedural
- *   Zenith_AnimationAsset* pAnim = Zenith_AssetRegistry::Get().Create<Zenith_AnimationAsset>();
+ *   Zenith_AnimationAsset* pAnim = Zenith_AssetRegistry::Create<Zenith_AnimationAsset>();
  *   pAnim->SetClip(pMyProceduralClip);
  */
 class Zenith_AnimationAsset : public Zenith_Asset

@@ -6,7 +6,7 @@
  * for difficulty levels, spawn rates, crafting times, etc.
  *
  * Usage:
- *   m_pxConfig = Zenith_AssetRegistry::Get().Get<Survival_Config>("game:Config/SurvivalConfig.zdata");
+ *   m_pxConfig = Zenith_AssetRegistry::Get<Survival_Config>("game:Config/SurvivalConfig.zdata");
  */
 
 #include "AssetHandling/Zenith_Asset.h"

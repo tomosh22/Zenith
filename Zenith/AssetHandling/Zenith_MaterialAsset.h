@@ -19,10 +19,10 @@ class Zenith_TextureAsset;
  *
  * Usage:
  *   // Load existing material
- *   auto* pMat = Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>("Assets/mat.zmat");
+ *   auto* pMat = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>("Assets/mat.zmat");
  *
  *   // Create new material
- *   auto* pMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+ *   auto* pMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
  *   pMat->SetName("MyMaterial");
  *   pMat->SetDiffuseTexturePath("Assets/Textures/diffuse.ztex");
  *   pMat->SaveToFile("Assets/Materials/MyMaterial.zmat");

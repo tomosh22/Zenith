@@ -178,11 +178,11 @@ public:
 
 		// Create materials for terrain texture blending
 		// Material 0 = grass, Material 1 = dirt
-		Zenith_MaterialAsset& xGrassMat = *Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset& xGrassMat = *Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		xGrassMat.SetName("TerrainGrass");
 		xGrassMat.SetDiffuseTexturePath("Textures/grass_diffuse.ztex");
 
-		Zenith_MaterialAsset& xDirtMat = *Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset& xDirtMat = *Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		xDirtMat.SetName("TerrainDirt");
 		xDirtMat.SetDiffuseTexturePath("Textures/dirt_diffuse.ztex");
 

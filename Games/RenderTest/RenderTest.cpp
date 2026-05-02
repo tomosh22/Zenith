@@ -640,10 +640,9 @@ static void InitializeRenderTestResources()
 		"RenderTestTerrainSand"
 	};
 
-	Zenith_AssetRegistry& xRegistry = Zenith_AssetRegistry::Get();
 	for (u_int u = 0; u < 4; u++)
 	{
-		RenderTest::g_axTerrainMaterials[u].Set(xRegistry.Create<Zenith_MaterialAsset>());
+		RenderTest::g_axTerrainMaterials[u].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		RenderTest::g_axTerrainMaterials[u].GetDirect()->SetName(aszMaterialNames[u]);
 		SetMaterialTexturePaths(RenderTest::g_axTerrainMaterials[u].GetDirect(), strTexturesDir, aszTextureNames[u]);
 	}

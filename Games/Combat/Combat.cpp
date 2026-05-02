@@ -96,7 +96,7 @@ void Combat::TryInitializeStickFigureModel()
 		// Load the mesh geometry through registry
 		if (std::filesystem::exists(strStickFigureMeshGeomPath))
 		{
-			g_pxStickFigureGeometryAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshGeometryAsset>(strStickFigureMeshGeomPath);
+			g_pxStickFigureGeometryAsset = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(strStickFigureMeshGeomPath);
 			if (g_pxStickFigureGeometryAsset)
 			{
 				g_pxStickFigureGeometry = g_pxStickFigureGeometryAsset->GetGeometry();
@@ -105,7 +105,7 @@ void Combat::TryInitializeStickFigureModel()
 		}
 
 		// Create model asset via registry
-		g_pxStickFigureModelAsset = Zenith_AssetRegistry::Get().Create<Zenith_ModelAsset>();
+		g_pxStickFigureModelAsset = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
 		g_pxStickFigureModelAsset->SetName("StickFigure");
 		g_pxStickFigureModelAsset->SetSkeletonPath(strStickFigureSkeletonPath);
 
@@ -455,7 +455,7 @@ static void InitializeCombatResources()
 	std::filesystem::create_directories(strMeshDir);
 
 	// Create capsule geometry (for characters) - custom size, tracked through registry
-	g_pxCapsuleAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	g_pxCapsuleAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
 	Flux_MeshGeometry* pxCapsule = new Flux_MeshGeometry();
 	GenerateCapsule(*pxCapsule, 0.5f, 1.0f, 16, 16);
 	g_pxCapsuleAsset->SetGeometry(pxCapsule);
@@ -476,7 +476,7 @@ static void InitializeCombatResources()
 #endif
 
 	// Create cone geometry (for candles on walls) - custom size, tracked through registry
-	g_pxConeAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	g_pxConeAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
 	Flux_MeshGeometry* pxCone = new Flux_MeshGeometry();
 	GenerateCone(*pxCone, 0.08f, 0.25f, 12);
 	g_pxConeAsset->SetGeometry(pxCone);
@@ -503,29 +503,28 @@ static void InitializeCombatResources()
 	TextureHandle xCandleTextureHandle = ExportColoredTexture(strTexturesDir + "/Candle.ztex", 240, 220, 180);    // Cream candle color
 
 	// Create materials with texture paths (properly serializable)
-	auto& xRegistry = Zenith_AssetRegistry::Get();
 
-	g_xPlayerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xPlayerMaterial.GetDirect()->SetName("CombatPlayer");
 	g_xPlayerMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Player.ztex");
 	g_xPlayerMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - player should be REFLECTED, not reflecting
 
-	g_xEnemyMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xEnemyMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xEnemyMaterial.GetDirect()->SetName("CombatEnemy");
 	g_xEnemyMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Enemy.ztex");
 	g_xEnemyMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - enemies should be REFLECTED, not reflecting
 
-	g_xArenaMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xArenaMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xArenaMaterial.GetDirect()->SetName("CombatArena");
 	g_xArenaMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Arena.ztex");
 	g_xArenaMaterial.GetDirect()->SetRoughness(0.15f);  // LOW roughness - floor IS the reflective surface
 
-	g_xWallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xWallMaterial.GetDirect()->SetName("CombatWall");
 	g_xWallMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Wall.ztex");
 	g_xWallMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - walls should be REFLECTED, not reflecting
 
-	g_xCandleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xCandleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xCandleMaterial.GetDirect()->SetName("CombatCandle");
 	g_xCandleMaterial.GetDirect()->SetDiffuseTexturePath(strTexturesDir + "/Candle.ztex");
 	g_xCandleMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - candles should be REFLECTED, not reflecting
@@ -586,7 +585,7 @@ static void InitializeCombatResources()
 		// the launch and effectively transient.
 		const std::string strBasePath = "EnemyBase.zpfb";
 		g_pxEnemyPrefab->SaveToFile(strBasePath);
-		Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strBasePath);
+		Zenith_AssetRegistry::Get<Zenith_Prefab>(strBasePath);
 
 		// Build the three Scale variants in memory.
 		PrefabHandle xBaseHandle(strBasePath);

@@ -350,11 +350,10 @@ public:
 		}
 
 		// Create highlighted versions of shape materials with emissive glow
-		auto& xRegistry = Zenith_AssetRegistry::Get();
 		for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 		{
 			Zenith_MaterialAsset* pxOriginal = m_axShapeMaterials[i].GetDirect();
-			Zenith_MaterialAsset* pxHighlighted = xRegistry.Create<Zenith_MaterialAsset>();
+			Zenith_MaterialAsset* pxHighlighted = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 
 			pxHighlighted->SetName(pxOriginal->GetName() + "_Highlighted");
 			pxHighlighted->SetBaseColor(pxOriginal->GetBaseColor());
