@@ -246,6 +246,13 @@ public:
     virtual void RenderPropertiesPanel();
 #endif
 
+    // Read the current mouse position (in screen pixels), then in tools builds
+    // remap from window-screen-space into the canvas's logical coordinate
+    // space using the editor viewport rect. Lets interactive elements (button,
+    // toggle, scroll view, ...) hit-test against their own canvas-space bounds
+    // regardless of where the viewport sits inside the editor host window.
+    void GetTransformedMousePosition(float& fMouseX, float& fMouseY) const;
+
 protected:
     void MarkTransformDirty();
     void RecalculateScreenBounds() const;

@@ -180,40 +180,33 @@ Zenith_Mutex_NoProfiling& Zenith_AssetRegistry::GetSerializableTypeRegistryMutex
 	return s_xMutex;
 }
 
-void Zenith_AssetRegistry::SetGameAssetsDir(const std::string& strPath)
+// Normalize path separators to forward slashes and strip any trailing slash so
+// downstream string concatenations produce a clean `<dir>/<file>` path.
+static void NormalizeAssetDirPath(std::string& strPathInOut)
 {
-	s_strGameAssetsDir = strPath;
-	// Normalize path separators to forward slashes
-	for (char& c : s_strGameAssetsDir)
+	for (char& c : strPathInOut)
 	{
 		if (c == '\\')
 		{
 			c = '/';
 		}
 	}
-	// Remove trailing slash if present
-	if (!s_strGameAssetsDir.empty() && s_strGameAssetsDir.back() == '/')
+	if (!strPathInOut.empty() && strPathInOut.back() == '/')
 	{
-		s_strGameAssetsDir.pop_back();
+		strPathInOut.pop_back();
 	}
+}
+
+void Zenith_AssetRegistry::SetGameAssetsDir(const std::string& strPath)
+{
+	s_strGameAssetsDir = strPath;
+	NormalizeAssetDirPath(s_strGameAssetsDir);
 }
 
 void Zenith_AssetRegistry::SetEngineAssetsDir(const std::string& strPath)
 {
 	s_strEngineAssetsDir = strPath;
-	// Normalize path separators to forward slashes
-	for (char& c : s_strEngineAssetsDir)
-	{
-		if (c == '\\')
-		{
-			c = '/';
-		}
-	}
-	// Remove trailing slash if present
-	if (!s_strEngineAssetsDir.empty() && s_strEngineAssetsDir.back() == '/')
-	{
-		s_strEngineAssetsDir.pop_back();
-	}
+	NormalizeAssetDirPath(s_strEngineAssetsDir);
 }
 
 std::string Zenith_AssetRegistry::ResolvePath(const std::string& strPrefixedPath)
@@ -795,3 +788,5 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath)
 		strTypeName.c_str(), strPath.c_str());
 	return pxAsset;
 }
+
+#include "AssetHandling/Zenith_AssetRegistry.Tests.inl"

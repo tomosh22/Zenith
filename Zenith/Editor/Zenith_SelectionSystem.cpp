@@ -326,118 +326,115 @@ Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector
 	return uClosestEntityID;
 }
 
+// Default picking AABB for entities without a ModelComponent (cameras, lights,
+// empty nodes). Centred on the transform position with 0.5-unit half-extents
+// so the user can still click on otherwise-invisible entities.
+static BoundingBox CalculateAABBForNoModelEntity(Zenith_SceneData* pxSceneData, Zenith_EntityID xEntityID)
+{
+	Zenith_TransformComponent& xTransform =
+		pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(xEntityID);
+	Zenith_Maths::Vector3 xPos;
+	xTransform.GetPosition(xPos);
+	constexpr float fHalfExtent = 0.5f;
+	BoundingBox xBox;
+	xBox.m_xMin = xPos - Zenith_Maths::Vector3(fHalfExtent);
+	xBox.m_xMax = xPos + Zenith_Maths::Vector3(fHalfExtent);
+	return xBox;
+}
+
+// Compute model-space min/max from a ModelComponent. Prefers the physics
+// mesh (raycast-optimised), falls back to per-sub-mesh asset bounds, and
+// last-resort iterates procedural-mesh vertex positions directly.
+static void CalculateModelSpaceBounds(Zenith_ModelComponent& xModel,
+	Zenith_Maths::Vector3& xMinOut, Zenith_Maths::Vector3& xMaxOut)
+{
+	xMinOut = Zenith_Maths::Vector3(std::numeric_limits<float>::max());
+	xMaxOut = Zenith_Maths::Vector3(std::numeric_limits<float>::lowest());
+
+	// Physics mesh is optimised for raycasting and provides better selection accuracy.
+	Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
+	if (pxPhysicsMesh && pxPhysicsMesh->m_pxPositions && pxPhysicsMesh->GetNumVerts() > 0)
+	{
+		const Zenith_Maths::Vector3* pPositions = pxPhysicsMesh->m_pxPositions;
+		const u_int uVertexCount = pxPhysicsMesh->GetNumVerts();
+		for (u_int v = 0; v < uVertexCount; ++v)
+		{
+			xMinOut = glm::min(xMinOut, pPositions[v]);
+			xMaxOut = glm::max(xMaxOut, pPositions[v]);
+		}
+		return;
+	}
+
+	if (!xModel.GetModelInstance()) return;
+
+	// Use each sub-mesh's bounds: asset-backed meshes have pre-computed
+	// bind-pose bounds (good enough for editor picking on skinned meshes);
+	// procedurally-built meshes wrap a Flux_MeshGeometry whose positions we
+	// iterate directly.
+	Flux_ModelInstance* pxModelInst = xModel.GetModelInstance();
+	for (u_int u = 0; u < pxModelInst->GetNumMeshes(); ++u)
+	{
+		Flux_MeshInstance* pxMeshInst = pxModelInst->GetMeshInstance(u);
+		if (!pxMeshInst) continue;
+
+		if (Zenith_MeshAsset* pxMeshAsset = pxMeshInst->GetSourceAsset())
+		{
+			xMinOut = glm::min(xMinOut, pxMeshAsset->m_xBoundsMin);
+			xMaxOut = glm::max(xMaxOut, pxMeshAsset->m_xBoundsMax);
+			continue;
+		}
+
+		if (const Flux_MeshGeometry* pxGeometry = pxMeshInst->GetProceduralGeometry())
+		{
+			const Zenith_Maths::Vector3* pPositions = pxGeometry->m_pxPositions;
+			const u_int uVertexCount = pxGeometry->GetNumVerts();
+			if (!pPositions || uVertexCount == 0) continue;
+			for (u_int v = 0; v < uVertexCount; ++v)
+			{
+				xMinOut = glm::min(xMinOut, pPositions[v]);
+				xMaxOut = glm::max(xMaxOut, pPositions[v]);
+			}
+		}
+	}
+}
+
 BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity)
 {
 	BoundingBox xBoundingBox;
 
-	if (!pxEntity)
-		return xBoundingBox;
+	if (!pxEntity) return xBoundingBox;
 
 	// Find the scene that owns this entity (not just active scene)
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(pxEntity->GetEntityID());
-	if (!pxSceneData)
-		return xBoundingBox;
+	if (!pxSceneData) return xBoundingBox;
+
+	const Zenith_EntityID xEntityID = pxEntity->GetEntityID();
 
 	// Entities without a ModelComponent (cameras, lights, empty nodes) get a
 	// small picking cube centered at their transform position. Every entity is
 	// guaranteed to have a TransformComponent, so no further check is needed.
-	if (!pxSceneData->EntityHasComponent<Zenith_ModelComponent>(pxEntity->GetEntityID()))
+	if (!pxSceneData->EntityHasComponent<Zenith_ModelComponent>(xEntityID))
 	{
-		Zenith_TransformComponent& xTransform =
-			pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(pxEntity->GetEntityID());
-		Zenith_Maths::Vector3 xPos;
-		xTransform.GetPosition(xPos);
-		constexpr float fHalfExtent = 0.5f;
-		xBoundingBox.m_xMin = xPos - Zenith_Maths::Vector3(fHalfExtent);
-		xBoundingBox.m_xMax = xPos + Zenith_Maths::Vector3(fHalfExtent);
-		return xBoundingBox;
+		return CalculateAABBForNoModelEntity(pxSceneData, xEntityID);
 	}
 
-	Zenith_ModelComponent& xModel = pxSceneData->GetComponentFromEntity<Zenith_ModelComponent>(pxEntity->GetEntityID());
+	Zenith_ModelComponent& xModel = pxSceneData->GetComponentFromEntity<Zenith_ModelComponent>(xEntityID);
+	Zenith_Maths::Vector3 xMin, xMax;
+	CalculateModelSpaceBounds(xModel, xMin, xMax);
+	xBoundingBox.m_xMin = xMin;
+	xBoundingBox.m_xMax = xMax;
 
-	// Initialize min/max to extreme values
-	// These will be updated as we process vertices
-	Zenith_Maths::Vector3 xMin(std::numeric_limits<float>::max());
-	Zenith_Maths::Vector3 xMax(std::numeric_limits<float>::lowest());
-
-	// CRITICAL: Use physics mesh for selection if available
-	// Physics mesh is optimized for raycasting and provides better selection accuracy
-	Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
-
-	if (pxPhysicsMesh && pxPhysicsMesh->m_pxPositions && pxPhysicsMesh->GetNumVerts() > 0)
+	// Apply entity transform to convert from model space to world space.
+	// After rotation the AABB may be larger than the OBB — accepted trade-off
+	// for cheaper intersection tests.
+	if (pxSceneData->EntityHasComponent<Zenith_TransformComponent>(xEntityID))
 	{
-		// Use physics mesh for bounding box calculation
-		const Zenith_Maths::Vector3* pPositions = pxPhysicsMesh->m_pxPositions;
-		const u_int uVertexCount = pxPhysicsMesh->GetNumVerts();
-
-		for (u_int v = 0; v < uVertexCount; ++v)
-		{
-			xMin = glm::min(xMin, pPositions[v]);
-			xMax = glm::max(xMax, pPositions[v]);
-		}
-	}
-	else if (xModel.GetModelInstance())
-	{
-		// Use each sub-mesh's bounds: asset-backed meshes have pre-computed
-		// bind-pose bounds (good enough for editor picking on skinned meshes);
-		// procedurally-built meshes wrap a Flux_MeshGeometry whose positions we
-		// iterate directly.
-		Flux_ModelInstance* pxModelInst = xModel.GetModelInstance();
-		for (u_int u = 0; u < pxModelInst->GetNumMeshes(); ++u)
-		{
-			Flux_MeshInstance* pxMeshInst = pxModelInst->GetMeshInstance(u);
-			if (!pxMeshInst)
-				continue;
-
-			if (Zenith_MeshAsset* pxMeshAsset = pxMeshInst->GetSourceAsset())
-			{
-				xMin = glm::min(xMin, pxMeshAsset->m_xBoundsMin);
-				xMax = glm::max(xMax, pxMeshAsset->m_xBoundsMax);
-				continue;
-			}
-
-			if (const Flux_MeshGeometry* pxGeometry = pxMeshInst->GetProceduralGeometry())
-			{
-				const Zenith_Maths::Vector3* pPositions = pxGeometry->m_pxPositions;
-				const u_int uVertexCount = pxGeometry->GetNumVerts();
-				if (!pPositions || uVertexCount == 0)
-					continue;
-				for (u_int v = 0; v < uVertexCount; ++v)
-				{
-					xMin = glm::min(xMin, pPositions[v]);
-					xMax = glm::max(xMax, pPositions[v]);
-				}
-			}
-		}
-	}
-	
-	// Apply entity transform to convert from model space to world space
-	// The entity's transform may include translation, rotation, and scale
-	if (pxSceneData->EntityHasComponent<Zenith_TransformComponent>(pxEntity->GetEntityID()))
-	{
-		Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(pxEntity->GetEntityID());
+		Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(xEntityID);
 		Zenith_Maths::Matrix4 xTransformMatrix;
 		xTransform.BuildModelMatrix(xTransformMatrix);
-		
-		// Transform the bounding box
-		// This will transform all 8 corners and recompute axis-aligned bounds
-		// Note: After rotation, the AABB may be larger than the oriented bounding box
-		xBoundingBox.m_xMin = xMin;
-		xBoundingBox.m_xMax = xMax;
 		xBoundingBox.Transform(xTransformMatrix);
-		
-		// OPTIMIZATION NOTE:
-		// For better picking accuracy, could use Oriented Bounding Box (OBB)
-		// instead of AABB, which doesn't expand when rotated
-		// Trade-off: OBB intersection test is more expensive
 	}
-	else
-	{
-		// No transform - use model-space bounds
-		xBoundingBox.m_xMin = xMin;
-		xBoundingBox.m_xMax = xMax;
-	}
-	
+
 	return xBoundingBox;
 }
 

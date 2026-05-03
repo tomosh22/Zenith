@@ -3213,6 +3213,9 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.Tests.inl">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
@@ -3429,6 +3432,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentPool.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
@@ -3444,6 +3450,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_RenderTaskState.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
@@ -3454,6 +3463,12 @@
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.Tests.inl">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManagerGuards.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManagerInternal.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager_Internal.h">
@@ -3579,6 +3594,9 @@
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h">
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.Tests.inl">
+      <Filter>Flux\MeshAnimation</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h">
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
@@ -3589,6 +3607,9 @@
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BlendTree.h">
+      <Filter>Flux\MeshAnimation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BlendTree.Tests.inl">
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BonePose.h">

@@ -56,29 +56,6 @@ void Zenith_UIScrollView::ClampScrollPosition()
 	}
 }
 
-void Zenith_UIScrollView::GetTransformedMousePosition(float& fMouseX, float& fMouseY) const
-{
-	Zenith_Maths::Vector2_64 xMousePos;
-	Zenith_Input::GetMousePosition(xMousePos);
-	fMouseX = static_cast<float>(xMousePos.x);
-	fMouseY = static_cast<float>(xMousePos.y);
-
-#ifdef ZENITH_TOOLS
-#ifdef ZENITH_INPUT_SIMULATOR
-	if (!Zenith_InputSimulator::IsEnabled())
-#endif
-	{
-		Zenith_Maths::Vector2 xViewportPos = Zenith_Editor::GetViewportPos();
-		Zenith_Maths::Vector2 xViewportSize = Zenith_Editor::GetViewportSize();
-		if (xViewportSize.x > 0.f && xViewportSize.y > 0.f && m_pxCanvas)
-		{
-			Zenith_Maths::Vector2 xCanvasSize = m_pxCanvas->GetSize();
-			fMouseX = (fMouseX - xViewportPos.x) * (xCanvasSize.x / xViewportSize.x);
-			fMouseY = (fMouseY - xViewportPos.y) * (xCanvasSize.y / xViewportSize.y);
-		}
-	}
-#endif
-}
 
 void Zenith_UIScrollView::HandleDragInput(float fMouseX, float fMouseY, bool bInside, float fDt)
 {

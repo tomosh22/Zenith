@@ -146,7 +146,6 @@ private:
 #ifdef ZENITH_TOOLS
 	void HandleEditorStoppedState();
 #endif
-	void ComputeMousePosition(float& fMouseX, float& fMouseY) const;
 	void HandleInputEvents(bool bInteractable, bool bHovered, bool bMouseDown);
 	void ResolveState(bool bHovered, bool bMouseDown);
 	void UpdateVisualTransition(float fDt);

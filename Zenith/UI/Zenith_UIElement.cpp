@@ -11,6 +11,13 @@
 #include "UI/Zenith_UIOverlay.h"
 #include "UI/Zenith_UIScrollView.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "Input/Zenith_Input.h"
+#ifdef ZENITH_INPUT_SIMULATOR
+#include "Input/Zenith_InputSimulator.h"
+#endif
+#ifdef ZENITH_TOOLS
+#include "Editor/Zenith_Editor.h"
+#endif
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -550,5 +557,29 @@ void Zenith_UIElement::RenderPropertiesPanel()
     ImGui::PopID();
 }
 #endif
+
+void Zenith_UIElement::GetTransformedMousePosition(float& fMouseX, float& fMouseY) const
+{
+    Zenith_Maths::Vector2_64 xMousePos;
+    Zenith_Input::GetMousePosition(xMousePos);
+    fMouseX = static_cast<float>(xMousePos.x);
+    fMouseY = static_cast<float>(xMousePos.y);
+
+#ifdef ZENITH_TOOLS
+#ifdef ZENITH_INPUT_SIMULATOR
+    if (!Zenith_InputSimulator::IsEnabled())
+#endif
+    {
+        Zenith_Maths::Vector2 xViewportPos = Zenith_Editor::GetViewportPos();
+        Zenith_Maths::Vector2 xViewportSize = Zenith_Editor::GetViewportSize();
+        if (xViewportSize.x > 0.f && xViewportSize.y > 0.f && m_pxCanvas)
+        {
+            Zenith_Maths::Vector2 xCanvasSize = m_pxCanvas->GetSize();
+            fMouseX = (fMouseX - xViewportPos.x) * (xCanvasSize.x / xViewportSize.x);
+            fMouseY = (fMouseY - xViewportPos.y) * (xCanvasSize.y / xViewportSize.y);
+        }
+    }
+#endif
+}
 
 } // namespace Zenith_UI

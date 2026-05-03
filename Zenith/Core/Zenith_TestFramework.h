@@ -148,6 +148,27 @@ namespace Zenith_TestAssert_Detail
 			strUserMsg[0] ? " - " : "", strUserMsg);
 		Zenith_TestRunner::Instance().HandleFailure(strType, acFull, strFile, iLine);
 	}
+
+	// Shared failure-reporting tail for all comparison asserts. Each
+	// Zenith_TestAssertXX wrapper does its own comparison and, on failure,
+	// forwards operand values + assert metadata here. The va_list is
+	// constructed by the caller so the variadic format args reach this helper.
+	template<typename T, typename U>
+	inline void EmitCompareFailure(const T& xA, const U& xB,
+		const char* strAssertName, const char* strNegatedOp,
+		const char* strExprA, const char* strExprB,
+		const char* strFile, int iLine,
+		const char* strFormat, va_list args)
+	{
+		char acUser[512];
+		FormatUserMsg(acUser, sizeof(acUser), strFormat, args);
+		char acValA[128], acValB[128];
+		Zenith_FormatTestValue(acValA, sizeof(acValA), xA);
+		Zenith_FormatTestValue(acValB, sizeof(acValB), xB);
+		ReportCompareFailure(
+			strAssertName, strExprA, strExprB, strNegatedOp, acValA, acValB,
+			acUser, strFile, iLine);
+	}
 }
 
 // Template comparison assertions. Work for any types (T, U) where the
@@ -167,15 +188,10 @@ inline void Zenith_TestAssertEq(const T& xA, const U& xB,
 {
 	if (!(xA == xB))
 	{
-		char acUser[512]; va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::FormatUserMsg(acUser, sizeof(acUser), strFormat, args);
+		va_list args; va_start(args, strFormat);
+		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
+			"ZENITH_ASSERT_EQ", "!=", strExprA, strExprB, strFile, iLine, strFormat, args);
 		va_end(args);
-		char acValA[128], acValB[128];
-		Zenith_FormatTestValue(acValA, sizeof(acValA), xA);
-		Zenith_FormatTestValue(acValB, sizeof(acValB), xB);
-		Zenith_TestAssert_Detail::ReportCompareFailure(
-			"ZENITH_ASSERT_EQ", strExprA, strExprB, "!=", acValA, acValB,
-			acUser, strFile, iLine);
 	}
 }
 
@@ -186,15 +202,10 @@ inline void Zenith_TestAssertNe(const T& xA, const U& xB,
 {
 	if (xA == xB)
 	{
-		char acUser[512]; va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::FormatUserMsg(acUser, sizeof(acUser), strFormat, args);
+		va_list args; va_start(args, strFormat);
+		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
+			"ZENITH_ASSERT_NE", "==", strExprA, strExprB, strFile, iLine, strFormat, args);
 		va_end(args);
-		char acValA[128], acValB[128];
-		Zenith_FormatTestValue(acValA, sizeof(acValA), xA);
-		Zenith_FormatTestValue(acValB, sizeof(acValB), xB);
-		Zenith_TestAssert_Detail::ReportCompareFailure(
-			"ZENITH_ASSERT_NE", strExprA, strExprB, "==", acValA, acValB,
-			acUser, strFile, iLine);
 	}
 }
 
@@ -205,15 +216,10 @@ inline void Zenith_TestAssertGt(const T& xA, const U& xB,
 {
 	if (!(xA > xB))
 	{
-		char acUser[512]; va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::FormatUserMsg(acUser, sizeof(acUser), strFormat, args);
+		va_list args; va_start(args, strFormat);
+		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
+			"ZENITH_ASSERT_GT", "<=", strExprA, strExprB, strFile, iLine, strFormat, args);
 		va_end(args);
-		char acValA[128], acValB[128];
-		Zenith_FormatTestValue(acValA, sizeof(acValA), xA);
-		Zenith_FormatTestValue(acValB, sizeof(acValB), xB);
-		Zenith_TestAssert_Detail::ReportCompareFailure(
-			"ZENITH_ASSERT_GT", strExprA, strExprB, "<=", acValA, acValB,
-			acUser, strFile, iLine);
 	}
 }
 
@@ -224,15 +230,10 @@ inline void Zenith_TestAssertLt(const T& xA, const U& xB,
 {
 	if (!(xA < xB))
 	{
-		char acUser[512]; va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::FormatUserMsg(acUser, sizeof(acUser), strFormat, args);
+		va_list args; va_start(args, strFormat);
+		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
+			"ZENITH_ASSERT_LT", ">=", strExprA, strExprB, strFile, iLine, strFormat, args);
 		va_end(args);
-		char acValA[128], acValB[128];
-		Zenith_FormatTestValue(acValA, sizeof(acValA), xA);
-		Zenith_FormatTestValue(acValB, sizeof(acValB), xB);
-		Zenith_TestAssert_Detail::ReportCompareFailure(
-			"ZENITH_ASSERT_LT", strExprA, strExprB, ">=", acValA, acValB,
-			acUser, strFile, iLine);
 	}
 }
 
@@ -243,15 +244,10 @@ inline void Zenith_TestAssertGe(const T& xA, const U& xB,
 {
 	if (!(xA >= xB))
 	{
-		char acUser[512]; va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::FormatUserMsg(acUser, sizeof(acUser), strFormat, args);
+		va_list args; va_start(args, strFormat);
+		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
+			"ZENITH_ASSERT_GE", "<", strExprA, strExprB, strFile, iLine, strFormat, args);
 		va_end(args);
-		char acValA[128], acValB[128];
-		Zenith_FormatTestValue(acValA, sizeof(acValA), xA);
-		Zenith_FormatTestValue(acValB, sizeof(acValB), xB);
-		Zenith_TestAssert_Detail::ReportCompareFailure(
-			"ZENITH_ASSERT_GE", strExprA, strExprB, "<", acValA, acValB,
-			acUser, strFile, iLine);
 	}
 }
 
@@ -262,15 +258,10 @@ inline void Zenith_TestAssertLe(const T& xA, const U& xB,
 {
 	if (!(xA <= xB))
 	{
-		char acUser[512]; va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::FormatUserMsg(acUser, sizeof(acUser), strFormat, args);
+		va_list args; va_start(args, strFormat);
+		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
+			"ZENITH_ASSERT_LE", ">", strExprA, strExprB, strFile, iLine, strFormat, args);
 		va_end(args);
-		char acValA[128], acValB[128];
-		Zenith_FormatTestValue(acValA, sizeof(acValA), xA);
-		Zenith_FormatTestValue(acValB, sizeof(acValB), xB);
-		Zenith_TestAssert_Detail::ReportCompareFailure(
-			"ZENITH_ASSERT_LE", strExprA, strExprB, ">", acValA, acValB,
-			acUser, strFile, iLine);
 	}
 }
 

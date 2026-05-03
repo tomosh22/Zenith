@@ -334,6 +334,13 @@ public:
 	// rolled teardown silently leaks GPU memory.
 	static void Destroy(Flux_RenderAttachment& xAttachment);
 	static void Destroy(Flux_RenderAttachmentCube& xAttachment);
+
+private:
+	// Shared body of BuildColour / BuildColourFromAliasedVRAM. Caller passes a
+	// fully-formed VRAM handle — freshly allocated or borrowed from an aliased
+	// pool. szDiagPrefix is "" for the standard variant or "Aliased " for the
+	// aliased one; it's interpolated into the diagnostic log line.
+	void BuildColourImpl(Flux_RenderAttachment& xAttachment, const std::string& strName, Flux_VRAMHandle xVRAM, const char* szDiagPrefix);
 };
 
 struct Flux_RenderGraph_Pass;

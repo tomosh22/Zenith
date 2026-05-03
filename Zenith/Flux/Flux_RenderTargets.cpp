@@ -199,24 +199,23 @@ const Flux_RenderTargetView& Flux_RenderAttachmentCube::RTV(u_int uMip, u_int uF
 	return m_aaxMipFaceRTVs[uMip][uFace];
 }
 
-void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName)
+// Shared colour-attachment build core. Caller supplies a fully-formed
+// Flux_VRAMHandle — either freshly allocated (BuildColour) or borrowed from
+// an aliased pool (BuildColourFromAliasedVRAM). All view creation, surface
+// info population, and diagnostic logging is identical between the two paths.
+void Flux_RenderAttachmentBuilder::BuildColourImpl(Flux_RenderAttachment& xAttachment, const std::string& strName, Flux_VRAMHandle xVRAM, const char* szDiagPrefix)
 {
-	// Idempotent rebuild: if this attachment was built previously (e.g. first-
-	// frame init) and is now being re-built (e.g. window resize), queue the
-	// prior VRAM + all image views for deferred GPU-safe deletion first.
-	Destroy(xAttachment);
-
 	Flux_SurfaceInfo xInfo;
-	xInfo.m_uWidth = m_uWidth;
-	xInfo.m_uHeight = m_uHeight;
-	xInfo.m_uDepth = m_uDepth;
-	xInfo.m_eFormat = m_eFormat;
+	xInfo.m_uWidth       = m_uWidth;
+	xInfo.m_uHeight      = m_uHeight;
+	xInfo.m_uDepth       = m_uDepth;
+	xInfo.m_eFormat      = m_eFormat;
 	xInfo.m_eTextureType = m_eTextureType;
-	xInfo.m_uNumMips = m_uNumMips;
-	xInfo.m_uNumLayers = 1;
+	xInfo.m_uNumMips     = m_uNumMips;
+	xInfo.m_uNumLayers   = 1;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
-	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
+	xAttachment.m_xVRAMHandle = xVRAM;
 	xAttachment.m_xSurfaceInfo = xInfo;
 #ifdef ZENITH_TOOLS
 	xAttachment.m_strName = strName;
@@ -256,7 +255,8 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 
 	{
 		Flux_VRAM* pxVRAMForLog = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
-		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Colour Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u",
+		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: %sColour Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u",
+			szDiagPrefix,
 			strName.c_str(),
 			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,
 			xAttachment.m_xVRAMHandle.AsUInt(),
@@ -264,14 +264,11 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	}
 }
 
-void Flux_RenderAttachmentBuilder::BuildColourFromAliasedVRAM(Flux_RenderAttachment& xAttachment, const std::string& strName, Flux_VRAMHandle xAliasedVRAM)
+void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName)
 {
-	// Aliased-image variant: skip CreateRenderTargetVRAM; the VRAM was created
-	// separately via Flux_MemoryManager::CreateAliasedImageVRAM and is bound
-	// to a pool's allocation. All view creation logic is identical to the
-	// non-aliased BuildColour.
-	Zenith_Assert(xAliasedVRAM.IsValid(),
-		"Flux_RenderAttachmentBuilder::BuildColourFromAliasedVRAM: invalid aliased VRAM handle for '%s'", strName.c_str());
+	// Idempotent rebuild: if this attachment was built previously (e.g. first-
+	// frame init) and is now being re-built (e.g. window resize), queue the
+	// prior VRAM + all image views for deferred GPU-safe deletion first.
 	Destroy(xAttachment);
 
 	Flux_SurfaceInfo xInfo;
@@ -284,43 +281,20 @@ void Flux_RenderAttachmentBuilder::BuildColourFromAliasedVRAM(Flux_RenderAttachm
 	xInfo.m_uNumLayers   = 1;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
-	xAttachment.m_xVRAMHandle = xAliasedVRAM;
-	xAttachment.m_xSurfaceInfo = xInfo;
-#ifdef ZENITH_TOOLS
-	xAttachment.m_strName = strName;
-#else
-	(void)strName;
-#endif
+	BuildColourImpl(xAttachment, strName, Flux_MemoryManager::CreateRenderTargetVRAM(xInfo), "");
+}
 
-	// Per-mip RTVs and SRVs — see BuildColour for the bug history.
-	for (u_int uMip = 0; uMip < m_uNumMips; uMip++)
-	{
-		xAttachment.m_axRTVs[uMip] = Flux_MemoryManager::CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, uMip);
-	}
+void Flux_RenderAttachmentBuilder::BuildColourFromAliasedVRAM(Flux_RenderAttachment& xAttachment, const std::string& strName, Flux_VRAMHandle xAliasedVRAM)
+{
+	// Aliased-image variant: skip CreateRenderTargetVRAM; the VRAM was created
+	// separately via Flux_MemoryManager::CreateAliasedImageVRAM and is bound
+	// to a pool's allocation. All view creation logic is identical to the
+	// non-aliased BuildColour.
+	Zenith_Assert(xAliasedVRAM.IsValid(),
+		"Flux_RenderAttachmentBuilder::BuildColourFromAliasedVRAM: invalid aliased VRAM handle for '%s'", strName.c_str());
+	Destroy(xAttachment);
 
-	xAttachment.m_xSRV = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, m_uNumMips);
-	for (u_int uMip = 0; uMip < m_uNumMips; uMip++)
-	{
-		xAttachment.m_axMipSRVs[uMip] = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, uMip, 1);
-	}
-
-	if (m_uMemoryFlags & (1 << MEMORY_FLAGS__UNORDERED_ACCESS))
-	{
-		for (u_int uMip = 0; uMip < m_uNumMips; uMip++)
-		{
-			xAttachment.m_axUAVs[uMip] = Flux_MemoryManager::CreateUnorderedAccessView(
-				xAttachment.m_xVRAMHandle, xInfo, uMip);
-		}
-	}
-
-	{
-		Flux_VRAM* pxVRAMForLog = Flux_PlatformAPI::GetVRAM(xAttachment.m_xVRAMHandle);
-		Zenith_Log(LOG_CATEGORY_RENDERER, "DIAG: Aliased Colour Attachment '%s' VkImage=0x%llx VRAM=%u %ux%u mips=%u",
-			strName.c_str(),
-			pxVRAMForLog ? (unsigned long long)(VkImage)pxVRAMForLog->GetImage() : 0ull,
-			xAttachment.m_xVRAMHandle.AsUInt(),
-			xInfo.m_uWidth, xInfo.m_uHeight, m_uNumMips);
-	}
+	BuildColourImpl(xAttachment, strName, xAliasedVRAM, "Aliased ");
 }
 
 void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachmentCube& xAttachment, const std::string& strName)

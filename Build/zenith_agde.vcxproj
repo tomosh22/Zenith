@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -853,6 +853,7 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_Asset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandle.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.Tests.inl" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.h" />
@@ -925,15 +926,19 @@
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueue.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistry.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentPool.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.inl" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_RenderTaskState.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneData.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.Tests.inl" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManagerGuards.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManagerInternal.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager_Internal.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneOperation.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
@@ -975,10 +980,12 @@
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h" />
+    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BlendTree.h" />
+    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BlendTree.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BonePose.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_InverseKinematics.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h" />

@@ -174,6 +174,17 @@ private:
 	static int AllocateSceneHandle();
 	static void FreeSceneHandle(int iHandle);
 
+	// Phase-2 destruction body for one scene during a non-persistent unload
+	// (UnloadAllNonPersistent). Deletes the SceneData, fires SceneUnloaded
+	// callback, and releases the handle (which increments the generation
+	// counter). bActiveSceneUnloadedInOut is OR'd with whether this scene
+	// was the active one, so the caller can detect after the loop whether
+	// the active scene needs the post-loop fallback orchestration. The
+	// fallback (clearing s_iActiveSceneHandle, firing ActiveSceneChanged)
+	// stays in the parent because it depends on cumulative state across
+	// all scenes, not just this one.
+	static void UnloadOneScene(Zenith_Scene xScene, bool& bActiveSceneUnloadedInOut);
+
 	// Per-frame helpers called from Update(). Split out to flatten Update()'s
 	// nesting — the animation collection walk was five levels deep inline.
 	// A4: CollectUpdatableScenes / CollectAnimationsFromScene moved to

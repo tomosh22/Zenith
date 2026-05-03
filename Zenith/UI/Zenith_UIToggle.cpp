@@ -93,29 +93,6 @@ void Zenith_UIToggle::ResetInteractionStateForEditor()
 #endif
 }
 
-void Zenith_UIToggle::GetInteractionMousePosition(float& fOutMouseX, float& fOutMouseY) const
-{
-	Zenith_Maths::Vector2_64 xMousePos;
-	Zenith_Input::GetMousePosition(xMousePos);
-
-	fOutMouseX = static_cast<float>(xMousePos.x);
-	fOutMouseY = static_cast<float>(xMousePos.y);
-#ifdef ZENITH_TOOLS
-#ifdef ZENITH_INPUT_SIMULATOR
-	if (!Zenith_InputSimulator::IsEnabled())
-#endif
-	{
-		Zenith_Maths::Vector2 xViewportPos = Zenith_Editor::GetViewportPos();
-		Zenith_Maths::Vector2 xViewportSize = Zenith_Editor::GetViewportSize();
-		if (xViewportSize.x > 0.f && xViewportSize.y > 0.f && m_pxCanvas)
-		{
-			Zenith_Maths::Vector2 xCanvasSize = m_pxCanvas->GetSize();
-			fOutMouseX = (fOutMouseX - xViewportPos.x) * (xCanvasSize.x / xViewportSize.x);
-			fOutMouseY = (fOutMouseY - xViewportPos.y) * (xCanvasSize.y / xViewportSize.y);
-		}
-	}
-#endif
-}
 
 bool Zenith_UIToggle::ComputeHovered(bool bInteractable, float fMouseX, float fMouseY) const
 {
@@ -194,7 +171,7 @@ void Zenith_UIToggle::Update(float fDt)
 
 	float fMouseX;
 	float fMouseY;
-	GetInteractionMousePosition(fMouseX, fMouseY);
+	GetTransformedMousePosition(fMouseX, fMouseY);
 
 	bool bHovered = ComputeHovered(bInteractable, fMouseX, fMouseY);
 	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);

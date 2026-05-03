@@ -648,6 +648,101 @@ namespace
 	}
 }
 
+// Render one attached script slot. Sets m_iPendingRemoveIndex if the user
+// clicks the X button so the actual removal happens next frame (avoids
+// invalidating the loop iterator).
+void Zenith_ScriptComponent::RenderScriptSlot(uint32_t uIndex, const Zenith_ScriptSlot& xSlot)
+{
+	ImGui::PushID(static_cast<int>(uIndex));
+
+	const std::string strBasename = AssetPathBasename(xSlot.m_strScriptAssetPath);
+	const char* szTypeName = xSlot.m_pxBehaviour->GetBehaviourTypeName();
+
+	char acHeader[256];
+	std::snprintf(acHeader, sizeof(acHeader), "%s - %s",
+		strBasename.empty() ? "(no asset)" : strBasename.c_str(),
+		szTypeName ? szTypeName : "?");
+
+	const bool bOpen = ImGui::TreeNodeEx(acHeader, ImGuiTreeNodeFlags_DefaultOpen);
+
+	// X button on the right edge to remove this slot
+	ImGui::SameLine(ImGui::GetWindowWidth() - 40.0f);
+	if (ImGui::SmallButton("X"))
+	{
+		m_iPendingRemoveIndex = static_cast<int32_t>(uIndex);
+	}
+
+	if (bOpen)
+	{
+		if (xSlot.m_pxBehaviour->m_axGUIDRefs.size() > 0)
+		{
+			ImGui::Text("GUID References: %zu", xSlot.m_pxBehaviour->m_axGUIDRefs.size());
+		}
+		xSlot.m_pxBehaviour->RenderPropertiesPanel();
+		ImGui::TreePop();
+	}
+
+	ImGui::PopID();
+}
+
+// "Add Script" button + popup listing every public registered behaviour.
+// Internal/test behaviours are intentionally hidden — they can still be
+// attached via AddScript<T>() in code.
+void Zenith_ScriptComponent::RenderAddScriptPopup()
+{
+	if (ImGui::Button("Add Script"))
+	{
+		ImGui::OpenPopup("AddScriptPopup");
+	}
+
+	if (!ImGui::BeginPopup("AddScriptPopup")) return;
+
+	Zenith_Vector<std::string> axTypeNames;
+	Zenith_ScriptAsset::GetPublicRegisteredTypeNames(axTypeNames);
+
+	// Sort for stable UX (Zenith_Vector doesn't expose iterators, so sort by hand into a temp std::vector)
+	std::vector<std::string> axSorted;
+	axSorted.reserve(axTypeNames.GetSize());
+	for (uint32_t u = 0; u < axTypeNames.GetSize(); ++u)
+	{
+		axSorted.push_back(axTypeNames.Get(u));
+	}
+	std::sort(axSorted.begin(), axSorted.end());
+
+	for (const std::string& strTypeName : axSorted)
+	{
+		if (ImGui::MenuItem(strTypeName.c_str()))
+		{
+			const std::string strAssetPath = Zenith_ScriptAsset::MakeAssetPath(strTypeName.c_str());
+			AddScriptByAssetPath(strAssetPath.c_str());
+		}
+	}
+
+	if (axSorted.empty())
+	{
+		ImGui::TextDisabled("(no registered scripts)");
+	}
+
+	ImGui::EndPopup();
+}
+
+// Drag-drop target for .zscript files from the content browser.
+// Content browser sends a DragDropFilePayload containing an absolute file
+// path; normalize it to the prefixed form (game:Scripts/...) before attaching.
+void Zenith_ScriptComponent::AcceptScriptAssetDragDrop()
+{
+	if (!ImGui::BeginDragDropTarget()) return;
+
+	const ImGuiPayload* pxPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_SCRIPT_ASSET);
+	if (pxPayload && pxPayload->Data && pxPayload->DataSize >= static_cast<int>(sizeof(DragDropFilePayload)))
+	{
+		const DragDropFilePayload* pxFilePayload = static_cast<const DragDropFilePayload*>(pxPayload->Data);
+		const std::string strNormalized = Zenith_AssetRegistry::NormalizeAssetPath(pxFilePayload->m_szFilePath);
+		AddScriptByAssetPath(strNormalized.c_str());
+	}
+	ImGui::EndDragDropTarget();
+}
+
 void Zenith_ScriptComponent::RenderPropertiesPanel()
 {
 	if (!ImGui::CollapsingHeader("Script Component", ImGuiTreeNodeFlags_DefaultOpen))
@@ -660,100 +755,15 @@ void Zenith_ScriptComponent::RenderPropertiesPanel()
 		m_iPendingRemoveIndex = -1;
 	}
 
-	// Render each attached script as its own collapsible section
 	for (uint32_t u = 0; u < m_axSlots.GetSize(); ++u)
 	{
 		const Zenith_ScriptSlot& xSlot = m_axSlots.Get(u);
-		if (!xSlot.m_pxBehaviour)
-			continue;
-
-		ImGui::PushID(static_cast<int>(u));
-
-		const std::string strBasename = AssetPathBasename(xSlot.m_strScriptAssetPath);
-		const char* szTypeName = xSlot.m_pxBehaviour->GetBehaviourTypeName();
-
-		char acHeader[256];
-		std::snprintf(acHeader, sizeof(acHeader), "%s - %s",
-			strBasename.empty() ? "(no asset)" : strBasename.c_str(),
-			szTypeName ? szTypeName : "?");
-
-		const bool bOpen = ImGui::TreeNodeEx(acHeader, ImGuiTreeNodeFlags_DefaultOpen);
-
-		// X button on the right edge to remove this slot
-		ImGui::SameLine(ImGui::GetWindowWidth() - 40.0f);
-		if (ImGui::SmallButton("X"))
-		{
-			m_iPendingRemoveIndex = static_cast<int32_t>(u);
-		}
-
-		if (bOpen)
-		{
-			if (xSlot.m_pxBehaviour->m_axGUIDRefs.size() > 0)
-			{
-				ImGui::Text("GUID References: %zu", xSlot.m_pxBehaviour->m_axGUIDRefs.size());
-			}
-			xSlot.m_pxBehaviour->RenderPropertiesPanel();
-			ImGui::TreePop();
-		}
-
-		ImGui::PopID();
+		if (!xSlot.m_pxBehaviour) continue;
+		RenderScriptSlot(u, xSlot);
 	}
 
 	ImGui::Separator();
-
-	// "Add Script" popup - lists all registered behaviours
-	if (ImGui::Button("Add Script"))
-	{
-		ImGui::OpenPopup("AddScriptPopup");
-	}
-
-	if (ImGui::BeginPopup("AddScriptPopup"))
-	{
-		Zenith_Vector<std::string> axTypeNames;
-		// Use the public-only enumerator so test/internal behaviours don't pollute the
-		// editor's "Add Script" popup. Internal behaviours can still be attached via
-		// AddScript<T>() in code.
-		Zenith_ScriptAsset::GetPublicRegisteredTypeNames(axTypeNames);
-
-		// Sort for stable UX (Zenith_Vector doesn't expose iterators, so sort by hand into a temp std::vector)
-		std::vector<std::string> axSorted;
-		axSorted.reserve(axTypeNames.GetSize());
-		for (uint32_t u = 0; u < axTypeNames.GetSize(); ++u)
-		{
-			axSorted.push_back(axTypeNames.Get(u));
-		}
-		std::sort(axSorted.begin(), axSorted.end());
-
-		for (const std::string& strTypeName : axSorted)
-		{
-			if (ImGui::MenuItem(strTypeName.c_str()))
-			{
-				const std::string strAssetPath = Zenith_ScriptAsset::MakeAssetPath(strTypeName.c_str());
-				AddScriptByAssetPath(strAssetPath.c_str());
-			}
-		}
-
-		if (axSorted.empty())
-		{
-			ImGui::TextDisabled("(no registered scripts)");
-		}
-
-		ImGui::EndPopup();
-	}
-
-	// Drag-drop target for .zscript files from the content browser.
-	// Content browser sends a DragDropFilePayload containing an absolute file path;
-	// normalize it to the prefixed form (game:Scripts/...) before attaching.
-	if (ImGui::BeginDragDropTarget())
-	{
-		const ImGuiPayload* pxPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_SCRIPT_ASSET);
-		if (pxPayload && pxPayload->Data && pxPayload->DataSize >= static_cast<int>(sizeof(DragDropFilePayload)))
-		{
-			const DragDropFilePayload* pxFilePayload = static_cast<const DragDropFilePayload*>(pxPayload->Data);
-			const std::string strNormalized = Zenith_AssetRegistry::NormalizeAssetPath(pxFilePayload->m_szFilePath);
-			AddScriptByAssetPath(strNormalized.c_str());
-		}
-		ImGui::EndDragDropTarget();
-	}
+	RenderAddScriptPopup();
+	AcceptScriptAssetDragDrop();
 }
 #endif

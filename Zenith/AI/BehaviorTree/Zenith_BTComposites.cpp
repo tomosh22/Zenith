@@ -2,14 +2,32 @@
 #include "AI/BehaviorTree/Zenith_BTComposites.h"
 #include "DataStream/Zenith_DataStream.h"
 
-// ========== Zenith_BTSequence ==========
+// ========== Sequence / Selector shared body ==========
+//
+// Sequence and Selector are duals: both walk children left-to-right, both
+// resume from m_uCurrentChild after a RUNNING child, both call OnEnter /
+// OnExit at the same boundaries. The only difference is which child status
+// triggers the early-exit return:
+//   - Sequence exits on FAILURE (and returns SUCCESS if all children pass)
+//   - Selector exits on SUCCESS (and returns FAILURE if all children fail)
+//
+// Function-pointer template parameter (not std::function — forbidden by
+// project conventions) makes the predicate a compile-time constant so the
+// branch optimises away.
 
-BTNodeStatus Zenith_BTSequence::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+static bool IsFailureStatus(BTNodeStatus eStatus) { return eStatus == BTNodeStatus::FAILURE; }
+static bool IsSuccessStatus(BTNodeStatus eStatus) { return eStatus == BTNodeStatus::SUCCESS; }
+
+template<bool (*EarlyExit)(BTNodeStatus), BTNodeStatus FinalStatus>
+static BTNodeStatus ExecuteCompositeBody(
+	Zenith_BTComposite& xSelf,
+	uint32_t& uCurrentChild, BTNodeStatus& eLastStatus,
+	Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
 {
-	// Continue from where we left off (m_uCurrentChild is reset in OnEnter)
-	while (m_uCurrentChild < GetChildCount())
+	// Continue from where we left off (uCurrentChild is reset in OnEnter)
+	while (uCurrentChild < xSelf.GetChildCount())
 	{
-		Zenith_BTNode* pxChild = GetChild(m_uCurrentChild);
+		Zenith_BTNode* pxChild = xSelf.GetChild(uCurrentChild);
 
 		// If this is a new child, call OnEnter
 		if (pxChild->GetLastStatus() != BTNodeStatus::RUNNING)
@@ -22,70 +40,40 @@ BTNodeStatus Zenith_BTSequence::Execute(Zenith_Entity& xAgent, Zenith_Blackboard
 		if (eChildStatus == BTNodeStatus::RUNNING)
 		{
 			// Child still running, return RUNNING and resume here next tick
-			m_eLastStatus = BTNodeStatus::RUNNING;
-			return m_eLastStatus;
+			eLastStatus = BTNodeStatus::RUNNING;
+			return eLastStatus;
 		}
 
 		// Child completed, call OnExit
 		pxChild->OnExit(xAgent, xBlackboard);
 
-		if (eChildStatus == BTNodeStatus::FAILURE)
+		if (EarlyExit(eChildStatus))
 		{
-			// Sequence fails on first failure
-			m_eLastStatus = BTNodeStatus::FAILURE;
-			return m_eLastStatus;
+			eLastStatus = eChildStatus;
+			return eLastStatus;
 		}
 
-		// Child succeeded, move to next
-		++m_uCurrentChild;
+		++uCurrentChild;
 	}
 
-	// All children succeeded
-	m_eLastStatus = BTNodeStatus::SUCCESS;
-	return m_eLastStatus;
+	eLastStatus = FinalStatus;
+	return eLastStatus;
+}
+
+// ========== Zenith_BTSequence ==========
+
+BTNodeStatus Zenith_BTSequence::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+{
+	return ExecuteCompositeBody<&IsFailureStatus, BTNodeStatus::SUCCESS>(
+		*this, m_uCurrentChild, m_eLastStatus, xAgent, xBlackboard, fDt);
 }
 
 // ========== Zenith_BTSelector ==========
 
 BTNodeStatus Zenith_BTSelector::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
 {
-	// Continue from where we left off
-	while (m_uCurrentChild < GetChildCount())
-	{
-		Zenith_BTNode* pxChild = GetChild(m_uCurrentChild);
-
-		// If this is a new child, call OnEnter
-		if (pxChild->GetLastStatus() != BTNodeStatus::RUNNING)
-		{
-			pxChild->OnEnter(xAgent, xBlackboard);
-		}
-
-		BTNodeStatus eChildStatus = pxChild->Execute(xAgent, xBlackboard, fDt);
-
-		if (eChildStatus == BTNodeStatus::RUNNING)
-		{
-			// Child still running, return RUNNING and resume here next tick
-			m_eLastStatus = BTNodeStatus::RUNNING;
-			return m_eLastStatus;
-		}
-
-		// Child completed, call OnExit
-		pxChild->OnExit(xAgent, xBlackboard);
-
-		if (eChildStatus == BTNodeStatus::SUCCESS)
-		{
-			// Selector succeeds on first success
-			m_eLastStatus = BTNodeStatus::SUCCESS;
-			return m_eLastStatus;
-		}
-
-		// Child failed, try next
-		++m_uCurrentChild;
-	}
-
-	// All children failed
-	m_eLastStatus = BTNodeStatus::FAILURE;
-	return m_eLastStatus;
+	return ExecuteCompositeBody<&IsSuccessStatus, BTNodeStatus::FAILURE>(
+		*this, m_uCurrentChild, m_eLastStatus, xAgent, xBlackboard, fDt);
 }
 
 // ========== Zenith_BTParallel ==========

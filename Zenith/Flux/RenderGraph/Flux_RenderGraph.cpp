@@ -26,6 +26,12 @@ static u_int64 EstimateTransientImageSize(const Flux_TransientTextureDesc& xDesc
 // Centralised so assertions across AddResourceUsage, Validate, bind-time
 // checks all agree on what a given ResourceAccess means. Any new access mode
 // added to Flux_Enums.h must be classified here or the default branch trips.
+//
+// Note: IsReadAccess and IsWriteAccess are intentionally kept as separate
+// fully-enumerated switches rather than collapsed into a single bitmask
+// table. The compiler-warning-via-missing-case path forces every new
+// ResourceAccess value to be explicitly classified in BOTH directions —
+// trying to share a table or bitmask would lose that enforcement.
 static bool IsReadAccess(ResourceAccess eAccess)
 {
     switch (eAccess)

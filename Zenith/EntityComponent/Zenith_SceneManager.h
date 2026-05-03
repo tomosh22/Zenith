@@ -42,12 +42,16 @@
 //   - Zenith_SceneLifecycleContext   (per-frame lifecycle state read surface)
 //
 // Why is Zenith_SceneData.h included AT THE BOTTOM, after the class definition?
-// SceneData.h ALSO includes this file at its bottom — the cycle is intentional
-// and load-bearing. Each header is `#pragma once` and finishes its class body
-// before pulling in the sibling, so any TU eventually sees both classes fully
-// defined. Don't "fix" the cycle by removing one of the includes. The
-// canonical follow-up is the documented `T2.4` task: extract the
-// Zenith_ComponentPool* types so neither header depends on the other for them.
+// This header's template bodies (e.g. GetAllOfComponentTypeFromAllScenes) call
+// into Zenith_SceneData::AppendAllOfComponentType<T>, so SceneData must be
+// fully defined by the time those bodies are compiled. The class body comes
+// first and the sibling include is deferred to the bottom.
+//
+// As of the T2.4 cycle-break, SceneData.h NO LONGER includes this header back —
+// component-pool types live in Zenith_ComponentPool.h and the AreRenderTasksActive
+// dependency was replaced with the free-function forwarder in
+// Zenith_RenderTaskState.h. The dependency is now strictly one-way:
+// SceneManager.h → SceneData.h.
 // =============================================================================
 
 #include "Collections/Zenith_Vector.h"

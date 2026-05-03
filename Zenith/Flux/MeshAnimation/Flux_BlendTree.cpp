@@ -315,26 +315,33 @@ void Flux_BlendTreeNode_BlendSpace1D::Evaluate(float fDt,
 	Flux_SkeletonPose::Blend(xOutPose, m_xPoseA, m_xPoseB, fBlend);
 }
 
-float Flux_BlendTreeNode_BlendSpace1D::GetNormalizedTime() const
+// Walk a blend-point list and return the nearest entry by some caller-supplied
+// distance metric (1D uses scalar abs-delta, 2D uses vector length). Returns
+// nullptr only when the list is empty.
+template<typename PointT, typename DistFn>
+static const PointT* FindNearestBlendPoint(const Zenith_Vector<PointT>& xPoints, DistFn fnDist)
 {
-	if (m_xBlendPoints.GetSize() == 0)
-		return 0.0f;
+	if (xPoints.GetSize() == 0) return nullptr;
 
-	// Return time of nearest blend point
 	float fMinDist = FLT_MAX;
-	const BlendPoint* pxNearest = nullptr;
-
-	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+	const PointT* pxNearest = nullptr;
+	for (u_int u = 0; u < xPoints.GetSize(); u++)
 	{
-		const BlendPoint& xPoint = m_xBlendPoints.Get(u);
-		float fDist = std::abs(xPoint.m_fPosition - m_fParameter);
+		const PointT& xPoint = xPoints.Get(u);
+		float fDist = fnDist(xPoint);
 		if (fDist < fMinDist)
 		{
 			fMinDist = fDist;
 			pxNearest = &xPoint;
 		}
 	}
+	return pxNearest;
+}
 
+float Flux_BlendTreeNode_BlendSpace1D::GetNormalizedTime() const
+{
+	const BlendPoint* pxNearest = FindNearestBlendPoint(m_xBlendPoints,
+		[this](const BlendPoint& xP) { return std::abs(xP.m_fPosition - m_fParameter); });
 	return pxNearest && pxNearest->m_pxNode ? pxNearest->m_pxNode->GetNormalizedTime() : 0.0f;
 }
 
@@ -586,24 +593,8 @@ void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 
 float Flux_BlendTreeNode_BlendSpace2D::GetNormalizedTime() const
 {
-	if (m_xBlendPoints.GetSize() == 0)
-		return 0.0f;
-
-	// Return time of nearest point
-	float fMinDist = FLT_MAX;
-	const BlendPoint* pxNearest = nullptr;
-
-	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
-	{
-		const BlendPoint& xPoint = m_xBlendPoints.Get(u);
-		float fDist = glm::length(xPoint.m_xPosition - m_xParameter);
-		if (fDist < fMinDist)
-		{
-			fMinDist = fDist;
-			pxNearest = &xPoint;
-		}
-	}
-
+	const BlendPoint* pxNearest = FindNearestBlendPoint(m_xBlendPoints,
+		[this](const BlendPoint& xP) { return glm::length(xP.m_xPosition - m_xParameter); });
 	return pxNearest && pxNearest->m_pxNode ? pxNearest->m_pxNode->GetNormalizedTime() : 0.0f;
 }
 
@@ -851,3 +842,5 @@ void Flux_BlendTreeNode_Select::ReadFromDataStream(Zenith_DataStream& xStream)
 	for (uint32_t i = 0; i < uNumChildren; ++i)
 		m_xChildren.PushBack(ReadChildNode(xStream));
 }
+
+#include "Flux/MeshAnimation/Flux_BlendTree.Tests.inl"

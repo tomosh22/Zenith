@@ -289,14 +289,14 @@ The `Zenith_EventSystem` callback hierarchy (`Zenith_CallbackBase` → `Zenith_C
 
 4. **Current Design Is Type-Safe**: The callback wrappers know the exact event type at compile time, preserving type safety within the wrapper while providing runtime polymorphism for storage.
 
-### Why SceneManager.h and SceneData.h Include Each Other
+### SceneManager.h ↔ SceneData.h: cycle broken (T2.4)
 
-`Zenith_SceneData.h` includes `Zenith_SceneManager.h` (at the bottom) and `Zenith_SceneManager.h` includes `Zenith_SceneData.h`. The complexity analyzer flags this as a cycle; it is intentional and load-bearing.
+The historical cycle (`SceneData.h` ↔ `SceneManager.h`, both including each other at the bottom for mutual template body references) has been broken. The dependency is now strictly **one-way**: `SceneManager.h → SceneData.h`.
 
-1. **Template bodies reference each other**: `SceneData`'s template methods call `Zenith_SceneManager::AreRenderTasksActive()`; `SceneManager`'s template methods call `pxData->AppendAllOfComponentType<T>()`. Each template's body needs the other class fully declared at the point of instantiation.
+The break was achieved by lifting both sources of the back-edge out of `SceneData.h`:
 
-2. **Trailing `#include` order is deliberate**: Each header defines its class body first, then includes the sibling at the end. By the time any consumer TU instantiates the templates, both class declarations are visible.
+1. **Component pool types** — `Zenith_ComponentPoolBase`, `Zenith_ComponentHandle<T>`, `Zenith_ComponentPool<T>`, and the `Zenith_Component` concept moved to `Zenith_ComponentPool.h`. This new header carries its own placement-new guard and is fully self-contained (it includes `Zenith_Entity.h`, `Zenith_Vector`, and the memory-management headers internally).
 
-3. **Safe by construction**: `#pragma once` guarantees each header is processed exactly once per TU. The cycle is only a textual artifact of the include graph — it is not a compile-time fragility.
+2. **Render-task-active check** — `SceneData.h`'s template assertions used to call `Zenith_SceneManager::AreRenderTasksActive()`, which forced the SceneManager.h include. Replaced with the free-function `Zenith_AreRenderTasksActive()` declared in `Zenith_RenderTaskState.h` and defined in `Zenith_SceneManager.cpp` as a one-line forwarder to the unchanged static class accessor. The static accessor and the underlying `s_bRenderTasksActive` flag still live in `Zenith_SceneManagerInternal.h` — only the template-body call sites in SceneData.h were retargeted (~4 sites). The qualified `Zenith_SceneManager::AreRenderTasksActive()` form continues to work at every other call site (~20 elsewhere across SceneRegistry.cpp, Query.h, SceneOperationQueue.cpp, etc.).
 
-The original rationale is documented in-source at `Zenith_SceneData.h:838-851`. See the `T2.4` task in the active quality plan if the two headers are later split and the cycle broken; the target approach is extracting `Zenith_ComponentPool*` into a new header so neither SceneManager.h nor SceneData.h needs to depend on the other for component-pool types.
+`SceneManager.h` still includes `SceneData.h` at the bottom (line ~938) so its own template bodies can call into `Zenith_SceneData::AppendAllOfComponentType<T>`. That direction of the dependency is necessary and stays.

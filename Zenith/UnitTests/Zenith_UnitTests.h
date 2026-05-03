@@ -577,4 +577,41 @@ public:
 	static void TestFluxPerFrameCallbackOrderPreserved();
 	static void TestFluxPerFrameCallbackUserDataPassed();
 	static void TestFluxPerFrameRingIndexInsideCallback();
+
+	// AssetRegistry path-normalization tests (verify SetGameAssetsDir /
+	// SetEngineAssetsDir → NormalizeAssetDirPath pipeline)
+	static void TestAssetRegistryNormalizeBackslashes();
+	static void TestAssetRegistryStripsTrailingForwardSlash();
+	static void TestAssetRegistryStripsTrailingBackslash();
+	static void TestAssetRegistryMixedSeparators();
+	static void TestAssetRegistryEmptyStringNoOp();
+	static void TestAssetRegistryNoChangeNeeded();
+	static void TestAssetRegistrySingleSlashStripsToEmpty();
+	static void TestAssetRegistryGameAndEngineDirsSeparate();
+
+	// Flux_RootMotion::SamplePosition/Rotation Delta tests (verify the
+	// shared SampleRootMotionDeltas templated helper handles edge cases:
+	// empty list, single keyframe, between-frames lerp, identical-timestamp
+	// guard, past-end clamp).
+	static void TestRootMotionPositionEmpty();
+	static void TestRootMotionPositionDisabled();
+	static void TestRootMotionPositionSingleKeyframe();
+	static void TestRootMotionPositionInterpolatesBetween();
+	static void TestRootMotionPositionPastEnd();
+	static void TestRootMotionPositionIdenticalTimestamps();
+	static void TestRootMotionPositionExactKeyframeMatch();
+	static void TestRootMotionRotationEmpty();
+	static void TestRootMotionRotationSingleKeyframe();
+	static void TestRootMotionRotationInterpolatesBetween();
+	static void TestRootMotionRotationPastEnd();
+
+	// Flux_BlendTreeNode_BlendSpace1D / 2D nearest-blend-point tests (verify
+	// the shared FindNearestBlendPoint templated helper).
+	static void TestBlendSpace1DEmptyReturnsZero();
+	static void TestBlendSpace1DSingleBlendPoint();
+	static void TestBlendSpace1DSelectsNearestPoint();
+	static void TestBlendSpace1DSelectsNearestUnsorted();
+	static void TestBlendSpace2DEmptyReturnsZero();
+	static void TestBlendSpace2DSingleBlendPoint();
+	static void TestBlendSpace2DSelectsNearestByEuclideanDistance();
 };

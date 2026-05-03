@@ -85,7 +85,6 @@ private:
 	// ========== Update Helpers ==========
 
 	void ResetInteractionStateForEditor();
-	void GetInteractionMousePosition(float& fOutMouseX, float& fOutMouseY) const;
 	bool ComputeHovered(bool bInteractable, float fMouseX, float fMouseY) const;
 	void HandleMouseInteraction(bool bHovered, bool bMouseDown);
 	void HandleKeyboardActivation();

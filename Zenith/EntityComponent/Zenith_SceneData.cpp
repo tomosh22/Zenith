@@ -693,7 +693,7 @@ void Zenith_SceneData::QueuePendingStartsForNewEntities(const Zenith_Vector<Zeni
 	}
 }
 
-void Zenith_SceneData::DispatchOnUpdateForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt)
+void Zenith_SceneData::DispatchLifecycleHookForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt, LifecycleHook eHook)
 {
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 
@@ -705,23 +705,12 @@ void Zenith_SceneData::DispatchOnUpdateForEntities(const Zenith_Vector<Zenith_En
 
 		Zenith_Entity xEntity = GetEntity(uID);
 		if (!xEntity.IsActiveInHierarchy()) continue;
-		xRegistry.DispatchOnUpdate(xEntity, fDt);
-	}
-}
 
-void Zenith_SceneData::DispatchOnLateUpdateForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt)
-{
-	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
-
-	for (u_int u = 0; u < xSnapshotIDs.GetSize(); ++u)
-	{
-		Zenith_EntityID uID = xSnapshotIDs.Get(u);
-		if (!EntityExists(uID)) continue;
-		if (WasCreatedDuringUpdate(uID)) continue;
-
-		Zenith_Entity xEntity = GetEntity(uID);
-		if (!xEntity.IsActiveInHierarchy()) continue;
-		xRegistry.DispatchOnLateUpdate(xEntity, fDt);
+		switch (eHook)
+		{
+		case LifecycleHook::UPDATE:      xRegistry.DispatchOnUpdate(xEntity, fDt);     break;
+		case LifecycleHook::LATE_UPDATE: xRegistry.DispatchOnLateUpdate(xEntity, fDt); break;
+		}
 	}
 }
 

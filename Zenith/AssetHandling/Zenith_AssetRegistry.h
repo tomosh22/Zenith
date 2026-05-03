@@ -80,6 +80,10 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath);
  */
 class Zenith_AssetRegistry
 {
+	// Test code reads/writes the cached asset-dir strings to verify path
+	// normalization edge cases (backslash conversion, trailing slash strip).
+	friend class Zenith_UnitTests;
+
 public:
 
 	//--------------------------------------------------------------------------

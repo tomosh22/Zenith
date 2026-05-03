@@ -357,6 +357,13 @@ public:
 
 #ifdef ZENITH_TOOLS
 	void RenderPropertiesPanel();
+private:
+	// Sub-panels of RenderPropertiesPanel. Public-facing API stays a single
+	// call; the helpers exist only to flatten the panel function.
+	void RenderScriptSlot(uint32_t uIndex, const Zenith_ScriptSlot& xSlot);
+	void RenderAddScriptPopup();
+	void AcceptScriptAssetDragDrop();
+public:
 #endif
 
 	// Drains any slots marked for removal during dispatch. Called automatically at the end of

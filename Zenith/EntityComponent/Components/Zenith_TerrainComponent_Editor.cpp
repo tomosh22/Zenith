@@ -287,6 +287,80 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 // physics / buffer state via CleanupPriorGenerationForRegenerate() before
 // re-running the export.
 //-----------------------------------------------------------------------------
+// Delete every regular file under strOutputDir. Errors are warned, not
+// fatal — partial cleanup is recoverable since the next ExportHeightmapFromPaths
+// will overwrite anything that survives.
+static void DeleteExistingTerrainFiles(const std::string& strOutputDir)
+{
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Deleting existing terrain files in %s", strOutputDir.c_str());
+	try
+	{
+		if (std::filesystem::exists(strOutputDir))
+		{
+			for (const auto& entry : std::filesystem::directory_iterator(strOutputDir))
+			{
+				if (entry.is_regular_file()) std::filesystem::remove(entry.path());
+			}
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Deleted existing terrain files");
+		}
+	}
+	catch (const std::exception& e)
+	{
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Warning: Failed to delete some terrain files: %s", e.what());
+	}
+}
+
+// Allocate a fresh material asset into any empty slot, named after the
+// owning entity. Called between physics-geometry load and render-init so
+// the upcoming InitializeRenderResources sees a fully-populated slot table.
+void Zenith_TerrainComponent::EnsureMaterialSlotsPopulated()
+{
+	const std::string strEntityName = m_xParentEntity.GetName().empty()
+		? ("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex))
+		: m_xParentEntity.GetName();
+	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
+	{
+		if (m_axMaterials[u].GetDirect()) continue;
+		Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		if (pxMat) pxMat->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
+		m_axMaterials[u].Set(pxMat);
+	}
+}
+
+// End-to-end execution of the Regenerate button: cleanup → delete files →
+// export → reload physics → re-init render. Each step updates the export
+// status string so the editor footer reflects progress.
+void Zenith_TerrainComponent::RunTerrainRegeneration(const std::string& strOutputDir)
+{
+	s_bTerrainExportInProgress = true;
+	s_strTerrainExportStatus = "Cleaning up existing terrain...";
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain regeneration...");
+
+	CleanupPriorGenerationForRegenerate();
+
+	s_strTerrainExportStatus = "Deleting existing terrain files...";
+	DeleteExistingTerrainFiles(strOutputDir);
+
+	s_strTerrainExportStatus = "Exporting new terrain meshes...";
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Exporting new terrain...");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strOutputDir.c_str());
+	ExportHeightmapFromPaths(s_szHeightmapPath, strOutputDir);
+
+	s_strTerrainExportStatus = "Loading physics geometry...";
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading new physics geometry...");
+	LoadCombinedPhysicsGeometry();
+
+	s_strTerrainExportStatus = "Initializing render resources...";
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Reinitializing render resources...");
+	EnsureMaterialSlotsPopulated();
+	InitializeRenderResources();
+
+	s_bTerrainExportInProgress = false;
+	s_strTerrainExportStatus = "Terrain regenerated successfully!";
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain regeneration complete!");
+}
+
 void Zenith_TerrainComponent::RenderTerrainRegenerationSection()
 {
 	if (!ImGui::TreeNode("Regenerate Terrain"))
@@ -305,80 +379,14 @@ void Zenith_TerrainComponent::RenderTerrainRegenerationSection()
 
 	const bool bCanRegenerate = strlen(s_szHeightmapPath) > 0 && !s_bTerrainExportInProgress;
 
-	if (!bCanRegenerate)
-		ImGui::BeginDisabled();
+	if (!bCanRegenerate) ImGui::BeginDisabled();
 
 	if (ImGui::Button("Regenerate Terrain", ImVec2(200, 30)))
 	{
-		s_bTerrainExportInProgress = true;
-		s_strTerrainExportStatus = "Cleaning up existing terrain...";
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain regeneration...");
-
-		CleanupPriorGenerationForRegenerate();
-
-		// Delete on-disk files from the previous export.
-		s_strTerrainExportStatus = "Deleting existing terrain files...";
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Deleting existing terrain files in %s", strOutputDir.c_str());
-
-		try
-		{
-			if (std::filesystem::exists(strOutputDir))
-			{
-				for (const auto& entry : std::filesystem::directory_iterator(strOutputDir))
-				{
-					if (entry.is_regular_file())
-					{
-						std::filesystem::remove(entry.path());
-					}
-				}
-				Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Deleted existing terrain files");
-			}
-		}
-		catch (const std::exception& e)
-		{
-			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Warning: Failed to delete some terrain files: %s", e.what());
-		}
-
-		// Export, reload, reinitialise.
-		s_strTerrainExportStatus = "Exporting new terrain meshes...";
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Exporting new terrain...");
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strOutputDir.c_str());
-		ExportHeightmapFromPaths(s_szHeightmapPath, strOutputDir);
-
-		s_strTerrainExportStatus = "Loading physics geometry...";
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading new physics geometry...");
-		LoadCombinedPhysicsGeometry();
-
-		s_strTerrainExportStatus = "Initializing render resources...";
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Reinitializing render resources...");
-
-		// Fill in any empty material slots before re-init.
-		{
-			const std::string strEntityName = m_xParentEntity.GetName().empty()
-				? ("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex))
-				: m_xParentEntity.GetName();
-			for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
-			{
-				if (!m_axMaterials[u].GetDirect())
-				{
-					Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
-					if (pxMat)
-						pxMat->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
-					m_axMaterials[u].Set(pxMat);
-				}
-			}
-		}
-
-		InitializeRenderResources();
-
-		s_bTerrainExportInProgress = false;
-		s_strTerrainExportStatus = "Terrain regenerated successfully!";
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain regeneration complete!");
+		RunTerrainRegeneration(strOutputDir);
 	}
 
-	if (!bCanRegenerate)
-		ImGui::EndDisabled();
+	if (!bCanRegenerate) ImGui::EndDisabled();
 
 	RenderTerrainStatusDisplay();
 	ImGui::TreePop();

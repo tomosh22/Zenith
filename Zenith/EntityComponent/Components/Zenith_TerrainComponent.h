@@ -268,6 +268,14 @@ private:
 	// Cleanup helper used by Regenerate to tear down prior GPU / physics / buffer state
 	// before re-exporting. Split out because the 5-step sequence is easy to get wrong.
 	void CleanupPriorGenerationForRegenerate();
+
+	// End-to-end regeneration pipeline triggered by the editor's "Regenerate
+	// Terrain" button. Owns the cleanup → delete-files → export → reload-physics
+	// → re-init-render sequence and updates s_strTerrainExportStatus throughout.
+	void RunTerrainRegeneration(const std::string& strOutputDir);
+	// Allocate fresh material asset into any empty slot in m_axMaterials, named
+	// after the owning entity. Called pre-render-init during regeneration.
+	void EnsureMaterialSlotsPopulated();
 #endif
 
 };

@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include <algorithm>
+#include <optional>
 
 // =====================================================================
 // Flux_DynamicLights — gather + upload front-end for the clustered
@@ -302,6 +303,172 @@ static void StagePending(const PendingLight& xL)
 	}
 }
 
+// Build a candidate point-light from a Zenith_LightComponent. Returns nullopt
+// if the light is frustum-culled.
+static std::optional<PendingLight> ProcessPointLightCandidate(Zenith_LightComponent& xLight,
+	const Zenith_Maths::Vector3& xColor, float fIntensity)
+{
+	Zenith_Maths::Vector3 xPosition = xLight.GetWorldPosition();
+	float fRange = xLight.GetRange();
+	if (!IsSphereFrustumVisible(xPosition, fRange)) return std::nullopt;
+
+	PendingLight xL;
+	xL.m_eType = PendingLight::POINT;
+	xL.m_xColor = xColor;
+	xL.m_fIntensity = fIntensity;
+	xL.m_xPosition = xPosition;
+	xL.m_fRange = fRange;
+	xL.m_xDirection = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+	xL.m_fCosInner = 0.0f;
+	xL.m_fCosOuter = 0.0f;
+	return xL;
+}
+
+// Build a candidate spot-light. Returns nullopt if zero-direction (logs and
+// skips) or frustum-culled. Validates inner <= outer and outer angle range.
+static std::optional<PendingLight> ProcessSpotLightCandidate(Zenith_LightComponent& xLight,
+	const Zenith_Maths::Vector3& xColor, float fIntensity, Zenith_EntityID uID)
+{
+	Zenith_Maths::Vector3 xPosition = xLight.GetWorldPosition();
+	float fRange = xLight.GetRange();
+
+	float fInnerAngle = xLight.GetSpotInnerAngle();
+	float fOuterAngle = xLight.GetSpotOuterAngle();
+	Zenith_Assert(fInnerAngle <= fOuterAngle,
+		"Spot light inner angle (%.2f) must be <= outer angle (%.2f)", fInnerAngle, fOuterAngle);
+	Zenith_Assert(fOuterAngle > 0.0f && fOuterAngle < glm::pi<float>(),
+		"Spot light outer angle (%.2f) out of valid range", fOuterAngle);
+
+	Zenith_Maths::Vector3 xDirection = xLight.GetWorldDirection();
+	float fDirLength = Zenith_Maths::Length(xDirection);
+	if (fDirLength < fDIRECTION_EPSILON)
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping spot light with zero-length direction (Entity %u)", uID.m_uIndex);
+		return std::nullopt;
+	}
+	xDirection /= fDirLength;
+
+	if (!IsConeFrustumVisible(xPosition, xDirection, fRange, fOuterAngle)) return std::nullopt;
+
+	PendingLight xL;
+	xL.m_eType = PendingLight::SPOT;
+	xL.m_xColor = xColor;
+	xL.m_fIntensity = fIntensity;
+	xL.m_xPosition = xPosition;
+	xL.m_fRange = fRange;
+	xL.m_xDirection = xDirection;
+	xL.m_fCosInner = cosf(fInnerAngle);
+	xL.m_fCosOuter = cosf(fOuterAngle);
+	return xL;
+}
+
+// Build a candidate directional-light. Returns nullopt if zero-direction.
+// Directionals are not frustum-culled (they're effectively at infinity).
+static std::optional<PendingLight> ProcessDirectionalLightCandidate(Zenith_LightComponent& xLight,
+	const Zenith_Maths::Vector3& xColor, float fIntensity, Zenith_EntityID uID)
+{
+	Zenith_Maths::Vector3 xDirection = xLight.GetWorldDirection();
+	float fDirLength = Zenith_Maths::Length(xDirection);
+	if (fDirLength < fDIRECTION_EPSILON)
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping directional light with zero-length direction (Entity %u)", uID.m_uIndex);
+		return std::nullopt;
+	}
+	xDirection /= fDirLength;
+
+	PendingLight xL;
+	xL.m_eType = PendingLight::DIRECTIONAL;
+	xL.m_xColor = xColor;
+	xL.m_fIntensity = fIntensity;
+	xL.m_xPosition = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+	xL.m_fRange = 0.0f;
+	xL.m_xDirection = xDirection;
+	xL.m_fCosInner = 0.0f;
+	xL.m_fCosOuter = 0.0f;
+	return xL;
+}
+
+// Stage all pending lights into s_axLightStaging directional-first.
+//
+// CRITICAL INVARIANT: directional-first ordering must hold both before AND
+// after priority trimming. The clustering compute shader iterates the
+// unified buffer in order and clamps at MAX_LIGHTS_PER_CLUSTER (64) per
+// cluster — packing directionals at the front guarantees they're never
+// silently dropped by a cluster that's saturated by point/spot lights at
+// lower indices. The CPU priority sort gives directionals effectively-
+// infinite priority so they're never dropped; the two-pass stage below
+// keeps them at the *front* of the buffer too.
+//
+// Under the cap: stage in arrival order, directional-first.
+// Over the cap: priority-sort descending, keep the top uMAX_LIGHTS, then
+// stage that subset directional-first.
+static void StageLightsWithPriority(const Zenith_Vector<PendingLight>& xPending, u_int uTotal)
+{
+	const u_int uMAX_LIGHTS = Flux_DynamicLights::uMAX_LIGHTS;
+
+	if (uTotal <= uMAX_LIGHTS)
+	{
+		for (u_int i = 0; i < uTotal; ++i)
+			if (xPending.Get(i).m_eType == PendingLight::DIRECTIONAL) StagePending(xPending.Get(i));
+		for (u_int i = 0; i < uTotal; ++i)
+			if (xPending.Get(i).m_eType != PendingLight::DIRECTIONAL) StagePending(xPending.Get(i));
+		return;
+	}
+
+	s_xSortBuffer.Clear();
+	for (u_int i = 0; i < uTotal; ++i)
+	{
+		s_xSortBuffer.PushBack({ xPending.Get(i).GetSortPriority(), i });
+	}
+	std::sort(s_xSortBuffer.GetDataPointer(),
+			  s_xSortBuffer.GetDataPointer() + s_xSortBuffer.GetSize());
+
+	for (u_int i = 0; i < uMAX_LIGHTS; ++i)
+	{
+		const PendingLight& xL = xPending.Get(s_xSortBuffer.Get(i).m_uIndex);
+		if (xL.m_eType == PendingLight::DIRECTIONAL) StagePending(xL);
+	}
+	for (u_int i = 0; i < uMAX_LIGHTS; ++i)
+	{
+		const PendingLight& xL = xPending.Get(s_xSortBuffer.Get(i).m_uIndex);
+		if (xL.m_eType != PendingLight::DIRECTIONAL) StagePending(xL);
+	}
+
+	const u_int uDropped = uTotal - uMAX_LIGHTS;
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Dropped %u dynamic lights (limit: %u, kept highest priority)",
+		uDropped, uMAX_LIGHTS);
+}
+
+// Verify the directional-first invariant on the staging buffer. Both branches
+// of StageLightsWithPriority (under-cap and over-cap) walk directionals first
+// then non-directionals; any directional appearing AFTER a non-directional
+// would mean a future refactor broke the ordering and the clustering compute
+// shader could silently drop directionals when a cluster's 64-light cap is
+// reached. Cheap O(N) walk in debug builds; compiles to nothing in release.
+#ifdef ZENITH_ASSERT
+namespace
+{
+	void AssertDirectionalFirstInvariant()
+	{
+		bool bSeenNonDirectional = false;
+		for (u_int i = 0; i < s_uLightCount; ++i)
+		{
+			const bool bIsDirectional = s_axLightStaging[i].m_xTypeOuter.y == fLIGHT_TYPE_TAG_DIRECTIONAL;
+			if (!bIsDirectional)
+			{
+				bSeenNonDirectional = true;
+			}
+			else
+			{
+				Zenith_Assert(!bSeenNonDirectional,
+					"Flux_DynamicLights: directional-first staging invariant broken — "
+					"directional light at index %u follows a non-directional light", i);
+			}
+		}
+	}
+}
+#endif
+
 void Flux_DynamicLights::GatherLightsFromScene()
 {
 	s_uLightCount = 0;
@@ -342,128 +509,23 @@ void Flux_DynamicLights::GatherLightsFromScene()
 			float fIntensity = xLight.GetIntensity();
 			if (fIntensity < fMIN_LIGHT_INTENSITY) return;
 
-			if (eType == LIGHT_TYPE_POINT)
+			std::optional<PendingLight> xCandidate;
+			switch (eType)
 			{
-				Zenith_Maths::Vector3 xPosition = xLight.GetWorldPosition();
-				float fRange = xLight.GetRange();
-				if (!IsSphereFrustumVisible(xPosition, fRange)) return;
-
-				PendingLight xL;
-				xL.m_eType = PendingLight::POINT;
-				xL.m_xColor = xColor;
-				xL.m_fIntensity = fIntensity;
-				xL.m_xPosition = xPosition;
-				xL.m_fRange = fRange;
-				xL.m_xDirection = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
-				xL.m_fCosInner = 0.0f;
-				xL.m_fCosOuter = 0.0f;
-				xPending.PushBack(xL);
+			case LIGHT_TYPE_POINT:       xCandidate = ProcessPointLightCandidate(xLight, xColor, fIntensity); break;
+			case LIGHT_TYPE_SPOT:        xCandidate = ProcessSpotLightCandidate(xLight, xColor, fIntensity, uID); break;
+			case LIGHT_TYPE_DIRECTIONAL: xCandidate = ProcessDirectionalLightCandidate(xLight, xColor, fIntensity, uID); break;
+			default: return;
 			}
-			else if (eType == LIGHT_TYPE_SPOT)
-			{
-				Zenith_Maths::Vector3 xPosition = xLight.GetWorldPosition();
-				float fRange = xLight.GetRange();
-
-				float fInnerAngle = xLight.GetSpotInnerAngle();
-				float fOuterAngle = xLight.GetSpotOuterAngle();
-				Zenith_Assert(fInnerAngle <= fOuterAngle,
-					"Spot light inner angle (%.2f) must be <= outer angle (%.2f)", fInnerAngle, fOuterAngle);
-				Zenith_Assert(fOuterAngle > 0.0f && fOuterAngle < glm::pi<float>(),
-					"Spot light outer angle (%.2f) out of valid range", fOuterAngle);
-
-				Zenith_Maths::Vector3 xDirection = xLight.GetWorldDirection();
-				float fDirLength = Zenith_Maths::Length(xDirection);
-				if (fDirLength < fDIRECTION_EPSILON)
-				{
-					Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping spot light with zero-length direction (Entity %u)", uID.m_uIndex);
-					return;
-				}
-				xDirection /= fDirLength;
-
-				if (!IsConeFrustumVisible(xPosition, xDirection, fRange, fOuterAngle)) return;
-
-				PendingLight xL;
-				xL.m_eType = PendingLight::SPOT;
-				xL.m_xColor = xColor;
-				xL.m_fIntensity = fIntensity;
-				xL.m_xPosition = xPosition;
-				xL.m_fRange = fRange;
-				xL.m_xDirection = xDirection;
-				xL.m_fCosInner = cosf(fInnerAngle);
-				xL.m_fCosOuter = cosf(fOuterAngle);
-				xPending.PushBack(xL);
-			}
-			else if (eType == LIGHT_TYPE_DIRECTIONAL)
-			{
-				Zenith_Maths::Vector3 xDirection = xLight.GetWorldDirection();
-				float fDirLength = Zenith_Maths::Length(xDirection);
-				if (fDirLength < fDIRECTION_EPSILON)
-				{
-					Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping directional light with zero-length direction (Entity %u)", uID.m_uIndex);
-					return;
-				}
-				xDirection /= fDirLength;
-
-				PendingLight xL;
-				xL.m_eType = PendingLight::DIRECTIONAL;
-				xL.m_xColor = xColor;
-				xL.m_fIntensity = fIntensity;
-				xL.m_xPosition = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
-				xL.m_fRange = 0.0f;
-				xL.m_xDirection = xDirection;
-				xL.m_fCosInner = 0.0f;
-				xL.m_fCosOuter = 0.0f;
-				xPending.PushBack(xL);
-			}
+			if (xCandidate.has_value()) xPending.PushBack(*xCandidate);
 		});
 	}
 
-	// Stage directional lights first, then point/spot. The clustering
-	// compute shader iterates the unified buffer in order and clamps at
-	// MAX_LIGHTS_PER_CLUSTER (64) per cluster — packing directionals at
-	// the front guarantees they're never silently dropped by a cluster
-	// that's saturated by point/spot lights at lower indices. The CPU
-	// priority sort (used when over the global cap) gives directionals
-	// infinite priority, which keeps them in the buffer; this two-pass
-	// stage keeps them at the *front* of the buffer too.
-	//
-	// If under the cap: stage in arrival order, directional-first.
-	// Over the cap: priority-sort descending, keep the top uMAX_LIGHTS,
-	// then stage that subset directional-first. Directional lights have
-	// effectively-infinite sort priority so they're never dropped.
-	const u_int uTotal = xPending.GetSize();
-	if (uTotal <= uMAX_LIGHTS)
-	{
-		for (u_int i = 0; i < uTotal; ++i)
-			if (xPending.Get(i).m_eType == PendingLight::DIRECTIONAL) StagePending(xPending.Get(i));
-		for (u_int i = 0; i < uTotal; ++i)
-			if (xPending.Get(i).m_eType != PendingLight::DIRECTIONAL) StagePending(xPending.Get(i));
-	}
-	else
-	{
-		s_xSortBuffer.Clear();
-		for (u_int i = 0; i < uTotal; ++i)
-		{
-			s_xSortBuffer.PushBack({ xPending.Get(i).GetSortPriority(), i });
-		}
-		std::sort(s_xSortBuffer.GetDataPointer(),
-		          s_xSortBuffer.GetDataPointer() + s_xSortBuffer.GetSize());
+	StageLightsWithPriority(xPending, xPending.GetSize());
 
-		for (u_int i = 0; i < uMAX_LIGHTS; ++i)
-		{
-			const PendingLight& xL = xPending.Get(s_xSortBuffer.Get(i).m_uIndex);
-			if (xL.m_eType == PendingLight::DIRECTIONAL) StagePending(xL);
-		}
-		for (u_int i = 0; i < uMAX_LIGHTS; ++i)
-		{
-			const PendingLight& xL = xPending.Get(s_xSortBuffer.Get(i).m_uIndex);
-			if (xL.m_eType != PendingLight::DIRECTIONAL) StagePending(xL);
-		}
-
-		const u_int uDropped = uTotal - uMAX_LIGHTS;
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Dropped %u dynamic lights (limit: %u, kept highest priority)",
-			uDropped, uMAX_LIGHTS);
-	}
+#ifdef ZENITH_ASSERT
+	AssertDirectionalFirstInvariant();
+#endif
 
 	// Upload to GPU. Flux_MemoryManager::UploadBufferData handles the
 	// memory barrier so transfer writes finish before the clustering

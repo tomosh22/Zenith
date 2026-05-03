@@ -60,54 +60,48 @@ void Flux_AnimationClipMetadata::ReadFromDataStream(Zenith_DataStream& xStream)
 //=============================================================================
 // Flux_RootMotion
 //=============================================================================
-Zenith_Maths::Vector3 Flux_RootMotion::SamplePositionDelta(float fTime) const
+
+// Walk the keyframe list to find the bracket containing fTime, then call the
+// caller-supplied per-channel interpolator. Empty / single-keyframe / past-end
+// cases short-circuit before invoking the interpolator. fnInterp must accept
+// (a, b, t) and return the interpolated value (mix for vectors, slerp for
+// quaternions).
+template<typename T, typename InterpFn>
+static T SampleRootMotionDeltas(const std::vector<std::pair<T, float>>& xKeys,
+								float fTime, bool bEnabled, const T& xIdentity,
+								InterpFn fnInterp)
 {
-	if (!m_bEnabled || m_xPositionDeltas.empty())
-		return Zenith_Maths::Vector3(0.0f);
+	if (!bEnabled || xKeys.empty()) return xIdentity;
+	if (xKeys.size() == 1)           return xKeys[0].first;
 
-	if (m_xPositionDeltas.size() == 1)
-		return m_xPositionDeltas[0].first;
-
-	// Find keyframes to interpolate between
-	for (size_t i = 0; i < m_xPositionDeltas.size() - 1; ++i)
+	for (size_t i = 0; i < xKeys.size() - 1; ++i)
 	{
-		if (fTime < m_xPositionDeltas[i + 1].second)
+		if (fTime < xKeys[i + 1].second)
 		{
-			float fTimeDelta = m_xPositionDeltas[i + 1].second - m_xPositionDeltas[i].second;
+			float fTimeDelta = xKeys[i + 1].second - xKeys[i].second;
 			// Guard against division by zero (identical keyframe timestamps)
-			if (fTimeDelta <= 0.0f)
-				return m_xPositionDeltas[i].first;
-			float t = (fTime - m_xPositionDeltas[i].second) / fTimeDelta;
-			return glm::mix(m_xPositionDeltas[i].first, m_xPositionDeltas[i + 1].first, t);
+			if (fTimeDelta <= 0.0f) return xKeys[i].first;
+			float t = (fTime - xKeys[i].second) / fTimeDelta;
+			return fnInterp(xKeys[i].first, xKeys[i + 1].first, t);
 		}
 	}
+	return xKeys.back().first;
+}
 
-	return m_xPositionDeltas.back().first;
+Zenith_Maths::Vector3 Flux_RootMotion::SamplePositionDelta(float fTime) const
+{
+	return SampleRootMotionDeltas(m_xPositionDeltas, fTime, m_bEnabled,
+		Zenith_Maths::Vector3(0.0f),
+		[](const Zenith_Maths::Vector3& a, const Zenith_Maths::Vector3& b, float t)
+		{ return glm::mix(a, b, t); });
 }
 
 Zenith_Maths::Quat Flux_RootMotion::SampleRotationDelta(float fTime) const
 {
-	if (!m_bEnabled || m_xRotationDeltas.empty())
-		return Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
-
-	if (m_xRotationDeltas.size() == 1)
-		return m_xRotationDeltas[0].first;
-
-	// Find keyframes to interpolate between
-	for (size_t i = 0; i < m_xRotationDeltas.size() - 1; ++i)
-	{
-		if (fTime < m_xRotationDeltas[i + 1].second)
-		{
-			float fTimeDelta = m_xRotationDeltas[i + 1].second - m_xRotationDeltas[i].second;
-			// Guard against division by zero (identical keyframe timestamps)
-			if (fTimeDelta <= 0.0f)
-				return m_xRotationDeltas[i].first;
-			float t = (fTime - m_xRotationDeltas[i].second) / fTimeDelta;
-			return glm::slerp(m_xRotationDeltas[i].first, m_xRotationDeltas[i + 1].first, t);
-		}
-	}
-
-	return m_xRotationDeltas.back().first;
+	return SampleRootMotionDeltas(m_xRotationDeltas, fTime, m_bEnabled,
+		Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f),
+		[](const Zenith_Maths::Quat& a, const Zenith_Maths::Quat& b, float t)
+		{ return glm::slerp(a, b, t); });
 }
 
 void Flux_RootMotion::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -766,3 +760,5 @@ void Flux_AnimationClipCollection::ReadFromDataStream(Zenith_DataStream& xStream
 		AddClip(pxClip);
 	}
 }
+
+#include "Flux/MeshAnimation/Flux_AnimationClip.Tests.inl"

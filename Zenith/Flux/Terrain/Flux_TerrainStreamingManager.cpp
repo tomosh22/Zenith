@@ -1035,6 +1035,49 @@ void Flux_TerrainStreamingManager::RebuildActiveChunkSet(Flux_TerrainStreamingSt
 		xState.m_xActiveChunkIndices.push_back(xCD.m_uChunkIndex);
 }
 
+// Populate one per-LOD slot of a chunk's GPU data from its residency state.
+// Slots without a resident allocation are zeroed — the compute shader's
+// "indexCount == 0 → fall back / skip" path takes over. Do NOT mirror LOW's
+// allocation into HIGH; that desyncs the LOD debug colour from the geometry
+// the indirect draw actually consumes.
+static void BuildLODSlotForChunk(uint32_t uLOD, const Flux_TerrainChunkResidency& xResidency, Zenith_TerrainLODData& xLODOut)
+{
+	xLODOut.m_fMaxDistance = LOD_MAX_DISTANCE_SQ[uLOD];
+
+	if (xResidency.m_aeStates[uLOD] != Flux_TerrainLODResidencyState::RESIDENT)
+	{
+		xLODOut.m_uFirstIndex   = 0;
+		xLODOut.m_uIndexCount   = 0;
+		xLODOut.m_uVertexOffset = 0;
+		return;
+	}
+
+	const Flux_TerrainLODAllocation& xAlloc = xResidency.m_axAllocations[uLOD];
+	xLODOut.m_uFirstIndex = xAlloc.m_uIndexOffset;
+	xLODOut.m_uIndexCount = xAlloc.m_uIndexCount;
+	// LOW LOD uses combined buffer with rebased indices (vertexOffset = 0).
+	// HIGH LOD uses individually uploaded chunks with 0-based indices (need offset).
+	xLODOut.m_uVertexOffset = (uLOD == LOD_LOW) ? 0 : xAlloc.m_uVertexOffset;
+}
+
+// Populate one chunk's full GPU data: AABB (if cached) + every LOD slot.
+static void BuildOneChunkData(const Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, Zenith_TerrainChunkData& xChunkData)
+{
+	const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
+
+	if (xState.m_bAABBsCached)
+	{
+		const Zenith_AABB& xAABB = xState.m_axChunkAABBs[uChunkIndex];
+		xChunkData.m_xAABBMin = Zenith_Maths::Vector4(xAABB.m_xMin, 0.0f);
+		xChunkData.m_xAABBMax = Zenith_Maths::Vector4(xAABB.m_xMax, 0.0f);
+	}
+
+	for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
+	{
+		BuildLODSlotForChunk(uLOD, xResidency, xChunkData.m_axLODs[uLOD]);
+	}
+}
+
 // Shared body for BuildChunkDataForGPU: walks one state's chunk residency
 // and emits per-chunk GPU data. Both the component-aware overload and the
 // legacy primary-resolving overload route through here so the chunk-data
@@ -1051,60 +1094,14 @@ void Flux_TerrainStreamingManager::BuildChunkDataForGPU_Internal(const Flux_Terr
 	{
 		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; ++y)
 		{
-			uint32_t uChunkIndex = x * CHUNK_GRID_SIZE + y;
-			const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
+			const uint32_t uChunkIndex = x * CHUNK_GRID_SIZE + y;
 			Zenith_TerrainChunkData& xChunkData = pxChunkDataOut[uChunkIndex];
 
-			// Set AABB
-			if (xState.m_bAABBsCached)
-			{
-				const Zenith_AABB& xAABB = xState.m_axChunkAABBs[uChunkIndex];
-				xChunkData.m_xAABBMin = Zenith_Maths::Vector4(xAABB.m_xMin, 0.0f);
-				xChunkData.m_xAABBMax = Zenith_Maths::Vector4(xAABB.m_xMax, 0.0f);
-			}
+			BuildOneChunkData(xState, uChunkIndex, xChunkData);
 
-			// Set LOD data (HIGH and LOW). Slots without a resident
-			// allocation are zeroed out — the GPU compute shader's explicit
-			// fallback handles "requested HIGH, only LOW available" by
-			// re-reading the LOW slot, and writes the *actual* drawn LOD
-			// into LODLevelBuffer so the debug visualisation matches the
-			// geometry the indirect draw consumes. The previous code
-			// falsified non-resident slots by copying LOW's allocation
-			// into the HIGH slot, which caused the LOD-debug colour and
-			// the actually-drawn vertex density to disagree.
-			for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
-			{
-				xChunkData.m_axLODs[uLOD].m_fMaxDistance = LOD_MAX_DISTANCE_SQ[uLOD];
-
-				if (xResidency.m_aeStates[uLOD] == Flux_TerrainLODResidencyState::RESIDENT)
-				{
-					const Flux_TerrainLODAllocation& xAlloc = xResidency.m_axAllocations[uLOD];
-					xChunkData.m_axLODs[uLOD].m_uFirstIndex = xAlloc.m_uIndexOffset;
-					xChunkData.m_axLODs[uLOD].m_uIndexCount = xAlloc.m_uIndexCount;
-
-					// LOW LOD uses combined buffer with rebased indices (vertexOffset = 0)
-					// HIGH LOD uses individually uploaded chunks with 0-based indices (need offset)
-					if (uLOD == LOD_LOW)
-						xChunkData.m_axLODs[uLOD].m_uVertexOffset = 0;
-					else
-						xChunkData.m_axLODs[uLOD].m_uVertexOffset = xAlloc.m_uVertexOffset;
-				}
-				else
-				{
-					// Zero out — shader's "indexCount == 0 → fall back / skip" path
-					// takes over. Do NOT overwrite with LOW's allocation: that
-					// makes the LODLevelBuffer read disagree with the geometry
-					// the indirect draw actually consumes.
-					xChunkData.m_axLODs[uLOD].m_uFirstIndex   = 0;
-					xChunkData.m_axLODs[uLOD].m_uIndexCount   = 0;
-					xChunkData.m_axLODs[uLOD].m_uVertexOffset = 0;
-				}
-			}
-
-			if (xChunkData.m_axLODs[LOD_LOW].m_uIndexCount == 0)
-				uLowZeroCountChunks++;
-			if (xResidency.m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT)
-				uHighResidentChunks++;
+			const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
+			if (xChunkData.m_axLODs[LOD_LOW].m_uIndexCount == 0) uLowZeroCountChunks++;
+			if (xResidency.m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT) uHighResidentChunks++;
 		}
 	}
 

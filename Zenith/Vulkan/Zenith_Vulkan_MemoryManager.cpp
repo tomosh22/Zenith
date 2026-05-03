@@ -712,31 +712,48 @@ void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, si
 	}
 }
 
+// Set up one frame's VRAM + descriptor for a dynamic (per-frame, host-visible)
+// buffer and populate the caller's frame buffer struct. Returns the
+// registered descriptor handle so callers can install it into the view types
+// they expose (CBV-only for constant buffers, UAV+SRV mirror for RW buffers).
+// Both variants share residency (CPU) and the same staging-buffer-free upload
+// pattern; only the usage flags and view structures differ.
+static Flux_BufferDescriptorHandle InitialiseDynamicBufferFrame(
+	const void* pData, size_t uSize, MemoryFlags eFlags, Flux_Buffer& xBufferOut)
+{
+	Flux_VRAMHandle xHandle = Zenith_Vulkan_MemoryManager::CreateBufferVRAM(
+		static_cast<u_int>(uSize), eFlags, MEMORY_RESIDENCY_CPU);
+	xBufferOut.m_xVRAMHandle = xHandle;
+	xBufferOut.m_ulSize = uSize;
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+	Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
+
+	vk::DescriptorBufferInfo xBufferInfo;
+	xBufferInfo.setBuffer(pxVRAM->GetBuffer());
+	xBufferInfo.setOffset(0);
+	xBufferInfo.setRange(uSize);
+
+	const Flux_BufferDescriptorHandle xDesc = Zenith_Vulkan_MemoryManager::RegisterBufferDescriptor(xBufferInfo);
+
+	if (pData)
+	{
+		Zenith_Vulkan_MemoryManager::UploadBufferData(xHandle, pData, uSize);
+	}
+	return xDesc;
+}
+
 void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut)
 {
 	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_CPU);
 		Flux_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
-		xBuffer.m_xVRAMHandle = xHandle;
-		xBuffer.m_ulSize = uSize;
-
-		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
-		Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
-
-		vk::DescriptorBufferInfo xBufferInfo;
-		xBufferInfo.setBuffer(pxVRAM->GetBuffer());
-		xBufferInfo.setOffset(0);
-		xBufferInfo.setRange(uSize);
+		const Flux_BufferDescriptorHandle xDesc = InitialiseDynamicBufferFrame(
+			pData, uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__SHADER_READ), xBuffer);
 
 		Flux_ConstantBufferView& xCBV = xBufferOut.GetCBVForFrameInFlight(u);
-		xCBV.m_xBufferDescHandle = RegisterBufferDescriptor(xBufferInfo);
-		xCBV.m_xVRAMHandle = xHandle;
-
-		if (pData)
-		{
-			UploadBufferData(xHandle, pData, uSize);
-		}
+		xCBV.m_xBufferDescHandle = xDesc;
+		xCBV.m_xVRAMHandle = xBuffer.m_xVRAMHandle;
 	}
 }
 
@@ -796,29 +813,20 @@ void Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer(const void* pData, s
 
 void Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer(const void* pData, size_t uSize, Flux_DynamicReadWriteBuffer& xBufferOut)
 {
+	// CPU-resident (host-visible) to allow direct writes without staging buffer.
+	// Per-frame uploads through the GPU staging buffer are unsafe because the staging
+	// buffer can be overwritten by the next frame before the GPU executes the copy.
 	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		// CPU-resident (host-visible) to allow direct writes without staging buffer.
-		// Per-frame uploads through the GPU staging buffer are unsafe because the staging
-		// buffer can be overwritten by the next frame before the GPU executes the copy.
-		Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__UNORDERED_ACCESS | 1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_CPU);
 		Flux_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
-		xBuffer.m_xVRAMHandle = xHandle;
-		xBuffer.m_ulSize = uSize;
-
-		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
-		Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
-
-		vk::DescriptorBufferInfo xBufferInfo;
-		xBufferInfo.setBuffer(pxVRAM->GetBuffer());
-		xBufferInfo.setOffset(0);
-		xBufferInfo.setRange(uSize);
-
-		const Flux_BufferDescriptorHandle xBufferDescHandle = RegisterBufferDescriptor(xBufferInfo);
+		const Flux_BufferDescriptorHandle xDesc = InitialiseDynamicBufferFrame(
+			pData, uSize,
+			static_cast<MemoryFlags>(1 << MEMORY_FLAGS__UNORDERED_ACCESS | 1 << MEMORY_FLAGS__SHADER_READ),
+			xBuffer);
 
 		Flux_UnorderedAccessView_Buffer& xUAV = xBufferOut.GetUAVForFrameInFlight(u);
-		xUAV.m_xBufferDescHandle = xBufferDescHandle;
-		xUAV.m_xVRAMHandle = xHandle;
+		xUAV.m_xBufferDescHandle = xDesc;
+		xUAV.m_xVRAMHandle = xBuffer.m_xVRAMHandle;
 
 		// Mirror the same descriptor / VRAM handles into the read-only SSBO view.
 		// vk::DescriptorType::eStorageBuffer is identical for StructuredBuffer<T>
@@ -826,13 +834,8 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer(const void* p
 		// render-graph access classifier and the shader binder can tell apart the
 		// read-only and read-write paths.
 		Flux_ShaderResourceView_Buffer& xSRV = xBufferOut.GetSRVForFrameInFlight(u);
-		xSRV.m_xBufferDescHandle = xBufferDescHandle;
-		xSRV.m_xVRAMHandle = xHandle;
-
-		if (pData)
-		{
-			UploadBufferData(xHandle, pData, uSize);
-		}
+		xSRV.m_xBufferDescHandle = xDesc;
+		xSRV.m_xVRAMHandle = xBuffer.m_xVRAMHandle;
 	}
 }
 

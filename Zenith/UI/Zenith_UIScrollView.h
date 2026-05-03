@@ -66,7 +66,6 @@ public:
 
 private:
 	void ClampScrollPosition();
-	void GetTransformedMousePosition(float& fMouseX, float& fMouseY) const;
 	void HandleDragInput(float fMouseX, float fMouseY, bool bInside, float fDt);
 	void UpdateInertia(float fDt);
 

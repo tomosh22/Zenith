@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_RenderTaskState.h"
 #include "EntityComponent/Zenith_SceneManager_Internal.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistry.h"
@@ -1200,6 +1201,29 @@ void Zenith_SceneManager::DispatchFullLifecycleInit() { Zenith_SceneLifecycleSch
 int Zenith_SceneManager::AllocateSceneHandle() { return Zenith_SceneRegistry::AllocateSceneHandle(); }
 void Zenith_SceneManager::FreeSceneHandle(int iHandle) { Zenith_SceneRegistry::FreeSceneHandle(iHandle); }
 
+// Free-function forwarder for use from Zenith_SceneData.h template bodies
+// (declared in Zenith_RenderTaskState.h). The static class accessor and
+// underlying flag storage stay in Zenith_SceneManagerInternal.h — this file
+// is just the definition site, intentionally minimal.
+bool Zenith_AreRenderTasksActive() { return Zenith_SceneManager::AreRenderTasksActive(); }
+
+void Zenith_SceneManager::UnloadOneScene(Zenith_Scene xScene, bool& bActiveSceneUnloadedInOut)
+{
+	if (xScene.m_iHandle == Zenith_SceneRegistry::s_iActiveSceneHandle)
+	{
+		bActiveSceneUnloadedInOut = true;
+	}
+
+	delete Zenith_SceneRegistry::s_axScenes.Get(xScene.m_iHandle);
+	Zenith_SceneRegistry::s_axScenes.Get(xScene.m_iHandle) = nullptr;
+
+	// Fire unloaded callback BEFORE incrementing generation so the handle
+	// is still valid for identification in callbacks (Unity parity).
+	FireSceneUnloadedCallbacks(xScene);
+
+	FreeSceneHandle(xScene.m_iHandle);
+}
+
 void Zenith_SceneManager::PushLifecycleContext(const std::string& strCanonicalPath) { Zenith_SceneLifecycleScheduler::PushLifecycleContext(strCanonicalPath); }
 void Zenith_SceneManager::PopLifecycleContext(const std::string& strCanonicalPath) { Zenith_SceneLifecycleScheduler::PopLifecycleContext(strCanonicalPath); }
 
@@ -1296,21 +1320,7 @@ void Zenith_SceneManager::UnloadAllNonPersistent(int iExcludeHandle)
 	// Phase 2: Destroy scenes and fire SceneUnloaded callbacks AFTER destruction
 	for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
 	{
-		Zenith_Scene xScene = axScenesToUnload.Get(i);
-
-		if (xScene.m_iHandle == Zenith_SceneRegistry::s_iActiveSceneHandle)
-		{
-			bActiveSceneUnloaded = true;
-		}
-
-		delete Zenith_SceneRegistry::s_axScenes.Get(xScene.m_iHandle);
-		Zenith_SceneRegistry::s_axScenes.Get(xScene.m_iHandle) = nullptr;
-
-		// Fire unloaded callback BEFORE incrementing generation so the handle
-		// is still valid for identification in callbacks (Unity parity)
-		FireSceneUnloadedCallbacks(xScene);
-
-		FreeSceneHandle(xScene.m_iHandle);
+		UnloadOneScene(axScenesToUnload.Get(i), bActiveSceneUnloaded);
 	}
 
 	// A6: If the active scene was unloaded, clear the active handle. Do NOT fall back

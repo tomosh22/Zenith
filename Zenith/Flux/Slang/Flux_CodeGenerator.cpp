@@ -139,6 +139,128 @@ namespace
 		}
 		return nullptr;
 	}
+
+	// Emit one CB struct field: pad to its reflected offset, then emit the
+	// typed C++ member (scalar / array / opaque-byte fallback) and advance
+	// uRunningOffset past it. Output is appended to strContentOut byte-for-byte
+	// matching the previous inline form.
+	void EmitCBField(const Flux_ReflectedField& xField, u_int& uRunningOffset, std::string& strContentOut)
+	{
+		std::string strFieldIdent = SanitizeIdentifier(xField.m_strName);
+		const CppMapping* pxMap = MapSlangTypeToCpp(xField.m_strTypeName);
+
+		// Insert padding bytes if the reflected offset is ahead
+		// of where we've emitted to. The pad name carries the
+		// offset so identical offsets across CBs don't collide.
+		if (xField.m_uOffset > uRunningOffset)
+		{
+			const u_int uPad = xField.m_uOffset - uRunningOffset;
+			char szPad[160];
+			snprintf(szPad, sizeof(szPad),
+					 "\t\t\tunsigned char m_aPad_%u[%u];\n",
+					 uRunningOffset, uPad);
+			strContentOut += szPad;
+			uRunningOffset = xField.m_uOffset;
+		}
+
+		char szField[512];
+		u_int uFieldFootprint = 0;
+		if (pxMap && xField.m_uArrayCount <= 1)
+		{
+			// Scalar / vector / matrix field with engine Hungarian prefix.
+			snprintf(szField, sizeof(szField),
+					 "\t\t\t%s m_%c%s; // slang=%s offset=%u\n",
+					 pxMap->m_szCpp,
+					 pxMap->m_chHungarian,
+					 strFieldIdent.c_str(),
+					 xField.m_strTypeName.c_str(),
+					 xField.m_uOffset);
+			uFieldFootprint = xField.m_uSize ? xField.m_uSize : 4;
+		}
+		else if (pxMap && xField.m_uArrayCount > 1)
+		{
+			// Array of mapped type — switch member prefix to `a`.
+			snprintf(szField, sizeof(szField),
+					 "\t\t\t%s m_a%s[%u]; // slang=%s offset=%u\n",
+					 pxMap->m_szCpp,
+					 strFieldIdent.c_str(),
+					 xField.m_uArrayCount,
+					 xField.m_strTypeName.c_str(),
+					 xField.m_uOffset);
+			// Slang reflection's m_uSize for an array is the
+			// total stride * count, so it's the right footprint.
+			uFieldFootprint = xField.m_uSize ? xField.m_uSize : 4 * xField.m_uArrayCount;
+		}
+		else
+		{
+			// Unknown type — emit a sized byte buffer so sizeof(_CB)
+			// stays correct; the size_assert below still fires when
+			// the reflected size drifts.
+			const u_int uByteSize = xField.m_uSize ? xField.m_uSize : 4;
+			snprintf(szField, sizeof(szField),
+					 "\t\t\tunsigned char m_a%s[%u]; // slang=%s offset=%u arrayCount=%u (no C++ mapping)\n",
+					 strFieldIdent.c_str(),
+					 uByteSize,
+					 xField.m_strTypeName.empty() ? "?" : xField.m_strTypeName.c_str(),
+					 xField.m_uOffset,
+					 xField.m_uArrayCount);
+			uFieldFootprint = uByteSize;
+		}
+		strContentOut += szField;
+		uRunningOffset = xField.m_uOffset + uFieldFootprint;
+	}
+
+	// Trailing std140 pad: if the last emitted field doesn't reach the
+	// linked CB size from reflection, std140 wants trailing pad bytes.
+	void EmitTrailingCBPad(const Flux_ReflectedBinding& xBinding, u_int uRunningOffset, std::string& strContentOut)
+	{
+		if (xBinding.m_uSize > uRunningOffset)
+		{
+			const u_int uPad = xBinding.m_uSize - uRunningOffset;
+			char szPad[160];
+			snprintf(szPad, sizeof(szPad),
+					 "\t\t\tunsigned char m_aPad_%u[%u];\n",
+					 uRunningOffset, uPad);
+			strContentOut += szPad;
+		}
+	}
+
+	// Size + per-field offset asserts for one CB struct. Catches drift
+	// between the GPU side (Slang) and host side (C++) at compile time.
+	// Byte-buffer-fallback fields (no C++ mapping) are skipped — they have
+	// no symbolic member name to feed into offsetof.
+	void EmitCBStructAsserts(const Flux_ReflectedBinding& xBinding, const std::string& strBindIdent, std::string& strContentOut)
+	{
+		char szSizeAssert[256];
+		snprintf(szSizeAssert, sizeof(szSizeAssert),
+				 "\t\tstatic_assert(sizeof(%s_CB) == %u, \"%s_CB size drifted from Slang reflection\");\n",
+				 strBindIdent.c_str(), xBinding.m_uSize, strBindIdent.c_str());
+		strContentOut += szSizeAssert;
+
+		for (u_int f = 0; f < xBinding.m_axFields.GetSize(); f++)
+		{
+			const Flux_ReflectedField& xField = xBinding.m_axFields.Get(f);
+			std::string strFieldIdent = SanitizeIdentifier(xField.m_strName);
+			const CppMapping* pxMap = MapSlangTypeToCpp(xField.m_strTypeName);
+			if (!pxMap) continue; // byte-buffer fallback has no symbolic name to offsetof
+			char szOffsetAssert[256];
+			if (xField.m_uArrayCount <= 1)
+			{
+				snprintf(szOffsetAssert, sizeof(szOffsetAssert),
+						 "\t\tstatic_assert(offsetof(%s_CB, m_%c%s) == %u, \"%s.%s offset drifted from Slang reflection\");\n",
+						 strBindIdent.c_str(), pxMap->m_chHungarian, strFieldIdent.c_str(), xField.m_uOffset,
+						 strBindIdent.c_str(), strFieldIdent.c_str());
+			}
+			else
+			{
+				snprintf(szOffsetAssert, sizeof(szOffsetAssert),
+						 "\t\tstatic_assert(offsetof(%s_CB, m_a%s) == %u, \"%s.%s offset drifted from Slang reflection\");\n",
+						 strBindIdent.c_str(), strFieldIdent.c_str(), xField.m_uOffset,
+						 strBindIdent.c_str(), strFieldIdent.c_str());
+			}
+			strContentOut += szOffsetAssert;
+		}
+	}
 }
 
 std::string Flux_CodeGenerator::BuildProgramEnumContent()
@@ -236,117 +358,11 @@ std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsys
 				u_int uRunningOffset = 0;
 				for (u_int f = 0; f < xBinding.m_axFields.GetSize(); f++)
 				{
-					const Flux_ReflectedField& xField = xBinding.m_axFields.Get(f);
-					std::string strFieldIdent = SanitizeIdentifier(xField.m_strName);
-					const CppMapping* pxMap = MapSlangTypeToCpp(xField.m_strTypeName);
-
-					// Insert padding bytes if the reflected offset is ahead
-					// of where we've emitted to. The pad name carries the
-					// offset so identical offsets across CBs don't collide.
-					if (xField.m_uOffset > uRunningOffset)
-					{
-						const u_int uPad = xField.m_uOffset - uRunningOffset;
-						char szPad[160];
-						snprintf(szPad, sizeof(szPad),
-								 "\t\t\tunsigned char m_aPad_%u[%u];\n",
-								 uRunningOffset, uPad);
-						strContent += szPad;
-						uRunningOffset = xField.m_uOffset;
-					}
-
-					char szField[512];
-					u_int uFieldFootprint = 0;
-					if (pxMap && xField.m_uArrayCount <= 1)
-					{
-						// Scalar / vector / matrix field with engine Hungarian prefix.
-						snprintf(szField, sizeof(szField),
-								 "\t\t\t%s m_%c%s; // slang=%s offset=%u\n",
-								 pxMap->m_szCpp,
-								 pxMap->m_chHungarian,
-								 strFieldIdent.c_str(),
-								 xField.m_strTypeName.c_str(),
-								 xField.m_uOffset);
-						uFieldFootprint = xField.m_uSize ? xField.m_uSize : 4;
-					}
-					else if (pxMap && xField.m_uArrayCount > 1)
-					{
-						// Array of mapped type — switch member prefix to `a`.
-						snprintf(szField, sizeof(szField),
-								 "\t\t\t%s m_a%s[%u]; // slang=%s offset=%u\n",
-								 pxMap->m_szCpp,
-								 strFieldIdent.c_str(),
-								 xField.m_uArrayCount,
-								 xField.m_strTypeName.c_str(),
-								 xField.m_uOffset);
-						// Slang reflection's m_uSize for an array is the
-						// total stride * count, so it's the right footprint.
-						uFieldFootprint = xField.m_uSize ? xField.m_uSize : 4 * xField.m_uArrayCount;
-					}
-					else
-					{
-						// Unknown type — emit a sized byte buffer so sizeof(_CB)
-						// stays correct; the size_assert below still fires when
-						// the reflected size drifts.
-						const u_int uByteSize = xField.m_uSize ? xField.m_uSize : 4;
-						snprintf(szField, sizeof(szField),
-								 "\t\t\tunsigned char m_a%s[%u]; // slang=%s offset=%u arrayCount=%u (no C++ mapping)\n",
-								 strFieldIdent.c_str(),
-								 uByteSize,
-								 xField.m_strTypeName.empty() ? "?" : xField.m_strTypeName.c_str(),
-								 xField.m_uOffset,
-								 xField.m_uArrayCount);
-						uFieldFootprint = uByteSize;
-					}
-					strContent += szField;
-					uRunningOffset = xField.m_uOffset + uFieldFootprint;
+					EmitCBField(xBinding.m_axFields.Get(f), uRunningOffset, strContent);
 				}
-
-				// Trailing std140 pad. m_uSize is the linked CB size from
-				// reflection; if the last field doesn't reach it, std140 is
-				// asking for trailing pad.
-				if (xBinding.m_uSize > uRunningOffset)
-				{
-					const u_int uPad = xBinding.m_uSize - uRunningOffset;
-					char szPad[160];
-					snprintf(szPad, sizeof(szPad),
-							 "\t\t\tunsigned char m_aPad_%u[%u];\n",
-							 uRunningOffset, uPad);
-					strContent += szPad;
-				}
-
+				EmitTrailingCBPad(xBinding, uRunningOffset, strContent);
 				strContent += "\t\t};\n";
-
-				// Size + per-field offset asserts catch struct drift between
-				// the GPU side (Slang) and host side (C++) at compile time.
-				char szSizeAssert[256];
-				snprintf(szSizeAssert, sizeof(szSizeAssert),
-						 "\t\tstatic_assert(sizeof(%s_CB) == %u, \"%s_CB size drifted from Slang reflection\");\n",
-						 strBindIdent.c_str(), xBinding.m_uSize, strBindIdent.c_str());
-				strContent += szSizeAssert;
-
-				for (u_int f = 0; f < xBinding.m_axFields.GetSize(); f++)
-				{
-					const Flux_ReflectedField& xField = xBinding.m_axFields.Get(f);
-					std::string strFieldIdent = SanitizeIdentifier(xField.m_strName);
-					const CppMapping* pxMap = MapSlangTypeToCpp(xField.m_strTypeName);
-					if (!pxMap) continue; // byte-buffer fallback has no symbolic name to offsetof
-					char szOffsetAssert[256];
-					if (xField.m_uArrayCount <= 1)
-					{
-						snprintf(szOffsetAssert, sizeof(szOffsetAssert),
-								 "\t\tstatic_assert(offsetof(%s_CB, m_%c%s) == %u, \"%s.%s offset drifted from Slang reflection\");\n",
-								 strBindIdent.c_str(), pxMap->m_chHungarian, strFieldIdent.c_str(), xField.m_uOffset,
-								 strBindIdent.c_str(), strFieldIdent.c_str());
-					}
-					else
-					{
-						snprintf(szOffsetAssert, sizeof(szOffsetAssert),
-								 "\t\tstatic_assert(offsetof(%s_CB, m_a%s) == %u, \"%s.%s offset drifted from Slang reflection\");\n",
-								 strBindIdent.c_str(), strFieldIdent.c_str(), xField.m_uOffset,
-								 strBindIdent.c_str(), strFieldIdent.c_str());
-					}
-					strContent += szOffsetAssert;
-				}
+				EmitCBStructAsserts(xBinding, strBindIdent, strContent);
 			}
 		}
 
