@@ -20,6 +20,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "Flux/Flux_Graphics.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
@@ -828,8 +829,9 @@ static void InitializeRenderTestResources()
 	const std::string strProceduralTexDir = std::string(GAME_ASSETS_DIR) + "Textures/";
 	std::filesystem::create_directories(strProceduralTexDir);
 
-	RenderTest::g_xCubeMaterial   = CreateFlatColorMaterial("RenderTestCubeMaterial",
-		strProceduralTexDir + "CubeDiffuse" ZENITH_TEXTURE_EXT, 200, 200, 220);
+	RenderTest::g_xCubeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	RenderTest::g_xCubeMaterial.GetDirect()->SetName("RenderTestCubeMaterial");
+	RenderTest::g_xCubeMaterial.GetDirect()->SetDiffuseTexture(Flux_Graphics::s_xGridTexture);
 	RenderTest::g_xPlayerMaterial = CreateFlatColorMaterial("RenderTestPlayerMaterial",
 		strProceduralTexDir + "PlayerDiffuse" ZENITH_TEXTURE_EXT, 0, 200, 220);
 

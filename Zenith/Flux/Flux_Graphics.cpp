@@ -15,6 +15,9 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "DataStream/Zenith_DataStream.h"
+#include "FileAccess/Zenith_FileAccess.h"
+#include <filesystem>
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
@@ -93,18 +96,6 @@ void Flux_Graphics::Initialise()
 		s_xBlackTexture.Set(pxBlack);
 	}
 
-	// Create 64x64 greyscale grid pattern texture for procedural materials
-	// This allows materials to use BaseColor for tinting instead of colored 1x1 textures
-	// Each 32x32 quadrant is a uniform color, creating a checkerboard pattern
-	Flux_SurfaceInfo xGridTexInfo;
-	xGridTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xGridTexInfo.m_uWidth = 64;
-	xGridTexInfo.m_uHeight = 64;
-	xGridTexInfo.m_uDepth = 1;
-	xGridTexInfo.m_uNumMips = 1;
-	xGridTexInfo.m_uNumLayers = 1;
-	xGridTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-
 	// 64x64 checkerboard pattern with 32x32 quadrants
 	// Light grey (200) in top-left and bottom-right, dark grey (150) in top-right and bottom-left
 	u_int8 aucGridTexData[64 * 64 * 4];
@@ -112,26 +103,40 @@ void Flux_Graphics::Initialise()
 	{
 		for (u_int uX = 0; uX < 64; ++uX)
 		{
-			// Determine quadrant: top-left/bottom-right = light, top-right/bottom-left = dark
 			bool bTopHalf = (uY < 32);
 			bool bLeftHalf = (uX < 32);
-			bool bLightQuadrant = (bTopHalf == bLeftHalf);  // TL or BR
+			bool bLightQuadrant = (bTopHalf == bLeftHalf);
 
 			u_int8 uGreyValue = bLightQuadrant ? 200 : 150;
 			u_int uIdx = (uY * 64 + uX) * 4;
-			aucGridTexData[uIdx + 0] = uGreyValue;  // R
-			aucGridTexData[uIdx + 1] = uGreyValue;  // G
-			aucGridTexData[uIdx + 2] = uGreyValue;  // B
-			aucGridTexData[uIdx + 3] = 255;         // A
+			aucGridTexData[uIdx + 0] = uGreyValue;
+			aucGridTexData[uIdx + 1] = uGreyValue;
+			aucGridTexData[uIdx + 2] = uGreyValue;
+			aucGridTexData[uIdx + 3] = 255;
 		}
 	}
 
-	// Create grid texture (procedural — pinned via handle so callers can share by ref-counted copy)
-	if (Zenith_TextureAsset* pxGridTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+	// Self-heal: write Grid.ztxtr if missing, then assign the handle by *path* so it
+	// carries the stable engine: prefix when copied into materials. Set(ptr) would
+	// clear the path (it's the procedural-asset entry point), and any material that
+	// later receives this handle would lose the texture's identity at serialization.
+	const char* szGridAssetPath = "engine:Grid" ZENITH_TEXTURE_EXT;
+	const std::string strGridDiskPath = Zenith_AssetRegistry::ResolvePath(szGridAssetPath);
+	if (!std::filesystem::exists(strGridDiskPath))
 	{
-		pxGridTex->CreateFromData(aucGridTexData, xGridTexInfo, false);
-		s_xGridTexture.Set(pxGridTex);
+		Zenith_DataStream xStream;
+		xStream << static_cast<int32_t>(64);
+		xStream << static_cast<int32_t>(64);
+		xStream << static_cast<int32_t>(1);
+		xStream << static_cast<TextureFormat>(TEXTURE_FORMAT_RGBA8_UNORM);
+		xStream << static_cast<size_t>(sizeof(aucGridTexData));
+		xStream.WriteData(aucGridTexData, sizeof(aucGridTexData));
+		xStream.WriteToFile(strGridDiskPath.c_str());
 	}
+
+	s_xGridTexture = TextureHandle(szGridAssetPath);
+	Zenith_Assert(s_xGridTexture.Resolve() != nullptr,
+		"Failed to load engine grid texture from %s", szGridAssetPath);
 
 	// Create blank material for use as fallback throughout the engine (pinned).
 	// Material will use blank white textures by default (GetXXXTexture returns blank if path not set).
