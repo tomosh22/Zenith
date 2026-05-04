@@ -63,6 +63,15 @@ public:
 	}
 
 	/**
+	 * Construct directly from an asset pointer (procedural assets created via registry.Create<T>()).
+	 * Path is left empty; ref count is incremented via Set().
+	 */
+	explicit Zenith_AssetHandle(T* pxAsset)
+	{
+		Set(pxAsset);
+	}
+
+	/**
 	 * Copy constructor - increments ref count
 	 */
 	Zenith_AssetHandle(const Zenith_AssetHandle& xOther)

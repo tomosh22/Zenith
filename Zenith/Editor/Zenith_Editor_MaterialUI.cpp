@@ -99,22 +99,23 @@ std::string GetTexturePathForSlot(const Zenith_MaterialAsset& xMaterial, Texture
 
 void SetTexturePathForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot, const std::string& strPath)
 {
+	TextureHandle xHandle(strPath);
 	switch (eSlot)
 	{
 	case TEXTURE_SLOT_DIFFUSE:
-		xMaterial.SetDiffuseTexturePath(strPath);
+		xMaterial.SetDiffuseTexture(std::move(xHandle));
 		break;
 	case TEXTURE_SLOT_NORMAL:
-		xMaterial.SetNormalTexturePath(strPath);
+		xMaterial.SetNormalTexture(std::move(xHandle));
 		break;
 	case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-		xMaterial.SetRoughnessMetallicTexturePath(strPath);
+		xMaterial.SetRoughnessMetallicTexture(std::move(xHandle));
 		break;
 	case TEXTURE_SLOT_OCCLUSION:
-		xMaterial.SetOcclusionTexturePath(strPath);
+		xMaterial.SetOcclusionTexture(std::move(xHandle));
 		break;
 	case TEXTURE_SLOT_EMISSIVE:
-		xMaterial.SetEmissiveTexturePath(strPath);
+		xMaterial.SetEmissiveTexture(std::move(xHandle));
 		break;
 	}
 }

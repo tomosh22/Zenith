@@ -110,7 +110,7 @@ private:
 	Zenith_UI::Zenith_UIRect* m_apxInventorySlots[s_iInventorySlots] = {};
 	bool m_bUIInitialized = false;
 
-	// Bullet prefab (per-instance)
+	// Bullet prefab (per-instance) — loaded via the registry
 	std::string m_strBulletPrefabPath = GAME_ASSETS_DIR"Prefabs/Bullet" ZENITH_PREFAB_EXT;
-	Zenith_Prefab* m_pxBulletPrefab = nullptr;
+	PrefabHandle m_xBulletPrefab;
 };

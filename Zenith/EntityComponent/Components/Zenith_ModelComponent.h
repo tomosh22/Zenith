@@ -152,7 +152,7 @@ public:
 	void GeneratePhysicsMesh(PhysicsMeshQuality eQuality = PHYSICS_MESH_QUALITY_MEDIUM);
 	void GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig);
 	Flux_MeshGeometry* GetPhysicsMesh() const;
-	bool HasPhysicsMesh() const { return m_pxPhysicsMeshAsset != nullptr; }
+	bool HasPhysicsMesh() const { return m_xPhysicsMeshAsset.GetDirect() != nullptr; }
 	void SetDebugDrawPhysicsMesh(bool bEnable) { m_bDebugDrawPhysicsMesh = bEnable; }
 	bool GetDebugDrawPhysicsMesh() const { return m_bDebugDrawPhysicsMesh; }
 	void QueueDebugDrawPhysicsMesh(const Zenith_Maths::Vector3& xColor) const;
@@ -200,7 +200,7 @@ public:
 	// Physics Mesh
 	//=========================================================================
 
-	Zenith_MeshGeometryAsset* m_pxPhysicsMeshAsset = nullptr;
+	MeshGeometryHandle m_xPhysicsMeshAsset;
 	bool m_bDebugDrawPhysicsMesh = false;
 
 };

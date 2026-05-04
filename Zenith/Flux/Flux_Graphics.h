@@ -1,6 +1,7 @@
 #pragma once
 #include "Flux.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 
 // ---- Core render-target format constants --------------------------------
 // Pipeline building needs these at init time (before transients exist).
@@ -20,6 +21,12 @@ public:
 
 	static void InitialiseSamplers();
 	static void Initialise();
+
+	// Drop refs to all Flux_Graphics-owned asset handles (default textures, blank
+	// material, grid texture). Called from Flux::ReleaseAssetReferences before the
+	// asset registry shuts down. Do NOT free GPU resources here — that's Shutdown().
+	static void ReleaseAssetReferences();
+
 	static void Shutdown();
 
 	static void UploadFrameConstants();
@@ -50,19 +57,22 @@ public:
 	static Flux_DynamicConstantBuffer s_xFrameConstantsBuffer;
 
 	//----------------------------------------------------------------------
-	// Fallback Assets (engine defaults for missing/loading assets)
+	// Fallback Assets (engine defaults for missing/loading assets).
+	// Stored as handles so they hold a permanent ref while initialised — without
+	// that, Zenith_AssetRegistry::UnloadUnused() would free them out from under
+	// every consumer that uses them as a fallback.
 	//----------------------------------------------------------------------
-	static class Zenith_TextureAsset* s_pxWhiteTexture;
-	static class Zenith_TextureAsset* s_pxBlackTexture;
-	static class Zenith_TextureAsset* s_pxGridTexture;
+	static TextureHandle s_xWhiteTexture;
+	static TextureHandle s_xBlackTexture;
+	static TextureHandle s_xGridTexture;
 	static Flux_MeshGeometry s_xBlankMesh;
-	static class Zenith_MaterialAsset* s_pxBlankMaterial;
+	static MaterialHandle s_xBlankMaterial;
 
 	//----------------------------------------------------------------------
 	// Scene Textures (set during initialization in Zenith_Main.cpp)
 	//----------------------------------------------------------------------
-	static class Zenith_TextureAsset* s_pxCubemapTexture;
-	static class Zenith_TextureAsset* s_pxWaterNormalTexture;
+	static TextureHandle s_xCubemapTexture;
+	static TextureHandle s_xWaterNormalTexture;
 
 	static TextureFormat GetMRTFormat(MRTIndex eIndex);
 	static TextureFormat s_aeMRTFormats[MRT_INDEX_COUNT];

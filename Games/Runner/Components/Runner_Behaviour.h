@@ -66,11 +66,11 @@ namespace Runner
 	extern MaterialHandle g_xDustMaterial;
 	extern MaterialHandle g_xCollectParticleMaterial;
 
-	extern Zenith_Prefab* g_pxCharacterPrefab;
-	extern Zenith_Prefab* g_pxGroundPrefab;
-	extern Zenith_Prefab* g_pxObstaclePrefab;
-	extern Zenith_Prefab* g_pxCollectiblePrefab;
-	extern Zenith_Prefab* g_pxParticlePrefab;
+	extern PrefabHandle g_xCharacterPrefab;
+	extern PrefabHandle g_xGroundPrefab;
+	extern PrefabHandle g_xObstaclePrefab;
+	extern PrefabHandle g_xCollectiblePrefab;
+	extern PrefabHandle g_xParticlePrefab;
 }
 
 /**
@@ -392,7 +392,7 @@ private:
 		Runner_TerrainManager::Config xTerrainConfig;
 		Runner_TerrainManager::Initialize(
 			xTerrainConfig,
-			Runner::g_pxGroundPrefab,
+			Runner::g_xGroundPrefab.GetDirect(),
 			m_pxCubeGeometry,
 			m_xGroundMaterial.GetDirect());
 
@@ -400,8 +400,8 @@ private:
 		Runner_CollectibleSpawner::Config xSpawnConfig;
 		Runner_CollectibleSpawner::Initialize(
 			xSpawnConfig,
-			Runner::g_pxCollectiblePrefab,
-			Runner::g_pxObstaclePrefab,
+			Runner::g_xCollectiblePrefab.GetDirect(),
+			Runner::g_xObstaclePrefab.GetDirect(),
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
 			m_xCollectibleMaterial.GetDirect(),
@@ -412,7 +412,7 @@ private:
 		Runner_ParticleManager::Config xParticleConfig;
 		Runner_ParticleManager::Initialize(
 			xParticleConfig,
-			Runner::g_pxParticlePrefab,
+			Runner::g_xParticlePrefab.GetDirect(),
 			m_pxSphereGeometry,
 			m_xDustMaterial.GetDirect(),
 			m_xCollectParticleMaterial.GetDirect());
@@ -423,14 +423,14 @@ private:
 
 	void CreateCharacter()
 	{
-		if (Runner::g_pxCharacterPrefab == nullptr || m_pxCapsuleGeometry == nullptr || !m_xCharacterMaterial)
+		if (!Runner::g_xCharacterPrefab || m_pxCapsuleGeometry == nullptr || !m_xCharacterMaterial)
 			return;
 
 		if (!m_xGameScene.IsValid())
 			return;
 
 		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xGameScene);
-		Zenith_Entity xCharacter = Runner::g_pxCharacterPrefab->Instantiate(pxSceneData, "Runner");
+		Zenith_Entity xCharacter = Runner::g_xCharacterPrefab.GetDirect()->Instantiate(pxSceneData, "Runner");
 
 		Zenith_TransformComponent& xTransform = xCharacter.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));

@@ -106,11 +106,10 @@ void Zenith_Core::Zenith_Init()
 		Flux_MemoryManager::BeginFrame();
 		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after Flux::EarlyInitialise()
 
-		// Load cubemap texture
-		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-		if (Flux_Graphics::s_pxCubemapTexture)
+		// Load cubemap texture (pinned)
+		if (Zenith_TextureAsset* pxCubemap = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
 		{
-			Flux_Graphics::s_pxCubemapTexture->LoadCubemapFromFiles(
+			pxCubemap->LoadCubemapFromFiles(
 				ENGINE_ASSETS_DIR"Textures/Cubemap/px" ZENITH_TEXTURE_EXT,
 				ENGINE_ASSETS_DIR"Textures/Cubemap/nx" ZENITH_TEXTURE_EXT,
 				ENGINE_ASSETS_DIR"Textures/Cubemap/py" ZENITH_TEXTURE_EXT,
@@ -118,10 +117,14 @@ void Zenith_Core::Zenith_Init()
 				ENGINE_ASSETS_DIR"Textures/Cubemap/pz" ZENITH_TEXTURE_EXT,
 				ENGINE_ASSETS_DIR"Textures/Cubemap/nz" ZENITH_TEXTURE_EXT
 			);
+			Flux_Graphics::s_xCubemapTexture.Set(pxCubemap);
 		}
 
-		// Load water normal texture
-		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT);
+		// Load water normal texture (pinned)
+		if (Zenith_TextureAsset* pxWaterNormal = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT))
+		{
+			Flux_Graphics::s_xWaterNormalTexture.Set(pxWaterNormal);
+		}
 
 		Flux_MemoryManager::EndFrame(false);
 	}
@@ -215,13 +218,18 @@ void Zenith_Core::Zenith_Shutdown()
 	// 5. Project shutdown - clean up game-specific resources
 	Project_Shutdown();
 
-	// 6. Shutdown asset registry (unloads all assets)
+	// 6. Release Flux's asset-system references BEFORE the registry shuts down.
+	// Flux statics hold TextureHandle / MaterialHandle defaults that must drop their
+	// refs while the registry still owns its assets — Flux::Shutdown() runs too late.
+	Flux::ReleaseAssetReferences();
+
+	// 7. Shutdown asset registry (unloads all assets)
 	Zenith_AssetRegistry::Shutdown();
 
-	// 7. Shutdown Flux (all subsystems + graphics + memory manager)
+	// 8. Shutdown Flux (all subsystems + graphics + memory manager)
 	Flux::Shutdown();
 
-	// 8. Shutdown task system (terminates worker threads)
+	// 9. Shutdown task system (terminates worker threads)
 	Zenith_TaskSystem::Shutdown();
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");

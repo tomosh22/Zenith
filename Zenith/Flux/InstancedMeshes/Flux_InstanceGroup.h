@@ -2,6 +2,7 @@
 
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Maths/Zenith_Maths.h"
 #include <vector>
@@ -113,7 +114,7 @@ public:
 	const std::vector<Zenith_Maths::Matrix4>& GetTransforms() const { return m_axTransforms; }
 
 	Flux_MeshInstance* GetMesh() const { return m_pxMesh; }
-	Zenith_MaterialAsset* GetMaterial() const { return m_pxMaterial; }
+	Zenith_MaterialAsset* GetMaterial() const { return m_xMaterial.GetDirect(); }
 	Flux_AnimationTexture* GetAnimationTexture() const { return m_pxAnimationTexture; }
 	const Flux_InstanceBounds& GetBounds() const { return m_xBounds; }
 
@@ -168,10 +169,13 @@ private:
 	Flux_ReadWriteBuffer m_xVisibleCountBuffer;   // uint32 - atomic counter for culling
 
 	//-------------------------------------------------------------------------
-	// References (not owned)
+	// References — m_xMaterial keeps the asset alive via handle ref counting.
+	// m_pxMesh and m_pxAnimationTexture are still raw because their lifetimes
+	// are managed by their owning subsystems (mesh manager, animation system),
+	// not by the asset registry.
 	//-------------------------------------------------------------------------
 	Flux_MeshInstance* m_pxMesh = nullptr;
-	Zenith_MaterialAsset* m_pxMaterial = nullptr;
+	MaterialHandle m_xMaterial;
 	Flux_AnimationTexture* m_pxAnimationTexture = nullptr;
 	Flux_InstanceBounds m_xBounds = {};
 };

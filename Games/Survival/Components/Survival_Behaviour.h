@@ -77,11 +77,11 @@ namespace Survival
 	extern MaterialHandle g_xWoodMaterial;
 	extern MaterialHandle g_xStoneMaterial;
 
-	extern Zenith_Prefab* g_pxPlayerPrefab;
-	extern Zenith_Prefab* g_pxTreePrefab;
-	extern Zenith_Prefab* g_pxRockPrefab;
-	extern Zenith_Prefab* g_pxBerryBushPrefab;
-	extern Zenith_Prefab* g_pxDroppedItemPrefab;
+	extern PrefabHandle g_xPlayerPrefab;
+	extern PrefabHandle g_xTreePrefab;
+	extern PrefabHandle g_xRockPrefab;
+	extern PrefabHandle g_xBerryBushPrefab;
+	extern PrefabHandle g_xDroppedItemPrefab;
 }
 
 // ============================================================================

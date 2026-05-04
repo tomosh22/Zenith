@@ -364,7 +364,13 @@ private:
 	// Type-specific loaders
 	std::unordered_map<Zenith_TypeIndex, AssetLoaderFn> m_xLoaders;
 
-	// Thread safety
+	// Thread safety. CONTRACT: Zenith_Mutex MUST be recursive — Get<T>() runs the
+	// type-specific loader inside this lock, and a loader that calls Get<U>() for a
+	// sub-asset (e.g. a model loader pulling in its meshes) re-enters the registry.
+	// Zenith_Mutex is recursive on Windows (CRITICAL_SECTION) and Android
+	// (PTHREAD_MUTEX_RECURSIVE) — see Zenith_Windows_Multithreading.h:15 and
+	// Zenith_Android_Multithreading.h:15. A future port that swaps in a
+	// non-recursive primitive will deadlock on the first nested Get<>.
 	mutable Zenith_Mutex m_xMutex;
 
 	// Procedural asset ID counter

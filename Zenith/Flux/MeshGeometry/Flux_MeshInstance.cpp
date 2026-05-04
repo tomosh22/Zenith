@@ -65,13 +65,12 @@ Flux_MeshInstance::Flux_MeshInstance(Flux_MeshInstance&& xOther)
 	, m_xBufferLayout(std::move(xOther.m_xBufferLayout))
 	, m_uNumVerts(xOther.m_uNumVerts)
 	, m_uNumIndices(xOther.m_uNumIndices)
-	, m_pxSourceAsset(xOther.m_pxSourceAsset)
+	, m_xSourceAsset(std::move(xOther.m_xSourceAsset))
 	, m_pxProceduralGeometry(xOther.m_pxProceduralGeometry)
 	, m_bInitialized(xOther.m_bInitialized)
 {
 	xOther.m_uNumVerts = 0;
 	xOther.m_uNumIndices = 0;
-	xOther.m_pxSourceAsset = nullptr;
 	xOther.m_pxProceduralGeometry = nullptr;
 	xOther.m_bInitialized = false;
 }
@@ -87,13 +86,12 @@ Flux_MeshInstance& Flux_MeshInstance::operator=(Flux_MeshInstance&& xOther)
 		m_xBufferLayout = std::move(xOther.m_xBufferLayout);
 		m_uNumVerts = xOther.m_uNumVerts;
 		m_uNumIndices = xOther.m_uNumIndices;
-		m_pxSourceAsset = xOther.m_pxSourceAsset;
+		m_xSourceAsset = std::move(xOther.m_xSourceAsset);
 		m_pxProceduralGeometry = xOther.m_pxProceduralGeometry;
 		m_bInitialized = xOther.m_bInitialized;
 
 		xOther.m_uNumVerts = 0;
 		xOther.m_uNumIndices = 0;
-		xOther.m_pxSourceAsset = nullptr;
 		xOther.m_pxProceduralGeometry = nullptr;
 		xOther.m_bInitialized = false;
 	}
@@ -184,7 +182,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset)
 	}
 
 	Flux_MeshInstance* pxInstance = new Flux_MeshInstance();
-	pxInstance->m_pxSourceAsset = pxAsset;
+	pxInstance->m_xSourceAsset.Set(pxAsset);
 	pxInstance->m_uNumVerts = uNumVerts;
 	pxInstance->m_uNumIndices = uNumIndices;
 
@@ -306,7 +304,7 @@ void Flux_MeshInstance::Destroy()
 		m_xBufferLayout.Reset();
 		m_uNumVerts = 0;
 		m_uNumIndices = 0;
-		m_pxSourceAsset = nullptr;
+		m_xSourceAsset.Clear();
 		m_bInitialized = false;
 	}
 	// Procedural instances don't own any GPU resources, just clear the back-reference.
@@ -315,9 +313,9 @@ void Flux_MeshInstance::Destroy()
 
 bool Flux_MeshInstance::HasSkinning() const
 {
-	if (m_pxSourceAsset)
+	if (Zenith_MeshAsset* pxSource = m_xSourceAsset.GetDirect())
 	{
-		return m_pxSourceAsset->HasSkinning();
+		return pxSource->HasSkinning();
 	}
 	return false;
 }
@@ -372,7 +370,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateSkinnedFromAsset(Zenith_MeshAsset* p
 	}
 
 	Flux_MeshInstance* pxInstance = new Flux_MeshInstance();
-	pxInstance->m_pxSourceAsset = pxAsset;
+	pxInstance->m_xSourceAsset.Set(pxAsset);
 	pxInstance->m_uNumVerts = uNumVerts;
 	pxInstance->m_uNumIndices = uNumIndices;
 
@@ -528,7 +526,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 	}
 
 	Flux_MeshInstance* pxInstance = new Flux_MeshInstance();
-	pxInstance->m_pxSourceAsset = pxAsset;
+	pxInstance->m_xSourceAsset.Set(pxAsset);
 	pxInstance->m_uNumVerts = uNumVerts;
 	pxInstance->m_uNumIndices = uNumIndices;
 

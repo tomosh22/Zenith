@@ -86,8 +86,8 @@ namespace
 
 // Static member definitions
 // Note: Use {} initialization to trigger default member initializers
-Zenith_TextureAsset* Flux_VolumeFog::s_pxNoiseTexture3D = nullptr;
-Zenith_TextureAsset* Flux_VolumeFog::s_pxBlueNoiseTexture = nullptr;
+TextureHandle Flux_VolumeFog::s_xNoiseTexture3D;
+TextureHandle Flux_VolumeFog::s_xBlueNoiseTexture;
 Flux_RenderAttachment Flux_VolumeFog::s_xFroxelDensityGrid;
 Flux_RenderAttachment Flux_VolumeFog::s_xFroxelLightingGrid;
 Flux_RenderAttachment Flux_VolumeFog::s_xDebugOutput;
@@ -115,6 +115,12 @@ void Flux_VolumeFog::Initialise()
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_VolumeFog initialised");
+}
+
+void Flux_VolumeFog::ReleaseAssetReferences()
+{
+	s_xNoiseTexture3D.Clear();
+	s_xBlueNoiseTexture.Clear();
 }
 
 void Flux_VolumeFog::Shutdown()
@@ -173,8 +179,11 @@ void Flux_VolumeFog::GenerateNoiseTexture3D()
 	xSurfaceInfo.m_uNumLayers = 1;
 	xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
-	s_pxNoiseTexture3D = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-	s_pxNoiseTexture3D->CreateFromData(pData, xSurfaceInfo, false);
+	if (Zenith_TextureAsset* pxNoise3D = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+	{
+		pxNoise3D->CreateFromData(pData, xSurfaceInfo, false);
+		s_xNoiseTexture3D.Set(pxNoise3D);
+	}
 
 	Zenith_MemoryManagement::Deallocate(pData);
 
@@ -252,8 +261,11 @@ void Flux_VolumeFog::GenerateBlueNoiseTexture()
 	xSurfaceInfo.m_uNumLayers = 1;
 	xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
-	s_pxBlueNoiseTexture = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-	s_pxBlueNoiseTexture->CreateFromData(pData, xSurfaceInfo, false);
+	if (Zenith_TextureAsset* pxBlueNoise = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+	{
+		pxBlueNoise->CreateFromData(pData, xSurfaceInfo, false);
+		s_xBlueNoiseTexture.Set(pxBlueNoise);
+	}
 
 	Zenith_MemoryManagement::Deallocate(pData);
 

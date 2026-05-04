@@ -2,6 +2,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Maths/Zenith_Maths.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 
 /**
  * Flux_SkeletonInstance - Runtime skeleton for animation playback
@@ -112,7 +113,7 @@ public:
 	/**
 	 * Get source skeleton asset
 	 */
-	Zenith_SkeletonAsset* GetSourceSkeleton() const { return m_pxSourceSkeleton; }
+	Zenith_SkeletonAsset* GetSourceSkeleton() const { return m_xSourceSkeleton.GetDirect(); }
 
 	/**
 	 * Get number of bones in skeleton
@@ -138,8 +139,8 @@ public:
 	const Zenith_Maths::Matrix4& GetBoneModelTransform(uint32_t uBoneIndex) const;
 
 private:
-	// Source skeleton asset (not owned)
-	Zenith_SkeletonAsset* m_pxSourceSkeleton = nullptr;
+	// Source skeleton asset handle — keeps the asset alive for the lifetime of this instance.
+	SkeletonHandle m_xSourceSkeleton;
 
 	// Number of bones (cached from skeleton asset)
 	uint32_t m_uNumBones = 0;

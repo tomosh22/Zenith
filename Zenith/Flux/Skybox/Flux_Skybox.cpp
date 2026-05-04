@@ -18,8 +18,9 @@
 #endif
 
 
-// Cubemap texture reference
-static Zenith_TextureAsset* s_pxCubemapTexture = nullptr;
+// Ref-counted copy of Flux_Graphics::s_xCubemapTexture (set during init in Zenith_Main).
+// Owned by handle so the cubemap survives any UnloadUnused calls during the frame.
+static TextureHandle s_xCubemapTexture;
 
 // Static member definitions
 Flux_RenderAttachment Flux_Skybox::s_xTransmittanceLUT;
@@ -167,8 +168,8 @@ void Flux_Skybox::Initialise()
 
 	BuildPipelines();
 
-	// Use the global cubemap texture pointer set during initialization in Zenith_Main.cpp
-	s_pxCubemapTexture = Flux_Graphics::s_pxCubemapTexture;
+	// Take a ref-counted copy of the global cubemap handle (set during init in Zenith_Main).
+	s_xCubemapTexture = Flux_Graphics::s_xCubemapTexture;
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -186,6 +187,11 @@ void Flux_Skybox::Initialise()
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox initialised");
+}
+
+void Flux_Skybox::ReleaseAssetReferences()
+{
+	s_xCubemapTexture.Clear();
 }
 
 void Flux_Skybox::Shutdown()
@@ -300,7 +306,8 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 	else
 	{
 		// Cubemap sky
-		if (!s_pxCubemapTexture || !s_pxCubemapTexture->m_xSRV.m_xImageViewHandle.IsValid())
+		Zenith_TextureAsset* pxCubemap = s_xCubemapTexture.GetDirect();
+		if (!pxCubemap || !pxCubemap->m_xSRV.m_xImageViewHandle.IsValid())
 		{
 			return;
 		}
@@ -310,7 +317,7 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 		pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
 		pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-		pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_pxCubemapTexture->m_xSRV, 1);
+		pxCommandList->AddCommand<Flux_CommandBindSRV>(&pxCubemap->m_xSRV, 1);
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 	}
 }

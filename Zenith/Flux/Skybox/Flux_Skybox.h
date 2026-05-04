@@ -68,6 +68,10 @@ public:
 	~Flux_Skybox() = delete;
 
 	static void Initialise();
+
+	// Drop refs to skybox cubemap before the asset registry shuts down.
+	static void ReleaseAssetReferences();
+
 	static void Shutdown();
 	static void Reset();
 	static void BuildPipelines();

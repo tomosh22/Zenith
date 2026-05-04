@@ -425,17 +425,48 @@ void Zenith_AssetRegistry::UnloadAllInternal()
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Unloading all %zu assets", m_xAssetsByPath.size());
 	}
 
+	// Phase A: drain refcount==0 assets to a fixed point. Each delete may release
+	// refs to other assets (e.g. a material releasing texture handles), dropping
+	// them to zero — repeat until no more do.
+	bool bAnyDeleted;
+	do
+	{
+		bAnyDeleted = false;
+		for (auto it = m_xAssetsByPath.begin(); it != m_xAssetsByPath.end(); )
+		{
+			if (it->second->GetRefCount() == 0)
+			{
+				if (m_bLifecycleLogging)
+				{
+					Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Unloading '%s'", it->first.c_str());
+				}
+				delete it->second;
+				it = m_xAssetsByPath.erase(it);
+				bAnyDeleted = true;
+			}
+			else
+			{
+				++it;
+			}
+		}
+	} while (bAnyDeleted);
+
+	// Phase B: anything still held is a real cycle or a leaked handle — log loudly
+	// so the leak is discoverable but don't abort (cycles can be legitimate, and
+	// we still need to free the memory either way).
 	for (auto& xPair : m_xAssetsByPath)
 	{
-		if (m_bLifecycleLogging && xPair.second->GetRefCount() > 0)
-		{
-			Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Warning - unloading '%s' with ref count %u",
-				xPair.first.c_str(), xPair.second->GetRefCount());
-		}
-
-		delete xPair.second;
+		Zenith_Warning(LOG_CATEGORY_ASSET,
+			"AssetRegistry shutdown: '%s' still held with %u refs — cycle or leaked handle",
+			xPair.first.c_str(), xPair.second->GetRefCount());
 	}
 
+	// Phase C: force-delete the remaining assets (the registry itself is being torn
+	// down, so we cannot leave the heap allocations dangling).
+	for (auto& xPair : m_xAssetsByPath)
+	{
+		delete xPair.second;
+	}
 	m_xAssetsByPath.clear();
 }
 

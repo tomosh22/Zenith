@@ -330,7 +330,7 @@ static void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup*
 	Zenith_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
 	if (!pxMaterial)
 	{
-		pxMaterial = Flux_Graphics::s_pxBlankMaterial;
+		pxMaterial = Flux_Graphics::s_xBlankMaterial.GetDirect();
 	}
 
 	Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
@@ -380,7 +380,7 @@ static void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup*
 	}
 	else
 	{
-		xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &Flux_Graphics::s_pxWhiteTexture->m_xSRV);
+		xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &Flux_Graphics::s_xWhiteTexture.GetDirect()->m_xSRV);
 	}
 
 	// Bind instance buffers

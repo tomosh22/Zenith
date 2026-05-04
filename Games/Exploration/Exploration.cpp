@@ -377,11 +377,11 @@ static bool GenerateAndExportTerrain()
  */
 static void SetMaterialTexturePaths(Zenith_MaterialAsset* pxMat, const std::string& strDir, const std::string& strName)
 {
-	pxMat->SetDiffuseTexturePath(strDir + strName + "_Diffuse" ZENITH_TEXTURE_EXT);
-	pxMat->SetNormalTexturePath(strDir + strName + "_Normal" ZENITH_TEXTURE_EXT);
-	pxMat->SetRoughnessMetallicTexturePath(strDir + strName + "_RM" ZENITH_TEXTURE_EXT);
-	pxMat->SetOcclusionTexturePath(strDir + strName + "_Occlusion" ZENITH_TEXTURE_EXT);
-	pxMat->SetEmissiveTexturePath(strDir + strName + "_Emissive" ZENITH_TEXTURE_EXT);
+	pxMat->SetDiffuseTexture          (TextureHandle(strDir + strName + "_Diffuse" ZENITH_TEXTURE_EXT));
+	pxMat->SetNormalTexture           (TextureHandle(strDir + strName + "_Normal" ZENITH_TEXTURE_EXT));
+	pxMat->SetRoughnessMetallicTexture(TextureHandle(strDir + strName + "_RM" ZENITH_TEXTURE_EXT));
+	pxMat->SetOcclusionTexture        (TextureHandle(strDir + strName + "_Occlusion" ZENITH_TEXTURE_EXT));
+	pxMat->SetEmissiveTexture         (TextureHandle(strDir + strName + "_Emissive" ZENITH_TEXTURE_EXT));
 }
 
 /**

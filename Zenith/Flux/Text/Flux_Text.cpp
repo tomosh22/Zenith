@@ -35,7 +35,9 @@ struct TextVertex
 };
 static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 
-static Zenith_TextureAsset* s_pxFontAtlasTexture = nullptr;
+// Pinned via TextureHandle so UnloadUnused never frees the font atlas while the
+// engine is running. Cleared in Flux_Text::ReleaseAssetReferences.
+static TextureHandle s_xFontAtlasTexture;
 
 // Overlay clip rect state (set during canvas render, consumed during Flux_Text::Render)
 static bool s_bOverlayClipActive = false;
@@ -85,11 +87,14 @@ void Flux_Text::Initialise()
 	constexpr bool bDeviceLocal = false;
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(TextVertex), s_xInstanceBuffer, bDeviceLocal);
 
-	s_pxFontAtlasTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR "Textures/Font/FontAtlas" ZENITH_TEXTURE_EXT);
-	if (!s_pxFontAtlasTexture)
+	if (Zenith_TextureAsset* pxFontAtlas = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR "Textures/Font/FontAtlas" ZENITH_TEXTURE_EXT))
+	{
+		s_xFontAtlasTexture.Set(pxFontAtlas);
+	}
+	else
 	{
 		Zenith_Log(LOG_CATEGORY_TEXT, "Warning: Failed to load font atlas texture, using white texture");
-		s_pxFontAtlasTexture = Flux_Graphics::s_pxWhiteTexture;
+		s_xFontAtlasTexture = Flux_Graphics::s_xWhiteTexture;  // copy: AddRefs the white default
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -113,6 +118,11 @@ void Flux_Text::Reset()
 	Zenith_UI::Zenith_UICanvas::ClearPendingTextEntries();
 
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text::Reset() - Cleared pending text entries");
+}
+
+void Flux_Text::ReleaseAssetReferences()
+{
+	s_xFontAtlasTexture.Clear();
 }
 
 void Flux_Text::Shutdown()
@@ -267,7 +277,7 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 
 	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
 	pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_pxFontAtlasTexture->m_xSRV, 1);
+	pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_xFontAtlasTexture.GetDirect()->m_xSRV, 1);
 
 	if (s_bOverlayClipActive && s_uBgCharCount > 0)
 	{

@@ -21,6 +21,11 @@ class Flux_Text
 public:
 	static void Initialise();
 	static void BuildPipelines();
+
+	// Drop refs to font atlas texture before the asset registry shuts down.
+	// Called from Flux::ReleaseAssetReferences.
+	static void ReleaseAssetReferences();
+
 	static void Shutdown();
 
 	static void Reset();  // Clear state when scene resets (e.g., Play/Stop transitions)

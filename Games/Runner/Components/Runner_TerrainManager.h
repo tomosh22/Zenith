@@ -180,11 +180,11 @@ public:
 		// Material 0 = grass, Material 1 = dirt
 		Zenith_MaterialAsset& xGrassMat = *Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		xGrassMat.SetName("TerrainGrass");
-		xGrassMat.SetDiffuseTexturePath("Textures/grass_diffuse.ztex");
+		xGrassMat.SetDiffuseTexture(TextureHandle(std::string("Textures/grass_diffuse.ztex")));
 
 		Zenith_MaterialAsset& xDirtMat = *Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		xDirtMat.SetName("TerrainDirt");
-		xDirtMat.SetDiffuseTexturePath("Textures/dirt_diffuse.ztex");
+		xDirtMat.SetDiffuseTexture(TextureHandle(std::string("Textures/dirt_diffuse.ztex")));
 
 		// Add TerrainComponent - this handles:
 		// 1. Loading terrain mesh data (heightmap -> mesh)

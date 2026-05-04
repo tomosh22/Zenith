@@ -5,9 +5,9 @@
 #include "DataStream/Zenith_DataStream.h"
 #include <filesystem>
 
-// Static default textures
-Zenith_TextureAsset* Zenith_MaterialAsset::s_pxDefaultWhite = nullptr;
-Zenith_TextureAsset* Zenith_MaterialAsset::s_pxDefaultNormal = nullptr;
+// Static default textures (pinned via handle).
+TextureHandle Zenith_MaterialAsset::s_xDefaultWhite;
+TextureHandle Zenith_MaterialAsset::s_xDefaultNormal;
 
 //--------------------------------------------------------------------------
 // Construction / Destruction
@@ -206,80 +206,36 @@ void Zenith_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 }
 
 //--------------------------------------------------------------------------
-// Texture Path Setters
+// Texture Setters
 //--------------------------------------------------------------------------
 
-void Zenith_MaterialAsset::SetDiffuseTexturePath(const std::string& strPath)
+void Zenith_MaterialAsset::SetDiffuseTexture(TextureHandle xHandle)
 {
-	m_xDiffuseTexture.SetPath(strPath);
-	m_pxDirectDiffuse = nullptr;
+	m_xDiffuseTexture = std::move(xHandle);
 	m_bDirty = true;
 }
 
-void Zenith_MaterialAsset::SetNormalTexturePath(const std::string& strPath)
+void Zenith_MaterialAsset::SetNormalTexture(TextureHandle xHandle)
 {
-	m_xNormalTexture.SetPath(strPath);
-	m_pxDirectNormal = nullptr;
+	m_xNormalTexture = std::move(xHandle);
 	m_bDirty = true;
 }
 
-void Zenith_MaterialAsset::SetRoughnessMetallicTexturePath(const std::string& strPath)
+void Zenith_MaterialAsset::SetRoughnessMetallicTexture(TextureHandle xHandle)
 {
-	m_xRoughnessMetallicTexture.SetPath(strPath);
-	m_pxDirectRoughnessMetallic = nullptr;
+	m_xRoughnessMetallicTexture = std::move(xHandle);
 	m_bDirty = true;
 }
 
-void Zenith_MaterialAsset::SetOcclusionTexturePath(const std::string& strPath)
+void Zenith_MaterialAsset::SetOcclusionTexture(TextureHandle xHandle)
 {
-	m_xOcclusionTexture.SetPath(strPath);
-	m_pxDirectOcclusion = nullptr;
+	m_xOcclusionTexture = std::move(xHandle);
 	m_bDirty = true;
 }
 
-void Zenith_MaterialAsset::SetEmissiveTexturePath(const std::string& strPath)
+void Zenith_MaterialAsset::SetEmissiveTexture(TextureHandle xHandle)
 {
-	m_xEmissiveTexture.SetPath(strPath);
-	m_pxDirectEmissive = nullptr;
-	m_bDirty = true;
-}
-
-//--------------------------------------------------------------------------
-// Direct Texture Setters
-//--------------------------------------------------------------------------
-
-void Zenith_MaterialAsset::SetDiffuseTextureDirectly(Zenith_TextureAsset* pTexture)
-{
-	m_pxDirectDiffuse = pTexture;
-	m_xDiffuseTexture.Clear();
-	m_bDirty = true;
-}
-
-void Zenith_MaterialAsset::SetNormalTextureDirectly(Zenith_TextureAsset* pTexture)
-{
-	m_pxDirectNormal = pTexture;
-	m_xNormalTexture.Clear();
-	m_bDirty = true;
-}
-
-void Zenith_MaterialAsset::SetRoughnessMetallicTextureDirectly(Zenith_TextureAsset* pTexture)
-{
-	m_pxDirectRoughnessMetallic = pTexture;
-	m_xRoughnessMetallicTexture.Clear();
-	m_bDirty = true;
-}
-
-void Zenith_MaterialAsset::SetOcclusionTextureDirectly(Zenith_TextureAsset* pTexture)
-{
-	m_pxDirectOcclusion = pTexture;
-	m_xOcclusionTexture.Clear();
-	m_bDirty = true;
-}
-
-void Zenith_MaterialAsset::SetEmissiveTextureDirectly(Zenith_TextureAsset* pTexture)
-{
-	m_pxDirectEmissive = pTexture;
-	m_xEmissiveTexture.Clear();
+	m_xEmissiveTexture = std::move(xHandle);
 	m_bDirty = true;
 }
 
@@ -289,51 +245,31 @@ void Zenith_MaterialAsset::SetEmissiveTextureDirectly(Zenith_TextureAsset* pText
 
 Zenith_TextureAsset* Zenith_MaterialAsset::GetDiffuseTexture()
 {
-	if (m_pxDirectDiffuse)
-	{
-		return m_pxDirectDiffuse;
-	}
-	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xDiffuseTexture.GetPath());
+	Zenith_TextureAsset* pTex = m_xDiffuseTexture.Resolve();
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
 Zenith_TextureAsset* Zenith_MaterialAsset::GetNormalTexture()
 {
-	if (m_pxDirectNormal)
-	{
-		return m_pxDirectNormal;
-	}
-	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xNormalTexture.GetPath());
+	Zenith_TextureAsset* pTex = m_xNormalTexture.Resolve();
 	return pTex ? pTex : GetDefaultNormalTexture();
 }
 
 Zenith_TextureAsset* Zenith_MaterialAsset::GetRoughnessMetallicTexture()
 {
-	if (m_pxDirectRoughnessMetallic)
-	{
-		return m_pxDirectRoughnessMetallic;
-	}
-	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xRoughnessMetallicTexture.GetPath());
+	Zenith_TextureAsset* pTex = m_xRoughnessMetallicTexture.Resolve();
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
 Zenith_TextureAsset* Zenith_MaterialAsset::GetOcclusionTexture()
 {
-	if (m_pxDirectOcclusion)
-	{
-		return m_pxDirectOcclusion;
-	}
-	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xOcclusionTexture.GetPath());
+	Zenith_TextureAsset* pTex = m_xOcclusionTexture.Resolve();
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
 Zenith_TextureAsset* Zenith_MaterialAsset::GetEmissiveTexture()
 {
-	if (m_pxDirectEmissive)
-	{
-		return m_pxDirectEmissive;
-	}
-	Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xEmissiveTexture.GetPath());
+	Zenith_TextureAsset* pTex = m_xEmissiveTexture.Resolve();
 	return pTex ? pTex : GetDefaultWhiteTexture();
 }
 
@@ -343,18 +279,18 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetEmissiveTexture()
 
 Zenith_TextureAsset* Zenith_MaterialAsset::GetDefaultWhiteTexture()
 {
-	return s_pxDefaultWhite;
+	return s_xDefaultWhite.GetDirect();
 }
 
 Zenith_TextureAsset* Zenith_MaterialAsset::GetDefaultNormalTexture()
 {
-	return s_pxDefaultNormal;
+	return s_xDefaultNormal.GetDirect();
 }
 
 void Zenith_MaterialAsset::InitializeDefaults()
 {
-	// Create default white texture (1x1 white pixel)
-	s_pxDefaultWhite = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	// Create default white texture (1x1 white pixel) — pinned via handle.
+	if (Zenith_TextureAsset* pxWhite = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
 	{
 		uint32_t uWhite = 0xFFFFFFFF;
 		Flux_SurfaceInfo xInfo;
@@ -363,11 +299,12 @@ void Zenith_MaterialAsset::InitializeDefaults()
 		xInfo.m_uNumMips = 1;
 		xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
 		xInfo.m_eTextureType = TEXTURE_TYPE_2D;
-		s_pxDefaultWhite->CreateFromData(&uWhite, xInfo, false);
+		pxWhite->CreateFromData(&uWhite, xInfo, false);
+		s_xDefaultWhite.Set(pxWhite);
 	}
 
-	// Create default normal texture (1x1 flat normal: 0.5, 0.5, 1.0)
-	s_pxDefaultNormal = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	// Create default normal texture (1x1 flat normal: 0.5, 0.5, 1.0) — pinned.
+	if (Zenith_TextureAsset* pxNormal = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
 	{
 		uint32_t uNormal = 0xFFFF8080; // RGBA: 0.5, 0.5, 1.0, 1.0 in 8-bit (128, 128, 255, 255)
 		Flux_SurfaceInfo xInfo;
@@ -376,7 +313,8 @@ void Zenith_MaterialAsset::InitializeDefaults()
 		xInfo.m_uNumMips = 1;
 		xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
 		xInfo.m_eTextureType = TEXTURE_TYPE_2D;
-		s_pxDefaultNormal->CreateFromData(&uNormal, xInfo, false);
+		pxNormal->CreateFromData(&uNormal, xInfo, false);
+		s_xDefaultNormal.Set(pxNormal);
 	}
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "Material default textures initialized");
@@ -384,10 +322,15 @@ void Zenith_MaterialAsset::InitializeDefaults()
 
 void Zenith_MaterialAsset::ShutdownDefaults()
 {
-	// Clear pointers - registry manages asset lifetime
-	s_pxDefaultWhite = nullptr;
-	s_pxDefaultNormal = nullptr;
+	// No-op kept for ABI compatibility — handle cleanup is done in ReleaseDefaults
+	// during Flux::ReleaseAssetReferences. Subsystem Shutdown runs too late
+	// (after Zenith_AssetRegistry::Shutdown).
+	Zenith_Log(LOG_CATEGORY_ASSET, "Material default textures shut down (handles cleared via ReleaseDefaults)");
+}
 
-	Zenith_Log(LOG_CATEGORY_ASSET, "Material default textures shut down");
+void Zenith_MaterialAsset::ReleaseDefaults()
+{
+	s_xDefaultWhite.Clear();
+	s_xDefaultNormal.Clear();
 }
 

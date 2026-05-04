@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 
 class Zenith_TextureAsset;
 
@@ -86,12 +87,16 @@ class Flux_VolumeFog
 {
 public:
 	static void Initialise();
+
+	// Drop refs to fog noise textures before the asset registry shuts down.
+	static void ReleaseAssetReferences();
+
 	static void Shutdown();
 	static void Reset();  // Clear state when scene resets
 
 	// Shared resources accessors
-	static Zenith_TextureAsset* GetNoiseTexture3D() { return s_pxNoiseTexture3D; }
-	static Zenith_TextureAsset* GetBlueNoiseTexture() { return s_pxBlueNoiseTexture; }
+	static Zenith_TextureAsset* GetNoiseTexture3D() { return s_xNoiseTexture3D.GetDirect(); }
+	static Zenith_TextureAsset* GetBlueNoiseTexture() { return s_xBlueNoiseTexture.GetDirect(); }
 	static Flux_RenderAttachment& GetFroxelDensityGrid() { return s_xFroxelDensityGrid; }
 	static Flux_RenderAttachment& GetFroxelLightingGrid() { return s_xFroxelLightingGrid; }
 
@@ -109,9 +114,9 @@ private:
 	static void CreateDebugOutput();
 	static void RegisterDebugVariables();
 
-	// Shared textures
-	static Zenith_TextureAsset* s_pxNoiseTexture3D;      // 64^3 Perlin-Worley noise
-	static Zenith_TextureAsset* s_pxBlueNoiseTexture;    // 64x64 blue noise
+	// Shared textures (pinned via handles so UnloadUnused never frees them mid-frame).
+	static TextureHandle s_xNoiseTexture3D;      // 64^3 Perlin-Worley noise
+	static TextureHandle s_xBlueNoiseTexture;    // 64x64 blue noise
 
 	// Froxel grids (3D render targets)
 	static Flux_RenderAttachment s_xFroxelDensityGrid;   // RGBA16F: density + scattering

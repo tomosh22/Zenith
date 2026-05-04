@@ -33,7 +33,7 @@ Flux_AnimationController::~Flux_AnimationController()
 
 Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xOther) noexcept
 	: m_pxSkeletonInstance(xOther.m_pxSkeletonInstance)
-	, m_pxSkeletonAsset(xOther.m_pxSkeletonAsset)
+	, m_xSkeletonAsset(std::move(xOther.m_xSkeletonAsset))
 	, m_xClipCollection(std::move(xOther.m_xClipCollection))
 	, m_xAnimationAssets(std::move(xOther.m_xAnimationAssets))
 	, m_pxStateMachine(xOther.m_pxStateMachine)
@@ -63,7 +63,6 @@ Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xO
 	xOther.m_pxDirectTransition = nullptr;
 #endif
 	xOther.m_pxSkeletonInstance = nullptr;
-	xOther.m_pxSkeletonAsset = nullptr;
 	xOther.m_pfnEventCallback = nullptr;
 	xOther.m_pEventCallbackUserData = nullptr;
 }
@@ -80,9 +79,9 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		delete m_pxDirectTransition;
 #endif
 
-		// Transfer non-owned pointers
+		// Transfer non-owned pointers / move handles
 		m_pxSkeletonInstance = xOther.m_pxSkeletonInstance;
-		m_pxSkeletonAsset = xOther.m_pxSkeletonAsset;
+		m_xSkeletonAsset = std::move(xOther.m_xSkeletonAsset);
 
 		// Move value types
 		m_xClipCollection = std::move(xOther.m_xClipCollection);
@@ -120,7 +119,6 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		xOther.m_pxDirectTransition = nullptr;
 #endif
 		xOther.m_pxSkeletonInstance = nullptr;
-		xOther.m_pxSkeletonAsset = nullptr;
 		xOther.m_pfnEventCallback = nullptr;
 		xOther.m_pEventCallbackUserData = nullptr;
 	}
@@ -133,8 +131,8 @@ void Flux_AnimationController::Initialize(Flux_SkeletonInstance* pxSkeleton)
 
 	if (m_pxSkeletonInstance)
 	{
-		// Get skeleton asset for bone hierarchy info
-		m_pxSkeletonAsset = m_pxSkeletonInstance->GetSourceSkeleton();
+		// Get skeleton asset for bone hierarchy info (handle keeps it alive)
+		m_xSkeletonAsset.Set(m_pxSkeletonInstance->GetSourceSkeleton());
 
 		// Initialize pose with number of bones
 		uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
@@ -172,7 +170,7 @@ bool Flux_AnimationController::HasAnimationContent() const
 
 void Flux_AnimationController::Update(float fDt)
 {
-	if (!m_pxSkeletonInstance || !m_pxSkeletonAsset || m_bPaused)
+	if (!m_pxSkeletonInstance || !m_xSkeletonAsset.GetDirect() || m_bPaused)
 		return;
 
 	// #TODO: Implement ANIMATION_UPDATE_FIXED and ANIMATION_UPDATE_UNSCALED when engine time scale support is added
@@ -203,7 +201,7 @@ void Flux_AnimationController::EvaluateAndComposeLayers(float fDt)
 
 	for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
 	{
-		m_xLayers.Get(i)->Update(fDt, *m_pxSkeletonAsset);
+		m_xLayers.Get(i)->Update(fDt, *m_xSkeletonAsset.GetDirect());
 	}
 
 	// Layer 0 is the base; later layers compose on top.
@@ -275,14 +273,14 @@ void Flux_AnimationController::UpdateDirectPlayPose(float fDt)
 	const uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
 	for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
 	{
-		const Zenith_SkeletonAsset::Bone& xBone = m_pxSkeletonAsset->GetBone(i);
+		const Zenith_SkeletonAsset::Bone& xBone = m_xSkeletonAsset.GetDirect()->GetBone(i);
 		Flux_BoneLocalPose& xPose = m_xOutputPose.GetLocalPose(i);
 		xPose.m_xPosition = xBone.m_xBindPosition;
 		xPose.m_xRotation = xBone.m_xBindRotation;
 		xPose.m_xScale = xBone.m_xBindScale;
 	}
 
-	m_xOutputPose.SampleFromClip(*pxClip, fCurrentTime, *m_pxSkeletonAsset);
+	m_xOutputPose.SampleFromClip(*pxClip, fCurrentTime, *m_xSkeletonAsset.GetDirect());
 
 	// Optional crossfade between direct clips — blends from the snapshot pose.
 	if (m_pxDirectTransition)
@@ -324,7 +322,7 @@ void Flux_AnimationController::UpdateWithSkeletonInstance(float fDt)
 
 	if (m_pxStateMachine)
 	{
-		m_pxStateMachine->Update(fDt, m_xOutputPose, *m_pxSkeletonAsset);
+		m_pxStateMachine->Update(fDt, m_xOutputPose, *m_xSkeletonAsset.GetDirect());
 		ApplyOutputPoseToSkeleton();
 	}
 	// Otherwise: no animation playing — skeleton instance stays at the bind pose
@@ -354,8 +352,7 @@ const Zenith_Maths::Matrix4* Flux_AnimationController::GetSkinningMatrices() con
 
 Flux_AnimationClip* Flux_AnimationController::AddClipFromFile(const std::string& strPath)
 {
-	// Store handle to keep asset alive (the clip is owned by the asset)
-	AnimationHandle xHandle(strPath);
+	// Resolve through the registry first so we have a concrete pointer.
 	Zenith_AnimationAsset* pxAnimAsset = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>(strPath);
 	Zenith_Assert(pxAnimAsset != nullptr, "Failed to load animation asset from: %s", strPath.c_str());
 
@@ -363,7 +360,12 @@ Flux_AnimationClip* Flux_AnimationController::AddClipFromFile(const std::string&
 	Flux_AnimationClip* pxClip = pxAnimAsset->GetClip();
 	Zenith_Assert(pxClip != nullptr, "Animation asset has no clip: %s", strPath.c_str());
 
-	// Store the handle to keep the asset alive
+	// Build a handle that actually holds a ref to the asset. A path-only handle
+	// (AnimationHandle(strPath) without Resolve/Set) does NOT increment refcount
+	// until the cached pointer is populated — UnloadUnused would otherwise free
+	// the asset out from under m_xClipCollection. Set() wires up the AddRef now.
+	AnimationHandle xHandle;
+	xHandle.Set(pxAnimAsset);
 	m_xAnimationAssets.PushBack(std::move(xHandle));
 
 	// Add as a non-owning reference (asset owns the clip)

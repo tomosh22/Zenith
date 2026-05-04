@@ -258,8 +258,9 @@ private:
 	// The skeleton instance we're animating
 	Flux_SkeletonInstance* m_pxSkeletonInstance = nullptr;
 
-	// Skeleton asset for bone hierarchy info when using skeleton instance
-	Zenith_SkeletonAsset* m_pxSkeletonAsset = nullptr;
+	// Skeleton asset handle for bone hierarchy info — keeps the asset alive while
+	// this controller exists so UnloadUnused can't free the bone data mid-frame.
+	SkeletonHandle m_xSkeletonAsset;
 
 	// Animation data
 	Flux_AnimationClipCollection m_xClipCollection;

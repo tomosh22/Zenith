@@ -48,11 +48,11 @@
 // ============================================================================
 namespace TilePuzzle
 {
-	// Shared geometry assets (registry-managed)
-	Zenith_MeshGeometryAsset* g_pxCubeAsset = nullptr;
-	Zenith_MeshGeometryAsset* g_pxSphereAsset = nullptr;
+	// Shared geometry assets (registry-managed via handles)
+	MeshGeometryHandle g_xCubeAsset;
+	MeshGeometryHandle g_xSphereAsset;
 
-	// Convenience pointers to underlying geometry (do not delete - managed by assets)
+	// Convenience pointers to underlying geometry (set in init via .GetDirect()->GetGeometry())
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
 
@@ -73,12 +73,12 @@ namespace TilePuzzle
 
 	// Cat cafe display materials (procedural face textures applied to cat head mesh)
 	MaterialHandle g_axCatCafeDisplayMaterials[TILEPUZZLE_COLOR_COUNT];
-	Zenith_TextureAsset* g_apxCatCafeFaceTextures[TILEPUZZLE_COLOR_COUNT] = {};
+	TextureHandle g_axCatCafeFaceTextures[TILEPUZZLE_COLOR_COUNT];
 
-	// Prefabs for runtime instantiation
-	Zenith_Prefab* g_pxCellPrefab = nullptr;
-	Zenith_Prefab* g_pxShapeCubePrefab = nullptr;
-	Zenith_Prefab* g_pxCatPrefab = nullptr;
+	// Prefabs for runtime instantiation (handles for ref counting)
+	PrefabHandle g_xCellPrefab;
+	PrefabHandle g_xShapeCubePrefab;
+	PrefabHandle g_xCatPrefab;
 
 	// Pre-generated merged meshes for each shape type
 	Flux_MeshGeometry* g_apxShapeMeshes[TILEPUZZLE_SHAPE_COUNT] = {};
@@ -86,30 +86,30 @@ namespace TilePuzzle
 	// Highlight emissive intensity (loaded from materials.bin)
 	float g_fHighlightEmissiveIntensity = 0.5f;
 
-	// UI Icon textures (loaded via AssetRegistry from .ztxtr files)
-	Zenith_TextureAsset* g_pxIconStarFilled = nullptr;
-	Zenith_TextureAsset* g_pxIconStarEmpty = nullptr;
-	Zenith_TextureAsset* g_pxIconCoin = nullptr;
-	Zenith_TextureAsset* g_pxIconHeart = nullptr;
-	Zenith_TextureAsset* g_pxIconUndo = nullptr;
-	Zenith_TextureAsset* g_pxIconSkip = nullptr;
-	Zenith_TextureAsset* g_pxIconLock = nullptr;
-	Zenith_TextureAsset* g_pxIconMenu = nullptr;
-	Zenith_TextureAsset* g_pxIconBack = nullptr;
-	Zenith_TextureAsset* g_pxIconSoundOn = nullptr;
-	Zenith_TextureAsset* g_pxIconSoundOff = nullptr;
-	Zenith_TextureAsset* g_pxIconReset = nullptr;
-	Zenith_TextureAsset* g_pxIconGear = nullptr;
-	Zenith_TextureAsset* g_pxIconCatSilhouette = nullptr;
-	Zenith_TextureAsset* g_pxIconHint = nullptr;
-	Zenith_TextureAsset* g_pxIconHintToken = nullptr;
+	// UI Icon textures (loaded via AssetRegistry, pinned via handles)
+	TextureHandle g_xIconStarFilled;
+	TextureHandle g_xIconStarEmpty;
+	TextureHandle g_xIconCoin;
+	TextureHandle g_xIconHeart;
+	TextureHandle g_xIconUndo;
+	TextureHandle g_xIconSkip;
+	TextureHandle g_xIconLock;
+	TextureHandle g_xIconMenu;
+	TextureHandle g_xIconBack;
+	TextureHandle g_xIconSoundOn;
+	TextureHandle g_xIconSoundOff;
+	TextureHandle g_xIconReset;
+	TextureHandle g_xIconGear;
+	TextureHandle g_xIconCatSilhouette;
+	TextureHandle g_xIconHint;
+	TextureHandle g_xIconHintToken;
 
 	// Cat face textures (one per color)
-	Zenith_TextureAsset* g_apxCatFaceTextures[TILEPUZZLE_COLOR_COUNT] = {};
+	TextureHandle g_axCatFaceTextures[TILEPUZZLE_COLOR_COUNT];
 
 	// Gameplay textures
-	Zenith_TextureAsset* g_pxFloorTileTexture = nullptr;
-	Zenith_TextureAsset* g_pxBlockerTexture = nullptr;
+	TextureHandle g_xFloorTileTexture;
+	TextureHandle g_xBlockerTexture;
 
 	// Pinball materials (loaded from .zmtrl files)
 	Zenith_MaterialAsset* g_pxPinballBallMaterial = nullptr;
@@ -117,14 +117,14 @@ namespace TilePuzzle
 	Zenith_MaterialAsset* g_pxPinballPegHitMaterial = nullptr;
 
 	// Pinball PBR textures
-	Zenith_TextureAsset* g_pxPinballBumperDiffuseTex = nullptr;
-	Zenith_TextureAsset* g_pxPinballBumperRMTex = nullptr;
-	Zenith_TextureAsset* g_pxPinballWallDiffuseTex = nullptr;
-	Zenith_TextureAsset* g_pxPinballWallRMTex = nullptr;
-	Zenith_TextureAsset* g_pxPinballFloorDiffuseTex = nullptr;
-	Zenith_TextureAsset* g_pxPinballFloorRMTex = nullptr;
-	Zenith_TextureAsset* g_pxPinballPlungerRMTex = nullptr;
-	Zenith_TextureAsset* g_pxPinballTargetDiffuseTex = nullptr;
+	TextureHandle g_xPinballBumperDiffuseTex;
+	TextureHandle g_xPinballBumperRMTex;
+	TextureHandle g_xPinballWallDiffuseTex;
+	TextureHandle g_xPinballWallRMTex;
+	TextureHandle g_xPinballFloorDiffuseTex;
+	TextureHandle g_xPinballFloorRMTex;
+	TextureHandle g_xPinballPlungerRMTex;
+	TextureHandle g_xPinballTargetDiffuseTex;
 
 	// Pinball custom meshes
 	Flux_MeshGeometry* g_pxBumperGeometry = nullptr;
@@ -1246,9 +1246,10 @@ static void GenerateCatCafeFaceTextures(
 		DrawLine(136, 150, 198, 150, 255, 255, 255);
 		DrawLine(136, 153, 198, 161, 255, 255, 255);
 
-		g_apxCatCafeFaceTextures[i] = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-		g_apxCatCafeFaceTextures[i]->CreateFromData(pPixels, xSurfaceInfo);
-		g_apxCatCafeFaceTextures[i]->MarkAsBindless();
+		Zenith_TextureAsset* pxFaceTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+		pxFaceTex->CreateFromData(pPixels, xSurfaceInfo);
+		pxFaceTex->MarkAsBindless();
+		g_axCatCafeFaceTextures[i].Set(pxFaceTex);
 	}
 
 	delete[] pPixels;
@@ -1258,44 +1259,41 @@ static void LoadProceduralAssets()
 {
 	using namespace TilePuzzle;
 
-	// Load procedural textures from .ztxtr files via AssetRegistry
-	g_pxIconStarFilled = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT);
-	g_pxIconStarEmpty = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
-	g_pxIconCoin = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);
-	g_pxIconHeart = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/heart" ZENITH_TEXTURE_EXT);
-	g_pxIconUndo = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/undo" ZENITH_TEXTURE_EXT);
-	g_pxIconSkip = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/skip" ZENITH_TEXTURE_EXT);
-	g_pxIconLock = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/lock" ZENITH_TEXTURE_EXT);
-	g_pxIconMenu = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/menu" ZENITH_TEXTURE_EXT);
-	g_pxIconBack = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/back" ZENITH_TEXTURE_EXT);
-	g_pxIconSoundOn = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/sound_on" ZENITH_TEXTURE_EXT);
-	g_pxIconSoundOff = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/sound_off" ZENITH_TEXTURE_EXT);
-	g_pxIconReset = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/reset" ZENITH_TEXTURE_EXT);
-	g_pxIconGear = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/gear" ZENITH_TEXTURE_EXT);
-	g_pxIconCatSilhouette = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/cat_silhouette" ZENITH_TEXTURE_EXT);
-	g_pxIconHint = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/hint" ZENITH_TEXTURE_EXT);
-	g_pxIconHintToken = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/hint_token" ZENITH_TEXTURE_EXT);
+	// Load procedural textures from .ztxtr files via AssetRegistry (pinned via handles)
+	g_xIconStarFilled.SetPath(GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT);     g_xIconStarFilled.Resolve();
+	g_xIconStarEmpty.SetPath(GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);       g_xIconStarEmpty.Resolve();
+	g_xIconCoin.SetPath(GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);                  g_xIconCoin.Resolve();
+	g_xIconHeart.SetPath(GAME_ASSETS_DIR "Textures/Icons/heart" ZENITH_TEXTURE_EXT);                g_xIconHeart.Resolve();
+	g_xIconUndo.SetPath(GAME_ASSETS_DIR "Textures/Icons/undo" ZENITH_TEXTURE_EXT);                  g_xIconUndo.Resolve();
+	g_xIconSkip.SetPath(GAME_ASSETS_DIR "Textures/Icons/skip" ZENITH_TEXTURE_EXT);                  g_xIconSkip.Resolve();
+	g_xIconLock.SetPath(GAME_ASSETS_DIR "Textures/Icons/lock" ZENITH_TEXTURE_EXT);                  g_xIconLock.Resolve();
+	g_xIconMenu.SetPath(GAME_ASSETS_DIR "Textures/Icons/menu" ZENITH_TEXTURE_EXT);                  g_xIconMenu.Resolve();
+	g_xIconBack.SetPath(GAME_ASSETS_DIR "Textures/Icons/back" ZENITH_TEXTURE_EXT);                  g_xIconBack.Resolve();
+	g_xIconSoundOn.SetPath(GAME_ASSETS_DIR "Textures/Icons/sound_on" ZENITH_TEXTURE_EXT);           g_xIconSoundOn.Resolve();
+	g_xIconSoundOff.SetPath(GAME_ASSETS_DIR "Textures/Icons/sound_off" ZENITH_TEXTURE_EXT);         g_xIconSoundOff.Resolve();
+	g_xIconReset.SetPath(GAME_ASSETS_DIR "Textures/Icons/reset" ZENITH_TEXTURE_EXT);                g_xIconReset.Resolve();
+	g_xIconGear.SetPath(GAME_ASSETS_DIR "Textures/Icons/gear" ZENITH_TEXTURE_EXT);                  g_xIconGear.Resolve();
+	g_xIconCatSilhouette.SetPath(GAME_ASSETS_DIR "Textures/Icons/cat_silhouette" ZENITH_TEXTURE_EXT); g_xIconCatSilhouette.Resolve();
+	g_xIconHint.SetPath(GAME_ASSETS_DIR "Textures/Icons/hint" ZENITH_TEXTURE_EXT);                  g_xIconHint.Resolve();
+	g_xIconHintToken.SetPath(GAME_ASSETS_DIR "Textures/Icons/hint_token" ZENITH_TEXTURE_EXT);       g_xIconHintToken.Resolve();
 
 	// Load cat face textures
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 	{
 		char szPath[ZENITH_MAX_PATH_LENGTH];
 		snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Textures/CatFaces/cat_face_%u" ZENITH_TEXTURE_EXT, i);
-		g_apxCatFaceTextures[i] = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(szPath);
+		g_axCatFaceTextures[i].SetPath(szPath);
 	}
 
 	// Load gameplay textures and apply to materials
-	g_pxFloorTileTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Gameplay/floor_tile" ZENITH_TEXTURE_EXT);
-	g_pxBlockerTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Gameplay/blocker" ZENITH_TEXTURE_EXT);
+	g_xFloorTileTexture.SetPath(GAME_ASSETS_DIR "Textures/Gameplay/floor_tile" ZENITH_TEXTURE_EXT);
+	g_xBlockerTexture.SetPath(GAME_ASSETS_DIR "Textures/Gameplay/blocker" ZENITH_TEXTURE_EXT);
 
-	if (g_pxFloorTileTexture)
-		g_xFloorMaterial.GetDirect()->SetDiffuseTextureDirectly(g_pxFloorTileTexture);
-	if (g_pxBlockerTexture)
-		g_xBlockerMaterial.GetDirect()->SetDiffuseTextureDirectly(g_pxBlockerTexture);
+	g_xFloorMaterial.GetDirect()->SetDiffuseTexture(g_xFloorTileTexture);
+	g_xBlockerMaterial.GetDirect()->SetDiffuseTexture(g_xBlockerTexture);
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 	{
-		if (g_apxCatFaceTextures[i])
-			g_axCatMaterials[i].GetDirect()->SetDiffuseTextureDirectly(g_apxCatFaceTextures[i]);
+		g_axCatMaterials[i].GetDirect()->SetDiffuseTexture(g_axCatFaceTextures[i]);
 	}
 
 	// Load pinball materials from .zmtrl files
@@ -1304,14 +1302,14 @@ static void LoadProceduralAssets()
 	g_pxPinballPegHitMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg_hit" ZENITH_MATERIAL_EXT);
 
 	// Load pinball PBR textures
-	g_pxPinballBumperDiffuseTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/bumper_diffuse" ZENITH_TEXTURE_EXT);
-	g_pxPinballBumperRMTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/bumper_rm" ZENITH_TEXTURE_EXT);
-	g_pxPinballWallDiffuseTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/wall_diffuse" ZENITH_TEXTURE_EXT);
-	g_pxPinballWallRMTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/wall_rm" ZENITH_TEXTURE_EXT);
-	g_pxPinballFloorDiffuseTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/floor_diffuse" ZENITH_TEXTURE_EXT);
-	g_pxPinballFloorRMTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/floor_rm" ZENITH_TEXTURE_EXT);
-	g_pxPinballPlungerRMTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/plunger_rm" ZENITH_TEXTURE_EXT);
-	g_pxPinballTargetDiffuseTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Pinball/target_diffuse" ZENITH_TEXTURE_EXT);
+	g_xPinballBumperDiffuseTex.SetPath(GAME_ASSETS_DIR "Textures/Pinball/bumper_diffuse" ZENITH_TEXTURE_EXT);
+	g_xPinballBumperRMTex     .SetPath(GAME_ASSETS_DIR "Textures/Pinball/bumper_rm" ZENITH_TEXTURE_EXT);
+	g_xPinballWallDiffuseTex  .SetPath(GAME_ASSETS_DIR "Textures/Pinball/wall_diffuse" ZENITH_TEXTURE_EXT);
+	g_xPinballWallRMTex       .SetPath(GAME_ASSETS_DIR "Textures/Pinball/wall_rm" ZENITH_TEXTURE_EXT);
+	g_xPinballFloorDiffuseTex .SetPath(GAME_ASSETS_DIR "Textures/Pinball/floor_diffuse" ZENITH_TEXTURE_EXT);
+	g_xPinballFloorRMTex      .SetPath(GAME_ASSETS_DIR "Textures/Pinball/floor_rm" ZENITH_TEXTURE_EXT);
+	g_xPinballPlungerRMTex    .SetPath(GAME_ASSETS_DIR "Textures/Pinball/plunger_rm" ZENITH_TEXTURE_EXT);
+	g_xPinballTargetDiffuseTex.SetPath(GAME_ASSETS_DIR "Textures/Pinball/target_diffuse" ZENITH_TEXTURE_EXT);
 
 	// Load particle configs
 	TilePuzzle_AssetGen::LoadParticleConfigs();
@@ -1325,11 +1323,11 @@ static void InitializeTilePuzzleResources()
 	using namespace TilePuzzle;
 
 	// Create geometry using registry's cached primitives
-	g_pxCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
-	g_pxCubeGeometry = g_pxCubeAsset->GetGeometry();
+	g_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	g_pxCubeGeometry = g_xCubeAsset.GetDirect()->GetGeometry();
 
-	g_pxSphereAsset = Zenith_MeshGeometryAsset::CreateUnitSphere(16);
-	g_pxSphereGeometry = g_pxSphereAsset->GetGeometry();
+	g_xSphereAsset.Set(Zenith_MeshGeometryAsset::CreateUnitSphere(16));
+	g_pxSphereGeometry = g_xSphereAsset.GetDirect()->GetGeometry();
 
 	// Generate cat head mesh
 	g_pxCatMeshGeometry = new Flux_MeshGeometry();
@@ -1429,20 +1427,20 @@ static void InitializeTilePuzzleResources()
 	// Store loaded highlight emissive intensity globally for behaviours
 	g_fHighlightEmissiveIntensity = fHighlightEmissive;
 
-	// Use grid pattern texture with BaseColor for all materials
-	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
+	// Use grid pattern texture with BaseColor for all materials.
+	const TextureHandle& xGridTex = Flux_Graphics::s_xGridTexture;
 
 	// Create materials with loaded colors
 	g_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xFloorMaterial.GetDirect()->SetName("TilePuzzleFloor");
-	g_xFloorMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	g_xFloorMaterial.GetDirect()->SetBaseColor(xFloorColor);
 	g_xFloorMaterial.GetDirect()->SetRoughness(0.8f);
 	g_xFloorMaterial.GetDirect()->SetMetallic(0.0f);
 
 	g_xBlockerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xBlockerMaterial.GetDirect()->SetName("TilePuzzleBlocker");
-	g_xBlockerMaterial.GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+	g_xBlockerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	g_xBlockerMaterial.GetDirect()->SetBaseColor(xBlockerColor);
 	g_xBlockerMaterial.GetDirect()->SetRoughness(0.9f);
 	g_xBlockerMaterial.GetDirect()->SetMetallic(0.0f);
@@ -1457,7 +1455,7 @@ static void InitializeTilePuzzleResources()
 		snprintf(szName, sizeof(szName), "TilePuzzleShape%s", aszShapeColorNames[i]);
 		g_axShapeMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		g_axShapeMaterials[i].GetDirect()->SetName(szName);
-		g_axShapeMaterials[i].GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+		g_axShapeMaterials[i].GetDirect()->SetDiffuseTexture(xGridTex);
 		g_axShapeMaterials[i].GetDirect()->SetBaseColor(axShapeColors[i]);
 		g_axShapeMaterials[i].GetDirect()->SetRoughness(s_afShapeRoughness[i]);
 		g_axShapeMaterials[i].GetDirect()->SetMetallic(s_afShapeMetallic[i]);
@@ -1470,7 +1468,7 @@ static void InitializeTilePuzzleResources()
 		snprintf(szName, sizeof(szName), "TilePuzzleCat%s", aszShapeColorNames[i]);
 		g_axCatMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		g_axCatMaterials[i].GetDirect()->SetName(szName);
-		g_axCatMaterials[i].GetDirect()->SetDiffuseTextureDirectly(pxGridTex);
+		g_axCatMaterials[i].GetDirect()->SetDiffuseTexture(xGridTex);
 		g_axCatMaterials[i].GetDirect()->SetBaseColor(axShapeColors[i]);
 		g_axCatMaterials[i].GetDirect()->SetRoughness(0.6f);
 		g_axCatMaterials[i].GetDirect()->SetMetallic(0.05f);
@@ -1484,7 +1482,7 @@ static void InitializeTilePuzzleResources()
 		snprintf(szName, sizeof(szName), "TilePuzzleCatCafeDisplay%s", aszShapeColorNames[i]);
 		g_axCatCafeDisplayMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 		g_axCatCafeDisplayMaterials[i].GetDirect()->SetName(szName);
-		g_axCatCafeDisplayMaterials[i].GetDirect()->SetDiffuseTextureDirectly(g_apxCatCafeFaceTextures[i]);
+		g_axCatCafeDisplayMaterials[i].GetDirect()->SetDiffuseTexture(g_axCatCafeFaceTextures[i]);
 		g_axCatCafeDisplayMaterials[i].GetDirect()->SetBaseColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
 		g_axCatCafeDisplayMaterials[i].GetDirect()->SetRoughness(0.6f);
 		g_axCatCafeDisplayMaterials[i].GetDirect()->SetMetallic(0.05f);
@@ -1506,24 +1504,27 @@ static void InitializeTilePuzzleResources()
 	// Cell prefab (floor tiles)
 	{
 		Zenith_Entity xCellTemplate(pxSceneData, "CellTemplate");
-		g_pxCellPrefab = new Zenith_Prefab();
-		g_pxCellPrefab->CreateFromEntity(xCellTemplate, "Cell");
+		Zenith_Prefab* pxCell = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		pxCell->CreateFromEntity(xCellTemplate, "Cell");
+		g_xCellPrefab.Set(pxCell);
 		Zenith_SceneManager::Destroy(xCellTemplate);
 	}
 
 	// Shape cube prefab (for multi-cube shapes)
 	{
 		Zenith_Entity xShapeCubeTemplate(pxSceneData, "ShapeCubeTemplate");
-		g_pxShapeCubePrefab = new Zenith_Prefab();
-		g_pxShapeCubePrefab->CreateFromEntity(xShapeCubeTemplate, "ShapeCube");
+		Zenith_Prefab* pxShapeCube = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		pxShapeCube->CreateFromEntity(xShapeCubeTemplate, "ShapeCube");
+		g_xShapeCubePrefab.Set(pxShapeCube);
 		Zenith_SceneManager::Destroy(xShapeCubeTemplate);
 	}
 
 	// Cat prefab (spheres)
 	{
 		Zenith_Entity xCatTemplate(pxSceneData, "CatTemplate");
-		g_pxCatPrefab = new Zenith_Prefab();
-		g_pxCatPrefab->CreateFromEntity(xCatTemplate, "Cat");
+		Zenith_Prefab* pxCat = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		pxCat->CreateFromEntity(xCatTemplate, "Cat");
+		g_xCatPrefab.Set(pxCat);
 		Zenith_SceneManager::Destroy(xCatTemplate);
 	}
 
@@ -1573,7 +1574,49 @@ void Project_RegisterScriptBehaviours()
 
 void Project_Shutdown()
 {
-	// TilePuzzle has no resources that need explicit cleanup
+	using namespace TilePuzzle;
+	// Drop asset handle refs before Zenith_AssetRegistry::Shutdown teardown.
+	g_xCubeAsset.Clear();
+	g_xSphereAsset.Clear();
+	g_xFloorMaterial.Clear();
+	g_xBlockerMaterial.Clear();
+	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
+	{
+		g_axShapeMaterials[i].Clear();
+		g_axCatMaterials[i].Clear();
+		g_axCatCafeDisplayMaterials[i].Clear();
+		g_axCatCafeFaceTextures[i].Clear();
+		g_axCatFaceTextures[i].Clear();
+	}
+	g_xCellPrefab.Clear();
+	g_xShapeCubePrefab.Clear();
+	g_xCatPrefab.Clear();
+	g_xIconStarFilled.Clear();
+	g_xIconStarEmpty.Clear();
+	g_xIconCoin.Clear();
+	g_xIconHeart.Clear();
+	g_xIconUndo.Clear();
+	g_xIconSkip.Clear();
+	g_xIconLock.Clear();
+	g_xIconMenu.Clear();
+	g_xIconBack.Clear();
+	g_xIconSoundOn.Clear();
+	g_xIconSoundOff.Clear();
+	g_xIconReset.Clear();
+	g_xIconGear.Clear();
+	g_xIconCatSilhouette.Clear();
+	g_xIconHint.Clear();
+	g_xIconHintToken.Clear();
+	g_xFloorTileTexture.Clear();
+	g_xBlockerTexture.Clear();
+	g_xPinballBumperDiffuseTex.Clear();
+	g_xPinballBumperRMTex.Clear();
+	g_xPinballWallDiffuseTex.Clear();
+	g_xPinballWallRMTex.Clear();
+	g_xPinballFloorDiffuseTex.Clear();
+	g_xPinballFloorRMTex.Clear();
+	g_xPinballPlungerRMTex.Clear();
+	g_xPinballTargetDiffuseTex.Clear();
 }
 
 void Project_LoadInitialScene(); // Forward declaration for automation steps

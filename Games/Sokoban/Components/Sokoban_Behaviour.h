@@ -67,9 +67,9 @@ namespace Sokoban
 	extern MaterialHandle g_xPlayerMaterial;
 	extern MaterialHandle g_xTargetMaterial;
 
-	extern Zenith_Prefab* g_pxTilePrefab;
-	extern Zenith_Prefab* g_pxBoxPrefab;
-	extern Zenith_Prefab* g_pxPlayerPrefab;
+	extern PrefabHandle g_xTilePrefab;
+	extern PrefabHandle g_xBoxPrefab;
+	extern PrefabHandle g_xPlayerPrefab;
 
 	// Particle effects
 	extern Flux_ParticleEmitterConfig* g_pxDustConfig;
@@ -746,7 +746,7 @@ private:
 			m_uGridWidth, m_uGridHeight,
 			m_aeTiles, m_abBoxes, m_abTargets,
 			m_uPlayerX, m_uPlayerY,
-			Sokoban::g_pxTilePrefab, Sokoban::g_pxBoxPrefab, Sokoban::g_pxPlayerPrefab,
+			Sokoban::g_xTilePrefab.GetDirect(), Sokoban::g_xBoxPrefab.GetDirect(), Sokoban::g_xPlayerPrefab.GetDirect(),
 			m_pxCubeGeometry,
 			m_xFloorMaterial.GetDirect(), m_xWallMaterial.GetDirect(), m_xTargetMaterial.GetDirect(),
 			m_xBoxMaterial.GetDirect(), m_xBoxOnTargetMaterial.GetDirect(), m_xPlayerMaterial.GetDirect(),

@@ -36,7 +36,8 @@ static Flux_Pipeline s_xTerrainWireframePipeline;
 static Flux_Shader s_xWaterShader;
 static Flux_Pipeline s_xWaterPipeline;
 
-static Zenith_TextureAsset* s_pxWaterNormalTexture = nullptr;
+// Pinned via TextureHandle so UnloadUnused never frees the water-normal texture mid-frame.
+static TextureHandle s_xWaterNormalTexture;
 static uint32_t s_uWaterDisplacementTexHandle = UINT32_MAX;
 
 // Material-texture binding table used by ExecuteGBuffer's slot/channel loop.
@@ -87,11 +88,12 @@ namespace
 // the legacy "splatmap absent → use base material only" behaviour without
 // leaving the descriptor unbound (Vulkan validation rejects an unbound
 // SRV slot the shader is declared to read).
-static Zenith_TextureAsset* s_pxFallbackSplatmap = nullptr;
+// Pinned via TextureHandle so UnloadUnused never frees the fallback splatmap mid-frame.
+static TextureHandle s_xFallbackSplatmap;
 
 static const Flux_ShaderResourceView& GetFallbackSplatmapSRV()
 {
-	if (!s_pxFallbackSplatmap)
+	if (!s_xFallbackSplatmap)
 	{
 		const u_int8 aucRGBA[4] = { 255u, 0u, 0u, 0u };
 		Flux_SurfaceInfo xInfo;
@@ -103,11 +105,12 @@ static const Flux_ShaderResourceView& GetFallbackSplatmapSRV()
 		xInfo.m_uNumLayers    = 1;
 		xInfo.m_uMemoryFlags  = 1u << MEMORY_FLAGS__SHADER_READ;
 
-		s_pxFallbackSplatmap = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-		Zenith_Assert(s_pxFallbackSplatmap != nullptr, "Failed to create terrain fallback splatmap texture asset");
-		s_pxFallbackSplatmap->CreateFromData(aucRGBA, xInfo, /*bCreateMips*/ false);
+		Zenith_TextureAsset* pxFallback = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+		Zenith_Assert(pxFallback != nullptr, "Failed to create terrain fallback splatmap texture asset");
+		pxFallback->CreateFromData(aucRGBA, xInfo, /*bCreateMips*/ false);
+		s_xFallbackSplatmap.Set(pxFallback);
 	}
-	return s_pxFallbackSplatmap->m_xSRV;
+	return s_xFallbackSplatmap.GetDirect()->m_xSRV;
 }
 
 // ========== GPU-Driven Terrain Culling Pipeline ==========
@@ -265,8 +268,8 @@ void Flux_Terrain::Initialise()
 {
 	BuildPipelines();
 
-	// Use the global water normal texture pointer set during initialization in Zenith_Main.cpp
-	s_pxWaterNormalTexture = Flux_Graphics::s_pxWaterNormalTexture;
+	// Take a ref-counted copy of the global water normal texture handle (set during init in Zenith_Main).
+	s_xWaterNormalTexture = Flux_Graphics::s_xWaterNormalTexture;
 
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), s_xTerrainConstantsBuffer);
@@ -307,14 +310,15 @@ void Flux_Terrain::Reset()
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain::Reset()");
 }
 
+void Flux_Terrain::ReleaseAssetReferences()
+{
+	s_xWaterNormalTexture.Clear();
+	s_xFallbackSplatmap.Clear();
+}
+
 void Flux_Terrain::Shutdown()
 {
 	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xTerrainConstantsBuffer);
-
-	// Release the lazy-init fallback splatmap (asset registry owns the
-	// memory; we just drop our reference so it isn't kept alive after the
-	// graphics device is gone).
-	s_pxFallbackSplatmap = nullptr;
 
 	// Manager Shutdown asserts the per-terrain state registry is empty —
 	// any terrain component still alive at engine teardown is a leak that
@@ -545,15 +549,15 @@ void Flux_Terrain::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		// Bind material textures (set 1, named bindings) — 4 slots × 5 channels.
 		// Per-channel defaulting (white / normal-up) is already handled by
 		// Zenith_MaterialAsset::GetXxxTexture(); the fallback here is at the
-		// slot level: a null material falls back to Flux_Graphics::s_pxBlankMaterial,
+		// slot level: a null material falls back to Flux_Graphics::s_xBlankMaterial,
 		// whose channel getters return the engine-wide defaults. The binding
 		// table at file scope (s_axTerrainTexBindings) holds stable codegen
 		// name pointers — see comment there for why.
 		auto ResolveSRV = [](Zenith_MaterialAsset* pxMat,
 			Zenith_TextureAsset* (Zenith_MaterialAsset::*pfn)()) -> const Flux_ShaderResourceView*
 		{
-			Zenith_MaterialAsset* pxResolved = pxMat ? pxMat : Flux_Graphics::s_pxBlankMaterial;
-			Zenith_Assert(pxResolved != nullptr, "Flux_Graphics::s_pxBlankMaterial not initialised — Flux_Graphics::Initialise must run before terrain renders");
+			Zenith_MaterialAsset* pxResolved = pxMat ? pxMat : Flux_Graphics::s_xBlankMaterial.GetDirect();
+			Zenith_Assert(pxResolved != nullptr, "Flux_Graphics::s_xBlankMaterial not initialised — Flux_Graphics::Initialise must run before terrain renders");
 			Zenith_TextureAsset* pxTex = (pxResolved->*pfn)();
 			Zenith_Assert(pxTex != nullptr, "Material channel getter returned null — Zenith_MaterialAsset defaults should guarantee non-null");
 			return &pxTex->m_xSRV;

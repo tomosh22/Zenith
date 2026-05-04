@@ -24,7 +24,7 @@ class Zenith_TextureAsset;
  *   // Create new material
  *   auto* pMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
  *   pMat->SetName("MyMaterial");
- *   pMat->SetDiffuseTexturePath("Assets/Textures/diffuse.ztex");
+ *   pMat->SetDiffuseTexture(TextureHandle("Assets/Textures/diffuse.ztex"));
  *   pMat->SaveToFile("Assets/Materials/MyMaterial.zmat");
  *
  *   // Get texture for rendering
@@ -122,34 +122,34 @@ public:
 	bool IsDirty() const { return m_bDirty; }
 
 	//--------------------------------------------------------------------------
-	// Texture Path Setters (serialized)
+	// Texture Setters (handle-based — covers both file-backed and procedural)
 	//--------------------------------------------------------------------------
 
-	const std::string& GetDiffuseTexturePath() const { return m_xDiffuseTexture.GetPath(); }
-	void SetDiffuseTexturePath(const std::string& strPath);
+	void SetDiffuseTexture(TextureHandle xHandle);
+	void SetNormalTexture(TextureHandle xHandle);
+	void SetRoughnessMetallicTexture(TextureHandle xHandle);
+	void SetOcclusionTexture(TextureHandle xHandle);
+	void SetEmissiveTexture(TextureHandle xHandle);
 
-	const std::string& GetNormalTexturePath() const { return m_xNormalTexture.GetPath(); }
-	void SetNormalTexturePath(const std::string& strPath);
+	//--------------------------------------------------------------------------
+	// Texture Handle Accessors (for material-copy and procedural preservation)
+	//--------------------------------------------------------------------------
 
+	const TextureHandle& GetDiffuseTextureHandle() const           { return m_xDiffuseTexture; }
+	const TextureHandle& GetNormalTextureHandle() const            { return m_xNormalTexture; }
+	const TextureHandle& GetRoughnessMetallicTextureHandle() const { return m_xRoughnessMetallicTexture; }
+	const TextureHandle& GetOcclusionTextureHandle() const         { return m_xOcclusionTexture; }
+	const TextureHandle& GetEmissiveTextureHandle() const          { return m_xEmissiveTexture; }
+
+	//--------------------------------------------------------------------------
+	// Texture Path Accessors (read-only convenience for UI / serialization)
+	//--------------------------------------------------------------------------
+
+	const std::string& GetDiffuseTexturePath() const           { return m_xDiffuseTexture.GetPath(); }
+	const std::string& GetNormalTexturePath() const            { return m_xNormalTexture.GetPath(); }
 	const std::string& GetRoughnessMetallicTexturePath() const { return m_xRoughnessMetallicTexture.GetPath(); }
-	void SetRoughnessMetallicTexturePath(const std::string& strPath);
-
-	const std::string& GetOcclusionTexturePath() const { return m_xOcclusionTexture.GetPath(); }
-	void SetOcclusionTexturePath(const std::string& strPath);
-
-	const std::string& GetEmissiveTexturePath() const { return m_xEmissiveTexture.GetPath(); }
-	void SetEmissiveTexturePath(const std::string& strPath);
-
-	//--------------------------------------------------------------------------
-	// Direct Texture Setters (for procedurally generated textures)
-	// Sets both the handle and the direct pointer
-	//--------------------------------------------------------------------------
-
-	void SetDiffuseTextureDirectly(Zenith_TextureAsset* pTexture);
-	void SetNormalTextureDirectly(Zenith_TextureAsset* pTexture);
-	void SetRoughnessMetallicTextureDirectly(Zenith_TextureAsset* pTexture);
-	void SetOcclusionTextureDirectly(Zenith_TextureAsset* pTexture);
-	void SetEmissiveTextureDirectly(Zenith_TextureAsset* pTexture);
+	const std::string& GetOcclusionTexturePath() const         { return m_xOcclusionTexture.GetPath(); }
+	const std::string& GetEmissiveTexturePath() const          { return m_xEmissiveTexture.GetPath(); }
 
 	//--------------------------------------------------------------------------
 	// Texture Accessors (returns loaded texture, or blank if not set)
@@ -162,13 +162,19 @@ public:
 	Zenith_TextureAsset* GetEmissiveTexture();
 
 	//--------------------------------------------------------------------------
-	// Default Textures (static, for fallback)
+	// Default Textures (static, for fallback). Pinned via TextureHandle so
+	// Zenith_AssetRegistry::UnloadUnused never frees them while the engine runs.
 	//--------------------------------------------------------------------------
 
 	static Zenith_TextureAsset* GetDefaultWhiteTexture();
 	static Zenith_TextureAsset* GetDefaultNormalTexture();
 	static void InitializeDefaults();
 	static void ShutdownDefaults();
+
+	// Drop the default texture handles before Zenith_AssetRegistry::Shutdown.
+	// Called from Flux::ReleaseAssetReferences. Distinct from ShutdownDefaults
+	// (which has been preserved as a no-op for callers that still invoke it).
+	static void ReleaseDefaults();
 
 private:
 	friend class Zenith_AssetRegistry;
@@ -204,26 +210,20 @@ private:
 	bool m_bTwoSided = false;
 	bool m_bUnlit = false;
 
-	// Texture handles (serialized by path)
+	// Texture handles — store either a path (file-backed, lazy-loaded via registry)
+	// or a procedural pointer set via TextureHandle::Set(). Resolve() handles both.
 	TextureHandle m_xDiffuseTexture;
 	TextureHandle m_xNormalTexture;
 	TextureHandle m_xRoughnessMetallicTexture;
 	TextureHandle m_xOcclusionTexture;
 	TextureHandle m_xEmissiveTexture;
 
-	// Direct texture pointers (for procedural textures that bypass handles)
-	Zenith_TextureAsset* m_pxDirectDiffuse = nullptr;
-	Zenith_TextureAsset* m_pxDirectNormal = nullptr;
-	Zenith_TextureAsset* m_pxDirectRoughnessMetallic = nullptr;
-	Zenith_TextureAsset* m_pxDirectOcclusion = nullptr;
-	Zenith_TextureAsset* m_pxDirectEmissive = nullptr;
-
 	// Dirty flag
 	bool m_bDirty = false;
 
-	// Static default textures
-	static Zenith_TextureAsset* s_pxDefaultWhite;
-	static Zenith_TextureAsset* s_pxDefaultNormal;
+	// Static default textures (pinned via handle so they survive UnloadUnused).
+	static TextureHandle s_xDefaultWhite;
+	static TextureHandle s_xDefaultNormal;
 };
 
 // Material file version

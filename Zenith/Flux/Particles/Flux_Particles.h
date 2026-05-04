@@ -8,6 +8,10 @@ class Flux_Particles
 public:
 	static void Initialise();
 	static void BuildPipelines();
+
+	// Drop refs to particle texture before the asset registry shuts down.
+	static void ReleaseAssetReferences();
+
 	static void Shutdown();
 
 	static void Reset();  // Clear state when scene resets (e.g., Play/Stop transitions)

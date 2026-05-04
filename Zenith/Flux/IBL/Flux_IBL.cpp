@@ -334,10 +334,10 @@ void Flux_IBL::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserDat
 		Flux_ShaderBinder xBinder(*pxCmd);
 		xBinder.BindCBV(s_xIrradianceConvolveShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindDrawConstants(s_xIrradianceConvolveShader, "IrradianceConstants", &xConsts, sizeof(xConsts));
-		if (Flux_Graphics::s_pxCubemapTexture)
-			xBinder.BindSRV(s_xIrradianceConvolveShader, "g_xSkyboxCubemap", &Flux_Graphics::s_pxCubemapTexture->GetSRV());
-		else if (Flux_Graphics::s_pxBlackTexture)
-			xBinder.BindSRV(s_xIrradianceConvolveShader, "g_xSkyboxCubemap", &Flux_Graphics::s_pxBlackTexture->GetSRV());
+		if (Zenith_TextureAsset* pxCubemap = Flux_Graphics::s_xCubemapTexture.GetDirect())
+			xBinder.BindSRV(s_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
+		else if (Zenith_TextureAsset* pxBlack = Flux_Graphics::s_xBlackTexture.GetDirect())
+			xBinder.BindSRV(s_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -361,10 +361,10 @@ void Flux_IBL::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserD
 		Flux_ShaderBinder xBinder(*pxCmd);
 		xBinder.BindCBV(s_xPrefilterShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindDrawConstants(s_xPrefilterShader, "PrefilterConstants", &xConsts, sizeof(xConsts));
-		if (Flux_Graphics::s_pxCubemapTexture)
-			xBinder.BindSRV(s_xPrefilterShader, "g_xSkyboxCubemap", &Flux_Graphics::s_pxCubemapTexture->GetSRV());
-		else if (Flux_Graphics::s_pxBlackTexture)
-			xBinder.BindSRV(s_xPrefilterShader, "g_xSkyboxCubemap", &Flux_Graphics::s_pxBlackTexture->GetSRV());
+		if (Zenith_TextureAsset* pxCubemap = Flux_Graphics::s_xCubemapTexture.GetDirect())
+			xBinder.BindSRV(s_xPrefilterShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
+		else if (Zenith_TextureAsset* pxBlack = Flux_Graphics::s_xBlackTexture.GetDirect())
+			xBinder.BindSRV(s_xPrefilterShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
 }

@@ -113,7 +113,7 @@ There is no `RenderOrder` enum and no caller-supplied ordering token. Pass execu
 `Flux_PipelineSpecification` struct defines complete graphics pipeline state: shader, blend modes, depth test, vertex input, render targets, load/store actions.
 
 ### Material System
-Materials (`Zenith_MaterialAsset`) store textures and rendering properties. Located in `AssetHandling/`. Use `SetDiffuseTexturePath()` when creating materials to store texture source path for scene serialization. See `AssetHandling/CLAUDE.md` for details on material and texture asset management.
+Materials (`Zenith_MaterialAsset`) store textures and rendering properties. Located in `AssetHandling/`. Use `SetDiffuseTexture(TextureHandle(...))` when creating materials — the handle covers both path-based (serializable) and procedural-pointer textures. See `AssetHandling/CLAUDE.md` for details on material and texture asset management.
 
 ### Backend Abstraction
 The renderer is backend-agnostic. `Flux_Backend.h` aggregates the seven C++20 concepts that any backend must satisfy: `FluxBackendDevice`, `FluxBackendMemoryAlloc`, `FluxBackendMemoryDelete`, `FluxBackendCommandRecorder`, `FluxBackendSync`, `FluxBackendPresentation`, and the shader/pipeline-builder family (`FluxBackendShader`, `FluxBackendPipelineBuilder`, `FluxBackendComputePipelineBuilder`, `FluxBackendRootSigBuilder`). `Backend/Flux_BackendConformance.cpp` static-asserts the active backend against each concept, so signature drift fails the build instead of the first frame. Adding a second backend (DX12 / Metal / WebGPU) means providing classes that satisfy each concept and adding the conformance asserts.

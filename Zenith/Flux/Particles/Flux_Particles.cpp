@@ -42,7 +42,8 @@ static uint32_t s_uAlphaInstanceCount = 0;
 static Flux_ParticleInstance s_axAdditiveInstances[s_uMaxParticles];
 static uint32_t s_uAdditiveInstanceCount = 0;
 
-static Zenith_TextureAsset* s_pxParticleTexture = nullptr;
+// Pinned via TextureHandle so UnloadUnused never frees the particle atlas mid-frame.
+static TextureHandle s_xParticleTexture;
 
 void Flux_Particles::BuildPipelines()
 {
@@ -94,12 +95,15 @@ void Flux_Particles::Initialise()
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBufferAlpha, false);
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBufferAdditive, false);
 
-	// Load default particle texture
-	s_pxParticleTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Particles/particleSwirl" ZENITH_TEXTURE_EXT);
-	if (!s_pxParticleTexture)
+	// Load default particle texture (pinned)
+	if (Zenith_TextureAsset* pxParticle = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Particles/particleSwirl" ZENITH_TEXTURE_EXT))
+	{
+		s_xParticleTexture.Set(pxParticle);
+	}
+	else
 	{
 		Zenith_Log(LOG_CATEGORY_PARTICLES, "Warning: Failed to load particle texture, using white texture");
-		s_pxParticleTexture = Flux_Graphics::s_pxWhiteTexture;
+		s_xParticleTexture = Flux_Graphics::s_xWhiteTexture;
 	}
 
 #ifdef ZENITH_TOOLS
@@ -119,6 +123,11 @@ void Flux_Particles::Reset()
 	s_uAlphaInstanceCount = 0;
 	s_uAdditiveInstanceCount = 0;
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles::Reset()");
+}
+
+void Flux_Particles::ReleaseAssetReferences()
+{
+	s_xParticleTexture.Clear();
 }
 
 void Flux_Particles::Shutdown()
@@ -236,7 +245,7 @@ void Flux_Particles::ExecuteParticles(Flux_CommandList* pxCommandList, void* pUs
 
 			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
 			pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-			pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_pxParticleTexture->m_xSRV, 1);
+			pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_xParticleTexture.GetDirect()->m_xSRV, 1);
 
 			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uAlphaInstanceCount);
 		}
@@ -252,7 +261,7 @@ void Flux_Particles::ExecuteParticles(Flux_CommandList* pxCommandList, void* pUs
 
 			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
 			pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-			pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_pxParticleTexture->m_xSRV, 1);
+			pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_xParticleTexture.GetDirect()->m_xSRV, 1);
 
 			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uAdditiveInstanceCount);
 		}

@@ -32,13 +32,13 @@ Flux_Sampler Flux_Graphics::s_xRepeatSampler;
 Flux_Sampler Flux_Graphics::s_xClampSampler;
 Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
 Flux_DynamicConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
-Zenith_TextureAsset* Flux_Graphics::s_pxWhiteTexture = nullptr;
-Zenith_TextureAsset* Flux_Graphics::s_pxBlackTexture = nullptr;
-Zenith_TextureAsset* Flux_Graphics::s_pxGridTexture = nullptr;
+TextureHandle Flux_Graphics::s_xWhiteTexture;
+TextureHandle Flux_Graphics::s_xBlackTexture;
+TextureHandle Flux_Graphics::s_xGridTexture;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
-Zenith_MaterialAsset* Flux_Graphics::s_pxBlankMaterial = nullptr;
-Zenith_TextureAsset* Flux_Graphics::s_pxCubemapTexture = nullptr;
-Zenith_TextureAsset* Flux_Graphics::s_pxWaterNormalTexture = nullptr;
+MaterialHandle Flux_Graphics::s_xBlankMaterial;
+TextureHandle Flux_Graphics::s_xCubemapTexture;
+TextureHandle Flux_Graphics::s_xWaterNormalTexture;
 Flux_Graphics::FrameConstants Flux_Graphics::s_xFrameConstants;
 Flux_BindingGroupLayout Flux_Graphics::s_xFrameConstantsLayout;
 
@@ -77,20 +77,20 @@ void Flux_Graphics::Initialise()
 
 	u_int8 aucWhiteBlankTexData[] = { 255,255,255,255 };
 
-	// Create white texture
-	s_pxWhiteTexture = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-	if (s_pxWhiteTexture)
+	// Create white texture (pinned via handle so UnloadUnused never frees it)
+	if (Zenith_TextureAsset* pxWhite = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
 	{
-		s_pxWhiteTexture->CreateFromData(aucWhiteBlankTexData, xTexInfo, false);
+		pxWhite->CreateFromData(aucWhiteBlankTexData, xTexInfo, false);
+		s_xWhiteTexture.Set(pxWhite);
 	}
 
 	u_int8 aucBlackBlankTexData[] = { 0,0,0,0 };
 
-	// Create black texture
-	s_pxBlackTexture = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-	if (s_pxBlackTexture)
+	// Create black texture (pinned)
+	if (Zenith_TextureAsset* pxBlack = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
 	{
-		s_pxBlackTexture->CreateFromData(aucBlackBlankTexData, xTexInfo, false);
+		pxBlack->CreateFromData(aucBlackBlankTexData, xTexInfo, false);
+		s_xBlackTexture.Set(pxBlack);
 	}
 
 	// Create 64x64 greyscale grid pattern texture for procedural materials
@@ -126,23 +126,19 @@ void Flux_Graphics::Initialise()
 		}
 	}
 
-	// Create grid texture
-	s_pxGridTexture = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-	if (s_pxGridTexture)
+	// Create grid texture (procedural — pinned via handle so callers can share by ref-counted copy)
+	if (Zenith_TextureAsset* pxGridTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
 	{
-		s_pxGridTexture->CreateFromData(aucGridTexData, xGridTexInfo, false);
+		pxGridTex->CreateFromData(aucGridTexData, xGridTexInfo, false);
+		s_xGridTexture.Set(pxGridTex);
 	}
 
-	// Create blank material for use as fallback throughout the engine
-	s_pxBlankMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
-	if (s_pxBlankMaterial)
+	// Create blank material for use as fallback throughout the engine (pinned).
+	// Material will use blank white textures by default (GetXXXTexture returns blank if path not set).
+	if (Zenith_MaterialAsset* pxBlankMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>())
 	{
-		s_pxBlankMaterial->SetName("BlankMaterial");
-	}
-	// Ensure it has white textures set
-	if (s_pxBlankMaterial)
-	{
-		// Material will use blank white textures by default (GetXXXTexture returns blank if path not set)
+		pxBlankMat->SetName("BlankMaterial");
+		s_xBlankMaterial.Set(pxBlankMat);
 	}
 
 	Flux_MeshGeometry::GenerateFullscreenQuad(s_xQuadMesh);
@@ -393,6 +389,20 @@ Flux_RenderAttachment& Flux_Graphics::GetFinalRenderTarget()
 {
 	Zenith_Assert(s_pxGraph, "Flux_Graphics::GetFinalRenderTarget: graph pointer is null");
 	return s_pxGraph->GetTransientAttachment(s_xFinalRTHandle);
+}
+
+void Flux_Graphics::ReleaseAssetReferences()
+{
+	// Drop refs to all engine bootstrap defaults so the asset registry can delete
+	// them in its own Shutdown. Called from Flux::ReleaseAssetReferences before
+	// Zenith_AssetRegistry::Shutdown — putting these inside Flux_Graphics::Shutdown
+	// would run too late (Flux::Shutdown executes after the registry is gone).
+	s_xWhiteTexture.Clear();
+	s_xBlackTexture.Clear();
+	s_xGridTexture.Clear();
+	s_xBlankMaterial.Clear();
+	s_xCubemapTexture.Clear();
+	s_xWaterNormalTexture.Clear();
 }
 
 void Flux_Graphics::Shutdown()

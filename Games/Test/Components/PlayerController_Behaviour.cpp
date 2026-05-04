@@ -75,7 +75,8 @@ static void UpdateCameraRotation(Zenith_CameraComponent& xCamera)
 
 void PlayerController_Behaviour::Shoot()
 {
-	if (!m_pxBulletPrefab)
+	Zenith_Prefab* pxBulletPrefab = m_xBulletPrefab.GetDirect();
+	if (!pxBulletPrefab)
 	{
 		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] Bullet prefab not loaded!");
 		return;
@@ -94,7 +95,7 @@ void PlayerController_Behaviour::Shoot()
 	Zenith_Entity& xBulletEntity = s_axBulletEntities[s_uCurrentBulletIndex];
 	s_uCurrentBulletIndex = (s_uCurrentBulletIndex + 1) % 128;
 
-	m_pxBulletPrefab->ApplyToEntity(xBulletEntity);
+	pxBulletPrefab->ApplyToEntity(xBulletEntity);
 
 	Zenith_CameraComponent& xCamera = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
 	Zenith_Maths::Vector3 xFacingDir;
@@ -256,14 +257,14 @@ void PlayerController_Behaviour::OnAwake()
 {
 	FindHUDElements();
 	return;
-	if (!m_pxBulletPrefab && !m_strBulletPrefabPath.empty())
+	if (!m_xBulletPrefab && !m_strBulletPrefabPath.empty())
 	{
-		m_pxBulletPrefab = new Zenith_Prefab();
-		if (!m_pxBulletPrefab->LoadFromFile(m_strBulletPrefabPath))
+		// Load through the asset registry so the prefab is cached and ref-counted.
+		m_xBulletPrefab.SetPath(m_strBulletPrefabPath);
+		if (!m_xBulletPrefab.Resolve())
 		{
 			Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] Failed to load bullet prefab: %s", m_strBulletPrefabPath.c_str());
-			delete m_pxBulletPrefab;
-			m_pxBulletPrefab = nullptr;
+			m_xBulletPrefab.Clear();
 		}
 	}
 }
@@ -272,21 +273,16 @@ void PlayerController_Behaviour::SetBulletPrefabPath(const std::string& strPath)
 {
 	m_strBulletPrefabPath = strPath;
 
-	// Reload the prefab with the new path
-	if (m_pxBulletPrefab)
-	{
-		delete m_pxBulletPrefab;
-		m_pxBulletPrefab = nullptr;
-	}
+	// Reload the prefab with the new path via the registry
+	m_xBulletPrefab.Clear();
 
 	if (!strPath.empty())
 	{
-		m_pxBulletPrefab = new Zenith_Prefab();
-		if (!m_pxBulletPrefab->LoadFromFile(strPath))
+		m_xBulletPrefab.SetPath(strPath);
+		if (!m_xBulletPrefab.Resolve())
 		{
 			Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] Failed to load bullet prefab: %s", strPath.c_str());
-			delete m_pxBulletPrefab;
-			m_pxBulletPrefab = nullptr;
+			m_xBulletPrefab.Clear();
 		}
 		else
 		{

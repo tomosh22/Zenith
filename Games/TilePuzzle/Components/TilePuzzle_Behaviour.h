@@ -82,10 +82,10 @@ namespace TilePuzzle
 	extern MaterialHandle g_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
 	extern MaterialHandle g_axCatMaterials[TILEPUZZLE_COLOR_COUNT];
 	extern MaterialHandle g_axCatCafeDisplayMaterials[TILEPUZZLE_COLOR_COUNT];
-	extern Zenith_TextureAsset* g_apxCatCafeFaceTextures[TILEPUZZLE_COLOR_COUNT];
-	extern Zenith_Prefab* g_pxCellPrefab;
-	extern Zenith_Prefab* g_pxShapeCubePrefab;
-	extern Zenith_Prefab* g_pxCatPrefab;
+	extern TextureHandle g_axCatCafeFaceTextures[TILEPUZZLE_COLOR_COUNT];
+	extern PrefabHandle g_xCellPrefab;
+	extern PrefabHandle g_xShapeCubePrefab;
+	extern PrefabHandle g_xCatPrefab;
 	extern Flux_MeshGeometry* g_apxShapeMeshes[TILEPUZZLE_SHAPE_COUNT];
 	extern float g_fHighlightEmissiveIntensity;
 	void GenerateShapeMeshFromDefinition(const TilePuzzleShapeDefinition& xDef, Flux_MeshGeometry& xGeometryOut);
@@ -357,7 +357,7 @@ public:
 
 			pxHighlighted->SetName(pxOriginal->GetName() + "_Highlighted");
 			pxHighlighted->SetBaseColor(pxOriginal->GetBaseColor());
-			pxHighlighted->SetDiffuseTextureDirectly(pxOriginal->GetDiffuseTexture());
+			pxHighlighted->SetDiffuseTexture(pxOriginal->GetDiffuseTextureHandle());
 
 			Zenith_Maths::Vector4 xBaseColor = pxOriginal->GetBaseColor();
 			pxHighlighted->SetEmissiveColor(Zenith_Maths::Vector3(xBaseColor.x, xBaseColor.y, xBaseColor.z));
@@ -3218,7 +3218,7 @@ private:
 			return;
 
 		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
-		if (!pxSceneData || !TilePuzzle::g_pxCellPrefab || !TilePuzzle::g_pxCellPrefab->IsValid())
+		if (!pxSceneData || !TilePuzzle::g_xCellPrefab.GetDirect() || !TilePuzzle::g_xCellPrefab.GetDirect()->IsValid())
 		{
 			return;
 		}
@@ -3231,7 +3231,7 @@ private:
 				uint32_t uIdx = y * m_xCurrentLevel.uGridWidth + x;
 				if (m_xCurrentLevel.aeCells[uIdx] == TILEPUZZLE_CELL_FLOOR)
 				{
-					Zenith_Entity xFloorEntity = TilePuzzle::g_pxCellPrefab->Instantiate(pxSceneData, "Floor");
+					Zenith_Entity xFloorEntity = TilePuzzle::g_xCellPrefab.GetDirect()->Instantiate(pxSceneData, "Floor");
 					if (!xFloorEntity.IsValid())
 						continue;
 
@@ -3262,7 +3262,7 @@ private:
 			TilePuzzle::GenerateShapeMeshFromDefinition(*xShape.pxDefinition, *pxShapeMesh);
 			m_apxGeneratedShapeMeshes.PushBack(pxShapeMesh);
 
-			Zenith_Entity xShapeEntity = TilePuzzle::g_pxShapeCubePrefab->Instantiate(pxSceneData, "Shape");
+			Zenith_Entity xShapeEntity = TilePuzzle::g_xShapeCubePrefab.GetDirect()->Instantiate(pxSceneData, "Shape");
 			Zenith_TransformComponent& xTransform = xShapeEntity.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(GridToWorld(
 				static_cast<float>(xShape.iOriginX),
@@ -3279,7 +3279,7 @@ private:
 		// Create cat visuals
 		for (auto& xCat : m_xCurrentLevel.axCats)
 		{
-			Zenith_Entity xCatEntity = TilePuzzle::g_pxCatPrefab->Instantiate(pxSceneData, "Cat");
+			Zenith_Entity xCatEntity = TilePuzzle::g_xCatPrefab.GetDirect()->Instantiate(pxSceneData, "Cat");
 			Zenith_TransformComponent& xTransform = xCatEntity.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(GridToWorld(static_cast<float>(xCat.iGridX), static_cast<float>(xCat.iGridY), s_fCatHeight));
 			xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));
@@ -3796,7 +3796,7 @@ private:
 		TilePuzzle::GenerateShapeMeshFromDefinition(*xShape.pxDefinition, *pxShapeMesh);
 		m_apxGeneratedShapeMeshes.PushBack(pxShapeMesh);
 
-		Zenith_Entity xShapeEntity = TilePuzzle::g_pxShapeCubePrefab->Instantiate(pxSceneData, "Shape");
+		Zenith_Entity xShapeEntity = TilePuzzle::g_xShapeCubePrefab.GetDirect()->Instantiate(pxSceneData, "Shape");
 		Zenith_TransformComponent& xTransform = xShapeEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(GridToWorld(
 			static_cast<float>(xShape.iOriginX),
@@ -3821,7 +3821,7 @@ private:
 
 		TilePuzzleCatData& xCat = m_xCurrentLevel.axCats[uCatIndex];
 
-		Zenith_Entity xCatEntity = TilePuzzle::g_pxCatPrefab->Instantiate(pxSceneData, "Cat");
+		Zenith_Entity xCatEntity = TilePuzzle::g_xCatPrefab.GetDirect()->Instantiate(pxSceneData, "Cat");
 		Zenith_TransformComponent& xTransform = xCatEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(GridToWorld(static_cast<float>(xCat.iGridX), static_cast<float>(xCat.iGridY), s_fCatHeight));
 		xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));

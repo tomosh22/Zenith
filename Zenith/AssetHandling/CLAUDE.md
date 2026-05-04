@@ -96,9 +96,16 @@ Materials store textures and rendering properties.
 // Create via registry
 Zenith_MaterialAsset* pMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 
-// Set textures (stores path for serialization)
-pMat->SetDiffuseTexturePath("Assets/diffuse.ztxtr");
-pMat->SetNormalTexturePath("Assets/normal.ztxtr");
+// Set textures via TextureHandle. The handle stores either a path
+// (file-backed, lazy-loaded via the registry) or a direct pointer
+// (procedural, set via TextureHandle::Set or the T* constructor).
+pMat->SetDiffuseTexture(TextureHandle("Assets/diffuse.ztxtr"));
+pMat->SetNormalTexture(TextureHandle("Assets/normal.ztxtr"));
+
+// Procedural textures use the T* constructor:
+Zenith_TextureAsset* pProcTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+// ...populate pProcTex via CreateFromData...
+pMat->SetDiffuseTexture(TextureHandle(pProcTex));
 ```
 
 ### Default Textures

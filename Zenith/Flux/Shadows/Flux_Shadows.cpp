@@ -213,7 +213,7 @@ Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
 
 Flux_ShaderResourceView& Flux_Shadows::GetCSMSRV(const uint32_t u)
 {
-	return Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? GetCSM(u).SRV() : Flux_Graphics::s_pxWhiteTexture->m_xSRV;
+	return Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? GetCSM(u).SRV() : Flux_Graphics::s_xWhiteTexture.GetDirect()->m_xSRV;
 }
 
 Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)

@@ -15,6 +15,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -1006,25 +1007,15 @@ void Zenith_SceneManager::UnloadUnusedAssets()
 	++s_uUnloadUnusedAssetsCallCount;
 #endif
 
-	// TODO(flux-refcount): Implement once Flux asset managers support reference counting.
-	// This method should delegate to:
-	// - Flux_TextureManager::UnloadUnused()
-	// - Flux_ModelManager::UnloadUnused()
-	// - Flux_MaterialManager::UnloadUnused()
-	// - Flux_ShaderManager::UnloadUnused()
-	// etc.
+	// Unity-parity: SCENE_LOAD_SINGLE auto-fires this between teardown and the
+	// new scene's load (see Zenith_SceneOperationQueue.cpp:695). Frees every asset
+	// whose refcount has dropped to zero — anything still referenced by a handle
+	// (engine fallbacks, live scene materials, etc.) survives untouched.
 	//
-	// Audit §3.1 (Phase 9 minimal patch): the warning is no longer guarded by a
-	// one-shot `ls_bWarnedOnce` flag. Every call prints the warning so QA notices
-	// the Unity-parity gap on every SCENE_LOAD_SINGLE. Unity auto-invokes
-	// Resources.UnloadUnusedAssets on LoadSceneMode.Single — this auto-invocation
-	// is community-documented behaviour rather than explicit ScriptReference docs,
-	// but the practical effect is well known. Until Flux asset managers support
-	// refcounting, callers must manage their own texture/model/material unloads.
-	// Ref: https://docs.unity3d.com/ScriptReference/Resources.UnloadUnusedAssets.html
-	Zenith_Warning(LOG_CATEGORY_SCENE,
-		"UnloadUnusedAssets: Not yet implemented - Flux asset managers need reference counting support. "
-		"Assets will remain in memory after scene unloads. Callers must manage their own unloads.");
+	// Asset registry contract: Get<>/Create<> populate m_xAssetsByPath without
+	// AddRef'ing; the asset's refcount is managed entirely by Zenith_AssetHandle.
+	// UnloadUnused() walks the cache and deletes every entry with refcount == 0.
+	Zenith_AssetRegistry::UnloadUnused();
 }
 
 // ============================================================================

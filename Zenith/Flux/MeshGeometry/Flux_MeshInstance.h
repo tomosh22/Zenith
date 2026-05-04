@@ -1,6 +1,7 @@
 #pragma once
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_Types.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 
 class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
@@ -85,7 +86,7 @@ public:
 	const Flux_BufferLayout& GetBufferLayout() const;
 	const Flux_VertexBuffer& GetVertexBuffer() const;
 	const Flux_IndexBuffer& GetIndexBuffer() const;
-	Zenith_MeshAsset* GetSourceAsset() const { return m_pxSourceAsset; }
+	Zenith_MeshAsset* GetSourceAsset() const { return m_xSourceAsset.GetDirect(); }
 
 	/**
 	 * Get the procedural geometry back-reference (nullptr if asset-backed)
@@ -106,7 +107,10 @@ private:
 	uint32_t m_uNumVerts = 0;
 	uint32_t m_uNumIndices = 0;
 
-	Zenith_MeshAsset* m_pxSourceAsset = nullptr;
+	// Source asset handle — keeps the asset alive for the lifetime of this instance.
+	// Was a raw pointer with "not owned" comments before; the handle now makes the
+	// dependency explicit so UnloadUnused can't free the source while it's in use.
+	MeshHandle m_xSourceAsset;
 	// Non-owning back-reference for procedural instances (see CreateFromGeometry).
 	// When non-null, buffer/layout accessors proxy to the geometry and Destroy()
 	// skips buffer teardown (the geometry owns them).

@@ -103,7 +103,7 @@ public:
 	/**
 	 * Get the source asset this instance was created from
 	 */
-	Zenith_ModelAsset* GetSourceAsset() const { return m_pxSourceAsset; }
+	Zenith_ModelAsset* GetSourceAsset() const { return m_xSourceAsset.GetDirect(); }
 
 	/**
 	 * Get the number of meshes in this model
@@ -168,8 +168,8 @@ public:
 	void UpdateAnimation();
 
 private:
-	// Source asset this instance was created from (not owned - just a reference)
-	Zenith_ModelAsset* m_pxSourceAsset = nullptr;
+	// Source asset handle — keeps the asset alive for the lifetime of this instance.
+	ModelHandle m_xSourceAsset;
 
 	// Runtime mesh instances (GPU-ready, owned by this instance)
 	// Static 72-byte format for static rendering or bind-pose rendering

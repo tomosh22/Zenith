@@ -32,7 +32,7 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 	}
 
 	Flux_ModelInstance* pxInstance = new Flux_ModelInstance();
-	pxInstance->m_pxSourceAsset = pxAsset;
+	pxInstance->m_xSourceAsset.Set(pxAsset);
 
 	// Load skeleton if the model has one
 	if (pxAsset->HasSkeleton())
@@ -106,13 +106,16 @@ void Flux_ModelInstance::BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAss
 	const Zenith_ModelAsset::MeshMaterialBinding& xBinding = pxAsset->GetMeshBinding(uMeshIdx);
 	const std::string strMeshPath = xBinding.GetMeshPath();
 
-	MeshHandle xMeshHandle(strMeshPath);
 	Zenith_MeshAsset* pxMeshAsset = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshPath);
 	if (!pxMeshAsset)
 	{
 		Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load mesh: %s", strMeshPath.c_str());
 		return;
 	}
+	// A path-only handle does NOT hold a ref until something Resolve()s it. Set()
+	// here so the handle's stored pointer keeps the asset alive against UnloadUnused.
+	MeshHandle xMeshHandle;
+	xMeshHandle.Set(pxMeshAsset);
 	m_xLoadedMeshAssets.PushBack(std::move(xMeshHandle));
 
 	// Pass skeleton for skinned meshes to apply bind pose transforms for static rendering.
@@ -147,9 +150,13 @@ void Flux_ModelInstance::BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAss
 	for (uint32_t uMatIdx = 0; uMatIdx < uNumMaterials; uMatIdx++)
 	{
 		const std::string strMaterialPath = xBinding.GetMaterialPath(uMatIdx);
-		MaterialHandle xMaterialHandle(strMaterialPath);
-
-		if (!Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(strMaterialPath))
+		// Resolve the material first; a path-only handle wouldn't hold a ref.
+		MaterialHandle xMaterialHandle;
+		if (Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(strMaterialPath))
+		{
+			xMaterialHandle.Set(pxMat);
+		}
+		else
 		{
 			Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load material: %s", strMaterialPath.c_str());
 			xMaterialHandle.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
@@ -210,8 +217,8 @@ void Flux_ModelInstance::Destroy()
 	// Clear skeleton asset handle (auto-releases ref count)
 	m_xLoadedSkeletonAsset.Clear();
 
-	// Clear source asset reference (not owned by us)
-	m_pxSourceAsset = nullptr;
+	// Drop the source asset ref
+	m_xSourceAsset.Clear();
 }
 
 //------------------------------------------------------------------------------

@@ -30,9 +30,9 @@ namespace
 	// Path the next save will write to (defaults to <name>.zpfb in cwd).
 	char s_acSavePath[512]   = "NewVariant.zpfb";
 
-	// In-memory variant currently being authored. Owned by this panel; deleted
-	// on destruction or when the user starts a new variant.
-	Zenith_Prefab* s_pxAuthoringVariant = nullptr;
+	// In-memory variant currently being authored. Stored as a PrefabHandle so the
+	// asset is registered with Zenith_AssetRegistry and ref-counted normally.
+	PrefabHandle s_xAuthoringVariant;
 
 	// === Inspection state ===
 	// Path of an existing prefab (variant or otherwise) being inspected
@@ -119,14 +119,16 @@ namespace
 			if (pxBase != nullptr)
 			{
 				PrefabHandle xHandle(s_acBasePath);
-				delete s_pxAuthoringVariant;
-				s_pxAuthoringVariant = new Zenith_Prefab();
-				if (!s_pxAuthoringVariant->CreateAsVariant(xHandle, s_acVariantName))
+				Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+				if (pxVariant && pxVariant->CreateAsVariant(xHandle, s_acVariantName))
+				{
+					s_xAuthoringVariant.Set(pxVariant);
+				}
+				else
 				{
 					Zenith_Warning(LOG_CATEGORY_ECS,
 						"VariantEditor: CreateAsVariant rejected — likely a cycle or unset handle.");
-					delete s_pxAuthoringVariant;
-					s_pxAuthoringVariant = nullptr;
+					s_xAuthoringVariant.Clear();
 				}
 			}
 			else
@@ -140,16 +142,17 @@ namespace
 
 	void RenderActiveVariantOverrideForm()
 	{
-		if (s_pxAuthoringVariant == nullptr) return;
+		Zenith_Prefab* pxAuthoringVariant = s_xAuthoringVariant.GetDirect();
+		if (pxAuthoringVariant == nullptr) return;
 
 		ImGui::Separator();
 		ImGui::Text("Editing: %s (%u override%s)",
-			s_pxAuthoringVariant->GetName().c_str(),
-			s_pxAuthoringVariant->GetOverrides().GetSize(),
-			s_pxAuthoringVariant->GetOverrides().GetSize() == 1 ? "" : "s");
+			pxAuthoringVariant->GetName().c_str(),
+			pxAuthoringVariant->GetOverrides().GetSize(),
+			pxAuthoringVariant->GetOverrides().GetSize() == 1 ? "" : "s");
 
 		// Override list (read-only — overrides are append-only via this panel).
-		const Zenith_Vector<Zenith_PropertyOverride>& xOverrides = s_pxAuthoringVariant->GetOverrides();
+		const Zenith_Vector<Zenith_PropertyOverride>& xOverrides = pxAuthoringVariant->GetOverrides();
 		for (u_int u = 0; u < xOverrides.GetSize(); ++u)
 		{
 			const Zenith_PropertyOverride& xOv = xOverrides.Get(u);
@@ -157,7 +160,7 @@ namespace
 		}
 		if (xOverrides.GetSize() > 0 && ImGui::Button("Clear all overrides"))
 		{
-			s_pxAuthoringVariant->ClearOverrides();
+			pxAuthoringVariant->ClearOverrides();
 		}
 
 		// Override input form — Vector3 fields on Transform only for now.
@@ -187,18 +190,18 @@ namespace
 			xOv.m_strComponentName = s_axOverrideTemplates[s_iOverridePropertyIdx].m_szComponentName;
 			xOv.m_strPropertyPath  = s_axOverrideTemplates[s_iOverridePropertyIdx].m_szPropertyName;
 			xOv.m_xValue << Zenith_Maths::Vector3(s_afOverrideValue[0], s_afOverrideValue[1], s_afOverrideValue[2]);
-			s_pxAuthoringVariant->AddOverride(std::move(xOv));
+			pxAuthoringVariant->AddOverride(std::move(xOv));
 		}
 
 		// Save button — writes the in-memory variant to s_acSavePath as a .zpfb.
 		ImGui::Separator();
 		if (ImGui::Button("Save to disk"))
 		{
-			const bool bOk = s_pxAuthoringVariant->SaveToFile(s_acSavePath);
+			const bool bOk = pxAuthoringVariant->SaveToFile(s_acSavePath);
 			if (bOk)
 			{
 				Zenith_Log(LOG_CATEGORY_ECS, "VariantEditor: saved variant '%s' to %s",
-					s_pxAuthoringVariant->GetName().c_str(), s_acSavePath);
+					pxAuthoringVariant->GetName().c_str(), s_acSavePath);
 			}
 			else
 			{
@@ -209,8 +212,7 @@ namespace
 		ImGui::SameLine();
 		if (ImGui::Button("Discard"))
 		{
-			delete s_pxAuthoringVariant;
-			s_pxAuthoringVariant = nullptr;
+			s_xAuthoringVariant.Clear();
 		}
 	}
 

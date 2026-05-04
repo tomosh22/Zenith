@@ -72,12 +72,11 @@ Zenith_ModelComponent::Zenith_ModelComponent(Zenith_ModelComponent&& xOther) noe
 	, m_pxModelInstance(xOther.m_pxModelInstance)
 	, m_xModel(std::move(xOther.m_xModel))
 	, m_strModelPath(std::move(xOther.m_strModelPath))
-	, m_pxPhysicsMeshAsset(xOther.m_pxPhysicsMeshAsset)
+	, m_xPhysicsMeshAsset(std::move(xOther.m_xPhysicsMeshAsset))
 	, m_bDebugDrawPhysicsMesh(xOther.m_bDebugDrawPhysicsMesh)
 {
 	// Nullify source pointers so its destructor doesn't delete our resources
 	xOther.m_pxModelInstance = nullptr;
-	xOther.m_pxPhysicsMeshAsset = nullptr;
 	xOther.m_bDebugDrawPhysicsMesh = false;
 }
 
@@ -94,12 +93,11 @@ Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& 
 		m_pxModelInstance = xOther.m_pxModelInstance;
 		m_xModel = std::move(xOther.m_xModel);
 		m_strModelPath = std::move(xOther.m_strModelPath);
-		m_pxPhysicsMeshAsset = xOther.m_pxPhysicsMeshAsset;
+		m_xPhysicsMeshAsset = std::move(xOther.m_xPhysicsMeshAsset);
 		m_bDebugDrawPhysicsMesh = xOther.m_bDebugDrawPhysicsMesh;
 
 		// Nullify source pointers
 		xOther.m_pxModelInstance = nullptr;
-		xOther.m_pxPhysicsMeshAsset = nullptr;
 		xOther.m_bDebugDrawPhysicsMesh = false;
 	}
 	return *this;
@@ -467,11 +465,10 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 			xScale.x, xScale.y, xScale.z);
 	}
 
-	m_pxPhysicsMeshAsset = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xMeshGeometries, xConfig);
-
-	if (m_pxPhysicsMeshAsset)
+	if (Zenith_MeshGeometryAsset* pxPhysicsAsset = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xMeshGeometries, xConfig))
 	{
-		Flux_MeshGeometry* pxGeometry = m_pxPhysicsMeshAsset->GetGeometry();
+		m_xPhysicsMeshAsset.Set(pxPhysicsAsset);
+		Flux_MeshGeometry* pxGeometry = pxPhysicsAsset->GetGeometry();
 		Zenith_Log(LOG_CATEGORY_PHYSICS, "Generated physics mesh for model: %u verts, %u tris",
 			pxGeometry->GetNumVerts(),
 			pxGeometry->GetNumIndices() / 3);
@@ -497,13 +494,14 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 
 void Zenith_ModelComponent::ClearPhysicsMesh()
 {
-	// Just clear the pointer - registry manages asset deletion
-	m_pxPhysicsMeshAsset = nullptr;
+	// Drop the handle ref; registry frees the asset when its refcount hits zero.
+	m_xPhysicsMeshAsset.Clear();
 }
 
 Flux_MeshGeometry* Zenith_ModelComponent::GetPhysicsMesh() const
 {
-	return m_pxPhysicsMeshAsset ? m_pxPhysicsMeshAsset->GetGeometry() : nullptr;
+	Zenith_MeshGeometryAsset* pxPhysics = m_xPhysicsMeshAsset.GetDirect();
+	return pxPhysics ? pxPhysics->GetGeometry() : nullptr;
 }
 
 void Zenith_ModelComponent::QueueDebugDrawPhysicsMesh(const Zenith_Maths::Vector3& xColor) const

@@ -40,7 +40,7 @@ void Flux_InstanceGroup::SetMesh(Flux_MeshInstance* pxMesh)
 
 void Flux_InstanceGroup::SetMaterial(Zenith_MaterialAsset* pxMaterial)
 {
-	m_pxMaterial = pxMaterial;
+	m_xMaterial.Set(pxMaterial);
 }
 
 void Flux_InstanceGroup::SetAnimationTexture(Flux_AnimationTexture* pxAnimTex)

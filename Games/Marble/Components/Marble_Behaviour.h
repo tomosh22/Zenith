@@ -65,11 +65,11 @@ namespace Marble
 	extern MaterialHandle g_xCollectibleMaterial;
 	extern MaterialHandle g_xFloorMaterial;
 
-	// Prefabs for runtime instantiation
-	extern Zenith_Prefab* g_pxBallPrefab;
-	extern Zenith_Prefab* g_pxPlatformPrefab;
-	extern Zenith_Prefab* g_pxGoalPrefab;
-	extern Zenith_Prefab* g_pxCollectiblePrefab;
+	// Prefabs for runtime instantiation (handles for ref counting)
+	extern PrefabHandle g_xBallPrefab;
+	extern PrefabHandle g_xPlatformPrefab;
+	extern PrefabHandle g_xGoalPrefab;
+	extern PrefabHandle g_xCollectiblePrefab;
 }
 
 // ============================================================================
@@ -303,10 +303,10 @@ private:
 		Marble_LevelGenerator::GenerateLevel(
 			m_xLevelEntities,
 			m_xRng,
-			Marble::g_pxBallPrefab,
-			Marble::g_pxPlatformPrefab,
-			Marble::g_pxGoalPrefab,
-			Marble::g_pxCollectiblePrefab,
+			Marble::g_xBallPrefab.GetDirect(),
+			Marble::g_xPlatformPrefab.GetDirect(),
+			Marble::g_xGoalPrefab.GetDirect(),
+			Marble::g_xCollectiblePrefab.GetDirect(),
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
 			m_xBallMaterial.GetDirect(),
@@ -352,10 +352,10 @@ private:
 		Marble_LevelGenerator::GenerateLevel(
 			m_xLevelEntities,
 			m_xRng,
-			Marble::g_pxBallPrefab,
-			Marble::g_pxPlatformPrefab,
-			Marble::g_pxGoalPrefab,
-			Marble::g_pxCollectiblePrefab,
+			Marble::g_xBallPrefab.GetDirect(),
+			Marble::g_xPlatformPrefab.GetDirect(),
+			Marble::g_xGoalPrefab.GetDirect(),
+			Marble::g_xCollectiblePrefab.GetDirect(),
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
 			m_xBallMaterial.GetDirect(),

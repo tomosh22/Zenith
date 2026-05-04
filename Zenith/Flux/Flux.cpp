@@ -18,6 +18,8 @@
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/SSAO/Flux_SSAO.h"
 #include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Fog/Flux_VolumeFog.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/SDFs/Flux_SDFs.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/Particles/Flux_Particles.h"
@@ -325,6 +327,22 @@ void Flux::SetupRenderGraph()
 		.Reads(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_READ_SRV);
 
 	// Clear() already left the graph dirty — no explicit MarkDirty() needed.
+}
+
+void Flux::ReleaseAssetReferences()
+{
+	// Drop refs to Flux-side assets so Zenith_AssetRegistry::Shutdown can delete them
+	// cleanly. Each subsystem releases the handles it owns.
+	Flux_Graphics::ReleaseAssetReferences();
+	Flux_Text::ReleaseAssetReferences();
+	Flux_Particles::ReleaseAssetReferences();
+	Flux_Terrain::ReleaseAssetReferences();
+	Flux_Skybox::ReleaseAssetReferences();
+	Flux_VolumeFog::ReleaseAssetReferences();
+
+	// Material defaults live in AssetHandling but are part of the same pre-registry
+	// release window — this is the natural place to drop them.
+	Zenith_MaterialAsset::ReleaseDefaults();
 }
 
 void Flux::Shutdown()

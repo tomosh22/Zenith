@@ -383,6 +383,15 @@ public:
 	~Flux() = delete;
 	static void EarlyInitialise();
 	static void LateInitialise();
+
+	// Release all asset-system references held by Flux statics (texture/material/etc.
+	// handles in Flux_Graphics, Flux_Text, Flux_Particles, Flux_Terrain, Flux_VolumeFog,
+	// plus Zenith_MaterialAsset's own defaults). Called between Project_Shutdown and
+	// Zenith_AssetRegistry::Shutdown so handles release while the registry still owns
+	// its assets — putting these Clears inside subsystem Shutdown() runs too late
+	// because Flux::Shutdown() executes AFTER the registry has been torn down.
+	static void ReleaseAssetReferences();
+
 	static void Shutdown();
 
 	static const uint32_t GetFrameCounter() { return s_uFrameCounter; }

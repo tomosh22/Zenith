@@ -15,7 +15,7 @@ Flux_SkeletonInstance::~Flux_SkeletonInstance()
 // Move Constructor
 //=============================================================================
 Flux_SkeletonInstance::Flux_SkeletonInstance(Flux_SkeletonInstance&& xOther)
-	: m_pxSourceSkeleton(xOther.m_pxSourceSkeleton)
+	: m_xSourceSkeleton(std::move(xOther.m_xSourceSkeleton))
 	, m_uNumBones(xOther.m_uNumBones)
 	, m_xBoneBuffer(std::move(xOther.m_xBoneBuffer))
 	, m_bGPUResourcesInitialized(xOther.m_bGPUResourcesInitialized)
@@ -31,7 +31,6 @@ Flux_SkeletonInstance::Flux_SkeletonInstance(Flux_SkeletonInstance&& xOther)
 	}
 
 	// Clear source to prevent double destruction
-	xOther.m_pxSourceSkeleton = nullptr;
 	xOther.m_uNumBones = 0;
 	xOther.m_bGPUResourcesInitialized = false;
 }
@@ -47,7 +46,7 @@ Flux_SkeletonInstance& Flux_SkeletonInstance::operator=(Flux_SkeletonInstance&& 
 		Destroy();
 
 		// Move data
-		m_pxSourceSkeleton = xOther.m_pxSourceSkeleton;
+		m_xSourceSkeleton = std::move(xOther.m_xSourceSkeleton);
 		m_uNumBones = xOther.m_uNumBones;
 		m_xBoneBuffer = std::move(xOther.m_xBoneBuffer);
 		m_bGPUResourcesInitialized = xOther.m_bGPUResourcesInitialized;
@@ -63,7 +62,6 @@ Flux_SkeletonInstance& Flux_SkeletonInstance::operator=(Flux_SkeletonInstance&& 
 		}
 
 		// Clear source
-		xOther.m_pxSourceSkeleton = nullptr;
 		xOther.m_uNumBones = 0;
 		xOther.m_bGPUResourcesInitialized = false;
 	}
@@ -95,7 +93,7 @@ Flux_SkeletonInstance* Flux_SkeletonInstance::CreateFromAsset(Zenith_SkeletonAss
 	}
 
 	Flux_SkeletonInstance* pxInstance = new Flux_SkeletonInstance();
-	pxInstance->m_pxSourceSkeleton = pxAsset;
+	pxInstance->m_xSourceSkeleton.Set(pxAsset);
 	pxInstance->m_uNumBones = pxAsset->GetNumBones();
 
 	// Initialize all arrays to identity/default values
@@ -158,7 +156,7 @@ void Flux_SkeletonInstance::Destroy()
 		m_bGPUResourcesInitialized = false;
 	}
 
-	m_pxSourceSkeleton = nullptr;
+	m_xSourceSkeleton.Clear();
 	m_uNumBones = 0;
 }
 
@@ -167,7 +165,8 @@ void Flux_SkeletonInstance::Destroy()
 //=============================================================================
 void Flux_SkeletonInstance::SetToBindPose()
 {
-	if (!m_pxSourceSkeleton)
+	Zenith_SkeletonAsset* pxSource = m_xSourceSkeleton.GetDirect();
+	if (!pxSource)
 	{
 		return;
 	}
@@ -175,7 +174,7 @@ void Flux_SkeletonInstance::SetToBindPose()
 	// Copy bind pose transforms from skeleton asset
 	for (uint32_t i = 0; i < m_uNumBones && i < MAX_BONES; ++i)
 	{
-		const Zenith_SkeletonAsset::Bone& xBone = m_pxSourceSkeleton->GetBone(i);
+		const Zenith_SkeletonAsset::Bone& xBone = pxSource->GetBone(i);
 		m_axLocalPositions[i] = xBone.m_xBindPosition;
 		m_axLocalRotations[i] = xBone.m_xBindRotation;
 		m_axLocalScales[i] = xBone.m_xBindScale;
@@ -276,7 +275,8 @@ Zenith_Maths::Matrix4 Flux_SkeletonInstance::ComposeTransformMatrix(
 //=============================================================================
 Zenith_Maths::Matrix4 Flux_SkeletonInstance::ComputeBoneModelTransform(uint32_t uBoneIndex) const
 {
-	if (!m_pxSourceSkeleton || uBoneIndex >= m_uNumBones)
+	Zenith_SkeletonAsset* pxSource = m_xSourceSkeleton.GetDirect();
+	if (!pxSource || uBoneIndex >= m_uNumBones)
 	{
 		return glm::identity<Zenith_Maths::Matrix4>();
 	}
@@ -289,7 +289,7 @@ Zenith_Maths::Matrix4 Flux_SkeletonInstance::ComputeBoneModelTransform(uint32_t 
 	);
 
 	// Walk up the parent chain to accumulate transforms
-	const Zenith_SkeletonAsset::Bone& xBone = m_pxSourceSkeleton->GetBone(uBoneIndex);
+	const Zenith_SkeletonAsset::Bone& xBone = pxSource->GetBone(uBoneIndex);
 	int32_t iParentIndex = xBone.m_iParentIndex;
 
 	if (iParentIndex == Zenith_SkeletonAsset::INVALID_BONE_INDEX)
@@ -311,7 +311,8 @@ Zenith_Maths::Matrix4 Flux_SkeletonInstance::ComputeBoneModelTransform(uint32_t 
 //=============================================================================
 void Flux_SkeletonInstance::ComputeSkinningMatrices()
 {
-	if (!m_pxSourceSkeleton)
+	Zenith_SkeletonAsset* pxSource = m_xSourceSkeleton.GetDirect();
+	if (!pxSource)
 	{
 		return;
 	}
@@ -324,7 +325,7 @@ void Flux_SkeletonInstance::ComputeSkinningMatrices()
 	// are always less than child indices (bones are stored in hierarchical order)
 	for (uint32_t i = 0; i < m_uNumBones && i < MAX_BONES; ++i)
 	{
-		const Zenith_SkeletonAsset::Bone& xBone = m_pxSourceSkeleton->GetBone(i);
+		const Zenith_SkeletonAsset::Bone& xBone = pxSource->GetBone(i);
 
 		// Get local transform for this bone
 		Zenith_Maths::Matrix4 xLocalTransform = ComposeTransformMatrix(

@@ -185,7 +185,7 @@ static void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBi
 		pxCmdList->AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
 		Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
-		if (!pxMaterial) pxMaterial = Flux_Graphics::s_pxBlankMaterial;
+		if (!pxMaterial) pxMaterial = Flux_Graphics::s_xBlankMaterial.GetDirect();
 		Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
 
 		DrawStaticMesh(pxCmdList, xBinder, xModelMatrix, pxMaterial, pxMeshInstance->GetNumIndices());

@@ -65,40 +65,36 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 
 	if (pxOldMaterial)
 	{
-		if (!pxOldMaterial->GetDiffuseTexturePath().empty())
-			pxNewMaterial->SetDiffuseTexturePath(pxOldMaterial->GetDiffuseTexturePath());
-		if (!pxOldMaterial->GetNormalTexturePath().empty())
-			pxNewMaterial->SetNormalTexturePath(pxOldMaterial->GetNormalTexturePath());
-		if (!pxOldMaterial->GetRoughnessMetallicTexturePath().empty())
-			pxNewMaterial->SetRoughnessMetallicTexturePath(pxOldMaterial->GetRoughnessMetallicTexturePath());
-		if (!pxOldMaterial->GetOcclusionTexturePath().empty())
-			pxNewMaterial->SetOcclusionTexturePath(pxOldMaterial->GetOcclusionTexturePath());
-		if (!pxOldMaterial->GetEmissiveTexturePath().empty())
-			pxNewMaterial->SetEmissiveTexturePath(pxOldMaterial->GetEmissiveTexturePath());
+		pxNewMaterial->SetDiffuseTexture(pxOldMaterial->GetDiffuseTextureHandle());
+		pxNewMaterial->SetNormalTexture(pxOldMaterial->GetNormalTextureHandle());
+		pxNewMaterial->SetRoughnessMetallicTexture(pxOldMaterial->GetRoughnessMetallicTextureHandle());
+		pxNewMaterial->SetOcclusionTexture(pxOldMaterial->GetOcclusionTextureHandle());
+		pxNewMaterial->SetEmissiveTexture(pxOldMaterial->GetEmissiveTextureHandle());
 
 		pxNewMaterial->SetBaseColor(pxOldMaterial->GetBaseColor());
 	}
 
+	TextureHandle xPickedHandle{std::string(szFilePath)};
 	switch (eSlot)
 	{
 	case TEXTURE_SLOT_DIFFUSE:
-		pxNewMaterial->SetDiffuseTexturePath(szFilePath);
+		pxNewMaterial->SetDiffuseTexture(std::move(xPickedHandle));
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set diffuse texture");
 		break;
 	case TEXTURE_SLOT_NORMAL:
-		pxNewMaterial->SetNormalTexturePath(szFilePath);
+		pxNewMaterial->SetNormalTexture(std::move(xPickedHandle));
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set normal texture");
 		break;
 	case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-		pxNewMaterial->SetRoughnessMetallicTexturePath(szFilePath);
+		pxNewMaterial->SetRoughnessMetallicTexture(std::move(xPickedHandle));
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set roughness/metallic texture");
 		break;
 	case TEXTURE_SLOT_OCCLUSION:
-		pxNewMaterial->SetOcclusionTexturePath(szFilePath);
+		pxNewMaterial->SetOcclusionTexture(std::move(xPickedHandle));
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set occlusion texture");
 		break;
 	case TEXTURE_SLOT_EMISSIVE:
-		pxNewMaterial->SetEmissiveTexturePath(szFilePath);
+		pxNewMaterial->SetEmissiveTexture(std::move(xPickedHandle));
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set emissive texture");
 		break;
 	}

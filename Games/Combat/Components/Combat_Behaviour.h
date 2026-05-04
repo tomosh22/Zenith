@@ -68,7 +68,7 @@ namespace Combat
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
 	extern Flux_MeshGeometry* g_pxConeGeometry;
 	extern Flux_MeshGeometry* g_pxStickFigureGeometry;
-	extern Zenith_ModelAsset* g_pxStickFigureModelAsset;
+	extern ModelHandle g_xStickFigureModelAsset;
 	extern std::string g_strStickFigureModelPath;
 	extern MaterialHandle g_xPlayerMaterial;
 	extern MaterialHandle g_xEnemyMaterial;
@@ -76,16 +76,16 @@ namespace Combat
 	extern MaterialHandle g_xWallMaterial;
 	extern MaterialHandle g_xCandleMaterial;
 
-	extern Zenith_Prefab* g_pxPlayerPrefab;
-	extern Zenith_Prefab* g_pxEnemyPrefab;
-	extern Zenith_Prefab* g_pxArenaPrefab;
-	extern Zenith_Prefab* g_pxArenaWallPrefab;
+	extern PrefabHandle g_xPlayerPrefab;
+	extern PrefabHandle g_xEnemyPrefab;
+	extern PrefabHandle g_xArenaPrefab;
+	extern PrefabHandle g_xArenaWallPrefab;
 
 	// Enemy variant prefabs — three Scale tiers (weak/normal/strong) created
-	// from g_pxEnemyPrefab via the prefab variant override system. Each
+	// from g_xEnemyPrefab via the prefab variant override system. Each
 	// instantiation walks the base chain + applies the Transform.Scale override.
 	static constexpr u_int uENEMY_VARIANT_COUNT = 3;
-	extern Zenith_Prefab* g_apxEnemyVariants[uENEMY_VARIANT_COUNT];
+	extern PrefabHandle g_axEnemyVariants[uENEMY_VARIANT_COUNT];
 	extern const char* g_aszEnemyVariantNames[uENEMY_VARIANT_COUNT];
 	extern const float g_afEnemyVariantScales[uENEMY_VARIANT_COUNT];
 
@@ -496,7 +496,7 @@ private:
 		static constexpr uint32_t s_uWallSegments = 24;
 
 		// Create arena floor
-		Zenith_Entity xFloor = Combat::g_pxArenaPrefab->Instantiate(pxSceneData, "ArenaFloor");
+		Zenith_Entity xFloor = Combat::g_xArenaPrefab.GetDirect()->Instantiate(pxSceneData, "ArenaFloor");
 
 		Zenith_TransformComponent& xFloorTransform = xFloor.GetComponent<Zenith_TransformComponent>();
 		xFloorTransform.SetPosition(Zenith_Maths::Vector3(0.0f, -0.5f, 0.0f));
@@ -558,7 +558,7 @@ private:
 		}
 
 		// Create player
-		Zenith_Entity xPlayer = Combat::g_pxPlayerPrefab->Instantiate(pxSceneData, "Player");
+		Zenith_Entity xPlayer = Combat::g_xPlayerPrefab.GetDirect()->Instantiate(pxSceneData, "Player");
 
 		Zenith_TransformComponent& xPlayerTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
 		xPlayerTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
@@ -645,7 +645,7 @@ private:
 			// override (0.7 / 0.9 / 1.1 respectively) — no explicit SetScale here
 			// because the variant's override applies it during Instantiate.
 			const u_int uVariantIdx = i % Combat::uENEMY_VARIANT_COUNT;
-			Zenith_Prefab* pxVariant = Combat::g_apxEnemyVariants[uVariantIdx];
+			Zenith_Prefab* pxVariant = Combat::g_axEnemyVariants[uVariantIdx].GetDirect();
 
 			char szName[32];
 			snprintf(szName, sizeof(szName), "Enemy_%u_%s", i, Combat::g_aszEnemyVariantNames[uVariantIdx]);
