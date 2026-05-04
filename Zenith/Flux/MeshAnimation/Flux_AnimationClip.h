@@ -8,8 +8,6 @@
 #include <string>
 #include <functional>
 
-#define ZENITH_ANIMATION_EXT ".zanim"
-
 // Forward declarations
 #ifdef ZENITH_TOOLS
 struct aiNodeAnim;

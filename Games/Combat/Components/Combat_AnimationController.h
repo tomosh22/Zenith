@@ -303,14 +303,14 @@ private:
 		static const char* s_strAssetDir = ENGINE_ASSETS_DIR "Meshes/StickFigure/";
 
 		Flux_AnimationController& xController = m_pxAnimator->GetController();
-		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Idle.zanim");
-		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Walk.zanim");
-		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack1.zanim");
-		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack2.zanim");
-		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack3.zanim");
-		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Dodge.zanim");
-		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Hit.zanim");
-		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Death.zanim");
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Idle" ZENITH_ANIMATION_EXT);
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Walk" ZENITH_ANIMATION_EXT);
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack1" ZENITH_ANIMATION_EXT);
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack2" ZENITH_ANIMATION_EXT);
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack3" ZENITH_ANIMATION_EXT);
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Dodge" ZENITH_ANIMATION_EXT);
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Hit" ZENITH_ANIMATION_EXT);
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Death" ZENITH_ANIMATION_EXT);
 	}
 
 	void SetupStateMachine()

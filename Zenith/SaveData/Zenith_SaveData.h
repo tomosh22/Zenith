@@ -3,8 +3,6 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-#define ZENITH_SAVE_EXT ".zsave"
-
 // Magic number: "ZENS" = 0x5A454E53 (Zenith Save)
 static constexpr uint32_t uZENITH_SAVE_MAGIC = 0x5A454E53;
 

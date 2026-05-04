@@ -159,7 +159,7 @@ std::string Zenith_ScriptAsset::MakeAssetPath(const char* szTypeName)
 	{
 		strPath += szTypeName;
 	}
-	strPath += ".zscript";
+	strPath += ZENITH_SCRIPT_EXT;
 	return strPath;
 }
 
@@ -239,7 +239,7 @@ void Zenith_ScriptAsset::SyncRegisteredTypesToDisk()
 			continue;
 		}
 		const fs::path& xPath = xEntry.path();
-		if (xPath.extension() != ".zscript")
+		if (xPath.extension() != ZENITH_SCRIPT_EXT)
 		{
 			continue;
 		}

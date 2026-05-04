@@ -6,7 +6,6 @@
 #include <string>
 
 #define ZENITH_MODEL_ASSET_VERSION 2
-#define ZENITH_MODEL_EXT ".zmodel"
 
 // Forward declarations
 class Zenith_MeshAsset;

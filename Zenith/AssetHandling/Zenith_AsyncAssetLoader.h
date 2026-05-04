@@ -63,7 +63,7 @@ using AssetLoaderFn = void*(*)(const std::string& strPath);
  *
  * Usage:
  *   // Request async load using prefixed path
- *   Zenith_AsyncAssetLoader::LoadAsync<Zenith_TextureAsset>("game:Textures/diffuse.ztex", OnTextureLoaded, userData);
+ *   Zenith_AsyncAssetLoader::LoadAsync<Zenith_TextureAsset>("game:Textures/diffuse.ztxtr", OnTextureLoaded, userData);
  *
  *   // In main loop (must be called every frame)
  *   Zenith_AsyncAssetLoader::ProcessCompletedLoads();
@@ -81,7 +81,7 @@ public:
 	// Internal types (public for task function access)
 	struct LoadRequest
 	{
-		std::string m_strPath;  // Prefixed path (e.g., "game:Textures/tex.ztex")
+		std::string m_strPath;  // Prefixed path (e.g., "game:Textures/tex.ztxtr")
 		AssetLoaderFn m_pfnLoader;
 		AssetLoadCompleteFn m_pfnOnComplete;
 		AssetLoadFailFn m_pfnOnFail;
@@ -101,7 +101,7 @@ public:
 
 	/**
 	 * Request async loading of an asset by path
-	 * @param strPath Prefixed path to the asset (e.g., "game:Textures/tex.ztex")
+	 * @param strPath Prefixed path to the asset (e.g., "game:Textures/tex.ztxtr")
 	 * @param pfnOnComplete Callback when load completes (called on main thread)
 	 * @param pxUserData User data passed to callbacks
 	 * @param pfnOnFail Callback on load failure (optional, called on main thread)

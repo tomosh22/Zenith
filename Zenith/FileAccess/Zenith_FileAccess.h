@@ -2,11 +2,17 @@
 
 #define ZENITH_TEXTURE_EXT		".ztxtr"
 #define ZENITH_MESH_EXT			".zmesh"
+#define ZENITH_MESH_ASSET_EXT	".zasset"
 #define ZENITH_MATERIAL_EXT		".zmtrl"
 #define ZENITH_PREFAB_EXT		".zprfb"
 #define ZENITH_SCENE_EXT		".zscen"
 #define ZENITH_PARTICLES_EXT	".zptcl"
 #define ZENITH_SCRIPT_EXT		".zscript"
+#define ZENITH_SKELETON_EXT		".zskel"
+#define ZENITH_MODEL_EXT		".zmodel"
+#define ZENITH_ANIMATION_EXT	".zanim"
+#define ZENITH_SAVE_EXT			".zsave"
+#define ZENITH_META_EXT			".zmeta"
 
 #define ZENITH_MAX_PATH_LENGTH 1024
 

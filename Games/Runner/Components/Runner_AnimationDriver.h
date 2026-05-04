@@ -83,8 +83,8 @@ public:
 
 		// Load clips and set up state machine:
 		Flux_AnimationController& xController = xAnimator.GetController();
-		xController.AddClipFromFile("Meshes/Character/Idle.zanim");
-		xController.AddClipFromFile("Meshes/Character/Walk.zanim");
+		xController.AddClipFromFile("Meshes/Character/Idle" ZENITH_ANIMATION_EXT);
+		xController.AddClipFromFile("Meshes/Character/Walk" ZENITH_ANIMATION_EXT);
 
 		Flux_AnimationStateMachine* pxSM = xController.CreateStateMachine("RunnerAnimations");
 		pxSM->GetParameters().AddFloat("Speed", 0.0f);

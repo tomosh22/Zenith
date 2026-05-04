@@ -18,7 +18,7 @@ class Zenith_DataStream;
  * - Reference count decremented on AssetHandle destruction
  * - Deleted by registry when ref count reaches 0
  *
- * For disk assets: path is the file path (e.g., "Assets/Textures/diffuse.ztex")
+ * For disk assets: path is the file path (e.g., "Assets/Textures/diffuse.ztxtr")
  * For procedural assets: path is generated (e.g., "procedural://texture_0")
  */
 class Zenith_Asset

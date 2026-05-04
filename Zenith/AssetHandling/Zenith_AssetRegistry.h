@@ -60,7 +60,7 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath);
  * - Relative paths for cross-machine portability
  *
  * Path Prefixes:
- *   game:   - Resolves to GAME_ASSETS_DIR (e.g., "game:Textures/diffuse.ztex")
+ *   game:   - Resolves to GAME_ASSETS_DIR (e.g., "game:Textures/diffuse.ztxtr")
  *   engine: - Resolves to ENGINE_ASSETS_DIR (e.g., "engine:Materials/default.zmat")
  *
  * Usage:
@@ -70,7 +70,7 @@ Zenith_Asset* LoadSerializableAsset(const std::string& strPath);
  *   Zenith_AssetRegistry::Initialize();
  *
  *   // Load asset from file (using prefixed path)
- *   Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("game:Textures/diffuse.ztex");
+ *   Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("game:Textures/diffuse.ztxtr");
  *
  *   // Create procedural asset
  *   Zenith_MeshAsset* pMesh = Zenith_AssetRegistry::Create<Zenith_MeshAsset>();
@@ -104,7 +104,7 @@ public:
 
 	/**
 	 * Resolve a prefixed path to an absolute path
-	 * @param strPrefixedPath Path with prefix (e.g., "game:Textures/tex.ztex")
+	 * @param strPrefixedPath Path with prefix (e.g., "game:Textures/tex.ztxtr")
 	 * @return Absolute path on disk
 	 */
 	static std::string ResolvePath(const std::string& strPrefixedPath);
@@ -112,7 +112,7 @@ public:
 	/**
 	 * Convert an absolute path to a prefixed relative path
 	 * @param strAbsolutePath Absolute path on disk
-	 * @return Prefixed relative path (e.g., "game:Textures/tex.ztex"), or empty if not in known directories
+	 * @return Prefixed relative path (e.g., "game:Textures/tex.ztxtr"), or empty if not in known directories
 	 */
 	static std::string MakeRelativePath(const std::string& strAbsolutePath);
 

@@ -72,7 +72,7 @@ static TextureHandle ExportColoredTexture(const std::string& strPath, uint8_t uR
 	// Create texture data
 	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
 
-	// Write to .ztex file format (same as Zenith_Tools_TextureExport::ExportFromData)
+	// Write to .ztxtr file format (same as Zenith_Tools_TextureExport::ExportFromData)
 	Zenith_DataStream xStream;
 	xStream << (int32_t)1;  // width
 	xStream << (int32_t)1;  // height
@@ -359,7 +359,7 @@ static void InitializeSurvivalResources()
 	g_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
 	g_pxCubeGeometry = g_xCubeAsset.GetDirect()->GetGeometry();
 #ifdef ZENITH_TOOLS
-	std::string strCubePath = strMeshDir + "/Cube.zmesh";
+	std::string strCubePath = strMeshDir + "/Cube" ZENITH_MESH_EXT;
 	g_pxCubeGeometry->Export(strCubePath.c_str());
 	g_pxCubeGeometry->m_strSourcePath = strCubePath;
 #endif
@@ -374,7 +374,7 @@ static void InitializeSurvivalResources()
 		g_pxSphereGeometry = pxSphereAsset->GetGeometry();
 	}
 #ifdef ZENITH_TOOLS
-	std::string strSpherePath = strMeshDir + "/Sphere.zmesh";
+	std::string strSpherePath = strMeshDir + "/Sphere" ZENITH_MESH_EXT;
 	g_pxSphereGeometry->Export(strSpherePath.c_str());
 	g_pxSphereGeometry->m_strSourcePath = strSpherePath;
 #endif
@@ -389,7 +389,7 @@ static void InitializeSurvivalResources()
 		g_pxCapsuleGeometry = pxCapsuleAsset->GetGeometry();
 	}
 #ifdef ZENITH_TOOLS
-	std::string strCapsulePath = strMeshDir + "/Capsule.zmesh";
+	std::string strCapsulePath = strMeshDir + "/Capsule" ZENITH_MESH_EXT;
 	g_pxCapsuleGeometry->Export(strCapsulePath.c_str());
 	g_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
 #endif
@@ -399,13 +399,13 @@ static void InitializeSurvivalResources()
 	std::filesystem::create_directories(strTexturesDir);
 
 	// Export procedural textures to disk and get TextureHandles
-	TextureHandle xPlayerTextureHandle = ExportColoredTexture(strTexturesDir + "/Player.ztex", 51, 102, 230);      // Blue player
-	TextureHandle xGroundTextureHandle = ExportColoredTexture(strTexturesDir + "/Ground.ztex", 90, 70, 50);        // Brown ground
-	TextureHandle xTreeTextureHandle = ExportColoredTexture(strTexturesDir + "/Tree.ztex", 40, 120, 40);           // Green tree
-	TextureHandle xRockTextureHandle = ExportColoredTexture(strTexturesDir + "/Rock.ztex", 120, 120, 130);         // Gray rock
-	TextureHandle xBerryTextureHandle = ExportColoredTexture(strTexturesDir + "/Berry.ztex", 200, 50, 80);         // Red berries
-	TextureHandle xWoodTextureHandle = ExportColoredTexture(strTexturesDir + "/Wood.ztex", 139, 90, 43);           // Brown wood
-	TextureHandle xStoneTextureHandle = ExportColoredTexture(strTexturesDir + "/Stone.ztex", 100, 100, 110);       // Gray stone item
+	TextureHandle xPlayerTextureHandle = ExportColoredTexture(strTexturesDir + "/Player" ZENITH_TEXTURE_EXT, 51, 102, 230);      // Blue player
+	TextureHandle xGroundTextureHandle = ExportColoredTexture(strTexturesDir + "/Ground" ZENITH_TEXTURE_EXT, 90, 70, 50);        // Brown ground
+	TextureHandle xTreeTextureHandle = ExportColoredTexture(strTexturesDir + "/Tree" ZENITH_TEXTURE_EXT, 40, 120, 40);           // Green tree
+	TextureHandle xRockTextureHandle = ExportColoredTexture(strTexturesDir + "/Rock" ZENITH_TEXTURE_EXT, 120, 120, 130);         // Gray rock
+	TextureHandle xBerryTextureHandle = ExportColoredTexture(strTexturesDir + "/Berry" ZENITH_TEXTURE_EXT, 200, 50, 80);         // Red berries
+	TextureHandle xWoodTextureHandle = ExportColoredTexture(strTexturesDir + "/Wood" ZENITH_TEXTURE_EXT, 139, 90, 43);           // Brown wood
+	TextureHandle xStoneTextureHandle = ExportColoredTexture(strTexturesDir + "/Stone" ZENITH_TEXTURE_EXT, 100, 100, 110);       // Gray stone item
 
 	// Create materials with texture paths (properly serializable)
 

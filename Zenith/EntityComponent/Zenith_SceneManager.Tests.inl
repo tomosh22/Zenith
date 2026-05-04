@@ -10793,7 +10793,7 @@ void Zenith_SceneTests::TestCircularLoadNoMatch(){
 	ZENITH_ASSERT_EQ(Zenith_SceneLifecycleScheduler::s_axLifecycleLoadStack.GetSize(), 0, "Lifecycle load stack should be empty at test start");
 
 	// A path not in the pending load list should not be detected as circular
-	bool bResult = Zenith_SceneLifecycleScheduler::IsCircularLoadDependency("NonExistent/TestScene.zscen");
+	bool bResult = Zenith_SceneLifecycleScheduler::IsCircularLoadDependency("NonExistent/TestScene" ZENITH_SCENE_EXT);
 	ZENITH_ASSERT_FALSE(bResult, "CheckCircularLoadDependency should return false when path is not in pending loads");
 
 }
@@ -10802,7 +10802,7 @@ ZENITH_TEST(Scene, CircularLoadWithMatch) { Zenith_SceneTests::TestCircularLoadW
 
 void Zenith_SceneTests::TestCircularLoadWithMatch(){
 
-	const std::string strTestPath = "TestCircular/MyScene.zscen";
+	const std::string strTestPath = "TestCircular/MyScene" ZENITH_SCENE_EXT;
 
 	// Ensure clean state
 	ZENITH_ASSERT_EQ(Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths.GetSize(), 0, "Currently loading paths should be empty at test start");
@@ -10815,7 +10815,7 @@ void Zenith_SceneTests::TestCircularLoadWithMatch(){
 	ZENITH_ASSERT_TRUE(bResult, "CheckCircularLoadDependency should return true when path matches a pending load");
 
 	// A different path should not be detected as circular
-	bool bDifferent = Zenith_SceneLifecycleScheduler::IsCircularLoadDependency("Other/Scene.zscen");
+	bool bDifferent = Zenith_SceneLifecycleScheduler::IsCircularLoadDependency("Other/Scene" ZENITH_SCENE_EXT);
 	ZENITH_ASSERT_FALSE(bDifferent, "CheckCircularLoadDependency should return false for a different path");
 
 	// Cleanup: remove the test path

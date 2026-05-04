@@ -57,7 +57,7 @@ bool Zenith_AnimationAsset::LoadFromFile(const std::string& strPath)
 	if (uDotPos != std::string::npos)
 	{
 		std::string strExt = strPath.substr(uDotPos);
-		bIsZanim = (strExt == ZENITH_ANIMATION_EXT || strExt == ".zanim");
+		bIsZanim = (strExt == ZENITH_ANIMATION_EXT);
 	}
 
 	if (bIsZanim)

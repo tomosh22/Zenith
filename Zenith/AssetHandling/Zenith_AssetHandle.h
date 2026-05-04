@@ -24,7 +24,7 @@ class Zenith_DataStream;
  * - Uses prefixed paths for cross-machine portability
  *
  * Path Prefixes:
- *   game:   - Game assets (e.g., "game:Textures/diffuse.ztex")
+ *   game:   - Game assets (e.g., "game:Textures/diffuse.ztxtr")
  *   engine: - Engine assets (e.g., "engine:Materials/default.zmat")
  *
  * Usage:

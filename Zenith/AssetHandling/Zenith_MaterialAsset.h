@@ -24,7 +24,7 @@ class Zenith_TextureAsset;
  *   // Create new material
  *   auto* pMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
  *   pMat->SetName("MyMaterial");
- *   pMat->SetDiffuseTexture(TextureHandle("Assets/Textures/diffuse.ztex"));
+ *   pMat->SetDiffuseTexture(TextureHandle("Assets/Textures/diffuse.ztxtr"));
  *   pMat->SaveToFile("Assets/Materials/MyMaterial.zmat");
  *
  *   // Get texture for rendering

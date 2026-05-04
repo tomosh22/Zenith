@@ -26,7 +26,7 @@ namespace Exploration_AsyncLoader
 	// ========================================================================
 	struct LoadRequest
 	{
-		std::string m_strPath;  // Prefixed path (e.g., "game:Textures/tex.ztex")
+		std::string m_strPath;  // Prefixed path (e.g., "game:Textures/tex.ztxtr")
 		int32_t m_iPriority = 0;  // Higher = more important
 		bool m_bCompleted = false;
 		bool m_bFailed = false;
@@ -89,7 +89,7 @@ namespace Exploration_AsyncLoader
 
 	/**
 	 * Queue an asset for async loading
-	 * @param strPath Prefixed path to load (e.g., "game:Textures/diffuse.ztex")
+	 * @param strPath Prefixed path to load (e.g., "game:Textures/diffuse.ztxtr")
 	 * @param iPriority Load priority (higher = sooner)
 	 */
 	inline void QueueAsset(const std::string& strPath, int32_t iPriority = 0)

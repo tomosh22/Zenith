@@ -1021,68 +1021,68 @@ void GenerateStickFigureAssets()
 	std::filesystem::create_directories(strOutputDir);
 
 	// Export skeleton
-	std::string strSkelPath = strOutputDir + "StickFigure.zskel";
+	std::string strSkelPath = strOutputDir + "StickFigure" ZENITH_SKELETON_EXT;
 	pxSkel->Export(strSkelPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported skeleton to: %s", strSkelPath.c_str());
 
 	// Set skeleton path on mesh before export
-	pxMesh->SetSkeletonPath("Meshes/StickFigure/StickFigure.zskel");
+	pxMesh->SetSkeletonPath("Meshes/StickFigure/StickFigure" ZENITH_SKELETON_EXT);
 
 	// Export mesh in Zenith_MeshAsset format
-	std::string strMeshAssetPath = strOutputDir + "StickFigure.zasset";
+	std::string strMeshAssetPath = strOutputDir + "StickFigure" ZENITH_MESH_ASSET_EXT;
 	pxMesh->Export(strMeshAssetPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported mesh asset to: %s", strMeshAssetPath.c_str());
 
 #ifdef ZENITH_TOOLS
 	// Export mesh in Flux_MeshGeometry format
 	Flux_MeshGeometry* pxFluxGeometry = CreateFluxMeshGeometry(pxMesh, pxSkel);
-	std::string strMeshPath = strOutputDir + "StickFigure.zmesh";
+	std::string strMeshPath = strOutputDir + "StickFigure" ZENITH_MESH_EXT;
 	pxFluxGeometry->Export(strMeshPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported mesh geometry to: %s", strMeshPath.c_str());
 	delete pxFluxGeometry;
 
 	// Export static mesh
 	Flux_MeshGeometry* pxStaticGeometry = CreateStaticFluxMeshGeometry(pxMesh);
-	std::string strStaticMeshPath = strOutputDir + "StickFigure_Static.zmesh";
+	std::string strStaticMeshPath = strOutputDir + "StickFigure_Static" ZENITH_MESH_EXT;
 	pxStaticGeometry->Export(strStaticMeshPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported static mesh geometry to: %s", strStaticMeshPath.c_str());
 	delete pxStaticGeometry;
 #endif
 
 	// Export animations
-	std::string strIdlePath = strOutputDir + "StickFigure_Idle.zanim";
+	std::string strIdlePath = strOutputDir + "StickFigure_Idle" ZENITH_ANIMATION_EXT;
 	pxIdleClip->Export(strIdlePath);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported idle animation to: %s", strIdlePath.c_str());
 
-	std::string strWalkPath = strOutputDir + "StickFigure_Walk.zanim";
+	std::string strWalkPath = strOutputDir + "StickFigure_Walk" ZENITH_ANIMATION_EXT;
 	pxWalkClip->Export(strWalkPath);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported walk animation to: %s", strWalkPath.c_str());
 
-	std::string strRunPath = strOutputDir + "StickFigure_Run.zanim";
+	std::string strRunPath = strOutputDir + "StickFigure_Run" ZENITH_ANIMATION_EXT;
 	pxRunClip->Export(strRunPath);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported run animation to: %s", strRunPath.c_str());
 
-	std::string strAttack1Path = strOutputDir + "StickFigure_Attack1.zanim";
+	std::string strAttack1Path = strOutputDir + "StickFigure_Attack1" ZENITH_ANIMATION_EXT;
 	pxAttack1Clip->Export(strAttack1Path);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported attack1 animation to: %s", strAttack1Path.c_str());
 
-	std::string strAttack2Path = strOutputDir + "StickFigure_Attack2.zanim";
+	std::string strAttack2Path = strOutputDir + "StickFigure_Attack2" ZENITH_ANIMATION_EXT;
 	pxAttack2Clip->Export(strAttack2Path);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported attack2 animation to: %s", strAttack2Path.c_str());
 
-	std::string strAttack3Path = strOutputDir + "StickFigure_Attack3.zanim";
+	std::string strAttack3Path = strOutputDir + "StickFigure_Attack3" ZENITH_ANIMATION_EXT;
 	pxAttack3Clip->Export(strAttack3Path);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported attack3 animation to: %s", strAttack3Path.c_str());
 
-	std::string strDodgePath = strOutputDir + "StickFigure_Dodge.zanim";
+	std::string strDodgePath = strOutputDir + "StickFigure_Dodge" ZENITH_ANIMATION_EXT;
 	pxDodgeClip->Export(strDodgePath);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported dodge animation to: %s", strDodgePath.c_str());
 
-	std::string strHitPath = strOutputDir + "StickFigure_Hit.zanim";
+	std::string strHitPath = strOutputDir + "StickFigure_Hit" ZENITH_ANIMATION_EXT;
 	pxHitClip->Export(strHitPath);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported hit animation to: %s", strHitPath.c_str());
 
-	std::string strDeathPath = strOutputDir + "StickFigure_Death.zanim";
+	std::string strDeathPath = strOutputDir + "StickFigure_Death" ZENITH_ANIMATION_EXT;
 	pxDeathClip->Export(strDeathPath);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported death animation to: %s", strDeathPath.c_str());
 
@@ -1129,28 +1129,28 @@ void GenerateProceduralTreeAssets()
 	std::filesystem::create_directories(strOutputDir);
 
 	// Export skeleton
-	std::string strSkelPath = strOutputDir + "Tree.zskel";
+	std::string strSkelPath = strOutputDir + "Tree" ZENITH_SKELETON_EXT;
 	pxSkel->Export(strSkelPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported skeleton to: %s", strSkelPath.c_str());
 
 	// Set skeleton path on mesh before export
-	pxMesh->SetSkeletonPath("Meshes/ProceduralTree/Tree.zskel");
+	pxMesh->SetSkeletonPath("Meshes/ProceduralTree/Tree" ZENITH_SKELETON_EXT);
 
 	// Export mesh in Zenith_MeshAsset format
-	std::string strMeshAssetPath = strOutputDir + "Tree.zasset";
+	std::string strMeshAssetPath = strOutputDir + "Tree" ZENITH_MESH_ASSET_EXT;
 	pxMesh->Export(strMeshAssetPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported mesh asset to: %s", strMeshAssetPath.c_str());
 
 #ifdef ZENITH_TOOLS
 	// Export mesh in Flux_MeshGeometry format
 	Flux_MeshGeometry* pxFluxGeometry = CreateFluxMeshGeometry(pxMesh, pxSkel);
-	std::string strMeshPath = strOutputDir + "Tree.zmesh";
+	std::string strMeshPath = strOutputDir + "Tree" ZENITH_MESH_EXT;
 	pxFluxGeometry->Export(strMeshPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported mesh geometry to: %s", strMeshPath.c_str());
 
 	// Export static mesh
 	Flux_MeshGeometry* pxStaticGeometry = CreateStaticFluxMeshGeometry(pxMesh);
-	std::string strStaticMeshPath = strOutputDir + "Tree_Static.zmesh";
+	std::string strStaticMeshPath = strOutputDir + "Tree_Static" ZENITH_MESH_EXT;
 	pxStaticGeometry->Export(strStaticMeshPath.c_str());
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported static mesh geometry to: %s", strStaticMeshPath.c_str());
 
@@ -1173,7 +1173,7 @@ void GenerateProceduralTreeAssets()
 #endif
 
 	// Export animation
-	std::string strSwayPath = strOutputDir + "Tree_Sway.zanim";
+	std::string strSwayPath = strOutputDir + "Tree_Sway" ZENITH_ANIMATION_EXT;
 	pxSwayClip->Export(strSwayPath);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported sway animation to: %s", strSwayPath.c_str());
 

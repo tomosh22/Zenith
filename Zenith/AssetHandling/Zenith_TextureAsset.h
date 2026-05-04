@@ -11,7 +11,7 @@
  *
  * Usage:
  *   // Load from file
- *   Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("Assets/tex.ztex");
+ *   Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("Assets/tex.ztxtr");
  *
  *   // Create procedural
  *   Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();

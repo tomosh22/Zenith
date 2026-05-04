@@ -264,7 +264,7 @@ void Zenith_EditorPanelContentBrowser::RenderFileContextMenu(const ContentBrowse
 	{
 		if (std::filesystem::remove(xEntry.m_strFullPath))
 		{
-			std::string strMetaPath = xEntry.m_strFullPath + ".zmeta";
+			std::string strMetaPath = xEntry.m_strFullPath + ZENITH_META_EXT;
 			std::filesystem::remove(strMetaPath);
 			xState.m_bDirectoryNeedsRefresh = true;
 		}

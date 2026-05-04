@@ -87,9 +87,9 @@ void Combat::TryInitializeStickFigureModel()
 	if (!g_strStickFigureModelPath.empty())
 		return;
 
-	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmesh";
-	std::string strStickFigureMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zasset";
-	std::string strStickFigureSkeletonPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zskel";
+	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MESH_EXT;
+	std::string strStickFigureMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MESH_ASSET_EXT;
+	std::string strStickFigureSkeletonPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_SKELETON_EXT;
 
 	if (std::filesystem::exists(strStickFigureMeshAssetPath) && std::filesystem::exists(strStickFigureSkeletonPath))
 	{
@@ -113,7 +113,7 @@ void Combat::TryInitializeStickFigureModel()
 		pxModel->AddMeshByPath(strStickFigureMeshAssetPath, xEmptyMaterials);
 
 		// Export model asset
-		g_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmodel";
+		g_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MODEL_EXT;
 		pxModel->Export(g_strStickFigureModelPath.c_str());
 		g_xStickFigureModelAsset.Set(pxModel);
 		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Created model asset at %s", g_strStickFigureModelPath.c_str());
@@ -199,7 +199,7 @@ static TextureHandle ExportColoredTexture(const std::string& strPath, uint8_t uR
 	// Create texture data
 	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
 
-	// Write to .ztex file format (same as Zenith_Tools_TextureExport::ExportFromData)
+	// Write to .ztxtr file format (same as Zenith_Tools_TextureExport::ExportFromData)
 	Zenith_DataStream xStream;
 	xStream << (int32_t)1;  // width
 	xStream << (int32_t)1;  // height
@@ -465,7 +465,7 @@ static void InitializeCombatResources()
 		g_pxCapsuleGeometry = pxCapsuleAsset->GetGeometry();
 	}
 #ifdef ZENITH_TOOLS
-	std::string strCapsulePath = strMeshDir + "/Capsule.zmesh";
+	std::string strCapsulePath = strMeshDir + "/Capsule" ZENITH_MESH_EXT;
 	g_pxCapsuleGeometry->Export(strCapsulePath.c_str());
 	g_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
 #endif
@@ -474,7 +474,7 @@ static void InitializeCombatResources()
 	g_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
 	g_pxCubeGeometry = g_xCubeAsset.GetDirect()->GetGeometry();
 #ifdef ZENITH_TOOLS
-	std::string strCubePath = strMeshDir + "/Cube.zmesh";
+	std::string strCubePath = strMeshDir + "/Cube" ZENITH_MESH_EXT;
 	g_pxCubeGeometry->Export(strCubePath.c_str());
 	g_pxCubeGeometry->m_strSourcePath = strCubePath;
 #endif
@@ -489,7 +489,7 @@ static void InitializeCombatResources()
 		g_pxConeGeometry = pxConeAsset->GetGeometry();
 	}
 #ifdef ZENITH_TOOLS
-	std::string strConePath = strMeshDir + "/Cone.zmesh";
+	std::string strConePath = strMeshDir + "/Cone" ZENITH_MESH_EXT;
 	g_pxConeGeometry->Export(strConePath.c_str());
 	g_pxConeGeometry->m_strSourcePath = strConePath;
 #endif
@@ -503,11 +503,11 @@ static void InitializeCombatResources()
 
 	// Export procedural textures to disk and get TextureHandles
 	// SSR VERIFICATION: Using bright distinctive colors for walls and player
-	TextureHandle xPlayerTextureHandle = ExportColoredTexture(strTexturesDir + "/Player.ztex", 0, 255, 255);      // CYAN player for SSR detection
-	TextureHandle xEnemyTextureHandle = ExportColoredTexture(strTexturesDir + "/Enemy.ztex", 204, 51, 51);        // Red enemies
-	TextureHandle xArenaTextureHandle = ExportColoredTexture(strTexturesDir + "/Arena.ztex", 77, 77, 89);         // Gray arena floor
-	TextureHandle xWallTextureHandle = ExportColoredTexture(strTexturesDir + "/Wall.ztex", 255, 0, 255);          // MAGENTA walls for SSR detection
-	TextureHandle xCandleTextureHandle = ExportColoredTexture(strTexturesDir + "/Candle.ztex", 240, 220, 180);    // Cream candle color
+	TextureHandle xPlayerTextureHandle = ExportColoredTexture(strTexturesDir + "/Player" ZENITH_TEXTURE_EXT, 0, 255, 255);      // CYAN player for SSR detection
+	TextureHandle xEnemyTextureHandle = ExportColoredTexture(strTexturesDir + "/Enemy" ZENITH_TEXTURE_EXT, 204, 51, 51);        // Red enemies
+	TextureHandle xArenaTextureHandle = ExportColoredTexture(strTexturesDir + "/Arena" ZENITH_TEXTURE_EXT, 77, 77, 89);         // Gray arena floor
+	TextureHandle xWallTextureHandle = ExportColoredTexture(strTexturesDir + "/Wall" ZENITH_TEXTURE_EXT, 255, 0, 255);          // MAGENTA walls for SSR detection
+	TextureHandle xCandleTextureHandle = ExportColoredTexture(strTexturesDir + "/Candle" ZENITH_TEXTURE_EXT, 240, 220, 180);    // Cream candle color
 
 	// Create materials with texture paths (properly serializable)
 

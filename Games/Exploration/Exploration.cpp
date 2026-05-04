@@ -529,7 +529,7 @@ static void CreateInstancedTrees(Zenith_SceneData* pxSceneData)
 	using namespace Exploration;
 
 	std::string strTreeDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/ProceduralTree/";
-	std::string strMeshAssetPath = strTreeDir + "Tree.zasset";
+	std::string strMeshAssetPath = strTreeDir + "Tree" ZENITH_MESH_ASSET_EXT;
 	std::string strVATPath = strTreeDir + "Tree_Sway.zanmt";
 
 	// Check if tree assets exist

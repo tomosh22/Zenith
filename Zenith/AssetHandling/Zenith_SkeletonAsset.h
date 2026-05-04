@@ -6,7 +6,6 @@
 #include <unordered_map>
 
 #define ZENITH_SKELETON_ASSET_VERSION 2
-#define ZENITH_SKELETON_EXT ".zskel"
 
 /**
  * Zenith_SkeletonAsset - Bone hierarchy and bind pose data

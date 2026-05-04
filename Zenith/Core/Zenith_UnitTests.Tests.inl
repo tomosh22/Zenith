@@ -3648,7 +3648,7 @@ void Zenith_UnitTests::TestMeshAssetLoading(){
 
 	// Test loading a mesh asset
 	{
-		const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0.zmesh";
+		const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0" ZENITH_MESH_EXT;
 		Zenith_MeshAsset* pxMeshAsset = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshPath);
 
 		if (pxMeshAsset == nullptr)
@@ -3683,8 +3683,8 @@ void Zenith_UnitTests::TestMeshAssetLoading(){
 ZENITH_TEST(Core, BindPoseVertexPositions) { Zenith_UnitTests::TestBindPoseVertexPositions(); }
 void Zenith_UnitTests::TestBindPoseVertexPositions(){
 
-	const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0.zmesh";
-	const std::string strSkelPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain.zskel";
+	const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0" ZENITH_MESH_EXT;
+	const std::string strSkelPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain" ZENITH_SKELETON_EXT;
 
 	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshPath);
 	Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(strSkelPath);
@@ -3753,9 +3753,9 @@ void Zenith_UnitTests::TestBindPoseVertexPositions(){
 ZENITH_TEST(Core, AnimatedVertexPositions) { Zenith_UnitTests::TestAnimatedVertexPositions(); }
 void Zenith_UnitTests::TestAnimatedVertexPositions(){
 
-	const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0.zmesh";
-	const std::string strSkelPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain.zskel";
-	const std::string strAnimPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_ForearmRotate.zanim";
+	const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0" ZENITH_MESH_EXT;
+	const std::string strSkelPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain" ZENITH_SKELETON_EXT;
+	const std::string strAnimPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_ForearmRotate" ZENITH_ANIMATION_EXT;
 
 	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>(strMeshPath);
 	Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(strSkelPath);
@@ -4885,11 +4885,11 @@ void Zenith_UnitTests::TestStickFigureAssetExport(){
 	const uint32_t uExpectedIndexCount = STICK_BONE_COUNT * 36;  // 36 indices per bone = 576
 
 	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
-	std::string strSkelPath = strOutputDir + "StickFigure.zskel";
-	std::string strMeshAssetPath = strOutputDir + "StickFigure.zasset";
-	std::string strIdlePath = strOutputDir + "StickFigure_Idle.zanim";
-	std::string strWalkPath = strOutputDir + "StickFigure_Walk.zanim";
-	std::string strRunPath = strOutputDir + "StickFigure_Run.zanim";
+	std::string strSkelPath = strOutputDir + "StickFigure" ZENITH_SKELETON_EXT;
+	std::string strMeshAssetPath = strOutputDir + "StickFigure" ZENITH_MESH_ASSET_EXT;
+	std::string strIdlePath = strOutputDir + "StickFigure_Idle" ZENITH_ANIMATION_EXT;
+	std::string strWalkPath = strOutputDir + "StickFigure_Walk" ZENITH_ANIMATION_EXT;
+	std::string strRunPath = strOutputDir + "StickFigure_Run" ZENITH_ANIMATION_EXT;
 
 	// Verify files exist
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(strSkelPath), "Skeleton file should exist");
@@ -4913,7 +4913,7 @@ void Zenith_UnitTests::TestStickFigureAssetExport(){
 #ifdef ZENITH_TOOLS
 	// Reload and verify Flux_MeshGeometry format
 	Flux_MeshGeometry xReloadedGeometry;
-	Flux_MeshGeometry::LoadFromFile((strOutputDir + "StickFigure.zmesh").c_str(), xReloadedGeometry, 0, false);
+	Flux_MeshGeometry::LoadFromFile((strOutputDir + "StickFigure" ZENITH_MESH_EXT).c_str(), xReloadedGeometry, 0, false);
 	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumVerts(), uExpectedVertCount, "Reloaded geometry vertex count mismatch");
 	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumIndices(), uExpectedIndexCount, "Reloaded geometry index count mismatch");
 	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumBones(), uExpectedBoneCount, "Reloaded geometry bone count mismatch");
@@ -7298,7 +7298,7 @@ ZENITH_TEST(Asset, AsyncLoadState) { Zenith_UnitTests::TestAsyncLoadState(); }
 void Zenith_UnitTests::TestAsyncLoadState(){
 
 	// Test that default state is UNLOADED for unknown paths
-	std::string strUnknownPath = "game:NonExistent/Unknown.ztex";
+	std::string strUnknownPath = "game:NonExistent/Unknown" ZENITH_TEXTURE_EXT;
 	AssetLoadState eState = Zenith_AsyncAssetLoader::GetLoadState(strUnknownPath);
 	ZENITH_ASSERT_EQ(eState, AssetLoadState::UNLOADED, "TestAsyncLoadState: Unknown path should be UNLOADED");
 
@@ -7739,9 +7739,9 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport(){
 	const uint32_t uExpectedIndexCount = TREE_BONE_COUNT * 36;  // 36 indices per bone = 324
 
 	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/ProceduralTree/";
-	std::string strSkelPath = strOutputDir + "Tree.zskel";
-	std::string strMeshAssetPath = strOutputDir + "Tree.zasset";
-	std::string strSwayPath = strOutputDir + "Tree_Sway.zanim";
+	std::string strSkelPath = strOutputDir + "Tree" ZENITH_SKELETON_EXT;
+	std::string strMeshAssetPath = strOutputDir + "Tree" ZENITH_MESH_ASSET_EXT;
+	std::string strSwayPath = strOutputDir + "Tree_Sway" ZENITH_ANIMATION_EXT;
 
 	// Verify files exist
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(strSkelPath), "Skeleton file should exist");
@@ -7765,7 +7765,7 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport(){
 #ifdef ZENITH_TOOLS
 	// Reload and verify Flux_MeshGeometry format
 	Flux_MeshGeometry xReloadedGeometry;
-	Flux_MeshGeometry::LoadFromFile((strOutputDir + "Tree.zmesh").c_str(), xReloadedGeometry, 0, false);
+	Flux_MeshGeometry::LoadFromFile((strOutputDir + "Tree" ZENITH_MESH_EXT).c_str(), xReloadedGeometry, 0, false);
 	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumVerts(), uExpectedVertCount, "Reloaded geometry vertex count mismatch");
 	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumIndices(), uExpectedIndexCount, "Reloaded geometry index count mismatch");
 	ZENITH_ASSERT_EQ(xReloadedGeometry.GetNumBones(), uExpectedBoneCount, "Reloaded geometry bone count mismatch");
