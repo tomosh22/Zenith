@@ -152,6 +152,12 @@ enum class Zenith_EditorActionType
 
 	// Model
 	ADD_MESH_ENTRY,
+	LOAD_MODEL,
+	SET_MODEL_MATERIAL,
+
+	// Terrain
+	SET_TERRAIN_MATERIAL,
+	SET_TERRAIN_SPLATMAP_PATH,
 
 	// Prefab variant authoring (Phase 3 of the readability plan).
 	// CREATE_PREFAB_FROM_SELECTED captures the currently-selected entity into a
@@ -382,6 +388,27 @@ public:
 	// Model Step Helpers
 	//--------------------------------------------------------------------------
 	static void AddStep_AddMeshEntry(Flux_MeshGeometry* pxGeometry, Zenith_MaterialAsset* pxMaterial);
+
+	// Load a .zmodel into the selected entity's ModelComponent. Survives
+	// SaveScene/LoadScene because serialization writes the model GUID/path.
+	// szPath must point to static storage — same lifetime contract as every
+	// other const char* automation arg.
+	static void AddStep_LoadModel(const char* szPath);
+
+	// Override the material at slot iIndex on the selected entity's loaded
+	// ModelInstance. Apply AFTER AddStep_LoadModel so the slot exists.
+	static void AddStep_SetModelMaterial(int iIndex, Zenith_MaterialAsset* pxMaterial);
+
+	//--------------------------------------------------------------------------
+	// Terrain Step Helpers
+	//--------------------------------------------------------------------------
+	// Set one of the four terrain material slots on the selected entity's
+	// Zenith_TerrainComponent. Slot must be in [0, 4).
+	static void AddStep_SetTerrainMaterial(int iSlot, Zenith_MaterialAsset* pxMaterial);
+
+	// Set the splatmap texture path on the selected entity's Zenith_TerrainComponent.
+	// szPath must point to static storage.
+	static void AddStep_SetTerrainSplatmapPath(const char* szPath);
 
 	//--------------------------------------------------------------------------
 	// Prefab Variant Step Helpers

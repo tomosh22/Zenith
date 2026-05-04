@@ -12,6 +12,8 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "Flux/Flux_ModelInstance.h"
 #include "UI/Zenith_UI.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -245,6 +247,14 @@ namespace
 		xAction.m_pArg2 = pArg2;
 		xActions.PushBack(xAction);
 	}
+	inline void Push(ActionList& xActions, ActionType eType, int i, void* pArg)
+	{
+		Zenith_EditorAction xAction = {};
+		xAction.m_eType = eType;
+		xAction.m_aiArgs[0] = i;
+		xAction.m_pArg = pArg;
+		xActions.PushBack(xAction);
+	}
 }
 
 // -- Scene --
@@ -397,6 +407,13 @@ void Zenith_EditorAutomation::AddStep_AddColliderShape(int iVolumeType, int iBod
 // -- Model --
 
 void Zenith_EditorAutomation::AddStep_AddMeshEntry(Flux_MeshGeometry* pxGeometry, Zenith_MaterialAsset* pxMaterial) { Push(s_axActions, ActionType::ADD_MESH_ENTRY, pxGeometry, pxMaterial); }
+void Zenith_EditorAutomation::AddStep_LoadModel(const char* szPath)                                                { Push(s_axActions, ActionType::LOAD_MODEL, szPath); }
+void Zenith_EditorAutomation::AddStep_SetModelMaterial(int iIndex, Zenith_MaterialAsset* pxMaterial)               { Push(s_axActions, ActionType::SET_MODEL_MATERIAL, iIndex, pxMaterial); }
+
+// -- Terrain --
+
+void Zenith_EditorAutomation::AddStep_SetTerrainMaterial(int iSlot, Zenith_MaterialAsset* pxMaterial) { Push(s_axActions, ActionType::SET_TERRAIN_MATERIAL, iSlot, pxMaterial); }
+void Zenith_EditorAutomation::AddStep_SetTerrainSplatmapPath(const char* szPath)                      { Push(s_axActions, ActionType::SET_TERRAIN_SPLATMAP_PATH, szPath); }
 
 // -- Prefab Variant Authoring --
 
@@ -1320,6 +1337,61 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Assert(pxGeometry, "Null geometry for ADD_MESH_ENTRY");
 		Zenith_Assert(pxMaterial, "Null material for ADD_MESH_ENTRY");
 		pxEntity->GetComponent<Zenith_ModelComponent>().AddMeshEntry(*pxGeometry, *pxMaterial);
+		break;
+	}
+
+	case Zenith_EditorActionType::LOAD_MODEL:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for LOAD_MODEL");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_ModelComponent>(), "Selected entity has no ModelComponent");
+		Zenith_Assert(xAction.m_szArg1, "Null path for LOAD_MODEL");
+		pxEntity->GetComponent<Zenith_ModelComponent>().LoadModel(xAction.m_szArg1);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_MODEL_MATERIAL:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_MODEL_MATERIAL");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_ModelComponent>(), "Selected entity has no ModelComponent");
+		Zenith_ModelComponent& xModel = pxEntity->GetComponent<Zenith_ModelComponent>();
+		Zenith_Assert(xModel.HasModel(), "Selected entity has no model loaded for SET_MODEL_MATERIAL (call AddStep_LoadModel first)");
+		const int iIndex = xAction.m_aiArgs[0];
+		Zenith_MaterialAsset* pxMaterial = static_cast<Zenith_MaterialAsset*>(xAction.m_pArg);
+		Zenith_Assert(pxMaterial, "Null material for SET_MODEL_MATERIAL");
+		Flux_ModelInstance* pxInstance = xModel.GetModelInstance();
+		Zenith_Assert(pxInstance, "Null model instance for SET_MODEL_MATERIAL");
+		Zenith_Assert(iIndex >= 0 && static_cast<uint32_t>(iIndex) < pxInstance->GetNumMaterials(),
+			"SET_MODEL_MATERIAL slot %d out of range (model has %u materials)", iIndex, pxInstance->GetNumMaterials());
+		pxInstance->SetMaterial(static_cast<uint32_t>(iIndex), pxMaterial);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// Terrain operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::SET_TERRAIN_MATERIAL:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_TERRAIN_MATERIAL");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_TerrainComponent>(), "Selected entity has no TerrainComponent");
+		const int iSlot = xAction.m_aiArgs[0];
+		Zenith_MaterialAsset* pxMaterial = static_cast<Zenith_MaterialAsset*>(xAction.m_pArg);
+		Zenith_Assert(iSlot >= 0 && iSlot < static_cast<int>(Zenith_TerrainComponent::TERRAIN_MATERIAL_COUNT),
+			"SET_TERRAIN_MATERIAL slot %d out of range [0, %u)", iSlot, Zenith_TerrainComponent::TERRAIN_MATERIAL_COUNT);
+		Zenith_Assert(pxMaterial, "Null material for SET_TERRAIN_MATERIAL");
+		pxEntity->GetComponent<Zenith_TerrainComponent>().GetMaterialHandle(static_cast<u_int>(iSlot)).Set(pxMaterial);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_TERRAIN_SPLATMAP_PATH:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_TERRAIN_SPLATMAP_PATH");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_TerrainComponent>(), "Selected entity has no TerrainComponent");
+		Zenith_Assert(xAction.m_szArg1, "Null path for SET_TERRAIN_SPLATMAP_PATH");
+		pxEntity->GetComponent<Zenith_TerrainComponent>().GetSplatmapHandle().SetPath(xAction.m_szArg1);
 		break;
 	}
 

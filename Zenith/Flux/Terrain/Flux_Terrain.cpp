@@ -166,7 +166,7 @@ void Flux_Terrain::BuildPipelines()
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
 	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);           // Position (12 bytes)
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_HALF2);             // UV (4 bytes)
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);             // UV (8 bytes — FLOAT2 not HALF2: HALF mantissa is too small for heightmap-pixel-scale UVs above 2048, which collapses adjacent vertex UVs and shows up as a vertex-spacing-period strip pattern in the diffuse)
 	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_SNORM10_10_10_2);   // Normal (4 bytes)
 	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_SNORM10_10_10_2);   // Tangent + BitangentSign (4 bytes)
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();

@@ -456,6 +456,8 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\Components\RenderTest_FollowCamera.h" />
+    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\RenderTest.cpp" />

@@ -108,8 +108,14 @@ static constexpr uint32_t STREAMING_UPDATE_INTERVAL = 2;
 
 // ========== Vertex Format ==========
 // Terrain vertex stride (Position + UV + Normal + Tangent+Sign)
-// = FLOAT3(12) + HALF2(4) + SNORM10:10:10:2(4) + SNORM10:10:10:2(4) = 24 bytes
-static constexpr uint32_t VERTEX_STRIDE_BYTES = 24;
+// = FLOAT3(12) + FLOAT2(8) + SNORM10:10:10:2(4) + SNORM10:10:10:2(4) = 28 bytes
+//
+// UV is FLOAT2, not HALF2: terrain UVs are stored as heightmap pixel
+// coordinates (up to ~4095), and HALF's 10-bit mantissa loses sub-integer
+// precision above 1024 / 2-unit precision above 2048. With HALF the upper
+// half of any large terrain shows a stretched/compressed strip artefact at
+// vertex spacing in the diffuse channel.
+static constexpr uint32_t VERTEX_STRIDE_BYTES = 28;
 
 // ========== Helper Functions ==========
 

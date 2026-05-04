@@ -55,47 +55,27 @@ static uint32_t PackSNORM10_10_10_2(float fX, float fY, float fZ, float fW)
 	return uResult;
 }
 
-// Convert float32 to float16 (IEEE 754 half-precision)
-static uint16_t FloatToHalf(float fValue)
-{
-	uint32_t uBits;
-	memcpy(&uBits, &fValue, sizeof(uint32_t));
-
-	uint32_t uSign = (uBits >> 16) & 0x8000;
-	int32_t iExponent = static_cast<int32_t>((uBits >> 23) & 0xFF) - 127;
-	uint32_t uMantissa = uBits & 0x7FFFFF;
-
-	// Handle special cases
-	if (iExponent == 128) // Inf/NaN
-		return static_cast<uint16_t>(uSign | 0x7C00 | (uMantissa ? 0x200 : 0));
-	if (iExponent < -24) // Too small, underflow to zero
-		return static_cast<uint16_t>(uSign);
-
-	int32_t iHalfExp = iExponent + 15;
-	if (iHalfExp <= 0)
-	{
-		// Denormalized half
-		uMantissa = (uMantissa | 0x800000) >> (1 - iHalfExp);
-		return static_cast<uint16_t>(uSign | (uMantissa >> 13));
-	}
-	if (iHalfExp >= 31) // Overflow to infinity
-		return static_cast<uint16_t>(uSign | 0x7C00);
-
-	return static_cast<uint16_t>(uSign | (iHalfExp << 10) | (uMantissa >> 13));
-}
-
-// Generate packed terrain vertex data (24 bytes/vertex)
-// Layout: Position(FLOAT3,12) + UV(HALF2,4) + Normal(SNORM10,4) + Tangent+Sign(SNORM10,4)
+// Generate packed terrain vertex data (28 bytes/vertex)
+// Layout: Position(FLOAT3,12) + UV(FLOAT2,8) + Normal(SNORM10,4) + Tangent+Sign(SNORM10,4)
+//
+// UV is FLOAT2 (not HALF2) because terrain UVs are stored as full heightmap
+// pixel coordinates (e.g. [0, 4095]). HALF only has 10 bits of mantissa, so
+// values above 1024 lose sub-integer precision and above 2048 the step is 2 —
+// causing pairs of adjacent vertices on the upper half of the terrain to
+// collapse onto the same UV. That manifests as a stretched/compressed strip
+// pattern at vertex spacing in any high-contrast diffuse texture sampled at
+// those UVs. FLOAT32 has full precision across the whole range; +4 bytes per
+// vertex is acceptable.
 static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 {
 	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
-	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_HALF2 });
+	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT2 });
 	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_SNORM10_10_10_2 });
 	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_SNORM10_10_10_2 });
 	xMesh.m_xBufferLayout.CalculateOffsetsAndStrides();
 
 	const uint32_t uStride = xMesh.m_xBufferLayout.GetStride();
-	Zenith_Assert(uStride == 24, "Terrain vertex stride should be 24 bytes");
+	Zenith_Assert(uStride == 28, "Terrain vertex stride should be 28 bytes (FLOAT2 UV)");
 
 	xMesh.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * uStride));
 
@@ -111,11 +91,12 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 		pPos[2] = xMesh.m_pxPositions[i].z;
 		uOffset += 12;
 
-		// UV: half2 (4 bytes)
-		uint16_t* pUV = reinterpret_cast<uint16_t*>(pVertex + uOffset);
-		pUV[0] = FloatToHalf(xMesh.m_pxUVs[i].x);
-		pUV[1] = FloatToHalf(xMesh.m_pxUVs[i].y);
-		uOffset += 4;
+		// UV: float2 (8 bytes) — full 32-bit precision so heightmap-pixel-scale
+		// UVs don't collapse on the upper half of the terrain.
+		float* pUV = reinterpret_cast<float*>(pVertex + uOffset);
+		pUV[0] = xMesh.m_pxUVs[i].x;
+		pUV[1] = xMesh.m_pxUVs[i].y;
+		uOffset += 8;
 
 		// Normal: SNORM10:10:10:2 (4 bytes), w=0
 		uint32_t* pNormal = reinterpret_cast<uint32_t*>(pVertex + uOffset);

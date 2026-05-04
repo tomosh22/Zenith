@@ -3,4 +3,17 @@
   <ItemGroup>
     <ClCompile Include="..\RenderTest.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Components\RenderTest_FollowCamera.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Components">
+      <UniqueIdentifier>{3bb4bb05-923d-8332-e0b6-ffafd088f41f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
 </Project>

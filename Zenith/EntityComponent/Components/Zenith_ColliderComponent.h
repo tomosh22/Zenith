@@ -1,6 +1,8 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
+#include <Jolt/Jolt.h>
+#include <Jolt/Core/Reference.h>
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentRegistry.h"
@@ -71,14 +73,16 @@ private:
 	// member state — CreateTerrainShape and CreateConvexOrMeshShape allocate
 	// m_pxTerrainMeshData for later cleanup, so they cannot be free functions.
 	//
-	// Returning raw JPH::Shape* (ref count 0 on return) avoids pulling the Jolt
-	// Reference.h template into this header; AddCollider assigns the result into a
-	// JPH::RefConst<JPH::Shape> which takes ownership.
-	JPH::Shape* CreateBoxShape(const Zenith_Maths::Vector3& xScale) const;
-	JPH::Shape* CreateSphereShape(const Zenith_Maths::Vector3& xScale) const;
-	JPH::Shape* CreateCapsuleShape(const Zenith_Maths::Vector3& xScale, float fMinScale) const;
-	JPH::Shape* CreateTerrainShape();
-	JPH::Shape* CreateConvexOrMeshShape(const Zenith_Maths::Vector3& xScale, RigidBodyType eRigidBodyType);
+	// Returning JPH::RefConst<JPH::Shape> keeps the lifetime explicit. Box/Sphere/Capsule
+	// paths construct the Ref from a fresh `new`'d shape (refcount 0 → 1 on AddRef).
+	// Terrain/ConvexOrMesh paths construct the Ref from the ShapeResult's payload, which
+	// AddRefs the live shape so it survives the local ShapeResult's destruction at function
+	// exit. Either way the caller adopts a single owning reference.
+	JPH::RefConst<JPH::Shape> CreateBoxShape(const Zenith_Maths::Vector3& xScale) const;
+	JPH::RefConst<JPH::Shape> CreateSphereShape(const Zenith_Maths::Vector3& xScale) const;
+	JPH::RefConst<JPH::Shape> CreateCapsuleShape(const Zenith_Maths::Vector3& xScale, float fMinScale) const;
+	JPH::RefConst<JPH::Shape> CreateTerrainShape();
+	JPH::RefConst<JPH::Shape> CreateConvexOrMeshShape(const Zenith_Maths::Vector3& xScale, RigidBodyType eRigidBodyType);
 
 	Zenith_Entity m_xParentEntity;
 	JPH::Body* m_pxRigidBody = nullptr;

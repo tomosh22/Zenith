@@ -180,20 +180,20 @@ namespace
 	}
 }
 
-JPH::Shape* Zenith_ColliderComponent::CreateBoxShape(const Zenith_Maths::Vector3& xScale) const
+JPH::RefConst<JPH::Shape> Zenith_ColliderComponent::CreateBoxShape(const Zenith_Maths::Vector3& xScale) const
 {
 	// BoxShape takes half-extents; unit cube is -0.5..0.5 so half-extent = scale * 0.5
 	return new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
 }
 
-JPH::Shape* Zenith_ColliderComponent::CreateSphereShape(const Zenith_Maths::Vector3& xScale) const
+JPH::RefConst<JPH::Shape> Zenith_ColliderComponent::CreateSphereShape(const Zenith_Maths::Vector3& xScale) const
 {
 	// Unit sphere has radius 0.5, so physics radius = max_scale * 0.5
 	const float fRadius = std::max({ xScale.x, xScale.y, xScale.z }) * 0.5f;
 	return new JPH::SphereShape(fRadius);
 }
 
-JPH::Shape* Zenith_ColliderComponent::CreateCapsuleShape(const Zenith_Maths::Vector3& xScale, float fMinScale) const
+JPH::RefConst<JPH::Shape> Zenith_ColliderComponent::CreateCapsuleShape(const Zenith_Maths::Vector3& xScale, float fMinScale) const
 {
 	float fRadius;
 	float fHalfHeight;
@@ -221,7 +221,7 @@ JPH::Shape* Zenith_ColliderComponent::CreateCapsuleShape(const Zenith_Maths::Vec
 	return new JPH::CapsuleShape(fHalfHeight, fRadius);
 }
 
-JPH::Shape* Zenith_ColliderComponent::CreateTerrainShape()
+JPH::RefConst<JPH::Shape> Zenith_ColliderComponent::CreateTerrainShape()
 {
 	Zenith_Assert(m_xParentEntity.HasComponent<Zenith_TerrainComponent>(), "Can't have a terrain collider without a terrain component");
 	const Zenith_TerrainComponent& xTerrain = m_xParentEntity.GetComponent<Zenith_TerrainComponent>();
@@ -271,13 +271,18 @@ JPH::Shape* Zenith_ColliderComponent::CreateTerrainShape()
 
 	JPH::MeshShapeSettings xMeshSettings(xTriangles);
 	JPH::Shape::ShapeResult xShapeResult = xMeshSettings.Create();
-	// ShapeResult::Get() returns a RefConst<Shape>; ->GetPtr() returns the raw pointer
-	// with refcount still at 1, matching the `new XxxShape()` return of the other
-	// factories (caller sinks into a RefConst which becomes owner).
-	return xShapeResult.Get().GetPtr();
+	if (!xShapeResult.IsValid())
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS, "Zenith_ColliderComponent::CreateTerrainShape: MeshShape creation failed: %s", xShapeResult.GetError().c_str());
+		return nullptr;
+	}
+	// xShapeResult holds the only ref. Returning the inner Ref by value (as
+	// RefConst<Shape>) AddRefs the shape; xShapeResult's destruction at function
+	// exit then drops its ref, leaving the returned RefConst as the sole owner.
+	return xShapeResult.Get();
 }
 
-JPH::Shape* Zenith_ColliderComponent::CreateConvexOrMeshShape(const Zenith_Maths::Vector3& xScale, RigidBodyType eRigidBodyType)
+JPH::RefConst<JPH::Shape> Zenith_ColliderComponent::CreateConvexOrMeshShape(const Zenith_Maths::Vector3& xScale, RigidBodyType eRigidBodyType)
 {
 	Zenith_Assert(m_xParentEntity.HasComponent<Zenith_ModelComponent>(), "Can't have a model mesh collider without a model component");
 	Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
@@ -344,7 +349,9 @@ JPH::Shape* Zenith_ColliderComponent::CreateConvexOrMeshShape(const Zenith_Maths
 	if (xConvexResult.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_PHYSICS, " Created convex hull collider successfully");
-		return xConvexResult.Get().GetPtr();
+		// See CreateTerrainShape for the lifetime contract: returning the inner
+		// Ref by value AddRefs, the local ShapeResult releases on exit.
+		return xConvexResult.Get();
 	}
 
 	Zenith_Log(LOG_CATEGORY_PHYSICS, " Convex hull failed, falling back to mesh shape (static only)");
@@ -377,7 +384,8 @@ JPH::Shape* Zenith_ColliderComponent::CreateConvexOrMeshShape(const Zenith_Maths
 	if (xMeshResult.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_PHYSICS, " Created mesh collider successfully");
-		return xMeshResult.Get().GetPtr();
+		// Same lifetime contract as CreateTerrainShape.
+		return xMeshResult.Get();
 	}
 
 	Zenith_Log(LOG_CATEGORY_PHYSICS, " Mesh shape failed, using box fallback");

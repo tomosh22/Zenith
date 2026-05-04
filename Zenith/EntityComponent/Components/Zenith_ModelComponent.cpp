@@ -139,9 +139,18 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 		return;
 	}
 
-	if (!std::filesystem::exists(strLocalPath))
+	// strLocalPath may be prefixed (e.g. "game:Meshes/Foo.zmodel" or
+	// "engine:Meshes/Foo.zmodel") when this is reached via scene deserialization
+	// — the saved ModelHandle stores the normalised prefixed form. Resolve to an
+	// absolute filesystem path before the exists() check so reload doesn't
+	// silently bail with "File does not exist". Zenith_AssetRegistry::Get below
+	// already handles prefixed paths, but it doesn't surface "missing file" the
+	// same way, so we keep the explicit existence check on the resolved path.
+	const std::string strResolvedPath = Zenith_AssetRegistry::ResolvePath(strLocalPath);
+	if (!std::filesystem::exists(strResolvedPath))
 	{
-		Zenith_Error(LOG_CATEGORY_MESH, "LoadModel: File does not exist: %s", strLocalPath.c_str());
+		Zenith_Error(LOG_CATEGORY_MESH, "LoadModel: File does not exist: %s (resolved: %s)",
+			strLocalPath.c_str(), strResolvedPath.c_str());
 		return;
 	}
 
