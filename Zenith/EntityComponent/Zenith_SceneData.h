@@ -548,6 +548,10 @@ private:
 	void DispatchAwakeForNewScene();
 	void DispatchEnableAndPendingStartsForNewScene();
 
+	// Cleanup helper invoked from DispatchAwakeForNewScene when the awake
+	// wave limit is hit (pathological OnAwake-creates-entities chain).
+	void HandleAwakeOverflow(u_int uWaveStart, u_int uWaveEnd, u_int uMaxIterations);
+
 	/**
 	 * Dispatch pending OnStart calls (called at start of Update).
 	 * Unity behavior: Start() runs on first frame after scene load.

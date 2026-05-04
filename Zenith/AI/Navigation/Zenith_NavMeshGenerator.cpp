@@ -684,49 +684,39 @@ bool Zenith_NavMeshGenerator::TraceContours(GenerationContext& xContext)
 // All walkable spans are processed (not just topmost) — a column may have
 // floor + raised obstacle-top spans, both of which become valid polygons.
 // ============================================================================
-bool Zenith_NavMeshGenerator::BuildPolygonMesh(GenerationContext& xContext)
+uint32_t Zenith_NavMeshGenerator::GetOrCreateVertex(GenerationContext& xContext,
+	Zenith_HashMap<uint64_t, uint32_t>& xVertexMap,
+	int32_t iX, int32_t iZ, float fY)
 {
-	const float fCellSize = xContext.m_xConfig.m_fCellSize;
-	const float fCellHeight = xContext.m_xConfig.m_fCellHeight;
+	// Quantise (iX, iZ, fY*100) into a unique 64-bit key. The +10000 bias
+	// makes the cast safe for negative grid coordinates.
+	uint64_t uKey = (static_cast<uint64_t>(iX + 10000) << 32) |
+					(static_cast<uint64_t>(iZ + 10000) << 16) |
+					(static_cast<uint64_t>(static_cast<int32_t>(fY * 100.0f) + 10000));
 
-	xContext.m_axOutputVertices.Clear();
-	xContext.m_axOutputPolygons.Clear();
-
-	// Build a map for vertex deduplication
-	std::unordered_map<uint64_t, uint32_t> xVertexMap;
-
-	auto GetOrCreateVertex = [&](int32_t iX, int32_t iZ, float fY) -> uint32_t
+	if (uint32_t* puExisting = xVertexMap.TryGet(uKey))
 	{
-		// Create a unique key from grid coordinates
-		uint64_t uKey = (static_cast<uint64_t>(iX + 10000) << 32) |
-						(static_cast<uint64_t>(iZ + 10000) << 16) |
-						(static_cast<uint64_t>(static_cast<int32_t>(fY * 100.0f) + 10000));
+		return *puExisting;
+	}
 
-		auto it = xVertexMap.find(uKey);
-		if (it != xVertexMap.end())
-		{
-			return it->second;
-		}
+	const float fCellSize = xContext.m_xConfig.m_fCellSize;
+	Zenith_Maths::Vector3 xWorldPos;
+	xWorldPos.x = xContext.m_xBoundsMin.x + iX * fCellSize;
+	xWorldPos.y = fY;
+	xWorldPos.z = xContext.m_xBoundsMin.z + iZ * fCellSize;
 
-		// Create new vertex
-		Zenith_Maths::Vector3 xWorldPos;
-		xWorldPos.x = xContext.m_xBoundsMin.x + iX * fCellSize;
-		xWorldPos.y = fY;
-		xWorldPos.z = xContext.m_xBoundsMin.z + iZ * fCellSize;
+	uint32_t uIndex = xContext.m_axOutputVertices.GetSize();
+	xContext.m_axOutputVertices.PushBack(xWorldPos);
+	xVertexMap.Insert(uKey, uIndex);
+	return uIndex;
+}
 
-		uint32_t uIndex = xContext.m_axOutputVertices.GetSize();
-		xContext.m_axOutputVertices.PushBack(xWorldPos);
-		xVertexMap[uKey] = uIndex;
-		return uIndex;
-	};
+Zenith_NavMeshGenerator::HeightCategoryCounts Zenith_NavMeshGenerator::EmitQuadsFromSpans(
+	GenerationContext& xContext, Zenith_HashMap<uint64_t, uint32_t>& xVertexMap)
+{
+	const float fCellHeight = xContext.m_xConfig.m_fCellHeight;
+	HeightCategoryCounts xCounts;
 
-	// Debug: count polygons at different height levels
-	uint32_t uFloorPolygons = 0;
-	uint32_t uMidPolygons = 0;
-	uint32_t uHighPolygons = 0;
-
-	// Iterate through all walkable spans and create quads
-	// Create polygons for ALL walkable spans, not just the topmost
 	for (int32_t iZ = 0; iZ < xContext.m_iHeight; ++iZ)
 	{
 		for (int32_t iX = 0; iX < xContext.m_iWidth; ++iX)
@@ -737,7 +727,6 @@ bool Zenith_NavMeshGenerator::BuildPolygonMesh(GenerationContext& xContext)
 				continue;
 			}
 
-			// Get spans for this column using the proper indexing
 			uint32_t uSpanCount = xContext.m_axColumnSpanCounts.Get(uCol);
 			if (uSpanCount == 0)
 			{
@@ -746,8 +735,8 @@ bool Zenith_NavMeshGenerator::BuildPolygonMesh(GenerationContext& xContext)
 
 			uint32_t uSpanStart = xContext.m_axColumnSpanStarts.Get(uCol);
 
-			// Create a polygon for EVERY walkable span in this column
-			// This allows multiple walkable levels (e.g., floor + bridge/platform)
+			// Emit a quad for EVERY walkable span in this column so multi-level
+			// terrain (floor + bridge/platform) keeps both levels.
 			for (uint32_t s = 0; s < uSpanCount; ++s)
 			{
 				CompactSpan& xSpan = xContext.m_axCompactSpans.Get(uSpanStart + s);
@@ -756,27 +745,20 @@ bool Zenith_NavMeshGenerator::BuildPolygonMesh(GenerationContext& xContext)
 					continue;  // No region assigned = not walkable
 				}
 
-				// Calculate world Y from span height
 				float fWorldY = xContext.m_xBoundsMin.y + xSpan.m_uY * fCellHeight;
 
-				// Debug: categorize by height
-				if (fWorldY < 0.5f)
-					++uFloorPolygons;
-				else if (fWorldY < 2.5f)
-					++uMidPolygons;
-				else
-					++uHighPolygons;
+				if (fWorldY < 0.5f)       ++xCounts.m_uFloor;
+				else if (fWorldY < 2.5f)  ++xCounts.m_uMid;
+				else                      ++xCounts.m_uHigh;
 
-				// Create a quad for this cell (4 vertices, CCW winding when viewed from above)
-				// Corners: (iX, iZ), (iX+1, iZ), (iX+1, iZ+1), (iX, iZ+1)
-				uint32_t uV0 = GetOrCreateVertex(iX, iZ, fWorldY);
-				uint32_t uV1 = GetOrCreateVertex(iX + 1, iZ, fWorldY);
-				uint32_t uV2 = GetOrCreateVertex(iX + 1, iZ + 1, fWorldY);
-				uint32_t uV3 = GetOrCreateVertex(iX, iZ + 1, fWorldY);
+				// Quad corners (V0=bottom-left, V1=bottom-right, V2=top-right,
+				// V3=top-left). CCW winding (V0→V3→V2→V1) yields an upward
+				// normal — see Navigation/CLAUDE.md "Polygon Winding Order".
+				uint32_t uV0 = GetOrCreateVertex(xContext, xVertexMap, iX,     iZ,     fWorldY);
+				uint32_t uV1 = GetOrCreateVertex(xContext, xVertexMap, iX + 1, iZ,     fWorldY);
+				uint32_t uV2 = GetOrCreateVertex(xContext, xVertexMap, iX + 1, iZ + 1, fWorldY);
+				uint32_t uV3 = GetOrCreateVertex(xContext, xVertexMap, iX,     iZ + 1, fWorldY);
 
-				// Create quad polygon (CCW when viewed from above: 0, 3, 2, 1)
-				// V0=bottom-left, V1=bottom-right, V2=top-right, V3=top-left
-				// CCW order for upward normal: V0 -> V3 -> V2 -> V1
 				Zenith_Vector<uint32_t> axQuadIndices;
 				axQuadIndices.PushBack(uV0);
 				axQuadIndices.PushBack(uV3);
@@ -788,9 +770,26 @@ bool Zenith_NavMeshGenerator::BuildPolygonMesh(GenerationContext& xContext)
 		}
 	}
 
+	return xCounts;
+}
+
+void Zenith_NavMeshGenerator::LogHeightCategoryBreakdown(const HeightCategoryCounts& xCounts,
+	uint32_t uVertexCount, uint32_t uPolygonCount)
+{
 	Zenith_Log(LOG_CATEGORY_AI, "Built polygon mesh: %u vertices, %u polygons (floor: %u, mid: %u, high: %u)",
-		xContext.m_axOutputVertices.GetSize(), xContext.m_axOutputPolygons.GetSize(),
-		uFloorPolygons, uMidPolygons, uHighPolygons);
+		uVertexCount, uPolygonCount, xCounts.m_uFloor, xCounts.m_uMid, xCounts.m_uHigh);
+}
+
+bool Zenith_NavMeshGenerator::BuildPolygonMesh(GenerationContext& xContext)
+{
+	xContext.m_axOutputVertices.Clear();
+	xContext.m_axOutputPolygons.Clear();
+
+	Zenith_HashMap<uint64_t, uint32_t> xVertexMap;
+	const HeightCategoryCounts xCounts = EmitQuadsFromSpans(xContext, xVertexMap);
+	LogHeightCategoryBreakdown(xCounts,
+		xContext.m_axOutputVertices.GetSize(),
+		xContext.m_axOutputPolygons.GetSize());
 
 	return xContext.m_axOutputPolygons.GetSize() > 0;
 }

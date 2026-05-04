@@ -20,6 +20,107 @@ struct FileWatcherPlatformData
 	bool bPendingRead = false;
 };
 
+namespace
+{
+	// UpdatePlatform helpers — extracted so the orchestrator stays small. All
+	// three are file-local and called only from Zenith_FileWatcher::UpdatePlatform
+	// below. The bPendingRead flag is owned by UpdatePlatform itself; helpers
+	// must not touch it.
+
+	struct PollResult
+	{
+		DWORD m_dwBytesTransferred = 0;
+		bool m_bGotNotification = false;  // false on timeout/error — caller bails
+		bool m_bOverflow = false;         // true when bytes==0 (Win32 buffer overflow)
+	};
+
+	// Non-blocking peek at the IO completion port. Translates timeout into
+	// "no notification" and bytes==0 into "overflow" (caller must drop pending
+	// read state before re-issuing).
+	PollResult PollCompletionPort(HANDLE hCompletionPort)
+	{
+		PollResult xResult;
+		ULONG_PTR ulKey = 0;
+		LPOVERLAPPED pOverlapped = nullptr;
+		BOOL bResult = GetQueuedCompletionStatus(hCompletionPort, &xResult.m_dwBytesTransferred,
+			&ulKey, &pOverlapped, 0);
+		if (!bResult)
+		{
+			DWORD dwError = GetLastError();
+			if (dwError != WAIT_TIMEOUT)
+			{
+				Zenith_Log(LOG_CATEGORY_CORE, "FileWatcher: GetQueuedCompletionStatus failed (error %u)", dwError);
+			}
+			return xResult;
+		}
+		xResult.m_bGotNotification = true;
+		xResult.m_bOverflow = (xResult.m_dwBytesTransferred == 0);
+		return xResult;
+	}
+
+	// Walk the FILE_NOTIFY_INFORMATION linked list, convert each name to UTF-8,
+	// and queue it onto pData->xPendingChanges under pData->xMutex (acquired
+	// once per notification — matches the original lock granularity).
+	void ProcessNotifications(FILE_NOTIFY_INFORMATION* pNotify, FileWatcherPlatformData* pData)
+	{
+		while (pNotify != nullptr)
+		{
+			int iLen = WideCharToMultiByte(CP_UTF8, 0, pNotify->FileName,
+				pNotify->FileNameLength / sizeof(WCHAR), nullptr, 0, nullptr, nullptr);
+
+			std::string strFileName(iLen, '\0');
+			WideCharToMultiByte(CP_UTF8, 0, pNotify->FileName,
+				pNotify->FileNameLength / sizeof(WCHAR), &strFileName[0], iLen, nullptr, nullptr);
+
+			for (char& c : strFileName)
+			{
+				if (c == '\\') c = '/';
+			}
+
+			FileChangeType eType = FileChangeType::Modified;
+			switch (pNotify->Action)
+			{
+			case FILE_ACTION_ADDED:              eType = FileChangeType::Created;  break;
+			case FILE_ACTION_REMOVED:            eType = FileChangeType::Deleted;  break;
+			case FILE_ACTION_MODIFIED:           eType = FileChangeType::Modified; break;
+			case FILE_ACTION_RENAMED_OLD_NAME:
+			case FILE_ACTION_RENAMED_NEW_NAME:   eType = FileChangeType::Renamed;  break;
+			}
+
+			{
+				// Acquires pData->xMutex internally for queue mutation.
+				Zenith_ScopedMutexLock xLock(pData->xMutex);
+				pData->xPendingChanges.push({ strFileName, eType });
+			}
+
+			if (pNotify->NextEntryOffset == 0) break;
+			pNotify = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(
+				reinterpret_cast<char*>(pNotify) + pNotify->NextEntryOffset);
+		}
+	}
+
+	// Drain the queued changes and fire the callback for each. Pops one entry
+	// per lock acquisition so the user callback runs unlocked.
+	void DispatchPendingChanges(FileWatcherPlatformData* pData, const FileChangeCallback& pfnCallback)
+	{
+		while (true)
+		{
+			std::pair<std::string, FileChangeType> xChange;
+			{
+				// Acquires pData->xMutex internally.
+				Zenith_ScopedMutexLock xLock(pData->xMutex);
+				if (pData->xPendingChanges.empty()) break;
+				xChange = pData->xPendingChanges.front();
+				pData->xPendingChanges.pop();
+			}
+			if (pfnCallback)
+			{
+				pfnCallback(xChange.first, xChange.second);
+			}
+		}
+	}
+}
+
 Zenith_FileWatcher::Zenith_FileWatcher()
 {
 	m_pPlatformData = new FileWatcherPlatformData();
@@ -172,102 +273,27 @@ void Zenith_FileWatcher::UpdatePlatform()
 		return;
 	}
 
-	// Check for completion (non-blocking)
-	DWORD dwBytesTransferred = 0;
-	ULONG_PTR ulKey = 0;
-	LPOVERLAPPED pOverlapped = nullptr;
-
-	BOOL bResult = GetQueuedCompletionStatus(
-		pData->hCompletionPort,
-		&dwBytesTransferred,
-		&ulKey,
-		&pOverlapped,
-		0); // Non-blocking (0ms timeout)
-
-	if (!bResult)
+	const PollResult xPoll = PollCompletionPort(pData->hCompletionPort);
+	if (!xPoll.m_bGotNotification)
 	{
-		DWORD dwError = GetLastError();
-		if (dwError == WAIT_TIMEOUT)
-		{
-			// No changes yet - this is normal
-			return;
-		}
-
-		// Error occurred
-		Zenith_Log(LOG_CATEGORY_CORE, "FileWatcher: GetQueuedCompletionStatus failed (error %u)", dwError);
 		return;
 	}
 
-	if (dwBytesTransferred == 0)
+	if (xPoll.m_bOverflow)
 	{
-		// Buffer overflow - re-issue the read
+		// Buffer overflow — drop pending state so the re-issue below restarts
+		// observation. This flag stays mutated only here in UpdatePlatform.
 		pData->bPendingRead = false;
 	}
 	else
 	{
-		// Process notifications
-		FILE_NOTIFY_INFORMATION* pNotify = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(pData->acBuffer);
-
-		while (pNotify != nullptr)
-		{
-			// Convert wide string filename to narrow string
-			int iLen = WideCharToMultiByte(CP_UTF8, 0, pNotify->FileName,
-				pNotify->FileNameLength / sizeof(WCHAR), nullptr, 0, nullptr, nullptr);
-
-			std::string strFileName(iLen, '\0');
-			WideCharToMultiByte(CP_UTF8, 0, pNotify->FileName,
-				pNotify->FileNameLength / sizeof(WCHAR), &strFileName[0], iLen, nullptr, nullptr);
-
-			// Normalize path separators
-			for (char& c : strFileName)
-			{
-				if (c == '\\')
-				{
-					c = '/';
-				}
-			}
-
-			// Determine change type
-			FileChangeType eType = FileChangeType::Modified;
-			switch (pNotify->Action)
-			{
-			case FILE_ACTION_ADDED:
-				eType = FileChangeType::Created;
-				break;
-			case FILE_ACTION_REMOVED:
-				eType = FileChangeType::Deleted;
-				break;
-			case FILE_ACTION_MODIFIED:
-				eType = FileChangeType::Modified;
-				break;
-			case FILE_ACTION_RENAMED_OLD_NAME:
-			case FILE_ACTION_RENAMED_NEW_NAME:
-				eType = FileChangeType::Renamed;
-				break;
-			}
-
-			// Queue the change for callback dispatch
-			{
-				Zenith_ScopedMutexLock xLock(pData->xMutex);
-				pData->xPendingChanges.push({ strFileName, eType });
-			}
-
-			// Move to next notification
-			if (pNotify->NextEntryOffset == 0)
-			{
-				break;
-			}
-			pNotify = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(
-				reinterpret_cast<char*>(pNotify) + pNotify->NextEntryOffset);
-		}
+		ProcessNotifications(reinterpret_cast<FILE_NOTIFY_INFORMATION*>(pData->acBuffer), pData);
 	}
 
-	// Re-issue the read for more changes
+	// Re-issue the read for more changes.
 	memset(&pData->xOverlapped, 0, sizeof(pData->xOverlapped));
-
 	DWORD dwNotifyFilter = FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_CREATION;
-
-	bResult = ReadDirectoryChangesW(
+	BOOL bResult = ReadDirectoryChangesW(
 		pData->hDirectory,
 		pData->acBuffer,
 		sizeof(pData->acBuffer),
@@ -276,29 +302,9 @@ void Zenith_FileWatcher::UpdatePlatform()
 		nullptr,
 		&pData->xOverlapped,
 		nullptr);
-
 	pData->bPendingRead = (bResult != FALSE);
 
-	// Dispatch pending changes via callback
-	while (true)
-	{
-		std::pair<std::string, FileChangeType> xChange;
-
-		{
-			Zenith_ScopedMutexLock xLock(pData->xMutex);
-			if (pData->xPendingChanges.empty())
-			{
-				break;
-			}
-			xChange = pData->xPendingChanges.front();
-			pData->xPendingChanges.pop();
-		}
-
-		if (m_pfnCallback)
-		{
-			m_pfnCallback(xChange.first, xChange.second);
-		}
-	}
+	DispatchPendingChanges(pData, m_pfnCallback);
 }
 
 #endif // ZENITH_WINDOWS

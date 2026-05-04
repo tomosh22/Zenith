@@ -4,7 +4,6 @@
 #include "Collections/Zenith_HashSet.h"
 #include "Collections/Zenith_Vector.h"
 #include "Flux/Flux.h"
-#include <unordered_map> // #TODO: Replace with engine hash map
 #include <unordered_set> // #TODO: Replace with engine hash set
 #include <string>
 #include <utility>
@@ -356,7 +355,7 @@ public:
 
     const Zenith_Vector<Flux_RenderGraph_Pass*>& GetPasses() const { return m_xPasses; }
     const Zenith_Vector<u_int>& GetExecutionOrder() const { return m_xExecutionOrder; }
-    const std::unordered_map<void*, Flux_RenderGraph_Resource>& GetResources() const { return m_xResources; }
+    const Zenith_HashMap<void*, Flux_RenderGraph_Resource>& GetResources() const { return m_xResources; }
 
     // Human-readable list of passes in their compiled execution order. Format is
     // "PassA -> PassB -> PassC ...". Disabled passes are suffixed " (disabled)".
@@ -509,8 +508,7 @@ private:
     void ComputePoolSizes();
 
     Zenith_Vector<Flux_RenderGraph_Pass*> m_xPasses;
-    // #TODO: Replace std::unordered_map with engine hash map
-    std::unordered_map<void*, Flux_RenderGraph_Resource> m_xResources;
+    Zenith_HashMap<void*, Flux_RenderGraph_Resource> m_xResources;
     Zenith_Vector<u_int> m_xExecutionOrder;
     bool m_bCompiled = false;
     bool m_bDirty = true;
@@ -558,8 +556,7 @@ private:
     void AssertTransientHandleValid(Flux_TransientHandle xHandle, const char* szCaller) const;
 
     struct ResourceTraffic { Zenith_Vector<u_int> m_xWriters; Zenith_Vector<u_int> m_xReaders; };
-    // #TODO: Replace std::unordered_map with engine hash map
-    std::unordered_map<void*, ResourceTraffic> m_xTraffic;
+    Zenith_HashMap<void*, ResourceTraffic> m_xTraffic;
     // Clear tracking is keyed on Flux_BarrierKey so that a cubemap whose 42
     // (mip, face) subresources are each written by a different pass correctly
     // grants every pass "first writer" status for *its* subresource. A ptr-only

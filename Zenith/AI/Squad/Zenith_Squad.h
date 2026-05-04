@@ -157,6 +157,9 @@ private:
 	// Internal helpers
 	void AutoAssignLeader();
 	void AssignFormationSlots();
+	void AssignLeaderSlot(Zenith_Vector<bool>& axSlotTaken);
+	void AssignRoleMatchedSlots(Zenith_Vector<bool>& axSlotTaken);
+	void AssignRemainingSlots(Zenith_Vector<bool>& axSlotTaken);
 	void UpdateSharedKnowledge(float fDt);
 	int32_t FindMemberIndex(Zenith_EntityID xEntity) const;
 	int32_t FindSharedTargetIndex(Zenith_EntityID xTarget) const;

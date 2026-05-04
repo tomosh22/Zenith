@@ -200,39 +200,41 @@ Zenith_UIElement* Zenith_UICanvas::FindElementRecursive(Zenith_UIElement* pxElem
     return nullptr;
 }
 
+void Zenith_UICanvas::UpdateFocusNavigation()
+{
+    if (!m_pxFocusedElement)
+        return;
+
+    if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP))
+        NavigateUp();
+    else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
+        NavigateDown();
+    else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
+        NavigateLeft();
+    else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
+        NavigateRight();
+
+    if (!Zenith_Input::IsGamepadConnected())
+        return;
+
+    if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_UP))
+        NavigateUp();
+    else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_DOWN))
+        NavigateDown();
+    else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_LEFT))
+        NavigateLeft();
+    else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_RIGHT))
+        NavigateRight();
+
+    if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_A))
+        ActivateFocused();
+}
+
 void Zenith_UICanvas::Update(float fDt)
 {
     UpdateSize();
 
-    // Focus navigation input
-    if (m_pxFocusedElement)
-    {
-        if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP))
-            NavigateUp();
-        else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
-            NavigateDown();
-        else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
-            NavigateLeft();
-        else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
-            NavigateRight();
-
-        // Gamepad D-pad navigation
-        if (Zenith_Input::IsGamepadConnected())
-        {
-            if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_UP))
-                NavigateUp();
-            else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_DOWN))
-                NavigateDown();
-            else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_LEFT))
-                NavigateLeft();
-            else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_RIGHT))
-                NavigateRight();
-
-            // Gamepad A button activates focused element
-            if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_A))
-                ActivateFocused();
-        }
-    }
+    UpdateFocusNavigation();
 
     for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
     {

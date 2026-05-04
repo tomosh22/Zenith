@@ -851,52 +851,7 @@ void Zenith_SceneData::DispatchAwakeForNewScene()
 				"infinite entity creation in Awake callbacks", uMAX_AWAKE_ITERATIONS);
 			if (uIteration >= uMAX_AWAKE_ITERATIONS)
 			{
-				// Release-build safety net: the Zenith_Assert above compiles away in
-				// release builds, so without this explicit Zenith_Error a runaway scene
-				// would silently truncate its Awake dispatch. The break is already
-				// outside the assert so the loop still terminates; this just makes the
-				// failure observable in shipped builds.
-				Zenith_Error(LOG_CATEGORY_SCENE,
-					"DispatchAwakeForNewScene: Awake wave limit (%u) reached for scene '%s'; "
-					"destroying %u unawakened entities. An OnAwake handler is creating "
-					"entities without bound.",
-					uMAX_AWAKE_ITERATIONS, m_strPath.c_str(), uWaveEnd - uWaveStart);
-
-				// Phase A3 fix: destroy the unawakened entities so the scene-lifecycle
-				// invariant holds (every surviving entity in DispatchEnableAndPendingStartsForNewScene
-				// must have received OnAwake). Leaving them in m_xActiveEntities would
-				// silently fire OnEnable/OnStart on entities that never got OnAwake.
-				//
-				// Snapshot IDs first because RemoveEntity erases from m_xActiveEntities.
-				// A scene that hits this path is malformed, so we're also not worried
-				// about recursive OnDestroy creating more entities — they'd just be
-				// swept by the same cleanup on the next scene load.
-				//
-				// Audit §3.6 note (Unity-parity divergence, deliberate): Unity's
-				// MonoBehaviour.OnDestroy only fires on objects that became active
-				// (i.e. had Awake). Zenith fires OnDestroy here on entities whose
-				// Awake never ran. That's a deliberate divergence: this branch only
-				// triggers on pathological content (100+ cascading Awake-creates-Awake
-				// waves), and routing overflow through RemoveEntity gives component
-				// destructors — especially those holding OS resources — a chance to
-				// clean up instead of silently leaking. The alternative (skip OnDestroy
-				// for strict Unity parity) would trade a predictable cleanup path for
-				// an invisible resource leak in an already-malformed scene.
-				// Refs: https://docs.unity3d.com/ScriptReference/MonoBehaviour.Awake.html
-				//       https://docs.unity3d.com/ScriptReference/MonoBehaviour.OnDestroy.html
-				Zenith_Vector<Zenith_EntityID> axUnawokenIDs;
-				for (u_int u = uWaveStart; u < uWaveEnd; ++u)
-				{
-					axUnawokenIDs.PushBack(m_xActiveEntities.Get(u));
-				}
-				for (u_int i = 0; i < axUnawokenIDs.GetSize(); ++i)
-				{
-					Zenith_EntityID xID = axUnawokenIDs.Get(i);
-					if (EntityExists(xID))
-					{
-						RemoveEntity(xID);
-					}
-				}
+				HandleAwakeOverflow(uWaveStart, uWaveEnd, uMAX_AWAKE_ITERATIONS);
 				break;
 			}
 		}
@@ -906,6 +861,53 @@ void Zenith_SceneData::DispatchAwakeForNewScene()
 	if (!m_strPath.empty())
 	{
 		Zenith_SceneManager::PopLifecycleContext(m_strPath);
+	}
+}
+
+// Release-build safety net: the Zenith_Assert in DispatchAwakeForNewScene compiles
+// away in release builds, so without this explicit Zenith_Error a runaway scene
+// would silently truncate its Awake dispatch.
+//
+// The helper destroys unawakened entities so the scene-lifecycle invariant holds
+// (every surviving entity in DispatchEnableAndPendingStartsForNewScene must have
+// received OnAwake). Leaving them in m_xActiveEntities would silently fire
+// OnEnable/OnStart on entities that never got OnAwake.
+//
+// Snapshot IDs first because RemoveEntity erases from m_xActiveEntities. A scene
+// that hits this path is malformed, so we're not worried about recursive OnDestroy
+// creating more entities — they'd be swept by the same cleanup on the next load.
+//
+// Audit §3.6 note (Unity-parity divergence, deliberate): Unity's
+// MonoBehaviour.OnDestroy only fires on objects that became active (i.e. had
+// Awake). Zenith fires OnDestroy here on entities whose Awake never ran. That's
+// a deliberate divergence: this branch only triggers on pathological content
+// (100+ cascading Awake-creates-Awake waves), and routing overflow through
+// RemoveEntity gives component destructors — especially those holding OS
+// resources — a chance to clean up instead of silently leaking. The alternative
+// (skip OnDestroy for strict Unity parity) would trade a predictable cleanup
+// path for an invisible resource leak in an already-malformed scene.
+// Refs: https://docs.unity3d.com/ScriptReference/MonoBehaviour.Awake.html
+//       https://docs.unity3d.com/ScriptReference/MonoBehaviour.OnDestroy.html
+void Zenith_SceneData::HandleAwakeOverflow(u_int uWaveStart, u_int uWaveEnd, u_int uMaxIterations)
+{
+	Zenith_Error(LOG_CATEGORY_SCENE,
+		"DispatchAwakeForNewScene: Awake wave limit (%u) reached for scene '%s'; "
+		"destroying %u unawakened entities. An OnAwake handler is creating "
+		"entities without bound.",
+		uMaxIterations, m_strPath.c_str(), uWaveEnd - uWaveStart);
+
+	Zenith_Vector<Zenith_EntityID> axUnawokenIDs;
+	for (u_int u = uWaveStart; u < uWaveEnd; ++u)
+	{
+		axUnawokenIDs.PushBack(m_xActiveEntities.Get(u));
+	}
+	for (u_int i = 0; i < axUnawokenIDs.GetSize(); ++i)
+	{
+		Zenith_EntityID xID = axUnawokenIDs.Get(i);
+		if (EntityExists(xID))
+		{
+			RemoveEntity(xID);
+		}
 	}
 }
 

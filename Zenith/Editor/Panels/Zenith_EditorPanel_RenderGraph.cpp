@@ -43,9 +43,9 @@ namespace Zenith_EditorPanelRenderGraph
 	static const Flux_RenderGraph_Resource* FindResource(const Flux_RenderGraph& xGraph, void* pResource)
 	{
 		const auto& xResources = xGraph.GetResources();
-		auto it = xResources.find(pResource);
-		Zenith_Assert(it != xResources.end(), "Flux_RenderGraph: resource not found in resources map");
-		return &it->second;
+		const Flux_RenderGraph_Resource* pxRes = xResources.TryGet(pResource);
+		Zenith_Assert(pxRes != nullptr, "Flux_RenderGraph: resource not found in resources map");
+		return pxRes;
 	}
 
 	static void RenderResourceUsage(const Flux_RenderGraph_ResourceUsage& xUsage, const Flux_RenderGraph& xGraph)

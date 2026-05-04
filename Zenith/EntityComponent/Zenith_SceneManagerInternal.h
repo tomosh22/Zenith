@@ -316,3 +316,32 @@ private:
 	// torn down during an atomic-swap sync LoadScene(SINGLE). Pass -1 (the default)
 	// for the original "unload every non-persistent scene" behaviour.
 	static void UnloadAllNonPersistent(int iExcludeHandle = -1);
+
+	// UnloadAllNonPersistent helpers — extracted to keep the orchestrator small
+	// and to give the threading/dedup invariants explicit names. All four are
+	// main-thread-only by construction (UnloadAllNonPersistent asserts at top).
+
+	// Cancel + complete every in-flight async unload job, marking each as
+	// SUCCEEDED (the sync path completes the unload via a different code path).
+	// Records into xAlreadyFiredOut the handles whose SceneUnloading callback
+	// fired during the async job — Phase-1 in DestroyScenesAndFireUnloaded
+	// must skip those to honour Unity's exactly-one Unloading guarantee.
+	static void CompleteAsyncUnloadJobs(Zenith_HashSet<int>& xAlreadyFiredOut);
+
+	// Walk Zenith_SceneRegistry for loaded non-persistent scenes that aren't
+	// the explicit excluded handle. Returns scene handles + generations so
+	// callbacks see correct generation counters even after destruction.
+	static Zenith_Vector<Zenith_Scene> CollectNonPersistentScenes(int iExcludeHandle);
+
+	// Two-phase: fire SceneUnloading for every scene not in xAlreadyFired,
+	// then destroy each scene + fire SceneUnloaded. Returns true if the
+	// active scene was among the destroyed set (caller dispatches the
+	// post-loop active-scene fallback).
+	static bool DestroyScenesAndFireUnloaded(const Zenith_Vector<Zenith_Scene>& axScenes,
+		const Zenith_HashSet<int>& xAlreadyFired);
+
+	// Post-destroy active-scene bookkeeping: clear the active handle and fire
+	// ActiveSceneChanged (or defer it via the suppression flag during a
+	// SINGLE-load teardown). Caller only invokes this if DestroyScenesAndFireUnloaded
+	// returned true.
+	static void UpdateActiveSceneAfterUnload(Zenith_Scene xOldActive);

@@ -291,8 +291,6 @@ static vk::ImageCreateInfo BuildAliasedImageCreateInfo(const Flux_SurfaceInfo& x
 // usage mask). The cache below is keyed on this signature so repeated probes
 // across recompiles (typical after a window resize) don't re-issue the
 // vkCreateImage / vkGetImageMemoryRequirements / vkDestroyImage trio.
-//
-// #TODO: Replace std::unordered_map with engine hash map
 static u_int64 MakeProbeSignature(const Flux_SurfaceInfo& xInfo)
 {
 	// Pack the scalar fields into a single u_int64. Dimensions dominate the
@@ -1012,30 +1010,31 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	return xHandle;
 }
 
-Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
+void Zenith_Vulkan_MemoryManager::NormalizeTextureInfo(Flux_SurfaceInfo& xInfo, bool bCreateMips)
 {
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	
-	Flux_SurfaceInfo xInfoCopy = xInfo;
-	xInfoCopy.m_uNumMips = bCreateMips ? static_cast<u_int>(std::floor(std::log2((std::max)(xInfo.m_uWidth, xInfo.m_uHeight))) + 1) : 1;
-	// Ensure depth and layers are at least 1 to prevent zero data size calculations
-	xInfoCopy.m_uDepth = std::max(1u, xInfoCopy.m_uDepth);
-	xInfoCopy.m_uNumLayers = std::max(1u, xInfoCopy.m_uNumLayers);
+	xInfo.m_uNumMips = bCreateMips
+		? static_cast<u_int>(std::floor(std::log2((std::max)(xInfo.m_uWidth, xInfo.m_uHeight))) + 1)
+		: 1;
+	// Clamp depth/layers to a min of 1 so the downstream byte-size math doesn't
+	// silently produce zero (which would mask uninitialised input fields).
+	xInfo.m_uDepth = std::max(1u, xInfo.m_uDepth);
+	xInfo.m_uNumLayers = std::max(1u, xInfo.m_uNumLayers);
+}
 
-	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfoCopy.m_eFormat);
-	
+vk::ImageCreateInfo Zenith_Vulkan_MemoryManager::BuildImageCreateInfo(const Flux_SurfaceInfo& xInfo)
+{
+	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+
 	vk::ImageUsageFlags eUsageFlags = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc;
-	if (xInfoCopy.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ) eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
-	if (xInfoCopy.m_uMemoryFlags & 1 << MEMORY_FLAGS__UNORDERED_ACCESS) eUsageFlags |= vk::ImageUsageFlagBits::eStorage;
+	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ) eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
+	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__UNORDERED_ACCESS) eUsageFlags |= vk::ImageUsageFlagBits::eStorage;
 
-	// Determine image type and extent based on texture type
 	vk::ImageType eImageType = vk::ImageType::e2D;
-	vk::Extent3D xExtent = { xInfoCopy.m_uWidth, xInfoCopy.m_uHeight, 1 };
-
-	if (xInfoCopy.m_eTextureType == TEXTURE_TYPE_3D)
+	vk::Extent3D xExtent = { xInfo.m_uWidth, xInfo.m_uHeight, 1 };
+	if (xInfo.m_eTextureType == TEXTURE_TYPE_3D)
 	{
 		eImageType = vk::ImageType::e3D;
-		xExtent = vk::Extent3D(xInfoCopy.m_uWidth, xInfoCopy.m_uHeight, xInfoCopy.m_uDepth);
+		xExtent = vk::Extent3D(xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uDepth);
 	}
 
 	vk::ImageCreateInfo xImageInfo = vk::ImageCreateInfo()
@@ -1043,40 +1042,120 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 		.setFormat(xFormat)
 		.setTiling(vk::ImageTiling::eOptimal)
 		.setExtent(xExtent)
-		.setMipLevels(xInfoCopy.m_uNumMips)
-		.setArrayLayers(xInfoCopy.m_uNumLayers)
+		.setMipLevels(xInfo.m_uNumMips)
+		.setArrayLayers(xInfo.m_uNumLayers)
 		.setInitialLayout(vk::ImageLayout::eUndefined)
 		.setUsage(eUsageFlags)
 		.setSharingMode(vk::SharingMode::eExclusive)
 		.setSamples(vk::SampleCountFlagBits::e1);
 
-	// Add cube compatible flag if this is a cubemap (6 layers)
-	if (xInfoCopy.m_eTextureType == TEXTURE_TYPE_CUBE || xInfoCopy.m_uNumLayers == 6)
+	if (xInfo.m_eTextureType == TEXTURE_TYPE_CUBE || xInfo.m_uNumLayers == 6)
 	{
 		xImageInfo.setFlags(vk::ImageCreateFlagBits::eCubeCompatible);
 	}
+	return xImageInfo;
+}
 
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::AllocateAndRegisterImage(const vk::ImageCreateInfo& xImageInfo,
+	VkImage& xImageOut, VmaAllocation& xAllocationOut)
+{
 	VmaAllocationCreateInfo xAllocInfo = {};
 	xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
 	const vk::ImageCreateInfo::NativeType xImageInfo_Native = xImageInfo;
 
-	VkImage xImage = VK_NULL_HANDLE;
-	VmaAllocation xAllocation = VK_NULL_HANDLE;
-	VkResult eResult = vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
+	xImageOut = VK_NULL_HANDLE;
+	xAllocationOut = VK_NULL_HANDLE;
+	VkResult eResult = vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImageOut, &xAllocationOut, nullptr);
 	Zenith_Assert(eResult == VK_SUCCESS, "vmaCreateImage failed with result %d", static_cast<int>(eResult));
 	if (eResult != VK_SUCCESS)
 	{
-		// Return invalid handle on allocation failure
 		return Flux_VRAMHandle();
 	}
 
-	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
-	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
+	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImageOut), xAllocationOut, s_xAllocator);
+	return Zenith_Vulkan::RegisterVRAM(pxVRAM);
+}
+
+void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocation xAllocation,
+	const void* pData, const Flux_SurfaceInfo& xInfo, size_t ulDataSize)
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+
+	s_xMutex.Lock();
+
+	VkMemoryPropertyFlags eMemoryProps;
+	vmaGetAllocationMemoryProperties(s_xAllocator, xAllocation, &eMemoryProps);
+
+	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+	{
+		// Direct upload to host-visible memory.
+		VmaAllocationInfo xImageAllocInfo;
+		vmaGetAllocationInfo(s_xAllocator, xAllocation, &xImageAllocInfo);
+		memcpy(xImageAllocInfo.pMappedData, pData, ulDataSize);
+		vmaFlushAllocation(s_xAllocator, xAllocation, 0, VK_WHOLE_SIZE);
+	}
+	else if (ulDataSize > g_uStagingPoolSize)
+	{
+		// Allocation larger than the staging buffer — unlock and chunk.
+		s_xMutex.Unlock();
+		UploadTextureDataChunked(vk::Image(xImage), pData, ulDataSize, xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uNumMips, xInfo.m_uNumLayers);
+		return;
+	}
+	else
+	{
+		// Upload via the current frame's staging slot. CurrentStaging() resolves
+		// to s_axStaging[CurrentFrameIndex], so the bump-allocate + memcpy +
+		// queue-copy sequence below only ever touches memory the GPU is allowed
+		// to consume in this frame.
+		PerFrameStaging& xStaging = CurrentStaging();
+		if (xStaging.m_uNextFreeOffset + ulDataSize > g_uStagingPoolSize)
+		{
+			HandleStagingBufferFull();
+		}
+
+		StagingMemoryAllocation xStagingAlloc;
+		xStagingAlloc.m_eType = ALLOCATION_TYPE_TEXTURE;
+		xStagingAlloc.m_xTextureMetadata.m_xImage = vk::Image(xImage);
+		xStagingAlloc.m_xTextureMetadata.m_uWidth = xInfo.m_uWidth;
+		xStagingAlloc.m_xTextureMetadata.m_uHeight = xInfo.m_uHeight;
+		xStagingAlloc.m_xTextureMetadata.m_uDepth = xInfo.m_uDepth;
+		xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfo.m_uNumMips;
+		xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfo.m_uNumLayers;
+		xStagingAlloc.m_xTextureMetadata.m_eFormat = xInfo.m_eFormat;
+		xStagingAlloc.m_uSize = ulDataSize;
+		xStagingAlloc.m_uOffset = xStaging.m_uNextFreeOffset;
+		xStaging.m_xAllocations.PushBack(xStagingAlloc);
+
+		void* pMap = VkUnwrap(xDevice.mapMemory(xStaging.m_xMemory, xStaging.m_uNextFreeOffset, ulDataSize));
+		memcpy(pMap, pData, ulDataSize);
+		xDevice.unmapMemory(xStaging.m_xMemory);
+		xStaging.m_uNextFreeOffset += ulDataSize;
+		// Align to 8 bytes for compressed texture formats (BC1, BC3, etc.)
+		xStaging.m_uNextFreeOffset = ALIGN(xStaging.m_uNextFreeOffset, 8);
+		if (xStaging.m_uNextFreeOffset > xStaging.m_uHighWaterMark)
+			xStaging.m_uHighWaterMark = xStaging.m_uNextFreeOffset;
+	}
+	s_xMutex.Unlock();
+}
+
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
+{
+	Flux_SurfaceInfo xInfoCopy = xInfo;
+	NormalizeTextureInfo(xInfoCopy, bCreateMips);
+
+	const vk::ImageCreateInfo xImageInfo = BuildImageCreateInfo(xInfoCopy);
+
+	VkImage xImage = VK_NULL_HANDLE;
+	VmaAllocation xAllocation = VK_NULL_HANDLE;
+	Flux_VRAMHandle xHandle = AllocateAndRegisterImage(xImageInfo, xImage, xAllocation);
+	if (!xHandle.IsValid())
+	{
+		return xHandle;  // Allocation failure already asserted inside the helper.
+	}
 
 	if (pData)
 	{
-		// Calculate data size based on format (compressed vs uncompressed)
 		size_t ulDataSize;
 		if (IsCompressedFormat(xInfoCopy.m_eFormat))
 		{
@@ -1086,68 +1165,13 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 		{
 			ulDataSize = ColourFormatBytesPerPixel(xInfoCopy.m_eFormat) * xInfoCopy.m_uWidth * xInfoCopy.m_uHeight * xInfoCopy.m_uDepth * xInfoCopy.m_uNumLayers;
 		}
-
-		// Upload data directly without creating temp texture object
-		s_xMutex.Lock();
-
-		VkMemoryPropertyFlags eMemoryProps;
-		vmaGetAllocationMemoryProperties(s_xAllocator, xAllocation, &eMemoryProps);
-
-		if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-		{
-			// Direct upload to host-visible memory
-			VmaAllocationInfo xImageAllocInfo;
-			vmaGetAllocationInfo(s_xAllocator, xAllocation, &xImageAllocInfo);
-			memcpy(xImageAllocInfo.pMappedData, pData, ulDataSize);
-			vmaFlushAllocation(s_xAllocator, xAllocation, 0, VK_WHOLE_SIZE);
-		}
-		else if (ulDataSize > g_uStagingPoolSize)
-		{
-			// Allocation larger than entire staging buffer - unlock and use chunked upload
-			s_xMutex.Unlock();
-			UploadTextureDataChunked(vk::Image(xImage), pData, ulDataSize, xInfoCopy.m_uWidth, xInfoCopy.m_uHeight, xInfoCopy.m_uNumMips, xInfoCopy.m_uNumLayers);
-			return xHandle;
-		}
-		else
-		{
-			// Upload via the current frame's staging slot. CurrentStaging()
-			// resolves to s_axStaging[CurrentFrameIndex], so the bump-allocate
-			// + memcpy + queue-copy sequence below only ever touches the
-			// memory the GPU is allowed to consume in this frame.
-			PerFrameStaging& xStaging = CurrentStaging();
-			if (xStaging.m_uNextFreeOffset + ulDataSize > g_uStagingPoolSize)
-			{
-				HandleStagingBufferFull();
-			}
-
-			// Create staging allocation with texture metadata directly - no temp texture object
-			StagingMemoryAllocation xStagingAlloc;
-			xStagingAlloc.m_eType = ALLOCATION_TYPE_TEXTURE;
-			xStagingAlloc.m_xTextureMetadata.m_xImage = vk::Image(xImage);
-			xStagingAlloc.m_xTextureMetadata.m_uWidth = xInfoCopy.m_uWidth;
-			xStagingAlloc.m_xTextureMetadata.m_uHeight = xInfoCopy.m_uHeight;
-			xStagingAlloc.m_xTextureMetadata.m_uDepth = xInfoCopy.m_uDepth;
-			xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfoCopy.m_uNumMips;
-			xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfoCopy.m_uNumLayers;
-			xStagingAlloc.m_xTextureMetadata.m_eFormat = xInfoCopy.m_eFormat;
-			xStagingAlloc.m_uSize = ulDataSize;
-			xStagingAlloc.m_uOffset = xStaging.m_uNextFreeOffset;
-			xStaging.m_xAllocations.PushBack(xStagingAlloc);
-
-			void* pMap = VkUnwrap(xDevice.mapMemory(xStaging.m_xMemory, xStaging.m_uNextFreeOffset, ulDataSize));
-			memcpy(pMap, pData, ulDataSize);
-			xDevice.unmapMemory(xStaging.m_xMemory);
-			xStaging.m_uNextFreeOffset += ulDataSize;
-			// Align to 8 bytes for compressed texture formats (BC1, BC3, etc.)
-			xStaging.m_uNextFreeOffset = ALIGN(xStaging.m_uNextFreeOffset, 8);
-			if (xStaging.m_uNextFreeOffset > xStaging.m_uHighWaterMark)
-				xStaging.m_uHighWaterMark = xStaging.m_uNextFreeOffset;
-		}
-		s_xMutex.Unlock();
+		UploadTextureData(xImage, xAllocation, pData, xInfoCopy, ulDataSize);
 	}
 	else
 	{
-		// For host-visible memory, transition directly to shader read layout
+		// No data to upload — the caller will fill via render passes / compute.
+		// Transition directly to shader-read so the next sampler bind works
+		// without an explicit barrier in calling code.
 		ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 	}
 

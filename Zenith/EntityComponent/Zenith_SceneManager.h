@@ -55,6 +55,7 @@
 // =============================================================================
 
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashSet.h"
 #include <atomic>
 #include <string>
 #include "Core/Multithreading/Zenith_Multithreading.h"

@@ -251,9 +251,10 @@ Flux_RenderGraph::CurrentPassScope::~CurrentPassScope()
 static bool IsGraphTrackedVRAMHandle(const Flux_RenderGraph* pxGraph, Flux_VRAMHandle xVRAMHandle)
 {
 	if (pxGraph == nullptr) return false;
-	for (auto& xPair : pxGraph->GetResources())
+	const Zenith_HashMap<void*, Flux_RenderGraph_Resource>& xResources = pxGraph->GetResources();
+	for (Zenith_HashMap<void*, Flux_RenderGraph_Resource>::Iterator it(xResources); !it.Done(); it.Next())
 	{
-		const Flux_RenderGraph_Resource& rxRes = xPair.second;
+		const Flux_RenderGraph_Resource& rxRes = it.GetValue();
 		if (rxRes.m_xResource.IsImageLike())
 		{
 			if (rxRes.m_xResource.GetVRAMHandle() == xVRAMHandle) return true;

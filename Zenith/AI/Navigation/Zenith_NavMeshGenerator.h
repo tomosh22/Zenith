@@ -3,6 +3,7 @@
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
+#include "Collections/Zenith_HashMap.h"
 
 class Zenith_SceneData;
 
@@ -197,6 +198,27 @@ private:
 	static bool IsRegionBoundary(const GenerationContext& xContext, int32_t iX, int32_t iZ, uint16_t uRegion);
 
 	static bool BuildPolygonMesh(GenerationContext& xContext);
+
+	// BuildPolygonMesh helpers — extracted to keep the orchestrator readable.
+	struct HeightCategoryCounts
+	{
+		uint32_t m_uFloor = 0;
+		uint32_t m_uMid   = 0;
+		uint32_t m_uHigh  = 0;
+	};
+	// Look up or insert a vertex at grid (iX, iZ) with world-Y fY. Quantises Y
+	// to centi-units so two spans at near-identical heights coalesce.
+	static uint32_t GetOrCreateVertex(GenerationContext& xContext,
+		Zenith_HashMap<uint64_t, uint32_t>& xVertexMap,
+		int32_t iX, int32_t iZ, float fY);
+	// Iterate every walkable span in every column, emit one CCW quad per span,
+	// and return the per-height-band polygon counts for the debug log.
+	static HeightCategoryCounts EmitQuadsFromSpans(GenerationContext& xContext,
+		Zenith_HashMap<uint64_t, uint32_t>& xVertexMap);
+	// Per-height-band debug log; pulled out so BuildPolygonMesh's body is just
+	// orchestration.
+	static void LogHeightCategoryBreakdown(const HeightCategoryCounts& xCounts,
+		uint32_t uVertexCount, uint32_t uPolygonCount);
 
 	static Zenith_NavMesh* BuildNavMesh(GenerationContext& xContext);
 

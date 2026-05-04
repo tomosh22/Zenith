@@ -37,9 +37,11 @@ static const char* AccessToString(ResourceAccess eAccess)
 
 void Flux_RenderGraph::ValidateOrphanedReads() const
 {
-    for (auto& xPair : m_xTraffic)
+    for (Zenith_HashMap<void*, ResourceTraffic>::Iterator it(m_xTraffic); !it.Done(); it.Next())
     {
-        if (xPair.second.m_xReaders.GetSize() == 0 || xPair.second.m_xWriters.GetSize() != 0) continue;
+        void* pKey = it.GetKey();
+        const ResourceTraffic& xTraffic = it.GetValue();
+        if (xTraffic.m_xReaders.GetSize() == 0 || xTraffic.m_xWriters.GetSize() != 0) continue;
 
         // Buffers registered via MarkBufferHostWritten are produced outside the
         // graph (host uploads), so a Read with no graph-side writer is legitimate.
@@ -47,7 +49,7 @@ void Flux_RenderGraph::ValidateOrphanedReads() const
         bool bExternallyWritten = false;
         for (u_int u = 0; u < m_xExternallyWrittenBuffers.GetSize(); u++)
         {
-            if (static_cast<void*>(m_xExternallyWrittenBuffers.Get(u)) == xPair.first)
+            if (static_cast<void*>(m_xExternallyWrittenBuffers.Get(u)) == pKey)
             {
                 bExternallyWritten = true;
                 break;
@@ -55,17 +57,17 @@ void Flux_RenderGraph::ValidateOrphanedReads() const
         }
         if (bExternallyWritten) continue;
 
-        auto it = m_xResources.find(xPair.first);
-        const char* sz = (it != m_xResources.end()) ? it->second.m_xResource.GetName().c_str() : "<unknown>";
+        const Flux_RenderGraph_Resource* pxRes = m_xResources.TryGet(pKey);
+        const char* sz = (pxRes != nullptr) ? pxRes->m_xResource.GetName().c_str() : "<unknown>";
         Zenith_Error(LOG_CATEGORY_RENDERER, "Flux_RenderGraph: resource '%s' (ptr=%p) read but never written. Reader passes:",
-            sz, xPair.first);
-        for (Zenith_Vector<u_int>::Iterator itR(xPair.second.m_xReaders); !itR.Done(); itR.Next())
+            sz, pKey);
+        for (Zenith_Vector<u_int>::Iterator itR(xTraffic.m_xReaders); !itR.Done(); itR.Next())
         {
             Flux_RenderGraph_Pass* pxReaderPass = m_xPasses.Get(itR.GetData());
             Zenith_Error(LOG_CATEGORY_RENDERER, "  - Pass %u: '%s'", itR.GetData(), pxReaderPass->DebugName());
         }
         Zenith_Assert(false, "Flux_RenderGraph: resource '%s' (ptr=%p) read but never written (see reader pass list above)",
-            sz, xPair.first);
+            sz, pKey);
     }
 }
 
@@ -219,10 +221,11 @@ void Flux_RenderGraph::InitAdjacencyData()
 
 void Flux_RenderGraph::BuildAdjacencyFromTraffic()
 {
-    for (auto& xP : m_xTraffic)
+    for (Zenith_HashMap<void*, ResourceTraffic>::Iterator it(m_xTraffic); !it.Done(); it.Next())
     {
-        const Zenith_Vector<u_int>& xWriters = xP.second.m_xWriters;
-        const Zenith_Vector<u_int>& xReaders = xP.second.m_xReaders;
+        const ResourceTraffic& xTraffic = it.GetValue();
+        const Zenith_Vector<u_int>& xWriters = xTraffic.m_xWriters;
+        const Zenith_Vector<u_int>& xReaders = xTraffic.m_xReaders;
         AddReaderWriterEdges(xReaders, xWriters);
         AddWriterChainEdges(xWriters);
     }

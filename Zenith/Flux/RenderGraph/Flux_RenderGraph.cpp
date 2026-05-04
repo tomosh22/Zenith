@@ -326,14 +326,14 @@ void Flux_RenderGraph::TrackResource(const Flux_GraphResource& xResource)
 {
     void* pRes = xResource.GetVoidPtr();
     Zenith_Assert(pRes != nullptr, "Flux_RenderGraph::TrackResource: null resource");
-    if (m_xResources.find(pRes) == m_xResources.end())
+    if (!m_xResources.Contains(pRes))
     {
         Flux_RenderGraph_Resource xRes;
         xRes.m_xResource = xResource;
         xRes.m_uFirstWrite = UINT32_MAX;
         xRes.m_uLastRead   = UINT32_MAX;
         xRes.m_uLastWrite  = UINT32_MAX;
-        m_xResources[pRes] = xRes;
+        m_xResources.Insert(pRes, xRes);
     }
 }
 
@@ -654,8 +654,8 @@ void Flux_RenderGraph::Clear()
 {
     for (u_int i = 0; i < m_xPasses.GetSize(); i++) delete m_xPasses.Get(i);
     m_xPasses.Clear();
-    m_xResources.clear();
-    m_xTraffic.clear();
+    m_xResources.Clear();
+    m_xTraffic.Clear();
     m_xAttachmentNeedsClear.Clear();
     m_xAttachmentClearAssigned.Clear();
     m_xEdgeSet.Clear();
@@ -1003,7 +1003,7 @@ void Flux_RenderGraph::DestroyTransients()
 
 void Flux_RenderGraph::BuildResourceTraffic()
 {
-    m_xTraffic.clear();
+    m_xTraffic.Clear();
     for (u_int uPass = 0; uPass < m_xPasses.GetSize(); uPass++)
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(uPass);
@@ -1060,11 +1060,12 @@ void Flux_RenderGraph::ComputeResourceLifetimes()
     // The reset loop at the top makes this idempotent — every call rebuilds
     // lifetimes from scratch rather than accumulating onto stale state.
 
-    for (auto& xPair : m_xResources)
+    for (Zenith_HashMap<void*, Flux_RenderGraph_Resource>::Iterator it(m_xResources); !it.Done(); it.Next())
     {
-        xPair.second.m_uFirstWrite = UINT32_MAX;
-        xPair.second.m_uLastRead   = UINT32_MAX;
-        xPair.second.m_uLastWrite  = UINT32_MAX;
+        Flux_RenderGraph_Resource& xRes = it.GetValueMutable();
+        xRes.m_uFirstWrite = UINT32_MAX;
+        xRes.m_uLastRead   = UINT32_MAX;
+        xRes.m_uLastWrite  = UINT32_MAX;
     }
 
     u_int uTopo = 0;
@@ -1077,20 +1078,20 @@ void Flux_RenderGraph::ComputeResourceLifetimes()
         {
             const Flux_RenderGraph_ResourceUsage& xWrite = it.GetData();
             void* pRes = xWrite.m_xResource.GetVoidPtr();
-            auto itRes = m_xResources.find(pRes);
-            Zenith_Assert(itRes != m_xResources.end(), "Flux_RenderGraph::ComputeResourceLifetimes: resource not tracked");
-            if (uTopo < itRes->second.m_uFirstWrite) itRes->second.m_uFirstWrite = uTopo;
-            if (itRes->second.m_uLastWrite == UINT32_MAX || uTopo > itRes->second.m_uLastWrite)
-                itRes->second.m_uLastWrite = uTopo;
+            Flux_RenderGraph_Resource* pxRes = m_xResources.TryGet(pRes);
+            Zenith_Assert(pxRes != nullptr, "Flux_RenderGraph::ComputeResourceLifetimes: resource not tracked");
+            if (uTopo < pxRes->m_uFirstWrite) pxRes->m_uFirstWrite = uTopo;
+            if (pxRes->m_uLastWrite == UINT32_MAX || uTopo > pxRes->m_uLastWrite)
+                pxRes->m_uLastWrite = uTopo;
         }
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())
         {
             const Flux_RenderGraph_ResourceUsage& xRead = it.GetData();
             void* pRes = xRead.m_xResource.GetVoidPtr();
-            auto itRes = m_xResources.find(pRes);
-            Zenith_Assert(itRes != m_xResources.end(), "Flux_RenderGraph::ComputeResourceLifetimes: resource not tracked");
-            if (itRes->second.m_uLastRead == UINT32_MAX || uTopo > itRes->second.m_uLastRead)
-                itRes->second.m_uLastRead = uTopo;
+            Flux_RenderGraph_Resource* pxRes = m_xResources.TryGet(pRes);
+            Zenith_Assert(pxRes != nullptr, "Flux_RenderGraph::ComputeResourceLifetimes: resource not tracked");
+            if (pxRes->m_uLastRead == UINT32_MAX || uTopo > pxRes->m_uLastRead)
+                pxRes->m_uLastRead = uTopo;
         }
     }
 }
@@ -1314,11 +1315,11 @@ void Flux_RenderGraph::ComputeTransientLifetimes()
         // transient was never read or written in any enabled pass it won't be
         // in m_xResources at all, in which case the sentinels stay.
         void* pRes = static_cast<void*>(&pxT->m_xAttachment);
-        auto itRes = m_xResources.find(pRes);
-        if (itRes == m_xResources.end())
+        const Flux_RenderGraph_Resource* pxRes = m_xResources.TryGet(pRes);
+        if (pxRes == nullptr)
             continue;
 
-        const Flux_RenderGraph_Resource& xRes = itRes->second;
+        const Flux_RenderGraph_Resource& xRes = *pxRes;
         pxT->m_uFirstWrite = xRes.m_uFirstWrite;
 
         // Last-use = max(last read, last write), tolerant of UINT32_MAX
@@ -1789,30 +1790,29 @@ static BarrierDecision DecideBarrierNeeded(ResourceAccess eSrc,
 namespace
 {
     // Rolling per-subresource resource-access tracker used during barrier synthesis.
-    // #TODO: Replace std::unordered_map with engine hash map.
     struct BarrierStateTracker
     {
-        std::unordered_map<Flux_BarrierKey, ResourceAccess> m_xImageState;
-        std::unordered_map<Flux_Buffer*, ResourceAccess> m_xBufferState;
+        Zenith_HashMap<Flux_BarrierKey, ResourceAccess> m_xImageState;
+        Zenith_HashMap<Flux_Buffer*, ResourceAccess> m_xBufferState;
 
         ResourceAccess QueryImageState(void* pRes, u_int uMip, u_int uLayer) const
         {
             const Flux_BarrierKey ulKey = MakeBarrierKey(pRes, uMip, uLayer);
-            auto it = m_xImageState.find(ulKey);
-            return (it == m_xImageState.end()) ? RESOURCE_ACCESS_UNDEFINED : it->second;
+            const ResourceAccess* pe = m_xImageState.TryGet(ulKey);
+            return (pe == nullptr) ? RESOURCE_ACCESS_UNDEFINED : *pe;
         }
         void SetImageState(void* pRes, u_int uMip, u_int uLayer, ResourceAccess e)
         {
-            m_xImageState[MakeBarrierKey(pRes, uMip, uLayer)] = e;
+            m_xImageState.Insert(MakeBarrierKey(pRes, uMip, uLayer), e);
         }
         ResourceAccess QueryBufferState(Flux_Buffer* pxBuffer) const
         {
-            auto it = m_xBufferState.find(pxBuffer);
-            return (it == m_xBufferState.end()) ? RESOURCE_ACCESS_UNDEFINED : it->second;
+            const ResourceAccess* pe = m_xBufferState.TryGet(pxBuffer);
+            return (pe == nullptr) ? RESOURCE_ACCESS_UNDEFINED : *pe;
         }
         void SetBufferState(Flux_Buffer* pxBuffer, ResourceAccess e)
         {
-            m_xBufferState[pxBuffer] = e;
+            m_xBufferState.Insert(pxBuffer, e);
         }
     };
 

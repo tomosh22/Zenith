@@ -10,6 +10,7 @@
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "Collections/Zenith_HashSet.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -1233,121 +1234,128 @@ void Zenith_SceneManager::ProcessPendingUnloads()
 	// Reserved for future async unload implementation if needed
 }
 
-void Zenith_SceneManager::UnloadAllNonPersistent(int iExcludeHandle)
+void Zenith_SceneManager::CompleteAsyncUnloadJobs(Zenith_HashSet<int>& xAlreadyFiredOut)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "UnloadAllNonPersistent must be called from main thread");
-	Zenith_Assert(!s_bRenderTasksActive, "UnloadAllNonPersistent: scene mutation while render tasks are reading — render-task invariant violated");
-
-	// HIGH-2: track scene handles whose SceneUnloading callback has already
-	// fired via an in-flight async unload job. Without this, the Phase-1 walk
-	// below would fire SceneUnloading a second time for the same scene — Unity
-	// guarantees exactly-one Unloading per unload.
-	Zenith_Vector<int> axAsyncUnloadingAlreadyFired;
-
-	// Cancel pending async unload jobs.
-	// C5: These jobs are being preempted by the synchronous UnloadAllNonPersistent
-	// path which itself unloads the scene. The unload IS completing (just via a
-	// different code path), so we mark the operation SUCCEEDED rather than FAILED.
-	// Previously "cancelled async unloads" showed up as failures in the API,
-	// which was misleading for callers polling for operation status.
+	// C5: in-flight async unloads are pre-empted by the synchronous bulk path,
+	// which itself completes the unload — so the operation finishes successfully,
+	// just via a different code path. Mark SUCCEEDED rather than FAILED so
+	// status-polling callers see the right outcome.
 	for (u_int i = 0; i < Zenith_SceneOperationQueue::s_axAsyncUnloadJobs.GetSize(); ++i)
 	{
 		Zenith_SceneOperationQueue::AsyncUnloadJob* pxJob = Zenith_SceneOperationQueue::s_axAsyncUnloadJobs.Get(i);
 		if (pxJob->m_bUnloadingCallbackFired)
 		{
-			axAsyncUnloadingAlreadyFired.PushBack(pxJob->m_iSceneHandle);
+			// HIGH-2: this job already fired SceneUnloading on the async path.
+			// Phase 1 below must skip these handles or we'd violate Unity's
+			// exactly-one-Unloading guarantee.
+			xAlreadyFiredOut.Insert(pxJob->m_iSceneHandle);
 		}
 		Zenith_SceneOperation* pxOp = pxJob->m_pxOperation;
-		// SetFailed(false) is the explicit "completed without error" state.
-		pxOp->SetFailed(false);
-		// E.16 (finding 3.17): unload ops always report INVALID_SCENE as their result.
-		pxOp->SetResultSceneHandle(-1);
+		pxOp->SetFailed(false);                       // explicit "completed without error"
+		pxOp->SetResultSceneHandle(-1);               // E.16: unload ops report INVALID_SCENE
 		pxOp->SetProgress(1.0f);
 		pxOp->SetComplete(true);
 		pxOp->FireCompletionCallback();
 		delete pxJob;
 	}
 	Zenith_SceneOperationQueue::s_axAsyncUnloadJobs.Clear();
+}
 
-	// Track if we're unloading the active scene
-	bool bActiveSceneUnloaded = false;
-	// Capture active scene BEFORE destruction (FreeSceneHandle increments generation)
-	Zenith_Scene xOldActive = GetActiveScene();
-
-	// Collect scenes to unload for two-phase callback/destruction
-	Zenith_Vector<Zenith_Scene> axScenesToUnload;
+Zenith_Vector<Zenith_Scene> Zenith_SceneManager::CollectNonPersistentScenes(int iExcludeHandle)
+{
+	Zenith_Vector<Zenith_Scene> axScenes;
 	for (u_int i = 0; i < Zenith_SceneRegistry::s_axScenes.GetSize(); ++i)
 	{
-		// D.12: skip the explicit excluded handle too (used by atomic-swap sync
-		// LoadScene to keep the staging scene alive while old scenes are unloaded).
-		if (static_cast<int>(i) != Zenith_SceneRegistry::s_iPersistentSceneHandle && static_cast<int>(i) != iExcludeHandle)
+		// D.12: skip the explicit excluded handle (atomic-swap sync LoadScene
+		// keeps the staging scene alive while old scenes are torn down).
+		if (static_cast<int>(i) == Zenith_SceneRegistry::s_iPersistentSceneHandle ||
+		    static_cast<int>(i) == iExcludeHandle)
 		{
-			Zenith_SceneData* pxData = Zenith_SceneRegistry::s_axScenes.Get(i);
-			if (pxData && pxData->m_bIsLoaded)
-			{
-				Zenith_Scene xScene;
-				xScene.m_iHandle = static_cast<int>(i);
-				xScene.m_uGeneration = Zenith_SceneRegistry::s_axSceneGenerations.Get(i);
-				axScenesToUnload.PushBack(xScene);
-			}
+			continue;
+		}
+		Zenith_SceneData* pxData = Zenith_SceneRegistry::s_axScenes.Get(i);
+		if (pxData && pxData->m_bIsLoaded)
+		{
+			Zenith_Scene xScene;
+			xScene.m_iHandle = static_cast<int>(i);
+			xScene.m_uGeneration = Zenith_SceneRegistry::s_axSceneGenerations.Get(i);
+			axScenes.PushBack(xScene);
 		}
 	}
+	return axScenes;
+}
 
-	// Phase 1: Fire SceneUnloading callbacks BEFORE destruction
-	// This allows cleanup code to access scene data before it's destroyed.
-	// HIGH-2: skip scenes that already fired SceneUnloading via an in-flight
-	// async unload — firing it twice violates Unity's exactly-one guarantee.
-	// SceneUnloaded is always fired below in Phase 2 (HIGH-3 — cancel path
-	// must still pair Unloaded with the earlier Unloading).
-	for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
+bool Zenith_SceneManager::DestroyScenesAndFireUnloaded(const Zenith_Vector<Zenith_Scene>& axScenes,
+	const Zenith_HashSet<int>& xAlreadyFired)
+{
+	// Phase 1: fire SceneUnloading BEFORE any destruction so cleanup code can
+	// still touch scene data. HIGH-2 dedup against xAlreadyFired prevents a
+	// second Unloading callback for scenes the cancelled async path already
+	// notified. SceneUnloaded still fires in Phase 2 (HIGH-3 — pair Unloaded
+	// with the earlier Unloading on the cancel path).
+	for (u_int i = 0; i < axScenes.GetSize(); ++i)
 	{
-		const Zenith_Scene& xScene = axScenesToUnload.Get(i);
-		bool bSkipUnloading = false;
-		for (u_int j = 0; j < axAsyncUnloadingAlreadyFired.GetSize(); ++j)
-		{
-			if (axAsyncUnloadingAlreadyFired.Get(j) == xScene.m_iHandle)
-			{
-				bSkipUnloading = true;
-				break;
-			}
-		}
-		if (!bSkipUnloading)
+		const Zenith_Scene& xScene = axScenes.Get(i);
+		if (!xAlreadyFired.Contains(xScene.m_iHandle))
 		{
 			FireSceneUnloadingCallbacks(xScene);
 		}
 	}
 
-	// Phase 2: Destroy scenes and fire SceneUnloaded callbacks AFTER destruction
-	for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
+	// Phase 2: destroy + fire SceneUnloaded. UnloadOneScene mutates the bool
+	// ref; aggregate the result into bActiveSceneUnloaded for the caller.
+	bool bActiveSceneUnloaded = false;
+	for (u_int i = 0; i < axScenes.GetSize(); ++i)
 	{
-		UnloadOneScene(axScenesToUnload.Get(i), bActiveSceneUnloaded);
+		UnloadOneScene(axScenes.Get(i), bActiveSceneUnloaded);
 	}
+	return bActiveSceneUnloaded;
+}
 
-	// A6: If the active scene was unloaded, clear the active handle. Do NOT fall back
-	// to the persistent scene — it's a DontDestroyOnLoad container, not a real scene.
-	// The next LoadScene will set a new active scene, and during the gap GetActiveScene
-	// returns INVALID (callers must handle it; they already do via IsValid() paths).
+void Zenith_SceneManager::UpdateActiveSceneAfterUnload(Zenith_Scene xOldActive)
+{
+	// A6: clear the active handle. Do NOT fall back to the persistent scene —
+	// it's a DontDestroyOnLoad container, not a real scene. The next LoadScene
+	// will set a new active scene; during the gap GetActiveScene returns
+	// INVALID (callers handle it via IsValid() paths).
+	Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
+	Zenith_SceneRegistry::s_iActiveSceneHandle = -1;
+	Zenith_Scene xNewActive = GetActiveScene();  // will be INVALID_SCENE
+	if (xOldActive == xNewActive)
+	{
+		return;
+	}
+	// A5: suppress during SINGLE-load teardown — LoadScene fires the single
+	// consolidated old→new callback once the new scene is active.
+	if (Zenith_SceneCallbackBus::IsActiveSceneSuppressed())
+	{
+		if (!Zenith_SceneCallbackBus::HasDeferredOldActive())
+		{
+			Zenith_SceneCallbackBus::SetDeferredOldActive(xOldActive);
+		}
+	}
+	else
+	{
+		FireActiveSceneChangedCallbacks(xOldActive, xNewActive);
+	}
+}
+
+void Zenith_SceneManager::UnloadAllNonPersistent(int iExcludeHandle)
+{
+	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "UnloadAllNonPersistent must be called from main thread");
+	Zenith_Assert(!s_bRenderTasksActive, "UnloadAllNonPersistent: scene mutation while render tasks are reading — render-task invariant violated");
+
+	Zenith_HashSet<int> xAlreadyFired;
+	CompleteAsyncUnloadJobs(xAlreadyFired);
+
+	// Capture active scene BEFORE destruction (FreeSceneHandle increments generation).
+	const Zenith_Scene xOldActive = GetActiveScene();
+	const Zenith_Vector<Zenith_Scene> axScenesToUnload = CollectNonPersistentScenes(iExcludeHandle);
+	const bool bActiveSceneUnloaded = DestroyScenesAndFireUnloaded(axScenesToUnload, xAlreadyFired);
+
 	if (bActiveSceneUnloaded)
 	{
-		Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
-		Zenith_SceneRegistry::s_iActiveSceneHandle = -1;
-		Zenith_Scene xNewActive = GetActiveScene();  // will be INVALID_SCENE
-		if (xOldActive != xNewActive)
-		{
-			// A5: suppress during SINGLE-load teardown — LoadScene fires the
-			// single consolidated old→new callback once the new scene is active.
-			if (Zenith_SceneCallbackBus::IsActiveSceneSuppressed())
-			{
-				if (!Zenith_SceneCallbackBus::HasDeferredOldActive())
-				{
-					Zenith_SceneCallbackBus::SetDeferredOldActive(xOldActive);
-				}
-			}
-			else
-			{
-				FireActiveSceneChangedCallbacks(xOldActive, xNewActive);
-			}
-		}
+		UpdateActiveSceneAfterUnload(xOldActive);
 	}
 }
 

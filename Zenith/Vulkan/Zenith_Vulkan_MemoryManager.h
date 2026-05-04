@@ -237,6 +237,33 @@ private:
 	static void UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize);
 	static void UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers);
 
+	// CreateTextureVRAM helpers — extracted to keep the orchestrator small and
+	// to give the s_xMutex invariant a single named owner. Allocation runs
+	// pre-lock; only UploadTextureData acquires/releases s_xMutex.
+
+	// Patch defaults onto a Flux_SurfaceInfo: derive mip count from extents
+	// when bCreateMips is true, clamp depth/layers to a min of 1 to keep
+	// downstream byte calculations honest.
+	static void NormalizeTextureInfo(Flux_SurfaceInfo& xInfo, bool bCreateMips);
+
+	// Pure: produce a vk::ImageCreateInfo from the (already normalized) surface
+	// info. Picks 2D vs 3D type, derives the usage mask from the memory flags,
+	// and tags cubemaps with eCubeCompatible. No side effects, so this is safe
+	// to call before the staging-buffer mutex is acquired.
+	static vk::ImageCreateInfo BuildImageCreateInfo(const Flux_SurfaceInfo& xInfo);
+
+	// Allocate the VkImage via VMA and register it as a Flux_VRAMHandle.
+	// Pure with respect to s_xMutex — does NOT acquire it. Returns an invalid
+	// handle on allocation failure (caller treats as an early-out).
+	static Flux_VRAMHandle AllocateAndRegisterImage(const vk::ImageCreateInfo& xImageInfo,
+		VkImage& xImageOut, VmaAllocation& xAllocationOut);
+
+	// Upload pData to the freshly-allocated image via the right path
+	// (host-visible direct copy / chunked / staging-pool bump-allocate).
+	// Acquires s_xMutex internally; caller MUST NOT hold it on entry.
+	static void UploadTextureData(VkImage xImage, VmaAllocation xAllocation,
+		const void* pData, const Flux_SurfaceInfo& xInfo, size_t ulDataSize);
+
 	struct StagingTextureMetadata {
 		vk::Image m_xImage;
 		uint32_t m_uWidth;

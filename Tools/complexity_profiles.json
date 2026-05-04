@@ -27,9 +27,12 @@
         ],
         "fail_on": {
             "max-cc": 100,
-            "max-cognitive": 150,
-            "max-nesting": 8,
-            "max-loc": 900
+            "max-cognitive": 60,
+            "max-nesting": 6,
+            "max-loc": 1000,
+            "max-function-priority": 55,
+            "max-include-cycles": 0,
+            "max-duplicate-clusters": 4
         },
         "filter_low_priority_duplicates": true,
         "filter_test_only_duplicates": true

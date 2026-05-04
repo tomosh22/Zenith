@@ -11721,10 +11721,10 @@ void Zenith_UnitTests::TestRenderGraphLifetimeUsesTopologicalOrder(){
 
 	Flux_RenderGraph::TransientResource* pxT = xGraph.m_axTransients.Get(xT.m_uIndex);
 	void* pTKey = static_cast<void*>(&pxT->m_xAttachment);
-	auto itRes = xGraph.m_xResources.find(pTKey);
-	ZENITH_ASSERT_TRUE(itRes != xGraph.m_xResources.end(), "T must be tracked in m_xResources");
+	const Flux_RenderGraph_Resource* pxRes = xGraph.m_xResources.TryGet(pTKey);
+	ZENITH_ASSERT_TRUE(pxRes != nullptr, "T must be tracked in m_xResources");
 
-	const Flux_RenderGraph_Resource& xRes = itRes->second;
+	const Flux_RenderGraph_Resource& xRes = *pxRes;
 	ZENITH_ASSERT_EQ(xRes.m_uFirstWrite, 0u,
 		"first-write must be the topological position of the writer (topo 0 = P3 at exec[0]), not the writer's pass index (3). Got %u",
 		xRes.m_uFirstWrite);

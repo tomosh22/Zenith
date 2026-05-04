@@ -705,60 +705,35 @@ static bool LinkComponentType(slang::IComponentType* pxComposed,
 	return true;
 }
 
-bool Flux_SlangCompiler::CompileProgram(const Flux_SlangProgramDesc& xDesc, Flux_SlangProgramResult& xResultOut)
+// Load the named module via the session and surface diagnostics on failure.
+static bool LoadSlangModule(slang::ISession* pxSession,
+							 const char* szModuleName,
+							 slang::IModule*& pxModuleOut,
+							 std::string& strError)
 {
-	xResultOut.m_bSuccess = false;
-	xResultOut.m_strError.clear();
-	xResultOut.m_axVertexSpirv.Clear();
-	xResultOut.m_axFragmentSpirv.Clear();
-	xResultOut.m_axComputeSpirv.Clear();
-
-	if (!s_pxGlobalSession)
-	{
-		xResultOut.m_strError = "Slang compiler not initialized";
-		return false;
-	}
-	if (!xDesc.m_szModuleName || !xDesc.m_szModuleName[0])
-	{
-		xResultOut.m_strError = "Flux_SlangProgramDesc missing module name";
-		return false;
-	}
-
-	Slang::ComPtr<slang::ISession> pxSession;
-	if (!CreateSlangSession(xDesc, pxSession, xResultOut.m_strError)) return false;
-
-	// Load the requested module. loadModule resolves transitive imports via
-	// the session search paths.
 	Slang::ComPtr<slang::IBlob> pxLoadDiagnostics;
-	slang::IModule* pxModule = pxSession->loadModule(xDesc.m_szModuleName, pxLoadDiagnostics.writeRef());
-	if (!pxModule)
+	pxModuleOut = pxSession->loadModule(szModuleName, pxLoadDiagnostics.writeRef());
+	if (!pxModuleOut)
 	{
-		xResultOut.m_strError = "Failed to load module '" + std::string(xDesc.m_szModuleName) + "'";
+		strError = "Failed to load module '" + std::string(szModuleName) + "'";
 		if (pxLoadDiagnostics && pxLoadDiagnostics->getBufferSize() > 0)
 		{
-			xResultOut.m_strError += ": ";
-			xResultOut.m_strError.append(static_cast<const char*>(pxLoadDiagnostics->getBufferPointer()),
-										 pxLoadDiagnostics->getBufferSize());
+			strError += ": ";
+			strError.append(static_cast<const char*>(pxLoadDiagnostics->getBufferPointer()),
+							 pxLoadDiagnostics->getBufferSize());
 		}
 		return false;
 	}
+	return true;
+}
 
-	std::vector<Flux_SlangEntryPointBinding> axEntryPoints;
-	if (!CollectEntryPoints(pxModule, xDesc, axEntryPoints, xResultOut.m_strError)) return false;
-
-	if (axEntryPoints.empty())
-	{
-		xResultOut.m_strError = "No entry points specified for program";
-		return false;
-	}
-
-	Slang::ComPtr<slang::IComponentType> pxComposed;
-	if (!ComposeComponentType(pxSession, pxModule, axEntryPoints, pxComposed, xResultOut.m_strError)) return false;
-
-	Slang::ComPtr<slang::IComponentType> pxLinked;
-	if (!LinkComponentType(pxComposed, pxLinked, xResultOut.m_strError)) return false;
-
-	// Emit SPIR-V per entry point.
+// Emit SPIR-V for every entry point on the linked program, routing into the
+// per-stage output vectors on xResultOut. Returns false on first failure with
+// strError populated.
+static bool EmitEntryPointSpirv(slang::IComponentType* pxLinked,
+								 const std::vector<Flux_SlangEntryPointBinding>& axEntryPoints,
+								 Flux_SlangProgramResult& xResultOut)
+{
 	for (size_t i = 0; i < axEntryPoints.size(); i++)
 	{
 		Slang::ComPtr<slang::IBlob> pxCode;
@@ -792,6 +767,50 @@ bool Flux_SlangCompiler::CompileProgram(const Flux_SlangProgramDesc& xDesc, Flux
 		pxOut->Reserve(static_cast<u_int>(ulWords));
 		for (size_t w = 0; w < ulWords; w++) pxOut->PushBack(puCode[w]);
 	}
+	return true;
+}
+
+bool Flux_SlangCompiler::CompileProgram(const Flux_SlangProgramDesc& xDesc, Flux_SlangProgramResult& xResultOut)
+{
+	xResultOut.m_bSuccess = false;
+	xResultOut.m_strError.clear();
+	xResultOut.m_axVertexSpirv.Clear();
+	xResultOut.m_axFragmentSpirv.Clear();
+	xResultOut.m_axComputeSpirv.Clear();
+
+	if (!s_pxGlobalSession)
+	{
+		xResultOut.m_strError = "Slang compiler not initialized";
+		return false;
+	}
+	if (!xDesc.m_szModuleName || !xDesc.m_szModuleName[0])
+	{
+		xResultOut.m_strError = "Flux_SlangProgramDesc missing module name";
+		return false;
+	}
+
+	Slang::ComPtr<slang::ISession> pxSession;
+	if (!CreateSlangSession(xDesc, pxSession, xResultOut.m_strError)) return false;
+
+	slang::IModule* pxModule = nullptr;
+	if (!LoadSlangModule(pxSession, xDesc.m_szModuleName, pxModule, xResultOut.m_strError)) return false;
+
+	std::vector<Flux_SlangEntryPointBinding> axEntryPoints;
+	if (!CollectEntryPoints(pxModule, xDesc, axEntryPoints, xResultOut.m_strError)) return false;
+
+	if (axEntryPoints.empty())
+	{
+		xResultOut.m_strError = "No entry points specified for program";
+		return false;
+	}
+
+	Slang::ComPtr<slang::IComponentType> pxComposed;
+	if (!ComposeComponentType(pxSession, pxModule, axEntryPoints, pxComposed, xResultOut.m_strError)) return false;
+
+	Slang::ComPtr<slang::IComponentType> pxLinked;
+	if (!LinkComponentType(pxComposed, pxLinked, xResultOut.m_strError)) return false;
+
+	if (!EmitEntryPointSpirv(pxLinked, axEntryPoints, xResultOut)) return false;
 
 	// Reflection from the linked program.
 	slang::ProgramLayout* pxReflection = pxLinked->getLayout(0);

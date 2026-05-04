@@ -716,6 +716,69 @@ void Zenith_Squad::AutoAssignLeader()
 	}
 }
 
+void Zenith_Squad::AssignLeaderSlot(Zenith_Vector<bool>& axSlotTaken)
+{
+	if (!HasLeader())
+		return;
+
+	Zenith_SquadMember* pxLeader = GetMember(m_xLeaderID);
+	if (pxLeader && m_pxFormation->GetSlotCount() > 0)
+	{
+		pxLeader->m_iFormationSlot = 0;
+		axSlotTaken.Get(0) = true;
+	}
+}
+
+void Zenith_Squad::AssignRoleMatchedSlots(Zenith_Vector<bool>& axSlotTaken)
+{
+	for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
+	{
+		Zenith_SquadMember& xMember = m_axMembers.Get(u);
+		if (xMember.m_iFormationSlot >= 0 || !xMember.m_bAlive)
+		{
+			continue;
+		}
+
+		for (uint32_t uSlot = 0; uSlot < m_pxFormation->GetSlotCount(); ++uSlot)
+		{
+			if (axSlotTaken.Get(uSlot))
+			{
+				continue;
+			}
+
+			const Zenith_FormationSlot& xSlot = m_pxFormation->GetSlot(uSlot);
+			if (xSlot.m_ePreferredRole == xMember.m_eRole)
+			{
+				xMember.m_iFormationSlot = static_cast<int32_t>(uSlot);
+				axSlotTaken.Get(uSlot) = true;
+				break;
+			}
+		}
+	}
+}
+
+void Zenith_Squad::AssignRemainingSlots(Zenith_Vector<bool>& axSlotTaken)
+{
+	for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
+	{
+		Zenith_SquadMember& xMember = m_axMembers.Get(u);
+		if (xMember.m_iFormationSlot >= 0 || !xMember.m_bAlive)
+		{
+			continue;
+		}
+
+		for (uint32_t uSlot = 0; uSlot < m_pxFormation->GetSlotCount(); ++uSlot)
+		{
+			if (!axSlotTaken.Get(uSlot))
+			{
+				xMember.m_iFormationSlot = static_cast<int32_t>(uSlot);
+				axSlotTaken.Get(uSlot) = true;
+				break;
+			}
+		}
+	}
+}
+
 void Zenith_Squad::AssignFormationSlots()
 {
 	if (m_pxFormation == nullptr)
@@ -737,63 +800,9 @@ void Zenith_Squad::AssignFormationSlots()
 		axSlotTaken.PushBack(false);
 	}
 
-	// First pass: assign leader to slot 0 (leader slot)
-	if (HasLeader())
-	{
-		Zenith_SquadMember* pxLeader = GetMember(m_xLeaderID);
-		if (pxLeader && m_pxFormation->GetSlotCount() > 0)
-		{
-			pxLeader->m_iFormationSlot = 0;
-			axSlotTaken.Get(0) = true;
-		}
-	}
-
-	// Second pass: assign members to slots matching their role
-	for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
-	{
-		Zenith_SquadMember& xMember = m_axMembers.Get(u);
-		if (xMember.m_iFormationSlot >= 0 || !xMember.m_bAlive)
-		{
-			continue; // Already assigned or dead
-		}
-
-		// Find best slot for this role
-		for (uint32_t uSlot = 0; uSlot < m_pxFormation->GetSlotCount(); ++uSlot)
-		{
-			if (axSlotTaken.Get(uSlot))
-			{
-				continue;
-			}
-
-			const Zenith_FormationSlot& xSlot = m_pxFormation->GetSlot(uSlot);
-			if (xSlot.m_ePreferredRole == xMember.m_eRole)
-			{
-				xMember.m_iFormationSlot = static_cast<int32_t>(uSlot);
-				axSlotTaken.Get(uSlot) = true;
-				break;
-			}
-		}
-	}
-
-	// Third pass: assign remaining members to any available slot
-	for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
-	{
-		Zenith_SquadMember& xMember = m_axMembers.Get(u);
-		if (xMember.m_iFormationSlot >= 0 || !xMember.m_bAlive)
-		{
-			continue;
-		}
-
-		for (uint32_t uSlot = 0; uSlot < m_pxFormation->GetSlotCount(); ++uSlot)
-		{
-			if (!axSlotTaken.Get(uSlot))
-			{
-				xMember.m_iFormationSlot = static_cast<int32_t>(uSlot);
-				axSlotTaken.Get(uSlot) = true;
-				break;
-			}
-		}
-	}
+	AssignLeaderSlot(axSlotTaken);
+	AssignRoleMatchedSlots(axSlotTaken);
+	AssignRemainingSlots(axSlotTaken);
 
 	UpdateFormationPositions();
 }

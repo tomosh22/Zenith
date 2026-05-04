@@ -129,6 +129,7 @@ public:
 private:
     Zenith_UIElement* FindElementRecursive(Zenith_UIElement* pxElement, const std::string& strName) const;
     void UpdateSize();
+    void UpdateFocusNavigation();
 
     // All elements owned by canvas (flat list for ownership/deletion)
     Zenith_Vector<Zenith_UIElement*> m_xAllElements;
