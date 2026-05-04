@@ -178,7 +178,7 @@ void Zenith_Editor::UpdateEditorCamera(float fDt)
 {
 	if (!s_bEditorCameraInitialized)  return;
 	if (s_eEditorMode == EditorMode::Playing)  return;  // Stopped/Paused only.
-	if (!s_bViewportFocused)  return;
+	if (!s_bViewportHovered && !Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))  return;
 
 	UpdateEditorCameraLook();
 	UpdateEditorCameraMovement(fDt);
