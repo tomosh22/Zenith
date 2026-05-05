@@ -98,6 +98,11 @@ void Flux_Skybox::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		// Attach depth only so the render-pass clear resets scene depth to far.
+		// The fullscreen sky draw must not depth-test or write depth.
+		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
+		xSpec.m_bDepthTestEnabled = false;
+		xSpec.m_bDepthWriteEnabled = false;
 		xSpec.m_pxShader = &s_xCubemapShader;
 		s_xCubemapShader.Initialise(FluxShaderProgram::SkyboxCubemap);
 		s_xCubemapShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
@@ -117,6 +122,11 @@ void Flux_Skybox::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		// Attach depth only so the render-pass clear resets scene depth to far.
+		// The fullscreen sky draw must not depth-test or write depth.
+		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
+		xSpec.m_bDepthTestEnabled = false;
+		xSpec.m_bDepthWriteEnabled = false;
 		xSpec.m_pxShader = &s_xSolidColourShader;
 		s_xSolidColourShader.Initialise(FluxShaderProgram::SkyboxSolidColour);
 		s_xSolidColourShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
@@ -136,6 +146,11 @@ void Flux_Skybox::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		// Attach depth only so the render-pass clear resets scene depth to far.
+		// The fullscreen sky draw must not depth-test or write depth.
+		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
+		xSpec.m_bDepthTestEnabled = false;
+		xSpec.m_bDepthWriteEnabled = false;
 		xSpec.m_pxShader = &s_xAtmosphereShader;
 		s_xAtmosphereShader.Initialise(FluxShaderProgram::SkyboxAtmosphere);
 		s_xAtmosphereShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
@@ -353,6 +368,9 @@ void Flux_Skybox::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		// Depth is attached purely so ClearTargets() clears it to 1.0; the
+		// skybox pipelines disable depth test/write, so the draw does not touch it.
+		.Writes(Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV)
 		.Prepare(PreExecuteSkybox)
 		.ClearTargets();
 }
