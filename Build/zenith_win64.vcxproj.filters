@@ -3099,6 +3099,9 @@
     <ClInclude Include="..\Tools\Zenith_Tools_TestAssetExport.h">
       <Filter>Tools</Filter>
     </ClInclude>
+    <ClInclude Include="..\Tools\Zenith_Tools_TestAssetExport.Tests.inl">
+      <Filter>Tools</Filter>
+    </ClInclude>
     <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h">
       <Filter>Tools</Filter>
     </ClInclude>

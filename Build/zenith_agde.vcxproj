@@ -815,6 +815,7 @@
     <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TerrainExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TestAssetExport.h" />
+    <ClInclude Include="..\Tools\Zenith_Tools_TestAssetExport.Tests.inl" />
     <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h" />
     <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.h" />
     <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.Tests.inl" />

@@ -160,6 +160,23 @@ void Zenith_Window::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
 	glfwGetCursorPos(m_pxNativeWindow, &xOut.x, &xOut.y);
 }
 
+void Zenith_Window::ToggleCaptureCursor()
+{
+	const int iCurrent = glfwGetInputMode(m_pxNativeWindow, GLFW_CURSOR);
+	glfwSetInputMode(m_pxNativeWindow, GLFW_CURSOR,
+		iCurrent == GLFW_CURSOR_DISABLED ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+}
+
+void Zenith_Window::EnableCaptureCursor()
+{
+	glfwSetInputMode(m_pxNativeWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+}
+
+void Zenith_Window::DisableCaptureCursor()
+{
+	glfwSetInputMode(m_pxNativeWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+}
+
 bool Zenith_Window::IsKeyDown(Zenith_KeyCode iKey)
 {
 	// Mouse buttons use GLFW_MOUSE_BUTTON_* codes (0-7)

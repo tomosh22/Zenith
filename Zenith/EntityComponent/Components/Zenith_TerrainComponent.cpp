@@ -1054,7 +1054,7 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList)
 {
 	if (!m_bCullingResourcesInitialized)
 	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "ERROR: Zenith_TerrainComponent::UpdateCullingAndLod() called before InitializeCullingResources()");
+		Zenith_Error(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent::UpdateCullingAndLod() called before InitializeCullingResources()");
 		return;
 	}
 

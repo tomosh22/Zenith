@@ -21,15 +21,19 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
+#include "Prefab/Zenith_Prefab.h"
+#include "UI/Zenith_UI.h"
 #include "Zenith_OS_Include.h"
 
 // Header-only behaviours: must be included into a compiled TU so their
 // ZENITH_BEHAVIOUR_TYPE_NAME auto-registers the factory at startup.
 #include "RenderTest/Components/RenderTest_PlayerBehaviour.h"
 #include "RenderTest/Components/RenderTest_FollowCamera.h"
+#include "RenderTest/Components/RenderTest_BulletBehaviour.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -67,6 +71,20 @@ namespace RenderTest
 
 	MaterialHandle g_xCubeMaterial;
 	MaterialHandle g_xPlayerMaterial;
+
+	// Bullet projectile assets. The .zmodel + sphere mesh asset are produced
+	// by GenerateRenderTestAssets() at tools-build time and live under
+	// ENGINE_ASSETS_DIR/Meshes/Bullet_Sphere/. The bullet material is created
+	// in-memory each run (procedural flat yellow). The .zprfb is produced by
+	// AddStep_CreatePrefabFromSelected during scene-build automation.
+	std::string                                      g_strBulletModelPath;
+	MaterialHandle                                   g_xBulletMaterial;
+	Zenith_AssetHandle<Zenith_Prefab>                g_xBulletPrefab;
+
+	// Muzzle-flash particle config (heap-owned; registered by name with
+	// Flux_ParticleEmitterConfig). Sokoban precedent: registry borrows the
+	// pointer, caller deletes on shutdown.
+	Flux_ParticleEmitterConfig*                      g_pxMuzzleConfig = nullptr;
 }
 
 static bool s_bResourcesInitialized = false;
@@ -838,6 +856,48 @@ static void InitializeRenderTestResources()
 	EnsureUnitCubeModelExists();
 	EnsureStickFigureModelExists();
 
+	// --- Bullet projectile material (procedural flat yellow tracer) ---
+	RenderTest::g_xBulletMaterial = CreateFlatColorMaterial("RenderTestBulletMaterial",
+		strProceduralTexDir + "BulletDiffuse" ZENITH_TEXTURE_EXT, 255, 220, 60);
+
+	// --- Bullet projectile model (Bullet_Sphere.zmodel produced by tool) ---
+	// The sphere mesh + model are shared engine assets so any game can spawn
+	// the same bullet without each game shipping its own sphere mesh.
+	RenderTest::g_strBulletModelPath = std::string(ENGINE_ASSETS_DIR)
+		+ "Meshes/Bullet_Sphere/Bullet_Sphere" ZENITH_MODEL_EXT;
+
+	// --- Bullet prefab handle ---
+	// The .zprfb itself is produced by AddStep_CreatePrefabFromSelected during
+	// scene-build automation. SetPath here so the runtime can resolve it on
+	// the next run; we don't force Resolve() yet because on the very first
+	// build the file doesn't exist until automation has run.
+	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "Prefabs");
+	RenderTest::g_xBulletPrefab.SetPath(std::string(GAME_ASSETS_DIR)
+		+ "Prefabs/Bullet" ZENITH_PREFAB_EXT);
+
+	// --- Muzzle flash particle config (Sokoban pattern) ---
+	if (!RenderTest::g_pxMuzzleConfig)
+	{
+		RenderTest::g_pxMuzzleConfig = new Flux_ParticleEmitterConfig();
+		RenderTest::g_pxMuzzleConfig->m_fSpawnRate            = 0.0f;       // burst-only
+		RenderTest::g_pxMuzzleConfig->m_uBurstCount           = 8;
+		RenderTest::g_pxMuzzleConfig->m_uMaxParticles         = 64;
+		RenderTest::g_pxMuzzleConfig->m_fLifetimeMin          = 0.04f;
+		RenderTest::g_pxMuzzleConfig->m_fLifetimeMax          = 0.10f;
+		RenderTest::g_pxMuzzleConfig->m_fSpreadAngleDegrees   = 25.0f;
+		RenderTest::g_pxMuzzleConfig->m_fSpeedMin             = 4.0f;
+		RenderTest::g_pxMuzzleConfig->m_fSpeedMax             = 8.0f;
+		RenderTest::g_pxMuzzleConfig->m_xGravity              = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+		RenderTest::g_pxMuzzleConfig->m_fDrag                 = 4.0f;
+		RenderTest::g_pxMuzzleConfig->m_xColorStart           = { 1.0f, 0.95f, 0.4f, 1.0f };
+		RenderTest::g_pxMuzzleConfig->m_xColorEnd             = { 1.0f, 0.40f, 0.0f, 0.0f };
+		RenderTest::g_pxMuzzleConfig->m_fSizeStart            = 0.25f;
+		RenderTest::g_pxMuzzleConfig->m_fSizeEnd              = 0.05f;
+		RenderTest::g_pxMuzzleConfig->m_bAdditiveBlending     = true;
+		RenderTest::g_pxMuzzleConfig->m_bUseGPUCompute        = false;
+		Flux_ParticleEmitterConfig::Register("RenderTest_MuzzleFlash", RenderTest::g_pxMuzzleConfig);
+	}
+
 	s_bResourcesInitialized = true;
 }
 
@@ -1194,6 +1254,21 @@ void Project_RegisterScriptBehaviours()
 
 void Project_Shutdown()
 {
+	// Drop asset handles before the registry tears down, mirroring Sokoban's
+	// pattern. Static handle destructors run after the registry is gone, which
+	// would be use-after-free.
+	RenderTest::g_xBulletPrefab.Clear();
+	RenderTest::g_xBulletMaterial.Clear();
+
+	// Particle config registry borrows the pointer (Sokoban precedent at
+	// Sokoban.cpp:204). Unregister + delete + null so a subsequent Initialise
+	// rebuilds cleanly if the process were to keep running.
+	if (RenderTest::g_pxMuzzleConfig)
+	{
+		Flux_ParticleEmitterConfig::Unregister("RenderTest_MuzzleFlash");
+		delete RenderTest::g_pxMuzzleConfig;
+		RenderTest::g_pxMuzzleConfig = nullptr;
+	}
 }
 
 void Project_LoadInitialScene();
@@ -1227,13 +1302,17 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateScene("RenderTest");
 
 	// GameManager — main camera with follow-camera script.
+	// Initial position is approximate; the FollowCamera overwrites it on the
+	// first OnLateUpdate to track the player at the over-the-shoulder offset.
+	// Pitch starts at the shooter angle so the editor preview matches the
+	// in-play view rather than the old top-down -0.7rad framing.
 	const float fInitialPlayerY = 82.0f;
-	const float fCamOffsetY = 12.0f;
-	const float fCamOffsetZ = -15.0f;
+	const float fCamOffsetY = 2.0f;
+	const float fCamOffsetZ = -4.0f;
 	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
 	Zenith_EditorAutomation::AddStep_AddCamera();
 	Zenith_EditorAutomation::AddStep_SetCameraPosition(TERRAIN_SIZE * 0.5f, fInitialPlayerY + fCamOffsetY, TERRAIN_SIZE * 0.5f + fCamOffsetZ);
-	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.7f);
+	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.15f);
 	Zenith_EditorAutomation::AddStep_SetCameraYaw(0.0f);
 	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(70.0f));
 	Zenith_EditorAutomation::AddStep_SetCameraNear(0.1f);
@@ -1272,7 +1351,71 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::g_strStickFigureModelPath.c_str());
 	Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::g_xPlayerMaterial.GetDirect());
 	Zenith_EditorAutomation::AddStep_AddAnimator();
+	// Muzzle flash emitter lives on the Player entity; the player behaviour
+	// overrides its emit position+direction per shot so we don't need a
+	// separate gun-barrel child entity.
+	Zenith_EditorAutomation::AddStep_AddParticleEmitter();
+	Zenith_EditorAutomation::AddStep_SetParticleConfigByName("RenderTest_MuzzleFlash");
+	Zenith_EditorAutomation::AddStep_SetParticleEmitting(false);
 	Zenith_EditorAutomation::AddStep_AttachScript("RenderTest_PlayerBehaviour");
+
+	// HUD canvas — crosshair (5 small UIRects) + ammo counter text.
+	Zenith_EditorAutomation::AddStep_CreateEntity("HUD");
+	Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
+	Zenith_EditorAutomation::AddStep_AddUI();
+
+	// Crosshair: center pixel + 4 short bars at +/-10px on each axis.
+	Zenith_EditorAutomation::AddStep_CreateUIRect("Crosshair_Center");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Crosshair_Center", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Crosshair_Center", 0.0f, 0.0f);
+	Zenith_EditorAutomation::AddStep_SetUISize("Crosshair_Center", 4.0f, 4.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Crosshair_Center", 1.0f, 1.0f, 1.0f, 0.85f);
+
+	Zenith_EditorAutomation::AddStep_CreateUIRect("Crosshair_Top");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Crosshair_Top", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Crosshair_Top", 0.0f, -10.0f);
+	Zenith_EditorAutomation::AddStep_SetUISize("Crosshair_Top", 2.0f, 8.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Crosshair_Top", 1.0f, 1.0f, 1.0f, 0.7f);
+
+	Zenith_EditorAutomation::AddStep_CreateUIRect("Crosshair_Bottom");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Crosshair_Bottom", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Crosshair_Bottom", 0.0f, 10.0f);
+	Zenith_EditorAutomation::AddStep_SetUISize("Crosshair_Bottom", 2.0f, 8.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Crosshair_Bottom", 1.0f, 1.0f, 1.0f, 0.7f);
+
+	Zenith_EditorAutomation::AddStep_CreateUIRect("Crosshair_Left");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Crosshair_Left", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Crosshair_Left", -10.0f, 0.0f);
+	Zenith_EditorAutomation::AddStep_SetUISize("Crosshair_Left", 8.0f, 2.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Crosshair_Left", 1.0f, 1.0f, 1.0f, 0.7f);
+
+	Zenith_EditorAutomation::AddStep_CreateUIRect("Crosshair_Right");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Crosshair_Right", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Crosshair_Right", 10.0f, 0.0f);
+	Zenith_EditorAutomation::AddStep_SetUISize("Crosshair_Right", 8.0f, 2.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Crosshair_Right", 1.0f, 1.0f, 1.0f, 0.7f);
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("AmmoText", "30 / 90");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("AmmoText", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("AmmoText", -100.0f, -40.0f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("AmmoText", 32.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("AmmoText", 1.0f, 1.0f, 1.0f, 1.0f);
+
+	// Bullet prefab template — built into a transient entity, then captured to
+	// .zprfb via AddStep_CreatePrefabFromSelected. The transient entity is
+	// discarded after the prefab is saved; only the .zprfb persists.
+	Zenith_EditorAutomation::AddStep_CreateEntity("BulletTemplate");
+	Zenith_EditorAutomation::AddStep_SetEntityTransient(true);
+	Zenith_EditorAutomation::AddStep_SetTransformPosition(0.0f, 0.0f, 0.0f);
+	Zenith_EditorAutomation::AddStep_SetTransformScale(0.15f, 0.15f, 0.15f);
+	Zenith_EditorAutomation::AddStep_AddModel();
+	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::g_strBulletModelPath.c_str());
+	Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::g_xBulletMaterial.GetDirect());
+	Zenith_EditorAutomation::AddStep_AddCollider();
+	Zenith_EditorAutomation::AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
+	Zenith_EditorAutomation::AddStep_AttachScript("RenderTest_BulletBehaviour");
+	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("Bullet",
+		GAME_ASSETS_DIR "Prefabs/Bullet" ZENITH_PREFAB_EXT);
 
 	// Smoke runner — attached BEFORE save so it ends up in the saved scene.
 	if (RenderTest_IsSmokeMode())
@@ -1309,3 +1452,8 @@ void Project_LoadInitialScene()
 	}
 #endif
 }
+
+// Input-simulator tests for RenderTest_FollowCamera + RenderTest_PlayerBehaviour.
+// Included here (rather than from a Zenith engine TU) so the auto-registered
+// ZENITH_TEST cases land in the RenderTest binary's test runner.
+#include "RenderTest/Components/RenderTest_PlayerBehaviour.Tests.inl"

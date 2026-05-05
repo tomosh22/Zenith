@@ -605,6 +605,40 @@ public:
 	static void TestRootMotionRotationInterpolatesBetween();
 	static void TestRootMotionRotationPastEnd();
 
+	// RenderTest input-simulator tests (FollowCamera + PlayerBehaviour driven
+	// via Zenith_InputSimulator). Each test owns a fresh test scene + minimal
+	// Player/GameManager entities. See RenderTest_PlayerBehaviour.Tests.inl.
+	static void TestRenderTestCameraYawDecreasesOnMouseRight();
+	static void TestRenderTestCameraPitchDecreasesOnMouseDown();
+	static void TestRenderTestCameraPitchClampedAtFloor();
+	static void TestRenderTestCameraPitchClampedAtCeiling();
+	static void TestRenderTestCameraYawWrapsToZeroToTwoPi();
+	static void TestRenderTestPlayerMovesForwardOnW();
+	static void TestRenderTestPlayerNoRotationOnBackward();
+	static void TestRenderTestPlayerRotatesWithCameraYawWhenAiming();
+	static void TestRenderTestAimingFlagSetByRMB();
+	static void TestRenderTestFireDecrementsAmmo();
+	static void TestRenderTestFireRespectsCooldown();
+	static void TestRenderTestAutoReloadOnEmptyClick();
+	static void TestRenderTestHipfireReloadRaisesAimLayer();
+	static void TestRenderTestReloadBlocksFire();
+
+	// StickFigure procedural-clip tests (Aim/Fire/Reload/Jump animation factories
+	// in Tools/Zenith_Tools_TestAssetExport.cpp). Each test constructs the clip,
+	// asserts on metadata + bone-channel presence + a representative sample.
+	static void TestStickFigureAimClipMetadata();
+	static void TestStickFigureAimClipBoneChannelsExist();
+	static void TestStickFigureAimClipRightArmRotation();
+	static void TestStickFigureFireClipMetadata();
+	static void TestStickFigureFireClipReturnsToAimPoseAtEnd();
+	static void TestStickFigureFireClipPeakRecoil();
+	static void TestStickFigureReloadClipMetadata();
+	static void TestStickFigureReloadClipFiveKeyframesOnLeftArm();
+	static void TestStickFigureReloadClipReturnsToAimPoseAtEnd();
+	static void TestStickFigureJumpClipMetadata();
+	static void TestStickFigureJumpClipBothLegsHaveKeyframes();
+	static void TestStickFigureJumpClipReturnsToIdentityAtEnd();
+
 	// Flux_BlendTreeNode_BlendSpace1D / 2D nearest-blend-point tests (verify
 	// the shared FindNearestBlendPoint templated helper).
 	static void TestBlendSpace1DEmptyReturnsZero();

@@ -162,7 +162,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\Components\RenderTest_BulletBehaviour.h" />
     <ClInclude Include="..\Components\RenderTest_FollowCamera.h" />
+    <ClInclude Include="..\Components\RenderTest_GameplayState.h" />
     <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.h" />
   </ItemGroup>
   <ItemGroup>

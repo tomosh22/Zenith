@@ -4,7 +4,13 @@
     <ClCompile Include="..\RenderTest.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\Components\RenderTest_BulletBehaviour.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\RenderTest_FollowCamera.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_GameplayState.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.h">

@@ -13,3 +13,7 @@ extern void GenerateStickFigureAssets();
 // Creates: skeleton, mesh, mesh geometry, static mesh, VAT, sway animation
 // Output: ENGINE_ASSETS_DIR/Meshes/ProceduralTree/
 extern void GenerateProceduralTreeAssets();
+
+// Generate RenderTest game-specific assets (bullet sphere mesh + model)
+// Output: GAME_ASSETS_DIR/Meshes/Bullet_Sphere.{zasset,zmodel}
+extern void GenerateRenderTestAssets();

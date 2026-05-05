@@ -2,6 +2,7 @@
 
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -996,6 +997,277 @@ static Flux_AnimationClip* CreateTreeSwayAnimation()
 }
 
 //------------------------------------------------------------------------------
+// Aim Hold Pose
+//
+// Shared upper-body rest pose used by the Aim, Fire, and Reload clips. Each
+// clip's start/end keyframes match this pose so transitions between them
+// don't snap arms back to identity.
+//------------------------------------------------------------------------------
+namespace StickFigureAimHoldPose
+{
+	inline Zenith_Maths::Quat RightUpperArm()
+	{
+		return glm::angleAxis(glm::radians(-75.0f), Zenith_Maths::Vector3(1, 0, 0))
+		     * glm::angleAxis(glm::radians( 20.0f), Zenith_Maths::Vector3(0, 1, 0));
+	}
+	inline Zenith_Maths::Quat RightLowerArm()
+	{
+		return glm::angleAxis(glm::radians(-45.0f), Zenith_Maths::Vector3(1, 0, 0));
+	}
+	inline Zenith_Maths::Quat LeftUpperArm()
+	{
+		return glm::angleAxis(glm::radians(-65.0f), Zenith_Maths::Vector3(1, 0, 0))
+		     * glm::angleAxis(glm::radians(-25.0f), Zenith_Maths::Vector3(0, 1, 0));
+	}
+	inline Zenith_Maths::Quat LeftLowerArm()
+	{
+		return glm::angleAxis(glm::radians(-50.0f), Zenith_Maths::Vector3(1, 0, 0));
+	}
+	inline Zenith_Maths::Quat Spine()
+	{
+		return glm::angleAxis(glm::radians(-10.0f), Zenith_Maths::Vector3(1, 0, 0));
+	}
+	inline Zenith_Maths::Quat Head()
+	{
+		return glm::angleAxis(glm::radians(-5.0f), Zenith_Maths::Vector3(1, 0, 0));
+	}
+}
+
+static Flux_AnimationClip* CreateAimAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Aim");
+	pxClip->SetDuration(0.5f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(true);
+
+	// Stable hold — both keyframes are the aim pose, so looping doesn't pulse.
+	auto AddHold = [&](const char* szBone, const Zenith_Maths::Quat& xPose)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, xPose);
+		xChannel.AddRotationKeyframe(12.0f, xPose);
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel(szBone, std::move(xChannel));
+	};
+
+	AddHold("RightUpperArm", StickFigureAimHoldPose::RightUpperArm());
+	AddHold("RightLowerArm", StickFigureAimHoldPose::RightLowerArm());
+	AddHold("LeftUpperArm",  StickFigureAimHoldPose::LeftUpperArm());
+	AddHold("LeftLowerArm",  StickFigureAimHoldPose::LeftLowerArm());
+	AddHold("Spine",         StickFigureAimHoldPose::Spine());
+	AddHold("Head",          StickFigureAimHoldPose::Head());
+
+	return pxClip;
+}
+
+static Flux_AnimationClip* CreateFireAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Fire");
+	pxClip->SetDuration(0.20f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
+
+	// Recoil deltas applied on top of the aim hold pose, so arms stay raised.
+	auto AddRecoil = [&](const char* szBone, const Zenith_Maths::Quat& xRest, float fKickDeg)
+	{
+		const Zenith_Maths::Quat xKick = glm::angleAxis(glm::radians(fKickDeg), xXAxis) * xRest;
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, xRest);
+		xChannel.AddRotationKeyframe(2.0f, xKick);
+		xChannel.AddRotationKeyframe(5.0f, xRest);
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel(szBone, std::move(xChannel));
+	};
+
+	AddRecoil("RightUpperArm", StickFigureAimHoldPose::RightUpperArm(), 15.0f);
+	AddRecoil("RightLowerArm", StickFigureAimHoldPose::RightLowerArm(), -10.0f);
+	AddRecoil("Spine",         StickFigureAimHoldPose::Spine(),         3.0f);
+	AddRecoil("Head",          StickFigureAimHoldPose::Head(),          2.0f);
+
+	return pxClip;
+}
+
+static Flux_AnimationClip* CreateReloadAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Reload");
+	pxClip->SetDuration(1.5f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
+	const Zenith_Maths::Vector3 xYAxis(0, 1, 0);
+
+	const Zenith_Maths::Quat xLeftUpperRest  = StickFigureAimHoldPose::LeftUpperArm();
+	const Zenith_Maths::Quat xLeftLowerRest  = StickFigureAimHoldPose::LeftLowerArm();
+	const Zenith_Maths::Quat xRightUpperRest = StickFigureAimHoldPose::RightUpperArm();
+
+	// Left arm: drop free hand, reach across body for magazine, return.
+	{
+		Flux_BoneChannel xChannel;
+		const Zenith_Maths::Quat xDrop  = glm::angleAxis(glm::radians(-90.0f), xXAxis) * xLeftUpperRest;
+		const Zenith_Maths::Quat xReach = glm::angleAxis(glm::radians(-30.0f), xXAxis)
+		                                * glm::angleAxis(glm::radians( 60.0f), xYAxis) * xLeftUpperRest;
+		const Zenith_Maths::Quat xLift  = glm::angleAxis(glm::radians(-90.0f), xXAxis) * xLeftUpperRest;
+		xChannel.AddRotationKeyframe(0.0f,  xLeftUpperRest);
+		xChannel.AddRotationKeyframe(8.0f,  xDrop);
+		xChannel.AddRotationKeyframe(20.0f, xReach);
+		xChannel.AddRotationKeyframe(28.0f, xLift);
+		xChannel.AddRotationKeyframe(36.0f, xLeftUpperRest);
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
+	}
+
+	{
+		Flux_BoneChannel xChannel;
+		const Zenith_Maths::Quat xBend = glm::angleAxis(glm::radians(-100.0f), xXAxis) * xLeftLowerRest;
+		const Zenith_Maths::Quat xMid  = glm::angleAxis(glm::radians( -60.0f), xXAxis) * xLeftLowerRest;
+		const Zenith_Maths::Quat xRet  = glm::angleAxis(glm::radians( -50.0f), xXAxis) * xLeftLowerRest;
+		xChannel.AddRotationKeyframe(0.0f,  xLeftLowerRest);
+		xChannel.AddRotationKeyframe(8.0f,  xBend);
+		xChannel.AddRotationKeyframe(20.0f, xMid);
+		xChannel.AddRotationKeyframe(28.0f, xRet);
+		xChannel.AddRotationKeyframe(36.0f, xLeftLowerRest);
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("LeftLowerArm", std::move(xChannel));
+	}
+
+	// Right arm holds gun-grip pose with a subtle dip in the middle.
+	{
+		Flux_BoneChannel xChannel;
+		const Zenith_Maths::Quat xDip = glm::angleAxis(glm::radians(-15.0f), xXAxis) * xRightUpperRest;
+		xChannel.AddRotationKeyframe(0.0f,  xRightUpperRest);
+		xChannel.AddRotationKeyframe(8.0f,  xDip);
+		xChannel.AddRotationKeyframe(20.0f, xDip);
+		xChannel.AddRotationKeyframe(28.0f, xDip);
+		xChannel.AddRotationKeyframe(36.0f, xRightUpperRest);
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+static Flux_AnimationClip* CreateJumpAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Jump");
+	pxClip->SetDuration(0.8f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
+
+	// Spine: crouch, neutral on push-off, slight back lean on land, recover.
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f,  glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(4.0f,  glm::angleAxis(glm::radians( 20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(16.0f, glm::angleAxis(glm::radians(-10.0f), xXAxis));
+		xChannel.AddRotationKeyframe(19.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Spine", std::move(xChannel));
+	}
+
+	// Both upper legs: crouch, push, tuck, recover.
+	auto AddUpperLeg = [&](const char* szBone)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f,  glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(4.0f,  glm::angleAxis(glm::radians( 30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(10.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(16.0f, glm::angleAxis(glm::radians( 40.0f), xXAxis));
+		xChannel.AddRotationKeyframe(19.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel(szBone, std::move(xChannel));
+	};
+	AddUpperLeg("LeftUpperLeg");
+	AddUpperLeg("RightUpperLeg");
+
+	// Lower legs: knee bend during crouch, big tuck mid-jump.
+	auto AddLowerLeg = [&](const char* szBone)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f,  glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(4.0f,  glm::angleAxis(glm::radians(-45.0f), xXAxis));
+		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(16.0f, glm::angleAxis(glm::radians(-90.0f), xXAxis));
+		xChannel.AddRotationKeyframe(19.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel(szBone, std::move(xChannel));
+	};
+	AddLowerLeg("LeftLowerLeg");
+	AddLowerLeg("RightLowerLeg");
+
+	// Arms swing for momentum.
+	auto AddArmSwing = [&](const char* szBone)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f,  glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(4.0f,  glm::angleAxis(glm::radians( 20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(10.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));
+		xChannel.AddRotationKeyframe(16.0f, glm::angleAxis(glm::radians( 30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(19.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel(szBone, std::move(xChannel));
+	};
+	AddArmSwing("LeftUpperArm");
+	AddArmSwing("RightUpperArm");
+
+	return pxClip;
+}
+
+//------------------------------------------------------------------------------
+// Bullet sphere mesh
+//
+// Generates a unit sphere into a Zenith_MeshAsset. Used by GenerateRenderTestAssets
+// to produce the bullet projectile asset on disk.
+//------------------------------------------------------------------------------
+static void GenerateUnitSphereMeshAsset(Zenith_MeshAsset& xMeshOut, uint32_t uSegments, uint32_t uRings)
+{
+	xMeshOut.Reset();
+
+	const uint32_t uVertCount = (uRings + 1) * (uSegments + 1);
+	const uint32_t uIdxCount  = uRings * uSegments * 6;
+	xMeshOut.Reserve(uVertCount, uIdxCount);
+
+	for (uint32_t uRing = 0; uRing <= uRings; ++uRing)
+	{
+		const float fV = static_cast<float>(uRing) / static_cast<float>(uRings);
+		const float fPhi = fV * glm::pi<float>();
+		const float fY = cosf(fPhi);
+		const float fSinPhi = sinf(fPhi);
+
+		for (uint32_t uSeg = 0; uSeg <= uSegments; ++uSeg)
+		{
+			const float fU = static_cast<float>(uSeg) / static_cast<float>(uSegments);
+			const float fTheta = fU * glm::pi<float>() * 2.0f;
+			const Zenith_Maths::Vector3 xPos(fSinPhi * cosf(fTheta), fY, fSinPhi * sinf(fTheta));
+			xMeshOut.AddVertex(xPos * 0.5f, xPos /* normal */, Zenith_Maths::Vector2(fU, fV));
+		}
+	}
+
+	for (uint32_t uRing = 0; uRing < uRings; ++uRing)
+	{
+		for (uint32_t uSeg = 0; uSeg < uSegments; ++uSeg)
+		{
+			const uint32_t uA = uRing * (uSegments + 1) + uSeg;
+			const uint32_t uB = uA + (uSegments + 1);
+			xMeshOut.AddTriangle(uA, uB, uA + 1);
+			xMeshOut.AddTriangle(uA + 1, uB, uB + 1);
+		}
+	}
+
+	xMeshOut.AddSubmesh(0, uIdxCount, 0);
+	xMeshOut.ComputeBounds();
+}
+
+//------------------------------------------------------------------------------
 // Public Asset Generation Functions
 //------------------------------------------------------------------------------
 
@@ -1015,6 +1287,10 @@ void GenerateStickFigureAssets()
 	Flux_AnimationClip* pxDodgeClip = CreateDodgeAnimation();
 	Flux_AnimationClip* pxHitClip = CreateHitAnimation();
 	Flux_AnimationClip* pxDeathClip = CreateDeathAnimation();
+	Flux_AnimationClip* pxAimClip = CreateAimAnimation();
+	Flux_AnimationClip* pxFireClip = CreateFireAnimation();
+	Flux_AnimationClip* pxReloadClip = CreateReloadAnimation();
+	Flux_AnimationClip* pxJumpClip = CreateJumpAnimation();
 
 	// Create output directory
 	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
@@ -1086,11 +1362,28 @@ void GenerateStickFigureAssets()
 	pxDeathClip->Export(strDeathPath);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported death animation to: %s", strDeathPath.c_str());
 
+	std::string strAimPath = strOutputDir + "StickFigure_Aim" ZENITH_ANIMATION_EXT;
+	pxAimClip->Export(strAimPath);
+	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported aim animation to: %s", strAimPath.c_str());
+
+	std::string strFirePath = strOutputDir + "StickFigure_Fire" ZENITH_ANIMATION_EXT;
+	pxFireClip->Export(strFirePath);
+	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported fire animation to: %s", strFirePath.c_str());
+
+	std::string strReloadPath = strOutputDir + "StickFigure_Reload" ZENITH_ANIMATION_EXT;
+	pxReloadClip->Export(strReloadPath);
+	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported reload animation to: %s", strReloadPath.c_str());
+
+	std::string strJumpPath = strOutputDir + "StickFigure_Jump" ZENITH_ANIMATION_EXT;
+	pxJumpClip->Export(strJumpPath);
+	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported jump animation to: %s", strJumpPath.c_str());
+
 	// Export to glTF format for editing in Blender
 	{
 		std::vector<const Flux_AnimationClip*> axClips = {
 			pxIdleClip, pxWalkClip, pxRunClip, pxAttack1Clip, pxAttack2Clip,
-			pxAttack3Clip, pxDodgeClip, pxHitClip, pxDeathClip
+			pxAttack3Clip, pxDodgeClip, pxHitClip, pxDeathClip,
+			pxAimClip, pxFireClip, pxReloadClip, pxJumpClip
 		};
 		std::string strGltfPath = strOutputDir + "StickFigure.gltf";
 		if (Zenith_Tools_GltfExport::ExportToGltf(strGltfPath.c_str(), pxMesh, pxSkel, axClips))
@@ -1100,6 +1393,10 @@ void GenerateStickFigureAssets()
 	}
 
 	// Cleanup
+	delete pxJumpClip;
+	delete pxReloadClip;
+	delete pxFireClip;
+	delete pxAimClip;
 	delete pxDeathClip;
 	delete pxHitClip;
 	delete pxDodgeClip;
@@ -1195,10 +1492,47 @@ void GenerateProceduralTreeAssets()
 	Zenith_Log(LOG_CATEGORY_ASSET, "ProceduralTree assets generated at: %s", strOutputDir.c_str());
 }
 
+void GenerateRenderTestAssets()
+{
+	Zenith_Log(LOG_CATEGORY_ASSET, "Generating RenderTest game assets...");
+
+	// Shared engine asset (any game can reference it). Mirrors how StickFigure
+	// and ProceduralTree live under ENGINE_ASSETS_DIR/Meshes/. GAME_ASSETS_DIR
+	// is per-game and isn't defined in the engine-library translation unit.
+	const std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/Bullet_Sphere/";
+	std::filesystem::create_directories(strOutputDir);
+
+	const std::string strMeshAssetPath = strOutputDir + "Bullet_Sphere" ZENITH_MESH_ASSET_EXT;
+	const std::string strModelPath     = strOutputDir + "Bullet_Sphere" ZENITH_MODEL_EXT;
+
+	if (!std::filesystem::exists(strMeshAssetPath))
+	{
+		Zenith_MeshAsset xSphere;
+		GenerateUnitSphereMeshAsset(xSphere, /*uSegments=*/16, /*uRings=*/8);
+		xSphere.Export(strMeshAssetPath.c_str());
+		Zenith_Log(LOG_CATEGORY_ASSET, "  Exported bullet sphere mesh to: %s", strMeshAssetPath.c_str());
+	}
+
+	if (!std::filesystem::exists(strModelPath))
+	{
+		Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		pxModel->SetName("BulletSphere");
+		Zenith_Vector<std::string> xEmptyMaterials;
+		pxModel->AddMeshByPath(strMeshAssetPath, xEmptyMaterials);
+		pxModel->Export(strModelPath.c_str());
+		Zenith_Log(LOG_CATEGORY_ASSET, "  Exported bullet sphere model to: %s", strModelPath.c_str());
+	}
+
+	Zenith_Log(LOG_CATEGORY_ASSET, "RenderTest assets generated at: %s", strOutputDir.c_str());
+}
+
 void GenerateTestAssets()
 {
 	Zenith_Log(LOG_CATEGORY_ASSET, "=== Generating Test Assets ===");
 	GenerateStickFigureAssets();
 	GenerateProceduralTreeAssets();
+	GenerateRenderTestAssets();
 	Zenith_Log(LOG_CATEGORY_ASSET, "=== Test Asset Generation Complete ===");
 }
+
+#include "Zenith_Tools_TestAssetExport.Tests.inl"

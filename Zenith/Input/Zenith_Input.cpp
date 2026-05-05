@@ -11,6 +11,13 @@ static std::unordered_set<Zenith_KeyCode> s_xFrameKeyPresses;
 static Zenith_Maths::Vector2_64 s_xLastMousePosition = { 0.0, 0.0 };
 static Zenith_Maths::Vector2_64 s_xMouseDelta = { 0.0, 0.0 };
 static bool s_bFirstFrame = true;
+#ifdef ZENITH_INPUT_SIMULATOR
+// Tracks whether the previous frame was simulator-driven. Switching between
+// simulator and real input mid-run would otherwise compare a real cursor
+// position against the simulator's (0,0) reset and produce a one-frame
+// spurious mouse delta.
+static bool s_bSimWasEnabledLastFrame = false;
+#endif
 
 #ifdef ZENITH_WINDOWS
 // Gamepad state tracking for "button pressed this frame" detection
@@ -26,8 +33,35 @@ void Zenith_Input::BeginFrame()
 	if (Zenith_InputSimulator::IsEnabled())
 	{
 		Zenith_InputSimulator::ProcessAutoReleases();
+
+		// Mouse delta must still be tracked when simulator is driving input —
+		// otherwise GetMouseDelta() returns a stale value and code that drives
+		// camera-look from the delta (e.g. RenderTest_FollowCamera) can't be
+		// exercised via SimulateMousePosition.
+		Zenith_Maths::Vector2_64 xCurrentMousePos;
+		Zenith_InputSimulator::GetMousePositionSimulated(xCurrentMousePos);
+
+		// Skip delta on the first simulator frame OR the frame we transitioned
+		// from real input — the saved last-position is from a different domain
+		// and would produce a single huge spurious delta.
+		if (s_bFirstFrame || !s_bSimWasEnabledLastFrame)
+		{
+			s_xMouseDelta = { 0.0, 0.0 };
+			s_bFirstFrame = false;
+		}
+		else
+		{
+			s_xMouseDelta.x = xCurrentMousePos.x - s_xLastMousePosition.x;
+			s_xMouseDelta.y = xCurrentMousePos.y - s_xLastMousePosition.y;
+		}
+		s_xLastMousePosition = xCurrentMousePos;
+		s_bSimWasEnabledLastFrame = true;
 		return;
 	}
+	// Simulator just disabled this frame — skip one frame's delta to avoid the
+	// (sim-position) -> (real-cursor-position) jump.
+	const bool bJustLeftSimMode = s_bSimWasEnabledLastFrame;
+	s_bSimWasEnabledLastFrame = false;
 #endif
 
 	s_xFrameKeyPresses.clear();
@@ -36,7 +70,11 @@ void Zenith_Input::BeginFrame()
 	Zenith_Maths::Vector2_64 xCurrentMousePos;
 	Zenith_Window::GetInstance()->GetMousePosition(xCurrentMousePos);
 
+#ifdef ZENITH_INPUT_SIMULATOR
+	if (s_bFirstFrame || bJustLeftSimMode)
+#else
 	if (s_bFirstFrame)
+#endif
 	{
 		s_xMouseDelta = { 0.0, 0.0 };
 		s_bFirstFrame = false;
