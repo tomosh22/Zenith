@@ -6,6 +6,7 @@
 #include "Flux/Flux.h"
 #include "Multithreading/Zenith_Multithreading.h"
 
+static constexpr float fPROFILING_MAX_EVENT_TIME_SECONDS = 0.5f;
 static constexpr u_int uMAX_PROFILE_DEPTH = 16;
 thread_local static u_int tl_g_uCurrentDepth;
 thread_local static Zenith_ProfileIndex tl_g_aeIndices[uMAX_PROFILE_DEPTH];
@@ -750,6 +751,18 @@ void Zenith_Profiling::EndProfile(const Zenith_ProfileIndex eIndex)
 		tl_g_uCurrentDepth,
 		tl_g_aszLabels[tl_g_uCurrentDepth]
 	};
+
+	const float fDurationSeconds = std::chrono::duration<float>(tl_g_axEndPoints[tl_g_uCurrentDepth] - tl_g_axStartPoints[tl_g_uCurrentDepth]).count();
+	if (fDurationSeconds > fPROFILING_MAX_EVENT_TIME_SECONDS)
+	{
+		const char* szEventName = tl_g_aszLabels[tl_g_uCurrentDepth] ? tl_g_aszLabels[tl_g_uCurrentDepth] : g_aszProfileNames[tl_g_aeIndices[tl_g_uCurrentDepth]];
+		Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: Event '%s' took %.3fms (threshold: %.3fms) on thread %u",
+			szEventName,
+			fDurationSeconds * 1000.0f,
+			fPROFILING_MAX_EVENT_TIME_SECONDS * 1000.0f,
+			Zenith_Multithreading::GetCurrentThreadID());
+	}
+
 	GetOrCreateThreadEvents().PushBack(xEvent);
 
 	tl_g_aeIndices[tl_g_uCurrentDepth] = ZENITH_PROFILE_INDEX__TOTAL_FRAME;
