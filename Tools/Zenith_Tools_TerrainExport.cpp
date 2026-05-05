@@ -234,7 +234,7 @@ static cv::Mat LoadHeightmapAuto(const std::string& strPath)
 //#TO width/height that heightmap is divided into
 #define TERRAIN_SIZE 64
 //#TO multiplier for vertex positions
-#define TERRAIN_SCALE 1
+#define TERRAIN_SCALE 0.1f
 
 void GenerateFullTerrain(const cv::Mat& xHeightmapImage, Flux_MeshGeometry& xMesh, u_int uDensityDivisor)
 {
@@ -290,7 +290,7 @@ void GenerateFullTerrain(const cv::Mat& xHeightmapImage, Flux_MeshGeometry& xMes
 				dHeight = dBottom * dWeightY + dTop * (1.f - dWeightY);
 			}
 
-			xMesh.m_pxPositions[offset] = glm::highp_vec3((double)x / fDensity, dHeight * MAX_TERRAIN_HEIGHT - 1000, (double)z / fDensity) * static_cast<float>(TERRAIN_SCALE);
+			xMesh.m_pxPositions[offset] = glm::highp_vec3((double)x / fDensity, dHeight * MAX_TERRAIN_HEIGHT, (double)z / fDensity) * static_cast<float>(TERRAIN_SCALE);
 			glm::vec2 fUV = glm::vec2(x, z);
 			xMesh.m_pxUVs[offset] = fUV / fDensity;
 		}

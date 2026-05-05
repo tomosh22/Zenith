@@ -479,188 +479,6 @@ private:
 	Zenith_Vector<RenderTest_ResidencySnapshot> m_axSnapshotT2;
 };
 
-#ifdef ZENITH_TOOLS
-static void ExportSolidTexture(
-	const std::string& strPath,
-	uint8_t uR, uint8_t uG, uint8_t uB, uint8_t uA,
-	uint32_t uWidth, uint32_t uHeight)
-{
-	std::vector<uint8_t> xPixelData(uWidth * uHeight * 4);
-	for (uint32_t u = 0; u < uWidth * uHeight; u++)
-	{
-		xPixelData[u * 4 + 0] = uR;
-		xPixelData[u * 4 + 1] = uG;
-		xPixelData[u * 4 + 2] = uB;
-		xPixelData[u * 4 + 3] = uA;
-	}
-
-	Zenith_DataStream xStream;
-	xStream << static_cast<int32_t>(uWidth);
-	xStream << static_cast<int32_t>(uHeight);
-	xStream << static_cast<int32_t>(1);
-	xStream << static_cast<TextureFormat>(TEXTURE_FORMAT_RGBA8_UNORM);
-	xStream << static_cast<size_t>(xPixelData.size());
-	xStream.WriteData(xPixelData.data(), xPixelData.size());
-	xStream.WriteToFile(strPath.c_str());
-}
-
-static void ExportMaterialTextures(
-	const std::string& strDir,
-	const std::string& strName,
-	uint8_t uDiffR, uint8_t uDiffG, uint8_t uDiffB,
-	uint8_t uRoughness, uint8_t uMetallic)
-{
-	ExportSolidTexture(strDir + strName + "_Diffuse" ZENITH_TEXTURE_EXT, uDiffR, uDiffG, uDiffB, 255, 4, 4);
-	ExportSolidTexture(strDir + strName + "_Normal" ZENITH_TEXTURE_EXT, 128, 128, 255, 255, 4, 4);
-	ExportSolidTexture(strDir + strName + "_RM" ZENITH_TEXTURE_EXT, 0, uRoughness, uMetallic, 255, 4, 4);
-	ExportSolidTexture(strDir + strName + "_Occlusion" ZENITH_TEXTURE_EXT, 255, 255, 255, 255, 4, 4);
-	ExportSolidTexture(strDir + strName + "_Emissive" ZENITH_TEXTURE_EXT, 0, 0, 0, 255, 4, 4);
-}
-
-struct RenderTestHeightmapGenData
-{
-	cv::Mat* pxHeightmap = nullptr;
-	uint32_t uSize = 0;
-	float fTerrainWorldSize = 0.0f;
-};
-
-static void GenerateHeightmapRowsTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
-{
-	RenderTestHeightmapGenData* pxData = static_cast<RenderTestHeightmapGenData*>(pData);
-	const uint32_t uSize = pxData->uSize;
-	const float fTerrainWorldSize = pxData->fTerrainWorldSize;
-	const float fSizeMinusOne = static_cast<float>(uSize - 1);
-	const float fMaxProceduralHeight = 100.0f;
-
-	const u_int uRowsPerInvocation = (uSize + uNumInvocations - 1) / uNumInvocations;
-	const u_int uStartRow = uInvocationIndex * uRowsPerInvocation;
-	const u_int uEndRow = std::min(uStartRow + uRowsPerInvocation, static_cast<u_int>(uSize));
-
-	for (uint32_t y = uStartRow; y < uEndRow; y++)
-	{
-		float* pfRow = pxData->pxHeightmap->ptr<float>(y);
-		const float fWorldZ = (static_cast<float>(y) / fSizeMinusOne) * fTerrainWorldSize - fTerrainWorldSize * 0.5f;
-
-		for (uint32_t x = 0; x < uSize; x++)
-		{
-			const float fWorldX = (static_cast<float>(x) / fSizeMinusOne) * fTerrainWorldSize - fTerrainWorldSize * 0.5f;
-
-			float fHeight = 0.0f;
-			fHeight += std::sin(fWorldX * 0.0013f) * std::cos(fWorldZ * 0.0011f) * 42.0f;
-			fHeight += std::sin(fWorldX * 0.0047f + 1.1f) * std::cos(fWorldZ * 0.0041f + 0.8f) * 24.0f;
-			fHeight += std::sin((fWorldX + fWorldZ) * 0.014f) * 7.0f;
-			fHeight += 32.0f;
-
-			pfRow[x] = std::clamp(fHeight / fMaxProceduralHeight, 0.0f, 1.0f);
-		}
-	}
-}
-
-static cv::Mat GenerateProceduralHeightmap(uint32_t uSize, float fTerrainWorldSize)
-{
-	cv::Mat xHeightmap(uSize, uSize, CV_32FC1);
-
-	RenderTestHeightmapGenData xData;
-	xData.pxHeightmap = &xHeightmap;
-	xData.uSize = uSize;
-	xData.fTerrainWorldSize = fTerrainWorldSize;
-
-	const u_int uNumInvocations = std::min(static_cast<u_int>(64), uSize);
-	Zenith_TaskArray xTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, GenerateHeightmapRowsTask, &xData, uNumInvocations, true);
-	Zenith_TaskSystem::SubmitTaskArray(&xTask);
-	xTask.WaitUntilComplete();
-
-	cv::flip(xHeightmap, xHeightmap, 0);
-	return xHeightmap;
-}
-
-static void GenerateProceduralSplatmap(const cv::Mat& xHeightmap, const std::string& strOutputPath)
-{
-	const int iWidth = xHeightmap.cols;
-	const int iHeight = xHeightmap.rows;
-	std::vector<uint8_t> xPixelData(static_cast<size_t>(iWidth) * static_cast<size_t>(iHeight) * 4);
-
-	double dMin = 0.0;
-	double dMax = 1.0;
-	cv::minMaxLoc(xHeightmap, &dMin, &dMax);
-	const double dRange = (dMax - dMin > 0.0001) ? (dMax - dMin) : 1.0;
-
-	for (int y = 0; y < iHeight; y++)
-	{
-		const float* pfRow = xHeightmap.ptr<float>(y);
-		for (int x = 0; x < iWidth; x++)
-		{
-			const float fHeight = static_cast<float>((pfRow[x] - dMin) / dRange);
-			const float fBand = static_cast<float>(x) / static_cast<float>(std::max(1, iWidth - 1));
-
-			float fGrass = std::clamp(1.0f - std::abs(fHeight - 0.35f) * 2.4f, 0.08f, 1.0f);
-			float fRock = std::clamp((fHeight - 0.52f) * 2.8f, 0.0f, 1.0f);
-			float fDirt = std::clamp(1.0f - std::abs(fHeight - 0.18f) * 4.0f, 0.0f, 1.0f);
-			float fSand = std::clamp((0.28f - fHeight) * 4.0f, 0.0f, 1.0f);
-
-			// Add a broad lateral material sweep so the four terrain slots are easy to inspect.
-			fRock += std::clamp((fBand - 0.65f) * 1.5f, 0.0f, 0.35f);
-			fDirt += std::clamp((0.35f - fBand) * 1.5f, 0.0f, 0.35f);
-
-			const float fTotal = std::max(0.0001f, fGrass + fRock + fDirt + fSand);
-			const uint32_t uIdx = static_cast<uint32_t>((y * iWidth + x) * 4);
-			xPixelData[uIdx + 0] = static_cast<uint8_t>((fGrass / fTotal) * 255.0f + 0.5f);
-			xPixelData[uIdx + 1] = static_cast<uint8_t>((fRock / fTotal) * 255.0f + 0.5f);
-			xPixelData[uIdx + 2] = static_cast<uint8_t>((fDirt / fTotal) * 255.0f + 0.5f);
-			xPixelData[uIdx + 3] = static_cast<uint8_t>((fSand / fTotal) * 255.0f + 0.5f);
-		}
-	}
-
-	Zenith_DataStream xStream;
-	xStream << static_cast<int32_t>(iWidth);
-	xStream << static_cast<int32_t>(iHeight);
-	xStream << static_cast<int32_t>(1);
-	xStream << static_cast<TextureFormat>(TEXTURE_FORMAT_RGBA8_UNORM);
-	xStream << static_cast<size_t>(xPixelData.size());
-	xStream.WriteData(xPixelData.data(), xPixelData.size());
-	xStream.WriteToFile(strOutputPath.c_str());
-}
-
-static bool GenerateAndExportTerrain()
-{
-	using namespace Flux_TerrainConfig;
-
-	const std::string strTerrainDir = std::string(GAME_ASSETS_DIR) + "Terrain/";
-	const std::string strTexturesDir = strTerrainDir + "Textures/";
-	const std::string strFirstLowChunk = strTerrainDir + "Render_LOW_0_0" ZENITH_MESH_EXT;
-
-	if (!RenderTest_HasCommandLineFlag("--rendertest-force-regenerate") && std::filesystem::exists(strFirstLowChunk))
-	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[RenderTest] Existing terrain chunks found; skipping generation");
-		return true;
-	}
-
-	std::filesystem::create_directories(strTerrainDir);
-	std::filesystem::create_directories(strTexturesDir);
-
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "[RenderTest] Generating procedural terrain assets...");
-
-	cv::Mat xHeightmap = GenerateProceduralHeightmap(4096, TERRAIN_SIZE);
-	const std::string strHeightmapPath = strTerrainDir + "RenderTestHeightmap.tif";
-	if (!cv::imwrite(strHeightmapPath, xHeightmap))
-	{
-		Zenith_Error(LOG_CATEGORY_TERRAIN, "[RenderTest] Failed to save generated heightmap: %s", strHeightmapPath.c_str());
-		return false;
-	}
-
-	ExportHeightmapFromMat(xHeightmap, strTerrainDir);
-
-	ExportMaterialTextures(strTexturesDir, "Grass", 72, 132, 48, 225, 0);
-	ExportMaterialTextures(strTexturesDir, "Rock", 118, 112, 106, 190, 0);
-	ExportMaterialTextures(strTexturesDir, "Dirt", 122, 88, 58, 235, 0);
-	ExportMaterialTextures(strTexturesDir, "Sand", 196, 184, 136, 240, 0);
-	GenerateProceduralSplatmap(xHeightmap, strTerrainDir + "Splatmap" ZENITH_TEXTURE_EXT);
-
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "[RenderTest] Terrain asset generation complete");
-	return true;
-}
-#endif
-
 // Write a 1x1 colored .ztxtr file and return a TextureHandle pointing at it.
 // Mirrors Combat::ExportColoredTexture so the procedural diffuse texture survives
 // scene save/load via its disk path.
@@ -914,18 +732,6 @@ static void RenderTest_EnsureTerrainAssetsForAutomation()
 	const std::string strUserHeightmap = std::string(GAME_ASSETS_DIR) + "Textures/Terrain/Height" ZENITH_TEXTURE_EXT;
 	const std::string strChunksDir     = std::string(GAME_ASSETS_DIR) + "Terrain/";
 	const std::string strFirstChunk    = strChunksDir + "Render_LOW_0_0" ZENITH_MESH_EXT;
-
-	if (!std::filesystem::exists(strUserHeightmap))
-	{
-		// No user heightmap — fall back to the procedural path (which itself
-		// no-ops when chunks are already on disk).
-		if (!GenerateAndExportTerrain())
-		{
-			Zenith_Error(LOG_CATEGORY_TERRAIN,
-				"[RenderTest] Terrain asset generation failed during automation — saved scene will be missing terrain meshes");
-		}
-		return;
-	}
 
 	const bool bForceRegen = RenderTest_HasCommandLineFlag("--rendertest-force-regenerate");
 	bool bRegen = bForceRegen || !std::filesystem::exists(strFirstChunk);
@@ -1306,12 +1112,12 @@ void Project_RegisterEditorAutomationSteps()
 	// first OnLateUpdate to track the player at the over-the-shoulder offset.
 	// Pitch starts at the shooter angle so the editor preview matches the
 	// in-play view rather than the old top-down -0.7rad framing.
-	const float fInitialPlayerY = 82.0f;
+	const float fInitialPlayerY = 50.0f;
 	const float fCamOffsetY = 2.0f;
 	const float fCamOffsetZ = -4.0f;
 	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
 	Zenith_EditorAutomation::AddStep_AddCamera();
-	Zenith_EditorAutomation::AddStep_SetCameraPosition(TERRAIN_SIZE * 0.5f, fInitialPlayerY + fCamOffsetY, TERRAIN_SIZE * 0.5f + fCamOffsetZ);
+	Zenith_EditorAutomation::AddStep_SetCameraPosition(512 * 0.5f, fInitialPlayerY + fCamOffsetY, 512 * 0.5f + fCamOffsetZ);
 	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.15f);
 	Zenith_EditorAutomation::AddStep_SetCameraYaw(0.0f);
 	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(70.0f));
@@ -1335,7 +1141,7 @@ void Project_RegisterEditorAutomationSteps()
 	// Cube platform — uses exported .zmodel so it survives SaveScene/LoadScene.
 	Zenith_EditorAutomation::AddStep_CreateEntity("CenterPlatform");
 	Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
-	Zenith_EditorAutomation::AddStep_SetTransformPosition(TERRAIN_SIZE * 0.5f, 80.0f, TERRAIN_SIZE * 0.5f);
+	Zenith_EditorAutomation::AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY - 2.f, 512 * 0.5f);
 	Zenith_EditorAutomation::AddStep_SetTransformScale(30.0f, 0.5f, 30.0f);
 	Zenith_EditorAutomation::AddStep_AddModel();
 	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::g_strCubeModelPath.c_str());
@@ -1346,7 +1152,7 @@ void Project_RegisterEditorAutomationSteps()
 	// Player — .zmodel with skeleton; AnimatorComponent discovers skeleton on OnStart.
 	Zenith_EditorAutomation::AddStep_CreateEntity("Player");
 	Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
-	Zenith_EditorAutomation::AddStep_SetTransformPosition(TERRAIN_SIZE * 0.5f, fInitialPlayerY, TERRAIN_SIZE * 0.5f);
+	Zenith_EditorAutomation::AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY, 512 * 0.5f);
 	Zenith_EditorAutomation::AddStep_AddModel();
 	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::g_strStickFigureModelPath.c_str());
 	Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::g_xPlayerMaterial.GetDirect());
