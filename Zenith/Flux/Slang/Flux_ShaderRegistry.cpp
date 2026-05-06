@@ -265,12 +265,28 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		"SSR",
 	},
 
-	// SSR resolve pass. Roughness-driven contact-hardening Gaussian blur
-	// with bilateral edge stops. Imports Common.Frame for screen dims.
+	// SSR denoise — separable joint-bilateral horizontal pass. Replaces the
+	// retired SSR_Resolve. Roughness gating runs at the top so smooth/rough
+	// pixels pass through without cost. Push constants drive sigma/radius
+	// (mirrors SSGI's denoise pattern). Imports Common.Frame for screen dims.
 	{
-		FluxShaderProgram::SSR_Resolve,
-		"SSR_Resolve",
-		"SSR/Flux_SSR_Resolve",
+		FluxShaderProgram::SSR_DenoiseH,
+		"SSR_DenoiseH",
+		"SSR/Flux_SSR_DenoiseH",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"SSR",
+	},
+
+	// SSR denoise — separable joint-bilateral vertical pass. Reads the H
+	// intermediate; same gates and weights as H. Outputs the canonical
+	// denoised RGBA16F that the deferred shader consumes.
+	{
+		FluxShaderProgram::SSR_DenoiseV,
+		"SSR_DenoiseV",
+		"SSR/Flux_SSR_DenoiseV",
 		"vsMain",
 		"fsMain",
 		nullptr,

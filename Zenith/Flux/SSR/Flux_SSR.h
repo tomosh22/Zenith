@@ -17,6 +17,7 @@ enum SSR_DebugMode : u_int
 	SSR_DEBUG_FINAL_RESULT,        // Final reflection with confidence
 	SSR_DEBUG_ROUGHNESS,           // Visualize GBuffer roughness values
 	SSR_DEBUG_WORLD_NORMAL_Y,      // Visualize world normal Y component
+	SSR_DEBUG_RAY_COUNT,           // Phase 2: heatmap of effective rays per pixel after early-exit
 	SSR_DEBUG_COUNT
 };
 
@@ -53,9 +54,13 @@ public:
 	static bool IsInitialised();
 
 	// Attachment accessors
-	static Flux_RenderAttachment& GetRayMarchAttachment();   // half-res
-	static Flux_RenderAttachment& GetUpsampledAttachment();  // full-res, bilateral-upsampled
-	static Flux_RenderAttachment& GetResolvedAttachment();   // full-res, after roughness blur
+	static Flux_RenderAttachment& GetRayMarchAttachment();      // half-res RT0: rgb=colour, a=confidence
+	static Flux_RenderAttachment& GetRayMarchAuxAttachment();   // half-res RT1: rg=hitUV, b=travelDist, a=rayCount
+	static Flux_RenderAttachment& GetUpsampledAttachment();     // full-res RT0, bilateral-upsampled colour
+	static Flux_RenderAttachment& GetUpsampledAuxAttachment();  // full-res RT1, bilateral-upsampled metadata
+	static Flux_RenderAttachment& GetDenoiseHAttachment();      // full-res, H pass RT0: rgb=Σ(w·color), a=Σ(w)
+	static Flux_RenderAttachment& GetDenoiseHConfAttachment();  // full-res, H pass RT1: r=Σ(w·conf) (Phase 3b)
+	static Flux_RenderAttachment& GetDenoiseVAttachment();      // full-res, separable bilateral V pass (final SSR output)
 
 private:
 	static bool s_bInitialised;

@@ -38,10 +38,14 @@ namespace Flux_Generated_SSR
 			float m_fu_fHalfResHeight; // slang=float offset=48
 			float m_fu_fRcpHalfResWidth; // slang=float offset=52
 			float m_fu_fRcpHalfResHeight; // slang=float offset=56
-			float m_fu_fPad0; // slang=float offset=60
-			unsigned char m_au_axHiZMipSizes[192]; // slang=Array offset=64 arrayCount=12 (no C++ mapping)
+			unsigned int m_uu_uRayCount; // slang=uint offset=60
+			unsigned int m_uu_uStepCountMin; // slang=uint offset=64
+			unsigned int m_uu_uPad0; // slang=uint offset=68
+			unsigned int m_uu_uPad1; // slang=uint offset=72
+			unsigned int m_uu_uPad2; // slang=uint offset=76
+			unsigned char m_au_axHiZMipSizes[192]; // slang=Array offset=80 arrayCount=12 (no C++ mapping)
 		};
-		static_assert(sizeof(SSRConstants_CB) == 256, "SSRConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(SSRConstants_CB) == 272, "SSRConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fIntensity) == 0, "SSRConstants.u_fIntensity offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxDistance) == 4, "SSRConstants.u_fMaxDistance offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxRoughness) == 8, "SSRConstants.u_fMaxRoughness offset drifted from Slang reflection");
@@ -57,7 +61,11 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(SSRConstants_CB, m_fu_fHalfResHeight) == 48, "SSRConstants.u_fHalfResHeight offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResWidth) == 52, "SSRConstants.u_fRcpHalfResWidth offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResHeight) == 56, "SSRConstants.u_fRcpHalfResHeight offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fPad0) == 60, "SSRConstants.u_fPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uRayCount) == 60, "SSRConstants.u_uRayCount offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uStepCountMin) == 64, "SSRConstants.u_uStepCountMin offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uPad0) == 68, "SSRConstants.u_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uPad1) == 72, "SSRConstants.u_uPad1 offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uPad2) == 76, "SSRConstants.u_uPad2 offset drifted from Slang reflection");
 		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
 		inline constexpr unsigned int kg_xDepthTex_Set = 0;
 		inline constexpr unsigned int kg_xDepthTex_Binding = 2;
@@ -115,70 +123,148 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 	}
 
-	// ----- SSR_Resolve (SSR/Flux_SSR_Resolve) -----
-	namespace SSR_Resolve
+	// ----- SSR_DenoiseH (SSR/Flux_SSR_DenoiseH) -----
+	namespace SSR_DenoiseH
 	{
-		inline constexpr const char* kSSRConstants_Name = "SSRConstants";
-		inline constexpr unsigned int kSSRConstants_Set = 0;
-		inline constexpr unsigned int kSSRConstants_Binding = 1;
-		inline constexpr unsigned int kSSRConstants_DescriptorCount = 1;
+		inline constexpr const char* kg_xSSRUpsampledTex_Name = "g_xSSRUpsampledTex";
+		inline constexpr unsigned int kg_xSSRUpsampledTex_Set = 0;
+		inline constexpr unsigned int kg_xSSRUpsampledTex_Binding = 1;
+		inline constexpr unsigned int kg_xSSRUpsampledTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kPushConstants_Name = "PushConstants";
+		inline constexpr unsigned int kPushConstants_Set = 0;
+		inline constexpr unsigned int kPushConstants_Binding = 2;
+		inline constexpr unsigned int kPushConstants_DescriptorCount = 1;
 		// kind: ConstantBuffer
-		struct SSRConstants_CB
+		struct PushConstants_CB
 		{
-			float m_fu_fIntensity; // slang=float offset=0
-			float m_fu_fMaxDistance; // slang=float offset=4
-			float m_fu_fMaxRoughness; // slang=float offset=8
-			float m_fu_fThickness; // slang=float offset=12
-			unsigned int m_uu_uStepCount; // slang=uint offset=16
-			unsigned int m_uu_uDebugMode; // slang=uint offset=20
-			unsigned int m_uu_uHiZMipCount; // slang=uint offset=24
-			unsigned int m_uu_uStartMip; // slang=uint offset=28
-			unsigned int m_uu_uFrameIndex; // slang=uint offset=32
-			unsigned int m_uu_uBinarySearchIterations; // slang=uint offset=36
-			float m_fu_fContactHardeningDist; // slang=float offset=40
-			float m_fu_fHalfResWidth; // slang=float offset=44
-			float m_fu_fHalfResHeight; // slang=float offset=48
-			float m_fu_fRcpHalfResWidth; // slang=float offset=52
-			float m_fu_fRcpHalfResHeight; // slang=float offset=56
-			float m_fu_fPad0; // slang=float offset=60
-			unsigned char m_au_axHiZMipSizes[192]; // slang=Array offset=64 arrayCount=12 (no C++ mapping)
+			float m_fu_fSpatialSigma; // slang=float offset=0
+			float m_fu_fDepthSigma; // slang=float offset=4
+			float m_fu_fNormalSigma; // slang=float offset=8
+			float m_fu_fRoughnessSigma; // slang=float offset=12
+			unsigned int m_uu_uKernelRadius; // slang=uint offset=16
+			unsigned int m_uu_bEnabled; // slang=uint offset=20
+			float m_f_pad0; // slang=float offset=24
+			float m_f_pad1; // slang=float offset=28
 		};
-		static_assert(sizeof(SSRConstants_CB) == 256, "SSRConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fIntensity) == 0, "SSRConstants.u_fIntensity offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxDistance) == 4, "SSRConstants.u_fMaxDistance offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxRoughness) == 8, "SSRConstants.u_fMaxRoughness offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fThickness) == 12, "SSRConstants.u_fThickness offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_uu_uStepCount) == 16, "SSRConstants.u_uStepCount offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_uu_uDebugMode) == 20, "SSRConstants.u_uDebugMode offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_uu_uHiZMipCount) == 24, "SSRConstants.u_uHiZMipCount offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_uu_uStartMip) == 28, "SSRConstants.u_uStartMip offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_uu_uFrameIndex) == 32, "SSRConstants.u_uFrameIndex offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_uu_uBinarySearchIterations) == 36, "SSRConstants.u_uBinarySearchIterations offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fContactHardeningDist) == 40, "SSRConstants.u_fContactHardeningDist offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fHalfResWidth) == 44, "SSRConstants.u_fHalfResWidth offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fHalfResHeight) == 48, "SSRConstants.u_fHalfResHeight offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResWidth) == 52, "SSRConstants.u_fRcpHalfResWidth offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResHeight) == 56, "SSRConstants.u_fRcpHalfResHeight offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fPad0) == 60, "SSRConstants.u_fPad0 offset drifted from Slang reflection");
-		inline constexpr const char* kg_xRayMarchTex_Name = "g_xRayMarchTex";
-		inline constexpr unsigned int kg_xRayMarchTex_Set = 0;
-		inline constexpr unsigned int kg_xRayMarchTex_Binding = 2;
-		inline constexpr unsigned int kg_xRayMarchTex_DescriptorCount = 1;
+		static_assert(sizeof(PushConstants_CB) == 32, "PushConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fSpatialSigma) == 0, "PushConstants.u_fSpatialSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fDepthSigma) == 4, "PushConstants.u_fDepthSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fNormalSigma) == 8, "PushConstants.u_fNormalSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fRoughnessSigma) == 12, "PushConstants.u_fRoughnessSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_uu_uKernelRadius) == 16, "PushConstants.u_uKernelRadius offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_uu_bEnabled) == 20, "PushConstants.u_bEnabled offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_f_pad0) == 24, "PushConstants._pad0 offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_f_pad1) == 28, "PushConstants._pad1 offset drifted from Slang reflection");
+		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
+		inline constexpr unsigned int kg_xDepthTex_Set = 0;
+		inline constexpr unsigned int kg_xDepthTex_Binding = 3;
+		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr const char* kg_xNormalsTex_Name = "g_xNormalsTex";
 		inline constexpr unsigned int kg_xNormalsTex_Set = 0;
-		inline constexpr unsigned int kg_xNormalsTex_Binding = 3;
+		inline constexpr unsigned int kg_xNormalsTex_Binding = 4;
 		inline constexpr unsigned int kg_xNormalsTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr const char* kg_xMaterialTex_Name = "g_xMaterialTex";
 		inline constexpr unsigned int kg_xMaterialTex_Set = 0;
-		inline constexpr unsigned int kg_xMaterialTex_Binding = 4;
+		inline constexpr unsigned int kg_xMaterialTex_Binding = 5;
 		inline constexpr unsigned int kg_xMaterialTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xSSRUpsampledAuxTex_Name = "g_xSSRUpsampledAuxTex";
+		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Set = 0;
+		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Binding = 6;
+		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
+		inline constexpr unsigned int kFrameConstants_Set = 0;
+		inline constexpr unsigned int kFrameConstants_Binding = 0;
+		inline constexpr unsigned int kFrameConstants_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		struct FrameConstants_CB
+		{
+			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=400 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour[16]; // slang=vector offset=416 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=432 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=440 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=448
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=452
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=456 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(FrameConstants_CB) == 464, "FrameConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(FrameConstants_CB, m_ug_bQuadUtilisationAnalysis) == 448, "FrameConstants.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+	}
+
+	// ----- SSR_DenoiseV (SSR/Flux_SSR_DenoiseV) -----
+	namespace SSR_DenoiseV
+	{
+		inline constexpr const char* kg_xSSRDenoiseHColTex_Name = "g_xSSRDenoiseHColTex";
+		inline constexpr unsigned int kg_xSSRDenoiseHColTex_Set = 0;
+		inline constexpr unsigned int kg_xSSRDenoiseHColTex_Binding = 1;
+		inline constexpr unsigned int kg_xSSRDenoiseHColTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kPushConstants_Name = "PushConstants";
+		inline constexpr unsigned int kPushConstants_Set = 0;
+		inline constexpr unsigned int kPushConstants_Binding = 2;
+		inline constexpr unsigned int kPushConstants_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		struct PushConstants_CB
+		{
+			float m_fu_fSpatialSigma; // slang=float offset=0
+			float m_fu_fDepthSigma; // slang=float offset=4
+			float m_fu_fNormalSigma; // slang=float offset=8
+			float m_fu_fRoughnessSigma; // slang=float offset=12
+			unsigned int m_uu_uKernelRadius; // slang=uint offset=16
+			unsigned int m_uu_bEnabled; // slang=uint offset=20
+			float m_f_pad0; // slang=float offset=24
+			float m_f_pad1; // slang=float offset=28
+		};
+		static_assert(sizeof(PushConstants_CB) == 32, "PushConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fSpatialSigma) == 0, "PushConstants.u_fSpatialSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fDepthSigma) == 4, "PushConstants.u_fDepthSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fNormalSigma) == 8, "PushConstants.u_fNormalSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_fu_fRoughnessSigma) == 12, "PushConstants.u_fRoughnessSigma offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_uu_uKernelRadius) == 16, "PushConstants.u_uKernelRadius offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_uu_bEnabled) == 20, "PushConstants.u_bEnabled offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_f_pad0) == 24, "PushConstants._pad0 offset drifted from Slang reflection");
+		static_assert(offsetof(PushConstants_CB, m_f_pad1) == 28, "PushConstants._pad1 offset drifted from Slang reflection");
 		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
 		inline constexpr unsigned int kg_xDepthTex_Set = 0;
-		inline constexpr unsigned int kg_xDepthTex_Binding = 5;
+		inline constexpr unsigned int kg_xDepthTex_Binding = 3;
 		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xNormalsTex_Name = "g_xNormalsTex";
+		inline constexpr unsigned int kg_xNormalsTex_Set = 0;
+		inline constexpr unsigned int kg_xNormalsTex_Binding = 4;
+		inline constexpr unsigned int kg_xNormalsTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xMaterialTex_Name = "g_xMaterialTex";
+		inline constexpr unsigned int kg_xMaterialTex_Set = 0;
+		inline constexpr unsigned int kg_xMaterialTex_Binding = 5;
+		inline constexpr unsigned int kg_xMaterialTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xSSRUpsampledAuxTex_Name = "g_xSSRUpsampledAuxTex";
+		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Set = 0;
+		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_Binding = 6;
+		inline constexpr unsigned int kg_xSSRUpsampledAuxTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xSSRDenoiseHConfTex_Name = "g_xSSRDenoiseHConfTex";
+		inline constexpr unsigned int kg_xSSRDenoiseHConfTex_Set = 0;
+		inline constexpr unsigned int kg_xSSRDenoiseHConfTex_Binding = 7;
+		inline constexpr unsigned int kg_xSSRDenoiseHConfTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xSSRUpsampledTex_Name = "g_xSSRUpsampledTex";
+		inline constexpr unsigned int kg_xSSRUpsampledTex_Set = 0;
+		inline constexpr unsigned int kg_xSSRUpsampledTex_Binding = 8;
+		inline constexpr unsigned int kg_xSSRUpsampledTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
 		inline constexpr unsigned int kFrameConstants_Set = 0;
@@ -232,10 +318,14 @@ namespace Flux_Generated_SSR
 			float m_fu_fHalfResHeight; // slang=float offset=48
 			float m_fu_fRcpHalfResWidth; // slang=float offset=52
 			float m_fu_fRcpHalfResHeight; // slang=float offset=56
-			float m_fu_fPad0; // slang=float offset=60
-			unsigned char m_au_axHiZMipSizes[192]; // slang=Array offset=64 arrayCount=12 (no C++ mapping)
+			unsigned int m_uu_uRayCount; // slang=uint offset=60
+			unsigned int m_uu_uStepCountMin; // slang=uint offset=64
+			unsigned int m_uu_uPad0; // slang=uint offset=68
+			unsigned int m_uu_uPad1; // slang=uint offset=72
+			unsigned int m_uu_uPad2; // slang=uint offset=76
+			unsigned char m_au_axHiZMipSizes[192]; // slang=Array offset=80 arrayCount=12 (no C++ mapping)
 		};
-		static_assert(sizeof(SSRConstants_CB) == 256, "SSRConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(SSRConstants_CB) == 272, "SSRConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fIntensity) == 0, "SSRConstants.u_fIntensity offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxDistance) == 4, "SSRConstants.u_fMaxDistance offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fMaxRoughness) == 8, "SSRConstants.u_fMaxRoughness offset drifted from Slang reflection");
@@ -251,7 +341,11 @@ namespace Flux_Generated_SSR
 		static_assert(offsetof(SSRConstants_CB, m_fu_fHalfResHeight) == 48, "SSRConstants.u_fHalfResHeight offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResWidth) == 52, "SSRConstants.u_fRcpHalfResWidth offset drifted from Slang reflection");
 		static_assert(offsetof(SSRConstants_CB, m_fu_fRcpHalfResHeight) == 56, "SSRConstants.u_fRcpHalfResHeight offset drifted from Slang reflection");
-		static_assert(offsetof(SSRConstants_CB, m_fu_fPad0) == 60, "SSRConstants.u_fPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uRayCount) == 60, "SSRConstants.u_uRayCount offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uStepCountMin) == 64, "SSRConstants.u_uStepCountMin offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uPad0) == 68, "SSRConstants.u_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uPad1) == 72, "SSRConstants.u_uPad1 offset drifted from Slang reflection");
+		static_assert(offsetof(SSRConstants_CB, m_uu_uPad2) == 76, "SSRConstants.u_uPad2 offset drifted from Slang reflection");
 		inline constexpr const char* kg_xSSRTex_Name = "g_xSSRTex";
 		inline constexpr unsigned int kg_xSSRTex_Set = 0;
 		inline constexpr unsigned int kg_xSSRTex_Binding = 1;
@@ -261,6 +355,21 @@ namespace Flux_Generated_SSR
 		inline constexpr unsigned int kg_xDepthTex_Set = 0;
 		inline constexpr unsigned int kg_xDepthTex_Binding = 2;
 		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xSSRAuxTex_Name = "g_xSSRAuxTex";
+		inline constexpr unsigned int kg_xSSRAuxTex_Set = 0;
+		inline constexpr unsigned int kg_xSSRAuxTex_Binding = 3;
+		inline constexpr unsigned int kg_xSSRAuxTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xNormalsTex_Name = "g_xNormalsTex";
+		inline constexpr unsigned int kg_xNormalsTex_Set = 0;
+		inline constexpr unsigned int kg_xNormalsTex_Binding = 4;
+		inline constexpr unsigned int kg_xNormalsTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kg_xMaterialTex_Name = "g_xMaterialTex";
+		inline constexpr unsigned int kg_xMaterialTex_Set = 0;
+		inline constexpr unsigned int kg_xMaterialTex_Binding = 5;
+		inline constexpr unsigned int kg_xMaterialTex_DescriptorCount = 1;
 		// kind: CombinedTextureSampler
 	}
 

@@ -3888,10 +3888,13 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.slang">
       <Filter>Flux\Shaders\SSGI</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.slang">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_DenoiseH.slang">
       <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Resolve.slang">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_DenoiseV.slang">
+      <Filter>Flux\Shaders\SSR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.slang">
       <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Upsample.slang">

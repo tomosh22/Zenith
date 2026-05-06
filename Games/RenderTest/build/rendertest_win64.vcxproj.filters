@@ -16,6 +16,9 @@
     <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_PlayerBehaviour.Tests.inl">
+      <Filter>Components</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Components">

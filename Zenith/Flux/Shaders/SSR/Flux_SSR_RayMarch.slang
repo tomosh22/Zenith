@@ -6,8 +6,13 @@
 // surfaces, then traverses the depth pyramid (binary-search refined),
 // and the final hit colour comes from the G-buffer diffuse target.
 //
-// Output RGBA: RGB = colour, A = confidence (used by Resolve for
-// roughness-driven contact-hardening blur and by deferred for IBL blend).
+// Outputs (dual MRT):
+//   RT0 RGBA: rgb = reflection colour,        a = confidence
+//   RT1 RGBA: rg  = hit UV, b = travel dist,  a = ray count
+//
+// RT1 carries hit metadata for downstream passes (denoise BRDF reuse,
+// variance estimation) — see Flux_SSR.cpp for the transient layout.
+// On miss / debug / sky / roughness-rejected paths both RTs go to zero.
 //
 // Imports Common.Frame (matrices, depth helpers, blue noise constants)
 // and Common.PBR (ImportanceSampleGGX, PBR_DIRECTION_EPSILON).
@@ -37,18 +42,36 @@ static const int   SSR_BINARY_SEARCH_ITERATIONS         = 6;
 static const float SSR_BINARY_SEARCH_RELATIVE_TOLERANCE = 0.0001;
 static const float SSR_BINARY_SEARCH_MIN_TOLERANCE      = 0.0001;
 
+// Phase 6 — adaptive per-pixel step budget. Mirror-smooth surfaces and pixels
+// near a screen edge get more steps; high-roughness surfaces in the centre of
+// the frame get fewer (their wide GGX lobe + IBL fallback hide the impact).
+// Edge proximity is measured against the nearest screen edge (ramp ends at
+// 20% of screen so the extra-budget zone covers the visible edge band).
+static const float SSR_ADAPTIVE_ROUGHNESS_BREAK = 0.5;
+static const float SSR_ADAPTIVE_EDGE_BAND       = 0.2;
+
 // Roughness-driven cone tracing. Roughness ∈ [0, 1] maps to mip 0..3.
 static const float SSR_ROUGHNESS_MIP_SCALE       = 2.5;
 static const int   SSR_MAX_ROUGHNESS_MIP         = 3;
 
-static const float SSR_BACKFACE_THRESHOLD        = 0.1;
+// Hit normal must face *toward* the ray (NdotR < 0). 0.0 is the clean physical
+// threshold; the previous 0.1 admitted slightly back-facing hits which produced
+// the "noisy halo around silhouettes" look.
+static const float SSR_BACKFACE_THRESHOLD        = 0.0;
 static const float SSR_DEPTH_VALID_MIN           = 0.1;
 
-static const float SSR_EDGE_MARGIN_BASE          = 0.15;
+// Edge-margin base trimmed from 0.15 → 0.08 so the screen-edge fade doesn't
+// eat ~30% of usable reflection area at high roughness. Combined with
+// SSR_EDGE_MARGIN_ROUGHNESS = 0.10 this caps the fade band at 18% of screen
+// even on near-fully-rough surfaces, vs the previous 25%.
+static const float SSR_EDGE_MARGIN_BASE          = 0.08;
 static const float SSR_EDGE_MARGIN_ROUGHNESS     = 0.10;
 static const float SSR_BACKFACE_SMOOTHSTEP_MIN   = 0.1;
 static const float SSR_BACKFACE_SMOOTHSTEP_MAX   = -0.3;
-static const float SSR_MIN_CONFIDENCE            = 0.1;
+// Artificial floor retired (was 0.1). The min was masking weak hits with a
+// fixed brightness, producing the "speckled noise floor" on near-mirror
+// surfaces. Phase 3a denoise gates handle low-confidence pixels properly.
+static const float SSR_MIN_CONFIDENCE            = 0.0;
 
 static const float SSR_DISTANCE_FADE_START       = 0.3;
 static const float SSR_DISTANCE_FADE_END         = 0.8;
@@ -68,6 +91,22 @@ static const float SSR_METALLIC_BOOST            = 1.0;
 static const float SSR_ROUGHNESS_PERTURB_THRESHOLD = 0.05;
 static const float SSR_HORIZON_FADE_SCALE        = 5.0;
 
+// Phase 2 — multi-ray per pixel for rough surfaces.
+//   Roughness gate: surfaces below this stay at 1 ray (the GGX lobe is tight
+//   enough that one importance-sampled ray is already a good estimate). Above
+//   this, take u_uRayCount stratified GGX samples per pixel and average.
+//   Hammersley provides a low-discrepancy 2D sequence that, combined with the
+//   per-pixel blue-noise offset, gives clean stratification across both pixels
+//   and rays.
+static const float SSR_MULTIRAY_ROUGHNESS_THRESHOLD = 0.3;
+//   Hard cap on rays per pixel — keeps the shader's stack usage bounded even
+//   if the CBV value is mis-set.
+static const uint  SSR_MAX_RAYS_PER_PIXEL           = 4u;
+//   Average-confidence early-exit threshold. Matches SSGI's
+//   SSGI_EARLY_EXIT_CONFIDENCE so behaviour is consistent across screen-space
+//   stochastic effects.
+static const float SSR_EARLY_EXIT_CONFIDENCE        = 0.95;
+
 // Debug modes.
 static const uint SSR_DEBUG_NONE              = 0u;
 static const uint SSR_DEBUG_RAY_DIRECTIONS    = 1u;
@@ -81,6 +120,7 @@ static const uint SSR_DEBUG_MARCH_DISTANCE   = 8u;
 static const uint SSR_DEBUG_FINAL_RESULT     = 9u;
 static const uint SSR_DEBUG_ROUGHNESS        = 10u;
 static const uint SSR_DEBUG_WORLD_NORMAL_Y   = 11u;
+static const uint SSR_DEBUG_RAY_COUNT        = 12u;
 
 struct SSRConstantsLayout
 {
@@ -88,6 +128,9 @@ struct SSRConstantsLayout
 	float u_fMaxDistance;
 	float u_fMaxRoughness;
 	float u_fThickness;
+	// Phase 6: u_uStepCount is now the *maximum* per-pixel step budget.
+	// u_uStepCountMin is the floor for high-roughness / centre-of-screen
+	// pixels — those don't need precision so we save iterations there.
 	uint  u_uStepCount;
 	uint  u_uDebugMode;
 	uint  u_uHiZMipCount;
@@ -101,7 +144,18 @@ struct SSRConstantsLayout
 	float u_fHalfResHeight;
 	float u_fRcpHalfResWidth;
 	float u_fRcpHalfResHeight;
-	float u_fPad0;
+	// Phase 2 — rays-per-pixel for rough surfaces. Effective count is clamped
+	// against SSR_MAX_RAYS_PER_PIXEL inside the shader.
+	uint  u_uRayCount;
+	// Phase 6 — minimum step budget (mirror-smooth surfaces use up to
+	// u_uStepCount; high-roughness surfaces drop to u_uStepCountMin).
+	uint  u_uStepCountMin;
+	// Padding to land the float4 array on a 16-byte boundary. Slang's CBV
+	// layout rules promote float4 arrays to 16-byte alignment regardless;
+	// these explicit pads keep the C++ side honest.
+	uint  u_uPad0;
+	uint  u_uPad1;
+	uint  u_uPad2;
 	// Cached HiZ per-mip dimensions: xy = (w, h), zw = (1/w, 1/h).
 	// Replaces inner-loop GetDimensions calls.
 	float4 u_axHiZMipSizes[12];
@@ -116,6 +170,23 @@ struct SSRConstantsLayout
 
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
+
+// Dual-MRT output. RT0 keeps the legacy (rgb=colour, a=confidence) shape that
+// upsample/deferred consume. RT1 carries metadata used by Phase 3b denoise
+// (BRDF reuse needs neighbour hit UV) and Phase 4 variance (radial component).
+struct RayMarchOut
+{
+	float4 xColour : SV_Target0;
+	float4 xAux    : SV_Target1;
+};
+
+RayMarchOut MakeRayMarchOut(float4 xColour, float4 xAux)
+{
+	RayMarchOut o;
+	o.xColour = xColour;
+	o.xAux    = xAux;
+	return o;
+}
 
 float2 GetBlueNoise(int2 xPixelCoord, uint uFrameIndex)
 {
@@ -132,6 +203,7 @@ float4 RayMarch(float3 xViewOrigin,
 				float3 xViewNormal,
 				float  fRoughness,
 				float  fNdotV,
+				uint   uStepBudget,
 				out float fMarchDistance,
 				out float2 xScreenDir)
 {
@@ -216,7 +288,7 @@ float4 RayMarch(float3 xViewOrigin,
 
 	int iMinMip = clamp((int)floor(fRoughness * SSR_ROUGHNESS_MIP_SCALE), 0, SSR_MAX_ROUGHNESS_MIP);
 
-	for (uint uIter = 0u; uIter < SSRConstants.u_uStepCount; uIter++)
+	for (uint uIter = 0u; uIter < uStepBudget; uIter++)
 	{
 		float2 xSampleUV = xScreenStart.xy + xScreenDir * fT * fMaxScreenDist;
 
@@ -357,13 +429,15 @@ float4 RayMarch(float3 xViewOrigin,
 }
 
 [shader("fragment")]
-float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
+RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 {
+	const float4 xZero4 = float4(0.0, 0.0, 0.0, 0.0);
+
 	// Debug 99: solid magenta — proves the pipeline ran at all.
-	if (SSRConstants.u_uDebugMode == 99u) return float4(1.0, 0.0, 1.0, 1.0);
+	if (SSRConstants.u_uDebugMode == 99u) return MakeRayMarchOut(float4(1.0, 0.0, 1.0, 1.0), xZero4);
 
 	float fDepth = g_xDepthTex.Sample(input.uv).r;
-	if (fDepth >= 1.0) return float4(0.0, 0.0, 0.0, 0.0); // sky
+	if (fDepth >= 1.0) return MakeRayMarchOut(xZero4, xZero4); // sky
 
 	float4 xMaterial    = g_xMaterialTex.Sample(input.uv);
 	float  fRoughness   = xMaterial.r;
@@ -372,58 +446,134 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 	if (SSRConstants.u_uDebugMode == SSR_DEBUG_ROUGHNESS)
 	{
 		float fPassesThreshold = (fRoughness <= SSRConstants.u_fMaxRoughness) ? 1.0 : 0.0;
-		return float4(fRoughness, fPassesThreshold, fRoughness / SSRConstants.u_fMaxRoughness, 1.0);
+		return MakeRayMarchOut(float4(fRoughness, fPassesThreshold, fRoughness / SSRConstants.u_fMaxRoughness, 1.0), xZero4);
 	}
 	if (SSRConstants.u_uDebugMode == SSR_DEBUG_WORLD_NORMAL_Y)
 	{
 		float fNormalY = xWorldNormal.y * 0.5 + 0.5;
-		return float4(fNormalY,
-					  (xWorldNormal.y > 0.7) ? 1.0 : 0.0,
-					  (xWorldNormal.y > 0.9) ? 1.0 : 0.0,
-					  1.0);
+		return MakeRayMarchOut(float4(fNormalY,
+									  (xWorldNormal.y > 0.7) ? 1.0 : 0.0,
+									  (xWorldNormal.y > 0.9) ? 1.0 : 0.0,
+									  1.0), xZero4);
 	}
 
-	if (fRoughness > SSRConstants.u_fMaxRoughness) return float4(0.0, 0.0, 0.0, 0.0);
+	if (fRoughness > SSRConstants.u_fMaxRoughness) return MakeRayMarchOut(xZero4, xZero4);
 
-	float3 xViewPos    = GetViewPosFromDepth(input.uv, fDepth);
-	float3 xViewNormal = normalize(mul((float3x3)FrameConstants.g_xViewMat, xWorldNormal));
-	float3 xViewDir    = normalize(xViewPos);
-	float3 xReflectDir = reflect(xViewDir, xViewNormal);
+	float3 xViewPos          = GetViewPosFromDepth(input.uv, fDepth);
+	float3 xViewNormal       = normalize(mul((float3x3)FrameConstants.g_xViewMat, xWorldNormal));
+	float3 xViewDir          = normalize(xViewPos);
+	float3 xMirrorReflectDir = reflect(xViewDir, xViewNormal);
+	float  fNdotV            = max(dot(xViewNormal, -xViewDir), 0.0);
 
-	// Stochastic GGX perturbation for rough surfaces — gives physically-correct
-	// rough reflections rather than relying on post-blur alone.
-	if (fRoughness > SSR_ROUGHNESS_PERTURB_THRESHOLD)
+	// Phase 2: take multiple GGX importance samples on rough surfaces (where
+	// one sample is too noisy a Monte-Carlo estimate of the lobe). Mirror-
+	// smooth surfaces (R ≤ 0.3) stay at 1 ray since their lobe is tight.
+	uint uRequestedRays = 1u;
+	if (fRoughness > SSR_MULTIRAY_ROUGHNESS_THRESHOLD)
 	{
-		int2  xPixelCoord  = (int2)fragCoord.xy;
-		float2 xNoise       = GetBlueNoise(xPixelCoord, SSRConstants.u_uFrameIndex);
-		float3 xH           = ImportanceSampleGGX(xNoise, xViewNormal, fRoughness);
-		float3 xPerturbedDir = reflect(xViewDir, xH);
-		// Reject perturbations that fall below the surface — reflect() can
-		// produce sub-horizon directions for low NdotH samples.
-		if (dot(xPerturbedDir, xViewNormal) > 0.0) xReflectDir = xPerturbedDir;
+		uRequestedRays = clamp(SSRConstants.u_uRayCount, 1u, SSR_MAX_RAYS_PER_PIXEL);
 	}
 
+	// Phase 6 — per-pixel step budget. Scale between u_uStepCountMin and
+	// u_uStepCount based on (a) surface smoothness — sharp reflections need
+	// more steps to land precisely; rough reflections will be averaged out
+	// by the lobe regardless — and (b) edge proximity — pixels near the
+	// screen edge get a longer trace so the ray has room to find a hit
+	// before exiting.
+	float fSmoothness    = 1.0 - smoothstep(0.0, SSR_ADAPTIVE_ROUGHNESS_BREAK, fRoughness);
+	float fEdgeProximity = min(min(input.uv.x, 1.0 - input.uv.x),
+								min(input.uv.y, 1.0 - input.uv.y));
+	float fEdgeNearness  = 1.0 - smoothstep(0.0, SSR_ADAPTIVE_EDGE_BAND, fEdgeProximity);
+	float fHighStepFactor = max(fSmoothness, fEdgeNearness);
+
+	uint uStepMin    = max(SSRConstants.u_uStepCountMin, 1u);
+	uint uStepMax    = max(SSRConstants.u_uStepCount, uStepMin);
+	uint uStepBudget = uStepMin + (uint)((float)(uStepMax - uStepMin) * fHighStepFactor);
+
+	// Multi-ray accumulators. We average colour / confidence / hit-UV /
+	// travel-distance across rays that produced a valid hit; misses don't
+	// contribute. Importance sampling already biases toward the GGX D-term,
+	// so the average is unweighted (re-weighting by D would double-bias
+	// toward the mirror direction).
+	float3 xAccumColour    = float3(0.0);
+	float  fAccumConf      = 0.0;
+	float2 xAccumHitUV     = float2(0.0);
+	float  fAccumDist      = 0.0;
+	uint   uEffectiveRays  = 0u;  // rays that actually hit
+	uint   uRaysAttempted  = 0u;  // rays we actually traced (≤ uRequestedRays — early-exit can stop short)
+
+	// First-ray captured state used by per-ray-direction debug visualisations
+	// — these fall through with k=0 data even when the loop runs multiple
+	// iterations.
+	float3 xFirstReflectDir = xMirrorReflectDir;
+	float2 xFirstScreenDir  = float2(0.0, 0.0);
+	float4 xFirstHitResult  = float4(0.0, 0.0, 0.0, 0.0);
+
+	int2 xPixelCoord = (int2)fragCoord.xy;
+	for (uint k = 0u; k < uRequestedRays; k++)
+	{
+		uRaysAttempted++;
+		// Stratified Hammersley + per-pixel blue-noise offset. Hammersley
+		// gives a low-discrepancy 2D sequence across rays; the blue-noise
+		// offset rotates the sequence per pixel so neighbours don't all see
+		// the same N samples.
+		float2 xBlueNoise  = GetBlueNoise(xPixelCoord, SSRConstants.u_uFrameIndex);
+		float2 xHammersley = Hammersley(k, max(uRequestedRays, 1u));
+		float2 xXi         = frac(xBlueNoise + xHammersley);
+
+		float3 xKReflectDir = xMirrorReflectDir;
+		if (fRoughness > SSR_ROUGHNESS_PERTURB_THRESHOLD)
+		{
+			float3 xH            = ImportanceSampleGGX(xXi, xViewNormal, fRoughness);
+			float3 xPerturbedDir = reflect(xViewDir, xH);
+			// Reject perturbations that fall below the surface — reflect()
+			// can produce sub-horizon directions for low NdotH samples.
+			if (dot(xPerturbedDir, xViewNormal) > 0.0) xKReflectDir = xPerturbedDir;
+		}
+
+		float  fKMarchDist  = 0.0;
+		float2 xKScreenDir  = float2(0.0, 0.0);
+		float4 xKHitResult  = RayMarch(xViewPos, xKReflectDir, xViewNormal, fRoughness, fNdotV, uStepBudget, fKMarchDist, xKScreenDir);
+
+		if (k == 0u)
+		{
+			xFirstReflectDir = xKReflectDir;
+			xFirstScreenDir  = xKScreenDir;
+			xFirstHitResult  = xKHitResult;
+		}
+
+		if (xKHitResult.w > 0.0)
+		{
+			xAccumColour  += g_xDiffuseTex.Sample(xKHitResult.xy).rgb;
+			fAccumConf    += xKHitResult.w;
+			xAccumHitUV   += xKHitResult.xy;
+			fAccumDist    += fKMarchDist;
+			uEffectiveRays++;
+
+			// Average-confidence early exit (matches SSGI). Stop spending
+			// extra rays once the running mean confidence already clears the
+			// "this is clearly a good hit" bar.
+			if ((fAccumConf / float(uEffectiveRays)) > SSR_EARLY_EXIT_CONFIDENCE) break;
+		}
+	}
+
+	// Per-ray-direction debug visualisations — all use the first ray's data
+	// so the visualisation is deterministic regardless of multi-ray count.
 	if (SSRConstants.u_uDebugMode == SSR_DEBUG_RAY_DIRECTIONS)
-		return float4(xReflectDir * 0.5 + 0.5, 1.0);
+		return MakeRayMarchOut(float4(xFirstReflectDir * 0.5 + 0.5, 1.0), xZero4);
 
 	if (SSRConstants.u_uDebugMode == SSR_DEBUG_EDGE_FADE)
 	{
 		float fEdgeFade = ComputeEdgeFade(input.uv, 0.1);
-		return float4(fEdgeFade, fEdgeFade, fEdgeFade, 1.0);
+		return MakeRayMarchOut(float4(fEdgeFade, fEdgeFade, fEdgeFade, 1.0), xZero4);
 	}
 
-	float fNdotV = max(dot(xViewNormal, -xViewDir), 0.0);
-
-	float fMarchDistance = 0.0;
-	float2 xScreenDir    = float2(0.0, 0.0);
-	float4 xHitResult    = RayMarch(xViewPos, xReflectDir, xViewNormal, fRoughness, fNdotV, fMarchDistance, xScreenDir);
-
 	if (SSRConstants.u_uDebugMode == SSR_DEBUG_SCREEN_DIRECTIONS)
-		return float4(xScreenDir * 0.5 + 0.5, 0.0, 1.0);
+		return MakeRayMarchOut(float4(xFirstScreenDir * 0.5 + 0.5, 0.0, 1.0), xZero4);
 	if (SSRConstants.u_uDebugMode == SSR_DEBUG_REFLECTION_UVS)
-		return float4(xHitResult.xy, 0.0, 1.0);
+		return MakeRayMarchOut(float4(xFirstHitResult.xy, 0.0, 1.0), xZero4);
 	if (SSRConstants.u_uDebugMode == SSR_DEBUG_CONFIDENCE)
-		return float4(xHitResult.w, xHitResult.w, xHitResult.w, 1.0);
+		return MakeRayMarchOut(float4(xFirstHitResult.w, xFirstHitResult.w, xFirstHitResult.w, 1.0), xZero4);
 
 	if (SSRConstants.u_uDebugMode == SSR_DEBUG_DEPTH_COMPARISON)
 	{
@@ -434,7 +584,7 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 		for (uint i = 1u; i <= 64u; i++)
 		{
 			float  fT_dbg     = (float)i / 64.0;
-			float2 xSampleUV  = xScreenStart.xy + xScreenDir * fT_dbg * 0.8;
+			float2 xSampleUV  = xScreenStart.xy + xFirstScreenDir * fT_dbg * 0.8;
 			if (xSampleUV.x < 0.0 || xSampleUV.x > 1.0 ||
 				xSampleUV.y < 0.0 || xSampleUV.y > 1.0) break;
 			float fSceneDepth = g_xHiZTex.Sample(xSampleUV).r;
@@ -449,36 +599,57 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 		float fR = saturate(fMaxDepthDiff / 10.0);
 		float fG = bFoundCloser ? 1.0 : 0.0;
 		float fB = (fMaxDepthDiff > 0.5) ? 1.0 : 0.0;
-		return float4(fR, fG, fB, 1.0);
+		return MakeRayMarchOut(float4(fR, fG, fB, 1.0), xZero4);
 	}
 
 	if (SSRConstants.u_uDebugMode == SSR_DEBUG_MARCH_DISTANCE)
 	{
 		float3 xScreenStart = ViewToScreen(xViewPos);
-		float2 xEndUV       = xScreenStart.xy + xScreenDir * 0.8;
+		float2 xEndUV       = xScreenStart.xy + xFirstScreenDir * 0.8;
 		float  fEndDepth    = g_xHiZTex.Sample(saturate(xEndUV)).r;
 		bool   bHitSky      = fEndDepth >= 0.9999;
-		return float4(xEndUV.x, xEndUV.y, bHitSky ? 1.0 : 0.0, 1.0);
+		return MakeRayMarchOut(float4(xEndUV.x, xEndUV.y, bHitSky ? 1.0 : 0.0, 1.0), xZero4);
 	}
 
-	if (xHitResult.w > 0.0)
+	if (SSRConstants.u_uDebugMode == SSR_DEBUG_RAY_COUNT)
 	{
-		float3 xReflectionColour = g_xDiffuseTex.Sample(xHitResult.xy).rgb;
+		float fNorm = (float)uEffectiveRays / (float)max(SSR_MAX_RAYS_PER_PIXEL, 1u);
+		return MakeRayMarchOut(float4(fNorm, fNorm, fNorm, 1.0), xZero4);
+	}
+
+	if (uEffectiveRays > 0u)
+	{
+		// Two denominators:
+		//   * Colour / hitUV / distance average over EFFECTIVE rays — the
+		//     undimmed "what the lobe sampled where it found something" value.
+		//   * Confidence averages over ATTEMPTED rays so misses contribute 0
+		//     to the numerator. Without this, 1 of 4 rays hitting at conf=1
+		//     reads as fully reliable; with it, the result correctly fades
+		//     to ~25% confidence so the deferred shader blends in IBL for
+		//     the 75% of the lobe that found no screen-space hit. Using
+		//     attempted (not requested) rays keeps early-exit honest — those
+		//     untraced rays don't penalize the confidence as faux misses.
+		float  fInvHits   = 1.0 / (float)uEffectiveRays;
+		float  fInvAll    = 1.0 / (float)max(uRaysAttempted, 1u);
+		float3 xAvgColour = xAccumColour * fInvHits;
+		float  fAvgConf   = fAccumConf   * fInvAll;
+		float2 xAvgHitUV  = xAccumHitUV  * fInvHits;
+		float  fAvgDist   = fAccumDist   * fInvHits;
 
 		if (SSRConstants.u_uDebugMode == SSR_DEBUG_HIT_POSITIONS)
 		{
-			float3 xHitWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, xHitResult.xy);
-			return float4(xHitWorldPos / 100.0, 1.0);
+			float3 xHitWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, xAvgHitUV);
+			return MakeRayMarchOut(float4(xHitWorldPos / 100.0, 1.0), xZero4);
 		}
 
-		xReflectionColour *= SSRConstants.u_fIntensity;
+		xAvgColour *= SSRConstants.u_fIntensity;
 
-		float fFinalConfidence = xHitResult.w;
+		float fFinalConfidence = fAvgConf;
 
 		// Contact hardening — distance-weighted confidence falloff using
-		// the world-space travel between origin and hit.
+		// the world-space travel from origin to averaged hit.
 		float3 xOriginWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, input.uv);
-		float3 xHitWorldPos    = GetWorldPosFromDepthTex(g_xDepthTex, xHitResult.xy);
+		float3 xHitWorldPos    = GetWorldPosFromDepthTex(g_xDepthTex, xAvgHitUV);
 		float  fWorldTravelDist = length(xHitWorldPos - xOriginWorldPos);
 
 		float fContactHardening = smoothstep(0.0, SSRConstants.u_fContactHardeningDist, fWorldTravelDist);
@@ -495,15 +666,21 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 		fFinalConfidence    *= fMetallicBoost;
 
 		// Horizon occlusion — fades reflections nearly parallel to the
-		// surface (small normal jitter → wild direction changes there).
-		float fNdotR       = max(dot(xViewNormal, xReflectDir), 0.0);
+		// surface. Use the first ray's direction as a representative — for
+		// multi-ray, all rays sit in the same GGX lobe so any one is fine.
+		float fNdotR       = max(dot(xViewNormal, xFirstReflectDir), 0.0);
 		float fHorizonFade = saturate(fNdotR * SSR_HORIZON_FADE_SCALE);
 		fFinalConfidence  *= fHorizonFade;
 
 		fFinalConfidence  *= fContactConfidence;
 		fFinalConfidence   = saturate(fFinalConfidence);
 
-		return float4(xReflectionColour, fFinalConfidence);
+		// RT1 metadata for Phase 3b/4 consumers:
+		//   rg = average hit UV
+		//   b  = average travel distance
+		//   a  = effective ray count (post early-exit)
+		float4 xAux = float4(xAvgHitUV, fAvgDist, (float)uEffectiveRays);
+		return MakeRayMarchOut(float4(xAvgColour, fFinalConfidence), xAux);
 	}
-	return float4(0.0, 0.0, 0.0, 0.0);
+	return MakeRayMarchOut(xZero4, xZero4);
 }

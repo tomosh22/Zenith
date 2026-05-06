@@ -1306,8 +1306,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_DenoiseV.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_DenoiseH.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_DenoiseV.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Resolve.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Upsample.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToGBuffer.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMesh_ToShadowmap.slang" />
