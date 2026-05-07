@@ -700,6 +700,225 @@ class TestIncludeResolution(unittest.TestCase):
         self.assertEqual(caller.fan_out, 1)
 
 
+class TestIncludeRedundancy(unittest.TestCase):
+    def test_duplicate_include_flagged(self):
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_redundancy_')
+        (Path(tmpdir) / 'x.h').write_text('#pragma once\n', encoding='utf-8')
+        # Same raw include string on lines 1 and 3.
+        (Path(tmpdir) / 'a.cpp').write_text(
+            '#include "x.h"\nvoid f() {}\n#include "x.h"\n', encoding='utf-8'
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        fm_a = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('a.cpp'))
+        self.assertEqual(len(fm_a.duplicate_includes), 1)
+        rec = fm_a.duplicate_includes[0]
+        self.assertEqual(rec['line'], 3)
+        self.assertEqual(rec['first_line'], 1)
+        self.assertEqual(rec['include'], 'x.h')
+
+    def test_transitive_include_flagged(self):
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_redundancy_')
+        (Path(tmpdir) / 'leaf.h').write_text('#pragma once\n', encoding='utf-8')
+        (Path(tmpdir) / 'mid.h').write_text(
+            '#pragma once\n#include "leaf.h"\n', encoding='utf-8'
+        )
+        # top.cpp directly includes both — leaf.h is redundant because mid.h pulls it in.
+        (Path(tmpdir) / 'top.cpp').write_text(
+            '#include "mid.h"\n#include "leaf.h"\nvoid f() {}\n', encoding='utf-8'
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        fm_top = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('top.cpp'))
+        self.assertEqual(len(fm_top.transitive_includes), 1)
+        rec = fm_top.transitive_includes[0]
+        self.assertEqual(rec['include'], 'leaf.h')
+        self.assertTrue(rec['covered_by'].endswith('mid.h'))
+
+    def test_unresolved_include_flagged(self):
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_redundancy_')
+        (Path(tmpdir) / 'solo.cpp').write_text(
+            '#include "does_not_exist.h"\nvoid f() {}\n', encoding='utf-8'
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        fm_solo = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('solo.cpp'))
+        self.assertEqual(len(fm_solo.unresolved_includes), 1)
+        rec = fm_solo.unresolved_includes[0]
+        self.assertEqual(rec['include'], 'does_not_exist.h')
+        self.assertEqual(rec['line'], 1)
+        # Genuine errors must NOT count toward externals.
+        self.assertEqual(len(fm_solo.external_includes), 0)
+
+    def test_conditional_cover_skipped_in_transitive(self):
+        # If the only cover path goes through a `#ifdef`-wrapped include, the analyzer
+        # must NOT report transitive coverage — removing the redundant include would
+        # break builds that don't define the macro.
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_redundancy_')
+        (Path(tmpdir) / 'leaf.h').write_text('#pragma once\n', encoding='utf-8')
+        (Path(tmpdir) / 'mid.h').write_text(
+            '#pragma once\n#include "leaf.h"\n', encoding='utf-8'
+        )
+        # mid.h is included only inside `#ifdef ZENITH_TOOLS`, so its coverage of
+        # leaf.h is conditional. The unconditional include of leaf.h must NOT be
+        # flagged as transitive.
+        (Path(tmpdir) / 'top.cpp').write_text(
+            '#ifdef ZENITH_TOOLS\n#include "mid.h"\n#endif\n#include "leaf.h"\nvoid f() {}\n',
+            encoding='utf-8',
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        fm_top = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('top.cpp'))
+        self.assertEqual(len(fm_top.transitive_includes), 0)
+        # The conditional flag on the include should reflect the `#ifdef` wrap.
+        self.assertEqual(fm_top.include_conditional, [True, False])
+
+    def test_conditional_source_include_not_flagged_transitive(self):
+        # The redundant include itself is conditional. Even if a cover exists,
+        # don't flag — the user might be intentionally re-asserting the include
+        # under a different macro context.
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_redundancy_')
+        (Path(tmpdir) / 'leaf.h').write_text('#pragma once\n', encoding='utf-8')
+        (Path(tmpdir) / 'mid.h').write_text(
+            '#pragma once\n#include "leaf.h"\n', encoding='utf-8'
+        )
+        (Path(tmpdir) / 'top.cpp').write_text(
+            '#include "mid.h"\n#ifdef ZENITH_TOOLS\n#include "leaf.h"\n#endif\nvoid f() {}\n',
+            encoding='utf-8',
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        fm_top = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('top.cpp'))
+        self.assertEqual(len(fm_top.transitive_includes), 0)
+
+    def test_transitive_skipped_when_cover_appears_after_redundant(self):
+        # If the only cover path is included AFTER the redundant include, code
+        # between the two might use the type and rely on the explicit include.
+        # Removing the early one would break parse order.
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_redundancy_')
+        (Path(tmpdir) / 'leaf.h').write_text('#pragma once\n', encoding='utf-8')
+        (Path(tmpdir) / 'mid.h').write_text(
+            '#pragma once\n#include "leaf.h"\n', encoding='utf-8'
+        )
+        # Order: leaf.h FIRST (line 1), mid.h LATER (line 2). leaf.h must NOT be
+        # flagged transitive — mid.h's coverage only kicks in after line 2.
+        (Path(tmpdir) / 'top.cpp').write_text(
+            '#include "leaf.h"\n#include "mid.h"\nvoid f() {}\n',
+            encoding='utf-8',
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        fm_top = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('top.cpp'))
+        self.assertEqual(len(fm_top.transitive_includes), 0)
+
+    def test_unconditional_transitive_still_flagged(self):
+        # Sanity: when both candidate and cover are unconditional, transitive
+        # detection still works.
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_redundancy_')
+        (Path(tmpdir) / 'leaf.h').write_text('#pragma once\n', encoding='utf-8')
+        (Path(tmpdir) / 'mid.h').write_text(
+            '#pragma once\n#include "leaf.h"\n', encoding='utf-8'
+        )
+        (Path(tmpdir) / 'top.cpp').write_text(
+            '#include "mid.h"\n#include "leaf.h"\nvoid f() {}\n',
+            encoding='utf-8',
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        fm_top = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('top.cpp'))
+        self.assertEqual(len(fm_top.transitive_includes), 1)
+        self.assertEqual(fm_top.include_conditional, [False, False])
+
+    def test_external_include_routed_to_external_not_unresolved(self):
+        # A header that lives under an excluded directory (e.g. Middleware/) should
+        # surface as external (informational), NOT as an unresolved error.
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_redundancy_')
+        (Path(tmpdir) / 'Middleware').mkdir()
+        (Path(tmpdir) / 'Middleware' / 'imgui').mkdir()
+        (Path(tmpdir) / 'Middleware' / 'imgui' / 'imgui.h').write_text(
+            '// imgui header\n', encoding='utf-8'
+        )
+        (Path(tmpdir) / 'caller.cpp').write_text(
+            '#include "imgui.h"\n#include "missing.h"\nvoid f() {}\n', encoding='utf-8'
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=['Middleware'])
+        analyzer.analyze(workers=1)
+        fm = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('caller.cpp'))
+        # imgui.h resolves to Middleware/imgui/imgui.h via basename → external.
+        self.assertEqual(len(fm.external_includes), 1)
+        self.assertEqual(fm.external_includes[0]['include'], 'imgui.h')
+        self.assertTrue(fm.external_includes[0]['resolved_to'].endswith('imgui.h'))
+        # missing.h has no match anywhere → unresolved error.
+        self.assertEqual(len(fm.unresolved_includes), 1)
+        self.assertEqual(fm.unresolved_includes[0]['include'], 'missing.h')
+        # Externals don't contribute to optimisation score; only the four cleanup
+        # categories do.
+        self.assertEqual(
+            fm.include_optimisation_score,
+            len(fm.duplicate_includes) + len(fm.transitive_includes)
+            + len(fm.unresolved_includes) + len(fm.conflicting_includes),
+        )
+
+    def test_conflicting_basename_includes_flagged(self):
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_redundancy_')
+        (Path(tmpdir) / 'Net').mkdir()
+        (Path(tmpdir) / 'Audio').mkdir()
+        (Path(tmpdir) / 'Net' / 'Foo.h').write_text('#pragma once\n', encoding='utf-8')
+        (Path(tmpdir) / 'Audio' / 'Foo.h').write_text('#pragma once\n', encoding='utf-8')
+        (Path(tmpdir) / 'caller.cpp').write_text(
+            '#include "Net/Foo.h"\n#include "Audio/Foo.h"\nvoid f() {}\n',
+            encoding='utf-8',
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        fm_caller = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('caller.cpp'))
+        self.assertEqual(len(fm_caller.conflicting_includes), 1)
+        rec = fm_caller.conflicting_includes[0]
+        self.assertEqual(rec['conflicts_with'], 'Net/Foo.h')
+        self.assertEqual(rec['first_line'], 1)
+        self.assertEqual(rec['line'], 2)
+        self.assertFalse(rec['same_target'])
+
+    def test_optimisation_score_aggregates_all_four(self):
+        tmpdir = tempfile.mkdtemp(prefix='complex_test_redundancy_')
+        (Path(tmpdir) / 'leaf.h').write_text('#pragma once\n', encoding='utf-8')
+        (Path(tmpdir) / 'mid.h').write_text(
+            '#pragma once\n#include "leaf.h"\n', encoding='utf-8'
+        )
+        (Path(tmpdir) / 'Net').mkdir()
+        (Path(tmpdir) / 'Audio').mkdir()
+        (Path(tmpdir) / 'Net' / 'Foo.h').write_text('#pragma once\n', encoding='utf-8')
+        (Path(tmpdir) / 'Audio' / 'Foo.h').write_text('#pragma once\n', encoding='utf-8')
+        # Lines (1-based):
+        #   1: #include "mid.h"
+        #   2: #include "leaf.h"      -> transitive (covered by mid.h)
+        #   3: #include "Net/Foo.h"
+        #   4: #include "Audio/Foo.h" -> conflicting basename
+        #   5: #include "leaf.h"      -> duplicate
+        #   6: #include "missing.h"   -> unresolved
+        (Path(tmpdir) / 'all.cpp').write_text(
+            '#include "mid.h"\n#include "leaf.h"\n#include "Net/Foo.h"\n'
+            '#include "Audio/Foo.h"\n#include "leaf.h"\n#include "missing.h"\n'
+            'void f() {}\n',
+            encoding='utf-8',
+        )
+        analyzer = ac.CppAnalyzer(tmpdir, exclude_dirs=[])
+        analyzer.analyze(workers=1)
+        fm = next(fm for fm in analyzer.file_metrics if fm.filepath.endswith('all.cpp'))
+        self.assertGreaterEqual(len(fm.duplicate_includes), 1)
+        self.assertGreaterEqual(len(fm.transitive_includes), 1)
+        self.assertGreaterEqual(len(fm.unresolved_includes), 1)
+        self.assertGreaterEqual(len(fm.conflicting_includes), 1)
+        self.assertEqual(
+            fm.include_optimisation_score,
+            len(fm.duplicate_includes) + len(fm.transitive_includes)
+            + len(fm.unresolved_includes) + len(fm.conflicting_includes),
+        )
+        self.assertGreaterEqual(fm.include_optimisation_score, 4)
+        h = ac.get_health_summary(analyzer)
+        self.assertGreaterEqual(h['total_include_optimisation_score'], 4)
+
+
 class TestHealthSummary(unittest.TestCase):
     def test_health_summary_populated(self):
         code = 'int Add(int a, int b) { return a + b; }\n'

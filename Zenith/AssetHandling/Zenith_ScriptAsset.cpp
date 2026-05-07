@@ -1,7 +1,6 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_ScriptAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
-#include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 
 #ifdef ZENITH_TOOLS

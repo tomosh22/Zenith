@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "Prefab/Zenith_Prefab.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 

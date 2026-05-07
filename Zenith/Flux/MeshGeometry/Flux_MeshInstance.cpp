@@ -3,7 +3,6 @@
 #include "Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
-#include "Flux/Flux.h"
 
 
 // Helper function to apply bind pose skinning transformation

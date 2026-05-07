@@ -2,10 +2,8 @@
 #include "UI/Zenith_UIImage.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Buffers.h"
-#include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"

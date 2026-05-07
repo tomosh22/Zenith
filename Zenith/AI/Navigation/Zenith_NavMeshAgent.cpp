@@ -3,7 +3,6 @@
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Profiling/Zenith_Profiling.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_Primitives.h"

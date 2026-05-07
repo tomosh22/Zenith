@@ -1,8 +1,6 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"

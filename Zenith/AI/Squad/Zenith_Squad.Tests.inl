@@ -1,6 +1,5 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AI/Squad/Zenith_Squad.h"
-#include "AI/Squad/Zenith_Formation.h"
 
 // ============================================================================
 // Squad Tests

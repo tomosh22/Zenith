@@ -145,5 +145,4 @@ namespace std
 // need Zenith_SceneData fully defined, which is only true at this point in the
 // translation unit.
 //==============================================================================
-#include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Entity.inl"

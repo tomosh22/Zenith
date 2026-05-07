@@ -1,7 +1,6 @@
 #pragma once
 #include "AssetHandling/Zenith_Asset.h"
 #include "Collections/Zenith_Vector.h"
-#include "DataStream/Zenith_DataStream.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include <string>
 

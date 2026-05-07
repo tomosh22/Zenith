@@ -11,11 +11,8 @@
 
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "DataStream/Zenith_DataStream.h"
-#include "FileAccess/Zenith_FileAccess.h"
 
 void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeTransient)
 {

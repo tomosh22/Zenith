@@ -1,22 +1,12 @@
 #include "Zenith.h"
 
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Flux_Types.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Buffers.h"
 #include "Flux/Shadows/Flux_Shadows.h"
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Zenith_OS_Include.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "DataStream/Zenith_DataStream.h"
-#include "FileAccess/Zenith_FileAccess.h"
 #include <filesystem>
 
 #ifdef ZENITH_TOOLS

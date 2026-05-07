@@ -1,5 +1,4 @@
 #include "Zenith.h"
-#include "Core/Zenith_Core.h"
 
 int main()
 {

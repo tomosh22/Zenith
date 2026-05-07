@@ -1,9 +1,6 @@
 #pragma once
 
 #include "Flux/Flux.h"
-#include "Flux/Slang/Flux_SlangCompiler.h"
-#include "Flux/Shaders/Generated/FluxShaderProgram.h"
-#include "Zenith_PlatformGraphics_Include.h"
 
 // Concept group: pipeline / shader / root signature construction.
 //

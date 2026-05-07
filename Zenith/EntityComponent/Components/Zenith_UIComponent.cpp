@@ -1,11 +1,6 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
-#include "UI/Zenith_UIText.h"
-#include "UI/Zenith_UIRect.h"
-#include "UI/Zenith_UIImage.h"
-#include "UI/Zenith_UIButton.h"
-#include "DataStream/Zenith_DataStream.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_UIComponent, "UI")
 

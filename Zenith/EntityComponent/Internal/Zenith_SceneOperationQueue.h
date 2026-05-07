@@ -20,8 +20,6 @@
 // shadows the real class.
 
 #include "EntityComponent/Zenith_Scene.h"  // for Zenith_SceneOperationID alias
-#include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
 #include <atomic>
 #include <cstdint>
 #include <string>

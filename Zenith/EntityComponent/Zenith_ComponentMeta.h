@@ -7,7 +7,6 @@
 
 // Include Scene.h to get Entity template implementations (they're defined there)
 #include "EntityComponent/Zenith_Scene.h"
-#include "Collections/Zenith_Vector.h"
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentRegistry.h"

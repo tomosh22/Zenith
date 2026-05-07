@@ -2,8 +2,6 @@
 
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "Flux_CommandList.h"
-#include "Maths/Zenith_Maths.h"
 
 // ============================================================================
 // Material Push Constants (128 bytes - Vulkan minimum guarantee)

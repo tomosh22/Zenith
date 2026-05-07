@@ -43,6 +43,5 @@ using Flux_VRAM                      = Zenith_Vulkan_VRAM;
 // Now include the actual headers (which may include Flux.h)
 #include "Zenith_Vulkan.h"
 #include "Zenith_Vulkan_MemoryManager.h"
-#include "Zenith_Vulkan_CommandBuffer.h"
 #include "Zenith_Vulkan_Swapchain.h"
 #include "Zenith_Vulkan_Pipeline.h"

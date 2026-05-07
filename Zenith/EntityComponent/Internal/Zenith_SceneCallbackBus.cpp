@@ -1,8 +1,6 @@
 #include "Zenith.h"
 
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_Entity.h"
 
 //=============================================================================
 // Zenith_SceneCallbackBus — implementation.

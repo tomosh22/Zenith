@@ -1,11 +1,8 @@
 #include "Zenith.h"
 
 #include "Flux_IBL.h"
-#include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Buffers.h"
-#include "Flux/Flux_CommandList.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Skybox/Flux_Skybox.h"
 #include "AssetHandling/Zenith_TextureAsset.h"

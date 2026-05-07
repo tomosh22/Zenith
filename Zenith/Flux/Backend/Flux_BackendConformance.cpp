@@ -36,11 +36,6 @@
 #include "Flux/Flux_Backend.h"
 
 // Pull in the concrete backend classes so the concepts can substitute.
-#include "Vulkan/Zenith_Vulkan.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan_CommandBuffer.h"
-#include "Vulkan/Zenith_Vulkan_Swapchain.h"
-#include "Vulkan/Zenith_Vulkan_Pipeline.h"
 
 // ---- Vulkan backend conformance --------------------------------------------
 

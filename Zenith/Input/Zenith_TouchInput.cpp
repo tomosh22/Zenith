@@ -2,7 +2,6 @@
 
 #include "Input/Zenith_TouchInput.h"
 #include "Input/Zenith_Input.h"
-#include "Core/Zenith_Core.h"
 
 // ============================================================================
 // State

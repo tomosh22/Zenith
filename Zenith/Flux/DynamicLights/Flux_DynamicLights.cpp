@@ -2,10 +2,8 @@
 
 #include "Flux/DynamicLights/Flux_DynamicLights.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Flux_Buffers.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"

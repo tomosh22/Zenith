@@ -3,7 +3,6 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
-#include "DataStream/Zenith_DataStream.h"
 #include "Flux/Flux_Buffers.h"
 
 #define ZENITH_MESH_ASSET_VERSION 1

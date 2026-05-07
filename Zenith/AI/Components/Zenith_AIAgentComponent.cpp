@@ -3,7 +3,6 @@
 #include "AI/BehaviorTree/Zenith_BehaviorTree.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
-#include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 

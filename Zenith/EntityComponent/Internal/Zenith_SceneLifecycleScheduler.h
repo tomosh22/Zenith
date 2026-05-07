@@ -23,8 +23,6 @@
 // (same pattern as Zenith_SceneRegistry / Zenith_SceneOperationQueue).
 
 #include "EntityComponent/Zenith_Scene.h"
-#include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
 #include <cstdint>
 #include <string>
 

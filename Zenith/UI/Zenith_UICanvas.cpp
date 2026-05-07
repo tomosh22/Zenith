@@ -7,7 +7,6 @@
 #include "UI/Zenith_UIToggle.h"
 #include "Flux/Quads/Flux_Quads.h"
 #include "Input/Zenith_Input.h"
-#include "DataStream/Zenith_DataStream.h"
 #include <algorithm>
 
 namespace Zenith_UI {

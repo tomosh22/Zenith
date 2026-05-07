@@ -1,8 +1,6 @@
 #include "Zenith.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_Types.h"
-#include "FileAccess/Zenith_FileAccess.h"
-#include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_WINDOWS
 #include <slang.h>

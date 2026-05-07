@@ -3,10 +3,6 @@
 #include "EntityComponent/Zenith_Entity.h"
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
-#include "Flux/MeshGeometry/Flux_MeshInstance.h"
-#include "AssetHandling/Zenith_MaterialAsset.h"
-#include "AssetHandling/Zenith_AssetHandle.h"
-#include "Maths/Zenith_Maths.h"
 #include <string>
 #include <vector>
 

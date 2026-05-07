@@ -6,7 +6,6 @@
 // ============================================================================
 // AI Debug Variables Tests
 // ============================================================================
-#include "AI/Zenith_AIDebugVariables.h"
 
 ZENITH_TEST(AI, TacticalPointDebugColor) { Zenith_UnitTests::TestTacticalPointDebugColor(); }
 

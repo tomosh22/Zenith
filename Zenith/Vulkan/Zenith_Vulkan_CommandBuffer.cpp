@@ -6,10 +6,8 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Flux_Buffers.h"
 
 //#TO purely for the static assert in SetIndexBuffer
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"

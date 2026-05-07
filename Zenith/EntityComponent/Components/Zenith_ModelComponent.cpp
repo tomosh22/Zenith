@@ -1,9 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
-#include "DataStream/Zenith_DataStream.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
@@ -11,9 +9,6 @@
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
-#include "FileAccess/Zenith_FileAccess.h"
-#include "Core/Zenith_Core.h"
 #include <filesystem>
 
 ZENITH_REGISTER_COMPONENT(Zenith_ModelComponent, "Model")

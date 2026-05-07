@@ -3,15 +3,11 @@
 #include "Zenith_Vulkan_Swapchain.h"
 
 #include "Zenith_Vulkan.h"
-#include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Zenith_Vulkan_MemoryManager.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Profiling/Zenith_Profiling.h"
 
-#include "Zenith_OS_Include.h" //#TO for Zenith_Window
 #ifdef ZENITH_WINDOWS
 #include "Zenith_Windows_Window.h"
 #endif

@@ -3,7 +3,6 @@
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
-#include "DataStream/Zenith_DataStream.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_LightComponent, "Light")
 

@@ -1,8 +1,6 @@
 #pragma once
 
 #include "UI/Zenith_UIElement.h"
-#include "Maths/Zenith_Maths.h"
-#include "Collections/Zenith_Vector.h"
 #include <string>
 
 class Zenith_DataStream;

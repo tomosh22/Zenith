@@ -1,7 +1,5 @@
 #pragma once
 #include "Flux_AnimationStateMachine.h"
-#include "Flux_BonePose.h"
-#include "DataStream/Zenith_DataStream.h"
 #include <string>
 
 //=============================================================================

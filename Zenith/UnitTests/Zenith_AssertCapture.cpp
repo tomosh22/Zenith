@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "UnitTests/Zenith_AssertCapture.h"
-#include "Zenith_DebugBreak.h"
 
 Zenith_AssertCaptureScope::Zenith_AssertCaptureScope()
 {

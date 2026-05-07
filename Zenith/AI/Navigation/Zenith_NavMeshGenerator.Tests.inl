@@ -1,6 +1,4 @@
 #include "UnitTests/Zenith_UnitTests.h"
-#include "UnitTests/Zenith_AITests.h"
-#include "AI/Navigation/Zenith_NavMeshGenerator.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 
 // ============================================================================

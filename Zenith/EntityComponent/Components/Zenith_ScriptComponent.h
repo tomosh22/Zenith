@@ -1,11 +1,7 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_ScriptAsset.h"
-#include "Collections/Zenith_Vector.h"
-#include "DataStream/Zenith_DataStream.h"
 #include <string>
 #include <cstring>
 

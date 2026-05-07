@@ -5,7 +5,6 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Flux_Buffers.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/IBL/Flux_IBL.h"
 #include "Flux/SSR/Flux_SSR.h"

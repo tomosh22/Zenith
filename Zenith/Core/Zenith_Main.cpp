@@ -1,5 +1,4 @@
 #include "Zenith.h"
-#include "Zenith_Core.h"
 
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_ScriptAsset.h"
@@ -8,16 +7,13 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #endif
 #include "Physics/Zenith_Physics.h"
-#include "Profiling/Zenith_Profiling.h"
 #include "UnitTests/Zenith_UnitTests.h"
-#include "Zenith_OS_Include.h"
 
 #ifdef ZENITH_WINDOWS
 #include <cstring>

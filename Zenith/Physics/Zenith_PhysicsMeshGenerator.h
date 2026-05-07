@@ -1,7 +1,6 @@
 #pragma once
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Maths/Zenith_Maths.h"
-#include "Collections/Zenith_Vector.h"
 
 // Forward declarations
 class Zenith_MeshGeometryAsset;

@@ -10,7 +10,6 @@
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_ScriptAsset.h"
 #include "Prefab/Zenith_Prefab.h"
-#include "DataStream/Zenith_DataStream.h"
 #include <fstream>
 
 // Loader implementations

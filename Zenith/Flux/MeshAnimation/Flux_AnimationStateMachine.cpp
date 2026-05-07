@@ -1,7 +1,5 @@
 #include "Zenith.h"
 #include "Flux_AnimationStateMachine.h"
-#include "AssetHandling/Zenith_SkeletonAsset.h"
-#include "Core/Zenith_Core.h"
 #include <algorithm>
 #include <fstream>
 

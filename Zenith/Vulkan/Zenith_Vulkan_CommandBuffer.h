@@ -4,7 +4,6 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Types.h"
-#include "Core/ZenithConfig.h"
 
 class Flux_VertexBuffer;
 struct Flux_Texture;

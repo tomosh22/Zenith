@@ -1,9 +1,7 @@
 #pragma once
 
 #include "UI/Zenith_UIElement.h"
-#include "UI/Zenith_UIStyle.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
-#include "Maths/Zenith_Maths.h"
 #include <string>
 
 class Zenith_TextureAsset;

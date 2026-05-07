@@ -1,19 +1,14 @@
 #include "Zenith.h"
 
 #include "Flux/Decals/Flux_Decals.h"
-#include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Buffers.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Primitives/Flux_Primitives.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
-#include "Maths/Zenith_Maths.h"
-#include "Zenith_PlatformGraphics_Include.h"
 
 #include <algorithm>
 #include <cmath>

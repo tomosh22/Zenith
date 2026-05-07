@@ -1,11 +1,7 @@
 #include "Zenith.h"
 #include "Flux_AnimationController.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
-#include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_AnimationAsset.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
-#include "Zenith_PlatformGraphics_Include.h"
-#include "Core/Zenith_Core.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_Primitives.h"

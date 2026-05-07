@@ -3,7 +3,6 @@
 #include "TaskSystem/Zenith_TaskSystem.h"
 
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Multithreading/Zenith_Multithreading.h"
 #include <thread>
 #include <atomic>
 

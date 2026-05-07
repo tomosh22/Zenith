@@ -4,9 +4,7 @@
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "DataStream/Zenith_DataStream.h"
 #include <random>
 
 // ========== Zenith_BTCondition_HasTarget ==========

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "UI/Zenith_UIElement.h"
-#include "Maths/Zenith_Maths.h"
 #include <string>
 
 /**

@@ -2,7 +2,6 @@
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
-#include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"

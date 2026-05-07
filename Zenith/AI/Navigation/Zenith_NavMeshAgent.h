@@ -1,7 +1,6 @@
 #pragma once
 
 #include "AI/Navigation/Zenith_Pathfinding.h"
-#include "Maths/Zenith_Maths.h"
 
 class Zenith_NavMesh;
 class Zenith_TransformComponent;

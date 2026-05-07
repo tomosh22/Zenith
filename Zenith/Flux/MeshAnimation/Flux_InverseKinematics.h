@@ -1,6 +1,5 @@
 #pragma once
 #include "Flux_BonePose.h"
-#include "DataStream/Zenith_DataStream.h"
 #include <vector>
 #include <unordered_map>
 #include <string>

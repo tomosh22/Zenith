@@ -2,7 +2,6 @@
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UICanvas.h"
 #include "Flux/Text/Flux_Text.h"
-#include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"

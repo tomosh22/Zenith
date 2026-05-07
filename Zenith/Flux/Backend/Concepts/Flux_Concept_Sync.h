@@ -2,7 +2,6 @@
 
 #include "Flux/Flux.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "Zenith_PlatformGraphics_Include.h"
 
 // Concept: graph-emitted barrier emission. The render graph synthesises a
 // portable Flux_RenderGraph_Barrier list per pass during Compile() and the

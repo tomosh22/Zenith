@@ -2,9 +2,6 @@
 
 #include "EntityComponent/Internal/Zenith_SceneRegistry.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_Entity.h"
 
 //=============================================================================
 // Zenith_SceneRegistry — implementations and static-storage definitions.

@@ -8,23 +8,16 @@
 // test-only `*_Internal.h` header if the coupling starts to leak, but until
 // the interface grows the friend declarations are the cheapest option.
 #include "Collections/Zenith_CircularQueue.h"
-#include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_HashSet.h"
 #include "Collections/Zenith_MemoryPool.h"
-#include "Collections/Zenith_Vector.h"
-#include "DataStream/Zenith_DataStream.h"
 #include "Flux/Flux_Types.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
 // Scene serialization includes
 #include "EntityComponent/Zenith_Scene.h"
-#include "FileAccess/Zenith_FileAccess.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
-#include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Zenith_EventSystem.h"
@@ -33,10 +26,8 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
-#include "Physics/Zenith_Physics.h"
 #include <filesystem>
 
 // Animation system includes
@@ -46,7 +37,6 @@
 #include "Flux/MeshAnimation/Flux_AnimationStateMachine.h"
 #include "Flux/MeshAnimation/Flux_InverseKinematics.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
-#include "Flux/MeshAnimation/Flux_AnimationLayer.h"
 
 // Tween system includes
 #include "Core/Zenith_Tween.h"
@@ -54,26 +44,16 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 
 // Mesh geometry include (for exporting runtime-format meshes)
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
 // Vulkan memory manager (for DetermineImageViewType tests)
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 
 // UIStyle (for UIStyle tests)
-#include "UI/Zenith_UIStyle.h"
-#include "UI/Zenith_UIText.h"
 
 // Animation texture include (for VAT baking)
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 
-// Asset pipeline includes
-#include "AssetHandling/Zenith_MeshAsset.h"
-#include "AssetHandling/Zenith_SkeletonAsset.h"
-
 // Asset system includes
-#include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AnimationAsset.h"
-#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
@@ -90,7 +70,6 @@
 // (Slang DLL access is gated inside the .cpp via ZENITH_WINDOWS), so the
 // reflection v2 round-trip and codegen-determinism tests below run on AGDE
 // too — they exercise pure-CPU serialisation and string-builder logic.
-#include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Slang/Flux_CodeGenerator.h"
 
 #ifdef ZENITH_TOOLS
@@ -9507,7 +9486,6 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport(){
 // are correctly detected as valid, not just path-based assets.
 //=============================================================================
 
-#include "AssetHandling/Zenith_MaterialAsset.h"
 
 ZENITH_TEST(Asset, AssetHandleProceduralBoolConversion) { Zenith_UnitTests::TestAssetHandleProceduralBoolConversion(); }
 
@@ -13838,7 +13816,6 @@ void Zenith_UnitTests::TestRenderGraphPassOrderDescription(){
 // clashing false hit.
 
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Flux/Flux_CommandList.h"
 
 namespace
 {

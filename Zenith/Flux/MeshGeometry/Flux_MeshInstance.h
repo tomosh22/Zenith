@@ -1,6 +1,5 @@
 #pragma once
 #include "Flux/Flux_Buffers.h"
-#include "Flux/Flux_Types.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 
 class Zenith_MeshAsset;

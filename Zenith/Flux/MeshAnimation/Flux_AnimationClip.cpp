@@ -1,7 +1,5 @@
 #include "Zenith.h"
 #include "Flux_AnimationClip.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
-#include "Core/Zenith_Core.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"

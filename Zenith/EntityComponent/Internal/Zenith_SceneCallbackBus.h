@@ -15,7 +15,6 @@
 // become two-line forwarders to this bus.
 
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_Scene.h"  // ActiveSceneChangeSuppressionScope stores a Zenith_Scene by value
 
 class Zenith_SceneCallbackBus
 {

@@ -1,8 +1,6 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
-#include "DataStream/Zenith_DataStream.h"
 #include <filesystem>
 
 // Static default textures (pinned via handle).

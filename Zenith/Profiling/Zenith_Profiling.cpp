@@ -4,7 +4,6 @@
 
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux.h"
-#include "Multithreading/Zenith_Multithreading.h"
 
 static constexpr float fPROFILING_MAX_EVENT_TIME_SECONDS = 0.5f;
 static constexpr u_int uMAX_PROFILE_DEPTH = 16;

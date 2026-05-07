@@ -12,8 +12,6 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Zenith_Vulkan.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "FileAccess/Zenith_FileAccess.h"
-#include "DataStream/Zenith_DataStream.h"
 
 // Hot-reload state was removed when the Slang migration retired the
 // .vert/.frag string-pair path. Slang hot reload is tracked as a

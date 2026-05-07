@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
@@ -9,7 +8,6 @@
 #include "AssetHandling/Zenith_AnimationAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Prefab/Zenith_Prefab.h"
-#include "DataStream/Zenith_DataStream.h"
 
 //--------------------------------------------------------------------------
 // Template specializations for Get()

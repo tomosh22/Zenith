@@ -1,7 +1,5 @@
 #pragma once
 #include "Flux_BonePose.h"
-#include "Flux_AnimationClip.h"
-#include "DataStream/Zenith_DataStream.h"
 #include <array>
 
 // Forward declarations

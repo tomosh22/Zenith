@@ -2,12 +2,8 @@
 
 #include "EntityComponent/Internal/Zenith_SceneEntityOwnership.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Internal/Zenith_SceneRegistry.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
 
 //==========================================================================

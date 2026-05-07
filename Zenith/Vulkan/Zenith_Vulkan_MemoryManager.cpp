@@ -12,7 +12,6 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_PerFrame.h"
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
 // Probe cache storage. ProbeCacheEntry itself lives in
 // Zenith_Vulkan_MemoryManager_Internal.h so a future sibling TU (the

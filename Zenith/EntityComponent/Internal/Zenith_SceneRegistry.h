@@ -22,7 +22,6 @@
 // friend-injected forward declaration of Zenith_SceneRegistry rather than the
 // real class.
 #include "EntityComponent/Zenith_Scene.h"
-#include "Collections/Zenith_Vector.h"
 #include <string>
 
 class Zenith_SceneData;

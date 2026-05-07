@@ -1,7 +1,5 @@
 #include "Zenith.h"
 #include "AI/BehaviorTree/Zenith_BehaviorTree.h"
-#include "DataStream/Zenith_DataStream.h"
-#include "FileAccess/Zenith_FileAccess.h"
 
 Zenith_BehaviorTree::~Zenith_BehaviorTree()
 {

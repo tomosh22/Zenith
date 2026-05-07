@@ -1,8 +1,6 @@
 #pragma once
 
 #include "AI/Navigation/Zenith_NavMesh.h"
-#include "Maths/Zenith_Maths.h"
-#include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"
 
 class Zenith_SceneData;

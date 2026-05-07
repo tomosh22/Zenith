@@ -5,21 +5,16 @@
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Flux/Particles/Flux_ParticleGPU.h"
 
-#include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Flux_Buffers.h"
 #include "Flux/HDR/Flux_HDR.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"

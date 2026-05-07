@@ -4,7 +4,6 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"

@@ -90,6 +90,12 @@ _TECH_DEBT_PATTERN: re.Pattern = re.compile(
 # Local `#include "..."` — system `<...>` includes are intentionally skipped
 # so the graph reflects only this codebase's internal coupling.
 _LOCAL_INCLUDE_PATTERN: re.Pattern = re.compile(r'^[ \t]*#[ \t]*include[ \t]*"([^"]+)"', re.MULTILINE)
+# Preprocessor scope tracking. `#if/ifdef/ifndef` opens a conditional region;
+# `#endif` closes it. We use these to flag includes that live inside conditional
+# blocks, so transitive-coverage analysis can skip cover paths that are only
+# guaranteed under specific build configurations (e.g. `#ifdef ZENITH_TOOLS`).
+_PREPROC_OPEN_PATTERN: re.Pattern = re.compile(r'^[ \t]*#[ \t]*(?:if|ifdef|ifndef)\b', re.MULTILINE)
+_PREPROC_CLOSE_PATTERN: re.Pattern = re.compile(r'^[ \t]*#[ \t]*endif\b', re.MULTILINE)
 
 # Anti-pattern thresholds (overridable via --thresholds JSON). Values picked to be
 # loud enough that firing means something, quiet enough not to drown out signal.
@@ -225,9 +231,31 @@ class FileMetrics:
     # populated by `_compute_include_graph` after all files are analyzed.
     includes: List[str] = field(default_factory=list)
     include_paths: List[str] = field(default_factory=list)
+    # 1-based line of each `#include "..."` directive, parallel to `include_paths`.
+    include_lines: List[int] = field(default_factory=list)
+    # True when the include sits inside any `#if/#ifdef/#ifndef` block, so its
+    # availability is conditional on macro state. Parallel to `include_paths`.
+    include_conditional: List[bool] = field(default_factory=list)
+    # Resolved node indices per include occurrence, parallel to `include_paths`.
+    # Populated by `_compute_include_graph`; entry is empty if the include failed
+    # all three resolution tiers.
+    include_resolved_targets: List[List[int]] = field(default_factory=list)
     fan_in: int = 0
     fan_out: int = 0
     in_cycle: bool = False
+    # Include-redundancy findings, populated post-graph by `_compute_include_redundancy`.
+    # Each list-of-Dict entry holds `{line, include, ...}` plus category-specific keys.
+    duplicate_includes: List[Dict] = field(default_factory=list)
+    transitive_includes: List[Dict] = field(default_factory=list)
+    # Includes that don't resolve in-tree but DO match a header in an excluded
+    # directory (Middleware/, ThirdParty/, etc.). Informational — not flagged as
+    # an error and does NOT contribute to `include_optimisation_score`.
+    external_includes: List[Dict] = field(default_factory=list)
+    # Genuine unresolved errors: include path matched nothing in-tree AND nothing
+    # under any excluded source directory. Likely a typo or a stale reference.
+    unresolved_includes: List[Dict] = field(default_factory=list)
+    conflicting_includes: List[Dict] = field(default_factory=list)
+    include_optimisation_score: int = 0
     # Per-class LCOM5 cohesion + counts. Each entry: {name, start_line, method_count,
     # field_count, lcom5}. Computed once per file in analyze_file; classes with <2
     # inline methods or no `m_` fields are skipped (nothing to measure).
@@ -1553,10 +1581,35 @@ class CppAnalyzer:
         # Local include targets. Capture both the basename (robust to path differences
         # between includers — `#include "Flux/Foo.h"` vs just `"Foo.h"`) and the raw
         # include string so the include-graph builder can prefer exact relative-path
-        # resolution and only fall back to basename matching when needed.
-        raw_includes = _LOCAL_INCLUDE_PATTERN.findall(code)
-        includes = [Path(m).name for m in raw_includes]
-        include_paths = list(raw_includes)
+        # resolution and only fall back to basename matching when needed. Also capture
+        # 1-based line numbers and a conditional flag — pattern is anchored on `^` with
+        # re.MULTILINE so `m.start()` is always at the directive's line start.
+        # Conditional state is tracked by interleaving `#if/#ifdef/#ifndef` (depth +1)
+        # and `#endif` (depth -1) directives in source order; an include with depth > 0
+        # is inside at least one preprocessor block.
+        preproc_deltas: List[Tuple[int, int]] = []
+        for m in _PREPROC_OPEN_PATTERN.finditer(code):
+            preproc_deltas.append((m.start(), 1))
+        for m in _PREPROC_CLOSE_PATTERN.finditer(code):
+            preproc_deltas.append((m.start(), -1))
+        preproc_deltas.sort()
+
+        include_paths: List[str] = []
+        includes: List[str] = []
+        include_lines: List[int] = []
+        include_conditional: List[bool] = []
+        delta_idx = 0
+        depth = 0
+        for m in _LOCAL_INCLUDE_PATTERN.finditer(code):
+            pos = m.start()
+            while delta_idx < len(preproc_deltas) and preproc_deltas[delta_idx][0] < pos:
+                depth += preproc_deltas[delta_idx][1]
+                delta_idx += 1
+            raw = m.group(1)
+            include_paths.append(raw)
+            includes.append(Path(raw).name)
+            include_lines.append(code.count('\n', 0, pos) + 1)
+            include_conditional.append(depth > 0)
 
         # Per-class LCOM5 cohesion. Uses the cleaned code so comments/strings don't
         # inflate method bodies or field references.
@@ -1585,6 +1638,8 @@ class CppAnalyzer:
             tech_debt_markers=tech_debt,
             includes=includes,
             include_paths=include_paths,
+            include_lines=include_lines,
+            include_conditional=include_conditional,
             classes=class_metrics,
         )
         return file_m
@@ -1630,6 +1685,7 @@ class CppAnalyzer:
         print(f"Analyzed {len(files)} files.")
         self._compute_priority_scores()
         self._compute_include_graph()
+        self._compute_include_redundancy()
         self._find_duplicates()
         self._aggregate_by_directory()
 
@@ -1719,20 +1775,63 @@ class CppAnalyzer:
             for k in range(1, len(parts)):
                 suffix_owners['/'.join(parts[k:])].add(i)
 
+        # External-header index: walk the excluded directories once and collect any
+        # header files. Used to distinguish middleware/third-party includes (expected,
+        # informational) from genuine missing-file errors. Only header extensions —
+        # `#include "..."` resolves to headers, never to .cpp.
+        external_by_suffix: Dict[str, str] = {}
+        external_by_basename: Dict[str, str] = {}
+        if self.exclude_dirs:
+            header_exts = {'.h', '.hpp', '.hxx', '.inl'}
+            for file in self.root_path.rglob('*'):
+                if file.suffix.lower() not in header_exts:
+                    continue
+                try:
+                    rel = file.relative_to(self.root_path)
+                except ValueError:
+                    continue
+                # Only index files that ARE excluded — these are the ones the in-tree
+                # resolver doesn't see. Files inside `self.file_metrics` are already
+                # handled by the in-tree tiers above.
+                if not self.should_exclude(rel):
+                    continue
+                rel_posix = rel.as_posix()
+                external_by_basename.setdefault(file.name, rel_posix)
+                parts = rel_posix.split('/')
+                for k in range(len(parts)):
+                    external_by_suffix.setdefault('/'.join(parts[k:]), rel_posix)
+
         relative_count = 0
         basename_count = 0
 
         # Adjacency list: node index -> list of included node indices (deduped).
         adj: List[List[int]] = [[] for _ in self.file_metrics]
+        # Parallel adjacency limited to UNCONDITIONAL edges (source include not inside
+        # any `#if/#ifdef`). Used by transitive-coverage analysis so we don't claim a
+        # cover whose availability depends on macro state.
+        unconditional_adj: List[List[int]] = [[] for _ in self.file_metrics]
         for i, fm in enumerate(self.file_metrics):
             seen: Set[int] = set()
+            seen_uncond: Set[int] = set()
             # `include_paths` holds raw include strings; `includes` is basenames. Older
             # data without include_paths still works because we fall back to basenames.
             raw_paths = fm.include_paths or fm.includes
-            for raw, base in zip(raw_paths, fm.includes):
+            # Per-include resolved targets (parallel to raw_paths; NOT deduped — duplicate
+            # includes still record both occurrences so redundancy reporting can name both
+            # line numbers).
+            resolved_per_include: List[List[int]] = []
+            unresolved_local: List[Dict] = []
+            external_local: List[Dict] = []
+            for idx, (raw, base) in enumerate(zip(raw_paths, fm.includes)):
+                # Conditional sources don't seed unconditional edges — when their condition
+                # is off, the include never happens, so anything they "cover" can't be
+                # safely removed in the unconditional case.
+                is_cond = (fm.include_conditional[idx]
+                           if idx < len(fm.include_conditional) else False)
                 norm = raw.replace('\\', '/').lstrip('./')
                 target: Optional[int] = None
                 resolved_via_relative = False
+                this_resolved: List[int] = []
                 # Tier 1: exact relative-path match.
                 if norm in by_rel_path:
                     target = by_rel_path[norm]
@@ -1742,23 +1841,89 @@ class CppAnalyzer:
                 elif norm in suffix_owners and len(suffix_owners[norm]) == 1:
                     target = next(iter(suffix_owners[norm]))
                     resolved_via_relative = True
-                if target is not None and target != i and target not in seen:
-                    seen.add(target)
-                    adj[i].append(target)
-                    if resolved_via_relative:
-                        relative_count += 1
+                if target is not None and target != i:
+                    this_resolved.append(target)
+                    if target not in seen:
+                        seen.add(target)
+                        adj[i].append(target)
+                        if resolved_via_relative:
+                            relative_count += 1
+                    if not is_cond and target not in seen_uncond:
+                        seen_uncond.add(target)
+                        unconditional_adj[i].append(target)
+                    resolved_per_include.append(this_resolved)
                     continue
                 # Tier 2: basename fallback (low confidence — link to all files
                 # sharing the basename, which is rare in Zenith but possible).
+                tier2_hits = 0
                 for tgt in by_basename.get(base, ()):
-                    if tgt != i and tgt not in seen:
+                    if tgt == i:
+                        continue
+                    this_resolved.append(tgt)
+                    tier2_hits += 1
+                    if tgt not in seen:
                         seen.add(tgt)
                         adj[i].append(tgt)
                         basename_count += 1
+                    if not is_cond and tgt not in seen_uncond:
+                        seen_uncond.add(tgt)
+                        unconditional_adj[i].append(tgt)
+                resolved_per_include.append(this_resolved)
+                # If no in-tree tier matched, try the external (excluded-dir) index.
+                # External hits are informational — they confirm middleware/third-party
+                # deps are wired up. Real misses become genuine unresolved errors.
+                if target is None and tier2_hits == 0:
+                    line_no = fm.include_lines[idx] if idx < len(fm.include_lines) else 0
+                    ext_match = external_by_suffix.get(norm)
+                    if ext_match is None:
+                        ext_match = external_by_basename.get(base)
+                    if ext_match is not None:
+                        external_local.append({
+                            'line': line_no,
+                            'include': raw,
+                            'resolved_to': ext_match,
+                        })
+                    else:
+                        unresolved_local.append({'line': line_no, 'include': raw})
             fm.fan_out = len(adj[i])
+            fm.include_resolved_targets = resolved_per_include
+            fm.external_includes = external_local
+            fm.unresolved_includes = unresolved_local
+
+            # Conflicting basename detection: same basename, different raw paths inside
+            # one file. Report each non-first occurrence against the first (deterministic
+            # and avoids quadratic record blow-up on >2 conflicts).
+            first_for_base: Dict[str, int] = {}
+            conflicts_local: List[Dict] = []
+            for idx, raw in enumerate(raw_paths):
+                base = Path(raw).name
+                if base in first_for_base:
+                    first_idx = first_for_base[base]
+                    if raw_paths[first_idx] != raw:
+                        first_targets = set(resolved_per_include[first_idx])
+                        same_target = bool(first_targets and first_targets.intersection(
+                            resolved_per_include[idx]))
+                        line_no = fm.include_lines[idx] if idx < len(fm.include_lines) else 0
+                        first_line = (fm.include_lines[first_idx]
+                                      if first_idx < len(fm.include_lines) else 0)
+                        conflicts_local.append({
+                            'line': line_no,
+                            'include': raw,
+                            'conflicts_with': raw_paths[first_idx],
+                            'first_line': first_line,
+                            'same_target': same_target,
+                        })
+                else:
+                    first_for_base[base] = idx
+            fm.conflicting_includes = conflicts_local
 
         self.include_edge_relative_count = relative_count
         self.include_edge_basename_count = basename_count
+        # Stash adjacency on self so `_compute_include_redundancy` can DFS without
+        # rebuilding the graph. The unconditional variant is used for transitive
+        # coverage to avoid false positives from macro-gated cover paths.
+        self._include_graph_adj = adj
+        self._include_graph_unconditional_adj = unconditional_adj
 
         fan_in_count = [0] * len(self.file_metrics)
         for i, targets in enumerate(adj):
@@ -1836,6 +2001,139 @@ class CppAnalyzer:
         if self.include_cycles:
             print(f"  Found {len(self.include_cycles)} include cycle(s) "
                   f"(SCC size >= 2 or self-loop).")
+
+    def _compute_include_redundancy(self) -> None:
+        """
+        Populate per-file include-redundancy lists and `include_optimisation_score`.
+
+        Four categories:
+          1. **Duplicate** — same raw `#include` string appears twice in one file.
+          2. **Transitive** — a direct include is also reachable through another direct
+             include (so removing it would not break the build, modulo macros).
+          3. **Unresolved** — local-style `#include "..."` that fails all three resolution
+             tiers (relative path, suffix, basename). Already populated inline by
+             `_compute_include_graph`.
+          4. **Conflicting** — two includes in one file share a basename but differ in
+             raw path (e.g. `Flux/Foo.h` vs `Engine/Flux/Foo.h`). Already populated.
+
+        The score is the sum of the four category counts. It is a standalone metric and
+        is NOT folded into `priority_score`.
+        """
+        adj = getattr(self, '_include_graph_adj', None)
+        if adj is None:
+            return
+        # Transitive coverage uses the UNCONDITIONAL graph: an include is only safe to
+        # remove if its replacement path is guaranteed to fire regardless of `#ifdef`
+        # state. Conditional edges (e.g. `#ifdef ZENITH_TOOLS`) might not be available
+        # in every build, so they can't be relied on as covers.
+        uncond_adj = getattr(self, '_include_graph_unconditional_adj', None) or adj
+
+        # Lazy memoised transitive closure: closure[v] = set of nodes reachable from v
+        # excluding v itself, traversing only unconditional edges. Built iteratively per
+        # query node to avoid recursion limits and only for nodes actually needed (the
+        # source-side of each direct include).
+        closure: Dict[int, Set[int]] = {}
+
+        def reach_excluding_self(start: int) -> Set[int]:
+            cached = closure.get(start)
+            if cached is not None:
+                return cached
+            visited: Set[int] = set()
+            stack: List[int] = list(uncond_adj[start])
+            while stack:
+                node = stack.pop()
+                if node == start or node in visited:
+                    continue
+                visited.add(node)
+                stack.extend(uncond_adj[node])
+            closure[start] = visited
+            return visited
+
+        # Map filepath -> node index so transitive records can name the covering file.
+        for i, fm in enumerate(self.file_metrics):
+            # --- Duplicates ---
+            duplicates_local: List[Dict] = []
+            seen_first: Dict[str, int] = {}
+            for idx, raw in enumerate(fm.include_paths):
+                if raw in seen_first:
+                    first_line = (fm.include_lines[seen_first[raw]]
+                                  if seen_first[raw] < len(fm.include_lines) else 0)
+                    line_no = fm.include_lines[idx] if idx < len(fm.include_lines) else 0
+                    duplicates_local.append({
+                        'line': line_no,
+                        'include': raw,
+                        'first_line': first_line,
+                    })
+                else:
+                    seen_first[raw] = idx
+            fm.duplicate_includes = duplicates_local
+
+            # --- Transitive ---
+            # Direct targets per source-include index (skipping self-edges already, since
+            # _compute_include_graph never records target == i). Only UNCONDITIONAL
+            # source includes can be reported as redundant or relied on as covers —
+            # conditional ones (`#ifdef`-wrapped) might not be present in every build.
+            transitive_local: List[Dict] = []
+            direct_per_idx = fm.include_resolved_targets
+            cond_flags = fm.include_conditional
+            def _is_cond(j: int) -> bool:
+                return j < len(cond_flags) and cond_flags[j]
+            # Flatten direct targets (unconditional only) to a quick lookup with their
+            # first-occurrence include index so transitive records can cite the covering
+            # include's line number.
+            direct_target_first_idx: Dict[int, int] = {}
+            for idx, targets in enumerate(direct_per_idx):
+                if _is_cond(idx):
+                    continue
+                for t in targets:
+                    if t == i:
+                        continue
+                    if t not in direct_target_first_idx:
+                        direct_target_first_idx[t] = idx
+            for idx, targets in enumerate(direct_per_idx):
+                if _is_cond(idx):
+                    continue
+                for d_i in targets:
+                    if d_i == i:
+                        continue
+                    covered_by_idx: Optional[int] = None
+                    for d_j, j_idx in direct_target_first_idx.items():
+                        if d_j == d_i or d_j == i or j_idx == idx:
+                            continue
+                        # The cover must appear BEFORE the redundant include in the
+                        # source file. If the cover comes later, code between the two
+                        # includes might use the type and only the explicit include
+                        # makes it available there. Removing it would break parse order.
+                        if j_idx > idx:
+                            continue
+                        if d_i in reach_excluding_self(d_j):
+                            covered_by_idx = j_idx
+                            covering_target = d_j
+                            break
+                    else:
+                        covered_by_idx = None
+                    if covered_by_idx is not None:
+                        line_no = (fm.include_lines[idx]
+                                   if idx < len(fm.include_lines) else 0)
+                        cov_line = (fm.include_lines[covered_by_idx]
+                                    if covered_by_idx < len(fm.include_lines) else 0)
+                        transitive_local.append({
+                            'line': line_no,
+                            'include': fm.include_paths[idx]
+                                if idx < len(fm.include_paths) else '',
+                            'covered_by': self.file_metrics[covering_target].filepath,
+                            'covered_by_line': cov_line,
+                        })
+                        break  # one record per source-include is enough
+            fm.transitive_includes = transitive_local
+
+            # --- Score ---
+            fm.include_optimisation_score = (
+                len(fm.duplicate_includes)
+                + len(fm.transitive_includes)
+                + len(fm.unresolved_includes)
+                + len(fm.conflicting_includes)
+            )
 
     def _find_duplicates(self) -> None:
         """
@@ -2084,6 +2382,60 @@ class CppAnalyzer:
                 leader = cluster[0]
                 print(f"  {i}. {len(cluster)} functions similar, led by:")
                 print(f"     {leader['file']}:{leader['line']}  {leader['name']}")
+
+        # Genuine unresolved-include errors — surfaced FIRST and loudly because each
+        # one is a likely typo or stale reference that the build still tolerates only
+        # because precompiled headers / cached builds papered over it.
+        unresolved_total = sum(len(f.unresolved_includes) for f in self.file_metrics)
+        if unresolved_total > 0:
+            print(f"\n=== UNRESOLVED INCLUDES ({unresolved_total} — ERRORS) ===")
+            print("-" * 40)
+            print("These #include paths matched neither the analyzed tree nor any header")
+            print("under excluded directories (Middleware/, ThirdParty/, ...). Likely typos")
+            print("or references to deleted files.")
+            shown = 0
+            for fm in self.file_metrics:
+                for r in fm.unresolved_includes:
+                    if shown >= 25:
+                        break
+                    print(f"  {fm.filepath}:{r['line']}  {r['include']}")
+                    shown += 1
+                if shown >= 25:
+                    print(f"  ... and {unresolved_total - shown} more")
+                    break
+
+        # External / middleware includes — informational only.
+        external_total = sum(len(f.external_includes) for f in self.file_metrics)
+        if external_total > 0:
+            from collections import Counter as _Counter
+            counts = _Counter()
+            for fm in self.file_metrics:
+                for r in fm.external_includes:
+                    counts[r['include']] += 1
+            print(f"\n=== EXTERNAL INCLUDES ({external_total} resolved to "
+                  f"{len(counts)} middleware/third-party header(s)) ===")
+            print("-" * 40)
+            for name, n in counts.most_common(10):
+                print(f"  {n:4d}  {name}")
+            if len(counts) > 10:
+                print(f"  ... and {len(counts) - 10} more")
+
+        # Include-redundancy hotspots — top 10 files by include_optimisation_score.
+        # Each line shows per-category counts so the reviewer can tell at a glance
+        # whether the file's problem is duplicates, transitive coverage, dead paths,
+        # or basename collisions.
+        opt_ranked = [f for f in self.file_metrics if f.include_optimisation_score > 0]
+        if opt_ranked:
+            opt_ranked.sort(key=lambda f: -f.include_optimisation_score)
+            total_score = sum(f.include_optimisation_score for f in opt_ranked)
+            print(f"\n=== INCLUDE REDUNDANCY ({len(opt_ranked)} file(s), score {total_score}) ===")
+            print("-" * 40)
+            for i, fm in enumerate(opt_ranked[:10], 1):
+                print(f"  {i:2d}. {fm.filepath}  score={fm.include_optimisation_score}")
+                print(f"      dup={len(fm.duplicate_includes)}  "
+                      f"transitive={len(fm.transitive_includes)}  "
+                      f"unresolved={len(fm.unresolved_includes)}  "
+                      f"conflicting={len(fm.conflicting_includes)}")
 
         # Per-function refactoring queue: the highest-ROI section for Claude/human
         # reviewers. Sorted by priority_score, formatted as `file:line` so it's
@@ -2738,17 +3090,22 @@ def export_csv(analyzer: CppAnalyzer, output_dir: Path) -> None:
         writer.writerow([
             'File', 'Total Lines', 'Code Lines', 'Comment Lines', 'Blank Lines',
             'Cyclomatic Complexity', 'Cognitive Complexity', 'Maintainability Index',
-            'Functions', 'Classes', 'Max Nesting', 'Halstead Volume', 
-            'Halstead Difficulty', 'Halstead Effort', 'Estimated Bugs'
+            'Functions', 'Classes', 'Max Nesting', 'Halstead Volume',
+            'Halstead Difficulty', 'Halstead Effort', 'Estimated Bugs',
+            'Duplicate Includes', 'Transitive Includes', 'External Includes',
+            'Unresolved Includes', 'Conflicting Includes', 'Include Opt Score',
         ])
-        
+
         for fm in analyzer.file_metrics:
             writer.writerow([
                 fm.filepath, fm.total_lines, fm.code_lines, fm.comment_lines, fm.blank_lines,
                 fm.cyclomatic_complexity, fm.cognitive_complexity, f'{fm.maintainability_index:.2f}',
                 fm.function_count, fm.class_count, fm.max_nesting_depth,
                 f'{fm.halstead.volume:.2f}', f'{fm.halstead.difficulty:.2f}',
-                f'{fm.halstead.effort:.2f}', f'{fm.halstead.bugs_delivered:.3f}'
+                f'{fm.halstead.effort:.2f}', f'{fm.halstead.bugs_delivered:.3f}',
+                len(fm.duplicate_includes), len(fm.transitive_includes),
+                len(fm.external_includes), len(fm.unresolved_includes),
+                len(fm.conflicting_includes), fm.include_optimisation_score,
             ])
     
     print(f"  File metrics exported to: {file_csv}")
@@ -2859,6 +3216,12 @@ def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
             'fan_in': fm.fan_in,
             'fan_out': fm.fan_out,
             'in_cycle': fm.in_cycle,
+            'duplicate_includes': fm.duplicate_includes,
+            'transitive_includes': fm.transitive_includes,
+            'external_includes': fm.external_includes,
+            'unresolved_includes': fm.unresolved_includes,
+            'conflicting_includes': fm.conflicting_includes,
+            'include_optimisation_score': fm.include_optimisation_score,
             'classes': fm.classes,
             'tags': fm.tags,
             'todo_count': fm.todo_count,
@@ -3016,6 +3379,21 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
             base_pct = 100.0 * base / total
             out.append(f'- Include edges resolved: {rel} relative-path (high confidence), '
                        f'{base} basename-only (low confidence, {base_pct:.0f}%)')
+        unres_total = health.get('total_unresolved_includes', 0)
+        if unres_total > 0:
+            out.append(f'- **Unresolved includes (errors): {unres_total}** — see section below')
+        ext_total = health.get('total_external_includes', 0)
+        if ext_total > 0:
+            out.append(f'- External includes (middleware/third-party): {ext_total}')
+        opt_total = health.get('total_include_optimisation_score', 0)
+        if opt_total > 0:
+            out.append(
+                f'- Include redundancy: score **{opt_total}** '
+                f'({health["total_duplicate_includes"]} duplicate, '
+                f'{health["total_transitive_includes"]} transitive, '
+                f'{health["total_unresolved_includes"]} unresolved, '
+                f'{health["total_conflicting_includes"]} conflicting)'
+            )
         if health['worst_function']:
             wf = health['worst_function']
             out.append(f'- Worst function: `{wf["file"]}:{wf["line"]}` `{wf["name"]}` '
@@ -3184,6 +3562,74 @@ def export_markdown(analyzer: CppAnalyzer, output_dir: Path) -> None:
                            f'(score {m["priority_score"]:.1f}, LOC {m["code_lines"]})')
             out.append('')
 
+    # Include redundancy — four cleanup categories plus two informational ones
+    # (external resolution + the genuine-error subset of unresolved). Tables stay
+    # short (top 25 records each) so the markdown is reviewable; the JSON report
+    # carries the full lists.
+    dup_inc = [(fm, r) for fm in analyzer.file_metrics for r in fm.duplicate_includes]
+    trans_inc = [(fm, r) for fm in analyzer.file_metrics for r in fm.transitive_includes]
+    ext_inc = [(fm, r) for fm in analyzer.file_metrics for r in fm.external_includes]
+    unres_inc = [(fm, r) for fm in analyzer.file_metrics for r in fm.unresolved_includes]
+    conf_inc = [(fm, r) for fm in analyzer.file_metrics for r in fm.conflicting_includes]
+
+    # Unresolved errors come FIRST and outside the redundancy section because they're
+    # build-bug candidates, not cleanup opportunities.
+    if unres_inc:
+        out.append(f'## Unresolved includes ({len(unres_inc)} — errors)\n')
+        out.append('These `#include` paths matched neither the analyzed tree nor any '
+                   'header under excluded directories. Each is a likely typo or stale '
+                   'reference to a removed file — fix or delete.\n')
+        out.append('| File | Line | Include |')
+        out.append('| --- | ---: | --- |')
+        for fm, r in unres_inc[:50]:
+            out.append(f'| `{fm.filepath}` | {r["line"]} | `{r["include"]}` |')
+        out.append('')
+
+    if dup_inc or trans_inc or conf_inc:
+        out.append('## Include redundancy\n')
+        out.append('Per-file `#include` findings: duplicates, transitive coverage, '
+                   'and same-basename conflicts. Each row is a concrete cleanup '
+                   'candidate.\n')
+        if dup_inc:
+            out.append(f'### Duplicate includes ({len(dup_inc)} total)')
+            out.append('| File | Line | Include | First seen |')
+            out.append('| --- | ---: | --- | ---: |')
+            for fm, r in dup_inc[:25]:
+                out.append(f'| `{fm.filepath}` | {r["line"]} | `{r["include"]}` | {r["first_line"]} |')
+            out.append('')
+        if trans_inc:
+            out.append(f'### Transitively-covered includes ({len(trans_inc)} total)')
+            out.append('| File | Line | Include | Covered by |')
+            out.append('| --- | ---: | --- | --- |')
+            for fm, r in trans_inc[:25]:
+                out.append(f'| `{fm.filepath}` | {r["line"]} | `{r["include"]}` | '
+                           f'`{r["covered_by"]}:{r["covered_by_line"]}` |')
+            out.append('')
+        if conf_inc:
+            out.append(f'### Conflicting basename includes ({len(conf_inc)} total)')
+            out.append('| File | Line | Include | Conflicts with | Same target |')
+            out.append('| --- | ---: | --- | --- | :---: |')
+            for fm, r in conf_inc[:25]:
+                same = 'yes' if r.get('same_target') else 'no'
+                out.append(f'| `{fm.filepath}` | {r["line"]} | `{r["include"]}` | '
+                           f'`{r["conflicts_with"]}` (line {r["first_line"]}) | {same} |')
+            out.append('')
+
+    # External (middleware/third-party) includes — informational. Aggregated by
+    # header name so the reader sees "60x imgui.h" instead of 60 noisy rows.
+    if ext_inc:
+        from collections import Counter as _Counter
+        ext_counts = _Counter(r['include'] for _, r in ext_inc)
+        out.append(f'## External includes ({len(ext_inc)} resolved to '
+                   f'{len(ext_counts)} middleware/third-party header(s))\n')
+        out.append('These resolve into excluded directories (Middleware/, ThirdParty/, '
+                   'External/, …). Listed for visibility only — not flagged as issues.\n')
+        out.append('| Count | Header |')
+        out.append('| ---: | --- |')
+        for name, n in ext_counts.most_common(50):
+            out.append(f'| {n} | `{name}` |')
+        out.append('')
+
     # Tech-debt markers
     all_markers = [
         (fm.filepath, m) for fm in analyzer.file_metrics for m in fm.tech_debt_markers
@@ -3322,6 +3768,24 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px
     <h2>Near-duplicate functions <span id="dup-count"></span></h2>
     <p class="hint">Token-normalized 5-gram Jaccard similarity. Variables can differ without breaking a match.</p>
     <div id="dup-list"></div>
+  </section>
+
+  <section id="unresolved-section" hidden>
+    <h2>Unresolved includes <span id="unres-count"></span></h2>
+    <p class="hint">These <code>#include</code> paths matched neither the analyzed tree nor any header under excluded dirs. Likely typos or stale references &mdash; treat as errors.</p>
+    <div id="unres-list"></div>
+  </section>
+
+  <section id="include-redundancy-section" hidden>
+    <h2>Include redundancy <span id="inc-red-count"></span></h2>
+    <p class="hint">Per-file <code>#include</code> findings: duplicate, transitively covered, conflicting basename. Each row is a concrete cleanup candidate.</p>
+    <div id="inc-red-list"></div>
+  </section>
+
+  <section id="externals-section" hidden>
+    <h2>External includes <span id="ext-count"></span></h2>
+    <p class="hint">Resolved into excluded directories (Middleware, ThirdParty, External, &hellip;). Informational only.</p>
+    <div id="ext-list"></div>
   </section>
 
   <section id="techdebt-section" hidden>
@@ -3534,6 +3998,60 @@ if (clusters.length) {
   }
 }
 
+// --- Unresolved errors (highest-priority, listed first) ---
+const allFiles = data.all_files || [];
+const unresAll = [];
+for (const f of allFiles) for (const r of (f.unresolved_includes || [])) unresAll.push({file: f.filepath, ...r});
+if (unresAll.length) {
+  show('unresolved-section');
+  setText('unres-count', `(${unresAll.length})`);
+  const list = document.getElementById('unres-list');
+  const ul = el('ul', {}, []);
+  for (const r of unresAll.slice(0, 100)) {
+    ul.appendChild(el('li', {}, [`${r.file}:${r.line} — “${r.include}”`]));
+  }
+  list.appendChild(ul);
+}
+
+// --- Include redundancy ---
+const incFiles = allFiles.filter(f => (f.include_optimisation_score || 0) > 0);
+if (incFiles.length) {
+  show('include-redundancy-section');
+  const totalScore = incFiles.reduce((acc, f) => acc + (f.include_optimisation_score || 0), 0);
+  setText('inc-red-count', `(${incFiles.length} file${incFiles.length === 1 ? '' : 's'}, score ${totalScore})`);
+  incFiles.sort((a, b) => (b.include_optimisation_score || 0) - (a.include_optimisation_score || 0));
+  const list = document.getElementById('inc-red-list');
+  for (const f of incFiles.slice(0, 50)) {
+    const counts = `dup ${f.duplicate_includes.length}, trans ${f.transitive_includes.length}, unres ${f.unresolved_includes.length}, conflict ${f.conflicting_includes.length}`;
+    const items = [];
+    for (const r of (f.duplicate_includes || [])) items.push(el('li', {}, [`L${r.line}: duplicate “${r.include}” (first at L${r.first_line})`]));
+    for (const r of (f.transitive_includes || [])) items.push(el('li', {}, [`L${r.line}: transitive “${r.include}” — covered by ${r.covered_by}:${r.covered_by_line}`]));
+    for (const r of (f.unresolved_includes || [])) items.push(el('li', {}, [`L${r.line}: unresolved “${r.include}”`]));
+    for (const r of (f.conflicting_includes || [])) items.push(el('li', {}, [`L${r.line}: conflicts with “${r.conflicts_with}” (L${r.first_line})${r.same_target ? ' [same target]' : ''}`]));
+    const d = el('details', { class: 'cluster' }, [
+      el('summary', {}, [`${f.filepath} — score ${f.include_optimisation_score} (${counts})`]),
+      el('ul', {}, items),
+    ]);
+    list.appendChild(d);
+  }
+}
+
+// --- External (middleware) includes ---
+const extCounts = new Map();
+for (const f of allFiles) for (const r of (f.external_includes || [])) extCounts.set(r.include, (extCounts.get(r.include) || 0) + 1);
+if (extCounts.size) {
+  show('externals-section');
+  const total = Array.from(extCounts.values()).reduce((a, b) => a + b, 0);
+  setText('ext-count', `(${total} resolved to ${extCounts.size} header${extCounts.size === 1 ? '' : 's'})`);
+  const list = document.getElementById('ext-list');
+  const sorted = Array.from(extCounts.entries()).sort((a, b) => b[1] - a[1]);
+  const ul = el('ul', {}, []);
+  for (const [name, n] of sorted.slice(0, 100)) {
+    ul.appendChild(el('li', {}, [`${n}× ${name}`]));
+  }
+  list.appendChild(ul);
+}
+
 // --- Tech debt ---
 const td = data.tech_debt_markers || [];
 if (td.length) {
@@ -3648,6 +4166,26 @@ _SARIF_RULES: Dict[str, Dict[str, str]] = {
         'short': 'Near-duplicate function detected (Jaccard >= 85%)',
         'level': 'note',
     },
+    'include-duplicate': {
+        'name': 'IncludeDuplicate',
+        'short': 'Same `#include` directive appears twice in one file',
+        'level': 'note',
+    },
+    'include-transitive': {
+        'name': 'IncludeTransitive',
+        'short': 'Direct `#include` is also reachable transitively — likely removable',
+        'level': 'note',
+    },
+    'include-unresolved': {
+        'name': 'IncludeUnresolved',
+        'short': '`#include` does not resolve to any file in the analyzed tree or excluded source dirs',
+        'level': 'error',
+    },
+    'include-conflicting': {
+        'name': 'IncludeConflicting',
+        'short': 'Two includes share a basename but differ in path (`Flux/Foo.h` vs `Engine/Flux/Foo.h`)',
+        'level': 'warning',
+    },
 }
 
 
@@ -3754,6 +4292,48 @@ def export_sarif(analyzer: CppAnalyzer, output_dir: Path) -> None:
                 'level': _SARIF_RULES['near-duplicate']['level'],
                 'message': {'text': msg},
                 'locations': [_location(member['file'], member['line'])],
+            })
+
+    # Include redundancy — one finding per record across the four categories.
+    for fm in analyzer.file_metrics:
+        for r in fm.duplicate_includes:
+            results.append({
+                'ruleId': 'include-duplicate',
+                'level': _SARIF_RULES['include-duplicate']['level'],
+                'message': {'text': (
+                    f'`{r["include"]}` already included on line {r["first_line"]}'
+                )},
+                'locations': [_location(fm.filepath, r['line'])],
+            })
+        for r in fm.transitive_includes:
+            results.append({
+                'ruleId': 'include-transitive',
+                'level': _SARIF_RULES['include-transitive']['level'],
+                'message': {'text': (
+                    f'`{r["include"]}` is already reachable through '
+                    f'{r["covered_by"]}:{r["covered_by_line"]}'
+                )},
+                'locations': [_location(fm.filepath, r['line'])],
+            })
+        for r in fm.unresolved_includes:
+            results.append({
+                'ruleId': 'include-unresolved',
+                'level': _SARIF_RULES['include-unresolved']['level'],
+                'message': {'text': (
+                    f'`{r["include"]}` does not resolve to any file in the analyzed tree'
+                )},
+                'locations': [_location(fm.filepath, r['line'])],
+            })
+        for r in fm.conflicting_includes:
+            same = ' (same target)' if r.get('same_target') else ''
+            results.append({
+                'ruleId': 'include-conflicting',
+                'level': _SARIF_RULES['include-conflicting']['level'],
+                'message': {'text': (
+                    f'`{r["include"]}` conflicts with `{r["conflicts_with"]}` '
+                    f'(line {r["first_line"]}){same}'
+                )},
+                'locations': [_location(fm.filepath, r['line'])],
             })
 
     sarif = {
@@ -4131,6 +4711,13 @@ def get_health_summary(analyzer: CppAnalyzer) -> Dict:
     if analyzer.file_metrics:
         worst_file = max(analyzer.file_metrics, key=lambda f: f.priority_score)
 
+    total_dup_inc = sum(len(f.duplicate_includes) for f in analyzer.file_metrics)
+    total_trans_inc = sum(len(f.transitive_includes) for f in analyzer.file_metrics)
+    total_ext_inc = sum(len(f.external_includes) for f in analyzer.file_metrics)
+    total_unres_inc = sum(len(f.unresolved_includes) for f in analyzer.file_metrics)
+    total_conf_inc = sum(len(f.conflicting_includes) for f in analyzer.file_metrics)
+    total_inc_opt_score = sum(f.include_optimisation_score for f in analyzer.file_metrics)
+
     return {
         'parser_backend': analyzer.parser_backend,
         'parser_backend_requested': analyzer.parser_backend_requested,
@@ -4141,6 +4728,12 @@ def get_health_summary(analyzer: CppAnalyzer) -> Dict:
         'duplicate_cluster_count': len(analyzer.duplicate_clusters),
         'include_edges_relative': analyzer.include_edge_relative_count,
         'include_edges_basename': analyzer.include_edge_basename_count,
+        'total_duplicate_includes': total_dup_inc,
+        'total_transitive_includes': total_trans_inc,
+        'total_external_includes': total_ext_inc,
+        'total_unresolved_includes': total_unres_inc,
+        'total_conflicting_includes': total_conf_inc,
+        'total_include_optimisation_score': total_inc_opt_score,
         'worst_function': (
             {
                 'name': worst_func.name,

@@ -1,7 +1,5 @@
 #include "Zenith.h"
 #include "Zenith_ComponentMeta.h"
-#include "Zenith_Entity.h"
-#include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include <algorithm>
 

@@ -6,11 +6,8 @@ using namespace Flux_TerrainConfig;
 
 #include "EntityComponent/Zenith_Entity.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux.h"
-#include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Maths/Zenith_FrustumCulling.h"
 
 // Forward declarations

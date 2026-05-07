@@ -10,7 +10,6 @@
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UIOverlay.h"
 #include "UI/Zenith_UIScrollView.h"
-#include "DataStream/Zenith_DataStream.h"
 #include "Input/Zenith_Input.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"

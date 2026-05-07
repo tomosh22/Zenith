@@ -1,8 +1,6 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
-#include "Flux/Flux.h"
 
 //------------------------------------------------------------------------------
 // Helper Functions for Serialization

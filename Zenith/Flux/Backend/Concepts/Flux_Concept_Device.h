@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Flux/Flux.h"
-#include "Zenith_PlatformGraphics_Include.h"
 
 // Concept: device lifecycle, VRAM registry, top-level GPU state.
 //

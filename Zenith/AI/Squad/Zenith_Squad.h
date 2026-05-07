@@ -2,7 +2,6 @@
 
 #include "EntityComponent/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"
-#include "Collections/Zenith_Vector.h"
 #include "AI/Squad/Zenith_Formation.h"
 #include <unordered_map>
 

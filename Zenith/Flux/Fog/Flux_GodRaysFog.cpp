@@ -3,9 +3,7 @@
 #include "Flux/Fog/Flux_GodRaysFog.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 
-#include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Flux_Buffers.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "DebugVariables/Zenith_DebugVariables.h"

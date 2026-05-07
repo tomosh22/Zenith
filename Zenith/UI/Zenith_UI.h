@@ -51,7 +51,6 @@
  */
 
 #include "UI/Zenith_UICanvas.h"
-#include "UI/Zenith_UIElement.h"
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIImage.h"

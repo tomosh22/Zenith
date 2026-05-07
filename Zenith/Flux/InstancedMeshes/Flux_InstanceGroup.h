@@ -2,9 +2,7 @@
 
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
-#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
-#include "Maths/Zenith_Maths.h"
 #include <vector>
 
 class Flux_AnimationTexture;

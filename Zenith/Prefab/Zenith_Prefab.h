@@ -5,7 +5,6 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_Asset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
-#include "Collections/Zenith_Vector.h"
 #include <string>
 
 /**

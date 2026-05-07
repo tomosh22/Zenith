@@ -4,7 +4,6 @@
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "Maths/Zenith_Maths.h"
 #include "Maths/Zenith_FrustumCulling.h"
-#include "Collections/Zenith_Vector.h"
 #include <vector>
 #include <cstdint>
 #include <atomic>

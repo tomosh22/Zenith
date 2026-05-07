@@ -7,9 +7,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_PerFrame.h"
@@ -17,7 +15,6 @@
 #include "Flux/IBL/Flux_IBL.h"
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSGI/Flux_SSGI.h"
-#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #endif
@@ -25,9 +22,7 @@
 #include "Input/Zenith_TouchInput.h"
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
-#include "Profiling/Zenith_Profiling.h"
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
-#include "Zenith_OS_Include.h"
 
 
 // Namespace variable definitions

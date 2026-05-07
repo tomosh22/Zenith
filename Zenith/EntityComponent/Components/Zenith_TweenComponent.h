@@ -1,8 +1,6 @@
 #pragma once
 #include "EntityComponent/Zenith_Entity.h"
 #include "Core/Zenith_Tween.h"
-#include "Collections/Zenith_Vector.h"
-#include "DataStream/Zenith_DataStream.h"
 
 //=============================================================================
 // Zenith_TweenComponent

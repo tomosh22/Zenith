@@ -13,8 +13,6 @@
 // the other internal subsystems use.
 
 #include "EntityComponent/Zenith_Scene.h"
-#include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
 
 class Zenith_Entity;
 class Zenith_SceneData;

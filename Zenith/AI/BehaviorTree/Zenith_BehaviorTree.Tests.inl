@@ -3,10 +3,8 @@
 #include "AI/BehaviorTree/Zenith_BTNode.h"
 #include "AI/BehaviorTree/Zenith_BTComposites.h"
 #include "AI/BehaviorTree/Zenith_BTDecorators.h"
-#include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 
 // ============================================================================
 // Helper: Mock BT Node for testing

@@ -1,5 +1,4 @@
 #include "UnitTests/Zenith_UnitTests.h"
-#include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
 
 ZENITH_TEST(AI, PathfindingStraightLine) { Zenith_UnitTests::TestPathfindingStraightLine(); }

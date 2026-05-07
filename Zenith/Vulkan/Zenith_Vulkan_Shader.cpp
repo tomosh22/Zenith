@@ -2,8 +2,6 @@
 
 #include "Zenith_Vulkan_Pipeline.h"
 #include "Zenith_Vulkan.h"
-#include "FileAccess/Zenith_FileAccess.h"
-#include "DataStream/Zenith_DataStream.h"
 #include "Flux/Slang/Flux_ShaderRegistry.h"
 
 #ifdef ZENITH_WINDOWS

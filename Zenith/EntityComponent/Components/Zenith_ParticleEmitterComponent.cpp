@@ -5,7 +5,6 @@
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Flux/Particles/Flux_ParticleGPU.h"
-#include "DataStream/Zenith_DataStream.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_ParticleEmitterComponent, "ParticleEmitter")
 

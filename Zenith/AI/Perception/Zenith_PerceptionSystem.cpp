@@ -2,10 +2,8 @@
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
-#include "Profiling/Zenith_Profiling.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_Primitives.h"

@@ -1,7 +1,5 @@
 #include "Zenith.h"
 #include "Flux_InverseKinematics.h"
-#include "AssetHandling/Zenith_SkeletonAsset.h"
-#include "Core/Zenith_Core.h"
 
 //=============================================================================
 // Flux_JointConstraint

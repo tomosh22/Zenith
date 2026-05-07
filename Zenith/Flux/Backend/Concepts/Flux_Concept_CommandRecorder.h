@@ -1,9 +1,7 @@
 #pragma once
 
 #include "Flux/Flux.h"
-#include "Flux/Flux_CommandList.h"
 #include "Flux/Flux_Buffers.h"
-#include "Zenith_PlatformGraphics_Include.h"
 
 // Concept: per-worker command recording. Instance methods on the backend
 // command-buffer type (aliased as Flux_CommandBuffer). Each Flux_CommandList

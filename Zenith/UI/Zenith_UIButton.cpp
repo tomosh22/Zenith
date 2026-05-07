@@ -7,7 +7,6 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
-#include "DataStream/Zenith_DataStream.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 
 #ifdef ZENITH_TOOLS

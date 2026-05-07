@@ -2,16 +2,10 @@
 // with Jolt's custom operator new
 #include "Zenith.h"
 #define ZENITH_PLACEMENT_NEW_ZONE
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
-#include "Zenith_OS_Include.h"
 // Re-enter the placement-new disabled zone for the additional Jolt headers
 // not already pulled in by Zenith_Physics.h (which re-enables on exit).
 #ifdef ZENITH_PLACEMENT_NEW_ZONE
@@ -19,7 +13,6 @@
 #else
 #define ZENITH_PLACEMENT_NEW_ZONE
 #endif
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
@@ -28,7 +21,6 @@
 #undef ZENITH_PLACEMENT_NEW_ZONE
 #endif
 #undef ZENITH_PHYSICS_CPP_ZONE_WAS_SET
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 JPH::TempAllocatorImpl* Zenith_Physics::s_pxTempAllocator = nullptr;
 JPH::JobSystemThreadPool* Zenith_Physics::s_pxJobSystem = nullptr;

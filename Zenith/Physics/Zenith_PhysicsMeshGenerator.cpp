@@ -4,10 +4,6 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneManager.h"
-#include "EntityComponent/Zenith_SceneData.h"
 #include "Flux/Primitives/Flux_Primitives.h"
 #include <unordered_map>
 #include <unordered_set>

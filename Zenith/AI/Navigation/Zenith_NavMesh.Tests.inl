@@ -1,5 +1,4 @@
 #include "UnitTests/Zenith_UnitTests.h"
-#include "AI/Navigation/Zenith_NavMesh.h"
 
 // ============================================================================
 // NavMesh Tests

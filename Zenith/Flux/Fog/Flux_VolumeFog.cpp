@@ -3,10 +3,8 @@
 #include "Flux/Fog/Flux_VolumeFog.h"
 
 #include "Flux/Flux_Graphics.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Maths/Zenith_Maths.h"
 
 #include <cmath>
 #include <random>

@@ -3,7 +3,6 @@
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_InstancedMeshComponent, "InstancedMesh")

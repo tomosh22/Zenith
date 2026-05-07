@@ -4,13 +4,10 @@
 #include "Vulkan/Zenith_Vulkan.h"
 #include "Vulkan/Zenith_Vulkan_Platform.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "Vulkan/Zenith_Vulkan_CommandBuffer.h"
 #include "Flux/Flux.h"
-#include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
-#include "Multithreading/Zenith_Multithreading.h"
 #include <algorithm>
 
 #ifdef ZENITH_WINDOWS
@@ -31,8 +28,6 @@
 #ifdef ZENITH_DEBUG_VARIABLES
 #include "DebugVariables/Zenith_DebugVariables.h"
 #endif
-
-#include "Flux/Flux_Graphics.h"
 
 #ifdef ZENITH_DEBUG
 static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation", /*"VK_LAYER_KHRONOS_synchronization2"*/ };

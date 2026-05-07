@@ -1,6 +1,5 @@
 #pragma once
 #include "Zenith_PlatformGraphics_Include.h"
-#include "Flux/Flux_Enums.h"  // for ResourceAccess
 
 #include "Profiling/Zenith_Profiling.h"
 
@@ -449,9 +448,7 @@ public:
 		}
 
 		*reinterpret_cast<Flux_CommandType*>(&m_pcData[m_uCursor]) = CommandType_T::m_eType;
-		#include "Memory/Zenith_MemoryManagement_Disabled.h"
 		new (reinterpret_cast<CommandType_T*>(&m_pcData[m_uCursor + sizeof(Flux_CommandType)])) CommandType_T(std::forward<Args>(xArgs)...);
-		#include "Memory/Zenith_MemoryManagement_Enabled.h"
 		m_uCursor += sizeof(CommandType_T) + sizeof(Flux_CommandType);
 		m_uCommandCount++;
 	}

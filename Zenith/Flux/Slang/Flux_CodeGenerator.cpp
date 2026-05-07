@@ -1,9 +1,7 @@
 #include "Zenith.h"
-#include "Core/Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Flux/Slang/Flux_CodeGenerator.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
-#include "Flux/Slang/Flux_ShaderRegistry.h"
 
 #include <cstdio>
 #include <fstream>

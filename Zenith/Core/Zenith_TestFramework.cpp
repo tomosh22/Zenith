@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "Zenith_TestFramework.h"
-#include "Zenith_DebugBreak.h"
 
 #ifdef ZENITH_TESTING
 

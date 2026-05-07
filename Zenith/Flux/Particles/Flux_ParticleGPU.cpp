@@ -3,11 +3,8 @@
 #include "Flux/Particles/Flux_ParticleGPU.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 
-#include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Flux_Buffers.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Zenith_PlatformGraphics_Include.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 

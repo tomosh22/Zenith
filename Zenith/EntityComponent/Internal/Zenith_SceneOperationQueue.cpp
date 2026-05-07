@@ -6,14 +6,8 @@
 #include "EntityComponent/Zenith_SceneManager_Internal.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
 #include "EntityComponent/Internal/Zenith_SceneLifecycleContext.h"
-#include "EntityComponent/Internal/Zenith_SceneRegistry.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
-#include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "DataStream/Zenith_DataStream.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
 #include "Physics/Zenith_Physics.h"
 
 // Pull in the detail symbols so existing body code can use unqualified names

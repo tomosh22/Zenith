@@ -2,7 +2,6 @@
 #include "AssetHandling/Zenith_Asset.h"
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
-#include "DataStream/Zenith_DataStream.h"
 #include <unordered_map>
 
 #define ZENITH_SKELETON_ASSET_VERSION 2

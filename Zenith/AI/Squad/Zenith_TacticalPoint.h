@@ -2,7 +2,6 @@
 
 #include "EntityComponent/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"
-#include "Collections/Zenith_Vector.h"
 
 /**
  * Types of tactical positions

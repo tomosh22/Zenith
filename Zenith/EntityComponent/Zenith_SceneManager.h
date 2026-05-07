@@ -940,7 +940,6 @@ public:
 // Include SceneData after class definition for template implementations
 // that need the full Zenith_SceneData type. This is safe because SceneData.h
 // includes SceneManager.h after its own class definition (no circular issue).
-#include "EntityComponent/Zenith_SceneData.h"
 
 // ============================================================================
 // Template implementations

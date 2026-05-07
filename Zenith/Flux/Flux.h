@@ -2,10 +2,7 @@
 
 #include "Collections/Zenith_Vector.h"
 #include "Zenith_PlatformGraphics_Include.h"
-#include "Flux/Flux_Enums.h"
-#include "Flux/Flux_Types.h"
 #include "Flux/Flux_CommandList.h"
-#include "Flux/Shaders/Generated/FluxShaderProgram.h"
 #include "Multithreading/Zenith_Multithreading.h"
 
 // Flux_SurfaceInfo and view structs (Flux_ShaderResourceView, Flux_*View)

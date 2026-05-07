@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
 
 //------------------------------------------------------------------------------
 // MeshMaterialBinding Serialization

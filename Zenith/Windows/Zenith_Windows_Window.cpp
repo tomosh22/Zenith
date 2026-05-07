@@ -12,7 +12,6 @@ static std::atomic<u_int64> s_ulGLFWMemoryAllocated = 0;
 static std::atomic<u_int64> s_ulGLFWAllocationCount = 0;
 
 // Disable memory management macros for GLFW allocator (uses raw malloc/free)
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 // Custom GLFW allocator with tracking
 static void* GLFWAllocWrapper(size_t sz, void* user)
@@ -83,7 +82,6 @@ static void GLFWFreeWrapper(void* ptr, void* user)
 }
 
 // Re-enable memory management macros
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 u_int64 Zenith_Window::GetGLFWMemoryAllocated()
 {

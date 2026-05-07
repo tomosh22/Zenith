@@ -3,7 +3,6 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "Zenith_PlatformGraphics_Include.h"
 
 enum ToneMappingOperator : u_int
 {
