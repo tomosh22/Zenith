@@ -34,6 +34,7 @@
 #include "Flux/Vegetation/Flux_Grass.h"
 #include "Flux/DynamicLights/Flux_DynamicLights.h"
 #include "Flux/DynamicLights/Flux_LightClustering.h"
+#include "Flux/Decals/Flux_Decals.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -177,6 +178,7 @@ void Flux::LateInitialise()
 	Flux_DynamicLights::Initialise();   // Light gather + upload (front-end for clustered deferred)
 	Flux_LightClustering::Initialise(); // Per-cluster light culling compute (must precede DeferredShading)
 	Flux_DeferredShading::Initialise(); // Reads cluster buffers + light buffer in fragment shader
+	Flux_Decals::Initialise();          // Deferred screen-space box decals (writes G-buffer pre-readers)
 	Flux_SSAO::Initialise();
 	Flux_Fog::Initialise();
 	Flux_SDFs::Initialise();
@@ -286,6 +288,12 @@ void Flux::SetupRenderGraph()
 	Flux_InstancedMeshes::SetupRenderGraph(*s_pxRenderGraph);
 	Flux_Grass::SetupRenderGraph(*s_pxRenderGraph);
 
+	// Decals (read G-Buffer + depth, write G-Buffer MRTs). Must be
+	// registered after all G-buffer writers and before all G-buffer
+	// readers so the topo sort places it correctly. Grass doesn't write
+	// the G-buffer, so its position relative to decals is irrelevant.
+	Flux_Decals::SetupRenderGraph(*s_pxRenderGraph);
+
 	// Screen-space effects
 	Flux_HiZ::SetupRenderGraph(*s_pxRenderGraph);
 	Flux_SSR::SetupRenderGraph(*s_pxRenderGraph);
@@ -363,6 +371,7 @@ void Flux::Shutdown()
 	Flux_SDFs::Shutdown();
 	// Flux_Fog, Flux_DeferredShading - no Shutdown() methods
 	Flux_SSAO::Shutdown();           // SSAO render targets
+	Flux_Decals::Shutdown();          // Deferred decal renderer (frees instance buffer + IB)
 	Flux_LightClustering::Shutdown(); // Cluster compute pass (frees cluster buffers)
 	Flux_DynamicLights::Shutdown();   // Light gather front-end (frees unified light buffer)
 	Flux_SSGI::Shutdown();         // Before HiZ (SSGI uses Hi-Z)

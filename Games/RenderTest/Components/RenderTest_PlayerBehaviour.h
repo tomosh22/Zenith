@@ -23,13 +23,9 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UI.h"
+#include "Flux/Decals/Flux_Decals.h"
 
 #include "RenderTest/Components/RenderTest_GameplayState.h"
-
-namespace RenderTest
-{
-	extern Zenith_AssetHandle<Zenith_Prefab> g_xBulletPrefab;
-}
 
 // Third-person shooter player controller.
 //
@@ -70,8 +66,27 @@ public:
 	float    GetAimLayerWeight() const { return m_fAimLayerWeight; }
 	bool     IsReloading()    const { return m_fReloadTimer > 0.0f; }
 
+	// Single-player game; the smoke runner uses this to drive a test shot
+	// from outside the input system. nullptr until OnAwake fires.
+	static RenderTest_PlayerBehaviour* GetActiveInstance() { return s_pxActiveInstance; }
+
+	// Smoke-runner hook: aim straight down and fire one shot, ignoring fire
+	// cooldown / ammo / reload state. Restores the camera pitch on exit so
+	// the player's normal aiming isn't disturbed.
+	void TriggerShootDownwardForTest()
+	{
+		const float fSavedPitch = RenderTest_GameplayState::s_fCameraPitch;
+		// FollowCamera clamps pitch to [-1.2, 0.6]; -1.2 rad ≈ 69° below
+		// horizontal — close to straight-down but within the clamp range.
+		RenderTest_GameplayState::s_fCameraPitch = -1.2f;
+		Shoot();
+		RenderTest_GameplayState::s_fCameraPitch = fSavedPitch;
+	}
+
 	void OnAwake() override
 	{
+		s_pxActiveInstance = this;
+
 		// Reset shared gameplay state — survives Play->Stop->Play unless cleared.
 		// (FollowCamera::OnAwake also calls Reset(); calling twice is harmless.)
 		RenderTest_GameplayState::Reset();
@@ -90,22 +105,6 @@ public:
 		m_fReloadTimer = 0.0f;
 		m_uAmmoInClip = k_uMagSize;
 		m_uReserveAmmo = 90;
-
-		// Reset the file-static bullet pool so a Play->Stop->Play cycle doesn't
-		// leak destroyed bullet entity handles.
-		s_uCurrentBulletIndex = 0;
-		for (Zenith_Entity& xBullet : s_axBulletEntities)
-		{
-			xBullet = Zenith_Entity();
-		}
-
-		// Lazy-resolve the bullet prefab. On first run after adding the
-		// automation, the .zprfb may not exist yet; Shoot() null-checks before
-		// applying.
-		if (!RenderTest::g_xBulletPrefab.GetDirect())
-		{
-			RenderTest::g_xBulletPrefab.Resolve();
-		}
 	}
 
 	void OnStart() override
@@ -710,50 +709,10 @@ private:
 
 	void Shoot()
 	{
-		Zenith_Prefab* pxPrefab = RenderTest::g_xBulletPrefab.GetDirect();
-		if (!pxPrefab)
-		{
-			// Try to lazy-resolve once more — the .zprfb may have just been
-			// produced by automation on this run. Still null-check the result.
-			RenderTest::g_xBulletPrefab.Resolve();
-			pxPrefab = RenderTest::g_xBulletPrefab.GetDirect();
-			if (!pxPrefab)
-			{
-				Zenith_Log(LOG_CATEGORY_GAMEPLAY,
-					"[RenderTest] Bullet prefab not loaded; skipping shot");
-				return;
-			}
-		}
-
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (!pxSceneData)
-			return;
-
-		// Reuse the next pool slot (ring buffer). Old bullet in this slot, if
-		// any, gets force-destroyed before we overwrite the handle.
-		if (s_axBulletEntities[s_uCurrentBulletIndex].IsValid())
-		{
-			s_axBulletEntities[s_uCurrentBulletIndex].DestroyImmediate();
-		}
-
-		s_axBulletEntities[s_uCurrentBulletIndex] =
-			Zenith_Entity(pxSceneData, "Bullet" + std::to_string(s_uCurrentBulletIndex));
-		Zenith_Entity& xBullet = s_axBulletEntities[s_uCurrentBulletIndex];
-		s_uCurrentBulletIndex = (s_uCurrentBulletIndex + 1) % k_uBulletPoolSize;
-
-		// ApplyToEntity deserializes Transform + Model + Collider + Script onto
-		// the entity but defers OnAwake/OnStart to the next update tick. The
-		// transform/velocity we set immediately below take effect right away;
-		// any future OnAwake logic on RenderTest_BulletBehaviour must NOT
-		// assume it runs before this initial setup.
-		pxPrefab->ApplyToEntity(xBullet);
-
-		// Trajectory along the FULL camera basis (yaw + pitch) — bullets must
-		// fly where the player is actually looking, including up/down. Sign
+		// Trajectory along the FULL camera basis (yaw + pitch). Sign
 		// convention matches OnUpdate's xForward/xRight: at yaw=0 the player
-		// faces +Z (camera is behind at -Z), so a bullet fired with yaw=0,
-		// pitch=0 must travel +Z (away from the camera).
+		// faces +Z (camera is behind at -Z), so a shot fired at yaw=0
+		// pitch=0 travels +Z (away from the camera).
 		const float fYaw   = RenderTest_GameplayState::GetCameraYaw();
 		const float fPitch = RenderTest_GameplayState::GetCameraPitch();
 		const Zenith_Maths::Vector3 xFwd(-sinf(fYaw) * cosf(fPitch),
@@ -766,14 +725,40 @@ private:
 		const Zenith_Maths::Vector3 xBarrel =
 			xPlayerPos + xRgt * 0.3f + Zenith_Maths::Vector3(0.0f, 1.4f, 0.0f) + xFwd * 1.0f;
 
-		Zenith_TransformComponent& xT = xBullet.GetComponent<Zenith_TransformComponent>();
-		xT.SetPosition(xBarrel);
-		xT.SetScale(Zenith_Maths::Vector3(0.15f));
+		// Hitscan: raycast from the barrel along the camera forward. Ignore
+		// the player's own collider per the IK precedent in UpdateFootIK.
+		const Zenith_Physics::RaycastResult xHit = Zenith_Physics::Raycast(
+			xBarrel, xFwd, k_fMaxRange, m_xParentEntity.GetEntityID());
 
-		Zenith_ColliderComponent& xCol = xBullet.GetComponent<Zenith_ColliderComponent>();
-		Zenith_Physics::SetLinearVelocity(xCol.GetBodyID(), xFwd * 80.0f);
-		// Hitscan-style: no gravity arc on the projectile.
-		Zenith_Physics::SetGravityEnabled(xCol.GetBodyID(), false);
+		if (xHit.m_bHit)
+		{
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+				"[SHOOT] HIT yaw=%.3f pitch=%.3f barrel=(%.2f,%.2f,%.2f) fwd=(%.3f,%.3f,%.3f) "
+				"hitPoint=(%.2f,%.2f,%.2f) hitNormal=(%.3f,%.3f,%.3f) hitDist=%.2f hitEntity=%u",
+				fYaw, fPitch,
+				xBarrel.x, xBarrel.y, xBarrel.z,
+				xFwd.x, xFwd.y, xFwd.z,
+				xHit.m_xHitPoint.x, xHit.m_xHitPoint.y, xHit.m_xHitPoint.z,
+				xHit.m_xHitNormal.x, xHit.m_xHitNormal.y, xHit.m_xHitNormal.z,
+				xHit.m_fDistance,
+				xHit.m_xHitEntity.m_uIndex);
+		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+				"[SHOOT] MISS yaw=%.3f pitch=%.3f barrel=(%.2f,%.2f,%.2f) fwd=(%.3f,%.3f,%.3f)",
+				fYaw, fPitch,
+				xBarrel.x, xBarrel.y, xBarrel.z,
+				xFwd.x, xFwd.y, xFwd.z);
+		}
+
+		if (xHit.m_bHit)
+		{
+			Flux_Decals::SpawnDecal(
+				xHit.m_xHitPoint, xHit.m_xHitNormal,
+				/*pxTexture*/ nullptr,
+				k_fDecalSize, k_fDecalLifetime);
+		}
 
 		// Muzzle flash burst at the gun tip, oriented along the firing direction.
 		if (m_pxMuzzleEmitter)
@@ -909,17 +894,17 @@ private:
 		SolveOneFoot("RightLeg", "RightFoot");
 	}
 
-	// Bullet pool — file-static ring buffer. Reset in OnAwake to survive
-	// Play->Stop->Play. Sized to 64: at ~500 RPM and a 2s bullet lifetime,
-	// at most ~17 bullets are alive at once, so reuse never destroys a still-
-	// live bullet.
-	static constexpr uint32_t k_uBulletPoolSize = 64;
 	static constexpr uint32_t k_uMagSize        = 30;
 	static constexpr float    k_fFireInterval   = 0.12f;  // ~500 RPM
 	static constexpr float    k_fReloadDuration = 1.5f;
 
-	inline static Zenith_Entity s_axBulletEntities[k_uBulletPoolSize] = {};
-	inline static uint32_t      s_uCurrentBulletIndex                 = 0;
+	// Hitscan tuning. k_fMaxRange covers the central platform and the
+	// surrounding terrain at RenderTest's playable scale. The decal lifetime
+	// is generous so a player can shoot a wall and still see the holes ten
+	// seconds later — the 64-slot ring buffer caps live decals regardless.
+	static constexpr float k_fMaxRange      = 200.0f;
+	static constexpr float k_fDecalSize     = 0.15f;
+	static constexpr float k_fDecalLifetime = 30.0f;
 
 	Zenith_AnimatorComponent*         m_pxAnimator = nullptr;
 	Flux_AnimationLayer*              m_pxBaseLayer = nullptr;
@@ -937,4 +922,6 @@ private:
 	float    m_fReloadTimer     = 0.0f;
 	uint32_t m_uAmmoInClip      = k_uMagSize;
 	uint32_t m_uReserveAmmo     = 90;
+
+	inline static RenderTest_PlayerBehaviour* s_pxActiveInstance = nullptr;
 };

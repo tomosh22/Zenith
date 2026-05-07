@@ -763,6 +763,34 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		"spirv_1_3",
 		"ComputeTest",
 	},
+
+	// Deferred screen-space box decals — pre-Apply normalsAmbient clone
+	// pass. Required because Apply both reads and writes the live
+	// normalsAmbient MRT; Flux's render graph doesn't expose subpass
+	// self-dependencies, so the standard pattern is a transient copy.
+	{
+		FluxShaderProgram::Decals_NormalsCopy,
+		"Decals_NormalsCopy",
+		"Decals/Flux_Decals_NormalsCopy",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"Decals",
+	},
+	// Decal apply pass — instanced unit cube; per-fragment box test +
+	// surface-alignment discard; alpha-blends a procedural bullet-hole
+	// pattern into all three G-buffer MRTs.
+	{
+		FluxShaderProgram::Decals_Apply,
+		"Decals_Apply",
+		"Decals/Flux_Decals_Apply",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"Decals",
+	},
 };
 
 static constexpr u_int kRegistryCount = sizeof(s_axRegistry) / sizeof(s_axRegistry[0]);

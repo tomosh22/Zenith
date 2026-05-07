@@ -374,13 +374,6 @@ void Zenith_UnitTests::TestRenderTestFireDecrementsAmmo()
 {
 	RenderTest_TestFixture xFix;
 
-	// Force Shoot() to early-return: clear the prefab handle for the duration
-	// of the test so we don't drag the entire bullet+physics+model load chain
-	// into the test environment. The ammo decrement happens AFTER Shoot()
-	// returns, so we still observe the bookkeeping change. Restored on exit.
-	Zenith_AssetHandle<Zenith_Prefab> xSavedPrefab = RenderTest::g_xBulletPrefab;
-	RenderTest::g_xBulletPrefab = Zenith_AssetHandle<Zenith_Prefab>();
-
 	const uint32_t uStartAmmo = xFix.pxPlayer->GetAmmoInClip();
 	ZENITH_ASSERT_TRUE(uStartAmmo > 0, "Mag should start non-empty");
 
@@ -389,7 +382,6 @@ void Zenith_UnitTests::TestRenderTestFireDecrementsAmmo()
 	xFix.Step();
 
 	const uint32_t uAfter = xFix.pxPlayer->GetAmmoInClip();
-	RenderTest::g_xBulletPrefab = xSavedPrefab;
 
 	ZENITH_ASSERT_TRUE(uAfter == uStartAmmo - 1,
 		"Ammo should decrement by 1 on a single LMB press");
@@ -400,8 +392,6 @@ ZENITH_TEST(RenderTestInput, FireRespectsCooldown)
 void Zenith_UnitTests::TestRenderTestFireRespectsCooldown()
 {
 	RenderTest_TestFixture xFix;
-	Zenith_AssetHandle<Zenith_Prefab> xSavedPrefab = RenderTest::g_xBulletPrefab;
-	RenderTest::g_xBulletPrefab = Zenith_AssetHandle<Zenith_Prefab>();
 
 	// First shot: hits the cooldown gate from cold (cooldown=0).
 	xFix.BeginFrame();
@@ -416,8 +406,6 @@ void Zenith_UnitTests::TestRenderTestFireRespectsCooldown()
 	xFix.Step(0.001f);
 	const uint32_t uAfterSecond = xFix.pxPlayer->GetAmmoInClip();
 
-	RenderTest::g_xBulletPrefab = xSavedPrefab;
-
 	ZENITH_ASSERT_TRUE(uAfterFirst == uAfterSecond,
 		"Second click within fire-cooldown window must NOT decrement ammo");
 }
@@ -427,8 +415,6 @@ ZENITH_TEST(RenderTestInput, AutoReloadOnEmptyClick)
 void Zenith_UnitTests::TestRenderTestAutoReloadOnEmptyClick()
 {
 	RenderTest_TestFixture xFix;
-	Zenith_AssetHandle<Zenith_Prefab> xSavedPrefab = RenderTest::g_xBulletPrefab;
-	RenderTest::g_xBulletPrefab = Zenith_AssetHandle<Zenith_Prefab>();
 
 	// Drain the clip to zero by repeatedly firing with tiny dt steps to dodge
 	// the cooldown — drain is tested separately; here we just need to set up
@@ -447,7 +433,6 @@ void Zenith_UnitTests::TestRenderTestAutoReloadOnEmptyClick()
 	Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
 	xFix.Step();
 	const bool bReloading = xFix.pxPlayer->IsReloading();
-	RenderTest::g_xBulletPrefab = xSavedPrefab;
 	ZENITH_ASSERT_TRUE(bReloading,
 		"Empty-clip click should auto-start a reload");
 }
@@ -457,8 +442,6 @@ ZENITH_TEST(RenderTestInput, HipfireReloadRaisesAimLayer)
 void Zenith_UnitTests::TestRenderTestHipfireReloadRaisesAimLayer()
 {
 	RenderTest_TestFixture xFix;
-	Zenith_AssetHandle<Zenith_Prefab> xSavedPrefab = RenderTest::g_xBulletPrefab;
-	RenderTest::g_xBulletPrefab = Zenith_AssetHandle<Zenith_Prefab>();
 
 	// Burn one shot from hipfire so a reload is allowed (R is a no-op when
 	// the clip is already full). RMB is NOT held — pure hipfire reload path,
@@ -496,7 +479,6 @@ void Zenith_UnitTests::TestRenderTestHipfireReloadRaisesAimLayer()
 	}
 
 	const float fWeightDuringReload = xFix.pxPlayer->GetAimLayerWeight();
-	RenderTest::g_xBulletPrefab = xSavedPrefab;
 
 	ZENITH_ASSERT_TRUE(fWeightDuringReload > 0.8f,
 		"Aim layer must ramp up while reloading from hipfire so the reload "
@@ -508,8 +490,6 @@ ZENITH_TEST(RenderTestInput, ReloadBlocksFire)
 void Zenith_UnitTests::TestRenderTestReloadBlocksFire()
 {
 	RenderTest_TestFixture xFix;
-	Zenith_AssetHandle<Zenith_Prefab> xSavedPrefab = RenderTest::g_xBulletPrefab;
-	RenderTest::g_xBulletPrefab = Zenith_AssetHandle<Zenith_Prefab>();
 
 	// Burn one shot so the clip is below max (R is otherwise no-op).
 	xFix.BeginFrame();
@@ -528,7 +508,6 @@ void Zenith_UnitTests::TestRenderTestReloadBlocksFire()
 	Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
 	xFix.Step();
 	const uint32_t uAfterClickDuringReload = xFix.pxPlayer->GetAmmoInClip();
-	RenderTest::g_xBulletPrefab = xSavedPrefab;
 	ZENITH_ASSERT_TRUE(uAfterClickDuringReload == uAmmoAfterFirstShot,
 		"Ammo must not decrement while reloading");
 }

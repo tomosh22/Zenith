@@ -34,7 +34,6 @@
 // ZENITH_BEHAVIOUR_TYPE_NAME auto-registers the factory at startup.
 #include "RenderTest/Components/RenderTest_PlayerBehaviour.h"
 #include "RenderTest/Components/RenderTest_FollowCamera.h"
-#include "RenderTest/Components/RenderTest_BulletBehaviour.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -72,15 +71,6 @@ namespace RenderTest
 
 	MaterialHandle g_xCubeMaterial;
 	MaterialHandle g_xPlayerMaterial;
-
-	// Bullet projectile assets. The .zmodel + sphere mesh asset are produced
-	// by GenerateRenderTestAssets() at tools-build time and live under
-	// ENGINE_ASSETS_DIR/Meshes/Bullet_Sphere/. The bullet material is created
-	// in-memory each run (procedural flat yellow). The .zprfb is produced by
-	// AddStep_CreatePrefabFromSelected during scene-build automation.
-	std::string                                      g_strBulletModelPath;
-	MaterialHandle                                   g_xBulletMaterial;
-	Zenith_AssetHandle<Zenith_Prefab>                g_xBulletPrefab;
 
 	// Muzzle-flash particle config (heap-owned; registered by name with
 	// Flux_ParticleEmitterConfig). Sokoban precedent: registry borrows the
@@ -575,6 +565,27 @@ public:
 			m_bPassed = RenderTest_LogIKOnSurfaceState(m_uFrame, 48.25f + 0.05f, 0.20f) && m_bPassed;
 		}
 
+		// Decal smoke: fire several shots straight down at the platform between
+		// frames 210-220. Each shot exercises the full chain (raycast → decal
+		// spawn → CPU pool → GPU upload → render-graph passes), and the
+		// per-stage diagnostic logs in Flux_Decals + PlayerBehaviour::Shoot
+		// pinpoint where the chain breaks if decals don't appear in the frame.
+		if (m_uFrame == 210 || m_uFrame == 215 || m_uFrame == 220)
+		{
+			RenderTest_PlayerBehaviour* pxPlayer = RenderTest_PlayerBehaviour::GetActiveInstance();
+			if (pxPlayer)
+			{
+				Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+					"[DECAL_SMOKE] frame %u: triggering downward shot", m_uFrame);
+				pxPlayer->TriggerShootDownwardForTest();
+			}
+			else
+			{
+				Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+					"[DECAL_SMOKE] frame %u: PlayerBehaviour instance not registered yet", m_uFrame);
+			}
+		}
+
 		// Probe C: residency-snapshot alternation detection.
 		// Capture residency at three steady-state checkpoints. If any chunk's
 		// residency follows the alternation pattern (T0 == T2 != T1) the
@@ -864,25 +875,6 @@ static void InitializeRenderTestResources()
 
 	EnsureUnitCubeModelExists();
 	EnsureStickFigureModelExists();
-
-	// --- Bullet projectile material (procedural flat yellow tracer) ---
-	RenderTest::g_xBulletMaterial = CreateFlatColorMaterial("RenderTestBulletMaterial",
-		strProceduralTexDir + "BulletDiffuse" ZENITH_TEXTURE_EXT, 255, 220, 60);
-
-	// --- Bullet projectile model (Bullet_Sphere.zmodel produced by tool) ---
-	// The sphere mesh + model are shared engine assets so any game can spawn
-	// the same bullet without each game shipping its own sphere mesh.
-	RenderTest::g_strBulletModelPath = std::string(ENGINE_ASSETS_DIR)
-		+ "Meshes/Bullet_Sphere/Bullet_Sphere" ZENITH_MODEL_EXT;
-
-	// --- Bullet prefab handle ---
-	// The .zprfb itself is produced by AddStep_CreatePrefabFromSelected during
-	// scene-build automation. SetPath here so the runtime can resolve it on
-	// the next run; we don't force Resolve() yet because on the very first
-	// build the file doesn't exist until automation has run.
-	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "Prefabs");
-	RenderTest::g_xBulletPrefab.SetPath(std::string(GAME_ASSETS_DIR)
-		+ "Prefabs/Bullet" ZENITH_PREFAB_EXT);
 
 	// --- Muzzle flash particle config (Sokoban pattern) ---
 	if (!RenderTest::g_pxMuzzleConfig)
@@ -1251,12 +1243,6 @@ void Project_RegisterScriptBehaviours()
 
 void Project_Shutdown()
 {
-	// Drop asset handles before the registry tears down, mirroring Sokoban's
-	// pattern. Static handle destructors run after the registry is gone, which
-	// would be use-after-free.
-	RenderTest::g_xBulletPrefab.Clear();
-	RenderTest::g_xBulletMaterial.Clear();
-
 	// Particle config registry borrows the pointer (Sokoban precedent at
 	// Sokoban.cpp:204). Unregister + delete + null so a subsequent Initialise
 	// rebuilds cleanly if the process were to keep running.
@@ -1443,22 +1429,6 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIPosition("AmmoText", -100.0f, -40.0f);
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("AmmoText", 32.0f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("AmmoText", 1.0f, 1.0f, 1.0f, 1.0f);
-
-	// Bullet prefab template — built into a transient entity, then captured to
-	// .zprfb via AddStep_CreatePrefabFromSelected. The transient entity is
-	// discarded after the prefab is saved; only the .zprfb persists.
-	Zenith_EditorAutomation::AddStep_CreateEntity("BulletTemplate");
-	Zenith_EditorAutomation::AddStep_SetEntityTransient(true);
-	Zenith_EditorAutomation::AddStep_SetTransformPosition(0.0f, 0.0f, 0.0f);
-	Zenith_EditorAutomation::AddStep_SetTransformScale(0.15f, 0.15f, 0.15f);
-	Zenith_EditorAutomation::AddStep_AddModel();
-	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::g_strBulletModelPath.c_str());
-	Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::g_xBulletMaterial.GetDirect());
-	Zenith_EditorAutomation::AddStep_AddCollider();
-	Zenith_EditorAutomation::AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
-	Zenith_EditorAutomation::AddStep_AttachScript("RenderTest_BulletBehaviour");
-	Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected("Bullet",
-		GAME_ASSETS_DIR "Prefabs/Bullet" ZENITH_PREFAB_EXT);
 
 	// Smoke runner — attached BEFORE save so it ends up in the saved scene.
 	if (RenderTest_IsSmokeMode())

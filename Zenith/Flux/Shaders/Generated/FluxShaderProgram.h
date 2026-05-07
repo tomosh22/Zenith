@@ -66,6 +66,8 @@ enum class FluxShaderProgram : unsigned int
 	Water = 54,
 	ComputeTest = 55,
 	ComputeTest_Display = 56,
+	Decals_NormalsCopy = 57,
+	Decals_Apply = 58,
 
 	COUNT
 };

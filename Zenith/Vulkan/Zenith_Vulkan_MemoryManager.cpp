@@ -1131,8 +1131,12 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocatio
 		memcpy(pMap, pData, ulDataSize);
 		xDevice.unmapMemory(xStaging.m_xMemory);
 		xStaging.m_uNextFreeOffset += ulDataSize;
-		// Align to 8 bytes for compressed texture formats (BC1, BC3, etc.)
-		xStaging.m_uNextFreeOffset = ALIGN(xStaging.m_uNextFreeOffset, 8);
+		// Align to 16 bytes — the maximum texel block size we ship (BC3 / BC5 /
+		// BC7 are all 16-byte blocks, and Vulkan requires bufferOffset to be a
+		// multiple of the texel block size on vkCmdCopyBufferToImage). 8 was
+		// only enough for BC1 (8-byte block) and got away with BC3 by luck
+		// when prior allocations happened to leave the cursor 16-aligned.
+		xStaging.m_uNextFreeOffset = ALIGN(xStaging.m_uNextFreeOffset, 16);
 		if (xStaging.m_uNextFreeOffset > xStaging.m_uHighWaterMark)
 			xStaging.m_uHighWaterMark = xStaging.m_uNextFreeOffset;
 	}
@@ -1516,8 +1520,11 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 		memcpy(pMap, pData, uSize);
 		xDevice.unmapMemory(xStaging.m_xMemory);
 		xStaging.m_uNextFreeOffset += uSize;
-		// Align to 8 bytes for consistency and compressed texture support
-		xStaging.m_uNextFreeOffset = ALIGN(xStaging.m_uNextFreeOffset, 8);
+		// Align to 16 bytes — see InitialiseTextureFromData for the rationale.
+		// Buffer uploads are followed by texture uploads in the same staging
+		// pool, so any allocator that leaves the cursor sub-16-aligned will
+		// break vkCmdCopyBufferToImage for BC3/BC5/BC7.
+		xStaging.m_uNextFreeOffset = ALIGN(xStaging.m_uNextFreeOffset, 16);
 		if (xStaging.m_uNextFreeOffset > xStaging.m_uHighWaterMark)
 			xStaging.m_uHighWaterMark = xStaging.m_uNextFreeOffset;
 	}
@@ -1673,7 +1680,8 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 			xDevice.unmapMemory(xStagingPost.m_xMemory);
 
 			xStagingPost.m_uNextFreeOffset += uChunkSize;
-			xStagingPost.m_uNextFreeOffset = ALIGN(xStagingPost.m_uNextFreeOffset, 8);
+			// 16-byte alignment — see InitialiseTextureFromData / UploadBufferData.
+			xStagingPost.m_uNextFreeOffset = ALIGN(xStagingPost.m_uNextFreeOffset, 16);
 			if (xStagingPost.m_uNextFreeOffset > xStagingPost.m_uHighWaterMark)
 				xStagingPost.m_uHighWaterMark = xStagingPost.m_uNextFreeOffset;
 

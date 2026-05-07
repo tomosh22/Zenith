@@ -751,6 +751,9 @@
     <ClCompile Include="..\Zenith\Flux\Backend\Flux_BackendConformance.cpp">
       <Filter>Flux\Backend</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Decals\Flux_Decals.cpp">
+      <Filter>Flux\Decals</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp">
       <Filter>Flux\DeferredShading</Filter>
     </ClCompile>
@@ -3507,6 +3510,9 @@
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Sync.h">
       <Filter>Flux\Backend\Concepts</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Decals\Flux_Decals.h">
+      <Filter>Flux\Decals</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h">
       <Filter>Flux\DeferredShading</Filter>
     </ClInclude>
@@ -3695,6 +3701,12 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.slang">
       <Filter>Flux\Shaders\ComputeTest</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_Apply.slang">
+      <Filter>Flux\Shaders\Decals</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_NormalsCopy.slang">
+      <Filter>Flux\Shaders\Decals</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.slang">
       <Filter>Flux\Shaders\DeferredShading</Filter>
@@ -3887,6 +3899,9 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.slang">
       <Filter>Flux\Shaders\SSGI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_DenoiseCommon.slang">
+      <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_DenoiseH.slang">
       <Filter>Flux\Shaders\SSR</Filter>
@@ -4217,6 +4232,9 @@
     <Filter Include="Flux\Backend\Concepts">
       <UniqueIdentifier>{e0dff4ef-3f2c-0602-3bf0-62d10cc745dc}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\Decals">
+      <UniqueIdentifier>{526a839e-2305-5616-35fe-1e827db6be5e}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\DeferredShading">
       <UniqueIdentifier>{a9dab6da-cbee-63eb-9c37-5df5e2db7ddb}</UniqueIdentifier>
     </Filter>
@@ -4282,6 +4300,9 @@
     </Filter>
     <Filter Include="Flux\Shaders\ComputeTest">
       <UniqueIdentifier>{613a55c0-df80-e2bf-eb95-76784e3786a6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Shaders\Decals">
+      <UniqueIdentifier>{0d7747a5-91e0-2724-7ed5-7014e7744686}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\DeferredShading">
       <UniqueIdentifier>{1395f665-b91c-b9e2-e764-120841bbdfe0}</UniqueIdentifier>

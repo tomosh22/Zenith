@@ -571,17 +571,13 @@ static vk::PipelineColorBlendStateCreateInfo BuildColorBlendState(const Flux_Pip
 	for (u_int u = 0; u < xSpec.m_uNumColourAttachments; u++)
 	{
 		axOutBlendInfo[u]
-			.setColorWriteMask(
-				vk::ColorComponentFlagBits::eR |
-				vk::ColorComponentFlagBits::eG |
-				vk::ColorComponentFlagBits::eB |
-				vk::ColorComponentFlagBits::eA)
+			.setColorWriteMask(vk::ColorComponentFlags(xSpec.m_axBlendStates[u].m_uColorWriteMask))
 			.setBlendEnable(xSpec.m_axBlendStates[u].m_bBlendEnabled)
 			.setAlphaBlendOp(vk::BlendOp::eAdd)
 			.setColorBlendOp(vk::BlendOp::eAdd)
-			.setSrcAlphaBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eSrcBlendFactor))
+			.setSrcAlphaBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eSrcAlphaBlendFactor))
 			.setSrcColorBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eSrcBlendFactor))
-			.setDstAlphaBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eDstBlendFactor))
+			.setDstAlphaBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eDstAlphaBlendFactor))
 			.setDstColorBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eDstBlendFactor));
 	}
 	vk::PipelineColorBlendStateCreateInfo xBlendInfo;

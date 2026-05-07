@@ -182,7 +182,10 @@ struct Flux_BlendState
 {
 	BlendFactor m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
 	BlendFactor m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
+	BlendFactor m_eSrcAlphaBlendFactor = BLEND_FACTOR_SRCALPHA;
+	BlendFactor m_eDstAlphaBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 	bool m_bBlendEnabled = true;
+	uint8_t m_uColorWriteMask = 0xF;
 };
 
 struct Flux_BindingGroupEntry
