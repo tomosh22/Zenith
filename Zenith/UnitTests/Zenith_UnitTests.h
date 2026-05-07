@@ -83,6 +83,34 @@ public:
 	static void TestIKFindPerpendicularAxis();
 	static void TestIKConstrainBoneLength();
 
+	// IK engine-plumbing tests added by the foot-placement plan
+	static void TestIKResolveBoneIndices();
+	static void TestIKComputeBoneLengths();
+	static void TestComputeModelSpaceMatricesFromSkeleton();
+	static void TestIKSolveReachableTarget();
+	static void TestIKSolveUnreachableTarget();
+	static void TestIKSolveDisabledTarget();
+	static void TestIKLazyResolveOnFirstSolve();
+	static void TestIKWorldMatrixTransform();
+	static void TestIKHingeConstraintProjectsSegmentDirection();
+	static void TestIKPoleVectorBiasesKnee();
+	static void TestIKMultiChainBoneDisjoint();
+	static void TestIKConvergence();
+	static void TestIKWeightZeroIsNoop();
+	static void TestIKDegenerateChainSizes();
+	static void TestIKSolveOnReloadedAsset();
+	// Reproductions of the "feet dragging behind body" bug report
+	static void TestIKWithPlayerLikeWorldRotation();
+	static void TestIKWithPlayerLikeWorldRotationAndPole();
+	static void TestIKEachCardinalRotation();
+	static void TestIKOverManyFramesWalkingAndRotating();
+	static void TestIKFootBindMatchesCapsuleBottomForPlayerOnGround();
+	static void TestIKModelSpaceTargetAvoidsPhysicsLagDrag();
+	static void TestIKModelSpaceTargetEqualsWorldSpaceTargetWhenNoLag();
+	static void TestIKLocksFootXZAcrossFramesAtFullWeight();
+	static void TestIKLetsAnimationDriveFootXZAtZeroWeight();
+	static void TestIKAsymmetricFeetAtSpawn();
+
 	static void TestAnimationEvents();
 	static void TestBoneMasking();
 
@@ -102,6 +130,7 @@ public:
 	// Stick figure animation tests
 	static void TestStickFigureSkeletonCreation();
 	static void TestStickFigureMeshCreation();
+	static void TestStickFigureMeshJointAlignment();
 	static void TestStickFigureIdleAnimation();
 	static void TestStickFigureWalkAnimation();
 	static void TestStickFigureRunAnimation();
@@ -622,6 +651,8 @@ public:
 	static void TestRenderTestAutoReloadOnEmptyClick();
 	static void TestRenderTestHipfireReloadRaisesAimLayer();
 	static void TestRenderTestReloadBlocksFire();
+	// IK helper robustness — fixture has no animator, helper must early-out cleanly
+	static void TestRenderTestIKHelperEarlyOutsWithoutAnimator();
 
 	// StickFigure procedural-clip tests (Aim/Fire/Reload/Jump animation factories
 	// in Tools/Zenith_Tools_TestAssetExport.cpp). Each test constructs the clip,

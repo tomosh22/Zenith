@@ -12,9 +12,23 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Zenith_OS_Include.h"
+// Re-enter the placement-new disabled zone for the additional Jolt headers
+// not already pulled in by Zenith_Physics.h (which re-enables on exit).
+#ifdef ZENITH_PLACEMENT_NEW_ZONE
+#define ZENITH_PHYSICS_CPP_ZONE_WAS_SET
+#else
+#define ZENITH_PLACEMENT_NEW_ZONE
+#endif
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
+#ifndef ZENITH_PHYSICS_CPP_ZONE_WAS_SET
+#undef ZENITH_PLACEMENT_NEW_ZONE
+#endif
+#undef ZENITH_PHYSICS_CPP_ZONE_WAS_SET
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 JPH::TempAllocatorImpl* Zenith_Physics::s_pxTempAllocator = nullptr;
 JPH::JobSystemThreadPool* Zenith_Physics::s_pxJobSystem = nullptr;
@@ -674,55 +688,90 @@ float Zenith_Physics::GetFriction(const JPH::BodyID& xBodyID)
 	return xBodyInterface.GetFriction(xBodyID);
 }
 
-Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector3& xOrigin,
-	const Zenith_Maths::Vector3& xDirection, float fMaxDistance)
+// Shared implementation. The body filter is supplied by the caller; passing the
+// default-constructed JPH::BodyFilter() makes this equivalent to an unfiltered cast.
+static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xOrigin,
+	const Zenith_Maths::Vector3& xDirection, float fMaxDistance, const JPH::BodyFilter& xBodyFilter)
 {
-	RaycastResult xResult;
+	Zenith_Physics::RaycastResult xResult;
 	xResult.m_bHit = false;
 
-	if (!s_pxPhysicsSystem)
+	if (!Zenith_Physics::s_pxPhysicsSystem)
 	{
 		return xResult;
 	}
 
-	// Normalize direction
 	Zenith_Maths::Vector3 xNormDir = Zenith_Maths::Normalize(xDirection);
 
-	// Create ray
 	JPH::RRayCast xRay;
 	xRay.mOrigin = JPH::RVec3(xOrigin.x, xOrigin.y, xOrigin.z);
 	xRay.mDirection = JPH::Vec3(xNormDir.x * fMaxDistance, xNormDir.y * fMaxDistance, xNormDir.z * fMaxDistance);
 
-	// Cast ray
 	JPH::RayCastResult xHit;
-	const JPH::NarrowPhaseQuery& xQuery = s_pxPhysicsSystem->GetNarrowPhaseQuery();
+	const JPH::NarrowPhaseQuery& xQuery = Zenith_Physics::s_pxPhysicsSystem->GetNarrowPhaseQuery();
 
-	if (xQuery.CastRay(xRay, xHit))
+	if (xQuery.CastRay(xRay, xHit, JPH::BroadPhaseLayerFilter(), JPH::ObjectLayerFilter(), xBodyFilter))
 	{
 		xResult.m_bHit = true;
 		xResult.m_fDistance = xHit.mFraction * fMaxDistance;
 
-		// Calculate hit point
 		JPH::RVec3 xHitPoint = xRay.GetPointOnRay(xHit.mFraction);
 		xResult.m_xHitPoint = Zenith_Maths::Vector3(
 			static_cast<float>(xHitPoint.GetX()),
 			static_cast<float>(xHitPoint.GetY()),
 			static_cast<float>(xHitPoint.GetZ()));
 
-		// Get entity from body
-		JPH::BodyLockRead xLock(s_pxPhysicsSystem->GetBodyLockInterface(), xHit.mBodyID);
+		JPH::BodyLockRead xLock(Zenith_Physics::s_pxPhysicsSystem->GetBodyLockInterface(), xHit.mBodyID);
 		if (xLock.Succeeded())
 		{
 			const JPH::Body& xBody = xLock.GetBody();
 			xResult.m_xHitEntity = Zenith_EntityID::FromPacked(xBody.GetUserData());
 
-			// Get surface normal
 			JPH::Vec3 xNormal = xBody.GetWorldSpaceSurfaceNormal(xHit.mSubShapeID2, xHitPoint);
 			xResult.m_xHitNormal = Zenith_Maths::Vector3(xNormal.GetX(), xNormal.GetY(), xNormal.GetZ());
 		}
 	}
 
 	return xResult;
+}
+
+Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector3& xOrigin,
+	const Zenith_Maths::Vector3& xDirection, float fMaxDistance)
+{
+	return RaycastImpl(xOrigin, xDirection, fMaxDistance, JPH::BodyFilter());
+}
+
+Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector3& xOrigin,
+	const Zenith_Maths::Vector3& xDirection, float fMaxDistance, Zenith_EntityID xIgnoreEntity)
+{
+	if (xIgnoreEntity == INVALID_ENTITY_ID)
+	{
+		return RaycastImpl(xOrigin, xDirection, fMaxDistance, JPH::BodyFilter());
+	}
+
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(xIgnoreEntity);
+	if (!pxSceneData)
+	{
+		return RaycastImpl(xOrigin, xDirection, fMaxDistance, JPH::BodyFilter());
+	}
+
+	Zenith_Entity xEntity = pxSceneData->GetEntity(xIgnoreEntity);
+	// IsValid() guards against stale handles whose generation no longer matches
+	// the slot — accessing components on a stale entity would either return a
+	// component owned by a different entity or trigger an assert.
+	if (!xEntity.IsValid() || !xEntity.HasComponent<Zenith_ColliderComponent>())
+	{
+		return RaycastImpl(xOrigin, xDirection, fMaxDistance, JPH::BodyFilter());
+	}
+
+	const JPH::BodyID xBodyID = xEntity.GetComponent<Zenith_ColliderComponent>().GetBodyID();
+	if (xBodyID.IsInvalid())
+	{
+		return RaycastImpl(xOrigin, xDirection, fMaxDistance, JPH::BodyFilter());
+	}
+
+	JPH::IgnoreSingleBodyFilter xFilter(xBodyID);
+	return RaycastImpl(xOrigin, xDirection, fMaxDistance, xFilter);
 }
 
 JPH::ValidateResult Zenith_Physics::PhysicsContactListener::OnContactValidate(

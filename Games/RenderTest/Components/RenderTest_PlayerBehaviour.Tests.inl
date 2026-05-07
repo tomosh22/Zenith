@@ -533,4 +533,27 @@ void Zenith_UnitTests::TestRenderTestReloadBlocksFire()
 		"Ammo must not decrement while reloading");
 }
 
+// ----- IK helper robustness -------------------------------------------------
+
+ZENITH_TEST(RenderTestInput, IKHelperEarlyOutsWithoutAnimator)
+{ Zenith_UnitTests::TestRenderTestIKHelperEarlyOutsWithoutAnimator(); }
+void Zenith_UnitTests::TestRenderTestIKHelperEarlyOutsWithoutAnimator()
+{
+	// The fixture deliberately doesn't add an AnimatorComponent (loading the
+	// .zanim files + building a layered animator is heavy setup we skip for
+	// input-driven tests). UpdateFootIK is called at the END of OnUpdate; if
+	// the m_pxAnimator nullcheck is missing, this would null-deref through
+	// pxAnimator->ClearIKTarget. The fixture destructor cleanly tearing down
+	// after several update ticks is the test pass.
+	RenderTest_TestFixture xFix;
+
+	xFix.BeginFrame();
+	for (int i = 0; i < 5; ++i)
+	{
+		xFix.Step();
+		xFix.BeginFrame();
+	}
+	ZENITH_ASSERT_TRUE(true, "UpdateFootIK with no animator must not crash");
+}
+
 #endif // ZENITH_INPUT_SIMULATOR

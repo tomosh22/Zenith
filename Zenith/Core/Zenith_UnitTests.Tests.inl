@@ -1614,6 +1614,19 @@ static bool Vec3Equals(const Zenith_Maths::Vector3& a, const Zenith_Maths::Vecto
 		   FloatEquals(a.z, b.z, fTolerance);
 }
 
+// Helper function to compare matrices element-wise with tolerance
+static bool Mat4Equals(const Zenith_Maths::Matrix4& a, const Zenith_Maths::Matrix4& b, float fTolerance = 0.0001f)
+{
+	for (int c = 0; c < 4; ++c)
+	{
+		for (int r = 0; r < 4; ++r)
+		{
+			if (!FloatEquals(a[c][r], b[c][r], fTolerance)) return false;
+		}
+	}
+	return true;
+}
+
 // Helper function to compare quaternions with tolerance
 static bool QuatEquals(const Zenith_Maths::Quat& a, const Zenith_Maths::Quat& b, float fTolerance = 0.0001f)
 {
@@ -3954,10 +3967,10 @@ static const Zenith_Maths::Vector3 s_axBoneScales[STICK_BONE_COUNT] = {
 	{0.05f, 0.10f, 0.05f},  // 2: Neck - thin, at Y=1.2
 	{0.12f, 0.12f, 0.10f},  // 3: Head - round, large, at Y=1.4
 	{0.05f, 0.20f, 0.05f},  // 4: LeftUpperArm - at Y=1.1
-	{0.04f, 0.18f, 0.04f},  // 5: LeftLowerArm
+	{0.04f, 0.15f, 0.04f},  // 5: LeftLowerArm (Y matches bone-to-Hand 0.30)
 	{0.04f, 0.06f, 0.02f},  // 6: LeftHand
 	{0.05f, 0.20f, 0.05f},  // 7: RightUpperArm - at Y=1.1
-	{0.04f, 0.18f, 0.04f},  // 8: RightLowerArm
+	{0.04f, 0.15f, 0.04f},  // 8: RightLowerArm
 	{0.04f, 0.06f, 0.02f},  // 9: RightHand
 	{0.07f, 0.25f, 0.07f},  // 10: LeftUpperLeg - at Y=0
 	{0.05f, 0.25f, 0.05f},  // 11: LeftLowerLeg - at Y=-0.5
@@ -3965,6 +3978,28 @@ static const Zenith_Maths::Vector3 s_axBoneScales[STICK_BONE_COUNT] = {
 	{0.07f, 0.25f, 0.07f},  // 13: RightUpperLeg
 	{0.05f, 0.25f, 0.05f},  // 14: RightLowerLeg
 	{0.05f, 0.03f, 0.10f},  // 15: RightFoot
+};
+
+// Per-bone cube center offsets — see Tools/Zenith_Tools_TestAssetExport.cpp
+// for the rationale (kept in sync with the production export so unit tests
+// build the same geometry).
+static const Zenith_Maths::Vector3 s_axBoneCenterOffsets[STICK_BONE_COUNT] = {
+	{ 0.0f,  0.0f,  0.0f},  // 0: Root
+	{ 0.0f,  0.0f,  0.0f},  // 1: Spine (junction — shift would intersect head)
+	{ 0.0f,  0.0f,  0.0f},  // 2: Neck (junction)
+	{ 0.0f,  0.0f,  0.0f},  // 3: Head
+	{ 0.0f, -0.20f, 0.0f},  // 4: LeftUpperArm
+	{ 0.0f, -0.15f, 0.0f},  // 5: LeftLowerArm
+	{ 0.0f,  0.0f,  0.0f},  // 6: LeftHand
+	{ 0.0f, -0.20f, 0.0f},  // 7: RightUpperArm
+	{ 0.0f, -0.15f, 0.0f},  // 8: RightLowerArm
+	{ 0.0f,  0.0f,  0.0f},  // 9: RightHand
+	{ 0.0f, -0.25f, 0.0f},  // 10: LeftUpperLeg
+	{ 0.0f, -0.25f, 0.0f},  // 11: LeftLowerLeg
+	{ 0.0f,  0.0f,  0.0f},  // 12: LeftFoot
+	{ 0.0f, -0.25f, 0.0f},  // 13: RightUpperLeg
+	{ 0.0f, -0.25f, 0.0f},  // 14: RightLowerLeg
+	{ 0.0f,  0.0f,  0.0f},  // 15: RightFoot
 };
 
 static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSkeleton)
@@ -3984,6 +4019,9 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 		// Get per-bone scale
 		Zenith_Maths::Vector3 xScale = s_axBoneScales[uBone];
 
+		// Shift cube so its top face sits on the bone pivot, bottom on child pivot.
+		Zenith_Maths::Vector3 xCenterOffset = s_axBoneCenterOffsets[uBone];
+
 		uint32_t uBaseVertex = pxMesh->GetNumVerts();
 
 		// Add 8 cube vertices with per-bone scaling
@@ -3995,7 +4033,7 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 			xScaledOffset.y *= xScale.y * 10.0f;
 			xScaledOffset.z *= xScale.z * 10.0f;
 
-			Zenith_Maths::Vector3 xPos = xBoneWorldPos + xScaledOffset;
+			Zenith_Maths::Vector3 xPos = xBoneWorldPos + xCenterOffset + xScaledOffset;
 
 			// Calculate proper face normal based on vertex position
 			Zenith_Maths::Vector3 xNormal = glm::normalize(s_axCubeOffsets[i]);
@@ -4177,6 +4215,1632 @@ static Flux_AnimationClip* CreateRunAnimation()
 }
 
 //------------------------------------------------------------------------------
+// IK Engine-Plumbing Tests
+// Added by the RenderTest IK foot-placement plan. Reuses CreateStickFigureSkeleton
+// above. Each test owns its skeleton via `new`/`delete` and a heap-allocated chain
+// solver — no AssetRegistry use except IK15 (which exercises serialization).
+//------------------------------------------------------------------------------
+
+namespace
+{
+	// Helper: build a 3-bone leg chain on the stick figure with no constraints
+	// and no pole vector. Used by tests that need to isolate the FABRIK solver
+	// from CreateLegChain's constraint defaults.
+	static Flux_IKChain MakeUnconstrainedLeftLegChain()
+	{
+		Flux_IKChain xChain;
+		xChain.m_strName = "LeftLeg";
+		xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+		xChain.m_bUsePoleVector = false;
+		return xChain;
+	}
+
+	// Helper: standard pose-init prelude. Allocates pose, copies bind-pose TRS,
+	// computes initial model-space matrices.
+	static void InitPoseAtBindForSkeleton(Flux_SkeletonPose& xPose, const Zenith_SkeletonAsset& xSkel)
+	{
+		xPose.Initialize(xSkel.GetNumBones());
+		xPose.InitFromBindPose(xSkel);
+		xPose.ComputeModelSpaceMatricesFromSkeleton(xSkel);
+	}
+}
+
+ZENITH_TEST(Animation, IKResolveBoneIndices) { Zenith_UnitTests::TestIKResolveBoneIndices(); }
+void Zenith_UnitTests::TestIKResolveBoneIndices()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	// All bones present
+	{
+		Flux_IKChain xChain;
+		xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+		xChain.ResolveBoneIndices(*pxSkel);
+		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.size(), 3, "Should resolve 3 indices");
+		ZENITH_ASSERT_EQ(static_cast<int32_t>(xChain.m_xBoneIndices[0]), pxSkel->GetBoneIndex("LeftUpperLeg"), "Index 0 mismatch");
+		ZENITH_ASSERT_EQ(static_cast<int32_t>(xChain.m_xBoneIndices[1]), pxSkel->GetBoneIndex("LeftLowerLeg"), "Index 1 mismatch");
+		ZENITH_ASSERT_EQ(static_cast<int32_t>(xChain.m_xBoneIndices[2]), pxSkel->GetBoneIndex("LeftFoot"), "Index 2 mismatch");
+	}
+
+	// Some bones missing
+	{
+		Flux_IKChain xChain;
+		xChain.m_xBoneNames = { "LeftUpperLeg", "NoSuchBone", "LeftFoot" };
+		xChain.ResolveBoneIndices(*pxSkel);
+		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.size(), 3, "Should still produce 3 entries");
+		ZENITH_ASSERT_NE(xChain.m_xBoneIndices[0], ~0u, "First should be valid");
+		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices[1], ~0u, "Middle should be invalid sentinel");
+		ZENITH_ASSERT_NE(xChain.m_xBoneIndices[2], ~0u, "Third should be valid");
+	}
+
+	// All bones missing
+	{
+		Flux_IKChain xChain;
+		xChain.m_xBoneNames = { "X", "Y", "Z" };
+		xChain.ResolveBoneIndices(*pxSkel);
+		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.size(), 3, "Should produce 3 sentinels");
+		for (uint32_t u : xChain.m_xBoneIndices) ZENITH_ASSERT_EQ(u, ~0u, "All should be invalid sentinel");
+	}
+
+	// Empty chain
+	{
+		Flux_IKChain xChain;
+		xChain.ResolveBoneIndices(*pxSkel);
+		ZENITH_ASSERT_TRUE(xChain.m_xBoneIndices.empty(), "Empty chain should produce empty result");
+	}
+
+	// Idempotence: second resolve produces same result
+	{
+		Flux_IKChain xChain;
+		xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+		xChain.ResolveBoneIndices(*pxSkel);
+		const std::vector<uint32_t> xFirst = xChain.m_xBoneIndices;
+		xChain.ResolveBoneIndices(*pxSkel);
+		ZENITH_ASSERT_EQ(xChain.m_xBoneIndices.size(), xFirst.size(), "Sizes match across calls");
+		for (size_t i = 0; i < xFirst.size(); ++i)
+			ZENITH_ASSERT_EQ(xChain.m_xBoneIndices[i], xFirst[i], "Indices match across calls");
+	}
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKComputeBoneLengths) { Zenith_UnitTests::TestIKComputeBoneLengths(); }
+void Zenith_UnitTests::TestIKComputeBoneLengths()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	// Stick-figure leg chain — bone offsets are (0,-0.5,0) and (0,-0.5,0), so
+	// segment lengths are exactly 0.5 each, total 1.0.
+	{
+		Flux_IKChain xChain = MakeUnconstrainedLeftLegChain();
+		xChain.ResolveBoneIndices(*pxSkel);
+		xChain.ComputeBoneLengths(xPose);
+		ZENITH_ASSERT_EQ(xChain.m_xBoneLengths.size(), 2, "3-bone chain should produce 2 lengths");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths[0], 0.5f, 0.001f), "Upper-to-lower should be 0.5m");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths[1], 0.5f, 0.001f), "Lower-to-foot should be 0.5m");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_fTotalLength, 1.0f, 0.001f), "Total length should be 1.0m");
+	}
+
+	// Chain with one invalid index — that segment's length is 0
+	{
+		Flux_IKChain xChain;
+		xChain.m_xBoneNames = { "LeftUpperLeg", "NoSuchBone", "LeftFoot" };
+		xChain.ResolveBoneIndices(*pxSkel);
+		xChain.ComputeBoneLengths(xPose);
+		ZENITH_ASSERT_EQ(xChain.m_xBoneLengths.size(), 2, "Should produce 2 lengths");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths[0], 0.0f, 0.001f), "First segment with invalid neighbour should be 0");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_xBoneLengths[1], 0.0f, 0.001f), "Second segment with invalid neighbour should be 0");
+	}
+
+	// 1-bone chain — early-out path
+	{
+		Flux_IKChain xChain;
+		xChain.m_xBoneNames = { "LeftFoot" };
+		xChain.ResolveBoneIndices(*pxSkel);
+		xChain.ComputeBoneLengths(xPose);
+		ZENITH_ASSERT_TRUE(xChain.m_xBoneLengths.empty(), "1-bone chain should produce 0 lengths");
+		ZENITH_ASSERT_TRUE(FloatEquals(xChain.m_fTotalLength, 0.0f, 0.001f), "1-bone total should be 0");
+	}
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, ComputeModelSpaceMatricesFromSkeleton) { Zenith_UnitTests::TestComputeModelSpaceMatricesFromSkeleton(); }
+void Zenith_UnitTests::TestComputeModelSpaceMatricesFromSkeleton()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	// Bind-pose: pose's model matrices should match asset's bind-pose precompute
+	{
+		Flux_SkeletonPose xPose;
+		InitPoseAtBindForSkeleton(xPose, *pxSkel);
+		for (uint32_t i = 0; i < pxSkel->GetNumBones(); ++i)
+		{
+			ZENITH_ASSERT_TRUE(Mat4Equals(xPose.GetModelSpaceMatrix(i), pxSkel->GetBone(i).m_xBindPoseModel, 0.001f),
+				"Pose model-space should match asset bind-pose model after init");
+		}
+	}
+
+	// Modified local pose: rotation on LeftLowerLeg should propagate to LeftFoot
+	{
+		Flux_SkeletonPose xPose;
+		InitPoseAtBindForSkeleton(xPose, *pxSkel);
+		const int32_t iLowerLeg = pxSkel->GetBoneIndex("LeftLowerLeg");
+		const int32_t iFoot = pxSkel->GetBoneIndex("LeftFoot");
+		const Zenith_Maths::Vector3 xFootBefore =
+			Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(static_cast<uint32_t>(iFoot))[3]);
+
+		Flux_BoneLocalPose& xLowerLocal = xPose.GetLocalPose(static_cast<uint32_t>(iLowerLeg));
+		xLowerLocal.m_xRotation = glm::angleAxis(glm::radians(90.0f), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+		xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+
+		const Zenith_Maths::Vector3 xFootAfter =
+			Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(static_cast<uint32_t>(iFoot))[3]);
+		ZENITH_ASSERT_FALSE(Vec3Equals(xFootBefore, xFootAfter, 0.01f), "Foot model-space position should change after lower-leg rotation");
+	}
+
+	// Empty pose / empty skeleton — early-out, no crash
+	{
+		Flux_SkeletonPose xEmptyPose;
+		Zenith_SkeletonAsset xEmptySkel;
+		xEmptyPose.Initialize(0);
+		xEmptyPose.ComputeModelSpaceMatricesFromSkeleton(xEmptySkel);
+		ZENITH_ASSERT_EQ(xEmptyPose.GetNumBones(), 0, "Pose should remain at zero bones");
+	}
+
+	// Mismatched counts: pose with fewer bones than skeleton — walks the smaller count
+	{
+		Flux_SkeletonPose xPartial;
+		xPartial.Initialize(5);
+		xPartial.InitFromBindPose(*pxSkel);   // copies first 5 bind poses
+		xPartial.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+		// Should not crash; first 5 model matrices are populated. We can't easily
+		// assert specifics for partial skeletons, but the no-crash + correct
+		// per-bone walk for the first 5 bones is the contract.
+		for (uint32_t i = 0; i < 5; ++i)
+		{
+			ZENITH_ASSERT_TRUE(Mat4Equals(xPartial.GetModelSpaceMatrix(i), pxSkel->GetBone(i).m_xBindPoseModel, 0.001f),
+				"First 5 bone model matrices should match asset bind pose");
+		}
+	}
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKSolveReachableTarget) { Zenith_UnitTests::TestIKSolveReachableTarget(); }
+void Zenith_UnitTests::TestIKSolveReachableTarget()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(MakeUnconstrainedLeftLegChain());
+
+	const uint32_t uRootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+	const Zenith_Maths::Vector3 xRoot(xPose.GetModelSpaceMatrix(uRootIdx)[3]);
+	const Zenith_Maths::Vector3 xRest(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+
+	// Reachable target: 0.85m from upper-leg origin in a perturbed direction.
+	const Zenith_Maths::Vector3 xTarget = xRoot + glm::normalize(xRest - xRoot + Zenith_Maths::Vector3(0.1f, 0.0f, 0.1f)) * 0.85f;
+
+	const Zenith_Maths::Vector3 xKneeBefore(xPose.GetModelSpaceMatrix(static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftLowerLeg")))[3]);
+
+	Flux_IKTarget xT;
+	xT.m_xPosition = xTarget;
+	xT.m_fWeight = 1.0f;
+	xT.m_bEnabled = true;
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+
+	const Zenith_Maths::Vector3 xFootAfter(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+	ZENITH_ASSERT_TRUE(Vec3Equals(xFootAfter, xTarget, 0.01f), "Foot should converge on reachable target");
+
+	const Zenith_Maths::Vector3 xKneeAfter(xPose.GetModelSpaceMatrix(static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftLowerLeg")))[3]);
+	ZENITH_ASSERT_FALSE(Vec3Equals(xKneeBefore, xKneeAfter, 0.001f), "Knee should have moved during solve");
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKSolveUnreachableTarget) { Zenith_UnitTests::TestIKSolveUnreachableTarget(); }
+void Zenith_UnitTests::TestIKSolveUnreachableTarget()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(MakeUnconstrainedLeftLegChain());
+
+	const uint32_t uRootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+	const Zenith_Maths::Vector3 xRoot(xPose.GetModelSpaceMatrix(uRootIdx)[3]);
+	const Zenith_Maths::Vector3 xTarget = xRoot + Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f);  // way out of reach
+
+	Flux_IKTarget xT;
+	xT.m_xPosition = xTarget;
+	xT.m_fWeight = 1.0f;
+	xT.m_bEnabled = true;
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+
+	const Zenith_Maths::Vector3 xFootAfter(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+	const float fDistFromRoot = glm::length(xFootAfter - xRoot);
+	// Total chain length is 1.0m. After unreachable-target stretch, foot should be ~1.0m from root.
+	ZENITH_ASSERT_TRUE(FloatEquals(fDistFromRoot, 1.0f, 0.05f), "Foot should be at total chain length from root");
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKSolveDisabledTarget) { Zenith_UnitTests::TestIKSolveDisabledTarget(); }
+void Zenith_UnitTests::TestIKSolveDisabledTarget()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	// Capture pre-solve local poses (bind values)
+	std::vector<Flux_BoneLocalPose> xPreSolve(pxSkel->GetNumBones());
+	for (uint32_t i = 0; i < pxSkel->GetNumBones(); ++i) xPreSolve[i] = xPose.GetLocalPose(i);
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(MakeUnconstrainedLeftLegChain());
+
+	// Disabled target → solver should skip
+	const uint32_t uRootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+	const Zenith_Maths::Vector3 xRoot(xPose.GetModelSpaceMatrix(uRootIdx)[3]);
+	Flux_IKTarget xT;
+	xT.m_xPosition = xRoot + Zenith_Maths::Vector3(0.0f, -0.5f, 0.5f);
+	xT.m_fWeight = 1.0f;
+	xT.m_bEnabled = false;   // ← key: disabled
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+
+	for (uint32_t i = 0; i < pxSkel->GetNumBones(); ++i)
+	{
+		ZENITH_ASSERT_TRUE(QuatEquals(xPose.GetLocalPose(i).m_xRotation, xPreSolve[i].m_xRotation, 0.001f),
+			"Disabled target should not modify any bone rotation");
+	}
+
+	// Same: enabled but no chain registered → also no-op
+	{
+		Flux_IKSolver xSolver2;   // empty
+		Flux_IKTarget xT2;
+		xT2.m_xPosition = Zenith_Maths::Vector3(0.0f, -0.5f, 0.5f);
+		xT2.m_fWeight = 1.0f;
+		xT2.m_bEnabled = true;
+		xSolver2.SetTarget("LeftLeg", xT2);
+		xSolver2.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+		for (uint32_t i = 0; i < pxSkel->GetNumBones(); ++i)
+		{
+			ZENITH_ASSERT_TRUE(QuatEquals(xPose.GetLocalPose(i).m_xRotation, xPreSolve[i].m_xRotation, 0.001f),
+				"Solver with no chains should not modify any bone");
+		}
+	}
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKLazyResolveOnFirstSolve) { Zenith_UnitTests::TestIKLazyResolveOnFirstSolve(); }
+void Zenith_UnitTests::TestIKLazyResolveOnFirstSolve()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(MakeUnconstrainedLeftLegChain());
+	// We never call ResolveBoneIndices manually.
+	ZENITH_ASSERT_TRUE(xSolver.GetChain("LeftLeg")->m_xBoneIndices.empty(), "Indices should start empty");
+
+	const uint32_t uRootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+	const Zenith_Maths::Vector3 xRoot(xPose.GetModelSpaceMatrix(uRootIdx)[3]);
+	Flux_IKTarget xT;
+	xT.m_xPosition = xRoot + Zenith_Maths::Vector3(0.05f, -0.7f, 0.05f);
+	xT.m_fWeight = 1.0f;
+	xT.m_bEnabled = true;
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+
+	ZENITH_ASSERT_EQ(xSolver.GetChain("LeftLeg")->m_xBoneIndices.size(), 3, "Lazy resolve should have populated 3 indices");
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKWorldMatrixTransform) { Zenith_UnitTests::TestIKWorldMatrixTransform(); }
+void Zenith_UnitTests::TestIKWorldMatrixTransform()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	// Translated world: target at world(rest) → no model-space movement
+	{
+		Flux_SkeletonPose xPose;
+		InitPoseAtBindForSkeleton(xPose, *pxSkel);
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(MakeUnconstrainedLeftLegChain());
+
+		const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+		const Zenith_Maths::Vector3 xRest(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+		const Zenith_Maths::Matrix4 xWorld = glm::translate(glm::mat4(1.0f), Zenith_Maths::Vector3(10.0f, 5.0f, 0.0f));
+		const Zenith_Maths::Vector4 xWorldFoot = xWorld * Zenith_Maths::Vector4(xRest, 1.0f);
+
+		Flux_IKTarget xT;
+		xT.m_xPosition = Zenith_Maths::Vector3(xWorldFoot);
+		xT.m_fWeight = 1.0f;
+		xT.m_bEnabled = true;
+		xSolver.SetTarget("LeftLeg", xT);
+		xSolver.Solve(xPose, *pxSkel, xWorld);
+
+		const Zenith_Maths::Vector3 xFootAfter(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+		ZENITH_ASSERT_TRUE(Vec3Equals(xFootAfter, xRest, 0.01f), "Target at world(rest) should leave foot at rest in model space");
+	}
+
+	// Rotated + translated world: world-space offset converts to model-space offset
+	{
+		Flux_SkeletonPose xPose;
+		InitPoseAtBindForSkeleton(xPose, *pxSkel);
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(MakeUnconstrainedLeftLegChain());
+
+		const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+		const Zenith_Maths::Vector3 xRest(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+
+		// 90° Y rotation, translated. Pick a model-space offset that contracts the
+		// chain (positive Y, slight Z) so the target stays inside the 1.0m sphere.
+		Zenith_Maths::Matrix4 xWorld = glm::translate(glm::mat4(1.0f), Zenith_Maths::Vector3(10.0f, 5.0f, 0.0f));
+		xWorld = xWorld * glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+
+		const Zenith_Maths::Vector3 xModelOffset(0.0f, 0.05f, -0.1f);
+		const Zenith_Maths::Vector4 xWorldFoot = xWorld * Zenith_Maths::Vector4(xRest, 1.0f);
+		const Zenith_Maths::Vector4 xWorldOffset = xWorld * Zenith_Maths::Vector4(xModelOffset, 0.0f);
+		const Zenith_Maths::Vector3 xWorldTarget = Zenith_Maths::Vector3(xWorldFoot) + Zenith_Maths::Vector3(xWorldOffset);
+
+		Flux_IKTarget xT;
+		xT.m_xPosition = xWorldTarget;
+		xT.m_fWeight = 1.0f;
+		xT.m_bEnabled = true;
+		xSolver.SetTarget("LeftLeg", xT);
+		xSolver.Solve(xPose, *pxSkel, xWorld);
+
+		const Zenith_Maths::Vector3 xFootAfter(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+		ZENITH_ASSERT_TRUE(Vec3Equals(xFootAfter, xRest + xModelOffset, 0.02f),
+			"Inverse-world-transform should map rotated world target back into expected model-space position");
+	}
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKHingeConstraintProjectsSegmentDirection) { Zenith_UnitTests::TestIKHingeConstraintProjectsSegmentDirection(); }
+void Zenith_UnitTests::TestIKHingeConstraintProjectsSegmentDirection()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	// 3-bone chain with hinge at the knee (axis +X). Test that the post-solve
+	// knee→foot segment has near-zero X component (projection onto YZ plane).
+	Flux_IKChain xChain;
+	xChain.m_strName = "LeftLeg";
+	xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+	xChain.m_bUsePoleVector = false;
+	xChain.m_xJointConstraints.resize(3);
+	xChain.m_xJointConstraints[1].m_eType = Flux_JointConstraint::ConstraintType::Hinge;
+	xChain.m_xJointConstraints[1].m_xHingeAxis = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(xChain);
+
+	const uint32_t uRootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+	const Zenith_Maths::Vector3 xRoot(xPose.GetModelSpaceMatrix(uRootIdx)[3]);
+
+	// Target offset along X (perpendicular to the hinge plane). Without the hinge
+	// this would pull the knee out of the YZ plane; with the hinge, the knee→foot
+	// segment projects back onto the YZ plane.
+	Flux_IKTarget xT;
+	xT.m_xPosition = xRoot + Zenith_Maths::Vector3(0.4f, -0.6f, 0.1f);
+	xT.m_fWeight = 1.0f;
+	xT.m_bEnabled = true;
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+
+	const uint32_t uKneeIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftLowerLeg"));
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+	const Zenith_Maths::Vector3 xKnee(xPose.GetModelSpaceMatrix(uKneeIdx)[3]);
+	const Zenith_Maths::Vector3 xFoot(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+	const Zenith_Maths::Vector3 xSeg = xFoot - xKnee;
+
+	// Hinge axis is X, so segment's X component should be near zero (modulo
+	// how much the rotation conversion preserves the projection — give some
+	// tolerance for the FABRIK→rotation round trip).
+	ZENITH_ASSERT_TRUE(std::abs(xSeg.x) < 0.10f, "Knee→foot segment X component should be projected toward 0 by hinge");
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKPoleVectorBiasesKnee) { Zenith_UnitTests::TestIKPoleVectorBiasesKnee(); }
+void Zenith_UnitTests::TestIKPoleVectorBiasesKnee()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	// Pole-vector test: an off-axis reachable target where the natural leg
+	// configuration lets the knee bend either +Z or -Z. The pole vector picks one.
+	auto SolveAndGetKneeZ = [&](const Zenith_Maths::Vector3& xPoleVec) -> float
+	{
+		Flux_SkeletonPose xPose;
+		InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+		Flux_IKChain xChain;
+		xChain.m_strName = "LeftLeg";
+		xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+		xChain.m_bUsePoleVector = true;
+		xChain.m_xPoleVector = xPoleVec;
+
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(xChain);
+
+		const uint32_t uRootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+		const Zenith_Maths::Vector3 xRoot(xPose.GetModelSpaceMatrix(uRootIdx)[3]);
+
+		Flux_IKTarget xT;
+		xT.m_xPosition = xRoot + Zenith_Maths::Vector3(0.3f, -0.7f, 0.0f);
+		xT.m_fWeight = 1.0f;
+		xT.m_bEnabled = true;
+		xSolver.SetTarget("LeftLeg", xT);
+		xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+
+		const uint32_t uKneeIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftLowerLeg"));
+		return xPose.GetModelSpaceMatrix(uKneeIdx)[3].z;
+	};
+
+	const float fKneeZForward  = SolveAndGetKneeZ(Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	const float fKneeZBackward = SolveAndGetKneeZ(Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f));
+
+	// Different pole positions should yield knee Z values on opposite sides
+	// (i.e. their difference is non-trivial). Exact magnitudes depend on FABRIK
+	// convergence + pole projection, so assert the directional relationship.
+	ZENITH_ASSERT_TRUE((fKneeZForward - fKneeZBackward) > 0.01f,
+		"Forward pole should produce greater knee.z than backward pole");
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKMultiChainBoneDisjoint) { Zenith_UnitTests::TestIKMultiChainBoneDisjoint(); }
+void Zenith_UnitTests::TestIKMultiChainBoneDisjoint()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	auto SolveLeftOnly = [&]() -> Zenith_Maths::Vector3
+	{
+		Flux_SkeletonPose xPose;
+		InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(MakeUnconstrainedLeftLegChain());
+
+		const uint32_t uRootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+		const Zenith_Maths::Vector3 xRoot(xPose.GetModelSpaceMatrix(uRootIdx)[3]);
+		Flux_IKTarget xT;
+		xT.m_xPosition = xRoot + Zenith_Maths::Vector3(0.05f, -0.7f, 0.1f);
+		xT.m_fWeight = 1.0f;
+		xT.m_bEnabled = true;
+		xSolver.SetTarget("LeftLeg", xT);
+		xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+
+		const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+		return Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+	};
+
+	const Zenith_Maths::Vector3 xLeftOnlyResult = SolveLeftOnly();
+
+	// Run with both chains targeted, distinct targets. Left chain's solve should
+	// be identical to single-chain run (chains are bone-disjoint).
+	Flux_SkeletonPose xPoseBoth;
+	InitPoseAtBindForSkeleton(xPoseBoth, *pxSkel);
+
+	Flux_IKSolver xSolverBoth;
+	xSolverBoth.AddChain(MakeUnconstrainedLeftLegChain());
+	{
+		Flux_IKChain xRight;
+		xRight.m_strName = "RightLeg";
+		xRight.m_xBoneNames = { "RightUpperLeg", "RightLowerLeg", "RightFoot" };
+		xRight.m_bUsePoleVector = false;
+		xSolverBoth.AddChain(xRight);
+	}
+
+	const uint32_t uLeftRoot = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+	const uint32_t uRightRoot = static_cast<uint32_t>(pxSkel->GetBoneIndex("RightUpperLeg"));
+	const Zenith_Maths::Vector3 xLeftRoot(xPoseBoth.GetModelSpaceMatrix(uLeftRoot)[3]);
+	const Zenith_Maths::Vector3 xRightRoot(xPoseBoth.GetModelSpaceMatrix(uRightRoot)[3]);
+
+	Flux_IKTarget xLT; xLT.m_xPosition = xLeftRoot + Zenith_Maths::Vector3(0.05f, -0.7f, 0.1f); xLT.m_fWeight = 1.0f; xLT.m_bEnabled = true;
+	Flux_IKTarget xRT; xRT.m_xPosition = xRightRoot + Zenith_Maths::Vector3(-0.05f, -0.6f, 0.2f); xRT.m_fWeight = 1.0f; xRT.m_bEnabled = true;
+	xSolverBoth.SetTarget("LeftLeg", xLT);
+	xSolverBoth.SetTarget("RightLeg", xRT);
+	xSolverBoth.Solve(xPoseBoth, *pxSkel, glm::mat4(1.0f));
+
+	const uint32_t uLeftFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+	const uint32_t uRightFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("RightFoot"));
+	const Zenith_Maths::Vector3 xLeftFootBoth(xPoseBoth.GetModelSpaceMatrix(uLeftFootIdx)[3]);
+	const Zenith_Maths::Vector3 xRightFootBoth(xPoseBoth.GetModelSpaceMatrix(uRightFootIdx)[3]);
+
+	ZENITH_ASSERT_TRUE(Vec3Equals(xLeftFootBoth, xLT.m_xPosition, 0.01f), "Left foot should reach left target");
+	ZENITH_ASSERT_TRUE(Vec3Equals(xRightFootBoth, xRT.m_xPosition, 0.01f), "Right foot should reach right target");
+	// Bone-disjoint chains: left foot result should match single-chain run (chains don't interfere)
+	// Note: hash map iteration order isn't deterministic across solves, so the chain solve order
+	// may differ. The disjoint-bones property still guarantees identical end states.
+	ZENITH_ASSERT_TRUE(Vec3Equals(xLeftFootBoth, xLeftOnlyResult, 0.01f), "Left foot result should match single-chain run");
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKConvergence) { Zenith_UnitTests::TestIKConvergence(); }
+void Zenith_UnitTests::TestIKConvergence()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	auto SolveAndError = [&](uint32_t uIters, float fTolerance) -> float
+	{
+		Flux_SkeletonPose xPose;
+		InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+		Flux_IKChain xChain = MakeUnconstrainedLeftLegChain();
+		xChain.m_uMaxIterations = uIters;
+		xChain.m_fTolerance = fTolerance;
+
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(xChain);
+
+		const uint32_t uRootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+		const Zenith_Maths::Vector3 xRoot(xPose.GetModelSpaceMatrix(uRootIdx)[3]);
+		const Zenith_Maths::Vector3 xTarget = xRoot + Zenith_Maths::Vector3(0.2f, -0.6f, 0.3f);
+
+		Flux_IKTarget xT;
+		xT.m_xPosition = xTarget;
+		xT.m_fWeight = 1.0f;
+		xT.m_bEnabled = true;
+		xSolver.SetTarget("LeftLeg", xT);
+		xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+
+		const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+		const Zenith_Maths::Vector3 xFoot(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+		return glm::length(xFoot - xTarget);
+	};
+
+	const float fError1 = SolveAndError(1, 0.001f);
+	const float fError20 = SolveAndError(20, 0.001f);
+	const float fError100 = SolveAndError(100, 0.0001f);
+
+	ZENITH_ASSERT_TRUE(fError20 <= fError1 + 0.01f, "20 iters should converge at least as well as 1");
+	ZENITH_ASSERT_TRUE(fError100 < 0.01f, "100 iters should be well-converged");
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKWeightZeroIsNoop) { Zenith_UnitTests::TestIKWeightZeroIsNoop(); }
+void Zenith_UnitTests::TestIKWeightZeroIsNoop()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	std::vector<Flux_BoneLocalPose> xPreSolve(pxSkel->GetNumBones());
+	for (uint32_t i = 0; i < pxSkel->GetNumBones(); ++i) xPreSolve[i] = xPose.GetLocalPose(i);
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(MakeUnconstrainedLeftLegChain());
+
+	const uint32_t uRootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+	const Zenith_Maths::Vector3 xRoot(xPose.GetModelSpaceMatrix(uRootIdx)[3]);
+
+	// Weight 0 → solver should short-circuit (E3d) and produce no change
+	Flux_IKTarget xT;
+	xT.m_xPosition = xRoot + Zenith_Maths::Vector3(0.05f, -0.7f, 0.1f);
+	xT.m_fWeight = 0.0f;
+	xT.m_bEnabled = true;
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+
+	for (uint32_t i = 0; i < pxSkel->GetNumBones(); ++i)
+	{
+		ZENITH_ASSERT_TRUE(QuatEquals(xPose.GetLocalPose(i).m_xRotation, xPreSolve[i].m_xRotation, 0.001f),
+			"Weight 0 solve should not modify any bone");
+	}
+
+	// Weight 1 → solver should converge
+	xT.m_fWeight = 1.0f;
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+	const Zenith_Maths::Vector3 xFoot(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+	ZENITH_ASSERT_TRUE(Vec3Equals(xFoot, xT.m_xPosition, 0.01f), "Weight 1 solve should converge");
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKDegenerateChainSizes) { Zenith_UnitTests::TestIKDegenerateChainSizes(); }
+void Zenith_UnitTests::TestIKDegenerateChainSizes()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	std::vector<Flux_BoneLocalPose> xPreSolve(pxSkel->GetNumBones());
+	for (uint32_t i = 0; i < pxSkel->GetNumBones(); ++i) xPreSolve[i] = xPose.GetLocalPose(i);
+
+	// 1-bone chain — early-out at SolveChain's < 2 guard
+	{
+		Flux_IKChain xChain;
+		xChain.m_strName = "OneBone";
+		xChain.m_xBoneNames = { "LeftFoot" };
+		xChain.m_bUsePoleVector = false;
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(xChain);
+		Flux_IKTarget xT; xT.m_xPosition = Zenith_Maths::Vector3(0.0f); xT.m_fWeight = 1.0f; xT.m_bEnabled = true;
+		xSolver.SetTarget("OneBone", xT);
+		xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+		for (uint32_t i = 0; i < pxSkel->GetNumBones(); ++i)
+		{
+			ZENITH_ASSERT_TRUE(QuatEquals(xPose.GetLocalPose(i).m_xRotation, xPreSolve[i].m_xRotation, 0.001f),
+				"1-bone chain should not modify pose");
+		}
+	}
+
+	// Empty chain — no crash
+	{
+		Flux_IKChain xChain;
+		xChain.m_strName = "Empty";
+		xChain.m_bUsePoleVector = false;
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(xChain);
+		Flux_IKTarget xT; xT.m_xPosition = Zenith_Maths::Vector3(0.0f); xT.m_fWeight = 1.0f; xT.m_bEnabled = true;
+		xSolver.SetTarget("Empty", xT);
+		xSolver.Solve(xPose, *pxSkel, glm::mat4(1.0f));
+		for (uint32_t i = 0; i < pxSkel->GetNumBones(); ++i)
+		{
+			ZENITH_ASSERT_TRUE(QuatEquals(xPose.GetLocalPose(i).m_xRotation, xPreSolve[i].m_xRotation, 0.001f),
+				"Empty chain should not modify pose");
+		}
+	}
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKSolveOnReloadedAsset) { Zenith_UnitTests::TestIKSolveOnReloadedAsset(); }
+void Zenith_UnitTests::TestIKSolveOnReloadedAsset()
+{
+	const std::string strPath = std::string(ENGINE_ASSETS_DIR) +
+		"Meshes/IKTestRig/IKTestRig" ZENITH_SKELETON_EXT;
+
+	// First-run export. Idempotent: skip if already on disk (the .zskel is
+	// committed to source control after the first developer runs it).
+	if (!std::filesystem::exists(strPath))
+	{
+		std::filesystem::create_directories(std::filesystem::path(strPath).parent_path());
+
+		Zenith_SkeletonAsset* pxRig = new Zenith_SkeletonAsset();
+		const auto xId = glm::identity<Zenith_Maths::Quat>();
+		const auto xUS = Zenith_Maths::Vector3(1.0f);
+		pxRig->AddBone("Root",           -1, Zenith_Maths::Vector3( 0.00f,  0.0f,  0.0f), xId, xUS);
+		pxRig->AddBone("LeftUpperLeg",    0, Zenith_Maths::Vector3(-0.15f,  0.0f,  0.0f), xId, xUS);
+		pxRig->AddBone("LeftLowerLeg",    1, Zenith_Maths::Vector3( 0.00f, -0.5f,  0.0f), xId, xUS);
+		pxRig->AddBone("LeftFoot",        2, Zenith_Maths::Vector3( 0.00f, -0.5f,  0.0f), xId, xUS);
+		pxRig->AddBone("RightUpperLeg",   0, Zenith_Maths::Vector3( 0.15f,  0.0f,  0.0f), xId, xUS);
+		pxRig->AddBone("RightLowerLeg",   4, Zenith_Maths::Vector3( 0.00f, -0.5f,  0.0f), xId, xUS);
+		pxRig->AddBone("RightFoot",       5, Zenith_Maths::Vector3( 0.00f, -0.5f,  0.0f), xId, xUS);
+		pxRig->ComputeBindPoseMatrices();
+		pxRig->Export(strPath.c_str());
+		delete pxRig;
+
+		Zenith_Log(LOG_CATEGORY_ANIMATION,
+			"[IKTestRig] Exported new asset to %s — commit to source control "
+			"so future test runs and game-side consumers find it.", strPath.c_str());
+	}
+
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(strPath), "IKTestRig.zskel should exist on disk");
+
+	Zenith_SkeletonAsset* pxRig = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(strPath);
+	ZENITH_ASSERT_NOT_NULL(pxRig, "IKTestRig should load via AssetRegistry");
+	ZENITH_ASSERT_EQ(pxRig->GetNumBones(), 7, "IKTestRig should have 7 bones");
+	ZENITH_ASSERT_TRUE(pxRig->HasBone("LeftFoot"), "IKTestRig should have LeftFoot bone");
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(pxRig->GetNumBones());
+	xPose.InitFromBindPose(*pxRig);
+	xPose.ComputeModelSpaceMatricesFromSkeleton(*pxRig);
+
+	Flux_IKSolver xSolver;
+	Flux_IKChain xChain;
+	xChain.m_strName = "LeftLeg";   // <-- registers under this name; SetTarget("LeftLeg") finds it
+	xChain.m_xBoneNames = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" };
+	xChain.m_bUsePoleVector = false;
+	// Bump iterations + tighten internal tolerance — the leg starts fully extended,
+	// which gives FABRIK a worst-case starting condition. 50 iterations + 0.0005f
+	// inner tolerance reliably converges below the 0.05m outer assertion.
+	xChain.m_uMaxIterations = 50;
+	xChain.m_fTolerance = 0.0005f;
+	xSolver.AddChain(xChain);
+
+	const uint32_t uRoot = static_cast<uint32_t>(pxRig->GetBoneIndex("LeftUpperLeg"));
+	const uint32_t uFoot = static_cast<uint32_t>(pxRig->GetBoneIndex("LeftFoot"));
+	const Zenith_Maths::Vector3 xRoot(pxRig->GetBone(uRoot).m_xBindPoseModel[3]);
+	const Zenith_Maths::Vector3 xRest(pxRig->GetBone(uFoot).m_xBindPoseModel[3]);
+	const Zenith_Maths::Vector3 xTarget = xRoot + glm::normalize(xRest - xRoot + Zenith_Maths::Vector3(0.1f, 0.0f, 0.1f)) * 0.85f;
+
+	Flux_IKTarget xT;
+	xT.m_xPosition = xTarget;
+	xT.m_fWeight = 1.0f;
+	xT.m_bEnabled = true;
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxRig, glm::mat4(1.0f));
+
+	const Zenith_Maths::Vector3 xFootAfter(xPose.GetModelSpaceMatrix(uFoot)[3]);
+	// 0.05m tolerance: this is the ROUND-TRIP test (Export → Reload → Solve), so
+	// the focus is on "did the asset survive the disk hop?" not "is FABRIK precise?".
+	// The dedicated convergence test (IK12) covers the precision angle.
+	ZENITH_ASSERT_TRUE(Vec3Equals(xFootAfter, xTarget, 0.05f),
+		"IKTestRig solve should converge on target");
+}
+
+//------------------------------------------------------------------------------
+// Reproductions of the "feet dragging behind body" bug
+// Mirrors what RenderTest_PlayerBehaviour::UpdateFootIK does end-to-end:
+//   1. Player has a rotated world matrix (faces +X via yaw=π/2)
+//   2. Compute the foot's CURRENT world position via xWorld * footModel * (0,0,0,1)
+//   3. Simulate a "raycast hit" 1m below the foot
+//   4. Set the IK target in WORLD space (just like SetIKTarget does)
+//   5. Solve
+//   6. Assert: the foot ends up at the target world position (NOT drifted in XZ)
+//
+// If the foot ends up at a DIFFERENT world XZ than the target, the IK math is
+// inconsistent with the world-matrix application — the canonical "feet drag
+// behind body" failure mode.
+//------------------------------------------------------------------------------
+
+ZENITH_TEST(Animation, IKWithPlayerLikeWorldRotation) { Zenith_UnitTests::TestIKWithPlayerLikeWorldRotation(); }
+void Zenith_UnitTests::TestIKWithPlayerLikeWorldRotation()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(MakeUnconstrainedLeftLegChain());
+
+	// Player at (5, 10, 5), rotated 90° around +Y (faces +X). Same kind of world
+	// matrix the real player builds via Zenith_TransformComponent::BuildModelMatrix.
+	const Zenith_Maths::Vector3 xPlayerPos(5.0f, 10.0f, 5.0f);
+	const Zenith_Maths::Quat xPlayerRot = glm::angleAxis(
+		static_cast<float>(Zenith_Maths::Pi * 0.5),
+		Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	const Zenith_Maths::Matrix4 xWorld =
+		glm::translate(glm::mat4(1.0f), xPlayerPos) * glm::toMat4(xPlayerRot);
+
+	// Compute the foot's current WORLD position — same way UpdateFootIK does it.
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+	const Zenith_Maths::Matrix4& xFootModel = xPose.GetModelSpaceMatrix(uFootIdx);
+	const Zenith_Maths::Vector4 xFootW4 = xWorld * xFootModel * Zenith_Maths::Vector4(0, 0, 0, 1);
+	const Zenith_Maths::Vector3 xFootWorld(xFootW4);
+
+	// Simulate raycast hit 1m below foot, target = hit + ankle-height. This is
+	// reachable (chain is 1m, foot is 1m below player root, target lifts foot up
+	// by ~0.95m, so distance from upper-leg origin to target is well under 1m).
+	const Zenith_Maths::Vector3 xTargetWorld(xFootWorld.x, xFootWorld.y + 0.5f, xFootWorld.z);
+
+	Flux_IKTarget xT;
+	xT.m_xPosition = xTargetWorld;   // WORLD space — solver will inverse-transform
+	xT.m_fWeight = 1.0f;
+	xT.m_bEnabled = true;
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxSkel, xWorld);
+
+	// After solve, the foot in MODEL space should map to the target in WORLD space.
+	const Zenith_Maths::Matrix4& xFootModelAfter = xPose.GetModelSpaceMatrix(uFootIdx);
+	const Zenith_Maths::Vector4 xFootWorldAfter4 = xWorld * xFootModelAfter * Zenith_Maths::Vector4(0, 0, 0, 1);
+	const Zenith_Maths::Vector3 xFootWorldAfter(xFootWorldAfter4);
+
+	// The bug: if the world matrix isn't correctly applied during the solve, the
+	// foot drifts in WORLD XZ relative to where the target sits. Tolerance is
+	// generous (0.05m) since FABRIK convergence has its own slop.
+	ZENITH_ASSERT_TRUE(Vec3Equals(xFootWorldAfter, xTargetWorld, 0.05f),
+		"After IK solve, foot world position should match target world position");
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKWithPlayerLikeWorldRotationAndPole) { Zenith_UnitTests::TestIKWithPlayerLikeWorldRotationAndPole(); }
+void Zenith_UnitTests::TestIKWithPlayerLikeWorldRotationAndPole()
+{
+	// Same as above but using CreateLegChain (with pole vector + hinge constraint
+	// configured) — this is the actual chain RenderTest_PlayerBehaviour adds.
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(Flux_IKSolver::CreateLegChain("LeftLeg",
+		"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"));
+
+	const Zenith_Maths::Vector3 xPlayerPos(5.0f, 10.0f, 5.0f);
+	const Zenith_Maths::Quat xPlayerRot = glm::angleAxis(
+		static_cast<float>(Zenith_Maths::Pi * 0.5),
+		Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	const Zenith_Maths::Matrix4 xWorld =
+		glm::translate(glm::mat4(1.0f), xPlayerPos) * glm::toMat4(xPlayerRot);
+
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+	const Zenith_Maths::Matrix4& xFootModel = xPose.GetModelSpaceMatrix(uFootIdx);
+	const Zenith_Maths::Vector4 xFootW4 = xWorld * xFootModel * Zenith_Maths::Vector4(0, 0, 0, 1);
+	const Zenith_Maths::Vector3 xFootWorld(xFootW4);
+	const Zenith_Maths::Vector3 xTargetWorld(xFootWorld.x, xFootWorld.y + 0.5f, xFootWorld.z);
+
+	Flux_IKTarget xT;
+	xT.m_xPosition = xTargetWorld;
+	xT.m_fWeight = 1.0f;
+	xT.m_bEnabled = true;
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxSkel, xWorld);
+
+	const Zenith_Maths::Matrix4& xFootModelAfter = xPose.GetModelSpaceMatrix(uFootIdx);
+	const Zenith_Maths::Vector4 xFootWorldAfter4 = xWorld * xFootModelAfter * Zenith_Maths::Vector4(0, 0, 0, 1);
+	const Zenith_Maths::Vector3 xFootWorldAfter(xFootWorldAfter4);
+
+	ZENITH_ASSERT_TRUE(Vec3Equals(xFootWorldAfter, xTargetWorld, 0.05f),
+		"With CreateLegChain (pole+hinge), foot world should still match target world");
+
+	delete pxSkel;
+}
+
+ZENITH_TEST(Animation, IKEachCardinalRotation) { Zenith_UnitTests::TestIKEachCardinalRotation(); }
+void Zenith_UnitTests::TestIKEachCardinalRotation()
+{
+	// Sweeps the player's yaw through 0, π/2, π, -π/2 (forward, right, back, left).
+	// For each, sets up the same player-style scenario and verifies the foot lands
+	// on its target. Catches rotation-direction-specific bugs that a single
+	// orientation might miss.
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+
+	const float afYaws[] = {
+		0.0f,
+		static_cast<float>(Zenith_Maths::Pi * 0.5),
+		static_cast<float>(Zenith_Maths::Pi),
+		static_cast<float>(-Zenith_Maths::Pi * 0.5)
+	};
+	const char* aszLabels[] = { "yaw=0 (forward)", "yaw=+π/2 (right)", "yaw=π (back)", "yaw=-π/2 (left)" };
+
+	for (size_t i = 0; i < sizeof(afYaws) / sizeof(afYaws[0]); ++i)
+	{
+		Flux_SkeletonPose xPose;
+		InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(MakeUnconstrainedLeftLegChain());
+
+		const Zenith_Maths::Vector3 xPlayerPos(5.0f, 10.0f, 5.0f);
+		const Zenith_Maths::Quat xPlayerRot = glm::angleAxis(afYaws[i],
+			Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		const Zenith_Maths::Matrix4 xWorld =
+			glm::translate(glm::mat4(1.0f), xPlayerPos) * glm::toMat4(xPlayerRot);
+
+		const Zenith_Maths::Matrix4& xFootModel = xPose.GetModelSpaceMatrix(uFootIdx);
+		const Zenith_Maths::Vector4 xFootW4 = xWorld * xFootModel * Zenith_Maths::Vector4(0, 0, 0, 1);
+		const Zenith_Maths::Vector3 xFootWorld(xFootW4);
+		const Zenith_Maths::Vector3 xTargetWorld(xFootWorld.x, xFootWorld.y + 0.5f, xFootWorld.z);
+
+		Flux_IKTarget xT;
+		xT.m_xPosition = xTargetWorld;
+		xT.m_fWeight = 1.0f;
+		xT.m_bEnabled = true;
+		xSolver.SetTarget("LeftLeg", xT);
+		xSolver.Solve(xPose, *pxSkel, xWorld);
+
+		const Zenith_Maths::Matrix4& xFootModelAfter = xPose.GetModelSpaceMatrix(uFootIdx);
+		const Zenith_Maths::Vector4 xFootWorldAfter4 = xWorld * xFootModelAfter * Zenith_Maths::Vector4(0, 0, 0, 1);
+		const Zenith_Maths::Vector3 xFootWorldAfter(xFootWorldAfter4);
+
+		(void)aszLabels;   // logged on failure path only — labels reserved for future debug
+		ZENITH_ASSERT_TRUE(Vec3Equals(xFootWorldAfter, xTargetWorld, 0.05f),
+			"Foot world should match target world for each cardinal yaw");
+	}
+
+	delete pxSkel;
+}
+
+// Multi-frame simulation: player walks forward and rotates simultaneously.
+// Each "frame" mirrors the actual game's order:
+//   1. (start of frame) animator IK runs with the world matrix from the LAST
+//      transform state and the target set on the LAST frame.
+//   2. Player::OnUpdate equivalent: position + rotation update.
+//   3. UpdateFootIK equivalent: read foot's current model transform, transform
+//      to world via the post-update transform, raycast-simulate, set new target.
+//
+// This is the critical test for "feet dragging when moving" — if there's any
+// timing mismatch between when the world matrix is recorded vs when the target
+// is computed, the foot world position will drift behind the body each frame.
+ZENITH_TEST(Animation, IKOverManyFramesWalkingAndRotating) { Zenith_UnitTests::TestIKOverManyFramesWalkingAndRotating(); }
+void Zenith_UnitTests::TestIKOverManyFramesWalkingAndRotating()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(Flux_IKSolver::CreateLegChain("LeftLeg",
+		"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"));
+
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+
+	// Player starts at (0, 10, 0) facing +Z, walks at 5 m/s in +Z direction
+	// while rotating yaw at 1 rad/s. 60fps. Run for 1 second (60 frames).
+	Zenith_Maths::Vector3 xPlayerPos(0.0f, 10.0f, 0.0f);
+	float fYaw = 0.0f;
+	const float fDt = 1.0f / 60.0f;
+	const float fWalkSpeed = 5.0f;        // m/s in player local +Z (forward)
+	const float fYawRate = 1.0f;          // rad/s
+	const float fGroundY = 9.0f;          // 1m below player root
+
+	// Build world matrix helper.
+	auto BuildWorld = [&]() -> Zenith_Maths::Matrix4 {
+		const Zenith_Maths::Quat xRot = glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		return glm::translate(glm::mat4(1.0f), xPlayerPos) * glm::toMat4(xRot);
+	};
+
+	// Last frame's world matrix used for IK solve. Initially set to bind world.
+	Zenith_Maths::Matrix4 xWorldForSolve = BuildWorld();
+
+	// Last frame's IK target (in world space). Initially none — first frame solves with bind.
+	bool bHasTarget = false;
+	Flux_IKTarget xTarget;
+	xTarget.m_fWeight = 1.0f;
+	xTarget.m_bEnabled = true;
+
+	const int kFrames = 60;
+	float fMaxDragError = 0.0f;
+	int iWorstFrame = -1;
+	Zenith_Maths::Vector3 xWorstFootWorld(0.0f), xWorstTargetWorld(0.0f);
+
+	for (int iFrame = 0; iFrame < kFrames; ++iFrame)
+	{
+		// === Step 1: simulated Animator IK Solve ===
+		// Uses xWorldForSolve (recorded at start of this frame) and the target
+		// set last frame. This is what Flux_AnimationController does each frame.
+		if (bHasTarget)
+		{
+			xSolver.SetTarget("LeftLeg", xTarget);
+			// Pre-solve recompute (mirrors Flux_AnimationController::ApplyOutputPoseToSkeleton).
+			xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+			xSolver.Solve(xPose, *pxSkel, xWorldForSolve);
+			xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+		}
+
+		// === Step 2: simulated Player::OnUpdate (movement + rotation) ===
+		// Update happens AFTER animator. Position and rotation change in the same
+		// step before the IK helper runs.
+		const Zenith_Maths::Vector3 xForward(-sinf(fYaw), 0.0f, cosf(fYaw));
+		xPlayerPos += xForward * fWalkSpeed * fDt;
+		fYaw += fYawRate * fDt;
+
+		// === Step 3: simulated UpdateFootIK (sets target for next frame) ===
+		const Zenith_Maths::Matrix4 xWorldNow = BuildWorld();
+		const Zenith_Maths::Matrix4& xFootModelNow = xPose.GetModelSpaceMatrix(uFootIdx);
+		const Zenith_Maths::Vector4 xFootW4 = xWorldNow * xFootModelNow * Zenith_Maths::Vector4(0, 0, 0, 1);
+		const Zenith_Maths::Vector3 xFootWorld(xFootW4);
+
+		// Simulated raycast: hits ground (Y=fGroundY) directly below foot.
+		// Target = hit + ankle.
+		const Zenith_Maths::Vector3 xRayHit(xFootWorld.x, fGroundY, xFootWorld.z);
+		const Zenith_Maths::Vector3 xTargetWorld = xRayHit + Zenith_Maths::Vector3(0.0f, 0.05f, 0.0f);
+
+		xTarget.m_xPosition = xTargetWorld;
+		bHasTarget = true;
+
+		// IMPORTANT: record the world matrix that was current when target was set.
+		// This is what the NEXT frame's animator should use to inverse-transform.
+		// Mirrors Zenith_AnimatorComponent::UpdateWorldMatrix being called at the
+		// START of the next frame (which reads the NOW-current transform).
+		xWorldForSolve = xWorldNow;
+
+		// Diagnostic: after solve, foot world should land near target. Compute
+		// drag error between this frame's PRE-update foot world and the LAST
+		// frame's target — that's what determines whether the foot is keeping up.
+		if (iFrame > 5)   // skip warmup
+		{
+			const float fError = glm::length(xFootWorld - xTargetWorld);
+			if (fError > fMaxDragError)
+			{
+				fMaxDragError = fError;
+				iWorstFrame = iFrame;
+				xWorstFootWorld = xFootWorld;
+				xWorstTargetWorld = xTargetWorld;
+			}
+		}
+	}
+
+	Zenith_Log(LOG_CATEGORY_ANIMATION,
+		"[IKWalkRotateTest] worst drag err=%.4f at frame %d. footWorld=(%.3f,%.3f,%.3f) targetWorld=(%.3f,%.3f,%.3f)",
+		fMaxDragError, iWorstFrame,
+		xWorstFootWorld.x, xWorstFootWorld.y, xWorstFootWorld.z,
+		xWorstTargetWorld.x, xWorstTargetWorld.y, xWorstTargetWorld.z);
+
+	// Acceptable drag: less than 0.05m. The bug being investigated produced
+	// drag on the order of 0.5m+ (visible feet trailing behind body).
+	ZENITH_ASSERT_TRUE(fMaxDragError < 0.05f,
+		"Foot should keep up with body during walking + rotating (no drag)");
+
+	delete pxSkel;
+}
+
+// Geometric integrity test: the player's capsule dimensions must place the
+// model's foot bind position EXACTLY at the IK ankle target when the capsule
+// rests on the ground. If they don't, the IK has to fold the leg every frame
+// just to plant feet on the ground — producing the visible "legs angled" or
+// "feet dragging" symptom even at rest.
+//
+// The geometry:
+//   playerY               = ground + halfExtent      (capsule rests on ground)
+//   foot_bind_world_Y     = playerY + footBindModel.y
+//   ik_target_world_Y     = ground + ankleHeight
+// For ZERO leg fold (foot bind = IK target):
+//   halfExtent = ankleHeight - footBindModel.y         (= -bind_y + ankle)
+//
+// For the StickFigure (footBindModel.y = -1.0) and ankleHeight = 0.05:
+//   halfExtent should be 1.05.
+//
+// RenderTest uses AddCapsuleCollider(0.10, 0.95) → total half-extent 1.05.
+// (The narrow 0.10 radius is required for the IKStep_Spawn demo: it puts the
+// foot at offset 0.15 OUTSIDE the capsule, so a tall step under the foot
+// doesn't push the capsule up off the main platform.)
+ZENITH_TEST(Animation, IKFootBindMatchesCapsuleBottomForPlayerOnGround) { Zenith_UnitTests::TestIKFootBindMatchesCapsuleBottomForPlayerOnGround(); }
+void Zenith_UnitTests::TestIKFootBindMatchesCapsuleBottomForPlayerOnGround()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+	const Zenith_Maths::Vector3 xFootBindModel(pxSkel->GetBone(uFootIdx).m_xBindPoseModel[3]);
+
+	// RenderTest player capsule: half-cylinder 0.95 + radius 0.10 = 1.05m total half-extent.
+	const float fCapsuleHalfExtent = 0.95f + 0.10f;
+	const float fAnkleHeight = 0.05f;
+
+	// The exact alignment required for zero-fold standing pose.
+	const float fExpectedHalfExtent = fAnkleHeight - xFootBindModel.y;   // 0.05 - (-1.0) = 1.05
+
+	ZENITH_ASSERT_TRUE(FloatEquals(fCapsuleHalfExtent, fExpectedHalfExtent, 0.01f),
+		"Player capsule half-extent must equal (ankleHeight - footBindModel.y) so "
+		"feet sit cleanly at IK ankle target Y when the capsule rests on the ground");
+
+	// End-to-end check: with the proper capsule, IK on a stationary grounded
+	// player should produce essentially NO leg fold — foot model Y stays at bind.
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(Flux_IKSolver::CreateLegChain("LeftLeg",
+		"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"));
+
+	const float fPlayerY = 10.0f;
+	const float fGroundY = fPlayerY - fCapsuleHalfExtent;   // = 10 - 1.05 = 8.95
+
+	const Zenith_Maths::Matrix4 xWorld = glm::translate(glm::mat4(1.0f),
+		Zenith_Maths::Vector3(0.0f, fPlayerY, 0.0f));
+
+	const Zenith_Maths::Vector4 xFootBindW = xWorld * Zenith_Maths::Vector4(xFootBindModel, 1.0f);
+	const Zenith_Maths::Vector3 xTargetWorld(xFootBindW.x, fGroundY + fAnkleHeight, xFootBindW.z);
+
+	Flux_IKTarget xT;
+	xT.m_xPosition = xTargetWorld;
+	xT.m_fWeight = 1.0f;
+	xT.m_bEnabled = true;
+	xSolver.SetTarget("LeftLeg", xT);
+	xSolver.Solve(xPose, *pxSkel, xWorld);
+
+	const Zenith_Maths::Vector3 xFootAfterModel(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+
+	// With proper capsule sizing, foot stays at bind (no fold). Tolerance 1cm
+	// covers FABRIK numerical noise.
+	const float fFold = glm::length(xFootBindModel - xFootAfterModel);
+	Zenith_Log(LOG_CATEGORY_ANIMATION,
+		"[IKZeroFoldTest] foot bind=(%.3f,%.3f,%.3f) foot after=(%.3f,%.3f,%.3f) fold=%.4f",
+		xFootBindModel.x, xFootBindModel.y, xFootBindModel.z,
+		xFootAfterModel.x, xFootAfterModel.y, xFootAfterModel.z,
+		fFold);
+
+	ZENITH_ASSERT_TRUE(fFold < 0.01f,
+		"With proper capsule sizing, IK on stationary grounded player should not "
+		"fold the leg at all — foot stays at bind position");
+
+	delete pxSkel;
+}
+
+// Reproduces the "feet drag while walking" bug.
+//
+// Timing:
+//   Frame N end: player at world position P_N. UpdateFootIK reads foot world
+//                from current transform, sets target_world = (foot.x, ground+ankle, foot.z).
+//                m_xWorldMatrix on the controller still holds the value from
+//                start-of-frame-N animator update.
+//   Between frames: physics steps, player moves to P_N + v*dt.
+//   Frame N+1 start: animator UpdateWorldMatrix reads NEW transform → m_xWorldMatrix
+//                 updated to use P_{N+1}.
+//   IK Solve: target_world (set with P_N) inverse-transformed using world_{N+1}.
+//             target_local has X/Z component shifted by -v*dt in player local space.
+//             Foot pulls to a position ~v*dt BEHIND where it should be → drag.
+//
+// This test reproduces that exact sequence and asserts that a MODEL-SPACE target
+// avoids the drag (because no inverse-transform happens at solve time).
+ZENITH_TEST(Animation, IKModelSpaceTargetAvoidsPhysicsLagDrag) { Zenith_UnitTests::TestIKModelSpaceTargetAvoidsPhysicsLagDrag(); }
+void Zenith_UnitTests::TestIKModelSpaceTargetAvoidsPhysicsLagDrag()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+
+	// Player walking forward at 5 m/s, 60 fps. Inter-frame movement = 0.083m.
+	const float fDt = 1.0f / 60.0f;
+	const float fSpeed = 5.0f;
+	const Zenith_Maths::Vector3 xPlayerVelocity(0.0f, 0.0f, fSpeed);   // +Z forward
+	const float fInterFrameMove = fSpeed * fDt;                       // ~0.083m
+
+	const Zenith_Maths::Vector3 xPlayerPosAtTargetSet(0.0f, 10.0f, 0.0f);
+	const Zenith_Maths::Vector3 xPlayerPosAtSolve = xPlayerPosAtTargetSet + xPlayerVelocity * fDt;
+
+	const Zenith_Maths::Matrix4 xWorldAtTargetSet =
+		glm::translate(glm::mat4(1.0f), xPlayerPosAtTargetSet);
+	const Zenith_Maths::Matrix4 xWorldAtSolve =
+		glm::translate(glm::mat4(1.0f), xPlayerPosAtSolve);
+
+	// === Step 1: simulate UpdateFootIK at end of frame N ===
+	// Compute foot world from bind pose using the world matrix at target-set time.
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	const Zenith_Maths::Matrix4& xFootBindModel = xPose.GetModelSpaceMatrix(uFootIdx);
+	const Zenith_Maths::Vector4 xFootW4 = xWorldAtTargetSet * xFootBindModel * Zenith_Maths::Vector4(0, 0, 0, 1);
+	const Zenith_Maths::Vector3 xFootWorldAtTargetSet(xFootW4);
+
+	// Target at ground+ankle directly below foot (world space).
+	const float fGroundY = xPlayerPosAtTargetSet.y - 1.05f;   // matches RenderTest capsule
+	const float fAnkleHeight = 0.05f;
+	const Zenith_Maths::Vector3 xTargetWorld(xFootWorldAtTargetSet.x, fGroundY + fAnkleHeight, xFootWorldAtTargetSet.z);
+
+	// === Step 2 — WORLD-SPACE TARGET PATH (current/buggy behavior) ===
+	// Solve uses world matrix from start of frame N+1 (after physics moved player).
+	{
+		Flux_SkeletonPose xPoseWorld = xPose;   // copy
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(Flux_IKSolver::CreateLegChain("LeftLeg",
+			"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"));
+
+		Flux_IKTarget xT;
+		xT.m_xPosition = xTargetWorld;
+		xT.m_fWeight = 1.0f;
+		xT.m_bEnabled = true;
+		xSolver.SetTarget("LeftLeg", xT);
+		xSolver.Solve(xPoseWorld, *pxSkel, xWorldAtSolve);   // ← uses post-physics matrix
+
+		// After solve, foot world = xWorldAtSolve * footModel. The drift between
+		// xWorldAtTargetSet and xWorldAtSolve translates into foot-world drift.
+		const Zenith_Maths::Vector4 xFootAfterW4 = xWorldAtSolve * xPoseWorld.GetModelSpaceMatrix(uFootIdx) * Zenith_Maths::Vector4(0, 0, 0, 1);
+		const Zenith_Maths::Vector3 xFootAfterWorld(xFootAfterW4);
+
+		const float fForwardDrag = xPlayerPosAtSolve.z - xFootAfterWorld.z;   // positive = foot behind player
+
+		Zenith_Log(LOG_CATEGORY_ANIMATION,
+			"[IKWorldLagTest] inter-frame move=%.4f, foot post-solve world Z=%.4f, expected=%.4f, drag=%.4f",
+			fInterFrameMove, xFootAfterWorld.z, xPlayerPosAtSolve.z, fForwardDrag);
+
+		// The world-space target path SHOULD show drag of ~v*dt (the inter-frame
+		// physics motion). This assertion documents the bug — it currently fails
+		// (drag present) but the model-space path below should fix it.
+		ZENITH_ASSERT_TRUE(fForwardDrag > fInterFrameMove * 0.5f,
+			"World-space-target path should produce visible drag (this assertion documents the bug)");
+	}
+
+	// === Step 3 — MODEL-SPACE TARGET PATH (fix) ===
+	// Compute target in model space at target-set time, then pass it through
+	// untouched at solve time. No inverse-transform needed → no drag.
+	{
+		Flux_SkeletonPose xPoseModel = xPose;   // copy
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(Flux_IKSolver::CreateLegChain("LeftLeg",
+			"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"));
+
+		// Convert world target to model space using the matrix at target-set time.
+		const Zenith_Maths::Matrix4 xInvWorld = glm::inverse(xWorldAtTargetSet);
+		const Zenith_Maths::Vector4 xTargetModel4 = xInvWorld * Zenith_Maths::Vector4(xTargetWorld, 1.0f);
+
+		Flux_IKTarget xT;
+		xT.m_xPosition = Zenith_Maths::Vector3(xTargetModel4);
+		xT.m_fWeight = 1.0f;
+		xT.m_bEnabled = true;
+		xT.m_bIsModelSpace = true;   // ← skip inverse-transform in Solve
+		xSolver.SetTarget("LeftLeg", xT);
+		xSolver.Solve(xPoseModel, *pxSkel, xWorldAtSolve);   // matrix doesn't matter for model-space target
+
+		// Foot model-space position after IK should match the model-space target.
+		// In world: xWorldAtSolve * footModel. The body has moved forward by v*dt,
+		// and the foot moves with it (relative position constant in model space).
+		const Zenith_Maths::Vector4 xFootAfterW4 = xWorldAtSolve * xPoseModel.GetModelSpaceMatrix(uFootIdx) * Zenith_Maths::Vector4(0, 0, 0, 1);
+		const Zenith_Maths::Vector3 xFootAfterWorld(xFootAfterW4);
+
+		// Expected foot world: xPlayerPosAtSolve + (model offset to foot bind+target).
+		// Since the target is at the bind position (foot at ground+ankle), the foot
+		// should follow the player. Specifically: xFootAfterWorld.z should track
+		// xPlayerPosAtSolve.z (no drag).
+		const float fForwardDrag = xPlayerPosAtSolve.z - xFootAfterWorld.z;
+
+		Zenith_Log(LOG_CATEGORY_ANIMATION,
+			"[IKModelSpaceTest] inter-frame move=%.4f, foot post-solve world Z=%.4f, drag=%.4f",
+			fInterFrameMove, xFootAfterWorld.z, fForwardDrag);
+
+		// With model-space target: NO drag. Foot stays under the body.
+		ZENITH_ASSERT_TRUE(std::abs(fForwardDrag) < 0.01f,
+			"Model-space-target path should produce NO drag — foot tracks body forward motion");
+	}
+
+	delete pxSkel;
+}
+
+// Sanity: when the world matrix is the SAME at target-set and solve time, the
+// model-space and world-space paths should produce identical results. This
+// pins the equivalence so the model-space code path doesn't silently diverge.
+ZENITH_TEST(Animation, IKModelSpaceTargetEqualsWorldSpaceTargetWhenNoLag) { Zenith_UnitTests::TestIKModelSpaceTargetEqualsWorldSpaceTargetWhenNoLag(); }
+void Zenith_UnitTests::TestIKModelSpaceTargetEqualsWorldSpaceTargetWhenNoLag()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	const uint32_t uFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+	const Zenith_Maths::Matrix4 xWorld = glm::translate(glm::mat4(1.0f),
+		Zenith_Maths::Vector3(5.0f, 10.0f, 5.0f)) *
+		glm::toMat4(glm::angleAxis(0.7f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+
+	// Same target in world space, two paths.
+	const Zenith_Maths::Vector3 xTargetWorld(4.95f, 9.10f, 5.10f);
+
+	auto SolveAndGetFootModel = [&](bool bModelSpace) -> Zenith_Maths::Vector3 {
+		Flux_SkeletonPose xPose;
+		InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+		Flux_IKSolver xSolver;
+		xSolver.AddChain(Flux_IKSolver::CreateLegChain("LeftLeg",
+			"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"));
+
+		Flux_IKTarget xT;
+		if (bModelSpace)
+		{
+			Zenith_Maths::Vector4 xModel4 = glm::inverse(xWorld) * Zenith_Maths::Vector4(xTargetWorld, 1.0f);
+			xT.m_xPosition = Zenith_Maths::Vector3(xModel4);
+			xT.m_bIsModelSpace = true;
+		}
+		else
+		{
+			xT.m_xPosition = xTargetWorld;
+			xT.m_bIsModelSpace = false;
+		}
+		xT.m_fWeight = 1.0f;
+		xT.m_bEnabled = true;
+		xSolver.SetTarget("LeftLeg", xT);
+		xSolver.Solve(xPose, *pxSkel, xWorld);
+
+		return Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+	};
+
+	const Zenith_Maths::Vector3 xFootWorld = SolveAndGetFootModel(false);
+	const Zenith_Maths::Vector3 xFootModel = SolveAndGetFootModel(true);
+
+	ZENITH_ASSERT_TRUE(Vec3Equals(xFootWorld, xFootModel, 0.001f),
+		"World-space and model-space target paths should agree when the world matrix is consistent");
+
+	delete pxSkel;
+}
+
+// Reproduces the "legs don't move while walking" bug.
+//
+// The foot-IK helper reads the foot's CURRENT model-space position from the
+// skeleton (which is the POST-IK output of the previous frame), then sets the
+// IK target to (foot_xz, ground_y). On the next frame the animation pose is
+// overwritten by the current animation keyframe (the leg has swung to a new
+// pose), but IK runs with the target XZ from the previous frame and pulls the
+// foot back to that XZ. The animation's leg-swing can never get through →
+// legs appear frozen.
+//
+// This test pins that pathology numerically by simulating multiple frames of
+// walk animation: it sets up an oscillating foot XZ pose each frame, runs IK
+// with weight 1, and asserts that the resulting foot XZ does NOT track the
+// animation. (The fix is in the production code path, where the player should
+// drop IK weight to 0 while walking — covered by the next test.)
+ZENITH_TEST(Animation, IKLocksFootXZAcrossFramesAtFullWeight) { Zenith_UnitTests::TestIKLocksFootXZAcrossFramesAtFullWeight(); }
+void Zenith_UnitTests::TestIKLocksFootXZAcrossFramesAtFullWeight()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	const uint32_t uUpperIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+	const uint32_t uFootIdx  = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(pxSkel->GetNumBones());
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(Flux_IKSolver::CreateLegChain("LeftLeg",
+		"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"));
+
+	const Zenith_Maths::Matrix4 xWorld = glm::translate(glm::mat4(1.0f),
+		Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f));
+
+	// Simulate a walk-anim that swings the upper leg forward and back. Per frame
+	// we mimic the actual animator pipeline: animation sets local poses, IK
+	// reads target from previous frame, IK modifies the leg, UpdateFootIK reads
+	// post-IK foot and sets next target.
+	const int kFrames = 30;
+	const float fSwingDeg = 30.0f;
+
+	float fLastFootZ = 0.0f;
+	bool bHasTarget = false;
+	Flux_IKTarget xTarget;
+	xTarget.m_fWeight = 1.0f;
+	xTarget.m_bEnabled = true;
+	xTarget.m_bIsModelSpace = true;
+
+	float fMaxFootZAcrossFrames = -1e9f;
+	float fMinFootZAcrossFrames = 1e9f;
+
+	for (int iFrame = 0; iFrame < kFrames; ++iFrame)
+	{
+		// Step 1: animation overwrites local rotations (swing UpperLeg).
+		xPose.InitFromBindPose(*pxSkel);
+		const float fT = (float)iFrame / (float)kFrames;
+		const float fSwing = sinf(fT * 6.28318f) * fSwingDeg;
+		xPose.GetLocalPose(uUpperIdx).m_xRotation = glm::angleAxis(glm::radians(fSwing),
+			Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+
+		// Step 2: IK solve with previous frame's target (if any).
+		if (bHasTarget)
+		{
+			xSolver.SetTarget("LeftLeg", xTarget);
+			xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+			xSolver.Solve(xPose, *pxSkel, xWorld);
+			xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+		}
+		else
+		{
+			xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+		}
+
+		// Step 3: simulated UpdateFootIK — read post-IK foot, build target.
+		const Zenith_Maths::Vector3 xFootModelPostIK(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+
+		fLastFootZ = xFootModelPostIK.z;
+		fMaxFootZAcrossFrames = std::max(fMaxFootZAcrossFrames, xFootModelPostIK.z);
+		fMinFootZAcrossFrames = std::min(fMinFootZAcrossFrames, xFootModelPostIK.z);
+
+		// Build target (already in model space — same path as production).
+		xTarget.m_xPosition = Zenith_Maths::Vector3(xFootModelPostIK.x, -1.0f, xFootModelPostIK.z);
+		bHasTarget = true;
+	}
+
+	// At weight 1, foot Z range should be small — the IK locks it after the
+	// first frame even though animation swings ±0.5m.
+	const float fFootZRange = fMaxFootZAcrossFrames - fMinFootZAcrossFrames;
+	Zenith_Log(LOG_CATEGORY_ANIMATION,
+		"[IKLockTest weight=1] foot Z range across %d frames = %.4f (anim swing produces ~1.0m without lock)",
+		kFrames, fFootZRange);
+
+	ZENITH_ASSERT_TRUE(fFootZRange < 0.2f,
+		"At full IK weight, foot Z should be locked across frames despite animation swing — this assertion documents the bug");
+
+	delete pxSkel;
+}
+
+// The fix path: when the player is moving, IK weight drops to 0. The IK solver
+// short-circuits (E3d) and animation drives the legs. Foot model XZ should
+// then track the animation's pose each frame.
+ZENITH_TEST(Animation, IKLetsAnimationDriveFootXZAtZeroWeight) { Zenith_UnitTests::TestIKLetsAnimationDriveFootXZAtZeroWeight(); }
+void Zenith_UnitTests::TestIKLetsAnimationDriveFootXZAtZeroWeight()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	const uint32_t uUpperIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+	const uint32_t uFootIdx  = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(pxSkel->GetNumBones());
+
+	Flux_IKSolver xSolver;
+	xSolver.AddChain(Flux_IKSolver::CreateLegChain("LeftLeg",
+		"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"));
+
+	const Zenith_Maths::Matrix4 xWorld = glm::translate(glm::mat4(1.0f),
+		Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f));
+
+	const int kFrames = 30;
+	const float fSwingDeg = 30.0f;
+
+	bool bHasTarget = false;
+	Flux_IKTarget xTarget;
+	xTarget.m_fWeight = 0.0f;   // ← zero weight — production behavior while moving
+	xTarget.m_bEnabled = true;
+	xTarget.m_bIsModelSpace = true;
+
+	float fMaxFootZAcrossFrames = -1e9f;
+	float fMinFootZAcrossFrames = 1e9f;
+
+	for (int iFrame = 0; iFrame < kFrames; ++iFrame)
+	{
+		xPose.InitFromBindPose(*pxSkel);
+		const float fT = (float)iFrame / (float)kFrames;
+		const float fSwing = sinf(fT * 6.28318f) * fSwingDeg;
+		xPose.GetLocalPose(uUpperIdx).m_xRotation = glm::angleAxis(glm::radians(fSwing),
+			Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+
+		if (bHasTarget)
+		{
+			xSolver.SetTarget("LeftLeg", xTarget);
+			xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+			xSolver.Solve(xPose, *pxSkel, xWorld);
+			xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+		}
+		else
+		{
+			xPose.ComputeModelSpaceMatricesFromSkeleton(*pxSkel);
+		}
+
+		const Zenith_Maths::Vector3 xFootModelPostIK(xPose.GetModelSpaceMatrix(uFootIdx)[3]);
+
+		fMaxFootZAcrossFrames = std::max(fMaxFootZAcrossFrames, xFootModelPostIK.z);
+		fMinFootZAcrossFrames = std::min(fMinFootZAcrossFrames, xFootModelPostIK.z);
+
+		xTarget.m_xPosition = Zenith_Maths::Vector3(xFootModelPostIK.x, -1.0f, xFootModelPostIK.z);
+		bHasTarget = true;
+	}
+
+	// At weight 0, animation drives the legs. Foot Z swings ±sin(30°)*1.0 ≈ ±0.5m,
+	// for a total range of ~1.0m. Anything > 0.5m proves anim is getting through.
+	const float fFootZRange = fMaxFootZAcrossFrames - fMinFootZAcrossFrames;
+	Zenith_Log(LOG_CATEGORY_ANIMATION,
+		"[IKLockTest weight=0] foot Z range across %d frames = %.4f (expected ~1.0m from anim swing)",
+		kFrames, fFootZRange);
+
+	ZENITH_ASSERT_TRUE(fFootZRange > 0.5f,
+		"At zero IK weight, foot Z should track animation swing across frames — animation drives legs");
+
+	delete pxSkel;
+}
+
+// Verifies the asymmetric-feet spawn scenario in RenderTest.cpp: the player
+// spawns at (256, 49.30, 256) on the main platform with the IKStep_Spawn cube
+// (30cm-tall raised block) positioned to be CLEARLY OUTSIDE the player's
+// capsule (capsule radius 0.10 → cube right edge at offset -0.105, 5mm clear).
+// The capsule rests on the main platform unmolested; only the left foot's
+// raycast hits the elevated step. The IK should produce visibly different
+// foot heights AND a clearly bent left knee (forward, +Z in model space).
+//
+// Geometry mirrored from Project_RegisterEditorAutomationSteps:
+//   - Main platform top Y = 48.25
+//   - IKStep_Spawn top Y = 48.55 (30cm above main), X-range [255.70, 255.895]
+//   - Player capsule (0.10, 0.95): radius 0.10 narrow enough that foot at
+//     model-X offset 0.15 is OUTSIDE the capsule. Cube right edge at
+//     X=255.895 vs capsule left edge at X=255.90 — 5mm gap.
+//   - Player at (256, 49.30, 256), capsule rests on main platform
+//   - Left foot at world (255.85, 48.30, 256) — over step
+//   - Right foot at world (256.15, 48.30, 256) — over main platform
+//   - IK targets: left (255.85, 48.60, 256), right (256.15, 48.30, 256)
+//   - Expected: left foot Y ≈ 48.60, right foot Y ≈ 48.30, diff ≈ 30cm
+//   - Knee should bend FORWARD (model +Z) by ~36cm, NOT sideways or backward
+ZENITH_TEST(Animation, IKAsymmetricFeetAtSpawn) { Zenith_UnitTests::TestIKAsymmetricFeetAtSpawn(); }
+void Zenith_UnitTests::TestIKAsymmetricFeetAtSpawn()
+{
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	const uint32_t uLeftFootIdx  = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftFoot"));
+	const uint32_t uRightFootIdx = static_cast<uint32_t>(pxSkel->GetBoneIndex("RightFoot"));
+
+	Flux_SkeletonPose xPose;
+	InitPoseAtBindForSkeleton(xPose, *pxSkel);
+
+	Flux_IKSolver xSolver;
+	{
+		Flux_IKChain xLeft = Flux_IKSolver::CreateLegChain("LeftLeg",
+			"LeftUpperLeg", "LeftLowerLeg", "LeftFoot");
+		Flux_IKChain xRight = Flux_IKSolver::CreateLegChain("RightLeg",
+			"RightUpperLeg", "RightLowerLeg", "RightFoot");
+		// Bump iterations + tighten tolerance — FABRIK with pole vector and hinge
+		// constraints converges slowly when the target is near the chain length
+		// limit (which both targets are here, at 0.983m and 1.0m respectively).
+		// The default 10 iterations leaves ~13mm error on the bent leg.
+		xLeft.m_uMaxIterations = 30;
+		xLeft.m_fTolerance = 0.0005f;
+		xRight.m_uMaxIterations = 30;
+		xRight.m_fTolerance = 0.0005f;
+		xSolver.AddChain(xLeft);
+		xSolver.AddChain(xRight);
+	}
+
+	// Player at (256, 49.30, 256) — capsule rests on main platform, IKStep_Spawn
+	// cube is clearly outside the capsule X-range so it doesn't push the player up.
+	const Zenith_Maths::Vector3 xPlayerPos(256.0f, 49.30f, 256.0f);
+	const Zenith_Maths::Matrix4 xWorld = glm::translate(glm::mat4(1.0f), xPlayerPos);
+
+	// Left foot at X=255.85 over IKStep_Spawn (top 48.55).
+	// Right foot at X=256.15 over main platform (top 48.25).
+	const float fStepTopY = 48.55f;
+	const float fMainTopY = 48.25f;
+	const float fAnkleHeight = 0.05f;
+
+	const Zenith_Maths::Vector3 xLeftTargetWorld(255.85f, fStepTopY + fAnkleHeight, 256.0f);
+	const Zenith_Maths::Vector3 xRightTargetWorld(256.15f, fMainTopY + fAnkleHeight, 256.0f);
+
+	// Convert to model space at the same world matrix UpdateFootIK would use,
+	// then set targets via the model-space path (matches production behavior).
+	const Zenith_Maths::Matrix4 xInvWorld = glm::inverse(xWorld);
+	const Zenith_Maths::Vector4 xLeftTargetModel4  = xInvWorld * Zenith_Maths::Vector4(xLeftTargetWorld,  1.0f);
+	const Zenith_Maths::Vector4 xRightTargetModel4 = xInvWorld * Zenith_Maths::Vector4(xRightTargetWorld, 1.0f);
+
+	Flux_IKTarget xTL;
+	xTL.m_xPosition = Zenith_Maths::Vector3(xLeftTargetModel4);
+	xTL.m_fWeight = 1.0f;
+	xTL.m_bEnabled = true;
+	xTL.m_bIsModelSpace = true;
+	xSolver.SetTarget("LeftLeg", xTL);
+
+	Flux_IKTarget xTR;
+	xTR.m_xPosition = Zenith_Maths::Vector3(xRightTargetModel4);
+	xTR.m_fWeight = 1.0f;
+	xTR.m_bEnabled = true;
+	xTR.m_bIsModelSpace = true;
+	xSolver.SetTarget("RightLeg", xTR);
+
+	xSolver.Solve(xPose, *pxSkel, xWorld);
+
+	const uint32_t uLeftKneeIdx  = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftLowerLeg"));
+	const uint32_t uLeftHipIdx   = static_cast<uint32_t>(pxSkel->GetBoneIndex("LeftUpperLeg"));
+
+	const Zenith_Maths::Vector4 xLeftFootW4  = xWorld * xPose.GetModelSpaceMatrix(uLeftFootIdx)  * Zenith_Maths::Vector4(0, 0, 0, 1);
+	const Zenith_Maths::Vector4 xRightFootW4 = xWorld * xPose.GetModelSpaceMatrix(uRightFootIdx) * Zenith_Maths::Vector4(0, 0, 0, 1);
+	const Zenith_Maths::Vector3 xLeftFootWorld(xLeftFootW4);
+	const Zenith_Maths::Vector3 xRightFootWorld(xRightFootW4);
+
+	const Zenith_Maths::Vector3 xLeftFootModel (xPose.GetModelSpaceMatrix(uLeftFootIdx)[3]);
+	const Zenith_Maths::Vector3 xLeftKneeModel (xPose.GetModelSpaceMatrix(uLeftKneeIdx)[3]);
+	const Zenith_Maths::Vector3 xLeftHipModel  (xPose.GetModelSpaceMatrix(uLeftHipIdx)[3]);
+
+	const float fHeightDiff = xLeftFootWorld.y - xRightFootWorld.y;
+
+	Zenith_Log(LOG_CATEGORY_ANIMATION,
+		"[IKSpawnAsymmetryTest] left foot Y=%.4f right foot Y=%.4f diff=%.4f",
+		xLeftFootWorld.y, xRightFootWorld.y, fHeightDiff);
+	Zenith_Log(LOG_CATEGORY_ANIMATION,
+		"[IKSpawnAsymmetryTest] L hip model=(%.3f,%.3f,%.3f) knee model=(%.3f,%.3f,%.3f) foot model=(%.3f,%.3f,%.3f)",
+		xLeftHipModel.x, xLeftHipModel.y, xLeftHipModel.z,
+		xLeftKneeModel.x, xLeftKneeModel.y, xLeftKneeModel.z,
+		xLeftFootModel.x, xLeftFootModel.y, xLeftFootModel.z);
+
+	// Left foot should be ~30cm above right foot. Visible asymmetry threshold: ≥10cm.
+	ZENITH_ASSERT_TRUE(fHeightDiff > 0.10f,
+		"At spawn, left foot (on step cube) should be visibly higher than right foot (on main platform)");
+
+	// Sanity: left foot should be near the step + ankle, right foot near main + ankle.
+	ZENITH_ASSERT_TRUE(std::abs(xLeftFootWorld.y - (fStepTopY + fAnkleHeight)) < 0.05f,
+		"Left foot should land near the step top + ankle height");
+	ZENITH_ASSERT_TRUE(std::abs(xRightFootWorld.y - (fMainTopY + fAnkleHeight)) < 0.05f,
+		"Right foot should land near the main platform top + ankle height");
+
+	// Knee bend assertion: the left leg lifts the foot 30cm, so the chain folds
+	// from 1m straight to 0.7m hip-to-foot distance. The knee must protrude
+	// FORWARD (model +Z) by ~36cm — not sideways, not backward, not zero.
+	// This is what makes the leg visually look like a natural human knee bend
+	// rather than a stiff straight leg.
+	const float fExpectedKneeForward = 0.36f;     // sqrt(0.5² - 0.35²) ≈ 0.357
+	ZENITH_ASSERT_TRUE(xLeftKneeModel.z > 0.20f,
+		"Left knee should bend FORWARD (+Z in model space) by at least 20cm — anything less means the IK isn't producing a natural-looking bend");
+	ZENITH_ASSERT_TRUE(std::abs(xLeftKneeModel.z - fExpectedKneeForward) < 0.10f,
+		"Left knee Z should be close to the geometric expectation (~36cm forward)");
+	ZENITH_ASSERT_TRUE(std::abs(xLeftKneeModel.x - (-0.15f)) < 0.05f,
+		"Left knee should stay aligned with the leg's X plane (no sideways bend)");
+
+	delete pxSkel;
+}
+
+//------------------------------------------------------------------------------
 // Stick Figure Animation Tests
 //------------------------------------------------------------------------------
 
@@ -4242,6 +5906,57 @@ void Zenith_UnitTests::TestStickFigureMeshCreation(){
 	// Verify bounds
 	ZENITH_ASSERT_LT(pxMesh->GetBoundsMin().y, -0.9f, "Bounds min Y should be below -0.9");
 	ZENITH_ASSERT_GT(pxMesh->GetBoundsMax().y, 1.3f, "Bounds max Y should be above 1.3");
+
+	delete pxMesh;
+	delete pxSkel;
+}
+
+ZENITH_TEST(Core, StickFigureMeshJointAlignment) { Zenith_UnitTests::TestStickFigureMeshJointAlignment(); }
+
+void Zenith_UnitTests::TestStickFigureMeshJointAlignment()
+{
+	// Verify each leg/arm bone's cube is centered at the midpoint between the
+	// bone pivot and its child's pivot. With this invariant the cube's "top"
+	// stays planted at the joint when the bone rotates around its pivot, so
+	// adjacent cubes (parent and child) stay visually connected through rotation.
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
+
+	struct ChainCheck { uint32_t uBone; uint32_t uChild; const char* szName; };
+	const ChainCheck axChecks[] = {
+		{ STICK_BONE_LEFT_UPPER_LEG,  STICK_BONE_LEFT_LOWER_LEG,  "LeftUpperLeg"  },
+		{ STICK_BONE_LEFT_LOWER_LEG,  STICK_BONE_LEFT_FOOT,       "LeftLowerLeg"  },
+		{ STICK_BONE_RIGHT_UPPER_LEG, STICK_BONE_RIGHT_LOWER_LEG, "RightUpperLeg" },
+		{ STICK_BONE_RIGHT_LOWER_LEG, STICK_BONE_RIGHT_FOOT,      "RightLowerLeg" },
+		{ STICK_BONE_LEFT_UPPER_ARM,  STICK_BONE_LEFT_LOWER_ARM,  "LeftUpperArm"  },
+		{ STICK_BONE_LEFT_LOWER_ARM,  STICK_BONE_LEFT_HAND,       "LeftLowerArm"  },
+		{ STICK_BONE_RIGHT_UPPER_ARM, STICK_BONE_RIGHT_LOWER_ARM, "RightUpperArm" },
+		{ STICK_BONE_RIGHT_LOWER_ARM, STICK_BONE_RIGHT_HAND,      "RightLowerArm" },
+	};
+
+	for (const ChainCheck& xChk : axChecks)
+	{
+		const float fBonePivotY  = pxSkel->GetBone(xChk.uBone).m_xBindPoseModel[3].y;
+		const float fChildPivotY = pxSkel->GetBone(xChk.uChild).m_xBindPoseModel[3].y;
+
+		float fMinY = FLT_MAX;
+		float fMaxY = -FLT_MAX;
+		for (uint32_t v = xChk.uBone * 8; v < (xChk.uBone + 1) * 8; ++v)
+		{
+			const Zenith_Maths::Vector3& xPos = pxMesh->m_xPositions.Get(v);
+			fMinY = std::min(fMinY, xPos.y);
+			fMaxY = std::max(fMaxY, xPos.y);
+		}
+
+		// Cube should be centered on the midpoint between bone and child pivot.
+		// This is the invariant that makes joints stay connected through rotation:
+		// when a bone rotates around its pivot, a cube centered at the midpoint
+		// keeps its top face anchored at the joint.
+		const float fExpectedCenter = 0.5f * (fBonePivotY + fChildPivotY);
+		const float fActualCenter = 0.5f * (fMaxY + fMinY);
+		ZENITH_ASSERT_TRUE(FloatEquals(fActualCenter, fExpectedCenter, 0.001f),
+			"Cube center Y should be at midpoint between bone and child pivot");
+	}
 
 	delete pxMesh;
 	delete pxSkel;

@@ -217,7 +217,7 @@ Uses `CreateEmptyScene("Arena")` + `SetActiveScene()` to start, `UnloadScene()` 
 Add `Zenith_AnimatorComponent` to the entity (separate from `Zenith_ModelComponent`). The AnimatorComponent auto-discovers the skeleton from ModelComponent on the same entity during `OnStart()`. Create states and transitions via `GetStateMachine()`, use Any-State transitions for global reactions (Hit, Death), and query state with `GetCurrentAnimatorStateInfo()`.
 
 ### IK Application
-Create IK chains via `Flux_IKSolver::CreateLegChain()`, set targets from raycasts each frame, and call `Solve()` after animation evaluation.
+Create IK chains via `Flux_IKSolver::CreateLegChain()` and add them to `xAnimator.GetController().GetIKSolver()`. Set targets each frame from raycasts via `Zenith_AnimatorComponent::SetIKTarget()` (or `SetIKTargetModelSpace()` for one-frame-latency-immune targets). The controller invokes `Flux_IKSolver::Solve()` automatically inside `ApplyOutputPoseToSkeleton` — do not call it directly when using the animator pipeline, or IK will run twice per frame.
 
 ### Event-Based Damage
 Define custom event structs (e.g., `Combat_DamageEvent`), subscribe via `Zenith_EventDispatcher::Get().SubscribeLambda<>()`, and dispatch events on hit.

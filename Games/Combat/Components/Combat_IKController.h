@@ -303,7 +303,10 @@ private:
  * ApplyIKToTransform - Apply IK offsets to a procedural character
  *
  * For capsule-based characters, this applies the body vertical offset.
- * For skeletal characters, you would use Flux_IKSolver::Solve() instead.
+ * For skeletal characters, register a chain via Flux_IKSolver::CreateLegChain()
+ * on the animator's IK solver and set targets via Zenith_AnimatorComponent::SetIKTarget().
+ * The controller solves automatically inside ApplyOutputPoseToSkeleton — do not
+ * call Flux_IKSolver::Solve() directly when using the animator pipeline.
  */
 inline void ApplyIKToTransform(
 	Zenith_TransformComponent& xTransform,

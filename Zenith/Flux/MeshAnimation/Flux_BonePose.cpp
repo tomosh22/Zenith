@@ -336,6 +336,32 @@ void Flux_SkeletonPose::ComputeModelSpaceMatricesFlat(const Flux_MeshGeometry&)
 	}
 }
 
+void Flux_SkeletonPose::ComputeModelSpaceMatricesFromSkeleton(const Zenith_SkeletonAsset& xSkeleton)
+{
+	const uint32_t uCount = std::min({m_uNumBones, xSkeleton.GetNumBones(), (uint32_t)FLUX_MAX_BONES});
+	if (uCount == 0)
+		return;
+
+	for (uint32_t i = 0; i < uCount; ++i)
+	{
+		const int32_t iParent = xSkeleton.GetBone(i).m_iParentIndex;
+		// Out-of-order parents indicate a malformed skeleton asset (a child
+		// listed before its parent). Assert in debug to surface bad data, but
+		// fall through to the root-handling branch in release so we don't
+		// crash on a corrupted asset.
+		Zenith_Assert(iParent == Zenith_SkeletonAsset::INVALID_BONE_INDEX || (uint32_t)iParent < i,
+			"Skeleton bone %u lists parent %d which violates parent-precedes-child ordering", i, iParent);
+		if (iParent == Zenith_SkeletonAsset::INVALID_BONE_INDEX || (uint32_t)iParent >= i)
+		{
+			m_axModelSpaceMatrices[i] = m_axLocalPoses[i].ToMatrix();
+		}
+		else
+		{
+			m_axModelSpaceMatrices[i] = m_axModelSpaceMatrices[iParent] * m_axLocalPoses[i].ToMatrix();
+		}
+	}
+}
+
 void Flux_SkeletonPose::ComputeSkinningMatrices(const Flux_MeshGeometry& xGeometry)
 {
 	// skinning = modelSpace * inverseBindPose

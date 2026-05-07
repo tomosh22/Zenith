@@ -69,10 +69,10 @@ static const Zenith_Maths::Vector3 s_axBoneScales[STICK_BONE_COUNT] = {
 	{0.05f, 0.10f, 0.05f},  // 2: Neck
 	{0.12f, 0.12f, 0.10f},  // 3: Head
 	{0.05f, 0.20f, 0.05f},  // 4: LeftUpperArm
-	{0.04f, 0.18f, 0.04f},  // 5: LeftLowerArm
+	{0.04f, 0.15f, 0.04f},  // 5: LeftLowerArm (Y matches bone-to-Hand 0.30 to avoid hand overlap)
 	{0.04f, 0.06f, 0.02f},  // 6: LeftHand
 	{0.05f, 0.20f, 0.05f},  // 7: RightUpperArm
-	{0.04f, 0.18f, 0.04f},  // 8: RightLowerArm
+	{0.04f, 0.15f, 0.04f},  // 8: RightLowerArm
 	{0.04f, 0.06f, 0.02f},  // 9: RightHand
 	{0.07f, 0.25f, 0.07f},  // 10: LeftUpperLeg
 	{0.05f, 0.25f, 0.05f},  // 11: LeftLowerLeg
@@ -80,6 +80,32 @@ static const Zenith_Maths::Vector3 s_axBoneScales[STICK_BONE_COUNT] = {
 	{0.07f, 0.25f, 0.07f},  // 13: RightUpperLeg
 	{0.05f, 0.25f, 0.05f},  // 14: RightLowerLeg
 	{0.05f, 0.03f, 0.10f},  // 15: RightFoot
+};
+
+// Per-bone cube center offsets (bone-local). For limb bones, shift the cube
+// along the bone's local Y so the cube spans from the bone's pivot to its
+// child's pivot — when the bone rotates around its pivot, the top face stays
+// planted at the joint and the cube stays connected to its parent's cube.
+// Junction bones (Root, Spine, Neck, Head) are NOT shifted: their cubes are
+// sized as volumes (torso, head) rather than single segments, and shifting
+// them would push the cube past adjacent body parts (e.g. Spine into Head).
+static const Zenith_Maths::Vector3 s_axBoneCenterOffsets[STICK_BONE_COUNT] = {
+	{ 0.0f,  0.0f,  0.0f},  // 0: Root (junction)
+	{ 0.0f,  0.0f,  0.0f},  // 1: Spine (torso volume — shift would intersect head)
+	{ 0.0f,  0.0f,  0.0f},  // 2: Neck (junction)
+	{ 0.0f,  0.0f,  0.0f},  // 3: Head (terminal)
+	{ 0.0f, -0.20f, 0.0f},  // 4: LeftUpperArm — child LowerArm at -Y 0.4
+	{ 0.0f, -0.15f, 0.0f},  // 5: LeftLowerArm — child Hand at -Y 0.3
+	{ 0.0f,  0.0f,  0.0f},  // 6: LeftHand (terminal)
+	{ 0.0f, -0.20f, 0.0f},  // 7: RightUpperArm
+	{ 0.0f, -0.15f, 0.0f},  // 8: RightLowerArm
+	{ 0.0f,  0.0f,  0.0f},  // 9: RightHand (terminal)
+	{ 0.0f, -0.25f, 0.0f},  // 10: LeftUpperLeg — child LowerLeg at -Y 0.5
+	{ 0.0f, -0.25f, 0.0f},  // 11: LeftLowerLeg — child Foot at -Y 0.5
+	{ 0.0f,  0.0f,  0.0f},  // 12: LeftFoot (terminal)
+	{ 0.0f, -0.25f, 0.0f},  // 13: RightUpperLeg
+	{ 0.0f, -0.25f, 0.0f},  // 14: RightLowerLeg
+	{ 0.0f,  0.0f,  0.0f},  // 15: RightFoot (terminal)
 };
 
 //------------------------------------------------------------------------------
@@ -175,6 +201,12 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 		// Get per-bone scale
 		Zenith_Maths::Vector3 xScale = s_axBoneScales[uBone];
 
+		// Bone-local cube center shift so the top face sits on the bone pivot
+		// and the bottom face sits on the child's pivot — joints stay connected
+		// when bones rotate. Bind pose has identity rotations, so bone-local axes
+		// equal world axes here and we can add the offset directly.
+		Zenith_Maths::Vector3 xCenterOffset = s_axBoneCenterOffsets[uBone];
+
 		uint32_t uBaseVertex = pxMesh->GetNumVerts();
 
 		// Add 8 cube vertices with per-bone scaling
@@ -186,7 +218,7 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 			xScaledOffset.y *= xScale.y * 10.0f;
 			xScaledOffset.z *= xScale.z * 10.0f;
 
-			Zenith_Maths::Vector3 xPos = xBoneWorldPos + xScaledOffset;
+			Zenith_Maths::Vector3 xPos = xBoneWorldPos + xCenterOffset + xScaledOffset;
 
 			// Calculate proper face normal based on vertex position
 			Zenith_Maths::Vector3 xNormal = glm::normalize(s_axCubeOffsets[i]);

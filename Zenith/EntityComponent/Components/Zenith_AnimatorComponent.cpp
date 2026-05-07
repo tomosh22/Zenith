@@ -248,6 +248,11 @@ void Zenith_AnimatorComponent::SetIKTarget(const std::string& strChainName, cons
 	m_xController.SetIKTarget(strChainName, xPos, fWeight);
 }
 
+void Zenith_AnimatorComponent::SetIKTargetModelSpace(const std::string& strChainName, const Zenith_Maths::Vector3& xModelSpacePos, float fWeight)
+{
+	m_xController.SetIKTargetModelSpace(strChainName, xModelSpacePos, fWeight);
+}
+
 void Zenith_AnimatorComponent::ClearIKTarget(const std::string& strChainName)
 {
 	m_xController.ClearIKTarget(strChainName);

@@ -1,6 +1,6 @@
 #include "Zenith.h"
 #include "Flux_InverseKinematics.h"
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Core/Zenith_Core.h"
 
 //=============================================================================
@@ -38,17 +38,17 @@ void Flux_JointConstraint::ReadFromDataStream(Zenith_DataStream& xStream)
 //=============================================================================
 // Flux_IKChain
 //=============================================================================
-void Flux_IKChain::ResolveBoneIndices(const Flux_MeshGeometry& xGeometry)
+void Flux_IKChain::ResolveBoneIndices(const Zenith_SkeletonAsset& xSkeleton)
 {
 	m_xBoneIndices.clear();
 	m_xBoneIndices.reserve(m_xBoneNames.size());
 
 	for (const std::string& strName : m_xBoneNames)
 	{
-		auto it = xGeometry.m_xBoneNameToIdAndOffset.find(strName);
-		if (it != xGeometry.m_xBoneNameToIdAndOffset.end())
+		const int32_t iIdx = xSkeleton.GetBoneIndex(strName);
+		if (iIdx != Zenith_SkeletonAsset::INVALID_BONE_INDEX)
 		{
-			m_xBoneIndices.push_back(it->second.first);
+			m_xBoneIndices.push_back(static_cast<uint32_t>(iIdx));
 		}
 		else
 		{
@@ -123,6 +123,18 @@ void Flux_IKChain::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_xPoleVector.x;
 	xStream >> m_xPoleVector.y;
 	xStream >> m_xPoleVector.z;
+	// Migration path: pre-2026-05 saves stored m_xPoleVector as a world-space
+	// position. The new convention is a unit direction. If we read a vector that
+	// isn't approximately unit length, normalize it — for the common case of
+	// (0, 0, ±1) this is a no-op, and for stale position values it produces a
+	// best-effort direction rather than letting the solver consume garbage.
+	{
+		const float fLenSq = glm::dot(m_xPoleVector, m_xPoleVector);
+		if (fLenSq > 0.0001f && (fLenSq < 0.81f || fLenSq > 1.21f))
+		{
+			m_xPoleVector = m_xPoleVector / std::sqrt(fLenSq);
+		}
+	}
 	xStream >> m_strPoleTargetBone;
 
 	uint32_t uNumBones = 0;
@@ -233,7 +245,7 @@ Zenith_Maths::Vector3 Flux_IKSolver::ConstrainBoneLength(const Zenith_Maths::Vec
 }
 
 void Flux_IKSolver::Solve(Flux_SkeletonPose& xPose,
-	const Flux_MeshGeometry& xGeometry,
+	const Zenith_SkeletonAsset& xSkeleton,
 	const Zenith_Maths::Matrix4& xWorldMatrix)
 {
 	for (auto& xPair : m_xChains)
@@ -246,29 +258,38 @@ void Flux_IKSolver::Solve(Flux_SkeletonPose& xPose,
 		if (itTarget == m_xTargets.end() || !itTarget->second.m_bEnabled)
 			continue;
 
+		// E3d: skip solver work entirely when target weight is non-positive — the
+		// weighted slerp inside ConvertPositionsToRotations would produce identity
+		// anyway, so the FABRIK iterations are pure waste.
+		if (itTarget->second.m_fWeight <= 0.0f)
+			continue;
+
 		// Resolve bone indices if needed
 		if (xChain.m_xBoneIndices.empty())
-			xChain.ResolveBoneIndices(xGeometry);
+			xChain.ResolveBoneIndices(xSkeleton);
 
 		// Compute bone lengths if needed
 		if (xChain.m_xBoneLengths.empty())
 			xChain.ComputeBoneLengths(xPose);
 
-		// Transform target to model space
+		// Transform target to model space (unless caller already did the conversion)
 		Flux_IKTarget xModelSpaceTarget = itTarget->second;
-		Zenith_Maths::Matrix4 xInvWorld = glm::inverse(xWorldMatrix);
-		Zenith_Maths::Vector4 xTargetWorld = Zenith_Maths::Vector4(xModelSpaceTarget.m_xPosition, 1.0f);
-		xModelSpaceTarget.m_xPosition = Zenith_Maths::Vector3(xInvWorld * xTargetWorld);
+		if (!xModelSpaceTarget.m_bIsModelSpace)
+		{
+			Zenith_Maths::Matrix4 xInvWorld = glm::inverse(xWorldMatrix);
+			Zenith_Maths::Vector4 xTargetWorld = Zenith_Maths::Vector4(xModelSpaceTarget.m_xPosition, 1.0f);
+			xModelSpaceTarget.m_xPosition = Zenith_Maths::Vector3(xInvWorld * xTargetWorld);
+		}
 
 		// Solve the chain
-		SolveChain(xPose, xChain, xModelSpaceTarget, xGeometry);
+		SolveChain(xPose, xChain, xModelSpaceTarget, xSkeleton);
 	}
 }
 
 void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 	const Flux_IKChain& xChain,
 	const Flux_IKTarget& xTarget,
-	const Flux_MeshGeometry& xGeometry)
+	const Zenith_SkeletonAsset& xSkeleton)
 {
 	if (xChain.m_xBoneIndices.size() < 2 || xChain.m_xBoneLengths.empty())
 		return;
@@ -305,6 +326,50 @@ void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 	}
 	else
 	{
+		// Pre-FABRIK collinearity bias. When the initial chain is collinear with
+		// the target direction (foot hanging straight down, target straight below
+		// player — exactly the foot-IK case), FABRIK has no preferred bend
+		// direction and oscillates between collapsed states. The pole-vector
+		// constraint can't recover because once the chain collapses (root==end)
+		// it computes a zero main axis and early-outs. Fix: nudge the middle
+		// joints slightly toward a chosen perpendicular direction BEFORE iteration
+		// starts so FABRIK has a non-degenerate frame to converge from.
+		if (uNumBones >= 3)
+		{
+			const Zenith_Maths::Vector3 xChainAxis = SafeNormalize(xBonePositions[uNumBones - 1] - xRootPos);
+			const Zenith_Maths::Vector3 xTargetAxis = SafeNormalize(xTargetPos - xRootPos);
+			// Detect collinearity of initial chain with target axis. dot ~ ±1 means parallel.
+			const float fCollinearity = std::abs(glm::dot(xChainAxis, xTargetAxis));
+			if (fCollinearity > 0.999f && glm::length(xChainAxis) > 0.0001f)
+			{
+				// Choose bias direction. Use the pole vector AS A DIRECTION here
+				// (not "pole-relative-to-root" the way ApplyPoleVectorConstraint
+				// treats it). For pre-bias purposes we just need any side to bend
+				// toward; using the pole as a direction avoids introducing a stray
+				// X component that would conflict with a knee hinge constraint.
+				Zenith_Maths::Vector3 xBiasDir(0.0f);
+				if (xChain.m_bUsePoleVector)
+				{
+					Zenith_Maths::Vector3 xPole = xChain.m_xPoleVector;
+					xPole -= xChainAxis * glm::dot(xPole, xChainAxis);
+					xBiasDir = SafeNormalize(xPole);
+				}
+				if (glm::length(xBiasDir) < 0.0001f)
+				{
+					xBiasDir = FindPerpendicularAxis(xChainAxis);
+				}
+				// Nudge middle joints by a small amount (5% of bone length).
+				// FABRIK's length-constraint passes will repair bone lengths but
+				// the non-collinear configuration will persist as a hint to FABRIK
+				// (and the pole-vector constraint) about which side to bend toward.
+				for (size_t i = 1; i < uNumBones - 1; ++i)
+				{
+					const float fPerturb = 0.05f * xChain.m_xBoneLengths[i - 1];
+					xBonePositions[i] += xBiasDir * fPerturb;
+				}
+			}
+		}
+
 		// FABRIK iterations
 		for (uint32_t iter = 0; iter < xChain.m_uMaxIterations; ++iter)
 		{
@@ -334,7 +399,7 @@ void Flux_IKSolver::SolveChain(Flux_SkeletonPose& xPose,
 	}
 
 	// Convert positions back to bone rotations
-	ConvertPositionsToRotations(xPose, xChain, xBonePositions, xGeometry, xTarget.m_fWeight);
+	ConvertPositionsToRotations(xPose, xChain, xBonePositions, xSkeleton, xTarget.m_fWeight);
 }
 
 void Flux_IKSolver::ForwardReaching(std::vector<Zenith_Maths::Vector3>& xPositions,
@@ -460,13 +525,19 @@ void Flux_IKSolver::ApplyConstraints(std::vector<Zenith_Maths::Vector3>& xPositi
 
 void Flux_IKSolver::ApplyPoleVectorConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
 	const Flux_IKChain& xChain,
-	const Zenith_Maths::Vector3& xPolePosition)
+	const Zenith_Maths::Vector3& xPoleVector)
 {
 	if (xPositions.size() < 3)
 		return;
 
-	// For a 3-bone chain (like arm or leg), rotate the middle joint
-	// to point toward the pole vector
+	// For a 3-bone chain (like arm or leg), rotate the middle joint to point
+	// toward the pole DIRECTION. Treating m_xPoleVector as a direction (not a
+	// world-space position) avoids spurious lateral pulls on the middle joint
+	// when the chain root is offset from the model origin (the leg case: upper-leg
+	// is at -0.15m X, pole at (0,0,1) — if pole were treated as a position, the
+	// constraint would pull the knee toward +X by 0.15m, which conflicts with a
+	// hinge constraint on the same axis). CreateLegChain comments confirm this:
+	// the pole is documented as "Forward" — a direction, not a coordinate.
 	const Zenith_Maths::Vector3& xRoot = xPositions[0];
 	const Zenith_Maths::Vector3& xEnd = xPositions[xPositions.size() - 1];
 
@@ -475,8 +546,8 @@ void Flux_IKSolver::ApplyPoleVectorConstraint(std::vector<Zenith_Maths::Vector3>
 	if (glm::length(xMainAxis) < 0.0001f)
 		return;
 
-	// Project pole onto plane perpendicular to main axis
-	Zenith_Maths::Vector3 xToPole = xPolePosition - xRoot;
+	// Project pole DIRECTION onto plane perpendicular to main axis.
+	Zenith_Maths::Vector3 xToPole = xPoleVector;
 	xToPole = xToPole - xMainAxis * glm::dot(xToPole, xMainAxis);
 
 	xToPole = SafeNormalize(xToPole);
@@ -548,14 +619,23 @@ Zenith_Maths::Quat RotationBetweenVectors(const Zenith_Maths::Vector3& xFrom,
 void Flux_IKSolver::ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 	const Flux_IKChain& xChain,
 	const std::vector<Zenith_Maths::Vector3>& xPositions,
-	const Flux_MeshGeometry&,
+	const Zenith_SkeletonAsset& xSkeleton,
 	float fWeight)
 {
 	if (xChain.m_xBoneIndices.size() < 2)
 		return;
 
-	// For each bone (except the last), compute the rotation needed
-	// to point toward the next bone in the chain
+	const Zenith_Maths::Quat xIdentity(1.0f, 0.0f, 0.0f, 0.0f);
+
+	// For each bone (except the last), compute the rotation needed to point
+	// toward the next bone in the chain. Two correctness requirements:
+	//   1. The model-space rotation delta must be converted to parent-local
+	//      space before being applied to m_xRotation, otherwise non-root bones
+	//      with rotated parents end up rotating in the wrong frame.
+	//   2. After updating bone i's local rotation, model-space matrices for
+	//      bone i and its descendants are stale. Recompute the whole pose
+	//      between iterations so the next bone's "current" direction reads
+	//      from the just-updated hierarchy.
 	for (size_t i = 0; i < xChain.m_xBoneIndices.size() - 1; ++i)
 	{
 		uint32_t uBoneIndex = xChain.m_xBoneIndices[i];
@@ -564,7 +644,9 @@ void Flux_IKSolver::ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 		if (uBoneIndex == ~0u || uChildIndex == ~0u)
 			continue;
 
-		// Current direction to child in model space
+		// Current model-space child direction. Fresh on first iteration thanks
+		// to the pre-solve recompute in Flux_AnimationController; fresh on later
+		// iterations thanks to the per-bone recompute at the end of this loop.
 		Zenith_Maths::Vector3 xCurrentChildPos = Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(uChildIndex)[3]);
 		Zenith_Maths::Vector3 xCurrentPos = Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(uBoneIndex)[3]);
 		Zenith_Maths::Vector3 xCurrentDir = SafeNormalize(xCurrentChildPos - xCurrentPos);
@@ -572,23 +654,42 @@ void Flux_IKSolver::ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 		if (glm::length(xCurrentDir) < 0.0001f)
 			continue;
 
-		// Target direction
+		// Target direction from FABRIK position buffer
 		Zenith_Maths::Vector3 xTargetDir = SafeNormalize(xPositions[i + 1] - xPositions[i]);
 		if (glm::length(xTargetDir) < 0.0001f)
 			continue;
 
-		// Compute rotation from current to target
-		Zenith_Maths::Quat xDeltaRotation = RotationBetweenVectors(xCurrentDir, xTargetDir);
+		// Model-space delta rotation
+		Zenith_Maths::Quat xDeltaModel = RotationBetweenVectors(xCurrentDir, xTargetDir);
 
-		// Apply with weight
+		// Resolve the bone's parent in the skeleton hierarchy. For root chain bones
+		// (or bones whose parent is outside the resolved skeleton) the parent rotation
+		// is identity, so model-space and parent-local-space deltas coincide.
+		Zenith_Maths::Quat xParentModelRotation = xIdentity;
+		if (uBoneIndex < xSkeleton.GetNumBones())
+		{
+			const int32_t iParent = xSkeleton.GetBone(uBoneIndex).m_iParentIndex;
+			if (iParent != Zenith_SkeletonAsset::INVALID_BONE_INDEX
+				&& static_cast<uint32_t>(iParent) < xPose.GetNumBones())
+			{
+				xParentModelRotation = glm::quat_cast(
+					Zenith_Maths::Matrix3(xPose.GetModelSpaceMatrix(static_cast<uint32_t>(iParent))));
+			}
+		}
+
+		// Convert the model-space delta into parent-local space via conjugation.
+		const Zenith_Maths::Quat xParentInv = glm::inverse(xParentModelRotation);
+		Zenith_Maths::Quat xDeltaLocal = xParentInv * xDeltaModel * xParentModelRotation;
+
+		// Apply weighted delta to local rotation
 		Flux_BoneLocalPose& xLocalPose = xPose.GetLocalPose(uBoneIndex);
-		Zenith_Maths::Quat xWeightedDelta = glm::slerp(
-			Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f),
-			xDeltaRotation,
-			fWeight
-		);
-
+		Zenith_Maths::Quat xWeightedDelta = glm::slerp(xIdentity, xDeltaLocal, fWeight);
 		xLocalPose.m_xRotation = xWeightedDelta * xLocalPose.m_xRotation;
+
+		// Refresh the whole pose's model-space matrices so the next iteration's
+		// model-space reads (and the children's positions) reflect the just-applied
+		// rotation. Cheap on small skeletons; trivial relative to the FABRIK iters.
+		xPose.ComputeModelSpaceMatricesFromSkeleton(xSkeleton);
 	}
 }
 
@@ -732,8 +833,10 @@ bool SolveTwoBoneIK(const Zenith_Maths::Vector3& xRootPos,
 	// Initial upper bone direction
 	Zenith_Maths::Vector3 xUpperDir = glm::normalize(xMidPos - xRootPos);
 
-	// Compute plane normal from pole vector
-	Zenith_Maths::Vector3 xToPole = xPoleVector - xRootPos;
+	// Project pole DIRECTION onto plane perpendicular to root-to-target axis.
+	// xPoleVector is treated as a direction (matching ApplyPoleVectorConstraint
+	// and the CreateLegChain/CreateArmChain factories).
+	Zenith_Maths::Vector3 xToPole = xPoleVector;
 	xToPole = xToPole - xToTargetDir * glm::dot(xToPole, xToTargetDir);
 	xToPole = Flux_IKSolver::SafeNormalize(xToPole, Zenith_Maths::Vector3(0, 0, 1));
 

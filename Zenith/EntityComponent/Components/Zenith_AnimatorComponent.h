@@ -68,6 +68,7 @@ public:
 
 	// ========== IK ==========
 	void SetIKTarget(const std::string& strChainName, const Zenith_Maths::Vector3& xPos, float fWeight = 1.0f);
+	void SetIKTargetModelSpace(const std::string& strChainName, const Zenith_Maths::Vector3& xModelSpacePos, float fWeight = 1.0f);
 	void ClearIKTarget(const std::string& strChainName);
 
 	// ========== Update Mode ==========

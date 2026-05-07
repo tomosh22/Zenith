@@ -331,6 +331,18 @@ void Flux_AnimationController::UpdateWithSkeletonInstance(float fDt)
 
 void Flux_AnimationController::ApplyOutputPoseToSkeleton()
 {
+	// Run IK before copying the pose to the skeleton instance. Pre-solve recompute
+	// gives the FABRIK chain a fresh model-space frame to read from; post-solve
+	// recompute keeps m_xOutputPose's model matrices consistent for downstream
+	// CPU readers (debug draw, gizmos, animation tools).
+	if (m_pxIKSolver && !m_pxIKSolver->GetChains().empty() && m_xSkeletonAsset.GetDirect())
+	{
+		const Zenith_SkeletonAsset& xSkel = *m_xSkeletonAsset.GetDirect();
+		m_xOutputPose.ComputeModelSpaceMatricesFromSkeleton(xSkel);
+		m_pxIKSolver->Solve(m_xOutputPose, xSkel, m_xWorldMatrix);
+		m_xOutputPose.ComputeModelSpaceMatricesFromSkeleton(xSkel);
+	}
+
 	uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
 	for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
 	{

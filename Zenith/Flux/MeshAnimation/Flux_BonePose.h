@@ -123,6 +123,13 @@ public:
 	// Alternative: compute model space from a flat bone hierarchy (for clips without node tree)
 	void ComputeModelSpaceMatricesFlat(const Flux_MeshGeometry& xGeometry);
 
+	// Hierarchy-aware model-space matrix computation using the skeleton asset's parent chain.
+	// Walks bones in storage order (parents always precede children — same invariant
+	// Flux_SkeletonInstance::ComputeSkinningMatrices relies on). Used by IK solving where
+	// reading model-space bone positions during the solve requires the local poses to be
+	// composed with their ancestors.
+	void ComputeModelSpaceMatricesFromSkeleton(const Zenith_SkeletonAsset& xSkeleton);
+
 	// Compute final skinning matrices from model-space matrices
 	// skinning = modelSpace * inverseBindPose
 	void ComputeSkinningMatrices(const Flux_MeshGeometry& xGeometry);

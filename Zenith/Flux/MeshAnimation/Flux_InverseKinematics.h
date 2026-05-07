@@ -6,7 +6,7 @@
 #include <string>
 
 // Forward declarations
-class Flux_MeshGeometry;
+class Zenith_SkeletonAsset;
 
 //=============================================================================
 // Flux_IKTarget
@@ -19,6 +19,14 @@ struct Flux_IKTarget
 	float m_fWeight = 1.0f;           // Blend weight with animation [0-1]
 	bool m_bUseRotation = false;       // Apply rotation constraint on end effector
 	bool m_bEnabled = true;            // Is this target active?
+	// When true, m_xPosition is interpreted as already in model (skeleton) space
+	// and Solve skips the inverse-world-matrix transform. Use this when the
+	// target was computed using a *different* world matrix than the one Solve
+	// will see — e.g. the per-frame foot-IK helper sets targets at end of
+	// frame N, but physics may move the player before frame N+1's solve, so the
+	// solve's m_xWorldMatrix lags the target by one physics step. Converting
+	// to model space at set-time eliminates that drift.
+	bool m_bIsModelSpace = false;
 };
 
 //=============================================================================
@@ -67,7 +75,10 @@ struct Flux_IKChain
 	uint32_t m_uMaxIterations = 10;
 	float m_fTolerance = 0.001f;              // Distance threshold for convergence
 
-	// Pole vector for elbow/knee direction control
+	// Pole vector for elbow/knee direction control. Interpreted as a DIRECTION
+	// in model space (not a world-space position): the middle joint bends toward
+	// this direction. Pre-2026-05 builds treated this as a position; saves from
+	// those builds with non-unit-length values are auto-normalized on read.
 	Zenith_Maths::Vector3 m_xPoleVector = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
 	bool m_bUsePoleVector = false;
 	std::string m_strPoleTargetBone;          // Optional: bone to use as pole target
@@ -80,7 +91,7 @@ struct Flux_IKChain
 	std::vector<float> m_xBoneLengths;
 
 	// Resolve bone names to indices
-	void ResolveBoneIndices(const Flux_MeshGeometry& xGeometry);
+	void ResolveBoneIndices(const Zenith_SkeletonAsset& xSkeleton);
 
 	// Compute bone lengths from bind pose
 	void ComputeBoneLengths(const Flux_SkeletonPose& xPose);
@@ -158,16 +169,21 @@ public:
 	//=========================================================================
 
 	// Apply IK to a skeleton pose
-	// Call AFTER animation blending, BEFORE computing final matrices
+	// Call AFTER animation blending, BEFORE computing final matrices.
+	// NOTE: When this solver is owned by a Flux_AnimationController, the
+	// controller invokes Solve() automatically inside ApplyOutputPoseToSkeleton.
+	// Game code should set targets via the controller (SetIKTarget /
+	// SetIKTargetModelSpace) and not call Solve() directly — doing so would
+	// run IK twice per frame on the same pose.
 	void Solve(Flux_SkeletonPose& xPose,
-		const Flux_MeshGeometry& xGeometry,
+		const Zenith_SkeletonAsset& xSkeleton,
 		const Zenith_Maths::Matrix4& xWorldMatrix);
 
 	// Solve a single chain (internal use or for debugging)
 	void SolveChain(Flux_SkeletonPose& xPose,
 		const Flux_IKChain& xChain,
 		const Flux_IKTarget& xTarget,
-		const Flux_MeshGeometry& xGeometry);
+		const Zenith_SkeletonAsset& xSkeleton);
 
 	//=========================================================================
 	// Helper Functions
@@ -236,7 +252,7 @@ private:
 	void ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 		const Flux_IKChain& xChain,
 		const std::vector<Zenith_Maths::Vector3>& xPositions,
-		const Flux_MeshGeometry& xGeometry,
+		const Zenith_SkeletonAsset& xSkeleton,
 		float fWeight);
 
 	//=========================================================================
@@ -255,8 +271,11 @@ private:
 Zenith_Maths::Quat RotationBetweenVectors(const Zenith_Maths::Vector3& xFrom,
 	const Zenith_Maths::Vector3& xTo);
 
-// Two-bone analytical IK (for simple arm/leg setups)
-// Returns true if solution found
+// Two-bone analytical IK (for simple arm/leg setups).
+// xPoleVector is a DIRECTION (not a world-space position) indicating which side
+// the middle joint should bend toward — matches Flux_IKChain::m_xPoleVector and
+// CreateLegChain/CreateArmChain conventions.
+// Returns true if solution found.
 bool SolveTwoBoneIK(const Zenith_Maths::Vector3& xRootPos,
 	const Zenith_Maths::Vector3& xMidPos,
 	const Zenith_Maths::Vector3& xEndPos,

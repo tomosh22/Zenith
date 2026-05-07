@@ -85,6 +85,10 @@ public:
 	// Cast a ray and return the first hit. Returns true if hit, false if no hit.
 	static RaycastResult Raycast(const Zenith_Maths::Vector3& xOrigin, const Zenith_Maths::Vector3& xDirection, float fMaxDistance);
 
+	// Cast a ray ignoring the body owned by xIgnoreEntity (looked up via Zenith_ColliderComponent).
+	// If xIgnoreEntity is invalid or has no collider, behaves like the unfiltered overload.
+	static RaycastResult Raycast(const Zenith_Maths::Vector3& xOrigin, const Zenith_Maths::Vector3& xDirection, float fMaxDistance, Zenith_EntityID xIgnoreEntity);
+
 	static double s_fTimestepAccumulator;
 	static constexpr double s_fDesiredFramerate = 1.0 / 60.0;
 

@@ -4,6 +4,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -18,6 +19,8 @@
 #include "Flux/MeshAnimation/Flux_AnimationLayer.h"
 #include "Flux/MeshAnimation/Flux_BlendTree.h"
 #include "Flux/MeshAnimation/Flux_BonePose.h"
+#include "Flux/MeshAnimation/Flux_InverseKinematics.h"
+#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UI.h"
 
@@ -119,7 +122,21 @@ public:
 			: m_xParentEntity.AddComponent<Zenith_ColliderComponent>();
 		if (!xCollider.HasValidBody())
 		{
-			xCollider.AddCapsuleCollider(0.3f, 0.6f, RIGIDBODY_TYPE_DYNAMIC);
+			// Capsule sized so:
+			//  - Total half-extent = 1.05m (halfCyl + radius), placing the model's
+			//    foot bind position (-1.0m below player) at the IK ankle target Y
+			//    when the capsule rests on the ground. No leg fold for stationary
+			//    standing feet.
+			//  - Radius = 0.10m, narrow enough that the foot bones (offset 0.15m
+			//    from player center) are OUTSIDE the capsule. This lets a tall
+			//    step cube sit directly under one foot WITHOUT the cube
+			//    penetrating the capsule and pushing the player up off the main
+			//    platform — the asymmetric-foot demo wouldn't be visible
+			//    otherwise (capsule would just rest on top of the step).
+			// Trade-off: the player's collision is narrower than the visible
+			// stick-figure body. Acceptable for the IK demo; widen if other
+			// gameplay needs broader collision.
+			xCollider.AddCapsuleCollider(0.10f, 0.95f, RIGIDBODY_TYPE_DYNAMIC);
 		}
 		if (xCollider.HasValidBody())
 		{
@@ -353,6 +370,15 @@ public:
 
 		// --- HUD ---
 		UpdateAmmoHUD();
+
+		// --- IK foot placement ---
+		// Run last in OnUpdate so the targets are derived from the player's
+		// settled position this frame. The animator's component-update phase ran
+		// before scripts (Animator < Script in serialization order), so any IK
+		// targets we set here apply to NEXT frame's animator solve — there's
+		// always one frame of latency. Setting them at the end uses the freshest
+		// position; setting at the start uses last frame's position.
+		UpdateFootIK();
 	}
 
 private:
@@ -550,6 +576,32 @@ private:
 
 		pxAimSM->SetDefaultState("Hipfire");
 		pxAimSM->ResolveClipReferences(&xClips);
+
+		// IK foot-placement chains. CreateLegChain configures pole vector (0,0,1)
+		// (forward) and a knee hinge constraint along (1,0,0). HasChain guards keep
+		// SetupLayeredAnimator idempotent — OnStart can fire twice (once during
+		// automation, once after SaveScene/LoadScene reload).
+		Flux_IKSolver& xIK = xController.GetIKSolver();
+		if (!xIK.HasChain("LeftLeg"))
+		{
+			Flux_IKChain xLeft = Flux_IKSolver::CreateLegChain("LeftLeg",
+				"LeftUpperLeg", "LeftLowerLeg", "LeftFoot");
+			// Bump iterations + tighten tolerance — FABRIK with pole vector and
+			// hinge constraints converges slowly near full chain extension, which
+			// is exactly the foot-IK case. The default 10 iterations leaves
+			// ~10-15mm error on a bent leg; 30 iterations brings error under 3mm.
+			xLeft.m_uMaxIterations = 30;
+			xLeft.m_fTolerance = 0.0005f;
+			xIK.AddChain(xLeft);
+		}
+		if (!xIK.HasChain("RightLeg"))
+		{
+			Flux_IKChain xRight = Flux_IKSolver::CreateLegChain("RightLeg",
+				"RightUpperLeg", "RightLowerLeg", "RightFoot");
+			xRight.m_uMaxIterations = 30;
+			xRight.m_fTolerance = 0.0005f;
+			xIK.AddChain(xRight);
+		}
 	}
 
 	static void AddClipState(Flux_AnimationStateMachine* pxSM,
@@ -759,14 +811,102 @@ private:
 	{
 		Zenith_Maths::Vector3 xPlayerPos;
 		m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
-		const float fCapsuleHalfHeight = 0.6f;
+		// Total half-extent of the capsule = half-cylinder + radius = 0.75 + 0.3.
+		// Capsule bottom sits at playerY - 1.05. Raycast from just below the
+		// capsule bottom to detect contact with the ground.
+		const float fCapsuleHalfExtent = 1.05f;
 		const float fEpsilon = 0.02f;
 		const Zenith_Maths::Vector3 xRayOrigin =
-			xPlayerPos - Zenith_Maths::Vector3(0.0f, fCapsuleHalfHeight + fEpsilon, 0.0f);
+			xPlayerPos - Zenith_Maths::Vector3(0.0f, fCapsuleHalfExtent + fEpsilon, 0.0f);
 		const Zenith_Maths::Vector3 xDown(0.0f, -1.0f, 0.0f);
 		const Zenith_Physics::RaycastResult xResult =
 			Zenith_Physics::Raycast(xRayOrigin, xDown, 0.2f);
 		return xResult.m_bHit;
+	}
+
+	// Per-frame foot IK update. Raycasts down from each foot's last-frame world
+	// position and sets the IK target to the hit point if the ray strikes
+	// something other than the player's own collider. Cleared on miss or when
+	// airborne (fWeight=0). Robust to missing animator/model — early-outs on
+	// every component-presence check so the input-simulator test fixture (which
+	// instantiates the script without an animator) doesn't crash.
+	void UpdateFootIK()
+	{
+		if (!m_pxAnimator) return;
+		Zenith_ModelComponent* pxModel = m_xParentEntity.HasComponent<Zenith_ModelComponent>()
+			? &m_xParentEntity.GetComponent<Zenith_ModelComponent>() : nullptr;
+		if (!pxModel || !pxModel->HasSkeleton()) return;
+		Flux_SkeletonInstance* pxSkel = pxModel->GetSkeletonInstance();
+		if (!pxSkel) return;
+		Zenith_SkeletonAsset* pxSkelAsset = pxSkel->GetSourceSkeleton();
+		if (!pxSkelAsset) return;
+
+		Zenith_TransformComponent& xT = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+		Zenith_Maths::Matrix4 xWorld; xT.BuildModelMatrix(xWorld);
+
+		// IK weight: only plant feet when the player is grounded AND stationary.
+		// While walking, the walk animation drives the leg swing — running IK on
+		// top would feedback-loop on its own previous output (target XZ derived
+		// from the post-IK foot, which was set by the previous frame's target,
+		// etc.) and lock the foot at the first frame's animated pose, suppressing
+		// the swing entirely. The standard solution is to disable IK during
+		// locomotion and only plant feet when standing still. (See unit tests
+		// IKLocksFootXZAcrossFramesAtFullWeight and IKLetsAnimationDriveFootXZAtZeroWeight.)
+		float fHorizontalSpeedSq = 0.0f;
+		if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		{
+			Zenith_ColliderComponent& xCollider2 = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+			if (xCollider2.HasValidBody())
+			{
+				const Zenith_Maths::Vector3 xVel = Zenith_Physics::GetLinearVelocity(xCollider2.GetBodyID());
+				fHorizontalSpeedSq = xVel.x * xVel.x + xVel.z * xVel.z;
+			}
+		}
+		const bool bIsStationary = fHorizontalSpeedSq < 0.01f;   // < 0.1 m/s
+		const float fWeight = (IsGrounded() && bIsStationary) ? 1.0f : 0.0f;
+
+		auto SolveOneFoot = [&](const char* szChain, const char* szFootBone)
+		{
+			const int32_t iFoot = pxSkelAsset->GetBoneIndex(szFootBone);
+			if (iFoot < 0) return;
+
+			// World-space foot position derived from the previous frame's skinned
+			// pose. One frame stale, but recomputing live would double the
+			// hierarchy walk for no visible benefit.
+			const Zenith_Maths::Matrix4& xFootModel = pxSkel->GetBoneModelTransform((uint32_t)iFoot);
+			Zenith_Maths::Vector4 xFootW = xWorld * xFootModel * Zenith_Maths::Vector4(0, 0, 0, 1);
+			Zenith_Maths::Vector3 xFootPos(xFootW);
+
+			const Zenith_Maths::Vector3 xOrigin = xFootPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f);
+			// Ignore the player's own capsule. Without this, the foot ray (origin
+			// inside the capsule) hits self and the helper clears IK every frame.
+			const Zenith_Physics::RaycastResult xHit = Zenith_Physics::Raycast(
+				xOrigin, Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 1.5f,
+				m_xParentEntity.GetEntityID());
+
+			if (!xHit.m_bHit)
+			{
+				m_pxAnimator->ClearIKTarget(szChain);
+				return;
+			}
+
+			constexpr float k_fAnkleHeight = 0.05f;
+			Zenith_Maths::Vector3 xTargetWorld = xHit.m_xHitPoint
+				+ Zenith_Maths::Vector3(0.0f, k_fAnkleHeight, 0.0f);
+			// Convert the world-space target to model space NOW, using the world
+			// matrix that was current when we read the foot position. The
+			// alternative — passing a world-space target and relying on Solve
+			// to inverse-transform with whatever world matrix is current at
+			// solve time — produces a per-frame drag of `velocity * dt` because
+			// physics moves the player between target-set and IK-solve. Pinning
+			// the target in model space at set-time eliminates that lag.
+			const Zenith_Maths::Matrix4 xInvWorld = glm::inverse(xWorld);
+			const Zenith_Maths::Vector4 xTargetModel4 = xInvWorld * Zenith_Maths::Vector4(xTargetWorld, 1.0f);
+			m_pxAnimator->SetIKTargetModelSpace(szChain, Zenith_Maths::Vector3(xTargetModel4), fWeight);
+		};
+
+		SolveOneFoot("LeftLeg",  "LeftFoot");
+		SolveOneFoot("RightLeg", "RightFoot");
 	}
 
 	// Bullet pool — file-static ring buffer. Reset in OnAwake to survive

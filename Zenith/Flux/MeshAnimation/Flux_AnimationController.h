@@ -167,6 +167,10 @@ public:
 
 	// IK target shortcuts
 	void SetIKTarget(const std::string& strChainName, const Zenith_Maths::Vector3& xPosition, float fWeight = 1.0f);
+	// Variant for callers that already converted the target to model (skeleton)
+	// space and don't want Solve to apply the inverse world transform. See the
+	// m_bIsModelSpace comment in Flux_IKTarget for why this exists.
+	void SetIKTargetModelSpace(const std::string& strChainName, const Zenith_Maths::Vector3& xModelSpacePosition, float fWeight = 1.0f);
 	void ClearIKTarget(const std::string& strChainName);
 
 	//=========================================================================
@@ -349,6 +353,20 @@ inline void Flux_AnimationController::SetIKTarget(const std::string& strChainNam
 	xTarget.m_xPosition = xPosition;
 	xTarget.m_fWeight = fWeight;
 	xTarget.m_bEnabled = true;
+	xTarget.m_bIsModelSpace = false;
+
+	GetIKSolver().SetTarget(strChainName, xTarget);
+}
+
+inline void Flux_AnimationController::SetIKTargetModelSpace(const std::string& strChainName,
+	const Zenith_Maths::Vector3& xModelSpacePosition,
+	float fWeight)
+{
+	Flux_IKTarget xTarget;
+	xTarget.m_xPosition = xModelSpacePosition;
+	xTarget.m_fWeight = fWeight;
+	xTarget.m_bEnabled = true;
+	xTarget.m_bIsModelSpace = true;
 
 	GetIKSolver().SetTarget(strChainName, xTarget);
 }
