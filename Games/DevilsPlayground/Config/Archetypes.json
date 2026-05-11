@@ -1,0 +1,211 @@
+{
+  "_comment": "Villager archetypes. Only first 4 are MVP-priority; remainder are designed but stubbed (mvp: false). Tests parameterise over the array; new archetypes added here pick up tests automatically.",
+  "_version": 1,
+  "_ratified": "2026-05-11",
+
+  "archetypes": [
+    {
+      "id": "Farmhand",
+      "display_name_key": "archetype.farmhand.name",
+      "mvp": true,
+      "life_timer_s": 30.0,
+      "walk_speed_mps": 4.0,
+      "jog_speed_mps": 8.0,
+      "sprint_speed_mps": 12.0,
+      "possession_channel_s": 0.0,
+      "demon_scent_floor": 0.0,
+      "abilities": [],
+      "restrictions": [],
+      "rarity": 1.0,
+      "min_spawns": 6,
+      "max_spawns": 10,
+      "tint_rgb": [0.65, 0.55, 0.40],
+      "_comment": "Baseline archetype. The bulk of every Night's body pool."
+    },
+    {
+      "id": "Sexton",
+      "display_name_key": "archetype.sexton.name",
+      "mvp": true,
+      "life_timer_s": 30.0,
+      "walk_speed_mps": 4.0,
+      "jog_speed_mps": 8.0,
+      "sprint_speed_mps": 12.0,
+      "possession_channel_s": 0.0,
+      "demon_scent_floor": 0.0,
+      "abilities": ["can_enter_chapel_unseen"],
+      "restrictions": [],
+      "rarity": 0.3,
+      "min_spawns": 1,
+      "max_spawns": 2,
+      "tint_rgb": [0.12, 0.12, 0.15],
+      "_comment": "Black-robed church servant. Aelfric doesn't search him in the chapel."
+    },
+    {
+      "id": "Devout",
+      "display_name_key": "archetype.devout.name",
+      "mvp": true,
+      "life_timer_s": 30.0,
+      "walk_speed_mps": 4.0,
+      "jog_speed_mps": 8.0,
+      "sprint_speed_mps": 12.0,
+      "possession_channel_s": 0.8,
+      "demon_scent_floor": 0.4,
+      "abilities": ["aelfric_trusts_never_interrogates"],
+      "restrictions": ["channel_interruptible_by_aelfric_line_of_sight"],
+      "rarity": 0.4,
+      "min_spawns": 1,
+      "max_spawns": 3,
+      "tint_rgb": [0.92, 0.88, 0.82],
+      "_comment": "Pious. Hard to possess (0.8 s channel) but Aelfric won't suspect them."
+    },
+    {
+      "id": "Child",
+      "display_name_key": "archetype.child.name",
+      "mvp": true,
+      "life_timer_s": 15.0,
+      "walk_speed_mps": 4.0,
+      "jog_speed_mps": 8.0,
+      "sprint_speed_mps": 12.0,
+      "possession_channel_s": 0.0,
+      "demon_scent_floor": 0.0,
+      "abilities": ["invisible_to_hounds"],
+      "restrictions": ["cannot_carry_tools", "cannot_use_forge"],
+      "rarity": 0.4,
+      "min_spawns": 1,
+      "max_spawns": 2,
+      "tint_rgb": [0.88, 0.75, 0.65],
+      "scale_multiplier": 0.7,
+      "_comment": "Half timer; small silhouette; tools restricted but reagents OK."
+    },
+
+    {
+      "id": "Carter",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "walk_speed_mps": 5.0,
+      "jog_speed_mps": 10.0,
+      "sprint_speed_mps": 15.0,
+      "abilities": ["fast_movement"],
+      "_comment_post_mvp": "+25% speed across all paces."
+    },
+    {
+      "id": "SmithApp",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["free_forge_crafting"],
+      "_comment_post_mvp": "Forge crafts at 0 s instead of 2 s."
+    },
+    {
+      "id": "Beggar",
+      "mvp": false,
+      "life_timer_s": 25.0,
+      "abilities": ["aelfric_ignores"],
+      "_comment_post_mvp": "Aelfric won't search beggars; they sleep when un-possessed."
+    },
+    {
+      "id": "Stoneborn",
+      "mvp": false,
+      "life_timer_s": 45.0,
+      "walk_speed_mps": 3.0,
+      "jog_speed_mps": 6.0,
+      "sprint_speed_mps": 9.0,
+      "_comment_post_mvp": "Long timer (Old Bett unlock); slow."
+    },
+    {
+      "id": "Seer",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["reveal_aelfric_position_on_possess_10s"],
+      "_comment_post_mvp": "Mereworth unlock."
+    },
+    {
+      "id": "Stonemason",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["can_climb_low_walls"]
+    },
+    {
+      "id": "Drunk",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["aelfric_ignores"],
+      "_comment_post_mvp": "Wanders erratically when un-possessed; Aelfric ignores drunks."
+    },
+    {
+      "id": "BellRinger",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["immune_to_bell_panic"]
+    },
+    {
+      "id": "Cooper",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "_comment_post_mvp": "Barrel-maker. Generic."
+    },
+    {
+      "id": "Weaver",
+      "mvp": false,
+      "life_timer_s": 30.0
+    },
+    {
+      "id": "Miller",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["mill_district_silent"]
+    },
+    {
+      "id": "Hunter",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["can_carry_two_items"]
+    },
+    {
+      "id": "Midwife",
+      "mvp": false,
+      "life_timer_s": 30.0
+    },
+    {
+      "id": "Tinker",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["instant_pickup_tools"]
+    },
+    {
+      "id": "Pilgrim",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["aelfric_trusts_never_interrogates"]
+    },
+    {
+      "id": "Shepherd",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["can_call_sheep_distraction"]
+    },
+    {
+      "id": "Cooper2",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "_comment_post_mvp": "Placeholder slot for design iteration."
+    },
+    {
+      "id": "WidowWalker",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["aelfric_ignores_at_night"]
+    },
+    {
+      "id": "Greenwoman",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["herbalist_charm_generation"]
+    },
+    {
+      "id": "BlacksmithMaster",
+      "mvp": false,
+      "life_timer_s": 30.0,
+      "abilities": ["free_forge_crafting", "expanded_recipes"]
+    }
+  ]
+}

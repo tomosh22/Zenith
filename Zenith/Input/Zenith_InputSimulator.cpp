@@ -14,6 +14,7 @@ bool Zenith_InputSimulator::s_abKeyPressedThisFrame[uMAX_SIMULATED_KEYS] = {};
 Zenith_Maths::Vector2_64 Zenith_InputSimulator::s_xMousePosition = { 0.0, 0.0 };
 Zenith_KeyCode Zenith_InputSimulator::s_aeAutoReleaseKeys[uMAX_AUTO_RELEASE] = {};
 u_int32 Zenith_InputSimulator::s_uAutoReleaseCount = 0;
+float Zenith_InputSimulator::s_fMouseWheelDelta = 0.0f;
 
 // ========== Lifecycle ==========
 
@@ -215,6 +216,7 @@ void Zenith_InputSimulator::ResetAllInputState()
 	memset(s_abKeyPressedThisFrame, 0, sizeof(s_abKeyPressedThisFrame));
 	s_xMousePosition = { 0.0, 0.0 };
 	s_uAutoReleaseCount = 0;
+	s_fMouseWheelDelta = 0.0f;
 }
 
 // ========== Test Frame Lifecycle ==========
@@ -227,6 +229,19 @@ void Zenith_InputSimulator::BeginTestFrame()
 void Zenith_InputSimulator::EndTestFrame()
 {
 	memset(s_abKeyPressedThisFrame, 0, sizeof(s_abKeyPressedThisFrame));
+	// EXT-4: clear wheel delta at frame end so SimulateMouseWheel asserts for
+	// exactly one full frame, mirroring SimulateKeyPress semantics.
+	s_fMouseWheelDelta = 0.0f;
+}
+
+void Zenith_InputSimulator::SimulateMouseWheel(float fDelta)
+{
+	s_fMouseWheelDelta = fDelta;
+}
+
+float Zenith_InputSimulator::GetMouseWheelDeltaSimulated()
+{
+	return s_fMouseWheelDelta;
 }
 
 // ========== Fixed Dt Override ==========
@@ -283,6 +298,27 @@ void Zenith_InputSimulator::ProcessAutoReleases()
 		}
 	}
 	s_uAutoReleaseCount = 0;
+
+	// NOTE: wheel-delta is NOT cleared here. Doing so would defeat the
+	// pattern where SimulateMouseWheel(f) is called in the test's Setup or
+	// in Step, and the consumer (orbit camera etc.) reads via
+	// Zenith_Input::GetMouseWheelDelta the same frame — BeginFrame runs
+	// before either, so clearing here would zero the value before the
+	// consumer ever sees it. The wheel is instead cleared from
+	// EndOfFrameTickComplete() below, invoked by Zenith_Core::Zenith_MainLoop
+	// AFTER the scene/script Update phase has consumed the wheel.
+}
+
+void Zenith_InputSimulator::EndOfFrameTickComplete()
+{
+	// Clear simulator-supplied wheel delta. Called once per main-loop
+	// iteration AFTER the game systems update phase has had a chance to
+	// read it via Zenith_Input::GetMouseWheelDelta. The same call also
+	// covers the Setup-before-tick-0 case: Setup's SimulateMouseWheel
+	// survives the first BeginFrame (since ProcessAutoReleases no longer
+	// clears), the test's Step + game systems read it within tick 0,
+	// and this clear at the end of tick 0 zeros it before tick 1 starts.
+	s_fMouseWheelDelta = 0.0f;
 }
 
 #endif // ZENITH_INPUT_SIMULATOR

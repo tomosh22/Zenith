@@ -589,4 +589,58 @@ namespace Flux_Generated_Fog
 		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 	}
 
+	// ----- DevilsPlayground_DPFog (Fog/DP_Fog) -----
+	namespace DevilsPlayground_DPFog
+	{
+		inline constexpr const char* kDPFogConstants_Name = "DPFogConstants";
+		inline constexpr unsigned int kDPFogConstants_Set = 0;
+		inline constexpr unsigned int kDPFogConstants_Binding = 1;
+		inline constexpr unsigned int kDPFogConstants_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		struct DPFogConstants_CB
+		{
+			unsigned char m_ag_xFogColor_Density[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_axHoles[960]; // slang=Array offset=16 arrayCount=60 (no C++ mapping)
+			unsigned int m_ug_uHoleCount; // slang=uint offset=976
+			unsigned int m_u_pad0; // slang=uint offset=980
+			unsigned int m_u_pad1; // slang=uint offset=984
+			unsigned int m_u_pad2; // slang=uint offset=988
+		};
+		static_assert(sizeof(DPFogConstants_CB) == 992, "DPFogConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(DPFogConstants_CB, m_ug_uHoleCount) == 976, "DPFogConstants.g_uHoleCount offset drifted from Slang reflection");
+		static_assert(offsetof(DPFogConstants_CB, m_u_pad0) == 980, "DPFogConstants._pad0 offset drifted from Slang reflection");
+		static_assert(offsetof(DPFogConstants_CB, m_u_pad1) == 984, "DPFogConstants._pad1 offset drifted from Slang reflection");
+		static_assert(offsetof(DPFogConstants_CB, m_u_pad2) == 988, "DPFogConstants._pad2 offset drifted from Slang reflection");
+		inline constexpr const char* kg_xDepthTex_Name = "g_xDepthTex";
+		inline constexpr unsigned int kg_xDepthTex_Set = 0;
+		inline constexpr unsigned int kg_xDepthTex_Binding = 2;
+		inline constexpr unsigned int kg_xDepthTex_DescriptorCount = 1;
+		// kind: CombinedTextureSampler
+		inline constexpr const char* kFrameConstants_Name = "FrameConstants";
+		inline constexpr unsigned int kFrameConstants_Set = 0;
+		inline constexpr unsigned int kFrameConstants_Binding = 0;
+		inline constexpr unsigned int kFrameConstants_DescriptorCount = 1;
+		// kind: ConstantBuffer
+		struct FrameConstants_CB
+		{
+			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xProjMat[64]; // slang=matrix offset=64 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xViewProjMat[64]; // slang=matrix offset=128 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewProjMat[64]; // slang=matrix offset=192 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvViewMat[64]; // slang=matrix offset=256 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xInvProjMat[64]; // slang=matrix offset=320 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xCamPos_Pad[16]; // slang=vector offset=384 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=400 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour[16]; // slang=vector offset=416 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xScreenDims[8]; // slang=vector offset=432 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpScreenDims[8]; // slang=vector offset=440 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=448
+			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=452
+			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=456 arrayCount=2 (no C++ mapping)
+		};
+		static_assert(sizeof(FrameConstants_CB) == 464, "FrameConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(FrameConstants_CB, m_ug_bQuadUtilisationAnalysis) == 448, "FrameConstants.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
+		static_assert(offsetof(FrameConstants_CB, m_ug_uTargetPixelsPerTri) == 452, "FrameConstants.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+	}
+
 }

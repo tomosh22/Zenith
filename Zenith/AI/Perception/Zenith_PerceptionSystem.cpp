@@ -189,6 +189,35 @@ const Zenith_Vector<Zenith_PerceivedTarget>* Zenith_PerceptionSystem::GetPerceiv
 	return nullptr;
 }
 
+// EXT-6: walk the agent's perceived-targets list and pick the freshest
+// hearing-flagged entry. The PerceivedTarget already carries the position
+// (m_xLastKnownPosition), source entity, age (m_fTimeSinceLastSeen), and
+// the stimulus mask we need to disambiguate sight vs hearing.
+Zenith_PerceptionSystem::Zenith_LastHeardSound
+Zenith_PerceptionSystem::GetLastHeardSoundFor(Zenith_EntityID xAgentID)
+{
+	Zenith_LastHeardSound xResult;
+	auto it = s_xAgentData.find(xAgentID.GetPacked());
+	if (it == s_xAgentData.end()) return xResult;
+
+	const Zenith_Vector<Zenith_PerceivedTarget>& axTargets = it->second.m_axPerceivedTargets;
+	float fBestAge = -1.0f; // sentinel for "no candidate yet"
+	for (uint32_t i = 0; i < axTargets.GetSize(); ++i)
+	{
+		const Zenith_PerceivedTarget& xT = axTargets.Get(i);
+		if ((xT.m_uStimulusMask & PERCEPTION_STIMULUS_HEARING) == 0) continue;
+		if (fBestAge < 0.0f || xT.m_fTimeSinceLastSeen < fBestAge)
+		{
+			fBestAge = xT.m_fTimeSinceLastSeen;
+			xResult.m_bValid       = true;
+			xResult.m_xPosition    = xT.m_xLastKnownPosition;
+			xResult.m_xSourceEntity = xT.m_xEntityID;
+			xResult.m_fAge         = xT.m_fTimeSinceLastSeen;
+		}
+	}
+	return xResult;
+}
+
 Zenith_EntityID Zenith_PerceptionSystem::GetPrimaryTarget(Zenith_EntityID xAgentID)
 {
 	auto it = s_xAgentData.find(xAgentID.GetPacked());

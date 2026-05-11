@@ -6,6 +6,7 @@
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "Input/Zenith_Input.h"
 // Re-enter the placement-new disabled zone for the additional Jolt headers
 // not already pulled in by Zenith_Physics.h (which re-enables on exit).
 #ifdef ZENITH_PLACEMENT_NEW_ZONE
@@ -497,7 +498,11 @@ void Zenith_Physics::Shutdown()
 Zenith_Physics::RaycastInfo Zenith_Physics::BuildRayFromMouse(Zenith_CameraComponent& xCam)
 {
 	Zenith_Maths::Vector2_64 xMousePos;
-	Zenith_Window::GetInstance()->GetMousePosition(xMousePos);
+	// Route through Zenith_Input rather than Zenith_Window so click-driven
+	// raycasts respect Zenith_InputSimulator overrides — without this, simulated
+	// SimulateMousePosition + SimulateMouseClick fires the press event but the
+	// raycast still uses the OS cursor.
+	Zenith_Input::GetMousePosition(xMousePos);
 
 	double fX = xMousePos.x;
 	double fY = xMousePos.y;
@@ -522,6 +527,24 @@ void Zenith_Physics::SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_
 {
 	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	// Activate the body before/along with setting velocity. Jolt puts idle
+	// dynamic bodies to sleep to save simulation cost; SetLinearVelocity on
+	// its own does not wake them, so a body that was at rest would have
+	// velocity stored but never integrate. Game code (e.g. character
+	// controllers driving capsules via velocity each frame) needs the
+	// body to actually move on the next physics step. Match the
+	// AddForce / AddImpulse path which activates explicitly.
+	//
+	// Exact-zero compare here is intentional: callers requesting a stop
+	// (controller releases WASD → ZeroHorizontalVelocity) pass
+	// exactly Vector3(0,0,0), and any non-stop intent passes a normalized
+	// direction × speed which is well above 0. There's no near-zero
+	// epsilon use case in current callers; the body's existing sleep
+	// timer handles the "approaching rest" decision.
+	if (xVelocity.x != 0.0f || xVelocity.y != 0.0f || xVelocity.z != 0.0f)
+	{
+		xBodyInterface.ActivateBody(xBodyID);
+	}
 	xBodyInterface.SetLinearVelocity(xBodyID, JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
 }
 

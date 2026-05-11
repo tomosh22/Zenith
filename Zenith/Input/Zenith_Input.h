@@ -16,6 +16,12 @@ public:
 	static bool IsMouseButtonHeld(Zenith_KeyCode iMouseButton) { return IsKeyDown(iMouseButton); }
 	static bool WasKeyPressedThisFrame(Zenith_KeyCode iKey);
 
+	// Mouse wheel (EXT-4). Y-axis delta accumulated since the previous
+	// BeginFrame; positive = scroll up. Reset once per frame at BeginFrame —
+	// multiple readers within a single frame all see the same value.
+	static void MouseWheelCallback(double fXOffset, double fYOffset);
+	static float GetMouseWheelDelta();
+
 	// Gamepad input (gamepad 0 = first connected gamepad)
 	static bool IsGamepadConnected(int iGamepad = 0);
 	static bool IsGamepadButtonDown(int iButton, int iGamepad = 0);

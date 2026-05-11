@@ -791,6 +791,23 @@ static const Flux_ShaderRegistryEntry s_axRegistry[] =
 		"spirv_1_3",
 		"Decals",
 	},
+
+	// DevilsPlayground game-side fog (EXT-1). Replaces the engine fog
+	// (which is disabled via Flux_Fog::SetExternallyOverridden) with
+	// exponential distance fog and circular "holes" around villagers /
+	// lights. Up to DP_FOG_MAX_HOLES (60) holes per frame uploaded as a CBV
+	// array — see DPFogPass.cpp for the matching C++ cap and
+	// Zenith/Flux/Shaders/Fog/DP_Fog.slang for the shader-side constant.
+	{
+		FluxShaderProgram::DevilsPlayground_DPFog,
+		"DevilsPlayground_DPFog",
+		"Fog/DP_Fog",
+		"vsMain",
+		"fsMain",
+		nullptr,
+		"spirv_1_3",
+		"Fog",
+	},
 };
 
 static constexpr u_int kRegistryCount = sizeof(s_axRegistry) / sizeof(s_axRegistry[0]);

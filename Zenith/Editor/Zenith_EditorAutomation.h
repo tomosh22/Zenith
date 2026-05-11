@@ -58,6 +58,12 @@ enum class Zenith_EditorActionType
 	// Transform field edits
 	SET_TRANSFORM_POSITION,
 	SET_TRANSFORM_SCALE,
+	SET_TRANSFORM_ROTATION_YAW,
+
+	// Light field edits
+	SET_LIGHT_INTENSITY,
+	SET_LIGHT_RANGE,
+	SET_LIGHT_COLOR,
 
 	// UI element creation and field edits
 	CREATE_UI_TEXT,
@@ -262,6 +268,16 @@ public:
 	//--------------------------------------------------------------------------
 	static void AddStep_SetTransformPosition(float fX, float fY, float fZ);
 	static void AddStep_SetTransformScale(float fX, float fY, float fZ);
+	// Yaw-only rotation (radians) around the Y axis. Sufficient for the
+	// common "place an actor flat on the ground at angle θ" pattern that
+	// dominates DP scene authoring (UE author rotations imported as yaw).
+	static void AddStep_SetTransformYaw(float fYawRadians);
+
+	// Light component field edits. Apply to the selected entity's
+	// Zenith_LightComponent — set after AddStep_AddComponent("Light").
+	static void AddStep_SetLightIntensity(float fLumens);
+	static void AddStep_SetLightRange(float fMetres);
+	static void AddStep_SetLightColor(float fR, float fG, float fB);
 
 	//--------------------------------------------------------------------------
 	// UI Step Helpers

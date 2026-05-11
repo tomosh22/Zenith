@@ -4,6 +4,8 @@
 
 #include "Input/Zenith_Input.h"
 #include <atomic>
+#include <cstdlib>  // __argc / __argv (MSVC globals) for --headless parsing
+#include <cstring>  // std::strcmp
 
 Zenith_Window* Zenith_Window::s_pxInstance = nullptr;
 
@@ -118,6 +120,15 @@ static void MouseCallback(GLFWwindow*, int32_t iKey, int32_t iAction, int32_t)
 	}
 }
 
+// EXT-4: forward GLFW scroll events into Zenith_Input. Y offset is the
+// vertical wheel ticks; positive = scroll up. X offset is horizontal scroll
+// (touchpad / tilted wheel) — we ignore it for now but pass it through so a
+// future API extension can read it without re-wiring GLFW.
+static void ScrollCallback(GLFWwindow*, double fXOffset, double fYOffset)
+{
+	Zenith_Input::MouseWheelCallback(fXOffset, fYOffset);
+}
+
 Zenith_Window::Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHeight)
 {
 	// Hook GLFW allocator for memory tracking BEFORE glfwInit()
@@ -134,12 +145,35 @@ Zenith_Window::Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHei
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 #endif
 
+	// EXT-3b: headless mode — hide the window when --headless is passed.
+	// We can't skip glfwCreateWindow entirely because Vulkan's surface still
+	// needs a HWND, but GLFW_VISIBLE=false keeps the window off-screen so
+	// CI / Claude Code automated test runs don't pop a black flash.
+	bool bHeadless = false;
+	for (int i = 1; i < __argc; ++i)
+	{
+		if (std::strcmp(__argv[i], "--headless") == 0) { bHeadless = true; break; }
+	}
+	if (bHeadless)
+	{
+		glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+	}
+
 	glfwSetErrorCallback(ErrorCallback);
 
 	m_pxNativeWindow = glfwCreateWindow(static_cast<int32_t>(uWidth), static_cast<int32_t>(uHeight), szTitle, nullptr, nullptr);
 
+	if (bHeadless)
+	{
+		// Belt-and-braces: re-hide in case the platform layer briefly flashed
+		// the window (some Windows window-managers ignore GLFW_VISIBLE before
+		// the first message pump).
+		glfwHideWindow(m_pxNativeWindow);
+	}
+
 	glfwSetKeyCallback(m_pxNativeWindow, KeyCallback);
 	glfwSetMouseButtonCallback(m_pxNativeWindow, MouseCallback);
+	glfwSetScrollCallback(m_pxNativeWindow, ScrollCallback);
 
 	Zenith_Log(LOG_CATEGORY_WINDOW, "Window created");
 }

@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
+      <Configuration>arm64_v8a_vs2022_Debug_Agde_False</Configuration>
+      <Platform>Android-arm64-v8a</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a">
+      <Configuration>arm64_v8a_vs2022_Release_Agde_False</Configuration>
+      <Platform>Android-arm64-v8a</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{279BB029-A025-65EA-9AA6-391327564B7B}</ProjectGuid>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <RootNamespace>DevilsPlayground</RootNamespace>
+    <ProjectName>DevilsPlayground</ProjectName>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals" Condition="'$(Platform)'=='Android-arm64-v8a' Or '$(Platform)'=='Android-x86_64' Or '$(Platform)'=='Android-armeabi-v7a' Or '$(Platform)'=='Android-x86'">
+    <AndroidMinSdkVersion>30</AndroidMinSdkVersion>
+    <PlatformToolset>Clang</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals">
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <UseOfStl>cpp_shared</UseOfStl>
+    <ThumbMode>Disabled</ThumbMode>
+    <LinkTimeOptimization>None</LinkTimeOptimization>
+    <ClangLinkType>lld</ClangLinkType>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
+    <CLanguageStandard>c11</CLanguageStandard>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <UseOfStl>cpp_shared</UseOfStl>
+    <ThumbMode>Disabled</ThumbMode>
+    <LinkTimeOptimization>None</LinkTimeOptimization>
+    <ClangLinkType>lld</ClangLinkType>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
+    <CLanguageStandard>c11</CLanguageStandard>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+    <TargetName>libdevilsplayground</TargetName>
+    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_debug_agde_false\</OutDir>
+    <IntDir>obj\agde\arm64_v8a_vs2022_debug_agde_false\</IntDir>
+    <TargetExt>.so</TargetExt>
+    <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libdevilsplayground.so</OutputFile>
+    <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
+    <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+    <AndroidEnablePackaging>true</AndroidEnablePackaging>
+    <AndroidGradleBuildDir>c:/dev/zenith/Games/DevilsPlayground/Android</AndroidGradleBuildDir>
+    <AndroidApplicationModule>app</AndroidApplicationModule>
+    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_debug_agde_false\arm64-v8a\</OutDir>
+    <AndroidGradleBuildType>debug</AndroidGradleBuildType>
+    <AndroidGradlePackageOutputName>app-debug.apk</AndroidGradlePackageOutputName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+    <TargetName>libdevilsplayground</TargetName>
+    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_release_agde_false\</OutDir>
+    <IntDir>obj\agde\arm64_v8a_vs2022_release_agde_false\</IntDir>
+    <TargetExt>.so</TargetExt>
+    <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libdevilsplayground.so</OutputFile>
+    <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
+    <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+    <AndroidEnablePackaging>true</AndroidEnablePackaging>
+    <AndroidGradleBuildDir>c:/dev/zenith/Games/DevilsPlayground/Android</AndroidGradleBuildDir>
+    <AndroidApplicationModule>app</AndroidApplicationModule>
+    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_release_agde_false\arm64-v8a\</OutDir>
+    <AndroidGradleBuildType>release</AndroidGradleBuildType>
+    <AndroidGradlePackageOutputName>app-release.apk</AndroidGradlePackageOutputName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+    <ClCompile>
+      <WarningLevel>EnableFormatWarnings</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GAME_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\android;..\..\..\zenith\android\nativeglue;..\..\..\zenith\core;..\..\..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
+      <FloatABI>Default</FloatABI>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <OmitFramePointers>false</OmitFramePointers>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <ExceptionHandling>Disabled</ExceptionHandling>
+      <StackProtectionLevel>Strong</StackProtectionLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DataLevelLinking>true</DataLevelLinking>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <CompileAs>Default</CompileAs>
+      <UnwindTables>true</UnwindTables>
+      <AddressSignificanceTable>false</AddressSignificanceTable>
+      <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
+      <PositionIndependentCode>true</PositionIndependentCode>
+    </ClCompile>
+    <Link>
+      <DebuggerSymbolInformation>true</DebuggerSymbolInformation>
+      <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libdevilsplayground.so</OutputFile>
+      <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_debug_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
+      <AdditionalDependencies>-l:libzenith.a;%(AdditionalDependencies);</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <GenerateMapFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libdevilsplayground.map</GenerateMapFile>
+      <IncrementalLink>false</IncrementalLink>
+      <FunctionBinding>true</FunctionBinding>
+      <NoExecStackRequired>true</NoExecStackRequired>
+      <UnresolvedSymbolReferences>true</UnresolvedSymbolReferences>
+      <Relocation>true</Relocation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+    <ClCompile>
+      <WarningLevel>EnableFormatWarnings</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GAME_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\android;..\..\..\zenith\android\nativeglue;..\..\..\zenith\core;..\..\..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
+      <FloatABI>Default</FloatABI>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <OmitFramePointers>false</OmitFramePointers>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <ExceptionHandling>Disabled</ExceptionHandling>
+      <StackProtectionLevel>Strong</StackProtectionLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DataLevelLinking>true</DataLevelLinking>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <CompileAs>Default</CompileAs>
+      <UnwindTables>true</UnwindTables>
+      <AddressSignificanceTable>false</AddressSignificanceTable>
+      <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
+      <PositionIndependentCode>true</PositionIndependentCode>
+    </ClCompile>
+    <Link>
+      <DebuggerSymbolInformation>true</DebuggerSymbolInformation>
+      <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libdevilsplayground.so</OutputFile>
+      <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_release_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
+      <AdditionalDependencies>-l:libzenith.a;%(AdditionalDependencies);</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <GenerateMapFile>output\agde\arm64_v8a_vs2022_release_agde_false\libdevilsplayground.map</GenerateMapFile>
+      <IncrementalLink>false</IncrementalLink>
+      <FunctionBinding>true</FunctionBinding>
+      <NoExecStackRequired>true</NoExecStackRequired>
+      <UnresolvedSymbolReferences>true</UnresolvedSymbolReferences>
+      <Relocation>true</Relocation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Components\DPChest_Behaviour.h" />
+    <ClInclude Include="..\Components\DPDoor_Behaviour.h" />
+    <ClInclude Include="..\Components\DPDoubleDoor_Behaviour.h" />
+    <ClInclude Include="..\Components\DPFogPass_Behaviour.h" />
+    <ClInclude Include="..\Components\DPForge_Behaviour.h" />
+    <ClInclude Include="..\Components\DPHUDController_Behaviour.h" />
+    <ClInclude Include="..\Components\DPInteractable_Behaviour.h" />
+    <ClInclude Include="..\Components\DPItemBase_Behaviour.h" />
+    <ClInclude Include="..\Components\DPItemManager_Behaviour.h" />
+    <ClInclude Include="..\Components\DPItemSpawn_Behaviour.h" />
+    <ClInclude Include="..\Components\DPMainMenuController_Behaviour.h" />
+    <ClInclude Include="..\Components\DPOrbitCamera_Behaviour.h" />
+    <ClInclude Include="..\Components\DPPauseMenuController_Behaviour.h" />
+    <ClInclude Include="..\Components\DPPentagram_Behaviour.h" />
+    <ClInclude Include="..\Components\DPPlayerController_Behaviour.h" />
+    <ClInclude Include="..\Components\DPVillager_Behaviour.h" />
+    <ClInclude Include="..\Components\DP_BT_Nodes.h" />
+    <ClInclude Include="..\Components\DummyNoiseMachine_Behaviour.h" />
+    <ClInclude Include="..\Components\Priest_Behaviour.h" />
+    <ClInclude Include="..\Source\DevilsPlayground_Tags.h" />
+    <ClInclude Include="..\Source\DPFogPass.h" />
+    <ClInclude Include="..\Source\DPInputActions.h" />
+    <ClInclude Include="..\Source\DPMaterials.h" />
+    <ClInclude Include="..\Source\DP_LevelData.h" />
+    <ClInclude Include="..\Source\PublicInterfaces.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\DevilsPlayground.cpp" />
+    <ClCompile Include="..\Source\DPFogPass.cpp" />
+    <ClCompile Include="..\Source\DPMaterials.cpp" />
+    <ClCompile Include="..\Source\PublicInterfaces.cpp" />
+    <ClCompile Include="..\Tests\Test_BuildingWallClosure.cpp" />
+    <ClCompile Include="..\Tests\Test_DimLightsCutFog.cpp" />
+    <ClCompile Include="..\Tests\Test_DoubleDoorAndForge.cpp" />
+    <ClCompile Include="..\Tests\Test_DPFogPass.cpp" />
+    <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp" />
+    <ClCompile Include="..\Tests\Test_FullPlaythrough.cpp" />
+    <ClCompile Include="..\Tests\Test_GameLevelScene.cpp" />
+    <ClCompile Include="..\Tests\Test_GameplaySystems.cpp" />
+    <ClCompile Include="..\Tests\Test_GameRenderHook.cpp" />
+    <ClCompile Include="..\Tests\Test_GymScenes.cpp" />
+    <ClCompile Include="..\Tests\Test_HearingFlow.cpp" />
+    <ClCompile Include="..\Tests\Test_Hello.cpp" />
+    <ClCompile Include="..\Tests\Test_HumanPlaythrough.cpp" />
+    <ClCompile Include="..\Tests\Test_ItemPickup.cpp" />
+    <ClCompile Include="..\Tests\Test_LifeTimer.cpp" />
+    <ClCompile Include="..\Tests\Test_Materials.cpp" />
+    <ClCompile Include="..\Tests\Test_MouseWheel.cpp" />
+    <ClCompile Include="..\Tests\Test_PentagramVictory.cpp" />
+    <ClCompile Include="..\Tests\Test_Possession.cpp" />
+    <ClCompile Include="..\Tests\Test_PostFogHookFires.cpp" />
+    <ClCompile Include="..\Tests\Test_PriestBBBridge.cpp" />
+    <ClCompile Include="..\Tests\Test_PriestPursuit.cpp" />
+    <ClCompile Include="..\Tests\Test_PublicInterfaces.cpp" />
+    <ClCompile Include="..\Tests\Test_VisualWiring.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\build\zenith_agde.vcxproj">
+      <Project>{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,54 @@
+#pragma once
+/**
+ * DPPentagram_Behaviour - win-condition altar. Each interact consumes one
+ * Objective[1..5] item; collecting all five fires DP_OnVictory.
+ */
+
+#include "Components/DPInteractable_Behaviour.h"
+
+class DPPentagram_Behaviour ZENITH_FINAL : public DPInteractable_Behaviour
+{
+	friend class Zenith_ScriptComponent;
+public:
+	ZENITH_BEHAVIOUR_TYPE_NAME(DPPentagram_Behaviour)
+
+	DPPentagram_Behaviour() = delete;
+	DPPentagram_Behaviour(Zenith_Entity& xParentEntity)
+		: DPInteractable_Behaviour(xParentEntity)
+	{}
+
+	void OnAwake() ZENITH_FINAL override
+	{
+		DPInteractable_Behaviour::OnAwake();
+		// Pentagram runs the win-state side-table; re-init on each fresh
+		// scene so a replay starts clean.
+		DP_Win::Reset();
+	}
+
+protected:
+	void HandleInteract(Zenith_EntityID xVillager) override
+	{
+		const DP_ItemTag eHeld = DP_Player::GetHeldItemTag(xVillager);
+		if (!DP_IsObjectiveTag(eHeld)) return;
+
+		const uint32_t uBit = DP_ObjectiveTagToBit(eHeld);
+		if (DP_Win::GetCollectedObjectivesMask() & uBit) return; // already collected
+
+		DP_Win::NotifyObjectiveCollected(eHeld);
+		// Consume the held objective.
+		Zenith_EntityID xItem = DP_Player::GetHeldItemEntity(xVillager);
+		DP_Player::RemoveHeldItem(xVillager);
+		if (xItem.IsValid())
+		{
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xItem);
+			if (pxScene != nullptr)
+			{
+				Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
+				if (xEnt.IsValid())
+				{
+					Zenith_SceneManager::Destroy(xEnt);
+				}
+			}
+		}
+	}
+};

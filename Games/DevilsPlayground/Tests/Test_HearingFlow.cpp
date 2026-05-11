@@ -1,0 +1,168 @@
+#include "Zenith.h"
+
+#ifdef ZENITH_INPUT_SIMULATOR
+
+#include "Core/Zenith_AutomatedTest.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "Maths/Zenith_Maths.h"
+
+#include "Source/PublicInterfaces.h"
+#include "Components/Priest_Behaviour.h"
+#include "Components/DPVillager_Behaviour.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
+
+// ============================================================================
+// HearingFlow_Test (EXT-6 + Priest perception bridge)
+//
+// Loads GameLevel, finds the Priest entity, emits a sound stimulus close to
+// the priest, runs a few frames so the perception system processes it, then
+// verifies:
+//   - GetLastHeardSoundFor(priest) reports m_bValid = true
+//   - The reported position matches the noise origin (within tolerance)
+//
+// The test does NOT verify the BB write path — that is a side effect of
+// Priest_Behaviour::OnUpdate which only runs in Playing mode AND requires
+// the AIAgentComponent's tick. Verifying the BB requires the BT to settle,
+// which gets brittle. The accessor is the load-bearing piece.
+// ============================================================================
+
+namespace
+{
+	enum Phase : int { kHF_Start, kHF_WaitScene, kHF_Emit, kHF_WaitProcess,
+	                   kHF_Verify, kHF_Done };
+
+	int             g_iHFPhase = kHF_Start;
+	Zenith_EntityID g_xPriest;
+	Zenith_EntityID g_xSoundSource;
+	bool            g_bSawValid     = false;
+	float           g_fObservedDx   = 0.0f;
+	float           g_fObservedDz   = 0.0f;
+	int             g_iWaitFrames   = 0;
+
+	// Filled in at runtime once we know where the priest actually is — the
+	// scene authoring uses real UE positions, so a hardcoded noise origin
+	// might be 50m+ away from the priest and outside hearing range.
+	Zenith_Maths::Vector3 g_xNoisePos(0.0f);
+}
+
+static void Setup_HearingFlow()
+{
+	g_iHFPhase     = kHF_Start;
+	g_xPriest      = INVALID_ENTITY_ID;
+	g_xSoundSource = INVALID_ENTITY_ID;
+	g_bSawValid    = false;
+	g_fObservedDx  = 0.0f;
+	g_fObservedDz  = 0.0f;
+	g_iWaitFrames  = 0;
+}
+
+static bool Step_HearingFlow(int iFrame)
+{
+	switch (g_iHFPhase)
+	{
+	case kHF_Start:
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		g_iHFPhase = kHF_WaitScene;
+		return true;
+
+	case kHF_WaitScene:
+	{
+		Zenith_EntityID xFoundPriest;
+		Zenith_EntityID xFoundSource;
+		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+			[&xFoundPriest](Zenith_EntityID xId, Priest_Behaviour&) { xFoundPriest = xId; });
+		// Use the villager as the synthetic sound source — needs to be a
+		// VALID, NON-PRIEST EntityID. Zenith_PerceptionSystem::UpdateHearingPerception
+		// silently drops sounds whose source is invalid (no FindOrCreateTarget),
+		// and ignores sounds where source == self (priest doesn't hear its own
+		// footsteps).
+		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			[&xFoundSource](Zenith_EntityID xId, DPVillager_Behaviour&) { xFoundSource = xId; });
+		if (xFoundPriest.IsValid() && xFoundSource.IsValid())
+		{
+			g_xPriest      = xFoundPriest;
+			g_xSoundSource = xFoundSource;
+			// Place the synthetic noise 2m in front of the priest so it
+			// always lies inside the priest's 25m hearing radius regardless
+			// of the priest's authored position.
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xPriest);
+			if (pxScene != nullptr)
+			{
+				Zenith_Entity xEnt = pxScene->TryGetEntity(g_xPriest);
+				if (xEnt.IsValid() && xEnt.HasComponent<Zenith_TransformComponent>())
+				{
+					Zenith_Maths::Vector3 xPriestPos;
+					xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPriestPos);
+					g_xNoisePos = xPriestPos + Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f);
+				}
+			}
+			g_iHFPhase = kHF_Emit;
+		}
+		else if (iFrame > 60)
+		{
+			g_iHFPhase = kHF_Done;
+		}
+		return true;
+	}
+
+	case kHF_Emit:
+	{
+		// Loud + wide-radius stimulus, well above the priest's hearing
+		// threshold and inside its 25m max range. Source = villager so the
+		// perception system creates a perceived-target for it (without that
+		// the sound is processed but the per-target record never appears,
+		// and GetLastHeardSoundFor walks an empty list).
+		DP_AI::EmitNoise(g_xNoisePos, /*loudness*/ 1.0f, /*radius*/ 30.0f, g_xSoundSource);
+		g_iHFPhase = kHF_WaitProcess;
+		return true;
+	}
+
+	case kHF_WaitProcess:
+		// Perception needs Update to fire; that runs once per frame in
+		// Playing mode. Give it 5 frames to settle (one update is enough,
+		// but bursty frame-skips can defer it).
+		++g_iWaitFrames;
+		if (g_iWaitFrames >= 5)
+		{
+			g_iHFPhase = kHF_Verify;
+		}
+		return true;
+
+	case kHF_Verify:
+	{
+		const Zenith_PerceptionSystem::Zenith_LastHeardSound xHeard
+			= Zenith_PerceptionSystem::GetLastHeardSoundFor(g_xPriest);
+		g_bSawValid   = xHeard.m_bValid;
+		g_fObservedDx = xHeard.m_xPosition.x - g_xNoisePos.x;
+		g_fObservedDz = xHeard.m_xPosition.z - g_xNoisePos.z;
+		g_iHFPhase    = kHF_Done;
+		return false;
+	}
+
+	case kHF_Done:
+	default:
+		return false;
+	}
+}
+
+static bool Verify_HearingFlow()
+{
+	if (!g_xPriest.IsValid()) return false;
+	if (!g_bSawValid)         return false;
+	// Reported position should match the emitted noise origin within 0.5m.
+	if (g_fObservedDx > 0.5f || g_fObservedDx < -0.5f) return false;
+	if (g_fObservedDz > 0.5f || g_fObservedDz < -0.5f) return false;
+	return true;
+}
+
+static const Zenith_AutomatedTest g_xHearingFlowTest = {
+	"HearingFlow_Test",
+	&Setup_HearingFlow,
+	&Step_HearingFlow,
+	&Verify_HearingFlow,
+	240
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xHearingFlowTest);
+
+#endif // ZENITH_INPUT_SIMULATOR

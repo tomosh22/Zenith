@@ -79,6 +79,13 @@ private:
 	// AddRefs the live shape so it survives the local ShapeResult's destruction at function
 	// exit. Either way the caller adopts a single owning reference.
 	JPH::RefConst<JPH::Shape> CreateBoxShape(const Zenith_Maths::Vector3& xScale) const;
+	// Shared box-sizing math used by CreateBoxShape AND QueueDebugDraw so the
+	// wireframe visualisation matches the physics body's actual half-extents
+	// + mesh-centre offset. See implementation for the unit-cube fallback.
+	void ComputeBoxDimensionsAndOffset(const Zenith_Maths::Vector3& xScale,
+		Zenith_Maths::Vector3& xHalfExtentsOut,
+		Zenith_Maths::Vector3& xLocalOffsetOut,
+		bool bWarnOnDegenerateBounds) const;
 	JPH::RefConst<JPH::Shape> CreateSphereShape(const Zenith_Maths::Vector3& xScale) const;
 	JPH::RefConst<JPH::Shape> CreateCapsuleShape(const Zenith_Maths::Vector3& xScale, float fMinScale) const;
 	JPH::RefConst<JPH::Shape> CreateTerrainShape();

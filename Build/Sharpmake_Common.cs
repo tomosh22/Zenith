@@ -191,6 +191,7 @@ public class ZenithSolution : Solution
 		conf.AddProject<SurvivalGameProject>(target);
 		conf.AddProject<TilePuzzleGameProject>(target);
 		conf.AddProject<AIShowcaseGameProject>(target);
+		conf.AddProject<DevilsPlaygroundGameProject>(target);
 
 		// Windows-only tools
 		if (target.Platform == Platform.win64)

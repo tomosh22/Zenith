@@ -68,6 +68,7 @@ enum class FluxShaderProgram : unsigned int
 	ComputeTest_Display = 56,
 	Decals_NormalsCopy = 57,
 	Decals_Apply = 58,
+	DevilsPlayground_DPFog = 59,
 
 	COUNT
 };

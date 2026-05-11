@@ -21,4 +21,3 @@ echo   - zenith_win64.sln (Windows)
 echo   - zenith_agde.sln (Android)
 echo.
 echo AGDE debug builds have UBSan enabled (-fsanitize=undefined)
-pause

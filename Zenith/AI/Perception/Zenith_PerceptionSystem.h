@@ -124,6 +124,30 @@ public:
 	static const Zenith_Vector<Zenith_PerceivedTarget>* GetPerceivedTargets(Zenith_EntityID xAgentID);
 
 	/**
+	 * EXT-6: typed accessor for the most-recent hearing stimulus delivered to
+	 * an agent. Returned `m_bValid == false` when the agent has no
+	 * hearing-flagged perceived targets.
+	 *
+	 * Disambiguates sound vs sight using each PerceivedTarget's
+	 * m_uStimulusMask (PERCEPTION_STIMULUS_HEARING bit). Among matching
+	 * entries, picks the smallest m_fTimeSinceLastSeen as the freshest.
+	 *
+	 * Used by DevilsPlayground's Priest_Behaviour to bridge perception
+	 * stimuli into BB.InvestigatePos / BB.HasInvestigatePos. The plan
+	 * argued for a per-agent side-channel populated inside
+	 * UpdateHearingPerception, but the perceived-targets list already
+	 * carries the data — this wrapper just exposes it typed.
+	 */
+	struct Zenith_LastHeardSound
+	{
+		bool                  m_bValid       = false;
+		Zenith_Maths::Vector3 m_xPosition    = Zenith_Maths::Vector3(0.0f);
+		Zenith_EntityID       m_xSourceEntity;
+		float                 m_fAge         = 0.0f;
+	};
+	static Zenith_LastHeardSound GetLastHeardSoundFor(Zenith_EntityID xAgentID);
+
+	/**
 	 * Get the primary (highest awareness) target for an agent
 	 */
 	static Zenith_EntityID GetPrimaryTarget(Zenith_EntityID xAgentID);

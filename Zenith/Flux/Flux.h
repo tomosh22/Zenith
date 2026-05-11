@@ -438,6 +438,7 @@ public:
 	}
 
 	static Flux_RenderGraph& GetRenderGraph() { return *s_pxRenderGraph; }
+	static bool IsRenderGraphValid() { return s_pxRenderGraph != nullptr; }
 	static void SetupRenderGraph();
 
 	// Called every frame from Zenith_Core::ExecuteRenderGraph before Compile.

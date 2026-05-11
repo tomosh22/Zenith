@@ -1,0 +1,7 @@
+// Minimal AGDE-required Gradle scaffold for DevilsPlayground. Mirrors
+// Games/Combat/Android/settings.gradle — the agde vcxproj's
+// AndroidGradleBuildDir points here and the AGDE packaging step invokes
+// `:app:assemble<Type>` against this project. Without this file the
+// Android build of zenith_agde.sln fails with "Project not found".
+rootProject.name = 'DevilsPlayground'
+include ':app'

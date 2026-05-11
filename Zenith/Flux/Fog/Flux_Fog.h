@@ -43,6 +43,31 @@ public:
 	// MarkDirty() to force a full Compile() on technique change.
 	static void ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph);
 
+	// Game-side override: when set to true, the entire engine fog system is
+	// short-circuited — ApplyTechniqueSelectionToGraph early-returns and all 6
+	// fog passes are explicitly disabled on the active graph. Survives graph
+	// rebuilds because ReapplyOverrideToCurrentGraph is invoked at the end of
+	// SetupRenderGraph whenever the flag is set.
+	//
+	// Used by DevilsPlayground (and any future game) that ships its own
+	// atmospheric/fog pass via Zenith_GameRenderHook::RegisterPostFogPass.
+	// Setting back to false re-engages normal technique selection on the
+	// next frame (does NOT blanket-enable all 6 passes — it lets
+	// ApplyTechniqueSelectionToGraph pick whichever subset matches the
+	// current technique).
+	static void SetExternallyOverridden(bool bOverridden);
+
+	// Read-side query for the override flag. True iff a game-side post-fog
+	// pass has called SetExternallyOverridden(true). Used by tests to verify
+	// the post-fog hook actually fired during render-graph setup (the hook
+	// runs INSIDE SetupRenderGraph, so a missed callback never sets the flag).
+	static bool IsExternallyOverridden();
+
+	// Internal helper invoked at the end of Flux_Fog::SetupRenderGraph so that
+	// a graph rebuild while the override is active still leaves the fog
+	// passes disabled. Game code should not call this directly.
+	static void ReapplyOverrideToCurrentGraph();
+
 private:
 	static void ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData);
 	static void ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserData);

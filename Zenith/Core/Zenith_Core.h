@@ -10,6 +10,11 @@ namespace Zenith_Core
 #endif
 	void Zenith_Init();
 	void Zenith_Shutdown();
+	// Convenience wrapper: Shutdown + delete window singleton + any other
+	// "init-only" teardown the steady-state main-loop exit performs. Use
+	// from early-exit paths so they don't have to mirror the main-loop's
+	// post-loop sequence by hand.
+	void Zenith_FullShutdown();
 
 	// Frame timing accessors (inline for performance)
 	inline void SetDt(const float fDt);

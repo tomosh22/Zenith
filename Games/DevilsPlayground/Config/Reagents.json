@@ -1,0 +1,137 @@
+{
+  "_comment": "The 14 reagents. First 5 are MVP. All have unique pickup behaviour; remainder are stubbed.",
+  "_version": 1,
+  "_ratified": "2026-05-11",
+
+  "reagents": [
+    {
+      "id": "Caul",
+      "display_name_key": "reagent.caul.name",
+      "mvp": true,
+      "pickup_channel_s": 1.0,
+      "spawn_candidate_districts": ["smithy"],
+      "spawn_candidate_anchors": ["smithy_smoke_loft_a", "smithy_rafter_b"],
+      "special_behaviour": "none",
+      "tint_rgb": [0.95, 0.92, 0.85],
+      "rarity": 0.5,
+      "_comment": "Wrapped in linen. Found in the smithy smoke-loft."
+    },
+    {
+      "id": "HareTongue",
+      "display_name_key": "reagent.hare_tongue.name",
+      "mvp": true,
+      "pickup_channel_s": 1.0,
+      "spawn_candidate_districts": ["chapel"],
+      "spawn_candidate_anchors": ["chapel_offertory_bowl"],
+      "special_behaviour": "none",
+      "tint_rgb": [0.65, 0.20, 0.18],
+      "rarity": 0.4
+    },
+    {
+      "id": "BogWater",
+      "display_name_key": "reagent.bog_water.name",
+      "mvp": true,
+      "pickup_channel_s": 1.0,
+      "spawn_candidate_districts": ["moor_edge"],
+      "spawn_candidate_anchors": ["bog_pool_a", "bog_pool_b"],
+      "special_behaviour": "evaporates_after_drop",
+      "evaporate_duration_s": 8.0,
+      "tint_rgb": [0.20, 0.30, 0.25],
+      "rarity": 0.3,
+      "_comment": "Sealed in a phial. Once dropped, despawns in 8 s."
+    },
+    {
+      "id": "BurialCoin",
+      "display_name_key": "reagent.burial_coin.name",
+      "mvp": true,
+      "pickup_channel_s": 1.0,
+      "spawn_candidate_districts": ["longhouse"],
+      "spawn_candidate_anchors": ["longhouse_pillow_a"],
+      "special_behaviour": "none",
+      "tint_rgb": [0.70, 0.60, 0.30],
+      "rarity": 0.2,
+      "_comment": "On Joan Trew's pillow. Highest-difficulty draw."
+    },
+    {
+      "id": "BellSoul",
+      "display_name_key": "reagent.bell_soul.name",
+      "mvp": true,
+      "pickup_channel_s": 1.0,
+      "spawn_candidate_districts": ["chapel"],
+      "spawn_candidate_anchors": ["chapel_bell_tower"],
+      "special_behaviour": "rings_bell_on_pickup",
+      "tint_rgb": [0.85, 0.75, 0.45],
+      "rarity": 0.25,
+      "_comment": "A struck bell-clapper. Picking it up dispatches DP_OnBellRing — audible from the entire map."
+    },
+
+    {
+      "id": "WitchsBraid",
+      "mvp": false,
+      "pickup_channel_s": 1.0,
+      "spawn_candidate_districts": ["yards"],
+      "special_behaviour": "none"
+    },
+    {
+      "id": "SaltedTear",
+      "mvp": false,
+      "pickup_channel_s": 1.5,
+      "spawn_candidate_districts": ["chapel"],
+      "special_behaviour": "evaporates_after_drop",
+      "evaporate_duration_s": 12.0
+    },
+    {
+      "id": "BabysFingerbone",
+      "mvp": false,
+      "pickup_channel_s": 1.5,
+      "spawn_candidate_districts": ["chapel", "moor_edge"],
+      "special_behaviour": "aelfric_alerted_on_pickup",
+      "_comment": "Picking this up forces Aelfric to instantly enter pursuit. High-risk, high-reward objective."
+    },
+    {
+      "id": "CrownOfNails",
+      "mvp": false,
+      "pickup_channel_s": 2.0,
+      "spawn_candidate_districts": ["smithy"],
+      "special_behaviour": "none"
+    },
+    {
+      "id": "MoonDrenchedFeather",
+      "mvp": false,
+      "pickup_channel_s": 1.0,
+      "spawn_candidate_districts": ["moor_edge"],
+      "special_behaviour": "weather_required_clear",
+      "_comment": "Only spawns when weather is clear."
+    },
+    {
+      "id": "TanglingThread",
+      "mvp": false,
+      "pickup_channel_s": 1.0,
+      "spawn_candidate_districts": ["yards"],
+      "special_behaviour": "slows_holder",
+      "_comment": "Villager carrying this moves at 75% speed."
+    },
+    {
+      "id": "BlackHawthornBerry",
+      "mvp": false,
+      "pickup_channel_s": 1.0,
+      "spawn_candidate_districts": ["moor_edge", "yards"],
+      "special_behaviour": "none"
+    },
+    {
+      "id": "FoundlingsHair",
+      "mvp": false,
+      "pickup_channel_s": 1.0,
+      "spawn_candidate_districts": ["longhouse"],
+      "special_behaviour": "none"
+    },
+    {
+      "id": "HangmanCharm",
+      "mvp": false,
+      "pickup_channel_s": 1.5,
+      "spawn_candidate_districts": ["moor_edge"],
+      "special_behaviour": "demon_scent_doubles_on_pickup",
+      "_comment": "Cursed to mark the wearer to demonic eyes."
+    }
+  ]
+}

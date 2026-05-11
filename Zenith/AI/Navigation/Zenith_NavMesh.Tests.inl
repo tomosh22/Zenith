@@ -240,3 +240,72 @@ void Zenith_UnitTests::TestNavMeshComputePolygonBounds(){
 
 }
 
+ZENITH_TEST(AI, NavMeshGetRandomReachablePointInRadius) { Zenith_UnitTests::TestNavMeshGetRandomReachablePointInRadius(); }
+
+void Zenith_UnitTests::TestNavMeshGetRandomReachablePointInRadius()
+{
+	// Build two disconnected islands so we can verify reachability semantics.
+	// Island A: 4x4 unit square centered at (0, 0, 0).  All polys connected.
+	// Island B: 4x4 unit square centered at (50, 0, 0). Disconnected from A.
+	Zenith_NavMesh xNavMesh;
+
+	auto fnAddSquare = [&xNavMesh](float fCx, float fCz)
+	{
+		const uint32_t uV0 = xNavMesh.AddVertex(Zenith_Maths::Vector3(fCx - 2.0f, 0.0f, fCz - 2.0f));
+		const uint32_t uV1 = xNavMesh.AddVertex(Zenith_Maths::Vector3(fCx + 2.0f, 0.0f, fCz - 2.0f));
+		const uint32_t uV2 = xNavMesh.AddVertex(Zenith_Maths::Vector3(fCx + 2.0f, 0.0f, fCz + 2.0f));
+		const uint32_t uV3 = xNavMesh.AddVertex(Zenith_Maths::Vector3(fCx - 2.0f, 0.0f, fCz + 2.0f));
+		Zenith_Vector<uint32_t> ax;
+		ax.PushBack(uV0); ax.PushBack(uV1); ax.PushBack(uV2); ax.PushBack(uV3);
+		return xNavMesh.AddPolygon(ax);
+	};
+
+	fnAddSquare(0.0f, 0.0f);
+	fnAddSquare(50.0f, 0.0f);
+
+	xNavMesh.ComputeAdjacency();
+	xNavMesh.ComputeSpatialData();
+	xNavMesh.BuildSpatialGrid();
+
+	// Sample many points around the centre of island A; every result must
+	// land inside island A's footprint, never inside island B (which is
+	// well outside any reasonable radius from the source).
+	const Zenith_Maths::Vector3 xCenter(0.0f, 0.0f, 0.0f);
+	const float fRadius = 3.0f;
+	uint32_t uReachableHits   = 0;
+	uint32_t uUnreachableHits = 0;
+	uint32_t uOutOfRadiusHits = 0;
+
+	for (uint32_t i = 0; i < 1000; ++i)
+	{
+		Zenith_Maths::Vector3 xResult;
+		if (!xNavMesh.GetRandomReachablePointInRadius(xCenter, fRadius, xResult)) continue;
+
+		// Horizontal distance check.
+		const float fDx = xResult.x - xCenter.x;
+		const float fDz = xResult.z - xCenter.z;
+		if (fDx * fDx + fDz * fDz > fRadius * fRadius)
+		{
+			++uOutOfRadiusHits;
+		}
+
+		// Reachability: result must lie inside island A's [-2,2]x[-2,2] square.
+		// Island B is centred at x=50; any sample with x>10 is on the wrong island.
+		if (xResult.x > 10.0f)
+		{
+			++uUnreachableHits;
+		}
+		else
+		{
+			++uReachableHits;
+		}
+	}
+
+	ZENITH_ASSERT_TRUE(uReachableHits > 0,
+		"Should produce at least one reachable sample");
+	ZENITH_ASSERT_EQ(uUnreachableHits, 0,
+		"Should never sample the disconnected island");
+	ZENITH_ASSERT_EQ(uOutOfRadiusHits, 0,
+		"All samples should be within the requested radius");
+}
+

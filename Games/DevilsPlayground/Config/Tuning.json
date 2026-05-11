@@ -1,0 +1,144 @@
+{
+  "_comment": "Devil's Playground tuning data. Every numerical value in the game lives here. Modify and re-run tests to re-tune. Test_P1Tuning_ValuesInBand enforces sanity ranges.",
+  "_version": 1,
+  "_ratified": "2026-05-11",
+
+  "possession": {
+    "_comment": "Core possession loop parameters. Life timer is THE defining number of the game.",
+    "life_timer_default_s": 30.0,
+    "life_timer_min_s": 15.0,
+    "life_timer_max_s": 45.0,
+    "channel_default_s": 0.0,
+    "channel_devout_s": 0.8,
+    "channel_interrupt_distance_m": 6.0,
+    "cooldown_after_voluntary_switch_s": 1.5,
+    "cooldown_after_burnout_s": 0.0,
+    "range_from_anchor_m": 15.0,
+    "anchor_initial_position": {
+      "x": 50.0,
+      "y": 0.0,
+      "z": 50.0,
+      "_comment": "Demon's first anchor for the MVP level. Set to the GameLevel scene's standing-stones location."
+    },
+    "demon_scent_per_possession": 0.3,
+    "demon_scent_decay_per_s": 0.05,
+    "demon_scent_max": 1.5,
+    "demon_scent_hound_bark_threshold": 0.5,
+    "voluntary_switch_faint_recovery_s": 10.0
+  },
+
+  "movement": {
+    "walk_speed_mps": 4.0,
+    "jog_speed_mps": 8.0,
+    "sprint_speed_mps": 12.0,
+    "sprint_life_cost_extra_per_s": 3.0,
+    "walk_hearing_multiplier": 0.5,
+    "_comment_walk_hearing": "Walk-quiet halves the priest's effective hearing range against this villager's footsteps."
+  },
+
+  "camera": {
+    "default_orbit_distance_m": 80.0,
+    "zoom_min_m": 30.0,
+    "zoom_max_m": 150.0,
+    "zoom_speed_m_per_wheel_tick": 5.0,
+    "pitch_rad": 1.2,
+    "yaw_default_rad": 1.5708,
+    "rotation_speed_rad_per_s": 1.5,
+    "follow_mode_default": false,
+    "_comment_follow": "Auto-follow is OFF by default; players need to scan ahead."
+  },
+
+  "priest": {
+    "_comment": "Single canonical Aelfric for MVP. Variants come post-MVP.",
+    "sight_range_m": 25.0,
+    "sight_fov_deg": 110.0,
+    "sight_peripheral_deg": 137.5,
+    "sight_eye_height_m": 1.6,
+    "sight_awareness_gain_rate": 2.0,
+    "sight_awareness_decay_rate": 0.5,
+    "hearing_range_m": 30.0,
+    "hearing_loudness_threshold": 0.05,
+    "hearing_fog_multiplier": 2.0,
+    "_comment_hearing_fog": "Hearing range doubles when fog is dense (sound carries further when sight is short).",
+    "walk_speed_mps": 4.0,
+    "pursue_speed_mps": 7.0,
+    "suspicion_radius_m": 15.0,
+    "investigate_memory_s": 8.0,
+    "investigate_max_age_s": 5.0,
+    "investigate_wait_after_arrive_s": 2.0,
+    "patrol_wait_after_arrive_s": 1.0,
+    "pursue_acceptance_radius_m": 1.5,
+    "pursue_repath_interval_s": 0.4,
+    "investigate_acceptance_radius_m": 1.0,
+    "patrol_acceptance_radius_m": 1.0,
+    "apprehend_range_m": 2.0,
+    "apprehend_channel_s": 3.0,
+    "apprehend_interruptible_by_switch": true
+  },
+
+  "interactables": {
+    "default_proximity_radius_m": 2.0,
+    "door_open_duration_s": 0.4,
+    "door_open_yaw_deg": 90.0,
+    "door_audible_at_m": 12.0,
+    "door_audible_loudness": 0.6,
+    "double_door_open_duration_s": 0.5,
+    "double_door_open_yaw_deg": 80.0,
+    "double_door_audible_at_m": 15.0,
+    "double_door_audible_loudness": 0.7,
+    "chest_open_duration_s": 0.8,
+    "chest_audible_at_m": 20.0,
+    "chest_audible_loudness": 0.8,
+    "forge_craft_duration_s": 2.0,
+    "forge_audible_at_m": 30.0,
+    "forge_audible_loudness": 1.0,
+    "pentagram_inscribe_duration_s": 1.5,
+    "noise_machine_loudness": 1.0,
+    "noise_machine_radius_m": 20.0,
+    "item_pickup_radius_m": 1.5,
+    "item_pickup_default_channel_s": 0.0,
+    "reagent_pickup_channel_s": 1.0
+  },
+
+  "fog_of_war": {
+    "possessed_villager_hole_radius_m": 8.0,
+    "_comment_possessed": "Increased from prototype's 3.0 m for top-down legibility.",
+    "unpossessed_villager_hole_radius_m": 1.5,
+    "light_hole_radius_slop_m": 0.5,
+    "max_holes_per_frame": 64,
+    "memory_visible_s": 10.0,
+    "memory_dim_s": 30.0,
+    "memory_hidden_s": 999999.0,
+    "_comment_memory": "Tiles seen <=10s ago are visible, 10-30s ago are dim, >30s never seen are full grey."
+  },
+
+  "night": {
+    "dawn_timer_s": 600.0,
+    "_comment_dawn": "MVP uses a 10-minute Night, not the GDD's 25-35 min. Tuning later.",
+    "reagents_required_for_victory": 5,
+    "minimum_villagers_to_avoid_loss": 1,
+    "modifier_hound_release_s": -1.0,
+    "_comment_modifiers": "All escalation modifiers disabled for MVP (-1 = never). Re-enable post-MVP.",
+    "modifier_flintlock_s": -1.0,
+    "modifier_bless_s": -1.0,
+    "modifier_exorcise_s": -1.0
+  },
+
+  "visual_telegraphs": {
+    "_comment": "Hardcoded visual constants for the life-timer telegraphs (GDD §4.7).",
+    "frost_outline_full_threshold_s": 15.0,
+    "frost_outline_pulse_threshold_s": 5.0,
+    "frost_outline_panic_walk_speed_multiplier": 0.75,
+    "burnout_vapour_height_m": 8.0,
+    "burnout_vapour_duration_s": 2.0,
+    "burnout_frost_decal_radius_m": 1.5
+  },
+
+  "test_constants": {
+    "_comment": "Values used ONLY by automated tests. Production gameplay never reads these.",
+    "fixed_dt_60hz": 0.01666,
+    "default_test_max_frames": 600,
+    "playthrough_test_max_frames": 9000,
+    "campaign_test_max_frames": 90000
+  }
+}

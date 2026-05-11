@@ -1,8 +1,12 @@
 #include "Zenith.h"
 #include "Zenith_Core.h"
 
+// InputSimulator + AutomatedTest are both gated on ZENITH_INPUT_SIMULATOR. The
+// nested #ifdef the previous version emitted around the AutomatedTest include
+// was vacuously true inside the outer guard — collapsed to a single block.
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
+#include "Core/Zenith_AutomatedTest.h"
 #endif
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -193,11 +197,33 @@ void Zenith_Core::Zenith_MainLoop()
 	bool bShouldUpdateGameLogic = true;
 #endif
 
+#ifdef ZENITH_INPUT_SIMULATOR
+	// EXT-3a: pump the automated-test state machine. Runs AFTER editor update
+	// so HarnessPhase::WaitForAutomationComplete observes the automation queue
+	// drain in the same frame, and BEFORE physics/scene update so a phase
+	// transition into Playing takes effect on the *next* frame's update — that
+	// gives OnAwake time to fire and lets us observe a clean OnStart on the
+	// flush-first-frame iteration.
+	Zenith_AutomatedTestRunner::Tick();
+	// Re-read after Tick() in case it switched the editor into Playing mode.
+	#ifdef ZENITH_TOOLS
+	bShouldUpdateGameLogic = (Zenith_Editor::GetEditorMode() == EditorMode::Playing);
+	#endif
+#endif
+
 	if (bShouldUpdateGameLogic)
 	{
 		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Physics::Update, ZENITH_PROFILE_INDEX__PHYSICS, Zenith_Core::GetDt());
 		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_SceneManager::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
 	}
+
+#ifdef ZENITH_INPUT_SIMULATOR
+	// Tear down per-frame simulated input AFTER the scene/script update
+	// has consumed it. Specifically clears the mouse-wheel delta — see
+	// Zenith_InputSimulator::EndOfFrameTickComplete for the lifecycle.
+	Zenith_InputSimulator::EndOfFrameTickComplete();
+#endif
+
 	Flux_Graphics::UploadFrameConstants();
 
 	// Only submit render tasks if we're going to process them

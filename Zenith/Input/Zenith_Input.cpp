@@ -9,6 +9,7 @@
 static std::unordered_set<Zenith_KeyCode> s_xFrameKeyPresses;
 static Zenith_Maths::Vector2_64 s_xLastMousePosition = { 0.0, 0.0 };
 static Zenith_Maths::Vector2_64 s_xMouseDelta = { 0.0, 0.0 };
+static float s_fMouseWheelDelta = 0.0f;
 static bool s_bFirstFrame = true;
 #ifdef ZENITH_INPUT_SIMULATOR
 // Tracks whether the previous frame was simulator-driven. Switching between
@@ -64,6 +65,9 @@ void Zenith_Input::BeginFrame()
 #endif
 
 	s_xFrameKeyPresses.clear();
+	// Reset wheel accumulator BEFORE poll — GLFW scroll callbacks accumulate
+	// during this BeginFrame's poll cycle; game code reads after.
+	s_fMouseWheelDelta = 0.0f;
 
 	// Calculate mouse delta
 	Zenith_Maths::Vector2_64 xCurrentMousePos;
@@ -121,6 +125,27 @@ void Zenith_Input::KeyPressedCallback(Zenith_KeyCode iKey)
 void Zenith_Input::MouseButtonPressedCallback(Zenith_KeyCode iKey)
 {
 	s_xFrameKeyPresses.insert(iKey);
+}
+
+void Zenith_Input::MouseWheelCallback(double /*fXOffset*/, double fYOffset)
+{
+	// Accumulate within the frame — multiple scroll callbacks may fire
+	// between two BeginFrame calls.
+	s_fMouseWheelDelta += static_cast<float>(fYOffset);
+}
+
+float Zenith_Input::GetMouseWheelDelta()
+{
+#ifdef ZENITH_INPUT_SIMULATOR
+	if (Zenith_InputSimulator::IsEnabled())
+	{
+		// Simulator path lives entirely in the simulator class — that lets
+		// SimulateMouseWheel inject a value that survives a full frame
+		// without the GLFW callback path interfering.
+		return Zenith_InputSimulator::GetMouseWheelDeltaSimulated();
+	}
+#endif
+	return s_fMouseWheelDelta;
 }
 
 void Zenith_Input::GetMousePosition(Zenith_Maths::Vector2_64& xOut)

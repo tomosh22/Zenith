@@ -36,6 +36,10 @@ public:
 	static void SimulateTap(double fScreenX, double fScreenY);
 	static void SimulateSwipe(double fStartX, double fStartY, double fEndX, double fEndY, u_int32 uDurationFrames);
 
+	// Mouse wheel simulation (EXT-4). Stays asserted for one full frame —
+	// EndTestFrame clears it, mirroring SimulateKeyPress semantics.
+	static void SimulateMouseWheel(float fDelta);
+
 	// UI element click helper: resolves element name to screen center and simulates a click
 	static void SimulateClickOnUIElement(const char* szElementName);
 
@@ -60,9 +64,17 @@ public:
 	static bool IsKeyDownSimulated(Zenith_KeyCode eKey);
 	static bool WasKeyPressedThisFrameSimulated(Zenith_KeyCode eKey);
 	static void GetMousePositionSimulated(Zenith_Maths::Vector2_64& xOut);
+	static float GetMouseWheelDeltaSimulated();
 
 	// Frame lifecycle (called by Zenith_Input::BeginFrame)
 	static void ProcessAutoReleases();
+
+	// Called once per main-loop iteration AFTER the scene/script update
+	// phase, by Zenith_Core::Zenith_MainLoop. Clears the simulator's
+	// single-frame mouse-wheel delta so a SimulateMouseWheel() value lives
+	// for exactly one frame regardless of whether it was queued in Setup
+	// (before tick 0) or inside a Step (mid-tick).
+	static void EndOfFrameTickComplete();
 
 private:
 	static bool s_bEnabled;
@@ -77,6 +89,9 @@ private:
 	static constexpr u_int32 uMAX_AUTO_RELEASE = 32;
 	static Zenith_KeyCode s_aeAutoReleaseKeys[uMAX_AUTO_RELEASE];
 	static u_int32 s_uAutoReleaseCount;
+
+	// Mouse wheel simulation state (EXT-4)
+	static float s_fMouseWheelDelta;
 };
 
 #endif // ZENITH_INPUT_SIMULATOR

@@ -16,6 +16,10 @@
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"
+#include "Flux/Flux_ModelInstance.h"
+#include "AssetHandling/Zenith_MeshAsset.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_ColliderComponent, "Collider")
 
@@ -176,10 +180,120 @@ namespace
 	}
 }
 
+void Zenith_ColliderComponent::ComputeBoxDimensionsAndOffset(
+	const Zenith_Maths::Vector3& xScale,
+	Zenith_Maths::Vector3& xHalfExtentsOut,
+	Zenith_Maths::Vector3& xLocalOffsetOut,
+	bool bWarnOnDegenerateBounds) const
+{
+	// Sizing strategy:
+	//   - When the entity has a Zenith_ModelComponent and the mesh asset
+	//     exposes its bounds, use those: half-extents = mesh_extents * scale,
+	//     and offset the box by the mesh's centre (also scaled). This is
+	//     critical for the BuildingAssetKit walls — their mesh sits at
+	//     bounds (-1, 0, -1) to (1, 4, 1), i.e. a 2×4×2 brick anchored at
+	//     y=0 — so the legacy "unit cube" assumption built a 1×1×1 collider
+	//     and let villagers walk straight through the visible wall above.
+	//   - When no model is attached (synthetic AABB-only entities) or the
+	//     mesh hasn't loaded yet, fall back to the unit-cube assumption so
+	//     test code that calls AddCollider without a mesh keeps working.
+	//
+	// Shared between CreateBoxShape (creates the actual Jolt body) and
+	// QueueDebugDraw (renders the wireframe). Without this consolidation
+	// the wireframe was sized purely from entity scale while the physics
+	// shape was mesh-aware, and the two visualisations drifted apart for
+	// every multi-meter wall in the level — confusing when debugging.
+	xHalfExtentsOut.x = std::abs(xScale.x) * 0.5f;
+	xHalfExtentsOut.y = std::abs(xScale.y) * 0.5f;
+	xHalfExtentsOut.z = std::abs(xScale.z) * 0.5f;
+	xLocalOffsetOut = Zenith_Maths::Vector3(0.0f);
+
+	if (m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+	{
+		const Zenith_ModelComponent& xModel =
+			m_xParentEntity.GetComponent<Zenith_ModelComponent>();
+		// Single-slot contract: we size the OBB from mesh #0's bounds only.
+		// Multi-mesh models (e.g., a character composed of body + clothing
+		// sub-meshes, or a kitbash prop with a base + decoration) end up
+		// with a collider that covers ONLY the first sub-mesh's footprint.
+		// That is intentional for the typical case where mesh #0 is the
+		// "primary" mesh and the others are attachments; if a multi-mesh
+		// entity needs an enclosing collider it must compute the union of
+		// all sub-mesh bounds itself and call AddCapsuleCollider /
+		// equivalent with explicit dimensions, or sit behind multiple
+		// child entities each owning their own ColliderComponent.
+		if (Flux_MeshInstance* pxMeshInstance = xModel.GetMeshInstance(0))
+		{
+			if (Zenith_MeshAsset* pxAsset = pxMeshInstance->GetSourceAsset())
+			{
+				const Zenith_Maths::Vector3& xMin = pxAsset->GetBoundsMin();
+				const Zenith_Maths::Vector3& xMax = pxAsset->GetBoundsMax();
+				const bool bBoundsValid =
+					(xMax.x - xMin.x) > 0.001f &&
+					(xMax.y - xMin.y) > 0.001f &&
+					(xMax.z - xMin.z) > 0.001f;
+				if (bBoundsValid)
+				{
+					xHalfExtentsOut.x = (xMax.x - xMin.x) * 0.5f * std::abs(xScale.x);
+					xHalfExtentsOut.y = (xMax.y - xMin.y) * 0.5f * std::abs(xScale.y);
+					xHalfExtentsOut.z = (xMax.z - xMin.z) * 0.5f * std::abs(xScale.z);
+					xLocalOffsetOut.x = (xMax.x + xMin.x) * 0.5f * xScale.x;
+					xLocalOffsetOut.y = (xMax.y + xMin.y) * 0.5f * xScale.y;
+					xLocalOffsetOut.z = (xMax.z + xMin.z) * 0.5f * xScale.z;
+				}
+				else if (bWarnOnDegenerateBounds)
+				{
+					// Visible to anyone hitting the streaming edge case; the
+					// scale-only collider will be wrong-sized for the
+					// loaded mesh. Tools/CI can grep for this string when
+					// debugging mismatched colliders. Only the body-create
+					// path warns; debug-draw stays quiet on the same
+					// degenerate-bounds condition since the physics layer
+					// already logged it.
+					Zenith_Warning(LOG_CATEGORY_PHYSICS,
+						"CreateBoxShape: mesh bounds degenerate (asset='%s', "
+						"min=(%g,%g,%g) max=(%g,%g,%g)); using scale-only "
+						"sizing — call RebuildCollider() after asset load",
+						xModel.GetModelPath().c_str(),
+						xMin.x, xMin.y, xMin.z, xMax.x, xMax.y, xMax.z);
+				}
+			}
+		}
+	}
+}
+
 JPH::RefConst<JPH::Shape> Zenith_ColliderComponent::CreateBoxShape(const Zenith_Maths::Vector3& xScale) const
 {
-	// BoxShape takes half-extents; unit cube is -0.5..0.5 so half-extent = scale * 0.5
-	return new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
+	Zenith_Maths::Vector3 xHalfExtents;
+	Zenith_Maths::Vector3 xLocalOffset;
+	ComputeBoxDimensionsAndOffset(xScale, xHalfExtents, xLocalOffset,
+		/*bWarnOnDegenerateBounds=*/true);
+
+	float fHalfX = xHalfExtents.x;
+	float fHalfY = xHalfExtents.y;
+	float fHalfZ = xHalfExtents.z;
+
+	// Jolt's BoxShape min half-extent is JPH::cDefaultConvexRadius (0.05 m);
+	// clamp tiny values so creating a shape for thin meshes doesn't assert.
+	const float fMin = JPH::cDefaultConvexRadius;
+	fHalfX = std::max(fHalfX, fMin);
+	fHalfY = std::max(fHalfY, fMin);
+	fHalfZ = std::max(fHalfZ, fMin);
+
+	JPH::RefConst<JPH::Shape> pxBox = new JPH::BoxShape(JPH::Vec3(fHalfX, fHalfY, fHalfZ));
+
+	// If the mesh isn't centred on its origin (e.g., walls anchored at the
+	// floor with y_min=0) wrap the box in a RotatedTranslatedShape so the
+	// physics box stays aligned with the visible mesh. Skip the wrap when
+	// the offset is effectively zero to avoid the indirection cost.
+	if (xLocalOffset.x * xLocalOffset.x +
+		xLocalOffset.y * xLocalOffset.y +
+		xLocalOffset.z * xLocalOffset.z > 0.000001f)
+	{
+		const JPH::Vec3 xOffset(xLocalOffset.x, xLocalOffset.y, xLocalOffset.z);
+		return new JPH::RotatedTranslatedShape(xOffset, JPH::Quat::sIdentity(), pxBox);
+	}
+	return pxBox;
 }
 
 JPH::RefConst<JPH::Shape> Zenith_ColliderComponent::CreateSphereShape(const Zenith_Maths::Vector3& xScale) const
@@ -500,15 +614,50 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 	switch (m_eVolumeType)
 	{
 	case COLLISION_VOLUME_TYPE_AABB:
-		Flux_Primitives::AddWireframeCube(xPosition, xScale * 0.5f, xColor);
+	{
+		// Mirror CreateBoxShape's mesh-aware sizing so the wireframe matches
+		// the physics body. For AABB, rotation is identity so the local
+		// offset just shifts the box centre in world space.
+		Zenith_Maths::Vector3 xHalfExtents, xLocalOffset;
+		ComputeBoxDimensionsAndOffset(xScale, xHalfExtents, xLocalOffset,
+			/*bWarnOnDegenerateBounds=*/false);
+		Flux_Primitives::AddWireframeCube(xPosition + xLocalOffset, xHalfExtents, xColor);
 		break;
+	}
 
 	case COLLISION_VOLUME_TYPE_OBB:
 	{
-		Zenith_Maths::Matrix4 xModelMatrix;
-		xTransform.BuildModelMatrix(xModelMatrix);
+		// Same mesh-aware sizing as the body. For OBB the local offset is
+		// rotated by the entity's transform — apply the rotation manually
+		// since BuildUnitCubeCorners assumes a unit-cube centred at origin.
+		Zenith_Maths::Vector3 xHalfExtents, xLocalOffset;
+		ComputeBoxDimensionsAndOffset(xScale, xHalfExtents, xLocalOffset,
+			/*bWarnOnDegenerateBounds=*/false);
+		const Zenith_Maths::Vector3 xRotatedOffset =
+			Zenith_Maths::RotateVector(xLocalOffset, xRotation);
+		const Zenith_Maths::Vector3 xBoxCentre = xPosition + xRotatedOffset;
+		// Build the eight world-space corners of an axis-aligned box of
+		// xHalfExtents centred at xBoxCentre, then rotate each by the
+		// entity's rotation.
+		static const Zenith_Maths::Vector3 s_axLocalCornerSigns[8] = {
+			Zenith_Maths::Vector3(-1.0f, -1.0f, -1.0f),
+			Zenith_Maths::Vector3( 1.0f, -1.0f, -1.0f),
+			Zenith_Maths::Vector3(-1.0f,  1.0f, -1.0f),
+			Zenith_Maths::Vector3( 1.0f,  1.0f, -1.0f),
+			Zenith_Maths::Vector3(-1.0f, -1.0f,  1.0f),
+			Zenith_Maths::Vector3( 1.0f, -1.0f,  1.0f),
+			Zenith_Maths::Vector3(-1.0f,  1.0f,  1.0f),
+			Zenith_Maths::Vector3( 1.0f,  1.0f,  1.0f),
+		};
 		Zenith_Maths::Vector3 axCorners[8];
-		BuildUnitCubeCorners(xModelMatrix, axCorners);
+		for (uint32_t u = 0; u < 8; ++u)
+		{
+			const Zenith_Maths::Vector3 xLocalCorner(
+				s_axLocalCornerSigns[u].x * xHalfExtents.x,
+				s_axLocalCornerSigns[u].y * xHalfExtents.y,
+				s_axLocalCornerSigns[u].z * xHalfExtents.z);
+			axCorners[u] = xBoxCentre + Zenith_Maths::RotateVector(xLocalCorner, xRotation);
+		}
 		AddWireBoxEdges(axCorners, xColor);
 		break;
 	}

@@ -1,0 +1,21 @@
+// Root Gradle script — same layout as Games/Combat/Android/build.gradle.
+// AGDE injects the NDK toolchain and ABI configuration via the
+// vcxproj-side AndroidApplicationModule/AndroidEnablePackaging knobs; this
+// file just needs to declare the AGP classpath so the :app module can
+// resolve `com.android.application`.
+buildscript {
+	repositories {
+		google()
+		mavenCentral()
+	}
+	dependencies {
+		classpath 'com.android.tools.build:gradle:8.2.0'
+	}
+}
+
+allprojects {
+	repositories {
+		google()
+		mavenCentral()
+	}
+}

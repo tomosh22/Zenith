@@ -1,0 +1,215 @@
+Asset count: 203
+Asset classes:
+  Texture2D: 45
+  Blueprint: 41
+  ObjectRedirector: 29
+  Material: 26
+  StaticMesh: 23
+  MaterialInstanceConstant: 8
+  WidgetBlueprint: 6
+  World: 6
+  InputAction: 5
+  CanvasRenderTarget2D: 2
+  ControlRigBlueprint: 2
+  MaterialFunction: 2
+  StringTable: 2
+  BehaviorTree: 1
+  BlackboardData: 1
+  DataTable: 1
+  InputMappingContext: 1
+  MaterialParameterCollection: 1
+  NiagaraSystem: 1
+
+Maps:
+  /Game/DevilsPlayground/GYMs/GYM_AI actors=23 error=None
+    StaticMeshActor: 12
+    BP_DummyNoiseMachine_C: 1
+    BP_PriestPawn_C: 1
+    CameraActor: 1
+    DirectionalLight: 1
+    ExponentialHeightFog: 1
+    NavMeshBoundsVolume: 1
+    PlayerStart: 1
+    RecastNavMesh: 1
+    SkyAtmosphere: 1
+    SkyLight: 1
+    VolumetricCloud: 1
+  /Game/DevilsPlayground/GYMs/GYM_CCC actors=8 error=None
+    StaticMeshActor: 2
+    BP_Blacksmith_C: 1
+    BP_Pleb_C: 1
+    CameraActor: 1
+    DirectionalLight: 1
+    PlayerStart: 1
+    PostProcessVolume: 1
+  /Game/DevilsPlayground/GYMs/Gym_Interactables actors=34 error=None
+    StaticMeshActor: 18
+    BP_Blacksmith_C: 1
+    BP_ChestInteractable_C: 1
+    BP_Door_C: 1
+    BP_DoubleDoor_C: 1
+    BP_Pleb_C: 1
+    CameraActor: 1
+    DirectionalLight: 1
+    ExponentialHeightFog: 1
+    NavMeshBoundsVolume: 1
+    PlayerStart: 1
+    PostProcessVolume: 1
+    RecastNavMesh: 1
+    SkyAtmosphere: 1
+    SkyLight: 1
+    VolumetricCloud: 1
+    WorldPartitionMiniMapVolume: 1
+  /Game/DevilsPlayground/Items/Level_ItemTest actors=18 error=None
+    BP_ItemSpawn_C: 4
+    BP_Door_C: 1
+    BP_Forge_C: 1
+    BP_Interactable_Pentagram_C: 1
+    BP_ItemManager_C: 1
+    BP_Pleb_C: 1
+    BP_TestHouse_C: 1
+    CameraActor: 1
+    DirectionalLight: 1
+    ExponentialHeightFog: 1
+    PlayerStart: 1
+    SkyAtmosphere: 1
+    SkyLight: 1
+    StaticMeshActor: 1
+    VolumetricCloud: 1
+  /Game/DevilsPlayground/L_FrontEnd actors=0 error=None
+  /Game/DevilsPlayground/L_GameLevel actors=249 error=None
+    StaticMeshActor: 139
+    BP_Light_C: 24
+    BP_MushroomGroup_C: 21
+    BP_Door_C: 15
+    BP_ItemSpawn_C: 15
+    BP_Pleb_C: 14
+    BP_ChestInteractable_C: 6
+    BP_Blacksmith_C: 2
+    BP_FogManager_C: 1
+    BP_PriestPawn_C: 1
+    BP_Seer_C: 1
+    CameraActor: 1
+    DirectionalLight: 1
+    NavMeshBoundsVolume: 1
+    NiagaraActor: 1
+    PlayerStart: 1
+    PointLight: 1
+    PostProcessVolume: 1
+    RecastNavMesh: 1
+    SkyAtmosphere: 1
+
+Input mappings:
+  /Game/DevilsPlayground/Input/IMC_Villager.IMC_Villager
+    /Game/DevilsPlayground/Input/IA_MoveVillager.IA_MoveVillager -> W
+    /Game/DevilsPlayground/Input/IA_MoveVillager.IA_MoveVillager -> S
+    /Game/DevilsPlayground/Input/IA_MoveVillager.IA_MoveVillager -> A
+    /Game/DevilsPlayground/Input/IA_MoveVillager.IA_MoveVillager -> D
+    /Game/DevilsPlayground/Input/IA_Interact.IA_Interact -> F
+    /Game/DevilsPlayground/Input/IA_VillagerAbility.IA_VillagerAbility -> SpaceBar
+    /Game/DevilsPlayground/Input/IA_RotateCamera.IA_RotateCamera -> E
+    /Game/DevilsPlayground/Input/IA_ZoomCamera.IA_ZoomCamera -> MouseWheelAxis
+    /Game/DevilsPlayground/Input/IA_RotateCamera.IA_RotateCamera -> Q
+    /Game/DevilsPlayground/Input/IA_ZoomCamera.IA_ZoomCamera -> MouseWheelAxis
+
+Blackboards:
+  /Game/DevilsPlayground/AI/BB_Priest.BB_Priest
+    SelfActor : /Game/DevilsPlayground/AI/BB_Priest.BB_Priest:BlackboardKeyType_Object_0
+    TargetWithDevil : /Game/DevilsPlayground/AI/BB_Priest.BB_Priest:BlackboardKeyType_Object_1
+    SuspicionRadius : /Game/DevilsPlayground/AI/BB_Priest.BB_Priest:BlackboardKeyType_Float_0
+    InvestigatePos : /Game/DevilsPlayground/AI/BB_Priest.BB_Priest:BlackboardKeyType_Vector_2
+
+Interesting referencers:
+  BP_Forge:
+    /Game/DevilsPlayground/BPs/WorldGameObjects/BP_Forge.BP_Forge [Blueprint]
+      ref /Game/DevilsPlayground/Items/Level_ItemTest
+  BP_Interactable_Pentagram:
+    /Game/DevilsPlayground/Items/BP_Interactable_Pentagram.BP_Interactable_Pentagram [Blueprint]
+      ref /Game/DevilsPlayground/Items/Level_ItemTest
+      ref /Game/DevilsPlayground/Items/BP_Pentagram
+  BP_DoubleDoor:
+    /Game/DevilsPlayground/BPs/WorldGameObjects/BP_DoubleDoor.BP_DoubleDoor [Blueprint]
+      ref /Game/DevilsPlayground/GYMs/Gym_Interactables
+      ref /Game/DevilsPlayground/BPs/BP_DPDoubleDoor
+  BP_DPDoubleDoor:
+    /Game/DevilsPlayground/BPs/BP_DPDoubleDoor.BP_DPDoubleDoor [ObjectRedirector]
+    /Game/DevilsPlayground/BPs/BP_DPDoubleDoor.BP_DPDoubleDoor_C [ObjectRedirector]
+    /Game/DevilsPlayground/BPs/BP_DPDoubleDoor.Default__BP_DPDoubleDoor_C [ObjectRedirector]
+  BP_DummyNoiseMachine:
+    /Game/DevilsPlayground/AI/BP_DummyNoiseMachine.BP_DummyNoiseMachine [Blueprint]
+      ref /Game/DevilsPlayground/GYMs/GYM_AI
+      ref /Game/DevilsPlayground/AI/BP_PriestController
+  BP_ItemManager:
+    /Game/DevilsPlayground/Items/BP_ItemManager.BP_ItemManager [Blueprint]
+      ref /Game/DevilsPlayground/Items/Level_ItemTest
+  BP_FogManager:
+    /Game/DevilsPlayground/BPs/BP_FogManager.BP_FogManager [Blueprint]
+      ref /Game/DevilsPlayground/L_GameLevel
+  RT_VillagerFogHoles:
+    /Game/DevilsPlayground/Assets/Materials/RT_VillagerFogHoles.RT_VillagerFogHoles [CanvasRenderTarget2D]
+      ref /Game/DevilsPlayground/L_GameLevel
+      ref /Game/DevilsPlayground/Assets/Materials/M_Fog
+  RT_LightFogHoles:
+    /Game/DevilsPlayground/Assets/Materials/RT_LightFogHoles.RT_LightFogHoles [CanvasRenderTarget2D]
+      ref /Game/DevilsPlayground/L_GameLevel
+      ref /Game/DevilsPlayground/Assets/Materials/M_Fog
+  BP_Pleb:
+    /Game/DevilsPlayground/BPs/Characters/BP_Pleb.BP_Pleb [Blueprint]
+      ref /Game/DevilsPlayground/L_GameLevel
+      ref /Game/DevilsPlayground/BPs/WorldGameObjects/BP_Door
+      ref /Game/DevilsPlayground/BPs/Characters/BP_Blacksmith
+      ref /Game/DevilsPlayground/Items/Level_ItemTest
+      ref /Game/DevilsPlayground/Items/BP_Interactable_Pentagram
+      ref /Game/DevilsPlayground/BPs/WorldGameObjects/BP_Forge
+      ref /Game/DevilsPlayground/GYMs/Gym_Interactables
+      ref /Game/DevilsPlayground/GYMs/GYM_CCC
+      ref /Game/DevilsPlayground/BPs/BP_Villager
+      ref /Game/DevilsPlayground/BPs/BP_GameState
+  BP_Villager:
+    /Game/DevilsPlayground/BPs/BP_Villager.BP_Villager [ObjectRedirector]
+    /Game/DevilsPlayground/BPs/BP_Villager.BP_Villager_C [ObjectRedirector]
+    /Game/DevilsPlayground/BPs/BP_Villager.Default__BP_Villager_C [ObjectRedirector]
+  BP_PlayerController:
+    /Game/DevilsPlayground/BPs/BP_PlayerController.BP_PlayerController [Blueprint]
+      ref /Game/DevilsPlayground/BPs/BP_GameMode
+      ref /Game/DevilsPlayground/AI/BP_PriestController
+  BP_PriestController:
+    /Game/DevilsPlayground/AI/BP_PriestController.BP_PriestController [Blueprint]
+      ref /Game/DevilsPlayground/AI/BP_PriestPawn
+  BT_Priest:
+    /Game/DevilsPlayground/AI/BT_Priest.BT_Priest [BehaviorTree]
+      ref /Game/DevilsPlayground/AI/BP_PriestController
+  BB_Priest:
+    /Game/DevilsPlayground/AI/BB_Priest.BB_Priest [BlackboardData]
+      ref /Game/DevilsPlayground/AI/BT_Priest
+      ref /Game/DevilsPlayground/AI/BP_PriestController
+  BTT_FindPosInSuspicionSphere:
+    /Game/DevilsPlayground/AI/BTT_FindPosInSuspicionSphere.BTT_FindPosInSuspicionSphere [Blueprint]
+      ref /Game/DevilsPlayground/AI/BT_Priest
+  BTD_IsTargetValid:
+    /Game/DevilsPlayground/AI/BTD_IsTargetValid.BTD_IsTargetValid [Blueprint]
+      ref /Game/DevilsPlayground/AI/BT_Priest
+  PFX_Witch:
+    /Game/DevilsPlayground/Assets/Blockout/PFX_Witch.PFX_Witch [NiagaraSystem]
+      ref /Game/DevilsPlayground/L_GameLevel
+  IMC_Villager:
+    /Game/DevilsPlayground/Input/IMC_Villager.IMC_Villager [InputMappingContext]
+      ref /Game/DevilsPlayground/BPs/BP_PlayerController
+  IA_VillagerAbility:
+    /Game/DevilsPlayground/Input/IA_VillagerAbility.IA_VillagerAbility [InputAction]
+      ref /Game/DevilsPlayground/Input/IMC_Villager
+  WBP_ItemPickUp:
+    /Game/DevilsPlayground/Items/WBP_ItemPickUp.WBP_ItemPickUp [WidgetBlueprint]
+      ref /Game/DevilsPlayground/Items/BP_Item
+      ref /Game/DevilsPlayground/Items/BP_Item_Objective5
+      ref /Game/DevilsPlayground/Items/BP_Item_Objective4
+      ref /Game/DevilsPlayground/Items/BP_Item_Objective3
+      ref /Game/DevilsPlayground/Items/BP_Item_Objective2
+      ref /Game/DevilsPlayground/Items/BP_Item_Objective1
+  WBP_HUDLayout:
+  BP_Item_Objective:
+    /Game/DevilsPlayground/Items/BP_Item_Objective1.BP_Item_Objective1 [Blueprint]
+    /Game/DevilsPlayground/Items/BP_Item_Objective2.BP_Item_Objective2 [Blueprint]
+    /Game/DevilsPlayground/Items/BP_Item_Objective3.BP_Item_Objective3 [Blueprint]
+    /Game/DevilsPlayground/Items/BP_Item_Objective4.BP_Item_Objective4 [Blueprint]
+    /Game/DevilsPlayground/Items/BP_Item_Objective5.BP_Item_Objective5 [Blueprint]

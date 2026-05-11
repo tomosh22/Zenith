@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -879,6 +879,7 @@
     <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
     <ClInclude Include="..\Zenith\Core\Zenith.h" />
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h" />
@@ -1019,6 +1020,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_NormalsCopy.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_LightClustering.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\DP_Fog.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_Fog.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Apply.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Inject.slang" />
@@ -1028,6 +1030,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_TemporalFog_Resolve.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\AnimatedMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\ComputeTest.h" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Decals.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\DeferredShading.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\DynamicLights.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\FluxShaderProgram.h" />
@@ -1111,6 +1114,7 @@
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.h" />
     <ClInclude Include="..\Zenith\Flux\Text\Flux_Text.h" />
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_Grass.h" />
+    <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderHook.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_InputSimulator.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_KeyCodes.h" />
@@ -1811,6 +1815,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_AutomatedTest.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_GraphicsOptions.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Main.cpp" />
@@ -1981,6 +1986,7 @@
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.cpp" />
     <ClCompile Include="..\Zenith\Flux\Text\Flux_Text.cpp" />
     <ClCompile Include="..\Zenith\Flux\Vegetation\Flux_Grass.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Zenith_GameRenderHook.cpp" />
     <ClCompile Include="..\Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="..\Zenith\Input\Zenith_InputSimulator.cpp" />
     <ClCompile Include="..\Zenith\Input\Zenith_TouchInput.cpp" />

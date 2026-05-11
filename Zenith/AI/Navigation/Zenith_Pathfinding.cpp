@@ -48,6 +48,12 @@ namespace
 
 		const Zenith_NavMeshPolygon& xNeighborPoly = xNavMesh.GetPolygon(uNeighbor);
 
+		// Dynamic-obstacle gate: blocked polygons (closed doors, transient
+		// blockers) are invisible to A*. They are NOT added to the closed set
+		// either, so unblocking later via SetPolygonBlocked(false) makes the
+		// polygon available on the next path query without any rebuild.
+		if (xNeighborPoly.IsBlocked()) return;
+
 		float fEdgeCost = Zenith_Maths::Length(xNeighborPoly.m_xCenter - xCurrentCenter);
 		fEdgeCost *= xNeighborPoly.m_fCost;  // Apply area cost multiplier.
 
@@ -163,6 +169,25 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 	PathEndpoints xEndpoints;
 	if (!LocaliseEndpoints(xNavMesh, xStart, xEnd, xEndpoints)) return xResult;
 
+	// Dynamic-obstacle gate at the endpoint level. ExpandNeighbor already
+	// skips FLAG_BLOCKED polygons during A* traversal, but that gate fires
+	// AFTER the same-polygon shortcut below — so a query that starts AND
+	// ends inside one blocked polygon (closed door footprint, transient
+	// blocker, or any scenario on the flat one-polygon DP navmesh) would
+	// return a straight SUCCESS path walking through the blocker.
+	// Reporting FAILED here matches the semantics callers expect when the
+	// requested destination is unreachable through the navmesh's current
+	// blocker state.
+	if (xNavMesh.GetPolygon(xEndpoints.m_uStartPoly).IsBlocked() ||
+		xNavMesh.GetPolygon(xEndpoints.m_uEndPoly).IsBlocked())
+	{
+		Zenith_Log(LOG_CATEGORY_AI,
+			"Pathfinding: endpoint inside blocked polygon (startPoly=%u blocked=%d, endPoly=%u blocked=%d)",
+			xEndpoints.m_uStartPoly, xNavMesh.GetPolygon(xEndpoints.m_uStartPoly).IsBlocked() ? 1 : 0,
+			xEndpoints.m_uEndPoly,   xNavMesh.GetPolygon(xEndpoints.m_uEndPoly).IsBlocked() ? 1 : 0);
+		return xResult;
+	}
+
 	// Same polygon — direct path, no A* required.
 	if (xEndpoints.m_uStartPoly == xEndpoints.m_uEndPoly)
 	{
@@ -251,6 +276,35 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 	return xResult;
 }
 
+namespace
+{
+	// Walks a line segment in `kSamples` steps and returns true if any
+	// sampled point lies inside a polygon flagged FLAG_BLOCKED. Used by
+	// SmoothPath to refuse a shortcut that would slice through a closed
+	// door or any other transient blocker — Zenith_NavMesh::Raycast doesn't
+	// know about the flag (it tests ray-vs-polygon-plane, which on a flat
+	// navmesh always misses), so without this probe smoothing happily
+	// straight-lines the path back through the very obstacle A* routed
+	// around.
+	//
+	// 12 samples gives sub-metre spacing for typical 5–10 m shortcut
+	// candidates without measurably impacting per-path planning cost.
+	bool SegmentCrossesBlockedPolygon(const Zenith_NavMesh& xNavMesh,
+		const Zenith_Maths::Vector3& xA, const Zenith_Maths::Vector3& xB)
+	{
+		constexpr int kSamples = 12;
+		for (int i = 1; i < kSamples; ++i)
+		{
+			const float fT = static_cast<float>(i) / static_cast<float>(kSamples);
+			const Zenith_Maths::Vector3 xP = xA + (xB - xA) * fT;
+			const uint32_t uPoly = xNavMesh.FindPolygonContaining(xP, /*fMaxVerticalDist=*/1.5f);
+			if (uPoly == UINT32_MAX) continue;
+			if (xNavMesh.GetPolygon(uPoly).IsBlocked()) return true;
+		}
+		return false;
+	}
+}
+
 void Zenith_Pathfinding::SmoothPath(Zenith_Vector<Zenith_Maths::Vector3>& axPath,
 	const Zenith_NavMesh& xNavMesh)
 {
@@ -275,15 +329,27 @@ void Zenith_Pathfinding::SmoothPath(Zenith_Vector<Zenith_Maths::Vector3>& axPath
 		{
 			// Check if we can see directly from current to u
 			Zenith_Maths::Vector3 xHit;
-			if (!xNavMesh.Raycast(axPath.Get(uCurrent), axPath.Get(u), xHit))
+			const bool bRaycastBlocked =
+				xNavMesh.Raycast(axPath.Get(uCurrent), axPath.Get(u), xHit);
+			// Dynamic-obstacle gate — see SegmentCrossesBlockedPolygon
+			// above. The geometric Raycast misses FLAG_BLOCKED polygons
+			// on a flat navmesh, so a closed door would be invisible to
+			// the smoother and the funnel-equivalent shortcut would
+			// cut through it.
+			const bool bBlockedByObstacle =
+				SegmentCrossesBlockedPolygon(xNavMesh,
+					axPath.Get(uCurrent), axPath.Get(u));
+			if (!bRaycastBlocked && !bBlockedByObstacle)
 			{
-				// Raycast didn't hit anything on navmesh, path is clear
+				// Path is geometrically clear AND doesn't cross a blocked
+				// polygon — safe to extend the shortcut.
 				uFurthest = u;
 			}
 			else
 			{
-				// Raycast hit something - we can't shortcut past this point
-				// Stop looking further since subsequent waypoints would also be blocked
+				// Either we'd leave the navmesh or cross a blocked
+				// polygon. Subsequent waypoints would also be unreachable
+				// from uCurrent by the same line, so stop searching.
 				break;
 			}
 		}

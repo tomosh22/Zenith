@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Flux.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 #include "Flux/Fog/Flux_GodRaysFog.h"
 #include "Flux/Fog/Flux_RaymarchFog.h"
@@ -24,6 +25,21 @@ static Flux_PassHandle s_xFroxelApplyPass;
 static Flux_PassHandle s_xRaymarchPass;
 static Flux_PassHandle s_xGodRaysPass;
 static u_int s_uLastFogTechnique = UINT32_MAX;
+
+// Game-side override flag (EXT-1). When true, all 6 fog passes are explicitly
+// disabled on the active render graph and ApplyTechniqueSelectionToGraph
+// short-circuits.
+static bool s_bExternallyOverridden = false;
+
+static void DisableAllFogPasses(Flux_RenderGraph& xGraph)
+{
+	xGraph.SetEnabled(s_xSimpleFogPass,        false);
+	xGraph.SetEnabled(s_xFroxelInjectPass,     false);
+	xGraph.SetEnabled(s_xFroxelLightPass,      false);
+	xGraph.SetEnabled(s_xFroxelApplyPass,      false);
+	xGraph.SetEnabled(s_xRaymarchPass,         false);
+	xGraph.SetEnabled(s_xGodRaysPass,          false);
+}
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -105,6 +121,13 @@ void Flux_Fog::Reset()
 
 void Flux_Fog::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 {
+	// EXT-1: when a game has taken over fog rendering via SetExternallyOverridden,
+	// short-circuit completely — DON'T re-toggle SetEnabled per frame, otherwise
+	// the per-frame technique cache would re-enable engine fog passes the next
+	// time the cached technique compares unequal.
+	if (s_bExternallyOverridden)
+		return;
+
 	const u_int uTechnique = Zenith_GraphicsOptions::Get().m_uVolFogTechnique;
 	if (uTechnique == s_uLastFogTechnique)
 		return;
@@ -256,4 +279,46 @@ void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	s_xGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays)
 		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+
+	// EXT-1: re-apply game-side override after the graph has been (re)built.
+	// Without this, a RequestGraphRebuild() while the flag is set would leave
+	// fog passes in their default-enabled state until the next technique
+	// switch. Pass handles above are freshly populated, so DisableAllFogPasses
+	// is safe to call here.
+	ReapplyOverrideToCurrentGraph();
+}
+
+bool Flux_Fog::IsExternallyOverridden()
+{
+	return s_bExternallyOverridden;
+}
+
+void Flux_Fog::SetExternallyOverridden(bool bOverridden)
+{
+	s_bExternallyOverridden = bOverridden;
+
+	// Touch the active graph immediately so the change takes effect this
+	// frame, regardless of whether ApplyTechniqueSelectionToGraph runs.
+	if (!Flux::IsRenderGraphValid()) return;
+	Flux_RenderGraph& xGraph = Flux::GetRenderGraph();
+
+	if (bOverridden)
+	{
+		DisableAllFogPasses(xGraph);
+	}
+	else
+	{
+		// Don't blanket-enable all 6 passes — let ApplyTechniqueSelectionToGraph
+		// pick whichever subset matches the current technique on the next
+		// frame. Invalidate the cached technique so the apply path runs.
+		s_uLastFogTechnique = UINT32_MAX;
+	}
+	xGraph.MarkDirty();
+}
+
+void Flux_Fog::ReapplyOverrideToCurrentGraph()
+{
+	if (!s_bExternallyOverridden) return;
+	if (!Flux::IsRenderGraphValid()) return;
+	DisableAllFogPasses(Flux::GetRenderGraph());
 }

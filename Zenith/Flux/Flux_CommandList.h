@@ -93,7 +93,9 @@ public:
 private:
 	// Inline storage cap for deferred command payload.
 	// NOT related to Vulkan's maxPushConstantsSize — this path binds a dynamic UBO, not push constants.
-	static constexpr u_int uMAX_SIZE = 512;
+	// Sized to comfortably fit DP's per-frame fog CBV (60 holes × 16 B
+	// + 32 B header ≈ 1 KiB) plus headroom for future per-pass payloads.
+	static constexpr u_int uMAX_SIZE = 2048;
 
 	u_int8 m_acData[uMAX_SIZE];
 	u_int m_uSize;

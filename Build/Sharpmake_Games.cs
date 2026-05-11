@@ -244,3 +244,15 @@ public class AIShowcaseGameProject : GameProject
 		// AIShowcase-specific configuration if needed
 	}
 }
+
+// DevilsPlayground game project - Click-to-possess top-down occult horror (UE5 game-jam port)
+[Sharpmake.Generate]
+public class DevilsPlaygroundGameProject : GameProject
+{
+	public override string GameName => "DevilsPlayground";
+
+	public DevilsPlaygroundGameProject() : base()
+	{
+		// DevilsPlayground-specific configuration if needed
+	}
+}

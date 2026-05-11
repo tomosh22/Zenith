@@ -27,7 +27,7 @@ struct Zenith_GraphicsOptions
 	bool m_bShadowsEnabled = true;
 	bool m_bSkyboxEnabled = true;
 	bool m_bSSAOEnabled = true;
-	bool m_bSSGIEnabled = true;
+	bool m_bSSGIEnabled = false;
 	bool m_bSSREnabled = true;
 	bool m_bStaticMeshesEnabled = true;
 	bool m_bTerrainEnabled = true;

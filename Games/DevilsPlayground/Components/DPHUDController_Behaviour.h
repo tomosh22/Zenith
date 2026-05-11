@@ -1,0 +1,230 @@
+#pragma once
+/**
+ * DPHUDController_Behaviour - in-game HUD. Updates:
+ *   - Life bar: 20-tick bar reflecting possessed villager's remaining life,
+ *     with colour gradient green→yellow→red as life depletes (urgency cue).
+ *   - Held item: shows the held item's tag name, or hidden when empty.
+ *   - Objective counter: "Objectives: N/5", reflects DP_Win::GetCollected….
+ *   - Status banner: VICTORY / death prompt, listens for DP_OnVictory and
+ *     DP_OnVillagerDied. Auto-clears after a short timeout for death so
+ *     the player isn't permanently overlaid.
+ *
+ * The Status / LifeBar / HeldItem / Objectives / PauseOverlay UI elements
+ * are authored by the scene editor automation (see DevilsPlayground.cpp's
+ * AuthorGameLevelScene + AuthorGymCommon). Missing elements are silently
+ * skipped — this lets gym scenes opt out of, e.g., the Objectives counter
+ * if they don't care about the win condition.
+ */
+
+#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Zenith_EventSystem.h"
+#include "UI/Zenith_UIText.h"
+#include "Maths/Zenith_Maths.h"
+
+#include "Source/PublicInterfaces.h"
+#include "Source/DevilsPlayground_Tags.h"
+#include "Components/DPVillager_Behaviour.h"
+
+#include <cstdio>
+#include <cstring>
+
+class DPHUDController_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
+{
+	friend class Zenith_ScriptComponent;
+public:
+	ZENITH_BEHAVIOUR_TYPE_NAME(DPHUDController_Behaviour)
+
+	DPHUDController_Behaviour() = delete;
+	DPHUDController_Behaviour(Zenith_Entity& /*xParentEntity*/) {}
+
+	void OnAwake() ZENITH_FINAL override
+	{
+		// Subscribe with a SubscribeLambda that captures `this` — we MUST
+		// unsubscribe in OnDisable/OnDestroy or the captured `this` will be
+		// dangling after script tear-down.
+		m_xVictoryHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnVictory>(
+			[this](const DP_OnVictory&)
+			{
+				SetStatusText("VICTORY",
+					Zenith_Maths::Vector4(0.3f, 1.0f, 0.3f, 1.0f),
+					/*fHoldSeconds=*/0.0f /* permanent */);
+			});
+		m_xDeathHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnVillagerDied>(
+			[this](const DP_OnVillagerDied&)
+			{
+				SetStatusText("Possess another villager",
+					Zenith_Maths::Vector4(0.9f, 0.2f, 0.2f, 1.0f),
+					/*fHoldSeconds=*/2.5f);
+			});
+	}
+
+	void OnDisable() ZENITH_FINAL override { TearDown(); }
+	void OnDestroy() ZENITH_FINAL override { TearDown(); }
+
+	void OnUpdate(const float fDt) ZENITH_FINAL override
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>()) return;
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		// Status banner timed clear.
+		if (m_fStatusHoldRemaining > 0.0f)
+		{
+			m_fStatusHoldRemaining -= fDt;
+			if (m_fStatusHoldRemaining <= 0.0f)
+			{
+				if (auto* pxStatus = xUI.FindElement<Zenith_UI::Zenith_UIText>("Status"))
+				{
+					pxStatus->SetVisible(false);
+				}
+			}
+		}
+
+		const Zenith_EntityID xV = DP_Player::GetPossessedVillager();
+		const bool bPossessed = xV.IsValid();
+
+		// LifeBar — visible only when possessing.
+		if (auto* pxBar = xUI.FindElement<Zenith_UI::Zenith_UIText>("LifeBar"))
+		{
+			if (!bPossessed)
+			{
+				pxBar->SetVisible(false);
+			}
+			else if (DPVillager_Behaviour* pxVB = TryGetVillager(xV))
+			{
+				const float fT = glm::clamp(pxVB->GetRemainingLife() / pxVB->GetMaxLife(), 0.0f, 1.0f);
+				BuildLifeBar(*pxBar, fT);
+				pxBar->SetVisible(true);
+			}
+		}
+
+		// HeldItem — only when possessing AND something is held. Otherwise hide.
+		if (auto* pxHeld = xUI.FindElement<Zenith_UI::Zenith_UIText>("HeldItem"))
+		{
+			const DP_ItemTag eTag = bPossessed ? DP_Player::GetHeldItemTag(xV) : DP_ItemTag::None;
+			if (eTag == DP_ItemTag::None)
+			{
+				pxHeld->SetVisible(false);
+			}
+			else
+			{
+				char buf[64];
+				std::snprintf(buf, sizeof(buf), "Holding: %s", DP_ItemTagToString(eTag));
+				pxHeld->SetText(buf);
+				// Match the tag-tint colour scheme from DPItemBase.
+				pxHeld->SetColor(TagToColor(eTag));
+				pxHeld->SetVisible(true);
+			}
+		}
+
+		// Objectives — always visible during play, hidden in front-end /
+		// gym scenes that don't author the element.
+		if (auto* pxObj = xUI.FindElement<Zenith_UI::Zenith_UIText>("Objectives"))
+		{
+			const uint32_t uMask = DP_Win::GetCollectedObjectivesMask();
+			// Count set bits in the low 5 (Objective1..Objective5).
+			int iCount = 0;
+			for (int i = 0; i < 5; ++i) if (uMask & (1u << i)) ++iCount;
+			char buf[32];
+			std::snprintf(buf, sizeof(buf), "Objectives: %d/5", iCount);
+			pxObj->SetText(buf);
+			pxObj->SetVisible(true);
+		}
+	}
+
+private:
+	// Gradient: green → yellow → red as life depletes. The interpolation
+	// hands off at 0.5 to keep yellow visible for ~half the bar.
+	static Zenith_Maths::Vector4 LifeColor(float fT)
+	{
+		if (fT >= 0.5f)
+		{
+			const float fU = (fT - 0.5f) * 2.0f;     // 0..1 over upper half
+			return Zenith_Maths::Vector4(
+				glm::mix(1.0f, 0.3f, fU),  // R: yellow→green R
+				glm::mix(1.0f, 1.0f, fU),  // G: stays high
+				glm::mix(0.3f, 0.3f, fU),  // B: low
+				1.0f);
+		}
+		const float fU = fT * 2.0f;                   // 0..1 over lower half
+		return Zenith_Maths::Vector4(
+			glm::mix(1.0f, 1.0f, fU),  // R: red→yellow R
+			glm::mix(0.2f, 1.0f, fU),  // G: red G→yellow G
+			glm::mix(0.2f, 0.3f, fU),  // B: low
+			1.0f);
+	}
+
+	// Mirror DPItemBase tag→color so the HUD readout matches the world tint.
+	static Zenith_Maths::Vector4 TagToColor(DP_ItemTag eTag)
+	{
+		switch (eTag)
+		{
+			case DP_ItemTag::Iron:        return Zenith_Maths::Vector4(0.6f, 0.6f, 0.7f, 1.0f);
+			case DP_ItemTag::Key:         return Zenith_Maths::Vector4(1.0f, 0.85f, 0.2f, 1.0f);
+			case DP_ItemTag::SkeletonKey: return Zenith_Maths::Vector4(0.7f, 0.3f, 0.9f, 1.0f);
+			case DP_ItemTag::Objective1:
+			case DP_ItemTag::Objective2:
+			case DP_ItemTag::Objective3:
+			case DP_ItemTag::Objective4:
+			case DP_ItemTag::Objective5:  return Zenith_Maths::Vector4(0.95f, 0.15f, 0.15f, 1.0f);
+			default:                      return Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+		}
+	}
+
+	void BuildLifeBar(Zenith_UI::Zenith_UIText& xBar, float fT)
+	{
+		const int iBars = static_cast<int>(fT * 20.0f + 0.5f);
+		char buf[64];
+		std::snprintf(buf, sizeof(buf), "Life: ");
+		size_t off = std::strlen(buf);
+		for (int i = 0; i < 20 && off + 1 < sizeof(buf); ++i)
+		{
+			buf[off++] = (i < iBars) ? '|' : '.';
+		}
+		buf[off] = '\0';
+		xBar.SetText(buf);
+		xBar.SetColor(LifeColor(fT));
+	}
+
+	DPVillager_Behaviour* TryGetVillager(Zenith_EntityID xV)
+	{
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xV);
+		if (pxScene == nullptr) return nullptr;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xV);
+		if (!xEnt.IsValid()) return nullptr;
+		if (!xEnt.HasComponent<Zenith_ScriptComponent>()) return nullptr;
+		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+	}
+
+	void SetStatusText(const char* szText, const Zenith_Maths::Vector4& xColor, float fHoldSeconds)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>()) return;
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		if (auto* pxStatus = xUI.FindElement<Zenith_UI::Zenith_UIText>("Status"))
+		{
+			pxStatus->SetText(szText);
+			pxStatus->SetColor(xColor);
+			pxStatus->SetVisible(true);
+		}
+		// Negative or zero hold means "permanent" — Victory uses this.
+		m_fStatusHoldRemaining = (fHoldSeconds > 0.0f) ? fHoldSeconds : -1.0f;
+	}
+
+	void TearDown()
+	{
+		if (m_xVictoryHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(m_xVictoryHandle);
+			m_xVictoryHandle = INVALID_EVENT_HANDLE;
+		}
+		if (m_xDeathHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(m_xDeathHandle);
+			m_xDeathHandle = INVALID_EVENT_HANDLE;
+		}
+	}
+
+	Zenith_EventHandle m_xVictoryHandle       = INVALID_EVENT_HANDLE;
+	Zenith_EventHandle m_xDeathHandle         = INVALID_EVENT_HANDLE;
+	float              m_fStatusHoldRemaining = -1.0f;  // <0 = permanent / not set
+};

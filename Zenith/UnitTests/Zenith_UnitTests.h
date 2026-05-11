@@ -287,6 +287,7 @@ public:
 	static void TestNavMeshRaycast();
 	static void TestNavMeshFindNearestPolygonInCell();
 	static void TestNavMeshComputePolygonBounds();
+	static void TestNavMeshGetRandomReachablePointInRadius();
 	static void TestPathfindingStraightLine();
 	static void TestPathfindingAroundObstacle();
 	static void TestPathfindingNoPath();

@@ -7,6 +7,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -288,6 +289,13 @@ void Zenith_EditorAutomation::AddStep_SetAsMainCamera()               { Push(s_a
 
 void Zenith_EditorAutomation::AddStep_SetTransformPosition(float fX, float fY, float fZ) { Push(s_axActions, ActionType::SET_TRANSFORM_POSITION, fX, fY, fZ); }
 void Zenith_EditorAutomation::AddStep_SetTransformScale   (float fX, float fY, float fZ) { Push(s_axActions, ActionType::SET_TRANSFORM_SCALE,    fX, fY, fZ); }
+void Zenith_EditorAutomation::AddStep_SetTransformYaw     (float fYawRadians)             { Push(s_axActions, ActionType::SET_TRANSFORM_ROTATION_YAW, fYawRadians); }
+
+// -- Light --
+
+void Zenith_EditorAutomation::AddStep_SetLightIntensity(float fLumens)              { Push(s_axActions, ActionType::SET_LIGHT_INTENSITY, fLumens); }
+void Zenith_EditorAutomation::AddStep_SetLightRange    (float fMetres)              { Push(s_axActions, ActionType::SET_LIGHT_RANGE,     fMetres); }
+void Zenith_EditorAutomation::AddStep_SetLightColor    (float fR, float fG, float fB) { Push(s_axActions, ActionType::SET_LIGHT_COLOR, fR, fG, fB); }
 
 // -- UI --
 
@@ -611,6 +619,48 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_SCALE");
 		pxEntity->GetComponent<Zenith_TransformComponent>().SetScale(
 			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_TRANSFORM_ROTATION_YAW:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_ROTATION_YAW");
+		const float fYaw = xAction.m_afArgs[0];
+		const Zenith_Maths::Quat xRot = glm::angleAxis(
+			fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		pxEntity->GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_LIGHT_INTENSITY:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_INTENSITY");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
+			"SET_LIGHT_INTENSITY: selected entity has no LightComponent");
+		pxEntity->GetComponent<Zenith_LightComponent>().SetIntensity(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_LIGHT_RANGE:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_RANGE");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
+			"SET_LIGHT_RANGE: selected entity has no LightComponent");
+		pxEntity->GetComponent<Zenith_LightComponent>().SetRange(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_LIGHT_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_COLOR");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
+			"SET_LIGHT_COLOR: selected entity has no LightComponent");
+		pxEntity->GetComponent<Zenith_LightComponent>().SetColor(
+			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]));
 		break;
 	}
 

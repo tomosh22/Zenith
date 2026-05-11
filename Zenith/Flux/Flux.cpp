@@ -19,6 +19,7 @@
 #include "Flux/SSAO/Flux_SSAO.h"
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
+#include "Flux/Zenith_GameRenderHook.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/SDFs/Flux_SDFs.h"
 #include "Flux/Shadows/Flux_Shadows.h"
@@ -311,6 +312,12 @@ void Flux::SetupRenderGraph()
 	Flux_Skybox::SetupAerialPerspectiveRenderGraph(*s_pxRenderGraph);
 	Flux_SSAO::SetupRenderGraph(*s_pxRenderGraph);
 	Flux_Fog::SetupRenderGraph(*s_pxRenderGraph);
+
+	// Game-side post-fog hook: contracted to fire AFTER engine fog passes are
+	// registered and BEFORE any post-processing passes. Games that disable the
+	// engine fog system (Flux_Fog::SetExternallyOverridden(true)) and substitute
+	// their own atmospheric pass register here. See Zenith_GameRenderHook.h.
+	Zenith_GameRenderHook::InvokePostFogRegistrations(*s_pxRenderGraph);
 
 	// Post-processing
 	Flux_SDFs::SetupRenderGraph(*s_pxRenderGraph);

@@ -2,6 +2,8 @@
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Zenith_AIDebugVariables.h"
 
+#include <random>
+
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_Primitives.h"
 #endif
@@ -567,6 +569,49 @@ uint32_t Zenith_NavMesh::FindPolygonContaining(const Zenith_Maths::Vector3& xPoi
 	return UINT32_MAX;
 }
 
+void Zenith_NavMesh::SetPolygonBlocked(uint32_t uPoly, bool bBlocked) const
+{
+	// Hot-update the flag field. We intentionally cast away const-ness: the
+	// mesh's topology (verts, polys, adjacency, spatial grid) is invariant;
+	// only the dynamic-obstacle flag toggles. Callers that hand out
+	// `const Zenith_NavMesh*` (e.g., DP_AI::GetOrBuildLevelNavMesh) can still
+	// invoke this without forcing every consumer to take a mutable handle.
+	if (uPoly >= m_axPolygons.GetSize()) return;
+	Zenith_NavMeshPolygon& xPoly =
+		const_cast<Zenith_NavMeshPolygon&>(m_axPolygons.Get(uPoly));
+	if (bBlocked) xPoly.m_uFlags |=  Zenith_NavMeshPolygon::FLAG_BLOCKED;
+	else          xPoly.m_uFlags &= ~Zenith_NavMeshPolygon::FLAG_BLOCKED;
+}
+
+uint32_t Zenith_NavMesh::SetBlockedAtPoint(const Zenith_Maths::Vector3& xPoint,
+	bool bBlocked, float fMaxVerticalDist) const
+{
+	// Walk the spatial grid cell at xPoint and flip every polygon whose
+	// 2D footprint contains the point. A door's pivot typically lands
+	// inside exactly one polygon, but a corner pivot could straddle two —
+	// flipping all of them keeps the API safe in that case.
+	if (m_axPolygons.GetSize() == 0) return 0;
+	int32_t iX, iZ;
+	GetGridCoords(xPoint, iX, iZ);
+	const uint32_t uCellIndex = GetGridCellIndex(iX, iZ);
+	if (uCellIndex >= m_axGridCells.GetSize()) return 0;
+
+	uint32_t uToggled = 0;
+	const GridCell& xCell = m_axGridCells.Get(uCellIndex);
+	for (uint32_t u = 0; u < xCell.m_axPolygonIndices.GetSize(); ++u)
+	{
+		const uint32_t uPoly = xCell.m_axPolygonIndices.Get(u);
+		const Zenith_NavMeshPolygon& xPoly = m_axPolygons.Get(uPoly);
+		const float fVertDist =
+			std::abs(Zenith_Maths::Dot(xPoint - xPoly.m_xCenter, xPoly.m_xNormal));
+		if (fVertDist > fMaxVerticalDist) continue;
+		if (!xPoly.ContainsPoint(xPoint, m_axVertices)) continue;
+		SetPolygonBlocked(uPoly, bBlocked);
+		++uToggled;
+	}
+	return uToggled;
+}
+
 bool Zenith_NavMesh::Raycast(const Zenith_Maths::Vector3& xStart,
 	const Zenith_Maths::Vector3& xEnd, Zenith_Maths::Vector3& xHitOut) const
 {
@@ -637,6 +682,233 @@ bool Zenith_NavMesh::ProjectPoint(const Zenith_Maths::Vector3& xPoint,
 {
 	uint32_t uPoly;
 	return FindNearestPolygon(xPoint, uPoly, xProjectedOut, fMaxDist);
+}
+
+bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3& xCenter,
+	float fRadius,
+	Zenith_Maths::Vector3& xOutPoint,
+	uint32_t uMaxAttempts) const
+{
+	if (fRadius <= 0.0f) return false;
+	if (m_axPolygons.GetSize() == 0) return false;
+
+	// ---- Phase 1: locate the source polygon ---------------------------------
+	// Use a search distance comfortably larger than the requested radius so a
+	// caller standing slightly off-mesh still finds a starting island.
+	uint32_t uCenterPoly = UINT32_MAX;
+	Zenith_Maths::Vector3 xNearestOnMesh;
+	const float fLocateMaxDist = fRadius + 5.0f;
+	if (!FindNearestPolygon(xCenter, uCenterPoly, xNearestOnMesh, fLocateMaxDist))
+	{
+		return false;
+	}
+
+	// ---- Phase 2: BFS over polygon adjacency, bounded by horizontal radius --
+	// Visited as parallel array of bools (not a hash set) for speed.
+	const uint32_t uPolyCount = m_axPolygons.GetSize();
+	Zenith_Vector<bool> axVisited;
+	axVisited.Reserve(uPolyCount);
+	for (uint32_t i = 0; i < uPolyCount; ++i) axVisited.PushBack(false);
+
+	Zenith_Vector<uint32_t> axReachable;       // polygons reachable within fRadius
+	Zenith_Vector<uint32_t> axQueue;            // BFS frontier
+
+	const float fRadiusSq = fRadius * fRadius;
+	auto fnHorizontalDistSq = [](const Zenith_Maths::Vector3& a, const Zenith_Maths::Vector3& b)
+	{
+		const float fDx = a.x - b.x;
+		const float fDz = a.z - b.z;
+		return fDx * fDx + fDz * fDz;
+	};
+
+	// 2D AABB-vs-disc test. Returns true when ANY part of the polygon's
+	// horizontal footprint sits inside the sphere of `fRadius` around
+	// xCenter. The previous "polygon centre inside radius" criterion would
+	// reject a polygon that covers the entire sphere if its centre happened
+	// to sit outside — exactly the DevilsPlayground case where the
+	// synthetic flat navmesh is one 300 m quad centred far from any
+	// gameplay-positioned agent. With this test the priest's 15 m
+	// patrol radius still finds the one-and-only flat polygon as
+	// reachable, sampling continues normally, and Phase 4's per-sample
+	// distance check enforces the actual disc constraint.
+	auto fnPolygonOverlapsDisc = [&](uint32_t uPolyIdx) -> bool
+	{
+		const Zenith_NavMeshPolygon& xQ = m_axPolygons.Get(uPolyIdx);
+		Zenith_Maths::Vector3 xMin, xMax;
+		ComputePolygonBounds2D(xQ, m_axVertices, xMin, xMax);
+		const float fClosestX = std::max(xMin.x, std::min(xCenter.x, xMax.x));
+		const float fClosestZ = std::max(xMin.z, std::min(xCenter.z, xMax.z));
+		const float fDx = fClosestX - xCenter.x;
+		const float fDz = fClosestZ - xCenter.z;
+		return (fDx * fDx + fDz * fDz) <= fRadiusSq;
+	};
+
+	axQueue.PushBack(uCenterPoly);
+	axVisited.Get(uCenterPoly) = true;
+
+	// Soft visit-count cap as a runaway-BFS fallback. Hitting this is a
+	// warning, not a hard correctness limit — we just stop expanding the
+	// frontier and rejection-sample within whatever we have so far.
+	constexpr uint32_t uMAX_BFS_VISITS = 256;
+	uint32_t uVisitCount = 0;
+
+	while (axQueue.GetSize() > 0 && uVisitCount < uMAX_BFS_VISITS)
+	{
+		const uint32_t uPoly = axQueue.Get(0);
+		// Pop front. Zenith_Vector has no efficient pop_front so use RemoveSwap
+		// — order doesn't matter for BFS-as-flood-fill (only completeness does).
+		axQueue.RemoveSwap(0);
+		++uVisitCount;
+
+		const Zenith_NavMeshPolygon& xPoly = m_axPolygons.Get(uPoly);
+
+		// Reachable iff the polygon's 2D footprint overlaps the disc AND it
+		// isn't currently flagged as a dynamic blocker. A closed door's
+		// polygon (FLAG_BLOCKED) must not contribute a candidate sample —
+		// the priest's patrol target selection would otherwise drop a
+		// MoveTo destination on top of the blocker, and MoveTo would either
+		// fail at the endpoint-blocked check or walk the priest into the
+		// door collider.
+		if (!xPoly.IsBlocked() && fnPolygonOverlapsDisc(uPoly))
+		{
+			axReachable.PushBack(uPoly);
+		}
+
+		// Expand to neighbours whose footprint also overlaps the disc. The
+		// previous "neighbour centre inside radius" criterion silently
+		// pruned the frontier on coarse meshes — same fix applies. Blocked
+		// neighbours stay OUT of the frontier (same rationale as the
+		// reachable-set filter above).
+		const uint32_t uNeighbourCount = xPoly.m_axNeighborIndices.GetSize();
+		for (uint32_t i = 0; i < uNeighbourCount; ++i)
+		{
+			const int32_t iNeighbour = xPoly.m_axNeighborIndices.Get(i);
+			if (iNeighbour < 0) continue;
+			const uint32_t uNeighbour = static_cast<uint32_t>(iNeighbour);
+			if (uNeighbour >= uPolyCount) continue;
+			if (axVisited.Get(uNeighbour)) continue;
+
+			if (m_axPolygons.Get(uNeighbour).IsBlocked()) continue;
+			if (!fnPolygonOverlapsDisc(uNeighbour)) continue;
+
+			axVisited.Get(uNeighbour) = true;
+			axQueue.PushBack(uNeighbour);
+		}
+	}
+
+	if (uVisitCount >= uMAX_BFS_VISITS)
+	{
+		Zenith_Log(LOG_CATEGORY_AI,
+			"NavMesh::GetRandomReachablePointInRadius hit BFS visit cap (%u). "
+			"Sampling within partial reachable set.", uMAX_BFS_VISITS);
+	}
+
+	if (axReachable.GetSize() == 0)
+	{
+		// Center polygon is itself outside fRadius (caller is far from any
+		// reachable polygon). Bail.
+		return false;
+	}
+
+	// ---- Phase 3: build cumulative area weights for polygon selection ------
+	Zenith_Vector<float> afCumulativeArea;
+	afCumulativeArea.Reserve(axReachable.GetSize());
+	float fTotalArea = 0.0f;
+	for (uint32_t i = 0; i < axReachable.GetSize(); ++i)
+	{
+		const uint32_t uIdx = axReachable.Get(i);
+		const float fArea = m_axPolygons.Get(uIdx).m_fArea;
+		// Guard zero-area polys (degenerate triangles) — skip from sampling
+		// by treating them as zero weight, which they already are.
+		fTotalArea += fArea;
+		afCumulativeArea.PushBack(fTotalArea);
+	}
+
+	if (fTotalArea <= 0.0f) return false;
+
+	thread_local std::mt19937 s_xRng(std::random_device{}());
+	auto fnSampleUnit = [&]() -> float
+	{
+		std::uniform_real_distribution<float> xDist(0.0f, 1.0f);
+		return xDist(s_xRng);
+	};
+
+	// ---- Phase 4: rejection sampling --------------------------------------
+	for (uint32_t uAttempt = 0; uAttempt < uMaxAttempts; ++uAttempt)
+	{
+		// Pick a polygon weighted by area.
+		const float fPolyPick = fnSampleUnit() * fTotalArea;
+		uint32_t uPickedPolyArrayIdx = 0;
+		for (uint32_t i = 0; i < afCumulativeArea.GetSize(); ++i)
+		{
+			if (fPolyPick <= afCumulativeArea.Get(i))
+			{
+				uPickedPolyArrayIdx = i;
+				break;
+			}
+		}
+		const uint32_t uPolyIdx = axReachable.Get(uPickedPolyArrayIdx);
+		const Zenith_NavMeshPolygon& xPoly = m_axPolygons.Get(uPolyIdx);
+
+		const uint32_t uVerts = xPoly.m_axVertexIndices.GetSize();
+		if (uVerts < 3) continue;
+
+		// Fan-triangulate around vertex 0; weight per-triangle area.
+		const Zenith_Maths::Vector3& xV0 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(0));
+		Zenith_Vector<float> afTriCumArea;
+		afTriCumArea.Reserve(uVerts - 2);
+		float fTriTotal = 0.0f;
+		for (uint32_t t = 1; t + 1 < uVerts; ++t)
+		{
+			const Zenith_Maths::Vector3& xVa = m_axVertices.Get(xPoly.m_axVertexIndices.Get(t));
+			const Zenith_Maths::Vector3& xVb = m_axVertices.Get(xPoly.m_axVertexIndices.Get(t + 1));
+			const Zenith_Maths::Vector3 xCross = glm::cross(xVa - xV0, xVb - xV0);
+			const float fTriArea = 0.5f * glm::length(xCross);
+			fTriTotal += fTriArea;
+			afTriCumArea.PushBack(fTriTotal);
+		}
+
+		if (fTriTotal <= 0.0f) continue;
+
+		// Pick a triangle.
+		const float fTriPick = fnSampleUnit() * fTriTotal;
+		uint32_t uTriIdx = 0;
+		for (uint32_t i = 0; i < afTriCumArea.GetSize(); ++i)
+		{
+			if (fTriPick <= afTriCumArea.Get(i))
+			{
+				uTriIdx = i;
+				break;
+			}
+		}
+
+		// Uniform barycentric sample inside the triangle.
+		const Zenith_Maths::Vector3& xVa = m_axVertices.Get(xPoly.m_axVertexIndices.Get(uTriIdx + 1));
+		const Zenith_Maths::Vector3& xVb = m_axVertices.Get(xPoly.m_axVertexIndices.Get(uTriIdx + 2));
+		float fU = fnSampleUnit();
+		float fV = fnSampleUnit();
+		if (fU + fV > 1.0f)
+		{
+			// Fold back into the triangle (Turk's barycentric trick).
+			fU = 1.0f - fU;
+			fV = 1.0f - fV;
+		}
+		const float fW = 1.0f - fU - fV;
+		const Zenith_Maths::Vector3 xCandidate = fW * xV0 + fU * xVa + fV * xVb;
+
+		// Snap to the navmesh surface.
+		Zenith_Maths::Vector3 xSnapped;
+		if (!ProjectPoint(xCandidate, xSnapped, 5.0f)) continue;
+
+		// Final radius check (the snap may have moved the point off the
+		// triangle and outside fRadius — verify before returning).
+		if (fnHorizontalDistSq(xSnapped, xCenter) > fRadiusSq) continue;
+
+		xOutPoint = xSnapped;
+		return true;
+	}
+
+	return false;
 }
 
 void Zenith_NavMesh::WriteToDataStream(Zenith_DataStream& xStream) const

@@ -30,6 +30,15 @@ struct Zenith_NavMeshPolygon
 	uint32_t m_uFlags = 0;  // Custom flags (e.g., walkability modifiers)
 	float m_fCost = 1.0f;   // Traversal cost multiplier
 
+	// Polygon flag bits — keep room for renderer hints / game-specific tags by
+	// reserving the low byte for engine use. BLOCKED is the dynamic-obstacle
+	// gate consulted in Zenith_Pathfinding::ExpandNeighbor: when set, A* skips
+	// the polygon entirely, which is how DPDoor (and any future toggleable
+	// blocker) cuts the navmesh without rebuilding it.
+	static constexpr uint32_t FLAG_BLOCKED = 1u << 0;
+
+	bool IsBlocked() const { return (m_uFlags & FLAG_BLOCKED) != 0u; }
+
 	// Serialization
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
@@ -163,6 +172,68 @@ public:
 	bool ProjectPoint(const Zenith_Maths::Vector3& xPoint,
 		Zenith_Maths::Vector3& xProjectedOut,
 		float fMaxDist = 10.0f) const;
+
+	/**
+	 * Sample a uniformly-random point that is REACHABLE on the navmesh from
+	 * the source center within a horizontal radius. Reachable here means
+	 * "path-connected via polygon neighbours starting from the polygon
+	 * nearest the center". This matches Unreal's UNavigationSystem
+	 * GetRandomReachablePointInRadius semantics — points on a disconnected
+	 * island are NOT returned, even if they happen to lie within the radius.
+	 *
+	 * Algorithm:
+	 *  1. Find the nearest polygon to xCenter (the source island).
+	 *  2. BFS over polygon neighbours; cap each polygon at horizontal
+	 *     distance ≤ fRadius from xCenter.
+	 *  3. Pick a polygon weighted by area; pick a triangle inside the
+	 *     polygon's fan-triangulation weighted by triangle area; sample a
+	 *     uniform barycentric point inside that triangle.
+	 *  4. Project the candidate to the navmesh surface.
+	 *  5. Verify horizontal distance ≤ fRadius. Retry up to uMaxAttempts.
+	 *
+	 * @param xCenter Source point. The result is reachable from the polygon
+	 *                nearest this point.
+	 * @param fRadius Horizontal radius (XZ-plane). Vertical distance is not
+	 *                bounded; the surface position is taken from
+	 *                ProjectPoint.
+	 * @param xOutPoint Output: random reachable point. Untouched on false.
+	 * @param uMaxAttempts Per-polygon-pick rejection-sampling budget. With
+	 *                area-weighted selection, even 16 attempts converges fast.
+	 * @return True if a point was found, false if the source polygon could
+	 *         not be located, the reachable region is empty, or every
+	 *         attempt's sample fell outside the radius.
+	 */
+	bool GetRandomReachablePointInRadius(const Zenith_Maths::Vector3& xCenter,
+		float fRadius,
+		Zenith_Maths::Vector3& xOutPoint,
+		uint32_t uMaxAttempts = 16) const;
+
+	// ========== Dynamic obstacles ==========
+
+	/**
+	 * Toggle a polygon's BLOCKED flag. Blocked polygons are skipped by
+	 * Zenith_Pathfinding::FindPath, so the caller can carve transient
+	 * obstacles (e.g., closed doors) out of an otherwise static navmesh
+	 * without re-running mesh generation. Idempotent.
+	 *
+	 * Marked `const` against the mesh's pathing semantics — the topology
+	 * does not change. Mutates the polygon's flag field via const_cast
+	 * internally so any thread that already holds a const navmesh handle
+	 * can still flip dynamic-obstacle state. Caller must serialise
+	 * concurrent toggles externally.
+	 */
+	void SetPolygonBlocked(uint32_t uPoly, bool bBlocked) const;
+
+	/**
+	 * Block / unblock every polygon whose 2D footprint contains the given
+	 * world point. Convenience for "find polygon under door pivot and
+	 * toggle it" — DPDoor uses this so it doesn't have to know which
+	 * navmesh polygon corresponds to its mesh footprint.
+	 *
+	 * @return Number of polygons toggled (0 if no polygon contains xPoint).
+	 */
+	uint32_t SetBlockedAtPoint(const Zenith_Maths::Vector3& xPoint, bool bBlocked,
+		float fMaxVerticalDist = 1.5f) const;
 
 	// ========== Accessors ==========
 
