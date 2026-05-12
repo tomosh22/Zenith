@@ -25,8 +25,8 @@ These tasks land the **infrastructure** needed by every subsequent task. They ar
 
 ### 0.1 Tuning system
 
-- [ ] **MVP-0.1.1** — Add `Source/DP_Tuning.h/.cpp`. Load `Config/Tuning.json` at startup; expose `DP_Tuning::Get<T>(key)` accessor. Cache parsed values.
-- [ ] **MVP-0.1.2** — Add `Test_P1Tuning_LoadsAndValuesInBand` (Tier 1). Asserts each tuning value is within its sanity range (defined in test alongside the value).
+- [x] **MVP-0.1.1** — Add `Source/DP_Tuning.h/.cpp`. Load `Config/Tuning.json` at startup; expose `DP_Tuning::Get<T>(key)` accessor. Cache parsed values.
+- [x] **MVP-0.1.2** — Add `Test_P1Tuning_LoadsAndValuesInBand` (Tier 1). Asserts each tuning value is within its sanity range (defined in test alongside the value).
 - [ ] **MVP-0.1.3** — Migrate `DPVillager_Behaviour` to read `m_fMaxLife`, `m_fMoveSpeed` from `DP_Tuning`. Add migration test that proves prototype's behaviour unchanged.
 - [ ] **MVP-0.1.4** — Migrate `Priest_Behaviour` configuration block to `DP_Tuning`.
 - [ ] **MVP-0.1.5** — Migrate `DPInteractable_Behaviour` and all its subclasses' timing constants to `DP_Tuning`.

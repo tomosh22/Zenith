@@ -5,6 +5,7 @@
 #include "Source/DPFogPass.h"
 #include "Source/DP_LevelData.h"
 #include "Source/DPMaterials.h"
+#include "Source/DP_Tuning.h"
 
 #include <cstdio>
 #include <cstring>
@@ -65,6 +66,11 @@ namespace DevilsPlayground
 {
 	void InitializeResources()
 	{
+		// Load Config/Tuning.json into the in-process cache before any other
+		// resource init so subsequent systems (materials, fog, behaviours)
+		// can read tuning values during their own bring-up.
+		DP_Tuning::Initialize();
+
 		// Author Zenith_MaterialAssets from the UE parameter dumps under
 		// Assets/Materials/*.json. Idempotent — safe across Editor Stop/Play.
 		DPMaterials::Initialize();
@@ -100,6 +106,10 @@ namespace DevilsPlayground
 
 		// B6 fog: drop the PFX_Witch config so a relaunch doesn't double-register.
 		DPFogPass::UnregisterParticleConfigs();
+
+		// Drop the tuning cache last so materials/fog teardown above can still
+		// query tuning values if they ever start to. Idempotent.
+		DP_Tuning::Shutdown();
 	}
 }
 
