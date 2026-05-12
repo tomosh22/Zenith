@@ -1,0 +1,53 @@
+# Engine-wide complexity gate. Fires on every PR / push to master.
+#
+# This workflow used to also build Games/Test (a project that no longer
+# exists; the build was red since at least 2026-05-07). The build job
+# was removed once .github/workflows/dp-pr.yml became the canonical DP
+# build. Complexity gate kept because it has cross-game value -- it
+# catches engine-source complexity regressions independent of any
+# specific game's build.
+#
+# Required check name: `complexity-gate`.
+
+name: Complexity Gate
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  complexity-gate:
+    # Runs analyze_code_complexity.py via CheckComplexity.bat against the
+    # engine source. Thresholds live in Tools/complexity_profiles.json under
+    # the `engine-ci` profile -- edit that file (not this workflow) to tune
+    # the gate. Thresholds are checked-in CEILINGS of the current worst-case
+    # engine code, NOT aspirational targets.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tree-sitter parser
+        run: python -m pip install tree-sitter tree-sitter-cpp
+
+      - name: Run complexity gate
+        working-directory: ${{ env.GITHUB_WORKSPACE }}
+        shell: cmd
+        run: Tools\CheckComplexity.bat --parser tree-sitter
+
+      - name: Upload complexity report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: complexity-report
+          path: complexity_report_ci/
+          if-no-files-found: warn
