@@ -8,6 +8,39 @@
 
 ---
 
+## 2026-05-12 — MVP-0.0.5: post-build slang copy expanded from `slang.dll` to `*.dll`.
+
+**Decision:** All four Sharpmake configs that emit a Slang DLL post-build xcopy (`Sharpmake_Games.cs`, `Sharpmake_FluxCompiler.cs`, `Sharpmake_TilePuzzleLevelGen.cs`, `Sharpmake_TilePuzzleRegistryViewer.cs`) now copy `Middleware/slang/bin/*.dll` instead of just `slang.dll`.
+
+**Why:** The original author's comment claimed "engine is Slang-only post-migration so we ship slang.dll only." That's true for the Sharpmake-side intent, but it doesn't account for how `slang.dll` ITSELF works at runtime: it's a dynamic loader that loads `slang-rt`, `slang-glslang`, `slang-glsl-module`, `slang-llvm`, `slang-compiler`, and `gfx` from its own directory at startup. Those six DLLs being absent triggers `STATUS_DLL_NOT_FOUND` (0xC0000135) -- exactly the failure mode noted in `Games/DevilsPlayground/CLAUDE.md` ("copy DLLs from Combat output to DP output if you see DLL_NOT_FOUND"). Changing the single xcopy to a wildcard fixes that systemically: on a workstation with a real slang install, all 7 DLLs get copied; on CI with only a placeholder slang.dll (per `dp-pr.yml`), only that 1 file gets copied -- same as before the change. No regression risk.
+
+**Trade-offs considered:**
+- *Add 6 more explicit xcopy lines naming each DLL.* Rejected -- duplicated text across 4 configs, breaks when slang upstream renames a DLL. The wildcard is the obvious fix.
+- *Use vcpkg-style AppLocalFromInstalled.* Already happens for vcpkg deps; doesn't apply to non-vcpkg slang.
+- *Switch to xcopy `*.dll`.* Accepted. Single-character change.
+
+**Test that prevents regression:** the workflow `dp-build` (PR #5) builds DP top-to-bottom on every PR and exercises the post-build event. If a wildcard regression breaks the build (e.g. permissions), CI will flag it. There's no separate test for the post-build copy specifically.
+
+**Reversibility:** trivial.
+
+---
+
+## 2026-05-12 — MVP-0.0.5: pwsh.exe installed via winget; admin-elevation gate was over-conservative.
+
+**Decision:** Installed PowerShell 7.6.1 via `winget install Microsoft.PowerShell --silent --accept-package-agreements --accept-source-agreements --disable-interactivity` from the agent session. No admin elevation needed -- the install is per-user under `C:\Users\tomos\AppData\Local\Microsoft\WindowsApps\pwsh.exe`. The MvpRoadmap MVP-0.0.5 entry's "admin-elevation required -- agent cannot install software" note was over-conservative; for `pwsh` and `gh`, winget current-user install works fine.
+
+**Why:** `pwsh.exe` is in BuildEnvironment.md section 1 as a hard prereq. The previous agent session had to work around its absence (Q-2026-05-12-005). Two routes were available per the roadmap: install (deferred behind alleged admin gate) or rewrite scripts (taken in MVP-0.0.4 for `run_dp_tests.ps1`). With the install now done, both halves of the question are resolved: scripts are PS5.1-compat AND pwsh is on PATH for tools that prefer it (e.g. vcpkg's AppLocalFromInstalled step).
+
+`verify_build_env.ps1` now reports 8 PASS / 0 WARN / 0 FAIL with `-SkipRepoState`.
+
+**Trade-offs considered:** none material -- winget worked without elevation and the install is reversible (`winget uninstall Microsoft.PowerShell`).
+
+**Test that prevents regression:** `verify_build_env.ps1` checks pwsh presence and downgrades to WARN if missing. Any future regression in install state surfaces there.
+
+**Reversibility:** trivial.
+
+---
+
 ## 2026-05-12 — MVP-0.0.4: runner-flag tests use static parse-check, not full invocation.
 
 **Decision:** `Tools/Test_T0Harness_RunnerFlagsExist.ps1` validates the three new flags (`-Tier`, `-FailFast`, `-AssertionsLog`) by calling `Get-Command` on `Tools/run_dp_tests.ps1` and inspecting its `.Parameters` dictionary. It does NOT execute the runner.
