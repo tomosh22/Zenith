@@ -8,6 +8,46 @@
 
 ---
 
+## 2026-05-12 — MVP-0.0.2: `dp-pr.yml` runs alongside (not replacing) `msbuild.yml`.
+
+**Decision:** Added `.github/workflows/dp-pr.yml` as a new workflow without deleting the existing `msbuild.yml`. Both fire on PR / push-to-master.
+
+**Why:** `msbuild.yml` builds `Games/Test` (the wrong project for DP) AND runs the complexity gate. The complexity gate has standalone value -- it catches function-level complexity regressions across engine source independent of any specific game. Replacing `msbuild.yml` wholesale would lose the gate; surgically deleting just the build job would be a separate scope-of-cleanup change. For MVP-0.0.2 the additive path is correct: get `dp-build` reporting green, leave `msbuild.yml` cleanup for a follow-up.
+
+**Trade-offs considered:**
+- *Replace `msbuild.yml` entirely with `dp-pr.yml`.* Rejected: drops the complexity gate, expands MVP-0.0.2 scope.
+- *Edit `msbuild.yml` in place to swap `Games/Test` for `DevilsPlayground`.* Rejected: `msbuild.yml`'s check name is `build` (generic), not the `dp-build` required-check name MVP-0.0.6 will eventually demand. A new file is cleaner.
+
+**Test that prevents regression:** the workflow itself is the regression guard -- every PR now must have `dp-build` green.
+
+**Reversibility:** trivial. Delete `dp-pr.yml`.
+
+---
+
+## 2026-05-12 — MVP-0.0.2: five CI iterations to ship `dp-pr.yml` -- iteration log.
+
+**Decision:** The first cut of `dp-pr.yml` needed five force-pushes to reach a green `dp-build`. Logging the iterations because each represents a non-obvious gap between the local user's machine and a fresh GitHub windows-latest runner. Future workflow authors should expect these as the canonical "things to fix when a Windows + Vulkan + Sharpmake + vcpkg build hits CI for the first time."
+
+**The five fixes (in order):**
+
+1. **`poly2tri` is not a vcpkg port.** It ships as `jhasse-poly2tri` (the upstream maintainer's namespace). Locally vcpkg's install plan worked because the user already had it installed; in classic-mode `install` with the bare name on CI, vcpkg errors `port does not exist`.
+2. **`Sharpmake/Basic.Reference.Assemblies.Net80.dll` is untracked but required.** Sharpmake.Application.dll (which IS tracked) loads this assembly during its `Sharpmake.Assembler` type initializer. The DLL was never committed when the upstream .NET 6 -> .NET 8 transition happened. Force-added (`.gitignore` line 17's `*.dll` rule otherwise blocks it; other Sharpmake/*.dll files are grandfathered tracked).
+3. **vcpkg cache key churn.** First-pass key was `vcpkg-x64-windows-${{ hashFiles('.github/workflows/dp-pr.yml') }}-v1` -- every edit to the workflow invalidated the cache, defeating the entire point. Switched to a static `vcpkg-x64-windows-pkgs-v1`, bumped manually when the package list changes. The `restore-keys: vcpkg-x64-windows-` prefix-match still handles ad-hoc renames.
+4. **`WindowsTargetPlatformVersion=10.0` MSBuild override.** Sharpmake's generated vcxprojs pin Windows SDK `10.0.19041.0` (its win64-platform default). windows-latest only has `10.0.26100.0` installed. MSB8036 at SDK lookup. Override via the property tells MSBuild to use the latest available SDK at build time -- locally invisible (both versions installed), CI dodges the strict pin.
+5. **Placeholder `slang.dll` for the post-build event.** The .vcxproj post-build runs `xcopy Middleware\slang\bin\slang.dll output\...`. Slang runtime DLLs are gitignored; on a fresh checkout the source file does not exist; xcopy exits 4; MSB3073 fires AFTER the compile/link itself succeeded. A pre-MSBuild step `New-Item slang.dll -ItemType File` satisfies the existence check. MVP-0.0.3 will need to provision the *real* DLL for `Tools/run_dp_tests.ps1` to launch the exe; for the build-only check this placeholder is sufficient.
+
+**Lessons:**
+- Anything in `Sharpmake/` other than .pdb/.exe should be tracked -- the `*.dll` gitignore rule is too broad. Worth a separate PR to add narrow `!Sharpmake/*.dll` exceptions.
+- Always cache on a static key; restore-keys is for fallback fuzziness only. The hashFiles-of-workflow pattern is an antipattern when the workflow file itself is what's being iterated.
+- Sharpmake's `WindowsTargetPlatformVersion` default should probably be configurable per-target; hardcoded 19041 is unhelpful when the runner doesn't have that SDK.
+- Post-build events that copy runtime DLLs should be skippable for build-only validation; MSB3073 from a successful compile+link is confusing.
+
+**Test that prevents regression:** the workflow itself is the regression guard. Next time someone touches `dp-pr.yml` it must still pass `dp-build`. Cache miss is the most likely failure mode (e.g. an upstream vcpkg port name change); the iteration cost is captured in the file directly so the next agent can grep for it.
+
+**Reversibility:** all five fixes are small, reversible commits on `dp/mvp-0.0.2`.
+
+---
+
 ## 2026-05-12 — MVP-0.0.1: `verify_build_env.ps1` accepts .NET runtime, not just SDK.
 
 **Decision:** `Tools/verify_build_env.ps1` (MVP-0.0.1) treats the .NET check as PASS if EITHER the SDK OR the runtime is >= 6.0 — not strictly the SDK as MvpRoadmap section "0.0.1" and BuildEnvironment.md section 1 originally specified. The PASS message annotates "(no SDK installed; runtime suffices for prebuilt Sharpmake.Application.exe)" when applicable.

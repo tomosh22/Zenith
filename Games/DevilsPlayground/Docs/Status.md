@@ -10,9 +10,9 @@
 
 ## Current task
 
-**MVP-0.0.2** — Author `.github/workflows/dp-pr.yml` that builds the DevilsPlayground project on PR (`vs2022_Debug_Win64_True`). Required check name: `dp-build`. Replaces the existing `msbuild.yml` which incorrectly targets `Games/Test`.
+**MVP-0.0.3** — Author `.github/workflows/dp-tests.yml` that runs `Tools/run_dp_tests.ps1 -Headless` on PR. Required check name: `dp-tests`. Uploads test result JSON as artifact. Will need to provision the real slang runtime DLLs (MVP-0.0.2 only needed a placeholder for compile/link).
 
-**Phase 0.0 progress:** MVP-0.0.1 shipped (PR for `Tools/verify_build_env.ps1`). Next is MVP-0.0.2 → MVP-0.0.7, then MVP-0.1.2 onwards. **MVP-0.1.1 (DP_Tuning) is already DONE** — shipped out-of-sequence in PR #3 (commit e2b10e3a). See [DecisionLog.md 2026-05-12 (PR #3 out-of-sequence)](DecisionLog.md).
+**Phase 0.0 progress:** MVP-0.0.1 + MVP-0.0.2 shipped (`verify_build_env.ps1` in PR #4; `dp-pr.yml` in PR #5). Next is MVP-0.0.3 → MVP-0.0.7, then MVP-0.1.2 onwards. **MVP-0.1.1 (DP_Tuning) is already DONE** — shipped out-of-sequence in PR #3 (commit e2b10e3a). See [DecisionLog.md 2026-05-12 (PR #3 out-of-sequence)](DecisionLog.md).
 
 ## Ownership
 
@@ -26,7 +26,8 @@ Tomos's role remains: tick `ManualSetupChecklist.md` boxes once before the first
 
 ## Last completed
 
-- **MVP-0.0.1** (this PR) — `Tools/verify_build_env.ps1`. Audits the eight prerequisites from BuildEnvironment.md section 1 (VS 2022 + C++ workload, Windows SDK >= 22000, Vulkan SDK, .NET 6+ runtime/SDK, PowerShell, Git 2.30+, gh CLI authenticated, repo master+clean). Exits 0 on green, 1 on any required failure. Accepts `-SkipRepoState` for use during feature-branch sessions, and `-WarningsAreErrors` for CI-grade strictness. Run locally on the wizardly-payne worktree: 7 PASS / 1 WARN (`pwsh.exe` not installed — Q-2026-05-12-005) / 0 FAIL with `-SkipRepoState`; FAILs on `branch!=master / dirty` without the flag, as designed.
+- **MVP-0.0.2** (this PR) — `.github/workflows/dp-pr.yml`. Builds the DevilsPlayground target on every PR / push-to-master using `vs2022_Debug_Win64_True`. Check name `dp-build`. Runs alongside the existing `msbuild.yml`. Five CI iterations to get green; see DecisionLog 2026-05-12.
+- **MVP-0.0.1** (PR #4) — `Tools/verify_build_env.ps1`. Audits the eight prerequisites from BuildEnvironment.md section 1 (VS 2022 + C++ workload, Windows SDK >= 22000, Vulkan SDK, .NET 6+ runtime/SDK, PowerShell, Git 2.30+, gh CLI authenticated, repo master+clean). Exits 0 on green, 1 on any required failure. Accepts `-SkipRepoState` for use during feature-branch sessions, and `-WarningsAreErrors` for CI-grade strictness. Run locally on the wizardly-payne worktree: 7 PASS / 1 WARN (`pwsh.exe` not installed — Q-2026-05-12-005) / 0 FAIL with `-SkipRepoState`; FAILs on `branch!=master / dirty` without the flag, as designed.
 - **MVP-0.1.1** (out of sequence, PR #3 e2b10e3a, 2026-05-12) — `DP_Tuning` system + `Test_P1Tuning_LoadsAndValuesInBand`. The orchestrator that ran was working from the pre-reconciliation roadmap; it jumped straight to MVP-0.1.1 instead of starting at MVP-0.0.1. The work itself is correct and matches the round-3 reconciled spec for MVP-0.1.1 (single PR bundling API + test + implementation). The Phase 0.0 bootstrap tasks remain due before further coding-style PRs land. See [DecisionLog.md 2026-05-12 entries](DecisionLog.md).
 - **Round-2 peer-review reconciliation** (staged 2026-05-12, committed alongside this status update) — introduced Phase 0.0 Bootstrap, ManualSetupChecklist.md, BuildEnvironment.md, Glossary.md, PeerReviews/, expanded DecisionLog/MvpRoadmap/OrchestratorPlaybook, dropped InputsForAutonomy.md.
 - **Initial-planning session** (2026-05-11) — six design documents + three config files landed: [GameDesignDocument.md](GameDesignDocument.md), [Shortfalls.md](Shortfalls.md), [TestPlan.md](TestPlan.md), [AssetManifest.md](AssetManifest.md), [AssetTestPlan.md](AssetTestPlan.md), [MVPScope.md](MVPScope.md), [MvpRoadmap.md](MvpRoadmap.md), [AgentBriefing.md](AgentBriefing.md), [Config/Tuning.json](../Config/Tuning.json), [Config/Archetypes.json](../Config/Archetypes.json), [Config/Reagents.json](../Config/Reagents.json). User signed off on the GDD framing and gave execution mandate.
