@@ -100,10 +100,13 @@ public class TilePuzzleRegistryViewerProject : ZenithBaseProject
 		conf.LibraryFiles.Add("dxgi.lib");
 		conf.LibraryFiles.Add("d3dcompiler.lib");
 
-		// Copy Slang DLLs to output directory (Slang-only post-migration —
-		// slang-glslang.dll dropped along with the GLSL compatibility path)
+		// Copy ALL Slang runtime DLLs to output directory. MVP-0.0.5 changed
+		// from `slang.dll` to `*.dll` -- slang.dll loads its own dependency
+		// tree (slang-rt, slang-glslang, slang-glsl-module, slang-llvm,
+		// slang-compiler, gfx) at startup and STATUS_DLL_NOT_FOUND fires
+		// if those aren't beside the exe.
 		string slangBinPath = Path.GetFullPath(Path.Combine(SharpmakeCsPath, "..", "Middleware", "slang", "bin"));
-		conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\slang.dll\" \"$(OutDir)\"");
+		conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\*.dll\" \"$(OutDir)\"");
 
 		// Output executable
 		conf.Output = Configuration.OutputType.Exe;

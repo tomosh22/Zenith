@@ -125,14 +125,20 @@ public class GameProject : ZenithBaseProject
 		// Add Zenith engine dependency (includes Tools when ToolsEnabled)
 		conf.AddPublicDependency<ZenithProject>(target);
 
-		// Copy Slang DLLs to output directory (Windows only). slang-glslang.dll
-		// was a dependency of the legacy `enableGLSL = true` path, dropped
-		// when the engine went Slang-only.
+		// Copy ALL Slang runtime DLLs to output directory (Windows only).
+		// MVP-0.0.5 changed this from `slang.dll` to `*.dll` because slang.dll
+		// has its own dependency tree (slang-rt, slang-glslang, slang-glsl-
+		// module, slang-llvm, slang-compiler, gfx) that the OS loader looks up
+		// from the exe's directory at startup. Copying only slang.dll left the
+		// exe failing with STATUS_DLL_NOT_FOUND on machines that hadn't
+		// manually populated the output dir from another game's build. The
+		// wildcard is a no-op on CI runners that only have a placeholder
+		// slang.dll in Middleware/slang/bin (per dp-pr.yml).
 		if (target.Platform == Platform.win64)
 		{
 			// Use zenithRoot which is the actual project root (one level up from Build/)
 			string slangBinPath = zenithRoot + "/Middleware/slang/bin";
-			conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\slang.dll\" \"$(OutDir)\"");
+			conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\*.dll\" \"$(OutDir)\"");
 		}
 	}
 }
