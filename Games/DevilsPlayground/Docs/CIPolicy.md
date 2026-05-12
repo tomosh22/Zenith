@@ -1,6 +1,6 @@
 # Devil's Playground -- CI Policy
 
-**Document purpose:** Records the branch-protection ruleset on `master`, the required status checks, and the policy for changing them. Authored 2026-05-12 for MVP-0.0.6.
+**Document purpose:** Records the branch-protection ruleset on `master`, the required status checks, and the policy for changing them. Authored 2026-05-12 for MVP-0.0.6. End-to-end gate verified by the MVP-0.0.7 smoke PR (this comment is the smoke change).
 
 ---
 
