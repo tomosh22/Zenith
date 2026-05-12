@@ -120,10 +120,16 @@ jobs:
       - name: Build DevilsPlayground
         shell: pwsh
         run: |
+          # WindowsTargetPlatformVersion=10.0 tells MSBuild to use whatever SDK
+          # is installed on the runner (windows-latest has 10.0.26100.0; the
+          # generated vcxprojs pin 10.0.19041.0 by Sharpmake default). Locally
+          # both are installed so this override is invisible; on CI it dodges
+          # the strict pin.
           msbuild Build\zenith_win64.sln `
               /t:DevilsPlayground `
               /p:Configuration=vs2022_Debug_Win64_True `
               /p:Platform=x64 `
+              /p:WindowsTargetPlatformVersion=10.0 `
               -maxCpuCount:1 `
               -nologo `
               -clp:Summary `
