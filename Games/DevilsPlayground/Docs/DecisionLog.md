@@ -8,6 +8,38 @@
 
 ---
 
+## 2026-05-12 — MVP-0.0.4: runner-flag tests use static parse-check, not full invocation.
+
+**Decision:** `Tools/Test_T0Harness_RunnerFlagsExist.ps1` validates the three new flags (`-Tier`, `-FailFast`, `-AssertionsLog`) by calling `Get-Command` on `Tools/run_dp_tests.ps1` and inspecting its `.Parameters` dictionary. It does NOT execute the runner.
+
+**Why:** The roadmap spec was "invokes the runner with each flag and confirms parsed correctly." A literal full invocation requires either (a) the engine + Vulkan + DLLs to be present (otherwise the runner errors before flag-validation runs), or (b) a synthetic filter that matches no tests (which causes the runner to exit 1, not 0 -- making "did the flag parse" ambiguous from exit code alone). The static parse-check is strictly cheaper: it loads the script's `param()` block (a real parser invocation -- a parse error would fail the test) and verifies the three declared parameter names. If a flag is missing from the param block or the script fails to parse, the test fails. That's the contract.
+
+**Trade-offs considered:**
+- *Add a `-SelfTest` flag to `run_dp_tests.ps1` that exits 0 after parsing params.* Rejected -- scope creep for a single use case.
+- *Use `-Filter NONEXISTENT_TEST_NAME` to force a fast-exit invocation.* Rejected -- ambiguous exit codes; "no tests" exits 1 just like a real failure.
+- *Full invocation when GPU is available; static check otherwise.* Rejected -- branching logic in a smoke test undermines the smoke. Static is honest.
+- *Static parse-check via `Get-Command`.* Accepted. Runs in any environment, takes <100 ms, fails loudly on flag drift.
+
+**Test that prevents regression:** `Test_T0Harness_RunnerFlagsExist.ps1` itself. Future PRs that rename or drop a flag fail this test.
+
+**Reversibility:** trivial -- the file is 60 lines.
+
+---
+
+## 2026-05-12 — MVP-0.0.4: rewrote `run_dp_tests.ps1` ASCII-only (resolves Q-2026-05-12-005).
+
+**Decision:** While extending `Tools/run_dp_tests.ps1` with the new flags, replaced every em-dash (`U+2014`) with `--` in the script body. Five occurrences (header comment lines 1, 16, 48, 134, 138). The script now parses cleanly under Windows PowerShell 5.1, no `pwsh.exe` required.
+
+**Why:** Windows PowerShell 5.1's default file-reading codepage is CP1252, not UTF-8. A `.ps1` saved as bare UTF-8 with em-dashes in comments mis-decodes them as `â€"` and the parser errors. The diagnosis was in Q-2026-05-12-005's postscript (added during MVP-0.0.1). Fixing it inline during MVP-0.0.4 piggybacks on the planned rewrite rather than spinning a separate micro-PR.
+
+This means MVP-0.0.5's "rewrite scripts to powershell.exe" alternative is now largely already done for `run_dp_tests.ps1`. The remaining MVP-0.0.5 scope is: verify pwsh.exe on PATH (or document the slang.dll post-build copy step fix that the user's local box hit; see Q-2026-05-12-005 postscript).
+
+**Test that prevents regression:** `Test_T0Harness_RunnerFlagsExist.ps1` invokes `Get-Command` against the runner -- this would fail with a parser error if any non-ASCII character is reintroduced.
+
+**Reversibility:** trivial.
+
+---
+
 ## 2026-05-12 — MVP-0.0.3 landed as `workflow_dispatch`-only skeleton; auto-trigger deferred behind Q-2026-05-12-007.
 
 **Decision:** `.github/workflows/dp-tests.yml` is committed with only `workflow_dispatch` enabled. The `pull_request` and `push` triggers that the spec called for are explicitly absent. The file documents the test infrastructure design (build + DLL provisioning + pwsh invocation + artifact upload) but does NOT gate PRs in its current form.
