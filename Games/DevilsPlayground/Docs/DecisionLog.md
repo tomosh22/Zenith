@@ -8,6 +8,26 @@
 
 ---
 
+## 2026-05-12 — MVP-0.0.6: branch protection on master via `gh api`; dp-tests excluded.
+
+**Decision:** Branch protection on `master` set via `gh api -X PUT repos/tomosh22/Zenith/branches/master/protection`. Required status checks: `dp-build` + `complexity-gate` (NOT `dp-tests`). `strict=true`, `required_linear_history=true`, `enforce_admins=false`, `allow_force_pushes=false`, `allow_deletions=false`. Authored `Docs/CIPolicy.md` to document.
+
+**Why two of the three checks, not all three:** `dp-tests` is a `workflow_dispatch`-only skeleton (MVP-0.0.3 + Q-2026-05-12-007) -- it cannot run on free GitHub windows runners because they have no GPU. Requiring it would block every PR. The autonomy loop accepts this gap; every PR auto-merges with build-only CI validation. Local `Tools/run_dp_tests.ps1` execution is the only actual test gate today. CIPolicy.md instructs how to add `dp-tests` to the required list when the GPU question resolves.
+
+**Why `gh api` worked without `admin:repo_hook`:** The MvpRoadmap MVP-0.0.6 entry said the gh token would likely lack admin scope and the orchestrator would have to fall through to web-UI. That assumption was wrong for personal repos: the `repo` scope (which Tomos's existing token has) is sufficient for branch-protection PUTs on a personal repo. The web-UI fallback only triggers for organisation-owned repos where the user lacks personal admin authority.
+
+**Trade-offs considered:**
+- *Require `dp-tests` immediately as a "TODO".* Rejected -- a perpetually-failing required check blocks every PR. The gate has to either work or be absent.
+- *Require PR reviews.* Rejected -- the autonomy loop is single-agent today; review enforcement would deadlock self-auto-merge. Reviewer-subagent dispatch already happens in-session (OrchestratorPlaybook section 5.4); the PR-side enforcement adds nothing.
+- *Required signed commits.* Rejected -- adds friction without security benefit for a personal repo.
+- *enforce_admins=true.* Rejected -- Tomos needs emergency override for "CI itself is broken" cases. Agents lack admin so they cannot abuse this.
+
+**Test that prevents regression:** the smoke PR MVP-0.0.7 will be the first end-to-end exercise of the gate (push trivial change, observe both checks fire green, observe `--auto` merge). If the gate is mis-configured the smoke PR surfaces it.
+
+**Reversibility:** trivial -- `gh api -X DELETE` on the same endpoint. Log the gap in DecisionLog if you do this for an emergency.
+
+---
+
 ## 2026-05-12 — MVP-0.0.5: post-build slang copy expanded from `slang.dll` to `*.dll`.
 
 **Decision:** All four Sharpmake configs that emit a Slang DLL post-build xcopy (`Sharpmake_Games.cs`, `Sharpmake_FluxCompiler.cs`, `Sharpmake_TilePuzzleLevelGen.cs`, `Sharpmake_TilePuzzleRegistryViewer.cs`) now copy `Middleware/slang/bin/*.dll` instead of just `slang.dll`.
