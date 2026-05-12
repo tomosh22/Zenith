@@ -110,6 +110,29 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 ---
 
+### ⚠️ Q-2026-05-12-007 — `dp-tests` CI gate is blocked on GPU-on-CI. MVP-0.0.6 follow-on is also blocked.
+
+**Context:** MVP-0.0.3 attempted to land `.github/workflows/dp-tests.yml` as a PR gate. The workflow's build / DLL-provisioning pieces all worked (vcpkg packages cached, Vulkan SDK 1.3.290.0 installed, Slang v2026.1 fetched, OpenCV 4.10.0 DLL fetched, MSBuild green). What FAILS is **running the exe** on the GitHub windows-latest runner:
+
+- First iteration: exited `0xC0000135` (DLL_NOT_FOUND) with no stdout. Root cause: missing `opencv_world4100d.dll` (120.6 MB, over the 100 MB per-file commit limit so cannot be tracked). Fixed by fetching from the OpenCV 4.10.0 Windows release.
+- Second iteration: build green; `--list-automated-tests` smoke step **hung indefinitely** (cancelled after 40+ min). Root cause: the engine's `Flux::EarlyInitialise` calls `vkEnumeratePhysicalDevices`. The runner has no GPU and no Vulkan ICD; enumeration finds zero devices and the engine's wait-for-device loop deadlocks.
+
+**Implication:** Without a Vulkan device, `dp-tests` cannot run on free GitHub-hosted runners, full stop. MVP-0.0.6 (branch-protection requiring both `dp-build` AND `dp-tests` checks) cannot land because `dp-tests` would block every PR.
+
+**Resolution options:**
+- (A) **Paid GPU runner.** Vetoed by zero-external-spend rule.
+- (B) **Install Mesa lavapipe (software Vulkan).** Lavapipe is conformant; may need engine code changes if Flux queries NVIDIA-specific extensions on startup. ~3-8 CI iterations of 15-25 min each.
+- (C) **Add a `--no-graphics` engine boot mode** that skips Vulkan init entirely. Most DP tests don't exercise rendering (TestPlan §0.3 says pixel rendering is replaced by surrogates). Cleanest path; substantive engine work (2-4 hours).
+- (D) **Self-hosted runner with GPU.** Requires Tomos's hardware + setup.
+
+**My best guess:** **Stub MVP-0.0.3 as a `workflow_dispatch`-only skeleton (already done in this PR). Defer the gate. Move on to MVP-0.0.4 / 0.0.5 / 0.0.7.** MVP-0.0.6 is officially blocked. When ready to revisit, Option C is the highest-leverage path (the engine fix solves both CI testability and other no-display use cases like server-side simulation). Until then, this single deferred check is the autonomy loop's biggest gap — every PR auto-merges without test validation. Local pre-PR `run_dp_tests.ps1` execution is the only check.
+
+**Cost of getting it wrong:** moderate. The autonomy loop relies on test validation to catch regressions; without it, a bad PR auto-merges and only the next session catches the break.
+
+**Status:** asked 2026-05-12. Skeleton committed; auto-trigger disabled. Need direction on A/B/C/D.
+
+---
+
 ## Resolved
 
 ### ✅ Initial framing — ratified 2026-05-11

@@ -8,6 +8,32 @@
 
 ---
 
+## 2026-05-12 — MVP-0.0.3 landed as `workflow_dispatch`-only skeleton; auto-trigger deferred behind Q-2026-05-12-007.
+
+**Decision:** `.github/workflows/dp-tests.yml` is committed with only `workflow_dispatch` enabled. The `pull_request` and `push` triggers that the spec called for are explicitly absent. The file documents the test infrastructure design (build + DLL provisioning + pwsh invocation + artifact upload) but does NOT gate PRs in its current form.
+
+**Why:** The DP engine is Vulkan-mandatory at boot -- `Flux::EarlyInitialise` calls `vkEnumeratePhysicalDevices`. Free GitHub-hosted windows-latest runners have no GPU and no Vulkan ICD installed. Two iterations attempted: (i) first failed at 0xC0000135 from missing `opencv_world4100d.dll` (now provisioned from the OpenCV 4.10.0 release); (ii) second built clean and reached the `--list-automated-tests` smoke step, then **hung indefinitely** waiting for a Vulkan device that doesn't exist. Cancelled after 40+ min of burned CI time. The third iteration would face the same wall, as would every iteration that doesn't address the GPU question.
+
+Reactivation requires one of: paid GPU runner (vetoed: zero-external-spend), Mesa lavapipe + engine code changes to handle software-only Vulkan, an engine `--no-graphics` boot mode, or a self-hosted runner with GPU. Each is multi-hour work outside MVP-0.0.x scope (and the lavapipe path is uncertain payoff).
+
+**Trade-offs considered:**
+- *Keep grinding on lavapipe install + iterate.* Rejected -- ~3-8 more CI iterations of 15-25 min each ($/h-equivalent for autonomous-agent time), uncertain payoff. The engine may need code changes regardless.
+- *Implement `--no-graphics` mode in the engine now.* Rejected for THIS PR -- engine work is out of MVP-0.0.3's scope and the user's instruction was to land Phase 0.0 infra, not engine refactors.
+- *Delete `dp-tests.yml` entirely.* Considered. Rejected because the build / DLL-provisioning pieces are validated and worth preserving as a starting point. Deletion would force the next agent to re-derive `vcpkg integrate` + `Slang v2026.1 release download` + `OpenCV 4.10.0 release extract` + `pwsh -File ...` patterns from scratch.
+- *Stub workflow to `workflow_dispatch` only, document, continue.* **Accepted.** Documented in Q-2026-05-12-007. File stays in repo as a real artifact someone can `gh workflow run` on demand when a GPU runner exists.
+
+**Test that prevents regression:** none applicable -- this is a process-state decision about CI gating, not a code change. The Status.md "current task" line, the MvpRoadmap caveat on MVP-0.0.3, and Q-2026-05-12-007 together prevent the next session from re-attempting the gate without first resolving the GPU question.
+
+**Reversibility:** trivial. Restoring the auto-triggers is a one-line revert to the `on:` block in `dp-tests.yml`. Real reversibility cost is in the engineering required FIRST: lavapipe install, engine code changes, or self-hosted runner setup.
+
+**Consequence for downstream tasks:**
+- MVP-0.0.4 (runner script flags): unblocked, proceed.
+- MVP-0.0.5 (pwsh.exe install / script PS5.1 rewrite gate): unblocked, proceed.
+- MVP-0.0.6 (branch protection requiring `dp-tests`): **blocked**, cannot land until `dp-tests` runs.
+- MVP-0.0.7 (smoke PR): partially blocked -- the smoke PR's stated value is "observe both checks run green, observe auto-merge fires." Only `dp-build` runs as a check; `dp-tests` is dormant. The smoke PR can still prove the `dp-build` half of the loop, with a note that the `dp-tests` half is missing.
+
+---
+
 ## 2026-05-12 — MVP-0.0.2: `dp-pr.yml` runs alongside (not replacing) `msbuild.yml`.
 
 **Decision:** Added `.github/workflows/dp-pr.yml` as a new workflow without deleting the existing `msbuild.yml`. Both fire on PR / push-to-master.
