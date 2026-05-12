@@ -21,8 +21,10 @@
       "_comment": "Demon's first anchor for the MVP level. Set to the GameLevel scene's standing-stones location."
     },
     "demon_scent_per_possession": 0.3,
+    "_comment_scent_per_possession": "Only applies on SUCCESSFUL possession. Failed attempts (cooldown-blocked, out-of-range, channel-interrupted) produce no scent.",
     "demon_scent_decay_per_s": 0.05,
-    "demon_scent_max": 1.5,
+    "demon_scent_max": 1.0,
+    "_comment_scent_max": "Saturation cap. GDD §4.5 states the range 0.0-1.0; values above this cap are clamped.",
     "demon_scent_hound_bark_threshold": 0.5,
     "voluntary_switch_faint_recovery_s": 10.0
   },
@@ -32,14 +34,15 @@
     "jog_speed_mps": 8.0,
     "sprint_speed_mps": 12.0,
     "sprint_life_cost_extra_per_s": 3.0,
-    "walk_hearing_multiplier": 0.5,
-    "_comment_walk_hearing": "Walk-quiet halves the priest's effective hearing range against this villager's footsteps."
+    "walk_footstep_loudness_multiplier": 0.5,
+    "_comment_walk_loudness": "Multiplier applied to THE MOVING VILLAGER'S FOOTSTEP LOUDNESS when walking (0.5 = half loudness). Aelfric's perception radius is unchanged; the quieter footstep simply reaches him from half as far away. NOT a reduction on Aelfric's hearing range."
   },
 
   "camera": {
-    "default_orbit_distance_m": 80.0,
+    "default_orbit_distance_m": 60.0,
     "zoom_min_m": 30.0,
-    "zoom_max_m": 150.0,
+    "zoom_max_m": 80.0,
+    "_comment_zoom": "GDD §4.2 specifies PC zoom 30-80m, console 35-60m. MVP is PC-only.",
     "zoom_speed_m_per_wheel_tick": 5.0,
     "pitch_rad": 1.2,
     "yaw_default_rad": 1.5708,
@@ -49,10 +52,11 @@
   },
 
   "priest": {
-    "_comment": "Single canonical Aelfric for MVP. Variants come post-MVP.",
+    "_comment": "Single canonical Aelfric for MVP. Variants come post-MVP — see _post_mvp_variants section at bottom of this file. NOTE: existing Priest_Behaviour.h currently HARDCODES sight=20, hearing=25, FOV=120; MVP-0.1.4 (priest tuning migration) must replace those with reads from this config.",
     "sight_range_m": 25.0,
     "sight_fov_deg": 110.0,
-    "sight_peripheral_deg": 137.5,
+    "sight_peripheral_deg": 130.0,
+    "_comment_peripheral": "GDD §4.5 specifies 130° peripheral cone. Implementation uses this exactly.",
     "sight_eye_height_m": 1.6,
     "sight_awareness_gain_rate": 2.0,
     "sight_awareness_decay_rate": 0.5,
@@ -108,13 +112,12 @@
     "max_holes_per_frame": 64,
     "memory_visible_s": 10.0,
     "memory_dim_s": 30.0,
-    "memory_hidden_s": 999999.0,
-    "_comment_memory": "Tiles seen <=10s ago are visible, 10-30s ago are dim, >30s never seen are full grey."
+    "_comment_memory_states": "Tiles have 4 states: NEVER_SEEN (full grey, default), VISITED_VISIBLE (tile last seen <=memory_visible_s ago), VISITED_DIM (last seen between memory_visible_s and memory_dim_s ago), VISITED_HIDDEN (last seen >memory_dim_s ago, returns to grey). A tile in NEVER_SEEN is distinct from a tile in VISITED_HIDDEN: NEVER_SEEN tiles can be exposed by FIRST visit; VISITED_HIDDEN tiles are 'forgotten' visited tiles. The shader treats both as grey but the test (Test_P2Fog_MemoryDimsAfter10s) distinguishes them via the never_seen flag in the tile buffer."
   },
 
   "night": {
     "dawn_timer_s": 600.0,
-    "_comment_dawn": "MVP uses a 10-minute Night, not the GDD's 25-35 min. Tuning later.",
+    "_comment_dawn": "MVP uses a 10-minute Night (down from GDD §5.1's 25-35 min) for fast-iteration playtesting. The shorter timer is INTENTIONAL FOR MVP and is restored toward GDD's range in post-MVP tuning.",
     "reagents_required_for_victory": 5,
     "minimum_villagers_to_avoid_loss": 1,
     "modifier_hound_release_s": -1.0,
@@ -140,5 +143,40 @@
     "default_test_max_frames": 600,
     "playthrough_test_max_frames": 9000,
     "campaign_test_max_frames": 90000
+  },
+
+  "_post_mvp_variants": {
+    "_comment": "Pre-shaped data for post-MVP features. Not read by any code in MVP. Promoted to top-level sections (priest_variants, hounds, etc.) when implementation lands.",
+
+    "priest_variants": {
+      "_comment": "GDD §5.5: three Aelfric variants. Modifiers applied on top of base priest config.",
+      "Cautious": {
+        "investigate_memory_s": 30.0,
+        "_comment_cautious": "Longer memory; otherwise unchanged."
+      },
+      "Cruel": {
+        "apprehend_channel_s": 1.5,
+        "_comment_cruel": "Half the apprehend window. Brutal."
+      },
+      "Drunk": {
+        "stimulus_skip_every_n": 4,
+        "_comment_drunk": "Ignores every Nth perception stimulus (deterministic)."
+      }
+    },
+
+    "hounds": {
+      "tether_range_to_priest_m": 15.0,
+      "bark_range_m": 6.0,
+      "sniff_range_m": 12.0,
+      "_comment": "GDD §4.5 hound-track sub-system."
+    },
+
+    "priest_escalation_marks": {
+      "modifier_hound_release_s": 300.0,
+      "modifier_flintlock_s": 600.0,
+      "modifier_bless_s": 900.0,
+      "modifier_exorcise_s": 1200.0,
+      "_comment": "In-Night escalation marks per GDD §5.3."
+    }
   }
 }

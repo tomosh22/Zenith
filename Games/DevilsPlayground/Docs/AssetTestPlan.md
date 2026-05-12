@@ -123,7 +123,7 @@ Example schemas:
 
 ### 1.4 Budget test — does it fit the platform target?
 
-Catches placeholder bloat early. A junior artist exporting a Mixamo character at full Synty texture resolution (4K) will balloon the build size; the budget test catches it the same day.
+Catches placeholder bloat early. An artist exporting a Mixamo character at full 4K texture resolution will balloon the build size; the budget test catches it the same day.
 
 - Texture: `<= 1024² @ S0`, `<= 2048² @ S2`.
 - Mesh tri count: `<= 14000` for villagers, `<= 24000` for Aelfric, `<= 1500` for items.
@@ -784,7 +784,7 @@ The asset test plan deploys in lockstep with the asset roll-out from [AssetManif
 
 | Month | Asset stage delivered | Asset tests landing |
 |---|---|---|
-| 0 | S0 placeholders sourced (Mixamo + Synty + Kenney) | Manifest + loadability tests for every initial placeholder. ~80 tests. |
+| 0 | S0 placeholders sourced (Mixamo + Kenney + Sketchfab CC0 — Synty rejected per AssetManifest §2.1.4) | Manifest + loadability tests for every initial placeholder. ~80 tests. |
 | 1–2 | S0 in-game integration | Schema tests for char/env/item meshes. Skeleton bone-set tests. Animation duration tests. ~40 tests. |
 | 3–4 | District mood paintings; S1 props begin | UI sprite tests. Particle config tests. ~25 tests. |
 | 5–8 | S1 props + S1 characters | Substitution tests for every S0 → S1 swap. Material channel tests. ~30 tests. |
@@ -841,7 +841,18 @@ This plan adds **~180 asset-validation tests** to the suite described in [TestPl
 
 The asset linter (`ZenithTools.exe lint`) runs on every save and pre-commit, catching ~85% of asset bugs at the source. The full asset validator runs nightly, catching the remaining 15%.
 
-**The artist's contract is the test suite.** When the test suite passes, the asset is shippable — regardless of whether it's a Mixamo placeholder on day 1 or a hand-authored hero asset in month 17. This discipline keeps engineering and design moving at full speed during the entire 18-month production runway, with **zero human-in-the-loop asset verification** required.
+**The artist's contract is the structural test suite.** When the test suite passes, the asset meets the structural contract (loads, has expected geometry/format/budget, instantiates in a scene without crashes). This is the **necessary** condition for shipping; it is not **sufficient**.
+
+**Toned down 2026-05-12 per round-2 peer review.** Earlier versions of this doc claimed "zero human-in-the-loop asset verification." That was overstated. Structural tests catch structural bugs — they cannot judge:
+
+- **Visual quality and artistic intent.** Does the Aelfric model look like a 1670s witch-finder? Does the final villager mesh read at 80m camera distance? Does the candlelight feel oppressive?
+- **Gameplay readability.** Can a player distinguish the four MVP archetype silhouettes during 30 seconds of fog-of-war-shrouded chase?
+- **Audio mix and emotional tone.** The bus instrumentation tells tests *whether* a sound fired; it does not tell anyone *if it sounded right*.
+- **Animation naturalness.** Bone-pose tests catch malformed clips, not janky retargeting.
+
+For all of these, **human review is mandatory**. The asset test suite is a quality *floor*, not a quality *ceiling*. Specifically: every S2 final-art substitution PR requires Tomos to look at the asset in-engine and sign off before the substitution merges. The autonomous loop runs the structural tests; the human runs the eye test.
+
+This discipline keeps engineering moving at full speed during the production runway while preserving the human's role as the final arbiter of look and feel.
 
 ---
 

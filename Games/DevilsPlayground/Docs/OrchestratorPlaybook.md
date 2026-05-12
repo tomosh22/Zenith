@@ -38,12 +38,13 @@ Reason: race-free write semantics. Subagents return summaries; the orchestrator 
 
 ### 1.1 First five minutes
 
-1. Read `Games/DevilsPlayground/Docs/Status.md` — current task, build state, notes for next agent.
-2. Read `Games/DevilsPlayground/Docs/Questions.md` — surface ⚠️ items the user may have answered between sessions.
-3. Read the next un-checked task in `Games/DevilsPlayground/Docs/MvpRoadmap.md`.
-4. Decide which subagents the task needs (see §3 catalogue).
-5. Acquire the build lock (see §4) if you'll be building.
-6. **Verify the baseline.** Quick `git status` to confirm clean tree on master. If dirty, investigate before doing anything.
+1. **Read `Games/DevilsPlayground/Docs/ManualSetupChecklist.md`.** If ANY box is unticked, STOP. Write a Questions.md entry asking the user to complete it. Do not attempt any Phase 0.0 task until every box is ticked. The orchestrator cannot install Vulkan SDK, configure GitHub branch protection, or set up `gh` auth — these are human-only one-time tasks.
+2. Read `Games/DevilsPlayground/Docs/Status.md` — current task, build state, notes for next agent.
+3. Read `Games/DevilsPlayground/Docs/Questions.md` — surface ⚠️ items the user may have answered between sessions.
+4. Read the next un-checked task in `Games/DevilsPlayground/Docs/MvpRoadmap.md`.
+5. Decide which subagents the task needs (see §3 catalogue).
+6. Acquire the build lock (see §4) if you'll be building.
+7. **Verify the baseline.** Quick `git status` to confirm clean tree on master. If dirty, investigate before doing anything.
 
 ### 1.2 The orchestrator's mental model
 
@@ -125,10 +126,11 @@ Each role is a specific way to invoke the `Agent` tool. Pick the role that match
 
 **Mandatory prompt clauses:**
 
-- *"Files you may edit: [exhaustive list]."*
+- *"Files you may edit: [exhaustive list]."* — scope can include paths under `Games/DevilsPlayground/` and/or `Zenith/` (engine code is in-scope per 2026-05-12 user direction); be specific.
 - *"DO NOT run `MSBuild`, `Tools/run_dp_tests.ps1`, `Sharpmake_Build.bat`, or the game executable. The orchestrator handles all build/test/run operations."*
 - *"DO NOT modify Docs/Status.md, Docs/MvpRoadmap.md, Docs/DecisionLog.md, Docs/Questions.md, or anything in `Config/`. The orchestrator manages these."*
 - *"Follow Zenith conventions: no std::function / std::vector / std::mutex. Use Zenith_Vector, Zenith_Mutex, function pointers. All .cpp files start with `#include \"Zenith.h\"`. Tests wrapped in `#ifdef ZENITH_INPUT_SIMULATOR`."*
+- *"For engine-code changes (paths under `Zenith/`): the orchestrator will spawn a Reviewer subagent (mandatory) and run a Combat smoke build before merging. Surface any cross-game concerns in your report."*
 - *"Report back: list of files changed + a one-paragraph summary."*
 
 **Example prompt:**
@@ -143,7 +145,9 @@ Each role is a specific way to invoke the `Agent` tool. Pick the role that match
 
 **Example prompt:**
 
-> *"Author `Test_P1Apprehend_PriestCatchesPlayer`. Files you may edit: only `Games/DevilsPlayground/Tests/Test_P1Apprehend_PriestCatchesPlayer.cpp` (create). The test pattern is the 7-phase state machine from `Games/DevilsPlayground/Docs/TestPlan.md` §2.3. Setup an authored test scene with priest at (0,0,0) and villager at (1,0,0); subscribe to a new `DP_OnRunLost` event (struct already exists in PublicInterfaces.h); possess the villager, pin it (no input), wait 180+ frames; assert `DP_OnRunLost` dispatched exactly once. Max frames 240. [Plus the no-build-or-run clauses.]"*
+> *"Author `Test_P1Apprehend_PriestCatchesPlayer`. Files you may edit: only `Games/DevilsPlayground/Tests/Test_P1Apprehend_PriestCatchesPlayer.cpp` (create). The test pattern is the 7-phase state machine from `Games/DevilsPlayground/Docs/TestPlan.md` §2.3. Setup an authored test scene with priest at (0,0,0) and villager at (1,0,0); subscribe to `DP_OnRunLost` (which is being added in MVP-1.3.2 — your test depends on that PR landing first); possess the villager, pin it (no input), wait 180+ frames; assert `DP_OnRunLost` dispatched exactly once. Max frames 240. [Plus the no-build-or-run clauses.]"*
+
+**Note:** `DP_OnRunLost` is **not** yet in `PublicInterfaces.h` (validated 2026-05-11). MVP-1.3.2 creates it. Sequence the test author to either land alongside MVP-1.3.2 or after.
 
 ### 3.5 Reviewer (subagent_type: `general-purpose`, prompt-enforced read-only)
 
@@ -176,23 +180,81 @@ Each role is a specific way to invoke the `Agent` tool. Pick the role that match
 
 The orchestrator is the sole invoker of MSBuild and the test runner. This section is the recipe.
 
-### 4.1 Acquire the lock
+### 4.1 Acquire the lock (atomic with PID + liveness)
+
+The Test-Path-then-New-Item pattern below is a TOCTOU race: two agents that both see the file absent both create it. **Use atomic FileStream creation instead.** The PID is written into the lock; before stealing a stale lock, the orchestrator confirms the prior PID is no longer alive.
 
 ```powershell
-# PowerShell — wait up to 60 s for the lock; abort if held longer.
-$lockFile = "C:\dev\Zenith\Build\.build_lock"
-$timeout = 60
-$waited = 0
-while (Test-Path $lockFile) {
-    if ($waited -ge $timeout) {
-        Write-Error "Build lock held for > $timeout s; abort. Check for runaway subagent."
-        exit 1
+# C:\dev\Zenith\Tools\build_lock.ps1 — call from every build/test wrapper.
+function Acquire-BuildLock {
+    param([int]$TimeoutSeconds = 60)
+    $lockFile = "C:\dev\Zenith\Build\.build_lock"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+    while ($true) {
+        try {
+            # Atomic create-or-fail. CreateNew throws IOException if the file exists.
+            $fs = [System.IO.File]::Open($lockFile, 'CreateNew', 'Write', 'None')
+            try {
+                $stamp = "{0}|{1}|{2}" -f $PID, $env:COMPUTERNAME, (Get-Date -Format o)
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes($stamp)
+                $fs.Write($bytes, 0, $bytes.Length)
+            } finally {
+                $fs.Close()
+            }
+            return $true
+        }
+        catch [System.IO.IOException] {
+            # Lock held. Check whether the holder is still alive.
+            try {
+                $existing = Get-Content $lockFile -Raw -ErrorAction Stop
+                $parts = $existing.Trim().Split('|')
+                $holderPid = [int]$parts[0]
+                $holderHost = $parts[1]
+                if ($holderHost -eq $env:COMPUTERNAME) {
+                    $proc = Get-Process -Id $holderPid -ErrorAction SilentlyContinue
+                    if (-not $proc) {
+                        # Holder is dead. Steal the lock atomically by deleting and retrying.
+                        Remove-Item $lockFile -Force -ErrorAction SilentlyContinue
+                        continue
+                    }
+                }
+            } catch {
+                # Lock file is malformed; treat as stale.
+                Remove-Item $lockFile -Force -ErrorAction SilentlyContinue
+                continue
+            }
+
+            if ((Get-Date) -gt $deadline) {
+                throw "Build lock held for > $TimeoutSeconds s by PID $holderPid on $holderHost. Abort. Manual recovery: Remove-Item '$lockFile' if you've verified no build is in progress."
+            }
+            Start-Sleep -Seconds 2
+        }
     }
-    Start-Sleep -Seconds 2
-    $waited += 2
 }
-New-Item -Path $lockFile -Value "$PID-$(Get-Date -Format o)" -Force | Out-Null
+
+function Release-BuildLock {
+    $lockFile = "C:\dev\Zenith\Build\.build_lock"
+    Remove-Item $lockFile -Force -ErrorAction SilentlyContinue
+}
 ```
+
+**Usage from every build/test wrapper:**
+
+```powershell
+. C:\dev\Zenith\Tools\build_lock.ps1
+Acquire-BuildLock
+try {
+    # MSBuild / Tools/run_dp_tests.ps1 / Sharpmake / asset import / scene export
+    # …
+} finally {
+    Release-BuildLock
+}
+```
+
+**Why this matters:** the previous Test-Path-then-New-Item approach failed two ways. (a) Two agents see the file absent within the same 100ms window and both create it; both proceed to invoke MSBuild; mspdbsrv thrashes per memory `feedback_parallel_agents_msbuild_thrash.md`. (b) An orchestrator crash leaves a stale lock that the 30-min age cleanup can't tell apart from a real long-running build.
+
+The atomic + PID-liveness pattern fixes both. The only remaining failure mode is the same machine reusing a PID for a different process; the safety net is the timeout, which converts that case into a manual recovery prompt.
 
 ### 4.2 Build
 
@@ -226,37 +288,25 @@ pwsh.exe -File Tools/run_dp_tests.ps1 -Filter "Apprehend" -Headless
 
 ### 4.4 Release the lock
 
-```powershell
-Remove-Item "C:\dev\Zenith\Build\.build_lock" -ErrorAction SilentlyContinue
-```
-
-**Always release in a finally-equivalent.** Use try/finally in PowerShell:
-
-```powershell
-try {
-    # build/test commands here
-} finally {
-    Remove-Item "C:\dev\Zenith\Build\.build_lock" -ErrorAction SilentlyContinue
-}
-```
+`Release-BuildLock` (defined in `Tools/build_lock.ps1` above) is the canonical release. Always call it inside a `finally` block.
 
 ### 4.5 Stale lock cleanup
 
-If the orchestrator crashes mid-build, the lock leaks. Defensively at session start:
+Stale-lock recovery is now built into `Acquire-BuildLock` (PID-liveness check above). No separate session-start cleanup is needed — the atomic acquire will steal a dead-process lock on first try. If a lock is held by a *live* process and that process is genuinely stuck, the timeout in `Acquire-BuildLock` raises an explicit error rather than silently overwriting.
 
-```powershell
-# Drop locks older than 30 minutes — assume crashed orchestrator.
-$lockFile = "C:\dev\Zenith\Build\.build_lock"
-if (Test-Path $lockFile) {
-    $age = (Get-Date) - (Get-Item $lockFile).LastWriteTime
-    if ($age.TotalMinutes -gt 30) {
-        Remove-Item $lockFile -Force
-        Write-Warning "Stale build lock removed (age: $($age.TotalMinutes) min)."
-    }
-}
-```
+### 4.6 What else the lock must cover
 
-The orchestrator runs this at the start of every session.
+The lock protects more than `MSBuild` and `Tools/run_dp_tests.ps1`. Every operation that touches build output, generated source, or the game's runtime state needs it:
+
+- `MSBuild zenith_win64.sln ...`
+- `Sharpmake_Build.bat`
+- `Tools/run_dp_tests.ps1`
+- `ZenithTools.exe import ...` (asset import — may regenerate scene files and headers)
+- `ZenithTools.exe lint ...` (asset linter; reads build outputs)
+- `devilsplayground.exe` (any direct run of the game)
+- Editor-automation scene save / export
+
+Subagents that author *source files only* (header + cpp text) don't need the lock. Anything that *invokes* the build chain does.
 
 ---
 
@@ -272,10 +322,13 @@ Five common patterns. Pick the one that matches the task.
 3. Orchestrator builds + runs test, confirms it fails for the right reason.
 4. Orchestrator spawns Implementer (foreground): authors code.
 5. Orchestrator builds + runs full suite, confirms green.
-6. Orchestrator commits, pushes, PRs, updates state files.
+6. **MANDATORY for any PR that changes game logic** (anything under `Source/`, `Components/`, `Config/`): orchestrator spawns Reviewer subagent per §5.4 before commit. Plumbing PRs (workflow files, doc-only changes, Sharpmake regen, build scripts) may skip the reviewer.
+7. Orchestrator commits, pushes, PRs, updates state files.
 ```
 
 Best for: well-scoped MvpRoadmap tasks. Most MVP work fits here.
+
+**Why mandatory review:** auto-merge on green CI removes the human gate. The reviewer subagent IS the human-equivalent gate. Skipping it for logic changes means bugs ship to master with only test coverage as the safety net, and tests don't catch design errors or contract violations.
 
 ### 5.2 The plan-first pattern (multi-file refactors)
 
@@ -358,6 +411,21 @@ These files are *only* edited by the orchestrator. Never by a subagent.
 
 A subagent that wants a roadmap update or a decision logged returns text to the orchestrator; the orchestrator writes it.
 
+### 6.4 Subagent write-scope: game AND engine code
+
+**Clarified 2026-05-12 (user direction):** subagents may edit files anywhere under `Games/DevilsPlayground/` **and** anywhere under `Zenith/` (engine code). The earlier round-2 framing limited subagent scope to game code only; the user has authorised engine work as in-scope for the autonomous orchestrator.
+
+When dispatching subagents for engine work, the file-scope clause in the prompt must still be tight. Example:
+
+> *"Files you may edit: ONLY `Zenith/Core/Zenith_AudioBus.h` (create), `Zenith/Core/Zenith_AudioBus.cpp` (create), `Zenith/Core/Zenith.h` (include the new header). Do NOT touch any other file under `Zenith/`. Do NOT touch any file under `Games/`."*
+
+**Engine-PR safeguards** (mandatory, not optional):
+
+1. **Reviewer subagent** dispatched per §5.4 — non-negotiable for engine PRs.
+2. **Full test suite** run after build (`run_dp_tests.ps1 -Headless`), not just filtered tests.
+3. **Combat smoke build** added as a CI gate for engine-touching PRs: build the Combat game's project to confirm shared engine code didn't regress. The CI workflow at `.github/workflows/dp-pr.yml` should include this as a conditional step that runs when the PR touches `Zenith/` paths.
+4. **Design rationale logged** in `DecisionLog.md` before opening the PR for any net-new engine namespace or non-trivial algorithm.
+
 ---
 
 ## 7. Anti-patterns
@@ -402,22 +470,46 @@ Fix: even though Mode C isn't active for MVP, build defensive habits. Wrap every
 
 ---
 
-## 8. Worked Example — Orchestrating MVP-0.1.1
+## 8. Worked Example — Orchestrating the bootstrap + first gameplay task
 
-Concrete reference for the first MVP task, executed through the orchestrator pattern.
+**Updated 2026-05-12 (round-2 peer review):** the previous worked example walked through MVP-0.1.1 as if it were the first task and as if it were an implementation task. After the round-1 reconciliation, MVP-0.0.x is the first phase (bootstrap) and MVP-0.1.1 was reordered to be the failing test (not the implementation). This example now matches.
 
-### Setup
+### Session 1: Bootstrap (MVP-0.0.1)
+
+Before any gameplay code runs, Phase 0.0 must complete. This session does one bootstrap task end-to-end as a template.
+
+```
+Orchestrator reads:
+  - Docs/Status.md → "Current task: MVP-0.0.1"
+  - Docs/Questions.md → check for ⚠️ items
+  - Docs/ManualSetupChecklist.md → confirm all items ticked by user
+    (if not: STOP. Surface in Questions.md. Phase 0.0 cannot run until human has done the one-time setup.)
+  - Docs/MvpRoadmap.md → MVP-0.0.1 = Author Tools/verify_build_env.ps1
+
+Orchestrator runs (PowerShell):
+  - Stale lock cleanup (atomic — see §4.1)
+  - git checkout master && git pull
+  - git checkout -b dp/mvp-0.0.1
+```
+
+The task: author a PowerShell script that checks for Visual Studio, Windows SDK, Vulkan SDK, .NET, pwsh/powershell, gh CLI authentication, and prints a pass/fail summary. Then run it locally; commit the script and a "ran cleanly on Tomos's machine 2026-MM-DD" note in DecisionLog.md.
+
+No subagents needed — this is a single-file script authoring + verification task. The orchestrator does it directly:
+
+1. Author `Tools/verify_build_env.ps1` per BuildEnvironment.md §1 contract.
+2. Run it locally; capture output.
+3. If anything fails, surface in Questions.md (likely a one-time user setup item).
+4. Commit, push, PR with `gh pr create`, auto-merge.
+
+### Session 2: First gameplay task (MVP-0.1.1)
+
+After Phase 0.0 completes (the smoke PR at MVP-0.0.7 merges green), the orchestrator starts gameplay work. **MVP-0.1.1 lands the DP_Tuning API + the failing test + the implementation in a single PR.** Test-first discipline lives within the agent's local session (write test, watch it fail locally, implement, watch it pass), not across PR boundaries. The PR itself opens with green CI per the auto-merge contract.
 
 ```
 Orchestrator reads:
   - Docs/Status.md → "Current task: MVP-0.1.1"
-  - Docs/Questions.md → no open items
-  - Docs/MvpRoadmap.md → MVP-0.1.1 detail
-
-Orchestrator runs (PowerShell):
-  - Stale lock cleanup (§4.5)
-  - git checkout master && git pull
-  - git checkout -b dp/mvp-0.1.1
+  - Docs/MvpRoadmap.md → MVP-0.1.1 = "Land DP_Tuning API + test + impl in one PR.
+    Test-first within the session, not across PRs."
 ```
 
 ### Plan (subagent dispatch)
@@ -426,39 +518,49 @@ Orchestrator runs (PowerShell):
 Orchestrator: spawn Planner (foreground).
 
 Prompt:
-"Design the implementation plan for MVP-0.1.1 — DP_Tuning system.
+"Design the implementation plan for MVP-0.1.1 — DP_Tuning API + test + impl in a single green PR (per the corrected test-first ordering from round-3 reconciliation: test-first lives within the session, not across PRs).
 Goal: load Config/Tuning.json at startup, expose DP_Tuning::Get<T>(key)
-accessor. Existing JSON-parsing utilities should be checked first in
-Core/. Constraints: no std::function/vector/mutex. Files likely
+accessor. **Verify whether the engine has an existing JSON utility first** — search Zenith/Core/, Zenith/AssetHandling/, Zenith/FileAccess/ for any *json* file. If found, use it; if not, write a minimal hand-coded flat-dotted-key reader (no recursive descent needed for our Tuning.json structure). Constraints: no std::function/vector/mutex (production code). Files likely
 needed: new Source/DP_Tuning.h, new Source/DP_Tuning.cpp,
-modification to DevilsPlayground.cpp's InitializeResources hook.
+modification to DevilsPlayground.cpp's InitializeResources hook, new test file.
 Return: step list (max 8 steps), files to touch, risks, test ideas.
 ~400 words."
 
 Planner returns (summary):
-  1. Verify Core/Zenith_JsonReader exists; if not, use minimal parser.
+  1. Search engine for JSON utility (Zenith/Core, Zenith/AssetHandling,
+     Zenith/FileAccess). At time of authoring this example: ROUND-4 VERIFIED
+     no Zenith_JsonReader exists. Use a minimal hand-coded parser.
   2. Author DP_Tuning.h declaring namespace and Get<T>(key) accessor.
   3. Author DP_Tuning.cpp implementing parse + cache.
   4. Hook DP_Tuning::Initialize() into InitializeResources.
   5. Run Sharpmake (new .cpp file).
-  6. Author Test_P1Tuning_LoadsAndValuesInBand.
-  7. Build + run.
-  8. Risk: JSON parser may not exist. Fall back to hand-coded parser
-     (we only need a flat-dotted-key reader).
+  6. Author Test_P1Tuning_LoadsAndValuesInBand alongside.
+  7. Build + run; iterate until test passes.
+  8. Risk: minor — Tuning.json has _comment_ keys; parser must skip them.
 ```
 
-### Research (one quick subagent)
+### Research (one quick subagent — confirm or refute the JSON utility assumption)
 
 ```
 Orchestrator: spawn Researcher (foreground).
 
 Prompt:
-"Find any existing JSON-parsing utility in C:\dev\Zenith\Core\ or
-adjacent. Return the API and a file:line pointer if found; report
-'none found' if not. ~100 words. No code changes."
+"Find any existing JSON-parsing utility under C:\dev\Zenith\Zenith\
+(NOTE: the path is Zenith/Zenith/, not Zenith/Core/ — round-4 reviewer
+flagged that earlier example used the wrong path). Look in:
+- Zenith/Core/
+- Zenith/AssetHandling/
+- Zenith/FileAccess/
+Return file paths and a sentence on their API. If none found, report
+'none found' — that's the actual state per round-4 validation (2026-05-12).
+~100 words. No code changes."
 
-Researcher returns: "Core/Zenith_JsonReader.h provides ParseFromFile
-returning a tree. Sufficient for our needs."
+Researcher returns (as of 2026-05-12 validation): "None found.
+Zenith/Core/, Zenith/AssetHandling/, Zenith/FileAccess/ contain no
+Zenith_Json* files. Engine reads .zscen via Zenith_DataStream binary
+serialisation, not text JSON. DP_Tuning must include a minimal
+hand-coded JSON parser (~80-120 LOC for the flat-dotted-key shape of
+Tuning.json)."
 ```
 
 ### Test author (subagent dispatch)
@@ -500,21 +602,15 @@ Orchestrator: git diff Tests/Test_P1Tuning_LoadsAndValuesInBand.cpp
 (visually verify ~80 lines, conventions followed, file looks sane).
 ```
 
-### Verify red
+### Implementer (subagent dispatch — same PR as the test)
 
-```
-Orchestrator acquires lock. Sharpmake. MSBuild. Compile fails:
-"'DP_Tuning' was not declared in this scope" — expected (we haven't
-implemented it yet). Release lock. Red confirmed.
-```
-
-### Implementer (subagent dispatch)
+**Important (round-3 correction):** the test author and implementer dispatch happens in the same agent session, before any commit. The PR opens with API + test + impl all green together. Test-first discipline = write the test, watch it fail *locally*, implement, watch it pass *locally*, then commit and PR. CI sees one green PR.
 
 ```
 Orchestrator: spawn Implementer (foreground).
 
 Prompt:
-"Implement DP_Tuning for MVP-0.1.1.
+"Implement DP_Tuning for MVP-0.1.1 in the same PR as Test_P1Tuning_LoadsAndValuesInBand.
 
 Files you may edit:
   - Games/DevilsPlayground/Source/DP_Tuning.h (create)
@@ -535,7 +631,12 @@ API spec:
     // Errors: assert if key missing; that's the failure mode we want.
   }
 
-Reference Core/Zenith_JsonReader for parsing.
+**No engine JSON utility exists** (verified by Researcher subagent above —
+no Zenith_JsonReader, no Zenith_Json* file anywhere under Zenith/).
+Write a minimal hand-coded parser: read the file as text, strip
+//-style comments, walk tokens, build a flat dotted-key map keyed on
+strings. ~80-120 LOC. Skip `_comment` keys (Tuning.json uses
+underscore-prefixed comment fields).
 
 Follow Zenith conventions: no std::function/vector/mutex; use
 Zenith_Vector for any vector needs; all .cpp starts with
@@ -547,9 +648,9 @@ Implementer returns:
   Files changed: Source/DP_Tuning.h, Source/DP_Tuning.cpp,
                  DevilsPlayground.cpp.
   Summary: header declares the namespace; .cpp parses Config/Tuning.json
-  on Initialize, walks the tree, flattens to dotted-key map cached in
-  a Zenith_Vector<KVPair>; Get<float> dispatches via linear search
-  (small N).
+  on Initialize via minimal hand-coded parser (~90 LOC), walks the tree,
+  flattens to dotted-key map cached in a Zenith_Vector<KVPair>; Get<float>
+  dispatches via linear search (small N).
 
 Orchestrator: git diff. All three files. Conventions followed; no
 std::function. Linear search is fine for our size (~80 keys).
@@ -560,7 +661,8 @@ std::function. Linear search is fine for our size (~80 keys).
 ```
 Orchestrator acquires lock. Sharpmake. MSBuild → success.
 Tools/run_dp_tests.ps1 -Filter Tuning -Headless → 1 test, pass.
-Tools/run_dp_tests.ps1 -Headless → 29/29 tests, all pass.
+Tools/run_dp_tests.ps1 -Headless → 35/35 tests, all pass (the 34 existing
++ the new Test_P1Tuning_LoadsAndValuesInBand).
 Release lock.
 ```
 
@@ -616,11 +718,11 @@ Orchestrator updates Docs/Status.md:
   DP_Tuning).
 
 Orchestrator appends to Docs/DecisionLog.md:
-  2026-05-13 — Used Core/Zenith_JsonReader rather than adding a JSON
-  dependency. Rationale: existing infra; no new third-party code.
-  Linear-search Get<T> chosen for simplicity; binary-search optional
-  post-MVP. Test_P1Tuning_LoadsAndValuesInBand is the regression
-  guard.
+  2026-05-13 — Wrote a minimal hand-coded JSON parser (~90 LOC) — no engine
+  JSON utility exists (verified via directory scan of Zenith/Core,
+  Zenith/AssetHandling, Zenith/FileAccess). Linear-search Get<T> chosen
+  for simplicity; binary-search optional post-MVP.
+  Test_P1Tuning_LoadsAndValuesInBand is the regression guard.
 
 Orchestrator ticks MvpRoadmap.md task MVP-0.1.1.
 

@@ -28,7 +28,7 @@ Every system, asset, and test in this scope exists to support that sentence. Eve
 | Possession cooldown | 1.5 s after voluntary switch | Prevents click-spam. |
 | Demon-scent | Per-body, +0.3/possession, decay 0.05/s | Telemetry signal; hound effect deferred (no hounds in MVP). |
 | Sprint | Shift/R1, 12 m/s, +3 s/s extra life-cost | Per GDD §4.2. |
-| Walk-quiet | Ctrl/L1, 4 m/s, halves Aelfric's hearing range | Per GDD §4.2. |
+| Walk-quiet | Ctrl/L1, 4 m/s, halves the villager's emitted footstep loudness (effect: Aelfric's effective detection range against THIS villager's footsteps is halved; Aelfric's hearing config is unchanged). | Per GDD §4.2 + Tuning.json `movement.walk_footstep_loudness_multiplier`. Semantics clarified 2026-05-12 round-5 reconciliation — the earlier "halves Aelfric's hearing range" wording was correct in outcome but suggested modifying Aelfric's config, which it doesn't. |
 | Movement | Camera-relative WASD on possessed body | Already prototyped. |
 | Top-down orbit camera | Q/E rotate, mouse-wheel zoom | Already prototyped; expand zoom range. |
 | Real pause | Esc freezes simulation; resume on Esc | Currently a fake overlay — needs real pause. |
@@ -56,7 +56,7 @@ Every system, asset, and test in this scope exists to support that sentence. Eve
 
 | Content | MVP count | Post-MVP target |
 |---|---:|---:|
-| Villager archetypes | **4** (Farmhand, Sexton, Devout, Child) | 24 |
+| Villager archetypes | **4** (Farmhand, Beggar, Devout, Child) | 24 |
 | Reagents | **5** (Caul, Hare's Tongue, Bog-Water, Burial-Coin, Bell's Soul) | 14 |
 | Witch-finder | **1** (canonical Aelfric, no variants) | 3 variants + hounds |
 | Forge recipes | **3** (Iron→Key, Iron+Wood→Spike, Iron+Brass→Skeleton) | 6 |
@@ -87,7 +87,7 @@ Per [AssetManifest.md §0.2](AssetManifest.md) — S0 sourced placeholders.
 | Tier 1 (Foundation) | All ~30 |
 | Tier 2 (Depth) | **Subset:** Devout channel, Child half-timer, fog memory, fog-aelfric-not-revealed, possession cooldown, demon-scent accumulation, sprint cost |
 | Tier 3 (Content) | **Subset:** archetype-timer parameterised (4 archetypes), reagent inventory (5 reagents), naming-convention linter |
-| Tier 4 (Ship) | **MVP only:** `Test_P4Playthrough_Night1WinGolden`, `Test_P4Playthrough_Night1LossByApprehend`, `Test_P4Playthrough_Night1LossByDawn` |
+| Tier 4 (Ship) | **MVP only:** `Test_P4Playthrough_Night1WinGolden`, `Test_P4Playthrough_Night1LossByApprehend`, `Test_P4Playthrough_Night1LossByDawn`, `Test_P4Playthrough_Night1LossByNoVillagers` |
 
 **Total MVP tests:** ~50 (from the ~250-test ship target). Total MVP test runtime: ~10 min batch.
 

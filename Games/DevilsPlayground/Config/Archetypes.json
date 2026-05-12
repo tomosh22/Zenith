@@ -25,7 +25,7 @@
     {
       "id": "Sexton",
       "display_name_key": "archetype.sexton.name",
-      "mvp": true,
+      "mvp": false,
       "life_timer_s": 30.0,
       "walk_speed_mps": 4.0,
       "jog_speed_mps": 8.0,
@@ -38,7 +38,7 @@
       "min_spawns": 1,
       "max_spawns": 2,
       "tint_rgb": [0.12, 0.12, 0.15],
-      "_comment": "Black-robed church servant. Aelfric doesn't search him in the chapel."
+      "_comment": "Black-robed church servant. Aelfric doesn't search him in the chapel. **MOVED TO POST-MVP 2026-05-12** per peer review (round 2): the 'can_enter_chapel_unseen' ability needs a chapel-bounds zone check + Aelfric sight-cone integration that adds ~3-5 days of work. Without that ability the Sexton is mechanically identical to a Farmhand. Replaced in MVP by the Beggar archetype (simpler ability: Aelfric ignores beggars; tested via behaviour-tree filter)."
     },
     {
       "id": "Devout",
@@ -97,10 +97,21 @@
     },
     {
       "id": "Beggar",
-      "mvp": false,
+      "display_name_key": "archetype.beggar.name",
+      "mvp": true,
       "life_timer_s": 25.0,
+      "walk_speed_mps": 4.0,
+      "jog_speed_mps": 8.0,
+      "sprint_speed_mps": 12.0,
+      "possession_channel_s": 0.0,
+      "demon_scent_floor": 0.0,
       "abilities": ["aelfric_ignores"],
-      "_comment_post_mvp": "Aelfric won't search beggars; they sleep when un-possessed."
+      "restrictions": [],
+      "rarity": 0.4,
+      "min_spawns": 1,
+      "max_spawns": 2,
+      "tint_rgb": [0.45, 0.38, 0.32],
+      "_comment": "**PROMOTED TO MVP 2026-05-12** per peer review. Replaces Sexton. Shorter life timer (25s) AND a clear gameplay benefit (Aelfric won't pursue): the trade-off is the core mechanic of the archetype, easily tested via a behaviour-tree filter on `BB.TargetWithDevil` (Aelfric never sets target to a Beggar). Implementation: ~1 day. Test: Test_P2Archetype_BeggarIgnoredByAelfric."
     },
     {
       "id": "Stoneborn",
@@ -184,10 +195,11 @@
       "abilities": ["can_call_sheep_distraction"]
     },
     {
-      "id": "Cooper2",
+      "id": "Reeve",
       "mvp": false,
       "life_timer_s": 30.0,
-      "_comment_post_mvp": "Placeholder slot for design iteration."
+      "abilities": ["can_unlock_civic_door_without_key"],
+      "_comment_post_mvp": "Village officer. Carries the lord's authority — civic doors (longhouse, smithy) recognise the reeve and open without a key."
     },
     {
       "id": "WidowWalker",

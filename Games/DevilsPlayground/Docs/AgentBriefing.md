@@ -34,7 +34,7 @@ You are working on **Devil's Playground**, a stealth-puzzle roguelite. The user 
 
 - **Game:** Devil's Playground. Top-down stealth-puzzle roguelite. You play a bodiless demon possessing villagers in a 1670s English village to collect 5 reagents and complete a ritual at a pentagram while a witch-finder hunts you. Each possessed body has a 30-second life timer.
 - **Engine:** Zenith (custom C++20, Vulkan-based). Located at `C:\dev\Zenith\`. The DP project lives at `C:\dev\Zenith\Games\DevilsPlayground\`.
-- **Status:** Skeleton-grade UE5 port. ~25% of shipping scope present. ~28 automated tests passing. Real loss states, real navmesh, real pause, real archetype/reagent variety, audio system — all absent. MVP target ~4 months.
+- **Status:** Skeleton-grade UE5 port. ~25% of shipping scope present. 34 automated tests registered (verified 2026-05-12). Real loss states, real navmesh, real pause, real archetype/reagent variety, audio system — all absent. MVP target ~4-9 months depending on navmesh and Mixamo spike outcomes.
 
 ### Document map (read in this order)
 
@@ -45,9 +45,12 @@ You are working on **Devil's Playground**, a stealth-puzzle roguelite. The user 
 5. **[TestPlan.md](TestPlan.md)** — every gameplay test in the suite. Reference when authoring tests.
 6. **[AssetManifest.md](AssetManifest.md)** — what art deliverables look like.
 7. **[AssetTestPlan.md](AssetTestPlan.md)** — how to verify placeholder assets.
-8. **[InputsForAutonomy.md](InputsForAutonomy.md)** — what I (the AI) need from the user (the human). Updated as we go.
-9. **[OrchestratorPlaybook.md](OrchestratorPlaybook.md)** — *if you are the orchestrator of a fresh session, this is your primary operating manual. Read it instead of (well, in addition to) this one.*
-10. **This file** — general conventions inherited by orchestrator and subagents alike.
+8. **[OrchestratorPlaybook.md](OrchestratorPlaybook.md)** — *if you are the orchestrator of a fresh session, this is your primary operating manual. Read it instead of (well, in addition to) this one.*
+9. **[ManualSetupChecklist.md](ManualSetupChecklist.md)** — one-time human pre-flight steps; orchestrator stops if any box unticked.
+10. **[Glossary.md](Glossary.md)** — authoritative term definitions; consult when terminology is ambiguous.
+11. **[BuildEnvironment.md](BuildEnvironment.md)** — required software, one-time setup, troubleshooting.
+12. **[PeerReviews/](PeerReviews/)** — historical critiques of the planning pack. Read if you're investigating "why was X structured this way?"
+13. **This file** — general conventions inherited by orchestrator and subagents alike.
 
 ### Always-loaded state files
 
@@ -220,11 +223,11 @@ PR titles use Conventional Commits: `feat(dp): MVP-X.Y.Z — short summary`. Typ
 
 ### 3.5 CI & auto-merge specifics
 
-**Assumed CI provider:** GitHub Actions. Workflows live in `.github/workflows/`. If they don't exist yet, **the very first thing you do** is create them — they are MVP-0.3 territory. Required checks for auto-merge:
+**Assumed CI provider:** GitHub Actions. Workflows live in `.github/workflows/`. **Phase 0.0 of the MvpRoadmap authors them** (MVP-0.0.2 + MVP-0.0.3). Required checks for auto-merge:
 
-- `build-debug-tools` — clean MSBuild of `vs2022_Debug_Win64_True`.
-- `tests-headless` — `Tools/run_dp_tests.ps1 -Headless` exit code 0.
-- `asset-lint` — once MVP-3.5.1 lands, the asset linter pass.
+- `dp-build` — clean MSBuild of `vs2022_Debug_Win64_True` (authored in MVP-0.0.2).
+- `dp-tests` — `Tools/run_dp_tests.ps1 -Headless` exit code 0 (authored in MVP-0.0.3).
+- `dp-asset-lint` — once MVP-3.5.1 lands, the asset linter pass.
 
 **Auto-merge command:**
 
@@ -343,9 +346,9 @@ These are not deadlines — they're triggers to ask *"is this task ill-defined, 
 
 Read these before you touch code; they're permanent footguns:
 
-- **`std::function` / `std::vector` / `std::mutex` are forbidden** ([memory](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/MEMORY.md)). Use `Zenith_Vector`, `Zenith_Mutex`, function pointers.
+- **`std::function` / `std::vector` / `std::mutex` are forbidden in NEW production code** ([memory](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/MEMORY.md)). Use `Zenith_Vector`, `Zenith_Mutex`, function pointers. **Existing prototype code that already uses STL is grandfathered** — `Source/PublicInterfaces.cpp` uses `std::unordered_map` at lines 39, 42, 50; `Source/DPMaterials.cpp` uses it too. These were ported from UE5 and remain until a dedicated cleanup task replaces them with `Zenith_HashMap` (which exists at `Zenith/Collections/Zenith_HashMap.h`). **Do not introduce new STL containers**; if you need to read from or extend grandfathered code, the surrounding STL stays for now. **Test code (wrapped in `#ifdef ZENITH_INPUT_SIMULATOR`) may use STL freely** — `Test_HumanPlaythrough.cpp` uses `std::vector`. Production headers and runtime `.cpp` files added going forward remain strict.
 - **`Zenith_Vector` has no STL iterators.** Index-based loops only.
-- **Non-tools builds are broken** ([memory: project_nontools_build_broken.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/project_nontools_build_broken.md)). Skip `*_False` configurations until that's fixed.
+- **Non-tools builds were fixed 2026-05-10** ([memory: project_nontools_build_broken.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/project_nontools_build_broken.md)). Easy to regress. *Verify* `*_False` configurations build green before declaring a foundation feature done.
 - **Sharpmake regen required after adding `.cpp` files** — `cd Build && cmd /c '.\Sharpmake_Build.bat < nul'`. Forgetting this means your new file isn't in the solution and tests fail with "not found."
 - **`ZENITH_REGISTER_COMPONENT` doesn't fire if the `.obj` is dead-stripped** ([memory: feedback_msvc_static_init_dead_strip.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/feedback_msvc_static_init_dead_strip.md)). Fix by `AddComponent` at runtime from a script that *is* referenced.
 - **Parallel MSBuild thrashes** ([memory: feedback_parallel_agents_msbuild_thrash.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/feedback_parallel_agents_msbuild_thrash.md)). Use `-maxCpuCount:1`.
@@ -354,6 +357,7 @@ Read these before you touch code; they're permanent footguns:
 - **Tests must be wrapped in `#ifdef ZENITH_INPUT_SIMULATOR`** or they won't compile in non-tools builds.
 - **Scene authoring lives in `Project_RegisterEditorAutomationSteps`** ([memory: feedback_scene_setup_via_editor_automation.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/feedback_scene_setup_via_editor_automation.md)). Don't write imperative scene construction; use `AddStep_*` calls. Marble.cpp is the canonical reference.
 - **DevilsPlayground is in `C:\dev\Zenith\Games\DevilsPlayground\` (main repo)**, NOT in any worktree under `.claude/worktrees/`. Always work on `master` branch.
+- **Engine work is in-scope for autonomous agents** (per user direction 2026-05-12). Subagents may edit anywhere under `Zenith/` for tasks like MVP-0.4 (instrumentation hooks) and MVP-1.2 (navmesh generator). Engine PRs trigger mandatory Reviewer-subagent dispatch (OrchestratorPlaybook §5.4) and a Combat smoke build (catches cross-game regressions). Design rationale logged in `DecisionLog.md` before opening the PR for any net-new engine namespace.
 
 ### 4.10 When the user appears mid-session
 
@@ -522,7 +526,7 @@ Multiple Claude Code instances on different machines / terminals / users work th
 - **Tuner.** *(Post-autonomous-playtest-bot.)* Runs the bot, analyses telemetry, proposes tuning-JSON deltas.
 - **Doc Maintainer.** Keeps GDD / Shortfalls / TestPlan / AssetManifest / etc. in sync with reality.
 
-For the MVP: ignore this entire section beyond knowing it exists. **You are mode A.**
+For the MVP: ignore this entire section beyond knowing it exists. **You are mode B** (orchestrator + subagents in a single session — see §6.2). The earlier draft of this paragraph said "mode A" which contradicted §1.1 and §6.2; round-4 peer review caught the inconsistency. Mode B is the operational default for the MVP per the user's 2026-05-11 directive.
 
 ### 6.4 Choosing your mode at session start
 
@@ -565,120 +569,13 @@ If any of these are false, finish them before you stop.
 
 ---
 
-## 9. Worked Example — MVP-0.1.1 from start to merge
+## 9. Worked Example
 
-Concrete reference for what a session looks like end-to-end. This is the **first** real task in the MVP roadmap.
+**Note:** The detailed worked example previously lived here. It's been moved to **[OrchestratorPlaybook.md §8](OrchestratorPlaybook.md)** (the orchestrator's primary doc) and updated to match the current roadmap structure (where MVP-0.0.x is the bootstrap phase and MVP-0.1.1 is the failing test, not the implementation).
 
-### Setup (~5 min)
+The version that used to be here showed MVP-0.1.1 as an implementer task — that was correct in the round-0 plan, but round-1 reconciliation flipped the order (test first, implementation second), so the duplicate example here would have misled an agent. One source of truth is better than two near-duplicates.
 
-```powershell
-cd C:\dev\Zenith
-git checkout master
-git pull
-# Read state
-cat Games/DevilsPlayground/Docs/Status.md
-cat Games/DevilsPlayground/Docs/Questions.md  # nothing actionable
-# Pick the next un-checked task in MvpRoadmap.md → MVP-0.1.1.
-git checkout -b dp/mvp-0.1.1
-```
-
-### Investigate (~15 min)
-
-Check how Combat / other game projects do data-driven config — direct `Read` of one file, skip Explore agent (this is a single file, not multi-pass research):
-
-```
-Read Games/Combat/Components/Combat_Config.h
-```
-
-Note the pattern (struct holding config, loaded in a `Project_*` hook). Decide: I'll follow the same shape.
-
-### Write the test (~25 min)
-
-Per [TestPlan.md §5.1 of the AgentBriefing test-first rule]: write `Test_P1Tuning_LoadsAndValuesInBand` first. The test asserts:
-1. `DP_Tuning::Get<float>("possession.life_timer_default_s")` returns 30.0.
-2. Every value in the JSON is within a sanity range (the test defines per-key ranges).
-
-Build. Run. Fails because `DP_Tuning` doesn't exist yet:
-
-```powershell
-& 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe' Build\zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount:1
-```
-
-Compile error: `'DP_Tuning' was not declared in this scope`. Test would fail. Good — we're red.
-
-### Implement (~90 min)
-
-Add:
-- `Games/DevilsPlayground/Source/DP_Tuning.h` — declares the namespace + accessors.
-- `Games/DevilsPlayground/Source/DP_Tuning.cpp` — parses `Config/Tuning.json` (use a minimal JSON parser; check `Core/` for an existing one before adding a dep), caches values in a hashtable keyed by dot-path string.
-- Call `DP_Tuning::Initialize()` from `DevilsPlayground::InitializeResources()` (in `DevilsPlayground.cpp`).
-
-Run Sharpmake (added `.cpp`):
-
-```powershell
-cd Build
-cmd /c '.\Sharpmake_Build.bat < nul'
-cd ..
-```
-
-Build again, this time successful. Run the test:
-
-```powershell
-pwsh.exe -File Tools/run_dp_tests.ps1 -Filter Tuning -Headless
-```
-
-Pass. Run the full suite to confirm nothing else broke:
-
-```powershell
-pwsh.exe -File Tools/run_dp_tests.ps1 -Headless
-```
-
-All 29 tests (the 28 prior + our new one) green.
-
-### Wrap up (~10 min)
-
-Update docs:
-- `Docs/Status.md` — "Current task: MVP-0.1.2."
-- `Docs/DecisionLog.md` — entry on the JSON-parser choice ("used Core/Zenith_JsonReader vs. adding a dep").
-- `Docs/MvpRoadmap.md` — tick MVP-0.1.1.
-
-Commit and PR:
-
-```powershell
-git add -A
-git commit -m "feat(dp): MVP-0.1.1 — DP_Tuning load + Test_P1Tuning_LoadsAndValuesInBand"
-git push -u origin dp/mvp-0.1.1
-gh pr create --title "feat(dp): MVP-0.1.1 — DP_Tuning load + Test_P1Tuning_LoadsAndValuesInBand" --body "$(cat <<'EOF'
-## What
-Add DP_Tuning::Get<T>(key) accessor reading from Config/Tuning.json.
-
-## Why
-Closes MVP-0.1.1. The single highest-leverage data unlock per [InputsForAutonomy §1.2](../Games/DevilsPlayground/Docs/InputsForAutonomy.md).
-
-## Tests
-- Added: Test_P1Tuning_LoadsAndValuesInBand (asserts every value within its sanity range).
-- All existing tests pass.
-- New test runtime: 1.2 s.
-
-## Decision log
-[2026-05-13 — chose Core/Zenith_JsonReader over adding dep](Games/DevilsPlayground/Docs/DecisionLog.md)
-
-## Reviewer checklist
-- [x] No std::function/vector/mutex
-- [x] All .cpp start with #include "Zenith.h"
-- [x] ZENITH_INPUT_SIMULATOR-wrapped test
-- [x] Sharpmake regen committed
-- [x] No post-MVP scope
-
-Closes MVP-0.1.1.
-EOF
-)"
-gh pr merge --auto --squash --delete-branch
-```
-
-### Total time: ~2.5 hours. Within the plumbing-task budget (§4.8).
-
-The next session reads `Status.md`, sees MVP-0.1.2 queued, and continues.
+If you are a subagent reading this file: you don't need a worked example; your spawner provides scoped instructions. If you are the orchestrator: read OrchestratorPlaybook §8.
 
 ---
 

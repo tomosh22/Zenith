@@ -2,7 +2,7 @@
 /**
  * DPVillager_Behaviour - Possessable villager (DevilsPlayground port).
  *
- * 14 villagers are placed around L_GameLevel. The player click-to-possesses
+ * 17 villagers are placed around L_GameLevel (was 14 in early port milestones; extended during M0.5). The player click-to-possesses
  * one at a time. Possessed villager moves under WASD; un-possessed villagers
  * stand still. Possession bumps the villager's remaining-life timer to a
  * fixed value; when it ticks to zero, the villager dies and the player must

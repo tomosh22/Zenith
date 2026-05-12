@@ -6,7 +6,7 @@
 **Last updated:** 2026-05-11
 **Target platforms:** PC (Steam, primary), Xbox Series X|S, PlayStation 5, Nintendo Switch 2
 **Target storefront price:** $19.99 USD at launch (premium one-time purchase)
-**Estimated dev runway from current skeleton:** 18 months, team of ~12 (see `Shortfalls.md`)
+**Actual dev model:** 1 full-time developer + autonomous Claude Code agents. Zero external spend until art assets begin. **MVP runway: 3.5–4.5 months (optimistic) or 5.5–7 months (if Mixamo spike fails — navmesh-generator risk retired after round-4 finding that `Zenith_NavMeshGenerator` already exists in engine).** Full-game runway: 12–24 months. See [MVPScope.md](MVPScope.md) and [MvpRoadmap.md](MvpRoadmap.md) for the executable plan; see §12 of this doc for the actual production model.
 
 ---
 
@@ -451,19 +451,55 @@ The pitch to publishers: this is a *premium-priced, replayable, finite-content* 
 
 ---
 
-## 12. Production scope (high-level)
+## 12. Production scope (actual)
 
-| Discipline | Headcount | Months 0–6 | Months 6–12 | Months 12–18 |
-|---|---|---|---|---|
-| Design | 2 | Lock §4–7 designs | Tune & playtest | Final balance |
-| Engineering (gameplay) | 3 | Burn-out timer, demon-scent, hounds, apprehend | Crafting expansion, AI variants, Liminal | Tutorial, polish |
-| Engineering (engine) | 1 | Real navmesh, real pause, real volumetric fog | Performance, console ports | Cert |
-| Art (env) | 2 | Vexholme blockout → final | Lighting pass | Polish |
-| Art (char) | 2 | 24 villagers + Aelfric + hounds | Animations | Polish |
-| Audio | 1 (+ external composer) | SFX bible, music dev | Recording | Mix |
-| QA | 1 → 3 by month 14 | Smoke pass | Daily Nightly | Cert |
+**This GDD describes a game that traditionally requires ~12 people and 18 months at ~$3M. The actual production is one full-time developer working with autonomous Claude Code agents, with zero external spend until art assets begin. The numbers below reflect that reality.**
 
-Total ~12 people, 18 months, ~$3M budget exclusive of marketing.
+The 12-person table that appeared in earlier drafts is preserved at the end of this section as "traditional sizing" — informational context, **not** a planning anchor. Compare your pace against the MVP roadmap's task-level estimates, not against a team schedule.
+
+### 12.1 Actual production model
+
+| Role | Who | Notes |
+|---|---|---|
+| Producer / designer | User (Tomos) | Full-time. Reviews PRs from agents. Owns scope decisions and tuning judgement calls. |
+| Engineering | Autonomous Claude Code orchestrator + subagents | Test-first, auto-merge on green CI. See [OrchestratorPlaybook.md](OrchestratorPlaybook.md). |
+| Art (S0 / S1) | Mixamo + Kenney + Sketchfab CC0 + in-house authored low-poly | No external spend. See [AssetManifest.md](AssetManifest.md). |
+| Art (S2 final) | Deferred until MVP ships; first paid art relationship at that point | User decides who/when. |
+| Audio | None during MVP (silent + emission events). Composer/VO/mix all post-MVP. | First paid audio relationship after MVP playable validates the design. |
+| QA | Automated test suite (~250 tests at ship); user as final playtest authority | See [TestPlan.md](TestPlan.md). |
+| Cert / platforms | Post-MVP only. MVP is PC (Windows) only. | Console layers + cert are engine-team work outside this project. |
+
+### 12.2 MVP runway (the only schedule that matters now)
+
+| Phase | Target | Scope |
+|---|---|---|
+| Phase 0.0 Bootstrap | 1 week | CI, runner flags, build env verify, smoke PR. See [MvpRoadmap.md](MvpRoadmap.md) Phase 0.0. |
+| Phase 0.1 Plumbing | 2 weeks | Tuning, archetype, instrumentation hooks. |
+| Phase 1 Foundation gameplay | **4–6 weeks** | Pause, navmesh (now ~3-5 days — the engine generator already exists; see round-4 finding), apprehend, switch, drop, cooldown, scent, sprint, range, omniscience removal, save. **Round-4 peer review found `Zenith_NavMeshGenerator` is a fully-implemented Recast-style pipeline in the engine with unit tests.** MVP-1.2 is integration, not authoring. Original 6-12 week navmesh estimate retired. |
+| Phase 2 Depth | 4 weeks | Archetypes, reagents, forge, fog, HUD upgrades. |
+| Phase 3 Asset substitution | 3 weeks | Mixamo villagers, Kenney items. Blocked on MVP-3.0.1 spike. |
+| Phase 4 MVP acceptance | 2 weeks | The 4 playthrough tests. |
+
+**Honest MVP runway (re-estimated 2026-05-12 round-4 after `Zenith_NavMeshGenerator` discovery):**
+- **Optimistic path: 14–18 weeks (3.5–4.5 months).** Navmesh generator integrates cleanly; Mixamo spike works first try.
+- **Pessimistic path: 22–28 weeks (5.5–7 months).** Navmesh-generator integration uncovers DP-specific collider issues requiring engine fixes; Mixamo retargeting fails and tinted-cubes ship through MVP.
+- The earlier "7-9 month worst case" framing was anchored on writing a navmesh generator from scratch. With the generator existing in-engine, that scenario is retired.
+
+### 12.3 Traditional team sizing (informational; not the plan)
+
+If a publisher funded this project at industry-standard staffing, the table below shows what shape that would take. It is **not** the user's current plan; it exists here to give context if the user ever pitches the project externally or scales the team post-MVP.
+
+| Discipline | Traditional headcount | What they'd do |
+|---|---|---|
+| Design | 2 | Lock designs, tune, balance |
+| Engineering (gameplay) | 3 | Features, AI, content tooling |
+| Engineering (engine) | 1 | Navmesh, fog, performance, ports |
+| Art (env) | 2 | Vexholme blockout → final → polish |
+| Art (char) | 2 | 24 villagers + Aelfric + hounds + animations |
+| Audio | 1 + composer | SFX bible, music dev, recording, mix |
+| QA | 1 → 3 by ship | Smoke, Nightly, cert |
+
+Traditional total: ~12 people, 18 months, ~$3M ex-marketing. **This is not the actual plan.** Solo-dev-plus-AI is the actual plan; the MVP-roadmap task estimates are the authoritative time budgets.
 
 ---
 

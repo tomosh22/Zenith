@@ -499,7 +499,7 @@ namespace
 	{
 		// Skeleton-grade L_GameLevel — exercises every behaviour with a single
 		// representative entity each. Wave-4 polish replaces this with the
-		// full UE-port placement (14 villagers, 15 doors, 6 chests, 24 lights,
+		// full UE-port placement (17 villagers, 15 doors, 6 chests, 24 lights,
 		// pentagram + 5 objective items, 21 mushroom groups).
 		Zenith_EditorAutomation::AddStep_CreateScene("GameLevel");
 

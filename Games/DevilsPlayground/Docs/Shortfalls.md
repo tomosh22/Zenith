@@ -4,6 +4,12 @@
 
 **Scope:** Everything in the current `Games/DevilsPlayground/` tree as of 2026-05-11 (commit-ish: skeleton-grade UE port, M0/M0.5/M1 milestones complete).
 
+**Updated 2026-05-11** (post peer-review reconciliation):
+- Prototype contains 24 test `.cpp` files registering exactly 34 tests (verified via grep on 2026-05-12; the earlier "~28" was hand-wavy).
+- GameLevel scene spawns 17 villagers (CLAUDE.md's "14" in one comment is a stale value from earlier port milestones; "17" in `DevilsPlayground.cpp` line 565 is the current truth).
+- `DPFogPass.cpp` is substantially implemented (~312 lines with `SetupDPFog`/`ExecuteDPFog`/`BuildPipelines`). The shader file `Zenith/Flux/Shaders/Fog/DP_Fog.slang` **also exists** (with compiled `.spv` reflection files) — corrected 2026-05-12 round-4 peer review; earlier rounds claimed this file needed authoring (MVP-2.4.1) but it's already in the repo. The remaining MVP-2.4 work is *test coverage + memory-fog implementation*, not shader authoring.
+- Non-tools builds (`*_False` configurations) were **fixed as of 2026-05-10** per project memory; previous "broken" claims in this doc are obsolete (see §3.8 below).
+
 **Verdict at a glance:**
 - **What works today:** ~25% of the shipping scope. The bones are real.
 - **What's stubbed but architected:** ~30%. Hook points exist, behaviour is placeholder.
@@ -209,11 +215,13 @@ The prototype runs in debug builds on PC and has automated test coverage at ~60 
 
 **Bridge cost:** ~6 engineering weeks for a full perf pass, allocated across the 18-month dev runway.
 
-### 3.8 Non-tools build is broken (engine-wide)
+### 3.8 Non-tools build dead-strip — RESOLVED 2026-05-10
 
-Per memory: `feedback_msvc_static_init_dead_strip.md` notes that `ZENITH_REGISTER_COMPONENT` doesn't fire if the `.obj` is unreferenced. This bites DP because component registration (e.g., `Zenith_AIAgentComponent`) requires runtime force-add — already worked around in `Priest_Behaviour::OnAwake`. But the underlying issue (per `project_nontools_build_broken.md`) is that **only `*_True` configs build right now**. Shipping needs `*_False`.
+Per memory: `feedback_msvc_static_init_dead_strip.md` documents that `ZENITH_REGISTER_COMPONENT` doesn't fire if the `.obj` is unreferenced. This bit DP because component registration (e.g., `Zenith_AIAgentComponent`) required runtime force-add — already worked around in `Priest_Behaviour::OnAwake`.
 
-**Bridge cost:** Unknown — this is engine-level. Likely ~4 engineering weeks to audit dead-stripped registrations and add force-anchor mechanisms.
+**Status (2026-05-10):** Memory note `project_nontools_build_broken.md` records that `vs2022_Release_Win64_False` configurations now build and DP tests run in them. The remaining work is **verification** (rerun the full test batch in non-tools mode and confirm green), not **recovery**. Bridge cost reduced to ~3 engineering days (one CI pipeline addition + a green-run confirmation).
+
+**Action item:** Verify in MVP-0.0.7 (the smoke PR) that the CI workflow includes a non-tools-build sanity check.
 
 ### 3.9 No console-specific platform layer for DP
 
@@ -251,7 +259,7 @@ The honest summary: **the prototype contains the engineering pattern for each of
 
 ### 5.1 Automated test coverage is strong — for what's there
 
-The 28-test harness (`Tests/`) is genuinely impressive for a skeleton-grade port. Tests cover: scene loading, possession round-trip, life timer, pickup, victory, perception bridge, pursuit, fog-pass contract, material side-table, gym scenes for each subsystem. The harness supports batch mode for fast iteration.
+The 34-test harness (`Tests/`) is genuinely impressive for a skeleton-grade port. Tests cover: scene loading, possession round-trip, life timer, pickup, victory, perception bridge, pursuit, fog-pass contract, material side-table, gym scenes for each subsystem. The harness supports batch mode for fast iteration.
 
 This is the project's largest **strength** carried over from the M0/M0.5/M1 milestones, and shipping should preserve it. The pattern (gym scenes per subsystem + integration tests for the full game level) generalises directly.
 
@@ -295,9 +303,15 @@ A small bug-shaped tell: the prototype's held-item visual hovers 1.6 m above the
 
 **Cost:** ~1 engineering day, but worth flagging now so the animation team plans for it.
 
-### 6.4 14 vs. 17 villager mismatch
+### 6.4 17 villagers — the prototype spawns 17, not 14
 
-The CLAUDE.md says "14 villagers" but the GameLevel spawns "17 villagers" per the file map. The prototype has drifted from its own documentation in just the engineering of the level — a small symptom of the gap between authoring code and pre-baked scenes (§3.4).
+**Corrected 2026-05-11 per peer review.** The CLAUDE.md says "14 villagers" in one section but "17 villagers" in another, and `DevilsPlayground.cpp` line 565 confirms 17. The ground truth is 17 (the original 14 plus 3 added when the GameLevel scene was extended). MVPScope's "4 archetypes for MVP" is independent of the spawn count — the existing 17 villagers will be assigned to one of the 4 MVP archetypes each.
+
+**Action item:** Update DP CLAUDE.md to consistently say 17. Note in DecisionLog.
+
+### 6.4.1 Updated `AgentBriefing.md` claim about non-tools build
+
+The previous claim "non-tools builds are broken" in `AgentBriefing.md` §4.9 is **out of date as of 2026-05-10**. The pitfall list now reads "*Verify* non-tools builds before claiming green — they were fixed in May 2026 but easy to regress."
 
 ### 6.5 No item drop on possession switch
 
@@ -369,7 +383,7 @@ Not all of the prototype is a list of things to fix. The following are genuine *
 
 1. **The `Project_*` lifecycle hooks** (9 entry points, mirroring Combat). Clean architecture. Don't deviate.
 2. **The `DP_*` namespace public-interface contract** (Source/PublicInterfaces.h/cpp). The discipline of behaviours-talk-only-via-namespace is preserved-worthy.
-3. **The automated test harness** (28 tests, batch mode, gym scenes). One of the strongest QA stories of any in-development game I've seen at this stage. Build on it; don't replace it.
+3. **The automated test harness** (34 tests, batch mode, gym scenes). One of the strongest QA stories of any in-development game I've seen at this stage. Build on it; don't replace it.
 4. **The editor-automation scene authoring pattern.** Declarative `AddStep_*` calls reading like a recipe. Bake into `.zscen` for ship, but keep the authoring DSL for live iteration.
 5. **The perception-system bridge pattern** in `Priest_Behaviour::BridgePerceptionToBlackboard`. The right shape for the GDD's Aelfric variants — just needs the omniscience-fallback removed.
 6. **The fog-hole clear-and-rebuild strategy.** Simple, deterministic, no subscription overhead. Keep.

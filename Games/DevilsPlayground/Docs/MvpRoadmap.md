@@ -19,39 +19,77 @@
 
 ---
 
-## Phase 0 — Foundation Plumbing (2 weeks target)
+## Phase 0.0 — Autonomy Bootstrap (1 week target)
+
+**Added per peer review 2026-05-11.** These tasks land the *execution environment* that every later task depends on. None of Phase 0.1+ is meaningful until Phase 0.0 is green.
+
+- [ ] **MVP-0.0.1** — Author `Tools/verify_build_env.ps1`. Checks: Visual Studio 2022 with C++ workload installed; Windows SDK present; Vulkan SDK 1.3.x present; .NET 6+ for Sharpmake; `pwsh.exe` or fallback to `powershell.exe`; `gh` CLI authenticated; current branch is master and clean. Exits 0 on success with a printed summary, non-zero on missing prerequisites.
+- [ ] **MVP-0.0.2** — Author `.github/workflows/dp-pr.yml` that builds the DevilsPlayground project (NOT `Games/Test` — the current workflow is wrong) on PR. Required check name: `dp-build`. Builds `vs2022_Debug_Win64_True` configuration.
+- [ ] **MVP-0.0.3** — Author `.github/workflows/dp-tests.yml` that runs `Tools/run_dp_tests.ps1 -Headless` on PR. Required check name: `dp-tests`. Uploads test result JSON as artifact.
+- [ ] **MVP-0.0.4** — Extend `Tools/run_dp_tests.ps1` with three flags: `-Tier <0|1|2|3|4>` (filters by `Test_T0`/`Test_P1`/etc. name prefix), `-FailFast` (abort batch on first failure), `-AssertionsLog <path>` (append every assertion failure line across the batch into a single grep-able log file). Tests: add `Test_T0Harness_RunnerFlagsExist` that invokes the runner with each flag and confirms parsed correctly.
+- [ ] **MVP-0.0.5** — **🚧 HUMAN_GATE.** Verify `pwsh.exe` is on PATH; if not, install PowerShell 7 (admin-elevation required — agent cannot install software). Alternative: agent rewrites all PS scripts and docs to use `powershell.exe -NoProfile` instead (agent CAN do this). Resolve the post-build slang.dll copy step mentioned in `Games/DevilsPlayground/CLAUDE.md`. **Orchestrator behaviour:** if `pwsh.exe` is missing and rewriting scripts is the chosen path, the orchestrator proceeds with the rewrite. If installation is the chosen path, the orchestrator surfaces in Questions.md with a clear "needs human admin action" tag and continues to other tasks until Tomos installs.
+- [ ] **MVP-0.0.6** — **🚧 HUMAN_GATE.** Repo-protect master: require both `dp-build` and `dp-tests` checks before merge; auto-merge enabled. Document in `Docs/CIPolicy.md`. **Branch protection rules require GitHub web-UI access** (or the `gh api repos/...` call with admin scope — most likely `gh` tokens lack that scope; verify first). **Orchestrator behaviour:** check `gh api repos/{owner}/{repo}/branches/master/protection` for current rules; if absent and the token has admin scope, attempt to set via API; if the token lacks scope, surface in Questions.md with the exact GitHub Settings URL Tomos should click.
+- [ ] **MVP-0.0.7** — Smoke PR: create a trivial PR that adds a comment to a doc, push, observe both checks run green, observe auto-merge fires. This is the **end-to-end proof** that the bootstrap works.
+
+**Exit criterion:** the bootstrap PR itself merges cleanly via auto-merge on green CI. After that, every subsequent task uses the same flow.
+
+---
+
+## Phase 0.1 — Foundation Plumbing (2 weeks target)
 
 These tasks land the **infrastructure** needed by every subsequent task. They are small, low-risk, and pay back across the rest of the MVP.
 
 ### 0.1 Tuning system
 
-- [x] **MVP-0.1.1** — Add `Source/DP_Tuning.h/.cpp`. Load `Config/Tuning.json` at startup; expose `DP_Tuning::Get<T>(key)` accessor. Cache parsed values.
-- [x] **MVP-0.1.2** — Add `Test_P1Tuning_LoadsAndValuesInBand` (Tier 1). Asserts each tuning value is within its sanity range (defined in test alongside the value).
-- [ ] **MVP-0.1.3** — Migrate `DPVillager_Behaviour` to read `m_fMaxLife`, `m_fMoveSpeed` from `DP_Tuning`. Add migration test that proves prototype's behaviour unchanged.
-- [ ] **MVP-0.1.4** — Migrate `Priest_Behaviour` configuration block to `DP_Tuning`.
-- [ ] **MVP-0.1.5** — Migrate `DPInteractable_Behaviour` and all its subclasses' timing constants to `DP_Tuning`.
+**Test-first ordering — corrected 2026-05-12 (round-3 peer review):** an earlier wording made MVP-0.1.1 a "test that fails to compile because `DP_Tuning` doesn't exist." That's incompatible with auto-merge on green CI — a compile-failing PR is rejected at the build gate, not the test gate. The corrected pattern: **MVP-0.1.1 lands the API + the test + the implementation in a single PR.** Test-first discipline is preserved *inside the PR* (write the test first locally, watch it fail locally, then implement, watch it pass, commit both). CI sees a single green PR with the new test passing.
+
+- [x] **MVP-0.1.1** — In one PR: (a) Add `Source/DP_Tuning.h/.cpp` declaring `namespace DP_Tuning` with `Initialize()`, `Shutdown()`, `Get<T>(key)`. (b) Implement: load `Config/Tuning.json` at startup, walk the tree, flatten to dot-keyed values, cache in `Zenith_Vector<KVPair>`. (c) Hook `DP_Tuning::Initialize()` into `DevilsPlayground::InitializeResources()`. (d) Add `Test_P1Tuning_LoadsAndValuesInBand` (Tier 1) that calls `Get<float>("possession.life_timer_default_s")` and asserts equals 30.0, plus 10 other key sanity checks. The test passes; CI green; auto-merge. **Test-first discipline lives in the agent's local session, not in the PR boundary.** This is faster (one PR, not two) and matches the auto-merge contract. *Shipped 2026-05-12 in [PR #3](https://github.com/tomosh22/Zenith/pull/3) (commit e2b10e3a) out-of-sequence — orchestrator was reading the pre-reconciliation roadmap. Phase 0.0 still owed.*
+- [ ] **MVP-0.1.2** — Migrate `DPVillager_Behaviour` to read `m_fMaxLife`, `m_fMoveSpeed` from `DP_Tuning`. Add migration test that proves prototype's behaviour unchanged.
+- [ ] **MVP-0.1.3** — Migrate `Priest_Behaviour` configuration block to `DP_Tuning`. **This task fixes the existing drift:** the prototype hardcodes sight=20, hearing=25, FOV=120 while Tuning.json (and GDD §4.5) specify sight=25, hearing=30, FOV=110 with 130° peripheral. After this task, the priest reads from config. Add `Test_P1Tuning_PriestValuesMatchConfig` as a regression guard against future hardcode drift.
+- [ ] **MVP-0.1.4** — Migrate `DPInteractable_Behaviour` and all its subclasses' timing constants to `DP_Tuning`.
+
+**General rule on TDD + auto-merge:** test-first means *within a session* (red, then green, then commit), not *across PRs*. A PR opens with green CI; the failing-test phase is local-only. The Reviewer subagent verifies that each new API has a corresponding test in the same PR.
 
 ### 0.2 Archetype system
 
-- [ ] **MVP-0.2.1** — Add `Source/DP_Archetypes.h/.cpp`. Load `Config/Archetypes.json`. Expose `DP_Archetypes::Get(id)` returning const ref to archetype data.
-- [ ] **MVP-0.2.2** — Add `m_eArchetype` enum field to `DPVillager_Behaviour`; on `OnAwake`, look up timer + abilities from the registry. Authoring step (`AddStep_AttachScript`) takes archetype id as parameter.
-- [ ] **MVP-0.2.3** — Add `Test_P2Archetype_TimersMatchSpec`. Parameterised over the 4 MVP archetypes.
-- [ ] **MVP-0.2.4** — Add `Test_P3Inventory_ArchetypeCount`. Asserts manifest declares ≥ 4 MVP archetypes.
+- [ ] **MVP-0.2.1** — Add `Test_P2Archetype_TimersMatchSpec` for the 4 MVP archetypes. Per the updated TestPlan §3.1, the expectation table contains only **Farmhand, Beggar, Devout, Child** (Sexton was swapped out for Beggar on 2026-05-12 — see DecisionLog).
+- [ ] **MVP-0.2.2** — Add `Source/DP_Archetypes.h/.cpp`. Load `Config/Archetypes.json` (filter `"mvp": true` entries). Expose `DP_Archetypes::Get(id)` returning const ref to archetype data. Make the failing test pass.
+- [ ] **MVP-0.2.3** — Add `m_eArchetype` enum field to `DPVillager_Behaviour`; on `OnAwake`, look up timer + abilities from the registry. Authoring step (`AddStep_AttachScript`) takes archetype id as parameter.
+- [ ] **MVP-0.2.4** — Add `Test_P3Inventory_ArchetypeCount` parameterised over the full 24 (currently fails for 20 of them; those tests are `#ifdef DP_POST_MVP_ARCHETYPES`-guarded).
 
 ### 0.3 Workflow scaffolding
 
-- [ ] **MVP-0.3.1** — Add `Docs/Status.md` (one running paragraph + current task line). Initialised by this commit.
-- [ ] **MVP-0.3.2** — Add `Docs/Questions.md` (running list of blocked items). Initialised empty.
-- [ ] **MVP-0.3.3** — Add `Docs/DecisionLog.md` (append-only).
-- [ ] **MVP-0.3.4** — Add `Tools/agent_session_close.ps1` — script that updates `Status.md`, appends to `DecisionLog.md`, prints the next task name from this roadmap. Agents call it at session end.
+*Note: `Docs/Status.md`, `Docs/Questions.md`, `Docs/DecisionLog.md` were authored in the planning session and already exist. MVP-0.3 only adds the session-end helper + the long-deferred doc linter.*
 
-### 0.4 Test instrumentation hooks
+- [ ] **MVP-0.3.1** — Add `Tools/agent_session_close.ps1` — script that updates `Status.md`, appends to `DecisionLog.md`, prints the next task name from this roadmap. Agents call it at session end.
+- [ ] **MVP-0.3.2** — **Doc linter** (added 2026-05-12 round-5 — five rounds of peer review consensus). Author `Tools/doc_lint.py` that cross-checks numeric/textual claims across docs:
+   1. Test count in Status.md / TestPlan.md / BuildEnvironment.md / AgentBriefing.md / Shortfalls.md must all match (currently 34, verified via grep).
+   2. MVP archetype names in MVPScope.md / TestPlan.md `kExpectMVP[]` / MvpRoadmap §0.2.1 / `Archetypes.json` `"mvp": true` entries must agree (currently: Farmhand, Beggar, Devout, Child).
+   3. Roadmap task IDs are unique (catches future duplicate-section bugs like the round-5 navmesh dedup).
+   4. No `[SUPERSEDED]` markers in active text (only in DecisionLog historical entries).
+   5. No claims like "X does not exist" for files that DO exist (e.g. the recurring `DP_Fog.slang` stale claim).
+   6. Cross-references via markdown links resolve (no dead `(./Path.md)` pointers).
+   Add CI step running the linter on every PR; fail the PR on any violation. ~100 lines of Python. Five reconciliation rounds have shown this is the recurring failure mode — landing it in Phase 0 saves weeks across the rest of the project.
+- [ ] **MVP-0.3.3** — **Git LFS configuration** (added 2026-05-12 round-5). Author `.gitattributes` with LFS patterns for binary asset types (`*.zmodel`, `*.zskel`, `*.zanim`, `*.ztxtr`, `*.zaudio`, `*.spv`, `*.fbx`, `*.png`, `*.wav`, `*.ogg`). Confirm `git lfs install` ran (ManualSetupChecklist §F). LFS must be configured BEFORE Phase 3 binary imports — retrofitting LFS to existing binary commits is painful and CI-disruptive.
 
-Per [TestPlan §0.4](TestPlan.md). These three hooks unlock the test plan for shipping; without them, audio/render/save tests cannot be claudia-verified.
+### 0.4 Test instrumentation hooks — orchestrator-driven engine work
 
-- [ ] **MVP-0.4.1** — Add `Zenith_AudioBus::GetEmittedSoundsForTest()` and `ClearEmittedSoundsForTest()`. Test-build-only. Hook called from every code path that *would* emit audio (currently none — the hook just primes the API).
-- [ ] **MVP-0.4.2** — Add `Zenith_RenderBus::GetSubmittedDrawCallsForTest()`. Same pattern.
-- [ ] **MVP-0.4.3** — Add `Zenith_SaveSystem` skeleton with `GetWrittenBlobsForTest()` and `SetReadbackBlob()`. Doesn't touch disk yet.
+Per [TestPlan §0.4](TestPlan.md). These hooks unlock the test plan for shipping; without them, audio/render/save tests cannot be claudia-verified.
+
+**Ownership clarified 2026-05-12 (user override of round-2 reviewer consensus):** these tasks touch engine code (`Zenith/Core/`, `Zenith/Flux/`, `Zenith/FileAccess/`), but the user has authorised the orchestrator to drive engine work unsupervised. The reviewers' concern was that engine work needs design-mode thinking and has cross-cutting effects on other games (Combat, Sokoban, Marble, etc.); the orchestrator must mitigate by:
+
+- Spawning the **Reviewer subagent** (OrchestratorPlaybook §5.4) for every engine PR — non-negotiable, not optional, because the safety net is no longer Tomos's eye.
+- Running the **full test suite** (not just DP tests) after engine changes to confirm other games still build and pass. Add a Combat smoke build to CI for MVP-0.4 PRs specifically.
+- Logging design rationale for any net-new namespace in `DecisionLog.md` before opening the PR, so the choice is auditable later.
+
+The orchestrator may surface design decisions to Questions.md when in doubt — that's still the escape hatch — but the default is "act, log, ship."
+
+- [ ] **MVP-0.4.1** — `Zenith_AudioBus`. Engine-wide bus class. `EmitSound(const char* name, Vec3 position, float loudness, float radius)` records to a per-frame ring buffer in test builds. **Note (round-4 reconciliation):** the `radius` field is required by `Test_P2Forge_AudibleAt30m` (TestPlan §3.5) which asserts `radius >= 30.0`. Earlier signature missed this. Shipping builds delegate to the audio system (not yet existing — that's post-MVP). `GetEmittedSoundsForTest()` returns `Zenith_Vector<EmittedSound>` where `EmittedSound = { name, position, loudness, radius, frame }`. `ClearEmittedSoundsForTest()` resets. Files: `Zenith/Core/Zenith_AudioBus.h/.cpp`.
+- [ ] **MVP-0.4.2** — `Zenith_RenderBus::GetSubmittedDrawCallsForTest()`. Per-frame draw-call recording. Pattern after existing engine instrumentation in `Flux/`. Files: `Zenith/Flux/Zenith_RenderBus.h/.cpp` or appropriate Flux sub-location.
+- [ ] **MVP-0.4.3** — `Zenith_SaveSystem` skeleton. `GetWrittenBlobsForTest()` + `SetReadbackBlob()`. Doesn't touch disk yet. Files: `Zenith/FileAccess/Zenith_SaveSystem.h/.cpp`.
+- [ ] **MVP-0.4.4** — `Zenith_NavMesh::GetQueryCountForTest()`. Per-frame counter on `FindPath` calls. Files: `Zenith/AI/Navigation/Zenith_NavMesh.h/.cpp`.
+
+**Until MVP-0.4 completes, every test that references these surfaces is BLOCKED.** ~40 tests across Tier 1-4. Phase 0.0 → 0.1 → 0.2 → 0.3 → 1.x sequencing can proceed using only tests that don't depend on these surfaces. If MVP-0.4 slips, MVP-1.1 (pause), MVP-1.2 (navmesh — independent of audio/render/save), and MVP-1.4 (drop) can still proceed.
 
 ---
 
@@ -66,21 +104,60 @@ The blocker list from [Shortfalls §1](Shortfalls.md). After Phase 1, the game h
 - [ ] **MVP-1.1.3** — Test_P1Pause_PriestStopsOnEscape.
 - [ ] **MVP-1.1.4** — Test_P1Pause_InputSimDuringPause.
 
-### 1.2 Real navmesh
+### 1.2 Real navmesh — integrate the existing engine generator
 
-- [ ] **MVP-1.2.1** — Test_P1NavMesh_PathRespectsWalls (failing).
-- [ ] **MVP-1.2.2** — Implement collider-derived navmesh generator in `AI/Navigation/Zenith_NavMeshGenerator`. Voxelise → polygon soup → triangulate.
-- [ ] **MVP-1.2.3** — Replace `DP_AI::GetOrBuildLevelNavMesh` to call the generator.
-- [ ] **MVP-1.2.4** — Test_P1NavMesh_ClosedDoorBlocksPath.
-- [ ] **MVP-1.2.5** — Test_P1NavMesh_RegenerationOnSceneSwap.
+**⚡ TRANSFORMATIVE FINDING 2026-05-12 round-4 peer review:** `Zenith/AI/Navigation/Zenith_NavMeshGenerator.h/.cpp` **already exists** as a complete Recast-style pipeline (voxelisation → walkable-span filtering → region growing → contour tracing → polygon mesh → adjacency). Plus `Zenith_NavMeshGenerator.Tests.inl` unit tests. The earlier round-2 framing of "6-12 weeks of net-new engine work, no in-codebase pattern to follow" was wrong — the engine has the pattern, with tests.
+
+**Real scope:** *integrate* the existing generator, don't build from scratch. Estimated ~3-5 days, not 6 weeks.
+
+**API contract** (from `Zenith_NavMeshGenerator.h`):
+```cpp
+static Zenith_NavMesh* GenerateFromScene(
+    Zenith_SceneData& xScene,
+    const NavMeshGenerationConfig& xConfig);
+```
+
+Plus a default `NavMeshGenerationConfig` with agent radius 0.4m, height 1.8m, step 0.3m, slope 45°, cell size 0.3m. These defaults match human-scale walking; villager-sized agents work directly.
+
+#### Plan
+
+- [ ] **MVP-1.2.0** — **Spike (2-day timebox, was 5).** Author a single static test scene with 4 cube walls forming a room with a doorway. Call `Zenith_NavMeshGenerator::GenerateFromScene` on it. Assert the returned `Zenith_NavMesh*` is non-null and `FindPath(start, end)` routes around the wall (not through). Read `Zenith_NavMeshGenerator.Tests.inl` first to copy the test pattern. If the spike fails at day 2, switch to fallback (MVP-1.2.alt) — see "Why much shorter timebox" below.
+- [ ] **MVP-1.2.1** — `Test_P1NavMesh_PathRespectsWalls`. Same shape as the spike test, just promoted to the real test suite.
+- [ ] **MVP-1.2.2** — Replace `DP_AI::GetOrBuildLevelNavMesh` (currently returns a synthetic flat quad — see `Source/PublicInterfaces.cpp:210` for the existing stub) with a call to `Zenith_NavMeshGenerator::GenerateFromScene(activeScene, kDpDefaultNavMeshConfig)`. Cache the result; invalidate on scene unload.
+- [ ] **MVP-1.2.3** — `Test_P1NavMesh_ClosedDoorBlocksPath`. Wire `DPDoor::SyncNavMeshBlock` (currently a no-op in the prototype because the flat-quad navmesh has nothing to block) to the generator's portal system. Closed doors disable the matching portal.
+- [ ] **MVP-1.2.4** — `Test_P1NavMesh_RegenerationOnSceneSwap`. Switch from GameLevel to a gym scene; assert the generator runs again and produces the correct polygon count for the new scene.
+- [ ] **MVP-1.2.5** — Add `Zenith_NavMeshAgent::GetPathWaypoints() -> Zenith_Vector<Vec3>` if it's not already present. Used by Tier 4 tests.
+
+**Why much shorter timebox:** the original 5-day spike was scoped to write the pipeline from scratch. Now it's "call an existing function and verify it works on our colliders." Two days is plenty; if it fails in two days, the generator has a fundamental bug or DP's collider setup is incompatible, both of which need different responses than "write a new generator."
+
+#### Fallback path: hand-authored `.znavmesh` (ONLY if MVP-1.2.0 spike fails)
+
+(Unchanged from earlier rounds; preserved as recovery insurance.)
+
+- [ ] **MVP-1.2.alt.1** — Define `.znavmesh` binary format (vertex list, triangle list, portal list, area types). Load via `Zenith_AssetRegistry`.
+- [ ] **MVP-1.2.alt.2** — Author `Tools/build_gamelevel_navmesh.ps1` to bake the GameLevel navmesh by hand from `DP_LevelData.h` collider tables. **Important caveat noted by round-4 reviewer:** `DP_LevelData.h` doesn't contain wall-polygon outlines — it has placement coordinates. The bake script would need to either (a) ingest Jolt collider geometry directly (same input the generator already uses), or (b) require Tomos to author a `Tools/GameLevelNavMesh.json` with explicit polygon definitions. Option (b) is more honest about the work but adds a manual asset.
+- [ ] **MVP-1.2.alt.3** — Bake the GameLevel `.znavmesh` and commit. Replace `DP_AI::GetOrBuildLevelNavMesh` to load the baked asset.
+- [ ] **MVP-1.2.alt.4** — Same tests as the primary path.
+
+**Note:** with the engine generator existing and tested, the fallback path is now genuinely a backup, not the safer-but-slower default.
+
+### 1.2.9 Navmesh-aware test pathfinder (REQUIRED before Tier 4)
+
+**Added 2026-05-12 round-3 peer review.** The existing `Test_HumanPlaythrough.cpp:432` `ComputePathAStar` uses a grid + per-cell walkability check. The grid is **decoupled from the navmesh** — once MVP-1.2 lands real navmesh with door portals, the test pathfinder still navigates its own grid which may not align with navmesh wall geometry. Test bots could pass MVP acceptance by routing through walls.
+
+- [ ] **MVP-1.2.9** — Wrap `Zenith_NavMesh::FindPath` in a test-harness-friendly API. Surface: `Zenith_NavMeshTestPathfinder::ComputePath(start, end, outWaypoints) -> bool`. Implementation: thin wrapper around the real navmesh agent's pathfinding so test bots use **the same path** the priest would use. Add `Zenith_NavMeshAgent::GetPathWaypoints() -> Zenith_Vector<Vec3>` if not already present (TestPlan §2.2 references this; verify and add to the agent API). Retire `ComputePathAStar` from `Test_HumanPlaythrough.cpp` (mark deprecated; route callers through the new test-pathfinder). Tier 4 playthrough tests use this new API exclusively.
+
+**Why this matters:** without it, the Tier 4 acceptance gate is meaningless — the bot wins by cheating. Reviewer 4 (round 3) flagged this as a Critical Issue.
 
 ### 1.3 Apprehend / run-loss
 
-- [ ] **MVP-1.3.1** — Test_P1Apprehend_PriestCatchesPlayer (failing).
-- [ ] **MVP-1.3.2** — Add `DP_OnRunLost` event + cause enum (Apprehended, Dawn, NoVessels).
-- [ ] **MVP-1.3.3** — Add `Apprehend` BT branch to `Priest_Behaviour`: distance < `apprehend_range_m` → 3 s channel → dispatch event.
-- [ ] **MVP-1.3.4** — Test_P1Apprehend_SwitchBreaksChannel.
-- [ ] **MVP-1.3.5** — Test_P1Apprehend_OutOfRangeIgnored.
+**Restructured 2026-05-12** to merge API declarations with their first test (round-2 peer review: a test that references undeclared types is a build break, not a "red" test).
+
+- [ ] **MVP-1.3.1** — In one PR: add `DP_OnRunLost` event struct + cause enum (`Apprehended`, `Dawn`, `NoVessels`) to `PublicInterfaces.h/.cpp`, AND author the failing `Test_P1Apprehend_PriestCatchesPlayer` that subscribes to it. The test compiles but fails because no `Apprehend` BT branch dispatches the event yet.
+- [ ] **MVP-1.3.2** — Add `Apprehend` BT branch to `Priest_Behaviour`: distance < `priest.apprehend_range_m` → channel for `priest.apprehend_channel_s` seconds → dispatch `DP_OnRunLost{Apprehended}`. Make MVP-1.3.1's test pass.
+- [ ] **MVP-1.3.3** — `Test_P1Apprehend_SwitchBreaksChannel`. Implement channel-interrupt-on-switch in the BT branch.
+- [ ] **MVP-1.3.4** — `Test_P1Apprehend_OutOfRangeIgnored`. Regression guard.
+- [ ] **MVP-1.3.5** — Wire `Dawn` and `NoVessels` causes through the same event (dispatched from the Night timer and from `DPVillager_Behaviour` respectively). These have their own tests at MVP-4.2.2 / MVP-4.2.3.
 
 ### 1.4 Voluntary switch + drop verb
 
@@ -101,13 +178,16 @@ The blocker list from [Shortfalls §1](Shortfalls.md). After Phase 1, the game h
 
 - [ ] **MVP-1.6.1** — Test_P1Scent_AccumulatesOnPossession (failing).
 - [ ] **MVP-1.6.2** — Add per-entity scent table to `DP_Player`. Update on possession-switch event; tick decay each frame.
-- [ ] **MVP-1.6.3** — Test_P1Scent_NotificationToBlackboard (deferred until hounds — post-MVP).
+- [ ] **MVP-1.6.3** — Test_P1Scent_NotificationToBlackboard. **Note:** the test is authored against the priest blackboard, but in MVP no behaviour consumes the `BB.HighScentTarget` key (hounds and variants are post-MVP). The test asserts only the data-path (scent accumulates → blackboard updates), not consumption. Removed post-MVP scope ambiguity from previous version.
 
 ### 1.7 Sprint + walk-quiet
 
-- [ ] **MVP-1.7.1** — Test_P1Sprint_DrainsLifeFaster.
-- [ ] **MVP-1.7.2** — Add Shift + Ctrl handling in `DP_Input::ReadMoveVillager`. Apply speed multiplier and life-cost.
+- [ ] **MVP-1.7.1** — Test_P1Sprint_DrainsLifeFaster (with Sprint impl in the same PR per the corrected test-first pattern).
+- [ ] **MVP-1.7.2** — Add Shift handling in `DP_Input::ReadMoveVillager` for sprint. Apply speed multiplier and life-cost.
 - [ ] **MVP-1.7.3** — Test_P1Sprint_NoDrainWhenNotMoving.
+- [ ] **MVP-1.7.4** — Test_P1WalkQuiet_FootstepLoudnessHalved (with walk-quiet impl in the same PR). Added 2026-05-12 round-3/4 reconciliation — walk-quiet is MVPScope §1.1 but was missing from earlier roadmap.
+- [ ] **MVP-1.7.5** — Add Ctrl handling in `DP_Input::ReadMoveVillager` for walk-quiet. Footstep emissions through `Zenith_AudioBus::EmitSound` apply the `walk_footstep_loudness_multiplier` from Tuning.json.
+- [ ] **MVP-1.7.6** — Test_P1WalkQuiet_AelfricEffectiveHearingHalved.
 
 ### 1.8 Possession range
 
@@ -123,9 +203,10 @@ The blocker list from [Shortfalls §1](Shortfalls.md). After Phase 1, the game h
 
 ### 1.10 Save/load run state
 
-- [ ] **MVP-1.10.1** — Test_P1Save_RoundTripMeta (failing).
-- [ ] **MVP-1.10.2** — Add `DP_RunState` struct (possessed villager, life timer, held items per villager, scent table, win mask, dawn timer). Serialise via `Zenith_SaveSystem` skeleton from MVP-0.4.3.
-- [ ] **MVP-1.10.3** — Test_P1Save_RobustToCorruption.
+- [ ] **MVP-1.10.1** — Add `DP_RunState` struct + Test_P1Save_RoundTripMeta in one PR (per the corrected test-first pattern). Fields: schema version (`uint32_t uSchemaVersion = 1`), possessed villager, life timer, held items per villager, scent table, win mask, dawn timer. **Schema version is mandatory** — every serialised blob starts with the version u32 so future format changes have a migration anchor. Serialise via `Zenith_SaveSystem` skeleton from MVP-0.4.3.
+- [ ] **MVP-1.10.2** — Test_P1Save_RobustToCorruption. Truncated, malformed, and wrong-version blobs all fail-soft (return default state, do not crash).
+- [ ] **MVP-1.10.3** — Test_P1Save_VersionMismatchFallsBackToDefault. Inject a blob with `uSchemaVersion = 999` (future); assert the load returns a default `DP_RunState` rather than the truncated/corrupted data.
+- [ ] **MVP-1.10.4** — Add `Docs/SaveFormat.md` documenting: the schema-version contract (every save starts with u32 version), the migration policy (each future version implements a migration function from N-1 to N; failed migration falls back to default), the rejection policy (versions lower than oldest-supported are rejected with a one-line log).
 
 ---
 
@@ -139,7 +220,8 @@ The four MVP archetypes, the five MVP reagents, fog-of-war shader, HUD upgrades.
 - [ ] **MVP-2.1.2** — Test_P2Archetype_DevoutChannelInterrupt. Implement interrupt-on-priest-LOS.
 - [ ] **MVP-2.1.3** — Test_P2Archetype_ChildHalfTimer.
 - [ ] **MVP-2.1.4** — Test_P2Archetype_ChildCannotCarryTools. Add restriction check in `DPItemBase_Behaviour::OnUpdate` pickup path.
-- [ ] **MVP-2.1.5** — Test_P2Archetype_SextonChapelStealth. (Skip for MVP — Sexton ability is post-MVP scope; the archetype just visually distinguishes for now.)
+- [x] ~~**MVP-2.1.5** — Test_P2Archetype_SextonChapelStealth~~ — **Sexton moved post-MVP entirely 2026-05-12.** The archetype is replaced in MVP by Beggar (Aelfric ignores). New task added below.
+- [ ] **MVP-2.1.6** — `Test_P2Archetype_BeggarIgnoredByAelfric`. Possess a Beggar; place Aelfric with line-of-sight; assert `BB.TargetWithDevil != beggar_id` across 60 frames. Implementation in `Priest_Behaviour::BridgePerceptionToBlackboard` filters the perceived-targets list by archetype-id, skipping Beggars.
 
 ### 2.2 Reagent uniqueness
 
@@ -158,13 +240,22 @@ The four MVP archetypes, the five MVP reagents, fog-of-war shader, HUD upgrades.
 - [ ] **MVP-2.3.3** — Test_P2Forge_IronBrassKeySkeleton.
 - [ ] **MVP-2.3.4** — Test_P2Forge_AudibleAt30m (uses Audio bus instrumentation hook).
 
-### 2.4 Real fog shader
+### 2.4 Fog memory & visibility tests
 
-- [ ] **MVP-2.4.1** — Author `Shaders/DP_Fog.slang` — accept CBV with hole array, output single black-fog plane with hole carve-outs + memory-fade. Cheap as possible.
-- [ ] **MVP-2.4.2** — Wire `DPFogPass` to upload the CBV and dispatch.
-- [ ] **MVP-2.4.3** — Test_P2Fog_AelfricNotRevealed.
-- [ ] **MVP-2.4.4** — Test_P2Fog_LightAddsHole.
-- [ ] **MVP-2.4.5** — Memory fog implementation: per-tile last-seen-frame buffer. Test_P2Fog_MemoryDimsAfter10s.
+**Major correction 2026-05-12 (round-2 peer review):** the fog system is mostly **already implemented** in the prototype. Validation confirms:
+
+- `DP_Fog::GatherFogHolePositions` is **fully implemented** at `PublicInterfaces.cpp:322` and called from `DPFogPass.cpp:191`.
+- `Zenith/Flux/Shaders/Fog/DP_Fog.slang` **exists** with compiled `.spv` reflection files.
+- `Test_DPFogPass.cpp` already exercises the fog API.
+
+The remaining MVP fog work is **test coverage and memory-fog implementation**, not API or shader authoring. Tasks restructured accordingly:
+
+- [x] ~~MVP-2.4.0 (add GatherFogHolePositions API)~~ — done. Already exists.
+- [x] ~~MVP-2.4.1 (author DP_Fog.slang)~~ — done. Already exists in engine.
+- [x] ~~MVP-2.4.2 (wire DPFogPass to upload CBV)~~ — done. Already implemented.
+- [ ] **MVP-2.4.3** — Audit `DPFogPass.cpp` (312 lines) against the GDD §4.6 contract: per-frame rebuild, possessed-villager 8m hole, un-possessed 1.5m, lights sized by range, Aelfric **does not** carve a hole. Author `Test_P2Fog_AelfricNotRevealed` as the regression guard.
+- [ ] **MVP-2.4.4** — `Test_P2Fog_LightAddsHole`. Capture fog-hole array against a scene with N known lights; assert N matches.
+- [ ] **MVP-2.4.5** — **Memory fog (NEW work).** Add per-tile last-seen-frame buffer to `DPFogPass`. Update the shader to read it and apply the four-state model from `Config/Tuning.json` `_comment_memory_states`. `Test_P2Fog_MemoryDimsAfter10s`.
 
 ### 2.5 HUD upgrades
 
@@ -181,7 +272,13 @@ The four MVP archetypes, the five MVP reagents, fog-of-war shader, HUD upgrades.
 
 Replace the most jarring placeholders with Mixamo + Kenney free assets. Existing tinted-cube system continues for the long tail.
 
-### 3.1 Mixamo villager integration
+### 3.0 Skeletal-mesh import spike (PRE-REQUISITE — DO NOT SKIP)
+
+**Added per peer review 2026-05-11.** The Zenith-side skeletal-mesh import workflow for Mixamo-rigged characters is unproven. Phase 3 cannot proceed without this spike. If the spike fails, the entire MVP ships with tinted-cube villagers and Phase 3 is descoped.
+
+- [ ] **MVP-3.0.1** — **🚧 HUMAN_GATE (Mixamo login).** **Spike (5-day timebox).** Import a single Mixamo Y-Bot FBX through `ZenithTools.exe import` to produce `.zmodel/.zskel/.zanim`. **Downloading from Mixamo requires Adobe authentication** — the agent cannot log in. Orchestrator behaviour: surface in Questions.md "Need a Mixamo Y-Bot FBX placed at `Vendor/Mixamo/y_bot.fbx`," continue with other tasks until Tomos downloads it. Once the FBX is in place, spawn one in a test scene; play the idle anim; assert it renders without errors and the skeleton's bones match the canonical bone-set from AssetTestPlan §2.2. If this fails by day 5, fallback is: keep tinted-cube villagers for MVP, retire MVP-3.1 entirely.
+
+### 3.1 Mixamo villager integration (blocked on MVP-3.0.1)
 
 - [ ] **MVP-3.1.1** — Download Mixamo Y-Bot rigged character + idle/walk/run anims. Import via `ZenithTools` to `.zmodel` / `.zskel` / `.zanim`.
 - [ ] **MVP-3.1.2** — Author the canonical bone-set test (Test_AssetSkel_VillagerCanonicalBones). Iterate the imported skeleton until tests pass.
@@ -233,10 +330,10 @@ The three playthrough tests that define MVP done.
 
 ### 4.3 Polish & demo build
 
-- [ ] **MVP-4.3.1** — Tune the MVP loop so the bot wins ~50% of randomised input runs (proxy for fair difficulty).
+- [ ] **MVP-4.3.1** — Tune the MVP loop via **deterministic acceptance criteria**, not a randomised bot. Corrected 2026-05-12 round-5 peer review: the autonomous playtest bot is post-MVP backlog (it doesn't exist in MVP scope) so "tune until the bot wins ~50%" was a circular dependency. Replace with: confirm `Test_P4Playthrough_Night1WinGolden` completes in < 9000 frames, `Test_P4Playthrough_Night1LossByApprehend` triggers within 240 frames in its set scene, and the three loss-state tests fire their expected `DP_OnRunLost` causes. If any of those drift by > 20% in frame count vs. their initial passing run, investigate; otherwise the loop is acceptably tuned.
 - [ ] **MVP-4.3.2** — Add post-victory and post-loss "press any key to restart" overlay.
 - [ ] **MVP-4.3.3** — Set up the demo packaging script: `Tools/package_mvp_demo.ps1` that copies the build output + assets to a single folder for distribution.
-- [ ] **MVP-4.3.4** — Run the MVP demo end-to-end personally. Update Status.md to "MVP COMPLETE."
+- [ ] **MVP-4.3.4** — **🚧 HUMAN_GATE.** Tomos runs the MVP demo end-to-end personally and confirms the MVPScope §5 sentence ("clicked a villager, watched a 30-second timer, ran them across a single playable level…"). Orchestrator surfaces this in Questions.md when MVP-4.3.1–4.3.3 pass; Tomos plays, ticks, then orchestrator updates Status.md to "MVP COMPLETE."
 
 ---
 
@@ -254,7 +351,7 @@ The three playthrough tests that define MVP done.
 
 When MVP ships, the next milestone candidates are:
 
-1. **Autonomous playtest bot** (InputsForAutonomy §2.1). Highest-value engineering investment.
+1. **Autonomous playtest bot.** A bot that plays 1000+ randomised runs per night and reports aggregate stats (win rate, decision diversity, death-cause distribution, Aelfric reaction frequency, reagent-collection times). Detects regressions in fun-proxies overnight. ~6 engineering weeks. Highest-value engineering investment post-MVP.
 2. **Audio system + first SFX integration.** Closes the engine's largest gap.
 3. **Remaining 20 archetypes + 9 reagents.**
 4. **Hounds + Aelfric variants.**

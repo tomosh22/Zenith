@@ -60,7 +60,7 @@ Three engine-side instrumentation hooks need to land in Phase 1 so the rest of t
 
 | Hook | Purpose | Spec |
 |---|---|---|
-| `Zenith_AudioBus::GetEmittedSoundsForTest()` | Record-and-replay of audio emissions for surrogate audio asserts. | Returns a `Zenith_Vector<EmittedSound>` cleared between tests. Each entry: `{name, position, loudness, frame}`. |
+| `Zenith_AudioBus::GetEmittedSoundsForTest()` | Record-and-replay of audio emissions for surrogate audio asserts. | Returns a `Zenith_Vector<EmittedSound>` cleared between tests. Each entry: `{const char* name, Vec3 position, float loudness, float radius, Zenith_EntityID uSourceEntity, uint32_t uFrame}`. **Round-4/5 reconciliation:** `radius` is required by `Test_P2Forge_AudibleAt30m`; `uSourceEntity` is required by walk-quiet tests to distinguish villager footsteps from Aelfric's own footsteps. |
 | `Zenith_RenderBus::GetSubmittedDrawCallsForTest()` | Record-and-replay of draw submissions for surrogate render asserts. | Returns a `Zenith_Vector<SubmittedDraw>` cleared between tests. Each entry: `{modelHandle, materialHandle, worldMatrix, frame}`. |
 | `Zenith_SaveSystem::GetWrittenBlobsForTest()` | Round-trip read-back of save blobs without disk I/O. | Returns the last-written blob as a buffer; `SetReadbackBlob` injects a buffer for the next load. |
 
@@ -77,7 +77,7 @@ These three together turn rendering, audio, and persistence into in-process asse
 
 ### 0.6 Runner
 
-The existing `Tools/run_dp_tests.ps1` already handles discovery, batch run, and JSON aggregation. **No script changes required for this plan.** Three runner additions land in Phase 1:
+The existing `Tools/run_dp_tests.ps1` already handles discovery, batch run, and JSON aggregation. **Three additions are scheduled in Phase 0.0 (MVP-0.0.4)** before any Phase 1 test work begins — the runner currently supports only `-Headless`, `-PerProcess`, `-Filter`, `-ResultsDir`, `-ExitAfterFrames`, `-FixedDt`. Phase 1 then adds:
 
 1. `-Tier <0|1|2|3|4>` — filter tests by tier prefix.
 2. `-FailFast` — abort the batch on first failure (default off for nightly, on for PR checks).
@@ -138,7 +138,7 @@ Every dev session, on every branch, before any other test. If these fail, no oth
 - **Step:** wait for scene Awake. Phase 1: `SimulateClickOnUIElement("MenuPlay")`. Phase 2: poll `Zenith_SceneManager::GetActiveScene` → expect scene index 1. Return false.
 - **Verify:** active scene == 1.
 
-These five tests already pass on the prototype today (the harness drove them during M1). They're the canary.
+These six tests are the canary. The first five (Smoke, FixedDt, KeyPressAutoRelease, MouseClickAtPosition, MouseWheel) already pass on the prototype today (the harness drove them during M1). The sixth (UIElementClickByName) requires a UI element to exist at the click target and lands once the FrontEnd scene has the MenuPlay button wired up.
 
 ---
 
@@ -328,6 +328,54 @@ These tests prove the foundational gaps from [Shortfalls.md §1](Shortfalls.md) 
 - **Step:** possess A four times in sequence (drives scent to 1.2). Read priest's `BB.HighScentTarget`. Expect = A.
 - **Verify:** blackboard entry matches.
 
+### 2.6b Visual telegraphs (GDD §4.7)
+
+**Added 2026-05-12 round-3 peer review.** The visual telegraphs at life-timer thresholds (frost outline, walk-speed drop, burn-out vapour) are load-bearing player feedback. Tests use surrogate measurement: assert the underlying state variable rather than pixel rendering.
+
+#### Test_P1Telegraph_WalkSpeedDropsBelow5s
+
+**Proves:** GDD §4.7 — at <5s life remaining, walk speed drops 25%.
+
+- **Setup:** villager.
+- **Step:** possess villager, force life to 6.0 (`SetRemainingLifeForTest(6.0)`). Capture `m_fEffectiveMoveSpeed` at frames 0 (life=6, normal), 60 (life≈5, at threshold), 120 (life≈4, below threshold).
+- **Verify:** speed at frame 0 == jog speed; speed at frame 120 == jog speed × 0.75 (per `Tuning.json` `visual_telegraphs.frost_outline_panic_walk_speed_multiplier`), tolerance ±0.01.
+
+#### Test_P1Telegraph_BurnoutVapourSpawnsOnDeath
+
+**Proves:** GDD §4.7 — on burn-out, a frost decal spawns at the body position and a vapour particle plays for 2 seconds.
+
+- **Setup:** villager. Query `Flux_Decals::GetActiveCountForTest` (per recent engine decal work).
+- **Step:** possess, `SetRemainingLifeForTest(0.05)`, wait for death. Capture decal count + active-particle count.
+- **Verify:** at least one frost decal within `burnout_frost_decal_radius_m` of the death position; at least one vapour particle active for ≥ `burnout_vapour_duration_s` (2.0s).
+
+#### Test_P1Telegraph_FrostOutlineMaterialSwapsBelow15s
+
+**Proves:** GDD §4.7 — at <15s life, the villager's material switches to the frost-outline variant.
+
+- **Setup:** villager.
+- **Step:** possess, force life to 16.0, capture material handle. Force life to 14.0, capture again. Force life to 4.0, capture again.
+- **Verify:** material handles at life=14 and life=4 differ from the life=16 handle (swap occurred at the 15s threshold). Specific material identity is implementation-defined; test asserts the swap, not which material.
+
+### 2.6c Walk-quiet (Ctrl/L1)
+
+**Added 2026-05-12 round-3/4 peer review.** Walk-quiet is a load-bearing stealth mechanic (MVPScope §1.1) but had no test in earlier rounds.
+
+#### Test_P1WalkQuiet_FootstepLoudnessHalved
+
+**Proves:** GDD §4.2 + Tuning.json `movement.walk_footstep_loudness_multiplier: 0.5` — when the player holds Ctrl/L1, the moving villager's footstep emissions register at half loudness.
+
+- **Setup:** villager. Subscribe to `Zenith_AudioBus::GetEmittedSoundsForTest` (MVP-0.4.1).
+- **Step:** possess. Walk normally for 60 frames (1s); capture average emitted-loudness for `footstep_*` events. Then `SetKeyHeld(ZENITH_KEY_LCTRL, true)`. Walk-quiet for 60 frames; capture average.
+- **Verify:** walk-quiet average ≈ 0.5 × normal-walk average, ±0.05.
+
+#### Test_P1WalkQuiet_AelfricEffectiveHearingHalved
+
+**Proves:** GDD §4.2 — Aelfric's effective detection range against this villager's footsteps halves when walking quiet.
+
+- **Setup:** villager 25 m from Aelfric. Aelfric's `hearing_range_m: 30.0` from Tuning.json — normally hears the villager at 25 m walking; should NOT hear at 25 m when walking quiet (effective range = 30 × 0.5 = 15 m).
+- **Step:** possess. Walk (no Ctrl). Wait 60 frames. Capture `BB.InvestigatePos` — Aelfric should have heard footsteps → set position. Then move villager out, reset, walk-quiet (Ctrl held). Wait 60 frames. Capture `BB.InvestigatePos` — should be unchanged (didn't hear).
+- **Verify:** first capture has investigate pos set; second capture does not.
+
 ### 2.7 Sprint as Life-Cost
 
 #### Test_P1Sprint_DrainsLifeFaster
@@ -419,37 +467,55 @@ This is the **single most important pre-merge test** because authoring drift is 
 
 ## 3. Tier 2 — Phase 2: Depth (months 4–10)
 
+**MVP vs post-MVP tagging** (added 2026-05-12 round-5 peer review). Tier 2 was contaminated with tests for systems explicitly deferred from MVP (hounds, priest variants, charms, distractions, Liminal hub, full 24-archetype suite). Three reviewers in round 5 flagged this. The tags below clarify which Tier 2 tests are MVP scope vs which are post-MVP (and therefore should NOT be authored during the MVP build).
+
+| Sub-section | MVP scope? |
+|---|---|
+| §3.1 Villager Archetypes (4 MVP archetypes only — Farmhand, Beggar, Devout, Child) | **MVP** for the 4 archetypes; **post-MVP** for the full 24 (Test_P3Archetype_TimersMatchSpec is the post-MVP parameterised variant). |
+| §3.2 Hounds | **post-MVP** entirely (hounds are post-MVP per MVPScope §2.1) |
+| §3.3 Witch-Finder Variants | **post-MVP** entirely (variants are post-MVP per MVPScope §2.1) |
+| §3.4 Reagent Uniqueness — but only the 5 MVP reagents (BogWaterEvaporates, BellSoulRingsBell, UniquePickupChannel) | **MVP** for those 5; **post-MVP** for the other 9 reagents' unique-behaviour tests |
+| §3.5 Crafting Expansion (the 3 MVP recipes: Iron→Brass Key, Iron+Wood→Spike, Iron+Brass→Skeleton) | **MVP** |
+| §3.6 Charms | **post-MVP** entirely (charms are post-MVP per MVPScope §2.2) |
+| §3.7 Distractions | **post-MVP** entirely (distractions are post-MVP per MVPScope §2.2) |
+| §3.8 Liminal & Meta-Progression | **post-MVP** entirely (Liminal/Knots are post-MVP per MVPScope §2.2) |
+| §3.9 Volumetric Fog & Visibility | **MVP** (3 tests, all in MVPScope §1.4 subset) |
+
+**Agents authoring MVP tests must filter Tier 2 by this table.** Any Tier 2 test in a post-MVP-only sub-section is `#ifdef DP_POST_MVP_TIER2`-guarded and NOT in the MVP roadmap. The "Always-On Tests" table in §6 lists the 20-test PR gate; that's the operative MVP gate, not the full Tier 2 surface.
+
 ### 3.1 Villager Archetypes
 
-#### Test_P2Archetype_TimersMatchSpec
+#### Test_P2Archetype_TimersMatchSpec (MVP)
 
-**Proves:** GDD §6.2 — each archetype has the timer specified in the design table.
+**Proves:** GDD §6.2 + MVPScope §1.2 — each MVP archetype has the timer specified in Archetypes.json.
 
-- **Setup:** load a Gym scene with one instance of each implemented archetype (test-only `Gym_Archetypes` scene authored via editor automation).
-- **Step:** iterate `DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>`. For each, query its archetype enum and `GetMaxLife()`. Compare to the static expectation table.
-- **Verify:** every villager's max-life matches table.
+- **Setup:** load a Gym scene with one instance of each MVP archetype (test-only `Gym_Archetypes_MVP` scene authored via editor automation).
+- **Step:** iterate `DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>`. For each, query its archetype enum and `GetMaxLife()`. Compare to the **MVP expectation table below**.
+- **Verify:** every villager's max-life matches table; the scene contains exactly 4 distinct archetypes.
 
-Expectation table (in code, ~`Tests/Test_P2Archetype_TimersMatchSpec.cpp`):
+Expectation table for MVP (in code, `Tests/Test_P2Archetype_TimersMatchSpec.cpp`):
 
 ```cpp
 struct ArchetypeExpect { DP_ArchetypeId eId; float fMaxLife; };
-static const ArchetypeExpect kExpect[] = {
+static const ArchetypeExpect kExpectMVP[] = {
     { DP_Archetype::Farmhand,    30.0f },
-    { DP_Archetype::Carter,      30.0f },
-    { DP_Archetype::SmithApp,    30.0f },
-    { DP_Archetype::Devout,      30.0f },
     { DP_Archetype::Beggar,      25.0f },
-    { DP_Archetype::Sexton,      30.0f },
+    { DP_Archetype::Devout,      30.0f },
     { DP_Archetype::Child,       15.0f },
-    { DP_Archetype::Stoneborn,   45.0f },
-    { DP_Archetype::Seer,        30.0f },
-    { DP_Archetype::Stonemason,  30.0f },
-    { DP_Archetype::Drunk,       30.0f },
-    { DP_Archetype::BellRinger,  30.0f },
 };
 ```
 
-This test re-runs after every archetype addition. Failing means an archetype's max-life drifted from the spec.
+**Important:** the test must reject any extra archetypes added post-MVP from entering the MVP gym scene. Source-of-truth is `Config/Archetypes.json` entries with `"mvp": true`. Sexton was originally an MVP archetype but moved to post-MVP per 2026-05-12 reconciliation (the `can_enter_chapel_unseen` ability requires chapel-bounds + sight-cone integration that would have made the Sexton mechanically identical to a Farmhand in MVP). Beggar replaced it: shorter timer (25s) plus `aelfric_ignores` ability gives a genuinely distinct gameplay role and is testable via a 1-day BT filter.
+
+#### Test_P3Archetype_TimersMatchSpec (post-MVP)
+
+**Proves:** all 24 designed archetypes have correct timers.
+
+- **Setup:** post-MVP scene `Gym_Archetypes_Full` containing one of every archetype.
+- **Step:** same as above but iterates all entries in `Config/Archetypes.json` (whether `"mvp": true` or not).
+- **Verify:** every archetype's max-life matches its JSON entry.
+
+This is a parameterised test — adding a new archetype to Archetypes.json automatically extends the test's expectation set. It is **post-MVP scope** and lives behind a `#ifdef DP_POST_MVP_ARCHETYPES` guard until those archetypes are implemented.
 
 #### Test_P2Archetype_DevoutChannel
 
@@ -852,45 +918,59 @@ These tests don't measure wall-clock (the harness uses fixed-dt). Instead they m
 
 The biggest tests in the suite. Each scripts a full Night start-to-end and asserts win/loss state.
 
+**Critical: all Tier 4 playthrough tests use `Zenith_NavMeshTestPathfinder::ComputePath` (the navmesh-aware wrapper landing in MVP-1.2.9), NOT the existing `Test_HumanPlaythrough.cpp:432` grid-based `ComputePathAStar`.**
+
+**Reconciled 2026-05-12 round-4 peer review.** The earlier wording in this section said tests should reuse the existing `ComputePathAStar` from the prototype. That function is a grid pathfinder over a separate occupancy buffer — it does NOT consult the navmesh. Once MVP-1.2 lands real navmesh with door portals, the grid pathfinder would route bots through walls (test bots could "win" by cheating). MVP-1.2.9 retires `ComputePathAStar` from the test suite and replaces it with `Zenith_NavMeshTestPathfinder::ComputePath` which wraps the real `Zenith_NavMesh::FindPath`. **Tier 4 tests use the navmesh-aware API only.**
+
+**Why a real-navmesh-aware pathfinder is required:** Raw timed key-holds (`SetKeyHeld(W, true) for 5 s`) flake the moment a collider is nudged. A grid-A* pathfinder routes through walls. The harness must own:
+- Path planning that uses the same navmesh the priest uses.
+- Per-frame replanning when blocked (e.g. a door closed in the priest's wake — and the door's `SyncNavMeshBlock` disables the matching portal).
+- WASD-input synthesis from path waypoints (transforms `Vec3 path[i+1] - pos` into camera-relative WASD presses).
+- Stuck-detection: if position hasn't moved >0.5 m in 60 frames, abort the leg, re-plan from current position; if 3 consecutive re-plans fail, fail the test with diagnostic.
+
+Tier 4 tests are **blocked on MVP-1.2 (real navmesh) completing**. They cannot be authored until the navmesh generator is integrated; the prototype's flat-quad navmesh would let the playthrough cheat through walls.
+
 #### Test_P4Playthrough_Night1WinGolden
 
-**Proves:** the canonical Night 1 win path completes within budget.
+**Proves:** the canonical Night 1 win path completes within budget on real geometry.
 
-- **Setup:** load Night 1, seed = "tutorial". (Tutorial seed is deterministic and authoritative.)
-- **Step:** 30-phase script:
-  - Phase 0–4: tutorial onboarding clicks.
-  - Phase 5: possess villager near reagent A.
-  - Phase 6: walk to reagent A (`SetKeyHeld(W, true)` for 5 s, then false).
-  - Phase 7: pick up reagent A.
-  - Phase 8–9: walk to pentagram, inscribe.
-  - Phase 10–25: repeat for reagents B–E.
-  - Phase 26: assert `DP_Win::HasWon() == true`.
-- **Max frames:** 9000 (2.5 min @ 60 Hz fixed).
-- **Verify:** has-won true, no `DP_OnRunLost`, no `DP_OnVillagerDied` events (perfect run).
+- **Setup:** load Night 1, seed = "tutorial" (tutorial seed is deterministic and authoritative). Capture the 5 reagent entity IDs.
+- **Step:** state machine over **legs**, not over fixed frame counts. For each of the 5 reagents (selected nearest-first):
+  1. **Pick body:** find the closest possessable villager to the reagent's position via on-navmesh distance; `DP_Player::SetPossessedVillager(id)`.
+  2. **Path to reagent:** `Zenith_NavMeshTestPathfinder::ComputePath(villager_pos, reagent_pos, outWaypoints)`; assert returns true and waypoints non-empty.
+  3. **Drive:** per frame, `DriveWASDToward(next waypoint at 0.5m tolerance)` via `SetKeyHeld`. Replan if stuck.
+  4. **Pickup:** wait until `DP_Player::GetHeldItemTag(villager) == reagent.tag`.
+  5. **Path to pentagram:** repeat.
+  6. **Inscribe:** at <2m from pentagram, `SimulateKeyPress(ZENITH_KEY_F)`; wait for inscription event.
+- **Max frames:** 9000 (2.5 min @ 60 Hz fixed). Most legs complete in ~300 frames; budget is generous.
+- **Verify:** `DP_Win::HasWon() == true`; no `DP_OnRunLost`; ≤1 `DP_OnVillagerDied` event (allows one burn-out per run on the worst leg).
 
 #### Test_P4Playthrough_Night1LossByApprehend
 
 **Proves:** when the player stands still in Aelfric's pursuit cone, the run loses by apprehension.
 
-- **Setup:** Night 1, seed = "tutorial_loss". Aelfric placed near reagent A spawn.
-- **Step:** possess villager. Stand still (no input). Wait until run-lost event.
-- **Verify:** `DP_OnRunLost` fired with cause `Apprehended`.
+- **Setup:** authored test scene with priest placed 8 m from a villager's spawn anchor, in line-of-sight. Subscribe to `DP_OnRunLost`.
+- **Step:** `SetPossessedVillager(villager)`. Pin the villager (no input). Wait until run-lost event fires or max frames hit.
+- **Max frames:** 600 (priest closes 8 m at 7 m/s in ~1.2 s, then 3 s apprehend channel = ~5 s budget; we give 10 s).
+- **Verify:** `DP_OnRunLost` fired exactly once with cause `Apprehended`. No `DP_OnVictory`.
 
 #### Test_P4Playthrough_Night1LossByDawn
 
 **Proves:** dawn timeout ends the run when objectives not completed.
 
-- **Setup:** Night 1, dawn timer set to 30 s (test override).
-- **Step:** possess. Stand still. Wait 35 s.
-- **Verify:** `DP_OnRunLost` fired with cause `Dawn`.
+- **Setup:** Night 1 scene. Override `DP_Tuning::SetForTest("night.dawn_timer_s", 30.0)` so the run ends quickly.
+- **Step:** possess a villager. Pin (no input). Wait 35 s game-time (2100 frames @ 60Hz fixed).
+- **Max frames:** 2200.
+- **Verify:** `DP_OnRunLost` fired exactly once with cause `Dawn`. No `DP_OnVictory`.
 
 #### Test_P4Playthrough_Night1LossByNoVillagers
 
 **Proves:** running out of villagers ends the run.
 
-- **Setup:** Night 1 with only 2 villagers (test override).
-- **Step:** possess both in sequence; let each burn out.
-- **Verify:** `DP_OnRunLost` fired with cause `NoVessels`.
+- **Setup:** authored test scene with 2 villagers only. Override dawn timer to large value so it doesn't trigger.
+- **Step:** possess each in sequence; let each burn out (use `SetRemainingLifeForTest(0.05)` per villager to accelerate). Wait for second burn-out + dispatch.
+- **Max frames:** 300 (each burn-out + dispatch is ~30 frames).
+- **Verify:** `DP_OnRunLost` fired exactly once with cause `NoVessels`.
 
 #### Test_P4Playthrough_Night5_FreeJoan
 
@@ -1127,7 +1207,7 @@ This loop is fully autonomous. No human inspects screenshots; no human listens t
 
 ## 8. Authoring Conventions for New Tests
 
-To keep the suite navigable as it grows from the current 28 tests to the ~250 tests this plan describes:
+To keep the suite navigable as it grows from the current 34 tests to the ~250 tests this plan describes:
 
 ### 8.1 File template
 

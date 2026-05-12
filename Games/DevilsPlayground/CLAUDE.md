@@ -1,9 +1,11 @@
 # DevilsPlayground
 
 UE5 → Zenith port of an occult-horror prototype. Click-to-possess top-down
-gameplay: the player picks one of 14 villagers, races a 30-second life
-timer to deliver objective items to a pentagram while avoiding a roaming
-priest. Source repo lives at `C:\dev\GameJam0\` (UE 5.6).
+gameplay: the player picks one of 17 villagers in the GameLevel scene
+(corrected from earlier "14" — the level was extended during the M0.5
+port), races a 30-second life timer to deliver objective items to a
+pentagram while avoiding a roaming priest. Source repo lives at
+`C:\dev\GameJam0\` (UE 5.6).
 
 This is a **skeleton-grade** port — every behaviour shape is in place and
 verified by the automated-test harness, but real meshes/materials and full
@@ -40,7 +42,7 @@ Components/
   DPMainMenuController_Behaviour.h   # Front-end Play button → LoadSceneByIndex(1)
   DPPauseMenuController_Behaviour.h  # Esc-toggle overlay
   DPFogPass_Behaviour.h              # Per-frame fog-hole rebuild
-Tests/                                 (28 automated tests; full list via --list-automated-tests)
+Tests/                                 (34 registered tests across 24 .cpp files; full list via --list-automated-tests)
   Test_Hello.cpp                     # Harness smoke
   Test_MouseWheel.cpp                # EXT-4 simulator round-trip
   Test_PublicInterfaces.cpp          # 5 namespace-API tests + source-bug guards

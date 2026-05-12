@@ -16,7 +16,7 @@
 |---|---:|---|
 | Concept art (key art + reference) | ~80 paintings | 0 |
 | Character meshes (unique) | 27 (24 villager archetypes + Aelfric + Joan + demon-visual proxy) | 0 (capsule colliders) |
-| Character animations | ~410 clips (avg 15/char + Aelfric 30 + hounds 20) | 0 |
+| Character animations | ~482 clips (24 archetypes × 15 base + 24 × ~3 unique + Aelfric 30 + hounds 20). Earlier numbers (~410 / ~430) were arithmetic errors. | 0 |
 | Environment meshes (modular kit) | ~180 pieces across 6 districts | ~30 blockout pieces from UE export |
 | Prop meshes (items + interactables + dressing) | ~120 | 0 (tinted cubes via `DPMaterials::GetOrCreateColouredVariant`) |
 | Materials (`.zmtrl`) | ~220 | ~15 procedural variants per-tag |
@@ -168,14 +168,14 @@ Plus **per-archetype unique animations** (avg 3 per archetype):
 - Beggar: `sit`, `beg_idle`, `lie_down`
 - … etc.
 
-**Total animation count for villagers:** 24 archetypes × 15 base + 24 × ~3 unique = **~430 clips**. Sourceable from Mixamo or pre-built blockout libraries at S0; re-authored to spec at S2.
+**Total animation count for villagers + Aelfric + hounds:** 24 archetypes × 15 base + 24 × ~3 unique + Aelfric 30 + hounds 20 = **~482 clips**. (Earlier drafts said ~430 villagers-only — that's the villager subtotal; the full count including Aelfric and hounds is 482, matching §0.1.) Sourceable from Mixamo or pre-built blockout libraries at S0; re-authored to spec at S2.
 
 #### 2.1.4 Placeholder strategy — characters
 
 | Stage | Placeholder |
 |---|---|
-| **S0 — Day 1** | **Mixamo standard rigged character** (Mixamo "Y-Bot" or "Erika"), 1 mesh, retargeted across all 24 archetypes. Materials use the existing `DPMaterials::GetOrCreateColouredVariant` system to colour-tag each archetype (Farmhand = brown, Smith = grey, Devout = white-grey, Sexton = black, Child = small + bright, etc.). Animation: Mixamo's free idle + walk + run packs (~ 200 clips available free under Mixamo's terms). |
-| **S1 — Months 2–8** | Replace with **Synty POLYGON Fantasy** or **Synty Horror Mansion** pack characters (~$50 / pack, 30+ characters each, low-poly stylised). Re-skin per archetype with the colour-tag layer kept. Idle / walk / run / interact authored fresh on a Synty rig. Hat/silhouette variation real. |
+| **S0 — Day 1** | **Mixamo standard rigged character** (Mixamo "Y-Bot" or "Erika"), 1 mesh, retargeted across all 24 archetypes. Materials use the existing `DPMaterials::GetOrCreateColouredVariant` system to colour-tag each archetype. **Silhouette differentiation REQUIRED for the 4 MVP archetypes** (per round-2 peer review 2026-05-12): a single tinted Y-Bot is unreadable at the GDD's specified 80m camera distance (~24 pixels per character at 1080p). Author **one distinguishing head-prop per MVP archetype** as 5-minute primitives attached to the character's head bone via socket: Farmhand = wide-brim straw hat (squat cylinder + disc, ~100 tris); Beggar = hood (cone over head, ~80 tris); Devout = small tonsure-cap (low dome, ~60 tris) + held rosary prop (string of small spheres); Child = scale 0.7× + bare-head (smallest silhouette by negation). Each head-prop is authored in Blender in an afternoon; ~1 day total for the four. Animation: Mixamo's free idle + walk + run packs. **License caveat:** Mixamo is free for use in commercial games per Adobe's FAQ, but Adobe's terms restrict redistribution of raw character files; characters must be embedded in the end product. Document in `Docs/AssetProvenance.md` (post-MVP). |
+| **S1 — Months 2–8** | **Three legitimately free paths in priority order:** (a) **Kenney.nl character meshes** — CC0, engine-agnostic, character packs already exist; pair with Mixamo retargeted animations. (b) **Sketchfab CC0 / CC-BY-licensed character meshes** — vet license per asset; attribution-only is fine; non-commercial licences are NOT compatible with a premium-priced game. (c) **In-house authored low-poly characters** at ~2 days per silhouette variant; for 4 MVP archetypes this is ~8 days of solo work — affordable. *Synty POLYGON packs are NOT used for one reason only: the no-external-spend policy* — Synty's one-time-purchase EULA permits engine-agnostic commercial use (not Unity-restricted, contrary to a round-1 misreading). If the user later authorises Synty spend post-MVP, they're a viable upgrade path. For MVP: CC0 / CC-BY / in-house only. |
 | **S2 — Months 10+** | Final art. In-house lead + outsourced detail. Final rig (the in-engine biped used everywhere). Real cloth sim where it's worth it (Sexton's robe, Aelfric's coat). |
 
 **Critical:** The Mixamo placeholder is a one-day setup. There is no reason to ship internal builds with capsule colliders past month 1.
@@ -210,7 +210,7 @@ The most-authored character in the game. He is on screen ~80% of every Night.
 | Stage | Placeholder |
 |---|---|
 | **S0** | A taller, darker Mixamo character with a **stovepipe hat hat-only mesh** (5 min to model — a tapered cylinder) and a black robe colour-tag. Distinctly silhouetted as "the priest" from 80 m. Mixamo's free "gunslinger" anims cover raise/aim/fire reasonably; substitute hand-key restrain. |
-| **S1** | Synty POLYGON Horror's Witch Hunter character (this character exists in the pack and is closer to the design than any other off-the-shelf option). Custom hat-attach. Lantern as a separate held prop with the lantern-emissive material. |
+| **S1** | Free Sketchfab "witch hunter" / "puritan" / "inquisitor" character with CC0 or CC-BY license (several exist; vet on download). Alternative: in-house authored cloaked figure with a stovepipe hat — ~3 days. Custom hat-attach. Lantern as a separate held prop with the lantern-emissive material. |
 | **S2** | Final art. The single most-iterated character. Plan two full passes (months 11 and 16). |
 
 ### 2.3 Joan Trew
@@ -227,7 +227,7 @@ Non-possessable. Appears only from Night 2 onwards. Restrained in the longhouse.
 | Stage | Placeholder |
 |---|---|
 | **S0** | A Mixamo female character with half-shaved-head silhouette flag (a flat plane texture on the head representing shaved hair). Bound to a chair via parent constraint. |
-| **S1** | Synty character + custom hair. |
+| **S1** | Kenney/Sketchfab CC0 female character + custom hair geometry. |
 | **S2** | Final. Hand-authored. |
 
 ### 2.4 The Demon (visual proxy)
@@ -254,7 +254,7 @@ Two instances of one mesh + one skeleton + one anim set. The hounds are distinct
 | Stage | Placeholder |
 |---|---|
 | **S0** | A free wolf rig from Mixamo Marketplace (one available CC-licensed) or Unity Asset Store's "Wolf Animations" free download. Recolour to brown. |
-| **S1** | Synty POLYGON Knights / Polygon Adventure has dogs. Adjust proportions slightly. |
+| **S1** | Sketchfab CC0 dog / wolf mesh (several available); re-rig if needed. Adjust proportions toward mastiff/lurcher. |
 | **S2** | Final mastiff / lurcher (period-correct breed). |
 
 ---
@@ -314,7 +314,7 @@ Non-interactable decorative props that fill the village.
 
 | Stage | Placeholder |
 |---|---|
-| **S0** | Synty POLYGON Knights / Heist / Western prop packs (~$50 each). One-day mass import. Drop into scenes. |
+| **S0** | **Kenney.nl** medieval / survival prop packs (CC0, engine-agnostic, free). One-day mass import. Drop into scenes. Supplement with Sketchfab CC0 props as needed. |
 | **S1** | In-house generalist (1 FTE) authors the prop pack at S1 quality — silhouette correct, single matte material, no surface detail. ~3 days per prop × 100 = ~60 weeks of work. **Outsource at least 60% of this.** |
 | **S2** | Full surface detail, second-pass. Outsourced to an asset shop (e.g. an Eastern European or Indian studio that quotes ~$200–$400 per S2 prop). |
 
@@ -403,7 +403,9 @@ GDD §4.3 enumerates the gameplay items; GDD §4.4 the interactables.
 | Distractions | Wind-Up Music Box, Tin Whistle, Tinder-Bundle, Raw Meat (for hounds) | Each has its own affordance / silhouette |
 | Charms | Rowan Sprig, St. George Medal, Salt Pouch | Held + dropped versions identical |
 
-**Spec per item:**
+****Note on counts:** Iron, Wood, Brass Key, Skeleton Key, 4 distractions, 3 charms, plus the 14 reagents = 25 item kinds. Earlier doc revisions said "~30 of the 25 items" — that's a count error; the correct figure is "~25 item kinds, of which most map directly to Kenney/Sketchfab CC0 props."
+
+Spec per item:**
 
 | Field | Value |
 |---|---|
@@ -446,7 +448,7 @@ Mostly already enumerated in the prototype's `Components/DP*_Behaviour.h`.
 | Stage | Placeholder |
 |---|---|
 | **S0** | The current scaled-cube approach is shippable. Each interactable is a colour-tagged box with the right approximate dimensions. The `DPInteractable_Behaviour` proximity range already works at this fidelity. |
-| **S1** | Synty POLYGON Knights / Vikings include doors, chests, hearths, even a forge. Re-skin per kit-piece variant. |
+| **S1** | Kenney Medieval / Survival kits include doors, chests, hearths, forge. Re-skin per kit-piece variant. Supplement with Sketchfab CC0 props as needed. |
 | **S2** | Hand-authored. Outsourced ~$500/piece for final-detail interactables. |
 
 ---
@@ -679,7 +681,7 @@ GDD §7.1 specifies the HUD; §7.2 the menus.
 |---|---|
 | **S0** | The engine has no audio. Build a minimal `Zenith_AudioBus` with `EmittedSounds` recording (already required by [TestPlan.md](TestPlan.md) §0.4) — no actual playback, just an event-bus pattern. Designers and engineers see audio fire in logs and tests pass. The game is silent on the speaker. |
 | **S0.5** | Add a single tone-generator playback (a 440 Hz sine for each emission). Awful to play but proves the spatial-audio chain works. |
-| **S1** | Source temp SFX from freesound.org (CC0 / CC-BY). Temp music from FreeMusicArchive (CC-BY, attribute). Aelfric VO: text-to-speech (engine-side hookup; Microsoft Azure TTS has a usable voice). The game is fully audible in S1; the audio is just temp. |
+| **S1** | Source temp SFX from freesound.org **filtered to CC0 and CC-BY only — reject all CC-BY-NC results** (NC = non-commercial, incompatible with a $19.99 premium game). Every CC-BY asset needs an attribution entry in `Docs/AssetProvenance.md` (post-MVP doc). Temp music from FreeMusicArchive (CC-BY, attribute). Aelfric VO: text-to-speech (engine-side hookup; e.g. Azure TTS — requires explicit user authorisation per the no-external-spend policy). The game is fully audible in S1; the audio is just temp. |
 | **S2** | Final composer score. Real VO recording session. Curated SFX library + bespoke field recordings (the bell, the millrace, sheep, a real forge). Final mix by an external mix engineer over ~6 weeks. |
 
 ---
@@ -760,20 +762,37 @@ How asset stages map to the 18-month dev runway (matches GDD §12 phasing).
 
 ## 13. Ownership matrix
 
-Who owns what across the team.
+**Actual ownership for the solo-dev-plus-AI production:**
 
-| Asset class | Owner | Notes |
+| Asset class | MVP owner | Post-MVP owner |
+|---|---|---|
+| Concept art | None for MVP (no concept art required for placeholder-only MVP) | First paid art relationship; the user commissions or authors |
+| Characters | Mixamo Y-Bot + tint via existing system (autonomous orchestrator) | First paid art relationship |
+| Environment | Existing UE-exported blockout + Kenney CC0 supplements (autonomous orchestrator) | First paid art relationship |
+| VFX | One generic placeholder config reused for all systems (autonomous orchestrator) | Possible junior VFX contract |
+| UI | Wireframe text overlays (autonomous orchestrator) | First paid UI relationship |
+| Lighting | Existing prototype's torches + directional moon (autonomous orchestrator) | Same as environment art |
+| Audio | None for MVP (silent + emission events). Audio system itself is engine work. | First paid audio relationships post-MVP |
+| Cinematics | None for MVP | Post-MVP cinematic director if budget |
+
+**Total MVP headcount:** 1 human + autonomous Claude Code agents. **No paid contractors.** Total art/audio spend through MVP: $0.
+
+The "5 FTE art/audio + 4 contractor relationships" ownership matrix that appeared in earlier drafts described a *traditional* production. It is preserved below as historical/informational context, **not** the current plan.
+
+### 13.1 Traditional team ownership (informational; not the plan)
+
+| Asset class | Traditional owner | Notes |
 |---|---|---|
 | Concept art | Concept Lead (1 FTE month 0+) | |
-| Characters | Character Lead (1 FTE month 2+) + 1 outsource shop | |
-| Environment | Env Lead (1 FTE month 1+) + 1 generalist + 1 outsource shop | |
+| Characters | Character Lead (1 FTE month 2+) + outsource shop | |
+| Environment | Env Lead (1 FTE month 1+) + 1 generalist + outsource shop | |
 | VFX | Tech Art Lead (1 FTE month 4+) | |
-| UI | UI Generalist (0.5 FTE month 3+) → UI Lead (1 FTE month 8+) | |
-| Lighting | Env Lead doubles as lighting lead | Specialist hire month 12 if budget. |
-| Audio | Audio Director (1 FTE month 2+) + composer + mix engineer + VO director on contracts | Engine team owns audio system itself. |
-| Cinematics | Director + Storyboard artist + animator | Months 14–18 heavy. |
+| UI | UI Generalist → UI Lead | |
+| Lighting | Env Lead doubles as lighting lead | |
+| Audio | Audio Director + composer + mix engineer + VO director on contracts | |
+| Cinematics | Director + Storyboard artist + animator | |
 
-**Total art / audio headcount:** 5 FTE at peak + 4 contractor relationships. (Combines with the 12-person engineering team from GDD §12 for a ~17-headcount production at peak.)
+If post-MVP staffing scales toward the traditional model, the above table is the headcount target. **Until that funding decision, ignore it.**
 
 ---
 
@@ -787,7 +806,7 @@ Lessons learned across the industry; *do not* fall into these.
 4. **Inconsistent silhouettes across archetypes.** The single biggest crowd-legibility failure mode at 80 m view. Concept-art sheets must include a silhouette swatch.
 5. **Aelfric without iteration time.** He is the antagonist; he gets two full passes. Schedule them.
 6. **Volumetric fog at full settings on Switch.** The engine offers 4 fog techniques; Switch may need the cheap "simple exponential" mode. Budget a per-platform fog quality switch.
-7. **Audio system as a Phase 4 task.** It must land Phase 1 — every level of gameplay tuning depends on it.
+7. **Audio system scope.** Reconciled 2026-05-12: MVP ships **silent + emission-event-recording only** via the `Zenith_AudioBus` instrumentation hook (MVP-0.4.1). The real audio system (playback, mixer, spatial 3D, streaming) is a ~3-month engine-team task that lands **post-MVP**, not Phase 1. The earlier "must land Phase 1" framing was correct for a *funded team* production but incorrect for the actual solo-dev plan. For MVP, **silent speakers + green tests** is the explicit scope. Players hear nothing during the MVP playable; the audio bus records what *would* have played, and gameplay tests assert against those recordings.
 
 ---
 
@@ -795,12 +814,12 @@ Lessons learned across the industry; *do not* fall into these.
 
 The current prototype's tinted-cubes + capsule-colliders approach is **the cheapest, most coherent placeholder strategy a game at this stage could have**. The `DPMaterials::GetOrCreateColouredVariant` system encodes semantic identity into visual identity; preserve it as a debug mode forever. From here, the asset roadmap is:
 
-1. **Month 0–1:** Source Mixamo + Synty + Kenney packs. The game looks like a "Polygon Pack stealth game" — workable.
+1. **Month 0–1:** Source Mixamo + Kenney + Sketchfab CC0 packs. The game looks like a free-asset-pack stealth game — workable, distinguishable archetypes, no paid licenses.
 2. **Month 2–10:** In-house S1 pass. The game looks like a coherent stylised prototype.
 3. **Month 10–18:** S2 pass with heavy outsourcing. The game looks like the shipping product.
 
 The biggest art-side risk is **Aelfric**: he is on screen for ~80% of every run and is the antagonist. Schedule two full character-art passes and one VO session re-do (~30 days of audio booth time across the campaign).
 
-The biggest engine-side risk is **audio**: the system does not exist. Budget Phase 1 engineering for the audio system before any audio artist deliverable can integrate.
+The biggest engine-side risk is **audio**: the system does not exist. **For MVP**, only the bus instrumentation hook (`Zenith_AudioBus::EmitSound` + `GetEmittedSoundsForTest`) lands — this is human-owned engine work (MVP-0.4.1). The full audio system (playback, mixer, 3D positional, streaming) is post-MVP and gates first-paid-audio-artist relationships.
 
 The cumulative asset count at ship is **~2,400 individual files** across meshes, textures, animations, particles, decals, UI, fonts, music, SFX, VO, and decals. Of those, the prototype contains roughly 60 (~2.5%). The shipping bar is reachable in 18 months with the schedule described in §12.
