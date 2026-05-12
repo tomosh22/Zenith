@@ -1,32 +1,55 @@
-# DevilsPlayground PR tests (MVP-0.0.3).
+# DevilsPlayground tests (MVP-0.0.3 skeleton -- DISABLED auto-triggers).
 #
-# Builds the DevilsPlayground exe (same path as dp-pr.yml), provisions
-# the runtime DLLs that aren't tracked in repo (slang runtime from the
-# v2026.1 GitHub release; Vulkan loader from the LunarG SDK 1.3.290.0;
-# opencv via vcpkg), then runs `Tools/run_dp_tests.ps1 -Headless` and
-# uploads the per-test JSON results as a CI artifact.
+# **CURRENT STATE: workflow_dispatch ONLY -- does NOT gate PRs.**
 #
-# Required check name: `dp-tests`.
+# Why disabled: the DP exe is Vulkan-mandatory at boot (it calls
+# vkEnumeratePhysicalDevices during Flux::EarlyInitialise and waits for
+# a real GPU device). GitHub-hosted windows-latest runners have no GPU
+# and no Vulkan ICD. First iteration of this workflow exited 0xC0000135
+# (missing opencv DLL, fixed). Second iteration hung indefinitely at
+# `--list-automated-tests` after a clean compile/link, then a clean
+# DLL inventory step -- the engine deadlocked enumerating Vulkan
+# devices. Cancelled after 40+ min.
 #
-# This workflow duplicates the build steps from dp-pr.yml rather than
-# composing via workflow_run + artifact handoff. The composition approach
-# is cleaner but adds a stale-state failure mode that's not worth the
-# complexity for MVP-0.0.3. Wall-clock for both PR workflows runs in
-# parallel anyway -- the wasted compute is only ~10 min of vcpkg-cached
-# build time, not the full ~20 min cold path.
+# Reactivating this workflow as a PR gate requires ONE of:
+#   1. A paid GitHub GPU runner (vetoed: zero-external-spend rule).
+#   2. Mesa lavapipe / SwiftShader on the runner, with engine code
+#      changes to handle software-only Vulkan and not query NVIDIA-
+#      specific extensions on startup. Non-trivial engine work.
+#   3. A `--no-graphics` engine boot mode that skips Vulkan init
+#      entirely for tests that don't need rendering. Cleanest path.
+#      Most DP tests don't exercise rendering directly (they assert
+#      on state, events, or component values per TestPlan.md section 0.3).
 #
-# File-size constraint: `slang-llvm.dll` is 105 MB (> GitHub's 100 MB
-# per-file commit limit), so the slang runtime DLLs CANNOT be tracked
-# in git -- they have to be fetched on every CI run. This step is the
-# largest single new failure surface vs MVP-0.0.2.
+# Until one of those lands, this file's value is:
+#   - Documenting the test infra design (build + DLL provisioning +
+#     pwsh invocation + artifact upload) for the eventual reactivation.
+#   - Manual `workflow_dispatch` for debugging the DLL provisioning
+#     and build pipeline without GPU dependency at that surface.
+#
+# Build + DLL pieces below work (verified through the Build step on
+# iteration 2). Only the exe-execution piece blocks.
+#
+# Required check name (when reactivated): `dp-tests`.
+#
+# File-size constraints captured here so the next reactivation attempt
+# doesn't re-discover them:
+#   - slang-llvm.dll: 105 MB (> 100 MB per-file commit limit). Fetched
+#     from Slang v2026.1 GitHub release per run.
+#   - opencv_world4100d.dll: 120.6 MB. Fetched from OpenCV 4.10.0
+#     Windows release per run.
+#   - vulkan-1.dll: copied from LunarG Vulkan SDK 1.3.290.0 install.
 
 name: dp-tests
 
 on:
-  pull_request:
-    branches: [ master ]
-  push:
-    branches: [ master ]
+  # Disabled auto-triggers; see header comment for rationale.
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner override (e.g. self-hosted with GPU).'
+        required: false
+        default: 'windows-latest'
 
 permissions:
   contents: read
@@ -34,7 +57,7 @@ permissions:
 jobs:
   dp-tests:
     name: dp-tests
-    runs-on: windows-latest
+    runs-on: ${{ github.event.inputs.runner || 'windows-latest' }}
     timeout-minutes: 60
 
     env:
