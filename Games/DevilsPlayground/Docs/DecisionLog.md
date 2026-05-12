@@ -8,6 +8,42 @@
 
 ---
 
+## 2026-05-12 — MVP-0.0.1: `verify_build_env.ps1` accepts .NET runtime, not just SDK.
+
+**Decision:** `Tools/verify_build_env.ps1` (MVP-0.0.1) treats the .NET check as PASS if EITHER the SDK OR the runtime is >= 6.0 — not strictly the SDK as MvpRoadmap section "0.0.1" and BuildEnvironment.md section 1 originally specified. The PASS message annotates "(no SDK installed; runtime suffices for prebuilt Sharpmake.Application.exe)" when applicable.
+
+**Why:** `Sharpmake/Sharpmake.Application.exe` ships **pre-built** in the repo. It needs only the .NET runtime to launch. The .NET SDK would be required only if a developer wanted to rebuild Sharpmake itself — which the routine "build DevilsPlayground" flow does not do. On the wizardly-payne worktree the runtime (v8.x) is installed but `dotnet --list-sdks` returns empty; `dotnet --version` then exits non-zero with "No .NET SDKs were found". A strict SDK check would FAIL on a machine that is otherwise fully capable of building and running DP. The cost of false-failing here is high (autonomous sessions abort at the gate); the cost of relaxing is low (Sharpmake.Application either runs or doesn't, and that's a runtime concern surfaced elsewhere).
+
+**Trade-offs considered:**
+- *Keep the strict SDK check.* Rejected: would false-fail this exact machine and any other workstation that has the runtime but not the SDK.
+- *Drop the .NET check entirely.* Rejected: a machine with no runtime at all is a real failure mode (`Sharpmake.Application.exe` won't launch) and worth catching.
+- *Accept runtime OR SDK, annotate distinction.* Accepted. The annotation makes the gap visible without blocking.
+
+**Test that prevents regression:** None — this is the test (the script itself). Future change: when MVP-0.0.4 lands `Test_T0Harness_RunnerFlagsExist` we get a runner that can host environment-audit tests; consider porting verify_build_env's per-check logic into individual T0 tests then.
+
+**Reversibility:** trivial.
+
+---
+
+## 2026-05-12 — MVP-0.0.1: Q-2026-05-12-005 root cause = PS5.1 reads non-BOM UTF-8 as Windows-1252.
+
+**Decision:** Diagnosed why `Tools/run_dp_tests.ps1` fails to parse under Windows PowerShell 5.1 (the original symptom that forced the PR #3 orchestrator to bypass the runner and invoke `devilsplayground.exe` directly). Root cause: Windows PowerShell 5.1's default file-reading codepage is **Windows-1252 (CP1252), not UTF-8**. A `.ps1` saved as bare UTF-8 with no BOM that contains non-ASCII characters (em-dashes —, section sign §, smart quotes, ellipsis) gets mis-decoded — each 3-byte UTF-8 em-dash becomes three Windows-1252 chars (`â€"`) which break PS5.1's tokenizer. `run_dp_tests.ps1`'s top-of-file usage comment is the prime suspect.
+
+**Why:** While authoring `verify_build_env.ps1` I hit the identical parser error on my own em-dashes (line 122 in the initial version: `"-- may work, unverified)"` was originally `"-- may work, unverified)"`). Replacing every non-ASCII character with ASCII (em-dash `—` -> `--`, section sign `§` -> `section`) made the script parse cleanly under both PS5.1 and PS7. PR #3's hypothesis (some unknown PS7-only syntax) was wrong — it's purely an encoding mismatch.
+
+**Why this is a generally-applicable rule for this repo:** PS7 is not on the BuildEnvironment prereq list as a hard requirement (ManualSetupChecklist marks it required but `verify_build_env` accepts PS5.1 as fallback). Every `.ps1` we author must therefore be PS5.1-clean — i.e. either ASCII-only OR saved with a UTF-8 BOM. The ASCII-only convention is more portable and grep-friendly.
+
+**Trade-offs considered:**
+- *Mandate a UTF-8 BOM on every `.ps1`.* Rejected: BOMs break some tools (sed, awk, jq, certain editors that don't strip them on save). ASCII-only is more universally safe.
+- *Mandate PS7 as a hard prereq, drop PS5.1 support.* Rejected: would force a manual install on every fresh machine, conflicts with the existing "fallback to powershell.exe" allowance in `verify_build_env`, and isn't necessary if scripts stay ASCII.
+- *Accept ASCII-only convention for `.ps1`.* Accepted. `verify_build_env.ps1` is the reference. `run_dp_tests.ps1` will be fixed under MVP-0.0.4.
+
+**Test that prevents regression:** The doc-linter that MVP-0.3.2 promotes from post-MVP to in-scope (round-5 reconciliation) should grow a `.ps1`-only ASCII check at the same time. Until then, the discipline is by-convention.
+
+**Reversibility:** trivial.
+
+---
+
 ## 2026-05-12 — MVP-0.1.1 shipped out-of-sequence in PR #3; Phase 0.0 still owed.
 
 **Decision:** The orchestrator session that ran 2026-05-12 (Claude harness, branch `claude/wizardly-payne-c210e5`) was working from the pre-reconciliation roadmap and jumped straight to MVP-0.1.1 (`DP_Tuning`). It built and shipped a complete green PR ([PR #3, commit e2b10e3a](https://github.com/tomosh22/Zenith/pull/3)) bundling `Source/DP_Tuning.h/.cpp` + `Test_P1Tuning_LoadsAndValuesInBand` + the `DevilsPlayground.cpp` hook. The PR matches the round-3 reconciled spec for MVP-0.1.1 exactly (single-PR API+test+impl bundling, not two-PR test-first). Phase 0.0 Bootstrap (MVP-0.0.1 → MVP-0.0.7) was skipped and remains owed.

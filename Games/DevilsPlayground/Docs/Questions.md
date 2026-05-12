@@ -92,7 +92,9 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 **Cost of getting it wrong:** low (the bypass works). Future sessions hit the same wall and re-discover the bypass — minor productivity loss.
 
-**Status:** asked 2026-05-12. Acting on best guess.
+**Postscript (2026-05-12, MVP-0.0.1 session):** root cause identified while authoring `Tools/verify_build_env.ps1`. PS5.1's default file-reading codepage is Windows-1252 (CP1252), **not UTF-8**. Scripts saved as bare UTF-8 (no BOM) containing non-ASCII characters (em-dashes —, section sign §, smart quotes, ellipsis …) get mis-decoded as 2-3 chars of Windows-1252 garbage that break PS5.1's parser. The `run_dp_tests.ps1` script very likely contains em-dashes in its top-of-file comments, which would explain the cascade of `Array index expression is missing` / `String missing terminator` parse errors I saw. Two fixes: (a) re-save the script with a UTF-8 BOM (PS5.1 honours BOM), or (b) rewrite to use only ASCII characters. `verify_build_env.ps1` shipped with option (b). The same fix for `run_dp_tests.ps1` is folded into MVP-0.0.4's scope.
+
+**Status:** root cause diagnosed 2026-05-12. Fix folded into MVP-0.0.4.
 
 ---
 
