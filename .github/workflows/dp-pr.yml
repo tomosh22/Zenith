@@ -70,7 +70,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-${{ hashFiles('.github/workflows/dp-pr.yml') }}-v1
+          # IMPORTANT: do NOT key on hashFiles(this workflow). Every iteration
+          # of this workflow edits the file, which would invalidate the cache
+          # and force a 10+ min vcpkg install on every push. Bump the trailing
+          # version tag (v1 -> v2) by hand when the package list changes.
+          key: vcpkg-x64-windows-pkgs-v1
           restore-keys: |
             vcpkg-x64-windows-
 
