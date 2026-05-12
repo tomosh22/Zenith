@@ -117,6 +117,28 @@ jobs:
               exit 1
           }
 
+      - name: Placeholder slang.dll for post-build xcopy
+        shell: pwsh
+        run: |
+          # The .vcxproj has a post-build event that runs `xcopy slang.dll
+          # output/...`. The source path is `Middleware\slang\bin\slang.dll`,
+          # which is gitignored (the runtime DLLs aren't tracked in repo --
+          # only headers, .lib import libraries, and .slang stdlib files are).
+          # On a fresh CI checkout, xcopy fails with exit 4 (file not found)
+          # and msbuild errors out via MSB3073 -- after the compile/link
+          # itself has actually succeeded.
+          #
+          # MVP-0.0.2 only cares about compile/link. Drop a 0-byte placeholder
+          # so xcopy succeeds; MVP-0.0.3 will provision the real DLL when the
+          # tests need to actually launch the exe.
+          $path = 'Middleware\slang\bin\slang.dll'
+          if (-not (Test-Path $path)) {
+              New-Item -ItemType File -Path $path -Force | Out-Null
+              Write-Host "Created placeholder: $path"
+          } else {
+              Write-Host "Already present: $path"
+          }
+
       - name: Build DevilsPlayground
         shell: pwsh
         run: |
