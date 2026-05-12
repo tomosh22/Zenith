@@ -1,0 +1,141 @@
+# DevilsPlayground PR build (MVP-0.0.2).
+#
+# Builds the DevilsPlayground executable target on every PR and on push to
+# master. Required check name: `dp-build`. Configuration:
+# vs2022_Debug_Win64_True.
+#
+# This workflow runs alongside the existing msbuild.yml (which builds
+# Games/Test) -- both fire on PR. msbuild.yml will be retired in a
+# follow-up once dp-build proves out; killing it now would lose the
+# complexity-gate job, which still has value.
+#
+# Caching strategy:
+#   - vcpkg/installed/  -> keyed on this workflow file. First run installs
+#     the assimp/curl/draco/kubazip/minizip/poly2tri/pugixml/zlib set
+#     (~15 min); subsequent runs restore in seconds.
+#
+# Dependencies the build needs that are already tracked in repo:
+#   - Sharpmake/Sharpmake.Application.dll (+ supporting DLLs) -- launched
+#     via `dotnet exec` rather than the missing-on-CI .exe shim.
+#   - Middleware/VulkanSDK/1.3.280.0/Include + Lib -- full headers + libs.
+#     No Vulkan SDK install needed at build time.
+#   - Middleware/slang/lib/{slang,gfx,slang-compiler,slang-rt}.lib.
+#   - Middleware/glfw-3.4.bin.win64/lib-vc2022/glfw3_mt.lib.
+#   - Tools/Middleware/opencv/build/x64/vc16/lib/opencv_world4100d.lib.
+#
+# Dependencies that DO need installation:
+#   - assimp-vc143-mtd.lib + co. -- not at the Sharpmake-configured
+#     Tools/Middleware/assimp/lib/ path. The user's local box resolves
+#     them via vcpkg.user.props injection (vcpkg integrate install). We
+#     replicate that on the CI runner.
+
+name: dp-build
+
+on:
+  pull_request:
+    branches: [ master ]
+  push:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+jobs:
+  dp-build:
+    name: dp-build
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      # Disable telemetry noise from .NET / vcpkg.
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      VCPKG_DISABLE_METRICS: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Probe .NET runtime
+        shell: pwsh
+        run: |
+          dotnet --info
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Cache vcpkg installed/
+        id: cache-vcpkg
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-${{ hashFiles('.github/workflows/dp-pr.yml') }}-v1
+          restore-keys: |
+            vcpkg-x64-windows-
+
+      - name: Install vcpkg packages
+        shell: pwsh
+        run: |
+          $packages = @(
+              'assimp',
+              'curl',
+              'draco',
+              'kubazip',
+              'minizip',
+              'poly2tri',
+              'pugixml',
+              'zlib'
+          )
+          Write-Host "Installing: $($packages -join ', ')"
+          & 'C:\vcpkg\vcpkg.exe' install @packages --triplet x64-windows --recurse
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "vcpkg install failed"
+              exit 1
+          }
+          & 'C:\vcpkg\vcpkg.exe' integrate install
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "vcpkg integrate install failed"
+              exit 1
+          }
+
+      - name: Regenerate solution (Sharpmake)
+        shell: pwsh
+        working-directory: Build
+        run: |
+          # Sharpmake_Build.bat invokes ..\Sharpmake\Sharpmake.Application.exe
+          # which is not tracked in git. The .dll is tracked -- launch it via
+          # `dotnet exec` instead. This avoids the chicken-and-egg of needing
+          # the .exe shim before Sharpmake has run.
+          dotnet exec '..\Sharpmake\Sharpmake.Application.dll' "/sources('Sharpmake_Common.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs', 'Sharpmake_TilePuzzleRegistryViewer.cs')"
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "Sharpmake generation failed"
+              exit 1
+          }
+
+      - name: Build DevilsPlayground
+        shell: pwsh
+        run: |
+          msbuild Build\zenith_win64.sln `
+              /t:DevilsPlayground `
+              /p:Configuration=vs2022_Debug_Win64_True `
+              /p:Platform=x64 `
+              -maxCpuCount:1 `
+              -nologo `
+              -clp:Summary `
+              -clp:ErrorsOnly
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "MSBuild failed"
+              exit 1
+          }
+
+      - name: Confirm devilsplayground.exe was produced
+        shell: pwsh
+        run: |
+          $exe = 'Games\DevilsPlayground\Build\output\win64\vs2022_debug_win64_true\devilsplayground.exe'
+          if (-not (Test-Path $exe)) {
+              Write-Error "Expected build output not found: $exe"
+              exit 1
+          }
+          $info = Get-Item $exe
+          Write-Host "Built: $exe  size: $($info.Length) bytes  last-modified: $($info.LastWriteTime)"
