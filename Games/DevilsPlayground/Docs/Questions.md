@@ -82,7 +82,7 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 ---
 
-### ⚠️ Q-2026-05-12-005 — `Tools/run_dp_tests.ps1` fails to parse under Windows PowerShell 5.1; system has no `pwsh.exe`.
+### ✅ Q-2026-05-12-005 — `Tools/run_dp_tests.ps1` fails to parse under Windows PowerShell 5.1; system has no `pwsh.exe`. **RESOLVED MVP-0.0.4.**
 
 **Context:** The runner script is written for `pwsh.exe` (PowerShell 7+) per its top-of-file usage comment. The system PATH has only Windows PowerShell 5.1 (`powershell.exe`). PS 5.1 raises five parser errors when reading the script (`Array index expression is missing or not valid` on `Write-Host "[run_dp_tests] ..."`, `The string is missing the terminator: "` on `Write-Host "    $_"`, and matching missing-`}` cascade errors). Investigation: the script bytes are clean UTF-8 LF — no hidden chars, no BOM. The parser failure is likely a PS5.1-vs-PS7 subtlety I didn't isolate.
 
@@ -94,7 +94,9 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 **Postscript (2026-05-12, MVP-0.0.1 session):** root cause identified while authoring `Tools/verify_build_env.ps1`. PS5.1's default file-reading codepage is Windows-1252 (CP1252), **not UTF-8**. Scripts saved as bare UTF-8 (no BOM) containing non-ASCII characters (em-dashes —, section sign §, smart quotes, ellipsis …) get mis-decoded as 2-3 chars of Windows-1252 garbage that break PS5.1's parser. The `run_dp_tests.ps1` script very likely contains em-dashes in its top-of-file comments, which would explain the cascade of `Array index expression is missing` / `String missing terminator` parse errors I saw. Two fixes: (a) re-save the script with a UTF-8 BOM (PS5.1 honours BOM), or (b) rewrite to use only ASCII characters. `verify_build_env.ps1` shipped with option (b). The same fix for `run_dp_tests.ps1` is folded into MVP-0.0.4's scope.
 
-**Status:** root cause diagnosed 2026-05-12. Fix folded into MVP-0.0.4.
+**Resolution (2026-05-12, MVP-0.0.4):** `Tools/run_dp_tests.ps1` rewritten ASCII-only. All five em-dashes replaced with `--`. `Tools/Test_T0Harness_RunnerFlagsExist.ps1` validates that parsing succeeds (a regression would fail the test). The runner now works under both PS5.1 (`powershell.exe`) and PS7 (`pwsh.exe`); no `pwsh.exe` install gate required for the runner itself. `pwsh.exe` is still recommended for the vcpkg-applocal post-build step (which the user's local box also handles via fallback to `powershell.exe`).
+
+**Status:** RESOLVED 2026-05-12 in MVP-0.0.4 PR. Runner ASCII-only, PS5.1-compat.
 
 ---
 

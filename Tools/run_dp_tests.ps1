@@ -1,11 +1,15 @@
-# run_dp_tests.ps1 — discover and run every registered DevilsPlayground
+# run_dp_tests.ps1 -- discover and run every registered DevilsPlayground
 # automated test, aggregate JSON results, and exit non-zero if any failed.
 #
 # Usage (from repo root):
 #   pwsh ./Tools/run_dp_tests.ps1
 #   pwsh ./Tools/run_dp_tests.ps1 -Filter Hello_Test
 #   pwsh ./Tools/run_dp_tests.ps1 -ResultsDir build/dp_test_results
-#   pwsh ./Tools/run_dp_tests.ps1 -PerProcess     # legacy: spawn one process per test
+#   pwsh ./Tools/run_dp_tests.ps1 -PerProcess              # legacy: spawn one process per test
+#   pwsh ./Tools/run_dp_tests.ps1 -Tier 0                  # only Tier-0 tests (Test_T0*)
+#   pwsh ./Tools/run_dp_tests.ps1 -Tier 1                  # only Tier-1 tests (Test_P1*)
+#   pwsh ./Tools/run_dp_tests.ps1 -FailFast                # stop on first failure (forces per-process mode)
+#   pwsh ./Tools/run_dp_tests.ps1 -AssertionsLog dp.log    # append every failure to dp.log
 #
 # Default mode (batch): one process runs every test sequentially via the
 # engine's --all-automated-tests flag. Cuts total runtime by ~70% vs the
@@ -13,10 +17,31 @@
 #
 # -PerProcess mode: legacy fallback that forks per test for full process
 # isolation (slower, but bullet-proof against state leaks). Used to be the
-# default — keep available for diagnosing test interactions.
+# default -- keep available for diagnosing test interactions.
 #
 # -Filter applies in both modes; in batch mode it falls back to per-process
 # spawning because the engine batch flag has no built-in filter.
+#
+# -Tier N filters tests by name prefix:
+#   -Tier 0  -> keep tests starting with 'Test_T0' (harness sanity / smoke).
+#   -Tier 1  -> keep tests starting with 'Test_P1' (Phase 1 features).
+#   -Tier 2..4 -> Test_P2.., Test_P3.., Test_P4..
+# Per TestPlan.md the test corpus follows Test_T0Harness_<X> / Test_P<N><Topic>_<X>;
+# tier filtering uses the prefix substring. Combine with -Filter for finer slicing.
+#
+# -FailFast forces per-process mode and aborts the batch on the first FAIL.
+# In batch mode the engine runs every test in one process regardless of
+# individual outcomes, so honoring FailFast requires the per-process path.
+#
+# -AssertionsLog <path> appends a one-line summary for each FAIL across the
+# batch -- test name + result JSON path + any failure message captured from
+# the JSON. Intended for grep-driven triage when a long-form test plan spits
+# out dozens of failures across many files. The file is OPENED FOR APPEND;
+# delete it manually between runs if you want a clean log.
+#
+# ASCII-only script body (no em-dashes, smart quotes, section signs, etc.) so
+# Windows PowerShell 5.1 can parse it without UTF-8/CP1252 mojibake -- see
+# Q-2026-05-12-005 for the diagnosis.
 
 [CmdletBinding()]
 param(
@@ -26,7 +51,13 @@ param(
     [int]$ExitAfterFrames = 600,
     [double]$FixedDt     = 0.01666,
     [switch]$Headless,
-    [switch]$PerProcess
+    [switch]$PerProcess,
+
+    # MVP-0.0.4 additions:
+    [ValidateRange(0, 4)]
+    [Nullable[int]]$Tier = $null,
+    [switch]$FailFast,
+    [string]$AssertionsLog = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,7 +76,7 @@ if (-not (Test-Path $ResultsDir)) {
 #   1. Renamed/removed tests leaving orphan JSON that the tally loop happily
 #      counts as passes.
 #   2. An engine crash mid-batch leaving the last few tests' JSONs untouched
-#      from the previous run — without a wipe, the script tallies those
+#      from the previous run -- without a wipe, the script tallies those
 #      stale passes alongside this run's partial results and reports
 #      success.
 # We only nuke *.json directly inside $ResultsDir to avoid clobbering
@@ -91,17 +122,43 @@ if ($Filter -ne "") {
     $tests = $tests | Where-Object { $_ -like "*$Filter*" }
 }
 
+# -Tier filter. Tier 0 is harness-sanity (Test_T0*); Tier N for N>=1 is
+# Test_P<N>* per TestPlan.md naming convention.
+if ($null -ne $Tier) {
+    if ($Tier -eq 0) {
+        $tierPrefix = 'Test_T0'
+    } else {
+        $tierPrefix = "Test_P$Tier"
+    }
+    $beforeCount = $tests.Count
+    $tests = $tests | Where-Object { $_ -like "$tierPrefix*" }
+    Write-Host "[run_dp_tests] -Tier $Tier filter: $beforeCount -> $($tests.Count) test(s) (prefix $tierPrefix)" -ForegroundColor Cyan
+}
+
 if ($tests.Count -eq 0) {
-    Write-Error "No tests discovered (Filter='$Filter')"
+    Write-Error "No tests discovered (Filter='$Filter', Tier=$Tier)"
     exit 1
 }
 
 Write-Host "[run_dp_tests] Found $($tests.Count) test(s):" -ForegroundColor Cyan
 $tests | ForEach-Object { Write-Host "    $_" }
 
-# -Filter forces per-process mode because the engine's --all-automated-tests
-# flag has no test-name filter (it runs every registered test).
-$useBatch = -not $PerProcess -and $Filter -eq ""
+# -Filter and -FailFast both force per-process mode:
+#   -Filter: engine's --all-automated-tests flag has no test-name filter.
+#   -FailFast: in batch mode the engine runs every test regardless of
+#              individual outcomes, so honoring FailFast requires per-process.
+# -Tier filters the test list BEFORE batch dispatch, so it does NOT force
+#   per-process by itself -- unless combined with FailFast/Filter.
+$useBatch = -not $PerProcess -and $Filter -eq "" -and -not $FailFast
+
+# AssertionsLog helper: append a one-line failure summary for a given test.
+function Append-AssertionLog {
+    param([string]$Name, [string]$JsonPath, [string]$Extra)
+    if ($AssertionsLog -eq "") { return }
+    $stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    $entry = "$stamp  FAIL  $Name  json=$JsonPath  $Extra"
+    Add-Content -Path $AssertionsLog -Value $entry
+}
 
 $passed = 0
 $failed = @()
@@ -131,12 +188,13 @@ if ($useBatch) {
     # Propagate a non-zero engine exit as a hard failure even if every JSON
     # the tally loop sees happens to say passed=true. The engine reports
     # 1 on any test failure, 2 on harness setup error, 3 on unrecoverable
-    # config error — combined with the pre-run JSON wipe above, this stops
+    # config error -- combined with the pre-run JSON wipe above, this stops
     # a partial batch (crashed mid-suite) from masking as success when the
     # last few result files weren't written.
     if ($exitCode -ne 0) {
-        Write-Host "[run_dp_tests] Engine exited non-zero — flagging batch as failed even if individual JSONs pass." -ForegroundColor Red
+        Write-Host "[run_dp_tests] Engine exited non-zero -- flagging batch as failed even if individual JSONs pass." -ForegroundColor Red
         $failed += "<batch:exit=$exitCode>"
+        Append-AssertionLog -Name "<batch>" -JsonPath "" -Extra "engine exited $exitCode"
     }
 
     # Tally from per-test JSON files written by the engine.
@@ -145,6 +203,7 @@ if ($useBatch) {
         if (-not (Test-Path $jsonPath)) {
             Write-Host "    MISSING $name (no JSON written)" -ForegroundColor Red
             $failed += $name
+            Append-AssertionLog -Name $name -JsonPath $jsonPath -Extra "JSON missing"
             continue
         }
         try {
@@ -152,20 +211,24 @@ if ($useBatch) {
         } catch {
             Write-Host "    UNPARSEABLE $name ($jsonPath)" -ForegroundColor Red
             $failed += $name
+            Append-AssertionLog -Name $name -JsonPath $jsonPath -Extra "json unparseable"
             continue
         }
         if ($obj.passed) {
             Write-Host "    PASS $name" -ForegroundColor Green
             $passed++
         } else {
+            $detail = ""
+            if ($obj.failures) { $detail = "failures=$($obj.failures.Count) frames=$($obj.frames)" }
             Write-Host "    FAIL $name ($jsonPath)" -ForegroundColor Red
             $failed += $name
+            Append-AssertionLog -Name $name -JsonPath $jsonPath -Extra $detail
         }
     }
 }
 else {
     # ---------------------------------------------------------------------
-    # Per-process mode: spawn one process per test (legacy / -Filter / -PerProcess).
+    # Per-process mode: spawn one process per test (legacy / -Filter / -PerProcess / -FailFast).
     # ---------------------------------------------------------------------
     foreach ($name in $tests) {
         $jsonPath = Join-Path $ResultsDir "$name.json"
@@ -188,16 +251,25 @@ else {
         } else {
             Write-Host "    FAIL exit=$code ($jsonPath)" -ForegroundColor Red
             $failed += $name
+            Append-AssertionLog -Name $name -JsonPath $jsonPath -Extra "exit=$code"
+            if ($FailFast) {
+                Write-Host "[run_dp_tests] -FailFast: aborting batch after first failure ($name)" -ForegroundColor Red
+                break
+            }
         }
     }
 }
 
 # 3. Summary ---------------------------------------------------------------
 Write-Host ""
-Write-Host "[run_dp_tests] Summary: $passed passed, $($failed.Count) failed" -ForegroundColor Cyan
-if ($failed.Count -gt 0) {
+$failCount = if ($null -eq $failed) { 0 } else { @($failed).Count }
+Write-Host "[run_dp_tests] Summary: $passed passed, $failCount failed" -ForegroundColor Cyan
+if ($failCount -gt 0) {
     Write-Host "Failed tests:" -ForegroundColor Red
     $failed | ForEach-Object { Write-Host "    $_" }
+    if ($AssertionsLog -ne "" -and (Test-Path $AssertionsLog)) {
+        Write-Host "Assertion log appended to: $AssertionsLog" -ForegroundColor Yellow
+    }
     exit 1
 }
 exit 0
