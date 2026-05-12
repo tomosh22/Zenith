@@ -1,0 +1,232 @@
+# DevilsPlayground PR tests (MVP-0.0.3).
+#
+# Builds the DevilsPlayground exe (same path as dp-pr.yml), provisions
+# the runtime DLLs that aren't tracked in repo (slang runtime from the
+# v2026.1 GitHub release; Vulkan loader from the LunarG SDK 1.3.290.0;
+# opencv via vcpkg), then runs `Tools/run_dp_tests.ps1 -Headless` and
+# uploads the per-test JSON results as a CI artifact.
+#
+# Required check name: `dp-tests`.
+#
+# This workflow duplicates the build steps from dp-pr.yml rather than
+# composing via workflow_run + artifact handoff. The composition approach
+# is cleaner but adds a stale-state failure mode that's not worth the
+# complexity for MVP-0.0.3. Wall-clock for both PR workflows runs in
+# parallel anyway -- the wasted compute is only ~10 min of vcpkg-cached
+# build time, not the full ~20 min cold path.
+#
+# File-size constraint: `slang-llvm.dll` is 105 MB (> GitHub's 100 MB
+# per-file commit limit), so the slang runtime DLLs CANNOT be tracked
+# in git -- they have to be fetched on every CI run. This step is the
+# largest single new failure surface vs MVP-0.0.2.
+
+name: dp-tests
+
+on:
+  pull_request:
+    branches: [ master ]
+  push:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+jobs:
+  dp-tests:
+    name: dp-tests
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      VCPKG_DISABLE_METRICS: 1
+      SLANG_VERSION: '2026.1'
+      VULKAN_SDK_VERSION: '1.3.290.0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Cache vcpkg installed/
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-pkgs-dptests-v1
+          restore-keys: |
+            vcpkg-x64-windows-pkgs-
+            vcpkg-x64-windows-
+
+      - name: Install vcpkg packages
+        shell: pwsh
+        run: |
+          $packages = @(
+              'assimp',
+              'curl',
+              'draco',
+              'kubazip',
+              'minizip',
+              'jhasse-poly2tri',
+              'pugixml',
+              'zlib'
+          )
+          & 'C:\vcpkg\vcpkg.exe' install @packages --triplet x64-windows --recurse
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & 'C:\vcpkg\vcpkg.exe' integrate install
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Cache Vulkan SDK
+        id: cache-vulkan
+        uses: actions/cache@v4
+        with:
+          path: C:\VulkanSDK\${{ env.VULKAN_SDK_VERSION }}
+          key: vulkan-sdk-${{ env.VULKAN_SDK_VERSION }}-v1
+
+      - name: Install Vulkan SDK
+        if: steps.cache-vulkan.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $version = $env:VULKAN_SDK_VERSION
+          $url = "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe"
+          Write-Host "Downloading Vulkan SDK $version from $url"
+          Invoke-WebRequest -Uri $url -OutFile vulkan-installer.exe -UseBasicParsing
+          Write-Host "Installing Vulkan SDK (silent)..."
+          $proc = Start-Process -FilePath .\vulkan-installer.exe `
+              -ArgumentList @(
+                  "--root", "C:\VulkanSDK\$version",
+                  "--accept-licenses",
+                  "--default-answer",
+                  "--confirm-command", "install"
+              ) `
+              -Wait -PassThru
+          if ($proc.ExitCode -ne 0) {
+              Write-Error "Vulkan SDK installer exited $($proc.ExitCode)"
+              exit 1
+          }
+          Write-Host "Vulkan SDK installed."
+
+      - name: Export Vulkan SDK env vars
+        shell: pwsh
+        run: |
+          $sdkRoot = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
+          echo "VULKAN_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "$sdkRoot\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Download Slang runtime DLLs (v${{ env.SLANG_VERSION }})
+        shell: pwsh
+        run: |
+          $version = $env:SLANG_VERSION
+          $url = "https://github.com/shader-slang/slang/releases/download/v$version/slang-$version-windows-x86_64.zip"
+          $tmpDir = 'C:\tmp\slang-release'
+          $zipPath = "$tmpDir\slang.zip"
+          New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
+          Expand-Archive -Path $zipPath -DestinationPath $tmpDir -Force
+          # Slang release layout: top-level bin/ contains DLLs; the .slang
+          # standard module dir is bin/slang-standard-module-<ver>/ which is
+          # already tracked in repo.
+          $candidates = Get-ChildItem -Path $tmpDir -Directory -Filter 'bin' -Recurse
+          if (-not $candidates) {
+              Write-Error "No 'bin' directory in slang release zip; layout changed?"
+              Get-ChildItem $tmpDir -Recurse | Select-Object FullName | Out-Host
+              exit 1
+          }
+          $slangBin = $candidates | Select-Object -First 1
+          Write-Host "Slang release bin: $($slangBin.FullName)"
+          # Repo target dir already exists (tracked .slang files); add the DLLs.
+          New-Item -ItemType Directory -Path 'Middleware\slang\bin' -Force | Out-Null
+          Copy-Item "$($slangBin.FullName)\*.dll" 'Middleware\slang\bin\' -Force
+          Write-Host "Slang DLLs provisioned:"
+          Get-ChildItem 'Middleware\slang\bin\*.dll' | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,1)}} | Format-Table -AutoSize | Out-String | Write-Host
+
+      - name: Regenerate solution (Sharpmake)
+        shell: pwsh
+        working-directory: Build
+        run: |
+          dotnet exec '..\Sharpmake\Sharpmake.Application.dll' "/sources('Sharpmake_Common.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs', 'Sharpmake_TilePuzzleRegistryViewer.cs')"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build DevilsPlayground
+        shell: pwsh
+        run: |
+          msbuild Build\zenith_win64.sln `
+              /t:DevilsPlayground `
+              /p:Configuration=vs2022_Debug_Win64_True `
+              /p:Platform=x64 `
+              /p:WindowsTargetPlatformVersion=10.0 `
+              -maxCpuCount:1 `
+              -nologo `
+              -clp:Summary `
+              -clp:ErrorsOnly
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Copy runtime DLLs into exe output dir
+        shell: pwsh
+        run: |
+          $exeDir = 'Games\DevilsPlayground\Build\output\win64\vs2022_debug_win64_true'
+          if (-not (Test-Path $exeDir)) {
+              Write-Error "exe output dir does not exist: $exeDir"
+              exit 1
+          }
+          # 1. All slang DLLs (the post-build event only copies slang.dll itself;
+          #    the rest of the slang dependency tree -- slang-rt, slang-glslang,
+          #    slang-glsl-module, slang-llvm, slang-compiler, gfx -- are needed
+          #    at runtime to avoid STATUS_DLL_NOT_FOUND).
+          Copy-Item 'Middleware\slang\bin\*.dll' $exeDir -Force
+          # 2. vulkan-1.dll from the Vulkan SDK (the system Windows runtime may
+          #    not have a loader installed on the CI runner).
+          $vkLoader = Join-Path $env:VULKAN_SDK 'Bin\vulkan-1.dll'
+          if (Test-Path $vkLoader) {
+              Copy-Item $vkLoader $exeDir -Force
+          } else {
+              Write-Warning "vulkan-1.dll not found at $vkLoader; relying on system loader."
+          }
+          # 3. opencv: not in repo, not in vcpkg's auto-applocal step (opencv
+          #    isn't in the install list). For MVP-0.0.3 we omit it -- the
+          #    DevilsPlayground exe doesn't directly load OpenCV at runtime
+          #    (it's used by Tools/ZenithTools for asset import). Tests should
+          #    not hit this. If they do, surface as a known gap and iterate.
+          Write-Host "DLLs in exe output dir:"
+          Get-ChildItem "$exeDir\*.dll" | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,1)}} | Sort-Object Name | Format-Table -AutoSize | Out-String | Write-Host
+
+      - name: Verify exe boots far enough to enumerate tests
+        shell: pwsh
+        run: |
+          $exe = 'Games\DevilsPlayground\Build\output\win64\vs2022_debug_win64_true\devilsplayground.exe'
+          # --list-automated-tests exits 0 cleanly without entering main loop;
+          # if Vulkan loader / device init blocks early we'll see it here before
+          # spending 10 minutes running the whole test batch.
+          $out = & $exe --list-automated-tests --skip-tool-exports --skip-unit-tests 2>&1
+          $code = $LASTEXITCODE
+          Write-Host "exe --list exited $code; first 30 lines:"
+          $out | Select-Object -First 30 | Out-Host
+          if ($code -ne 0) {
+              Write-Host "... tail (last 40 lines) ..."
+              $out | Select-Object -Last 40 | Out-Host
+              Write-Error "exe failed to enumerate tests (exit $code) -- engine can't boot on this runner."
+              exit 1
+          }
+
+      - name: Run DP tests
+        shell: pwsh
+        run: |
+          # pwsh 7+ handles UTF-8 cleanly (the runner script has em-dashes
+          # in its top-of-file usage comment that crash PS5.1 -- see
+          # Questions.md Q-2026-05-12-005). windows-latest has pwsh
+          # preinstalled at C:\Program Files\PowerShell\7\pwsh.exe.
+          & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File '.\Tools\run_dp_tests.ps1' -Headless
+          $testExit = $LASTEXITCODE
+          Write-Host "run_dp_tests exit: $testExit"
+          if ($testExit -ne 0) { exit $testExit }
+
+      - name: Upload test result JSON artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dp-test-results
+          path: build/dp_test_results/
+          if-no-files-found: warn
