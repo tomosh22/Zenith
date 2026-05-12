@@ -83,7 +83,7 @@ jobs:
               'draco',
               'kubazip',
               'minizip',
-              'poly2tri',
+              'jhasse-poly2tri',
               'pugixml',
               'zlib'
           )
