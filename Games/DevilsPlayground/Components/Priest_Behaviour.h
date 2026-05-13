@@ -37,6 +37,7 @@
 #include "Physics/Zenith_Physics.h"
 
 #include "Source/PublicInterfaces.h"
+#include "Source/DP_Tuning.h"
 #include "Components/DP_BT_Nodes.h"
 #include "Components/DPVillager_Behaviour.h"
 
@@ -53,6 +54,24 @@ public:
 
 	void OnAwake() ZENITH_FINAL override
 	{
+		// MVP-0.1.3: read priest tuning from DP_Tuning instead of hard-coded
+		// initializers. Resolves the existing drift between the prototype's
+		// hardcodes (sight=20, hearing=25, FOV=120, move=5, peripheral=FOV*1.25)
+		// and Tuning.json / GDD §4.5 (sight=25, hearing=30, FOV=110, pursue=7,
+		// peripheral=130). After this hook, every priest field below mirrors
+		// Tuning.json exactly.
+		m_fSuspicionRadius      = DP_Tuning::Get<float>("priest.suspicion_radius_m");
+		m_fInvestigateMaxAge    = DP_Tuning::Get<float>("priest.investigate_max_age_s");
+		m_fHearingRange         = DP_Tuning::Get<float>("priest.hearing_range_m");
+		m_fHearingLoudnessThr   = DP_Tuning::Get<float>("priest.hearing_loudness_threshold");
+		m_fSightRange           = DP_Tuning::Get<float>("priest.sight_range_m");
+		m_fSightFOV             = DP_Tuning::Get<float>("priest.sight_fov_deg");
+		m_fSightPeripheral      = DP_Tuning::Get<float>("priest.sight_peripheral_deg");
+		m_fSightEyeHeight       = DP_Tuning::Get<float>("priest.sight_eye_height_m");
+		m_fSightAwarenessGain   = DP_Tuning::Get<float>("priest.sight_awareness_gain_rate");
+		m_fSightAwarenessDecay  = DP_Tuning::Get<float>("priest.sight_awareness_decay_rate");
+		m_fMoveSpeed            = DP_Tuning::Get<float>("priest.pursue_speed_mps");
+
 		// Ensure the AIAgent component is on this entity. The scene authoring
 		// step `AddStep_AddComponent("AIAgent")` resolves through
 		// Zenith_ComponentRegistry, which fails silently when the AIAgent's
@@ -76,17 +95,17 @@ public:
 
 		Zenith_HearingConfig xHearing;
 		xHearing.m_fMaxRange         = m_fHearingRange;
-		xHearing.m_fLoudnessThreshold = 0.05f;
+		xHearing.m_fLoudnessThreshold = m_fHearingLoudnessThr;
 		Zenith_PerceptionSystem::SetHearingConfig(xSelf, xHearing);
 
 		Zenith_SightConfig xSight;
 		xSight.m_fMaxRange            = m_fSightRange;
 		xSight.m_fFOVAngle            = m_fSightFOV;
-		xSight.m_fPeripheralAngle     = m_fSightFOV * 1.25f;  // wider peripheral
-		xSight.m_fEyeHeight           = 1.6f;
+		xSight.m_fPeripheralAngle     = m_fSightPeripheral;
+		xSight.m_fEyeHeight           = m_fSightEyeHeight;
 		xSight.m_bRequireLineOfSight  = true;
-		xSight.m_fAwarenessGainRate   = 2.0f;
-		xSight.m_fAwarenessDecayRate  = 0.5f;
+		xSight.m_fAwarenessGainRate   = m_fSightAwarenessGain;
+		xSight.m_fAwarenessDecayRate  = m_fSightAwarenessDecay;
 		Zenith_PerceptionSystem::SetSightConfig(xSelf, xSight);
 
 		// Reset blackboard transient state — Editor Stop/Play replay would
@@ -301,10 +320,38 @@ private:
 	Zenith_NavMeshAgent m_xNavAgent;
 	uint32_t            m_uDebugFrameCounter = 0;
 
-	float m_fSuspicionRadius   = 15.0f;
-	float m_fInvestigateMaxAge = 5.0f; // seconds — older heard sounds are stale
-	float m_fHearingRange      = 25.0f;
-	float m_fSightRange        = 20.0f;
-	float m_fSightFOV          = 120.0f;
-	float m_fMoveSpeed         = 5.0f;
+	// Class-body initializers below are FALLBACKS only -- production gameplay
+	// always overwrites them in OnAwake via DP_Tuning::Get<float>() reads.
+	// Values picked to match Tuning.json's ratified constants so a misordered
+	// init still produces sensible behaviour.
+	float m_fSuspicionRadius     = 15.0f;
+	float m_fInvestigateMaxAge   = 5.0f;
+	float m_fHearingRange        = 30.0f;
+	float m_fHearingLoudnessThr  = 0.05f;
+	float m_fSightRange          = 25.0f;
+	float m_fSightFOV            = 110.0f;
+	float m_fSightPeripheral     = 130.0f;
+	float m_fSightEyeHeight      = 1.6f;
+	float m_fSightAwarenessGain  = 2.0f;
+	float m_fSightAwarenessDecay = 0.5f;
+	float m_fMoveSpeed           = 7.0f;
+
+#ifdef ZENITH_INPUT_SIMULATOR
+public:
+	// Test-only accessors -- MVP-0.1.3's Test_P1Tuning_PriestValuesMatchConfig
+	// reads these back to verify DP_Tuning propagated correctly. Production
+	// gameplay doesn't read priest tuning externally (perception system consumes
+	// the values inside OnAwake, BT actions consume m_fMoveSpeed indirectly via
+	// the NavMeshAgent).
+	float GetSuspicionRadius() const     { return m_fSuspicionRadius; }
+	float GetHearingRange() const        { return m_fHearingRange; }
+	float GetHearingLoudnessThr() const  { return m_fHearingLoudnessThr; }
+	float GetSightRange() const          { return m_fSightRange; }
+	float GetSightFOV() const            { return m_fSightFOV; }
+	float GetSightPeripheral() const     { return m_fSightPeripheral; }
+	float GetSightEyeHeight() const      { return m_fSightEyeHeight; }
+	float GetSightAwarenessGain() const  { return m_fSightAwarenessGain; }
+	float GetSightAwarenessDecay() const { return m_fSightAwarenessDecay; }
+	float GetMoveSpeed() const           { return m_fMoveSpeed; }
+#endif
 };
