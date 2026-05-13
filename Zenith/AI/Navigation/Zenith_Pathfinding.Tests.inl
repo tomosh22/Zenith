@@ -300,3 +300,126 @@ void Zenith_UnitTests::TestPathfindingPartialPath(){
 
 }
 
+
+// ============================================================================
+// Smoother regression: shortcut must NOT cross a carved-out region of the
+// navmesh (e.g., the area beneath a wall on the floor mesh). Geometric
+// Raycast on a flat navmesh trivially "passes through" the gap because no
+// polygon plane sits in the gap to intersect. The SegmentExitsNavMesh
+// probe in SmoothPath catches this by sampling the line and asserting
+// every sample lands on a polygon at roughly the same Y as the endpoints.
+//
+// Setup:
+//   Two adjacent floor polygons at y=0.0, separated horizontally by a
+//   1m gap (no polygon between them). Both polygons are flagged as
+//   neighbours via `SetNeighbor` (matching the real-world bug where
+//   shared vertex indices in the grid-stamped polygon mesh make two
+//   floor polygons across a carved-out wall footprint claim adjacency).
+//
+//   A separate "wall-top" polygon at y=1.0 sits ABOVE the gap. Without
+//   the height-aware probe, FindPolygonContaining would find this
+//   wall-top polygon for samples at y=0.0 in the gap and report "still
+//   on the navmesh" -- masking the hole. The probe's vertical tolerance
+//   (0.5m) excludes the wall-top from the y=0.0 sample's match.
+// ============================================================================
+ZENITH_TEST(AI, PathfindingSmootherRejectsCarvedShortcut) { Zenith_UnitTests::TestPathfindingSmootherRejectsCarvedShortcut(); }
+
+void Zenith_UnitTests::TestPathfindingSmootherRejectsCarvedShortcut(){
+	Zenith_NavMesh xNavMesh;
+
+	// Two floor polygons at y=0, both 2m x 2m, separated by a 1m gap in z.
+	// West polygon: x in [0,2], z in [0,2]
+	// East polygon: x in [0,2], z in [3,5]
+	// Gap: z in [2,3]
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));  // 0
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));  // 1
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 0.0f, 2.0f));  // 2
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 2.0f));  // 3
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 3.0f));  // 4
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 0.0f, 3.0f));  // 5
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 0.0f, 5.0f));  // 6
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f));  // 7
+
+	// Wall-top polygon at y=1.0 spanning the gap (z in [2,3]).
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 1.0f, 2.0f));  // 8
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 1.0f, 2.0f));  // 9
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 1.0f, 3.0f));  // 10
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 1.0f, 3.0f));  // 11
+
+	Zenith_Vector<uint32_t> axWest, axEast, axWallTop;
+	axWest.PushBack(0); axWest.PushBack(1); axWest.PushBack(2); axWest.PushBack(3);
+	axEast.PushBack(4); axEast.PushBack(5); axEast.PushBack(6); axEast.PushBack(7);
+	axWallTop.PushBack(8); axWallTop.PushBack(9); axWallTop.PushBack(10); axWallTop.PushBack(11);
+
+	xNavMesh.AddPolygon(axWest);     // poly 0
+	xNavMesh.AddPolygon(axEast);     // poly 1
+	xNavMesh.AddPolygon(axWallTop);  // poly 2
+	xNavMesh.BuildSpatialGrid();
+
+	// Force-claim that poly 0 and poly 1 are neighbours (the bug-state).
+	// In production this happens via the grid-vertex-matching adjacency
+	// pass when a wall carves cells out -- adjacent floor polygons on
+	// opposite sides claim adjacency via shared vertex indices despite
+	// no real connection.
+	xNavMesh.SetNeighbor(0, /*edge=*/2, 1);
+	xNavMesh.SetNeighbor(1, /*edge=*/0, 0);
+
+	// Build a 2-waypoint candidate path from west to east. The smoother
+	// will try to shortcut start->end directly across the gap. With the
+	// fix, that shortcut is rejected because samples at y=0 in z in [2,3]
+	// find no polygon at the floor level (the wall-top at y=1.0 is too
+	// far away vertically given the 0.5m probe tolerance).
+	Zenith_Vector<Zenith_Maths::Vector3> axPath;
+	axPath.PushBack(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));   // west centre
+	axPath.PushBack(Zenith_Maths::Vector3(1.0f, 0.0f, 2.5f));   // gap midpoint -- intermediate
+	axPath.PushBack(Zenith_Maths::Vector3(1.0f, 0.0f, 4.0f));   // east centre
+
+	Zenith_Pathfinding::SmoothPath(axPath, xNavMesh);
+
+	// After smoothing the intermediate waypoint must REMAIN because the
+	// start->end shortcut crosses the gap. If smoothing reduced to 2
+	// waypoints, the regression has come back.
+	ZENITH_ASSERT_GE(axPath.GetSize(), 3,
+		"SmoothPath must NOT shortcut across the carved-out region");
+}
+
+// ============================================================================
+// Companion test: verify the smoother still smooths valid shortcuts that
+// don't cross gaps. Without this counter-check, an over-aggressive
+// SegmentExitsNavMesh probe (e.g., too-tight vertical tolerance) would
+// silently break smoothing for all paths.
+// ============================================================================
+ZENITH_TEST(AI, PathfindingSmootherAcceptsValidShortcut) { Zenith_UnitTests::TestPathfindingSmootherAcceptsValidShortcut(); }
+
+void Zenith_UnitTests::TestPathfindingSmootherAcceptsValidShortcut(){
+	Zenith_NavMesh xNavMesh;
+
+	// Two adjacent floor polygons forming a 4m x 2m rectangle.
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));  // 0
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));  // 1 shared
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 0.0f, 2.0f));  // 2 shared
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 2.0f));  // 3
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));  // 4
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(4.0f, 0.0f, 2.0f));  // 5
+
+	Zenith_Vector<uint32_t> axLeft, axRight;
+	axLeft.PushBack(0);  axLeft.PushBack(1);  axLeft.PushBack(2);  axLeft.PushBack(3);
+	axRight.PushBack(1); axRight.PushBack(4); axRight.PushBack(5); axRight.PushBack(2);
+
+	xNavMesh.AddPolygon(axLeft);
+	xNavMesh.AddPolygon(axRight);
+	xNavMesh.ComputeAdjacency();
+	xNavMesh.BuildSpatialGrid();
+
+	// Build a 3-waypoint path with a redundant intermediate. The smoother
+	// should reduce it to 2 waypoints because nothing is in the way.
+	Zenith_Vector<Zenith_Maths::Vector3> axPath;
+	axPath.PushBack(Zenith_Maths::Vector3(0.5f, 0.0f, 1.0f));
+	axPath.PushBack(Zenith_Maths::Vector3(2.0f, 0.0f, 1.0f));  // portal midpoint -- redundant
+	axPath.PushBack(Zenith_Maths::Vector3(3.5f, 0.0f, 1.0f));
+
+	Zenith_Pathfinding::SmoothPath(axPath, xNavMesh);
+
+	ZENITH_ASSERT_EQ(axPath.GetSize(), 2,
+		"SmoothPath must collapse a redundant intermediate when the line is clear");
+}
