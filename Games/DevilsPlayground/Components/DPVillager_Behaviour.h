@@ -29,6 +29,7 @@
 #include "Source/DPInputActions.h"
 #include "Source/DPMaterials.h"
 #include "Source/DP_Tuning.h"
+#include "Source/DP_Archetypes.h"
 
 #include <cstdio>
 
@@ -49,13 +50,15 @@ public:
 
 	void OnAwake() ZENITH_FINAL override
 	{
-		// MVP-0.1.2: read tuning constants from DP_Tuning (Config/Tuning.json)
-		// instead of hard-coded field initializers. Run before m_fRemainingLife
-		// is seeded below so the timer uses the tuned value. The class-body
-		// initializers (m_fMaxLife = 30.0f, m_fMoveSpeed = 8.0f) are now
-		// fallbacks only; production gameplay always overwrites them here.
-		m_fMaxLife   = DP_Tuning::Get<float>("possession.life_timer_default_s");
-		m_fMoveSpeed = DP_Tuning::Get<float>("movement.jog_speed_mps");
+		// MVP-0.2.3: apply the archetype's life_timer + jog_speed. Archetype
+		// id is stored in m_strArchetypeId; default "Farmhand" matches the
+		// pre-MVP-0.2.3 behaviour (life=30s, jog=8m/s). Per-villager authoring
+		// or test setup can override via ApplyArchetype("Beggar") /
+		// ApplyArchetype("Child") to switch stats before OnAwake fires (call
+		// pattern: SetArchetype on the freshly-attached script before the
+		// Awake wave drains in EditorAutomation), or after OnAwake to retune
+		// at runtime.
+		ApplyArchetype(m_strArchetypeId.c_str());
 
 		// Reset transient state — Editor Stop/Play would otherwise leave a
 		// stale possession flag from a previous play session.
@@ -142,6 +145,59 @@ public:
 
 	float GetRemainingLife() const { return m_fRemainingLife; }
 	float GetMaxLife() const { return m_fMaxLife; }
+	const std::string& GetArchetypeId() const { return m_strArchetypeId; }
+
+	// Re-resolve stats from DP_Archetypes for a new archetype id. Persists
+	// the id and re-seeds m_fMaxLife + m_fMoveSpeed; resets m_fRemainingLife
+	// only if the villager isn't currently possessed (a mid-possession swap
+	// would otherwise interrupt the player's life-timer countdown). MVP-0.2.3
+	// authoring path: scene authoring calls SetArchetype("...") on the
+	// freshly-attached script before the OnAwake wave drains so the entity
+	// awakens with archetype-correct stats. Falls back to DP_Tuning's
+	// possession.life_timer_default_s + movement.jog_speed_mps if the
+	// archetype id is missing or DP_Archetypes wasn't initialized.
+	void ApplyArchetype(const char* szId)
+	{
+		if (szId != nullptr) m_strArchetypeId = szId;
+		float fLife  = DP_Tuning::Get<float>("possession.life_timer_default_s");
+		float fSpeed = DP_Tuning::Get<float>("movement.jog_speed_mps");
+		if (m_strArchetypeId.empty()) m_strArchetypeId = "Farmhand";
+		const DP_Archetypes::Archetype* pxA = nullptr;
+		if (DP_Archetypes::Count() > 0)
+		{
+			// Use FindByIndex linear scan so a missing-id silently falls back
+			// to DP_Tuning rather than asserting (matches the soft-fail style
+			// of LoadModel for missing assets on fresh CI checkouts).
+			for (size_t u = 0; u < DP_Archetypes::Count(); ++u)
+			{
+				const DP_Archetypes::Archetype* pxCandidate = DP_Archetypes::GetByIndex(u);
+				if (pxCandidate && pxCandidate->id == m_strArchetypeId)
+				{
+					pxA = pxCandidate;
+					break;
+				}
+			}
+		}
+		if (pxA != nullptr)
+		{
+			fLife  = pxA->life_timer_s;
+			fSpeed = pxA->jog_speed_mps;
+		}
+		m_fMaxLife   = fLife;
+		m_fMoveSpeed = fSpeed;
+		if (!m_bIsPossessed)
+		{
+			m_fRemainingLife = m_fMaxLife;
+		}
+	}
+
+	// Pre-OnAwake authoring setter: stash the id so the next OnAwake call
+	// resolves with the new archetype. Does NOT immediately apply -- safe to
+	// call from EditorAutomation before the Awake wave fires.
+	void SetArchetype(const char* szId)
+	{
+		if (szId != nullptr) m_strArchetypeId = szId;
+	}
 	// Test-only accessor — MVP-0.1.2's Test_P1Villager_TuningMigration reads
 	// the move speed back to verify it matches DP_Tuning's
 	// movement.jog_speed_mps after OnAwake. Production gameplay never reads
@@ -373,6 +429,11 @@ private:
 
 	float m_fMaxLife        = 30.0f;
 	float m_fRemainingLife  = 30.0f;
+	// MVP-0.2.3: archetype id (resolved at OnAwake via DP_Archetypes). Default
+	// "Farmhand" keeps pre-MVP-0.2.3 stats (life=30s, jog=8m/s) for scenes
+	// that don't yet override per-villager. Updated through SetArchetype()
+	// before OnAwake or ApplyArchetype() at runtime.
+	std::string m_strArchetypeId = "Farmhand";
 	// 8 m/s — a brisk jog. The previous 4 m/s value made the
 	// HumanPlaythrough_Test miss the 3-minute wall-clock budget by a wide
 	// margin; doubling it cuts every walk leg in half without changing
