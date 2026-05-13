@@ -1,6 +1,13 @@
-# DevilsPlayground tests (MVP-0.0.3 skeleton -- DISABLED auto-triggers).
+# DevilsPlayground tests (MVP-0.0.3 — ACTIVE PR gate as of 2026-05-13).
 #
-# **CURRENT STATE: workflow_dispatch ONLY -- does NOT gate PRs.**
+# **CURRENT STATE: pull_request + push triggers ACTIVE; required check on master.**
+# How: the engine has a `--headless` boot mode (Zenith_CommandLine::IsHeadless)
+# that short-circuits Flux init / VMA leaf functions / Editor flush paths /
+# view-creation null-handle asserts. 9 graphics-mandatory DP tests are tagged
+# `m_bRequiresGraphics = true` and the harness skips them (counts as pass).
+# See DecisionLog 2026-05-13 entry on Q-2026-05-12-007 for full rationale.
+#
+# Historical context (kept for the next "this approach blocked, what now?" moment):
 #
 # Why disabled: the DP exe is Vulkan-mandatory at boot (it calls
 # vkEnumeratePhysicalDevices during Flux::EarlyInitialise and waits for
@@ -43,7 +50,11 @@
 name: dp-tests
 
 on:
-  # Disabled auto-triggers; see header comment for rationale.
+  # Active PR gate as of 2026-05-13; see Docs/DecisionLog.md entry on Q-2026-05-12-007.
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       runner:
@@ -282,9 +293,10 @@ jobs:
         run: |
           $exe = 'Games\DevilsPlayground\Build\output\win64\vs2022_debug_win64_true\devilsplayground.exe'
           # --list-automated-tests exits 0 cleanly without entering main loop;
-          # if Vulkan loader / device init blocks early we'll see it here before
-          # spending 10 minutes running the whole test batch.
-          $out = & $exe --list-automated-tests --skip-tool-exports --skip-unit-tests 2>&1
+          # --headless skips Vulkan init entirely (Zenith_CommandLine::IsHeadless
+          # short-circuits Flux::EarlyInitialise / LateInitialise / Shutdown so
+          # vkEnumeratePhysicalDevices never runs on the GPU-less runner).
+          $out = & $exe --list-automated-tests --skip-tool-exports --skip-unit-tests --headless 2>&1
           $code = $LASTEXITCODE
           Write-Host "exe --list exited $code; first 30 lines:"
           $out | Select-Object -First 30 | Out-Host

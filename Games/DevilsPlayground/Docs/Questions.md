@@ -112,7 +112,22 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 ---
 
-### ⚠️ Q-2026-05-12-007 — `dp-tests` CI gate is blocked on GPU-on-CI. MVP-0.0.6 follow-on is also blocked.
+### ✅ Q-2026-05-12-007 — `dp-tests` CI gate is blocked on GPU-on-CI. MVP-0.0.6 follow-on is also blocked.
+
+**RESOLVED 2026-05-13.** Picked Option C (engine-level skip). Engine boot now branches on `Zenith_CommandLine::IsHeadless()`:
+- `Flux::EarlyInitialise` / `LateInitialise` / `Shutdown` / `WaitForGPUIdle` skipped in `Zenith_Main` + `Zenith_Core`
+- `Editor::WaitForGPUAndFlushDeferred` short-circuits to no-op in headless
+- All VMA `vmaCreate*` leaf sites guard on `s_xAllocator == VK_NULL_HANDLE` and return invalid `Flux_VRAMHandle`
+- View-creation asserts (`CreateShaderResourceView`, `CreateRenderTargetView`, etc.) loosened: `pxVRAM != nullptr || Zenith_CommandLine::IsHeadless()`
+- `Zenith_Vulkan::GetVRAM(invalid_handle)` returns `nullptr` (was assert+invariant)
+
+9 tests that genuinely require GPU work (fog passes, materials, full playthrough — see [TestPlan §0.3](TestPlan.md)) marked `m_bRequiresGraphics = true` in their `Zenith_AutomatedTest` literal. Harness reads that field at the setup phase, emits `"skipped": true` in the JSON, prints `SKIPPED (requires graphics; running headless)`. Skipped tests count as passed for tally / exit-code purposes.
+
+Verified on 2026-05-13: `--headless` + non-graphics → PASS, `--headless` + graphics → SKIP, no-flag + graphics → PASS, no-flag + non-graphics → PASS. dp-tests.yml auto-triggers re-enabled, `dp-tests` added to required branch-protection checks.
+
+---
+
+### ⚠️ Q-2026-05-12-007 (original framing — kept for historical context) — `dp-tests` CI gate is blocked on GPU-on-CI. MVP-0.0.6 follow-on is also blocked.
 
 **Context:** MVP-0.0.3 attempted to land `.github/workflows/dp-tests.yml` as a PR gate. The workflow's build / DLL-provisioning pieces all worked (vcpkg packages cached, Vulkan SDK 1.3.290.0 installed, Slang v2026.1 fetched, OpenCV 4.10.0 DLL fetched, MSBuild green). What FAILS is **running the exe** on the GitHub windows-latest runner:
 

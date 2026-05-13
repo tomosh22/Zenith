@@ -1418,6 +1418,14 @@ Flux_VRAMHandle Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)
 
 Zenith_Vulkan_VRAM* Zenith_Vulkan::GetVRAM(const Flux_VRAMHandle xHandle)
 {
+	// Headless mode (Zenith_CommandLine::IsHeadless()): Create*VRAM returns
+	// invalid (UINT32_MAX) handles, and asset-load paths still propagate them
+	// to view-creation / upload sites that read via GetVRAM. Return nullptr
+	// instead of asserting so those sites' existing null-pxVRAM guards run.
+	if (!xHandle.IsValid())
+	{
+		return nullptr;
+	}
 	Zenith_Assert(xHandle.AsUInt() < s_xVRAMRegistry.size(), "Invalid VRAM handle");
 	return s_xVRAMRegistry[xHandle.AsUInt()];
 }

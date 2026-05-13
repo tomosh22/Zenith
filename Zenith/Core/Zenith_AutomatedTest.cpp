@@ -7,6 +7,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "Core/Zenith_CommandLine.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -109,6 +110,13 @@ namespace
 		// BetweenTests sub-state: counts frames since the boot-scene reload
 		// was triggered. -1 = scene reload not yet triggered for this gap.
 		int                             m_iBetweenTestsFrame = -1;
+		// Set when ResetSimulatorAndCallSetup detects that the current test
+		// requires graphics but the harness is running --headless. Causes
+		// VerifyAndExit to skip the Verify() call, emit a SKIPPED log line,
+		// and write results JSON with skipped=true. Reused via the same
+		// advance/finalise code path so we don't duplicate state-machine
+		// bookkeeping.
+		bool                            m_bSkipCurrentTest   = false;
 	};
 	RunnerState s_xRunner;
 
@@ -264,7 +272,8 @@ void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
 // ============================================================================
 static void WriteResultsJson(const RunnerState& xRunner,
                              const Zenith_AutomatedTest* pxTest,
-                             bool bPassed)
+                             bool bPassed,
+                             bool bSkipped = false)
 {
 	// Resolve the output path. In batch mode prefer m_szResultsDir/<name>.json;
 	// in single mode use m_szResultsPath verbatim. If neither is set, skip.
@@ -304,11 +313,13 @@ static void WriteResultsJson(const RunnerState& xRunner,
 		"  \"name\": \"%s\",\n"
 		"  \"passed\": %s,\n"
 		"  \"frames\": %d,\n"
-		"  \"failures\": []\n"
+		"  \"failures\": [],\n"
+		"  \"skipped\": %s\n"
 		"}\n",
 		szName,
 		bPassed ? "true" : "false",
-		xRunner.m_iStepFrame);
+		xRunner.m_iStepFrame,
+		bSkipped ? "true" : "false");
 	std::fclose(pxFile);
 }
 
@@ -358,12 +369,32 @@ bool Zenith_AutomatedTestRunner::Tick()
 	}
 	case HarnessPhase::ResetSimulatorAndCallSetup:
 	{
+		const Zenith_AutomatedTest* pxTest = CurrentTest();
+
+		// Headless skip: tests that need Flux state (material assets, fog hole
+		// tables, render hooks, visual wiring) opt in via m_bRequiresGraphics.
+		// In --headless we skip them BEFORE running Setup so they don't crash
+		// dereferencing null Flux state. Transition straight to VerifyAndExit
+		// with the skip flag set; VerifyAndExit reuses its existing advance /
+		// finalise path so suite tally + JSON emission stay consistent.
+		if (pxTest != nullptr
+		    && pxTest->m_bRequiresGraphics
+		    && Zenith_CommandLine::IsHeadless())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[AutomatedTest] %s: SKIPPED (requires graphics; running headless)",
+				pxTest->m_szName ? pxTest->m_szName : "(unknown)");
+			s_xRunner.m_bSkipCurrentTest = true;
+			s_xRunner.m_iStepFrame       = 0;
+			s_xRunner.m_ePhase           = HarnessPhase::VerifyAndExit;
+			return true;
+		}
+
 		Zenith_InputSimulator::ResetAllInputState();
 		if (s_xRunner.m_fFixedDt > 0.0f)
 		{
 			Zenith_InputSimulator::SetFixedDt(s_xRunner.m_fFixedDt);
 		}
-		const Zenith_AutomatedTest* pxTest = CurrentTest();
 		if (pxTest != nullptr && pxTest->m_pfnSetup != nullptr)
 		{
 			pxTest->m_pfnSetup();
@@ -402,25 +433,29 @@ bool Zenith_AutomatedTestRunner::Tick()
 	case HarnessPhase::VerifyAndExit:
 	{
 		const Zenith_AutomatedTest* pxTest = CurrentTest();
+		const bool bSkipped = s_xRunner.m_bSkipCurrentTest;
 		bool bPassed = true;
-		if (pxTest != nullptr && pxTest->m_pfnVerify != nullptr)
+		if (!bSkipped && pxTest != nullptr && pxTest->m_pfnVerify != nullptr)
 		{
 			bPassed = pxTest->m_pfnVerify();
 		}
 		s_xRunner.m_bVerifyPassed = bPassed;
 		s_xRunner.m_bVerifyReported = true;
 
-		WriteResultsJson(s_xRunner, pxTest, bPassed);
+		WriteResultsJson(s_xRunner, pxTest, bPassed, bSkipped);
 
 		std::printf("[AutomatedTest] %s: %s (%d frames)\n",
 			pxTest && pxTest->m_szName ? pxTest->m_szName : "(unknown)",
-			bPassed ? "PASSED" : "FAILED",
+			bSkipped ? "SKIPPED" : (bPassed ? "PASSED" : "FAILED"),
 			s_xRunner.m_iStepFrame);
 		std::fflush(stdout);
 
 		++s_xRunner.m_iTotalTests;
 		if (bPassed)
 		{
+			// Skipped tests count as passed for tally purposes (non-failure);
+			// the JSON's skipped:true field is what tooling reads to
+			// disambiguate skipped from actually-passed.
 			++s_xRunner.m_iPassedTests;
 		}
 		else
@@ -439,6 +474,7 @@ bool Zenith_AutomatedTestRunner::Tick()
 			s_xRunner.m_iBetweenTestsFrame = -1;  // signals "trigger reload on next BetweenTests tick"
 			s_xRunner.m_bVerifyReported    = false;
 			s_xRunner.m_bVerifyPassed      = false;
+			s_xRunner.m_bSkipCurrentTest   = false;
 			s_xRunner.m_ePhase             = HarnessPhase::BetweenTests;
 			return true;
 		}

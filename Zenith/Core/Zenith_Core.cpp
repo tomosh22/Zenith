@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Zenith_Core.h"
+#include "Core/Zenith_CommandLine.h"
 
 // InputSimulator + AutomatedTest are both gated on ZENITH_INPUT_SIMULATOR. The
 // nested #ifdef the previous version emitted around the AutomatedTest include
@@ -160,6 +161,8 @@ void Zenith_Core::Zenith_MainLoop()
 	// to live behind Flux_PlatformAPI::BeginFrame). The PROFILE index name is
 	// kept the same so the profiler timeline is comparable to pre-extraction
 	// runs.
+	// Flux_PerFrame::BeginFrame is a NOP when no backend callbacks are
+	// registered (i.e. in --headless where Flux::EarlyInitialise was skipped).
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PerFrame::BeginFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME);
 
 	UpdateTimers();
@@ -170,25 +173,32 @@ void Zenith_Core::Zenith_MainLoop()
 	// Process async asset load callbacks on main thread
 	Zenith_AsyncAssetLoader::ProcessCompletedLoads();
 
-	Flux_MemoryManager::BeginFrame();
-	if (!Flux_Swapchain::BeginFrame())
+	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux_MemoryManager::EndFrame(false);
-		// Skipped frame still fires end-frame callbacks so the deferred VRAM
-		// deletion clock ticks, but we deliberately DON'T advance the ring
-		// counter — a rapid-resize sequence of consecutive skips would
-		// otherwise wrap the counter past valid fences and shorten the
-		// effective MAX_FRAMES_IN_FLIGHT+1 deferred-deletion grace period.
-		Flux_PerFrame::FireEndCallbacks();
-		return;
+		Flux_MemoryManager::BeginFrame();
+		if (!Flux_Swapchain::BeginFrame())
+		{
+			Flux_MemoryManager::EndFrame(false);
+			// Skipped frame still fires end-frame callbacks so the deferred VRAM
+			// deletion clock ticks, but we deliberately DON'T advance the ring
+			// counter — a rapid-resize sequence of consecutive skips would
+			// otherwise wrap the counter past valid fences and shorten the
+			// effective MAX_FRAMES_IN_FLIGHT+1 deferred-deletion grace period.
+			Flux_PerFrame::FireEndCallbacks();
+			return;
+		}
 	}
 
-	bool bSubmitRenderWork = true;
+	bool bSubmitRenderWork = !Zenith_CommandLine::IsHeadless();
 #ifdef ZENITH_TOOLS
 	// CRITICAL: Update editor BEFORE any game logic or rendering
 	// This is where deferred scene loads happen (from "Open Scene" menu)
 	// Must occur when no render tasks are active to avoid concurrent access to scene data
-	bSubmitRenderWork = Zenith_Editor::Update();
+	bool bEditorWantsRender = Zenith_Editor::Update();
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		bSubmitRenderWork = bEditorWantsRender;
+	}
 
 	// Skip physics and scene updates when editor is paused or stopped
 	// Only run game simulation when in Playing mode
@@ -224,11 +234,16 @@ void Zenith_Core::Zenith_MainLoop()
 	Zenith_InputSimulator::EndOfFrameTickComplete();
 #endif
 
-	Flux_Graphics::UploadFrameConstants();
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Flux_Graphics::UploadFrameConstants();
+	}
 
 	// Only submit render tasks if we're going to process them
 	// During scene transitions, bSubmitRenderWork is false and we skip rendering entirely
 	// to avoid building command lists with potentially incomplete scene state
+	// In --headless, bSubmitRenderWork is false (set initially on line ~186)
+	// regardless of editor state, so this whole block is skipped.
 	if (bSubmitRenderWork)
 	{
 		// Queue physics debug visualization only while the editor is stopped,
@@ -280,20 +295,29 @@ void Zenith_Core::Zenith_MainLoop()
 	// EndFrame prepares memory command buffer for submission and processes deferred deletions
 	// Deferred deletions use a frame counter (MAX_FRAMES_IN_FLIGHT) to ensure GPU has finished
 	// using resources before they are deleted
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_MemoryManager::EndFrame, ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER);
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_MemoryManager::EndFrame, ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER);
+	}
 
 	Zenith_MemoryManagement::EndFrame();
 
 	// Flux_PlatformAPI::EndFrame records render command buffers
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::EndFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME, bSubmitRenderWork);
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::EndFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME, bSubmitRenderWork);
 
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Swapchain::EndFrame, ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
+		ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Swapchain::EndFrame, ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
+	}
 
 	// Final action of the main loop: fires registered end-frame callbacks
 	// (deferred-deletion countdown lives here now) and advances the
 	// Flux_PerFrame counter. Counter advance happens AFTER Swapchain::EndFrame
 	// so the present uses the slot for frame N before the ring index moves to
 	// N+1 for the next iteration — matches the old in-swapchain bump.
+	// Flux_PerFrame::EndFrame is a NOP when no backend callbacks are registered.
+	// The ring counter advance is harmless in headless and keeps frame-counting
+	// consistent for any downstream code that reads Flux_PerFrame::GetFrameIndex().
 	Flux_PerFrame::EndFrame();
 }
 

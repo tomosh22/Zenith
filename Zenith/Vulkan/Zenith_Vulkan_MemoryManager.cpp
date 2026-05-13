@@ -8,6 +8,7 @@
 #include "Zenith_Vulkan.h"
 
 #include "Collections/Zenith_HashMap.h"
+#include "Core/Zenith_CommandLine.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_Graphics.h"
@@ -182,6 +183,12 @@ bool Zenith_Vulkan_MemoryManager::SupportsTransientAliasing()
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateAliasPoolVRAM(u_int64 ulSize, u_int64 ulAlignment,
                                                                   AliasPoolMemoryKind eMemoryKind)
 {
+	// Headless guard: see CreateBufferVRAM for rationale.
+	if (s_xAllocator == VK_NULL_HANDLE)
+	{
+		return Flux_VRAMHandle();
+	}
+
 	Zenith_Assert(ulSize > 0, "CreateAliasPoolVRAM: zero-size pool");
 
 	// VMA's AUTO_* usages are forbidden with vmaAllocateMemory (no image/buffer
@@ -382,6 +389,12 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateAliasedImageVRAM(const Flux_S
                                                                     Flux_VRAMHandle xPoolHandle,
                                                                     u_int64 ulOffsetInPool)
 {
+	// Headless guard: see CreateBufferVRAM for rationale.
+	if (s_xAllocator == VK_NULL_HANDLE)
+	{
+		return Flux_VRAMHandle();
+	}
+
 	Zenith_Assert(xPoolHandle.IsValid(), "CreateAliasedImageVRAM: invalid pool handle");
 	Zenith_Vulkan_VRAM* pxPoolVRAM = Zenith_Vulkan::GetVRAM(xPoolHandle);
 	Zenith_Assert(pxPoolVRAM != nullptr && pxPoolVRAM->IsPool(),
@@ -838,6 +851,15 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer(const void* p
 
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency)
 {
+	// Headless guard: when Flux::EarlyInitialise was skipped (Zenith_CommandLine::IsHeadless()),
+	// s_xAllocator stays VK_NULL_HANDLE. Upstream asset-load paths still
+	// invoke buffer creation; return an empty handle so they get a benign
+	// invalid VRAM handle to store rather than asserting in vmaCreateBuffer.
+	if (s_xAllocator == VK_NULL_HANDLE)
+	{
+		return Flux_VRAMHandle();
+	}
+
 	vk::BufferUsageFlags eUsageFlags = vk::BufferUsageFlagBits::eTransferDst;
 	
 	if (eFlags & 1 << MEMORY_FLAGS__VERTEX_BUFFER)
@@ -891,6 +913,12 @@ Zenith_Vulkan_MemoryManager::PersistentBuffer Zenith_Vulkan_MemoryManager::Creat
 	PersistentBuffer xResult = {};
 	xResult.m_uSize = uSize;
 
+	// Headless guard: see CreateBufferVRAM for rationale.
+	if (s_xAllocator == VK_NULL_HANDLE)
+	{
+		return xResult;
+	}
+
 	vk::BufferCreateInfo xBufferInfo = vk::BufferCreateInfo()
 		.setSize(uSize)
 		.setUsage(eUsageFlags)
@@ -918,6 +946,12 @@ Zenith_Vulkan_MemoryManager::PersistentBuffer Zenith_Vulkan_MemoryManager::Creat
 
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo)
 {
+	// Headless guard: see CreateBufferVRAM for rationale.
+	if (s_xAllocator == VK_NULL_HANDLE)
+	{
+		return Flux_VRAMHandle();
+	}
+
 	const bool bIsColour = xInfo.m_eFormat > TEXTURE_FORMAT_COLOUR_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_COLOUR_END;
 	const bool bIsDepthStencil = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
 	Zenith_Assert(bIsColour ^ bIsDepthStencil, "Invalid texture format for render target");
@@ -1058,6 +1092,14 @@ vk::ImageCreateInfo Zenith_Vulkan_MemoryManager::BuildImageCreateInfo(const Flux
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::AllocateAndRegisterImage(const vk::ImageCreateInfo& xImageInfo,
 	VkImage& xImageOut, VmaAllocation& xAllocationOut)
 {
+	// Headless guard: see CreateBufferVRAM for rationale.
+	if (s_xAllocator == VK_NULL_HANDLE)
+	{
+		xImageOut = VK_NULL_HANDLE;
+		xAllocationOut = VK_NULL_HANDLE;
+		return Flux_VRAMHandle();
+	}
+
 	VmaAllocationCreateInfo xAllocInfo = {};
 	xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
@@ -1079,6 +1121,12 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::AllocateAndRegisterImage(const vk::
 void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocation xAllocation,
 	const void* pData, const Flux_SurfaceInfo& xInfo, size_t ulDataSize)
 {
+	// Headless guard: see CreateBufferVRAM for rationale.
+	if (s_xAllocator == VK_NULL_HANDLE)
+	{
+		return;
+	}
+
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	s_xMutex.Lock();
@@ -1204,7 +1252,7 @@ Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(Flux_V
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateRenderTargetView");
+	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateRenderTargetView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
@@ -1241,7 +1289,7 @@ Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetViewForLaye
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateRenderTargetViewForLayer");
+	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateRenderTargetViewForLayer");
 	if (!pxVRAM) return xView;
 
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
@@ -1272,7 +1320,7 @@ Flux_DepthStencilView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(Flux_V
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateDepthStencilView");
+	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateDepthStencilView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
@@ -1304,7 +1352,7 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateShaderResourceView");
+	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateShaderResourceView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
 	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
@@ -1354,7 +1402,7 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewFor
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateShaderResourceViewForLayer");
+	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateShaderResourceViewForLayer");
 	if (!pxVRAM) return xView;
 
 	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
@@ -1398,7 +1446,7 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateUnorderedAccessView");
+	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateUnorderedAccessView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
@@ -1437,7 +1485,7 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateUnorderedAccessViewForSlice");
+	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateUnorderedAccessViewForSlice");
 	if (!pxVRAM) return xView;
 
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
@@ -1463,11 +1511,20 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
+
+	// Headless guard: see CreateBufferVRAM for rationale. With no allocator, all
+	// upstream CreateBufferVRAM calls returned invalid handles, so GetVRAM would
+	// hit the null-assert below — bail before that.
+	if (s_xAllocator == VK_NULL_HANDLE)
+	{
+		return;
+	}
+
 	s_xMutex.Lock();
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xBufferHandle);
-	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in UploadBufferData");
+	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in UploadBufferData");
 	if (!pxVRAM)
 	{
 		s_xMutex.Unlock();
@@ -1613,9 +1670,15 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
 
+	// Headless guard: see CreateBufferVRAM for rationale.
+	if (s_xAllocator == VK_NULL_HANDLE)
+	{
+		return;
+	}
+
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xBufferHandle);
-	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in UploadBufferDataAtOffset");
+	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in UploadBufferDataAtOffset");
 	if (!pxVRAM) return;  // Safety guard for release builds
 	const VmaAllocation& xAlloc = pxVRAM->GetAllocation();
 	VkMemoryPropertyFlags eMemoryProps;

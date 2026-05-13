@@ -52,6 +52,13 @@ struct Zenith_AutomatedTest
 	bool (*m_pfnStep)(int iFrame) = nullptr;        // returns true=keep ticking
 	bool (*m_pfnVerify)()       = nullptr;          // pass/fail
 	int  m_iMaxFrames           = 600;              // 10 seconds at fixed 60Hz
+
+	// Tests that depend on Flux being initialised (material assets, fog hole
+	// tables, render hooks, visual wiring) set this to true. The harness skips
+	// them when Zenith_CommandLine::IsHeadless() is true so they don't crash
+	// on null Flux state. Defaults to false: most tests are gameplay logic
+	// (entity state, possession, events) and run fine headless.
+	bool m_bRequiresGraphics    = false;
 };
 
 // Linked-list node populated by the registrar macro. Kept writable (no

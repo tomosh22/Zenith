@@ -1009,7 +1009,8 @@ static const Zenith_AutomatedTest g_xFullPlaythroughTest = {
 	&Setup_FullPlaythrough,
 	&Step_FullPlaythrough,
 	&Verify_FullPlaythrough,
-	600 // ~10 seconds at 60 Hz — generous for ~80 sequential phases
+	600, // ~10 seconds at 60 Hz — generous for ~80 sequential phases
+	true // m_bRequiresGraphics: end-to-end gameplay smoke; loads scenes + HUD UI
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xFullPlaythroughTest);
 

@@ -141,7 +141,8 @@ static const Zenith_AutomatedTest g_xVisualWiringTest = {
 	&Setup_VisualWiring,
 	&Step_VisualWiring,
 	&Verify_VisualWiring,
-	240 // 4 seconds at 60Hz — generous for cold-load
+	240, // 4 seconds at 60Hz — generous for cold-load
+	true // m_bRequiresGraphics: counts mesh/light/collider components after GPU scene load
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xVisualWiringTest);
 

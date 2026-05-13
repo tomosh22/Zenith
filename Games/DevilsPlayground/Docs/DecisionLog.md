@@ -8,6 +8,42 @@
 
 ---
 
+## 2026-05-13 — Q-2026-05-12-007 resolution: engine-level `--headless` boot mode (Option C).
+
+**Decision:** Picked **Option C** from Q-2026-05-12-007 (add a `--headless` engine boot mode that skips Vulkan init entirely). MVP-0.0.3 reactivated and `dp-tests` added to required branch-protection checks alongside `dp-build` + `complexity-gate`.
+
+**What landed:**
+
+1. **`Zenith_CommandLine`** namespace (new — was briefly considered as `Zenith_Args`; renamed before any references; nothing internal called it `Zenith_Args`). Single source of truth for engine CLI flag parsing. Currently exposes `Parse(int argc, char** argv)` + `bool IsHeadless()`. Parsed once in `Zenith_Main.cpp` before any subsystem boot.
+2. **Engine boot gating** (`Zenith_Main` + `Zenith_Core`): every `Flux::EarlyInitialise` / `LateInitialise` / `Shutdown` / `WaitForGPUIdle` / asset-block call wrapped in `if (!Zenith_CommandLine::IsHeadless())`. Submit-render decision also captures `IsHeadless()`. Editor init still runs (needed for EditorAutomation; the harness uses it to author scenes in tests/tools builds).
+3. **VMA leaf guards** (`Zenith_Vulkan_MemoryManager.cpp`): every `vmaCreate*` / `vmaAllocateMemory` / `vmaMapMemory` / `vmaFlushAllocation` site short-circuits when `s_xAllocator == VK_NULL_HANDLE`. `CreateBufferVRAM` / `CreatePersistentlyMappedBuffer` / `CreateRenderTargetVRAM` / `CreateAliasPoolVRAM` / `CreateAliasedImageVRAM` / `AllocateAndRegisterImage` / `UploadBufferData` / `UploadBufferDataAtOffset` / `UploadTextureData` all return invalid handles / no-op.
+4. **`Zenith_Vulkan::GetVRAM(invalid_handle)`** returns `nullptr` instead of asserting. The downstream view-creation assertions (`Zenith_Assert(pxVRAM != nullptr, ...)`) loosened to `pxVRAM != nullptr || Zenith_CommandLine::IsHeadless()` at 9 sites — the existing release-build early-return paths (`if (!pxVRAM) return xView;`) handle the rest.
+5. **`Editor::WaitForGPUAndFlushDeferred`** short-circuits in headless mode. This is the entry point the test harness's between-tests scene swap calls — without the guard, `Flux_MemoryManager::BeginFrame` hits `Command buffers not allocated` because the command-buffer ring is never created.
+6. **`m_bRequiresGraphics`** field added to `Zenith_AutomatedTest` literal (`Zenith_AutomatedTest.h`). 9 DP tests tagged: `Test_Materials`, `Test_DPFogPass`, `Test_DimLightsCutFog`, `Test_FrontEndPlay`, `Test_GameRenderHook`, `Test_PostFogHookFires`, `Test_VisualWiring`, `Test_HumanPlaythrough`, `Test_FullPlaythrough`. Harness handles skip at `HarnessPhase::ResetSimulatorAndCallSetup`; emits `"skipped": true` in the per-test JSON; counts as pass for tally purposes.
+
+**Why Option C and not Mesa lavapipe (Option B):** lavapipe needs ICD discovery on the CI runner and an `enable_sw=1` env var that varies by version; the engine's `vkEnumeratePhysicalDevices` would still potentially block on driver init quirks. Option C is *one* engine-level branch — predictable, no driver dependency, faster boot (~6s saved). The engine also gains a general "no-graphics" mode that's useful for headless server simulation, asset bake jobs, and future no-display CI work — not just dp-tests.
+
+**Local verification matrix (2026-05-13):**
+
+| Mode | Test type | Expected | Actual |
+|------|-----------|----------|--------|
+| `--headless` | non-graphics (Hello_Test) | PASS | PASS, 11 frames, JSON `passed:true skipped:false` |
+| `--headless` | graphics-tagged (PostFogHookFires) | SKIP | SKIP, 0 frames, JSON `passed:true skipped:true` |
+| windowed | non-graphics | PASS | PASS, 11 frames, JSON `passed:true skipped:false` |
+| windowed | graphics-tagged | PASS | PASS, 1 frame, JSON `passed:true skipped:false` |
+
+**Trade-offs considered and rejected:**
+
+- *Guard only at very top level (Flux::EarlyInitialise) and let lower-level asserts fire.* Rejected — Editor's `EditorAutomation` runs scene authoring before any test step, which loads assets via `Flux_MemoryManager::CreateBufferVRAM`/`CreateTextureVRAM`. Without leaf guards the harness can't even reach the test setup phase.
+- *Skip `Editor::Initialise` entirely.* Rejected — EditorAutomation IS the test harness's scene-construction layer; tests/tools builds need it to run.
+- *Hard-fail any test that touches GPU paths without graphics tag.* Rejected — many tests touch GPU paths *incidentally* (model load to populate scene tree) but never observe a rendered frame. Guarding the GPU paths to no-op is cheaper than re-classifying every test.
+
+**Reversibility:** the engine-side branch is local and reversible (`if (Zenith_CommandLine::IsHeadless())` blocks revert cleanly). Branch-protection update is one `gh api` call to swap the contexts list.
+
+**Test that prevents regression:** dp-tests.yml itself. Any future change that breaks the no-allocator boot path will fail every subsequent PR until fixed. The 4-quadrant verification matrix above lives in this DecisionLog entry as the canonical "what to test if --headless seems wrong."
+
+---
+
 ## 2026-05-12 — MVP-0.0.6: branch protection on master via `gh api`; dp-tests excluded.
 
 **Decision:** Branch protection on `master` set via `gh api -X PUT repos/tomosh22/Zenith/branches/master/protection`. Required status checks: `dp-build` + `complexity-gate` (NOT `dp-tests`). `strict=true`, `required_linear_history=true`, `enforce_admins=false`, `allow_force_pushes=false`, `allow_deletions=false`. Authored `Docs/CIPolicy.md` to document.

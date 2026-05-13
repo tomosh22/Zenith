@@ -259,7 +259,8 @@ static const Zenith_AutomatedTest g_xFrontEndPlayTest = {
 	&Setup_FrontEndPlay,
 	&Step_FrontEndPlay,
 	&Verify_FrontEndPlay,
-	240
+	240,
+	true // m_bRequiresGraphics: UI click on Play button needs Flux UI render path
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xFrontEndPlayTest);
 

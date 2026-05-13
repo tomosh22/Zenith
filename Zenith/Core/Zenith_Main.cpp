@@ -3,6 +3,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_ScriptAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -96,13 +97,17 @@ void Zenith_Core::Zenith_Init()
 #endif
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::EarlyInitialise...");
-	Flux::EarlyInitialise();
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Flux::EarlyInitialise();
+	}
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Physics::Initialise...");
 	Zenith_Physics::Initialise();
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: SceneManager::Initialise...");
 	Zenith_SceneManager::Initialise();
 
 	//#TO_TODO: move somewhere sensible
+	if (!Zenith_CommandLine::IsHeadless())
 	{
 		Flux_MemoryManager::BeginFrame();
 		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after Flux::EarlyInitialise()
@@ -130,15 +135,21 @@ void Zenith_Core::Zenith_Init()
 		Flux_MemoryManager::EndFrame(false);
 	}
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::LateInitialise...");
-	Flux::LateInitialise();
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Flux::LateInitialise();
+	}
 
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
 	Zenith_GraphicsOptions::RegisterDebugVariables();
-	Zenith_Editor::Initialise();
-	Zenith_DebugVariables::AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
-	Zenith_DebugVariables::AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
-	Zenith_DebugVariables::AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
-	Zenith_DebugVariables::AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Zenith_Editor::Initialise();
+		Zenith_DebugVariables::AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
+		Zenith_DebugVariables::AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
+		Zenith_DebugVariables::AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
+		Zenith_DebugVariables::AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
+	}
 #endif
 
 	Project_RegisterScriptBehaviours();
@@ -168,9 +179,15 @@ void Zenith_Core::Zenith_Init()
 #ifdef ZENITH_TOOLS
 	// Initialize game-specific resources (geometry, materials, prefabs, particle configs)
 	// Must be inside BeginFrame/EndFrame for GPU resource allocation
-	Flux_MemoryManager::BeginFrame();
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Flux_MemoryManager::BeginFrame();
+	}
 	Project_InitializeResources();
-	Flux_MemoryManager::EndFrame(false);
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Flux_MemoryManager::EndFrame(false);
+	}
 
 	// Register automation steps and begin execution (one step per frame in main loop)
 	Project_RegisterEditorAutomationSteps();
@@ -178,13 +195,19 @@ void Zenith_Core::Zenith_Init()
 #else
 	// Non-tools: load pre-generated scene files
 	// Run a tools build first to generate .zscen files
-	Flux_MemoryManager::BeginFrame();
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Flux_MemoryManager::BeginFrame();
+	}
 	Zenith_SceneManager::SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	{
 		Zenith_SceneManager::LifecycleDeferralGuard xLoadingGuard(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
 		Project_LoadInitialScene();
 	}
-	Flux_MemoryManager::EndFrame(false);
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Flux_MemoryManager::EndFrame(false);
+	}
 	Zenith_Assert(Zenith_SceneManager::GetActiveScene().IsValid(),
 		"No scene loaded. Run a ZENITH_TOOLS build first to generate .zscen files.");
 #endif
@@ -201,7 +224,10 @@ void Zenith_Core::Zenith_Shutdown()
 	Zenith_Log(LOG_CATEGORY_CORE, "Beginning shutdown sequence...");
 
 	// 1. Wait for GPU to finish all pending work
-	Flux_PlatformAPI::WaitForGPUIdle();
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Flux_PlatformAPI::WaitForGPUIdle();
+	}
 
 #ifdef ZENITH_TOOLS
 	// 2. Shutdown editor (processes pending deletions, cleans up editor state)
@@ -222,13 +248,19 @@ void Zenith_Core::Zenith_Shutdown()
 	// 6. Release Flux's asset-system references BEFORE the registry shuts down.
 	// Flux statics hold TextureHandle / MaterialHandle defaults that must drop their
 	// refs while the registry still owns its assets — Flux::Shutdown() runs too late.
-	Flux::ReleaseAssetReferences();
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Flux::ReleaseAssetReferences();
+	}
 
 	// 7. Shutdown asset registry (unloads all assets)
 	Zenith_AssetRegistry::Shutdown();
 
 	// 8. Shutdown Flux (all subsystems + graphics + memory manager)
-	Flux::Shutdown();
+	if (!Zenith_CommandLine::IsHeadless())
+	{
+		Flux::Shutdown();
+	}
 
 	// 9. Shutdown task system (terminates worker threads)
 	Zenith_TaskSystem::Shutdown();
@@ -260,6 +292,7 @@ void Zenith_Core::Zenith_Main()
 	// Graphics options are populated inside Zenith_Init() for all platforms
 	// but we need window dimensions before that, so call it here too (idempotent)
 	Project_SetGraphicsOptions(Zenith_GraphicsOptions::Get());
+	Zenith_CommandLine::Parse(__argc, __argv);
 	Zenith_Window::Inititalise("Zenith", Zenith_GraphicsOptions::Get().m_uWindowWidth, Zenith_GraphicsOptions::Get().m_uWindowHeight);
 	Zenith_Init();
 
