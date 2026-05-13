@@ -204,11 +204,16 @@ private:
 		uint32_t m_uMid   = 0;
 		uint32_t m_uHigh  = 0;
 	};
-	// Look up or insert a vertex at grid (iX, iZ) with world-Y fY. Quantises Y
-	// to centi-units so two spans at near-identical heights coalesce.
+	// Look up or insert a vertex at grid (iX, iZ) within flood-fill region
+	// uRegion. Vertices are deduplicated by (iX, iZ, region) so cells in the
+	// same region share corner vertices even when their Y values differ
+	// slightly (typical for floors authored from multiple collider entities
+	// at non-identical Y). Cells in DIFFERENT regions get separate vertices
+	// at the same XZ — that's intentional: a ground floor and a balcony
+	// stacked above it are different regions and need distinct geometry.
 	static uint32_t GetOrCreateVertex(GenerationContext& xContext,
 		Zenith_HashMap<uint64_t, uint32_t>& xVertexMap,
-		int32_t iX, int32_t iZ, float fY);
+		int32_t iX, int32_t iZ, float fY, uint16_t uRegion);
 	// Iterate every walkable span in every column, emit one CCW quad per span,
 	// and return the per-height-band polygon counts for the debug log.
 	static HeightCategoryCounts EmitQuadsFromSpans(GenerationContext& xContext,
