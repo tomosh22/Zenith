@@ -178,6 +178,19 @@ bool Zenith_NavMeshGenerator::CollectGeometryFromScene(Zenith_SceneData& xScene,
 		{
 			continue;
 		}
+
+		// Opt-out: callers can mark a static collider as "not navmesh geometry"
+		// when the obstacle is meant to be runtime-blockable (doors, gates,
+		// lift barriers). Skipping these here lets the generator emit
+		// walkable polygons across the doorway gap; the gameplay layer then
+		// calls Zenith_NavMesh::SetBlockedAtPoint at runtime to mark those
+		// polygons blocked when the door is closed. See
+		// Zenith_ColliderComponent::SetIncludeInNavMesh for the contract.
+		if (!xCollider.GetIncludeInNavMesh())
+		{
+			continue;
+		}
+
 		++uEntitiesWithValidBodies;
 
 		if (!xEntity.HasComponent<Zenith_TransformComponent>())
