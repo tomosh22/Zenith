@@ -937,6 +937,9 @@
     <ClCompile Include="..\Zenith\Flux\Zenith_GameRenderHook.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Zenith_RenderBus.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Input\Zenith_Input.cpp">
       <Filter>Input</Filter>
     </ClCompile>
@@ -4003,6 +4006,9 @@
       <Filter>Flux\Vegetation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderHook.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Zenith_RenderBus.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Input\Zenith_Input.h">
