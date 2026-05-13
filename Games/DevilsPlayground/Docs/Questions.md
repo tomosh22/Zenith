@@ -10,6 +10,34 @@
 
 ## Open
 
+### ⚠️ Q-2026-05-13-NM03 — MVP-1.2.2 (real navmesh in DP_AI) reveals disconnected regions; `PriestPursuit_Test` breaks because priest + closest villager land in different regions.
+
+**Context:** With PR #32 (walls block paths) + PR #33 (O(N) adjacency, 850ms generate) both landed, the production path of wiring `DP_AI::GetOrBuildLevelNavMesh` to call `Zenith_NavMeshGenerator::GenerateFromScene` is technically feasible. I wired it with a build-index-keyed cache and ran the DP suite -- 49/50 pass, but `PriestPursuit_Test` fails:
+
+```
+[AI] DP_AI: built real navmesh for build-index=1 (136784 verts, 131983 polys)
+[AI] PriestPursuit: navAgent=... target=(231/2) priestPos=(62.4,1.0,56.5)
+     villagerPos=(65.2,2.0,53.1) hasPath=0 vel=(0.00,0.00,0.00) patrol=(62.9,1.9,56.4)
+[AI] PriestPursuit_Test: initial=4.40 final=4.40 progress=0.00
+```
+
+`hasPath=0` over 4.4m of separation -- the priest's polygon and the closest villager's polygon are in **different connected components** of the navmesh. GameLevel's authored colliders (walls of every individual building) fully enclose rooms with no doorway-shaped gaps in the navmesh, so flood-filled regions are isolated.
+
+**This is the navmesh accurately representing the level geometry.** It's correct, just not what the existing test expects. The old synthetic 200m × 200m flat quad let the priest path to any villager.
+
+**Implication:** MVP-1.2.2 needs more than just the wiring + cache. The roadmap's MVP-1.2.3 (`DPDoor::SyncNavMeshBlock` portal wiring) is the natural next step BUT it doesn't help here -- doors *unblock* portals between rooms, but the navmesh has no portals between rooms today because the underlying geometry has no doorway openings. Either:
+  a) The collider authoring needs explicit doorway gaps (re-export from UE source map -- blocked on the asset pipeline).
+  b) The generator needs an explicit "connector cell" mechanism where DPDoor entities punch a hole in the navmesh at their footprint.
+  c) The Recast pipeline needs an "off-mesh connection" API (Zenith doesn't currently have this).
+
+**My best guess if you don't reply:** keep MVP-1.2.2 reverted. PR #33 lands the perf fix on its own value (unblocks `Test_P1NavMesh_PathRespectsWalls` which now uses real navmesh on a tiny scratch scene). Sketch MVP-1.2.3 as "DPDoor punches a navmesh hole at runtime" -- needs an engine API `Zenith_NavMesh::PunchOpening(point, radius)`. Track as a separate engine PR. Once that lands, MVP-1.2.2 can wire DP_AI to real navmesh AND PriestPursuit_Test still passes.
+
+**Cost of getting it wrong:** moderate. Sticking with the synthetic flat quad means doors don't gate AI navigation -- the priest patrols through walls. The roadmap acknowledges this; MVP-1.2 was always going to be a multi-PR effort.
+
+**Status:** asked 2026-05-13.
+
+---
+
 ### ⚠️ Q-2026-05-13-NM01 — NavMesh generator's geometry collector only voxelises box-collider TOP faces; walls never block the floor below.
 
 **Context:** During MVP-1.2.0 spike (real navmesh integration) I built a tiny test scene with a 12x12m floor + a 5m wide / 1m tall box-collider wall, called `Zenith_NavMeshGenerator::GenerateFromScene`, and tried to verify that `Zenith_Pathfinding::FindPath((0, 0.1, -3), (0, 0.1, +3))` routed around the wall. It didn't -- the returned path is a 2-waypoint straight line right through where the wall should be (length 6.0, `|x|max` 0.0).

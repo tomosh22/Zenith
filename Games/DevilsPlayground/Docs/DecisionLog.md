@@ -8,6 +8,28 @@
 
 ---
 
+## 2026-05-13 — MVP-1.2.2 attempt-2 deferred: real navmesh exposes disconnected regions, `PriestPursuit_Test` fails (Q-2026-05-13-NM03).
+
+**Decision:** Do NOT wire `DP_AI::GetOrBuildLevelNavMesh` to `Zenith_NavMeshGenerator::GenerateFromScene` yet. The engine perf fix (PR #33) makes the generation step fast enough (~850ms on GameLevel + cache amortises across batched tests), but the resulting navmesh accurately reflects GameLevel's collider geometry -- which has rooms walled-off with no doorway gaps. `PriestPursuit_Test` puts the priest at (62.4, 1.0, 56.5) and villager at (65.2, 2.0, 53.1) -- 4.4m apart but in different navmesh regions. `FindPath` returns `hasPath=0` and the priest doesn't move.
+
+**What I tried (and reverted):**
+1. Wire `GetOrBuildLevelNavMesh` to call `GenerateFromScene` first, fall back to the synthetic flat quad on null/empty result.
+2. Cache by `Zenith_SceneData::GetBuildIndex()` so the test harness's force-load + load-next pattern between tests doesn't trigger a fresh rebuild each time. (Cache key was correct -- the issue was the navmesh itself, not the cache.)
+3. Ran full DP suite: 49/50 pass + 1 fail (`PriestPursuit_Test`) + 1 batch-process crash. Reverted the wiring.
+
+**Why this is a "real-fix-needed" not "test-needs-loosening":** the test isn't asserting unreachable AI behaviour; it asserts that the priest closes distance on a nearby villager over 120 frames. With the synthetic mesh the priest could walk through walls (incorrect, but worked for the test). With the real mesh the priest stays put because every navmesh polygon adjacent to its spawn is sealed off from the villager's polygon. The right answer is the navmesh learning to thread through doorways, not the test relaxing its assertion.
+
+**Next-step option that I'd take if asked:** add `Zenith_NavMesh::PunchOpening(xPoint, fRadius)` engine API. `DPDoor_Behaviour` calls it at OnStart for every authored door, carving a connector through the wall-induced region boundary in the navmesh. Or implement off-mesh-connections (Recast standard) -- bigger surface, more complete. Either way, requires engine work + a new DPDoor wiring pass before MVP-1.2.2 can land.
+
+**Trade-offs considered:**
+- *Land MVP-1.2.2 + accept the `PriestPursuit_Test` regression.* Rejected -- the regression is genuine (priest is stuck), not a test artifact.
+- *Adjust `PriestPursuit_Test` to spawn priest + villager in the same room.* Possible but fragile -- the level's room layout shifts as we extend GameLevel. Better to fix the navmesh.
+- *Ship MVP-1.2.2 with an opt-in flag* (real navmesh for some tests, synthetic for others). Considered but adds production complexity for short-term test convenience.
+
+**Reversibility:** trivial -- no code committed. Documented in Q-2026-05-13-NM03.
+
+---
+
 ## 2026-05-13 — MVP-1.2.0 spike result: navmesh generator's top-face-only collector blocks the roadmap path. Filed as Q-2026-05-13-NM01.
 
 **Decision:** Do NOT commit a `Test_P1NavMesh_PathRespectsWalls` that fails to actually verify wall-respecting paths. The spike (described in the roadmap as "Author a single static test scene with 4 cube walls forming a room with a doorway. Call `Zenith_NavMeshGenerator::GenerateFromScene` on it. Assert the returned `Zenith_NavMesh*` is non-null and `FindPath(start, end)` routes around the wall") was implemented and run. The generator returns non-null and `FindPath` succeeds -- but the path is a straight line through where the wall should be. Cause documented in Q-2026-05-13-NM01.
