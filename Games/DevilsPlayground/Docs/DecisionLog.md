@@ -8,6 +8,25 @@
 
 ---
 
+## 2026-05-13 — MVP-1.2.0 spike result: navmesh generator's top-face-only collector blocks the roadmap path. Filed as Q-2026-05-13-NM01.
+
+**Decision:** Do NOT commit a `Test_P1NavMesh_PathRespectsWalls` that fails to actually verify wall-respecting paths. The spike (described in the roadmap as "Author a single static test scene with 4 cube walls forming a room with a doorway. Call `Zenith_NavMeshGenerator::GenerateFromScene` on it. Assert the returned `Zenith_NavMesh*` is non-null and `FindPath(start, end)` routes around the wall") was implemented and run. The generator returns non-null and `FindPath` succeeds -- but the path is a straight line through where the wall should be. Cause documented in Q-2026-05-13-NM01.
+
+**What I tried:** Built `Games/DevilsPlayground/Tests/Test_P1NavMesh_PathRespectsWalls.cpp` with a 12x12m floor + 5m wide / 1m tall box-collider wall. Path from (0, 0.1, -3) to (0, 0.1, +3) routes straight at `|x|=0.0`. Read the generator. Tried emitting all 6 box faces (vs the existing top-face-only emit) -- polygon count unchanged, path still straight. Concluded the generator needs a column solid-fill post-pass (Recast-style) the engine doesn't currently have. Test deleted, findings filed in Questions.md.
+
+**Why not commit a loose "spike-only" test:** a test named `Test_P1NavMesh_PathRespectsWalls` whose Verify returns true regardless of whether the path detours is dishonest -- a future agent or reviewer would see it green and assume the wall-blocking is verified. A misleading green test is worse than no test.
+
+**Why not commit the engine fix in this same session:** Q-2026-05-13-NM01's preferred path is to fix the generator's solid-fill step, but it's an engine change to a non-trivial algorithm and warrants a dedicated PR with its own engine tests + design review (per OrchestratorPlaybook §5.4 "Mandatory Reviewer subagent on every engine PR"). Bundling it with a DP-side game-test PR would dilute review.
+
+**Trade-offs considered:**
+- *Commit the loose test anyway with a `m_bRequiresGraphics=true` to skip it on CI.* Rejected -- skipping is for genuine graphics dependence, not for "this test doesn't actually work yet". Repurposing the skip flag muddies the contract.
+- *Implement the generator fix in this session and bundle.* Rejected per the dilute-review concern above.
+- *Switch to MVP-1.2.alt (hand-authored `.znavmesh`).* Rejected for the same reasons captured in Q-2026-05-13-NM01: more work than fixing the generator + a manually-managed asset to maintain.
+
+**Reversibility:** filing as a Question is fully reversible. Implementing the generator fix would require a follow-up engine PR with its own DecisionLog entry.
+
+---
+
 ## 2026-05-13 — MVP-1.1: Pause controller migrates to persistent scene (singleton); dedicated `PauseManager` entity.
 
 **Decision:** `DPPauseMenuController_Behaviour::OnStart` captures the current active scene as `m_xGameplayScene`, then calls `Zenith_SceneManager::MarkEntityPersistent(m_xParentEntity)`. On Esc it toggles overlay visibility AND calls `Zenith_SceneManager::SetScenePaused(m_xGameplayScene, m_bShown)`. Subsequent scene loads create a new `PauseManager` entity whose OnStart detects an existing persistent singleton, hands it the new gameplay-scene handle, force-unpauses, and lets itself be destroyed with the scene rather than re-migrating.

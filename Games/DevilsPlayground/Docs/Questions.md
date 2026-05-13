@@ -10,6 +10,26 @@
 
 ## Open
 
+### ⚠️ Q-2026-05-13-NM01 — NavMesh generator's geometry collector only voxelises box-collider TOP faces; walls never block the floor below.
+
+**Context:** During MVP-1.2.0 spike (real navmesh integration) I built a tiny test scene with a 12x12m floor + a 5m wide / 1m tall box-collider wall, called `Zenith_NavMeshGenerator::GenerateFromScene`, and tried to verify that `Zenith_Pathfinding::FindPath((0, 0.1, -3), (0, 0.1, +3))` routed around the wall. It didn't -- the returned path is a 2-waypoint straight line right through where the wall should be (length 6.0, `|x|max` 0.0).
+
+Root cause traced to `Zenith/AI/Navigation/Zenith_NavMeshGenerator.cpp::CollectGeometryFromScene` (around line 193, comment "Only add TOP face - this creates walkable surfaces"). The collector emits **only the top face** of each box collider as input triangles. The voxelizer thus sees a thin lid at the floor's top y AND another thin lid at the wall's top y -- but nothing between them. The clearance check above the floor span doesn't trip on the wall's interior because the wall has no interior in the heightfield. Floor cells under the wall stay walkable; path-finder cuts straight through.
+
+I tried emitting all six box faces. Polygon count was unchanged (1681 polygons, floor: 1630, mid: 51, high: 0). The voxelizer's triangle rasteriser hits cells the triangles cover but doesn't *fill* between disjoint top + bottom + side triangles into a closed solid region. Recast does this via a "solid span fill" post-pass per column; Zenith's generator currently omits that step.
+
+**Implication:** MVP-1.2.0 spike as the roadmap originally described it (4 walls forming a room with a doorway, FindPath detours through doorway) CANNOT pass against the current generator. Production DP needs either:
+  a) the generator to gain the column solid-fill step (~30 lines of post-processing in the rasterizer), OR
+  b) the MVP-1.2.alt fallback (hand-authored `.znavmesh` from collider geometry, no runtime generation).
+
+**My best guess if you don't reply:** spend ~half a day on option (a) -- fix the generator's column solid-fill step, then revive the spike test as the strict MVP-1.2.1 assertion. The fix is well-bounded (per-column scan of min/max-y triangle hits → mark intermediate voxels solid). Falling back to MVP-1.2.alt means authoring a tool to bake `.znavmesh` from collider geometry, which is more work than fixing the generator and produces a manually-managed asset.
+
+**Cost of getting it wrong:** Phase 1.2 slips by a couple of days either way. Going with option (a) and discovering it's harder than expected costs the same as going straight to (b). Going with (b) when (a) would have worked means we ship a hand-authored navmesh that needs re-baking every time level geometry changes.
+
+**Status:** asked 2026-05-13. The spike findings are documented but I did NOT commit the failing test -- a test named `Test_P1NavMesh_PathRespectsWalls` that doesn't actually assert wall-respecting paths would be misleading. The test will be re-introduced once the generator fix lands.
+
+---
+
 ### ⚠️ Q-2026-05-12-001 — No CI gate for DP. Auto-merge merges immediately without running DP tests.
 
 **Context:** [.github/workflows/complexity.yml](../../../.github/workflows/complexity.yml) (renamed from msbuild.yml in MVP-0.0.2) runs a complexity gate but did not originally build DP or run `Tools/run_dp_tests.ps1` -- those checks landed in MVP-0.0.2 (`dp-build`) and MVP-0.0.3 (`dp-tests`) workflows. [AgentBriefing.md §3.5](AgentBriefing.md) describes required checks (`build-debug-tools`, `tests-headless`) but they're aspirational, not implemented yet — they're MVP-0.3 territory.
