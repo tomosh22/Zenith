@@ -50,6 +50,17 @@ public:
 	void SetDebugDrawPhysicsMesh(bool bEnable) { m_bDebugDrawPhysicsMesh = bEnable; }
 	bool GetDebugDrawPhysicsMesh() const { return m_bDebugDrawPhysicsMesh; }
 
+	// NavMesh-input flag: when false, Zenith_NavMeshGenerator skips this
+	// collider during geometry collection. The collider still participates
+	// in physics. Use this for static obstacles that AI should be ABLE to
+	// path through dynamically (doors, breakable barriers, lift gates) --
+	// pathfinding then uses Zenith_NavMesh::SetPolygonBlocked / SetBlockedAtPoint
+	// at runtime to mark the corresponding polygons as blocked when the
+	// obstacle is in its "closed" state. Defaults to true (existing
+	// behaviour: every static collider becomes navmesh geometry).
+	void SetIncludeInNavMesh(bool bInclude) { m_bIncludeInNavMesh = bInclude; }
+	bool GetIncludeInNavMesh() const { return m_bIncludeInNavMesh; }
+
 	void AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType);
 	void AddCapsuleCollider(float fRadius, float fHalfHeight, RigidBodyType eRigidBodyType);
 	void RebuildCollider(); // Rebuild collider with current transform (e.g., after scale change)
@@ -103,6 +114,11 @@ private:
 	float m_fExplicitCapsuleHalfHeight = 0.0f;
 	bool m_bUseExplicitCapsuleDimensions = false;
 	bool m_bDebugDrawPhysicsMesh = false;
+	// See SetIncludeInNavMesh comment. Defaults to true so existing colliders
+	// (floors, walls, props) continue to contribute navmesh geometry without
+	// requiring an opt-in change. Callers that author runtime-blockable
+	// obstacles (doors, gates) opt OUT via SetIncludeInNavMesh(false).
+	bool m_bIncludeInNavMesh = true;
 
 	struct TerrainMeshData
 	{

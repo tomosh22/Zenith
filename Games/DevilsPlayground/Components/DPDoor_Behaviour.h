@@ -12,6 +12,7 @@
 
 #include "Components/DPInteractable_Behaviour.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Maths/Zenith_Maths.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "Source/PublicInterfaces.h"
@@ -36,6 +37,20 @@ public:
 		m_fOpenDuration = DP_Tuning::Get<float>("interactables.door_open_duration_s");
 		m_bIsOpen = false;
 		m_fOpenT = 0.0f;
+
+		// Doors are runtime-blockable obstacles. The wall colliders surrounding
+		// each room have authored doorway GAPS that are exactly door-width;
+		// the door entity itself sits IN that gap with its own collider. If
+		// the door's collider participated in the navmesh, the gap would be
+		// sealed and AI couldn't path between rooms even when the door is
+		// open. Mark the collider as nav-mesh-excluded so the generator emits
+		// walkable polygons through the doorway; SyncNavMeshBlock then toggles
+		// those polygons' BLOCKED flag at runtime based on open/closed state.
+		// See Zenith_ColliderComponent::SetIncludeInNavMesh for the contract.
+		if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		{
+			m_xParentEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
+		}
 	}
 
 	void OnStart() ZENITH_FINAL override
