@@ -106,7 +106,12 @@ if (Test-Path $slangBinDir) {
 # Discover tests (always, so we can print the list before the run and
 # decode batch results into per-test pass/fail tally).
 Write-Host "[run_dp_tests] Discovering tests..." -ForegroundColor Cyan
-$listOutput = & $Exe --list-automated-tests --skip-tool-exports --skip-unit-tests 2>&1
+# --headless is required on GPU-less CI runners; --list-automated-tests
+# would otherwise hang on vkEnumeratePhysicalDevices. Pass it whenever
+# the caller asked for -Headless.
+$listArgs = @('--list-automated-tests', '--skip-tool-exports', '--skip-unit-tests')
+if ($Headless) { $listArgs += '--headless' }
+$listOutput = & $Exe @listArgs 2>&1
 $tests = @()
 $inList = $false
 foreach ($line in $listOutput) {
