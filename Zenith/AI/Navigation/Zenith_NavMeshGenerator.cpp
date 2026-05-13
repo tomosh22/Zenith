@@ -749,13 +749,32 @@ bool Zenith_NavMeshGenerator::TraceContours(GenerationContext& xContext)
 // ============================================================================
 uint32_t Zenith_NavMeshGenerator::GetOrCreateVertex(GenerationContext& xContext,
 	Zenith_HashMap<uint64_t, uint32_t>& xVertexMap,
-	int32_t iX, int32_t iZ, float fY)
+	int32_t iX, int32_t iZ, float fY, uint16_t uRegion)
 {
-	// Quantise (iX, iZ, fY*100) into a unique 64-bit key. The +10000 bias
+	// Quantise (iX, iZ, region) into a unique 64-bit key. The +10000 bias
 	// makes the cast safe for negative grid coordinates.
+	//
+	// Why REGION not Y: real-scene floor geometry is often authored from
+	// many separate collider entities at slightly varying Y (e.g. DP
+	// GameLevel has floor tiles at 1.00, 1.04, 0.98, etc.). Adjacent
+	// walkable cells inside one flood-fill region thus end up at
+	// micro-different Y values; if we key vertices by Y the same XZ corner
+	// shared by two cells in the same region maps to two different
+	// vertices, the adjacency hash (which uses vertex indices) doesn't
+	// link them, and one logical room fragments into a dozen disconnected
+	// polygon islands.
+	//
+	// Keying by region ID instead solves it: cells in the same region
+	// share vertices by construction (flood fill guarantees walkable
+	// connectivity within a region), while cells in DIFFERENT regions
+	// stay separate (a ground floor and a balcony stack are different
+	// regions). The vertex's stored Y is whichever cell created it first;
+	// within a region the Y delta across cells is bounded by step-height
+	// (0.3m by default) so the slight visual tilt is invisible to
+	// pathfinding.
 	uint64_t uKey = (static_cast<uint64_t>(iX + 10000) << 32) |
 					(static_cast<uint64_t>(iZ + 10000) << 16) |
-					(static_cast<uint64_t>(static_cast<int32_t>(fY * 100.0f) + 10000));
+					(static_cast<uint64_t>(uRegion));
 
 	if (uint32_t* puExisting = xVertexMap.TryGet(uKey))
 	{
@@ -817,10 +836,11 @@ Zenith_NavMeshGenerator::HeightCategoryCounts Zenith_NavMeshGenerator::EmitQuads
 				// Quad corners (V0=bottom-left, V1=bottom-right, V2=top-right,
 				// V3=top-left). CCW winding (V0→V3→V2→V1) yields an upward
 				// normal — see Navigation/CLAUDE.md "Polygon Winding Order".
-				uint32_t uV0 = GetOrCreateVertex(xContext, xVertexMap, iX,     iZ,     fWorldY);
-				uint32_t uV1 = GetOrCreateVertex(xContext, xVertexMap, iX + 1, iZ,     fWorldY);
-				uint32_t uV2 = GetOrCreateVertex(xContext, xVertexMap, iX + 1, iZ + 1, fWorldY);
-				uint32_t uV3 = GetOrCreateVertex(xContext, xVertexMap, iX,     iZ + 1, fWorldY);
+				const uint16_t uRegion = static_cast<uint16_t>(xSpan.m_uRegion);
+				uint32_t uV0 = GetOrCreateVertex(xContext, xVertexMap, iX,     iZ,     fWorldY, uRegion);
+				uint32_t uV1 = GetOrCreateVertex(xContext, xVertexMap, iX + 1, iZ,     fWorldY, uRegion);
+				uint32_t uV2 = GetOrCreateVertex(xContext, xVertexMap, iX + 1, iZ + 1, fWorldY, uRegion);
+				uint32_t uV3 = GetOrCreateVertex(xContext, xVertexMap, iX,     iZ + 1, fWorldY, uRegion);
 
 				Zenith_Vector<uint32_t> axQuadIndices;
 				axQuadIndices.PushBack(uV0);
