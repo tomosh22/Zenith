@@ -116,6 +116,9 @@
     <ClCompile Include="..\Tests\Test_PublicInterfaces.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_T0AudioBus_EmitsAndRecords.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_T0RenderBus_RecordsDrawCalls.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

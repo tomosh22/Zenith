@@ -580,6 +580,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_AudioBus.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_AutomatedTest.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -3295,6 +3298,9 @@
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_AudioBus.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h">
