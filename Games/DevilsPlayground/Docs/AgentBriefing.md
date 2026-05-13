@@ -199,7 +199,7 @@ Every PR body uses this template (paste into `gh pr create --body "$(cat <<'EOF'
 <one-line summary>
 
 ## Why
-Closes MVP-X.Y.Z (see [MvpRoadmap.md](../Games/DevilsPlayground/Docs/MvpRoadmap.md)).
+Closes MVP-X.Y.Z (see [MvpRoadmap.md](MvpRoadmap.md)).
 <link to the GDD / Shortfalls / TestPlan section that justifies the change, if relevant>
 
 ## Tests
@@ -305,7 +305,7 @@ pwsh.exe -File Tools/run_dp_tests.ps1 -Filter "Apprehend_PriestCatches" -PerProc
 
 ### 4.6 Parallel agents
 
-Per memory ([feedback_parallel_agents_msbuild_thrash.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/feedback_parallel_agents_msbuild_thrash.md)): **default sequential.** mspdbsrv + output-dir locks force one MSBuild at a time. Parallel works only when:
+Per the engine-knowledge note `feedback_parallel_agents_msbuild_thrash` (Claude user-memory): **default sequential.** mspdbsrv + output-dir locks force one MSBuild at a time. Parallel works only when:
 - Tasks touch different files entirely.
 - One agent finishes its build before another starts.
 - You're running asset linter (no MSBuild) or test runner (single build artefact reused).
@@ -346,16 +346,16 @@ These are not deadlines — they're triggers to ask *"is this task ill-defined, 
 
 Read these before you touch code; they're permanent footguns:
 
-- **`std::function` / `std::vector` / `std::mutex` are forbidden in NEW production code** ([memory](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/MEMORY.md)). Use `Zenith_Vector`, `Zenith_Mutex`, function pointers. **Existing prototype code that already uses STL is grandfathered** — `Source/PublicInterfaces.cpp` uses `std::unordered_map` at lines 39, 42, 50; `Source/DPMaterials.cpp` uses it too. These were ported from UE5 and remain until a dedicated cleanup task replaces them with `Zenith_HashMap` (which exists at `Zenith/Collections/Zenith_HashMap.h`). **Do not introduce new STL containers**; if you need to read from or extend grandfathered code, the surrounding STL stays for now. **Test code (wrapped in `#ifdef ZENITH_INPUT_SIMULATOR`) may use STL freely** — `Test_HumanPlaythrough.cpp` uses `std::vector`. Production headers and runtime `.cpp` files added going forward remain strict.
+- **`std::function` / `std::vector` / `std::mutex` are forbidden in NEW production code** (Claude user-memory `MEMORY.md`). Use `Zenith_Vector`, `Zenith_Mutex`, function pointers. **Existing prototype code that already uses STL is grandfathered** — `Source/PublicInterfaces.cpp` uses `std::unordered_map` at lines 39, 42, 50; `Source/DPMaterials.cpp` uses it too. These were ported from UE5 and remain until a dedicated cleanup task replaces them with `Zenith_HashMap` (which exists at `Zenith/Collections/Zenith_HashMap.h`). **Do not introduce new STL containers**; if you need to read from or extend grandfathered code, the surrounding STL stays for now. **Test code (wrapped in `#ifdef ZENITH_INPUT_SIMULATOR`) may use STL freely** — `Test_HumanPlaythrough.cpp` uses `std::vector`. Production headers and runtime `.cpp` files added going forward remain strict.
 - **`Zenith_Vector` has no STL iterators.** Index-based loops only.
-- **Non-tools builds were fixed 2026-05-10** ([memory: project_nontools_build_broken.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/project_nontools_build_broken.md)). Easy to regress. *Verify* `*_False` configurations build green before declaring a foundation feature done.
+- **Non-tools builds were fixed 2026-05-10** (Claude user-memory `project_nontools_build_broken`). Easy to regress. *Verify* `*_False` configurations build green before declaring a foundation feature done.
 - **Sharpmake regen required after adding `.cpp` files** — `cd Build && cmd /c '.\Sharpmake_Build.bat < nul'`. Forgetting this means your new file isn't in the solution and tests fail with "not found."
-- **`ZENITH_REGISTER_COMPONENT` doesn't fire if the `.obj` is dead-stripped** ([memory: feedback_msvc_static_init_dead_strip.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/feedback_msvc_static_init_dead_strip.md)). Fix by `AddComponent` at runtime from a script that *is* referenced.
-- **Parallel MSBuild thrashes** ([memory: feedback_parallel_agents_msbuild_thrash.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/feedback_parallel_agents_msbuild_thrash.md)). Use `-maxCpuCount:1`.
+- **`ZENITH_REGISTER_COMPONENT` doesn't fire if the `.obj` is dead-stripped** (Claude user-memory `feedback_msvc_static_init_dead_strip`). Fix by `AddComponent` at runtime from a script that *is* referenced.
+- **Parallel MSBuild thrashes** (Claude user-memory `feedback_parallel_agents_msbuild_thrash`). Use `-maxCpuCount:1`.
 - **Hanging compiler processes** lock build files. If a build fails on "cannot access file," run `Build/CleanBuild.bat` (kills cl.exe/mspdbsrv.exe).
 - **`SimulateClickOnUIElement` asserts on missing element.** Only call after the element is known to exist in the active scene's canvas.
 - **Tests must be wrapped in `#ifdef ZENITH_INPUT_SIMULATOR`** or they won't compile in non-tools builds.
-- **Scene authoring lives in `Project_RegisterEditorAutomationSteps`** ([memory: feedback_scene_setup_via_editor_automation.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/feedback_scene_setup_via_editor_automation.md)). Don't write imperative scene construction; use `AddStep_*` calls. Marble.cpp is the canonical reference.
+- **Scene authoring lives in `Project_RegisterEditorAutomationSteps`** (Claude user-memory `feedback_scene_setup_via_editor_automation`). Don't write imperative scene construction; use `AddStep_*` calls. Marble.cpp is the canonical reference.
 - **DevilsPlayground is in `C:\dev\Zenith\Games\DevilsPlayground\` (main repo)**, NOT in any worktree under `.claude/worktrees/`. Always work on `master` branch.
 - **Engine work is in-scope for autonomous agents** (per user direction 2026-05-12). Subagents may edit anywhere under `Zenith/` for tasks like MVP-0.4 (instrumentation hooks) and MVP-1.2 (navmesh generator). Engine PRs trigger mandatory Reviewer-subagent dispatch (OrchestratorPlaybook §5.4) and a Combat smoke build (catches cross-game regressions). Design rationale logged in `DecisionLog.md` before opening the PR for any net-new engine namespace.
 

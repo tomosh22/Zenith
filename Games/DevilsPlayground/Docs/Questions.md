@@ -12,7 +12,7 @@
 
 ### ⚠️ Q-2026-05-12-001 — No CI gate for DP. Auto-merge merges immediately without running DP tests.
 
-**Context:** [.github/workflows/msbuild.yml](../../../.github/workflows/msbuild.yml) builds `Games/Test/Build/zenith_win64.vcxproj` and runs a complexity gate, but does NOT build DP and does NOT run `Tools/run_dp_tests.ps1`. [AgentBriefing.md §3.5](AgentBriefing.md) describes required checks (`build-debug-tools`, `tests-headless`) but they're aspirational, not implemented yet — they're MVP-0.3 territory.
+**Context:** [.github/workflows/complexity.yml](../../../.github/workflows/complexity.yml) (renamed from msbuild.yml in MVP-0.0.2) runs a complexity gate but did not originally build DP or run `Tools/run_dp_tests.ps1` -- those checks landed in MVP-0.0.2 (`dp-build`) and MVP-0.0.3 (`dp-tests`) workflows. [AgentBriefing.md §3.5](AgentBriefing.md) describes required checks (`build-debug-tools`, `tests-headless`) but they're aspirational, not implemented yet — they're MVP-0.3 territory.
 
 **Implication:** `gh pr merge --auto --squash --delete-branch` will merge immediately because there are no DP-relevant required checks. The DP test suite is never validated by CI.
 
@@ -169,4 +169,4 @@ User confirmed:
 - Autonomous agent workflow.
 - Zero external service spend until art assets (then user decides).
 
-See [project_dp_mvp_scope.md](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/project_dp_mvp_scope.md) for the durable record.
+See Claude user-memory `project_dp_mvp_scope` for the durable record.
