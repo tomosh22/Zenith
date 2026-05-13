@@ -235,6 +235,7 @@
     <ClCompile Include="..\Tests\Test_T0NavMesh_QueryCountIncrements.cpp" />
     <ClCompile Include="..\Tests\Test_T0RenderBus_RecordsDrawCalls.cpp" />
     <ClCompile Include="..\Tests\Test_T0SaveData_TestHooks.cpp" />
+    <ClCompile Include="..\Tests\Test_T1NavMesh_GeneratorPerf.cpp" />
     <ClCompile Include="..\Tests\Test_VisualWiring.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
