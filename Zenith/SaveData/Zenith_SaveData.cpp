@@ -12,6 +12,27 @@
 
 namespace Zenith_SaveData
 {
+#ifdef ZENITH_INPUT_SIMULATOR
+	// ============================================================================
+	// MVP-0.4.3 test instrumentation -- recording log + readback stash. The
+	// recording log captures every Save() call; the stash lets tests inject
+	// "what disk would have returned" for a specific slot so a Load() short-
+	// circuits to it. Both wiped only by ClearForTest.
+	// ============================================================================
+	static Zenith_Vector<WrittenSlot>     s_xWrittenSlotsLog;
+	static std::vector<WrittenSlot>       s_xReadbackStash;
+
+	static WrittenSlot* FindReadbackSlot(const char* szSlotName)
+	{
+		if (szSlotName == nullptr) return nullptr;
+		for (auto& xSlot : s_xReadbackStash)
+		{
+			if (xSlot.m_strSlotName == szSlotName) return &xSlot;
+		}
+		return nullptr;
+	}
+#endif
+
 	// ============================================================================
 	// CRC32 Lookup Table (polynomial 0xEDB88320)
 	// ============================================================================
@@ -114,6 +135,27 @@ namespace Zenith_SaveData
 
 		uint64_t ulPayloadSize = xPayloadStream.GetCursor();
 
+#ifdef ZENITH_INPUT_SIMULATOR
+		// MVP-0.4.3: record the write so tests can audit what was persisted.
+		// We copy the payload bytes BEFORE the header is added so the log
+		// reflects the game-level data, not the file format scaffolding.
+		{
+			WrittenSlot xEntry;
+			xEntry.m_strSlotName  = szSlotName;
+			xEntry.m_uGameVersion = uGameVersion;
+			if (ulPayloadSize > 0)
+			{
+				xEntry.m_xPayload.Reserve(static_cast<u_int>(ulPayloadSize));
+				const uint8_t* pxBytes = static_cast<const uint8_t*>(xPayloadStream.GetData());
+				for (uint64_t u = 0; u < ulPayloadSize; ++u)
+				{
+					xEntry.m_xPayload.PushBack(pxBytes[u]);
+				}
+			}
+			s_xWrittenSlotsLog.PushBack(std::move(xEntry));
+		}
+#endif
+
 		// Compute checksum over payload bytes
 		uint32_t uChecksum = 0;
 		if (ulPayloadSize > 0)
@@ -155,6 +197,28 @@ namespace Zenith_SaveData
 	// ============================================================================
 	bool Load(const char* szSlotName, SaveReadCallback pfnReadPayload, void* pxUserData)
 	{
+#ifdef ZENITH_INPUT_SIMULATOR
+		// MVP-0.4.3: if a test staged a readback for this slot, short-circuit
+		// the disk path and feed the staged payload to the read callback.
+		// Runs BEFORE the Initialise / null-arg asserts so tests can exercise
+		// load semantics without having to first call Initialise (which sets
+		// up an APPDATA save directory we'd never use in a hermetic test).
+		if (szSlotName != nullptr && pfnReadPayload != nullptr)
+		{
+			if (WrittenSlot* pxStash = FindReadbackSlot(szSlotName))
+			{
+				Zenith_DataStream xStream;
+				if (pxStash->m_xPayload.GetSize() > 0)
+				{
+					xStream.WriteData(&pxStash->m_xPayload.Get(0), pxStash->m_xPayload.GetSize());
+					xStream.SetCursor(0);
+				}
+				pfnReadPayload(xStream, pxStash->m_uGameVersion, pxUserData);
+				return true;
+			}
+		}
+#endif
+
 		Zenith_Assert(s_bInitialised, "SaveData: Not initialised. Call Initialise() first");
 		Zenith_Assert(szSlotName != nullptr, "SaveData: Slot name cannot be null");
 		Zenith_Assert(pfnReadPayload != nullptr, "SaveData: Read callback cannot be null");
@@ -274,4 +338,49 @@ namespace Zenith_SaveData
 		Zenith_Log(LOG_CATEGORY_CORE, "SaveData: Deleted save slot '%s'", szPath);
 		return true;
 	}
+
+#ifdef ZENITH_INPUT_SIMULATOR
+	// ============================================================================
+	// MVP-0.4.3 test instrumentation -- public API
+	// ============================================================================
+	const Zenith_Vector<WrittenSlot>& GetWrittenSlotsForTest()
+	{
+		return s_xWrittenSlotsLog;
+	}
+
+	void SetReadbackForTest(const char* szSlotName, uint32_t uGameVersion,
+		const void* pData, uint64_t ulSize)
+	{
+		if (szSlotName == nullptr) return;
+
+		WrittenSlot xSlot;
+		xSlot.m_strSlotName  = szSlotName;
+		xSlot.m_uGameVersion = uGameVersion;
+		if (pData != nullptr && ulSize > 0)
+		{
+			xSlot.m_xPayload.Reserve(static_cast<u_int>(ulSize));
+			const uint8_t* pxBytes = static_cast<const uint8_t*>(pData);
+			for (uint64_t u = 0; u < ulSize; ++u)
+			{
+				xSlot.m_xPayload.PushBack(pxBytes[u]);
+			}
+		}
+
+		// Update or insert in the stash.
+		if (WrittenSlot* pxExisting = FindReadbackSlot(szSlotName))
+		{
+			*pxExisting = std::move(xSlot);
+		}
+		else
+		{
+			s_xReadbackStash.push_back(std::move(xSlot));
+		}
+	}
+
+	void ClearForTest()
+	{
+		s_xWrittenSlotsLog.Clear();
+		s_xReadbackStash.clear();
+	}
+#endif
 }

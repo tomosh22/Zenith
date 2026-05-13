@@ -104,6 +104,9 @@
     <ClCompile Include="..\Tests\Test_PublicInterfaces.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_T0SaveData_TestHooks.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_VisualWiring.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
