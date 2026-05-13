@@ -876,6 +876,7 @@
     <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
     <ClInclude Include="..\Zenith\Core\Zenith.h" />
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_AudioBus.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
@@ -1814,6 +1815,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_AudioBus.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_AutomatedTest.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_CommandLine.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp" />
