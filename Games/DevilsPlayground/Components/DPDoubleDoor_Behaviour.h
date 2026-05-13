@@ -13,6 +13,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
+#include "Source/DP_Tuning.h"
 
 class DPDoubleDoor_Behaviour ZENITH_FINAL : public DPInteractable_Behaviour
 {
@@ -28,6 +29,9 @@ public:
 	void OnAwake() ZENITH_FINAL override
 	{
 		DPInteractable_Behaviour::OnAwake();
+		// MVP-0.1.4: tuning reads.
+		m_fOpenYaw      = DP_Tuning::Get<float>("interactables.double_door_open_yaw_deg");
+		m_fOpenDuration = DP_Tuning::Get<float>("interactables.double_door_open_duration_s");
 		m_bIsOpen = false;
 		m_fOpenT = 0.0f;
 	}
@@ -95,6 +99,12 @@ private:
 	DP_ItemTag m_eRequiredKey = DP_ItemTag::Key;
 	bool       m_bIsOpen      = false;
 	float      m_fOpenT       = 0.0f;
-	float      m_fOpenYaw     = 80.0f;
-	float      m_fOpenDuration = 0.5f;
+	float      m_fOpenYaw     = 80.0f; // Fallback; OnAwake reads DP_Tuning.
+	float      m_fOpenDuration = 0.5f; // Fallback; OnAwake reads DP_Tuning.
+
+#ifdef ZENITH_INPUT_SIMULATOR
+public:
+	float GetOpenYaw() const { return m_fOpenYaw; }
+	float GetOpenDuration() const { return m_fOpenDuration; }
+#endif
 };

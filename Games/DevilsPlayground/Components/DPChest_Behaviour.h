@@ -7,6 +7,7 @@
 #include "Components/DPInteractable_Behaviour.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Maths/Zenith_Maths.h"
+#include "Source/DP_Tuning.h"
 
 class DPChest_Behaviour ZENITH_FINAL : public DPInteractable_Behaviour
 {
@@ -22,6 +23,9 @@ public:
 	void OnAwake() ZENITH_FINAL override
 	{
 		DPInteractable_Behaviour::OnAwake();
+		// MVP-0.1.4: tuning read. Chest had pre-existing drift (0.5f hardcoded
+		// vs Tuning.json's 0.8s); the post-migration value matches the config.
+		m_fOpenDuration = DP_Tuning::Get<float>("interactables.chest_open_duration_s");
 		m_bIsOpen = false;
 		m_fOpenT = 0.0f;
 	}
@@ -50,5 +54,10 @@ protected:
 private:
 	bool  m_bIsOpen = false;
 	float m_fOpenT  = 0.0f;
-	float m_fOpenDuration = 0.5f;
+	float m_fOpenDuration = 0.8f; // Fallback (Tuning.json value); OnAwake reads DP_Tuning.
+
+#ifdef ZENITH_INPUT_SIMULATOR
+public:
+	float GetOpenDuration() const { return m_fOpenDuration; }
+#endif
 };

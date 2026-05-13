@@ -15,6 +15,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "Source/PublicInterfaces.h"
+#include "Source/DP_Tuning.h"
 
 class DPDoor_Behaviour ZENITH_FINAL : public DPInteractable_Behaviour
 {
@@ -30,6 +31,9 @@ public:
 	void OnAwake() ZENITH_FINAL override
 	{
 		DPInteractable_Behaviour::OnAwake();
+		// MVP-0.1.4: tuning reads on top of the base-class proximity radius.
+		m_fOpenYaw      = DP_Tuning::Get<float>("interactables.door_open_yaw_deg");
+		m_fOpenDuration = DP_Tuning::Get<float>("interactables.door_open_duration_s");
 		m_bIsOpen = false;
 		m_fOpenT = 0.0f;
 	}
@@ -119,6 +123,12 @@ private:
 	bool       m_bIsOpen      = false;
 	float      m_fOpenT       = 0.0f;
 	float      m_fClosedYaw   = 0.0f;
-	float      m_fOpenYaw     = 90.0f;
-	float      m_fOpenDuration = 0.4f;
+	float      m_fOpenYaw     = 90.0f; // Fallback; OnAwake reads DP_Tuning.
+	float      m_fOpenDuration = 0.4f; // Fallback; OnAwake reads DP_Tuning.
+
+#ifdef ZENITH_INPUT_SIMULATOR
+public:
+	float GetOpenYaw() const { return m_fOpenYaw; }
+	float GetOpenDuration() const { return m_fOpenDuration; }
+#endif
 };
