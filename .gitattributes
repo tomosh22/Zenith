@@ -46,9 +46,9 @@
 
 ###############################################################################
 # diff behavior for common document formats
-# 
+#
 # Convert binary document formats to text before diffing them. This feature
-# is only available from the command line. Turn it on by uncommenting the 
+# is only available from the command line. Turn it on by uncommenting the
 # entries below.
 ###############################################################################
 #*.doc   diff=astextplain
@@ -61,3 +61,46 @@
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+
+###############################################################################
+# Git LFS (MVP-0.3.3, added 2026-05-13)
+#
+# All binary asset types route through Git LFS instead of being stored inline
+# in pack files. Reasons:
+#   - GitHub has a 100 MB per-file commit limit (already bit us on
+#     opencv_world4100d.dll = 120 MB and slang-llvm.dll = 105 MB; both
+#     are fetched per-CI-run today rather than tracked).
+#   - Repo clones stay small for new contributors who don't need every
+#     historical asset revision.
+#   - Binary diffs are unreadable anyway -- LFS hashing them is a strict
+#     win for git operations.
+#
+# Prerequisite: `git lfs install` must have run on the developer's machine
+# AND on the CI runner. Tracked in ManualSetupChecklist section F.
+#
+# Patterns chosen per the MVP-0.3.3 roadmap entry. Add new binary asset
+# extensions to this section when they appear; do NOT inline-track them.
+###############################################################################
+*.zmodel  filter=lfs diff=lfs merge=lfs -text
+*.zskel   filter=lfs diff=lfs merge=lfs -text
+*.zanim   filter=lfs diff=lfs merge=lfs -text
+*.zmesh   filter=lfs diff=lfs merge=lfs -text
+*.ztxtr   filter=lfs diff=lfs merge=lfs -text
+*.zaudio  filter=lfs diff=lfs merge=lfs -text
+*.spv     filter=lfs diff=lfs merge=lfs -text
+*.fbx     filter=lfs diff=lfs merge=lfs -text
+*.png     filter=lfs diff=lfs merge=lfs -text
+*.jpg     filter=lfs diff=lfs merge=lfs -text
+*.jpeg    filter=lfs diff=lfs merge=lfs -text
+*.tga     filter=lfs diff=lfs merge=lfs -text
+*.dds     filter=lfs diff=lfs merge=lfs -text
+*.exr     filter=lfs diff=lfs merge=lfs -text
+*.hdr     filter=lfs diff=lfs merge=lfs -text
+*.wav     filter=lfs diff=lfs merge=lfs -text
+*.ogg     filter=lfs diff=lfs merge=lfs -text
+*.mp3     filter=lfs diff=lfs merge=lfs -text
+*.flac    filter=lfs diff=lfs merge=lfs -text
+*.gltf    filter=lfs diff=lfs merge=lfs -text
+*.glb     filter=lfs diff=lfs merge=lfs -text
+*.obj     filter=lfs diff=lfs merge=lfs -text
+*.blend   filter=lfs diff=lfs merge=lfs -text
