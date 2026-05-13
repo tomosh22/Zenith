@@ -80,6 +80,17 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__AI_PATHFINDING,
 	ZENITH_PROFILE_INDEX__AI_AGENT_UPDATE,
 	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE,
+	// Sub-stages of AI_NAVMESH_GENERATE -- each wrapped individually so the
+	// profile report shows which Recast-style phase dominates the total.
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_COLLECT_GEOMETRY,
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_COMPUTE_BOUNDS,
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_VOXELIZE,
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_FILTER_WALKABLE,
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_COMPACT_HF,
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_REGIONS,
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_TRACE_CONTOURS,
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_POLY_MESH,
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_NAVMESH,
 	ZENITH_PROFILE_INDEX__AI_DEBUG_DRAW,
 
 	// TilePuzzle Level Generation
@@ -169,6 +180,15 @@ static const char* g_aszProfileNames[]
 	"AI Pathfinding",
 	"AI Agent Update",
 	"AI NavMesh Generate",
+	"AI NavMesh Generate / Collect Geometry",
+	"AI NavMesh Generate / Compute Bounds",
+	"AI NavMesh Generate / Voxelize",
+	"AI NavMesh Generate / Filter Walkable",
+	"AI NavMesh Generate / Build Compact HF",
+	"AI NavMesh Generate / Build Regions",
+	"AI NavMesh Generate / Trace Contours",
+	"AI NavMesh Generate / Build Poly Mesh",
+	"AI NavMesh Generate / Build NavMesh",
 	"AI Debug Draw",
 
 	// TilePuzzle Level Generation

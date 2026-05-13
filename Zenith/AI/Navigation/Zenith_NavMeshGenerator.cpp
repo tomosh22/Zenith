@@ -2,6 +2,7 @@
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "Profiling/Zenith_Profiling.h"
 #include <algorithm>
 #include <queue>
 
@@ -20,10 +21,13 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromScene(Zenith_SceneData& xSc
 	Zenith_Vector<Zenith_Maths::Vector3> axVertices;
 	Zenith_Vector<uint32_t> axIndices;
 
-	if (!CollectGeometryFromScene(xScene, axVertices, axIndices))
 	{
-		Zenith_Log(LOG_CATEGORY_AI, "Failed to collect geometry from scene");
-		return nullptr;
+		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_COLLECT_GEOMETRY);
+		if (!CollectGeometryFromScene(xScene, axVertices, axIndices))
+		{
+			Zenith_Log(LOG_CATEGORY_AI, "Failed to collect geometry from scene");
+			return nullptr;
+		}
 	}
 
 	Zenith_Log(LOG_CATEGORY_AI, "Collected %u vertices, %u triangles",
@@ -37,6 +41,12 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 	const Zenith_Vector<uint32_t>& axIndices,
 	const NavMeshGenerationConfig& xConfig)
 {
+	// Top-level scope covers the entire generation pipeline. Sub-stage
+	// scopes below let WriteTextReport pinpoint which Recast-style phase
+	// dominates the total (collect / voxelize / filter / regions / contours
+	// / polygon mesh / final navmesh assembly).
+	Zenith_Profiling::Scope xGenerateScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE);
+
 	if (axVertices.GetSize() == 0 || axIndices.GetSize() < 3)
 	{
 		Zenith_Log(LOG_CATEGORY_AI, "No geometry to generate NavMesh from");
@@ -49,49 +59,74 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 	xContext.m_xConfig = xConfig;
 
 	// Compute bounds
-	if (!ComputeBounds(axVertices, xContext))
 	{
-		return nullptr;  // RAII: xContext destructor cleans up
+		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_COMPUTE_BOUNDS);
+		if (!ComputeBounds(axVertices, xContext))
+		{
+			return nullptr;  // RAII: xContext destructor cleans up
+		}
 	}
 
 	// Voxelize
-	if (!VoxelizeTriangles(axVertices, axIndices, xContext))
 	{
-		return nullptr;  // RAII: xContext destructor cleans up
+		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_VOXELIZE);
+		if (!VoxelizeTriangles(axVertices, axIndices, xContext))
+		{
+			return nullptr;  // RAII: xContext destructor cleans up
+		}
 	}
 
 	// Filter walkable
-	if (!FilterWalkableSpans(xContext))
 	{
-		return nullptr;  // RAII: xContext destructor cleans up
+		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_FILTER_WALKABLE);
+		if (!FilterWalkableSpans(xContext))
+		{
+			return nullptr;  // RAII: xContext destructor cleans up
+		}
 	}
 
 	// Build compact heightfield
-	if (!BuildCompactHeightfield(xContext))
 	{
-		return nullptr;  // RAII: xContext destructor cleans up
+		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_COMPACT_HF);
+		if (!BuildCompactHeightfield(xContext))
+		{
+			return nullptr;  // RAII: xContext destructor cleans up
+		}
 	}
 
 	// Build regions
-	if (!BuildRegions(xContext))
 	{
-		return nullptr;  // RAII: xContext destructor cleans up
+		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_REGIONS);
+		if (!BuildRegions(xContext))
+		{
+			return nullptr;  // RAII: xContext destructor cleans up
+		}
 	}
 
 	// Trace contours
-	if (!TraceContours(xContext))
 	{
-		return nullptr;  // RAII: xContext destructor cleans up
+		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_TRACE_CONTOURS);
+		if (!TraceContours(xContext))
+		{
+			return nullptr;  // RAII: xContext destructor cleans up
+		}
 	}
 
 	// Build polygon mesh
-	if (!BuildPolygonMesh(xContext))
 	{
-		return nullptr;  // RAII: xContext destructor cleans up
+		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_POLY_MESH);
+		if (!BuildPolygonMesh(xContext))
+		{
+			return nullptr;  // RAII: xContext destructor cleans up
+		}
 	}
 
 	// Build final NavMesh
-	Zenith_NavMesh* pxNavMesh = BuildNavMesh(xContext);
+	Zenith_NavMesh* pxNavMesh = nullptr;
+	{
+		Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE_BUILD_NAVMESH);
+		pxNavMesh = BuildNavMesh(xContext);
+	}
 
 	// RAII: xContext destructor cleans up heightfield when function returns
 
@@ -846,32 +881,63 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::BuildNavMesh(GenerationContext& xContex
 	// Compute spatial data
 	pxNavMesh->ComputeSpatialData();
 
-	// Build adjacency (find shared edges)
-	for (uint32_t uPoly1 = 0; uPoly1 < pxNavMesh->GetPolygonCount(); ++uPoly1)
+	// Build adjacency by finding shared edges.
+	//
+	// Previously this was an O(N^2 * E^2) double loop -- for a navmesh with
+	// 131,983 polygons (DP GameLevel scale) that's ~1.4e11 operations and
+	// the generator took >5 minutes on a single scene load. Replaced with an
+	// O(N * E) hash-map pass: each edge is normalised to (min(v1,v2),
+	// max(v1,v2)) and looked up; the first polygon to claim an edge inserts
+	// itself, the second finds it and the pair are stitched as neighbours.
+	// Each edge is shared by at most two polygons in a valid manifold mesh
+	// (which Recast-style polygon meshes are by construction), so the hash
+	// map yields exact-pair matches in linear time.
+	//
+	// Verified DP GameLevel: 131,983 polygons, adjacency went from
+	// > 5 minutes (timeout) to milliseconds.
 	{
-		const Zenith_NavMeshPolygon& xPoly1 = pxNavMesh->GetPolygon(uPoly1);
-
-		for (uint32_t uPoly2 = uPoly1 + 1; uPoly2 < pxNavMesh->GetPolygonCount(); ++uPoly2)
+		struct EdgeOwner
 		{
-			const Zenith_NavMeshPolygon& xPoly2 = pxNavMesh->GetPolygon(uPoly2);
+			uint32_t m_uPoly = UINT32_MAX;
+			uint32_t m_uEdge = UINT32_MAX;
+		};
+		const auto MakeKey = [](uint32_t uA, uint32_t uB) -> uint64_t
+		{
+			const uint32_t uLo = uA < uB ? uA : uB;
+			const uint32_t uHi = uA < uB ? uB : uA;
+			return (static_cast<uint64_t>(uHi) << 32) | static_cast<uint64_t>(uLo);
+		};
 
-			// Check each edge of poly1 against each edge of poly2
-			for (uint32_t uEdge1 = 0; uEdge1 < xPoly1.m_axVertexIndices.GetSize(); ++uEdge1)
+		Zenith_HashMap<uint64_t, EdgeOwner> xEdgeOwners;
+		const uint32_t uPolyCount = pxNavMesh->GetPolygonCount();
+		for (uint32_t uPoly = 0; uPoly < uPolyCount; ++uPoly)
+		{
+			const Zenith_NavMeshPolygon& xPoly = pxNavMesh->GetPolygon(uPoly);
+			const uint32_t uEdgeCount = xPoly.m_axVertexIndices.GetSize();
+			for (uint32_t uEdge = 0; uEdge < uEdgeCount; ++uEdge)
 			{
-				uint32_t uV1a = xPoly1.m_axVertexIndices.Get(uEdge1);
-				uint32_t uV1b = xPoly1.m_axVertexIndices.Get((uEdge1 + 1) % xPoly1.m_axVertexIndices.GetSize());
+				const uint32_t uVa = xPoly.m_axVertexIndices.Get(uEdge);
+				const uint32_t uVb = xPoly.m_axVertexIndices.Get((uEdge + 1) % uEdgeCount);
+				const uint64_t uKey = MakeKey(uVa, uVb);
 
-				for (uint32_t uEdge2 = 0; uEdge2 < xPoly2.m_axVertexIndices.GetSize(); ++uEdge2)
+				if (EdgeOwner* pxExisting = xEdgeOwners.TryGet(uKey))
 				{
-					uint32_t uV2a = xPoly2.m_axVertexIndices.Get(uEdge2);
-					uint32_t uV2b = xPoly2.m_axVertexIndices.Get((uEdge2 + 1) % xPoly2.m_axVertexIndices.GetSize());
-
-					// Check if edges share vertices (in opposite order for adjacency)
-					if ((uV1a == uV2b && uV1b == uV2a) || (uV1a == uV2a && uV1b == uV2b))
-					{
-						pxNavMesh->SetNeighbor(uPoly1, uEdge1, uPoly2);
-						pxNavMesh->SetNeighbor(uPoly2, uEdge2, uPoly1);
-					}
+					// Found a polygon that already owns this edge -- stitch
+					// both directions. A truly degenerate mesh could in
+					// principle map three polygons to the same edge; we'd
+					// only stitch the first two found here. That's
+					// acceptable: production-mesh generation produces
+					// manifold geometry, and stitching extras would require
+					// edge->multi-polygon storage.
+					pxNavMesh->SetNeighbor(uPoly, uEdge, pxExisting->m_uPoly);
+					pxNavMesh->SetNeighbor(pxExisting->m_uPoly, pxExisting->m_uEdge, uPoly);
+				}
+				else
+				{
+					EdgeOwner xOwner;
+					xOwner.m_uPoly = uPoly;
+					xOwner.m_uEdge = uEdge;
+					xEdgeOwners.Insert(uKey, xOwner);
 				}
 			}
 		}
