@@ -60,6 +60,7 @@ public:
 		// steps before OnStart fires, so the position is final here. In
 		// OnAwake the transform is still at (0,0,0), which would block the
 		// origin cell instead of the door's actual footprint.
+		StitchNavMeshPortal();
 		SyncNavMeshBlock();
 	}
 
@@ -91,6 +92,81 @@ protected:
 	}
 
 private:
+	void StitchNavMeshPortal()
+	{
+		// Bridge the two rooms separated by this door at the navmesh level.
+		// The wall colliders on either side of the door fully separate the
+		// rooms in the heightfield, so even with the door collider excluded
+		// (SetIncludeInNavMesh(false) in OnAwake) the generator emits
+		// disconnected polygon islands -- A* between them returns FAILED.
+		// StitchPortalAt adds a graph-only neighbour link between the two
+		// nearest walkable polygons on each side of the door's facing
+		// direction. Pathfinding then routes through the door's footprint
+		// without requiring a runtime navmesh rebuild.
+		//
+		// The "wall-perpendicular axis" we probe along is the door's
+		// FORWARD direction: when the door opens, you walk perpendicular
+		// to its yaw. We rotate the +X unit vector by the door's yaw to
+		// get the forward axis in world space.
+		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>()) return;
+		const Zenith_NavMesh* pxNavMesh = DP_AI::GetOrBuildLevelNavMesh();
+		if (pxNavMesh == nullptr) return;
+
+		// Same gate as SyncNavMeshBlock: only stitch on the real generated
+		// navmesh, not the legacy 1-poly synthetic. The synthetic mesh
+		// doesn't NEED stitching (everything's one big walkable region)
+		// and stitching it would add a self-loop neighbour link.
+		constexpr uint32_t kMinPolysForStitching = 16;
+		if (pxNavMesh->GetPolygonCount() < kMinPolysForStitching) return;
+
+		Zenith_Maths::Vector3 xPos;
+		Zenith_Maths::Quat xRot;
+		Zenith_TransformComponent& xT =
+			m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+		xT.GetPosition(xPos);
+		xT.GetRotation(xRot);
+
+		// Extract yaw from quaternion. Standard Y-up convention:
+		// yaw = atan2(2*(w*y + x*z), 1 - 2*(y*y + z*z)).
+		const float fYaw = std::atan2(2.0f * (xRot.w * xRot.y + xRot.x * xRot.z),
+			1.0f - 2.0f * (xRot.y * xRot.y + xRot.z * xRot.z));
+		const float fCos = std::cos(fYaw);
+		const float fSin = std::sin(fYaw);
+		const Zenith_Maths::Vector3 xForward(fCos, 0.0f, -fSin);
+
+		// StitchPortalAt mutates polygon adjacency (graph topology) on
+		// what is otherwise a const navmesh handle. The navmesh's
+		// m_axPolygons vector itself isn't reallocated; only the
+		// neighbour-slot data within polygons changes. The cast mirrors
+		// SetPolygonBlocked / SetBlockedAtPoint's existing convention.
+		Zenith_NavMesh& xMutable = const_cast<Zenith_NavMesh&>(*pxNavMesh);
+
+		// Probe candidates: along the door's forward axis (most likely
+		// the wall normal), and also along its perpendicular axis in
+		// case yaw extraction was wrong. Use a few probe distances to
+		// reach past wall thicknesses while staying inside the adjacent
+		// rooms. First successful stitch wins.
+		const Zenith_Maths::Vector3 xPerp(-fSin, 0.0f, -fCos);
+		const Zenith_Maths::Vector3 axProbeAxes[2] = { xForward, xPerp };
+		const float afProbeDistances[3] = { 1.0f, 1.5f, 2.5f };
+		bool bStitched = false;
+		for (int iAxis = 0; iAxis < 2 && !bStitched; ++iAxis)
+		{
+			for (int iDist = 0; iDist < 3 && !bStitched; ++iDist)
+			{
+				bStitched = xMutable.StitchPortalAt(xPos, axProbeAxes[iAxis],
+					afProbeDistances[iDist], /*fMaxVerticalDist=*/3.0f);
+			}
+		}
+		if (!bStitched)
+		{
+			Zenith_Log(LOG_CATEGORY_AI,
+				"DPDoor::StitchNavMeshPortal: stitch failed at (%g,%g,%g) yaw=%g -- "
+				"every probe axis/distance combo returned same-poly or no-poly",
+				xPos.x, xPos.y, xPos.z, fYaw);
+		}
+	}
+
 	void SyncNavMeshBlock()
 	{
 		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>()) return;

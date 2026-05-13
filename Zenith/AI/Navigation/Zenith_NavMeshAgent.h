@@ -68,6 +68,17 @@ public:
 	const Zenith_PathResult& GetCurrentPath() const { return m_xCurrentPath; }
 
 	/**
+	 * Narrow accessor for the path's waypoint list. Convenience for the
+	 * test-harness pathfinder wrapper (`Zenith_NavMeshTestPathfinder`)
+	 * and any caller that only needs the smoothed waypoints, not the
+	 * full PathResult including status/distance/etc.
+	 */
+	const Zenith_Vector<Zenith_Maths::Vector3>& GetPathWaypoints() const
+	{
+		return m_xCurrentPath.m_axWaypoints;
+	}
+
+	/**
 	 * Get the current destination
 	 */
 	const Zenith_Maths::Vector3& GetDestination() const { return m_xDestination; }

@@ -608,6 +608,76 @@ void Zenith_NavMesh::SetPolygonBlocked(uint32_t uPoly, bool bBlocked) const
 	else          xPoly.m_uFlags &= ~Zenith_NavMeshPolygon::FLAG_BLOCKED;
 }
 
+bool Zenith_NavMesh::StitchPortalAt(const Zenith_Maths::Vector3& xPoint,
+	const Zenith_Maths::Vector3& xAxis,
+	float fProbeDistance,
+	float fMaxVerticalDist)
+{
+	// Probe each side of the door point along ±xAxis. We want polygons in
+	// the two adjacent rooms that the door physically separates -- those
+	// polygons exist in the navmesh (the rooms are walkable) but the
+	// generator didn't link them as neighbours because the wall section
+	// between them stayed as obstruction spans, and the doorway gap polys
+	// (if any were emitted) ended up in their own tiny island.
+	if (m_axPolygons.GetSize() == 0) return false;
+
+	const float fAxisLen = Zenith_Maths::Length(xAxis);
+	if (fAxisLen < 0.0001f) return false;
+	const Zenith_Maths::Vector3 xUnit = xAxis / fAxisLen;
+
+	const Zenith_Maths::Vector3 xProbePos = xPoint + xUnit * fProbeDistance;
+	const Zenith_Maths::Vector3 xProbeNeg = xPoint - xUnit * fProbeDistance;
+
+	// FindNearestPolygon (vs FindPolygonContaining): the probe point can
+	// fall in a navmesh "hole" (e.g., over a wall footprint that was
+	// carved out). We want the nearest polygon -- the room's interior --
+	// not strict containment. Range 2m so we don't accidentally bridge to
+	// a far-away polygon on the wrong side of another wall.
+	uint32_t uPolyA = UINT32_MAX, uPolyB = UINT32_MAX;
+	Zenith_Maths::Vector3 xNearestA, xNearestB;
+	const bool bFoundA = FindNearestPolygon(xProbePos, uPolyA, xNearestA, /*fMaxDist=*/2.0f);
+	const bool bFoundB = FindNearestPolygon(xProbeNeg, uPolyB, xNearestB, /*fMaxDist=*/2.0f);
+	(void)fMaxVerticalDist;
+	if (!bFoundA || !bFoundB) return false;
+	if (uPolyA == uPolyB) return false; // already same polygon -- no portal needed
+
+	// Check if they're already linked.
+	const Zenith_NavMeshPolygon& xPolyA = m_axPolygons.Get(uPolyA);
+	for (uint32_t u = 0; u < xPolyA.m_axNeighborIndices.GetSize(); ++u)
+	{
+		if (xPolyA.m_axNeighborIndices.Get(u) == static_cast<int32_t>(uPolyB))
+		{
+			return false; // already neighbours
+		}
+	}
+
+	// Append a phantom neighbour slot to each polygon's neighbour list.
+	// The neighbour list is normally sized 1-per-edge by ComputeAdjacency,
+	// so all edge slots are taken on interior polygons that have natural
+	// neighbours on every side. Pushing an EXTRA slot beyond the
+	// vertex-count is safe by construction:
+	//
+	// * A* (Zenith_Pathfinding::FindPathInternal) iterates the FULL
+	//   m_axNeighborIndices list, so the phantom neighbour is visited.
+	// * GetPortal (used by GetPortalMidpoint) only scans neighbour slots
+	//   indexed BY EDGE (i.e., u < m_axVertexIndices.GetSize()), so the
+	//   phantom is invisible to it -- and GetPortalMidpoint then falls
+	//   back to averaging polygon centers. That fallback is correct for
+	//   a phantom portal: there is no real shared edge between the two
+	//   rooms, so "midpoint between rooms" is the right interpolation.
+	// * SmoothPath's SegmentExitsNavMesh probe still gates the shortcut
+	//   correctly -- the smoothed line from polyA's centre to polyB's
+	//   centre passes through the door's position, where the navmesh
+	//   has walkable polygons (the doorway gap cells the generator
+	//   emitted with the door collider excluded), so the probe finds
+	//   them and doesn't reject the shortcut.
+	Zenith_NavMeshPolygon& xMutA = m_axPolygons.Get(uPolyA);
+	Zenith_NavMeshPolygon& xMutB = m_axPolygons.Get(uPolyB);
+	xMutA.m_axNeighborIndices.PushBack(static_cast<int32_t>(uPolyB));
+	xMutB.m_axNeighborIndices.PushBack(static_cast<int32_t>(uPolyA));
+	return true;
+}
+
 uint32_t Zenith_NavMesh::SetBlockedAtPoint(const Zenith_Maths::Vector3& xPoint,
 	bool bBlocked, float fMaxVerticalDist) const
 {

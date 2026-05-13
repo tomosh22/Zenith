@@ -235,6 +235,40 @@ public:
 	uint32_t SetBlockedAtPoint(const Zenith_Maths::Vector3& xPoint, bool bBlocked,
 		float fMaxVerticalDist = 1.5f) const;
 
+	/**
+	 * Stitch a navmesh portal at the given world point along the given
+	 * "wall axis" (the door's left-right vector, perpendicular to the
+	 * door's facing direction). Used by DPDoor in OnStart -- the wall
+	 * authoring in DP's GameLevel uses wall-section colliders that fully
+	 * separate adjacent rooms in the voxel heightfield even after the
+	 * door's own collider is excluded; the gap between wall endpoints is
+	 * voxelised but the resulting polygons on each side end up in
+	 * different connected components because the gap polygons are too
+	 * narrow / too few cells to bridge them automatically.
+	 *
+	 * StitchPortalAt scans for the nearest walkable polygon on each side
+	 * of the point (offset by `fProbeDistance` along ±xAxis), and adds
+	 * a mutual neighbour link between the two on their nearest-facing
+	 * edges. After stitching, A* can traverse from one side to the other
+	 * directly. The polygons' geometry is unchanged -- this is purely a
+	 * graph-connectivity addition.
+	 *
+	 * Safety:
+	 * - If either side fails to find a polygon, the call is a no-op.
+	 * - If the two polygons are already neighbours, the call is a no-op.
+	 * - Each polygon stores a fixed-size neighbour list (one slot per
+	 *   edge). If both polygons have a free slot, the stitch lands on
+	 *   the nearest edges. If no free slot is available, the call logs
+	 *   and bails (better than overwriting an existing legitimate
+	 *   neighbour).
+	 *
+	 * @return true if a portal stitch was actually added; false on no-op.
+	 */
+	bool StitchPortalAt(const Zenith_Maths::Vector3& xPoint,
+		const Zenith_Maths::Vector3& xAxis,
+		float fProbeDistance = 0.6f,
+		float fMaxVerticalDist = 1.5f);
+
 	// ========== Accessors ==========
 
 	uint32_t GetVertexCount() const { return m_axVertices.GetSize(); }
