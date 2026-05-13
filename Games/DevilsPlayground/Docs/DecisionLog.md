@@ -8,6 +8,20 @@
 
 ---
 
+## 2026-05-13 — MVP-0.1.2: DPVillager tuning migration + carryover from PR #13 squash.
+
+**Decision:** Migrate DPVillager_Behaviour's `m_fMaxLife` (30.0f) and `m_fMoveSpeed` (8.0f) from class-body initializers to `DP_Tuning::Get<float>(...)` reads in OnAwake. Add `Test_P1Villager_TuningMigration` that loads GameLevel, locates the first authored villager, and verifies `GetMaxLife() == DP_Tuning value` AND `GetMoveSpeed() == DP_Tuning value` AND the ratified 30.0 / 8.0 constants (defence-in-depth against same-value tuner edits).
+
+**Why OnAwake, not constructor:** the constructor runs before `m_xParentEntity` is populated by `Zenith_ScriptComponent`, and before `DP_Tuning::Initialize()` (called from `Project_InitializeResources` which runs after script-component creation). OnAwake is the first hook called after both prerequisites are met; it's also Unity-equivalent semantics for "first-frame setup."
+
+**Why a test-only `GetMoveSpeed()` getter:** the move speed is consumed only inside `TickMovement` (which writes to the rigid body's linear velocity). External read-back from tests via the physics body would require an extra DP_Tuning lookup of `physics.fixed_dt` and frame-counting math; a const getter is cheaper and clearer. Marked test-only in the comment so future readers don't grow gameplay code against it.
+
+**Carryover from PR #13 squash:** PR #13's final commit (`0024cba6` — SET_MODEL_MATERIAL warn-not-assert + docs revert + `dp-tests` removed from required) did not make it into the merge commit `c35141fe`. Auto-merge fired on the prior head before the final force-push landed. Result: master has the hard SET_MODEL_MATERIAL assert (would crash dp-tests CI again if asset provisioning lands), and the docs say `dp-tests` is required while branch protection actually only requires `dp-build` + `complexity-gate`. Bundling those fixes into THIS PR rather than spending a round-trip on a separate cleanup PR.
+
+**Reversibility:** trivial — both the tuning read and the carryover are small, additive changes. If the tuning read regresses anything, revert to the static initializer.
+
+---
+
 ## 2026-05-13 — Q-2026-05-12-007 resolution: engine-level `--headless` boot mode (Option C).
 
 **Decision:** Picked **Option C** from Q-2026-05-12-007 (add a `--headless` engine boot mode that skips Vulkan init entirely). MVP-0.0.3 reactivated and `dp-tests` added to required branch-protection checks alongside `dp-build` + `complexity-gate`.

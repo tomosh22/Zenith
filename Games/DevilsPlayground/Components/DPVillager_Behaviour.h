@@ -28,6 +28,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DPInputActions.h"
 #include "Source/DPMaterials.h"
+#include "Source/DP_Tuning.h"
 
 #include <cstdio>
 
@@ -48,6 +49,14 @@ public:
 
 	void OnAwake() ZENITH_FINAL override
 	{
+		// MVP-0.1.2: read tuning constants from DP_Tuning (Config/Tuning.json)
+		// instead of hard-coded field initializers. Run before m_fRemainingLife
+		// is seeded below so the timer uses the tuned value. The class-body
+		// initializers (m_fMaxLife = 30.0f, m_fMoveSpeed = 8.0f) are now
+		// fallbacks only; production gameplay always overwrites them here.
+		m_fMaxLife   = DP_Tuning::Get<float>("possession.life_timer_default_s");
+		m_fMoveSpeed = DP_Tuning::Get<float>("movement.jog_speed_mps");
+
 		// Reset transient state — Editor Stop/Play would otherwise leave a
 		// stale possession flag from a previous play session.
 		m_bIsPossessed = false;
@@ -133,6 +142,11 @@ public:
 
 	float GetRemainingLife() const { return m_fRemainingLife; }
 	float GetMaxLife() const { return m_fMaxLife; }
+	// Test-only accessor — MVP-0.1.2's Test_P1Villager_TuningMigration reads
+	// the move speed back to verify it matches DP_Tuning's
+	// movement.jog_speed_mps after OnAwake. Production gameplay never reads
+	// the move speed externally (it's only consumed inside TickMovement).
+	float GetMoveSpeed() const { return m_fMoveSpeed; }
 	bool IsPossessed() const { return m_bIsPossessed; }
 
 	// Test/debug only: shrink the timer so death-by-timeout tests don't need

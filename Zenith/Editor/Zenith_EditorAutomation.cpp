@@ -1406,7 +1406,19 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Assert(pxEntity, "No entity selected for SET_MODEL_MATERIAL");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_ModelComponent>(), "Selected entity has no ModelComponent");
 		Zenith_ModelComponent& xModel = pxEntity->GetComponent<Zenith_ModelComponent>();
-		Zenith_Assert(xModel.HasModel(), "Selected entity has no model loaded for SET_MODEL_MATERIAL (call AddStep_LoadModel first)");
+		// Soften: missing model means the previous LOAD_MODEL silently failed
+		// (file not found in CI checkouts where Assets/Meshes/ is .gitignore'd).
+		// LOAD_MODEL logs an error and returns; downstream SET_MODEL_MATERIAL
+		// used to assert here. Now we warn and skip so EditorAutomation can
+		// continue and downstream state-only tests still run.
+		if (!xModel.HasModel())
+		{
+			Zenith_Warning(LOG_CATEGORY_EDITOR,
+				"SET_MODEL_MATERIAL skipped on entity %u: no model loaded "
+				"(likely a missing .zmodel asset on this checkout)",
+				static_cast<u_int>(pxEntity->GetEntityID().m_uIndex));
+			break;
+		}
 		const int iIndex = xAction.m_aiArgs[0];
 		Zenith_MaterialAsset* pxMaterial = static_cast<Zenith_MaterialAsset*>(xAction.m_pArg);
 		Zenith_Assert(pxMaterial, "Null material for SET_MODEL_MATERIAL");

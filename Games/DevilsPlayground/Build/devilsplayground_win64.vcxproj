@@ -507,6 +507,7 @@
     <ClCompile Include="..\Tests\Test_Materials.cpp" />
     <ClCompile Include="..\Tests\Test_MouseWheel.cpp" />
     <ClCompile Include="..\Tests\Test_P1Tuning_LoadsAndValuesInBand.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Villager_TuningMigration.cpp" />
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp" />
     <ClCompile Include="..\Tests\Test_Possession.cpp" />
     <ClCompile Include="..\Tests\Test_PostFogHookFires.cpp" />
