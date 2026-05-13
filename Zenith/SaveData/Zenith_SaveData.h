@@ -2,6 +2,11 @@
 
 #include "DataStream/Zenith_DataStream.h"
 
+#ifdef ZENITH_INPUT_SIMULATOR
+#include "Collections/Zenith_Vector.h"
+#include <string>
+#endif
+
 // Magic number: "ZENS" = 0x5A454E53 (Zenith Save)
 static constexpr uint32_t uZENITH_SAVE_MAGIC = 0x5A454E53;
 
@@ -62,4 +67,44 @@ namespace Zenith_SaveData
 
 	// Compute CRC32 checksum of a data buffer
 	uint32_t ComputeCRC32(const void* pData, uint64_t ulSize);
+
+#ifdef ZENITH_INPUT_SIMULATOR
+	// ========================================================================
+	// Test instrumentation (MVP-0.4.3)
+	//
+	// Recording + readback hooks for headless save tests. Tests typically:
+	//   1. Call ClearForTest() at setup to wipe recorded state.
+	//   2. Use SetReadbackForTest(...) BEFORE the system-under-test calls
+	//      Load() -- the staged payload bypasses disk and is returned to
+	//      the read callback directly.
+	//   3. Run gameplay that calls Save() / Load() through the normal API.
+	//   4. Inspect GetWrittenSlotsForTest() to assert what was persisted
+	//      (slot name + raw payload bytes + game version).
+	//
+	// The recording lives behind ZENITH_INPUT_SIMULATOR so shipping builds
+	// stay clean. Save() / Load() still hit disk in test builds too unless
+	// SetReadbackForTest stages a payload for the requested slot (in which
+	// case Load() short-circuits to the stash without reading the file).
+	// ========================================================================
+	struct WrittenSlot
+	{
+		std::string m_strSlotName;
+		uint32_t    m_uGameVersion = 0;
+		Zenith_Vector<uint8_t> m_xPayload;
+	};
+
+	// Returns every Save() call since the last ClearForTest, in order. The
+	// payload bytes are exactly what was written between the header and
+	// EOF (no header, no CRC -- those live in the file on disk).
+	const Zenith_Vector<WrittenSlot>& GetWrittenSlotsForTest();
+
+	// Stage a payload that the next Load(szSlotName, ...) returns via its
+	// read callback instead of reading from disk. The stash persists across
+	// Save() / Load() calls; only ClearForTest wipes it.
+	void SetReadbackForTest(const char* szSlotName, uint32_t uGameVersion,
+		const void* pData, uint64_t ulSize);
+
+	// Wipe the recording log + readback stash. Disk files are NOT touched.
+	void ClearForTest();
+#endif
 }
