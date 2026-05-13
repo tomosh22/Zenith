@@ -8,6 +8,33 @@
 
 ---
 
+## 2026-05-14 — MVP-1.2.2 attempt-3 finding: with the full engine stack landed (#32, #33, #35, #36, #37), reachability is fixed but `PriestPursuit_Test` exposes a SEPARATE BT-behaviour issue.
+
+**Context:** With all engine pieces landed -- walls block paths (PR #32), O(N) adjacency (PR #33), collider-can-opt-out-of-navmesh (PR #35), per-door portal stitching (PR #36), region-keyed vertex dedup (PR #37) -- I tried wiring `DP_AI::GetOrBuildLevelNavMesh` to `Zenith_NavMeshGenerator::GenerateFromScene` locally. `PriestPursuit_Test` no longer fails on `hasPath=0`; the navmesh-connectivity diagnosis from Q-2026-05-13-NM03 is fully resolved by the engine stack.
+
+**New failure mode:** with the priest relocated to villager + 0.5m offset (guaranteed-same-polygon reachability), the priest's BT runs for 120 frames and the priest MOVES AWAY from the villager (initial 0.59m → final 0.98m). hasPath might be 1 at some point but the priest's actual trajectory diverges from the villager. The pursue BT branch should fire when `BB.TargetWithDevil` is set (the test does set the possessed villager); either the BT picks a sub-branch other than pursue, or the path the agent follows wanders before the target is reached.
+
+**Hypotheses (not yet investigated):**
+  a) Pursue branch isn't firing because the perception bridge's `EmitSoundStimulus` (or sight check) hasn't yet detected the villager at distance < 1m -- the priest's awareness ramp may take frames to reach the threshold. With the synthetic 200m flat navmesh the priest would walk the long initial distance toward the villager via patrol, which had the side-effect of also building awareness; with the priest pre-positioned right next to the villager, that distance-walking step is skipped.
+  b) The BT's Selector picks patrol before pursue because the awareness isn't above threshold yet -- the patrol target picker (`GetRandomReachablePointInRadius`) returns a point in the wrong direction.
+  c) Path smoothing / navmesh quirk produces an unexpected first-waypoint direction.
+
+**Decision:** Don't ship the DP_AI wiring change in this session. The PriestPursuit regression is real (the metric goes UP, not down). The fix is BT-side -- investigate which branch fires, why pursue isn't triggering, what the perception ramp is doing -- not engine-side. Filed as Q-2026-05-14-NM01.
+
+What DOES ship this session: every engine surface MVP-1.2.2 needs to actually work. The PR-by-PR investment is intact:
+  * MVP-1.2.0 / 1.2.1 (walls block paths) -- PR #32, merged.
+  * MVP-1.2.5 (`GetPathWaypoints`) + 1.2.9 (`Zenith_NavMeshTestPathfinder`) -- PR #36, in CI.
+  * Generator-quality fixes (perf, collider opt-out, portal stitch, region keys) -- PRs #33, #35, #36, #37, all merged or in CI.
+
+**Trade-offs considered:**
+- *Land the wiring with a known regression on PriestPursuit_Test.* Rejected -- the metric goes the wrong way; that's not "behaviour is preserved", it's "a previously-passing test now reports the priest is broken".
+- *Land the wiring + the test relocation (0.5m offset).* Rejected -- the test now describes a different scenario than it claims to test (BT pursue under controlled spawn vs the original "find closest villager and pursue"), AND the test still fails.
+- *Skip the test gracefully when the priest can't reach any villager.* Rejected -- hides the BT bug that this PR exposed.
+
+**Reversibility:** trivial -- the wiring isn't on master.
+
+---
+
 ## 2026-05-13 — MVP-1.2.2 attempt-2 deferred: real navmesh exposes disconnected regions, `PriestPursuit_Test` fails (Q-2026-05-13-NM03).
 
 **Decision:** Do NOT wire `DP_AI::GetOrBuildLevelNavMesh` to `Zenith_NavMeshGenerator::GenerateFromScene` yet. The engine perf fix (PR #33) makes the generation step fast enough (~850ms on GameLevel + cache amortises across batched tests), but the resulting navmesh accurately reflects GameLevel's collider geometry -- which has rooms walled-off with no doorway gaps. `PriestPursuit_Test` puts the priest at (62.4, 1.0, 56.5) and villager at (65.2, 2.0, 53.1) -- 4.4m apart but in different navmesh regions. `FindPath` returns `hasPath=0` and the priest doesn't move.

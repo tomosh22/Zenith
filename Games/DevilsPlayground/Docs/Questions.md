@@ -10,6 +10,27 @@
 
 ## Open
 
+### ⚠️ Q-2026-05-14-NM01 — With the full engine MVP-1.2 stack, `PriestPursuit_Test` exposes a BT-behaviour issue, not a navmesh issue.
+
+**Context:** With PRs #32 (walls block) + #33 (perf) + #35 (collider opt-out) + #36 (portal stitch + 1.2.5 + 1.2.9) + #37 (region-keyed verts) all landed, the navmesh connectivity issue Q-2026-05-13-NM03 was filed about is fully resolved. Wiring `DP_AI::GetOrBuildLevelNavMesh` to `GenerateFromScene` no longer produces `hasPath=0`. But `PriestPursuit_Test` still fails -- now because the priest's BT moves the priest AWAY from the relocated villager (initial distance 0.59m → final 0.98m over 120 frames).
+
+The priest is now spawning 0.5m east of the closest villager (a test-side relocation to guarantee same-polygon reachability), `BB.TargetWithDevil` should be set by the perception bridge once `DP_Player::SetPossessedVillager` is called, and the BT's pursue branch should fire. Something between the BT's branch selection and the agent's velocity output is going wrong; the priest steers in the wrong direction.
+
+**Hypotheses I'd investigate first:**
+  * Perception awareness ramp -- with the priest spawned right next to the villager, the awareness ramp may not have reached the threshold to flip BB into pursue mode within the first 60 frames. The synthetic-flat-quad version of this test had the priest WALK to the villager from a few meters away, which gave the awareness time to ramp up before pursue fired. Need to check `Zenith_PerceptionSystem::GetAwarenessOf` for the villager over those 120 frames.
+  * Patrol target picker -- if pursue ISN'T firing, the Selector's fallback is patrol. The patrol target picker (`GetRandomReachablePointInRadius`) might return a point in the wrong direction. The diagnostic log showed `patrol=(67.5,1.5,51.9)` while priest is at (67.7,1.9,53.1) -- patrol target is 1.2m southwest, which would explain the priest moving in that direction.
+  * BT lifecycle -- BT only ticks at 10Hz (per AI/CLAUDE.md), so 120 frames at 60Hz = 20 BT ticks. If the BT picks patrol on tick 1 and the run-to-completion semantics of the patrol leaf keep it running for several ticks, the priest commits to patrol even after pursue would otherwise fire.
+
+**Implication:** Phase 1 (priest pursuit) is "done" from an engine-surface perspective but might have a real gameplay bug. With the synthetic flat navmesh the bug was masked by the long initial pursuit distance.
+
+**My best guess if you don't reply:** look at the perception awareness ramp first -- if it's the cause, raise `awareness_gain` or set BB.TargetWithDevil unconditionally when DP_Player::SetPossessedVillager is called (don't wait for the perception ramp).
+
+**Cost of getting it wrong:** moderate. The priest does pursue villagers in actual gameplay (with the synthetic navmesh) -- this test failure surfaces only on the controlled-relocation scenario. Production gameplay starts the priest several meters from any villager.
+
+**Status:** asked 2026-05-14.
+
+---
+
 ### ⚠️ Q-2026-05-13-NM03 — MVP-1.2.2 (real navmesh in DP_AI) reveals disconnected regions; `PriestPursuit_Test` breaks because priest + closest villager land in different regions.
 
 **Context:** With PR #32 (walls block paths) + PR #33 (O(N) adjacency, 850ms generate) both landed, the production path of wiring `DP_AI::GetOrBuildLevelNavMesh` to call `Zenith_NavMeshGenerator::GenerateFromScene` is technically feasible. I wired it with a build-index-keyed cache and ran the DP suite -- 49/50 pass, but `PriestPursuit_Test` fails:
