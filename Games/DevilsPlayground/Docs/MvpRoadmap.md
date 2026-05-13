@@ -99,10 +99,10 @@ The blocker list from [Shortfalls §1](Shortfalls.md). After Phase 1, the game h
 
 ### 1.1 Real pause
 
-- [ ] **MVP-1.1.1** — Test_P1Pause_TimerStopsOnEscape (write first; expect to fail).
-- [ ] **MVP-1.1.2** — Wire `Zenith_SceneManager::SetScenePaused` (or add it). Pause overlay calls it.
-- [ ] **MVP-1.1.3** — Test_P1Pause_PriestStopsOnEscape.
-- [ ] **MVP-1.1.4** — Test_P1Pause_InputSimDuringPause.
+- [x] **MVP-1.1.1** — Test_P1Pause_TimerStopsOnEscape (PR #X). Possessed villager's life timer freezes while paused, ticks again after unpause.
+- [x] **MVP-1.1.2** — `DPPauseMenuController_Behaviour` now calls `Zenith_SceneManager::SetScenePaused` on the captured gameplay scene. The controller's entity migrates itself to the persistent scene during OnStart (singleton pattern, see component header) so its OnUpdate keeps firing while the gameplay scene is frozen -- otherwise the player couldn't unpause.
+- [x] **MVP-1.1.3** — Test_P1Pause_PriestStopsOnEscape. Priest BT ticks halt; entity transform stays put for the paused window.
+- [x] **MVP-1.1.4** — Test_P1Pause_InputSimDuringPause. Verifies the singleton receives the unpause Esc while the gameplay scene is paused (regression guard for the migration).
 
 ### 1.2 Real navmesh — integrate the existing engine generator
 

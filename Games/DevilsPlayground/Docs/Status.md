@@ -1,8 +1,8 @@
 # DP Status
 
-**Last updated:** 2026-05-13 — Q-2026-05-12-007 **RESOLVED** after PR #14 landed the `SET_MODEL_MATERIAL` softening; dp-tests **is now a required check** on master (36 passed / 0 failed on CI). MVP-0.1.2 merged in PR #14.
-**Build:** ✅ DP target builds clean (`vs2022_Debug_Win64_True`, 0 warnings, 0 errors) as of PR #3 (commit e2b10e3a).
-**Tests:** 34/35 passing as of PR #3 (Test_P1Tuning_LoadsAndValuesInBand green). The single fail is `HumanPlaythrough_Test`, a pre-existing skeleton-state issue (`m_iMaxFrames=6000` vs runner default `--exit-after-frames 600`).
+**Last updated:** 2026-05-13 — Phase 0.4 in flight, Phase 1.1 (real pause) drafted in PR #30. PR #29 (Zenith_SaveData test hooks) merged, replacing the closed parallel PR #27. 5 Phase 0 PRs still queued for auto-merge (#21 #22 #25 #26 #28).
+**Build:** ✅ DP target builds clean (`vs2022_Debug_Win64_True`, 0 warnings, 0 errors).
+**Tests:** Full local suite is green via `run_dp_tests.ps1 -Headless` after MVP-1.1 added three pause tests. Master CI shape updates as each in-flight PR lands.
 
 ## Manual setup checklist gating
 
@@ -10,9 +10,13 @@
 
 ## Current task
 
-**MVP-0.1.3** — Next task per roadmap once MVP-0.1.2 lands.
+**MVP-1.1 (Phase 1 — real pause) drafted in PR #30.** All four sub-tasks landed:
+- MVP-1.1.1 / 1.1.3 / 1.1.4 — three pause tests (timer, priest, input-sim).
+- MVP-1.1.2 — `DPPauseMenuController_Behaviour` now wires `Zenith_SceneManager::SetScenePaused`. The controller migrates itself to the persistent scene on OnStart (singleton pattern) so its OnUpdate keeps firing while the gameplay scene is frozen.
+- The pause-controller entity was split off from `GameManager` into a dedicated `PauseManager` entity. The original setup attached the pause script to the shared GameManager entity, which broke when MarkEntityPersistent dragged camera/HUD/fog to the persistent scene with it.
+- Between-tests hook calls `DPPauseMenuController_Behaviour::ResetForTest()` so pause state doesn't carry across batched tests.
 
-**MVP-0.1.2 in progress** — DPVillager migration to DP_Tuning. PR includes the test + the read-from-tuning + the carryover from PR #13's squash that lost the SET_MODEL_MATERIAL soften and the dp-tests-from-required revert.
+**Next per roadmap:** MVP-1.2 (real navmesh integration) once Phase 0.4 in-flight PRs (#25 #26 #28) and #30 land.
 
 **Phase 0.0 COMPLETE** (2026-05-12). All 7 sub-tasks done; bootstrap loop end-to-end-verified in PR #11. `dp-build` + `complexity-gate` + `dp-tests` are the required status checks; auto-merge fires on green. MVP-0.0.3 / Q-2026-05-12-007 was resolved across PR #13 (engine `--headless` mode) and PR #14 (`SET_MODEL_MATERIAL` softened so the asset gap stops blocking authoring). Final CI shape: 36 tests, 24 actual pass, 12 skip via `m_bRequiresGraphics=true`, 0 fail.
 
