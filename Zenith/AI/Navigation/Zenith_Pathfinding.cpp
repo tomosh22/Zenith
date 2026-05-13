@@ -311,6 +311,49 @@ namespace
 		}
 		return false;
 	}
+
+	// Walks a line segment in `kSamples` steps and returns true if any
+	// sampled point is NOT on the navmesh at roughly the same height as
+	// the endpoints -- i.e., the line passes through a carved-out region
+	// (e.g., under a wall) where no floor polygon exists at the agent's
+	// current vertical level. The existing `Zenith_NavMesh::Raycast` is a
+	// ray-vs-polygon-plane test that misses these gaps because the ray
+	// runs parallel to the navmesh polygons and finds no plane to hit; A*
+	// can return a "neighbour" between two floor polygons on opposite
+	// sides of a wall because adjacency is computed from shared vertex
+	// indices and the grid keeps vertex indices stable across the carve.
+	//
+	// Why the tight vertical tolerance: with the default 1.5m tolerance
+	// (matching SegmentCrossesBlockedPolygon), a sample at floor height
+	// y=0.1 inside the wall's carved-out footprint would still "find" the
+	// wall-top polygon at y=1.0 (0.9m above) and return false (not a
+	// hole). We need a tolerance closer to the agent's max step height
+	// (0.3m) so polygons at the WRONG vertical level don't mask the gap.
+	//
+	// Tuning notes:
+	//   * 24 samples gives ~0.25m spacing for a 6m shortcut. The wall test
+	//     needs at least one sample inside the 0.6m-thick wall footprint;
+	//     0.25m spacing leaves ~0.35m of slack either side of the wall.
+	//   * Vertical tolerance = mean of endpoint Y ± kVERT_SLACK. Picking
+	//     against the actual segment endpoints (vs a fixed 0.3m) lets the
+	//     probe work for ramps + multi-level scenes where the line itself
+	//     crosses a Y delta.
+	//   * Sample indices 1..N-1 only (skip endpoints) -- endpoints are by
+	//     construction on the navmesh (A* placed them there).
+	bool SegmentExitsNavMesh(const Zenith_NavMesh& xNavMesh,
+		const Zenith_Maths::Vector3& xA, const Zenith_Maths::Vector3& xB)
+	{
+		constexpr int   kSamples    = 24;
+		constexpr float kVERT_SLACK = 0.5f;  // half the default 1.0m floor-to-ceiling envelope
+		for (int i = 1; i < kSamples; ++i)
+		{
+			const float fT = static_cast<float>(i) / static_cast<float>(kSamples);
+			const Zenith_Maths::Vector3 xP = xA + (xB - xA) * fT;
+			const uint32_t uPoly = xNavMesh.FindPolygonContaining(xP, kVERT_SLACK);
+			if (uPoly == UINT32_MAX) return true;
+		}
+		return false;
+	}
 }
 
 void Zenith_Pathfinding::SmoothPath(Zenith_Vector<Zenith_Maths::Vector3>& axPath,
@@ -347,17 +390,25 @@ void Zenith_Pathfinding::SmoothPath(Zenith_Vector<Zenith_Maths::Vector3>& axPath
 			const bool bBlockedByObstacle =
 				SegmentCrossesBlockedPolygon(xNavMesh,
 					axPath.Get(uCurrent), axPath.Get(u));
-			if (!bRaycastBlocked && !bBlockedByObstacle)
+			// Static-geometry gate — see SegmentExitsNavMesh above. The
+			// geometric Raycast also misses HOLES in the navmesh (carved
+			// cells under a wall), so without this check the smoother
+			// shortcuts across walls.
+			const bool bExitsNavMesh =
+				SegmentExitsNavMesh(xNavMesh,
+					axPath.Get(uCurrent), axPath.Get(u));
+			if (!bRaycastBlocked && !bBlockedByObstacle && !bExitsNavMesh)
 			{
-				// Path is geometrically clear AND doesn't cross a blocked
-				// polygon — safe to extend the shortcut.
+				// Path is geometrically clear, doesn't cross a blocked
+				// polygon, AND stays on the navmesh — safe to extend.
 				uFurthest = u;
 			}
 			else
 			{
-				// Either we'd leave the navmesh or cross a blocked
-				// polygon. Subsequent waypoints would also be unreachable
-				// from uCurrent by the same line, so stop searching.
+				// Either we'd leave the navmesh, cross a blocked polygon,
+				// or pass through a carved-out region. Subsequent waypoints
+				// would also be unreachable from uCurrent by the same line,
+				// so stop searching.
 				break;
 			}
 		}

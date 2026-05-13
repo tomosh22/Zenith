@@ -190,15 +190,40 @@ bool Zenith_NavMeshGenerator::CollectGeometryFromScene(Zenith_SceneData& xScene,
 			axVerticesOut.PushBack(axBoxVerts[i]);
 		}
 
-		// Only add TOP face - this creates walkable surfaces
-		// Vertex indices: 0-3 = bottom face corners, 4-7 = top face corners
-		// Top face (Y+) - CCW when viewed from above
-		axIndicesOut.PushBack(uBaseVertex + 4);
-		axIndicesOut.PushBack(uBaseVertex + 7);
-		axIndicesOut.PushBack(uBaseVertex + 6);
-		axIndicesOut.PushBack(uBaseVertex + 4);
-		axIndicesOut.PushBack(uBaseVertex + 6);
-		axIndicesOut.PushBack(uBaseVertex + 5);
+		// Emit all six faces of the box. The top face's normal points up
+		// and the slope check (in RasterizeTriangle) marks it walkable;
+		// the four sides and the bottom face have normals that fail the
+		// slope check and are marked as OBSTRUCTION spans (area type 0).
+		// Obstruction spans block the clearance check above any walkable
+		// span beneath them, so a 1m-tall wall sitting on the floor carves
+		// a hole in the floor's walkable surface directly under its
+		// footprint -- which is what the navmesh needs to route AI around
+		// walls instead of through them.
+		//
+		// Vertex layout (matches the axBoxVerts initialiser above):
+		//   0-3 = bottom face corners, 4-7 = top face corners.
+		//   0=(-x,-y,-z), 1=(+x,-y,-z), 2=(+x,-y,+z), 3=(-x,-y,+z),
+		//   4=(-x,+y,-z), 5=(+x,+y,-z), 6=(+x,+y,+z), 7=(-x,+y,+z).
+		// Each face wound CCW when viewed from OUTSIDE so the computed
+		// triangle normal points outward (away from the box centre).
+		auto EmitTri = [&](uint32_t a, uint32_t b, uint32_t c)
+		{
+			axIndicesOut.PushBack(uBaseVertex + a);
+			axIndicesOut.PushBack(uBaseVertex + b);
+			axIndicesOut.PushBack(uBaseVertex + c);
+		};
+		// Top face (normal +Y, walkable).
+		EmitTri(4, 7, 6); EmitTri(4, 6, 5);
+		// Bottom face (normal -Y, obstruction).
+		EmitTri(0, 1, 2); EmitTri(0, 2, 3);
+		// Front face Z- (normal -Z, obstruction).
+		EmitTri(0, 4, 5); EmitTri(0, 5, 1);
+		// Back face Z+ (normal +Z, obstruction).
+		EmitTri(3, 2, 6); EmitTri(3, 6, 7);
+		// Left face X- (normal -X, obstruction).
+		EmitTri(0, 3, 7); EmitTri(0, 7, 4);
+		// Right face X+ (normal +X, obstruction).
+		EmitTri(1, 5, 6); EmitTri(1, 6, 2);
 	}
 
 	Zenith_Log(LOG_CATEGORY_AI, "CollectGeometryFromScene: %u entities with colliders, %u with valid bodies, generated %u vertices",
@@ -319,11 +344,16 @@ void Zenith_NavMeshGenerator::RasterizeTriangle(
 	Zenith_Maths::Vector3 xEdge2 = xV2 - xV0;
 	Zenith_Maths::Vector3 xNormal = Zenith_Maths::Normalize(Zenith_Maths::Cross(xEdge1, xEdge2));
 
-	// Only voxelize walkable slopes (we only include top faces now)
-	if (!IsWalkableSlope(xNormal, xContext.m_xConfig.m_fMaxSlope))
-	{
-		return;
-	}
+	// Triangles whose normals point sufficiently up are walkable surfaces
+	// (area type 1) -- they emit voxel spans the agent can stand on.
+	// Everything else (vertical walls, ceilings, undersides) emits an
+	// OBSTRUCTION span (area type 0). Obstruction spans don't appear in
+	// the polygon mesh, but they DO trip the clearance check above any
+	// walkable span beneath them in the same column -- which is how a
+	// wall sitting on a floor carves a hole in the floor's walkable area.
+	const bool bWalkable = IsWalkableSlope(xNormal, xContext.m_xConfig.m_fMaxSlope);
+	const uint8_t uAreaType = bWalkable ? static_cast<uint8_t>(1)
+	                                    : static_cast<uint8_t>(0);
 
 	// Compute triangle bounding box in grid coords
 	float fMinX = std::min({xV0.x, xV1.x, xV2.x});
@@ -353,7 +383,7 @@ void Zenith_NavMeshGenerator::RasterizeTriangle(
 		for (int32_t iX = iMinX; iX <= iMaxX; ++iX)
 		{
 			int32_t iColIndex = GetColumnIndex(iX, iZ, xContext.m_iWidth);
-			AddSpan(xContext.m_axColumns.Get(iColIndex), uMinY, uMaxY, 1);  // All voxelized surfaces are walkable
+			AddSpan(xContext.m_axColumns.Get(iColIndex), uMinY, uMaxY, uAreaType);
 		}
 	}
 }

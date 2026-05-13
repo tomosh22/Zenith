@@ -303,6 +303,8 @@ public:
 	static void TestPathfindingNoDuplicateWaypoints();
 	static void TestPathfindingBatchProcessing();
 	static void TestPathfindingPartialPath();
+	static void TestPathfindingSmootherRejectsCarvedShortcut();
+	static void TestPathfindingSmootherAcceptsValidShortcut();
 
 	// NavMesh Generator helper tests
 	static void TestCountWalkableSpans();
