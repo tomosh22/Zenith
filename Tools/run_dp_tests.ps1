@@ -106,7 +106,12 @@ if (Test-Path $slangBinDir) {
 # Discover tests (always, so we can print the list before the run and
 # decode batch results into per-test pass/fail tally).
 Write-Host "[run_dp_tests] Discovering tests..." -ForegroundColor Cyan
-$listOutput = & $Exe --list-automated-tests --skip-tool-exports --skip-unit-tests 2>&1
+# --headless is required on GPU-less CI runners; --list-automated-tests
+# would otherwise hang on vkEnumeratePhysicalDevices. Pass it whenever
+# the caller asked for -Headless.
+$listArgs = @('--list-automated-tests', '--skip-tool-exports', '--skip-unit-tests')
+if ($Headless) { $listArgs += '--headless' }
+$listOutput = & $Exe @listArgs 2>&1
 $tests = @()
 $inList = $false
 foreach ($line in $listOutput) {
@@ -180,10 +185,17 @@ if ($useBatch) {
     if ($Headless) { $args += '--headless' }
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    & $Exe @args 2>&1 | Tee-Object -Variable runOutput | Out-Null
+    # Tee output into a variable for post-mortem on non-zero exits. The Out-Null
+    # used to suppress live output -- swapped for direct console pass-through so
+    # CI surfaces engine assertions / crash output as it happens.
+    & $Exe @args 2>&1 | Tee-Object -Variable runOutput
     $exitCode = $LASTEXITCODE
     $stopwatch.Stop()
     Write-Host "[run_dp_tests] Batch run finished in $([int]$stopwatch.Elapsed.TotalSeconds)s (exit=$exitCode)" -ForegroundColor Cyan
+    if ($exitCode -ne 0) {
+        Write-Host "[run_dp_tests] Last 80 lines of engine output:" -ForegroundColor Yellow
+        $runOutput | Select-Object -Last 80 | ForEach-Object { Write-Host "    $_" }
+    }
 
     # Propagate a non-zero engine exit as a hard failure even if every JSON
     # the tally loop sees happens to say passed=true. The engine reports

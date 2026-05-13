@@ -10,7 +10,7 @@ Set via `gh api repos/tomosh22/Zenith/branches/master/protection -X PUT` (token 
 
 | Setting | Value |
 |---|---|
-| Required status checks (strict) | `dp-build`, `complexity-gate` |
+| Required status checks (strict) | `dp-build`, `complexity-gate`, `dp-tests` |
 | `strict` (up-to-date branch required) | true |
 | Require linear history | true |
 | Enforce on administrators | **false** (Tomos can bypass for emergencies) |
@@ -24,7 +24,7 @@ Set via `gh api repos/tomosh22/Zenith/branches/master/protection -X PUT` (token 
 
 - **`dp-build`** is the canonical compile-link gate for the DevilsPlayground project ([dp-pr.yml](../../../.github/workflows/dp-pr.yml)). Any PR that breaks the DP build fails this check.
 - **`complexity-gate`** is the engine-wide complexity ceiling check ([complexity.yml](../../../.github/workflows/complexity.yml)). Any PR that adds a function past the [Tools/complexity_profiles.json `engine-ci` thresholds](../../../Tools/complexity_profiles.json) fails this check.
-- **`dp-tests` is NOT a required check.** The `dp-tests.yml` workflow is a `workflow_dispatch`-only skeleton today; it cannot run on free GitHub-hosted runners because the engine needs a Vulkan device that those runners don't have. See [Questions.md Q-2026-05-12-007](Questions.md) for the resolution paths. **When dp-tests reactivates, this policy must be updated** to add it to the required-checks list.
+- **`dp-tests`** is the headless DP test suite ([dp-tests.yml](../../../.github/workflows/dp-tests.yml)). Added as a required check 2026-05-13 after Q-2026-05-12-007 resolution (Option C — engine-level `--headless` short-circuits `Flux::EarlyInitialise`, VMA leaf functions, and editor flush paths). Tests that genuinely require a GPU (fog passes, materials, full playthrough) are tagged `m_bRequiresGraphics=true` in their `Zenith_AutomatedTest` literal; the harness emits `"skipped": true` for them and the skip counts as a pass. CI artefact: `dp-test-results` (per-test JSON).
 - **`strict` (up-to-date branch)** forces PRs to be rebased against the latest master before merge -- prevents "you tested against stale master, your green CI doesn't mean it works against current master" regressions.
 - **`enforce_admins=false`** lets Tomos bypass the gate manually for emergencies (e.g. an urgent build fix when CI itself is broken). The autonomy loop never has admin override -- so the gate is real for agent PRs.
 - **`required_linear_history`** matches the `gh pr merge --squash` convention used by every autonomous-agent PR so far. Squash-merge produces linear history by construction.

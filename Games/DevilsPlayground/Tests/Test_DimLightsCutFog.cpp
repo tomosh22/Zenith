@@ -166,7 +166,8 @@ static const Zenith_AutomatedTest g_xDimLightsCutFogTest = {
 	&Setup_DimLightsCutFog,
 	&Step_DimLightsCutFog,
 	&Verify_DimLightsCutFog,
-	240
+	240,
+	true // m_bRequiresGraphics: light intensity readbacks need scene load with GPU-uploaded materials
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xDimLightsCutFogTest);
 

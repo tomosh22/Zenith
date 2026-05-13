@@ -6,6 +6,7 @@
 #include "Zenith_Editor.h"
 #include "Zenith_EditorState.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "Core/Zenith_CommandLine.h"
 
 // Bridge function called from Zenith_Log macro to add to editor console
 // NOTE: Must be defined after including Zenith_Editor.h
@@ -1194,6 +1195,15 @@ void Zenith_Editor::RequestLoadSceneFromFile(const std::string& strPath)
 // that destroys GPU resources still in flight (scene reset, scene load).
 void Zenith_Editor::WaitForGPUAndFlushDeferred(const char* szReason)
 {
+	// Headless mode (Zenith_CommandLine::IsHeadless()): Flux::EarlyInitialise is
+	// skipped, so command buffers / allocator / device are never created. Every
+	// call below would assert. The semantics ("ensure GPU is idle before
+	// destroying resources") collapse to a no-op when there is no GPU.
+	if (Zenith_CommandLine::IsHeadless())
+	{
+		return;
+	}
+
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Flushing staging buffer...");
 	Flux_MemoryManager::BeginFrame();
 	Flux_MemoryManager::EndFrame(false);  // synchronous, do not defer

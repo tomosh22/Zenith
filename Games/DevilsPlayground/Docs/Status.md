@@ -1,6 +1,6 @@
 # DP Status
 
-**Last updated:** 2026-05-12 after round-2 peer-review reconciliation; MVP-0.1.1 landed out-of-sequence in PR #3.
+**Last updated:** 2026-05-13 — Q-2026-05-12-007 resolved (engine `--headless` mode); MVP-0.0.3 reactivated; dp-tests is now a required PR check.
 **Build:** ✅ DP target builds clean (`vs2022_Debug_Win64_True`, 0 warnings, 0 errors) as of PR #3 (commit e2b10e3a).
 **Tests:** 34/35 passing as of PR #3 (Test_P1Tuning_LoadsAndValuesInBand green). The single fail is `HumanPlaythrough_Test`, a pre-existing skeleton-state issue (`m_iMaxFrames=6000` vs runner default `--exit-after-frames 600`).
 
@@ -12,7 +12,7 @@
 
 **MVP-0.1.2** — Migrate `DPVillager_Behaviour` to read `m_fMaxLife` and `m_fMoveSpeed` from `DP_Tuning` (the system that landed in PR #3 / MVP-0.1.1). Add a migration test that proves prototype's behaviour unchanged.
 
-**Phase 0.0 COMPLETE** (2026-05-12). All 7 sub-tasks done; bootstrap loop end-to-end-verified in PR #11. `dp-build` + `complexity-gate` are the required status checks; auto-merge fires on green. The one open caveat is **MVP-0.0.3** which is a `workflow_dispatch`-only skeleton -- reactivating it as a PR gate is blocked on Q-2026-05-12-007 (GPU on CI / Mesa lavapipe / `--no-graphics` engine mode).
+**Phase 0.0 COMPLETE** (2026-05-12, MVP-0.0.3 reactivated 2026-05-13). All 7 sub-tasks done; bootstrap loop end-to-end-verified in PR #11. `dp-build` + `complexity-gate` + `dp-tests` are the required status checks; auto-merge fires on green. The previously-blocked MVP-0.0.3 (Q-2026-05-12-007 — GPU on CI) was resolved on 2026-05-13 via engine-level headless mode (`Zenith_CommandLine::IsHeadless()` gates `Flux::EarlyInitialise`/`LateInitialise`/`Shutdown`, VMA leaf functions, view-creation asserts, and `Editor::WaitForGPUAndFlushDeferred`; 9 graphics-mandatory tests tagged `m_bRequiresGraphics=true` so the harness skips them).
 
 **MVP-0.1.1 (DP_Tuning) is DONE** out-of-sequence in PR #3 (commit e2b10e3a). See [DecisionLog.md 2026-05-12 (PR #3 out-of-sequence)](DecisionLog.md).
 

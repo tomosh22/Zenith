@@ -102,7 +102,8 @@ static const Zenith_AutomatedTest g_xGameRenderHookTest = {
 	&Setup_GameRenderHook,
 	&Step_GameRenderHook,
 	&Verify_GameRenderHook,
-	5
+	5,
+	true // m_bRequiresGraphics: validates the EXT-1 fog-pass render hook
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xGameRenderHookTest);
 

@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
+#include <filesystem>
 #include <fstream>
 
 namespace Zenith_FileAccess
@@ -71,6 +72,21 @@ namespace Zenith_FileAccess
 		// Use destination buffer size, not source string length, to prevent buffer overflow
 		strncpy_s(acFixedFilename, sizeof(acFixedFilename), szFilename, _TRUNCATE);
 		Zenith_StringUtil::ReplaceAllChars(acFixedFilename, '\\', '/');
+
+		// Ensure the parent directory exists. Fresh CI checkouts (and any other
+		// caller writing to a path under a never-existed subtree, e.g.
+		// EditorAutomation generating .zscen files into Assets/Scenes/ when
+		// that dir is .gitignore'd) hit ENOENT here otherwise -- the assert
+		// below would fire with "Failed to open file ... for writing".
+		std::error_code xMkdirErr;
+		const std::filesystem::path xPath(acFixedFilename);
+		if (xPath.has_parent_path())
+		{
+			std::filesystem::create_directories(xPath.parent_path(), xMkdirErr);
+			// Ignore xMkdirErr -- if the mkdir genuinely failed, the open
+			// below will fail too and trip the existing assert with a
+			// consistent message.
+		}
 
 		std::ofstream xFile(acFixedFilename, std::ios::trunc | std::ios::binary);
 		Zenith_Assert(xFile.is_open(), "Failed to open file %s for writing", szFilename);

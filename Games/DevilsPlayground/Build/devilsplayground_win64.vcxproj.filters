@@ -8,6 +8,9 @@
     <ClCompile Include="..\Source\DPMaterials.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DP_Tuning.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\PublicInterfaces.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -60,6 +63,9 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_MouseWheel.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Tuning_LoadsAndValuesInBand.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp">
@@ -155,6 +161,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DP_LevelData.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Tuning.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\PublicInterfaces.h">

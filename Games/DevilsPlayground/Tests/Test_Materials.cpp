@@ -128,7 +128,8 @@ static const Zenith_AutomatedTest g_xMaterialsTest = {
 	&Setup_Materials,
 	&Step_Materials,
 	&Verify_Materials,
-	240
+	240,
+	true   // m_bRequiresGraphics: asserts on Zenith_MaterialAsset count + DPMaterials::Initialize side-table
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xMaterialsTest);
 

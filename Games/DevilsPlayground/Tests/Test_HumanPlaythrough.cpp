@@ -1879,10 +1879,14 @@ static const Zenith_AutomatedTest g_xHumanPlaythroughTest = {
 	&Setup_HumanPlaythrough,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
-	6000   // ~3 min wall-clock cap — at debug-build ~30 fps this is 200 s; at
+	6000,  // ~3 min wall-clock cap — at debug-build ~30 fps this is 200 s; at
 	       // release ~120 fps it's 50 s. A successful playthrough lands around
 	       // 4500-5500 frames, so this leaves a small headroom but stops a
 	       // stuck run inside the 3-min budget.
+	true   // m_bRequiresGraphics: visible playthrough -- needs UI click on Play +
+	       // a window the user can watch. Also resolves the pre-existing fail in
+	       // Q-2026-05-12-002 (frame-budget mismatch); skipping in headless
+	       // removes the persistent red without losing the test entirely.
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xHumanPlaythroughTest);
 

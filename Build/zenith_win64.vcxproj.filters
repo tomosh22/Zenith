@@ -583,6 +583,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_AutomatedTest.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_CommandLine.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -1094,15 +1097,6 @@
     </ClInclude>
     <ClInclude Include="..\Middleware\imgui-docking\imstb_truetype.h">
       <Filter>Middleware\imgui-docking</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX\VertexConstants.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL\VertexConstants.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\VertexConstants.h">
-      <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK</Filter>
     </ClInclude>
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\AABBTree</Filter>
@@ -3303,6 +3297,9 @@
     <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -4420,21 +4417,6 @@
     </Filter>
     <Filter Include="Middleware\JoltPhysics-5.4.0">
       <UniqueIdentifier>{28d59694-f7eb-5f2a-988d-245669d0d02d}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Assets">
-      <UniqueIdentifier>{fd3572a1-8e8f-db55-3195-b627a00aedc8}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Assets\Shaders">
-      <UniqueIdentifier>{4a196956-3f69-2b1a-5b8e-e667a3948a07}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX">
-      <UniqueIdentifier>{7cdbb2ec-b33f-425c-bfeb-4155d00486df}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL">
-      <UniqueIdentifier>{7283c8ca-48e0-6a9a-c0a6-a7cfb52f4fd1}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK">
-      <UniqueIdentifier>{29841488-3bfc-3d5d-2765-383d7c9905ec}</UniqueIdentifier>
     </Filter>
     <Filter Include="Middleware\JoltPhysics-5.4.0\Jolt">
       <UniqueIdentifier>{850f62c6-7919-d563-7aa8-d889c6dd20a9}</UniqueIdentifier>
