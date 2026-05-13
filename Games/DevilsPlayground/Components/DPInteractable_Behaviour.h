@@ -18,6 +18,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DPInputActions.h"
+#include "Source/DP_Tuning.h"
 
 // Public inheritance because DPDoor / DPChest / DPForge / DPPentagram /
 // DummyNoiseMachine all derive from this — private inheritance would hide
@@ -35,6 +36,12 @@ public:
 
 	void OnAwake() override
 	{
+		// MVP-0.1.4: read default proximity radius from DP_Tuning. Subclasses
+		// (DPDoor / DPDoubleDoor / DPChest / DPForge / DPPentagram /
+		// DummyNoiseMachine) override their own per-type durations / loudness
+		// in their OnAwake on top of this.
+		m_fInteractRadius = DP_Tuning::Get<float>("interactables.default_proximity_radius_m");
+
 		m_bWasInRangeLastFrame = false;
 		m_xInteractSubscription = INVALID_EVENT_HANDLE;
 	}
@@ -143,7 +150,9 @@ protected:
 	}
 
 	bool                m_bInteractOnOverlap = false;
-	float               m_fInteractRadius    = 2.0f;
+	float               m_fInteractRadius    = 2.0f; // Fallback; OnAwake reads DP_Tuning.
 	bool                m_bWasInRangeLastFrame = false;
 	Zenith_EventHandle  m_xInteractSubscription = INVALID_EVENT_HANDLE;
+	// Note: GetInteractRadius() is declared above (line ~84) as part of the
+	// public API; tests use the same accessor.
 };

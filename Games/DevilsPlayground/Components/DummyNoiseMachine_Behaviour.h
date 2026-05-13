@@ -6,6 +6,7 @@
  */
 
 #include "Components/DPInteractable_Behaviour.h"
+#include "Source/DP_Tuning.h"
 
 class DummyNoiseMachine_Behaviour ZENITH_FINAL : public DPInteractable_Behaviour
 {
@@ -17,6 +18,14 @@ public:
 	DummyNoiseMachine_Behaviour(Zenith_Entity& xParentEntity)
 		: DPInteractable_Behaviour(xParentEntity)
 	{}
+
+	void OnAwake() ZENITH_FINAL override
+	{
+		DPInteractable_Behaviour::OnAwake();
+		// MVP-0.1.4: tuning reads.
+		m_fLoudness = DP_Tuning::Get<float>("interactables.noise_machine_loudness");
+		m_fRadius   = DP_Tuning::Get<float>("interactables.noise_machine_radius_m");
+	}
 
 protected:
 	void HandleInteract(Zenith_EntityID /*xVillager*/) override
@@ -30,6 +39,12 @@ protected:
 	}
 
 private:
-	float m_fLoudness = 1.0f;
-	float m_fRadius   = 20.0f;
+	float m_fLoudness = 1.0f;  // Fallback; OnAwake reads DP_Tuning.
+	float m_fRadius   = 20.0f; // Fallback; OnAwake reads DP_Tuning.
+
+#ifdef ZENITH_INPUT_SIMULATOR
+public:
+	float GetLoudness() const { return m_fLoudness; }
+	float GetRadius() const   { return m_fRadius; }
+#endif
 };
