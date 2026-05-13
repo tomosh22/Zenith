@@ -339,7 +339,7 @@ The three playthrough tests that define MVP done.
 
 ## Roadmap meta-rules
 
-- **Sequencing.** Tasks within a sub-section (e.g. 1.3.1–1.3.5) are strictly sequential. Tasks across sub-sections within the same phase (e.g. 1.3.x vs. 1.4.x) can run in parallel agents if Sharpmake regeneration / build-output locks aren't a problem ([per memory](../../../../Users/tomos/.claude/projects/C--dev-Zenith/memory/feedback_parallel_agents_msbuild_thrash.md): they often are. Default to sequential unless the agent confirms isolation).
+- **Sequencing.** Tasks within a sub-section (e.g. 1.3.1–1.3.5) are strictly sequential. Tasks across sub-sections within the same phase (e.g. 1.3.x vs. 1.4.x) can run in parallel agents if Sharpmake regeneration / build-output locks aren't a problem (per Claude user-memory `feedback_parallel_agents_msbuild_thrash`: they often are. Default to sequential unless the agent confirms isolation).
 - **Branch hygiene.** One PR per task. Branch name `dp/mvp-<task-id>`.
 - **Test-first discipline.** Every task starts with a failing test, ends with a passing test. PRs that change behaviour without a corresponding test change are rejected by the reviewer rubric.
 - **Tuning changes.** Any change to `Config/*.json` is its own PR, separate from code changes. Easier to review and revert.

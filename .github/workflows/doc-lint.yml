@@ -1,0 +1,41 @@
+# doc-lint (MVP-0.3.2): cross-document consistency check.
+#
+# Runs Tools/doc_lint.ps1 on every PR + push-to-master. Six checks:
+#   1. Test count consistency across Status / TestPlan / BuildEnvironment /
+#      AgentBriefing / Shortfalls.
+#   2. MVP archetype names agree across docs + Archetypes.json mvp:true.
+#   3. Roadmap task IDs are unique.
+#   4. No [SUPERSEDED] markers in active text (only DecisionLog).
+#   5. No false "X does not exist" claims for files that do exist.
+#   6. Cross-references via markdown links resolve.
+#
+# Each violation is printed in a grep-able single-line form:
+#   VIOLATION [check-id] path:line description
+# CI fails on any violation.
+
+name: doc-lint
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  doc-lint:
+    name: doc-lint
+    runs-on: windows-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run doc_lint.ps1
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File ./Tools/doc_lint.ps1 -ShowPassed
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
