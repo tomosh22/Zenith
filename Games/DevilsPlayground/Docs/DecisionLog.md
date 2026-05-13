@@ -8,6 +8,43 @@
 
 ---
 
+## 2026-05-13 — MVP-1.1: Pause controller migrates to persistent scene (singleton); dedicated `PauseManager` entity.
+
+**Decision:** `DPPauseMenuController_Behaviour::OnStart` captures the current active scene as `m_xGameplayScene`, then calls `Zenith_SceneManager::MarkEntityPersistent(m_xParentEntity)`. On Esc it toggles overlay visibility AND calls `Zenith_SceneManager::SetScenePaused(m_xGameplayScene, m_bShown)`. Subsequent scene loads create a new `PauseManager` entity whose OnStart detects an existing persistent singleton, hands it the new gameplay-scene handle, force-unpauses, and lets itself be destroyed with the scene rather than re-migrating.
+
+**Why a dedicated entity, not on GameManager:** the original authoring attached `DPPauseMenuController_Behaviour` to the shared `GameManager` entity that hosts the camera, HUD, fog pass, and player controller. `MarkEntityPersistent` moves the entire entity. Migrating GameManager would drag camera + HUD + fog to the persistent scene, breaking `HUDLifeBar_Test`, `OrbitCameraStaysFixed_Test`, and `GameLevelScene_Test`. Splitting `PauseManager` off as its own entity (with just `UIComponent` + the `PauseOverlay` text element + the controller script) keeps the migration scoped.
+
+**Why a singleton, not "kill the persistent instance on scene unload":** the persistent scene by definition isn't unloaded, so the original singleton's OnDestroy doesn't fire from a scene unload. The alternative was to manually clean up before each new scene load, which couples the load path to a DP-specific hook. The singleton pattern keeps cleanup local: new PauseManager entities defer to the existing singleton and die naturally with their scene.
+
+**Why test the input simulator during pause (MVP-1.1.4):** if a future change moved the controller back to a paused scene, the player would be unable to unpause -- a soft-lock. `Test_P1Pause_InputSimDuringPause` simulates Esc while paused and asserts the controller still consumes it.
+
+**Trade-offs considered:**
+- *Don't use SetScenePaused; gate gameplay updates on a `DP_Pause::IsPaused()` flag.* Rejected -- duplicates engine surface, contradicts the roadmap's "use engine API" guidance, and forces every gameplay system to wrap its OnUpdate with a pause check.
+- *Move the controller to FrontEnd scene instead of persistent.* Rejected -- FrontEnd is unloaded on SCENE_LOAD_SINGLE, same as GameLevel. The persistent scene is the only DP-accessible always-alive container.
+- *Add an engine-level "always tick" hook for the controller.* Rejected -- the engine already provides the persistent-scene escape hatch for exactly this case; adding a new hook would be over-engineering.
+
+**Reversibility:** revert the OnStart MarkEntityPersistent + the dedicated PauseManager authoring. The Esc-toggles-overlay behaviour reverts to the pre-MVP-1.1 visual-only state.
+
+---
+
+## 2026-05-13 — Lesson: check existing engine surface before authoring a new namespace (PR #27 closed, #29 replaced).
+
+**Decision:** Going forward, before authoring a net-new engine namespace or system, the orchestrator MUST run `find Zenith/ -iname '*<Concept>*'` and `grep -rln 'namespace.*<Concept>\|class.*<Concept>' Zenith/` to confirm no production surface already covers the concept. A check of `Games/TilePuzzle` or another shipping game's usage is also worth a minute since those tend to be the canonical clients of cross-cutting engine systems (save, audio, render, perception).
+
+**What prompted this:** during MVP-0.4.3 (save-system test hooks), I authored `Zenith/FileAccess/Zenith_SaveSystem.h/cpp` from scratch as a brand-new namespace. The user caught it: "Does Zenith not already have a save system? How does TilePuzzle handle saving?" Investigation confirmed `Zenith/SaveData/Zenith_SaveData.h/cpp` already existed as a production-quality save system with ZENS-magic file format, CRC32 integrity, slot API, function-pointer write/read callbacks -- and `Games/TilePuzzle` was using it with 8 schema versions. PR #27 was closed; PR #29 replaced it by adding the test hooks (`WrittenSlot`, `GetWrittenSlotsForTest`, `SetReadbackForTest`, `ClearForTest`) directly onto `Zenith_SaveData` under `#ifdef ZENITH_INPUT_SIMULATOR`.
+
+**Why I missed it:** the orchestrator's reflexive flow was "I need a save system → I'll add one." The naming difference (`SaveSystem` vs `SaveData`) meant a `grep -r SaveSystem Zenith/` returned nothing and I didn't widen the search. The engine's directory layout had `SaveData/` as a top-level peer of `FileAccess/`, which I would have noticed in a `ls Zenith/` but didn't check.
+
+**Audit of nearby PRs:** I also confirmed PRs #25 (`Zenith_AudioBus`) and #26 (`Zenith_RenderBus`) are NOT duplicates -- `Zenith_AudioBus` is for one-shot audio emission recording (perception system covers stimulus, not playback) and `Zenith_RenderBus` for per-frame draw-call recording (no existing engine surface).
+
+**Trade-offs considered:**
+- *Codify the pre-check as a hard slash-command (`/check-engine-surface`).* Rejected for now -- the lesson is fresh and the orchestrator's habit will absorb it. Revisit if the same mistake repeats.
+- *Add a complexity-gate rule that fails on new top-level `Zenith_*` namespaces without a DecisionLog entry.* Considered for later; would require parsing the diff to detect new namespaces. Defer until we see a second instance of this mistake.
+
+**Reversibility:** N/A, this is a process change.
+
+---
+
 ## 2026-05-13 — Q-2026-05-12-007 final resolution: dp-tests re-added to required checks after PR #14.
 
 **Decision:** Branch protection on `master` updated via `gh api PUT` to require all three checks: `dp-build`, `complexity-gate`, `dp-tests`. The earlier 2026-05-13 attempt to add dp-tests was reverted the same day after CI showed `SET_MODEL_MATERIAL` crashing EditorAutomation step 69 (Q-2026-05-12-007 follow-up entry above). PR #14 softened that assertion to warn-and-skip; the next CI run reported **36 passed, 0 failed** (24 actual pass + 12 skipped via `m_bRequiresGraphics=true`). With that empirical evidence the second add stuck.
