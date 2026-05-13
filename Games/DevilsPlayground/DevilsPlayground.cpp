@@ -6,6 +6,7 @@
 #include "Source/DP_LevelData.h"
 #include "Source/DPMaterials.h"
 #include "Source/DP_Tuning.h"
+#include "Source/DP_Archetypes.h"
 
 #include <cstdio>
 #include <cstring>
@@ -71,6 +72,11 @@ namespace DevilsPlayground
 		// can read tuning values during their own bring-up.
 		DP_Tuning::Initialize();
 
+		// MVP-0.2.1+2: Config/Archetypes.json into the archetype cache. Loaded
+		// right after Tuning so DPVillager_Behaviour::OnAwake can consult both.
+		// Idempotent.
+		DP_Archetypes::Initialize();
+
 		// Author Zenith_MaterialAssets from the UE parameter dumps under
 		// Assets/Materials/*.json. Idempotent — safe across Editor Stop/Play.
 		DPMaterials::Initialize();
@@ -106,6 +112,11 @@ namespace DevilsPlayground
 
 		// B6 fog: drop the PFX_Witch config so a relaunch doesn't double-register.
 		DPFogPass::UnregisterParticleConfigs();
+
+		// Drop the archetype cache before tuning -- archetypes don't depend on
+		// tuning, but keep teardown order paired so future cross-deps are
+		// surfaced by the Editor Stop/Play smoke runs. Idempotent.
+		DP_Archetypes::Shutdown();
 
 		// Drop the tuning cache last so materials/fog teardown above can still
 		// query tuning values if they ever start to. Idempotent.
