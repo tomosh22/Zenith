@@ -751,6 +751,9 @@
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
       <Filter>FileAccess</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\FileAccess\Zenith_SaveSystem.cpp">
+      <Filter>FileAccess</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp">
       <Filter>Flux\AnimatedMeshes</Filter>
     </ClCompile>
@@ -3490,6 +3493,9 @@
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h">
+      <Filter>FileAccess</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\FileAccess\Zenith_SaveSystem.h">
       <Filter>FileAccess</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h">

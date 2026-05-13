@@ -520,6 +520,7 @@
     <ClCompile Include="..\Tests\Test_PriestBBBridge.cpp" />
     <ClCompile Include="..\Tests\Test_PriestPursuit.cpp" />
     <ClCompile Include="..\Tests\Test_PublicInterfaces.cpp" />
+    <ClCompile Include="..\Tests\Test_T0SaveSystem_WriteReadRoundTrip.cpp" />
     <ClCompile Include="..\Tests\Test_VisualWiring.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

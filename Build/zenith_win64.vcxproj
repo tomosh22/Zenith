@@ -1170,6 +1170,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager_Internal.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneOperation.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
+    <ClInclude Include="..\Zenith\FileAccess\Zenith_SaveSystem.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Device.h" />
@@ -2435,6 +2436,7 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneOperation.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
+    <ClCompile Include="..\Zenith\FileAccess\Zenith_SaveSystem.cpp" />
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\Backend\Flux_BackendConformance.cpp" />
     <ClCompile Include="..\Zenith\Flux\Decals\Flux_Decals.cpp" />
