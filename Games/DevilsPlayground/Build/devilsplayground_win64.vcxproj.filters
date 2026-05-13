@@ -86,6 +86,9 @@
     <ClCompile Include="..\Tests\Test_P2Villager_ArchetypeStatsApplied.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P3Inventory_ArchetypeCount.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
