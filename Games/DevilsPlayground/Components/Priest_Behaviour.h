@@ -182,6 +182,10 @@ public:
 		auto* pxPatrol = new Zenith_BTSequence();
 		auto* pxFindPos = new DP_BTAction_FindPosInSuspicionSphere();
 		pxFindPos->SetNavMesh(pxNavMesh);
+		// Stash the FindPos pointer so OnUpdate can refresh its navmesh handle
+		// when DP_AI rebuilds the cache (e.g., after a test adds scene
+		// geometry and calls ResetLevelNavMesh).
+		m_pxFindPosNode = pxFindPos;
 		pxPatrol->AddChild(pxFindPos);
 		auto* pxMoveToPatrol = new Zenith_BTAction_MoveTo(DP_AI::BB_KEY_PATROL_TARGET);
 		pxMoveToPatrol->SetAcceptanceRadius(1.0f);
@@ -197,6 +201,24 @@ public:
 		if (!m_xParentEntity.HasComponent<Zenith_AIAgentComponent>()) return;
 		Zenith_AIAgentComponent& xAgent = m_xParentEntity.GetComponent<Zenith_AIAgentComponent>();
 		Zenith_Blackboard& xBB = xAgent.GetBlackboard();
+
+		// Refresh the cached navmesh pointer. DP_AI's navmesh can be rebuilt
+		// at runtime (e.g., a test setup that adds scene geometry then calls
+		// DP_AI::ResetLevelNavMesh), invalidating the pointer the agent
+		// captured during OnStart. Re-pulling here keeps the agent + the
+		// patrol-target picker in sync with the live cache, at the cost of
+		// one hash-table lookup per frame.
+		const Zenith_NavMesh* pxLiveNavMesh = DP_AI::GetOrBuildLevelNavMesh();
+		if (pxLiveNavMesh != m_xNavAgent.GetNavMesh())
+		{
+			m_xNavAgent.SetNavMesh(pxLiveNavMesh);
+			// FindPos node holds its own navmesh pointer too -- update it
+			// in lock-step so patrol picks reachable points on the new mesh.
+			if (m_pxFindPosNode != nullptr)
+			{
+				m_pxFindPosNode->SetNavMesh(pxLiveNavMesh);
+			}
+		}
 
 		BridgePerceptionToBlackboard(xBB);
 
@@ -319,6 +341,12 @@ private:
 	Zenith_BehaviorTree m_xTree;
 	Zenith_NavMeshAgent m_xNavAgent;
 	uint32_t            m_uDebugFrameCounter = 0;
+
+	// Non-owning pointer to the patrol's FindPos node. Set in OnStart so
+	// OnUpdate can refresh the navmesh handle when DP_AI rebuilds the cache.
+	// The BT itself owns the node's memory; we only need read access to
+	// call SetNavMesh on it.
+	DP_BTAction_FindPosInSuspicionSphere* m_pxFindPosNode = nullptr;
 
 	// Class-body initializers below are FALLBACKS only -- production gameplay
 	// always overwrites them in OnAwake via DP_Tuning::Get<float>() reads.
