@@ -8,6 +8,9 @@
     <ClCompile Include="..\Source\DPMaterials.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DP_Archetypes.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DP_Tuning.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -75,6 +78,9 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Villager_TuningMigration.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P2Archetype_TimersMatchSpec.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp">
@@ -167,6 +173,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPMaterials.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Archetypes.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DP_LevelData.h">

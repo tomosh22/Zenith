@@ -479,6 +479,7 @@
     <ClInclude Include="..\Source\DPFogPass.h" />
     <ClInclude Include="..\Source\DPInputActions.h" />
     <ClInclude Include="..\Source\DPMaterials.h" />
+    <ClInclude Include="..\Source\DP_Archetypes.h" />
     <ClInclude Include="..\Source\DP_LevelData.h" />
     <ClInclude Include="..\Source\DP_Tuning.h" />
     <ClInclude Include="..\Source\PublicInterfaces.h" />
@@ -487,6 +488,7 @@
     <ClCompile Include="..\DevilsPlayground.cpp" />
     <ClCompile Include="..\Source\DPFogPass.cpp" />
     <ClCompile Include="..\Source\DPMaterials.cpp" />
+    <ClCompile Include="..\Source\DP_Archetypes.cpp" />
     <ClCompile Include="..\Source\DP_Tuning.cpp" />
     <ClCompile Include="..\Source\PublicInterfaces.cpp" />
     <ClCompile Include="..\Tests\Test_BuildingWallClosure.cpp" />
@@ -510,6 +512,7 @@
     <ClCompile Include="..\Tests\Test_P1Tuning_LoadsAndValuesInBand.cpp" />
     <ClCompile Include="..\Tests\Test_P1Tuning_PriestValuesMatchConfig.cpp" />
     <ClCompile Include="..\Tests\Test_P1Villager_TuningMigration.cpp" />
+    <ClCompile Include="..\Tests\Test_P2Archetype_TimersMatchSpec.cpp" />
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp" />
     <ClCompile Include="..\Tests\Test_Possession.cpp" />
     <ClCompile Include="..\Tests\Test_PostFogHookFires.cpp" />
