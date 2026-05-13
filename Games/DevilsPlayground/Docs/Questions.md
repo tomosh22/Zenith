@@ -112,9 +112,9 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 ---
 
-### ⚠️ Q-2026-05-12-007 — `dp-tests` CI gate is blocked on GPU-on-CI. MVP-0.0.6 follow-on is also blocked.
+### ✅ Q-2026-05-12-007 — `dp-tests` CI gate is blocked on GPU-on-CI. MVP-0.0.6 follow-on is also blocked.
 
-**PARTIAL 2026-05-13.** Picked Option C (engine-level skip). Engine boot now branches on `Zenith_CommandLine::IsHeadless()`:
+**RESOLVED 2026-05-13** (after one false-start). Picked Option C (engine-level skip). Engine boot now branches on `Zenith_CommandLine::IsHeadless()`:
 - `Flux::EarlyInitialise` / `LateInitialise` / `Shutdown` / `WaitForGPUIdle` skipped in `Zenith_Main` + `Zenith_Core`
 - `Editor::WaitForGPUAndFlushDeferred` short-circuits to no-op in headless
 - All VMA `vmaCreate*` leaf sites guard on `s_xAllocator == VK_NULL_HANDLE` and return invalid `Flux_VRAMHandle`
@@ -127,12 +127,9 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 Verified locally on 2026-05-13: `--headless` + non-graphics → PASS, `--headless` + graphics → SKIP, no-flag + graphics → PASS, no-flag + non-graphics → PASS. Full headless batch via `run_dp_tests.ps1 -Headless`: 35/35 effective pass (24 actual pass + 11 skip).
 
-**STILL OPEN on CI:** `Games/DevilsPlayground/Assets/Meshes/` is gitignored (root `.gitignore` line 75: `**/Assets/`). Fresh CI checkouts have no `.zmodel` files, so EditorAutomation's `LoadModel` calls hit `File does not exist` and the resulting model-less entities can't satisfy most gameplay-test setups. dp-tests.yml triggers are active (pull_request + push) so the workflow runs informationally, but **dp-tests was REMOVED from required branch-protection checks** until asset provisioning is solved. Three follow-up paths:
-1. Commit a placeholder-asset bundle (`Assets/Meshes/Placeholder.zmodel` + redirect every LoadModel through a "use placeholder if file missing" hook). Cleanest engine fix; ~2 hours; lets every state-only test on CI pass.
-2. Fetch a CC0 mesh archive at dp-tests.yml workflow startup (mirror the local Assets/ tree). External-dependency cost; counter to zero-external-spend rule unless self-hosted.
-3. Self-hosted runner with full local checkout. Lowest immediate work; ongoing maintenance burden.
+**The asset-provisioning concern was empirical, not theoretical.** Once PR #14 landed the `SET_MODEL_MATERIAL` softening (warn-and-skip instead of assert when no model loaded), CI ran the headless batch cleanly: **36 passed, 0 failed** (24 actual pass + 12 skipped via `m_bRequiresGraphics=true`). The state-only tests (DP_Win, DP_HeldItem, DP_Unlock, Hello, MouseWheel, PriestBBBridge, PostFogHookFires, Test_P1Tuning_LoadsAndValuesInBand, etc.) never needed the `.zmodel` files; the tests that DO need them are all tagged graphics-required and skip cleanly on CI.
 
-**Status:** PARTIAL 2026-05-13. Engine `--headless` done + verified. CI asset provisioning is the new gate.
+**Status:** RESOLVED 2026-05-13. `dp-tests` re-added to required branch-protection checks after PR #14. The three follow-up paths above (placeholder bundle / CC0 archive / self-hosted runner) become relevant only if we want the graphics-tagged tests to run on CI too — for now, local-only coverage of those is acceptable.
 
 ---
 

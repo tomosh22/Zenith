@@ -8,6 +8,20 @@
 
 ---
 
+## 2026-05-13 — Q-2026-05-12-007 final resolution: dp-tests re-added to required checks after PR #14.
+
+**Decision:** Branch protection on `master` updated via `gh api PUT` to require all three checks: `dp-build`, `complexity-gate`, `dp-tests`. The earlier 2026-05-13 attempt to add dp-tests was reverted the same day after CI showed `SET_MODEL_MATERIAL` crashing EditorAutomation step 69 (Q-2026-05-12-007 follow-up entry above). PR #14 softened that assertion to warn-and-skip; the next CI run reported **36 passed, 0 failed** (24 actual pass + 12 skipped via `m_bRequiresGraphics=true`). With that empirical evidence the second add stuck.
+
+**Why the asset gap turned out to be a non-issue:** the failing dp-tests runs were crashing at SET_MODEL_MATERIAL *before* any test ran, masking the fact that state-only tests didn't actually need the .zmodel files. Once authoring completed (even with model-less entities for the villagers), every test that doesn't assert on rendered output passed. The 12 tests that *do* need real meshes/rendering were already tagged to skip in headless mode -- they continue to run only on local windowed builds.
+
+**Trade-offs considered:**
+- *Wait for asset provisioning (placeholder-bundle / CC0 fetch / self-hosted runner) before re-adding.* Rejected -- empirical 36-pass result on CI means we don't need provisioning to gate. Asset provisioning becomes a later "want the graphics-tagged tests to also run on CI" enhancement, not a gate.
+- *Leave dp-tests informational permanently.* Rejected -- the autonomy loop premise is "auto-merge on green CI"; an informational test gate that's actually passing is wasted signal.
+
+**Reversibility:** one `gh api PUT` call drops dp-tests from the contexts list.
+
+---
+
 ## 2026-05-13 — MVP-0.1.2: DPVillager tuning migration + carryover from PR #13 squash.
 
 **Decision:** Migrate DPVillager_Behaviour's `m_fMaxLife` (30.0f) and `m_fMoveSpeed` (8.0f) from class-body initializers to `DP_Tuning::Get<float>(...)` reads in OnAwake. Add `Test_P1Villager_TuningMigration` that loads GameLevel, locates the first authored villager, and verifies `GetMaxLife() == DP_Tuning value` AND `GetMoveSpeed() == DP_Tuning value` AND the ratified 30.0 / 8.0 constants (defence-in-depth against same-value tuner edits).

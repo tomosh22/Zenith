@@ -10,7 +10,7 @@ Set via `gh api repos/tomosh22/Zenith/branches/master/protection -X PUT` (token 
 
 | Setting | Value |
 |---|---|
-| Required status checks (strict) | `dp-build`, `complexity-gate` |
+| Required status checks (strict) | `dp-build`, `complexity-gate`, `dp-tests` |
 | `strict` (up-to-date branch required) | true |
 | Require linear history | true |
 | Enforce on administrators | **false** (Tomos can bypass for emergencies) |
@@ -24,7 +24,7 @@ Set via `gh api repos/tomosh22/Zenith/branches/master/protection -X PUT` (token 
 
 - **`dp-build`** is the canonical compile-link gate for the DevilsPlayground project ([dp-pr.yml](../../../.github/workflows/dp-pr.yml)). Any PR that breaks the DP build fails this check.
 - **`complexity-gate`** is the engine-wide complexity ceiling check ([complexity.yml](../../../.github/workflows/complexity.yml)). Any PR that adds a function past the [Tools/complexity_profiles.json `engine-ci` thresholds](../../../Tools/complexity_profiles.json) fails this check.
-- **`dp-tests`** ([dp-tests.yml](../../../.github/workflows/dp-tests.yml)) runs on every PR but **is NOT a required check** as of 2026-05-13. The engine-level `--headless` mode (Q-2026-05-12-007 Option C) is done and verified locally, but the test execution on a fresh CI checkout hits a **separate asset-provisioning gap**: `Games/DevilsPlayground/Assets/Meshes/` is `.gitignore`'d (root `.gitignore` line 75: `**/Assets/`), so on CI the `LoadModel` calls during `EditorAutomation` fail with `File does not exist`. The engine softens the subsequent `SET_MODEL_MATERIAL` assertion so authoring continues, but the resulting model-less scene won't pass most gameplay tests. Adding `dp-tests` back to required is gated on solving the asset provisioning story (track a placeholder asset bundle in git, or fetch a CC0-mesh archive at workflow start, or self-hosted runner with the real asset tree). Tracked as Q-2026-05-12-007 follow-up.
+- **`dp-tests`** ([dp-tests.yml](../../../.github/workflows/dp-tests.yml)) is the headless DP test suite. Re-added as a required check 2026-05-13 (second attempt) after PR #14's `SET_MODEL_MATERIAL` softening empirically resolved the CI asset-gap concern: on a fresh GPU-less runner with no `.zmodel` files, the engine `--headless` mode + the `m_bRequiresGraphics` skip-list combine to give **36 passed, 0 failed** (24 actual pass + 12 skipped). The first re-add attempt earlier 2026-05-13 was reverted because the SET_MODEL_MATERIAL hard assert had crashed authoring before any test ran; with that commit in master, dp-tests is reliable as a gate. Tests that genuinely require a GPU or mesh data (fog passes, materials, full playthrough, double-door, forge, villager-tuning migration -- 12 total) are tagged `m_bRequiresGraphics=true`; the harness emits `"skipped": true` for them and skip counts as pass. CI artefact: `dp-test-results` (per-test JSON).
 - **`strict` (up-to-date branch)** forces PRs to be rebased against the latest master before merge -- prevents "you tested against stale master, your green CI doesn't mean it works against current master" regressions.
 - **`enforce_admins=false`** lets Tomos bypass the gate manually for emergencies (e.g. an urgent build fix when CI itself is broken). The autonomy loop never has admin override -- so the gate is real for agent PRs.
 - **`required_linear_history`** matches the `gh pr merge --squash` convention used by every autonomous-agent PR so far. Squash-merge produces linear history by construction.
