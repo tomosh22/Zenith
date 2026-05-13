@@ -130,6 +130,14 @@ Zenith_PathResult Zenith_Pathfinding::FindPath(const Zenith_NavMesh& xNavMesh,
 	const Zenith_Maths::Vector3& xEnd)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PATHFINDING);
+#ifdef ZENITH_INPUT_SIMULATOR
+	// MVP-0.4.4: count every public FindPath call so tests can assert
+	// query-volume contracts (e.g. "priest issued <= N path queries
+	// during the test window"). FindPathInternal is called from
+	// AsyncWorker too; we only count the public-facing call so the
+	// async-internal recompute path doesn't double-count.
+	Zenith_NavMesh::IncrementQueryCountForTest_Internal();
+#endif
 	return FindPathInternal(xNavMesh, xStart, xEnd);
 }
 

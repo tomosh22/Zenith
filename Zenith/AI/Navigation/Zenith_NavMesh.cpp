@@ -219,6 +219,31 @@ void Zenith_NavMeshPolygon::ReadFromDataStream(Zenith_DataStream& xStream)
 
 // ========== Zenith_NavMesh ==========
 
+#ifdef ZENITH_INPUT_SIMULATOR
+namespace
+{
+	// MVP-0.4.4: per-process FindPath query counter. Lives in the anonymous
+	// namespace so it stays a TU-local static; the three accessors below
+	// expose it through the class API.
+	u_int s_uFindPathQueryCount = 0;
+}
+
+u_int Zenith_NavMesh::GetQueryCountForTest()
+{
+	return s_uFindPathQueryCount;
+}
+
+void Zenith_NavMesh::ResetQueryCountForTest()
+{
+	s_uFindPathQueryCount = 0;
+}
+
+void Zenith_NavMesh::IncrementQueryCountForTest_Internal()
+{
+	++s_uFindPathQueryCount;
+}
+#endif
+
 void Zenith_NavMesh::Clear()
 {
 	m_axVertices.Clear();

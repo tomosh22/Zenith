@@ -249,6 +249,26 @@ public:
 	const Zenith_Maths::Vector3& GetBoundsMin() const { return m_xBoundsMin; }
 	const Zenith_Maths::Vector3& GetBoundsMax() const { return m_xBoundsMax; }
 
+#ifdef ZENITH_INPUT_SIMULATOR
+	// ========== Test instrumentation (MVP-0.4.4) ==========
+	//
+	// Per-process counter incremented every time Zenith_Pathfinding::FindPath
+	// is called. Used by tests asserting "the priest issued at most N path
+	// queries during the test window" without needing to instrument
+	// Priest_Behaviour or the AI agent. Owned by the navmesh namespace
+	// because the counter is a property of the navigation system as a whole
+	// rather than any single NavMesh instance.
+	//
+	// API:
+	//   GetQueryCountForTest() -- returns the live counter.
+	//   ResetQueryCountForTest() -- zero the counter (call at test setup).
+	//   IncrementQueryCountForTest_Internal() -- called by FindPath. Not
+	//       intended for direct use; the suffix flags it as engine-internal.
+	static u_int GetQueryCountForTest();
+	static void  ResetQueryCountForTest();
+	static void  IncrementQueryCountForTest_Internal();
+#endif
+
 	// ========== Serialization ==========
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
