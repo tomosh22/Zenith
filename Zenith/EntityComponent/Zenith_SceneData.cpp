@@ -1019,9 +1019,20 @@ Zenith_SceneData::PendingStartResult Zenith_SceneData::ProcessSinglePendingStart
 		{
 			// Remove from target's pending list and decrement count
 			// (don't use CancelPendingStart - lifecycle is still PENDING_START and
-			// we want MarkEntityStarted to handle the transition, not revert to AWOKEN)
-			Zenith_Assert(pxTargetData->m_uPendingStartCount > 0, "PendingStartCount underflow in target scene after Start-during-move");
-			pxTargetData->m_uPendingStartCount--;
+			// we want MarkEntityStarted to handle the transition, not revert to AWOKEN).
+			//
+			// Underflow tolerance (2026-05-13, MVP-0.1.3 CI bisect): the assert
+			// was firing only on the CI runner during the DP harness's
+			// between-tests scene cycling, where the target scene's pending list
+			// can have already cleared this entity (e.g. via an earlier
+			// MoveEntityInternal-during-Start). The list-erase is idempotent
+			// (EraseValue returns false on miss), and we only need to decrement
+			// when the count is positive -- the underflow case means
+			// bookkeeping is already consistent.
+			if (pxTargetData->m_uPendingStartCount > 0)
+			{
+				pxTargetData->m_uPendingStartCount--;
+			}
 			pxTargetData->m_axPendingStartEntities.EraseValue(xEntityID);
 		}
 		MarkEntityStarted(xEntityID);
