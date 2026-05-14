@@ -98,27 +98,30 @@ namespace DP_Player
 	Zenith_EntityID GetPossessedVillager();
 	void SetPossessedVillager(Zenith_EntityID xId);
 
-	// MVP-1.5: voluntary-switch possession path. Player-driven possession
-	// (click-to-possess, future switch UI) goes through this entry point
-	// so the cooldown gate fires. System paths -- villager death, priest
-	// apprehend -- keep calling SetPossessedVillager directly so they
-	// don't trigger a cooldown the player can't see coming.
+	// MVP-1.5 + 1.8: voluntary-switch possession path. Player-driven
+	// possession (click-to-possess, future switch UI) goes through this
+	// entry point so the cooldown + range gates fire. System paths --
+	// villager death, priest apprehend -- keep calling SetPossessedVillager
+	// directly so they don't trigger gates the player can't see coming.
 	//
 	// Returns true if the possession actually changed; false when the
-	// call was rejected by the cooldown gate. Resolving to the SAME
-	// villager that's already possessed returns true and is a no-op
-	// (idempotent re-clicks don't waste the cooldown window).
+	// call was rejected by the cooldown or range gates. Resolving to the
+	// SAME villager that's already possessed returns true and is a no-op
+	// (idempotent re-clicks don't waste the cooldown window or trip the
+	// range gate).
 	//
-	// Cooldown rules:
-	//   * Switching to a different valid villager (incl. INVALID -> X
-	//     while a cooldown is already burning down from a prior switch):
-	//     refused if cooldown > 0; on success, cooldown = priest_tuning
+	// Gates:
+	//   * Cooldown (MVP-1.5): refused if cooldown > 0; on success,
+	//     cooldown = priest_tuning
 	//     "possession.cooldown_after_voluntary_switch_s" (default 1.5 s).
-	//   * Voluntarily releasing to INVALID while currently possessing
-	//     a valid villager: cooldown = same as above.
-	//   * Resetting cooldown is automatic on death / apprehend (those
-	//     paths use SetPossessedVillager and don't touch the cooldown
-	//     timer; "cooldown_after_burnout_s = 0" in tuning is the canon).
+	//   * Range (MVP-1.8): refused if the new villager's world position
+	//     is more than "possession.range_from_anchor_m" (default 15 m)
+	//     from the anchor. Anchor is set by SetPossessedVillager and
+	//     TryVoluntaryPossessSwitch on success; cleared by
+	//     SetPossessedVillager(INVALID_ENTITY_ID).
+	//   * Resetting cooldown / range is automatic on death / apprehend
+	//     (those paths use SetPossessedVillager and don't trigger the
+	//     gates; "cooldown_after_burnout_s = 0" in tuning is the canon).
 	bool TryVoluntaryPossessSwitch(Zenith_EntityID xId);
 
 	// Per-frame cooldown decrement. DPPlayerController_Behaviour::OnUpdate

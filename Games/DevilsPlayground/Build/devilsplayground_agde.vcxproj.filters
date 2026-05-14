@@ -101,6 +101,12 @@
     <ClCompile Include="..\Tests\Test_P1Pause_TimerStopsOnEscape.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Range_AcceptedInRange.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Range_RefusedOutOfRange.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Tuning_InteractableValuesMatchConfig.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
