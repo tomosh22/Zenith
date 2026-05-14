@@ -20,6 +20,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DPMaterials.h"
+#include "Components/DPVillager_Behaviour.h"
 
 class DPItemBase_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
@@ -85,6 +86,25 @@ public:
 		const float fDx = xMyPos.x - xVPos.x;
 		const float fDz = xMyPos.z - xVPos.z;
 		if (fDx * fDx + fDz * fDz > m_fPickupRadius * m_fPickupRadius) return;
+
+		// MVP-2.1.4: Child archetype can't carry tools. The GDD framing
+		// is "small hands"; mechanically it means the Child has to
+		// route through other villagers for any door / forge work. We
+		// look up the possessed villager's archetype id and refuse
+		// pickup if it's "Child" AND the item is in the tool set
+		// (DP_IsToolTag -- Iron, Key). Objectives + SkeletonKey are
+		// exempt so a Child can still complete the run.
+		if (xV.HasComponent<Zenith_ScriptComponent>())
+		{
+			DPVillager_Behaviour* pxV =
+				xV.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
+			if (pxV != nullptr
+				&& pxV->GetArchetypeId() == "Child"
+				&& DP_IsToolTag(m_eTag))
+			{
+				return;
+			}
+		}
 
 		DP_Player::SetHeldItem(xVillager, m_xParentEntity.GetEntityID());
 		Zenith_EventDispatcher::Get().Dispatch(
