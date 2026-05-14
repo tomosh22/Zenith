@@ -188,8 +188,17 @@ public:
 			m_xParentEntity.GetEntityID().m_uIndex, m_xParentEntity.GetEntityID().m_uGeneration,
 			bHasAI ? 1 : 0, (void*)pxNavMesh);
 
-		// Build the BT root: Selector → Pursue / Investigate / Patrol.
+		// Build the BT root: Selector → Apprehend / Pursue / Investigate / Patrol.
 		auto* pxRoot = new Zenith_BTSelector();
+
+		// ---- Apprehend branch (MVP-1.3.2, highest priority) -----------------
+		// HasTarget(BB.TargetWithDevil) → Apprehend (channels in place)
+		// Apprehend internally checks range/channel-duration and dispatches
+		// DP_OnRunLost{Apprehended} when the channel completes.
+		auto* pxApprehend = new Zenith_BTSequence();
+		pxApprehend->AddChild(new Zenith_BTCondition_HasTarget(DP_AI::BB_KEY_TARGET_WITH_DEVIL));
+		pxApprehend->AddChild(new DP_BTAction_Apprehend());
+		pxRoot->AddChild(pxApprehend);
 
 		// ---- Pursue branch ---------------------------------------------------
 		// HasTarget(BB.TargetWithDevil) → MoveToEntity(BB.TargetWithDevil)
