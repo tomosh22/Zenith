@@ -225,6 +225,8 @@
     <ClCompile Include="..\Tests\Test_P1Dawn_NoFireWhenNotStarted.cpp" />
     <ClCompile Include="..\Tests\Test_P1Drop_GoesToGroundAtBodyPosition.cpp" />
     <ClCompile Include="..\Tests\Test_P1Drop_PickupChainHandoff.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Faint_RecoversToIdle.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Faint_SystemPossessBypassesGate.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_ClosedDoorBlocksPath.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_PathRespectsWalls.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_RegenerationOnSceneSwap.cpp" />
