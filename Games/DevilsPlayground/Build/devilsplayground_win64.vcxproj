@@ -514,6 +514,7 @@
     <ClCompile Include="..\Tests\Test_P1Cooldown_CannotPossessFor1pt5s.cpp" />
     <ClCompile Include="..\Tests\Test_P1Cooldown_NotAffectedByDeath.cpp" />
     <ClCompile Include="..\Tests\Test_P1Drop_GoesToGroundAtBodyPosition.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Drop_PickupChainHandoff.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_ClosedDoorBlocksPath.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_PathRespectsWalls.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_RegenerationOnSceneSwap.cpp" />
