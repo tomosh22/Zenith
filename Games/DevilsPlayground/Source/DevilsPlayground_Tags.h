@@ -15,6 +15,16 @@ enum class DP_ItemTag : uint32_t
 	// output, and other systems treat it as a generic tool).
 	Wood,
 	Spike,
+	// MVP-2.2: the 5 ratified MVP reagents (Reagents.json `mvp: true`).
+	// Each has a 1.0 s pickup channel resolved at OnAwake via the
+	// DP_Reagents registry. BogWater + BellSoul also carry special
+	// behaviours (evaporate-after-drop / rings-bell-on-pickup) wired
+	// in later MVP-2.2.4-7 PRs.
+	Caul,
+	HareTongue,
+	BogWater,
+	BurialCoin,
+	BellSoul,
 	Objective1,
 	Objective2,
 	Objective3,
@@ -34,6 +44,11 @@ inline const char* DP_ItemTagToString(DP_ItemTag eTag)
 	case DP_ItemTag::SkeletonKey: return "SkeletonKey";
 	case DP_ItemTag::Wood:        return "Wood";
 	case DP_ItemTag::Spike:       return "Spike";
+	case DP_ItemTag::Caul:        return "Caul";
+	case DP_ItemTag::HareTongue:  return "HareTongue";
+	case DP_ItemTag::BogWater:    return "BogWater";
+	case DP_ItemTag::BurialCoin:  return "BurialCoin";
+	case DP_ItemTag::BellSoul:    return "BellSoul";
 	case DP_ItemTag::Objective1:  return "Objective1";
 	case DP_ItemTag::Objective2:  return "Objective2";
 	case DP_ItemTag::Objective3:  return "Objective3";
@@ -46,6 +61,26 @@ inline const char* DP_ItemTagToString(DP_ItemTag eTag)
 inline bool DP_IsObjectiveTag(DP_ItemTag eTag)
 {
 	return eTag >= DP_ItemTag::Objective1 && eTag <= DP_ItemTag::Objective5;
+}
+
+// MVP-2.2.1: classify an item as a "reagent". The 5 MVP reagents
+// (Reagents.json `mvp: true`) each have a 1.0 s pickup channel; the
+// channel duration itself is looked up at OnAwake from the DP_Reagents
+// registry, but this helper is used for tag classification (e.g.
+// DPItemBase initialises its pickup-channel state machine only for
+// reagent tags, not for tools / objectives).
+//
+// Reagent tags are independent from Objective tags: a level may
+// designate the 5 reagents AS the 5 objectives (canonical MVP) or
+// use Objective1-5 as generic placeholder slots. The pentagram win
+// path lives on the Objective tag bitmask, not the reagent identity.
+inline bool DP_IsReagentTag(DP_ItemTag eTag)
+{
+	return eTag == DP_ItemTag::Caul
+	    || eTag == DP_ItemTag::HareTongue
+	    || eTag == DP_ItemTag::BogWater
+	    || eTag == DP_ItemTag::BurialCoin
+	    || eTag == DP_ItemTag::BellSoul;
 }
 
 // MVP-2.1.4: classify an item as a "tool" -- the crafting / utility
