@@ -19,12 +19,17 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_EventSystem.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
+#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "UI/Zenith_UIText.h"
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 #include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Behaviour.h"
 
 #include <cstdio>
 #include <cstring>
@@ -165,6 +170,26 @@ public:
 				pxScent->SetVisible(true);
 			}
 		}
+
+		// MVP-2.5.1 + 2.5.3: Aelfric awareness state. Compute once;
+		// feed both the whisper line + the awareness icon.
+		const AelfricState eState = ComputeAelfricState();
+
+		if (auto* pxWhisper = xUI.FindElement<Zenith_UI::Zenith_UIText>("WhisperLine"))
+		{
+			char buf[64];
+			BuildWhisperText(buf, sizeof(buf), eState);
+			pxWhisper->SetText(buf);
+			pxWhisper->SetVisible(true);
+		}
+
+		if (auto* pxAwareness = xUI.FindElement<Zenith_UI::Zenith_UIText>("AelfricAwareness"))
+		{
+			char buf[48];
+			BuildAwarenessText(buf, sizeof(buf), eState);
+			pxAwareness->SetText(buf);
+			pxAwareness->SetVisible(true);
+		}
 	}
 
 public:
@@ -181,6 +206,81 @@ public:
 	{
 		if (fScent < 0.0f) fScent = 0.0f;
 		std::snprintf(szBuf, uBufSize, "Scent: %.2f", fScent);
+	}
+
+	// MVP-2.5.1 + 2.5.3: Aelfric awareness state. Derived from the
+	// priest's blackboard each frame:
+	//   Pursuing   -- BB_KEY_TARGET_WITH_DEVIL is a valid villager
+	//                 (priest sees the demon and is heading for them).
+	//   Suspicious -- BB_KEY_HAS_INVESTIGATE_POS is true (priest
+	//                 heard / saw something and is investigating)
+	//                 but no confirmed target.
+	//   Calm       -- neither flag set (default patrol).
+	enum class AelfricState : uint8_t
+	{
+		Calm = 0,
+		Suspicious,
+		Pursuing
+	};
+
+	// Awareness-icon text: the state name in caps. Placeholder per
+	// the roadmap (MVP-2.5.3) until a real icon asset lands.
+	static void BuildAwarenessText(char* szBuf, size_t uBufSize, AelfricState eState)
+	{
+		const char* szLabel = "CALM";
+		if      (eState == AelfricState::Pursuing)   szLabel = "PURSUING";
+		else if (eState == AelfricState::Suspicious) szLabel = "SUSPICIOUS";
+		std::snprintf(szBuf, uBufSize, "Aelfric: %s", szLabel);
+	}
+
+	// Whisper-line text: vibe copy that reacts to the priest's state.
+	// One line per state -- post-MVP polish would rotate through
+	// variants. Per MVP-2.5.1, the whisper line is a single-line
+	// bottom-centre text element.
+	static void BuildWhisperText(char* szBuf, size_t uBufSize, AelfricState eState)
+	{
+		const char* szLine = "He patrols.";
+		if      (eState == AelfricState::Pursuing)   szLine = "He sees you!";
+		else if (eState == AelfricState::Suspicious) szLine = "He stirs...";
+		std::snprintf(szBuf, uBufSize, "%s", szLine);
+	}
+
+	// Compute the current Aelfric state. Iterates Priest_Behaviour
+	// scripts in the active scene (typically just 1 priest), reads
+	// the agent's blackboard, classifies.
+	static AelfricState ComputeAelfricState()
+	{
+		AelfricState eOut = AelfricState::Calm;
+		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+			[&eOut](Zenith_EntityID xPriestId, Priest_Behaviour&)
+			{
+				Zenith_SceneData* pxScene =
+					Zenith_SceneManager::GetSceneDataForEntity(xPriestId);
+				if (pxScene == nullptr) return;
+				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
+				if (!xEnt.IsValid()) return;
+				if (!xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
+				Zenith_AIAgentComponent& xAg =
+					xEnt.GetComponent<Zenith_AIAgentComponent>();
+				Zenith_Blackboard& xBB = xAg.GetBlackboard();
+				const Zenith_EntityID xTarget =
+					xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
+				if (xTarget.IsValid())
+				{
+					eOut = AelfricState::Pursuing;
+					return;
+				}
+				const bool bHasInvestigate =
+					xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
+				if (bHasInvestigate)
+				{
+					if (eOut < AelfricState::Suspicious)
+					{
+						eOut = AelfricState::Suspicious;
+					}
+				}
+			});
+		return eOut;
 	}
 
 private:

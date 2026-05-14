@@ -565,6 +565,7 @@
     <ClCompile Include="..\Tests\Test_P2Forge_AudibleAt30m.cpp" />
     <ClCompile Include="..\Tests\Test_P2Forge_IronToSkeletonKey.cpp" />
     <ClCompile Include="..\Tests\Test_P2Forge_WoodToSpike.cpp" />
+    <ClCompile Include="..\Tests\Test_P2HUD_AelfricStateReadouts.cpp" />
     <ClCompile Include="..\Tests\Test_P2HUD_DawnAndScentReadouts.cpp" />
     <ClCompile Include="..\Tests\Test_P2Reagent_BellSoulRingsBell.cpp" />
     <ClCompile Include="..\Tests\Test_P2Reagent_BogWaterEvaporates.cpp" />

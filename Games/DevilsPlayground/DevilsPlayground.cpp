@@ -594,6 +594,26 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIColor("ScentIndicator", 0.7f, 0.3f, 0.9f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("ScentIndicator", false);
 
+		// MVP-2.5.1: Whisper line -- single-line vibe text bottom-centre.
+		// The demon's voice reacting to Aelfric's awareness state.
+		// "He patrols." / "He stirs..." / "He sees you!" -- one line
+		// per state for MVP; rotation variants are post-MVP polish.
+		Zenith_EditorAutomation::AddStep_CreateUIText("WhisperLine", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("WhisperLine", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("WhisperLine", 0.0f, -80.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("WhisperLine", 28.0f);
+		Zenith_EditorAutomation::AddStep_SetUIColor("WhisperLine", 0.85f, 0.4f, 0.4f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("WhisperLine", false);
+
+		// MVP-2.5.3: Aelfric awareness icon (placeholder: state-name
+		// as text at top-right, below the Objectives counter).
+		Zenith_EditorAutomation::AddStep_CreateUIText("AelfricAwareness", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("AelfricAwareness", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("AelfricAwareness", -30.0f, 80.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("AelfricAwareness", 28.0f);
+		Zenith_EditorAutomation::AddStep_SetUIColor("AelfricAwareness", 0.95f, 0.6f, 0.3f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("AelfricAwareness", false);
+
 		// Attach the global coordinators. Each is independent — order doesn't
 		// matter, but Combat-style is to attach the player first.
 		Zenith_EditorAutomation::AddStep_AttachScript("DPPlayerController_Behaviour");
