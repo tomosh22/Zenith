@@ -508,7 +508,9 @@
     <ClCompile Include="..\Tests\Test_LifeTimer.cpp" />
     <ClCompile Include="..\Tests\Test_Materials.cpp" />
     <ClCompile Include="..\Tests\Test_MouseWheel.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Apprehend_OutOfRangeIgnored.cpp" />
     <ClCompile Include="..\Tests\Test_P1Apprehend_PriestCatchesPlayer.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Apprehend_SwitchBreaksChannel.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_ClosedDoorBlocksPath.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_PathRespectsWalls.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_RegenerationOnSceneSwap.cpp" />
