@@ -126,11 +126,20 @@ public:
 
 		if (m_bIsPossessed)
 		{
+			// MVP-1.7: compute "sprinting now" once per frame so TickLife
+			// and TickMovement agree. Sprint requires BOTH the input
+			// (Shift held) AND movement input (otherwise standing-still
+			// with Shift down would burn life for no movement -- failing
+			// MVP-1.7.3's "no drain when not moving" test).
+			const Zenith_Maths::Vector2 xMove = DP_Input::ReadMoveVillager();
+			const float fMoveLen = glm::length(xMove);
+			m_bIsSprintingNow = DP_Input::ReadSprintHeld() && (fMoveLen > 0.01f);
 			TickLife(fDt);
 			TickMovement(fDt);
 		}
 		else
 		{
+			m_bIsSprintingNow = false;
 			ZeroHorizontalVelocity();
 		}
 
@@ -204,6 +213,11 @@ public:
 	// the move speed externally (it's only consumed inside TickMovement).
 	float GetMoveSpeed() const { return m_fMoveSpeed; }
 	bool IsPossessed() const { return m_bIsPossessed; }
+	// MVP-1.7: test accessor -- returns true if Shift was held AND the
+	// villager was actually moving on the most recent OnUpdate. Used by
+	// Test_P1Sprint_* to verify the sprint state machine without
+	// faking input.
+	bool IsSprintingNow() const { return m_bIsSprintingNow; }
 
 	// Test/debug only: shrink the timer so death-by-timeout tests don't need
 	// 1800+ simulated frames to fire. Production gameplay sets m_fMaxLife
@@ -213,7 +227,20 @@ public:
 private:
 	void TickLife(float fDt)
 	{
-		m_fRemainingLife -= fDt;
+		// MVP-1.7: sprinting AND moving drains an extra
+		// movement.sprint_life_cost_extra_per_s on TOP of the baseline
+		// 1.0 s/s drain. The "AND moving" condition is enforced by
+		// OnUpdate's m_bIsSprintingNow computation so a player who
+		// holds Shift while standing still doesn't burn life for
+		// nothing (Test_P1Sprint_NoDrainWhenNotMoving).
+		float fDrain = fDt;
+		if (m_bIsSprintingNow)
+		{
+			const float fExtra =
+				DP_Tuning::Get<float>("movement.sprint_life_cost_extra_per_s");
+			fDrain += fExtra * fDt;
+		}
+		m_fRemainingLife -= fDrain;
 		if (m_fRemainingLife <= 0.0f)
 		{
 			m_fRemainingLife = 0.0f;
@@ -255,7 +282,16 @@ private:
 		{
 			const Zenith_Maths::Vector3 xDir =
 				glm::normalize(xInput.x * xRight + xInput.y * xForward);
-			xVel = xDir * m_fMoveSpeed;
+			// MVP-1.7: sprint speed multiplier. The "AND moving"
+			// guard lives in OnUpdate (m_bIsSprintingNow); we just
+			// read the flag here to swap m_fMoveSpeed for the sprint
+			// tuning value when active.
+			float fSpeed = m_fMoveSpeed;
+			if (m_bIsSprintingNow)
+			{
+				fSpeed = DP_Tuning::Get<float>("movement.sprint_speed_mps");
+			}
+			xVel = xDir * fSpeed;
 		}
 		Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVel);
 	}
@@ -441,6 +477,11 @@ private:
 	// skip collider response.
 	float m_fMoveSpeed      = 8.0f;
 	bool  m_bIsPossessed    = false;
+	// MVP-1.7: sprint-state cache. Set in OnUpdate to
+	// (DP_Input::ReadSprintHeld() && moving). TickLife / TickMovement
+	// both read this so they agree on whether sprint is active this
+	// tick.
+	bool  m_bIsSprintingNow = false;
 	// Snapshot of the base materials taken on first possession - used to
 	// restore the un-tinted look when un-possessed.
 	Zenith_Vector<Zenith_MaterialAsset*> m_apxBaseMaterials;
