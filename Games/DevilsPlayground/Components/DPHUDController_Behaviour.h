@@ -130,6 +130,57 @@ public:
 			pxObj->SetText(buf);
 			pxObj->SetVisible(true);
 		}
+
+		// MVP-2.5.4: Dawn sun-gauge. Visible while a night is active;
+		// hidden in scenes that haven't called DP_Night::StartNight.
+		if (auto* pxDawn = xUI.FindElement<Zenith_UI::Zenith_UIText>("DawnGauge"))
+		{
+			if (!DP_Night::IsNightActive())
+			{
+				pxDawn->SetVisible(false);
+			}
+			else
+			{
+				char buf[32];
+				BuildDawnText(buf, sizeof(buf), DP_Night::GetNightTimeRemaining());
+				pxDawn->SetText(buf);
+				pxDawn->SetVisible(true);
+			}
+		}
+
+		// MVP-2.5.2: Scent indicator. Reads the possessed villager's
+		// scent value. Hidden when nothing possessed.
+		if (auto* pxScent = xUI.FindElement<Zenith_UI::Zenith_UIText>("ScentIndicator"))
+		{
+			if (!bPossessed)
+			{
+				pxScent->SetVisible(false);
+			}
+			else
+			{
+				const float fScent = DP_Player::GetDemonScent(xV);
+				char buf[32];
+				BuildScentText(buf, sizeof(buf), fScent);
+				pxScent->SetText(buf);
+				pxScent->SetVisible(true);
+			}
+		}
+	}
+
+public:
+	// MVP-2.5.4 + 2.5.2: pure text-formatting helpers exposed for
+	// unit-level tests (Test_P2HUD_*). The real OnUpdate calls them
+	// internally; this lets tests verify the formatting WITHOUT
+	// authoring a full UI subsystem in their scene.
+	static void BuildDawnText(char* szBuf, size_t uBufSize, float fSecondsRemaining)
+	{
+		if (fSecondsRemaining < 0.0f) fSecondsRemaining = 0.0f;
+		std::snprintf(szBuf, uBufSize, "Dawn: %.1f s", fSecondsRemaining);
+	}
+	static void BuildScentText(char* szBuf, size_t uBufSize, float fScent)
+	{
+		if (fScent < 0.0f) fScent = 0.0f;
+		std::snprintf(szBuf, uBufSize, "Scent: %.2f", fScent);
 	}
 
 private:

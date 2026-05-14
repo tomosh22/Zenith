@@ -573,6 +573,27 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.9f, 0.2f, 0.2f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
 
+		// MVP-2.5.4: Dawn sun-gauge -- text countdown at top-centre.
+		// Shows "Dawn: 12.3 s" while a night is running; hidden when
+		// no night active. Production polish post-MVP swaps the text
+		// for a graphical sun-arc.
+		Zenith_EditorAutomation::AddStep_CreateUIText("DawnGauge", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("DawnGauge", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("DawnGauge", 0.0f, 30.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("DawnGauge", 36.0f);
+		Zenith_EditorAutomation::AddStep_SetUIColor("DawnGauge", 1.0f, 0.85f, 0.6f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("DawnGauge", false);
+
+		// MVP-2.5.2: Scent indicator -- numeric for now ("Scent: 0.4").
+		// Shows the currently-possessed villager's scent value;
+		// hidden when no villager is possessed.
+		Zenith_EditorAutomation::AddStep_CreateUIText("ScentIndicator", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("ScentIndicator", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("ScentIndicator", 30.0f, -30.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("ScentIndicator", 28.0f);
+		Zenith_EditorAutomation::AddStep_SetUIColor("ScentIndicator", 0.7f, 0.3f, 0.9f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("ScentIndicator", false);
+
 		// Attach the global coordinators. Each is independent — order doesn't
 		// matter, but Combat-style is to attach the player first.
 		Zenith_EditorAutomation::AddStep_AttachScript("DPPlayerController_Behaviour");
