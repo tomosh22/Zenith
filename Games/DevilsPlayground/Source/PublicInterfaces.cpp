@@ -10,6 +10,8 @@
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
 
+#include "DP_Tuning.h"
+
 #include <unordered_map>
 
 // ============================================================================
@@ -23,6 +25,15 @@ namespace
 {
 	// ---- DP_Player state (B2 fills in) ----
 	Zenith_EntityID g_xPossessedVillager = INVALID_ENTITY_ID;
+
+	// MVP-1.5: possession-cooldown timer. Decrements per frame via
+	// DP_Player::TickPossessionCooldown (called from
+	// DPPlayerController_Behaviour::OnUpdate). Set by
+	// TryVoluntaryPossessSwitch on a successful voluntary switch /
+	// release. Death + apprehend paths bypass this entirely (they
+	// call SetPossessedVillager directly), matching the Tuning.json
+	// canon: "cooldown_after_burnout_s = 0.0".
+	float g_fPossessionCooldownRemaining = 0.0f;
 
 	// Per-villager held-item record. Mutated by DP_Player::SetHeldItem /
 	// RemoveHeldItem, read by DP_Player::GetHeldItem*. EntityID hashes via
@@ -70,6 +81,46 @@ namespace DP_Player
 		g_xPossessedVillager = xId;
 	}
 
+	bool TryVoluntaryPossessSwitch(Zenith_EntityID xId)
+	{
+		// Idempotent re-click: clicking the same villager you're already
+		// possessing is a no-op (and doesn't waste the cooldown window).
+		if (xId.IsValid()
+			&& g_xPossessedVillager.IsValid()
+			&& xId.m_uIndex == g_xPossessedVillager.m_uIndex
+			&& xId.m_uGeneration == g_xPossessedVillager.m_uGeneration)
+		{
+			return true;
+		}
+
+		// Cooldown gate. Death/apprehend never set the cooldown, so a
+		// pending switch after a respawn always succeeds without delay.
+		if (g_fPossessionCooldownRemaining > 0.0f)
+		{
+			return false;
+		}
+
+		g_xPossessedVillager = xId;
+		g_fPossessionCooldownRemaining =
+			DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
+		return true;
+	}
+
+	void TickPossessionCooldown(float fDt)
+	{
+		if (g_fPossessionCooldownRemaining <= 0.0f) return;
+		g_fPossessionCooldownRemaining -= fDt;
+		if (g_fPossessionCooldownRemaining < 0.0f)
+		{
+			g_fPossessionCooldownRemaining = 0.0f;
+		}
+	}
+
+	float GetPossessionCooldownRemaining()
+	{
+		return g_fPossessionCooldownRemaining;
+	}
+
 	DP_ItemTag GetHeldItemTag(Zenith_EntityID xVillager)
 	{
 		auto it = g_xHeldItems.find(PackEntityID(xVillager));
@@ -105,6 +156,7 @@ namespace DP_Player
 	{
 		g_xPossessedVillager = INVALID_ENTITY_ID;
 		g_xHeldItems.clear();
+		g_fPossessionCooldownRemaining = 0.0f;
 	}
 }
 

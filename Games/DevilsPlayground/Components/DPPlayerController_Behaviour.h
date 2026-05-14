@@ -44,6 +44,12 @@ public:
 		// process sight/hearing/damage stimuli.
 		Zenith_PerceptionSystem::Update(fDt);
 
+		// MVP-1.5: drain the possession cooldown per frame. The cooldown is
+		// set by TryVoluntaryPossessSwitch on a successful voluntary switch
+		// and gates subsequent attempts until it reaches zero. Death + priest
+		// apprehend paths don't touch the cooldown.
+		DP_Player::TickPossessionCooldown(fDt);
+
 		HandleClickToPossess();
 	}
 
@@ -115,7 +121,11 @@ private:
 
 		if (xBest.IsValid())
 		{
-			DP_Player::SetPossessedVillager(xBest);
+			// Voluntary switch path -- triggers the cooldown gate. If the
+			// click lands within the cooldown window (1.5 s default) the
+			// possession refuses, silently. Cosmetic feedback (HUD flash /
+			// audio) is a future-MVP polish item.
+			DP_Player::TryVoluntaryPossessSwitch(xBest);
 		}
 	}
 };
