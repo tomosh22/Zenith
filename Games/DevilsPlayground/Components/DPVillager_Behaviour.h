@@ -251,14 +251,68 @@ private:
 		m_fRemainingLife -= fDrain;
 		if (m_fRemainingLife <= 0.0f)
 		{
-			m_fRemainingLife = 0.0f;
-			Zenith_EventDispatcher::Get().Dispatch(
-				DP_OnVillagerDied{ m_xParentEntity.GetEntityID() });
-			// Clear possession so the player has to pick a new villager.
-			DP_Player::SetPossessedVillager(INVALID_ENTITY_ID);
+			// MVP-1.3.5: route the death through Kill() so the
+			// NoVessels-detection scan runs alongside the per-death
+			// DP_OnVillagerDied dispatch. Previously the dispatch
+			// happened inline here; refactored so a test (or future
+			// non-natural-cause death path) can fire the same
+			// sequence without driving TickLife to drain.
+			Kill();
 		}
 	}
 
+public:
+	// MVP-1.3.5: dispatch a villager's death + scan for "no remaining
+	// vessels" (last alive villager just died -> dispatch
+	// DP_OnRunLost{NoVessels}).
+	//
+	// Production path: called by TickLife when m_fRemainingLife
+	// reaches 0. Test path: called directly by
+	// Test_P1NoVessels_DispatchesRunLost to drive 17 deaths without
+	// needing a possess-tick-die loop per villager.
+	//
+	// Idempotent: a second Kill() on an already-dead villager
+	// early-returns via m_bDispatchedDeath. (Using the life value
+	// for the guard would fail because TickLife calls Kill() AFTER
+	// decrementing life past 0 -- the guard would prevent the very
+	// first death from firing.)
+	void Kill()
+	{
+		if (m_bDispatchedDeath) return;
+		m_bDispatchedDeath = true;
+		m_fRemainingLife = 0.0f;
+		Zenith_EventDispatcher::Get().Dispatch(
+			DP_OnVillagerDied{ m_xParentEntity.GetEntityID() });
+		// Only clear possession if WE were the possessed villager.
+		// (Test-driven kills on unpossessed villagers shouldn't
+		// stomp the player's current possession state.)
+		if (m_bIsPossessed)
+		{
+			DP_Player::SetPossessedVillager(INVALID_ENTITY_ID);
+		}
+
+		// MVP-1.3.5: scan the active scene for any other villager
+		// with life > 0. If none remain, the run is over by the
+		// "no vessels" cause -- dispatch the GDD-spec event.
+		//
+		// Natural place for the scan: it runs exactly once per
+		// death (no per-frame polling) and observes the post-this-
+		// death state. The just-died villager is in the iteration
+		// but its life is 0 so the `> 0` check excludes it.
+		int iAlive = 0;
+		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			[&iAlive](Zenith_EntityID, DPVillager_Behaviour& xV)
+			{
+				if (xV.GetRemainingLife() > 0.0f) ++iAlive;
+			});
+		if (iAlive == 0)
+		{
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnRunLost{ DP_RunLostCause::NoVessels });
+		}
+	}
+
+private:
 	void TickMovement(float /*fDt*/)
 	{
 		// Velocity-driven movement on a DYNAMIC capsule body. Jolt integrates
@@ -550,6 +604,12 @@ private:
 	// MVP-1.7: footstep emission countdown. Counts down each frame
 	// while moving; when it hits 0, TickFootsteps emits a step + resets.
 	float m_fFootstepCountdown = 0.0f;
+	// MVP-1.3.5: idempotency flag for Kill(). Flipped true on the
+	// first Kill(); subsequent calls early-return. Using a dedicated
+	// flag (rather than reading m_fRemainingLife) is necessary because
+	// TickLife calls Kill() AFTER decrementing life past 0 -- a
+	// life-based guard would suppress the very first dispatch.
+	bool  m_bDispatchedDeath = false;
 	// Snapshot of the base materials taken on first possession - used to
 	// restore the un-tinted look when un-possessed.
 	Zenith_Vector<Zenith_MaterialAsset*> m_apxBaseMaterials;

@@ -518,6 +518,7 @@
     <ClCompile Include="..\Tests\Test_P1NavMesh_ClosedDoorBlocksPath.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_PathRespectsWalls.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_RegenerationOnSceneSwap.cpp" />
+    <ClCompile Include="..\Tests\Test_P1NoVessels_DispatchesRunLost.cpp" />
     <ClCompile Include="..\Tests\Test_P1Pause_InputSimDuringPause.cpp" />
     <ClCompile Include="..\Tests\Test_P1Pause_PriestStopsOnEscape.cpp" />
     <ClCompile Include="..\Tests\Test_P1Pause_TimerStopsOnEscape.cpp" />
