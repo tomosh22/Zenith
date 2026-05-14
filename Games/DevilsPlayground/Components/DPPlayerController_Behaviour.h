@@ -58,6 +58,11 @@ public:
 		DP_Player::TickDemonScent(fDt);
 		DP_Player::WriteHighestScentToBlackboard();
 
+		// MVP-2.1.1/2 Devout channel: per-frame countdown + priest
+		// interrupt check. Quiet no-op until TryVoluntaryPossessSwitch
+		// starts a channel onto a Devout target.
+		DP_Player::TickChannel(fDt);
+
 		// MVP-1.3.5 Dawn: tick the night-timer countdown. Quiet
 		// no-op until DP_Night::StartNight has been called (production
 		// path: scene-entry hook or future Begin-Run menu; test path:

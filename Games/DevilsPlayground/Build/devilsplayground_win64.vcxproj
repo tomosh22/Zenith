@@ -554,6 +554,8 @@
     <ClCompile Include="..\Tests\Test_P1WalkQuiet_FootstepLoudnessHalved.cpp" />
     <ClCompile Include="..\Tests\Test_P2Archetype_BeggarIgnoredByAelfric.cpp" />
     <ClCompile Include="..\Tests\Test_P2Archetype_ChildCannotCarryTools.cpp" />
+    <ClCompile Include="..\Tests\Test_P2Archetype_DevoutChannel.cpp" />
+    <ClCompile Include="..\Tests\Test_P2Archetype_DevoutChannelInterrupt.cpp" />
     <ClCompile Include="..\Tests\Test_P2Archetype_TimersMatchSpec.cpp" />
     <ClCompile Include="..\Tests\Test_P2Fog_AelfricNotRevealed.cpp" />
     <ClCompile Include="..\Tests\Test_P2Fog_LightAddsHole.cpp" />
