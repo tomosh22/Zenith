@@ -33,12 +33,19 @@
 //
 // Procedure:
 //   1. Load GameLevel.
-//   2. Find the closest pair of villagers.
-//   3. Snapshot baseline scent on both (expect 0.0 after suite reset).
+//   2. Find a trio of villagers in mutual range (A, B, C). Three
+//      rather than two because MVP-1.4.1-3 added the Fainted state:
+//      after switching away from A, A is unavailable for re-
+//      possession until the 10 s faint recovery completes. The
+//      original 2-villager A->B->A test no longer fits because the
+//      B->A leg is refused by the faint gate. Using a fresh C
+//      preserves the accumulation assertion (each successful switch
+//      bumps scent on the destination) without bumping into faint.
+//   3. Snapshot baseline scent on all three.
 //   4. SetPossessedVillager(A) -- direct write, no scent bump.
 //   5. TryVoluntaryPossessSwitch(A) -- idempotent re-click; no bump.
 //   6. TryVoluntaryPossessSwitch(B) -- scent[B] = 0.3.
-//   7. Wait cooldown + TryVoluntaryPossessSwitch(A) -- scent[A] = 0.3.
+//   7. Wait cooldown + TryVoluntaryPossessSwitch(C) -- scent[C] = 0.3.
 //
 // Why no hard saturation assert: the test's natural pacing (1.5 s
 // cooldown between switches) interacts with the 0.05 /s decay rate
@@ -56,20 +63,22 @@ namespace
 		kSA_PossessADirect, kSA_VerifyANoBump,
 		kSA_TryIdempotent, kSA_VerifyIdempotentNoBump,
 		kSA_SwitchToB, kSA_VerifyBAfterFirst,
-		kSA_WaitCooldown1, kSA_SwitchToA2, kSA_VerifyAAfterFirst,
+		kSA_WaitCooldown1, kSA_SwitchToC, kSA_VerifyCAfterSwitch,
 		kSA_Done
 	};
 
 	int                     g_iPhase = kSA_Start;
 	Zenith_EntityID         g_xA;
 	Zenith_EntityID         g_xB;
+	Zenith_EntityID         g_xC;
 
 	float                   g_fBaselineA = -1.0f;
 	float                   g_fBaselineB = -1.0f;
+	float                   g_fBaselineC = -1.0f;
 	float                   g_fScentAfterADirect = -1.0f;
 	float                   g_fScentAfterIdempotent = -1.0f;
 	float                   g_fScentBAfterFirstSwitch = -1.0f;
-	float                   g_fScentAAfterFirstSwitch = -1.0f;
+	float                   g_fScentCAfterSwitch = -1.0f;
 
 	int                     g_iCooldownWaitFrames = 0;
 
@@ -96,8 +105,16 @@ namespace
 		return std::sqrt(fDx * fDx + fDz * fDz);
 	}
 
-	void PickClosestPair(Zenith_EntityID& xA, Zenith_EntityID& xB)
+	// Find any trio A, B, C all within the possession range gate
+	// (15 m default) of each other -- A is anchor, then B->C hop
+	// must satisfy both d(A,B)<=range and d(B,C)<=range. Brute-force
+	// O(n^3) over GameLevel's 17 villagers = 4913 candidates, trivially
+	// fast.
+	bool PickMutualRangeTrio(Zenith_EntityID& xA,
+	                         Zenith_EntityID& xB,
+	                         Zenith_EntityID& xC)
 	{
+		const float fRange = DP_Tuning::Get<float>("possession.range_from_anchor_m");
 		struct Cand { Zenith_EntityID xId; Zenith_Maths::Vector3 xPos; };
 		Zenith_Vector<Cand> axCands;
 		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
@@ -106,22 +123,23 @@ namespace
 				Cand xV; xV.xId = xId;
 				if (TryGetEntityPos(xId, xV.xPos)) axCands.PushBack(xV);
 			});
-		if (axCands.GetSize() < 2) return;
-		float fMin = 1e30f;
+		if (axCands.GetSize() < 3) return false;
 		for (uint32_t i = 0; i < axCands.GetSize(); ++i)
+		for (uint32_t j = 0; j < axCands.GetSize(); ++j)
+		for (uint32_t k = 0; k < axCands.GetSize(); ++k)
 		{
-			for (uint32_t j = i + 1; j < axCands.GetSize(); ++j)
+			if (i == j || j == k || i == k) continue;
+			const float fAB = HorizontalDistance(axCands.Get(i).xPos, axCands.Get(j).xPos);
+			const float fBC = HorizontalDistance(axCands.Get(j).xPos, axCands.Get(k).xPos);
+			if (fAB <= fRange && fBC <= fRange)
 			{
-				const float fD = HorizontalDistance(
-					axCands.Get(i).xPos, axCands.Get(j).xPos);
-				if (fD < fMin)
-				{
-					fMin = fD;
-					xA = axCands.Get(i).xId;
-					xB = axCands.Get(j).xId;
-				}
+				xA = axCands.Get(i).xId;
+				xB = axCands.Get(j).xId;
+				xC = axCands.Get(k).xId;
+				return true;
 			}
 		}
+		return false;
 	}
 
 	bool ApproxEquals(float fA, float fB, float fTol = 0.001f)
@@ -136,12 +154,14 @@ static void Setup_P1ScentAccumulates()
 	g_iPhase = kSA_Start;
 	g_xA = INVALID_ENTITY_ID;
 	g_xB = INVALID_ENTITY_ID;
+	g_xC = INVALID_ENTITY_ID;
 	g_fBaselineA = -1.0f;
 	g_fBaselineB = -1.0f;
+	g_fBaselineC = -1.0f;
 	g_fScentAfterADirect = -1.0f;
 	g_fScentAfterIdempotent = -1.0f;
 	g_fScentBAfterFirstSwitch = -1.0f;
-	g_fScentAAfterFirstSwitch = -1.0f;
+	g_fScentCAfterSwitch = -1.0f;
 	g_iCooldownWaitFrames = 0;
 }
 
@@ -155,9 +175,7 @@ static bool Step_P1ScentAccumulates(int iFrame)
 		return true;
 
 	case kSA_WaitScene:
-		PickClosestPair(g_xA, g_xB);
-		if (g_xA.IsValid() && g_xB.IsValid()
-			&& g_xA.m_uIndex != g_xB.m_uIndex)
+		if (PickMutualRangeTrio(g_xA, g_xB, g_xC))
 		{
 			g_iPhase = kSA_RecordBaseline;
 		}
@@ -170,6 +188,7 @@ static bool Step_P1ScentAccumulates(int iFrame)
 	case kSA_RecordBaseline:
 		g_fBaselineA = DP_Player::GetDemonScent(g_xA);
 		g_fBaselineB = DP_Player::GetDemonScent(g_xB);
+		g_fBaselineC = DP_Player::GetDemonScent(g_xC);
 		g_iPhase = kSA_PossessADirect;
 		return true;
 
@@ -213,23 +232,24 @@ static bool Step_P1ScentAccumulates(int iFrame)
 		++g_iCooldownWaitFrames;
 		if (g_iCooldownWaitFrames >= kCOOLDOWN_FRAMES)
 		{
-			g_iPhase = kSA_SwitchToA2;
+			g_iPhase = kSA_SwitchToC;
 		}
 		return true;
 
-	case kSA_SwitchToA2:
-		// Switch back to A. scent[A] += 0.3.
-		DP_Player::TryVoluntaryPossessSwitch(g_xA);
-		g_iPhase = kSA_VerifyAAfterFirst;
+	case kSA_SwitchToC:
+		// Switch onward to C (NOT back to A -- A is Fainted post-MVP-
+		// 1.4). scent[C] += 0.3.
+		DP_Player::TryVoluntaryPossessSwitch(g_xC);
+		g_iPhase = kSA_VerifyCAfterSwitch;
 		return true;
 
-	case kSA_VerifyAAfterFirst:
-		g_fScentAAfterFirstSwitch = DP_Player::GetDemonScent(g_xA);
+	case kSA_VerifyCAfterSwitch:
+		g_fScentCAfterSwitch = DP_Player::GetDemonScent(g_xC);
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P1ScentAccumulates: baseA=%.3f baseB=%.3f directA=%.3f idempA=%.3f firstB=%.3f firstA=%.3f",
-			g_fBaselineA, g_fBaselineB, g_fScentAfterADirect,
-			g_fScentAfterIdempotent, g_fScentBAfterFirstSwitch,
-			g_fScentAAfterFirstSwitch);
+			"P1ScentAccumulates: baseA=%.3f baseB=%.3f baseC=%.3f directA=%.3f idempA=%.3f firstB=%.3f firstC=%.3f",
+			g_fBaselineA, g_fBaselineB, g_fBaselineC,
+			g_fScentAfterADirect, g_fScentAfterIdempotent,
+			g_fScentBAfterFirstSwitch, g_fScentCAfterSwitch);
 		g_iPhase = kSA_Done;
 		return false;
 
@@ -241,16 +261,18 @@ static bool Step_P1ScentAccumulates(int iFrame)
 
 static bool Verify_P1ScentAccumulates()
 {
-	if (!g_xA.IsValid() || !g_xB.IsValid())
+	if (!g_xA.IsValid() || !g_xB.IsValid() || !g_xC.IsValid())
 	{
-		Zenith_Log(LOG_CATEGORY_AI, "P1ScentAccumulates: villager pick failed");
+		Zenith_Log(LOG_CATEGORY_AI, "P1ScentAccumulates: villager trio pick failed");
 		return false;
 	}
-	if (!ApproxEquals(g_fBaselineA, 0.0f) || !ApproxEquals(g_fBaselineB, 0.0f))
+	if (!ApproxEquals(g_fBaselineA, 0.0f)
+		|| !ApproxEquals(g_fBaselineB, 0.0f)
+		|| !ApproxEquals(g_fBaselineC, 0.0f))
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P1ScentAccumulates: baseline non-zero (A=%.3f B=%.3f) -- did ResetForTest run?",
-			g_fBaselineA, g_fBaselineB);
+			"P1ScentAccumulates: baseline non-zero (A=%.3f B=%.3f C=%.3f) -- did ResetForTest run?",
+			g_fBaselineA, g_fBaselineB, g_fBaselineC);
 		return false;
 	}
 	if (!ApproxEquals(g_fScentAfterADirect, 0.0f))
@@ -276,17 +298,15 @@ static bool Verify_P1ScentAccumulates()
 			g_fScentBAfterFirstSwitch, fPerPossession);
 		return false;
 	}
-	// scent[A] after switching back has been decayed by the cooldown
-	// wait (110 frames * 0.01666 s/frame * 0.05/s = ~0.09 lost).
-	// Expected: 0.3 (from this switch) but the read is BEFORE any
-	// decay tick after the switch frame, so we expect exactly 0.3 +/-
-	// one-frame-of-decay. Allow 0.05 tolerance.
-	if (g_fScentAAfterFirstSwitch < fPerPossession - 0.05f
-		|| g_fScentAAfterFirstSwitch > fPerPossession + 0.05f)
+	// scent[C] after switching onward to C. C is fresh (no prior
+	// bumps), so this is just the per-possession amount. Allow 0.05
+	// tolerance for one-frame-of-decay slop.
+	if (g_fScentCAfterSwitch < fPerPossession - 0.05f
+		|| g_fScentCAfterSwitch > fPerPossession + 0.05f)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P1ScentAccumulates: scent[A] after second switch = %.3f, expected near %.3f",
-			g_fScentAAfterFirstSwitch, fPerPossession);
+			"P1ScentAccumulates: scent[C] after onward switch = %.3f, expected near %.3f",
+			g_fScentCAfterSwitch, fPerPossession);
 		return false;
 	}
 	return true;

@@ -13,6 +13,7 @@
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include "DP_Tuning.h"
+#include "../Components/DPVillager_Behaviour.h"
 
 #include <unordered_map>
 
@@ -165,6 +166,28 @@ namespace DP_Player
 		if (g_fPossessionCooldownRemaining > 0.0f)
 		{
 			return false;
+		}
+
+		// MVP-1.4.1-3: state gate. Refuse fainted (still recovering) or
+		// dead villagers. SetPossessedVillager (system path) bypasses
+		// this -- only the player-driven voluntary switch enforces it.
+		if (xId.IsValid())
+		{
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+			if (pxScene != nullptr)
+			{
+				Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+				if (xEnt.IsValid() && xEnt.HasComponent<Zenith_ScriptComponent>())
+				{
+					DPVillager_Behaviour* pxV =
+						xEnt.GetComponent<Zenith_ScriptComponent>()
+							.GetScript<DPVillager_Behaviour>();
+					if (pxV != nullptr && !pxV->IsPossessable())
+					{
+						return false;
+					}
+				}
+			}
 		}
 
 		// MVP-1.8: range gate. Anchor was set by the prior successful

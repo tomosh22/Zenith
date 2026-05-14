@@ -35,6 +35,27 @@
 
 #include <cstdio>
 
+// MVP-1.4.1-3: villager lifecycle state machine.
+//
+// Idle:      not possessed; life > 0; available for possession.
+// Possessed: currently the player's vessel; TickLife/TickMovement run.
+// Fainted:   voluntarily switched off by the player. Recovers to Idle
+//            after `possession.faint_recovery_s` seconds. Refused by
+//            TryVoluntaryPossessSwitch (player can't re-possess until
+//            recovered). System path SetPossessedVillager bypasses the
+//            refusal as a debug/test backdoor.
+// Dead:      life timer expired (or test-driven Kill()). Terminal --
+//            permanently unavailable. Distinct from Fainted so a future
+//            GDD "permanent vessel pool decrement" mechanic has a clean
+//            boundary.
+enum class DPVillagerState : uint8_t
+{
+	Idle,
+	Possessed,
+	Fainted,
+	Dead
+};
+
 class DPVillager_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
@@ -92,19 +113,95 @@ public:
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
-		// Possession state is observed via DP_Player; refresh per frame so a
-		// click-to-possess on another villager flips us back to idle without
-		// the controller having to broadcast.
+		// MVP-1.4.1-3: state-machine-driven possession transitions.
+		// Observe DP_Player's possessed handle each frame and drive
+		// m_eState through Idle/Possessed/Fainted/Dead.
+		//
+		// Transition table:
+		//   Idle      + possessed         -> Possessed  (bump life to max)
+		//   Possessed + un-possessed      -> Fainted    (arm faint timer)
+		//                                                EXCEPT if we're
+		//                                                already Dead --
+		//                                                Kill() ran inline
+		//                                                from TickLife and
+		//                                                set state=Dead
+		//                                                before OnUpdate
+		//                                                got a chance to
+		//                                                observe the
+		//                                                un-possession.
+		//   Fainted   + (timer expires)   -> Idle
+		//   Fainted   + possessed (SYSTEM path bypass) -> Possessed
+		//                                                (test backdoor;
+		//                                                 voluntary switch
+		//                                                 is refused at
+		//                                                 the TryVoluntary-
+		//                                                 PossessSwitch
+		//                                                 level via
+		//                                                 IsPossessable())
+		//   Dead      + *                 -> Dead (terminal)
 		const Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
-		const bool bWasPossessed = m_bIsPossessed;
-		m_bIsPossessed = (xPossessed.m_uIndex == m_xParentEntity.GetEntityID().m_uIndex)
-		             && (xPossessed.m_uGeneration == m_xParentEntity.GetEntityID().m_uGeneration);
+		const bool bIsPossessedThisFrame =
+			(xPossessed.m_uIndex == m_xParentEntity.GetEntityID().m_uIndex)
+			&& (xPossessed.m_uGeneration == m_xParentEntity.GetEntityID().m_uGeneration);
+		const DPVillagerState ePrevState = m_eState;
 
-		// Bump life on freshly-possessed transition.
-		if (m_bIsPossessed && !bWasPossessed)
+		switch (m_eState)
 		{
-			m_fRemainingLife = m_fMaxLife;
+		case DPVillagerState::Idle:
+			if (bIsPossessedThisFrame)
+			{
+				m_eState = DPVillagerState::Possessed;
+				m_fRemainingLife = m_fMaxLife;
+			}
+			break;
+		case DPVillagerState::Possessed:
+			if (!bIsPossessedThisFrame)
+			{
+				// We were the possessed villager last frame and we're
+				// not now. Two ways this can happen:
+				//   1. Voluntary switch: player chose another vessel.
+				//      Kill() did NOT run; m_bDispatchedDeath is false.
+				//      -> Fainted.
+				//   2. Death: Kill() already set m_eState=Dead inline
+				//      from TickLife. We won't reach this branch then
+				//      because the switch's outer case is Dead, not
+				//      Possessed. So unconditional Fainted is correct.
+				m_eState = DPVillagerState::Fainted;
+				m_fFaintRecoveryRemaining =
+					DP_Tuning::Get<float>("possession.voluntary_switch_faint_recovery_s");
+			}
+			break;
+		case DPVillagerState::Fainted:
+			if (bIsPossessedThisFrame)
+			{
+				// System path bypass -- e.g., a test calling
+				// SetPossessedVillager(faintedVillager) directly.
+				// The voluntary-switch path refuses this via
+				// IsPossessable(); reaching here means the developer
+				// chose to override. Wake up.
+				m_eState = DPVillagerState::Possessed;
+				m_fRemainingLife = m_fMaxLife;
+				m_fFaintRecoveryRemaining = 0.0f;
+			}
+			else
+			{
+				m_fFaintRecoveryRemaining -= fDt;
+				if (m_fFaintRecoveryRemaining <= 0.0f)
+				{
+					m_fFaintRecoveryRemaining = 0.0f;
+					m_eState = DPVillagerState::Idle;
+				}
+			}
+			break;
+		case DPVillagerState::Dead:
+			// Terminal.
+			break;
 		}
+
+		// Legacy flag sync. Kept for the existing public API
+		// (IsPossessed()) and the rest of OnUpdate's gate below.
+		m_bIsPossessed = (m_eState == DPVillagerState::Possessed);
+		const bool bWasPossessed = (ePrevState == DPVillagerState::Possessed);
 
 		// Swap to / from the possessed-tint material on transition. Only swap
 		// when the possession state actually flipped to avoid thrashing the
@@ -219,6 +316,25 @@ public:
 	// the move speed externally (it's only consumed inside TickMovement).
 	float GetMoveSpeed() const { return m_fMoveSpeed; }
 	bool IsPossessed() const { return m_bIsPossessed; }
+
+	// MVP-1.4.1-3 state accessors.
+	DPVillagerState GetState() const { return m_eState; }
+
+	// Whether the player's voluntary-switch path is allowed to
+	// possess this villager. Refused for Fainted (still recovering)
+	// and Dead (permanent). Idle and Possessed both pass -- re-
+	// clicking the same villager is idempotent in
+	// TryVoluntaryPossessSwitch.
+	bool IsPossessable() const
+	{
+		return m_eState == DPVillagerState::Idle
+			|| m_eState == DPVillagerState::Possessed;
+	}
+
+	// Diagnostic only -- the recovery countdown while Fainted, 0
+	// otherwise. Tests inspect this to assert the timer arms on
+	// voluntary switch.
+	float GetFaintRecoveryRemaining() const { return m_fFaintRecoveryRemaining; }
 	// MVP-1.7: test accessor -- returns true if Shift was held AND the
 	// villager was actually moving on the most recent OnUpdate. Used by
 	// Test_P1Sprint_* to verify the sprint state machine without
@@ -281,6 +397,13 @@ public:
 		if (m_bDispatchedDeath) return;
 		m_bDispatchedDeath = true;
 		m_fRemainingLife = 0.0f;
+		// MVP-1.4.3: distinguish death from voluntary-switch faint.
+		// Setting state=Dead here (BEFORE the next OnUpdate observes
+		// the un-possession) is what makes the burn-out path skip the
+		// Possessed -> Fainted transition. The OnUpdate switch's outer
+		// `case Dead` is terminal, so the un-possession on the next
+		// frame is a no-op rather than a faint.
+		m_eState = DPVillagerState::Dead;
 		Zenith_EventDispatcher::Get().Dispatch(
 			DP_OnVillagerDied{ m_xParentEntity.GetEntityID() });
 		// Only clear possession if WE were the possessed villager.
@@ -592,6 +715,14 @@ private:
 	// skip collider response.
 	float m_fMoveSpeed      = 8.0f;
 	bool  m_bIsPossessed    = false;
+	// MVP-1.4.1-3: villager lifecycle state. Drives the Idle/Possessed/
+	// Fainted/Dead transitions in OnUpdate. The legacy m_bIsPossessed
+	// flag (above) is kept in sync for the IsPossessed() API.
+	DPVillagerState m_eState = DPVillagerState::Idle;
+	// MVP-1.4.2: countdown while Fainted. Set on Possessed->Fainted
+	// transition from possession.faint_recovery_s. When it reaches 0
+	// the state advances to Idle.
+	float m_fFaintRecoveryRemaining = 0.0f;
 	// MVP-1.7: sprint-state cache. Set in OnUpdate to
 	// (DP_Input::ReadSprintHeld() && moving). TickLife / TickMovement
 	// both read this so they agree on whether sprint is active this
