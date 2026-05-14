@@ -11,6 +11,9 @@
     <ClCompile Include="..\Source\DP_Archetypes.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DP_Save.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DP_Tuning.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -123,6 +126,15 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Range_RefusedOutOfRange.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Save_RobustToCorruption.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Save_RoundTripMeta.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Save_VersionMismatchFallsBackToDefault.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Scent_AccumulatesOnPossession.cpp">
@@ -296,6 +308,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DP_LevelData.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Save.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DP_Tuning.h">

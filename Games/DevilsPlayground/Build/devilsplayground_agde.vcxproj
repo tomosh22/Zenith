@@ -187,6 +187,7 @@
     <ClInclude Include="..\Source\DPMaterials.h" />
     <ClInclude Include="..\Source\DP_Archetypes.h" />
     <ClInclude Include="..\Source\DP_LevelData.h" />
+    <ClInclude Include="..\Source\DP_Save.h" />
     <ClInclude Include="..\Source\DP_Tuning.h" />
     <ClInclude Include="..\Source\PublicInterfaces.h" />
   </ItemGroup>
@@ -195,6 +196,7 @@
     <ClCompile Include="..\Source\DPFogPass.cpp" />
     <ClCompile Include="..\Source\DPMaterials.cpp" />
     <ClCompile Include="..\Source\DP_Archetypes.cpp" />
+    <ClCompile Include="..\Source\DP_Save.cpp" />
     <ClCompile Include="..\Source\DP_Tuning.cpp" />
     <ClCompile Include="..\Source\PublicInterfaces.cpp" />
     <ClCompile Include="..\Tests\Test_BuildingWallClosure.cpp" />
@@ -233,6 +235,9 @@
     <ClCompile Include="..\Tests\Test_P1Range_AcceptedInRange.cpp" />
     <ClCompile Include="..\Tests\Test_P1Range_AnchorMovesWithEachHop.cpp" />
     <ClCompile Include="..\Tests\Test_P1Range_RefusedOutOfRange.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Save_RobustToCorruption.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Save_RoundTripMeta.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Save_VersionMismatchFallsBackToDefault.cpp" />
     <ClCompile Include="..\Tests\Test_P1Scent_AccumulatesOnPossession.cpp" />
     <ClCompile Include="..\Tests\Test_P1Scent_DecaysOverTime.cpp" />
     <ClCompile Include="..\Tests\Test_P1Scent_HighestWinsInBlackboard.cpp" />
