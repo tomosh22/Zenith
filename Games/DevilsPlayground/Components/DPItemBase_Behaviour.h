@@ -49,8 +49,20 @@ public:
 		DP_Items::Internal_UnregisterItemTag(m_xParentEntity.GetEntityID());
 	}
 
-	void OnUpdate(const float /*fDt*/) ZENITH_FINAL override
+	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
+		// MVP-1.4.5: after a drop, the item sits AT the villager's
+		// foot position -- which is well inside m_fPickupRadius, so the
+		// next-frame OnUpdate would immediately re-pick-up. Hold a
+		// short cooldown so the player has to step away (or another
+		// villager has to walk over) before pickup re-engages.
+		if (m_fPostDropCooldownSec > 0.0f)
+		{
+			m_fPostDropCooldownSec -= fDt;
+			if (m_fPostDropCooldownSec < 0.0f) m_fPostDropCooldownSec = 0.0f;
+			return;
+		}
+
 		// Distance-based pickup: when the possessed villager wanders within
 		// m_fPickupRadius of an item that has no holder, the villager picks
 		// it up. Source-game semantics: an item already in the villager's
@@ -134,7 +146,24 @@ private:
 		m_bTintApplied = true;
 	}
 
+public:
+	// MVP-1.4.5: external setter for the post-drop pickup cooldown.
+	// Called by DPPlayerController_Behaviour::HandleDropItem so the
+	// dropped item doesn't immediately re-pick-up from the villager's
+	// foot position. 0.5 s is long enough to step out of the 1.5 m
+	// pickup radius at 4 m/s walk speed (which covers 2 m in 0.5 s).
+	void BeginPostDropCooldown()
+	{
+		m_fPostDropCooldownSec = 0.5f;
+	}
+
+#ifdef ZENITH_INPUT_SIMULATOR
+	float GetPostDropCooldownForTest() const { return m_fPostDropCooldownSec; }
+#endif
+
+private:
 	DP_ItemTag m_eTag = DP_ItemTag::None;
 	float      m_fPickupRadius = 1.5f;
 	bool       m_bTintApplied = false;
+	float      m_fPostDropCooldownSec = 0.0f;
 };

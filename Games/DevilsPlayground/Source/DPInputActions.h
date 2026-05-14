@@ -48,6 +48,14 @@ namespace DP_Input
 		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_F);
 	}
 
+	// MVP-1.4.5: drop verb. Releases the possessed villager's held
+	// item at the villager's foot position. Single-frame edge so
+	// holding G doesn't keep dropping (no-op once held = None).
+	inline bool ReadDropPressed()
+	{
+		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_G);
+	}
+
 	inline bool ReadAbilityPressed()
 	{
 		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE);
