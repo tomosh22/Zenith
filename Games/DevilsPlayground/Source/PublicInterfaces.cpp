@@ -14,6 +14,7 @@
 
 #include "DP_Tuning.h"
 #include "../Components/DPVillager_Behaviour.h"
+#include "../Components/Priest_Behaviour.h"
 
 #include <unordered_map>
 
@@ -53,6 +54,14 @@ namespace
 	// indices (the generation counter survives the pack). Reads are
 	// done via GetDemonScent which returns 0 for missing entries.
 	std::unordered_map<uint64_t, float> g_xDemonScent;
+
+	// MVP-2.1.1 Devout channel state. Set by TryVoluntaryPossessSwitch
+	// when the target is Devout (and channel_devout_s > 0). Decremented
+	// by TickChannel per frame. Cleared by completion, InterruptChannel,
+	// or ResetForTest.
+	Zenith_EntityID g_xChannelTarget   = INVALID_ENTITY_ID;
+	float           g_fChannelRemaining = 0.0f;
+	bool            g_bChannelActive    = false;
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	// MVP-1.9: test-build omniscient fallback toggle. Default ON so
@@ -148,6 +157,46 @@ namespace DP_Player
 		}
 	}
 
+	// Internal helper used by both the immediate-possession path and
+	// the channel-completion path. Updates possessed handle, sets
+	// anchor, arms cooldown, bumps scent. Caller is responsible for
+	// having already passed the gates (cooldown / state / range).
+	static void CommitVoluntaryPossession(
+		Zenith_EntityID xId,
+		const Zenith_Maths::Vector3& xNewPos,
+		bool bGotNewPos)
+	{
+		g_xPossessedVillager = xId;
+		g_fPossessionCooldownRemaining =
+			DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
+
+		if (bGotNewPos)
+		{
+			g_xPossessionAnchor = xNewPos;
+			g_bHasPossessionAnchor = true;
+		}
+		else
+		{
+			g_bHasPossessionAnchor = false;
+		}
+
+		// MVP-1.6 scent: only successful possession bumps. Tuning.json's
+		// scent comment explicitly says channel-interrupted switches
+		// produce no scent -- so the bump lives on this commit path,
+		// not on TryVoluntaryPossessSwitch's entry.
+		if (xId.IsValid())
+		{
+			const float fPerPossession =
+				DP_Tuning::Get<float>("possession.demon_scent_per_possession");
+			const float fMaxScent =
+				DP_Tuning::Get<float>("possession.demon_scent_max");
+			const uint64_t uKey = PackEntityID(xId);
+			float fNew = g_xDemonScent[uKey] + fPerPossession;
+			if (fNew > fMaxScent) fNew = fMaxScent;
+			g_xDemonScent[uKey] = fNew;
+		}
+	}
+
 	bool TryVoluntaryPossessSwitch(Zenith_EntityID xId)
 	{
 		// Idempotent re-click: clicking the same villager you're already
@@ -159,6 +208,23 @@ namespace DP_Player
 			&& xId.m_uGeneration == g_xPossessedVillager.m_uGeneration)
 		{
 			return true;
+		}
+
+		// MVP-2.1.1: refuse a new switch attempt while a Devout channel
+		// is in progress. Idempotent re-click on the SAME channel
+		// target is also a no-op (the channel continues). A different
+		// target is refused so spam-clicks during channel don't
+		// confuse the state machine.
+		if (g_bChannelActive)
+		{
+			if (xId.IsValid()
+				&& g_xChannelTarget.IsValid()
+				&& xId.m_uIndex == g_xChannelTarget.m_uIndex
+				&& xId.m_uGeneration == g_xChannelTarget.m_uGeneration)
+			{
+				return true;
+			}
+			return false;
 		}
 
 		// Cooldown gate. Death/apprehend never set the cooldown, so a
@@ -210,40 +276,129 @@ namespace DP_Player
 			}
 		}
 
-		g_xPossessedVillager = xId;
-		g_fPossessionCooldownRemaining =
-			DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
-
-		// Update the anchor to the new villager so the next voluntary
-		// hop's range is measured from where the player jumped TO, not
-		// where they jumped FROM. (Matches "demon-hop chain" semantics:
-		// each successful possession defines a new anchor circle.)
-		if (bGotNewPos)
-		{
-			g_xPossessionAnchor = xNewPos;
-			g_bHasPossessionAnchor = true;
-		}
-		else
-		{
-			g_bHasPossessionAnchor = false;
-		}
-
-		// MVP-1.6: accumulate scent on the freshly-possessed villager.
-		// Saturates at "possession.demon_scent_max" (1.0 default). The
-		// scent decays via TickDemonScent, which DPPlayerController
-		// drives once per frame.
+		// MVP-2.1.1: Devout channel dispatch. If the target's archetype
+		// has a non-zero channel duration, start the channel instead
+		// of committing immediately. The possession stays on the SOURCE
+		// villager until TickChannel completes the timer (and dispatches
+		// to CommitVoluntaryPossession). Non-Devout (channel_default_s
+		// = 0) commits immediately.
+		float fChannelSec = DP_Tuning::Get<float>("possession.channel_default_s");
 		if (xId.IsValid())
 		{
-			const float fPerPossession =
-				DP_Tuning::Get<float>("possession.demon_scent_per_possession");
-			const float fMaxScent =
-				DP_Tuning::Get<float>("possession.demon_scent_max");
-			const uint64_t uKey = PackEntityID(xId);
-			float fNew = g_xDemonScent[uKey] + fPerPossession;
-			if (fNew > fMaxScent) fNew = fMaxScent;
-			g_xDemonScent[uKey] = fNew;
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+			if (pxScene != nullptr)
+			{
+				Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+				if (xEnt.IsValid() && xEnt.HasComponent<Zenith_ScriptComponent>())
+				{
+					DPVillager_Behaviour* pxV =
+						xEnt.GetComponent<Zenith_ScriptComponent>()
+							.GetScript<DPVillager_Behaviour>();
+					if (pxV != nullptr && pxV->GetArchetypeId() == "Devout")
+					{
+						fChannelSec = DP_Tuning::Get<float>("possession.channel_devout_s");
+					}
+				}
+			}
 		}
+
+		if (fChannelSec > 0.0f)
+		{
+			// Start channel; commit deferred to TickChannel. Possession
+			// state stays on the SOURCE villager (g_xPossessedVillager
+			// unchanged) so a priest still pursues the original body.
+			g_xChannelTarget    = xId;
+			g_fChannelRemaining = fChannelSec;
+			g_bChannelActive    = true;
+			return true;
+		}
+
+		// Immediate commit path (non-Devout, channel = 0).
+		CommitVoluntaryPossession(xId, xNewPos, bGotNewPos);
 		return true;
+	}
+
+	// MVP-2.1.1/2 Devout channel API.
+	bool IsChanneling()
+	{
+		return g_bChannelActive;
+	}
+
+	Zenith_EntityID GetChannelTarget()
+	{
+		return g_xChannelTarget;
+	}
+
+	float GetChannelRemaining()
+	{
+		return g_fChannelRemaining;
+	}
+
+	void InterruptChannel()
+	{
+		if (!g_bChannelActive) return;
+		g_bChannelActive    = false;
+		g_xChannelTarget    = INVALID_ENTITY_ID;
+		g_fChannelRemaining = 0.0f;
+		// NOTE: cooldown is NOT armed on interrupt (Tuning.json's
+		// scent comment specifies channel-interrupted switches produce
+		// no scent + no cooldown). The player can immediately retry
+		// onto a different villager.
+	}
+
+	void TickChannel(float fDt)
+	{
+		if (!g_bChannelActive) return;
+
+		// MVP-2.1.2 interrupt check: any priest within
+		// channel_interrupt_distance_m of the channel target cancels
+		// the channel before the timer runs down. The check runs
+		// BEFORE the timer decrement so even the completion frame can
+		// be interrupted.
+		Zenith_Maths::Vector3 xTargetPos(0.0f);
+		const bool bGotTargetPos =
+			g_xChannelTarget.IsValid()
+			&& TryGetVillagerPos(g_xChannelTarget, xTargetPos);
+		if (bGotTargetPos)
+		{
+			const float fInterruptDist =
+				DP_Tuning::Get<float>("possession.channel_interrupt_distance_m");
+			bool bInterrupted = false;
+			DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+				[&bInterrupted, &xTargetPos, fInterruptDist]
+				(Zenith_EntityID xPriestId, Priest_Behaviour&)
+				{
+					if (bInterrupted) return;
+					Zenith_Maths::Vector3 xPriestPos;
+					if (!TryGetVillagerPos(xPriestId, xPriestPos)) return;
+					const float fDx = xPriestPos.x - xTargetPos.x;
+					const float fDz = xPriestPos.z - xTargetPos.z;
+					const float fDistSq = fDx * fDx + fDz * fDz;
+					if (fDistSq < fInterruptDist * fInterruptDist)
+					{
+						bInterrupted = true;
+					}
+				});
+			if (bInterrupted)
+			{
+				InterruptChannel();
+				return;
+			}
+		}
+
+		g_fChannelRemaining -= fDt;
+		if (g_fChannelRemaining <= 0.0f)
+		{
+			// Commit the deferred possession.
+			Zenith_EntityID xTarget = g_xChannelTarget;
+			g_bChannelActive    = false;
+			g_xChannelTarget    = INVALID_ENTITY_ID;
+			g_fChannelRemaining = 0.0f;
+			Zenith_Maths::Vector3 xCommitPos(0.0f);
+			const bool bGotPos =
+				xTarget.IsValid() && TryGetVillagerPos(xTarget, xCommitPos);
+			CommitVoluntaryPossession(xTarget, xCommitPos, bGotPos);
+		}
 	}
 
 	void TickPossessionCooldown(float fDt)
@@ -380,6 +535,10 @@ namespace DP_Player
 		g_xPossessionAnchor = Zenith_Maths::Vector3(0.0f);
 		g_bHasPossessionAnchor = false;
 		g_xDemonScent.clear();
+		// MVP-2.1.1 channel state.
+		g_xChannelTarget    = INVALID_ENTITY_ID;
+		g_fChannelRemaining = 0.0f;
+		g_bChannelActive    = false;
 #ifdef ZENITH_INPUT_SIMULATOR
 		// Restore the omniscient fallback default so each batched
 		// test starts from a known state. MVP-1.9 sight tests

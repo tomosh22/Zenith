@@ -153,6 +153,38 @@ namespace DP_Player
 	void  TickDemonScent(float fDt);
 	void  WriteHighestScentToBlackboard();
 
+	// MVP-2.1.1: Devout possession channel.
+	//
+	// Devout-archetype villagers don't possess instantly. When the
+	// player TryVoluntaryPossessSwitch's onto a Devout, the call
+	// returns true but possession is NOT committed yet -- instead a
+	// channel timer (`possession.channel_devout_s`, 0.8 s default)
+	// starts, during which the player's possession stays on the
+	// SOURCE villager. TickChannel (called per-frame by
+	// DPPlayerController) decrements the timer; when it reaches 0
+	// the possession commits onto the Devout.
+	//
+	// MVP-2.1.2 interrupt: each TickChannel iteration also scans for
+	// any priest within `possession.channel_interrupt_distance_m`
+	// (6 m default) of the channel TARGET. If found, the channel is
+	// cancelled (InterruptChannel) -- the demon's faith snaps off
+	// the partial possession. The cooldown is NOT consumed on
+	// interrupt, so the player can immediately retry onto another
+	// villager.
+	//
+	// Non-Devout villagers use `channel_default_s` (0 s) -- the
+	// switch commits immediately as before. The Devout-vs-default
+	// branch is internal to TryVoluntaryPossessSwitch.
+	//
+	// Idempotency: TryVoluntaryPossessSwitch refuses while a channel
+	// is in progress (returns false). Wait for completion or
+	// InterruptChannel().
+	bool            IsChanneling();
+	Zenith_EntityID GetChannelTarget();
+	float           GetChannelRemaining();
+	void            TickChannel(float fDt);
+	void            InterruptChannel();
+
 #ifdef ZENITH_INPUT_SIMULATOR
 	// MVP-1.9: opt-in test-only "omniscient fallback" toggle. Pre-1.9,
 	// `Priest_Behaviour::BridgePerceptionToBlackboard` unconditionally
