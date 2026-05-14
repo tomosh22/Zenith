@@ -520,6 +520,8 @@
     <ClCompile Include="..\Tests\Test_P1Pause_InputSimDuringPause.cpp" />
     <ClCompile Include="..\Tests\Test_P1Pause_PriestStopsOnEscape.cpp" />
     <ClCompile Include="..\Tests\Test_P1Pause_TimerStopsOnEscape.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Priest_DoesNotChasePossessedOutOfSight.cpp" />
+    <ClCompile Include="..\Tests\Test_P1Priest_PursuesAfterLineOfSight.cpp" />
     <ClCompile Include="..\Tests\Test_P1Range_AcceptedInRange.cpp" />
     <ClCompile Include="..\Tests\Test_P1Range_AnchorMovesWithEachHop.cpp" />
     <ClCompile Include="..\Tests\Test_P1Range_RefusedOutOfRange.cpp" />

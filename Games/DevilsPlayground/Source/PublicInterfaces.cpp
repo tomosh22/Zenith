@@ -53,6 +53,14 @@ namespace
 	// done via GetDemonScent which returns 0 for missing entries.
 	std::unordered_map<uint64_t, float> g_xDemonScent;
 
+#ifdef ZENITH_INPUT_SIMULATOR
+	// MVP-1.9: test-build omniscient fallback toggle. Default ON so
+	// pre-1.9 tests work without code changes. New sight-based tests
+	// set this false in Setup to verify the production-shape (no
+	// fallback) detection path.
+	bool g_bTestOmniscientFallback = true;
+#endif
+
 	// Resolves a villager handle to its world position. Returns false
 	// if the entity has no transform / no scene-data binding (e.g.,
 	// passed a stale handle after the villager was destroyed).
@@ -230,6 +238,17 @@ namespace DP_Player
 		return g_fPossessionCooldownRemaining;
 	}
 
+#ifdef ZENITH_INPUT_SIMULATOR
+	void SetTestOmniscientFallback(bool bEnabled)
+	{
+		g_bTestOmniscientFallback = bEnabled;
+	}
+	bool IsTestOmniscientFallbackEnabled()
+	{
+		return g_bTestOmniscientFallback;
+	}
+#endif
+
 	float GetDemonScent(Zenith_EntityID xVillager)
 	{
 		if (!xVillager.IsValid()) return 0.0f;
@@ -338,6 +357,12 @@ namespace DP_Player
 		g_xPossessionAnchor = Zenith_Maths::Vector3(0.0f);
 		g_bHasPossessionAnchor = false;
 		g_xDemonScent.clear();
+#ifdef ZENITH_INPUT_SIMULATOR
+		// Restore the omniscient fallback default so each batched
+		// test starts from a known state. MVP-1.9 sight tests
+		// re-disable it in their own Setup.
+		g_bTestOmniscientFallback = true;
+#endif
 	}
 }
 

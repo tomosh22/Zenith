@@ -352,19 +352,29 @@ private:
 				}
 			}
 		}
-		if (!xTargetWithDevil.IsValid())
+#ifdef ZENITH_INPUT_SIMULATOR
+		// MVP-1.9: the omniscient fallback is now opt-in via a test
+		// flag. Production builds (no ZENITH_INPUT_SIMULATOR) compile
+		// it out entirely -- the priest is sight-driven only, matching
+		// the GDD's intent. In test builds the flag defaults to true
+		// so existing pursuit/apprehend tests keep working without
+		// having to position priests with line-of-sight setup; the
+		// MVP-1.9 sight tests turn the flag off in their Setup to
+		// exercise the production-shape detection path.
+		if (!xTargetWithDevil.IsValid()
+			&& DP_Player::IsTestOmniscientFallbackEnabled())
 		{
-			// Fallback path — DP_Player::GetPossessedVillager is the source of
-			// truth, and at skeleton-grade the priest "knows" who is possessed
-			// even without a sight-cone hit. This matches the source UE
-			// BT_Priest's blackboard setter which uses the global possession
-			// pointer, not perception, in the same way.
+			// Fallback path -- DP_Player::GetPossessedVillager is the
+			// source of truth without needing perception. Matches the
+			// source UE BT_Priest's blackboard setter which uses the
+			// global possession pointer.
 			const Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
 			if (xPossessed.IsValid() && IsPossessedVillager(xPossessed))
 			{
 				xTargetWithDevil = xPossessed;
 			}
 		}
+#endif
 		xBB.SetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, xTargetWithDevil);
 
 		// EXT-6: typed sound accessor. Bridge the freshest hearing stimulus
