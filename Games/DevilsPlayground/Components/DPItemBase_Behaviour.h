@@ -54,6 +54,29 @@ public:
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
+		// MVP-2.2.4: evaporate countdown. Set by BeginPostDropCooldown
+		// for items with special_behaviour="evaporates_after_drop".
+		// On zero-crossing the entity is destroyed. We check this
+		// BEFORE the post-drop cooldown block so a dropped reagent's
+		// evaporate timer keeps ticking through the cooldown window
+		// (the cooldown only gates re-pickup, not the destroy timer).
+		if (m_fEvaporateRemaining > 0.0f)
+		{
+			m_fEvaporateRemaining -= fDt;
+			if (m_fEvaporateRemaining <= 0.0f)
+			{
+				m_fEvaporateRemaining = 0.0f;
+				Zenith_SceneData* pxScene =
+					Zenith_SceneManager::GetSceneDataForEntity(m_xParentEntity.GetEntityID());
+				if (pxScene != nullptr)
+				{
+					Zenith_Entity xEnt = pxScene->TryGetEntity(m_xParentEntity.GetEntityID());
+					if (xEnt.IsValid()) Zenith_SceneManager::Destroy(xEnt);
+				}
+				return;
+			}
+		}
+
 		// MVP-1.4.5: after a drop, the item sits AT the villager's
 		// foot position -- which is well inside m_fPickupRadius, so the
 		// next-frame OnUpdate would immediately re-pick-up. Hold a
@@ -234,6 +257,16 @@ public:
 	void BeginPostDropCooldown()
 	{
 		m_fPostDropCooldownSec = 0.5f;
+		// MVP-2.2.4: BogWater + post-MVP reagents with
+		// special_behaviour="evaporates_after_drop" start a destroy
+		// timer when dropped. The duration is loaded from
+		// Reagents.json (8.0s for BogWater). Once expired the entity
+		// destroys itself in OnUpdate.
+		if (m_strSpecialBehaviour == "evaporates_after_drop"
+			&& m_fEvaporateDuration > 0.0f)
+		{
+			m_fEvaporateRemaining = m_fEvaporateDuration;
+		}
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -245,14 +278,18 @@ public:
 	float           GetPickupChannelDurationForTest() const { return m_fPickupChannelDuration; }
 	float           GetChannelRemainingForTest() const { return m_fChannelRemaining; }
 	Zenith_EntityID GetChannelingVillagerForTest() const { return m_xChannelingVillager; }
+	// MVP-2.2.4 evaporate test accessors.
+	float           GetEvaporateDurationForTest() const { return m_fEvaporateDuration; }
+	float           GetEvaporateRemainingForTest() const { return m_fEvaporateRemaining; }
+	const std::string& GetSpecialBehaviourForTest() const { return m_strSpecialBehaviour; }
 #endif
 
 private:
-	// MVP-2.2.1: look up the item's reagent properties at OnAwake and
-	// cache the pickup-channel duration. Non-reagent tags (Iron, Key,
-	// Wood, Spike, Objective1..5) silently default to 0 (immediate
-	// pickup) -- the existing tool/objective behaviour is preserved
-	// because TryGet returns nullptr for them.
+	// MVP-2.2.1/4: look up the item's reagent properties at OnAwake
+	// and cache the pickup-channel duration + special-behaviour
+	// metadata. Non-reagent tags (Iron, Key, Wood, Spike,
+	// Objective1..5) silently default to no channel + no special
+	// behaviour -- TryGet returns nullptr for them.
 	void ResolveReagentChannelFromRegistry()
 	{
 		const char* szTagName = DP_ItemTagToString(m_eTag);
@@ -260,10 +297,14 @@ private:
 		if (pxR != nullptr)
 		{
 			m_fPickupChannelDuration = pxR->pickup_channel_s;
+			m_strSpecialBehaviour    = pxR->special_behaviour;
+			m_fEvaporateDuration     = pxR->evaporate_duration_s;
 		}
 		else
 		{
 			m_fPickupChannelDuration = 0.0f;
+			m_strSpecialBehaviour.clear();
+			m_fEvaporateDuration     = 0.0f;
 		}
 	}
 
@@ -280,4 +321,11 @@ private:
 	float           m_fPickupChannelDuration = 0.0f;
 	float           m_fChannelRemaining      = 0.0f;
 	Zenith_EntityID m_xChannelingVillager;
+	// MVP-2.2.4 evaporate state. Set when BeginPostDropCooldown is
+	// called on an item with special_behaviour=evaporates_after_drop
+	// (currently only BogWater). When > 0, the timer counts down in
+	// OnUpdate; on 0, the entity is destroyed.
+	std::string m_strSpecialBehaviour;
+	float       m_fEvaporateDuration  = 0.0f;
+	float       m_fEvaporateRemaining = 0.0f;
 };
