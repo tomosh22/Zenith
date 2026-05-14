@@ -1058,6 +1058,7 @@
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshAgent.Tests.inl" />
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshGenerator.h" />
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshGenerator.Tests.inl" />
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshTestPathfinder.h" />
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_Pathfinding.h" />
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_Pathfinding.Tests.inl" />
     <ClInclude Include="..\Zenith\AI\Perception\Zenith_PerceptionSystem.h" />
