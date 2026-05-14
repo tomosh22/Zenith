@@ -200,6 +200,9 @@
     <ClCompile Include="..\Tests\Test_P2Archetype_BeggarIgnoredByAelfric.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P2Archetype_ChildCannotCarryTools.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P2Archetype_TimersMatchSpec.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

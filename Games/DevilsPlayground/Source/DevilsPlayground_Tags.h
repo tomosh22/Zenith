@@ -39,6 +39,20 @@ inline bool DP_IsObjectiveTag(DP_ItemTag eTag)
 	return eTag >= DP_ItemTag::Objective1 && eTag <= DP_ItemTag::Objective5;
 }
 
+// MVP-2.1.4: classify an item as a "tool" -- the crafting / utility
+// items used to open doors, forge new items, etc. The Child archetype
+// can't pick these up (the GDD framing: small hands, can't carry).
+// Objectives + the SkeletonKey-as-objective edge case are NOT tools
+// (the SkeletonKey is technically a master key but the GDD treats it
+// as an objective-class pickup -- it's exempt from the Child filter
+// so a Child can still carry it). For MVP scope the tool set is:
+//   Iron (forge input)
+//   Key  (regular door key)
+inline bool DP_IsToolTag(DP_ItemTag eTag)
+{
+	return eTag == DP_ItemTag::Iron || eTag == DP_ItemTag::Key;
+}
+
 inline uint32_t DP_ObjectiveTagToBit(DP_ItemTag eTag)
 {
 	if (!DP_IsObjectiveTag(eTag)) return 0;
