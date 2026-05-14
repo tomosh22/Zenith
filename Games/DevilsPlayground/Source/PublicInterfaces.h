@@ -320,6 +320,53 @@ namespace DP_Fog
 	// skipped silently; their slots simply aren't emitted, so the caller's
 	// w==0 sentinel can be used to mark "unused" tail entries.
 	uint32_t GatherFogHolePositions(Vec4* pxOutHoles, uint32_t uMaxHoles);
+
+	// ========================================================================
+	// MVP-2.4.5: Memory fog. Tiles the player has visited remain partially
+	// visible after the villager moves away, with a state-based dimming
+	// model.
+	//
+	// Per Tuning.json `_comment_memory_states`:
+	//   NEVER_SEEN       : tile has no memory entry; full grey.
+	//   VISITED_VISIBLE  : age <= possession.memory_visible_s (10 s default).
+	//   VISITED_DIM      : memory_visible_s < age <= memory_dim_s (10..30 s).
+	//   VISITED_HIDDEN   : age > memory_dim_s; visually grey but distinct
+	//                      from NEVER_SEEN (the shader can treat them
+	//                      identically, but tests + future "you've been
+	//                      here before" UI flourishes distinguish them).
+	//
+	// Memory entries are dedup'd by 1 m grid cell. A new reveal at an
+	// existing cell refreshes the cell's age to 0; a new reveal at a
+	// fresh cell appends a new entry. TickMemoryFog increments all ages
+	// each frame. Entries past memory_dim_s stay in VISITED_HIDDEN
+	// (no implicit pruning for MVP -- production polish post-MVP).
+	// ========================================================================
+	enum class MemoryTileState : uint8_t
+	{
+		NeverSeen = 0,
+		VisitedVisible,
+		VisitedDim,
+		VisitedHidden
+	};
+
+	// Record a reveal at a world position. Snaps to the 1 m grid; if the
+	// cell already has an entry, its age resets to 0. DPFogPass calls
+	// this once per villager / light fog-hole each frame (the same loop
+	// that builds RegisterFogHole, so memory follows visibility).
+	void RecordMemoryReveal(Vec3 xPosition);
+
+	// Per-frame age tick. DPPlayerController drives this once per frame.
+	void TickMemoryFog(float fDt);
+
+	// Query the current memory state at a world position. Snaps to the
+	// 1 m grid. Returns NeverSeen if no entry exists at that cell.
+	MemoryTileState GetMemoryStateAt(Vec3 xPosition);
+
+	// Test introspection: how many memory entries are in the table now.
+	uint32_t GetMemoryRevealCount();
+
+	// Reset memory state. Wired to the between-tests reset hook.
+	void ClearAllMemoryReveals();
 }
 
 // ============================================================================

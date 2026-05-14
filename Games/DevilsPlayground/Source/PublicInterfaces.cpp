@@ -123,6 +123,30 @@ namespace
 	};
 	std::unordered_map<uint64_t, FogHole> g_xFogHoles;
 
+	// MVP-2.4.5 memory fog state. Keyed by snapped grid cell (1 m
+	// resolution); value is the cell's age in seconds since the most
+	// recent RecordMemoryReveal call that hit this cell. Per the JSON
+	// `_comment_memory_states`, age maps to a 4-state visibility
+	// model. No implicit pruning for MVP -- entries past
+	// memory_dim_s stay in VISITED_HIDDEN.
+	struct MemoryCellKey
+	{
+		int32_t iX;
+		int32_t iZ;
+		bool operator==(const MemoryCellKey& o) const { return iX == o.iX && iZ == o.iZ; }
+	};
+	struct MemoryCellKeyHash
+	{
+		size_t operator()(const MemoryCellKey& k) const
+		{
+			// Cantor-pairing-style hash; sufficient for our scale.
+			const uint64_t ux = static_cast<uint64_t>(static_cast<uint32_t>(k.iX));
+			const uint64_t uz = static_cast<uint64_t>(static_cast<uint32_t>(k.iZ));
+			return static_cast<size_t>((ux * 73856093u) ^ (uz * 19349663u));
+		}
+	};
+	std::unordered_map<MemoryCellKey, float, MemoryCellKeyHash> g_xMemoryReveals;
+
 	// ---- DP_Win state (B3 Pentagram fills in) ----
 	uint32_t g_uCollectedObjectivesMask = 0;
 	bool     g_bHasWon = false;
@@ -831,6 +855,67 @@ namespace DP_Fog
 			pxOutHoles[uWritten++] = Vec4(xPos.x, xPos.y, xPos.z, xHole.m_fRadius);
 		}
 		return uWritten;
+	}
+
+	// ========================================================================
+	// MVP-2.4.5: Memory fog implementation. State machine lives here so
+	// the API surface in PublicInterfaces.h has a single owner.
+	// ========================================================================
+	namespace
+	{
+		// 1 m grid resolution: small enough that a moving villager's
+		// fog hole touches multiple cells per tick (each becomes its
+		// own memory entry), large enough that the cell count stays
+		// bounded across a 200 m * 200 m level.
+		MemoryCellKey CellKeyForPosition(const Vec3& xPos)
+		{
+			MemoryCellKey k;
+			k.iX = static_cast<int32_t>(std::floor(xPos.x));
+			k.iZ = static_cast<int32_t>(std::floor(xPos.z));
+			return k;
+		}
+	}
+
+	void RecordMemoryReveal(Vec3 xPosition)
+	{
+		const MemoryCellKey k = CellKeyForPosition(xPosition);
+		// Either insert with age 0 (fresh cell) or reset existing
+		// cell's age. operator[] does both atomically.
+		g_xMemoryReveals[k] = 0.0f;
+	}
+
+	void TickMemoryFog(float fDt)
+	{
+		if (fDt <= 0.0f) return;
+		for (auto& xPair : g_xMemoryReveals)
+		{
+			xPair.second += fDt;
+		}
+	}
+
+	MemoryTileState GetMemoryStateAt(Vec3 xPosition)
+	{
+		const MemoryCellKey k = CellKeyForPosition(xPosition);
+		const auto it = g_xMemoryReveals.find(k);
+		if (it == g_xMemoryReveals.end()) return MemoryTileState::NeverSeen;
+		const float fAge = it->second;
+		const float fVisibleThreshold =
+			DP_Tuning::Get<float>("fog_of_war.memory_visible_s");
+		const float fDimThreshold =
+			DP_Tuning::Get<float>("fog_of_war.memory_dim_s");
+		if (fAge <= fVisibleThreshold) return MemoryTileState::VisitedVisible;
+		if (fAge <= fDimThreshold)     return MemoryTileState::VisitedDim;
+		return MemoryTileState::VisitedHidden;
+	}
+
+	uint32_t GetMemoryRevealCount()
+	{
+		return static_cast<uint32_t>(g_xMemoryReveals.size());
+	}
+
+	void ClearAllMemoryReveals()
+	{
+		g_xMemoryReveals.clear();
 	}
 }
 

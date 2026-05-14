@@ -102,6 +102,7 @@ namespace DevilsPlayground
 			DP_Player::ResetForTest();
 			DP_Win::Reset();
 			DP_Fog::ClearAllFogHoles();
+			DP_Fog::ClearAllMemoryReveals();
 			DP_AI::ResetLevelNavMesh();
 			DP_Night::Reset();
 			DPPauseMenuController_Behaviour::ResetForTest();

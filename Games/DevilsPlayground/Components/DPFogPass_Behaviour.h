@@ -41,6 +41,23 @@ public:
 			[this](Zenith_EntityID xId, DPVillager_Behaviour&)
 			{
 				DP_Fog::RegisterFogHole(xId, m_fVillagerHoleRadius);
+				// MVP-2.4.5: record memory reveals for each villager
+				// position each frame. Cells that stay in range keep
+				// their age at 0 (refreshed every frame); cells the
+				// villager moves AWAY from will age through the
+				// VisitedVisible -> VisitedDim -> VisitedHidden
+				// states over the next 30 s.
+				Zenith_Maths::Vector3 xVPos;
+				Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+				if (pxScene != nullptr)
+				{
+					Zenith_Entity xV = pxScene->TryGetEntity(xId);
+					if (xV.IsValid() && xV.HasComponent<Zenith_TransformComponent>())
+					{
+						xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
+						DP_Fog::RecordMemoryReveal(xVPos);
+					}
+				}
 			});
 
 		// Lights — every dynamic light reveals an area around itself. Size

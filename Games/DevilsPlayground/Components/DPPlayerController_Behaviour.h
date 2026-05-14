@@ -63,6 +63,13 @@ public:
 		// starts a channel onto a Devout target.
 		DP_Player::TickChannel(fDt);
 
+		// MVP-2.4.5 memory fog: age all existing memory entries. The
+		// recording side (DPFogPass) refreshes entries for currently-
+		// visible cells, so this only ages cells that are NOT being
+		// revealed right now -- producing the "tiles the villager
+		// walked through earlier" memory effect.
+		DP_Fog::TickMemoryFog(fDt);
+
 		// MVP-1.3.5 Dawn: tick the night-timer countdown. Quiet
 		// no-op until DP_Night::StartNight has been called (production
 		// path: scene-entry hook or future Begin-Run menu; test path:
