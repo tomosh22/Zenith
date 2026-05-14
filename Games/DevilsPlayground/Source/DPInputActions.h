@@ -20,6 +20,17 @@ namespace DP_Input
 		return xInput;
 	}
 
+	// MVP-1.7: sprint hold. Either Shift key works (some Windows /
+	// laptop keyboards don't fire both as the same logical key).
+	// DPVillager_Behaviour reads this each frame to decide whether
+	// to apply movement.sprint_speed_mps and the
+	// movement.sprint_life_cost_extra_per_s drain.
+	inline bool ReadSprintHeld()
+	{
+		return Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT_SHIFT)
+			|| Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT);
+	}
+
 	inline bool ReadInteractPressed()
 	{
 		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_F);
