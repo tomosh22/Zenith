@@ -559,6 +559,8 @@
     <ClCompile Include="..\Tests\Test_P2Archetype_TimersMatchSpec.cpp" />
     <ClCompile Include="..\Tests\Test_P2Fog_AelfricNotRevealed.cpp" />
     <ClCompile Include="..\Tests\Test_P2Fog_LightAddsHole.cpp" />
+    <ClCompile Include="..\Tests\Test_P2Forge_IronToSkeletonKey.cpp" />
+    <ClCompile Include="..\Tests\Test_P2Forge_WoodToSpike.cpp" />
     <ClCompile Include="..\Tests\Test_P2Villager_ArchetypeStatsApplied.cpp" />
     <ClCompile Include="..\Tests\Test_P3Inventory_ArchetypeCount.cpp" />
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp" />

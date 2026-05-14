@@ -653,6 +653,9 @@ private:
 			case DP_ItemTag::Iron:        xRgb = Zenith_Maths::Vector3(0.5f, 0.5f, 0.55f); szLabel = "TintIron"; break;
 			case DP_ItemTag::Key:         xRgb = Zenith_Maths::Vector3(1.0f, 0.85f, 0.2f); szLabel = "TintKey"; break;
 			case DP_ItemTag::SkeletonKey: xRgb = Zenith_Maths::Vector3(0.7f, 0.3f, 0.9f);  szLabel = "TintSkeletonKey"; break;
+			// MVP-2.3 forge additions
+			case DP_ItemTag::Wood:        xRgb = Zenith_Maths::Vector3(0.55f, 0.35f, 0.15f); szLabel = "TintWood"; break;
+			case DP_ItemTag::Spike:       xRgb = Zenith_Maths::Vector3(0.85f, 0.85f, 0.9f);  szLabel = "TintSpike"; break;
 			default:                      xRgb = Zenith_Maths::Vector3(0.95f, 0.15f, 0.15f); szLabel = "TintObjective"; break;
 		}
 		const uint32_t uMatCount = pxInst->GetNumMaterials();

@@ -43,6 +43,21 @@ public:
 	DP_ItemTag GetRecipeOutputTag() const { return m_eRecipeOutputTag; }
 	uint32_t GetCraftCount() const { return m_uCraftCount; }
 
+	// MVP-2.3: configure the forge's recipe. Each forge instance holds
+	// ONE recipe (input -> output); a level with multiple recipes
+	// places multiple forge entities, each with its own recipe. This
+	// matches the gym scene's design (Gym_Forge has four Iron spawners
+	// around one forge) and keeps the surface narrow for MVP.
+	//
+	// Default is Iron -> Key (matches the original prototype's only
+	// recipe). Authoring / test code calls SetRecipe after attaching
+	// the DPForge_Behaviour script to override.
+	void SetRecipe(DP_ItemTag eInput, DP_ItemTag eOutput)
+	{
+		m_eRecipeInputTag  = eInput;
+		m_eRecipeOutputTag = eOutput;
+	}
+
 	// Test-only: bypass DPInteractable's proximity / rising-edge dance.
 	// Used by Forge_Test to drive the recipe-consume + output-spawn path
 	// directly from a fixed frame budget.
