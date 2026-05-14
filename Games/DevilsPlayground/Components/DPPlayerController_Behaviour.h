@@ -25,6 +25,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DPInputActions.h"
 #include "Components/DPVillager_Behaviour.h"
+#include "Components/DPItemBase_Behaviour.h"
 
 class DPPlayerController_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
@@ -58,6 +59,7 @@ public:
 		DP_Player::WriteHighestScentToBlackboard();
 
 		HandleClickToPossess();
+		HandleDropItem();
 	}
 
 private:
@@ -134,5 +136,52 @@ private:
 			// audio) is a future-MVP polish item.
 			DP_Player::TryVoluntaryPossessSwitch(xBest);
 		}
+	}
+
+	// MVP-1.4.5: drop verb. G releases the possessed villager's held
+	// item at the villager's foot position and starts a short pickup
+	// cooldown on the item so it doesn't immediately re-pick-up.
+	void HandleDropItem()
+	{
+		if (!DP_Input::ReadDropPressed()) return;
+		const Zenith_EntityID xVillager = DP_Player::GetPossessedVillager();
+		if (!xVillager.IsValid()) return;
+		const Zenith_EntityID xItem = DP_Player::GetHeldItemEntity(xVillager);
+		if (!xItem.IsValid()) return;
+
+		// Read the villager's foot position (transform origin == feet by
+		// authoring convention -- the visible mesh is centred ~1 m above).
+		Zenith_SceneData* pxVScene =
+			Zenith_SceneManager::GetSceneDataForEntity(xVillager);
+		if (pxVScene == nullptr) return;
+		Zenith_Entity xV = pxVScene->TryGetEntity(xVillager);
+		if (!xV.IsValid() || !xV.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_Maths::Vector3 xFootPos;
+		xV.GetComponent<Zenith_TransformComponent>().GetPosition(xFootPos);
+
+		// Resolve the item entity (may be in a different scene if
+		// MoveEntityToScene was used -- defensive scene lookup).
+		Zenith_SceneData* pxIScene =
+			Zenith_SceneManager::GetSceneDataForEntity(xItem);
+		if (pxIScene == nullptr) return;
+		Zenith_Entity xI = pxIScene->TryGetEntity(xItem);
+		if (!xI.IsValid() || !xI.HasComponent<Zenith_TransformComponent>()) return;
+		xI.GetComponent<Zenith_TransformComponent>().SetPosition(xFootPos);
+
+		// Arm the item's post-drop cooldown so DPItemBase::OnUpdate
+		// doesn't immediately re-pick-up from the foot position.
+		if (xI.HasComponent<Zenith_ScriptComponent>())
+		{
+			Zenith_ScriptComponent& xScr = xI.GetComponent<Zenith_ScriptComponent>();
+			if (DPItemBase_Behaviour* pxItemBeh = xScr.GetScript<DPItemBase_Behaviour>())
+			{
+				pxItemBeh->BeginPostDropCooldown();
+			}
+		}
+
+		// Clear the held-item side-table entry. The villager's
+		// floating held-item visual is rebuilt on the next OnUpdate
+		// when GetHeldItemTag flips back to None.
+		DP_Player::RemoveHeldItem(xVillager);
 	}
 };
