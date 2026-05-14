@@ -709,3 +709,73 @@ namespace DP_Win
 	}
 }
 
+// ============================================================================
+// DP_Night (MVP-1.3.5 Dawn half)
+// ============================================================================
+namespace
+{
+	// Per-run timer state. Set by StartNight, ticked by TickNight,
+	// cleared by Reset (between-tests hook + future "menu -> game"
+	// flow). The dispatch flag prevents repeat DP_OnRunLost emits if
+	// TickNight is called multiple frames after timer hits 0.
+	float g_fNightRemainingSec = 0.0f;
+	bool  g_bNightActive       = false;
+	bool  g_bDawnDispatched    = false;
+}
+
+namespace DP_Night
+{
+	void StartNight(float fDurationSeconds)
+	{
+		g_fNightRemainingSec = (fDurationSeconds > 0.0f) ? fDurationSeconds : 0.0f;
+		g_bNightActive       = true;
+		// Re-arm: a new run begins, even if a prior dawn already
+		// dispatched.
+		g_bDawnDispatched    = false;
+	}
+
+	void TickNight(float fDt)
+	{
+		if (!g_bNightActive)        return;
+		if (g_bDawnDispatched)
+		{
+			// Stay at 0; do not dispatch again until StartNight()
+			// or Reset() re-arms. Pinning the remaining time at 0
+			// (rather than letting it drift negative) keeps the
+			// GetNightTimeRemaining() readout stable for HUD use.
+			g_fNightRemainingSec = 0.0f;
+			return;
+		}
+		g_fNightRemainingSec -= fDt;
+		if (g_fNightRemainingSec <= 0.0f)
+		{
+			g_fNightRemainingSec = 0.0f;
+			g_bDawnDispatched    = true;
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnRunLost{ DP_RunLostCause::Dawn });
+		}
+	}
+
+	float GetNightTimeRemaining()
+	{
+		return g_fNightRemainingSec;
+	}
+
+	bool IsNightActive()
+	{
+		return g_bNightActive;
+	}
+
+	bool HasDawnReached()
+	{
+		return g_bDawnDispatched;
+	}
+
+	void Reset()
+	{
+		g_fNightRemainingSec = 0.0f;
+		g_bNightActive       = false;
+		g_bDawnDispatched    = false;
+	}
+}
+
