@@ -72,7 +72,27 @@ public:
 
 	void OnUpdate(const float /*fDt*/) ZENITH_FINAL override
 	{
-		if (!Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE)) return;
+		const bool bEsc = Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
+
+		// MVP-2.5.5: while paused, R restarts the run (reload
+		// gameplay scene) and Q quits to the main menu. Both are
+		// only honoured while shown=true so they don't fire during
+		// normal play.
+		if (m_bShown)
+		{
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+			{
+				HandleRestart();
+				return;
+			}
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_Q))
+			{
+				HandleQuit();
+				return;
+			}
+		}
+
+		if (!bEsc) return;
 		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>()) return;
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 		auto* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIText>("PauseOverlay");
@@ -95,6 +115,26 @@ public:
 	bool IsPausedForTest() const { return m_bShown; }
 	Zenith_Scene GetGameplaySceneForTest() const { return m_xGameplayScene; }
 
+	// MVP-2.5.5 test accessors. Both are flags flipped by
+	// HandleRestart / HandleQuit so tests can verify the
+	// shortcut wiring without actually reloading scenes or
+	// quitting the process.
+	static bool WasRestartRequestedForTest() { return s_bRestartRequestedForTest; }
+	static bool WasQuitToMenuRequestedForTest() { return s_bQuitToMenuRequestedForTest; }
+	static void ResetPauseShortcutsForTest()
+	{
+		s_bRestartRequestedForTest = false;
+		s_bQuitToMenuRequestedForTest = false;
+	}
+	static void FireRestartShortcutForTest()
+	{
+		if (s_pxPersistentInstance != nullptr) s_pxPersistentInstance->HandleRestart();
+	}
+	static void FireQuitToMenuShortcutForTest()
+	{
+		if (s_pxPersistentInstance != nullptr) s_pxPersistentInstance->HandleQuit();
+	}
+
 	// Allow the test harness to reset the persistent singleton between
 	// batched tests so we don't carry pause state across them. The
 	// matching call lives in DevilsPlayground.cpp's between-tests hook.
@@ -105,6 +145,8 @@ public:
 			s_pxPersistentInstance->ResetVisibleAndUnpause();
 			s_pxPersistentInstance->m_xGameplayScene = Zenith_Scene();
 		}
+		s_bRestartRequestedForTest = false;
+		s_bQuitToMenuRequestedForTest = false;
 	}
 	static DPPauseMenuController_Behaviour* GetPersistentInstanceForTest()
 	{
@@ -113,6 +155,28 @@ public:
 #endif
 
 private:
+	void HandleRestart()
+	{
+#ifdef ZENITH_INPUT_SIMULATOR
+		s_bRestartRequestedForTest = true;
+#endif
+		// Unpause + hide overlay before reloading so the new scene
+		// boots with a clean pause state.
+		ResetVisibleAndUnpause();
+		// Reload gameplay scene (build index 1 = GameLevel).
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+	}
+
+	void HandleQuit()
+	{
+#ifdef ZENITH_INPUT_SIMULATOR
+		s_bQuitToMenuRequestedForTest = true;
+#endif
+		ResetVisibleAndUnpause();
+		// Load front-end (build index 0).
+		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+	}
+
 	void ResetVisibleAndUnpause()
 	{
 		// Force overlay off + unpause the (possibly stale) captured scene.
@@ -135,4 +199,8 @@ private:
 	Zenith_Scene m_xGameplayScene;
 
 	static inline DPPauseMenuController_Behaviour* s_pxPersistentInstance = nullptr;
+#ifdef ZENITH_INPUT_SIMULATOR
+	static inline bool s_bRestartRequestedForTest = false;
+	static inline bool s_bQuitToMenuRequestedForTest = false;
+#endif
 };

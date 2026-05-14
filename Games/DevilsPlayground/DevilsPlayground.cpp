@@ -513,6 +513,12 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.0f, 0.0f);
 		Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.0f, 50.0f);
 
+		// MVP-2.5.6: main-menu Quit button. Sits below Play.
+		Zenith_EditorAutomation::AddStep_CreateUIButton("MenuQuit", "Quit");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuQuit", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuQuit", 0.0f, 70.0f);
+		Zenith_EditorAutomation::AddStep_SetUISize("MenuQuit", 200.0f, 50.0f);
+
 		Zenith_EditorAutomation::AddStep_AttachScript("DPMainMenuController_Behaviour");
 
 		Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT);
@@ -635,7 +641,7 @@ namespace
 		// its visibility via the same entity's UIComponent.
 		Zenith_EditorAutomation::AddStep_CreateEntity("PauseManager");
 		Zenith_EditorAutomation::AddStep_AddUI();
-		Zenith_EditorAutomation::AddStep_CreateUIText("PauseOverlay", "PAUSED — press Esc to resume");
+		Zenith_EditorAutomation::AddStep_CreateUIText("PauseOverlay", "PAUSED\nEsc: Resume   R: Restart   Q: Quit");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("PauseOverlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		Zenith_EditorAutomation::AddStep_SetUIPosition("PauseOverlay", 0.0f, 0.0f);
 		Zenith_EditorAutomation::AddStep_SetUIFontSize("PauseOverlay", 48.0f);
@@ -1106,7 +1112,7 @@ namespace
 		// Dedicated PauseManager entity (see AuthorGameLevelScene for rationale).
 		Zenith_EditorAutomation::AddStep_CreateEntity("PauseManager");
 		Zenith_EditorAutomation::AddStep_AddUI();
-		Zenith_EditorAutomation::AddStep_CreateUIText("PauseOverlay", "PAUSED — press Esc to resume");
+		Zenith_EditorAutomation::AddStep_CreateUIText("PauseOverlay", "PAUSED\nEsc: Resume   R: Restart   Q: Quit");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("PauseOverlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		Zenith_EditorAutomation::AddStep_SetUIPosition("PauseOverlay", 0.0f, 0.0f);
 		Zenith_EditorAutomation::AddStep_SetUIFontSize("PauseOverlay", 48.0f);
