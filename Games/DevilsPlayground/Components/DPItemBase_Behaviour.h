@@ -17,6 +17,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DPMaterials.h"
@@ -171,6 +172,24 @@ public:
 		DP_Player::SetHeldItem(xVillager, m_xParentEntity.GetEntityID());
 		Zenith_EventDispatcher::Get().Dispatch(
 			DP_OnItemPickedUp{ xVillager, m_xParentEntity.GetEntityID() });
+
+		// MVP-2.2.6: BellSoul rings the bell on pickup -- audible to
+		// every priest on the map. Dispatches DP_OnBellRing (HUD +
+		// state-machine subscribers) and emits a map-wide perception
+		// stimulus (200 m radius, well past the priest's 30 m
+		// hearing range so it's guaranteed to register).
+		if (m_strSpecialBehaviour == "rings_bell_on_pickup")
+		{
+			DP_OnBellRing xEvt;
+			xEvt.m_xVillager = xVillager;
+			xEvt.m_xBellSoul = m_xParentEntity.GetEntityID();
+			xEvt.m_xPosition = xMyPos;
+			Zenith_EventDispatcher::Get().Dispatch(xEvt);
+			// Perception stimulus: map-wide. Loudness 1.0 (max),
+			// radius 200 m (well past Aelfric's 30 m hearing range).
+			Zenith_PerceptionSystem::EmitSoundStimulus(
+				xMyPos, 1.0f, 200.0f, m_xParentEntity.GetEntityID());
+		}
 	}
 
 	DP_ItemTag GetTag() const { return m_eTag; }
