@@ -61,6 +61,35 @@ struct DP_OnVictory
 	uint32_t m_uPlaceholder = 0;
 };
 
+// MVP-1.3.1: run-loss cause enum. The dispatcher fires DP_OnRunLost{cause}
+// when the player's current possession ends in a way other than the
+// player voluntarily switching to another villager. Three causes:
+//   * Apprehended -- the priest got within priest.apprehend_range_m of
+//     the possessed villager and held the channel for
+//     priest.apprehend_channel_s seconds. MVP-1.3.2's Apprehend BT
+//     branch dispatches this.
+//   * Dawn -- the night timer ran out before the player delivered all
+//     5 objectives. MVP-1.3.5 / MVP-4.2.2 wires this.
+//   * NoVessels -- every villager in the level has died (life timer)
+//     and no fresh body is available for possession. MVP-1.3.5 /
+//     MVP-4.2.3 wires this from DPVillager_Behaviour::TickLife.
+//
+// Subscribers (DPHUDController, GameManager / state machine, future
+// "game over" overlay) treat all three as "run is over" and switch
+// the player to the run-over screen. The cause field lets the UI tell
+// the player WHY they lost (the GDD's three failure copy variants).
+enum class DP_RunLostCause : uint8_t
+{
+	Apprehended,
+	Dawn,
+	NoVessels
+};
+
+struct DP_OnRunLost
+{
+	DP_RunLostCause m_eCause;
+};
+
 // ============================================================================
 // DP_Player — published by B2 (player + camera + input).
 // ============================================================================
