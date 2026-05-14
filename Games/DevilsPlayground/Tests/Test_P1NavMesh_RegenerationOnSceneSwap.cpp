@@ -33,11 +33,14 @@
 //      GameLevel-scale geometry, or if GameLevel shrinks below 1000
 //      polygons -- both indicate a regression worth investigating).
 //   6. Assert N1 != N2 (different polygon counts prove regeneration).
-//   7. Assert P1 != P2 (different allocations -- the cache discarded the
-//      old navmesh and allocated a new one; not strictly required because
-//      heap allocators occasionally reuse the same address, but in
-//      practice the 248k-polygon GameLevel allocation never lands at
-//      Gym_Doors's freed address).
+//
+// Note on pointer equality: P1 and P2 are also recorded for diagnostic
+// logging, but the test does NOT assert they differ. CI's heap allocator
+// has been observed to reuse the freed Gym_Doors navmesh address for the
+// GameLevel allocation (run 25850815534, 2026-05-14), which made an
+// earlier "pointers differ" gate fail spuriously on the same workload
+// that passed locally every time. The polygon-count delta is unambiguous
+// proof of regeneration regardless of where the new navmesh lands.
 //
 // Why this matters: every gameplay BT branch that calls
 // DP_AI::GetOrBuildLevelNavMesh (priest pursue / patrol / investigate)
@@ -147,14 +150,21 @@ static bool Step_P1NavMeshRegenerationOnSceneSwap(int /*iFrame*/)
 		                            && (g_uPolyCountGym <= kMAX_GYM_POLYS);
 		const bool bGameLevelLarge   = (g_uPolyCountGameLevel >= kMIN_GAMELEVEL_POLYS);
 		const bool bPolyCountsDiffer = (g_uPolyCountGym != g_uPolyCountGameLevel);
+		// Pointer equality is recorded for diagnostic purposes ONLY -- we
+		// do NOT assert that the pointers differ. CI's heap allocator was
+		// observed to reuse the freed Gym_Doors navmesh address for the
+		// GameLevel allocation (run 25850815534), which would have made a
+		// "pointers differ" gate fail spuriously on the same workload that
+		// passes every time locally. The 45 -> 248413 polygon count delta
+		// is unambiguous proof of regeneration regardless of where the new
+		// navmesh lands in heap.
 		const bool bPointersDiffer   = (g_pxNavMeshGym != g_pxNavMeshGameLevel);
 		g_bPassed = bGymSmall
 		         && bGameLevelLarge
 		         && bPolyCountsDiffer
-		         && bPointersDiffer
 		         && g_pxNavMeshGym != nullptr
 		         && g_pxNavMeshGameLevel != nullptr;
-		std::printf("[P1NavMeshRegen] verify: gymSmall=%d gamelevelLarge=%d polyDiff=%d ptrDiff=%d passed=%d\n",
+		std::printf("[P1NavMeshRegen] verify: gymSmall=%d gamelevelLarge=%d polyDiff=%d ptrDiff=%d (diagnostic only) passed=%d\n",
 			(int)bGymSmall, (int)bGameLevelLarge,
 			(int)bPolyCountsDiffer, (int)bPointersDiffer,
 			(int)g_bPassed);
