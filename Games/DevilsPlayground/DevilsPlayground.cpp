@@ -7,6 +7,7 @@
 #include "Source/DPMaterials.h"
 #include "Source/DP_Tuning.h"
 #include "Source/DP_Archetypes.h"
+#include "Source/DP_Reagents.h"
 
 #include <cstdio>
 #include <cstring>
@@ -77,6 +78,12 @@ namespace DevilsPlayground
 		// Idempotent.
 		DP_Archetypes::Initialize();
 
+		// MVP-2.2.1: Config/Reagents.json into the reagent cache. Loaded
+		// alongside archetypes so DPItemBase::OnAwake can look up the
+		// pickup_channel_s + special_behaviour fields by tag name.
+		// Idempotent.
+		DP_Reagents::Initialize();
+
 		// Author Zenith_MaterialAssets from the UE parameter dumps under
 		// Assets/Materials/*.json. Idempotent — safe across Editor Stop/Play.
 		DPMaterials::Initialize();
@@ -119,6 +126,9 @@ namespace DevilsPlayground
 		// tuning, but keep teardown order paired so future cross-deps are
 		// surfaced by the Editor Stop/Play smoke runs. Idempotent.
 		DP_Archetypes::Shutdown();
+
+		// Drop the reagent cache paired with archetypes.
+		DP_Reagents::Shutdown();
 
 		// Drop the tuning cache last so materials/fog teardown above can still
 		// query tuning values if they ever start to. Idempotent.

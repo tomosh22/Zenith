@@ -20,6 +20,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DPMaterials.h"
+#include "Source/DP_Reagents.h"
 #include "Components/DPVillager_Behaviour.h"
 
 class DPItemBase_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
@@ -35,6 +36,7 @@ public:
 	{
 		DP_Items::Internal_RegisterItemTag(m_xParentEntity.GetEntityID(), m_eTag);
 		ApplyTagTint();
+		ResolveReagentChannelFromRegistry();
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -106,6 +108,43 @@ public:
 			}
 		}
 
+		// MVP-2.2.2: per-tag pickup channel. For reagents,
+		// m_fPickupChannelDuration > 0 (loaded from DP_Reagents at
+		// OnAwake); pickup only fires after the villager stays in
+		// range for the full channel duration. For tools / objectives
+		// (channel duration 0), pickup fires immediately.
+		//
+		// State machine on the ITEM:
+		//   * No channel yet: start one with the current villager.
+		//   * Same villager in range: tick down. On 0, fire pickup.
+		//   * Same villager OUT of range: reset (player can walk away
+		//     to cancel mid-channel).
+		//   * Different villager: not a real concern in MVP (only one
+		//     possessed villager at a time); treated as restart.
+		if (m_fPickupChannelDuration > 0.0f)
+		{
+			const bool bSameVillager = m_xChannelingVillager.IsValid()
+				&& m_xChannelingVillager.m_uIndex == xVillager.m_uIndex
+				&& m_xChannelingVillager.m_uGeneration == xVillager.m_uGeneration;
+			if (!bSameVillager)
+			{
+				// Fresh channel.
+				m_xChannelingVillager = xVillager;
+				m_fChannelRemaining = m_fPickupChannelDuration;
+				return;
+			}
+			m_fChannelRemaining -= fDt;
+			if (m_fChannelRemaining > 0.0f)
+			{
+				return; // still channeling
+			}
+			// Channel complete: fall through to the SetHeldItem block
+			// below. Reset state so a future drop+re-channel restarts
+			// from full.
+			m_xChannelingVillager = INVALID_ENTITY_ID;
+			m_fChannelRemaining = 0.0f;
+		}
+
 		DP_Player::SetHeldItem(xVillager, m_xParentEntity.GetEntityID());
 		Zenith_EventDispatcher::Get().Dispatch(
 			DP_OnItemPickedUp{ xVillager, m_xParentEntity.GetEntityID() });
@@ -123,6 +162,11 @@ public:
 		// are re-set even if a previous tag's tint was already applied.
 		m_bTintApplied = false;
 		ApplyTagTint();
+		// MVP-2.2: re-resolve the pickup-channel duration from the
+		// reagent registry. The OnAwake call resolved against
+		// m_eTag=None (default); SetTag is the canonical "I'm actually
+		// a BogWater now" moment.
+		ResolveReagentChannelFromRegistry();
 	}
 
 private:
@@ -152,6 +196,18 @@ private:
 			// MVP-2.3 forge additions
 			case DP_ItemTag::Wood:        xRgb = Zenith_Maths::Vector3(0.55f, 0.35f, 0.15f); szLabel = "TintWood";        break;
 			case DP_ItemTag::Spike:       xRgb = Zenith_Maths::Vector3(0.85f, 0.85f, 0.9f);  szLabel = "TintSpike";       break;
+			// MVP-2.2 reagent tints. Read tint_rgb from DP_Reagents at
+			// OnAwake instead of hardcoding; but compile-time enum case
+			// labels need a static colour fallback. We keep the
+			// per-tag tints here as a backup AND let
+			// ResolveReagentChannelFromRegistry use the live tint_rgb
+			// from the JSON if it diverges. The JSON values match
+			// these constants today.
+			case DP_ItemTag::Caul:        xRgb = Zenith_Maths::Vector3(0.95f, 0.92f, 0.85f); szLabel = "TintCaul";        break;
+			case DP_ItemTag::HareTongue:  xRgb = Zenith_Maths::Vector3(0.65f, 0.20f, 0.18f); szLabel = "TintHareTongue";  break;
+			case DP_ItemTag::BogWater:    xRgb = Zenith_Maths::Vector3(0.20f, 0.30f, 0.25f); szLabel = "TintBogWater";    break;
+			case DP_ItemTag::BurialCoin:  xRgb = Zenith_Maths::Vector3(0.70f, 0.60f, 0.30f); szLabel = "TintBurialCoin";  break;
+			case DP_ItemTag::BellSoul:    xRgb = Zenith_Maths::Vector3(0.85f, 0.75f, 0.45f); szLabel = "TintBellSoul";    break;
 			case DP_ItemTag::Objective1:
 			case DP_ItemTag::Objective2:
 			case DP_ItemTag::Objective3:
@@ -182,11 +238,46 @@ public:
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	float GetPostDropCooldownForTest() const { return m_fPostDropCooldownSec; }
+
+	// MVP-2.2 test accessors. ChannelDuration is the per-tag value
+	// resolved at OnAwake from DP_Reagents; ChannelRemaining tracks
+	// the in-flight countdown when a villager is in pickup range.
+	float           GetPickupChannelDurationForTest() const { return m_fPickupChannelDuration; }
+	float           GetChannelRemainingForTest() const { return m_fChannelRemaining; }
+	Zenith_EntityID GetChannelingVillagerForTest() const { return m_xChannelingVillager; }
 #endif
 
 private:
+	// MVP-2.2.1: look up the item's reagent properties at OnAwake and
+	// cache the pickup-channel duration. Non-reagent tags (Iron, Key,
+	// Wood, Spike, Objective1..5) silently default to 0 (immediate
+	// pickup) -- the existing tool/objective behaviour is preserved
+	// because TryGet returns nullptr for them.
+	void ResolveReagentChannelFromRegistry()
+	{
+		const char* szTagName = DP_ItemTagToString(m_eTag);
+		const DP_Reagents::Reagent* pxR = DP_Reagents::TryGet(szTagName);
+		if (pxR != nullptr)
+		{
+			m_fPickupChannelDuration = pxR->pickup_channel_s;
+		}
+		else
+		{
+			m_fPickupChannelDuration = 0.0f;
+		}
+	}
+
 	DP_ItemTag m_eTag = DP_ItemTag::None;
 	float      m_fPickupRadius = 1.5f;
 	bool       m_bTintApplied = false;
 	float      m_fPostDropCooldownSec = 0.0f;
+	// MVP-2.2.2 pickup-channel state. Duration is loaded from
+	// DP_Reagents at OnAwake; >0 means the item is a reagent and
+	// requires staying in range for that many seconds before pickup
+	// fires. Remaining counts down per frame while a villager is in
+	// range. Channeling villager identity is tracked so a different
+	// villager wandering into range mid-channel restarts cleanly.
+	float           m_fPickupChannelDuration = 0.0f;
+	float           m_fChannelRemaining      = 0.0f;
+	Zenith_EntityID m_xChannelingVillager;
 };

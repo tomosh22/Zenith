@@ -187,6 +187,7 @@
     <ClInclude Include="..\Source\DPMaterials.h" />
     <ClInclude Include="..\Source\DP_Archetypes.h" />
     <ClInclude Include="..\Source\DP_LevelData.h" />
+    <ClInclude Include="..\Source\DP_Reagents.h" />
     <ClInclude Include="..\Source\DP_Save.h" />
     <ClInclude Include="..\Source\DP_Tuning.h" />
     <ClInclude Include="..\Source\PublicInterfaces.h" />
@@ -196,6 +197,7 @@
     <ClCompile Include="..\Source\DPFogPass.cpp" />
     <ClCompile Include="..\Source\DPMaterials.cpp" />
     <ClCompile Include="..\Source\DP_Archetypes.cpp" />
+    <ClCompile Include="..\Source\DP_Reagents.cpp" />
     <ClCompile Include="..\Source\DP_Save.cpp" />
     <ClCompile Include="..\Source\DP_Tuning.cpp" />
     <ClCompile Include="..\Source\PublicInterfaces.cpp" />
@@ -267,6 +269,7 @@
     <ClCompile Include="..\Tests\Test_P2Fog_LightAddsHole.cpp" />
     <ClCompile Include="..\Tests\Test_P2Forge_IronToSkeletonKey.cpp" />
     <ClCompile Include="..\Tests\Test_P2Forge_WoodToSpike.cpp" />
+    <ClCompile Include="..\Tests\Test_P2Reagent_UniquePickupChannel.cpp" />
     <ClCompile Include="..\Tests\Test_P2Villager_ArchetypeStatsApplied.cpp" />
     <ClCompile Include="..\Tests\Test_P3Inventory_ArchetypeCount.cpp" />
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp" />
