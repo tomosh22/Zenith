@@ -90,6 +90,21 @@ struct DP_OnRunLost
 	DP_RunLostCause m_eCause;
 };
 
+// MVP-2.2.6: BellSoul ring-on-pickup event. Dispatched by DPItemBase
+// when an item with special_behaviour="rings_bell_on_pickup" (only
+// BellSoul in MVP) is picked up by the proximity-pickup path.
+// Subscribers: future HUD overlay flash, Aelfric heightened-awareness
+// state. The audible-everywhere effect lives in a separate
+// EmitSoundStimulus call with a very large radius (200 m -- bigger
+// than the priest's 30 m hearing range, so the priest hears it
+// guaranteed regardless of where on the map the pickup happened).
+struct DP_OnBellRing
+{
+	Zenith_EntityID m_xVillager;       // who picked it up
+	Zenith_EntityID m_xBellSoul;       // the BellSoul item handle (now destroyed/held)
+	Zenith_Maths::Vector3 m_xPosition; // world-space ring origin
+};
+
 // ============================================================================
 // DP_Player — published by B2 (player + camera + input).
 // ============================================================================

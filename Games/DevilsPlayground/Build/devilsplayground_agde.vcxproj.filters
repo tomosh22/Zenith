@@ -227,6 +227,9 @@
     <ClCompile Include="..\Tests\Test_P2Forge_WoodToSpike.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P2Reagent_BellSoulRingsBell.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P2Reagent_BogWaterEvaporates.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
