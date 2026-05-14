@@ -77,6 +77,12 @@
     <ClCompile Include="..\Tests\Test_P1Apprehend_SwitchBreaksChannel.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Cooldown_CannotPossessFor1pt5s.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Cooldown_NotAffectedByDeath.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P1NavMesh_ClosedDoorBlocksPath.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

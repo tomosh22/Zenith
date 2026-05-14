@@ -98,13 +98,48 @@ namespace DP_Player
 	Zenith_EntityID GetPossessedVillager();
 	void SetPossessedVillager(Zenith_EntityID xId);
 
+	// MVP-1.5: voluntary-switch possession path. Player-driven possession
+	// (click-to-possess, future switch UI) goes through this entry point
+	// so the cooldown gate fires. System paths -- villager death, priest
+	// apprehend -- keep calling SetPossessedVillager directly so they
+	// don't trigger a cooldown the player can't see coming.
+	//
+	// Returns true if the possession actually changed; false when the
+	// call was rejected by the cooldown gate. Resolving to the SAME
+	// villager that's already possessed returns true and is a no-op
+	// (idempotent re-clicks don't waste the cooldown window).
+	//
+	// Cooldown rules:
+	//   * Switching to a different valid villager (incl. INVALID -> X
+	//     while a cooldown is already burning down from a prior switch):
+	//     refused if cooldown > 0; on success, cooldown = priest_tuning
+	//     "possession.cooldown_after_voluntary_switch_s" (default 1.5 s).
+	//   * Voluntarily releasing to INVALID while currently possessing
+	//     a valid villager: cooldown = same as above.
+	//   * Resetting cooldown is automatic on death / apprehend (those
+	//     paths use SetPossessedVillager and don't touch the cooldown
+	//     timer; "cooldown_after_burnout_s = 0" in tuning is the canon).
+	bool TryVoluntaryPossessSwitch(Zenith_EntityID xId);
+
+	// Per-frame cooldown decrement. DPPlayerController_Behaviour::OnUpdate
+	// calls this once per frame so the cooldown drains at wall-clock rate
+	// regardless of how many possession attempts are made. Safe to call
+	// when cooldown is already zero (clamps).
+	void TickPossessionCooldown(float fDt);
+
+	// Remaining cooldown in seconds. Zero when no cooldown is active.
+	// HUD / debug overlays can render this to show the player when their
+	// next switch will be available.
+	float GetPossessionCooldownRemaining();
+
 	DP_ItemTag GetHeldItemTag(Zenith_EntityID xVillager);
 	Zenith_EntityID GetHeldItemEntity(Zenith_EntityID xVillager);
 	void SetHeldItem(Zenith_EntityID xVillager, Zenith_EntityID xItem);
 	void RemoveHeldItem(Zenith_EntityID xVillager);
 
 	// Drop possessed-villager and held-item state. Used by the harness
-	// between batched automated tests; not part of game runtime.
+	// between batched automated tests; not part of game runtime. Also
+	// resets the possession cooldown so tests start with a clean slate.
 	void ResetForTest();
 }
 
