@@ -239,6 +239,9 @@
     <ClCompile Include="..\Tests\Test_P2HUD_DawnAndScentReadouts.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P2Menu_PauseAndMainMenuShortcuts.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P2Reagent_BellSoulRingsBell.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
