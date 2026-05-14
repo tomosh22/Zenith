@@ -287,6 +287,59 @@ namespace DP_Win
 }
 
 // ============================================================================
+// DP_Night (MVP-1.3.5 Dawn half) -- night-timer countdown. When the
+// timer expires, dispatches DP_OnRunLost{Dawn} EXACTLY ONCE.
+//
+// Design:
+//   * StartNight(durationSeconds) seeds the timer. Idempotent re-arm:
+//     calling Start while a night is already active resets the timer
+//     to the new duration AND clears the dawn-dispatched flag (a
+//     "new run begins" semantic).
+//   * TickNight(fDt) is driven by DPPlayerController::OnUpdate at
+//     game-frame rate. It decrements only while the timer is active;
+//     it does NOT auto-start (production code calls StartNight on
+//     scene entry; tests drive it directly).
+//   * Dispatch happens on the frame the timer crosses zero. The
+//     m_bDawnDispatched flag prevents repeat dispatch on subsequent
+//     ticks at <= 0.
+//
+// Why DP_Night and not part of DP_AI / DP_Player: the night timer
+// is a global run-state concept (like DP_Win), not a per-agent
+// behaviour. Keeping it in its own namespace makes the
+// reset/test-cleanup story symmetric with the other run-state
+// systems.
+// ============================================================================
+namespace DP_Night
+{
+	// Begin a night countdown. duration_s typically reads from
+	// possession.night_duration_s (~30 s default per GDD). Calling
+	// while already active resets to the new duration and re-arms
+	// the dispatch flag (think of it as "start a fresh run").
+	void StartNight(float fDurationSeconds);
+
+	// Per-frame tick. Decrements m_fRemaining while active; on the
+	// frame it crosses 0, dispatches DP_OnRunLost{Dawn} exactly once
+	// and stays active (remains at 0) until either StartNight() or
+	// Reset() is called. Called from DPPlayerController::OnUpdate.
+	void TickNight(float fDt);
+
+	// Seconds remaining; 0 once the timer has expired; equal to the
+	// last StartNight argument before any ticks.
+	float GetNightTimeRemaining();
+
+	// True iff StartNight was called and Reset wasn't called since.
+	// Stays true after dawn (timer at 0).
+	bool IsNightActive();
+
+	// True iff the dawn-dispatch fired this run.
+	bool HasDawnReached();
+
+	// Between-tests cleanup hook. Called from DevilsPlayground.cpp's
+	// between-tests reset.
+	void Reset();
+}
+
+// ============================================================================
 // DP_Query — script-iteration helpers. Scripts live INSIDE
 // Zenith_ScriptComponent, so we cannot Query<T> them directly.
 // ============================================================================

@@ -58,6 +58,13 @@ public:
 		DP_Player::TickDemonScent(fDt);
 		DP_Player::WriteHighestScentToBlackboard();
 
+		// MVP-1.3.5 Dawn: tick the night-timer countdown. Quiet
+		// no-op until DP_Night::StartNight has been called (production
+		// path: scene-entry hook or future Begin-Run menu; test path:
+		// tests call StartNight directly). On the frame the timer
+		// crosses 0, DP_OnRunLost{Dawn} dispatches exactly once.
+		DP_Night::TickNight(fDt);
+
 		HandleClickToPossess();
 		HandleDropItem();
 	}

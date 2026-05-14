@@ -86,6 +86,12 @@
     <ClCompile Include="..\Tests\Test_P1Cooldown_NotAffectedByDeath.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Dawn_DispatchesRunLost.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Dawn_NoFireWhenNotStarted.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Drop_GoesToGroundAtBodyPosition.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
