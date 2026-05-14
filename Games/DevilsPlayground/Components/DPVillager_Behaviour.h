@@ -348,6 +348,14 @@ public:
 	// once at authoring and never touches it again.
 	void SetRemainingLifeForTest(float fSeconds) { m_fRemainingLife = fSeconds; }
 
+	// MVP-1.4 test accessor: shortcut the 10s faint-recovery countdown
+	// so Test_P1Faint_RecoversToIdle can verify the Fainted->Idle
+	// transition without ticking 600 frames. The OnUpdate state machine
+	// reads m_fFaintRecoveryRemaining and transitions to Idle on the
+	// frame it reaches 0; the test sets it close to 0 and confirms the
+	// next-frame OnUpdate makes the transition.
+	void SetFaintRecoveryForTest(float fSeconds) { m_fFaintRecoveryRemaining = fSeconds; }
+
 private:
 	void TickLife(float fDt)
 	{

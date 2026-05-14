@@ -98,6 +98,12 @@
     <ClCompile Include="..\Tests\Test_P1Drop_PickupChainHandoff.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Faint_RecoversToIdle.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Faint_SystemPossessBypassesGate.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P1NavMesh_ClosedDoorBlocksPath.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
