@@ -736,11 +736,14 @@ namespace
 
 		// Interactables: villagers, doors, chests, priest. All get colliders so
 		// click-to-possess raycasts can hit and Jolt physics can simulate.
-		// Villagers are DYNAMIC bodies because the player drives the possessed
-		// villager via SetLinearVelocity, and Jolt resolves wall collisions
-		// natively against the OBB walls. Priests / doors / chests stay STATIC
-		// (priest moves itself via NavMeshAgent transform writes; door+chest
-		// are stationary).
+		// Both villagers AND the priest are DYNAMIC bodies — Zenith's
+		// Zenith_TransformComponent::SetPosition routes through Jolt's
+		// BodyInterface when a collider is present, and a STATIC body in the
+		// NON_MOVING broadphase layer ignores SetPosition activation and stays
+		// pinned at its initial pose. The villager drives its DYNAMIC body via
+		// SetLinearVelocity; the priest's NavMeshAgent writes the transform
+		// directly via SetPosition (which now lands on Jolt because the body
+		// is DYNAMIC). Doors / chests stay STATIC — they really are stationary.
 		AuthorPlacementBatch("Villager", "DPVillager_Behaviour",
 			DP_LevelData::kVillager, DP_LevelData::kVillagerCount,
 			/*bAddAIAgent=*/false, /*bAddCollider=*/true, /*bIsCharacter=*/true,
@@ -858,7 +861,8 @@ namespace
 		// collider so it participates in Jolt and the player can raycast it.
 		AuthorPlacementBatch("Priest", "Priest_Behaviour",
 			DP_LevelData::kPriest, DP_LevelData::kPriestCount,
-			/*bAddAIAgent=*/true, /*bAddCollider=*/true, /*bIsCharacter=*/true);
+			/*bAddAIAgent=*/true, /*bAddCollider=*/true, /*bIsCharacter=*/true,
+			/*bShiftYByHalfScale=*/false, /*eBodyType=*/RIGIDBODY_TYPE_DYNAMIC);
 
 		// Static decoration meshes (140 in the UE map — floor + 4 perimeter
 		// walls + interior building wall sections). Enable AABB colliders so

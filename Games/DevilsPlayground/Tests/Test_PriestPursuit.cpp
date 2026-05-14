@@ -13,6 +13,8 @@
 #include "AI/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
+#include "AI/Navigation/Zenith_NavMesh.h"
+#include "AI/Navigation/Zenith_Pathfinding.h"
 
 // ============================================================================
 // PriestPursuit_Test (NavMesh + BT + perception bridge end-to-end)
@@ -191,6 +193,24 @@ static bool Step_PriestPursuit(int iFrame)
 					bHasPath ? 1 : 0,
 					xVel.x, xVel.y, xVel.z,
 					xPatrol.x, xPatrol.y, xPatrol.z);
+
+				// Reachability probe — call FindPath directly with the priest's
+				// CURRENT navmesh handle for the priest→villager pair. If this
+				// returns FAILED, the pursue branch's path requests are also
+				// failing (silently — A* returns FAILED with no log when the
+				// best partial polygon is the start polygon). Distinguishing
+				// "navmesh disconnected" from "BT/agent race" lets the fix
+				// target the right system.
+				const Zenith_NavMesh* pxNav2 = pxNav ? pxNav->GetNavMesh() : nullptr;
+				if (pxNav2 != nullptr)
+				{
+					Zenith_PathResult xR =
+						Zenith_Pathfinding::FindPath(*pxNav2, xPP, xVP);
+					Zenith_Log(LOG_CATEGORY_AI,
+						"PriestPursuit: direct FindPath(priest→villager) status=%d waypoints=%u dist=%.2f navmeshPolys=%u",
+						(int)xR.m_eStatus, xR.m_axWaypoints.GetSize(),
+						xR.m_fTotalDistance, pxNav2->GetPolygonCount());
+				}
 			}
 			else
 			{
