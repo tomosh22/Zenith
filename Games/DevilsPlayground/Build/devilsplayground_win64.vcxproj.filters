@@ -221,6 +221,9 @@
     <ClCompile Include="..\Tests\Test_P2Fog_LightAddsHole.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P2Fog_MemoryDimsAfter10s.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P2Forge_AudibleAt30m.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
