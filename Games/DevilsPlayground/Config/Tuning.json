@@ -35,7 +35,11 @@
     "sprint_speed_mps": 12.0,
     "sprint_life_cost_extra_per_s": 3.0,
     "walk_footstep_loudness_multiplier": 0.5,
-    "_comment_walk_loudness": "Multiplier applied to THE MOVING VILLAGER'S FOOTSTEP LOUDNESS when walking (0.5 = half loudness). Aelfric's perception radius is unchanged; the quieter footstep simply reaches him from half as far away. NOT a reduction on Aelfric's hearing range."
+    "_comment_walk_loudness": "Multiplier applied to THE MOVING VILLAGER'S FOOTSTEP LOUDNESS when walking (0.5 = half loudness). Aelfric's perception radius is unchanged; the quieter footstep simply reaches him from half as far away. NOT a reduction on Aelfric's hearing range.",
+    "footstep_interval_s": 0.4,
+    "footstep_loudness": 0.3,
+    "footstep_radius_m": 10.0,
+    "_comment_footstep": "MVP-1.7.5: baseline footstep emission tuning. Possessed villagers emit a footstep every footstep_interval_s while moving. Per Zenith perception default (loudness 0.3, radius 10m) -- matches CLAUDE.md's 'common sound types' table. walk_footstep_loudness_multiplier above is applied on top when Ctrl is held."
   },
 
   "camera": {
