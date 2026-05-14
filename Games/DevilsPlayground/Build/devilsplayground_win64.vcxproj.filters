@@ -131,6 +131,9 @@
     <ClCompile Include="..\Tests\Test_T0SaveData_TestHooks.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_T1NavMesh_BTUnitsCanFollowRealPath.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_T1NavMesh_GeneratorPerf.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

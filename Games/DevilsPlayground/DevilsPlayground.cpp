@@ -701,13 +701,49 @@ namespace
 			}
 		};
 
+		// MVP-1.2.2 ground plane. The UE source map has irregular per-room
+		// floor authoring (each building has its own floor mesh, but the
+		// outdoor area between buildings has no floor collider at all). For
+		// AI navmesh generation that creates disconnected polygon islands --
+		// each room is walkable in isolation, but there's no walkable
+		// connection between rooms or between buildings and outdoor patrol
+		// zones. A single big ground-plane collider underneath the whole
+		// playable area gives the navmesh a guaranteed connected base.
+		//
+		// Y placement is critical. Entities are at varying spawn-Y (priest 1.0
+		// static, villagers 1.88 dynamic capsule). The plane TOP needs to be
+		// BELOW every spawn so:
+		//   (a) Static entities (priest) stay at their authored Y;
+		//   (b) Dynamic entities (villagers) settle ON the plane via gravity
+		//       without being pushed below it on the first physics step;
+		//   (c) Every entity is within FindNearestPolygon's 5m max-dist of
+		//       the plane's walkable polygons (which sit at the plane's top Y).
+		// Plane top at y=0.5 satisfies all three: priest 0.5m above, villager
+		// capsule (half-height 0.88) lands with centre at y=1.38 after gravity.
+		//
+		// Bounds: 120m x 0.4m x 120m centred at (50, 0.3, 50) -> top y=0.5.
+		// Villagers span x in [5.8, 91.4], z in [11.4, 92.0]; priest at
+		// (62.4, 56.5); walls extend slightly outside that. 60m radius
+		// around the placement centre catches every spawn with margin.
+		Zenith_EditorAutomation::AddStep_CreateEntity("GameLevel_GroundPlane");
+		Zenith_EditorAutomation::AddStep_SetTransformPosition(50.0f, 0.3f, 50.0f);
+		Zenith_EditorAutomation::AddStep_SetTransformScale(120.0f, 0.4f, 120.0f);
+		AuthorMeshAndCollider(
+			"/Game/LevelPrototyping/Meshes/SM_Cube.SM_Cube",
+			/*bAddCollider=*/true,
+			COLLISION_VOLUME_TYPE_OBB,
+			RIGIDBODY_TYPE_STATIC);
+
 		// Interactables: villagers, doors, chests, priest. All get colliders so
 		// click-to-possess raycasts can hit and Jolt physics can simulate.
-		// Villagers are DYNAMIC bodies because the player drives the possessed
-		// villager via SetLinearVelocity, and Jolt resolves wall collisions
-		// natively against the OBB walls. Priests / doors / chests stay STATIC
-		// (priest moves itself via NavMeshAgent transform writes; door+chest
-		// are stationary).
+		// Both villagers AND the priest are DYNAMIC bodies — Zenith's
+		// Zenith_TransformComponent::SetPosition routes through Jolt's
+		// BodyInterface when a collider is present, and a STATIC body in the
+		// NON_MOVING broadphase layer ignores SetPosition activation and stays
+		// pinned at its initial pose. The villager drives its DYNAMIC body via
+		// SetLinearVelocity; the priest's NavMeshAgent writes the transform
+		// directly via SetPosition (which now lands on Jolt because the body
+		// is DYNAMIC). Doors / chests stay STATIC — they really are stationary.
 		AuthorPlacementBatch("Villager", "DPVillager_Behaviour",
 			DP_LevelData::kVillager, DP_LevelData::kVillagerCount,
 			/*bAddAIAgent=*/false, /*bAddCollider=*/true, /*bIsCharacter=*/true,
@@ -825,7 +861,8 @@ namespace
 		// collider so it participates in Jolt and the player can raycast it.
 		AuthorPlacementBatch("Priest", "Priest_Behaviour",
 			DP_LevelData::kPriest, DP_LevelData::kPriestCount,
-			/*bAddAIAgent=*/true, /*bAddCollider=*/true, /*bIsCharacter=*/true);
+			/*bAddAIAgent=*/true, /*bAddCollider=*/true, /*bIsCharacter=*/true,
+			/*bShiftYByHalfScale=*/false, /*eBodyType=*/RIGIDBODY_TYPE_DYNAMIC);
 
 		// Static decoration meshes (140 in the UE map — floor + 4 perimeter
 		// walls + interior building wall sections). Enable AABB colliders so

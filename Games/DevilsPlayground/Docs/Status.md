@@ -1,8 +1,8 @@
 # DP Status
 
-**Last updated:** 2026-05-13 — Phase 0.4 in flight, Phase 1.1 (real pause) drafted in PR #30. PR #29 (Zenith_SaveData test hooks) merged, replacing the closed parallel PR #27. 5 Phase 0 PRs still queued for auto-merge (#21 #22 #25 #26 #28).
+**Last updated:** 2026-05-14 — MVP-1.2.2 + PriestPursuit_Test stabilisation in PR #39 (auto-merge pending after rebase onto PR #36). Phase 0.0 / 0.1 / 0.2 / 0.3 / 0.4 / 1.1 complete on master; MVP-1.2 (real navmesh) substantively complete with priest pursuit working end-to-end on the real GameLevel scene.
 **Build:** ✅ DP target builds clean (`vs2022_Debug_Win64_True`, 0 warnings, 0 errors).
-**Tests:** Full local suite is green via `run_dp_tests.ps1 -Headless` after MVP-1.1 added three pause tests. Master CI shape updates as each in-flight PR lands.
+**Tests:** Full local suite (36 PASSED / 0 FAILED / 15 SKIPPED-headless) via `Tools/run_dp_tests.ps1 -Headless`. PriestPursuit_Test passes reliably across 4 consecutive runs after the 2026-05-14 fix (priest body DYNAMIC + reactive BT selector + BT pending-path tolerance).
 
 ## Manual setup checklist gating
 
@@ -10,13 +10,17 @@
 
 ## Current task
 
-**MVP-1.1 (Phase 1 — real pause) drafted in PR #30.** All four sub-tasks landed:
-- MVP-1.1.1 / 1.1.3 / 1.1.4 — three pause tests (timer, priest, input-sim).
-- MVP-1.1.2 — `DPPauseMenuController_Behaviour` now wires `Zenith_SceneManager::SetScenePaused`. The controller migrates itself to the persistent scene on OnStart (singleton pattern) so its OnUpdate keeps firing while the gameplay scene is frozen.
-- The pause-controller entity was split off from `GameManager` into a dedicated `PauseManager` entity. The original setup attached the pause script to the shared GameManager entity, which broke when MarkEntityPersistent dragged camera/HUD/fog to the persistent scene with it.
-- Between-tests hook calls `DPPauseMenuController_Behaviour::ResetForTest()` so pause state doesn't carry across batched tests.
+**MVP-1.2.2 (Phase 1 — real navmesh wiring) substantively complete in PR #39** (auto-merge pending after the 2026-05-14 rebase onto PR #36's engine APIs):
+- `DP_AI::GetOrBuildLevelNavMesh` now calls `Zenith_NavMeshGenerator::GenerateFromScene` on the live active scene, keyed by `Zenith_SceneData::GetBuildIndex()`, with the synthetic flat-quad fallback retained for tests that build their own scenes.
+- GameLevel got a 120×120m ground plane so the generator has something to walk on (the UE level data didn't include a floor placement; the prototype's flat-quad stub had masked that gap).
+- Priest is now authored DYNAMIC (`RIGIDBODY_TYPE_DYNAMIC` in `AuthorPlacementBatch`), with gravity off and pitch/roll locked in `OnAwake`, mirroring the villager pattern. The previous STATIC body silently ignored NavMeshAgent's `SetPosition` writes because `Zenith_TransformComponent::SetPosition` routes through Jolt's BodyInterface and STATIC bodies in the NON_MOVING broadphase layer don't activate.
+- Engine fix in `Zenith_BTAction_MoveTo::Execute` and `Zenith_BTAction_MoveToEntity::Execute`: when `!HasPath()` but `NeedsPath()` is true, return RUNNING (not FAILURE). Previously the BT failed the same frame `SetDestination` was called, before `NavMeshAgent::Update` had a chance to compute the path.
+- DP-side fix in `Priest_Behaviour::OnUpdate`: detect the rising edge of `BB_KEY_TARGET_WITH_DEVIL` and call `m_xTree.Reset()` so pursue gets re-evaluated immediately rather than waiting ~1s for the in-flight patrol branch to complete (Zenith_BTSelector is a memory-selector, not a reactive priority-selector).
+- `Test_PriestPursuit` extended with a direct `Zenith_Pathfinding::FindPath(priest→villager)` reachability probe in its end-of-run dump, so future regressions can distinguish "navmesh disconnected" from "BT/agent race" without re-instrumenting.
 
-**Next per roadmap:** MVP-1.2 (real navmesh integration) once Phase 0.4 in-flight PRs (#25 #26 #28) and #30 land.
+**Result:** PriestPursuit_Test passes reliably (progress ~0.7-1.0m, threshold 0.5m, velocity direction points TOWARD the villager). Verified 4 consecutive runs.
+
+**Next per roadmap:** MVP-1.2.3 (closed doors block navmesh portals via `Zenith_NavMesh::StitchPortalAt`, landed in PR #36) → MVP-1.2.4 (regeneration on scene swap) → MVP-1.3 (apprehend / run-loss).
 
 **Phase 0.0 COMPLETE** (2026-05-12). All 7 sub-tasks done; bootstrap loop end-to-end-verified in PR #11. `dp-build` + `complexity-gate` + `dp-tests` are the required status checks; auto-merge fires on green. MVP-0.0.3 / Q-2026-05-12-007 was resolved across PR #13 (engine `--headless` mode) and PR #14 (`SET_MODEL_MATERIAL` softened so the asset gap stops blocking authoring). Final CI shape: 36 tests, 24 actual pass, 12 skip via `m_bRequiresGraphics=true`, 0 fail.
 
@@ -34,6 +38,9 @@ Tomos's role remains: tick `ManualSetupChecklist.md` boxes once before the first
 
 ## Last completed
 
+- **MVP-1.2.2 + PriestPursuit_Test stabilisation** (PR #39, 2026-05-14, auto-merge pending after rebase onto PR #36) — see "Current task" above. Three stacked root causes diagnosed by the user's "why does the priest have a static collider?" question: (1) STATIC body silently ignored SetPosition writes; (2) engine BT actions failed the same frame SetDestination was called, before NavMeshAgent could compute the path; (3) Zenith_BTSelector's memory-selector semantics kept patrol RUNNING for ~1s after possession before re-evaluating pursue. All three fixes shipped together so the test passes for the RIGHT reason (priest actually pursues, velocity vector points at the villager).
+- **PR #36** (2026-05-13, merged) — engine plumbing for MVP-1.2.3/5/9: `Zenith_NavMesh::StitchPortalAt` (phantom-neighbor portal API for door bridging), `Zenith_NavMeshAgent::GetPathWaypoints`, and `Zenith_NavMeshTestPathfinder` test-harness wrapper.
+- **PR #37** (2026-05-13, merged) — engine fix: NavMesh vertex dedup keyed by region not Y, eliminates within-room polygon fragmentation that was producing ~248k polygons on GameLevel before the fix.
 - **MVP-0.0.7** (PR #11) — Smoke PR. Trivial one-line addition to `Docs/CIPolicy.md`. End-to-end verified: dp-build + complexity-gate fired green; `gh pr merge --auto --squash --delete-branch` queued and fired without intervention. Merge commit `90558880`. Bootstrap loop is provably operational.
 - **MVP-0.0.6** (PR #10) — Branch protection on `master` enabled via `gh api`. Required status checks: `dp-build` + `complexity-gate`. Linear history required. `enforce_admins=false`. Authored [Docs/CIPolicy.md](CIPolicy.md) documenting the ruleset, the rationale for excluding `dp-tests`, and the update procedure. The roadmap's "🚧 HUMAN_GATE" caveat was over-conservative -- `repo` scope sufficed for personal-repo branch protection. Also turned on `repo.allow_auto_merge` so `--auto` actually queues.
 - **MVP-0.0.5** (PR #9) — Installed `pwsh.exe` 7.6.1 via `winget install Microsoft.PowerShell` (no admin elevation required for current-user install). `verify_build_env.ps1` now reports 8/8 PASS, 0 warnings. Also fixed the long-standing slang DLL post-build copy gap (CLAUDE.md note): changed the Sharpmake-emitted xcopy from `slang.dll` to `*.dll` across all 4 game/tool Sharpmake configs (Games, FluxCompiler, TilePuzzleLevelGen, TilePuzzleRegistryViewer). Resolves the "copy DLLs from Combat output to DP output if you see DLL_NOT_FOUND" workaround documented in CLAUDE.md.

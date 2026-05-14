@@ -85,6 +85,41 @@ public:
 			m_xParentEntity.AddComponent<Zenith_AIAgentComponent>();
 		}
 
+		// MVP-1.2.2: the priest is authored with a DYNAMIC rigid body so
+		// NavMeshAgent's SetPosition writes actually land in Jolt (a STATIC
+		// body in the NON_MOVING broadphase layer ignores SetPosition's
+		// Activate call and stays pinned at its initial pose, which made the
+		// priest look frozen even though the BT was correctly emitting
+		// transform writes every frame).
+		//
+		// Two follow-ups required for a DYNAMIC capsule on a top-down map,
+		// mirroring the villager pattern:
+		//   - Gravity off: the level is a flush slab; we don't want the
+		//     priest's body integrating downward into it between SetPosition
+		//     writes.
+		//   - Lock pitch + roll: the capsule may yaw to face its movement
+		//     direction, but a glancing wall hit shouldn't be able to tip it
+		//     over. LockRotation zeroes the inverse inertia on the locked
+		//     axes so Jolt won't try to integrate them.
+		//
+		// The collider also opts out of navmesh generation -- the priest's
+		// own footprint would otherwise carve a hole in the floor mesh at
+		// authoring time, trapping it on a sub-polygon island disconnected
+		// from every villager. (SetIncludeInNavMesh is a one-time hint
+		// consumed by the generator; it has no per-frame cost.)
+		if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		{
+			Zenith_ColliderComponent& xCollider =
+				m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+			xCollider.SetIncludeInNavMesh(false);
+			if (xCollider.HasValidBody())
+			{
+				const JPH::BodyID& xBodyID = xCollider.GetBodyID();
+				Zenith_Physics::SetGravityEnabled(xBodyID, false);
+				Zenith_Physics::LockRotation(xBodyID, /*X=*/true, /*Y=*/false, /*Z=*/true);
+			}
+		}
+
 		// Register with the perception system so the priest can hear noise
 		// stimuli AND see possessed villagers. Note: Zenith_AIAgentComponent::OnAwake
 		// also calls RegisterAgent, so this is technically idempotent — but
@@ -182,6 +217,10 @@ public:
 		auto* pxPatrol = new Zenith_BTSequence();
 		auto* pxFindPos = new DP_BTAction_FindPosInSuspicionSphere();
 		pxFindPos->SetNavMesh(pxNavMesh);
+		// Stash the FindPos pointer so OnUpdate can refresh its navmesh handle
+		// when DP_AI rebuilds the cache (e.g., after a test adds scene
+		// geometry and calls ResetLevelNavMesh).
+		m_pxFindPosNode = pxFindPos;
 		pxPatrol->AddChild(pxFindPos);
 		auto* pxMoveToPatrol = new Zenith_BTAction_MoveTo(DP_AI::BB_KEY_PATROL_TARGET);
 		pxMoveToPatrol->SetAcceptanceRadius(1.0f);
@@ -198,7 +237,50 @@ public:
 		Zenith_AIAgentComponent& xAgent = m_xParentEntity.GetComponent<Zenith_AIAgentComponent>();
 		Zenith_Blackboard& xBB = xAgent.GetBlackboard();
 
+		// Refresh the cached navmesh pointer. DP_AI's navmesh can be rebuilt
+		// at runtime (e.g., a test setup that adds scene geometry then calls
+		// DP_AI::ResetLevelNavMesh), invalidating the pointer the agent
+		// captured during OnStart. Re-pulling here keeps the agent + the
+		// patrol-target picker in sync with the live cache, at the cost of
+		// one hash-table lookup per frame.
+		const Zenith_NavMesh* pxLiveNavMesh = DP_AI::GetOrBuildLevelNavMesh();
+		if (pxLiveNavMesh != m_xNavAgent.GetNavMesh())
+		{
+			m_xNavAgent.SetNavMesh(pxLiveNavMesh);
+			// FindPos node holds its own navmesh pointer too -- update it
+			// in lock-step so patrol picks reachable points on the new mesh.
+			if (m_pxFindPosNode != nullptr)
+			{
+				m_pxFindPosNode->SetNavMesh(pxLiveNavMesh);
+			}
+		}
+
 		BridgePerceptionToBlackboard(xBB);
+
+		// Reactive-selector hack: Zenith_BTSelector resumes at the last
+		// RUNNING child rather than re-evaluating from the top each tick.
+		// That's the standard "memory selector" semantics, but it breaks our
+		// priority ordering — if the priest's BT lands in the patrol branch
+		// (because pursue's HasTarget was false on frame 0 before the
+		// possession side-table propagated to DPVillager_Behaviour) then
+		// patrol keeps RUNNING for ~1s before completing, and only THEN does
+		// the Selector get another shot at pursue. During that ~1s the
+		// priest visibly ignores a possessed villager standing right next to
+		// it.
+		//
+		// Detect the rising edge of BB_KEY_TARGET_WITH_DEVIL and call
+		// m_xTree.Reset() to abort the in-flight branch (which calls OnAbort
+		// on the running node, e.g. MoveTo::OnAbort which calls
+		// NavMeshAgent::Stop) and force the next Tick to re-enter from the
+		// root. That re-runs HasTarget which now passes, and pursue takes
+		// over with a freshly requested path to the possessed villager.
+		const Zenith_EntityID xCurrentTarget =
+			xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
+		if (xCurrentTarget.IsValid() && !m_xLastSeenTarget.IsValid())
+		{
+			m_xTree.Reset(m_xParentEntity, xBB);
+		}
+		m_xLastSeenTarget = xCurrentTarget;
 
 		// Tick the tree manually. We do NOT call xAgent.SetBehaviorTree(&m_xTree)
 		// because Zenith_AIAgentComponent::Update would then double-tick.
@@ -303,22 +385,37 @@ private:
 
 	void ApplyVelocityToBodyIfPresent()
 	{
+		// MVP-1.2.2: the DYNAMIC priest body is driven by NavMeshAgent's
+		// SetPosition writes (which route through Jolt BodyInterface), not by
+		// Jolt-integrated velocity. We zero the body's linearVelocity each
+		// frame so the physics step doesn't drift the body past the position
+		// the navmesh agent just wrote. (Pre-DYNAMIC this method pushed the
+		// nav agent's planned velocity into Jolt as a hedge -- with a STATIC
+		// body that was a noop, but with the body now DYNAMIC the extra
+		// velocity would compound with SetPosition's teleport and double the
+		// priest's effective move speed.)
 		if (!m_xParentEntity.HasComponent<Zenith_ColliderComponent>()) return;
 		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
 		if (!xCollider.HasValidBody()) return;
-
-		const Zenith_Maths::Vector3& xVel = m_xNavAgent.GetVelocity();
-		Zenith_Maths::Vector3 xCurrent = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
-		// Don't clobber Y — gravity / jump physics own that channel. Only XZ
-		// is path-driven.
-		xCurrent.x = xVel.x;
-		xCurrent.z = xVel.z;
-		Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xCurrent);
+		Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(),
+			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	}
 
 	Zenith_BehaviorTree m_xTree;
 	Zenith_NavMeshAgent m_xNavAgent;
 	uint32_t            m_uDebugFrameCounter = 0;
+
+	// Used by the reactive-selector hack in OnUpdate: a rising-edge from
+	// INVALID → valid on BB_KEY_TARGET_WITH_DEVIL triggers m_xTree.Reset()
+	// so pursue gets re-evaluated immediately rather than waiting for the
+	// in-flight patrol branch to complete.
+	Zenith_EntityID     m_xLastSeenTarget = INVALID_ENTITY_ID;
+
+	// Non-owning pointer to the patrol's FindPos node. Set in OnStart so
+	// OnUpdate can refresh the navmesh handle when DP_AI rebuilds the cache.
+	// The BT itself owns the node's memory; we only need read access to
+	// call SetNavMesh on it.
+	DP_BTAction_FindPosInSuspicionSphere* m_pxFindPosNode = nullptr;
 
 	// Class-body initializers below are FALLBACKS only -- production gameplay
 	// always overwrites them in OnAwake via DP_Tuning::Get<float>() reads.

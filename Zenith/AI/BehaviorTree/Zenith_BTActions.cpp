@@ -126,9 +126,19 @@ BTNodeStatus Zenith_BTAction_MoveTo::Execute(Zenith_Entity& xAgent, Zenith_Black
 		return m_eLastStatus;
 	}
 
-	// Check if path failed
+	// Check if path failed. A path that's still being computed asynchronously
+	// (m_bPathPending=true && !HasPath()) is NOT a failure — keep RUNNING so
+	// the agent's next NavMeshAgent::Update gets to call FindPath. Without
+	// this gate, MoveTo would fail in the same frame SetDestination is
+	// called because BT.Tick runs ahead of NavMeshAgent::Update in the
+	// per-frame schedule.
 	if (!pxNav->HasPath())
 	{
+		if (pxNav->NeedsPath())
+		{
+			m_eLastStatus = BTNodeStatus::RUNNING;
+			return m_eLastStatus;
+		}
 		m_eLastStatus = BTNodeStatus::FAILURE;
 		return m_eLastStatus;
 	}
@@ -247,9 +257,20 @@ BTNodeStatus Zenith_BTAction_MoveToEntity::Execute(Zenith_Entity& xAgent, Zenith
 		m_bPathRequested = true;
 	}
 
-	// Check if path failed
+	// Check if path failed. As with MoveTo::Execute, a path that's still
+	// being computed asynchronously (m_bPathPending=true && !HasPath()) is
+	// NOT a failure — keep RUNNING so the agent's next NavMeshAgent::Update
+	// gets to call FindPath. Without this gate, MoveToEntity returns
+	// FAILURE the same frame SetDestination is called (BT.Tick runs ahead
+	// of NavMeshAgent::Update in the per-frame schedule), and the parent
+	// Sequence's repath loop never gets to consume a successful path.
 	if (m_bPathRequested && !pxNav->HasPath())
 	{
+		if (pxNav->NeedsPath())
+		{
+			m_eLastStatus = BTNodeStatus::RUNNING;
+			return m_eLastStatus;
+		}
 		m_eLastStatus = BTNodeStatus::FAILURE;
 		return m_eLastStatus;
 	}
