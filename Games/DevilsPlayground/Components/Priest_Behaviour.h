@@ -85,6 +85,20 @@ public:
 			m_xParentEntity.AddComponent<Zenith_AIAgentComponent>();
 		}
 
+		// MVP-1.2.2: the priest is authored with a STATIC rigid body (the
+		// priest moves itself via NavMeshAgent transform writes, not via
+		// Jolt forces). With the real navmesh wired in, that static
+		// collider would otherwise contribute to navmesh generation and
+		// carve a hole in the floor at the priest's own footprint --
+		// trapping the priest in a sub-polygon island disconnected from
+		// every villager. Opt the priest's collider out of navmesh input.
+		// The collider still raycasts + collides for click-to-possess and
+		// gameplay queries; it just doesn't shape the navmesh.
+		if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		{
+			m_xParentEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
+		}
+
 		// Register with the perception system so the priest can hear noise
 		// stimuli AND see possessed villagers. Note: Zenith_AIAgentComponent::OnAwake
 		// also calls RegisterAgent, so this is technically idempotent — but

@@ -8,6 +8,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
+#include "AI/Navigation/Zenith_NavMeshGenerator.h"
 
 #include <unordered_map>
 
@@ -207,16 +208,23 @@ namespace DP_Interactables
 // ============================================================================
 namespace
 {
-	// Synthetic flat-quad navmesh holder. The UE source map has irregular
-	// floor authoring (each room/staircase has its own collider mesh, none
-	// of which has been re-exported into the port yet). Generating a recast
-	// navmesh from the empty collider geometry currently in the scene would
-	// produce an empty navmesh, so the priest pursuit logic falls back to a
-	// hand-built 200m × 200m polygon centred on the level origin. This is
-	// large enough that the priest's spawn (≈56,1,62) and every villager's
-	// spawn fits inside it. Wave-4 polish replaces this with
-	// Zenith_NavMeshGenerator::GenerateFromScene once colliders land.
+	// MVP-1.2.2: real navmesh generated from active-scene collider geometry
+	// via Zenith_NavMeshGenerator::GenerateFromScene. With the full engine
+	// stack (PRs #32 walls block / #33 perf / #35 collider opt-out / #36
+	// portal stitch / #37 region-keyed verts) and a production ground-plane
+	// collider in AuthorGameLevelScene, the generated navmesh is connected
+	// across the whole playable area.
+	//
+	// Cache key is the active scene's build index, stable across handle
+	// reuse so batched tests reloading the same scene share one ~850ms
+	// generation. Cache invalidation is the explicit ResetLevelNavMesh
+	// call.
+	//
+	// Fallback path stays for scenes with no static-collider geometry
+	// (FrontEnd menu) -- synthetic 200m flat quad keeps priest spawn /
+	// patrol APIs functional without crashing on a null navmesh pointer.
 	Zenith_NavMesh* g_pxLevelNavMesh = nullptr;
+	int             g_iCachedNavMeshBuildIndex = -1;
 
 	void BuildSyntheticFlatNavMesh()
 	{
@@ -277,10 +285,56 @@ namespace DP_AI
 
 	const Zenith_NavMesh* GetOrBuildLevelNavMesh()
 	{
-		if (g_pxLevelNavMesh == nullptr)
+		// Cache hit: same build-indexed scene as last call.
+		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
+		const int iActiveBuildIndex = xActive.IsValid()
+			? Zenith_SceneManager::GetSceneData(xActive)->GetBuildIndex()
+			: -1;
+		if (g_pxLevelNavMesh != nullptr && iActiveBuildIndex >= 0
+			&& iActiveBuildIndex == g_iCachedNavMeshBuildIndex)
 		{
-			BuildSyntheticFlatNavMesh();
+			return g_pxLevelNavMesh;
 		}
+
+		// Cache miss -- drop stale + rebuild.
+		delete g_pxLevelNavMesh;
+		g_pxLevelNavMesh = nullptr;
+		g_iCachedNavMeshBuildIndex = -1;
+
+		if (xActive.IsValid())
+		{
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+			if (pxScene != nullptr)
+			{
+				NavMeshGenerationConfig xCfg{};
+				// Tightened agent radius: DP doorways are 0.8-3m gaps and
+				// 0.4m default radius erodes narrow doorways. 0.2m keeps
+				// every authored doorway passable.
+				xCfg.m_fAgentRadius = 0.2f;
+				Zenith_NavMesh* pxGenerated =
+					Zenith_NavMeshGenerator::GenerateFromScene(*pxScene, xCfg);
+				if (pxGenerated != nullptr && pxGenerated->GetPolygonCount() > 0)
+				{
+					g_pxLevelNavMesh = pxGenerated;
+					g_iCachedNavMeshBuildIndex = iActiveBuildIndex;
+					Zenith_Log(LOG_CATEGORY_AI,
+						"DP_AI: built real navmesh for build-index=%d (%u verts, %u polys)",
+						iActiveBuildIndex,
+						g_pxLevelNavMesh->GetVertexCount(),
+						g_pxLevelNavMesh->GetPolygonCount());
+					return g_pxLevelNavMesh;
+				}
+				delete pxGenerated; // null-safe
+				Zenith_Log(LOG_CATEGORY_AI,
+					"DP_AI: generator returned empty navmesh for build-index=%d -- falling back to synthetic flat quad",
+					iActiveBuildIndex);
+			}
+		}
+
+		// Fallback: legacy 200m flat quad for scenes with no static collider
+		// geometry (FrontEnd menu). NOT cached against the build index --
+		// the next call with real geometry will rebuild.
+		BuildSyntheticFlatNavMesh();
 		return g_pxLevelNavMesh;
 	}
 
@@ -288,6 +342,7 @@ namespace DP_AI
 	{
 		delete g_pxLevelNavMesh;
 		g_pxLevelNavMesh = nullptr;
+		g_iCachedNavMeshBuildIndex = -1;
 	}
 }
 
