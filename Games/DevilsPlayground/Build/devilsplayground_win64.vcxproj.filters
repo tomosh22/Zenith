@@ -98,6 +98,9 @@
     <ClCompile Include="..\Tests\Test_P1NavMesh_RegenerationOnSceneSwap.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1NoVessels_DispatchesRunLost.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Pause_InputSimDuringPause.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
