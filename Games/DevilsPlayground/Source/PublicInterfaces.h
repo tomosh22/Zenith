@@ -153,6 +153,24 @@ namespace DP_Player
 	void  TickDemonScent(float fDt);
 	void  WriteHighestScentToBlackboard();
 
+#ifdef ZENITH_INPUT_SIMULATOR
+	// MVP-1.9: opt-in test-only "omniscient fallback" toggle. Pre-1.9,
+	// `Priest_Behaviour::BridgePerceptionToBlackboard` unconditionally
+	// dropped back to `DP_Player::GetPossessedVillager` if no perceived
+	// target qualified, making the priest effectively omniscient. That
+	// behaviour stays in TEST builds by default (true) so existing
+	// pursuit/apprehend tests don't have to position priests with
+	// line-of-sight setup; new MVP-1.9 sight tests call
+	// `SetTestOmniscientFallback(false)` in Setup to disable it and
+	// verify the production-shaped sight-driven detection path.
+	//
+	// Production builds (no ZENITH_INPUT_SIMULATOR) don't compile the
+	// fallback at all -- the priest is sight-driven only, matching
+	// the GDD's intent.
+	void SetTestOmniscientFallback(bool bEnabled);
+	bool IsTestOmniscientFallbackEnabled();
+#endif
+
 	DP_ItemTag GetHeldItemTag(Zenith_EntityID xVillager);
 	Zenith_EntityID GetHeldItemEntity(Zenith_EntityID xVillager);
 	void SetHeldItem(Zenith_EntityID xVillager, Zenith_EntityID xItem);

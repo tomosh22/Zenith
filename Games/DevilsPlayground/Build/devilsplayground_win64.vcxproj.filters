@@ -104,6 +104,12 @@
     <ClCompile Include="..\Tests\Test_P1Pause_TimerStopsOnEscape.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Priest_DoesNotChasePossessedOutOfSight.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Priest_PursuesAfterLineOfSight.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Range_AcceptedInRange.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
