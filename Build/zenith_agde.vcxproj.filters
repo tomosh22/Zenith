@@ -3162,6 +3162,9 @@
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshGenerator.Tests.inl">
       <Filter>AI\Navigation</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshTestPathfinder.h">
+      <Filter>AI\Navigation</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_Pathfinding.h">
       <Filter>AI\Navigation</Filter>
     </ClInclude>

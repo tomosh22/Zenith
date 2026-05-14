@@ -68,6 +68,9 @@
     <ClCompile Include="..\Tests\Test_MouseWheel.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1NavMesh_ClosedDoorBlocksPath.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P1NavMesh_PathRespectsWalls.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
