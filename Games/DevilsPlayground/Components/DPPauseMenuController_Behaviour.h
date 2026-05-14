@@ -33,6 +33,8 @@
 #include "Input/Zenith_KeyCodes.h"
 #include "UI/Zenith_UIText.h"
 
+#include "Source/PublicInterfaces.h"
+
 class DPPauseMenuController_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
@@ -155,14 +157,31 @@ public:
 #endif
 
 private:
+	// Shared post-pause-menu reset. Clears every per-run DP state
+	// owner so the next scene-load starts from a fresh demon run.
+	// Called by both HandleRestart (re-load GameLevel) and HandleQuit
+	// (load FrontEnd) -- both intents leave no state-leak across the
+	// transition.
+	void ResetAllRunStateBeforeReload()
+	{
+		ResetVisibleAndUnpause();
+		DP_Player::ResetForTest();      // Despite the name, semantically
+		                                // "reset all per-run player state"
+		                                // -- clears possessed handle,
+		                                // held items, cooldown, scent,
+		                                // anchor, channel.
+		DP_Win::Reset();
+		DP_Fog::ClearAllFogHoles();
+		DP_Fog::ClearAllMemoryReveals();
+		DP_Night::Reset();
+	}
+
 	void HandleRestart()
 	{
 #ifdef ZENITH_INPUT_SIMULATOR
 		s_bRestartRequestedForTest = true;
 #endif
-		// Unpause + hide overlay before reloading so the new scene
-		// boots with a clean pause state.
-		ResetVisibleAndUnpause();
+		ResetAllRunStateBeforeReload();
 		// Reload gameplay scene (build index 1 = GameLevel).
 		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
@@ -172,7 +191,7 @@ private:
 #ifdef ZENITH_INPUT_SIMULATOR
 		s_bQuitToMenuRequestedForTest = true;
 #endif
-		ResetVisibleAndUnpause();
+		ResetAllRunStateBeforeReload();
 		// Load front-end (build index 0).
 		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}

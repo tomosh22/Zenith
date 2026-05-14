@@ -278,6 +278,7 @@
     <ClCompile Include="..\Tests\Test_P2HUD_AelfricStateReadouts.cpp" />
     <ClCompile Include="..\Tests\Test_P2HUD_DawnAndScentReadouts.cpp" />
     <ClCompile Include="..\Tests\Test_P2Menu_PauseAndMainMenuShortcuts.cpp" />
+    <ClCompile Include="..\Tests\Test_P2Pause_RestartActuallyReloadsScene.cpp" />
     <ClCompile Include="..\Tests\Test_P2Reagent_BellSoulRingsBell.cpp" />
     <ClCompile Include="..\Tests\Test_P2Reagent_BogWaterEvaporates.cpp" />
     <ClCompile Include="..\Tests\Test_P2Reagent_UniquePickupChannel.cpp" />
