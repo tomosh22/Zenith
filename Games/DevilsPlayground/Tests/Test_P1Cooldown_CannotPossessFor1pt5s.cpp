@@ -10,6 +10,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
+#include "Collections/Zenith_Vector.h"
 #include "Components/DPVillager_Behaviour.h"
 
 #include <cmath>
@@ -97,62 +98,78 @@ namespace
 		return std::sqrt(fDx * fDx + fDz * fDz);
 	}
 
-	// Pick three distinct villagers: closest, mid (≈median), farthest from
-	// the priest. The exact ordering doesn't matter for this test --
-	// we just need three different EntityIDs to switch between -- but
-	// using distance-from-priest gives a stable, reproducible pick if
-	// GameLevel ever shuffles villager order in DP_LevelData.
-	void PickThreeVillagers(Zenith_EntityID& xClosest,
-	                        Zenith_EntityID& xMid,
-	                        Zenith_EntityID& xFarthest)
+	// Pick three distinct villagers that are MUTUALLY within
+	// `possession.range_from_anchor_m` of each other. Required because
+	// MVP-1.8's range gate also fires inside TryVoluntaryPossessSwitch
+	// -- if A and B are 80 m apart, the switch is refused for the
+	// "out of range" reason, not the cooldown reason this test wants
+	// to assert.
+	//
+	// Strategy: find the closest pair (A, B) in the level, then pick C
+	// as the villager closest to A (other than B) that's also within
+	// range of A AND of B. With the stock 17-villager spread of
+	// GameLevel that gives the Blacksmith / Blacksmith2 / Pleb6
+	// cluster (all under 15 m mutually).
+	void PickThreeMutualRangeVillagers(Zenith_EntityID& xA,
+	                                    Zenith_EntityID& xB,
+	                                    Zenith_EntityID& xC)
 	{
-		// Anchor pick: use the active scene's first DPVillager-by-iteration
-		// as a reference. The DP_Query iteration order matches insertion
-		// order which matches DP_LevelData::kVillager order, so this is
-		// deterministic.
-		Zenith_Maths::Vector3 xAnchor(0.0f);
-		bool bGotAnchor = false;
-		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xAnchor, &bGotAnchor]
-			(Zenith_EntityID xId, DPVillager_Behaviour&)
-			{
-				if (bGotAnchor) return;
-				bGotAnchor = TryGetEntityPos(xId, xAnchor);
-			});
-		if (!bGotAnchor) return;
+		const float fMaxRange =
+			DP_Tuning::Get<float>("possession.range_from_anchor_m");
 
-		struct Cand { Zenith_EntityID xId; float fDist; };
+		struct Cand { Zenith_EntityID xId; Zenith_Maths::Vector3 xPos; };
 		Zenith_Vector<Cand> axCands;
 		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
-			[&xAnchor, &axCands]
+			[&axCands]
 			(Zenith_EntityID xId, DPVillager_Behaviour&)
 			{
-				Zenith_Maths::Vector3 xPos;
-				if (!TryGetEntityPos(xId, xPos)) return;
-				Cand xC;
-				xC.xId = xId;
-				xC.fDist = HorizontalDistance(xPos, xAnchor);
-				axCands.PushBack(xC);
+				Cand xV; xV.xId = xId;
+				if (TryGetEntityPos(xId, xV.xPos))
+				{
+					axCands.PushBack(xV);
+				}
 			});
 		if (axCands.GetSize() < 3) return;
 
-		// Cheap "sort by distance" -- bubble for the 17-villager scene.
+		// Find the closest pair (A, B).
+		float fMinPair = 1e30f;
+		uint32_t uA = UINT32_MAX, uB = UINT32_MAX;
 		for (uint32_t i = 0; i < axCands.GetSize(); ++i)
 		{
 			for (uint32_t j = i + 1; j < axCands.GetSize(); ++j)
 			{
-				if (axCands.Get(j).fDist < axCands.Get(i).fDist)
+				const float fD = HorizontalDistance(
+					axCands.Get(i).xPos, axCands.Get(j).xPos);
+				if (fD < fMinPair)
 				{
-					const Cand xTmp = axCands.Get(i);
-					axCands.Get(i) = axCands.Get(j);
-					axCands.Get(j) = xTmp;
+					fMinPair = fD;
+					uA = i;
+					uB = j;
 				}
 			}
 		}
+		if (uA == UINT32_MAX) return;
+		if (fMinPair > fMaxRange) return; // No in-range pair anywhere.
 
-		xClosest  = axCands.Get(0).xId;
-		xMid      = axCands.Get(axCands.GetSize() / 2).xId;
-		xFarthest = axCands.Get(axCands.GetSize() - 1).xId;
+		// Find C: a villager (not A, not B) within fMaxRange of BOTH
+		// A AND B. We try every remaining candidate and stop on the
+		// first hit. If none qualify, give up -- the caller will see
+		// xC.IsValid() == false and fail with a test-design message.
+		for (uint32_t k = 0; k < axCands.GetSize(); ++k)
+		{
+			if (k == uA || k == uB) continue;
+			const float fDA = HorizontalDistance(
+				axCands.Get(k).xPos, axCands.Get(uA).xPos);
+			const float fDB = HorizontalDistance(
+				axCands.Get(k).xPos, axCands.Get(uB).xPos);
+			if (fDA <= fMaxRange && fDB <= fMaxRange)
+			{
+				xA = axCands.Get(uA).xId;
+				xB = axCands.Get(uB).xId;
+				xC = axCands.Get(k).xId;
+				return;
+			}
+		}
 	}
 }
 
@@ -183,7 +200,7 @@ static bool Step_P1Cooldown(int iFrame)
 
 	case kCD_WaitScene:
 	{
-		PickThreeVillagers(g_xA, g_xB, g_xC);
+		PickThreeMutualRangeVillagers(g_xA, g_xB, g_xC);
 		if (g_xA.IsValid() && g_xB.IsValid() && g_xC.IsValid()
 			&& g_xA.m_uIndex != g_xB.m_uIndex
 			&& g_xB.m_uIndex != g_xC.m_uIndex

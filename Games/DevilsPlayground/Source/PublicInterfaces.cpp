@@ -35,6 +35,30 @@ namespace
 	// canon: "cooldown_after_burnout_s = 0.0".
 	float g_fPossessionCooldownRemaining = 0.0f;
 
+	// MVP-1.8: anchor position. Set by SetPossessedVillager and
+	// TryVoluntaryPossessSwitch from the new villager's transform
+	// position on any successful possession. TryVoluntaryPossessSwitch
+	// then enforces that subsequent voluntary switches stay within
+	// `possession.range_from_anchor_m` (default 15 m) of the anchor.
+	// SetPossessedVillager(INVALID) clears the anchor; the next
+	// successful possession re-seeds it.
+	Zenith_Maths::Vector3 g_xPossessionAnchor = Zenith_Maths::Vector3(0.0f);
+	bool                  g_bHasPossessionAnchor = false;
+
+	// Resolves a villager handle to its world position. Returns false
+	// if the entity has no transform / no scene-data binding (e.g.,
+	// passed a stale handle after the villager was destroyed).
+	bool TryGetVillagerPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
+	{
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		if (!xEnt.IsValid()) return false;
+		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
+		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		return true;
+	}
+
 	// Per-villager held-item record. Mutated by DP_Player::SetHeldItem /
 	// RemoveHeldItem, read by DP_Player::GetHeldItem*. EntityID hashes via
 	// (m_uIndex,m_uGeneration) — pack to uint64_t for std::unordered_map.
@@ -79,12 +103,27 @@ namespace DP_Player
 	void SetPossessedVillager(Zenith_EntityID xId)
 	{
 		g_xPossessedVillager = xId;
+		// MVP-1.8: keep the anchor in sync with the latest possession.
+		// System callers (death cleared possession, apprehend cleared
+		// possession, test setup) reach this function; clearing to
+		// INVALID drops the anchor so the next voluntary attempt gets
+		// a fresh seed without inheriting a stale anchor from a long-
+		// dead villager.
+		if (xId.IsValid() && TryGetVillagerPos(xId, g_xPossessionAnchor))
+		{
+			g_bHasPossessionAnchor = true;
+		}
+		else
+		{
+			g_bHasPossessionAnchor = false;
+		}
 	}
 
 	bool TryVoluntaryPossessSwitch(Zenith_EntityID xId)
 	{
 		// Idempotent re-click: clicking the same villager you're already
-		// possessing is a no-op (and doesn't waste the cooldown window).
+		// possessing is a no-op (and doesn't waste the cooldown window
+		// or trip the range gate).
 		if (xId.IsValid()
 			&& g_xPossessedVillager.IsValid()
 			&& xId.m_uIndex == g_xPossessedVillager.m_uIndex
@@ -100,9 +139,43 @@ namespace DP_Player
 			return false;
 		}
 
+		// MVP-1.8: range gate. Anchor was set by the prior successful
+		// possession (or by a direct SetPossessedVillager). If no anchor
+		// has ever been set (fresh process / immediately after a death
+		// that cleared it), skip the range check -- the first voluntary
+		// switch establishes the anchor.
+		Zenith_Maths::Vector3 xNewPos(0.0f);
+		const bool bGotNewPos = xId.IsValid() && TryGetVillagerPos(xId, xNewPos);
+		if (g_bHasPossessionAnchor && bGotNewPos)
+		{
+			const float fDx = xNewPos.x - g_xPossessionAnchor.x;
+			const float fDz = xNewPos.z - g_xPossessionAnchor.z;
+			const float fDist = std::sqrt(fDx * fDx + fDz * fDz);
+			const float fMaxRange =
+				DP_Tuning::Get<float>("possession.range_from_anchor_m");
+			if (fDist > fMaxRange)
+			{
+				return false;
+			}
+		}
+
 		g_xPossessedVillager = xId;
 		g_fPossessionCooldownRemaining =
 			DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
+
+		// Update the anchor to the new villager so the next voluntary
+		// hop's range is measured from where the player jumped TO, not
+		// where they jumped FROM. (Matches "demon-hop chain" semantics:
+		// each successful possession defines a new anchor circle.)
+		if (bGotNewPos)
+		{
+			g_xPossessionAnchor = xNewPos;
+			g_bHasPossessionAnchor = true;
+		}
+		else
+		{
+			g_bHasPossessionAnchor = false;
+		}
 		return true;
 	}
 
@@ -157,6 +230,8 @@ namespace DP_Player
 		g_xPossessedVillager = INVALID_ENTITY_ID;
 		g_xHeldItems.clear();
 		g_fPossessionCooldownRemaining = 0.0f;
+		g_xPossessionAnchor = Zenith_Maths::Vector3(0.0f);
+		g_bHasPossessionAnchor = false;
 	}
 }
 
