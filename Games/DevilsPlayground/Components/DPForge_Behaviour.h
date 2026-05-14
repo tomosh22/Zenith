@@ -22,6 +22,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
 #include "Core/Zenith_AudioBus.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
@@ -113,8 +114,19 @@ protected:
 			DP_Tuning::Get<float>("interactables.forge_audible_at_m");
 		const float fAudibleLoudness =
 			DP_Tuning::Get<float>("interactables.forge_audible_loudness");
+		// AudioBus emit -- test instrumentation (recorded by
+		// GetEmittedSoundsForTest for assertion harnesses) + future
+		// shipping audio system hook.
 		Zenith_AudioBus::EmitSound("DP.Forge.Hammer",
 			xForgePos, fAudibleLoudness, fAudibleRadius);
+		// PerceptionSystem emit -- this is the actual priest-hearing
+		// path. Without this the AudioBus call records the event but
+		// no AI agent reacts. Source entity is the forge so the
+		// stimulus is attributed to the forge's position when the
+		// priest's BridgePerceptionToBlackboard reads GetLastHeardSoundFor.
+		Zenith_PerceptionSystem::EmitSoundStimulus(
+			xForgePos, fAudibleLoudness, fAudibleRadius,
+			m_xParentEntity.GetEntityID());
 	}
 
 private:

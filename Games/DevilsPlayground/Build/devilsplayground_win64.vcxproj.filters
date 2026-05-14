@@ -236,7 +236,13 @@
     <ClCompile Include="..\Tests\Test_P2Forge_IronToSkeletonKey.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P2Forge_PriestHearsTheHammer.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P2Forge_WoodToSpike.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P2HUD_AelfricStateInRealScene.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P2HUD_AelfricStateReadouts.cpp">
