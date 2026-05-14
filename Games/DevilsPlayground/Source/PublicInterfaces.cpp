@@ -9,6 +9,8 @@
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
+#include "AI/Components/Zenith_AIAgentComponent.h"
+#include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include "DP_Tuning.h"
 
@@ -45,6 +47,12 @@ namespace
 	Zenith_Maths::Vector3 g_xPossessionAnchor = Zenith_Maths::Vector3(0.0f);
 	bool                  g_bHasPossessionAnchor = false;
 
+	// MVP-1.6: per-villager scent table. Keyed by packed EntityID so
+	// stale entries from destroyed villagers don't collide with reused
+	// indices (the generation counter survives the pack). Reads are
+	// done via GetDemonScent which returns 0 for missing entries.
+	std::unordered_map<uint64_t, float> g_xDemonScent;
+
 	// Resolves a villager handle to its world position. Returns false
 	// if the entity has no transform / no scene-data binding (e.g.,
 	// passed a stale handle after the villager was destroyed).
@@ -65,6 +73,18 @@ namespace
 	uint64_t PackEntityID(Zenith_EntityID xID)
 	{
 		return (static_cast<uint64_t>(xID.m_uGeneration) << 32) | static_cast<uint64_t>(xID.m_uIndex);
+	}
+
+	// Inverse of PackEntityID -- recovers an EntityID from the packed
+	// uint64_t key used in side-table std::unordered_maps. Used by the
+	// scent table's "find highest" scan to translate a winning map entry
+	// back into a handle the blackboard can store.
+	Zenith_EntityID UnpackEntityID(uint64_t uKey)
+	{
+		Zenith_EntityID xID;
+		xID.m_uIndex      = static_cast<uint32_t>(uKey & 0xFFFFFFFFull);
+		xID.m_uGeneration = static_cast<uint32_t>((uKey >> 32) & 0xFFFFFFFFull);
+		return xID;
 	}
 
 	struct VillagerHeldRecord
@@ -176,6 +196,22 @@ namespace DP_Player
 		{
 			g_bHasPossessionAnchor = false;
 		}
+
+		// MVP-1.6: accumulate scent on the freshly-possessed villager.
+		// Saturates at "possession.demon_scent_max" (1.0 default). The
+		// scent decays via TickDemonScent, which DPPlayerController
+		// drives once per frame.
+		if (xId.IsValid())
+		{
+			const float fPerPossession =
+				DP_Tuning::Get<float>("possession.demon_scent_per_possession");
+			const float fMaxScent =
+				DP_Tuning::Get<float>("possession.demon_scent_max");
+			const uint64_t uKey = PackEntityID(xId);
+			float fNew = g_xDemonScent[uKey] + fPerPossession;
+			if (fNew > fMaxScent) fNew = fMaxScent;
+			g_xDemonScent[uKey] = fNew;
+		}
 		return true;
 	}
 
@@ -192,6 +228,75 @@ namespace DP_Player
 	float GetPossessionCooldownRemaining()
 	{
 		return g_fPossessionCooldownRemaining;
+	}
+
+	float GetDemonScent(Zenith_EntityID xVillager)
+	{
+		if (!xVillager.IsValid()) return 0.0f;
+		const auto it = g_xDemonScent.find(PackEntityID(xVillager));
+		if (it == g_xDemonScent.end()) return 0.0f;
+		return it->second;
+	}
+
+	void TickDemonScent(float fDt)
+	{
+		if (g_xDemonScent.empty()) return;
+		const float fDecayPerSec =
+			DP_Tuning::Get<float>("possession.demon_scent_decay_per_s");
+		const float fDecay = fDecayPerSec * fDt;
+		// Iterate-and-erase pattern -- entries reaching <= 0 are removed
+		// so the table doesn't accumulate dead handles. Reading via
+		// GetDemonScent returns 0 for a missing entry, so removal is
+		// observationally identical to "value = 0".
+		for (auto it = g_xDemonScent.begin(); it != g_xDemonScent.end(); )
+		{
+			it->second -= fDecay;
+			if (it->second <= 0.0f)
+			{
+				it = g_xDemonScent.erase(it);
+			}
+			else
+			{
+				++it;
+			}
+		}
+	}
+
+	void WriteHighestScentToBlackboard()
+	{
+		// Find the highest-scent villager.
+		Zenith_EntityID xHighestId = INVALID_ENTITY_ID;
+		float fHighestScent = 0.0f;
+		for (const auto& xPair : g_xDemonScent)
+		{
+			if (xPair.second > fHighestScent)
+			{
+				fHighestScent = xPair.second;
+				xHighestId = UnpackEntityID(xPair.first);
+			}
+		}
+
+		// Write the handle to every AIAgentComponent's blackboard slot
+		// across all loaded scenes. In production this is the priest's
+		// blackboard; in gym scenes there may be no AIAgentComponent
+		// at all (no-op). We iterate via scene Query rather than coupling
+		// PublicInterfaces.cpp to Priest_Behaviour -- AIAgentComponent
+		// is engine-side, Priest_Behaviour is game-side, and the data
+		// path doesn't need to know which behaviour reads the key.
+		const uint32_t uSlotCount = Zenith_SceneManager::GetSceneSlotCount();
+		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
+		{
+			Zenith_SceneData* pxScene =
+				Zenith_SceneManager::GetLoadedSceneDataAtSlot(uSlot);
+			if (pxScene == nullptr) continue;
+			pxScene->Query<Zenith_AIAgentComponent>().ForEach(
+				[xHighestId]
+				(Zenith_EntityID, Zenith_AIAgentComponent& xAgent)
+				{
+					xAgent.GetBlackboard().SetEntityID(
+						DP_AI::BB_KEY_HIGH_SCENT_TARGET, xHighestId);
+				});
+		}
 	}
 
 	DP_ItemTag GetHeldItemTag(Zenith_EntityID xVillager)
@@ -232,6 +337,7 @@ namespace DP_Player
 		g_fPossessionCooldownRemaining = 0.0f;
 		g_xPossessionAnchor = Zenith_Maths::Vector3(0.0f);
 		g_bHasPossessionAnchor = false;
+		g_xDemonScent.clear();
 	}
 }
 

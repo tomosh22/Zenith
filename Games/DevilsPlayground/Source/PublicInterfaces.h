@@ -135,6 +135,24 @@ namespace DP_Player
 	// next switch will be available.
 	float GetPossessionCooldownRemaining();
 
+	// MVP-1.6: demon-scent table. Successful possessions accumulate scent
+	// on the possessed villager; the value decays over time and saturates
+	// at `possession.demon_scent_max`.
+	//
+	// The accumulation happens INSIDE TryVoluntaryPossessSwitch (the
+	// player path) -- death and apprehend never bump scent. This matches
+	// Tuning.json:
+	//   "demon_scent_per_possession ... Only applies on SUCCESSFUL
+	//    possession. Failed attempts (cooldown-blocked, out-of-range,
+	//    channel-interrupted) produce no scent."
+	//
+	// In MVP only the data-path is wired (scent table + decay + write to
+	// the priest's BB_KEY_HIGH_SCENT_TARGET). No behaviour CONSUMES the
+	// scent yet (hounds and variants are post-MVP).
+	float GetDemonScent(Zenith_EntityID xVillager);
+	void  TickDemonScent(float fDt);
+	void  WriteHighestScentToBlackboard();
+
 	DP_ItemTag GetHeldItemTag(Zenith_EntityID xVillager);
 	Zenith_EntityID GetHeldItemEntity(Zenith_EntityID xVillager);
 	void SetHeldItem(Zenith_EntityID xVillager, Zenith_EntityID xItem);
@@ -197,6 +215,14 @@ namespace DP_AI
 	constexpr const char* BB_KEY_INVESTIGATE_POS     = "InvestigatePos";
 	constexpr const char* BB_KEY_HAS_INVESTIGATE_POS = "HasInvestigatePos";
 	constexpr const char* BB_KEY_PATROL_TARGET       = "PatrolTarget";
+	// MVP-1.6: priest reads the highest-scent villager out of this slot.
+	// Set by DP_Player::WriteHighestScentToBlackboard, called by
+	// DPPlayerController_Behaviour::OnUpdate after the scent table
+	// has been ticked / updated. Value is INVALID_ENTITY_ID when no
+	// villager carries any scent. No production behaviour consumes
+	// this key in MVP (the hound archetype is post-MVP); the test
+	// suite is the only reader for now.
+	constexpr const char* BB_KEY_HIGH_SCENT_TARGET   = "HighScentTarget";
 
 	void EmitNoise(Vec3 xPos, float fLoudness, float fRadius, Zenith_EntityID xSource);
 
