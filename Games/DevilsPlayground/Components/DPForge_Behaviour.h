@@ -21,9 +21,11 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
+#include "Core/Zenith_AudioBus.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
+#include "Source/DP_Tuning.h"
 
 #include <cstdio>
 
@@ -91,6 +93,28 @@ protected:
 			DP_Player::SetHeldItem(xVillager, xOutput);
 		}
 		++m_uCraftCount;
+
+		// MVP-2.3.4: forge craft emits a hammer sound audible across
+		// the village. Tuning.json:
+		//   forge_audible_at_m   = 30.0  (per GDD: priest hears it
+		//                                 from anywhere in the village
+		//                                 if the craft happens during
+		//                                 his patrol)
+		//   forge_audible_loudness = 1.0
+		// The radius is the audible-at distance; loudness is the
+		// stimulus intensity. Future variant aelfrics could tune
+		// their hearing threshold to attenuate.
+		Zenith_Maths::Vector3 xForgePos(0.0f);
+		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		{
+			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xForgePos);
+		}
+		const float fAudibleRadius =
+			DP_Tuning::Get<float>("interactables.forge_audible_at_m");
+		const float fAudibleLoudness =
+			DP_Tuning::Get<float>("interactables.forge_audible_loudness");
+		Zenith_AudioBus::EmitSound("DP.Forge.Hammer",
+			xForgePos, fAudibleLoudness, fAudibleRadius);
 	}
 
 private:
