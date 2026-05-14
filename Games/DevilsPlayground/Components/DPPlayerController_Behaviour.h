@@ -50,6 +50,13 @@ public:
 		// apprehend paths don't touch the cooldown.
 		DP_Player::TickPossessionCooldown(fDt);
 
+		// MVP-1.6: decay scent on every villager that's carrying any, then
+		// push the highest-scent villager handle to every AIAgentComponent's
+		// BB_KEY_HIGH_SCENT_TARGET slot. Production reader is the future
+		// hound archetype; in MVP this is data-path-only.
+		DP_Player::TickDemonScent(fDt);
+		DP_Player::WriteHighestScentToBlackboard();
+
 		HandleClickToPossess();
 	}
 
