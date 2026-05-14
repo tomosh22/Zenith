@@ -31,6 +31,18 @@ namespace DP_Input
 			|| Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT);
 	}
 
+	// MVP-1.7: walk-quiet hold. Either Ctrl key works. While held AND
+	// the villager is moving, footsteps emit at
+	// `movement.walk_footstep_loudness_multiplier` (0.5x default) and
+	// the villager moves at `movement.walk_speed_mps` instead of the
+	// jog default. Sprint wins ties (holding Shift+Ctrl resolves to
+	// sprint -- the louder, faster mode).
+	inline bool ReadWalkQuietHeld()
+	{
+		return Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT_CONTROL)
+			|| Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT_CONTROL);
+	}
+
 	inline bool ReadInteractPressed()
 	{
 		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_F);

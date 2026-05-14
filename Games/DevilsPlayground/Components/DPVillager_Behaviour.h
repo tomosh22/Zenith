@@ -22,6 +22,8 @@
 #include "Physics/Zenith_Physics.h"
 #include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
+#include "Core/Zenith_AudioBus.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 
@@ -126,20 +128,24 @@ public:
 
 		if (m_bIsPossessed)
 		{
-			// MVP-1.7: compute "sprinting now" once per frame so TickLife
-			// and TickMovement agree. Sprint requires BOTH the input
-			// (Shift held) AND movement input (otherwise standing-still
-			// with Shift down would burn life for no movement -- failing
-			// MVP-1.7.3's "no drain when not moving" test).
+			// MVP-1.7: compute movement-state booleans once per frame so
+			// TickLife / TickMovement / TickFootsteps all agree. Sprint
+			// requires Shift+moving; walk-quiet requires Ctrl+moving;
+			// sprint wins ties so Shift+Ctrl resolves to sprint.
 			const Zenith_Maths::Vector2 xMove = DP_Input::ReadMoveVillager();
 			const float fMoveLen = glm::length(xMove);
-			m_bIsSprintingNow = DP_Input::ReadSprintHeld() && (fMoveLen > 0.01f);
+			const bool bMoving = (fMoveLen > 0.01f);
+			m_bIsSprintingNow = DP_Input::ReadSprintHeld() && bMoving;
+			m_bIsWalkQuietNow = !m_bIsSprintingNow
+				&& DP_Input::ReadWalkQuietHeld() && bMoving;
 			TickLife(fDt);
 			TickMovement(fDt);
+			TickFootsteps(fDt, bMoving);
 		}
 		else
 		{
 			m_bIsSprintingNow = false;
+			m_bIsWalkQuietNow = false;
 			ZeroHorizontalVelocity();
 		}
 
@@ -218,6 +224,8 @@ public:
 	// Test_P1Sprint_* to verify the sprint state machine without
 	// faking input.
 	bool IsSprintingNow() const { return m_bIsSprintingNow; }
+	// MVP-1.7: walk-quiet cache; same shape as IsSprintingNow.
+	bool IsWalkQuietNow() const { return m_bIsWalkQuietNow; }
 
 	// Test/debug only: shrink the timer so death-by-timeout tests don't need
 	// 1800+ simulated frames to fire. Production gameplay sets m_fMaxLife
@@ -282,18 +290,71 @@ private:
 		{
 			const Zenith_Maths::Vector3 xDir =
 				glm::normalize(xInput.x * xRight + xInput.y * xForward);
-			// MVP-1.7: sprint speed multiplier. The "AND moving"
-			// guard lives in OnUpdate (m_bIsSprintingNow); we just
-			// read the flag here to swap m_fMoveSpeed for the sprint
-			// tuning value when active.
+			// MVP-1.7: speed override based on movement modifier state.
+			// Sprint wins ties; walk-quiet takes the slow speed.
 			float fSpeed = m_fMoveSpeed;
 			if (m_bIsSprintingNow)
 			{
 				fSpeed = DP_Tuning::Get<float>("movement.sprint_speed_mps");
 			}
+			else if (m_bIsWalkQuietNow)
+			{
+				fSpeed = DP_Tuning::Get<float>("movement.walk_speed_mps");
+			}
 			xVel = xDir * fSpeed;
 		}
 		Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVel);
+	}
+
+	// MVP-1.7.5: footstep emission. Called once per frame from
+	// OnUpdate while the villager is possessed. While moving,
+	// accumulates a countdown timer; when it expires, emits a
+	// footstep via Zenith_AudioBus::EmitSound (for the test recorder)
+	// AND Zenith_PerceptionSystem::EmitSoundStimulus (so the priest
+	// can actually hear it). Loudness is multiplied by
+	// `movement.walk_footstep_loudness_multiplier` while walk-quiet
+	// is active; sprint runs at full loudness (no extra loudness mult
+	// in MVP -- the sprint cost is movement.sprint_life_cost, the
+	// audibility multiplier is post-MVP).
+	void TickFootsteps(float fDt, bool bMoving)
+	{
+		if (!bMoving)
+		{
+			// Hold the timer at zero so the FIRST step after starting
+			// to move emits immediately, not after a full interval.
+			m_fFootstepCountdown = 0.0f;
+			return;
+		}
+		m_fFootstepCountdown -= fDt;
+		if (m_fFootstepCountdown > 0.0f) return;
+
+		const float fInterval = DP_Tuning::Get<float>("movement.footstep_interval_s");
+		m_fFootstepCountdown = fInterval;
+
+		const float fBaseLoudness = DP_Tuning::Get<float>("movement.footstep_loudness");
+		const float fRadius = DP_Tuning::Get<float>("movement.footstep_radius_m");
+		float fLoudness = fBaseLoudness;
+		if (m_bIsWalkQuietNow)
+		{
+			fLoudness *= DP_Tuning::Get<float>("movement.walk_footstep_loudness_multiplier");
+		}
+
+		Zenith_Maths::Vector3 xPos(0.0f);
+		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		{
+			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		}
+
+		// Tag emissions with a name the AudioBus test recorder can
+		// filter on. The "DP.Villager.Footstep" prefix lets future
+		// graphics builds attach an actual sample file by name.
+		Zenith_AudioBus::EmitSound("DP.Villager.Footstep", xPos, fLoudness, fRadius);
+
+		// Drive priest hearing through the perception system. The
+		// Priest_Behaviour bridge consumes the freshest hearing
+		// stimulus into BB.InvestigatePos.
+		Zenith_PerceptionSystem::EmitSoundStimulus(
+			xPos, fLoudness, fRadius, m_xParentEntity.GetEntityID());
 	}
 
 	void ZeroHorizontalVelocity()
@@ -482,6 +543,13 @@ private:
 	// both read this so they agree on whether sprint is active this
 	// tick.
 	bool  m_bIsSprintingNow = false;
+	// MVP-1.7: walk-quiet cache, computed similarly. Sprint wins on
+	// Shift+Ctrl ties (the louder, faster mode shouldn't be silenced
+	// by a held Ctrl).
+	bool  m_bIsWalkQuietNow = false;
+	// MVP-1.7: footstep emission countdown. Counts down each frame
+	// while moving; when it hits 0, TickFootsteps emits a step + resets.
+	float m_fFootstepCountdown = 0.0f;
 	// Snapshot of the base materials taken on first possession - used to
 	// restore the un-tinted look when un-possessed.
 	Zenith_Vector<Zenith_MaterialAsset*> m_apxBaseMaterials;

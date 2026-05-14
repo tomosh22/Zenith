@@ -529,6 +529,7 @@
     <ClCompile Include="..\Tests\Test_P1Tuning_LoadsAndValuesInBand.cpp" />
     <ClCompile Include="..\Tests\Test_P1Tuning_PriestValuesMatchConfig.cpp" />
     <ClCompile Include="..\Tests\Test_P1Villager_TuningMigration.cpp" />
+    <ClCompile Include="..\Tests\Test_P1WalkQuiet_FootstepLoudnessHalved.cpp" />
     <ClCompile Include="..\Tests\Test_P2Archetype_TimersMatchSpec.cpp" />
     <ClCompile Include="..\Tests\Test_P2Villager_ArchetypeStatsApplied.cpp" />
     <ClCompile Include="..\Tests\Test_P3Inventory_ArchetypeCount.cpp" />
