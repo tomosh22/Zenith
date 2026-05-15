@@ -51,6 +51,7 @@ public:
 		m_xVictoryHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnVictory>(
 			[this](const DP_OnVictory&)
 			{
+				m_bRunOver = true;
 				SetStatusText("VICTORY",
 					Zenith_Maths::Vector4(0.3f, 1.0f, 0.3f, 1.0f),
 					/*fHoldSeconds=*/0.0f /* permanent */);
@@ -69,6 +70,7 @@ public:
 			[this](const DP_OnRunLost& xEvt)
 			{
 				m_bRunLostReceived = true;
+				m_bRunOver = true;
 				m_eLastRunLostCause = xEvt.m_eCause;
 				char buf[64];
 				BuildRunLostText(buf, sizeof(buf), xEvt.m_eCause);
@@ -204,6 +206,24 @@ public:
 			pxAwareness->SetText(buf);
 			pxAwareness->SetVisible(true);
 		}
+
+		// MVP-4.3.2: post-victory / post-run-lost "press any key to
+		// restart" overlay. Set m_bRunOver true when either Victory or
+		// RunLost dispatches; show the RestartPrompt UI element with the
+		// canonical R/Q hint. Element is authored hidden by default; only
+		// becomes visible once the run is actually over.
+		if (auto* pxPrompt = xUI.FindElement<Zenith_UI::Zenith_UIText>("RestartPrompt"))
+		{
+			if (m_bRunOver)
+			{
+				pxPrompt->SetText("Press R to restart, Q to quit");
+				pxPrompt->SetVisible(true);
+			}
+			else
+			{
+				pxPrompt->SetVisible(false);
+			}
+		}
 	}
 
 public:
@@ -279,9 +299,13 @@ public:
 	// by Phase-4 loss playthrough tests to verify the HUD reacted.
 	bool DidRunLostHandlerFireForTest() const { return m_bRunLostReceived; }
 	DP_RunLostCause LastRunLostCauseForTest() const { return m_eLastRunLostCause; }
+	// MVP-4.3.2 test accessor: did either Victory or RunLost handler set
+	// the run-over flag? Used by Phase-4 restart-prompt tests.
+	bool IsRunOverForTest() const { return m_bRunOver; }
 	void ResetRunLostForTest()
 	{
 		m_bRunLostReceived = false;
+		m_bRunOver = false;
 		m_eLastRunLostCause = DP_RunLostCause::Apprehended;
 	}
 #endif
@@ -426,5 +450,10 @@ private:
 	Zenith_EventHandle m_xRunLostHandle       = INVALID_EVENT_HANDLE;
 	float              m_fStatusHoldRemaining = -1.0f;  // <0 = permanent / not set
 	bool               m_bRunLostReceived     = false;
+	// MVP-4.3.2: set by EITHER the Victory or RunLost subscriber. Drives
+	// the RestartPrompt UI element + gates the pause-menu R/Q shortcuts
+	// when the player isn't paused but the run is over (e.g., they
+	// watched "VICTORY" appear and just want to start a new run).
+	bool               m_bRunOver             = false;
 	DP_RunLostCause    m_eLastRunLostCause    = DP_RunLostCause::Apprehended;
 };

@@ -29,6 +29,7 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_EventSystem.h"
 #include "Input/Zenith_Input.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "UI/Zenith_UIText.h"
@@ -54,6 +55,7 @@ public:
 		{
 			s_pxPersistentInstance->m_xGameplayScene = m_xParentEntity.GetScene();
 			s_pxPersistentInstance->ResetVisibleAndUnpause();
+			s_pxPersistentInstance->m_bRunOver = false;
 			return;
 		}
 
@@ -62,10 +64,36 @@ public:
 		m_xGameplayScene = m_xParentEntity.GetScene();
 		Zenith_SceneManager::MarkEntityPersistent(m_xParentEntity);
 		s_pxPersistentInstance = this;
+
+		// MVP-4.3.2: mirror DPHUDController's run-over flag so the R/Q
+		// shortcuts work even when the player hasn't opened the pause
+		// menu first. The HUD owns the user-facing prompt ("Press R to
+		// restart"); this controller owns the input handler. Both
+		// subscribe to the same two events.
+		m_xVictoryHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnVictory>(
+			[this](const DP_OnVictory&)
+			{
+				m_bRunOver = true;
+			});
+		m_xRunLostHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnRunLost>(
+			[this](const DP_OnRunLost&)
+			{
+				m_bRunOver = true;
+			});
 	}
 
 	void OnDestroy()
 	{
+		if (m_xVictoryHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(m_xVictoryHandle);
+			m_xVictoryHandle = INVALID_EVENT_HANDLE;
+		}
+		if (m_xRunLostHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(m_xRunLostHandle);
+			m_xRunLostHandle = INVALID_EVENT_HANDLE;
+		}
 		if (s_pxPersistentInstance == this)
 		{
 			s_pxPersistentInstance = nullptr;
@@ -77,10 +105,13 @@ public:
 		const bool bEsc = Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
 
 		// MVP-2.5.5: while paused, R restarts the run (reload
-		// gameplay scene) and Q quits to the main menu. Both are
-		// only honoured while shown=true so they don't fire during
-		// normal play.
-		if (m_bShown)
+		// gameplay scene) and Q quits to the main menu.
+		// MVP-4.3.2: same shortcuts also honoured when the run is
+		// over (m_bRunOver set by Victory / RunLost subscribers).
+		// The player sees the permanent banner + "Press R to restart"
+		// HUD prompt and can press the key without first opening the
+		// pause menu.
+		if (m_bShown || m_bRunOver)
 		{
 			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
 			{
@@ -146,9 +177,17 @@ public:
 		{
 			s_pxPersistentInstance->ResetVisibleAndUnpause();
 			s_pxPersistentInstance->m_xGameplayScene = Zenith_Scene();
+			s_pxPersistentInstance->m_bRunOver = false;
 		}
 		s_bRestartRequestedForTest = false;
 		s_bQuitToMenuRequestedForTest = false;
+	}
+	// MVP-4.3.2 test accessor: did either Victory or RunLost handler
+	// set the run-over flag in the pause controller? Used by tests
+	// that verify R/Q work without first opening the pause menu.
+	static bool IsRunOverForTest()
+	{
+		return s_pxPersistentInstance != nullptr && s_pxPersistentInstance->m_bRunOver;
 	}
 	static DPPauseMenuController_Behaviour* GetPersistentInstanceForTest()
 	{
@@ -212,8 +251,14 @@ private:
 		m_bShown = false;
 	}
 
-	bool         m_bShown = false;
-	Zenith_Scene m_xGameplayScene;
+	bool               m_bShown = false;
+	// MVP-4.3.2: set by Victory / RunLost subscribers in OnStart. Lets the
+	// R/Q shortcuts fire when the run is over without first opening the
+	// pause menu (the HUD's RestartPrompt element prompts the player).
+	bool               m_bRunOver = false;
+	Zenith_Scene       m_xGameplayScene;
+	Zenith_EventHandle m_xVictoryHandle = INVALID_EVENT_HANDLE;
+	Zenith_EventHandle m_xRunLostHandle = INVALID_EVENT_HANDLE;
 
 	static inline DPPauseMenuController_Behaviour* s_pxPersistentInstance = nullptr;
 #ifdef ZENITH_INPUT_SIMULATOR

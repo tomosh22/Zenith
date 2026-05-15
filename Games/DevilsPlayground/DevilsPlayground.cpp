@@ -620,6 +620,17 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIColor("AelfricAwareness", 0.95f, 0.6f, 0.3f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("AelfricAwareness", false);
 
+		// MVP-4.3.2: post-victory / post-run-lost restart prompt. Hidden
+		// by default; DPHUDController flips visibility when m_bRunOver
+		// is set by either the DP_OnVictory or DP_OnRunLost subscriber.
+		// Positioned below the centre Status banner.
+		Zenith_EditorAutomation::AddStep_CreateUIText("RestartPrompt", "Press R to restart, Q to quit");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("RestartPrompt", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("RestartPrompt", 0.0f, 60.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("RestartPrompt", 28.0f);
+		Zenith_EditorAutomation::AddStep_SetUIColor("RestartPrompt", 1.0f, 1.0f, 1.0f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("RestartPrompt", false);
+
 		// Attach the global coordinators. Each is independent — order doesn't
 		// matter, but Combat-style is to attach the player first.
 		Zenith_EditorAutomation::AddStep_AttachScript("DPPlayerController_Behaviour");
