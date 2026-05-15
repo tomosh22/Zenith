@@ -2,10 +2,10 @@
 
 **Document purpose:** A frank, gap-by-gap audit of where the current `DevilsPlayground` prototype falls short of the shipping vision described in [GameDesignDocument.md](GameDesignDocument.md). Written for producers, leads, and external partners assessing the runway from "skeleton-grade port" to "ship-ready PC/console title."
 
-**Scope:** Everything in the current `Games/DevilsPlayground/` tree as of 2026-05-11 (commit-ish: skeleton-grade UE port, M0/M0.5/M1 milestones complete).
+**Scope:** Everything in the current `Games/DevilsPlayground/` tree. **Note (2026-05-15):** this doc was written against the 2026-05-11 skeleton-grade port. Phase 1 + Phase 2 + Phase 4 loss-state UI have shipped since (see [Status.md](Status.md) for the current state) — many "missing" items listed below are now landed. Treat the headline gaps in §1 as historical snapshots and cross-check against Status.md before acting on any one.
 
 **Updated 2026-05-11** (post peer-review reconciliation):
-- Prototype contains 24 test `.cpp` files registering exactly 34 tests (verified via grep on 2026-05-12; the earlier "~28" was hand-wavy).
+- Prototype originally contained 24 test `.cpp` files registering 34 tests; as of 2026-05-15 the suite is ~110 tests across 100 .cpp files.
 - GameLevel scene spawns 17 villagers (CLAUDE.md's "14" in one comment is a stale value from earlier port milestones; "17" in `DevilsPlayground.cpp` line 565 is the current truth).
 - `DPFogPass.cpp` is substantially implemented (~312 lines with `SetupDPFog`/`ExecuteDPFog`/`BuildPipelines`). The shader file `Zenith/Flux/Shaders/Fog/DP_Fog.slang` **also exists** (with compiled `.spv` reflection files) — corrected 2026-05-12 round-4 peer review; earlier rounds claimed this file needed authoring (MVP-2.4.1) but it's already in the repo. The remaining MVP-2.4 work is *test coverage + memory-fog implementation*, not shader authoring.
 - Non-tools builds (`*_False` configurations) were **fixed as of 2026-05-10** per project memory; previous "broken" claims in this doc are obsolete (see §3.8 below).
@@ -25,35 +25,25 @@ These are the issues that, if left as-is, prevent the prototype from being demon
 
 ### 1.1 The witch-finder cannot end the run
 
-**Status:** Critical. **GDD ref:** §4.5.
+**Status:** ✅ RESOLVED 2026-05-14. **GDD ref:** §4.5.
 
-The prototype's `Priest_Behaviour` perceives, pursues, and navigates — but **there is no collision check between the priest and the possessed villager** and no apprehend logic. The player literally cannot lose to the antagonist. The only loss states currently available are (a) running out of life-timer with no other villager nearby (which simply soft-locks rather than ending the run) and (b) wall-clock timeout outside the game.
+PR #41 (`MVP-1.3.1+1.3.2`) shipped the `Apprehend` BT branch + `DP_OnRunLost{Apprehended}` event. PRs #42, #54 (NoVessels), #57 (Dawn) added the other two loss causes. PR #75 wired the HUD banner per cause. Coverage tests `Test_P1Apprehend_PriestCatchesPlayer`, `Test_P1Apprehend_SwitchBreaksChannel`, `Test_P1Apprehend_OutOfRangeIgnored`, `Test_P1Apprehend_PriestStandsStillDuringChannel` pin the contract.
 
-For a stealth game whose entire dramatic premise is "an inquisitor hunts you," this is the gap. Until it lands, every other priest improvement is decoration.
-
-**Bridge cost:** ~3 engineering weeks. Add an `Apprehend` BT branch that triggers on overlap with the possessed body's collider, with a 3 s channel that can be interrupted by switching bodies. Hook into a new `DP_OnRunLost` event.
+_Historical text (kept for record):_ The prototype's `Priest_Behaviour` perceives, pursues, and navigates — but **there is no collision check between the priest and the possessed villager** and no apprehend logic. The player literally cannot lose to the antagonist.
 
 ### 1.2 No real navmesh — only a single 200×200 m polygon
 
-**Status:** Critical. **GDD ref:** §6.1, §4.5.
+**Status:** ✅ RESOLVED 2026-05-14. **GDD ref:** §6.1, §4.5.
 
-`DP_AI::GetOrBuildLevelNavMesh` returns a synthetic flat quad. The priest can walk through any wall. `DPDoor::SyncNavMeshBlock` is wired up correctly but operates on a navmesh that doesn't have doorways to begin with, so it's a no-op. The path-finding tests pass because they only assert "distance to target decreases" — not "the path respects geometry."
+Generated-from-colliders path (option a) shipped via PRs #32 (walls block via six-face emit + obstruction-span clearance check), #33 (O(N) adjacency, ~850 ms generate), #36 (portal stitch + ColliderComponent opt-out for runtime-blockable obstacles), #37 (region-keyed vertex dedup), #39 (`Priest_Behaviour` refreshes live navmesh + reactive-selector hack), #40 (closed-door + regen-on-swap tests). `Test_P1NavMesh_PathRespectsWalls`, `Test_P1NavMesh_ClosedDoorBlocksPath`, `Test_P1NavMesh_RegenerationOnSceneSwap`, `Test_T1NavMesh_BTUnitsCanFollowRealPath`, `PriestPursuit_Test` all pin the contract.
 
-This is the single largest blocker to any meaningful level design.
-
-**Bridge cost:** ~6 engineering weeks. Two paths:
-- **Generate from colliders.** Walk the scene's static collider set, voxelise, build a polygon soup, triangulate. Standard navmesh generator. Reuse-able for other Zenith games (Combat, AIShowcase).
-- **Pre-bake assets.** Author `.znavmesh` files in the editor, ship as data. Less elegant but ships faster.
-
-Recommend (a) — it pays back across the engine.
+_Historical text:_ The prototype's `DP_AI::GetOrBuildLevelNavMesh` returned a synthetic flat quad; the priest could walk through any wall. Bridge cost was estimated at ~6 engineering weeks; actual delivery was ~2 days across 6 PRs.
 
 ### 1.3 Pause is a lie
 
-**Status:** Critical. **GDD ref:** §7.2.
+**Status:** ✅ RESOLVED. **GDD ref:** §7.2.
 
-`DPPauseMenuController_Behaviour` toggles a UI overlay text element when Esc is pressed. The game's simulation keeps running underneath. For a stealth game where every decision is time-priced, this is unshippable — players need to pause to think.
-
-**Bridge cost:** ~1 engineering week. The engine has `Zenith_SceneManager::SetScenePaused` (or equivalent — verify). Wire the pause overlay to call it. Add an audio ducking pass.
+PR #30 (`MVP-1.1` Real pause) wired Esc to `Zenith_SceneManager::SetScenePaused` on the gameplay scene; controller migrates to the persistent scene so it keeps ticking. PR #71 added R/Q shortcuts (restart/quit-to-menu) while paused. PR #74 caught a state-leak where `HandleRestart` flipped the flag without actually reloading the scene; extracted `ResetAllRunStateBeforeReload()` helper. Tests `Test_P1Pause_TimerStopsOnEscape`, `Test_P1Pause_PriestStopsOnEscape`, `Test_P1Pause_InputSimDuringPause`, `Test_P2Menu_PauseAndMainMenuShortcuts`, `Test_P2Pause_RestartActuallyReloadsScene` pin the chain. Audio ducking pass still pending.
 
 ### 1.4 No villager animations at all
 
@@ -81,17 +71,17 @@ These are systems described in the GDD that don't exist in code at all yet. None
 
 ### 2.1 Possession depth
 
-| GDD feature | Prototype state |
-|---|---|
-| 24 villager archetypes with distinct timers/abilities | 1 archetype. All villagers identical. |
-| Possession range tied to last death anchor | No range limit; any villager anywhere on the map can be clicked. |
-| Possession channel (0.8 s for Devout) | Instant for all. |
-| Possession cooldown (1.5 s after voluntary switch) | None. Players can chain-click. |
-| Demon-scent (per-body, decays) | No tracking of possession history per body. |
-| Voluntary switch (faint vs. die) | Cannot voluntarily switch — switching during life-timer just transfers state immediately, body stays put. |
-| Sprint as life-cost mechanic | Single speed. No sprint, no walk. |
+| GDD feature | Prototype state | 2026-05-15 status |
+|---|---|---|
+| 24 villager archetypes with distinct timers/abilities | 1 archetype. All villagers identical. | ✅ 4 MVP archetypes shipped (Farmhand/Beggar/Devout/Child) via PRs #19, #20, #58, #59, #62. Remaining 20 are post-MVP per `Config/Archetypes.json` `"mvp": false` filter. |
+| Possession range tied to last death anchor | No range limit; any villager anywhere on the map can be clicked. | ✅ Shipped in PR #44 (`MVP-1.8` 15 m anchor; anchor moves on each successful hop). |
+| Possession channel (0.8 s for Devout) | Instant for all. | ✅ Shipped in PR #62 (`MVP-2.1.1+2` Devout channel + priest interrupt). |
+| Possession cooldown (1.5 s after voluntary switch) | None. Players can chain-click. | ✅ Shipped in PR #43 (`MVP-1.5` 1.5 s cooldown after voluntary switch; death/apprehend bypass). |
+| Demon-scent (per-body, decays) | No tracking of possession history per body. | ✅ Shipped in PR #45 (`MVP-1.6` table + decay + write to priest BB). |
+| Voluntary switch (faint vs. die) | Cannot voluntarily switch — switching during life-timer just transfers state immediately, body stays put. | ✅ Shipped in PR #55 (`MVP-1.4.1–3` Idle/Possessed/Fainted/Dead state machine with 10 s recovery); coverage gap closed in PR #60. |
+| Sprint as life-cost mechanic | Single speed. No sprint, no walk. | ✅ Shipped in PRs #46 (sprint), #47 (walk-quiet), #53 (Aelfric effective hearing halved by walk-quiet). |
 
-**Bridge cost:** ~6 engineering weeks for the new state-machine + ~4 design weeks for archetype tuning.
+**Bridge cost (original estimate ~6+4 weeks):** actual delivery was ~2 days of autonomous-loop work across 11 PRs.
 
 ### 2.2 The witch-finder is half a character
 
@@ -383,7 +373,7 @@ Not all of the prototype is a list of things to fix. The following are genuine *
 
 1. **The `Project_*` lifecycle hooks** (9 entry points, mirroring Combat). Clean architecture. Don't deviate.
 2. **The `DP_*` namespace public-interface contract** (Source/PublicInterfaces.h/cpp). The discipline of behaviours-talk-only-via-namespace is preserved-worthy.
-3. **The automated test harness** (34 tests, batch mode, gym scenes). One of the strongest QA stories of any in-development game I've seen at this stage. Build on it; don't replace it.
+3. **The automated test harness** (110+ tests as of 2026-05-15, batch mode, gym scenes). One of the strongest QA stories of any in-development game I've seen at this stage. Build on it; don't replace it.
 4. **The editor-automation scene authoring pattern.** Declarative `AddStep_*` calls reading like a recipe. Bake into `.zscen` for ship, but keep the authoring DSL for live iteration.
 5. **The perception-system bridge pattern** in `Priest_Behaviour::BridgePerceptionToBlackboard`. The right shape for the GDD's Aelfric variants — just needs the omniscience-fallback removed.
 6. **The fog-hole clear-and-rebuild strategy.** Simple, deterministic, no subscription overhead. Keep.

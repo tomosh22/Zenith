@@ -10,7 +10,7 @@
 
 ## Open
 
-### ⚠️ Q-2026-05-13-NM03 — MVP-1.2.2 (real navmesh in DP_AI) reveals disconnected regions; `PriestPursuit_Test` breaks because priest + closest villager land in different regions.
+### ✅ Q-2026-05-13-NM03 — MVP-1.2.2 (real navmesh in DP_AI) reveals disconnected regions; `PriestPursuit_Test` breaks because priest + closest villager land in different regions.
 
 **Context:** With PR #32 (walls block paths) + PR #33 (O(N) adjacency, 850ms generate) both landed, the production path of wiring `DP_AI::GetOrBuildLevelNavMesh` to call `Zenith_NavMeshGenerator::GenerateFromScene` is technically feasible. I wired it with a build-index-keyed cache and ran the DP suite -- 49/50 pass, but `PriestPursuit_Test` fails:
 
@@ -34,11 +34,11 @@
 
 **Cost of getting it wrong:** moderate. Sticking with the synthetic flat quad means doors don't gate AI navigation -- the priest patrols through walls. The roadmap acknowledges this; MVP-1.2 was always going to be a multi-PR effort.
 
-**Status:** asked 2026-05-13.
+**Status:** RESOLVED 2026-05-14 via PRs #36 (ColliderComponent::SetIncludeInNavMesh — runtime-blockable obstacle opt-out), #37 (within-room vertex dedup keyed by region not Y), #39 (Priest_Behaviour refreshes navmesh + live DP_AI wiring), #40 (closed-door + regen-on-swap tests). PriestPursuit_Test green on master; full headless suite 107+ PASSED.
 
 ---
 
-### ⚠️ Q-2026-05-13-NM01 — NavMesh generator's geometry collector only voxelises box-collider TOP faces; walls never block the floor below.
+### ✅ Q-2026-05-13-NM01 — NavMesh generator's geometry collector only voxelises box-collider TOP faces; walls never block the floor below.
 
 **Context:** During MVP-1.2.0 spike (real navmesh integration) I built a tiny test scene with a 12x12m floor + a 5m wide / 1m tall box-collider wall, called `Zenith_NavMeshGenerator::GenerateFromScene`, and tried to verify that `Zenith_Pathfinding::FindPath((0, 0.1, -3), (0, 0.1, +3))` routed around the wall. It didn't -- the returned path is a 2-waypoint straight line right through where the wall should be (length 6.0, `|x|max` 0.0).
 
@@ -54,11 +54,11 @@ I tried emitting all six box faces. Polygon count was unchanged (1681 polygons, 
 
 **Cost of getting it wrong:** Phase 1.2 slips by a couple of days either way. Going with option (a) and discovering it's harder than expected costs the same as going straight to (b). Going with (b) when (a) would have worked means we ship a hand-authored navmesh that needs re-baking every time level geometry changes.
 
-**Status:** asked 2026-05-13. The spike findings are documented but I did NOT commit the failing test -- a test named `Test_P1NavMesh_PathRespectsWalls` that doesn't actually assert wall-respecting paths would be misleading. The test will be re-introduced once the generator fix lands.
+**Status:** RESOLVED 2026-05-13 via PR #32 (option a — `CollectGeometryFromScene` now emits all six box faces; non-walkable side/bottom faces rasterize as obstruction spans that trip `HasInsufficientClearance` on the floor span beneath). `Test_P1NavMesh_PathRespectsWalls` + `Test_T1NavMesh_BTUnitsCanFollowRealPath` (PR #39) pin the contract.
 
 ---
 
-### ⚠️ Q-2026-05-12-001 — No CI gate for DP. Auto-merge merges immediately without running DP tests.
+### ✅ Q-2026-05-12-001 — No CI gate for DP. Auto-merge merges immediately without running DP tests.
 
 **Context:** [.github/workflows/complexity.yml](../../../.github/workflows/complexity.yml) (renamed from msbuild.yml in MVP-0.0.2) runs a complexity gate but did not originally build DP or run `Tools/run_dp_tests.ps1` -- those checks landed in MVP-0.0.2 (`dp-build`) and MVP-0.0.3 (`dp-tests`) workflows. [AgentBriefing.md §3.5](AgentBriefing.md) describes required checks (`build-debug-tools`, `tests-headless`) but they're aspirational, not implemented yet — they're MVP-0.3 territory.
 
@@ -68,11 +68,11 @@ I tried emitting all six box faces. Polygon count was unchanged (1681 polygons, 
 
 **Cost of getting it wrong:** moderate. Without CI, regressions only surface when the next session boots. Most autonomous-session PRs are small enough that local validation suffices.
 
-**Status:** asked 2026-05-12. Acting on best guess.
+**Status:** RESOLVED 2026-05-13 via PRs #5 (`dp-build`), #7 (`dp-tests` skeleton), #10 (branch protection — `dp-build` + `complexity-gate` required), #15 (`dp-tests` re-added to required-checks list after PR #14 unblocked it). Auto-merge now blocks on green CI for all three required checks (`dp-build`, `dp-tests`, `complexity-gate`).
 
 ---
 
-### ⚠️ Q-2026-05-12-002 — `HumanPlaythrough_Test` is pre-existing-broken under `--exit-after-frames 600`.
+### ✅ Q-2026-05-12-002 — `HumanPlaythrough_Test` is pre-existing-broken under `--exit-after-frames 600`.
 
 **Context:** [Test_HumanPlaythrough.cpp](../Tests/Test_HumanPlaythrough.cpp) declares `m_iMaxFrames = 6000` (~3-min wall-clock test). The runner script default is `--exit-after-frames 600`. The CLI flag is a hard cap, so the test is cut off at frame 600 and `Verify` returns false (objectives not yet delivered). Result: `passed=false` on every batch run with default flags.
 
@@ -88,7 +88,7 @@ I tried emitting all six box faces. Polygon count was unchanged (1681 polygons, 
 
 **Cost of getting it wrong:** low. The single pre-existing fail doesn't block forward progress.
 
-**Status:** asked 2026-05-12. Acting on best guess.
+**Status:** RESOLVED 2026-05-13 via PR #13 (`m_bRequiresGraphics = true` tag in the test's registration). The test is now skipped in headless CI batches (counts as PASSED-skipped) and remains runnable locally with graphics. The test's own registration comment cites this question ID.
 
 ---
 
@@ -116,7 +116,7 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 ---
 
-### ⚠️ Q-2026-05-12-004 — `Build/dp_test_results/*.json` is committed to git but updated on every test run.
+### ✅ Q-2026-05-12-004 — `Build/dp_test_results/*.json` is committed to git but updated on every test run.
 
 **Context:** The previous commit (`22776b42 Devils Playground`) committed the contents of `Build/dp_test_results/` — 28 per-test JSON files. My test runs overwrite them (with potentially-different `frames` counts each time). Working in this dir, my session wiped them once and then regenerated 35 of them (the 28 original + 6 renamed + 1 new test from this PR), creating a large noisy diff.
 
@@ -126,7 +126,7 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 **Cost of getting it wrong:** low.
 
-**Status:** asked 2026-05-12. Acting on best guess.
+**Status:** RESOLVED 2026-05-13 via PR #18 (`chore(dp): gitignore Build/dp_test_results/` — directly cites this question ID in the commit message). Files were removed via `git rm --cached` and the directory added to `.gitignore`. CI artefact upload still captures the JSONs in `dp-tests.yml`.
 
 ---
 

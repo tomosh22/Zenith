@@ -13,7 +13,7 @@ You are working on **Devil's Playground**, a stealth-puzzle roguelite. The user 
 
 ### What to do first (every session)
 
-1. `cd C:\dev\Zenith` and `git checkout master && git pull` (work on master; the worktree at `.claude/worktrees/...` is unrelated).
+1. `cd C:\dev\Zenith` and `git checkout master && git pull` (work on master; per OrchestratorPlaybook Invariant 2 no worktrees — if the harness drops you into `.claude/worktrees/<name>/`, treat it as a transient sandbox and remember Sharpmake bakes the cwd absolute path into generated vcxprojs).
 2. Read `Games/DevilsPlayground/Docs/Status.md` — tells you the current build state and the in-flight task.
 3. Read `Games/DevilsPlayground/Docs/Questions.md` — surface any blockers; address them or skip them if the user hasn't responded.
 4. Read `Games/DevilsPlayground/Docs/MvpRoadmap.md` — pick the **first un-checked task**.
@@ -34,7 +34,7 @@ You are working on **Devil's Playground**, a stealth-puzzle roguelite. The user 
 
 - **Game:** Devil's Playground. Top-down stealth-puzzle roguelite. You play a bodiless demon possessing villagers in a 1670s English village to collect 5 reagents and complete a ritual at a pentagram while a witch-finder hunts you. Each possessed body has a 30-second life timer.
 - **Engine:** Zenith (custom C++20, Vulkan-based). Located at `C:\dev\Zenith\`. The DP project lives at `C:\dev\Zenith\Games\DevilsPlayground\`.
-- **Status:** Skeleton-grade UE5 port. ~25% of shipping scope present. 34 automated tests registered (verified 2026-05-12). Real loss states, real navmesh, real pause, real archetype/reagent variety, audio system — all absent. MVP target ~4-9 months depending on navmesh and Mixamo spike outcomes.
+- **Status (2026-05-15):** Phase 1 + Phase 2 substantively complete; Phase 4 loss-state UI shipped (PR #75). ~110 automated tests registered, full headless suite 0 failures. Loss states, navmesh, pause, archetype/reagent variety, HUD upgrades, and most engine instrumentation all landed. The live frontier is Phase 3 assets (Mixamo spike — HUMAN_GATE) and Phase 4.3.x bot-driven playthrough. See [Status.md](Status.md) for the live wave-by-wave breakdown.
 
 ### Document map (read in this order)
 
@@ -223,10 +223,12 @@ PR titles use Conventional Commits: `feat(dp): MVP-X.Y.Z — short summary`. Typ
 
 ### 3.5 CI & auto-merge specifics
 
-**Assumed CI provider:** GitHub Actions. Workflows live in `.github/workflows/`. **Phase 0.0 of the MvpRoadmap authors them** (MVP-0.0.2 + MVP-0.0.3). Required checks for auto-merge:
+**CI provider:** GitHub Actions. Workflows live in `.github/workflows/`. **Phase 0.0 of the MvpRoadmap authored them** (MVP-0.0.2 + MVP-0.0.3). Required checks for auto-merge (verified live via `gh api repos/.../branches/master/protection`):
 
-- `dp-build` — clean MSBuild of `vs2022_Debug_Win64_True` (authored in MVP-0.0.2).
-- `dp-tests` — `Tools/run_dp_tests.ps1 -Headless` exit code 0 (authored in MVP-0.0.3).
+- `dp-build` — clean MSBuild of `vs2022_Debug_Win64_True` (MVP-0.0.2).
+- `dp-tests` — `Tools/run_dp_tests.ps1 -Headless` exit code 0 (MVP-0.0.3; re-added in PR #15 after PR #14 unblocked SET_MODEL_MATERIAL).
+- `complexity-gate` — Cyclomatic-complexity threshold.
+- `doc-lint` — runs `Tools/doc_lint.ps1` (MVP-0.3.2, PR #24); not blocking auto-merge but always required to pass.
 - `dp-asset-lint` — once MVP-3.5.1 lands, the asset linter pass.
 
 **Auto-merge command:**
@@ -301,7 +303,7 @@ pwsh.exe -File Tools/run_dp_tests.ps1 -Filter "Apprehend_PriestCatches" -PerProc
 - Conventional Commits subject format: `feat(dp): MVP-X.Y.Z — short summary` / `test(dp): ...` / `fix(dp): ...` / `chore(dp): ...` / `docs(dp): ...`.
 - Squash-merge via `gh pr merge --auto --squash`.
 - Never force-push to master. Never bypass hooks. If hooks fail, fix the root cause.
-- The worktree at `.claude/worktrees/flamboyant-mirzakhani-9186f1/` is unrelated to DP. Ignore it.
+- The Claude Code harness may place sessions in a `.claude/worktrees/<name>/` checkout. Per OrchestratorPlaybook Invariant 2 (no worktrees), this is treated as transient — work happens on `master` with feature branches, regardless of which directory the shell starts in. Be aware that Sharpmake-regenerated vcxprojs bake the cwd's absolute path into `ENGINE_ASSETS_DIR`/`GAME_ASSETS_DIR`/`SHADER_SOURCE_ROOT`/`ZENITH_ROOT` and post-build event xcopy commands, so committing vcxprojs from a worktree would break checkouts elsewhere.
 
 ### 4.6 Parallel agents
 
@@ -356,7 +358,11 @@ Read these before you touch code; they're permanent footguns:
 - **`SimulateClickOnUIElement` asserts on missing element.** Only call after the element is known to exist in the active scene's canvas.
 - **Tests must be wrapped in `#ifdef ZENITH_INPUT_SIMULATOR`** or they won't compile in non-tools builds.
 - **Scene authoring lives in `Project_RegisterEditorAutomationSteps`** (Claude user-memory `feedback_scene_setup_via_editor_automation`). Don't write imperative scene construction; use `AddStep_*` calls. Marble.cpp is the canonical reference.
-- **DevilsPlayground is in `C:\dev\Zenith\Games\DevilsPlayground\` (main repo)**, NOT in any worktree under `.claude/worktrees/`. Always work on `master` branch.
+- **DevilsPlayground lives at `C:\dev\Zenith\Games\DevilsPlayground\` in the main repo.** Always work on `master` branch with per-task feature branches. If the harness places you in a `.claude/worktrees/<name>/` checkout, treat it as transient — the no-worktrees Invariant from OrchestratorPlaybook still holds; in particular don't commit Sharpmake-regenerated vcxprojs from inside a worktree (they bake the worktree's absolute path).
+- **`DP_Player::ResetForNewRun()` is the canonical per-run reset.** Used by `DPPauseMenuController::HandleRestart`/`HandleQuit` AND the harness between-tests hook. `ResetForTest` exists only as a backward-compat alias under `#ifdef ZENITH_INPUT_SIMULATOR`; prefer the new name.
+- **Perception system clamps hearing range at `min(emit_radius, agent_max_range)`.** A 200m emit doesn't reach a priest 100m away if the priest's `hearing_range_m` is 30m. For "map-wide" stimuli (BellSoul-class) use `DP_AI::NotifyAllPriestsOfInvestigatePos` to bypass the clamp via direct BB write.
+- **Run tests through `Tools/run_dp_tests.ps1`, not direct `devilsplayground.exe --automated-test`.** The runner adds `--skip-tool-exports --skip-unit-tests` which the engine's automated-test driver requires for reliable batched behaviour; the direct exe path skips them and tests can fail spuriously.
+- **`Sharpmake_Build.bat` has a `pause` directive** that hangs non-interactively. Invoke `Sharpmake/Sharpmake.Application.exe` directly with the same `/sources(...)` args.
 - **Engine work is in-scope for autonomous agents** (per user direction 2026-05-12). Subagents may edit anywhere under `Zenith/` for tasks like MVP-0.4 (instrumentation hooks) and MVP-1.2 (navmesh generator). Engine PRs trigger mandatory Reviewer-subagent dispatch (OrchestratorPlaybook §5.4) and a Combat smoke build (catches cross-game regressions). Design rationale logged in `DecisionLog.md` before opening the PR for any net-new engine namespace.
 
 ### 4.10 When the user appears mid-session
