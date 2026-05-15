@@ -747,6 +747,34 @@ namespace DP_AI
 		Zenith_PerceptionSystem::EmitSoundStimulus(xPos, fLoudness, fRadius, xSource);
 	}
 
+	void NotifyAllPriestsOfInvestigatePos(Vec3 xPos)
+	{
+		// Direct-BB-write fanout, deliberately bypassing the perception
+		// system. The perception path clamps each agent's hearing radius
+		// at agent_max_range (priest default 30 m) -- so a 200 m bell
+		// emit doesn't reach a priest 100 m away. The GDD intent for
+		// BellSoul is "map-wide" so we iterate every priest in the
+		// active scene and write straight into its BB. The existing
+		// DP_BTAction_ClearInvestigatePos node still owns the slot's
+		// lifetime: the next time the priest reaches xPos and the
+		// wait/clear sequence completes, the slot clears normally.
+		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+			[&xPos](Zenith_EntityID xPriestId, Priest_Behaviour&)
+			{
+				Zenith_SceneData* pxScene =
+					Zenith_SceneManager::GetSceneDataForEntity(xPriestId);
+				if (pxScene == nullptr) return;
+				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
+				if (!xEnt.IsValid()) return;
+				if (!xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
+				Zenith_AIAgentComponent& xAg =
+					xEnt.GetComponent<Zenith_AIAgentComponent>();
+				Zenith_Blackboard& xBB = xAg.GetBlackboard();
+				xBB.SetVector3(BB_KEY_INVESTIGATE_POS, xPos);
+				xBB.SetBool(BB_KEY_HAS_INVESTIGATE_POS, true);
+			});
+	}
+
 	const Zenith_NavMesh* GetOrBuildLevelNavMesh()
 	{
 		// Cache hit: same build-indexed scene as last call.
