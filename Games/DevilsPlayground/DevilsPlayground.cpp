@@ -5,6 +5,7 @@
 #include "Source/DPFogPass.h"
 #include "Source/DP_LevelData.h"
 #include "Source/DPMaterials.h"
+#include "Source/DPUI.h"
 #include "Source/DP_Tuning.h"
 #include "Source/DP_Archetypes.h"
 #include "Source/DP_Reagents.h"
@@ -504,20 +505,26 @@ namespace
 		Zenith_EditorAutomation::AddStep_AddUI();
 		Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "DEVIL'S PLAYGROUND");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.0f, -120.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", 64.0f);
+		// MVP-UI-polish: TextAlignment::Center is required for the text to
+		// render symmetrically around the anchor point. Without it the
+		// text flows left-aligned FROM the anchor and looks off-centre.
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.0f, -160.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", DPUI::fMENU_TITLE_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 0.9f, 0.2f, 0.2f, 1.0f);
 
 		Zenith_EditorAutomation::AddStep_CreateUIButton("MenuPlay", "Play");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.0f, 0.0f);
-		Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.0f, 50.0f);
+		Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", DPUI::fMENU_BTN_W, DPUI::fMENU_BTN_H);
+		Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("MenuPlay", DPUI::fMENU_BTN_FONT);
 
 		// MVP-2.5.6: main-menu Quit button. Sits below Play.
 		Zenith_EditorAutomation::AddStep_CreateUIButton("MenuQuit", "Quit");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuQuit", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuQuit", 0.0f, 70.0f);
-		Zenith_EditorAutomation::AddStep_SetUISize("MenuQuit", 200.0f, 50.0f);
+		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuQuit", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING);
+		Zenith_EditorAutomation::AddStep_SetUISize("MenuQuit", DPUI::fMENU_BTN_W, DPUI::fMENU_BTN_H);
+		Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("MenuQuit", DPUI::fMENU_BTN_FONT);
 
 		Zenith_EditorAutomation::AddStep_AttachScript("DPMainMenuController_Behaviour");
 
@@ -550,73 +557,79 @@ namespace
 
 		Zenith_EditorAutomation::AddStep_AddUI();
 		// Life bar text + Status banner + PauseOverlay text.
+		// MVP-UI-polish: TopLeft / BottomLeft anchored text gets Left alignment
+		// (default but explicit); TopRight gets Right; *Center anchors get
+		// Center. This keeps text growing away from the screen edge instead
+		// of toward it, fixing the "off the right hand side" bug.
 		Zenith_EditorAutomation::AddStep_CreateUIText("LifeBar", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("LifeBar", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("LifeBar", 30.0f, 30.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("LifeBar", 36.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("LifeBar", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("LifeBar", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("LifeBar", DPUI::fHUD_LIFEBAR_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("LifeBar", 0.3f, 1.0f, 0.3f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("LifeBar", false);
 
 		// Held-item readout sits below the life bar — same anchor, offset down.
 		Zenith_EditorAutomation::AddStep_CreateUIText("HeldItem", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("HeldItem", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("HeldItem", 30.0f, 70.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("HeldItem", 28.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("HeldItem", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("HeldItem", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 50.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("HeldItem", DPUI::fHUD_HELDITEM_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("HeldItem", 1.0f, 1.0f, 1.0f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("HeldItem", false);
 
-		// Objective counter, top-right corner.
+		// Objective counter, top-right corner. Right-aligned so the text
+		// grows leftward into the screen instead of off the right edge.
 		Zenith_EditorAutomation::AddStep_CreateUIText("Objectives", "Objectives: 0/5");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("Objectives", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("Objectives", -30.0f, 30.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("Objectives", 32.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("Objectives", static_cast<int>(Zenith_UI::TextAlignment::Right));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("Objectives", -DPUI::fEDGE_INSET, DPUI::fEDGE_INSET);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("Objectives", DPUI::fHUD_OBJECTIVES_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("Objectives", 0.95f, 0.7f, 0.7f, 1.0f);
 
 		Zenith_EditorAutomation::AddStep_CreateUIText("Status", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("Status", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("Status", 0.0f, -60.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", 80.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("Status", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("Status", 0.0f, -80.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", DPUI::fHUD_STATUS_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.9f, 0.2f, 0.2f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
 
 		// MVP-2.5.4: Dawn sun-gauge -- text countdown at top-centre.
-		// Shows "Dawn: 12.3 s" while a night is running; hidden when
-		// no night active. Production polish post-MVP swaps the text
-		// for a graphical sun-arc.
 		Zenith_EditorAutomation::AddStep_CreateUIText("DawnGauge", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("DawnGauge", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("DawnGauge", 0.0f, 30.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("DawnGauge", 36.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("DawnGauge", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("DawnGauge", 0.0f, DPUI::fEDGE_INSET);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("DawnGauge", DPUI::fHUD_DAWN_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("DawnGauge", 1.0f, 0.85f, 0.6f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("DawnGauge", false);
 
-		// MVP-2.5.2: Scent indicator -- numeric for now ("Scent: 0.4").
-		// Shows the currently-possessed villager's scent value;
-		// hidden when no villager is possessed.
+		// MVP-2.5.2: Scent indicator at bottom-left.
 		Zenith_EditorAutomation::AddStep_CreateUIText("ScentIndicator", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("ScentIndicator", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("ScentIndicator", 30.0f, -30.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("ScentIndicator", 28.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("ScentIndicator", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("ScentIndicator", DPUI::fEDGE_INSET, -DPUI::fEDGE_INSET);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("ScentIndicator", DPUI::fHUD_SCENT_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("ScentIndicator", 0.7f, 0.3f, 0.9f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("ScentIndicator", false);
 
-		// MVP-2.5.1: Whisper line -- single-line vibe text bottom-centre.
-		// The demon's voice reacting to Aelfric's awareness state.
-		// "He patrols." / "He stirs..." / "He sees you!" -- one line
-		// per state for MVP; rotation variants are post-MVP polish.
+		// MVP-2.5.1: Whisper line at bottom-centre.
 		Zenith_EditorAutomation::AddStep_CreateUIText("WhisperLine", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("WhisperLine", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("WhisperLine", 0.0f, -80.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("WhisperLine", 28.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("WhisperLine", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("WhisperLine", 0.0f, -100.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("WhisperLine", DPUI::fHUD_WHISPER_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("WhisperLine", 0.85f, 0.4f, 0.4f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("WhisperLine", false);
 
-		// MVP-2.5.3: Aelfric awareness icon (placeholder: state-name
-		// as text at top-right, below the Objectives counter).
+		// MVP-2.5.3: Aelfric awareness icon top-right, below the
+		// Objectives counter. Right-aligned to grow leftward into the
+		// screen rather than off the right edge.
 		Zenith_EditorAutomation::AddStep_CreateUIText("AelfricAwareness", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("AelfricAwareness", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("AelfricAwareness", -30.0f, 80.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("AelfricAwareness", 28.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("AelfricAwareness", static_cast<int>(Zenith_UI::TextAlignment::Right));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("AelfricAwareness", -DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 50.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("AelfricAwareness", DPUI::fHUD_AWARENESS_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("AelfricAwareness", 0.95f, 0.6f, 0.3f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("AelfricAwareness", false);
 
@@ -643,8 +656,9 @@ namespace
 		Zenith_EditorAutomation::AddStep_AddUI();
 		Zenith_EditorAutomation::AddStep_CreateUIText("PauseOverlay", "PAUSED\nEsc: Resume   R: Restart   Q: Quit");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("PauseOverlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("PauseOverlay", static_cast<int>(Zenith_UI::TextAlignment::Center));
 		Zenith_EditorAutomation::AddStep_SetUIPosition("PauseOverlay", 0.0f, 0.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("PauseOverlay", 48.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("PauseOverlay", DPUI::fHUD_PAUSE_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("PauseOverlay", 1.0f, 1.0f, 1.0f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("PauseOverlay", false);
 		Zenith_EditorAutomation::AddStep_AttachScript("DPPauseMenuController_Behaviour");
@@ -1079,29 +1093,36 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetAsMainCamera();
 
 		Zenith_EditorAutomation::AddStep_AddUI();
+		// Shared HUD elements in gym scenes -- mirror the GameLevel
+		// authoring (DPUI font constants + alignment) so a gym scene
+		// renders correctly on any screen size.
 		Zenith_EditorAutomation::AddStep_CreateUIText("LifeBar", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("LifeBar", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("LifeBar", 30.0f, 30.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("LifeBar", 36.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("LifeBar", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("LifeBar", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("LifeBar", DPUI::fHUD_LIFEBAR_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("LifeBar", 0.3f, 1.0f, 0.3f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("LifeBar", false);
 		Zenith_EditorAutomation::AddStep_CreateUIText("HeldItem", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("HeldItem", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("HeldItem", 30.0f, 70.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("HeldItem", 28.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("HeldItem", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("HeldItem", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 50.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("HeldItem", DPUI::fHUD_HELDITEM_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("HeldItem", 1.0f, 1.0f, 1.0f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("HeldItem", false);
 		Zenith_EditorAutomation::AddStep_CreateUIText("Status", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("Status", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("Status", 0.0f, -60.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", 80.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("Status", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("Status", 0.0f, -80.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", DPUI::fHUD_STATUS_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.9f, 0.2f, 0.2f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
 		// Per-gym title text — overrides displayed Gym name in the upper-centre.
 		Zenith_EditorAutomation::AddStep_CreateUIText("GymTitle", szSceneName);
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("GymTitle", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("GymTitle", 0.0f, 30.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("GymTitle", 44.0f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("GymTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("GymTitle", 0.0f, DPUI::fEDGE_INSET);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("GymTitle", DPUI::fHUD_GYM_TITLE_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("GymTitle", 0.9f, 0.6f, 0.2f, 1.0f);
 
 		Zenith_EditorAutomation::AddStep_AttachScript("DPPlayerController_Behaviour");
@@ -1114,8 +1135,9 @@ namespace
 		Zenith_EditorAutomation::AddStep_AddUI();
 		Zenith_EditorAutomation::AddStep_CreateUIText("PauseOverlay", "PAUSED\nEsc: Resume   R: Restart   Q: Quit");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("PauseOverlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("PauseOverlay", static_cast<int>(Zenith_UI::TextAlignment::Center));
 		Zenith_EditorAutomation::AddStep_SetUIPosition("PauseOverlay", 0.0f, 0.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("PauseOverlay", 48.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("PauseOverlay", DPUI::fHUD_PAUSE_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("PauseOverlay", 1.0f, 1.0f, 1.0f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("PauseOverlay", false);
 		Zenith_EditorAutomation::AddStep_AttachScript("DPPauseMenuController_Behaviour");
