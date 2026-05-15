@@ -278,6 +278,46 @@ void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
         CheckEdge(m_bWarnedOffBottom, "BOTTOM", fTextBotY, "bottomY", xCanvasSize.y);
     }
 
+    // Anchor-alignment-mismatch warning: catches the "Center anchor +
+    // Left alignment = text appears off-centre" bug class. The text
+    // technically fits inside the canvas so the off-edge warning above
+    // won't fire, but the visual effect is the same authoring bug:
+    // the player sees text drifting toward one edge.
+    //
+    // Mismatch rules (anchor X position in normalized 0..1 space):
+    //   anchor.x near 1.0 (right-anchored) -> expect Right alignment
+    //   anchor.x near 0.5 (center-anchored) -> expect Center alignment
+    //   anchor.x near 0.0 (left-anchored)   -> expect Left alignment
+    // Tolerance 0.15 on the anchor value so TopCenter (0.5, 0) and
+    // BottomCenter (0.5, 1) both count as centered for this check.
+    if (!m_bWarnedAlignmentMismatch && fWidth < 1.0f) // only when size is 0 (anchor-driven)
+    {
+        const float fAnchorX = m_xAnchor.x;
+        const char* szExpected = nullptr;
+        if (fAnchorX > 0.85f && m_eAlignment != TextAlignment::Right)
+        {
+            szExpected = "Right";
+        }
+        else if (fAnchorX > 0.35f && fAnchorX < 0.65f && m_eAlignment != TextAlignment::Center)
+        {
+            szExpected = "Center";
+        }
+        else if (fAnchorX < 0.15f && m_eAlignment != TextAlignment::Left)
+        {
+            szExpected = "Left";
+        }
+        if (szExpected != nullptr)
+        {
+            const char* szActual = "Left";
+            if (m_eAlignment == TextAlignment::Center) szActual = "Center";
+            else if (m_eAlignment == TextAlignment::Right) szActual = "Right";
+            Zenith_Warning(LOG_CATEGORY_UI,
+                "Zenith_UIText '%s' has anchor.x=%.2f but TextAlignment::%s -- expected TextAlignment::%s for this anchor. Text will visually drift toward one edge instead of being aligned to the anchor.",
+                m_strName.c_str(), fAnchorX, szActual, szExpected);
+            m_bWarnedAlignmentMismatch = true;
+        }
+    }
+
     Zenith_UIElement::Render(xCanvas);
 }
 

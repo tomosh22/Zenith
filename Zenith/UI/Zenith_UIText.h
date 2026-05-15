@@ -127,6 +127,10 @@ private:
     mutable bool m_bWarnedOffRight  = false;
     mutable bool m_bWarnedOffTop    = false;
     mutable bool m_bWarnedOffBottom = false;
+    // Alignment-anchor-mismatch warning: catches the "Center anchor +
+    // Left alignment = text appears off-centre" bug where text fits
+    // inside the canvas but is visually offset toward one edge.
+    mutable bool m_bWarnedAlignmentMismatch = false;
 };
 
 } // namespace Zenith_UI
