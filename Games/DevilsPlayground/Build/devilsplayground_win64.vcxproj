@@ -578,6 +578,9 @@
     <ClCompile Include="..\Tests\Test_P2Reagent_UniquePickupChannel.cpp" />
     <ClCompile Include="..\Tests\Test_P2Villager_ArchetypeStatsApplied.cpp" />
     <ClCompile Include="..\Tests\Test_P3Inventory_ArchetypeCount.cpp" />
+    <ClCompile Include="..\Tests\Test_P4Playthrough_LossByApprehend.cpp" />
+    <ClCompile Include="..\Tests\Test_P4Playthrough_LossByDawn.cpp" />
+    <ClCompile Include="..\Tests\Test_P4Playthrough_LossByNoVessels.cpp" />
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp" />
     <ClCompile Include="..\Tests\Test_Possession.cpp" />
     <ClCompile Include="..\Tests\Test_PostFogHookFires.cpp" />

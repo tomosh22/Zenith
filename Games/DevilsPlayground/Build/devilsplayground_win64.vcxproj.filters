@@ -272,6 +272,15 @@
     <ClCompile Include="..\Tests\Test_P3Inventory_ArchetypeCount.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P4Playthrough_LossByApprehend.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P4Playthrough_LossByDawn.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P4Playthrough_LossByNoVessels.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
