@@ -62,6 +62,20 @@ public:
 					Zenith_Maths::Vector4(0.9f, 0.2f, 0.2f, 1.0f),
 					/*fHoldSeconds=*/2.5f);
 			});
+		// MVP-4.2 / 4.3.2: run-lost banner. Each cause has its own
+		// copy line that hangs permanently (run is over). The pause-
+		// menu R / Q shortcuts still work to restart / quit.
+		m_xRunLostHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnRunLost>(
+			[this](const DP_OnRunLost& xEvt)
+			{
+				m_bRunLostReceived = true;
+				m_eLastRunLostCause = xEvt.m_eCause;
+				char buf[64];
+				BuildRunLostText(buf, sizeof(buf), xEvt.m_eCause);
+				SetStatusText(buf,
+					Zenith_Maths::Vector4(0.9f, 0.2f, 0.2f, 1.0f),
+					/*fHoldSeconds=*/0.0f /* permanent */);
+			});
 	}
 
 	void OnDisable() ZENITH_FINAL override { TearDown(); }
@@ -245,6 +259,33 @@ public:
 		std::snprintf(szBuf, uBufSize, "%s", szLine);
 	}
 
+	// MVP-4.2 / 4.3.2: run-lost banner copy. One line per cause from
+	// DP_RunLostCause. Permanent display (run is over); the pause
+	// menu's R / Q shortcuts continue to work for restart / quit.
+	static void BuildRunLostText(char* szBuf, size_t uBufSize, DP_RunLostCause eCause)
+	{
+		const char* szLine = "RUN LOST";
+		switch (eCause)
+		{
+		case DP_RunLostCause::Apprehended: szLine = "CAUGHT BY AELFRIC"; break;
+		case DP_RunLostCause::Dawn:        szLine = "DAWN BREAKS"; break;
+		case DP_RunLostCause::NoVessels:   szLine = "NO VESSELS REMAIN"; break;
+		}
+		std::snprintf(szBuf, uBufSize, "%s", szLine);
+	}
+
+#ifdef ZENITH_INPUT_SIMULATOR
+	// MVP-4.2 test accessors: did the run-lost subscriber fire? Used
+	// by Phase-4 loss playthrough tests to verify the HUD reacted.
+	bool DidRunLostHandlerFireForTest() const { return m_bRunLostReceived; }
+	DP_RunLostCause LastRunLostCauseForTest() const { return m_eLastRunLostCause; }
+	void ResetRunLostForTest()
+	{
+		m_bRunLostReceived = false;
+		m_eLastRunLostCause = DP_RunLostCause::Apprehended;
+	}
+#endif
+
 	// Compute the current Aelfric state. Iterates Priest_Behaviour
 	// scripts in the active scene (typically just 1 priest), reads
 	// the agent's blackboard, classifies.
@@ -373,9 +414,17 @@ private:
 			Zenith_EventDispatcher::Get().Unsubscribe(m_xDeathHandle);
 			m_xDeathHandle = INVALID_EVENT_HANDLE;
 		}
+		if (m_xRunLostHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(m_xRunLostHandle);
+			m_xRunLostHandle = INVALID_EVENT_HANDLE;
+		}
 	}
 
 	Zenith_EventHandle m_xVictoryHandle       = INVALID_EVENT_HANDLE;
 	Zenith_EventHandle m_xDeathHandle         = INVALID_EVENT_HANDLE;
+	Zenith_EventHandle m_xRunLostHandle       = INVALID_EVENT_HANDLE;
 	float              m_fStatusHoldRemaining = -1.0f;  // <0 = permanent / not set
+	bool               m_bRunLostReceived     = false;
+	DP_RunLostCause    m_eLastRunLostCause    = DP_RunLostCause::Apprehended;
 };
