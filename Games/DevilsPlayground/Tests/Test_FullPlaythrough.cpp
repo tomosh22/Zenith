@@ -235,19 +235,34 @@ namespace
 		DP_Player::SetHeldItem(xVillager, xFake);
 	}
 
-	// Look up a UI element by name on the GameManager's UICanvas.
+	// Look up a UI element by name in ANY loaded scene's UICanvas. The
+	// HUD elements (LifeBar / Objectives / HeldItem / Status / ...) are
+	// authored on the GameManager entity in the active gameplay scene,
+	// but DPPauseMenuController_Behaviour::OnStart migrates its parent
+	// entity (and the PauseOverlay text element on it) to the persistent
+	// scene via `Zenith_SceneManager::MarkEntityPersistent` so the
+	// controller keeps ticking while the gameplay scene is paused.
+	//
+	// Originally this helper only walked the active scene -- the
+	// FullPlaythrough_Test's pause-overlay phase saw `pauseOpen=0`
+	// because PauseOverlay had migrated and the search missed it. Walk
+	// every loaded scene; first match wins.
 	Zenith_UI::Zenith_UIText* FindHudText(const char* szName)
 	{
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
-		if (!pxScene) return nullptr;
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
-		pxScene->Query<Zenith_UIComponent>().ForEach(
-			[szName, &pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
-			{
-				if (pxResult) return;
-				pxResult = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
-			});
+		const uint32_t uSlotCount = Zenith_SceneManager::GetSceneSlotCount();
+		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
+		{
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetLoadedSceneDataAtSlot(uSlot);
+			if (pxScene == nullptr) continue;
+			pxScene->Query<Zenith_UIComponent>().ForEach(
+				[szName, &pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
+				{
+					if (pxResult) return;
+					pxResult = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
+				});
+			if (pxResult) break;
+		}
 		return pxResult;
 	}
 

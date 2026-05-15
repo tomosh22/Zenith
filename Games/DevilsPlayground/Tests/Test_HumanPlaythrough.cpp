@@ -238,18 +238,28 @@ namespace
 		return true;
 	}
 
+	// Look up a UI element by name in ANY loaded scene's UICanvas.
+	// DPPauseMenuController_Behaviour::OnStart migrates its parent
+	// entity to the persistent scene, so a search restricted to the
+	// active scene would miss PauseOverlay. Walk every loaded scene;
+	// first match wins. See FullPlaythrough_Test::FindHudText for the
+	// fuller rationale.
 	Zenith_UI::Zenith_UIText* FindHudText(const char* szName)
 	{
-		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
-		if (!pxScene) return nullptr;
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
-		pxScene->Query<Zenith_UIComponent>().ForEach(
-			[szName, &pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
-			{
-				if (pxResult) return;
-				pxResult = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
-			});
+		const uint32_t uSlotCount = Zenith_SceneManager::GetSceneSlotCount();
+		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
+		{
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetLoadedSceneDataAtSlot(uSlot);
+			if (pxScene == nullptr) continue;
+			pxScene->Query<Zenith_UIComponent>().ForEach(
+				[szName, &pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
+				{
+					if (pxResult) return;
+					pxResult = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
+				});
+			if (pxResult) break;
+		}
 		return pxResult;
 	}
 
