@@ -218,6 +218,9 @@
     <ClCompile Include="..\Tests\Test_P2Archetype_TimersMatchSpec.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P2BellSoul_AudibleAcrossMap.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P2BellSoul_PriestHearsTheBell.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

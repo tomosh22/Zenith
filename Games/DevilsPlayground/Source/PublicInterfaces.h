@@ -291,6 +291,19 @@ namespace DP_AI
 
 	void EmitNoise(Vec3 xPos, float fLoudness, float fRadius, Zenith_EntityID xSource);
 
+	// MVP-2.2.6+ map-wide bell broadcast. The perception system clamps each
+	// agent's hearing at min(emit_radius, agent_max_range), so a 200 m
+	// EmitNoise emit still cuts off at the priest's 30 m hearing_range_m --
+	// breaking the GDD's "BellSoul audible from the entire map" promise.
+	// This helper bypasses perception and writes directly to every
+	// Priest_Behaviour agent's blackboard:
+	//   BB_KEY_INVESTIGATE_POS      <- xPos
+	//   BB_KEY_HAS_INVESTIGATE_POS  <- true
+	// The investigate-pos slot is then consumed by the existing
+	// DP_BTAction_ClearInvestigatePos sequence, so the rest of the BT
+	// flow is unchanged.
+	void NotifyAllPriestsOfInvestigatePos(Vec3 xPos);
+
 	// Lazily-built level navmesh. First call generates a synthetic flat
 	// 200m × 200m polygon centred on the priest start (the source UE map
 	// uses rough authoring positions that aren't on a single navmesh

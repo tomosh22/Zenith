@@ -20,57 +20,56 @@
 #include <cstdio>
 
 // ============================================================================
-// Test_P2BellSoul_PriestHearsTheBell (MVP-2.2.6 -- INTEGRATION)
+// Test_P2BellSoul_AudibleAcrossMap (MVP-2.2.6 GDD-PARITY -- INTEGRATION)
 //
-// Test_P2Reagent_BellSoulRingsBell pins the EVENT (DP_OnBellRing
-// dispatches once per pickup). This integration test pins the
-// PERCEPTION SIDE: when the villager picks up a BellSoul, the
-// priest's perception system receives the map-wide hearing stimulus
-// AND the priest's Priest_Behaviour::BridgePerceptionToBlackboard
-// then sets BB_KEY_HAS_INVESTIGATE_POS = true with InvestigatePos
-// near the BellSoul.
+// Test_P2BellSoul_PriestHearsTheBell pins the WITHIN-RANGE perception
+// path (priest 20 m from the bell). The GDD promises BellSoul is
+// audible from the ENTIRE map -- the perception system's
+// min(emit_radius, agent_max_range) clamp breaks that promise at the
+// engine layer (a priest 100+ m away can't hear the bell even though
+// the emit radius is 200 m, because the priest's hearing_range_m
+// caps perception at 30 m).
 //
-// Without this test the chain "BellSoul rings -> priest hears ->
-// priest changes BT branch to investigate" could break silently:
-// the event might fire but the perception stimulus might not be
-// emitted at the right radius / loudness, or the priest's bridge
-// might filter it out.
+// MVP-2.2.6 fix: DPItemBase's BellSoul branch now ALSO calls
+// DP_AI::NotifyAllPriestsOfInvestigatePos which iterates every priest
+// in the scene and writes BB.HasInvestigatePos=true + InvestigatePos
+// directly, bypassing the perception clamp.
+//
+// This test pins THAT path: a priest 120 m away from the BellSoul
+// receives the BB update.
 //
 // Procedure:
 //   1. Load GameLevel; find priest + a villager + build a BellSoul.
-//   2. Teleport the priest 50 m AWAY from the BellSoul (so without
-//      the bell ring, the priest can't hear anything happening at
-//      that distance via regular footsteps). The BellSoul's 200 m
-//      emit radius easily covers 50 m so the priest WILL hear it.
+//   2. Teleport priest 120 m EAST of the BellSoul -- well past the
+//      perception clamp (30 m hearing range, 200 m emit). The
+//      perception path would never fire here.
 //   3. Possess the villager, teleport onto the BellSoul.
-//   4. Tick 80 frames (~1.33 s) so the 1.0 s pickup channel
-//      completes AND the priest's per-frame OnUpdate runs the
-//      perception bridge.
-//   5. Read the priest's blackboard:
-//        BB_KEY_HAS_INVESTIGATE_POS == true.
-//        BB_KEY_INVESTIGATE_POS close to BellSoul's world position.
+//   4. Tick 80 frames so the 1.0 s pickup channel completes AND the
+//      priest's per-frame OnUpdate has had a chance to observe the
+//      BB write.
+//   5. Read priest's BB. HasInvestigatePos must be true, with
+//      InvestigatePos near the BellSoul's world position.
 //
 // What this catches:
-//   * The EmitSoundStimulus call inside DPItemBase's pickup branch
-//     was removed / refactored to a smaller radius (priest stops
-//     hearing distant bells).
-//   * The priest's BridgePerceptionToBlackboard stopped bridging
-//     hearing stimuli into BB.InvestigatePos.
-//   * A perception-system change that drops sources without an
-//     entity ID (the EmitSoundStimulus uses the BellSoul entity as
-//     source, which we destroy on pickup -- if the stale-entity
-//     check filters it out, the priest never hears).
+//   * Someone removes the NotifyAllPriestsOfInvestigatePos call from
+//     DPItemBase's BellSoul branch (the "200 m emit covers everything"
+//     comment that was wrong before MVP-2.2.6 returns).
+//   * The helper's per-priest BB iteration regresses (e.g., starts
+//     filtering by perception distance, defeating its purpose).
+//   * The BridgePerceptionToBlackboard call overwrites BB.InvestigatePos
+//     every frame with a default Vector3 when no perception hit lands,
+//     erasing the direct write before the BT can read it.
 // ============================================================================
 
 namespace
 {
 	enum Phase : int {
-		kBP_Start, kBP_WaitScene, kBP_BuildBellSoul, kBP_TeleportPriest,
-		kBP_PossessVillager, kBP_TeleportVillager, kBP_TickPickup,
-		kBP_Snapshot, kBP_Verify, kBP_Done
+		kBA_Start, kBA_WaitScene, kBA_BuildBellSoul, kBA_TeleportPriest,
+		kBA_PossessVillager, kBA_TeleportVillager, kBA_TickPickup,
+		kBA_Snapshot, kBA_Verify, kBA_Done
 	};
 
-	int                     g_iPhase = kBP_Start;
+	int                     g_iPhase = kBA_Start;
 	Zenith_EntityID         g_xPriest;
 	Zenith_EntityID         g_xVillager;
 	Zenith_EntityID         g_xBellSoul;
@@ -81,16 +80,10 @@ namespace
 	Zenith_Maths::Vector3   g_xInvestigatePos(0.0f);
 	Zenith_EntityID         g_xHeldAfter;
 
-	constexpr int kPICKUP_TICKS = 80;  // ~1.33s, well past the 1.0s channel
-	// Priest hearing_range_m defaults to 30. The perception system
-	// CLAMPS at min(emit_radius, agent_max_range), so even though the
-	// BellSoul emits at 200m, the perception path only reaches priests
-	// within 30m. This test exercises that path at 20m -- the GDD's
-	// "audible from entire map" promise is delivered by an additional
-	// direct-BB fanout (DP_AI::NotifyAllPriestsOfInvestigatePos) that
-	// runs alongside the perception emit; the across-map case is pinned
-	// by Test_P2BellSoul_AudibleAcrossMap at 120m.
-	constexpr float kPRIEST_FAR_DIST = 20.0f;
+	constexpr int kPICKUP_TICKS = 80;
+	// 120 m: 4x the priest's 30 m hearing range. If the perception path
+	// were the only one wired up, the bell would be silent here.
+	constexpr float kPRIEST_FAR_DIST = 120.0f;
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
@@ -130,9 +123,9 @@ namespace
 	}
 }
 
-static void Setup_P2BellSoulPriestHears()
+static void Setup_P2BellSoulAudibleAcrossMap()
 {
-	g_iPhase = kBP_Start;
+	g_iPhase = kBA_Start;
 	g_xPriest = INVALID_ENTITY_ID;
 	g_xVillager = INVALID_ENTITY_ID;
 	g_xBellSoul = INVALID_ENTITY_ID;
@@ -143,16 +136,16 @@ static void Setup_P2BellSoulPriestHears()
 	g_xHeldAfter = INVALID_ENTITY_ID;
 }
 
-static bool Step_P2BellSoulPriestHears(int iFrame)
+static bool Step_P2BellSoulAudibleAcrossMap(int iFrame)
 {
 	switch (g_iPhase)
 	{
-	case kBP_Start:
+	case kBA_Start:
 		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
-		g_iPhase = kBP_WaitScene;
+		g_iPhase = kBA_WaitScene;
 		return true;
 
-	case kBP_WaitScene:
+	case kBA_WaitScene:
 	{
 		Zenith_EntityID xFoundPriest;
 		Zenith_EntityID xFoundVillager;
@@ -168,22 +161,22 @@ static bool Step_P2BellSoulPriestHears(int iFrame)
 		{
 			g_xPriest = xFoundPriest;
 			g_xVillager = xFoundVillager;
-			g_iPhase = kBP_BuildBellSoul;
+			g_iPhase = kBA_BuildBellSoul;
 		}
 		else if (iFrame > 60)
 		{
-			g_iPhase = kBP_Done;
+			g_iPhase = kBA_Done;
 		}
 		return true;
 	}
 
-	case kBP_BuildBellSoul:
+	case kBA_BuildBellSoul:
 	{
 		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
 		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
-		if (pxScene == nullptr) { g_iPhase = kBP_Done; return false; }
-		Zenith_Entity xEnt(pxScene, std::string("Test_BellSoul_PriestHears"));
-		if (!xEnt.IsValid()) { g_iPhase = kBP_Done; return false; }
+		if (pxScene == nullptr) { g_iPhase = kBA_Done; return false; }
+		Zenith_Entity xEnt(pxScene, std::string("Test_BellSoul_AudibleAcrossMap"));
+		if (!xEnt.IsValid()) { g_iPhase = kBA_Done; return false; }
 		g_xBellSoul = xEnt.GetEntityID();
 		// Place the BellSoul far from the priest's start spot so the
 		// teleport step (next) has somewhere to go.
@@ -197,99 +190,100 @@ static bool Step_P2BellSoulPriestHears(int iFrame)
 		DPItemBase_Behaviour* pxBeh = xEnt.AddComponent<Zenith_ScriptComponent>()
 			.AddScript<DPItemBase_Behaviour>();
 		if (pxBeh != nullptr) pxBeh->SetTag(DP_ItemTag::BellSoul);
-		g_iPhase = kBP_TeleportPriest;
+		g_iPhase = kBA_TeleportPriest;
 		return true;
 	}
 
-	case kBP_TeleportPriest:
+	case kBA_TeleportPriest:
 	{
-		// Park priest 50 m away from the BellSoul. The bell emit
-		// has a 200 m radius and loudness 1.0, so even at 50 m the
-		// perceived loudness is:
-		//   1.0 * (1 - 50/200) = 0.75 -- well above the priest's
-		//   0.05 hearing threshold.
+		// 120 m from the BellSoul. Priest's hearing_range_m is 30 m;
+		// EmitSoundStimulus's perception path can't deliver here.
+		// Only the direct BB fanout from NotifyAllPriestsOfInvestigatePos
+		// will reach the priest at this distance.
 		Zenith_Maths::Vector3 xFar(g_xBellSoulPos.x + kPRIEST_FAR_DIST,
 		                           g_xBellSoulPos.y,
 		                           g_xBellSoulPos.z);
 		TeleportTo(g_xPriest, xFar);
-		g_iPhase = kBP_PossessVillager;
+		g_iPhase = kBA_PossessVillager;
 		return true;
 	}
 
-	case kBP_PossessVillager:
+	case kBA_PossessVillager:
 		DP_Player::SetPossessedVillager(g_xVillager);
-		g_iPhase = kBP_TeleportVillager;
+		g_iPhase = kBA_TeleportVillager;
 		return true;
 
-	case kBP_TeleportVillager:
+	case kBA_TeleportVillager:
 		TeleportTo(g_xVillager, g_xBellSoulPos);
 		g_iTickCounter = 0;
-		g_iPhase = kBP_TickPickup;
+		g_iPhase = kBA_TickPickup;
 		return true;
 
-	case kBP_TickPickup:
+	case kBA_TickPickup:
 		++g_iTickCounter;
-		if (g_iTickCounter >= kPICKUP_TICKS) g_iPhase = kBP_Snapshot;
+		if (g_iTickCounter >= kPICKUP_TICKS) g_iPhase = kBA_Snapshot;
 		return true;
 
-	case kBP_Snapshot:
+	case kBA_Snapshot:
 		g_xHeldAfter = DP_Player::GetHeldItemEntity(g_xVillager);
 		ReadPriestBB(g_xPriest, g_bHasInvestigatePos, g_xInvestigatePos);
-		g_iPhase = kBP_Verify;
+		g_iPhase = kBA_Verify;
 		return true;
 
-	case kBP_Verify:
-		std::printf("[P2BellSoulPriestHears] held=(%u/%u) hasInvPos=%d invPos=(%.2f,%.2f,%.2f) expected bellSoulPos=(%.2f,%.2f,%.2f)\n",
+	case kBA_Verify:
+		std::printf("[P2BellSoulAudibleAcrossMap] held=(%u/%u) hasInvPos=%d invPos=(%.2f,%.2f,%.2f) expected bellSoulPos=(%.2f,%.2f,%.2f) priestDist=%.1fm\n",
 			g_xHeldAfter.m_uIndex, g_xHeldAfter.m_uGeneration,
 			(int)g_bHasInvestigatePos,
 			g_xInvestigatePos.x, g_xInvestigatePos.y, g_xInvestigatePos.z,
-			g_xBellSoulPos.x, g_xBellSoulPos.y, g_xBellSoulPos.z);
+			g_xBellSoulPos.x, g_xBellSoulPos.y, g_xBellSoulPos.z,
+			kPRIEST_FAR_DIST);
 		std::fflush(stdout);
-		g_iPhase = kBP_Done;
+		g_iPhase = kBA_Done;
 		return false;
 
-	case kBP_Done:
+	case kBA_Done:
 	default:
 		return false;
 	}
 }
 
-static bool Verify_P2BellSoulPriestHears()
+static bool Verify_P2BellSoulAudibleAcrossMap()
 {
 	if (!g_xPriest.IsValid() || !g_xVillager.IsValid() || !g_xBellSoul.IsValid())
 	{
-		Zenith_Log(LOG_CATEGORY_AI, "P2BellSoulPriestHears: setup entities missing");
+		Zenith_Log(LOG_CATEGORY_AI, "P2BellSoulAudibleAcrossMap: setup entities missing");
 		return false;
 	}
-	// Precondition: pickup must have completed (so the bell rang).
+	// Precondition: pickup must have completed.
 	if (!g_xHeldAfter.IsValid()
 		|| g_xHeldAfter.m_uIndex != g_xBellSoul.m_uIndex
 		|| g_xHeldAfter.m_uGeneration != g_xBellSoul.m_uGeneration)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P2BellSoulPriestHears: pickup didn't complete (held=%u/%u, expected BellSoul %u/%u). The bell never rang, so the perception assertion below is meaningless",
+			"P2BellSoulAudibleAcrossMap: pickup didn't complete (held=%u/%u, expected BellSoul %u/%u)",
 			g_xHeldAfter.m_uIndex, g_xHeldAfter.m_uGeneration,
 			g_xBellSoul.m_uIndex, g_xBellSoul.m_uGeneration);
 		return false;
 	}
-	// Main assertion: priest's BB.HasInvestigatePos must be true.
+	// Main assertion: priest 120m away knows the bell rang.
 	if (!g_bHasInvestigatePos)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P2BellSoulPriestHears: priest BB.HasInvestigatePos is false after BellSoul pickup 50m away. The hearing chain broke: either DPItemBase didn't EmitSoundStimulus, or the perception system filtered it, or the priest's BridgePerceptionToBlackboard didn't bridge hearing stimuli into the BB");
+			"P2BellSoulAudibleAcrossMap: priest at %.0fm did NOT receive the bell's investigate-pos. The map-wide BB fanout (DP_AI::NotifyAllPriestsOfInvestigatePos) regressed or DPItemBase's BellSoul branch stopped calling it -- the GDD's map-wide audibility is broken",
+			kPRIEST_FAR_DIST);
 		return false;
 	}
-	// Sanity: investigate position should be near the BellSoul. We
-	// allow generous tolerance (5m) because the priest's perception
-	// system caches "last heard" not "exact source"; for MVP scope
-	// we just want it pointing at the right neighbourhood.
+	// Sanity: investigate position should be near the BellSoul. The
+	// direct-write path delivers EXACTLY xMyPos so we use a tight
+	// tolerance (the perception path's "last heard" can drift by a
+	// few metres; the direct path doesn't).
 	const float fDx = g_xInvestigatePos.x - g_xBellSoulPos.x;
 	const float fDz = g_xInvestigatePos.z - g_xBellSoulPos.z;
 	const float fDistSq = fDx * fDx + fDz * fDz;
-	if (fDistSq > 25.0f) // 5m tolerance
+	if (fDistSq > 1.0f) // 1m tolerance
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P2BellSoulPriestHears: priest investigate pos (%.2f,%.2f,%.2f) too far from BellSoul (%.2f,%.2f,%.2f)",
+			"P2BellSoulAudibleAcrossMap: priest investigate pos (%.2f,%.2f,%.2f) too far from BellSoul (%.2f,%.2f,%.2f). The direct fanout should write xMyPos exactly; >1m drift implies either the perception path overwrote the direct write, or the helper sourced the position from somewhere other than the BellSoul",
 			g_xInvestigatePos.x, g_xInvestigatePos.y, g_xInvestigatePos.z,
 			g_xBellSoulPos.x, g_xBellSoulPos.y, g_xBellSoulPos.z);
 		return false;
@@ -297,13 +291,13 @@ static bool Verify_P2BellSoulPriestHears()
 	return true;
 }
 
-static const Zenith_AutomatedTest g_xP2BellSoulPriestHearsTest = {
-	"Test_P2BellSoul_PriestHearsTheBell",
-	&Setup_P2BellSoulPriestHears,
-	&Step_P2BellSoulPriestHears,
-	&Verify_P2BellSoulPriestHears,
+static const Zenith_AutomatedTest g_xP2BellSoulAudibleAcrossMapTest = {
+	"Test_P2BellSoul_AudibleAcrossMap",
+	&Setup_P2BellSoulAudibleAcrossMap,
+	&Step_P2BellSoulAudibleAcrossMap,
+	&Verify_P2BellSoulAudibleAcrossMap,
 	240
 };
-ZENITH_AUTOMATED_TEST_REGISTER(g_xP2BellSoulPriestHearsTest);
+ZENITH_AUTOMATED_TEST_REGISTER(g_xP2BellSoulAudibleAcrossMapTest);
 
 #endif // ZENITH_INPUT_SIMULATOR
