@@ -551,7 +551,7 @@ namespace DP_Player
 		g_xHeldItems.erase(it);
 	}
 
-	void ResetForTest()
+	void ResetForNewRun()
 	{
 		g_xPossessedVillager = INVALID_ENTITY_ID;
 		g_xHeldItems.clear();
