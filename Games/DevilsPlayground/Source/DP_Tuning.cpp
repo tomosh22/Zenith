@@ -317,6 +317,11 @@ namespace DP_Tuning
 		if (!LoadJsonFile(xPath, xRoot))
 		{
 			Zenith_Assert(false, "DP_Tuning: failed to load %s", xPath.string().c_str());
+			// Q-2026-05-12-006 fix: release the heap allocation before bailing.
+			// Without this, the cache leaks until Shutdown -- which guards on
+			// s_bInitialized and won't run because we never set it true.
+			delete s_pxKvCache;
+			s_pxKvCache = nullptr;
 			return;
 		}
 
