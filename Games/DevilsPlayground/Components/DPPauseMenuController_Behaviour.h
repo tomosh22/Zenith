@@ -165,9 +165,7 @@ private:
 	void ResetAllRunStateBeforeReload()
 	{
 		ResetVisibleAndUnpause();
-		DP_Player::ResetForTest();      // Despite the name, semantically
-		                                // "reset all per-run player state"
-		                                // -- clears possessed handle,
+		DP_Player::ResetForNewRun();    // Clears possessed handle,
 		                                // held items, cooldown, scent,
 		                                // anchor, channel.
 		DP_Win::Reset();

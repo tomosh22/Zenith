@@ -223,10 +223,23 @@ namespace DP_Player
 	void SetHeldItem(Zenith_EntityID xVillager, Zenith_EntityID xItem);
 	void RemoveHeldItem(Zenith_EntityID xVillager);
 
-	// Drop possessed-villager and held-item state. Used by the harness
-	// between batched automated tests; not part of game runtime. Also
-	// resets the possession cooldown so tests start with a clean slate.
-	void ResetForTest();
+	// Drop every per-run DP_Player state owner: possessed villager,
+	// held-item table, possession cooldown, anchor, scent table,
+	// channel state. Used by:
+	//   - DPPauseMenuController::HandleRestart / HandleQuit -- the
+	//     player's permanent run-over -> new-run transition.
+	//   - The harness between batched automated tests -- next test
+	//     starts from a clean slate.
+	// "ForNewRun" reflects the production semantic. The historical
+	// name was ResetForTest (test-only intent); when MVP-2.5.5 ran
+	// the pause-menu restart through it, the name became misleading.
+	void ResetForNewRun();
+
+#ifdef ZENITH_INPUT_SIMULATOR
+	// Backward-compatible alias for tests that pre-date the rename.
+	// New call sites should prefer ResetForNewRun.
+	inline void ResetForTest() { ResetForNewRun(); }
+#endif
 }
 
 // ============================================================================
