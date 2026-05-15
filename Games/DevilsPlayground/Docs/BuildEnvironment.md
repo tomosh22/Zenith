@@ -83,7 +83,7 @@ cd C:\dev\Zenith
 .\Tools\run_dp_tests.ps1 -Headless
 ```
 
-Expected: 34 tests run (verified 2026-05-12 via grep of `ZENITH_AUTOMATED_TEST_REGISTER` macros across 24 .cpp files); some pass, some fail (depending on current prototype state). The runner exits 0 if all pass, 1 if any fail.
+Expected: ~110 tests run (verified 2026-05-15 via `grep -c ZENITH_AUTOMATED_TEST_REGISTER Games/DevilsPlayground/Tests/*.cpp`); current master suite is fully green in headless mode. The runner exits 0 if all pass, 1 if any fail.
 
 Filter to a specific test during dev:
 

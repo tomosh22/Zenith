@@ -42,7 +42,7 @@ Components/
   DPMainMenuController_Behaviour.h   # Front-end Play button → LoadSceneByIndex(1)
   DPPauseMenuController_Behaviour.h  # Esc-toggle overlay
   DPFogPass_Behaviour.h              # Per-frame fog-hole rebuild
-Tests/                                 (34 registered tests across 24 .cpp files; full list via --list-automated-tests)
+Tests/                                 (110 registered tests across 100 .cpp files as of 2026-05-15; full list via --list-automated-tests)
   Test_Hello.cpp                     # Harness smoke
   Test_MouseWheel.cpp                # EXT-4 simulator round-trip
   Test_PublicInterfaces.cpp          # 5 namespace-API tests + source-bug guards

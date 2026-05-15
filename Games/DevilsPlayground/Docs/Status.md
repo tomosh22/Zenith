@@ -1,6 +1,6 @@
 # DP Status
 
-**Last updated:** 2026-05-15 — Phase 1 + Phase 2 substantively complete; Phase 4 loss-state UI shipped. Auto-loop sweep landed PRs #50 through #76 in <24 h. Master HEAD `b64af334` (PR #75) + PR #76 merged at `01:09Z`. Full suite **107 PASSED, 0 FAILED** locally via `Tools/run_dp_tests.ps1 -Headless`.
+**Last updated:** 2026-05-15 — Phase 1 + Phase 2 substantively complete; Phase 4 loss-state UI shipped. Auto-loop sweep landed PRs #50 through #79 in <24 h. Master HEAD `0e67f13e`. Full suite **~110 PASSED, 0 FAILED** locally via `Tools/run_dp_tests.ps1 -Headless`.
 **Build:** ✅ DP target builds clean (`vs2022_Debug_Win64_True`, 0 warnings, 0 errors).
 **Tests:** Full local suite green. Headless skips graphics-only tests by m_bRequiresGraphics; all compute-only tests pass.
 
@@ -56,12 +56,13 @@
 | **MVP-4.3.1–3** Bot-driven playthrough | ⏸ deferred | — | Different shape than the loss-state pin; needs the test-pathfinder + a real human-bot. Less urgent now that the loss UI exists |
 | **MVP-4.3.4** Human-driven playthrough | 🚧 HUMAN_GATE | — | Tomos plays the demo end-to-end |
 
-### In flight (auto-merge enabled, awaiting CI)
+### Recent quality-of-life landings
 
 | Wave | Status | PRs | Notes |
 |------|--------|-----|-------|
-| **MVP-2.5.5** Rename ResetForTest → ResetForNewRun | 🔄 in CI | #77 | Misleading name (production HandleRestart uses it); backward-compat alias retained |
-| **MVP-1.3.2 coverage** Priest stillness during apprehend channel | 🔄 in CI | #78 | Pins "the priest plants and channels in place" GDD framing; samples post-Pursue-settle and asserts <0.1m drift to dispatch |
+| **MVP-2.5.5** Rename ResetForTest → ResetForNewRun | ✅ landed | #77 | Misleading name (production HandleRestart uses it); backward-compat alias retained under ZENITH_INPUT_SIMULATOR |
+| **MVP-1.3.2 coverage** Priest stillness during apprehend channel | ✅ landed | #78 | Pins "the priest plants and channels in place" GDD framing; samples post-Pursue-settle and asserts <0.1m drift to dispatch |
+| **Status.md refresh** Phase 1+2 wave-by-wave + integration-test pattern | ✅ landed | #79 | Promoted every Phase-1 wave from deferred to landed; added Phase-2 + Phase-4 tables |
 
 ## Suite growth
 
@@ -161,7 +162,7 @@ Tomos's role: tick `ManualSetupChecklist.md` once before the first session; revi
 
 1. **Operating mode for fresh sessions:** orchestrator + subagents (Mode B). Read [OrchestratorPlaybook.md](OrchestratorPlaybook.md) before doing anything else.
 2. **Hard invariants:** (a) only the orchestrator invokes MSBuild / Tools/run_dp_tests.ps1 / the game executable; (b) no worktrees, all work on `master` with per-task feature branches; (c) only the orchestrator writes Status.md / Questions.md / DecisionLog.md / MvpRoadmap.md / Config/*.json.
-3. **First action:** verify the baseline. Build the prototype, run the full suite via `Tools/run_dp_tests.ps1 -Headless`. Expect **~107-110 PASSED / 0 FAILED** on `master @ b64af334`+ (count depends on whether #77/#78 have merged).
+3. **First action:** verify the baseline. Build the prototype, run the full suite via `Tools/run_dp_tests.ps1 -Headless`. Expect **~110 PASSED / 0 FAILED** on `master @ 0e67f13e` (the post-#79 head).
 4. **Next-up work** (now that Phase 1 + 2 are substantively done):
    - **Phase 3 (assets)** — Mixamo Y-Bot spike (`MVP-3.0.1` 🚧 HUMAN_GATE), villager / priest skeletons. Most of Phase 3 needs human-provided FBX.
    - **Phase 4 acceptance playthrough** — bot-driven (`MVP-4.3.1-3`) is the biggest deferred chunk. Needs the test-pathfinder + a real human-bot that drives the WASD/click inputs along a full run.
@@ -172,7 +173,7 @@ Tomos's role: tick `ManualSetupChecklist.md` once before the first session; revi
 5. **Local-run pitfalls** (caught 2026-05-15):
    - Direct `devilsplayground.exe --automated-test <name>` invocation differs from `Tools/run_dp_tests.ps1 -Filter <name>` results. The runner adds `--skip-tool-exports --skip-unit-tests` which the engine's automated-test driver requires for reliable batched test behaviour. Always run tests through the runner script, not direct exe invocation.
    - The `Sharpmake_Build.bat` script has a `pause` directive; running it non-interactively hangs. Invoke `Sharpmake.Application.exe` directly with the same args.
-6. **Branching:** all work on `master`. Branch as `dp/mvp-<task-id>` or `dp/<scope>`. The worktree at `.claude/worktrees/wizardly-payne-c210e5/` is the canonical session worktree.
+6. **Branching:** all work on `master`. Branch as `dp/mvp-<task-id>` or `dp/<scope>`. Per OrchestratorPlaybook Invariant 2 (no git worktrees), prefer `C:\dev\Zenith\` directly; if the harness places you in a `.claude/worktrees/<name>/` checkout, treat it as a transient sandbox and remember Sharpmake bakes the cwd path into generated vcxprojs.
 7. **No external spend** unless you find a paid blocker (and even then, log it in Questions.md and pick a different task to unblock yourself).
 8. **Engine surface to be aware of** for new tests/features:
    - `Zenith_BTNode::m_eLastStatus` must be assigned by leaf nodes before returning.
