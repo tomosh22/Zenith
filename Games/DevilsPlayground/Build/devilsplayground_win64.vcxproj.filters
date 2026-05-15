@@ -287,6 +287,12 @@
     <ClCompile Include="..\Tests\Test_P4Playthrough_LossByNoVessels.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P4Playthrough_Night1WinGolden.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P4UI_RestartPromptAfterRunOver.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

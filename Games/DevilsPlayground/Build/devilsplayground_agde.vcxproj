@@ -289,6 +289,8 @@
     <ClCompile Include="..\Tests\Test_P4Playthrough_LossByApprehend.cpp" />
     <ClCompile Include="..\Tests\Test_P4Playthrough_LossByDawn.cpp" />
     <ClCompile Include="..\Tests\Test_P4Playthrough_LossByNoVessels.cpp" />
+    <ClCompile Include="..\Tests\Test_P4Playthrough_Night1WinGolden.cpp" />
+    <ClCompile Include="..\Tests\Test_P4UI_RestartPromptAfterRunOver.cpp" />
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp" />
     <ClCompile Include="..\Tests\Test_Possession.cpp" />
     <ClCompile Include="..\Tests\Test_PostFogHookFires.cpp" />
