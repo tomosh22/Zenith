@@ -175,9 +175,24 @@ public:
 
 		// MVP-2.2.6: BellSoul rings the bell on pickup -- audible to
 		// every priest on the map. Dispatches DP_OnBellRing (HUD +
-		// state-machine subscribers) and emits a map-wide perception
-		// stimulus (200 m radius, well past the priest's 30 m
-		// hearing range so it's guaranteed to register).
+		// state-machine subscribers) AND triggers the map-wide priest
+		// fanout.
+		//
+		// Two propagation paths run in parallel:
+		//   1. Zenith_PerceptionSystem::EmitSoundStimulus -- the normal
+		//      hearing path. Priests within their own hearing_range_m
+		//      (30 m default) pick it up here. Going through perception
+		//      gives the priest's BridgePerceptionToBlackboard the
+		//      stale-source-entity scrub it needs (the BellSoul entity
+		//      is destroyed on pickup so the perception system would
+		//      otherwise drop the stimulus on its next tick).
+		//   2. DP_AI::NotifyAllPriestsOfInvestigatePos -- direct BB
+		//      write to every priest in the scene, regardless of
+		//      distance. This delivers the GDD's "audible from the
+		//      entire map" intent; the perception system's
+		//      min(emit_radius, agent_max_range) clamp would otherwise
+		//      cap audibility at the 30 m hearing range no matter how
+		//      loud the bell.
 		if (m_strSpecialBehaviour == "rings_bell_on_pickup")
 		{
 			DP_OnBellRing xEvt;
@@ -185,10 +200,12 @@ public:
 			xEvt.m_xBellSoul = m_xParentEntity.GetEntityID();
 			xEvt.m_xPosition = xMyPos;
 			Zenith_EventDispatcher::Get().Dispatch(xEvt);
-			// Perception stimulus: map-wide. Loudness 1.0 (max),
-			// radius 200 m (well past Aelfric's 30 m hearing range).
+			// Perception stimulus: serves priests within hearing range.
 			Zenith_PerceptionSystem::EmitSoundStimulus(
 				xMyPos, 1.0f, 200.0f, m_xParentEntity.GetEntityID());
+			// Direct BB fanout: serves every priest beyond hearing
+			// range. Both paths together = truly map-wide.
+			DP_AI::NotifyAllPriestsOfInvestigatePos(xMyPos);
 		}
 	}
 
