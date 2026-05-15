@@ -148,15 +148,11 @@ Additionally, **Sharpmake regenerates vcxproj files with the cwd's absolute path
 
 ---
 
-### ⚠️ Q-2026-05-12-006 — Minor `DP_Tuning::Initialize` failure-path leak (non-blocking).
+### ✅ Q-2026-05-12-006 — Minor `DP_Tuning::Initialize` failure-path leak (non-blocking).
 
 **Context:** [DP_Tuning.cpp:319](../Source/DP_Tuning.cpp) — when `LoadJsonFile` fails, the code asserts and returns. The freshly-`new`'d `s_pxKvCache` (empty vector) is not freed; in release builds (asserts compiled out) this is a one-shot leak of an empty `Zenith_Vector<DottedKVPair>`. Reviewer subagent flagged this; the cost of fixing now is < 5 minutes (add `delete s_pxKvCache; s_pxKvCache = nullptr;` before the return).
 
-**My best guess if you don't reply:** Defer to a follow-up micro-PR or to the MVP-0.2.1 `DP_Json` extraction PR when the parser moves. The assert IS the intended fatal path; if Tuning.json fails to load, the game has bigger problems than a leak.
-
-**Cost of getting it wrong:** essentially zero.
-
-**Status:** noted 2026-05-12. Filing for follow-up; no action this PR.
+**Status:** RESOLVED 2026-05-15 via Sprint C cleanup PR. Added `delete s_pxKvCache; s_pxKvCache = nullptr;` before the assert-and-return in `Initialize`. The asset code path is unchanged; only the failure path is plugged.
 
 ---
 

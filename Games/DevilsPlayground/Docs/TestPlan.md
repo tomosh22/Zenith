@@ -641,21 +641,29 @@ For each archetype, a corresponding `Test_P2Archetype_<Name><Ability>` test exis
 
 ### 3.5 Crafting Expansion
 
-#### Test_P2Forge_IronWoodSpike
+#### Test_P2Forge_WoodToSpike
 
-**Proves:** Iron + Wood at forge = Spike.
+**Proves:** Wood at forge = Spike (single-input recipe; the original spec said Iron + Wood but the shipped recipe in PR #63 is the simpler Wood -> Spike, matching `DPForge_Behaviour`'s per-instance recipe table).
 
-- **Setup:** villager at forge holding Iron. Wood item present at forge.
-- **Step:** interact (F). Wait 2 s.
-- **Verify:** held == Spike, both Iron and Wood entities destroyed, craft-count incremented.
+- **Setup:** villager at forge holding Wood.
+- **Step:** interact (F). Wait 1 s.
+- **Verify:** held == Spike, Wood entity destroyed, craft-count incremented. **Shipped** via [`Test_P2Forge_WoodToSpike.cpp`](../Tests/Test_P2Forge_WoodToSpike.cpp) (PR #63).
 
-#### Test_P2Forge_IronBrassKeySkeleton
+#### Test_P2Forge_IronToSkeletonKey
 
-**Proves:** Iron + Brass Key = Skeleton Key.
+**Proves:** Iron at forge = SkeletonKey (originally specced as Iron + Brass Key; the shipped MVP recipe per `DPForge_Behaviour` is Iron -> SkeletonKey).
 
-- **Setup:** villager at forge holding Iron. Brass Key present.
-- **Step:** interact. Wait 2 s.
-- **Verify:** held == SkeletonKey.
+- **Setup:** villager at forge holding Iron.
+- **Step:** interact. Wait 1 s.
+- **Verify:** held == SkeletonKey. **Shipped** via [`Test_P2Forge_IronToSkeletonKey.cpp`](../Tests/Test_P2Forge_IronToSkeletonKey.cpp) (PR #63).
+
+#### Test_P2Forge_PriestHearsTheHammer
+
+**Proves:** the forge's hammer sound emission reaches the priest's perception system (not just the AudioBus instrumentation). Caught a real wiring bug (PR #73): the forge originally only emitted via `Zenith_AudioBus::EmitSound`, missing the `Zenith_PerceptionSystem::EmitSoundStimulus` call the priest's hearing path needs.
+
+- **Setup:** load GameLevel, pick priest + a villager, possess the villager, teleport to forge.
+- **Step:** drive a forge interact, tick frames for the priest's BridgePerceptionToBlackboard to observe the heard sound.
+- **Verify:** priest's `BB.HasInvestigatePos` flips true. **Shipped** via [`Test_P2Forge_PriestHearsTheHammer.cpp`](../Tests/Test_P2Forge_PriestHearsTheHammer.cpp) (PR #73).
 
 #### Test_P2Forge_AudibleAt30m
 

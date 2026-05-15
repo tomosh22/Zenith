@@ -130,16 +130,14 @@ Plus a default `NavMeshGenerationConfig` with agent radius 0.4m, height 1.8m, st
 
 **Why much shorter timebox:** the original 5-day spike was scoped to write the pipeline from scratch. Now it's "call an existing function and verify it works on our colliders." Two days is plenty; if it fails in two days, the generator has a fundamental bug or DP's collider setup is incompatible, both of which need different responses than "write a new generator."
 
-#### Fallback path: hand-authored `.znavmesh` (ONLY if MVP-1.2.0 spike fails)
+#### ~~Fallback path: hand-authored `.znavmesh` (ONLY if MVP-1.2.0 spike fails)~~ DEPRECATED 2026-05-15
 
-(Unchanged from earlier rounds; preserved as recovery insurance.)
+The primary engine-navmesh-generator path won via PRs #32-#40. The fallback hand-authored pipeline is no longer needed and is preserved here only as historical record of the option that was considered.
 
-- [ ] **MVP-1.2.alt.1** — Define `.znavmesh` binary format (vertex list, triangle list, portal list, area types). Load via `Zenith_AssetRegistry`.
-- [ ] **MVP-1.2.alt.2** — Author `Tools/build_gamelevel_navmesh.ps1` to bake the GameLevel navmesh by hand from `DP_LevelData.h` collider tables. **Important caveat noted by round-4 reviewer:** `DP_LevelData.h` doesn't contain wall-polygon outlines — it has placement coordinates. The bake script would need to either (a) ingest Jolt collider geometry directly (same input the generator already uses), or (b) require Tomos to author a `Tools/GameLevelNavMesh.json` with explicit polygon definitions. Option (b) is more honest about the work but adds a manual asset.
-- [ ] **MVP-1.2.alt.3** — Bake the GameLevel `.znavmesh` and commit. Replace `DP_AI::GetOrBuildLevelNavMesh` to load the baked asset.
-- [ ] **MVP-1.2.alt.4** — Same tests as the primary path.
-
-**Note:** with the engine generator existing and tested, the fallback path is now genuinely a backup, not the safer-but-slower default.
+- ~~**MVP-1.2.alt.1** — Define `.znavmesh` binary format (vertex list, triangle list, portal list, area types). Load via `Zenith_AssetRegistry`.~~ Obsolete: primary path won.
+- ~~**MVP-1.2.alt.2** — Author `Tools/build_gamelevel_navmesh.ps1` to bake the GameLevel navmesh by hand from `DP_LevelData.h` collider tables.~~ Obsolete.
+- ~~**MVP-1.2.alt.3** — Bake the GameLevel `.znavmesh` and commit. Replace `DP_AI::GetOrBuildLevelNavMesh` to load the baked asset.~~ Obsolete.
+- ~~**MVP-1.2.alt.4** — Same tests as the primary path.~~ Obsolete; the primary path's tests (MVP-1.2.1, 1.2.3, 1.2.4 in PRs #39 + #40) cover the contract.
 
 ### 1.2.9 Navmesh-aware test pathfinder (REQUIRED before Tier 4)
 
@@ -218,7 +216,7 @@ The four MVP archetypes, the five MVP reagents, fog-of-war shader, HUD upgrades.
 
 - [x] **MVP-2.1.1** — Test_P2Archetype_DevoutChannel (failing). Implement possession-channel state in `DP_Player` and `DPVillager_Behaviour`.
 - [x] **MVP-2.1.2** — Test_P2Archetype_DevoutChannelInterrupt. Implement interrupt-on-priest-LOS.
-- [ ] **MVP-2.1.3** — Test_P2Archetype_ChildHalfTimer.
+- [x] **MVP-2.1.3** — ~~Test_P2Archetype_ChildHalfTimer.~~ Subsumed by `Test_P2Archetype_TimersMatchSpec.cpp` (PR #19/#20), which iterates the 4 MVP archetypes — Farmhand, Beggar, Devout, Child — and asserts each one's `life_timer_s` matches the value declared in `Config/Archetypes.json`. Verified 2026-05-15 doc audit.
 - [x] **MVP-2.1.4** — Test_P2Archetype_ChildCannotCarryTools. Add restriction check in `DPItemBase_Behaviour::OnUpdate` pickup path.
 - [x] ~~**MVP-2.1.5** — Test_P2Archetype_SextonChapelStealth~~ — **Sexton moved post-MVP entirely 2026-05-12.** The archetype is replaced in MVP by Beggar (Aelfric ignores). New task added below.
 - [x] **MVP-2.1.6** — `Test_P2Archetype_BeggarIgnoredByAelfric`. Possess a Beggar; place Aelfric with line-of-sight; assert `BB.TargetWithDevil != beggar_id` across 60 frames. Implementation in `Priest_Behaviour::BridgePerceptionToBlackboard` filters the perceived-targets list by archetype-id, skipping Beggars.
