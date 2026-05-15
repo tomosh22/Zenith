@@ -99,7 +99,7 @@ namespace DevilsPlayground
 		// only need to reset state that has no entity owner.
 		Zenith_AutomatedTestRunner::RegisterBetweenTestsHook([]()
 		{
-			DP_Player::ResetForTest();
+			DP_Player::ResetForNewRun();
 			DP_Win::Reset();
 			DP_Fog::ClearAllFogHoles();
 			DP_Fog::ClearAllMemoryReveals();
