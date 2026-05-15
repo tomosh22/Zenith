@@ -17,6 +17,7 @@
  */
 
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -30,7 +31,13 @@
 #include "Source/DevilsPlayground_Tags.h"
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/Priest_Behaviour.h"
+#include "Components/DPDoor_Behaviour.h"
+#include "Components/DPChest_Behaviour.h"
+#include "Components/DPForge_Behaviour.h"
+#include "Components/DPPentagram_Behaviour.h"
+#include "Components/DummyNoiseMachine_Behaviour.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -224,6 +231,218 @@ public:
 				pxPrompt->SetVisible(false);
 			}
 		}
+
+		// ---------------------------------------------------------------
+		// Detailed HUD readouts (user feedback 2026-05-15: HUD needs more
+		// detail). Eight new elements complement the primary readouts:
+		//   VillagerInfo  -- archetype name of the possessed villager
+		//   LifeNumeric   -- "Life: 23.4 / 30.0 s" alongside the ASCII bar
+		//   MovementMode  -- "SPRINT" / "WALK QUIET" / "MOVE"
+		//   VillagersAlive -- countdown of live villagers (toward NoVessels)
+		//   PriestDistance -- meters to the closest priest
+		//   RunTimer      -- mm:ss since first possession
+		//   InteractHint  -- "F to interact" when in range of an interactable
+		//   ReagentHelp   -- one-line description of held special item
+		// Each gated to its visibility rule -- nothing rendered when irrelevant.
+		// ---------------------------------------------------------------
+
+		// Tick run timer once we've possessed for the first time.
+		if (bPossessed && !m_bTimerStarted)
+		{
+			m_bTimerStarted = true;
+			m_fRunTimerSeconds = 0.0f;
+		}
+		if (m_bTimerStarted && !m_bRunOver)
+		{
+			m_fRunTimerSeconds += fDt;
+		}
+
+		// VillagerInfo + LifeNumeric -- show possessed villager's archetype
+		// and life-seconds. Both gated on possessing.
+		DPVillager_Behaviour* pxVB = bPossessed ? TryGetVillager(xV) : nullptr;
+		if (auto* pxInfo = xUI.FindElement<Zenith_UI::Zenith_UIText>("VillagerInfo"))
+		{
+			if (pxVB != nullptr && !pxVB->GetArchetypeId().empty())
+			{
+				char buf[80];
+				std::snprintf(buf, sizeof(buf), "Archetype: %s", pxVB->GetArchetypeId().c_str());
+				pxInfo->SetText(buf);
+				pxInfo->SetVisible(true);
+			}
+			else
+			{
+				pxInfo->SetVisible(false);
+			}
+		}
+		if (auto* pxLifeNum = xUI.FindElement<Zenith_UI::Zenith_UIText>("LifeNumeric"))
+		{
+			if (pxVB != nullptr)
+			{
+				char buf[48];
+				std::snprintf(buf, sizeof(buf), "Life: %.1f / %.0f s",
+					pxVB->GetRemainingLife(), pxVB->GetMaxLife());
+				pxLifeNum->SetText(buf);
+				pxLifeNum->SetVisible(true);
+			}
+			else
+			{
+				pxLifeNum->SetVisible(false);
+			}
+		}
+
+		// MovementMode -- Sprint / Walk-Quiet / Move / Idle. Reads the
+		// possessed villager's per-frame state cache.
+		if (auto* pxMove = xUI.FindElement<Zenith_UI::Zenith_UIText>("MovementMode"))
+		{
+			if (pxVB != nullptr)
+			{
+				const char* szMode = "Move";
+				if (pxVB->IsSprintingNow())       szMode = "SPRINT";
+				else if (pxVB->IsWalkQuietNow())  szMode = "WALK QUIET";
+				char buf[40];
+				std::snprintf(buf, sizeof(buf), "Movement: %s", szMode);
+				pxMove->SetText(buf);
+				pxMove->SetVisible(true);
+			}
+			else
+			{
+				pxMove->SetVisible(false);
+			}
+		}
+
+		// VillagersAlive -- count live villagers (RemainingLife > 0). Shows
+		// "N / total" so the player tracks attrition toward NoVessels.
+		if (auto* pxCount = xUI.FindElement<Zenith_UI::Zenith_UIText>("VillagersAlive"))
+		{
+			int iAlive = 0;
+			int iTotal = 0;
+			DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+				[&iAlive, &iTotal](Zenith_EntityID, DPVillager_Behaviour& xVilla)
+				{
+					++iTotal;
+					if (xVilla.GetRemainingLife() > 0.0f) ++iAlive;
+				});
+			if (iTotal > 0)
+			{
+				char buf[40];
+				std::snprintf(buf, sizeof(buf), "Vessels: %d / %d", iAlive, iTotal);
+				pxCount->SetText(buf);
+				pxCount->SetVisible(true);
+			}
+			else
+			{
+				pxCount->SetVisible(false);
+			}
+		}
+
+		// PriestDistance -- meters to closest priest from possessed villager.
+		// Hidden when not possessing.
+		if (auto* pxDist = xUI.FindElement<Zenith_UI::Zenith_UIText>("PriestDistance"))
+		{
+			if (bPossessed)
+			{
+				Zenith_Maths::Vector3 xMyPos(0.0f);
+				bool bHaveMyPos = TryGetEntityPos(xV, xMyPos);
+				float fClosestDist = -1.0f;
+				if (bHaveMyPos)
+				{
+					DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+						[&xMyPos, &fClosestDist](Zenith_EntityID xPriestId, Priest_Behaviour&)
+						{
+							Zenith_Maths::Vector3 xPPos(0.0f);
+							if (!TryGetEntityPos(xPriestId, xPPos)) return;
+							const float fDx = xPPos.x - xMyPos.x;
+							const float fDz = xPPos.z - xMyPos.z;
+							const float fD = std::sqrt(fDx * fDx + fDz * fDz);
+							if (fClosestDist < 0.0f || fD < fClosestDist)
+							{
+								fClosestDist = fD;
+							}
+						});
+				}
+				if (fClosestDist >= 0.0f)
+				{
+					char buf[40];
+					std::snprintf(buf, sizeof(buf), "Priest: %.0f m", fClosestDist);
+					// Red urgency colour when within apprehend reach (~5m).
+					if (fClosestDist < 5.0f)
+					{
+						pxDist->SetColor(Zenith_Maths::Vector4(1.0f, 0.3f, 0.3f, 1.0f));
+					}
+					else if (fClosestDist < 15.0f)
+					{
+						pxDist->SetColor(Zenith_Maths::Vector4(1.0f, 0.8f, 0.4f, 1.0f));
+					}
+					else
+					{
+						pxDist->SetColor(Zenith_Maths::Vector4(0.85f, 0.85f, 0.85f, 1.0f));
+					}
+					pxDist->SetText(buf);
+					pxDist->SetVisible(true);
+				}
+				else
+				{
+					pxDist->SetVisible(false);
+				}
+			}
+			else
+			{
+				pxDist->SetVisible(false);
+			}
+		}
+
+		// RunTimer -- mm:ss elapsed since first possession.
+		if (auto* pxTimer = xUI.FindElement<Zenith_UI::Zenith_UIText>("RunTimer"))
+		{
+			if (m_bTimerStarted)
+			{
+				const int iSec = static_cast<int>(m_fRunTimerSeconds);
+				char buf[32];
+				std::snprintf(buf, sizeof(buf), "Time: %d:%02d", iSec / 60, iSec % 60);
+				pxTimer->SetText(buf);
+				pxTimer->SetVisible(true);
+			}
+			else
+			{
+				pxTimer->SetVisible(false);
+			}
+		}
+
+		// InteractHint -- show "F to interact with <type>" when possessing
+		// AND within range of an interactable. Iterates each interactable
+		// subclass since IsPlayerInRange is defined on the base.
+		if (auto* pxHint = xUI.FindElement<Zenith_UI::Zenith_UIText>("InteractHint"))
+		{
+			const char* szNearestType = bPossessed ? FindNearestInteractableType(xV) : nullptr;
+			if (szNearestType != nullptr)
+			{
+				char buf[64];
+				std::snprintf(buf, sizeof(buf), "F: interact with %s", szNearestType);
+				pxHint->SetText(buf);
+				pxHint->SetVisible(true);
+			}
+			else
+			{
+				pxHint->SetVisible(false);
+			}
+		}
+
+		// ReagentHelp -- one-line description of held item if it's a special
+		// reagent. Helps the player remember each reagent's quirk.
+		if (auto* pxReagent = xUI.FindElement<Zenith_UI::Zenith_UIText>("ReagentHelp"))
+		{
+			const DP_ItemTag eTag = bPossessed ? DP_Player::GetHeldItemTag(xV) : DP_ItemTag::None;
+			const char* szHelp = ReagentHelpText(eTag);
+			if (szHelp != nullptr)
+			{
+				pxReagent->SetText(szHelp);
+				pxReagent->SetVisible(true);
+			}
+			else
+			{
+				pxReagent->SetVisible(false);
+			}
+		}
 	}
 
 public:
@@ -307,6 +526,8 @@ public:
 		m_bRunLostReceived = false;
 		m_bRunOver = false;
 		m_eLastRunLostCause = DP_RunLostCause::Apprehended;
+		m_bTimerStarted = false;
+		m_fRunTimerSeconds = 0.0f;
 	}
 #endif
 
@@ -412,6 +633,72 @@ private:
 		return xEnt.GetComponent<Zenith_ScriptComponent>().GetScript<DPVillager_Behaviour>();
 	}
 
+	static bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
+	{
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		if (!xEnt.IsValid()) return false;
+		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
+		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		return true;
+	}
+
+	// Walk every interactable subclass in the active scene; if the
+	// possessed villager is within range of any of them, return a
+	// human-readable type name ("door", "chest", "forge", "pentagram",
+	// "noise machine"). Returns nullptr if none in range.
+	template<typename TInteract>
+	static void ScanInteractables(const Zenith_Maths::Vector3& xMyPos,
+	                              const char* szTypeLabel,
+	                              const char*& szResult,
+	                              float& fClosestSq)
+	{
+		DP_Query::ForEachScriptInActiveScene<TInteract>(
+			[&xMyPos, &szResult, &fClosestSq, szTypeLabel]
+			(Zenith_EntityID xId, TInteract& xInteract)
+			{
+				Zenith_Maths::Vector3 xIPos(0.0f);
+				if (!TryGetEntityPos(xId, xIPos)) return;
+				const float fDx = xIPos.x - xMyPos.x;
+				const float fDz = xIPos.z - xMyPos.z;
+				const float fSq = fDx * fDx + fDz * fDz;
+				const float fR = xInteract.GetInteractRadius();
+				if (fSq <= fR * fR && fSq < fClosestSq)
+				{
+					fClosestSq = fSq;
+					szResult = szTypeLabel;
+				}
+			});
+	}
+	static const char* FindNearestInteractableType(Zenith_EntityID xVillager)
+	{
+		Zenith_Maths::Vector3 xMyPos(0.0f);
+		if (!TryGetEntityPos(xVillager, xMyPos)) return nullptr;
+		const char* szResult = nullptr;
+		float fClosestSq = 1e30f;
+		ScanInteractables<DPDoor_Behaviour>           (xMyPos, "door",          szResult, fClosestSq);
+		ScanInteractables<DPChest_Behaviour>          (xMyPos, "chest",         szResult, fClosestSq);
+		ScanInteractables<DPForge_Behaviour>          (xMyPos, "forge",         szResult, fClosestSq);
+		ScanInteractables<DPPentagram_Behaviour>      (xMyPos, "pentagram",     szResult, fClosestSq);
+		ScanInteractables<DummyNoiseMachine_Behaviour>(xMyPos, "noise machine", szResult, fClosestSq);
+		return szResult;
+	}
+
+	// One-line reagent description text. Returns nullptr for non-reagent
+	// tags (Iron, Key, Spike, Wood, Objective*, None) so the help line
+	// hides.
+	static const char* ReagentHelpText(DP_ItemTag eTag)
+	{
+		switch (eTag)
+		{
+		case DP_ItemTag::BellSoul:    return "BellSoul: rings on pickup -- alerts every priest on the map.";
+		case DP_ItemTag::BogWater:    return "BogWater: evaporates 8 seconds after you drop it.";
+		case DP_ItemTag::SkeletonKey: return "Skeleton Key: opens any locked door.";
+		default:                       return nullptr;
+		}
+	}
+
 	void SetStatusText(const char* szText, const Zenith_Maths::Vector4& xColor, float fHoldSeconds)
 	{
 		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>()) return;
@@ -456,4 +743,9 @@ private:
 	// watched "VICTORY" appear and just want to start a new run).
 	bool               m_bRunOver             = false;
 	DP_RunLostCause    m_eLastRunLostCause    = DP_RunLostCause::Apprehended;
+	// Detailed-HUD: run timer. Starts ticking on first possession and
+	// freezes when the run ends (Victory or RunLost). Drives the
+	// RunTimer UI element.
+	bool               m_bTimerStarted        = false;
+	float              m_fRunTimerSeconds     = 0.0f;
 };

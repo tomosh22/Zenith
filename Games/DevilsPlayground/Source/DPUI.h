@@ -55,6 +55,19 @@ namespace DPUI
 	// Aelfric awareness icon + whisper line.
 	static constexpr float fHUD_AWARENESS_FONT  = 40.0f;
 	static constexpr float fHUD_WHISPER_FONT    = 36.0f;
+	// Secondary readouts -- archetype name, life-seconds, movement
+	// mode, villagers-alive count, priest distance, run timer,
+	// interact hint, reagent description. Slightly smaller than the
+	// primary corner readouts because there are more of them and the
+	// HUD shouldn't drown the gameplay view.
+	static constexpr float fHUD_VILLAGER_INFO_FONT  = 32.0f;
+	static constexpr float fHUD_LIFE_NUMERIC_FONT   = 32.0f;
+	static constexpr float fHUD_MOVEMENT_FONT       = 32.0f;
+	static constexpr float fHUD_VILLAGER_COUNT_FONT = 32.0f;
+	static constexpr float fHUD_PRIEST_DIST_FONT    = 32.0f;
+	static constexpr float fHUD_RUN_TIMER_FONT      = 32.0f;
+	static constexpr float fHUD_INTERACT_HINT_FONT  = 36.0f;
+	static constexpr float fHUD_REAGENT_HELP_FONT   = 28.0f;
 	// Pause overlay (multi-line; the line spacing makes 64px feel less
 	// dominant than the Status banner).
 	static constexpr float fHUD_PAUSE_FONT      = 64.0f;

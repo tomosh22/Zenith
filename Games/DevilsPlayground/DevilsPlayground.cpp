@@ -623,15 +623,106 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIVisible("WhisperLine", false);
 
 		// MVP-2.5.3: Aelfric awareness icon top-right, below the
-		// Objectives counter. Right-aligned to grow leftward into the
-		// screen rather than off the right edge.
+		// Aelfric awareness icon top-right, below the Objectives counter.
+		// Right-aligned to grow leftward into the screen.
 		Zenith_EditorAutomation::AddStep_CreateUIText("AelfricAwareness", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("AelfricAwareness", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
 		Zenith_EditorAutomation::AddStep_SetUIAlignment("AelfricAwareness", static_cast<int>(Zenith_UI::TextAlignment::Right));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("AelfricAwareness", -DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 50.0f);
+		Zenith_EditorAutomation::AddStep_SetUIPosition("AelfricAwareness", -DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 60.0f);
 		Zenith_EditorAutomation::AddStep_SetUIFontSize("AelfricAwareness", DPUI::fHUD_AWARENESS_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("AelfricAwareness", 0.95f, 0.6f, 0.3f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("AelfricAwareness", false);
+
+		// --- DETAILED HUD (user feedback 2026-05-15) ---------------------
+		// Eight extra readouts that fill in the gameplay picture:
+		// possession info, movement mode, threat distance, run economy,
+		// contextual hints. Each is anchored such that text grows AWAY
+		// from the screen edge (Left anchors -> Left align, Right ->
+		// Right, Centers -> Center).
+		//
+		// Vertical stack order on each edge (top to bottom):
+		//   TopLeft:    LifeBar (40), LifeNumeric (90), HeldItem (130),
+		//               ReagentHelp (175), VillagerInfo (215)
+		//   TopRight:   Objectives (40), AelfricAwareness (100),
+		//               VillagersAlive (155), PriestDistance (205)
+		//   TopCenter:  DawnGauge (40), RunTimer (95)
+		//   BottomLeft: ScentIndicator (-40), MovementMode (-85)
+		//   BottomCenter: WhisperLine (-100), InteractHint (-160)
+
+		// VillagerInfo -- archetype name when possessing.
+		Zenith_EditorAutomation::AddStep_CreateUIText("VillagerInfo", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("VillagerInfo", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("VillagerInfo", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("VillagerInfo", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 215.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("VillagerInfo", DPUI::fHUD_VILLAGER_INFO_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("VillagerInfo", 0.85f, 0.85f, 1.0f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("VillagerInfo", false);
+
+		// LifeNumeric -- "Life: 23.4 / 30.0 s" alongside the ASCII bar.
+		Zenith_EditorAutomation::AddStep_CreateUIText("LifeNumeric", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("LifeNumeric", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("LifeNumeric", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("LifeNumeric", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 90.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("LifeNumeric", DPUI::fHUD_LIFE_NUMERIC_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("LifeNumeric", 0.7f, 1.0f, 0.7f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("LifeNumeric", false);
+
+		// ReagentHelp -- one-line description shown when holding a special
+		// reagent (BellSoul / BogWater / SkeletonKey). Hidden otherwise.
+		Zenith_EditorAutomation::AddStep_CreateUIText("ReagentHelp", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("ReagentHelp", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("ReagentHelp", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("ReagentHelp", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 175.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("ReagentHelp", DPUI::fHUD_REAGENT_HELP_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("ReagentHelp", 0.9f, 0.85f, 0.6f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("ReagentHelp", false);
+
+		// MovementMode -- Sprint / Walk-Quiet / Move. Bottom-left, above ScentIndicator.
+		Zenith_EditorAutomation::AddStep_CreateUIText("MovementMode", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("MovementMode", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("MovementMode", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("MovementMode", DPUI::fEDGE_INSET, -DPUI::fEDGE_INSET - 50.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("MovementMode", DPUI::fHUD_MOVEMENT_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("MovementMode", 0.85f, 0.85f, 0.85f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("MovementMode", false);
+
+		// VillagersAlive -- count of live villagers. Top-right, below AelfricAwareness.
+		Zenith_EditorAutomation::AddStep_CreateUIText("VillagersAlive", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("VillagersAlive", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("VillagersAlive", static_cast<int>(Zenith_UI::TextAlignment::Right));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("VillagersAlive", -DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 120.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("VillagersAlive", DPUI::fHUD_VILLAGER_COUNT_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("VillagersAlive", 0.85f, 0.85f, 1.0f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("VillagersAlive", false);
+
+		// PriestDistance -- meters to closest priest. Top-right, below VillagersAlive.
+		// Controller recolours red/amber/grey based on distance.
+		Zenith_EditorAutomation::AddStep_CreateUIText("PriestDistance", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("PriestDistance", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("PriestDistance", static_cast<int>(Zenith_UI::TextAlignment::Right));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("PriestDistance", -DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 170.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("PriestDistance", DPUI::fHUD_PRIEST_DIST_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("PriestDistance", 0.85f, 0.85f, 0.85f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("PriestDistance", false);
+
+		// RunTimer -- mm:ss since first possession. Top-center, below DawnGauge.
+		Zenith_EditorAutomation::AddStep_CreateUIText("RunTimer", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("RunTimer", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("RunTimer", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("RunTimer", 0.0f, DPUI::fEDGE_INSET + 55.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("RunTimer", DPUI::fHUD_RUN_TIMER_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("RunTimer", 0.9f, 0.9f, 0.7f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("RunTimer", false);
+
+		// InteractHint -- "F to interact with door/chest/forge/...".
+		// Bottom-center, above WhisperLine. Visible only when near an interactable.
+		Zenith_EditorAutomation::AddStep_CreateUIText("InteractHint", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("InteractHint", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("InteractHint", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("InteractHint", 0.0f, -160.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("InteractHint", DPUI::fHUD_INTERACT_HINT_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("InteractHint", 1.0f, 0.95f, 0.5f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("InteractHint", false);
 
 		// MVP-4.3.2: post-victory / post-run-lost restart prompt. Hidden
 		// by default; DPHUDController flips visibility when m_bRunOver
