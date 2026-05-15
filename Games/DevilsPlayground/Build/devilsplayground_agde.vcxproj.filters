@@ -80,6 +80,9 @@
     <ClCompile Include="..\Tests\Test_P1Apprehend_PriestCatchesPlayer.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1Apprehend_PriestStandsStillDuringChannel.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Apprehend_SwitchBreaksChannel.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
