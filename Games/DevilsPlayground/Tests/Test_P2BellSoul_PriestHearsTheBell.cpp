@@ -84,15 +84,12 @@ namespace
 	constexpr int kPICKUP_TICKS = 80;  // ~1.33s, well past the 1.0s channel
 	// Priest hearing_range_m defaults to 30. The perception system
 	// CLAMPS at min(emit_radius, agent_max_range), so even though the
-	// BellSoul emits at 200m, the priest can only hear it within 30m.
-	// The GDD's "audible from entire map" promise is a known
-	// limitation -- making the priest's hearing genuinely range-
-	// unlimited for BellSoul-class events requires either an engine
-	// change to the audibility clamp or a direct BB write on every
-	// priest from DPItemBase. Both are post-MVP design questions.
-	// This test pins the chain that DOES work: bell emit ->
-	// perception system -> priest BB bridge, at a distance the
-	// perception system accepts.
+	// BellSoul emits at 200m, the perception path only reaches priests
+	// within 30m. This test exercises that path at 20m -- the GDD's
+	// "audible from entire map" promise is delivered by an additional
+	// direct-BB fanout (DP_AI::NotifyAllPriestsOfInvestigatePos) that
+	// runs alongside the perception emit; the across-map case is pinned
+	// by Test_P2BellSoul_AudibleAcrossMap at 120m.
 	constexpr float kPRIEST_FAR_DIST = 20.0f;
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)

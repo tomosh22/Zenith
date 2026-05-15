@@ -265,6 +265,7 @@
     <ClCompile Include="..\Tests\Test_P2Archetype_DevoutChannel.cpp" />
     <ClCompile Include="..\Tests\Test_P2Archetype_DevoutChannelInterrupt.cpp" />
     <ClCompile Include="..\Tests\Test_P2Archetype_TimersMatchSpec.cpp" />
+    <ClCompile Include="..\Tests\Test_P2BellSoul_AudibleAcrossMap.cpp" />
     <ClCompile Include="..\Tests\Test_P2BellSoul_PriestHearsTheBell.cpp" />
     <ClCompile Include="..\Tests\Test_P2Fog_AelfricNotRevealed.cpp" />
     <ClCompile Include="..\Tests\Test_P2Fog_LightAddsHole.cpp" />
