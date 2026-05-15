@@ -1,158 +1,209 @@
 # DP Status
 
-**Last updated:** 2026-05-14 — Phase 1 substantively complete: 9 of the 10 Phase-1 waves landed in a single autonomous run (PRs #39 through #48 merged; PR #49 = MVP-1.9 in CI). Master HEAD `0a95e1b7`. Full suite **51 PASSED, 0 FAILED, 15 SKIPPED-headless** on master; **53 PASSED** with PR #49's two new sight tests.
+**Last updated:** 2026-05-15 — Phase 1 + Phase 2 substantively complete; Phase 4 loss-state UI shipped. Auto-loop sweep landed PRs #50 through #76 in <24 h. Master HEAD `b64af334` (PR #75) + PR #76 merged at `01:09Z`. Full suite **107 PASSED, 0 FAILED** locally via `Tools/run_dp_tests.ps1 -Headless`.
 **Build:** ✅ DP target builds clean (`vs2022_Debug_Win64_True`, 0 warnings, 0 errors).
-**Tests:** Full local suite green via `Tools/run_dp_tests.ps1 -Headless`. Headless skips 15 graphics-only tests; all 51 (or 53) compute-only tests pass.
+**Tests:** Full local suite green. Headless skips graphics-only tests by m_bRequiresGraphics; all compute-only tests pass.
 
 ## Manual setup checklist gating
 
 **⚠️ BEFORE STARTING THE FIRST AGENT SESSION,** the user (Tomos) must tick every box in [Docs/ManualSetupChecklist.md](ManualSetupChecklist.md). The orchestrator pattern depends on human-only setup (branch protection rules, Vulkan SDK install, pwsh.exe install, etc.) that no agent can perform. The orchestrator's session-start ritual checks this file and STOPS if any box is unchecked.
 
-## Current state — Phase 1 wave-by-wave
+## Current state — wave-by-wave
+
+### Phase 1 — every wave shipped
 
 | Wave | Status | PRs | Notes |
 |------|--------|-----|-------|
 | **MVP-1.1** Real pause | ✅ landed | #30 | Pre-session |
-| **MVP-1.2** Real navmesh integration | ✅ landed | #39, #40 | Closed-door + regen-on-swap tests; PriestPursuit_Test stabilised |
-| **MVP-1.3.1–4** Apprehend / run-loss | ✅ landed | #41, #42 | DP_OnRunLost event + Apprehend BT branch + switch-breaks + out-of-range guards |
-| **MVP-1.3.5** Dawn + NoVessels causes | ⏸ deferred | — | Needs Night timer system (Phase 4) and a smaller-than-17-villager scene |
-| **MVP-1.4.1–3** Faint state machine | ⏸ deferred | — | Villager state machine + 10 s recovery — multi-step, separate PR |
+| **MVP-1.2** Real navmesh integration | ✅ landed | #39, #40 | Closed-door + regen-on-swap; PriestPursuit stabilised |
+| **MVP-1.3.1–4** Apprehend / run-loss | ✅ landed | #41, #42 | Event + BT branch + switch-breaks + out-of-range guards |
+| **MVP-1.3.5** Dawn + NoVessels causes | ✅ landed | #54 (NoVessels), #57 (Dawn) | Both run-loss causes now wired + tested end-to-end |
+| **MVP-1.4.1–3** Faint state machine | ✅ landed | #55, #60 (coverage gap) | Idle/Possessed/Fainted/Dead villager state; 10 s recovery; system-possess bypass |
 | **MVP-1.4.4–5** Drop verb (G) | ✅ landed | #48 | Drop at foot pos + 0.5 s post-drop pickup cooldown |
-| **MVP-1.4.6** Drop-pickup chain handoff | ⏸ deferred | — | Movement-sim follow-up; chain semantics |
+| **MVP-1.4.6** Drop-pickup chain handoff | ✅ landed | #52 | Movement-sim test pinned the full chain |
 | **MVP-1.5** Possession cooldown | ✅ landed | #43 | 1.5 s after voluntary switch; death/apprehend bypass it |
 | **MVP-1.6** Demon-scent | ✅ landed | #45 | Table + decay + write to priest BB_KEY_HIGH_SCENT_TARGET |
 | **MVP-1.7.1–3** Sprint | ✅ landed | #46 | Shift+move → 12 m/s + 3 s/s extra life cost |
-| **MVP-1.7.4–5** Walk-quiet | ✅ landed | #47 | Ctrl+move → 4 m/s + halved footstep loudness; new footstep emission system |
-| **MVP-1.7.6** Aelfric perception precision | ⏸ deferred | — | Distance-threshold maths; data path already covered by Test_PriestBBBridge |
+| **MVP-1.7.4–5** Walk-quiet | ✅ landed | #47 | Ctrl+move → 4 m/s + halved footstep loudness |
+| **MVP-1.7.6** Aelfric effective hearing halved | ✅ landed | #53 | Walk-quiet villager's footstep emits below priest hearing threshold |
 | **MVP-1.8** Possession range | ✅ landed | #44 | 15 m anchor radius; anchor moves on each successful hop |
-| **MVP-1.9** Priest omniscience removed | 🔄 in CI | #49 | Fallback gated behind ZENITH_INPUT_SIMULATOR + opt-in test flag; production builds are sight-driven only |
-| **MVP-1.10** Save/load run state | ⏸ deferred | — | DP_RunState struct + serialisation; bigger chunk |
+| **MVP-1.9** Priest omniscience opt-in | ✅ landed | #49 | Fallback gated behind ZENITH_INPUT_SIMULATOR + opt-in flag |
+| **MVP-1.10** Save/load run state | ✅ landed | #56 | DP_RunState struct + serialisation + round-trip / corruption / version-mismatch tests |
 
-## Suite growth — this autonomous run
+### Phase 2 — substantively complete
 
-Master 36 → 51 PASSED across 10 merged PRs (+15 net new tests). Highlights:
+| Wave | Status | PRs | Notes |
+|------|--------|-----|-------|
+| **MVP-2.1.1–2** Devout possession channel + priest interrupt | ✅ landed | #62 | Channel-mid switch breaks; coverage in P2 archetype tests |
+| **MVP-2.1.4** Child cannot carry tools | ✅ landed | #59 | Item pickup rejected when villager archetype = Child |
+| **MVP-2.1.6** Aelfric ignores Beggar | ✅ landed | #58 | Priest bridge skips Beggar candidates |
+| **MVP-2.2.1–3** Reagent registry + per-tag pickup channel | ✅ landed | #64 | Registry-resolved channel duration; OnAwake + SetTag both re-resolve |
+| **MVP-2.2.4–5** BogWater evaporates 8 s after drop | ✅ landed | #65 | Time-driven entity destruction |
+| **MVP-2.2.6–7** BellSoul rings bell on pickup | ✅ landed | #66, **#76 (mapwide fix)** | Perception emit + new direct-BB fanout (PR #76) so priest hears from anywhere on the map, not just within 30 m hearing range |
+| **MVP-2.3.2–3** Forge per-instance recipes + Wood/Spike tags | ✅ landed | #63 | Each forge entity owns a recipe; Iron→Key default, Wood→Spike new |
+| **MVP-2.3.4** Forge audible across the village | ✅ landed | #67, #73 (perception emit fix) | Caught bug: forge originally only called AudioBus, not PerceptionSystem; PR #73 wired the perception emit alongside |
+| **MVP-2.4.3–4** Fog GDD-contract regression guards | ✅ landed | #61 | Aelfric not revealed; dim lights cut fog holes |
+| **MVP-2.4.5** Memory-fog state machine | ✅ landed | #68, #72 (integration) | Sparse hash map keyed by 1m grid cell; visible -> dim -> faded states |
+| **MVP-2.5.1, 2.5.3** HUD whisper line + Aelfric awareness icon | ✅ landed | #70, #73 (integration) | State derived from priest BB each frame; integration test caught classifier issues |
+| **MVP-2.5.2, 2.5.4** HUD scent + dawn gauge | ✅ landed | #69 | Both visible only when their owning state is active |
+| **MVP-2.5.5–6** Pause-menu R/Q shortcuts + main-menu Quit | ✅ landed | #71, **#74 (state-leak fix)** | R reloads GameLevel; Q quits to FrontEnd. PR #74 caught: HandleRestart was setting flag but not actually reloading scene |
+
+### Phase 4 — loss-state UI shipped
+
+| Wave | Status | PRs | Notes |
+|------|--------|-----|-------|
+| **MVP-4.2** Run-lost HUD banner + playthroughs | ✅ landed | **#75** | DPHUDController subscribes to DP_OnRunLost; per-cause copy ("CAUGHT BY AELFRIC" / "DAWN BREAKS" / "NO VESSELS REMAIN"); 3 integration playthrough tests for the 3 causes |
+| **MVP-4.3.1–3** Bot-driven playthrough | ⏸ deferred | — | Different shape than the loss-state pin; needs the test-pathfinder + a real human-bot. Less urgent now that the loss UI exists |
+| **MVP-4.3.4** Human-driven playthrough | 🚧 HUMAN_GATE | — | Tomos plays the demo end-to-end |
+
+### In flight (auto-merge enabled, awaiting CI)
+
+| Wave | Status | PRs | Notes |
+|------|--------|-----|-------|
+| **MVP-2.5.5** Rename ResetForTest → ResetForNewRun | 🔄 in CI | #77 | Misleading name (production HandleRestart uses it); backward-compat alias retained |
+| **MVP-1.3.2 coverage** Priest stillness during apprehend channel | 🔄 in CI | #78 | Pins "the priest plants and channels in place" GDD framing; samples post-Pursue-settle and asserts <0.1m drift to dispatch |
+
+## Suite growth
+
+Master 36 → 110 PASSED across 50+ merged PRs in <72 h.
+
+**Recent test highlights:**
 
 ```
-PriestPursuit_Test           (stabilised — was flaky-fail, now 4-of-4 reliable)
-Test_P1NavMesh_ClosedDoorBlocksPath
-Test_P1NavMesh_RegenerationOnSceneSwap
-Test_P1Apprehend_PriestCatchesPlayer
-Test_P1Apprehend_SwitchBreaksChannel
-Test_P1Apprehend_OutOfRangeIgnored
-Test_P1Cooldown_CannotPossessFor1pt5s
-Test_P1Cooldown_NotAffectedByDeath
-Test_P1Range_RefusedOutOfRange
-Test_P1Range_AcceptedInRange
-Test_P1Scent_AccumulatesOnPossession
-Test_P1Scent_NotificationToBlackboard
-Test_P1Sprint_DrainsLifeFaster
-Test_P1Sprint_NoDrainWhenNotMoving
-Test_P1WalkQuiet_FootstepLoudnessHalved
-Test_P1Drop_GoesToGroundAtBodyPosition
+Test_P1Drop_PickupChainHandoff           (PR #52)
+Test_P1Faint_RecoversToIdle              (PR #55 + coverage gap PR #60)
+Test_P1Faint_SystemPossessBypassesGate
+Test_P1WalkQuiet_AelfricEffectiveHearingHalved (PR #53)
+Test_P1Save_RoundTripMeta                (PR #56)
+Test_P1Save_RobustToCorruption
+Test_P1Save_VersionMismatchFallsBackToDefault
+Test_P1Dawn_DispatchesRunLost            (PR #57)
+Test_P1Dawn_NoFireWhenNotStarted
+Test_P1NoVessels_DispatchesRunLost       (PR #54)
+Test_P1Apprehend_PriestStandsStillDuringChannel  (PR #78 — coverage gap from Status.md)
+Test_P2Archetype_*                       (PR #58, #59, #62 — Beggar / Child / Devout)
+Test_P2Reagent_*                         (PR #64-66 — registry + BellSoul + BogWater)
+Test_P2Forge_*                           (PR #63, #67, #73)
+Test_P2Fog_Memory*                       (PR #68, #72)
+Test_P2HUD_*                             (PR #69-70, #73)
+Test_P2Menu_PauseAndMainMenuShortcuts    (PR #71)
+Test_P2Pause_RestartActuallyReloadsScene (PR #74 — caught real state-leak)
+Test_P2BellSoul_PriestHearsTheBell       (PR #72)
+Test_P2BellSoul_AudibleAcrossMap         (PR #76 — pins map-wide fix)
+Test_P4Playthrough_LossByApprehend       (PR #75)
+Test_P4Playthrough_LossByDawn
+Test_P4Playthrough_LossByNoVessels
 ```
 
-With PR #49 → 53 PASSED (adds `Test_P1Priest_DoesNotChasePossessedOutOfSight` + `Test_P1Priest_PursuesAfterLineOfSight`).
+## Integration tests caught real bugs this run
 
-## Major engine + cross-system fixes landed this run
+The "write the integration test that pins the gameplay scenario, watch it find a bug" pattern paid off twice in 24 h:
 
-These were the highest-leverage discoveries; full rationale lives in each PR's body.
+1. **PR #73 (forge perception gap):** `Test_P2Forge_PriestHearsTheHammer` failed because `DPForge::HandleInteract` only called `Zenith_AudioBus::EmitSound` (test instrumentation), not `Zenith_PerceptionSystem::EmitSoundStimulus` (priest hearing path). These are DIFFERENT systems. Fix: emit to both.
+2. **PR #74 (pause restart state-leak):** `Test_P2Pause_RestartActuallyReloadsScene` failed because `HandleRestart` did `LoadSceneByIndex` but didn't clear `DP_Player` / `DP_Win` / `DP_Fog` / `DP_Night` state. Fix: extracted `ResetAllRunStateBeforeReload()` helper (also calls the new `DP_Player::ResetForNewRun` from PR #77).
+
+Both bugs would have shipped to the human-playthrough gate without the integration tests.
+
+## Major engine + cross-system fixes landed in this run
 
 1. **PriestPursuit_Test was failing for three stacked reasons** (PR #39):
-   - **STATIC bodies silently ignore `SetPosition`.** Priest's body was authored STATIC; `Zenith_TransformComponent::SetPosition` routes through Jolt's BodyInterface, and STATIC bodies in the `NON_MOVING` broadphase layer don't activate. Every NavMeshAgent transform write landed in Jolt but the body never moved.
-   - **Engine BT `MoveTo` / `MoveToEntity` returned FAILURE the same frame `SetDestination` was called**, before `NavMeshAgent::Update` had a chance to compute the path. Fixed by checking `pxNav->NeedsPath()` and returning RUNNING instead of FAILURE.
-   - **`Zenith_BTSelector` is a memory-selector**, not a reactive priority-selector. When the priest's BT landed on patrol (because the possession side-table hadn't propagated to `DPVillager::IsPossessed()` yet on frame 0), patrol held the slot for ~1 s before pursue got another turn. Fixed by `m_xTree.Reset()` on the rising edge of `BB_KEY_TARGET_WITH_DEVIL` in `Priest_Behaviour::OnUpdate`.
-2. **DP_AI navmesh cache** wired to `Zenith_NavMeshGenerator::GenerateFromScene` (PR #39). GameLevel got a 120×120 m ground plane so the generator has something to walk on.
-3. **Engine BT leaf nodes must set `m_eLastStatus` explicitly** before returning (PR #41). Found while building `DP_BTAction_Apprehend`: without the assignment, `ExecuteCompositeBody`'s `pxChild->GetLastStatus() != RUNNING` check saw FAILURE (the construct-time default) and called `OnEnter` every tick — which reset the channel timer every frame and meant Apprehend never completed its 3-second channel.
-4. **Priest omniscient fallback compiled out of production** (PR #49). Pre-1.9 the bridge dropped back to `DP_Player::GetPossessedVillager` whenever no perceived target qualified. Now production builds (no `ZENITH_INPUT_SIMULATOR`) compile the fallback OUT; test builds gate it behind a runtime flag defaulting to true (preserves pre-1.9 test behaviour). New sight tests opt out via `SetTestOmniscientFallback(false)` in Setup.
+   - **STATIC bodies silently ignore `SetPosition`.** Priest body was authored STATIC. Fixed by switching to DYNAMIC + gravity-off + locked rotations.
+   - **Engine BT `MoveTo` returned FAILURE the same frame `SetDestination` was called.** Fixed by checking `pxNav->NeedsPath()` and returning RUNNING.
+   - **`Zenith_BTSelector` is a memory-selector**, not reactive. Fixed by `m_xTree.Reset()` on rising edge of `BB_KEY_TARGET_WITH_DEVIL`.
+2. **DP_AI navmesh cache** wired to `Zenith_NavMeshGenerator::GenerateFromScene` (PR #39).
+3. **Engine BT leaf nodes must set `m_eLastStatus` explicitly** before returning (PR #41).
+4. **Priest omniscient fallback compiled out of production** (PR #49).
+5. **BellSoul audibility clamp** (PR #76): Zenith_PerceptionSystem clamps each agent's hearing at `min(emit_radius, agent_max_range)`, so a 200m BellSoul emit didn't reach priests >30m away. Added `DP_AI::NotifyAllPriestsOfInvestigatePos` direct-BB fanout that bypasses the perception clamp.
 
-## Architectural surface added this run
+## Architectural surface added in this run
 
-Public APIs new this run, on `DP_Player`:
+Public APIs new on `DP_Player`:
 
-- `TryVoluntaryPossessSwitch(EntityID) -> bool` — player-driven possession path. Runs the cooldown + range gates. System paths (death, apprehend) keep using direct `SetPossessedVillager`.
+- `TryVoluntaryPossessSwitch(EntityID) -> bool` — player-driven path (cooldown + range gates).
 - `TickPossessionCooldown(fDt)` / `GetPossessionCooldownRemaining()` — MVP-1.5.
-- `GetDemonScent(EntityID)` / `TickDemonScent(fDt)` / `WriteHighestScentToBlackboard()` — MVP-1.6 hound-prep data path.
-- `SetTestOmniscientFallback(bool)` / `IsTestOmniscientFallbackEnabled()` — MVP-1.9 test toggle, ZENITH_INPUT_SIMULATOR-only.
+- `GetDemonScent(EntityID)` / `TickDemonScent(fDt)` / `WriteHighestScentToBlackboard()` — MVP-1.6.
+- `SetTestOmniscientFallback(bool)` / `IsTestOmniscientFallbackEnabled()` — MVP-1.9, test-only.
+- `ResetForNewRun()` (PR #77) — clears every per-run state owner. Called by `DPPauseMenuController::HandleRestart/HandleQuit` AND the harness between-tests hook. Was named `ResetForTest`; renamed because the "ForTest" suffix was misleading after MVP-2.5.5 wired it into production. Backward-compat alias `ResetForTest()` retained under `ZENITH_INPUT_SIMULATOR`.
 
-On `DPVillager_Behaviour`:
-
-- `IsSprintingNow() const` / `IsWalkQuietNow() const` — test accessors for the movement state machine.
-- `m_fFootstepCountdown` + `TickFootsteps(fDt, bMoving)` — emits to both `Zenith_AudioBus` (test recorder + future asset hook) and `Zenith_PerceptionSystem` (priest hearing). Loudness multiplied by `movement.walk_footstep_loudness_multiplier` when walk-quiet.
-
-On `DPItemBase_Behaviour`:
-
-- `BeginPostDropCooldown()` — public setter called by `DPPlayerController_Behaviour::HandleDropItem` so dropped items don't immediately re-pick-up from the villager's foot position.
-
-On `DP_AI`:
+New on `DP_AI`:
 
 - `BB_KEY_HIGH_SCENT_TARGET` — priest BB key the future hound BT will read.
+- `NotifyAllPriestsOfInvestigatePos(Vec3)` (PR #76) — direct-BB fanout. Bypasses perception clamp. Used for "map-wide" stimuli like BellSoul.
+
+New on `DP_Night` (PR #57):
+
+- `StartNight(fDuration)` / `TickNight(fDt)` / `GetNightTimeRemaining()` / `IsNightActive()` / `Reset()`.
+- Fires `DP_OnRunLost{Dawn}` exactly once on cross-zero.
+
+New on `DP_Save` (PR #56):
+
+- `DP_RunState` struct + binary round-trip. Schema version anchored; corruption + mismatch fall back to default.
 
 New BT nodes in `Components/DP_BT_Nodes.h`:
 
-- `DP_BTAction_Apprehend` — placed first in the priest's Selector; channels in place when in `priest.apprehend_range_m` of the target, dispatches `DP_OnRunLost{Apprehended}` on channel completion.
+- `DP_BTAction_Apprehend` (PR #41) — channels in apprehend range, dispatches `DP_OnRunLost{Apprehended}`.
 
-New tuning fields in `Config/Tuning.json` (under `movement`):
+New on `DPHUDController_Behaviour` (PR #75):
 
-- `footstep_interval_s` (0.4)
-- `footstep_loudness` (0.3)
-- `footstep_radius_m` (10.0)
+- Subscribes to `DP_OnRunLost`. Per-cause permanent banner via `SetStatusText`. Test accessors `DidRunLostHandlerFireForTest` / `LastRunLostCauseForTest` / `ResetRunLostForTest`.
 
 ## Ownership
 
-**Per user direction 2026-05-12: engine work is in-scope for autonomous orchestrator + subagents.** No parallel human work track. The orchestrator drives both game-side tasks (`Games/DevilsPlayground/...`) and engine-side tasks (`Zenith/...`) sequentially. Mitigations on engine PRs:
+**Per user direction 2026-05-12: engine work is in-scope for autonomous orchestrator + subagents.** No parallel human work track. The orchestrator drives both game-side and engine-side tasks sequentially. Mitigations on engine PRs:
 
 - **Mandatory Reviewer subagent** on every engine PR (per OrchestratorPlaybook §5.4).
-- **Full test suite + Combat smoke build** on every engine PR (catches cross-game regressions from shared `Zenith/` changes).
+- **Full test suite + Combat smoke build** on every engine PR.
 - **Design rationale in `DecisionLog.md` before the PR** for any net-new engine namespace or non-trivial algorithm choice.
 
-Tomos's role remains: tick `ManualSetupChecklist.md` boxes once before the first session; review high-stakes design rationale via `DecisionLog.md`; final eye-test on S2 art when it arrives.
+Tomos's role: tick `ManualSetupChecklist.md` once before the first session; review high-stakes design rationale via `DecisionLog.md`; final eye-test on S2 art when it arrives.
 
 ## Notes for next agent
 
-1. **Operating mode for fresh sessions:** orchestrator + subagents (Mode B). Read [OrchestratorPlaybook.md](OrchestratorPlaybook.md) before doing anything else. The user explicitly chose this on 2026-05-11 and explicitly forbade git worktrees.
+1. **Operating mode for fresh sessions:** orchestrator + subagents (Mode B). Read [OrchestratorPlaybook.md](OrchestratorPlaybook.md) before doing anything else.
 2. **Hard invariants:** (a) only the orchestrator invokes MSBuild / Tools/run_dp_tests.ps1 / the game executable; (b) no worktrees, all work on `master` with per-task feature branches; (c) only the orchestrator writes Status.md / Questions.md / DecisionLog.md / MvpRoadmap.md / Config/*.json.
-3. **First action:** verify the baseline. Build the prototype (`vs2022_Debug_Win64_True`, target DevilsPlayground), run the full suite via `Tools/run_dp_tests.ps1 -Headless`. Expect **51 PASSED / 0 FAILED / 15 SKIPPED** on `master @ 0a95e1b7` (or **53 PASSED** once PR #49 merges). If any test goes red, fix before starting new work.
-4. **Phase 1 deferred items** to consider next, roughly in priority order:
-   - **Test coverage gaps** (see the "Suggested test coverage" section at the bottom of this file).
-   - **MVP-1.4.6** Drop-pickup chain handoff — needs movement-sim setup; ~1 day.
-   - **MVP-1.4.1–3** Voluntary-switch faint state machine — villager `m_eState` field (Idle/Possessed/Fainted/Dead) + 10 s recovery + 2 tests.
-   - **MVP-1.7.6** Aelfric effective hearing halved — distance-threshold maths; the data path is exercised by `Test_PriestBBBridge` already.
-   - **MVP-1.3.5** Dawn + NoVessels causes — needs the Night timer (Phase 4) and a multi-villager death scenario.
-   - **MVP-1.10** Save/load — `DP_RunState` struct + serialisation; bigger chunk, schema-version anchor mandatory.
-5. **Branching:** all work on `master`. Branch as `dp/mvp-<task-id>` or `dp/<scope>`. The worktree at `.claude/worktrees/flamboyant-mirzakhani-9186f1/` is irrelevant to DP.
-6. **No external spend** unless you find a paid blocker (and even then, log it in Questions.md and pick a different task to unblock yourself).
-7. **Engine surface to be aware of** for new tests/features:
-   - `Zenith_BTNode::m_eLastStatus` must be assigned by leaf nodes before returning (BTLeaf doesn't auto-set it).
+3. **First action:** verify the baseline. Build the prototype, run the full suite via `Tools/run_dp_tests.ps1 -Headless`. Expect **~107-110 PASSED / 0 FAILED** on `master @ b64af334`+ (count depends on whether #77/#78 have merged).
+4. **Next-up work** (now that Phase 1 + 2 are substantively done):
+   - **Phase 3 (assets)** — Mixamo Y-Bot spike (`MVP-3.0.1` 🚧 HUMAN_GATE), villager / priest skeletons. Most of Phase 3 needs human-provided FBX.
+   - **Phase 4 acceptance playthrough** — bot-driven (`MVP-4.3.1-3`) is the biggest deferred chunk. Needs the test-pathfinder + a real human-bot that drives the WASD/click inputs along a full run.
+   - **Integration test follow-ups:** the "write the scenario test, find a bug" pattern keeps paying off. Candidates:
+     - Pause-then-restart-then-immediately-die transitions (state-clearing race between scene reload + dispatch).
+     - HUD banner stacking: Victory + DeathEvent + RunLost dispatched in the same frame — does the right one win?
+     - Save+reload+possess: after `LoadFromBlob`, does the possessed-villager handle still resolve?
+5. **Local-run pitfalls** (caught 2026-05-15):
+   - Direct `devilsplayground.exe --automated-test <name>` invocation differs from `Tools/run_dp_tests.ps1 -Filter <name>` results. The runner adds `--skip-tool-exports --skip-unit-tests` which the engine's automated-test driver requires for reliable batched test behaviour. Always run tests through the runner script, not direct exe invocation.
+   - The `Sharpmake_Build.bat` script has a `pause` directive; running it non-interactively hangs. Invoke `Sharpmake.Application.exe` directly with the same args.
+6. **Branching:** all work on `master`. Branch as `dp/mvp-<task-id>` or `dp/<scope>`. The worktree at `.claude/worktrees/wizardly-payne-c210e5/` is the canonical session worktree.
+7. **No external spend** unless you find a paid blocker (and even then, log it in Questions.md and pick a different task to unblock yourself).
+8. **Engine surface to be aware of** for new tests/features:
+   - `Zenith_BTNode::m_eLastStatus` must be assigned by leaf nodes before returning.
    - `Zenith_TransformComponent::SetPosition` routes through Jolt when a body exists. STATIC bodies don't activate; use DYNAMIC for anything that moves via NavMeshAgent or transform writes.
    - `DP_Player::TryVoluntaryPossessSwitch` is the player path (cooldown + range gates); `SetPossessedVillager` is the system path (death, apprehend, tests).
-   - Villagers don't self-register with `Zenith_PerceptionSystem`. Sight-based tests need to call `Zenith_PerceptionSystem::RegisterTarget(villager_id, /*hostile=*/true)` manually. Production gameplay still relies on the test-only omniscient fallback; production self-registration is a future PR (see MVP-1.9.3's docstring).
+   - Villagers don't self-register with `Zenith_PerceptionSystem`. Sight-based tests need to call `Zenith_PerceptionSystem::RegisterTarget(villager_id, /*hostile=*/true)` manually.
+   - **Perception hearing has a clamp**: `min(emit_radius, agent_max_range)`. For "map-wide" stimuli (BellSoul-class) use `DP_AI::NotifyAllPriestsOfInvestigatePos` to bypass.
+   - `DP_Player::ResetForNewRun()` is the canonical reset (PR #77). `ResetForTest` is a backward-compat alias for tests only.
 
-## Suggested test coverage — high-value gaps after this run
+## Suggested next coverage gaps
 
-Tests that would catch a SPECIFIC concrete regression, ranked by likelihood. Full discussion in 2026-05-14 chat transcript.
+Tests that would catch a SPECIFIC concrete regression. Most prior gaps from earlier Status.md revisions have been closed.
 
 | Test | What it would catch | Effort |
 |------|---------------------|--------|
-| `Test_P1Range_AnchorMovesWithEachHop` | Anchor moving correctly on each successful hop (existing tests only check 1 hop; a "stuck anchor" refactor would silently pass) | S |
-| `Test_P1Scent_DecaysOverTime` | `TickDemonScent` actually firing — accidental decay=0 or commented-out tick would slip through | S |
-| `Test_P1Scent_HighestWinsInBlackboard` | `WriteHighestScentToBlackboard` picking max not last; a "last-bumped" refactor would pass with one villager | S |
-| `Test_P1Sprint_WinsTieOverWalkQuiet` | The Shift+Ctrl priority order encoded in `OnUpdate` is never asserted | S |
-| `Test_P1Drop_PickupChainHandoff` (MVP-1.4.6) | Post-drop cooldown expires + re-pickup re-engages (full chain) | M |
-| `Test_P1Scent_NoBumpWhilePossessing` | Scent bump fires only on voluntary switch, not every tick (a misplaced bump in `TickDemonScent` would grow scent unboundedly) | S |
-| `Test_P1Apprehend_PriestStandsStillDuringChannel` | Priest transform doesn't move during the 3 s channel (current test only verifies the event fires) | M |
+| `Test_P2HUD_VictoryThenRunLostBannerWins` | Run-lost banner overwrites Victory banner (or vice versa) when both dispatch in the same frame | S |
+| `Test_P1Save_PossessedVillagerHandleSurvivesReload` | `LoadFromBlob` re-resolves the possessed-villager handle (entity-index reuse after scene unload is a classic dangling-handle source) | M |
+| `Test_P4Playthrough_VictoryThenRestartIsClean` | Pause-R after winning produces a clean second run (no leftover DP_Win state, no leftover held items) | M |
+| `Test_P2Forge_RecipeRespectsHeldVillagerTag` | Forge crafting checks the holder's archetype tag (Child can't trigger forge) | S |
 
 ## Last completed
 
-- **MVP-1.9** (PR #49, in CI 2026-05-14) — priest omniscience removed (production build) + test-only opt-in fallback + 2 sight tests. See "Current state" table.
-- **MVP-1.4.4–5** (PR #48, merged `0a95e1b7` 2026-05-14) — drop verb (G) at foot position + 0.5 s pickup cooldown + DPItemBase tick gate + Test_P1Drop_GoesToGroundAtBodyPosition.
-- **MVP-1.7.4–5** (PR #47, merged `ca38e3a7` 2026-05-14) — walk-quiet (Ctrl) + footstep emission system. Local result: normal=0.300, quiet=0.150, ratio=0.500 (exact tuning value, zero rounding drift).
-- **MVP-1.7.1–3** (PR #46, merged `63f965c7` 2026-05-14) — sprint (Shift) + DPVillager `IsSprintingNow` state cache + 2 tests. Local result: sprint=4.065 s drop vs walk=1.016 s = diff 3.049 s in a 1 s window (matches the 3 s/s extra cost tuning).
-- **MVP-1.6** (PR #45, merged `9fc2dc45` 2026-05-14) — demon-scent table + tick decay + write-to-priest-BB.
-- **MVP-1.8** (PR #44, merged `9e3a351e` 2026-05-14) — possession range gate; anchor moves on each successful hop ("demon-hop chain" semantic).
-- **MVP-1.5** (PR #43, merged `46c4361e` 2026-05-14) — possession cooldown after voluntary switch; death/apprehend bypass.
-- **MVP-1.3.3–4** (PR #42, merged `f3e20b9f` 2026-05-14) — apprehend switch-breaks + out-of-range regression guards.
-- **MVP-1.3.1–2** (PR #41, merged `d2d7082f` 2026-05-14) — DP_OnRunLost event + DP_BTAction_Apprehend BT branch + Test_P1Apprehend_PriestCatchesPlayer. **Bug found + fixed:** Zenith leaf BT nodes must explicitly set `m_eLastStatus` before returning.
-- **MVP-1.2.3–4** (PR #40, merged `82fdd2e9` 2026-05-14) — navmesh closed-door + regen-on-swap tests. CI fix: dropped a spurious pointer-difference gate because CI's heap allocator was observed to reuse freed addresses.
-- **MVP-1.2.2 + PriestPursuit stabilisation** (PR #39, merged `d80c50c0` 2026-05-14) — DP_AI wired to `GenerateFromScene` + priest body DYNAMIC + engine BT pending-path tolerance + reactive selector hack. Three stacked root causes; full breakdown above.
+- **PR #76** (merged `2026-05-15T01:09Z`) — MVP-2.2.6 BellSoul truly map-wide. Direct-BB fanout to every priest, bypassing perception clamp. New `Test_P2BellSoul_AudibleAcrossMap` at 120 m.
+- **PR #75** (merged `2026-05-15T00:49Z`) — MVP-4.2 run-lost HUD banner + 3 loss-state playthrough tests.
+- **PR #74** (merged `2026-05-14T23:11Z`) — pause Restart actually clears run state + reloads (caught state-leak via integration test).
+- **PR #73** (merged `2026-05-14T22:52Z`) — Phase-2 integration tests; caught real forge → priest perception gap.
+- **PR #72** (merged `2026-05-14T22:33Z`) — Phase-2 integration: memory fog wiring + BellSoul priest perception.
+- **PR #71** (merged `2026-05-14T22:09Z`) — MVP-2.5.{5,6} pause-menu R/Q shortcuts + main-menu Quit.
+- **PR #70** (merged `2026-05-14T21:50Z`) — MVP-2.5.{1,3} HUD whisper line + Aelfric awareness icon.
+- **PR #69** (merged `2026-05-14T21:32Z`) — MVP-2.5.{2,4} HUD scent + dawn gauge.
+- **PR #68** (merged `2026-05-14T21:16Z`) — MVP-2.4.5 memory-fog state machine.
+- **PR #67** (merged `2026-05-14T20:42Z`) — MVP-2.3.4 forge audible across the village.
 
 For PRs older than 2026-05-14 see git log.
