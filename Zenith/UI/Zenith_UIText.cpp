@@ -215,14 +215,107 @@ void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
     // each is aligned within the element bounds. Left alignment or single-line text
     // can submit the display string as one block.
     const bool bMultiLine = strDisplay.find('\n') != std::string::npos;
+    const float fTextHeight = GetTextHeight();
+    float fTextStartX = 0.0f;
+    float fTextEndX = 0.0f;
     if (m_eAlignment != TextAlignment::Left && bMultiLine)
     {
         RenderMultilineAligned(xCanvas, strDisplay, fLeft, fWidth, fStartY, fAlpha);
+        // For warning bounds: use the widest line as a worst-case
+        // approximation. The actual rendered text may be narrower for
+        // shorter lines, but it never exceeds GetTextWidth().
+        const float fMaxLineWidth = GetTextWidth();
+        const float fAlignedX = ComputeHorizontalStartX(fLeft, fWidth, fMaxLineWidth, m_eAlignment);
+        fTextStartX = fAlignedX;
+        fTextEndX = fAlignedX + fMaxLineWidth;
     }
     else
     {
-        const float fLineX = ComputeHorizontalStartX(fLeft, fWidth, GetTextWidth(), m_eAlignment);
+        const float fLineWidth = GetTextWidth();
+        const float fLineX = ComputeHorizontalStartX(fLeft, fWidth, fLineWidth, m_eAlignment);
         SubmitTextWithShadow(xCanvas, strDisplay, { fLineX, fStartY }, fAlpha);
+        fTextStartX = fLineX;
+        fTextEndX = fLineX + fLineWidth;
+    }
+
+    // Off-screen detection (MVP-UI-polish): if the rendered text extends
+    // past any canvas edge, log a once-per-element warning. Catches the
+    // "anchored top-right + Left alignment = text flows off the right
+    // edge" bug class. Doesn't run the check every frame -- once we've
+    // warned for a (name, edge) we don't re-warn until the element name
+    // changes, which is essentially never. Use a `static set` per UIText
+    // instance is overkill; use a per-instance dirty-bit set on the four
+    // edges instead.
+    const Zenith_Maths::Vector2 xCanvasSize = xCanvas.GetSize();
+    const float fTextTopY = fStartY;
+    const float fTextBotY = fStartY + fTextHeight;
+    // Allow a tiny epsilon -- floating-point bound checks can otherwise
+    // fire on the pixel-perfect-edge case. 0.5 px is well below
+    // perceptual relevance.
+    constexpr float kEpsilon = 0.5f;
+    auto CheckEdge = [&](bool& bWarned, const char* szEdge, float fValue, const char* szRelation, float fLimit)
+    {
+        if (bWarned) return;
+        Zenith_Warning(LOG_CATEGORY_UI,
+            "Zenith_UIText '%s' renders past %s edge of canvas: %s=%.1f (limit %.1f). Likely missing TextAlignment for the anchor: TopRight/BottomRight anchors need TextAlignment::Right, *Center anchors need TextAlignment::Center, otherwise the text flows off the screen edge.",
+            m_strName.c_str(), szEdge, szRelation, fValue, fLimit);
+        bWarned = true;
+    };
+    if (fTextStartX < -kEpsilon)
+    {
+        CheckEdge(m_bWarnedOffLeft, "LEFT", fTextStartX, "startX", 0.0f);
+    }
+    if (fTextEndX > xCanvasSize.x + kEpsilon)
+    {
+        CheckEdge(m_bWarnedOffRight, "RIGHT", fTextEndX, "endX", xCanvasSize.x);
+    }
+    if (fTextTopY < -kEpsilon)
+    {
+        CheckEdge(m_bWarnedOffTop, "TOP", fTextTopY, "topY", 0.0f);
+    }
+    if (fTextBotY > xCanvasSize.y + kEpsilon)
+    {
+        CheckEdge(m_bWarnedOffBottom, "BOTTOM", fTextBotY, "bottomY", xCanvasSize.y);
+    }
+
+    // Anchor-alignment-mismatch warning: catches the "Center anchor +
+    // Left alignment = text appears off-centre" bug class. The text
+    // technically fits inside the canvas so the off-edge warning above
+    // won't fire, but the visual effect is the same authoring bug:
+    // the player sees text drifting toward one edge.
+    //
+    // Mismatch rules (anchor X position in normalized 0..1 space):
+    //   anchor.x near 1.0 (right-anchored) -> expect Right alignment
+    //   anchor.x near 0.5 (center-anchored) -> expect Center alignment
+    //   anchor.x near 0.0 (left-anchored)   -> expect Left alignment
+    // Tolerance 0.15 on the anchor value so TopCenter (0.5, 0) and
+    // BottomCenter (0.5, 1) both count as centered for this check.
+    if (!m_bWarnedAlignmentMismatch && fWidth < 1.0f) // only when size is 0 (anchor-driven)
+    {
+        const float fAnchorX = m_xAnchor.x;
+        const char* szExpected = nullptr;
+        if (fAnchorX > 0.85f && m_eAlignment != TextAlignment::Right)
+        {
+            szExpected = "Right";
+        }
+        else if (fAnchorX > 0.35f && fAnchorX < 0.65f && m_eAlignment != TextAlignment::Center)
+        {
+            szExpected = "Center";
+        }
+        else if (fAnchorX < 0.15f && m_eAlignment != TextAlignment::Left)
+        {
+            szExpected = "Left";
+        }
+        if (szExpected != nullptr)
+        {
+            const char* szActual = "Left";
+            if (m_eAlignment == TextAlignment::Center) szActual = "Center";
+            else if (m_eAlignment == TextAlignment::Right) szActual = "Right";
+            Zenith_Warning(LOG_CATEGORY_UI,
+                "Zenith_UIText '%s' has anchor.x=%.2f but TextAlignment::%s -- expected TextAlignment::%s for this anchor. Text will visually drift toward one edge instead of being aligned to the anchor.",
+                m_strName.c_str(), fAnchorX, szActual, szExpected);
+            m_bWarnedAlignmentMismatch = true;
+        }
     }
 
     Zenith_UIElement::Render(xCanvas);

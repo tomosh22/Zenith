@@ -116,6 +116,21 @@ private:
     bool m_bShadowEnabled = false;
     Zenith_Maths::Vector4 m_xShadowColor = {0.0f, 0.0f, 0.0f, 0.5f};
     Zenith_Maths::Vector2 m_xShadowOffset = {2.0f, 2.0f};
+
+    // Off-screen warning state -- one bool per edge. Render() logs a
+    // Zenith_Warning the FIRST time the rendered text extends past
+    // that edge of the canvas, then flips the bool true to suppress
+    // future warnings for the same edge on the same element. The warning
+    // catches the "anchored TopRight + default Left alignment = text
+    // flows off the right edge" class of authoring bugs.
+    mutable bool m_bWarnedOffLeft   = false;
+    mutable bool m_bWarnedOffRight  = false;
+    mutable bool m_bWarnedOffTop    = false;
+    mutable bool m_bWarnedOffBottom = false;
+    // Alignment-anchor-mismatch warning: catches the "Center anchor +
+    // Left alignment = text appears off-centre" bug where text fits
+    // inside the canvas but is visually offset toward one edge.
+    mutable bool m_bWarnedAlignmentMismatch = false;
 };
 
 } // namespace Zenith_UI
