@@ -37,11 +37,11 @@ param(
     [switch]$SkipRun   = $false,
     # Bot needs more than the harness default 600-frame cap to walk
     # the GameLevel map. Pre-possess + scene load = ~60 frames; pathing
-    # to 5 objectives + the pentagram is ~30-40 s of bot time at the
-    # bot's jog speed. 2100 frames = 35 s, generous enough that the
-    # bot can win the placeholder GameLevel once Phase 3b's pathing
-    # is wired in.
-    [int]$ExitAfterFrames = 2100,
+    # to 5 objectives + the pentagram via a multi-possession chain is
+    # ~3-5 min of bot time at jog speed. 18300 frames = 5 min, matches
+    # Test_DPHeuristicBotPlaythrough's kMaxFrames so the bot gets its
+    # full budget when invoked through this runner.
+    [int]$ExitAfterFrames = 18300,
     [string]$RunnerScript = "Tools/run_dp_tests.ps1",
     # When -Visualise is set, post-process the captured telemetry into
     # a top-down PNG (Tools/dp_telemetry_visualise.ps1). Useful for

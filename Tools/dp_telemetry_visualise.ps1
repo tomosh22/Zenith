@@ -522,8 +522,14 @@ foreach ($evt in $sortedEvents) {
     $entityKey = "$($evt.payload.entityA.idx):$($evt.payload.entityA.gen)"
     $pos = FindEntityPosAtFrame $entityKey $evt.frame
     if ($null -eq $pos) {
-        # Fallback: middle of the world bounds.
-        $pos = @(($minX + $maxX) / 2.0, ($minZ + $maxZ) / 2.0)
+        # Fallback: middle of the world bounds. Force scalar [double]
+        # casts because PowerShell can occasionally promote $minX/$maxX
+        # to System.Object[] across closure captures (observed with 3000+
+        # frame samples). Without the casts the division below crashes
+        # with "op_Division on System.Object[]".
+        $cx = [double]([double]$minX + [double]$maxX) / 2.0
+        $cz = [double]([double]$minZ + [double]$maxZ) / 2.0
+        $pos = @($cx, $cz)
     }
     $p = Project $pos[0] $pos[1]
     $rawName = if ($evt.PSObject.Properties.Name -contains 'name') { [string]$evt.name } else { "evt$($evt.type)" }

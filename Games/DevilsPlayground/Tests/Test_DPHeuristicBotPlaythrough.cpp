@@ -53,7 +53,14 @@
 
 namespace
 {
-	constexpr int   kMaxFrames        = 1800;            // ~30 s at fixed-dt 1/60
+	// Bumped 2026-05-16 (Phase-5-audit follow-up): old 1800 frames = 30 s
+	// covered exactly one villager's life timer + ~5 s of the second
+	// possession. Not enough for a full playthrough -- bot has 5 objectives
+	// to collect + deliver across a 100 m map with multi-possession chains.
+	// 18000 frames = 5 min wall-clock; conservative upper bound while we
+	// observe whether the bot can actually win. Will tighten back down
+	// once we have evidence of win consistency.
+	constexpr int   kMaxFrames        = 18000;           // ~5 min at fixed-dt 1/60
 	constexpr float kFixedDt          = 1.0f / 60.0f;
 	constexpr uint32_t kPositionSamplePeriodFrames = 6u; // 10 Hz
 	constexpr int kSceneLoadTimeoutFrames = 120;         // 2 s; matches FullPlaythrough patience
