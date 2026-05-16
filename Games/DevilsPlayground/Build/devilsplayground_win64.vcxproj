@@ -507,6 +507,8 @@
     <ClCompile Include="..\Tests\Test_DoubleDoorAndForge.cpp" />
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp" />
     <ClCompile Include="..\Tests\Test_DPHeuristicBotPlaythrough.cpp" />
+    <ClCompile Include="..\Tests\Test_DPHeuristicBot_GoalDispatch.cpp" />
+    <ClCompile Include="..\Tests\Test_DPHeuristicBot_Pathing.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryAnalyzer.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp" />
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp" />

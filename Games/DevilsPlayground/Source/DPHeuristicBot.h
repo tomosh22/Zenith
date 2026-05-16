@@ -28,6 +28,7 @@
 
 #include "EntityComponent/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"
+#include "Source/DevilsPlayground_Tags.h"
 
 #include <cstdint>
 
@@ -71,6 +72,67 @@ namespace DPHeuristicBot
 	uint32_t GetInteractPressCount();
 	uint32_t GetDropPressCount();
 	uint32_t GetPossessClickCount();
+
+	// =========================================================
+	// TestSurface -- testability hooks. Exposes the bot's pure
+	// helpers (grid math, A*, goal dispatch) so unit tests can pin
+	// their behaviour against a hand-built walkability grid +
+	// observation tuple without needing a scene or real entities.
+	//
+	// Phase 3b added ~200 lines of A* / replan code; this namespace
+	// is the contract that lets Test_DPHeuristicBot_* exercise it
+	// without coupling tests to internal storage.
+	//
+	// All functions are no-ops in shipping builds (the whole header
+	// is #ifdef'd to ZENITH_INPUT_SIMULATOR).
+	// =========================================================
+	namespace TestSurface
+	{
+		// Pathing-grid configuration constants. Tests use these to
+		// build hand-crafted walkability grids of the right size.
+		int   GetGridDim();
+		float GetCellSize();
+		float GetOriginX();
+		float GetOriginZ();
+
+		// Inject a walkability grid for tests. abGrid must have
+		// length GetGridDim() * GetGridDim(); the function copies in
+		// and marks the grid as built (BuildPathGrid will not rebuild
+		// from raycasts). Pair with ResetForTest() to release.
+		void SetWalkabilityGridForTest(const bool* abGrid);
+		void ResetForTest();
+
+		// Grid math.
+		void WorldToCell(const Zenith_Maths::Vector3& xWorld, int& iOutX, int& iOutZ);
+		Zenith_Maths::Vector3 CellToWorld(int iX, int iZ);
+		bool IsCellWalkable(int iX, int iZ);
+
+		// Spiral-outward fallback. Returns -1 if no walkable cell
+		// within iMaxRing rings of (iX, iZ).
+		int SnapToWalkable(int iX, int iZ, int iMaxRing = 8);
+
+		// A* over the injected grid. Returns true + populates xOutPath
+		// with world-space waypoints from start to end. Returns false
+		// when no path exists.
+		bool ComputePathAStar(const Zenith_Maths::Vector3& xStart,
+		                     const Zenith_Maths::Vector3& xEnd,
+		                     Zenith_Vector<Zenith_Maths::Vector3>& xOutPath);
+
+		// Pure goal-dispatch table. Production PickGoal builds an
+		// Observation from DP_Player / scene queries; this entry
+		// point takes the same logical state as primitives so tests
+		// can pin every branch.
+		//
+		// fPriestDist < 0 means "no priest in scene / unknown".
+		// fLife = 0 is acceptable when bPossessed == false.
+		Goal PickGoalForState(bool bPossessed,
+		                      float fPriestDist,
+		                      float fLife,
+		                      DP_ItemTag eHeldTag,
+		                      bool bPentagramPresent,
+		                      bool bForgePresent,
+		                      bool bObjectiveItemAvailable);
+	}
 }
 
 #endif // ZENITH_INPUT_SIMULATOR

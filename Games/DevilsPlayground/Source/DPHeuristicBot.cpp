@@ -552,24 +552,45 @@ namespace DPHeuristicBot
 		Zenith_EntityID xForge;
 	};
 
-	static Goal PickGoal(const Observation& xObs)
+	// Pure dispatch over primitives -- testable in isolation. Lives
+	// next to the wrapper so the production read-path stays one call
+	// away from the documented decision table.
+	static Goal PickGoalForStateImpl(bool bPossessed,
+	                                 float fPriestDist,
+	                                 float fLife,
+	                                 DP_ItemTag eHeldTag,
+	                                 bool bPentagramPresent,
+	                                 bool bForgePresent,
+	                                 bool bObjectiveItemAvailable)
 	{
-		if (!xObs.bPossessed)
+		if (!bPossessed)
 			return Goal::PossessClosest;
-		if (xObs.fPriestDist >= 0.0f && xObs.fPriestDist < kFleeDistance)
+		if (fPriestDist >= 0.0f && fPriestDist < kFleeDistance)
 			return Goal::FleeFromPriest;
-		if (xObs.fLife > 0.0f && xObs.fLife < kSwapLifeThreshold)
+		if (fLife > 0.0f && fLife < kSwapLifeThreshold)
 			return Goal::BodySwap;
 		// Holding-objective path: deliver.
-		if (DP_IsObjectiveTag(xObs.eHeld) && xObs.xPentagram.IsValid())
+		if (DP_IsObjectiveTag(eHeldTag) && bPentagramPresent)
 			return Goal::WalkToPentagram;
 		// Holding iron + forge known -> forge it.
-		if (xObs.eHeld == DP_ItemTag::Iron && xObs.xForge.IsValid())
+		if (eHeldTag == DP_ItemTag::Iron && bForgePresent)
 			return Goal::WalkToForge;
 		// Default: chase nearest objective.
-		if (xObs.xObjectiveItem.IsValid())
+		if (bObjectiveItemAvailable)
 			return Goal::WalkToObjective;
 		return Goal::Idle;
+	}
+
+	static Goal PickGoal(const Observation& xObs)
+	{
+		return PickGoalForStateImpl(
+			xObs.bPossessed,
+			xObs.fPriestDist,
+			xObs.fLife,
+			xObs.eHeld,
+			xObs.xPentagram.IsValid(),
+			xObs.xForge.IsValid(),
+			xObs.xObjectiveItem.IsValid());
 	}
 
 	// =========================================================
@@ -772,6 +793,77 @@ namespace DPHeuristicBot
 	uint32_t GetInteractPressCount()  { return g_uInteractPresses; }
 	uint32_t GetDropPressCount()      { return g_uDropPresses; }
 	uint32_t GetPossessClickCount()   { return g_uPossessClicks; }
+
+	// =========================================================
+	// TestSurface implementations -- thin pass-throughs to the
+	// file-static helpers above. Lives in the same translation
+	// unit so it can reach the file-static state (g_abPathWalkable,
+	// g_bPathGridBuilt) without making those symbols externally
+	// visible.
+	// =========================================================
+	namespace TestSurface
+	{
+		int   GetGridDim()  { return kPathGridDim; }
+		float GetCellSize() { return kPathCellSize; }
+		float GetOriginX()  { return kPathOriginX; }
+		float GetOriginZ()  { return kPathOriginZ; }
+
+		void SetWalkabilityGridForTest(const bool* abGrid)
+		{
+			if (abGrid == nullptr) return;
+			for (int i = 0; i < kPathGridDim * kPathGridDim; ++i)
+			{
+				g_abPathWalkable[i] = abGrid[i];
+			}
+			g_bPathGridBuilt = true;
+		}
+
+		void ResetForTest()
+		{
+			for (int i = 0; i < kPathGridDim * kPathGridDim; ++i)
+			{
+				g_abPathWalkable[i] = false;
+			}
+			g_bPathGridBuilt = false;
+			g_axCurrentPath.Clear();
+			g_iPathWaypoint = 0;
+			g_xLastPlannedTarget = Zenith_Maths::Vector3(1e9f, 0.0f, 0.0f);
+		}
+
+		void WorldToCell(const Zenith_Maths::Vector3& xWorld, int& iOutX, int& iOutZ)
+		{
+			::DPHeuristicBot::WorldToCell(xWorld, iOutX, iOutZ);
+		}
+		Zenith_Maths::Vector3 CellToWorld(int iX, int iZ)
+		{
+			return ::DPHeuristicBot::CellToWorld(iX, iZ);
+		}
+		bool IsCellWalkable(int iX, int iZ)
+		{
+			return ::DPHeuristicBot::IsCellWalkable(iX, iZ);
+		}
+		int SnapToWalkable(int iX, int iZ, int iMaxRing)
+		{
+			return ::DPHeuristicBot::SnapToWalkable(iX, iZ, iMaxRing);
+		}
+		bool ComputePathAStar(const Zenith_Maths::Vector3& xStart,
+		                     const Zenith_Maths::Vector3& xEnd,
+		                     Zenith_Vector<Zenith_Maths::Vector3>& xOutPath)
+		{
+			return ::DPHeuristicBot::ComputePathAStar(xStart, xEnd, xOutPath);
+		}
+		Goal PickGoalForState(bool bPossessed,
+		                      float fPriestDist,
+		                      float fLife,
+		                      DP_ItemTag eHeldTag,
+		                      bool bPentagramPresent,
+		                      bool bForgePresent,
+		                      bool bObjectiveItemAvailable)
+		{
+			return PickGoalForStateImpl(bPossessed, fPriestDist, fLife, eHeldTag,
+				bPentagramPresent, bForgePresent, bObjectiveItemAvailable);
+		}
+	}
 }
 
 #endif // ZENITH_INPUT_SIMULATOR

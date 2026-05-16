@@ -191,7 +191,54 @@ static bool TestBadVersion()
 }
 
 // -----------------------------------------------------------------------
-// 5. End-without-Begin returns false (no crash, no file write).
+// 5. JSON exporter works with no event-name resolver (nullptr is the
+// documented "fall back to numeric form" sentinel).
+// -----------------------------------------------------------------------
+static bool TestJsonExportWithoutResolver()
+{
+	const std::string strBin  = TempPath("noresolver.ztlm");
+	const std::string strJson = TempPath("noresolver.json");
+
+	auto& xRec = Zenith_Telemetry::GetRecorder();
+	Zenith_Telemetry::Header xHeader;
+	xHeader.strSceneName = "NoResolverTest";
+	xRec.Begin(xHeader);
+	xRec.NextFrame();
+	{
+		Zenith_Telemetry::FrameSample xS;
+		xS.fTimeS = 0.016f;
+		xRec.RecordFrame(xS);
+	}
+	{
+		Zenith_Telemetry::Event xE;
+		xE.uEventType = 12345u; // arbitrary value, no resolver match
+		xRec.RecordEvent(xE);
+	}
+	// End with nullptr resolver -> exporter must NOT attempt to call it.
+	if (!xRec.End(strBin.c_str(), strJson.c_str(), /*pfnEventTypeToString=*/nullptr))
+		return Fail("noresolver: End returned false");
+
+	// Open the JSON file and verify:
+	//   * the event row is present (type:12345)
+	//   * no "name":"..." key was inserted (resolver bypassed)
+	std::ifstream xIn(strJson, std::ios::binary | std::ios::ate);
+	if (!xIn.is_open()) return Fail("noresolver: JSON file did not open");
+	const std::streamsize llLen = xIn.tellg();
+	if (llLen <= 0) return Fail("noresolver: JSON file empty");
+	xIn.seekg(0);
+	std::string strBody(static_cast<size_t>(llLen), '\0');
+	xIn.read(strBody.data(), llLen);
+
+	if (strBody.find("\"type\":12345") == std::string::npos)
+		return Fail("noresolver: event type 12345 missing from JSON");
+	if (strBody.find("\"name\":") != std::string::npos)
+		return Fail("noresolver: 'name' key emitted despite nullptr resolver");
+
+	return true;
+}
+
+// -----------------------------------------------------------------------
+// 6. End-without-Begin returns false (no crash, no file write).
 // -----------------------------------------------------------------------
 static bool TestEndWithoutBegin()
 {
@@ -223,14 +270,15 @@ static void Setup_TelemetryEdge()
 	g_bPassed = false;
 	g_szFailureReason = "";
 
-	if (!TestEndWithoutBegin())      return;
-	if (!TestPauseResume())          return;
-	if (!TestSamplePeriodDefault())  return;
-	if (!TestBadMagic())             return;
-	if (!TestBadVersion())           return;
+	if (!TestEndWithoutBegin())          return;
+	if (!TestPauseResume())              return;
+	if (!TestSamplePeriodDefault())      return;
+	if (!TestBadMagic())                 return;
+	if (!TestBadVersion())               return;
+	if (!TestJsonExportWithoutResolver())return;
 
 	g_bPassed = true;
-	std::printf("[TelemetryEdgeCases] all 5 edge cases passed\n");
+	std::printf("[TelemetryEdgeCases] all 6 edge cases passed\n");
 	std::fflush(stdout);
 }
 

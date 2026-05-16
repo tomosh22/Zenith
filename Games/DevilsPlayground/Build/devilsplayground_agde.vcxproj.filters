@@ -47,6 +47,12 @@
     <ClCompile Include="..\Tests\Test_DPHeuristicBotPlaythrough.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_DPHeuristicBot_GoalDispatch.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_DPHeuristicBot_Pathing.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_DPTelemetryAnalyzer.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
