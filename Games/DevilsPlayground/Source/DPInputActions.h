@@ -78,4 +78,13 @@ namespace DP_Input
 	{
 		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
 	}
+
+	// 2026-05-16: instructional-HUD toggle. H opens / closes the
+	// full-screen help overlay authored on the GameLevel scene
+	// (HelpBg + HelpOverlay). Single-frame edge so holding H doesn't
+	// strobe the overlay.
+	inline bool ReadHelpTogglePressed()
+	{
+		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_H);
+	}
 }

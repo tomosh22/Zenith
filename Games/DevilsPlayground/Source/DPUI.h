@@ -73,6 +73,26 @@ namespace DPUI
 	static constexpr float fHUD_PAUSE_FONT      = 64.0f;
 	// Gym scene title.
 	static constexpr float fHUD_GYM_TITLE_FONT  = 56.0f;
+	// ---------------------------------------------------------------
+	// Instructional-HUD (2026-05-16). Three layers of teaching:
+	//   ControlsHint   -- persistent hotkey cheat-sheet (BottomRight).
+	//                     Compact so it stays unobtrusive in normal play.
+	//   TutorialHint   -- single context line ("Click a villager to
+	//                     possess them" / "Carry to the pentagram" /
+	//                     "Aelfric sees you -- break line of sight").
+	//                     Slightly larger so it's actually noticed.
+	//   HelpOverlay    -- full-screen modal toggled with [H]. Lists
+	//                     EVERY mechanic + every hotkey. Body 32px,
+	//                     title 56px.
+	//   MenuHowToPlay  -- FrontEnd primer block under the buttons; the
+	//                     first thing a brand-new player reads.
+	// ---------------------------------------------------------------
+	static constexpr float fHUD_CONTROLS_FONT     = 24.0f;
+	static constexpr float fHUD_TUTORIAL_FONT     = 36.0f;
+	static constexpr float fHUD_HELP_FONT         = 32.0f;
+	static constexpr float fHUD_HELP_TITLE_FONT   = 56.0f;
+	static constexpr float fMENU_HOWTO_FONT       = 28.0f;
+	static constexpr float fMENU_HOWTO_TITLE_FONT = 36.0f;
 
 	// ---------------------------------------------------------------
 	// Edge insets in pixels. Used as the pixel offset from the

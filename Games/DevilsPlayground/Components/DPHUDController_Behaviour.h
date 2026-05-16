@@ -25,6 +25,9 @@
 #include "AI/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "UI/Zenith_UIText.h"
+#include "UI/Zenith_UIRect.h"
+#include "Input/Zenith_Input.h"
+#include "Source/DPInputActions.h"
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
@@ -443,6 +446,54 @@ public:
 				pxReagent->SetVisible(false);
 			}
 		}
+
+		// ---------------------------------------------------------------
+		// Instructional HUD (user feedback 2026-05-16: HUD should teach
+		// the entire game). Three layers:
+		//   ControlsHint -- static multi-line hotkey cheat sheet
+		//                   (authored once, never touched here).
+		//   TutorialHint -- single-line context-sensitive guidance
+		//                   ("Click a villager to possess them" /
+		//                   "Carry to the pentagram" / etc.)
+		//   HelpOverlay  -- full-screen modal toggled with [H], lists
+		//                   every mechanic + every hotkey.
+		// ---------------------------------------------------------------
+
+		// Toggle full-screen help overlay on [H]. The HelpBg rect and
+		// HelpOverlay/HelpTitle text elements are authored hidden by
+		// default; here we follow m_bHelpVisible.
+		if (DP_Input::ReadHelpTogglePressed())
+		{
+			m_bHelpVisible = !m_bHelpVisible;
+		}
+		if (auto* pxHelpBg = xUI.FindElement<Zenith_UI::Zenith_UIRect>("HelpBg"))
+		{
+			pxHelpBg->SetVisible(m_bHelpVisible);
+		}
+		if (auto* pxHelpTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("HelpTitle"))
+		{
+			pxHelpTitle->SetVisible(m_bHelpVisible);
+		}
+		if (auto* pxHelp = xUI.FindElement<Zenith_UI::Zenith_UIText>("HelpOverlay"))
+		{
+			pxHelp->SetVisible(m_bHelpVisible);
+		}
+
+		// TutorialHint: pick the single most useful instruction for the
+		// current game state. Hidden when no hint is relevant.
+		if (auto* pxTut = xUI.FindElement<Zenith_UI::Zenith_UIText>("TutorialHint"))
+		{
+			const char* szHint = BuildTutorialHint(bPossessed, xV, eState, m_bRunOver);
+			if (szHint != nullptr)
+			{
+				pxTut->SetText(szHint);
+				pxTut->SetVisible(true);
+			}
+			else
+			{
+				pxTut->SetVisible(false);
+			}
+		}
 	}
 
 public:
@@ -511,6 +562,41 @@ public:
 		case DP_RunLostCause::NoVessels:   szLine = "NO VESSELS REMAIN"; break;
 		}
 		std::snprintf(szBuf, uBufSize, "%s", szLine);
+	}
+
+	// 2026-05-16 instructional HUD: pick the single most useful
+	// instruction for the current game state. Priority order:
+	//   run-over        -> hide (RestartPrompt already covers this)
+	//   not-possessed   -> "Click a villager to possess them"
+	//   priest-pursuing -> "Aelfric sees you -- break LOS"
+	//   holding-objective -> "Carry to the pentagram"
+	//   holding-iron      -> "Carry to a forge for a key"
+	//   holding-skeletonkey -> "[F] on any locked door"
+	//   holding-reagent   -> "See the reagent line"
+	//   priest-suspicious -> "He's suspicious -- walk quiet"
+	//   default           -> "Find an objective"
+	// Returns nullptr when no hint applies (HUD line hidden).
+	// Static + pure so unit tests can exercise the dispatch table.
+	static const char* BuildTutorialHint(bool bPossessed, Zenith_EntityID xV,
+	                                     AelfricState eState, bool bRunOver)
+	{
+		if (bRunOver) return nullptr;
+		if (!bPossessed)
+			return "Click a villager to possess them -- the demon needs a body.";
+		if (eState == AelfricState::Pursuing)
+			return "Aelfric sees you -- break line of sight or [Shift] to sprint.";
+		const DP_ItemTag eTag = DP_Player::GetHeldItemTag(xV);
+		if (DP_IsObjectiveTag(eTag))
+			return "Carry to the pentagram. 5 objectives end the night.";
+		if (eTag == DP_ItemTag::SkeletonKey)
+			return "Skeleton Key in hand -- press [F] on any locked door.";
+		if (eTag == DP_ItemTag::Iron)
+			return "Carry the iron to a forge. Forge it into a Skeleton Key.";
+		if (DP_IsReagentTag(eTag))
+			return "Reagent in hand -- see the description above for what it does.";
+		if (eState == AelfricState::Suspicious)
+			return "Aelfric is suspicious. Hold [Ctrl] to walk quietly.";
+		return "Find an objective -- check chests, search the village.";
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -748,4 +834,10 @@ private:
 	// RunTimer UI element.
 	bool               m_bTimerStarted        = false;
 	float              m_fRunTimerSeconds     = 0.0f;
+	// 2026-05-16 instructional HUD: [H] toggles the full-screen help
+	// overlay (HelpBg rect + HelpTitle/HelpOverlay text). Defaults to
+	// closed -- player opts in. Persists across frames; not reset by
+	// possession changes (player likely wants the overlay back if they
+	// re-open it mid-run).
+	bool               m_bHelpVisible         = false;
 };

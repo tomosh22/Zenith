@@ -526,6 +526,33 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUISize("MenuQuit", DPUI::fMENU_BTN_W, DPUI::fMENU_BTN_H);
 		Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("MenuQuit", DPUI::fMENU_BTN_FONT);
 
+		// 2026-05-16 instructional HUD: main-menu primer. Short summary
+		// of the goal + the four most useful keys, plus a reminder that
+		// [H] in-game opens the full help overlay. First thing a new
+		// player reads after launching the game.
+		Zenith_EditorAutomation::AddStep_CreateUIText("MenuHowToTitle", "How to play");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuHowToTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuHowToTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUISize("MenuHowToTitle", 1000.0f, 50.0f);
+		// Quit button sits at y = +128 (BTN_H 96 + spacing 32). Title sits ~80px below it.
+		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuHowToTitle", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING + 80.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuHowToTitle", DPUI::fMENU_HOWTO_TITLE_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("MenuHowToTitle", 1.0f, 0.85f, 0.6f, 1.0f);
+
+		Zenith_EditorAutomation::AddStep_CreateUIText("MenuHowToBody",
+			"You are a demon. Possess villagers ([LMB]) and deliver 5 objectives\n"
+			"from chests to the pentagram before dawn. Avoid the priest.\n"
+			"\n"
+			"[WASD] move    [Shift] sprint    [F] interact    [Esc] pause\n"
+			"\n"
+			"Press [H] in-game for the full controls + mechanics reference.");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuHowToBody", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuHowToBody", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUISize("MenuHowToBody", 1100.0f, 220.0f);
+		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuHowToBody", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING + 140.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuHowToBody", DPUI::fMENU_HOWTO_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("MenuHowToBody", 0.9f, 0.9f, 0.85f, 1.0f);
+
 		Zenith_EditorAutomation::AddStep_AttachScript("DPMainMenuController_Behaviour");
 
 		Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT);
@@ -723,6 +750,105 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIFontSize("InteractHint", DPUI::fHUD_INTERACT_HINT_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("InteractHint", 1.0f, 0.95f, 0.5f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("InteractHint", false);
+
+		// ----------------------------------------------------------------
+		// Instructional HUD (user feedback 2026-05-16): tooltips, hotkeys,
+		// and step-by-step instructions visible on the HUD itself so a
+		// brand-new player understands the game just by looking.
+		//
+		// Three layers:
+		//   ControlsHint  -- persistent hotkey cheat-sheet (BottomRight).
+		//   TutorialHint  -- single-line context guidance (TopCenter).
+		//   HelpOverlay   -- full-screen modal toggled with [H].
+		//
+		// IMPORTANT ordering: HelpBg rect is authored BEFORE HelpOverlay
+		// text. The canvas iterates root elements in insertion order, so
+		// the rect renders first (behind) and the text on top.
+		// ----------------------------------------------------------------
+
+		// ControlsHint -- always-visible hotkey cheat-sheet, BottomRight.
+		// Compact 24px multi-line text; right-aligned so the LHS column
+		// of each row lines up with the screen-right edge.
+		Zenith_EditorAutomation::AddStep_CreateUIText("ControlsHint",
+			"[LMB] Possess villager\n"
+			"[WASD] Move    [Q/E] Camera\n"
+			"[Shift] Sprint  [Ctrl] Walk quiet\n"
+			"[F] Interact   [G] Drop item\n"
+			"[Space] Ability   [Wheel] Zoom\n"
+			"[Esc] Pause   [R] Restart   [H] Help");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("ControlsHint", static_cast<int>(Zenith_UI::AnchorPreset::BottomRight));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("ControlsHint", static_cast<int>(Zenith_UI::TextAlignment::Right));
+		Zenith_EditorAutomation::AddStep_SetUISize("ControlsHint", 550.0f, 220.0f);
+		Zenith_EditorAutomation::AddStep_SetUIPosition("ControlsHint", -DPUI::fEDGE_INSET, -DPUI::fEDGE_INSET);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("ControlsHint", DPUI::fHUD_CONTROLS_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("ControlsHint", 0.85f, 0.85f, 0.85f, 0.9f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("ControlsHint", true);
+
+		// TutorialHint -- single-line context guidance, TopCenter, between
+		// RunTimer (at +95 from top) and the gameplay area. Slightly
+		// larger than secondary readouts so it actually draws the eye.
+		Zenith_EditorAutomation::AddStep_CreateUIText("TutorialHint", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialHint", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialHint", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUISize("TutorialHint", 1200.0f, 50.0f);
+		Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialHint", 0.0f, DPUI::fEDGE_INSET + 110.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialHint", DPUI::fHUD_TUTORIAL_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("TutorialHint", 1.0f, 0.95f, 0.7f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("TutorialHint", false);
+
+		// HelpBg -- semi-transparent black background for the HelpOverlay
+		// modal. Authored BEFORE HelpOverlay so it renders behind. Hidden
+		// by default; DPHUDController flips visibility on [H].
+		Zenith_EditorAutomation::AddStep_CreateUIRect("HelpBg");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("HelpBg", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUISize("HelpBg", 1200.0f, 900.0f);
+		Zenith_EditorAutomation::AddStep_SetUIPosition("HelpBg", 0.0f, 0.0f);
+		Zenith_EditorAutomation::AddStep_SetUIColor("HelpBg", 0.02f, 0.02f, 0.04f, 0.92f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("HelpBg", false);
+
+		// HelpOverlay -- full-screen tutorial text, toggled with [H]. Lists
+		// every mechanic + every hotkey so a brand-new player can read it
+		// once and understand the game. Hidden by default.
+		Zenith_EditorAutomation::AddStep_CreateUIText("HelpOverlay",
+			"HOW TO PLAY    (press [H] to close)\n"
+			"\n"
+			"GOAL\n"
+			"  You are a demon possessing the villagers of Aelfric's Reach.\n"
+			"  Each villager you possess lives 30 seconds before burning out.\n"
+			"  Collect 5 objectives from chests and deliver each to the\n"
+			"  pentagram in the centre. Survive until dawn.\n"
+			"\n"
+			"YOU LOSE IF\n"
+			"  * Aelfric (the priest) catches a possessed villager.\n"
+			"  * Dawn breaks before you deliver 5 objectives.\n"
+			"  * Every villager runs out of life.\n"
+			"\n"
+			"CONTROLS\n"
+			"  LMB           Possess villager under the cursor\n"
+			"  WASD          Move the possessed villager\n"
+			"  Shift         Sprint -- faster, louder, drains life quickly\n"
+			"  Ctrl          Walk quiet -- slower, half-volume footsteps\n"
+			"  F             Interact (door / chest / forge / pentagram)\n"
+			"  G             Drop the held item at your feet\n"
+			"  Space         Ability (archetype-specific)\n"
+			"  Q / E         Rotate the orbit camera\n"
+			"  Mouse Wheel   Zoom the camera\n"
+			"  Esc           Pause\n"
+			"  R             Restart after victory or loss\n"
+			"  H             Toggle this help screen\n"
+			"\n"
+			"REAGENTS\n"
+			"  BellSoul      Rings on pickup -- alerts every priest\n"
+			"  BogWater      Evaporates 8 seconds after you drop it\n"
+			"  SkeletonKey   Opens any locked door\n"
+			"  Iron          Carry to a forge for a Skeleton Key");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("HelpOverlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("HelpOverlay", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUISize("HelpOverlay", 1150.0f, 870.0f);
+		Zenith_EditorAutomation::AddStep_SetUIPosition("HelpOverlay", 0.0f, 0.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("HelpOverlay", DPUI::fHUD_HELP_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("HelpOverlay", 0.98f, 0.95f, 0.85f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("HelpOverlay", false);
 
 		// MVP-4.3.2: post-victory / post-run-lost restart prompt. Hidden
 		// by default; DPHUDController flips visibility when m_bRunOver
