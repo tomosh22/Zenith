@@ -89,6 +89,11 @@ protected:
 		// can now traverse it. The pathfinder picks this up on the next
 		// FindPath query — no navmesh rebuild, no agent reset.
 		SyncNavMeshBlock();
+		// Phase-5-audit (2026-05-16): announce the door-open milestone so
+		// the telemetry analyzer + visualiser can plot it as a discrete
+		// event rather than burying it in generic DP_OnInteract noise.
+		Zenith_EventDispatcher::Get().Dispatch(
+			DP_OnDoorOpened{ xVillager, m_xParentEntity.GetEntityID() });
 	}
 
 private:

@@ -132,6 +132,12 @@ namespace DPHeuristicBot
 		                      bool bPentagramPresent,
 		                      bool bForgePresent,
 		                      bool bObjectiveItemAvailable);
+
+		// Phase-5-audit (2026-05-16): test hook to verify the bot's
+		// path-grid is scene-aware (rebuilds when the active scene
+		// changes). Returns the scene handle for which the current
+		// walkability grid was built, or -1 when no grid is cached.
+		int GetPathGridSceneHandleForTest();
 	}
 }
 

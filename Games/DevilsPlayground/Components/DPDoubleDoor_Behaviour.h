@@ -63,6 +63,11 @@ protected:
 		if (m_bIsOpen) return;
 		if (!DP_Items::TryConsumeKeyForUnlock(xVillager, m_eRequiredKey)) return;
 		m_bIsOpen = true;
+		// Phase-5-audit (2026-05-16): same DP_OnDoorOpened event as
+		// DPDoor_Behaviour -- analyzer / visualiser don't distinguish
+		// single vs double door beyond the entityB target.
+		Zenith_EventDispatcher::Get().Dispatch(
+			DP_OnDoorOpened{ xVillager, m_xParentEntity.GetEntityID() });
 	}
 
 private:

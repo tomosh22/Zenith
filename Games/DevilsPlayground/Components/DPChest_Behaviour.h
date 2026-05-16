@@ -45,10 +45,17 @@ public:
 	bool IsOpen() const { return m_bIsOpen; }
 
 protected:
-	void HandleInteract(Zenith_EntityID /*xVillager*/) override
+	void HandleInteract(Zenith_EntityID xVillager) override
 	{
 		if (m_bIsOpen) return;
 		m_bIsOpen = true;
+		// Phase-5-audit (2026-05-16): emit DP_OnChestOpened so the
+		// analyzer can require chest-open as a verified mechanic and
+		// the visualiser can plot the moment. Loot dispense remains a
+		// later milestone -- the event fires on the lid-opening, not
+		// the inventory transfer.
+		Zenith_EventDispatcher::Get().Dispatch(
+			DP_OnChestOpened{ xVillager, m_xParentEntity.GetEntityID() });
 	}
 
 private:

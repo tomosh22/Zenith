@@ -106,6 +106,50 @@ struct DP_OnBellRing
 };
 
 // ============================================================================
+// Phase-5-audit (2026-05-16): granular gameplay-milestone events. Surface
+// the moments the analyzer + visualiser want to inspect rather than
+// inferring them from generic DP_OnInteract noise. Each dispatched by
+// the relevant subsystem at the moment the milestone fires:
+//
+//   DP_OnPossessionChanged  -- DP_Player::SetPossessedVillager
+//   DP_OnDoorOpened         -- DPDoor_Behaviour rising edge of "opened"
+//   DP_OnChestOpened        -- DPChest_Behaviour rising edge of "open"
+//   DP_OnForgeCrafted       -- DPForge_Behaviour after recipe consumes
+//   DP_OnObjectivePlaced    -- DPPentagram_Behaviour per delivered objective
+// ============================================================================
+struct DP_OnPossessionChanged
+{
+	Zenith_EntityID m_xOldVillager;  // INVALID if no prior possession (first-possess case)
+	Zenith_EntityID m_xNewVillager;  // INVALID when un-possessing (death, voluntary release)
+};
+
+struct DP_OnDoorOpened
+{
+	Zenith_EntityID m_xVillager;
+	Zenith_EntityID m_xDoor;
+};
+
+struct DP_OnChestOpened
+{
+	Zenith_EntityID m_xVillager;
+	Zenith_EntityID m_xChest;
+};
+
+struct DP_OnForgeCrafted
+{
+	Zenith_EntityID m_xVillager;
+	Zenith_EntityID m_xForge;
+	Zenith_EntityID m_xOutputItem;
+};
+
+struct DP_OnObjectivePlaced
+{
+	Zenith_EntityID m_xVillager;
+	Zenith_EntityID m_xPentagram;
+	int             m_iObjectiveBitIndex;  // 0..4, mirrors DP_Win::GetCollectedObjectivesMask bit
+};
+
+// ============================================================================
 // DP_Player — published by B2 (player + camera + input).
 // ============================================================================
 namespace DP_Player

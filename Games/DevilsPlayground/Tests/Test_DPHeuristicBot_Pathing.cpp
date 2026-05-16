@@ -272,6 +272,28 @@ static bool TestPathStartEqualsEnd()
 	return true;
 }
 
+// 6a. Phase-5-audit scene-aware grid cache. Verify that
+// SetWalkabilityGridForTest stamps the kTestInjectedHandle sentinel
+// (INT_MIN) so BuildPathGrid short-circuits and doesn't raycast over
+// the test grid, and that ResetForTest clears the handle back to -1
+// ("no grid cached").
+static bool TestSceneHandleCache()
+{
+	std::vector<unsigned char> abGrid = BuildAllWalkable();
+	LoadGrid(abGrid);
+	const int iSentinel = DPHeuristicBot::TestSurface::GetPathGridSceneHandleForTest();
+	// Magic sentinel value -- documented invariant: must be far from any
+	// real Zenith_Scene handle so BuildPathGrid recognises it. We don't
+	// reach into the cpp's kTestInjectedHandle; we assert "negative + far
+	// below -1" which is sufficient to prove the contract.
+	if (iSentinel >= 0 || iSentinel > -1000)
+		return Fail("scene-cache: sentinel not stamped (handle should be a large negative value)");
+	DPHeuristicBot::TestSurface::ResetForTest();
+	if (DPHeuristicBot::TestSurface::GetPathGridSceneHandleForTest() != -1)
+		return Fail("scene-cache: ResetForTest didn't clear handle to -1");
+	return true;
+}
+
 // 6. Final waypoint = exact target (the planner replaces the last cell
 // centre with xEnd so the bot lands on the target, not the cell centre).
 static bool TestPathLastWaypointExact()
@@ -310,12 +332,13 @@ static void Setup_Pathing()
 	if (!TestPathWalledOff())        return;
 	if (!TestPathStartEqualsEnd())   return;
 	if (!TestPathLastWaypointExact())return;
+	if (!TestSceneHandleCache())     return;
 
 	// Reset so subsequent tests start with a clean recorder + clean grid.
 	DPHeuristicBot::TestSurface::ResetForTest();
 
 	g_bPassed = true;
-	std::printf("[DPHeuristicBot_Pathing] all 8 cluster tests passed\n");
+	std::printf("[DPHeuristicBot_Pathing] all 9 cluster tests passed\n");
 	std::fflush(stdout);
 }
 

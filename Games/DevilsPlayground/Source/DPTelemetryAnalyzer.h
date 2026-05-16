@@ -53,6 +53,15 @@ namespace DPTelemetryAnalyzer
 		RunLostFired          = 12, // >=1 RunLost event (a valid terminal state)
 		TerminalEventFired    = 13, // VictoryFired OR RunLostFired -- run ended
 		PickupFired           = 14, // >=1 ItemPickup event
+		// Phase-5-audit (2026-05-16) granular gameplay-milestone criteria.
+		// Each is satisfied iff the corresponding DPEventType fired >=1
+		// time in the recording. Lets the bot test require specific
+		// mechanics rather than just "the pipeline produced something".
+		PossessionChangedFired = 15, // >=1 PossessionChanged event
+		DoorOpenedFired        = 16, // >=1 DoorOpened
+		ChestOpenedFired       = 17, // >=1 ChestOpened
+		ForgeCraftedFired      = 18, // >=1 ForgeCrafted
+		ObjectivePlacedFired   = 19, // >=1 ObjectivePlaced
 	};
 
 	// Thresholds for the numeric criteria. Const-ref input so callers

@@ -127,6 +127,17 @@ protected:
 		Zenith_PerceptionSystem::EmitSoundStimulus(
 			xForgePos, fAudibleLoudness, fAudibleRadius,
 			m_xParentEntity.GetEntityID());
+
+		// Phase-5-audit (2026-05-16): emit DP_OnForgeCrafted so the
+		// analyzer can require "ForgeUsed" as a verified mechanic + the
+		// visualiser can mark the craft moment with a distinct marker.
+		// xOutput may be INVALID if SpawnOutputItem failed; downstream
+		// consumers must guard on IsValid().
+		Zenith_EventDispatcher::Get().Dispatch(
+			DP_OnForgeCrafted{
+				xVillager,
+				m_xParentEntity.GetEntityID(),
+				xOutput });
 	}
 
 private:

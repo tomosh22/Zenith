@@ -356,9 +356,10 @@ function DrawArrowHead($prev, $cur, [int[]]$rgb) {
     $pt1 = New-Object System.Drawing.PointF([float]$tipX, [float]$tipY)
     $pt2 = New-Object System.Drawing.PointF([float]($baseCx + $perpx), [float]($baseCy + $perpy))
     $pt3 = New-Object System.Drawing.PointF([float]($baseCx - $perpx), [float]($baseCy - $perpy))
+    [System.Drawing.PointF[]]$arrowPts = @($pt1, $pt2, $pt3)
     $brush = New-Object System.Drawing.SolidBrush(
         [System.Drawing.Color]::FromArgb(240, $rgb[0], $rgb[1], $rgb[2]))
-    $g.FillPolygon($brush, @($pt1, $pt2, $pt3))
+    $g.FillPolygon($brush, $arrowPts)
     $brush.Dispose()
 }
 
@@ -375,15 +376,115 @@ foreach ($key in $keys) {
 }
 
 # ----------------------------------------------------------------------
-# 5. Event markers.
+# 5. Event markers -- per-type shape + colour. Each gameplay-milestone
+# event gets its own distinguishable glyph so the viewer can read the
+# sequence of milestones at a glance without staring at labels.
 # ----------------------------------------------------------------------
-$eventBrush = New-Object System.Drawing.SolidBrush(
-    [System.Drawing.Color]::FromArgb(220, 255,  90,  90))
-$eventPen   = New-Object System.Drawing.Pen(
-    [System.Drawing.Color]::FromArgb(220, 255, 255, 255), 1.0)
 $labelFont  = New-Object System.Drawing.Font('Consolas', 10.0)
 $labelBrush = New-Object System.Drawing.SolidBrush(
-    [System.Drawing.Color]::FromArgb(220, 255, 255, 255))
+    [System.Drawing.Color]::FromArgb(230, 255, 255, 255))
+$markerOutlinePen = New-Object System.Drawing.Pen(
+    [System.Drawing.Color]::FromArgb(230, 255, 255, 255), 1.0)
+
+# Lookup table: event name -> @{ Shape; RGB }.
+#   Shape values: 'Circle', 'CircleOutline', 'Square', 'Diamond',
+#                 'Triangle', 'X', 'Star', 'Dot'.
+$eventStyles = @{
+    'ItemPickup'        = @{ Shape = 'Circle';        RGB = @(110, 220, 110) }   # green filled
+    'ItemDrop'          = @{ Shape = 'CircleOutline'; RGB = @(110, 220, 110) }   # green outline
+    'Interact'          = @{ Shape = 'Dot';           RGB = @(180, 180, 180) }   # small grey
+    'InteractionBegin'  = @{ Shape = 'Triangle';      RGB = @(180, 180, 200) }   # light triangle
+    'InteractionEnd'    = @{ Shape = 'Triangle';      RGB = @(200, 200, 180) }   # light triangle (slight tint)
+    'InteractionCancel' = @{ Shape = 'X';             RGB = @(180, 180, 180) }
+    'VillagerDied'      = @{ Shape = 'X';             RGB = @(255,  80,  80) }   # red X
+    'Victory'           = @{ Shape = 'Star';          RGB = @(255, 215,   0) }   # gold star
+    'RunLost'           = @{ Shape = 'X';             RGB = @(190,  40,  40) }   # dark red X
+    'BellRing'          = @{ Shape = 'CircleOutline'; RGB = @(255, 240, 100) }   # yellow outline (sound)
+    'PriestStateChange' = @{ Shape = 'Square';        RGB = @(180, 100, 220) }   # purple square
+    'PossessedSwitched' = @{ Shape = 'Circle';        RGB = @(240, 240, 240) }   # white-ish
+    'PossessionChanged' = @{ Shape = 'Circle';        RGB = @(255, 255, 255) }   # bright white
+    'Possession'        = @{ Shape = 'Circle';        RGB = @(220, 220, 220) }   # legacy alias
+    'Unpossession'      = @{ Shape = 'CircleOutline'; RGB = @(180, 180, 180) }   # legacy alias
+    'DoorOpened'        = @{ Shape = 'Square';        RGB = @(160, 110,  70) }   # brown
+    'ChestOpened'       = @{ Shape = 'Square';        RGB = @(220, 160,  60) }   # tan-brown
+    'ForgeCrafted'      = @{ Shape = 'Triangle';      RGB = @(255, 130,  40) }   # orange flame
+    'ObjectivePlaced'   = @{ Shape = 'Diamond';       RGB = @( 90, 170, 255) }   # blue diamond
+}
+
+function ResolveStyle($name) {
+    if ($null -ne $name -and $eventStyles.ContainsKey($name)) {
+        return $eventStyles[$name]
+    }
+    # Default for any new / unrecognised event type.
+    return @{ Shape = 'Circle'; RGB = @(255, 90, 90) }
+}
+
+function DrawEventMarker($cx, $cy, $style) {
+    $rgb = $style.RGB
+    $fillBrush = New-Object System.Drawing.SolidBrush(
+        [System.Drawing.Color]::FromArgb(230, $rgb[0], $rgb[1], $rgb[2]))
+    $sz = 5
+    switch ($style.Shape) {
+        'Circle'        {
+            $g.FillEllipse($fillBrush, $cx - $sz, $cy - $sz, $sz * 2, $sz * 2)
+            $g.DrawEllipse($markerOutlinePen, $cx - $sz, $cy - $sz, $sz * 2, $sz * 2)
+        }
+        'CircleOutline' {
+            $coloredPen = New-Object System.Drawing.Pen(
+                [System.Drawing.Color]::FromArgb(230, $rgb[0], $rgb[1], $rgb[2]), 2.0)
+            $g.DrawEllipse($coloredPen, $cx - $sz, $cy - $sz, $sz * 2, $sz * 2)
+            $coloredPen.Dispose()
+        }
+        'Square'        {
+            $g.FillRectangle($fillBrush, $cx - $sz, $cy - $sz, $sz * 2, $sz * 2)
+            $g.DrawRectangle($markerOutlinePen, $cx - $sz, $cy - $sz, $sz * 2, $sz * 2)
+        }
+        'Diamond'       {
+            [System.Drawing.PointF[]]$pts = @(
+                (New-Object System.Drawing.PointF([float]$cx, [float]($cy - $sz - 1))),
+                (New-Object System.Drawing.PointF([float]($cx + $sz + 1), [float]$cy)),
+                (New-Object System.Drawing.PointF([float]$cx, [float]($cy + $sz + 1))),
+                (New-Object System.Drawing.PointF([float]($cx - $sz - 1), [float]$cy))
+            )
+            $g.FillPolygon($fillBrush, $pts)
+            $g.DrawPolygon($markerOutlinePen, $pts)
+        }
+        'Triangle'      {
+            [System.Drawing.PointF[]]$pts = @(
+                (New-Object System.Drawing.PointF([float]$cx, [float]($cy - $sz - 1))),
+                (New-Object System.Drawing.PointF([float]($cx + $sz + 1), [float]($cy + $sz))),
+                (New-Object System.Drawing.PointF([float]($cx - $sz - 1), [float]($cy + $sz)))
+            )
+            $g.FillPolygon($fillBrush, $pts)
+            $g.DrawPolygon($markerOutlinePen, $pts)
+        }
+        'X'             {
+            $coloredPen = New-Object System.Drawing.Pen(
+                [System.Drawing.Color]::FromArgb(230, $rgb[0], $rgb[1], $rgb[2]), 2.5)
+            $g.DrawLine($coloredPen, $cx - $sz, $cy - $sz, $cx + $sz, $cy + $sz)
+            $g.DrawLine($coloredPen, $cx - $sz, $cy + $sz, $cx + $sz, $cy - $sz)
+            $coloredPen.Dispose()
+        }
+        'Star'          {
+            # 5-point star. Compute outer + inner vertices.
+            $rawPts = @()
+            for ($i = 0; $i -lt 10; ++$i) {
+                $r = if ($i % 2 -eq 0) { $sz + 2 } else { ($sz + 2) * 0.45 }
+                $theta = ($i / 10.0) * 2.0 * [math]::PI - [math]::PI / 2.0
+                $rawPts += (New-Object System.Drawing.PointF(
+                    [float]($cx + $r * [math]::Cos($theta)),
+                    [float]($cy + $r * [math]::Sin($theta))))
+            }
+            [System.Drawing.PointF[]]$pts = $rawPts
+            $g.FillPolygon($fillBrush, $pts)
+            $g.DrawPolygon($markerOutlinePen, $pts)
+        }
+        'Dot'           {
+            $g.FillEllipse($fillBrush, $cx - 2, $cy - 2, 4, 4)
+        }
+    }
+    $fillBrush.Dispose()
+}
 
 # Each event marker is positioned at the entityA's location in the
 # nearest preceding frame sample. If entityA is invalid or not found,
@@ -401,7 +502,23 @@ function FindEntityPosAtFrame($entityKey, $eventFrame) {
     return $null
 }
 
-foreach ($evt in $events) {
+# Track which (x,y) bands we've used so subsequent event labels at the
+# same screen position stagger vertically rather than overlapping.
+$labelBuckets = @{}
+function StaggerLabelY($cx, $cy) {
+    $bucketKey = "{0}:{1}" -f [int]($cx / 12), [int]($cy / 18)
+    if (-not $labelBuckets.ContainsKey($bucketKey)) {
+        $labelBuckets[$bucketKey] = 0
+    } else {
+        $labelBuckets[$bucketKey]++
+    }
+    return $cy - 6 + ($labelBuckets[$bucketKey] * 14)
+}
+
+# Sort events by frame so the timeline is built in time order.
+$sortedEvents = @($events | Sort-Object { [int]$_.frame })
+
+foreach ($evt in $sortedEvents) {
     $entityKey = "$($evt.payload.entityA.idx):$($evt.payload.entityA.gen)"
     $pos = FindEntityPosAtFrame $entityKey $evt.frame
     if ($null -eq $pos) {
@@ -409,12 +526,12 @@ foreach ($evt in $events) {
         $pos = @(($minX + $maxX) / 2.0, ($minZ + $maxZ) / 2.0)
     }
     $p = Project $pos[0] $pos[1]
-    $g.FillEllipse($eventBrush, $p[0] - 5, $p[1] - 5, 10, 10)
-    $g.DrawEllipse($eventPen,   $p[0] - 5, $p[1] - 5, 10, 10)
     $rawName = if ($evt.PSObject.Properties.Name -contains 'name') { [string]$evt.name } else { "evt$($evt.type)" }
-    # "VillagerDied  f=1531 t=25.5s"
+    $style = ResolveStyle $rawName
+    DrawEventMarker $p[0] $p[1] $style
     $label = ("{0}  f={1} t={2:F1}s" -f $rawName, [int]$evt.frame, [double]$evt.t)
-    $g.DrawString($label, $labelFont, $labelBrush, [float]($p[0] + 8), [float]($p[1] - 6))
+    $labelY = StaggerLabelY $p[0] $p[1]
+    $g.DrawString($label, $labelFont, $labelBrush, [float]($p[0] + 8), [float]$labelY)
 }
 
 # ----------------------------------------------------------------------
@@ -431,6 +548,52 @@ $g.DrawString($headerText, $headerFont, $headerBrush, 10.0, 10.0)
 $boundsText = "world bounds: x=[{0:F1},{1:F1}]  z=[{2:F1},{3:F1}]  ({4:F1}m x {5:F1}m)" `
     -f $minX, $maxX, $minZ, $maxZ, ($maxX - $minX), ($maxZ - $minZ)
 $g.DrawString($boundsText, $labelFont, $labelBrush, 10.0, 32.0)
+
+# ----------------------------------------------------------------------
+# 5b. Timeline strip (top-of-image, under the header). Horizontal bar
+#     spanning the drawing area. Each event plotted as a thin vertical
+#     tick at x = (event.frame / maxFrame) * drawW. Provides a
+#     time-axis view of the same events the spatial map shows.
+# ----------------------------------------------------------------------
+$maxFrame = 1
+foreach ($frame in $frames) {
+    if ([int]$frame.frame -gt $maxFrame) { $maxFrame = [int]$frame.frame }
+}
+foreach ($evt in $events) {
+    if ([int]$evt.frame -gt $maxFrame) { $maxFrame = [int]$evt.frame }
+}
+$tlY      = 78   # sits below the two header lines (top y=10 + y=32) with breathing room
+$tlX0     = $offsetX
+$tlX1     = $offsetX + $drawW
+$tlPen    = New-Object System.Drawing.Pen(
+    [System.Drawing.Color]::FromArgb(180, 90, 100, 120), 1.0)
+$g.DrawLine($tlPen, $tlX0, $tlY, $tlX1, $tlY)
+$g.DrawLine($tlPen, $tlX0, $tlY - 4, $tlX0, $tlY + 4)
+$g.DrawLine($tlPen, $tlX1, $tlY - 4, $tlX1, $tlY + 4)
+$tlPen.Dispose()
+$tlLabelFont = New-Object System.Drawing.Font('Consolas', 8.5)
+$tlLabelBrush = New-Object System.Drawing.SolidBrush(
+    [System.Drawing.Color]::FromArgb(200, 200, 200, 210))
+$tlT0 = "0 s"
+$tlT1 = "{0:F1} s" -f ($maxFrame * $telemetry.header.fixedDt)
+$g.DrawString($tlT0, $tlLabelFont, $tlLabelBrush, [float]($tlX0 - 2), [float]($tlY + 6))
+$g.DrawString($tlT1, $tlLabelFont, $tlLabelBrush, [float]($tlX1 - 40), [float]($tlY + 6))
+$g.DrawString("Timeline (events over t)", $tlLabelFont, $tlLabelBrush,
+    [float]($tlX0 + ($tlX1 - $tlX0) / 2 - 70), [float]($tlY - 18))
+# Event ticks above the line, coloured by event style.
+foreach ($evt in $sortedEvents) {
+    $rawName = if ($evt.PSObject.Properties.Name -contains 'name') { [string]$evt.name } else { "evt$($evt.type)" }
+    $style = ResolveStyle $rawName
+    $rgb = $style.RGB
+    $u = if ($maxFrame -gt 0) { [int]$evt.frame / [double]$maxFrame } else { 0.0 }
+    $tickX = $tlX0 + [int]($u * ($tlX1 - $tlX0))
+    $coloredPen = New-Object System.Drawing.Pen(
+        [System.Drawing.Color]::FromArgb(220, $rgb[0], $rgb[1], $rgb[2]), 2.0)
+    $g.DrawLine($coloredPen, $tickX, $tlY - 6, $tickX, $tlY + 6)
+    $coloredPen.Dispose()
+}
+$tlLabelFont.Dispose()
+$tlLabelBrush.Dispose()
 
 # ----------------------------------------------------------------------
 # 6a. Distance scale bar (bottom-left). Pick a "nice" round number
@@ -556,8 +719,7 @@ $legendFont.Dispose()
 # ----------------------------------------------------------------------
 # 7. Save + cleanup.
 # ----------------------------------------------------------------------
-$eventBrush.Dispose()
-$eventPen.Dispose()
+$markerOutlinePen.Dispose()
 $labelFont.Dispose()
 $labelBrush.Dispose()
 $headerFont.Dispose()

@@ -50,5 +50,16 @@ protected:
 				}
 			}
 		}
+
+		// Phase-5-audit (2026-05-16): announce the objective-placed
+		// milestone so the analyzer can require ObjectivePlaced as a
+		// verified mechanic + the visualiser can plot each of the 5
+		// deliveries as a distinct marker.
+		const int iBitIdx = static_cast<int>(eHeld) - static_cast<int>(DP_ItemTag::Objective1);
+		Zenith_EventDispatcher::Get().Dispatch(
+			DP_OnObjectivePlaced{
+				xVillager,
+				m_xParentEntity.GetEntityID(),
+				iBitIdx });
 	}
 };

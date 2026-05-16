@@ -93,6 +93,17 @@ static void Setup_TelemetryHooks()
 		Zenith_Maths::Vector3 xBellPos(11.5f, 0.0f, 22.5f);
 		xDisp.Dispatch(DP_OnBellRing{xV, xI, xBellPos});
 
+		// Phase-5-audit (2026-05-16) granular events. Each fires its own
+		// DPEventType + the PossessionChanged path additionally synthesises
+		// a legacy Possession event when the new villager is valid.
+		const Zenith_EntityID xVOld = {5u, 1u};
+		xDisp.Dispatch(DP_OnPossessionChanged{xVOld, xV});  // start possess
+		xDisp.Dispatch(DP_OnPossessionChanged{xV,    Zenith_EntityID{}});  // un-possess (death)
+		xDisp.Dispatch(DP_OnDoorOpened{xV, xT});
+		xDisp.Dispatch(DP_OnChestOpened{xV, xT});
+		xDisp.Dispatch(DP_OnForgeCrafted{xV, xT, xI});
+		xDisp.Dispatch(DP_OnObjectivePlaced{xV, xT, 3});
+
 		// 3) Hooks goes out of scope here -> unsubscribe.
 	}
 
@@ -120,12 +131,24 @@ static void Setup_TelemetryHooks()
 		return;
 	}
 
-	// 6) Read back and assert: 9 events in dispatch order.
+	// 6) Read back and assert: dispatch order.
+	// Phase-5-audit (2026-05-16): event count is now 17. The 9 originals
+	// plus 8 new events from the granular gameplay milestones. The
+	// PossessionChanged path emits TWO events per dispatch (the unified
+	// PossessionChanged + a legacy Possession or Unpossession) so the
+	// two DP_OnPossessionChanged dispatches account for 4 of the 8 new.
 	Zenith_Telemetry::Reader xReader;
 	if (!xReader.LoadFromFile(strBin.c_str())) { Fail("hooks: reader load failed"); return; }
 
 	const auto& axE = xReader.GetEvents();
-	if (axE.GetSize() != 9u) { Fail("hooks: expected 9 events"); return; }
+	if (axE.GetSize() != 17u)
+	{
+		static char sBuf[96];
+		std::snprintf(sBuf, sizeof(sBuf), "hooks: expected 17 events, got %u",
+			static_cast<unsigned>(axE.GetSize()));
+		Fail(sBuf);
+		return;
+	}
 
 	using DPE = DPTelemetry::DPEventType;
 
@@ -139,15 +162,25 @@ static void Setup_TelemetryHooks()
 		return true;
 	};
 
-	if (!Check(0, DPE::ItemPickup,        "hooks: event 0 != ItemPickup")) return;
-	if (!Check(1, DPE::Interact,          "hooks: event 1 != Interact")) return;
-	if (!Check(2, DPE::InteractionBegin,  "hooks: event 2 != InteractionBegin")) return;
-	if (!Check(3, DPE::InteractionEnd,    "hooks: event 3 != InteractionEnd")) return;
-	if (!Check(4, DPE::InteractionCancel, "hooks: event 4 != InteractionCancel")) return;
-	if (!Check(5, DPE::VillagerDied,      "hooks: event 5 != VillagerDied")) return;
-	if (!Check(6, DPE::Victory,           "hooks: event 6 != Victory")) return;
-	if (!Check(7, DPE::RunLost,           "hooks: event 7 != RunLost")) return;
-	if (!Check(8, DPE::BellRing,          "hooks: event 8 != BellRing")) return;
+	if (!Check(0,  DPE::ItemPickup,         "hooks: event 0 != ItemPickup")) return;
+	if (!Check(1,  DPE::Interact,           "hooks: event 1 != Interact")) return;
+	if (!Check(2,  DPE::InteractionBegin,   "hooks: event 2 != InteractionBegin")) return;
+	if (!Check(3,  DPE::InteractionEnd,     "hooks: event 3 != InteractionEnd")) return;
+	if (!Check(4,  DPE::InteractionCancel,  "hooks: event 4 != InteractionCancel")) return;
+	if (!Check(5,  DPE::VillagerDied,       "hooks: event 5 != VillagerDied")) return;
+	if (!Check(6,  DPE::Victory,            "hooks: event 6 != Victory")) return;
+	if (!Check(7,  DPE::RunLost,            "hooks: event 7 != RunLost")) return;
+	if (!Check(8,  DPE::BellRing,           "hooks: event 8 != BellRing")) return;
+	// PossessionChanged (xVOld -> xV): unified + legacy Possession (new valid).
+	if (!Check(9,  DPE::PossessionChanged,  "hooks: event 9 != PossessionChanged")) return;
+	if (!Check(10, DPE::Possession,         "hooks: event 10 != Possession")) return;
+	// PossessionChanged (xV -> INVALID): unified + legacy Unpossession (new invalid).
+	if (!Check(11, DPE::PossessionChanged,  "hooks: event 11 != PossessionChanged")) return;
+	if (!Check(12, DPE::Unpossession,       "hooks: event 12 != Unpossession")) return;
+	if (!Check(13, DPE::DoorOpened,         "hooks: event 13 != DoorOpened")) return;
+	if (!Check(14, DPE::ChestOpened,        "hooks: event 14 != ChestOpened")) return;
+	if (!Check(15, DPE::ForgeCrafted,       "hooks: event 15 != ForgeCrafted")) return;
+	if (!Check(16, DPE::ObjectivePlaced,    "hooks: event 16 != ObjectivePlaced")) return;
 
 	// Payload spot-checks.
 	const auto& xPickup = axE.Get(0);
@@ -173,6 +206,15 @@ static void Setup_TelemetryHooks()
 		return;
 	}
 
+	// Phase-5-audit payload spot-checks.
+	const auto& xPossChange = axE.Get(9);   // PossessionChanged (xVOld -> xV)
+	if (xPossChange.xPayload.xEntityA.m_uIndex != 5u) { Fail("possChange: entityA (old) mismatch"); return; }
+	if (xPossChange.xPayload.xEntityB.m_uIndex != xV.m_uIndex) { Fail("possChange: entityB (new) mismatch"); return; }
+	const auto& xObjPlaced = axE.Get(16);   // ObjectivePlaced
+	if (xObjPlaced.xPayload.aiInts[0] != 3) { Fail("objplaced: bit index 3 not round-tripped"); return; }
+	if (xObjPlaced.xPayload.xEntityA.m_uIndex != xV.m_uIndex) { Fail("objplaced: villager mismatch"); return; }
+	if (xObjPlaced.xPayload.xEntityB.m_uIndex != xT.m_uIndex) { Fail("objplaced: pentagram mismatch"); return; }
+
 	// 7) JSON sanity: contains the resolved type names.
 	std::ifstream xIn(strJson, std::ios::binary | std::ios::ate);
 	if (!xIn.is_open()) { Fail("hooks: json file did not open"); return; }
@@ -187,6 +229,16 @@ static void Setup_TelemetryHooks()
 		{ Fail("hooks: json missing Victory name"); return; }
 	if (strBody.find("\"name\":\"BellRing\"") == std::string::npos)
 		{ Fail("hooks: json missing BellRing name"); return; }
+	if (strBody.find("\"name\":\"PossessionChanged\"") == std::string::npos)
+		{ Fail("hooks: json missing PossessionChanged name"); return; }
+	if (strBody.find("\"name\":\"DoorOpened\"") == std::string::npos)
+		{ Fail("hooks: json missing DoorOpened name"); return; }
+	if (strBody.find("\"name\":\"ChestOpened\"") == std::string::npos)
+		{ Fail("hooks: json missing ChestOpened name"); return; }
+	if (strBody.find("\"name\":\"ForgeCrafted\"") == std::string::npos)
+		{ Fail("hooks: json missing ForgeCrafted name"); return; }
+	if (strBody.find("\"name\":\"ObjectivePlaced\"") == std::string::npos)
+		{ Fail("hooks: json missing ObjectivePlaced name"); return; }
 
 	// 8) Spot-check the name resolver directly.
 	if (DPTelemetry::DPEventTypeToString(0) == nullptr ||

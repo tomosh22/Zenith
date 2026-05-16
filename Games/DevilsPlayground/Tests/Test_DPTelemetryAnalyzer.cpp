@@ -245,6 +245,36 @@ static bool TestEventCriteria()
 		if (CheckOne(strNone.c_str(), A::PossessionFired)) return Fail("possess: neither path should fail PossessionFired");
 	}
 
+	// Phase-5-audit (2026-05-16) granular criteria. Each fires when its
+	// own event type is present + falls back to false when absent. The
+	// PossessionChangedFired criterion also accepts the legacy
+	// Possession + Unpossession aliases.
+	auto AssertGranular = [&MakeEvent](DPTelemetry::DPEventType eEvt, A eCrit, const char* szWhich) -> bool
+	{
+		Zenith_Telemetry::Event aE[1] = { MakeEvent(eEvt) };
+		const std::string strPos = BuildRecording("ev_granular_pos.ztlm", "S", 25u, 0u, aE, 1u);
+		if (!CheckOne(strPos.c_str(), eCrit))
+			return Fail("granular: positive case should pass");
+		const std::string strNeg = BuildRecording("ev_granular_neg.ztlm", "S", 25u, 0u, nullptr, 0u);
+		if (CheckOne(strNeg.c_str(), eCrit))
+			return Fail("granular: negative case should fail");
+		(void)szWhich;
+		return true;
+	};
+	if (!AssertGranular(DPTelemetry::DPEventType::PossessionChanged, A::PossessionChangedFired, "PossessionChanged")) return false;
+	if (!AssertGranular(DPTelemetry::DPEventType::DoorOpened,        A::DoorOpenedFired,        "DoorOpened"))         return false;
+	if (!AssertGranular(DPTelemetry::DPEventType::ChestOpened,       A::ChestOpenedFired,       "ChestOpened"))        return false;
+	if (!AssertGranular(DPTelemetry::DPEventType::ForgeCrafted,      A::ForgeCraftedFired,      "ForgeCrafted"))       return false;
+	if (!AssertGranular(DPTelemetry::DPEventType::ObjectivePlaced,   A::ObjectivePlacedFired,   "ObjectivePlaced"))    return false;
+
+	// PossessionChangedFired ALSO accepts the legacy Possession alias.
+	{
+		Zenith_Telemetry::Event aE[1] = { MakeEvent(DPTelemetry::DPEventType::Possession) };
+		const std::string strLegacy = BuildRecording("ev_poss_legacy.ztlm", "S", 25u, 0u, aE, 1u);
+		if (!CheckOne(strLegacy.c_str(), A::PossessionChangedFired))
+			return Fail("possChange: legacy Possession alias should pass PossessionChangedFired");
+	}
+
 	return true;
 }
 
@@ -315,6 +345,12 @@ static bool TestCriterionToString()
 		return Fail("name: VictoryFired");
 	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(A::TerminalEventFired), "TerminalEventFired") != 0)
 		return Fail("name: TerminalEventFired");
+	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(A::DoorOpenedFired), "DoorOpenedFired") != 0)
+		return Fail("name: DoorOpenedFired");
+	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(A::ForgeCraftedFired), "ForgeCraftedFired") != 0)
+		return Fail("name: ForgeCraftedFired");
+	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(A::ObjectivePlacedFired), "ObjectivePlacedFired") != 0)
+		return Fail("name: ObjectivePlacedFired");
 	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(static_cast<A>(0xFFu)), "Unknown") != 0)
 		return Fail("name: unknown enum should be 'Unknown'");
 	return true;

@@ -54,8 +54,8 @@ namespace DPTelemetry
 	enum class DPEventType : uint16_t
 	{
 		None              = 0,
-		Possession        = 1,
-		Unpossession      = 2,
+		Possession        = 1,  // legacy alias (still emitted by Hooks on possession start)
+		Unpossession      = 2,  // legacy alias (still emitted by Hooks on possession end)
 		ItemPickup        = 3,
 		ItemDrop          = 4,
 		Interact          = 5,
@@ -68,6 +68,14 @@ namespace DPTelemetry
 		BellRing          = 12,
 		PriestStateChange = 13,
 		PossessedSwitched = 14,
+		// Phase-5-audit (2026-05-16) granular gameplay milestones. Each
+		// has a corresponding DP_On* struct in PublicInterfaces.h and a
+		// subscription wired in DPTelemetry::Hooks.
+		PossessionChanged = 15,  // entityA=old, entityB=new
+		DoorOpened        = 16,  // entityA=villager, entityB=door
+		ChestOpened       = 17,  // entityA=villager, entityB=chest
+		ForgeCrafted      = 18,  // entityA=villager, entityB=forge,  payload.ints[0] = output tag
+		ObjectivePlaced   = 19,  // entityA=villager, entityB=pentagram, payload.ints[0] = bit index 0..4
 
 		_Count
 	};
@@ -132,14 +140,20 @@ namespace DPTelemetry
 		Hooks& operator=(Hooks&&)      = delete;
 
 	private:
-		Zenith_EventHandle m_xPickup         = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xInteract       = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xInteractBegin  = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xInteractEnd    = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xInteractCancel = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xDied           = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xVictory        = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xRunLost        = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xBellRing       = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xPickup           = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xInteract         = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xInteractBegin    = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xInteractEnd      = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xInteractCancel   = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xDied             = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xVictory          = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xRunLost          = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xBellRing         = INVALID_EVENT_HANDLE;
+		// Phase-5-audit (2026-05-16) granular event subscriptions.
+		Zenith_EventHandle m_xPossessChanged   = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xDoorOpened       = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xChestOpened      = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xForgeCrafted     = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xObjectivePlaced  = INVALID_EVENT_HANDLE;
 	};
 }

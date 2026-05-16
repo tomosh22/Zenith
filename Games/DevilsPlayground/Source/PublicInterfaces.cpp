@@ -164,6 +164,11 @@ namespace DP_Player
 
 	void SetPossessedVillager(Zenith_EntityID xId)
 	{
+		// Snapshot prior possession BEFORE the assign so the dispatched
+		// event carries the actual transition (old, new). Skip the
+		// dispatch when nothing changed (idempotent re-set with the same
+		// villager -- common in test setup + the cooldown idempotent path).
+		const Zenith_EntityID xPrior = g_xPossessedVillager;
 		g_xPossessedVillager = xId;
 		// MVP-1.8: keep the anchor in sync with the latest possession.
 		// System callers (death cleared possession, apprehend cleared
@@ -178,6 +183,17 @@ namespace DP_Player
 		else
 		{
 			g_bHasPossessionAnchor = false;
+		}
+		// Phase-5-audit (2026-05-16): dispatch the change so the
+		// telemetry recorder, future HUD overlays, and other subscribers
+		// see the transition explicitly. Previously possession changes
+		// were observable only by polling DP_Player::GetPossessedVillager
+		// frame-to-frame; that worked but lost the moment / cause of the
+		// change.
+		if (xPrior != xId)
+		{
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnPossessionChanged{ xPrior, xId });
 		}
 	}
 

@@ -60,11 +60,28 @@ namespace DPHeuristicBot
 	static constexpr float kPathFloorYTop = 1.5f;
 	static constexpr float kWaypointReachedDist = 1.8f;
 
-	// Lazily built once per process. Reset() does NOT clear it -- the
-	// scene's wall geometry is static across bot reruns, so a rebuild
-	// just wastes time.
+	// Lazily built. The previous design ("once per process") leaked the
+	// grid across scenes when a future caller loaded a different scene
+	// after the bot had run on the first -- e.g. multi-scene procgen
+	// runs in the same process would route through the OLD scene's
+	// walls. Fixed in Phase-5-audit (2026-05-16) by tracking the scene
+	// handle the grid was built for + comparing against the active
+	// scene on every BuildPathGrid call. If the handle differs we
+	// rebuild. If it matches we skip (~3600 raycasts saved).
+	//
+	// Caveat: if the SAME scene reloads (handle reused, geometry
+	// changed via editor automation), the grid stays stale. Reset()
+	// clears the cached handle so a `Reset() -> Tick()` cycle forces
+	// a fresh build -- the bot's test always does this.
 	static bool g_bPathGridBuilt = false;
+	static int  g_iPathGridSceneHandle = -1;
 	static bool g_abPathWalkable[kPathGridDim * kPathGridDim] = {};
+	// Sentinel handle used by TestSurface::SetWalkabilityGridForTest to
+	// flag the grid as "test-injected, do NOT rebuild from raycasts".
+	// Picked at INT_MIN so it can't collide with any real Zenith_Scene
+	// handle (those are small non-negative ints from the scene registry).
+	// BuildPathGrid checks for this value and skips its rebuild path.
+	static constexpr int kTestInjectedHandle = (-2147483647 - 1); // = INT_MIN, avoid <climits> include
 
 	// Active path. Replanned when target drifts > kReplanIfTargetMoves
 	// or when stuck > kStuckFrameLimit. Cleared on Reset().
@@ -272,7 +289,18 @@ namespace DPHeuristicBot
 
 	static void BuildPathGrid()
 	{
-		if (g_bPathGridBuilt) return;
+		// Test-injection short-circuit: TestSurface::SetWalkabilityGridForTest
+		// stamps the sentinel kTestInjectedHandle so unit tests can build a
+		// hand-crafted grid + know A* will use exactly that grid rather than
+		// overwriting it with raycast output from whatever scene happens to
+		// be loaded.
+		if (g_iPathGridSceneHandle == kTestInjectedHandle) return;
+		// Scene-aware cache: rebuild iff the active scene's handle
+		// changed since the previous build. Cheap to check (one
+		// SceneManager call) and avoids the multi-scene wall-routing
+		// bug previously latent in the once-per-process design.
+		const int iActiveHandle = Zenith_SceneManager::GetActiveScene().GetHandle();
+		if (g_bPathGridBuilt && g_iPathGridSceneHandle == iActiveHandle) return;
 		uint32_t uWalkable = 0;
 		for (int z = 0; z < kPathGridDim; ++z)
 		{
@@ -293,8 +321,9 @@ namespace DPHeuristicBot
 			}
 		}
 		g_bPathGridBuilt = true;
-		std::printf("[DPHeuristicBot] path grid built: %u/%d cells walkable\n",
-			uWalkable, kPathGridDim * kPathGridDim);
+		g_iPathGridSceneHandle = iActiveHandle;
+		std::printf("[DPHeuristicBot] path grid built: %u/%d cells walkable (scene handle %d)\n",
+			uWalkable, kPathGridDim * kPathGridDim, iActiveHandle);
 		std::fflush(stdout);
 	}
 
@@ -816,6 +845,11 @@ namespace DPHeuristicBot
 				g_abPathWalkable[i] = abGrid[i];
 			}
 			g_bPathGridBuilt = true;
+			// Flag the grid as test-injected via the kTestInjectedHandle
+			// sentinel. BuildPathGrid short-circuits when it sees this
+			// handle and skips its raycast rebuild, so A* operates on
+			// exactly the grid the test set up.
+			g_iPathGridSceneHandle = kTestInjectedHandle;
 		}
 
 		void ResetForTest()
@@ -825,9 +859,18 @@ namespace DPHeuristicBot
 				g_abPathWalkable[i] = false;
 			}
 			g_bPathGridBuilt = false;
+			g_iPathGridSceneHandle = -1;
 			g_axCurrentPath.Clear();
 			g_iPathWaypoint = 0;
 			g_xLastPlannedTarget = Zenith_Maths::Vector3(1e9f, 0.0f, 0.0f);
+		}
+
+		// Returns the scene handle the current grid was built for, or -1
+		// if no grid has been built since the last reset. Used by the
+		// scene-swap unit test to verify the cache flip.
+		int GetPathGridSceneHandleForTest()
+		{
+			return g_iPathGridSceneHandle;
 		}
 
 		void WorldToCell(const Zenith_Maths::Vector3& xWorld, int& iOutX, int& iOutZ)
