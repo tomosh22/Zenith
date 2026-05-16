@@ -5,6 +5,9 @@
     <ClCompile Include="..\Source\DPFogPass.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DPHeuristicBot.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DPMaterials.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -36,6 +39,9 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_DPHeuristicBotPlaythrough.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp">
@@ -413,6 +419,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPFogPass.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DPHeuristicBot.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPInputActions.h">
