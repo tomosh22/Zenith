@@ -183,6 +183,16 @@ namespace Zenith_Telemetry
 		if (!m_bRecording || m_bPaused) return;
 		Event xCopy = xEvt;
 		xCopy.uFrameIdx = m_uFrameIdx;
+		// Stamp fTimeS from the recorder's frame index when the caller
+		// left it unset (default 0.0). Lets DP-side EmitEvent paths
+		// produce meaningful event timestamps in the JSON without
+		// every site computing iFrame * fixed_dt manually. Callers who
+		// explicitly set fTimeS (the round-trip test for one) get to
+		// keep their value -- only stamp when the field is zero.
+		if (xCopy.fTimeS == 0.0f && m_xHeader.fFixedDt > 0.0f)
+		{
+			xCopy.fTimeS = static_cast<float>(m_uFrameIdx) * m_xHeader.fFixedDt;
+		}
 		m_axEvents.PushBack(xCopy);
 	}
 
