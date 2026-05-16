@@ -42,7 +42,14 @@ param(
     # bot can win the placeholder GameLevel once Phase 3b's pathing
     # is wired in.
     [int]$ExitAfterFrames = 2100,
-    [string]$RunnerScript = "Tools/run_dp_tests.ps1"
+    [string]$RunnerScript = "Tools/run_dp_tests.ps1",
+    # When -Visualise is set, post-process the captured telemetry into
+    # a top-down PNG (Tools/dp_telemetry_visualise.ps1). Useful for
+    # spotting "bot stood in a corner" failure modes that pass the
+    # analyzer's pipeline-health criteria but didn't really play the
+    # game.
+    [switch]$Visualise,
+    [string]$VisualiserScript = "Tools/dp_telemetry_visualise.ps1"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -200,6 +207,31 @@ if ($eventBuckets.Count -gt 0) {
     }
 } else {
     Write-Host "No events recorded."
+}
+
+# ----------------------------------------------------------------------
+# 3a. Optional visualisation. Runs the post-processor on the JSON we
+#     just copied into $OutDir, producing a sibling .png next to the
+#     binary + JSON artifacts.
+# ----------------------------------------------------------------------
+if ($Visualise) {
+    Write-Section "Visualising"
+    if (-not (Test-Path $VisualiserScript)) {
+        Write-Warning "Visualiser script not found: $VisualiserScript -- skipping."
+    } else {
+        $pngPath = Join-Path $OutDir 'bot_playthrough.png'
+        & pwsh.exe -NoProfile -ExecutionPolicy Bypass `
+            -File $VisualiserScript `
+            -JsonPath $destJson `
+            -OutPath $pngPath `
+            -Quiet
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Visualiser exited $LASTEXITCODE."
+        } elseif (Test-Path $pngPath) {
+            $kb = [int]((Get-Item $pngPath).Length / 1024)
+            Write-Host "Wrote PNG     : $pngPath ($kb KB)"
+        }
+    }
 }
 
 # ----------------------------------------------------------------------
