@@ -185,6 +185,7 @@
     <ClInclude Include="..\Source\DPFogPass.h" />
     <ClInclude Include="..\Source\DPInputActions.h" />
     <ClInclude Include="..\Source\DPMaterials.h" />
+    <ClInclude Include="..\Source\DPTelemetry.h" />
     <ClInclude Include="..\Source\DPUI.h" />
     <ClInclude Include="..\Source\DP_Archetypes.h" />
     <ClInclude Include="..\Source\DP_LevelData.h" />
@@ -197,6 +198,7 @@
     <ClCompile Include="..\DevilsPlayground.cpp" />
     <ClCompile Include="..\Source\DPFogPass.cpp" />
     <ClCompile Include="..\Source\DPMaterials.cpp" />
+    <ClCompile Include="..\Source\DPTelemetry.cpp" />
     <ClCompile Include="..\Source\DP_Archetypes.cpp" />
     <ClCompile Include="..\Source\DP_Reagents.cpp" />
     <ClCompile Include="..\Source\DP_Save.cpp" />
@@ -206,6 +208,7 @@
     <ClCompile Include="..\Tests\Test_DimLightsCutFog.cpp" />
     <ClCompile Include="..\Tests\Test_DoubleDoorAndForge.cpp" />
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp" />
+    <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp" />
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp" />
     <ClCompile Include="..\Tests\Test_FullPlaythrough.cpp" />
     <ClCompile Include="..\Tests\Test_GameLevelScene.cpp" />

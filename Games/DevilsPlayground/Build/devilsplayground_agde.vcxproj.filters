@@ -8,6 +8,9 @@
     <ClCompile Include="..\Source\DPMaterials.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DPTelemetry.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DP_Archetypes.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -33,6 +36,9 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp">
@@ -413,6 +419,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPMaterials.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DPTelemetry.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPUI.h">
