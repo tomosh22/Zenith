@@ -187,6 +187,7 @@
     <ClInclude Include="..\Source\DPInputActions.h" />
     <ClInclude Include="..\Source\DPMaterials.h" />
     <ClInclude Include="..\Source\DPTelemetry.h" />
+    <ClInclude Include="..\Source\DPTelemetryAnalyzer.h" />
     <ClInclude Include="..\Source\DPUI.h" />
     <ClInclude Include="..\Source\DP_Archetypes.h" />
     <ClInclude Include="..\Source\DP_LevelData.h" />
@@ -201,6 +202,7 @@
     <ClCompile Include="..\Source\DPHeuristicBot.cpp" />
     <ClCompile Include="..\Source\DPMaterials.cpp" />
     <ClCompile Include="..\Source\DPTelemetry.cpp" />
+    <ClCompile Include="..\Source\DPTelemetryAnalyzer.cpp" />
     <ClCompile Include="..\Source\DP_Archetypes.cpp" />
     <ClCompile Include="..\Source\DP_Reagents.cpp" />
     <ClCompile Include="..\Source\DP_Save.cpp" />
@@ -211,6 +213,7 @@
     <ClCompile Include="..\Tests\Test_DoubleDoorAndForge.cpp" />
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp" />
     <ClCompile Include="..\Tests\Test_DPHeuristicBotPlaythrough.cpp" />
+    <ClCompile Include="..\Tests\Test_DPTelemetryAnalyzer.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp" />
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp" />
     <ClCompile Include="..\Tests\Test_FullPlaythrough.cpp" />

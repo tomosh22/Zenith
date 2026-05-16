@@ -10,6 +10,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 #include "Source/DPTelemetry.h"
+#include "Source/DPTelemetryAnalyzer.h"
 #include "Source/DPHeuristicBot.h"
 #include "Source/PublicInterfaces.h"
 #include "Components/DPVillager_Behaviour.h"
@@ -263,12 +264,22 @@ static bool Step_BotPlaythrough(int /*iFrame*/)
 // All non-cleanup verification checks. Returns true iff every assertion
 // passes; on failure sets g_szFailureReason via Fail(). Factored out so
 // Verify_BotPlaythrough's cleanup path doesn't need a goto label.
+//
+// Verification splits into two layers:
+//   1. Bot-test-specific assertions (exact header values, JSON file
+//      well-formedness) -- the recording was produced by THIS test,
+//      so we know what the header should contain.
+//   2. Generic telemetry analyzer criteria (DPTelemetryAnalyzer)
+//      applied across all 7 criteria the placeholder GameLevel +
+//      straight-line bot can reliably hit. Per-criterion failure
+//      reasons surface via Zenith_Log for debuggability.
 static bool RunVerificationChecks()
 {
 	Zenith_Telemetry::Reader xReader;
 	if (!xReader.LoadFromFile(g_strBinPath.c_str()))
 		return Fail("could not read back recorded binary");
 
+	// --- Layer 1: bot-test-specific header round-trip ---
 	if (xReader.GetHeader().strSceneName != "GameLevel")
 		return Fail("header sceneName mismatch");
 	if (xReader.GetHeader().uSeed != 0xB0Bull)
@@ -276,21 +287,48 @@ static bool RunVerificationChecks()
 	if (xReader.GetHeader().uSamplePeriodFrames != kPositionSamplePeriodFrames)
 		return Fail("header samplePeriod mismatch");
 
-	// At least some frame samples landed. Sampling at 10 Hz over ~30 s
-	// of play we'd expect ~300; the test may exit early on victory so
-	// require >=20 (~0.3 s of play) as the lower bar.
-	const uint32_t uFrames = xReader.GetFrames().GetSize();
-	if (uFrames < 20u) return Fail("too few position samples recorded");
+	// --- Layer 2: analyzer over the captured telemetry ---
+	// Criteria selected to match what the Phase 3a straight-line bot
+	// reliably exercises on the placeholder GameLevel:
+	//   * pipeline health (magic / scene-name / frame count / non-empty)
+	//   * possession actually fired in game state (the bot's click landed)
+	// VictoryFired / SprintFrame / WalkQuietFrame are gated on Phase 3b's
+	// navmesh upgrade; adding them now would flake the test.
+	using A = DPTelemetryAnalyzer::Criterion;
+	const A aeCriteria[] = {
+		A::HeaderMagicValid,
+		A::HeaderHasSceneName,
+		A::FramesRecorded,
+		A::FramesNonEmpty,
+		A::PossessionFired,
+	};
+	const uint32_t uN = sizeof(aeCriteria) / sizeof(aeCriteria[0]);
 
-	for (uint32_t i = 0; i < 5u && i < uFrames; ++i)
+	const DPTelemetryAnalyzer::Verdict xV =
+		DPTelemetryAnalyzer::Analyze(xReader, aeCriteria, uN);
+	if (!xV.bOverallPass)
 	{
-		if (xReader.GetFrames().Get(i).axEntities.GetSize() == 0u)
-			return Fail("sample with zero entity snapshots");
+		// Log every failed criterion before bailing -- diagnosing a
+		// regression is easier with the full list than the first-failure.
+		for (uint32_t i = 0; i < xV.axResults.GetSize(); ++i)
+		{
+			const auto& xR = xV.axResults.Get(i);
+			if (xR.bPassed) continue;
+			Zenith_Log(LOG_CATEGORY_AI,
+				"BotPlaythrough: analyzer FAIL %s -- %s",
+				DPTelemetryAnalyzer::CriterionToString(xR.eCriterion),
+				xR.szReason);
+		}
+		return Fail("analyzer verdict bOverallPass=false");
 	}
 
+	// Bot also tried to possess (separate from PossessionFired: this
+	// asserts the bot reached the click code, even if game state
+	// rejected the click for any reason).
 	if (DPHeuristicBot::GetPossessClickCount() < 1u)
 		return Fail("bot never tried to possess");
 
+	// JSON exporter sanity (lives outside the analyzer's contract).
 	std::ifstream xIn(g_strJsonPath, std::ios::binary | std::ios::ate);
 	if (!xIn.is_open()) return Fail("JSON file missing");
 	const std::streamsize llLen = xIn.tellg();
