@@ -530,12 +530,21 @@ namespace
 		// of the goal + the four most useful keys, plus a reminder that
 		// [H] in-game opens the full help overlay. First thing a new
 		// player reads after launching the game.
+		//
+		// Layout calculation (1920x1080 reference; Center anchor has
+		// pivot 0.5,0.5 so position is measured to ELEMENT CENTRE):
+		//   MenuQuit centre  = +128, half-height 48  -> bottom at +176
+		//   MenuHowToTitle   = +230, half-height 25  -> top at +205 (~29px gap)
+		//                        text top y = +205, font 36 -> bottom ~+241
+		//   MenuHowToBody    = +380, half-height 110 -> top at +270 (~29px gap)
+		//                        text top y = +270, ~6 lines * 33px -> bottom ~+468
+		// Earlier values (+208 / +268) overlapped because the body's box
+		// half-height (110) put its top edge ABOVE the title's bottom.
 		Zenith_EditorAutomation::AddStep_CreateUIText("MenuHowToTitle", "How to play");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuHowToTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuHowToTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
 		Zenith_EditorAutomation::AddStep_SetUISize("MenuHowToTitle", 1000.0f, 50.0f);
-		// Quit button sits at y = +128 (BTN_H 96 + spacing 32). Title sits ~80px below it.
-		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuHowToTitle", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING + 80.0f);
+		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuHowToTitle", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING + 102.0f);
 		Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuHowToTitle", DPUI::fMENU_HOWTO_TITLE_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("MenuHowToTitle", 1.0f, 0.85f, 0.6f, 1.0f);
 
@@ -549,7 +558,7 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuHowToBody", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuHowToBody", static_cast<int>(Zenith_UI::TextAlignment::Center));
 		Zenith_EditorAutomation::AddStep_SetUISize("MenuHowToBody", 1100.0f, 220.0f);
-		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuHowToBody", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING + 140.0f);
+		Zenith_EditorAutomation::AddStep_SetUIPosition("MenuHowToBody", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING + 252.0f);
 		Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuHowToBody", DPUI::fMENU_HOWTO_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("MenuHowToBody", 0.9f, 0.9f, 0.85f, 1.0f);
 
