@@ -19,12 +19,14 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
+#include "Physics/Zenith_Physics.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Windows/Zenith_Windows_Window.h"
 
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace DPHeuristicBot
 {
@@ -39,8 +41,37 @@ namespace DPHeuristicBot
 	static constexpr float kStopAtTargetDist    = 1.4f;
 	static constexpr float kStuckMoveThresholdSq= 0.25f;   // moved < 0.5 m -> stuck increment
 	static constexpr int   kStuckFrameLimit     = 90;       // ~1.5 s @ 60 fps
-	static constexpr int   kStrafeBurstFrames   = 30;       // ~0.5 s
-	static constexpr int   kAxisThreshDecisive  = 1;        // 1=binary direction commit
+
+	// =========================================================
+	// Grid-A* pathing (Phase 3b). Mirrors Test_HumanPlaythrough's
+	// approach: lazy one-shot walkability grid built via downward
+	// raycasts, A* over the grid, waypoint-follow with replan on
+	// target drift or stuck-detector trigger.
+	//
+	// Smaller grid than HumanPlaythrough (60x60 @ 2 m) -- the bot
+	// doesn't need 1 m fidelity, and the smaller grid is ~4x faster
+	// to build (3600 raycasts vs 14400). Bake cost is one-time.
+	// =========================================================
+	static constexpr int   kPathGridDim   = 60;
+	static constexpr float kPathCellSize  = 2.0f;
+	static constexpr float kPathOriginX   = -10.0f;
+	static constexpr float kPathOriginZ   = -10.0f;
+	static constexpr float kPathFloorY    = 1.0f;
+	static constexpr float kPathFloorYTop = 1.5f;
+	static constexpr float kWaypointReachedDist = 1.8f;
+
+	// Lazily built once per process. Reset() does NOT clear it -- the
+	// scene's wall geometry is static across bot reruns, so a rebuild
+	// just wastes time.
+	static bool g_bPathGridBuilt = false;
+	static bool g_abPathWalkable[kPathGridDim * kPathGridDim] = {};
+
+	// Active path. Replanned when target drifts > kReplanIfTargetMoves
+	// or when stuck > kStuckFrameLimit. Cleared on Reset().
+	static Zenith_Vector<Zenith_Maths::Vector3> g_axCurrentPath;
+	static int   g_iPathWaypoint = 0;
+	static Zenith_Maths::Vector3 g_xLastPlannedTarget{1e9f, 0.0f, 0.0f};
+	static constexpr float kReplanIfTargetMoves = 4.0f; // metres
 
 	// =========================================================
 	// Persistent state.
@@ -48,8 +79,6 @@ namespace DPHeuristicBot
 	static Goal g_eCurrentGoal = Goal::Idle;
 	static Zenith_Maths::Vector3 g_xLastPos{1e9f, 0.0f, 0.0f};
 	static int   g_iStuckFrames        = 0;
-	static int   g_iStrafeRemaining    = 0;
-	static int   g_iStrafeDirection    = 0;  // 0 = right (+A), 1 = left (+D)
 	static uint32_t g_uSprintFrames    = 0;
 	static uint32_t g_uWalkQuietFrames = 0;
 	static uint32_t g_uInteractPresses = 0;
@@ -232,10 +261,183 @@ namespace DPHeuristicBot
 	}
 
 	// =========================================================
-	// Movement primitives. DriveToward sets WASD + tracks stuck.
+	// Grid-A* helpers. Mirrors Test_HumanPlaythrough's pathfinder but
+	// with a coarser grid + simpler walkability sample (1 ray, not 5).
 	// =========================================================
-	static void DriveToward(const Zenith_Maths::Vector3& xMyPos,
-	                        const Zenith_Maths::Vector3& xTarget)
+	static inline bool IsCellWalkable(int x, int z)
+	{
+		if (x < 0 || x >= kPathGridDim || z < 0 || z >= kPathGridDim) return false;
+		return g_abPathWalkable[z * kPathGridDim + x];
+	}
+
+	static void BuildPathGrid()
+	{
+		if (g_bPathGridBuilt) return;
+		uint32_t uWalkable = 0;
+		for (int z = 0; z < kPathGridDim; ++z)
+		{
+			for (int x = 0; x < kPathGridDim; ++x)
+			{
+				const float cx = kPathOriginX + (x + 0.5f) * kPathCellSize;
+				const float cz = kPathOriginZ + (z + 0.5f) * kPathCellSize;
+				// Single centre raycast -- coarser than HumanPlaythrough's
+				// 5-ray capsule test but ~5x cheaper. Wall AABBs sit Y=1..5;
+				// floor at Y=0..1. Threshold 1.5 m sits between, so floor
+				// hits are walkable + wall hits are blocked.
+				const Zenith_Physics::RaycastResult xH = Zenith_Physics::Raycast(
+					Zenith_Maths::Vector3(cx, 10.0f, cz),
+					Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 12.0f);
+				const bool bWalkable = xH.m_bHit && xH.m_xHitPoint.y < kPathFloorYTop;
+				g_abPathWalkable[z * kPathGridDim + x] = bWalkable;
+				if (bWalkable) ++uWalkable;
+			}
+		}
+		g_bPathGridBuilt = true;
+		std::printf("[DPHeuristicBot] path grid built: %u/%d cells walkable\n",
+			uWalkable, kPathGridDim * kPathGridDim);
+		std::fflush(stdout);
+	}
+
+	static inline void WorldToCell(const Zenith_Maths::Vector3& xWorld, int& x, int& z)
+	{
+		x = static_cast<int>((xWorld.x - kPathOriginX) / kPathCellSize);
+		z = static_cast<int>((xWorld.z - kPathOriginZ) / kPathCellSize);
+	}
+
+	static inline Zenith_Maths::Vector3 CellToWorld(int x, int z)
+	{
+		return Zenith_Maths::Vector3(
+			kPathOriginX + (x + 0.5f) * kPathCellSize,
+			kPathFloorY,
+			kPathOriginZ + (z + 0.5f) * kPathCellSize);
+	}
+
+	// Snap a world-space cell to the nearest walkable cell. Used when
+	// start or end falls inside a wall (rare but possible after
+	// possession because villager spawn points can clip).
+	static int SnapToWalkable(int x, int z, int iMaxRing = 8)
+	{
+		if (IsCellWalkable(x, z)) return z * kPathGridDim + x;
+		for (int r = 1; r <= iMaxRing; ++r)
+		{
+			for (int dz = -r; dz <= r; ++dz)
+			{
+				for (int dx = -r; dx <= r; ++dx)
+				{
+					const int aDx = (dx < 0) ? -dx : dx;
+					const int aDz = (dz < 0) ? -dz : dz;
+					if (aDx != r && aDz != r) continue; // ring only
+					const int nx = x + dx, nz = z + dz;
+					if (IsCellWalkable(nx, nz)) return nz * kPathGridDim + nx;
+				}
+			}
+		}
+		return -1;
+	}
+
+	// A* over the grid. Open list is a vector with linear-scan
+	// min-extract -- with kN=3600 + open << kN in practice, this is
+	// cheaper than dragging in std::priority_queue.
+	static bool ComputePathAStar(const Zenith_Maths::Vector3& xStart,
+	                             const Zenith_Maths::Vector3& xEnd,
+	                             Zenith_Vector<Zenith_Maths::Vector3>& xOutPath)
+	{
+		BuildPathGrid();
+		int sx, sz, ex, ez;
+		WorldToCell(xStart, sx, sz);
+		WorldToCell(xEnd, ex, ez);
+
+		const int iSnapStart = SnapToWalkable(sx, sz, 16);
+		const int iSnapEnd   = SnapToWalkable(ex, ez, 16);
+		if (iSnapStart < 0 || iSnapEnd < 0) return false;
+		sx = iSnapStart % kPathGridDim; sz = iSnapStart / kPathGridDim;
+		ex = iSnapEnd   % kPathGridDim; ez = iSnapEnd   / kPathGridDim;
+
+		constexpr int kN = kPathGridDim * kPathGridDim;
+		std::vector<float> axGScore(kN, 1e30f);
+		std::vector<int>   aiCameFrom(kN, -1);
+		std::vector<bool>  abVisited(kN, false);
+		std::vector<std::pair<float, int>> axOpen;
+		axOpen.reserve(64);
+
+		auto Heuristic = [ex, ez](int x, int z) {
+			const float fDx = static_cast<float>(x - ex);
+			const float fDz = static_cast<float>(z - ez);
+			return std::sqrt(fDx * fDx + fDz * fDz);
+		};
+
+		const int iStartIdx = sz * kPathGridDim + sx;
+		const int iEndIdx   = ez * kPathGridDim + ex;
+		axGScore[iStartIdx] = 0.0f;
+		axOpen.push_back({Heuristic(sx, sz), iStartIdx});
+
+		bool bFound = (iStartIdx == iEndIdx);
+		while (!axOpen.empty() && !bFound)
+		{
+			size_t uBest = 0;
+			for (size_t i = 1; i < axOpen.size(); ++i)
+				if (axOpen[i].first < axOpen[uBest].first) uBest = i;
+			const int iIdx = axOpen[uBest].second;
+			axOpen[uBest] = axOpen.back();
+			axOpen.pop_back();
+
+			if (abVisited[iIdx]) continue;
+			abVisited[iIdx] = true;
+			if (iIdx == iEndIdx) { bFound = true; break; }
+
+			const int x = iIdx % kPathGridDim;
+			const int z = iIdx / kPathGridDim;
+			for (int dz = -1; dz <= 1; ++dz)
+			{
+				for (int dx = -1; dx <= 1; ++dx)
+				{
+					if (dx == 0 && dz == 0) continue;
+					const int nx = x + dx, nz = z + dz;
+					if (!IsCellWalkable(nx, nz)) continue;
+					const int iNIdx = nz * kPathGridDim + nx;
+					if (abVisited[iNIdx]) continue;
+					const float fStep = (dx != 0 && dz != 0) ? 1.41421f : 1.0f;
+					const float fNewG = axGScore[iIdx] + fStep;
+					if (fNewG < axGScore[iNIdx])
+					{
+						axGScore[iNIdx] = fNewG;
+						aiCameFrom[iNIdx] = iIdx;
+						axOpen.push_back({fNewG + Heuristic(nx, nz), iNIdx});
+					}
+				}
+			}
+		}
+
+		if (!bFound) return false;
+
+		xOutPath.Clear();
+		std::vector<int> aiReverse;
+		int iCur = iEndIdx;
+		while (iCur >= 0)
+		{
+			aiReverse.push_back(iCur);
+			iCur = aiCameFrom[iCur];
+		}
+		for (auto it = aiReverse.rbegin(); it != aiReverse.rend(); ++it)
+		{
+			xOutPath.PushBack(CellToWorld(*it % kPathGridDim, *it / kPathGridDim));
+		}
+		// Replace final waypoint with the actual target so we don't
+		// stop short by up to ~1.4 m.
+		if (xOutPath.GetSize() > 0)
+		{
+			Zenith_Maths::Vector3& xLast = xOutPath.Get(xOutPath.GetSize() - 1);
+			xLast.x = xEnd.x;
+			xLast.z = xEnd.z;
+		}
+		return true;
+	}
+
+	// =========================================================
+	// Movement primitives.
+	// =========================================================
+	static void DriveWASDInDirection(const Zenith_Maths::Vector3& xMyPos,
+	                                 const Zenith_Maths::Vector3& xTarget)
 	{
 		const float fDx = xTarget.x - xMyPos.x;
 		const float fDz = xTarget.z - xMyPos.z;
@@ -256,38 +458,70 @@ namespace DPHeuristicBot
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, fRightDot   < -kAxisThresh);
 	}
 
-	// While "strafing" (stuck-recovery), push the villager perpendicular
-	// to the camera right vector so we punch out of a wall corner.
-	static void DriveStrafe()
+	// Drive toward xTarget via A* path-following. Replans when the
+	// final target drifts > kReplanIfTargetMoves OR when stuck.
+	// Returns the current waypoint's xy distance for caller's
+	// "within interact range" checks.
+	static float DriveTowardViaPath(const Zenith_Maths::Vector3& xMyPos,
+	                                const Zenith_Maths::Vector3& xTarget)
 	{
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true);
-		if (g_iStrafeDirection == 0)
-		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
-		}
-		else
-		{
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);
-			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
-		}
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
-	}
+		// Replan triggers:
+		//   - no path cached
+		//   - target moved significantly (chasing a moving objective)
+		//   - we've been stuck for > kStuckFrameLimit (need a new route)
+		const float fTdx = xTarget.x - g_xLastPlannedTarget.x;
+		const float fTdz = xTarget.z - g_xLastPlannedTarget.z;
+		bool bReplan = (g_axCurrentPath.GetSize() == 0u)
+		            || (fTdx*fTdx + fTdz*fTdz > kReplanIfTargetMoves * kReplanIfTargetMoves);
 
-	// Update the stuck detector. Called every frame while moving.
-	// Returns true if the bot is stuck right now (caller should strafe).
-	static bool UpdateStuck(const Zenith_Maths::Vector3& xMyPos)
-	{
-		const float fDx = xMyPos.x - g_xLastPos.x;
-		const float fDz = xMyPos.z - g_xLastPos.z;
-		if (fDx*fDx + fDz*fDz > kStuckMoveThresholdSq)
+		// Stuck detector: tracks meaningful displacement of g_xLastPos.
+		const float fSdx = xMyPos.x - g_xLastPos.x;
+		const float fSdz = xMyPos.z - g_xLastPos.z;
+		if (fSdx*fSdx + fSdz*fSdz > kStuckMoveThresholdSq)
 		{
 			g_xLastPos = xMyPos;
 			g_iStuckFrames = 0;
-			return false;
 		}
-		++g_iStuckFrames;
-		return g_iStuckFrames > kStuckFrameLimit;
+		else
+		{
+			++g_iStuckFrames;
+			if (g_iStuckFrames > kStuckFrameLimit)
+			{
+				bReplan = true;
+				g_iStuckFrames = 0;
+			}
+		}
+
+		if (bReplan)
+		{
+			g_axCurrentPath.Clear();
+			g_iPathWaypoint = 0;
+			ComputePathAStar(xMyPos, xTarget, g_axCurrentPath);
+			g_xLastPlannedTarget = xTarget;
+		}
+
+		// Advance through already-reached waypoints (except the last
+		// one -- that's our final target).
+		while (g_iPathWaypoint + 1 < static_cast<int>(g_axCurrentPath.GetSize()))
+		{
+			const Zenith_Maths::Vector3& wp = g_axCurrentPath.Get(g_iPathWaypoint);
+			const float fWdx = wp.x - xMyPos.x;
+			const float fWdz = wp.z - xMyPos.z;
+			if (fWdx*fWdx + fWdz*fWdz < kWaypointReachedDist * kWaypointReachedDist)
+				++g_iPathWaypoint;
+			else
+				break;
+		}
+
+		// Drive toward the current waypoint (or the target if path empty).
+		Zenith_Maths::Vector3 xWaypoint = xTarget;
+		if (g_iPathWaypoint < static_cast<int>(g_axCurrentPath.GetSize()))
+			xWaypoint = g_axCurrentPath.Get(g_iPathWaypoint);
+		DriveWASDInDirection(xMyPos, xWaypoint);
+
+		const float fFx = xTarget.x - xMyPos.x;
+		const float fFz = xTarget.z - xMyPos.z;
+		return std::sqrt(fFx*fFx + fFz*fFz);
 	}
 
 	// =========================================================
@@ -346,8 +580,6 @@ namespace DPHeuristicBot
 		g_eCurrentGoal      = Goal::Idle;
 		g_xLastPos          = Zenith_Maths::Vector3(1e9f, 0.0f, 0.0f);
 		g_iStuckFrames      = 0;
-		g_iStrafeRemaining  = 0;
-		g_iStrafeDirection  = 0;
 		g_uSprintFrames     = 0;
 		g_uWalkQuietFrames  = 0;
 		g_uInteractPresses  = 0;
@@ -356,6 +588,12 @@ namespace DPHeuristicBot
 		g_iLastInteractFrame= -1000;
 		g_iLastDropFrame    = -1000;
 		g_iLastPossessFrame = -1000;
+		g_axCurrentPath.Clear();
+		g_iPathWaypoint     = 0;
+		g_xLastPlannedTarget = Zenith_Maths::Vector3(1e9f, 0.0f, 0.0f);
+		// g_bPathGridBuilt is intentionally NOT reset -- the grid is
+		// derived from static scene geometry, so a rebuild across bot
+		// reruns within the same scene would waste 3600 raycasts.
 		ClearAllKeys();
 	}
 
@@ -435,27 +673,8 @@ namespace DPHeuristicBot
 			if (!xObs.xObjectiveItem.IsValid()) { ClearMovementKeys(); break; }
 			Zenith_Maths::Vector3 xTargetPos;
 			if (!TryGetEntityPos(xObs.xObjectiveItem, xTargetPos)) { ClearMovementKeys(); break; }
-			if (UpdateStuck(xObs.xMyPos) || g_iStrafeRemaining > 0)
-			{
-				if (g_iStrafeRemaining <= 0)
-				{
-					g_iStrafeRemaining = kStrafeBurstFrames;
-					g_iStrafeDirection = (iFrame >> 5) & 1;
-					g_iStuckFrames = 0;
-				}
-				DriveStrafe();
-				--g_iStrafeRemaining;
-			}
-			else
-			{
-				DriveToward(xObs.xMyPos, xTargetPos);
-			}
-			// Within pickup range -> attempt F press for tagged items
-			// (items use the proximity-pickup path; F is still useful for
-			// chest-enclosed items in the placeholder layout).
-			const float fDx = xTargetPos.x - xObs.xMyPos.x;
-			const float fDz = xTargetPos.z - xObs.xMyPos.z;
-			if (fDx*fDx + fDz*fDz < kStopAtTargetDist * kStopAtTargetDist
+			const float fDistToTarget = DriveTowardViaPath(xObs.xMyPos, xTargetPos);
+			if (fDistToTarget < kStopAtTargetDist
 			    && (iFrame - g_iLastInteractFrame) >= kInteractCooldownFrames)
 			{
 				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
@@ -472,10 +691,8 @@ namespace DPHeuristicBot
 				ClearMovementKeys();
 				break;
 			}
-			DriveToward(xObs.xMyPos, xTargetPos);
-			const float fDx = xTargetPos.x - xObs.xMyPos.x;
-			const float fDz = xTargetPos.z - xObs.xMyPos.z;
-			if (fDx*fDx + fDz*fDz < kStopAtTargetDist * kStopAtTargetDist
+			const float fDistToTarget = DriveTowardViaPath(xObs.xMyPos, xTargetPos);
+			if (fDistToTarget < kStopAtTargetDist
 			    && (iFrame - g_iLastInteractFrame) >= kInteractCooldownFrames)
 			{
 				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
@@ -492,10 +709,8 @@ namespace DPHeuristicBot
 				ClearMovementKeys();
 				break;
 			}
-			DriveToward(xObs.xMyPos, xTargetPos);
-			const float fDx = xTargetPos.x - xObs.xMyPos.x;
-			const float fDz = xTargetPos.z - xObs.xMyPos.z;
-			if (fDx*fDx + fDz*fDz < kStopAtTargetDist * kStopAtTargetDist
+			const float fDistToTarget = DriveTowardViaPath(xObs.xMyPos, xTargetPos);
+			if (fDistToTarget < kStopAtTargetDist
 			    && (iFrame - g_iLastInteractFrame) >= kInteractCooldownFrames)
 			{
 				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
@@ -511,12 +726,15 @@ namespace DPHeuristicBot
 			const Zenith_EntityID xPriest = FindClosestPriest(xObs.xMyPos, fIgnored);
 			if (xPriest.IsValid() && TryGetEntityPos(xPriest, xPriestPos))
 			{
-				// Target = MyPos + (MyPos - PriestPos) -> walking away.
+				// Walk straight away from the priest -- short-range escape
+				// doesn't need pathing (and pathing toward an extrapolated
+				// "away" point on the grid usually doesn't find a route
+				// because the point falls outside walkable cells).
 				const Zenith_Maths::Vector3 xAway(
 					xObs.xMyPos.x + (xObs.xMyPos.x - xPriestPos.x),
 					xObs.xMyPos.y,
 					xObs.xMyPos.z + (xObs.xMyPos.z - xPriestPos.z));
-				DriveToward(xObs.xMyPos, xAway);
+				DriveWASDInDirection(xObs.xMyPos, xAway);
 			}
 			else
 			{

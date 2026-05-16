@@ -35,6 +35,13 @@ param(
     [switch]$Headless  = $true,
     [switch]$Build     = $false,
     [switch]$SkipRun   = $false,
+    # Bot needs more than the harness default 600-frame cap to walk
+    # the GameLevel map. Pre-possess + scene load = ~60 frames; pathing
+    # to 5 objectives + the pentagram is ~30-40 s of bot time at the
+    # bot's jog speed. 2100 frames = 35 s, generous enough that the
+    # bot can win the placeholder GameLevel once Phase 3b's pathing
+    # is wired in.
+    [int]$ExitAfterFrames = 2100,
     [string]$RunnerScript = "Tools/run_dp_tests.ps1"
 )
 
@@ -97,7 +104,8 @@ if (-not $SkipRun) {
     }
     $runnerArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass',
         '-File', $RunnerScript,
-        '-Filter', 'Test_DPHeuristicBotPlaythrough')
+        '-Filter', 'Test_DPHeuristicBotPlaythrough',
+        '-ExitAfterFrames', $ExitAfterFrames)
     if ($Headless) { $runnerArgs += '-Headless' }
     & pwsh.exe @runnerArgs
     $testExit = $LASTEXITCODE
