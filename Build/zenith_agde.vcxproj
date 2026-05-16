@@ -1131,6 +1131,7 @@
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h" />
     <ClInclude Include="..\Zenith\SaveData\Zenith_SaveData.h" />
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
+    <ClInclude Include="..\Zenith\Telemetry\Zenith_Telemetry.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UI.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIButton.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UICanvas.h" />
@@ -2001,6 +2002,7 @@
     <ClCompile Include="..\Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="..\Zenith\SaveData\Zenith_SaveData.cpp" />
     <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
+    <ClCompile Include="..\Zenith\Telemetry\Zenith_Telemetry.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIButton.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UICanvas.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIElement.cpp" />

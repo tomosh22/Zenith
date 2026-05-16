@@ -973,6 +973,9 @@
     <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp">
       <Filter>TaskSystem</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Telemetry\Zenith_Telemetry.cpp">
+      <Filter>Telemetry</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\UI\Zenith_UIButton.cpp">
       <Filter>UI</Filter>
     </ClCompile>
@@ -4065,6 +4068,9 @@
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h">
       <Filter>TaskSystem</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Telemetry\Zenith_Telemetry.h">
+      <Filter>Telemetry</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\UI\Zenith_UI.h">
       <Filter>UI</Filter>
     </ClInclude>
@@ -4519,6 +4525,9 @@
     </Filter>
     <Filter Include="TaskSystem">
       <UniqueIdentifier>{4cc59397-cf4e-fb00-80ea-d1b43e569737}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Telemetry">
+      <UniqueIdentifier>{14a296aa-de12-d9f0-16f4-3b639424f8e4}</UniqueIdentifier>
     </Filter>
     <Filter Include="Tools">
       <UniqueIdentifier>{dee12586-e17b-394c-b1d1-4dc03d822497}</UniqueIdentifier>

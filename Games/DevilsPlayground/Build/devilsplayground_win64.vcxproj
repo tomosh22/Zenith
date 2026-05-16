@@ -479,6 +479,7 @@
     <ClInclude Include="..\Source\DPFogPass.h" />
     <ClInclude Include="..\Source\DPInputActions.h" />
     <ClInclude Include="..\Source\DPMaterials.h" />
+    <ClInclude Include="..\Source\DPUI.h" />
     <ClInclude Include="..\Source\DP_Archetypes.h" />
     <ClInclude Include="..\Source\DP_LevelData.h" />
     <ClInclude Include="..\Source\DP_Reagents.h" />
@@ -597,6 +598,7 @@
     <ClCompile Include="..\Tests\Test_T0SaveData_TestHooks.cpp" />
     <ClCompile Include="..\Tests\Test_T1NavMesh_BTUnitsCanFollowRealPath.cpp" />
     <ClCompile Include="..\Tests\Test_T1NavMesh_GeneratorPerf.cpp" />
+    <ClCompile Include="..\Tests\Test_TelemetryRoundTrip.cpp" />
     <ClCompile Include="..\Tests\Test_VisualWiring.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
