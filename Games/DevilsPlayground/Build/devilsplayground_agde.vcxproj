@@ -280,6 +280,8 @@
     <ClCompile Include="..\Tests\Test_P2HUD_AelfricStateInRealScene.cpp" />
     <ClCompile Include="..\Tests\Test_P2HUD_AelfricStateReadouts.cpp" />
     <ClCompile Include="..\Tests\Test_P2HUD_DawnAndScentReadouts.cpp" />
+    <ClCompile Include="..\Tests\Test_P2HUD_DetailedReadouts.cpp" />
+    <ClCompile Include="..\Tests\Test_P2HUD_TutorialHint.cpp" />
     <ClCompile Include="..\Tests\Test_P2Menu_PauseAndMainMenuShortcuts.cpp" />
     <ClCompile Include="..\Tests\Test_P2Pause_RestartActuallyReloadsScene.cpp" />
     <ClCompile Include="..\Tests\Test_P2Reagent_BellSoulRingsBell.cpp" />
@@ -304,6 +306,7 @@
     <ClCompile Include="..\Tests\Test_T0SaveData_TestHooks.cpp" />
     <ClCompile Include="..\Tests\Test_T1NavMesh_BTUnitsCanFollowRealPath.cpp" />
     <ClCompile Include="..\Tests\Test_T1NavMesh_GeneratorPerf.cpp" />
+    <ClCompile Include="..\Tests\Test_TelemetryEdgeCases.cpp" />
     <ClCompile Include="..\Tests\Test_TelemetryRoundTrip.cpp" />
     <ClCompile Include="..\Tests\Test_VisualWiring.cpp" />
   </ItemGroup>

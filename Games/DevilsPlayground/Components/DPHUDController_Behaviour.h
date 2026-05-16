@@ -261,14 +261,15 @@ public:
 		}
 
 		// VillagerInfo + LifeNumeric -- show possessed villager's archetype
-		// and life-seconds. Both gated on possessing.
+		// and life-seconds. Both gated on possessing. Formatting via the
+		// public static helpers so unit tests pin each case independently.
 		DPVillager_Behaviour* pxVB = bPossessed ? TryGetVillager(xV) : nullptr;
 		if (auto* pxInfo = xUI.FindElement<Zenith_UI::Zenith_UIText>("VillagerInfo"))
 		{
 			if (pxVB != nullptr && !pxVB->GetArchetypeId().empty())
 			{
 				char buf[80];
-				std::snprintf(buf, sizeof(buf), "Archetype: %s", pxVB->GetArchetypeId().c_str());
+				BuildArchetypeText(buf, sizeof(buf), pxVB->GetArchetypeId().c_str());
 				pxInfo->SetText(buf);
 				pxInfo->SetVisible(true);
 			}
@@ -282,8 +283,7 @@ public:
 			if (pxVB != nullptr)
 			{
 				char buf[48];
-				std::snprintf(buf, sizeof(buf), "Life: %.1f / %.0f s",
-					pxVB->GetRemainingLife(), pxVB->GetMaxLife());
+				BuildLifeNumericText(buf, sizeof(buf), pxVB->GetRemainingLife(), pxVB->GetMaxLife());
 				pxLifeNum->SetText(buf);
 				pxLifeNum->SetVisible(true);
 			}
@@ -293,17 +293,14 @@ public:
 			}
 		}
 
-		// MovementMode -- Sprint / Walk-Quiet / Move / Idle. Reads the
-		// possessed villager's per-frame state cache.
+		// MovementMode -- Sprint / Walk-Quiet / Move. Reads the possessed
+		// villager's per-frame cache; format via BuildMovementModeText.
 		if (auto* pxMove = xUI.FindElement<Zenith_UI::Zenith_UIText>("MovementMode"))
 		{
 			if (pxVB != nullptr)
 			{
-				const char* szMode = "Move";
-				if (pxVB->IsSprintingNow())       szMode = "SPRINT";
-				else if (pxVB->IsWalkQuietNow())  szMode = "WALK QUIET";
 				char buf[40];
-				std::snprintf(buf, sizeof(buf), "Movement: %s", szMode);
+				BuildMovementModeText(buf, sizeof(buf), pxVB->IsSprintingNow(), pxVB->IsWalkQuietNow());
 				pxMove->SetText(buf);
 				pxMove->SetVisible(true);
 			}
@@ -328,7 +325,7 @@ public:
 			if (iTotal > 0)
 			{
 				char buf[40];
-				std::snprintf(buf, sizeof(buf), "Vessels: %d / %d", iAlive, iTotal);
+				BuildVillagersAliveText(buf, sizeof(buf), iAlive, iTotal);
 				pxCount->SetText(buf);
 				pxCount->SetVisible(true);
 			}
@@ -339,7 +336,9 @@ public:
 		}
 
 		// PriestDistance -- meters to closest priest from possessed villager.
-		// Hidden when not possessing.
+		// Hidden when not possessing. Threshold-based colour coding lives in
+		// PriestDangerForDistance + PriestDistanceColor so tests can pin the
+		// breakpoints without authoring a priest entity.
 		if (auto* pxDist = xUI.FindElement<Zenith_UI::Zenith_UIText>("PriestDistance"))
 		{
 			if (bPossessed)
@@ -366,20 +365,8 @@ public:
 				if (fClosestDist >= 0.0f)
 				{
 					char buf[40];
-					std::snprintf(buf, sizeof(buf), "Priest: %.0f m", fClosestDist);
-					// Red urgency colour when within apprehend reach (~5m).
-					if (fClosestDist < 5.0f)
-					{
-						pxDist->SetColor(Zenith_Maths::Vector4(1.0f, 0.3f, 0.3f, 1.0f));
-					}
-					else if (fClosestDist < 15.0f)
-					{
-						pxDist->SetColor(Zenith_Maths::Vector4(1.0f, 0.8f, 0.4f, 1.0f));
-					}
-					else
-					{
-						pxDist->SetColor(Zenith_Maths::Vector4(0.85f, 0.85f, 0.85f, 1.0f));
-					}
+					BuildPriestDistanceText(buf, sizeof(buf), fClosestDist);
+					pxDist->SetColor(PriestDistanceColor(PriestDangerForDistance(fClosestDist)));
 					pxDist->SetText(buf);
 					pxDist->SetVisible(true);
 				}
@@ -399,9 +386,8 @@ public:
 		{
 			if (m_bTimerStarted)
 			{
-				const int iSec = static_cast<int>(m_fRunTimerSeconds);
 				char buf[32];
-				std::snprintf(buf, sizeof(buf), "Time: %d:%02d", iSec / 60, iSec % 60);
+				BuildRunTimerText(buf, sizeof(buf), m_fRunTimerSeconds);
 				pxTimer->SetText(buf);
 				pxTimer->SetVisible(true);
 			}
@@ -420,7 +406,7 @@ public:
 			if (szNearestType != nullptr)
 			{
 				char buf[64];
-				std::snprintf(buf, sizeof(buf), "F: interact with %s", szNearestType);
+				BuildInteractHintText(buf, sizeof(buf), szNearestType);
 				pxHint->SetText(buf);
 				pxHint->SetVisible(true);
 			}
@@ -576,16 +562,21 @@ public:
 	//   priest-suspicious -> "He's suspicious -- walk quiet"
 	//   default           -> "Find an objective"
 	// Returns nullptr when no hint applies (HUD line hidden).
-	// Static + pure so unit tests can exercise the dispatch table.
-	static const char* BuildTutorialHint(bool bPossessed, Zenith_EntityID xV,
-	                                     AelfricState eState, bool bRunOver)
+	//
+	// Two forms:
+	//   BuildTutorialHintForState -- pure dispatch table; takes the
+	//     held-item tag directly. Unit-testable in isolation.
+	//   BuildTutorialHint -- thin wrapper for OnUpdate; resolves the
+	//     tag via DP_Player::GetHeldItemTag (which needs a real entity
+	//     + scene). Tests cover the pure form.
+	static const char* BuildTutorialHintForState(bool bPossessed, DP_ItemTag eTag,
+	                                             AelfricState eState, bool bRunOver)
 	{
 		if (bRunOver) return nullptr;
 		if (!bPossessed)
 			return "Click a villager to possess them -- the demon needs a body.";
 		if (eState == AelfricState::Pursuing)
 			return "Aelfric sees you -- break line of sight or [Shift] to sprint.";
-		const DP_ItemTag eTag = DP_Player::GetHeldItemTag(xV);
 		if (DP_IsObjectiveTag(eTag))
 			return "Carry to the pentagram. 5 objectives end the night.";
 		if (eTag == DP_ItemTag::SkeletonKey)
@@ -597,6 +588,132 @@ public:
 		if (eState == AelfricState::Suspicious)
 			return "Aelfric is suspicious. Hold [Ctrl] to walk quietly.";
 		return "Find an objective -- check chests, search the village.";
+	}
+
+	static const char* BuildTutorialHint(bool bPossessed, Zenith_EntityID xV,
+	                                     AelfricState eState, bool bRunOver)
+	{
+		const DP_ItemTag eTag = bPossessed ? DP_Player::GetHeldItemTag(xV) : DP_ItemTag::None;
+		return BuildTutorialHintForState(bPossessed, eTag, eState, bRunOver);
+	}
+
+	// =============== Detailed-HUD formatter helpers ===============
+	// Each returns the formatted text via the caller-supplied buffer
+	// (matches the BuildDawnText / BuildScentText style). Pure +
+	// side-effect-free so unit tests pin the format without authoring
+	// a UI canvas.
+
+	// "Movement: SPRINT" / "Movement: WALK QUIET" / "Movement: Move".
+	// Sprint wins ties (matches the actual gameplay precedence in
+	// DPVillager::OnUpdate where sprint+quiet resolves to sprint).
+	static void BuildMovementModeText(char* szBuf, size_t uBufSize,
+	                                  bool bSprintingNow, bool bWalkQuietNow)
+	{
+		const char* szMode = "Move";
+		if      (bSprintingNow)  szMode = "SPRINT";
+		else if (bWalkQuietNow)  szMode = "WALK QUIET";
+		std::snprintf(szBuf, uBufSize, "Movement: %s", szMode);
+	}
+
+	// "Vessels: alive / total". Caller guarantees iTotal > 0; for
+	// iTotal == 0 the HUD hides the element entirely (no formatting).
+	static void BuildVillagersAliveText(char* szBuf, size_t uBufSize,
+	                                    int iAlive, int iTotal)
+	{
+		if (iAlive < 0) iAlive = 0;
+		if (iTotal < 0) iTotal = 0;
+		std::snprintf(szBuf, uBufSize, "Vessels: %d / %d", iAlive, iTotal);
+	}
+
+	// "Priest: <m> m" rounded to nearest metre. Negative input -> "0 m"
+	// so the readout never shows nonsense if the distance is unset.
+	static void BuildPriestDistanceText(char* szBuf, size_t uBufSize, float fMeters)
+	{
+		if (fMeters < 0.0f) fMeters = 0.0f;
+		std::snprintf(szBuf, uBufSize, "Priest: %.0f m", fMeters);
+	}
+
+	// 3-level urgency for the PriestDistance readout colour. Thresholds:
+	//   < 5 m  -> Danger (red)        priest can apprehend
+	//   < 15 m -> Caution (amber)     priest within hearing
+	//   else   -> Calm (grey)
+	enum class PriestDanger : uint8_t
+	{
+		Calm    = 0,
+		Caution = 1,
+		Danger  = 2,
+	};
+	static PriestDanger PriestDangerForDistance(float fMeters)
+	{
+		if (fMeters < 5.0f)  return PriestDanger::Danger;
+		if (fMeters < 15.0f) return PriestDanger::Caution;
+		return PriestDanger::Calm;
+	}
+	static Zenith_Maths::Vector4 PriestDistanceColor(PriestDanger eDanger)
+	{
+		switch (eDanger)
+		{
+		case PriestDanger::Danger:  return Zenith_Maths::Vector4(1.0f, 0.3f, 0.3f, 1.0f);
+		case PriestDanger::Caution: return Zenith_Maths::Vector4(1.0f, 0.8f, 0.4f, 1.0f);
+		case PriestDanger::Calm:
+		default:                    return Zenith_Maths::Vector4(0.85f, 0.85f, 0.85f, 1.0f);
+		}
+	}
+
+	// "Time: M:SS" -- minutes:seconds (zero-padded seconds). Negative
+	// input clamps to 0 so the timer never goes backwards on the HUD.
+	static void BuildRunTimerText(char* szBuf, size_t uBufSize, float fSeconds)
+	{
+		if (fSeconds < 0.0f) fSeconds = 0.0f;
+		const int iSec = static_cast<int>(fSeconds);
+		std::snprintf(szBuf, uBufSize, "Time: %d:%02d", iSec / 60, iSec % 60);
+	}
+
+	// "F: interact with <type>" -- type is one of "door" / "chest" /
+	// "forge" / "pentagram" / "noise machine" returned by
+	// FindNearestInteractableType. nullptr type yields an empty string.
+	static void BuildInteractHintText(char* szBuf, size_t uBufSize, const char* szType)
+	{
+		if (szType == nullptr || szType[0] == '\0')
+		{
+			if (uBufSize > 0) szBuf[0] = '\0';
+			return;
+		}
+		std::snprintf(szBuf, uBufSize, "F: interact with %s", szType);
+	}
+
+	// "Life: X.X / X.X s". Caller passes the remaining + max life.
+	static void BuildLifeNumericText(char* szBuf, size_t uBufSize, float fRemaining, float fMax)
+	{
+		if (fRemaining < 0.0f) fRemaining = 0.0f;
+		if (fMax < 0.0f)       fMax = 0.0f;
+		std::snprintf(szBuf, uBufSize, "Life: %.1f / %.0f s", fRemaining, fMax);
+	}
+
+	// "Archetype: <id>" -- id is the villager's m_strArchetypeId.
+	// Empty id yields an empty string (HUD hides the element).
+	static void BuildArchetypeText(char* szBuf, size_t uBufSize, const char* szArchetypeId)
+	{
+		if (szArchetypeId == nullptr || szArchetypeId[0] == '\0')
+		{
+			if (uBufSize > 0) szBuf[0] = '\0';
+			return;
+		}
+		std::snprintf(szBuf, uBufSize, "Archetype: %s", szArchetypeId);
+	}
+
+	// One-line reagent description text. Returns nullptr for non-reagent
+	// tags (Iron, Key, Spike, Wood, Objective*, None) so the help line
+	// hides. Public so unit tests can pin every case.
+	static const char* ReagentHelpText(DP_ItemTag eTag)
+	{
+		switch (eTag)
+		{
+		case DP_ItemTag::BellSoul:    return "BellSoul: rings on pickup -- alerts every priest on the map.";
+		case DP_ItemTag::BogWater:    return "BogWater: evaporates 8 seconds after you drop it.";
+		case DP_ItemTag::SkeletonKey: return "Skeleton Key: opens any locked door.";
+		default:                       return nullptr;
+		}
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -771,19 +888,8 @@ private:
 		return szResult;
 	}
 
-	// One-line reagent description text. Returns nullptr for non-reagent
-	// tags (Iron, Key, Spike, Wood, Objective*, None) so the help line
-	// hides.
-	static const char* ReagentHelpText(DP_ItemTag eTag)
-	{
-		switch (eTag)
-		{
-		case DP_ItemTag::BellSoul:    return "BellSoul: rings on pickup -- alerts every priest on the map.";
-		case DP_ItemTag::BogWater:    return "BogWater: evaporates 8 seconds after you drop it.";
-		case DP_ItemTag::SkeletonKey: return "Skeleton Key: opens any locked door.";
-		default:                       return nullptr;
-		}
-	}
+	// (ReagentHelpText moved to public section above so unit tests can
+	// pin each case; see ~line 580.)
 
 	void SetStatusText(const char* szText, const Zenith_Maths::Vector4& xColor, float fHoldSeconds)
 	{
