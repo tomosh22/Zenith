@@ -276,6 +276,45 @@ else {
 Write-Host ""
 $failCount = if ($null -eq $failed) { 0 } else { @($failed).Count }
 Write-Host "[run_dp_tests] Summary: $passed passed, $failCount failed" -ForegroundColor Cyan
+
+# 3a. Slowest-tests report. Reads "durationMs" from each per-test JSON;
+# rolls them up + prints the top N. Helps spot outliers dragging suite
+# runtime down. Graceful if a JSON lacks the field (pre-timing-feature
+# results files).
+$timings = @()
+foreach ($name in $tests) {
+    $jsonPath = Join-Path $ResultsDir "$name.json"
+    if (-not (Test-Path $jsonPath)) { continue }
+    try {
+        $obj = Get-Content $jsonPath -Raw | ConvertFrom-Json
+    } catch { continue }
+    if ($obj.PSObject.Properties.Name -contains 'durationMs') {
+        $timings += [PSCustomObject]@{
+            Name       = $name
+            DurationMs = [double]$obj.durationMs
+            Frames     = if ($obj.PSObject.Properties.Name -contains 'frames') { [int]$obj.frames } else { 0 }
+            Skipped    = if ($obj.PSObject.Properties.Name -contains 'skipped') { [bool]$obj.skipped } else { $false }
+        }
+    }
+}
+if ($timings.Count -gt 0) {
+    $totalMs   = ($timings | Measure-Object -Property DurationMs -Sum).Sum
+    $countRan  = ($timings | Where-Object { -not $_.Skipped }).Count
+    $avgMs     = if ($countRan -gt 0) { ($timings | Where-Object { -not $_.Skipped } | Measure-Object -Property DurationMs -Average).Average } else { 0 }
+    Write-Host ""
+    Write-Host ("[run_dp_tests] Timing: {0} tests measured, total = {1:N0} ms, avg = {2:N1} ms" `
+        -f $timings.Count, $totalMs, $avgMs) -ForegroundColor Cyan
+    $topN = [Math]::Min(10, $timings.Count)
+    Write-Host "[run_dp_tests] Slowest $topN tests:" -ForegroundColor Cyan
+    $timings |
+        Sort-Object -Property DurationMs -Descending |
+        Select-Object -First $topN |
+        ForEach-Object {
+            $tag = if ($_.Skipped) { ' (skipped)' } else { '' }
+            Write-Host ("    {0,7:N1} ms  {1,6} frames  {2}{3}" -f $_.DurationMs, $_.Frames, $_.Name, $tag)
+        }
+}
+
 if ($failCount -gt 0) {
     Write-Host "Failed tests:" -ForegroundColor Red
     $failed | ForEach-Object { Write-Host "    $_" }

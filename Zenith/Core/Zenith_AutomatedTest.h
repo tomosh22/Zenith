@@ -64,11 +64,24 @@ struct Zenith_AutomatedTest
 // Linked-list node populated by the registrar macro. Kept writable (no
 // const) so the registrar can chain it without const_cast — important
 // because the compiler may place the user's `static const Zenith_AutomatedTest`
-// in read-only memory.
+// in read-only memory. Also used as a side-channel for the harness to
+// record per-test runtime back onto the node (the test struct itself is
+// in read-only memory and can't be mutated).
 struct Zenith_AutomatedTestNode
 {
 	const Zenith_AutomatedTest* m_pxTest = nullptr;
 	Zenith_AutomatedTestNode*   m_pxNext = nullptr;
+	// Wall-clock duration of the most-recent run of this test, measured
+	// from start of Setup() to end of Verify(). Updated by the harness
+	// in VerifyAndExit. -1.0f means "never run / not yet measured".
+	// Sub-millisecond resolution (we use high_resolution_clock).
+	//
+	// `mutable` because the harness reaches the node via a
+	// `const Zenith_AutomatedTestNode*` (registry walk type) -- the
+	// timing write is conceptually metadata, not part of the
+	// registration payload, so const-correctness vs the test struct
+	// itself stays intact.
+	mutable float               m_fLastDurationMs = -1.0f;
 };
 
 namespace Zenith_AutomatedTestRunner

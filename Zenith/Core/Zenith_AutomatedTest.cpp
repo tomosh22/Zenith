@@ -20,6 +20,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+#include <chrono>
 
 // ============================================================================
 // Linked-list registry — populated by static initializers
@@ -117,6 +118,14 @@ namespace
 		// advance/finalise code path so we don't duplicate state-machine
 		// bookkeeping.
 		bool                            m_bSkipCurrentTest   = false;
+		// Wall-clock test timing. Captured immediately before Setup runs
+		// (or immediately before the skip-decision for graphics-required
+		// tests in headless mode) and consumed in VerifyAndExit to
+		// populate m_fLastDurationMs on the node + the JSON + stdout.
+		// Excludes the BetweenTests scene-reload settle phase so the
+		// reported duration reflects the test's own work, not harness
+		// bookkeeping.
+		std::chrono::high_resolution_clock::time_point m_xTestStartTime;
 	};
 	RunnerState s_xRunner;
 
@@ -273,6 +282,7 @@ void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
 static void WriteResultsJson(const RunnerState& xRunner,
                              const Zenith_AutomatedTest* pxTest,
                              bool bPassed,
+                             float fDurationMs,
                              bool bSkipped = false)
 {
 	// Resolve the output path. In batch mode prefer m_szResultsDir/<name>.json;
@@ -313,14 +323,63 @@ static void WriteResultsJson(const RunnerState& xRunner,
 		"  \"name\": \"%s\",\n"
 		"  \"passed\": %s,\n"
 		"  \"frames\": %d,\n"
+		"  \"durationMs\": %.3f,\n"
 		"  \"failures\": [],\n"
 		"  \"skipped\": %s\n"
 		"}\n",
 		szName,
 		bPassed ? "true" : "false",
 		xRunner.m_iStepFrame,
+		static_cast<double>(fDurationMs),
 		bSkipped ? "true" : "false");
 	std::fclose(pxFile);
+}
+
+// ============================================================================
+// Slowest-tests summary (batch mode). Walks the registered-test list,
+// collects (name, durationMs), insertion-sorts into a fixed-size top-N
+// buffer, prints to stdout. Insertion sort is fine because we expect
+// well under 1000 tests in practice.
+// ============================================================================
+static void PrintSlowestTestsSummary(int iTopN)
+{
+	if (iTopN <= 0) return;
+
+	constexpr int kMaxN = 32;
+	if (iTopN > kMaxN) iTopN = kMaxN;
+
+	struct Entry { const char* szName; float fMs; };
+	Entry axTop[kMaxN] = {};
+	int   iCount = 0;
+
+	for (const Zenith_AutomatedTestNode* p = s_pxTestListHead; p != nullptr; p = p->m_pxNext)
+	{
+		if (p->m_fLastDurationMs < 0.0f) continue;  // never measured (e.g. skipped before harness reset)
+		const char* sz = (p->m_pxTest && p->m_pxTest->m_szName) ? p->m_pxTest->m_szName : "(unnamed)";
+		const float fMs = p->m_fLastDurationMs;
+
+		// Find insertion point in the descending-by-ms top-N.
+		int iIns = iCount;
+		while (iIns > 0 && axTop[iIns - 1].fMs < fMs) --iIns;
+
+		if (iIns >= iTopN) continue;  // slower than every current entry, but the array is already full
+
+		// Shift entries to make room.
+		const int iShiftEnd = (iCount < iTopN) ? iCount : (iTopN - 1);
+		for (int j = iShiftEnd; j > iIns; --j) axTop[j] = axTop[j - 1];
+		axTop[iIns].szName = sz;
+		axTop[iIns].fMs    = fMs;
+		if (iCount < iTopN) ++iCount;
+	}
+
+	if (iCount == 0) return;
+
+	std::printf("[AutomatedTest] Slowest %d tests:\n", iCount);
+	for (int i = 0; i < iCount; ++i)
+	{
+		std::printf("  %7.1f ms  %s\n", static_cast<double>(axTop[i].fMs), axTop[i].szName);
+	}
+	std::fflush(stdout);
 }
 
 // ============================================================================
@@ -381,6 +440,9 @@ bool Zenith_AutomatedTestRunner::Tick()
 		    && pxTest->m_bRequiresGraphics
 		    && Zenith_CommandLine::IsHeadless())
 		{
+			// Skipped tests still get a (near-zero) duration so the
+			// JSON schema stays uniform across all rows.
+			s_xRunner.m_xTestStartTime = std::chrono::high_resolution_clock::now();
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[AutomatedTest] %s: SKIPPED (requires graphics; running headless)",
 				pxTest->m_szName ? pxTest->m_szName : "(unknown)");
@@ -395,6 +457,11 @@ bool Zenith_AutomatedTestRunner::Tick()
 		{
 			Zenith_InputSimulator::SetFixedDt(s_xRunner.m_fFixedDt);
 		}
+		// Capture start AFTER input reset / fixed-dt setup so the reported
+		// duration is the test's own Setup + Step loop + Verify work, not
+		// harness bookkeeping. Scene-load / BetweenTests settle frames are
+		// likewise excluded (they happen in earlier phases).
+		s_xRunner.m_xTestStartTime = std::chrono::high_resolution_clock::now();
 		if (pxTest != nullptr && pxTest->m_pfnSetup != nullptr)
 		{
 			pxTest->m_pfnSetup();
@@ -439,15 +506,28 @@ bool Zenith_AutomatedTestRunner::Tick()
 		{
 			bPassed = pxTest->m_pfnVerify();
 		}
+		// Stop the wall-clock immediately after Verify so harness JSON-
+		// write + stdout-print latency don't pollute the per-test number.
+		const auto xEndTime = std::chrono::high_resolution_clock::now();
+		const auto xDuration = xEndTime - s_xRunner.m_xTestStartTime;
+		const float fDurationMs = static_cast<float>(
+			std::chrono::duration_cast<std::chrono::nanoseconds>(xDuration).count() / 1.0e6);
+		// Stash on the node so the batch-mode summary + external tooling
+		// can surface it after every test has run.
+		if (s_xRunner.m_pxCurrentNode != nullptr)
+		{
+			s_xRunner.m_pxCurrentNode->m_fLastDurationMs = fDurationMs;
+		}
 		s_xRunner.m_bVerifyPassed = bPassed;
 		s_xRunner.m_bVerifyReported = true;
 
-		WriteResultsJson(s_xRunner, pxTest, bPassed, bSkipped);
+		WriteResultsJson(s_xRunner, pxTest, bPassed, fDurationMs, bSkipped);
 
-		std::printf("[AutomatedTest] %s: %s (%d frames)\n",
+		std::printf("[AutomatedTest] %s: %s (%d frames, %.1f ms)\n",
 			pxTest && pxTest->m_szName ? pxTest->m_szName : "(unknown)",
 			bSkipped ? "SKIPPED" : (bPassed ? "PASSED" : "FAILED"),
-			s_xRunner.m_iStepFrame);
+			s_xRunner.m_iStepFrame,
+			static_cast<double>(fDurationMs));
 		std::fflush(stdout);
 
 		++s_xRunner.m_iTotalTests;
@@ -487,6 +567,10 @@ bool Zenith_AutomatedTestRunner::Tick()
 				s_xRunner.m_iFailedTests,
 				s_xRunner.m_iTotalTests);
 			std::fflush(stdout);
+			// Slowest-N report: helps identify outlier tests dragging the
+			// suite runtime down. Top 10 by wall-clock; emitted only after
+			// every test has populated its node's m_fLastDurationMs.
+			PrintSlowestTestsSummary(/*iTopN=*/10);
 			s_xRunner.m_iPendingExitCode = s_xRunner.m_bAnyFailures ? 1 : 0;
 		}
 		else
