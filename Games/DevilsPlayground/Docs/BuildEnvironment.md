@@ -83,7 +83,7 @@ cd C:\dev\Zenith
 .\Tools\run_dp_tests.ps1 -Headless
 ```
 
-Expected: ~110 tests run (verified 2026-05-15 via `grep -c ZENITH_AUTOMATED_TEST_REGISTER Games/DevilsPlayground/Tests/*.cpp`); current master suite is fully green in headless mode. The runner exits 0 if all pass, 1 if any fail.
+Expected: **122 tests run** (verified 2026-05-16 via `grep -c ZENITH_AUTOMATED_TEST_REGISTER Games/DevilsPlayground/Tests/*.cpp`); current master suite is fully green in headless mode. The runner exits 0 if all pass, 1 if any fail. Each per-test JSON now includes a `durationMs` field and the runner prints the slowest-10 after every batch.
 
 Filter to a specific test during dev:
 

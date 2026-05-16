@@ -758,3 +758,70 @@ The single biggest schedule risk of the entire MVP is therefore retired. The han
 **Test that prevents regression:** N/A (planning artefact, not code). The MvpRoadmap's task-checklist itself is the regression guard — every task ticks because a test passed.
 
 **Reversibility:** trivial. Documents are markdown; data files are JSON. Any line can be amended in a PR.
+
+---
+
+## 2026-05-15 — Telemetry / verification system (engine + DP, Phases 1-5 + 3b)
+
+**Decision:** Shipped a 6-commit feature train (commits `1bb46802` -> `3cb99e84`) that records, drives, analyses, and reports player + entity behaviour during automated playthroughs. Five logical phases:
+
+1. **Phase 1** (`1bb46802`): engine-side `Zenith_Telemetry` recorder + reader + JSON exporter. Generic over game-defined event types (game emits `uint16_t`; resolver function pointer turns it into a JSON name).
+2. **Phase 2** (`6954aaac`): DP event-type enum + `DPTelemetry::Hooks` RAII subscription holder. Routes the 9 existing DP events (`DP_OnItemPickedUp`, `DP_OnVictory`, `DP_OnRunLost`, etc.) into the recorder.
+3. **Phase 3a** (`f207df84`): heuristic bot driver + integration test. Goal-stack with priest-flee, body-swap-on-low-life, walk-to-objective / forge / pentagram. Drives `Zenith_InputSimulator`.
+4. **Phase 4** (`c6c3db53`): `DPTelemetryAnalyzer` library. 14-criterion `Verdict` struct with per-criterion reason strings. Pure over an in-memory `Reader` so tests can exercise every branch with synthesised data.
+5. **Phase 5** (`4beefe0a`): `Tools/dp_telemetry_runner.ps1` developer wrapper -- run bot, copy `.ztlm` + `.json` from `%TEMP%` to a stable location, parse + report event breakdown.
+6. **Phase 3b** (`aae4898c`): upgraded bot from straight-line + strafe to grid-A* over a 60x60 walkability grid built lazily via downward raycasts. ~200 lines of pathing code.
+7. **Phase 3b hardening** (`0c9e6f2b`): refactored DPHeuristicBot to expose `TestSurface` namespace, added `Test_DPHeuristicBot_Pathing` (8 clusters) + `Test_DPHeuristicBot_GoalDispatch` (11 priority/edge cases) + JSON-no-resolver edge case.
+
+**Why:** The user asked for a telemetry system + multi-level test runs + verification "the game was played correctly." This delivered the engine recorder, the DP-side event glue, the bot to generate the telemetry, the analyser to verify it, and the developer-facing tooling. The infrastructure scales to procgen (16 baked seeds) without further architectural work -- just point the runner at multiple scenes.
+
+**Test count delta:** 113 -> 122 across this work (+9 net new tests; ~50 internal assertions). Suite stays fully green throughout.
+
+**Trade-offs considered:**
+- *Use `std::function` for the event-name resolver.* Rejected: project convention forbids it (`function pointers instead` per CLAUDE.md). Function pointer works fine here.
+- *Skip the bot, just record human input.* Rejected: the analyser needs deterministic input streams to be useful in CI. Bot is required.
+- *In-process parallel tests via `Zenith_TaskSystem`.* Rejected (post-implementation, in the 2026-05-16 chat): engine state is main-thread-only by design (~30+ `IsMainThread()` asserts), tests share singletons (`Zenith_SceneManager`, `Zenith_EventDispatcher`, `Zenith_Telemetry::GetRecorder`). The only realistic parallelism is multi-process via the runner script.
+
+**Reversibility:** Each commit is independently revertable. Recorder + analyser are net-new files; bot is a net-new behaviour script that nothing else depends on; harness changes are additive.
+
+---
+
+## 2026-05-15 — Direct-to-master workflow (branch protection disabled)
+
+**Decision:** Per user direction 2026-05-15, branch protection on `master` deleted; all subsequent work pushed direct via `git push origin HEAD:master` rather than the prior PR + auto-merge flow. CI still runs on every push (every workflow has `push: branches: [master]` triggers in `.github/workflows/dp-{pr,tests}.yml`, `complexity.yml`, `doc-lint.yml`).
+
+**Why:** User explicitly requested it -- "Merge all work into master and just work directly in master from now on" -- after the autonomous-loop PR-bouncing rhythm proved heavier than necessary now that the orchestrator is operating with high confidence. CI workflows still gate quality on every push; the only thing removed is the PR ceremony.
+
+**Trade-offs considered:**
+- *Keep PR + auto-merge.* Rejected per user direction.
+- *Disable CI on master pushes (just rely on local).* Rejected: CI is the safety net even with direct-to-master. Triggers preserved.
+
+**Reversibility:** trivial. `gh api repos/owner/repo/branches/master/protection --method PUT` re-enables protection.
+
+---
+
+## 2026-05-16 — Engine harness per-test timing
+
+**Decision:** Extended `Zenith_AutomatedTest` (engine-side) to capture wall-clock duration per test. Added `mutable float m_fLastDurationMs` to `Zenith_AutomatedTestNode`. Captured `std::chrono::high_resolution_clock::time_point` just before `pfnSetup`; computed elapsed in `VerifyAndExit` right after `pfnVerify`. Wrote to: (a) per-test JSON via new `"durationMs": %.3f` field; (b) stdout line `(N frames, M.M ms)`; (c) batch-mode summary "Slowest 10 tests" table.
+
+Runner script (`Tools/run_dp_tests.ps1`) reads `durationMs` from JSONs + prints total / average / slowest-10 with `(skipped)` annotations.
+
+**Why:** "Which tests are slowest" surfaces optimisation candidates. Pre-feature: invisible. Post-feature: every batch run prints the top-10 outliers. Identified `Test_DPHeuristicBotPlaythrough` (20.2 s, integration), `Test_P2Reagent_BogWaterEvaporates` (10.3 s, 8 s wall-clock wait), and a cluster of 7 P1 tests in the 5-6 s range (all waiting on real game timers).
+
+**Test:** Not directly tested (timing values are wall-clock and would flake). Observable via the slowest-10 report itself.
+
+**Reversibility:** Trivial. All changes additive. The `mutable` field defaults to `-1.0f` ("never measured") so removing the feature reverts cleanly.
+
+---
+
+## 2026-05-16 — Test multithreading rejected
+
+**Decision:** Investigated parallelising the DP test suite via `Zenith_TaskSystem`. Rejected.
+
+**Why:** Engine state is main-thread-only by explicit design -- ~30+ `Zenith_Assert(Zenith_Multithreading::IsMainThread(), ...)` checks across `EntityComponent`, `Physics`, `Flux`. Tests share global singletons (`Zenith_SceneManager`, `Zenith_EventDispatcher::Get()`, `Zenith_Telemetry::GetRecorder()`, `Zenith_InputSimulator` static state) plus DP namespace globals (`DP_Player::g_xPossessedVillager`, `DP_Win::g_uCollectedObjectivesMask`). The `BetweenTests` phase exists specifically to scrub these between sequential tests; running two tests concurrently in the same process races on every one.
+
+**Trade-offs considered:**
+- *Pure unit tests on worker threads.* Maybe 5 tests in the suite are pure-function (no scene / no event-dispatcher use). Total savings: 1-2 s out of 283 s. Not worth the complexity.
+- *Multi-process parallelism via the runner script.* Each process is isolated, no shared state. Expected ~3-4x speedup with 4 workers, ~4-5x with 8. Would need a `--automated-tests-filter <substring>` engine flag + LPT-scheduled partitioning in the runner script. **Filed as a future option but not implemented this session** (user direction: "scrap the parallel tests idea").
+
+**Reversibility:** N/A (decided not to do it).

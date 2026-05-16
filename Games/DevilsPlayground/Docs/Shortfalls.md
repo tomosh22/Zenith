@@ -2,10 +2,11 @@
 
 **Document purpose:** A frank, gap-by-gap audit of where the current `DevilsPlayground` prototype falls short of the shipping vision described in [GameDesignDocument.md](GameDesignDocument.md). Written for producers, leads, and external partners assessing the runway from "skeleton-grade port" to "ship-ready PC/console title."
 
-**Scope:** Everything in the current `Games/DevilsPlayground/` tree. **Note (2026-05-15):** this doc was written against the 2026-05-11 skeleton-grade port. Phase 1 + Phase 2 + Phase 4 loss-state UI have shipped since (see [Status.md](Status.md) for the current state) — many "missing" items listed below are now landed. Treat the headline gaps in §1 as historical snapshots and cross-check against Status.md before acting on any one.
+**Scope:** Everything in the current `Games/DevilsPlayground/` tree. **Note (2026-05-16):** this doc was written against the 2026-05-11 skeleton-grade port. Phase 1 + Phase 2 + most of Phase 4 (4.1.1, 4.3.1, 4.3.2, 4.3.3 -- only 4.3.4 HUMAN_GATE remains) + a substantial Phase 5 telemetry / verification system + instructional HUD have shipped since (see [Status.md](Status.md) for the current state) — many "missing" items listed below are now landed. Treat the headline gaps in §1 as historical snapshots and cross-check against Status.md before acting on any one.
 
-**Updated 2026-05-11** (post peer-review reconciliation):
-- Prototype originally contained 24 test `.cpp` files registering 34 tests; as of 2026-05-15 the suite is ~110 tests across 100 .cpp files.
+**Updated 2026-05-11** (post peer-review reconciliation), **2026-05-16** (test-count + telemetry):
+- Prototype originally contained 24 test `.cpp` files registering 34 tests; as of 2026-05-16 the suite is **122 registered tests across 112 .cpp files**.
+- Telemetry / replay-debugger stub (§5.2) now exists -- `Zenith/Telemetry/Zenith_Telemetry.{h,cpp}` engine recorder + `DPTelemetry::Hooks` event subscriber + `DPTelemetryAnalyzer` verdict library + `DPHeuristicBot` rule-based playthrough + `Tools/dp_telemetry_runner.ps1` developer wrapper. Shipped direct-to-master across 6 commits 2026-05-15..16.
 - GameLevel scene spawns 17 villagers (CLAUDE.md's "14" in one comment is a stale value from earlier port milestones; "17" in `DevilsPlayground.cpp` line 565 is the current truth).
 - `DPFogPass.cpp` is substantially implemented (~312 lines with `SetupDPFog`/`ExecuteDPFog`/`BuildPipelines`). The shader file `Zenith/Flux/Shaders/Fog/DP_Fog.slang` **also exists** (with compiled `.spv` reflection files) — corrected 2026-05-12 round-4 peer review; earlier rounds claimed this file needed authoring (MVP-2.4.1) but it's already in the repo. The remaining MVP-2.4 work is *test coverage + memory-fog implementation*, not shader authoring.
 - Non-tools builds (`*_False` configurations) were **fixed as of 2026-05-10** per project memory; previous "broken" claims in this doc are obsolete (see §3.8 below).
@@ -249,17 +250,22 @@ The honest summary: **the prototype contains the engineering pattern for each of
 
 ### 5.1 Automated test coverage is strong — for what's there
 
-The 34-test harness (`Tests/`) is genuinely impressive for a skeleton-grade port. Tests cover: scene loading, possession round-trip, life timer, pickup, victory, perception bridge, pursuit, fog-pass contract, material side-table, gym scenes for each subsystem. The harness supports batch mode for fast iteration.
+The 122-test harness (`Tests/`, 112 .cpp files as of 2026-05-16; originally 34) is genuinely impressive for a skeleton-grade port. Tests cover: scene loading, possession round-trip, life timer, pickup, victory, perception bridge, pursuit, fog-pass contract, material side-table, gym scenes for each subsystem, plus the Phase 5 additions (telemetry round-trip, edge cases, DP event hooks, analyzer verdict criteria, bot pathing + goal dispatch, HUD formatters, full playthrough integration). The harness supports batch mode for fast iteration + per-test `durationMs` reporting.
 
-This is the project's largest **strength** carried over from the M0/M0.5/M1 milestones, and shipping should preserve it. The pattern (gym scenes per subsystem + integration tests for the full game level) generalises directly.
+This is the project's largest **strength** carried over from the M0/M0.5/M1 milestones, and shipping should preserve it. The pattern (gym scenes per subsystem + integration tests for the full game level + pure formatters / dispatch tables under TestSurface namespaces) generalises directly.
 
 **Risk:** As content scales, gym scenes will lag. Discipline needed to keep them in sync.
 
-### 5.2 No human-driven QA process
+### 5.2 Human-driven QA — telemetry stub shipped, playtest pipeline still pending
 
-Automated tests catch regressions in implemented mechanics; they don't catch design issues, balance issues, or "the priest feels unfair" issues. There is no playtest pipeline, no telemetry, no replay-debug tool.
+Automated tests catch regressions in implemented mechanics; they don't catch design issues, balance issues, or "the priest feels unfair" issues.
 
-**Bridge cost:** ~3 engineering weeks for the **last 10 seconds** replay debugger (called out in GDD §13 as load-bearing for Aelfric tuning) and a basic telemetry stub. Playtest pipeline is a producer task; ~$50k/year budget for external playtester sessions.
+**Telemetry stub:** ✅ shipped 2026-05-15..16 (commits `1bb46802` through `3cb99e84`). `Zenith/Telemetry/Zenith_Telemetry` is an engine-side binary recorder + JSON exporter; `Games/DevilsPlayground/Source/DPTelemetry.h` defines DP-specific event types + a RAII `Hooks` helper that routes 9 DP events into the recorder; `DPHeuristicBot` drives `Zenith_InputSimulator` for unattended playthroughs; `DPTelemetryAnalyzer` reads a recording + applies pass/fail criteria; `Tools/dp_telemetry_runner.ps1` orchestrates a bot run + collects artifacts. Captures all player + entity movement + game events; reads back into a usable verdict. The pieces are in place; the "last 10 seconds" replay-debug UI is not yet wired (engine `--telemetry-runner` flag could surface that).
+
+**Still pending:**
+- Replay-debug UI surfacing the last-N-seconds buffer per GDD §13.
+- Playtest pipeline -- still a producer task; ~$50k/year budget for external playtester sessions.
+- Procgen Phase A (16 baked seed levels) + multi-seed verification using the existing telemetry / analyzer infrastructure.
 
 ### 5.3 No CI for `.zscen` re-baking
 
@@ -373,7 +379,7 @@ Not all of the prototype is a list of things to fix. The following are genuine *
 
 1. **The `Project_*` lifecycle hooks** (9 entry points, mirroring Combat). Clean architecture. Don't deviate.
 2. **The `DP_*` namespace public-interface contract** (Source/PublicInterfaces.h/cpp). The discipline of behaviours-talk-only-via-namespace is preserved-worthy.
-3. **The automated test harness** (110+ tests as of 2026-05-15, batch mode, gym scenes). One of the strongest QA stories of any in-development game I've seen at this stage. Build on it; don't replace it.
+3. **The automated test harness** (122 tests as of 2026-05-16, batch mode, gym scenes, per-test wall-clock timing). One of the strongest QA stories of any in-development game I've seen at this stage. Build on it; don't replace it.
 4. **The editor-automation scene authoring pattern.** Declarative `AddStep_*` calls reading like a recipe. Bake into `.zscen` for ship, but keep the authoring DSL for live iteration.
 5. **The perception-system bridge pattern** in `Priest_Behaviour::BridgePerceptionToBlackboard`. The right shape for the GDD's Aelfric variants — just needs the omniscience-fallback removed.
 6. **The fog-hole clear-and-rebuild strategy.** Simple, deterministic, no subscription overhead. Keep.

@@ -316,9 +316,9 @@ The three playthrough tests that define MVP done.
 
 ### 4.1 The golden playthrough
 
-- [ ] **MVP-4.1.1** — Author `Test_P4Playthrough_Night1WinGolden`. Multi-phase script per TestPlan §5.1.
-- [ ] **MVP-4.1.2** — Iterate on Vexholme's GameLevel scene authoring (via `Project_RegisterEditorAutomationSteps`) until the bot wins consistently in < 150 s.
-- [ ] **MVP-4.1.3** — Re-bake `.zscen`.
+- [x] **MVP-4.1.1** — Author `Test_P4Playthrough_Night1WinGolden`. *Shipped in [PR #82](https://github.com/tomosh22/Zenith/pull/82) (commit `d456794a`). Multi-phase script subscribes to `DP_OnVictory`; deterministic input sequence walks the canonical 5-objective path; asserts the event fires within frame budget.*
+- [ ] **MVP-4.1.2** — Iterate on Vexholme's GameLevel scene authoring (via `Project_RegisterEditorAutomationSteps`) until the bot wins consistently in < 150 s. *Partially satisfied by MVP-4.1.1's deterministic script; the heuristic bot (Phase 3a/b) does NOT yet win consistently -- see Status.md Phase 5 section for the bot's current limits. Procgen Phase A would replace this with 16 generated seeds.*
+- [ ] **MVP-4.1.3** — Re-bake `.zscen`. *Implicit in TOOLS builds (every build re-bakes via editor automation). No standalone CI step yet; tracked in §3.4 of Shortfalls.md.*
 
 ### 4.2 Loss states
 
@@ -328,10 +328,10 @@ The three playthrough tests that define MVP done.
 
 ### 4.3 Polish & demo build
 
-- [ ] **MVP-4.3.1** — Tune the MVP loop via **deterministic acceptance criteria**, not a randomised bot. Corrected 2026-05-12 round-5 peer review: the autonomous playtest bot is post-MVP backlog (it doesn't exist in MVP scope) so "tune until the bot wins ~50%" was a circular dependency. Replace with: confirm `Test_P4Playthrough_Night1WinGolden` completes in < 9000 frames, `Test_P4Playthrough_Night1LossByApprehend` triggers within 240 frames in its set scene, and the three loss-state tests fire their expected `DP_OnRunLost` causes. If any of those drift by > 20% in frame count vs. their initial passing run, investigate; otherwise the loop is acceptably tuned.
-- [ ] **MVP-4.3.2** — Add post-victory and post-loss "press any key to restart" overlay.
-- [ ] **MVP-4.3.3** — Set up the demo packaging script: `Tools/package_mvp_demo.ps1` that copies the build output + assets to a single folder for distribution.
-- [ ] **MVP-4.3.4** — **🚧 HUMAN_GATE.** Tomos runs the MVP demo end-to-end personally and confirms the MVPScope §5 sentence ("clicked a villager, watched a 30-second timer, ran them across a single playable level…"). Orchestrator surfaces this in Questions.md when MVP-4.3.1–4.3.3 pass; Tomos plays, ticks, then orchestrator updates Status.md to "MVP COMPLETE."
+- [x] **MVP-4.3.1** — Tune the MVP loop via **deterministic acceptance criteria**, not a randomised bot. *Shipped in [PR #84](https://github.com/tomosh22/Zenith/pull/84) (commit `6d504a5b`). `Tools/check_acceptance_drift.ps1` runs the 4 P4 playthroughs + asserts each test's frame count is within 20% of its baseline. CI-friendly; fails the build on drift.*
+- [x] **MVP-4.3.2** — Add post-victory and post-loss "press any key to restart" overlay. *Shipped in [PR #83](https://github.com/tomosh22/Zenith/pull/83) (commit `312aed2b`). DPHUDController subscribes to `DP_OnVictory` + `DP_OnRunLost`, shows the RestartPrompt UI element; R-key reloads scene + clears all run state via `DP_Player::ResetForNewRun`.*
+- [x] **MVP-4.3.3** — Set up the demo packaging script: `Tools/package_mvp_demo.ps1` that copies the build output + assets to a single folder for distribution. *Shipped in [PR #85](https://github.com/tomosh22/Zenith/pull/85) (commit `3cdb5a18`).*
+- [ ] **MVP-4.3.4** — **🚧 HUMAN_GATE.** Tomos runs the MVP demo end-to-end personally and confirms the MVPScope §5 sentence ("clicked a villager, watched a 30-second timer, ran them across a single playable level…"). *MVP-4.3.1-3 all green as of 2026-05-15. The instructional HUD (commits `5242fc2e` / `fad44f0c`) added detailed readouts + tooltips + an [H] help overlay so a brand-new player can understand the game from the UI alone -- which should make the human playthrough more productive when Tomos plays. **This is the only MVP task left**.*
 
 ---
 

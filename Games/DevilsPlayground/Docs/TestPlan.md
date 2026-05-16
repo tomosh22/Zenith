@@ -4,7 +4,7 @@
 
 **Author:** Test Design (Claude)
 **Companion docs:** [GameDesignDocument.md](GameDesignDocument.md), [Shortfalls.md](Shortfalls.md)
-**Last updated:** 2026-05-15 — Phase 1 + Phase 2 substantively complete; ~110 tests now registered (was 34 at original authoring). See [Status.md](Status.md) for the live wave-by-wave breakdown. Individual test entries below describe the intended verify-contract; for any test name listed as "to author" or "planned," cross-check against `Games/DevilsPlayground/Tests/Test_*.cpp` first (many have shipped since 2026-05-11 and just haven't been promoted out of the planned sections here).
+**Last updated:** 2026-05-16 — Phase 1 + Phase 2 + most of Phase 4 substantively complete; Phase 5 telemetry / verification system + instructional HUD shipped direct-to-master 2026-05-15..16. **122 tests now registered** (was 34 at original authoring). See [Status.md](Status.md) for the live wave-by-wave breakdown. Individual test entries below describe the intended verify-contract; for any test name listed as "to author" or "planned," cross-check against `Games/DevilsPlayground/Tests/Test_*.cpp` first (many have shipped since 2026-05-11 and just haven't been promoted out of the planned sections here).
 
 ---
 
@@ -1215,7 +1215,7 @@ This loop is fully autonomous. No human inspects screenshots; no human listens t
 
 ## 8. Authoring Conventions for New Tests
 
-To keep the suite navigable as it grows from the current ~110 tests to the ~250 tests this plan describes:
+To keep the suite navigable as it grows from the current 122 tests to the ~250 tests this plan describes:
 
 ### 8.1 File template
 

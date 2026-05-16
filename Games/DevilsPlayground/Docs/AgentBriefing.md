@@ -34,7 +34,7 @@ You are working on **Devil's Playground**, a stealth-puzzle roguelite. The user 
 
 - **Game:** Devil's Playground. Top-down stealth-puzzle roguelite. You play a bodiless demon possessing villagers in a 1670s English village to collect 5 reagents and complete a ritual at a pentagram while a witch-finder hunts you. Each possessed body has a 30-second life timer.
 - **Engine:** Zenith (custom C++20, Vulkan-based). Located at `C:\dev\Zenith\`. The DP project lives at `C:\dev\Zenith\Games\DevilsPlayground\`.
-- **Status (2026-05-15):** Phase 1 + Phase 2 substantively complete; Phase 4 loss-state UI shipped (PR #75). ~110 automated tests registered, full headless suite 0 failures. Loss states, navmesh, pause, archetype/reagent variety, HUD upgrades, and most engine instrumentation all landed. The live frontier is Phase 3 assets (Mixamo spike — HUMAN_GATE) and Phase 4.3.x bot-driven playthrough. See [Status.md](Status.md) for the live wave-by-wave breakdown.
+- **Status (2026-05-16):** Phase 1 + Phase 2 substantively complete; Phase 4 acceptance gates landed (4.1.1 / 4.3.1 / 4.3.2 / 4.3.3) -- only 4.3.4 🚧 HUMAN_GATE remains; Phase 5 telemetry / verification system + instructional HUD shipped direct-to-master 2026-05-15..16. ~122 automated tests registered, full headless suite 0 failures, total wall-clock ~283 s (per-test `durationMs` in JSON since commit `3cb99e84`; slowest-10 reported after every batch). The live frontier is Phase 3 assets (Mixamo spike -- HUMAN_GATE), procgen Phase A (designed not started), bot win consistency. See [Status.md](Status.md) for the live wave-by-wave breakdown.
 
 ### Document map (read in this order)
 

@@ -1,8 +1,8 @@
 # DP Status
 
-**Last updated:** 2026-05-15 — Phase 1 + Phase 2 substantively complete; Phase 4 loss-state UI shipped. Auto-loop sweep landed PRs #50 through #79 in <24 h. Master HEAD `0e67f13e`. Full suite **~110 PASSED, 0 FAILED** locally via `Tools/run_dp_tests.ps1 -Headless`.
+**Last updated:** 2026-05-16 — Phase 1 + Phase 2 + Phase 4 substantively complete (4.3.4 is the lone HUMAN_GATE remaining); telemetry / verification system shipped (Phases 1-5 + 3b). Direct-to-master workflow active since 2026-05-15. Master HEAD `3cb99e84`. Full suite **122 PASSED, 0 FAILED** locally via `Tools/run_dp_tests.ps1 -Headless` (total ~283 s headless; longest single test 20 s).
 **Build:** ✅ DP target builds clean (`vs2022_Debug_Win64_True`, 0 warnings, 0 errors).
-**Tests:** Full local suite green. Headless skips graphics-only tests by m_bRequiresGraphics; all compute-only tests pass.
+**Tests:** Full local suite green. Headless skips graphics-only tests by m_bRequiresGraphics; all compute-only tests pass. Per-test wall-clock timing now reported in test JSON (`durationMs`) + slowest-10 surfaced after every batch run.
 
 ## Manual setup checklist gating
 
@@ -48,13 +48,33 @@
 | **MVP-2.5.2, 2.5.4** HUD scent + dawn gauge | ✅ landed | #69 | Both visible only when their owning state is active |
 | **MVP-2.5.5–6** Pause-menu R/Q shortcuts + main-menu Quit | ✅ landed | #71, **#74 (state-leak fix)** | R reloads GameLevel; Q quits to FrontEnd. PR #74 caught: HandleRestart was setting flag but not actually reloading scene |
 
-### Phase 4 — loss-state UI shipped
+### Phase 4 — acceptance shipped except HUMAN_GATE
 
-| Wave | Status | PRs | Notes |
-|------|--------|-----|-------|
-| **MVP-4.2** Run-lost HUD banner + playthroughs | ✅ landed | **#75** | DPHUDController subscribes to DP_OnRunLost; per-cause copy ("CAUGHT BY AELFRIC" / "DAWN BREAKS" / "NO VESSELS REMAIN"); 3 integration playthrough tests for the 3 causes |
-| **MVP-4.3.1–3** Bot-driven playthrough | ⏸ deferred | — | Different shape than the loss-state pin; needs the test-pathfinder + a real human-bot. Less urgent now that the loss UI exists |
-| **MVP-4.3.4** Human-driven playthrough | 🚧 HUMAN_GATE | — | Tomos plays the demo end-to-end |
+| Wave | Status | PRs / commits | Notes |
+|------|--------|---------------|-------|
+| **MVP-4.1.1** Golden playthrough test | ✅ landed | **#82** | `Test_P4Playthrough_Night1WinGolden` -- MVP-DoD gate. Bot scripts the canonical win path; asserts Victory event within frame budget. |
+| **MVP-4.2** Run-lost HUD banner + playthroughs | ✅ landed | #75 | DPHUDController subscribes to DP_OnRunLost; per-cause copy ("CAUGHT BY AELFRIC" / "DAWN BREAKS" / "NO VESSELS REMAIN"); 3 integration playthrough tests for the 3 causes |
+| **MVP-4.3.1** Acceptance-drift gate | ✅ landed | **#84** | `Tools/check_acceptance_drift.ps1` runs the 4 P4 playthroughs + asserts each test's frame count is within 20% of the baseline. CI-friendly. |
+| **MVP-4.3.2** Restart prompt | ✅ landed | **#83** | Post-victory / post-loss "Press R to restart, Q to quit" overlay; R-key shortcut reloads scene + clears all run state. |
+| **MVP-4.3.3** Demo packager | ✅ landed | **#85** | `Tools/package_mvp_demo.ps1` copies build output + assets to a single folder. Ready for distribution. |
+| **MVP-4.3.4** Human-driven playthrough | 🚧 HUMAN_GATE | — | Tomos plays the demo end-to-end + ticks the MVP-DoD checkbox. The only MVP task left. |
+
+### Phase 5 — instructional HUD + telemetry / verification system (post-MVP-quality work shipped 2026-05-15..16)
+
+A self-contained feature train that landed direct-to-master after branch protection was disabled (per Tomos direction). Six independent commits, each green CI:
+
+| Subsystem | Status | Commit | Notes |
+|-----------|--------|--------|-------|
+| **UI polish** -- bigger fonts, anchor-alignment + off-edge warnings | ✅ landed | #87 (`9af8435c`) | Engine off-edge UI warning fires when text renders past a canvas edge; anchor/alignment mismatch warning catches a class of authoring bugs. |
+| **Detailed HUD** -- 8 new readouts | ✅ landed | `5242fc2e` | Archetype, life numeric, movement mode, vessels alive, priest distance (with red/amber/grey colour), run timer, interact hint, reagent help. |
+| **Instructional HUD** -- tooltips / hotkeys / instructions | ✅ landed | `fad44f0c`, `acb4e63a` | ControlsHint (BottomRight hotkey cheat-sheet), TutorialHint (context-sensitive instruction), HelpOverlay ([H] toggle full-screen help), MenuHowTo (front-end primer). New `BuildTutorialHintForState` 9-case dispatcher. |
+| **Telemetry recorder** -- engine-side | ✅ landed | `1bb46802` | `Zenith/Telemetry/Zenith_Telemetry.{h,cpp}` binary recorder + JSON exporter + round-trip + edge-case tests. |
+| **DP event Hooks** | ✅ landed | `6954aaac` | `DPTelemetry::Hooks` RAII subscription holder; routes 9 DP event types into the recorder; name-resolver for JSON. |
+| **Heuristic bot + playthrough test** | ✅ landed | `f207df84`, `aae4898c` | Goal-stack bot driving Zenith_InputSimulator. Phase 3a straight-line. Phase 3b upgraded to grid-A* with 60x60 walkability grid (2425/3600 walkable on GameLevel). |
+| **Analyzer + Verdict** | ✅ landed | `c6c3db53` | `DPTelemetryAnalyzer` reads a recording + applies pass/fail criteria. 14-criterion stable enum; per-criterion reason strings. |
+| **Runner tooling** | ✅ landed | `4beefe0a` | `Tools/dp_telemetry_runner.ps1` wraps the bot test + collects artifacts + prints summary. |
+| **Test hardening** -- HUD + telemetry + bot pathing + JSON edges | ✅ landed | `d4a66f6d`, `0c9e6f2b` | Test_P2HUD_TutorialHint (9 cases), Test_P2HUD_DetailedReadouts (9 clusters), Test_TelemetryEdgeCases (6 cases inc. JSON-no-resolver), Test_DPTelemetryAnalyzer (7 clusters), Test_DPHeuristicBot_Pathing (8 clusters), Test_DPHeuristicBot_GoalDispatch (11 priority/edge cases), Test_DPTelemetryHooks (9 events). |
+| **Harness timing** -- per-test wall clock + slowest-N | ✅ landed | `3cb99e84` | JSON now includes `durationMs`; stdout shows `(N frames, M.M ms)`; batch summary appends "Slowest 10". Runner script reads + reports too. Identified P1 timer cluster (~5 s each, wait on real game timers) as the suite's bulk runtime. |
 
 ### Recent quality-of-life landings
 
@@ -66,7 +86,7 @@
 
 ## Suite growth
 
-Master 36 → 110 PASSED across 50+ merged PRs in <72 h.
+Master 36 → 122 PASSED across 60+ merged PRs / direct-to-master commits in <96 h.
 
 **Recent test highlights:**
 
@@ -94,6 +114,16 @@ Test_P2BellSoul_AudibleAcrossMap         (PR #76 — pins map-wide fix)
 Test_P4Playthrough_LossByApprehend       (PR #75)
 Test_P4Playthrough_LossByDawn
 Test_P4Playthrough_LossByNoVessels
+Test_P4Playthrough_Night1WinGolden       (PR #82 -- MVP-DoD)
+Test_TelemetryRoundTrip                  (Phase 1 -- 1bb46802)
+Test_TelemetryEdgeCases                  (Phase 1 hardening -- d4a66f6d / 0c9e6f2b)
+Test_DPTelemetryHooks                    (Phase 2 -- 6954aaac)
+Test_DPHeuristicBotPlaythrough           (Phase 3a/b -- f207df84 + aae4898c)
+Test_DPHeuristicBot_Pathing              (Phase 3b hardening -- 0c9e6f2b)
+Test_DPHeuristicBot_GoalDispatch         (Phase 3b hardening -- 0c9e6f2b)
+Test_DPTelemetryAnalyzer                 (Phase 4 -- c6c3db53)
+Test_P2HUD_TutorialHint                  (Phase 5 hardening -- d4a66f6d)
+Test_P2HUD_DetailedReadouts              (Phase 5 hardening -- d4a66f6d)
 ```
 
 ## Integration tests caught real bugs this run
@@ -160,19 +190,22 @@ Tomos's role: tick `ManualSetupChecklist.md` once before the first session; revi
 
 ## Notes for next agent
 
-1. **Operating mode for fresh sessions:** orchestrator + subagents (Mode B). Read [OrchestratorPlaybook.md](OrchestratorPlaybook.md) before doing anything else.
-2. **Hard invariants:** (a) only the orchestrator invokes MSBuild / Tools/run_dp_tests.ps1 / the game executable; (b) no worktrees, all work on `master` with per-task feature branches; (c) only the orchestrator writes Status.md / Questions.md / DecisionLog.md / MvpRoadmap.md / Config/*.json.
-3. **First action:** verify the baseline. Build the prototype, run the full suite via `Tools/run_dp_tests.ps1 -Headless`. Expect **~110 PASSED / 0 FAILED** on `master @ 0e67f13e` (the post-#79 head).
-4. **Next-up work** (now that Phase 1 + 2 are substantively done):
-   - **Phase 3 (assets)** — Mixamo Y-Bot spike (`MVP-3.0.1` 🚧 HUMAN_GATE), villager / priest skeletons. Most of Phase 3 needs human-provided FBX.
-   - **Phase 4 acceptance playthrough** — bot-driven (`MVP-4.3.1-3`) is the biggest deferred chunk. Needs the test-pathfinder + a real human-bot that drives the WASD/click inputs along a full run.
-   - **Integration test follow-ups:** the "write the scenario test, find a bug" pattern keeps paying off. Candidates:
-     - Pause-then-restart-then-immediately-die transitions (state-clearing race between scene reload + dispatch).
-     - HUD banner stacking: Victory + DeathEvent + RunLost dispatched in the same frame — does the right one win?
+1. **Operating mode (updated 2026-05-15):** direct-to-master workflow per Tomos. Branch protection disabled on master; CI still runs on every push via `push: branches: [master]` triggers in `dp-pr.yml`, `dp-tests.yml`, `complexity.yml`, `doc-lint.yml`. No PR branch required; commit + `git push origin HEAD:master` from the main checkout. Worktrees in `.claude/worktrees/` are sandbox-only; main work happens at `C:/dev/Zenith` on master.
+2. **Hard invariants (revised 2026-05-15):** (a) commits must keep the full suite green; (b) per-test JSON `durationMs` must not regress > 20% on any test without justification (use `Tools/check_acceptance_drift.ps1` to detect); (c) no docs without explicit user request -- Status.md / DecisionLog.md / MvpRoadmap.md updates ARE within scope when shipping new features.
+3. **First action:** verify the baseline. Build the prototype, run the full suite via `Tools/run_dp_tests.ps1 -Headless`. Expect **122 PASSED / 0 FAILED** on `master @ 3cb99e84`.
+4. **Next-up work** (Phase 1, 2 + most of Phase 4 done; Phase 5 telemetry shipped):
+   - **MVP-4.3.4** 🚧 HUMAN_GATE -- Tomos plays the MVP demo end-to-end + ticks the box. The only MVP task left.
+   - **Phase 3 (assets)** -- Mixamo Y-Bot spike (`MVP-3.0.1` 🚧 HUMAN_GATE), villager / priest skeletons. Most of Phase 3 needs human-provided FBX.
+   - **Procgen Phase A** -- generator scaffolding designed in 2026-05-16 chat; not yet started. 16-seed pool of generated GameLevels to replace the UE placeholder; uses the existing WallSection / CornerWallSection / SM_Cube mesh kit. Would expand verification from 1 scene to 16.
+   - **Bot Phase 3c** -- make the heuristic bot actually win the GameLevel (currently dies once + only triggers 2 events in 35 s). Would let the analyzer's `VictoryFired` / `AnySprintFrame` / `AnyWalkQuietFrame` criteria activate.
+   - **P1 timer-cluster amortisation** -- 9 tests in the P1 family burn 5-6 s each waiting on real game timers; the slowest-N report identifies them. `Tools/run_dp_tests.ps1` reports total suite time + the top-10 slowest after every run. Migrating these to accelerated test-only timers would drop suite from 283 s to ~100 s.
+   - **Integration test follow-ups:**
+     - HUD banner stacking: Victory + DeathEvent + RunLost in the same frame -- does the right one win?
      - Save+reload+possess: after `LoadFromBlob`, does the possessed-villager handle still resolve?
-5. **Local-run pitfalls** (caught 2026-05-15):
+5. **Local-run pitfalls** (caught 2026-05-15..16):
    - Direct `devilsplayground.exe --automated-test <name>` invocation differs from `Tools/run_dp_tests.ps1 -Filter <name>` results. The runner adds `--skip-tool-exports --skip-unit-tests` which the engine's automated-test driver requires for reliable batched test behaviour. Always run tests through the runner script, not direct exe invocation.
-   - The `Sharpmake_Build.bat` script has a `pause` directive; running it non-interactively hangs. Invoke `Sharpmake.Application.exe` directly with the same args.
+   - The `Sharpmake_Build.bat` script has a `pause` directive; running it non-interactively hangs. **Use `Build/run_sharpmake.bat` instead** -- shipped 2026-05-15 as the non-interactive equivalent. Returns ERRORLEVEL via exit code rather than the modal pause.
+   - `Tools/run_dp_tests.ps1` defaults to `-ExitAfterFrames 600` (~10 s per test). The bot playthrough (`Test_DPHeuristicBotPlaythrough`) is bounded by this cap; `Tools/dp_telemetry_runner.ps1` overrides to 2100 (~35 s) for the bot test.
 6. **Branching:** all work on `master`. Branch as `dp/mvp-<task-id>` or `dp/<scope>`. Per OrchestratorPlaybook Invariant 2 (no git worktrees), prefer `C:\dev\Zenith\` directly; if the harness places you in a `.claude/worktrees/<name>/` checkout, treat it as a transient sandbox and remember Sharpmake bakes the cwd path into generated vcxprojs.
 7. **No external spend** unless you find a paid blocker (and even then, log it in Questions.md and pick a different task to unblock yourself).
 8. **Engine surface to be aware of** for new tests/features:
@@ -185,7 +218,7 @@ Tomos's role: tick `ManualSetupChecklist.md` once before the first session; revi
 
 ## Suggested next coverage gaps
 
-Tests that would catch a SPECIFIC concrete regression. Most prior gaps from earlier Status.md revisions have been closed.
+Tests that would catch a SPECIFIC concrete regression. Most prior gaps from earlier Status.md revisions have been closed (Phase 5 hardening commits added ~50 internal cases across the bot, analyzer, and telemetry).
 
 | Test | What it would catch | Effort |
 |------|---------------------|--------|
@@ -193,18 +226,41 @@ Tests that would catch a SPECIFIC concrete regression. Most prior gaps from earl
 | `Test_P1Save_PossessedVillagerHandleSurvivesReload` | `LoadFromBlob` re-resolves the possessed-villager handle (entity-index reuse after scene unload is a classic dangling-handle source) | M |
 | `Test_P4Playthrough_VictoryThenRestartIsClean` | Pause-R after winning produces a clean second run (no leftover DP_Win state, no leftover held items) | M |
 | `Test_P2Forge_RecipeRespectsHeldVillagerTag` | Forge crafting checks the holder's archetype tag (Child can't trigger forge) | S |
+| `Test_P1TimerHarness_FastForward` | Speeding wall-clock waits in P1 tests via fixed-dt amortisation -- once landed, the P1 timer cluster drops from 5 s to <1 s each, suite from 283 s to ~100 s | M |
 
 ## Last completed
 
-- **PR #76** (merged `2026-05-15T01:09Z`) — MVP-2.2.6 BellSoul truly map-wide. Direct-BB fanout to every priest, bypassing perception clamp. New `Test_P2BellSoul_AudibleAcrossMap` at 120 m.
+Most recent at top. Anything older than 2026-05-14 see `git log`.
+
+Direct-to-master (post-#87, branch protection disabled per Tomos 2026-05-15):
+- **`3cb99e84`** (2026-05-16) — Per-test timing in automated-test harness + slowest-N report.
+- **`0c9e6f2b`** (2026-05-16) — Harden Phase 3b bot pathing + dispatch + telemetry JSON edge (3 new tests, +21 cases).
+- **`aae4898c`** (2026-05-15) — Phase 3b telemetry: bot upgraded to grid-A* path follow.
+- **`4beefe0a`** (2026-05-15) — Phase 5 telemetry: developer-facing runner script (`Tools/dp_telemetry_runner.ps1`).
+- **`c6c3db53`** (2026-05-15) — Phase 4 telemetry: analyzer library + Verdict + bot integration.
+- **`f207df84`** (2026-05-15) — Phase 3a telemetry: heuristic bot driver + playthrough test.
+- **`6954aaac`** (2026-05-15) — Phase 2 telemetry: DP event enum + RAII Hooks helper.
+- **`d4a66f6d`** (2026-05-15) — Harden HUD + telemetry coverage (3 new tests, +21 cases).
+- **`1bb46802`** (2026-05-15) — Phase 1 telemetry recorder: binary stream + JSON export.
+- **`acb4e63a`** (2026-05-15) — Main-menu HowTo title/body spacing fix.
+- **`fad44f0c`** (2026-05-15) — Instructional HUD: tooltips, hotkeys, instructions ([H] toggle + FrontEnd primer).
+- **`5242fc2e`** (2026-05-15) — Detailed HUD: 8 new readouts (archetype, life numeric, movement, vessels, priest dist, run timer, interact hint, reagent help).
+
+Merged PRs (pre-direct-to-master):
+- **PR #87** (merged `2026-05-15`) — UI polish + off-screen Zenith_Warning. Bigger HUD fonts; main-menu Center alignment; off-edge warning fires on rendering past any canvas edge.
+- **PR #86** (merged `2026-05-15`) — Sprint C cleanup: DP_Tuning leak fix + roadmap/testplan/questions tidy.
+- **PR #85** (merged `2026-05-15`) — MVP-4.3.3: `Tools/package_mvp_demo.ps1` demo packager.
+- **PR #84** (merged `2026-05-15`) — MVP-4.3.1: acceptance criteria gate (`Tools/check_acceptance_drift.ps1`).
+- **PR #83** (merged `2026-05-15`) — MVP-4.3.2: post-victory/post-loss restart prompt + R-key shortcut.
+- **PR #82** (merged `2026-05-15`) — MVP-4.1.1: `Test_P4Playthrough_Night1WinGolden` (MVP-DoD gate).
+- **PR #81** (merged `2026-05-15`) — FindHudText walks all loaded scenes (catches persistent-scene UI).
+- **PR #80** (merged `2026-05-15`) — Exhaustive audit of DP/Docs against current master state.
+- **PR #79** (merged `2026-05-15`) — Status.md refresh: Phase 1 + 2 complete, Phase 4 loss UI shipped.
+- **PR #78** (merged `2026-05-15`) — `Test_P1Apprehend_PriestStandsStillDuringChannel` (Status.md coverage gap).
+- **PR #77** (merged `2026-05-15`) — Rename `DP_Player::ResetForTest` → `ResetForNewRun`.
+- **PR #76** (merged `2026-05-15T01:09Z`) — MVP-2.2.6 BellSoul truly map-wide.
 - **PR #75** (merged `2026-05-15T00:49Z`) — MVP-4.2 run-lost HUD banner + 3 loss-state playthrough tests.
-- **PR #74** (merged `2026-05-14T23:11Z`) — pause Restart actually clears run state + reloads (caught state-leak via integration test).
+- **PR #74** (merged `2026-05-14T23:11Z`) — pause Restart actually clears run state + reloads.
 - **PR #73** (merged `2026-05-14T22:52Z`) — Phase-2 integration tests; caught real forge → priest perception gap.
-- **PR #72** (merged `2026-05-14T22:33Z`) — Phase-2 integration: memory fog wiring + BellSoul priest perception.
-- **PR #71** (merged `2026-05-14T22:09Z`) — MVP-2.5.{5,6} pause-menu R/Q shortcuts + main-menu Quit.
-- **PR #70** (merged `2026-05-14T21:50Z`) — MVP-2.5.{1,3} HUD whisper line + Aelfric awareness icon.
-- **PR #69** (merged `2026-05-14T21:32Z`) — MVP-2.5.{2,4} HUD scent + dawn gauge.
-- **PR #68** (merged `2026-05-14T21:16Z`) — MVP-2.4.5 memory-fog state machine.
-- **PR #67** (merged `2026-05-14T20:42Z`) — MVP-2.3.4 forge audible across the village.
 
 For PRs older than 2026-05-14 see git log.

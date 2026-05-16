@@ -39,7 +39,7 @@
   cd ..
   .\Tools\run_dp_tests.ps1 -Headless
   ```
-  Result: the ~110 registered tests run; current master suite is fully green in headless mode. What matters is **the build itself succeeds** so the orchestrator can run + extend it.
+  Result: the **122** registered tests run; current master suite is fully green in headless mode. What matters is **the build itself succeeds** so the orchestrator can run + extend it.
 
 ## C. GitHub repository configuration (web UI work)
 
