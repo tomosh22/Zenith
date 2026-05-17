@@ -16,8 +16,6 @@ namespace DPTelemetry
 		switch (static_cast<DPEventType>(uType))
 		{
 		case DPEventType::None:              return "None";
-		case DPEventType::Possession:        return "Possession";
-		case DPEventType::Unpossession:      return "Unpossession";
 		case DPEventType::ItemPickup:        return "ItemPickup";
 		case DPEventType::ItemDrop:          return "ItemDrop";
 		case DPEventType::Interact:          return "Interact";
@@ -123,16 +121,27 @@ namespace DPTelemetry
 			});
 
 		m_xVictory = xDisp.SubscribeLambda<DP_OnVictory>(
-			[](const DP_OnVictory&)
+			[](const DP_OnVictory& xEvt)
 			{
-				EmitEvent(DPEventType::Victory);
+				// entityA = winning villager, entityB = pentagram.
+				// Either may be INVALID if the dispatcher (legacy test
+				// call to DP_Win::NotifyObjectiveCollected without
+				// scene context) didn't supply them; the visualiser's
+				// FindEntityPosAtFrame falls back to bounds-centre in
+				// that case, which is the documented behaviour.
+				EmitEvent(DPEventType::Victory,
+					xEvt.m_xVillager, xEvt.m_xPentagram);
 			});
 
 		m_xRunLost = xDisp.SubscribeLambda<DP_OnRunLost>(
 			[](const DP_OnRunLost& xEvt)
 			{
+				// entityA = primary actor (caught villager / dead
+				//                          villager / last-possessed villager)
+				// entityB = secondary actor (the priest, on Apprehended)
+				// ints[0] = cause enum for downstream filtering.
 				EmitEvent(DPEventType::RunLost,
-					Zenith_EntityID{}, Zenith_EntityID{},
+					xEvt.m_xVillager, xEvt.m_xOther,
 					static_cast<int32_t>(xEvt.m_eCause), 0.0f,
 					/*szLabel=*/nullptr);
 			});
@@ -154,22 +163,12 @@ namespace DPTelemetry
 		m_xPossessChanged = xDisp.SubscribeLambda<DP_OnPossessionChanged>(
 			[](const DP_OnPossessionChanged& xEvt)
 			{
-				// Always emit the unified PossessionChanged event with
-				// both old + new in the payload.
+				// Unified PossessionChanged event with both old + new
+				// in the payload -- subscribers distinguish
+				// first-possess / un-possess / voluntary-switch by
+				// inspecting which entity IDs are valid.
 				EmitEvent(DPEventType::PossessionChanged,
 					xEvt.m_xOldVillager, xEvt.m_xNewVillager);
-				// Convenience legacy events so existing
-				// analyzer / external tooling that key on Possession
-				// vs Unpossession alone still get a discrete signal.
-				if (xEvt.m_xNewVillager.IsValid())
-				{
-					EmitEvent(DPEventType::Possession,
-						xEvt.m_xNewVillager, xEvt.m_xOldVillager);
-				}
-				else if (xEvt.m_xOldVillager.IsValid())
-				{
-					EmitEvent(DPEventType::Unpossession, xEvt.m_xOldVillager);
-				}
 			});
 
 		m_xDoorOpened = xDisp.SubscribeLambda<DP_OnDoorOpened>(

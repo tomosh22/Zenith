@@ -143,7 +143,7 @@ static bool Verify_P1Tuning_PriestValuesMatchConfig()
 	//    "tuner edits both the JSON and the priest fallback to the same
 	//    wrong value" case). These are GDD §4.5 ratified numbers.
 	CheckMatch("suspicion_radius == 15.0",  g_fActSuspicion, 15.0f);
-	CheckMatch("hearing_range == 30.0",     g_fActHearRange, 30.0f);
+	CheckMatch("hearing_range == 35.0",     g_fActHearRange, 35.0f);
 	CheckMatch("hearing_loudness == 0.05",  g_fActHearLoud,  0.05f);
 	CheckMatch("sight_range == 25.0",       g_fActSightRng,  25.0f);
 	CheckMatch("sight_fov == 110.0",        g_fActSightFov,  110.0f);

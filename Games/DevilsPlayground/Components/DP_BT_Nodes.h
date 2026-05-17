@@ -195,8 +195,14 @@ public:
 			// Channel complete. Dispatch the run-loss event and clear
 			// the player's possession (the player gets bounced to the
 			// "run over" screen by whichever subscriber owns that).
+			// Payload carries the apprehended villager (xTarget) + the
+			// priest that caught them (xAgent.GetEntityID()) so the
+			// telemetry visualiser can plot the catch site.
 			Zenith_EventDispatcher::Get().Dispatch(
-				DP_OnRunLost{ DP_RunLostCause::Apprehended });
+				DP_OnRunLost{
+					DP_RunLostCause::Apprehended,
+					xTarget,
+					xAgent.GetEntityID() });
 			DP_Player::SetPossessedVillager(INVALID_ENTITY_ID);
 			m_eLastStatus = BTNodeStatus::SUCCESS;
 			return m_eLastStatus;

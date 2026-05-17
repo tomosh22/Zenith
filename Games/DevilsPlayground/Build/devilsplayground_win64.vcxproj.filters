@@ -5,9 +5,6 @@
     <ClCompile Include="..\Source\DPFogPass.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="..\Source\DPHeuristicBot.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
     <ClCompile Include="..\Source\DPMaterials.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -44,15 +41,6 @@
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="..\Tests\Test_DPHeuristicBotPlaythrough.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Tests\Test_DPHeuristicBot_GoalDispatch.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Tests\Test_DPHeuristicBot_Pathing.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
     <ClCompile Include="..\Tests\Test_DPTelemetryAnalyzer.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -81,9 +69,6 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_Hello.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Tests\Test_HumanPlaythrough.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_ItemPickup.cpp">
@@ -326,6 +311,9 @@
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_PersonalityPlaythrough.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_Possession.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -431,9 +419,6 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPFogPass.h">
-      <Filter>Source</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Source\DPHeuristicBot.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPInputActions.h">

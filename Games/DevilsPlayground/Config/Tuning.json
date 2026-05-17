@@ -64,7 +64,7 @@
     "sight_eye_height_m": 1.6,
     "sight_awareness_gain_rate": 2.0,
     "sight_awareness_decay_rate": 0.5,
-    "hearing_range_m": 30.0,
+    "hearing_range_m": 35.0,
     "hearing_loudness_threshold": 0.05,
     "hearing_fog_multiplier": 2.0,
     "_comment_hearing_fog": "Hearing range doubles when fog is dense (sound carries further when sight is short).",

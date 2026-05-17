@@ -1077,4 +1077,31 @@ public:
 	// B2 P1: ADDITIVE head transitioning into activation-paused mid-pass
 	//==========================================================================
 	static void TestB2_AdditiveHeadStallsBehindMidPassActivationPause();
+
+	//==========================================================================
+	// 2026-05-17: SCENE_LOAD_SINGLE drainage invariants
+	//
+	// Documents the contract that DP-side script side-tables rely on:
+	// every prior-scene entity's OnDestroy must fire before any new-scene
+	// entity's OnAwake fires. Without this, scripts that maintain
+	// global side-tables (DP_Items::g_xItemTagTable, DP_Fog::g_xFogHoles,
+	// any registry keyed by entityID that's populated in OnAwake +
+	// cleared in OnDestroy) accumulate stale entries across scene
+	// transitions -- producing the silent failure where a fresh test
+	// queries a side-table and gets a hit on an entity that no longer
+	// exists.
+	//
+	// Three tests:
+	//   - SingleLoad_OnDestroyDrainsBeforeNewSceneAwake: prove ordering
+	//     of OnDestroy vs OnAwake across the SINGLE-mode transition.
+	//   - SingleLoad_SideTableCleanupCompleteBeforeNextAwake: prove
+	//     a side-table maintained via OnAwake/OnDestroy is empty by
+	//     the time the next scene's OnAwake fires.
+	//   - HasPendingDestructionsClearAfterBlockingSingleLoad: prove
+	//     the public HasPendingDestructions() predicate returns false
+	//     once the blocking SINGLE-mode load returns.
+	//==========================================================================
+	static void TestSingleLoad_OnDestroyDrainsBeforeNewSceneAwake();
+	static void TestSingleLoad_SideTableCleanupCompleteBeforeNextAwake();
+	static void TestHasPendingDestructionsClearAfterBlockingSingleLoad();
 };

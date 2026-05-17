@@ -438,8 +438,16 @@ public:
 			});
 		if (iAlive == 0)
 		{
+			// Payload's m_xVillager carries the last villager to die (this
+			// one) so the telemetry visualiser places the RunLost marker at
+			// the final death site instead of the world-bounds centre. The
+			// caught-by-priest variant uses m_xOther for the priest entity;
+			// NoVessels has no second entity so it stays INVALID.
 			Zenith_EventDispatcher::Get().Dispatch(
-				DP_OnRunLost{ DP_RunLostCause::NoVessels });
+				DP_OnRunLost{
+					DP_RunLostCause::NoVessels,
+					m_xParentEntity.GetEntityID(),
+					Zenith_EntityID{} });
 		}
 	}
 

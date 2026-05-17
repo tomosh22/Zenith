@@ -84,7 +84,7 @@ static bool Step_HearingFlow(int iFrame)
 			g_xPriest      = xFoundPriest;
 			g_xSoundSource = xFoundSource;
 			// Place the synthetic noise 2m in front of the priest so it
-			// always lies inside the priest's 25m hearing radius regardless
+			// always lies inside the priest's 35 m hearing radius regardless
 			// of the priest's authored position.
 			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xPriest);
 			if (pxScene != nullptr)
@@ -109,7 +109,7 @@ static bool Step_HearingFlow(int iFrame)
 	case kHF_Emit:
 	{
 		// Loud + wide-radius stimulus, well above the priest's hearing
-		// threshold and inside its 25m max range. Source = villager so the
+		// threshold and inside its 35 m max range. Source = villager so the
 		// perception system creates a perceived-target for it (without that
 		// the sound is processed but the per-target record never appears,
 		// and GetLastHeardSoundFor walks an empty list).

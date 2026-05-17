@@ -620,11 +620,24 @@ bool Zenith_AutomatedTestRunner::Tick()
 		// finished. Without this check, a slow load (cold-disk asset
 		// fetch, big mesh re-import) could leave the next test's
 		// Setup querying a half-populated scene.
+		//
+		// HasPendingDestructions() check (2026-05-17): defence-in-depth
+		// against any future async-unload path that takes longer than
+		// the 8-frame settle. Today SCENE_LOAD_SINGLE's Phase 1
+		// destroys prior non-persistent scenes synchronously (pinned
+		// by Test_Scene_SingleLoad_OnDestroyDrainsBeforeNewSceneAwake
+		// and friends), so this branch is true at first check. If a
+		// future refactor introduces deferred destruction, the gate
+		// will simply wait longer rather than letting a test's Setup
+		// observe stale entity slots.
 		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
 		const bool bSceneReady =
 			xActive.IsValid()
 			&& Zenith_SceneManager::GetSceneData(xActive) != nullptr;
-		if (!bSceneReady && s_xRunner.m_iBetweenTestsFrame < kMaxSettleFrames)
+		const bool bDestructionDrained =
+			!Zenith_SceneManager::HasPendingDestructions();
+		if ((!bSceneReady || !bDestructionDrained)
+			&& s_xRunner.m_iBetweenTestsFrame < kMaxSettleFrames)
 		{
 			return true;
 		}

@@ -1342,6 +1342,19 @@ void Zenith_SceneManager::UnloadAllNonPersistent(int iExcludeHandle)
 
 uint32_t Zenith_SceneManager::CountScenesBeingAsyncUnloaded() { return Zenith_SceneOperationQueue::CountScenesBeingAsyncUnloaded(); }
 
+bool Zenith_SceneManager::HasPendingDestructions()
+{
+	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+		"HasPendingDestructions must be called from main thread");
+	// Async-unload jobs are the only async destruction path. Synchronous
+	// destruction (UnloadAllNonPersistent + UnloadScene's blocking path)
+	// completes within the calling stack frame -- by the time control
+	// returns to the caller of HasPendingDestructions, that path has
+	// finished. So "are any async unload jobs in flight" is the entire
+	// answer.
+	return Zenith_SceneOperationQueue::CountScenesBeingAsyncUnloaded() > 0u;
+}
+
 void Zenith_SceneManager::ResetAllRenderSystems()
 {
 	// Reset all Flux render systems - called during SINGLE mode scene loads

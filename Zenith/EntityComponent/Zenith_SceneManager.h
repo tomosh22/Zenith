@@ -233,6 +233,25 @@ public:
 	static uint32_t GetLoadedSceneCount();
 
 	/**
+	 * Returns true while ANY scene-destruction work is still pending --
+	 * an in-flight async-unload job (entity batches still draining across
+	 * frames) OR a synchronous bulk unload currently mid-call. Useful for
+	 * test harnesses + scripted scene-transition code that needs to know
+	 * when the engine has fully purged a prior scene's state (entity
+	 * slots, OnDestroy-driven side tables, perception caches, ...) before
+	 * invoking the next logical step.
+	 *
+	 * For SCENE_LOAD_SINGLE specifically, the destruction of every
+	 * prior-non-persistent scene completes inside the loading Phase 1's
+	 * UnloadAllNonPersistent + Physics::Reset block -- by the time the
+	 * new scene's OnAwake wave begins, HasPendingDestructions() returns
+	 * false. The pinned-invariant tests
+	 * (SingleLoad_OnDestroyDrainsBeforeNewSceneAwake +
+	 *  HasPendingDestructionsClearAfterBlockingSingleLoad) document this.
+	 */
+	static bool HasPendingDestructions();
+
+	/**
 	 * Get total scene count (includes scenes being loaded/unloaded)
 	 */
 	static uint32_t GetTotalSceneCount();

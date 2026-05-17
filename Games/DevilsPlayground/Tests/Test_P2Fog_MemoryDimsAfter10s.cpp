@@ -8,6 +8,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
+#include "../Components/DPFogPass_Behaviour.h"
 
 #include <cstdio>
 
@@ -71,6 +72,16 @@ static void Setup_P2MemoryFog()
 	g_bPassed = false;
 	g_szFailureReason = "";
 	g_iFailureStep = 0;
+
+	// 2026-05-17 ownership refactor: DP_Fog memory-reveals table moved
+	// onto DPFogPass_Behaviour::m_xMemoryReveals. Spin up a scene with
+	// the script attached so the DP_Fog::Record/Get/Tick forwarders
+	// actually do something (no-ops without an Instance()).
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("MemoryFogTest");
+	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xFogEntity(pxScene, "FogPassEntity");
+	xFogEntity.AddComponent<Zenith_ScriptComponent>()
+		.AddScript<DPFogPass_Behaviour>();
 
 	// Ensure clean state -- the between-tests reset hook should have
 	// cleared this already, but belt-and-braces.
@@ -145,6 +156,8 @@ static void Setup_P2MemoryFog()
 		StateName(DP_Fog::GetMemoryStateAt(xP)),
 		DP_Fog::GetMemoryRevealCount());
 	std::fflush(stdout);
+
+	Zenith_SceneManager::UnloadScene(xScene);
 }
 
 static bool Step_P2MemoryFog(int /*iFrame*/)
