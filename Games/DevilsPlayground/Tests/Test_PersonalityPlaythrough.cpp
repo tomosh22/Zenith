@@ -3,6 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "Telemetry/Zenith_Telemetry.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
@@ -25,6 +26,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
+#include "Source/DPTelemetry.h"
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/DPDoor_Behaviour.h"
 #include "Components/DPChest_Behaviour.h"
@@ -41,27 +43,53 @@
 #include <cmath>
 #include <vector>
 #include <utility>
+#include <filesystem>
+#include <memory>
+#include <string>
 
 // ============================================================================
-// HumanPlaythrough_Test — pure-input visible playthrough.
+// PersonalityPlaythrough_* — pure-input playthrough, 4 personality variants.
 //
 // Drives DevilsPlayground end-to-end using ONLY Zenith_InputSimulator (no
 // teleporting, no *ForTest bypass calls, no SetInteractOnOverlap, no
-// SetPossessedVillager). Runs in a visible window at wall-clock speed; the
-// user can watch the playthrough as if a human were playing.
+// SetPossessedVillager). Each test registers under a distinct personality
+// (Human / Stealth / Speedrun / Reckless) that tunes the input layer:
+//
+//   * Human    — base walking, single F-press per interaction, runs the
+//                pause-overlay test. Matches the pre-2026-05-17 reference
+//                "HumanPlaythrough_Test" behaviour exactly.
+//   * Stealth  — holds Ctrl while walking (walk-quiet, half speed, halved
+//                footstep loudness). Walk budget doubled to compensate
+//                for the speed halving. Single F-press per interaction.
+//   * Speedrun — holds Shift while walking (sprint, faster + louder).
+//                Single F-press per interaction.
+//   * Reckless — base walking + presses F every frame while in range of
+//                a target (vs once per arrival). Skips the pause-overlay
+//                phases. Bait for footstep/aggro regressions: it accepts
+//                villager deaths + re-possession instead of avoiding them.
+//
+// Headless: the test always loads GameLevel directly (skips FrontEnd menu).
+// Menu-click coverage lives in Test_FullPlaythrough.cpp. With FrontEnd out
+// of the loop the personality tests run in either --headless or visible
+// mode unchanged; the runner picks by flag.
+//
+// Each registration writes its telemetry recording to
+//   %TEMP%/dp_personality_<name>.{ztlm,json}
+// so the four runs don't clobber each other and the visualiser can be
+// pointed at any of them individually.
 //
 // Exercised systems (matches FullPlaythrough_Test's coverage list):
-//   1. FrontEnd → click MenuPlay button → GameLevel scene swap
+//   1. (skipped — see header) FrontEnd → MenuPlay → GameLevel
 //   2. Q/E camera rotate, mouse-wheel zoom in/out
 //   3. Click-to-possess (raycast hits villager screen pixel)
-//   4. WASD movement of possessed villager
+//   4. WASD movement of possessed villager (modifier keys vary per personality)
 //   5. Item pickup (proximity)
 //   6. Forge crafting Iron → Key (F-press)
 //   7. Door unlock with key (F-press)
 //   8. Chest open (F-press)
 //   9. Noise machine emit (F-press) → priest perception blackboard
 //  10. 5× pentagram delivery → DP_Win::HasWon() + DP_OnVictory event
-//  11. Pause overlay toggle (Esc)
+//  11. Pause overlay toggle (Esc) — Reckless skips this
 //
 // Implementation notes:
 //   - SimulateMouseClick / SimulateClickOnUIElement call StepFrame() inside,
@@ -81,6 +109,57 @@
 
 namespace
 {
+	// ------------------------------------------------------------------------
+	// Personality table
+	//
+	// Each personality is a small bundle of input-layer tunables. Setup writes
+	// g_xActiveCfg from one of the constants below before Step starts running;
+	// Step + Verify branch on the relevant flags. Adding a new personality is
+	// a four-step pattern:
+	//   1. Add an enum value here.
+	//   2. Add a `kPersonality_*` constant below.
+	//   3. Add a Setup wrapper at the bottom of the file.
+	//   4. Add a ZENITH_AUTOMATED_TEST_REGISTER block at the bottom.
+	// No other code edits are needed; everything reads off g_xActiveCfg.
+	// ------------------------------------------------------------------------
+	enum class Personality : uint8_t { Human, Stealth, Speedrun, Reckless };
+
+	struct PersonalityConfig
+	{
+		Personality eType;
+		const char* szName;          // used in log lines + telemetry filename
+		bool        bHoldSprint;     // hold ZENITH_KEY_LEFT_SHIFT while walking
+		bool        bHoldQuiet;      // hold ZENITH_KEY_LEFT_CONTROL while walking
+		bool        bMashInteract;   // press F every frame in range vs once per arrival
+		bool        bRunPauseTest;   // run the Esc pause-overlay phases
+		int         iWalkBudgetMul;  // multiplier on the base 1200-frame walk budget
+	};
+
+	// Walk budget multipliers calibrated for the per-personality movement
+	// speed. Stealth halves the villager's walk speed (Ctrl held), so we
+	// double the per-walk frame budget to give it equal opportunity to
+	// reach the same target. Speedrun + Reckless don't slow down so they
+	// run at the base 1x budget.
+	constexpr PersonalityConfig kPersonality_Human    = {
+		Personality::Human,    "Human",    /*sprint*/false, /*quiet*/false, /*mash*/false, /*pause*/true,  /*budgetMul*/1 };
+	constexpr PersonalityConfig kPersonality_Stealth  = {
+		Personality::Stealth,  "Stealth",  /*sprint*/false, /*quiet*/true,  /*mash*/false, /*pause*/true,  /*budgetMul*/2 };
+	constexpr PersonalityConfig kPersonality_Speedrun = {
+		Personality::Speedrun, "Speedrun", /*sprint*/true,  /*quiet*/false, /*mash*/false, /*pause*/true,  /*budgetMul*/1 };
+	constexpr PersonalityConfig kPersonality_Reckless = {
+		Personality::Reckless, "Reckless", /*sprint*/false, /*quiet*/false, /*mash*/true,  /*pause*/false, /*budgetMul*/1 };
+
+	PersonalityConfig g_xActiveCfg = kPersonality_Human;
+
+	// How many frames Reckless dwells in a press-F phase mashing the
+	// interact key. Each press while in range fires DP_OnInteract -> the
+	// telemetry recorder sees N Interact events per interactable instead
+	// of 1. 8 frames * 9 interactables ~= 72 extra events, comparable to
+	// the bot recordings' 80-event signature.
+	constexpr int kRecklessMashFrames = 8;
+
+	// SetWalkBudget defined below, after g_iWalkBudget storage is declared.
+
 	// ------------------------------------------------------------------------
 	// Phase enum
 	// ------------------------------------------------------------------------
@@ -128,6 +207,15 @@ namespace
 	int g_iPhase = kHP_Start;
 	int g_iWait  = 0;            // generic intra-phase frame counter
 	int g_iWalkBudget = 0;       // remaining frames allowed in current walk
+
+	// Single-source setter for the per-walk frame budget. Replaces the
+	// literal `SetWalkBudget(1200);` assignments scattered across Step
+	// so the active personality's budget multiplier is honoured everywhere
+	// (Stealth needs 2x because walk-quiet halves villager speed).
+	inline void SetWalkBudget(int iBase)
+	{
+		g_iWalkBudget = iBase * g_xActiveCfg.iWalkBudgetMul;
+	}
 
 	// Stuck-detection state — bail early when the villager hasn't moved in N
 	// frames. Without this, an unreachable target consumes the full walk
@@ -198,6 +286,40 @@ namespace
 	Zenith_EventHandle g_xVictoryHandle = INVALID_EVENT_HANDLE;
 
 	// ------------------------------------------------------------------------
+	// Telemetry recording state.
+	//
+	// Mirrors the bot-playthrough test's recorder + hooks pattern so the
+	// resulting binary/JSON artifacts feed straight into
+	// Tools/dp_telemetry_visualise.ps1 unchanged. Recording begins once the
+	// GameLevel scene has loaded + scripts are populated (kHP_CaptureRefs)
+	// and ends in Verify regardless of pass/fail so the artifacts are
+	// always available for offline inspection.
+	// ------------------------------------------------------------------------
+	constexpr float kHPFixedDt = 1.0f / 60.0f;
+	constexpr uint32_t kHPSamplePeriodFrames = 6u;  // 10 Hz position sampling
+
+	std::unique_ptr<DPTelemetry::Hooks> g_pxTelemetryHooks;
+	bool g_bRecordingActive = false;
+	std::string g_strHPBinPath;
+	std::string g_strHPJsonPath;
+	int g_iTelemetryFrame = 0;  // frames since recording started
+
+	std::string HPTempPath(const char* sz)
+	{
+		std::error_code xErr;
+		std::filesystem::path xDir = std::filesystem::temp_directory_path(xErr);
+		if (xErr) xDir = ".";
+		// Per-personality basename so the 4 personality tests don't clobber
+		// each other when run in the same batch. e.g. dp_personality_Human_playthrough.ztlm.
+		std::string strBase = std::string("dp_personality_") + g_xActiveCfg.szName + "_" + sz;
+		xDir /= strBase;
+		return xDir.string();
+	}
+
+	// EmitHPPositionSample is defined below, after TryGetEntityPos (its
+	// in-namespace dependency).
+
+	// ------------------------------------------------------------------------
 	// Helpers (mirrors Test_FullPlaythrough.cpp's pattern)
 	// ------------------------------------------------------------------------
 	template<typename T>
@@ -236,6 +358,51 @@ namespace
 		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return false;
 		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
 		return true;
+	}
+
+	// Per-sample emit. Pattern lifted from Test_DPHeuristicBotPlaythrough's
+	// EmitPositionSample so the visualiser's classification logic
+	// (IsPriest / Possessed / HoldingItem flags) lights up identically for
+	// a human-driven run.
+	void EmitHPPositionSample(int iFrame)
+	{
+		Zenith_Telemetry::FrameSample xSample;
+		xSample.fTimeS = static_cast<float>(iFrame) * kHPFixedDt;
+
+		const Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
+
+		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			[&xSample, xPossessed](Zenith_EntityID xId, DPVillager_Behaviour& xVilla)
+			{
+				Zenith_Telemetry::EntitySnapshot xE;
+				xE.xId = xId;
+				if (!TryGetEntityPos(xId, xE.xPos)) return;
+				uint32_t uFlags = 0;
+				if (xVilla.GetRemainingLife() > 0.0f) uFlags |= DPTelemetry::StateFlags::Alive;
+				if (xId == xPossessed)
+				{
+					uFlags |= DPTelemetry::StateFlags::Possessed;
+					if (xVilla.IsSprintingNow()) uFlags |= DPTelemetry::StateFlags::Sprinting;
+					if (xVilla.IsWalkQuietNow()) uFlags |= DPTelemetry::StateFlags::WalkQuiet;
+					const DP_ItemTag eTag = DP_Player::GetHeldItemTag(xId);
+					if (eTag != DP_ItemTag::None) uFlags |= DPTelemetry::StateFlags::HoldingItem;
+				}
+				xE.uStateFlags = uFlags;
+				xSample.axEntities.PushBack(xE);
+			});
+
+		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
+			[&xSample](Zenith_EntityID xId, Priest_Behaviour&)
+			{
+				Zenith_Telemetry::EntitySnapshot xE;
+				xE.xId = xId;
+				if (!TryGetEntityPos(xId, xE.xPos)) return;
+				xE.uStateFlags = DPTelemetry::StateFlags::IsPriest
+				               | DPTelemetry::StateFlags::Alive;
+				xSample.axEntities.PushBack(xE);
+			});
+
+		Zenith_Telemetry::GetRecorder().RecordFrame(xSample);
 	}
 
 	// Look up a UI element by name in ANY loaded scene's UICanvas.
@@ -314,6 +481,12 @@ namespace
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
+		// Clear personality modifier keys too -- if a Stealth or Speedrun
+		// personality leaves Ctrl/Shift held when we transition to a non-
+		// walking phase, the orbit camera (Q/E) and click-to-possess would
+		// inherit the modifier state. Always reset to a clean slate.
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT,   false);
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_CONTROL, false);
 	}
 
 	// ====================================================================
@@ -668,6 +841,13 @@ namespace
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, fForwardDot < -kAxisThresh);
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, fRightDot   >  kAxisThresh);
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, fRightDot   < -kAxisThresh);
+
+		// Personality modifier keys. Set unconditionally so that walks driven
+		// by the same DriveWASDToward call get the same modifier policy across
+		// every phase. Cleared in ClearWASD so we don't carry held modifiers
+		// into phases that aren't walking (camera control, possession click).
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT,   g_xActiveCfg.bHoldSprint);
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_CONTROL, g_xActiveCfg.bHoldQuiet);
 		return false;
 	}
 
@@ -926,6 +1106,18 @@ static void Setup_HumanPlaythrough()
 	g_xVictoryHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnVictory>(&OnVictoryEvent);
 	g_xInteractHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnInteract>(&OnInteractEvent);
 
+	// Telemetry artifacts -- always written under %TEMP% as
+	// dp_human_playthrough.{ztlm,json}. Tools/dp_telemetry_visualise.ps1
+	// reads these by path; the runner script auto-detects them once the
+	// test exits.
+	g_strHPBinPath  = HPTempPath("playthrough.ztlm");
+	g_strHPJsonPath = HPTempPath("playthrough.json");
+	g_pxTelemetryHooks.reset();
+	g_bRecordingActive = false;
+	g_iTelemetryFrame  = 0;
+	// Recorder Begin + Hooks construction deferred to kHP_CaptureRefs so
+	// the FrontEnd-boot frames don't pollute the recording.
+
 	// Reset the A* path cache so the first walk computes a fresh path. The
 	// grid is invalidated automatically on world-state changes (door open
 	// etc.) via OnInteractEvent; this just clears any stale state from a
@@ -940,60 +1132,51 @@ static void Setup_HumanPlaythrough()
 // ----------------------------------------------------------------------------
 static bool Step_HumanPlaythrough(int /*iFrame*/)
 {
+	// Telemetry sampling. Runs every frame once recording has begun
+	// (kHP_CaptureRefs onward). The 10 Hz position-sample period and
+	// the per-frame NextFrame() advance match the bot test so the
+	// visualiser sees the same cadence + units. Placed at the top of
+	// Step so it captures the world AFTER the previous frame's
+	// game-side OnUpdate (which already mutated positions) and BEFORE
+	// the input simulator pushes new keys this frame.
+	if (g_bRecordingActive)
+	{
+		auto& xRec = Zenith_Telemetry::GetRecorder();
+		xRec.NextFrame();
+		if (xRec.ShouldSampleThisFrame())
+		{
+			EmitHPPositionSample(g_iTelemetryFrame);
+		}
+		++g_iTelemetryFrame;
+	}
+
 	switch (g_iPhase)
 	{
 	// ----------------------------------------------------------------------
-	// Phase A — boot through FrontEnd, click MenuPlay
+	// Phase A — load GameLevel directly (FrontEnd skipped)
+	//
+	// Pre-2026-05-17 the test booted via FrontEnd + clicked MenuPlay so the
+	// menu/scene-swap path was covered. With the personality refactor the
+	// menu click is no longer wanted -- it forces m_bRequiresGraphics=true
+	// (the click depends on a visible window) and adds 2 seconds of FE
+	// settling time for every one of the four personality runs. Menu-click
+	// coverage stays in Test_FullPlaythrough.cpp.
 	// ----------------------------------------------------------------------
 	case kHP_Start:
-		// Ensure FrontEnd is the active scene. Boot already loads it as scene
-		// index 0; explicit re-load is defensive against running after another
-		// test that swapped scenes.
-		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
-		g_iPhase = kHP_LoadFE;
-		g_iWait = 0;
-		return true;
-
-	case kHP_LoadFE:
-	{
-		++g_iWait;
-		if (Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas() != nullptr) {
-			g_iPhase = kHP_WaitFE;
-			g_iWait = 0;
-			return true;
-		}
-		if (g_iWait > 60) { g_iPhase = kHP_Done; return false; }
-		return true;
-	}
-
-	case kHP_WaitFE:
-	{
-		++g_iWait;
-		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
-		if (pxCanvas != nullptr && pxCanvas->FindElement("MenuPlay") != nullptr) {
-			g_iPhase = kHP_ClickPlay;
-			g_iWait = 0;
-			return true;
-		}
-		if (g_iWait > 120) { g_iPhase = kHP_Done; return false; }
-		return true;
-	}
-
-	case kHP_ClickPlay:
-	{
-		// SimulateMousePosition + queue MOUSE_BUTTON_LEFT press; the same-frame
-		// game OnUpdate will see WasKeyPressedThisFrame == true and the button
-		// callback will fire (DPMainMenuController hooks it to LoadSceneByIndex(1)).
-		const bool bClicked = ClickUIElement("MenuPlay");
-		if (!bClicked) {
-			// Canvas/element vanished between phases; bail gracefully.
-			g_iPhase = kHP_Done;
-			return false;
-		}
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 		g_iPhase = kHP_WaitGameLevel;
 		g_iWait = 0;
 		return true;
-	}
+
+	// kHP_LoadFE / kHP_WaitFE / kHP_ClickPlay are retained in the enum so
+	// the phase numbering stays stable for the rest of Step, but they are
+	// no longer reachable from kHP_Start. Fall through to Done if any
+	// future code path lands here unexpectedly.
+	case kHP_LoadFE:
+	case kHP_WaitFE:
+	case kHP_ClickPlay:
+		g_iPhase = kHP_Done;
+		return false;
 
 	case kHP_WaitGameLevel:
 	{
@@ -1082,6 +1265,30 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			const float fDx = xCamPos.x - 50.0f;
 			const float fDz = xCamPos.z - 50.0f;
 			g_fDistBefore = std::sqrt(fDx*fDx + fDz*fDz);
+		}
+
+		// Begin telemetry recording NOW -- scene is loaded, all the
+		// gameplay scripts have populated, OnAwake/OnStart have fired,
+		// and we're about to start the visible playthrough. The
+		// FrontEnd menu frames stay out of the recording (kHP_LoadFE
+		// through kHP_WaitGameLevel ran before this).
+		if (!g_bRecordingActive)
+		{
+			Zenith_Telemetry::Header xHeader;
+			// Distinct seed from the bot test's 0xB0Bull so the
+			// resulting recording is identifiable at a glance.
+			xHeader.uSeed              = 0xFEEDC0DEull;
+			xHeader.strSceneName       = "GameLevel";
+			xHeader.fFixedDt           = kHPFixedDt;
+			xHeader.uSamplePeriodFrames = kHPSamplePeriodFrames;
+			Zenith_Telemetry::GetRecorder().Begin(xHeader);
+			// Hooks AFTER Begin so the very first events land in this run.
+			g_pxTelemetryHooks = std::make_unique<DPTelemetry::Hooks>();
+			g_iTelemetryFrame  = 0;
+			g_bRecordingActive = true;
+			std::printf("[HumanPlaythrough] telemetry begin -- bin=%s json=%s\n",
+				g_strHPBinPath.c_str(), g_strHPJsonPath.c_str());
+			std::fflush(stdout);
 		}
 
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_Q, true);
@@ -1199,7 +1406,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 				xPossessed.m_uIndex);
 			std::fflush(stdout);
 			g_iPhase = kHP_WalkIron;
-			g_iWalkBudget = 1200;  // ~25 s budget for finding/walking to first iron
+			SetWalkBudget(1200);  // ~25 s budget for finding/walking to first iron
 			return true;
 		}
 		if (g_iWait > 180)
@@ -1233,7 +1440,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			std::fflush(stdout);
 			ClearWASD();
 			g_iPhase = kHP_WalkForge;
-			g_iWalkBudget = 1200;
+			SetWalkBudget(1200);
 			return true;
 		}
 		Zenith_Maths::Vector3 xIronPos = DP_Items::GetItemWorldPos(xIron);
@@ -1253,7 +1460,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			std::printf("[HumanPlaythrough] iron WALK_TIMEOUT — skipping\n");
 			std::fflush(stdout);
 			g_iPhase = kHP_WalkForge;
-			g_iWalkBudget = 1200;
+			SetWalkBudget(1200);
 			return true;
 		}
 		return true;
@@ -1272,7 +1479,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			(int)eHeld, (int)g_bIronPickedUp);
 		std::fflush(stdout);
 		g_iPhase = kHP_WalkForge;
-		g_iWalkBudget = 1200;
+		SetWalkBudget(1200);
 		return true;
 	}
 
@@ -1285,11 +1492,11 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		if (!g_xForge.IsValid()) {
 			std::printf("[HumanPlaythrough] forge missing — skipping\n");
 			std::fflush(stdout);
-			g_iPhase = kHP_WalkDoor; g_iWalkBudget = 1200; return true;
+			g_iPhase = kHP_WalkDoor; SetWalkBudget(1200); return true;
 		}
 		Zenith_Maths::Vector3 xForgePos;
 		if (!TryGetEntityPos(g_xForge, xForgePos)) {
-			g_iPhase = kHP_WalkDoor; g_iWalkBudget = 1200; return true;
+			g_iPhase = kHP_WalkDoor; SetWalkBudget(1200); return true;
 		}
 		LogWalkProgress("forge", xForgePos);
 		--g_iWalkBudget;
@@ -1307,7 +1514,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			std::printf("[HumanPlaythrough] forge WALK_TIMEOUT — skipping\n");
 			std::fflush(stdout);
 			g_iPhase = kHP_WalkDoor;
-			g_iWalkBudget = 1200;
+			SetWalkBudget(1200);
 			return true;
 		}
 		return true;
@@ -1320,6 +1527,9 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
+		// Reckless mashes F for kRecklessMashFrames frames -- each press
+		// while in range emits another DP_OnInteract event into the recorder.
+		if (g_xActiveCfg.bMashInteract && g_iWait < kRecklessMashFrames) return true;
 		g_iPhase = kHP_VerifyForge;
 		g_iWait = 0;
 		return true;
@@ -1343,7 +1553,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			(int)eHeld, uCrafts, (int)g_bForgeCrafted);
 		std::fflush(stdout);
 		g_iPhase = kHP_WalkDoor;
-		g_iWalkBudget = 1200;
+		SetWalkBudget(1200);
 		return true;
 	}
 
@@ -1356,10 +1566,10 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		if (!g_xDoor.IsValid()) {
 			std::printf("[HumanPlaythrough] door missing — skipping\n");
 			std::fflush(stdout);
-			g_iPhase = kHP_WalkChest; g_iWalkBudget = 1200; return true;
+			g_iPhase = kHP_WalkChest; SetWalkBudget(1200); return true;
 		}
 		Zenith_Maths::Vector3 xDoorPos;
-		if (!TryGetEntityPos(g_xDoor, xDoorPos)) { g_iPhase = kHP_WalkChest; g_iWalkBudget = 1200; return true; }
+		if (!TryGetEntityPos(g_xDoor, xDoorPos)) { g_iPhase = kHP_WalkChest; SetWalkBudget(1200); return true; }
 		LogWalkProgress("door", xDoorPos);
 		--g_iWalkBudget;
 		const bool bArrived = DriveWASDToward(xDoorPos, 1.95f);
@@ -1380,13 +1590,13 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 				std::printf("[HumanPlaythrough] door WALK_TIMEOUT — retry %d\n",
 					g_iDoorAttempts);
 				std::fflush(stdout);
-				g_iWalkBudget = 1200;
+				SetWalkBudget(1200);
 				return true;
 			}
 			std::printf("[HumanPlaythrough] door WALK_TIMEOUT — giving up\n");
 			std::fflush(stdout);
 			g_iPhase = kHP_WalkChest;
-			g_iWalkBudget = 1200;
+			SetWalkBudget(1200);
 			return true;
 		}
 		return true;
@@ -1397,6 +1607,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
+		if (g_xActiveCfg.bMashInteract && g_iWait < kRecklessMashFrames) return true;
 		g_iPhase = kHP_VerifyDoor;
 		g_iWait = 0;
 		return true;
@@ -1413,7 +1624,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		std::printf("[HumanPlaythrough] door: open=%d\n", (int)g_bDoorOpened);
 		std::fflush(stdout);
 		g_iPhase = kHP_WalkChest;
-		g_iWalkBudget = 1200;
+		SetWalkBudget(1200);
 		return true;
 	}
 
@@ -1426,10 +1637,10 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		if (!g_xChest.IsValid()) {
 			std::printf("[HumanPlaythrough] chest missing — skipping\n");
 			std::fflush(stdout);
-			g_iPhase = kHP_WalkNoise; g_iWalkBudget = 1200; return true;
+			g_iPhase = kHP_WalkNoise; SetWalkBudget(1200); return true;
 		}
 		Zenith_Maths::Vector3 xChestPos;
-		if (!TryGetEntityPos(g_xChest, xChestPos)) { g_iPhase = kHP_WalkNoise; g_iWalkBudget = 1200; return true; }
+		if (!TryGetEntityPos(g_xChest, xChestPos)) { g_iPhase = kHP_WalkNoise; SetWalkBudget(1200); return true; }
 		LogWalkProgress("chest", xChestPos);
 		--g_iWalkBudget;
 		// Interaction radius for DPInteractable is 2.0 m. Stop just outside
@@ -1458,13 +1669,13 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 				std::printf("[HumanPlaythrough] chest WALK_TIMEOUT — retry %d\n",
 					g_iChestAttempts);
 				std::fflush(stdout);
-				g_iWalkBudget = 1200;
+				SetWalkBudget(1200);
 				return true;
 			}
 			std::printf("[HumanPlaythrough] chest WALK_TIMEOUT — giving up\n");
 			std::fflush(stdout);
 			g_iPhase = kHP_WalkNoise;
-			g_iWalkBudget = 1200;
+			SetWalkBudget(1200);
 			return true;
 		}
 		return true;
@@ -1475,6 +1686,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
+		if (g_xActiveCfg.bMashInteract && g_iWait < kRecklessMashFrames) return true;
 		g_iPhase = kHP_VerifyChest;
 		g_iWait = 0;
 		return true;
@@ -1491,7 +1703,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		std::printf("[HumanPlaythrough] chest: open=%d\n", (int)g_bChestOpened);
 		std::fflush(stdout);
 		g_iPhase = kHP_WalkNoise;
-		g_iWalkBudget = 1200;
+		SetWalkBudget(1200);
 		return true;
 	}
 
@@ -1504,10 +1716,10 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		if (!g_xNoise.IsValid()) {
 			std::printf("[HumanPlaythrough] noise missing — skipping\n");
 			std::fflush(stdout);
-			g_iPhase = kHP_ObjLoopFind; g_iWalkBudget = 1200; return true;
+			g_iPhase = kHP_ObjLoopFind; SetWalkBudget(1200); return true;
 		}
 		Zenith_Maths::Vector3 xNoisePos;
-		if (!TryGetEntityPos(g_xNoise, xNoisePos)) { g_iPhase = kHP_ObjLoopFind; g_iWalkBudget = 1200; return true; }
+		if (!TryGetEntityPos(g_xNoise, xNoisePos)) { g_iPhase = kHP_ObjLoopFind; SetWalkBudget(1200); return true; }
 		LogWalkProgress("noise", xNoisePos);
 		--g_iWalkBudget;
 		const bool bArrived = DriveWASDToward(xNoisePos, 1.95f);
@@ -1528,13 +1740,13 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 				std::printf("[HumanPlaythrough] noise WALK_TIMEOUT — retry %d\n",
 					g_iNoiseAttempts);
 				std::fflush(stdout);
-				g_iWalkBudget = 1200;
+				SetWalkBudget(1200);
 				return true;
 			}
 			std::printf("[HumanPlaythrough] noise WALK_TIMEOUT — giving up\n");
 			std::fflush(stdout);
 			g_iPhase = kHP_ObjLoopFind;
-			g_iWalkBudget = 1200;
+			SetWalkBudget(1200);
 			return true;
 		}
 		return true;
@@ -1545,6 +1757,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
+		if (g_xActiveCfg.bMashInteract && g_iWait < kRecklessMashFrames) return true;
 		g_iPhase = kHP_WaitNoise;
 		g_iWait = 0;
 		return true;
@@ -1572,7 +1785,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			(int)g_bPriestHeardNoise);
 		std::fflush(stdout);
 		g_iPhase = kHP_ObjLoopFind;
-		g_iWalkBudget = 1200;
+		SetWalkBudget(1200);
 		return true;
 	}
 
@@ -1630,7 +1843,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		{
 			g_xCurrentObjItem = INVALID_ENTITY_ID;
 			g_iPhase = kHP_ObjLoopWalkPentagram;
-			g_iWalkBudget = 1200;
+			SetWalkBudget(1200);
 			return true;
 		}
 
@@ -1651,7 +1864,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		}
 		g_xCurrentObjItem = xItem;
 		g_iPhase = kHP_ObjLoopWalk;
-		g_iWalkBudget = 1200;
+		SetWalkBudget(1200);
 		return true;
 	}
 
@@ -1671,7 +1884,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		{
 			ClearWASD();
 			g_iPhase = kHP_ObjLoopWalkPentagram;
-			g_iWalkBudget = 1200;
+			SetWalkBudget(1200);
 			return true;
 		}
 		if (g_iWalkBudget <= 0)
@@ -1718,12 +1931,15 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait == 1) return true;
-		if (g_iWait == 2)
+		// Reckless mashes F every frame from frame 2 onwards; other
+		// personalities single-press on frame 2 and idle for 3 frames so
+		// the pentagram has time to register the delivery.
+		const int iSettleEnd = g_xActiveCfg.bMashInteract ? (2 + kRecklessMashFrames) : 5;
+		if (g_iWait >= 2 && (g_xActiveCfg.bMashInteract || g_iWait == 2))
 		{
 			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
-			return true;
 		}
-		if (g_iWait < 5) return true;
+		if (g_iWait < iSettleEnd) return true;
 		// Read the current possessed villager (may be different from the one
 		// we started the obj loop with if a re-possession fired mid-walk).
 		const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
@@ -1758,10 +1974,13 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait < 4) return true;
 		g_uVictoryMask = DP_Win::GetCollectedObjectivesMask();
-		std::printf("[HumanPlaythrough] victory: mask=0x%X event=%d won=%d\n",
-			g_uVictoryMask, (int)g_bVictoryEvent, (int)DP_Win::HasWon());
+		std::printf("[%s] victory: mask=0x%X event=%d won=%d\n",
+			g_xActiveCfg.szName, g_uVictoryMask, (int)g_bVictoryEvent, (int)DP_Win::HasWon());
 		std::fflush(stdout);
-		g_iPhase = kHP_PauseOpen;
+		// Reckless skips the pause-overlay test entirely. Verify is
+		// personality-aware (the pause-asserted flags only get checked
+		// when g_xActiveCfg.bRunPauseTest is true).
+		g_iPhase = g_xActiveCfg.bRunPauseTest ? kHP_PauseOpen : kHP_Summary;
 		g_iWait = 0;
 		return true;
 	}
@@ -1811,12 +2030,13 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 
 	case kHP_Summary:
 	{
-		std::printf("[HumanPlaythrough] summary: "
+		std::printf("[%s] summary: "
 			"V=%d D=%d C=%d possess=%d "
 			"camYawQ=(%.3f→%.3f) camYawE=%.3f camDist=(%.2f→%.2f→%.2f) "
 			"iron=%d forge=%d door=%d chest=%d noise=%d "
 			"objs=%d mask=0x%X victory=%d won=%d "
 			"pauseOn=%d pauseOff=%d\n",
+			g_xActiveCfg.szName,
 			g_iVillagerCount, g_iDoorCount, g_iChestCount, (int)g_bPossessionConfirmed,
 			g_fYawBeforeQ, g_fYawAfterQ, g_fYawAfterE,
 			g_fDistBefore, g_fDistAfterIn, g_fDistAfterOut,
@@ -1856,6 +2076,25 @@ static bool Verify_HumanPlaythrough()
 	// point we can clean up before the next test's Setup fires.
 	Zenith_InputSimulator::ClearFixedDt();
 
+	// End telemetry recording. Always runs (success OR failure) so the
+	// .ztlm + .json artifacts are available for offline inspection
+	// regardless of how the playthrough finished. Tear down the hooks
+	// first so the recorder's End() write doesn't race against any
+	// stray late events.
+	if (g_bRecordingActive)
+	{
+		const uint32_t uFrames = Zenith_Telemetry::GetRecorder().GetFrameIdx();
+		const bool bEnded = Zenith_Telemetry::GetRecorder().End(
+			g_strHPBinPath.c_str(),
+			g_strHPJsonPath.c_str(),
+			&DPTelemetry::DPEventTypeToString);
+		g_pxTelemetryHooks.reset();
+		g_bRecordingActive = false;
+		std::printf("[HumanPlaythrough] telemetry end -- frames=%u ended=%d bin=%s json=%s\n",
+			uFrames, (int)bEnded, g_strHPBinPath.c_str(), g_strHPJsonPath.c_str());
+		std::fflush(stdout);
+	}
+
 	if (g_iVillagerCount < 1) return false;
 	if (g_iDoorCount     < 1) return false;
 	if (g_iChestCount    < 1) return false;
@@ -1879,25 +2118,66 @@ static bool Verify_HumanPlaythrough()
 	if (!DP_Win::HasWon()) return false;
 	if (!g_bVictoryEvent) return false;
 
-	if (!g_bPauseOnObserved) return false;
-	if (!g_bPauseOffObserved) return false;
+	// Pause-overlay assertions only apply to personalities that ran the
+	// pause test. Reckless skips it entirely (bRunPauseTest=false) so the
+	// pause-on/off flags stay false; treating that as a fail would make
+	// the test red for a deliberate skip. Mirror the same logic in the
+	// summary block of Step.
+	if (g_xActiveCfg.bRunPauseTest)
+	{
+		if (!g_bPauseOnObserved) return false;
+		if (!g_bPauseOffObserved) return false;
+	}
 	return true;
 }
 
-static const Zenith_AutomatedTest g_xHumanPlaythroughTest = {
-	"HumanPlaythrough_Test",
-	&Setup_HumanPlaythrough,
+// Per-personality Setup wrappers. Each just stashes the active config
+// in g_xActiveCfg, then chains into the shared Setup. The personality
+// pointer + Step + Verify pointers in the registration block below are
+// the same across all 4 -- only Setup varies.
+static void Setup_Personality_Human()    { g_xActiveCfg = kPersonality_Human;    Setup_HumanPlaythrough(); }
+static void Setup_Personality_Stealth()  { g_xActiveCfg = kPersonality_Stealth;  Setup_HumanPlaythrough(); }
+static void Setup_Personality_Speedrun() { g_xActiveCfg = kPersonality_Speedrun; Setup_HumanPlaythrough(); }
+static void Setup_Personality_Reckless() { g_xActiveCfg = kPersonality_Reckless; Setup_HumanPlaythrough(); }
+
+// 6000-frame budget covers all four personalities in practice: a
+// successful Human run finishes in ~1800 frames, Stealth (2x walk budget
+// for Ctrl-held walks) finishes in ~3500, Speedrun in ~1500, Reckless in
+// ~1900. Stealth is the slowest but still well inside the cap.
+static const Zenith_AutomatedTest g_xPersonalityTest_Human = {
+	"PersonalityPlaythrough_Human",
+	&Setup_Personality_Human,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
-	6000,  // ~3 min wall-clock cap — at debug-build ~30 fps this is 200 s; at
-	       // release ~120 fps it's 50 s. A successful playthrough lands around
-	       // 4500-5500 frames, so this leaves a small headroom but stops a
-	       // stuck run inside the 3-min budget.
-	true   // m_bRequiresGraphics: visible playthrough -- needs UI click on Play +
-	       // a window the user can watch. Also resolves the pre-existing fail in
-	       // Q-2026-05-12-002 (frame-budget mismatch); skipping in headless
-	       // removes the persistent red without losing the test entirely.
+	6000
 };
-ZENITH_AUTOMATED_TEST_REGISTER(g_xHumanPlaythroughTest);
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Human);
+
+static const Zenith_AutomatedTest g_xPersonalityTest_Stealth = {
+	"PersonalityPlaythrough_Stealth",
+	&Setup_Personality_Stealth,
+	&Step_HumanPlaythrough,
+	&Verify_HumanPlaythrough,
+	8000  // 2x walk budget per phase -> larger overall cap
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Stealth);
+
+static const Zenith_AutomatedTest g_xPersonalityTest_Speedrun = {
+	"PersonalityPlaythrough_Speedrun",
+	&Setup_Personality_Speedrun,
+	&Step_HumanPlaythrough,
+	&Verify_HumanPlaythrough,
+	6000
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Speedrun);
+
+static const Zenith_AutomatedTest g_xPersonalityTest_Reckless = {
+	"PersonalityPlaythrough_Reckless",
+	&Setup_Personality_Reckless,
+	&Step_HumanPlaythrough,
+	&Verify_HumanPlaythrough,
+	6000
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Reckless);
 
 #endif // ZENITH_INPUT_SIMULATOR

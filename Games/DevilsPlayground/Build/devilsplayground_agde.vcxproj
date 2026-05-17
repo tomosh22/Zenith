@@ -183,7 +183,6 @@
     <ClInclude Include="..\Components\Priest_Behaviour.h" />
     <ClInclude Include="..\Source\DevilsPlayground_Tags.h" />
     <ClInclude Include="..\Source\DPFogPass.h" />
-    <ClInclude Include="..\Source\DPHeuristicBot.h" />
     <ClInclude Include="..\Source\DPInputActions.h" />
     <ClInclude Include="..\Source\DPMaterials.h" />
     <ClInclude Include="..\Source\DPTelemetry.h" />
@@ -199,7 +198,6 @@
   <ItemGroup>
     <ClCompile Include="..\DevilsPlayground.cpp" />
     <ClCompile Include="..\Source\DPFogPass.cpp" />
-    <ClCompile Include="..\Source\DPHeuristicBot.cpp" />
     <ClCompile Include="..\Source\DPMaterials.cpp" />
     <ClCompile Include="..\Source\DPTelemetry.cpp" />
     <ClCompile Include="..\Source\DPTelemetryAnalyzer.cpp" />
@@ -212,9 +210,6 @@
     <ClCompile Include="..\Tests\Test_DimLightsCutFog.cpp" />
     <ClCompile Include="..\Tests\Test_DoubleDoorAndForge.cpp" />
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp" />
-    <ClCompile Include="..\Tests\Test_DPHeuristicBotPlaythrough.cpp" />
-    <ClCompile Include="..\Tests\Test_DPHeuristicBot_GoalDispatch.cpp" />
-    <ClCompile Include="..\Tests\Test_DPHeuristicBot_Pathing.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryAnalyzer.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp" />
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp" />
@@ -225,7 +220,6 @@
     <ClCompile Include="..\Tests\Test_GymScenes.cpp" />
     <ClCompile Include="..\Tests\Test_HearingFlow.cpp" />
     <ClCompile Include="..\Tests\Test_Hello.cpp" />
-    <ClCompile Include="..\Tests\Test_HumanPlaythrough.cpp" />
     <ClCompile Include="..\Tests\Test_ItemPickup.cpp" />
     <ClCompile Include="..\Tests\Test_LifeTimer.cpp" />
     <ClCompile Include="..\Tests\Test_Materials.cpp" />
@@ -306,6 +300,7 @@
     <ClCompile Include="..\Tests\Test_P4Playthrough_Night1WinGolden.cpp" />
     <ClCompile Include="..\Tests\Test_P4UI_RestartPromptAfterRunOver.cpp" />
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp" />
+    <ClCompile Include="..\Tests\Test_PersonalityPlaythrough.cpp" />
     <ClCompile Include="..\Tests\Test_Possession.cpp" />
     <ClCompile Include="..\Tests\Test_PostFogHookFires.cpp" />
     <ClCompile Include="..\Tests\Test_PriestBBBridge.cpp" />

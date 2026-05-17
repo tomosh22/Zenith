@@ -10,6 +10,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -58,6 +59,28 @@ namespace
 	}
 }
 
+// Test-data constants shared between the dispatch phase + the
+// post-recording assertions. Pulling them up here keeps the assertion
+// values in lock-step with the dispatch values (the original
+// inline-literal form re-typed `5u` and `3` and `11.5f` in two places,
+// any drift between them would have produced spurious failures).
+namespace
+{
+	constexpr Zenith_EntityID kEntVillager       = {3u, 1u};
+	constexpr Zenith_EntityID kEntTarget         = {7u, 2u};
+	constexpr Zenith_EntityID kEntItem           = {9u, 3u};
+	constexpr Zenith_EntityID kEntPriorVillager  = {5u, 1u};
+
+	constexpr float kBellPosX = 11.5f;
+	constexpr float kBellPosY =  0.0f;
+	constexpr float kBellPosZ = 22.5f;
+
+	// Bit index that DP_OnObjectivePlaced carries in its payload --
+	// arbitrary but specific so the round-trip check has something to
+	// compare against. 3 -> Objective4 (per DP_ObjectiveTagToBit).
+	constexpr int   kObjectiveBitIndex = 3;
+}
+
 static void Setup_TelemetryHooks()
 {
 	g_bPassed = false;
@@ -73,36 +96,33 @@ static void Setup_TelemetryHooks()
 	xHeader.uSeed = 0xABCDu;
 	xRec.Begin(xHeader);
 
-	const Zenith_EntityID xV = {3u, 1u};   // pretend villager
-	const Zenith_EntityID xT = {7u, 2u};   // pretend interactable target
-	const Zenith_EntityID xI = {9u, 3u};   // pretend item
-
 	// 2) Hooks alive: dispatch every event and assert it landed.
 	{
 		DPTelemetry::Hooks xHooks;
 
 		auto& xDisp = Zenith_EventDispatcher::Get();
-		xDisp.Dispatch(DP_OnItemPickedUp{xV, xI});
-		xDisp.Dispatch(DP_OnInteract{xV, xT});
-		xDisp.Dispatch(DP_OnInteractionBegin{xV, xT});
-		xDisp.Dispatch(DP_OnInteractionEnd{xV, xT});
-		xDisp.Dispatch(DP_OnInteractionCancelled{xV, xT});
-		xDisp.Dispatch(DP_OnVillagerDied{xV});
+		xDisp.Dispatch(DP_OnItemPickedUp{kEntVillager, kEntItem});
+		xDisp.Dispatch(DP_OnInteract{kEntVillager, kEntTarget});
+		xDisp.Dispatch(DP_OnInteractionBegin{kEntVillager, kEntTarget});
+		xDisp.Dispatch(DP_OnInteractionEnd{kEntVillager, kEntTarget});
+		xDisp.Dispatch(DP_OnInteractionCancelled{kEntVillager, kEntTarget});
+		xDisp.Dispatch(DP_OnVillagerDied{kEntVillager});
 		xDisp.Dispatch(DP_OnVictory{});
 		xDisp.Dispatch(DP_OnRunLost{DP_RunLostCause::Dawn});
-		Zenith_Maths::Vector3 xBellPos(11.5f, 0.0f, 22.5f);
-		xDisp.Dispatch(DP_OnBellRing{xV, xI, xBellPos});
+		Zenith_Maths::Vector3 xBellPos(kBellPosX, kBellPosY, kBellPosZ);
+		xDisp.Dispatch(DP_OnBellRing{kEntVillager, kEntItem, xBellPos});
 
-		// Phase-5-audit (2026-05-16) granular events. Each fires its own
-		// DPEventType + the PossessionChanged path additionally synthesises
-		// a legacy Possession event when the new villager is valid.
-		const Zenith_EntityID xVOld = {5u, 1u};
-		xDisp.Dispatch(DP_OnPossessionChanged{xVOld, xV});  // start possess
-		xDisp.Dispatch(DP_OnPossessionChanged{xV,    Zenith_EntityID{}});  // un-possess (death)
-		xDisp.Dispatch(DP_OnDoorOpened{xV, xT});
-		xDisp.Dispatch(DP_OnChestOpened{xV, xT});
-		xDisp.Dispatch(DP_OnForgeCrafted{xV, xT, xI});
-		xDisp.Dispatch(DP_OnObjectivePlaced{xV, xT, 3});
+		// Phase-5-audit (2026-05-16) granular events. Each fires its
+		// own DPEventType. The PossessionChanged path emits exactly
+		// one PossessionChanged event per dispatch (old + new
+		// villager IDs in the payload distinguish possess vs
+		// un-possess vs voluntary-switch downstream).
+		xDisp.Dispatch(DP_OnPossessionChanged{kEntPriorVillager, kEntVillager});  // start possess
+		xDisp.Dispatch(DP_OnPossessionChanged{kEntVillager,      Zenith_EntityID{}});  // un-possess (death)
+		xDisp.Dispatch(DP_OnDoorOpened{kEntVillager, kEntTarget});
+		xDisp.Dispatch(DP_OnChestOpened{kEntVillager, kEntTarget});
+		xDisp.Dispatch(DP_OnForgeCrafted{kEntVillager, kEntTarget, kEntItem});
+		xDisp.Dispatch(DP_OnObjectivePlaced{kEntVillager, kEntTarget, kObjectiveBitIndex});
 
 		// 3) Hooks goes out of scope here -> unsubscribe.
 	}
@@ -113,7 +133,7 @@ static void Setup_TelemetryHooks()
 	const uint32_t uNBeforePostDispatch = xRec.GetEvents().GetSize();
 	{
 		auto& xDisp = Zenith_EventDispatcher::Get();
-		xDisp.Dispatch(DP_OnItemPickedUp{xV, xI});
+		xDisp.Dispatch(DP_OnItemPickedUp{kEntVillager, kEntItem});
 		xDisp.Dispatch(DP_OnVictory{});
 	}
 	const uint32_t uNAfterPostDispatch = xRec.GetEvents().GetSize();
@@ -132,88 +152,121 @@ static void Setup_TelemetryHooks()
 	}
 
 	// 6) Read back and assert: dispatch order.
-	// Phase-5-audit (2026-05-16): event count is now 17. The 9 originals
-	// plus 8 new events from the granular gameplay milestones. The
-	// PossessionChanged path emits TWO events per dispatch (the unified
-	// PossessionChanged + a legacy Possession or Unpossession) so the
-	// two DP_OnPossessionChanged dispatches account for 4 of the 8 new.
+	// Each entry in kExpectedDispatch is the event type the hook
+	// system should have produced from the corresponding dispatch
+	// call above, in order. Comparing against a table (rather than
+	// hand-numbered Check(0, ...), Check(1, ...) calls) means
+	// inserting a new event type only needs one new row here -- no
+	// renumbering, no stale spot-check indices.
+	using DPE = DPTelemetry::DPEventType;
+	static constexpr DPE kExpectedDispatch[] = {
+		DPE::ItemPickup,
+		DPE::Interact,
+		DPE::InteractionBegin,
+		DPE::InteractionEnd,
+		DPE::InteractionCancel,
+		DPE::VillagerDied,
+		DPE::Victory,
+		DPE::RunLost,
+		DPE::BellRing,
+		DPE::PossessionChanged,   // start possess
+		DPE::PossessionChanged,   // un-possess (death)
+		DPE::DoorOpened,
+		DPE::ChestOpened,
+		DPE::ForgeCrafted,
+		DPE::ObjectivePlaced,
+	};
+	constexpr uint32_t kExpectedDispatchCount =
+		static_cast<uint32_t>(sizeof(kExpectedDispatch) / sizeof(kExpectedDispatch[0]));
+
 	Zenith_Telemetry::Reader xReader;
 	if (!xReader.LoadFromFile(strBin.c_str())) { Fail("hooks: reader load failed"); return; }
 
 	const auto& axE = xReader.GetEvents();
-	if (axE.GetSize() != 17u)
+	if (axE.GetSize() != kExpectedDispatchCount)
 	{
 		static char sBuf[96];
-		std::snprintf(sBuf, sizeof(sBuf), "hooks: expected 17 events, got %u",
+		std::snprintf(sBuf, sizeof(sBuf), "hooks: expected %u events, got %u",
+			static_cast<unsigned>(kExpectedDispatchCount),
 			static_cast<unsigned>(axE.GetSize()));
 		Fail(sBuf);
 		return;
 	}
 
-	using DPE = DPTelemetry::DPEventType;
-
-	auto Check = [&](uint32_t i, DPE eExpected, const char* szWhich) -> bool
+	for (uint32_t i = 0; i < kExpectedDispatchCount; ++i)
 	{
-		if (axE.Get(i).uEventType != static_cast<uint16_t>(eExpected))
+		if (axE.Get(i).uEventType != static_cast<uint16_t>(kExpectedDispatch[i]))
 		{
-			Fail(szWhich);
-			return false;
+			static char sBuf[128];
+			std::snprintf(sBuf, sizeof(sBuf),
+				"hooks: event %u expected type %u, got %u",
+				static_cast<unsigned>(i),
+				static_cast<unsigned>(kExpectedDispatch[i]),
+				static_cast<unsigned>(axE.Get(i).uEventType));
+			Fail(sBuf);
+			return;
 		}
-		return true;
+	}
+
+	// Payload spot-checks resolve events by TYPE (find-first-of-type)
+	// so the assertions stay correct even if the dispatch order shifts.
+	// nullptr return = type not in recording (should never happen if
+	// the per-index loop above passed; defensive guard for future
+	// refactors).
+	auto FindFirstOfType = [&axE](DPE eType) -> const Zenith_Telemetry::Event*
+	{
+		for (uint32_t i = 0; i < axE.GetSize(); ++i)
+		{
+			if (axE.Get(i).uEventType == static_cast<uint16_t>(eType))
+			{
+				return &axE.Get(i);
+			}
+		}
+		return nullptr;
 	};
 
-	if (!Check(0,  DPE::ItemPickup,         "hooks: event 0 != ItemPickup")) return;
-	if (!Check(1,  DPE::Interact,           "hooks: event 1 != Interact")) return;
-	if (!Check(2,  DPE::InteractionBegin,   "hooks: event 2 != InteractionBegin")) return;
-	if (!Check(3,  DPE::InteractionEnd,     "hooks: event 3 != InteractionEnd")) return;
-	if (!Check(4,  DPE::InteractionCancel,  "hooks: event 4 != InteractionCancel")) return;
-	if (!Check(5,  DPE::VillagerDied,       "hooks: event 5 != VillagerDied")) return;
-	if (!Check(6,  DPE::Victory,            "hooks: event 6 != Victory")) return;
-	if (!Check(7,  DPE::RunLost,            "hooks: event 7 != RunLost")) return;
-	if (!Check(8,  DPE::BellRing,           "hooks: event 8 != BellRing")) return;
-	// PossessionChanged (xVOld -> xV): unified + legacy Possession (new valid).
-	if (!Check(9,  DPE::PossessionChanged,  "hooks: event 9 != PossessionChanged")) return;
-	if (!Check(10, DPE::Possession,         "hooks: event 10 != Possession")) return;
-	// PossessionChanged (xV -> INVALID): unified + legacy Unpossession (new invalid).
-	if (!Check(11, DPE::PossessionChanged,  "hooks: event 11 != PossessionChanged")) return;
-	if (!Check(12, DPE::Unpossession,       "hooks: event 12 != Unpossession")) return;
-	if (!Check(13, DPE::DoorOpened,         "hooks: event 13 != DoorOpened")) return;
-	if (!Check(14, DPE::ChestOpened,        "hooks: event 14 != ChestOpened")) return;
-	if (!Check(15, DPE::ForgeCrafted,       "hooks: event 15 != ForgeCrafted")) return;
-	if (!Check(16, DPE::ObjectivePlaced,    "hooks: event 16 != ObjectivePlaced")) return;
+	const Zenith_Telemetry::Event* pxPickup = FindFirstOfType(DPE::ItemPickup);
+	if (pxPickup == nullptr) { Fail("pickup: ItemPickup not found"); return; }
+	if (pxPickup->xPayload.xEntityA.m_uIndex != kEntVillager.m_uIndex) { Fail("pickup: villager entityA mismatch"); return; }
+	if (pxPickup->xPayload.xEntityB.m_uIndex != kEntItem.m_uIndex)     { Fail("pickup: item entityB mismatch"); return; }
 
-	// Payload spot-checks.
-	const auto& xPickup = axE.Get(0);
-	if (xPickup.xPayload.xEntityA.m_uIndex != xV.m_uIndex) { Fail("pickup: villager entityA mismatch"); return; }
-	if (xPickup.xPayload.xEntityB.m_uIndex != xI.m_uIndex) { Fail("pickup: item entityB mismatch"); return; }
-
-	const auto& xRunLost = axE.Get(7);
-	if (xRunLost.xPayload.aiInts[0] != static_cast<int32_t>(DP_RunLostCause::Dawn))
+	const Zenith_Telemetry::Event* pxRunLost = FindFirstOfType(DPE::RunLost);
+	if (pxRunLost == nullptr) { Fail("runlost: RunLost not found"); return; }
+	if (pxRunLost->xPayload.aiInts[0] != static_cast<int32_t>(DP_RunLostCause::Dawn))
 	{
 		Fail("runlost: ints[0] != Dawn cause");
 		return;
 	}
 
-	const auto& xBell = axE.Get(8);
-	if (xBell.xPayload.afFloats[0] < 11.4f || xBell.xPayload.afFloats[0] > 11.6f)
+	// Float round-trip uses an explicit epsilon (1 cm) -- the binary
+	// format stores IEEE-754 float as-is so the tolerance is really
+	// just a defence against future format changes that go through
+	// any lossy intermediate (e.g. snapshot quantisation).
+	constexpr float kBellPosEpsilon = 0.1f;
+	const Zenith_Telemetry::Event* pxBell = FindFirstOfType(DPE::BellRing);
+	if (pxBell == nullptr) { Fail("bell: BellRing not found"); return; }
+	if (std::fabs(pxBell->xPayload.afFloats[0] - kBellPosX) > kBellPosEpsilon)
 	{
 		Fail("bell: floats[0] (pos.x) didn't round-trip");
 		return;
 	}
-	if (xBell.xPayload.afFloats[2] < 22.4f || xBell.xPayload.afFloats[2] > 22.6f)
+	if (std::fabs(pxBell->xPayload.afFloats[2] - kBellPosZ) > kBellPosEpsilon)
 	{
 		Fail("bell: floats[2] (pos.z) didn't round-trip");
 		return;
 	}
 
 	// Phase-5-audit payload spot-checks.
-	const auto& xPossChange = axE.Get(9);   // PossessionChanged (xVOld -> xV)
-	if (xPossChange.xPayload.xEntityA.m_uIndex != 5u) { Fail("possChange: entityA (old) mismatch"); return; }
-	if (xPossChange.xPayload.xEntityB.m_uIndex != xV.m_uIndex) { Fail("possChange: entityB (new) mismatch"); return; }
-	const auto& xObjPlaced = axE.Get(16);   // ObjectivePlaced
-	if (xObjPlaced.xPayload.aiInts[0] != 3) { Fail("objplaced: bit index 3 not round-tripped"); return; }
-	if (xObjPlaced.xPayload.xEntityA.m_uIndex != xV.m_uIndex) { Fail("objplaced: villager mismatch"); return; }
-	if (xObjPlaced.xPayload.xEntityB.m_uIndex != xT.m_uIndex) { Fail("objplaced: pentagram mismatch"); return; }
+	const Zenith_Telemetry::Event* pxPossChange = FindFirstOfType(DPE::PossessionChanged);
+	if (pxPossChange == nullptr) { Fail("possChange: PossessionChanged not found"); return; }
+	if (pxPossChange->xPayload.xEntityA.m_uIndex != kEntPriorVillager.m_uIndex) { Fail("possChange: entityA (old) mismatch"); return; }
+	if (pxPossChange->xPayload.xEntityB.m_uIndex != kEntVillager.m_uIndex)      { Fail("possChange: entityB (new) mismatch"); return; }
+
+	const Zenith_Telemetry::Event* pxObjPlaced = FindFirstOfType(DPE::ObjectivePlaced);
+	if (pxObjPlaced == nullptr) { Fail("objplaced: ObjectivePlaced not found"); return; }
+	if (pxObjPlaced->xPayload.aiInts[0] != kObjectiveBitIndex)             { Fail("objplaced: bit index not round-tripped"); return; }
+	if (pxObjPlaced->xPayload.xEntityA.m_uIndex != kEntVillager.m_uIndex)  { Fail("objplaced: villager mismatch"); return; }
+	if (pxObjPlaced->xPayload.xEntityB.m_uIndex != kEntTarget.m_uIndex)    { Fail("objplaced: pentagram mismatch"); return; }
 
 	// 7) JSON sanity: contains the resolved type names.
 	std::ifstream xIn(strJson, std::ios::binary | std::ios::ate);

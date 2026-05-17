@@ -10,7 +10,10 @@
  * The analyzer is the third leg of the verification pipeline:
  *   Phase 1: Zenith_Telemetry records.
  *   Phase 2: DPTelemetry::Hooks routes DP events into the recorder.
- *   Phase 3: DPHeuristicBot drives input + the recorder captures it.
+ *   Phase 3: input drives the game (currently
+ *            Test_PersonalityPlaythrough's WASD/click simulator; previously
+ *            also DPHeuristicBot, dropped 2026-05-17) + the recorder
+ *            captures it.
  *   Phase 4 (here): the analyzer asserts "the game was played correctly"
  *     over the captured artefact. Decoupled from the recorder so the
  *     same criteria can be applied to a recording from any source
@@ -62,6 +65,15 @@ namespace DPTelemetryAnalyzer
 		ChestOpenedFired       = 17, // >=1 ChestOpened
 		ForgeCraftedFired      = 18, // >=1 ForgeCrafted
 		ObjectivePlacedFired   = 19, // >=1 ObjectivePlaced
+		// 2026-05-17 priest-liveness gate. Sum of per-sample-step
+		// horizontal displacement for every IsPriest-flagged entity
+		// must exceed Thresholds::fMinPriestPathLengthM. Catches the
+		// silent-failure mode where the priest's BT never receives a
+		// stimulus + never picks a patrol target, so the priest stays
+		// motionless for the whole run. The previous bot recording
+		// passed the analyzer with the priest stuck at its spawn for
+		// the full 57 s; this criterion makes that loud.
+		PriestMoved            = 20,
 	};
 
 	// Thresholds for the numeric criteria. Const-ref input so callers
@@ -74,6 +86,12 @@ namespace DPTelemetryAnalyzer
 		uint32_t uMinSprintFrames  = 1;    // AnySprintFrame
 		uint32_t uMinQuietFrames   = 1;    // AnyWalkQuietFrame
 		uint32_t uMinHoldFrames    = 1;    // AnyHoldingItemFrame
+		// PriestMoved: minimum total path length (sum of per-sample
+		// step distances) across all IsPriest-flagged entities in the
+		// recording. 0.5 m filters out physics jitter (capsule rocking
+		// on its collider as it settles) without requiring meaningful
+		// AI-driven displacement to be more than half a metre.
+		float    fMinPriestPathLengthM = 0.5f;
 	};
 
 	struct CriterionResult

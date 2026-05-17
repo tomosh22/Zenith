@@ -51,31 +51,35 @@ namespace DPTelemetry
 	// =========== Event-type enum ===========
 	// Stable integer IDs -- file format compatibility depends on these
 	// not being reordered. Add new entries at the END before _Count.
+	//
+	// PossessionChanged is the canonical possession-transition event;
+	// payload carries both old + new villager so subscribers can
+	// distinguish first-possess (old=INVALID), un-possess (new=INVALID)
+	// and voluntary-switch (both valid) without needing two separate
+	// event types.
 	enum class DPEventType : uint16_t
 	{
 		None              = 0,
-		Possession        = 1,  // legacy alias (still emitted by Hooks on possession start)
-		Unpossession      = 2,  // legacy alias (still emitted by Hooks on possession end)
-		ItemPickup        = 3,
-		ItemDrop          = 4,
-		Interact          = 5,
-		InteractionBegin  = 6,
-		InteractionEnd    = 7,
-		InteractionCancel = 8,
-		VillagerDied      = 9,
-		Victory           = 10,
-		RunLost           = 11,
-		BellRing          = 12,
-		PriestStateChange = 13,
-		PossessedSwitched = 14,
+		ItemPickup        = 1,
+		ItemDrop          = 2,
+		Interact          = 3,
+		InteractionBegin  = 4,
+		InteractionEnd    = 5,
+		InteractionCancel = 6,
+		VillagerDied      = 7,
+		Victory           = 8,
+		RunLost           = 9,
+		BellRing          = 10,
+		PriestStateChange = 11,
+		PossessedSwitched = 12,
 		// Phase-5-audit (2026-05-16) granular gameplay milestones. Each
 		// has a corresponding DP_On* struct in PublicInterfaces.h and a
 		// subscription wired in DPTelemetry::Hooks.
-		PossessionChanged = 15,  // entityA=old, entityB=new
-		DoorOpened        = 16,  // entityA=villager, entityB=door
-		ChestOpened       = 17,  // entityA=villager, entityB=chest
-		ForgeCrafted      = 18,  // entityA=villager, entityB=forge,  payload.ints[0] = output tag
-		ObjectivePlaced   = 19,  // entityA=villager, entityB=pentagram, payload.ints[0] = bit index 0..4
+		PossessionChanged = 13, // entityA=old, entityB=new
+		DoorOpened        = 14, // entityA=villager, entityB=door
+		ChestOpened       = 15, // entityA=villager, entityB=chest
+		ForgeCrafted      = 16, // entityA=villager, entityB=forge,  payload.ints[0] = output tag
+		ObjectivePlaced   = 17, // entityA=villager, entityB=pentagram, payload.ints[0] = bit index 0..4
 
 		_Count
 	};
@@ -97,6 +101,13 @@ namespace DPTelemetry
 		static constexpr uint32_t HoldingItem      = 1u << 4;
 		static constexpr uint32_t PriestSuspicious = 1u << 5;
 		static constexpr uint32_t PriestPursuing   = 1u << 6;
+		// Phase-5-audit follow-up (2026-05-17): entity-role tag, set
+		// by the test's per-frame sampler when iterating
+		// Priest_Behaviour. Lets the visualiser classify the priest
+		// deterministically even when no Suspicious/Pursuing state is
+		// active -- without this bit, an idle-patrolling priest had
+		// flags=0 and fell into the "Unknown / priest?" legend bucket.
+		static constexpr uint32_t IsPriest = 1u << 7;
 	}
 
 	// =========== Emit helpers ===========

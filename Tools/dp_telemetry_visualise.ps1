@@ -83,6 +83,11 @@ $FLAG_ALIVE          = 8
 $FLAG_HOLDING_ITEM   = 16
 $FLAG_PRIEST_SUSP    = 32
 $FLAG_PRIEST_PURSUE  = 64
+# Role tag stamped by Test_DPHeuristicBotPlaythrough's priest sampler
+# so the visualiser can classify the priest deterministically (the
+# Suspicious/Pursuing bits are runtime state and may never flip if
+# the priest doesn't see anyone during the recording).
+$FLAG_IS_PRIEST      = 128
 
 $paths = @{}    # key -> ArrayList of @{ X; Z; Flags; FrameIdx }
 $idxOfKey = @{} # key -> first-seen sort index (preserves insertion order)
@@ -129,11 +134,16 @@ foreach ($key in $keysByIndex) {
     }
 
     $role = 'Other'
-    if (($flagUnion -band $FLAG_POSSESSED) -ne 0) {
-        $role = 'Possessed'
-    }
-    elseif (($flagUnion -band ($FLAG_PRIEST_SUSP -bor $FLAG_PRIEST_PURSUE)) -ne 0) {
+    # IsPriest tag wins over Possessed -- the priest can never be
+    # possessed (it has no DPVillager_Behaviour), so this is a safe
+    # short-circuit. The test's per-frame sampler always stamps
+    # IsPriest on priest snapshots, so any unflagged entity falls
+    # through to the Villager / Unknown branches.
+    if (($flagUnion -band $FLAG_IS_PRIEST) -ne 0) {
         $role = 'Priest'
+    }
+    elseif (($flagUnion -band $FLAG_POSSESSED) -ne 0) {
+        $role = 'Possessed'
     }
     elseif (($flagUnion -band $FLAG_ALIVE) -ne 0) {
         $role = 'Villager'
@@ -174,10 +184,12 @@ foreach ($key in $keysByIndex) {
         }
         'Unknown'  {
             $unknownCounter++
-            # In current packing, the priest comes through with flags=0
-            # because Test_DPHeuristicBotPlaythrough's EmitPositionSample
-            # doesn't pack priest state flags (TBD per the test's TODO).
-            $entityMeta[$key].LegendLabel = "Unknown / priest? #$unknownCounter"
+            # The priest used to land here (its flags were always 0
+            # before the IsPriest tag was added). Now any entity that
+            # ends up here genuinely IS unclassifiable -- e.g., an
+            # item entity if a future test starts packing those, or an
+            # unrecognised-script entity from a custom test fixture.
+            $entityMeta[$key].LegendLabel = "Unknown #$unknownCounter"
         }
         default    { $entityMeta[$key].LegendLabel = 'Other' }
     }
@@ -403,8 +415,6 @@ $eventStyles = @{
     'PriestStateChange' = @{ Shape = 'Square';        RGB = @(180, 100, 220) }   # purple square
     'PossessedSwitched' = @{ Shape = 'Circle';        RGB = @(240, 240, 240) }   # white-ish
     'PossessionChanged' = @{ Shape = 'Circle';        RGB = @(255, 255, 255) }   # bright white
-    'Possession'        = @{ Shape = 'Circle';        RGB = @(220, 220, 220) }   # legacy alias
-    'Unpossession'      = @{ Shape = 'CircleOutline'; RGB = @(180, 180, 180) }   # legacy alias
     'DoorOpened'        = @{ Shape = 'Square';        RGB = @(160, 110,  70) }   # brown
     'ChestOpened'       = @{ Shape = 'Square';        RGB = @(220, 160,  60) }   # tan-brown
     'ForgeCrafted'      = @{ Shape = 'Triangle';      RGB = @(255, 130,  40) }   # orange flame
@@ -419,11 +429,16 @@ function ResolveStyle($name) {
     return @{ Shape = 'Circle'; RGB = @(255, 90, 90) }
 }
 
-function DrawEventMarker($cx, $cy, $style) {
+function DrawEventMarker($cx, $cy, $style, $sizeMult = 1.0) {
     $rgb = $style.RGB
     $fillBrush = New-Object System.Drawing.SolidBrush(
         [System.Drawing.Color]::FromArgb(230, $rgb[0], $rgb[1], $rgb[2]))
-    $sz = 5
+    # Base size 5 px; sizeMult > 1.0 enlarges the glyph for collapsed
+    # buckets (more events at the same screen cell -> bigger marker).
+    # Cast back to [int] because the GDI+ shape primitives expect
+    # integer pixel bounds.
+    $sz = [int]([math]::Round(5.0 * $sizeMult))
+    if ($sz -lt 3) { $sz = 3 }
     switch ($style.Shape) {
         'Circle'        {
             $g.FillEllipse($fillBrush, $cx - $sz, $cy - $sz, $sz * 2, $sz * 2)
@@ -502,31 +517,61 @@ function FindEntityPosAtFrame($entityKey, $eventFrame) {
     return $null
 }
 
-# Track which (x,y) bands we've used so subsequent event labels at the
-# same screen position stagger vertically rather than overlapping.
-$labelBuckets = @{}
-function StaggerLabelY($cx, $cy) {
-    $bucketKey = "{0}:{1}" -f [int]($cx / 12), [int]($cy / 18)
-    if (-not $labelBuckets.ContainsKey($bucketKey)) {
-        $labelBuckets[$bucketKey] = 0
-    } else {
-        $labelBuckets[$bucketKey]++
-    }
-    return $cy - 6 + ($labelBuckets[$bucketKey] * 14)
-}
+# ----------------------------------------------------------------------
+# Event rendering policy (2026-05-17 icons-only rewrite):
+#
+# Zero per-marker text. Every event is a shape; the legend identifies
+# the shape; the timeline strip at the top of the image shows WHEN
+# events fired (colour-coded ticks); the JSON has the precise frame
+# numbers for anyone who needs them. The map is for "what happened
+# where", not "what happened where AND a labelled timestamp on every
+# marker".
+#
+# Per-bucket count is encoded by MARKER SIZE: more events at the same
+# screen cell -> larger glyph. Singletons use the base size; clusters
+# scale up by log2(count) so a 100-event pile-up doesn't dwarf the
+# rest of the map. The legend's per-type total count row tells you
+# how many fired in the whole run; the on-map size tells you how
+# they're spatially distributed.
+#
+# Bucketing keeps same-type same-position events from drawing on top
+# of each other (which produced uninformative dark blobs when 98
+# Interact events all stacked at the pentagram).
+# ----------------------------------------------------------------------
 
 # Sort events by frame so the timeline is built in time order.
 $sortedEvents = @($events | Sort-Object { [int]$_.frame })
 
+# Pass 1: resolve every event's screen position + style and bucket
+# duplicates. Bucket key = "<eventName>:<cellX>:<cellY>" with 14-px
+# cells; multiple events that hash to the same bucket render as one
+# enlarged marker.
+$markerBuckets = @{}  # bucketKey -> @{ Style; CX; CY; Count; Name }
+
 foreach ($evt in $sortedEvents) {
-    $entityKey = "$($evt.payload.entityA.idx):$($evt.payload.entityA.gen)"
-    $pos = FindEntityPosAtFrame $entityKey $evt.frame
+    # Resolution chain: try entityA first; fall back to entityB if A
+    # can't be located in any frame sample; fall back to bounds-centre
+    # only if neither resolves.
+    #
+    # entityB fallback covers events whose entityA is legitimately
+    # INVALID at dispatch time -- e.g. DP_OnPossessionChanged on the
+    # first-possess case has entityA=old=INVALID + entityB=new=valid.
+    # Without the fallback those markers floated at the world centre.
+    # The dispatch-side fixes (DPInteractable cached villager, etc.)
+    # eliminate the common cases; this is the defence-in-depth so any
+    # future event with INVALID entityA still plots somewhere meaningful.
+    $entityKeyA = "$($evt.payload.entityA.idx):$($evt.payload.entityA.gen)"
+    $pos = FindEntityPosAtFrame $entityKeyA $evt.frame
     if ($null -eq $pos) {
-        # Fallback: middle of the world bounds. Force scalar [double]
-        # casts because PowerShell can occasionally promote $minX/$maxX
-        # to System.Object[] across closure captures (observed with 3000+
-        # frame samples). Without the casts the division below crashes
-        # with "op_Division on System.Object[]".
+        $entityKeyB = "$($evt.payload.entityB.idx):$($evt.payload.entityB.gen)"
+        $pos = FindEntityPosAtFrame $entityKeyB $evt.frame
+    }
+    if ($null -eq $pos) {
+        # Final fallback: middle of the world bounds. Force scalar
+        # [double] casts because PowerShell can occasionally promote
+        # $minX/$maxX to System.Object[] across closure captures
+        # (observed with 3000+ frame samples). Without the casts the
+        # division below crashes with "op_Division on System.Object[]".
         $cx = [double]([double]$minX + [double]$maxX) / 2.0
         $cz = [double]([double]$minZ + [double]$maxZ) / 2.0
         $pos = @($cx, $cz)
@@ -534,10 +579,34 @@ foreach ($evt in $sortedEvents) {
     $p = Project $pos[0] $pos[1]
     $rawName = if ($evt.PSObject.Properties.Name -contains 'name') { [string]$evt.name } else { "evt$($evt.type)" }
     $style = ResolveStyle $rawName
-    DrawEventMarker $p[0] $p[1] $style
-    $label = ("{0}  f={1} t={2:F1}s" -f $rawName, [int]$evt.frame, [double]$evt.t)
-    $labelY = StaggerLabelY $p[0] $p[1]
-    $g.DrawString($label, $labelFont, $labelBrush, [float]($p[0] + 8), [float]$labelY)
+
+    # Bucket size: 14 px screen cells. Combined with the per-name key
+    # only same-type events at the same place merge -- a VillagerDied
+    # and a Victory at the same cluster stay as two distinct markers
+    # because their bucket keys differ on the name prefix.
+    $bucketKey = "{0}:{1}:{2}" -f $rawName, [int]($p[0] / 14), [int]($p[1] / 14)
+    if ($markerBuckets.ContainsKey($bucketKey)) {
+        $markerBuckets[$bucketKey].Count++
+    } else {
+        $markerBuckets[$bucketKey] = @{
+            Style = $style
+            CX    = $p[0]
+            CY    = $p[1]
+            Count = 1
+            Name  = $rawName
+        }
+    }
+}
+
+# Pass 2: render each bucket as a single marker, sized by count.
+# Size formula: baseSize * (1 + log2(count)/2). Singleton -> 1.0x;
+# 4 events -> 2.0x; 16 -> 3.0x; 64 -> 4.0x; 256 -> 5.0x. log2 keeps
+# the dynamic range readable without one mega-cluster eating the map.
+foreach ($entry in $markerBuckets.Values) {
+    $sizeMult = if ($entry.Count -le 1) { 1.0 } else {
+        1.0 + ([math]::Log($entry.Count, 2.0)) / 2.0
+    }
+    DrawEventMarker $entry.CX $entry.CY $entry.Style $sizeMult
 }
 
 # ----------------------------------------------------------------------
@@ -625,20 +694,72 @@ $scaleText = "${scaleMetres} m"
 $g.DrawString($scaleText, $labelFont, $labelBrush, [float]($scaleX0 + $scalePxWidth / 2 - 12), [float]($scaleY + 5))
 
 # ----------------------------------------------------------------------
-# 6b. Legend (bottom-right). Translucent panel + one row per entity
-#     (sorted: possessed first, then priest, then villagers, then others).
-#     Also documents the state-flag colour overrides (sprint, walk-quiet).
+# 6b. Legend (bottom-right). Translucent panel with three sections:
+#       1. Entity rows -- one per villager / priest / unknown that
+#          appears in the recording, with the path-stroke colour.
+#       2. State-flag colours -- the sprint + walk-quiet path overlays.
+#       3. EVENT TYPES -- one row per event type actually present in
+#          this recording, rendered with the same shape + colour as
+#          its on-map marker so the viewer can read the legend and
+#          identify every glyph on the map.
+#
+# The event-type section replaced the previous single "Game event"
+# red-circle row, which didn't match any actual marker style (events
+# use diamonds / stars / triangles / etc., not red circles). The new
+# section auto-populates from the events present + the eventStyles
+# dictionary so it stays in sync as event types are added.
 # ----------------------------------------------------------------------
 $rolePriority = @{ 'Possessed' = 0; 'Priest' = 1; 'Villager' = 2; 'Unknown' = 3; 'Other' = 4 }
 $legendEntries = @($keys |
     Sort-Object { $rolePriority[$entityMeta[$_].Role] }, { $idxOfKey[$_] })
 
+# Collect the event types that actually appear in this recording so the
+# legend only lists what's relevant. Sort with milestone types first
+# (Victory / RunLost / etc.) so the eye lands on the important glyphs.
+$eventTypeOrder = @(
+    'Victory',
+    'RunLost',
+    'VillagerDied',
+    'ObjectivePlaced',
+    'BellRing',
+    'DoorOpened',
+    'ChestOpened',
+    'ForgeCrafted',
+    'ItemPickup',
+    'ItemDrop',
+    'PossessionChanged',
+    'PossessedSwitched',
+    'PriestStateChange',
+    'InteractionBegin',
+    'InteractionEnd',
+    'Interact',
+    'InteractionCancel'
+)
+$presentEventCounts = @{}
+foreach ($evt in $sortedEvents) {
+    $rawName = if ($evt.PSObject.Properties.Name -contains 'name') { [string]$evt.name } else { "evt$($evt.type)" }
+    if ($presentEventCounts.ContainsKey($rawName)) {
+        $presentEventCounts[$rawName]++
+    } else {
+        $presentEventCounts[$rawName] = 1
+    }
+}
+$presentEventTypes = @($eventTypeOrder | Where-Object { $presentEventCounts.ContainsKey($_) })
+# Append any events present that aren't in the ordered list (future
+# types) at the end so the legend remains complete.
+foreach ($name in $presentEventCounts.Keys) {
+    if ($presentEventTypes -notcontains $name) {
+        $presentEventTypes += $name
+    }
+}
+
 # State-flag legend rows added at the END so they appear visually
 # separated from the entity rows (after a divider).
 $legendRowHeight = 16
 $legendPadding   = 8
-# Rows: entities + 1 divider + 2 state-flag rows + 1 divider + 1 "Event marker" row.
-$legendRowCount  = $legendEntries.Count + 4
+# Rows: entities + 1 divider + 2 state-flag rows + 1 divider + N
+#       event-type rows + 1 size-legend footnote row.
+$legendRowCount  = $legendEntries.Count + 4 + $presentEventTypes.Count + 1
 $legendWidth     = 260   # widened so "Possessed #N  n=NNN" fits without clipping
 $legendHeight    = $legendPadding * 2 + $legendRowHeight * $legendRowCount
 $legendX         = $Width  - $legendWidth - 10
@@ -655,6 +776,9 @@ $g.DrawRectangle($legendBorderPen, $legendX, $legendY, $legendWidth, $legendHeig
 $legendBorderPen.Dispose()
 
 $legendFont = New-Object System.Drawing.Font('Consolas', 9.5)
+$legendHeaderFont = New-Object System.Drawing.Font('Consolas', 9.0, [System.Drawing.FontStyle]::Bold)
+$legendHeaderBrush = New-Object System.Drawing.SolidBrush(
+    [System.Drawing.Color]::FromArgb(220, 180, 200, 230))
 
 $row = 0
 foreach ($key in $legendEntries) {
@@ -666,10 +790,12 @@ foreach ($key in $legendEntries) {
         [System.Drawing.Color]::FromArgb(255, $rgb[0], $rgb[1], $rgb[2]))
     $g.FillEllipse($brush, $legendX + $legendPadding, $cy - 5, 10, 10)
     $brush.Dispose()
-    # Label.
-    $samplesCount = $paths[$key].Count
-    $rowLabel = "{0,-22}  n={1}" -f $meta.LegendLabel, $samplesCount
-    $g.DrawString($rowLabel, $legendFont, $labelBrush,
+    # Label. Previously suffixed "n=NNN" (frame-sample count) but
+    # that value was identical for every entity in every recording --
+    # EmitPositionSample iterates ALL villagers + the priest every
+    # sample tick, so the count just degenerates to the recording's
+    # total sample count. Dropped for readability.
+    $g.DrawString($meta.LegendLabel, $legendFont, $labelBrush,
         [float]($legendX + $legendPadding + 16),
         [float]($cy - 7))
     ++$row
@@ -710,17 +836,60 @@ $g.DrawLine($dividerPen,
 $dividerPen.Dispose()
 $row++
 
-# Event marker row.
+# Event-type rows: one per type actually present. The "header" lives
+# on the first event-type row (no separate header row to save space).
+# Each row renders the marker shape at the same base size used for a
+# singleton on the map; the trailing "xN" tells you how many fired in
+# total. On the map, multiple events at the same screen cell collapse
+# into a single LARGER marker (size scales with log2(count)) -- so a
+# fat marker means "many events here" without needing a text badge.
+$bFirstEvent = $true
+foreach ($evtName in $presentEventTypes) {
+    $cy = $legendY + $legendPadding + $row * $legendRowHeight + 8
+    $style = ResolveStyle $evtName
+    # Render the actual marker shape at swatch position so the legend
+    # entry is visually identical to map markers (always base size).
+    $swatchX = $legendX + $legendPadding + 5
+    $swatchY = $cy
+    DrawEventMarker $swatchX $swatchY $style 1.0
+    $count = $presentEventCounts[$evtName]
+    $rowLabel = if ($bFirstEvent) {
+        "EVENTS  {0,-15} x{1}" -f $evtName, $count
+    } else {
+        "        {0,-15} x{1}" -f $evtName, $count
+    }
+    # First row uses the header-bold font / colour so the section
+    # break is visible without consuming a whole row.
+    if ($bFirstEvent) {
+        $g.DrawString($rowLabel, $legendHeaderFont, $legendHeaderBrush,
+            [float]($legendX + $legendPadding + 16),
+            [float]($cy - 7))
+        $bFirstEvent = $false
+    } else {
+        $g.DrawString($rowLabel, $legendFont, $labelBrush,
+            [float]($legendX + $legendPadding + 16),
+            [float]($cy - 7))
+    }
+    ++$row
+}
+
+# Final footnote row: "marker size scales with cluster count" so the
+# viewer knows why two markers of the same shape can have different
+# sizes on the map.
 $cy = $legendY + $legendPadding + $row * $legendRowHeight + 8
-$evtBrushLegend = New-Object System.Drawing.SolidBrush(
-    [System.Drawing.Color]::FromArgb(220, 255, 90, 90))
-$g.FillEllipse($evtBrushLegend, $legendX + $legendPadding, $cy - 5, 10, 10)
-$evtBrushLegend.Dispose()
-$g.DrawString("Game event", $legendFont, $labelBrush,
-    [float]($legendX + $legendPadding + 16),
+# Three concentric example markers showing the scale: x1 / x4 / x16.
+$sampleX = $legendX + $legendPadding + 2
+$sampleStyle = @{ Shape = 'Circle'; RGB = @(180, 180, 180) }
+DrawEventMarker ($sampleX + 4)  $cy $sampleStyle 1.0
+DrawEventMarker ($sampleX + 18) $cy $sampleStyle 2.0
+DrawEventMarker ($sampleX + 38) $cy $sampleStyle 3.0
+$g.DrawString("size = cluster count", $legendFont, $labelBrush,
+    [float]($legendX + $legendPadding + 60),
     [float]($cy - 7))
 
 $legendFont.Dispose()
+$legendHeaderFont.Dispose()
+$legendHeaderBrush.Dispose()
 
 # ----------------------------------------------------------------------
 # 7. Save + cleanup.

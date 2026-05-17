@@ -29,6 +29,7 @@
 #include "Source/DevilsPlayground_Tags.h"
 
 #include <cstdio>
+#include <unordered_map>
 
 class DPItemManager_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
@@ -48,7 +49,69 @@ public:
 
 	void OnDestroy() ZENITH_FINAL override
 	{
+		// m_xItemTagTable is auto-cleared by std::unordered_map's
+		// destructor when this script instance is freed. Because the
+		// script lives on a scene-owned entity, scene unload (which
+		// destroys every entity + fires this OnDestroy) is the only
+		// way the script ever dies -- so the tag table can never
+		// outlive its scene. That guarantee replaces the previous
+		// process-global g_xItemTagTable + manual cleanup in
+		// DP_Player::ResetForNewRun, which was vulnerable to leaking
+		// stale rows across batched tests when an item entity was
+		// destroyed through a path that skipped its OnDestroy hook.
 		if (s_pxInstance == this) s_pxInstance = nullptr;
+	}
+
+	//==========================================================================
+	// Item registry. Moved from anonymous-namespace globals in
+	// PublicInterfaces.cpp (g_xItemTagTable) so the side table is owned
+	// by this scene-bound script -- the map's lifetime matches the
+	// scene's, and there's no opportunity for stale rows to leak
+	// across scene transitions (Phase B fix for the bot-test batched
+	// failure investigated 2026-05-17).
+	//
+	// PackEntityID lives next to the table since it's the only thing
+	// that decides the key shape; previously it was an anon-namespace
+	// helper shared between DP_Player + DP_Items in PublicInterfaces.cpp.
+	//==========================================================================
+	static uint64_t PackEntityID(Zenith_EntityID xID)
+	{
+		return (static_cast<uint64_t>(xID.m_uGeneration) << 32)
+		     | static_cast<uint64_t>(xID.m_uIndex);
+	}
+
+	void RegisterItemTag(Zenith_EntityID xItem, DP_ItemTag eTag)
+	{
+		m_xItemTagTable[PackEntityID(xItem)] = eTag;
+	}
+
+	void UnregisterItemTag(Zenith_EntityID xItem)
+	{
+		m_xItemTagTable.erase(PackEntityID(xItem));
+	}
+
+	DP_ItemTag GetItemTag(Zenith_EntityID xItem) const
+	{
+		const auto it = m_xItemTagTable.find(PackEntityID(xItem));
+		if (it == m_xItemTagTable.end()) return DP_ItemTag::None;
+		return it->second;
+	}
+
+	// SourceBugFixed (carried over from the old DP_Items::FindItemByTag):
+	// miss returns INVALID_ENTITY_ID rather than dereferencing.
+	Zenith_EntityID FindItemByTag(DP_ItemTag eTag) const
+	{
+		for (const auto& [uPacked, eItemTag] : m_xItemTagTable)
+		{
+			if (eItemTag == eTag)
+			{
+				Zenith_EntityID xId;
+				xId.m_uIndex      = static_cast<uint32_t>(uPacked & 0xFFFFFFFFu);
+				xId.m_uGeneration = static_cast<uint32_t>(uPacked >> 32);
+				return xId;
+			}
+		}
+		return INVALID_ENTITY_ID;
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -145,4 +208,9 @@ private:
 	}
 
 	static inline DPItemManager_Behaviour* s_pxInstance = nullptr;
+
+	// Item registry -- one entry per live DPItemBase entity in this
+	// scene. Keyed by packed EntityID (PackEntityID). Cleared
+	// automatically when this script is destroyed (scene unload).
+	std::unordered_map<uint64_t, DP_ItemTag> m_xItemTagTable;
 };

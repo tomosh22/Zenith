@@ -82,10 +82,10 @@ namespace
 	Zenith_EntityID         g_xHeldAfter;
 
 	constexpr int kPICKUP_TICKS = 80;  // ~1.33s, well past the 1.0s channel
-	// Priest hearing_range_m defaults to 30. The perception system
+	// Priest hearing_range_m defaults to 35. The perception system
 	// CLAMPS at min(emit_radius, agent_max_range), so even though the
 	// BellSoul emits at 200m, the perception path only reaches priests
-	// within 30m. This test exercises that path at 20m -- the GDD's
+	// within 35m. This test exercises that path at 20m -- the GDD's
 	// "audible from entire map" promise is delivered by an additional
 	// direct-BB fanout (DP_AI::NotifyAllPriestsOfInvestigatePos) that
 	// runs alongside the perception emit; the across-map case is pinned

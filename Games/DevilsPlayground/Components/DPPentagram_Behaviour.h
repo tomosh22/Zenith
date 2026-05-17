@@ -34,7 +34,11 @@ protected:
 		const uint32_t uBit = DP_ObjectiveTagToBit(eHeld);
 		if (DP_Win::GetCollectedObjectivesMask() & uBit) return; // already collected
 
-		DP_Win::NotifyObjectiveCollected(eHeld);
+		// Forward villager + pentagram into the notify call so the eventual
+		// DP_OnVictory dispatch (fires only on the 5th objective) carries
+		// world-locatable entity context. Earlier objectives ignore the
+		// extra args; only the winning placement uses them.
+		DP_Win::NotifyObjectiveCollected(eHeld, xVillager, m_xParentEntity.GetEntityID());
 		// Consume the held objective.
 		Zenith_EntityID xItem = DP_Player::GetHeldItemEntity(xVillager);
 		DP_Player::RemoveHeldItem(xVillager);

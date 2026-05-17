@@ -28,7 +28,7 @@
 // min(emit_radius, agent_max_range) clamp breaks that promise at the
 // engine layer (a priest 100+ m away can't hear the bell even though
 // the emit radius is 200 m, because the priest's hearing_range_m
-// caps perception at 30 m).
+// caps perception at 35 m).
 //
 // MVP-2.2.6 fix: DPItemBase's BellSoul branch now ALSO calls
 // DP_AI::NotifyAllPriestsOfInvestigatePos which iterates every priest
@@ -196,7 +196,7 @@ static bool Step_P2BellSoulAudibleAcrossMap(int iFrame)
 
 	case kBA_TeleportPriest:
 	{
-		// 120 m from the BellSoul. Priest's hearing_range_m is 30 m;
+		// 120 m from the BellSoul. Priest's hearing_range_m is 35 m;
 		// EmitSoundStimulus's perception path can't deliver here.
 		// Only the direct BB fanout from NotifyAllPriestsOfInvestigatePos
 		// will reach the priest at this distance.

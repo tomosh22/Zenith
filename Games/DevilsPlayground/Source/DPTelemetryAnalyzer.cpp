@@ -2,6 +2,8 @@
 #include "Source/DPTelemetryAnalyzer.h"
 #include "Source/DPTelemetry.h"
 
+#include <cmath>
+
 namespace DPTelemetryAnalyzer
 {
 	// =========================================================
@@ -31,6 +33,7 @@ namespace DPTelemetryAnalyzer
 		case Criterion::ChestOpenedFired:       return "ChestOpenedFired";
 		case Criterion::ForgeCraftedFired:      return "ForgeCraftedFired";
 		case Criterion::ObjectivePlacedFired:   return "ObjectivePlacedFired";
+		case Criterion::PriestMoved:            return "PriestMoved";
 		default:                              return "Unknown";
 		}
 	}
@@ -79,6 +82,65 @@ namespace DPTelemetryAnalyzer
 				if (axE.Get(i).uEventType == uType) return true;
 			}
 			return false;
+		}
+
+		// Sum of horizontal step distances across every IsPriest-flagged
+		// entity, across every consecutive pair of frame samples. The
+		// IsPriest tag is stamped by the test's per-frame sampler when
+		// it iterates Priest_Behaviour instances (see
+		// Test_PersonalityPlaythrough's EmitPositionSample), so this
+		// only counts entities that the recording explicitly marks as
+		// the priest. A motionless priest returns 0.0; a priest that
+		// patrolled 40 m returns ~40.0.
+		//
+		// Tracks per-entity-key previous position so multiple priests
+		// (future multi-priest tests) sum independently rather than
+		// teleporting between each other's last-known spots.
+		float SumPriestPathLength(const Zenith_Telemetry::Reader& xReader)
+		{
+			const auto& axF = xReader.GetFrames();
+			const uint32_t uN = axF.GetSize();
+
+			// Per-priest last-seen XZ position; key = packed entityID.
+			// Small linear-scan associative map -- there's typically ONE
+			// priest in DP, so a vector pair beats an unordered_map.
+			struct Tracked { uint64_t uKey; float fLastX; float fLastZ; };
+			Zenith_Vector<Tracked> axTracked;
+
+			float fTotal = 0.0f;
+			for (uint32_t i = 0; i < uN; ++i)
+			{
+				const auto& xS = axF.Get(i);
+				const uint32_t uNE = xS.axEntities.GetSize();
+				for (uint32_t j = 0; j < uNE; ++j)
+				{
+					const auto& xE = xS.axEntities.Get(j);
+					if ((xE.uStateFlags & DPTelemetry::StateFlags::IsPriest) == 0u) continue;
+
+					const uint64_t uKey =
+						(static_cast<uint64_t>(xE.xId.m_uGeneration) << 32) | xE.xId.m_uIndex;
+
+					Tracked* pxT = nullptr;
+					for (uint32_t k = 0; k < axTracked.GetSize(); ++k)
+					{
+						if (axTracked.Get(k).uKey == uKey) { pxT = &axTracked.Get(k); break; }
+					}
+					if (pxT == nullptr)
+					{
+						Tracked xNew{ uKey, xE.xPos.x, xE.xPos.z };
+						axTracked.PushBack(xNew);
+					}
+					else
+					{
+						const float fDx = xE.xPos.x - pxT->fLastX;
+						const float fDz = xE.xPos.z - pxT->fLastZ;
+						fTotal += std::sqrt(fDx * fDx + fDz * fDz);
+						pxT->fLastX = xE.xPos.x;
+						pxT->fLastZ = xE.xPos.z;
+					}
+				}
+			}
+			return fTotal;
 		}
 
 		CriterionResult Check(Criterion eCriterion,
@@ -160,7 +222,7 @@ namespace DPTelemetryAnalyzer
 			}
 			case Criterion::PossessionFired:
 			{
-				if (AnyEventOfType(xReader, static_cast<uint16_t>(DPTelemetry::DPEventType::Possession))
+				if (AnyEventOfType(xReader, static_cast<uint16_t>(DPTelemetry::DPEventType::PossessionChanged))
 				 || AnyEventOfType(xReader, static_cast<uint16_t>(DPTelemetry::DPEventType::PossessedSwitched))
 				 || AnyFrameWithFlag(xReader, DPTelemetry::StateFlags::Possessed))
 					{ xR.bPassed = true; xR.szReason = "ok"; }
@@ -212,9 +274,7 @@ namespace DPTelemetryAnalyzer
 			}
 			case Criterion::PossessionChangedFired:
 			{
-				if (AnyEventOfType(xReader, static_cast<uint16_t>(DPTelemetry::DPEventType::PossessionChanged))
-				 || AnyEventOfType(xReader, static_cast<uint16_t>(DPTelemetry::DPEventType::Possession))
-				 || AnyEventOfType(xReader, static_cast<uint16_t>(DPTelemetry::DPEventType::Unpossession)))
+				if (AnyEventOfType(xReader, static_cast<uint16_t>(DPTelemetry::DPEventType::PossessionChanged)))
 					{ xR.bPassed = true; xR.szReason = "ok"; }
 				else
 					xR.szReason = "no PossessionChanged event";
@@ -250,6 +310,15 @@ namespace DPTelemetryAnalyzer
 					{ xR.bPassed = true; xR.szReason = "ok"; }
 				else
 					xR.szReason = "no ObjectivePlaced event";
+				break;
+			}
+			case Criterion::PriestMoved:
+			{
+				const float fPath = SumPriestPathLength(xReader);
+				if (fPath >= xT.fMinPriestPathLengthM)
+					{ xR.bPassed = true; xR.szReason = "ok"; }
+				else
+					xR.szReason = "priest never moved (path length below threshold)";
 				break;
 			}
 			case Criterion::None:

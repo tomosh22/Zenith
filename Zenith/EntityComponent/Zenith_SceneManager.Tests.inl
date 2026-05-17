@@ -15131,3 +15131,226 @@ void Zenith_SceneTests::TestB2_AdditiveHeadStallsBehindMidPassActivationPause(){
 	CleanupTestSceneFile(strPathA);
 	CleanupTestSceneFile(strPathB);
 }
+
+//==============================================================================
+// 2026-05-17: SCENE_LOAD_SINGLE drainage invariants
+//
+// Document the contract that script side-tables rely on: every prior-scene
+// entity's OnDestroy must fire before any new-scene entity's OnAwake fires.
+// See Zenith_SceneTests.h declarations for the rationale.
+//==============================================================================
+
+namespace
+{
+	// Per-test global sequence counter + per-event vectors.
+	uint32_t g_uSingleLoadTick = 0;
+	Zenith_Vector<uint32_t> g_axSingleLoadAwakeTicks;
+	Zenith_Vector<uint32_t> g_axSingleLoadDestroyTicks;
+
+	// Tag-table-style side map keyed by packed EntityID. Populated by the
+	// side-table-cleanup test's OnAwake callback, scrubbed by its
+	// OnDestroy callback. If OnDestroy doesn't drain before next-scene
+	// OnAwake, the map will be non-empty at the assertion site.
+	Zenith_Vector<uint64_t> g_axSingleLoadSideTable;
+
+	void SingleLoad_ResetCounters()
+	{
+		SceneTestBehaviour::ResetCounters();
+		g_uSingleLoadTick = 0;
+		g_axSingleLoadAwakeTicks.Clear();
+		g_axSingleLoadDestroyTicks.Clear();
+		g_axSingleLoadSideTable.Clear();
+	}
+
+	void SingleLoad_RecordAwakeTick(Zenith_Entity&)
+	{
+		g_axSingleLoadAwakeTicks.PushBack(g_uSingleLoadTick++);
+	}
+	void SingleLoad_RecordDestroyTick(Zenith_Entity&)
+	{
+		g_axSingleLoadDestroyTicks.PushBack(g_uSingleLoadTick++);
+	}
+
+	void SingleLoad_SideTable_RegisterOnAwake(Zenith_Entity& xEntity)
+	{
+		const Zenith_EntityID xId = xEntity.GetEntityID();
+		const uint64_t uKey =
+			(static_cast<uint64_t>(xId.m_uGeneration) << 32) | xId.m_uIndex;
+		g_axSingleLoadSideTable.PushBack(uKey);
+	}
+	void SingleLoad_SideTable_UnregisterOnDestroy(Zenith_Entity& xEntity)
+	{
+		const Zenith_EntityID xId = xEntity.GetEntityID();
+		const uint64_t uKey =
+			(static_cast<uint64_t>(xId.m_uGeneration) << 32) | xId.m_uIndex;
+		for (uint32_t u = 0; u < g_axSingleLoadSideTable.GetSize(); ++u)
+		{
+			if (g_axSingleLoadSideTable.Get(u) == uKey)
+			{
+				g_axSingleLoadSideTable.RemoveSwap(u);
+				return;
+			}
+		}
+	}
+
+	// Helper: write a one-entity scene file with the SceneTestBehaviour
+	// script attached. The script's OnAwake / OnDestroy will be invoked
+	// through the engine's normal lifecycle dispatch, hitting whatever
+	// callback hooks we have armed.
+	void CreateTestSceneFileWithTestBehaviour(const std::string& strPath,
+	                                          const std::string& strEntityName)
+	{
+		Zenith_Scene xTemp = Zenith_SceneManager::CreateEmptyScene("TempForSave");
+		Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xTemp);
+		Zenith_Entity xEntity(pxData, strEntityName);
+		xEntity.AddComponent<Zenith_ScriptComponent>()
+			.AddScript<SceneTestBehaviour>();
+		pxData->SaveToFile(strPath);
+		Zenith_SceneManager::UnloadScene(xTemp);
+	}
+}
+
+ZENITH_TEST(Scene, SingleLoad_OnDestroyDrainsBeforeNewSceneAwake)
+{
+	Zenith_SceneTests::TestSingleLoad_OnDestroyDrainsBeforeNewSceneAwake();
+}
+void Zenith_SceneTests::TestSingleLoad_OnDestroyDrainsBeforeNewSceneAwake()
+{
+	// Setup: create scene A in-memory + attach a SceneTestBehaviour
+	// (test-only script; AddScript triggers OnAwake synchronously, so
+	// we have to install the callback hooks BEFORE the attach + dispatch
+	// the new-scene lifecycle to record the Awake tick).
+	SingleLoad_ResetCounters();
+	SceneTestBehaviour::s_pfnOnAwakeCallback   = &SingleLoad_RecordAwakeTick;
+	SceneTestBehaviour::s_pfnOnDestroyCallback = &SingleLoad_RecordDestroyTick;
+
+	Zenith_Scene xSceneA = Zenith_SceneManager::CreateEmptyScene("SingleLoadProbeA");
+	Zenith_SceneData* pxA = Zenith_SceneManager::GetSceneData(xSceneA);
+	CreateEntityWithBehaviour(pxA, "ProbeA");
+	pxA->DispatchLifecycleForNewScene();
+
+	ZENITH_ASSERT_EQ(g_axSingleLoadAwakeTicks.GetSize(), 1u,
+		"Scene A's probe entity should have produced exactly 1 OnAwake "
+		"after DispatchLifecycleForNewScene (got %u)",
+		g_axSingleLoadAwakeTicks.GetSize());
+	const uint32_t uSceneA_AwakeTick = g_axSingleLoadAwakeTicks.Get(0);
+	const uint32_t uDestroysBefore   = g_axSingleLoadDestroyTicks.GetSize();
+
+	// Scene B is a vanilla file with a single entity + no script attached.
+	// SINGLE-loading it triggers UnloadAllNonPersistent (destroys scene A's
+	// probe entity) THEN creates the new scene + dispatches its Awake wave.
+	const std::string strPathB = "single_load_drain_B" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPathB, "PlainEntityB");
+
+	Zenith_Scene xSceneB = Zenith_SceneManager::LoadSceneBlockingForBootstrap(
+		strPathB, SCENE_LOAD_SINGLE);
+	ZENITH_ASSERT_TRUE(xSceneB.IsValid(), "Scene B must load");
+
+	// Core invariant: scene A's probe fired exactly one OnDestroy during
+	// the SINGLE-load swap.
+	ZENITH_ASSERT_GT(g_axSingleLoadDestroyTicks.GetSize(), uDestroysBefore,
+		"SINGLE-load of B should have destroyed scene A's probe entity "
+		"(no new destroy ticks recorded)");
+	const uint32_t uLastDestroyTick =
+		g_axSingleLoadDestroyTicks.Get(g_axSingleLoadDestroyTicks.GetSize() - 1u);
+
+	// Sanity: scene A's Awake tick predates the destroys.
+	ZENITH_ASSERT_LT(uSceneA_AwakeTick, uLastDestroyTick,
+		"Scene A awake tick %u should precede its destroy tick %u",
+		uSceneA_AwakeTick, uLastDestroyTick);
+
+	// HasPendingDestructions must be false by the time the blocking-load
+	// returns. This is the surface the harness will use to confirm
+	// "no pending destruction" before invoking the next test's Setup.
+	ZENITH_ASSERT_FALSE(Zenith_SceneManager::HasPendingDestructions(),
+		"After blocking SINGLE-load returns, HasPendingDestructions() "
+		"must be false (got true -- scene A's destruction did not drain "
+		"before LoadSceneBlockingForBootstrap returned)");
+
+	SceneTestBehaviour::s_pfnOnAwakeCallback   = nullptr;
+	SceneTestBehaviour::s_pfnOnDestroyCallback = nullptr;
+	Zenith_SceneManager::UnloadScene(xSceneB);
+	CleanupTestSceneFile(strPathB);
+}
+
+ZENITH_TEST(Scene, SingleLoad_SideTableCleanupCompleteBeforeNextAwake)
+{
+	Zenith_SceneTests::TestSingleLoad_SideTableCleanupCompleteBeforeNextAwake();
+}
+void Zenith_SceneTests::TestSingleLoad_SideTableCleanupCompleteBeforeNextAwake()
+{
+	// Mirror DP_Items::g_xItemTagTable's contract -- script registers in
+	// a side table at OnAwake, unregisters at OnDestroy. Verify the side
+	// table is empty after SINGLE-loading a new scene that doesn't have
+	// the script.
+	SingleLoad_ResetCounters();
+	SceneTestBehaviour::s_pfnOnAwakeCallback   = &SingleLoad_SideTable_RegisterOnAwake;
+	SceneTestBehaviour::s_pfnOnDestroyCallback = &SingleLoad_SideTable_UnregisterOnDestroy;
+
+	Zenith_Scene xSceneA = Zenith_SceneManager::CreateEmptyScene("SideTableProbeA");
+	Zenith_SceneData* pxA = Zenith_SceneManager::GetSceneData(xSceneA);
+	CreateEntityWithBehaviour(pxA, "SideTableA1");
+	CreateEntityWithBehaviour(pxA, "SideTableA2");
+	CreateEntityWithBehaviour(pxA, "SideTableA3");
+	pxA->DispatchLifecycleForNewScene();
+
+	ZENITH_ASSERT_EQ(g_axSingleLoadSideTable.GetSize(), 3u,
+		"After scene A's lifecycle dispatch, side table should hold 3 entries "
+		"(one per probe entity). Got %u",
+		g_axSingleLoadSideTable.GetSize());
+
+	const std::string strPathB = "single_load_sidetable_B" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPathB, "PlainEntityB");
+
+	Zenith_Scene xSceneB = Zenith_SceneManager::LoadSceneBlockingForBootstrap(
+		strPathB, SCENE_LOAD_SINGLE);
+	ZENITH_ASSERT_TRUE(xSceneB.IsValid(), "Scene B must load");
+
+	// Core invariant: every probe's OnDestroy must have fired during
+	// the SINGLE-load (UnloadAllNonPersistent path inside Phase 1).
+	// Side table is empty because scene B carries no probes.
+	ZENITH_ASSERT_EQ(g_axSingleLoadSideTable.GetSize(), 0u,
+		"After SINGLE-load of B, side table must be empty -- scene A's "
+		"3 probes' OnDestroy did not all fire (table size %u). This is "
+		"the silent-failure mode that breaks DP_Items::g_xItemTagTable "
+		"across batched tests.",
+		g_axSingleLoadSideTable.GetSize());
+
+	SceneTestBehaviour::s_pfnOnAwakeCallback   = nullptr;
+	SceneTestBehaviour::s_pfnOnDestroyCallback = nullptr;
+	Zenith_SceneManager::UnloadScene(xSceneB);
+	CleanupTestSceneFile(strPathB);
+}
+
+ZENITH_TEST(Scene, HasPendingDestructionsClearAfterBlockingSingleLoad)
+{
+	Zenith_SceneTests::TestHasPendingDestructionsClearAfterBlockingSingleLoad();
+}
+void Zenith_SceneTests::TestHasPendingDestructionsClearAfterBlockingSingleLoad()
+{
+	// Empty starting state: HasPendingDestructions returns false (nothing
+	// to destroy yet).
+	ZENITH_ASSERT_FALSE(Zenith_SceneManager::HasPendingDestructions(),
+		"At test entry, no destruction should be pending");
+
+	// Build + load a vanilla scene via the blocking-load path. After
+	// the call returns, the prior-test scene (if any) has been destroyed
+	// and no destruction work is outstanding.
+	const std::string strPath = "single_load_pending" ZENITH_SCENE_EXT;
+	CreateTestSceneFile(strPath, "PendingEntity");
+
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneBlockingForBootstrap(
+		strPath, SCENE_LOAD_SINGLE);
+	ZENITH_ASSERT_TRUE(xScene.IsValid(), "Scene must load");
+
+	ZENITH_ASSERT_FALSE(Zenith_SceneManager::HasPendingDestructions(),
+		"After blocking SINGLE-load of B (which unloaded prior scenes), "
+		"no destruction should be pending");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	CleanupTestSceneFile(strPath);
+
+	// Final state: blocking unload returns synchronously, no work left.
+	ZENITH_ASSERT_FALSE(Zenith_SceneManager::HasPendingDestructions(),
+		"After explicit UnloadScene, no destruction should be pending");
+}

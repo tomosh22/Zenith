@@ -27,6 +27,17 @@
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/DPItemBase_Behaviour.h"
 
+#include <unordered_map>
+
+// VillagerHeldRecord lives outside the class so callers (DP_Player
+// namespace functions in PublicInterfaces.cpp) can refer to it without
+// pulling the whole behaviour into their header chain.
+struct DPVillagerHeldRecord
+{
+	Zenith_EntityID m_xItem = INVALID_ENTITY_ID;
+	DP_ItemTag      m_eTag  = DP_ItemTag::None;
+};
+
 class DPPlayerController_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
@@ -36,6 +47,112 @@ public:
 	DPPlayerController_Behaviour() = delete;
 	DPPlayerController_Behaviour(Zenith_Entity& /*xParentEntity*/)
 	{}
+
+	void OnAwake() ZENITH_FINAL override
+	{
+		// Singleton: per-scene script, set as soon as OnAwake fires
+		// (engine fires Awake on every script before any OnStart).
+		s_pxInstance = this;
+	}
+
+	void OnDestroy() ZENITH_FINAL override
+	{
+		// m_xHeldItems + m_xDemonScent are auto-cleared by their
+		// destructors when this script is freed. Scene unload is the
+		// only path that destroys the script, so the maps' lifetimes
+		// are bounded by the scene -- no stale rows can leak across
+		// scene transitions. Replaces the previous process-global
+		// g_xHeldItems + g_xDemonScent + their manual clear() calls
+		// in DP_Player::ResetForNewRun (Phase B of the bot-test
+		// batched-mode investigation, 2026-05-17).
+		if (s_pxInstance == this) s_pxInstance = nullptr;
+	}
+
+	static DPPlayerController_Behaviour* Instance() { return s_pxInstance; }
+
+	//==========================================================================
+	// Held-item registry. Keyed by packed villager EntityID. Mutated by
+	// DP_Player::SetHeldItem / RemoveHeldItem; read by GetHeldItem*.
+	//==========================================================================
+	static uint64_t PackEntityID(Zenith_EntityID xID)
+	{
+		return (static_cast<uint64_t>(xID.m_uGeneration) << 32)
+		     | static_cast<uint64_t>(xID.m_uIndex);
+	}
+
+	void SetHeldItemRecord(Zenith_EntityID xVillager, const DPVillagerHeldRecord& xRec)
+	{
+		m_xHeldItems[PackEntityID(xVillager)] = xRec;
+	}
+
+	void RemoveHeldItem(Zenith_EntityID xVillager)
+	{
+		m_xHeldItems.erase(PackEntityID(xVillager));
+	}
+
+	DP_ItemTag GetHeldItemTag(Zenith_EntityID xVillager) const
+	{
+		auto it = m_xHeldItems.find(PackEntityID(xVillager));
+		if (it == m_xHeldItems.end()) return DP_ItemTag::None;
+		return it->second.m_eTag;
+	}
+
+	Zenith_EntityID GetHeldItemEntity(Zenith_EntityID xVillager) const
+	{
+		auto it = m_xHeldItems.find(PackEntityID(xVillager));
+		if (it == m_xHeldItems.end()) return INVALID_ENTITY_ID;
+		return it->second.m_xItem;
+	}
+
+	//==========================================================================
+	// Demon-scent registry. Per-villager scalar, decays on tick + bumps
+	// on successful possession (MVP-1.6 hound-target heuristic).
+	//==========================================================================
+	float GetDemonScent(Zenith_EntityID xVillager) const
+	{
+		auto it = m_xDemonScent.find(PackEntityID(xVillager));
+		if (it == m_xDemonScent.end()) return 0.0f;
+		return it->second;
+	}
+
+	void BumpDemonScent(Zenith_EntityID xVillager, float fAddAmount, float fMax)
+	{
+		const uint64_t uKey = PackEntityID(xVillager);
+		float fNew = m_xDemonScent[uKey] + fAddAmount;
+		if (fNew > fMax) fNew = fMax;
+		m_xDemonScent[uKey] = fNew;
+	}
+
+	// Decays every entry by fDecayPerSec * fDt and erases rows that
+	// hit zero. Iterate-and-erase to keep the table from accumulating
+	// dead handles.
+	void DecayDemonScent(float fDecayPerSec, float fDt)
+	{
+		if (m_xDemonScent.empty()) return;
+		const float fDecay = fDecayPerSec * fDt;
+		for (auto it = m_xDemonScent.begin(); it != m_xDemonScent.end(); )
+		{
+			it->second -= fDecay;
+			if (it->second <= 0.0f) it = m_xDemonScent.erase(it);
+			else ++it;
+		}
+	}
+
+	// Iterate every (villager, scent) entry. Callback signature:
+	// void(Zenith_EntityID, float). Used by DP_Player::WriteHighestScentToBlackboard.
+	template <typename TFn>
+	void ForEachDemonScentEntry(TFn xFn) const
+	{
+		for (const auto& [uPacked, fScent] : m_xDemonScent)
+		{
+			Zenith_EntityID xId;
+			xId.m_uIndex      = static_cast<uint32_t>(uPacked & 0xFFFFFFFFu);
+			xId.m_uGeneration = static_cast<uint32_t>(uPacked >> 32);
+			xFn(xId, fScent);
+		}
+	}
+
+	bool HasDemonScentEntries() const { return !m_xDemonScent.empty(); }
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
@@ -203,4 +320,15 @@ private:
 		// when GetHeldItemTag flips back to None.
 		DP_Player::RemoveHeldItem(xVillager);
 	}
+
+	static inline DPPlayerController_Behaviour* s_pxInstance = nullptr;
+
+	// Held-item registry: one entry per villager holding an item.
+	// Cleared automatically when this script is destroyed (scene unload).
+	std::unordered_map<uint64_t, DPVillagerHeldRecord> m_xHeldItems;
+
+	// Demon-scent registry: per-villager scalar, accumulates on possession
+	// + decays per-frame via DP_Player::TickDemonScent. Cleared automatically
+	// when this script is destroyed (scene unload).
+	std::unordered_map<uint64_t, float> m_xDemonScent;
 };

@@ -5,6 +5,9 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
+#include "../Components/DPItemManager_Behaviour.h"
+#include "../Components/DPPlayerController_Behaviour.h"
+#include "../Components/DPFogPass_Behaviour.h"
 
 #include <cstdio>
 
@@ -54,6 +57,20 @@ static void Setup_HeldItem()
 	g_bAllPassed = true;
 	g_iFailCount = 0;
 
+	// 2026-05-17: DP_Items + DP_Player side tables were moved onto
+	// DPItemManager_Behaviour + DPPlayerController_Behaviour so they
+	// auto-clean on scene unload. Any test that exercises
+	// Internal_RegisterItemTag / SetHeldItem has to load a scene with
+	// both scripts attached -- otherwise the registration silently
+	// no-ops. Spin up a one-entity scene with both scripts attached.
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("HeldItemTest");
+	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
+	Zenith_ScriptComponent& xScripts =
+		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
+	xScripts.AddScript<DPItemManager_Behaviour>();
+	xScripts.AddScript<DPPlayerController_Behaviour>();
+
 	const Zenith_EntityID xVillager = MakeFakeId(1001);
 	const Zenith_EntityID xItemKey  = MakeFakeId(2001);
 
@@ -82,6 +99,7 @@ static void Setup_HeldItem()
 	DP_EXPECT(DP_Player::GetHeldItemTag(xVillager)    == DP_ItemTag::None,    "double-remove safe");
 
 	DP_Items::Internal_UnregisterItemTag(xItemKey);
+	Zenith_SceneManager::UnloadScene(xScene);
 }
 
 static bool Step_HeldItem(int /*iFrame*/)            { return false; /* one-shot */ }
@@ -93,7 +111,18 @@ static const Zenith_AutomatedTest g_xHeldItemTest = {
 ZENITH_AUTOMATED_TEST_REGISTER(g_xHeldItemTest);
 
 // ----------------------------------------------------------------------------
-// Test: DP_Items::FindItemByTag — guarded miss, hit, unregister, miss-again
+// Test: DP_Items::FindItemByTag — guarded miss, hit, unregister, miss-again,
+// scene-unload purge.
+//
+// 2026-05-17: g_xItemTagTable was moved out of the PublicInterfaces.cpp anon
+// namespace onto DPItemManager_Behaviour as an instance member. That means
+// FindItemByTag forwards through DPItemManager_Behaviour::Instance() and the
+// table dies with the scene that owns the manager -- no stale rows can leak
+// across scenes. Test setup creates a scene with a DPItemManager script
+// attached and exercises the same register/find/unregister round-trip as
+// before, plus a scene-unload step that proves the new ownership boundary
+// actually purges the registry (which the old global-map design could not
+// guarantee).
 // ----------------------------------------------------------------------------
 static bool g_bFindByTagSetupRan = false;
 
@@ -102,23 +131,55 @@ static void Setup_FindByTag()
 	g_bFindByTagSetupRan = true;
 	g_bAllPassed = true;
 
-	const Zenith_EntityID xIron = MakeFakeId(3001);
+	// 1) Empty state: no DPItemManager loaded -> FindItemByTag misses.
+	{
+		const Zenith_EntityID xMiss = DP_Items::FindItemByTag(DP_ItemTag::Iron);
+		DP_EXPECT(!xMiss.IsValid(),
+			"no-manager-loaded -> FindItemByTag returns invalid");
+	}
 
-	// SourceBugFixed: miss returns INVALID_ENTITY_ID, not a deref.
+	// 2) Spin up an in-memory scene with a DPItemManager attached
+	// (creates DPItemManager_Behaviour::Instance()) + a real item
+	// entity to register against.
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("FindByTagTest");
+	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
+	xManagerEntity.AddComponent<Zenith_ScriptComponent>()
+		.AddScript<DPItemManager_Behaviour>();
+	Zenith_Entity xIronEntity(pxScene, "IronEntity");
+	const Zenith_EntityID xIron = xIronEntity.GetEntityID();
+
+	// 3) Pre-register miss: manager exists but no Iron in table.
 	const Zenith_EntityID xMiss = DP_Items::FindItemByTag(DP_ItemTag::Iron);
-	DP_EXPECT(!xMiss.IsValid(), "find→miss returns invalid");
+	DP_EXPECT(!xMiss.IsValid(),
+		"manager-loaded, empty-table -> FindItemByTag returns invalid");
 
-	// Register, find returns the right entity.
+	// 4) Register, find returns the right entity.
 	DP_Items::Internal_RegisterItemTag(xIron, DP_ItemTag::Iron);
 	const Zenith_EntityID xHit = DP_Items::FindItemByTag(DP_ItemTag::Iron);
-	DP_EXPECT(xHit.IsValid(),                     "find→hit valid");
-	DP_EXPECT(xHit.m_uIndex == xIron.m_uIndex,    "find→correct index");
+	DP_EXPECT(xHit.IsValid(),                     "find->hit valid");
+	DP_EXPECT(xHit.m_uIndex == xIron.m_uIndex,    "find->correct index");
 	DP_EXPECT(DP_Items::GetItemTag(xHit) == DP_ItemTag::Iron, "GetItemTag round-trip");
 
-	// Unregister, find misses again.
+	// 5) Unregister, find misses again.
 	DP_Items::Internal_UnregisterItemTag(xIron);
 	const Zenith_EntityID xMiss2 = DP_Items::FindItemByTag(DP_ItemTag::Iron);
-	DP_EXPECT(!xMiss2.IsValid(), "find→post-unregister miss");
+	DP_EXPECT(!xMiss2.IsValid(), "find->post-unregister miss");
+
+	// 6) Re-register + Unload the scene. Pins the new ownership
+	//    boundary: scene unload destroys the manager entity, which
+	//    drops its m_xItemTagTable -- subsequent FindItemByTag with
+	//    no manager loaded must return invalid. The old global-map
+	//    design could leak across this boundary; the new design
+	//    cannot.
+	DP_Items::Internal_RegisterItemTag(xIron, DP_ItemTag::Iron);
+	const Zenith_EntityID xHit2 = DP_Items::FindItemByTag(DP_ItemTag::Iron);
+	DP_EXPECT(xHit2.IsValid(), "re-register before unload -> valid");
+	Zenith_SceneManager::UnloadScene(xScene);
+	const Zenith_EntityID xMissAfterUnload = DP_Items::FindItemByTag(DP_ItemTag::Iron);
+	DP_EXPECT(!xMissAfterUnload.IsValid(),
+		"scene-unload -> manager destroyed -> FindItemByTag returns invalid "
+		"(proves the registry is owned by the scene, not by a process-global)");
 }
 
 static bool Step_FindByTag(int)                      { return false; }
@@ -203,6 +264,17 @@ static void Setup_Fog()
 {
 	g_bFogSetupRan = true;
 	g_bAllPassed = true;
+
+	// 2026-05-17 ownership refactor: DP_Fog's fog-hole table moved
+	// onto DPFogPass_Behaviour::m_xFogHoles. Tests now need that
+	// script attached to a scene entity for any of the DP_Fog::*
+	// forwarders to take effect (no-ops otherwise).
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("FogTest");
+	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xFogEntity(pxScene, "FogPassEntity");
+	xFogEntity.AddComponent<Zenith_ScriptComponent>()
+		.AddScript<DPFogPass_Behaviour>();
+
 	DP_Fog::ClearAllFogHoles();
 
 	DP_EXPECT(DP_Fog::GetFogHoleCount() == 0, "initial count = 0");
@@ -221,6 +293,8 @@ static void Setup_Fog()
 
 	DP_Fog::ClearAllFogHoles();
 	DP_EXPECT(DP_Fog::GetFogHoleCount() == 0, "after clear");
+
+	Zenith_SceneManager::UnloadScene(xScene);
 }
 
 static bool Step_Fog(int)                            { return false; }
@@ -240,6 +314,18 @@ static void Setup_Unlock()
 {
 	g_bUnlockSetupRan = true;
 	g_bAllPassed = true;
+
+	// Need a DPItemManager- + DPPlayerController-attached scene for the
+	// item-tag + held-item registrations below to take effect (see
+	// Setup_HeldItem's matching comment for the 2026-05-17 ownership-
+	// refactor rationale).
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("UnlockTest");
+	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
+	Zenith_ScriptComponent& xScripts =
+		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
+	xScripts.AddScript<DPItemManager_Behaviour>();
+	xScripts.AddScript<DPPlayerController_Behaviour>();
 
 	const Zenith_EntityID xVillager = MakeFakeId(8001);
 	const Zenith_EntityID xKeyItem  = MakeFakeId(8101);
@@ -271,6 +357,7 @@ static void Setup_Unlock()
 	DP_Player::RemoveHeldItem(xVillager);
 	DP_Items::Internal_UnregisterItemTag(xKeyItem);
 	DP_Items::Internal_UnregisterItemTag(xSkelItem);
+	Zenith_SceneManager::UnloadScene(xScene);
 }
 
 static bool Step_Unlock(int)                         { return false; }

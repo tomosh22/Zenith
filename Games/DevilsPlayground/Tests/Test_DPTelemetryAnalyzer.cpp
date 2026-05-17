@@ -231,9 +231,12 @@ static bool TestEventCriteria()
 		if (!CheckOne(strP.c_str(), A::PickupFired)) return Fail("events: PickupFired should fire on ItemPickup");
 	}
 
-	// Possession event OR a Possessed flag frame should pass PossessionFired.
+	// PossessionChanged event OR a Possessed flag frame should pass
+	// PossessionFired. (Legacy Possession/Unpossession aliases were
+	// removed in the 2026-05-17 cleanup pass; PossessionChanged is the
+	// canonical event for any possession transition.)
 	{
-		Zenith_Telemetry::Event aE[1] = { MakeEvent(DPTelemetry::DPEventType::Possession) };
+		Zenith_Telemetry::Event aE[1] = { MakeEvent(DPTelemetry::DPEventType::PossessionChanged) };
 		const std::string strPE = BuildRecording("ev_poss.ztlm", "S", 25u, 0u, aE, 1u);
 		if (!CheckOne(strPE.c_str(), A::PossessionFired)) return Fail("possess: event should pass PossessionFired");
 
@@ -246,9 +249,7 @@ static bool TestEventCriteria()
 	}
 
 	// Phase-5-audit (2026-05-16) granular criteria. Each fires when its
-	// own event type is present + falls back to false when absent. The
-	// PossessionChangedFired criterion also accepts the legacy
-	// Possession + Unpossession aliases.
+	// own event type is present + falls back to false when absent.
 	auto AssertGranular = [&MakeEvent](DPTelemetry::DPEventType eEvt, A eCrit, const char* szWhich) -> bool
 	{
 		Zenith_Telemetry::Event aE[1] = { MakeEvent(eEvt) };
@@ -266,14 +267,6 @@ static bool TestEventCriteria()
 	if (!AssertGranular(DPTelemetry::DPEventType::ChestOpened,       A::ChestOpenedFired,       "ChestOpened"))        return false;
 	if (!AssertGranular(DPTelemetry::DPEventType::ForgeCrafted,      A::ForgeCraftedFired,      "ForgeCrafted"))       return false;
 	if (!AssertGranular(DPTelemetry::DPEventType::ObjectivePlaced,   A::ObjectivePlacedFired,   "ObjectivePlaced"))    return false;
-
-	// PossessionChangedFired ALSO accepts the legacy Possession alias.
-	{
-		Zenith_Telemetry::Event aE[1] = { MakeEvent(DPTelemetry::DPEventType::Possession) };
-		const std::string strLegacy = BuildRecording("ev_poss_legacy.ztlm", "S", 25u, 0u, aE, 1u);
-		if (!CheckOne(strLegacy.c_str(), A::PossessionChangedFired))
-			return Fail("possChange: legacy Possession alias should pass PossessionChangedFired");
-	}
 
 	return true;
 }
@@ -351,8 +344,99 @@ static bool TestCriterionToString()
 		return Fail("name: ForgeCraftedFired");
 	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(A::ObjectivePlacedFired), "ObjectivePlacedFired") != 0)
 		return Fail("name: ObjectivePlacedFired");
+	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(A::PriestMoved), "PriestMoved") != 0)
+		return Fail("name: PriestMoved");
 	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(static_cast<A>(0xFFu)), "Unknown") != 0)
 		return Fail("name: unknown enum should be 'Unknown'");
+	return true;
+}
+
+// ============================================================================
+// 8) PriestMoved: positive case sums per-sample horizontal displacement
+//    across IsPriest-flagged entities + passes when above threshold;
+//    negative case (priest never moves) fails. The generic BuildRecording
+//    helper doesn't support per-sample-varying entity positions so this
+//    test builds the recording inline.
+// ============================================================================
+namespace
+{
+	// Helper: write a recording with N samples; on each, emit one entity
+	// flagged IsPriest at the supplied (X, Z) position. Used by both the
+	// "stationary" and "moves linearly" cases below.
+	std::string BuildPriestMovementRecording(const char* szSuffix,
+	                                          uint32_t uSamples,
+	                                          float fX0, float fZ0,
+	                                          float fDx, float fDz)
+	{
+		const std::string strPath = TempPath(szSuffix);
+
+		Zenith_Telemetry::Header xHeader;
+		xHeader.strSceneName = "PriestMovementTest";
+		xHeader.uSamplePeriodFrames = 1;
+
+		auto& xRec = Zenith_Telemetry::GetRecorder();
+		xRec.Begin(xHeader);
+
+		const Zenith_EntityID xPriestId = { 42u, 1u };
+		for (uint32_t i = 0; i < uSamples; ++i)
+		{
+			xRec.NextFrame();
+			Zenith_Telemetry::FrameSample xS;
+			xS.fTimeS = static_cast<float>(i) * (1.0f / 60.0f);
+
+			Zenith_Telemetry::EntitySnapshot xE;
+			xE.xId        = xPriestId;
+			xE.xPos       = Zenith_Maths::Vector3(
+				fX0 + fDx * static_cast<float>(i),
+				1.0f,
+				fZ0 + fDz * static_cast<float>(i));
+			xE.uStateFlags = DPTelemetry::StateFlags::IsPriest
+			               | DPTelemetry::StateFlags::Alive;
+			xS.axEntities.PushBack(xE);
+			xRec.RecordFrame(xS);
+		}
+
+		xRec.End(strPath.c_str(), nullptr, nullptr);
+		return strPath;
+	}
+}
+
+static bool TestPriestMoved()
+{
+	// Positive: priest walks 1 m east per sample over 11 samples
+	// (10 inter-sample steps) -> 10 m total path. Default threshold
+	// is 0.5 m; this is 20x past it.
+	{
+		const std::string str = BuildPriestMovementRecording(
+			"priest_moves.ztlm", /*uSamples=*/11u,
+			/*fX0=*/0.0f, /*fZ0=*/0.0f,
+			/*fDx=*/1.0f, /*fDz=*/0.0f);
+		if (!CheckOne(str.c_str(), A::PriestMoved))
+			return Fail("priest-moved: 10 m linear walk should pass");
+	}
+
+	// Negative: priest sits perfectly still for 11 samples -> 0 m path.
+	// Must fail PriestMoved.
+	{
+		const std::string str = BuildPriestMovementRecording(
+			"priest_still.ztlm", /*uSamples=*/11u,
+			/*fX0=*/5.0f, /*fZ0=*/5.0f,
+			/*fDx=*/0.0f, /*fDz=*/0.0f);
+		if (CheckOne(str.c_str(), A::PriestMoved))
+			return Fail("priest-moved: stationary priest should fail PriestMoved");
+	}
+
+	// Negative: recording with NO IsPriest-flagged entities at all
+	// (only villagers) should fail -- no priest to measure means we
+	// can't claim he moved.
+	{
+		const std::string str = BuildRecording(
+			"priest_absent.ztlm", "PriestMovementTest",
+			11u, DPTelemetry::StateFlags::Alive, nullptr, 0u);
+		if (CheckOne(str.c_str(), A::PriestMoved))
+			return Fail("priest-moved: no priest in recording should fail");
+	}
+
 	return true;
 }
 
@@ -368,9 +452,10 @@ static void Setup_Analyzer()
 	if (!TestBadMagicFile())        return;
 	if (!TestPipelineHealthPreset())return;
 	if (!TestCriterionToString())   return;
+	if (!TestPriestMoved())         return;
 
 	g_bPassed = true;
-	std::printf("[DPTelemetryAnalyzer] all 7 test clusters passed\n");
+	std::printf("[DPTelemetryAnalyzer] all 8 test clusters passed\n");
 	std::fflush(stdout);
 }
 

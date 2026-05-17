@@ -58,7 +58,16 @@ struct DP_OnVillagerDied
 
 struct DP_OnVictory
 {
-	uint32_t m_uPlaceholder = 0;
+	// Phase-5-audit follow-up (2026-05-16): added entity payload so
+	// telemetry consumers (visualiser, replay UIs, analytics) can place
+	// the Victory marker at a meaningful world position instead of the
+	// bounding-box centre fallback. Both fields default to INVALID_ENTITY_ID
+	// so existing dispatchers that fire `DP_OnVictory{}` keep compiling
+	// (the fields just stay invalid -- only diagnostic value lost). The
+	// production dispatcher in DP_Win::NotifyObjectiveCollected (called
+	// from DPPentagram_Behaviour::HandleInteract) populates both.
+	Zenith_EntityID m_xVillager;   // who placed the 5th objective (the winner)
+	Zenith_EntityID m_xPentagram;  // the ritual altar entity
 };
 
 // MVP-1.3.1: run-loss cause enum. The dispatcher fires DP_OnRunLost{cause}
@@ -88,6 +97,19 @@ enum class DP_RunLostCause : uint8_t
 struct DP_OnRunLost
 {
 	DP_RunLostCause m_eCause;
+	// Phase-5-audit follow-up (2026-05-16): cause-specific entity
+	// context so the telemetry visualiser can place the RunLost marker
+	// at a meaningful world position instead of falling back to the
+	// world-bounds centre. Both default INVALID; existing dispatchers
+	// that fire `DP_OnRunLost{cause}` keep compiling.
+	//
+	//   Apprehended : m_xVillager = caught villager, m_xOther = priest who caught them
+	//   Dawn        : m_xVillager = currently-possessed villager (may be INVALID
+	//                                if dawn hit between possessions),
+	//                  m_xOther    = INVALID
+	//   NoVessels   : m_xVillager = last villager to die, m_xOther = INVALID
+	Zenith_EntityID m_xVillager;
+	Zenith_EntityID m_xOther;
 };
 
 // MVP-2.2.6: BellSoul ring-on-pickup event. Dispatched by DPItemBase
@@ -350,7 +372,7 @@ namespace DP_AI
 
 	// MVP-2.2.6+ map-wide bell broadcast. The perception system clamps each
 	// agent's hearing at min(emit_radius, agent_max_range), so a 200 m
-	// EmitNoise emit still cuts off at the priest's 30 m hearing_range_m --
+	// EmitNoise emit still cuts off at the priest's 35 m hearing_range_m --
 	// breaking the GDD's "BellSoul audible from the entire map" promise.
 	// This helper bypasses perception and writes directly to every
 	// Priest_Behaviour agent's blackboard:
@@ -446,7 +468,18 @@ namespace DP_Win
 {
 	uint32_t GetCollectedObjectivesMask();
 	bool HasWon();
-	void NotifyObjectiveCollected(DP_ItemTag eObjective);
+	// Adds the matching objective bit to the collected mask + (if this is
+	// the 5th objective) dispatches DP_OnVictory.
+	//
+	// xVillager / xPentagram are forwarded into the DP_OnVictory payload so
+	// the visualiser can locate the victory in world space. They're optional
+	// (default INVALID_ENTITY_ID) because legacy tests call this directly
+	// without scene context -- in those cases the Victory marker still fires,
+	// just without entity provenance. The production call site
+	// (DPPentagram_Behaviour::HandleInteract) always supplies both.
+	void NotifyObjectiveCollected(DP_ItemTag eObjective,
+	                              Zenith_EntityID xVillager  = Zenith_EntityID{},
+	                              Zenith_EntityID xPentagram = Zenith_EntityID{});
 	void Reset();
 }
 

@@ -42,25 +42,62 @@ public:
 		// in their OnAwake on top of this.
 		m_fInteractRadius = DP_Tuning::Get<float>("interactables.default_proximity_radius_m");
 
-		m_bWasInRangeLastFrame = false;
+		m_xInRangeVillager      = INVALID_ENTITY_ID;
 		m_xInteractSubscription = INVALID_EVENT_HANDLE;
 	}
 
 	void OnDisable() override   { TearDownSubscription(); }
 	void OnDestroy() override   { TearDownSubscription(); }
 
+	// Phase-5-audit follow-up (2026-05-16): cache the in-range villager
+	// so OnExitRange dispatches DP_OnInteractionEnd with the villager
+	// that ACTUALLY left, not whatever DP_Player::GetPossessedVillager()
+	// happens to return on the exit frame.
+	//
+	// Previously, the state machine compared (DP_Player::GetPossessedVillager,
+	// IsVillagerInRange) frame-to-frame. The failure mode: if the
+	// possessed villager died while inside the interactable's proximity,
+	// the next frame's GetPossessedVillager() returned INVALID (the
+	// death path called SetPossessedVillager(INVALID)). IsVillagerInRange
+	// then short-circuited to false, m_bWasInRangeLastFrame was still
+	// true, and OnExitRange(INVALID) fired -- so DP_OnInteractionEnd's
+	// m_xVillager was INVALID and the telemetry visualiser couldn't
+	// place the marker on the deceased villager's position.
+	//
+	// The new shape: each frame, derive a "would-be in-range villager"
+	// (the current possessed, IFF in range; else INVALID). Transitions
+	// on that value drive enter/exit. Enter caches the villager; exit
+	// dispatches with the cached villager + clears the cache. This also
+	// correctly handles the rare mid-range possession swap (A in range
+	// -> swap to B in range -> exit(A) + enter(B)).
 	void OnUpdate(const float /*fDt*/) override
 	{
-		const Zenith_EntityID xVillager = DP_Player::GetPossessedVillager();
-		const bool bInRange = IsVillagerInRange(xVillager);
+		const Zenith_EntityID xCurrent = DP_Player::GetPossessedVillager();
+		const bool bCurrentInRange = IsVillagerInRange(xCurrent);
+		const Zenith_EntityID xWouldBeInRange =
+			bCurrentInRange ? xCurrent : Zenith_EntityID{};
 
-		if (bInRange && !m_bWasInRangeLastFrame)
+		const bool bWasInRange    = m_xInRangeVillager.IsValid();
+		const bool bWillBeInRange = xWouldBeInRange.IsValid();
+		const bool bDifferent     =
+			(m_xInRangeVillager.m_uIndex      != xWouldBeInRange.m_uIndex) ||
+			(m_xInRangeVillager.m_uGeneration != xWouldBeInRange.m_uGeneration);
+
+		if (bDifferent)
 		{
-			OnEnterRange(xVillager);
-		}
-		else if (!bInRange && m_bWasInRangeLastFrame)
-		{
-			OnExitRange(xVillager);
+			if (bWasInRange)
+			{
+				// Exit using the CACHED villager -- the one that was
+				// actually in range, not the current possessed (which
+				// may be INVALID after death or a different villager
+				// after a mid-range swap).
+				OnExitRange(m_xInRangeVillager);
+			}
+			if (bWillBeInRange)
+			{
+				OnEnterRange(xWouldBeInRange);
+			}
+			m_xInRangeVillager = xWouldBeInRange;
 		}
 
 		// While in-range each frame (NOT just rising-edge): check the F-press
@@ -68,14 +105,12 @@ public:
 		// OnEnterRange catches this and invokes HandleInteract on the right
 		// target. Without this, players hold proximity but the F-press only
 		// counts on the single rising-edge frame — gameplay-breaking.
-		if (bInRange && !m_bInteractOnOverlap && xVillager.IsValid()
+		if (bWillBeInRange && !m_bInteractOnOverlap
 		    && DP_Input::ReadInteractPressed())
 		{
 			Zenith_EventDispatcher::Get().Dispatch(
-				DP_OnInteract{ xVillager, m_xParentEntity.GetEntityID() });
+				DP_OnInteract{ xWouldBeInRange, m_xParentEntity.GetEntityID() });
 		}
-
-		m_bWasInRangeLastFrame = bInRange;
 	}
 
 	bool IsInteractOnOverlap() const { return m_bInteractOnOverlap; }
@@ -151,7 +186,14 @@ protected:
 
 	bool                m_bInteractOnOverlap = false;
 	float               m_fInteractRadius    = 2.0f; // Fallback; OnAwake reads DP_Tuning.
-	bool                m_bWasInRangeLastFrame = false;
+	// The villager currently considered "in range" of this interactable,
+	// or INVALID_ENTITY_ID when no villager is in range. Replaces the
+	// old m_bWasInRangeLastFrame bool: storing the entity (not just the
+	// fact-of) lets OnExitRange dispatch DP_OnInteractionEnd with the
+	// villager that actually left, even if that villager has just died
+	// (which would have flipped DP_Player::GetPossessedVillager() to
+	// INVALID by the time the exit edge fires).
+	Zenith_EntityID     m_xInRangeVillager      = INVALID_ENTITY_ID;
 	Zenith_EventHandle  m_xInteractSubscription = INVALID_EVENT_HANDLE;
 	// Note: GetInteractRadius() is declared above (line ~84) as part of the
 	// public API; tests use the same accessor.
