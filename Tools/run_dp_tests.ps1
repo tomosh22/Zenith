@@ -48,7 +48,13 @@ param(
     [string]$Exe         = "Games/DevilsPlayground/Build/output/win64/vs2022_debug_win64_true/devilsplayground.exe",
     [string]$ResultsDir  = "build/dp_test_results",
     [string]$Filter      = "",
-    [int]$ExitAfterFrames = 600,
+    # Bumped 2026-05-17 from 600 to 8500 to give the
+    # PersonalityPlaythrough_* tests (max-frames 6000-8000 each) room to
+    # run end-to-end. Each per-test budget is still governed by the
+    # test's own `m_iMaxFrames`, so short tests stay short -- this only
+    # raises the per-batch ceiling. Stealth is the slowest in practice
+    # at ~3600 frames; 8500 leaves comfortable headroom.
+    [int]$ExitAfterFrames = 8500,
     [double]$FixedDt     = 0.01666,
     [switch]$Headless,
     [switch]$PerProcess,
