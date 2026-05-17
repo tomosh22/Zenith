@@ -74,7 +74,7 @@ I tried emitting all six box faces. Polygon count was unchanged (1681 polygons, 
 
 ### ✅ Q-2026-05-12-002 — `HumanPlaythrough_Test` is pre-existing-broken under `--exit-after-frames 600`.
 
-**Context:** [Test_HumanPlaythrough.cpp](../Tests/Test_HumanPlaythrough.cpp) declares `m_iMaxFrames = 6000` (~3-min wall-clock test). The runner script default is `--exit-after-frames 600`. The CLI flag is a hard cap, so the test is cut off at frame 600 and `Verify` returns false (objectives not yet delivered). Result: `passed=false` on every batch run with default flags.
+**Context:** [Test_HumanPlaythrough.cpp](../Tests/Test_PersonalityPlaythrough.cpp) (renamed to Test_PersonalityPlaythrough.cpp 2026-05-17) declares `m_iMaxFrames = 6000` (~3-min wall-clock test). The runner script default is `--exit-after-frames 600`. The CLI flag is a hard cap, so the test is cut off at frame 600 and `Verify` returns false (objectives not yet delivered). Result: `passed=false` on every batch run with default flags.
 
 **Implication:** Baseline batch reports 33/34 (now 34/35 after this PR). The HumanPlaythrough failure isn't a regression — it's persistent. But Status.md / future PR descriptions will repeatedly need to caveat "1 pre-existing fail."
 
