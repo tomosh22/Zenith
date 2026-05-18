@@ -44,6 +44,7 @@
 #include "Components/DPMainMenuController_Behaviour.h"
 #include "Components/DPPauseMenuController_Behaviour.h"
 #include "Components/DPFogPass_Behaviour.h"
+#include "Components/DPProcLevelBootstrap_Behaviour.h"
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
