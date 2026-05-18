@@ -482,22 +482,23 @@ private:
 		std::fflush(stdout);
 	}
 
-	// Spawn 17 villagers from the layout's axVillagerSpawns. Each gets
-	// the character mesh + transform scale (1, 2, 0.5) so the capsule
-	// collider sizes correctly (mirrors AuthorPlacementBatch's
-	// bIsCharacter=true branch). The y position matches the authored
-	// villagers in GameLevel (y=1.88 -- the character meshes' baked-in
-	// 12x scale lands the model on the floor at this anchor).
+	// Spawn 17 villagers + 1 priest from the layout. Both use SM_Cube as
+	// a placeholder mesh rather than the UE-imported SM_Peasant /
+	// SM_Pope. Reason: even with the 12x scale baked into those .gltfs
+	// the resulting mesh is only ~0.2 m wide × 0.15 m tall, so at the
+	// procgen orbit camera's 129 m distance characters render as
+	// sub-pixel specks -- effectively invisible (reported 2026-05-19).
+	// SM_Cube gives a clearly visible humanoid-sized placeholder. Real
+	// character meshes can be reinstated once the export pipeline has
+	// produced rigid (non-12x-baked) versions, or per-mesh transform
+	// scales are tuned to undo whatever scaling the import did.
 	void SpawnVillagers()
 	{
 		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
 		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
 		if (pxScene == nullptr) return;
 
-		const std::string strMeshPath =
-			std::string(GAME_ASSETS_DIR)
-			+ "Meshes/DevilsPlayground_Assets_Characters_Peasent_SM_Peasant"
-			+ ZENITH_MODEL_EXT;
+		const std::string strMeshPath = GetCubeMeshPath();
 
 		const uint32_t uN = m_xLayout.axVillagerSpawns.GetSize();
 		uint32_t uSpawned = 0;
@@ -516,10 +517,11 @@ private:
 		std::fflush(stdout);
 	}
 
-	// Spawn the single priest. Same character pipeline as villagers but
-	// the Priest_Behaviour OnAwake auto-adds the AIAgent component so
-	// behaviour-tree + perception wire up identically to the authored
-	// GameLevel priest.
+	// Spawn the single priest. Same SM_Cube placeholder path as
+	// villagers but scaled bigger (1.5 × 3 × 0.75 m) so the priest is
+	// visibly distinct from a wandering villager. Priest_Behaviour's
+	// OnAwake auto-adds the AIAgent component so behaviour-tree +
+	// perception wire up identically to the authored GameLevel priest.
 	void SpawnPriest()
 	{
 		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
@@ -527,10 +529,7 @@ private:
 		if (pxScene == nullptr) return;
 		if (!m_xLayout.xPriestSpawn.bValid) return;
 
-		const std::string strMeshPath =
-			std::string(GAME_ASSETS_DIR)
-			+ "Meshes/DevilsPlayground_Assets_Characters_Pope_SM_Pope"
-			+ ZENITH_MODEL_EXT;
+		const std::string strMeshPath = GetCubeMeshPath();
 
 		const DPProcLevel::PriestSpawn& xP = m_xLayout.xPriestSpawn;
 		m_bSpawnedPriest = SpawnCharacterEntity(pxScene, "ProcPriest", 0,
@@ -540,11 +539,28 @@ private:
 		std::fflush(stdout);
 	}
 
-	// Shared character-spawn helper. Returns true on success. The
-	// transform scale of (1, 2, 0.5) gives the capsule collider its
-	// authored humanoid hitbox (radius 0.5, half-height 0.5, total
-	// 2 m tall -- see AuthorPlacementBatch comment at L987-993 of
-	// DevilsPlayground.cpp).
+	static std::string GetCubeMeshPath()
+	{
+		return std::string(GAME_ASSETS_DIR)
+			+ "Meshes/LevelPrototyping_Meshes_SM_Cube"
+			+ ZENITH_MODEL_EXT;
+	}
+
+	// Shared character-spawn helper. Returns true on success.
+	//
+	// SM_Cube is corner-anchored at (0, 0, 0) → (1, 1, 1) in mesh local
+	// space. With scale (sx, sy, sz) and position (px, py, pz), the
+	// visual mesh spans [px, px+sx] × [py, py+sy] × [pz, pz+sz]. We
+	// keep position at the layout's (fX, _, fZ) and y=1 (floor top) so
+	// the character cube sits on the ground. The visual centre is
+	// (fX + sx/2, 1 + sy/2, fZ + sz/2), off by (sx/2, sy/2, sz/2) from
+	// the layout coords; acceptable slop for the placeholder visuals.
+	//
+	// Villager cube: 1 × 2 × 0.5 m  (matches AuthorPlacementBatch's
+	// authored humanoid capsule -- the engine's mesh-aware capsule
+	// sizing reads the same dimensions back out).
+	// Priest cube:   1.5 × 3 × 0.75 m  (50% bigger so the priest is
+	// visually distinguishable from villagers at a glance).
 	bool SpawnCharacterEntity(
 		Zenith_SceneData* pxScene,
 		const char* szPrefix,
@@ -560,20 +576,21 @@ private:
 		Zenith_Entity xEntity(pxScene, std::string(szName));
 		if (!xEntity.IsValid()) return false;
 
-		// Transform: world XZ, anchor at y=1.88 to match GameLevel
-		// villager authoring (the character meshes were exported with a
-		// baked-in 12x scale that lifts the model onto the floor at this
-		// anchor). Yaw rotates the character to face the spawn direction.
-		// Scale (1, 2, 0.5) preserves the humanoid AABB for the capsule.
+		const Zenith_Maths::Vector3 xScale = bIsPriest
+			? Zenith_Maths::Vector3(1.5f, 3.0f, 0.75f)
+			: Zenith_Maths::Vector3(1.0f, 2.0f, 0.5f);
+
 		if (xEntity.HasComponent<Zenith_TransformComponent>())
 		{
 			Zenith_TransformComponent& xT =
 				xEntity.GetComponent<Zenith_TransformComponent>();
-			xT.SetPosition(Zenith_Maths::Vector3(fX, 1.88f, fZ));
+			// Anchor y=1: floor top. Cube extends upward to y=1+scale.y.
+			// Villager: y in [1, 3]; priest: y in [1, 4].
+			xT.SetPosition(Zenith_Maths::Vector3(fX, 1.0f, fZ));
 			const Zenith_Maths::Quat xRot = Zenith_Maths::AngleAxis(
 				fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 			xT.SetRotation(xRot);
-			xT.SetScale(Zenith_Maths::Vector3(1.0f, 2.0f, 0.5f));
+			xT.SetScale(xScale);
 		}
 
 		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
