@@ -137,16 +137,35 @@ public:
 	bool     GetSpawnedPriest()        const { return m_bSpawnedPriest; }
 
 private:
-	// Spawn one entity per WallSegment. SM_Cube has mesh-local bounds
-	// (-1, 0, -1) to (1, 4, 1), so to get a wall of world half-extents
-	// (hx, _, hz) we scale by (hx, 1, hz) -- the mesh-aware OBB code in
-	// Zenith_ColliderComponent then derives the same half-extents from
-	// these bounds + scale.
+	// Spawn one entity per WallSegment. SM_Cube is a UNIT cube anchored
+	// at its (0, 0, 0) corner -- mesh bounds [0, 1]³, NOT the
+	// [-1, 1] × [0, 4] × [-1, 1] the previous comment claimed (verified
+	// against the .gltf min/max). Two consequences for sizing:
 	//
-	// Wall Y position: 0 (the body anchor; mesh-aware offset puts the
-	// OBB centre at y=2 so the wall spans y=0..4 above the floor).
-	// Floor existence is assumed for now -- a later P4 sub-phase will
-	// also spawn a ground plane if the scene doesn't already have one.
+	// 1. Total mesh extent along each axis = 1 unit, so to get a wall of
+	//    world half-extents (hx, _, hz) we scale by (2*hx, sy, 2*hz).
+	//    The earlier code scaled by (hx, _, hz), producing walls half
+	//    the correct length -- reported 2026-05-18.
+	//
+	// 2. The mesh is corner-anchored, NOT centre-anchored. The visible
+	//    mesh extends from entity position toward +X / +Y / +Z. So a
+	//    wall positioned at the LAYOUT'S centre would render offset by
+	//    (+hx, _, +hz) in world space (or rotated by yaw). To put the
+	//    wall's geometric centre at (cx, _, cz), we offset the entity
+	//    position by R(yaw) * (-hx, 0, -hz) -- the rotated vector from
+	//    centre to the min corner of the wall in wall-local space.
+	//
+	// Wall Y: floor occupies y=[0, 1] (matches GameLevel's SM_Floor).
+	// Walls sit on top of the floor at y=1, scale.y=4 so they span
+	// y=[1, 5]. The bot's pathfinder raycasts from y=10 downward and
+	// treats anything > y=1.5 as a "tall obstacle" -- walls comfortably
+	// clear that threshold.
+	//
+	// Rotation convention (visualiser's R_y, PR #95):
+	//   local (lx, lz) -> world (lx*cos + lz*sin, -lx*sin + lz*cos)
+	// So the world offset from wall centre to mesh-corner (-hx, 0, -hz):
+	//   wx_offset = -hx*cos - hz*sin
+	//   wz_offset =  hx*sin - hz*cos
 	void SpawnWalls()
 	{
 		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
@@ -166,25 +185,29 @@ private:
 			Zenith_Entity xEntity(pxScene, std::string(szName));
 			if (!xEntity.IsValid()) continue;
 
-			// Transform: world centre on XZ, anchor at y=0 (so the
-			// mesh-aware OBB centre lands at y=2 = wall midpoint).
 			if (xEntity.HasComponent<Zenith_TransformComponent>())
 			{
 				Zenith_TransformComponent& xT = xEntity.GetComponent<Zenith_TransformComponent>();
-				xT.SetPosition(Zenith_Maths::Vector3(xW.fCentreX, 0.0f, xW.fCentreZ));
-				// Yaw around +Y. The visualiser's R_y matrix (PR #95)
-				// is the same convention TransformComponent uses, so
-				// the wall's yaw can pass through unchanged.
+				// Corner-offset compensates for the mesh's [0, 1]³
+				// corner anchoring so the wall ends up centred on
+				// (xW.fCentreX, _, xW.fCentreZ) after rotation.
+				const float fCosY = std::cos(xW.fYawRadians);
+				const float fSinY = std::sin(xW.fYawRadians);
+				const float fOffsetX = -xW.fHalfExtentX * fCosY - xW.fHalfExtentZ * fSinY;
+				const float fOffsetZ =  xW.fHalfExtentX * fSinY - xW.fHalfExtentZ * fCosY;
+				xT.SetPosition(Zenith_Maths::Vector3(
+					xW.fCentreX + fOffsetX,
+					1.0f,  // sit on top of the floor (floor spans y=[0, 1])
+					xW.fCentreZ + fOffsetZ));
 				const Zenith_Maths::Quat xRot =
 					Zenith_Maths::AngleAxis(xW.fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 				xT.SetRotation(xRot);
-				// Scale x/z to match the wall's world half-extents.
-				// Mesh half-extent on X = 1 (bounds -1..1), so world
-				// half-extent = scale * 1 = scale. Same for Z. Y
-				// stays 1 so the wall's height stays at the mesh's
-				// authored 4 m.
+				// Scale = full wall dimensions: 2*hx along local X,
+				// 4 m tall, 2*hz along local Z.
 				xT.SetScale(Zenith_Maths::Vector3(
-					xW.fHalfExtentX, 1.0f, xW.fHalfExtentZ));
+					2.0f * xW.fHalfExtentX,
+					4.0f,
+					2.0f * xW.fHalfExtentZ));
 			}
 
 			Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
