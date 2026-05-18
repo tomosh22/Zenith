@@ -203,6 +203,182 @@ namespace DPProcLevel
 			return false;
 		}
 
+		// Build wall segments for the layout. Each room contributes 4
+		// edges (bottom, right, top, left in local frame); each edge is
+		// split into 1..N segments by the door gaps that fall on it.
+		// Door points are projected back into each room's local frame so
+		// we know which edge they belong to.
+		//
+		// Convention: emitted WallSegment uses (hx, hz) where hx is the
+		// half-length along the wall's local +X and hz is half-thickness
+		// along local +Z. For edges that run along the room's local +X
+		// (top + bottom), this maps directly: wall hx = segment half-length,
+		// wall hz = half-thickness, wall yaw = room yaw. For edges along
+		// local +Z (left + right) we SWAP into (hx = thickness, hz = length)
+		// so the wall still has yaw = room.yaw -- avoids a 90 deg yaw
+		// offset that would otherwise mess with the visualiser's coord
+		// expectations.
+		void BuildWallSegments(const LevelLayout& xLayoutIn,
+		                       const GenConfig& xCfg,
+		                       Zenith_Vector<WallSegment>& xOut)
+		{
+			xOut.Clear();
+			const float fHalfThick = xCfg.fWallHalfThickness;
+			const float fDoorHalf  = xCfg.fDoorGapHalfWidth;
+
+			for (uint32_t uR = 0; uR < xLayoutIn.axRooms.GetSize(); ++uR)
+			{
+				const Room& xRoom = xLayoutIn.axRooms.Get(uR);
+				const float fCos = std::cos(xRoom.fYawRadians);
+				const float fSin = std::sin(xRoom.fYawRadians);
+				const float fHx  = xRoom.fHalfExtentX;
+				const float fHz  = xRoom.fHalfExtentZ;
+
+				// Door positions in this room's local frame, classified by
+				// which edge they sit on. Index 0 = bottom (lz=-fHz),
+				// 1 = right (lx=+fHx), 2 = top (lz=+fHz), 3 = left (lx=-fHx).
+				Zenith_Vector<float> aaDoorsAlongEdge[4];
+
+				const float kEdgeTol = 0.01f;  // 1 cm; rotation is exact for door projection
+				for (uint32_t uD = 0; uD < xLayoutIn.axDoorPoints.GetSize(); ++uD)
+				{
+					const DoorPoint& xDP = xLayoutIn.axDoorPoints.Get(uD);
+					if (xDP.xRoomId != xRoom.id) continue;
+					// Inverse of R_y rotation (XZ): see PR #95 conventions.
+					//   wx = cx + lx*cos + lz*sin
+					//   wz = cz - lx*sin + lz*cos
+					// Inverse:
+					//   lx = dx*cos - dz*sin
+					//   lz = dx*sin + dz*cos
+					const float fDx = xDP.fX - xRoom.fCentreX;
+					const float fDz = xDP.fZ - xRoom.fCentreZ;
+					const float fLx = fDx * fCos - fDz * fSin;
+					const float fLz = fDx * fSin + fDz * fCos;
+					// Classify by closest edge (one of 4) using same logic as
+					// ProjectDoorPoint -- the door is guaranteed to sit on an
+					// edge because that's how it was authored.
+					const float fAbsLx = std::fabs(fLx);
+					const float fAbsLz = std::fabs(fLz);
+					if (fAbsLx * fHz > fAbsLz * fHx)
+					{
+						// X-edge: door is on left or right
+						const int iEdge = (fLx >= 0.0f) ? 1 : 3;  // right=1, left=3
+						aaDoorsAlongEdge[iEdge].PushBack(fLz);
+						(void)kEdgeTol;
+					}
+					else
+					{
+						// Z-edge: door is on bottom or top
+						const int iEdge = (fLz >= 0.0f) ? 2 : 0;  // top=2, bottom=0
+						aaDoorsAlongEdge[iEdge].PushBack(fLx);
+					}
+				}
+
+				// For each edge, sort door positions along the edge axis,
+				// then split [-half, +half] into segments with gaps.
+				//
+				// Edge 0 (bottom): axis = lx, fixed lz = -fHz
+				// Edge 1 (right):  axis = lz, fixed lx = +fHx
+				// Edge 2 (top):    axis = lx, fixed lz = +fHz
+				// Edge 3 (left):   axis = lz, fixed lx = -fHx
+				const float aLocalFixed[4][2] = {
+					{ 0.0f, -fHz },   // bottom: local (0, -hz), axis = lx
+					{ +fHx, 0.0f },   // right:  local (+hx, 0), axis = lz
+					{ 0.0f, +fHz },   // top:    local (0, +hz), axis = lx
+					{ -fHx, 0.0f },   // left:   local (-hx, 0), axis = lz
+				};
+				const bool abIsXEdge[4] = { true, false, true, false };
+
+				for (int iE = 0; iE < 4; ++iE)
+				{
+					const float fAxisMax = abIsXEdge[iE] ? fHx : fHz;
+					Zenith_Vector<float>& axDoors = aaDoorsAlongEdge[iE];
+
+					// Bubble-sort the door positions (small N -- typically <=2
+					// doors per edge in a BSP layout, so the cost is negligible).
+					for (uint32_t a = 0; a + 1 < axDoors.GetSize(); ++a)
+					{
+						for (uint32_t b = a + 1; b < axDoors.GetSize(); ++b)
+						{
+							if (axDoors.Get(b) < axDoors.Get(a))
+							{
+								const float t = axDoors.Get(a);
+								axDoors.Get(a) = axDoors.Get(b);
+								axDoors.Get(b) = t;
+							}
+						}
+					}
+
+					// Walk along the edge axis, emitting wall segments around
+					// the door gaps. A door at position d removes the interval
+					// [d - fDoorHalf, d + fDoorHalf] from the edge; we emit a
+					// wall for whatever's left.
+					float fCursor = -fAxisMax;
+					Zenith_Vector<float> axBreakpoints;  // pairs of (start, end)
+					for (uint32_t uD = 0; uD < axDoors.GetSize(); ++uD)
+					{
+						const float fDoorPos = axDoors.Get(uD);
+						const float fGapStart = fDoorPos - fDoorHalf;
+						const float fGapEnd   = fDoorPos + fDoorHalf;
+						if (fGapStart > fCursor)
+						{
+							axBreakpoints.PushBack(fCursor);
+							axBreakpoints.PushBack(fGapStart);
+						}
+						if (fGapEnd > fCursor) fCursor = fGapEnd;
+					}
+					if (fCursor < fAxisMax)
+					{
+						axBreakpoints.PushBack(fCursor);
+						axBreakpoints.PushBack(fAxisMax);
+					}
+
+					// Each pair in axBreakpoints is one wall segment.
+					for (uint32_t uP = 0; uP + 1 < axBreakpoints.GetSize(); uP += 2)
+					{
+						const float fA = axBreakpoints.Get(uP);
+						const float fB = axBreakpoints.Get(uP + 1);
+						const float fSegHalf = 0.5f * (fB - fA);
+						if (fSegHalf < 0.001f) continue;  // degenerate
+						const float fSegAxisCentre = 0.5f * (fA + fB);
+
+						// Wall's local-frame centre offset from room centre.
+						float fLocalCX, fLocalCZ;
+						if (abIsXEdge[iE])
+						{
+							fLocalCX = fSegAxisCentre;
+							fLocalCZ = aLocalFixed[iE][1];
+						}
+						else
+						{
+							fLocalCX = aLocalFixed[iE][0];
+							fLocalCZ = fSegAxisCentre;
+						}
+
+						// Rotate to world (R_y).
+						WallSegment xW;
+						xW.fCentreX = xRoom.fCentreX + fLocalCX * fCos + fLocalCZ * fSin;
+						xW.fCentreZ = xRoom.fCentreZ - fLocalCX * fSin + fLocalCZ * fCos;
+						xW.fYawRadians = xRoom.fYawRadians;
+						// Length along wall's local +X if it's an X-edge;
+						// along wall's local +Z if Z-edge. Swap hx/hz to
+						// match (see header comment).
+						if (abIsXEdge[iE])
+						{
+							xW.fHalfExtentX = fSegHalf;
+							xW.fHalfExtentZ = fHalfThick;
+						}
+						else
+						{
+							xW.fHalfExtentX = fHalfThick;
+							xW.fHalfExtentZ = fSegHalf;
+						}
+						xOut.PushBack(xW);
+					}
+				}
+			}
+		}
+
 		// Project the partition-edge midpoint onto a room's nearest edge
 		// to get a door point. The room may be rotated, so we work in the
 		// room's LOCAL frame: rotate the world midpoint into local, clamp
@@ -376,6 +552,10 @@ namespace DPProcLevel
 				xOut.axCorridors.PushBack(xC);
 			}
 		}
+
+		// 4. Wall segments derived from rooms + door points. Runs last so
+		//    every room + door point is finalised before we cut walls.
+		BuildWallSegments(xOut, xConfig, xOut.axWallSegments);
 
 		return true;
 	}

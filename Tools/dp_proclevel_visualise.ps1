@@ -52,8 +52,9 @@ $layout = Get-Content $JsonPath -Raw | ConvertFrom-Json
 $rooms      = if ($layout.rooms)      { @($layout.rooms) }      else { @() }
 $doors      = if ($layout.doorPoints) { @($layout.doorPoints) } else { @() }
 $corridors  = if ($layout.corridors)  { @($layout.corridors) }  else { @() }
+$walls      = if ($layout.walls)      { @($layout.walls) }      else { @() }
 
-if (-not $Quiet) { Write-Host "  + $($rooms.Count) rooms, $($doors.Count) doors, $($corridors.Count) corridors" -ForegroundColor DarkGray }
+if (-not $Quiet) { Write-Host "  + $($rooms.Count) rooms, $($doors.Count) doors, $($corridors.Count) corridors, $($walls.Count) walls" -ForegroundColor DarkGray }
 
 # ----------------------------------------------------------------------
 # World <-> image projection
@@ -152,6 +153,38 @@ for ($i = 0; $i -lt $rooms.Count; ++$i) {
     $labelBrush.Dispose()
 }
 
+# Walls (filled rotated rectangles). Drawn on top of the room fills so
+# we can VISUALLY verify that wall segments hug the room edges and that
+# door gaps appear where expected. Each wall is a top-down OBB; reuse
+# the same R_y corner-rotation logic as the room pass.
+if ($walls.Count -gt 0) {
+    $wallFill   = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 245, 245, 245))
+    $wallStroke = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, 30, 30, 35), 1.0)
+    foreach ($wall in $walls) {
+        $wcx  = [double]$wall.cx
+        $wcz  = [double]$wall.cz
+        $whx  = [double]$wall.hx
+        $whz  = [double]$wall.hz
+        $wyaw = [double]$wall.yaw
+        $wCos = [math]::Cos($wyaw)
+        $wSin = [math]::Sin($wyaw)
+        $wCorners = @(
+            @(-$whx, -$whz), @( $whx, -$whz), @( $whx,  $whz), @(-$whx,  $whz)
+        )
+        $wPts = @()
+        foreach ($lc in $wCorners) {
+            $wx = $wcx + $lc[0] * $wCos + $lc[1] * $wSin
+            $wz = $wcz - $lc[0] * $wSin + $lc[1] * $wCos
+            $pt = Project $wx $wz
+            $wPts += New-Object System.Drawing.Point($pt[0], $pt[1])
+        }
+        $g.FillPolygon($wallFill, [System.Drawing.Point[]]$wPts)
+        $g.DrawPolygon($wallStroke, [System.Drawing.Point[]]$wPts)
+    }
+    $wallFill.Dispose()
+    $wallStroke.Dispose()
+}
+
 # Corridors (line between two door points)
 $corridorPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(220, 220, 220, 230), 2.0)
 foreach ($c in $corridors) {
@@ -180,7 +213,7 @@ $doorStroke.Dispose()
 # Caption (top-left)
 $capFont = New-Object System.Drawing.Font('Consolas', 14.0, [System.Drawing.FontStyle]::Regular)
 $capBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(220, 220, 230))
-$caption = "seed=$($layout.header.seed)  rooms=$($rooms.Count)  doors=$($doors.Count)  corridors=$($corridors.Count)"
+$caption = "seed=$($layout.header.seed)  rooms=$($rooms.Count)  doors=$($doors.Count)  corridors=$($corridors.Count)  walls=$($walls.Count)"
 $g.DrawString($caption, $capFont, $capBrush, 10, 8)
 $boundsCaption = "world bounds: x=[{0:F1},{1:F1}]  z=[{2:F1},{3:F1}]  ({4:F1}m x {5:F1}m)" -f $minX, $maxX, $minZ, $maxZ, $worldW, $worldH
 $g.DrawString($boundsCaption, $capFont, $capBrush, 10, 30)
