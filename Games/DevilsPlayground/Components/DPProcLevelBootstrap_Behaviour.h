@@ -42,6 +42,8 @@
 #include "Components/DPItemBase_Behaviour.h"
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/Priest_Behaviour.h"
+#include "Components/DPOrbitCamera_Behaviour.h"
+#include "Source/PublicInterfaces.h"
 
 #include <cstdio>
 #include <cstdint>
@@ -103,6 +105,19 @@ public:
 		// wire up exactly like the authored GameLevel priest.
 		SpawnVillagers();
 		SpawnPriest();
+	}
+
+	void OnStart() ZENITH_FINAL override
+	{
+		// Camera auto-framing runs in OnStart rather than OnAwake because
+		// DPOrbitCamera_Behaviour::OnAwake initialises its orbit target
+		// + distance to authored defaults. If we set them in OnAwake the
+		// orbit's own OnAwake (which may fire after ours -- script
+		// OnAwake order across entities isn't guaranteed) would clobber
+		// our values. OnStart fires after ALL entities' OnAwake calls,
+		// so by this point the orbit defaults are stable and our
+		// override sticks.
+		FrameCameraToLevel();
 	}
 
 	void OnDestroy() ZENITH_FINAL override
@@ -397,6 +412,74 @@ private:
 		case T::Objective5: return DP_ItemTag::Objective5;
 		default:            return DP_ItemTag::None;
 		}
+	}
+
+	// Auto-frame the orbit camera so the entire generated level fits in
+	// the view frustum regardless of the level's bounds. Called from
+	// OnStart -- by that point DPOrbitCamera_Behaviour::OnAwake has
+	// installed its authored defaults, which we override here.
+	//
+	// Math derivation (constant pitch + FOV from DPOrbitCamera_Behaviour
+	// defaults: pitch = 1.20 rad ≈ 68.75° down, vertical FOV = 55°):
+	//
+	// Camera offset from target at orbit distance d:
+	//   (-cos(α)*d, sin(α)*d, 0)        (for yaw_eff = 3π/2)
+	// Lower frustum edge points at angle α + θv/2 = 96.25° down from
+	// horizontal (i.e., past straight down -- it covers ground BEHIND
+	// the camera relative to the look direction).
+	//
+	// Ground intersection of the lower edge in world X:
+	//   x_near = cx + d * (-cos(α) + sin(α)/tan(α + θv/2))
+	//          = cx + d * (-0.362 - 0.103)
+	//          = cx - 0.465 * d
+	//
+	// For the level's near edge (cx - W/2) to be inside the frustum:
+	//   cx - 0.465d <= cx - W/2
+	//   d >= W / (2 * 0.465)  ≈  1.075 * W
+	//
+	// The "near edge" is the binding constraint -- the upper frustum
+	// edge reaches well past the far edge of the level even at the
+	// minimum distance. With a 20% safety margin and using max(W, D)
+	// (so the level still fits when the player rotates Q/E and the
+	// camera-near axis switches), the formula collapses to:
+	//   d = max(W, D) * 1.075 * 1.20  ≈  1.29 * max(W, D)
+	//
+	// Bumping the orbit's m_fMaxDistance prevents the SetOrbitDistance
+	// clamp from silently capping the computed distance on big levels.
+	void FrameCameraToLevel()
+	{
+		DPOrbitCamera_Behaviour* pxOrbit = nullptr;
+		DP_Query::ForEachScriptInActiveScene<DPOrbitCamera_Behaviour>(
+			[&pxOrbit](Zenith_EntityID, DPOrbitCamera_Behaviour& xOrbit)
+			{
+				pxOrbit = &xOrbit;
+			});
+		if (pxOrbit == nullptr)
+		{
+			std::printf("[DPProcLevelBootstrap] FrameCameraToLevel: "
+				"no DPOrbitCamera_Behaviour found, skipping\n");
+			std::fflush(stdout);
+			return;
+		}
+
+		const float fBoundsW = m_xLayout.fBoundsMaxX - m_xLayout.fBoundsMinX;
+		const float fBoundsD = m_xLayout.fBoundsMaxZ - m_xLayout.fBoundsMinZ;
+		const float fCentreX = (m_xLayout.fBoundsMinX + m_xLayout.fBoundsMaxX) * 0.5f;
+		const float fCentreZ = (m_xLayout.fBoundsMinZ + m_xLayout.fBoundsMaxZ) * 0.5f;
+
+		constexpr float kFitFactor = 1.075f;  // derived from pitch + FOV (see header)
+		constexpr float kMargin    = 1.20f;   // 20% padding around the level edge
+		const float fLevelExtent  = std::max(fBoundsW, fBoundsD);
+		const float fOrbitDistance = kFitFactor * fLevelExtent * kMargin;
+
+		pxOrbit->SetMaxOrbitDistance(std::max(150.0f, fOrbitDistance * 1.10f));
+		pxOrbit->SetOrbitTarget(Zenith_Maths::Vector3(fCentreX, 0.0f, fCentreZ));
+		pxOrbit->SetOrbitDistance(fOrbitDistance);
+
+		std::printf("[DPProcLevelBootstrap] camera framed: "
+			"target=(%.1f, 0, %.1f) distance=%.1f m (level %.1f x %.1f m)\n",
+			fCentreX, fCentreZ, fOrbitDistance, fBoundsW, fBoundsD);
+		std::fflush(stdout);
 	}
 
 	// Spawn 17 villagers from the layout's axVillagerSpawns. Each gets
