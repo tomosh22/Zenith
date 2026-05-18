@@ -81,6 +81,38 @@ namespace DPProcLevel
 		float fYawRadians  = 0.0f;
 	};
 
+	// Types of gameplay element the generator places. Mirrors the
+	// authored-GameLevel structure so P4 can spawn the appropriate
+	// entity for each element (DPPentagram, DPForge, DPDoor, ...).
+	enum class GameElementType : uint8_t
+	{
+		SpawnPoint,    // Where villagers + the player's first possession spawn
+		Pentagram,     // Win-condition delivery point
+		Forge,         // Iron -> Key crafting
+		Door,          // Key-gated; on a corridor not in a room
+		Chest,         // Loot interactable
+		NoiseMachine,  // Aggro the priest interactable
+		Iron,          // Pickup -> input to forge
+		Objective1,    // Pickup -> deliver to pentagram (5 of these)
+		Objective2,
+		Objective3,
+		Objective4,
+		Objective5,
+	};
+
+	struct GameElement
+	{
+		GameElementType eType;
+		float           fX = 0.0f;
+		float           fZ = 0.0f;
+		// Which room this element sits in. -1 for Door (it sits on a
+		// corridor between rooms, not in any single one).
+		RoomId          xRoomId     = kInvalidRoomId;
+		// Only used for Door: which corridor (index into axCorridors)
+		// this door gates. -1 for non-door elements.
+		int32_t         iCorridorId = -1;
+	};
+
 	struct LevelLayout
 	{
 		// Bounds the entire level occupies in world XZ. Set by the
@@ -102,6 +134,11 @@ namespace DPProcLevel
 		// at the end of Generate() so a caller of Generate() gets the
 		// full level description in one go.
 		Zenith_Vector<WallSegment> axWallSegments;
+		// Gameplay elements (pentagram, forge, door, chest, noise machine,
+		// iron, 5 objectives, 1 spawn point). Placed AFTER walls so
+		// the placement code can use the corridor graph to decide which
+		// corridor gets the key-gated door + run a solvability BFS.
+		Zenith_Vector<GameElement> axGameElements;
 	};
 
 	// Generator configuration. Defaults match the v1 design (100x100 m

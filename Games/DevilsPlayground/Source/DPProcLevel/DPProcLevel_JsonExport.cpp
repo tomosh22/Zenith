@@ -82,6 +82,41 @@ namespace DPProcLevel
 			xOut << buf;
 			if (i + 1 < uNW) xOut << ",";
 		}
+		xOut << "],\n";
+
+		// Game elements (P2 placement). Type stored as a string for
+		// the visualiser to pick distinct icons; corridor id only
+		// populated for the Door element.
+		auto TypeName = [](GameElementType e) -> const char*
+		{
+			switch (e)
+			{
+				case GameElementType::SpawnPoint:   return "SpawnPoint";
+				case GameElementType::Pentagram:    return "Pentagram";
+				case GameElementType::Forge:        return "Forge";
+				case GameElementType::Door:         return "Door";
+				case GameElementType::Chest:        return "Chest";
+				case GameElementType::NoiseMachine: return "NoiseMachine";
+				case GameElementType::Iron:         return "Iron";
+				case GameElementType::Objective1:   return "Objective1";
+				case GameElementType::Objective2:   return "Objective2";
+				case GameElementType::Objective3:   return "Objective3";
+				case GameElementType::Objective4:   return "Objective4";
+				case GameElementType::Objective5:   return "Objective5";
+			}
+			return "Unknown";
+		};
+		xOut << "  \"gameElements\": [";
+		const uint32_t uNG = xLayout.axGameElements.GetSize();
+		for (uint32_t i = 0; i < uNG; ++i)
+		{
+			const GameElement& xE = xLayout.axGameElements.Get(i);
+			std::snprintf(buf, sizeof(buf),
+				"{\"type\":\"%s\",\"x\":%.3f,\"z\":%.3f,\"roomId\":%d,\"corridorId\":%d}",
+				TypeName(xE.eType), xE.fX, xE.fZ, xE.xRoomId, xE.iCorridorId);
+			xOut << buf;
+			if (i + 1 < uNG) xOut << ",";
+		}
 		xOut << "]\n";
 
 		xOut << "}\n";

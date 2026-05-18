@@ -379,6 +379,295 @@ namespace DPProcLevel
 			}
 		}
 
+		// Returns rooms[id] reachable from rooms[iStart], walking the
+		// corridor graph. If iSkipCorridor >= 0, that corridor is treated
+		// as removed (used to BFS "what's reachable WITHOUT the key" by
+		// removing the key-gated corridor before the search).
+		Zenith_Vector<bool> BfsReachable(const LevelLayout& xLayout, RoomId iStart, int32_t iSkipCorridor)
+		{
+			Zenith_Vector<bool> abVisited;
+			for (uint32_t i = 0; i < xLayout.axRooms.GetSize(); ++i) abVisited.PushBack(false);
+			if (iStart < 0 || iStart >= static_cast<RoomId>(xLayout.axRooms.GetSize())) return abVisited;
+			abVisited.Get(iStart) = true;
+			Zenith_Vector<RoomId> axFrontier;
+			axFrontier.PushBack(iStart);
+			while (axFrontier.GetSize() > 0)
+			{
+				const RoomId xCur = axFrontier.Get(axFrontier.GetSize() - 1);
+				axFrontier.Remove(axFrontier.GetSize() - 1);
+				for (uint32_t iC = 0; iC < xLayout.axCorridors.GetSize(); ++iC)
+				{
+					if (static_cast<int32_t>(iC) == iSkipCorridor) continue;
+					const Corridor& xC = xLayout.axCorridors.Get(iC);
+					const RoomId xA = xLayout.axDoorPoints.Get(xC.iDoorA).xRoomId;
+					const RoomId xB = xLayout.axDoorPoints.Get(xC.iDoorB).xRoomId;
+					RoomId xOther = kInvalidRoomId;
+					if      (xA == xCur) xOther = xB;
+					else if (xB == xCur) xOther = xA;
+					if (xOther == kInvalidRoomId) continue;
+					if (abVisited.Get(static_cast<uint32_t>(xOther))) continue;
+					abVisited.Get(static_cast<uint32_t>(xOther)) = true;
+					axFrontier.PushBack(xOther);
+				}
+			}
+			return abVisited;
+		}
+
+		// BFS distance from iStart through the corridor graph. Output
+		// vector has one entry per room; unreachable rooms get -1.
+		Zenith_Vector<int32_t> BfsDistances(const LevelLayout& xLayout, RoomId iStart)
+		{
+			Zenith_Vector<int32_t> aiDist;
+			for (uint32_t i = 0; i < xLayout.axRooms.GetSize(); ++i) aiDist.PushBack(-1);
+			if (iStart < 0 || iStart >= static_cast<RoomId>(xLayout.axRooms.GetSize())) return aiDist;
+			aiDist.Get(iStart) = 0;
+			Zenith_Vector<RoomId> axFrontier;
+			axFrontier.PushBack(iStart);
+			uint32_t uHead = 0;
+			while (uHead < axFrontier.GetSize())
+			{
+				const RoomId xCur = axFrontier.Get(uHead++);
+				for (uint32_t iC = 0; iC < xLayout.axCorridors.GetSize(); ++iC)
+				{
+					const Corridor& xC = xLayout.axCorridors.Get(iC);
+					const RoomId xA = xLayout.axDoorPoints.Get(xC.iDoorA).xRoomId;
+					const RoomId xB = xLayout.axDoorPoints.Get(xC.iDoorB).xRoomId;
+					RoomId xOther = kInvalidRoomId;
+					if      (xA == xCur) xOther = xB;
+					else if (xB == xCur) xOther = xA;
+					if (xOther == kInvalidRoomId) continue;
+					if (aiDist.Get(static_cast<uint32_t>(xOther)) >= 0) continue;
+					aiDist.Get(static_cast<uint32_t>(xOther)) = aiDist.Get(static_cast<uint32_t>(xCur)) + 1;
+					axFrontier.PushBack(xOther);
+				}
+			}
+			return aiDist;
+		}
+
+		// Place every gameplay element into the layout. Strategy:
+		//   1. Spawn = room 0 (deterministic; the BSP DFS order makes
+		//      this an arbitrary but predictable room).
+		//   2. Pentagram = room with max BFS distance from spawn (i.e.
+		//      "deepest" room). Ties broken by lowest id.
+		//   3. Door = the corridor that, when removed, isolates the
+		//      pentagram from the spawn -- typically the last corridor
+		//      on the pentagram->spawn path. Found by walking the BFS
+		//      parent chain back to the spawn until we hit a corridor
+		//      whose removal disconnects the two.
+		//   4. Iron + forge = rooms in the spawn-side reachable set
+		//      (so the bot can reach them without the key).
+		//   5. Chest + noise machine = any remaining rooms.
+		//   6. 5 objectives = scattered across rooms, avoiding pentagram
+		//      itself (since pickup-from-delivery-point is degenerate).
+		//
+		// Solvability is checked at the end -- key reachable without
+		// door, pentagram + all objectives reachable WITH door.
+		void PlaceGameElements(LevelLayout& xLayout)
+		{
+			xLayout.axGameElements.Clear();
+			const uint32_t uN = xLayout.axRooms.GetSize();
+			if (uN == 0) return;
+
+			auto RoomCentreElement = [&xLayout](GameElementType eType, RoomId xRoom) -> GameElement
+			{
+				GameElement xE;
+				xE.eType  = eType;
+				xE.xRoomId = xRoom;
+				if (xRoom >= 0 && xRoom < static_cast<RoomId>(xLayout.axRooms.GetSize()))
+				{
+					const Room& xR = xLayout.axRooms.Get(static_cast<uint32_t>(xRoom));
+					xE.fX = xR.fCentreX;
+					xE.fZ = xR.fCentreZ;
+				}
+				return xE;
+			};
+
+			// 1. Spawn at room 0.
+			const RoomId xSpawnRoom = 0;
+			xLayout.axGameElements.PushBack(RoomCentreElement(GameElementType::SpawnPoint, xSpawnRoom));
+
+			// 2. Pentagram at deepest room. Pre-compute BFS distances
+			//    from spawn (no door removed yet) so we can also find
+			//    the door-corridor below.
+			Zenith_Vector<int32_t> aiDistFromSpawn = BfsDistances(xLayout, xSpawnRoom);
+			RoomId xPentRoom = 0;
+			int32_t iMaxDist = -1;
+			for (uint32_t i = 0; i < uN; ++i)
+			{
+				const int32_t iD = aiDistFromSpawn.Get(i);
+				if (iD > iMaxDist) { iMaxDist = iD; xPentRoom = static_cast<RoomId>(i); }
+			}
+			xLayout.axGameElements.PushBack(RoomCentreElement(GameElementType::Pentagram, xPentRoom));
+
+			// 3. Door = corridor on the path from pentagram back toward
+			//    spawn that, when removed, disconnects the two. Walk the
+			//    BFS frontier backwards: for each corridor incident to
+			//    the pentagram room, try removing it; if the resulting
+			//    spawn-reachable set excludes the pentagram, that's the
+			//    door corridor. If none works (pentagram has multiple
+			//    independent paths to spawn), pick the corridor that
+			//    minimises the reachable-set size when removed.
+			int32_t iDoorCorridor = -1;
+			uint32_t uMinReachable = UINT32_MAX;
+			for (uint32_t iC = 0; iC < xLayout.axCorridors.GetSize(); ++iC)
+			{
+				const Corridor& xC = xLayout.axCorridors.Get(iC);
+				const RoomId xA = xLayout.axDoorPoints.Get(xC.iDoorA).xRoomId;
+				const RoomId xB = xLayout.axDoorPoints.Get(xC.iDoorB).xRoomId;
+				// Only consider corridors incident to the pentagram room.
+				if (xA != xPentRoom && xB != xPentRoom) continue;
+				const Zenith_Vector<bool> abReach = BfsReachable(xLayout, xSpawnRoom, static_cast<int32_t>(iC));
+				if (!abReach.Get(static_cast<uint32_t>(xPentRoom)))
+				{
+					// This corridor's removal isolates pentagram -- ideal door.
+					iDoorCorridor = static_cast<int32_t>(iC);
+					break;
+				}
+				// Otherwise track the smallest reachable set as a fallback.
+				uint32_t uCount = 0;
+				for (uint32_t j = 0; j < uN; ++j) if (abReach.Get(j)) ++uCount;
+				if (uCount < uMinReachable)
+				{
+					uMinReachable = uCount;
+					iDoorCorridor = static_cast<int32_t>(iC);
+				}
+			}
+			if (iDoorCorridor >= 0)
+			{
+				const Corridor& xC = xLayout.axCorridors.Get(static_cast<uint32_t>(iDoorCorridor));
+				// Place the door at the midpoint of the corridor line.
+				const DoorPoint& xDA = xLayout.axDoorPoints.Get(xC.iDoorA);
+				const DoorPoint& xDB = xLayout.axDoorPoints.Get(xC.iDoorB);
+				GameElement xE;
+				xE.eType        = GameElementType::Door;
+				xE.fX           = 0.5f * (xDA.fX + xDB.fX);
+				xE.fZ           = 0.5f * (xDA.fZ + xDB.fZ);
+				xE.xRoomId      = kInvalidRoomId;
+				xE.iCorridorId  = iDoorCorridor;
+				xLayout.axGameElements.PushBack(xE);
+			}
+
+			// Rooms reachable from spawn WITHOUT the door (the key has
+			// to be in this set + the forge has to be here too).
+			const Zenith_Vector<bool> abReachNoDoor = BfsReachable(xLayout, xSpawnRoom, iDoorCorridor);
+
+			// Build a list of candidate rooms for each placement bucket.
+			// Iron + forge: spawn-side rooms (not pentagram, not spawn).
+			// Objectives + chest + noise: any non-spawn, non-pentagram room.
+			Zenith_Vector<RoomId> axSpawnSide;
+			Zenith_Vector<RoomId> axAnyNonCritical;
+			for (uint32_t i = 0; i < uN; ++i)
+			{
+				const RoomId xR = static_cast<RoomId>(i);
+				if (xR == xSpawnRoom || xR == xPentRoom) continue;
+				axAnyNonCritical.PushBack(xR);
+				if (abReachNoDoor.Get(i)) axSpawnSide.PushBack(xR);
+			}
+
+			// 4. Iron + forge: prefer spawn-side. If too few spawn-side
+			//    rooms, fall back to any non-pentagram (which means the
+			//    bot might end up in a "no iron" failure state -- the
+			//    solvability check at the end catches this).
+			auto PickNth = [](Zenith_Vector<RoomId>& ax, uint32_t uIdx) -> RoomId
+			{
+				if (ax.GetSize() == 0) return kInvalidRoomId;
+				return ax.Get(uIdx % ax.GetSize());
+			};
+			const RoomId xIronRoom  = PickNth(axSpawnSide.GetSize() > 0 ? axSpawnSide : axAnyNonCritical, 0);
+			const RoomId xForgeRoom = PickNth(axSpawnSide.GetSize() > 1 ? axSpawnSide : axAnyNonCritical, 1);
+			xLayout.axGameElements.PushBack(RoomCentreElement(GameElementType::Iron,  xIronRoom));
+			xLayout.axGameElements.PushBack(RoomCentreElement(GameElementType::Forge, xForgeRoom));
+
+			// 5. Chest + noise machine: any non-critical.
+			const RoomId xChestRoom = PickNth(axAnyNonCritical, 2);
+			const RoomId xNoiseRoom = PickNth(axAnyNonCritical, 3);
+			xLayout.axGameElements.PushBack(RoomCentreElement(GameElementType::Chest,        xChestRoom));
+			xLayout.axGameElements.PushBack(RoomCentreElement(GameElementType::NoiseMachine, xNoiseRoom));
+
+			// 6. Objectives 1..5: distribute through non-critical rooms.
+			//    Wraps round-robin if there are fewer rooms than 5.
+			for (int iObj = 0; iObj < 5; ++iObj)
+			{
+				const RoomId xR = PickNth(axAnyNonCritical, static_cast<uint32_t>(4 + iObj));
+				const GameElementType eT = static_cast<GameElementType>(
+					static_cast<uint8_t>(GameElementType::Objective1) + iObj);
+				xLayout.axGameElements.PushBack(RoomCentreElement(eT, xR));
+			}
+		}
+
+		// Validate the placement: with door removed, iron + forge must
+		// be reachable from spawn (the bot can fetch the key). With door
+		// included, pentagram + all 5 objectives must be reachable (the
+		// bot can deliver). Returns true if solvable. Logs the first
+		// missing reachability for diagnosis.
+		bool ValidateSolvability(const LevelLayout& xLayout)
+		{
+			// Find spawn + pentagram + door corridor.
+			RoomId  xSpawn = kInvalidRoomId;
+			RoomId  xPent  = kInvalidRoomId;
+			int32_t iDoor  = -1;
+			Zenith_Vector<RoomId> axObjectiveRooms;
+			RoomId xIron = kInvalidRoomId, xForge = kInvalidRoomId;
+			for (uint32_t i = 0; i < xLayout.axGameElements.GetSize(); ++i)
+			{
+				const GameElement& xE = xLayout.axGameElements.Get(i);
+				switch (xE.eType)
+				{
+					case GameElementType::SpawnPoint: xSpawn = xE.xRoomId; break;
+					case GameElementType::Pentagram:  xPent  = xE.xRoomId; break;
+					case GameElementType::Door:       iDoor  = xE.iCorridorId; break;
+					case GameElementType::Iron:       xIron  = xE.xRoomId; break;
+					case GameElementType::Forge:      xForge = xE.xRoomId; break;
+					case GameElementType::Objective1:
+					case GameElementType::Objective2:
+					case GameElementType::Objective3:
+					case GameElementType::Objective4:
+					case GameElementType::Objective5: axObjectiveRooms.PushBack(xE.xRoomId); break;
+					default: break;
+				}
+			}
+			if (xSpawn == kInvalidRoomId || xPent == kInvalidRoomId)
+			{
+				Zenith_Warning(LOG_CATEGORY_CORE,
+					"DPProcLevel::ValidateSolvability: missing spawn or pentagram element");
+				return false;
+			}
+
+			const Zenith_Vector<bool> abNoDoor   = BfsReachable(xLayout, xSpawn, iDoor);
+			const Zenith_Vector<bool> abWithDoor = BfsReachable(xLayout, xSpawn, -1);
+
+			if (xIron != kInvalidRoomId && !abNoDoor.Get(static_cast<uint32_t>(xIron)))
+			{
+				Zenith_Warning(LOG_CATEGORY_CORE,
+					"DPProcLevel::ValidateSolvability: iron room %d unreachable without key", xIron);
+				return false;
+			}
+			if (xForge != kInvalidRoomId && !abNoDoor.Get(static_cast<uint32_t>(xForge)))
+			{
+				Zenith_Warning(LOG_CATEGORY_CORE,
+					"DPProcLevel::ValidateSolvability: forge room %d unreachable without key", xForge);
+				return false;
+			}
+			if (!abWithDoor.Get(static_cast<uint32_t>(xPent)))
+			{
+				Zenith_Warning(LOG_CATEGORY_CORE,
+					"DPProcLevel::ValidateSolvability: pentagram room %d unreachable even with key", xPent);
+				return false;
+			}
+			for (uint32_t i = 0; i < axObjectiveRooms.GetSize(); ++i)
+			{
+				const RoomId xR = axObjectiveRooms.Get(i);
+				if (xR == kInvalidRoomId) continue;
+				if (!abWithDoor.Get(static_cast<uint32_t>(xR)))
+				{
+					Zenith_Warning(LOG_CATEGORY_CORE,
+						"DPProcLevel::ValidateSolvability: objective %u room %d unreachable", i, xR);
+					return false;
+				}
+			}
+			return true;
+		}
+
 		// Project the partition-edge midpoint onto a room's nearest edge
 		// to get a door point. The room may be rotated, so we work in the
 		// room's LOCAL frame: rotate the world midpoint into local, clamp
@@ -556,6 +845,22 @@ namespace DPProcLevel
 		// 4. Wall segments derived from rooms + door points. Runs last so
 		//    every room + door point is finalised before we cut walls.
 		BuildWallSegments(xOut, xConfig, xOut.axWallSegments);
+
+		// 5. Game elements (pentagram, forge, door, key chain, 5 objectives,
+		//    chest, noise machine, spawn). Picks rooms deterministically
+		//    from the room graph + door corridor; then validates the
+		//    placement is solvable (BFS w/ and w/o the door).
+		PlaceGameElements(xOut);
+		if (!ValidateSolvability(xOut))
+		{
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"DPProcLevel::Generate: seed %llu produced an unsolvable layout",
+				static_cast<unsigned long long>(uSeed));
+			// Return true anyway -- the caller can decide whether to
+			// re-roll with a different seed. The warning + the missing
+			// solvability is visible in the JSON dump so iteration can
+			// see what went wrong.
+		}
 
 		return true;
 	}

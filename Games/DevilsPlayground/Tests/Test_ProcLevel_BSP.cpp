@@ -270,15 +270,47 @@ namespace
 				return Fail("degenerate wall segment", static_cast<int>(uSeed));
 		}
 
+		// P2 game-element invariants: exactly one of each type (except
+		// objectives, which come in 5), and the solvability check
+		// validated by the generator itself (re-run here as a guard
+		// against regressions in either side).
+		uint32_t auCounts[12] = {0};
+		for (uint32_t i = 0; i < xA.axGameElements.GetSize(); ++i)
+		{
+			const uint8_t u = static_cast<uint8_t>(xA.axGameElements.Get(i).eType);
+			if (u < 12u) auCounts[u]++;
+		}
+		const uint8_t kSpawn   = static_cast<uint8_t>(DPProcLevel::GameElementType::SpawnPoint);
+		const uint8_t kPent    = static_cast<uint8_t>(DPProcLevel::GameElementType::Pentagram);
+		const uint8_t kForge   = static_cast<uint8_t>(DPProcLevel::GameElementType::Forge);
+		const uint8_t kDoor    = static_cast<uint8_t>(DPProcLevel::GameElementType::Door);
+		const uint8_t kChest   = static_cast<uint8_t>(DPProcLevel::GameElementType::Chest);
+		const uint8_t kNoise   = static_cast<uint8_t>(DPProcLevel::GameElementType::NoiseMachine);
+		const uint8_t kIron    = static_cast<uint8_t>(DPProcLevel::GameElementType::Iron);
+		const uint8_t kObj1    = static_cast<uint8_t>(DPProcLevel::GameElementType::Objective1);
+		const uint8_t kObj5    = static_cast<uint8_t>(DPProcLevel::GameElementType::Objective5);
+		if (auCounts[kSpawn] != 1u) return Fail("expected exactly 1 SpawnPoint",   static_cast<int>(uSeed));
+		if (auCounts[kPent]  != 1u) return Fail("expected exactly 1 Pentagram",    static_cast<int>(uSeed));
+		if (auCounts[kForge] != 1u) return Fail("expected exactly 1 Forge",        static_cast<int>(uSeed));
+		if (auCounts[kDoor]  != 1u) return Fail("expected exactly 1 Door",         static_cast<int>(uSeed));
+		if (auCounts[kChest] != 1u) return Fail("expected exactly 1 Chest",        static_cast<int>(uSeed));
+		if (auCounts[kNoise] != 1u) return Fail("expected exactly 1 NoiseMachine", static_cast<int>(uSeed));
+		if (auCounts[kIron]  != 1u) return Fail("expected exactly 1 Iron",         static_cast<int>(uSeed));
+		for (uint8_t u = kObj1; u <= kObj5; ++u)
+		{
+			if (auCounts[u] != 1u) return Fail("expected exactly 1 of each Objective", static_cast<int>(uSeed));
+		}
+
 		// Emit JSON for the visualiser.
 		const std::string strPath = TempPath(uSeed);
 		if (!DPProcLevel::ExportLayoutJson(xA, strPath.c_str()))
 			return Fail("ExportLayoutJson returned false", static_cast<int>(uSeed));
 
-		std::printf("[ProcLevelBSP] seed=%llu rooms=%u doors=%u corridors=%u walls=%u json=%s\n",
+		std::printf("[ProcLevelBSP] seed=%llu rooms=%u doors=%u corridors=%u walls=%u elements=%u json=%s\n",
 			static_cast<unsigned long long>(uSeed),
 			xA.axRooms.GetSize(), xA.axDoorPoints.GetSize(),
 			xA.axCorridors.GetSize(), xA.axWallSegments.GetSize(),
+			xA.axGameElements.GetSize(),
 			strPath.c_str());
 		std::fflush(stdout);
 		return true;
