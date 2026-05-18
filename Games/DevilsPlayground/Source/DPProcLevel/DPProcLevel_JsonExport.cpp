@@ -117,6 +117,52 @@ namespace DPProcLevel
 			xOut << buf;
 			if (i + 1 < uNG) xOut << ",";
 		}
+		xOut << "],\n";
+
+		// Villager spawns (P3). Each entry: world (x, z) + yaw + roomId.
+		xOut << "  \"villagerSpawns\": [";
+		const uint32_t uNV = xLayout.axVillagerSpawns.GetSize();
+		for (uint32_t i = 0; i < uNV; ++i)
+		{
+			const VillagerSpawn& xV = xLayout.axVillagerSpawns.Get(i);
+			std::snprintf(buf, sizeof(buf),
+				"{\"x\":%.3f,\"z\":%.3f,\"yaw\":%.5f,\"roomId\":%d}",
+				xV.fX, xV.fZ, xV.fYawRadians, xV.xRoomId);
+			xOut << buf;
+			if (i + 1 < uNV) xOut << ",";
+		}
+		xOut << "],\n";
+
+		// Priest spawn (single -- DP runs one priest at a time). null if
+		// PlaceAI didn't populate.
+		xOut << "  \"priestSpawn\": ";
+		if (xLayout.xPriestSpawn.bValid)
+		{
+			std::snprintf(buf, sizeof(buf),
+				"{\"x\":%.3f,\"z\":%.3f,\"yaw\":%.5f,\"roomId\":%d}",
+				xLayout.xPriestSpawn.fX, xLayout.xPriestSpawn.fZ,
+				xLayout.xPriestSpawn.fYawRadians, xLayout.xPriestSpawn.xRoomId);
+			xOut << buf;
+		}
+		else
+		{
+			xOut << "null";
+		}
+		xOut << ",\n";
+
+		// Patrol-node cycle. The priest walks node[0] -> node[1] -> ... ->
+		// node[N-1] -> node[0]. Visualiser renders the closing line too.
+		xOut << "  \"patrolNodes\": [";
+		const uint32_t uNP = xLayout.axPatrolNodes.GetSize();
+		for (uint32_t i = 0; i < uNP; ++i)
+		{
+			const PatrolNode& xP = xLayout.axPatrolNodes.Get(i);
+			std::snprintf(buf, sizeof(buf),
+				"{\"x\":%.3f,\"z\":%.3f,\"roomId\":%d}",
+				xP.fX, xP.fZ, xP.xRoomId);
+			xOut << buf;
+			if (i + 1 < uNP) xOut << ",";
+		}
 		xOut << "]\n";
 
 		xOut << "}\n";

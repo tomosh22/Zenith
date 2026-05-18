@@ -113,6 +113,38 @@ namespace DPProcLevel
 		int32_t         iCorridorId = -1;
 	};
 
+	// Villager spawn anchor. Each villager gets a world (x, z) and an
+	// initial facing yaw. iRoomId identifies the room (-1 if somehow
+	// placed off-grid; not expected in current generation).
+	struct VillagerSpawn
+	{
+		float    fX = 0.0f;
+		float    fZ = 0.0f;
+		float    fYawRadians = 0.0f;
+		RoomId   xRoomId     = kInvalidRoomId;
+	};
+
+	// Single priest spawn (DP runs one priest). Same fields as
+	// VillagerSpawn -- kept separate as a clarity marker.
+	struct PriestSpawn
+	{
+		float    fX = 0.0f;
+		float    fZ = 0.0f;
+		float    fYawRadians = 0.0f;
+		RoomId   xRoomId     = kInvalidRoomId;
+		bool     bValid      = false;  // true once PlaceAI populates it
+	};
+
+	// One waypoint in the priest's patrol cycle. The Priest_Behaviour
+	// script walks between consecutive nodes, looping back to the first
+	// after the last.
+	struct PatrolNode
+	{
+		float    fX = 0.0f;
+		float    fZ = 0.0f;
+		RoomId   xRoomId = kInvalidRoomId;
+	};
+
 	struct LevelLayout
 	{
 		// Bounds the entire level occupies in world XZ. Set by the
@@ -139,6 +171,12 @@ namespace DPProcLevel
 		// the placement code can use the corridor graph to decide which
 		// corridor gets the key-gated door + run a solvability BFS.
 		Zenith_Vector<GameElement> axGameElements;
+		// AI placement (P3). 17 villagers distributed by room area, one
+		// priest in a "middle" room, patrol-node cycle walking the
+		// non-pentagram non-spawn rooms.
+		Zenith_Vector<VillagerSpawn> axVillagerSpawns;
+		PriestSpawn                  xPriestSpawn;
+		Zenith_Vector<PatrolNode>    axPatrolNodes;
 	};
 
 	// Generator configuration. Defaults match the v1 design (100x100 m
@@ -180,5 +218,16 @@ namespace DPProcLevel
 		// enough for the bot's 0.5 m capsule with margin).
 		float    fWallHalfThickness = 0.15f;
 		float    fDoorGapHalfWidth  = 1.0f;
+		// AI placement (P3). Total villagers across all non-pentagram
+		// rooms; the per-room count is allocated proportional to room
+		// area, with a min of 1 per non-pentagram room and the spillover
+		// landing in larger rooms. Default 17 matches the authored
+		// GameLevel's villager count.
+		uint32_t uVillagerCount = 17;
+		// Patrol cycle length. Lower bound chosen so the priest never
+		// stands still for too long; cap chosen so any room contributes
+		// at most one waypoint (the priest's patrol naturally rotates
+		// through different rooms instead of dwelling).
+		uint32_t uPatrolNodeCount = 6;
 	};
 }
