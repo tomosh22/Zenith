@@ -1636,12 +1636,18 @@ namespace
 		Zenith_EditorAutomation::AddStep_AttachScript("DPPauseMenuController_Behaviour");
 
 		// ------ Ground plane --------------------------------------------------
-		// Procgen bounds are XZ in [0, 100]. Author a 100×100 m flush slab
-		// centred on (50, 0, 50) so the navmesh generator picks up a
-		// single connected walkable surface across the whole map.
+		// SM_Cube is a unit cube anchored at its (0, 0, 0) corner (mesh
+		// bounds [0, 1]³ -- see the .gltf min/max). The visible mesh is
+		// NOT auto-centred; entity position is the mesh's MIN corner.
+		// So to cover the procgen XZ range [0, 100] with a 1 m thick
+		// slab we anchor at (0, 0, 0) and scale (100, 1, 100). This
+		// mirrors GameLevel's SM_Floor (DP_LevelData::kStaticDeco) which
+		// uses the same position + scale combo. The previous values
+		// (position 50,0,50 + scale 50,0.5,50) put the floor in the
+		// top-right quadrant only -- reported 2026-05-18 by the user.
 		Zenith_EditorAutomation::AddStep_CreateEntity("GroundPlane");
-		Zenith_EditorAutomation::AddStep_SetTransformPosition(50.0f, 0.0f, 50.0f);
-		Zenith_EditorAutomation::AddStep_SetTransformScale(50.0f, 0.5f, 50.0f);
+		Zenith_EditorAutomation::AddStep_SetTransformPosition(0.0f, 0.0f, 0.0f);
+		Zenith_EditorAutomation::AddStep_SetTransformScale(100.0f, 1.0f, 100.0f);
 		AuthorMeshAndCollider(
 			"/Game/LevelPrototyping/Meshes/SM_Cube.SM_Cube",
 			/*bAddCollider=*/true,
