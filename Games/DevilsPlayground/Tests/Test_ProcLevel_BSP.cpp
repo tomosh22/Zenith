@@ -81,10 +81,21 @@ namespace
 	bool LayoutsIdentical(const DPProcLevel::LevelLayout& xA,
 	                      const DPProcLevel::LevelLayout& xB)
 	{
-		if (xA.uSeed                 != xB.uSeed)                 return false;
-		if (xA.axRooms.GetSize()     != xB.axRooms.GetSize())     return false;
-		if (xA.axDoorPoints.GetSize()!= xB.axDoorPoints.GetSize()) return false;
-		if (xA.axCorridors.GetSize() != xB.axCorridors.GetSize()) return false;
+		if (xA.uSeed                       != xB.uSeed)                       return false;
+		if (xA.axRooms.GetSize()           != xB.axRooms.GetSize())           return false;
+		if (xA.axDoorPoints.GetSize()      != xB.axDoorPoints.GetSize())      return false;
+		if (xA.axCorridors.GetSize()       != xB.axCorridors.GetSize())       return false;
+		if (xA.axWallSegments.GetSize()    != xB.axWallSegments.GetSize())    return false;
+		for (uint32_t i = 0; i < xA.axWallSegments.GetSize(); ++i)
+		{
+			const auto& wA = xA.axWallSegments.Get(i);
+			const auto& wB = xB.axWallSegments.Get(i);
+			if (wA.fCentreX != wB.fCentreX) return false;
+			if (wA.fCentreZ != wB.fCentreZ) return false;
+			if (wA.fHalfExtentX != wB.fHalfExtentX) return false;
+			if (wA.fHalfExtentZ != wB.fHalfExtentZ) return false;
+			if (wA.fYawRadians != wB.fYawRadians) return false;
+		}
 		for (uint32_t i = 0; i < xA.axRooms.GetSize(); ++i)
 		{
 			const auto& rA = xA.axRooms.Get(i);
@@ -239,14 +250,35 @@ namespace
 		if (!LayoutConnected(xA))
 			return Fail("corridor graph is disconnected", static_cast<int>(uSeed));
 
+		// P1 wall-emission invariants:
+		//   * Each room contributes >= 4 wall segments BEFORE doors are
+		//     subtracted (one per edge). With door gaps, some edges
+		//     might be fully removed only in the pathological case
+		//     where an edge has multiple wide doors -- not currently
+		//     possible because the BSP layout only puts one door per
+		//     shared partition edge. So the lower bound is 4*rooms -
+		//     doors, conservatively check >= 3*rooms which covers any
+		//     reasonable splitting.
+		//   * No degenerate (zero-half-extent) walls.
+		const uint32_t uExpectedMinWalls = 3u * xA.axRooms.GetSize();
+		if (xA.axWallSegments.GetSize() < uExpectedMinWalls)
+			return Fail("too few wall segments emitted", static_cast<int>(uSeed));
+		for (uint32_t i = 0; i < xA.axWallSegments.GetSize(); ++i)
+		{
+			const auto& xW = xA.axWallSegments.Get(i);
+			if (xW.fHalfExtentX < 0.001f || xW.fHalfExtentZ < 0.001f)
+				return Fail("degenerate wall segment", static_cast<int>(uSeed));
+		}
+
 		// Emit JSON for the visualiser.
 		const std::string strPath = TempPath(uSeed);
 		if (!DPProcLevel::ExportLayoutJson(xA, strPath.c_str()))
 			return Fail("ExportLayoutJson returned false", static_cast<int>(uSeed));
 
-		std::printf("[ProcLevelBSP] seed=%llu rooms=%u doors=%u corridors=%u json=%s\n",
+		std::printf("[ProcLevelBSP] seed=%llu rooms=%u doors=%u corridors=%u walls=%u json=%s\n",
 			static_cast<unsigned long long>(uSeed),
-			xA.axRooms.GetSize(), xA.axDoorPoints.GetSize(), xA.axCorridors.GetSize(),
+			xA.axRooms.GetSize(), xA.axDoorPoints.GetSize(),
+			xA.axCorridors.GetSize(), xA.axWallSegments.GetSize(),
 			strPath.c_str());
 		std::fflush(stdout);
 		return true;

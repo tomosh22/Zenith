@@ -66,6 +66,22 @@ namespace DPProcLevel
 			xOut << buf;
 			if (i + 1 < uNC) xOut << ",";
 		}
+		xOut << "],\n";
+
+		// Wall segments (P1 geometry emission). Same OBB schema as
+		// rooms (cx, cz, hx, hz, yaw) so the visualiser can reuse its
+		// existing rotated-rectangle rendering.
+		xOut << "  \"walls\": [";
+		const uint32_t uNW = xLayout.axWallSegments.GetSize();
+		for (uint32_t i = 0; i < uNW; ++i)
+		{
+			const WallSegment& xW = xLayout.axWallSegments.Get(i);
+			std::snprintf(buf, sizeof(buf),
+				"{\"cx\":%.3f,\"cz\":%.3f,\"hx\":%.3f,\"hz\":%.3f,\"yaw\":%.5f}",
+				xW.fCentreX, xW.fCentreZ, xW.fHalfExtentX, xW.fHalfExtentZ, xW.fYawRadians);
+			xOut << buf;
+			if (i + 1 < uNW) xOut << ",";
+		}
 		xOut << "]\n";
 
 		xOut << "}\n";

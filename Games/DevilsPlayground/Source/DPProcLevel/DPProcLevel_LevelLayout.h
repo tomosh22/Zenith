@@ -63,6 +63,24 @@ namespace DPProcLevel
 		int32_t iDoorB = -1;
 	};
 
+	// Top-down OBB describing one straight wall segment. Same shape as
+	// Zenith_Telemetry::SceneObstacle so the segments are easy to
+	// visualise + later P4 can translate them 1:1 into Placement structs
+	// for AuthorPlacementBatch.
+	//
+	// Convention: half-extent X is the wall's "length" axis (along its
+	// own local +X), half-extent Z is the wall's "thickness" axis. The
+	// yaw places the wall in world XZ; a wall with yaw=0 is long along
+	// world +X.
+	struct WallSegment
+	{
+		float fCentreX     = 0.0f;
+		float fCentreZ     = 0.0f;
+		float fHalfExtentX = 0.0f;   // half-length along wall's local +X
+		float fHalfExtentZ = 0.0f;   // half-thickness along wall's local +Z
+		float fYawRadians  = 0.0f;
+	};
+
 	struct LevelLayout
 	{
 		// Bounds the entire level occupies in world XZ. Set by the
@@ -76,9 +94,14 @@ namespace DPProcLevel
 		uint64_t uSeed = 0;     // generator seed -- echoed back so the
 		                        //   visualiser caption can show it
 
-		Zenith_Vector<Room>      axRooms;
-		Zenith_Vector<DoorPoint> axDoorPoints;
-		Zenith_Vector<Corridor>  axCorridors;
+		Zenith_Vector<Room>        axRooms;
+		Zenith_Vector<DoorPoint>   axDoorPoints;
+		Zenith_Vector<Corridor>    axCorridors;
+		// Wall segments derived from rooms + door points (4 edges per
+		// room, split into multiple segments by door gaps). Populated
+		// at the end of Generate() so a caller of Generate() gets the
+		// full level description in one go.
+		Zenith_Vector<WallSegment> axWallSegments;
 	};
 
 	// Generator configuration. Defaults match the v1 design (100x100 m
@@ -112,5 +135,13 @@ namespace DPProcLevel
 		// bad. Set both to 1.0 to force square rooms.
 		float    fAspectMin      = 0.5f;
 		float    fAspectMax      = 2.0f;
+		// Wall geometry knobs. fWallHalfThickness is the perpendicular
+		// thickness of each emitted wall segment (default 0.15 -> 30 cm
+		// total thickness, matches the BuildingAssetKit convention).
+		// fDoorGapHalfWidth is the half-width of the gap left in a
+		// wall where a door point sits (default 1.0 -> 2 m clearance,
+		// enough for the bot's 0.5 m capsule with margin).
+		float    fWallHalfThickness = 0.15f;
+		float    fDoorGapHalfWidth  = 1.0f;
 	};
 }
