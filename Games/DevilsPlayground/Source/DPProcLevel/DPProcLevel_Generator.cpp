@@ -140,30 +140,40 @@ namespace DPProcLevel
 		// room of half-extents (hx, hz) has bounding-circle radius
 		// sqrt(hx^2 + hz^2). For ANY rotation to keep the room inside
 		// its partition (with margin), that radius must be <= the
-		// partition's inscribed-circle radius. We pick the LARGEST
-		// square satisfying that constraint:
-		//   hx = hz = (min(pHX, pHZ) - margin) / sqrt(2)
-		// This gives ~70%% of the axis-aligned room you'd get from the
-		// naive "half-extent = partition half-extent - margin" formula,
-		// in exchange for guaranteeing the rotated OBB never leaks into
-		// an adjacent partition. Visual variety still comes from yaw
-		// rotation; if rectangular rooms are wanted later, swap this
-		// for an aspect-ratio-aware sizing that preserves bounding-circle
-		// <= inscribed-circle.
-		Room PartitionToRoom(const Partition& xP, RoomId xId, const GenConfig& xCfg)
+		// partition's inscribed-circle radius.
+		//
+		// Given an aspect ratio a = hz/hx, the constraint becomes
+		//   sqrt(hx^2 + (a*hx)^2) = hx * sqrt(1 + a^2) <= R
+		// so hx = R / sqrt(1 + a^2) and hz = a*hx. This preserves the
+		// bounding-circle-inside-inscribed-circle invariant for any
+		// aspect, so rooms can be rectangular without leaking into
+		// adjacent partitions after rotation.
+		//
+		// fMaxRoomSize clamps the long axis without distorting the
+		// aspect: if either hx or hz exceeds the cap, both are scaled
+		// down proportionally.
+		Room PartitionToRoom(const Partition& xP, RoomId xId,
+		                     const GenConfig& xCfg, float fAspect)
 		{
 			const float fMargin = 0.5f;
 			const float fPartHX = 0.5f * (xP.fMaxX - xP.fMinX);
 			const float fPartHZ = 0.5f * (xP.fMaxZ - xP.fMinZ);
 			const float fSafeR  = std::min(fPartHX, fPartHZ) - fMargin;
-			constexpr float kInvSqrt2 = 0.70710678118f;
-			const float fH = std::min(fSafeR * kInvSqrt2, xCfg.fMaxRoomSize);
+			float fHx = fSafeR / std::sqrt(1.0f + fAspect * fAspect);
+			float fHz = fAspect * fHx;
+			const float fMaxDim = std::max(fHx, fHz);
+			if (fMaxDim > xCfg.fMaxRoomSize)
+			{
+				const float fScale = xCfg.fMaxRoomSize / fMaxDim;
+				fHx *= fScale;
+				fHz *= fScale;
+			}
 			Room xRoom;
 			xRoom.id           = xId;
 			xRoom.fCentreX     = 0.5f * (xP.fMinX + xP.fMaxX);
 			xRoom.fCentreZ     = 0.5f * (xP.fMinZ + xP.fMaxZ);
-			xRoom.fHalfExtentX = fH;
-			xRoom.fHalfExtentZ = fH;
+			xRoom.fHalfExtentX = fHx;
+			xRoom.fHalfExtentZ = fHz;
 			xRoom.fYawRadians  = 0.0f;
 			return xRoom;
 		}
@@ -305,7 +315,11 @@ namespace DPProcLevel
 
 		for (uint32_t i = 0; i < axLeaves.GetSize(); ++i)
 		{
-			Room xRoom = PartitionToRoom(axLeaves.Get(i), static_cast<RoomId>(i), xConfig);
+			// Sample aspect ratio per room. Drawn BEFORE any yaw retry
+			// so the room's shape is fixed and only its orientation
+			// gets re-rolled. Same seed -> same aspects -> same rooms.
+			const float fAspect = UniformF(xRng, xConfig.fAspectMin, xConfig.fAspectMax);
+			Room xRoom = PartitionToRoom(axLeaves.Get(i), static_cast<RoomId>(i), xConfig, fAspect);
 
 			bool bAccepted = false;
 			for (uint32_t uAttempt = 0; uAttempt < xConfig.uMaxYawRetries; ++uAttempt)

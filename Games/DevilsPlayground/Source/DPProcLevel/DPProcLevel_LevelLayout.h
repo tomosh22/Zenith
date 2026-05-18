@@ -104,5 +104,13 @@ namespace DPProcLevel
 		// orientation that doesn't overlap previously-placed rooms.
 		// After this many failures the room falls back to yaw=0.
 		uint32_t uMaxYawRetries  = 16;
+		// Room aspect-ratio range. Each room's hz/hx ratio is sampled
+		// uniformly in [fAspectMin, fAspectMax]. Defaults [0.5, 2.0]
+		// give rooms anywhere from "twice as wide as tall" through
+		// square to "twice as tall as wide" -- visible rectangular
+		// variety without producing sliver-shaped rooms that look
+		// bad. Set both to 1.0 to force square rooms.
+		float    fAspectMin      = 0.5f;
+		float    fAspectMax      = 2.0f;
 	};
 }
