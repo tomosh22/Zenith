@@ -126,6 +126,26 @@ namespace Zenith_Telemetry
 	}
 
 	// =========================================================
+	// SceneObstacle
+	// =========================================================
+	void SceneObstacle::WriteToDataStream(Zenith_DataStream& xS) const
+	{
+		xS << fCentreX;
+		xS << fCentreZ;
+		xS << fHalfExtentX;
+		xS << fHalfExtentZ;
+		xS << fYawRadians;
+	}
+	void SceneObstacle::ReadFromDataStream(Zenith_DataStream& xS)
+	{
+		xS >> fCentreX;
+		xS >> fCentreZ;
+		xS >> fHalfExtentX;
+		xS >> fHalfExtentZ;
+		xS >> fYawRadians;
+	}
+
+	// =========================================================
 	// Header
 	// =========================================================
 	void Header::WriteToDataStream(Zenith_DataStream& xS) const
@@ -137,6 +157,15 @@ namespace Zenith_Telemetry
 		WriteString(xS, strSceneName);
 		xS << fFixedDt;
 		xS << uSamplePeriodFrames;
+		// v2+ only: obstacle count + list. Writers always emit v2 so a
+		// recording produced by current code always carries this section
+		// (empty if the caller didn't populate it).
+		const uint32_t uNumObs = axObstacles.GetSize();
+		xS << uNumObs;
+		for (uint32_t i = 0; i < uNumObs; ++i)
+		{
+			axObstacles.Get(i).WriteToDataStream(xS);
+		}
 	}
 	void Header::ReadFromDataStream(Zenith_DataStream& xS)
 	{
@@ -147,6 +176,26 @@ namespace Zenith_Telemetry
 		ReadString(xS, strSceneName);
 		xS >> fFixedDt;
 		xS >> uSamplePeriodFrames;
+		// v2+ adds the obstacles list. v1 files leave axObstacles empty
+		// (default state). Magic + version are validated by Reader, so
+		// hitting this read with uVersion==1 just means we skip the
+		// obstacle payload and treat the file as obstacle-free.
+		axObstacles.Clear();
+		if (uVersion >= 2u)
+		{
+			uint32_t uNumObs = 0;
+			xS >> uNumObs;
+			// Safety cap: a level with > 64k walls is almost certainly
+			// a corrupt count; bail to zero so the reader doesn't try
+			// to allocate gigabytes.
+			if (uNumObs > 65536u) uNumObs = 0;
+			for (uint32_t i = 0; i < uNumObs; ++i)
+			{
+				SceneObstacle xO;
+				xO.ReadFromDataStream(xS);
+				axObstacles.PushBack(xO);
+			}
+		}
 	}
 
 	// =========================================================
@@ -284,7 +333,10 @@ namespace Zenith_Telemetry
 				"Zenith_Telemetry::Reader: bad magic 0x%08X in %s", m_xHeader.uMagic, szBinaryPath);
 			return false;
 		}
-		if (m_xHeader.uVersion != 1u)
+		// Accept v1 (legacy, no obstacles) and v2 (current, header carries
+		// SceneObstacle list). Anything else is a forward-incompat file
+		// produced by a newer writer than this reader knows how to parse.
+		if (m_xHeader.uVersion != 1u && m_xHeader.uVersion != 2u)
 		{
 			Zenith_Error(LOG_CATEGORY_CORE,
 				"Zenith_Telemetry::Reader: unknown version %u in %s", m_xHeader.uVersion, szBinaryPath);
@@ -349,7 +401,23 @@ namespace Zenith_Telemetry
 		xOut << "    \"startUTCMs\": " << m_xHeader.uStartUTCMs << ",\n";
 		xOut << "    \"sceneName\": \"" << m_xHeader.strSceneName << "\",\n";
 		xOut << "    \"fixedDt\": " << m_xHeader.fFixedDt << ",\n";
-		xOut << "    \"samplePeriodFrames\": " << m_xHeader.uSamplePeriodFrames << "\n";
+		xOut << "    \"samplePeriodFrames\": " << m_xHeader.uSamplePeriodFrames << ",\n";
+		// Static-scene obstacles. Always emitted (empty array if none) so
+		// downstream readers (visualiser, etc.) don't need a fallback path
+		// when the writer was older or didn't populate them.
+		xOut << "    \"obstacles\": [";
+		const uint32_t uNumObs = m_xHeader.axObstacles.GetSize();
+		for (uint32_t i = 0; i < uNumObs; ++i)
+		{
+			const SceneObstacle& xO = m_xHeader.axObstacles.Get(i);
+			char buf[256];
+			std::snprintf(buf, sizeof(buf),
+				"{\"cx\":%.3f,\"cz\":%.3f,\"hx\":%.3f,\"hz\":%.3f,\"yaw\":%.5f}",
+				xO.fCentreX, xO.fCentreZ, xO.fHalfExtentX, xO.fHalfExtentZ, xO.fYawRadians);
+			xOut << buf;
+			if (i + 1 < uNumObs) xOut << ",";
+		}
+		xOut << "]\n";
 		xOut << "  },\n";
 
 		// Frames

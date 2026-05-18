@@ -267,6 +267,47 @@ $borderPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(60, 
 $g.DrawRectangle($borderPen, $offsetX, $offsetY, $drawW, $drawH)
 $borderPen.Dispose()
 
+# ----------------------------------------------------------------------
+# Scene-obstacle layer (walls, props). Drawn BEFORE entity trails so they
+# sit visually behind the paths. Each obstacle is a top-down OBB stamped
+# into the telemetry header by the recording session; we project its 4
+# corners through the same world->image map the entity trails use, then
+# fill as a semi-transparent grey polygon. v1 telemetry files have no
+# obstacles field, so the loop is a no-op there.
+# ----------------------------------------------------------------------
+$obstacles = if ($telemetry.header.obstacles) { @($telemetry.header.obstacles) } else { @() }
+if ($obstacles.Count -gt 0) {
+    if (-not $Quiet) { Write-Host "  + $($obstacles.Count) scene obstacles" -ForegroundColor DarkGray }
+    # 40% alpha matte grey -- low enough that overlapping trails stay
+    # clearly readable, opaque enough that the wall layout is obvious.
+    $wallFill   = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(102, 130, 135, 145))
+    $wallStroke = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(150, 160, 165, 175), 1.0)
+    foreach ($obs in $obstacles) {
+        $cx  = [double]$obs.cx
+        $cz  = [double]$obs.cz
+        $hx  = [double]$obs.hx
+        $hz  = [double]$obs.hz
+        $yaw = [double]$obs.yaw
+        $cosY = [math]::Cos($yaw)
+        $sinY = [math]::Sin($yaw)
+        # 4 local corners of the OBB (CCW in local XZ), rotated into world.
+        $corners = @(
+            @(-$hx, -$hz), @( $hx, -$hz), @( $hx,  $hz), @(-$hx,  $hz)
+        )
+        $worldPts = @()
+        foreach ($lc in $corners) {
+            $wx = $cx + $lc[0] * $cosY - $lc[1] * $sinY
+            $wz = $cz + $lc[0] * $sinY + $lc[1] * $cosY
+            $pt = Project $wx $wz
+            $worldPts += New-Object System.Drawing.Point($pt[0], $pt[1])
+        }
+        $g.FillPolygon($wallFill, [System.Drawing.Point[]]$worldPts)
+        $g.DrawPolygon($wallStroke, [System.Drawing.Point[]]$worldPts)
+    }
+    $wallFill.Dispose()
+    $wallStroke.Dispose()
+}
+
 # Per-entity colour palette. Hash entity-id into a fixed palette of 17
 # distinguishable hues + cycle for overflow. Priest gets a fixed bright
 # red because there's typically only one and it's visually load-bearing.
