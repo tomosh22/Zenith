@@ -292,7 +292,10 @@ namespace
 		if (auCounts[kSpawn] != 1u) return Fail("expected exactly 1 SpawnPoint",   static_cast<int>(uSeed));
 		if (auCounts[kPent]  != 1u) return Fail("expected exactly 1 Pentagram",    static_cast<int>(uSeed));
 		if (auCounts[kForge] != 1u) return Fail("expected exactly 1 Forge",        static_cast<int>(uSeed));
-		if (auCounts[kDoor]  != 1u) return Fail("expected exactly 1 Door",         static_cast<int>(uSeed));
+		// Pentagram has 1..N incident corridors -- each gets its own door
+		// so the bot can't bypass the puzzle via an unlocked alternate path.
+		// Any count >= 1 is acceptable.
+		if (auCounts[kDoor]  <  1u) return Fail("expected >= 1 Door",              static_cast<int>(uSeed));
 		if (auCounts[kChest] != 1u) return Fail("expected exactly 1 Chest",        static_cast<int>(uSeed));
 		if (auCounts[kNoise] != 1u) return Fail("expected exactly 1 NoiseMachine", static_cast<int>(uSeed));
 		if (auCounts[kIron]  != 1u) return Fail("expected exactly 1 Iron",         static_cast<int>(uSeed));
