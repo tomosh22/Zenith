@@ -119,6 +119,17 @@ static bool Step_ProcLevelBootstrap(int iFrame)
 		return false;
 	}
 
+	// P4b -- the bootstrap should have spawned one entity per wall
+	// segment. Allow a small slack for entity creation failure (e.g.
+	// scene full) -- in practice the count should match exactly with
+	// an empty test scene.
+	const uint32_t uSpawned = pxBootstrap->GetSpawnedWallCount();
+	if (uSpawned != xLayout.axWallSegments.GetSize())
+	{
+		g_szFailureReason = "Spawned wall count != layout wall-segment count";
+		return false;
+	}
+
 	g_bPassed = true;
 	std::printf("[ProcLevelBootstrap] PASS: rooms=%u walls=%u elements=%u villagers=%u priest=%d\n",
 		xLayout.axRooms.GetSize(),
