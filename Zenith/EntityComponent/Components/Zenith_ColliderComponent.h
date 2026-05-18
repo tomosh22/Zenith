@@ -79,6 +79,20 @@ private:
 public:
 #endif
 	
+public:
+	// Public mesh-aware box sizing -- shared between CreateBoxShape (which builds the
+	// Jolt body) and external consumers that need to know the actual half-extents +
+	// local offset the physics body was built with. Telemetry obstacle scanning
+	// (Test_PersonalityPlaythrough) uses this to emit world-space wall OBBs that
+	// match the colliders the bot is actually navigating against, rather than
+	// guessing from raw transform scale (which would miss the mesh-aware offset
+	// the BuildingAssetKit walls rely on -- mesh bounds (-1,0,-1)..(1,4,1) means
+	// the Y offset is mid-height, not zero).
+	void ComputeBoxDimensionsAndOffset(const Zenith_Maths::Vector3& xScale,
+		Zenith_Maths::Vector3& xHalfExtentsOut,
+		Zenith_Maths::Vector3& xLocalOffsetOut,
+		bool bWarnOnDegenerateBounds) const;
+
 private:
 	// Shape factories used by AddCollider. Kept private because they can (and do) mutate
 	// member state — CreateTerrainShape and CreateConvexOrMeshShape allocate
@@ -90,13 +104,6 @@ private:
 	// AddRefs the live shape so it survives the local ShapeResult's destruction at function
 	// exit. Either way the caller adopts a single owning reference.
 	JPH::RefConst<JPH::Shape> CreateBoxShape(const Zenith_Maths::Vector3& xScale) const;
-	// Shared box-sizing math used by CreateBoxShape AND QueueDebugDraw so the
-	// wireframe visualisation matches the physics body's actual half-extents
-	// + mesh-centre offset. See implementation for the unit-cube fallback.
-	void ComputeBoxDimensionsAndOffset(const Zenith_Maths::Vector3& xScale,
-		Zenith_Maths::Vector3& xHalfExtentsOut,
-		Zenith_Maths::Vector3& xLocalOffsetOut,
-		bool bWarnOnDegenerateBounds) const;
 	JPH::RefConst<JPH::Shape> CreateSphereShape(const Zenith_Maths::Vector3& xScale) const;
 	JPH::RefConst<JPH::Shape> CreateCapsuleShape(const Zenith_Maths::Vector3& xScale, float fMinScale) const;
 	JPH::RefConst<JPH::Shape> CreateTerrainShape();
