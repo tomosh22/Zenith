@@ -8,6 +8,12 @@
     <ClCompile Include="..\Source\DPMaterials.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DPProcLevel\DPProcLevel_Generator.cpp">
+      <Filter>Source\DPProcLevel</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Source\DPProcLevel\DPProcLevel_JsonExport.cpp">
+      <Filter>Source\DPProcLevel</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DPTelemetry.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -326,6 +332,9 @@
     <ClCompile Include="..\Tests\Test_PriestPursuit.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_ProcLevel_BSP.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_PublicInterfaces.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -427,6 +436,15 @@
     <ClInclude Include="..\Source\DPMaterials.h">
       <Filter>Source</Filter>
     </ClInclude>
+    <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_Generator.h">
+      <Filter>Source\DPProcLevel</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_JsonExport.h">
+      <Filter>Source\DPProcLevel</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_LevelLayout.h">
+      <Filter>Source\DPProcLevel</Filter>
+    </ClInclude>
     <ClInclude Include="..\Source\DPTelemetry.h">
       <Filter>Source</Filter>
     </ClInclude>
@@ -461,6 +479,9 @@
     </Filter>
     <Filter Include="Source">
       <UniqueIdentifier>{d1bd1bf3-e8b3-cc5b-d652-680e16935819}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\DPProcLevel">
+      <UniqueIdentifier>{7e214264-baa7-437e-5700-c33e33a7bb41}</UniqueIdentifier>
     </Filter>
     <Filter Include="Tests">
       <UniqueIdentifier>{e52d7990-6129-41c3-18f9-76ebe4af3a75}</UniqueIdentifier>
