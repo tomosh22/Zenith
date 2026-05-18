@@ -48,25 +48,44 @@
 #include <string>
 
 // ============================================================================
-// PersonalityPlaythrough_* — pure-input playthrough, 4 personality variants.
+// PersonalityPlaythrough_* — pure-input playthrough, 5 personality variants.
 //
 // Drives DevilsPlayground end-to-end using ONLY Zenith_InputSimulator (no
 // teleporting, no *ForTest bypass calls, no SetInteractOnOverlap, no
 // SetPossessedVillager). Each test registers under a distinct personality
-// (Human / Stealth / Speedrun / Reckless) that tunes the input layer:
+// (Casual / Stealth / Speedrunner / Berserker / Methodical) that tunes
+// the input layer:
 //
-//   * Human    — base walking, single F-press per interaction, runs the
-//                pause-overlay test. Matches the pre-2026-05-17 reference
-//                "HumanPlaythrough_Test" behaviour exactly.
-//   * Stealth  — holds Ctrl while walking (walk-quiet, half speed, halved
-//                footstep loudness). Walk budget doubled to compensate
-//                for the speed halving. Single F-press per interaction.
-//   * Speedrun — holds Shift while walking (sprint, faster + louder).
-//                Single F-press per interaction.
-//   * Reckless — base walking + presses F every frame while in range of
-//                a target (vs once per arrival). Skips the pause-overlay
-//                phases. Bait for footstep/aggro regressions: it accepts
-//                villager deaths + re-possession instead of avoiding them.
+//   * Casual      — baseline. Walks normally, single F-press, runs the
+//                   pause-overlay test, engages every system. Reference
+//                   recording the others are compared against.
+//   * Stealth     — holds Ctrl while walking (walk-quiet, half speed,
+//                   halved footstep loudness) AND skips the noise machine
+//                   entirely (it's the one in-game source of deliberate
+//                   priest aggro). Walk budget doubled to compensate for
+//                   half speed. Single F-press per interaction.
+//   * Speedrunner — adaptive sprint: holds Shift only while the next
+//                   target is > kSprintMinDistanceM (5 m) away, walks on
+//                   close approach. Skips the pause-overlay test. The
+//                   pre-rework "Speedrun" (blind-sprint) was slower than
+//                   Casual because sprint_life_cost_extra_per_s burned
+//                   through the 30 s life timer and forced 3+ re-possess
+//                   cycles per run; adaptive sprint should actually beat
+//                   Casual's wall-clock.
+//   * Berserker   — adaptive sprint (like Speedrunner) PLUS F-mash inside
+//                   every interactable range. Skips the pause-overlay
+//                   test. Distinct from Speedrunner by the F-mash
+//                   signature in the recording (~70+ Interact events vs
+//                   the ~9 of single-press personalities). Blind sprint
+//                   was tried first but drained the life timer faster
+//                   than the objective loop could converge -- the run
+//                   never terminated. See PersonalityConfig comment for
+//                   the long form.
+//   * Methodical  — opposite of Berserker. Walks normally, single F-press,
+//                   runs the pause-overlay test multiple times
+//                   (iPauseCycles=3) to stress the open/close path.
+//                   Catches regressions in pause-overlay idempotency that
+//                   a one-shot run would miss.
 //
 // Headless: the test always loads GameLevel directly (skips FrontEnd menu).
 // Menu-click coverage lives in Test_FullPlaythrough.cpp. With FrontEnd out
@@ -75,7 +94,7 @@
 //
 // Each registration writes its telemetry recording to
 //   %TEMP%/dp_personality_<name>.{ztlm,json}
-// so the four runs don't clobber each other and the visualiser can be
+// so the five runs don't clobber each other and the visualiser can be
 // pointed at any of them individually.
 //
 // Exercised systems (matches FullPlaythrough_Test's coverage list):
@@ -87,9 +106,10 @@
 //   6. Forge crafting Iron → Key (F-press)
 //   7. Door unlock with key (F-press)
 //   8. Chest open (F-press)
-//   9. Noise machine emit (F-press) → priest perception blackboard
+//   9. Noise machine emit (F-press) — Stealth skips this
 //  10. 5× pentagram delivery → DP_Win::HasWon() + DP_OnVictory event
-//  11. Pause overlay toggle (Esc) — Reckless skips this
+//  11. Pause overlay toggle (Esc) — Speedrunner + Berserker skip,
+//      Methodical runs it 3 times
 //
 // Implementation notes:
 //   - SimulateMouseClick / SimulateClickOnUIElement call StepFrame() inside,
@@ -121,42 +141,116 @@ namespace
 	//   3. Add a Setup wrapper at the bottom of the file.
 	//   4. Add a ZENITH_AUTOMATED_TEST_REGISTER block at the bottom.
 	// No other code edits are needed; everything reads off g_xActiveCfg.
+	//
+	// Semantics (2026-05-18 rework — see Q-2026-05-18-001 "speedrun slower
+	// than human" puzzle for the original motivation):
+	//   * Casual      — baseline. Walks normally, single F-press, runs the
+	//                   pause overlay test, engages every system. The
+	//                   reference recording the others are compared against.
+	//   * Stealth     — minimises priest aggro. Walks quiet (Ctrl held,
+	//                   half speed + halved footstep loudness), and SKIPS
+	//                   the noise machine entirely — that machine is the
+	//                   one in-game source of deliberate hearing stimulus,
+	//                   so engaging it would contradict the stealth playstyle.
+	//                   Walk budget doubled to compensate for the half speed.
+	//   * Speedrunner — minimises total frames. Sprints ONLY when the next
+	//                   target is more than kSprintMinDistanceM away; walks
+	//                   close approaches so we don't pay the per-second life
+	//                   cost when it doesn't save time. Skips the pause
+	//                   overlay test (speedrunners don't admire menus).
+	//                   This is the personality that the pre-rework
+	//                   "Speedrun" (blind-sprint) was trying — and failing —
+	//                   to be: blind sprint burned through the life timer
+	//                   on every villager and forced 3x re-possess overhead
+	//                   that ate the speedup.
+	//   * Berserker   — maximises chaos. Blind sprint (Shift always held)
+	//                   PLUS F-mash inside every interact range. Skips the
+	//                   pause overlay test. Accepts villager deaths +
+	//                   re-possessions cheerfully — they're part of the
+	//                   recording's signature.
+	//   * Methodical  — opposite of Berserker. Walks normally, single F-press,
+	//                   and runs the pause overlay test multiple times
+	//                   (iPauseCycles=3) to stress the open/close path.
+	//                   Engages every system. Catches regressions in the
+	//                   pause overlay's idempotency + state restoration that
+	//                   a one-shot pause test would miss.
 	// ------------------------------------------------------------------------
-	enum class Personality : uint8_t { Human, Stealth, Speedrun, Reckless };
+	enum class Personality : uint8_t { Casual, Stealth, Speedrunner, Berserker, Methodical };
 
 	struct PersonalityConfig
 	{
 		Personality eType;
-		const char* szName;          // used in log lines + telemetry filename
-		bool        bHoldSprint;     // hold ZENITH_KEY_LEFT_SHIFT while walking
-		bool        bHoldQuiet;      // hold ZENITH_KEY_LEFT_CONTROL while walking
-		bool        bMashInteract;   // press F every frame in range vs once per arrival
-		bool        bRunPauseTest;   // run the Esc pause-overlay phases
-		int         iWalkBudgetMul;  // multiplier on the base 1200-frame walk budget
+		const char* szName;             // used in log lines + telemetry filename
+		bool        bHoldSprint;        // hold ZENITH_KEY_LEFT_SHIFT for the entire walk
+		bool        bHoldQuiet;         // hold ZENITH_KEY_LEFT_CONTROL for the entire walk
+		bool        bAdaptiveSprint;    // sprint only while the remaining distance to the
+		                                //   active target is > kSprintMinDistanceM
+		bool        bMashInteract;      // press F every frame in range vs once per arrival
+		bool        bRunNoiseMachine;   // walk to + engage the noise machine
+		bool        bRunPauseTest;      // run the Esc pause-overlay phases at all
+		int         iPauseCycles;       // how many open/close cycles when bRunPauseTest=true
+		int         iWalkBudgetMul;     // multiplier on the base 1200-frame walk budget
 	};
 
 	// Walk budget multipliers calibrated for the per-personality movement
 	// speed. Stealth halves the villager's walk speed (Ctrl held), so we
 	// double the per-walk frame budget to give it equal opportunity to
-	// reach the same target. Speedrun + Reckless don't slow down so they
-	// run at the base 1x budget.
-	constexpr PersonalityConfig kPersonality_Human    = {
-		Personality::Human,    "Human",    /*sprint*/false, /*quiet*/false, /*mash*/false, /*pause*/true,  /*budgetMul*/1 };
-	constexpr PersonalityConfig kPersonality_Stealth  = {
-		Personality::Stealth,  "Stealth",  /*sprint*/false, /*quiet*/true,  /*mash*/false, /*pause*/true,  /*budgetMul*/2 };
-	constexpr PersonalityConfig kPersonality_Speedrun = {
-		Personality::Speedrun, "Speedrun", /*sprint*/true,  /*quiet*/false, /*mash*/false, /*pause*/true,  /*budgetMul*/1 };
-	constexpr PersonalityConfig kPersonality_Reckless = {
-		Personality::Reckless, "Reckless", /*sprint*/false, /*quiet*/false, /*mash*/true,  /*pause*/false, /*budgetMul*/1 };
+	// reach the same target. The other personalities don't slow down so
+	// they run at the base 1x budget.
+	constexpr PersonalityConfig kPersonality_Casual = {
+		Personality::Casual,      "Casual",
+		/*sprint*/false, /*quiet*/false, /*adaptive*/false,
+		/*mash*/false,
+		/*noise*/true,   /*pause*/true,  /*pauseCycles*/1,
+		/*budgetMul*/1 };
+	constexpr PersonalityConfig kPersonality_Stealth = {
+		Personality::Stealth,     "Stealth",
+		/*sprint*/false, /*quiet*/true,  /*adaptive*/false,
+		/*mash*/false,
+		/*noise*/false,  /*pause*/true,  /*pauseCycles*/1,
+		/*budgetMul*/2 };
+	constexpr PersonalityConfig kPersonality_Speedrunner = {
+		Personality::Speedrunner, "Speedrunner",
+		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
+		/*mash*/false,
+		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
+		/*budgetMul*/1 };
+	// Berserker uses ADAPTIVE sprint (not blind sprint) for the same
+	// reason Speedrunner does: blind sprint drains the life timer fast
+	// enough that the villager dies mid-objective-loop, the bot re-possesses
+	// a fresh villager, that one also dies, and the run never terminates
+	// inside the per-test frame cap. Adaptive sprint keeps the "aggressive
+	// + chaotic" semantic (sprint on long hops + mash F in range) while
+	// allowing the playthrough to actually finish. The F-mash is what makes
+	// this distinct from Speedrunner in the telemetry signature.
+	constexpr PersonalityConfig kPersonality_Berserker = {
+		Personality::Berserker,   "Berserker",
+		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
+		/*mash*/true,
+		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
+		/*budgetMul*/1 };
+	constexpr PersonalityConfig kPersonality_Methodical = {
+		Personality::Methodical,  "Methodical",
+		/*sprint*/false, /*quiet*/false, /*adaptive*/false,
+		/*mash*/false,
+		/*noise*/true,   /*pause*/true,  /*pauseCycles*/3,
+		/*budgetMul*/1 };
 
-	PersonalityConfig g_xActiveCfg = kPersonality_Human;
+	PersonalityConfig g_xActiveCfg = kPersonality_Casual;
 
-	// How many frames Reckless dwells in a press-F phase mashing the
+	// Adaptive-sprint cut-off. Speedrunner holds Shift while the remaining
+	// distance to the active target exceeds this many metres; walks within
+	// closer range. Tuned to ~5 m — the typical inter-object spacing on
+	// GameLevel — so that long inter-building hops sprint but the final
+	// approach to a chest/door/forge walks (avoids overshoot + only pays
+	// the sprint life-cost when it actually saves meaningful time).
+	constexpr float kSprintMinDistanceM = 5.0f;
+
+	// How many frames Berserker dwells in a press-F phase mashing the
 	// interact key. Each press while in range fires DP_OnInteract -> the
 	// telemetry recorder sees N Interact events per interactable instead
-	// of 1. 8 frames * 9 interactables ~= 72 extra events, comparable to
-	// the bot recordings' 80-event signature.
-	constexpr int kRecklessMashFrames = 8;
+	// of 1. 8 frames * 9 interactables ~= 72 extra events.
+	constexpr int kBerserkerMashFrames = 8;
 
 	// SetWalkBudget defined below, after g_iWalkBudget storage is declared.
 
@@ -282,6 +376,12 @@ namespace
 	uint32_t g_uVictoryMask = 0;
 	bool g_bPauseOnObserved = false;
 	bool g_bPauseOffObserved = false;
+	// Counter decremented per pause-open/close cycle. When Setup writes
+	// g_xActiveCfg.iPauseCycles into this counter, the kHP_PauseAssertClosed
+	// transition either loops back to kHP_PauseOpen (counter > 0) or
+	// advances to kHP_Summary. Methodical sets iPauseCycles=3; everyone
+	// else uses 1 so the run-once behaviour is preserved.
+	int  g_iPauseCyclesRemaining = 0;
 
 	Zenith_EventHandle g_xVictoryHandle = INVALID_EVENT_HANDLE;
 
@@ -310,7 +410,7 @@ namespace
 		std::filesystem::path xDir = std::filesystem::temp_directory_path(xErr);
 		if (xErr) xDir = ".";
 		// Per-personality basename so the 4 personality tests don't clobber
-		// each other when run in the same batch. e.g. dp_personality_Human_playthrough.ztlm.
+		// each other when run in the same batch. e.g. dp_personality_Casual_playthrough.ztlm.
 		std::string strBase = std::string("dp_personality_") + g_xActiveCfg.szName + "_" + sz;
 		xDir /= strBase;
 		return xDir.string();
@@ -846,7 +946,24 @@ namespace
 		// by the same DriveWASDToward call get the same modifier policy across
 		// every phase. Cleared in ClearWASD so we don't carry held modifiers
 		// into phases that aren't walking (camera control, possession click).
-		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT,   g_xActiveCfg.bHoldSprint);
+		//
+		// Sprint policy:
+		//   * bHoldSprint=true  -> always sprint (Berserker)
+		//   * bAdaptiveSprint=true -> sprint while remaining distance to the
+		//                            ACTIVE TARGET (not next waypoint) exceeds
+		//                            kSprintMinDistanceM. Walk on close
+		//                            approach so we can stop precisely and
+		//                            don't pay the per-second life cost when
+		//                            it doesn't save meaningful time.
+		//                            (Speedrunner — the killer feature that
+		//                            makes adaptive sprint faster than blind
+		//                            sprint, which dies mid-objective and
+		//                            forces 3x re-possess overhead.)
+		const float fHorizToTarget = std::sqrt(fFx * fFx + fFz * fFz);
+		const bool bSprintNow = g_xActiveCfg.bHoldSprint
+		                     || (g_xActiveCfg.bAdaptiveSprint
+		                         && fHorizToTarget > kSprintMinDistanceM);
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT,   bSprintNow);
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_CONTROL, g_xActiveCfg.bHoldQuiet);
 		return false;
 	}
@@ -1102,6 +1219,7 @@ static void Setup_HumanPlaythrough()
 	g_uVictoryMask   = 0;
 	g_bPauseOnObserved = false;
 	g_bPauseOffObserved = false;
+	g_iPauseCyclesRemaining = g_xActiveCfg.iPauseCycles;
 
 	g_xVictoryHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnVictory>(&OnVictoryEvent);
 	g_xInteractHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnInteract>(&OnInteractEvent);
@@ -1527,9 +1645,9 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
-		// Reckless mashes F for kRecklessMashFrames frames -- each press
+		// Berserker mashes F for kBerserkerMashFrames frames -- each press
 		// while in range emits another DP_OnInteract event into the recorder.
-		if (g_xActiveCfg.bMashInteract && g_iWait < kRecklessMashFrames) return true;
+		if (g_xActiveCfg.bMashInteract && g_iWait < kBerserkerMashFrames) return true;
 		g_iPhase = kHP_VerifyForge;
 		g_iWait = 0;
 		return true;
@@ -1607,7 +1725,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
-		if (g_xActiveCfg.bMashInteract && g_iWait < kRecklessMashFrames) return true;
+		if (g_xActiveCfg.bMashInteract && g_iWait < kBerserkerMashFrames) return true;
 		g_iPhase = kHP_VerifyDoor;
 		g_iWait = 0;
 		return true;
@@ -1686,7 +1804,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
-		if (g_xActiveCfg.bMashInteract && g_iWait < kRecklessMashFrames) return true;
+		if (g_xActiveCfg.bMashInteract && g_iWait < kBerserkerMashFrames) return true;
 		g_iPhase = kHP_VerifyChest;
 		g_iWait = 0;
 		return true;
@@ -1702,7 +1820,21 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		}
 		std::printf("[HumanPlaythrough] chest: open=%d\n", (int)g_bChestOpened);
 		std::fflush(stdout);
-		g_iPhase = kHP_WalkNoise;
+		// Stealth skips the noise machine -- the whole point of the
+		// personality is to NOT emit hearing stimulus. Jump directly to
+		// the objective-delivery loop. Verify is gated on the same flag
+		// so the missing g_bPriestHeardNoise doesn't fail the test.
+		if (g_xActiveCfg.bRunNoiseMachine)
+		{
+			g_iPhase = kHP_WalkNoise;
+		}
+		else
+		{
+			std::printf("[HumanPlaythrough] %s skipping noise machine (stealth)\n",
+				g_xActiveCfg.szName);
+			std::fflush(stdout);
+			g_iPhase = kHP_ObjLoopFind;
+		}
 		SetWalkBudget(1200);
 		return true;
 	}
@@ -1757,7 +1889,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
-		if (g_xActiveCfg.bMashInteract && g_iWait < kRecklessMashFrames) return true;
+		if (g_xActiveCfg.bMashInteract && g_iWait < kBerserkerMashFrames) return true;
 		g_iPhase = kHP_WaitNoise;
 		g_iWait = 0;
 		return true;
@@ -1931,10 +2063,10 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait == 1) return true;
-		// Reckless mashes F every frame from frame 2 onwards; other
+		// Berserker mashes F every frame from frame 2 onwards; other
 		// personalities single-press on frame 2 and idle for 3 frames so
 		// the pentagram has time to register the delivery.
-		const int iSettleEnd = g_xActiveCfg.bMashInteract ? (2 + kRecklessMashFrames) : 5;
+		const int iSettleEnd = g_xActiveCfg.bMashInteract ? (2 + kBerserkerMashFrames) : 5;
 		if (g_iWait >= 2 && (g_xActiveCfg.bMashInteract || g_iWait == 2))
 		{
 			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
@@ -1977,9 +2109,9 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		std::printf("[%s] victory: mask=0x%X event=%d won=%d\n",
 			g_xActiveCfg.szName, g_uVictoryMask, (int)g_bVictoryEvent, (int)DP_Win::HasWon());
 		std::fflush(stdout);
-		// Reckless skips the pause-overlay test entirely. Verify is
-		// personality-aware (the pause-asserted flags only get checked
-		// when g_xActiveCfg.bRunPauseTest is true).
+		// Speedrunner + Berserker skip the pause-overlay test entirely.
+		// Verify is personality-aware (the pause-asserted flags only get
+		// checked when g_xActiveCfg.bRunPauseTest is true).
 		g_iPhase = g_xActiveCfg.bRunPauseTest ? kHP_PauseOpen : kHP_Summary;
 		g_iWait = 0;
 		return true;
@@ -2002,7 +2134,8 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		if (g_iWait < 3) return true;
 		if (auto* pxOverlay = FindHudText("PauseOverlay"))
 		{
-			g_bPauseOnObserved = pxOverlay->IsVisible();
+			// OR-accumulate (see kHP_PauseAssertClosed for rationale).
+			g_bPauseOnObserved = g_bPauseOnObserved || pxOverlay->IsVisible();
 		}
 		g_iPhase = kHP_PauseClose;
 		return true;
@@ -2022,7 +2155,22 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		if (g_iWait < 3) return true;
 		if (auto* pxOverlay = FindHudText("PauseOverlay"))
 		{
-			g_bPauseOffObserved = !pxOverlay->IsVisible();
+			// OR-accumulate so a single successful observation across
+			// any cycle is enough to satisfy Verify. Methodical's
+			// 3-cycle run only needs one cycle to confirm both states;
+			// the extra cycles stress the open/close path's idempotency.
+			g_bPauseOffObserved = g_bPauseOffObserved || !pxOverlay->IsVisible();
+		}
+		--g_iPauseCyclesRemaining;
+		if (g_iPauseCyclesRemaining > 0)
+		{
+			// Loop back for another open/close cycle (Methodical).
+			std::printf("[%s] pause cycle %d remaining\n",
+				g_xActiveCfg.szName, g_iPauseCyclesRemaining);
+			std::fflush(stdout);
+			g_iPhase = kHP_PauseOpen;
+			g_iWait = 0;
+			return true;
 		}
 		g_iPhase = kHP_Summary;
 		return true;
@@ -2112,17 +2260,20 @@ static bool Verify_HumanPlaythrough()
 	if (!g_bForgeCrafted) return false;
 	if (!g_bDoorOpened) return false;
 	if (!g_bChestOpened) return false;
-	if (!g_bPriestHeardNoise) return false;
+	// Noise-machine assertion is personality-aware. Stealth deliberately
+	// skips the noise machine (bRunNoiseMachine=false); treating a missed
+	// noise as a failure would fail the test for an intended omission.
+	if (g_xActiveCfg.bRunNoiseMachine && !g_bPriestHeardNoise) return false;
 
 	if (g_iObjectivesDelivered < 5) return false;
 	if (!DP_Win::HasWon()) return false;
 	if (!g_bVictoryEvent) return false;
 
 	// Pause-overlay assertions only apply to personalities that ran the
-	// pause test. Reckless skips it entirely (bRunPauseTest=false) so the
-	// pause-on/off flags stay false; treating that as a fail would make
-	// the test red for a deliberate skip. Mirror the same logic in the
-	// summary block of Step.
+	// pause test. Speedrunner + Berserker skip it (bRunPauseTest=false)
+	// so the pause-on/off flags stay false; treating that as a fail would
+	// make the test red for a deliberate skip. Mirror the same logic in
+	// the summary block of Step.
 	if (g_xActiveCfg.bRunPauseTest)
 	{
 		if (!g_bPauseOnObserved) return false;
@@ -2132,26 +2283,35 @@ static bool Verify_HumanPlaythrough()
 }
 
 // Per-personality Setup wrappers. Each just stashes the active config
-// in g_xActiveCfg, then chains into the shared Setup. The personality
-// pointer + Step + Verify pointers in the registration block below are
-// the same across all 4 -- only Setup varies.
-static void Setup_Personality_Human()    { g_xActiveCfg = kPersonality_Human;    Setup_HumanPlaythrough(); }
-static void Setup_Personality_Stealth()  { g_xActiveCfg = kPersonality_Stealth;  Setup_HumanPlaythrough(); }
-static void Setup_Personality_Speedrun() { g_xActiveCfg = kPersonality_Speedrun; Setup_HumanPlaythrough(); }
-static void Setup_Personality_Reckless() { g_xActiveCfg = kPersonality_Reckless; Setup_HumanPlaythrough(); }
+// in g_xActiveCfg, then chains into the shared Setup. Step + Verify
+// pointers in the registration block below are the same across all 5 --
+// only Setup varies.
+static void Setup_Personality_Casual()      { g_xActiveCfg = kPersonality_Casual;      Setup_HumanPlaythrough(); }
+static void Setup_Personality_Stealth()     { g_xActiveCfg = kPersonality_Stealth;     Setup_HumanPlaythrough(); }
+static void Setup_Personality_Speedrunner() { g_xActiveCfg = kPersonality_Speedrunner; Setup_HumanPlaythrough(); }
+static void Setup_Personality_Berserker()   { g_xActiveCfg = kPersonality_Berserker;   Setup_HumanPlaythrough(); }
+static void Setup_Personality_Methodical()  { g_xActiveCfg = kPersonality_Methodical;  Setup_HumanPlaythrough(); }
 
-// 6000-frame budget covers all four personalities in practice: a
-// successful Human run finishes in ~1800 frames, Stealth (2x walk budget
-// for Ctrl-held walks) finishes in ~3500, Speedrun in ~1500, Reckless in
-// ~1900. Stealth is the slowest but still well inside the cap.
-static const Zenith_AutomatedTest g_xPersonalityTest_Human = {
-	"PersonalityPlaythrough_Human",
-	&Setup_Personality_Human,
+// Frame-budget rationale (rough wall-clock at fixed-dt 1/60):
+//   * Casual      ~1800 frames (~30 s in-game / ~38 s wall-clock)
+//   * Stealth     ~3600 frames (2x walk budget for Ctrl-held walks, but
+//                 skips noise machine which saves a leg). Still well
+//                 under the 8000-frame cap.
+//   * Speedrunner ~1500 frames once adaptive sprint is wired (was ~1900
+//                 with blind sprint pre-rework; adaptive is faster
+//                 because it doesn't burn the life-cost on close approaches).
+//   * Berserker   ~2200 frames (blind sprint + 3x deaths + 8x mash F).
+//   * Methodical  ~2000 frames (1 extra pause cycle pair adds ~6 frames
+//                 each; 3 cycles is ~12 extra frames on top of Casual).
+// 6000-frame cap covers all but Stealth; Stealth gets 8000.
+static const Zenith_AutomatedTest g_xPersonalityTest_Casual = {
+	"PersonalityPlaythrough_Casual",
+	&Setup_Personality_Casual,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
 	6000
 };
-ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Human);
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Casual);
 
 static const Zenith_AutomatedTest g_xPersonalityTest_Stealth = {
 	"PersonalityPlaythrough_Stealth",
@@ -2162,22 +2322,31 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Stealth = {
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Stealth);
 
-static const Zenith_AutomatedTest g_xPersonalityTest_Speedrun = {
-	"PersonalityPlaythrough_Speedrun",
-	&Setup_Personality_Speedrun,
+static const Zenith_AutomatedTest g_xPersonalityTest_Speedrunner = {
+	"PersonalityPlaythrough_Speedrunner",
+	&Setup_Personality_Speedrunner,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
 	6000
 };
-ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Speedrun);
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Speedrunner);
 
-static const Zenith_AutomatedTest g_xPersonalityTest_Reckless = {
-	"PersonalityPlaythrough_Reckless",
-	&Setup_Personality_Reckless,
+static const Zenith_AutomatedTest g_xPersonalityTest_Berserker = {
+	"PersonalityPlaythrough_Berserker",
+	&Setup_Personality_Berserker,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
 	6000
 };
-ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Reckless);
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Berserker);
+
+static const Zenith_AutomatedTest g_xPersonalityTest_Methodical = {
+	"PersonalityPlaythrough_Methodical",
+	&Setup_Personality_Methodical,
+	&Step_HumanPlaythrough,
+	&Verify_HumanPlaythrough,
+	6000
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Methodical);
 
 #endif // ZENITH_INPUT_SIMULATOR
