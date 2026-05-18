@@ -1542,6 +1542,142 @@ namespace
 		Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Gym_Forge" ZENITH_SCENE_EXT);
 		Zenith_EditorAutomation::AddStep_UnloadScene();
 	}
+
+	// ============================================================================
+	// ProcLevel scene -- the procgen-driven counterpart to GameLevel.
+	//
+	// Static authoring is intentionally lean: GameManager + UI scaffolding,
+	// PauseManager, GroundPlane, a handful of corner lights, plus a single
+	// "ProcLevelBootstrap" entity carrying DPProcLevelBootstrap_Behaviour.
+	//
+	// At runtime, the bootstrap's OnAwake calls DPProcLevel::Generate() with
+	// seed = m_uSeed (default 0) and then spawns the full level under the
+	// active scene:
+	//   * 48 wall entities (P4b)
+	//   * 12 game elements: pentagram, forge, doors, chests, noise, iron + 5
+	//     objectives (P4c)
+	//   * 17 villagers + 1 priest (P4d)
+	//
+	// The saved .zscen file therefore stays small (a half-dozen authored
+	// entities). Every level layout cell, item, character is conjured at
+	// load-time -- so changing the seed produces a different level without
+	// re-authoring anything. Useful both for human play + automated tests
+	// that want a non-GameLevel surface to drive personality bots against.
+	// ============================================================================
+	void AuthorProcLevelScene()
+	{
+		Zenith_EditorAutomation::AddStep_CreateScene("ProcLevel");
+
+		// ------ GameManager: hosts global controllers + HUD UI ----------------
+		Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
+
+		Zenith_EditorAutomation::AddStep_AddCamera();
+		// Overview camera centred on the procgen bounds. The GenConfig
+		// defaults place the level at XZ in [0, 100] so the centre is
+		// (50, _, 50). Pull back/up so the player sees most of the
+		// playable area before clicking a villager.
+		Zenith_EditorAutomation::AddStep_SetCameraPosition(50.0f, 35.0f, -15.0f);
+		Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.85f);  // ~49° down
+		Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(55.0f));
+		Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+
+		Zenith_EditorAutomation::AddStep_AddUI();
+		// Minimum HUD: LifeBar / HeldItem / Status / Objectives. Mirrors
+		// the GymCommon authoring (same DPUI constants, same anchors).
+		Zenith_EditorAutomation::AddStep_CreateUIText("LifeBar", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("LifeBar", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("LifeBar", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("LifeBar", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("LifeBar", DPUI::fHUD_LIFEBAR_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("LifeBar", 0.3f, 1.0f, 0.3f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("LifeBar", false);
+
+		Zenith_EditorAutomation::AddStep_CreateUIText("HeldItem", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("HeldItem", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("HeldItem", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("HeldItem", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 50.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("HeldItem", DPUI::fHUD_HELDITEM_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("HeldItem", 1.0f, 1.0f, 1.0f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("HeldItem", false);
+
+		Zenith_EditorAutomation::AddStep_CreateUIText("Status", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("Status", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("Status", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("Status", 0.0f, -80.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", DPUI::fHUD_STATUS_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.9f, 0.2f, 0.2f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
+
+		Zenith_EditorAutomation::AddStep_CreateUIText("Objectives", "Objectives: 0/5");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("Objectives", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("Objectives", static_cast<int>(Zenith_UI::TextAlignment::Right));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("Objectives", -DPUI::fEDGE_INSET, DPUI::fEDGE_INSET);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("Objectives", DPUI::fHUD_OBJECTIVES_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("Objectives", 0.95f, 0.7f, 0.7f, 1.0f);
+
+		// Global controller scripts (matches GymCommon).
+		Zenith_EditorAutomation::AddStep_AttachScript("DPPlayerController_Behaviour");
+		Zenith_EditorAutomation::AddStep_AttachScript("DPFogPass_Behaviour");
+		Zenith_EditorAutomation::AddStep_AttachScript("DPHUDController_Behaviour");
+		Zenith_EditorAutomation::AddStep_AttachScript("DPOrbitCamera_Behaviour");
+		Zenith_EditorAutomation::AddStep_AttachScript("DPItemManager_Behaviour");
+
+		// ------ PauseManager (dedicated entity, mirrors GameLevel) ------------
+		Zenith_EditorAutomation::AddStep_CreateEntity("PauseManager");
+		Zenith_EditorAutomation::AddStep_AddUI();
+		Zenith_EditorAutomation::AddStep_CreateUIText("PauseOverlay",
+			"PAUSED\nEsc: Resume   R: Restart   Q: Quit");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("PauseOverlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("PauseOverlay", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("PauseOverlay", 0.0f, 0.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("PauseOverlay", DPUI::fHUD_PAUSE_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("PauseOverlay", 1.0f, 1.0f, 1.0f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("PauseOverlay", false);
+		Zenith_EditorAutomation::AddStep_AttachScript("DPPauseMenuController_Behaviour");
+
+		// ------ Ground plane --------------------------------------------------
+		// Procgen bounds are XZ in [0, 100]. Author a 100×100 m flush slab
+		// centred on (50, 0, 50) so the navmesh generator picks up a
+		// single connected walkable surface across the whole map.
+		Zenith_EditorAutomation::AddStep_CreateEntity("GroundPlane");
+		Zenith_EditorAutomation::AddStep_SetTransformPosition(50.0f, 0.0f, 50.0f);
+		Zenith_EditorAutomation::AddStep_SetTransformScale(50.0f, 0.5f, 50.0f);
+		AuthorMeshAndCollider(
+			"/Game/LevelPrototyping/Meshes/SM_Cube.SM_Cube",
+			/*bAddCollider=*/true,
+			COLLISION_VOLUME_TYPE_OBB,
+			RIGIDBODY_TYPE_STATIC);
+
+		// ------ Four corner lights for general visibility ---------------------
+		// Hand-authored point lights at high y so the procgen-spawned walls
+		// + items light up across the bounds. Intensity matches the GameLevel
+		// "candle minimum" so the scene isn't over-bloomed.
+		const float afLightXZ[4][2] = {
+			{ 25.0f, 25.0f }, { 75.0f, 25.0f },
+			{ 25.0f, 75.0f }, { 75.0f, 75.0f },
+		};
+		for (uint32_t i = 0; i < 4; ++i)
+		{
+			Zenith_EditorAutomation::AddStep_CreateEntity(InternEntityName("ProcLight", i));
+			Zenith_EditorAutomation::AddStep_SetTransformPosition(
+				afLightXZ[i][0], 10.0f, afLightXZ[i][1]);
+			Zenith_EditorAutomation::AddStep_AddComponent("Light");
+			Zenith_EditorAutomation::AddStep_SetLightIntensity(2000.0f);
+			Zenith_EditorAutomation::AddStep_SetLightRange(60.0f);
+			Zenith_EditorAutomation::AddStep_SetLightColor(1.0f, 0.95f, 0.85f);
+		}
+
+		// ------ The bootstrap entity ------------------------------------------
+		// Attaching this script is the ENTIRE level-content authoring. Every
+		// wall, item, character is materialised by the script's OnAwake at
+		// scene-load time. Changing m_uSeed (or the upcoming Tuning.json
+		// seed source) produces a different level without re-authoring.
+		Zenith_EditorAutomation::AddStep_CreateEntity("ProcLevelBootstrap");
+		Zenith_EditorAutomation::AddStep_AttachScript("DPProcLevelBootstrap_Behaviour");
+
+		Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/ProcLevel" ZENITH_SCENE_EXT);
+		Zenith_EditorAutomation::AddStep_UnloadScene();
+	}
 }
 
 void Project_RegisterEditorAutomationSteps()
@@ -1552,6 +1688,7 @@ void Project_RegisterEditorAutomationSteps()
 	AuthorGymNoiseScene();    // build index 3
 	AuthorGymDoorsScene();    // build index 4
 	AuthorGymForgeScene();    // build index 5
+	AuthorProcLevelScene();   // build index 6
 
 	Zenith_EditorAutomation::AddStep_LoadInitialScene(&Project_LoadInitialScene);
 }
@@ -1565,5 +1702,6 @@ void Project_LoadInitialScene()
 	Zenith_SceneManager::RegisterSceneBuildIndex(3, GAME_ASSETS_DIR "Scenes/Gym_Noise"  ZENITH_SCENE_EXT);
 	Zenith_SceneManager::RegisterSceneBuildIndex(4, GAME_ASSETS_DIR "Scenes/Gym_Doors"  ZENITH_SCENE_EXT);
 	Zenith_SceneManager::RegisterSceneBuildIndex(5, GAME_ASSETS_DIR "Scenes/Gym_Forge"  ZENITH_SCENE_EXT);
+	Zenith_SceneManager::RegisterSceneBuildIndex(6, GAME_ASSETS_DIR "Scenes/ProcLevel"  ZENITH_SCENE_EXT);
 	Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(0, SCENE_LOAD_SINGLE);
 }
