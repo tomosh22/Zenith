@@ -123,18 +123,40 @@ static bool Step_ProcLevelBootstrap(int iFrame)
 	// segment. Allow a small slack for entity creation failure (e.g.
 	// scene full) -- in practice the count should match exactly with
 	// an empty test scene.
-	const uint32_t uSpawned = pxBootstrap->GetSpawnedWallCount();
-	if (uSpawned != xLayout.axWallSegments.GetSize())
+	const uint32_t uSpawnedWalls = pxBootstrap->GetSpawnedWallCount();
+	if (uSpawnedWalls != xLayout.axWallSegments.GetSize())
 	{
 		g_szFailureReason = "Spawned wall count != layout wall-segment count";
 		return false;
 	}
 
+	// P4c -- the bootstrap should have spawned one entity per game
+	// element (pentagram, forge, doors, chests, noise machines, iron,
+	// objectives). SpawnPoint elements are skipped (consumed by P4d).
+	uint32_t uExpectedElements = 0;
+	for (uint32_t i = 0; i < xLayout.axGameElements.GetSize(); ++i)
+	{
+		if (xLayout.axGameElements.Get(i).eType
+		    != DPProcLevel::GameElementType::SpawnPoint)
+		{
+			++uExpectedElements;
+		}
+	}
+	const uint32_t uSpawnedElements = pxBootstrap->GetSpawnedGameElementCount();
+	if (uSpawnedElements != uExpectedElements)
+	{
+		g_szFailureReason =
+			"Spawned game-element count != expected (layout minus SpawnPoints)";
+		return false;
+	}
+
 	g_bPassed = true;
-	std::printf("[ProcLevelBootstrap] PASS: rooms=%u walls=%u elements=%u villagers=%u priest=%d\n",
+	std::printf("[ProcLevelBootstrap] PASS: rooms=%u walls=%u elements=%u "
+		"(spawned %u) villagers=%u priest=%d\n",
 		xLayout.axRooms.GetSize(),
 		xLayout.axWallSegments.GetSize(),
 		xLayout.axGameElements.GetSize(),
+		uSpawnedElements,
 		xLayout.axVillagerSpawns.GetSize(),
 		(int)xLayout.xPriestSpawn.bValid);
 	std::fflush(stdout);
