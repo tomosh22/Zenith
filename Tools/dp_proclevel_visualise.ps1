@@ -49,12 +49,13 @@ Add-Type -AssemblyName System.Drawing
 if (-not $Quiet) { Write-Host "Loading $JsonPath..." -ForegroundColor Cyan }
 $layout = Get-Content $JsonPath -Raw | ConvertFrom-Json
 
-$rooms      = if ($layout.rooms)      { @($layout.rooms) }      else { @() }
-$doors      = if ($layout.doorPoints) { @($layout.doorPoints) } else { @() }
-$corridors  = if ($layout.corridors)  { @($layout.corridors) }  else { @() }
-$walls      = if ($layout.walls)      { @($layout.walls) }      else { @() }
+$rooms      = if ($layout.rooms)        { @($layout.rooms) }        else { @() }
+$doors      = if ($layout.doorPoints)   { @($layout.doorPoints) }   else { @() }
+$corridors  = if ($layout.corridors)    { @($layout.corridors) }    else { @() }
+$walls      = if ($layout.walls)        { @($layout.walls) }        else { @() }
+$elements   = if ($layout.gameElements) { @($layout.gameElements) } else { @() }
 
-if (-not $Quiet) { Write-Host "  + $($rooms.Count) rooms, $($doors.Count) doors, $($corridors.Count) corridors, $($walls.Count) walls" -ForegroundColor DarkGray }
+if (-not $Quiet) { Write-Host "  + $($rooms.Count) rooms, $($doors.Count) doors, $($corridors.Count) corridors, $($walls.Count) walls, $($elements.Count) game elements" -ForegroundColor DarkGray }
 
 # ----------------------------------------------------------------------
 # World <-> image projection
@@ -210,10 +211,112 @@ foreach ($d in $doors) {
 $doorFill.Dispose()
 $doorStroke.Dispose()
 
+# Game elements -- distinct shape + colour per type. Drawn LAST so
+# they sit on top of rooms / walls / doors / corridors. Matches the
+# telemetry visualiser's event-marker convention where possible:
+#   Pentagram    star,        yellow
+#   Forge        triangle,    orange
+#   Door         red bar,     drawn ACROSS the corridor line
+#   Chest        square,      brown
+#   NoiseMachine circle,      cyan
+#   Iron         small circle, grey
+#   Objective1-5 diamonds,    blue (lighter shade per index for parity with telemetry)
+#   SpawnPoint   green crosshair
+function FillRegularPolygon($brush, $pen, $cx, $cy, $sides, $radius, $rotRadians) {
+    $pts = @()
+    for ($i = 0; $i -lt $sides; ++$i) {
+        $a = $rotRadians + ($i * 2.0 * [math]::PI / $sides)
+        $px = [int]($cx + $radius * [math]::Cos($a))
+        $py = [int]($cy + $radius * [math]::Sin($a))
+        $pts += New-Object System.Drawing.Point($px, $py)
+    }
+    $g.FillPolygon($brush, [System.Drawing.Point[]]$pts)
+    if ($pen) { $g.DrawPolygon($pen, [System.Drawing.Point[]]$pts) }
+}
+function FillStar($brush, $pen, $cx, $cy, $points, $outerR, $innerR, $rotRadians) {
+    $pts = @()
+    for ($i = 0; $i -lt ($points * 2); ++$i) {
+        $r = if ($i % 2 -eq 0) { $outerR } else { $innerR }
+        $a = $rotRadians + ($i * [math]::PI / $points)
+        $px = [int]($cx + $r * [math]::Cos($a))
+        $py = [int]($cy + $r * [math]::Sin($a))
+        $pts += New-Object System.Drawing.Point($px, $py)
+    }
+    $g.FillPolygon($brush, [System.Drawing.Point[]]$pts)
+    if ($pen) { $g.DrawPolygon($pen, [System.Drawing.Point[]]$pts) }
+}
+
+$elemStroke = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 1.5)
+$elemRadius = 12   # icon radius in pixels
+foreach ($elem in $elements) {
+    $p = Project ([double]$elem.x) ([double]$elem.z)
+    $cx = $p[0]; $cy = $p[1]
+    switch ($elem.type) {
+        'Pentagram' {
+            $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 255, 210, 60))
+            FillStar $brush $elemStroke $cx $cy 5 ($elemRadius + 4) ($elemRadius - 4) (-[math]::PI / 2)
+            $brush.Dispose()
+        }
+        'Forge' {
+            $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 240, 130, 50))
+            FillRegularPolygon $brush $elemStroke $cx $cy 3 ($elemRadius + 2) (-[math]::PI / 2)
+            $brush.Dispose()
+        }
+        'Door' {
+            # Door is on a corridor. Render as a thick red bar perpendicular
+            # to the corridor at this element's (x, z).
+            $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 230, 70, 70))
+            $g.FillEllipse($brush, ($cx - 10), ($cy - 10), 20, 20)
+            $g.DrawEllipse($elemStroke, ($cx - 10), ($cy - 10), 20, 20)
+            $brush.Dispose()
+        }
+        'Chest' {
+            $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 170, 110, 60))
+            $g.FillRectangle($brush, ($cx - $elemRadius), ($cy - $elemRadius), ($elemRadius * 2), ($elemRadius * 2))
+            $g.DrawRectangle($elemStroke, ($cx - $elemRadius), ($cy - $elemRadius), ($elemRadius * 2), ($elemRadius * 2))
+            $brush.Dispose()
+        }
+        'NoiseMachine' {
+            $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 100, 220, 230))
+            $g.FillEllipse($brush, ($cx - $elemRadius), ($cy - $elemRadius), ($elemRadius * 2), ($elemRadius * 2))
+            $g.DrawEllipse($elemStroke, ($cx - $elemRadius), ($cy - $elemRadius), ($elemRadius * 2), ($elemRadius * 2))
+            $brush.Dispose()
+        }
+        'Iron' {
+            $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 170, 170, 175))
+            $g.FillEllipse($brush, ($cx - 8), ($cy - 8), 16, 16)
+            $g.DrawEllipse($elemStroke, ($cx - 8), ($cy - 8), 16, 16)
+            $brush.Dispose()
+        }
+        'SpawnPoint' {
+            $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 90, 220, 90))
+            FillRegularPolygon $brush $elemStroke $cx $cy 4 $elemRadius ([math]::PI / 4)
+            $brush.Dispose()
+        }
+        default {
+            # Objectives 1..5: rotated squares (diamonds), various blues
+            if ($elem.type -match '^Objective(\d)$') {
+                $idx = [int]$matches[1]
+                $blue = 200 + (10 * $idx)
+                if ($blue -gt 255) { $blue = 255 }
+                $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 100, 150, $blue))
+                FillRegularPolygon $brush $elemStroke $cx $cy 4 $elemRadius 0
+                $brush.Dispose()
+                # Number label inside the diamond
+                $font  = New-Object System.Drawing.Font('Consolas', 9.0, [System.Drawing.FontStyle]::Bold)
+                $tBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
+                $g.DrawString("$idx", $font, $tBrush, ($cx - 4), ($cy - 7))
+                $font.Dispose(); $tBrush.Dispose()
+            }
+        }
+    }
+}
+$elemStroke.Dispose()
+
 # Caption (top-left)
 $capFont = New-Object System.Drawing.Font('Consolas', 14.0, [System.Drawing.FontStyle]::Regular)
 $capBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(220, 220, 230))
-$caption = "seed=$($layout.header.seed)  rooms=$($rooms.Count)  doors=$($doors.Count)  corridors=$($corridors.Count)  walls=$($walls.Count)"
+$caption = "seed=$($layout.header.seed)  rooms=$($rooms.Count)  doors=$($doors.Count)  corridors=$($corridors.Count)  walls=$($walls.Count)  elements=$($elements.Count)"
 $g.DrawString($caption, $capFont, $capBrush, 10, 8)
 $boundsCaption = "world bounds: x=[{0:F1},{1:F1}]  z=[{2:F1},{3:F1}]  ({4:F1}m x {5:F1}m)" -f $minX, $maxX, $minZ, $maxZ, $worldW, $worldH
 $g.DrawString($boundsCaption, $capFont, $capBrush, 10, 30)
