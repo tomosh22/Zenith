@@ -589,12 +589,25 @@ namespace
 				// Top-down OBB (XZ plane). Yaw extracted from the world
 				// rotation; the visualiser rotates the local-frame
 				// half-extents by yaw when computing the 4 corners.
+				//
+				// Why not glm::yaw(xRot)? GLM's implementation is
+				// `asin(-2*(qx*qz - qw*qy))`, which collapses to the
+				// [-pi/2, pi/2] range -- a 135-degree rotation comes
+				// back as 45 because asin(sin(135)) = asin(sin(45)).
+				// Half the BuildingAssetKit walls are authored at
+				// angles outside that range, so glm::yaw was rendering
+				// them at the wrong orientation. The atan2-based
+				// Tait-Bryan extraction below covers the full
+				// [-pi, pi] range and is exact for yaw-only rotations
+				// (which is all our walls have).
 				Zenith_Telemetry::SceneObstacle xO;
 				xO.fCentreX     = xCentre.x;
 				xO.fCentreZ     = xCentre.z;
 				xO.fHalfExtentX = xHalfExtents.x;
 				xO.fHalfExtentZ = xHalfExtents.z;
-				xO.fYawRadians  = glm::yaw(xRot);
+				xO.fYawRadians  = std::atan2(
+					2.0f * (xRot.w * xRot.y + xRot.x * xRot.z),
+					1.0f - 2.0f * (xRot.y * xRot.y + xRot.z * xRot.z));
 				xOutObs.PushBack(xO);
 				++uIncluded;
 			});
