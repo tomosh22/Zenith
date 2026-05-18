@@ -13,12 +13,13 @@
 [CmdletBinding()]
 param(
     [string[]]$Paths = @(
-        "build/dp_telemetry/personality_Human.json",
+        "build/dp_telemetry/personality_Casual.json",
         "build/dp_telemetry/personality_Stealth.json",
-        "build/dp_telemetry/personality_Speedrun.json",
-        "build/dp_telemetry/personality_Reckless.json"
+        "build/dp_telemetry/personality_Speedrunner.json",
+        "build/dp_telemetry/personality_Berserker.json",
+        "build/dp_telemetry/personality_Methodical.json"
     ),
-    [string[]]$Labels = @("Human", "Stealth", "Speedrun", "Reckless")
+    [string[]]$Labels = @("Casual", "Stealth", "Speedrunner", "Berserker", "Methodical")
 )
 
 $ErrorActionPreference = 'Stop'
