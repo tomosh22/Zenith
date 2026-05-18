@@ -94,15 +94,46 @@ namespace Zenith_Telemetry
 		void ReadFromDataStream(Zenith_DataStream& xStream);
 	};
 
+	// Top-down oriented-bounding-box of a static scene obstacle (wall,
+	// building, prop). Recorded once in the Header so the visualiser can
+	// draw scene geometry under the entity trails -- a trail that
+	// squeezes through a doorway or hugs a wall makes far more sense
+	// against a backdrop of the actual obstacles.
+	//
+	// Convention: XZ-plane projection only (Y is discarded because the
+	// visualiser is top-down). Half-extents are in the wall's LOCAL
+	// space; fYawRadians rotates that local frame into world space.
+	// Floors / non-blocking volumes are filtered by the caller before
+	// they reach here -- this struct just stores whatever rectangles
+	// the recording wants to overlay.
+	struct SceneObstacle
+	{
+		float fCentreX     = 0.0f;
+		float fCentreZ     = 0.0f;
+		float fHalfExtentX = 0.0f;
+		float fHalfExtentZ = 0.0f;
+		float fYawRadians  = 0.0f;
+
+		void WriteToDataStream(Zenith_DataStream& xStream) const;
+		void ReadFromDataStream(Zenith_DataStream& xStream);
+	};
+
 	struct Header
 	{
 		uint32_t    uMagic        = 0x4D4C545A; // 'ZTLM' little-endian
-		uint32_t    uVersion      = 1;
+		// Version 2 (2026-05-18): added axObstacles. Readers accept both
+		// versions -- a v1 file just yields an empty obstacle list.
+		uint32_t    uVersion      = 2;
 		uint64_t    uSeed         = 0;
 		uint64_t    uStartUTCMs   = 0;
 		std::string strSceneName;
 		float       fFixedDt      = 1.0f / 60.0f;
 		uint32_t    uSamplePeriodFrames = 6; // 10 Hz at fixed-dt 1/60
+		// Static scene obstacles, top-down OBBs. Populated by the caller
+		// before Recorder::Begin(); the recorder stores them as part of
+		// the header and the JSON exporter mirrors them in the header
+		// object so the visualiser can render walls under the trails.
+		Zenith_Vector<SceneObstacle> axObstacles;
 
 		void WriteToDataStream(Zenith_DataStream& xStream) const;
 		void ReadFromDataStream(Zenith_DataStream& xStream);

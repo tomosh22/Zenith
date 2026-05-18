@@ -9,7 +9,9 @@
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "Physics/Zenith_Physics_Fwd.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Input/Zenith_Input.h"
@@ -503,6 +505,93 @@ namespace
 			});
 
 		Zenith_Telemetry::GetRecorder().RecordFrame(xSample);
+	}
+
+	// Scan every Zenith_ColliderComponent in the active scene and emit a
+	// SceneObstacle (top-down OBB) for any whose world-space centre sits
+	// above the floor (y > 1.5 m). The same y threshold the path grid
+	// uses (kPathFloorY in BuildPathGrid + DPHeuristicBot's kPathFloorYTop)
+	// classifies anything taller than the floor's mesh-aware OBB top as
+	// "not walkable" -- here we report exactly that set of obstacles so the
+	// visualiser shows the bot's pathing constraint, not just the authored
+	// geometry.
+	//
+	// Convention reminder:
+	//   * Floor: mesh-local bounds 0..1, body at y=0, mesh-aware OBB top
+	//     at y=1.0. Centre at y=0.5 -> below the 1.5 threshold, excluded.
+	//   * Wall: mesh-local bounds 0..4, body at y=1, mesh-aware OBB top
+	//     at y=5.0. Centre at y=3.0 -> above the 1.5 threshold, included.
+	//
+	// World-space OBB derivation: the unit-cube mesh has its origin at
+	// the corner (0,0,0), so its local centre is (0.5, 0.5, 0.5). After
+	// transform (scale -> rotate -> translate) the world centre is
+	//   P + Q * (0.5*S)
+	// where S is the entity's scale, Q its rotation, P its position. The
+	// top-down half-extents are 0.5*Sx and 0.5*Sz; the yaw is extracted
+	// from Q via glm::yaw().
+	void ScanSceneObstacles(Zenith_Vector<Zenith_Telemetry::SceneObstacle>& xOutObs)
+	{
+		xOutObs.Clear();
+		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		if (pxScene == nullptr) return;
+
+		uint32_t uIncluded = 0;
+		uint32_t uExcludedFloor = 0;
+		uint32_t uExcludedNonBox = 0;
+
+		pxScene->Query<Zenith_ColliderComponent, Zenith_TransformComponent>().ForEach(
+			[&](Zenith_EntityID /*xId*/, Zenith_ColliderComponent& xCol, Zenith_TransformComponent& xT)
+			{
+				// Skip non-box obstacles. Spheres / capsules don't have a
+				// clean OBB; the visualiser is rectangle-only for now.
+				const CollisionVolumeType eVol = xCol.GetCollisionVolumeType();
+				if (eVol != COLLISION_VOLUME_TYPE_OBB && eVol != COLLISION_VOLUME_TYPE_AABB)
+				{
+					++uExcludedNonBox;
+					return;
+				}
+
+				Zenith_Maths::Vector3 xPos;
+				Zenith_Maths::Quat    xRot;
+				Zenith_Maths::Vector3 xScale;
+				xT.GetPosition(xPos);
+				xT.GetRotation(xRot);
+				xT.GetScale(xScale);
+
+				// World centre = P + Q * (0.5 * S). Use glm to rotate the
+				// half-scale vector by the quaternion.
+				const Zenith_Maths::Vector3 xLocalHalfS(0.5f * xScale.x,
+				                                        0.5f * xScale.y,
+				                                        0.5f * xScale.z);
+				const Zenith_Maths::Vector3 xRotatedHalfS = xRot * xLocalHalfS;
+				const Zenith_Maths::Vector3 xCentre = xPos + xRotatedHalfS;
+
+				// Tall-obstacle filter: anything whose mesh-aware OBB centre
+				// sits above the floor's top (y=1.0). 1.5 m is the same
+				// threshold the path grid uses.
+				if (xCentre.y < 1.5f)
+				{
+					++uExcludedFloor;
+					return;
+				}
+
+				// Top-down half-extents (XZ plane only). The y component
+				// is discarded.
+				Zenith_Telemetry::SceneObstacle xO;
+				xO.fCentreX     = xCentre.x;
+				xO.fCentreZ     = xCentre.z;
+				xO.fHalfExtentX = 0.5f * xScale.x;
+				xO.fHalfExtentZ = 0.5f * xScale.z;
+				xO.fYawRadians  = glm::yaw(xRot);
+				xOutObs.PushBack(xO);
+				++uIncluded;
+			});
+
+		std::printf("[PersonalityPlaythrough] scanned %u obstacles "
+			"(excluded %u floor, %u non-box)\n",
+			uIncluded, uExcludedFloor, uExcludedNonBox);
+		std::fflush(stdout);
 	}
 
 	// Look up a UI element by name in ANY loaded scene's UICanvas.
@@ -1399,6 +1488,12 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			xHeader.strSceneName       = "GameLevel";
 			xHeader.fFixedDt           = kHPFixedDt;
 			xHeader.uSamplePeriodFrames = kHPSamplePeriodFrames;
+			// Static-scene obstacles. Scanned once now (scene fully
+			// populated, scripts have OnAwake/OnStart'd) and stamped into
+			// the recording's header. The visualiser renders these as
+			// semi-transparent rectangles under the entity trails so
+			// movement makes sense against actual geometry.
+			ScanSceneObstacles(xHeader.axObstacles);
 			Zenith_Telemetry::GetRecorder().Begin(xHeader);
 			// Hooks AFTER Begin so the very first events land in this run.
 			g_pxTelemetryHooks = std::make_unique<DPTelemetry::Hooks>();
