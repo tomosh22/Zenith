@@ -335,6 +335,9 @@
     <ClCompile Include="..\Tests\Test_ProcLevelBootstrap.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_ProcLevelScene.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_ProcLevel_BSP.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
