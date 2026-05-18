@@ -756,6 +756,247 @@ namespace DPProcLevel
 			return true;
 		}
 
+		// Distribute uTotal villagers across the rooms in axRooms, skipping
+		// any room id in axSkip. Per-room counts proportional to room area
+		// (hx * hz), with a minimum of 1 villager per non-skipped room and
+		// spillover going to the largest room. Then sample positions inside
+		// each room using a per-villager small offset so they don't overlap.
+		//
+		// Determinism: caller passes the same RNG that drove BSP + yaw;
+		// since this function only consumes the RNG, same seed -> same
+		// villager positions.
+		void DistributeVillagers(LevelLayout& xLayout, Rng& xRng,
+		                         uint32_t uTotal,
+		                         const Zenith_Vector<RoomId>& axSkip)
+		{
+			xLayout.axVillagerSpawns.Clear();
+			const uint32_t uN = xLayout.axRooms.GetSize();
+			if (uN == 0u || uTotal == 0u) return;
+
+			// Build allowed-room list + areas.
+			Zenith_Vector<RoomId> axAllowed;
+			Zenith_Vector<float>  afArea;
+			float fSumArea = 0.0f;
+			for (uint32_t i = 0; i < uN; ++i)
+			{
+				bool bSkip = false;
+				for (uint32_t s = 0; s < axSkip.GetSize(); ++s)
+				{
+					if (axSkip.Get(s) == static_cast<RoomId>(i)) { bSkip = true; break; }
+				}
+				if (bSkip) continue;
+				const Room& xR = xLayout.axRooms.Get(i);
+				const float fA = 4.0f * xR.fHalfExtentX * xR.fHalfExtentZ;
+				axAllowed.PushBack(static_cast<RoomId>(i));
+				afArea.PushBack(fA);
+				fSumArea += fA;
+			}
+			if (axAllowed.GetSize() == 0u) return;
+
+			// Per-room base count: min 1 each, then spread the remainder by
+			// proportional rounding to the largest area.
+			Zenith_Vector<uint32_t> auPerRoom;
+			uint32_t uAssigned = 0u;
+			for (uint32_t i = 0; i < axAllowed.GetSize(); ++i)
+			{
+				auPerRoom.PushBack(1u);
+				++uAssigned;
+			}
+			if (uAssigned > uTotal)
+			{
+				// More rooms than villagers -- drop the surplus minimums in
+				// reverse area order until we fit. Tiny rooms are skipped
+				// in the under-budget case.
+				while (uAssigned > uTotal)
+				{
+					// Find smallest-area allowed room with count >= 1.
+					int iSmallest = -1;
+					float fMin = 1e30f;
+					for (uint32_t i = 0; i < axAllowed.GetSize(); ++i)
+					{
+						if (auPerRoom.Get(i) == 0u) continue;
+						if (afArea.Get(i) < fMin) { fMin = afArea.Get(i); iSmallest = static_cast<int>(i); }
+					}
+					if (iSmallest < 0) break;
+					auPerRoom.Get(static_cast<uint32_t>(iSmallest)) = 0u;
+					--uAssigned;
+				}
+			}
+			// Spill remainder proportionally: give each extra villager to
+			// the largest remaining room (greedy water-filling).
+			while (uAssigned < uTotal)
+			{
+				int iLargest = 0;
+				float fMax = -1.0f;
+				for (uint32_t i = 0; i < axAllowed.GetSize(); ++i)
+				{
+					const float fScore = afArea.Get(i) / static_cast<float>(auPerRoom.Get(i) + 1u);
+					if (fScore > fMax) { fMax = fScore; iLargest = static_cast<int>(i); }
+				}
+				auPerRoom.Get(static_cast<uint32_t>(iLargest))++;
+				++uAssigned;
+			}
+
+			// Sample per-villager positions inside each room. Use a small
+			// random offset from the centre, kept inside an inner box
+			// 60%% the size of the room so villagers don't clip into walls.
+			for (uint32_t iR = 0; iR < axAllowed.GetSize(); ++iR)
+			{
+				const RoomId xR = axAllowed.Get(iR);
+				const uint32_t uCount = auPerRoom.Get(iR);
+				if (uCount == 0u) continue;
+				const Room& xRoom = xLayout.axRooms.Get(static_cast<uint32_t>(xR));
+				const float fInnerHX = xRoom.fHalfExtentX * 0.6f;
+				const float fInnerHZ = xRoom.fHalfExtentZ * 0.6f;
+				const float fCos = std::cos(xRoom.fYawRadians);
+				const float fSin = std::sin(xRoom.fYawRadians);
+				for (uint32_t v = 0; v < uCount; ++v)
+				{
+					VillagerSpawn xS;
+					xS.xRoomId = xR;
+					const float fLx = UniformF(xRng, -fInnerHX, fInnerHX);
+					const float fLz = UniformF(xRng, -fInnerHZ, fInnerHZ);
+					// Rotate to world with R_y.
+					xS.fX = xRoom.fCentreX + fLx * fCos + fLz * fSin;
+					xS.fZ = xRoom.fCentreZ - fLx * fSin + fLz * fCos;
+					xS.fYawRadians = UniformF(xRng, 0.0f, 6.28318530718f);
+					xLayout.axVillagerSpawns.PushBack(xS);
+				}
+			}
+		}
+
+		// Pick the priest spawn room: a room that is neither spawn nor
+		// pentagram, weighted toward "middle" rooms (closer to neither).
+		// Falls back to any non-critical room if no middle exists.
+		RoomId PickPriestRoom(const LevelLayout& xLayout, RoomId xSpawnRoom, RoomId xPentRoom)
+		{
+			const uint32_t uN = xLayout.axRooms.GetSize();
+			if (uN == 0u) return kInvalidRoomId;
+			const Zenith_Vector<int32_t> aiDistFromSpawn = BfsDistances(xLayout, xSpawnRoom);
+			const Zenith_Vector<int32_t> aiDistFromPent  = BfsDistances(xLayout, xPentRoom);
+			RoomId xBest  = kInvalidRoomId;
+			int32_t iBest = -1;
+			for (uint32_t i = 0; i < uN; ++i)
+			{
+				const RoomId xR = static_cast<RoomId>(i);
+				if (xR == xSpawnRoom || xR == xPentRoom) continue;
+				const int32_t dS = aiDistFromSpawn.Get(i);
+				const int32_t dP = aiDistFromPent.Get(i);
+				if (dS < 0 || dP < 0) continue;
+				// Score: prefer rooms where min(d_spawn, d_pent) is highest
+				// (middle of the level). Tiebreak by lowest room id for
+				// determinism.
+				const int32_t iScore = (dS < dP) ? dS : dP;
+				if (iScore > iBest) { iBest = iScore; xBest = xR; }
+			}
+			// Fallback if BFS scoring failed.
+			if (xBest == kInvalidRoomId)
+			{
+				for (uint32_t i = 0; i < uN; ++i)
+				{
+					const RoomId xR = static_cast<RoomId>(i);
+					if (xR != xSpawnRoom && xR != xPentRoom) { xBest = xR; break; }
+				}
+			}
+			return xBest;
+		}
+
+		// Walk the corridor graph starting from xPriestRoom and emit up
+		// to uMaxNodes patrol waypoints, one per visited room (centre).
+		// BFS order yields a cycle that hits diverse rooms; the caller
+		// closes the cycle by having the priest loop from the last node
+		// back to the first.
+		void BuildPatrolCycle(LevelLayout& xLayout, RoomId xPriestRoom,
+		                      RoomId xPentRoom, uint32_t uMaxNodes)
+		{
+			xLayout.axPatrolNodes.Clear();
+			if (xPriestRoom == kInvalidRoomId) return;
+			const Zenith_Vector<int32_t> aiDist = BfsDistances(xLayout, xPriestRoom);
+			// Collect room ids reachable from priest (dist >= 0), sorted by
+			// distance ascending. Skip pentagram so the priest doesn't
+			// patrol into the win-condition room.
+			Zenith_Vector<RoomId>  axReach;
+			Zenith_Vector<int32_t> aiReachDist;
+			for (uint32_t i = 0; i < xLayout.axRooms.GetSize(); ++i)
+			{
+				if (aiDist.Get(i) < 0) continue;
+				if (static_cast<RoomId>(i) == xPentRoom) continue;
+				axReach.PushBack(static_cast<RoomId>(i));
+				aiReachDist.PushBack(aiDist.Get(i));
+			}
+			// Bubble-sort by distance (small N).
+			for (uint32_t a = 0; a + 1 < axReach.GetSize(); ++a)
+			{
+				for (uint32_t b = a + 1; b < axReach.GetSize(); ++b)
+				{
+					if (aiReachDist.Get(b) < aiReachDist.Get(a))
+					{
+						const int32_t tDist = aiReachDist.Get(a);
+						aiReachDist.Get(a) = aiReachDist.Get(b);
+						aiReachDist.Get(b) = tDist;
+						const RoomId tR = axReach.Get(a);
+						axReach.Get(a) = axReach.Get(b);
+						axReach.Get(b) = tR;
+					}
+				}
+			}
+			const uint32_t uTake = (axReach.GetSize() < uMaxNodes) ? axReach.GetSize() : uMaxNodes;
+			for (uint32_t i = 0; i < uTake; ++i)
+			{
+				const RoomId xR = axReach.Get(i);
+				const Room& xRoom = xLayout.axRooms.Get(static_cast<uint32_t>(xR));
+				PatrolNode xN;
+				xN.fX = xRoom.fCentreX;
+				xN.fZ = xRoom.fCentreZ;
+				xN.xRoomId = xR;
+				xLayout.axPatrolNodes.PushBack(xN);
+			}
+		}
+
+		// Top-level AI placement. Picks priest spawn, patrols, distributes
+		// villagers, and runs basic validation (>= 1 villager total, priest
+		// is placed, patrol has at least one node).
+		void PlaceAI(LevelLayout& xLayout, Rng& xRng, const GenConfig& xConfig)
+		{
+			xLayout.axVillagerSpawns.Clear();
+			xLayout.axPatrolNodes.Clear();
+			xLayout.xPriestSpawn = PriestSpawn();
+
+			// Find spawn + pentagram rooms from already-placed game
+			// elements.
+			RoomId xSpawn = kInvalidRoomId;
+			RoomId xPent  = kInvalidRoomId;
+			for (uint32_t i = 0; i < xLayout.axGameElements.GetSize(); ++i)
+			{
+				const GameElement& xE = xLayout.axGameElements.Get(i);
+				if (xE.eType == GameElementType::SpawnPoint) xSpawn = xE.xRoomId;
+				if (xE.eType == GameElementType::Pentagram)  xPent  = xE.xRoomId;
+			}
+			if (xSpawn == kInvalidRoomId || xPent == kInvalidRoomId) return;
+
+			// Priest in a "middle" room.
+			const RoomId xPriestRoom = PickPriestRoom(xLayout, xSpawn, xPent);
+			if (xPriestRoom != kInvalidRoomId)
+			{
+				const Room& xR = xLayout.axRooms.Get(static_cast<uint32_t>(xPriestRoom));
+				xLayout.xPriestSpawn.fX           = xR.fCentreX;
+				xLayout.xPriestSpawn.fZ           = xR.fCentreZ;
+				xLayout.xPriestSpawn.fYawRadians  = xR.fYawRadians;
+				xLayout.xPriestSpawn.xRoomId      = xPriestRoom;
+				xLayout.xPriestSpawn.bValid       = true;
+			}
+
+			// Patrol cycle starting at priest's room.
+			BuildPatrolCycle(xLayout, xPriestRoom, xPent, xConfig.uPatrolNodeCount);
+
+			// Villager distribution -- skip pentagram (puzzle room) and
+			// the priest's room (villagers would be eaten on spawn).
+			Zenith_Vector<RoomId> axSkip;
+			axSkip.PushBack(xPent);
+			if (xPriestRoom != kInvalidRoomId) axSkip.PushBack(xPriestRoom);
+			DistributeVillagers(xLayout, xRng, xConfig.uVillagerCount, axSkip);
+		}
+
 		// Project the partition-edge midpoint onto a room's nearest edge
 		// to get a door point. The room may be rotated, so we work in the
 		// room's LOCAL frame: rotate the world midpoint into local, clamp
@@ -949,6 +1190,11 @@ namespace DPProcLevel
 			// solvability is visible in the JSON dump so iteration can
 			// see what went wrong.
 		}
+
+		// 6. AI placement (17 villager anchors + priest spawn + patrol
+		//    cycle). Depends on the game elements having been placed
+		//    first so we know which rooms to skip (pentagram, priest's).
+		PlaceAI(xOut, xRng, xConfig);
 
 		return true;
 	}

@@ -49,13 +49,19 @@ Add-Type -AssemblyName System.Drawing
 if (-not $Quiet) { Write-Host "Loading $JsonPath..." -ForegroundColor Cyan }
 $layout = Get-Content $JsonPath -Raw | ConvertFrom-Json
 
-$rooms      = if ($layout.rooms)        { @($layout.rooms) }        else { @() }
-$doors      = if ($layout.doorPoints)   { @($layout.doorPoints) }   else { @() }
-$corridors  = if ($layout.corridors)    { @($layout.corridors) }    else { @() }
-$walls      = if ($layout.walls)        { @($layout.walls) }        else { @() }
-$elements   = if ($layout.gameElements) { @($layout.gameElements) } else { @() }
+$rooms      = if ($layout.rooms)          { @($layout.rooms) }          else { @() }
+$doors      = if ($layout.doorPoints)     { @($layout.doorPoints) }     else { @() }
+$corridors  = if ($layout.corridors)      { @($layout.corridors) }      else { @() }
+$walls      = if ($layout.walls)          { @($layout.walls) }          else { @() }
+$elements   = if ($layout.gameElements)   { @($layout.gameElements) }   else { @() }
+$villagers  = if ($layout.villagerSpawns) { @($layout.villagerSpawns) } else { @() }
+$patrol     = if ($layout.patrolNodes)    { @($layout.patrolNodes) }    else { @() }
+$priest     = $layout.priestSpawn
 
-if (-not $Quiet) { Write-Host "  + $($rooms.Count) rooms, $($doors.Count) doors, $($corridors.Count) corridors, $($walls.Count) walls, $($elements.Count) game elements" -ForegroundColor DarkGray }
+if (-not $Quiet) {
+    $priestStr = if ($priest) { "priest" } else { "no-priest" }
+    Write-Host "  + $($rooms.Count) rooms, $($doors.Count) doors, $($corridors.Count) corridors, $($walls.Count) walls, $($elements.Count) game elements, $($villagers.Count) villagers, $priestStr, $($patrol.Count) patrol nodes" -ForegroundColor DarkGray
+}
 
 # ----------------------------------------------------------------------
 # World <-> image projection
@@ -313,10 +319,62 @@ foreach ($elem in $elements) {
 }
 $elemStroke.Dispose()
 
+# Patrol cycle -- thin dashed pink lines between consecutive patrol nodes,
+# closing back from the last node to the first. Drawn under the priest +
+# villager icons so they're a context layer, not the focus.
+if ($patrol.Count -ge 2) {
+    $patrolPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(180, 230, 130, 200), 1.5)
+    $patrolPen.DashStyle = [System.Drawing.Drawing2D.DashStyle]::Dash
+    for ($i = 0; $i -lt $patrol.Count; ++$i) {
+        $a = $patrol[$i]
+        $b = $patrol[($i + 1) % $patrol.Count]
+        $pA = Project ([double]$a.x) ([double]$a.z)
+        $pB = Project ([double]$b.x) ([double]$b.z)
+        $g.DrawLine($patrolPen, $pA[0], $pA[1], $pB[0], $pB[1])
+    }
+    $patrolPen.Dispose()
+}
+
+# Patrol node markers (light pink dots). Drawn on top of the patrol
+# lines so the connection-points are obvious.
+$patrolBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 235, 150, 215))
+foreach ($p in $patrol) {
+    $pt = Project ([double]$p.x) ([double]$p.z)
+    $g.FillEllipse($patrolBrush, ($pt[0] - 5), ($pt[1] - 5), 10, 10)
+}
+$patrolBrush.Dispose()
+
+# Villager spawns -- small light-green dots. There are 17 of them per
+# layout in the default config, so they cluster around their host rooms
+# but with the per-villager random offset (handled by PlaceAI) they
+# don't pile up.
+$villagerBrush  = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(220, 130, 220, 130))
+$villagerStroke = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, 30, 60, 30), 1.0)
+foreach ($v in $villagers) {
+    $pt = Project ([double]$v.x) ([double]$v.z)
+    $g.FillEllipse($villagerBrush, ($pt[0] - 5), ($pt[1] - 5), 10, 10)
+    $g.DrawEllipse($villagerStroke, ($pt[0] - 5), ($pt[1] - 5), 10, 10)
+}
+$villagerBrush.Dispose()
+$villagerStroke.Dispose()
+
+# Priest spawn -- big dark-red X. Drawn LAST in the AI layer so it sits
+# on top of villager dots if the priest's room also has spawn anchors
+# (shouldn't, but defensive).
+if ($priest) {
+    $pt = Project ([double]$priest.x) ([double]$priest.z)
+    $priestPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, 200, 60, 60), 4.0)
+    $r = 12
+    $g.DrawLine($priestPen, ($pt[0] - $r), ($pt[1] - $r), ($pt[0] + $r), ($pt[1] + $r))
+    $g.DrawLine($priestPen, ($pt[0] - $r), ($pt[1] + $r), ($pt[0] + $r), ($pt[1] - $r))
+    $priestPen.Dispose()
+}
+
 # Caption (top-left)
 $capFont = New-Object System.Drawing.Font('Consolas', 14.0, [System.Drawing.FontStyle]::Regular)
 $capBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(220, 220, 230))
-$caption = "seed=$($layout.header.seed)  rooms=$($rooms.Count)  doors=$($doors.Count)  corridors=$($corridors.Count)  walls=$($walls.Count)  elements=$($elements.Count)"
+$priestCaption = if ($priest) { "priest" } else { "(no priest)" }
+$caption = "seed=$($layout.header.seed)  rooms=$($rooms.Count)  doors=$($doors.Count)  corridors=$($corridors.Count)  walls=$($walls.Count)  elements=$($elements.Count)  villagers=$($villagers.Count)  $priestCaption  patrol=$($patrol.Count)"
 $g.DrawString($caption, $capFont, $capBrush, 10, 8)
 $boundsCaption = "world bounds: x=[{0:F1},{1:F1}]  z=[{2:F1},{3:F1}]  ({4:F1}m x {5:F1}m)" -f $minX, $maxX, $minZ, $maxZ, $worldW, $worldH
 $g.DrawString($boundsCaption, $capFont, $capBrush, 10, 30)

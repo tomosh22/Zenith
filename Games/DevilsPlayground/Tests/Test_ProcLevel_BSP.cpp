@@ -86,6 +86,8 @@ namespace
 		if (xA.axDoorPoints.GetSize()      != xB.axDoorPoints.GetSize())      return false;
 		if (xA.axCorridors.GetSize()       != xB.axCorridors.GetSize())       return false;
 		if (xA.axWallSegments.GetSize()    != xB.axWallSegments.GetSize())    return false;
+		if (xA.axVillagerSpawns.GetSize()  != xB.axVillagerSpawns.GetSize())  return false;
+		if (xA.axPatrolNodes.GetSize()     != xB.axPatrolNodes.GetSize())     return false;
 		for (uint32_t i = 0; i < xA.axWallSegments.GetSize(); ++i)
 		{
 			const auto& wA = xA.axWallSegments.Get(i);
@@ -95,6 +97,29 @@ namespace
 			if (wA.fHalfExtentX != wB.fHalfExtentX) return false;
 			if (wA.fHalfExtentZ != wB.fHalfExtentZ) return false;
 			if (wA.fYawRadians != wB.fYawRadians) return false;
+		}
+		for (uint32_t i = 0; i < xA.axVillagerSpawns.GetSize(); ++i)
+		{
+			const auto& vA = xA.axVillagerSpawns.Get(i);
+			const auto& vB = xB.axVillagerSpawns.Get(i);
+			if (vA.fX != vB.fX || vA.fZ != vB.fZ) return false;
+			if (vA.fYawRadians != vB.fYawRadians) return false;
+			if (vA.xRoomId != vB.xRoomId) return false;
+		}
+		if (xA.xPriestSpawn.bValid != xB.xPriestSpawn.bValid) return false;
+		if (xA.xPriestSpawn.bValid)
+		{
+			if (xA.xPriestSpawn.fX != xB.xPriestSpawn.fX) return false;
+			if (xA.xPriestSpawn.fZ != xB.xPriestSpawn.fZ) return false;
+			if (xA.xPriestSpawn.fYawRadians != xB.xPriestSpawn.fYawRadians) return false;
+			if (xA.xPriestSpawn.xRoomId != xB.xPriestSpawn.xRoomId) return false;
+		}
+		for (uint32_t i = 0; i < xA.axPatrolNodes.GetSize(); ++i)
+		{
+			const auto& nA = xA.axPatrolNodes.Get(i);
+			const auto& nB = xB.axPatrolNodes.Get(i);
+			if (nA.fX != nB.fX || nA.fZ != nB.fZ) return false;
+			if (nA.xRoomId != nB.xRoomId) return false;
 		}
 		for (uint32_t i = 0; i < xA.axRooms.GetSize(); ++i)
 		{
@@ -304,16 +329,52 @@ namespace
 			if (auCounts[u] != 1u) return Fail("expected exactly 1 of each Objective", static_cast<int>(uSeed));
 		}
 
+		// P3 AI placement invariants:
+		//   * Exactly uVillagerCount villager spawns (default 17).
+		//   * Priest spawn populated (bValid=true).
+		//   * Patrol cycle has at least 2 nodes (so the priest actually
+		//     moves rather than camping a single spot).
+		//   * No villagers in the pentagram or priest rooms.
+		if (xA.axVillagerSpawns.GetSize() != xCfg.uVillagerCount)
+			return Fail("villager-count mismatch", static_cast<int>(uSeed));
+		if (!xA.xPriestSpawn.bValid)
+			return Fail("priest spawn not populated", static_cast<int>(uSeed));
+		if (xA.axPatrolNodes.GetSize() < 2u)
+			return Fail("patrol cycle has fewer than 2 nodes", static_cast<int>(uSeed));
+
+		// Skip-rooms check: pentagram + priest's rooms must contain
+		// no villager spawns.
+		DPProcLevel::RoomId xPentRoomId   = DPProcLevel::kInvalidRoomId;
+		DPProcLevel::RoomId xPriestRoomId = xA.xPriestSpawn.xRoomId;
+		for (uint32_t i = 0; i < xA.axGameElements.GetSize(); ++i)
+		{
+			if (xA.axGameElements.Get(i).eType == DPProcLevel::GameElementType::Pentagram)
+			{
+				xPentRoomId = xA.axGameElements.Get(i).xRoomId;
+				break;
+			}
+		}
+		for (uint32_t i = 0; i < xA.axVillagerSpawns.GetSize(); ++i)
+		{
+			const auto& xV = xA.axVillagerSpawns.Get(i);
+			if (xV.xRoomId == xPentRoomId)
+				return Fail("villager spawn in pentagram room", static_cast<int>(uSeed));
+			if (xV.xRoomId == xPriestRoomId)
+				return Fail("villager spawn in priest room", static_cast<int>(uSeed));
+		}
+
 		// Emit JSON for the visualiser.
 		const std::string strPath = TempPath(uSeed);
 		if (!DPProcLevel::ExportLayoutJson(xA, strPath.c_str()))
 			return Fail("ExportLayoutJson returned false", static_cast<int>(uSeed));
 
-		std::printf("[ProcLevelBSP] seed=%llu rooms=%u doors=%u corridors=%u walls=%u elements=%u json=%s\n",
+		std::printf("[ProcLevelBSP] seed=%llu rooms=%u doors=%u corridors=%u walls=%u elements=%u villagers=%u patrol=%u priest=%d json=%s\n",
 			static_cast<unsigned long long>(uSeed),
 			xA.axRooms.GetSize(), xA.axDoorPoints.GetSize(),
 			xA.axCorridors.GetSize(), xA.axWallSegments.GetSize(),
 			xA.axGameElements.GetSize(),
+			xA.axVillagerSpawns.GetSize(), xA.axPatrolNodes.GetSize(),
+			(int)xA.xPriestSpawn.bValid,
 			strPath.c_str());
 		std::fflush(stdout);
 		return true;
