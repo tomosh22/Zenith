@@ -25,6 +25,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics_Fwd.h"
+#include "Physics/Zenith_Physics.h"  // SetGravityEnabled / LockRotation for character bodies
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/DPProcLevel/DPProcLevel_Generator.h"
@@ -70,6 +71,15 @@ public:
 		// (default 0) so the bootstrap is deterministic + the unit
 		// test has a predictable layout to assert against.
 		DPProcLevel::GenConfig xConfig;  // defaults from header
+		// Override the wall half-thickness so total thickness (2*half =
+		// 0.8 m) exceeds the navmesh voxelizer's cell width (~0.36 m
+		// for a 100x100m level). The GenConfig default of 0.15
+		// (0.30 m total) is thinner than one navmesh cell, so the
+		// Recast-style voxelizer was missing walls -- the priest's
+		// NavMeshAgent would happily route a path through them and
+		// the SetPosition writes literally teleported the priest
+		// through walls (reported 2026-05-19).
+		xConfig.fWallHalfThickness = 0.4f;
 		const bool bOk = DPProcLevel::Generate(m_uSeed, xConfig, m_xLayout);
 
 		std::printf("[DPProcLevelBootstrap] seed=%llu generated=%d "
@@ -549,18 +559,41 @@ private:
 	// Shared character-spawn helper. Returns true on success.
 	//
 	// SM_Cube is corner-anchored at (0, 0, 0) → (1, 1, 1) in mesh local
-	// space. With scale (sx, sy, sz) and position (px, py, pz), the
-	// visual mesh spans [px, px+sx] × [py, py+sy] × [pz, pz+sz]. We
-	// keep position at the layout's (fX, _, fZ) and y=1 (floor top) so
-	// the character cube sits on the ground. The visual centre is
-	// (fX + sx/2, 1 + sy/2, fZ + sz/2), off by (sx/2, sy/2, sz/2) from
-	// the layout coords; acceptable slop for the placeholder visuals.
+	// space. To get the visual + capsule collider CENTRED on the
+	// layout's (fX, _, fZ), the entity position must be offset by
+	// -R(yaw) * (sx/2, _, sz/2) -- the same corner-compensation pattern
+	// SpawnWalls uses. Without this offset, characters render up to
+	// (sx/2, _, sz/2) away from where the bot's pathfinder + ai
+	// proximity queries expect them, which made the bot appear to be
+	// "trying to walk through walls" in 2026-05-19 testing (the path
+	// targeted a wall-overlapping centre while the visible cube was
+	// offset into the adjacent room).
 	//
-	// Villager cube: 1 × 2 × 0.5 m  (matches AuthorPlacementBatch's
-	// authored humanoid capsule -- the engine's mesh-aware capsule
-	// sizing reads the same dimensions back out).
-	// Priest cube:   1.5 × 3 × 0.75 m  (50% bigger so the priest is
-	// visually distinguishable from villagers at a glance).
+	// Visualiser's R_y convention (PR #95):
+	//   local (lx, lz) -> world (lx*cos + lz*sin, -lx*sin + lz*cos)
+	// World offset from layout centre to mesh corner (-sx/2, -sz/2):
+	//   wx = -sx/2*cos - sz/2*sin
+	//   wz =  sx/2*sin - sz/2*cos
+	//
+	// Y-anchor 1.0 (floor top) so the cube's bottom sits on the floor
+	// (which spans y=[0, 1] from the PR #109 floor fix).
+	//
+	// Physics setup after AddCollider mirrors what DPVillager_Behaviour
+	// and Priest_Behaviour do in their own OnAwake hooks, but we apply
+	// it INLINE here too because:
+	//   1. There's an apparent timing window where the script's OnAwake
+	//      sees HasValidBody() == false (the body has been created but
+	//      Jolt's activate hasn't run yet), causing the lock + gravity
+	//      disable to silently skip. Doing it here, immediately after
+	//      AddCollider, sidesteps that race.
+	//   2. The user observed "the cubes are rotating" on 2026-05-19,
+	//      which is exactly the symptom of the rotation lock not
+	//      taking effect.
+	// LockRotation(X=true, Y=false, Z=true) keeps yaw free but freezes
+	// pitch + roll so glancing wall hits can't tip the capsule over.
+	//
+	// Villager cube: 1 × 2 × 0.5 m. Priest cube: 1.5 × 3 × 0.75 m
+	// (50% larger so priest is visually distinguishable from villagers).
 	bool SpawnCharacterEntity(
 		Zenith_SceneData* pxScene,
 		const char* szPrefix,
@@ -584,9 +617,19 @@ private:
 		{
 			Zenith_TransformComponent& xT =
 				xEntity.GetComponent<Zenith_TransformComponent>();
-			// Anchor y=1: floor top. Cube extends upward to y=1+scale.y.
-			// Villager: y in [1, 3]; priest: y in [1, 4].
-			xT.SetPosition(Zenith_Maths::Vector3(fX, 1.0f, fZ));
+
+			// Corner-offset: rotate (-sx/2, 0, -sz/2) by yaw and add
+			// to the layout's (fX, _, fZ). End result: cube CENTRE is
+			// at (fX, _, fZ) instead of the cube CORNER landing there.
+			const float fCosY = std::cos(fYawRadians);
+			const float fSinY = std::sin(fYawRadians);
+			const float fHalfSx = xScale.x * 0.5f;
+			const float fHalfSz = xScale.z * 0.5f;
+			const float fOffsetX = -fHalfSx * fCosY - fHalfSz * fSinY;
+			const float fOffsetZ =  fHalfSx * fSinY - fHalfSz * fCosY;
+
+			xT.SetPosition(Zenith_Maths::Vector3(
+				fX + fOffsetX, 1.0f, fZ + fOffsetZ));
 			const Zenith_Maths::Quat xRot = Zenith_Maths::AngleAxis(
 				fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 			xT.SetRotation(xRot);
@@ -598,6 +641,17 @@ private:
 
 		Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
 		xCol.AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+
+		// Explicit physics setup (see method header). This is belt-and-
+		// braces against the DPVillager_Behaviour / Priest_Behaviour
+		// HasValidBody() check failing on the OnAwake immediately after
+		// AddScript fires.
+		if (xCol.HasValidBody())
+		{
+			const JPH::BodyID& xBodyID = xCol.GetBodyID();
+			Zenith_Physics::SetGravityEnabled(xBodyID, false);
+			Zenith_Physics::LockRotation(xBodyID, /*X=*/true, /*Y=*/false, /*Z=*/true);
+		}
 
 		if (bIsPriest)
 		{
