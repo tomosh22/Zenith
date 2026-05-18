@@ -332,6 +332,9 @@
     <ClCompile Include="..\Tests\Test_PriestPursuit.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_ProcLevelBootstrap.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_ProcLevel_BSP.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -410,6 +413,9 @@
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DPPlayerController_Behaviour.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\DPProcLevelBootstrap_Behaviour.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DPVillager_Behaviour.h">
