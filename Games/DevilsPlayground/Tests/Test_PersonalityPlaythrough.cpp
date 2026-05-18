@@ -508,27 +508,30 @@ namespace
 	}
 
 	// Scan every Zenith_ColliderComponent in the active scene and emit a
-	// SceneObstacle (top-down OBB) for any whose world-space centre sits
-	// above the floor (y > 1.5 m). The same y threshold the path grid
-	// uses (kPathFloorY in BuildPathGrid + DPHeuristicBot's kPathFloorYTop)
-	// classifies anything taller than the floor's mesh-aware OBB top as
-	// "not walkable" -- here we report exactly that set of obstacles so the
-	// visualiser shows the bot's pathing constraint, not just the authored
-	// geometry.
+	// SceneObstacle (top-down OBB) for any whose world-space OBB centre
+	// sits above the floor (y > 1.5 m). The 1.5 m threshold matches the
+	// path grid's classifier in BuildPathGrid -- anything whose top sits
+	// above the floor mesh's top (y=1.0) is "tall obstacle" the bot must
+	// route around, exactly what we want the visualiser to draw.
 	//
-	// Convention reminder:
-	//   * Floor: mesh-local bounds 0..1, body at y=0, mesh-aware OBB top
-	//     at y=1.0. Centre at y=0.5 -> below the 1.5 threshold, excluded.
-	//   * Wall: mesh-local bounds 0..4, body at y=1, mesh-aware OBB top
-	//     at y=5.0. Centre at y=3.0 -> above the 1.5 threshold, included.
+	// World-space OBB derivation uses the engine's own
+	// Zenith_ColliderComponent::ComputeBoxDimensionsAndOffset() so the
+	// rendered rectangles match the actual Jolt physics body the bot is
+	// navigating against, including mesh-aware sizing.
 	//
-	// World-space OBB derivation: the unit-cube mesh has its origin at
-	// the corner (0,0,0), so its local centre is (0.5, 0.5, 0.5). After
-	// transform (scale -> rotate -> translate) the world centre is
-	//   P + Q * (0.5*S)
-	// where S is the entity's scale, Q its rotation, P its position. The
-	// top-down half-extents are 0.5*Sx and 0.5*Sz; the yaw is extracted
-	// from Q via glm::yaw().
+	// Why we need mesh-aware sizing: the BuildingAssetKit walls use
+	// SM_Cube with mesh bounds (-1, 0, -1) to (1, 4, 1) (a 2x4x2 brick
+	// anchored at y=0). The naive "half-extents = 0.5*scale" formula
+	// gives a 1x1x1 collider, which:
+	//   * is half the wall's actual X/Z footprint (mesh half-extent is
+	//     1.0 in X/Z, not 0.5)
+	//   * misses the Y offset (mesh centre Y is 2, not 0.5)
+	// The pre-fix visualisation showed scattered tiny rectangles with
+	// wrong positions because of these two errors compounding.
+	//
+	// Mirrors the wall convention documented in
+	// Zenith_ColliderComponent.cpp::ComputeBoxDimensionsAndOffset() so a
+	// future change to that function automatically flows through here.
 	void ScanSceneObstacles(Zenith_Vector<Zenith_Telemetry::SceneObstacle>& xOutObs)
 	{
 		xOutObs.Clear();
@@ -559,30 +562,38 @@ namespace
 				xT.GetRotation(xRot);
 				xT.GetScale(xScale);
 
-				// World centre = P + Q * (0.5 * S). Use glm to rotate the
-				// half-scale vector by the quaternion.
-				const Zenith_Maths::Vector3 xLocalHalfS(0.5f * xScale.x,
-				                                        0.5f * xScale.y,
-				                                        0.5f * xScale.z);
-				const Zenith_Maths::Vector3 xRotatedHalfS = xRot * xLocalHalfS;
-				const Zenith_Maths::Vector3 xCentre = xPos + xRotatedHalfS;
+				// Ask the collider for the same half-extents + local
+				// offset the Jolt body was built with. This honours mesh
+				// bounds when a ModelComponent is attached, and falls
+				// back to the unit-cube assumption otherwise.
+				Zenith_Maths::Vector3 xHalfExtents;
+				Zenith_Maths::Vector3 xLocalOffset;
+				xCol.ComputeBoxDimensionsAndOffset(xScale, xHalfExtents, xLocalOffset, false);
 
-				// Tall-obstacle filter: anything whose mesh-aware OBB centre
-				// sits above the floor's top (y=1.0). 1.5 m is the same
-				// threshold the path grid uses.
+				// World centre = transform position + rotated mesh-centre
+				// offset. The mesh offset for BuildingAssetKit walls is
+				// (0, 2*sy, 0) so the body sits at the wall's vertical
+				// midpoint; XZ stays at the transform's authored XZ.
+				const Zenith_Maths::Vector3 xRotatedOffset = xRot * xLocalOffset;
+				const Zenith_Maths::Vector3 xCentre = xPos + xRotatedOffset;
+
+				// Tall-obstacle filter: anything whose OBB centre sits
+				// above the floor's top (y=1.0). 1.5 m matches the
+				// pathfinder's threshold (BuildPathGrid).
 				if (xCentre.y < 1.5f)
 				{
 					++uExcludedFloor;
 					return;
 				}
 
-				// Top-down half-extents (XZ plane only). The y component
-				// is discarded.
+				// Top-down OBB (XZ plane). Yaw extracted from the world
+				// rotation; the visualiser rotates the local-frame
+				// half-extents by yaw when computing the 4 corners.
 				Zenith_Telemetry::SceneObstacle xO;
 				xO.fCentreX     = xCentre.x;
 				xO.fCentreZ     = xCentre.z;
-				xO.fHalfExtentX = 0.5f * xScale.x;
-				xO.fHalfExtentZ = 0.5f * xScale.z;
+				xO.fHalfExtentX = xHalfExtents.x;
+				xO.fHalfExtentZ = xHalfExtents.z;
 				xO.fYawRadians  = glm::yaw(xRot);
 				xOutObs.PushBack(xO);
 				++uIncluded;
