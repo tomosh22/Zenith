@@ -756,6 +756,68 @@ namespace DPProcLevel
 			return true;
 		}
 
+		// Returns true if world point (fX, fZ) is inside the OBB of any
+		// room in the layout, treating the room as expanded by fMargin
+		// on each side (so outdoor samples sit at least fMargin away
+		// from every wall and don't clip into furniture).
+		bool PointInsideAnyRoom(const LevelLayout& xLayout, float fX, float fZ, float fMargin)
+		{
+			for (uint32_t i = 0; i < xLayout.axRooms.GetSize(); ++i)
+			{
+				const Room& xR = xLayout.axRooms.Get(i);
+				const float fCos = std::cos(xR.fYawRadians);
+				const float fSin = std::sin(xR.fYawRadians);
+				// Inverse R_y rotation: world -> room-local.
+				//   lx = dx*cos - dz*sin
+				//   lz = dx*sin + dz*cos
+				const float fDx = fX - xR.fCentreX;
+				const float fDz = fZ - xR.fCentreZ;
+				const float fLx = fDx * fCos - fDz * fSin;
+				const float fLz = fDx * fSin + fDz * fCos;
+				if (std::fabs(fLx) <= xR.fHalfExtentX + fMargin &&
+				    std::fabs(fLz) <= xR.fHalfExtentZ + fMargin)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		// Sample a random world XZ position that's OUTDOOR -- inside
+		// the world bounds but outside every room's OBB by at least
+		// fMargin. Rejection-sampling: if the random point lands in a
+		// room, try again. With ~50%% indoor coverage typical of the
+		// BSP output, this finds a valid point in 1-2 tries on average;
+		// uMaxRetries caps the loop at 64 just so we never spin forever
+		// on a pathological layout that's all-indoor (shouldn't happen
+		// given the BSP's partition margin, but defensive).
+		//
+		// Returns true on success. fOutX/fOutZ only meaningful then.
+		bool SampleOutdoorPoint(const LevelLayout& xLayout, Rng& xRng,
+		                       float fMargin, uint32_t uMaxRetries,
+		                       float& fOutX, float& fOutZ)
+		{
+			// Shrink the world bounds by margin too so outdoor samples
+			// don't kiss the outer rectangle.
+			const float fMinX = xLayout.fBoundsMinX + fMargin;
+			const float fMaxX = xLayout.fBoundsMaxX - fMargin;
+			const float fMinZ = xLayout.fBoundsMinZ + fMargin;
+			const float fMaxZ = xLayout.fBoundsMaxZ - fMargin;
+			if (fMinX >= fMaxX || fMinZ >= fMaxZ) return false;
+			for (uint32_t i = 0; i < uMaxRetries; ++i)
+			{
+				const float fX = UniformF(xRng, fMinX, fMaxX);
+				const float fZ = UniformF(xRng, fMinZ, fMaxZ);
+				if (!PointInsideAnyRoom(xLayout, fX, fZ, fMargin))
+				{
+					fOutX = fX;
+					fOutZ = fZ;
+					return true;
+				}
+			}
+			return false;
+		}
+
 		// Distribute uTotal villagers across the rooms in axRooms, skipping
 		// any room id in axSkip. Per-room counts proportional to room area
 		// (hx * hz), with a minimum of 1 villager per non-skipped room and
@@ -991,10 +1053,72 @@ namespace DPProcLevel
 
 			// Villager distribution -- skip pentagram (puzzle room) and
 			// the priest's room (villagers would be eaten on spawn).
+			// Split between INDOOR (room-based) and OUTDOOR (street-based)
+			// so a fraction of the population loiters between buildings
+			// instead of all being stuck inside rooms.
 			Zenith_Vector<RoomId> axSkip;
 			axSkip.PushBack(xPent);
 			if (xPriestRoom != kInvalidRoomId) axSkip.PushBack(xPriestRoom);
-			DistributeVillagers(xLayout, xRng, xConfig.uVillagerCount, axSkip);
+			const uint32_t uOutdoor = (xConfig.uOutdoorVillagerCount < xConfig.uVillagerCount)
+				? xConfig.uOutdoorVillagerCount : xConfig.uVillagerCount;
+			const uint32_t uIndoor  = xConfig.uVillagerCount - uOutdoor;
+			DistributeVillagers(xLayout, xRng, uIndoor, axSkip);
+
+			// Outdoor villagers: rejection-sample world points outside
+			// every room. Yaw is random. If the sample fails (shouldn't),
+			// fall back to placing the villager at the world centre --
+			// loud but visible in the visualiser so the bug is obvious.
+			for (uint32_t v = 0; v < uOutdoor; ++v)
+			{
+				float fX = 0.0f, fZ = 0.0f;
+				const bool bOk = SampleOutdoorPoint(xLayout, xRng,
+					xConfig.fOutdoorMargin, 64u, fX, fZ);
+				VillagerSpawn xS;
+				if (bOk)
+				{
+					xS.fX = fX;
+					xS.fZ = fZ;
+				}
+				else
+				{
+					xS.fX = 0.5f * (xLayout.fBoundsMinX + xLayout.fBoundsMaxX);
+					xS.fZ = 0.5f * (xLayout.fBoundsMinZ + xLayout.fBoundsMaxZ);
+					Zenith_Warning(LOG_CATEGORY_CORE,
+						"DPProcLevel: outdoor villager %u sample failed, using bounds centre", v);
+				}
+				xS.fYawRadians = UniformF(xRng, 0.0f, 6.28318530718f);
+				xS.xRoomId     = kInvalidRoomId;
+				xLayout.axVillagerSpawns.PushBack(xS);
+			}
+		}
+
+		// Relocate the LAST uCount objective elements (Objective5, then
+		// Objective4, ...) to outdoor positions. Called from
+		// PlaceGameElements after the indoor pass so the objectives
+		// always exist; we just override their (x, z) and clear xRoomId.
+		// Solvability check treats roomId == -1 as "always reachable
+		// from spawn" -- which is true because outdoor space is
+		// always connected to every room's door.
+		void OutdoorRelocateObjectives(LevelLayout& xLayout, Rng& xRng,
+		                              uint32_t uCount, float fMargin)
+		{
+			if (uCount == 0u) return;
+			// Walk axGameElements backwards looking for Objective1..5; move
+			// the last uCount of those outdoor.
+			uint32_t uMoved = 0;
+			for (int i = static_cast<int>(xLayout.axGameElements.GetSize()) - 1; i >= 0 && uMoved < uCount; --i)
+			{
+				GameElement& xE = xLayout.axGameElements.Get(static_cast<uint32_t>(i));
+				const uint8_t u = static_cast<uint8_t>(xE.eType);
+				if (u < static_cast<uint8_t>(GameElementType::Objective1) ||
+				    u > static_cast<uint8_t>(GameElementType::Objective5)) continue;
+				float fX = 0.0f, fZ = 0.0f;
+				if (!SampleOutdoorPoint(xLayout, xRng, fMargin, 64u, fX, fZ)) continue;
+				xE.fX = fX;
+				xE.fZ = fZ;
+				xE.xRoomId = kInvalidRoomId;
+				++uMoved;
+			}
 		}
 
 		// Project the partition-edge midpoint onto a room's nearest edge
@@ -1180,6 +1304,16 @@ namespace DPProcLevel
 		//    from the room graph + door corridor; then validates the
 		//    placement is solvable (BFS w/ and w/o the door).
 		PlaceGameElements(xOut);
+
+		// 5b. Relocate some objectives outdoor -- a real village has
+		//     pickups scattered between buildings as well as inside.
+		//     Solvability check skips kInvalidRoomId objectives so they're
+		//     implicitly "always reachable" (outdoor IS always connected
+		//     to every room's door).
+		OutdoorRelocateObjectives(xOut, xRng,
+			xConfig.uOutdoorObjectiveCount,
+			xConfig.fOutdoorMargin);
+
 		if (!ValidateSolvability(xOut))
 		{
 			Zenith_Warning(LOG_CATEGORY_CORE,
@@ -1194,6 +1328,8 @@ namespace DPProcLevel
 		// 6. AI placement (17 villager anchors + priest spawn + patrol
 		//    cycle). Depends on the game elements having been placed
 		//    first so we know which rooms to skip (pentagram, priest's).
+		//    Splits villagers into indoor (room-based) and outdoor
+		//    (between-building) buckets per uOutdoorVillagerCount.
 		PlaceAI(xOut, xRng, xConfig);
 
 		return true;

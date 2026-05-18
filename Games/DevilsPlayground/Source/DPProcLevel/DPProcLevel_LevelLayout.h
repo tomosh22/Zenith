@@ -229,5 +229,20 @@ namespace DPProcLevel
 		// at most one waypoint (the priest's patrol naturally rotates
 		// through different rooms instead of dwelling).
 		uint32_t uPatrolNodeCount = 6;
+		// Outdoor placement (P3.5). A village shouldn't be 100% indoors --
+		// some villagers loiter in the streets between buildings, and a
+		// few objectives lie outdoors as loot or pickups. These are
+		// sampled from the gaps between rooms (anywhere in world bounds
+		// that isn't inside any room's OBB + a wall-margin).
+		//
+		// uOutdoorVillagerCount villagers go outdoor (taken FROM the
+		// uVillagerCount total -- the remaining go indoor).
+		// uOutdoorObjectiveCount objectives are converted to outdoor
+		// pickups (their xRoomId becomes kInvalidRoomId).
+		uint32_t uOutdoorVillagerCount  = 8;   // ~half of 17
+		uint32_t uOutdoorObjectiveCount = 2;   // ~half of 5
+		// Margin around a room's OBB in metres -- outdoor points must
+		// sit at least this far from any wall so villagers don't clip.
+		float    fOutdoorMargin         = 0.8f;
 	};
 }
