@@ -296,8 +296,21 @@ if ($obstacles.Count -gt 0) {
         )
         $worldPts = @()
         foreach ($lc in $corners) {
-            $wx = $cx + $lc[0] * $cosY - $lc[1] * $sinY
-            $wz = $cz + $lc[0] * $sinY + $lc[1] * $cosY
+            # Right-handed yaw rotation around +Y. The matrix is
+            #     R_y(theta) = [ cos  0  sin]
+            #                  [  0   1   0 ]
+            #                  [-sin  0  cos]
+            # so a local (lx, lz) maps to world (lx*cos + lz*sin, -lx*sin + lz*cos).
+            #
+            # An earlier version used the standard 2D-math CCW matrix
+            #     [cos -sin; sin cos]
+            # which has the OPPOSITE sense for our coordinate system -- walls
+            # authored at +45 deg world yaw rendered as -45 deg, swapping
+            # the orientation of every rotated building. Forms a mirror-image
+            # of the actual scene, which is exactly what the visualiser was
+            # showing before this fix.
+            $wx = $cx + $lc[0] * $cosY + $lc[1] * $sinY
+            $wz = $cz - $lc[0] * $sinY + $lc[1] * $cosY
             $pt = Project $wx $wz
             $worldPts += New-Object System.Drawing.Point($pt[0], $pt[1])
         }
