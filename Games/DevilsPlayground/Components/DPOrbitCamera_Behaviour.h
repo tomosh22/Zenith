@@ -104,6 +104,17 @@ public:
 	void SetOrbitTarget(const Zenith_Maths::Vector3& xTarget) { m_xOrbitTarget = xTarget; }
 	void SetOrbitDistance(float f) { m_fOrbitDistance = glm::clamp(f, m_fMinDistance, m_fMaxDistance); }
 
+	// Raise the upper clamp on orbit distance. DPProcLevelBootstrap calls
+	// this so its auto-fit camera distance for large procgen levels
+	// isn't silently clamped to the default 150 m cap. Also re-clamps
+	// the current distance against the new range so an in-flight zoom
+	// stays valid.
+	void SetMaxOrbitDistance(float f)
+	{
+		m_fMaxDistance = f;
+		m_fOrbitDistance = glm::clamp(m_fOrbitDistance, m_fMinDistance, m_fMaxDistance);
+	}
+
 private:
 	// Pinned at the GameLevel's playable centre (~(50,0,50)). Set via
 	// SetOrbitTarget for gym scenes whose action sits at world origin.
