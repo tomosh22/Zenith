@@ -150,15 +150,33 @@ static bool Step_ProcLevelBootstrap(int iFrame)
 		return false;
 	}
 
+	// P4d -- AI agents. Villager count must match the layout; priest is
+	// spawned iff xPriestSpawn.bValid.
+	const uint32_t uSpawnedVillagers = pxBootstrap->GetSpawnedVillagerCount();
+	if (uSpawnedVillagers != xLayout.axVillagerSpawns.GetSize())
+	{
+		g_szFailureReason =
+			"Spawned villager count != layout villager-spawn count";
+		return false;
+	}
+	if (pxBootstrap->GetSpawnedPriest() != xLayout.xPriestSpawn.bValid)
+	{
+		g_szFailureReason =
+			"Spawned-priest flag != layout xPriestSpawn.bValid";
+		return false;
+	}
+
 	g_bPassed = true;
 	std::printf("[ProcLevelBootstrap] PASS: rooms=%u walls=%u elements=%u "
-		"(spawned %u) villagers=%u priest=%d\n",
+		"(spawned %u) villagers=%u (spawned %u) priest=%d (spawned=%d)\n",
 		xLayout.axRooms.GetSize(),
 		xLayout.axWallSegments.GetSize(),
 		xLayout.axGameElements.GetSize(),
 		uSpawnedElements,
 		xLayout.axVillagerSpawns.GetSize(),
-		(int)xLayout.xPriestSpawn.bValid);
+		uSpawnedVillagers,
+		(int)xLayout.xPriestSpawn.bValid,
+		(int)pxBootstrap->GetSpawnedPriest());
 	std::fflush(stdout);
 	return false;
 }

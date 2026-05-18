@@ -40,6 +40,8 @@
 #include "Components/DPChest_Behaviour.h"
 #include "Components/DummyNoiseMachine_Behaviour.h"
 #include "Components/DPItemBase_Behaviour.h"
+#include "Components/DPVillager_Behaviour.h"
+#include "Components/Priest_Behaviour.h"
 
 #include <cstdio>
 #include <cstdint>
@@ -93,6 +95,14 @@ public:
 		// by SpawnVillagers (P4d) as the player-first-possession
 		// anchor, not entities in their own right.
 		SpawnGameElements();
+
+		// P4d: AI agents -- 17 villagers + 1 priest. Each is a
+		// CAPSULE-collider DYNAMIC body with the proper character
+		// script attached. The priest's OnAwake also auto-adds the
+		// AIAgent component so behaviour-tree pursuit + perception
+		// wire up exactly like the authored GameLevel priest.
+		SpawnVillagers();
+		SpawnPriest();
 	}
 
 	void OnDestroy() ZENITH_FINAL override
@@ -120,6 +130,11 @@ public:
 	// SpawnPoint elements (P4c skips those -- the spawn anchor is
 	// consumed by P4d's villager-spawn pass). Useful for the smoke test.
 	uint32_t GetSpawnedGameElementCount() const { return m_uSpawnedGameElements; }
+
+	// AI-agent spawn counts (P4d). Villagers always go through the same
+	// path; the priest is single-valued so this is bool-shaped.
+	uint32_t GetSpawnedVillagerCount() const { return m_uSpawnedVillagers; }
+	bool     GetSpawnedPriest()        const { return m_bSpawnedPriest; }
 
 private:
 	// Spawn one entity per WallSegment. SM_Cube has mesh-local bounds
@@ -361,9 +376,123 @@ private:
 		}
 	}
 
+	// Spawn 17 villagers from the layout's axVillagerSpawns. Each gets
+	// the character mesh + transform scale (1, 2, 0.5) so the capsule
+	// collider sizes correctly (mirrors AuthorPlacementBatch's
+	// bIsCharacter=true branch). The y position matches the authored
+	// villagers in GameLevel (y=1.88 -- the character meshes' baked-in
+	// 12x scale lands the model on the floor at this anchor).
+	void SpawnVillagers()
+	{
+		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		if (pxScene == nullptr) return;
+
+		const std::string strMeshPath =
+			std::string(GAME_ASSETS_DIR)
+			+ "Meshes/DevilsPlayground_Assets_Characters_Peasent_SM_Peasant"
+			+ ZENITH_MODEL_EXT;
+
+		const uint32_t uN = m_xLayout.axVillagerSpawns.GetSize();
+		uint32_t uSpawned = 0;
+		for (uint32_t i = 0; i < uN; ++i)
+		{
+			const DPProcLevel::VillagerSpawn& xV = m_xLayout.axVillagerSpawns.Get(i);
+			if (SpawnCharacterEntity(pxScene, "ProcVillager", i, xV.fX, xV.fZ,
+				xV.fYawRadians, strMeshPath, /*bIsPriest=*/false))
+			{
+				++uSpawned;
+			}
+		}
+		m_uSpawnedVillagers = uSpawned;
+		std::printf("[DPProcLevelBootstrap] spawned %u/%u villager entities\n",
+			uSpawned, uN);
+		std::fflush(stdout);
+	}
+
+	// Spawn the single priest. Same character pipeline as villagers but
+	// the Priest_Behaviour OnAwake auto-adds the AIAgent component so
+	// behaviour-tree + perception wire up identically to the authored
+	// GameLevel priest.
+	void SpawnPriest()
+	{
+		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		if (pxScene == nullptr) return;
+		if (!m_xLayout.xPriestSpawn.bValid) return;
+
+		const std::string strMeshPath =
+			std::string(GAME_ASSETS_DIR)
+			+ "Meshes/DevilsPlayground_Assets_Characters_Pope_SM_Pope"
+			+ ZENITH_MODEL_EXT;
+
+		const DPProcLevel::PriestSpawn& xP = m_xLayout.xPriestSpawn;
+		m_bSpawnedPriest = SpawnCharacterEntity(pxScene, "ProcPriest", 0,
+			xP.fX, xP.fZ, xP.fYawRadians, strMeshPath, /*bIsPriest=*/true);
+		std::printf("[DPProcLevelBootstrap] spawned priest=%d\n",
+			static_cast<int>(m_bSpawnedPriest));
+		std::fflush(stdout);
+	}
+
+	// Shared character-spawn helper. Returns true on success. The
+	// transform scale of (1, 2, 0.5) gives the capsule collider its
+	// authored humanoid hitbox (radius 0.5, half-height 0.5, total
+	// 2 m tall -- see AuthorPlacementBatch comment at L987-993 of
+	// DevilsPlayground.cpp).
+	bool SpawnCharacterEntity(
+		Zenith_SceneData* pxScene,
+		const char* szPrefix,
+		uint32_t uIndex,
+		float fX,
+		float fZ,
+		float fYawRadians,
+		const std::string& strMeshPath,
+		bool bIsPriest)
+	{
+		char szName[64];
+		std::snprintf(szName, sizeof(szName), "%s_%u", szPrefix, uIndex);
+		Zenith_Entity xEntity(pxScene, std::string(szName));
+		if (!xEntity.IsValid()) return false;
+
+		// Transform: world XZ, anchor at y=1.88 to match GameLevel
+		// villager authoring (the character meshes were exported with a
+		// baked-in 12x scale that lifts the model onto the floor at this
+		// anchor). Yaw rotates the character to face the spawn direction.
+		// Scale (1, 2, 0.5) preserves the humanoid AABB for the capsule.
+		if (xEntity.HasComponent<Zenith_TransformComponent>())
+		{
+			Zenith_TransformComponent& xT =
+				xEntity.GetComponent<Zenith_TransformComponent>();
+			xT.SetPosition(Zenith_Maths::Vector3(fX, 1.88f, fZ));
+			const Zenith_Maths::Quat xRot = Zenith_Maths::AngleAxis(
+				fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+			xT.SetRotation(xRot);
+			xT.SetScale(Zenith_Maths::Vector3(1.0f, 2.0f, 0.5f));
+		}
+
+		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
+		xModel.LoadModel(strMeshPath);
+
+		Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
+		xCol.AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+
+		if (bIsPriest)
+		{
+			xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<Priest_Behaviour>();
+		}
+		else
+		{
+			xEntity.AddComponent<Zenith_ScriptComponent>().AddScript<DPVillager_Behaviour>();
+		}
+
+		return true;
+	}
+
 	uint64_t                  m_uSeed = 0ull;
 	uint32_t                  m_uSpawnedWalls = 0u;
 	uint32_t                  m_uSpawnedGameElements = 0u;
+	uint32_t                  m_uSpawnedVillagers = 0u;
+	bool                      m_bSpawnedPriest = false;
 	DPProcLevel::LevelLayout  m_xLayout;
 
 	static inline DPProcLevelBootstrap_Behaviour* s_pxInstance = nullptr;
