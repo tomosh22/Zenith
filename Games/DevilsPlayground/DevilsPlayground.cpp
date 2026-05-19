@@ -569,31 +569,41 @@ namespace
 		Zenith_EditorAutomation::AddStep_UnloadScene();
 	}
 
-	void AuthorGameLevelScene()
+	// ============================================================================
+	// AuthorDPGameSceneFrame - the GameManager + PauseManager scaffolding that
+	// every full-game DP scene shares. Used by AuthorGameLevelScene (current
+	// authored level) and AuthorProcLevelScene (procgen). Extracting it here
+	// keeps the two scenes at HUD + script parity automatically -- any UI
+	// element added to this helper appears on both scenes the next time the
+	// tools build re-authors them.
+	//
+	// Caller's contract: invoke between AddStep_CreateScene(...) and the
+	// level-specific authoring (ground plane, entities, lights, ...). The
+	// helper does NOT save or unload the scene -- the caller does that.
+	//
+	// Camera defaults (50, 35, -15) + pitch -0.85 + FOV 55° are tuned for the
+	// authored GameLevel's (0..100, 0..100) playable area. The procgen
+	// bootstrap overrides them at runtime via DPOrbitCamera_Behaviour's
+	// SetOrbitTarget/SetOrbitDistance setters once the layout bounds are
+	// known, so the same initial transform works for both scenes.
+	// ============================================================================
+	void AuthorDPGameSceneFrame()
 	{
-		// Skeleton-grade L_GameLevel — exercises every behaviour with a single
-		// representative entity each. Wave-4 polish replaces this with the
-		// full UE-port placement (17 villagers, 15 doors, 6 chests, 24 lights,
-		// pentagram + 5 objective items, 21 mushroom groups).
-		Zenith_EditorAutomation::AddStep_CreateScene("GameLevel");
-
 		// ------ GameManager: hosts global controllers + HUD UI ----------------
 		Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
 
 		Zenith_EditorAutomation::AddStep_AddCamera();
 		// Pre-possession overview camera — positioned over the centre of the
-		// UE-imported map (X+Z range ≈ 0..100, so centre ≈ (50, 0, 50)) and
-		// pulled back/up so the player sees most of the playable area before
-		// clicking a villager. The DPOrbitCamera_Behaviour leaves this
-		// transform alone until a villager is possessed; once that happens
-		// the orbit takes over and snaps onto the villager.
+		// authored playable area (X+Z range ≈ 0..100, so centre ≈ (50, 0, 50))
+		// and pulled back/up so the player sees most of the map before
+		// clicking a villager. Procgen overrides via DPOrbitCamera setters
+		// at runtime once bounds are known.
 		Zenith_EditorAutomation::AddStep_SetCameraPosition(50.0f, 35.0f, -15.0f);
 		Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.85f);  // ~49° down
 		Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(55.0f));
 		Zenith_EditorAutomation::AddStep_SetAsMainCamera();
 
 		Zenith_EditorAutomation::AddStep_AddUI();
-		// Life bar text + Status banner + PauseOverlay text.
 		// MVP-UI-polish: TopLeft / BottomLeft anchored text gets Left alignment
 		// (default but explicit); TopRight gets Right; *Center anchors get
 		// Center. This keeps text growing away from the screen edge instead
@@ -659,9 +669,8 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIColor("WhisperLine", 0.85f, 0.4f, 0.4f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("WhisperLine", false);
 
-		// MVP-2.5.3: Aelfric awareness icon top-right, below the
-		// Aelfric awareness icon top-right, below the Objectives counter.
-		// Right-aligned to grow leftward into the screen.
+		// MVP-2.5.3: Aelfric awareness icon top-right, below the Objectives
+		// counter. Right-aligned to grow leftward into the screen.
 		Zenith_EditorAutomation::AddStep_CreateUIText("AelfricAwareness", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("AelfricAwareness", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
 		Zenith_EditorAutomation::AddStep_SetUIAlignment("AelfricAwareness", static_cast<int>(Zenith_UI::TextAlignment::Right));
@@ -777,8 +786,6 @@ namespace
 		// ----------------------------------------------------------------
 
 		// ControlsHint -- always-visible hotkey cheat-sheet, BottomRight.
-		// Compact 24px multi-line text; right-aligned so the LHS column
-		// of each row lines up with the screen-right edge.
 		Zenith_EditorAutomation::AddStep_CreateUIText("ControlsHint",
 			"[LMB] Possess villager\n"
 			"[WASD] Move    [Q/E] Camera\n"
@@ -794,9 +801,7 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIColor("ControlsHint", 0.85f, 0.85f, 0.85f, 0.9f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("ControlsHint", true);
 
-		// TutorialHint -- single-line context guidance, TopCenter, between
-		// RunTimer (at +95 from top) and the gameplay area. Slightly
-		// larger than secondary readouts so it actually draws the eye.
+		// TutorialHint -- single-line context guidance, TopCenter.
 		Zenith_EditorAutomation::AddStep_CreateUIText("TutorialHint", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialHint", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
 		Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialHint", static_cast<int>(Zenith_UI::TextAlignment::Center));
@@ -806,9 +811,9 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIColor("TutorialHint", 1.0f, 0.95f, 0.7f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("TutorialHint", false);
 
-		// HelpBg -- semi-transparent black background for the HelpOverlay
-		// modal. Authored BEFORE HelpOverlay so it renders behind. Hidden
-		// by default; DPHUDController flips visibility on [H].
+		// HelpBg -- semi-transparent background for the HelpOverlay modal.
+		// Authored BEFORE HelpOverlay so it renders behind (canvas
+		// iterates root elements in insertion order).
 		Zenith_EditorAutomation::AddStep_CreateUIRect("HelpBg");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("HelpBg", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		Zenith_EditorAutomation::AddStep_SetUISize("HelpBg", 1200.0f, 900.0f);
@@ -816,9 +821,7 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIColor("HelpBg", 0.02f, 0.02f, 0.04f, 0.92f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("HelpBg", false);
 
-		// HelpOverlay -- full-screen tutorial text, toggled with [H]. Lists
-		// every mechanic + every hotkey so a brand-new player can read it
-		// once and understand the game. Hidden by default.
+		// HelpOverlay -- full-screen tutorial text, toggled with [H].
 		Zenith_EditorAutomation::AddStep_CreateUIText("HelpOverlay",
 			"HOW TO PLAY    (press [H] to close)\n"
 			"\n"
@@ -860,10 +863,7 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIColor("HelpOverlay", 0.98f, 0.95f, 0.85f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("HelpOverlay", false);
 
-		// MVP-4.3.2: post-victory / post-run-lost restart prompt. Hidden
-		// by default; DPHUDController flips visibility when m_bRunOver
-		// is set by either the DP_OnVictory or DP_OnRunLost subscriber.
-		// Positioned below the centre Status banner.
+		// MVP-4.3.2: post-victory / post-run-lost restart prompt.
 		Zenith_EditorAutomation::AddStep_CreateUIText("RestartPrompt", "Press R to restart, Q to quit");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("RestartPrompt", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		Zenith_EditorAutomation::AddStep_SetUIPosition("RestartPrompt", 0.0f, 60.0f);
@@ -872,24 +872,18 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIVisible("RestartPrompt", false);
 
 		// Attach the global coordinators. Each is independent — order doesn't
-		// matter, but Combat-style is to attach the player first.
+		// matter, but the convention is to attach the player first.
 		Zenith_EditorAutomation::AddStep_AttachScript("DPPlayerController_Behaviour");
 		Zenith_EditorAutomation::AddStep_AttachScript("DPItemManager_Behaviour");
 		Zenith_EditorAutomation::AddStep_AttachScript("DPFogPass_Behaviour");
 		Zenith_EditorAutomation::AddStep_AttachScript("DPHUDController_Behaviour");
-
-		// Orbit camera lives on its own entity? Combat puts everything on the
-		// GameManager entity — copy that for skeleton-grade. The orbit
-		// behaviour needs the Zenith_CameraComponent that already lives here.
 		Zenith_EditorAutomation::AddStep_AttachScript("DPOrbitCamera_Behaviour");
 
 		// ------ PauseManager: dedicated entity for the pause controller -------
 		// MVP-1.1: the pause controller migrates itself to the persistent
 		// scene in OnStart so it keeps ticking while the gameplay scene is
-		// paused. We give it its own entity so MarkEntityPersistent doesn't
-		// drag the camera / HUD / fog pass to the persistent scene with it.
-		// The pause overlay UI lives here too so the controller can toggle
-		// its visibility via the same entity's UIComponent.
+		// paused. Dedicated entity so MarkEntityPersistent doesn't drag
+		// the camera / HUD / fog pass to the persistent scene with it.
 		Zenith_EditorAutomation::AddStep_CreateEntity("PauseManager");
 		Zenith_EditorAutomation::AddStep_AddUI();
 		Zenith_EditorAutomation::AddStep_CreateUIText("PauseOverlay", "PAUSED\nEsc: Resume   R: Restart   Q: Quit");
@@ -900,6 +894,19 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIColor("PauseOverlay", 1.0f, 1.0f, 1.0f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("PauseOverlay", false);
 		Zenith_EditorAutomation::AddStep_AttachScript("DPPauseMenuController_Behaviour");
+	}
+
+	void AuthorGameLevelScene()
+	{
+		// Skeleton-grade L_GameLevel — exercises every behaviour with a single
+		// representative entity each. Wave-4 polish replaces this with the
+		// full UE-port placement (17 villagers, 15 doors, 6 chests, 24 lights,
+		// pentagram + 5 objective items, 21 mushroom groups).
+		Zenith_EditorAutomation::AddStep_CreateScene("GameLevel");
+
+		// GameManager + PauseManager + full HUD + global controller scripts.
+		// Shared with AuthorProcLevelScene so any HUD change lands in both.
+		AuthorDPGameSceneFrame();
 
 		// ------ Author from real UE positions (DP_LevelData.h, generated by
 		// Tools/dp_import/generate_level_data.py from L_GameLevel.json).
@@ -1568,72 +1575,12 @@ namespace
 	{
 		Zenith_EditorAutomation::AddStep_CreateScene("ProcLevel");
 
-		// ------ GameManager: hosts global controllers + HUD UI ----------------
-		Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
-
-		Zenith_EditorAutomation::AddStep_AddCamera();
-		// Overview camera centred on the procgen bounds. The GenConfig
-		// defaults place the level at XZ in [0, 100] so the centre is
-		// (50, _, 50). Pull back/up so the player sees most of the
-		// playable area before clicking a villager.
-		Zenith_EditorAutomation::AddStep_SetCameraPosition(50.0f, 35.0f, -15.0f);
-		Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.85f);  // ~49° down
-		Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(55.0f));
-		Zenith_EditorAutomation::AddStep_SetAsMainCamera();
-
-		Zenith_EditorAutomation::AddStep_AddUI();
-		// Minimum HUD: LifeBar / HeldItem / Status / Objectives. Mirrors
-		// the GymCommon authoring (same DPUI constants, same anchors).
-		Zenith_EditorAutomation::AddStep_CreateUIText("LifeBar", "");
-		Zenith_EditorAutomation::AddStep_SetUIAnchor("LifeBar", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-		Zenith_EditorAutomation::AddStep_SetUIAlignment("LifeBar", static_cast<int>(Zenith_UI::TextAlignment::Left));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("LifeBar", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("LifeBar", DPUI::fHUD_LIFEBAR_FONT);
-		Zenith_EditorAutomation::AddStep_SetUIColor("LifeBar", 0.3f, 1.0f, 0.3f, 1.0f);
-		Zenith_EditorAutomation::AddStep_SetUIVisible("LifeBar", false);
-
-		Zenith_EditorAutomation::AddStep_CreateUIText("HeldItem", "");
-		Zenith_EditorAutomation::AddStep_SetUIAnchor("HeldItem", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-		Zenith_EditorAutomation::AddStep_SetUIAlignment("HeldItem", static_cast<int>(Zenith_UI::TextAlignment::Left));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("HeldItem", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 50.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("HeldItem", DPUI::fHUD_HELDITEM_FONT);
-		Zenith_EditorAutomation::AddStep_SetUIColor("HeldItem", 1.0f, 1.0f, 1.0f, 1.0f);
-		Zenith_EditorAutomation::AddStep_SetUIVisible("HeldItem", false);
-
-		Zenith_EditorAutomation::AddStep_CreateUIText("Status", "");
-		Zenith_EditorAutomation::AddStep_SetUIAnchor("Status", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-		Zenith_EditorAutomation::AddStep_SetUIAlignment("Status", static_cast<int>(Zenith_UI::TextAlignment::Center));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("Status", 0.0f, -80.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", DPUI::fHUD_STATUS_FONT);
-		Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.9f, 0.2f, 0.2f, 1.0f);
-		Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
-
-		Zenith_EditorAutomation::AddStep_CreateUIText("Objectives", "Objectives: 0/5");
-		Zenith_EditorAutomation::AddStep_SetUIAnchor("Objectives", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-		Zenith_EditorAutomation::AddStep_SetUIAlignment("Objectives", static_cast<int>(Zenith_UI::TextAlignment::Right));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("Objectives", -DPUI::fEDGE_INSET, DPUI::fEDGE_INSET);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("Objectives", DPUI::fHUD_OBJECTIVES_FONT);
-		Zenith_EditorAutomation::AddStep_SetUIColor("Objectives", 0.95f, 0.7f, 0.7f, 1.0f);
-
-		// Global controller scripts (matches GymCommon).
-		Zenith_EditorAutomation::AddStep_AttachScript("DPPlayerController_Behaviour");
-		Zenith_EditorAutomation::AddStep_AttachScript("DPFogPass_Behaviour");
-		Zenith_EditorAutomation::AddStep_AttachScript("DPHUDController_Behaviour");
-		Zenith_EditorAutomation::AddStep_AttachScript("DPOrbitCamera_Behaviour");
-		Zenith_EditorAutomation::AddStep_AttachScript("DPItemManager_Behaviour");
-
-		// ------ PauseManager (dedicated entity, mirrors GameLevel) ------------
-		Zenith_EditorAutomation::AddStep_CreateEntity("PauseManager");
-		Zenith_EditorAutomation::AddStep_AddUI();
-		Zenith_EditorAutomation::AddStep_CreateUIText("PauseOverlay",
-			"PAUSED\nEsc: Resume   R: Restart   Q: Quit");
-		Zenith_EditorAutomation::AddStep_SetUIAnchor("PauseOverlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-		Zenith_EditorAutomation::AddStep_SetUIAlignment("PauseOverlay", static_cast<int>(Zenith_UI::TextAlignment::Center));
-		Zenith_EditorAutomation::AddStep_SetUIPosition("PauseOverlay", 0.0f, 0.0f);
-		Zenith_EditorAutomation::AddStep_SetUIFontSize("PauseOverlay", DPUI::fHUD_PAUSE_FONT);
-		Zenith_EditorAutomation::AddStep_SetUIColor("PauseOverlay", 1.0f, 1.0f, 1.0f, 1.0f);
-		Zenith_EditorAutomation::AddStep_SetUIVisible("PauseOverlay", false);
-		Zenith_EditorAutomation::AddStep_AttachScript("DPPauseMenuController_Behaviour");
+		// GameManager + PauseManager + full HUD + global controller scripts.
+		// Shared with AuthorGameLevelScene so any HUD change lands in both.
+		// The orbit camera's pose is overridden at runtime by
+		// DPProcLevelBootstrap::FrameCameraToLevel once the layout bounds
+		// are known.
+		AuthorDPGameSceneFrame();
 
 		// ------ Ground plane --------------------------------------------------
 		// SM_Cube is a unit cube anchored at its (0, 0, 0) corner (mesh
