@@ -27,10 +27,7 @@
 //
 // Procedure:
 //   1. Load GameLevel.
-//   2. Call `DP_Player::SetTestOmniscientFallback(false)` to enter
-//      the production-shape detection path (no scan of
-//      DP_Player::GetPossessedVillager in the bridge).
-//   3. Find the priest. Possess the FARTHEST villager (~100 m away
+//   2. Find the priest. Possess the FARTHEST villager (~100 m away
 //      in stock GameLevel authoring -- well outside priest sight
 //      range, no LOS).
 //   4. Run a ~2 s window (~120 frames). In this window the priest
@@ -101,9 +98,6 @@ static void Setup_P1NoChaseOutOfSight()
 	g_iRunFrames = 0;
 	g_bMidWindowTargetInvalid = false;
 	g_xFinalBBTarget = INVALID_ENTITY_ID;
-	// Disable the test-build omniscient fallback so the bridge uses
-	// only real perception output -- the production-shape path.
-	DP_Player::SetTestOmniscientFallback(false);
 }
 
 static bool Step_P1NoChaseOutOfSight(int iFrame)
@@ -194,8 +188,6 @@ static bool Step_P1NoChaseOutOfSight(int iFrame)
 			"P1NoChaseOOS: midInvalid=%d finalTarget=(%u/%u)",
 			(int)g_bMidWindowTargetInvalid,
 			g_xFinalBBTarget.m_uIndex, g_xFinalBBTarget.m_uGeneration);
-		// Restore default for the next batched test.
-		DP_Player::SetTestOmniscientFallback(true);
 		g_iPhase = kNS_Done;
 		return false;
 

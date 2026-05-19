@@ -27,9 +27,8 @@
 //
 // Procedure:
 //   1. Load GameLevel.
-//   2. `SetTestOmniscientFallback(false)`.
-//   3. Find the priest. Pick a villager.
-//   4. Teleport the villager to a position 4 m IN FRONT of the priest
+//   2. Find the priest. Pick a villager.
+//   3. Teleport the villager to a position 4 m IN FRONT of the priest
 //      (priest's authored yaw=0 means facing +Z, so put the villager
 //      at priest_pos + (0, 0, +4)).
 //   5. Possess the villager.
@@ -100,7 +99,6 @@ static void Setup_P1PursuesAfterLOS()
 	g_iRunFrames = 0;
 	g_iFrameTargetFirstSeen = -1;
 	g_xTargetAtFirstSighting = INVALID_ENTITY_ID;
-	DP_Player::SetTestOmniscientFallback(false);
 }
 
 static bool Step_P1PursuesAfterLOS(int iFrame)
@@ -191,7 +189,6 @@ static bool Step_P1PursuesAfterLOS(int iFrame)
 			g_iFrameTargetFirstSeen,
 			g_xTargetAtFirstSighting.m_uIndex, g_xTargetAtFirstSighting.m_uGeneration,
 			g_xVillager.m_uIndex, g_xVillager.m_uGeneration);
-		DP_Player::SetTestOmniscientFallback(true);
 		g_iPhase = kLS_Done;
 		return false;
 

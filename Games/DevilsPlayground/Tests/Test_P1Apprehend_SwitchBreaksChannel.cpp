@@ -12,6 +12,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Components/Priest_Behaviour.h"
 #include "Components/DPVillager_Behaviour.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
 
 #include <cmath>
 
@@ -175,6 +176,14 @@ static bool Step_P1ApprehendSwitch(int iFrame)
 	}
 
 	case kSB_Possess:
+		// MVP-1.9 cleanup: register both villagers so the priest's
+		// sight pass considers either as a target. The test then
+		// teleports priest within range of villager A; after the
+		// switch to villager B the priest is far from B (~67 m, well
+		// out of sight) so perception drops the target -- the same
+		// invariant the test asserts via the channel-broken check.
+		Zenith_PerceptionSystem::RegisterTarget(g_xVillagerA, /*hostile=*/true);
+		Zenith_PerceptionSystem::RegisterTarget(g_xVillagerB, /*hostile=*/true);
 		DP_Player::SetPossessedVillager(g_xVillagerA);
 		g_iPhase = kSB_TeleportPriest;
 		return true;

@@ -15,6 +15,7 @@
 #include "Components/Priest_Behaviour.h"
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/DPHUDController_Behaviour.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
 
 #include <cmath>
 #include <cstdio>
@@ -206,6 +207,9 @@ static bool Step_P4LossApprehend(int iFrame)
 	}
 
 	case kLA_Possess:
+		// MVP-1.9 cleanup: register the villager so the priest's
+		// sight pass considers it once teleported into range.
+		Zenith_PerceptionSystem::RegisterTarget(g_xVillager, /*hostile=*/true);
 		DP_Player::SetPossessedVillager(g_xVillager);
 		g_iPhase = kLA_TeleportPriest;
 		return true;

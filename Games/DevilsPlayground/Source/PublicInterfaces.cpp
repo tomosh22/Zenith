@@ -64,14 +64,6 @@ namespace
 	float           g_fChannelRemaining = 0.0f;
 	bool            g_bChannelActive    = false;
 
-#ifdef ZENITH_INPUT_SIMULATOR
-	// MVP-1.9: test-build omniscient fallback toggle. Default ON so
-	// pre-1.9 tests work without code changes. New sight-based tests
-	// set this false in Setup to verify the production-shape (no
-	// fallback) detection path.
-	bool g_bTestOmniscientFallback = true;
-#endif
-
 	// Resolves a villager handle to its world position. Returns false
 	// if the entity has no transform / no scene-data binding (e.g.,
 	// passed a stale handle after the villager was destroyed).
@@ -436,17 +428,6 @@ namespace DP_Player
 		return g_fPossessionCooldownRemaining;
 	}
 
-#ifdef ZENITH_INPUT_SIMULATOR
-	void SetTestOmniscientFallback(bool bEnabled)
-	{
-		g_bTestOmniscientFallback = bEnabled;
-	}
-	bool IsTestOmniscientFallbackEnabled()
-	{
-		return g_bTestOmniscientFallback;
-	}
-#endif
-
 	// 2026-05-17 scene-ownership refactor: all per-villager side
 	// tables (held item, demon scent) live on
 	// DPPlayerController_Behaviour::m_xHeldItems / m_xDemonScent so
@@ -562,12 +543,6 @@ namespace DP_Player
 		g_xChannelTarget    = INVALID_ENTITY_ID;
 		g_fChannelRemaining = 0.0f;
 		g_bChannelActive    = false;
-#ifdef ZENITH_INPUT_SIMULATOR
-		// Restore the omniscient fallback default so each batched
-		// test starts from a known state. MVP-1.9 sight tests
-		// re-disable it in their own Setup.
-		g_bTestOmniscientFallback = true;
-#endif
 	}
 }
 

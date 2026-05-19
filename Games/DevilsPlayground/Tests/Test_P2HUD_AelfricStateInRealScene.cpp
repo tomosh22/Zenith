@@ -9,6 +9,9 @@
 #include "Components/DPHUDController_Behaviour.h"
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/Priest_Behaviour.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "Maths/Zenith_Maths.h"
 
 #include <cstdio>
 
@@ -30,11 +33,10 @@
 //     BB has neither TargetWithDevil nor HasInvestigatePos set.
 //
 //   PHASE B: possessed villager (priest's BB.TargetWithDevil set).
-//     Setup: SetTestOmniscientFallback(true) so the priest's
-//     BridgePerceptionToBlackboard fills TargetWithDevil from
-//     DP_Player::GetPossessedVillager without needing physical
-//     line-of-sight. Possess a villager. Tick a few frames so the
-//     priest's OnUpdate runs.
+//     Setup: register the villager + teleport it 4 m into the
+//     priest's facing direction so real sight-cone perception
+//     catches it. Possess. Tick until awareness gain crosses the
+//     detection threshold (kBRIDGE_TICKS frames).
 //     Expectation: ComputeAelfricState() == Pursuing.
 //
 // What this catches (vs the formatter unit test):
@@ -63,10 +65,12 @@ namespace
 	DPHUDController_Behaviour::AelfricState g_ePursuingSnapshot =
 		DPHUDController_Behaviour::AelfricState::Calm;       // sentinel
 
-	// 10 frames is enough for the priest's OnUpdate (which fires
-	// each frame regardless of BT throttle) to call
-	// BridgePerceptionToBlackboard at least once.
-	constexpr int kBRIDGE_TICKS = 10;
+	// Awareness gain rate ~2.0/s means the priest's awareness of a
+	// villager in its sight cone crosses any reasonable detection
+	// threshold within ~1 s. 90 frames at 60 Hz = 1.5 s -- comfortable
+	// margin so the test isn't flaky on slow CI even though the bridge
+	// itself runs every frame.
+	constexpr int kBRIDGE_TICKS = 90;
 
 	const char* StateName(DPHUDController_Behaviour::AelfricState e)
 	{
@@ -124,18 +128,43 @@ static bool Step_P2HUDAelfricRealScene(int iFrame)
 	}
 
 	case kAS_SnapshotCalm:
-		// Disable omniscient fallback so the priest's BB doesn't
-		// spuriously fill TargetWithDevil from a stale state.
-		DP_Player::SetTestOmniscientFallback(false);
-		// No possession yet -- priest's BB should be empty.
+		// MVP-1.9 cleanup: no possession yet + no LOS setup -- the
+		// priest's BB has nothing in TargetWithDevil so the
+		// classifier should report Calm.
 		g_eCalmSnapshot = DPHUDController_Behaviour::ComputeAelfricState();
 		g_iPhase = kAS_EnableOmni;
 		return true;
 
 	case kAS_EnableOmni:
-		DP_Player::SetTestOmniscientFallback(true);
+	{
+		// MVP-1.9 cleanup (omniscient fallback removed): use real
+		// perception instead. Register the villager + teleport it
+		// 4 m IN FRONT of the priest (authored priest yaw = 0,
+		// facing +Z) so the priest's sight cone catches it.
+		Zenith_PerceptionSystem::RegisterTarget(g_xVillager, /*hostile=*/true);
+		Zenith_SceneData* pxPriestScene =
+			Zenith_SceneManager::GetSceneDataForEntity(g_xPriest);
+		Zenith_SceneData* pxVillagerScene =
+			Zenith_SceneManager::GetSceneDataForEntity(g_xVillager);
+		if (pxPriestScene != nullptr && pxVillagerScene != nullptr)
+		{
+			Zenith_Entity xPriestEnt = pxPriestScene->TryGetEntity(g_xPriest);
+			Zenith_Entity xVillagerEnt = pxVillagerScene->TryGetEntity(g_xVillager);
+			if (xPriestEnt.IsValid() && xVillagerEnt.IsValid()
+			 && xPriestEnt.HasComponent<Zenith_TransformComponent>()
+			 && xVillagerEnt.HasComponent<Zenith_TransformComponent>())
+			{
+				Zenith_Maths::Vector3 xPriestPos;
+				xPriestEnt.GetComponent<Zenith_TransformComponent>()
+					.GetPosition(xPriestPos);
+				xVillagerEnt.GetComponent<Zenith_TransformComponent>()
+					.SetPosition(Zenith_Maths::Vector3(
+						xPriestPos.x, xPriestPos.y, xPriestPos.z + 4.0f));
+			}
+		}
 		g_iPhase = kAS_PossessVillager;
 		return true;
+	}
 
 	case kAS_PossessVillager:
 		DP_Player::SetPossessedVillager(g_xVillager);

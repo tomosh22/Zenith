@@ -11,6 +11,9 @@
 #include "Source/PublicInterfaces.h"
 #include "Components/Priest_Behaviour.h"
 #include "Components/DPVillager_Behaviour.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "Maths/Zenith_Maths.h"
 
 #include <cstdio>
 
@@ -36,10 +39,9 @@
 //      ApplyArchetype("Beggar"). This re-resolves life/speed AND
 //      stamps the m_strArchetypeId so the priest's filter can read
 //      it back.
-//   3. Enable the omniscient fallback (SetTestOmniscientFallback) so
-//      we don't have to position the priest with explicit line-of-
-//      sight. The fallback path goes through the same Beggar filter
-//      that the perception path does, so the assertion covers both.
+//   3. Register the Beggar villager + teleport it 4 m into the
+//      priest's facing direction so the priest's sight cone catches
+//      it through real perception.
 //   4. SetPossessedVillager(beggarId). System path; the priest's
 //      BridgePerceptionToBlackboard will fire on the next OnUpdate.
 //   5. Tick ~60 frames so the priest's perception bridge runs at
@@ -141,12 +143,34 @@ static bool Step_P2BeggarIgnored(int iFrame)
 	{
 		DPVillager_Behaviour* pxV = GetVillagerBehaviour(g_xBeggar);
 		if (pxV != nullptr) pxV->ApplyArchetype("Beggar");
-		// Enable the omniscient fallback so the priest sees the
-		// possession without needing physical line-of-sight (which
-		// would require positioning that's outside this test's scope).
-		// The fallback path runs through the SAME IsBeggarVillager
-		// filter, so the assertion still covers both perception paths.
-		DP_Player::SetTestOmniscientFallback(true);
+		// MVP-1.9 cleanup: real perception only. Register the Beggar
+		// villager as a hostile target + teleport it 4 m IN FRONT of
+		// the priest (authored priest yaw = 0, facing +Z) so the
+		// priest's sight cone catches it. Without the Beggar filter,
+		// this setup would make the priest target the villager; the
+		// test asserts that the IsBeggarVillager check in
+		// BridgePerceptionToBlackboard rejects it instead.
+		Zenith_PerceptionSystem::RegisterTarget(g_xBeggar, /*hostile=*/true);
+		Zenith_SceneData* pxPriestScene =
+			Zenith_SceneManager::GetSceneDataForEntity(g_xPriest);
+		Zenith_SceneData* pxVillagerScene =
+			Zenith_SceneManager::GetSceneDataForEntity(g_xBeggar);
+		if (pxPriestScene != nullptr && pxVillagerScene != nullptr)
+		{
+			Zenith_Entity xPriestEnt = pxPriestScene->TryGetEntity(g_xPriest);
+			Zenith_Entity xBeggarEnt  = pxVillagerScene->TryGetEntity(g_xBeggar);
+			if (xPriestEnt.IsValid() && xBeggarEnt.IsValid()
+			 && xPriestEnt.HasComponent<Zenith_TransformComponent>()
+			 && xBeggarEnt.HasComponent<Zenith_TransformComponent>())
+			{
+				Zenith_Maths::Vector3 xPriestPos;
+				xPriestEnt.GetComponent<Zenith_TransformComponent>()
+					.GetPosition(xPriestPos);
+				xBeggarEnt.GetComponent<Zenith_TransformComponent>()
+					.SetPosition(Zenith_Maths::Vector3(
+						xPriestPos.x, xPriestPos.y, xPriestPos.z + 4.0f));
+			}
+		}
 		g_iPhase = kBG_PossessBeggar;
 		return true;
 	}
