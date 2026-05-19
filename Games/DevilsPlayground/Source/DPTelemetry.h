@@ -81,8 +81,34 @@ namespace DPTelemetry
 		ForgeCrafted      = 16, // entityA=villager, entityB=forge,  payload.ints[0] = output tag
 		ObjectivePlaced   = 17, // entityA=villager, entityB=pentagram, payload.ints[0] = bit index 0..4
 
+		// Telemetry-v3 (2026-05-19) additions. See PublicInterfaces.h
+		// for the matching DP_On* event structs.
+		ApprehendChannelStart       = 18, // entityA=priest, entityB=victim
+		ApprehendChannelComplete    = 19, // entityA=priest, entityB=victim
+		ApprehendChannelInterrupted = 20, // entityA=priest, entityB=victim, ints[0]=DP_ApprehendInterruptReason
+		PauseToggle                 = 21, // ints[0]=1 if pausing, 0 if unpausing
+		PerceptionContactBegin      = 22, // entityA=observer, entityB=target, ints[0]=stimulus mask, floats[0]=awareness
+		PerceptionContactEnd        = 23, // entityA=observer, entityB=target, ints[0]=stimulus mask
+
 		_Count
 	};
+
+	// Priest behaviour-tree branch enum, packed into
+	// EntitySnapshot::uAIIntent for the priest entity. Stable IDs --
+	// downstream consumers (visualiser) interpret these directly.
+	enum class PriestIntent : uint8_t
+	{
+		None        = 0,
+		Idle        = 1,
+		Patrol      = 2,
+		Investigate = 3,
+		Pursue      = 4,
+		Apprehend   = 5,
+	};
+
+	// Returns nullptr for unknown values (current visualiser falls back
+	// to the integer form in that case).
+	const char* PriestIntentToString(uint8_t uIntent);
 
 	// Game-side resolver used by the JSON exporter. Returns nullptr for
 	// unknown values so the exporter falls back to the numeric form.
@@ -114,12 +140,18 @@ namespace DPTelemetry
 	// Lower-level than Hooks: callers that want to emit a custom event
 	// (e.g. solver hints, bot decisions) without dispatching a full
 	// engine event can use these directly.
+	//
+	// szSource (v3) is an optional short identifier for the emitting
+	// subsystem ("Priest_BT", "PauseCtrl", "PerceptionPoll", ...). Goes
+	// into EventPayload::szSource so the timeline can disambiguate
+	// multiple callers of the same semantic event.
 	void EmitEvent(DPEventType eType,
 	               Zenith_EntityID xA = Zenith_EntityID{},
 	               Zenith_EntityID xB = Zenith_EntityID{},
 	               int32_t iInt0 = 0,
 	               float fFloat0 = 0.0f,
-	               const char* szLabel = nullptr);
+	               const char* szLabel = nullptr,
+	               const char* szSource = nullptr);
 
 	// =========== Hooks RAII helper ===========
 	// On construction: subscribes to every DP event listed in DPEventType
@@ -166,5 +198,12 @@ namespace DPTelemetry
 		Zenith_EventHandle m_xChestOpened      = INVALID_EVENT_HANDLE;
 		Zenith_EventHandle m_xForgeCrafted     = INVALID_EVENT_HANDLE;
 		Zenith_EventHandle m_xObjectivePlaced  = INVALID_EVENT_HANDLE;
+		// Telemetry-v3 (2026-05-19) subscriptions.
+		Zenith_EventHandle m_xApprehendStart       = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xApprehendComplete    = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xApprehendInterrupted = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xPauseToggle          = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xPerceptionBegin      = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xPerceptionEnd        = INVALID_EVENT_HANDLE;
 	};
 }

@@ -44,14 +44,48 @@ namespace Zenith_Telemetry
 		End         = 0xFF,
 	};
 
-	// Per-entity per-frame snapshot. uStateFlags is game-defined --
+	// Per-entity per-frame snapshot. The semantics of uStateFlags +
+	// uAIIntent + uHeldItemTag + fSecondaryFloat are game-defined --
 	// DevilsPlayground packs sprinting / walk-quiet / possessed / etc.
+	// into the flags, the priest's current BT branch into uAIIntent,
+	// the possessed villager's held item into uHeldItemTag, and the
+	// villager's remaining life timer into fSecondaryFloat.
+	//
+	// v3 additions (2026-05-19): xAITargetPos / uAIIntent / uHeldItemTag /
+	// fSecondaryFloat. Older recordings load with these defaulted; the
+	// JSON exporter always emits them so downstream readers can rely on
+	// the field being present.
 	struct EntitySnapshot
 	{
 		Zenith_EntityID       xId;
-		Zenith_Maths::Vector3 xPos      = {0.0f, 0.0f, 0.0f};
-		Zenith_Maths::Vector3 xForward  = {0.0f, 0.0f, 1.0f};
-		uint32_t              uStateFlags = 0;
+		Zenith_Maths::Vector3 xPos              = {0.0f, 0.0f, 0.0f};
+		Zenith_Maths::Vector3 xForward          = {0.0f, 0.0f, 1.0f};
+		uint32_t              uStateFlags       = 0;
+		// v3 fields:
+		Zenith_Maths::Vector3 xAITargetPos      = {0.0f, 0.0f, 0.0f};
+		uint8_t               uAIIntent         = 0;
+		uint8_t               uHeldItemTag      = 0;
+		uint16_t              uReserved         = 0;
+		float                 fSecondaryFloat   = 0.0f;
+
+		void WriteToDataStream(Zenith_DataStream& xStream) const;
+		void ReadFromDataStream(Zenith_DataStream& xStream, uint32_t uVersion);
+	};
+
+	// v3 addition: per-frame camera pose for replay-style debugging --
+	// "what was the player looking at when X happened". Sampled once per
+	// FrameSample. xLookAt is the orbit target / focus point; xPos is the
+	// camera's eye position.
+	struct CameraState
+	{
+		Zenith_Maths::Vector3 xPos           = {0.0f, 0.0f, 0.0f};
+		Zenith_Maths::Vector3 xLookAt        = {0.0f, 0.0f, 0.0f};
+		float                 fOrbitYawRad   = 0.0f;
+		float                 fOrbitDistance = 0.0f;
+		float                 fFovRadians    = 0.0f;
+		uint8_t               bValid         = 0;  // 0/1; non-bool so the
+		                                           // serialised size stays
+		                                           // platform-stable
 
 		void WriteToDataStream(Zenith_DataStream& xStream) const;
 		void ReadFromDataStream(Zenith_DataStream& xStream);
@@ -59,17 +93,25 @@ namespace Zenith_Telemetry
 
 	struct FrameSample
 	{
-		uint32_t                       uFrameIdx = 0;
-		float                          fTimeS    = 0.0f;
+		uint32_t                       uFrameIdx     = 0;
+		float                          fTimeS        = 0.0f;
 		Zenith_Vector<EntitySnapshot>  axEntities;
+		// v3 additions:
+		CameraState                    xCamera;
+		float                          fFrameWallMs  = 0.0f;  // wall-clock ms (0 if not measured)
 
 		void WriteToDataStream(Zenith_DataStream& xStream) const;
-		void ReadFromDataStream(Zenith_DataStream& xStream);
+		void ReadFromDataStream(Zenith_DataStream& xStream, uint32_t uVersion);
 	};
 
 	// Event payload -- small variant. Most events fit in (4 floats + 4 ints
-	// + 2 entity IDs + a 32-char label). Larger payloads should be split
-	// across multiple events or written through a side-channel.
+	// + 2 entity IDs + a 32-char label + a 24-char source tag). Larger
+	// payloads should be split across multiple events or written through
+	// a side-channel.
+	//
+	// szSource (v3): a short subsystem / call-site tag emitted by the
+	// dispatcher. Lets readers attribute "two scripts emit the same
+	// semantic event" without resorting to call-stack archaeology.
 	struct EventPayload
 	{
 		float           afFloats[4]   = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -77,9 +119,11 @@ namespace Zenith_Telemetry
 		Zenith_EntityID xEntityA;
 		Zenith_EntityID xEntityB;
 		char            szLabel[32]   = {0};
+		// v3 field:
+		char            szSource[24]  = {0};
 
 		void WriteToDataStream(Zenith_DataStream& xStream) const;
-		void ReadFromDataStream(Zenith_DataStream& xStream);
+		void ReadFromDataStream(Zenith_DataStream& xStream, uint32_t uVersion);
 	};
 
 	struct Event
@@ -91,7 +135,7 @@ namespace Zenith_Telemetry
 		EventPayload xPayload;
 
 		void WriteToDataStream(Zenith_DataStream& xStream) const;
-		void ReadFromDataStream(Zenith_DataStream& xStream);
+		void ReadFromDataStream(Zenith_DataStream& xStream, uint32_t uVersion);
 	};
 
 	// Top-down oriented-bounding-box of a static scene obstacle (wall,
@@ -121,9 +165,13 @@ namespace Zenith_Telemetry
 	struct Header
 	{
 		uint32_t    uMagic        = 0x4D4C545A; // 'ZTLM' little-endian
-		// Version 2 (2026-05-18): added axObstacles. Readers accept both
-		// versions -- a v1 file just yields an empty obstacle list.
-		uint32_t    uVersion      = 2;
+		// Version 3 (2026-05-19): expanded EntitySnapshot (AI target /
+		// intent / held item / life-timer), added CameraState +
+		// fFrameWallMs to FrameSample, added szSource to EventPayload,
+		// and added build-info / personality strings to the Header.
+		// Reader accepts v1 / v2 / v3; older recordings load with
+		// new fields defaulted.
+		uint32_t    uVersion      = 3;
 		uint64_t    uSeed         = 0;
 		uint64_t    uStartUTCMs   = 0;
 		std::string strSceneName;
@@ -134,6 +182,11 @@ namespace Zenith_Telemetry
 		// the header and the JSON exporter mirrors them in the header
 		// object so the visualiser can render walls under the trails.
 		Zenith_Vector<SceneObstacle> axObstacles;
+		// v3 build / personality metadata. Populated by the caller; empty
+		// strings are emitted as empty JSON strings.
+		std::string strBuildConfig;     // e.g. "vs2022_Debug_Win64_True"
+		std::string strBuildHash;       // short git hash if available
+		std::string strPersonalityName; // bot personality the run was driven by
 
 		void WriteToDataStream(Zenith_DataStream& xStream) const;
 		void ReadFromDataStream(Zenith_DataStream& xStream);
@@ -218,6 +271,17 @@ namespace Zenith_Telemetry
 		// nullptr to fall back to the numeric form.
 		bool ExportJson(const char* szJsonPath,
 		                const char* (*pfnEventTypeToString)(uint16_t) = nullptr) const;
+
+		// Write the recording as two CSV files for spreadsheet / pandas /
+		// awk-style analysis. szFramesCsvPath gets one row per per-frame
+		// entity sample (frame, t, entity_idx, entity_gen, pos_x/y/z,
+		// fwd_x/y/z, flags, ai_intent, ai_target_x/y/z, held_item,
+		// secondary_float, camera_*, frame_ms). szEventsCsvPath gets
+		// one row per event (frame, t, type, type_name, payload_*).
+		// Either path may be null to skip that file.
+		bool ExportCsv(const char* szFramesCsvPath,
+		               const char* szEventsCsvPath,
+		               const char* (*pfnEventTypeToString)(uint16_t) = nullptr) const;
 
 	private:
 		Header                        m_xHeader;

@@ -669,8 +669,18 @@ foreach ($entry in $markerBuckets.Values) {
 $headerFont = New-Object System.Drawing.Font('Consolas', 12.0, [System.Drawing.FontStyle]::Bold)
 $headerBrush = New-Object System.Drawing.SolidBrush(
     [System.Drawing.Color]::FromArgb(255, 230, 230, 230))
+# v3 header: scene + seed + frames + events on line 1, build config +
+# personality + bounds on line 2. The visualiser used to show only the
+# scene line; the build/personality info comes from Header.strBuildConfig
+# and Header.strPersonalityName (v3 fields, defaulted to empty for
+# older recordings).
+$buildCfg    = if ($telemetry.header.PSObject.Properties.Name -contains 'buildConfig')     { [string]$telemetry.header.buildConfig     } else { "" }
+$personality = if ($telemetry.header.PSObject.Properties.Name -contains 'personalityName') { [string]$telemetry.header.personalityName } else { "" }
 $headerText = "scene={0}  seed=0x{1:X}  frames={2}  events={3}" `
     -f $telemetry.header.sceneName, [int64]$telemetry.header.seed, $frames.Count, $events.Count
+if ($personality.Length -gt 0 -or $buildCfg.Length -gt 0) {
+    $headerText = "{0}  personality={1}  build={2}" -f $headerText, $personality, $buildCfg
+}
 $g.DrawString($headerText, $headerFont, $headerBrush, 10.0, 10.0)
 
 # World bounds caption.
@@ -709,6 +719,49 @@ $g.DrawString($tlT0, $tlLabelFont, $tlLabelBrush, [float]($tlX0 - 2), [float]($t
 $g.DrawString($tlT1, $tlLabelFont, $tlLabelBrush, [float]($tlX1 - 40), [float]($tlY + 6))
 $g.DrawString("Timeline (events over t)", $tlLabelFont, $tlLabelBrush,
     [float]($tlX0 + ($tlX1 - $tlX0) / 2 - 70), [float]($tlY - 18))
+# Telemetry-v3: render a translucent band BEHIND the timeline ticks for
+# windows where the game was paused. Scan PauseToggle events in order;
+# alternate paused / unpaused state based on payload.ints[0] (1=pausing,
+# 0=unpausing). The first PauseToggle starts a paused window; the next
+# closes it.
+$pauseEvents = @($sortedEvents | Where-Object {
+    if ($_.PSObject.Properties.Name -contains 'name') {
+        [string]$_.name -eq 'PauseToggle'
+    } else { $false }
+})
+if ($pauseEvents.Count -gt 0 -and $maxFrame -gt 0) {
+    $pauseBrush = New-Object System.Drawing.SolidBrush(
+        [System.Drawing.Color]::FromArgb(80, 200, 200, 80))
+    $bInPause      = $false
+    $iPauseStartFr = 0
+    foreach ($pe in $pauseEvents) {
+        $bPausing = $false
+        if ($pe.PSObject.Properties.Name -contains 'payload') {
+            $bPausing = ([int]$pe.payload.ints[0]) -ne 0
+        }
+        if ($bPausing -and -not $bInPause) {
+            $iPauseStartFr = [int]$pe.frame
+            $bInPause = $true
+        }
+        elseif ((-not $bPausing) -and $bInPause) {
+            $u0 = $iPauseStartFr / [double]$maxFrame
+            $u1 = [int]$pe.frame / [double]$maxFrame
+            $px0 = $tlX0 + [int]($u0 * ($tlX1 - $tlX0))
+            $px1 = $tlX0 + [int]($u1 * ($tlX1 - $tlX0))
+            if ($px1 -le $px0) { $px1 = $px0 + 1 }
+            $g.FillRectangle($pauseBrush, $px0, $tlY - 6, $px1 - $px0, 12)
+            $bInPause = $false
+        }
+    }
+    if ($bInPause) {
+        # Run ended mid-pause; cap the band at maxFrame.
+        $u0 = $iPauseStartFr / [double]$maxFrame
+        $px0 = $tlX0 + [int]($u0 * ($tlX1 - $tlX0))
+        $g.FillRectangle($pauseBrush, $px0, $tlY - 6, $tlX1 - $px0, 12)
+    }
+    $pauseBrush.Dispose()
+}
+
 # Event ticks above the line, coloured by event style.
 foreach ($evt in $sortedEvents) {
     $rawName = if ($evt.PSObject.Properties.Name -contains 'name') { [string]$evt.name } else { "evt$($evt.type)" }

@@ -123,6 +123,7 @@ public:
 		m_fAppliedRangeMetres    = DP_Tuning::Get<float>("priest.apprehend_range_m");
 		m_fChannelElapsed        = 0.0f;
 		m_xChannelTarget         = INVALID_ENTITY_ID;
+		m_bChannelStartEmitted   = false;
 
 		// Stop the navmesh agent so the priest plants and channels
 		// instead of continuing to drift along the path Pursue had
@@ -138,19 +139,46 @@ public:
 		}
 	}
 
+	// Helper: emit a DP_OnApprehendChannelInterrupted event iff a channel
+	// had been started but not completed. Called from every FAILURE
+	// return so the visualiser sees the interrupt regardless of which
+	// guard path tripped.
+	void EmitInterruptedIfRunning(const Zenith_EntityID& xPriestID,
+	                              DP_ApprehendInterruptReason eReason)
+	{
+		if (!m_bChannelStartEmitted) return;
+		Zenith_EventDispatcher::Get().Dispatch(
+			DP_OnApprehendChannelInterrupted{
+				xPriestID, m_xChannelTarget, eReason });
+		m_bChannelStartEmitted = false;
+	}
+
 	BTNodeStatus Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBB, float fDt) override
 	{
+		const Zenith_EntityID xPriestID = xAgent.GetEntityID();
 		const Zenith_EntityID xTarget = xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-		if (!xTarget.IsValid()) { m_eLastStatus = BTNodeStatus::FAILURE; return m_eLastStatus; }
+		if (!xTarget.IsValid())
+		{
+			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::TargetLost);
+			m_eLastStatus = BTNodeStatus::FAILURE; return m_eLastStatus;
+		}
 
 		// Resolve target's scene + transform.
 		Zenith_SceneData* pxScene =
 			Zenith_SceneManager::GetSceneDataForEntity(xTarget);
-		if (pxScene == nullptr) { m_eLastStatus = BTNodeStatus::FAILURE; return m_eLastStatus; }
+		if (pxScene == nullptr)
+		{
+			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::TargetLost);
+			m_eLastStatus = BTNodeStatus::FAILURE; return m_eLastStatus;
+		}
 		Zenith_Entity xTargetEnt = pxScene->TryGetEntity(xTarget);
-		if (!xTargetEnt.IsValid()) { m_eLastStatus = BTNodeStatus::FAILURE; return m_eLastStatus; }
-		if (!xTargetEnt.HasComponent<Zenith_TransformComponent>()) { m_eLastStatus = BTNodeStatus::FAILURE; return m_eLastStatus; }
-		if (!xAgent.HasComponent<Zenith_TransformComponent>()) { m_eLastStatus = BTNodeStatus::FAILURE; return m_eLastStatus; }
+		if (!xTargetEnt.IsValid()
+		 || !xTargetEnt.HasComponent<Zenith_TransformComponent>()
+		 || !xAgent.HasComponent<Zenith_TransformComponent>())
+		{
+			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::TargetLost);
+			m_eLastStatus = BTNodeStatus::FAILURE; return m_eLastStatus;
+		}
 
 		Zenith_Maths::Vector3 xTargetPos, xAgentPos;
 		xTargetEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xTargetPos);
@@ -170,6 +198,7 @@ public:
 			// Out of range -- bail so the Selector falls back to pursue.
 			// OnEnter resets state when this branch is re-entered after
 			// the priest re-closes the gap.
+			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::OutOfRange);
 			m_eLastStatus = BTNodeStatus::FAILURE;
 			return m_eLastStatus;
 		}
@@ -181,10 +210,17 @@ public:
 		if (!m_xChannelTarget.IsValid())
 		{
 			m_xChannelTarget = xTarget;
+			// Channel start: emit once on lock-on so the visualiser
+			// timeline shows the channel window even when the channel
+			// gets interrupted before SUCCESS.
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnApprehendChannelStart{ xPriestID, xTarget });
+			m_bChannelStartEmitted = true;
 		}
 		else if (m_xChannelTarget.m_uIndex != xTarget.m_uIndex
 		      || m_xChannelTarget.m_uGeneration != xTarget.m_uGeneration)
 		{
+			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::TargetSwitched);
 			m_eLastStatus = BTNodeStatus::FAILURE;
 			return m_eLastStatus;
 		}
@@ -199,10 +235,13 @@ public:
 			// priest that caught them (xAgent.GetEntityID()) so the
 			// telemetry visualiser can plot the catch site.
 			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnApprehendChannelComplete{ xPriestID, xTarget });
+			m_bChannelStartEmitted = false;
+			Zenith_EventDispatcher::Get().Dispatch(
 				DP_OnRunLost{
 					DP_RunLostCause::Apprehended,
 					xTarget,
-					xAgent.GetEntityID() });
+					xPriestID });
 			DP_Player::SetPossessedVillager(INVALID_ENTITY_ID);
 			m_eLastStatus = BTNodeStatus::SUCCESS;
 			return m_eLastStatus;
@@ -228,4 +267,5 @@ private:
 	float           m_fAppliedChannelSeconds = 3.0f;
 	float           m_fAppliedRangeMetres    = 2.0f;
 	Zenith_EntityID m_xChannelTarget         = INVALID_ENTITY_ID;
+	bool            m_bChannelStartEmitted   = false; // emit Interrupted iff true
 };

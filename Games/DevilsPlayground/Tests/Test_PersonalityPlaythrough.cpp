@@ -21,6 +21,7 @@
 // Zenith_Android_Window.
 #include "AI/Components/Zenith_AIAgentComponent.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "Maths/Zenith_Maths.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIElement.h"
@@ -41,6 +42,7 @@
 
 #include "Physics/Zenith_Physics.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cmath>
 #include <vector>
@@ -48,6 +50,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include "Source/DP_Tuning.h"
 
 // ============================================================================
 // PersonalityPlaythrough_* — pure-input playthrough, 5 personality variants.
@@ -418,7 +421,32 @@ namespace
 	bool g_bRecordingActive = false;
 	std::string g_strHPBinPath;
 	std::string g_strHPJsonPath;
+	std::string g_strHPFramesCsvPath;
+	std::string g_strHPEventsCsvPath;
 	int g_iTelemetryFrame = 0;  // frames since recording started
+
+	// Telemetry-v3: track which (observer,target) contacts are currently
+	// active (awareness above kContactThreshold). Diff against previous
+	// frame to emit DP_OnPerceptionContactBegin/End rising/falling edges
+	// from the per-frame sampler. Cleared by Setup_HumanPlaythrough.
+	constexpr float kContactAwarenessThreshold = 0.4f;
+	struct PerceptionContactKey
+	{
+		uint32_t uObsIdx;  uint32_t uObsGen;
+		uint32_t uTgtIdx;  uint32_t uTgtGen;
+		bool operator==(const PerceptionContactKey& o) const
+		{
+			return uObsIdx == o.uObsIdx && uObsGen == o.uObsGen
+			    && uTgtIdx == o.uTgtIdx && uTgtGen == o.uTgtGen;
+		}
+	};
+	struct PerceptionContactEntry
+	{
+		PerceptionContactKey xKey;
+		uint32_t              uStimulusMask;
+	};
+	std::vector<PerceptionContactEntry> g_axActiveContacts;
+	int g_iContactPrevFrameIdx = -1;
 
 	std::string HPTempPath(const char* sz)
 	{
@@ -476,14 +504,202 @@ namespace
 		return true;
 	}
 
-	// Per-sample emit. Pattern lifted from Test_DPHeuristicBotPlaythrough's
-	// EmitPositionSample so the visualiser's classification logic
-	// (IsPriest / Possessed / HoldingItem flags) lights up identically for
-	// a human-driven run.
+	// Resolve the priest's current BT branch + nav-target by inspecting
+	// the blackboard keys Priest_Behaviour writes. Mirror of the priest BT
+	// Selector ordering -- Apprehend > Pursue > Investigate > Patrol.
+	void DerivePriestIntentAndTarget(Zenith_EntityID xPriestId,
+	                                 const Zenith_Maths::Vector3& xPriestPos,
+	                                 DPTelemetry::PriestIntent& eIntent,
+	                                 Zenith_Maths::Vector3& xTargetPos)
+	{
+		eIntent    = DPTelemetry::PriestIntent::Idle;
+		xTargetPos = Zenith_Maths::Vector3(0.0f);
+
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xPriestId);
+		if (!pxScene) return;
+		Zenith_Entity xPriest = pxScene->TryGetEntity(xPriestId);
+		if (!xPriest.IsValid()) return;
+		if (!xPriest.HasComponent<Zenith_AIAgentComponent>()) return;
+
+		Zenith_Blackboard& xBB =
+			xPriest.GetComponent<Zenith_AIAgentComponent>().GetBlackboard();
+
+		const Zenith_EntityID xTgtWithDevil =
+			xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
+		if (xTgtWithDevil.IsValid())
+		{
+			// Pursue or Apprehend, depending on horizontal distance to the
+			// target vs the apprehend range.
+			Zenith_Maths::Vector3 xPos(0.0f);
+			if (TryGetEntityPos(xTgtWithDevil, xPos))
+			{
+				xTargetPos = xPos;
+				const float fDx = xPos.x - xPriestPos.x;
+				const float fDz = xPos.z - xPriestPos.z;
+				const float fDist = std::sqrt(fDx * fDx + fDz * fDz);
+				const float fApprehendRange = DP_Tuning::Get<float>("priest.apprehend_range_m");
+				eIntent = (fDist <= fApprehendRange)
+					? DPTelemetry::PriestIntent::Apprehend
+					: DPTelemetry::PriestIntent::Pursue;
+			}
+			else
+			{
+				eIntent = DPTelemetry::PriestIntent::Pursue;
+			}
+			return;
+		}
+
+		if (xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS))
+		{
+			xTargetPos = xBB.GetVector3(DP_AI::BB_KEY_INVESTIGATE_POS);
+			eIntent    = DPTelemetry::PriestIntent::Investigate;
+			return;
+		}
+
+		// PatrolTarget is a Vector3; "no patrol" reads as (0,0,0). The
+		// real first patrol point picked by DP_BTAction_FindPos lands
+		// inside the playable area, so a true zero is a safe sentinel.
+		const Zenith_Maths::Vector3 xPatrol = xBB.GetVector3(DP_AI::BB_KEY_PATROL_TARGET);
+		if (std::fabs(xPatrol.x) + std::fabs(xPatrol.z) > 0.001f)
+		{
+			xTargetPos = xPatrol;
+			eIntent    = DPTelemetry::PriestIntent::Patrol;
+		}
+	}
+
+	// Sample the orbit camera once per frame. Returns a valid=false
+	// CameraState if no DPOrbitCamera_Behaviour exists in the active
+	// scene (e.g. FrontEnd scene during early Setup).
+	Zenith_Telemetry::CameraState SampleCameraState()
+	{
+		Zenith_Telemetry::CameraState xCam;
+		xCam.bValid = 0;
+		DP_Query::ForEachScriptInActiveScene<DPOrbitCamera_Behaviour>(
+			[&xCam](Zenith_EntityID, DPOrbitCamera_Behaviour& xOrbit)
+			{
+				if (xCam.bValid) return;  // first one wins; there's only one
+				const Zenith_Maths::Vector3 xTarget = xOrbit.GetOrbitTarget();
+				const float fYaw   = xOrbit.GetOrbitYaw();
+				const float fDist  = xOrbit.GetOrbitDistance();
+				const float fPitch = xOrbit.GetOrbitPitch();
+				// Eye position derivation mirrors DPOrbitCamera::OnUpdate:
+				//   xOffset = (cos(yaw) * cos(pitch), sin(pitch), sin(yaw) * cos(pitch))
+				//   eyePos  = target + offset * distance
+				const float fCp = std::cos(fPitch);
+				const Zenith_Maths::Vector3 xOff(
+					std::cos(fYaw) * fCp,
+					std::sin(fPitch),
+					std::sin(fYaw) * fCp);
+				xCam.xLookAt        = xTarget;
+				xCam.xPos           = xTarget + xOff * fDist;
+				xCam.fOrbitYawRad   = fYaw;
+				xCam.fOrbitDistance = fDist;
+				// 55-degree FOV matches the camera authoring in
+				// AuthorDPGameSceneFrame; the camera component itself
+				// owns the exact value but we don't have direct access
+				// without the engine API surface, so this is a known
+				// approximation.
+				xCam.fFovRadians    = 55.0f * 3.14159265358979323846f / 180.0f;
+				xCam.bValid         = 1;
+			});
+		return xCam;
+	}
+
+	// Diff this frame's perception contacts against last frame's, emitting
+	// DP_OnPerceptionContactBegin/End for rising / falling edges. Called
+	// from EmitHPPositionSample so the contact transitions hit telemetry
+	// at the same cadence as position samples (10 Hz).
+	void UpdatePerceptionContacts(Zenith_EntityID xObserver)
+	{
+		const auto* paxTargets =
+			Zenith_PerceptionSystem::GetPerceivedTargets(xObserver);
+		if (paxTargets == nullptr) paxTargets = nullptr;
+
+		std::vector<PerceptionContactEntry> axCurrent;
+		if (paxTargets != nullptr)
+		{
+			const uint32_t uN = paxTargets->GetSize();
+			for (uint32_t i = 0; i < uN; ++i)
+			{
+				const auto& xT = paxTargets->Get(i);
+				if (xT.m_fAwareness < kContactAwarenessThreshold) continue;
+				PerceptionContactEntry xC;
+				xC.xKey.uObsIdx = xObserver.m_uIndex;
+				xC.xKey.uObsGen = xObserver.m_uGeneration;
+				xC.xKey.uTgtIdx = xT.m_xEntityID.m_uIndex;
+				xC.xKey.uTgtGen = xT.m_xEntityID.m_uGeneration;
+				xC.uStimulusMask = xT.m_uStimulusMask;
+				axCurrent.push_back(xC);
+			}
+		}
+
+		// Rising edges: in current, not in g_axActiveContacts.
+		for (const auto& xC : axCurrent)
+		{
+			bool bWasActive = false;
+			for (const auto& xP : g_axActiveContacts)
+			{
+				if (xP.xKey == xC.xKey) { bWasActive = true; break; }
+			}
+			if (!bWasActive)
+			{
+				DP_OnPerceptionContactBegin xEvt;
+				xEvt.m_xObserver.m_uIndex      = xC.xKey.uObsIdx;
+				xEvt.m_xObserver.m_uGeneration = xC.xKey.uObsGen;
+				xEvt.m_xTarget.m_uIndex        = xC.xKey.uTgtIdx;
+				xEvt.m_xTarget.m_uGeneration   = xC.xKey.uTgtGen;
+				xEvt.m_uStimulusMask           = xC.uStimulusMask;
+				xEvt.m_fAwareness              = kContactAwarenessThreshold;
+				Zenith_EventDispatcher::Get().Dispatch(xEvt);
+			}
+		}
+
+		// Falling edges: in g_axActiveContacts, not in current.
+		for (const auto& xP : g_axActiveContacts)
+		{
+			bool bStillActive = false;
+			for (const auto& xC : axCurrent)
+			{
+				if (xC.xKey == xP.xKey) { bStillActive = true; break; }
+			}
+			if (!bStillActive)
+			{
+				DP_OnPerceptionContactEnd xEvt;
+				xEvt.m_xObserver.m_uIndex      = xP.xKey.uObsIdx;
+				xEvt.m_xObserver.m_uGeneration = xP.xKey.uObsGen;
+				xEvt.m_xTarget.m_uIndex        = xP.xKey.uTgtIdx;
+				xEvt.m_xTarget.m_uGeneration   = xP.xKey.uTgtGen;
+				xEvt.m_uStimulusMask           = xP.uStimulusMask;
+				Zenith_EventDispatcher::Get().Dispatch(xEvt);
+			}
+		}
+
+		g_axActiveContacts = std::move(axCurrent);
+	}
+
+	// Per-sample emit. Builds an EntitySnapshot per villager + the priest
+	// with all v3 fields populated:
+	//   * Villagers: held-item tag in uHeldItemTag, remaining life timer
+	//     (seconds) in fSecondaryFloat.
+	//   * Priest:    BT-derived intent in uAIIntent, current nav-target
+	//     world XYZ in xAITargetPos.
+	// Also samples the camera + per-frame wall-clock ms and fires the
+	// perception-contact diff for the priest.
 	void EmitHPPositionSample(int iFrame)
 	{
+		// Frame wall-clock timing. The sampler runs once per kHPSamplePeriodFrames,
+		// so this measures the *gap between samples* rather than a single
+		// physics frame -- close enough to detect gameplay-path perf
+		// regressions (the main use case) while staying cheap.
+		static auto s_xLastSampleTime = std::chrono::steady_clock::now();
+		const auto xNow = std::chrono::steady_clock::now();
+		const std::chrono::duration<float, std::milli> xDelta = xNow - s_xLastSampleTime;
+		s_xLastSampleTime = xNow;
+
 		Zenith_Telemetry::FrameSample xSample;
-		xSample.fTimeS = static_cast<float>(iFrame) * kHPFixedDt;
+		xSample.fTimeS       = static_cast<float>(iFrame) * kHPFixedDt;
+		xSample.xCamera      = SampleCameraState();
+		xSample.fFrameWallMs = xDelta.count();
 
 		const Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
 
@@ -494,31 +710,48 @@ namespace
 				xE.xId = xId;
 				if (!TryGetEntityPos(xId, xE.xPos)) return;
 				uint32_t uFlags = 0;
-				if (xVilla.GetRemainingLife() > 0.0f) uFlags |= DPTelemetry::StateFlags::Alive;
+				const float fRemaining = xVilla.GetRemainingLife();
+				xE.fSecondaryFloat = fRemaining;  // life-timer remaining (s)
+				if (fRemaining > 0.0f) uFlags |= DPTelemetry::StateFlags::Alive;
+				// Held item: emit the tag for every villager, but only the
+				// possessed one is meaningful (others can't carry items in
+				// gameplay). Defaults to 0 (DP_ItemTag::None).
+				const DP_ItemTag eTag = DP_Player::GetHeldItemTag(xId);
+				xE.uHeldItemTag = static_cast<uint8_t>(eTag);
 				if (xId == xPossessed)
 				{
 					uFlags |= DPTelemetry::StateFlags::Possessed;
 					if (xVilla.IsSprintingNow()) uFlags |= DPTelemetry::StateFlags::Sprinting;
 					if (xVilla.IsWalkQuietNow()) uFlags |= DPTelemetry::StateFlags::WalkQuiet;
-					const DP_ItemTag eTag = DP_Player::GetHeldItemTag(xId);
 					if (eTag != DP_ItemTag::None) uFlags |= DPTelemetry::StateFlags::HoldingItem;
 				}
 				xE.uStateFlags = uFlags;
 				xSample.axEntities.PushBack(xE);
 			});
 
+		Zenith_EntityID xPriestId;
 		DP_Query::ForEachScriptInActiveScene<Priest_Behaviour>(
-			[&xSample](Zenith_EntityID xId, Priest_Behaviour&)
+			[&xSample, &xPriestId](Zenith_EntityID xId, Priest_Behaviour&)
 			{
 				Zenith_Telemetry::EntitySnapshot xE;
 				xE.xId = xId;
 				if (!TryGetEntityPos(xId, xE.xPos)) return;
 				xE.uStateFlags = DPTelemetry::StateFlags::IsPriest
 				               | DPTelemetry::StateFlags::Alive;
+				DPTelemetry::PriestIntent eIntent = DPTelemetry::PriestIntent::Idle;
+				DerivePriestIntentAndTarget(xId, xE.xPos, eIntent, xE.xAITargetPos);
+				xE.uAIIntent = static_cast<uint8_t>(eIntent);
 				xSample.axEntities.PushBack(xE);
+				xPriestId = xId;
 			});
 
 		Zenith_Telemetry::GetRecorder().RecordFrame(xSample);
+
+		// Perception contact diff. Only meaningful when we found a priest.
+		if (xPriestId.IsValid())
+		{
+			UpdatePerceptionContacts(xPriestId);
+		}
 	}
 
 	// Scan every Zenith_ColliderComponent in the active scene and emit a
@@ -1355,8 +1588,14 @@ static void Setup_HumanPlaythrough()
 	// dp_human_playthrough.{ztlm,json}. Tools/dp_telemetry_visualise.ps1
 	// reads these by path; the runner script auto-detects them once the
 	// test exits.
-	g_strHPBinPath  = HPTempPath("playthrough.ztlm");
-	g_strHPJsonPath = HPTempPath("playthrough.json");
+	g_strHPBinPath       = HPTempPath("playthrough.ztlm");
+	g_strHPJsonPath      = HPTempPath("playthrough.json");
+	g_strHPFramesCsvPath = HPTempPath("frames.csv");
+	g_strHPEventsCsvPath = HPTempPath("events.csv");
+	// Reset perception-contact diff state so personalities in a batched
+	// run don't inherit each other's "active contacts" lists.
+	g_axActiveContacts.clear();
+	g_iContactPrevFrameIdx = -1;
 	g_pxTelemetryHooks.reset();
 	g_bRecordingActive = false;
 	g_iTelemetryFrame  = 0;
@@ -1535,6 +1774,23 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			// semi-transparent rectangles under the entity trails so
 			// movement makes sense against actual geometry.
 			ScanSceneObstacles(xHeader.axObstacles);
+			// Telemetry-v3 build-info. ZENITH_DEBUG + ZENITH_TOOLS are
+			// the only build flags the engine carries through to runtime;
+			// concatenating them gives a self-describing config string
+			// without each game having to mirror the Sharpmake config
+			// names. Hash is empty for now -- a future commit can stamp
+			// the git SHA via a Sharpmake-injected define.
+#if defined(ZENITH_DEBUG) && defined(ZENITH_TOOLS)
+			xHeader.strBuildConfig = "Debug_True";
+#elif defined(ZENITH_DEBUG)
+			xHeader.strBuildConfig = "Debug_False";
+#elif defined(ZENITH_TOOLS)
+			xHeader.strBuildConfig = "Release_True";
+#else
+			xHeader.strBuildConfig = "Release_False";
+#endif
+			xHeader.strBuildHash       = "";
+			xHeader.strPersonalityName = g_xActiveCfg.szName;
 			Zenith_Telemetry::GetRecorder().Begin(xHeader);
 			// Hooks AFTER Begin so the very first events land in this run.
 			g_pxTelemetryHooks = std::make_unique<DPTelemetry::Hooks>();
@@ -2372,10 +2628,25 @@ static bool Verify_HumanPlaythrough()
 			g_strHPBinPath.c_str(),
 			g_strHPJsonPath.c_str(),
 			&DPTelemetry::DPEventTypeToString);
+		// Also emit the v3 CSV exports alongside the binary + JSON, so
+		// per-run telemetry is immediately usable by pandas / awk without
+		// a separate parse-from-JSON step.
+		if (bEnded)
+		{
+			Zenith_Telemetry::Reader xR;
+			if (xR.LoadFromFile(g_strHPBinPath.c_str()))
+			{
+				xR.ExportCsv(
+					g_strHPFramesCsvPath.c_str(),
+					g_strHPEventsCsvPath.c_str(),
+					&DPTelemetry::DPEventTypeToString);
+			}
+		}
 		g_pxTelemetryHooks.reset();
 		g_bRecordingActive = false;
-		std::printf("[HumanPlaythrough] telemetry end -- frames=%u ended=%d bin=%s json=%s\n",
-			uFrames, (int)bEnded, g_strHPBinPath.c_str(), g_strHPJsonPath.c_str());
+		std::printf("[HumanPlaythrough] telemetry end -- frames=%u ended=%d bin=%s json=%s frames_csv=%s events_csv=%s\n",
+			uFrames, (int)bEnded, g_strHPBinPath.c_str(), g_strHPJsonPath.c_str(),
+			g_strHPFramesCsvPath.c_str(), g_strHPEventsCsvPath.c_str());
 		std::fflush(stdout);
 	}
 

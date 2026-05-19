@@ -46,14 +46,59 @@ namespace Zenith_Telemetry
 		xS << xPos.x; xS << xPos.y; xS << xPos.z;
 		xS << xForward.x; xS << xForward.y; xS << xForward.z;
 		xS << uStateFlags;
+		// v3 fields (always written by the current writer; older Readers
+		// pass uVersion < 3 and skip the read of these fields).
+		xS << xAITargetPos.x; xS << xAITargetPos.y; xS << xAITargetPos.z;
+		xS << uAIIntent;
+		xS << uHeldItemTag;
+		xS << uReserved;
+		xS << fSecondaryFloat;
 	}
-	void EntitySnapshot::ReadFromDataStream(Zenith_DataStream& xS)
+	void EntitySnapshot::ReadFromDataStream(Zenith_DataStream& xS, uint32_t uVersion)
 	{
 		xS >> xId.m_uIndex;
 		xS >> xId.m_uGeneration;
 		xS >> xPos.x; xS >> xPos.y; xS >> xPos.z;
 		xS >> xForward.x; xS >> xForward.y; xS >> xForward.z;
 		xS >> uStateFlags;
+		if (uVersion >= 3u)
+		{
+			xS >> xAITargetPos.x; xS >> xAITargetPos.y; xS >> xAITargetPos.z;
+			xS >> uAIIntent;
+			xS >> uHeldItemTag;
+			xS >> uReserved;
+			xS >> fSecondaryFloat;
+		}
+		else
+		{
+			xAITargetPos    = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+			uAIIntent       = 0;
+			uHeldItemTag    = 0;
+			uReserved       = 0;
+			fSecondaryFloat = 0.0f;
+		}
+	}
+
+	// =========================================================
+	// CameraState (v3)
+	// =========================================================
+	void CameraState::WriteToDataStream(Zenith_DataStream& xS) const
+	{
+		xS << xPos.x;    xS << xPos.y;    xS << xPos.z;
+		xS << xLookAt.x; xS << xLookAt.y; xS << xLookAt.z;
+		xS << fOrbitYawRad;
+		xS << fOrbitDistance;
+		xS << fFovRadians;
+		xS << bValid;
+	}
+	void CameraState::ReadFromDataStream(Zenith_DataStream& xS)
+	{
+		xS >> xPos.x;    xS >> xPos.y;    xS >> xPos.z;
+		xS >> xLookAt.x; xS >> xLookAt.y; xS >> xLookAt.z;
+		xS >> fOrbitYawRad;
+		xS >> fOrbitDistance;
+		xS >> fFovRadians;
+		xS >> bValid;
 	}
 
 	// =========================================================
@@ -69,8 +114,11 @@ namespace Zenith_Telemetry
 		{
 			axEntities.Get(i).WriteToDataStream(xS);
 		}
+		// v3 trailing block. Older Readers pass uVersion < 3 and skip.
+		xCamera.WriteToDataStream(xS);
+		xS << fFrameWallMs;
 	}
-	void FrameSample::ReadFromDataStream(Zenith_DataStream& xS)
+	void FrameSample::ReadFromDataStream(Zenith_DataStream& xS, uint32_t uVersion)
 	{
 		xS >> uFrameIdx;
 		xS >> fTimeS;
@@ -82,8 +130,18 @@ namespace Zenith_Telemetry
 		for (uint32_t i = 0; i < uN; ++i)
 		{
 			EntitySnapshot xE;
-			xE.ReadFromDataStream(xS);
+			xE.ReadFromDataStream(xS, uVersion);
 			axEntities.PushBack(xE);
+		}
+		if (uVersion >= 3u)
+		{
+			xCamera.ReadFromDataStream(xS);
+			xS >> fFrameWallMs;
+		}
+		else
+		{
+			xCamera      = CameraState{};
+			fFrameWallMs = 0.0f;
 		}
 	}
 
@@ -97,8 +155,10 @@ namespace Zenith_Telemetry
 		xS << xEntityA.m_uIndex; xS << xEntityA.m_uGeneration;
 		xS << xEntityB.m_uIndex; xS << xEntityB.m_uGeneration;
 		xS.WriteData(szLabel, sizeof(szLabel));
+		// v3 field.
+		xS.WriteData(szSource, sizeof(szSource));
 	}
-	void EventPayload::ReadFromDataStream(Zenith_DataStream& xS)
+	void EventPayload::ReadFromDataStream(Zenith_DataStream& xS, uint32_t uVersion)
 	{
 		for (int i = 0; i < 4; ++i) xS >> afFloats[i];
 		for (int i = 0; i < 4; ++i) xS >> aiInts[i];
@@ -106,6 +166,15 @@ namespace Zenith_Telemetry
 		xS >> xEntityB.m_uIndex; xS >> xEntityB.m_uGeneration;
 		xS.ReadData(szLabel, sizeof(szLabel));
 		szLabel[sizeof(szLabel) - 1] = '\0';
+		if (uVersion >= 3u)
+		{
+			xS.ReadData(szSource, sizeof(szSource));
+			szSource[sizeof(szSource) - 1] = '\0';
+		}
+		else
+		{
+			szSource[0] = '\0';
+		}
 	}
 
 	void Event::WriteToDataStream(Zenith_DataStream& xS) const
@@ -116,13 +185,13 @@ namespace Zenith_Telemetry
 		xS << uReserved;
 		xPayload.WriteToDataStream(xS);
 	}
-	void Event::ReadFromDataStream(Zenith_DataStream& xS)
+	void Event::ReadFromDataStream(Zenith_DataStream& xS, uint32_t uVersion)
 	{
 		xS >> uFrameIdx;
 		xS >> fTimeS;
 		xS >> uEventType;
 		xS >> uReserved;
-		xPayload.ReadFromDataStream(xS);
+		xPayload.ReadFromDataStream(xS, uVersion);
 	}
 
 	// =========================================================
@@ -157,15 +226,17 @@ namespace Zenith_Telemetry
 		WriteString(xS, strSceneName);
 		xS << fFixedDt;
 		xS << uSamplePeriodFrames;
-		// v2+ only: obstacle count + list. Writers always emit v2 so a
-		// recording produced by current code always carries this section
-		// (empty if the caller didn't populate it).
+		// v2+ obstacle list.
 		const uint32_t uNumObs = axObstacles.GetSize();
 		xS << uNumObs;
 		for (uint32_t i = 0; i < uNumObs; ++i)
 		{
 			axObstacles.Get(i).WriteToDataStream(xS);
 		}
+		// v3+ build / personality metadata.
+		WriteString(xS, strBuildConfig);
+		WriteString(xS, strBuildHash);
+		WriteString(xS, strPersonalityName);
 	}
 	void Header::ReadFromDataStream(Zenith_DataStream& xS)
 	{
@@ -195,6 +266,16 @@ namespace Zenith_Telemetry
 				xO.ReadFromDataStream(xS);
 				axObstacles.PushBack(xO);
 			}
+		}
+		// v3+ build / personality metadata.
+		strBuildConfig.clear();
+		strBuildHash.clear();
+		strPersonalityName.clear();
+		if (uVersion >= 3u)
+		{
+			ReadString(xS, strBuildConfig);
+			ReadString(xS, strBuildHash);
+			ReadString(xS, strPersonalityName);
 		}
 	}
 
@@ -333,10 +414,12 @@ namespace Zenith_Telemetry
 				"Zenith_Telemetry::Reader: bad magic 0x%08X in %s", m_xHeader.uMagic, szBinaryPath);
 			return false;
 		}
-		// Accept v1 (legacy, no obstacles) and v2 (current, header carries
-		// SceneObstacle list). Anything else is a forward-incompat file
-		// produced by a newer writer than this reader knows how to parse.
-		if (m_xHeader.uVersion != 1u && m_xHeader.uVersion != 2u)
+		// Accept v1 (legacy, no obstacles), v2 (obstacles), and v3 (current --
+		// extended EntitySnapshot / CameraState / EventPayload.szSource +
+		// build metadata in Header). Anything else is a forward-incompat
+		// file produced by a newer writer than this reader knows how to
+		// parse.
+		if (m_xHeader.uVersion != 1u && m_xHeader.uVersion != 2u && m_xHeader.uVersion != 3u)
 		{
 			Zenith_Error(LOG_CATEGORY_CORE,
 				"Zenith_Telemetry::Reader: unknown version %u in %s", m_xHeader.uVersion, szBinaryPath);
@@ -344,6 +427,7 @@ namespace Zenith_Telemetry
 		}
 
 		// Walk records until End sentinel.
+		const uint32_t uVer = m_xHeader.uVersion;
 		while (xStream.GetCursor() < xStream.GetSize())
 		{
 			uint8_t uT = 0;
@@ -353,13 +437,13 @@ namespace Zenith_Telemetry
 			if (eT == RecordType::FrameSample)
 			{
 				FrameSample xS;
-				xS.ReadFromDataStream(xStream);
+				xS.ReadFromDataStream(xStream, uVer);
 				m_axFrames.PushBack(xS);
 			}
 			else if (eT == RecordType::Event)
 			{
 				Event xE;
-				xE.ReadFromDataStream(xStream);
+				xE.ReadFromDataStream(xStream, uVer);
 				m_axEvents.PushBack(xE);
 			}
 			else
@@ -402,6 +486,12 @@ namespace Zenith_Telemetry
 		xOut << "    \"sceneName\": \"" << m_xHeader.strSceneName << "\",\n";
 		xOut << "    \"fixedDt\": " << m_xHeader.fFixedDt << ",\n";
 		xOut << "    \"samplePeriodFrames\": " << m_xHeader.uSamplePeriodFrames << ",\n";
+		// v3 build / personality metadata. Always emitted so downstream
+		// readers can treat the fields as guaranteed-present (empty string
+		// when the writer didn't populate them).
+		xOut << "    \"buildConfig\": \""     << m_xHeader.strBuildConfig     << "\",\n";
+		xOut << "    \"buildHash\": \""       << m_xHeader.strBuildHash       << "\",\n";
+		xOut << "    \"personalityName\": \"" << m_xHeader.strPersonalityName << "\",\n";
 		// Static-scene obstacles. Always emitted (empty array if none) so
 		// downstream readers (visualiser, etc.) don't need a fallback path
 		// when the writer was older or didn't populate them.
@@ -437,10 +527,34 @@ namespace Zenith_Telemetry
 				WriteVec3(xE.xPos);
 				xOut << ",\"fwd\":";
 				WriteVec3(xE.xForward);
-				xOut << ",\"flags\":" << xE.uStateFlags << "}";
+				xOut << ",\"flags\":" << xE.uStateFlags;
+				// v3 fields. Always emitted so downstream consumers can
+				// rely on the keys being present; the values default to
+				// 0 / (0,0,0) for older v2 recordings.
+				xOut << ",\"aiTarget\":";
+				WriteVec3(xE.xAITargetPos);
+				xOut << ",\"aiIntent\":" << static_cast<int>(xE.uAIIntent);
+				xOut << ",\"heldItem\":" << static_cast<int>(xE.uHeldItemTag);
+				xOut << ",\"life\":"     << xE.fSecondaryFloat;
+				xOut << "}";
 				if (j + 1 < uNE) xOut << ",";
 			}
-			xOut << "]}";
+			xOut << "]";
+			// v3 camera state + per-frame perf. Wrapped in nested objects
+			// so they're easy to skip in client code that only cares
+			// about positions.
+			xOut << ",\"camera\":{";
+			xOut << "\"pos\":";
+			WriteVec3(xS.xCamera.xPos);
+			xOut << ",\"lookAt\":";
+			WriteVec3(xS.xCamera.xLookAt);
+			xOut << ",\"yaw\":"      << xS.xCamera.fOrbitYawRad
+			     << ",\"dist\":"     << xS.xCamera.fOrbitDistance
+			     << ",\"fov\":"      << xS.xCamera.fFovRadians
+			     << ",\"valid\":"    << static_cast<int>(xS.xCamera.bValid)
+			     << "}";
+			xOut << ",\"frameMs\":" << xS.fFrameWallMs;
+			xOut << "}";
 			if (i + 1 < uNF) xOut << ",";
 			xOut << "\n";
 		}
@@ -481,13 +595,138 @@ namespace Zenith_Telemetry
 				if (xE.xPayload.szLabel[uLabLen] == '\0') break;
 			}
 			std::string strLabel(xE.xPayload.szLabel, uLabLen);
-			xOut << ",\"label\":\"" << strLabel << "\"}";
+			xOut << ",\"label\":\"" << strLabel << "\"";
+			// v3: szSource. Same fixed-size, manually find terminator.
+			size_t uSrcLen = 0;
+			for (; uSrcLen < sizeof(xE.xPayload.szSource); ++uSrcLen)
+			{
+				if (xE.xPayload.szSource[uSrcLen] == '\0') break;
+			}
+			std::string strSource(xE.xPayload.szSource, uSrcLen);
+			xOut << ",\"source\":\"" << strSource << "\"}";
 			xOut << "}";
 			if (i + 1 < uNE) xOut << ",";
 			xOut << "\n";
 		}
 		xOut << "  ]\n";
 		xOut << "}\n";
+		return true;
+	}
+
+	// =========================================================
+	// CSV export (v3)
+	//
+	// Two row-based files for spreadsheet / pandas analysis:
+	//   - frames.csv: one row per entity per sampled frame
+	//   - events.csv: one row per event
+	//
+	// Either path may be null to skip writing that file. Field separator is
+	// comma; string fields are wrapped in double-quotes with embedded
+	// double-quotes escaped per RFC 4180.
+	// =========================================================
+	static void WriteCsvString(std::ofstream& xOut, const char* sz, size_t uMaxLen)
+	{
+		xOut << '"';
+		size_t uI = 0;
+		for (; uI < uMaxLen && sz[uI] != '\0'; ++uI)
+		{
+			if (sz[uI] == '"') xOut << "\"\""; // escape per RFC 4180
+			else               xOut << sz[uI];
+		}
+		xOut << '"';
+	}
+
+	bool Reader::ExportCsv(const char* szFramesCsvPath,
+	                       const char* szEventsCsvPath,
+	                       const char* (*pfnEventTypeToString)(uint16_t)) const
+	{
+		if (szFramesCsvPath != nullptr)
+		{
+			std::ofstream xOut(szFramesCsvPath);
+			if (!xOut.is_open()) return false;
+
+			// Header row.
+			xOut << "frame,t,entity_idx,entity_gen,pos_x,pos_y,pos_z,"
+			     << "fwd_x,fwd_y,fwd_z,flags,"
+			     << "ai_intent,ai_target_x,ai_target_y,ai_target_z,"
+			     << "held_item,life,"
+			     << "cam_pos_x,cam_pos_y,cam_pos_z,"
+			     << "cam_lookat_x,cam_lookat_y,cam_lookat_z,"
+			     << "cam_yaw,cam_dist,cam_fov,cam_valid,frame_ms\n";
+
+			const uint32_t uNF = m_axFrames.GetSize();
+			for (uint32_t i = 0; i < uNF; ++i)
+			{
+				const FrameSample& xS = m_axFrames.Get(i);
+				const uint32_t uNE = xS.axEntities.GetSize();
+				for (uint32_t j = 0; j < uNE; ++j)
+				{
+					const EntitySnapshot& xE = xS.axEntities.Get(j);
+					char buf[512];
+					std::snprintf(buf, sizeof(buf),
+						"%u,%.4f,%u,%u,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%u,"
+						"%u,%.4f,%.4f,%.4f,%u,%.4f,"
+						"%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.5f,%.4f,%.5f,%u,%.4f\n",
+						xS.uFrameIdx, xS.fTimeS,
+						xE.xId.m_uIndex, xE.xId.m_uGeneration,
+						xE.xPos.x, xE.xPos.y, xE.xPos.z,
+						xE.xForward.x, xE.xForward.y, xE.xForward.z,
+						xE.uStateFlags,
+						static_cast<unsigned>(xE.uAIIntent),
+						xE.xAITargetPos.x, xE.xAITargetPos.y, xE.xAITargetPos.z,
+						static_cast<unsigned>(xE.uHeldItemTag),
+						xE.fSecondaryFloat,
+						xS.xCamera.xPos.x, xS.xCamera.xPos.y, xS.xCamera.xPos.z,
+						xS.xCamera.xLookAt.x, xS.xCamera.xLookAt.y, xS.xCamera.xLookAt.z,
+						xS.xCamera.fOrbitYawRad, xS.xCamera.fOrbitDistance,
+						xS.xCamera.fFovRadians,
+						static_cast<unsigned>(xS.xCamera.bValid),
+						xS.fFrameWallMs);
+					xOut << buf;
+				}
+			}
+		}
+
+		if (szEventsCsvPath != nullptr)
+		{
+			std::ofstream xOut(szEventsCsvPath);
+			if (!xOut.is_open()) return false;
+
+			xOut << "frame,t,type,type_name,"
+			     << "float0,float1,float2,float3,int0,int1,int2,int3,"
+			     << "entityA_idx,entityA_gen,entityB_idx,entityB_gen,"
+			     << "label,source\n";
+
+			const uint32_t uN = m_axEvents.GetSize();
+			for (uint32_t i = 0; i < uN; ++i)
+			{
+				const Event& xE = m_axEvents.Get(i);
+				const char* szName = (pfnEventTypeToString != nullptr)
+					? pfnEventTypeToString(xE.uEventType)
+					: nullptr;
+				char buf[512];
+				std::snprintf(buf, sizeof(buf),
+					"%u,%.4f,%u,",
+					xE.uFrameIdx, xE.fTimeS, static_cast<unsigned>(xE.uEventType));
+				xOut << buf;
+				if (szName != nullptr) WriteCsvString(xOut, szName, 64);
+				else                   xOut << "\"\"";
+				std::snprintf(buf, sizeof(buf),
+					",%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,%u,%u,%u,%u,",
+					xE.xPayload.afFloats[0], xE.xPayload.afFloats[1],
+					xE.xPayload.afFloats[2], xE.xPayload.afFloats[3],
+					xE.xPayload.aiInts[0], xE.xPayload.aiInts[1],
+					xE.xPayload.aiInts[2], xE.xPayload.aiInts[3],
+					xE.xPayload.xEntityA.m_uIndex, xE.xPayload.xEntityA.m_uGeneration,
+					xE.xPayload.xEntityB.m_uIndex, xE.xPayload.xEntityB.m_uGeneration);
+				xOut << buf;
+				WriteCsvString(xOut, xE.xPayload.szLabel,  sizeof(xE.xPayload.szLabel));
+				xOut << ",";
+				WriteCsvString(xOut, xE.xPayload.szSource, sizeof(xE.xPayload.szSource));
+				xOut << "\n";
+			}
+		}
+
 		return true;
 	}
 

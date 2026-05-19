@@ -67,13 +67,17 @@ static void Setup_TelemetryRoundTrip()
 	const std::string strBin  = TempPath("roundtrip.ztlm");
 	const std::string strJson = TempPath("roundtrip.json");
 
-	// 1) Begin recording with a known header.
+	// 1) Begin recording with a known header. Includes v3 build / personality
+	// metadata so we cover the new Header fields in the round-trip.
 	Zenith_Telemetry::Header xHeader;
-	xHeader.uSeed         = 0xDEADBEEFDEADBEEFull;
-	xHeader.uStartUTCMs   = 42424242ull;
-	xHeader.strSceneName  = "TestScene";
-	xHeader.fFixedDt      = 1.0f / 60.0f;
+	xHeader.uSeed              = 0xDEADBEEFDEADBEEFull;
+	xHeader.uStartUTCMs        = 42424242ull;
+	xHeader.strSceneName       = "TestScene";
+	xHeader.fFixedDt           = 1.0f / 60.0f;
 	xHeader.uSamplePeriodFrames = 6;
+	xHeader.strBuildConfig     = "Test_Config";
+	xHeader.strBuildHash       = "abc1234";
+	xHeader.strPersonalityName = "TestPersonality";
 
 	Zenith_Telemetry::Recorder& xRec = Zenith_Telemetry::GetRecorder();
 	xRec.Begin(xHeader);
@@ -88,13 +92,27 @@ static void Setup_TelemetryRoundTrip()
 			Zenith_Telemetry::FrameSample xS;
 			xS.fTimeS = static_cast<float>(i) * (1.0f / 60.0f);
 			// One sentinel entity per sample so we can verify positions.
+			// Populates the v3 EntitySnapshot fields too so the round-trip
+			// covers them.
 			Zenith_Telemetry::EntitySnapshot xE;
 			xE.xId.m_uIndex      = 7u;
 			xE.xId.m_uGeneration = 1u;
 			xE.xPos              = { static_cast<float>(i), 0.0f, 0.0f };
 			xE.xForward          = { 1.0f, 0.0f, 0.0f };
 			xE.uStateFlags       = 0xAA55u;
+			xE.xAITargetPos      = { 100.0f, 0.0f, 200.0f };
+			xE.uAIIntent         = 4; // arbitrary game-defined enum
+			xE.uHeldItemTag      = 2; // arbitrary game-defined tag
+			xE.fSecondaryFloat   = 27.5f;
 			xS.axEntities.PushBack(xE);
+			// v3 frame-level fields.
+			xS.xCamera.xPos           = { 1.0f, 2.0f, 3.0f };
+			xS.xCamera.xLookAt        = { 4.0f, 5.0f, 6.0f };
+			xS.xCamera.fOrbitYawRad   = 1.5f;
+			xS.xCamera.fOrbitDistance = 80.0f;
+			xS.xCamera.fFovRadians    = 0.96f;
+			xS.xCamera.bValid         = 1;
+			xS.fFrameWallMs           = 16.7f;
 			xRec.RecordFrame(xS);
 		}
 
@@ -107,7 +125,9 @@ static void Setup_TelemetryRoundTrip()
 			xEvt.xPayload.aiInts[1]   = -99;
 			xEvt.xPayload.xEntityA.m_uIndex = 7u;
 			xEvt.xPayload.xEntityA.m_uGeneration = 1u;
-			std::snprintf(xEvt.xPayload.szLabel, sizeof(xEvt.xPayload.szLabel), "Devout");
+			std::snprintf(xEvt.xPayload.szLabel,  sizeof(xEvt.xPayload.szLabel),  "Devout");
+			// v3 source-tag round-trip.
+			std::snprintf(xEvt.xPayload.szSource, sizeof(xEvt.xPayload.szSource), "RoundTripTest");
 			xRec.RecordEvent(xEvt);
 		}
 		if (i == 29)
@@ -133,6 +153,11 @@ static void Setup_TelemetryRoundTrip()
 	if (xH.uStartUTCMs != 42424242ull) return;
 	if (xH.strSceneName != "TestScene") return;
 	if (xH.uSamplePeriodFrames != 6u) return;
+	// v3 header fields.
+	if (xH.uVersion != 3u) return;
+	if (xH.strBuildConfig     != "Test_Config")     return;
+	if (xH.strBuildHash       != "abc1234")         return;
+	if (xH.strPersonalityName != "TestPersonality") return;
 
 	// Sample period 6 over 30 frames -> samples at frames 6, 12, 18, 24, 30.
 	// (NextFrame at i=0..29 -> frame indices 1..30 inside the recorder.)
@@ -149,6 +174,18 @@ static void Setup_TelemetryRoundTrip()
 	// Coordinate sanity: the recorded x equals the loop index when the
 	// sample fires (loop counts 0..29, sample at i==5 -> x=5.0).
 	if (xE0.xPos.x < 4.5f || xE0.xPos.x > 5.5f) return;
+	// v3 entity fields round-trip.
+	if (std::fabs(xE0.xAITargetPos.x - 100.0f) > 0.01f) return;
+	if (std::fabs(xE0.xAITargetPos.z - 200.0f) > 0.01f) return;
+	if (xE0.uAIIntent       != 4u) return;
+	if (xE0.uHeldItemTag    != 2u) return;
+	if (std::fabs(xE0.fSecondaryFloat - 27.5f) > 0.01f) return;
+	// v3 camera + perf round-trip.
+	if (xS0.xCamera.bValid != 1u) return;
+	if (std::fabs(xS0.xCamera.xPos.x       - 1.0f) > 0.01f) return;
+	if (std::fabs(xS0.xCamera.xLookAt.z    - 6.0f) > 0.01f) return;
+	if (std::fabs(xS0.xCamera.fOrbitYawRad - 1.5f) > 0.01f) return;
+	if (std::fabs(xS0.fFrameWallMs - 16.7f) > 0.01f) return;
 
 	// Events round-trip.
 	const Zenith_Vector<Zenith_Telemetry::Event>& axE = xReader.GetEvents();
@@ -159,6 +196,8 @@ static void Setup_TelemetryRoundTrip()
 	if (xPossess.xPayload.aiInts[1] != -99) return;
 	if (xPossess.xPayload.xEntityA.m_uIndex != 7u) return;
 	if (std::strncmp(xPossess.xPayload.szLabel, "Devout", 6) != 0) return;
+	// v3 source-tag round-trip.
+	if (std::strncmp(xPossess.xPayload.szSource, "RoundTripTest", 13) != 0) return;
 
 	const Zenith_Telemetry::Event& xVictory = axE.Get(1);
 	if (xVictory.uEventType != static_cast<uint16_t>(TestEventType::Victory)) return;
@@ -181,6 +220,14 @@ static void Setup_TelemetryRoundTrip()
 		if (strJsonBody.find("\"name\":\"Possession\"") == std::string::npos) return;
 		if (strJsonBody.find("\"name\":\"Victory\"") == std::string::npos) return;
 		if (strJsonBody.find("\"label\":\"Devout\"") == std::string::npos) return;
+		// v3 JSON fields.
+		if (strJsonBody.find("\"buildConfig\": \"Test_Config\"") == std::string::npos) return;
+		if (strJsonBody.find("\"personalityName\": \"TestPersonality\"") == std::string::npos) return;
+		if (strJsonBody.find("\"source\":\"RoundTripTest\"") == std::string::npos) return;
+		if (strJsonBody.find("\"aiIntent\":4") == std::string::npos) return;
+		if (strJsonBody.find("\"heldItem\":2") == std::string::npos) return;
+		if (strJsonBody.find("\"camera\":") == std::string::npos) return;
+		if (strJsonBody.find("\"frameMs\":") == std::string::npos) return;
 	}
 
 	g_bSetupOk = true;

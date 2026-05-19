@@ -158,11 +158,13 @@ namespace DPTelemetryAnalyzer
 			{
 				const auto& xH = xReader.GetHeader();
 				if (xH.uMagic != 0x4D4C545Au) { xR.szReason = "magic != 'ZTLM'"; break; }
-				// Accept the two versions the current Reader handles
+				// Accept every version the current Reader handles
 				// (see Zenith_Telemetry::Reader::LoadFromFile). v1 was
-				// the original; v2 added Header.axObstacles.
-				if (xH.uVersion != 1u && xH.uVersion != 2u)
-				                              { xR.szReason = "version != 1 && != 2"; break; }
+				// the original; v2 added Header.axObstacles; v3 added
+				// extended EntitySnapshot + CameraState + perf + build
+				// metadata.
+				if (xH.uVersion != 1u && xH.uVersion != 2u && xH.uVersion != 3u)
+				                              { xR.szReason = "version != 1 && != 2 && != 3"; break; }
 				xR.bPassed = true; xR.szReason = "ok"; break;
 			}
 			case Criterion::HeaderHasSceneName:

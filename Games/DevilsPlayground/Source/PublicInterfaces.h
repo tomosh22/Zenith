@@ -172,6 +172,74 @@ struct DP_OnObjectivePlaced
 };
 
 // ============================================================================
+// Telemetry-v3 events (2026-05-19). These give the recorder a richer
+// timeline of priest + system behaviour than the prior "VillagerDied at
+// the end" black box. Subscribed by DPTelemetry::Hooks and forwarded to
+// the engine recorder as DPEventType::* values.
+// ============================================================================
+
+// Apprehend-channel lifecycle. The priest's Apprehend BT branch
+// channels for ~3s before firing DP_OnRunLost{cause=Apprehended}.
+// Surfacing the three transitions makes "the channel started but
+// was interrupted before it completed" visible in the timeline.
+struct DP_OnApprehendChannelStart
+{
+	Zenith_EntityID m_xPriest;
+	Zenith_EntityID m_xVictim;
+};
+
+struct DP_OnApprehendChannelComplete
+{
+	Zenith_EntityID m_xPriest;
+	Zenith_EntityID m_xVictim;
+};
+
+// Interrupt reasons. Stable integer IDs -- never reorder.
+enum class DP_ApprehendInterruptReason : int32_t
+{
+	Unknown          = 0,
+	TargetSwitched   = 1,  // possession switched to another villager mid-channel
+	TargetLost       = 2,  // priest lost line-of-sight / awareness on the victim
+	OutOfRange       = 3,  // victim moved outside apprehend_range_m
+	PriestDespawned  = 4,
+};
+
+struct DP_OnApprehendChannelInterrupted
+{
+	Zenith_EntityID            m_xPriest;
+	Zenith_EntityID            m_xVictim;
+	DP_ApprehendInterruptReason m_eReason;
+};
+
+// Pause-state transitions. DPPauseMenuController fires this on Esc-press
+// rising/falling edge so the visualiser can render a "paused frames"
+// band on the timeline.
+struct DP_OnPauseToggle
+{
+	bool m_bIsPaused;
+};
+
+// Perception contact transitions. Emitted by the per-frame DP telemetry
+// sampler when an agent's awareness of a target crosses kContactThreshold
+// (rising = Begin, falling = End). Stimulus mask records which sense
+// triggered the contact -- SIGHT / HEARING / DAMAGE per the engine
+// perception system's bit flags.
+struct DP_OnPerceptionContactBegin
+{
+	Zenith_EntityID m_xObserver;     // typically the priest
+	Zenith_EntityID m_xTarget;
+	uint32_t        m_uStimulusMask; // PERCEPTION_STIMULUS_* bits
+	float           m_fAwareness;    // observer's awareness of target at contact
+};
+
+struct DP_OnPerceptionContactEnd
+{
+	Zenith_EntityID m_xObserver;
+	Zenith_EntityID m_xTarget;
+	uint32_t        m_uStimulusMask;
+};
+
+// ============================================================================
 // DP_Player — published by B2 (player + camera + input).
 // ============================================================================
 namespace DP_Player

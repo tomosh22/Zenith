@@ -33,21 +33,58 @@ namespace DPTelemetry
 		case DPEventType::ChestOpened:       return "ChestOpened";
 		case DPEventType::ForgeCrafted:      return "ForgeCrafted";
 		case DPEventType::ObjectivePlaced:   return "ObjectivePlaced";
+		case DPEventType::ApprehendChannelStart:       return "ApprehendChannelStart";
+		case DPEventType::ApprehendChannelComplete:    return "ApprehendChannelComplete";
+		case DPEventType::ApprehendChannelInterrupted: return "ApprehendChannelInterrupted";
+		case DPEventType::PauseToggle:                 return "PauseToggle";
+		case DPEventType::PerceptionContactBegin:      return "PerceptionContactBegin";
+		case DPEventType::PerceptionContactEnd:        return "PerceptionContactEnd";
 		case DPEventType::_Count:
 		default:
 			return nullptr;
 		}
 	}
 
+	const char* PriestIntentToString(uint8_t uIntent)
+	{
+		switch (static_cast<PriestIntent>(uIntent))
+		{
+		case PriestIntent::None:        return "None";
+		case PriestIntent::Idle:        return "Idle";
+		case PriestIntent::Patrol:      return "Patrol";
+		case PriestIntent::Investigate: return "Investigate";
+		case PriestIntent::Pursue:      return "Pursue";
+		case PriestIntent::Apprehend:   return "Apprehend";
+		default:                        return nullptr;
+		}
+	}
+
 	// =========================================================
 	// Low-level emit. All Hooks subscriptions route through here.
 	// =========================================================
+	// Local helper -- copy a C-string into a fixed buffer with manual
+	// byte-by-byte fill (avoids MSVC's std::strncpy deprecation warning
+	// under /W4 + treat-as-errors).
+	static void CopyToFixed(char* pszDst, size_t uDstSize, const char* pszSrc)
+	{
+		if (pszDst == nullptr || uDstSize == 0u) return;
+		if (pszSrc == nullptr) { pszDst[0] = '\0'; return; }
+		const size_t uMax = uDstSize - 1u;
+		size_t uI = 0;
+		for (; uI < uMax && pszSrc[uI] != '\0'; ++uI)
+		{
+			pszDst[uI] = pszSrc[uI];
+		}
+		pszDst[uI] = '\0';
+	}
+
 	void EmitEvent(DPEventType eType,
 	               Zenith_EntityID xA,
 	               Zenith_EntityID xB,
 	               int32_t iInt0,
 	               float fFloat0,
-	               const char* szLabel)
+	               const char* szLabel,
+	               const char* szSource)
 	{
 		Zenith_Telemetry::Event xE;
 		xE.uEventType = static_cast<uint16_t>(eType);
@@ -55,20 +92,8 @@ namespace DPTelemetry
 		xE.xPayload.xEntityB = xB;
 		xE.xPayload.aiInts[0] = iInt0;
 		xE.xPayload.afFloats[0] = fFloat0;
-		if (szLabel != nullptr)
-		{
-			// Manual byte-by-byte copy. MSVC's /W4 + treat-as-errors flags
-			// std::strncpy as deprecated; manual copy avoids the warning
-			// without a SECURE_NO_WARNINGS macro that would silence other
-			// useful diagnostics.
-			const size_t uMax = sizeof(xE.xPayload.szLabel) - 1u;
-			size_t uI = 0;
-			for (; uI < uMax && szLabel[uI] != '\0'; ++uI)
-			{
-				xE.xPayload.szLabel[uI] = szLabel[uI];
-			}
-			xE.xPayload.szLabel[uI] = '\0';
-		}
+		CopyToFixed(xE.xPayload.szLabel,  sizeof(xE.xPayload.szLabel),  szLabel);
+		CopyToFixed(xE.xPayload.szSource, sizeof(xE.xPayload.szSource), szSource);
 		Zenith_Telemetry::GetRecorder().RecordEvent(xE);
 	}
 
@@ -206,6 +231,62 @@ namespace DPTelemetry
 					xEvt.m_xVillager, xEvt.m_xPentagram,
 					xEvt.m_iObjectiveBitIndex);
 			});
+
+		// ----- Telemetry-v3 (2026-05-19) subscriptions -----
+		m_xApprehendStart = xDisp.SubscribeLambda<DP_OnApprehendChannelStart>(
+			[](const DP_OnApprehendChannelStart& xEvt)
+			{
+				EmitEvent(DPEventType::ApprehendChannelStart,
+					xEvt.m_xPriest, xEvt.m_xVictim,
+					/*iInt0=*/0, /*fFloat0=*/0.0f,
+					/*szLabel=*/nullptr, /*szSource=*/"Priest_BT");
+			});
+
+		m_xApprehendComplete = xDisp.SubscribeLambda<DP_OnApprehendChannelComplete>(
+			[](const DP_OnApprehendChannelComplete& xEvt)
+			{
+				EmitEvent(DPEventType::ApprehendChannelComplete,
+					xEvt.m_xPriest, xEvt.m_xVictim,
+					/*iInt0=*/0, /*fFloat0=*/0.0f,
+					/*szLabel=*/nullptr, /*szSource=*/"Priest_BT");
+			});
+
+		m_xApprehendInterrupted = xDisp.SubscribeLambda<DP_OnApprehendChannelInterrupted>(
+			[](const DP_OnApprehendChannelInterrupted& xEvt)
+			{
+				EmitEvent(DPEventType::ApprehendChannelInterrupted,
+					xEvt.m_xPriest, xEvt.m_xVictim,
+					static_cast<int32_t>(xEvt.m_eReason), 0.0f,
+					/*szLabel=*/nullptr, /*szSource=*/"Priest_BT");
+			});
+
+		m_xPauseToggle = xDisp.SubscribeLambda<DP_OnPauseToggle>(
+			[](const DP_OnPauseToggle& xEvt)
+			{
+				EmitEvent(DPEventType::PauseToggle,
+					Zenith_EntityID{}, Zenith_EntityID{},
+					xEvt.m_bIsPaused ? 1 : 0, 0.0f,
+					/*szLabel=*/nullptr, /*szSource=*/"PauseCtrl");
+			});
+
+		m_xPerceptionBegin = xDisp.SubscribeLambda<DP_OnPerceptionContactBegin>(
+			[](const DP_OnPerceptionContactBegin& xEvt)
+			{
+				EmitEvent(DPEventType::PerceptionContactBegin,
+					xEvt.m_xObserver, xEvt.m_xTarget,
+					static_cast<int32_t>(xEvt.m_uStimulusMask),
+					xEvt.m_fAwareness,
+					/*szLabel=*/nullptr, /*szSource=*/"PerceptionPoll");
+			});
+
+		m_xPerceptionEnd = xDisp.SubscribeLambda<DP_OnPerceptionContactEnd>(
+			[](const DP_OnPerceptionContactEnd& xEvt)
+			{
+				EmitEvent(DPEventType::PerceptionContactEnd,
+					xEvt.m_xObserver, xEvt.m_xTarget,
+					static_cast<int32_t>(xEvt.m_uStimulusMask), 0.0f,
+					/*szLabel=*/nullptr, /*szSource=*/"PerceptionPoll");
+			});
 	}
 
 	Hooks::~Hooks()
@@ -225,5 +306,12 @@ namespace DPTelemetry
 		if (m_xChestOpened     != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xChestOpened);
 		if (m_xForgeCrafted    != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xForgeCrafted);
 		if (m_xObjectivePlaced != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xObjectivePlaced);
+		// v3 (2026-05-19)
+		if (m_xApprehendStart       != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xApprehendStart);
+		if (m_xApprehendComplete    != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xApprehendComplete);
+		if (m_xApprehendInterrupted != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xApprehendInterrupted);
+		if (m_xPauseToggle          != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xPauseToggle);
+		if (m_xPerceptionBegin      != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xPerceptionBegin);
+		if (m_xPerceptionEnd        != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xPerceptionEnd);
 	}
 }

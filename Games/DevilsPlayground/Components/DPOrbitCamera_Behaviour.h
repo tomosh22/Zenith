@@ -104,6 +104,13 @@ public:
 	void SetOrbitTarget(const Zenith_Maths::Vector3& xTarget) { m_xOrbitTarget = xTarget; }
 	void SetOrbitDistance(float f) { m_fOrbitDistance = glm::clamp(f, m_fMinDistance, m_fMaxDistance); }
 
+	// Telemetry-v3 accessors: per-frame camera state sampled by
+	// Test_PersonalityPlaythrough's recorder hook. Read-only.
+	const Zenith_Maths::Vector3& GetOrbitTarget()   const { return m_xOrbitTarget; }
+	float                        GetOrbitDistance() const { return m_fOrbitDistance; }
+	float                        GetOrbitYaw()      const { return m_fOrbitYaw; }
+	float                        GetOrbitPitch()    const { return m_fOrbitPitch; }
+
 	// Raise the upper clamp on orbit distance. DPProcLevelBootstrap calls
 	// this so its auto-fit camera distance for large procgen levels
 	// isn't silently clamped to the default 150 m cap. Also re-clamps
