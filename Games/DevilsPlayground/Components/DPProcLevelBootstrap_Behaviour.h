@@ -66,23 +66,6 @@ public:
 		// before they themselves run.
 		s_pxInstance = this;
 
-		// Disable the test-only "omniscient" priest fallback that
-		// Priest_Behaviour::BridgePerceptionToBlackboard normally
-		// applies when ZENITH_INPUT_SIMULATOR is defined (which it
-		// is in every config of this codebase, including the
-		// vs2022_Release_Win64_False build the user plays the demo
-		// in). The fallback sets BB_KEY_TARGET_WITH_DEVIL to the
-		// possessed villager whenever no perception target qualifies,
-		// which makes the priest omniscient -- the HUD's
-		// AelfricState then sticks at Pursuing and the WhisperLine
-		// constantly says "He sees you!" even when the priest is
-		// blind on the far side of the level. User reported
-		// 2026-05-19. Disabling it routes pursuit through real
-		// sight-cone perception, which is the GDD intent and the
-		// production-build behaviour (production compiles the
-		// fallback out entirely).
-		DP_Player::SetTestOmniscientFallback(false);
-
 		// Seed source TODO (P4 later): read from Tuning.json + allow
 		// --procgen-seed CLI override. For now we hardcode m_uSeed
 		// (default 0) so the bootstrap is deterministic + the unit

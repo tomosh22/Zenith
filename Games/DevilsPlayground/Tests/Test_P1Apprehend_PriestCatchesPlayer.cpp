@@ -13,6 +13,7 @@
 #include "Components/Priest_Behaviour.h"
 #include "Components/DPVillager_Behaviour.h"
 #include "Source/DP_Tuning.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
 
 #include <cmath>
 
@@ -163,6 +164,13 @@ static bool Step_P1Apprehend(int iFrame)
 	}
 
 	case kAP_Possess:
+		// MVP-1.9 cleanup: register the villager so the priest's sight
+		// pass considers it. (Production DPVillager_Behaviour doesn't
+		// self-register today; the omniscient fallback obviated that.)
+		// Real perception now drives BB_KEY_TARGET_WITH_DEVIL once the
+		// priest teleports within sight range of the villager in the
+		// next phase.
+		Zenith_PerceptionSystem::RegisterTarget(g_xVillager, /*hostile=*/true);
 		DP_Player::SetPossessedVillager(g_xVillager);
 		g_iPhase = kAP_TeleportPriest;
 		return true;

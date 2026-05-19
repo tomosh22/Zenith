@@ -12,6 +12,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Components/Priest_Behaviour.h"
 #include "Components/DPVillager_Behaviour.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
 
 #include <cmath>
 
@@ -161,13 +162,39 @@ static bool Step_P1ApprehendOutOfRange(int iFrame)
 	}
 
 	case kOR_Possess:
-		// Do NOT teleport the priest -- leave it at authored separation
-		// (~4.4m). The whole point of the test is that Apprehend stays
-		// quiet until the priest physically closes that gap via Pursue.
+	{
+		// MVP-1.9 cleanup: explicit LOS so the priest's sight cone
+		// catches the villager. RegisterTarget puts the villager into
+		// the priest's perception scan; teleport places it 4 m IN
+		// FRONT of the priest (authored priest yaw = 0, facing +Z).
+		// 4 m is outside apprehend_range (2 m) so the Apprehend BT
+		// branch must return FAILURE -- the original assertion of
+		// this test, preserved at a known-deterministic distance now
+		// that perception is no longer faked.
+		Zenith_PerceptionSystem::RegisterTarget(g_xVillager, /*hostile=*/true);
+		Zenith_Maths::Vector3 xPriestPos;
+		if (TryGetEntityPos(g_xPriest, xPriestPos))
+		{
+			Zenith_SceneData* pxScene =
+				Zenith_SceneManager::GetSceneDataForEntity(g_xVillager);
+			if (pxScene != nullptr)
+			{
+				Zenith_Entity xEnt = pxScene->TryGetEntity(g_xVillager);
+				if (xEnt.IsValid()
+				 && xEnt.HasComponent<Zenith_TransformComponent>())
+				{
+					xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(
+						Zenith_Maths::Vector3(
+							xPriestPos.x, xPriestPos.y, xPriestPos.z + 4.0f));
+					g_fInitialSeparation = 4.0f;
+				}
+			}
+		}
 		DP_Player::SetPossessedVillager(g_xVillager);
 		g_iRunFrames = 0;
 		g_iPhase = kOR_RunFrames;
 		return true;
+	}
 
 	case kOR_RunFrames:
 		++g_iRunFrames;

@@ -15,6 +15,7 @@
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"
 
 // ============================================================================
 // PriestPursuit_Test (NavMesh + BT + perception bridge end-to-end)
@@ -63,6 +64,17 @@ namespace
 		if (!xEnt.IsValid()) return false;
 		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
 		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		return true;
+	}
+
+	bool TrySetEntityPos(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
+	{
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
+		if (pxScene == nullptr) return false;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		if (!xEnt.IsValid()) return false;
+		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
+		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
 		return true;
 	}
 }
@@ -136,6 +148,23 @@ static bool Step_PriestPursuit(int iFrame)
 	}
 
 	case kPP_Possess:
+	{
+		// MVP-1.9 cleanup (omniscient fallback removed): the priest's
+		// BridgePerceptionToBlackboard now reads BB_KEY_TARGET_WITH_DEVIL
+		// from real perception only. Set up explicit LOS so the priest's
+		// sight cone catches this villager: register it as a hostile
+		// target + teleport it 6 m into the priest's facing direction
+		// (authored priest yaw = 0 → facing +Z). 6 m is inside priest
+		// sight_range_m and outside apprehend_range, so the pursue branch
+		// engages while the apprehend channel waits for the priest to
+		// close the gap.
+		Zenith_PerceptionSystem::RegisterTarget(g_xVillager, /*hostile=*/true);
+		Zenith_Maths::Vector3 xPriestPos;
+		if (TryGetEntityPos(g_xPriest, xPriestPos))
+		{
+			TrySetEntityPos(g_xVillager,
+				Zenith_Maths::Vector3(xPriestPos.x, xPriestPos.y, xPriestPos.z + 6.0f));
+		}
 		// Possess the chosen villager. The villager will then satisfy
 		// Priest_Behaviour::IsPossessedVillager(), and the priest's BB-bridge
 		// will write its EntityID into BB.TargetWithDevil — driving the
@@ -143,6 +172,7 @@ static bool Step_PriestPursuit(int iFrame)
 		DP_Player::SetPossessedVillager(g_xVillager);
 		g_iPPPhase = kPP_RecordInitial;
 		return true;
+	}
 
 	case kPP_RecordInitial:
 	{

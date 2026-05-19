@@ -153,7 +153,7 @@ Public APIs new on `DP_Player`:
 - `TryVoluntaryPossessSwitch(EntityID) -> bool` — player-driven path (cooldown + range gates).
 - `TickPossessionCooldown(fDt)` / `GetPossessionCooldownRemaining()` — MVP-1.5.
 - `GetDemonScent(EntityID)` / `TickDemonScent(fDt)` / `WriteHighestScentToBlackboard()` — MVP-1.6.
-- `SetTestOmniscientFallback(bool)` / `IsTestOmniscientFallbackEnabled()` — MVP-1.9, test-only.
+- ~~`SetTestOmniscientFallback(bool)` / `IsTestOmniscientFallbackEnabled()`~~ — removed 2026-05-19. The omniscient fallback in `Priest_Behaviour::BridgePerceptionToBlackboard` was a test backdoor that leaked into every build (`ZENITH_INPUT_SIMULATOR` is defined unconditionally). Replaced by real perception: tests that need the priest to acquire a target now call `Zenith_PerceptionSystem::RegisterTarget(villager, /*hostile=*/true)` and teleport the villager into the priest's sight cone — same code path production uses.
 - `ResetForNewRun()` (PR #77) — clears every per-run state owner. Called by `DPPauseMenuController::HandleRestart/HandleQuit` AND the harness between-tests hook. Was named `ResetForTest`; renamed because the "ForTest" suffix was misleading after MVP-2.5.5 wired it into production. Backward-compat alias `ResetForTest()` retained under `ZENITH_INPUT_SIMULATOR`.
 
 New on `DP_AI`:

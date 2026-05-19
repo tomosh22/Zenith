@@ -357,31 +357,16 @@ private:
 				break;
 			}
 		}
-#ifdef ZENITH_INPUT_SIMULATOR
-		// MVP-1.9: the omniscient fallback is now opt-in via a test
-		// flag. Production builds (no ZENITH_INPUT_SIMULATOR) compile
-		// it out entirely -- the priest is sight-driven only, matching
-		// the GDD's intent. In test builds the flag defaults to true
-		// so existing pursuit/apprehend tests keep working without
-		// having to position priests with line-of-sight setup; the
-		// MVP-1.9 sight tests turn the flag off in their Setup to
-		// exercise the production-shape detection path.
-		if (!xTargetWithDevil.IsValid()
-			&& DP_Player::IsTestOmniscientFallbackEnabled())
-		{
-			// Fallback path -- DP_Player::GetPossessedVillager is the
-			// source of truth without needing perception. Matches the
-			// source UE BT_Priest's blackboard setter which uses the
-			// global possession pointer.
-			const Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
-			if (xPossessed.IsValid()
-				&& IsPossessedVillager(xPossessed)
-				&& !IsBeggarVillager(xPossessed))
-			{
-				xTargetWithDevil = xPossessed;
-			}
-		}
-#endif
+		// MVP-1.9 cleanup (2026-05-19): the priest is sight-driven
+		// only. The historical "omniscient fallback" -- which wrote
+		// the possessed villager into BB_KEY_TARGET_WITH_DEVIL when
+		// perception found nothing -- was a test backdoor that leaked
+		// into every build because ZENITH_INPUT_SIMULATOR is defined
+		// unconditionally in this codebase. With it gone, tests that
+		// need the priest to acquire a target call
+		// Zenith_PerceptionSystem::RegisterTarget(villager, hostile)
+		// and position the villager inside the priest's sight cone --
+		// exercising the same code path production gameplay uses.
 		xBB.SetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, xTargetWithDevil);
 
 		// EXT-6: typed sound accessor. Bridge the freshest hearing stimulus
