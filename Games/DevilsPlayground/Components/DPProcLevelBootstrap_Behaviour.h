@@ -48,6 +48,7 @@
 
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 
 class DPProcLevelBootstrap_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
@@ -66,10 +67,32 @@ public:
 		// before they themselves run.
 		s_pxInstance = this;
 
-		// Seed source TODO (P4 later): read from Tuning.json + allow
-		// --procgen-seed CLI override. For now we hardcode m_uSeed
-		// (default 0) so the bootstrap is deterministic + the unit
-		// test has a predictable layout to assert against.
+		// Seed source: env var DP_PROCGEN_SEED (decimal uint64) when
+		// present and non-empty; otherwise the m_uSeed value baked in
+		// at construction (default 0) so the bootstrap stays
+		// deterministic for the unit tests. Test_ProcLevelBootstrap +
+		// Test_ProcLevelScene still drive m_uSeed directly via
+		// SetSeedForTest before OnAwake fires, so they're unaffected
+		// by whatever the env var says.
+#if defined(_MSC_VER)
+#  pragma warning(push)
+#  pragma warning(disable: 4996)  // std::getenv "may be unsafe"
+#endif
+		if (const char* szEnv = std::getenv("DP_PROCGEN_SEED"))
+		{
+			if (szEnv[0] != '\0')
+			{
+				char* pszEnd = nullptr;
+				const unsigned long long uParsed = std::strtoull(szEnv, &pszEnd, 10);
+				if (pszEnd != szEnv)
+				{
+					m_uSeed = static_cast<uint64_t>(uParsed);
+				}
+			}
+		}
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#endif
 		DPProcLevel::GenConfig xConfig;  // defaults from header
 		// Override the wall half-thickness so total thickness (2*half =
 		// 0.8 m) exceeds the navmesh voxelizer's cell width (~0.36 m
