@@ -141,6 +141,11 @@ public:
 		{
 			Zenith_SceneManager::SetScenePaused(m_xGameplayScene, m_bShown);
 		}
+
+		// Telemetry-v3: surface the toggle transition so the visualiser
+		// can render a "paused frames" band on the timeline. Fires on
+		// every Esc-press (both enter-pause and leave-pause).
+		Zenith_EventDispatcher::Get().Dispatch(DP_OnPauseToggle{ m_bShown });
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
