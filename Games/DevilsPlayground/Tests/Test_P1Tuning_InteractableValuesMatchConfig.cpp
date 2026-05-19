@@ -3,7 +3,10 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
+#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
 #include "Components/DPDoor_Behaviour.h"
@@ -12,31 +15,33 @@
 #include "Components/DummyNoiseMachine_Behaviour.h"
 
 #include <cmath>
+#include <string>
 
 // ============================================================================
 // Test_P1Tuning_InteractableValuesMatchConfig (MVP-0.1.4)
 //
 // Regression guard against the interactable-tuning drift fixed in MVP-0.1.4.
 // Each DPInteractable subclass now reads its timing/proximity constants
-// from DP_Tuning in OnAwake. This test loads GameLevel, locates one
-// instance of each interactable subclass, and asserts the migrated fields
-// match Tuning.json.
+// from DP_Tuning in OnAwake. This test loads the procgen ProcLevel scene
+// (build index 1), locates one instance of DPDoor / DPChest /
+// DummyNoiseMachine spawned by the procgen bootstrap, and asserts the
+// migrated fields match Tuning.json.
+//
+// DPDoubleDoor is the one variant the procgen bootstrap does NOT spawn
+// (procgen generates only single-leaf doors today). To preserve coverage,
+// the test constructs a synthetic DPDoubleDoor entity at runtime so its
+// OnAwake fires inside the active scene.
 //
 // Coverage classes (mirrors MVP-0.1.3's priest tuning test):
 //   1. Exact equality vs DP_Tuning::Get<float>() (catches "tuner forgot
 //      to delete the hardcoded fallback").
 //   2. Exact equality vs the ratified Tuning.json constants (catches
 //      "tuner edits both config and fallback to the same wrong value").
-//
-// GameLevel has 15 doors, 6 chests, plus a dummy noise machine in the
-// Gym_Noise scene. We test from GameLevel which has the most variety;
-// the noise machine assertion uses the same path since its OnAwake fires
-// when the script attaches in any scene.
 // ============================================================================
 
 namespace
 {
-	enum Phase : int { kI_Start, kI_WaitInteractables, kI_Done };
+	enum Phase : int { kI_Start, kI_WaitInteractables, kI_SpawnDoubleDoor, kI_CaptureAll, kI_Done };
 
 	int  g_iPhase            = kI_Start;
 	bool g_bFoundDoor        = false;
@@ -71,9 +76,12 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 
 	case kI_WaitInteractables:
 	{
-		// Capture whatever is in the currently-loaded scene. Each behaviour
-		// reads the same DP_Tuning keys regardless of which scene it lives in;
-		// finding ONE of each subclass anywhere is enough.
+		// ProcLevel's bootstrap runs DPProcLevel::Generate inside OnAwake;
+		// the procgen-spawned DPDoor / DPChest / DummyNoiseMachine entities
+		// have their script OnAwake fired during scene boot. Give the
+		// bootstrap a handful of frames to populate the scene, then probe.
+		if (iFrame < 30) return true;
+
 		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
 			[](Zenith_EntityID, DPDoor_Behaviour& xD) {
 				if (!g_bFoundDoor) {
@@ -81,14 +89,6 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 					g_fDoorOpenYaw       = xD.GetOpenYaw();
 					g_fDoorOpenDuration  = xD.GetOpenDuration();
 					g_fInteractRadius    = xD.GetInteractRadius();
-				}
-			});
-		DP_Query::ForEachScriptInActiveScene<DPDoubleDoor_Behaviour>(
-			[](Zenith_EntityID, DPDoubleDoor_Behaviour& xD) {
-				if (!g_bFoundDoubleDoor) {
-					g_bFoundDoubleDoor = true;
-					g_fDDOpenYaw       = xD.GetOpenYaw();
-					g_fDDOpenDuration  = xD.GetOpenDuration();
 				}
 			});
 		DP_Query::ForEachScriptInActiveScene<DPChest_Behaviour>(
@@ -107,34 +107,56 @@ static bool Step_P1Tuning_InteractableValuesMatchConfig(int iFrame)
 				}
 			});
 
-		const bool bAllFound = g_bFoundDoor && g_bFoundDoubleDoor && g_bFoundChest && g_bFoundNoise;
-		if (bAllFound)
+		if (g_bFoundDoor && g_bFoundChest && g_bFoundNoise)
 		{
-			g_iPhase = kI_Done;
-			return false;
+			g_iPhase = kI_SpawnDoubleDoor;
+			return true;
 		}
 
-		// Scene-cycling: GameLevel (scene 1) has DPDoor + DPChest; Gym_Doors
-		// (scene 4) has DPDoubleDoor; Gym_Noise (scene 3) has DummyNoiseMachine.
-		// Switch every 60 frames so each scene has time to load + spawn entities
-		// + dispatch OnAwake. The frame counter passes here directly because we
-		// reset capture flags across switches naturally (each ForEach finds the
-		// behaviour wherever it lives).
-		if (iFrame == 60 && !g_bFoundDoubleDoor)
-		{
-			Zenith_SceneManager::LoadSceneByIndex(4, SCENE_LOAD_SINGLE);
-		}
-		else if (iFrame == 120 && !g_bFoundNoise)
-		{
-			Zenith_SceneManager::LoadSceneByIndex(3, SCENE_LOAD_SINGLE);
-		}
-
-		if (iFrame > 240)
+		// Bail out if the procgen scene didn't materialise these behaviours
+		// within ~5 s of load -- procgen regressions should fail this test
+		// rather than hang.
+		if (iFrame > 300)
 		{
 			g_iPhase = kI_Done;
 			return false;
 		}
 		return true;
+	}
+
+	case kI_SpawnDoubleDoor:
+	{
+		// Procgen doesn't currently spawn DPDoubleDoor (only single-leaf
+		// doors). Build one at runtime in the active scene so its OnAwake
+		// fires + reads the DP_Tuning constants we want to verify.
+		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xActive);
+		if (pxScene == nullptr) { g_iPhase = kI_Done; return false; }
+
+		Zenith_Entity xDoor(pxScene, std::string("TuningTestDoubleDoor"));
+		xDoor.AddComponent<Zenith_ScriptComponent>()
+		     .AddScript<DPDoubleDoor_Behaviour>();
+
+		g_iPhase = kI_CaptureAll;
+		return true;
+	}
+
+	case kI_CaptureAll:
+	{
+		// The synthetic DPDoubleDoor's OnAwake has fired by now (script
+		// attach pumps OnAwake before the next frame begins). Pick up its
+		// tuning values.
+		DP_Query::ForEachScriptInActiveScene<DPDoubleDoor_Behaviour>(
+			[](Zenith_EntityID, DPDoubleDoor_Behaviour& xD) {
+				if (!g_bFoundDoubleDoor) {
+					g_bFoundDoubleDoor = true;
+					g_fDDOpenYaw       = xD.GetOpenYaw();
+					g_fDDOpenDuration  = xD.GetOpenDuration();
+				}
+			});
+
+		g_iPhase = kI_Done;
+		return false;
 	}
 
 	case kI_Done:
@@ -201,8 +223,8 @@ static const Zenith_AutomatedTest g_xInteractableTuningTest = {
 	&Step_P1Tuning_InteractableValuesMatchConfig,
 	&Verify_P1Tuning_InteractableValuesMatchConfig,
 	300,
-	// m_bRequiresGraphics: this test depends on authored interactable entities
-	// in GameLevel + Gym_Noise having model load + script attach succeed. CI
+	// m_bRequiresGraphics: this test depends on procgen-spawned interactable
+	// entities in ProcLevel having model load + script attach succeed. CI
 	// checkouts without .zmodel assets skip via headless skip-list; windowed
 	// runs exercise the assertions.
 	true

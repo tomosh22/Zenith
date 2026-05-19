@@ -304,8 +304,10 @@ namespace DPFogPass
 // =====================================================================
 namespace DPFogPass
 {
-	// Matches DP_LevelData::kNiagara[0] for PFX_Witch (already in
-	// Zenith X-Y-Z metres from generate_level_data.py).
+	// PFX_Witch spawn position (Zenith X-Y-Z metres). Originally
+	// imported from the UE map's Niagara[0] placement; values kept
+	// inline so the fog-hole infrastructure is decoupled from any
+	// per-scene level-data table.
 	float GetWitchSpawnX() { return 85.8263f; }
 	float GetWitchSpawnY() { return 2.0000f;  }
 	float GetWitchSpawnZ() { return 25.7546f; }
