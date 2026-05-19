@@ -192,12 +192,6 @@ namespace
 		bool        bRunPauseTest;      // run the Esc pause-overlay phases at all
 		int         iPauseCycles;       // how many open/close cycles when bRunPauseTest=true
 		int         iWalkBudgetMul;     // multiplier on the base 1200-frame walk budget
-		uint8_t     uSceneIndex;        // build-index to load: 1=ProcLevel (only gameplay scene)
-		bool        bDemoMode;          // lenient verify -- pass if scene loaded + telemetry
-		                                //   recorded, skip win-condition assertions. Used
-		                                //   for the ProcLevel demo where the bot is just
-		                                //   demonstrating motion on procgen geometry, not
-		                                //   asserting a full playthrough.
 	};
 
 	// Walk budget multipliers calibrated for the per-personality movement
@@ -206,11 +200,12 @@ namespace
 	// reach the same target. The other personalities don't slow down so
 	// they run at the base 1x budget.
 	//
-	// All personalities run with bDemoMode=true since the GameLevel scene
-	// was removed 2026-05-19 -- procgen geometry doesn't guarantee a
-	// reachable item/door/forge/pentagram chain inside the bot's frame
-	// budget, so the playthrough tests assert "bot drove around without
-	// crashing", not "bot completed the full win condition". The walking +
+	// All personalities load the same scene (ProcLevel, build index 1, the
+	// only gameplay scene since 2026-05-19) and run Verify in lenient
+	// mode -- procgen geometry doesn't guarantee a reachable
+	// item/door/forge/pentagram chain inside the bot's frame budget, so
+	// the playthrough tests assert "bot drove around without crashing",
+	// not "bot completed the full win condition". The walking +
 	// possession + interaction signatures are still observable via the
 	// telemetry emitted alongside each run.
 	constexpr PersonalityConfig kPersonality_Casual = {
@@ -218,19 +213,19 @@ namespace
 		/*sprint*/false, /*quiet*/false, /*adaptive*/false,
 		/*mash*/false,
 		/*noise*/true,   /*pause*/true,  /*pauseCycles*/1,
-		/*budgetMul*/1,  /*sceneIndex*/1, /*demoMode*/true };
+		/*budgetMul*/1 };
 	constexpr PersonalityConfig kPersonality_Stealth = {
 		Personality::Stealth,     "Stealth",
 		/*sprint*/false, /*quiet*/true,  /*adaptive*/false,
 		/*mash*/false,
 		/*noise*/false,  /*pause*/true,  /*pauseCycles*/1,
-		/*budgetMul*/2,  /*sceneIndex*/1, /*demoMode*/true };
+		/*budgetMul*/2 };
 	constexpr PersonalityConfig kPersonality_Speedrunner = {
 		Personality::Speedrunner, "Speedrunner",
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*mash*/false,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1,  /*sceneIndex*/1, /*demoMode*/true };
+		/*budgetMul*/1 };
 	// Berserker uses ADAPTIVE sprint (not blind sprint) for the same
 	// reason Speedrunner does: blind sprint drains the life timer fast
 	// enough that the villager dies mid-objective-loop, the bot re-possesses
@@ -244,30 +239,18 @@ namespace
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*mash*/true,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1,  /*sceneIndex*/1, /*demoMode*/true };
+		/*budgetMul*/1 };
 	constexpr PersonalityConfig kPersonality_Methodical = {
 		Personality::Methodical,  "Methodical",
 		/*sprint*/false, /*quiet*/false, /*adaptive*/false,
 		/*mash*/false,
 		/*noise*/true,   /*pause*/true,  /*pauseCycles*/3,
-		/*budgetMul*/1,  /*sceneIndex*/1, /*demoMode*/true };
+		/*budgetMul*/1 };
 
-	// ProcLevel demo personality. Casual playstyle (baseline) on the
-	// procgen scene (build index 1 = ProcLevel, the only gameplay scene
-	// since the GameLevel + gym scenes were removed 2026-05-19). Demo
-	// mode disables the win-condition assertions in Verify so the bot
-	// can be observed exploring procgen geometry without the test going
-	// red when it can't complete the full objective loop within the
-	// frame cap -- the assertion surface for procgen end-to-end is
-	// too brittle pre-pathfinding tuning, and the user-facing intent
-	// is "show the bot moving on a generated map", not "prove the
-	// procgen layout has a known-solvable path with the current AI".
-	constexpr PersonalityConfig kPersonality_ProcLevelDemo = {
-		Personality::Casual,      "ProcLevelDemo",
-		/*sprint*/false, /*quiet*/false, /*adaptive*/false,
-		/*mash*/false,
-		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1,  /*sceneIndex*/1, /*demoMode*/true };
+	// All personalities load the same scene index. Defined as a constant
+	// rather than a per-personality field because the original GameLevel
+	// vs ProcLevel split is gone.
+	constexpr uint8_t kPersonalitySceneIndex = 1;
 
 	PersonalityConfig g_xActiveCfg = kPersonality_Casual;
 
@@ -1425,12 +1408,10 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	// coverage stays in Test_FullPlaythrough.cpp.
 	// ----------------------------------------------------------------------
 	case kHP_Start:
-		// Personalities default to scene 1 (GameLevel); the ProcLevelDemo
-		// variant overrides to scene 6 (ProcLevel). Reading the index
-		// off the active config keeps the test scene-agnostic without
-		// branching here.
+		// Every personality loads the same gameplay scene (procgen
+		// ProcLevel at build index 1).
 		Zenith_SceneManager::LoadSceneByIndex(
-			static_cast<int>(g_xActiveCfg.uSceneIndex), SCENE_LOAD_SINGLE);
+			static_cast<int>(kPersonalitySceneIndex), SCENE_LOAD_SINGLE);
 		g_iPhase = kHP_WaitGameLevel;
 		g_iWait = 0;
 		return true;
@@ -1545,7 +1526,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			// Distinct seed from the bot test's 0xB0Bull so the
 			// resulting recording is identifiable at a glance.
 			xHeader.uSeed              = 0xFEEDC0DEull;
-			xHeader.strSceneName       = "GameLevel";
+			xHeader.strSceneName       = "ProcLevel";
 			xHeader.fFixedDt           = kHPFixedDt;
 			xHeader.uSamplePeriodFrames = kHPSamplePeriodFrames;
 			// Static-scene obstacles. Scanned once now (scene fully
@@ -2398,53 +2379,18 @@ static bool Verify_HumanPlaythrough()
 		std::fflush(stdout);
 	}
 
+	// Smoke-level Verify: every personality runs on procgen geometry
+	// where a reachable item/door/forge/pentagram chain isn't guaranteed
+	// inside the per-test frame budget, so we don't assert the full
+	// win-condition chain. The walking + possession + interaction
+	// signatures are still captured in the per-personality telemetry
+	// .ztlm / .json artifacts; the live verify is just enough to flag
+	// a regression that prevents the scene from loading or the bot from
+	// taking control of a villager at all.
 	if (g_iVillagerCount < 1) return false;
 	if (g_iDoorCount     < 1) return false;
 	if (g_iChestCount    < 1) return false;
 	if (!g_bPossessionConfirmed) return false;
-
-	// Demo mode (currently: ProcLevelDemo on scene 6) only asserts that
-	// the scene loaded with the expected entity-class counts + that the
-	// bot successfully possessed a villager. The full
-	// pickup/forge/door/chest/pentagram chain is skipped because the
-	// procgen layout's connectivity isn't yet validated against the
-	// current AI pathing (priest pursuit + villager pathfind both
-	// raycast against the navmesh, which is harder on procgen geometry
-	// than the authored GameLevel). Once the procgen pipeline is
-	// pathfinding-stable this flag can be removed.
-	if (g_xActiveCfg.bDemoMode) return true;
-
-	// Camera rotation observable: Q decreased yaw, E nudged it back up.
-	if (std::fabs(g_fYawAfterQ - g_fYawBeforeQ) < 0.05f) return false;
-
-	// Camera zoom observable: zoom-in shrank horizontal distance, zoom-out grew it.
-	// Tolerance 0.1 m to absorb numeric noise.
-	if (g_fDistBefore - g_fDistAfterIn < 0.1f) return false;
-	if (g_fDistAfterOut - g_fDistAfterIn < 0.1f) return false;
-
-	if (!g_bIronPickedUp) return false;
-	if (!g_bForgeCrafted) return false;
-	if (!g_bDoorOpened) return false;
-	if (!g_bChestOpened) return false;
-	// Noise-machine assertion is personality-aware. Stealth deliberately
-	// skips the noise machine (bRunNoiseMachine=false); treating a missed
-	// noise as a failure would fail the test for an intended omission.
-	if (g_xActiveCfg.bRunNoiseMachine && !g_bPriestHeardNoise) return false;
-
-	if (g_iObjectivesDelivered < 5) return false;
-	if (!DP_Win::HasWon()) return false;
-	if (!g_bVictoryEvent) return false;
-
-	// Pause-overlay assertions only apply to personalities that ran the
-	// pause test. Speedrunner + Berserker skip it (bRunPauseTest=false)
-	// so the pause-on/off flags stay false; treating that as a fail would
-	// make the test red for a deliberate skip. Mirror the same logic in
-	// the summary block of Step.
-	if (g_xActiveCfg.bRunPauseTest)
-	{
-		if (!g_bPauseOnObserved) return false;
-		if (!g_bPauseOffObserved) return false;
-	}
 	return true;
 }
 
@@ -2457,7 +2403,6 @@ static void Setup_Personality_Stealth()       { g_xActiveCfg = kPersonality_Stea
 static void Setup_Personality_Speedrunner()   { g_xActiveCfg = kPersonality_Speedrunner;   Setup_HumanPlaythrough(); }
 static void Setup_Personality_Berserker()     { g_xActiveCfg = kPersonality_Berserker;     Setup_HumanPlaythrough(); }
 static void Setup_Personality_Methodical()    { g_xActiveCfg = kPersonality_Methodical;    Setup_HumanPlaythrough(); }
-static void Setup_Personality_ProcLevelDemo() { g_xActiveCfg = kPersonality_ProcLevelDemo; Setup_HumanPlaythrough(); }
 
 // Frame-budget rationale (rough wall-clock at fixed-dt 1/60):
 //   * Casual      ~1800 frames (~30 s in-game / ~38 s wall-clock)
@@ -2515,20 +2460,5 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Methodical = {
 	6000
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Methodical);
-
-// ProcLevel demo. Casual playstyle on the procgen scene (build index 6)
-// with lenient verify -- this is the "see the bot play on a generated
-// map" tour requested 2026-05-18. Frame budget matches Casual (6000)
-// even though the bot likely won't complete the full objective loop
-// on procgen geometry; we just want it to run long enough to be
-// visually demonstrable.
-static const Zenith_AutomatedTest g_xPersonalityTest_ProcLevelDemo = {
-	"PersonalityPlaythrough_ProcLevelDemo",
-	&Setup_Personality_ProcLevelDemo,
-	&Step_HumanPlaythrough,
-	&Verify_HumanPlaythrough,
-	6000
-};
-ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_ProcLevelDemo);
 
 #endif // ZENITH_INPUT_SIMULATOR
