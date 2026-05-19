@@ -17,18 +17,4 @@ namespace DPFogPass
 {
 	void Init();
 	void Shutdown();
-
-	// Particle config registration (PFX_Witch). Called from
-	// DevilsPlayground::InitializeResources alongside other CPU-only
-	// resource setup. Idempotent.
-	void RegisterParticleConfigs();
-	void UnregisterParticleConfigs();
-
-	// Witch fog-hole spawn position (Zenith metres). Originally imported
-	// from the UE map's NiagaraActor placement; values are kept inline
-	// in DPFogPass.cpp so scene authoring can place a PFX_Witch emitter
-	// without depending on per-scene level-data tables.
-	float GetWitchSpawnX();
-	float GetWitchSpawnY();
-	float GetWitchSpawnZ();
 }
