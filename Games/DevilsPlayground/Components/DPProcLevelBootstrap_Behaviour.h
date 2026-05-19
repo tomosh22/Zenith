@@ -66,6 +66,23 @@ public:
 		// before they themselves run.
 		s_pxInstance = this;
 
+		// Disable the test-only "omniscient" priest fallback that
+		// Priest_Behaviour::BridgePerceptionToBlackboard normally
+		// applies when ZENITH_INPUT_SIMULATOR is defined (which it
+		// is in every config of this codebase, including the
+		// vs2022_Release_Win64_False build the user plays the demo
+		// in). The fallback sets BB_KEY_TARGET_WITH_DEVIL to the
+		// possessed villager whenever no perception target qualifies,
+		// which makes the priest omniscient -- the HUD's
+		// AelfricState then sticks at Pursuing and the WhisperLine
+		// constantly says "He sees you!" even when the priest is
+		// blind on the far side of the level. User reported
+		// 2026-05-19. Disabling it routes pursuit through real
+		// sight-cone perception, which is the GDD intent and the
+		// production-build behaviour (production compiles the
+		// fallback out entirely).
+		DP_Player::SetTestOmniscientFallback(false);
+
 		// Seed source TODO (P4 later): read from Tuning.json + allow
 		// --procgen-seed CLI override. For now we hardcode m_uSeed
 		// (default 0) so the bootstrap is deterministic + the unit
@@ -646,11 +663,23 @@ private:
 		// braces against the DPVillager_Behaviour / Priest_Behaviour
 		// HasValidBody() check failing on the OnAwake immediately after
 		// AddScript fires.
+		//
+		// LockRotation differs from the GameLevel character pattern:
+		// GameLevel locks X+Z but leaves Y (yaw) free so character
+		// meshes can face their movement direction. For ProcLevel's
+		// SM_Cube placeholders, leaving Y free makes the cube SWING
+		// around its corner anchor every time the script updates yaw
+		// (the corner-offset compensation in this method's transform
+		// setup only holds for the SPAWN yaw -- runtime yaw changes
+		// reveal the offset). User reported "the priest and villagers
+		// are still rotating" on 2026-05-19; locking yaw too makes the
+		// cubes statically translate through the level which is the
+		// correct visual for placeholders.
 		if (xCol.HasValidBody())
 		{
 			const JPH::BodyID& xBodyID = xCol.GetBodyID();
 			Zenith_Physics::SetGravityEnabled(xBodyID, false);
-			Zenith_Physics::LockRotation(xBodyID, /*X=*/true, /*Y=*/false, /*Z=*/true);
+			Zenith_Physics::LockRotation(xBodyID, /*X=*/true, /*Y=*/true, /*Z=*/true);
 		}
 
 		if (bIsPriest)
