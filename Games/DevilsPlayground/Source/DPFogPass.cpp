@@ -10,7 +10,6 @@
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
@@ -235,80 +234,4 @@ namespace
 
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 	}
-}
-
-// =====================================================================
-// Particle config registration
-//
-// Called from DevilsPlayground::InitializeResources via the project's
-// Project_RegisterScriptBehaviours hook. Registers the PFX_Witch
-// emitter config for runtime instantiation by ParticleEmitterComponent
-// or scripted spawners. Pattern mirrors Combat::g_pxHitSparkConfig
-// (Combat.cpp:648-664).
-// =====================================================================
-namespace
-{
-	Flux_ParticleEmitterConfig* g_pxWitchConfig = nullptr;
-}
-
-namespace DPFogPass
-{
-	void RegisterParticleConfigs()
-	{
-		if (g_pxWitchConfig != nullptr) return; // idempotent
-
-		g_pxWitchConfig = new Flux_ParticleEmitterConfig();
-		g_pxWitchConfig->m_fSpawnRate            = 15.0f;
-		g_pxWitchConfig->m_uBurstCount           = 0;
-		g_pxWitchConfig->m_uMaxParticles         = 30;
-		g_pxWitchConfig->m_fSpawnRadius          = 0.1f;
-		g_pxWitchConfig->m_fLifetimeMin          = 1.5f;
-		g_pxWitchConfig->m_fLifetimeMax          = 2.0f;
-		g_pxWitchConfig->m_fSpeedMin             = 0.4f;
-		g_pxWitchConfig->m_fSpeedMax             = 0.9f;
-		g_pxWitchConfig->m_fSpreadAngleDegrees   = 18.0f;
-		g_pxWitchConfig->m_xEmitDirection        = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-		g_pxWitchConfig->m_xGravity              = Zenith_Maths::Vector3(0.0f, 0.6f, 0.0f); // light updraft
-		g_pxWitchConfig->m_fDrag                 = 0.5f;
-		g_pxWitchConfig->m_xColorStart           = Zenith_Maths::Vector4(0.6f, 0.2f, 0.8f, 0.9f); // witch purple
-		g_pxWitchConfig->m_xColorEnd             = Zenith_Maths::Vector4(0.2f, 0.0f, 0.4f, 0.0f);
-		g_pxWitchConfig->m_fSizeStart            = 0.20f;
-		g_pxWitchConfig->m_fSizeEnd              = 0.04f;
-		g_pxWitchConfig->m_bAdditiveBlending     = true;
-		g_pxWitchConfig->m_fTurbulence           = 0.8f;
-		g_pxWitchConfig->m_bUseGPUCompute        = false;
-		Flux_ParticleEmitterConfig::Register("PFX_Witch", g_pxWitchConfig);
-	}
-
-	void UnregisterParticleConfigs()
-	{
-		if (g_pxWitchConfig == nullptr) return;
-		Flux_ParticleEmitterConfig::Unregister("PFX_Witch");
-		delete g_pxWitchConfig;
-		g_pxWitchConfig = nullptr;
-	}
-}
-
-// =====================================================================
-// Scene-authoring hook for the VisualWiring agent.
-//
-// VisualWiring owns Project_RegisterEditorAutomationSteps so we don't
-// touch it from this TU. Instead we expose a stand-alone function the
-// VisualWiring agent calls from the GameLevel scene-author block. The
-// witch position is taken from the L_GameLevel.json NiagaraActor_2:
-//   UE loc (cm)  = (8582.63, 2575.46, 200.00)
-//   Engine (m)   ≈ (85.83,    25.75,    2.00)  (UE: X-fwd, Y-right, Z-up
-//                                               -> Zenith: X, Y=Z, Z=Y)
-// We also register the PFX_Witch fog hole on the same entity so the
-// witch silhouette is visible through the fog at gameplay distance.
-// =====================================================================
-namespace DPFogPass
-{
-	// PFX_Witch spawn position (Zenith X-Y-Z metres). Originally
-	// imported from the UE map's Niagara[0] placement; values kept
-	// inline so the fog-hole infrastructure is decoupled from any
-	// per-scene level-data table.
-	float GetWitchSpawnX() { return 85.8263f; }
-	float GetWitchSpawnY() { return 2.0000f;  }
-	float GetWitchSpawnZ() { return 25.7546f; }
 }

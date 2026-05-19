@@ -15,11 +15,12 @@
 #include <cmath>
 
 // ============================================================================
-// Test_T1NavMesh_GeneratorPerfOnGameLevel (diagnostic)
+// Test_T1NavMesh_GeneratorPerfOnProcLevel (diagnostic)
 //
-// Loads GameLevel, scans every static collider for its world-space AABB,
-// then calls Zenith_NavMeshGenerator::GenerateFromScene under the
-// profiling system and dumps a per-stage report.
+// Loads the ProcLevel scene (build index 1, the only gameplay scene since
+// 2026-05-19), scans every static collider for its world-space AABB, then
+// calls Zenith_NavMeshGenerator::GenerateFromScene under the profiling
+// system and dumps a per-stage report.
 //
 // Surfaces:
 //   * The outlier collider(s) stretching the navmesh bounding box.
@@ -138,7 +139,7 @@ static bool Step_T1NavMeshGeneratorPerf(int iFrame)
 		const std::chrono::duration<float, std::milli> xMs = xEnd - xStart;
 		const uint32_t uPolyCount = (pxNavMesh != nullptr) ? pxNavMesh->GetPolygonCount() : 0;
 
-		std::printf("[T1NavMeshPerf] GenerateFromScene on GameLevel: %.2f ms, %u polygons\n",
+		std::printf("[T1NavMeshPerf] GenerateFromScene on ProcLevel: %.2f ms, %u polygons\n",
 			xMs.count(), uPolyCount);
 		std::printf("[T1NavMeshPerf] ---- profiling report ----\n");
 		std::fflush(stdout);
@@ -164,7 +165,7 @@ static bool Verify_T1NavMeshGeneratorPerf()
 }
 
 static const Zenith_AutomatedTest g_xT1NavMeshGeneratorPerfTest = {
-	"Test_T1NavMesh_GeneratorPerfOnGameLevel",
+	"Test_T1NavMesh_GeneratorPerfOnProcLevel",
 	&Setup_T1NavMeshGeneratorPerf,
 	&Step_T1NavMeshGeneratorPerf,
 	&Verify_T1NavMeshGeneratorPerf,

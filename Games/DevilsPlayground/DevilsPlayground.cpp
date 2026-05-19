@@ -89,9 +89,6 @@ namespace DevilsPlayground
 		// Assets/Materials/*.json. Idempotent — safe across Editor Stop/Play.
 		DPMaterials::Initialize();
 
-		// B6 fog: register PFX_Witch particle config for runtime instantiation.
-		DPFogPass::RegisterParticleConfigs();
-
 #ifdef ZENITH_INPUT_SIMULATOR
 		// Tell the automated-test harness how to wipe DP-specific persistent
 		// globals between batched tests. The harness force-loads scene 0
@@ -120,9 +117,6 @@ namespace DevilsPlayground
 		DP_Player::SetPossessedVillager(INVALID_ENTITY_ID);
 		DP_AI::ResetLevelNavMesh();
 		DPMaterials::Shutdown();
-
-		// B6 fog: drop the PFX_Witch config so a relaunch doesn't double-register.
-		DPFogPass::UnregisterParticleConfigs();
 
 		// Drop the archetype cache before tuning -- archetypes don't depend on
 		// tuning, but keep teardown order paired so future cross-deps are
