@@ -1,27 +1,29 @@
 # DevilsPlayground
 
-UE5 → Zenith port of an occult-horror prototype. Click-to-possess top-down
-gameplay: the player picks one of 17 villagers in the GameLevel scene
-(corrected from earlier "14" — the level was extended during the M0.5
-port), races a 30-second life timer to deliver objective items to a
-pentagram while avoiding a roaming priest. Source repo lives at
-`C:\dev\GameJam0\` (UE 5.6).
+Occult-horror prototype. Click-to-possess top-down gameplay: the player
+picks one of ~17 villagers spawned across a procgen village, races a
+30-second life timer to deliver objective items to a pentagram while
+avoiding a roaming priest.
 
-This is a **skeleton-grade** port — every behaviour shape is in place and
-verified by the automated-test harness, but real meshes/materials and full
-priest pursuit logic are gated on the UE asset re-export pipeline. See
-`../../Tools/dp_export/README.md` for the unblocking step.
+Originally ported from a UE5 source map; on 2026-05-19 the hand-authored
+GameLevel scene + the 4 gym scenes + the `Tools/dp_export/` UE-bridge
+pipeline were removed. Procgen (`Source/DPProcLevel/`) is now the only
+gameplay surface, and it is bit-deterministic across `/fp:fast` Debug +
+Release builds (verified by `Test_ProcLevel_DeterminismCheck`).
 
 ## File map
 
 ```
-DevilsPlayground.cpp                 # Project_* lifecycle hooks (Combat-style, ~9 hooks)
-parity_manifest.json                 # UE-side asset enumeration (placeholder until B1)
+DevilsPlayground.cpp                 # Project_* lifecycle hooks; authors FrontEnd + ProcLevel scenes
 Source/
   PublicInterfaces.h / .cpp          # DP_Player / DP_Items / DP_Interactables / DP_AI / DP_Fog / DP_Win / DP_Query
   DevilsPlayground_Tags.h            # DP_ItemTag enum + helpers
   DPInputActions.h                   # WASD/Q-E/F/Space/Esc/click readers
   DPFogPass.h / .cpp                 # Engine fog override + post-fog hook registration
+  DPProcLevel/                       # Procgen generator (deterministic integer-coord internals)
+    DPProcLevel_Generator.{h,cpp}    # BSP → rooms → doors → walls → game elements → AI placement
+    DPProcLevel_LevelLayout.h        # Public layout struct (float fields; integer math internal)
+    DPProcLevel_JsonExport.{h,cpp}   # Layout → JSON for the visualiser
 Components/
   DPVillager_Behaviour.h             # Possessable villager (movement + life timer)
   DPPlayerController_Behaviour.h     # Click-to-possess raycast
@@ -39,14 +41,14 @@ Components/
   Priest_Behaviour.h                 # Owns Zenith_BehaviorTree, manual Tick, perception bridge
   DP_BT_Nodes.h                      # 4 custom BT nodes (FindPos/HasInvestigatePos/...)
   DPHUDController_Behaviour.h        # Life bar (colour gradient) + held-item readout + objective counter + status banner
-  DPMainMenuController_Behaviour.h   # Front-end Play button → LoadSceneByIndex(1)
+  DPMainMenuController_Behaviour.h   # Front-end Play button → LoadSceneByIndex(1) (ProcLevel)
   DPPauseMenuController_Behaviour.h  # Esc-toggle overlay
   DPFogPass_Behaviour.h              # Per-frame fog-hole rebuild
-Tests/                                 (122 registered tests across 112 .cpp files as of 2026-05-16; full list via --list-automated-tests)
+  DPProcLevelBootstrap_Behaviour.h   # ProcLevel-scene script: calls Generate() in OnAwake + spawns layout
+Tests/                                 (full list via --list-automated-tests; 119 tests as of 2026-05-19)
   Test_Hello.cpp                     # Harness smoke
   Test_MouseWheel.cpp                # EXT-4 simulator round-trip
   Test_PublicInterfaces.cpp          # 5 namespace-API tests + source-bug guards
-  Test_GameLevelScene.cpp            # Scene-load + script-instantiation
   Test_Possession.cpp                # Possess/unpossess round-trip
   Test_LifeTimer.cpp                 # Possessed villager death timer
   Test_HearingFlow.cpp               # NoiseMachine → perception bridge → Priest BB
@@ -57,26 +59,26 @@ Tests/                                 (122 registered tests across 112 .cpp fil
   Test_GameRenderHook.cpp            # EXT-1 fog override
   Test_DPFogPass.cpp                 # Fog hole rebuild contract
   Test_Materials.cpp                 # Material side-table tinting
-  Test_VisualWiring.cpp              # GameLevel mesh/light/collider counts
+  Test_VisualWiring.cpp              # ProcLevel mesh/light/collider counts
   Test_GameplaySystems.cpp           # Door / chest / noise / camera / HUD smoke set (6 tests)
   Test_DoubleDoorAndForge.cpp        # DPDoubleDoor leaf rotation + DPForge recipe
-  Test_GymScenes.cpp                 # Loads all 4 gym scenes + verifies expected entities
+  Test_ProcLevelScene.cpp            # ProcLevel scene loads + bootstrap spawns full level
+  Test_ProcLevel_BSP.cpp             # BSP partitioning unit tests
+  Test_ProcLevel_DeterminismCheck.cpp # Cross-config bit-identical procgen output
+  Test_ProcLevelBootstrap.cpp        # Synthetic "create scene + add bootstrap" smoke
+  Test_PersonalityPlaythrough.cpp    # 6 bot personalities driving the procgen scene + telemetry
 Assets/
   Scenes/                            # Generated by Project_RegisterEditorAutomationSteps
-                                     # FrontEnd, GameLevel, Gym_Items, Gym_Noise, Gym_Doors, Gym_Forge
+                                     # FrontEnd.zscen, ProcLevel.zscen
   Scripts/                           # Generated by ScriptAsset::SyncRegisteredTypesToDisk
 ```
 
 ## Build indices
 
-| Index | Scene       | Purpose |
-|------:|-------------|---------|
-| 0     | FrontEnd    | Main menu (boots here) |
-| 1     | GameLevel   | Full game — 17 villagers / 15 doors / 6 chests / pentagram / priest |
-| 2     | Gym_Items   | Item pickup + tinting (6 spawners + manager) |
-| 3     | Gym_Noise   | Priest perception (3 noise machines + 1 priest) |
-| 4     | Gym_Doors   | Single-door + DoubleDoor unlock (2 keys, 1 of each door) |
-| 5     | Gym_Forge   | Iron→Key recipe (4 iron spawners around 1 forge) |
+| Index | Scene     | Purpose |
+|------:|-----------|---------|
+| 0     | FrontEnd  | Main menu (boots here) |
+| 1     | ProcLevel | Gameplay — DPProcLevelBootstrap spawns rooms / walls / villagers / priest / items / pentagram at runtime from `DPProcLevel::Generate(seed, cfg, ...)` |
 
 ## Engine surface used
 
@@ -122,7 +124,7 @@ powershell -NoProfile -File Tools/run_dp_tests.ps1 -Headless
 
 Default mode is **batch** — every registered test runs in one process
 via `--all-automated-tests`. Engine boot (~25 s) happens once, so the
-suite finishes in ~65 s for 28 tests vs ~10 min in per-process mode.
+suite finishes in ~65 s for ~120 tests vs ~10 min in per-process mode.
 
 Add `-PerProcess` to the runner for the legacy fork-per-test path
 (slower but bullet-proof against state leaks). `-Filter <substring>`
@@ -133,6 +135,18 @@ entity-managed side-tables clear via OnDestroy) and fires every
 hook registered with `Zenith_AutomatedTestRunner::RegisterBetweenTestsHook`.
 DevilsPlayground.cpp's hook resets `DP_Player`, `DP_Win`, `DP_Fog`, and
 `DP_AI`'s persistent globals.
+
+## Procgen determinism
+
+`Test_ProcLevel_DeterminismCheck` asserts both within-config repeat
+determinism (calling `Generate(seed, cfg, ...)` twice yields byte-identical
+`LevelLayout`) and emits a stable FNV-1a hash that the CI / dev workflow
+diffs across `vs2022_Debug_Win64_False` and `vs2022_Release_Win64_False`.
+Every shape-determining decision in the generator runs in integer math at
+mm precision; float values appear only at the LevelLayout output boundary,
+with the conversion pinned to `c * 0.001f` so `/fp:fast` can't substitute
+in a divide. See the giant block comment at the top of
+`Source/DPProcLevel/DPProcLevel_Generator.cpp` for the full design.
 
 ## Source-bug guards
 
@@ -162,7 +176,9 @@ Three guarded ports (each marked `SourceBugFixed:` in code):
 4. `#include` the new header from `DevilsPlayground.cpp` so the
    static-init registrar pulls into the link.
 5. Run Sharpmake (`cmd /c '.\Sharpmake_Build.bat < nul'` from `Build/`).
-6. Reference from scene authoring via `AddStep_AttachScript("DPFoo_Behaviour")`.
+6. Reference from scene authoring via `AddStep_AttachScript("DPFoo_Behaviour")`,
+   or have `DPProcLevelBootstrap` spawn it at runtime from a procgen
+   element type.
 7. The `.zscript` file is written automatically on next tools-build run
    by `Zenith_ScriptAsset::SyncRegisteredTypesToDisk`.
 
@@ -189,6 +205,12 @@ initial scene is loaded, OnAwake/OnStart have fired, and Playing mode is
 set. Step is called every main-loop frame until it returns false or the
 test's `m_iMaxFrames` is hit.
 
+If your test needs to load the gameplay scene, call
+`Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE)` — that is
+ProcLevel. Use `DP_Query::ForEachScriptInActiveScene<T>` to find
+priest / villager / item entities by type; do NOT bake in entity names
+or world positions, because procgen reshuffles those per seed.
+
 ## Known gotchas
 
 - **`SimulateClickOnUIElement` asserts on missing element**, killing the
@@ -205,5 +227,11 @@ test's `m_iMaxFrames` is hit.
   captured pointer dangles and the dispatcher crashes on next dispatch.
 - **`Project_RegisterEditorAutomationSteps` only runs in tools builds.**
   Wrapped in `#ifdef ZENITH_TOOLS`. Non-tools builds load pre-saved
-  `.zscen` files — re-run the tools build after changing scene authoring
-  or behaviours.
+  `.zscen` files (FrontEnd + ProcLevel) — re-run the tools build after
+  changing scene authoring or behaviours.
+- **Procgen geometry is not tuned for hand-tuned priest tests.**
+  Tests that need a specific priest/villager spatial arrangement (e.g.
+  teleport priest to 1.5m east of villager) may fail on procgen because
+  the navmesh agent steers the priest back to its nearest patrol-node
+  polygon. Stage such tests by spawning fresh entities at known clear
+  positions rather than teleporting procgen-spawned entities.

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
@@ -31,7 +31,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -41,7 +41,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp2a</CppLanguageStandard>
+    <CppLanguageStandard>cpp20</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -193,7 +193,6 @@
     <ClInclude Include="..\Source\DPTelemetryAnalyzer.h" />
     <ClInclude Include="..\Source\DPUI.h" />
     <ClInclude Include="..\Source\DP_Archetypes.h" />
-    <ClInclude Include="..\Source\DP_LevelData.h" />
     <ClInclude Include="..\Source\DP_Reagents.h" />
     <ClInclude Include="..\Source\DP_Save.h" />
     <ClInclude Include="..\Source\DP_Tuning.h" />
@@ -212,7 +211,6 @@
     <ClCompile Include="..\Source\DP_Save.cpp" />
     <ClCompile Include="..\Source\DP_Tuning.cpp" />
     <ClCompile Include="..\Source\PublicInterfaces.cpp" />
-    <ClCompile Include="..\Tests\Test_BuildingWallClosure.cpp" />
     <ClCompile Include="..\Tests\Test_DimLightsCutFog.cpp" />
     <ClCompile Include="..\Tests\Test_DoubleDoorAndForge.cpp" />
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp" />
@@ -220,10 +218,8 @@
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp" />
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp" />
     <ClCompile Include="..\Tests\Test_FullPlaythrough.cpp" />
-    <ClCompile Include="..\Tests\Test_GameLevelScene.cpp" />
     <ClCompile Include="..\Tests\Test_GameplaySystems.cpp" />
     <ClCompile Include="..\Tests\Test_GameRenderHook.cpp" />
-    <ClCompile Include="..\Tests\Test_GymScenes.cpp" />
     <ClCompile Include="..\Tests\Test_HearingFlow.cpp" />
     <ClCompile Include="..\Tests\Test_Hello.cpp" />
     <ClCompile Include="..\Tests\Test_ItemPickup.cpp" />
@@ -231,8 +227,6 @@
     <ClCompile Include="..\Tests\Test_Materials.cpp" />
     <ClCompile Include="..\Tests\Test_MouseWheel.cpp" />
     <ClCompile Include="..\Tests\Test_P1Apprehend_OutOfRangeIgnored.cpp" />
-    <ClCompile Include="..\Tests\Test_P1Apprehend_PriestCatchesPlayer.cpp" />
-    <ClCompile Include="..\Tests\Test_P1Apprehend_PriestStandsStillDuringChannel.cpp" />
     <ClCompile Include="..\Tests\Test_P1Apprehend_SwitchBreaksChannel.cpp" />
     <ClCompile Include="..\Tests\Test_P1Cooldown_CannotPossessFor1pt5s.cpp" />
     <ClCompile Include="..\Tests\Test_P1Cooldown_NotAffectedByDeath.cpp" />
@@ -244,10 +238,8 @@
     <ClCompile Include="..\Tests\Test_P1Faint_SystemPossessBypassesGate.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_ClosedDoorBlocksPath.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_PathRespectsWalls.cpp" />
-    <ClCompile Include="..\Tests\Test_P1NavMesh_RegenerationOnSceneSwap.cpp" />
     <ClCompile Include="..\Tests\Test_P1NoVessels_DispatchesRunLost.cpp" />
     <ClCompile Include="..\Tests\Test_P1Pause_InputSimDuringPause.cpp" />
-    <ClCompile Include="..\Tests\Test_P1Pause_PriestStopsOnEscape.cpp" />
     <ClCompile Include="..\Tests\Test_P1Pause_TimerStopsOnEscape.cpp" />
     <ClCompile Include="..\Tests\Test_P1Priest_DoesNotChasePossessedOutOfSight.cpp" />
     <ClCompile Include="..\Tests\Test_P1Priest_PursuesAfterLineOfSight.cpp" />
@@ -271,7 +263,6 @@
     <ClCompile Include="..\Tests\Test_P1Tuning_LoadsAndValuesInBand.cpp" />
     <ClCompile Include="..\Tests\Test_P1Tuning_PriestValuesMatchConfig.cpp" />
     <ClCompile Include="..\Tests\Test_P1Villager_TuningMigration.cpp" />
-    <ClCompile Include="..\Tests\Test_P1WalkQuiet_AelfricEffectiveHearingHalved.cpp" />
     <ClCompile Include="..\Tests\Test_P1WalkQuiet_FootstepLoudnessHalved.cpp" />
     <ClCompile Include="..\Tests\Test_P2Archetype_BeggarIgnoredByAelfric.cpp" />
     <ClCompile Include="..\Tests\Test_P2Archetype_ChildCannotCarryTools.cpp" />
@@ -300,7 +291,6 @@
     <ClCompile Include="..\Tests\Test_P2Reagent_UniquePickupChannel.cpp" />
     <ClCompile Include="..\Tests\Test_P2Villager_ArchetypeStatsApplied.cpp" />
     <ClCompile Include="..\Tests\Test_P3Inventory_ArchetypeCount.cpp" />
-    <ClCompile Include="..\Tests\Test_P4Playthrough_LossByApprehend.cpp" />
     <ClCompile Include="..\Tests\Test_P4Playthrough_LossByDawn.cpp" />
     <ClCompile Include="..\Tests\Test_P4Playthrough_LossByNoVessels.cpp" />
     <ClCompile Include="..\Tests\Test_P4Playthrough_Night1WinGolden.cpp" />

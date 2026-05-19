@@ -21,10 +21,11 @@
 namespace
 {
 	// ---------------------------------------------------------------------------
-	// Tiny JSON parser (hand-rolled). Tuned for the small uniform schema produced
-	// by Tools/dp_export. Supports objects, arrays, strings, numbers, true/false,
-	// null. Doesn't support escapes other than \" \\ \/ \n \t. The dumps don't
-	// need anything more.
+	// Tiny JSON parser (hand-rolled). Tuned for the small uniform schema of the
+	// per-material JSON files under Games/DevilsPlayground/Assets/Materials/.
+	// Supports objects, arrays, strings, numbers, true/false, null. Doesn't
+	// support escapes other than \" \\ \/ \n \t. The material dumps don't need
+	// anything more.
 	// ---------------------------------------------------------------------------
 	enum JsonType : uint8_t
 	{

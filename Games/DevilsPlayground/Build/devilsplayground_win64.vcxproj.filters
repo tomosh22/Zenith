@@ -35,9 +35,6 @@
     <ClCompile Include="..\Source\PublicInterfaces.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="..\Tests\Test_BuildingWallClosure.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
     <ClCompile Include="..\Tests\Test_DimLightsCutFog.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -59,16 +56,10 @@
     <ClCompile Include="..\Tests\Test_FullPlaythrough.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="..\Tests\Test_GameLevelScene.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
     <ClCompile Include="..\Tests\Test_GameplaySystems.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_GameRenderHook.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Tests\Test_GymScenes.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_HearingFlow.cpp">
@@ -90,12 +81,6 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Apprehend_OutOfRangeIgnored.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Tests\Test_P1Apprehend_PriestCatchesPlayer.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Tests\Test_P1Apprehend_PriestStandsStillDuringChannel.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Apprehend_SwitchBreaksChannel.cpp">
@@ -131,16 +116,10 @@
     <ClCompile Include="..\Tests\Test_P1NavMesh_PathRespectsWalls.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="..\Tests\Test_P1NavMesh_RegenerationOnSceneSwap.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
     <ClCompile Include="..\Tests\Test_P1NoVessels_DispatchesRunLost.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Pause_InputSimDuringPause.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Tests\Test_P1Pause_PriestStopsOnEscape.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Pause_TimerStopsOnEscape.cpp">
@@ -210,9 +189,6 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Villager_TuningMigration.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Tests\Test_P1WalkQuiet_AelfricEffectiveHearingHalved.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1WalkQuiet_FootstepLoudnessHalved.cpp">
@@ -297,9 +273,6 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P3Inventory_ArchetypeCount.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Tests\Test_P4Playthrough_LossByApprehend.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P4Playthrough_LossByDawn.cpp">
@@ -467,9 +440,6 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DP_Archetypes.h">
-      <Filter>Source</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Source\DP_LevelData.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DP_Reagents.h">

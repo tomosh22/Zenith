@@ -24,11 +24,10 @@ namespace DPFogPass
 	void RegisterParticleConfigs();
 	void UnregisterParticleConfigs();
 
-	// Witch spawn position (UE map coords from L_GameLevel.json's
-	// NiagaraActor_2, converted to Zenith metres). Exposed so the
-	// VisualWiring agent can author the witch entity from
-	// Project_RegisterEditorAutomationSteps without duplicating the
-	// magic numbers.
+	// Witch fog-hole spawn position (Zenith metres). Originally imported
+	// from the UE map's NiagaraActor placement; values are kept inline
+	// in DPFogPass.cpp so scene authoring can place a PFX_Witch emitter
+	// without depending on per-scene level-data tables.
 	float GetWitchSpawnX();
 	float GetWitchSpawnY();
 	float GetWitchSpawnZ();

@@ -21,12 +21,12 @@
 // ============================================================================
 // Test_ProcLevelScene (P5) -- end-to-end scene load + bootstrap-spawn check.
 //
-// Loads the authored ProcLevel scene (build index 6) and verifies that the
-// bootstrap's OnAwake spawned a fully-populated level: walls + game elements
-// + AI agents. Sits alongside Test_ProcLevelBootstrap (which is a synthetic
-// "create empty scene + add bootstrap manually" smoke test) -- this test
-// exercises the real load path used by the runtime + the demo personality
-// playthrough.
+// Loads the authored ProcLevel scene (build index 1 -- the only gameplay
+// scene since 2026-05-19) and verifies that the bootstrap's OnAwake spawned
+// a fully-populated level: walls + game elements + AI agents. Sits alongside
+// Test_ProcLevelBootstrap (which is a synthetic "create empty scene + add
+// bootstrap manually" smoke test) -- this test exercises the real load path
+// used by the runtime + the personality playthrough tests.
 //
 // Pass criteria (seed 0, default GenConfig):
 //   - Bootstrap singleton registered.
@@ -65,9 +65,9 @@ static void Setup_ProcLevelScene()
 	g_bPassed = false;
 	g_szFailureReason = "";
 
-	// Build index 6 is the authored ProcLevel scene (see
+	// Build index 1 is the authored ProcLevel scene (see
 	// DevilsPlayground.cpp::Project_LoadInitialScene).
-	Zenith_SceneManager::LoadSceneByIndex(6, SCENE_LOAD_SINGLE);
+	Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 }
 
 static bool Step_ProcLevelScene(int /*iFrame*/)
