@@ -1,6 +1,8 @@
 #include "Zenith.h"
 #include "Zenith_Core.h"
+#include "Core/FrameContext.h"
 #include "Core/Zenith_CommandLine.h"
+#include "Core/Zenith_Engine.h"
 
 // InputSimulator + AutomatedTest are both gated on ZENITH_INPUT_SIMULATOR. The
 // nested #ifdef the previous version emitted around the AutomatedTest include
@@ -30,28 +32,24 @@
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
 
 
-// Namespace variable definitions
-float Zenith_Core::g_fDt = 0.f;
-float Zenith_Core::g_fTimePassed = 0.f;
-std::chrono::high_resolution_clock::time_point Zenith_Core::g_xLastFrameTime;
-
 void Zenith_Core::UpdateTimers()
 {
-	std::chrono::high_resolution_clock::time_point xCurrentTime = std::chrono::high_resolution_clock::now();
+	FrameContext& xFrame = g_xEngine.Frame();
+	const std::chrono::high_resolution_clock::time_point xCurrentTime = std::chrono::high_resolution_clock::now();
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	if (Zenith_InputSimulator::HasFixedDtOverride())
 	{
-		Zenith_Core::SetDt(Zenith_InputSimulator::GetFixedDt());
+		xFrame.SetDt(Zenith_InputSimulator::GetFixedDt());
 	}
 	else
 #endif
 	{
-		Zenith_Core::SetDt(static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - g_xLastFrameTime).count() / 1.e9));
+		xFrame.SetDt(static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - xFrame.GetLastFrameTime()).count() / 1.e9));
 	}
-	g_xLastFrameTime = xCurrentTime;
+	xFrame.SetLastFrameTime(xCurrentTime);
 
-	Zenith_Core::AddTimePassed(Zenith_Core::GetDt());
+	xFrame.AddTimePassed(xFrame.GetDt());
 }
 
 #ifdef ZENITH_TOOLS
@@ -94,7 +92,7 @@ void RenderImGui()
 	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.x)) + " " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.y)) + " " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.z));
 	ImGui::Text(strCamPosText.c_str());
 
-	std::string strFpsText = "FPS: " + std::to_string(1.f / Zenith_Core::GetDt());
+	std::string strFpsText = "FPS: " + std::to_string(1.f / g_xEngine.Frame().GetDt());
 	ImGui::Text(strFpsText.c_str());
 
 	Zenith_DebugVariableTree& xTree = Zenith_DebugVariables::s_xTree;
@@ -223,8 +221,8 @@ void Zenith_Core::Zenith_MainLoop()
 
 	if (bShouldUpdateGameLogic)
 	{
-		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Physics::Update, ZENITH_PROFILE_INDEX__PHYSICS, Zenith_Core::GetDt());
-		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_SceneManager::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Physics::Update, ZENITH_PROFILE_INDEX__PHYSICS, g_xEngine.Frame().GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_SceneManager::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, g_xEngine.Frame().GetDt());
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -267,7 +265,7 @@ void Zenith_Core::Zenith_MainLoop()
 			for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
 			{
 				Zenith_UIComponent* const pxUI = xIt.GetData();
-				pxUI->Update(Zenith_Core::GetDt());
+				pxUI->Update(g_xEngine.Frame().GetDt());
 				pxUI->Render();
 			}
 		}

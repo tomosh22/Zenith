@@ -170,7 +170,7 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 
 		Zenith_Maths::Vector3 xPos;
 		xCamera.GetPosition(xPos);
-		xFinalVelocity *= Zenith_Maths::Vector3(Zenith_Core::GetDt());
+		xFinalVelocity *= Zenith_Maths::Vector3(g_xEngine.Frame().GetDt());
 		xPos += xFinalVelocity;
 		xCamera.SetPosition(xPos);
 

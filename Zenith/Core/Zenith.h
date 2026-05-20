@@ -39,6 +39,13 @@ static_assert(sizeof(u_int64) == 8);
 #include "Maths/Zenith_Maths.h"
 #include "Core/Zenith_String.h"
 #include "Zenith_Core.h"
+// Phase 2: g_xEngine.Frame() is the universal per-frame timing
+// accessor (replaces Zenith_Core::GetDt etc). Pulled into the PCH so
+// every TU has it without per-file include churn. Both headers are
+// light: Zenith_Engine.h is just a class decl + <type_traits>,
+// FrameContext.h adds <chrono> only.
+#include "Core/Zenith_Engine.h"
+#include "Core/FrameContext.h"
 
 #include "Zenith_OS_Include.h"
 #include "Zenith_DebugBreak.h"

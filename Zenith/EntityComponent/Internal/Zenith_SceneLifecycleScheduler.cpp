@@ -44,7 +44,7 @@ namespace
 
 	void AnimUpdateTask(void*, u_int uInvocationIndex, u_int uNumInvocations)
 	{
-		const float fDt = Zenith_Core::GetDt();
+		const float fDt = g_xEngine.Frame().GetDt();
 		const u_int uTotalAnimations = g_xAnimationsToUpdate.GetSize();
 
 		if (uInvocationIndex >= uTotalAnimations)

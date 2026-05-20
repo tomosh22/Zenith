@@ -375,7 +375,7 @@ void Flux_ParticleGPU::DispatchCompute(Flux_CommandList* pxCmdList)
 	if (!Zenith_GraphicsOptions::Get().m_bGPUParticlesEnabled || s_axEmitters.GetSize() == 0)
 		return;
 
-	float fDt = Zenith_Core::GetDt();
+	float fDt = g_xEngine.Frame().GetDt();
 
 	// Determine which buffers to use (ping-pong)
 	Flux_ReadWriteBuffer& xInputBuffer = s_bUseBufferA ? s_xParticleBufferA : s_xParticleBufferB;

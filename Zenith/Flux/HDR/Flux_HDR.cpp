@@ -346,7 +346,7 @@ void Flux_HDR::ExecuteAdaptation(Flux_CommandList* pxCommandList, void* pUserDat
 	AdaptationConstants xConsts;
 	xConsts.m_fMinLogLum = s_fMinLogLuminance;
 	xConsts.m_fLogLumRange = s_fLogLuminanceRange;
-	xConsts.m_fDeltaTime = Zenith_Core::GetDt();
+	xConsts.m_fDeltaTime = g_xEngine.Frame().GetDt();
 	xConsts.m_fAdaptationSpeed = dbg_bHDRFreezeExposure ? 0.0f : s_fAdaptationSpeed;
 	xConsts.m_fTargetLuminance = s_fTargetLuminance;
 	xConsts.m_fMinExposure = s_fMinExposure;

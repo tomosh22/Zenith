@@ -206,7 +206,7 @@ void Flux_Particles::Render(void*)
 	}
 
 	// Update all emitters (both CPU and GPU) and build the CPU instance buffers
-	float fDt = Zenith_Core::GetDt();
+	float fDt = g_xEngine.Frame().GetDt();
 	UpdateEmittersAndBuildInstanceBuffer(fDt);
 
 	// Upload CPU instance data to GPU
@@ -222,7 +222,7 @@ void Flux_Particles::ExecuteParticles(Flux_CommandList* pxCommandList, void* pUs
 	}
 
 	// CPU-side work: update emitters and upload instance data
-	float fDt = Zenith_Core::GetDt();
+	float fDt = g_xEngine.Frame().GetDt();
 	UpdateEmittersAndBuildInstanceBuffer(fDt);
 	UploadInstanceData();
 

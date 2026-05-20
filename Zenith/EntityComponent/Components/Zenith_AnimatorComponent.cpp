@@ -390,7 +390,7 @@ void Zenith_AnimatorComponent::RenderPropertiesPanel()
 	if (Zenith_Editor::GetEditorMode() != EditorMode::Playing && m_xController.IsInitialized())
 	{
 		UpdateWorldMatrix();
-		m_xController.Update(Zenith_Core::GetDt());
+		m_xController.Update(g_xEngine.Frame().GetDt());
 		SyncModelInstanceAnimation();
 	}
 

@@ -12,7 +12,7 @@ void HookesLaw_Behaviour::OnUpdate(const float fDt)
 {
 	Zenith_TransformComponent& xTrans = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
 
-	float fCurrentTime = Zenith_Core::GetTimePassed();
+	float fCurrentTime = g_xEngine.Frame().GetTimePassed();
 
 	Zenith_Maths::Vector3 xPosDelta;
 	xTrans.GetPosition(xPosDelta);

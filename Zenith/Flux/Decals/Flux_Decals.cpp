@@ -428,7 +428,7 @@ static void ExecuteApply(Flux_CommandList* pxCommandList, void*)
 
 static void PrepareDecals(void*)
 {
-	const float fDt = Zenith_Core::GetDt();
+	const float fDt = g_xEngine.Frame().GetDt();
 	const u_int uPriorActive = s_uActiveDecalCount;
 
 	// Tick lifetimes + pack active decals into the dense staging array.

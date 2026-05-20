@@ -218,7 +218,7 @@ void Flux_Grass::ExecuteRender(Flux_CommandList* pxCmdList, void*)
 	// Float32 has 24-bit mantissa, giving ~7 decimal digits of precision
 	// Wind frequencies max at 4.1x, so after 10 hours (36000s) we have 147600 which is fine
 	// No need to wrap - doing so causes visible phase jumps in all sine waves
-	double dTime = Zenith_Core::GetTimePassed();
+	double dTime = g_xEngine.Frame().GetTimePassed();
 	float fTime = static_cast<float>(dTime);
 
 	s_xGrassConstants.m_xWindParams = Zenith_Maths::Vector4(

@@ -84,12 +84,12 @@ void UploadSpheres()
 
 	{
 		Sphere& xSphere = s_axSphereData.m_axSpheres[0];
-		xSphere.m_xPosition_Radius = Zenith_Maths::Vector4(2000, 1500 + sin(Zenith_Core::GetTimePassed()) * 200, 2000, 100);
+		xSphere.m_xPosition_Radius = Zenith_Maths::Vector4(2000, 1500 + sin(g_xEngine.Frame().GetTimePassed()) * 200, 2000, 100);
 		xSphere.m_xColour = Zenith_Maths::Vector4(1., 0., 0., 1.);
 	}
 	{
 		Sphere& xSphere = s_axSphereData.m_axSpheres[1];
-		xSphere.m_xPosition_Radius = Zenith_Maths::Vector4(2000, 1500 + cos(Zenith_Core::GetTimePassed()) * 200, 2000, 100);
+		xSphere.m_xPosition_Radius = Zenith_Maths::Vector4(2000, 1500 + cos(g_xEngine.Frame().GetTimePassed()) * 200, 2000, 100);
 		xSphere.m_xColour = Zenith_Maths::Vector4(0., 1., 0., 1.);
 	}
 

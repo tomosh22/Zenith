@@ -46,7 +46,7 @@ void Zenith_TouchInput::Update()
 	s_xCurrentTouchPos = Zenith_Maths::Vector2(static_cast<float>(xPos64.x), static_cast<float>(xPos64.y));
 	s_bCurrentlyDown = bDown;
 
-	float fCurrentTime = Zenith_Core::GetTimePassed();
+	float fCurrentTime = g_xEngine.Frame().GetTimePassed();
 
 	if (bDown && !s_bWasTouchDownLastFrame)
 	{

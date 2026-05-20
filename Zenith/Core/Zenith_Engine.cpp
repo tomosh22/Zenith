@@ -7,6 +7,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_GraphicsOptions.h"
+#include "Core/FrameContext.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -64,8 +65,23 @@ namespace
 	}
 }
 
+FrameContext& Zenith_Engine::Frame()
+{
+	Zenith_Assert(m_pxFrame != nullptr,
+		"Zenith_Engine::Frame() called before Initialise() or after Shutdown(). "
+		"Frame timing is unavailable outside the engine lifetime.");
+	return *m_pxFrame;
+}
+
 void Zenith_Engine::Initialise()
 {
+	// Phase 2: per-frame timing state lives here now. Construct
+	// FIRST so any subsystem that reads dt during init sees a sane
+	// zero. Last-frame time is bumped at the end of Initialise()
+	// below, matching the historical Zenith_Init behaviour.
+	Zenith_Assert(m_pxFrame == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxFrame = new FrameContext();
+
 	// Populate graphics options from the game project FIRST
 	// Must happen before any Flux initialisation reads from Zenith_GraphicsOptions::Get()
 	Project_SetGraphicsOptions(Zenith_GraphicsOptions::Get());
@@ -218,7 +234,7 @@ void Zenith_Engine::Initialise()
 		"No scene loaded. Run a ZENITH_TOOLS build first to generate .zscen files.");
 #endif
 
-	Zenith_Core::g_xLastFrameTime = std::chrono::high_resolution_clock::now();
+	m_pxFrame->SetLastFrameTime(std::chrono::high_resolution_clock::now());
 }
 
 void Zenith_Engine::Shutdown()
@@ -270,6 +286,12 @@ void Zenith_Engine::Shutdown()
 
 	// 9. Shutdown task system (terminates worker threads)
 	Zenith_TaskSystem::Shutdown();
+
+	// 10. Tear down per-frame timing state. Done last so any
+	// subsystem shutdown that needs to log dt or read accumulated
+	// time still can.
+	delete m_pxFrame;
+	m_pxFrame = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

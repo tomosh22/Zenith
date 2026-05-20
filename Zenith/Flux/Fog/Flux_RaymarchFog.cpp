@@ -125,7 +125,7 @@ void Flux_RaymarchFog::Render(Flux_CommandList* pxCommandList)
 	// Get elapsed time for noise animation using actual frame delta time
 	// Wrap time to prevent float precision loss after extended runtime
 	static float s_fTime = 0.0f;
-	float fDeltaTime = Zenith_Core::GetDt();  // Actual frame delta, frame-rate independent
+	float fDeltaTime = g_xEngine.Frame().GetDt();  // Actual frame delta, frame-rate independent
 	s_fTime += fDeltaTime * dbg_fRaymarchNoiseSpeed;
 	s_fTime = std::fmod(s_fTime, 1000.0f);  // Wrap every 1000 seconds to maintain precision
 
