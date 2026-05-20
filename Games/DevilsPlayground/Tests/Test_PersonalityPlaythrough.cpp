@@ -344,6 +344,20 @@ namespace
 	int g_iNoiseAttempts = 0;
 	constexpr int kStuckFramesLimit = 120;  // ~4 s wall-clock at 30 fps
 
+	// Stuck-recovery side-step (added 2026-05-20 after the 10-seed
+	// personality matrix flagged seed-55555 / similar layouts where the
+	// villager jammed against a procgen door-jamb and never moved). When
+	// stuck-detect fires, the WASD steering direction is rotated 90
+	// degrees for kSideStepFrames frames so the villager peels off the
+	// wall it was pinned against. g_bSideStepClockwise alternates per
+	// stuck-event so a corner that traps clockwise gets a try
+	// counter-clockwise next time.
+	int  g_iSideStepFrames     = 0;
+	bool g_bSideStepClockwise  = true;
+	constexpr int kSideStepFrames = 30; // ~0.5 s @ 60 fps -- enough lateral
+	                                    // displacement to break wall contact
+	                                    // without overshooting the waypoint.
+
 	// ------------------------------------------------------------------------
 	// Captured entities + state
 	// ------------------------------------------------------------------------
@@ -964,11 +978,17 @@ namespace
 	// final navmesh so the path naturally routes through them rather than
 	// through walls.
 	// ====================================================================
-	// 1 m cell size — tight enough to fit through 1 m wall gaps (test door at
-	// (42, 35), corridors between buildings). 120×120 = 14400 cells; the
-	// one-shot grid build does ~14k raycasts and takes <1 s in debug.
-	constexpr int   kPathGridDim    = 120;
-	constexpr float kPathCellSize   = 1.0f;
+	// 0.5 m cell size — procgen door gaps are routinely 0.8-1.4 m wide
+	// and the previous 1.0 m grid blurred them into edge cells the
+	// pathfinder either marked unwalkable (path goes around the
+	// building) or marked walkable but the villager capsule (0.5 m
+	// radius) couldn't actually traverse. 240x240 = 57600 cells; the
+	// one-shot grid build does ~57k raycasts but still finishes in
+	// ~1-2 s in debug. The 2026-05-20 seed matrix showed seed-55555-
+	// style "bot walks 5 m then jams against a wall for the rest of
+	// its life" cases vanishing at 0.5 m resolution.
+	constexpr int   kPathGridDim    = 240;
+	constexpr float kPathCellSize   = 0.5f;
 	constexpr float kPathOriginX    = -10.0f;
 	constexpr float kPathOriginZ    = -10.0f;
 	constexpr float kPathFloorY     = 1.0f;
@@ -1222,14 +1242,24 @@ namespace
 			if (g_iStuckCounter > kStuckFramesLimit)
 			{
 				// First time stuck — tear down the path and let a fresh replan
-				// take us through an alternative route. Subsequent stuck-cycles
-				// fast-track the walk budget to surrender so the test phase
-				// advances rather than burning frames against a wall the
-				// pathfinder can't route around.
+				// take us through an alternative route. Also kick off a brief
+				// "side-step" window: for the next kSideStepFrames the WASD
+				// direction is rotated 90 degrees so the villager peels off
+				// whatever wall it's pinned against. Without the side-step a
+				// fresh path from the same start often retraces the same
+				// approach vector and re-jams on the same wall corner.
+				// Subsequent stuck-cycles fast-track the walk budget to
+				// surrender so the test phase advances rather than burning
+				// frames against a wall the pathfinder can't route around.
 				g_axCurrentPath.Clear();
 				g_iPathWaypoint = 0;
 				g_xLastPlannedTarget = Zenith_Maths::Vector3(1e9f, 0.0f, 0.0f);
 				g_iStuckCounter = 0;
+				// Alternate side-step direction across consecutive stuck
+				// triggers so a corner that traps clockwise gets a try
+				// counter-clockwise next time.
+				g_iSideStepFrames = kSideStepFrames;
+				g_bSideStepClockwise = !g_bSideStepClockwise;
 				if (++g_iStuckReplans >= 2)
 				{
 					g_iWalkBudget = 0;
@@ -1295,7 +1325,26 @@ namespace
 			ClearWASD();
 			return false;
 		}
-		const Zenith_Maths::Vector3 xDir = glm::normalize(xDelta);
+		Zenith_Maths::Vector3 xDir = glm::normalize(xDelta);
+		// Stuck-recovery side-step: rotate the steering direction by 90
+		// degrees for a short window after a stuck-detect fires so the
+		// villager peels off the wall it was pinned against. Without
+		// this the replanned path tends to retrace the same approach
+		// vector and re-jam. Alternate the rotation sense per stuck
+		// event (see DriveWASDToward stuck branch) so a corner that
+		// traps one direction gets a try in the other.
+		if (g_iSideStepFrames > 0)
+		{
+			--g_iSideStepFrames;
+			if (g_bSideStepClockwise)
+			{
+				xDir = Zenith_Maths::Vector3(xDir.z, 0.0f, -xDir.x);
+			}
+			else
+			{
+				xDir = Zenith_Maths::Vector3(-xDir.z, 0.0f, xDir.x);
+			}
+		}
 		const float fForwardDot = glm::dot(xDir, xForward);
 		const float fRightDot   = glm::dot(xDir, xRight);
 
@@ -1343,6 +1392,11 @@ namespace
 		g_xStuckRefPos = Zenith_Maths::Vector3(1e9f, 0.0f, 0.0f);
 		g_iStuckCounter = 0;
 		g_iStuckReplans = 0;
+		// Cancel any in-flight side-step so we don't carry rotation into
+		// the new walk phase. g_bSideStepClockwise is intentionally NOT
+		// reset -- alternating the rotation sense across stuck events is
+		// the whole point.
+		g_iSideStepFrames = 0;
 	}
 
 	// Returns true when the possessed villager hasn't moved at least 0.5 m
