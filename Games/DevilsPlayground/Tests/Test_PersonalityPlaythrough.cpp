@@ -58,8 +58,8 @@
 // Drives DevilsPlayground end-to-end using ONLY Zenith_InputSimulator (no
 // teleporting, no *ForTest bypass calls, no SetInteractOnOverlap, no
 // SetPossessedVillager). Each test registers under a distinct personality
-// (Casual / Stealth / Speedrunner / Berserker / Methodical) that tunes
-// the input layer:
+// (Casual / Stealth / Speedrunner / Berserker) that tunes the input
+// layer:
 //
 //   * Casual      — baseline. Walks normally, single F-press, runs the
 //                   pause-overlay test, engages every system. Reference
@@ -69,6 +69,10 @@
 //                   entirely (it's the one in-game source of deliberate
 //                   priest aggro). Walk budget doubled to compensate for
 //                   half speed. Single F-press per interaction.
+//                   Note: interaction noises (forge / chest / door) are
+//                   *fixed-loudness* and not silenced by walk-quiet, so
+//                   the priest can still hear the interactable side-effects
+//                   on layouts where it spawns nearby.
 //   * Speedrunner — adaptive sprint: holds Shift only while the next
 //                   target is > kSprintMinDistanceM (5 m) away, walks on
 //                   close approach. Skips the pause-overlay test. The
@@ -86,11 +90,6 @@
 //                   than the objective loop could converge -- the run
 //                   never terminated. See PersonalityConfig comment for
 //                   the long form.
-//   * Methodical  — opposite of Berserker. Walks normally, single F-press,
-//                   runs the pause-overlay test multiple times
-//                   (iPauseCycles=3) to stress the open/close path.
-//                   Catches regressions in pause-overlay idempotency that
-//                   a one-shot run would miss.
 //
 // Headless: the test always loads GameLevel directly (skips FrontEnd menu).
 // Menu-click coverage lives in Test_FullPlaythrough.cpp. With FrontEnd out
@@ -113,8 +112,8 @@
 //   8. Chest open (F-press)
 //   9. Noise machine emit (F-press) — Stealth skips this
 //  10. 5× pentagram delivery → DP_Win::HasWon() + DP_OnVictory event
-//  11. Pause overlay toggle (Esc) — Speedrunner + Berserker skip,
-//      Methodical runs it 3 times
+//  11. Pause overlay toggle (Esc) — Casual + Stealth run 1 cycle,
+//      Speedrunner + Berserker skip
 //
 // Implementation notes:
 //   - SimulateMouseClick / SimulateClickOnUIElement call StepFrame() inside,
@@ -173,14 +172,8 @@ namespace
 	//                   pause overlay test. Accepts villager deaths +
 	//                   re-possessions cheerfully — they're part of the
 	//                   recording's signature.
-	//   * Methodical  — opposite of Berserker. Walks normally, single F-press,
-	//                   and runs the pause overlay test multiple times
-	//                   (iPauseCycles=3) to stress the open/close path.
-	//                   Engages every system. Catches regressions in the
-	//                   pause overlay's idempotency + state restoration that
-	//                   a one-shot pause test would miss.
 	// ------------------------------------------------------------------------
-	enum class Personality : uint8_t { Casual, Stealth, Speedrunner, Berserker, Methodical };
+	enum class Personality : uint8_t { Casual, Stealth, Speedrunner, Berserker };
 
 	struct PersonalityConfig
 	{
@@ -217,6 +210,17 @@ namespace
 		/*mash*/false,
 		/*noise*/true,   /*pause*/true,  /*pauseCycles*/1,
 		/*budgetMul*/1 };
+	// Stealth caveat (seed-matrix analysis 2026-05-19): walk-quiet only
+	// halves *footstep* loudness (movement.walk_footstep_loudness_multiplier).
+	// The gameplay interactions Stealth still performs -- forge crafting
+	// (loudness 1.0 @ 30m radius), chest open (0.8 @ 20m), door open
+	// (0.6 @ 12m) -- emit fixed-loudness noise the priest WILL hear
+	// regardless of Ctrl-held. So Stealth's priest-Investigate fraction
+	// being non-zero on procgen layouts where the priest is close to
+	// those interactables is by design, not a noise-leak bug. The
+	// bRunNoiseMachine=false flag below specifically opts Stealth out of
+	// the *deliberate* noise-emit (DummyNoiseMachine F-press); it does
+	// not silence side-effect noise from forge/chest/door.
 	constexpr PersonalityConfig kPersonality_Stealth = {
 		Personality::Stealth,     "Stealth",
 		/*sprint*/false, /*quiet*/true,  /*adaptive*/false,
@@ -243,12 +247,10 @@ namespace
 		/*mash*/true,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
 		/*budgetMul*/1 };
-	constexpr PersonalityConfig kPersonality_Methodical = {
-		Personality::Methodical,  "Methodical",
-		/*sprint*/false, /*quiet*/false, /*adaptive*/false,
-		/*mash*/false,
-		/*noise*/true,   /*pause*/true,  /*pauseCycles*/3,
-		/*budgetMul*/1 };
+	// (Methodical personality removed 2026-05-19 -- the seed-matrix
+	// analysis found its bot behaviour was within rounding error of
+	// Casual on every metric except the pause-cycle count (3 cycles
+	// vs Casual's 1). Pause coverage is preserved via Casual.)
 
 	// All personalities load the same scene index. Defined as a constant
 	// rather than a per-personality field because the original GameLevel
@@ -398,8 +400,9 @@ namespace
 	// Counter decremented per pause-open/close cycle. When Setup writes
 	// g_xActiveCfg.iPauseCycles into this counter, the kHP_PauseAssertClosed
 	// transition either loops back to kHP_PauseOpen (counter > 0) or
-	// advances to kHP_Summary. Methodical sets iPauseCycles=3; everyone
-	// else uses 1 so the run-once behaviour is preserved.
+	// advances to kHP_Summary. Every personality that runs the pause
+	// test uses 1 cycle now (Methodical's 3-cycle stress was removed
+	// 2026-05-19 along with the personality itself).
 	int  g_iPauseCyclesRemaining = 0;
 
 	Zenith_EventHandle g_xVictoryHandle = INVALID_EVENT_HANDLE;
@@ -1450,24 +1453,84 @@ namespace
 	// click-possess a fresh one near the map centre. Returns true if a click
 	// was issued — the caller should return true and retry the same phase next
 	// frame so the click has time to land.
+	//
+	// Returns false (no click issued) once g_iRepossessAttempts exceeds
+	// kRepossessAttemptCap. Without that cap, a bot whose target villager
+	// landed in a click-unreachable spot (e.g. inside a procgen wall, or
+	// behind another villager) would loop forever, eating the test's
+	// 8500-frame budget. The post-2026-05-19 priest-pursues-during-channel
+	// change made apprehend catches frequent enough that the loop showed
+	// up routinely.
+	int g_iRepossessAttempts = 0;
+	constexpr int kRepossessAttemptCap = 240; // ~24s at 10 Hz BT tick / 60 Hz frames
+
 	bool TryRepossessIfDead()
 	{
 		const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
-		if (xCur.IsValid()) return false;
+		if (xCur.IsValid())
+		{
+			g_iRepossessAttempts = 0;
+			return false;
+		}
 
+		if (g_iRepossessAttempts >= kRepossessAttemptCap)
+		{
+			// Give up entirely. Without this short-circuit the caller's
+			// retry-loop falls through into walk-toward-objective logic
+			// using an invalid xPossessed, which burns the remaining
+			// frame budget waiting for the no-villager walk to time out.
+			// Jumping straight to Done lets the harness end the test.
+			if (g_iPhase != kHP_Done)
+			{
+				std::printf("[HumanPlaythrough] re-possess gave up after %d attempts -- ending test\n",
+					g_iRepossessAttempts);
+				std::fflush(stdout);
+			}
+			g_iPhase = kHP_Done;
+			return false;
+		}
+
+		// Skip villagers whose life timer is depleted -- they can't be
+		// possessed and clicking on them just burns frames. FindClosest*
+		// is unfiltered so we filter here.
 		const Zenith_Maths::Vector3 xCentre(50.0f, 0.0f, 50.0f);
-		const Zenith_EntityID xRepl = FindClosestVillagerTo(xCentre);
-		if (!xRepl.IsValid()) return false;
+		Zenith_EntityID xBest;
+		float fBestSq = 1e30f;
+		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			[&xBest, &fBestSq, &xCentre](Zenith_EntityID xId, DPVillager_Behaviour& xVilla)
+			{
+				if (xVilla.GetRemainingLife() <= 0.0f) return;
+				Zenith_Maths::Vector3 xPos;
+				if (!TryGetEntityPos(xId, xPos)) return;
+				const float fDx = xPos.x - xCentre.x;
+				const float fDz = xPos.z - xCentre.z;
+				const float fSq = fDx * fDx + fDz * fDz;
+				if (fSq < fBestSq) { fBestSq = fSq; xBest = xId; }
+			});
+
+		if (!xBest.IsValid())
+		{
+			// Every villager is dead. Bail so the phase machine can exit.
+			g_iRepossessAttempts = kRepossessAttemptCap;
+			return false;
+		}
+
 		Zenith_Maths::Vector3 xRPos;
-		if (!TryGetEntityPos(xRepl, xRPos)) return false;
+		if (!TryGetEntityPos(xBest, xRPos)) return false;
 		xRPos.y += 0.9f;
 		double fSx = 0.0, fSy = 0.0;
 		if (!WorldToScreen(xRPos, fSx, fSy)) return false;
 		Zenith_InputSimulator::SimulateMousePosition(fSx, fSy);
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
-		std::printf("[HumanPlaythrough] re-possess click at (%.1f, %.1f) target idx=%u\n",
-			fSx, fSy, xRepl.m_uIndex);
-		std::fflush(stdout);
+		++g_iRepossessAttempts;
+		if ((g_iRepossessAttempts & 0x3F) == 1)
+		{
+			// Throttle the log -- one line per 64 attempts is enough to
+			// see what's happening without spamming the test log.
+			std::printf("[HumanPlaythrough] re-possess click at (%.1f, %.1f) target idx=%u (attempt %d/%d)\n",
+				fSx, fSy, xBest.m_uIndex, g_iRepossessAttempts, kRepossessAttemptCap);
+			std::fflush(stdout);
+		}
 		return true;
 	}
 
@@ -1538,6 +1601,7 @@ static void Setup_HumanPlaythrough()
 	g_iPhase = kHP_Start;
 	g_iWait  = 0;
 	g_iWalkBudget = 0;
+	g_iRepossessAttempts = 0;
 
 	g_xPossessTarget   = INVALID_ENTITY_ID;
 	g_xCurrentVillager = INVALID_ENTITY_ID;
@@ -2548,15 +2612,17 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		if (auto* pxOverlay = FindHudText("PauseOverlay"))
 		{
 			// OR-accumulate so a single successful observation across
-			// any cycle is enough to satisfy Verify. Methodical's
-			// 3-cycle run only needs one cycle to confirm both states;
-			// the extra cycles stress the open/close path's idempotency.
+			// any cycle is enough to satisfy Verify. iPauseCycles>1
+			// support is kept in the code path even though no current
+			// personality uses it -- if a future stress-personality
+			// wants to drum the open/close path it can opt in via
+			// PersonalityConfig.iPauseCycles.
 			g_bPauseOffObserved = g_bPauseOffObserved || !pxOverlay->IsVisible();
 		}
 		--g_iPauseCyclesRemaining;
 		if (g_iPauseCyclesRemaining > 0)
 		{
-			// Loop back for another open/close cycle (Methodical).
+			// Loop back for another open/close cycle.
 			std::printf("[%s] pause cycle %d remaining\n",
 				g_xActiveCfg.szName, g_iPauseCyclesRemaining);
 			std::fflush(stdout);
@@ -2673,7 +2739,6 @@ static void Setup_Personality_Casual()        { g_xActiveCfg = kPersonality_Casu
 static void Setup_Personality_Stealth()       { g_xActiveCfg = kPersonality_Stealth;       Setup_HumanPlaythrough(); }
 static void Setup_Personality_Speedrunner()   { g_xActiveCfg = kPersonality_Speedrunner;   Setup_HumanPlaythrough(); }
 static void Setup_Personality_Berserker()     { g_xActiveCfg = kPersonality_Berserker;     Setup_HumanPlaythrough(); }
-static void Setup_Personality_Methodical()    { g_xActiveCfg = kPersonality_Methodical;    Setup_HumanPlaythrough(); }
 
 // Frame-budget rationale (rough wall-clock at fixed-dt 1/60):
 //   * Casual      ~1800 frames (~30 s in-game / ~38 s wall-clock)
@@ -2684,8 +2749,6 @@ static void Setup_Personality_Methodical()    { g_xActiveCfg = kPersonality_Meth
 //                 with blind sprint pre-rework; adaptive is faster
 //                 because it doesn't burn the life-cost on close approaches).
 //   * Berserker   ~2200 frames (blind sprint + 3x deaths + 8x mash F).
-//   * Methodical  ~2000 frames (1 extra pause cycle pair adds ~6 frames
-//                 each; 3 cycles is ~12 extra frames on top of Casual).
 // 6000-frame cap covers all but Stealth; Stealth gets 8000.
 static const Zenith_AutomatedTest g_xPersonalityTest_Casual = {
 	"PersonalityPlaythrough_Casual",
@@ -2722,14 +2785,5 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Berserker = {
 	6000
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Berserker);
-
-static const Zenith_AutomatedTest g_xPersonalityTest_Methodical = {
-	"PersonalityPlaythrough_Methodical",
-	&Setup_Personality_Methodical,
-	&Step_HumanPlaythrough,
-	&Verify_HumanPlaythrough,
-	6000
-};
-ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Methodical);
 
 #endif // ZENITH_INPUT_SIMULATOR

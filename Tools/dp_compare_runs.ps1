@@ -16,10 +16,9 @@ param(
         "build/dp_telemetry/personality_Casual.json",
         "build/dp_telemetry/personality_Stealth.json",
         "build/dp_telemetry/personality_Speedrunner.json",
-        "build/dp_telemetry/personality_Berserker.json",
-        "build/dp_telemetry/personality_Methodical.json"
+        "build/dp_telemetry/personality_Berserker.json"
     ),
-    [string[]]$Labels = @("Casual", "Stealth", "Speedrunner", "Berserker", "Methodical")
+    [string[]]$Labels = @("Casual", "Stealth", "Speedrunner", "Berserker")
 )
 
 $ErrorActionPreference = 'Stop'
