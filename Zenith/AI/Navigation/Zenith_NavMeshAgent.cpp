@@ -3,6 +3,8 @@
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "Physics/Zenith_Physics.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_Primitives.h"
@@ -102,14 +104,38 @@ float Zenith_NavMeshAgent::GetRemainingDistance() const
 	return fDistance;
 }
 
-void Zenith_NavMeshAgent::Update(float fDt, Zenith_TransformComponent& xTransform)
+void Zenith_NavMeshAgent::Update(float fDt,
+                                 Zenith_TransformComponent& xTransform,
+                                 Zenith_ColliderComponent* pxCollider)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_NAVMESH_AGENT_UPDATE);
+
+	// Decide once whether this agent drives motion through Jolt or via
+	// direct transform writes. The physics path is preferred whenever a
+	// dynamic body is present; the legacy SetPosition path is only used
+	// for transform-only test fixtures + non-physics agents.
+	const bool bUsePhysics =
+		pxCollider != nullptr
+		&& pxCollider->HasValidBody()
+		&& pxCollider->GetRigidBodyType() == RIGIDBODY_TYPE_DYNAMIC;
 
 	if (m_bReachedDestination || m_pxNavMesh == nullptr)
 	{
 		// Apply deceleration when stopped
 		m_fCurrentSpeed = std::max(0.0f, m_fCurrentSpeed - m_fAcceleration * fDt);
+		// Stop horizontal motion explicitly: without this, residual XZ
+		// velocity from the last steering tick would keep sliding the
+		// body until friction (if any) or wall collision damped it. We
+		// keep the body's existing Y velocity so gravity / impulses /
+		// fall-from-cliff motion can play out -- only the navmesh-
+		// driven intent is zeroed.
+		if (bUsePhysics)
+		{
+			const JPH::BodyID& xBodyID = pxCollider->GetBodyID();
+			const Zenith_Maths::Vector3 xCurVel = Zenith_Physics::GetLinearVelocity(xBodyID);
+			Zenith_Physics::SetLinearVelocity(xBodyID,
+				Zenith_Maths::Vector3(0.0f, xCurVel.y, 0.0f));
+		}
 		return;
 	}
 
@@ -157,11 +183,36 @@ void Zenith_NavMeshAgent::Update(float fDt, Zenith_TransformComponent& xTransfor
 	// Get desired velocity
 	Zenith_Maths::Vector3 xNewVelocity = CalculateVelocity(fDt, xCurrentPos);
 
-	// Apply velocity to position
-	Zenith_Maths::Vector3 xNewPos = xCurrentPos + xNewVelocity * fDt;
-
-	// Update transform
-	xTransform.SetPosition(xNewPos);
+	if (bUsePhysics)
+	{
+		// Physics-driven motion: hand the full navmesh-derived velocity
+		// to Jolt and let it integrate.
+		//
+		// The Y component is meaningful: on a flat navmesh (post-project
+		// steering) it's 0 and the agent rests on the floor (gravity
+		// pushes back into floor collision, equilibrium); on a sloped
+		// navmesh it carries the climb/descend intent and the agent
+		// follows the slope. Jolt's gravity (if enabled) acts each step
+		// as an additional acceleration -- not stomped, just composed
+		// with the agent's intent over the step.
+		//
+		// We deliberately don't preserve the body's PREVIOUS Y velocity
+		// here: external impulses (jumps, knockback) propagating into
+		// navmesh-driven motion would fight the path. Path-following
+		// is supposed to be authoritative for the agent's intent;
+		// gravity + collision response handle the rest of the physics
+		// story.
+		Zenith_Physics::SetLinearVelocity(pxCollider->GetBodyID(), xNewVelocity);
+	}
+	else
+	{
+		// Legacy transform-only path. Used by test fixtures that drive
+		// the agent without a physics body; also the only fallback when
+		// a runtime agent's body is non-dynamic (kinematic colliders
+		// don't accept SetLinearVelocity from gameplay).
+		const Zenith_Maths::Vector3 xNewPos = xCurrentPos + xNewVelocity * fDt;
+		xTransform.SetPosition(xNewPos);
+	}
 
 	// Update facing direction (rotate towards movement direction)
 	if (Zenith_Maths::LengthSq(xNewVelocity) > 0.01f)
@@ -205,30 +256,48 @@ Zenith_Maths::Vector3 Zenith_NavMeshAgent::CalculateVelocity(float fDt,
 		return m_xVelocity;
 	}
 
-	// XZ-plane steering. The navmesh polygons sit at ground height
-	// (typically the top of the floor collider); a dynamic capsule
-	// agent rests ABOVE that by half-capsule-height. Including the Y
-	// component in the steering vector makes the agent try to descend
-	// into the floor every frame -- Jolt collision response then pops
-	// it back up, and the dominant 3D-normalised direction is vertical
-	// so only a small fraction of m_fMoveSpeed reaches the horizontal
-	// plane. Net effect (verified 2026-05-20): a capsule agent at
-	// y=3.0 with waypoints at y=1.0 crawls at ~2 m/s instead of the
-	// configured ~7 m/s and never reaches its target.
+	// Steer in navmesh-space, not world-space.
 	//
-	// The navmesh is XZ-planar by design (Recast-style voxelisation
-	// + flood-fill on the floor), so dropping Y from the steering
-	// vector is the correct semantic, not a hack. Multi-level navmesh
-	// support would also need vertical edges in the polygon graph;
-	// neither exists today.
-	auto FlattenXZ = [](const Zenith_Maths::Vector3& v)
+	// Why: the agent entity sits at world Y = polygon_Y + half-capsule
+	// (dynamic capsule resting on the floor), while waypoints sit at
+	// polygon_Y. Steering 3D-from-world-position produces a vector
+	// with a constant downward Y component equal to half-capsule-height.
+	// 3D normalisation then channels most of m_fMoveSpeed into a
+	// vertical pull -- the agent's velocity slams the capsule into the
+	// floor, Jolt resolves the collision by popping the capsule back
+	// up, and only a small fraction of the speed reaches the horizontal
+	// plane. A 1.5 m capsule offset over a 2 m waypoint distance gives
+	// (XZ, Y) = (1.3 m, -1.5 m); 3D-normalised that's only 65 % of the
+	// move speed reaching XZ. The priest's 7 m/s effectively drops to
+	// ~4.5 m/s, sometimes worse, and the apprehend channel can't hold
+	// range on a walking villager.
+	//
+	// Project the agent's current world position onto the navmesh
+	// surface FIRST. After projection, both the projected position and
+	// the waypoint live on the polygon, so xToTarget.y now reflects
+	// REAL navmesh elevation changes (ramps, stairs, multi-level
+	// navmesh) rather than the constant capsule offset. Planar
+	// navmeshes (DP's procgen) end up with xToTarget.y exactly 0;
+	// non-planar navmeshes (future games with ramps, jump-links, or
+	// multi-floor levels) get correct slope-aware steering.
+	//
+	// The capsule's actual Y in world space is then a physics concern:
+	// gravity, ramp collision, and per-frame velocity preservation
+	// (see SetDestination + Update) keep the body at its resting height
+	// or sliding correctly along sloped surfaces.
+	Zenith_Maths::Vector3 xSteerOrigin = xCurrentPosition;
+	if (m_pxNavMesh != nullptr)
 	{
-		return Zenith_Maths::Vector3(v.x, 0.0f, v.z);
-	};
+		Zenith_Maths::Vector3 xProjected = xCurrentPosition;
+		if (m_pxNavMesh->ProjectPoint(xCurrentPosition, xProjected, /*fMaxDist=*/10.0f))
+		{
+			xSteerOrigin = xProjected;
+		}
+	}
 
 	// Get current target waypoint
 	Zenith_Maths::Vector3 xTarget   = GetCurrentTargetWaypoint();
-	Zenith_Maths::Vector3 xToTarget = FlattenXZ(xTarget - xCurrentPosition);
+	Zenith_Maths::Vector3 xToTarget = xTarget - xSteerOrigin;
 	float fDistToTarget = Zenith_Maths::Length(xToTarget);
 
 	// Check if we've reached current waypoint
@@ -247,7 +316,7 @@ Zenith_Maths::Vector3 Zenith_NavMeshAgent::CalculateVelocity(float fDt,
 
 		// Get new target
 		xTarget   = GetCurrentTargetWaypoint();
-		xToTarget = FlattenXZ(xTarget - xCurrentPosition);
+		xToTarget = xTarget - xSteerOrigin;
 		fDistToTarget = Zenith_Maths::Length(xToTarget);
 	}
 

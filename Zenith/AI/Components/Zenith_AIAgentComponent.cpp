@@ -5,6 +5,7 @@
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_AIAgentComponent, "AIAgent")
 
@@ -94,13 +95,23 @@ void Zenith_AIAgentComponent::OnUpdate(float fDt)
 		m_fTimeSinceLastUpdate = 0.0f;
 	}
 
-	// Update navigation (runs every frame for smooth movement)
+	// Update navigation (runs every frame for smooth movement). The
+	// NavMeshAgent prefers the physics path -- SetLinearVelocity on a
+	// dynamic Jolt body -- when the entity has one. Pass through the
+	// collider so the agent can dispatch to that path; absent a
+	// collider it falls back to direct transform writes for transform-
+	// only test fixtures.
 	if (m_pxNavMeshAgent != nullptr && m_xParentEntity.IsValid())
 	{
 		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
 		{
 			Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
-			m_pxNavMeshAgent->Update(fDt, xTransform);
+			Zenith_ColliderComponent* pxCollider = nullptr;
+			if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+			{
+				pxCollider = &m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+			}
+			m_pxNavMeshAgent->Update(fDt, xTransform, pxCollider);
 		}
 	}
 }
