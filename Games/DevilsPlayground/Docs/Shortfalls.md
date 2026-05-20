@@ -2,12 +2,13 @@
 
 **Document purpose:** A frank, gap-by-gap audit of where the current `DevilsPlayground` prototype falls short of the shipping vision described in [GameDesignDocument.md](GameDesignDocument.md). Written for producers, leads, and external partners assessing the runway from "skeleton-grade port" to "ship-ready PC/console title."
 
-**Scope:** Everything in the current `Games/DevilsPlayground/` tree. **Note (2026-05-16):** this doc was written against the 2026-05-11 skeleton-grade port. Phase 1 + Phase 2 + most of Phase 4 (4.1.1, 4.3.1, 4.3.2, 4.3.3 -- only 4.3.4 HUMAN_GATE remains) + a substantial Phase 5 telemetry / verification system + instructional HUD have shipped since (see [Status.md](Status.md) for the current state) — many "missing" items listed below are now landed. Treat the headline gaps in §1 as historical snapshots and cross-check against Status.md before acting on any one.
+**Scope:** Everything in the current `Games/DevilsPlayground/` tree. **Note (2026-05-20):** this doc was written against the 2026-05-11 skeleton-grade port. Phase 1 + Phase 2 + most of Phase 4 (4.1.1, 4.3.1, 4.3.2, 4.3.3 -- only 4.3.4 HUMAN_GATE remains) + a substantial Phase 5 telemetry / verification system + instructional HUD + the procgen migration (PRs #96-#117 retiring the UE-exported GameLevel + gym scenes) + telemetry v3 + seed-matrix tooling + the personality-matrix-driven balance pass have all shipped since (see [Status.md](Status.md) for the current state) — many "missing" items listed below are now landed. Treat the headline gaps in §1 as historical snapshots and cross-check against Status.md before acting on any one.
 
-**Updated 2026-05-11** (post peer-review reconciliation), **2026-05-16** (test-count + telemetry):
-- Prototype originally contained 24 test `.cpp` files registering 34 tests; as of 2026-05-16 the suite is **122 registered tests across 112 .cpp files**.
-- Telemetry / replay-debugger stub (§5.2) now exists -- `Zenith/Telemetry/Zenith_Telemetry.{h,cpp}` engine recorder + `DPTelemetry::Hooks` event subscriber + `DPTelemetryAnalyzer` verdict library + `DPHeuristicBot` rule-based playthrough + `Tools/dp_telemetry_runner.ps1` developer wrapper. Shipped direct-to-master across 6 commits 2026-05-15..16.
-- GameLevel scene spawns 17 villagers (CLAUDE.md's "14" in one comment is a stale value from earlier port milestones; "17" in `DevilsPlayground.cpp` line 565 is the current truth).
+**Updated 2026-05-11** (post peer-review reconciliation), **2026-05-16** (test-count + telemetry), **2026-05-20** (procgen migration + matrix tooling + Zealot personality):
+- Prototype originally contained 24 test `.cpp` files registering 34 tests; as of 2026-05-20 the suite is **117 registered tests across 104 .cpp files** (was 122 at 2026-05-16; consolidations during the procgen migration and Berserker → Zealot personality swap net -5).
+- Telemetry v3 shipped 2026-05-19 (PR #120) -- adds AI intent / per-villager life timer / held-item tag / camera state / per-frame perf ms + 12 new event types (Apprehend channel start/complete/interrupted, PerceptionContactBegin/End, etc).
+- Seed-matrix tooling shipped 2026-05-20 (PR #121) -- `Tools/dp_seed_matrix_run.ps1` cycles N seeds × 4 personalities; `Tools/dp_seed_matrix_analyse.py` aggregates into `REPORT.md`.
+- Single gameplay scene is **ProcLevel** (build index 1), built at runtime by `DPProcLevel::Generate(seed, cfg)`. The hand-authored GameLevel + the 4 gym scenes + `Tools/dp_export/` have been removed (PR #117). Villager spawn count is now procgen-variable (typically 12-18 per layout depending on room count).
 - `DPFogPass.cpp` is substantially implemented (~312 lines with `SetupDPFog`/`ExecuteDPFog`/`BuildPipelines`). The shader file `Zenith/Flux/Shaders/Fog/DP_Fog.slang` **also exists** (with compiled `.spv` reflection files) — corrected 2026-05-12 round-4 peer review; earlier rounds claimed this file needed authoring (MVP-2.4.1) but it's already in the repo. The remaining MVP-2.4 work is *test coverage + memory-fog implementation*, not shader authoring.
 - Non-tools builds (`*_False` configurations) were **fixed as of 2026-05-10** per project memory; previous "broken" claims in this doc are obsolete (see §3.8 below).
 
@@ -106,16 +107,16 @@ The GDD's roguelite layer — the **Liminal** hub, three hermit trees, the Knot 
 
 ### 2.4 Procedural Night-to-Night variance
 
-The prototype loads a single hand-authored `L_GameLevel` scene. There is no:
-- Reagent spawn shuffler.
-- Locked-door randomiser.
-- Villager archetype drawer.
-- Aelfric variant picker.
-- Weather state.
+**Status:** ✅ SUBSTANTIVELY RESOLVED 2026-05-19. **GDD ref:** §6.2.
 
-`Project_RegisterEditorAutomationSteps` is the right hook for the shuffler (it already authors the scene declaratively) — but the steps are currently deterministic.
+The procgen migration (PRs #96-#117) replaced the hand-authored GameLevel with `DPProcLevel::Generate(seed, cfg, ...)` -- a BSP-based generator with integer-coord internals (bit-deterministic across `/fp:fast` configs, verified by `Test_ProcLevel_DeterminismCheck`). Each seed produces a different room graph, wall layout, door placement, game-element placement, villager / priest spawn, and patrol nodes. Seeds are overridable via the `DP_PROCGEN_SEED` env var; the seed-matrix runner (PR #121) cycles 10+ seeds to expose layout-personality interactions.
 
-**Bridge cost:** ~4 engineering weeks. The architecture is there.
+What's still pending under "shuffler" framing:
+- **Reagent spawn shuffler.** Procgen does place 5 objectives at varied spawners per seed, but the *which-reagent-where* mapping isn't yet driven by the per-Night design (e.g. "Night 3 always has BogWater"). Tied to design budget.
+- **Aelfric variant picker.** A single Aelfric configuration (the GDD's three variants -- Cautious / Cruel / Drunk -- are post-MVP).
+- **Weather state.** Out of MVP scope.
+
+**Bridge cost remaining:** ~1-2 engineering weeks for the per-Night reagent / archetype mapping; the procgen generator itself is shipped.
 
 ### 2.5 Reagent system is five duplicates of one thing
 
@@ -289,9 +290,9 @@ The prototype's tests had to bump villager move speed from 4 m/s to 8 m/s becaus
 
 ### 6.2 Priest's "knows who is possessed" fallback
 
-In `Priest_Behaviour::BridgePerceptionToBlackboard`, when no perception target qualifies, the priest **falls back to `DP_Player::GetPossessedVillager()` directly** — meaning even out of sight, the priest knows which body is possessed. The comment notes this is to make the harness pursuit test deterministic.
+**Status:** ✅ RESOLVED 2026-05-19 (PR #115).
 
-**Design risk:** in shipping, this fallback is **wrong** for the game's tension. The witch-finder should sometimes guess wrong. Removing the fallback is one line of code; rewriting the harness pursuit test to seed perception properly is ~2 engineering days. **Do this in week one of the post-M1 sprint.**
+The omniscient-priest fallback in `Priest_Behaviour::BridgePerceptionToBlackboard` is gone. Tests that need the priest to acquire a target now call `Zenith_PerceptionSystem::RegisterTarget(villager, /*hostile=*/true)` and teleport the villager into the priest's sight cone -- same code path production uses. Removed alongside the omniscient-fallback's `DP_Player::SetTestOmniscientFallback` toggle (which was a test backdoor that leaked into every build because `ZENITH_INPUT_SIMULATOR` is defined unconditionally).
 
 ### 6.3 Held-item visual is a floating cube above the body
 
@@ -299,11 +300,11 @@ A small bug-shaped tell: the prototype's held-item visual hovers 1.6 m above the
 
 **Cost:** ~1 engineering day, but worth flagging now so the animation team plans for it.
 
-### 6.4 17 villagers — the prototype spawns 17, not 14
+### 6.4 Villager count — procgen-variable as of 2026-05-19
 
-**Corrected 2026-05-11 per peer review.** The CLAUDE.md says "14 villagers" in one section but "17 villagers" in another, and `DevilsPlayground.cpp` line 565 confirms 17. The ground truth is 17 (the original 14 plus 3 added when the GameLevel scene was extended). MVPScope's "4 archetypes for MVP" is independent of the spawn count — the existing 17 villagers will be assigned to one of the 4 MVP archetypes each.
+**Status:** ✅ obsolete after procgen migration. Villager count is no longer a fixed-by-hand number; the procgen generator places villagers per-room with a configurable density (currently ~12-18 per layout depending on room count). Each villager is assigned to one of the 4 MVP archetypes (Farmhand / Beggar / Devout / Child) at spawn time.
 
-**Action item:** Update DP CLAUDE.md to consistently say 17. Note in DecisionLog.
+_Historical:_ The pre-procgen hand-authored GameLevel spawned 17 villagers. The CLAUDE.md docs once said "14" in one section + "17" in another; the inconsistency was a stale value from earlier port milestones. The procgen migration retired this concern entirely.
 
 ### 6.4.1 Updated `AgentBriefing.md` claim about non-tools build
 

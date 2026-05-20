@@ -8,6 +8,145 @@
 
 ---
 
+## 2026-05-20 — PR #128 Berserker personality replaced by Zealot; F-mash code removed.
+
+**Decision:** Drop Berserker as a registered personality + the bMashInteract flag + kBerserkerMashFrames + the per-press-F-phase mash blocks. Replace with **Zealot** -- single-minded pursuit of the pentagram ritual, skips the iron/forge/door/chest/noise bootstrap chain entirely, runs straight from possession to the objective-deliver loop. Adds a new `bSkipBootstrap` flag on PersonalityConfig; `kHP_WaitPossess` branches on it to choose between `kHP_WalkIron` (existing) and `kHP_ObjLoopFind` (new).
+
+**Why Berserker had to go:** the 2026-05-20 seed matrix showed Berserker and Speedrunner producing **statistically identical gameplay outcomes** (death counts within ±2, possessions within ±2, objective deliveries within ±2). The only robust telemetry difference was the F-mash Interact-count signature (Berserker ~64 vs Speedrunner ~6 per run, 8.7× more). Mashing F per-frame inside an interactable's range produced no gameplay effect because `DPInteractable` debounces; the extra presses were just redundant signals to the same interactable. The matrix was effectively running 3 personalities + a cosmetic variant.
+
+**Why Zealot:** the analysis suggested the bootstrap chain (iron → forge → key → door → chest → noise) might be eating life-timer budget that the win loop could be spending. A personality that skips the bootstrap entirely is a useful structural counterpoint to the bootstrap-running ones. Telemetry confirms Zealot is structurally different:
+- Zero ForgeCrafted / DoorOpened / ChestOpened events.
+- 5x lower PerceptionContactBegin (priest barely notices Zealot because it makes no deliberate interactable noise; only footsteps).
+- Time-to-first-objective: 9 s median (vs Speedrunner's 52 s, Casual's 81 s).
+- 9 of 10 cells deliver in possession 1 (no other personality delivers in poss 1 at all).
+
+**Counter-intuitive matrix result:** despite the structural advantage, Zealot delivers FEWER total objectives than Speedrunner (20 vs 26 in the most recent 10-seed matrix). Hypothesis: the bootstrap centralises the bot's position (forge / door / chest are typically map-centre), so Speedrunner's poss-2+ start from a more productive position. Or: Speedrunner opens 3 doors across the matrix; Zealot opens 0; some objectives may be gated by those doors. Or: the door-open path-grid invalidations create new shortcut routes Zealot can't use. Investigating which is dominant is a next-up task.
+
+**Trade-offs considered:**
+- *Keep Berserker as a documented "cosmetic" variant.* Rejected -- the matrix is supposed to be a balance instrument, not a telemetry test fixture. Identical-outcome personalities pollute the signal.
+- *Make Zealot "blind sprint" (always-on Shift) instead of bootstrap-skip.* Rejected -- pre-#126 blind sprint was already tested (it dies mid-objective and forces 3+ re-possess overhead). The bootstrap-skip semantic is a genuinely new axis.
+- *Add Zealot as a 5th personality without removing Berserker.* Rejected -- 5 cells × 10 seeds = 50-minute matrix run; cost outweighed the value of keeping the Interact-count signature.
+
+**Reversibility:** Trivial. Revert the PR. Berserker config + flag are recoverable from git.
+
+---
+
+## 2026-05-20 — PR #127 Cross-possession memory + lift retry caps in PersonalityPlaythrough.
+
+**Decision:** Add cross-possession memory in the objective loop -- when the current villager isn't holding the expected objective tag (because a previous villager died mid-walk holding it), rewind to `kHP_ObjLoopFind` instead of walking to the pentagram and wasting an F-press. Also lift three phase-retry caps that were ending cells early:
+- `kRepossessAttemptCap` 240 → 1200 (~4 s → ~20 s wall-clock at 60 Hz).
+- `kMaxObjAttempts` 4 → 16.
+- Removed the `if (++g_iStuckReplans >= 2) { g_iWalkBudget = 0; }` truncation.
+
+**Why this matters:** the 2026-05-20 seed matrix showed 28 of 40 cells ended early (85-90 s out of a 141.6 s game-time budget), and even the full-budget cells got 0-3 objectives. Root cause: the bot's villager carries the objective from spawner to pentagram; if the villager dies mid-walk, the new villager arrives empty-handed and the F-press is wasted. Per-objective retry counter quickly maxed out on these wasted attempts. Lifting the caps + adding the rewind doubled total deliveries (43 → 84) and produced the first wins (0/40 → 2/40).
+
+**Trade-offs considered:**
+- *Make the held item persist across possession (give it to the new villager).* Rejected -- the game's design is that possession is per-body; the item is the body's property, not the demon's. Cross-possession item-transfer is a different game.
+- *Increase the life-timer instead.* Rejected -- the 30 s timer is the game's defining parameter per GDD §1. Adjusting it changes every other balance number.
+- *Implement a "carry" verb on the player side (instead of bot-side).* Out of scope -- the bot is a test fixture, not a player. The player-side carry mechanic is a post-MVP design consideration.
+
+**Reversibility:** Each cap is a single constant; the rewind is a single branch in `kHP_ObjLoopWalkPentagram` + `kHP_ObjLoopWalk`. All trivial to revert.
+
+---
+
+## 2026-05-20 — PR #126 Sprint tuning + finer path grid + side-step recovery from 10-seed personality matrix.
+
+**Decision:** Three fixes triggered by the 10-seed × 4-personality matrix:
+1. `movement.sprint_life_cost_extra_per_s` 3.0 → 1.5 in Tuning.json.
+2. Bot path grid 120×120 (1.0 m cells) → 240×240 (0.5 m cells).
+3. Side-step recovery on stuck-detect -- rotate WASD steering direction 90° for 0.5 s, alternating clockwise / counter-clockwise across consecutive stuck events.
+
+**Why the sprint tuning:** the pre-fix matrix showed Speedrunner / Berserker dying ~13 times per cell vs Casual / Stealth at ~2-3, with their bot trajectories at 2x but objective completions at 1/3. Sprint was dominating the negative outcomes. The 3.0 s/s extra cost made every possession a near-suicide for sprint personalities -- they'd die mid-objective and force 3+ re-possess overhead. 1.5 s/s still penalises sustained sprint (life drains 1.5x faster than walking) but gives sprint personalities a fair shot at completing the objective loop.
+
+**Why the finer path grid:** procgen door gaps are routinely 0.8-1.4 m wide. The 1.0 m grid blurred them into edge cells the pathfinder either marked unwalkable (path goes around the building) or marked walkable but the villager capsule (0.5 m radius) couldn't actually traverse. 240×240 = 57600 cells with 57k raycasts during the one-shot grid build (~1-2 s in debug). Seed-55555-style "bot walks 5 m then jams against a wall for the rest of its life" cases vanished at 0.5 m resolution.
+
+**Why the side-step:** even at 0.5 m grid, the bot would occasionally get pinned against a wall on the approach to a doorway -- replanning the same path from the same position retraces the same approach vector and re-jams. A brief steering-direction rotation peels the villager off the wall. Alternating sense (clockwise / counter-clockwise) handles symmetric corner traps.
+
+**Trade-offs considered:**
+- *Even finer path grid (0.25 m).* Rejected -- raycast count quadruples (228k cells); diminishing returns at the cost of grid-build time.
+- *Build the grid lazily / incrementally.* Considered, but the one-shot build amortises across the test run; lazy rebuilds would interrupt the active walk.
+- *Increase villager capsule radius.* Rejected -- changes game-feel and breaks other systems.
+- *Sprint cost 2.0 instead of 1.5.* The matrix showed 1.5 gave the best balance: still penalises (sprint dies 1.5x faster) but doesn't force the dominant negative outcomes. Tested 2.0 in a smaller matrix pass; sprint personalities still died ~2x more than walking and delivered fewer objectives.
+
+**Reversibility:** Tuning.json revert is trivial. Path-grid revert restores 120×120 cells. Side-step revert removes a single helper block in `DriveWASDToward`.
+
+---
+
+## 2026-05-19 — Procgen migration complete (PRs #96 → #117); hand-authored GameLevel + gym scenes + dp_export removed.
+
+**Decision:** Drop the UE5-bridge pipeline (`Tools/dp_export/`) + the hand-authored `GameLevel.zscen` + the 4 gym scenes (Gym_Items, Gym_Noise, Gym_Doors, Gym_Forge). Procgen (`DPProcLevel`) is the only gameplay surface. Every gameplay test that previously loaded GameLevel now loads ProcLevel; tests that needed gym-specific arrangements either spawn fresh entities at known positions or were retired.
+
+**Why now:** Procgen reached feature-parity with the hand-authored scene at PR #114 (the last bug-fix in the migration train). Continuing to support both paths would require:
+- Re-exporting GameLevel.zscen every time the layout changed in UE (which was happening less and less as design stabilised).
+- Maintaining gym scenes whose content was duplicating procgen-spawnable entity setups.
+- Carrying the `Tools/dp_export/` UE-bridge code that nobody was running.
+
+The procgen path is **strictly more capable** for testing: bit-deterministic across configs, runtime-tunable via `DP_PROCGEN_SEED`, generates 10+ structurally-different layouts from the same code path. The hand-authored scene was only "more capable" for hand-tuned spatial tests, which we've stopped writing (procgen ones are more representative).
+
+**Trade-offs considered:**
+- *Keep GameLevel as a non-default scene for tests that need a fixed layout.* Rejected after surveying which tests actually relied on it: only the priest-pursuit-test cluster, and those were rewritten to spawn fresh entities. Net negative ROI to keep the dual path.
+- *Keep gym scenes for subsystem isolation.* Rejected for the same reason -- subsystem tests (DPDoor, DPForge, etc) work fine on procgen because they construct their own DPDoor / DPForge entities at known positions and don't need the scene preconfigured.
+- *Migrate UE-bridge to a procgen-input-generator (UE → JSON → procgen seed).* Out of scope -- procgen's value is in *generating* layouts, not consuming hand-authored ones.
+
+**Reversibility:** moderate. The git history is rich with the pre-procgen scene code; reverting would require pulling back GameLevel.zscen, the gym scenes, the `Tools/dp_export/` tree, and the test fixtures that depended on them. ~1 day to restore if needed.
+
+---
+
+## 2026-05-19 — Telemetry v3 (PR #120): EntitySnapshot adds AI intent / life / held item / camera / perf; 12 new event types.
+
+**Decision:** Bump telemetry recorder magic from v2 to v3. EntitySnapshot gains:
+- `uHeldItemTag` (DP_ItemTag, 0 = none)
+- `fLifeRemaining` (per-villager life timer)
+- `aiIntent` (priest BT branch -- Patrol / Investigate / Pursue / Apprehend / Idle / None)
+- `aiTarget` (vec3 the priest is heading toward)
+
+Per-frame state gains:
+- `frameMs` (wall-clock between samples; for perf analysis)
+- `camera` (orbit position + target, for visualiser)
+
+12 new event types:
+- `ApprehendChannelStart` / `Complete` / `Interrupted` (with reason enum: SwitchedTarget / TargetLost / OutOfRange / TargetUnpossessed)
+- `PerceptionContactBegin` / `End` (rising/falling edge of priest awareness crossing 0.4)
+- `RunLost` (aggregate event with cause enum)
+- `PauseToggle`
+- `Burnout` (life-timer-zero death distinct from apprehend-death)
+- `InteractionEnd`
+- `Interact` (generic; the per-interactable events ChestOpened / DoorOpened / etc are kept as legible aliases)
+- `VillagerDied` (the per-villager death signal)
+
+The reader handles v2 streams too -- v3 adds fields; old recordings still parse with the new fields zero-defaulted.
+
+**Why now:** the personality matrix needed a way to compare bots beyond "did they win?". AI intent + per-frame perf were the highest-value adds. The Apprehend lifecycle event triplet exposes priest-vs-bot dynamics that the previous v2 binary couldn't surface (you couldn't tell if a chase ended in catch / loss-of-sight / target-switch).
+
+**Trade-offs considered:**
+- *Stay on v2; surface intent via the JSON sidecar only.* Rejected -- the binary stream is the canonical record; sidecar JSON is meant to mirror it.
+- *Version field instead of magic bump.* Rejected -- magic is the right place because v3's EntitySnapshot has a different byte layout, not just an additive field. A reader without v3 awareness would mis-parse v3 bytes.
+
+**Reversibility:** Stream-format change. New v3 recordings can't be read by a pre-#120 binary. v2 recordings parse on v3 readers (the version check in `Reader::LoadFromFile`).
+
+---
+
+## 2026-05-19 — Procgen scene determinism contract: `c * 0.001f` boundary conversion (PR #116).
+
+**Decision:** Procgen generator (`DPProcLevel_Generator`) runs every shape-determining decision in integer math at millimetre precision (32-bit `int32_t` "millimetre" coordinates). Float values appear only at the public `LevelLayout` boundary, with the conversion pinned to literal multiplication by `0.001f`:
+
+```cpp
+const float fX = static_cast<float>(iX_mm) * 0.001f;  // NEVER iX_mm / 1000.0f
+```
+
+The compiler optimiser under `/fp:fast` is permitted to substitute `x / 1000.0f` with `x * (1.0f / 1000.0f)` -- but the constant folding of `1.0f / 1000.0f` produces different bits in Debug vs Release. Multiplying by a literal `0.001f` directly pins the constant in both configs.
+
+**Why this matters:** `Test_ProcLevel_DeterminismCheck` asserts byte-identical `LevelLayout` outputs across `Debug_False` and `Release_False` builds using an FNV-1a hash. A single different bit in the float conversion ripples through the rest of the test and produces a mismatched hash. The integer-coord internals + the pinned conversion together produce a bit-deterministic generator.
+
+**Trade-offs considered:**
+- *Use double-precision math.* Rejected -- the engine is float-32 throughout; introducing doubles would force conversions at every API boundary.
+- *Use `fixed_point<int32_t, mm>` type wrapper.* Considered. The bare-integer approach is clearer in code review and doesn't add a new type. Revisit if procgen gets more complex.
+- *Document the rule but not enforce.* Rejected -- `Test_ProcLevel_DeterminismCheck` enforces it via the cross-config hash. The doc + the test together are the contract.
+
+**Reversibility:** Trivial. Any future refactor that introduces a non-pinned float conversion gets caught by the determinism test.
+
+---
+
 ## 2026-05-13 — MVP-1.2.2 attempt-2 deferred: real navmesh exposes disconnected regions, `PriestPursuit_Test` fails (Q-2026-05-13-NM03).
 
 **Decision:** Do NOT wire `DP_AI::GetOrBuildLevelNavMesh` to `Zenith_NavMeshGenerator::GenerateFromScene` yet. The engine perf fix (PR #33) makes the generation step fast enough (~850ms on GameLevel + cache amortises across batched tests), but the resulting navmesh accurately reflects GameLevel's collider geometry -- which has rooms walled-off with no doorway gaps. `PriestPursuit_Test` puts the priest at (62.4, 1.0, 56.5) and villager at (65.2, 2.0, 53.1) -- 4.4m apart but in different navmesh regions. `FindPath` returns `hasPath=0` and the priest doesn't move.
