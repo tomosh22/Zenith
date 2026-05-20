@@ -53,12 +53,12 @@
 #include "Source/DP_Tuning.h"
 
 // ============================================================================
-// PersonalityPlaythrough_* — pure-input playthrough, 5 personality variants.
+// PersonalityPlaythrough_* — pure-input playthrough, 4 personality variants.
 //
 // Drives DevilsPlayground end-to-end using ONLY Zenith_InputSimulator (no
 // teleporting, no *ForTest bypass calls, no SetInteractOnOverlap, no
 // SetPossessedVillager). Each test registers under a distinct personality
-// (Casual / Stealth / Speedrunner / Berserker) that tunes the input
+// (Casual / Stealth / Speedrunner / Zealot) that tunes the input
 // layer:
 //
 //   * Casual      — baseline. Walks normally, single F-press, runs the
@@ -75,21 +75,29 @@
 //                   on layouts where it spawns nearby.
 //   * Speedrunner — adaptive sprint: holds Shift only while the next
 //                   target is > kSprintMinDistanceM (5 m) away, walks on
-//                   close approach. Skips the pause-overlay test. The
-//                   pre-rework "Speedrun" (blind-sprint) was slower than
-//                   Casual because sprint_life_cost_extra_per_s burned
-//                   through the 30 s life timer and forced 3+ re-possess
-//                   cycles per run; adaptive sprint should actually beat
-//                   Casual's wall-clock.
-//   * Berserker   — adaptive sprint (like Speedrunner) PLUS F-mash inside
-//                   every interactable range. Skips the pause-overlay
-//                   test. Distinct from Speedrunner by the F-mash
-//                   signature in the recording (~70+ Interact events vs
-//                   the ~9 of single-press personalities). Blind sprint
-//                   was tried first but drained the life timer faster
-//                   than the objective loop could converge -- the run
-//                   never terminated. See PersonalityConfig comment for
-//                   the long form.
+//                   close approach. Runs the full iron/forge/door/chest
+//                   bootstrap so coverage is preserved. The pre-rework
+//                   "Speedrun" (blind-sprint) was slower than Casual
+//                   because sprint_life_cost_extra_per_s burned through
+//                   the 30 s life timer and forced 3+ re-possess cycles
+//                   per run; adaptive sprint actually beats Casual's
+//                   wall-clock.
+//   * Zealot      — single-minded pursuit of the pentagram ritual.
+//                   Skips the entire iron/forge/door/chest/noise
+//                   bootstrap chain and jumps straight from possession
+//                   to the objective-pickup-and-deliver loop. Adaptive
+//                   sprint between targets. Tests the hypothesis that
+//                   the bootstrap chain is eating budget the win loop
+//                   could be spending: if Zealot consistently delivers
+//                   more objectives than Casual / Speedrunner on the
+//                   same seed, the bootstrap was net-negative for the
+//                   win condition. Replaced Berserker on 2026-05-20 --
+//                   the seed matrix showed Berserker and Speedrunner
+//                   produced statistically identical gameplay outcomes
+//                   (same death counts, same possessions, same
+//                   objectives within rounding) and only differed in
+//                   the F-mash Interact-count signature, which had no
+//                   gameplay-outcome impact.
 //
 // Headless: the test always loads GameLevel directly (skips FrontEnd menu).
 // Menu-click coverage lives in Test_FullPlaythrough.cpp. With FrontEnd out
@@ -113,7 +121,7 @@
 //   9. Noise machine emit (F-press) — Stealth skips this
 //  10. 5× pentagram delivery → DP_Win::HasWon() + DP_OnVictory event
 //  11. Pause overlay toggle (Esc) — Casual + Stealth run 1 cycle,
-//      Speedrunner + Berserker skip
+//      Speedrunner + Zealot skip
 //
 // Implementation notes:
 //   - SimulateMouseClick / SimulateClickOnUIElement call StepFrame() inside,
@@ -146,8 +154,8 @@ namespace
 	//   4. Add a ZENITH_AUTOMATED_TEST_REGISTER block at the bottom.
 	// No other code edits are needed; everything reads off g_xActiveCfg.
 	//
-	// Semantics (2026-05-18 rework — see Q-2026-05-18-001 "speedrun slower
-	// than human" puzzle for the original motivation):
+	// Semantics (2026-05-20 -- Berserker replaced by Zealot; see top-of-
+	// file doc for the seed-matrix analysis that motivated the swap):
 	//   * Casual      — baseline. Walks normally, single F-press, runs the
 	//                   pause overlay test, engages every system. The
 	//                   reference recording the others are compared against.
@@ -162,18 +170,19 @@ namespace
 	//                   close approaches so we don't pay the per-second life
 	//                   cost when it doesn't save time. Skips the pause
 	//                   overlay test (speedrunners don't admire menus).
-	//                   This is the personality that the pre-rework
-	//                   "Speedrun" (blind-sprint) was trying — and failing —
-	//                   to be: blind sprint burned through the life timer
-	//                   on every villager and forced 3x re-possess overhead
-	//                   that ate the speedup.
-	//   * Berserker   — maximises chaos. Blind sprint (Shift always held)
-	//                   PLUS F-mash inside every interact range. Skips the
-	//                   pause overlay test. Accepts villager deaths +
-	//                   re-possessions cheerfully — they're part of the
-	//                   recording's signature.
+	//                   Runs the full iron/forge/door/chest bootstrap so
+	//                   coverage is preserved.
+	//   * Zealot      — skips the iron/forge/door/chest/noise bootstrap
+	//                   entirely and jumps straight from possession to the
+	//                   objective-pickup-and-deliver loop. Adaptive sprint
+	//                   between targets. Distinct from Speedrunner because
+	//                   it produces structurally different telemetry: zero
+	//                   bootstrap-interaction events, more time on the win
+	//                   loop, first-ObjectivePlaced fires much earlier.
+	//                   The empirical question Zealot answers: is the
+	//                   bootstrap chain net-negative for the win condition?
 	// ------------------------------------------------------------------------
-	enum class Personality : uint8_t { Casual, Stealth, Speedrunner, Berserker };
+	enum class Personality : uint8_t { Casual, Stealth, Speedrunner, Zealot };
 
 	struct PersonalityConfig
 	{
@@ -183,7 +192,8 @@ namespace
 		bool        bHoldQuiet;         // hold ZENITH_KEY_LEFT_CONTROL for the entire walk
 		bool        bAdaptiveSprint;    // sprint only while the remaining distance to the
 		                                //   active target is > kSprintMinDistanceM
-		bool        bMashInteract;      // press F every frame in range vs once per arrival
+		bool        bSkipBootstrap;     // skip iron/forge/door/chest/noise -- jump straight
+		                                //   from possession to the objective-deliver loop
 		bool        bRunNoiseMachine;   // walk to + engage the noise machine
 		bool        bRunPauseTest;      // run the Esc pause-overlay phases at all
 		int         iPauseCycles;       // how many open/close cycles when bRunPauseTest=true
@@ -207,7 +217,7 @@ namespace
 	constexpr PersonalityConfig kPersonality_Casual = {
 		Personality::Casual,      "Casual",
 		/*sprint*/false, /*quiet*/false, /*adaptive*/false,
-		/*mash*/false,
+		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/true,  /*pauseCycles*/1,
 		/*budgetMul*/1 };
 	// Stealth caveat (seed-matrix analysis 2026-05-19): walk-quiet only
@@ -224,33 +234,39 @@ namespace
 	constexpr PersonalityConfig kPersonality_Stealth = {
 		Personality::Stealth,     "Stealth",
 		/*sprint*/false, /*quiet*/true,  /*adaptive*/false,
-		/*mash*/false,
+		/*skipBootstrap*/false,
 		/*noise*/false,  /*pause*/true,  /*pauseCycles*/1,
 		/*budgetMul*/2 };
 	constexpr PersonalityConfig kPersonality_Speedrunner = {
 		Personality::Speedrunner, "Speedrunner",
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
-		/*mash*/false,
+		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
 		/*budgetMul*/1 };
-	// Berserker uses ADAPTIVE sprint (not blind sprint) for the same
-	// reason Speedrunner does: blind sprint drains the life timer fast
-	// enough that the villager dies mid-objective-loop, the bot re-possesses
-	// a fresh villager, that one also dies, and the run never terminates
-	// inside the per-test frame cap. Adaptive sprint keeps the "aggressive
-	// + chaotic" semantic (sprint on long hops + mash F in range) while
-	// allowing the playthrough to actually finish. The F-mash is what makes
-	// this distinct from Speedrunner in the telemetry signature.
-	constexpr PersonalityConfig kPersonality_Berserker = {
-		Personality::Berserker,   "Berserker",
+	// Zealot bypasses the entire iron/forge/door/chest/noise coverage
+	// chain and goes straight to the objective-deliver loop after the
+	// first possession lands. Adaptive sprint (not blind sprint) so the
+	// life timer doesn't burn through the loop mid-run. bRunNoiseMachine
+	// is moot when bSkipBootstrap is true (the noise-machine phase is
+	// part of the bootstrap chain) but is set false anyway for clarity.
+	// Pause-overlay test is skipped -- distractions don't fit the
+	// "single-minded ritual focus" semantic.
+	constexpr PersonalityConfig kPersonality_Zealot = {
+		Personality::Zealot,      "Zealot",
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
-		/*mash*/true,
-		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
+		/*skipBootstrap*/true,
+		/*noise*/false,  /*pause*/false, /*pauseCycles*/1,
 		/*budgetMul*/1 };
 	// (Methodical personality removed 2026-05-19 -- the seed-matrix
 	// analysis found its bot behaviour was within rounding error of
 	// Casual on every metric except the pause-cycle count (3 cycles
 	// vs Casual's 1). Pause coverage is preserved via Casual.)
+	// (Berserker personality removed 2026-05-20 -- the seed-matrix
+	// analysis found its gameplay outcomes were statistically identical
+	// to Speedrunner (death counts, possessions, objectives all within
+	// rounding) with only the F-mash Interact-count signature
+	// differing, and that signature had no gameplay-outcome impact.
+	// Zealot replaces it with a behaviourally distinct strategy.)
 
 	// All personalities load the same scene index. Defined as a constant
 	// rather than a per-personality field because the original GameLevel
@@ -266,12 +282,6 @@ namespace
 	// approach to a chest/door/forge walks (avoids overshoot + only pays
 	// the sprint life-cost when it actually saves meaningful time).
 	constexpr float kSprintMinDistanceM = 5.0f;
-
-	// How many frames Berserker dwells in a press-F phase mashing the
-	// interact key. Each press while in range fires DP_OnInteract -> the
-	// telemetry recorder sees N Interact events per interactable instead
-	// of 1. 8 frames * 9 interactables ~= 72 extra events.
-	constexpr int kBerserkerMashFrames = 8;
 
 	// SetWalkBudget defined below, after g_iWalkBudget storage is declared.
 
@@ -1372,17 +1382,20 @@ namespace
 		// into phases that aren't walking (camera control, possession click).
 		//
 		// Sprint policy:
-		//   * bHoldSprint=true  -> always sprint (Berserker)
+		//   * bHoldSprint=true  -> always sprint (no current personality
+		//                          uses this; reserved for future blind-
+		//                          sprint experiments).
 		//   * bAdaptiveSprint=true -> sprint while remaining distance to the
 		//                            ACTIVE TARGET (not next waypoint) exceeds
 		//                            kSprintMinDistanceM. Walk on close
 		//                            approach so we can stop precisely and
 		//                            don't pay the per-second life cost when
 		//                            it doesn't save meaningful time.
-		//                            (Speedrunner — the killer feature that
-		//                            makes adaptive sprint faster than blind
-		//                            sprint, which dies mid-objective and
-		//                            forces 3x re-possess overhead.)
+		//                            (Speedrunner + Zealot — the killer
+		//                            feature that makes adaptive sprint
+		//                            faster than blind sprint, which dies
+		//                            mid-objective and forces 3x re-possess
+		//                            overhead.)
 		const float fHorizToTarget = std::sqrt(fFx * fFx + fFz * fFz);
 		const bool bSprintNow = g_xActiveCfg.bHoldSprint
 		                     || (g_xActiveCfg.bAdaptiveSprint
@@ -2053,8 +2066,21 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			std::printf("[HumanPlaythrough] possession confirmed: villager idx=%u\n",
 				xPossessed.m_uIndex);
 			std::fflush(stdout);
-			g_iPhase = kHP_WalkIron;
-			SetWalkBudget(1200);  // ~25 s budget for finding/walking to first iron
+			// Zealot bypasses the iron/forge/door/chest/noise chain --
+			// it doesn't need a key to grab objectives, and the bootstrap
+			// chain eats ~30 s of life-timer budget that the win loop
+			// could be spending. Jumps straight to ObjLoopFind so all
+			// possessions (including poss 1) are spent on pentagram
+			// deliveries.
+			if (g_xActiveCfg.bSkipBootstrap)
+			{
+				g_iPhase = kHP_ObjLoopFind;
+			}
+			else
+			{
+				g_iPhase = kHP_WalkIron;
+			}
+			SetWalkBudget(1200);  // ~25 s budget for the first walk
 			return true;
 		}
 		if (g_iWait > 180)
@@ -2175,9 +2201,6 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
-		// Berserker mashes F for kBerserkerMashFrames frames -- each press
-		// while in range emits another DP_OnInteract event into the recorder.
-		if (g_xActiveCfg.bMashInteract && g_iWait < kBerserkerMashFrames) return true;
 		g_iPhase = kHP_VerifyForge;
 		g_iWait = 0;
 		return true;
@@ -2255,7 +2278,6 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
-		if (g_xActiveCfg.bMashInteract && g_iWait < kBerserkerMashFrames) return true;
 		g_iPhase = kHP_VerifyDoor;
 		g_iWait = 0;
 		return true;
@@ -2334,7 +2356,6 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
-		if (g_xActiveCfg.bMashInteract && g_iWait < kBerserkerMashFrames) return true;
 		g_iPhase = kHP_VerifyChest;
 		g_iWait = 0;
 		return true;
@@ -2419,7 +2440,6 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		++g_iWait;
 		if (g_iWait == 1) return true;
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
-		if (g_xActiveCfg.bMashInteract && g_iWait < kBerserkerMashFrames) return true;
 		g_iPhase = kHP_WaitNoise;
 		g_iWait = 0;
 		return true;
@@ -2671,15 +2691,13 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait == 1) return true;
-		// Berserker mashes F every frame from frame 2 onwards; other
-		// personalities single-press on frame 2 and idle for 3 frames so
-		// the pentagram has time to register the delivery.
-		const int iSettleEnd = g_xActiveCfg.bMashInteract ? (2 + kBerserkerMashFrames) : 5;
-		if (g_iWait >= 2 && (g_xActiveCfg.bMashInteract || g_iWait == 2))
+		// Single-press on frame 2, then idle for 3 frames so the pentagram
+		// has time to register the delivery.
+		if (g_iWait == 2)
 		{
 			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
 		}
-		if (g_iWait < iSettleEnd) return true;
+		if (g_iWait < 5) return true;
 		// Read the current possessed villager (may be different from the one
 		// we started the obj loop with if a re-possession fired mid-walk).
 		const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
@@ -2717,7 +2735,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		std::printf("[%s] victory: mask=0x%X event=%d won=%d\n",
 			g_xActiveCfg.szName, g_uVictoryMask, (int)g_bVictoryEvent, (int)DP_Win::HasWon());
 		std::fflush(stdout);
-		// Speedrunner + Berserker skip the pause-overlay test entirely.
+		// Speedrunner + Zealot skip the pause-overlay test entirely.
 		// Verify is personality-aware (the pause-asserted flags only get
 		// checked when g_xActiveCfg.bRunPauseTest is true).
 		g_iPhase = g_xActiveCfg.bRunPauseTest ? kHP_PauseOpen : kHP_Summary;
@@ -2890,7 +2908,7 @@ static bool Verify_HumanPlaythrough()
 static void Setup_Personality_Casual()        { g_xActiveCfg = kPersonality_Casual;        Setup_HumanPlaythrough(); }
 static void Setup_Personality_Stealth()       { g_xActiveCfg = kPersonality_Stealth;       Setup_HumanPlaythrough(); }
 static void Setup_Personality_Speedrunner()   { g_xActiveCfg = kPersonality_Speedrunner;   Setup_HumanPlaythrough(); }
-static void Setup_Personality_Berserker()     { g_xActiveCfg = kPersonality_Berserker;     Setup_HumanPlaythrough(); }
+static void Setup_Personality_Zealot()        { g_xActiveCfg = kPersonality_Zealot;        Setup_HumanPlaythrough(); }
 
 // Frame-budget rationale (rough wall-clock at fixed-dt 1/60):
 //   * Casual      ~1800 frames (~30 s in-game / ~38 s wall-clock)
@@ -2900,7 +2918,9 @@ static void Setup_Personality_Berserker()     { g_xActiveCfg = kPersonality_Bers
 //   * Speedrunner ~1500 frames once adaptive sprint is wired (was ~1900
 //                 with blind sprint pre-rework; adaptive is faster
 //                 because it doesn't burn the life-cost on close approaches).
-//   * Berserker   ~2200 frames (blind sprint + 3x deaths + 8x mash F).
+//   * Zealot      ~1400 frames -- skips the entire bootstrap chain so
+//                 it spends the saved ~30 s entirely on the objective
+//                 deliver loop. Adaptive sprint between targets.
 // 6000-frame cap covers all but Stealth; Stealth gets 8000.
 static const Zenith_AutomatedTest g_xPersonalityTest_Casual = {
 	"PersonalityPlaythrough_Casual",
@@ -2929,13 +2949,13 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Speedrunner = {
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Speedrunner);
 
-static const Zenith_AutomatedTest g_xPersonalityTest_Berserker = {
-	"PersonalityPlaythrough_Berserker",
-	&Setup_Personality_Berserker,
+static const Zenith_AutomatedTest g_xPersonalityTest_Zealot = {
+	"PersonalityPlaythrough_Zealot",
+	&Setup_Personality_Zealot,
 	&Step_HumanPlaythrough,
 	&Verify_HumanPlaythrough,
 	6000
 };
-ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Berserker);
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Zealot);
 
 #endif // ZENITH_INPUT_SIMULATOR
