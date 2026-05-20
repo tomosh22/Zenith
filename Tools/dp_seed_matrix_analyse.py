@@ -28,7 +28,7 @@ import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
 
-PERSONALITIES = ["Casual", "Stealth", "Speedrunner", "Berserker"]
+PERSONALITIES = ["Casual", "Stealth", "Speedrunner", "Zealot"]
 
 # DP_ItemTag enum -> name (DPTelemetry::EntitySnapshot.uHeldItemTag uses
 # DP_ItemTag values; the canonical mapping is in DevilsPlayground_Tags.h).

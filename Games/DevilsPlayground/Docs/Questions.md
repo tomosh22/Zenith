@@ -10,6 +10,49 @@
 
 ## Open
 
+### ⚠️ Q-2026-05-20-PERS01 — Zealot delivers fewer total objectives than Speedrunner despite skipping bootstrap. Why?
+
+**Context:** The 10-seed × 4-personality matrix after PR #128 (Berserker → Zealot replacement) shows:
+
+|                                    | Casual | Stealth | Speedrunner | Zealot |
+|------------------------------------|-------:|--------:|------------:|-------:|
+| Objectives delivered (10 seeds)    |     25 |       6 |          26 |     20 |
+| Wins (>=5 objs in one cell)        |   1/10 |    0/10 |        2/10 |   0/10 |
+| Time-to-1st obj (median)           |   81 s |   110 s |        52 s |    9 s |
+| Cells with delivery in possession 1 |     0 |       0 |           0 |      9 |
+
+Zealot's first delivery is **5-10x faster** than the other personalities (9 s median vs 50-110 s). 9 of 10 cells deliver in possession 1, the only personality that does. But **total deliveries** are 20 vs Speedrunner's 26 -- about 23% fewer.
+
+Three hypotheses for why Zealot's structural head-start doesn't compound into more total deliveries:
+
+1. **Bootstrap centralises position.** Forge / door / chest are typically placed near the map centre; the personalities that run the bootstrap finish poss 1 standing near centre, and the closest-villager click on respawn picks a centrally-positioned villager. Zealot ends poss 1 wherever the bot died -- potentially at a map edge -- and subsequent possessions inherit that.
+2. **Locked doors gate objectives.** Speedrunner opens 3 doors across the matrix; Zealot opens 0. The path grid invalidates and rebuilds when a door opens, exposing previously-blocked routes. If even one objective is gated by a door, Zealot pays for not having the key.
+3. **Priest engagement is irrelevant.** Zealot's PerceptionContactBegin is 5 across the matrix vs 24 for Speedrunner. Zealot is structurally stealthy (no deliberate interactable noise; only footsteps). But this doesn't translate to more deliveries -- so life-timer burnout, not priest catches, is the dominant loss vector.
+
+**My best guess if you don't reply:** Hypothesis 1 + 2 are compounding. Specifically: Speedrunner spends ~30 s of poss 1 walking the bootstrap chain, which (a) ends near the centre and (b) unlocks doors that the priest's perception system can't see through but the bot's path grid can. Both effects benefit possessions 2+.
+
+Test to validate: instrument the bot's starting position on each possession, plus the path-grid state at first delivery. If Zealot's possessions consistently start farther from the pentagram than Speedrunner's, hypothesis 1 is right. If Speedrunner's later possessions consistently use shorter paths through opened doors, hypothesis 2 is right.
+
+**Cost of getting it wrong:** moderate. The win-rate gap is the only signal we have for whether the bot AI is approximating optimal play. If we don't understand it, balance changes that *appear* to help (e.g. reducing `reagents_required_for_victory` to 3) might just be hiding the structural issue.
+
+**Status:** asked 2026-05-20. Acting on best guess.
+
+---
+
+### ⚠️ Q-2026-05-20-BAL01 — `reagents_required_for_victory` 5 → 3 for MVP playtest builds?
+
+**Context:** The current MVP-DoD requires 5 objective deliveries to win. In the latest matrix (PR #128), only 2-3 of 40 cells reach 5; the win condition is genuinely difficult for the bot. Reducing to 3 would put ~18/40 cells over the win bar -- a more sensitive instrument for balance changes, plus easier on a human playtester running through quick demo loops.
+
+The GDD §1 spec is 5 reagents per Night for the shipping game. The question is whether MVP playtest builds need to match that or whether MVP can ship with a 3-reagent variant gated behind a `MVP_PLAYTEST` define.
+
+**My best guess if you don't reply:** Keep 5 for the canonical build (matches GDD). Add an env-var override `DP_OBJECTIVES_REQUIRED` for matrix runs + playtests; default unchanged. That way Tomos's human playthrough hits the real win condition, but the matrix can be cycled with `=3` to expose more nuanced balance interactions.
+
+**Cost of getting it wrong:** low. Tuning value; trivially reversible.
+
+**Status:** asked 2026-05-20. Acting on best guess.
+
+---
+
 ### ✅ Q-2026-05-13-NM03 — MVP-1.2.2 (real navmesh in DP_AI) reveals disconnected regions; `PriestPursuit_Test` breaks because priest + closest villager land in different regions.
 
 **Context:** With PR #32 (walls block paths) + PR #33 (O(N) adjacency, 850ms generate) both landed, the production path of wiring `DP_AI::GetOrBuildLevelNavMesh` to call `Zenith_NavMeshGenerator::GenerateFromScene` is technically feasible. I wired it with a build-index-keyed cache and ran the DP suite -- 49/50 pass, but `PriestPursuit_Test` fails:
