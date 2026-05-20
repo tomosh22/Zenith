@@ -4,6 +4,7 @@
 
 class Zenith_NavMesh;
 class Zenith_TransformComponent;
+class Zenith_ColliderComponent;
 
 /**
  * Zenith_NavMeshAgent - Agent movement controller on navigation mesh
@@ -119,11 +120,33 @@ public:
 	// ========== Update ==========
 
 	/**
-	 * Update agent movement for one frame
-	 * @param fDt Delta time
-	 * @param xTransform Transform component to modify
+	 * Update agent movement for one frame.
+	 *
+	 * When pxCollider is non-null and references a dynamic Jolt body,
+	 * the agent drives motion via Zenith_Physics::SetLinearVelocity so
+	 * Jolt resolves wall collisions and integrates Y naturally. The
+	 * agent's current Jolt Y velocity is preserved (gravity, falls,
+	 * impulses survive each tick). This is the production path for
+	 * any AI agent on a physics-backed entity.
+	 *
+	 * When pxCollider is null OR the body is non-dynamic, falls back to
+	 * direct xTransform.SetPosition writes. This is the legacy path,
+	 * used by transform-only unit tests where physics isn't wired up.
+	 *
+	 * Rationale: a non-physics SetPosition path on a dynamic body
+	 * fights Jolt's collision response every frame -- written Y gets
+	 * popped back, written XZ can push through walls, the navmesh
+	 * agent and Jolt argue indefinitely about where the entity sits.
+	 *
+	 * @param fDt        Delta time
+	 * @param xTransform Transform component (used for position read +
+	 *                   the SetPosition fallback)
+	 * @param pxCollider Optional collider for the physics-velocity
+	 *                   path. Pass nullptr to force SetPosition mode.
 	 */
-	void Update(float fDt, Zenith_TransformComponent& xTransform);
+	void Update(float fDt,
+	            Zenith_TransformComponent& xTransform,
+	            Zenith_ColliderComponent* pxCollider = nullptr);
 
 	/**
 	 * Update agent and return desired velocity (without modifying transform)
