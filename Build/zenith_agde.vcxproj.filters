@@ -592,6 +592,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_Engine.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_GraphicsOptions.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -3316,6 +3319,9 @@
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_Engine.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h">

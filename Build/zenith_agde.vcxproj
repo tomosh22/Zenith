@@ -89,7 +89,7 @@
       <AssemblerOutput>NoListing</AssemblerOutput>
       <CompileAs>Default</CompileAs>
       <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\.claude\worktrees\wizardly-payne-c210e5\build\obj\agde\arm64_v8a_vs2022_debug_agde_false\</PrecompiledHeaderOutputFileDirectory>
+      <PrecompiledHeaderOutputFileDirectory>c:\tmp\zenith-engine-refactor\build\obj\agde\arm64_v8a_vs2022_debug_agde_false\</PrecompiledHeaderOutputFileDirectory>
       <UnwindTables>true</UnwindTables>
       <AddressSignificanceTable>false</AddressSignificanceTable>
       <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
@@ -120,7 +120,7 @@
       <AssemblerOutput>NoListing</AssemblerOutput>
       <CompileAs>Default</CompileAs>
       <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\.claude\worktrees\wizardly-payne-c210e5\build\obj\agde\arm64_v8a_vs2022_release_agde_false\</PrecompiledHeaderOutputFileDirectory>
+      <PrecompiledHeaderOutputFileDirectory>c:\tmp\zenith-engine-refactor\build\obj\agde\arm64_v8a_vs2022_release_agde_false\</PrecompiledHeaderOutputFileDirectory>
       <UnwindTables>true</UnwindTables>
       <AddressSignificanceTable>false</AddressSignificanceTable>
       <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
@@ -881,6 +881,7 @@
     <ClInclude Include="..\Zenith\Core\Zenith_AutomatedTest.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_CommandLine.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Engine.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
@@ -1821,6 +1822,7 @@
     <ClCompile Include="..\Zenith\Core\Zenith_AutomatedTest.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_CommandLine.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith_Engine.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_GraphicsOptions.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Main.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_String.cpp" />
