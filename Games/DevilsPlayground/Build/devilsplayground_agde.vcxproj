@@ -62,7 +62,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
     <AndroidEnablePackaging>true</AndroidEnablePackaging>
-    <AndroidGradleBuildDir>c:/dev/zenith/.claude/worktrees/wizardly-payne-c210e5/Games/DevilsPlayground/Android</AndroidGradleBuildDir>
+    <AndroidGradleBuildDir>c:/tmp/zenith-engine-refactor/Games/DevilsPlayground/Android</AndroidGradleBuildDir>
     <AndroidApplicationModule>app</AndroidApplicationModule>
     <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_debug_agde_false\arm64-v8a\</OutDir>
     <AndroidGradleBuildType>debug</AndroidGradleBuildType>
@@ -79,7 +79,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
     <AndroidEnablePackaging>true</AndroidEnablePackaging>
-    <AndroidGradleBuildDir>c:/dev/zenith/.claude/worktrees/wizardly-payne-c210e5/Games/DevilsPlayground/Android</AndroidGradleBuildDir>
+    <AndroidGradleBuildDir>c:/tmp/zenith-engine-refactor/Games/DevilsPlayground/Android</AndroidGradleBuildDir>
     <AndroidApplicationModule>app</AndroidApplicationModule>
     <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_release_agde_false\arm64-v8a\</OutDir>
     <AndroidGradleBuildType>release</AndroidGradleBuildType>
@@ -89,7 +89,7 @@
     <ClCompile>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GAME_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/.claude/worktrees/wizardly-payne-c210e5/";ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GAME_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_ROOT="c:/tmp/zenith-engine-refactor/";ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\android;..\..\..\zenith\android\nativeglue;..\..\..\zenith\core;..\..\..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
@@ -127,7 +127,7 @@
     <ClCompile>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GAME_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_ROOT="c:/dev/zenith/.claude/worktrees/wizardly-payne-c210e5/";ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GAME_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_ROOT="c:/tmp/zenith-engine-refactor/";ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\android;..\..\..\zenith\android\nativeglue;..\..\..\zenith\core;..\..\..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
@@ -217,6 +217,7 @@
     <ClCompile Include="..\Tests\Test_DPHeuristicBot_Pathing.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryAnalyzer.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp" />
+    <ClCompile Include="..\Tests\Test_EngineBootShutdownSmoke.cpp" />
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp" />
     <ClCompile Include="..\Tests\Test_FullPlaythrough.cpp" />
     <ClCompile Include="..\Tests\Test_GameLevelScene.cpp" />
