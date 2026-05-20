@@ -20,8 +20,11 @@
 //
 // Verifies MVP-1.7's sprint mechanic: while sprinting (Shift held AND
 // moving), the possessed villager's life drains at
-//   1.0 + movement.sprint_life_cost_extra_per_s   (1.0 + 3.0 = 4.0 s/s)
-// versus the 1.0 s/s baseline when only moving (no Shift).
+//   1.0 + movement.sprint_life_cost_extra_per_s   (1.0 + 1.5 = 2.5 s/s)
+// versus the 1.0 s/s baseline when only moving (no Shift). The
+// 1.5 s/s extra cost was lowered from 3.0 on 2026-05-20 after the
+// personality seed-matrix showed sprint personalities completing
+// objective loops at 1/3 the rate of walking ones.
 //
 // Procedure:
 //   1. Load GameLevel, possess any villager.
@@ -249,10 +252,14 @@ static bool Verify_P1Sprint()
 		Zenith_Log(LOG_CATEGORY_AI, "P1Sprint: walk window had no life drop -- TickLife didn't run");
 		return false;
 	}
-	// Expected difference: ~3 s/s extra cost over a 1 s window = 3 s.
-	// Allow 33% slack (2 s minimum) for frame-time / boundary jitter.
+	// Expected difference: ~1.5 s/s extra cost over a 1 s window = 1.5 s
+	// (was 3.0 s/s pre-2026-05-20; tuning dropped to 1.5 to give
+	// sprint personalities a fairer shot on procgen geometry where the
+	// item-spawner-to-target distances exceed a single villager's
+	// walking budget at the old drain rate).
+	// Allow ~33% slack (1.0 s minimum) for frame-time / boundary jitter.
 	const float fDiff = fSprintDrop - fWalkDrop;
-	const float fMinDiff = 2.0f;
+	const float fMinDiff = 1.0f;
 	if (fDiff < fMinDiff)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
