@@ -112,7 +112,7 @@ class DP_BTAction_Apprehend : public Zenith_BTLeaf
 public:
 	DP_BTAction_Apprehend() = default;
 
-	void OnEnter(Zenith_Entity& xAgent, Zenith_Blackboard& /*xBB*/) override
+	void OnEnter(Zenith_Entity& /*xAgent*/, Zenith_Blackboard& /*xBB*/) override
 	{
 		// Cache tuning per-run so DP_Tuning hot-reload during a play
 		// session (if ever wired) takes effect on the next apprehend
@@ -125,18 +125,15 @@ public:
 		m_xChannelTarget         = INVALID_ENTITY_ID;
 		m_bChannelStartEmitted   = false;
 
-		// Stop the navmesh agent so the priest plants and channels
-		// instead of continuing to drift along the path Pursue had
-		// requested. Pursue will re-request a path when Apprehend
-		// FAILS (target leaves range) and the Selector falls through.
-		if (xAgent.HasComponent<Zenith_AIAgentComponent>())
-		{
-			Zenith_AIAgentComponent& xAI = xAgent.GetComponent<Zenith_AIAgentComponent>();
-			if (Zenith_NavMeshAgent* pxNav = xAI.GetNavMeshAgent())
-			{
-				pxNav->Stop();
-			}
-		}
+		// Note: we no longer call pxNav->Stop() here. Originally the
+		// priest planted-and-channelled, which (per the seed-matrix
+		// analysis 2026-05-19) made the catch 0% reliable -- any
+		// possessed villager could simply walk out of the 2 m range
+		// during the 3 s channel and bypass the catch forever. We now
+		// keep pursuing during Execute so the channel timer only
+		// completes if the villager can be held in range -- walkers
+		// get caught (priest pursue 7 m/s > walk 4 m/s); sprinters
+		// (12 m/s) still escape.
 	}
 
 	// Helper: emit a DP_OnApprehendChannelInterrupted event iff a channel
@@ -223,6 +220,26 @@ public:
 			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::TargetSwitched);
 			m_eLastStatus = BTNodeStatus::FAILURE;
 			return m_eLastStatus;
+		}
+
+		// Continue pursuing the villager while channelling. Without this
+		// the priest would plant in place and any walking villager would
+		// simply outpace the 2 m range during the 3 s channel (verified
+		// 0 / 15 catches in the seed-matrix analysis 2026-05-19). With
+		// pursuit the priest closes at pursue_speed_mps (~7 m/s in
+		// Tuning.json) -- walk speed is 4 m/s so the priest gains 3 m/s
+		// on a walking target, catching them inside ~1 channel window;
+		// sprint speed is 12 m/s so sprinters still outrun and the
+		// channel times out on OutOfRange. Throttle SetDestination to
+		// once per BT tick (default 10 Hz) so we don't thrash the
+		// pathfinder.
+		if (xAgent.HasComponent<Zenith_AIAgentComponent>())
+		{
+			Zenith_AIAgentComponent& xAI = xAgent.GetComponent<Zenith_AIAgentComponent>();
+			if (Zenith_NavMeshAgent* pxNav = xAI.GetNavMeshAgent())
+			{
+				pxNav->SetDestination(xTargetPos);
+			}
 		}
 
 		m_fChannelElapsed += fDt;

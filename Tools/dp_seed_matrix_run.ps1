@@ -35,7 +35,7 @@ if (-not (Test-Path $exe)) {
     exit 1
 }
 
-$personalities = @("Casual","Stealth","Speedrunner","Berserker","Methodical")
+$personalities = @("Casual","Stealth","Speedrunner","Berserker")
 $tempDir = $env:TEMP
 if (-not $tempDir) { $tempDir = $env:TMP }
 
