@@ -404,7 +404,16 @@ namespace
 		DP_ItemTag::Objective3, DP_ItemTag::Objective4,
 		DP_ItemTag::Objective5,
 	};
-	constexpr int kMaxObjAttempts = 4;
+	// Per-objective retry cap. Was 4 pre-2026-05-20. The seed-matrix
+	// after the cross-possession memory landed showed cells reaching
+	// 4-5 objectives only when the bot survived 8+ possessions; with
+	// the old cap of 4 the bot would surrender an objective after just
+	// 4 failed pentagram-presses (the typical failure pattern is
+	// "pickup, die mid-walk, repossess, walker has no item, F-press
+	// does nothing, attempt++"). 16 gives the cross-possession recover
+	// path room to actually re-pickup -- each repossess-and-re-pickup
+	// costs ~1 attempt, so 16 lets ~10 productive deliveries through.
+	constexpr int kMaxObjAttempts = 16;
 
 	// Victory / pause flags.
 	bool g_bVictoryEvent = false;
@@ -1241,16 +1250,14 @@ namespace
 			++g_iStuckCounter;
 			if (g_iStuckCounter > kStuckFramesLimit)
 			{
-				// First time stuck — tear down the path and let a fresh replan
-				// take us through an alternative route. Also kick off a brief
-				// "side-step" window: for the next kSideStepFrames the WASD
-				// direction is rotated 90 degrees so the villager peels off
-				// whatever wall it's pinned against. Without the side-step a
-				// fresh path from the same start often retraces the same
-				// approach vector and re-jams on the same wall corner.
-				// Subsequent stuck-cycles fast-track the walk budget to
-				// surrender so the test phase advances rather than burning
-				// frames against a wall the pathfinder can't route around.
+				// Stuck for kStuckFramesLimit (~2 s @ 60 Hz). Tear down the
+				// path and let a fresh replan take us through an alternative
+				// route. Also kick off a brief "side-step" window: for the
+				// next kSideStepFrames the WASD direction is rotated 90
+				// degrees so the villager peels off whatever wall it's
+				// pinned against. Without the side-step a fresh path from
+				// the same start often retraces the same approach vector
+				// and re-jams on the same wall corner.
 				g_axCurrentPath.Clear();
 				g_iPathWaypoint = 0;
 				g_xLastPlannedTarget = Zenith_Maths::Vector3(1e9f, 0.0f, 0.0f);
@@ -1260,11 +1267,16 @@ namespace
 				// counter-clockwise next time.
 				g_iSideStepFrames = kSideStepFrames;
 				g_bSideStepClockwise = !g_bSideStepClockwise;
-				if (++g_iStuckReplans >= 2)
-				{
-					g_iWalkBudget = 0;
-					g_iStuckReplans = 0;
-				}
+				++g_iStuckReplans;
+				// Note: previously after >=2 stuck-replans we truncated
+				// g_iWalkBudget=0 to fast-track the phase to surrender.
+				// Removed 2026-05-20 -- the 0.5 m path grid + side-step
+				// usually break the bot free within a few replans, but
+				// the 2-replan kill-switch was cutting cells short before
+				// they could use their 141.6 s game-time budget. The
+				// natural g_iWalkBudget countdown still terminates the
+				// phase if the bot really is unrecoverable; this just
+				// lets it keep trying side-steps for longer first.
 			}
 		}
 
@@ -1515,8 +1527,16 @@ namespace
 	// 8500-frame budget. The post-2026-05-19 priest-pursues-during-channel
 	// change made apprehend catches frequent enough that the loop showed
 	// up routinely.
+	//
+	// Cap was 240 frames (~4 s wall-clock at 60 Hz, despite the old
+	// comment claiming 24 s). The 2026-05-20 seed-matrix analysis found
+	// 28 of 40 cells ended at 85-90 s wall-time with all-villagers-
+	// dead-or-unclickable, exhausting this cap well before the 141.6 s
+	// game-time budget. Raised to 1200 (20 s) so a wave of sprint-
+	// burnouts can resolve before the bot gives up entirely -- now this
+	// only fires when there genuinely are no living villagers left.
 	int g_iRepossessAttempts = 0;
-	constexpr int kRepossessAttemptCap = 240; // ~24s at 10 Hz BT tick / 60 Hz frames
+	constexpr int kRepossessAttemptCap = 1200; // 20 s wall-clock @ 60 Hz
 
 	bool TryRepossessIfDead()
 	{
@@ -2514,6 +2534,57 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		if (TryRepossessIfDead()) return true;
 		if (!g_xCurrentObjItem.IsValid()) { ++g_iObjectivesDelivered; g_iPhase = kHP_ObjLoopFind; return true; }
+
+		// Cross-possession memory (2026-05-20). Three guards covering
+		// the two ways a re-possession can land us mid-WalkObj:
+		//
+		// 1. New villager happens to already hold the target tag (item
+		//    auto-pickup may have fired on it via proximity, or we
+		//    retained somehow). Skip pickup, head to pentagram.
+		// 2. New villager is closer to a DIFFERENT instance of the same
+		//    tag than the original target. Re-aim at the closer one so
+		//    we don't retrace the dead villager's planned route across
+		//    the map. Hysteresis (>= 2 m savings) avoids flip-flopping
+		//    between two equidistant items.
+		// 3. (Implicit fall-through) Still need to pickup and the
+		//    original target is still the closest -- walk to it.
+		const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
+		if (xCur.IsValid() && g_iObjectivesDelivered < 5)
+		{
+			const DP_ItemTag eExpected = g_aeObjTags[g_iObjectivesDelivered];
+			if (DP_Player::GetHeldItemTag(xCur) == eExpected)
+			{
+				ClearWASD();
+				g_xCurrentObjItem = INVALID_ENTITY_ID;
+				g_iPhase = kHP_ObjLoopWalkPentagram;
+				SetWalkBudget(1200);
+				ResetPath();
+				return true;
+			}
+			Zenith_Maths::Vector3 xCurPos;
+			if (TryGetEntityPos(xCur, xCurPos))
+			{
+				const Zenith_EntityID xClosest = FindClosestItemByTag(eExpected, xCurPos);
+				if (xClosest.IsValid() && xClosest != g_xCurrentObjItem)
+				{
+					Zenith_Maths::Vector3 xOldPos = DP_Items::GetItemWorldPos(g_xCurrentObjItem);
+					Zenith_Maths::Vector3 xNewPos = DP_Items::GetItemWorldPos(xClosest);
+					const float fOldDx = xOldPos.x - xCurPos.x;
+					const float fOldDz = xOldPos.z - xCurPos.z;
+					const float fNewDx = xNewPos.x - xCurPos.x;
+					const float fNewDz = xNewPos.z - xCurPos.z;
+					const float fOldSq = fOldDx*fOldDx + fOldDz*fOldDz;
+					const float fNewSq = fNewDx*fNewDx + fNewDz*fNewDz;
+					// >= 4 m^2 ~= 2 m savings before we switch.
+					if (fNewSq + 16.0f < fOldSq)
+					{
+						g_xCurrentObjItem = xClosest;
+						ResetPath();
+					}
+				}
+			}
+		}
+
 		Zenith_Maths::Vector3 xItemPos = DP_Items::GetItemWorldPos(g_xCurrentObjItem);
 		LogWalkProgress("obj-item", xItemPos);
 		--g_iWalkBudget;
@@ -2545,6 +2616,33 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		if (TryRepossessIfDead()) return true;
 		if (!g_xPentagram.IsValid()) { ++g_iObjectivesDelivered; g_iPhase = kHP_ObjLoopFind; return true; }
+
+		// Cross-possession memory (2026-05-20). The single biggest waste
+		// in the pre-fix matrix was "villager A picks up objective, dies
+		// mid-walk to pentagram, villager B repossesses with no item in
+		// hand, walks to pentagram anyway, F-press fires but does
+		// nothing, attempt counter increments". Catch it here: if the
+		// current villager isn't holding the expected tag, rewind to
+		// ObjLoopFind so the next iteration re-picks the closest item
+		// and walks there first.
+		const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
+		if (xCur.IsValid() && g_iObjectivesDelivered < 5)
+		{
+			const DP_ItemTag eExpected = g_aeObjTags[g_iObjectivesDelivered];
+			if (DP_Player::GetHeldItemTag(xCur) != eExpected)
+			{
+				// Don't increment g_iObjAttempts here -- this isn't a
+				// failed attempt at *this* objective, just a re-route to
+				// re-pickup it. Otherwise repossession-heavy runs blow
+				// kMaxObjAttempts on what is actually legitimate progress.
+				ClearWASD();
+				g_xCurrentObjItem = INVALID_ENTITY_ID;
+				g_iPhase = kHP_ObjLoopFind;
+				ResetPath();
+				return true;
+			}
+		}
+
 		Zenith_Maths::Vector3 xPentPos;
 		if (!TryGetEntityPos(g_xPentagram, xPentPos)) { ++g_iObjectivesDelivered; g_iPhase = kHP_ObjLoopFind; return true; }
 		LogWalkProgress("obj-pent", xPentPos);
