@@ -21,9 +21,16 @@ bool Zenith_NavMeshAgent::SetDestination(const Zenith_Maths::Vector3& xDestinati
 	m_uCurrentWaypoint = 0;
 	m_bPathPending = true;  // Mark that we need a path
 
-	// Clear velocity for fresh start
-	m_xVelocity = Zenith_Maths::Vector3(0.0f);
-	m_fCurrentSpeed = 0.0f;
+	// We deliberately do NOT reset m_xVelocity or m_fCurrentSpeed here.
+	// An agent that's already moving toward a similar target (e.g. the
+	// DP priest re-issuing SetDestination every BT tick to track a
+	// moving villager during the Apprehend channel) needs to keep its
+	// momentum; otherwise it slows back to zero every tick and never
+	// reaches m_fMoveSpeed -- the chase becomes uncatchable. The next
+	// CalculateVelocity call will re-aim m_xVelocity along the new
+	// path, with m_fCurrentSpeed naturally clamped against
+	// m_fMoveSpeed via the accelerate/decelerate-to-desired-speed
+	// branch.
 
 	// Path will be calculated later (either in Update or via batch processing)
 	m_xCurrentPath.m_axWaypoints.Clear();
@@ -198,9 +205,30 @@ Zenith_Maths::Vector3 Zenith_NavMeshAgent::CalculateVelocity(float fDt,
 		return m_xVelocity;
 	}
 
+	// XZ-plane steering. The navmesh polygons sit at ground height
+	// (typically the top of the floor collider); a dynamic capsule
+	// agent rests ABOVE that by half-capsule-height. Including the Y
+	// component in the steering vector makes the agent try to descend
+	// into the floor every frame -- Jolt collision response then pops
+	// it back up, and the dominant 3D-normalised direction is vertical
+	// so only a small fraction of m_fMoveSpeed reaches the horizontal
+	// plane. Net effect (verified 2026-05-20): a capsule agent at
+	// y=3.0 with waypoints at y=1.0 crawls at ~2 m/s instead of the
+	// configured ~7 m/s and never reaches its target.
+	//
+	// The navmesh is XZ-planar by design (Recast-style voxelisation
+	// + flood-fill on the floor), so dropping Y from the steering
+	// vector is the correct semantic, not a hack. Multi-level navmesh
+	// support would also need vertical edges in the polygon graph;
+	// neither exists today.
+	auto FlattenXZ = [](const Zenith_Maths::Vector3& v)
+	{
+		return Zenith_Maths::Vector3(v.x, 0.0f, v.z);
+	};
+
 	// Get current target waypoint
-	Zenith_Maths::Vector3 xTarget = GetCurrentTargetWaypoint();
-	Zenith_Maths::Vector3 xToTarget = xTarget - xCurrentPosition;
+	Zenith_Maths::Vector3 xTarget   = GetCurrentTargetWaypoint();
+	Zenith_Maths::Vector3 xToTarget = FlattenXZ(xTarget - xCurrentPosition);
 	float fDistToTarget = Zenith_Maths::Length(xToTarget);
 
 	// Check if we've reached current waypoint
@@ -218,8 +246,8 @@ Zenith_Maths::Vector3 Zenith_NavMeshAgent::CalculateVelocity(float fDt,
 		}
 
 		// Get new target
-		xTarget = GetCurrentTargetWaypoint();
-		xToTarget = xTarget - xCurrentPosition;
+		xTarget   = GetCurrentTargetWaypoint();
+		xToTarget = FlattenXZ(xTarget - xCurrentPosition);
 		fDistToTarget = Zenith_Maths::Length(xToTarget);
 	}
 
