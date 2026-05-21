@@ -31,6 +31,13 @@
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/SDFs/Flux_SDFsImpl.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
+#include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
+#include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
+#include "Flux/Fog/Flux_FroxelFogImpl.h"
+#include "Flux/Fog/Flux_GodRaysFogImpl.h"
+#include "Flux/Fog/Flux_RaymarchFogImpl.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -244,7 +251,14 @@ Flux_StaticMeshesImpl&    Zenith_Engine::StaticMeshes()    { return *m_pxStaticM
 Flux_AnimatedMeshesImpl&  Zenith_Engine::AnimatedMeshes()  { return *m_pxAnimatedMeshes; }
 Flux_DeferredShadingImpl& Zenith_Engine::DeferredShading() { return *m_pxDeferredShading; }
 Flux_SDFsImpl&            Zenith_Engine::SDFs()            { return *m_pxSDFs; }
-Flux_QuadsImpl&           Zenith_Engine::Quads()           { return *m_pxQuads; }
+Flux_QuadsImpl&                    Zenith_Engine::Quads()             { return *m_pxQuads; }
+Flux_ShadowsImpl&                  Zenith_Engine::Shadows()           { return *m_pxShadows; }
+Flux_DynamicLightsImpl&            Zenith_Engine::DynamicLights()     { return *m_pxDynamicLights; }
+Flux_LightClusteringImpl&          Zenith_Engine::LightClustering()   { return *m_pxLightClustering; }
+Flux_FroxelFogImpl&                Zenith_Engine::FroxelFog()         { return *m_pxFroxelFog; }
+Flux_GodRaysFogImpl&               Zenith_Engine::GodRaysFog()        { return *m_pxGodRaysFog; }
+Flux_RaymarchFogImpl&              Zenith_Engine::RaymarchFog()       { return *m_pxRaymarchFog; }
+Flux_TerrainStreamingManagerImpl&  Zenith_Engine::TerrainStreaming()  { return *m_pxTerrainStreaming; }
 
 #ifdef ZENITH_TOOLS
 Zenith_EditorImpl& Zenith_Engine::Editor()
@@ -351,6 +365,15 @@ void Zenith_Engine::Initialise()
 	m_pxDeferredShading = new Flux_DeferredShadingImpl();
 	m_pxSDFs            = new Flux_SDFsImpl();
 	m_pxQuads           = new Flux_QuadsImpl();
+
+	// Phase 7c: 7 more Flux subsystems.
+	m_pxShadows          = new Flux_ShadowsImpl();
+	m_pxDynamicLights    = new Flux_DynamicLightsImpl();
+	m_pxLightClustering  = new Flux_LightClusteringImpl();
+	m_pxFroxelFog        = new Flux_FroxelFogImpl();
+	m_pxGodRaysFog       = new Flux_GodRaysFogImpl();
+	m_pxRaymarchFog      = new Flux_RaymarchFogImpl();
+	m_pxTerrainStreaming = new Flux_TerrainStreamingManagerImpl();
 
 #ifdef ZENITH_TOOLS
 	// Phase 5.5c: editor state (selection, viewport, content browser,
@@ -723,6 +746,13 @@ void Zenith_Engine::Shutdown()
 	delete m_pxDeferredShading; m_pxDeferredShading = nullptr;
 	delete m_pxSDFs;            m_pxSDFs = nullptr;
 	delete m_pxQuads;           m_pxQuads = nullptr;
+	delete m_pxShadows;          m_pxShadows = nullptr;
+	delete m_pxDynamicLights;    m_pxDynamicLights = nullptr;
+	delete m_pxLightClustering;  m_pxLightClustering = nullptr;
+	delete m_pxFroxelFog;        m_pxFroxelFog = nullptr;
+	delete m_pxGodRaysFog;       m_pxGodRaysFog = nullptr;
+	delete m_pxRaymarchFog;      m_pxRaymarchFog = nullptr;
+	delete m_pxTerrainStreaming; m_pxTerrainStreaming = nullptr;
 
 #ifdef ZENITH_TOOLS
 	// 21. Free editor state. Done LATE -- the editor's deferred-deletion

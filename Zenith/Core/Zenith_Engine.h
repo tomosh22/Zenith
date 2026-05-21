@@ -10,11 +10,18 @@ class Zenith_EntityStore;
 class Flux_GraphicsImpl;
 class Flux_AnimatedMeshesImpl;
 class Flux_DeferredShadingImpl;
+class Flux_DynamicLightsImpl;
+class Flux_FroxelFogImpl;
+class Flux_GodRaysFogImpl;
 class Flux_HiZImpl;
+class Flux_LightClusteringImpl;
 class Flux_QuadsImpl;
+class Flux_RaymarchFogImpl;
 class Flux_RendererImpl;
 class Flux_SDFsImpl;
+class Flux_ShadowsImpl;
 class Flux_StaticMeshesImpl;
+class Flux_TerrainStreamingManagerImpl;
 class Zenith_VulkanImpl;
 class Zenith_Vulkan_MemoryManagerImpl;
 class Zenith_Vulkan_SwapchainImpl;
@@ -95,6 +102,13 @@ public:
 	Flux_DeferredShadingImpl& DeferredShading();
 	Flux_SDFsImpl& SDFs();
 	Flux_QuadsImpl& Quads();
+	Flux_ShadowsImpl& Shadows();
+	Flux_DynamicLightsImpl& DynamicLights();
+	Flux_LightClusteringImpl& LightClustering();
+	Flux_FroxelFogImpl& FroxelFog();
+	Flux_GodRaysFogImpl& GodRaysFog();
+	Flux_RaymarchFogImpl& RaymarchFog();
+	Flux_TerrainStreamingManagerImpl& TerrainStreaming();
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl& Editor();
 	// True when Initialise() has run far enough to have allocated the
@@ -139,6 +153,13 @@ private:
 	Flux_DeferredShadingImpl*           m_pxDeferredShading  = nullptr;
 	Flux_SDFsImpl*                      m_pxSDFs             = nullptr;
 	Flux_QuadsImpl*                     m_pxQuads            = nullptr;
+	Flux_ShadowsImpl*                   m_pxShadows          = nullptr;
+	Flux_DynamicLightsImpl*             m_pxDynamicLights    = nullptr;
+	Flux_LightClusteringImpl*           m_pxLightClustering  = nullptr;
+	Flux_FroxelFogImpl*                 m_pxFroxelFog        = nullptr;
+	Flux_GodRaysFogImpl*                m_pxGodRaysFog       = nullptr;
+	Flux_RaymarchFogImpl*               m_pxRaymarchFog      = nullptr;
+	Flux_TerrainStreamingManagerImpl*   m_pxTerrainStreaming = nullptr;
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl*                  m_pxEditor             = nullptr;
 	Zenith_GizmoImpl*                   m_pxGizmo              = nullptr;

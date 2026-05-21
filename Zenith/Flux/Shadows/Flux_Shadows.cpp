@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Shadows/Flux_Shadows.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
 
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -16,21 +17,16 @@
 // destroyed by the render graph, sized from the descriptor in SetupRenderGraph.
 // CSM_FORMAT is declared in Flux_Shadows.h so subsystems that build shadow
 // pipelines at Initialise() time can reference it.
-static Flux_TransientHandle g_axCSMHandles[ZENITH_FLUX_NUM_CSMS];
-static Flux_RenderGraph* s_pxGraph = nullptr;
 
-static Zenith_Maths::Matrix4 g_axShadowMatrices[ZENITH_FLUX_NUM_CSMS];
 
-static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 
-static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
 
 DEBUGVAR float dbg_fZMultiplier = 8.f;
 
 static Flux_RenderAttachment& GetCSM(u_int uIndex)
 {
-	Zenith_Assert(s_pxGraph, "Flux_Shadows::GetCSM: graph pointer is null");
-	return s_pxGraph->GetTransientAttachment(g_axCSMHandles[uIndex]);
+	Zenith_Assert(g_xEngine.Shadows().m_pxGraph, "Flux_Shadows::GetCSM: graph pointer is null");
+	return g_xEngine.Shadows().m_pxGraph->GetTransientAttachment(g_xEngine.Shadows().m_axCSMHandles[uIndex]);
 }
 
 struct FrustumCorners
@@ -90,7 +86,7 @@ void Flux_Shadows::Initialise()
 {
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xShadowMatrixBuffers[u]);
+		Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -102,10 +98,10 @@ void Flux_Shadows::Shutdown()
 {
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xShadowMatrixBuffers[u]);
+		Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 	}
 
-	s_pxGraph = nullptr;
+	g_xEngine.Shadows().m_pxGraph = nullptr;
 }
 
 // Persistent pass names (W1: prevents dangling stack-buffer pointers passed to AddPass).
@@ -145,20 +141,20 @@ static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserDat
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	Flux_StaticMeshes::RenderToShadowMap(*pxCommandList, g_xShadowMatrixBuffers[u]);
+	Flux_StaticMeshes::RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_AnimatedMeshes::GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	Flux_AnimatedMeshes::RenderToShadowMap(*pxCommandList, g_xShadowMatrixBuffers[u]);
+	Flux_AnimatedMeshes::RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 
 	// #TODO: Enable terrain shadow casting
-	// Flux_Terrain::RenderToShadowMap(*pxCommandList, g_xShadowMatrixBuffers[u]);
+	// Flux_Terrain::RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 }
 
 void Flux_Shadows::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	s_pxGraph = &xGraph;
+	g_xEngine.Shadows().m_pxGraph = &xGraph;
 
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
@@ -169,7 +165,7 @@ void Flux_Shadows::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		xCSMDesc.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
 		xCSMDesc.m_bIsDepthStencil = true;
 
-		g_axCSMHandles[u] = xGraph.CreateTransient(xCSMDesc);
+		g_xEngine.Shadows().m_axCSMHandles[u] = xGraph.CreateTransient(xCSMDesc);
 	}
 
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
@@ -180,7 +176,7 @@ void Flux_Shadows::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		const Flux_PassHandle xPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade)
 			.UserData(u)
 			.ClearTargets()
-			.WritesTransient(g_axCSMHandles[u], RESOURCE_ACCESS_WRITE_DSV);
+			.WritesTransient(g_xEngine.Shadows().m_axCSMHandles[u], RESOURCE_ACCESS_WRITE_DSV);
 		if (u == 0)
 			xGraph.SetPrepare(xPass, PreExecuteShadowMatrices);
 	}
@@ -209,7 +205,7 @@ Flux_RenderAttachment* Flux_Shadows::GetCSMTargetSetup(const uint32_t uIndex, ui
 
 Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
 {
-	return g_axSunViewProjMats[uIndex];
+	return g_xEngine.Shadows().m_axSunViewProjMats[uIndex];
 }
 
 Flux_ShaderResourceView& Flux_Shadows::GetCSMSRV(const uint32_t u)
@@ -219,7 +215,7 @@ Flux_ShaderResourceView& Flux_Shadows::GetCSMSRV(const uint32_t u)
 
 Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)
 {
-	return g_xShadowMatrixBuffers[u];
+	return g_xEngine.Shadows().m_xShadowMatrixBuffers[u];
 }
 
 void Flux_Shadows::UpdateShadowMatrices()
@@ -249,9 +245,9 @@ void Flux_Shadows::UpdateShadowMatrices()
 
 		xSunViewMat = glm::lookAt(xFrustumCenter - xSunDir * (xLightAABB.m_xMax.z + fZRange * dbg_fZMultiplier), xFrustumCenter, xUp);
 
-		g_axSunViewProjMats[u] = glm::ortho(xLightAABB.m_xMin.x, xLightAABB.m_xMax.x, xLightAABB.m_xMin.y, xLightAABB.m_xMax.y, 0.0f, fZRange * (1.0f + 2.0f * dbg_fZMultiplier)) * xSunViewMat;
+		g_xEngine.Shadows().m_axSunViewProjMats[u] = glm::ortho(xLightAABB.m_xMin.x, xLightAABB.m_xMax.x, xLightAABB.m_xMin.y, xLightAABB.m_xMax.y, 0.0f, fZRange * (1.0f + 2.0f * dbg_fZMultiplier)) * xSunViewMat;
 
-		Flux_MemoryManager::UploadBufferData(g_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &g_axSunViewProjMats[u], sizeof(g_axSunViewProjMats[u]));
+		Flux_MemoryManager::UploadBufferData(g_xEngine.Shadows().m_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &g_xEngine.Shadows().m_axSunViewProjMats[u], sizeof(g_xEngine.Shadows().m_axSunViewProjMats[u]));
 	}
 
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);

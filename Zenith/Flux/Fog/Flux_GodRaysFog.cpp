@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Fog/Flux_GodRaysFog.h"
+#include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 
 #include "Flux/Flux_Graphics.h"
@@ -13,8 +14,6 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipeline;
 
 // God rays specific parameters
 struct Flux_GodRaysConstants
@@ -40,12 +39,13 @@ DEBUGVAR float dbg_fGodRaysExposure = 0.3f;
 DEBUGVAR float dbg_fGodRaysDensity = 1.0f;
 DEBUGVAR float dbg_fGodRaysWeight = 0.5f;
 
-// Cached constants for push constant
+// Cached constants for push constant (per-frame transient -- kept file-static).
 static Flux_GodRaysConstants s_xConstants;
+
 
 void Flux_GodRaysFog::BuildPipelines()
 {
-	s_xShader.Initialise(FluxShaderProgram::Fog_GodRays);
+	g_xEngine.GodRaysFog().m_xShader.Initialise(FluxShaderProgram::Fog_GodRays);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -54,10 +54,10 @@ void Flux_GodRaysFog::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_pxShader = &g_xEngine.GodRaysFog().m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	g_xEngine.GodRaysFog().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
@@ -67,7 +67,7 @@ void Flux_GodRaysFog::BuildPipelines()
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(g_xEngine.GodRaysFog().m_xPipeline, xPipelineSpec);
 }
 
 void Flux_GodRaysFog::Initialise()
@@ -139,16 +139,16 @@ void Flux_GodRaysFog::Render(Flux_CommandList* pxCommandList)
 	extern u_int dbg_uVolFogDebugMode;
 	s_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.GodRaysFog().m_xPipeline);
 
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV(s_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindCBV(g_xEngine.GodRaysFog().m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindSRV(g_xEngine.GodRaysFog().m_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 
-	xBinder.BindDrawConstants(s_xShader, "GodRaysConstants", &s_xConstants, sizeof(Flux_GodRaysConstants));
+	xBinder.BindDrawConstants(g_xEngine.GodRaysFog().m_xShader, "GodRaysConstants", &s_xConstants, sizeof(Flux_GodRaysConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

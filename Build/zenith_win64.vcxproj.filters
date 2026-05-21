@@ -3600,7 +3600,13 @@
     <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.h">
       <Filter>Flux\DynamicLights</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLightsImpl.h">
+      <Filter>Flux\DynamicLights</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_LightClustering.h">
+      <Filter>Flux\DynamicLights</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_LightClusteringImpl.h">
       <Filter>Flux\DynamicLights</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux.h">
@@ -3654,10 +3660,19 @@
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFog.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFogImpl.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_GodRaysFogImpl.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_RaymarchFog.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_RaymarchFogImpl.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFog.h">
@@ -4047,6 +4062,9 @@
     <ClInclude Include="..\Zenith\Flux\Shadows\Flux_Shadows.h">
       <Filter>Flux\Shadows</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shadows\Flux_ShadowsImpl.h">
+      <Filter>Flux\Shadows</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Skybox\Flux_Skybox.h">
       <Filter>Flux\Skybox</Filter>
     </ClInclude>
@@ -4087,6 +4105,9 @@
       <Filter>Flux\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.h">
+      <Filter>Flux\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManagerImpl.h">
       <Filter>Flux\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Text\Flux_Text.h">

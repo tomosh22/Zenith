@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Fog/Flux_RaymarchFog.h"
+#include "Flux/Fog/Flux_RaymarchFogImpl.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -15,8 +16,6 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipeline;
 
 // Ray march specific parameters
 struct Flux_RaymarchConstants
@@ -48,11 +47,12 @@ DEBUGVAR float dbg_fRaymarchPhaseG = 0.6f;
 DEBUGVAR float dbg_fRaymarchShadowBias = 0.001f;       // Shadow bias - prevents self-shadowing artifacts
 DEBUGVAR float dbg_fRaymarchShadowConeRadius = 0.002f; // Cone spread - controls soft shadow edge
 
+// Cached constants for push constant (per-frame transient -- kept file-static).
 static Flux_RaymarchConstants s_xConstants;
 
 void Flux_RaymarchFog::BuildPipelines()
 {
-	s_xShader.Initialise(FluxShaderProgram::Fog_Raymarch);
+	g_xEngine.RaymarchFog().m_xShader.Initialise(FluxShaderProgram::Fog_Raymarch);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -61,10 +61,10 @@ void Flux_RaymarchFog::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_pxShader = &g_xEngine.RaymarchFog().m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	g_xEngine.RaymarchFog().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
@@ -74,7 +74,7 @@ void Flux_RaymarchFog::BuildPipelines()
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(g_xEngine.RaymarchFog().m_xPipeline, xPipelineSpec);
 }
 
 void Flux_RaymarchFog::Initialise()
@@ -158,16 +158,16 @@ void Flux_RaymarchFog::Render(Flux_CommandList* pxCommandList)
 	s_xConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
 	s_xConstants.m_fNoiseWorldScale = xShared.m_fNoiseWorldScale;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.RaymarchFog().m_xPipeline);
 
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV(s_xShader, "u_xDepthTexture", Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xShader, "u_xNoiseTexture3D", &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV);
-	xBinder.BindSRV(s_xShader, "u_xBlueNoiseTexture", &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
+	xBinder.BindCBV(g_xEngine.RaymarchFog().m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindSRV(g_xEngine.RaymarchFog().m_xShader, "u_xDepthTexture", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.RaymarchFog().m_xShader, "u_xNoiseTexture3D", &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.RaymarchFog().m_xShader, "u_xBlueNoiseTexture", &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
 
 	// Bind CSM shadow maps and matrices for volumetric shadows
 	static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "u_xCSM0", "u_xCSM1", "u_xCSM2", "u_xCSM3" };
@@ -175,11 +175,11 @@ void Flux_RaymarchFog::Render(Flux_CommandList* pxCommandList)
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xCSMSRV = Flux_Shadows::GetCSMSRV(u);
-		xBinder.BindSRV(s_xShader, s_aszCSMNames[u], &xCSMSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
-		xBinder.BindCBV(s_xShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+		xBinder.BindSRV(g_xEngine.RaymarchFog().m_xShader, s_aszCSMNames[u], &xCSMSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
+		xBinder.BindCBV(g_xEngine.RaymarchFog().m_xShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
 	}
 
-	xBinder.BindDrawConstants(s_xShader, "RaymarchConstants", &s_xConstants, sizeof(Flux_RaymarchConstants));
+	xBinder.BindDrawConstants(g_xEngine.RaymarchFog().m_xShader, "RaymarchConstants", &s_xConstants, sizeof(Flux_RaymarchConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

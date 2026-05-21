@@ -188,7 +188,7 @@ public:
 	// ========== Lifecycle ==========
 	static void Initialize();
 	static void Shutdown();
-	static bool IsInitialized() { return s_bInitialized; }
+	static bool IsInitialized();
 
 	// ========== Buffer Registration ==========
 	// Called by Zenith_TerrainComponent to register its unified buffers.
@@ -227,12 +227,9 @@ public:
 
 private:
 	// ========== State ==========
-	static bool                                       s_bInitialized;
-	// Registry of every per-terrain streaming state. Each Zenith_TerrainComponent
-	// owns its state and pushes/pops it here on Register/Unregister.
-	static Zenith_Vector<Flux_TerrainStreamingState*> s_xRegistry;
-	// Mutates the registry on register / unregister.
-	static Zenith_Mutex                               s_xRegistryMutex;
+	// Phase 7c: state moved to Flux_TerrainStreamingManagerImpl held by Zenith_Engine.
+	// Registry of every per-terrain streaming state + register mutex moved
+	// to the Impl alongside s_bInitialized.
 
 	// ========== Internal Helpers ==========
 	// Helpers operate on a Flux_TerrainStreamingState& so the same logic

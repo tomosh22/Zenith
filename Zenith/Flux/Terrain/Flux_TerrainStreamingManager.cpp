@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Flux_TerrainStreamingManager.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -12,9 +13,6 @@ using namespace Flux_TerrainConfig;
 DEBUGVAR bool dbg_bLogTerrainStreaming = false;
 
 // ========== Static Member Definitions ==========
-bool                                       Flux_TerrainStreamingManager::s_bInitialized = false;
-Zenith_Vector<Flux_TerrainStreamingState*> Flux_TerrainStreamingManager::s_xRegistry;
-Zenith_Mutex                               Flux_TerrainStreamingManager::s_xRegistryMutex;
 
 // ========== Buffer Allocator Implementation ==========
 // Best-fit allocator with coalescing. Free list sorted by offset.
@@ -209,7 +207,7 @@ void Flux_TerrainStreamingState::Shutdown()
 
 void Flux_TerrainStreamingManager::Initialize()
 {
-	if (s_bInitialized)
+	if (g_xEngine.TerrainStreaming().m_bInitialized)
 		return;
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager::Initialize()");
@@ -218,29 +216,29 @@ void Flux_TerrainStreamingManager::Initialize()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Log Streaming" }, dbg_bLogTerrainStreaming);
 #endif
 
-	s_bInitialized = true;
+	g_xEngine.TerrainStreaming().m_bInitialized = true;
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager initialized");
 }
 
 void Flux_TerrainStreamingManager::Shutdown()
 {
-	if (!s_bInitialized)
+	if (!g_xEngine.TerrainStreaming().m_bInitialized)
 		return;
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager::Shutdown()");
 
-	s_xRegistryMutex.Lock();
+	g_xEngine.TerrainStreaming().m_xRegistryMutex.Lock();
 	// All terrain components must have been destroyed (and unregistered)
 	// before the manager shuts down. A non-empty registry means a leak —
 	// component destructor not running, or unregister wired to the wrong
 	// state. Loud failure is better than dangling pointers.
-	Zenith_Assert(s_xRegistry.GetSize() == 0,
+	Zenith_Assert(g_xEngine.TerrainStreaming().m_xRegistry.GetSize() == 0,
 		"Flux_TerrainStreamingManager::Shutdown: %u terrain(s) still registered — destroy components before shutting down the manager",
-		s_xRegistry.GetSize());
-	s_xRegistry.Clear();
-	s_xRegistryMutex.Unlock();
+		g_xEngine.TerrainStreaming().m_xRegistry.GetSize());
+	g_xEngine.TerrainStreaming().m_xRegistry.Clear();
+	g_xEngine.TerrainStreaming().m_xRegistryMutex.Unlock();
 
-	s_bInitialized = false;
+	g_xEngine.TerrainStreaming().m_bInitialized = false;
 }
 
 void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponent* pxTerrainComponent, const Flux_TerrainChunkInitData* pxChunkInitData)
@@ -254,19 +252,19 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponen
 	Flux_TerrainStreamingState& xState = *pxTerrainComponent->m_pxStreamingState;
 	xState.m_pxOwner = pxTerrainComponent;
 
-	s_xRegistryMutex.Lock();
+	g_xEngine.TerrainStreaming().m_xRegistryMutex.Lock();
 	// Idempotent: re-registering an already-registered terrain refreshes its
 	// allocators / AABBs (e.g. terrain regenerate path) without double-pushing.
 	bool bAlreadyRegistered = false;
-	for (u_int u = 0; u < s_xRegistry.GetSize(); u++)
+	for (u_int u = 0; u < g_xEngine.TerrainStreaming().m_xRegistry.GetSize(); u++)
 	{
-		if (s_xRegistry.Get(u) == &xState) { bAlreadyRegistered = true; break; }
+		if (g_xEngine.TerrainStreaming().m_xRegistry.Get(u) == &xState) { bAlreadyRegistered = true; break; }
 	}
 	if (!bAlreadyRegistered)
 	{
-		s_xRegistry.PushBack(&xState);
+		g_xEngine.TerrainStreaming().m_xRegistry.PushBack(&xState);
 	}
-	s_xRegistryMutex.Unlock();
+	g_xEngine.TerrainStreaming().m_xRegistryMutex.Unlock();
 
 	// Initialize allocators for the streaming region (after LOW LOD).
 	const uint32_t uMaxStreamingVertices = static_cast<uint32_t>(STREAMING_VERTEX_BUFFER_SIZE / pxTerrainComponent->m_uVertexStride);
@@ -322,19 +320,19 @@ void Flux_TerrainStreamingManager::UnregisterTerrainBuffers(Zenith_TerrainCompon
 
 	Flux_TerrainStreamingState* pxState = pxTerrainComponent->m_pxStreamingState;
 
-	s_xRegistryMutex.Lock();
+	g_xEngine.TerrainStreaming().m_xRegistryMutex.Lock();
 	// Remove the component's state from the registry (only — never touch
 	// other states; that was the cross-terrain-clearing bug fixed by this
 	// refactor).
-	for (u_int u = 0; u < s_xRegistry.GetSize(); u++)
+	for (u_int u = 0; u < g_xEngine.TerrainStreaming().m_xRegistry.GetSize(); u++)
 	{
-		if (s_xRegistry.Get(u) == pxState)
+		if (g_xEngine.TerrainStreaming().m_xRegistry.Get(u) == pxState)
 		{
-			s_xRegistry.RemoveSwap(u);
+			g_xEngine.TerrainStreaming().m_xRegistry.RemoveSwap(u);
 			break;
 		}
 	}
-	s_xRegistryMutex.Unlock();
+	g_xEngine.TerrainStreaming().m_xRegistryMutex.Unlock();
 
 	// Reset only this component's state. The component's destructor calls
 	// state Shutdown / delete after returning from here.
@@ -360,7 +358,7 @@ Flux_TerrainStreamingState* Flux_TerrainStreamingManager::GetStateFor(const Zeni
 
 bool Flux_TerrainStreamingManager::IsChunkDataDirty(const Zenith_TerrainComponent* pxTerrainComponent)
 {
-	if (!s_bInitialized || pxTerrainComponent == nullptr || pxTerrainComponent->m_pxStreamingState == nullptr) return false;
+	if (!g_xEngine.TerrainStreaming().m_bInitialized || pxTerrainComponent == nullptr || pxTerrainComponent->m_pxStreamingState == nullptr) return false;
 	return pxTerrainComponent->m_pxStreamingState->m_bChunkDataDirty.load(std::memory_order_acquire);
 }
 
@@ -492,7 +490,7 @@ void Flux_TerrainStreamingManager::EvictDistantHighLOD(Flux_TerrainStreamingStat
 
 void Flux_TerrainStreamingManager::UpdateStreamingForTerrain(Zenith_TerrainComponent* pxTerrainComponent, const Zenith_Maths::Vector3& xCameraPos)
 {
-	if (!s_bInitialized)
+	if (!g_xEngine.TerrainStreaming().m_bInitialized)
 	{
 		if (dbg_bLogTerrainStreaming)
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] UpdateStreamingForTerrain early-out: streaming manager not initialized");
@@ -625,7 +623,7 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManager::StreamInLOD(Flux_Terrai
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_STREAM_IN_LOD);
 
-	if (!s_bInitialized || !xState.m_pxOwner)
+	if (!g_xEngine.TerrainStreaming().m_bInitialized || !xState.m_pxOwner)
 		return Flux_TerrainStreamInResult::AllocationFailure;
 
 	// Only HIGH LOD can be streamed (LOW is always resident). Treat as a
@@ -729,7 +727,7 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManager::StreamInLOD(Flux_Terrai
 
 void Flux_TerrainStreamingManager::EvictLOD(Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, uint32_t uLODLevel)
 {
-	if (!s_bInitialized || !xState.m_pxOwner)
+	if (!g_xEngine.TerrainStreaming().m_bInitialized || !xState.m_pxOwner)
 		return;
 
 	Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
@@ -1119,7 +1117,10 @@ void Flux_TerrainStreamingManager::BuildChunkDataForGPU_Internal(const Flux_Terr
 
 void Flux_TerrainStreamingManager::BuildChunkDataForGPU(const Zenith_TerrainComponent* pxTerrainComponent, Zenith_TerrainChunkData* pxChunkDataOut)
 {
-	if (!s_bInitialized || pxTerrainComponent == nullptr || pxTerrainComponent->m_pxStreamingState == nullptr)
+	if (!g_xEngine.TerrainStreaming().m_bInitialized || pxTerrainComponent == nullptr || pxTerrainComponent->m_pxStreamingState == nullptr)
 		return;
 	BuildChunkDataForGPU_Internal(*pxTerrainComponent->m_pxStreamingState, pxChunkDataOut);
 }
+
+bool Flux_TerrainStreamingManager::IsInitialized() { return g_xEngine.TerrainStreaming().m_bInitialized; }
+
