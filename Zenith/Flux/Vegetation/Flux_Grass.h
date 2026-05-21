@@ -104,25 +104,7 @@ private:
 	static void CreateBuffers();
 	static void DestroyBuffers();
 
-	// Pipelines and shaders
-	static Flux_Pipeline s_xGrassPipeline;
-	static Flux_Shader s_xGrassShader;
-
-	// Instance buffer
-	static Flux_ReadWriteBuffer s_xInstanceBuffer;
-	static u_int s_uAllocatedInstances;
-
-	// Chunk management
-	static Zenith_Vector<GrassChunk> s_axChunks;
-	static u_int s_uVisibleBladeCount;
-	static u_int s_uActiveChunkCount;
-
-	// Configuration state (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
-	static float s_fDensityScale;
-	static float s_fMaxDistance;
-	static float s_fWindStrength;
-	static Zenith_Maths::Vector2 s_xWindDirection;
-
-	// Constants buffer for grass parameters
-	static Flux_DynamicConstantBuffer s_xGrassConstantsBuffer;
+	// Phase 7g: pipelines, instance buffer, chunk state and configuration moved
+	// to Flux_GrassImpl held by Zenith_Engine. Reach them via
+	// g_xEngine.Grass().m_xGrassPipeline etc.
 };

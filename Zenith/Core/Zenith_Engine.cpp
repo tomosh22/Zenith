@@ -48,6 +48,9 @@
 #include "Flux/SSR/Flux_SSRImpl.h"
 #include "Flux/SSGI/Flux_SSGIImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
+#include "Flux/Skybox/Flux_SkyboxImpl.h"
+#include "Flux/Vegetation/Flux_GrassImpl.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -280,6 +283,9 @@ Flux_InstancedMeshesImpl&          Zenith_Engine::InstancedMeshes()   { return *
 Flux_SSRImpl&                      Zenith_Engine::SSR()               { return *m_pxSSR; }
 Flux_SSGIImpl&                     Zenith_Engine::SSGI()              { return *m_pxSSGI; }
 Flux_IBLImpl&                      Zenith_Engine::IBL()               { return *m_pxIBL; }
+Flux_SkyboxImpl&                   Zenith_Engine::Skybox()            { return *m_pxSkybox; }
+Flux_GrassImpl&                    Zenith_Engine::Grass()             { return *m_pxGrass; }
+Flux_PrimitivesImpl&               Zenith_Engine::Primitives()        { return *m_pxPrimitives; }
 #ifdef ZENITH_TOOLS
 Flux_GizmosImpl&                   Zenith_Engine::Gizmos()            { return *m_pxGizmos; }
 #endif
@@ -414,6 +420,11 @@ void Zenith_Engine::Initialise()
 	m_pxSSR  = new Flux_SSRImpl();
 	m_pxSSGI = new Flux_SSGIImpl();
 	m_pxIBL  = new Flux_IBLImpl();
+
+	// Phase 7g: large subsystems.
+	m_pxSkybox     = new Flux_SkyboxImpl();
+	m_pxGrass      = new Flux_GrassImpl();
+	m_pxPrimitives = new Flux_PrimitivesImpl();
 #ifdef ZENITH_TOOLS
 	m_pxGizmos          = new Flux_GizmosImpl();
 #endif
@@ -806,6 +817,9 @@ void Zenith_Engine::Shutdown()
 	delete m_pxSSR;  m_pxSSR  = nullptr;
 	delete m_pxSSGI; m_pxSSGI = nullptr;
 	delete m_pxIBL;  m_pxIBL  = nullptr;
+	delete m_pxSkybox;     m_pxSkybox     = nullptr;
+	delete m_pxGrass;      m_pxGrass      = nullptr;
+	delete m_pxPrimitives; m_pxPrimitives = nullptr;
 #ifdef ZENITH_TOOLS
 	delete m_pxGizmos;          m_pxGizmos = nullptr;
 #endif

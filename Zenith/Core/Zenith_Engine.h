@@ -33,6 +33,9 @@ class Flux_TextImpl;
 class Flux_SSRImpl;
 class Flux_SSGIImpl;
 class Flux_IBLImpl;
+class Flux_SkyboxImpl;
+class Flux_GrassImpl;
+class Flux_PrimitivesImpl;
 class Zenith_VulkanImpl;
 class Zenith_Vulkan_MemoryManagerImpl;
 class Zenith_Vulkan_SwapchainImpl;
@@ -130,6 +133,9 @@ public:
 	Flux_SSRImpl& SSR();
 	Flux_SSGIImpl& SSGI();
 	Flux_IBLImpl& IBL();
+	Flux_SkyboxImpl& Skybox();
+	Flux_GrassImpl& Grass();
+	Flux_PrimitivesImpl& Primitives();
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl& Gizmos();
 #endif
@@ -194,6 +200,9 @@ private:
 	Flux_SSRImpl*                       m_pxSSR              = nullptr;
 	Flux_SSGIImpl*                      m_pxSSGI             = nullptr;
 	Flux_IBLImpl*                       m_pxIBL              = nullptr;
+	Flux_SkyboxImpl*                    m_pxSkybox           = nullptr;
+	Flux_GrassImpl*                     m_pxGrass            = nullptr;
+	Flux_PrimitivesImpl*                m_pxPrimitives       = nullptr;
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl*                    m_pxGizmos           = nullptr;
 #endif

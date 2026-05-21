@@ -106,20 +106,9 @@ public:
 	static void RegisterDebugVariables();
 #endif
 
-	// Pipelines and buffers (public for render graph execute callback access)
-	static Flux_Pipeline s_xCubemapPipeline;
-	static Flux_Pipeline s_xAtmospherePipeline;
-	static Flux_Pipeline s_xAerialPerspectivePipeline;
-	static Flux_DynamicConstantBuffer s_xAtmosphereConstantsBuffer;
-	static Flux_Pipeline s_xSolidColourPipeline;
-	static Flux_DynamicConstantBuffer s_xSolidColourConstantsBuffer;
-
-	// Shaders (public so free-function execute callbacks can pass them to
-	// name-based Flux_ShaderBinder calls).
-	static Flux_Shader s_xCubemapShader;
-	static Flux_Shader s_xAtmosphereShader;
-	static Flux_Shader s_xAerialPerspectiveShader;
-	static Flux_Shader s_xSolidColourShader;
+	// Phase 7g: pipelines, shaders, render attachments and configuration moved
+	// to Flux_SkyboxImpl held by Zenith_Engine. Reach them via
+	// g_xEngine.Skybox().m_xCubemapPipeline etc.
 
 private:
 	static void RenderSolidColour();
@@ -128,16 +117,4 @@ private:
 
 	static void CreateRenderTargets();
 	static void DestroyRenderTargets();
-
-	// Transmittance LUT (precomputed for atmosphere)
-	static Flux_RenderAttachment s_xTransmittanceLUT;
-	static bool s_bLUTNeedsUpdate;
-
-	// Atmosphere configuration state (continuous parameters)
-	static float s_fSunIntensity;
-	static float s_fRayleighScale;
-	static float s_fMieScale;
-	static float s_fMieG;
-	static float s_fAerialPerspectiveStrength;
-
 };
