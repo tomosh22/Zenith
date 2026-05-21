@@ -55,6 +55,10 @@ namespace DP_Particles
 		BellSoulRing      = 5,  // gold radial bell-ring (large radius), additive
 		BogWaterSteam     = 6,  // grey-white steam, slow rise
 		PriestAlert       = 7,  // red "!" burst above priest head, additive
+		HighScentAura     = 8,  // continuous violet aura around the high-scent
+		                        //   villager. Distinct from the other kinds: NOT
+		                        //   burst-based -- continuously emits while the
+		                        //   tracked villager has scent above threshold.
 
 		COUNT
 	};
@@ -95,6 +99,16 @@ namespace DP_Particles
 	// for "burst at this villager / door / chest entity" sites. No-op on
 	// invalid entity.
 	void BurstAtEntity(Kind eKind, Zenith_EntityID xEntity);
+
+	// ----- Continuous-emission API (for the HighScentAura kind) -----
+
+	// Reposition the HighScentAura emitter to track a villager + toggle
+	// emission. Called by DPPlayerController_Behaviour once per frame
+	// (after WriteHighestScentToBlackboard) with the highest-scent
+	// villager + a bShow flag derived from scent >= threshold. Passing
+	// INVALID_ENTITY_ID for xVillager OR bShow=false stops emission.
+	// Idempotent.
+	void UpdateHighScentAura(Zenith_EntityID xVillager, bool bShow);
 
 	// ----- Test accessors (ZENITH_INPUT_SIMULATOR only) -----
 	//

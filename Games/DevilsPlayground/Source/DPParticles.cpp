@@ -35,6 +35,7 @@ namespace DP_Particles
 			"DP_BellSoulRing",
 			"DP_BogWaterSteam",
 			"DP_PriestAlert",
+			"DP_HighScentAura",
 		};
 
 		// Per-Kind burst count. The Flux_ParticleEmitterConfig has
@@ -50,6 +51,7 @@ namespace DP_Particles
 			48,  // BellSoulRing     -- biggest; radial ring
 			20,  // BogWaterSteam
 			12,  // PriestAlert
+			0,   // HighScentAura   -- continuous emission, no per-burst count
 		};
 
 		// Vertical offset added to burst-position Y. PriestAlert needs
@@ -64,6 +66,7 @@ namespace DP_Particles
 			1.0f,  // BellSoulRing      (eye level)
 			0.1f,  // BogWaterSteam     (puddle level)
 			2.2f,  // PriestAlert       (above priest head; priest ~1.8 m)
+			0.9f,  // HighScentAura     (mid-body; the demonic stain reads as torso-emitted)
 		};
 
 		Flux_ParticleEmitterConfig* g_apxConfigs[kNumKinds] = { nullptr };
@@ -262,6 +265,36 @@ namespace DP_Particles
 			return p;
 		}
 
+		Flux_ParticleEmitterConfig* MakeHighScentAura()
+		{
+			// Continuous-emission emitter, NOT burst-based. Lives around
+			// the highest-scent villager while their scent is above the
+			// hound-bark threshold (0.5 by Tuning.json default). Soft
+			// violet/black smoke wisps reading as "this body smells of
+			// demon."
+			auto* p = new Flux_ParticleEmitterConfig();
+			p->m_fSpawnRate         = 18.0f;          // continuous trickle
+			p->m_uBurstCount        = 0;
+			p->m_uMaxParticles      = 64;
+			p->m_fLifetimeMin       = 0.8f;
+			p->m_fLifetimeMax       = 1.6f;
+			p->m_fSpawnRadius       = 0.40f;          // body-width column
+			p->m_xEmitDirection     = { 0.0f, 1.0f, 0.0f };
+			p->m_fSpreadAngleDegrees = 35.0f;
+			p->m_fSpeedMin          = 0.5f;
+			p->m_fSpeedMax          = 1.2f;
+			p->m_xGravity           = { 0.0f, 0.4f, 0.0f };  // gentle rise (smoke)
+			p->m_fDrag              = 0.8f;
+			p->m_xColorStart        = { 0.55f, 0.25f, 0.75f, 0.55f }; // violet
+			p->m_xColorEnd          = { 0.30f, 0.10f, 0.40f, 0.0f };  // fade darker
+			p->m_fSizeStart         = 0.18f;
+			p->m_fSizeEnd           = 0.40f;
+			p->m_bAdditiveBlending  = true;
+			p->m_fTurbulence        = 0.6f;
+			p->m_bUseGPUCompute     = false;
+			return p;
+		}
+
 		Flux_ParticleEmitterConfig* MakePriestAlert()
 		{
 			auto* p = new Flux_ParticleEmitterConfig();
@@ -298,6 +331,7 @@ namespace DP_Particles
 			g_apxConfigs[static_cast<int>(Kind::BellSoulRing)]      = MakeBellSoulRing();
 			g_apxConfigs[static_cast<int>(Kind::BogWaterSteam)]     = MakeBogWaterSteam();
 			g_apxConfigs[static_cast<int>(Kind::PriestAlert)]       = MakePriestAlert();
+			g_apxConfigs[static_cast<int>(Kind::HighScentAura)]     = MakeHighScentAura();
 
 			for (int i = 0; i < kNumKinds; ++i)
 			{
@@ -515,6 +549,53 @@ namespace DP_Particles
 		Zenith_Maths::Vector3 xPos;
 		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
 		Burst(eKind, xPos);
+	}
+
+	void UpdateHighScentAura(Zenith_EntityID xVillager, bool bShow)
+	{
+		if (!g_bInitialized) return;
+		const int iKind = static_cast<int>(Kind::HighScentAura);
+
+		// Resolve the aura emitter entity. If it wasn't created (e.g. a
+		// test loads ProcLevel but the bootstrap didn't run), bail.
+		Zenith_EntityID xEmitterId = g_axEmitterEntities[iKind];
+		if (!xEmitterId.IsValid()) return;
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xEmitterId);
+		if (pxScene == nullptr) return;
+		Zenith_Entity xEnt = pxScene->TryGetEntity(xEmitterId);
+		if (!xEnt.IsValid()) return;
+		if (!xEnt.HasComponent<Zenith_ParticleEmitterComponent>()) return;
+		Zenith_ParticleEmitterComponent& xEmitter =
+			xEnt.GetComponent<Zenith_ParticleEmitterComponent>();
+
+		const bool bWantEmit = bShow && xVillager.IsValid();
+		if (!bWantEmit)
+		{
+			xEmitter.SetEmitting(false);
+			return;
+		}
+
+		// Reposition the emitter at the villager's world position
+		// (plus the kind's vertical offset) + flip emission on. Done
+		// every frame so the aura follows the villager around the
+		// village rather than blooming once and staying put.
+		Zenith_SceneData* pxVilScene = Zenith_SceneManager::GetSceneDataForEntity(xVillager);
+		if (pxVilScene == nullptr)
+		{
+			xEmitter.SetEmitting(false);
+			return;
+		}
+		Zenith_Entity xVilEnt = pxVilScene->TryGetEntity(xVillager);
+		if (!xVilEnt.IsValid() || !xVilEnt.HasComponent<Zenith_TransformComponent>())
+		{
+			xEmitter.SetEmitting(false);
+			return;
+		}
+		Zenith_Maths::Vector3 xPos;
+		xVilEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		xPos.y += kKindHeightOffset[iKind];
+		xEmitter.SetEmitPosition(xPos);
+		xEmitter.SetEmitting(true);
 	}
 
 	uint32_t GetBurstCountForTest(Kind eKind)

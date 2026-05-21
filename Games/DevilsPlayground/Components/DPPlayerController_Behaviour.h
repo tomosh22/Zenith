@@ -24,6 +24,8 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DPInputActions.h"
+#include "Source/DPParticles.h"
+#include "Source/DP_Tuning.h"
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/DPItemBase_Behaviour.h"
 
@@ -170,10 +172,36 @@ public:
 
 		// MVP-1.6: decay scent on every villager that's carrying any, then
 		// push the highest-scent villager handle to every AIAgentComponent's
-		// BB_KEY_HIGH_SCENT_TARGET slot. Production reader is the future
-		// hound archetype; in MVP this is data-path-only.
+		// BB_KEY_HIGH_SCENT_TARGET slot. The priest reads this in
+		// DP_BTAction_FindPosInSuspicionSphere (2026-05-21) to bias
+		// patrol toward the high-scent villager.
 		DP_Player::TickDemonScent(fDt);
 		DP_Player::WriteHighestScentToBlackboard();
+
+		// 2026-05-21: update the visible scent-aura emitter. Following
+		// the highest-scent villager so the player can SEE which body
+		// is "marked" by repeated possession -- a strong cue to switch
+		// to a fresher villager. Threshold matches the priest's
+		// hound-bark threshold so the visual and the BT-side bias
+		// agree on "when does scent matter".
+		{
+			Zenith_EntityID xHighestId = INVALID_ENTITY_ID;
+			float fHighestScent = 0.0f;
+			ForEachDemonScentEntry(
+				[&xHighestId, &fHighestScent]
+				(Zenith_EntityID xId, float fScent)
+				{
+					if (fScent > fHighestScent)
+					{
+						fHighestScent = fScent;
+						xHighestId = xId;
+					}
+				});
+			const float fThreshold =
+				DP_Tuning::Get<float>("possession.demon_scent_hound_bark_threshold");
+			DP_Particles::UpdateHighScentAura(
+				xHighestId, fHighestScent >= fThreshold);
+		}
 
 		// MVP-2.1.1/2 Devout channel: per-frame countdown + priest
 		// interrupt check. Quiet no-op until TryVoluntaryPossessSwitch
