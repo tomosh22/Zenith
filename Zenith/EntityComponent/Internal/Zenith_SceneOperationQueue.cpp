@@ -8,6 +8,7 @@
 #include "EntityComponent/Internal/Zenith_SceneLifecycleContext.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneOperationQueueImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
@@ -293,7 +294,7 @@ void Zenith_SceneOperationQueue::CleanupAndRemoveAsyncJob(u_int uIndex)
 	{
 		pxJob->m_pxTask->WaitUntilComplete();
 	}
-	Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths.EraseValue(pxJob->m_strCanonicalPath);
+	g_xEngine.SceneLifecycle().m_axCurrentlyLoadingPaths.EraseValue(pxJob->m_strCanonicalPath);
 	delete pxJob;
 	g_xEngine.SceneOperations().m_axAsyncJobs.Remove(uIndex);
 }
@@ -621,7 +622,7 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneO
 	}
 
 	// File is loaded AND (ADDITIVE OR activation allowed) — proceed to scene creation.
-	Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = true;
+	g_xEngine.SceneLifecycle().m_bIsLoadingScene = true;
 
 	// Validate the pre-loaded stream header BEFORE destroying the current world for
 	// SCENE_LOAD_SINGLE. A corrupt / unsupported file must not leave the engine
@@ -648,7 +649,7 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneO
 		{
 			Zenith_Error(LOG_CATEGORY_SCENE, "LoadSceneAsync(SINGLE): Invalid or unsupported scene file, aborting before teardown: '%s'", pxJob->m_strPath.c_str());
 			FailAsyncLoadOperation(pxOp);
-			Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = false;
+			g_xEngine.SceneLifecycle().m_bIsLoadingScene = false;
 			CleanupAndRemoveAsyncJob(uIndex);
 			return AsyncJobStepResult::Removed;
 		}
@@ -684,7 +685,7 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneO
 		// won't reach here on a corrupt SINGLE load.
 		Zenith_SceneManager::UnloadUnusedAssets();
 		Zenith_Physics::Reset();
-		Zenith_SceneLifecycleScheduler::s_fFixedTimeAccumulator = 0.0f;  // Unity behavior: reset on scene load
+		g_xEngine.SceneLifecycle().m_fFixedTimeAccumulator = 0.0f;  // Unity behavior: reset on scene load
 
 		// Cancel the scope: Phase 2 fires the consolidated ActiveSceneChanged
 		// using pxJob's stored snapshot, possibly across frames if activation
@@ -727,7 +728,7 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneO
 			Zenith_Error(LOG_CATEGORY_SCENE, "LoadSceneAsync: Failed to deserialize '%s'", pxJob->m_strPath.c_str());
 			Zenith_SceneManager::UnloadSceneForced(xScene);
 			FailAsyncLoadOperation(pxOp);
-			Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = false;
+			g_xEngine.SceneLifecycle().m_bIsLoadingScene = false;
 			CleanupAndRemoveAsyncJob(uIndex);
 			return AsyncJobStepResult::Removed;
 		}
@@ -739,7 +740,7 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneO
 		pxJob->m_iCreatedSceneHandle = xScene.m_iHandle;
 		pxJob->m_uCreatedSceneGeneration = xScene.m_uGeneration;
 		pxJob->m_ePhase = AsyncLoadJob::LoadPhase::DESERIALIZED;
-		Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = false;
+		g_xEngine.SceneLifecycle().m_bIsLoadingScene = false;
 	}
 
 	return AsyncJobStepResult::FallThrough;
@@ -757,7 +758,7 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneO
 		return AsyncJobStepResult::Waiting;
 	}
 
-	Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = true;
+	g_xEngine.SceneLifecycle().m_bIsLoadingScene = true;
 
 	// A5: use the generation captured at Phase 1 end, not the current slot generation.
 	// If the slot was recycled between deserialization and activation, Zenith_SceneRegistry::GetSceneData
@@ -779,7 +780,7 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneO
 			pxJob->m_uCreatedSceneGeneration,
 			pxJob->m_iCreatedSceneHandle < static_cast<int>(g_xEngine.SceneRegistry().m_axSceneGenerations.GetSize())
 				? g_xEngine.SceneRegistry().m_axSceneGenerations.Get(pxJob->m_iCreatedSceneHandle) : 0);
-		Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = false;
+		g_xEngine.SceneLifecycle().m_bIsLoadingScene = false;
 		FailAsyncLoadOperation(pxOp);
 		CleanupAndRemoveAsyncJob(uIndex);
 		return AsyncJobStepResult::Removed;
@@ -816,9 +817,9 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneO
 
 		// D.13 (finding 3.12): clear the loading-scene flag BEFORE SceneLoaded callback
 		// dispatch so subscribers see IsLoadingScene() == false. Mirrors the sync path.
-		// CleanupAndRemoveAsyncJob below will also clear Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths; the
+		// CleanupAndRemoveAsyncJob below will also clear g_xEngine.SceneLifecycle().m_axCurrentlyLoadingPaths; the
 		// circular-load guard stays active until the per-path bookkeeping is released.
-		Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = false;
+		g_xEngine.SceneLifecycle().m_bIsLoadingScene = false;
 
 		Zenith_SceneCallbackBus::FireSceneLoaded(xScene, pxJob->m_eMode);
 	}

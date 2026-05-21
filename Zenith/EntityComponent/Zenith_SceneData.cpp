@@ -2,6 +2,7 @@
 
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -779,7 +780,7 @@ void Zenith_SceneData::DispatchImmediateLifecycleForRuntime(Zenith_EntityID xID)
 {
 	// Unity parity: Awake/OnEnable fire immediately when an entity is created at runtime.
 	// During scene loading and prefab instantiation, lifecycle is dispatched in batch.
-	if (Zenith_SceneLifecycleScheduler::s_bIsLoadingScene || Zenith_SceneLifecycleScheduler::s_bIsPrefabInstantiating)
+	if (g_xEngine.SceneLifecycle().m_bIsLoadingScene || g_xEngine.SceneLifecycle().m_bIsPrefabInstantiating)
 		return;
 
 	DispatchAwakeForEntity(xID);

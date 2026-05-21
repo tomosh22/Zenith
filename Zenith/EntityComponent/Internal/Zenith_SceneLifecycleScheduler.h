@@ -35,50 +35,10 @@ public:
 	using InitialSceneLoadFn = void(*)();
 
 	//==========================================================================
-	// Storage (A4: state migrated from Zenith_SceneManager)
+	// Storage type only (Phase 5e: actual state lives on
+	// Zenith_SceneLifecycleSchedulerImpl owned by Zenith_Engine).
+	// External readers reach it via g_xEngine.SceneLifecycle().m_xXxx.
 	//==========================================================================
-
-	// Lifecycle-deferral flags. Read by Zenith_SceneLifecycleContext accessors;
-	// written via the public RAII guards declared on Zenith_SceneManager.
-	static bool                          s_bIsLoadingScene;
-	static bool                          s_bIsPrefabInstantiating;
-	static bool                          s_bIsUpdating;
-
-	static Zenith_SceneOperationID       s_ulLastDeferredLoadOp;
-
-	// Fixed-timestep accumulator (drives FixedUpdate dispatch in Update()).
-	static float                         s_fFixedTimeAccumulator;
-	static float                         s_fFixedTimestep;            // default 0.02s = 50Hz
-
-	// Two stacks of in-progress load paths used for circular-dependency detection:
-	//   * s_axCurrentlyLoadingPaths is pushed during file-I/O / Phase1 deserialization.
-	//   * s_axLifecycleLoadStack is pushed during Awake/OnEnable dispatch.
-	static Zenith_Vector<std::string>    s_axCurrentlyLoadingPaths;
-	static Zenith_Vector<std::string>    s_axLifecycleLoadStack;
-
-	// Pending build-index plumb: LoadSceneByIndex / LoadSceneAsyncByIndex park
-	// the caller-supplied build index here; downstream scene-creation reads and
-	// clears it. Main-thread-only.
-	static int                           s_iPendingBuildIndex;
-
-	// B1: explicit creation-target stack. Pushed by SceneCreationTargetScope
-	// around the load/deserialization/activation paths so entities created by
-	// scene-load callbacks (deserialization side-effects, OnEnable spawning,
-	// SceneLoaded subscribers) land in the scene currently being materialized
-	// instead of the active scene. Top of stack drives
-	// Zenith_SceneManager::GetDefaultCreationScene(); empty stack falls back
-	// to the active scene.
-	static Zenith_Vector<Zenith_Scene>   s_axCreationTargetStack;
-
-	// B4: true while Zenith_Core::Zenith_MainLoop is running. Set once by
-	// Zenith_SceneManager::SetMainLoopRunning(true) just before the main
-	// loop's while(...) and cleared after the loop exits. Read by
-	// LoadSceneBlockingForBootstrap to assert bootstrap-only invocation.
-	static bool                          s_bIsMainLoopRunning;
-
-	// Set by Zenith_Core (or editor) so the Play/Stop cycle can re-run the
-	// project's initial-scene-load hook.
-	static InitialSceneLoadFn            s_pfnInitialSceneLoad;
 
 	//==========================================================================
 	// Lifecycle

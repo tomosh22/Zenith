@@ -6,6 +6,7 @@
 #include "Editor/Zenith_Editor.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
+#include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -1564,7 +1565,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		// deferral guard so DispatchFullLifecycleInit owns Awake/OnEnable order.
 		Zenith_SceneManager::SetInitialSceneLoadCallback(xAction.m_pfnFunc);
 		{
-			Zenith_SceneManager::LifecycleDeferralGuard xGuard(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
+			Zenith_SceneManager::LifecycleDeferralGuard xGuard(g_xEngine.SceneLifecycle().m_bIsLoadingScene);
 			xAction.m_pfnFunc();
 		}
 		break;

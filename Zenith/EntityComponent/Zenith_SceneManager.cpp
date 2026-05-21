@@ -5,6 +5,7 @@
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneOperationQueueImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -37,12 +38,12 @@ bool Zenith_SceneManager::s_bAnimTasksActive = false;
 static uint32_t s_uUnloadUnusedAssetsCallCount = 0;
 #endif
 // A3: async-operation statics moved to Zenith_SceneOperationQueue.
-// A4: lifecycle/update statics (Zenith_SceneLifecycleScheduler::s_bIsLoadingScene, Zenith_SceneLifecycleScheduler::s_bIsPrefabInstantiating,
-// Zenith_SceneLifecycleScheduler::s_bIsUpdating, Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp, Zenith_SceneLifecycleScheduler::s_fFixedTimeAccumulator, Zenith_SceneLifecycleScheduler::s_fFixedTimestep,
-// Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths, Zenith_SceneLifecycleScheduler::s_axLifecycleLoadStack, Zenith_SceneLifecycleScheduler::s_pfnInitialSceneLoad)
+// A4: lifecycle/update statics (g_xEngine.SceneLifecycle().m_bIsLoadingScene, g_xEngine.SceneLifecycle().m_bIsPrefabInstantiating,
+// g_xEngine.SceneLifecycle().m_bIsUpdating, g_xEngine.SceneLifecycle().m_ulLastDeferredLoadOp, g_xEngine.SceneLifecycle().m_fFixedTimeAccumulator, Zenith_SceneLifecycleScheduler::s_fFixedTimestep,
+// g_xEngine.SceneLifecycle().m_axCurrentlyLoadingPaths, g_xEngine.SceneLifecycle().m_axLifecycleLoadStack, g_xEngine.SceneLifecycle().m_pfnInitialSceneLoad)
 // moved to Zenith_SceneLifecycleScheduler.
 
-// PendingBuildIndexGuard: RAII helper that restores Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex on scope
+// PendingBuildIndexGuard: RAII helper that restores g_xEngine.SceneLifecycle().m_iPendingBuildIndex on scope
 // exit. Protects against leaking the pending value if LoadScene aborts mid-call.
 // Storage now lives on Zenith_SceneLifecycleScheduler (A4); the guard wraps the
 // scheduler's static.
@@ -51,11 +52,11 @@ namespace
 	struct PendingBuildIndexGuard
 	{
 		int m_iPrev;
-		explicit PendingBuildIndexGuard(int iValue) : m_iPrev(Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex)
+		explicit PendingBuildIndexGuard(int iValue) : m_iPrev(g_xEngine.SceneLifecycle().m_iPendingBuildIndex)
 		{
-			Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex = iValue;
+			g_xEngine.SceneLifecycle().m_iPendingBuildIndex = iValue;
 		}
-		~PendingBuildIndexGuard() { Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex = m_iPrev; }
+		~PendingBuildIndexGuard() { g_xEngine.SceneLifecycle().m_iPendingBuildIndex = m_iPrev; }
 
 		PendingBuildIndexGuard(const PendingBuildIndexGuard&) = delete;
 		PendingBuildIndexGuard& operator=(const PendingBuildIndexGuard&) = delete;
@@ -239,9 +240,9 @@ void Zenith_SceneManager::ResetForNextTest()
 {
 	// Clear transient flags that might have been left true by a crashed or
 	// early-returning test.
-	Zenith_SceneLifecycleScheduler::s_bIsLoadingScene   = false;
-	Zenith_SceneLifecycleScheduler::s_bIsUpdating       = false;
-	Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp = ZENITH_INVALID_OPERATION_ID;
+	g_xEngine.SceneLifecycle().m_bIsLoadingScene   = false;
+	g_xEngine.SceneLifecycle().m_bIsUpdating       = false;
+	g_xEngine.SceneLifecycle().m_ulLastDeferredLoadOp = ZENITH_INVALID_OPERATION_ID;
 	s_uUnloadUnusedAssetsCallCount = 0;
 
 	// Tear down the queue (waits for in-flight workers, deletes jobs and operations).
@@ -429,7 +430,7 @@ bool Zenith_SceneManager::ValidateLoadRequest(const std::string& strPath)
 
 Zenith_SceneOperationID Zenith_SceneManager::GetLastDeferredLoadOp()
 {
-	return Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp;
+	return g_xEngine.SceneLifecycle().m_ulLastDeferredLoadOp;
 }
 
 // HandleDeferredLoad / ValidateFileAndDetectCircular /
@@ -458,7 +459,7 @@ Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_S
 	// authorized synchronous variants.
 	Zenith_SceneOperationQueue::CompletePriorOperationsForBlockingLoad();
 	const Zenith_SceneOperationID ulOpID = LoadSceneAsync(strPath, eMode);
-	Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp = ulOpID;
+	g_xEngine.SceneLifecycle().m_ulLastDeferredLoadOp = ulOpID;
 	return MakeInvalidScene();
 }
 
@@ -472,7 +473,7 @@ Zenith_Scene Zenith_SceneManager::LoadSceneByIndex(int iBuildIndex, Zenith_Scene
 	// sync facade is just flush-priors + queue + stash + return INVALID.
 	Zenith_SceneOperationQueue::CompletePriorOperationsForBlockingLoad();
 	const Zenith_SceneOperationID ulOpID = LoadSceneAsyncByIndex(iBuildIndex, eMode);
-	Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp = ulOpID;
+	g_xEngine.SceneLifecycle().m_ulLastDeferredLoadOp = ulOpID;
 	return MakeInvalidScene();
 }
 
@@ -492,9 +493,9 @@ Zenith_Scene Zenith_SceneManager::LoadSceneByIndex(int iBuildIndex, Zenith_Scene
 // no guard is on the stack — and remain rejected.
 static bool IsBootstrapLoadContext()
 {
-	if (!Zenith_SceneLifecycleScheduler::s_bIsMainLoopRunning)
+	if (!g_xEngine.SceneLifecycle().m_bIsMainLoopRunning)
 		return true;
-	if (Zenith_SceneLifecycleScheduler::s_bIsLoadingScene)
+	if (g_xEngine.SceneLifecycle().m_bIsLoadingScene)
 		return true;
 	return false;
 }
@@ -522,10 +523,10 @@ static Zenith_Scene PumpDeferredLoadUntilComplete()
 		return Zenith_Scene::INVALID_SCENE;
 	if (g_xEngine.SceneOperations().m_uProcessingAsyncUnloadsDepth > 0)
 		return Zenith_Scene::INVALID_SCENE;
-	if (Zenith_SceneLifecycleScheduler::s_bIsUpdating)
+	if (g_xEngine.SceneLifecycle().m_bIsUpdating)
 		return Zenith_Scene::INVALID_SCENE;
 
-	const Zenith_SceneOperationID ulOpID = Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp;
+	const Zenith_SceneOperationID ulOpID = g_xEngine.SceneLifecycle().m_ulLastDeferredLoadOp;
 	if (ulOpID == ZENITH_INVALID_OPERATION_ID)
 		return Zenith_Scene::INVALID_SCENE;
 
@@ -617,10 +618,10 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsync(const std::string& s
 		// SceneLoaded. Previously this branch returned before the patch-up site in
 		// LoadSceneAsyncByIndex ran, so LoadSceneAsyncByIndex(idx, ADDITIVE_WITHOUT_LOADING)
 		// silently produced a scene with m_iBuildIndex == -1.
-		if (Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex >= 0)
+		if (g_xEngine.SceneLifecycle().m_iPendingBuildIndex >= 0)
 		{
-			pxSceneData->m_iBuildIndex = Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex;
-			Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex = -1;
+			pxSceneData->m_iBuildIndex = g_xEngine.SceneLifecycle().m_iPendingBuildIndex;
+			g_xEngine.SceneLifecycle().m_iPendingBuildIndex = -1;
 		}
 
 		pxOp->SetResultScene(xScene.m_iHandle, xScene.m_uGeneration);
@@ -666,7 +667,7 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsync(const std::string& s
 		Zenith_SceneOperationQueue::FailAsyncLoadOperation(pxOp);
 		return ulOpID;
 	}
-	Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths.PushBack(strCanonicalPath);
+	g_xEngine.SceneLifecycle().m_axCurrentlyLoadingPaths.PushBack(strCanonicalPath);
 
 	// Warn if exceeding max concurrent async loads
 	if (g_xEngine.SceneOperations().m_axAsyncJobs.GetSize() >= g_xEngine.SceneOperations().m_uMaxConcurrentAsyncLoads)
@@ -712,7 +713,7 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsyncByIndex(int iBuildInd
 		return ulOpID;
 	}
 
-	// B.4: plumb the build index through the same Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex guard the sync
+	// B.4: plumb the build index through the same g_xEngine.SceneLifecycle().m_iPendingBuildIndex guard the sync
 	// path uses. ADDITIVE_WITHOUT_LOADING completes inside LoadSceneAsync without pushing
 	// to g_xEngine.SceneOperations().m_axAsyncJobs, so the old job-patch-up code (retained below as a belt-and-braces
 	// safety net for the file-load async path, which uses Zenith_SceneOperationQueue::AsyncLoadJob::m_iBuildIndex
@@ -726,7 +727,7 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsyncByIndex(int iBuildInd
 
 	// For the file-load path, Phase 1 reads Zenith_SceneOperationQueue::AsyncLoadJob::m_iBuildIndex directly. Set
 	// it on the newly queued job so Phase 1 assigns the right build index to the scene
-	// it creates (Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex is already consumed by the time Phase 1 runs).
+	// it creates (g_xEngine.SceneLifecycle().m_iPendingBuildIndex is already consumed by the time Phase 1 runs).
 	if (g_xEngine.SceneOperations().m_axAsyncJobs.GetSize() > 0)
 	{
 		Zenith_SceneOperationQueue::AsyncLoadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncJobs.GetBack();
@@ -1101,25 +1102,25 @@ int Zenith_SceneManager::SelectNewActiveScene(int iExcludeHandle)
 //==========================================================================
 
 Zenith_SceneManager::PrefabInstantiationGuard::PrefabInstantiationGuard()
-	: m_bPrevValue(Zenith_SceneLifecycleScheduler::s_bIsPrefabInstantiating)
+	: m_bPrevValue(g_xEngine.SceneLifecycle().m_bIsPrefabInstantiating)
 {
-	Zenith_SceneLifecycleScheduler::s_bIsPrefabInstantiating = true;
+	g_xEngine.SceneLifecycle().m_bIsPrefabInstantiating = true;
 }
 
 Zenith_SceneManager::PrefabInstantiationGuard::~PrefabInstantiationGuard()
 {
-	Zenith_SceneLifecycleScheduler::s_bIsPrefabInstantiating = m_bPrevValue;
+	g_xEngine.SceneLifecycle().m_bIsPrefabInstantiating = m_bPrevValue;
 }
 
 Zenith_SceneManager::SceneUpdateDeferralGuard::SceneUpdateDeferralGuard()
-	: m_bPrevValue(Zenith_SceneLifecycleScheduler::s_bIsUpdating)
+	: m_bPrevValue(g_xEngine.SceneLifecycle().m_bIsUpdating)
 {
-	Zenith_SceneLifecycleScheduler::s_bIsUpdating = true;
+	g_xEngine.SceneLifecycle().m_bIsUpdating = true;
 }
 
 Zenith_SceneManager::SceneUpdateDeferralGuard::~SceneUpdateDeferralGuard()
 {
-	Zenith_SceneLifecycleScheduler::s_bIsUpdating = m_bPrevValue;
+	g_xEngine.SceneLifecycle().m_bIsUpdating = m_bPrevValue;
 }
 
 //==========================================================================
@@ -1130,23 +1131,23 @@ Zenith_SceneManager::SceneUpdateDeferralGuard::~SceneUpdateDeferralGuard()
 Zenith_SceneManager::SceneCreationTargetScope::SceneCreationTargetScope(Zenith_Scene xScene)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SceneCreationTargetScope must be constructed on the main thread");
-	Zenith_SceneLifecycleScheduler::s_axCreationTargetStack.PushBack(xScene);
+	g_xEngine.SceneLifecycle().m_axCreationTargetStack.PushBack(xScene);
 }
 
 Zenith_SceneManager::SceneCreationTargetScope::~SceneCreationTargetScope()
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SceneCreationTargetScope must be destroyed on the main thread");
-	Zenith_Assert(Zenith_SceneLifecycleScheduler::s_axCreationTargetStack.GetSize() > 0,
+	Zenith_Assert(g_xEngine.SceneLifecycle().m_axCreationTargetStack.GetSize() > 0,
 		"SceneCreationTargetScope: creation-target stack underflow on destruction");
-	Zenith_SceneLifecycleScheduler::s_axCreationTargetStack.PopBack();
+	g_xEngine.SceneLifecycle().m_axCreationTargetStack.PopBack();
 }
 
 Zenith_Scene Zenith_SceneManager::GetDefaultCreationScene()
 {
-	const u_int uDepth = Zenith_SceneLifecycleScheduler::s_axCreationTargetStack.GetSize();
+	const u_int uDepth = g_xEngine.SceneLifecycle().m_axCreationTargetStack.GetSize();
 	if (uDepth > 0)
 	{
-		return Zenith_SceneLifecycleScheduler::s_axCreationTargetStack.Get(uDepth - 1);
+		return g_xEngine.SceneLifecycle().m_axCreationTargetStack.Get(uDepth - 1);
 	}
 	return GetActiveScene();
 }
@@ -1154,7 +1155,7 @@ Zenith_Scene Zenith_SceneManager::GetDefaultCreationScene()
 void Zenith_SceneManager::SetMainLoopRunning(bool bRunning)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetMainLoopRunning must be called from main thread");
-	Zenith_SceneLifecycleScheduler::s_bIsMainLoopRunning = bRunning;
+	g_xEngine.SceneLifecycle().m_bIsMainLoopRunning = bRunning;
 }
 
 void Zenith_SceneManager::SetFixedTimestep(float fTimestep) { Zenith_SceneLifecycleScheduler::SetFixedTimestep(fTimestep); }
@@ -1170,11 +1171,11 @@ Zenith_SceneData* Zenith_SceneManager::GetSceneDataForEntity(Zenith_EntityID xID
 Zenith_Scene Zenith_SceneManager::GetSceneFromHandle(int iHandle) { return Zenith_SceneRegistry::GetSceneFromHandle(iHandle); }
 
 // A4: lifecycle accessors / setters / dispatch hook all forward to scheduler.
-bool Zenith_SceneManager::IsLoadingScene() { return Zenith_SceneLifecycleScheduler::s_bIsLoadingScene; }
-bool Zenith_SceneManager::IsPrefabInstantiating() { return Zenith_SceneLifecycleScheduler::s_bIsPrefabInstantiating; }
-bool Zenith_SceneManager::IsUpdating() { return Zenith_SceneLifecycleScheduler::s_bIsUpdating; }
+bool Zenith_SceneManager::IsLoadingScene() { return g_xEngine.SceneLifecycle().m_bIsLoadingScene; }
+bool Zenith_SceneManager::IsPrefabInstantiating() { return g_xEngine.SceneLifecycle().m_bIsPrefabInstantiating; }
+bool Zenith_SceneManager::IsUpdating() { return g_xEngine.SceneLifecycle().m_bIsUpdating; }
 bool Zenith_SceneManager::IsActiveSceneSuppressed() { return Zenith_SceneCallbackBus::IsActiveSceneSuppressed(); }
-int Zenith_SceneManager::GetPendingBuildIndex() { return Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex; }
+int Zenith_SceneManager::GetPendingBuildIndex() { return g_xEngine.SceneLifecycle().m_iPendingBuildIndex; }
 bool Zenith_SceneManager::IsCircularLoadDependency(const std::string& strCanonicalPath) { return Zenith_SceneLifecycleScheduler::IsCircularLoadDependency(strCanonicalPath); }
 void Zenith_SceneManager::SetInitialSceneLoadCallback(InitialSceneLoadFn pfnCallback) { Zenith_SceneLifecycleScheduler::SetInitialSceneLoadCallback(pfnCallback); }
 Zenith_SceneManager::InitialSceneLoadFn Zenith_SceneManager::GetInitialSceneLoadCallback() { return Zenith_SceneLifecycleScheduler::GetInitialSceneLoadCallback(); }
@@ -1459,7 +1460,7 @@ namespace Zenith_SceneLifecycleContext
 
 	bool IsMainLoopRunning()
 	{
-		return Zenith_SceneLifecycleScheduler::s_bIsMainLoopRunning;
+		return g_xEngine.SceneLifecycle().m_bIsMainLoopRunning;
 	}
 
 	int GetPendingBuildIndex()
@@ -1479,12 +1480,12 @@ namespace Zenith_SceneLifecycleContext
 
 	Zenith_Scene GetCurrentCreationTarget()
 	{
-		const u_int uDepth = Zenith_SceneLifecycleScheduler::s_axCreationTargetStack.GetSize();
+		const u_int uDepth = g_xEngine.SceneLifecycle().m_axCreationTargetStack.GetSize();
 		if (uDepth == 0)
 		{
 			return Zenith_Scene::INVALID_SCENE;
 		}
-		return Zenith_SceneLifecycleScheduler::s_axCreationTargetStack.Get(uDepth - 1);
+		return g_xEngine.SceneLifecycle().m_axCreationTargetStack.Get(uDepth - 1);
 	}
 }
 

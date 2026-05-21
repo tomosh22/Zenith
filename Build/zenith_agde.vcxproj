@@ -929,6 +929,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneEntityOwnership.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleContext.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleScheduler.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleSchedulerImpl.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueue.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueueImpl.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistry.h" />

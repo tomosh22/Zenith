@@ -3471,6 +3471,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleScheduler.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleSchedulerImpl.h">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueue.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>

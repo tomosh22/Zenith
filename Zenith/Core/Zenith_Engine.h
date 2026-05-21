@@ -11,6 +11,7 @@ class Zenith_MultithreadingImpl;
 class Zenith_PhysicsImpl;
 class Zenith_ProfilingImpl;
 class Zenith_SceneCallbackBusImpl;
+class Zenith_SceneLifecycleSchedulerImpl;
 class Zenith_SceneOperationQueueImpl;
 class Zenith_SceneRegistryImpl;
 class Zenith_TaskSystemImpl;
@@ -60,6 +61,7 @@ public:
 	Zenith_SceneRegistryImpl& SceneRegistry();
 	Zenith_SceneCallbackBusImpl& SceneCallbacks();
 	Zenith_SceneOperationQueueImpl& SceneOperations();
+	Zenith_SceneLifecycleSchedulerImpl& SceneLifecycle();
 
 private:
 	// Subsystem members. Raw pointers to forward-declared types so the
@@ -73,9 +75,10 @@ private:
 	Zenith_AssetRegistry*        m_pxAssets         = nullptr;
 	Zenith_PhysicsImpl*          m_pxPhysics        = nullptr;
 	Zenith_EntityStore*          m_pxEntityStore    = nullptr;
-	Zenith_SceneRegistryImpl*       m_pxSceneRegistry   = nullptr;
-	Zenith_SceneCallbackBusImpl*    m_pxSceneCallbacks  = nullptr;
-	Zenith_SceneOperationQueueImpl* m_pxSceneOperations = nullptr;
+	Zenith_SceneRegistryImpl*           m_pxSceneRegistry   = nullptr;
+	Zenith_SceneCallbackBusImpl*        m_pxSceneCallbacks  = nullptr;
+	Zenith_SceneOperationQueueImpl*     m_pxSceneOperations = nullptr;
+	Zenith_SceneLifecycleSchedulerImpl* m_pxSceneLifecycle  = nullptr;
 };
 
 // Compile-time guard: enforce trivial destruction so the

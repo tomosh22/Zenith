@@ -14,6 +14,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_EntityStore.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBusImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneOperationQueueImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -159,6 +160,14 @@ Zenith_SceneOperationQueueImpl& Zenith_Engine::SceneOperations()
 	return *m_pxSceneOperations;
 }
 
+Zenith_SceneLifecycleSchedulerImpl& Zenith_Engine::SceneLifecycle()
+{
+	// No assert: lifecycle flags and the FixedUpdate accumulator are read
+	// every frame from the Update pipeline. Allocated EARLY alongside
+	// the other scene-system Impls.
+	return *m_pxSceneLifecycle;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -194,6 +203,12 @@ void Zenith_Engine::Initialise()
 	// before Zenith_SceneManager::Initialise queues any bootstrap loads.
 	Zenith_Assert(m_pxSceneOperations == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxSceneOperations = new Zenith_SceneOperationQueueImpl();
+
+	// Phase 5e: scheduler state (lifecycle-deferral flags, fixed-timestep
+	// accumulator + config, circular-load stacks, build-index plumb,
+	// creation-target stack, main-loop flag, initial-scene-load hook).
+	Zenith_Assert(m_pxSceneLifecycle == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxSceneLifecycle = new Zenith_SceneLifecycleSchedulerImpl();
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
 	// main-thread ID) lives on the engine now. Allocate BEFORE
@@ -375,7 +390,7 @@ void Zenith_Engine::Initialise()
 	}
 	Zenith_SceneManager::SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	{
-		Zenith_SceneManager::LifecycleDeferralGuard xLoadingGuard(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene);
+		Zenith_SceneManager::LifecycleDeferralGuard xLoadingGuard(g_xEngine.SceneLifecycle().m_bIsLoadingScene);
 		Project_LoadInitialScene();
 	}
 	if (!Zenith_CommandLine::IsHeadless())
@@ -495,6 +510,12 @@ void Zenith_Engine::Shutdown()
 	// all in-flight load tasks + unload jobs + operation entries.
 	delete m_pxSceneOperations;
 	m_pxSceneOperations = nullptr;
+
+	// 18. Free the scheduler state. SceneLifecycleScheduler::Shutdown
+	// (called from SceneManager::Shutdown) already cleared all flags and
+	// terminated the animation update task.
+	delete m_pxSceneLifecycle;
+	m_pxSceneLifecycle = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }
