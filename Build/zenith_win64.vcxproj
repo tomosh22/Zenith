@@ -1222,6 +1222,7 @@
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h" />
     <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDR.h" />
     <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZ.h" />
+    <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZImpl.h" />
     <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBL.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceCulling.h" />

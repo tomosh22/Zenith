@@ -3666,6 +3666,9 @@
     <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZ.h">
       <Filter>Flux\HiZ</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZImpl.h">
+      <Filter>Flux\HiZ</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBL.h">
       <Filter>Flux\IBL</Filter>
     </ClInclude>

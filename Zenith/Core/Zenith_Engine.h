@@ -8,6 +8,7 @@ class FrameContext;
 class Zenith_AssetRegistry;
 class Zenith_EntityStore;
 class Flux_GraphicsImpl;
+class Flux_HiZImpl;
 class Flux_RendererImpl;
 class Zenith_VulkanImpl;
 class Zenith_Vulkan_MemoryManagerImpl;
@@ -83,6 +84,7 @@ public:
 	Zenith_VulkanImpl& Vulkan();
 	Zenith_Vulkan_MemoryManagerImpl& VulkanMemory();
 	Zenith_Vulkan_SwapchainImpl& VulkanSwapchain();
+	Flux_HiZImpl& HiZ();
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl& Editor();
 	// True when Initialise() has run far enough to have allocated the
@@ -121,6 +123,7 @@ private:
 	Zenith_VulkanImpl*                  m_pxVulkan          = nullptr;
 	Zenith_Vulkan_MemoryManagerImpl*    m_pxVulkanMemory    = nullptr;
 	Zenith_Vulkan_SwapchainImpl*        m_pxVulkanSwapchain = nullptr;
+	Flux_HiZImpl*                       m_pxHiZ             = nullptr;
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl*                  m_pxEditor             = nullptr;
 	Zenith_GizmoImpl*                   m_pxGizmo              = nullptr;

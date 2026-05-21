@@ -27,8 +27,6 @@ public:
 
 	// For resize callback access
 	static constexpr u_int uHIZ_MAX_MIPS = 12;  // Supports up to 4096x4096
-	static u_int s_uMipCount;
 
-private:
-	static bool s_bInitialised;
+	// Phase 7a: data members moved to Flux_HiZImpl held by Zenith_Engine.
 };

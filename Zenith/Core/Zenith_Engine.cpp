@@ -25,6 +25,7 @@
 #include "Vulkan/Zenith_VulkanImpl.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManagerImpl.h"
 #include "Vulkan/Zenith_Vulkan_SwapchainImpl.h"
+#include "Flux/HiZ/Flux_HiZImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -233,6 +234,8 @@ Zenith_Vulkan_SwapchainImpl& Zenith_Engine::VulkanSwapchain()
 	return *m_pxVulkanSwapchain;
 }
 
+Flux_HiZImpl& Zenith_Engine::HiZ() { return *m_pxHiZ; }
+
 #ifdef ZENITH_TOOLS
 Zenith_EditorImpl& Zenith_Engine::Editor()
 {
@@ -325,6 +328,10 @@ void Zenith_Engine::Initialise()
 
 	Zenith_Assert(m_pxVulkanSwapchain == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxVulkanSwapchain = new Zenith_Vulkan_SwapchainImpl();
+
+	// Phase 7a: HiZ subsystem state.
+	Zenith_Assert(m_pxHiZ == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxHiZ = new Flux_HiZImpl();
 
 #ifdef ZENITH_TOOLS
 	// Phase 5.5c: editor state (selection, viewport, content browser,
@@ -689,6 +696,9 @@ void Zenith_Engine::Shutdown()
 	m_pxVulkanMemory = nullptr;
 	delete m_pxVulkan;
 	m_pxVulkan = nullptr;
+
+	delete m_pxHiZ;
+	m_pxHiZ = nullptr;
 
 #ifdef ZENITH_TOOLS
 	// 21. Free editor state. Done LATE -- the editor's deferred-deletion

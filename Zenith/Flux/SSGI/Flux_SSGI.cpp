@@ -2,6 +2,7 @@
 
 #include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/HiZ/Flux_HiZ.h"
+#include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -394,7 +395,7 @@ void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.AddPass("SSGI RayMarch", ExecuteSSGIRayMarch)
 		.ClearTargets()
 		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_HiZ::GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount)
+		.Reads          (Flux_HiZ::GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().m_uMipCount)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
