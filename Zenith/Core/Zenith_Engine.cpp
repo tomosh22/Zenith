@@ -20,6 +20,7 @@
 #include "Editor/Zenith_EditorAutomation.h"
 #endif
 #include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "UnitTests/Zenith_UnitTests.h"
 
 #ifdef ZENITH_WINDOWS
@@ -103,6 +104,22 @@ Zenith_ProfilingImpl& Zenith_Engine::Profiling()
 	return *m_pxProfiling;
 }
 
+Zenith_AssetRegistry& Zenith_Engine::Assets()
+{
+	Zenith_Assert(m_pxAssets != nullptr,
+		"Zenith_Engine::Assets() called before Initialise() or after Shutdown(). "
+		"AssetRegistry is unavailable outside the engine lifetime.");
+	return *m_pxAssets;
+}
+
+Zenith_PhysicsImpl& Zenith_Engine::Physics()
+{
+	Zenith_Assert(m_pxPhysics != nullptr,
+		"Zenith_Engine::Physics() called before Initialise() or after Shutdown(). "
+		"Physics is unavailable outside the engine lifetime.");
+	return *m_pxPhysics;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -154,6 +171,16 @@ void Zenith_Engine::Initialise()
 #else
 	Zenith_AssetRegistry::SetEngineAssetsDir("./Zenith/Assets/");
 #endif
+
+	// Phase 4: Engine owns the AssetRegistry instance. Allocate and
+	// install the view-pointer BEFORE Zenith_AssetRegistry::Initialize()
+	// (which now only registers loaders and asserts s_pxInstance is set).
+	// The ~50 existing call sites of the static facade (Get<T>, Create<T>,
+	// Save, etc.) keep working through s_pxInstance until Phase 9 sweeps
+	// them away.
+	Zenith_Assert(m_pxAssets == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxAssets = new Zenith_AssetRegistry();
+	Zenith_AssetRegistry::s_pxInstance = m_pxAssets;
 	Zenith_AssetRegistry::Initialize();
 
 #ifdef ZENITH_TOOLS
@@ -177,6 +204,12 @@ void Zenith_Engine::Initialise()
 		Flux::EarlyInitialise();
 	}
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Physics::Initialise...");
+	// Phase 4: per-Engine Physics state lives on Zenith_PhysicsImpl.
+	// Allocate BEFORE Zenith_Physics::Initialise() below -- the static
+	// facade now reads/writes g_xEngine.Physics().m_pxXxx for every
+	// piece of state it used to keep as Zenith_Physics::s_*.
+	Zenith_Assert(m_pxPhysics == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxPhysics = new Zenith_PhysicsImpl();
 	Zenith_Physics::Initialise();
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: SceneManager::Initialise...");
 	Zenith_SceneManager::Initialise();
@@ -314,8 +347,12 @@ void Zenith_Engine::Shutdown()
 	// memory manager (model/mesh components hold VRAM handles)
 	Zenith_SceneManager::Shutdown();
 
-	// 4. Shutdown physics system
+	// 4. Shutdown physics system. The static facade drains state out of
+	// g_xEngine.Physics().m_pxXxx; engine then reclaims the Impl below
+	// (Phase 4 makes Zenith_Engine the sole owner).
 	Zenith_Physics::Shutdown();
+	delete m_pxPhysics;
+	m_pxPhysics = nullptr;
 
 	// 5. Project shutdown - clean up game-specific resources
 	Project_Shutdown();
@@ -328,8 +365,13 @@ void Zenith_Engine::Shutdown()
 		Flux::ReleaseAssetReferences();
 	}
 
-	// 7. Shutdown asset registry (unloads all assets)
+	// 7. Shutdown asset registry (unloads all assets). Engine then
+	// reclaims the instance — Phase 4 makes Zenith_Engine the sole
+	// owner; the static facade now drains state only.
 	Zenith_AssetRegistry::Shutdown();
+	delete m_pxAssets;
+	m_pxAssets = nullptr;
+	Zenith_AssetRegistry::s_pxInstance = nullptr;
 
 	// 8. Shutdown Flux (all subsystems + graphics + memory manager)
 	if (!Zenith_CommandLine::IsHeadless())

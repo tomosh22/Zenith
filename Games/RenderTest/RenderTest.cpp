@@ -26,6 +26,7 @@
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UI.h"
 #include "Zenith_OS_Include.h"
@@ -623,9 +624,9 @@ private:
 		Zenith_Entity xPlayer = RenderTest_FindPlayerEntity();
 		if (!xPlayer.IsValid() || !xPlayer.HasComponent<Zenith_ColliderComponent>()) return;
 		const JPH::BodyID& xBodyID = xPlayer.GetComponent<Zenith_ColliderComponent>().GetBodyID();
-		if (xBodyID.IsInvalid() || !Zenith_Physics::s_pxPhysicsSystem) return;
+		if (xBodyID.IsInvalid() || !g_xEngine.Physics().m_pxPhysicsSystem) return;
 
-		JPH::BodyInterface& xBI = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBI = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 		xBI.SetPositionAndRotation(xBodyID,
 			JPH::RVec3(xTarget.x, xTarget.y, xTarget.z),
 			JPH::Quat::sIdentity(),

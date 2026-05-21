@@ -37,9 +37,10 @@ class Zenith_CameraComponent;
 class Zenith_Physics
 {
 public:
-	static JPH::TempAllocatorImpl* s_pxTempAllocator;
-	static JPH::JobSystemThreadPool* s_pxJobSystem;
-	static JPH::PhysicsSystem* s_pxPhysicsSystem;
+	// Phase 4: Jolt singletons moved off this class into Zenith_PhysicsImpl
+	// (m_pxTempAllocator / m_pxJobSystem / m_pxPhysicsSystem). External call
+	// sites reach them via g_xEngine.Physics().m_pxXxx. The static methods
+	// below continue to drive lifecycle and forward to the Impl.
 
 	static void Initialise();
 	static void Update(float fDt);
@@ -117,12 +118,15 @@ public:
 		virtual void OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair) override;
 	};
 
-	static PhysicsContactListener s_xContactListener;
+	// Contact listener instance lives on Zenith_PhysicsImpl
+	// (m_xContactListener); registered with the physics system at
+	// Initialise. The nested type stays here for backwards include
+	// compatibility -- it's referenced by Zenith_PhysicsImpl.
 	static void ProcessDeferredCollisionEvents();
 
-	// Diagnostics: number of collision events dropped due to queue overflow since last frame
-	static uint32_t GetDroppedCollisionEventCount() { return s_uDroppedEventCount; }
-	static uint32_t s_uDroppedEventCount;
+	// Diagnostics: number of collision events dropped due to queue overflow since last frame.
+	// Reads through g_xEngine.Physics().m_uDroppedEventCount.
+	static uint32_t GetDroppedCollisionEventCount();
 
 private:
 	static constexpr uint32_t s_uMaxBodies = 65536;
@@ -130,9 +134,10 @@ private:
 	static constexpr uint32_t s_uMaxBodyPairs = 65536;
 	static constexpr uint32_t s_uMaxContactConstraints = 10240;
 
-	// Thread-safe deferred event queue
-	static Zenith_Vector<DeferredCollisionEvent> s_xDeferredEvents;
-	static Zenith_Mutex_NoProfiling s_xEventQueueMutex; // No profiling - accessed from Jolt worker threads which aren't registered with Zenith threading
+	// Deferred-collision queue + its mutex + dropped-event counter live
+	// on Zenith_PhysicsImpl (m_xDeferredEvents / m_xEventQueueMutex /
+	// m_uDroppedEventCount). Mutex is NoProfiling because writers are
+	// Jolt worker threads not registered with Zenith threading.
 
 	// Dispatch a collision event to an entity's script component
 	static void DispatchCollisionToEntity(Zenith_Entity& xEntity, Zenith_Entity& xOtherEntity, Zenith_EntityID xOtherID, CollisionEventType eEventType);

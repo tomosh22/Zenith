@@ -4068,6 +4068,9 @@
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics.Tests.inl">
       <Filter>Physics</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsImpl.h">
+      <Filter>Physics</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h">
       <Filter>Physics</Filter>
     </ClInclude>

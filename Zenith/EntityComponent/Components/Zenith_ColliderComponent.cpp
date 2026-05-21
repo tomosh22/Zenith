@@ -7,6 +7,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "Flux/Primitives/Flux_Primitives.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -70,7 +71,7 @@ Zenith_ColliderComponent& Zenith_ColliderComponent::operator=(Zenith_ColliderCom
 		// Clean up our existing physics body first
 		if (m_xBodyID.IsInvalid() == false)
 		{
-			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 			xBodyInterface.RemoveBody(m_xBodyID);
 			xBodyInterface.DestroyBody(m_xBodyID);
 		}
@@ -106,9 +107,9 @@ bool Zenith_ColliderComponent::HasValidBody() const
 
 Zenith_ColliderComponent::~Zenith_ColliderComponent()
 {
-	if (m_xBodyID.IsInvalid() == false && Zenith_Physics::s_pxPhysicsSystem != nullptr)
+	if (m_xBodyID.IsInvalid() == false && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
 	{
-		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 		// Check if the body actually exists in the physics system before trying to destroy it.
 		// This handles cases where scene restore loads stale body IDs that don't exist.
 		if (xBodyInterface.IsAdded(m_xBodyID))
@@ -571,7 +572,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	const JPH::ObjectLayer uObjectLayer = (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC) ? 1 : 0; // MOVING : NON_MOVING
 
 	JPH::BodyCreationSettings xBodySettings(pxShape, xJoltPos, xJoltRot, eMotionType, uObjectLayer);
-	JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	m_xBodyID = xBodyInterface.CreateAndAddBody(xBodySettings, JPH::EActivation::Activate);
 
 	if (m_xBodyID.IsInvalid())
@@ -580,7 +581,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		return;
 	}
 
-	JPH::BodyLockWrite xLock(Zenith_Physics::s_pxPhysicsSystem->GetBodyLockInterface(), m_xBodyID);
+	JPH::BodyLockWrite xLock(g_xEngine.Physics().m_pxPhysicsSystem->GetBodyLockInterface(), m_xBodyID);
 	if (xLock.Succeeded())
 	{
 		m_pxRigidBody = &xLock.GetBody();
@@ -794,7 +795,7 @@ void Zenith_ColliderComponent::RebuildCollider()
 	// Remove existing collider
 	if (m_xBodyID.IsInvalid() == false)
 	{
-		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 		xBodyInterface.RemoveBody(m_xBodyID);
 		xBodyInterface.DestroyBody(m_xBodyID);
 		m_xBodyID = JPH::BodyID();
@@ -841,7 +842,7 @@ void Zenith_ColliderComponent::DestroyExistingCollider()
 {
 	if (m_xBodyID.IsInvalid() == false)
 	{
-		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 		xBodyInterface.RemoveBody(m_xBodyID);
 		xBodyInterface.DestroyBody(m_xBodyID);
 		m_xBodyID = JPH::BodyID();

@@ -342,8 +342,14 @@ private:
 	// Generate a unique path for procedural assets
 	std::string GenerateProceduralPath(const std::string& strPrefix);
 
-	// Singleton instance
+	// Phase 4: the instance is owned by Zenith_Engine (m_pxAssets);
+	// s_pxInstance is a non-owning view-pointer kept in sync by
+	// Zenith_Engine::Initialise/Shutdown so the existing static-facade
+	// methods on Zenith_AssetRegistry (Get<T>, Initialize, Shutdown,
+	// etc.) compile unchanged. Phase 9 sweeps it away once call sites
+	// migrate to g_xEngine.Assets().X().
 	static Zenith_AssetRegistry* s_pxInstance;
+	friend class Zenith_Engine;
 
 	// Asset directories (set before Initialize)
 	static std::string s_strGameAssetsDir;

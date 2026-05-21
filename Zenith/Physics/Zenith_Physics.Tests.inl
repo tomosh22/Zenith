@@ -1,6 +1,7 @@
 // This file queries Jolt Physics objects - disable memory tracking macro to avoid conflicts
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -110,7 +111,7 @@ static void ResetPhysicsState()
 		"after CreateEmptyScene and before AddCollider.", axLiveColliders.GetSize());
 
 	Zenith_Physics::Reset();
-	Zenith_Physics::s_fTimestepAccumulator = 0;
+	g_xEngine.Physics().m_fTimestepAccumulator = 0;
 }
 
 static Zenith_Entity CreatePhysicsSphere(
@@ -152,7 +153,7 @@ static void StepPhysics(uint32_t uSteps)
 
 static Zenith_Maths::Vector3 GetBodyPosition(const Zenith_ColliderComponent& xCollider)
 {
-	JPH::BodyInterface& xBI = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBI = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	JPH::RVec3 xPos = xBI.GetPosition(xCollider.GetBodyID());
 	return Zenith_Maths::Vector3(
 		static_cast<float>(xPos.GetX()),
@@ -849,7 +850,7 @@ ZENITH_TEST(Physics, ColliderBodyIDMatchesJolt)
 	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
 
 	// Verify body exists in Jolt
-	JPH::BodyInterface& xBI = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBI = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	bool bIsAdded = xBI.IsAdded(xCollider.GetBodyID());
 	ZENITH_ASSERT_TRUE(bIsAdded, "TestColliderBodyIDMatchesJolt: Body should be added to Jolt physics system");
 
@@ -1002,7 +1003,7 @@ ZENITH_TEST(Physics, ResetClearsPhysicsState)
 	Zenith_Physics::Reset();
 
 	// Verify physics system is valid after reset
-	ZENITH_ASSERT_NOT_NULL(Zenith_Physics::s_pxPhysicsSystem, "TestResetClearsPhysicsState: Physics system should be valid after Reset");
+	ZENITH_ASSERT_NOT_NULL(g_xEngine.Physics().m_pxPhysicsSystem, "TestResetClearsPhysicsState: Physics system should be valid after Reset");
 
 	// Create a new body and verify it works
 	Zenith_Scene xTestScene2 = Zenith_SceneManager::CreateEmptyScene("PhysicsTest_Reset2");

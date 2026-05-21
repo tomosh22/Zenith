@@ -1356,6 +1356,7 @@
     <ClInclude Include="..\Zenith\Maths\Zenith_Maths_Intersections.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics.Tests.inl" />
+    <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsImpl.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h" />
     <ClInclude Include="..\Zenith\Prefab\Zenith_Prefab.h" />

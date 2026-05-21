@@ -5,7 +5,9 @@
 // Forward decls -- keep this header light. Full subsystem headers are
 // only included by Zenith_Engine.cpp where the accessor bodies live.
 class FrameContext;
+class Zenith_AssetRegistry;
 class Zenith_MultithreadingImpl;
+class Zenith_PhysicsImpl;
 class Zenith_ProfilingImpl;
 class Zenith_TaskSystemImpl;
 
@@ -48,6 +50,8 @@ public:
 	Zenith_MultithreadingImpl& Threading();
 	Zenith_TaskSystemImpl& Tasks();
 	Zenith_ProfilingImpl& Profiling();
+	Zenith_AssetRegistry& Assets();
+	Zenith_PhysicsImpl& Physics();
 
 private:
 	// Subsystem members. Raw pointers to forward-declared types so the
@@ -58,6 +62,8 @@ private:
 	Zenith_MultithreadingImpl* m_pxThreading = nullptr;
 	Zenith_TaskSystemImpl*     m_pxTasks     = nullptr;
 	Zenith_ProfilingImpl*      m_pxProfiling = nullptr;
+	Zenith_AssetRegistry*      m_pxAssets    = nullptr;
+	Zenith_PhysicsImpl*        m_pxPhysics   = nullptr;
 };
 
 // Compile-time guard: enforce trivial destruction so the
