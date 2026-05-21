@@ -8,6 +8,7 @@
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Core/FrameContext.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -73,6 +74,15 @@ FrameContext& Zenith_Engine::Frame()
 	return *m_pxFrame;
 }
 
+Zenith_MultithreadingImpl& Zenith_Engine::Threading()
+{
+	// NOTE: no assert here. Threading() is read on the IsMainThread
+	// hot path (every Zenith_Assert that gates on main-thread fires
+	// it), and the engine guarantees m_pxThreading exists before any
+	// thread can call RegisterThread / IsMainThread (see Initialise).
+	return *m_pxThreading;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -81,6 +91,13 @@ void Zenith_Engine::Initialise()
 	// below, matching the historical Zenith_Init behaviour.
 	Zenith_Assert(m_pxFrame == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxFrame = new FrameContext();
+
+	// Phase 3a: multithreading registry (thread-ID allocator +
+	// main-thread ID) lives on the engine now. Allocate BEFORE
+	// Zenith_Multithreading::RegisterThread(true) below, which reads
+	// from g_xEngine.Threading() to issue the main thread's ID.
+	Zenith_Assert(m_pxThreading == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxThreading = new Zenith_MultithreadingImpl();
 
 	// Populate graphics options from the game project FIRST
 	// Must happen before any Flux initialisation reads from Zenith_GraphicsOptions::Get()
@@ -292,6 +309,12 @@ void Zenith_Engine::Shutdown()
 	// time still can.
 	delete m_pxFrame;
 	m_pxFrame = nullptr;
+
+	// 11. Tear down the multithreading registry. Done after the task
+	// system shutdown (step 9) so worker threads aren't still calling
+	// IsMainThread while we're freeing the registry.
+	delete m_pxThreading;
+	m_pxThreading = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

@@ -1096,6 +1096,7 @@
     <ClInclude Include="..\Zenith\Collections\Zenith_MemoryPool.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_Vector.h" />
     <ClInclude Include="..\Zenith\Core\Callstack\Zenith_Callstack.h" />
+    <ClInclude Include="..\Zenith\Core\FrameContext.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryCategories.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.h" />
@@ -1103,6 +1104,7 @@
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.h" />
     <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
+    <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_MultithreadingImpl.h" />
     <ClInclude Include="..\Zenith\Core\Zenith.h" />
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_AudioBus.h" />
@@ -2377,6 +2379,7 @@
     <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp" />
     <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.cpp" />
     <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
+    <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_MultithreadingImpl.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">Create</PrecompiledHeader>

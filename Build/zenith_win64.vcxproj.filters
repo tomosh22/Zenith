@@ -577,6 +577,9 @@
     <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp">
       <Filter>Core\Multithreading</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_MultithreadingImpl.cpp">
+      <Filter>Core\Multithreading</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -3282,6 +3285,9 @@
     <ClInclude Include="..\Zenith\Core\Callstack\Zenith_Callstack.h">
       <Filter>Core\Callstack</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\FrameContext.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.h">
       <Filter>Core\Memory</Filter>
     </ClInclude>
@@ -3301,6 +3307,9 @@
       <Filter>Core\Memory</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h">
+      <Filter>Core\Multithreading</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_MultithreadingImpl.h">
       <Filter>Core\Multithreading</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith.h">

@@ -2,15 +2,19 @@
 
 #include "Zenith_Windows_Multithreading.h"
 
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "Multithreading/Zenith_Multithreading.h"
 
 #include <process.h>
 #include <processthreadsapi.h>
 
+// TLS state stays per-thread (carve-out per refactor plan -- threads
+// don't belong to an Engine, their registration index does). The
+// shared state (thread-ID allocator + main-thread ID) moved to
+// g_xEngine.Threading() in Phase 3a.
 thread_local static char tl_g_acThreadName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH]{ 0 };
 thread_local static u_int tl_g_uThreadID = ~0u;
-static u_int g_uMainThreadID = ~0u;
 
 template<>
 void Zenith_Windows_Mutex_T<true>::Lock()
@@ -104,22 +108,19 @@ void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_Thr
 
 void Zenith_Multithreading::Platform_RegisterThread(const bool bMainThread)
 {
-	// Thread-safe atomic counter to ensure unique IDs even when multiple threads register simultaneously
-	static std::atomic<u_int> ls_uThreadID{0};
-	tl_g_uThreadID = ls_uThreadID.fetch_add(1);
-	if (bMainThread)
-	{
-		g_uMainThreadID = tl_g_uThreadID;
-	}
+	// Thread-ID allocator + main-thread tracking live on g_xEngine.Threading()
+	// (Phase 3a). The engine guarantees the impl exists before any
+	// thread can reach this code path.
+	tl_g_uThreadID = g_xEngine.Threading().AllocateThreadID(bMainThread);
 }
 
 u_int Zenith_Multithreading::Platform_GetCurrentThreadID()
 {
-	Zenith_Assert(tl_g_uThreadID != -1, "This thread hasn't been registered with RegisterThread");
+	Zenith_Assert(tl_g_uThreadID != ~0u, "This thread hasn't been registered with RegisterThread");
 	return tl_g_uThreadID;
 }
 
 bool Zenith_Multithreading::Platform_IsMainThread()
 {
-	return tl_g_uThreadID == g_uMainThreadID;
+	return tl_g_uThreadID == g_xEngine.Threading().GetMainThreadID();
 }

@@ -5,6 +5,7 @@
 // Forward decls -- keep this header light. Full subsystem headers are
 // only included by Zenith_Engine.cpp where the accessor bodies live.
 class FrameContext;
+class Zenith_MultithreadingImpl;
 
 // Zenith_Engine is the single owner of the engine's mutable runtime
 // state. Phase 0 introduces the class and moves the bootstrap ordering
@@ -42,13 +43,15 @@ public:
 	// full subsystem headers are visible; this header only forward-
 	// declares the return types.
 	FrameContext& Frame();
+	Zenith_MultithreadingImpl& Threading();
 
 private:
 	// Subsystem members. Raw pointers to forward-declared types so the
 	// default ctor/dtor stay trivial and the constinit global has zero
 	// static-init cost. Each is allocated in Initialise() and deleted
 	// in Shutdown().
-	FrameContext* m_pxFrame = nullptr;
+	FrameContext*              m_pxFrame     = nullptr;
+	Zenith_MultithreadingImpl* m_pxThreading = nullptr;
 };
 
 // Compile-time guard: enforce trivial destruction so the
