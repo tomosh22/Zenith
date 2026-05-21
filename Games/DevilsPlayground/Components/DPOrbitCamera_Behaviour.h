@@ -16,7 +16,7 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
@@ -59,7 +59,7 @@ public:
 		// whole village in view to pick which villager to possess next
 		// and to keep tabs on the priest's pursuit.
 		m_fOrbitYaw += DP_Input::ReadCameraRotate() * m_fRotateSpeed * fDt;
-		const float fWheel = Zenith_Input::GetMouseWheelDelta();
+		const float fWheel = g_xEngine.Input().GetMouseWheelDelta();
 		if (fWheel != 0.0f)
 		{
 			m_fOrbitDistance = glm::clamp(m_fOrbitDistance - fWheel * m_fZoomSpeed,

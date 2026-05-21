@@ -214,7 +214,7 @@ public:
 			Survival_EventBus::ProcessDeferredEvents();
 
 			// Handle escape -> return to menu
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;

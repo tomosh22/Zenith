@@ -25,7 +25,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -232,7 +232,7 @@ public:
 
 		case SokobanGameState::PLAYING:
 			// Escape returns to menu
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -492,13 +492,13 @@ private:
 		// Up/Down would cycle if more buttons existed
 		static constexpr int32_t s_iButtonCount = 1;
 
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
+			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W))
 		{
 			m_iFocusIndex = (m_iFocusIndex - 1 + s_iButtonCount) % s_iButtonCount;
 		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN) ||
+			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_S))
 		{
 			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
 		}

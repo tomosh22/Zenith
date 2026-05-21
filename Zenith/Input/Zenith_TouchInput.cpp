@@ -2,7 +2,7 @@
 
 #include "Input/Zenith_TouchInputImpl.h"
 #include "Input/Zenith_TouchInputImpl.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 
 // Phase 5.5b: touch-gesture state lives on Zenith_TouchInputImpl held by
 // Zenith_Engine. All former file-statics are now reached via
@@ -20,9 +20,9 @@ void Zenith_TouchInputImpl::Update()
 	g_xEngine.Touch().m_fSwipeDistance = 0.f;
 
 	// Read current mouse/touch state
-	bool bDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	bool bDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 	Zenith_Maths::Vector2_64 xPos64;
-	Zenith_Input::GetMousePosition(xPos64);
+	g_xEngine.Input().GetMousePosition(xPos64);
 	g_xEngine.Touch().m_xCurrentTouchPos = Zenith_Maths::Vector2(static_cast<float>(xPos64.x), static_cast<float>(xPos64.y));
 	g_xEngine.Touch().m_bCurrentlyDown = bDown;
 

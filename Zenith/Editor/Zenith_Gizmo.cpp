@@ -5,7 +5,7 @@
 #include "Zenith_Gizmo.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -76,7 +76,7 @@ bool Zenith_Gizmo::HandleTranslateGizmo(
 
 	// Get current mouse position in viewport space
 	Zenith_Maths::Vector2_64 xMousePos64;
-	Zenith_Input::GetMousePosition(xMousePos64);
+	g_xEngine.Input().GetMousePosition(xMousePos64);
 	Zenith_Maths::Vector2 xMousePos = {
 		static_cast<float>(xMousePos64.x - viewportPos.x),
 		static_cast<float>(xMousePos64.y - viewportPos.y)
@@ -86,7 +86,7 @@ bool Zenith_Gizmo::HandleTranslateGizmo(
 	if (!g_xEngine.Gizmo().m_bIsManipulating)
 	{
 		// Check if mouse button was pressed to start manipulation
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
 		{
 			// For simplicity, we'll use a basic hit test
 			// In a full implementation, we'd test against rendered gizmo geometry
@@ -165,7 +165,7 @@ bool Zenith_Gizmo::HandleTranslateGizmo(
 		}
 
 		// Check for mouse release to end manipulation
-		if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT))
+		if (!g_xEngine.Input().IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT))
 		{
 			g_xEngine.Gizmo().m_bIsManipulating = false;
 			g_xEngine.Gizmo().m_eActiveAxis = GizmoAxis::None;

@@ -15,7 +15,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Physics/Zenith_Physics.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 
 // ============================================================================
@@ -330,13 +330,13 @@ private:
 	{
 		Zenith_Maths::Vector3 xInput(0.0f);
 
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_W) || Zenith_Input::IsKeyHeld(ZENITH_KEY_UP))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))
 			xInput.z += 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_S) || Zenith_Input::IsKeyHeld(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))
 			xInput.z -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_A) || Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))
 			xInput.x -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_D) || Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT))
 			xInput.x += 1.0f;
 
 		if (glm::length(xInput) > 0.01f)
@@ -348,7 +348,7 @@ private:
 	bool CheckAttackInput()
 	{
 		// Heavy attack (right click)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_RIGHT))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_RIGHT))
 		{
 			if (CanMove())
 			{
@@ -358,7 +358,7 @@ private:
 		}
 
 		// Light attack (left click)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
 		{
 			if (CanMove())
 			{
@@ -377,7 +377,7 @@ private:
 
 	bool CheckDodgeInput()
 	{
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
 		{
 			if (CanDodge())
 			{

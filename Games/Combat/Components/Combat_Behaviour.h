@@ -27,7 +27,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
@@ -235,19 +235,19 @@ public:
 			break;
 
 		case Combat_GameState::PLAYING:
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				SetGameState(Combat_GameState::PAUSED);
 				Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
 				UpdateUI();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
 			{
 				ResetGame();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -266,12 +266,12 @@ public:
 			break;
 
 		case Combat_GameState::PAUSED:
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				SetGameState(Combat_GameState::PLAYING);
 				Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
 			}
-			else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -281,12 +281,12 @@ public:
 
 		case Combat_GameState::VICTORY:
 		case Combat_GameState::GAME_OVER:
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
 			{
 				ResetGame();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;

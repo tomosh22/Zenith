@@ -27,7 +27,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
@@ -186,12 +186,12 @@ public:
 			break;
 
 		case AIShowcaseGameState::PAUSED:
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				m_eGameState = AIShowcaseGameState::PLAYING;
 				Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
 			}
-			else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
 				ReturnToMenu();
@@ -759,7 +759,7 @@ private:
 	void HandlePlayerInput(float fDt)
 	{
 		// Pause
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 		{
 			m_eGameState = AIShowcaseGameState::PAUSED;
 			Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
@@ -768,7 +768,7 @@ private:
 		}
 
 		// Escape - return to menu
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 		{
 			ReturnToMenu();
 			return;
@@ -781,13 +781,13 @@ private:
 
 		// Movement
 		Zenith_Maths::Vector3 xMoveDir(0.0f);
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_W))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W))
 			xMoveDir.z += 1.0f;  // Forward = +Z (away from camera)
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_S))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S))
 			xMoveDir.z -= 1.0f;  // Backward = -Z (toward camera)
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_A))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A))
 			xMoveDir.x -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_D))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D))
 			xMoveDir.x += 1.0f;
 
 		if (Zenith_Maths::LengthSq(xMoveDir) > 0.01f)
@@ -810,7 +810,7 @@ private:
 		}
 
 		// Attack / Make sound
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
 		{
 			// Emit sound stimulus for hearing test
 			Zenith_PerceptionSystem::EmitSoundStimulus(
@@ -818,19 +818,19 @@ private:
 		}
 
 		// Formation switching (1-5 keys)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_1))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_1))
 			SetFormation(0);
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_2))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_2))
 			SetFormation(1);
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_3))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_3))
 			SetFormation(2);
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_4))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_4))
 			SetFormation(3);
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_5))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_5))
 			SetFormation(4);
 
 		// Reset
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
 		{
 			ResetDemo();
 			return;

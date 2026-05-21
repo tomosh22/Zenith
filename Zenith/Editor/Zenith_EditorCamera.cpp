@@ -8,7 +8,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 
 //==============================================================================
 // Editor Camera System
@@ -96,11 +96,11 @@ namespace
 
 void Zenith_Editor::UpdateEditorCameraLook()
 {
-	if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))
+	if (!g_xEngine.Input().IsKeyDown(ZENITH_MOUSE_BUTTON_2))
 		return;
 
 	Zenith_Maths::Vector2_64 xMouseDelta;
-	Zenith_Input::GetMouseDelta(xMouseDelta);
+	g_xEngine.Input().GetMouseDelta(xMouseDelta);
 
 	// Yaw/pitch stored in radians (same convention as Zenith_CameraComponent).
 	const double fRotateSpeedRad = glm::radians(g_xEngine.Editor().m_fEditorCameraRotateSpeed);
@@ -118,28 +118,28 @@ void Zenith_Editor::UpdateEditorCameraLook()
 
 void Zenith_Editor::UpdateEditorCameraMovement(float fDt)
 {
-	if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))
+	if (!g_xEngine.Input().IsKeyDown(ZENITH_MOUSE_BUTTON_2))
 		return;
 
 	float fMoveSpeed = g_xEngine.Editor().m_fEditorCameraMoveSpeed;
-	if (Zenith_Input::IsKeyDown(ZENITH_KEY_LEFT_SHIFT))
+	if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT_SHIFT))
 		fMoveSpeed *= 3.0f;
 
 	const float fStep = fMoveSpeed * fDt;
 	const double fYaw = g_xEngine.Editor().m_fEditorCameraYaw;
 
-	if (Zenith_Input::IsKeyDown(ZENITH_KEY_W))
+	if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W))
 		g_xEngine.Editor().m_xEditorCameraPosition += YawDirectionScaled(fYaw, {0, 0,  1, 1}, fStep);
-	if (Zenith_Input::IsKeyDown(ZENITH_KEY_S))
+	if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_S))
 		g_xEngine.Editor().m_xEditorCameraPosition -= YawDirectionScaled(fYaw, {0, 0,  1, 1}, fStep);
-	if (Zenith_Input::IsKeyDown(ZENITH_KEY_A))
+	if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_A))
 		g_xEngine.Editor().m_xEditorCameraPosition += YawDirectionScaled(fYaw, {-1, 0, 0, 1}, fStep);
-	if (Zenith_Input::IsKeyDown(ZENITH_KEY_D))
+	if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_D))
 		g_xEngine.Editor().m_xEditorCameraPosition -= YawDirectionScaled(fYaw, {-1, 0, 0, 1}, fStep);
 
-	if (Zenith_Input::IsKeyDown(ZENITH_KEY_Q))
+	if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_Q))
 		g_xEngine.Editor().m_xEditorCameraPosition.y -= fStep;
-	if (Zenith_Input::IsKeyDown(ZENITH_KEY_E))
+	if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_E))
 		g_xEngine.Editor().m_xEditorCameraPosition.y += fStep;
 }
 
@@ -170,7 +170,7 @@ void Zenith_Editor::UpdateEditorCamera(float fDt)
 {
 	if (!g_xEngine.Editor().m_bEditorCameraInitialized)  return;
 	if (g_xEngine.Editor().m_eEditorMode == EditorMode::Playing)  return;  // Stopped/Paused only.
-	if (!g_xEngine.Editor().m_bViewportHovered && !Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))  return;
+	if (!g_xEngine.Editor().m_bViewportHovered && !g_xEngine.Input().IsKeyDown(ZENITH_MOUSE_BUTTON_2))  return;
 
 	UpdateEditorCameraLook();
 	UpdateEditorCameraMovement(fDt);

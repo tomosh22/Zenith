@@ -21,7 +21,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -789,7 +789,7 @@ public:
 		case TILEPUZZLE_STATE_LEVEL_SELECT:
 			m_fMenuTimer += fDeltaTime;
 #ifdef ZENITH_TOOLS
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 				return;
@@ -799,7 +799,7 @@ public:
 
 		case TILEPUZZLE_STATE_PLAYING:
 #ifdef ZENITH_TOOLS
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				if (m_bConfirmDialogActive)
 				{
@@ -859,7 +859,7 @@ public:
 
 		case TILEPUZZLE_STATE_LEVEL_COMPLETE:
 #ifdef ZENITH_TOOLS
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -873,7 +873,7 @@ public:
 
 		case TILEPUZZLE_STATE_CAT_CAFE:
 #ifdef ZENITH_TOOLS
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 				return;
@@ -884,7 +884,7 @@ public:
 
 		case TILEPUZZLE_STATE_SETTINGS:
 #ifdef ZENITH_TOOLS
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				OnSettingsBackClicked(this);
 				return;
@@ -899,7 +899,7 @@ public:
 
 		case TILEPUZZLE_STATE_ACHIEVEMENTS:
 #ifdef ZENITH_TOOLS
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 				return;
@@ -1367,9 +1367,9 @@ private:
 		if (m_eState != TILEPUZZLE_STATE_PLAYING && !m_bDragging)
 			return;
 
-		bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+		bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 		Zenith_Maths::Vector2_64 xMousePos64;
-		Zenith_Input::GetMousePosition(xMousePos64);
+		g_xEngine.Input().GetMousePosition(xMousePos64);
 		float fScreenX = static_cast<float>(xMousePos64.x);
 		float fScreenY = static_cast<float>(xMousePos64.y);
 
@@ -2089,7 +2089,7 @@ private:
 		}
 
 		// Check for tap to advance/dismiss (detect mouse-down transition)
-		bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+		bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 		if (bMouseDown && !m_bTutorialMouseWasDown && m_fTutorialFadeProgress >= 0.5f)
 		{
 			m_uTutorialStep++;
@@ -2560,11 +2560,11 @@ private:
 			Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 0.5f + 0.5f * sinf(m_fMenuTimer * 3.0f)));
 
 		// Handle back tap
-		bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+		bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 		if (bMouseDown && !m_bConfirmDialogMouseWasDown)
 		{
 			Zenith_Maths::Vector2_64 xMousePos64;
-			Zenith_Input::GetMousePosition(xMousePos64);
+			g_xEngine.Input().GetMousePosition(xMousePos64);
 			float fMY = static_cast<float>(xMousePos64.y);
 			if (fMY > fH - 80.0f)
 			{

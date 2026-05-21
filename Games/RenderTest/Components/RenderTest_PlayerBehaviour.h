@@ -10,7 +10,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -212,8 +212,8 @@ public:
 		const bool bIsReloading = (m_fReloadTimer > 0.0f);
 		const bool bCanAct = !bIsReloading;
 		const bool bSprinting = bCanAct
-			&& (Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT_SHIFT)
-			    || Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT))
+			&& (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT_SHIFT)
+			    || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT))
 			&& fMoveLen > 0.01f;
 
 		float fSpeed = 0.0f;
@@ -240,7 +240,7 @@ public:
 		// check uses a downward raycast from just below the capsule so it
 		// doesn't hit the player's own collider.
 		if (bCanAct
-			&& Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE)
+			&& g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE)
 			&& xCollider.HasValidBody()
 			&& IsGrounded())
 		{
@@ -257,7 +257,7 @@ public:
 		// R + need ammo + have reserve + can act -> start reload. Ammo transfer
 		// is deferred to the gated "just finished" block below — without the
 		// gate the clip would refill every frame after the timer crossed 0.
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R)
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R)
 			&& bCanAct
 			&& m_uAmmoInClip < k_uMagSize
 			&& m_uReserveAmmo > 0)
@@ -268,8 +268,8 @@ public:
 		// --- ADS + Fire input ---
 		// RMB held -> aim. LMB hipfire-clicks force ADS for the duration of the
 		// fire animation via m_fForceAimTimer so the recoil pose still plays.
-		const bool bAimingRMB = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT);
-		const bool bFirePressed = Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
+		const bool bAimingRMB = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT);
+		const bool bFirePressed = g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
 
 		if (bFirePressed && bCanAct)
 		{
@@ -384,10 +384,10 @@ private:
 	Zenith_Maths::Vector3 ReadMovementInput() const
 	{
 		Zenith_Maths::Vector3 xInput(0.0f);
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_W) || Zenith_Input::IsKeyHeld(ZENITH_KEY_UP))    xInput.z += 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_S) || Zenith_Input::IsKeyHeld(ZENITH_KEY_DOWN))  xInput.z -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_A) || Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT))  xInput.x -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_D) || Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT)) xInput.x += 1.0f;
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))    xInput.z += 1.0f;
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))  xInput.z -= 1.0f;
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))  xInput.x -= 1.0f;
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT)) xInput.x += 1.0f;
 		return xInput;
 	}
 

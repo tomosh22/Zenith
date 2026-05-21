@@ -164,19 +164,19 @@ public:
 
 		case RunnerGameState::PLAYING:
 		{
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				m_eGameState = RunnerGameState::PAUSED;
 				Zenith_SceneManager::SetScenePaused(m_xGameScene, true);
 				UpdateUI();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
 			{
 				ResetGame();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -187,12 +187,12 @@ public:
 		}
 
 		case RunnerGameState::PAUSED:
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				m_eGameState = RunnerGameState::PLAYING;
 				Zenith_SceneManager::SetScenePaused(m_xGameScene, false);
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -201,12 +201,12 @@ public:
 			break;
 
 		case RunnerGameState::GAME_OVER:
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
 			{
 				ResetGame();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;

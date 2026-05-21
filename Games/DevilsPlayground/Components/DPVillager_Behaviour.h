@@ -20,7 +20,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 #include "Core/Zenith_AudioBus.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"

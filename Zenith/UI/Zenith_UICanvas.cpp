@@ -6,7 +6,7 @@
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIToggle.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include <algorithm>
 
 namespace Zenith_UI {
@@ -204,28 +204,28 @@ void Zenith_UICanvas::UpdateFocusNavigation()
     if (!m_pxFocusedElement)
         return;
 
-    if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP))
+    if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP))
         NavigateUp();
-    else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
+    else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
         NavigateDown();
-    else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
+    else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
         NavigateLeft();
-    else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
+    else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
         NavigateRight();
 
-    if (!Zenith_Input::IsGamepadConnected())
+    if (!g_xEngine.Input().IsGamepadConnected())
         return;
 
-    if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_UP))
+    if (g_xEngine.Input().WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_UP))
         NavigateUp();
-    else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_DOWN))
+    else if (g_xEngine.Input().WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_DOWN))
         NavigateDown();
-    else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_LEFT))
+    else if (g_xEngine.Input().WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_LEFT))
         NavigateLeft();
-    else if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_RIGHT))
+    else if (g_xEngine.Input().WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_DPAD_RIGHT))
         NavigateRight();
 
-    if (Zenith_Input::WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_A))
+    if (g_xEngine.Input().WasGamepadButtonPressedThisFrame(ZENITH_GAMEPAD_BUTTON_A))
         ActivateFocused();
 }
 

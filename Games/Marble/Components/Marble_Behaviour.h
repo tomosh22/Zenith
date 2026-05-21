@@ -181,7 +181,7 @@ public:
 				ResetLevel();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -208,7 +208,7 @@ public:
 				m_eGameState = MarbleGameState::PLAYING;
 				Zenith_SceneManager::SetScenePaused(m_xLevelScene, false);
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -223,7 +223,7 @@ public:
 				ResetLevel();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -421,9 +421,9 @@ private:
 
 		static constexpr int32_t s_iButtonCount = 2;
 
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP) || g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W))
 			m_iFocusIndex = (m_iFocusIndex - 1 + s_iButtonCount) % s_iButtonCount;
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN) || g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_S))
 			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
 
 		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");

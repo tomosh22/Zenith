@@ -42,7 +42,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ImGuiIntegration.h"
@@ -697,17 +697,17 @@ void Zenith_Editor::UpdateEditorInput()
 	// Handle gizmo mode keyboard shortcuts (when viewport is focused)
 	if (g_xEngine.Editor().m_bViewportFocused)
 	{
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W))
 		{
 			SetGizmoMode(EditorGizmoMode::Translate);
 			g_xEngine.Gizmos().SetGizmoMode(GizmoMode::Translate);
 		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_E))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_E))
 		{
 			SetGizmoMode(EditorGizmoMode::Rotate);
 			g_xEngine.Gizmos().SetGizmoMode(GizmoMode::Rotate);
 		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
 		{
 			SetGizmoMode(EditorGizmoMode::Scale);
 			g_xEngine.Gizmos().SetGizmoMode(GizmoMode::Scale);
@@ -716,19 +716,19 @@ void Zenith_Editor::UpdateEditorInput()
 
 	// Handle undo/redo keyboard shortcuts (Ctrl+Z / Ctrl+Y)
 	// Check for Ctrl key being held down
-	bool bCtrlDown = Zenith_Input::IsKeyDown(ZENITH_KEY_LEFT_CONTROL) ||
-	                 Zenith_Input::IsKeyDown(ZENITH_KEY_RIGHT_CONTROL);
+	bool bCtrlDown = g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT_CONTROL) ||
+	                 g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT_CONTROL);
 
 	if (bCtrlDown)
 	{
 		// Ctrl+Z: Undo
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_Z))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_Z))
 		{
 			Zenith_UndoSystem::Undo();
 		}
 
 		// Ctrl+Y: Redo
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_Y))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_Y))
 		{
 			Zenith_UndoSystem::Redo();
 		}
@@ -825,12 +825,12 @@ void Zenith_Editor::HandleObjectPicking()
 		return;
 
 	// Only pick on left mouse button press (not held)
-	if (!Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
+	if (!g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
 		return;
 
 	// Get mouse position in screen space
 	Zenith_Maths::Vector2_64 xGlobalMousePos;
-	Zenith_Input::GetMousePosition(xGlobalMousePos);
+	g_xEngine.Input().GetMousePosition(xGlobalMousePos);
 
 	// Convert to viewport-relative coordinates
 	Zenith_Maths::Vector2 xViewportMousePos = {
@@ -919,7 +919,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 
 	// Get mouse position
 	Zenith_Maths::Vector2_64 xGlobalMousePos;
-	Zenith_Input::GetMousePosition(xGlobalMousePos);
+	g_xEngine.Input().GetMousePosition(xGlobalMousePos);
 
 	Zenith_Maths::Vector2 xViewportMousePos = {
 		static_cast<float>(xGlobalMousePos.x - g_xEngine.Editor().m_xViewportPos.x),
@@ -957,7 +957,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 	Zenith_Maths::Vector3 xRayOrigin(xCameraPos.x, xCameraPos.y, xCameraPos.z);
 
 	// Handle mouse input for gizmo interaction
-	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
+	if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Mouse left pressed - viewport hovered=%d, selected=%zu", g_xEngine.Editor().m_bViewportHovered, g_xEngine.Editor().m_xSelectedEntityIDs.size());
 		g_xEngine.Gizmos().BeginInteraction(xRayOrigin, xRayDir);
@@ -965,7 +965,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 	}
 	
 	// Update interaction while dragging (can happen same frame as BeginInteraction)
-	bool bIsKeyDown = Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT);
+	bool bIsKeyDown = g_xEngine.Input().IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT);
 	bool bIsInteracting = g_xEngine.Gizmos().IsInteracting();
 	
 	if (bIsKeyDown || bIsInteracting)
@@ -981,7 +981,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 	}
 	
 	// End interaction when mouse released
-	if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT) && g_xEngine.Gizmos().IsInteracting())
+	if (!g_xEngine.Input().IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT) && g_xEngine.Gizmos().IsInteracting())
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Ending interaction");
 		g_xEngine.Gizmos().EndInteraction();

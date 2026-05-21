@@ -7,7 +7,7 @@
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 // Re-enter the placement-new disabled zone for the additional Jolt headers
 // not already pulled in by Zenith_Physics.h (which re-enables on exit).
 #ifdef ZENITH_PLACEMENT_NEW_ZONE
@@ -507,7 +507,7 @@ Zenith_Physics::RaycastInfo Zenith_Physics::BuildRayFromMouse(Zenith_CameraCompo
 	// raycasts respect Zenith_InputSimulator overrides — without this, simulated
 	// SimulateMousePosition + SimulateMouseClick fires the press event but the
 	// raycast still uses the OS cursor.
-	Zenith_Input::GetMousePosition(xMousePos);
+	g_xEngine.Input().GetMousePosition(xMousePos);
 
 	double fX = xMousePos.x;
 	double fY = xMousePos.y;

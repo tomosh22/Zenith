@@ -12,7 +12,7 @@
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 #include "Editor/Panels/Zenith_EditorPanel_Hierarchy.h"
 #include "Editor/Panels/Zenith_EditorPanel_ContentBrowser.h"

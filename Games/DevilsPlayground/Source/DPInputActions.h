@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -9,13 +9,13 @@ namespace DP_Input
 	inline Zenith_Maths::Vector2 ReadMoveVillager()
 	{
 		Zenith_Maths::Vector2 xInput(0.0f);
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_W) || Zenith_Input::IsKeyHeld(ZENITH_KEY_UP))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))
 			xInput.y += 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_S) || Zenith_Input::IsKeyHeld(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))
 			xInput.y -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_A) || Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))
 			xInput.x -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_D) || Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT))
 			xInput.x += 1.0f;
 		return xInput;
 	}
@@ -27,8 +27,8 @@ namespace DP_Input
 	// movement.sprint_life_cost_extra_per_s drain.
 	inline bool ReadSprintHeld()
 	{
-		return Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT_SHIFT)
-			|| Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT);
+		return g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT_SHIFT)
+			|| g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT);
 	}
 
 	// MVP-1.7: walk-quiet hold. Either Ctrl key works. While held AND
@@ -39,13 +39,13 @@ namespace DP_Input
 	// sprint -- the louder, faster mode).
 	inline bool ReadWalkQuietHeld()
 	{
-		return Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT_CONTROL)
-			|| Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT_CONTROL);
+		return g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT_CONTROL)
+			|| g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT_CONTROL);
 	}
 
 	inline bool ReadInteractPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_F);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_F);
 	}
 
 	// MVP-1.4.5: drop verb. Releases the possessed villager's held
@@ -53,30 +53,30 @@ namespace DP_Input
 	// holding G doesn't keep dropping (no-op once held = None).
 	inline bool ReadDropPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_G);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_G);
 	}
 
 	inline bool ReadAbilityPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE);
 	}
 
 	inline float ReadCameraRotate()
 	{
 		float f = 0.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_Q)) f -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_E)) f += 1.0f;
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_Q)) f -= 1.0f;
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_E)) f += 1.0f;
 		return f;
 	}
 
 	inline bool ReadEscapePressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
 	}
 
 	inline bool ReadPossessClickPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
 	}
 
 	// 2026-05-16: instructional-HUD toggle. H opens / closes the
@@ -85,6 +85,6 @@ namespace DP_Input
 	// strobe the overlay.
 	inline bool ReadHelpTogglePressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_H);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_H);
 	}
 }

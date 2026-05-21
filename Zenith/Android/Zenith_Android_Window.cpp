@@ -1,6 +1,6 @@
 #include "Zenith.h"
 #include "Zenith_Android_Window.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 
 #include <android/native_window.h>
 #include <android_native_app_glue.h>
@@ -94,7 +94,7 @@ void Zenith_Window::OnTouchEvent(int32_t iAction, float fX, float fY)
 	{
 	case 0: // AMOTION_EVENT_ACTION_DOWN
 		m_bTouchDown = true;
-		Zenith_Input::MouseButtonPressedCallback(ZENITH_MOUSE_BUTTON_LEFT);
+		g_xEngine.Input().MouseButtonPressedCallback(ZENITH_MOUSE_BUTTON_LEFT);
 		break;
 	case 1: // AMOTION_EVENT_ACTION_UP
 		m_bTouchDown = false;

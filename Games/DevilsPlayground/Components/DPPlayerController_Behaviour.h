@@ -13,7 +13,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 // NOTE: do not include "Windows/Zenith_Windows_Window.h" directly. Zenith.h
 // (already included by the .cpp via the PCH) pulls in the platform-correct
 // window header through Zenith_OS_Include.h — Windows on win64, Android's
@@ -108,7 +108,7 @@ private:
 		if (iW <= 0 || iH <= 0) return;
 
 		Zenith_Maths::Vector2_64 xMousePos;
-		Zenith_Input::GetMousePosition(xMousePos);
+		g_xEngine.Input().GetMousePosition(xMousePos);
 
 		Zenith_Maths::Matrix4 xView, xProj;
 		pxCam->BuildViewMatrix(xView);

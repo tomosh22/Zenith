@@ -11,7 +11,7 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 // Zenith_Window class is provided by Zenith.h via Zenith_OS_Include.h —
 // don't include the win64-specific header directly or the Android build
 // of this test would pull in GLFW/Win32 declarations that clash with
@@ -75,7 +75,7 @@
 //     we project the world-space target delta onto camera forward/right and
 //     hold the appropriate keys.
 //   - Click-to-possess depends on the engine fix routing BuildRayFromMouse
-//     through Zenith_Input::GetMousePosition (so the simulator-set position
+//     through g_xEngine.Input().GetMousePosition (so the simulator-set position
 //     drives the raycast).
 // ============================================================================
 

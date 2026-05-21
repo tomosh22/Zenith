@@ -3,7 +3,7 @@
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
 #include "Flux/Text/Flux_TextImpl.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -109,7 +109,7 @@ void Zenith_UIButton::Update(float fDt)
 		&& fMouseY >= xBounds.y
 		&& fMouseY <= xBounds.w;
 
-	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 
 	HandleInputEvents(bInteractable, bHovered, bMouseDown);
 	ResolveState(bHovered, bMouseDown);
@@ -127,7 +127,7 @@ void Zenith_UIButton::HandleFirstVisibleFrame()
 		m_bWasInvisible = false;
 		// Sync mouse state to prevent false press/release detection on the first visible frame
 		m_bMousePressedInside = false;
-		m_bMouseDownLastFrame = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+		m_bMouseDownLastFrame = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 	}
 }
 
@@ -173,8 +173,8 @@ void Zenith_UIButton::HandleInputEvents(bool bInteractable, bool bHovered, bool 
 	m_bMouseDownLastFrame = bMouseDown;
 
 	bool bActivated = m_bFocused
-		&& (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
-			|| Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
+		&& (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
+			|| g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
 	if (bActivated)
 	{
 		if (m_pfnOnClick)

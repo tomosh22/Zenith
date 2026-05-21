@@ -1,6 +1,6 @@
 #include "Zenith.h"
 
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Input/Zenith_InputImpl.h"
 
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -16,7 +16,7 @@
 static constexpr int MAX_GAMEPADS = Zenith_InputImpl::MAX_GAMEPADS;
 #endif
 
-void Zenith_Input::BeginFrame()
+void Zenith_InputImpl::BeginFrame()
 {
 #ifdef ZENITH_INPUT_SIMULATOR
 	if (Zenith_InputSimulator::IsEnabled())
@@ -106,38 +106,25 @@ void Zenith_Input::BeginFrame()
 #endif
 }
 
-void Zenith_Input::KeyPressedCallback(Zenith_KeyCode iKey)
+void Zenith_InputImpl::KeyPressedCallback(Zenith_KeyCode iKey)
 {
 	g_xEngine.Input().m_xFrameKeyPresses.insert(iKey);
 }
 
-void Zenith_Input::MouseButtonPressedCallback(Zenith_KeyCode iKey)
+void Zenith_InputImpl::MouseButtonPressedCallback(Zenith_KeyCode iKey)
 {
 	g_xEngine.Input().m_xFrameKeyPresses.insert(iKey);
 }
 
-void Zenith_Input::MouseWheelCallback(double /*fXOffset*/, double fYOffset)
+void Zenith_InputImpl::MouseWheelCallback(double /*fXOffset*/, double fYOffset)
 {
 	// Accumulate within the frame — multiple scroll callbacks may fire
 	// between two BeginFrame calls.
 	g_xEngine.Input().m_fMouseWheelDelta += static_cast<float>(fYOffset);
 }
 
-float Zenith_Input::GetMouseWheelDelta()
-{
-#ifdef ZENITH_INPUT_SIMULATOR
-	if (Zenith_InputSimulator::IsEnabled())
-	{
-		// Simulator path lives entirely in the simulator class — that lets
-		// SimulateMouseWheel inject a value that survives a full frame
-		// without the GLFW callback path interfering.
-		return Zenith_InputSimulator::GetMouseWheelDeltaSimulated();
-	}
-#endif
-	return g_xEngine.Input().m_fMouseWheelDelta;
-}
 
-void Zenith_Input::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
+void Zenith_InputImpl::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
 {
 #ifdef ZENITH_INPUT_SIMULATOR
 	if (Zenith_InputSimulator::IsEnabled())
@@ -149,12 +136,12 @@ void Zenith_Input::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
 	Zenith_Window::GetInstance()->GetMousePosition(xOut);
 }
 
-void Zenith_Input::GetMouseDelta(Zenith_Maths::Vector2_64& xOut)
+void Zenith_InputImpl::GetMouseDelta(Zenith_Maths::Vector2_64& xOut)
 {
 	xOut = g_xEngine.Input().m_xMouseDelta;
 }
 
-bool Zenith_Input::IsKeyDown(Zenith_KeyCode iKey)
+bool Zenith_InputImpl::IsKeyDown(Zenith_KeyCode iKey)
 {
 #ifdef ZENITH_INPUT_SIMULATOR
 	if (Zenith_InputSimulator::IsEnabled())
@@ -165,7 +152,7 @@ bool Zenith_Input::IsKeyDown(Zenith_KeyCode iKey)
 	return Zenith_Window::GetInstance()->IsKeyDown(iKey);
 }
 
-bool Zenith_Input::WasKeyPressedThisFrame(Zenith_KeyCode iKey)
+bool Zenith_InputImpl::WasKeyPressedThisFrame(Zenith_KeyCode iKey)
 {
 #ifdef ZENITH_INPUT_SIMULATOR
 	if (Zenith_InputSimulator::IsEnabled())
@@ -180,14 +167,14 @@ bool Zenith_Input::WasKeyPressedThisFrame(Zenith_KeyCode iKey)
 
 #ifdef ZENITH_WINDOWS
 
-bool Zenith_Input::IsGamepadConnected(int iGamepad)
+bool Zenith_InputImpl::IsGamepadConnected(int iGamepad)
 {
 	if (iGamepad < 0 || iGamepad >= MAX_GAMEPADS) return false;
 	int iJoystickID = GLFW_JOYSTICK_1 + iGamepad;
 	return glfwJoystickIsGamepad(iJoystickID) == GLFW_TRUE;
 }
 
-bool Zenith_Input::IsGamepadButtonDown(int iButton, int iGamepad)
+bool Zenith_InputImpl::IsGamepadButtonDown(int iButton, int iGamepad)
 {
 	if (iGamepad < 0 || iGamepad >= MAX_GAMEPADS) return false;
 	if (iButton < 0 || iButton > GLFW_GAMEPAD_BUTTON_LAST) return false;
@@ -196,7 +183,7 @@ bool Zenith_Input::IsGamepadButtonDown(int iButton, int iGamepad)
 	return g_xEngine.Input().m_xCurrentGamepadState[iGamepad].buttons[iButton] == GLFW_PRESS;
 }
 
-bool Zenith_Input::WasGamepadButtonPressedThisFrame(int iButton, int iGamepad)
+bool Zenith_InputImpl::WasGamepadButtonPressedThisFrame(int iButton, int iGamepad)
 {
 	if (iGamepad < 0 || iGamepad >= MAX_GAMEPADS) return false;
 	if (iButton < 0 || iButton > GLFW_GAMEPAD_BUTTON_LAST) return false;
@@ -208,7 +195,7 @@ bool Zenith_Input::WasGamepadButtonPressedThisFrame(int iButton, int iGamepad)
 	return bDownNow && !bDownBefore;
 }
 
-float Zenith_Input::GetGamepadAxis(int iAxis, int iGamepad)
+float Zenith_InputImpl::GetGamepadAxis(int iAxis, int iGamepad)
 {
 	if (iGamepad < 0 || iGamepad >= MAX_GAMEPADS) return 0.0f;
 	if (iAxis < 0 || iAxis > GLFW_GAMEPAD_AXIS_LAST) return 0.0f;
@@ -226,26 +213,26 @@ float Zenith_Input::GetGamepadAxis(int iAxis, int iGamepad)
 	return fValue;
 }
 
-void Zenith_Input::GetGamepadLeftStick(float& fX, float& fY, int iGamepad)
+void Zenith_InputImpl::GetGamepadLeftStick(float& fX, float& fY, int iGamepad)
 {
 	fX = GetGamepadAxis(GLFW_GAMEPAD_AXIS_LEFT_X, iGamepad);
 	fY = GetGamepadAxis(GLFW_GAMEPAD_AXIS_LEFT_Y, iGamepad);
 }
 
-void Zenith_Input::GetGamepadRightStick(float& fX, float& fY, int iGamepad)
+void Zenith_InputImpl::GetGamepadRightStick(float& fX, float& fY, int iGamepad)
 {
 	fX = GetGamepadAxis(GLFW_GAMEPAD_AXIS_RIGHT_X, iGamepad);
 	fY = GetGamepadAxis(GLFW_GAMEPAD_AXIS_RIGHT_Y, iGamepad);
 }
 
-float Zenith_Input::GetGamepadLeftTrigger(int iGamepad)
+float Zenith_InputImpl::GetGamepadLeftTrigger(int iGamepad)
 {
 	// Triggers return -1 to 1, normalize to 0 to 1
 	float fValue = GetGamepadAxis(GLFW_GAMEPAD_AXIS_LEFT_TRIGGER, iGamepad);
 	return (fValue + 1.0f) * 0.5f;
 }
 
-float Zenith_Input::GetGamepadRightTrigger(int iGamepad)
+float Zenith_InputImpl::GetGamepadRightTrigger(int iGamepad)
 {
 	// Triggers return -1 to 1, normalize to 0 to 1
 	float fValue = GetGamepadAxis(GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER, iGamepad);
@@ -254,13 +241,13 @@ float Zenith_Input::GetGamepadRightTrigger(int iGamepad)
 
 #else
 
-bool Zenith_Input::IsGamepadConnected(int) { return false; }
-bool Zenith_Input::IsGamepadButtonDown(int, int) { return false; }
-bool Zenith_Input::WasGamepadButtonPressedThisFrame(int, int) { return false; }
-float Zenith_Input::GetGamepadAxis(int, int) { return 0.0f; }
-void Zenith_Input::GetGamepadLeftStick(float& fX, float& fY, int) { fX = 0.0f; fY = 0.0f; }
-void Zenith_Input::GetGamepadRightStick(float& fX, float& fY, int) { fX = 0.0f; fY = 0.0f; }
-float Zenith_Input::GetGamepadLeftTrigger(int) { return 0.0f; }
-float Zenith_Input::GetGamepadRightTrigger(int) { return 0.0f; }
+bool Zenith_InputImpl::IsGamepadConnected(int) { return false; }
+bool Zenith_InputImpl::IsGamepadButtonDown(int, int) { return false; }
+bool Zenith_InputImpl::WasGamepadButtonPressedThisFrame(int, int) { return false; }
+float Zenith_InputImpl::GetGamepadAxis(int, int) { return 0.0f; }
+void Zenith_InputImpl::GetGamepadLeftStick(float& fX, float& fY, int) { fX = 0.0f; fY = 0.0f; }
+void Zenith_InputImpl::GetGamepadRightStick(float& fX, float& fY, int) { fX = 0.0f; fY = 0.0f; }
+float Zenith_InputImpl::GetGamepadLeftTrigger(int) { return 0.0f; }
+float Zenith_InputImpl::GetGamepadRightTrigger(int) { return 0.0f; }
 
 #endif

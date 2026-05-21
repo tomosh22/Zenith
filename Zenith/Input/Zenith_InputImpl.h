@@ -8,12 +8,7 @@
 #include "GLFW/glfw3.h"
 #endif
 
-// Phase 5.5a: per-Engine input state. The 9 file-statics on the
-// Zenith_Input facade move here. The static facade itself stays as is;
-// method bodies read/write through g_xEngine.Input().m_xXxx.
-//
-// Zenith_InputSimulator state stays static by design (test/automation
-// helper, documented carve-out in the refactor plan).
+// Phase 9: state + behaviour for Input subsystem.
 class Zenith_InputImpl
 {
 public:
@@ -23,26 +18,43 @@ public:
 	Zenith_InputImpl(const Zenith_InputImpl&) = delete;
 	Zenith_InputImpl& operator=(const Zenith_InputImpl&) = delete;
 
-	// Keys pressed THIS frame (cleared every BeginFrame). std::unordered_set
-	// chosen by the original implementation; preserved as-is.
+	void BeginFrame();
+
+	void KeyPressedCallback(Zenith_KeyCode iKey);
+	void MouseButtonPressedCallback(Zenith_KeyCode iKey);
+	void GetMousePosition(Zenith_Maths::Vector2_64& xOut);
+	void GetMouseDelta(Zenith_Maths::Vector2_64& xOut);
+	bool IsKeyDown(Zenith_KeyCode iKey);
+	bool IsKeyHeld(Zenith_KeyCode iKey) { return IsKeyDown(iKey); }
+	bool IsMouseButtonHeld(Zenith_KeyCode iMouseButton) { return IsKeyDown(iMouseButton); }
+	bool WasKeyPressedThisFrame(Zenith_KeyCode iKey);
+
+	void MouseWheelCallback(double fXOffset, double fYOffset);
+	float GetMouseWheelDelta() const { return m_fMouseWheelDelta; }
+
+	bool IsGamepadConnected(int iGamepad = 0);
+	bool IsGamepadButtonDown(int iButton, int iGamepad = 0);
+	bool WasGamepadButtonPressedThisFrame(int iButton, int iGamepad = 0);
+	float GetGamepadAxis(int iAxis, int iGamepad = 0);
+	void GetGamepadLeftStick(float& fX, float& fY, int iGamepad = 0);
+	void GetGamepadRightStick(float& fX, float& fY, int iGamepad = 0);
+	float GetGamepadLeftTrigger(int iGamepad = 0);
+	float GetGamepadRightTrigger(int iGamepad = 0);
+
+	static constexpr float GAMEPAD_DEADZONE = 0.15f;
+
 	std::unordered_set<Zenith_KeyCode> m_xFrameKeyPresses;
 
-	// Mouse state.
 	Zenith_Maths::Vector2_64 m_xLastMousePosition = { 0.0, 0.0 };
 	Zenith_Maths::Vector2_64 m_xMouseDelta        = { 0.0, 0.0 };
 	float                    m_fMouseWheelDelta   = 0.0f;
 	bool                     m_bFirstFrame        = true;
 
 #ifdef ZENITH_INPUT_SIMULATOR
-	// Simulator/real-input transition guard. Without it, switching domains
-	// mid-run produces a single spurious huge mouse delta on the changeover
-	// frame because the saved last-position is from the wrong domain.
 	bool                     m_bSimWasEnabledLastFrame = false;
 #endif
 
 #ifdef ZENITH_WINDOWS
-	// Gamepad state tracking for "button pressed this frame" detection.
-	// MAX_GAMEPADS matches the original file-static constant.
 	static constexpr int     MAX_GAMEPADS = 4;
 	GLFWgamepadstate         m_xLastGamepadState[MAX_GAMEPADS]    = {};
 	GLFWgamepadstate         m_xCurrentGamepadState[MAX_GAMEPADS] = {};

@@ -5,7 +5,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 // Platform aggregator: pulls in the active platform's Zenith_Window (GLFW on
 // Windows, ANativeWindow stub on Android). Direct inclusion of the Windows
@@ -111,7 +111,7 @@ public:
 		// large delta between (0,0) and the cursor's actual screen position
 		// the first time we sample.
 		Zenith_Maths::Vector2_64 xMouseDelta;
-		Zenith_Input::GetMouseDelta(xMouseDelta);
+		g_xEngine.Input().GetMouseDelta(xMouseDelta);
 		if (m_bFirstMouseSample)
 		{
 			xMouseDelta = Zenith_Maths::Vector2_64(0.0, 0.0);

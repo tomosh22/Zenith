@@ -27,7 +27,7 @@
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #endif
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Input/Zenith_TouchInputImpl.h"
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
@@ -166,7 +166,7 @@ void Zenith_Core::Zenith_MainLoop()
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PerFrame::BeginFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME);
 
 	UpdateTimers();
-	Zenith_Input::BeginFrame();
+	g_xEngine.Input().BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
 	g_xEngine.Touch().Update();
 
