@@ -3405,7 +3405,13 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.Tests.inl">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomationImpl.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorImpl.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorMaterialUIImpl.h">
       <Filter>Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h">
@@ -3417,10 +3423,19 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_GizmoImpl.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystemImpl.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystemImpl.h">
       <Filter>Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.h">

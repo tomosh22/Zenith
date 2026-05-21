@@ -26,6 +26,11 @@
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorImpl.h"
 #include "Editor/Zenith_EditorAutomation.h"
+#include "Editor/Zenith_EditorAutomationImpl.h"
+#include "Editor/Zenith_EditorMaterialUIImpl.h"
+#include "Editor/Zenith_GizmoImpl.h"
+#include "Editor/Zenith_SelectionSystemImpl.h"
+#include "Editor/Zenith_UndoSystemImpl.h"
 #endif
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsImpl.h"
@@ -193,6 +198,12 @@ Zenith_EditorImpl& Zenith_Engine::Editor()
 	// callbacks. Allocated in Initialise.
 	return *m_pxEditor;
 }
+
+Zenith_GizmoImpl&            Zenith_Engine::Gizmo()              { return *m_pxGizmo; }
+Zenith_SelectionSystemImpl&  Zenith_Engine::Selection()          { return *m_pxSelection; }
+Zenith_UndoSystemImpl&       Zenith_Engine::UndoSystem()         { return *m_pxUndoSystem; }
+Zenith_EditorAutomationImpl& Zenith_Engine::EditorAutomation()   { return *m_pxEditorAutomation; }
+Zenith_EditorMaterialUIImpl& Zenith_Engine::EditorMaterialUI()   { return *m_pxEditorMaterialUI; }
 #endif
 
 void Zenith_Engine::Initialise()
@@ -255,6 +266,19 @@ void Zenith_Engine::Initialise()
 	// list, and editor automation runs before the main loop.
 	Zenith_Assert(m_pxEditor == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxEditor = new Zenith_EditorImpl();
+
+	// Phase 5.5d: editor sub-systems (Gizmo / Selection / Undo / Automation
+	// / MaterialUI). Allocate alongside the main editor Impl.
+	Zenith_Assert(m_pxGizmo == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxGizmo = new Zenith_GizmoImpl();
+	Zenith_Assert(m_pxSelection == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxSelection = new Zenith_SelectionSystemImpl();
+	Zenith_Assert(m_pxUndoSystem == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxUndoSystem = new Zenith_UndoSystemImpl();
+	Zenith_Assert(m_pxEditorAutomation == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxEditorAutomation = new Zenith_EditorAutomationImpl();
+	Zenith_Assert(m_pxEditorMaterialUI == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxEditorMaterialUI = new Zenith_EditorMaterialUIImpl();
 #endif
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
@@ -578,6 +602,16 @@ void Zenith_Engine::Shutdown()
 	// queue gets drained by Flux/Vulkan teardown above.
 	delete m_pxEditor;
 	m_pxEditor = nullptr;
+	delete m_pxGizmo;
+	m_pxGizmo = nullptr;
+	delete m_pxSelection;
+	m_pxSelection = nullptr;
+	delete m_pxUndoSystem;
+	m_pxUndoSystem = nullptr;
+	delete m_pxEditorAutomation;
+	m_pxEditorAutomation = nullptr;
+	delete m_pxEditorMaterialUI;
+	m_pxEditorMaterialUI = nullptr;
 #endif
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");

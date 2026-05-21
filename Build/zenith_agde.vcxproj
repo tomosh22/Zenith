@@ -907,12 +907,17 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.Tests.inl" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.Tests.inl" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomationImpl.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorImpl.h" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorMaterialUIImpl.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_GizmoImpl.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystemImpl.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystemImpl.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />

@@ -7,9 +7,14 @@
 class FrameContext;
 class Zenith_AssetRegistry;
 class Zenith_EntityStore;
+class Zenith_EditorAutomationImpl;
 class Zenith_EditorImpl;
+class Zenith_EditorMaterialUIImpl;
+class Zenith_GizmoImpl;
 class Zenith_InputImpl;
+class Zenith_SelectionSystemImpl;
 class Zenith_TouchInputImpl;
+class Zenith_UndoSystemImpl;
 class Zenith_MultithreadingImpl;
 class Zenith_PhysicsImpl;
 class Zenith_ProfilingImpl;
@@ -74,6 +79,11 @@ public:
 	// component-registration logs) gracefully skip writing to a not-yet-
 	// allocated console buffer.
 	bool HasEditor() const { return m_pxEditor != nullptr; }
+	Zenith_GizmoImpl& Gizmo();
+	Zenith_SelectionSystemImpl& Selection();
+	Zenith_UndoSystemImpl& UndoSystem();
+	Zenith_EditorAutomationImpl& EditorAutomation();
+	Zenith_EditorMaterialUIImpl& EditorMaterialUI();
 #endif
 
 private:
@@ -95,7 +105,12 @@ private:
 	Zenith_InputImpl*                   m_pxInput           = nullptr;
 	Zenith_TouchInputImpl*              m_pxTouch           = nullptr;
 #ifdef ZENITH_TOOLS
-	Zenith_EditorImpl*                  m_pxEditor          = nullptr;
+	Zenith_EditorImpl*                  m_pxEditor             = nullptr;
+	Zenith_GizmoImpl*                   m_pxGizmo              = nullptr;
+	Zenith_SelectionSystemImpl*         m_pxSelection          = nullptr;
+	Zenith_UndoSystemImpl*              m_pxUndoSystem         = nullptr;
+	Zenith_EditorAutomationImpl*        m_pxEditorAutomation   = nullptr;
+	Zenith_EditorMaterialUIImpl*        m_pxEditorMaterialUI   = nullptr;
 #endif
 };
 

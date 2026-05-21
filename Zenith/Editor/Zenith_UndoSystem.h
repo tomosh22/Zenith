@@ -169,18 +169,15 @@ public:
 	static void Clear();
 
 	// Get stack sizes (for debugging/UI)
-	static u_int GetUndoStackSize() { return s_xUndoStack.GetSize(); }
-	static u_int GetRedoStackSize() { return s_xRedoStack.GetSize(); }
+	static u_int GetUndoStackSize();
+	static u_int GetRedoStackSize();
 
 	// Configuration
 	static constexpr u_int MAX_UNDO_STACK_SIZE = 100;
 
 private:
-	// Undo stack: Commands that can be undone (most recent at back)
-	static Zenith_Vector<Zenith_UndoCommand*> s_xUndoStack;
-
-	// Redo stack: Commands that can be redone (most recent at back)
-	static Zenith_Vector<Zenith_UndoCommand*> s_xRedoStack;
+	// Phase 5.5d: undo / redo stacks moved to Zenith_UndoSystemImpl
+	// (held by Zenith_Engine).
 
 	// Helper: Enforce max stack size (remove oldest commands)
 	static void EnforceStackLimit();

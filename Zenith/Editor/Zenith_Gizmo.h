@@ -42,14 +42,14 @@ public:
 	);
 	
 	// Settings
-	static void SetSnapEnabled(bool enabled) { s_bSnapEnabled = enabled; }
-	static bool IsSnapEnabled() { return s_bSnapEnabled; }
+	static void SetSnapEnabled(bool enabled);
+	static bool IsSnapEnabled();
 
-	static void SetSnapValue(float value) { s_fSnapValue = value; }
-	static float GetSnapValue() { return s_fSnapValue; }
+	static void SetSnapValue(float value);
+	static float GetSnapValue();
 
 	// State queries
-	static bool IsManipulating() { return s_bIsManipulating; }
+	static bool IsManipulating();
 
 	static bool HandleTranslateGizmo(
 		Zenith_Entity* pxEntity,
@@ -109,15 +109,7 @@ public:
 		const Zenith_Maths::Vector3& planeNormal
 	);
 	
-	static GizmoAxis s_eActiveAxis;
-	static bool s_bIsManipulating;
-	static Zenith_Maths::Vector3 s_xManipulationStartPos;
-	static Zenith_Maths::Vector2 s_xMouseStartPos;
-	
-	static bool s_bSnapEnabled;
-	static float s_fSnapValue;
-	
-	static float s_fGizmoSize;
+	// Phase 5.5d: 7 statics moved to Zenith_GizmoImpl (held by Zenith_Engine).
 };
 
 #endif // ZENITH_TOOLS

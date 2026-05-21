@@ -12,22 +12,23 @@
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
-// Static member initialization
-GizmoAxis Zenith_Gizmo::s_eActiveAxis = GizmoAxis::None;
-bool Zenith_Gizmo::s_bIsManipulating = false;
-Zenith_Maths::Vector3 Zenith_Gizmo::s_xManipulationStartPos = Zenith_Maths::Vector3(0.0f);
-Zenith_Maths::Vector2 Zenith_Gizmo::s_xMouseStartPos = Zenith_Maths::Vector2(0.0f);
-bool Zenith_Gizmo::s_bSnapEnabled = false;
-float Zenith_Gizmo::s_fSnapValue = 1.0f;
-float Zenith_Gizmo::s_fGizmoSize = 1.0f;
+#include "Editor/Zenith_GizmoImpl.h"
+
+// Phase 5.5d: gizmo state lives on Zenith_GizmoImpl held by Zenith_Engine.
+
+void Zenith_Gizmo::SetSnapEnabled(bool enabled) { g_xEngine.Gizmo().m_bSnapEnabled = enabled; }
+bool Zenith_Gizmo::IsSnapEnabled()              { return g_xEngine.Gizmo().m_bSnapEnabled; }
+void Zenith_Gizmo::SetSnapValue(float value)    { g_xEngine.Gizmo().m_fSnapValue = value; }
+float Zenith_Gizmo::GetSnapValue()              { return g_xEngine.Gizmo().m_fSnapValue; }
+bool Zenith_Gizmo::IsManipulating()             { return g_xEngine.Gizmo().m_bIsManipulating; }
 
 void Zenith_Gizmo::Initialise()
 {
-	s_eActiveAxis = GizmoAxis::None;
-	s_bIsManipulating = false;
-	s_bSnapEnabled = false;
-	s_fSnapValue = 1.0f;
-	s_fGizmoSize = 1.0f;
+	g_xEngine.Gizmo().m_eActiveAxis = GizmoAxis::None;
+	g_xEngine.Gizmo().m_bIsManipulating = false;
+	g_xEngine.Gizmo().m_bSnapEnabled = false;
+	g_xEngine.Gizmo().m_fSnapValue = 1.0f;
+	g_xEngine.Gizmo().m_fGizmoSize = 1.0f;
 }
 
 void Zenith_Gizmo::Shutdown()
@@ -82,7 +83,7 @@ bool Zenith_Gizmo::HandleTranslateGizmo(
 	};
 
 	// STATE MACHINE: Idle -> Manipulating -> Idle
-	if (!s_bIsManipulating)
+	if (!g_xEngine.Gizmo().m_bIsManipulating)
 	{
 		// Check if mouse button was pressed to start manipulation
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
@@ -90,10 +91,10 @@ bool Zenith_Gizmo::HandleTranslateGizmo(
 			// For simplicity, we'll use a basic hit test
 			// In a full implementation, we'd test against rendered gizmo geometry
 			// Here we'll start manipulation if mouse is near gizmo center
-			s_bIsManipulating = true;
-			s_eActiveAxis = GizmoAxis::X;  // Default to X axis for now
-			s_xManipulationStartPos = xEntityPos;
-			s_xMouseStartPos = xMousePos;
+			g_xEngine.Gizmo().m_bIsManipulating = true;
+			g_xEngine.Gizmo().m_eActiveAxis = GizmoAxis::X;  // Default to X axis for now
+			g_xEngine.Gizmo().m_xManipulationStartPos = xEntityPos;
+			g_xEngine.Gizmo().m_xMouseStartPos = xMousePos;
 		}
 	}
 	else
@@ -114,7 +115,7 @@ bool Zenith_Gizmo::HandleTranslateGizmo(
 
 		// Create constraint plane based on active axis
 		Zenith_Maths::Vector3 xPlaneNormal;
-		switch (s_eActiveAxis)
+		switch (g_xEngine.Gizmo().m_eActiveAxis)
 		{
 		case GizmoAxis::X:
 			xPlaneNormal = { 0.0f, 1.0f, 0.0f };  // XZ plane
@@ -131,16 +132,16 @@ bool Zenith_Gizmo::HandleTranslateGizmo(
 		}
 
 		// Intersect ray with plane
-		float fT = RayPlaneIntersection(xCameraPos, xRayDir, s_xManipulationStartPos, xPlaneNormal);
+		float fT = RayPlaneIntersection(xCameraPos, xRayDir, g_xEngine.Gizmo().m_xManipulationStartPos, xPlaneNormal);
 
 		if (fT >= 0.0f)
 		{
 			// Calculate intersection point
 			Zenith_Maths::Vector3 xIntersection = xCameraPos + xRayDir * fT;
-			Zenith_Maths::Vector3 xNewPos = s_xManipulationStartPos;
+			Zenith_Maths::Vector3 xNewPos = g_xEngine.Gizmo().m_xManipulationStartPos;
 
 			// Apply movement only along active axis
-			switch (s_eActiveAxis)
+			switch (g_xEngine.Gizmo().m_eActiveAxis)
 			{
 			case GizmoAxis::X:
 				xNewPos.x = xIntersection.x;
@@ -154,9 +155,9 @@ bool Zenith_Gizmo::HandleTranslateGizmo(
 			}
 
 			// Apply snapping if enabled
-			if (s_bSnapEnabled)
+			if (g_xEngine.Gizmo().m_bSnapEnabled)
 			{
-				xNewPos = glm::round(xNewPos / s_fSnapValue) * s_fSnapValue;
+				xNewPos = glm::round(xNewPos / g_xEngine.Gizmo().m_fSnapValue) * g_xEngine.Gizmo().m_fSnapValue;
 			}
 
 			// Update entity transform
@@ -166,15 +167,15 @@ bool Zenith_Gizmo::HandleTranslateGizmo(
 		// Check for mouse release to end manipulation
 		if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT))
 		{
-			s_bIsManipulating = false;
-			s_eActiveAxis = GizmoAxis::None;
+			g_xEngine.Gizmo().m_bIsManipulating = false;
+			g_xEngine.Gizmo().m_eActiveAxis = GizmoAxis::None;
 		}
 	}
 
 	// Render the gizmo
 	RenderTranslateGizmo(xEntityPos, viewMatrix, projMatrix);
 
-	return s_bIsManipulating;
+	return g_xEngine.Gizmo().m_bIsManipulating;
 }
 
 bool Zenith_Gizmo::HandleRotateGizmo(
@@ -235,13 +236,13 @@ void Zenith_Gizmo::RenderTranslateGizmo(
 	ImDrawList* pDrawList = ImGui::GetForegroundDrawList();
 
 	// Define axis colors
-	ImU32 xAxisColor = (s_eActiveAxis == GizmoAxis::X) ?
+	ImU32 xAxisColor = (g_xEngine.Gizmo().m_eActiveAxis == GizmoAxis::X) ?
 		IM_COL32(255, 128, 128, 255) :  // Bright red when active
 		IM_COL32(255, 0, 0, 255);        // Red
-	ImU32 yAxisColor = (s_eActiveAxis == GizmoAxis::Y) ?
+	ImU32 yAxisColor = (g_xEngine.Gizmo().m_eActiveAxis == GizmoAxis::Y) ?
 		IM_COL32(128, 255, 128, 255) :  // Bright green when active
 		IM_COL32(0, 255, 0, 255);        // Green
-	ImU32 zAxisColor = (s_eActiveAxis == GizmoAxis::Z) ?
+	ImU32 zAxisColor = (g_xEngine.Gizmo().m_eActiveAxis == GizmoAxis::Z) ?
 		IM_COL32(128, 128, 255, 255) :  // Bright blue when active
 		IM_COL32(0, 0, 255, 255);        // Blue
 

@@ -7,6 +7,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
+#include "Editor/Zenith_EditorAutomationImpl.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -24,13 +25,11 @@
 #include "Maths/Zenith_Maths.h"
 #include "DataStream/Zenith_DataStream.h"
 
-//=============================================================================
-// Static member definitions
-//=============================================================================
-Zenith_Vector<Zenith_EditorAction> Zenith_EditorAutomation::s_axActions;
-uint32_t Zenith_EditorAutomation::s_uCurrentAction = 0;
-bool Zenith_EditorAutomation::s_bRunning = false;
-bool Zenith_EditorAutomation::s_bComplete = false;
+// Phase 5.5d: automation state lives on Zenith_EditorAutomationImpl
+// held by Zenith_Engine.
+
+bool Zenith_EditorAutomation::IsRunning()  { return g_xEngine.EditorAutomation().m_bRunning; }
+bool Zenith_EditorAutomation::IsComplete() { return g_xEngine.EditorAutomation().m_bComplete; }
 
 //=============================================================================
 // Execution
@@ -38,48 +37,48 @@ bool Zenith_EditorAutomation::s_bComplete = false;
 
 void Zenith_EditorAutomation::Begin()
 {
-	s_uCurrentAction = 0;
-	s_bRunning = true;
-	s_bComplete = false;
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Begin: %u steps queued", s_axActions.GetSize());
+	g_xEngine.EditorAutomation().m_uCurrentAction = 0;
+	g_xEngine.EditorAutomation().m_bRunning = true;
+	g_xEngine.EditorAutomation().m_bComplete = false;
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Begin: %u steps queued", g_xEngine.EditorAutomation().m_axActions.GetSize());
 }
 
 void Zenith_EditorAutomation::ExecuteNextStep()
 {
-	if (!s_bRunning || s_bComplete)
+	if (!g_xEngine.EditorAutomation().m_bRunning || g_xEngine.EditorAutomation().m_bComplete)
 		return;
 
-	if (s_uCurrentAction >= s_axActions.GetSize())
+	if (g_xEngine.EditorAutomation().m_uCurrentAction >= g_xEngine.EditorAutomation().m_axActions.GetSize())
 	{
-		s_bRunning = false;
-		s_bComplete = true;
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", s_axActions.GetSize());
-		s_axActions.Clear();
+		g_xEngine.EditorAutomation().m_bRunning = false;
+		g_xEngine.EditorAutomation().m_bComplete = true;
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", g_xEngine.EditorAutomation().m_axActions.GetSize());
+		g_xEngine.EditorAutomation().m_axActions.Clear();
 		return;
 	}
 
-	const Zenith_EditorAction& xAction = s_axActions.Get(s_uCurrentAction);
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Step %u/%u", s_uCurrentAction + 1, s_axActions.GetSize());
+	const Zenith_EditorAction& xAction = g_xEngine.EditorAutomation().m_axActions.Get(g_xEngine.EditorAutomation().m_uCurrentAction);
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Step %u/%u", g_xEngine.EditorAutomation().m_uCurrentAction + 1, g_xEngine.EditorAutomation().m_axActions.GetSize());
 
 	ExecuteAction(xAction);
-	s_uCurrentAction++;
+	g_xEngine.EditorAutomation().m_uCurrentAction++;
 
 	// Detect completion immediately after executing the last step
-	if (s_uCurrentAction >= s_axActions.GetSize())
+	if (g_xEngine.EditorAutomation().m_uCurrentAction >= g_xEngine.EditorAutomation().m_axActions.GetSize())
 	{
-		s_bRunning = false;
-		s_bComplete = true;
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", s_axActions.GetSize());
-		s_axActions.Clear();
+		g_xEngine.EditorAutomation().m_bRunning = false;
+		g_xEngine.EditorAutomation().m_bComplete = true;
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", g_xEngine.EditorAutomation().m_axActions.GetSize());
+		g_xEngine.EditorAutomation().m_axActions.Clear();
 	}
 }
 
 void Zenith_EditorAutomation::Reset()
 {
-	s_axActions.Clear();
-	s_uCurrentAction = 0;
-	s_bRunning = false;
-	s_bComplete = false;
+	g_xEngine.EditorAutomation().m_axActions.Clear();
+	g_xEngine.EditorAutomation().m_uCurrentAction = 0;
+	g_xEngine.EditorAutomation().m_bRunning = false;
+	g_xEngine.EditorAutomation().m_bComplete = false;
 }
 
 //=============================================================================
@@ -261,81 +260,81 @@ namespace
 
 // -- Scene --
 
-void Zenith_EditorAutomation::AddStep_CreateScene(const char* szName) { Push(s_axActions, ActionType::CREATE_SCENE, szName); }
-void Zenith_EditorAutomation::AddStep_SaveScene(const char* szPath)   { Push(s_axActions, ActionType::SAVE_SCENE, szPath); }
-void Zenith_EditorAutomation::AddStep_UnloadScene()                   { Push(s_axActions, ActionType::UNLOAD_SCENE); }
+void Zenith_EditorAutomation::AddStep_CreateScene(const char* szName) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_SCENE, szName); }
+void Zenith_EditorAutomation::AddStep_SaveScene(const char* szPath)   { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SAVE_SCENE, szPath); }
+void Zenith_EditorAutomation::AddStep_UnloadScene()                   { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::UNLOAD_SCENE); }
 
 // -- Entity --
 
-void Zenith_EditorAutomation::AddStep_CreateEntity(const char* szName)       { Push(s_axActions, ActionType::CREATE_ENTITY, szName); }
-void Zenith_EditorAutomation::AddStep_SelectEntity(const char* szName)       { Push(s_axActions, ActionType::SELECT_ENTITY, szName); }
-void Zenith_EditorAutomation::AddStep_SetEntityTransient(bool bTransient)    { Push(s_axActions, ActionType::SET_ENTITY_TRANSIENT, bTransient); }
+void Zenith_EditorAutomation::AddStep_CreateEntity(const char* szName)       { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_ENTITY, szName); }
+void Zenith_EditorAutomation::AddStep_SelectEntity(const char* szName)       { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SELECT_ENTITY, szName); }
+void Zenith_EditorAutomation::AddStep_SetEntityTransient(bool bTransient)    { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_ENTITY_TRANSIENT, bTransient); }
 
 // -- Component --
 
-void Zenith_EditorAutomation::AddStep_AddComponent(const char* szDisplayName) { Push(s_axActions, ActionType::ADD_COMPONENT, szDisplayName); }
+void Zenith_EditorAutomation::AddStep_AddComponent(const char* szDisplayName) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::ADD_COMPONENT, szDisplayName); }
 
 // -- Camera --
 
-void Zenith_EditorAutomation::AddStep_SetCameraPosition(float fX, float fY, float fZ) { Push(s_axActions, ActionType::SET_CAMERA_POSITION, fX, fY, fZ); }
-void Zenith_EditorAutomation::AddStep_SetCameraPitch (float fPitch)   { Push(s_axActions, ActionType::SET_CAMERA_PITCH,  fPitch); }
-void Zenith_EditorAutomation::AddStep_SetCameraYaw   (float fYaw)     { Push(s_axActions, ActionType::SET_CAMERA_YAW,    fYaw); }
-void Zenith_EditorAutomation::AddStep_SetCameraFOV   (float fFOV)     { Push(s_axActions, ActionType::SET_CAMERA_FOV,    fFOV); }
-void Zenith_EditorAutomation::AddStep_SetCameraNear  (float fNear)    { Push(s_axActions, ActionType::SET_CAMERA_NEAR,   fNear); }
-void Zenith_EditorAutomation::AddStep_SetCameraFar   (float fFar)     { Push(s_axActions, ActionType::SET_CAMERA_FAR,    fFar); }
-void Zenith_EditorAutomation::AddStep_SetCameraAspect(float fAspect)  { Push(s_axActions, ActionType::SET_CAMERA_ASPECT, fAspect); }
-void Zenith_EditorAutomation::AddStep_SetAsMainCamera()               { Push(s_axActions, ActionType::SET_MAIN_CAMERA); }
+void Zenith_EditorAutomation::AddStep_SetCameraPosition(float fX, float fY, float fZ) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_CAMERA_POSITION, fX, fY, fZ); }
+void Zenith_EditorAutomation::AddStep_SetCameraPitch (float fPitch)   { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_CAMERA_PITCH,  fPitch); }
+void Zenith_EditorAutomation::AddStep_SetCameraYaw   (float fYaw)     { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_CAMERA_YAW,    fYaw); }
+void Zenith_EditorAutomation::AddStep_SetCameraFOV   (float fFOV)     { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_CAMERA_FOV,    fFOV); }
+void Zenith_EditorAutomation::AddStep_SetCameraNear  (float fNear)    { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_CAMERA_NEAR,   fNear); }
+void Zenith_EditorAutomation::AddStep_SetCameraFar   (float fFar)     { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_CAMERA_FAR,    fFar); }
+void Zenith_EditorAutomation::AddStep_SetCameraAspect(float fAspect)  { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_CAMERA_ASPECT, fAspect); }
+void Zenith_EditorAutomation::AddStep_SetAsMainCamera()               { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_MAIN_CAMERA); }
 
 // -- Transform --
 
-void Zenith_EditorAutomation::AddStep_SetTransformPosition(float fX, float fY, float fZ) { Push(s_axActions, ActionType::SET_TRANSFORM_POSITION, fX, fY, fZ); }
-void Zenith_EditorAutomation::AddStep_SetTransformScale   (float fX, float fY, float fZ) { Push(s_axActions, ActionType::SET_TRANSFORM_SCALE,    fX, fY, fZ); }
-void Zenith_EditorAutomation::AddStep_SetTransformYaw     (float fYawRadians)             { Push(s_axActions, ActionType::SET_TRANSFORM_ROTATION_YAW, fYawRadians); }
+void Zenith_EditorAutomation::AddStep_SetTransformPosition(float fX, float fY, float fZ) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_TRANSFORM_POSITION, fX, fY, fZ); }
+void Zenith_EditorAutomation::AddStep_SetTransformScale   (float fX, float fY, float fZ) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_TRANSFORM_SCALE,    fX, fY, fZ); }
+void Zenith_EditorAutomation::AddStep_SetTransformYaw     (float fYawRadians)             { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_TRANSFORM_ROTATION_YAW, fYawRadians); }
 
 // -- Light --
 
-void Zenith_EditorAutomation::AddStep_SetLightIntensity(float fLumens)              { Push(s_axActions, ActionType::SET_LIGHT_INTENSITY, fLumens); }
-void Zenith_EditorAutomation::AddStep_SetLightRange    (float fMetres)              { Push(s_axActions, ActionType::SET_LIGHT_RANGE,     fMetres); }
-void Zenith_EditorAutomation::AddStep_SetLightColor    (float fR, float fG, float fB) { Push(s_axActions, ActionType::SET_LIGHT_COLOR, fR, fG, fB); }
+void Zenith_EditorAutomation::AddStep_SetLightIntensity(float fLumens)              { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_LIGHT_INTENSITY, fLumens); }
+void Zenith_EditorAutomation::AddStep_SetLightRange    (float fMetres)              { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_LIGHT_RANGE,     fMetres); }
+void Zenith_EditorAutomation::AddStep_SetLightColor    (float fR, float fG, float fB) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_LIGHT_COLOR, fR, fG, fB); }
 
 // -- UI --
 
-void Zenith_EditorAutomation::AddStep_CreateUIText         (const char* szName, const char* szText)          { Push(s_axActions, ActionType::CREATE_UI_TEXT,            szName, szText); }
-void Zenith_EditorAutomation::AddStep_CreateUIButton       (const char* szName, const char* szText)          { Push(s_axActions, ActionType::CREATE_UI_BUTTON,          szName, szText); }
-void Zenith_EditorAutomation::AddStep_CreateUIRect         (const char* szName)                              { Push(s_axActions, ActionType::CREATE_UI_RECT,            szName); }
-void Zenith_EditorAutomation::AddStep_CreateUIImage        (const char* szName)                              { Push(s_axActions, ActionType::CREATE_UI_IMAGE,           szName); }
-void Zenith_EditorAutomation::AddStep_SetUIImageTexturePath(const char* szElement, const char* szTexturePath){ Push(s_axActions, ActionType::SET_UI_IMAGE_TEXTURE_PATH, szElement, szTexturePath); }
-void Zenith_EditorAutomation::AddStep_SetUIAnchor          (const char* szElement, int iPreset)              { Push(s_axActions, ActionType::SET_UI_ANCHOR,             szElement, iPreset); }
-void Zenith_EditorAutomation::AddStep_SetUIPosition        (const char* szElement, float fX, float fY)       { Push(s_axActions, ActionType::SET_UI_POSITION,           szElement, fX, fY); }
-void Zenith_EditorAutomation::AddStep_SetUISize            (const char* szElement, float fW, float fH)       { Push(s_axActions, ActionType::SET_UI_SIZE,               szElement, fW, fH); }
-void Zenith_EditorAutomation::AddStep_SetUIFontSize        (const char* szElement, float fSize)              { Push(s_axActions, ActionType::SET_UI_FONT_SIZE,          szElement, fSize); }
-void Zenith_EditorAutomation::AddStep_SetUIColor           (const char* szElement, float fR, float fG, float fB, float fA) { Push(s_axActions, ActionType::SET_UI_COLOR, szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIAlignment       (const char* szElement, int iAlignment)           { Push(s_axActions, ActionType::SET_UI_ALIGNMENT,          szElement, iAlignment); }
-void Zenith_EditorAutomation::AddStep_SetUIVisible         (const char* szElement, bool bVisible)            { Push(s_axActions, ActionType::SET_UI_VISIBLE,            szElement, bVisible); }
+void Zenith_EditorAutomation::AddStep_CreateUIText         (const char* szName, const char* szText)          { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_UI_TEXT,            szName, szText); }
+void Zenith_EditorAutomation::AddStep_CreateUIButton       (const char* szName, const char* szText)          { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_UI_BUTTON,          szName, szText); }
+void Zenith_EditorAutomation::AddStep_CreateUIRect         (const char* szName)                              { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_UI_RECT,            szName); }
+void Zenith_EditorAutomation::AddStep_CreateUIImage        (const char* szName)                              { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_UI_IMAGE,           szName); }
+void Zenith_EditorAutomation::AddStep_SetUIImageTexturePath(const char* szElement, const char* szTexturePath){ Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_IMAGE_TEXTURE_PATH, szElement, szTexturePath); }
+void Zenith_EditorAutomation::AddStep_SetUIAnchor          (const char* szElement, int iPreset)              { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_ANCHOR,             szElement, iPreset); }
+void Zenith_EditorAutomation::AddStep_SetUIPosition        (const char* szElement, float fX, float fY)       { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_POSITION,           szElement, fX, fY); }
+void Zenith_EditorAutomation::AddStep_SetUISize            (const char* szElement, float fW, float fH)       { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_SIZE,               szElement, fW, fH); }
+void Zenith_EditorAutomation::AddStep_SetUIFontSize        (const char* szElement, float fSize)              { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_FONT_SIZE,          szElement, fSize); }
+void Zenith_EditorAutomation::AddStep_SetUIColor           (const char* szElement, float fR, float fG, float fB, float fA) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_COLOR, szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIAlignment       (const char* szElement, int iAlignment)           { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_ALIGNMENT,          szElement, iAlignment); }
+void Zenith_EditorAutomation::AddStep_SetUIVisible         (const char* szElement, bool bVisible)            { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_VISIBLE,            szElement, bVisible); }
 
 // -- UI Layout Group --
 
-void Zenith_EditorAutomation::AddStep_CreateUILayoutGroup        (const char* szName)                                            { Push(s_axActions, ActionType::CREATE_UI_LAYOUT_GROUP,           szName); }
-void Zenith_EditorAutomation::AddStep_AddUIChild                 (const char* szParent, const char* szChild)                    { Push(s_axActions, ActionType::ADD_UI_CHILD,                     szParent, szChild); }
-void Zenith_EditorAutomation::AddStep_SetUILayoutDirection       (const char* szElement, int iDirection)                        { Push(s_axActions, ActionType::SET_UI_LAYOUT_DIRECTION,          szElement, iDirection); }
-void Zenith_EditorAutomation::AddStep_SetUILayoutSpacing         (const char* szElement, float fSpacing)                        { Push(s_axActions, ActionType::SET_UI_LAYOUT_SPACING,            szElement, fSpacing); }
-void Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment  (const char* szElement, int iAlignment)                        { Push(s_axActions, ActionType::SET_UI_LAYOUT_CHILD_ALIGNMENT,    szElement, iAlignment); }
-void Zenith_EditorAutomation::AddStep_SetUILayoutPadding         (const char* szElement, float fL, float fT, float fR, float fB){ Push(s_axActions, ActionType::SET_UI_LAYOUT_PADDING,            szElement, fL, fT, fR, fB); }
-void Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent    (const char* szElement, bool bFit)                             { Push(s_axActions, ActionType::SET_UI_LAYOUT_FIT_TO_CONTENT,     szElement, bFit); }
-void Zenith_EditorAutomation::AddStep_SetUILayoutChildForceExpand(const char* szElement, bool bWidth, bool bHeight)             { Push(s_axActions, ActionType::SET_UI_LAYOUT_CHILD_FORCE_EXPAND, szElement, bWidth, bHeight); }
-void Zenith_EditorAutomation::AddStep_SetUILayoutReverse         (const char* szElement, bool bReverse)                         { Push(s_axActions, ActionType::SET_UI_LAYOUT_REVERSE,            szElement, bReverse); }
+void Zenith_EditorAutomation::AddStep_CreateUILayoutGroup        (const char* szName)                                            { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_UI_LAYOUT_GROUP,           szName); }
+void Zenith_EditorAutomation::AddStep_AddUIChild                 (const char* szParent, const char* szChild)                    { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::ADD_UI_CHILD,                     szParent, szChild); }
+void Zenith_EditorAutomation::AddStep_SetUILayoutDirection       (const char* szElement, int iDirection)                        { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_LAYOUT_DIRECTION,          szElement, iDirection); }
+void Zenith_EditorAutomation::AddStep_SetUILayoutSpacing         (const char* szElement, float fSpacing)                        { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_LAYOUT_SPACING,            szElement, fSpacing); }
+void Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment  (const char* szElement, int iAlignment)                        { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_LAYOUT_CHILD_ALIGNMENT,    szElement, iAlignment); }
+void Zenith_EditorAutomation::AddStep_SetUILayoutPadding         (const char* szElement, float fL, float fT, float fR, float fB){ Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_LAYOUT_PADDING,            szElement, fL, fT, fR, fB); }
+void Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent    (const char* szElement, bool bFit)                             { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_LAYOUT_FIT_TO_CONTENT,     szElement, bFit); }
+void Zenith_EditorAutomation::AddStep_SetUILayoutChildForceExpand(const char* szElement, bool bWidth, bool bHeight)             { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_LAYOUT_CHILD_FORCE_EXPAND, szElement, bWidth, bHeight); }
+void Zenith_EditorAutomation::AddStep_SetUILayoutReverse         (const char* szElement, bool bReverse)                         { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_LAYOUT_REVERSE,            szElement, bReverse); }
 
 // -- UI Toggle --
 
-void Zenith_EditorAutomation::AddStep_CreateUIToggle      (const char* szName, const char* szText)                      { Push(s_axActions, ActionType::CREATE_UI_TOGGLE,         szName, szText); }
-void Zenith_EditorAutomation::AddStep_SetUIToggleOnColor  (const char* szElement, float fR, float fG, float fB, float fA) { Push(s_axActions, ActionType::SET_UI_TOGGLE_ON_COLOR,  szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIToggleOffColor (const char* szElement, float fR, float fG, float fB, float fA) { Push(s_axActions, ActionType::SET_UI_TOGGLE_OFF_COLOR, szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_CreateUIToggle      (const char* szName, const char* szText)                      { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_UI_TOGGLE,         szName, szText); }
+void Zenith_EditorAutomation::AddStep_SetUIToggleOnColor  (const char* szElement, float fR, float fG, float fB, float fA) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_TOGGLE_ON_COLOR,  szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIToggleOffColor (const char* szElement, float fR, float fG, float fB, float fA) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_TOGGLE_OFF_COLOR, szElement, fR, fG, fB, fA); }
 
 // -- UI Overlay --
 
-void Zenith_EditorAutomation::AddStep_CreateUIOverlay       (const char* szName)                                            { Push(s_axActions, ActionType::CREATE_UI_OVERLAY,          szName); }
-void Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor  (const char* szElement, float fR, float fG, float fB, float fA){ Push(s_axActions, ActionType::SET_UI_OVERLAY_DIM_COLOR,   szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize(const char* szElement, float fW, float fH)                   { Push(s_axActions, ActionType::SET_UI_OVERLAY_CONTENT_SIZE, szElement, fW, fH); }
+void Zenith_EditorAutomation::AddStep_CreateUIOverlay       (const char* szName)                                            { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_UI_OVERLAY,          szName); }
+void Zenith_EditorAutomation::AddStep_SetUIOverlayDimColor  (const char* szElement, float fR, float fG, float fB, float fA){ Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_OVERLAY_DIM_COLOR,   szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIOverlayContentSize(const char* szElement, float fW, float fH)                   { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_OVERLAY_CONTENT_SIZE, szElement, fW, fH); }
 
 // -- UI Focus Navigation --
 
@@ -348,87 +347,87 @@ void Zenith_EditorAutomation::AddStep_SetUINavigation(const char* szElement, con
 	xAction.m_pArg = const_cast<void*>(static_cast<const void*>(szDown));
 	xAction.m_pArg2 = const_cast<void*>(static_cast<const void*>(szLeft));
 	xAction.m_pfnFunc = reinterpret_cast<void(*)()>(const_cast<char*>(szRight));
-	s_axActions.PushBack(xAction);
+	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
 }
 
 // -- UI ScrollView --
 
-void Zenith_EditorAutomation::AddStep_CreateUIScrollView         (const char* szName)                                            { Push(s_axActions, ActionType::CREATE_UI_SCROLL_VIEW,             szName); }
-void Zenith_EditorAutomation::AddStep_SetUIScrollViewContentSize (const char* szElement, float fW, float fH)                    { Push(s_axActions, ActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE,   szElement, fW, fH); }
+void Zenith_EditorAutomation::AddStep_CreateUIScrollView         (const char* szName)                                            { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_UI_SCROLL_VIEW,             szName); }
+void Zenith_EditorAutomation::AddStep_SetUIScrollViewContentSize (const char* szElement, float fW, float fH)                    { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE,   szElement, fW, fH); }
 
 // -- UI Button --
 
-void Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor (const char* szElement, float fR, float fG, float fB, float fA)    { Push(s_axActions, ActionType::SET_UI_BUTTON_NORMAL_COLOR,  szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor  (const char* szElement, float fR, float fG, float fB, float fA)    { Push(s_axActions, ActionType::SET_UI_BUTTON_HOVER_COLOR,   szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor(const char* szElement, float fR, float fG, float fB, float fA)    { Push(s_axActions, ActionType::SET_UI_BUTTON_PRESSED_COLOR, szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonFontSize    (const char* szElement, float fSize)                               { Push(s_axActions, ActionType::SET_UI_BUTTON_FONT_SIZE,     szElement, fSize); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonIcon        (const char* szElement, const char* szTexturePath)                 { Push(s_axActions, ActionType::SET_UI_BUTTON_ICON,          szElement, szTexturePath); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonIconSize    (const char* szElement, float fW, float fH)                        { Push(s_axActions, ActionType::SET_UI_BUTTON_ICON_SIZE,     szElement, fW, fH); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor (const char* szElement, float fR, float fG, float fB, float fA)    { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_NORMAL_COLOR,  szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor  (const char* szElement, float fR, float fG, float fB, float fA)    { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_HOVER_COLOR,   szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor(const char* szElement, float fR, float fG, float fB, float fA)    { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_PRESSED_COLOR, szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonFontSize    (const char* szElement, float fSize)                               { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_FONT_SIZE,     szElement, fSize); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonIcon        (const char* szElement, const char* szTexturePath)                 { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_ICON,          szElement, szTexturePath); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonIconSize    (const char* szElement, float fW, float fH)                        { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_ICON_SIZE,     szElement, fW, fH); }
 
-void Zenith_EditorAutomation::AddStep_SetUIButtonIconPlacement(const char* szElement, int iPlacement)                         { Push(s_axActions, ActionType::SET_UI_BUTTON_ICON_PLACEMENT, szElement, iPlacement); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonIconPlacement(const char* szElement, int iPlacement)                         { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_ICON_PLACEMENT, szElement, iPlacement); }
 
 // -- UIElement Background --
 
-void Zenith_EditorAutomation::AddStep_SetUIBackgroundColor       (const char* szElement, float fR, float fG, float fB, float fA)        { Push(s_axActions, ActionType::SET_UI_BACKGROUND_COLOR,         szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius(const char* szElement, float fRadius)                                 { Push(s_axActions, ActionType::SET_UI_BACKGROUND_CORNER_RADIUS, szElement, fRadius); }
-void Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder      (const char* szElement, float fR, float fG, float fB, float fThickness){ Push(s_axActions, ActionType::SET_UI_BACKGROUND_BORDER,        szElement, fR, fG, fB, fThickness); }
+void Zenith_EditorAutomation::AddStep_SetUIBackgroundColor       (const char* szElement, float fR, float fG, float fB, float fA)        { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BACKGROUND_COLOR,         szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius(const char* szElement, float fRadius)                                 { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BACKGROUND_CORNER_RADIUS, szElement, fRadius); }
+void Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder      (const char* szElement, float fR, float fG, float fB, float fThickness){ Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BACKGROUND_BORDER,        szElement, fR, fG, fB, fThickness); }
 
 // -- UIRect Styling --
 
-void Zenith_EditorAutomation::AddStep_SetUICornerRadius (const char* szElement, float fRadius)                                           { Push(s_axActions, ActionType::SET_UI_CORNER_RADIUS,  szElement, fRadius); }
-void Zenith_EditorAutomation::AddStep_SetUIGradientColor(const char* szElement, float fR, float fG, float fB, float fA)                  { Push(s_axActions, ActionType::SET_UI_GRADIENT_COLOR, szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIShadow       (const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled){ Push(s_axActions, ActionType::SET_UI_SHADOW,        szElement, fOffX, fOffY, fSpread, bEnabled); }
-void Zenith_EditorAutomation::AddStep_SetUIShadowColor  (const char* szElement, float fR, float fG, float fB, float fA)                  { Push(s_axActions, ActionType::SET_UI_SHADOW_COLOR,  szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIRectBorder   (const char* szElement, float fR, float fG, float fB, float fThickness)          { Push(s_axActions, ActionType::SET_UI_RECT_BORDER,   szElement, fR, fG, fB, fThickness); }
+void Zenith_EditorAutomation::AddStep_SetUICornerRadius (const char* szElement, float fRadius)                                           { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_CORNER_RADIUS,  szElement, fRadius); }
+void Zenith_EditorAutomation::AddStep_SetUIGradientColor(const char* szElement, float fR, float fG, float fB, float fA)                  { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_GRADIENT_COLOR, szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIShadow       (const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled){ Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_SHADOW,        szElement, fOffX, fOffY, fSpread, bEnabled); }
+void Zenith_EditorAutomation::AddStep_SetUIShadowColor  (const char* szElement, float fR, float fG, float fB, float fA)                  { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_SHADOW_COLOR,  szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIRectBorder   (const char* szElement, float fR, float fG, float fB, float fThickness)          { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_RECT_BORDER,   szElement, fR, fG, fB, fThickness); }
 
 // -- UIText Shadow --
 
-void Zenith_EditorAutomation::AddStep_SetUITextShadow     (const char* szElement, float fOffX, float fOffY, bool bEnabled)              { Push(s_axActions, ActionType::SET_UI_TEXT_SHADOW,       szElement, fOffX, fOffY, bEnabled); }
-void Zenith_EditorAutomation::AddStep_SetUITextShadowColor(const char* szElement, float fR, float fG, float fB, float fA)                { Push(s_axActions, ActionType::SET_UI_TEXT_SHADOW_COLOR, szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUITextShadow     (const char* szElement, float fOffX, float fOffY, bool bEnabled)              { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_TEXT_SHADOW,       szElement, fOffX, fOffY, bEnabled); }
+void Zenith_EditorAutomation::AddStep_SetUITextShadowColor(const char* szElement, float fR, float fG, float fB, float fA)                { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_TEXT_SHADOW_COLOR, szElement, fR, fG, fB, fA); }
 
 // -- UIButton Styling --
 
-void Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius   (const char* szElement, float fRadius)                                   { Push(s_axActions, ActionType::SET_UI_BUTTON_CORNER_RADIUS,    szElement, fRadius); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonShadow         (const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled){ Push(s_axActions, ActionType::SET_UI_BUTTON_SHADOW,    szElement, fOffX, fOffY, fSpread, bEnabled); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor    (const char* szElement, float fR, float fG, float fB, float fA)          { Push(s_axActions, ActionType::SET_UI_BUTTON_SHADOW_COLOR,     szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonGradientColor  (const char* szElement, float fR, float fG, float fB, float fA)          { Push(s_axActions, ActionType::SET_UI_BUTTON_GRADIENT_COLOR,   szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor    (const char* szElement, float fR, float fG, float fB, float fA)          { Push(s_axActions, ActionType::SET_UI_BUTTON_BORDER_COLOR,     szElement, fR, fG, fB, fA); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness(const char* szElement, float fThickness)                                { Push(s_axActions, ActionType::SET_UI_BUTTON_BORDER_THICKNESS, szElement, fThickness); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius   (const char* szElement, float fRadius)                                   { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_CORNER_RADIUS,    szElement, fRadius); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonShadow         (const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled){ Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_SHADOW,    szElement, fOffX, fOffY, fSpread, bEnabled); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor    (const char* szElement, float fR, float fG, float fB, float fA)          { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_SHADOW_COLOR,     szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonGradientColor  (const char* szElement, float fR, float fG, float fB, float fA)          { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_GRADIENT_COLOR,   szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor    (const char* szElement, float fR, float fG, float fB, float fA)          { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_BORDER_COLOR,     szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness(const char* szElement, float fThickness)                                { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_BORDER_THICKNESS, szElement, fThickness); }
 
-void Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration(const char* szElement, float fDuration)                            { Push(s_axActions, ActionType::SET_UI_BUTTON_TRANSITION_DURATION, szElement, fDuration); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow        (const char* szElement, float fOffX, float fOffY, bool bEnabled)  { Push(s_axActions, ActionType::SET_UI_BUTTON_TEXT_SHADOW,         szElement, fOffX, fOffY, bEnabled); }
-void Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor   (const char* szElement, float fR, float fG, float fB, float fA)  { Push(s_axActions, ActionType::SET_UI_BUTTON_TEXT_SHADOW_COLOR,   szElement, fR, fG, fB, fA); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration(const char* szElement, float fDuration)                            { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_TRANSITION_DURATION, szElement, fDuration); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow        (const char* szElement, float fOffX, float fOffY, bool bEnabled)  { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_TEXT_SHADOW,         szElement, fOffX, fOffY, bEnabled); }
+void Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor   (const char* szElement, float fR, float fG, float fB, float fA)  { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_UI_BUTTON_TEXT_SHADOW_COLOR,   szElement, fR, fG, fB, fA); }
 
 // -- Script --
 
-void Zenith_EditorAutomation::AddStep_AttachScript                (const char* szBehaviourTypeName) { Push(s_axActions, ActionType::ATTACH_SCRIPT, szBehaviourTypeName); }
+void Zenith_EditorAutomation::AddStep_AttachScript                (const char* szBehaviourTypeName) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::ATTACH_SCRIPT, szBehaviourTypeName); }
 
 // -- Particles --
 
-void Zenith_EditorAutomation::AddStep_SetParticleConfig      (Flux_ParticleEmitterConfig* pxConfig) { Push(s_axActions, ActionType::SET_PARTICLE_CONFIG,         pxConfig); }
-void Zenith_EditorAutomation::AddStep_SetParticleConfigByName(const char* szConfigName)              { Push(s_axActions, ActionType::SET_PARTICLE_CONFIG_BY_NAME, szConfigName); }
-void Zenith_EditorAutomation::AddStep_SetParticleEmitting    (bool bEmitting)                        { Push(s_axActions, ActionType::SET_PARTICLE_EMITTING,       bEmitting); }
+void Zenith_EditorAutomation::AddStep_SetParticleConfig      (Flux_ParticleEmitterConfig* pxConfig) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_PARTICLE_CONFIG,         pxConfig); }
+void Zenith_EditorAutomation::AddStep_SetParticleConfigByName(const char* szConfigName)              { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_PARTICLE_CONFIG_BY_NAME, szConfigName); }
+void Zenith_EditorAutomation::AddStep_SetParticleEmitting    (bool bEmitting)                        { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_PARTICLE_EMITTING,       bEmitting); }
 
 // -- Collider --
 
-void Zenith_EditorAutomation::AddStep_AddColliderShape(int iVolumeType, int iBodyType) { Push(s_axActions, ActionType::ADD_COLLIDER_SHAPE, iVolumeType, iBodyType); }
+void Zenith_EditorAutomation::AddStep_AddColliderShape(int iVolumeType, int iBodyType) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::ADD_COLLIDER_SHAPE, iVolumeType, iBodyType); }
 
 // -- Model --
 
-void Zenith_EditorAutomation::AddStep_AddMeshEntry(Flux_MeshGeometry* pxGeometry, Zenith_MaterialAsset* pxMaterial) { Push(s_axActions, ActionType::ADD_MESH_ENTRY, pxGeometry, pxMaterial); }
-void Zenith_EditorAutomation::AddStep_LoadModel(const char* szPath)                                                { Push(s_axActions, ActionType::LOAD_MODEL, szPath); }
-void Zenith_EditorAutomation::AddStep_SetModelMaterial(int iIndex, Zenith_MaterialAsset* pxMaterial)               { Push(s_axActions, ActionType::SET_MODEL_MATERIAL, iIndex, pxMaterial); }
+void Zenith_EditorAutomation::AddStep_AddMeshEntry(Flux_MeshGeometry* pxGeometry, Zenith_MaterialAsset* pxMaterial) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::ADD_MESH_ENTRY, pxGeometry, pxMaterial); }
+void Zenith_EditorAutomation::AddStep_LoadModel(const char* szPath)                                                { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::LOAD_MODEL, szPath); }
+void Zenith_EditorAutomation::AddStep_SetModelMaterial(int iIndex, Zenith_MaterialAsset* pxMaterial)               { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_MODEL_MATERIAL, iIndex, pxMaterial); }
 
 // -- Terrain --
 
-void Zenith_EditorAutomation::AddStep_SetTerrainMaterial(int iSlot, Zenith_MaterialAsset* pxMaterial) { Push(s_axActions, ActionType::SET_TERRAIN_MATERIAL, iSlot, pxMaterial); }
-void Zenith_EditorAutomation::AddStep_SetTerrainSplatmapPath(const char* szPath)                      { Push(s_axActions, ActionType::SET_TERRAIN_SPLATMAP_PATH, szPath); }
+void Zenith_EditorAutomation::AddStep_SetTerrainMaterial(int iSlot, Zenith_MaterialAsset* pxMaterial) { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_TERRAIN_MATERIAL, iSlot, pxMaterial); }
+void Zenith_EditorAutomation::AddStep_SetTerrainSplatmapPath(const char* szPath)                      { Push(g_xEngine.EditorAutomation().m_axActions, ActionType::SET_TERRAIN_SPLATMAP_PATH, szPath); }
 
 // -- Prefab Variant Authoring --
 
 void Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected(const char* szPrefabName, const char* szSavePath)
 {
-	Push(s_axActions, ActionType::CREATE_PREFAB_FROM_SELECTED, szPrefabName, szSavePath);
+	Push(g_xEngine.EditorAutomation().m_axActions, ActionType::CREATE_PREFAB_FROM_SELECTED, szPrefabName, szSavePath);
 }
 
 void Zenith_EditorAutomation::AddStep_CreatePrefabVariant(
@@ -446,7 +445,7 @@ void Zenith_EditorAutomation::AddStep_CreatePrefabVariant(
 	xAction.m_szArg1 = szVariantName;
 	xAction.m_szArg2 = szBasePath;
 	xAction.m_pArg   = const_cast<char*>(szSavePath);
-	s_axActions.PushBack(xAction);
+	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
 }
 
 void Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
@@ -465,12 +464,12 @@ void Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
 	xAction.m_afArgs[0] = fX;
 	xAction.m_afArgs[1] = fY;
 	xAction.m_afArgs[2] = fZ;
-	s_axActions.PushBack(xAction);
+	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
 }
 
 void Zenith_EditorAutomation::AddStep_InstantiatePrefab(const char* szPrefabPath, const char* szEntityName)
 {
-	Push(s_axActions, ActionType::INSTANTIATE_PREFAB, szPrefabPath, szEntityName);
+	Push(g_xEngine.EditorAutomation().m_axActions, ActionType::INSTANTIATE_PREFAB, szPrefabPath, szEntityName);
 }
 
 // -- Scene Loading --
@@ -480,7 +479,7 @@ void Zenith_EditorAutomation::AddStep_LoadInitialScene(void (*pfnCallback)())
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = Zenith_EditorActionType::LOAD_INITIAL_SCENE;
 	xAction.m_pfnFunc = pfnCallback;
-	s_axActions.PushBack(xAction);
+	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
 }
 
 // -- Custom --
@@ -490,7 +489,7 @@ void Zenith_EditorAutomation::AddStep_Custom(void (*pfnFunc)())
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = Zenith_EditorActionType::CUSTOM_STEP;
 	xAction.m_pfnFunc = pfnFunc;
-	s_axActions.PushBack(xAction);
+	g_xEngine.EditorAutomation().m_axActions.PushBack(xAction);
 }
 
 //=============================================================================
