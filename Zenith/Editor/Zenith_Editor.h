@@ -93,7 +93,7 @@ public:
 	static void Render();
 
 	// Editor state
-	static EditorMode GetEditorMode() { return s_eEditorMode; }
+	static EditorMode GetEditorMode();
 	static void SetEditorMode(EditorMode eMode);
 
 	// Synchronously process pending scene operations (load/save/reset)
@@ -144,7 +144,7 @@ public:
 	 * Get the primary selected entity ID (first in selection, or last clicked)
 	 * Returns INVALID_ENTITY_ID if no selection
 	 */
-	static Zenith_EntityID GetSelectedEntityID() { return s_uPrimarySelectedEntityID; }
+	static Zenith_EntityID GetSelectedEntityID();
 
 	/**
 	 * Get the primary selected entity (for backwards compatibility and property panel)
@@ -154,27 +154,27 @@ public:
 	/**
 	 * Get all selected entity IDs
 	 */
-	static const std::unordered_set<Zenith_EntityID>& GetSelectedEntityIDs() { return s_xSelectedEntityIDs; }
+	static const std::unordered_set<Zenith_EntityID>& GetSelectedEntityIDs();
 
 	/**
 	 * Get the number of selected entities
 	 */
-	static size_t GetSelectionCount() { return s_xSelectedEntityIDs.size(); }
+	static size_t GetSelectionCount();
 
 	/**
 	 * Check if any entities are selected
 	 */
-	static bool HasSelection() { return !s_xSelectedEntityIDs.empty(); }
+	static bool HasSelection();
 
 	/**
 	 * Check if multiple entities are selected
 	 */
-	static bool HasMultiSelection() { return s_xSelectedEntityIDs.size() > 1; }
+	static bool HasMultiSelection();
 
 	/**
 	 * Get the last clicked entity ID (for range selection)
 	 */
-	static Zenith_EntityID GetLastClickedEntityID() { return s_uLastClickedEntityID; }
+	static Zenith_EntityID GetLastClickedEntityID();
 
 	/**
 	 * Remove an entity from selection
@@ -182,12 +182,12 @@ public:
 	static void DeselectEntity(Zenith_EntityID uEntityID);
 
 	// Viewport
-	static Zenith_Maths::Vector2 GetViewportPos() { return s_xViewportPos; }
-	static Zenith_Maths::Vector2 GetViewportSize() { return s_xViewportSize; }
+	static Zenith_Maths::Vector2 GetViewportPos();
+	static Zenith_Maths::Vector2 GetViewportSize();
 
 	// Gizmo
-	static EditorGizmoMode GetGizmoMode() { return s_eGizmoMode; }
-	static void SetGizmoMode(EditorGizmoMode eMode) { s_eGizmoMode = eMode; }
+	static EditorGizmoMode GetGizmoMode();
+	static void SetGizmoMode(EditorGizmoMode eMode);
 
 	// Console log
 	static void AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel, Zenith_LogCategory eCategory);
@@ -196,7 +196,7 @@ public:
 	// Material Editor
 	static void SelectMaterial(Zenith_MaterialAsset* pMaterial);
 	static void ClearMaterialSelection();
-	static Zenith_MaterialAsset* GetSelectedMaterial() { return s_pxSelectedMaterial; }
+	static Zenith_MaterialAsset* GetSelectedMaterial();
 
 	//--------------------------------------------------------------------------
 	// Editor Operations
@@ -294,68 +294,12 @@ private:
 		const std::string& strCurrentPath,
 		void (*SetPathFunc)(Zenith_MaterialAsset*, const std::string&));
 
-	static EditorMode s_eEditorMode;
-	static EditorGizmoMode s_eGizmoMode;
-
-	// Multi-select state
-	static std::unordered_set<Zenith_EntityID> s_xSelectedEntityIDs;
-	static Zenith_EntityID s_uPrimarySelectedEntityID;  // The "primary" selection for property panel
-	static Zenith_EntityID s_uLastClickedEntityID;      // For range selection (shift+click)
-
-	// Viewport
-	static Zenith_Maths::Vector2 s_xViewportSize;
-	static Zenith_Maths::Vector2 s_xViewportPos;
-	static bool s_bViewportHovered;
-	static bool s_bViewportFocused;
-
-	// Deferred scene operations (Zenith_EditorDeferredOpsState) and play-mode
-	// scene backup (Zenith_EditorPlayBackupState) now live on a single
-	// translation-unit-scope Zenith_EditorState instance inside
-	// Zenith_Editor.cpp. See Editor/Zenith_EditorState.h for the field layout.
-
-	// Content Browser state
-	static std::string s_strCurrentDirectory;
-	static std::vector<ContentBrowserEntry> s_xDirectoryContents;
-	static std::vector<ContentBrowserEntry> s_xFilteredContents;  // After search/filter applied
-	static bool s_bDirectoryNeedsRefresh;
-	static char s_szSearchBuffer[256];  // Search text input buffer
-	static int s_iAssetTypeFilter;      // 0 = All, then asset types
-	static int s_iSelectedContentIndex; // Currently selected item for context menu
-	static float s_fThumbnailSize;      // Thumbnail size in pixels (40-200)
-	static std::vector<std::string> s_axNavigationHistory;
-	static int s_iHistoryIndex;
-	static ContentBrowserViewMode s_eViewMode;
-
-	// Console state
-	static std::vector<ConsoleLogEntry> s_xConsoleLogs;
-	static bool s_bConsoleAutoScroll;
-	static bool s_bShowConsoleInfo;
-	static bool s_bShowConsoleWarnings;
-	static bool s_bShowConsoleErrors;
-
-	// Panel visibility flags toggled by the View menu. Defaults to true so the
-	// editor opens with all panels showing.
-	static bool s_bShowHierarchyPanel;
-	static bool s_bShowPropertiesPanel;
-	static bool s_bShowConsolePanel;
-	static std::bitset<LOG_CATEGORY_COUNT> s_xCategoryFilters;
+	// Phase 5.5c: 36 class-static data members + 10 camera statics + 3
+	// file-statics moved off this class onto Zenith_EditorImpl (held by
+	// Zenith_Engine). Method bodies, the 42 external readers, and the
+	// EditorCamera.cpp camera storage now all read/write through
+	// g_xEngine.Editor().m_xXxx.
 	static constexpr size_t MAX_CONSOLE_ENTRIES = 1000;
-
-	// Editor camera (separate from game camera, not part of entity/scene system)
-	static Zenith_Maths::Vector3 s_xEditorCameraPosition;
-	static double s_fEditorCameraPitch;
-	static double s_fEditorCameraYaw;
-	static float s_fEditorCameraFOV;
-	static float s_fEditorCameraNear;
-	static float s_fEditorCameraFar;
-	static Zenith_EntityID s_uGameCameraEntity;  // Saved when entering play mode
-	static float s_fEditorCameraMoveSpeed;
-	static float s_fEditorCameraRotateSpeed;
-	static bool s_bEditorCameraInitialized;
-
-	// Material Editor state
-	static Zenith_MaterialAsset* s_pxSelectedMaterial;
-	static bool s_bShowMaterialEditor;
 
 	// Editor theme
 	static void ApplyEditorTheme();

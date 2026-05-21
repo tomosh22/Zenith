@@ -3405,6 +3405,9 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.Tests.inl">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorImpl.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h">
       <Filter>Editor</Filter>
     </ClInclude>

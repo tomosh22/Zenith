@@ -7,6 +7,7 @@
 class FrameContext;
 class Zenith_AssetRegistry;
 class Zenith_EntityStore;
+class Zenith_EditorImpl;
 class Zenith_InputImpl;
 class Zenith_TouchInputImpl;
 class Zenith_MultithreadingImpl;
@@ -66,6 +67,14 @@ public:
 	Zenith_SceneLifecycleSchedulerImpl& SceneLifecycle();
 	Zenith_InputImpl& Input();
 	Zenith_TouchInputImpl& Touch();
+#ifdef ZENITH_TOOLS
+	Zenith_EditorImpl& Editor();
+	// True when Initialise() has run far enough to have allocated the
+	// editor Impl. Lets call sites that fire during static init (e.g.
+	// component-registration logs) gracefully skip writing to a not-yet-
+	// allocated console buffer.
+	bool HasEditor() const { return m_pxEditor != nullptr; }
+#endif
 
 private:
 	// Subsystem members. Raw pointers to forward-declared types so the
@@ -85,6 +94,9 @@ private:
 	Zenith_SceneLifecycleSchedulerImpl* m_pxSceneLifecycle  = nullptr;
 	Zenith_InputImpl*                   m_pxInput           = nullptr;
 	Zenith_TouchInputImpl*              m_pxTouch           = nullptr;
+#ifdef ZENITH_TOOLS
+	Zenith_EditorImpl*                  m_pxEditor          = nullptr;
+#endif
 };
 
 // Compile-time guard: enforce trivial destruction so the

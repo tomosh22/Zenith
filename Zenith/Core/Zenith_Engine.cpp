@@ -24,6 +24,7 @@
 #include "Flux/Flux_Graphics.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Zenith_EditorImpl.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #endif
 #include "Physics/Zenith_Physics.h"
@@ -185,6 +186,15 @@ Zenith_TouchInputImpl& Zenith_Engine::Touch()
 	return *m_pxTouch;
 }
 
+#ifdef ZENITH_TOOLS
+Zenith_EditorImpl& Zenith_Engine::Editor()
+{
+	// No assert: editor state is read every editor frame and from log
+	// callbacks. Allocated in Initialise.
+	return *m_pxEditor;
+}
+#endif
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -237,6 +247,15 @@ void Zenith_Engine::Initialise()
 	// Phase 5.5b: touch-gesture state. Allocated alongside m_pxInput.
 	Zenith_Assert(m_pxTouch == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxTouch = new Zenith_TouchInputImpl();
+
+#ifdef ZENITH_TOOLS
+	// Phase 5.5c: editor state (selection, viewport, content browser,
+	// console, panel visibility, camera, ImGui texture cache). Allocate
+	// EARLY -- Zenith_Log fires AddLogMessage which writes to the console
+	// list, and editor automation runs before the main loop.
+	Zenith_Assert(m_pxEditor == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxEditor = new Zenith_EditorImpl();
+#endif
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
 	// main-thread ID) lives on the engine now. Allocate BEFORE
@@ -553,6 +572,13 @@ void Zenith_Engine::Shutdown()
 	// 20. Free touch-gesture state.
 	delete m_pxTouch;
 	m_pxTouch = nullptr;
+
+#ifdef ZENITH_TOOLS
+	// 21. Free editor state. Done LATE -- the editor's deferred-deletion
+	// queue gets drained by Flux/Vulkan teardown above.
+	delete m_pxEditor;
+	m_pxEditor = nullptr;
+#endif
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }
