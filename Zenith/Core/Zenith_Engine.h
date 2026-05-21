@@ -7,6 +7,7 @@
 class FrameContext;
 class Zenith_AssetRegistry;
 class Zenith_EntityStore;
+class Flux_RendererImpl;
 class Zenith_DebugVariablesImpl;
 class Zenith_EditorAutomationImpl;
 class Zenith_EditorImpl;
@@ -73,6 +74,7 @@ public:
 	Zenith_SceneLifecycleSchedulerImpl& SceneLifecycle();
 	Zenith_InputImpl& Input();
 	Zenith_TouchInputImpl& Touch();
+	Flux_RendererImpl& FluxRenderer();
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl& Editor();
 	// True when Initialise() has run far enough to have allocated the
@@ -106,6 +108,7 @@ private:
 	Zenith_SceneLifecycleSchedulerImpl* m_pxSceneLifecycle  = nullptr;
 	Zenith_InputImpl*                   m_pxInput           = nullptr;
 	Zenith_TouchInputImpl*              m_pxTouch           = nullptr;
+	Flux_RendererImpl*                  m_pxFluxRenderer    = nullptr;
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl*                  m_pxEditor             = nullptr;
 	Zenith_GizmoImpl*                   m_pxGizmo              = nullptr;

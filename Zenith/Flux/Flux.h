@@ -391,7 +391,7 @@ public:
 
 	static void Shutdown();
 
-	static const uint32_t GetFrameCounter() { return s_uFrameCounter; }
+	static const uint32_t GetFrameCounter();
 
 	// Submit a command list for Vulkan recording. Only called from
 	// Flux_RenderGraph::Execute Phase 2, sequentially on the main thread —
@@ -401,27 +401,13 @@ public:
 	static void SubmitCommandList(const Flux_CommandList* pxCmdList,
 		const Flux_RenderGraph_AttachmentRef* axColourAttachments, uint32_t uNumColour,
 		const Flux_RenderGraph_AttachmentRef& xDepthStencil,
-		bool bClearTargets, bool bDepthIsReadOnly, const Flux_RenderGraph_Pass* pxPass)
-	{
-		Zenith_Assert(pxCmdList != nullptr, "SubmitCommandList: Command list is null");
-		Zenith_Assert(pxPass != nullptr, "SubmitCommandList: pass pointer is null — bypass path no longer supported");
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SubmitCommandList: must be called from the main thread (Flux_RenderGraph::Execute Phase 2)");
-		Flux_CommandListEntry xEntry;
-		xEntry.m_pxCmdList = pxCmdList;
-		for (uint32_t i = 0; i < uNumColour; i++) xEntry.m_axColourAttachments[i] = axColourAttachments[i];
-		xEntry.m_uNumColourAttachments = uNumColour;
-		xEntry.m_xDepthStencil = xDepthStencil;
-		xEntry.m_pxPass = pxPass;
-		xEntry.m_bClearTargets = bClearTargets;
-		xEntry.m_bDepthIsReadOnly = bDepthIsReadOnly;
-		s_xPendingCommandLists.PushBack(xEntry);
-	}
+		bool bClearTargets, bool bDepthIsReadOnly, const Flux_RenderGraph_Pass* pxPass);
 
 	// Prepare frame for rendering - distributes work across worker threads
 	// Returns false if there is no work to do
 	static bool PrepareFrame(Flux_WorkDistribution& xOutDistribution);
 
-	static void AddResChangeCallback(void(*pfnCallback)()) { s_xResChangeCallbacks.PushBack(pfnCallback); }
+	static void AddResChangeCallback(void(*pfnCallback)());
 	static void OnResChange();
 
 	// Clear all pending command lists. CALLER GUARANTEES that no worker thread
@@ -430,15 +416,10 @@ public:
 	//   - Main thread between frames during res change / scene transition.
 	// This function intentionally does NOT take s_xPendingCommandListMutex
 	// because the contract above means there is no contender to lock against.
-	static void ClearPendingCommandLists()
-	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(),
-			"ClearPendingCommandLists: main-thread only");
-		s_xPendingCommandLists.Clear();
-	}
+	static void ClearPendingCommandLists();
 
-	static Flux_RenderGraph& GetRenderGraph() { return *s_pxRenderGraph; }
-	static bool IsRenderGraphValid() { return s_pxRenderGraph != nullptr; }
+	static Flux_RenderGraph& GetRenderGraph();
+	static bool IsRenderGraphValid();
 	static void SetupRenderGraph();
 
 	// Called every frame from Zenith_Core::ExecuteRenderGraph before Compile.
@@ -452,19 +433,19 @@ public:
 	// Request a full graph rebuild (Clear + SetupRenderGraph) at the start of
 	// the next frame. Safe to call from execute callbacks — the rebuild is
 	// deferred until before the next Compile()/Execute() cycle.
-	static void RequestGraphRebuild() { s_bGraphRebuildRequested = true; }
-	static bool ConsumeGraphRebuildRequest() { bool b = s_bGraphRebuildRequested; s_bGraphRebuildRequested = false; return b; }
+	static void RequestGraphRebuild();
+	static bool ConsumeGraphRebuildRequest();
 
 	// Public access to pending command lists for platform layer.
 	// Inserted in topological order by Flux_RenderGraph::Execute Phase 2 only.
-	static Zenith_Vector<Flux_CommandListEntry> s_xPendingCommandLists;
+	static Zenith_Vector<Flux_CommandListEntry>& GetPendingCommandLists();
 private:
 	friend class Zenith_Vulkan;  // Flux_PlatformAPI alias resolves to this
 
-	static uint32_t s_uFrameCounter;
-	static Zenith_Vector<void(*)()> s_xResChangeCallbacks;
-	static Flux_RenderGraph* s_pxRenderGraph;
-	static bool s_bGraphRebuildRequested;
+	// Phase 6a-1: 5 static data members moved off this class onto
+	// Flux_RendererImpl held by Zenith_Engine. The static method API
+	// stays unchanged; bodies live in Flux.cpp and route through
+	// g_xEngine.FluxRenderer().m_xXxx.
 };
 
 struct Flux_PipelineSpecification

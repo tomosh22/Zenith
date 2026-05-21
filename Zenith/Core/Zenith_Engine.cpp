@@ -20,6 +20,7 @@
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "Input/Zenith_InputImpl.h"
 #include "Input/Zenith_TouchInputImpl.h"
+#include "Flux/Flux_RendererImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -192,6 +193,15 @@ Zenith_TouchInputImpl& Zenith_Engine::Touch()
 	return *m_pxTouch;
 }
 
+Flux_RendererImpl& Zenith_Engine::FluxRenderer()
+{
+	// No assert: render graph + frame counter + pending command lists
+	// are read every frame and from Vulkan worker threads. Allocated
+	// EARLY in Initialise -- before Flux::EarlyInitialise creates the
+	// graph and pipes through OnResChange / SubmitCommandList paths.
+	return *m_pxFluxRenderer;
+}
+
 #ifdef ZENITH_TOOLS
 Zenith_EditorImpl& Zenith_Engine::Editor()
 {
@@ -260,6 +270,12 @@ void Zenith_Engine::Initialise()
 	// Phase 5.5b: touch-gesture state. Allocated alongside m_pxInput.
 	Zenith_Assert(m_pxTouch == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxTouch = new Zenith_TouchInputImpl();
+
+	// Phase 6a-1: Flux renderer state (frame counter, render graph,
+	// pending command-list queue, per-frame callbacks). Must exist
+	// before Flux::EarlyInitialise creates the graph.
+	Zenith_Assert(m_pxFluxRenderer == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxFluxRenderer = new Flux_RendererImpl();
 
 #ifdef ZENITH_TOOLS
 	// Phase 5.5c: editor state (selection, viewport, content browser,
@@ -603,6 +619,12 @@ void Zenith_Engine::Shutdown()
 	// 20. Free touch-gesture state.
 	delete m_pxTouch;
 	m_pxTouch = nullptr;
+
+	// Free Flux renderer state. Flux::Shutdown above has already freed the
+	// render graph and cleared the callback lists; this just reclaims the
+	// holder.
+	delete m_pxFluxRenderer;
+	m_pxFluxRenderer = nullptr;
 
 #ifdef ZENITH_TOOLS
 	// 21. Free editor state. Done LATE -- the editor's deferred-deletion

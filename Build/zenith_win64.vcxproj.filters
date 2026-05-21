@@ -3630,6 +3630,9 @@
     <ClInclude Include="..\Zenith\Flux\Flux_PerFrame.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_RendererImpl.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h">
       <Filter>Flux</Filter>
     </ClInclude>

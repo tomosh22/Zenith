@@ -85,15 +85,9 @@ public:
 	static u_int GetFrameCounter();
 
 private:
-	static u_int s_uFrameCounter;
-
-	static OnFrameBeginFunc s_apfnBeginCallbacks[FLUX_MAX_PERFRAME_CALLBACKS];
-	static void*            s_apBeginUserData   [FLUX_MAX_PERFRAME_CALLBACKS];
-	static u_int            s_uNumBeginCallbacks;
-
-	static OnFrameEndFunc   s_apfnEndCallbacks[FLUX_MAX_PERFRAME_CALLBACKS];
-	static void*            s_apEndUserData   [FLUX_MAX_PERFRAME_CALLBACKS];
-	static u_int            s_uNumEndCallbacks;
+	// Phase 6a-1: all 6 statics moved onto Flux_RendererImpl held by
+	// Zenith_Engine. The frame counter is now shared with Flux's counter
+	// (was redundant). Callback arrays + counts live on the same Impl.
 
 	// Unit tests reset state and inspect counters / callback arrays directly.
 	friend class Zenith_UnitTests;

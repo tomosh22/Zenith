@@ -14051,6 +14051,7 @@ void Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly(){
 // the test installs.
 
 #include "Flux/Flux_PerFrame.h"
+#include "Flux/Flux_RendererImpl.h"
 
 // Snapshot of Flux_PerFrame's internal state used by the §5.2 tests to save
 // the live engine state before installing scratch callbacks, then restore it
@@ -14069,32 +14070,34 @@ struct Zenith_UnitTests::PerFrameSnapshot
 
 void Zenith_UnitTests::SnapshotPerFrameAndReset(PerFrameSnapshot& xOut)
 {
-	xOut.m_uFrameCounter = Flux_PerFrame::s_uFrameCounter;
-	xOut.m_uNumBegin     = Flux_PerFrame::s_uNumBeginCallbacks;
-	xOut.m_uNumEnd       = Flux_PerFrame::s_uNumEndCallbacks;
+	Flux_RendererImpl& xR = g_xEngine.FluxRenderer();
+	xOut.m_uFrameCounter = xR.m_uFrameCounter;
+	xOut.m_uNumBegin     = xR.m_uNumBeginCallbacks;
+	xOut.m_uNumEnd       = xR.m_uNumEndCallbacks;
 	for (u_int u = 0; u < FLUX_MAX_PERFRAME_CALLBACKS; u++)
 	{
-		xOut.m_apfnBegin[u]   = Flux_PerFrame::s_apfnBeginCallbacks[u];
-		xOut.m_apBeginUser[u] = Flux_PerFrame::s_apBeginUserData[u];
-		xOut.m_apfnEnd[u]     = Flux_PerFrame::s_apfnEndCallbacks[u];
-		xOut.m_apEndUser[u]   = Flux_PerFrame::s_apEndUserData[u];
+		xOut.m_apfnBegin[u]   = xR.m_apfnBeginCallbacks[u];
+		xOut.m_apBeginUser[u] = xR.m_apBeginUserData[u];
+		xOut.m_apfnEnd[u]     = xR.m_apfnEndCallbacks[u];
+		xOut.m_apEndUser[u]   = xR.m_apEndUserData[u];
 	}
-	Flux_PerFrame::s_uFrameCounter      = 0;
-	Flux_PerFrame::s_uNumBeginCallbacks = 0;
-	Flux_PerFrame::s_uNumEndCallbacks   = 0;
+	xR.m_uFrameCounter      = 0;
+	xR.m_uNumBeginCallbacks = 0;
+	xR.m_uNumEndCallbacks   = 0;
 }
 
 void Zenith_UnitTests::RestorePerFrame(const PerFrameSnapshot& xIn)
 {
-	Flux_PerFrame::s_uFrameCounter      = xIn.m_uFrameCounter;
-	Flux_PerFrame::s_uNumBeginCallbacks = xIn.m_uNumBegin;
-	Flux_PerFrame::s_uNumEndCallbacks   = xIn.m_uNumEnd;
+	Flux_RendererImpl& xR = g_xEngine.FluxRenderer();
+	xR.m_uFrameCounter      = xIn.m_uFrameCounter;
+	xR.m_uNumBeginCallbacks = xIn.m_uNumBegin;
+	xR.m_uNumEndCallbacks   = xIn.m_uNumEnd;
 	for (u_int u = 0; u < FLUX_MAX_PERFRAME_CALLBACKS; u++)
 	{
-		Flux_PerFrame::s_apfnBeginCallbacks[u] = xIn.m_apfnBegin[u];
-		Flux_PerFrame::s_apBeginUserData[u]    = xIn.m_apBeginUser[u];
-		Flux_PerFrame::s_apfnEndCallbacks[u]   = xIn.m_apfnEnd[u];
-		Flux_PerFrame::s_apEndUserData[u]      = xIn.m_apEndUser[u];
+		xR.m_apfnBeginCallbacks[u] = xIn.m_apfnBegin[u];
+		xR.m_apBeginUserData[u]    = xIn.m_apBeginUser[u];
+		xR.m_apfnEndCallbacks[u]   = xIn.m_apfnEnd[u];
+		xR.m_apEndUserData[u]      = xIn.m_apEndUser[u];
 	}
 }
 

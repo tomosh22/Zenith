@@ -445,7 +445,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 
 	for (u_int i = uStartIndex; i < uEndIndex; i++)
 	{
-		const Flux_CommandListEntry& xEntry = Flux::s_xPendingCommandLists.Get(i);
+		const Flux_CommandListEntry& xEntry = Flux::GetPendingCommandLists().Get(i);
 		const bool bIsComputePass = (xEntry.m_uNumColourAttachments == 0 && !xEntry.m_xDepthStencil.IsValid());
 		if (bIsComputePass)
 		{
