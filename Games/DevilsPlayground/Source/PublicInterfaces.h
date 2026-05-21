@@ -240,6 +240,60 @@ struct DP_OnPerceptionContactEnd
 };
 
 // ============================================================================
+// Player-feedback events (2026-05-21). These telegraph state transitions
+// to the player via in-world particles + HUD messages. Distinct from the
+// telemetry events above -- those exist for offline analysis, these
+// exist so the player can see what just happened.
+// ============================================================================
+
+// Player pressed F at a locked door without the right key in hand. The
+// door stays closed and the held item is NOT consumed (DPDoor's
+// HandleInteract short-circuits before the lerp). The particles system
+// + HUD subscribe so the player sees a "rejection" puff and a
+// "Locked -- needs <key tag>" line.
+struct DP_OnDoorLockRejected
+{
+	Zenith_EntityID m_xVillager;
+	Zenith_EntityID m_xDoor;
+	DP_ItemTag      m_eRequiredKey;  // what tag the door wants
+};
+
+// An item with special_behaviour="evaporates_after_drop" finished its
+// evaporate countdown and is about to be destroyed. The position field
+// is captured BEFORE destruction so the particles system can fire a
+// steam burst at the now-empty floor location. MVP only triggers this
+// for BogWater (Reagents.json sets the special_behaviour); the post-MVP
+// reagents may also use it.
+struct DP_OnItemEvaporated
+{
+	Zenith_EntityID         m_xItem;        // entity about to be destroyed
+	DP_ItemTag              m_eTag;         // BogWater for MVP
+	Zenith_Maths::Vector3   m_xPosition;    // world position at evaporation
+};
+
+// Priest's BT acquired a stimulus rising-edge. The priest's BT runs four
+// branches (Patrol / Investigate / Pursue / Apprehend); this event fires
+// at the moment a "higher-priority" branch first wins over Patrol /
+// Idle. Subscribed by the particles system (which fires a "!" alert
+// burst above the priest's head) and the HUD (which raises the
+// awareness indicator to the appropriate state). Falling edge (priest
+// loses target + returns to patrol) is NOT emitted; the particles +
+// HUD time out on their own.
+enum class DP_PriestAlertKind : uint8_t
+{
+	HeardNoise   = 0,  // BB_KEY_HAS_INVESTIGATE_POS rose; priest will Investigate
+	SawTarget    = 1,  // BB_KEY_TARGET_WITH_DEVIL rose; priest will Pursue
+	WithinRange  = 2,  // priest within apprehend_range_m of target; will Apprehend
+};
+
+struct DP_OnPriestAlerted
+{
+	Zenith_EntityID         m_xPriest;
+	DP_PriestAlertKind      m_eKind;
+	Zenith_Maths::Vector3   m_xPosition;    // priest world pos at alert (for the "!" billboard anchor)
+};
+
+// ============================================================================
 // DP_Player — published by B2 (player + camera + input).
 // ============================================================================
 namespace DP_Player

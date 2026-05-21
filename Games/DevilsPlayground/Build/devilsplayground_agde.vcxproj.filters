@@ -8,6 +8,9 @@
     <ClCompile Include="..\Source\DPMaterials.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DPParticles.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DPProcLevel\DPProcLevel_Generator.cpp">
       <Filter>Source\DPProcLevel</Filter>
     </ClCompile>
@@ -287,6 +290,9 @@
     <ClCompile Include="..\Tests\Test_P4UI_RestartPromptAfterRunOver.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P5Particles_BurstsOnGameplayEvents.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -419,6 +425,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPMaterials.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DPParticles.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_Generator.h">

@@ -8,6 +8,7 @@
 #include "Source/DP_Tuning.h"
 #include "Source/DP_Archetypes.h"
 #include "Source/DP_Reagents.h"
+#include "Source/DPParticles.h"
 
 #include <cstdio>
 #include <cstring>
@@ -89,6 +90,14 @@ namespace DevilsPlayground
 		// Assets/Materials/*.json. Idempotent — safe across Editor Stop/Play.
 		DPMaterials::Initialize();
 
+		// 2026-05-21: in-world particle telegraphs (forge sparks, door dust,
+		// pentagram ritual swirl, BellSoul ring, BogWater steam, priest
+		// "!" alert, etc). Initialize() registers the configs + subscribes
+		// to DP events; the per-scene emitter entities are created by
+		// DPProcLevelBootstrap_Behaviour::OnAwake via
+		// DP_Particles::EnsureEmittersInScene. Idempotent.
+		DP_Particles::Initialize();
+
 #ifdef ZENITH_INPUT_SIMULATOR
 		// Tell the automated-test harness how to wipe DP-specific persistent
 		// globals between batched tests. The harness force-loads scene 0
@@ -104,6 +113,11 @@ namespace DevilsPlayground
 			DP_AI::ResetLevelNavMesh();
 			DP_Night::Reset();
 			DPPauseMenuController_Behaviour::ResetForTest();
+			// Drop emitter entities + zero burst counts so the next test
+			// gets a fresh particle slate. Configs + subscriptions stay
+			// alive across tests (they're process-global).
+			DP_Particles::ClearEmitterEntities();
+			DP_Particles::ResetBurstCountsForTest();
 		});
 #endif
 	}
@@ -116,6 +130,11 @@ namespace DevilsPlayground
 		DP_Fog::ClearAllFogHoles();
 		DP_Player::SetPossessedVillager(INVALID_ENTITY_ID);
 		DP_AI::ResetLevelNavMesh();
+		// Particles: tear down emitters + free configs + unsubscribe events.
+		// Run BEFORE the asset / material teardown -- the emitter entities
+		// hold Zenith_ParticleEmitterComponent pointers to configs, and the
+		// configs must outlive the emitters.
+		DP_Particles::Shutdown();
 		DPMaterials::Shutdown();
 
 		// Drop the archetype cache before tuning -- archetypes don't depend on

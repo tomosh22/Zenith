@@ -83,7 +83,17 @@ protected:
 	void HandleInteract(Zenith_EntityID xVillager) override
 	{
 		if (m_bIsOpen) return;
-		if (!DP_Items::TryConsumeKeyForUnlock(xVillager, m_eRequiredKey)) return;
+		if (!DP_Items::TryConsumeKeyForUnlock(xVillager, m_eRequiredKey))
+		{
+			// 2026-05-21: telegraph the rejection so the player can see
+			// the door knows it's locked. Without this the F-press
+			// produced ZERO feedback -- identical to pressing F at empty
+			// floor. The particles system fires a red rejection puff;
+			// the HUD raises a "Locked -- needs <key>" line for ~2 s.
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnDoorLockRejected{ xVillager, m_xParentEntity.GetEntityID(), m_eRequiredKey });
+			return;
+		}
 		m_bIsOpen = true;
 		// Carve the door cell out of the AI blocker set so pursuit paths
 		// can now traverse it. The pathfinder picks this up on the next

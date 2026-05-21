@@ -480,6 +480,7 @@
     <ClInclude Include="..\Source\DPFogPass.h" />
     <ClInclude Include="..\Source\DPInputActions.h" />
     <ClInclude Include="..\Source\DPMaterials.h" />
+    <ClInclude Include="..\Source\DPParticles.h" />
     <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_Generator.h" />
     <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_JsonExport.h" />
     <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_LevelLayout.h" />
@@ -496,6 +497,7 @@
     <ClCompile Include="..\DevilsPlayground.cpp" />
     <ClCompile Include="..\Source\DPFogPass.cpp" />
     <ClCompile Include="..\Source\DPMaterials.cpp" />
+    <ClCompile Include="..\Source\DPParticles.cpp" />
     <ClCompile Include="..\Source\DPProcLevel\DPProcLevel_Generator.cpp" />
     <ClCompile Include="..\Source\DPProcLevel\DPProcLevel_JsonExport.cpp" />
     <ClCompile Include="..\Source\DPTelemetry.cpp" />
@@ -589,6 +591,7 @@
     <ClCompile Include="..\Tests\Test_P4Playthrough_LossByNoVessels.cpp" />
     <ClCompile Include="..\Tests\Test_P4Playthrough_Night1WinGolden.cpp" />
     <ClCompile Include="..\Tests\Test_P4UI_RestartPromptAfterRunOver.cpp" />
+    <ClCompile Include="..\Tests\Test_P5Particles_BurstsOnGameplayEvents.cpp" />
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp" />
     <ClCompile Include="..\Tests\Test_PersonalityPlaythrough.cpp" />
     <ClCompile Include="..\Tests\Test_Possession.cpp" />
