@@ -7,6 +7,7 @@
 class FrameContext;
 class Zenith_AssetRegistry;
 class Zenith_EntityStore;
+class Zenith_DebugVariablesImpl;
 class Zenith_EditorAutomationImpl;
 class Zenith_EditorImpl;
 class Zenith_EditorMaterialUIImpl;
@@ -84,6 +85,7 @@ public:
 	Zenith_UndoSystemImpl& UndoSystem();
 	Zenith_EditorAutomationImpl& EditorAutomation();
 	Zenith_EditorMaterialUIImpl& EditorMaterialUI();
+	Zenith_DebugVariablesImpl& DebugVariables();
 #endif
 
 private:
@@ -111,6 +113,7 @@ private:
 	Zenith_UndoSystemImpl*              m_pxUndoSystem         = nullptr;
 	Zenith_EditorAutomationImpl*        m_pxEditorAutomation   = nullptr;
 	Zenith_EditorMaterialUIImpl*        m_pxEditorMaterialUI   = nullptr;
+	Zenith_DebugVariablesImpl*          m_pxDebugVariables     = nullptr;
 #endif
 };
 

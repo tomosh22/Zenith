@@ -3360,6 +3360,9 @@
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h">
       <Filter>DebugVariables</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariablesImpl.h">
+      <Filter>DebugVariables</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel.h">
       <Filter>Editor\Panels</Filter>
     </ClInclude>

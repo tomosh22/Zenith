@@ -12,6 +12,7 @@
 #include "Profiling/Zenith_ProfilingImpl.h"
 #include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "DebugVariables/Zenith_DebugVariablesImpl.h"
 #include "EntityComponent/Zenith_EntityStore.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBusImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
@@ -204,6 +205,7 @@ Zenith_SelectionSystemImpl&  Zenith_Engine::Selection()          { return *m_pxS
 Zenith_UndoSystemImpl&       Zenith_Engine::UndoSystem()         { return *m_pxUndoSystem; }
 Zenith_EditorAutomationImpl& Zenith_Engine::EditorAutomation()   { return *m_pxEditorAutomation; }
 Zenith_EditorMaterialUIImpl& Zenith_Engine::EditorMaterialUI()   { return *m_pxEditorMaterialUI; }
+Zenith_DebugVariablesImpl&   Zenith_Engine::DebugVariables()     { return *m_pxDebugVariables; }
 #endif
 
 void Zenith_Engine::Initialise()
@@ -279,6 +281,11 @@ void Zenith_Engine::Initialise()
 	m_pxEditorAutomation = new Zenith_EditorAutomationImpl();
 	Zenith_Assert(m_pxEditorMaterialUI == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxEditorMaterialUI = new Zenith_EditorMaterialUIImpl();
+
+	// Phase 5.7: debug-variable tree. Allocate alongside editor; many
+	// subsystems register vars during their own Initialise.
+	Zenith_Assert(m_pxDebugVariables == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxDebugVariables = new Zenith_DebugVariablesImpl();
 #endif
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
@@ -612,6 +619,8 @@ void Zenith_Engine::Shutdown()
 	m_pxEditorAutomation = nullptr;
 	delete m_pxEditorMaterialUI;
 	m_pxEditorMaterialUI = nullptr;
+	delete m_pxDebugVariables;
+	m_pxDebugVariables = nullptr;
 #endif
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");

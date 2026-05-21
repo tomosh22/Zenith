@@ -12,6 +12,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #endif
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "DebugVariables/Zenith_DebugVariablesImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -95,7 +96,7 @@ void RenderImGui()
 	std::string strFpsText = "FPS: " + std::to_string(1.f / g_xEngine.Frame().GetDt());
 	ImGui::Text(strFpsText.c_str());
 
-	Zenith_DebugVariableTree& xTree = Zenith_DebugVariables::s_xTree;
+	Zenith_DebugVariableTree& xTree = g_xEngine.DebugVariables().m_xTree;
 	Zenith_DebugVariableTree::Node* pxRoot = xTree.m_pxRoot;
 	TraverseTree(pxRoot, 0);
 

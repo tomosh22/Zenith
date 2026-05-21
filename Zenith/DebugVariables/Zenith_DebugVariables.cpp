@@ -2,13 +2,21 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "DebugVariables/Zenith_DebugVariablesImpl.h"
 #include "Flux/Flux.h"
 // Pulled in for Flux_Graphics::s_xRepeatSampler (used by the texture preview
 // widget); CreateImGuiTextureID itself is on Flux_PlatformAPI and reachable
 // via the platform-graphics include already in Flux.h.
 #include "Flux/Flux_Graphics.h"
 
-Zenith_DebugVariableTree Zenith_DebugVariables::s_xTree;
+// Phase 5.7: tree state lives on Zenith_DebugVariablesImpl held by
+// Zenith_Engine. The inline Add* methods in the header all funnel through
+// here so the header doesn't have to expose the Impl.
+void Zenith_DebugVariables::AddLeafNodeToEngineTree(
+	Zenith_DebugVariableTree::LeafNodeBase* pxLeaf, std::vector<std::string>& xName)
+{
+	g_xEngine.DebugVariables().m_xTree.AddLeafNode(pxLeaf, xName);
+}
 
 template<>
 void Zenith_DebugVariableTree::LeafNode<bool>::ImGuiDisplay()
