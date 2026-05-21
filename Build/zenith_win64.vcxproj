@@ -1235,6 +1235,7 @@
     <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZ.h" />
     <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZImpl.h" />
     <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBL.h" />
+    <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBLImpl.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceCulling.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes.h" />
@@ -1370,7 +1371,9 @@
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO.h" />
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAOImpl.h" />
     <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGI.h" />
+    <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGIImpl.h" />
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR.h" />
+    <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSRImpl.h" />
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_Terrain.h" />

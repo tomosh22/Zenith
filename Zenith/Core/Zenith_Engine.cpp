@@ -45,6 +45,9 @@
 #include "Flux/Particles/Flux_ParticlesImpl.h"
 #include "Flux/Text/Flux_TextImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
+#include "Flux/SSR/Flux_SSRImpl.h"
+#include "Flux/SSGI/Flux_SSGIImpl.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -274,6 +277,9 @@ Flux_VolumeFogImpl&                Zenith_Engine::VolumeFog()         { return *
 Flux_ParticlesImpl&                Zenith_Engine::Particles()         { return *m_pxParticles; }
 Flux_TextImpl&                     Zenith_Engine::Text()              { return *m_pxText; }
 Flux_InstancedMeshesImpl&          Zenith_Engine::InstancedMeshes()   { return *m_pxInstancedMeshes; }
+Flux_SSRImpl&                      Zenith_Engine::SSR()               { return *m_pxSSR; }
+Flux_SSGIImpl&                     Zenith_Engine::SSGI()              { return *m_pxSSGI; }
+Flux_IBLImpl&                      Zenith_Engine::IBL()               { return *m_pxIBL; }
 #ifdef ZENITH_TOOLS
 Flux_GizmosImpl&                   Zenith_Engine::Gizmos()            { return *m_pxGizmos; }
 #endif
@@ -403,6 +409,11 @@ void Zenith_Engine::Initialise()
 	m_pxParticles       = new Flux_ParticlesImpl();
 	m_pxText            = new Flux_TextImpl();
 	m_pxInstancedMeshes = new Flux_InstancedMeshesImpl();
+
+	// Phase 7f: multi-pass effects.
+	m_pxSSR  = new Flux_SSRImpl();
+	m_pxSSGI = new Flux_SSGIImpl();
+	m_pxIBL  = new Flux_IBLImpl();
 #ifdef ZENITH_TOOLS
 	m_pxGizmos          = new Flux_GizmosImpl();
 #endif
@@ -792,6 +803,9 @@ void Zenith_Engine::Shutdown()
 	delete m_pxParticles;       m_pxParticles = nullptr;
 	delete m_pxText;            m_pxText = nullptr;
 	delete m_pxInstancedMeshes; m_pxInstancedMeshes = nullptr;
+	delete m_pxSSR;  m_pxSSR  = nullptr;
+	delete m_pxSSGI; m_pxSSGI = nullptr;
+	delete m_pxIBL;  m_pxIBL  = nullptr;
 #ifdef ZENITH_TOOLS
 	delete m_pxGizmos;          m_pxGizmos = nullptr;
 #endif

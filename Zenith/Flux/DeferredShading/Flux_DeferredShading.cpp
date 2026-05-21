@@ -9,6 +9,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/IBL/Flux_IBL.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/DynamicLights/Flux_DynamicLights.h"
@@ -234,7 +235,7 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	// IBL textures — BRDF LUT, irradiance cubemap, prefiltered cubemap. Cubemap
 	// reads default to FLUX_RG_ALL_MIPS / FLUX_RG_ALL_LAYERS.
-	xGraph.Read(xPass, Flux_IBL::s_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(xPass, Flux_IBL::s_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(xPass, Flux_IBL::s_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, g_xEngine.IBL().m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, g_xEngine.IBL().m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, g_xEngine.IBL().m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
 }

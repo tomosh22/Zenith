@@ -30,6 +30,9 @@ class Flux_GizmosImpl;
 class Flux_InstancedMeshesImpl;
 class Flux_ParticlesImpl;
 class Flux_TextImpl;
+class Flux_SSRImpl;
+class Flux_SSGIImpl;
+class Flux_IBLImpl;
 class Zenith_VulkanImpl;
 class Zenith_Vulkan_MemoryManagerImpl;
 class Zenith_Vulkan_SwapchainImpl;
@@ -124,6 +127,9 @@ public:
 	Flux_ParticlesImpl& Particles();
 	Flux_TextImpl& Text();
 	Flux_InstancedMeshesImpl& InstancedMeshes();
+	Flux_SSRImpl& SSR();
+	Flux_SSGIImpl& SSGI();
+	Flux_IBLImpl& IBL();
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl& Gizmos();
 #endif
@@ -185,6 +191,9 @@ private:
 	Flux_ParticlesImpl*                 m_pxParticles        = nullptr;
 	Flux_TextImpl*                      m_pxText             = nullptr;
 	Flux_InstancedMeshesImpl*           m_pxInstancedMeshes  = nullptr;
+	Flux_SSRImpl*                       m_pxSSR              = nullptr;
+	Flux_SSGIImpl*                      m_pxSSGI             = nullptr;
+	Flux_IBLImpl*                       m_pxIBL              = nullptr;
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl*                    m_pxGizmos           = nullptr;
 #endif

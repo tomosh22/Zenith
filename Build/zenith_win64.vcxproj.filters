@@ -3705,6 +3705,9 @@
     <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBL.h">
       <Filter>Flux\IBL</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBLImpl.h">
+      <Filter>Flux\IBL</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.h">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
@@ -4110,7 +4113,13 @@
     <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGI.h">
       <Filter>Flux\SSGI</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGIImpl.h">
+      <Filter>Flux\SSGI</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR.h">
+      <Filter>Flux\SSR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSRImpl.h">
       <Filter>Flux\SSR</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h">

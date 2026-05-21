@@ -104,29 +104,15 @@ public:
 	static void RegisterDebugVariables();
 #endif
 
-	// State flags (public for render graph execute callback access)
-	static bool s_bBRDFLUTGenerated;
-	static bool s_bSkyIBLDirty;
-	static bool s_bIBLReady;  // True after all IBL textures have been generated
-
 	// Render-graph execute callbacks (public so the file-static graph wiring
 	// can take their address as Flux_RenderGraph_OnRecordFunc).
 	static void ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void* pUserData);
 	static void ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserData);
 	static void ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserData);
 
-	// Render attachments — public so consumers (DeferredShading, DynamicLights)
-	// can declare PassReads on them in their own SetupRenderGraph functions.
-	// Matches the SSR / SSGI pattern (s_xResolvedReflection, s_xDenoised, etc.).
-
-	// BRDF Integration LUT (2D texture, computed once)
-	static Flux_RenderAttachment s_xBRDFLUT;
-
-	// Sky-based irradiance map (cubemap for diffuse)
-	static Flux_RenderAttachmentCube s_xIrradianceMap;
-
-	// Sky-based prefiltered environment map (cubemap with mips for specular)
-	static Flux_RenderAttachmentCube s_xPrefilteredMap;
+	// Phase 7f: state moved to Flux_IBLImpl held by Zenith_Engine.
+	// External consumers (DeferredShading) reach the render-attachments
+	// via g_xEngine.IBL().m_xBRDFLUT etc.
 
 private:
 	static void CreateRenderTargets();
@@ -152,30 +138,6 @@ private:
 		const bool (&abRunIrradiance)[6],
 		const bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6]);
 
-	// Pipelines
-	static Flux_Pipeline s_xBRDFLUTPipeline;
-	static Flux_Pipeline s_xIrradianceConvolvePipeline;
-	static Flux_Pipeline s_xPrefilterPipeline;
-
-	// Shaders
-	static Flux_Shader s_xBRDFLUTShader;
-	static Flux_Shader s_xIrradianceConvolveShader;
-	static Flux_Shader s_xPrefilterShader;
-
-	// Configuration state (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
-	static float s_fIntensity;
-
-	// Dirty flags
-	static bool s_bFirstGeneration;  // True until first full generation completes
-
-	// Frame-amortized regeneration state
-	static IBL_RegenState s_eRegenState;
-	static u_int s_uRegenFace;  // Current face being processed (0-5)
-	static u_int s_uRegenMip;   // Current mip being processed (0-6, prefilter only)
-
-	// Render-graph pass handles — populated by SetupRenderGraph and consumed by
-	// UpdateGraphPassEnables to flip per-pass enable bits each frame.
-	static Flux_PassHandle s_xBRDFLUTPassHandle;
-	static Flux_PassHandle s_axIrradianceFacePassHandles[6];
-	static Flux_PassHandle s_axPrefilterMipFacePassHandles[IBLConfig::uPREFILTER_MIP_COUNT][6];
+	// Phase 7f: pipelines, shaders, regen state, pass handles moved to
+	// Flux_IBLImpl held by Zenith_Engine.
 };
