@@ -9,6 +9,7 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Core/FrameContext.h"
 #include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "Profiling/Zenith_ProfilingImpl.h"
 #include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -92,6 +93,16 @@ Zenith_TaskSystemImpl& Zenith_Engine::Tasks()
 	return *m_pxTasks;
 }
 
+Zenith_ProfilingImpl& Zenith_Engine::Profiling()
+{
+	// No assert: BeginProfile / EndProfile sit on the hottest path in
+	// the engine (every ZENITH_PROFILING_FUNCTION_WRAPPER call fires
+	// it). Zenith_Engine::Initialise allocates m_pxProfiling before
+	// Zenith_Profiling::Initialise() so the impl is always available
+	// once any thread starts profiling.
+	return *m_pxProfiling;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -114,6 +125,15 @@ void Zenith_Engine::Initialise()
 
 	// CRITICAL: Memory tracking must be initialized FIRST to capture all allocations
 	Zenith_MemoryManagement::Initialise();
+
+	// Phase 3b: per-Engine Profiling state. Allocate BEFORE
+	// Zenith_Multithreading::RegisterThread(true) below --
+	// RegisterThread transitively calls Zenith_Profiling::RegisterThread
+	// (which reads g_xEngine.Profiling().m_xEvents). The Profiling
+	// impl also has to exist before Zenith_Profiling::Initialise()
+	// further down for the same reason.
+	Zenith_Assert(m_pxProfiling == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxProfiling = new Zenith_ProfilingImpl();
 
 	Zenith_Multithreading::RegisterThread(true);
 	Zenith_Profiling::Initialise();
@@ -326,13 +346,20 @@ void Zenith_Engine::Shutdown()
 	delete m_pxTasks;
 	m_pxTasks = nullptr;
 
-	// 11. Tear down per-frame timing state. Done late so any
+	// 11. Free the per-Engine Profiling state. Comes AFTER TaskSystem
+	// shutdown (step 9) -- worker threads may have profile scopes
+	// pending until they exit, and AFTER tearing down m_pxTasks so no
+	// stale ThreadFunc can call Profiling.
+	delete m_pxProfiling;
+	m_pxProfiling = nullptr;
+
+	// 12. Tear down per-frame timing state. Done late so any
 	// subsystem shutdown that needs to log dt or read accumulated
 	// time still can.
 	delete m_pxFrame;
 	m_pxFrame = nullptr;
 
-	// 12. Tear down the multithreading registry. Done after the task
+	// 13. Tear down the multithreading registry. Done after the task
 	// system shutdown (step 9) so worker threads aren't still calling
 	// IsMainThread while we're freeing the registry.
 	delete m_pxThreading;

@@ -1132,6 +1132,7 @@
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h" />
     <ClInclude Include="..\Zenith\Prefab\Zenith_Prefab.h" />
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h" />
+    <ClInclude Include="..\Zenith\Profiling\Zenith_ProfilingImpl.h" />
     <ClInclude Include="..\Zenith\SaveData\Zenith_SaveData.h" />
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystemImpl.h" />

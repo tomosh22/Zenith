@@ -4080,6 +4080,9 @@
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h">
       <Filter>Profiling</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Profiling\Zenith_ProfilingImpl.h">
+      <Filter>Profiling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\SaveData\Zenith_SaveData.h">
       <Filter>SaveData</Filter>
     </ClInclude>

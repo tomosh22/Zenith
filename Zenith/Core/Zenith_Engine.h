@@ -6,6 +6,7 @@
 // only included by Zenith_Engine.cpp where the accessor bodies live.
 class FrameContext;
 class Zenith_MultithreadingImpl;
+class Zenith_ProfilingImpl;
 class Zenith_TaskSystemImpl;
 
 // Zenith_Engine is the single owner of the engine's mutable runtime
@@ -46,6 +47,7 @@ public:
 	FrameContext& Frame();
 	Zenith_MultithreadingImpl& Threading();
 	Zenith_TaskSystemImpl& Tasks();
+	Zenith_ProfilingImpl& Profiling();
 
 private:
 	// Subsystem members. Raw pointers to forward-declared types so the
@@ -55,6 +57,7 @@ private:
 	FrameContext*              m_pxFrame     = nullptr;
 	Zenith_MultithreadingImpl* m_pxThreading = nullptr;
 	Zenith_TaskSystemImpl*     m_pxTasks     = nullptr;
+	Zenith_ProfilingImpl*      m_pxProfiling = nullptr;
 };
 
 // Compile-time guard: enforce trivial destruction so the
