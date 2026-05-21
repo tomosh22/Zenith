@@ -17,6 +17,7 @@
 #include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneOperationQueueImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
+#include "Input/Zenith_InputImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -168,6 +169,14 @@ Zenith_SceneLifecycleSchedulerImpl& Zenith_Engine::SceneLifecycle()
 	return *m_pxSceneLifecycle;
 }
 
+Zenith_InputImpl& Zenith_Engine::Input()
+{
+	// No assert: input is read every frame and from GLFW callbacks (mouse
+	// wheel, key down). Allocated EARLY in Initialise -- the window may
+	// dispatch input events before the main loop kicks in.
+	return *m_pxInput;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -209,6 +218,13 @@ void Zenith_Engine::Initialise()
 	// creation-target stack, main-loop flag, initial-scene-load hook).
 	Zenith_Assert(m_pxSceneLifecycle == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxSceneLifecycle = new Zenith_SceneLifecycleSchedulerImpl();
+
+	// Phase 5.5a: per-frame input state (key presses, mouse delta + wheel,
+	// gamepad ring buffers). Allocate EARLY so GLFW callbacks fired by
+	// Flux::EarlyInitialise (which spins up the window) have a live store
+	// to write to.
+	Zenith_Assert(m_pxInput == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxInput = new Zenith_InputImpl();
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
 	// main-thread ID) lives on the engine now. Allocate BEFORE
@@ -516,6 +532,11 @@ void Zenith_Engine::Shutdown()
 	// terminated the animation update task.
 	delete m_pxSceneLifecycle;
 	m_pxSceneLifecycle = nullptr;
+
+	// 19. Free per-frame input state. Done LATE -- some Flux/window
+	// teardown paths can fire one last GLFW callback.
+	delete m_pxInput;
+	m_pxInput = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

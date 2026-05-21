@@ -1353,6 +1353,7 @@
     <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderHook.h" />
     <ClInclude Include="..\Zenith\Flux\Zenith_RenderBus.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_Input.h" />
+    <ClInclude Include="..\Zenith\Input\Zenith_InputImpl.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_InputSimulator.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_KeyCodes.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_TouchInput.h" />

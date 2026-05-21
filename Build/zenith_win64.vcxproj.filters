@@ -4059,6 +4059,9 @@
     <ClInclude Include="..\Zenith\Input\Zenith_Input.h">
       <Filter>Input</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Input\Zenith_InputImpl.h">
+      <Filter>Input</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Input\Zenith_InputSimulator.h">
       <Filter>Input</Filter>
     </ClInclude>
