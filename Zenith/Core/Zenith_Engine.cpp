@@ -18,6 +18,7 @@
 #include "EntityComponent/Internal/Zenith_SceneOperationQueueImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_TouchInputImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -177,6 +178,13 @@ Zenith_InputImpl& Zenith_Engine::Input()
 	return *m_pxInput;
 }
 
+Zenith_TouchInputImpl& Zenith_Engine::Touch()
+{
+	// No assert: touch state is read every frame from gameplay code.
+	// Allocated alongside m_pxInput.
+	return *m_pxTouch;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -225,6 +233,10 @@ void Zenith_Engine::Initialise()
 	// to write to.
 	Zenith_Assert(m_pxInput == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxInput = new Zenith_InputImpl();
+
+	// Phase 5.5b: touch-gesture state. Allocated alongside m_pxInput.
+	Zenith_Assert(m_pxTouch == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxTouch = new Zenith_TouchInputImpl();
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
 	// main-thread ID) lives on the engine now. Allocate BEFORE
@@ -537,6 +549,10 @@ void Zenith_Engine::Shutdown()
 	// teardown paths can fire one last GLFW callback.
 	delete m_pxInput;
 	m_pxInput = nullptr;
+
+	// 20. Free touch-gesture state.
+	delete m_pxTouch;
+	m_pxTouch = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

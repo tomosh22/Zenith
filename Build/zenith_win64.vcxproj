@@ -1357,6 +1357,7 @@
     <ClInclude Include="..\Zenith\Input\Zenith_InputSimulator.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_KeyCodes.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_TouchInput.h" />
+    <ClInclude Include="..\Zenith\Input\Zenith_TouchInputImpl.h" />
     <ClInclude Include="..\Zenith\Maths\Zenith_FrustumCulling.h" />
     <ClInclude Include="..\Zenith\Maths\Zenith_Maths.h" />
     <ClInclude Include="..\Zenith\Maths\Zenith_Maths_Intersections.h" />
