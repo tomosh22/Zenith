@@ -3,6 +3,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneManager_Internal.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -23,9 +24,8 @@
 
 // Static member definitions.
 // A1: callback-list statics moved to Zenith_SceneCallbackBus.
-// A2b: scene-storage statics (Zenith_SceneRegistry::s_axScenes, Zenith_SceneRegistry::s_axSceneGenerations, s_axFreeHandles,
-// Zenith_SceneRegistry::s_iActiveSceneHandle, Zenith_SceneRegistry::s_iPersistentSceneHandle, Zenith_SceneRegistry::s_ulNextLoadTimestamp,
-// s_axLoadedSceneNames, Zenith_SceneRegistry::s_axBuildIndexToPath) moved to Zenith_SceneRegistry.
+// A2b: scene-storage statics moved to Zenith_SceneRegistry; Phase 5b moves
+//      them further onto Zenith_SceneRegistryImpl (g_xEngine.SceneRegistry()).
 #ifdef ZENITH_ASSERT
 bool Zenith_SceneManager::s_bRenderTasksActive = false;
 bool Zenith_SceneManager::s_bAnimTasksActive = false;
@@ -76,16 +76,16 @@ void Zenith_SceneManager::FireUnloadCallbacksAndSelectNewActive(int iHandle, Zen
 {
 	// Track if we're unloading the active scene BEFORE callbacks
 	// (a callback could call SetActiveScene, so capture this first)
-	bool bWasActiveScene = (iHandle == Zenith_SceneRegistry::s_iActiveSceneHandle);
+	bool bWasActiveScene = (iHandle == g_xEngine.SceneRegistry().m_iActiveSceneHandle);
 
 	// Fire unloading callback BEFORE destruction (allows access to scene data)
 	FireSceneUnloadingCallbacks(xScene);
 
 	// Free the scene data
-	if (iHandle >= 0 && iHandle < static_cast<int>(Zenith_SceneRegistry::s_axScenes.GetSize()))
+	if (iHandle >= 0 && iHandle < static_cast<int>(g_xEngine.SceneRegistry().m_axScenes.GetSize()))
 	{
-		delete Zenith_SceneRegistry::s_axScenes.Get(iHandle);
-		Zenith_SceneRegistry::s_axScenes.Get(iHandle) = nullptr;
+		delete g_xEngine.SceneRegistry().m_axScenes.Get(iHandle);
+		g_xEngine.SceneRegistry().m_axScenes.Get(iHandle) = nullptr;
 
 		// Fire unloaded callback BEFORE incrementing generation so the handle
 		// is still valid for identification in callbacks (Unity parity)
@@ -98,7 +98,7 @@ void Zenith_SceneManager::FireUnloadCallbacksAndSelectNewActive(int iHandle, Zen
 	if (bWasActiveScene)
 	{
 		Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
-		Zenith_SceneRegistry::s_iActiveSceneHandle = SelectNewActiveScene();
+		g_xEngine.SceneRegistry().m_iActiveSceneHandle = SelectNewActiveScene();
 		Zenith_Scene xNewActive = GetActiveScene();
 
 		// During a LoadScene(SINGLE) teardown we suppress the intermediate
@@ -210,9 +210,9 @@ void Zenith_SceneManager::Initialise()
 	// DontDestroyOnLoad entities, not a user-visible scene, and must never be "active"
 	// in Unity terminology.
 	Zenith_Scene xPersistent = CreateEmptyScene("DontDestroyOnLoad", /*bAllowSetActive=*/false);
-	Zenith_SceneRegistry::s_iPersistentSceneHandle = xPersistent.m_iHandle;
+	g_xEngine.SceneRegistry().m_iPersistentSceneHandle = xPersistent.m_iHandle;
 
-	Zenith_Log(LOG_CATEGORY_SCENE, "SceneManager initialized with persistent scene (handle=%d)", Zenith_SceneRegistry::s_iPersistentSceneHandle);
+	Zenith_Log(LOG_CATEGORY_SCENE, "SceneManager initialized with persistent scene (handle=%d)", g_xEngine.SceneRegistry().m_iPersistentSceneHandle);
 }
 
 void Zenith_SceneManager::Shutdown()
@@ -261,7 +261,7 @@ void Zenith_SceneManager::ResetForNextTest()
 	// need to repeat the boilerplate. Tests that want their own scene
 	// simply overwrite the active handle via CreateEmptyScene or LoadScene.
 	Zenith_Scene xActive = CreateEmptyScene("TestHarnessDefaultScene");
-	Zenith_SceneRegistry::s_iActiveSceneHandle = xActive.m_iHandle;
+	g_xEngine.SceneRegistry().m_iActiveSceneHandle = xActive.m_iHandle;
 }
 #endif // ZENITH_TESTING
 
@@ -344,7 +344,7 @@ Zenith_Scene Zenith_SceneManager::CreateEmptyScene(const std::string& strName, b
 	Zenith_SceneData* pxSceneData = new Zenith_SceneData();
 	pxSceneData->m_strName = strName;
 	pxSceneData->m_iHandle = iHandle;
-	pxSceneData->m_uGeneration = Zenith_SceneRegistry::s_axSceneGenerations.Get(iHandle);
+	pxSceneData->m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(iHandle);
 	pxSceneData->m_bIsLoaded = true;
 	// B.9: mirror the sync/async load progression — scene is created as
 	// "loaded-but-not-activated" so any probe attached before the final flip
@@ -355,14 +355,14 @@ Zenith_Scene Zenith_SceneManager::CreateEmptyScene(const std::string& strName, b
 	// LoadScene(ADDITIVE_WITHOUT_LOADING) + the sync/async load paths all append
 	// their own lifecycle/callback work on top.
 	pxSceneData->m_bIsActivated = false;
-	pxSceneData->m_ulLoadTimestamp = Zenith_SceneRegistry::s_ulNextLoadTimestamp++;
+	pxSceneData->m_ulLoadTimestamp = g_xEngine.SceneRegistry().m_ulNextLoadTimestamp++;
 
 	// Ensure vector is large enough
-	while (Zenith_SceneRegistry::s_axScenes.GetSize() <= static_cast<u_int>(iHandle))
+	while (g_xEngine.SceneRegistry().m_axScenes.GetSize() <= static_cast<u_int>(iHandle))
 	{
-		Zenith_SceneRegistry::s_axScenes.PushBack(nullptr);
+		g_xEngine.SceneRegistry().m_axScenes.PushBack(nullptr);
 	}
-	Zenith_SceneRegistry::s_axScenes.Get(iHandle) = pxSceneData;
+	g_xEngine.SceneRegistry().m_axScenes.Get(iHandle) = pxSceneData;
 	AddToSceneNameCache(iHandle, strName);
 
 	// B.9: flip to activated now that the slot is fully published — empty scenes have
@@ -376,15 +376,15 @@ Zenith_Scene Zenith_SceneManager::CreateEmptyScene(const std::string& strName, b
 	// Initialise() passes false when creating the persistent DontDestroyOnLoad scene
 	// so it never becomes the fallback active — preventing the long-standing bug
 	// where UnloadAllNonPersistent would leave the persistent scene as the active one.
-	if (bAllowSetActive && Zenith_SceneRegistry::s_iActiveSceneHandle < 0)
+	if (bAllowSetActive && g_xEngine.SceneRegistry().m_iActiveSceneHandle < 0)
 	{
 		Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
-		Zenith_SceneRegistry::s_iActiveSceneHandle = iHandle;
+		g_xEngine.SceneRegistry().m_iActiveSceneHandle = iHandle;
 	}
 
 	Zenith_Scene xScene;
 	xScene.m_iHandle = iHandle;
-	xScene.m_uGeneration = Zenith_SceneRegistry::s_axSceneGenerations.Get(iHandle);
+	xScene.m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(iHandle);
 	return xScene;
 }
 
@@ -696,7 +696,7 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsync(const std::string& s
 Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsyncByIndex(int iBuildIndex, Zenith_SceneLoadMode eMode)
 {
 	const u_int uBuildIndex = static_cast<u_int>(iBuildIndex);
-	if (iBuildIndex < 0 || uBuildIndex >= Zenith_SceneRegistry::s_axBuildIndexToPath.GetSize() || Zenith_SceneRegistry::s_axBuildIndexToPath.Get(uBuildIndex).empty())
+	if (iBuildIndex < 0 || uBuildIndex >= g_xEngine.SceneRegistry().m_axBuildIndexToPath.GetSize() || g_xEngine.SceneRegistry().m_axBuildIndexToPath.Get(uBuildIndex).empty())
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "LoadSceneAsyncByIndex: No scene registered for build index %d", iBuildIndex);
 
@@ -720,7 +720,7 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsyncByIndex(int iBuildInd
 	Zenith_SceneOperationID ulOpID;
 	{
 		PendingBuildIndexGuard xGuard(iBuildIndex);
-		ulOpID = LoadSceneAsync(Zenith_SceneRegistry::s_axBuildIndexToPath.Get(uBuildIndex), eMode);
+		ulOpID = LoadSceneAsync(g_xEngine.SceneRegistry().m_axBuildIndexToPath.Get(uBuildIndex), eMode);
 	}
 
 	// For the file-load path, Phase 1 reads Zenith_SceneOperationQueue::AsyncLoadJob::m_iBuildIndex directly. Set
@@ -753,7 +753,7 @@ bool Zenith_SceneManager::CanUnloadScene(Zenith_Scene xScene)
 	}
 
 	// Cannot unload persistent scene
-	if (xScene.m_iHandle == Zenith_SceneRegistry::s_iPersistentSceneHandle)
+	if (xScene.m_iHandle == g_xEngine.SceneRegistry().m_iPersistentSceneHandle)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "Cannot unload persistent scene");
 		return false;
@@ -789,10 +789,10 @@ bool Zenith_SceneManager::CanUnloadScene(Zenith_Scene xScene)
 	// Count non-persistent scenes that are fully loaded and usable, excluding scenes
 	// that are still being async-loaded (not yet activated) or async-unloaded
 	uint32_t uNonPersistentCount = 0;
-	for (u_int i = 0; i < Zenith_SceneRegistry::s_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
-		Zenith_SceneData* pxData = Zenith_SceneRegistry::s_axScenes.Get(i);
-		if (pxData != nullptr && static_cast<int>(i) != Zenith_SceneRegistry::s_iPersistentSceneHandle
+		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
+		if (pxData != nullptr && static_cast<int>(i) != g_xEngine.SceneRegistry().m_iPersistentSceneHandle
 			&& pxData->m_bIsLoaded && pxData->m_bIsActivated && !pxData->m_bIsUnloading)
 		{
 			uNonPersistentCount++;
@@ -832,7 +832,7 @@ void Zenith_SceneManager::UnloadSceneForced(Zenith_Scene xScene)
 	}
 
 	// Cannot unload persistent scene even when forced
-	if (xScene.m_iHandle == Zenith_SceneRegistry::s_iPersistentSceneHandle)
+	if (xScene.m_iHandle == g_xEngine.SceneRegistry().m_iPersistentSceneHandle)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "Cannot unload persistent scene");
 		return;
@@ -938,7 +938,7 @@ bool Zenith_SceneManager::SetActiveScene(Zenith_Scene xScene)
 	// A6: the persistent scene is a container for DontDestroyOnLoad entities only;
 	// it must never be the "active" scene (matches Unity's DontDestroyOnLoad semantics).
 	// Fallbacks in SelectNewActiveScene and CreateEmptyScene also honour this.
-	if (xScene.m_iHandle == Zenith_SceneRegistry::s_iPersistentSceneHandle)
+	if (xScene.m_iHandle == g_xEngine.SceneRegistry().m_iPersistentSceneHandle)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "SetActiveScene: Cannot set the persistent scene as active (DontDestroyOnLoad is a container, not a real scene)");
 		return false;
@@ -966,7 +966,7 @@ bool Zenith_SceneManager::SetActiveScene(Zenith_Scene xScene)
 	}
 
 	Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
-	Zenith_SceneRegistry::s_iActiveSceneHandle = xScene.m_iHandle;
+	g_xEngine.SceneRegistry().m_iActiveSceneHandle = xScene.m_iHandle;
 	FireActiveSceneChangedCallbacks(xCurrent, xScene);
 	return true;
 }
@@ -1031,9 +1031,9 @@ Zenith_CameraComponent* Zenith_SceneManager::FindMainCameraAcrossScenes()
 	}
 
 	// Search all loaded scenes (finds camera in persistent scene, etc.)
-	for (u_int i = 0; i < Zenith_SceneRegistry::s_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
-		Zenith_SceneData* pxData = Zenith_SceneRegistry::s_axScenes.Get(i);
+		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
 		if (pxData && pxData->IsLoaded() && !pxData->IsUnloading())
 		{
 			Zenith_CameraComponent* pxCamera = pxData->TryGetMainCamera();
@@ -1192,13 +1192,13 @@ bool Zenith_AreRenderTasksActive() { return Zenith_SceneManager::AreRenderTasksA
 
 void Zenith_SceneManager::UnloadOneScene(Zenith_Scene xScene, bool& bActiveSceneUnloadedInOut)
 {
-	if (xScene.m_iHandle == Zenith_SceneRegistry::s_iActiveSceneHandle)
+	if (xScene.m_iHandle == g_xEngine.SceneRegistry().m_iActiveSceneHandle)
 	{
 		bActiveSceneUnloadedInOut = true;
 	}
 
-	delete Zenith_SceneRegistry::s_axScenes.Get(xScene.m_iHandle);
-	Zenith_SceneRegistry::s_axScenes.Get(xScene.m_iHandle) = nullptr;
+	delete g_xEngine.SceneRegistry().m_axScenes.Get(xScene.m_iHandle);
+	g_xEngine.SceneRegistry().m_axScenes.Get(xScene.m_iHandle) = nullptr;
 
 	// Fire unloaded callback BEFORE incrementing generation so the handle
 	// is still valid for identification in callbacks (Unity parity).
@@ -1246,21 +1246,21 @@ void Zenith_SceneManager::CompleteAsyncUnloadJobs(Zenith_HashSet<int>& xAlreadyF
 Zenith_Vector<Zenith_Scene> Zenith_SceneManager::CollectNonPersistentScenes(int iExcludeHandle)
 {
 	Zenith_Vector<Zenith_Scene> axScenes;
-	for (u_int i = 0; i < Zenith_SceneRegistry::s_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
 		// D.12: skip the explicit excluded handle (atomic-swap sync LoadScene
 		// keeps the staging scene alive while old scenes are torn down).
-		if (static_cast<int>(i) == Zenith_SceneRegistry::s_iPersistentSceneHandle ||
+		if (static_cast<int>(i) == g_xEngine.SceneRegistry().m_iPersistentSceneHandle ||
 		    static_cast<int>(i) == iExcludeHandle)
 		{
 			continue;
 		}
-		Zenith_SceneData* pxData = Zenith_SceneRegistry::s_axScenes.Get(i);
+		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
 		if (pxData && pxData->m_bIsLoaded)
 		{
 			Zenith_Scene xScene;
 			xScene.m_iHandle = static_cast<int>(i);
-			xScene.m_uGeneration = Zenith_SceneRegistry::s_axSceneGenerations.Get(i);
+			xScene.m_uGeneration = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(i);
 			axScenes.PushBack(xScene);
 		}
 	}
@@ -1301,7 +1301,7 @@ void Zenith_SceneManager::UpdateActiveSceneAfterUnload(Zenith_Scene xOldActive)
 	// will set a new active scene; during the gap GetActiveScene returns
 	// INVALID (callers handle it via IsValid() paths).
 	Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
-	Zenith_SceneRegistry::s_iActiveSceneHandle = -1;
+	g_xEngine.SceneRegistry().m_iActiveSceneHandle = -1;
 	Zenith_Scene xNewActive = GetActiveScene();  // will be INVALID_SCENE
 	if (xOldActive == xNewActive)
 	{

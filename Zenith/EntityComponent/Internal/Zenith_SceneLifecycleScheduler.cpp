@@ -2,6 +2,7 @@
 
 #include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistry.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneOperationQueue.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
@@ -67,9 +68,9 @@ namespace
 
 	void CollectUpdatableScenes(Zenith_Vector<Zenith_SceneData*>& axOut)
 	{
-		for (u_int i = 0; i < Zenith_SceneRegistry::s_axScenes.GetSize(); ++i)
+		for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 		{
-			Zenith_SceneData* pxData = Zenith_SceneRegistry::s_axScenes.Get(i);
+			Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
 			if (Zenith_SceneRegistry::IsSceneUpdatable(pxData))
 			{
 				axOut.PushBack(pxData);
@@ -166,9 +167,9 @@ void Zenith_SceneLifecycleScheduler::Update(float fDt)
 
 	// Animation Update (parallel task system).
 	g_xAnimationsToUpdate.Clear();
-	for (u_int i = 0; i < Zenith_SceneRegistry::s_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
-		CollectAnimationsFromScene(Zenith_SceneRegistry::s_axScenes.Get(i));
+		CollectAnimationsFromScene(g_xEngine.SceneRegistry().m_axScenes.Get(i));
 	}
 
 	s_bIsUpdating = false;
@@ -264,9 +265,9 @@ float Zenith_SceneLifecycleScheduler::GetFixedTimestep()
 void Zenith_SceneLifecycleScheduler::DispatchFullLifecycleInit()
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "DispatchFullLifecycleInit must be called from main thread");
-	for (u_int i = 0; i < Zenith_SceneRegistry::s_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
-		Zenith_SceneData* pxData = Zenith_SceneRegistry::s_axScenes.Get(i);
+		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
 		if (pxData && pxData->m_bIsLoaded)
 		{
 			pxData->DispatchLifecycleForNewScene();

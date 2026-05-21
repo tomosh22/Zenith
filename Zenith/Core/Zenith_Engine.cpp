@@ -13,6 +13,7 @@
 #include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_EntityStore.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -131,6 +132,15 @@ Zenith_EntityStore& Zenith_Engine::EntityStore()
 	return *m_pxEntityStore;
 }
 
+Zenith_SceneRegistryImpl& Zenith_Engine::SceneRegistry()
+{
+	// No assert: SceneRegistry is read every scene-handle resolution and
+	// from inside the per-frame Update pipeline. Allocated alongside the
+	// EntityStore VERY EARLY in Initialise so it's live before
+	// Zenith_SceneManager::Initialise creates the persistent scene.
+	return *m_pxSceneRegistry;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -146,6 +156,13 @@ void Zenith_Engine::Initialise()
 	// until SceneManager / scene-load starts creating entities.
 	Zenith_Assert(m_pxEntityStore == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxEntityStore = new Zenith_EntityStore();
+
+	// Phase 5b: scene-registry state (slot table, generations, active /
+	// persistent handles, build-index map, name cache). Allocated alongside
+	// EntityStore -- both must exist before Zenith_SceneManager::Initialise
+	// creates the persistent scene.
+	Zenith_Assert(m_pxSceneRegistry == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxSceneRegistry = new Zenith_SceneRegistryImpl();
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
 	// main-thread ID) lives on the engine now. Allocate BEFORE
@@ -431,6 +448,11 @@ void Zenith_Engine::Shutdown()
 	// may touch entity slots during teardown.
 	delete m_pxEntityStore;
 	m_pxEntityStore = nullptr;
+
+	// 15. Free the scene-registry state. SceneManager::Shutdown above
+	// already drained the slot table; just reclaim the holder.
+	delete m_pxSceneRegistry;
+	m_pxSceneRegistry = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

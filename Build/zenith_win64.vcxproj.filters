@@ -3474,6 +3474,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistry.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistryImpl.h">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>

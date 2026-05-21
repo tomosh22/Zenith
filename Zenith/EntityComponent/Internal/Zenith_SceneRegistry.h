@@ -31,13 +31,10 @@ class Zenith_SceneRegistry
 {
 public:
 	//==========================================================================
-	// Storage (A2b: state migrated from Zenith_SceneManager).
-	//
-	// Public statics on a class declared in an internal header. Game and editor
-	// code never sees them. Manager-side TUs (Zenith_SceneManager.cpp,
-	// Zenith_SceneOperationQueue.cpp, Zenith_SceneEntityOwnership.cpp,
-	// Zenith_SceneLifecycleScheduler.cpp) read and mutate them via
-	// Zenith_SceneRegistry::s_* qualification.
+	// Storage type (only — actual state moved to Zenith_SceneRegistryImpl
+	// owned by Zenith_Engine in Phase 5b). Sister TUs that used to read
+	// Zenith_SceneRegistry::s_axScenes etc. now read
+	// g_xEngine.SceneRegistry().m_axScenes through the Impl.
 	//==========================================================================
 
 	struct SceneNameEntry
@@ -45,15 +42,6 @@ public:
 		std::string m_strName;
 		int m_iHandle;
 	};
-
-	static Zenith_Vector<Zenith_SceneData*> s_axScenes;
-	static Zenith_Vector<uint32_t>          s_axSceneGenerations;
-	static Zenith_Vector<int>               s_axFreeHandles;
-	static int                              s_iActiveSceneHandle;
-	static int                              s_iPersistentSceneHandle;
-	static uint64_t                         s_ulNextLoadTimestamp;
-	static Zenith_Vector<SceneNameEntry>    s_axLoadedSceneNames;
-	static Zenith_Vector<std::string>       s_axBuildIndexToPath;
 
 	//==========================================================================
 	// Lifecycle

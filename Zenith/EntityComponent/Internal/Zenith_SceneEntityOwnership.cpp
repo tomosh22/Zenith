@@ -5,6 +5,7 @@
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 
 //==========================================================================
 // Zenith_SceneEntityOwnership — implementations.
@@ -183,14 +184,14 @@ bool Zenith_SceneEntityOwnership::MergeScenes(Zenith_Scene xSource, Zenith_Scene
 	}
 
 	// Cannot merge from the persistent scene
-	if (xSource.m_iHandle == Zenith_SceneRegistry::s_iPersistentSceneHandle)
+	if (xSource.m_iHandle == g_xEngine.SceneRegistry().m_iPersistentSceneHandle)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "MergeScenes: Cannot merge from persistent scene");
 		return false;
 	}
 
 	// Unity behavior: If source is active, target becomes active
-	if (xSource.m_iHandle == Zenith_SceneRegistry::s_iActiveSceneHandle)
+	if (xSource.m_iHandle == g_xEngine.SceneRegistry().m_iActiveSceneHandle)
 	{
 		Zenith_SceneManager::SetActiveScene(xTarget);
 	}

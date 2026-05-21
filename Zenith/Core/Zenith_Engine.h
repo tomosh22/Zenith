@@ -10,6 +10,7 @@ class Zenith_EntityStore;
 class Zenith_MultithreadingImpl;
 class Zenith_PhysicsImpl;
 class Zenith_ProfilingImpl;
+class Zenith_SceneRegistryImpl;
 class Zenith_TaskSystemImpl;
 
 // Zenith_Engine is the single owner of the engine's mutable runtime
@@ -54,6 +55,7 @@ public:
 	Zenith_AssetRegistry& Assets();
 	Zenith_PhysicsImpl& Physics();
 	Zenith_EntityStore& EntityStore();
+	Zenith_SceneRegistryImpl& SceneRegistry();
 
 private:
 	// Subsystem members. Raw pointers to forward-declared types so the
@@ -64,9 +66,10 @@ private:
 	Zenith_MultithreadingImpl* m_pxThreading   = nullptr;
 	Zenith_TaskSystemImpl*     m_pxTasks       = nullptr;
 	Zenith_ProfilingImpl*      m_pxProfiling   = nullptr;
-	Zenith_AssetRegistry*      m_pxAssets      = nullptr;
-	Zenith_PhysicsImpl*        m_pxPhysics     = nullptr;
-	Zenith_EntityStore*        m_pxEntityStore = nullptr;
+	Zenith_AssetRegistry*      m_pxAssets         = nullptr;
+	Zenith_PhysicsImpl*        m_pxPhysics        = nullptr;
+	Zenith_EntityStore*        m_pxEntityStore    = nullptr;
+	Zenith_SceneRegistryImpl*  m_pxSceneRegistry  = nullptr;
 };
 
 // Compile-time guard: enforce trivial destruction so the

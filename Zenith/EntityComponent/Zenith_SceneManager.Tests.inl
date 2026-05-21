@@ -4,6 +4,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneManager_Internal.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -12817,7 +12818,7 @@ void Zenith_SceneTests::TestAsyncLoadJobStoresCreatedSceneGeneration(){
 
 		ZENITH_ASSERT_GE(pxJob->m_iCreatedSceneHandle, 0, "Phase 1 should have produced a valid scene handle");
 		const int iHandle = pxJob->m_iCreatedSceneHandle;
-		const uint32_t uCurrentGen = Zenith_SceneRegistry::s_axSceneGenerations.Get(iHandle);
+		const uint32_t uCurrentGen = g_xEngine.SceneRegistry().m_axSceneGenerations.Get(iHandle);
 		ZENITH_ASSERT_EQ(pxJob->m_uCreatedSceneGeneration, uCurrentGen, "AsyncLoadJob must store the scene's actual generation (stored=%u, current=%u)", pxJob->m_uCreatedSceneGeneration, uCurrentGen);
 		ZENITH_ASSERT_NE(pxJob->m_uCreatedSceneGeneration, 0, "Stored generation must be non-zero (handles start at generation 1)");
 		break;
@@ -12941,7 +12942,7 @@ void Zenith_SceneTests::TestSelectNewActiveSceneNoEligibleWarns(){
 	// Persistent scene exists but cannot be fallback; other scenes (test-fixture
 	// restore scene) may still be loaded. So just assert the return is either -1
 	// or a non-persistent handle.
-	ZENITH_ASSERT_NE(iResult, Zenith_SceneRegistry::s_iPersistentSceneHandle, "SelectNewActiveScene must never return the persistent scene handle (got %d)", iResult);
+	ZENITH_ASSERT_NE(iResult, g_xEngine.SceneRegistry().m_iPersistentSceneHandle, "SelectNewActiveScene must never return the persistent scene handle (got %d)", iResult);
 
 }
 

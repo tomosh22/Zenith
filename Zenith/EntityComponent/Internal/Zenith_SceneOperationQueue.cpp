@@ -6,6 +6,7 @@
 #include "EntityComponent/Zenith_SceneManager_Internal.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
 #include "EntityComponent/Internal/Zenith_SceneLifecycleContext.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
@@ -225,8 +226,8 @@ u_int Zenith_SceneOperationQueue::CancelAllPendingAsyncLoads(AsyncLoadJob* pxExc
 		{
 			const int iHandle = pxJob->m_iCreatedSceneHandle;
 			const bool bGenerationStillValid =
-				iHandle < static_cast<int>(Zenith_SceneRegistry::s_axSceneGenerations.GetSize()) &&
-				Zenith_SceneRegistry::s_axSceneGenerations.Get(iHandle) == pxJob->m_uCreatedSceneGeneration;
+				iHandle < static_cast<int>(g_xEngine.SceneRegistry().m_axSceneGenerations.GetSize()) &&
+				g_xEngine.SceneRegistry().m_axSceneGenerations.Get(iHandle) == pxJob->m_uCreatedSceneGeneration;
 
 			if (bGenerationStillValid)
 			{
@@ -246,7 +247,7 @@ u_int Zenith_SceneOperationQueue::CancelAllPendingAsyncLoads(AsyncLoadJob* pxExc
 
 					Zenith_SceneCallbackBus::FireSceneUnloading(xCreatedScene);
 					delete pxSceneData;
-					Zenith_SceneRegistry::s_axScenes.Get(iHandle) = nullptr;
+					g_xEngine.SceneRegistry().m_axScenes.Get(iHandle) = nullptr;
 					Zenith_SceneCallbackBus::FireSceneUnloaded(xCreatedScene);
 					Zenith_SceneRegistry::FreeSceneHandle(iHandle);
 				}
@@ -775,14 +776,14 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneO
 	{
 		// Slot was recycled underneath us — the job's created scene was unloaded
 		// and replaced. Fail the op so callers can detect the abort; do not touch
-		// Zenith_SceneRegistry::s_iActiveSceneHandle or call lifecycle dispatch.
+		// g_xEngine.SceneRegistry().m_iActiveSceneHandle or call lifecycle dispatch.
 		Zenith_Warning(LOG_CATEGORY_SCENE,
 			"ProcessPendingAsyncLoads: Phase 2 aborted — scene slot %d was recycled "
 			"(stored gen=%u, current gen=%u).",
 			pxJob->m_iCreatedSceneHandle,
 			pxJob->m_uCreatedSceneGeneration,
-			pxJob->m_iCreatedSceneHandle < static_cast<int>(Zenith_SceneRegistry::s_axSceneGenerations.GetSize())
-				? Zenith_SceneRegistry::s_axSceneGenerations.Get(pxJob->m_iCreatedSceneHandle) : 0);
+			pxJob->m_iCreatedSceneHandle < static_cast<int>(g_xEngine.SceneRegistry().m_axSceneGenerations.GetSize())
+				? g_xEngine.SceneRegistry().m_axSceneGenerations.Get(pxJob->m_iCreatedSceneHandle) : 0);
 		Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = false;
 		FailAsyncLoadOperation(pxOp);
 		CleanupAndRemoveAsyncJob(uIndex);
@@ -800,7 +801,7 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneO
 		if (pxJob->m_eMode == SCENE_LOAD_SINGLE)
 		{
 			Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(), "Cannot change active scene while render tasks are in flight");
-			Zenith_SceneRegistry::s_iActiveSceneHandle = xScene.m_iHandle;
+			g_xEngine.SceneRegistry().m_iActiveSceneHandle = xScene.m_iHandle;
 
 			// A5: reconstruct the pre-teardown active scene from the snapshot stored on
 			// the job so subscribers see a single consolidated old → new transition.
@@ -903,10 +904,10 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads()
 			// callback fire until after SceneUnloaded (MEDIUM-1: match sync-unload
 			// ordering [Unloading, Unloaded, ActiveChanged] instead of the old
 			// [Unloading, ActiveChanged, Unloaded]).
-			if (xScene.m_iHandle == Zenith_SceneRegistry::s_iActiveSceneHandle)
+			if (xScene.m_iHandle == g_xEngine.SceneRegistry().m_iActiveSceneHandle)
 			{
 				Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(), "Cannot change active scene while render tasks are in flight");
-				Zenith_SceneRegistry::s_iActiveSceneHandle = Zenith_SceneRegistry::SelectNewActiveScene(xScene.m_iHandle);
+				g_xEngine.SceneRegistry().m_iActiveSceneHandle = Zenith_SceneRegistry::SelectNewActiveScene(xScene.m_iHandle);
 				Zenith_Scene xNewActive = Zenith_SceneRegistry::GetActiveScene();
 				pxJob->m_iOldActiveHandle = xScene.m_iHandle;
 				pxJob->m_uOldActiveGeneration = xScene.m_uGeneration;
@@ -974,7 +975,7 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads()
 		{
 			// Free scene data
 			delete pxSceneData;
-			Zenith_SceneRegistry::s_axScenes.Get(pxJob->m_iSceneHandle) = nullptr;
+			g_xEngine.SceneRegistry().m_axScenes.Get(pxJob->m_iSceneHandle) = nullptr;
 
 			// Fire unloaded callback BEFORE incrementing generation so the handle
 			// is still valid for identification in callbacks (Unity parity)
