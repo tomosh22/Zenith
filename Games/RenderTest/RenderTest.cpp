@@ -1252,6 +1252,23 @@ void Project_Shutdown()
 		delete RenderTest::g_pxMuzzleConfig;
 		RenderTest::g_pxMuzzleConfig = nullptr;
 	}
+
+	// Release file-scope asset handles BEFORE AssetRegistry::Shutdown
+	// destroys the underlying assets. Without this, the static
+	// destructors of these globals fire AFTER the engine has shut down
+	// and try to Release() pointers into freed memory -- manifesting
+	// as either "Release called on asset with 0 ref count" or an
+	// outright access violation, depending on whether the freed slot
+	// has been reused. Reset-via-assignment runs each handle's dtor
+	// while the registry is still alive.
+	for (MaterialHandle& xMat : RenderTest::g_axTerrainMaterials)
+	{
+		xMat = MaterialHandle{};
+	}
+	RenderTest::g_xCubeModelAsset        = ModelHandle{};
+	RenderTest::g_xStickFigureModelAsset = ModelHandle{};
+	RenderTest::g_xCubeMaterial          = MaterialHandle{};
+	RenderTest::g_xPlayerMaterial        = MaterialHandle{};
 }
 
 void Project_LoadInitialScene();

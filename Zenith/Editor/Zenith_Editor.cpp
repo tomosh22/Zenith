@@ -1732,6 +1732,16 @@ void Zenith_Editor::AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLev
 	strftime(timeBuffer, sizeof(timeBuffer), "%H:%M:%S", &localTime);
 	xEntry.m_strTimestamp = timeBuffer;
 
+	// Zenith_Log is called from worker threads (async asset loader,
+	// task system) as well as the main thread. std::vector push_back +
+	// erase from multiple threads is undefined behaviour and was the
+	// likely root cause of the silent mid-load crashes in RenderTest's
+	// smoke matrix. Lock-protected; the editor console panel only reads
+	// this on the main thread between frames, so the cost is just the
+	// CRITICAL_SECTION per log call.
+	static Zenith_Mutex_NoProfiling s_xLogMutex;
+	Zenith_ScopedMutexLock_T xLock(s_xLogMutex);
+
 	s_xConsoleLogs.push_back(xEntry);
 
 	// Limit console entries

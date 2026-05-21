@@ -1158,7 +1158,14 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocatio
 		PerFrameStaging& xStaging = CurrentStaging();
 		if (xStaging.m_uNextFreeOffset + ulDataSize > g_uStagingPoolSize)
 		{
+			// HandleStagingBufferFull does an EndFrame(false) -> EndAndCpuWait
+			// which blocks for multi-second GPU work. Holding s_xMutex across
+			// that wait stalls every other thread doing uploads (smoke runs
+			// showed 20-second "Wait for Mutex" events from worker threads
+			// piling up here). Release the mutex during the GPU wait.
+			s_xMutex.Unlock();
 			HandleStagingBufferFull();
+			s_xMutex.Lock();
 		}
 
 		StagingMemoryAllocation xStagingAlloc;
@@ -1171,21 +1178,24 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(VkImage xImage, VmaAllocatio
 		xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfo.m_uNumLayers;
 		xStagingAlloc.m_xTextureMetadata.m_eFormat = xInfo.m_eFormat;
 		xStagingAlloc.m_uSize = ulDataSize;
-		xStagingAlloc.m_uOffset = xStaging.m_uNextFreeOffset;
-		xStaging.m_xAllocations.PushBack(xStagingAlloc);
+		// Re-resolve staging slot in case HandleStagingBufferFull recycled it
+		// (m_uNextFreeOffset is back to 0 if so).
+		PerFrameStaging& xStagingAfter = CurrentStaging();
+		xStagingAlloc.m_uOffset = xStagingAfter.m_uNextFreeOffset;
+		xStagingAfter.m_xAllocations.PushBack(xStagingAlloc);
 
-		void* pMap = VkUnwrap(xDevice.mapMemory(xStaging.m_xMemory, xStaging.m_uNextFreeOffset, ulDataSize));
+		void* pMap = VkUnwrap(xDevice.mapMemory(xStagingAfter.m_xMemory, xStagingAfter.m_uNextFreeOffset, ulDataSize));
 		memcpy(pMap, pData, ulDataSize);
-		xDevice.unmapMemory(xStaging.m_xMemory);
-		xStaging.m_uNextFreeOffset += ulDataSize;
+		xDevice.unmapMemory(xStagingAfter.m_xMemory);
+		xStagingAfter.m_uNextFreeOffset += ulDataSize;
 		// Align to 16 bytes — the maximum texel block size we ship (BC3 / BC5 /
 		// BC7 are all 16-byte blocks, and Vulkan requires bufferOffset to be a
 		// multiple of the texel block size on vkCmdCopyBufferToImage). 8 was
 		// only enough for BC1 (8-byte block) and got away with BC3 by luck
 		// when prior allocations happened to leave the cursor 16-aligned.
-		xStaging.m_uNextFreeOffset = ALIGN(xStaging.m_uNextFreeOffset, 16);
-		if (xStaging.m_uNextFreeOffset > xStaging.m_uHighWaterMark)
-			xStaging.m_uHighWaterMark = xStaging.m_uNextFreeOffset;
+		xStagingAfter.m_uNextFreeOffset = ALIGN(xStagingAfter.m_uNextFreeOffset, 16);
+		if (xStagingAfter.m_uNextFreeOffset > xStagingAfter.m_uHighWaterMark)
+			xStagingAfter.m_uHighWaterMark = xStagingAfter.m_uNextFreeOffset;
 	}
 	s_xMutex.Unlock();
 }
@@ -1561,28 +1571,35 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 		PerFrameStaging& xStaging = CurrentStaging();
 		if (xStaging.m_uNextFreeOffset + uSize > g_uStagingPoolSize)
 		{
+			// HandleStagingBufferFull blocks multi-seconds on GPU; release
+			// the mutex so other threads' uploads aren't stalled. See
+			// matching comment in UploadTextureData above.
+			s_xMutex.Unlock();
 			HandleStagingBufferFull();
+			s_xMutex.Lock();
 		}
 
+		// Re-resolve staging slot in case HandleStagingBufferFull recycled it.
+		PerFrameStaging& xStagingAfter = CurrentStaging();
 		StagingMemoryAllocation xAllocation;
 		xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
 		xAllocation.m_xBufferMetadata.m_xBuffer = pxVRAM->GetBuffer();
 		xAllocation.m_xBufferMetadata.m_uDestOffset = 0;
 		xAllocation.m_uSize = uSize;
-		xAllocation.m_uOffset = xStaging.m_uNextFreeOffset;
-		xStaging.m_xAllocations.PushBack(xAllocation);
+		xAllocation.m_uOffset = xStagingAfter.m_uNextFreeOffset;
+		xStagingAfter.m_xAllocations.PushBack(xAllocation);
 
-		void* pMap = VkUnwrap(xDevice.mapMemory(xStaging.m_xMemory, xStaging.m_uNextFreeOffset, uSize));
+		void* pMap = VkUnwrap(xDevice.mapMemory(xStagingAfter.m_xMemory, xStagingAfter.m_uNextFreeOffset, uSize));
 		memcpy(pMap, pData, uSize);
-		xDevice.unmapMemory(xStaging.m_xMemory);
-		xStaging.m_uNextFreeOffset += uSize;
+		xDevice.unmapMemory(xStagingAfter.m_xMemory);
+		xStagingAfter.m_uNextFreeOffset += uSize;
 		// Align to 16 bytes — see InitialiseTextureFromData for the rationale.
 		// Buffer uploads are followed by texture uploads in the same staging
 		// pool, so any allocator that leaves the cursor sub-16-aligned will
 		// break vkCmdCopyBufferToImage for BC3/BC5/BC7.
-		xStaging.m_uNextFreeOffset = ALIGN(xStaging.m_uNextFreeOffset, 16);
-		if (xStaging.m_uNextFreeOffset > xStaging.m_uHighWaterMark)
-			xStaging.m_uHighWaterMark = xStaging.m_uNextFreeOffset;
+		xStagingAfter.m_uNextFreeOffset = ALIGN(xStagingAfter.m_uNextFreeOffset, 16);
+		if (xStagingAfter.m_uNextFreeOffset > xStagingAfter.m_uHighWaterMark)
+			xStagingAfter.m_uHighWaterMark = xStagingAfter.m_uNextFreeOffset;
 	}
 	s_xMutex.Unlock();
 }
