@@ -69,7 +69,7 @@ if (-not (Test-Path $exe)) {
 }
 $exeAbs = (Resolve-Path $exe).Path
 
-$personalities = @("Casual","Stealth","Speedrunner","Zealot","Magpie","Relay","Heretic")
+$personalities = @("Casual","Stealth","Speedrunner","Zealot","Magpie","Relay","Heretic","Trickster")
 $tempDir = $env:TEMP
 if (-not $tempDir) { $tempDir = $env:TMP }
 
