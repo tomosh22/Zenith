@@ -29,7 +29,7 @@
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/IBL/Flux_IBL.h"
-#include "Flux/HiZ/Flux_HiZ.h"
+#include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/Vegetation/Flux_Grass.h"
@@ -221,7 +221,7 @@ void Flux::LateInitialise()
 	Flux_Terrain::Initialise();
 	Flux_Grass::Initialise();        // Grass/vegetation (after terrain)
 	Flux_Primitives::Initialise();
-	Flux_HiZ::Initialise();          // Hi-Z depth pyramid (needed by SSR)
+	g_xEngine.HiZ().Initialise();          // Hi-Z depth pyramid (needed by SSR)
 	Flux_SSR::Initialise();          // Screen-space reflections (uses Hi-Z, needed by DeferredShading)
 	Flux_SSGI::Initialise();         // Screen-space GI (uses Hi-Z, needed by DeferredShading)
 	Flux_DynamicLights::Initialise();   // Light gather + upload (front-end for clustered deferred)
@@ -344,7 +344,7 @@ void Flux::SetupRenderGraph()
 	Flux_Decals::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// Screen-space effects
-	Flux_HiZ::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.HiZ().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_SSR::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_SSGI::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
@@ -431,7 +431,7 @@ void Flux::Shutdown()
 	Flux_DynamicLights::Shutdown();   // Light gather front-end (frees unified light buffer)
 	Flux_SSGI::Shutdown();         // Before HiZ (SSGI uses Hi-Z)
 	Flux_SSR::Shutdown();          // Before HiZ (SSR uses Hi-Z)
-	Flux_HiZ::Shutdown();          // Hi-Z depth pyramid
+	g_xEngine.HiZ().Shutdown();          // Hi-Z depth pyramid
 	Flux_Primitives::Shutdown();   // Debug primitives (reverse of init: between HiZ and Grass)
 	Flux_Grass::Shutdown();        // After Terrain (depends on terrain data)
 	Flux_Terrain::Shutdown();

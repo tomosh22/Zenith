@@ -2,7 +2,7 @@
 
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSR/Flux_SSRImpl.h"
-#include "Flux/HiZ/Flux_HiZ.h"
+#include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -89,7 +89,7 @@ static struct SSRConstants
 	// (width, height, 1/width, 1/height) into a float4. Populated each
 	// frame in UpdateSSRConstants from the swapchain — replaces in-shader
 	// GetDimensions(g_xHiZTex, mip, ...) calls in the ray-march loop.
-	// Array size matches Flux_HiZ::uHIZ_MAX_MIPS (12).
+	// Array size matches Flux_HiZImpl::uHIZ_MAX_MIPS (12).
 	float m_axHiZMipSizes[12][4] = {};
 } dbg_xSSRConstants;
 
@@ -302,7 +302,7 @@ static void UpdateSSRConstants()
 {
 	// Update constants from debug variables and HiZ system
 	dbg_xSSRConstants.m_uDebugMode = dbg_uDebugMode;
-	dbg_xSSRConstants.m_uHiZMipCount = Flux_HiZ::GetMipCount();
+	dbg_xSSRConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount();
 	dbg_xSSRConstants.m_uFrameIndex = Flux::GetFrameCounter();
 
 	// Resolution-based binary search iterations for sub-pixel hit precision.
@@ -348,7 +348,7 @@ static void UpdateSSRConstants()
 
 static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSR::IsEnabled() || !Flux_HiZ::IsEnabled())
+	if (!Flux_SSR::IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	UpdateSSRConstants();
@@ -372,7 +372,7 @@ static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xHiZTex", &Flux_HiZ::GetHiZSRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xHiZTex", &g_xEngine.HiZ().GetHiZSRV());
 	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xBlueNoiseTex", &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
 
@@ -381,7 +381,7 @@ static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteSSRUpsample(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSR::IsEnabled() || !Flux_HiZ::IsEnabled())
+	if (!Flux_SSR::IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SSR().m_xUpsamplePipeline);
@@ -407,7 +407,7 @@ static void ExecuteSSRUpsample(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteSSRDenoiseH(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSR::IsEnabled() || !Flux_HiZ::IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
+	if (!Flux_SSR::IsEnabled() || !g_xEngine.HiZ().IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SSR().m_xDenoiseHPipeline);
@@ -432,7 +432,7 @@ static void ExecuteSSRDenoiseH(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteSSRDenoiseV(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSR::IsEnabled() || !Flux_HiZ::IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
+	if (!Flux_SSR::IsEnabled() || !g_xEngine.HiZ().IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SSR().m_xDenoiseVPipeline);
@@ -498,7 +498,7 @@ void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.AddPass("SSR RayMarch", ExecuteSSRRayMarch)
 		.ClearTargets()
 		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_HiZ::GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().m_uMipCount)
+		.Reads          (g_xEngine.HiZ().GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().m_uMipCount)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)

@@ -2,7 +2,7 @@
 
 #include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/SSGI/Flux_SSGIImpl.h"
-#include "Flux/HiZ/Flux_HiZ.h"
+#include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -216,7 +216,7 @@ static u_int ComputeEffectiveBinarySearchIterations()
 static void UpdateSSGIConstants()
 {
 	dbg_xSSGIConstants.m_uDebugMode = dbg_uDebugMode;
-	dbg_xSSGIConstants.m_uHiZMipCount = Flux_HiZ::GetMipCount();
+	dbg_xSSGIConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount();
 	dbg_xSSGIConstants.m_uFrameIndex = Flux::GetFrameCounter();
 
 	// Clamp start mip to valid range
@@ -226,7 +226,7 @@ static void UpdateSSGIConstants()
 
 static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
+	if (!Flux_SSGI::IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
@@ -253,7 +253,7 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xHiZTex", &Flux_HiZ::GetHiZSRV());
+	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xHiZTex", &g_xEngine.HiZ().GetHiZSRV());
 	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xBlueNoiseTex", &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
 
@@ -262,7 +262,7 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
+	if (!Flux_SSGI::IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
@@ -285,7 +285,7 @@ static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 // direction is the only difference between the two shaders.
 static void ExecuteSSGIDenoiseH(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
+	if (!Flux_SSGI::IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
@@ -312,7 +312,7 @@ static void ExecuteSSGIDenoiseH(Flux_CommandList* pxCommandList, void*)
 // denoised result that deferred shading consumes.
 static void ExecuteSSGIDenoiseV(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSGI::IsEnabled() || !Flux_HiZ::IsEnabled())
+	if (!Flux_SSGI::IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
@@ -376,7 +376,7 @@ void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.AddPass("SSGI RayMarch", ExecuteSSGIRayMarch)
 		.ClearTargets()
 		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_HiZ::GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().m_uMipCount)
+		.Reads          (g_xEngine.HiZ().GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().m_uMipCount)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
 		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
