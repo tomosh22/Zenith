@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Particles/Flux_Particles.h"
+#include "Flux/Particles/Flux_ParticlesImpl.h"
 #include "Flux/Particles/Flux_ParticleData.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Flux/Particles/Flux_ParticleGPU.h"
@@ -21,29 +22,19 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipelineAlpha;
-static Flux_Pipeline s_xPipelineAdditive;
 
-static Flux_DynamicVertexBuffer s_xInstanceBufferAlpha;
-static Flux_DynamicVertexBuffer s_xInstanceBufferAdditive;
 
 // Maximum particles across all emitters
 static constexpr uint32_t s_uMaxParticles = 4096;
 
 // CPU-side instance buffers for staging (partitioned by blend mode)
-static Flux_ParticleInstance s_axAlphaInstances[s_uMaxParticles];
-static uint32_t s_uAlphaInstanceCount = 0;
 
-static Flux_ParticleInstance s_axAdditiveInstances[s_uMaxParticles];
-static uint32_t s_uAdditiveInstanceCount = 0;
 
 // Pinned via TextureHandle so UnloadUnused never frees the particle atlas mid-frame.
-static TextureHandle s_xParticleTexture;
 
 void Flux_Particles::BuildPipelines()
 {
-	s_xShader.Initialise(FluxShaderProgram::Particles);
+	g_xEngine.Particles().m_xShader.Initialise(FluxShaderProgram::Particles);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -58,10 +49,10 @@ void Flux_Particles::BuildPipelines()
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_pxShader = &g_xEngine.Particles().m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	g_xEngine.Particles().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
@@ -70,12 +61,12 @@ void Flux_Particles::BuildPipelines()
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipelineAlpha, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(g_xEngine.Particles().m_xPipelineAlpha, xPipelineSpec);
 
 	// Additive blending pipeline (SrcAlpha / One)
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipelineAdditive, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(g_xEngine.Particles().m_xPipelineAdditive, xPipelineSpec);
 
 	// Rebuild the GPU compute pipeline alongside the rasterisation ones so a
 	// shader edit to either Particles.slang or ParticleUpdate.slang triggers a
@@ -88,18 +79,18 @@ void Flux_Particles::Initialise()
 	BuildPipelines();
 
 	// Allocate instance buffers for both blend modes
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBufferAlpha, false);
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBufferAdditive, false);
+	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), g_xEngine.Particles().m_xInstanceBufferAlpha, false);
+	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), g_xEngine.Particles().m_xInstanceBufferAdditive, false);
 
 	// Load default particle texture (pinned)
 	if (Zenith_TextureAsset* pxParticle = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Particles/particleSwirl" ZENITH_TEXTURE_EXT))
 	{
-		s_xParticleTexture.Set(pxParticle);
+		g_xEngine.Particles().m_xParticleTexture.Set(pxParticle);
 	}
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_PARTICLES, "Warning: Failed to load particle texture, using white texture");
-		s_xParticleTexture = g_xEngine.FluxGraphics().m_xWhiteTexture;
+		g_xEngine.Particles().m_xParticleTexture = g_xEngine.FluxGraphics().m_xWhiteTexture;
 	}
 
 #ifdef ZENITH_TOOLS
@@ -116,27 +107,27 @@ void Flux_Particles::Initialise()
 
 void Flux_Particles::Reset()
 {
-	s_uAlphaInstanceCount = 0;
-	s_uAdditiveInstanceCount = 0;
+	g_xEngine.Particles().m_uAlphaInstanceCount = 0;
+	g_xEngine.Particles().m_uAdditiveInstanceCount = 0;
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles::Reset()");
 }
 
 void Flux_Particles::ReleaseAssetReferences()
 {
-	s_xParticleTexture.Clear();
+	g_xEngine.Particles().m_xParticleTexture.Clear();
 }
 
 void Flux_Particles::Shutdown()
 {
-	Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xInstanceBufferAlpha);
-	Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xInstanceBufferAdditive);
+	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAlpha);
+	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAdditive);
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles shut down");
 }
 
 static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 {
-	s_uAlphaInstanceCount = 0;
-	s_uAdditiveInstanceCount = 0;
+	g_xEngine.Particles().m_uAlphaInstanceCount = 0;
+	g_xEngine.Particles().m_uAdditiveInstanceCount = 0;
 
 	// Query all particle emitter components from ALL loaded scenes
 	for (uint32_t uSceneSlot = 0; uSceneSlot < Zenith_SceneManager::GetSceneSlotCount(); ++uSceneSlot)
@@ -167,8 +158,8 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 				Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetConfig();
 				bool bAdditive = (pxConfig != nullptr && pxConfig->m_bAdditiveBlending);
 
-				Flux_ParticleInstance* pxTargetBuffer = bAdditive ? s_axAdditiveInstances : s_axAlphaInstances;
-				uint32_t& uTargetCount = bAdditive ? s_uAdditiveInstanceCount : s_uAlphaInstanceCount;
+				Flux_ParticleInstance* pxTargetBuffer = bAdditive ? g_xEngine.Particles().m_axAdditiveInstances : g_xEngine.Particles().m_axAlphaInstances;
+				uint32_t& uTargetCount = bAdditive ? g_xEngine.Particles().m_uAdditiveInstanceCount : g_xEngine.Particles().m_uAlphaInstanceCount;
 
 				for (uint32_t i = 0; i < uAliveCount && uTargetCount < s_uMaxParticles; ++i)
 				{
@@ -181,20 +172,20 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 
 static void UploadInstanceData()
 {
-	if (s_uAlphaInstanceCount > 0)
+	if (g_xEngine.Particles().m_uAlphaInstanceCount > 0)
 	{
 		Flux_MemoryManager::UploadBufferData(
-			s_xInstanceBufferAlpha.GetBuffer().m_xVRAMHandle,
-			s_axAlphaInstances,
-			s_uAlphaInstanceCount * sizeof(Flux_ParticleInstance)
+			g_xEngine.Particles().m_xInstanceBufferAlpha.GetBuffer().m_xVRAMHandle,
+			g_xEngine.Particles().m_axAlphaInstances,
+			g_xEngine.Particles().m_uAlphaInstanceCount * sizeof(Flux_ParticleInstance)
 		);
 	}
-	if (s_uAdditiveInstanceCount > 0)
+	if (g_xEngine.Particles().m_uAdditiveInstanceCount > 0)
 	{
 		Flux_MemoryManager::UploadBufferData(
-			s_xInstanceBufferAdditive.GetBuffer().m_xVRAMHandle,
-			s_axAdditiveInstances,
-			s_uAdditiveInstanceCount * sizeof(Flux_ParticleInstance)
+			g_xEngine.Particles().m_xInstanceBufferAdditive.GetBuffer().m_xVRAMHandle,
+			g_xEngine.Particles().m_axAdditiveInstances,
+			g_xEngine.Particles().m_uAdditiveInstanceCount * sizeof(Flux_ParticleInstance)
 		);
 	}
 }
@@ -228,38 +219,38 @@ void Flux_Particles::ExecuteParticles(Flux_CommandList* pxCommandList, void* pUs
 	UploadInstanceData();
 
 	// Render CPU particles (alpha-blended first, then additive)
-	if (s_uAlphaInstanceCount > 0 || s_uAdditiveInstanceCount > 0)
+	if (g_xEngine.Particles().m_uAlphaInstanceCount > 0 || g_xEngine.Particles().m_uAdditiveInstanceCount > 0)
 	{
 		// Alpha-blended particles
-		if (s_uAlphaInstanceCount > 0)
+		if (g_xEngine.Particles().m_uAlphaInstanceCount > 0)
 		{
-			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipelineAlpha);
+			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Particles().m_xPipelineAlpha);
 
 			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer(), 0);
 			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBufferAlpha, 1);
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Particles().m_xInstanceBufferAlpha, 1);
 
 			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
 			pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
-			pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_xParticleTexture.GetDirect()->m_xSRV, 1);
+			pxCommandList->AddCommand<Flux_CommandBindSRV>(&g_xEngine.Particles().m_xParticleTexture.GetDirect()->m_xSRV, 1);
 
-			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uAlphaInstanceCount);
+			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, g_xEngine.Particles().m_uAlphaInstanceCount);
 		}
 
 		// Additive particles
-		if (s_uAdditiveInstanceCount > 0)
+		if (g_xEngine.Particles().m_uAdditiveInstanceCount > 0)
 		{
-			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipelineAdditive);
+			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Particles().m_xPipelineAdditive);
 
 			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer(), 0);
 			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBufferAdditive, 1);
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Particles().m_xInstanceBufferAdditive, 1);
 
 			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
 			pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
-			pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_xParticleTexture.GetDirect()->m_xSRV, 1);
+			pxCommandList->AddCommand<Flux_CommandBindSRV>(&g_xEngine.Particles().m_xParticleTexture.GetDirect()->m_xSRV, 1);
 
-			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uAdditiveInstanceCount);
+			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, g_xEngine.Particles().m_uAdditiveInstanceCount);
 		}
 	}
 }

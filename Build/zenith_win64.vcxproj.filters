@@ -3690,6 +3690,9 @@
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h">
       <Filter>Flux\Gizmos</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_GizmosImpl.h">
+      <Filter>Flux\Gizmos</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDR.h">
       <Filter>Flux\HDR</Filter>
     </ClInclude>
@@ -3709,6 +3712,9 @@
       <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes.h">
+      <Filter>Flux\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshesImpl.h">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h">
@@ -3763,6 +3769,9 @@
       <Filter>Flux\Particles</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_Particles.h">
+      <Filter>Flux\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticlesImpl.h">
       <Filter>Flux\Particles</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Primitives\Flux_Primitives.h">
@@ -4123,6 +4132,9 @@
       <Filter>Flux\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Text\Flux_Text.h">
+      <Filter>Flux\Text</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Text\Flux_TextImpl.h">
       <Filter>Flux\Text</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_Grass.h">

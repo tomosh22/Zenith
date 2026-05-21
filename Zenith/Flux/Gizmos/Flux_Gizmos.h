@@ -33,8 +33,13 @@ enum class GizmoMode
 	Scale
 };
 
+class Flux_GizmosImpl;
+
 class Flux_Gizmos
 {
+	// Phase 7e: Impl mirrors the private nested GizmoGeometry struct
+	// as engine-owned members.
+	friend class Flux_GizmosImpl;
 public:
 	static void Initialise();
 	static void BuildPipelines();
@@ -47,17 +52,17 @@ public:
 	// Interaction
 	static void SetTargetEntity(Zenith_Entity* pxEntity);
 	static void SetGizmoMode(GizmoMode eMode);
-	static GizmoMode GetGizmoMode() { return s_eMode; }
+	static GizmoMode GetGizmoMode();
 
 	// Mouse interaction
 	static void BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);
 	static void UpdateInteraction(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);
 	static void EndInteraction();
-	static bool IsInteracting() { return s_bIsInteracting; }
+	static bool IsInteracting();
 
 	// Gizmo state
-	static GizmoComponent GetHoveredComponent() { return s_eHoveredComponent; }
-	static GizmoComponent GetActiveComponent() { return s_eActiveComponent; }
+	static GizmoComponent GetHoveredComponent();
+	static GizmoComponent GetActiveComponent();
 
 	friend class Zenith_UnitTests;
 
@@ -104,31 +109,10 @@ private:
 	static void ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);
 	static void ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);
 
-	// State
-	static Zenith_Entity* s_pxTargetEntity;
-	static GizmoMode s_eMode;
-	static GizmoComponent s_eHoveredComponent;
-	static GizmoComponent s_eActiveComponent;
-	static bool s_bIsInteracting;
-
-	// Interaction state
-	static Zenith_Maths::Vector3 s_xInteractionStartPos;
-	static Zenith_Maths::Vector3 s_xInitialEntityPosition;
-	static Zenith_Maths::Quaternion s_xInitialEntityRotation;
-	static Zenith_Maths::Vector3 s_xInitialEntityScale;
-	static float s_fGizmoScale;  // Scale gizmo based on camera distance
-
 	// Render graph execute callback
 	static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData);
 
-	// Rendering resources
-	static Flux_Pipeline s_xPipeline;
-	static Flux_Shader s_xShader;
-	static Flux_CommandList s_xCommandList;
-
-	static Zenith_Vector<GizmoGeometry> s_xTranslateGeometry;
-	static Zenith_Vector<GizmoGeometry> s_xRotateGeometry;
-	static Zenith_Vector<GizmoGeometry> s_xScaleGeometry;
+	// Phase 7e: 14 data members moved to Flux_GizmosImpl held by Zenith_Engine.
 };
 
 #endif // ZENITH_TOOLS

@@ -42,6 +42,9 @@
 #include "Flux/Decals/Flux_DecalsImpl.h"
 #include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
+#include "Flux/Particles/Flux_ParticlesImpl.h"
+#include "Flux/Text/Flux_TextImpl.h"
+#include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -54,6 +57,7 @@
 #include "Editor/Zenith_GizmoImpl.h"
 #include "Editor/Zenith_SelectionSystemImpl.h"
 #include "Editor/Zenith_UndoSystemImpl.h"
+#include "Flux/Gizmos/Flux_GizmosImpl.h"
 #endif
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsImpl.h"
@@ -267,6 +271,12 @@ Flux_SSAOImpl&                     Zenith_Engine::SSAO()              { return *
 Flux_DecalsImpl&                   Zenith_Engine::Decals()            { return *m_pxDecals; }
 Flux_FogImpl&                      Zenith_Engine::Fog()               { return *m_pxFog; }
 Flux_VolumeFogImpl&                Zenith_Engine::VolumeFog()         { return *m_pxVolumeFog; }
+Flux_ParticlesImpl&                Zenith_Engine::Particles()         { return *m_pxParticles; }
+Flux_TextImpl&                     Zenith_Engine::Text()              { return *m_pxText; }
+Flux_InstancedMeshesImpl&          Zenith_Engine::InstancedMeshes()   { return *m_pxInstancedMeshes; }
+#ifdef ZENITH_TOOLS
+Flux_GizmosImpl&                   Zenith_Engine::Gizmos()            { return *m_pxGizmos; }
+#endif
 
 #ifdef ZENITH_TOOLS
 Zenith_EditorImpl& Zenith_Engine::Editor()
@@ -388,6 +398,14 @@ void Zenith_Engine::Initialise()
 	m_pxDecals     = new Flux_DecalsImpl();
 	m_pxFog        = new Flux_FogImpl();
 	m_pxVolumeFog  = new Flux_VolumeFogImpl();
+
+	// Phase 7e: 4 more.
+	m_pxParticles       = new Flux_ParticlesImpl();
+	m_pxText            = new Flux_TextImpl();
+	m_pxInstancedMeshes = new Flux_InstancedMeshesImpl();
+#ifdef ZENITH_TOOLS
+	m_pxGizmos          = new Flux_GizmosImpl();
+#endif
 
 #ifdef ZENITH_TOOLS
 	// Phase 5.5c: editor state (selection, viewport, content browser,
@@ -771,6 +789,12 @@ void Zenith_Engine::Shutdown()
 	delete m_pxDecals;     m_pxDecals = nullptr;
 	delete m_pxFog;        m_pxFog = nullptr;
 	delete m_pxVolumeFog;  m_pxVolumeFog = nullptr;
+	delete m_pxParticles;       m_pxParticles = nullptr;
+	delete m_pxText;            m_pxText = nullptr;
+	delete m_pxInstancedMeshes; m_pxInstancedMeshes = nullptr;
+#ifdef ZENITH_TOOLS
+	delete m_pxGizmos;          m_pxGizmos = nullptr;
+#endif
 
 #ifdef ZENITH_TOOLS
 	// 21. Free editor state. Done LATE -- the editor's deferred-deletion

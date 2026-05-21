@@ -1002,6 +1002,7 @@
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFog.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFogImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h" />
+    <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_GizmosImpl.h" />
     <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDR.h" />
     <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZ.h" />
     <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZImpl.h" />
@@ -1009,6 +1010,7 @@
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceCulling.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes.h" />
+    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.Tests.inl" />
@@ -1027,6 +1029,7 @@
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleEmitterConfig.h" />
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleGPU.h" />
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_Particles.h" />
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticlesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Primitives\Flux_Primitives.h" />
     <ClInclude Include="..\Zenith\Flux\Quads\Flux_Quads.h" />
     <ClInclude Include="..\Zenith\Flux\Quads\Flux_QuadsImpl.h" />
@@ -1147,6 +1150,7 @@
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManagerImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Text\Flux_Text.h" />
+    <ClInclude Include="..\Zenith\Flux\Text\Flux_TextImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_Grass.h" />
     <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderHook.h" />
     <ClInclude Include="..\Zenith\Flux\Zenith_RenderBus.h" />

@@ -26,6 +26,10 @@ class Flux_ShadowsImpl;
 class Flux_StaticMeshesImpl;
 class Flux_TerrainStreamingManagerImpl;
 class Flux_VolumeFogImpl;
+class Flux_GizmosImpl;
+class Flux_InstancedMeshesImpl;
+class Flux_ParticlesImpl;
+class Flux_TextImpl;
 class Zenith_VulkanImpl;
 class Zenith_Vulkan_MemoryManagerImpl;
 class Zenith_Vulkan_SwapchainImpl;
@@ -117,6 +121,12 @@ public:
 	Flux_DecalsImpl& Decals();
 	Flux_FogImpl& Fog();
 	Flux_VolumeFogImpl& VolumeFog();
+	Flux_ParticlesImpl& Particles();
+	Flux_TextImpl& Text();
+	Flux_InstancedMeshesImpl& InstancedMeshes();
+#ifdef ZENITH_TOOLS
+	Flux_GizmosImpl& Gizmos();
+#endif
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl& Editor();
 	// True when Initialise() has run far enough to have allocated the
@@ -172,6 +182,12 @@ private:
 	Flux_DecalsImpl*                    m_pxDecals           = nullptr;
 	Flux_FogImpl*                       m_pxFog              = nullptr;
 	Flux_VolumeFogImpl*                 m_pxVolumeFog        = nullptr;
+	Flux_ParticlesImpl*                 m_pxParticles        = nullptr;
+	Flux_TextImpl*                      m_pxText             = nullptr;
+	Flux_InstancedMeshesImpl*           m_pxInstancedMeshes  = nullptr;
+#ifdef ZENITH_TOOLS
+	Flux_GizmosImpl*                    m_pxGizmos           = nullptr;
+#endif
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl*                  m_pxEditor             = nullptr;
 	Zenith_GizmoImpl*                   m_pxGizmo              = nullptr;

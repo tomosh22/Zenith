@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
+#include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
 #include "Flux/InstancedMeshes/Flux_InstanceCulling.h"
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
@@ -43,27 +44,14 @@ static_assert(sizeof(InstancedMeshPushConstants) == 128, "InstancedMeshPushConst
 
 
 // Registered instance groups
-static std::vector<Flux_InstanceGroup*> s_apxInstanceGroups;
 
 // GBuffer rendering pipeline
-static Flux_Shader s_xGBufferShader;
-static Flux_Pipeline s_xGBufferPipeline;
 
 // Shadow map rendering pipeline
-static Flux_Shader s_xShadowShader;
-static Flux_Pipeline s_xShadowPipeline;
 
 // Culling compute pipeline
-static Flux_Shader s_xCullingShader;
-static Flux_Pipeline s_xCullingPipeline;
-static Flux_RootSig s_xCullingRootSig;
-static Flux_DynamicConstantBuffer s_xCullingConstantsBuffer;
-static bool s_bCullingInitialized = false;
-static bool s_bCullingEnabled = true;  // GPU culling enabled by default
 
 // Statistics
-static uint32_t s_uTotalInstances = 0;
-static uint32_t s_uVisibleInstances = 0;
 
 
 //=============================================================================
@@ -73,8 +61,8 @@ static uint32_t s_uVisibleInstances = 0;
 void Flux_InstancedMeshes::BuildPipelines()
 {
 	// Load shaders
-	s_xGBufferShader.Initialise(FluxShaderProgram::InstancedMesh_ToGBuffer);
-	s_xShadowShader.Initialise(FluxShaderProgram::InstancedMesh_ToShadowmap);
+	g_xEngine.InstancedMeshes().m_xGBufferShader.Initialise(FluxShaderProgram::InstancedMesh_ToGBuffer);
+	g_xEngine.InstancedMeshes().m_xShadowShader.Initialise(FluxShaderProgram::InstancedMesh_ToShadowmap);
 
 	// Vertex input description - same as static meshes (position, UV, normal, tangent, bitangent, color)
 	Flux_VertexInputDescription xVertexDesc;
@@ -95,10 +83,10 @@ void Flux_InstancedMeshes::BuildPipelines()
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-		xPipelineSpec.m_pxShader = &s_xGBufferShader;
+		xPipelineSpec.m_pxShader = &g_xEngine.InstancedMeshes().m_xGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-		s_xGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+		g_xEngine.InstancedMeshes().m_xGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
 		{
@@ -107,7 +95,7 @@ void Flux_InstancedMeshes::BuildPipelines()
 			xBlendState.m_bBlendEnabled = false;
 		}
 
-		Flux_PipelineBuilder::FromSpecification(s_xGBufferPipeline, xPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(g_xEngine.InstancedMeshes().m_xGBufferPipeline, xPipelineSpec);
 	}
 
 	// Shadow pipeline
@@ -115,30 +103,30 @@ void Flux_InstancedMeshes::BuildPipelines()
 		Flux_PipelineSpecification xShadowPipelineSpec;
 		xShadowPipelineSpec.m_eDepthStencilFormat = CSM_FORMAT;
 		xShadowPipelineSpec.m_uNumColourAttachments = 0;
-		xShadowPipelineSpec.m_pxShader = &s_xShadowShader;
+		xShadowPipelineSpec.m_pxShader = &g_xEngine.InstancedMeshes().m_xShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 		xShadowPipelineSpec.m_bDepthBias = false;
 
-		s_xShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
+		g_xEngine.InstancedMeshes().m_xShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
 
-		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(g_xEngine.InstancedMeshes().m_xShadowPipeline, xShadowPipelineSpec);
 	}
 
 	// Culling compute pipeline
 	{
-		s_xCullingShader.Initialise(FluxShaderProgram::InstanceCulling);
+		g_xEngine.InstancedMeshes().m_xCullingShader.Initialise(FluxShaderProgram::InstanceCulling);
 
 		// Build compute root signature from shader reflection
-		const Flux_ShaderReflection& xCullingReflection = s_xCullingShader.GetReflection();
-		Flux_RootSigBuilder::FromReflection(s_xCullingRootSig, xCullingReflection);
+		const Flux_ShaderReflection& xCullingReflection = g_xEngine.InstancedMeshes().m_xCullingShader.GetReflection();
+		Flux_RootSigBuilder::FromReflection(g_xEngine.InstancedMeshes().m_xCullingRootSig, xCullingReflection);
 
 		// Build compute pipeline
 		Flux_ComputePipelineBuilder xComputeBuilder;
-		xComputeBuilder.WithShader(s_xCullingShader)
-			.WithLayout(s_xCullingRootSig.m_xLayout)
-			.Build(s_xCullingPipeline);
+		xComputeBuilder.WithShader(g_xEngine.InstancedMeshes().m_xCullingShader)
+			.WithLayout(g_xEngine.InstancedMeshes().m_xCullingRootSig.m_xLayout)
+			.Build(g_xEngine.InstancedMeshes().m_xCullingPipeline);
 
-		s_xCullingPipeline.m_xRootSig = s_xCullingRootSig;
+		g_xEngine.InstancedMeshes().m_xCullingPipeline.m_xRootSig = g_xEngine.InstancedMeshes().m_xCullingRootSig;
 	}
 }
 
@@ -147,8 +135,8 @@ void Flux_InstancedMeshes::Initialise()
 	BuildPipelines();
 
 	// One-time setup that hot-reload must NOT repeat (would leak VRAM).
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), s_xCullingConstantsBuffer);
-	s_bCullingInitialized = true;
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Flux_CullingConstants), g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer);
+	g_xEngine.InstancedMeshes().m_bCullingInitialized = true;
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -169,7 +157,7 @@ void Flux_InstancedMeshes::Initialise()
 void Flux_InstancedMeshes::Shutdown()
 {
 	ClearAllGroups();
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xCullingConstantsBuffer);
+	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer);
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes shutdown");
 }
 
@@ -177,8 +165,8 @@ void Flux_InstancedMeshes::Reset()
 {
 	// Reset is handled by the render graph
 	// Update statistics
-	s_uTotalInstances = 0;
-	s_uVisibleInstances = 0;
+	g_xEngine.InstancedMeshes().m_uTotalInstances = 0;
+	g_xEngine.InstancedMeshes().m_uVisibleInstances = 0;
 
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes::Reset()");
 }
@@ -196,28 +184,28 @@ void Flux_InstancedMeshes::RegisterInstanceGroup(Flux_InstanceGroup* pxGroup)
 	}
 
 	// Check if already registered
-	for (size_t i = 0; i < s_apxInstanceGroups.size(); ++i)
+	for (size_t i = 0; i < g_xEngine.InstancedMeshes().m_apxInstanceGroups.size(); ++i)
 	{
-		if (s_apxInstanceGroups[i] == pxGroup)
+		if (g_xEngine.InstancedMeshes().m_apxInstanceGroups[i] == pxGroup)
 		{
 			return;  // Already registered
 		}
 	}
 
-	s_apxInstanceGroups.push_back(pxGroup);
-	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Registered instance group (total: %zu)", s_apxInstanceGroups.size());
+	g_xEngine.InstancedMeshes().m_apxInstanceGroups.push_back(pxGroup);
+	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Registered instance group (total: %zu)", g_xEngine.InstancedMeshes().m_apxInstanceGroups.size());
 }
 
 void Flux_InstancedMeshes::UnregisterInstanceGroup(Flux_InstanceGroup* pxGroup)
 {
-	for (size_t i = 0; i < s_apxInstanceGroups.size(); ++i)
+	for (size_t i = 0; i < g_xEngine.InstancedMeshes().m_apxInstanceGroups.size(); ++i)
 	{
-		if (s_apxInstanceGroups[i] == pxGroup)
+		if (g_xEngine.InstancedMeshes().m_apxInstanceGroups[i] == pxGroup)
 		{
 			// Swap with last and pop
-			s_apxInstanceGroups[i] = s_apxInstanceGroups.back();
-			s_apxInstanceGroups.pop_back();
-			Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Unregistered instance group (remaining: %zu)", s_apxInstanceGroups.size());
+			g_xEngine.InstancedMeshes().m_apxInstanceGroups[i] = g_xEngine.InstancedMeshes().m_apxInstanceGroups.back();
+			g_xEngine.InstancedMeshes().m_apxInstanceGroups.pop_back();
+			Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Unregistered instance group (remaining: %zu)", g_xEngine.InstancedMeshes().m_apxInstanceGroups.size());
 			return;
 		}
 	}
@@ -225,7 +213,7 @@ void Flux_InstancedMeshes::UnregisterInstanceGroup(Flux_InstanceGroup* pxGroup)
 
 void Flux_InstancedMeshes::ClearAllGroups()
 {
-	s_apxInstanceGroups.clear();
+	g_xEngine.InstancedMeshes().m_apxInstanceGroups.clear();
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Cleared all instance groups");
 }
 
@@ -252,12 +240,12 @@ void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 void Flux_InstancedMeshes::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 {
 	// Check if GPU culling should run
-	if (!s_bCullingInitialized || !s_bCullingEnabled || !Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled)
+	if (!g_xEngine.InstancedMeshes().m_bCullingInitialized || !g_xEngine.InstancedMeshes().m_bCullingEnabled || !Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled)
 	{
 		return;
 	}
 
-	if (s_apxInstanceGroups.empty())
+	if (g_xEngine.InstancedMeshes().m_apxInstanceGroups.empty())
 	{
 		return;
 	}
@@ -266,14 +254,14 @@ void Flux_InstancedMeshes::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 	Zenith_Maths::Matrix4 xViewProjMatrix = Flux_Graphics::GetViewProjMatrix();
 	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
 
-	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&s_xCullingPipeline);
+	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&g_xEngine.InstancedMeshes().m_xCullingPipeline);
 
 	// Create binder for compute shader bindings
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
-	for (size_t uGroup = 0; uGroup < s_apxInstanceGroups.size(); ++uGroup)
+	for (size_t uGroup = 0; uGroup < g_xEngine.InstancedMeshes().m_apxInstanceGroups.size(); ++uGroup)
 	{
-		Flux_InstanceGroup* pxGroup = s_apxInstanceGroups[uGroup];
+		Flux_InstanceGroup* pxGroup = g_xEngine.InstancedMeshes().m_apxInstanceGroups[uGroup];
 		if (!pxGroup || pxGroup->IsEmpty())
 		{
 			continue;
@@ -302,17 +290,17 @@ void Flux_InstancedMeshes::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 
 		// Upload culling constants
 		Flux_MemoryManager::UploadBufferData(
-			s_xCullingConstantsBuffer.GetBuffer().m_xVRAMHandle,
+			g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer.GetBuffer().m_xVRAMHandle,
 			&xCullingConstants,
 			sizeof(xCullingConstants));
 
 		// Bind resources
-		xBinder.BindCBV(s_xCullingShader, "CullingConstants", &s_xCullingConstantsBuffer.GetCBV());
-		xBinder.BindUAV_Buffer(s_xCullingShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xCullingShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xCullingShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xCullingShader, "visibleCount", &pxGroup->GetVisibleCountBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xCullingShader, "indirectInstanceCount", &pxGroup->GetIndirectBuffer().GetUAV());
+		xBinder.BindCBV(g_xEngine.InstancedMeshes().m_xCullingShader, "CullingConstants", &g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer.GetCBV());
+		xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xCullingShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xCullingShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xCullingShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xCullingShader, "visibleCount", &pxGroup->GetVisibleCountBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xCullingShader, "indirectInstanceCount", &pxGroup->GetIndirectBuffer().GetUAV());
 
 		// Dispatch compute shader: 64 threads per workgroup
 		uint32_t uNumWorkgroups = (pxGroup->GetInstanceCount() + 63) / 64;
@@ -362,29 +350,29 @@ static void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup*
 		xPushConstants.m_xAnimTexParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);  // VAT disabled
 	}
 
-	xBinder.BindDrawConstants(s_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
+	xBinder.BindDrawConstants(g_xEngine.InstancedMeshes().m_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
 
 	// Bind material textures
-	xBinder.BindSRV(s_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
-	xBinder.BindSRV(s_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
-	xBinder.BindSRV(s_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
-	xBinder.BindSRV(s_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
-	xBinder.BindSRV(s_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.InstancedMeshes().m_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.InstancedMeshes().m_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.InstancedMeshes().m_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.InstancedMeshes().m_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.InstancedMeshes().m_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
 
 	// Bind animation texture (VAT) if available, else bind blank texture
 	if (bHasVAT)
 	{
-		xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &pxAnimTex->GetPositionTexture()->m_xSRV);
+		xBinder.BindSRV(g_xEngine.InstancedMeshes().m_xGBufferShader, "g_xAnimationTex", &pxAnimTex->GetPositionTexture()->m_xSRV);
 	}
 	else
 	{
-		xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV);
+		xBinder.BindSRV(g_xEngine.InstancedMeshes().m_xGBufferShader, "g_xAnimationTex", &g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV);
 	}
 
 	// Bind instance buffers
-	xBinder.BindUAV_Buffer(s_xGBufferShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
-	xBinder.BindUAV_Buffer(s_xGBufferShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
-	xBinder.BindUAV_Buffer(s_xGBufferShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
+	xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xGBufferShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
+	xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xGBufferShader, "AnimDataBuffer", &pxGroup->GetAnimDataBuffer().GetUAV());
+	xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xGBufferShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
 }
 
 // Emit the draw call(s) for one instance group. GPU-culling path uses an
@@ -420,28 +408,28 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		return;
 	}
 
-	if (s_apxInstanceGroups.empty())
+	if (g_xEngine.InstancedMeshes().m_apxInstanceGroups.empty())
 	{
 		return;
 	}
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.InstancedMeshes().m_xGBufferPipeline);
 
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind FrameConstants once per command list (set 0 - per-frame data)
-	xBinder.BindCBV(s_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(g_xEngine.InstancedMeshes().m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Track statistics
-	s_uTotalInstances = 0;
-	s_uVisibleInstances = 0;
+	g_xEngine.InstancedMeshes().m_uTotalInstances = 0;
+	g_xEngine.InstancedMeshes().m_uVisibleInstances = 0;
 
-	const bool bUseGPUCulling = s_bCullingEnabled && Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled && s_bCullingInitialized;
+	const bool bUseGPUCulling = g_xEngine.InstancedMeshes().m_bCullingEnabled && Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled && g_xEngine.InstancedMeshes().m_bCullingInitialized;
 
-	for (size_t uGroup = 0; uGroup < s_apxInstanceGroups.size(); ++uGroup)
+	for (size_t uGroup = 0; uGroup < g_xEngine.InstancedMeshes().m_apxInstanceGroups.size(); ++uGroup)
 	{
-		Flux_InstanceGroup* pxGroup = s_apxInstanceGroups[uGroup];
+		Flux_InstanceGroup* pxGroup = g_xEngine.InstancedMeshes().m_apxInstanceGroups[uGroup];
 		if (!pxGroup || pxGroup->IsEmpty())
 		{
 			continue;
@@ -468,9 +456,9 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		BindBatchDescriptors(xBinder, pxGroup);
 		IssueBatchDraw(pxCmdList, pxGroup, pxMesh, bUseGPUCulling);
 
-		s_uTotalInstances += pxGroup->GetInstanceCount();
+		g_xEngine.InstancedMeshes().m_uTotalInstances += pxGroup->GetInstanceCount();
 		// Note: visible count is not accurate for GPU culling path (would need GPU readback)
-		s_uVisibleInstances += bUseGPUCulling ? pxGroup->GetInstanceCount() : pxGroup->GetVisibleCount();
+		g_xEngine.InstancedMeshes().m_uVisibleInstances += bUseGPUCulling ? pxGroup->GetInstanceCount() : pxGroup->GetVisibleCount();
 	}
 }
 
@@ -481,7 +469,7 @@ void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Fl
 		return;
 	}
 
-	if (s_apxInstanceGroups.empty())
+	if (g_xEngine.InstancedMeshes().m_apxInstanceGroups.empty())
 	{
 		return;
 	}
@@ -492,9 +480,9 @@ void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Fl
 	// Shadow pass: DrawConstants + ShadowMatrix + transform/visible-index
 	// SSBOs only — Slang reflection won't show FrameConstants.
 
-	for (size_t uGroup = 0; uGroup < s_apxInstanceGroups.size(); ++uGroup)
+	for (size_t uGroup = 0; uGroup < g_xEngine.InstancedMeshes().m_apxInstanceGroups.size(); ++uGroup)
 	{
-		Flux_InstanceGroup* pxGroup = s_apxInstanceGroups[uGroup];
+		Flux_InstanceGroup* pxGroup = g_xEngine.InstancedMeshes().m_apxInstanceGroups[uGroup];
 		if (!pxGroup || pxGroup->IsEmpty())
 		{
 			continue;
@@ -512,12 +500,12 @@ void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Fl
 
 		// Bind shadow matrix
 		Zenith_Maths::Matrix4 xIdentity = glm::identity<glm::mat4>();
-		xBinder.BindDrawConstants(s_xShadowShader, "DrawConstants", &xIdentity, sizeof(xIdentity));
-		xBinder.BindCBV(s_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
+		xBinder.BindDrawConstants(g_xEngine.InstancedMeshes().m_xShadowShader, "DrawConstants", &xIdentity, sizeof(xIdentity));
+		xBinder.BindCBV(g_xEngine.InstancedMeshes().m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
 
 		// Bind instance buffers
-		xBinder.BindUAV_Buffer(s_xShadowShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
-		xBinder.BindUAV_Buffer(s_xShadowShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xShadowShader, "TransformBuffer", &pxGroup->GetTransformBuffer().GetUAV());
+		xBinder.BindUAV_Buffer(g_xEngine.InstancedMeshes().m_xShadowShader, "VisibleIndexBuffer", &pxGroup->GetVisibleIndexBuffer().GetUAV());
 
 		// Draw all visible instances
 		uint32_t uVisibleCount = pxGroup->GetVisibleCount();
@@ -539,15 +527,15 @@ void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Fl
 
 uint32_t Flux_InstancedMeshes::GetTotalInstanceCount()
 {
-	return s_uTotalInstances;
+	return g_xEngine.InstancedMeshes().m_uTotalInstances;
 }
 
 uint32_t Flux_InstancedMeshes::GetVisibleInstanceCount()
 {
-	return s_uVisibleInstances;
+	return g_xEngine.InstancedMeshes().m_uVisibleInstances;
 }
 
 uint32_t Flux_InstancedMeshes::GetGroupCount()
 {
-	return static_cast<uint32_t>(s_apxInstanceGroups.size());
+	return static_cast<uint32_t>(g_xEngine.InstancedMeshes().m_apxInstanceGroups.size());
 }
