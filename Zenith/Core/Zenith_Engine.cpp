@@ -51,6 +51,8 @@
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
+#include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -286,6 +288,8 @@ Flux_IBLImpl&                      Zenith_Engine::IBL()               { return *
 Flux_SkyboxImpl&                   Zenith_Engine::Skybox()            { return *m_pxSkybox; }
 Flux_GrassImpl&                    Zenith_Engine::Grass()             { return *m_pxGrass; }
 Flux_PrimitivesImpl&               Zenith_Engine::Primitives()        { return *m_pxPrimitives; }
+Flux_HDRImpl&                      Zenith_Engine::HDR()               { return *m_pxHDR; }
+Flux_TerrainImpl&                  Zenith_Engine::Terrain()           { return *m_pxTerrain; }
 #ifdef ZENITH_TOOLS
 Flux_GizmosImpl&                   Zenith_Engine::Gizmos()            { return *m_pxGizmos; }
 #endif
@@ -425,6 +429,10 @@ void Zenith_Engine::Initialise()
 	m_pxSkybox     = new Flux_SkyboxImpl();
 	m_pxGrass      = new Flux_GrassImpl();
 	m_pxPrimitives = new Flux_PrimitivesImpl();
+
+	// Phase 7h: biggest subsystems.
+	m_pxHDR     = new Flux_HDRImpl();
+	m_pxTerrain = new Flux_TerrainImpl();
 #ifdef ZENITH_TOOLS
 	m_pxGizmos          = new Flux_GizmosImpl();
 #endif
@@ -820,6 +828,8 @@ void Zenith_Engine::Shutdown()
 	delete m_pxSkybox;     m_pxSkybox     = nullptr;
 	delete m_pxGrass;      m_pxGrass      = nullptr;
 	delete m_pxPrimitives; m_pxPrimitives = nullptr;
+	delete m_pxHDR;     m_pxHDR     = nullptr;
+	delete m_pxTerrain; m_pxTerrain = nullptr;
 #ifdef ZENITH_TOOLS
 	delete m_pxGizmos;          m_pxGizmos = nullptr;
 #endif

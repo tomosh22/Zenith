@@ -103,36 +103,7 @@ private:
 	static void ExecuteBloomUpsample(Flux_CommandList* pxCommandList, void* pUserData);
 	static void ExecuteToneMapping(Flux_CommandList* pxCommandList, void* pUserData);
 
-	static Flux_TransientHandle s_xHDRSceneTargetHandle;
-
-	static Flux_Pipeline s_xToneMappingPipeline;
-	static Flux_Pipeline s_xBloomDownsamplePipeline;
-	static Flux_Pipeline s_xBloomUpsamplePipeline;
-	static Flux_Pipeline s_xBloomThresholdPipeline;
-
-	static float s_fExposure;
-	static float s_fBloomIntensity;
-	static float s_fBloomThreshold;
-	static ToneMappingOperator s_eToneMappingOperator;
-
-	static float s_fCurrentExposure;
-	static float s_fAverageLuminance;
-
-	// Auto-exposure parameters
-	static float s_fAdaptationSpeed;
-	static float s_fTargetLuminance;
-	static float s_fMinExposure;
-	static float s_fMaxExposure;
-	static float s_fMinLogLuminance;
-	static float s_fLogLuminanceRange;
-
-	// Auto-exposure compute resources
-	static Flux_ReadWriteBuffer s_xHistogramBuffer;
-	static Flux_ReadWriteBuffer s_xExposureBuffer;
-	static Flux_Pipeline s_xLuminanceHistogramPipeline;
-	static Flux_Pipeline s_xAdaptationPipeline;
-	static Flux_Shader s_xLuminanceHistogramShader;
-	static Flux_Shader s_xAdaptationShader;
-	static Flux_RootSig s_xLuminanceRootSig;
-	static Flux_RootSig s_xAdaptationRootSig;
+	// Phase 7h: pipelines, shaders, buffers, transient handles, and tone-mapping
+	// + auto-exposure configuration moved to Flux_HDRImpl held by Zenith_Engine.
+	// Reach via g_xEngine.HDR().m_xToneMappingPipeline etc.
 };

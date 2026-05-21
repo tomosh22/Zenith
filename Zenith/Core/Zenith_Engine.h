@@ -36,6 +36,8 @@ class Flux_IBLImpl;
 class Flux_SkyboxImpl;
 class Flux_GrassImpl;
 class Flux_PrimitivesImpl;
+class Flux_HDRImpl;
+class Flux_TerrainImpl;
 class Zenith_VulkanImpl;
 class Zenith_Vulkan_MemoryManagerImpl;
 class Zenith_Vulkan_SwapchainImpl;
@@ -136,6 +138,8 @@ public:
 	Flux_SkyboxImpl& Skybox();
 	Flux_GrassImpl& Grass();
 	Flux_PrimitivesImpl& Primitives();
+	Flux_HDRImpl& HDR();
+	Flux_TerrainImpl& Terrain();
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl& Gizmos();
 #endif
@@ -203,6 +207,8 @@ private:
 	Flux_SkyboxImpl*                    m_pxSkybox           = nullptr;
 	Flux_GrassImpl*                     m_pxGrass            = nullptr;
 	Flux_PrimitivesImpl*                m_pxPrimitives       = nullptr;
+	Flux_HDRImpl*                       m_pxHDR              = nullptr;
+	Flux_TerrainImpl*                   m_pxTerrain          = nullptr;
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl*                    m_pxGizmos           = nullptr;
 #endif
