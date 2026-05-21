@@ -35,8 +35,39 @@ public:
 		if (m_pxNavMesh == nullptr) return BTNodeStatus::FAILURE;
 		if (!xAgent.HasComponent<Zenith_TransformComponent>()) return BTNodeStatus::FAILURE;
 
-		Zenith_Maths::Vector3 xCenter;
-		xAgent.GetComponent<Zenith_TransformComponent>().GetPosition(xCenter);
+		Zenith_Maths::Vector3 xAgentPos;
+		xAgent.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
+
+		// 2026-05-21: bias patrol toward the high-scent villager when
+		// one's been written to BB_KEY_HIGH_SCENT_TARGET AND that
+		// villager's scent is above the hound-bark threshold. Centers
+		// the random-reachable-point search on the scent target's
+		// position rather than the priest's own. Means "demon's been
+		// hopping bodies a lot -- priest is drawn to where the demon's
+		// scent is strongest." Falls back to the agent's own position
+		// when no qualifying scent target exists (existing behaviour).
+		Zenith_Maths::Vector3 xCenter = xAgentPos;
+		const Zenith_EntityID xScentTarget =
+			xBB.GetEntityID(DP_AI::BB_KEY_HIGH_SCENT_TARGET);
+		if (xScentTarget.IsValid())
+		{
+			const float fScent = DP_Player::GetDemonScent(xScentTarget);
+			const float fThreshold =
+				DP_Tuning::Get<float>("possession.demon_scent_hound_bark_threshold");
+			if (fScent >= fThreshold)
+			{
+				Zenith_SceneData* pxScene =
+					Zenith_SceneManager::GetSceneDataForEntity(xScentTarget);
+				if (pxScene != nullptr)
+				{
+					Zenith_Entity xTgt = pxScene->TryGetEntity(xScentTarget);
+					if (xTgt.IsValid() && xTgt.HasComponent<Zenith_TransformComponent>())
+					{
+						xTgt.GetComponent<Zenith_TransformComponent>().GetPosition(xCenter);
+					}
+				}
+			}
+		}
 
 		const float fRadius = xBB.GetFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, 15.0f);
 		Zenith_Maths::Vector3 xResult;

@@ -299,6 +299,9 @@
     <ClCompile Include="..\Tests\Test_P5Particles_BurstsOnGameplayEvents.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P5Scent_PriestPatrolBiasedByScent.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P5Tutorial_FirstEncounters.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
