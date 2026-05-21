@@ -88,6 +88,29 @@ public:
 					Zenith_Maths::Vector4(0.9f, 0.2f, 0.2f, 1.0f),
 					/*fHoldSeconds=*/0.0f /* permanent */);
 			});
+
+		// 2026-05-21: locked-door alert. The DPDoor's F-press fail path
+		// dispatches DP_OnDoorLockRejected; the HUD turns that into a
+		// brief "LOCKED -- needs Key" line so the player understands
+		// why nothing happened. Tag is captured for the formatter so
+		// post-MVP keys (SkeletonKey) telegraph correctly.
+		m_xLockedDoorHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnDoorLockRejected>(
+			[this](const DP_OnDoorLockRejected& xEvt)
+			{
+				m_eLastLockedDoorRequiredKey = xEvt.m_eRequiredKey;
+				m_fLockedDoorAlertRemaining = 2.0f;
+			});
+
+		// 2026-05-21: priest-alerted -- bump the awareness indicator's
+		// recent-alert flash so the player notices the transition even
+		// if their eyes were on the playfield. Falling edge auto-clears
+		// when the priest returns to patrol.
+		m_xPriestAlertHandle = Zenith_EventDispatcher::Get().SubscribeLambda<DP_OnPriestAlerted>(
+			[this](const DP_OnPriestAlerted& xEvt)
+			{
+				m_fAwarenessFlashRemaining = 1.0f;
+				m_eLastAlertKind = xEvt.m_eKind;
+			});
 	}
 
 	void OnDisable() ZENITH_FINAL override { TearDown(); }
@@ -181,6 +204,15 @@ public:
 
 		// MVP-2.5.2: Scent indicator. Reads the possessed villager's
 		// scent value. Hidden when nothing possessed.
+		// 2026-05-21: paired ScentBar element shows the 10-segment
+		// ASCII bar with hound-bark threshold marker. Both elements
+		// share the colour-coded gradient so peripheral vision picks
+		// up rising scent without reading the number.
+		const float fScent = bPossessed ? DP_Player::GetDemonScent(xV) : 0.0f;
+		const float fScentThreshold =
+			DP_Tuning::Get<float>("possession.demon_scent_hound_bark_threshold");
+		const Zenith_Maths::Vector4 xScentColor = ScentBarColor(fScent, fScentThreshold);
+
 		if (auto* pxScent = xUI.FindElement<Zenith_UI::Zenith_UIText>("ScentIndicator"))
 		{
 			if (!bPossessed)
@@ -189,11 +221,26 @@ public:
 			}
 			else
 			{
-				const float fScent = DP_Player::GetDemonScent(xV);
 				char buf[32];
 				BuildScentText(buf, sizeof(buf), fScent);
 				pxScent->SetText(buf);
+				pxScent->SetColor(xScentColor);
 				pxScent->SetVisible(true);
+			}
+		}
+		if (auto* pxScentBar = xUI.FindElement<Zenith_UI::Zenith_UIText>("ScentBar"))
+		{
+			if (!bPossessed)
+			{
+				pxScentBar->SetVisible(false);
+			}
+			else
+			{
+				char buf[40];
+				BuildScentBar(buf, sizeof(buf), fScent, fScentThreshold);
+				pxScentBar->SetText(buf);
+				pxScentBar->SetColor(xScentColor);
+				pxScentBar->SetVisible(true);
 			}
 		}
 
@@ -209,12 +256,72 @@ public:
 			pxWhisper->SetVisible(true);
 		}
 
+		// 2026-05-21: tick the awareness flash timer (set by
+		// DP_OnPriestAlerted subscriber). Range 0..1 maps to
+		// AwarenessColor's flash mix.
+		if (m_fAwarenessFlashRemaining > 0.0f)
+		{
+			m_fAwarenessFlashRemaining = glm::max(0.0f, m_fAwarenessFlashRemaining - fDt);
+		}
+
 		if (auto* pxAwareness = xUI.FindElement<Zenith_UI::Zenith_UIText>("AelfricAwareness"))
 		{
-			char buf[48];
+			char buf[64];
 			BuildAwarenessText(buf, sizeof(buf), eState);
 			pxAwareness->SetText(buf);
+			pxAwareness->SetColor(AwarenessColor(eState, m_fAwarenessFlashRemaining));
 			pxAwareness->SetVisible(true);
+		}
+
+		// 2026-05-21: locked-door alert. Counts down from 2 s on
+		// DP_OnDoorLockRejected (set by the subscribe lambda).
+		// Visibility is gated on the timer being positive; the text
+		// is rebuilt each frame from m_eLastLockedDoorRequiredKey so
+		// post-MVP keys (SkeletonKey) telegraph correctly.
+		if (m_fLockedDoorAlertRemaining > 0.0f)
+		{
+			m_fLockedDoorAlertRemaining = glm::max(0.0f, m_fLockedDoorAlertRemaining - fDt);
+		}
+		if (auto* pxLocked = xUI.FindElement<Zenith_UI::Zenith_UIText>("LockedDoorAlert"))
+		{
+			if (m_fLockedDoorAlertRemaining > 0.0f)
+			{
+				char buf[64];
+				BuildLockedDoorAlertText(buf, sizeof(buf), m_eLastLockedDoorRequiredKey);
+				pxLocked->SetText(buf);
+				pxLocked->SetVisible(true);
+			}
+			else
+			{
+				pxLocked->SetVisible(false);
+			}
+		}
+
+		// 2026-05-21: archetype status. Reads the possessed villager's
+		// archetype id and shows the special-rule line below VillagerInfo.
+		// Hidden when not possessing, or possessing a Farmhand (baseline).
+		// Local resolve of the villager script because the broader
+		// detailed-HUD block (which has its own pxVB) sits below this.
+		if (auto* pxArch = xUI.FindElement<Zenith_UI::Zenith_UIText>("ArchetypeStatus"))
+		{
+			const char* szLine = nullptr;
+			const char* szArchetype = nullptr;
+			DPVillager_Behaviour* pxLocalVB = bPossessed ? TryGetVillager(xV) : nullptr;
+			if (pxLocalVB != nullptr && !pxLocalVB->GetArchetypeId().empty())
+			{
+				szArchetype = pxLocalVB->GetArchetypeId().c_str();
+				szLine = BuildArchetypeStatusText(szArchetype);
+			}
+			if (szLine != nullptr)
+			{
+				pxArch->SetText(szLine);
+				pxArch->SetColor(ArchetypeStatusColor(szArchetype));
+				pxArch->SetVisible(true);
+			}
+			else
+			{
+				pxArch->SetVisible(false);
+			}
 		}
 
 		// MVP-4.3.2: post-victory / post-run-lost "press any key to
@@ -498,6 +605,66 @@ public:
 		std::snprintf(szBuf, uBufSize, "Scent: %.2f", fScent);
 	}
 
+	// 2026-05-21: ScentBar -- 10-cell ASCII bar visualisation of the
+	// possessed villager's scent saturation (0..1 mapped to 0..10
+	// segments). Filled cells use '#', empty use '.', and the
+	// hound-bark threshold (0.5 by Tuning.json default) is marked with
+	// a '|' separator so the player can SEE when scent crosses it.
+	// Format example at fScent=0.42, fThreshold=0.5:
+	//   "Scent [####|.....]"
+	// At fScent=0.65:
+	//   "Scent [#####|##..]"
+	// At fScent=1.0:
+	//   "Scent [#####|#####]" (saturated)
+	static void BuildScentBar(char* szBuf, size_t uBufSize, float fScent, float fThreshold)
+	{
+		if (fScent < 0.0f)     fScent = 0.0f;
+		if (fScent > 1.0f)     fScent = 1.0f;
+		if (fThreshold < 0.0f) fThreshold = 0.0f;
+		if (fThreshold > 1.0f) fThreshold = 1.0f;
+		const int kBarLen = 10;
+		const int iThresholdCell = static_cast<int>(fThreshold * static_cast<float>(kBarLen) + 0.5f);
+		const int iFilledCells   = static_cast<int>(fScent     * static_cast<float>(kBarLen) + 0.5f);
+
+		char xBar[24] = { 0 };
+		int iWrite = 0;
+		xBar[iWrite++] = '[';
+		for (int i = 0; i < kBarLen; ++i)
+		{
+			// Insert the threshold separator just BEFORE the iThresholdCell
+			// (so the bar reads "filled segments | empty segments" with
+			// the bar showing scent vs threshold visually).
+			if (i == iThresholdCell && iThresholdCell > 0 && iThresholdCell < kBarLen)
+			{
+				xBar[iWrite++] = '|';
+			}
+			xBar[iWrite++] = (i < iFilledCells) ? '#' : '.';
+		}
+		xBar[iWrite++] = ']';
+		xBar[iWrite] = '\0';
+		std::snprintf(szBuf, uBufSize, "Scent %s", xBar);
+	}
+
+	// 2026-05-21: scent-bar colour. Grey/violet when below threshold,
+	// bright red once we cross the hound-bark line. Lets the player's
+	// peripheral vision catch the danger transition without parsing
+	// the numeric "0.51 -> 0.48".
+	static Zenith_Maths::Vector4 ScentBarColor(float fScent, float fThreshold)
+	{
+		if (fScent < fThreshold)
+		{
+			// Gradient from neutral grey to deep violet as scent climbs.
+			const float fT = (fThreshold > 0.0001f) ? (fScent / fThreshold) : 0.0f;
+			return Zenith_Maths::Vector4(
+				0.50f + 0.20f * fT,
+				0.30f + 0.05f * fT,
+				0.70f + 0.20f * fT,
+				1.0f);
+		}
+		// At/above threshold: alarm red.
+		return Zenith_Maths::Vector4(1.0f, 0.25f, 0.20f, 1.0f);
+	}
+
 	// MVP-2.5.1 + 2.5.3: Aelfric awareness state. Derived from the
 	// priest's blackboard each frame:
 	//   Pursuing   -- BB_KEY_TARGET_WITH_DEVIL is a valid villager
@@ -513,14 +680,63 @@ public:
 		Pursuing
 	};
 
-	// Awareness-icon text: the state name in caps. Placeholder per
-	// the roadmap (MVP-2.5.3) until a real icon asset lands.
+	// Awareness-icon text: state-named with an ASCII glyph that
+	// telegraphs the urgency at a glance. Pre-fix this was just
+	// "Aelfric: <state>" -- legible only if you parsed the word.
+	// 2026-05-21: glyph + parens prefix so the icon line reads
+	// distinctly from the surrounding HUD text.
+	//   Calm        -> "[ ~ ] Aelfric: Patrolling"  (idle wave)
+	//   Suspicious  -> "[ ? ] Aelfric: SUSPICIOUS"  (question mark)
+	//   Pursuing    -> "[ ! ] Aelfric: PURSUING"    (alarm)
 	static void BuildAwarenessText(char* szBuf, size_t uBufSize, AelfricState eState)
 	{
-		const char* szLabel = "CALM";
-		if      (eState == AelfricState::Pursuing)   szLabel = "PURSUING";
-		else if (eState == AelfricState::Suspicious) szLabel = "SUSPICIOUS";
-		std::snprintf(szBuf, uBufSize, "Aelfric: %s", szLabel);
+		const char* szGlyph = "~";
+		const char* szLabel = "Patrolling";
+		if (eState == AelfricState::Pursuing)
+		{
+			szGlyph = "!";
+			szLabel = "PURSUING";
+		}
+		else if (eState == AelfricState::Suspicious)
+		{
+			szGlyph = "?";
+			szLabel = "SUSPICIOUS";
+		}
+		std::snprintf(szBuf, uBufSize, "[ %s ] Aelfric: %s", szGlyph, szLabel);
+	}
+
+	// 2026-05-21: awareness-icon colour. Threshold maps state to a
+	// risk-band gradient so the player's peripheral vision can read
+	// the priest's danger level without parsing the glyph.
+	//   Calm        -> dim green (safe-but-watch)
+	//   Suspicious  -> amber (rising)
+	//   Pursuing    -> alarm red (immediate)
+	// A short "flash" boost (via fFlashT in [0..1]) brightens the
+	// colour for ~1 s after a rising-edge DP_OnPriestAlerted -- helps
+	// the player notice the transition.
+	static Zenith_Maths::Vector4 AwarenessColor(AelfricState eState, float fFlashT)
+	{
+		if (fFlashT < 0.0f) fFlashT = 0.0f;
+		if (fFlashT > 1.0f) fFlashT = 1.0f;
+		Zenith_Maths::Vector4 xBase(0.45f, 0.85f, 0.45f, 1.0f);  // calm green
+		if (eState == AelfricState::Suspicious)
+		{
+			xBase = Zenith_Maths::Vector4(0.95f, 0.75f, 0.30f, 1.0f);
+		}
+		else if (eState == AelfricState::Pursuing)
+		{
+			xBase = Zenith_Maths::Vector4(1.0f, 0.30f, 0.20f, 1.0f);
+		}
+		// Flash mix: lerp toward bright white over 0..0.4, back over 0.4..1.
+		const float fMix = (fFlashT > 0.4f)
+			? (1.0f - fFlashT) / 0.6f
+			: fFlashT / 0.4f;
+		const float fK = glm::clamp(fMix, 0.0f, 1.0f) * 0.5f;
+		return Zenith_Maths::Vector4(
+			xBase.x + (1.0f - xBase.x) * fK,
+			xBase.y + (1.0f - xBase.y) * fK,
+			xBase.z + (1.0f - xBase.z) * fK,
+			1.0f);
 	}
 
 	// Whisper-line text: vibe copy that reacts to the priest's state.
@@ -595,6 +811,56 @@ public:
 	{
 		const DP_ItemTag eTag = bPossessed ? DP_Player::GetHeldItemTag(xV) : DP_ItemTag::None;
 		return BuildTutorialHintForState(bPossessed, eTag, eState, bRunOver);
+	}
+
+	// 2026-05-21: archetype-specific status line. Each MVP archetype
+	// has a unique gameplay rule that the placeholder cube visual
+	// doesn't telegraph; this line surfaces the rule textually so the
+	// player knows "I'm a Devout, possession is slow" etc.
+	// Returns nullptr for Farmhand (baseline -- no special rule) so
+	// the HUD line is hidden in that case.
+	static const char* BuildArchetypeStatusText(const char* szArchetypeId)
+	{
+		if (szArchetypeId == nullptr) return nullptr;
+		// String compare against the canonical archetype IDs from
+		// Config/Archetypes.json. Beggar / Devout / Child are the
+		// MVP variants with special rules; Farmhand returns null
+		// (no surface needed).
+		if (std::strcmp(szArchetypeId, "Beggar") == 0)
+			return "BEGGAR -- Aelfric will not pursue you";
+		if (std::strcmp(szArchetypeId, "Devout") == 0)
+			return "DEVOUT -- possession requires a 0.8 s channel (priest LOS breaks it)";
+		if (std::strcmp(szArchetypeId, "Child") == 0)
+			return "CHILD -- cannot carry tools (Iron / Key); half life timer";
+		// Farmhand / unknown -> hide.
+		return nullptr;
+	}
+
+	// Per-archetype HUD tint matching DPVillager_Behaviour's per-tag
+	// villager-body tint, so the HUD line reads as "this villager".
+	static Zenith_Maths::Vector4 ArchetypeStatusColor(const char* szArchetypeId)
+	{
+		if (szArchetypeId == nullptr) return Zenith_Maths::Vector4(0.95f, 0.85f, 0.65f, 1.0f);
+		if (std::strcmp(szArchetypeId, "Beggar") == 0)
+			return Zenith_Maths::Vector4(0.85f, 0.85f, 1.0f, 1.0f);   // safe blue
+		if (std::strcmp(szArchetypeId, "Devout") == 0)
+			return Zenith_Maths::Vector4(0.95f, 0.85f, 0.50f, 1.0f);  // candlelight yellow
+		if (std::strcmp(szArchetypeId, "Child") == 0)
+			return Zenith_Maths::Vector4(0.90f, 0.60f, 0.85f, 1.0f);  // pink
+		return Zenith_Maths::Vector4(0.95f, 0.85f, 0.65f, 1.0f);      // farmhand neutral
+	}
+
+	// 2026-05-21: locked-door alert. Telegraphs the result of an
+	// F-press on a key-gated door when the villager has no matching
+	// key (or wrong tag). Reads the required key tag from the event
+	// payload so the player knows what they need to find.
+	static void BuildLockedDoorAlertText(char* szBuf, size_t uBufSize, DP_ItemTag eRequired)
+	{
+		const char* szKey = "a Key";
+		if      (eRequired == DP_ItemTag::Key)         szKey = "a Key";
+		else if (eRequired == DP_ItemTag::SkeletonKey) szKey = "a Skeleton Key";
+		else if (eRequired == DP_ItemTag::Iron)        szKey = "an Iron"; // unusual but possible
+		std::snprintf(szBuf, uBufSize, "LOCKED -- needs %s", szKey);
 	}
 
 	// =============== Detailed-HUD formatter helpers ===============
@@ -922,11 +1188,23 @@ private:
 			Zenith_EventDispatcher::Get().Unsubscribe(m_xRunLostHandle);
 			m_xRunLostHandle = INVALID_EVENT_HANDLE;
 		}
+		if (m_xLockedDoorHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(m_xLockedDoorHandle);
+			m_xLockedDoorHandle = INVALID_EVENT_HANDLE;
+		}
+		if (m_xPriestAlertHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(m_xPriestAlertHandle);
+			m_xPriestAlertHandle = INVALID_EVENT_HANDLE;
+		}
 	}
 
 	Zenith_EventHandle m_xVictoryHandle       = INVALID_EVENT_HANDLE;
 	Zenith_EventHandle m_xDeathHandle         = INVALID_EVENT_HANDLE;
 	Zenith_EventHandle m_xRunLostHandle       = INVALID_EVENT_HANDLE;
+	Zenith_EventHandle m_xLockedDoorHandle    = INVALID_EVENT_HANDLE;
+	Zenith_EventHandle m_xPriestAlertHandle   = INVALID_EVENT_HANDLE;
 	float              m_fStatusHoldRemaining = -1.0f;  // <0 = permanent / not set
 	bool               m_bRunLostReceived     = false;
 	// MVP-4.3.2: set by EITHER the Victory or RunLost subscriber. Drives
@@ -935,6 +1213,16 @@ private:
 	// watched "VICTORY" appear and just want to start a new run).
 	bool               m_bRunOver             = false;
 	DP_RunLostCause    m_eLastRunLostCause    = DP_RunLostCause::Apprehended;
+	// 2026-05-21 player-feedback fields. m_fLockedDoorAlertRemaining
+	// counts down from 2 s on DP_OnDoorLockRejected, gating the
+	// LockedDoorAlert UI element's visibility. m_fAwarenessFlashRemaining
+	// gates a brief "recently alerted" colour flash on the awareness
+	// indicator so the player notices priest-state transitions even when
+	// not looking at the icon.
+	float              m_fLockedDoorAlertRemaining = 0.0f;
+	DP_ItemTag         m_eLastLockedDoorRequiredKey = DP_ItemTag::Key;
+	float              m_fAwarenessFlashRemaining   = 0.0f;
+	DP_PriestAlertKind m_eLastAlertKind             = DP_PriestAlertKind::HeardNoise;
 	// Detailed-HUD: run timer. Starts ticking on first possession and
 	// freezes when the run ends (Victory or RunLost). Drives the
 	// RunTimer UI element.
