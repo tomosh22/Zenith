@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDR.h"
@@ -18,8 +19,7 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipeline;
+// Phase 7b: state on Flux_DeferredShadingImpl held by Zenith_Engine.
 
 DEBUGVAR u_int dbg_uVisualiseCSMs = 0;
 DEBUGVAR bool dbg_bVisualiseCSMs = false;
@@ -28,7 +28,7 @@ DEBUGVAR float dbg_fAmbientFallbackIntensity = 0.03f;  // Ambient when IBL disab
 
 void Flux_DeferredShading::BuildPipelines()
 {
-	s_xShader.Initialise(FluxShaderProgram::DeferredShading);
+	g_xEngine.DeferredShading().m_xShader.Initialise(FluxShaderProgram::DeferredShading);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -36,10 +36,10 @@ void Flux_DeferredShading::BuildPipelines()
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_pxShader = &g_xEngine.DeferredShading().m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	g_xEngine.DeferredShading().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
@@ -48,7 +48,7 @@ void Flux_DeferredShading::BuildPipelines()
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(g_xEngine.DeferredShading().m_xPipeline, xPipelineSpec);
 }
 
 void Flux_DeferredShading::Initialise()
@@ -74,7 +74,7 @@ void Flux_DeferredShading::Initialise()
 
 static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 {
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.DeferredShading().m_xPipeline);
 
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
@@ -83,66 +83,66 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	// Bind frame constants
-	xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(g_xEngine.DeferredShading().m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Bind G-buffer textures (named bindings)
-	xBinder.BindSRV(s_xShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(s_xShader, "g_xNormalsAmbientTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(s_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xNormalsAmbientTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 
 	// Bind shadow maps (named bindings)
 	static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "g_xCSM0", "g_xCSM1", "g_xCSM2", "g_xCSM3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xSRV = Flux_Shadows::GetCSMSRV(u);
-		xBinder.BindSRV(s_xShader, s_aszCSMNames[u], &xSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, s_aszCSMNames[u], &xSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
 	}
 
 	// Bind shadow matrix buffers (named bindings)
 	static const char* const s_aszShadowMatrixNames[ZENITH_FLUX_NUM_CSMS] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		xBinder.BindCBV(s_xShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+		xBinder.BindCBV(g_xEngine.DeferredShading().m_xShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
 	}
 
 	// Bind IBL textures
-	xBinder.BindSRV(s_xShader, "g_xBRDFLUT", &Flux_IBL::GetBRDFLUTSRV());
-	xBinder.BindSRV(s_xShader, "g_xIrradianceMap", &Flux_IBL::GetIrradianceMapSRV());
-	xBinder.BindSRV(s_xShader, "g_xPrefilteredMap", &Flux_IBL::GetPrefilteredMapSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xBRDFLUT", &Flux_IBL::GetBRDFLUTSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xIrradianceMap", &Flux_IBL::GetIrradianceMapSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xPrefilteredMap", &Flux_IBL::GetPrefilteredMapSRV());
 
 	// Always bind SSR texture if initialised (shader checks g_bSSREnabled before sampling)
 	// This avoids Vulkan validation errors for unbound descriptors
 	if (Flux_SSR::IsInitialised())
 	{
-		xBinder.BindSRV(s_xShader, "g_xSSRTex", &Flux_SSR::GetReflectionSRV());
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSRTex", &Flux_SSR::GetReflectionSRV());
 	}
 	else
 	{
 		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(s_xShader, "g_xSSRTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSRTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
 	// Always bind SSGI texture if initialised (shader checks g_bSSGIEnabled before sampling)
 	if (Flux_SSGI::IsInitialised())
 	{
-		xBinder.BindSRV(s_xShader, "g_xSSGITex", &Flux_SSGI::GetSSGISRV());
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSGITex", &Flux_SSGI::GetSSGISRV());
 	}
 	else
 	{
 		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(s_xShader, "g_xSSGITex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSGITex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
 	// Clustered dynamic lights — buffers populated by Flux_LightClustering.
 	// All three are statically referenced by the shader, so all must be
 	// bound regardless of whether dynamic lights exist this frame (the
 	// fragment shader's cluster loop runs zero iterations when count = 0).
-	xBinder.BindSRV_Buffer(s_xShader, "LightBuffer",
+	xBinder.BindSRV_Buffer(g_xEngine.DeferredShading().m_xShader, "LightBuffer",
 		Flux_DynamicLights::GetLightBufferSRV());
-	xBinder.BindSRV_Buffer(s_xShader, "ClusterLightCounts",
+	xBinder.BindSRV_Buffer(g_xEngine.DeferredShading().m_xShader, "ClusterLightCounts",
 		Flux_LightClustering::GetClusterLightCountsSRV());
-	xBinder.BindSRV_Buffer(s_xShader, "ClusterLightIndices",
+	xBinder.BindSRV_Buffer(g_xEngine.DeferredShading().m_xShader, "ClusterLightIndices",
 		Flux_LightClustering::GetClusterLightIndicesSRV());
 
 	// Pass constants to shader
@@ -176,7 +176,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	xConstants.m_bSSGIEnabled = Flux_SSGI::IsEnabled() ? 1 : 0;
 	xConstants.m_fAmbientFallbackIntensity = dbg_fAmbientFallbackIntensity;
 
-	xBinder.BindDrawConstants(s_xShader, "DeferredShadingConstants", &xConstants, sizeof(xConstants));
+	xBinder.BindDrawConstants(g_xEngine.DeferredShading().m_xShader, "DeferredShadingConstants", &xConstants, sizeof(xConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

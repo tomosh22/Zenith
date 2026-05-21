@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/SDFs/Flux_SDFs.h"
+#include "Flux/SDFs/Flux_SDFsImpl.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -14,11 +15,9 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipeline;
+// Phase 7b: state on Flux_SDFsImpl held by Zenith_Engine.
 
 static constexpr uint32_t s_uMaxSpheres = 1000;
-static Flux_DynamicConstantBuffer s_xSpheresBuffer;
 struct Sphere
 {
 	Zenith_Maths::Vector4 m_xPosition_Radius;
@@ -34,7 +33,7 @@ struct SphereData
 
 void Flux_SDFs::BuildPipelines()
 {
-	s_xShader.Initialise(FluxShaderProgram::SDFs);
+	g_xEngine.SDFs().m_xShader.Initialise(FluxShaderProgram::SDFs);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -43,21 +42,21 @@ void Flux_SDFs::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_pxShader = &g_xEngine.SDFs().m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	g_xEngine.SDFs().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(g_xEngine.SDFs().m_xPipeline, xPipelineSpec);
 }
 
 void Flux_SDFs::Initialise()
 {
 	BuildPipelines();
 
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), s_xSpheresBuffer);
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), g_xEngine.SDFs().m_xSpheresBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
 #endif
@@ -75,7 +74,7 @@ void Flux_SDFs::Initialise()
 
 void Flux_SDFs::Shutdown()
 {
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xSpheresBuffer);
+	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.SDFs().m_xSpheresBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs shut down");
 }
 
@@ -94,7 +93,7 @@ void UploadSpheres()
 		xSphere.m_xColour = Zenith_Maths::Vector4(0., 1., 0., 1.);
 	}
 
-	Flux_MemoryManager::UploadBufferData(s_xSpheresBuffer.GetBuffer().m_xVRAMHandle, &s_axSphereData, sizeof(s_axSphereData));
+	Flux_MemoryManager::UploadBufferData(g_xEngine.SDFs().m_xSpheresBuffer.GetBuffer().m_xVRAMHandle, &s_axSphereData, sizeof(s_axSphereData));
 }
 
 void Flux_SDFs::Render(void*)
@@ -117,14 +116,14 @@ void Flux_SDFs::ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 
 	UploadSpheres();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SDFs().m_xPipeline);
 
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
 	pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&s_xSpheresBuffer.GetCBV(), 1);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.SDFs().m_xSpheresBuffer.GetCBV(), 1);
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

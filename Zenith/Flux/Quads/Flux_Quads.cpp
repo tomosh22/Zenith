@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Quads/Flux_Quads.h"
+#include "Flux/Quads/Flux_QuadsImpl.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -15,17 +16,13 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipeline;
+// Phase 7b: state on Flux_QuadsImpl held by Zenith_Engine.
 
-static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 
-Flux_Quads::Quad Flux_Quads::s_axQuadsToRender[FLUX_MAX_QUADS_PER_FRAME];
-uint32_t Flux_Quads::s_uQuadRenderIndex;
 
 void Flux_Quads::BuildPipelines()
 {
-	s_xShader.Initialise(FluxShaderProgram::Quads);
+	g_xEngine.Quads().m_xShader.Initialise(FluxShaderProgram::Quads);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -44,22 +41,22 @@ void Flux_Quads::BuildPipelines()
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = FINAL_RT_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_pxShader = &g_xEngine.Quads().m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	g_xEngine.Quads().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(g_xEngine.Quads().m_xPipeline, xPipelineSpec);
 }
 
 void Flux_Quads::Initialise()
 {
 	BuildPipelines();
 
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), s_xInstanceBuffer, false);
+	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), g_xEngine.Quads().m_xInstanceBuffer, false);
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -74,13 +71,13 @@ void Flux_Quads::Initialise()
 
 void Flux_Quads::Shutdown()
 {
-	Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xInstanceBuffer);
+	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Quads().m_xInstanceBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads shut down");
 }
 
 void Flux_Quads::UploadInstanceData()
 {
-	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer().m_xVRAMHandle, s_axQuadsToRender, sizeof(Quad) * s_uQuadRenderIndex);
+	Flux_MemoryManager::UploadBufferData(g_xEngine.Quads().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, g_xEngine.Quads().m_axQuadsToRender, sizeof(Quad) * g_xEngine.Quads().m_uQuadRenderIndex);
 }
 
 void Flux_Quads::Render(void*)
@@ -96,27 +93,27 @@ void Flux_Quads::Render(void*)
 void Flux_Quads::ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	if (!Zenith_GraphicsOptions::Get().m_bQuadsEnabled || s_uQuadRenderIndex == 0)
+	if (!Zenith_GraphicsOptions::Get().m_bQuadsEnabled || g_xEngine.Quads().m_uQuadRenderIndex == 0)
 	{
 		return;
 	}
 
 	UploadInstanceData();
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Quads().m_xPipeline);
 
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer(), 0);
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.Quads().m_xInstanceBuffer, 1);
 
 	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
 	pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
 
 	pxCommandList->AddCommand<Flux_CommandUseUnboundedTextures>(1);
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uQuadRenderIndex);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, g_xEngine.Quads().m_uQuadRenderIndex);
 
-	s_uQuadRenderIndex = 0;
+	g_xEngine.Quads().m_uQuadRenderIndex = 0;
 }
 
 void Flux_Quads::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -132,5 +129,5 @@ void Flux_Quads::UploadQuad(const Quad& xQuad)
 		return;
 	}
 
-	s_axQuadsToRender[s_uQuadRenderIndex++] = xQuad;
+	g_xEngine.Quads().m_axQuadsToRender[g_xEngine.Quads().m_uQuadRenderIndex++] = xQuad;
 }

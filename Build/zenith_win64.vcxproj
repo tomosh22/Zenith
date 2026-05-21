@@ -1188,6 +1188,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneOperation.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h" />
+    <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Device.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_MemoryAlloc.h" />
@@ -1197,6 +1198,7 @@
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Sync.h" />
     <ClInclude Include="..\Zenith\Flux\Decals\Flux_Decals.h" />
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h" />
+    <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShadingImpl.h" />
     <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.h" />
     <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_LightClustering.h" />
     <ClInclude Include="..\Zenith\Flux\Flux.h" />
@@ -1247,8 +1249,10 @@
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_Particles.h" />
     <ClInclude Include="..\Zenith\Flux\Primitives\Flux_Primitives.h" />
     <ClInclude Include="..\Zenith\Flux\Quads\Flux_Quads.h" />
+    <ClInclude Include="..\Zenith\Flux\Quads\Flux_QuadsImpl.h" />
     <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.h" />
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFs.h" />
+    <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFsImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToGBuffer.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToShadowmap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Atmosphere.slang" />
@@ -1355,6 +1359,7 @@
     <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGI.h" />
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR.h" />
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
+    <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_Terrain.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainConfig.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.h" />

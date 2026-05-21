@@ -26,6 +26,11 @@
 #include "Vulkan/Zenith_Vulkan_MemoryManagerImpl.h"
 #include "Vulkan/Zenith_Vulkan_SwapchainImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
+#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
+#include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
+#include "Flux/SDFs/Flux_SDFsImpl.h"
+#include "Flux/Quads/Flux_QuadsImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -234,7 +239,12 @@ Zenith_Vulkan_SwapchainImpl& Zenith_Engine::VulkanSwapchain()
 	return *m_pxVulkanSwapchain;
 }
 
-Flux_HiZImpl& Zenith_Engine::HiZ() { return *m_pxHiZ; }
+Flux_HiZImpl&             Zenith_Engine::HiZ()             { return *m_pxHiZ; }
+Flux_StaticMeshesImpl&    Zenith_Engine::StaticMeshes()    { return *m_pxStaticMeshes; }
+Flux_AnimatedMeshesImpl&  Zenith_Engine::AnimatedMeshes()  { return *m_pxAnimatedMeshes; }
+Flux_DeferredShadingImpl& Zenith_Engine::DeferredShading() { return *m_pxDeferredShading; }
+Flux_SDFsImpl&            Zenith_Engine::SDFs()            { return *m_pxSDFs; }
+Flux_QuadsImpl&           Zenith_Engine::Quads()           { return *m_pxQuads; }
 
 #ifdef ZENITH_TOOLS
 Zenith_EditorImpl& Zenith_Engine::Editor()
@@ -332,6 +342,15 @@ void Zenith_Engine::Initialise()
 	// Phase 7a: HiZ subsystem state.
 	Zenith_Assert(m_pxHiZ == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxHiZ = new Flux_HiZImpl();
+
+	// Phase 7b: 5 small Flux subsystems -- mesh pipelines, deferred
+	// shading, SDFs, quads.
+	Zenith_Assert(m_pxStaticMeshes == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxStaticMeshes    = new Flux_StaticMeshesImpl();
+	m_pxAnimatedMeshes  = new Flux_AnimatedMeshesImpl();
+	m_pxDeferredShading = new Flux_DeferredShadingImpl();
+	m_pxSDFs            = new Flux_SDFsImpl();
+	m_pxQuads           = new Flux_QuadsImpl();
 
 #ifdef ZENITH_TOOLS
 	// Phase 5.5c: editor state (selection, viewport, content browser,
@@ -699,6 +718,11 @@ void Zenith_Engine::Shutdown()
 
 	delete m_pxHiZ;
 	m_pxHiZ = nullptr;
+	delete m_pxStaticMeshes;    m_pxStaticMeshes = nullptr;
+	delete m_pxAnimatedMeshes;  m_pxAnimatedMeshes = nullptr;
+	delete m_pxDeferredShading; m_pxDeferredShading = nullptr;
+	delete m_pxSDFs;            m_pxSDFs = nullptr;
+	delete m_pxQuads;           m_pxQuads = nullptr;
 
 #ifdef ZENITH_TOOLS
 	// 21. Free editor state. Done LATE -- the editor's deferred-deletion

@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
+#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 
 
 #include "Flux/Flux_RenderTargets.h"
@@ -23,17 +24,14 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-static Flux_Shader s_xGBufferShader;
-static Flux_Pipeline s_xGBufferPipeline;
+// Phase 7b: state on Flux_StaticMeshesImpl held by Zenith_Engine.
 
-static Flux_Shader s_xShadowShader;
-static Flux_Pipeline s_xShadowPipeline;
 
 
 void Flux_StaticMeshes::BuildPipelines()
 {
-	s_xGBufferShader.Initialise(FluxShaderProgram::StaticMesh_ToGBuffer);
-	s_xShadowShader.Initialise(FluxShaderProgram::StaticMesh_ToShadowmap);
+	g_xEngine.StaticMeshes().m_xGBufferShader.Initialise(FluxShaderProgram::StaticMesh_ToGBuffer);
+	g_xEngine.StaticMeshes().m_xShadowShader.Initialise(FluxShaderProgram::StaticMesh_ToShadowmap);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -53,10 +51,10 @@ void Flux_StaticMeshes::BuildPipelines()
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
-		xPipelineSpec.m_pxShader = &s_xGBufferShader;
+		xPipelineSpec.m_pxShader = &g_xEngine.StaticMeshes().m_xGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-		s_xGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+		g_xEngine.StaticMeshes().m_xGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
 		{
@@ -65,7 +63,7 @@ void Flux_StaticMeshes::BuildPipelines()
 			xBlendState.m_bBlendEnabled = false;
 		}
 
-		Flux_PipelineBuilder::FromSpecification(s_xGBufferPipeline, xPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(g_xEngine.StaticMeshes().m_xGBufferPipeline, xPipelineSpec);
 	}
 
 	{
@@ -73,14 +71,14 @@ void Flux_StaticMeshes::BuildPipelines()
 		Flux_PipelineSpecification xShadowPipelineSpec;
 		xShadowPipelineSpec.m_eDepthStencilFormat = CSM_FORMAT;
 		xShadowPipelineSpec.m_uNumColourAttachments = 0;
-		xShadowPipelineSpec.m_pxShader = &s_xShadowShader;
+		xShadowPipelineSpec.m_pxShader = &g_xEngine.StaticMeshes().m_xShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
 		xShadowPipelineSpec.m_bDepthBias = false;
 
-		s_xShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
+		g_xEngine.StaticMeshes().m_xShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
 
-		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(g_xEngine.StaticMeshes().m_xShadowPipeline, xShadowPipelineSpec);
 	}
 }
 
@@ -134,13 +132,13 @@ static void DrawStaticMesh(Flux_CommandList* pxCmdList, Flux_ShaderBinder& xBind
 {
 	MaterialDrawConstants xPushConstants;
 	BuildMaterialDrawConstants(xPushConstants, xModelMatrix, pxMaterial);
-	xBinder.BindDrawConstants(s_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
+	xBinder.BindDrawConstants(g_xEngine.StaticMeshes().m_xGBufferShader, "DrawConstants", &xPushConstants, sizeof(xPushConstants));
 
-	xBinder.BindSRV(s_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
-	xBinder.BindSRV(s_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
-	xBinder.BindSRV(s_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
-	xBinder.BindSRV(s_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
-	xBinder.BindSRV(s_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.StaticMeshes().m_xGBufferShader, "g_xDiffuseTex", &pxMaterial->GetDiffuseTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.StaticMeshes().m_xGBufferShader, "g_xNormalTex", &pxMaterial->GetNormalTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.StaticMeshes().m_xGBufferShader, "g_xRoughnessMetallicTex", &pxMaterial->GetRoughnessMetallicTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.StaticMeshes().m_xGBufferShader, "g_xOcclusionTex", &pxMaterial->GetOcclusionTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.StaticMeshes().m_xGBufferShader, "g_xEmissiveTex", &pxMaterial->GetEmissiveTexture()->m_xSRV);
 
 	pxCmdList->AddCommand<Flux_CommandDrawIndexed>(uIndexCount);
 }
@@ -193,10 +191,10 @@ void Flux_StaticMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bStaticMeshesEnabled) return;
 
-	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
+	pxCmdList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.StaticMeshes().m_xGBufferPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(s_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(g_xEngine.StaticMeshes().m_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
@@ -246,8 +244,8 @@ void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_
 			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
 			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
-			xBinder.BindDrawConstants(s_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
-			xBinder.BindCBV(s_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
+			xBinder.BindDrawConstants(g_xEngine.StaticMeshes().m_xShadowShader, "DrawConstants", &xModelMatrix, sizeof(xModelMatrix));
+			xBinder.BindCBV(g_xEngine.StaticMeshes().m_xShadowShader, "ShadowMatrix", &xShadowMatrixBuffer.GetCBV());
 			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}
 	}
@@ -255,5 +253,5 @@ void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_
 
 Flux_Pipeline& Flux_StaticMeshes::GetShadowPipeline()
 {
-	return s_xShadowPipeline;
+	return g_xEngine.StaticMeshes().m_xShadowPipeline;
 }

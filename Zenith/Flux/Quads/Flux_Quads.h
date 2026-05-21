@@ -46,6 +46,5 @@ private:
 	static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData);
 	static void UploadInstanceData();
 
-	static Quad s_axQuadsToRender[FLUX_MAX_QUADS_PER_FRAME];
-	static uint32_t s_uQuadRenderIndex;
+	// Phase 7b: data members moved to Flux_QuadsImpl held by Zenith_Engine.
 };

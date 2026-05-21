@@ -8,8 +8,13 @@ class FrameContext;
 class Zenith_AssetRegistry;
 class Zenith_EntityStore;
 class Flux_GraphicsImpl;
+class Flux_AnimatedMeshesImpl;
+class Flux_DeferredShadingImpl;
 class Flux_HiZImpl;
+class Flux_QuadsImpl;
 class Flux_RendererImpl;
+class Flux_SDFsImpl;
+class Flux_StaticMeshesImpl;
 class Zenith_VulkanImpl;
 class Zenith_Vulkan_MemoryManagerImpl;
 class Zenith_Vulkan_SwapchainImpl;
@@ -85,6 +90,11 @@ public:
 	Zenith_Vulkan_MemoryManagerImpl& VulkanMemory();
 	Zenith_Vulkan_SwapchainImpl& VulkanSwapchain();
 	Flux_HiZImpl& HiZ();
+	Flux_StaticMeshesImpl& StaticMeshes();
+	Flux_AnimatedMeshesImpl& AnimatedMeshes();
+	Flux_DeferredShadingImpl& DeferredShading();
+	Flux_SDFsImpl& SDFs();
+	Flux_QuadsImpl& Quads();
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl& Editor();
 	// True when Initialise() has run far enough to have allocated the
@@ -123,7 +133,12 @@ private:
 	Zenith_VulkanImpl*                  m_pxVulkan          = nullptr;
 	Zenith_Vulkan_MemoryManagerImpl*    m_pxVulkanMemory    = nullptr;
 	Zenith_Vulkan_SwapchainImpl*        m_pxVulkanSwapchain = nullptr;
-	Flux_HiZImpl*                       m_pxHiZ             = nullptr;
+	Flux_HiZImpl*                       m_pxHiZ              = nullptr;
+	Flux_StaticMeshesImpl*              m_pxStaticMeshes     = nullptr;
+	Flux_AnimatedMeshesImpl*            m_pxAnimatedMeshes   = nullptr;
+	Flux_DeferredShadingImpl*           m_pxDeferredShading  = nullptr;
+	Flux_SDFsImpl*                      m_pxSDFs             = nullptr;
+	Flux_QuadsImpl*                     m_pxQuads            = nullptr;
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl*                  m_pxEditor             = nullptr;
 	Zenith_GizmoImpl*                   m_pxGizmo              = nullptr;
