@@ -4,7 +4,7 @@
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 

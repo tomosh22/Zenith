@@ -15,7 +15,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux.h"
 #include "AssetHandling/Zenith_TextureAsset.h"

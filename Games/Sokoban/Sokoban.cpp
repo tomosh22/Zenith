@@ -16,7 +16,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Prefab/Zenith_Prefab.h"

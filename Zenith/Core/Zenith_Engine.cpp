@@ -55,7 +55,7 @@
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorImpl.h"
@@ -786,7 +786,7 @@ void Zenith_Engine::Shutdown()
 	delete m_pxFluxRenderer;
 	m_pxFluxRenderer = nullptr;
 
-	// Free Flux_Graphics state. Flux_Graphics::Shutdown above has already
+	// Free Flux_Graphics state. g_xEngine.FluxGraphics().Shutdown above has already
 	// freed GPU resources; this just reclaims the holder.
 	delete m_pxFluxGraphics;
 	m_pxFluxGraphics = nullptr;

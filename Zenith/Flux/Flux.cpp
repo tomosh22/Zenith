@@ -2,7 +2,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_PerFrame.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
@@ -164,7 +164,7 @@ void Flux::EarlyInitialise()
 	Flux_PlatformAPI::Initialise();
 	Flux_MemoryManager::Initialise();
 	Flux_PlatformAPI::InitialiseScratchBuffers(); // Must be after memory manager init
-	Flux_Graphics::InitialiseSamplers(); // Must be before any CreateShaderResourceView calls (bindless registration)
+	g_xEngine.FluxGraphics().InitialiseSamplers(); // Must be before any CreateShaderResourceView calls (bindless registration)
 }
 
 void Flux::LateInitialise()
@@ -206,7 +206,7 @@ void Flux::LateInitialise()
 	Flux_ShaderHotReload::Initialise();
 #endif
 
-	Flux_Graphics::Initialise();
+	g_xEngine.FluxGraphics().Initialise();
 	g_xEngine.HDR().Initialise();  // Must be before DeferredShading - deferred renders to HDR target
 #ifdef ZENITH_TOOLS
 	Flux_PlatformAPI::InitialiseImGui();
@@ -273,10 +273,10 @@ void Flux::LateInitialise()
 	// SetupTransients, which re-runs on resize) and resolve the current SRV
 	// via callback every ImGui draw — rebuilds that invalidate the underlying
 	// TransientResource don't leave a dangling pointer in the tree.
-	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT Diffuse" },       &Flux_Graphics::GetDebugSRV_MRTDiffuse);
-	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT NormalsAO" },     &Flux_Graphics::GetDebugSRV_MRTNormalsAO);
-	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT Material" },      &Flux_Graphics::GetDebugSRV_MRTMaterial);
-	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "Depth" },             &Flux_Graphics::GetDebugSRV_Depth);
+	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT Diffuse" },       [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTDiffuse(); });
+	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT NormalsAO" },     [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTNormalsAO(); });
+	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT Material" },      [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTMaterial(); });
+	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "Depth" },             [](){ return g_xEngine.FluxGraphics().GetDebugSRV_Depth(); });
 	// HDR textures follow Flux_HDR.cpp's established "Flux/HDR/..." convention.
 	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "HDRScene"  }, [](){ return g_xEngine.HDR().GetDebugSRV_HDRScene(); });
 	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip0" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom0(); });
@@ -321,7 +321,7 @@ void Flux::SetupRenderGraph()
 	SyncRenderGraphDebugToggles();
 
 	// Core render targets FIRST — every other subsystem depends on these.
-	Flux_Graphics::SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.FluxGraphics().SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.HDR().SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph); // HDR scene target used by many subsystems
 
 	// Preprocessing
@@ -387,7 +387,7 @@ void Flux::SetupRenderGraph()
 	// purely so the graph emits a prologue barrier transitioning the Final
 	// RT from WRITE_RTV (set by tonemap / last writer) to READ_SRV.
 	g_xEngine.FluxRenderer().m_pxRenderGraph->AddPass("Final RT Layout Transition", Flux_FinalLayoutTransitionNoOp)
-		.Reads(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_READ_SRV);
+		.Reads(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_READ_SRV);
 
 	// Clear() already left the graph dirty — no explicit MarkDirty() needed.
 }
@@ -396,7 +396,7 @@ void Flux::ReleaseAssetReferences()
 {
 	// Drop refs to Flux-side assets so Zenith_AssetRegistry::Shutdown can delete them
 	// cleanly. Each subsystem releases the handles it owns.
-	Flux_Graphics::ReleaseAssetReferences();
+	g_xEngine.FluxGraphics().ReleaseAssetReferences();
 	g_xEngine.Text().ReleaseAssetReferences();
 	g_xEngine.Particles().ReleaseAssetReferences();
 	g_xEngine.Terrain().ReleaseAssetReferences();
@@ -455,7 +455,7 @@ void Flux::Shutdown()
 	g_xEngine.HDR().Shutdown();
 
 	// Shutdown core graphics (render targets, depth buffer, quad mesh, frame constants)
-	Flux_Graphics::Shutdown();
+	g_xEngine.FluxGraphics().Shutdown();
 
 	// Shutdown memory manager (VMA allocator, handle registries)
 	Flux_MemoryManager::Shutdown();

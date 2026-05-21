@@ -4,7 +4,7 @@
 #include "Source/PublicInterfaces.h"
 
 #include "Flux/Flux.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Zenith_GameRenderHook.h"
 #include "Flux/Fog/Flux_FogImpl.h"
@@ -171,7 +171,7 @@ namespace
 		// reconstruct world position; writes the HDR scene target. Pass builder
 		// is &&-qualified so the chain MUST be consumed inline.
 		xGraph.AddPass("DP_Fog", &ExecuteDPFog)
-			.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
+			.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
 			.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV);
 	}
 
@@ -231,7 +231,7 @@ namespace
 
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-		xBinder.BindSRV(s_xShader, "g_xDepthTex",     Flux_Graphics::GetDepthStencilSRV());
+		xBinder.BindSRV(s_xShader, "g_xDepthTex",     g_xEngine.FluxGraphics().GetDepthStencilSRV());
 		xBinder.BindDrawConstants(s_xShader, "DPFogConstants", &s_xPayload, sizeof(s_xPayload));
 
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);

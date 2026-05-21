@@ -8,7 +8,7 @@
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
@@ -234,10 +234,10 @@ void Flux_InstancedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	// Pass 2: GBuffer render
 	xGraph.AddPass("Instanced Meshes GBuffer", ExecuteInstancedGBuffer)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
 		.DependsOn(xCullingPass);
 }
 
@@ -255,8 +255,8 @@ static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 	}
 
 	// Get camera matrices from Flux_Graphics (already computed this frame)
-	Zenith_Maths::Matrix4 xViewProjMatrix = Flux_Graphics::GetViewProjMatrix();
-	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
+	Zenith_Maths::Matrix4 xViewProjMatrix = g_xEngine.FluxGraphics().GetViewProjMatrix();
+	Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 
 	pxCmdList->AddCommand<Flux_CommandBindComputePipeline>(&g_xEngine.InstancedMeshes().m_xCullingPipeline);
 

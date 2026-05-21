@@ -5,7 +5,7 @@
 #include "Flux/SSAO/Flux_SSAOImpl.h"
 
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -146,8 +146,8 @@ static void ExecuteSSAOGenerate(Flux_CommandList* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindCBV(g_xEngine.SSAO().m_xGenerateShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindDrawConstants(g_xEngine.SSAO().m_xGenerateShader, "SSAOConstants", &dbg_xGenerateConstants, sizeof(SSAOGenerateConstants));
-	xBinder.BindSRV(g_xEngine.SSAO().m_xGenerateShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(g_xEngine.SSAO().m_xGenerateShader, "g_xNormalTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.SSAO().m_xGenerateShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSAO().m_xGenerateShader, "g_xNormalTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -165,8 +165,8 @@ static void ExecuteSSAOBlur(Flux_CommandList* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindDrawConstants(g_xEngine.SSAO().m_xBlurShader, "SSAOBlurConstants", &dbg_xBlurConstants, sizeof(SSAOBlurConstants));
 	xBinder.BindSRV(g_xEngine.SSAO().m_xBlurShader, "g_xOcclusionTex", &GetRawOcclusion().SRV());
-	xBinder.BindSRV(g_xEngine.SSAO().m_xBlurShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(g_xEngine.SSAO().m_xBlurShader, "g_xNormalTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.SSAO().m_xBlurShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSAO().m_xBlurShader, "g_xNormalTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -187,7 +187,7 @@ static void ExecuteSSAOUpsample(Flux_CommandList* pxCommandList, void*)
 	else
 		xBinder.BindSRV(g_xEngine.SSAO().m_xUpsampleShader, "g_xOcclusionTex", &GetRawOcclusion().SRV());
 
-	xBinder.BindSRV(g_xEngine.SSAO().m_xUpsampleShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSAO().m_xUpsampleShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -211,20 +211,20 @@ void Flux_SSAOImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	xGraph.AddPass("SSAO Generate", ExecuteSSAOGenerate)
 		.ClearTargets()
-		.Reads         (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads         (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads         (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads         (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(g_xEngine.SSAO().m_xRawOcclusionHandle,                                     RESOURCE_ACCESS_WRITE_RTV);
 
 	xGraph.AddPass("SSAO Blur", ExecuteSSAOBlur)
 		.ClearTargets()
-		.Reads         (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads         (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads         (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads         (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient (g_xEngine.SSAO().m_xRawOcclusionHandle,                                     RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(g_xEngine.SSAO().m_xBlurredHandle,                                          RESOURCE_ACCESS_WRITE_RTV);
 
 	// Upsample pass — writes AO factor onto the HDR scene via multiplicative blend.
 	xGraph.AddPass("SSAO Upsample", ExecuteSSAOUpsample)
-		.Reads         (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
+		.Reads         (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
 		.Writes        (g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.ReadsTransient(g_xEngine.SSAO().m_xBlurredHandle,                    RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(g_xEngine.SSAO().m_xRawOcclusionHandle,               RESOURCE_ACCESS_READ_SRV);

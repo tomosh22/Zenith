@@ -3,7 +3,7 @@
 
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -483,7 +483,7 @@ void Flux_DynamicLightsImpl::GatherLightsFromScene()
 		return;
 	}
 
-	g_xEngine.DynamicLights().m_xCameraFrustum.ExtractFromViewProjection(Flux_Graphics::GetViewProjMatrix());
+	g_xEngine.DynamicLights().m_xCameraFrustum.ExtractFromViewProjection(g_xEngine.FluxGraphics().GetViewProjMatrix());
 
 	// Collect candidates first, then priority-sort if we exceed the cap.
 	// Single allocation per frame would be ideal — Zenith_Vector grows

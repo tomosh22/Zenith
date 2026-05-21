@@ -6,7 +6,7 @@
 
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -214,20 +214,20 @@ Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMSRV(const uint32_t u)
 void Flux_ShadowsImpl::UpdateShadowMatrices()
 {
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
-	const Zenith_Maths::Matrix4& xViewMat = Flux_Graphics::GetViewMatrix();
+	const Zenith_Maths::Matrix4& xViewMat = g_xEngine.FluxGraphics().GetViewMatrix();
 	
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		const float fNearPlane = Flux_Graphics::GetFarPlane() / s_afCSMLevels[u];
-		const float fFarPlane = Flux_Graphics::GetFarPlane() / s_afCSMLevels[u + 1];
+		const float fNearPlane = g_xEngine.FluxGraphics().GetFarPlane() / s_afCSMLevels[u];
+		const float fFarPlane = g_xEngine.FluxGraphics().GetFarPlane() / s_afCSMLevels[u + 1];
 
-		const Zenith_Maths::Matrix4 xProjMat = Zenith_Maths::PerspectiveProjection(Flux_Graphics::GetFOV(), Flux_Graphics::GetAspectRatio(), fNearPlane, fFarPlane);
+		const Zenith_Maths::Matrix4 xProjMat = Zenith_Maths::PerspectiveProjection(g_xEngine.FluxGraphics().GetFOV(), g_xEngine.FluxGraphics().GetAspectRatio(), fNearPlane, fFarPlane);
 		const Zenith_Maths::Matrix4 xInvViewProjMat = glm::inverse(xProjMat * xViewMat);
 
 		const FrustumCorners xFrustumCorners = WorldSpaceFrustumCornersFromInverseViewProjMatrix(xInvViewProjMat);
 		const Zenith_Maths::Vector3 xFrustumCenter = xFrustumCorners.GetCenter();
 
-		const Zenith_Maths::Vector3& xSunDir = Flux_Graphics::GetSunDir();
+		const Zenith_Maths::Vector3& xSunDir = g_xEngine.FluxGraphics().GetSunDir();
 		const Zenith_Maths::Vector3 xUp(0, 1, 0);
 		
 		Zenith_Maths::Matrix4 xSunViewMat = glm::lookAt(xFrustumCenter - xSunDir, xFrustumCenter, xUp);

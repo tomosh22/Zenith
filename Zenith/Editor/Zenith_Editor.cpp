@@ -44,7 +44,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Input/Zenith_Input.h"
 #include "FileAccess/Zenith_FileAccess.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"

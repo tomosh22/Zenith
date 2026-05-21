@@ -3,7 +3,7 @@
 
 #include "Flux/Decals/Flux_DecalsImpl.h"
 #include "Flux/Decals/Flux_DecalsImpl.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -387,7 +387,7 @@ static void ExecuteNormalsCopy(Flux_CommandList* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindSRV(g_xEngine.Decals().m_xNormalsCopyShader, "g_xNormalsTex",
-		Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+		g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -407,7 +407,7 @@ static void ExecuteApply(Flux_CommandList* pxCommandList, void*)
 
 	xBinder.BindCBV(g_xEngine.Decals().m_xApplyShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
-	xBinder.BindSRV(g_xEngine.Decals().m_xApplyShader, "g_xDepthTex",       Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.Decals().m_xApplyShader, "g_xDepthTex",       g_xEngine.FluxGraphics().GetDepthStencilSRV());
 	xBinder.BindSRV(g_xEngine.Decals().m_xApplyShader, "g_xNormalsCopyTex", &g_xEngine.Decals().m_pxGraph->GetTransientAttachment(g_xEngine.Decals().m_xNormalsCopyHandle).SRV());
 	xBinder.BindSRV_Buffer(g_xEngine.Decals().m_xApplyShader, "DecalBuffer", g_xEngine.Decals().m_xDecalBuffer.GetSRV());
 
@@ -465,18 +465,18 @@ void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	g_xEngine.Decals().m_xNormalsCopyPass = xGraph.AddPass("Decal Normals Copy", ExecuteNormalsCopy)
 		.Prepare(PrepareDecals)
 		.ClearTargets()
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(g_xEngine.Decals().m_xNormalsCopyHandle,                                       RESOURCE_ACCESS_WRITE_RTV);
 
 	// Apply — instanced cube into all 3 G-buffer MRTs. Reads depth + the
 	// cloned normals; writes diffuse / normalsAmbient / material under
 	// per-attachment blend.
 	g_xEngine.Decals().m_xApplyPass = xGraph.AddPass("Decal Apply", ExecuteApply)
-		.Reads         (Flux_Graphics::GetDepthAttachment(),                      RESOURCE_ACCESS_READ_SRV)
+		.Reads         (g_xEngine.FluxGraphics().GetDepthAttachment(),                      RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(g_xEngine.Decals().m_xNormalsCopyHandle,                                      RESOURCE_ACCESS_READ_SRV)
-		.Writes        (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes        (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes        (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV);
+		.Writes        (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV);
 
 	// Both passes are always-enabled. The render graph skips Prepare
 	// callbacks for disabled passes (Flux_RenderGraph_Execution.cpp:144),

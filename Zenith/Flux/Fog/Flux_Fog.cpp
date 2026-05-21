@@ -10,7 +10,7 @@
 #include "Flux/Fog/Flux_FroxelFogImpl.h"
 
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -174,7 +174,7 @@ static void ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindCBV(g_xEngine.Fog().m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV(g_xEngine.Fog().m_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.Fog().m_xShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
 	xBinder.BindDrawConstants(g_xEngine.Fog().m_xShader, "FogConstants", &dbg_xConstants, sizeof(Flux_FogConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -252,7 +252,7 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	g_xEngine.Fog().m_xSimpleFogPass = xGraph.AddPass("Fog_Simple", ExecuteSimpleFog)
 		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	g_xEngine.Fog().m_xFroxelInjectPass = xGraph.AddPass("Fog_FroxelInject", ExecuteFroxelInject)
 		.WritesTransient(g_xEngine.FroxelFog().GetDensityGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
@@ -269,17 +269,17 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// SRV bind.
 	g_xEngine.Fog().m_xFroxelApplyPass = xGraph.AddPass("Fog_FroxelApply", ExecuteFroxelApply)
 		.Writes        (g_xEngine.HDR().GetHDRSceneTarget(),               RESOURCE_ACCESS_WRITE_RTV)
-		.Reads         (Flux_Graphics::GetDepthAttachment(),         RESOURCE_ACCESS_READ_SRV)
+		.Reads         (g_xEngine.FluxGraphics().GetDepthAttachment(),         RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(g_xEngine.FroxelFog().GetLightingGridHandle(),     RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(g_xEngine.FroxelFog().GetScatteringGridHandle(),   RESOURCE_ACCESS_READ_SRV);
 
 	g_xEngine.Fog().m_xRaymarchPass = xGraph.AddPass("Fog_Raymarch", ExecuteRaymarch)
 		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	g_xEngine.Fog().m_xGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays)
 		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	// EXT-1: re-apply game-side override after the graph has been (re)built.
 	// Without this, a RequestGraphRebuild() while the flag is set would leave

@@ -5,10 +5,10 @@
 #include "Flux/SSGI/Flux_SSGIImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -251,11 +251,11 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindCBV(g_xEngine.SSGI().m_xRayMarchShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindDrawConstants(g_xEngine.SSGI().m_xRayMarchShader, "SSGIConstants", &xFrameConstants, sizeof(SSGIConstants));
 
-	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xNormalsTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xMaterialTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_MATERIAL));
 	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xHiZTex", &g_xEngine.HiZ().GetHiZSRV());
-	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xDiffuseTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xBlueNoiseTex", &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -276,7 +276,7 @@ static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	xBinder.BindSRV(g_xEngine.SSGI().m_xUpsampleShader, "g_xSSGITex", &g_xEngine.SSGI().GetRawResultAttachment().SRV());
-	xBinder.BindSRV(g_xEngine.SSGI().m_xUpsampleShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSGI().m_xUpsampleShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -302,9 +302,9 @@ static void ExecuteSSGIDenoiseH(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindDrawConstants(g_xEngine.SSGI().m_xDenoiseHShader, "PushConstants", &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
 	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xSSGITex",    &g_xEngine.SSGI().GetResolvedAttachment().SRV());
-	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xDepthTex",   Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xAlbedoTex",  Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xDepthTex",   g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xNormalsTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xAlbedoTex",  g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_DIFFUSE));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -329,9 +329,9 @@ static void ExecuteSSGIDenoiseV(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindDrawConstants(g_xEngine.SSGI().m_xDenoiseVShader, "PushConstants", &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
 	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseVShader, "g_xSSGITex",    &g_xEngine.SSGI().m_pxGraph->GetTransientAttachment(g_xEngine.SSGI().m_xDenoiseHHandle).SRV());
-	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseVShader, "g_xDepthTex",   Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseVShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseVShader, "g_xAlbedoTex",  Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseVShader, "g_xDepthTex",   g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseVShader, "g_xNormalsTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseVShader, "g_xAlbedoTex",  g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_DIFFUSE));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -376,17 +376,17 @@ void Flux_SSGIImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// RayMarch pass (half-res) — reads G-Buffer + HiZ, writes raw result.
 	xGraph.AddPass("SSGI RayMarch", ExecuteSSGIRayMarch)
 		.ClearTargets()
-		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
 		.Reads          (g_xEngine.HiZ().GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().m_uMipCount)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(g_xEngine.SSGI().m_xRawResultHandle,                                        RESOURCE_ACCESS_WRITE_RTV);
 
 	// Upsample pass — half→full res bilateral upsample.
 	xGraph.AddPass("SSGI Upsample", ExecuteSSGIUpsample)
 		.ClearTargets()
-		.Reads          (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient (g_xEngine.SSGI().m_xRawResultHandle,                  RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(g_xEngine.SSGI().m_xResolvedHandle,                   RESOURCE_ACCESS_WRITE_RTV);
 
@@ -395,17 +395,17 @@ void Flux_SSGIImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// toggles both enable bits together when m_bSSGIDenoiseEnabled changes.
 	g_xEngine.SSGI().m_xDenoisePassH = xGraph.AddPass("SSGI Denoise H", ExecuteSSGIDenoiseH)
 		.ClearTargets()
-		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient (g_xEngine.SSGI().m_xResolvedHandle,                                         RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(g_xEngine.SSGI().m_xDenoiseHHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
 
 	g_xEngine.SSGI().m_xDenoisePassV = xGraph.AddPass("SSGI Denoise V", ExecuteSSGIDenoiseV)
 		.ClearTargets()
-		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient (g_xEngine.SSGI().m_xDenoiseHHandle,                                         RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(g_xEngine.SSGI().m_xDenoisedHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
 

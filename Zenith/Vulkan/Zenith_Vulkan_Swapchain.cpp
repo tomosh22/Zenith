@@ -5,7 +5,7 @@
 
 #include "Zenith_Vulkan.h"
 #include "Zenith_VulkanImpl.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -422,7 +422,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 	if (dbg_bOutputMRT)
 	{
 		// When debugging, bind the MRT SRV
-		Flux_ShaderResourceView* pxMRTSRV = Flux_Graphics::GetGBufferSRV((MRTIndex)dbg_uMRTIndex);
+		Flux_ShaderResourceView* pxMRTSRV = g_xEngine.FluxGraphics().GetGBufferSRV((MRTIndex)dbg_uMRTIndex);
 		if (pxMRTSRV)
 		{
 			s_xCopyToFramebufferCmd.BindSRV(pxMRTSRV, 0);
@@ -432,7 +432,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 #endif
 	{
 		// Bind final render target using SRV
-		Flux_ShaderResourceView& xSRV = Flux_Graphics::GetFinalRenderTarget().SRV();
+		Flux_ShaderResourceView& xSRV = g_xEngine.FluxGraphics().GetFinalRenderTarget().SRV();
 		if (xSRV.m_xImageViewHandle.IsValid())
 		{
 			s_xCopyToFramebufferCmd.BindSRV(&xSRV, 0);

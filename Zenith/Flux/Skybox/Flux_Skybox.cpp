@@ -6,7 +6,7 @@
 
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -325,7 +325,7 @@ static void ExecuteAerialPerspective(Flux_CommandList* pxCommandList, void*)
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		xBinder.BindCBV(g_xEngine.Skybox().m_xAerialPerspectiveShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindCBV(g_xEngine.Skybox().m_xAerialPerspectiveShader, "AtmosphereConstants", &g_xEngine.Skybox().m_xAtmosphereConstantsBuffer.GetCBV());
-		xBinder.BindSRV(g_xEngine.Skybox().m_xAerialPerspectiveShader, "g_xDepthTex", &Flux_Graphics::GetDepthAttachment().SRV());
+		xBinder.BindSRV(g_xEngine.Skybox().m_xAerialPerspectiveShader, "g_xDepthTex", &g_xEngine.FluxGraphics().GetDepthAttachment().SRV());
 	}
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -338,12 +338,12 @@ void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// clear the MRT target (both color — redundantly — and depth, which the
 	// subsequent geometry passes need for depth testing).
 	xGraph.AddPass("Skybox", ExecuteSkybox)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
 		// Depth is attached purely so ClearTargets() clears it to 1.0; the
 		// skybox pipelines disable depth test/write, so the draw does not touch it.
-		.Writes(Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV)
+		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV)
 		.Prepare(PreExecuteSkybox)
 		.ClearTargets();
 }
@@ -357,7 +357,7 @@ void Flux_SkyboxImpl::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph
 	// last-frame HDR and produce garbage.
 	xGraph.AddPass("Aerial Perspective", ExecuteAerialPerspective)
 		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 }
 
 // Setters (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)

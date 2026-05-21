@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 
 // Unified data size calculation for both compressed and uncompressed textures

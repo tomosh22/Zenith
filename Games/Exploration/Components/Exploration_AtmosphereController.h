@@ -14,7 +14,7 @@
  */
 
 #include "Maths/Zenith_Maths.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
@@ -399,7 +399,7 @@ namespace Exploration_AtmosphereController
 	{
 		// Update frame constants with sun direction and color
 		// Note: This modifies the shared FrameConstants that get uploaded to GPU
-		Flux_Graphics::FrameConstants& xConstants = g_xEngine.FluxGraphics().m_xFrameConstants;
+		Flux_GraphicsImpl::FrameConstants& xConstants = g_xEngine.FluxGraphics().m_xFrameConstants;
 
 		xConstants.m_xSunDir_Pad = Zenith_Maths::Vector4(
 			s_xCurrentState.m_xSunDirection.x,

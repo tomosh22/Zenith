@@ -1,0 +1,60 @@
+sharpmake 1.2.0
+  arguments: /sources('Sharpmake_Common.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs', 'Sharpmake_TilePuzzleRegistryViewer.cs')
+  directory: C:\tmp\Zenith-engine-refactor\Build
+  platform: win64 - Microsoft Windows 10.0.26200
+  compiled with framework: .NET 8.0
+  running on framework: .NET 8.0.13
+
+  building projects and solutions configurations using 16 tasks...
+    build done in 0.5 sec
+  linking projects dependencies...
+    link done in 0.0 sec
+  generating projects and solutions...
+    generation done in 0.2 sec
+  14 projects generated:
+    c:\tmp\zenith-engine-refactor\build\zenith_agde.vcxproj
+    c:\tmp\zenith-engine-refactor\build\zenith_agde.vcxproj.filters
+    c:\tmp\zenith-engine-refactor\build\zenith_win64.vcxproj
+    c:\tmp\zenith-engine-refactor\build\zenith_win64.vcxproj.filters
+    c:\tmp\zenith-engine-refactor\games\aishowcase\build\aishowcase_agde.vcxproj
+    c:\tmp\zenith-engine-refactor\games\combat\build\combat_agde.vcxproj
+    c:\tmp\zenith-engine-refactor\games\devilsplayground\build\devilsplayground_agde.vcxproj
+    c:\tmp\zenith-engine-refactor\games\exploration\build\exploration_agde.vcxproj
+    c:\tmp\zenith-engine-refactor\games\marble\build\marble_agde.vcxproj
+    c:\tmp\zenith-engine-refactor\games\rendertest\build\rendertest_agde.vcxproj
+    c:\tmp\zenith-engine-refactor\games\runner\build\runner_agde.vcxproj
+    c:\tmp\zenith-engine-refactor\games\sokoban\build\sokoban_agde.vcxproj
+    c:\tmp\zenith-engine-refactor\games\survival\build\survival_agde.vcxproj
+    c:\tmp\zenith-engine-refactor\games\tilepuzzle\build\tilepuzzle_agde.vcxproj
+  Results:
+    projects  (   78 configurations)    14 generated,    36 up-to-date
+    solutions (    6 configurations)     0 generated,     2 up-to-date
+  time: 2.37 sec.
+  completed on 05/21/2026 01:28:55.
+0 errors, 0 warnings
+Processing: C:\tmp\Zenith-engine-refactor\Build\zenith_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\AIShowcase\build\aishowcase_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\Combat\build\combat_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\DevilsPlayground\Build\devilsplayground_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\Exploration\build\exploration_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\Marble\build\marble_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\RenderTest\build\rendertest_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\Runner\build\runner_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\Sokoban\Build\sokoban_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\Survival\build\survival_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\Test\Build\test_agde.vcxproj
+  Done
+Processing: C:\tmp\Zenith-engine-refactor\Games\TilePuzzle\build\tilepuzzle_agde.vcxproj
+  Done
+
+All AGDE vcxproj files updated.

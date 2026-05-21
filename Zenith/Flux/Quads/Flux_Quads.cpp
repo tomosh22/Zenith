@@ -5,7 +5,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -121,7 +121,7 @@ static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 void Flux_QuadsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Quads", ExecuteQuads)
-		.Writes(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		.Writes(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
 void Flux_QuadsImpl::UploadQuad(const Quad& xQuad)

@@ -12,7 +12,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
@@ -254,7 +254,7 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 	// Calculate gizmo scale based on camera distance for consistent screen size
 	Zenith_Maths::Vector3 xEntityPos;
 	xTransform.GetPosition(xEntityPos);
-	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
+	Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	float fDistance = glm::length(xEntityPos - xCameraPos);
 	g_xEngine.Gizmos().m_fGizmoScale = fDistance / GIZMO_AUTO_SCALE_DISTANCE;
 
@@ -332,7 +332,7 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 void Flux_GizmosImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Gizmos", ExecuteGizmos)
-		.Writes(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		.Writes(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
 void Flux_GizmosImpl::SetTargetEntity(Zenith_Entity* pxEntity)
@@ -820,7 +820,7 @@ void Flux_GizmosImpl::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Z
 	// For uniform scale, use the camera view direction as the constraint axis
 	if (bUniformScale)
 	{
-		Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
+		Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 		axis = glm::normalize(g_xEngine.Gizmos().m_xInitialEntityPosition - xCameraPos);
 	}
 

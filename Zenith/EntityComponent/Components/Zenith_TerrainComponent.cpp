@@ -3,7 +3,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include <fstream>
@@ -1040,7 +1040,7 @@ void Zenith_TerrainComponent::UploadFrustumPlanesForFrame(const Zenith_Maths::Ma
 		);
 	}
 
-	const Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
+	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
 
 	Flux_MemoryManager::UploadBufferDataAtOffset(m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);

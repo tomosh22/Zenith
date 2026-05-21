@@ -2,7 +2,7 @@
 
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Core/Zenith_Engine.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
@@ -172,7 +172,7 @@ void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// so the underlying image is already in a valid state when Grass runs.
 	xGraph.AddPass("Grass", ExecuteRender)
 		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_DEPTH);
+		.Reads (g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_DEPTH);
 }
 
 static void ExecuteRender(Flux_CommandList* pxCmdList, void*)
@@ -297,8 +297,8 @@ void Flux_GrassImpl::UpdateVisibleChunks()
 		return;
 	}
 
-	const Zenith_Maths::Vector3& xCamPos = Flux_Graphics::GetCameraPosition();
-	const Zenith_Maths::Matrix4 xViewProj = Flux_Graphics::GetViewProjMatrix();
+	const Zenith_Maths::Vector3& xCamPos = g_xEngine.FluxGraphics().GetCameraPosition();
+	const Zenith_Maths::Matrix4 xViewProj = g_xEngine.FluxGraphics().GetViewProjMatrix();
 	Zenith_Frustum xFrustum;
 	xFrustum.ExtractFromViewProjection(xViewProj);
 

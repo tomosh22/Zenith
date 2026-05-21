@@ -3,7 +3,7 @@
 #include <atomic>
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Core/Zenith_Engine.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -585,7 +585,7 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.AddPass("HDR_ToneMapping", ExecuteToneMapping)
 		.ClearTargets()
 		.Reads         (g_xEngine.HDR().GetHDRSceneTarget(),                    RESOURCE_ACCESS_READ_SRV)
-		.Writes        (Flux_Graphics::GetFinalRenderTarget(),  RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (g_xEngine.FluxGraphics().GetFinalRenderTarget(),  RESOURCE_ACCESS_WRITE_RTV)
 		.ReadsBuffer   (g_xEngine.HDR().m_xHistogramBuffer.GetBuffer(),         RESOURCE_ACCESS_READWRITE_UAV)
 		.ReadsBuffer   (g_xEngine.HDR().m_xExposureBuffer.GetBuffer(),          RESOURCE_ACCESS_READWRITE_UAV)
 		.ReadsTransient(g_xEngine.HDR().m_axBloomChainHandles[0],               RESOURCE_ACCESS_READ_SRV);
@@ -613,7 +613,7 @@ void Flux_HDRImpl::GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxCol
 {
 	apxColourAttachments[0] = &g_xEngine.HDR().GetHDRSceneTarget();
 	uNumColour = 1;
-	pxDepthStencil = &Flux_Graphics::GetDepthAttachment();
+	pxDepthStencil = &g_xEngine.FluxGraphics().GetDepthAttachment();
 }
 
 
@@ -700,7 +700,7 @@ void Flux_HDRImpl::RegisterDebugVariables()
 	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "MaxExposure" }, dbg_fHDRMaxExposure, 1.0f, 20.0f);
 }
 
-// Debug-SRV callbacks — mirror Flux_Graphics::GetDebugSRV_MRTDiffuse. Register
+// Debug-SRV callbacks — mirror g_xEngine.FluxGraphics().GetDebugSRV_MRTDiffuse. Register
 // via Zenith_DebugVariables::AddTextureCallback in Flux::LateInitialise; the
 // callback is invoked on every ImGui draw so the preview tracks transient
 // rebuilds on resize without leaving a dangling SRV.

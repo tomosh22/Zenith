@@ -14,7 +14,7 @@
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/Flux_ImGuiIntegration.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "../../../Tools/Zenith_Tools_TextureExport.h"
 

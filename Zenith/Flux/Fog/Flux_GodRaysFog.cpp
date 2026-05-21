@@ -5,9 +5,9 @@
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 
-#include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -147,7 +147,7 @@ void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindCBV(g_xEngine.GodRaysFog().m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV(g_xEngine.GodRaysFog().m_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.GodRaysFog().m_xShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
 
 	xBinder.BindDrawConstants(g_xEngine.GodRaysFog().m_xShader, "GodRaysConstants", &s_xConstants, sizeof(Flux_GodRaysConstants));
 

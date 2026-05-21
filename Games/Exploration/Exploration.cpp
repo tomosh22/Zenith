@@ -15,7 +15,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "UI/Zenith_UIButton.h"
 

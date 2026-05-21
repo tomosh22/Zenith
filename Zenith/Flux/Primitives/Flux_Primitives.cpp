@@ -3,7 +3,7 @@
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Core/Zenith_Engine.h"
 
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -508,10 +508,10 @@ void Flux_PrimitivesImpl::Shutdown()
 void Flux_PrimitivesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Primitives GBuffer", ExecuteGBuffer)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 void Flux_PrimitivesImpl::AddSphere(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor)

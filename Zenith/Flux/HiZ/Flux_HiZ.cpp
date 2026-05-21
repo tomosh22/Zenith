@@ -2,7 +2,7 @@
 
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Core/Zenith_Engine.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -126,7 +126,7 @@ static void ExecuteHiZMip(Flux_CommandList* pxCommandList, void* pUserData)
 	// For mip 0, read from depth buffer; for other mips, read from previous mip
 	if (uMip == 0)
 	{
-		xBinder.BindSRV(xHiZ.m_xComputeShader, "g_xInputTex", Flux_Graphics::GetDepthStencilSRV());
+		xBinder.BindSRV(xHiZ.m_xComputeShader, "g_xInputTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
 	}
 	else
 	{
@@ -186,7 +186,7 @@ void Flux_HiZImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			.WritesTransient(m_xHiZBufferHandle, RESOURCE_ACCESS_WRITE_UAV, uMip, 1);
 
 		if (uMip == 0)
-			xGraph.Read(xPass, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+			xGraph.Read(xPass, g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 		else
 			xGraph.ReadTransient(xPass, m_xHiZBufferHandle, RESOURCE_ACCESS_READ_SRV, uMip - 1, 1);
 	}

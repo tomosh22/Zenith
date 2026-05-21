@@ -31,7 +31,7 @@
 #include "Physics/Zenith_Physics.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UICanvas.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ModelInstance.h"
 

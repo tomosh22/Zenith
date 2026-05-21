@@ -24,7 +24,7 @@
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UIScrollView.h"
 #include "UI/Zenith_UIRect.h"
-#include "Flux/Text/Flux_Text.h"
+#include "Flux/Text/Flux_TextImpl.h"
 #include "TilePuzzle/Components/Pinball_Behaviour.h"
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Rules.h"

@@ -13,7 +13,7 @@
 #include "Input/Zenith_Input.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Entity.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Prefab/Zenith_Prefab.h"
 
 DEBUGVAR float dbg_fCamDistance = 25.f;

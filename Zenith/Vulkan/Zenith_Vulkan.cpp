@@ -5,7 +5,7 @@
 #include "Vulkan/Zenith_Vulkan_Platform.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Flux/Flux.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include <algorithm>

@@ -12,7 +12,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/Flux_ImGuiIntegration.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ModelInstance.h"
 #include <filesystem>
 #include <unordered_map>

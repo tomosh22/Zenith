@@ -5,7 +5,7 @@
 
 
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
@@ -106,10 +106,10 @@ void Flux_StaticMeshesImpl::Initialise()
 void Flux_StaticMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Static Meshes GBuffer", ExecuteGBuffer)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
 // Animated meshes (skeleton + at least one skinned mesh instance) are rendered

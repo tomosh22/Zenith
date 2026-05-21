@@ -4,7 +4,7 @@
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"

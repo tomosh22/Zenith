@@ -20,7 +20,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "FileAccess/Zenith_FileAccess.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"

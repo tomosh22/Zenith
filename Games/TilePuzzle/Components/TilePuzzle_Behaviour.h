@@ -34,7 +34,7 @@
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UIOverlay.h"
-#include "Flux/Text/Flux_Text.h"
+#include "Flux/Text/Flux_TextImpl.h"
 
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Rules.h"
@@ -51,7 +51,7 @@
 #include "FileAccess/Zenith_FileAccess.h"
 
 #include "Collections/Zenith_Vector.h"
-#include "Flux/Skybox/Flux_Skybox.h"
+#include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 

@@ -13,7 +13,7 @@
 #include "Core/Zenith_CommandLine.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Buffers.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
 

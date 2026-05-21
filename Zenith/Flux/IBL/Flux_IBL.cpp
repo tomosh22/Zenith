@@ -3,7 +3,7 @@
 
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"

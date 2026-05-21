@@ -1,7 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 

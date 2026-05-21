@@ -5,7 +5,7 @@
 #include "Core/Zenith_Engine.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -363,10 +363,10 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// pass after culling and let the graph synthesise the correct memory +
 	// pipeline-stage barriers between the compute writes and these reads.
 	Flux_PassHandle xGBufferPass = xGraph.AddPass("Terrain GBuffer", ExecuteGBuffer)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
 		.DependsOn(xCullingPass);
 
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
@@ -400,7 +400,7 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	// compute pass via vkSubmit's implicit host-write-available barrier.
 	// Frame indexing eliminates cross-frame CPU/GPU races on shared memory.
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
-	const Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
+	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	const Zenith_Maths::Matrix4& xViewProj = g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat;
 	for (u_int u = 0; u < g_xEngine.Terrain().m_xTerrainComponentsToRender.GetSize(); u++)
 	{
@@ -526,7 +526,7 @@ static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 			Zenith_TextureAsset* (Zenith_MaterialAsset::*pfn)()) -> const Flux_ShaderResourceView*
 		{
 			Zenith_MaterialAsset* pxResolved = pxMat ? pxMat : g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
-			Zenith_Assert(pxResolved != nullptr, "g_xEngine.FluxGraphics().m_xBlankMaterial not initialised — Flux_Graphics::Initialise must run before terrain renders");
+			Zenith_Assert(pxResolved != nullptr, "g_xEngine.FluxGraphics().m_xBlankMaterial not initialised — g_xEngine.FluxGraphics().Initialise must run before terrain renders");
 			Zenith_TextureAsset* pxTex = (pxResolved->*pfn)();
 			Zenith_Assert(pxTex != nullptr, "Material channel getter returned null — Zenith_MaterialAsset defaults should guarantee non-null");
 			return &pxTex->m_xSRV;

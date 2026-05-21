@@ -5,7 +5,7 @@
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
@@ -87,10 +87,10 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindCBV(g_xEngine.DeferredShading().m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Bind G-buffer textures (named bindings)
-	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xNormalsAmbientTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xDiffuseTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xNormalsAmbientTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xMaterialTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
 
 	// Bind shadow maps (named bindings)
 	static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "g_xCSM0", "g_xCSM1", "g_xCSM2", "g_xCSM3" };
@@ -121,7 +121,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	else
 	{
 		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSRTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSRTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
 	// Always bind SSGI texture if initialised (shader checks g_bSSGIEnabled before sampling)
@@ -132,7 +132,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	else
 	{
 		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSGITex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSGITex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
 	// Clustered dynamic lights — buffers populated by Flux_LightClustering.
@@ -193,9 +193,9 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.ClearTargets();
 
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
-		xGraph.Read(xPass, Flux_Graphics::GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(xPass, g_xEngine.FluxGraphics().GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
 
-	xGraph.Read(xPass, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	// Shadow maps (CSM depth targets)
 	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)

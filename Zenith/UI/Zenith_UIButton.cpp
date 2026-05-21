@@ -2,7 +2,7 @@
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
-#include "Flux/Text/Flux_Text.h"
+#include "Flux/Text/Flux_TextImpl.h"
 #include "Input/Zenith_Input.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"

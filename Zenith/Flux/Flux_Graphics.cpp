@@ -1,6 +1,6 @@
 #include "Zenith.h"
 
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
@@ -19,10 +19,10 @@
 // list-set on the static array now live in a small initialiser routine
 // called from Flux_Graphics::Initialise.
 
-Zenith_Maths::Matrix4 Flux_Graphics::GetViewProjMatrix()    { return g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat; }
-Zenith_Maths::Matrix4 Flux_Graphics::GetInvViewProjMatrix() { return g_xEngine.FluxGraphics().m_xFrameConstants.m_xInvViewProjMat; }
-Zenith_Maths::Matrix4 Flux_Graphics::GetViewMatrix()        { return g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewMat; }
-Zenith_Maths::Vector3 Flux_Graphics::GetSunDir()            { return g_xEngine.FluxGraphics().m_xFrameConstants.m_xSunDir_Pad; }
+Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetViewProjMatrix()    { return g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat; }
+Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetInvViewProjMatrix() { return g_xEngine.FluxGraphics().m_xFrameConstants.m_xInvViewProjMat; }
+Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetViewMatrix()        { return g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewMat; }
+Zenith_Maths::Vector3 Flux_GraphicsImpl::GetSunDir()            { return g_xEngine.FluxGraphics().m_xFrameConstants.m_xSunDir_Pad; }
 
 DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { 0.1,-1.0, 0.1 };
 DEBUGVAR Zenith_Maths::Vector4 dbg_SunColour = { 0.9, 0.8,0.7, 1.f };
@@ -33,13 +33,13 @@ DEBUGVAR u_int dbg_uTargetPixelsPerTri = 10;
 DEBUGVAR bool dbg_bOverrideViewProjMat = false;
 DEBUGVAR u_int dbg_uOverrideViewProjMatIndex = 0;
 
-void Flux_Graphics::InitialiseSamplers()
+void Flux_GraphicsImpl::InitialiseSamplers()
 {
 	Flux_Sampler::InitialiseRepeat(g_xEngine.FluxGraphics().m_xRepeatSampler);
 	Flux_Sampler::InitialiseClamp(g_xEngine.FluxGraphics().m_xClampSampler);
 }
 
-void Flux_Graphics::Initialise()
+void Flux_GraphicsImpl::Initialise()
 {
 	// MRT format defaults -- previously a static-init initialiser list,
 	// now set at engine-init time on the engine-owned Impl.
@@ -149,7 +149,7 @@ void Flux_Graphics::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics Initialised");
 }
 
-bool Flux_Graphics::BuildCameraMatrices(FrameConstants& xConstants)
+bool Flux_GraphicsImpl::BuildCameraMatrices(FrameConstants& xConstants)
 {
 #ifdef ZENITH_TOOLS
 	if (Zenith_Editor::GetEditorMode() != EditorMode::Playing)
@@ -171,7 +171,7 @@ bool Flux_Graphics::BuildCameraMatrices(FrameConstants& xConstants)
 	return false;
 }
 
-void Flux_Graphics::UploadFrameConstants()
+void Flux_GraphicsImpl::UploadFrameConstants()
 {
 	bool bCameraValid = BuildCameraMatrices(g_xEngine.FluxGraphics().m_xFrameConstants);
 
@@ -208,12 +208,12 @@ void Flux_Graphics::UploadFrameConstants()
 	Flux_MemoryManager::UploadBufferData(g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &g_xEngine.FluxGraphics().m_xFrameConstants, sizeof(FrameConstants));
 }
 
-TextureFormat Flux_Graphics::GetMRTFormat(MRTIndex eIndex)
+TextureFormat Flux_GraphicsImpl::GetMRTFormat(MRTIndex eIndex)
 {
 	return g_xEngine.FluxGraphics().m_aeMRTFormats[eIndex];
 }
 
-const Zenith_Maths::Vector3& Flux_Graphics::GetCameraPosition()
+const Zenith_Maths::Vector3& Flux_GraphicsImpl::GetCameraPosition()
 {
 	// Return the xyz components of the camera position (w is padding)
 	// Note: This is safe because Vector4's memory layout is {x, y, z, w} contiguously
@@ -221,27 +221,27 @@ const Zenith_Maths::Vector3& Flux_Graphics::GetCameraPosition()
 	return *reinterpret_cast<const Zenith_Maths::Vector3*>(&g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad);
 }
 
-Flux_ShaderResourceView* Flux_Graphics::GetGBufferSRV(MRTIndex eIndex)
+Flux_ShaderResourceView* Flux_GraphicsImpl::GetGBufferSRV(MRTIndex eIndex)
 {
 	return &GetMRTAttachment(eIndex).SRV();
 }
 
-Flux_ShaderResourceView* Flux_Graphics::GetDepthStencilSRV()
+Flux_ShaderResourceView* Flux_GraphicsImpl::GetDepthStencilSRV()
 {
 	return &GetDepthAttachment().SRV();
 }
 
-Flux_RenderTargetView* Flux_Graphics::GetGBufferRTV(MRTIndex eIndex)
+Flux_RenderTargetView* Flux_GraphicsImpl::GetGBufferRTV(MRTIndex eIndex)
 {
 	return &GetMRTAttachment(eIndex).RTV();
 }
 
-Flux_DepthStencilView* Flux_Graphics::GetDepthStencilDSV()
+Flux_DepthStencilView* Flux_GraphicsImpl::GetDepthStencilDSV()
 {
 	return &GetDepthAttachment().DSV();
 }
 
-float Flux_Graphics::GetNearPlane()
+float Flux_GraphicsImpl::GetNearPlane()
 {
 #ifdef ZENITH_TOOLS
 	return Zenith_Editor::GetCameraNearPlane();
@@ -250,7 +250,7 @@ float Flux_Graphics::GetNearPlane()
 	return pxCamera ? pxCamera->GetNearPlane() : 0.1f;
 #endif
 }
-float Flux_Graphics::GetFarPlane()
+float Flux_GraphicsImpl::GetFarPlane()
 {
 #ifdef ZENITH_TOOLS
 	return Zenith_Editor::GetCameraFarPlane();
@@ -260,7 +260,7 @@ float Flux_Graphics::GetFarPlane()
 #endif
 }
 
-float Flux_Graphics::GetFOV()
+float Flux_GraphicsImpl::GetFOV()
 {
 #ifdef ZENITH_TOOLS
 	return Zenith_Editor::GetCameraFOV();
@@ -270,7 +270,7 @@ float Flux_Graphics::GetFOV()
 #endif
 }
 
-float Flux_Graphics::GetAspectRatio()
+float Flux_GraphicsImpl::GetAspectRatio()
 {
 #ifdef ZENITH_TOOLS
 	return Zenith_Editor::GetCameraAspectRatio();
@@ -282,7 +282,7 @@ float Flux_Graphics::GetAspectRatio()
 
 // ---- Transient resource setup -----------------------------------------------
 
-void Flux_Graphics::SetupTransients(Flux_RenderGraph& xGraph)
+void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 {
 	g_xEngine.FluxGraphics().m_pxGraph = &xGraph;
 
@@ -332,22 +332,22 @@ void Flux_Graphics::SetupTransients(Flux_RenderGraph& xGraph)
 // graph, so rebuilds that invalidate the old SRV don't leave a stale binding
 // in the tree. Returns nullptr if the graph isn't set up yet (safe in early
 // startup before the first SetupTransients call).
-const Flux_ShaderResourceView* Flux_Graphics::GetDebugSRV_MRTDiffuse()
+const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_MRTDiffuse()
 {
 	if (g_xEngine.FluxGraphics().m_pxGraph == nullptr) return nullptr;
 	return &g_xEngine.FluxGraphics().m_pxGraph->GetTransientAttachment(g_xEngine.FluxGraphics().m_axMRTHandles[MRT_INDEX_DIFFUSE]).SRV();
 }
-const Flux_ShaderResourceView* Flux_Graphics::GetDebugSRV_MRTNormalsAO()
+const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_MRTNormalsAO()
 {
 	if (g_xEngine.FluxGraphics().m_pxGraph == nullptr) return nullptr;
 	return &g_xEngine.FluxGraphics().m_pxGraph->GetTransientAttachment(g_xEngine.FluxGraphics().m_axMRTHandles[MRT_INDEX_NORMALSAMBIENT]).SRV();
 }
-const Flux_ShaderResourceView* Flux_Graphics::GetDebugSRV_MRTMaterial()
+const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_MRTMaterial()
 {
 	if (g_xEngine.FluxGraphics().m_pxGraph == nullptr) return nullptr;
 	return &g_xEngine.FluxGraphics().m_pxGraph->GetTransientAttachment(g_xEngine.FluxGraphics().m_axMRTHandles[MRT_INDEX_MATERIAL]).SRV();
 }
-const Flux_ShaderResourceView* Flux_Graphics::GetDebugSRV_Depth()
+const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_Depth()
 {
 	if (g_xEngine.FluxGraphics().m_pxGraph == nullptr) return nullptr;
 	return &g_xEngine.FluxGraphics().m_pxGraph->GetTransientAttachment(g_xEngine.FluxGraphics().m_xDepthHandle).SRV();
@@ -355,26 +355,26 @@ const Flux_ShaderResourceView* Flux_Graphics::GetDebugSRV_Depth()
 #endif
 
 // Render target getters — always resolve through the graph's transient slot.
-Flux_RenderAttachment& Flux_Graphics::GetMRTAttachment(MRTIndex eIndex)
+Flux_RenderAttachment& Flux_GraphicsImpl::GetMRTAttachment(MRTIndex eIndex)
 {
 	Zenith_Assert(eIndex < MRT_INDEX_COUNT, "Flux_Graphics::GetMRTAttachment: index %u out of range", static_cast<u_int>(eIndex));
 	Zenith_Assert(g_xEngine.FluxGraphics().m_pxGraph, "Flux_Graphics::GetMRTAttachment: graph pointer is null — call SetupTransients first");
 	return g_xEngine.FluxGraphics().m_pxGraph->GetTransientAttachment(g_xEngine.FluxGraphics().m_axMRTHandles[eIndex]);
 }
 
-Flux_RenderAttachment& Flux_Graphics::GetDepthAttachment()
+Flux_RenderAttachment& Flux_GraphicsImpl::GetDepthAttachment()
 {
 	Zenith_Assert(g_xEngine.FluxGraphics().m_pxGraph, "Flux_Graphics::GetDepthAttachment: graph pointer is null");
 	return g_xEngine.FluxGraphics().m_pxGraph->GetTransientAttachment(g_xEngine.FluxGraphics().m_xDepthHandle);
 }
 
-Flux_RenderAttachment& Flux_Graphics::GetFinalRenderTarget()
+Flux_RenderAttachment& Flux_GraphicsImpl::GetFinalRenderTarget()
 {
 	Zenith_Assert(g_xEngine.FluxGraphics().m_pxGraph, "Flux_Graphics::GetFinalRenderTarget: graph pointer is null");
 	return g_xEngine.FluxGraphics().m_pxGraph->GetTransientAttachment(g_xEngine.FluxGraphics().m_xFinalRTHandle);
 }
 
-void Flux_Graphics::ReleaseAssetReferences()
+void Flux_GraphicsImpl::ReleaseAssetReferences()
 {
 	// Drop refs to all engine bootstrap defaults so the asset registry can delete
 	// them in its own Shutdown. Called from Flux::ReleaseAssetReferences before
@@ -388,7 +388,7 @@ void Flux_Graphics::ReleaseAssetReferences()
 	g_xEngine.FluxGraphics().m_xWaterNormalTexture.Clear();
 }
 
-void Flux_Graphics::Shutdown()
+void Flux_GraphicsImpl::Shutdown()
 {
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics shutting down...");
 

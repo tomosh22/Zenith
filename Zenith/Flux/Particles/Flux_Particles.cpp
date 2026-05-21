@@ -8,7 +8,7 @@
 #include "Flux/Particles/Flux_ParticleGPU.h"
 
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"

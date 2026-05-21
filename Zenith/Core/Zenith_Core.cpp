@@ -17,7 +17,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Flux/Flux.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Fog/Flux_FogImpl.h"
@@ -236,7 +236,7 @@ void Zenith_Core::Zenith_MainLoop()
 
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux_Graphics::UploadFrameConstants();
+		g_xEngine.FluxGraphics().UploadFrameConstants();
 	}
 
 	// Only submit render tasks if we're going to process them

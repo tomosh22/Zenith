@@ -5,7 +5,7 @@
 #include "Zenith_Editor_MaterialUI.h"
 #include "Zenith_Editor.h"
 #include "Zenith_EditorMaterialUIImpl.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 

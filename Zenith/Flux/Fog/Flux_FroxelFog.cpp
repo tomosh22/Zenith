@@ -6,10 +6,10 @@
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -372,7 +372,7 @@ void Flux_FroxelFogImpl::RenderApply(Flux_CommandList* pxCommandList)
 
 	Flux_ShaderBinder xApplyBinder(*pxCommandList);
 	xApplyBinder.BindCBV(g_xEngine.FroxelFog().m_xApplyShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xApplyBinder.BindSRV(g_xEngine.FroxelFog().m_xApplyShader, "u_xDepthTexture", Flux_Graphics::GetDepthStencilSRV());
+	xApplyBinder.BindSRV(g_xEngine.FroxelFog().m_xApplyShader, "u_xDepthTexture", g_xEngine.FluxGraphics().GetDepthStencilSRV());
 	xApplyBinder.BindSRV(g_xEngine.FroxelFog().m_xApplyShader, "u_xLightingGrid", &GetLightingGridInternal().SRV());
 	xApplyBinder.BindSRV(g_xEngine.FroxelFog().m_xApplyShader, "u_xScatteringGrid", &GetScatteringGridInternal().SRV());
 	xApplyBinder.BindDrawConstants(g_xEngine.FroxelFog().m_xApplyShader, "ApplyConstants", &s_xApplyConstants, sizeof(ApplyConstants));

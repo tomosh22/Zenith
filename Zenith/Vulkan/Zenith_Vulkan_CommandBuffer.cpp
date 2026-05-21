@@ -6,7 +6,7 @@
 #include "Vulkan/Zenith_VulkanImpl.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 
 //#TO purely for the static assert in SetIndexBuffer

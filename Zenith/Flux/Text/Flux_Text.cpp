@@ -6,7 +6,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -298,5 +298,5 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 void Flux_TextImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Text", ExecuteText)
-		.Writes(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
+		.Writes(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }

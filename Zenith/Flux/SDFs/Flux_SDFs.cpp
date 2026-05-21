@@ -5,7 +5,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -136,5 +136,5 @@ void Flux_SDFsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// is bound as a writable DSV for the renderpass.
 	xGraph.AddPass("SDFs", ExecuteSDFs)
 		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(Flux_Graphics::GetDepthAttachment(),  RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),  RESOURCE_ACCESS_WRITE_DSV);
 }

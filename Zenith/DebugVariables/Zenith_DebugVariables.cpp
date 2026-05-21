@@ -7,7 +7,7 @@
 // Pulled in for g_xEngine.FluxGraphics().m_xRepeatSampler (used by the texture preview
 // widget); CreateImGuiTextureID itself is on Flux_PlatformAPI and reachable
 // via the platform-graphics include already in Flux.h.
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 
 // Phase 5.7: tree state lives on Zenith_DebugVariablesImpl held by
