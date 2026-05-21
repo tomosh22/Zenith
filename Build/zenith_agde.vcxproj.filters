@@ -3459,6 +3459,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBus.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBusImpl.h">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneEntityOwnership.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>

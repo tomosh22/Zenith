@@ -13,6 +13,7 @@
 #include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_EntityStore.h"
+#include "EntityComponent/Internal/Zenith_SceneCallbackBusImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -141,6 +142,14 @@ Zenith_SceneRegistryImpl& Zenith_Engine::SceneRegistry()
 	return *m_pxSceneRegistry;
 }
 
+Zenith_SceneCallbackBusImpl& Zenith_Engine::SceneCallbacks()
+{
+	// No assert: callback registrations happen at static-init time (via
+	// scene system bootstrap) and during gameplay. Allocated alongside
+	// SceneRegistry / EntityStore VERY EARLY in Initialise.
+	return *m_pxSceneCallbacks;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -163,6 +172,13 @@ void Zenith_Engine::Initialise()
 	// creates the persistent scene.
 	Zenith_Assert(m_pxSceneRegistry == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxSceneRegistry = new Zenith_SceneRegistryImpl();
+
+	// Phase 5c: scene callback bus state (6 callback lists + handle
+	// allocator + deferred-removal queue + dispatch-depth + active-scene
+	// suppression flags). Must exist before any subsystem registers a
+	// callback during init.
+	Zenith_Assert(m_pxSceneCallbacks == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxSceneCallbacks = new Zenith_SceneCallbackBusImpl();
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
 	// main-thread ID) lives on the engine now. Allocate BEFORE
@@ -453,6 +469,11 @@ void Zenith_Engine::Shutdown()
 	// already drained the slot table; just reclaim the holder.
 	delete m_pxSceneRegistry;
 	m_pxSceneRegistry = nullptr;
+
+	// 16. Free the scene callback bus state. SceneCallbackBus::Shutdown
+	// (called from SceneManager::Shutdown) already cleared the lists.
+	delete m_pxSceneCallbacks;
+	m_pxSceneCallbacks = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

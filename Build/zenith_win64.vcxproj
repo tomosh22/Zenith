@@ -1153,6 +1153,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBus.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBusImpl.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneEntityOwnership.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleContext.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleScheduler.h" />
