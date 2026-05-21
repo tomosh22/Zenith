@@ -59,6 +59,18 @@ namespace DP_Particles
 		                        //   villager. Distinct from the other kinds: NOT
 		                        //   burst-based -- continuously emits while the
 		                        //   tracked villager has scent above threshold.
+		DevoutChannel     = 9,  // continuous candlelight motes around a Devout
+		                        //   being possessed while the 0.8 s channel
+		                        //   completes. Player feedback for "the
+		                        //   possession is in progress, don't move yet."
+		BeggarStealthAura = 10, // continuous dim grey halo around any possessed
+		                        //   Beggar. Telegraphs "you are invisible to
+		                        //   Aelfric" -- otherwise the Beggar-ignored
+		                        //   rule is a silent BridgePerception filter
+		                        //   the player can't see.
+		ChildToolRefusal  = 11, // one-shot red-X burst when a Child villager
+		                        //   tries to auto-pickup a tool (Iron / Key)
+		                        //   and the proximity-pickup is rejected.
 
 		COUNT
 	};
@@ -109,6 +121,18 @@ namespace DP_Particles
 	// INVALID_ENTITY_ID for xVillager OR bShow=false stops emission.
 	// Idempotent.
 	void UpdateHighScentAura(Zenith_EntityID xVillager, bool bShow);
+
+	// 2026-05-21: archetype-aware aura updates. Same shape as
+	// UpdateHighScentAura but for the Beggar + Devout effects.
+	// Called once per frame from DPPlayerController_Behaviour to
+	// track:
+	//   * The currently-possessed Beggar (BeggarStealthAura emits).
+	//   * The current Devout channel target during a 0.8 s channel
+	//     (DevoutChannel emits).
+	// Each is a SetEmitting(true) + SetEmitPosition call when the
+	// state holds; off otherwise. Idempotent.
+	void UpdateBeggarStealthAura(Zenith_EntityID xVillager, bool bShow);
+	void UpdateDevoutChannelAura(Zenith_EntityID xVillager, bool bShow);
 
 	// ----- Test accessors (ZENITH_INPUT_SIMULATOR only) -----
 	//

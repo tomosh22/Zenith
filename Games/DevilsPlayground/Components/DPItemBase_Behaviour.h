@@ -141,6 +141,19 @@ public:
 				&& pxV->GetArchetypeId() == "Child"
 				&& DP_IsToolTag(m_eTag))
 			{
+				// 2026-05-21: telegraph the refusal so the player can
+				// SEE that the Child silently can't carry tools.
+				// Pre-fix this branch was a bare return -- the only
+				// indication was "I walked over an Iron and nothing
+				// happened." The DP_OnChildToolRefused event drives
+				// the ChildToolRefusal particle burst (red X) at the
+				// villager position.
+				Zenith_EventDispatcher::Get().Dispatch(
+					DP_OnChildToolRefused{
+						xVillager,
+						m_xParentEntity.GetEntityID(),
+						m_eTag,
+						xVPos });
 				return;
 			}
 		}

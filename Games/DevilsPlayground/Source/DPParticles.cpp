@@ -36,6 +36,9 @@ namespace DP_Particles
 			"DP_BogWaterSteam",
 			"DP_PriestAlert",
 			"DP_HighScentAura",
+			"DP_DevoutChannel",
+			"DP_BeggarStealthAura",
+			"DP_ChildToolRefusal",
 		};
 
 		// Per-Kind burst count. The Flux_ParticleEmitterConfig has
@@ -51,7 +54,10 @@ namespace DP_Particles
 			48,  // BellSoulRing     -- biggest; radial ring
 			20,  // BogWaterSteam
 			12,  // PriestAlert
-			0,   // HighScentAura   -- continuous emission, no per-burst count
+			0,   // HighScentAura     -- continuous emission, no per-burst count
+			0,   // DevoutChannel     -- continuous emission
+			0,   // BeggarStealthAura -- continuous emission
+			10,  // ChildToolRefusal  -- small sharp red-X burst
 		};
 
 		// Vertical offset added to burst-position Y. PriestAlert needs
@@ -67,6 +73,9 @@ namespace DP_Particles
 			0.1f,  // BogWaterSteam     (puddle level)
 			2.2f,  // PriestAlert       (above priest head; priest ~1.8 m)
 			0.9f,  // HighScentAura     (mid-body; the demonic stain reads as torso-emitted)
+			1.2f,  // DevoutChannel     (above villager head; candlelight reads as halo)
+			0.7f,  // BeggarStealthAura (mid-body; subtle ground-level haze)
+			1.1f,  // ChildToolRefusal  (chest level; the X "blocks" the item visually)
 		};
 
 		Flux_ParticleEmitterConfig* g_apxConfigs[kNumKinds] = { nullptr };
@@ -83,6 +92,7 @@ namespace DP_Particles
 		Zenith_EventHandle g_xSubBellRing             = INVALID_EVENT_HANDLE;
 		Zenith_EventHandle g_xSubItemEvaporated       = INVALID_EVENT_HANDLE;
 		Zenith_EventHandle g_xSubPriestAlerted        = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle g_xSubChildToolRefused     = INVALID_EVENT_HANDLE;
 
 		// Test accessor backing storage.
 		uint32_t g_auBurstCounts[kNumKinds] = { 0 };
@@ -319,6 +329,89 @@ namespace DP_Particles
 			return p;
 		}
 
+		Flux_ParticleEmitterConfig* MakeDevoutChannel()
+		{
+			// Continuous emission while the player channels a Devout
+			// possession. Soft yellow / candlelight motes rising slowly
+			// around the channel target -- reads as ritualistic charge.
+			auto* p = new Flux_ParticleEmitterConfig();
+			p->m_fSpawnRate         = 26.0f;
+			p->m_uBurstCount        = 0;
+			p->m_uMaxParticles      = 72;
+			p->m_fLifetimeMin       = 0.6f;
+			p->m_fLifetimeMax       = 1.1f;
+			p->m_fSpawnRadius       = 0.5f;
+			p->m_xEmitDirection     = { 0.0f, 1.0f, 0.0f };
+			p->m_fSpreadAngleDegrees = 25.0f;
+			p->m_fSpeedMin          = 0.8f;
+			p->m_fSpeedMax          = 1.4f;
+			p->m_xGravity           = { 0.0f, 0.6f, 0.0f };
+			p->m_fDrag              = 0.4f;
+			p->m_xColorStart        = { 1.0f, 0.92f, 0.55f, 0.9f };  // candleflame
+			p->m_xColorEnd          = { 1.0f, 0.70f, 0.20f, 0.0f };
+			p->m_fSizeStart         = 0.10f;
+			p->m_fSizeEnd           = 0.05f;
+			p->m_bAdditiveBlending  = true;
+			p->m_bUseGPUCompute     = false;
+			return p;
+		}
+
+		Flux_ParticleEmitterConfig* MakeBeggarStealthAura()
+		{
+			// Continuous, dim grey haze around a possessed Beggar.
+			// Reads as "this villager is overlooked / unseen" -- the
+			// player learns that this body is functionally invisible
+			// to Aelfric.
+			auto* p = new Flux_ParticleEmitterConfig();
+			p->m_fSpawnRate         = 12.0f;
+			p->m_uBurstCount        = 0;
+			p->m_uMaxParticles      = 48;
+			p->m_fLifetimeMin       = 1.0f;
+			p->m_fLifetimeMax       = 1.8f;
+			p->m_fSpawnRadius       = 0.50f;
+			p->m_xEmitDirection     = { 0.0f, 1.0f, 0.0f };
+			p->m_fSpreadAngleDegrees = 40.0f;
+			p->m_fSpeedMin          = 0.2f;
+			p->m_fSpeedMax          = 0.6f;
+			p->m_xGravity           = { 0.0f, 0.0f, 0.0f };
+			p->m_fDrag              = 1.5f;
+			p->m_xColorStart        = { 0.55f, 0.55f, 0.55f, 0.35f }; // dim grey
+			p->m_xColorEnd          = { 0.70f, 0.70f, 0.75f, 0.0f };
+			p->m_fSizeStart         = 0.20f;
+			p->m_fSizeEnd           = 0.45f;
+			p->m_bAdditiveBlending  = false;
+			p->m_fTurbulence        = 0.3f;
+			p->m_bUseGPUCompute     = false;
+			return p;
+		}
+
+		Flux_ParticleEmitterConfig* MakeChildToolRefusal()
+		{
+			// Sharp red-X-like burst when a Child villager's
+			// auto-pickup is rejected. Bright, fast, brief -- meant to
+			// read as "no, blocked".
+			auto* p = new Flux_ParticleEmitterConfig();
+			p->m_fSpawnRate         = 0.0f;
+			p->m_uBurstCount        = 0;
+			p->m_uMaxParticles      = 20;
+			p->m_fLifetimeMin       = 0.25f;
+			p->m_fLifetimeMax       = 0.45f;
+			p->m_fSpawnRadius       = 0.10f;
+			p->m_xEmitDirection     = { 0.0f, 1.0f, 0.0f };
+			p->m_fSpreadAngleDegrees = 60.0f;
+			p->m_fSpeedMin          = 1.2f;
+			p->m_fSpeedMax          = 2.5f;
+			p->m_xGravity           = { 0.0f, -3.0f, 0.0f };
+			p->m_fDrag              = 1.0f;
+			p->m_xColorStart        = { 0.95f, 0.25f, 0.20f, 1.0f };  // alarm red
+			p->m_xColorEnd          = { 0.50f, 0.10f, 0.10f, 0.0f };
+			p->m_fSizeStart         = 0.10f;
+			p->m_fSizeEnd           = 0.04f;
+			p->m_bAdditiveBlending  = true;
+			p->m_bUseGPUCompute     = false;
+			return p;
+		}
+
 		// Build all eight configs in the right slot. Caller owns
 		// deallocation via Shutdown.
 		void BuildAllConfigs()
@@ -332,6 +425,9 @@ namespace DP_Particles
 			g_apxConfigs[static_cast<int>(Kind::BogWaterSteam)]     = MakeBogWaterSteam();
 			g_apxConfigs[static_cast<int>(Kind::PriestAlert)]       = MakePriestAlert();
 			g_apxConfigs[static_cast<int>(Kind::HighScentAura)]     = MakeHighScentAura();
+			g_apxConfigs[static_cast<int>(Kind::DevoutChannel)]     = MakeDevoutChannel();
+			g_apxConfigs[static_cast<int>(Kind::BeggarStealthAura)] = MakeBeggarStealthAura();
+			g_apxConfigs[static_cast<int>(Kind::ChildToolRefusal)]  = MakeChildToolRefusal();
 
 			for (int i = 0; i < kNumKinds; ++i)
 			{
@@ -402,6 +498,54 @@ namespace DP_Particles
 			// glyph), not the world telegraph.
 			Burst(Kind::PriestAlert, xEv.m_xPosition);
 		}
+
+		void OnChildToolRefused(const DP_OnChildToolRefused& xEv)
+		{
+			Burst(Kind::ChildToolRefusal, xEv.m_xPosition);
+		}
+
+		// Shared implementation for the continuous-emission per-villager
+		// auras (HighScent / DevoutChannel / BeggarStealth). Kept
+		// distinct from Burst() because the trigger condition is
+		// per-frame state, not an event.
+		void UpdateContinuousAura(Kind eKind, Zenith_EntityID xVillager, bool bShow)
+		{
+			if (!g_bInitialized) return;
+			const int iKind = static_cast<int>(eKind);
+			if (iKind < 0 || iKind >= kNumKinds) return;
+			Zenith_EntityID xEmitterId = g_axEmitterEntities[iKind];
+			if (!xEmitterId.IsValid()) return;
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xEmitterId);
+			if (pxScene == nullptr) return;
+			Zenith_Entity xEnt = pxScene->TryGetEntity(xEmitterId);
+			if (!xEnt.IsValid()) return;
+			if (!xEnt.HasComponent<Zenith_ParticleEmitterComponent>()) return;
+			Zenith_ParticleEmitterComponent& xEmitter =
+				xEnt.GetComponent<Zenith_ParticleEmitterComponent>();
+			const bool bWantEmit = bShow && xVillager.IsValid();
+			if (!bWantEmit)
+			{
+				xEmitter.SetEmitting(false);
+				return;
+			}
+			Zenith_SceneData* pxVilScene = Zenith_SceneManager::GetSceneDataForEntity(xVillager);
+			if (pxVilScene == nullptr)
+			{
+				xEmitter.SetEmitting(false);
+				return;
+			}
+			Zenith_Entity xVilEnt = pxVilScene->TryGetEntity(xVillager);
+			if (!xVilEnt.IsValid() || !xVilEnt.HasComponent<Zenith_TransformComponent>())
+			{
+				xEmitter.SetEmitting(false);
+				return;
+			}
+			Zenith_Maths::Vector3 xPos;
+			xVilEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+			xPos.y += kKindHeightOffset[iKind];
+			xEmitter.SetEmitPosition(xPos);
+			xEmitter.SetEmitting(true);
+		}
 	}
 
 	// =====================================================================
@@ -423,6 +567,7 @@ namespace DP_Particles
 		g_xSubBellRing            = xDispatcher.Subscribe<DP_OnBellRing>(&OnBellRing);
 		g_xSubItemEvaporated      = xDispatcher.Subscribe<DP_OnItemEvaporated>(&OnItemEvaporated);
 		g_xSubPriestAlerted       = xDispatcher.Subscribe<DP_OnPriestAlerted>(&OnPriestAlerted);
+		g_xSubChildToolRefused    = xDispatcher.Subscribe<DP_OnChildToolRefused>(&OnChildToolRefused);
 
 		for (int i = 0; i < kNumKinds; ++i) g_auBurstCounts[i] = 0;
 		for (int i = 0; i < kNumKinds; ++i) g_axEmitterEntities[i] = INVALID_ENTITY_ID;
@@ -443,6 +588,7 @@ namespace DP_Particles
 		xDispatcher.Unsubscribe(g_xSubBellRing);
 		xDispatcher.Unsubscribe(g_xSubItemEvaporated);
 		xDispatcher.Unsubscribe(g_xSubPriestAlerted);
+		xDispatcher.Unsubscribe(g_xSubChildToolRefused);
 		g_xSubDoorOpened          = INVALID_EVENT_HANDLE;
 		g_xSubDoorLockRejected    = INVALID_EVENT_HANDLE;
 		g_xSubChestOpened         = INVALID_EVENT_HANDLE;
@@ -451,6 +597,7 @@ namespace DP_Particles
 		g_xSubBellRing            = INVALID_EVENT_HANDLE;
 		g_xSubItemEvaporated      = INVALID_EVENT_HANDLE;
 		g_xSubPriestAlerted       = INVALID_EVENT_HANDLE;
+		g_xSubChildToolRefused    = INVALID_EVENT_HANDLE;
 
 		ClearEmitterEntities();
 		TearDownAllConfigs();
@@ -553,49 +700,17 @@ namespace DP_Particles
 
 	void UpdateHighScentAura(Zenith_EntityID xVillager, bool bShow)
 	{
-		if (!g_bInitialized) return;
-		const int iKind = static_cast<int>(Kind::HighScentAura);
+		UpdateContinuousAura(Kind::HighScentAura, xVillager, bShow);
+	}
 
-		// Resolve the aura emitter entity. If it wasn't created (e.g. a
-		// test loads ProcLevel but the bootstrap didn't run), bail.
-		Zenith_EntityID xEmitterId = g_axEmitterEntities[iKind];
-		if (!xEmitterId.IsValid()) return;
-		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xEmitterId);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xEmitterId);
-		if (!xEnt.IsValid()) return;
-		if (!xEnt.HasComponent<Zenith_ParticleEmitterComponent>()) return;
-		Zenith_ParticleEmitterComponent& xEmitter =
-			xEnt.GetComponent<Zenith_ParticleEmitterComponent>();
+	void UpdateBeggarStealthAura(Zenith_EntityID xVillager, bool bShow)
+	{
+		UpdateContinuousAura(Kind::BeggarStealthAura, xVillager, bShow);
+	}
 
-		const bool bWantEmit = bShow && xVillager.IsValid();
-		if (!bWantEmit)
-		{
-			xEmitter.SetEmitting(false);
-			return;
-		}
-
-		// Reposition the emitter at the villager's world position
-		// (plus the kind's vertical offset) + flip emission on. Done
-		// every frame so the aura follows the villager around the
-		// village rather than blooming once and staying put.
-		Zenith_SceneData* pxVilScene = Zenith_SceneManager::GetSceneDataForEntity(xVillager);
-		if (pxVilScene == nullptr)
-		{
-			xEmitter.SetEmitting(false);
-			return;
-		}
-		Zenith_Entity xVilEnt = pxVilScene->TryGetEntity(xVillager);
-		if (!xVilEnt.IsValid() || !xVilEnt.HasComponent<Zenith_TransformComponent>())
-		{
-			xEmitter.SetEmitting(false);
-			return;
-		}
-		Zenith_Maths::Vector3 xPos;
-		xVilEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-		xPos.y += kKindHeightOffset[iKind];
-		xEmitter.SetEmitPosition(xPos);
-		xEmitter.SetEmitting(true);
+	void UpdateDevoutChannelAura(Zenith_EntityID xVillager, bool bShow)
+	{
+		UpdateContinuousAura(Kind::DevoutChannel, xVillager, bShow);
 	}
 
 	uint32_t GetBurstCountForTest(Kind eKind)
