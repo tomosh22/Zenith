@@ -56,43 +56,52 @@
 #endif
 
 // ============================================================================
-// Combat Resources - Global access
-// Defined in Combat.cpp, initialized in Project_RegisterScriptBehaviours
+// Combat Resources - Phase 8 per-game ProjectResources struct.
 // ============================================================================
 
 class Flux_ParticleEmitterConfig;
 
 namespace Combat
 {
-	extern Flux_MeshGeometry* g_pxCapsuleGeometry;
-	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Flux_MeshGeometry* g_pxConeGeometry;
-	extern Flux_MeshGeometry* g_pxStickFigureGeometry;
-	extern ModelHandle g_xStickFigureModelAsset;
-	extern std::string g_strStickFigureModelPath;
-	extern MaterialHandle g_xPlayerMaterial;
-	extern MaterialHandle g_xEnemyMaterial;
-	extern MaterialHandle g_xArenaMaterial;
-	extern MaterialHandle g_xWallMaterial;
-	extern MaterialHandle g_xCandleMaterial;
-
-	extern PrefabHandle g_xPlayerPrefab;
-	extern PrefabHandle g_xEnemyPrefab;
-	extern PrefabHandle g_xArenaPrefab;
-	extern PrefabHandle g_xArenaWallPrefab;
-
 	// Enemy variant prefabs — three Scale tiers (weak/normal/strong) created
-	// from g_xEnemyPrefab via the prefab variant override system. Each
-	// instantiation walks the base chain + applies the Transform.Scale override.
+	// from m_xEnemyPrefab via the prefab variant override system.
 	static constexpr u_int uENEMY_VARIANT_COUNT = 3;
-	extern PrefabHandle g_axEnemyVariants[uENEMY_VARIANT_COUNT];
+
+	struct CombatResources
+	{
+		MeshGeometryHandle  m_xCapsuleAsset;
+		MeshGeometryHandle  m_xCubeAsset;
+		MeshGeometryHandle  m_xConeAsset;
+		MeshGeometryHandle  m_xStickFigureGeometryAsset;
+		Flux_MeshGeometry*  m_pxCapsuleGeometry     = nullptr;
+		Flux_MeshGeometry*  m_pxCubeGeometry        = nullptr;
+		Flux_MeshGeometry*  m_pxConeGeometry        = nullptr;
+		Flux_MeshGeometry*  m_pxStickFigureGeometry = nullptr;
+		ModelHandle         m_xStickFigureModelAsset;
+		std::string         m_strStickFigureModelPath;
+		MaterialHandle      m_xPlayerMaterial;
+		MaterialHandle      m_xEnemyMaterial;
+		MaterialHandle      m_xArenaMaterial;
+		MaterialHandle      m_xWallMaterial;
+		MaterialHandle      m_xCandleMaterial;
+
+		PrefabHandle        m_xPlayerPrefab;
+		PrefabHandle        m_xEnemyPrefab;
+		PrefabHandle        m_xArenaPrefab;
+		PrefabHandle        m_xArenaWallPrefab;
+
+		PrefabHandle        m_axEnemyVariants[uENEMY_VARIANT_COUNT];
+
+		Flux_ParticleEmitterConfig* m_pxHitSparkConfig    = nullptr;
+		Zenith_EntityID             m_uHitSparkEmitterID  = INVALID_ENTITY_ID;
+		Flux_ParticleEmitterConfig* m_pxFlameConfig       = nullptr;
+	};
+
+	CombatResources& Resources();
+
+	// Constant tables for enemy variants (.cpp-static -- shared, immutable).
 	extern const char* g_aszEnemyVariantNames[uENEMY_VARIANT_COUNT];
 	extern const float g_afEnemyVariantScales[uENEMY_VARIANT_COUNT];
-
-	// Particle effects
-	extern Flux_ParticleEmitterConfig* g_pxHitSparkConfig;
-	extern Zenith_EntityID g_uHitSparkEmitterID;
-	extern Flux_ParticleEmitterConfig* g_pxFlameConfig;
 
 	// Lazy init for stick figure model (assets may be created after first init attempt)
 	void TryInitializeStickFigureModel();
@@ -172,18 +181,18 @@ public:
 			});
 
 		// Cache resource pointers
-		m_pxCapsuleGeometry = Combat::g_pxCapsuleGeometry;
-		m_pxCubeGeometry = Combat::g_pxCubeGeometry;
-		m_pxStickFigureGeometry = Combat::g_pxStickFigureGeometry;
-		m_xPlayerMaterial = Combat::g_xPlayerMaterial;
-		m_xEnemyMaterial = Combat::g_xEnemyMaterial;
-		m_xArenaMaterial = Combat::g_xArenaMaterial;
-		m_xWallMaterial = Combat::g_xWallMaterial;
+		m_pxCapsuleGeometry = Combat::Resources().m_pxCapsuleGeometry;
+		m_pxCubeGeometry = Combat::Resources().m_pxCubeGeometry;
+		m_pxStickFigureGeometry = Combat::Resources().m_pxStickFigureGeometry;
+		m_xPlayerMaterial = Combat::Resources().m_xPlayerMaterial;
+		m_xEnemyMaterial = Combat::Resources().m_xEnemyMaterial;
+		m_xArenaMaterial = Combat::Resources().m_xArenaMaterial;
+		m_xWallMaterial = Combat::Resources().m_xWallMaterial;
 
 		Zenith_Assert(m_xEnemyMaterial.GetDirect() != nullptr,
-			"Combat::g_xEnemyMaterial was not properly initialized - check InitializeCombatResources()");
+			"Combat::Resources().m_xEnemyMaterial was not properly initialized - check InitializeCombatResources()");
 		Zenith_Assert(m_xPlayerMaterial.GetDirect() != nullptr,
-			"Combat::g_xPlayerMaterial was not properly initialized - check InitializeCombatResources()");
+			"Combat::Resources().m_xPlayerMaterial was not properly initialized - check InitializeCombatResources()");
 
 		// Wire menu button callback
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
@@ -496,7 +505,7 @@ private:
 		static constexpr uint32_t s_uWallSegments = 24;
 
 		// Create arena floor
-		Zenith_Entity xFloor = Combat::g_xArenaPrefab.GetDirect()->Instantiate(pxSceneData, "ArenaFloor");
+		Zenith_Entity xFloor = Combat::Resources().m_xArenaPrefab.GetDirect()->Instantiate(pxSceneData, "ArenaFloor");
 
 		Zenith_TransformComponent& xFloorTransform = xFloor.GetComponent<Zenith_TransformComponent>();
 		xFloorTransform.SetPosition(Zenith_Maths::Vector3(0.0f, -0.5f, 0.0f));
@@ -530,13 +539,13 @@ private:
 
 			Zenith_ModelComponent& xWallModel = xWall.AddComponent<Zenith_ModelComponent>();
 			xWallModel.AddMeshEntry(*m_pxCubeGeometry, *m_xWallMaterial.GetDirect());
-			xWallModel.AddMeshEntry(*Combat::g_pxConeGeometry, *Combat::g_xCandleMaterial.GetDirect());
+			xWallModel.AddMeshEntry(*Combat::Resources().m_pxConeGeometry, *Combat::Resources().m_xCandleMaterial.GetDirect());
 
 			xWall.AddComponent<Zenith_ColliderComponent>()
 				.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
 
 			Zenith_ParticleEmitterComponent& xFlameEmitter = xWall.AddComponent<Zenith_ParticleEmitterComponent>();
-			xFlameEmitter.SetConfig(Combat::g_pxFlameConfig);
+			xFlameEmitter.SetConfig(Combat::Resources().m_pxFlameConfig);
 			xFlameEmitter.SetEmitting(true);
 			xFlameEmitter.SetEmitPosition(Zenith_Maths::Vector3(fX, s_fArenaWallHeight + 0.1f, fZ));
 			xFlameEmitter.SetEmitDirection(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
@@ -558,7 +567,7 @@ private:
 		}
 
 		// Create player
-		Zenith_Entity xPlayer = Combat::g_xPlayerPrefab.GetDirect()->Instantiate(pxSceneData, "Player");
+		Zenith_Entity xPlayer = Combat::Resources().m_xPlayerPrefab.GetDirect()->Instantiate(pxSceneData, "Player");
 
 		Zenith_TransformComponent& xPlayerTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
 		xPlayerTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
@@ -571,9 +580,9 @@ private:
 		Combat::TryInitializeStickFigureModel();
 
 		bool bUsingModelInstance = false;
-		if (!Combat::g_strStickFigureModelPath.empty())
+		if (!Combat::Resources().m_strStickFigureModelPath.empty())
 		{
-			xPlayerModel.LoadModel(Combat::g_strStickFigureModelPath);
+			xPlayerModel.LoadModel(Combat::Resources().m_strStickFigureModelPath);
 			if (xPlayerModel.GetModelInstance() && xPlayerModel.HasSkeleton())
 			{
 				xPlayerModel.GetModelInstance()->SetMaterial(0, m_xPlayerMaterial.GetDirect());
@@ -583,7 +592,7 @@ private:
 		if (!bUsingModelInstance)
 		{
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player model instance fallback to static mesh (modelPath empty=%s, hasModelInst=%s, hasSkeleton=%s)",
-				Combat::g_strStickFigureModelPath.empty() ? "yes" : "no",
+				Combat::Resources().m_strStickFigureModelPath.empty() ? "yes" : "no",
 				xPlayerModel.HasModel() ? "yes" : "no",
 				xPlayerModel.HasModel() && xPlayerModel.HasSkeleton() ? "yes" : "no");
 			xPlayerModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xPlayerMaterial.GetDirect());
@@ -611,14 +620,14 @@ private:
 		// Create hit spark emitter in arena scene
 		Zenith_Entity xHitSparkEmitter(pxSceneData, "HitSparkEmitter");
 		Zenith_ParticleEmitterComponent& xEmitter = xHitSparkEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
-		xEmitter.SetConfig(Combat::g_pxHitSparkConfig);
-		Combat::g_uHitSparkEmitterID = xHitSparkEmitter.GetEntityID();
+		xEmitter.SetConfig(Combat::Resources().m_pxHitSparkConfig);
+		Combat::Resources().m_uHitSparkEmitterID = xHitSparkEmitter.GetEntityID();
 	}
 
 	void ClearEntityReferences()
 	{
 		m_xLevelEntities = Combat_LevelEntities();
-		Combat::g_uHitSparkEmitterID = INVALID_ENTITY_ID;
+		Combat::Resources().m_uHitSparkEmitterID = INVALID_ENTITY_ID;
 	}
 
 	// (InitializePlayerAnimation removed - Combat_PlayerBehaviour::OnStart now owns
@@ -645,7 +654,7 @@ private:
 			// override (0.7 / 0.9 / 1.1 respectively) — no explicit SetScale here
 			// because the variant's override applies it during Instantiate.
 			const u_int uVariantIdx = i % Combat::uENEMY_VARIANT_COUNT;
-			Zenith_Prefab* pxVariant = Combat::g_axEnemyVariants[uVariantIdx].GetDirect();
+			Zenith_Prefab* pxVariant = Combat::Resources().m_axEnemyVariants[uVariantIdx].GetDirect();
 
 			char szName[32];
 			snprintf(szName, sizeof(szName), "Enemy_%u_%s", i, Combat::g_aszEnemyVariantNames[uVariantIdx]);
@@ -658,9 +667,9 @@ private:
 			Zenith_ModelComponent& xModel = xEnemy.AddComponent<Zenith_ModelComponent>();
 
 			bool bUsingEnemyModel = false;
-			if (!Combat::g_strStickFigureModelPath.empty())
+			if (!Combat::Resources().m_strStickFigureModelPath.empty())
 			{
-				xModel.LoadModel(Combat::g_strStickFigureModelPath);
+				xModel.LoadModel(Combat::Resources().m_strStickFigureModelPath);
 				if (xModel.GetModelInstance() && xModel.HasSkeleton())
 				{
 					xModel.GetModelInstance()->SetMaterial(0, m_xEnemyMaterial.GetDirect());
@@ -758,10 +767,10 @@ private:
 			xHitDir = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
 		}
 
-		if (Combat::g_uHitSparkEmitterID != INVALID_ENTITY_ID &&
-			pxSceneData->EntityExists(Combat::g_uHitSparkEmitterID))
+		if (Combat::Resources().m_uHitSparkEmitterID != INVALID_ENTITY_ID &&
+			pxSceneData->EntityExists(Combat::Resources().m_uHitSparkEmitterID))
 		{
-			Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Combat::g_uHitSparkEmitterID);
+			Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Combat::Resources().m_uHitSparkEmitterID);
 			if (xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
 			{
 				Zenith_ParticleEmitterComponent& xEmitter = xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>();

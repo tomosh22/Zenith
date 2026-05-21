@@ -38,44 +38,11 @@
 // ============================================================================
 namespace Combat
 {
-	// Mesh geometry assets (registry-managed via handles)
-	MeshGeometryHandle g_xCapsuleAsset;
-	MeshGeometryHandle g_xCubeAsset;
-	MeshGeometryHandle g_xConeAsset;
-	MeshGeometryHandle g_xStickFigureGeometryAsset;
+	static CombatResources g_xResources;
+	CombatResources& Resources() { return g_xResources; }
 
-	// Convenience pointers to underlying geometry (set in init via .GetDirect()->GetGeometry())
-	Flux_MeshGeometry* g_pxCapsuleGeometry = nullptr;
-	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
-	Flux_MeshGeometry* g_pxConeGeometry = nullptr;
-	Flux_MeshGeometry* g_pxStickFigureGeometry = nullptr;
-
-	ModelHandle g_xStickFigureModelAsset;  // Model asset with skeleton for animated rendering
-	std::string g_strStickFigureModelPath;  // Path to model asset file
-	MaterialHandle g_xPlayerMaterial;
-	MaterialHandle g_xEnemyMaterial;
-	MaterialHandle g_xArenaMaterial;
-	MaterialHandle g_xWallMaterial;
-	MaterialHandle g_xCandleMaterial;  // Cream color for candles
-
-	// Prefabs for runtime instantiation (handles for ref counting)
-	PrefabHandle g_xPlayerPrefab;
-	PrefabHandle g_xEnemyPrefab;
-	PrefabHandle g_xArenaPrefab;
-	PrefabHandle g_xArenaWallPrefab;  // Wall segment with candle and flame
-
-	// Enemy variant prefabs — three size tiers that share the base enemy template
-	// but each apply a different Transform.Scale override at instantiation.
-	// uENEMY_VARIANT_COUNT is declared in Combat_Behaviour.h to keep both extern
-	// declarations and definitions in sync.
-	PrefabHandle g_axEnemyVariants[uENEMY_VARIANT_COUNT];
 	const char* g_aszEnemyVariantNames[uENEMY_VARIANT_COUNT] = { "EnemyWeak", "EnemyNormal", "EnemyStrong" };
 	const float g_afEnemyVariantScales[uENEMY_VARIANT_COUNT] = { 0.7f, 0.9f, 1.1f };
-
-	// Particle effects
-	Flux_ParticleEmitterConfig* g_pxHitSparkConfig = nullptr;
-	Zenith_EntityID g_uHitSparkEmitterID = INVALID_ENTITY_ID;
-	Flux_ParticleEmitterConfig* g_pxFlameConfig = nullptr;  // Candle flame particles
 }
 
 // Lazy initialization of stick figure model asset.
@@ -84,7 +51,7 @@ namespace Combat
 void Combat::TryInitializeStickFigureModel()
 {
 	// Already initialized
-	if (!g_strStickFigureModelPath.empty())
+	if (!Resources().m_strStickFigureModelPath.empty())
 		return;
 
 	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MESH_EXT;
@@ -98,8 +65,8 @@ void Combat::TryInitializeStickFigureModel()
 		{
 			if (Zenith_MeshGeometryAsset* pxGeom = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(strStickFigureMeshGeomPath))
 			{
-				g_xStickFigureGeometryAsset.Set(pxGeom);
-				g_pxStickFigureGeometry = pxGeom->GetGeometry();
+				Resources().m_xStickFigureGeometryAsset.Set(pxGeom);
+				Resources().m_pxStickFigureGeometry = pxGeom->GetGeometry();
 				Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Loaded stick figure mesh from %s", strStickFigureMeshGeomPath.c_str());
 			}
 		}
@@ -113,10 +80,10 @@ void Combat::TryInitializeStickFigureModel()
 		pxModel->AddMeshByPath(strStickFigureMeshAssetPath, xEmptyMaterials);
 
 		// Export model asset
-		g_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MODEL_EXT;
-		pxModel->Export(g_strStickFigureModelPath.c_str());
-		g_xStickFigureModelAsset.Set(pxModel);
-		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Created model asset at %s", g_strStickFigureModelPath.c_str());
+		Resources().m_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MODEL_EXT;
+		pxModel->Export(Resources().m_strStickFigureModelPath.c_str());
+		Resources().m_xStickFigureModelAsset.Set(pxModel);
+		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Created model asset at %s", Resources().m_strStickFigureModelPath.c_str());
 	}
 	else
 	{
@@ -125,10 +92,10 @@ void Combat::TryInitializeStickFigureModel()
 			std::filesystem::exists(strStickFigureSkeletonPath) ? "exists" : "MISSING");
 
 		// Use capsule as fallback geometry only if not already set
-		if (!g_pxStickFigureGeometry)
+		if (!Resources().m_pxStickFigureGeometry)
 		{
-			g_xStickFigureGeometryAsset = g_xCapsuleAsset;
-			g_pxStickFigureGeometry = g_pxCapsuleGeometry;
+			Resources().m_xStickFigureGeometryAsset = Resources().m_xCapsuleAsset;
+			Resources().m_pxStickFigureGeometry = Resources().m_pxCapsuleGeometry;
 		}
 	}
 }
@@ -146,42 +113,42 @@ static void CleanupCombatResources()
 		return;
 
 	// Delete particle configs
-	delete g_pxHitSparkConfig;
-	g_pxHitSparkConfig = nullptr;
-	g_uHitSparkEmitterID = INVALID_ENTITY_ID;
+	delete Resources().m_pxHitSparkConfig;
+	Resources().m_pxHitSparkConfig = nullptr;
+	Resources().m_uHitSparkEmitterID = INVALID_ENTITY_ID;
 
-	delete g_pxFlameConfig;
-	g_pxFlameConfig = nullptr;
+	delete Resources().m_pxFlameConfig;
+	Resources().m_pxFlameConfig = nullptr;
 
 	// Drop prefab handle refs (registry now owns these and deletes them on its own teardown)
-	g_xPlayerPrefab.Clear();
-	g_xEnemyPrefab.Clear();
+	Resources().m_xPlayerPrefab.Clear();
+	Resources().m_xEnemyPrefab.Clear();
 	for (u_int u = 0; u < uENEMY_VARIANT_COUNT; ++u)
 	{
-		g_axEnemyVariants[u].Clear();
+		Resources().m_axEnemyVariants[u].Clear();
 	}
-	g_xArenaPrefab.Clear();
-	g_xArenaWallPrefab.Clear();
+	Resources().m_xArenaPrefab.Clear();
+	Resources().m_xArenaWallPrefab.Clear();
 
 	// Drop model + mesh-geometry handle refs
-	g_xStickFigureModelAsset.Clear();
-	g_xCapsuleAsset.Clear();
-	g_xCubeAsset.Clear();
-	g_xConeAsset.Clear();
-	g_xStickFigureGeometryAsset.Clear();
+	Resources().m_xStickFigureModelAsset.Clear();
+	Resources().m_xCapsuleAsset.Clear();
+	Resources().m_xCubeAsset.Clear();
+	Resources().m_xConeAsset.Clear();
+	Resources().m_xStickFigureGeometryAsset.Clear();
 
 	// Clear material handles
-	g_xPlayerMaterial.Clear();
-	g_xEnemyMaterial.Clear();
-	g_xArenaMaterial.Clear();
-	g_xWallMaterial.Clear();
-	g_xCandleMaterial.Clear();
+	Resources().m_xPlayerMaterial.Clear();
+	Resources().m_xEnemyMaterial.Clear();
+	Resources().m_xArenaMaterial.Clear();
+	Resources().m_xWallMaterial.Clear();
+	Resources().m_xCandleMaterial.Clear();
 
 	// Clear convenience geometry pointers (handles already cleared above own the lifetime)
-	g_pxStickFigureGeometry = nullptr;
-	g_pxCapsuleGeometry = nullptr;
-	g_pxCubeGeometry = nullptr;
-	g_pxConeGeometry = nullptr;
+	Resources().m_pxStickFigureGeometry = nullptr;
+	Resources().m_pxCapsuleGeometry = nullptr;
+	Resources().m_pxCubeGeometry = nullptr;
+	Resources().m_pxConeGeometry = nullptr;
 
 	// Note: Textures and materials are managed by Zenith_AssetRegistry
 
@@ -461,22 +428,22 @@ static void InitializeCombatResources()
 		Flux_MeshGeometry* pxCapsule = new Flux_MeshGeometry();
 		GenerateCapsule(*pxCapsule, 0.5f, 1.0f, 16, 16);
 		pxCapsuleAsset->SetGeometry(pxCapsule);
-		g_xCapsuleAsset.Set(pxCapsuleAsset);
-		g_pxCapsuleGeometry = pxCapsuleAsset->GetGeometry();
+		Resources().m_xCapsuleAsset.Set(pxCapsuleAsset);
+		Resources().m_pxCapsuleGeometry = pxCapsuleAsset->GetGeometry();
 	}
 #ifdef ZENITH_TOOLS
 	std::string strCapsulePath = strMeshDir + "/Capsule" ZENITH_MESH_EXT;
-	g_pxCapsuleGeometry->Export(strCapsulePath.c_str());
-	g_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
+	Resources().m_pxCapsuleGeometry->Export(strCapsulePath.c_str());
+	Resources().m_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
 #endif
 
 	// Create cube geometry (for arena) - use registry's cached unit cube
-	g_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
-	g_pxCubeGeometry = g_xCubeAsset.GetDirect()->GetGeometry();
+	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strCubePath = strMeshDir + "/Cube" ZENITH_MESH_EXT;
-	g_pxCubeGeometry->Export(strCubePath.c_str());
-	g_pxCubeGeometry->m_strSourcePath = strCubePath;
+	Resources().m_pxCubeGeometry->Export(strCubePath.c_str());
+	Resources().m_pxCubeGeometry->m_strSourcePath = strCubePath;
 #endif
 
 	// Create cone geometry (for candles on walls) - custom size, tracked through registry
@@ -485,13 +452,13 @@ static void InitializeCombatResources()
 		Flux_MeshGeometry* pxCone = new Flux_MeshGeometry();
 		GenerateCone(*pxCone, 0.08f, 0.25f, 12);
 		pxConeAsset->SetGeometry(pxCone);
-		g_xConeAsset.Set(pxConeAsset);
-		g_pxConeGeometry = pxConeAsset->GetGeometry();
+		Resources().m_xConeAsset.Set(pxConeAsset);
+		Resources().m_pxConeGeometry = pxConeAsset->GetGeometry();
 	}
 #ifdef ZENITH_TOOLS
 	std::string strConePath = strMeshDir + "/Cone" ZENITH_MESH_EXT;
-	g_pxConeGeometry->Export(strConePath.c_str());
-	g_pxConeGeometry->m_strSourcePath = strConePath;
+	Resources().m_pxConeGeometry->Export(strConePath.c_str());
+	Resources().m_pxConeGeometry->m_strSourcePath = strConePath;
 #endif
 
 	// Try to load stick figure assets (may not exist yet on first run - unit tests create them)
@@ -511,53 +478,53 @@ static void InitializeCombatResources()
 
 	// Create materials with texture paths (properly serializable)
 
-	g_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xPlayerMaterial.GetDirect()->SetName("CombatPlayer");
-	g_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xPlayerTextureHandle);
-	g_xPlayerMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - player should be REFLECTED, not reflecting
+	Resources().m_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPlayerMaterial.GetDirect()->SetName("CombatPlayer");
+	Resources().m_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xPlayerTextureHandle);
+	Resources().m_xPlayerMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - player should be REFLECTED, not reflecting
 
-	g_xEnemyMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xEnemyMaterial.GetDirect()->SetName("CombatEnemy");
-	g_xEnemyMaterial.GetDirect()->SetDiffuseTexture(xEnemyTextureHandle);
-	g_xEnemyMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - enemies should be REFLECTED, not reflecting
+	Resources().m_xEnemyMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xEnemyMaterial.GetDirect()->SetName("CombatEnemy");
+	Resources().m_xEnemyMaterial.GetDirect()->SetDiffuseTexture(xEnemyTextureHandle);
+	Resources().m_xEnemyMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - enemies should be REFLECTED, not reflecting
 
-	g_xArenaMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xArenaMaterial.GetDirect()->SetName("CombatArena");
-	g_xArenaMaterial.GetDirect()->SetDiffuseTexture(xArenaTextureHandle);
-	g_xArenaMaterial.GetDirect()->SetRoughness(0.15f);  // LOW roughness - floor IS the reflective surface
+	Resources().m_xArenaMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xArenaMaterial.GetDirect()->SetName("CombatArena");
+	Resources().m_xArenaMaterial.GetDirect()->SetDiffuseTexture(xArenaTextureHandle);
+	Resources().m_xArenaMaterial.GetDirect()->SetRoughness(0.15f);  // LOW roughness - floor IS the reflective surface
 
-	g_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xWallMaterial.GetDirect()->SetName("CombatWall");
-	g_xWallMaterial.GetDirect()->SetDiffuseTexture(xWallTextureHandle);
-	g_xWallMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - walls should be REFLECTED, not reflecting
+	Resources().m_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xWallMaterial.GetDirect()->SetName("CombatWall");
+	Resources().m_xWallMaterial.GetDirect()->SetDiffuseTexture(xWallTextureHandle);
+	Resources().m_xWallMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - walls should be REFLECTED, not reflecting
 
-	g_xCandleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xCandleMaterial.GetDirect()->SetName("CombatCandle");
-	g_xCandleMaterial.GetDirect()->SetDiffuseTexture(xCandleTextureHandle);
-	g_xCandleMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - candles should be REFLECTED, not reflecting
+	Resources().m_xCandleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xCandleMaterial.GetDirect()->SetName("CombatCandle");
+	Resources().m_xCandleMaterial.GetDirect()->SetDiffuseTexture(xCandleTextureHandle);
+	Resources().m_xCandleMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - candles should be REFLECTED, not reflecting
 
 	// Create flame particle config for wall candles
-	g_pxFlameConfig = new Flux_ParticleEmitterConfig();
-	g_pxFlameConfig->m_fSpawnRate = 30.0f;                    // Dense flame
-	g_pxFlameConfig->m_uBurstCount = 0;
-	g_pxFlameConfig->m_uMaxParticles = 64;                    // More particles per candle
-	g_pxFlameConfig->m_fSpawnRadius = 0.05f;                  // Slight position variation
-	g_pxFlameConfig->m_fLifetimeMin = 0.4f;
-	g_pxFlameConfig->m_fLifetimeMax = 0.9f;
-	g_pxFlameConfig->m_fSpeedMin = 0.3f;
-	g_pxFlameConfig->m_fSpeedMax = 1.0f;
-	g_pxFlameConfig->m_fSpreadAngleDegrees = 25.0f;           // Wider spread
-	g_pxFlameConfig->m_xEmitDirection = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-	g_pxFlameConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, 0.8f, 0.0f);  // Strong updraft
-	g_pxFlameConfig->m_fDrag = 0.8f;
-	g_pxFlameConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.9f, 0.3f, 0.9f);  // Bright yellow
-	g_pxFlameConfig->m_xColorEnd = Zenith_Maths::Vector4(1.0f, 0.2f, 0.0f, 0.0f);    // Red->transparent
-	g_pxFlameConfig->m_fSizeStart = 0.15f;
-	g_pxFlameConfig->m_fSizeEnd = 0.04f;
-	g_pxFlameConfig->m_bAdditiveBlending = true;              // Glow effect
-	g_pxFlameConfig->m_fTurbulence = 1.5f;                    // Flickering motion
-	g_pxFlameConfig->m_bUseGPUCompute = false;
-	Flux_ParticleEmitterConfig::Register("Combat_Flame", g_pxFlameConfig);
+	Resources().m_pxFlameConfig = new Flux_ParticleEmitterConfig();
+	Resources().m_pxFlameConfig->m_fSpawnRate = 30.0f;                    // Dense flame
+	Resources().m_pxFlameConfig->m_uBurstCount = 0;
+	Resources().m_pxFlameConfig->m_uMaxParticles = 64;                    // More particles per candle
+	Resources().m_pxFlameConfig->m_fSpawnRadius = 0.05f;                  // Slight position variation
+	Resources().m_pxFlameConfig->m_fLifetimeMin = 0.4f;
+	Resources().m_pxFlameConfig->m_fLifetimeMax = 0.9f;
+	Resources().m_pxFlameConfig->m_fSpeedMin = 0.3f;
+	Resources().m_pxFlameConfig->m_fSpeedMax = 1.0f;
+	Resources().m_pxFlameConfig->m_fSpreadAngleDegrees = 25.0f;           // Wider spread
+	Resources().m_pxFlameConfig->m_xEmitDirection = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	Resources().m_pxFlameConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, 0.8f, 0.0f);  // Strong updraft
+	Resources().m_pxFlameConfig->m_fDrag = 0.8f;
+	Resources().m_pxFlameConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.9f, 0.3f, 0.9f);  // Bright yellow
+	Resources().m_pxFlameConfig->m_xColorEnd = Zenith_Maths::Vector4(1.0f, 0.2f, 0.0f, 0.0f);    // Red->transparent
+	Resources().m_pxFlameConfig->m_fSizeStart = 0.15f;
+	Resources().m_pxFlameConfig->m_fSizeEnd = 0.04f;
+	Resources().m_pxFlameConfig->m_bAdditiveBlending = true;              // Glow effect
+	Resources().m_pxFlameConfig->m_fTurbulence = 1.5f;                    // Flickering motion
+	Resources().m_pxFlameConfig->m_bUseGPUCompute = false;
+	Flux_ParticleEmitterConfig::Register("Combat_Flame", Resources().m_pxFlameConfig);
 
 	// Create prefabs for runtime instantiation
 	// Note: Prefabs are lightweight templates - components added after transform is set.
@@ -573,7 +540,7 @@ static void InitializeCombatResources()
 		Zenith_Entity xPlayerTemplate(pxSceneData, "PlayerTemplate");
 		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
-		g_xPlayerPrefab.Set(pxPlayer);
+		Resources().m_xPlayerPrefab.Set(pxPlayer);
 		Zenith_SceneManager::Destroy(xPlayerTemplate);
 	}
 
@@ -586,7 +553,7 @@ static void InitializeCombatResources()
 		Zenith_Entity xEnemyTemplate(pxSceneData, "EnemyTemplate");
 		Zenith_Prefab* pxEnemy = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxEnemy->CreateFromEntity(xEnemyTemplate, "Enemy");
-		g_xEnemyPrefab.Set(pxEnemy);
+		Resources().m_xEnemyPrefab.Set(pxEnemy);
 		Zenith_SceneManager::Destroy(xEnemyTemplate);
 
 		// Persist the base to disk so PrefabHandle("EnemyBase.zpfb") resolves
@@ -610,7 +577,7 @@ static void InitializeCombatResources()
 			xOv.m_xValue << Zenith_Maths::Vector3(f, f, f);
 			pxVariant->AddOverride(std::move(xOv));
 
-			g_axEnemyVariants[u].Set(pxVariant);
+			Resources().m_axEnemyVariants[u].Set(pxVariant);
 		}
 	}
 
@@ -619,7 +586,7 @@ static void InitializeCombatResources()
 		Zenith_Entity xArenaTemplate(pxSceneData, "ArenaTemplate");
 		Zenith_Prefab* pxArena = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxArena->CreateFromEntity(xArenaTemplate, "Arena");
-		g_xArenaPrefab.Set(pxArena);
+		Resources().m_xArenaPrefab.Set(pxArena);
 		Zenith_SceneManager::Destroy(xArenaTemplate);
 	}
 
@@ -635,33 +602,33 @@ static void InitializeCombatResources()
 
 		// Add ParticleEmitterComponent for candle flame
 		Zenith_ParticleEmitterComponent& xEmitter = xWallTemplate.AddComponent<Zenith_ParticleEmitterComponent>();
-		xEmitter.SetConfig(g_pxFlameConfig);
+		xEmitter.SetConfig(Resources().m_pxFlameConfig);
 		xEmitter.SetEmitting(true);
 
 		Zenith_Prefab* pxWall = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxWall->CreateFromEntity(xWallTemplate, "ArenaWall");
-		g_xArenaWallPrefab.Set(pxWall);
+		Resources().m_xArenaWallPrefab.Set(pxWall);
 		Zenith_SceneManager::Destroy(xWallTemplate);
 	}
 
 	// Create hit spark particle config
-	g_pxHitSparkConfig = new Flux_ParticleEmitterConfig();
-	g_pxHitSparkConfig->m_uBurstCount = 20;
-	g_pxHitSparkConfig->m_fSpawnRate = 0.0f;
-	g_pxHitSparkConfig->m_uMaxParticles = 256;
-	g_pxHitSparkConfig->m_fLifetimeMin = 0.2f;
-	g_pxHitSparkConfig->m_fLifetimeMax = 0.4f;
-	g_pxHitSparkConfig->m_fSpeedMin = 8.0f;
-	g_pxHitSparkConfig->m_fSpeedMax = 15.0f;
-	g_pxHitSparkConfig->m_fSpreadAngleDegrees = 60.0f;
-	g_pxHitSparkConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, -5.0f, 0.0f);
-	g_pxHitSparkConfig->m_fDrag = 2.0f;
-	g_pxHitSparkConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.6f, 0.1f, 1.0f);
-	g_pxHitSparkConfig->m_xColorEnd = Zenith_Maths::Vector4(1.0f, 1.0f, 0.2f, 0.0f);
-	g_pxHitSparkConfig->m_fSizeStart = 0.3f;
-	g_pxHitSparkConfig->m_fSizeEnd = 0.1f;
-	g_pxHitSparkConfig->m_bUseGPUCompute = false;
-	Flux_ParticleEmitterConfig::Register("Combat_HitSpark", g_pxHitSparkConfig);
+	Resources().m_pxHitSparkConfig = new Flux_ParticleEmitterConfig();
+	Resources().m_pxHitSparkConfig->m_uBurstCount = 20;
+	Resources().m_pxHitSparkConfig->m_fSpawnRate = 0.0f;
+	Resources().m_pxHitSparkConfig->m_uMaxParticles = 256;
+	Resources().m_pxHitSparkConfig->m_fLifetimeMin = 0.2f;
+	Resources().m_pxHitSparkConfig->m_fLifetimeMax = 0.4f;
+	Resources().m_pxHitSparkConfig->m_fSpeedMin = 8.0f;
+	Resources().m_pxHitSparkConfig->m_fSpeedMax = 15.0f;
+	Resources().m_pxHitSparkConfig->m_fSpreadAngleDegrees = 60.0f;
+	Resources().m_pxHitSparkConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, -5.0f, 0.0f);
+	Resources().m_pxHitSparkConfig->m_fDrag = 2.0f;
+	Resources().m_pxHitSparkConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.6f, 0.1f, 1.0f);
+	Resources().m_pxHitSparkConfig->m_xColorEnd = Zenith_Maths::Vector4(1.0f, 1.0f, 0.2f, 0.0f);
+	Resources().m_pxHitSparkConfig->m_fSizeStart = 0.3f;
+	Resources().m_pxHitSparkConfig->m_fSizeEnd = 0.1f;
+	Resources().m_pxHitSparkConfig->m_bUseGPUCompute = false;
+	Flux_ParticleEmitterConfig::Register("Combat_HitSpark", Resources().m_pxHitSparkConfig);
 
 	s_bResourcesInitialized = true;
 }

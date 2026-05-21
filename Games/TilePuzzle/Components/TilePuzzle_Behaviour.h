@@ -69,25 +69,95 @@
 #endif
 
 // ============================================================================
-// TilePuzzle Resources - Global access
-// Defined in TilePuzzle.cpp, initialized in Project_RegisterScriptBehaviours
+// TilePuzzle Resources - Phase 8 per-game ProjectResources struct.
 // ============================================================================
+class Flux_ParticleEmitterConfig;
+class Zenith_MaterialAsset;
 namespace TilePuzzle
 {
-	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Flux_MeshGeometry* g_pxSphereGeometry;
-	extern Flux_MeshGeometry* g_pxCatMeshGeometry;
-	extern MaterialHandle g_xFloorMaterial;
-	extern MaterialHandle g_xBlockerMaterial;
-	extern MaterialHandle g_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
-	extern MaterialHandle g_axCatMaterials[TILEPUZZLE_COLOR_COUNT];
-	extern MaterialHandle g_axCatCafeDisplayMaterials[TILEPUZZLE_COLOR_COUNT];
-	extern TextureHandle g_axCatCafeFaceTextures[TILEPUZZLE_COLOR_COUNT];
-	extern PrefabHandle g_xCellPrefab;
-	extern PrefabHandle g_xShapeCubePrefab;
-	extern PrefabHandle g_xCatPrefab;
-	extern Flux_MeshGeometry* g_apxShapeMeshes[TILEPUZZLE_SHAPE_COUNT];
-	extern float g_fHighlightEmissiveIntensity;
+	struct TilePuzzleResources
+	{
+		// Shared geometry assets (registry-managed via handles).
+		MeshGeometryHandle  m_xCubeAsset;
+		MeshGeometryHandle  m_xSphereAsset;
+		Flux_MeshGeometry*  m_pxCubeGeometry    = nullptr;
+		Flux_MeshGeometry*  m_pxSphereGeometry  = nullptr;
+		Flux_MeshGeometry*  m_pxCatMeshGeometry = nullptr;
+
+		// Floor + blocker materials.
+		MaterialHandle      m_xFloorMaterial;
+		MaterialHandle      m_xBlockerMaterial;
+
+		// Colored shape / cat materials + cat-cafe display materials/textures.
+		MaterialHandle      m_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
+		MaterialHandle      m_axCatMaterials[TILEPUZZLE_COLOR_COUNT];
+		MaterialHandle      m_axCatCafeDisplayMaterials[TILEPUZZLE_COLOR_COUNT];
+		TextureHandle       m_axCatCafeFaceTextures[TILEPUZZLE_COLOR_COUNT];
+
+		// Prefabs.
+		PrefabHandle        m_xCellPrefab;
+		PrefabHandle        m_xShapeCubePrefab;
+		PrefabHandle        m_xCatPrefab;
+
+		// Pre-generated merged shape meshes.
+		Flux_MeshGeometry*  m_apxShapeMeshes[TILEPUZZLE_SHAPE_COUNT] = {};
+
+		// Highlight emissive intensity.
+		float               m_fHighlightEmissiveIntensity = 0.5f;
+
+		// UI Icon textures.
+		TextureHandle       m_xIconStarFilled;
+		TextureHandle       m_xIconStarEmpty;
+		TextureHandle       m_xIconCoin;
+		TextureHandle       m_xIconHeart;
+		TextureHandle       m_xIconUndo;
+		TextureHandle       m_xIconSkip;
+		TextureHandle       m_xIconLock;
+		TextureHandle       m_xIconMenu;
+		TextureHandle       m_xIconBack;
+		TextureHandle       m_xIconSoundOn;
+		TextureHandle       m_xIconSoundOff;
+		TextureHandle       m_xIconReset;
+		TextureHandle       m_xIconGear;
+		TextureHandle       m_xIconCatSilhouette;
+		TextureHandle       m_xIconHint;
+		TextureHandle       m_xIconHintToken;
+
+		// Cat face textures (one per color).
+		TextureHandle       m_axCatFaceTextures[TILEPUZZLE_COLOR_COUNT];
+
+		// Gameplay textures.
+		TextureHandle       m_xFloorTileTexture;
+		TextureHandle       m_xBlockerTexture;
+
+		// Pinball materials (loaded from .zmtrl files).
+		Zenith_MaterialAsset* m_pxPinballBallMaterial   = nullptr;
+		Zenith_MaterialAsset* m_pxPinballPegMaterial    = nullptr;
+		Zenith_MaterialAsset* m_pxPinballPegHitMaterial = nullptr;
+
+		// Pinball PBR textures.
+		TextureHandle       m_xPinballBumperDiffuseTex;
+		TextureHandle       m_xPinballBumperRMTex;
+		TextureHandle       m_xPinballWallDiffuseTex;
+		TextureHandle       m_xPinballWallRMTex;
+		TextureHandle       m_xPinballFloorDiffuseTex;
+		TextureHandle       m_xPinballFloorRMTex;
+		TextureHandle       m_xPinballPlungerRMTex;
+		TextureHandle       m_xPinballTargetDiffuseTex;
+
+		// Pinball custom meshes.
+		Flux_MeshGeometry*  m_pxBumperGeometry      = nullptr;
+		Flux_MeshGeometry*  m_pxBeveledCubeGeometry = nullptr;
+		Flux_MeshGeometry*  m_pxPlungerGeometry     = nullptr;
+		Flux_MeshGeometry*  m_pxTargetRampGeometry  = nullptr;
+
+		// Particle configs.
+		Flux_ParticleEmitterConfig* m_pxEliminationParticleConfig = nullptr;
+		Flux_ParticleEmitterConfig* m_pxVictoryConfettiConfig     = nullptr;
+	};
+
+	TilePuzzleResources& Resources();
+
 	void GenerateShapeMeshFromDefinition(const TilePuzzleShapeDefinition& xDef, Flux_MeshGeometry& xGeometryOut);
 }
 
@@ -337,16 +407,16 @@ public:
 			m_uCurrentLevelNumber = (m_uAvailableLevelCount > 0) ? m_uAvailableLevelCount : 1;
 
 		// Cache global resources (lightweight)
-		m_pxCubeGeometry = TilePuzzle::g_pxCubeGeometry;
-		m_pxSphereGeometry = TilePuzzle::g_pxSphereGeometry;
-		m_pxCatGeometry = TilePuzzle::g_pxCatMeshGeometry;
-		m_xFloorMaterial = TilePuzzle::g_xFloorMaterial;
-		m_xBlockerMaterial = TilePuzzle::g_xBlockerMaterial;
+		m_pxCubeGeometry = TilePuzzle::Resources().m_pxCubeGeometry;
+		m_pxSphereGeometry = TilePuzzle::Resources().m_pxSphereGeometry;
+		m_pxCatGeometry = TilePuzzle::Resources().m_pxCatMeshGeometry;
+		m_xFloorMaterial = TilePuzzle::Resources().m_xFloorMaterial;
+		m_xBlockerMaterial = TilePuzzle::Resources().m_xBlockerMaterial;
 
 		for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 		{
-			m_axShapeMaterials[i] = TilePuzzle::g_axShapeMaterials[i];
-			m_axCatMaterials[i] = TilePuzzle::g_axCatMaterials[i];
+			m_axShapeMaterials[i] = TilePuzzle::Resources().m_axShapeMaterials[i];
+			m_axCatMaterials[i] = TilePuzzle::Resources().m_axCatMaterials[i];
 		}
 
 		// Create highlighted versions of shape materials with emissive glow
@@ -361,7 +431,7 @@ public:
 
 			Zenith_Maths::Vector4 xBaseColor = pxOriginal->GetBaseColor();
 			pxHighlighted->SetEmissiveColor(Zenith_Maths::Vector3(xBaseColor.x, xBaseColor.y, xBaseColor.z));
-			pxHighlighted->SetEmissiveIntensity(TilePuzzle::g_fHighlightEmissiveIntensity);
+			pxHighlighted->SetEmissiveIntensity(TilePuzzle::Resources().m_fHighlightEmissiveIntensity);
 
 			m_axShapeMaterialsHighlighted[i].Set(pxHighlighted);
 		}
@@ -3218,7 +3288,7 @@ private:
 			return;
 
 		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
-		if (!pxSceneData || !TilePuzzle::g_xCellPrefab.GetDirect() || !TilePuzzle::g_xCellPrefab.GetDirect()->IsValid())
+		if (!pxSceneData || !TilePuzzle::Resources().m_xCellPrefab.GetDirect() || !TilePuzzle::Resources().m_xCellPrefab.GetDirect()->IsValid())
 		{
 			return;
 		}
@@ -3231,7 +3301,7 @@ private:
 				uint32_t uIdx = y * m_xCurrentLevel.uGridWidth + x;
 				if (m_xCurrentLevel.aeCells[uIdx] == TILEPUZZLE_CELL_FLOOR)
 				{
-					Zenith_Entity xFloorEntity = TilePuzzle::g_xCellPrefab.GetDirect()->Instantiate(pxSceneData, "Floor");
+					Zenith_Entity xFloorEntity = TilePuzzle::Resources().m_xCellPrefab.GetDirect()->Instantiate(pxSceneData, "Floor");
 					if (!xFloorEntity.IsValid())
 						continue;
 
@@ -3262,7 +3332,7 @@ private:
 			TilePuzzle::GenerateShapeMeshFromDefinition(*xShape.pxDefinition, *pxShapeMesh);
 			m_apxGeneratedShapeMeshes.PushBack(pxShapeMesh);
 
-			Zenith_Entity xShapeEntity = TilePuzzle::g_xShapeCubePrefab.GetDirect()->Instantiate(pxSceneData, "Shape");
+			Zenith_Entity xShapeEntity = TilePuzzle::Resources().m_xShapeCubePrefab.GetDirect()->Instantiate(pxSceneData, "Shape");
 			Zenith_TransformComponent& xTransform = xShapeEntity.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(GridToWorld(
 				static_cast<float>(xShape.iOriginX),
@@ -3279,7 +3349,7 @@ private:
 		// Create cat visuals
 		for (auto& xCat : m_xCurrentLevel.axCats)
 		{
-			Zenith_Entity xCatEntity = TilePuzzle::g_xCatPrefab.GetDirect()->Instantiate(pxSceneData, "Cat");
+			Zenith_Entity xCatEntity = TilePuzzle::Resources().m_xCatPrefab.GetDirect()->Instantiate(pxSceneData, "Cat");
 			Zenith_TransformComponent& xTransform = xCatEntity.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(GridToWorld(static_cast<float>(xCat.iGridX), static_cast<float>(xCat.iGridY), s_fCatHeight));
 			xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));
@@ -3796,7 +3866,7 @@ private:
 		TilePuzzle::GenerateShapeMeshFromDefinition(*xShape.pxDefinition, *pxShapeMesh);
 		m_apxGeneratedShapeMeshes.PushBack(pxShapeMesh);
 
-		Zenith_Entity xShapeEntity = TilePuzzle::g_xShapeCubePrefab.GetDirect()->Instantiate(pxSceneData, "Shape");
+		Zenith_Entity xShapeEntity = TilePuzzle::Resources().m_xShapeCubePrefab.GetDirect()->Instantiate(pxSceneData, "Shape");
 		Zenith_TransformComponent& xTransform = xShapeEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(GridToWorld(
 			static_cast<float>(xShape.iOriginX),
@@ -3821,7 +3891,7 @@ private:
 
 		TilePuzzleCatData& xCat = m_xCurrentLevel.axCats[uCatIndex];
 
-		Zenith_Entity xCatEntity = TilePuzzle::g_xCatPrefab.GetDirect()->Instantiate(pxSceneData, "Cat");
+		Zenith_Entity xCatEntity = TilePuzzle::Resources().m_xCatPrefab.GetDirect()->Instantiate(pxSceneData, "Cat");
 		Zenith_TransformComponent& xTransform = xCatEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(GridToWorld(static_cast<float>(xCat.iGridX), static_cast<float>(xCat.iGridY), s_fCatHeight));
 		xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));

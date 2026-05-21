@@ -31,8 +31,8 @@ void CreateCatCafeDisplayEntity()
 		uColorIndex = uCatID % TILEPUZZLE_COLOR_COUNT;
 	}
 
-	Zenith_MaterialAsset* pxMaterial = TilePuzzle::g_axCatCafeDisplayMaterials[uColorIndex].GetDirect();
-	if (!pxMaterial || !TilePuzzle::g_pxCatMeshGeometry)
+	Zenith_MaterialAsset* pxMaterial = TilePuzzle::Resources().m_axCatCafeDisplayMaterials[uColorIndex].GetDirect();
+	if (!pxMaterial || !TilePuzzle::Resources().m_pxCatMeshGeometry)
 		return;
 
 	m_xCatCafeDisplayEntity = Zenith_Entity(pxSceneData, "CatCafeDisplay");
@@ -41,7 +41,7 @@ void CreateCatCafeDisplayEntity()
 	xTransform.SetScale(Zenith_Maths::Vector3(2.f, 2.f, 2.f));
 
 	Zenith_ModelComponent& xModel = m_xCatCafeDisplayEntity.AddComponent<Zenith_ModelComponent>();
-	xModel.AddMeshEntry(*TilePuzzle::g_pxCatMeshGeometry, *pxMaterial);
+	xModel.AddMeshEntry(*TilePuzzle::Resources().m_pxCatMeshGeometry, *pxMaterial);
 }
 
 void DestroyCatCafeDisplayEntity()
@@ -64,13 +64,13 @@ void UpdateCatCafeDisplayMaterial()
 		uColorIndex = uCatID % TILEPUZZLE_COLOR_COUNT;
 	}
 
-	Zenith_MaterialAsset* pxMaterial = TilePuzzle::g_axCatCafeDisplayMaterials[uColorIndex].GetDirect();
+	Zenith_MaterialAsset* pxMaterial = TilePuzzle::Resources().m_axCatCafeDisplayMaterials[uColorIndex].GetDirect();
 	if (!pxMaterial)
 		return;
 
 	Zenith_ModelComponent& xModel = m_xCatCafeDisplayEntity.GetComponent<Zenith_ModelComponent>();
 	xModel.ClearModel();
-	xModel.AddMeshEntry(*TilePuzzle::g_pxCatMeshGeometry, *pxMaterial);
+	xModel.AddMeshEntry(*TilePuzzle::Resources().m_pxCatMeshGeometry, *pxMaterial);
 }
 
 void SetCatCafeVisible(bool bVisible)

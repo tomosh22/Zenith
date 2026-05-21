@@ -49,93 +49,8 @@
 // ============================================================================
 namespace TilePuzzle
 {
-	// Shared geometry assets (registry-managed via handles)
-	MeshGeometryHandle g_xCubeAsset;
-	MeshGeometryHandle g_xSphereAsset;
-
-	// Convenience pointers to underlying geometry (set in init via .GetDirect()->GetGeometry())
-	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
-	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
-
-	// Programmatically generated cat head mesh
-	Flux_MeshGeometry* g_pxCatMeshGeometry = nullptr;
-
-	// Floor material
-	MaterialHandle g_xFloorMaterial;
-
-	// Blocker material (static shapes)
-	MaterialHandle g_xBlockerMaterial;
-
-	// Colored shape materials (draggable)
-	MaterialHandle g_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
-
-	// Colored cat materials
-	MaterialHandle g_axCatMaterials[TILEPUZZLE_COLOR_COUNT];
-
-	// Cat cafe display materials (procedural face textures applied to cat head mesh)
-	MaterialHandle g_axCatCafeDisplayMaterials[TILEPUZZLE_COLOR_COUNT];
-	TextureHandle g_axCatCafeFaceTextures[TILEPUZZLE_COLOR_COUNT];
-
-	// Prefabs for runtime instantiation (handles for ref counting)
-	PrefabHandle g_xCellPrefab;
-	PrefabHandle g_xShapeCubePrefab;
-	PrefabHandle g_xCatPrefab;
-
-	// Pre-generated merged meshes for each shape type
-	Flux_MeshGeometry* g_apxShapeMeshes[TILEPUZZLE_SHAPE_COUNT] = {};
-
-	// Highlight emissive intensity (loaded from materials.bin)
-	float g_fHighlightEmissiveIntensity = 0.5f;
-
-	// UI Icon textures (loaded via AssetRegistry, pinned via handles)
-	TextureHandle g_xIconStarFilled;
-	TextureHandle g_xIconStarEmpty;
-	TextureHandle g_xIconCoin;
-	TextureHandle g_xIconHeart;
-	TextureHandle g_xIconUndo;
-	TextureHandle g_xIconSkip;
-	TextureHandle g_xIconLock;
-	TextureHandle g_xIconMenu;
-	TextureHandle g_xIconBack;
-	TextureHandle g_xIconSoundOn;
-	TextureHandle g_xIconSoundOff;
-	TextureHandle g_xIconReset;
-	TextureHandle g_xIconGear;
-	TextureHandle g_xIconCatSilhouette;
-	TextureHandle g_xIconHint;
-	TextureHandle g_xIconHintToken;
-
-	// Cat face textures (one per color)
-	TextureHandle g_axCatFaceTextures[TILEPUZZLE_COLOR_COUNT];
-
-	// Gameplay textures
-	TextureHandle g_xFloorTileTexture;
-	TextureHandle g_xBlockerTexture;
-
-	// Pinball materials (loaded from .zmtrl files)
-	Zenith_MaterialAsset* g_pxPinballBallMaterial = nullptr;
-	Zenith_MaterialAsset* g_pxPinballPegMaterial = nullptr;
-	Zenith_MaterialAsset* g_pxPinballPegHitMaterial = nullptr;
-
-	// Pinball PBR textures
-	TextureHandle g_xPinballBumperDiffuseTex;
-	TextureHandle g_xPinballBumperRMTex;
-	TextureHandle g_xPinballWallDiffuseTex;
-	TextureHandle g_xPinballWallRMTex;
-	TextureHandle g_xPinballFloorDiffuseTex;
-	TextureHandle g_xPinballFloorRMTex;
-	TextureHandle g_xPinballPlungerRMTex;
-	TextureHandle g_xPinballTargetDiffuseTex;
-
-	// Pinball custom meshes
-	Flux_MeshGeometry* g_pxBumperGeometry = nullptr;
-	Flux_MeshGeometry* g_pxBeveledCubeGeometry = nullptr;
-	Flux_MeshGeometry* g_pxPlungerGeometry = nullptr;
-	Flux_MeshGeometry* g_pxTargetRampGeometry = nullptr;
-
-	// Particle configs
-	Flux_ParticleEmitterConfig* g_pxEliminationParticleConfig = nullptr;
-	Flux_ParticleEmitterConfig* g_pxVictoryConfettiConfig = nullptr;
+	static TilePuzzleResources g_xResources;
+	TilePuzzleResources& Resources() { return g_xResources; }
 }
 
 #include "TilePuzzle/Components/TilePuzzle_AssetGen.h"
@@ -1250,7 +1165,7 @@ static void GenerateCatCafeFaceTextures(
 		Zenith_TextureAsset* pxFaceTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 		pxFaceTex->CreateFromData(pPixels, xSurfaceInfo);
 		pxFaceTex->MarkAsBindless();
-		g_axCatCafeFaceTextures[i].Set(pxFaceTex);
+		Resources().m_axCatCafeFaceTextures[i].Set(pxFaceTex);
 	}
 
 	delete[] pPixels;
@@ -1261,56 +1176,56 @@ static void LoadProceduralAssets()
 	using namespace TilePuzzle;
 
 	// Load procedural textures from .ztxtr files via AssetRegistry (pinned via handles)
-	g_xIconStarFilled.SetPath(GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT);     g_xIconStarFilled.Resolve();
-	g_xIconStarEmpty.SetPath(GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);       g_xIconStarEmpty.Resolve();
-	g_xIconCoin.SetPath(GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);                  g_xIconCoin.Resolve();
-	g_xIconHeart.SetPath(GAME_ASSETS_DIR "Textures/Icons/heart" ZENITH_TEXTURE_EXT);                g_xIconHeart.Resolve();
-	g_xIconUndo.SetPath(GAME_ASSETS_DIR "Textures/Icons/undo" ZENITH_TEXTURE_EXT);                  g_xIconUndo.Resolve();
-	g_xIconSkip.SetPath(GAME_ASSETS_DIR "Textures/Icons/skip" ZENITH_TEXTURE_EXT);                  g_xIconSkip.Resolve();
-	g_xIconLock.SetPath(GAME_ASSETS_DIR "Textures/Icons/lock" ZENITH_TEXTURE_EXT);                  g_xIconLock.Resolve();
-	g_xIconMenu.SetPath(GAME_ASSETS_DIR "Textures/Icons/menu" ZENITH_TEXTURE_EXT);                  g_xIconMenu.Resolve();
-	g_xIconBack.SetPath(GAME_ASSETS_DIR "Textures/Icons/back" ZENITH_TEXTURE_EXT);                  g_xIconBack.Resolve();
-	g_xIconSoundOn.SetPath(GAME_ASSETS_DIR "Textures/Icons/sound_on" ZENITH_TEXTURE_EXT);           g_xIconSoundOn.Resolve();
-	g_xIconSoundOff.SetPath(GAME_ASSETS_DIR "Textures/Icons/sound_off" ZENITH_TEXTURE_EXT);         g_xIconSoundOff.Resolve();
-	g_xIconReset.SetPath(GAME_ASSETS_DIR "Textures/Icons/reset" ZENITH_TEXTURE_EXT);                g_xIconReset.Resolve();
-	g_xIconGear.SetPath(GAME_ASSETS_DIR "Textures/Icons/gear" ZENITH_TEXTURE_EXT);                  g_xIconGear.Resolve();
-	g_xIconCatSilhouette.SetPath(GAME_ASSETS_DIR "Textures/Icons/cat_silhouette" ZENITH_TEXTURE_EXT); g_xIconCatSilhouette.Resolve();
-	g_xIconHint.SetPath(GAME_ASSETS_DIR "Textures/Icons/hint" ZENITH_TEXTURE_EXT);                  g_xIconHint.Resolve();
-	g_xIconHintToken.SetPath(GAME_ASSETS_DIR "Textures/Icons/hint_token" ZENITH_TEXTURE_EXT);       g_xIconHintToken.Resolve();
+	Resources().m_xIconStarFilled.SetPath(GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT);     Resources().m_xIconStarFilled.Resolve();
+	Resources().m_xIconStarEmpty.SetPath(GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);       Resources().m_xIconStarEmpty.Resolve();
+	Resources().m_xIconCoin.SetPath(GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);                  Resources().m_xIconCoin.Resolve();
+	Resources().m_xIconHeart.SetPath(GAME_ASSETS_DIR "Textures/Icons/heart" ZENITH_TEXTURE_EXT);                Resources().m_xIconHeart.Resolve();
+	Resources().m_xIconUndo.SetPath(GAME_ASSETS_DIR "Textures/Icons/undo" ZENITH_TEXTURE_EXT);                  Resources().m_xIconUndo.Resolve();
+	Resources().m_xIconSkip.SetPath(GAME_ASSETS_DIR "Textures/Icons/skip" ZENITH_TEXTURE_EXT);                  Resources().m_xIconSkip.Resolve();
+	Resources().m_xIconLock.SetPath(GAME_ASSETS_DIR "Textures/Icons/lock" ZENITH_TEXTURE_EXT);                  Resources().m_xIconLock.Resolve();
+	Resources().m_xIconMenu.SetPath(GAME_ASSETS_DIR "Textures/Icons/menu" ZENITH_TEXTURE_EXT);                  Resources().m_xIconMenu.Resolve();
+	Resources().m_xIconBack.SetPath(GAME_ASSETS_DIR "Textures/Icons/back" ZENITH_TEXTURE_EXT);                  Resources().m_xIconBack.Resolve();
+	Resources().m_xIconSoundOn.SetPath(GAME_ASSETS_DIR "Textures/Icons/sound_on" ZENITH_TEXTURE_EXT);           Resources().m_xIconSoundOn.Resolve();
+	Resources().m_xIconSoundOff.SetPath(GAME_ASSETS_DIR "Textures/Icons/sound_off" ZENITH_TEXTURE_EXT);         Resources().m_xIconSoundOff.Resolve();
+	Resources().m_xIconReset.SetPath(GAME_ASSETS_DIR "Textures/Icons/reset" ZENITH_TEXTURE_EXT);                Resources().m_xIconReset.Resolve();
+	Resources().m_xIconGear.SetPath(GAME_ASSETS_DIR "Textures/Icons/gear" ZENITH_TEXTURE_EXT);                  Resources().m_xIconGear.Resolve();
+	Resources().m_xIconCatSilhouette.SetPath(GAME_ASSETS_DIR "Textures/Icons/cat_silhouette" ZENITH_TEXTURE_EXT); Resources().m_xIconCatSilhouette.Resolve();
+	Resources().m_xIconHint.SetPath(GAME_ASSETS_DIR "Textures/Icons/hint" ZENITH_TEXTURE_EXT);                  Resources().m_xIconHint.Resolve();
+	Resources().m_xIconHintToken.SetPath(GAME_ASSETS_DIR "Textures/Icons/hint_token" ZENITH_TEXTURE_EXT);       Resources().m_xIconHintToken.Resolve();
 
 	// Load cat face textures
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 	{
 		char szPath[ZENITH_MAX_PATH_LENGTH];
 		snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Textures/CatFaces/cat_face_%u" ZENITH_TEXTURE_EXT, i);
-		g_axCatFaceTextures[i].SetPath(szPath);
+		Resources().m_axCatFaceTextures[i].SetPath(szPath);
 	}
 
 	// Load gameplay textures and apply to materials
-	g_xFloorTileTexture.SetPath(GAME_ASSETS_DIR "Textures/Gameplay/floor_tile" ZENITH_TEXTURE_EXT);
-	g_xBlockerTexture.SetPath(GAME_ASSETS_DIR "Textures/Gameplay/blocker" ZENITH_TEXTURE_EXT);
+	Resources().m_xFloorTileTexture.SetPath(GAME_ASSETS_DIR "Textures/Gameplay/floor_tile" ZENITH_TEXTURE_EXT);
+	Resources().m_xBlockerTexture.SetPath(GAME_ASSETS_DIR "Textures/Gameplay/blocker" ZENITH_TEXTURE_EXT);
 
-	g_xFloorMaterial.GetDirect()->SetDiffuseTexture(g_xFloorTileTexture);
-	g_xBlockerMaterial.GetDirect()->SetDiffuseTexture(g_xBlockerTexture);
+	Resources().m_xFloorMaterial.GetDirect()->SetDiffuseTexture(Resources().m_xFloorTileTexture);
+	Resources().m_xBlockerMaterial.GetDirect()->SetDiffuseTexture(Resources().m_xBlockerTexture);
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 	{
-		g_axCatMaterials[i].GetDirect()->SetDiffuseTexture(g_axCatFaceTextures[i]);
+		Resources().m_axCatMaterials[i].GetDirect()->SetDiffuseTexture(Resources().m_axCatFaceTextures[i]);
 	}
 
 	// Load pinball materials from .zmtrl files
-	g_pxPinballBallMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_ball" ZENITH_MATERIAL_EXT);
-	g_pxPinballPegMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg" ZENITH_MATERIAL_EXT);
-	g_pxPinballPegHitMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg_hit" ZENITH_MATERIAL_EXT);
+	Resources().m_pxPinballBallMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_ball" ZENITH_MATERIAL_EXT);
+	Resources().m_pxPinballPegMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg" ZENITH_MATERIAL_EXT);
+	Resources().m_pxPinballPegHitMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg_hit" ZENITH_MATERIAL_EXT);
 
 	// Load pinball PBR textures
-	g_xPinballBumperDiffuseTex.SetPath(GAME_ASSETS_DIR "Textures/Pinball/bumper_diffuse" ZENITH_TEXTURE_EXT);
-	g_xPinballBumperRMTex     .SetPath(GAME_ASSETS_DIR "Textures/Pinball/bumper_rm" ZENITH_TEXTURE_EXT);
-	g_xPinballWallDiffuseTex  .SetPath(GAME_ASSETS_DIR "Textures/Pinball/wall_diffuse" ZENITH_TEXTURE_EXT);
-	g_xPinballWallRMTex       .SetPath(GAME_ASSETS_DIR "Textures/Pinball/wall_rm" ZENITH_TEXTURE_EXT);
-	g_xPinballFloorDiffuseTex .SetPath(GAME_ASSETS_DIR "Textures/Pinball/floor_diffuse" ZENITH_TEXTURE_EXT);
-	g_xPinballFloorRMTex      .SetPath(GAME_ASSETS_DIR "Textures/Pinball/floor_rm" ZENITH_TEXTURE_EXT);
-	g_xPinballPlungerRMTex    .SetPath(GAME_ASSETS_DIR "Textures/Pinball/plunger_rm" ZENITH_TEXTURE_EXT);
-	g_xPinballTargetDiffuseTex.SetPath(GAME_ASSETS_DIR "Textures/Pinball/target_diffuse" ZENITH_TEXTURE_EXT);
+	Resources().m_xPinballBumperDiffuseTex.SetPath(GAME_ASSETS_DIR "Textures/Pinball/bumper_diffuse" ZENITH_TEXTURE_EXT);
+	Resources().m_xPinballBumperRMTex     .SetPath(GAME_ASSETS_DIR "Textures/Pinball/bumper_rm" ZENITH_TEXTURE_EXT);
+	Resources().m_xPinballWallDiffuseTex  .SetPath(GAME_ASSETS_DIR "Textures/Pinball/wall_diffuse" ZENITH_TEXTURE_EXT);
+	Resources().m_xPinballWallRMTex       .SetPath(GAME_ASSETS_DIR "Textures/Pinball/wall_rm" ZENITH_TEXTURE_EXT);
+	Resources().m_xPinballFloorDiffuseTex .SetPath(GAME_ASSETS_DIR "Textures/Pinball/floor_diffuse" ZENITH_TEXTURE_EXT);
+	Resources().m_xPinballFloorRMTex      .SetPath(GAME_ASSETS_DIR "Textures/Pinball/floor_rm" ZENITH_TEXTURE_EXT);
+	Resources().m_xPinballPlungerRMTex    .SetPath(GAME_ASSETS_DIR "Textures/Pinball/plunger_rm" ZENITH_TEXTURE_EXT);
+	Resources().m_xPinballTargetDiffuseTex.SetPath(GAME_ASSETS_DIR "Textures/Pinball/target_diffuse" ZENITH_TEXTURE_EXT);
 
 	// Load particle configs
 	TilePuzzle_AssetGen::LoadParticleConfigs();
@@ -1324,25 +1239,25 @@ static void InitializeTilePuzzleResources()
 	using namespace TilePuzzle;
 
 	// Create geometry using registry's cached primitives
-	g_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
-	g_pxCubeGeometry = g_xCubeAsset.GetDirect()->GetGeometry();
+	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 
-	g_xSphereAsset.Set(Zenith_MeshGeometryAsset::CreateUnitSphere(16));
-	g_pxSphereGeometry = g_xSphereAsset.GetDirect()->GetGeometry();
+	Resources().m_xSphereAsset.Set(Zenith_MeshGeometryAsset::CreateUnitSphere(16));
+	Resources().m_pxSphereGeometry = Resources().m_xSphereAsset.GetDirect()->GetGeometry();
 
 	// Generate cat head mesh
-	g_pxCatMeshGeometry = new Flux_MeshGeometry();
-	GenerateCatMesh(*g_pxCatMeshGeometry);
+	Resources().m_pxCatMeshGeometry = new Flux_MeshGeometry();
+	GenerateCatMesh(*Resources().m_pxCatMeshGeometry);
 
 	// Generate pinball custom meshes
-	g_pxBumperGeometry = new Flux_MeshGeometry();
-	GenerateBumperMesh(*g_pxBumperGeometry);
-	g_pxBeveledCubeGeometry = new Flux_MeshGeometry();
-	GenerateBeveledCubeMesh(*g_pxBeveledCubeGeometry);
-	g_pxPlungerGeometry = new Flux_MeshGeometry();
-	GeneratePlungerMesh(*g_pxPlungerGeometry);
-	g_pxTargetRampGeometry = new Flux_MeshGeometry();
-	GenerateTargetRampMesh(*g_pxTargetRampGeometry);
+	Resources().m_pxBumperGeometry = new Flux_MeshGeometry();
+	GenerateBumperMesh(*Resources().m_pxBumperGeometry);
+	Resources().m_pxBeveledCubeGeometry = new Flux_MeshGeometry();
+	GenerateBeveledCubeMesh(*Resources().m_pxBeveledCubeGeometry);
+	Resources().m_pxPlungerGeometry = new Flux_MeshGeometry();
+	GeneratePlungerMesh(*Resources().m_pxPlungerGeometry);
+	Resources().m_pxTargetRampGeometry = new Flux_MeshGeometry();
+	GenerateTargetRampMesh(*Resources().m_pxTargetRampGeometry);
 
 	// Load pre-generated merged polyomino meshes from disk
 	for (uint32_t u = 0; u < TILEPUZZLE_SHAPE_COUNT; ++u)
@@ -1353,8 +1268,8 @@ static void InitializeTilePuzzleResources()
 		Zenith_DataStream xStream;
 		xStream.ReadFromFile(szPath);
 
-		g_apxShapeMeshes[u] = new Flux_MeshGeometry();
-		ReadShapeMeshFromStream(xStream, *g_apxShapeMeshes[u]);
+		Resources().m_apxShapeMeshes[u] = new Flux_MeshGeometry();
+		ReadShapeMeshFromStream(xStream, *Resources().m_apxShapeMeshes[u]);
 	}
 
 	// Load material color definitions from disk
@@ -1426,25 +1341,25 @@ static void InitializeTilePuzzleResources()
 	}
 
 	// Store loaded highlight emissive intensity globally for behaviours
-	g_fHighlightEmissiveIntensity = fHighlightEmissive;
+	Resources().m_fHighlightEmissiveIntensity = fHighlightEmissive;
 
 	// Use grid pattern texture with BaseColor for all materials.
 	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 	// Create materials with loaded colors
-	g_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xFloorMaterial.GetDirect()->SetName("TilePuzzleFloor");
-	g_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xFloorMaterial.GetDirect()->SetBaseColor(xFloorColor);
-	g_xFloorMaterial.GetDirect()->SetRoughness(0.8f);
-	g_xFloorMaterial.GetDirect()->SetMetallic(0.0f);
+	Resources().m_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xFloorMaterial.GetDirect()->SetName("TilePuzzleFloor");
+	Resources().m_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xFloorMaterial.GetDirect()->SetBaseColor(xFloorColor);
+	Resources().m_xFloorMaterial.GetDirect()->SetRoughness(0.8f);
+	Resources().m_xFloorMaterial.GetDirect()->SetMetallic(0.0f);
 
-	g_xBlockerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xBlockerMaterial.GetDirect()->SetName("TilePuzzleBlocker");
-	g_xBlockerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xBlockerMaterial.GetDirect()->SetBaseColor(xBlockerColor);
-	g_xBlockerMaterial.GetDirect()->SetRoughness(0.9f);
-	g_xBlockerMaterial.GetDirect()->SetMetallic(0.0f);
+	Resources().m_xBlockerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xBlockerMaterial.GetDirect()->SetName("TilePuzzleBlocker");
+	Resources().m_xBlockerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xBlockerMaterial.GetDirect()->SetBaseColor(xBlockerColor);
+	Resources().m_xBlockerMaterial.GetDirect()->SetRoughness(0.9f);
+	Resources().m_xBlockerMaterial.GetDirect()->SetMetallic(0.0f);
 
 	// Shape materials with loaded colors + per-color PBR variation
 	const char* aszShapeColorNames[] = { "Red", "Green", "Blue", "Yellow", "Purple" };
@@ -1454,12 +1369,12 @@ static void InitializeTilePuzzleResources()
 	{
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleShape%s", aszShapeColorNames[i]);
-		g_axShapeMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-		g_axShapeMaterials[i].GetDirect()->SetName(szName);
-		g_axShapeMaterials[i].GetDirect()->SetDiffuseTexture(xGridTex);
-		g_axShapeMaterials[i].GetDirect()->SetBaseColor(axShapeColors[i]);
-		g_axShapeMaterials[i].GetDirect()->SetRoughness(s_afShapeRoughness[i]);
-		g_axShapeMaterials[i].GetDirect()->SetMetallic(s_afShapeMetallic[i]);
+		Resources().m_axShapeMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		Resources().m_axShapeMaterials[i].GetDirect()->SetName(szName);
+		Resources().m_axShapeMaterials[i].GetDirect()->SetDiffuseTexture(xGridTex);
+		Resources().m_axShapeMaterials[i].GetDirect()->SetBaseColor(axShapeColors[i]);
+		Resources().m_axShapeMaterials[i].GetDirect()->SetRoughness(s_afShapeRoughness[i]);
+		Resources().m_axShapeMaterials[i].GetDirect()->SetMetallic(s_afShapeMetallic[i]);
 	}
 
 	// Cat materials (same colors as shapes)
@@ -1467,12 +1382,12 @@ static void InitializeTilePuzzleResources()
 	{
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleCat%s", aszShapeColorNames[i]);
-		g_axCatMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-		g_axCatMaterials[i].GetDirect()->SetName(szName);
-		g_axCatMaterials[i].GetDirect()->SetDiffuseTexture(xGridTex);
-		g_axCatMaterials[i].GetDirect()->SetBaseColor(axShapeColors[i]);
-		g_axCatMaterials[i].GetDirect()->SetRoughness(0.6f);
-		g_axCatMaterials[i].GetDirect()->SetMetallic(0.05f);
+		Resources().m_axCatMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		Resources().m_axCatMaterials[i].GetDirect()->SetName(szName);
+		Resources().m_axCatMaterials[i].GetDirect()->SetDiffuseTexture(xGridTex);
+		Resources().m_axCatMaterials[i].GetDirect()->SetBaseColor(axShapeColors[i]);
+		Resources().m_axCatMaterials[i].GetDirect()->SetRoughness(0.6f);
+		Resources().m_axCatMaterials[i].GetDirect()->SetMetallic(0.05f);
 	}
 
 	// Cat cafe display materials (programmatic face textures on cat head mesh)
@@ -1481,12 +1396,12 @@ static void InitializeTilePuzzleResources()
 	{
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleCatCafeDisplay%s", aszShapeColorNames[i]);
-		g_axCatCafeDisplayMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-		g_axCatCafeDisplayMaterials[i].GetDirect()->SetName(szName);
-		g_axCatCafeDisplayMaterials[i].GetDirect()->SetDiffuseTexture(g_axCatCafeFaceTextures[i]);
-		g_axCatCafeDisplayMaterials[i].GetDirect()->SetBaseColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
-		g_axCatCafeDisplayMaterials[i].GetDirect()->SetRoughness(0.6f);
-		g_axCatCafeDisplayMaterials[i].GetDirect()->SetMetallic(0.05f);
+		Resources().m_axCatCafeDisplayMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		Resources().m_axCatCafeDisplayMaterials[i].GetDirect()->SetName(szName);
+		Resources().m_axCatCafeDisplayMaterials[i].GetDirect()->SetDiffuseTexture(Resources().m_axCatCafeFaceTextures[i]);
+		Resources().m_axCatCafeDisplayMaterials[i].GetDirect()->SetBaseColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+		Resources().m_axCatCafeDisplayMaterials[i].GetDirect()->SetRoughness(0.6f);
+		Resources().m_axCatCafeDisplayMaterials[i].GetDirect()->SetMetallic(0.05f);
 	}
 
 #ifndef ZENITH_TOOLS
@@ -1507,7 +1422,7 @@ static void InitializeTilePuzzleResources()
 		Zenith_Entity xCellTemplate(pxSceneData, "CellTemplate");
 		Zenith_Prefab* pxCell = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxCell->CreateFromEntity(xCellTemplate, "Cell");
-		g_xCellPrefab.Set(pxCell);
+		Resources().m_xCellPrefab.Set(pxCell);
 		Zenith_SceneManager::Destroy(xCellTemplate);
 	}
 
@@ -1516,7 +1431,7 @@ static void InitializeTilePuzzleResources()
 		Zenith_Entity xShapeCubeTemplate(pxSceneData, "ShapeCubeTemplate");
 		Zenith_Prefab* pxShapeCube = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxShapeCube->CreateFromEntity(xShapeCubeTemplate, "ShapeCube");
-		g_xShapeCubePrefab.Set(pxShapeCube);
+		Resources().m_xShapeCubePrefab.Set(pxShapeCube);
 		Zenith_SceneManager::Destroy(xShapeCubeTemplate);
 	}
 
@@ -1525,7 +1440,7 @@ static void InitializeTilePuzzleResources()
 		Zenith_Entity xCatTemplate(pxSceneData, "CatTemplate");
 		Zenith_Prefab* pxCat = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxCat->CreateFromEntity(xCatTemplate, "Cat");
-		g_xCatPrefab.Set(pxCat);
+		Resources().m_xCatPrefab.Set(pxCat);
 		Zenith_SceneManager::Destroy(xCatTemplate);
 	}
 
@@ -1577,47 +1492,47 @@ void Project_Shutdown()
 {
 	using namespace TilePuzzle;
 	// Drop asset handle refs before Zenith_AssetRegistry::Shutdown teardown.
-	g_xCubeAsset.Clear();
-	g_xSphereAsset.Clear();
-	g_xFloorMaterial.Clear();
-	g_xBlockerMaterial.Clear();
+	Resources().m_xCubeAsset.Clear();
+	Resources().m_xSphereAsset.Clear();
+	Resources().m_xFloorMaterial.Clear();
+	Resources().m_xBlockerMaterial.Clear();
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 	{
-		g_axShapeMaterials[i].Clear();
-		g_axCatMaterials[i].Clear();
-		g_axCatCafeDisplayMaterials[i].Clear();
-		g_axCatCafeFaceTextures[i].Clear();
-		g_axCatFaceTextures[i].Clear();
+		Resources().m_axShapeMaterials[i].Clear();
+		Resources().m_axCatMaterials[i].Clear();
+		Resources().m_axCatCafeDisplayMaterials[i].Clear();
+		Resources().m_axCatCafeFaceTextures[i].Clear();
+		Resources().m_axCatFaceTextures[i].Clear();
 	}
-	g_xCellPrefab.Clear();
-	g_xShapeCubePrefab.Clear();
-	g_xCatPrefab.Clear();
-	g_xIconStarFilled.Clear();
-	g_xIconStarEmpty.Clear();
-	g_xIconCoin.Clear();
-	g_xIconHeart.Clear();
-	g_xIconUndo.Clear();
-	g_xIconSkip.Clear();
-	g_xIconLock.Clear();
-	g_xIconMenu.Clear();
-	g_xIconBack.Clear();
-	g_xIconSoundOn.Clear();
-	g_xIconSoundOff.Clear();
-	g_xIconReset.Clear();
-	g_xIconGear.Clear();
-	g_xIconCatSilhouette.Clear();
-	g_xIconHint.Clear();
-	g_xIconHintToken.Clear();
-	g_xFloorTileTexture.Clear();
-	g_xBlockerTexture.Clear();
-	g_xPinballBumperDiffuseTex.Clear();
-	g_xPinballBumperRMTex.Clear();
-	g_xPinballWallDiffuseTex.Clear();
-	g_xPinballWallRMTex.Clear();
-	g_xPinballFloorDiffuseTex.Clear();
-	g_xPinballFloorRMTex.Clear();
-	g_xPinballPlungerRMTex.Clear();
-	g_xPinballTargetDiffuseTex.Clear();
+	Resources().m_xCellPrefab.Clear();
+	Resources().m_xShapeCubePrefab.Clear();
+	Resources().m_xCatPrefab.Clear();
+	Resources().m_xIconStarFilled.Clear();
+	Resources().m_xIconStarEmpty.Clear();
+	Resources().m_xIconCoin.Clear();
+	Resources().m_xIconHeart.Clear();
+	Resources().m_xIconUndo.Clear();
+	Resources().m_xIconSkip.Clear();
+	Resources().m_xIconLock.Clear();
+	Resources().m_xIconMenu.Clear();
+	Resources().m_xIconBack.Clear();
+	Resources().m_xIconSoundOn.Clear();
+	Resources().m_xIconSoundOff.Clear();
+	Resources().m_xIconReset.Clear();
+	Resources().m_xIconGear.Clear();
+	Resources().m_xIconCatSilhouette.Clear();
+	Resources().m_xIconHint.Clear();
+	Resources().m_xIconHintToken.Clear();
+	Resources().m_xFloorTileTexture.Clear();
+	Resources().m_xBlockerTexture.Clear();
+	Resources().m_xPinballBumperDiffuseTex.Clear();
+	Resources().m_xPinballBumperRMTex.Clear();
+	Resources().m_xPinballWallDiffuseTex.Clear();
+	Resources().m_xPinballWallRMTex.Clear();
+	Resources().m_xPinballFloorDiffuseTex.Clear();
+	Resources().m_xPinballFloorRMTex.Clear();
+	Resources().m_xPinballPlungerRMTex.Clear();
+	Resources().m_xPinballTargetDiffuseTex.Clear();
 }
 
 void Project_LoadInitialScene(); // Forward declaration for automation steps

@@ -1435,10 +1435,10 @@ namespace TilePuzzle_AssetGen
 			xStream.ReadFromFile(szPath);
 			if (xStream.IsValid())
 			{
-				TilePuzzle::g_pxEliminationParticleConfig = new Flux_ParticleEmitterConfig();
-				TilePuzzle::g_pxEliminationParticleConfig->ReadFromDataStream(xStream);
+				TilePuzzle::Resources().m_pxEliminationParticleConfig = new Flux_ParticleEmitterConfig();
+				TilePuzzle::Resources().m_pxEliminationParticleConfig->ReadFromDataStream(xStream);
 				Flux_ParticleEmitterConfig::Register("Elimination",
-					TilePuzzle::g_pxEliminationParticleConfig);
+					TilePuzzle::Resources().m_pxEliminationParticleConfig);
 			}
 		}
 
@@ -1452,10 +1452,10 @@ namespace TilePuzzle_AssetGen
 			xStream.ReadFromFile(szPath);
 			if (xStream.IsValid())
 			{
-				TilePuzzle::g_pxVictoryConfettiConfig = new Flux_ParticleEmitterConfig();
-				TilePuzzle::g_pxVictoryConfettiConfig->ReadFromDataStream(xStream);
+				TilePuzzle::Resources().m_pxVictoryConfettiConfig = new Flux_ParticleEmitterConfig();
+				TilePuzzle::Resources().m_pxVictoryConfettiConfig->ReadFromDataStream(xStream);
 				Flux_ParticleEmitterConfig::Register("VictoryConfetti",
-					TilePuzzle::g_pxVictoryConfettiConfig);
+					TilePuzzle::Resources().m_pxVictoryConfettiConfig);
 			}
 		}
 	}
@@ -1483,10 +1483,10 @@ namespace TilePuzzle_AssetGen
 			xStream.ReadFromFile(szPath);
 			if (xStream.IsValid())
 			{
-				TilePuzzle::g_pxEliminationParticleConfig = new Flux_ParticleEmitterConfig();
-				TilePuzzle::g_pxEliminationParticleConfig->ReadFromDataStream(xStream);
+				TilePuzzle::Resources().m_pxEliminationParticleConfig = new Flux_ParticleEmitterConfig();
+				TilePuzzle::Resources().m_pxEliminationParticleConfig->ReadFromDataStream(xStream);
 				Flux_ParticleEmitterConfig::Register("Elimination",
-					TilePuzzle::g_pxEliminationParticleConfig);
+					TilePuzzle::Resources().m_pxEliminationParticleConfig);
 			}
 		}
 
@@ -1500,10 +1500,10 @@ namespace TilePuzzle_AssetGen
 			xStream.ReadFromFile(szPath);
 			if (xStream.IsValid())
 			{
-				TilePuzzle::g_pxVictoryConfettiConfig = new Flux_ParticleEmitterConfig();
-				TilePuzzle::g_pxVictoryConfettiConfig->ReadFromDataStream(xStream);
+				TilePuzzle::Resources().m_pxVictoryConfettiConfig = new Flux_ParticleEmitterConfig();
+				TilePuzzle::Resources().m_pxVictoryConfettiConfig->ReadFromDataStream(xStream);
 				Flux_ParticleEmitterConfig::Register("VictoryConfetti",
-					TilePuzzle::g_pxVictoryConfettiConfig);
+					TilePuzzle::Resources().m_pxVictoryConfettiConfig);
 			}
 		}
 	}

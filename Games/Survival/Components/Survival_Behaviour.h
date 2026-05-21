@@ -58,30 +58,37 @@
 extern void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData);
 
 // ============================================================================
-// Survival Resources - Global access
-// Defined in Survival.cpp, initialized in Project_RegisterScriptBehaviours
+// Survival Resources - Phase 8 per-game ProjectResources struct.
 // ============================================================================
 class Zenith_Prefab;
 
 namespace Survival
 {
-	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Flux_MeshGeometry* g_pxSphereGeometry;
-	extern Flux_MeshGeometry* g_pxCapsuleGeometry;
+	struct SurvivalResources
+	{
+		MeshGeometryHandle  m_xCubeAsset;
+		MeshGeometryHandle  m_xSphereAsset;
+		MeshGeometryHandle  m_xCapsuleAsset;
+		Flux_MeshGeometry*  m_pxCubeGeometry    = nullptr;
+		Flux_MeshGeometry*  m_pxSphereGeometry  = nullptr;
+		Flux_MeshGeometry*  m_pxCapsuleGeometry = nullptr;
 
-	extern MaterialHandle g_xPlayerMaterial;
-	extern MaterialHandle g_xGroundMaterial;
-	extern MaterialHandle g_xTreeMaterial;
-	extern MaterialHandle g_xRockMaterial;
-	extern MaterialHandle g_xBerryMaterial;
-	extern MaterialHandle g_xWoodMaterial;
-	extern MaterialHandle g_xStoneMaterial;
+		MaterialHandle      m_xPlayerMaterial;
+		MaterialHandle      m_xGroundMaterial;
+		MaterialHandle      m_xTreeMaterial;
+		MaterialHandle      m_xRockMaterial;
+		MaterialHandle      m_xBerryMaterial;
+		MaterialHandle      m_xWoodMaterial;
+		MaterialHandle      m_xStoneMaterial;
 
-	extern PrefabHandle g_xPlayerPrefab;
-	extern PrefabHandle g_xTreePrefab;
-	extern PrefabHandle g_xRockPrefab;
-	extern PrefabHandle g_xBerryBushPrefab;
-	extern PrefabHandle g_xDroppedItemPrefab;
+		PrefabHandle        m_xPlayerPrefab;
+		PrefabHandle        m_xTreePrefab;
+		PrefabHandle        m_xRockPrefab;
+		PrefabHandle        m_xBerryBushPrefab;
+		PrefabHandle        m_xDroppedItemPrefab;
+	};
+
+	SurvivalResources& Resources();
 }
 
 // ============================================================================
