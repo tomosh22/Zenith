@@ -29,6 +29,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DPInputActions.h"
+#include "Source/DPTutorial.h"
 #include "Source/DPMaterials.h"
 #include "Source/DP_Tuning.h"
 #include "Source/DP_Archetypes.h"
@@ -235,6 +236,12 @@ public:
 			m_bIsSprintingNow = DP_Input::ReadSprintHeld() && bMoving;
 			m_bIsWalkQuietNow = !m_bIsSprintingNow
 				&& DP_Input::ReadWalkQuietHeld() && bMoving;
+			// 2026-05-21: first-encounter tutorialisation hooks.
+			// Sprint + walk-quiet are continuous states without a
+			// dedicated event, so the tutorial fires programmatically
+			// on the first frame each state is active.
+			if (m_bIsSprintingNow) DP_Tutorial::TriggerIfFirstTime(DP_Tutorial::Kind::FirstSprintUse);
+			if (m_bIsWalkQuietNow) DP_Tutorial::TriggerIfFirstTime(DP_Tutorial::Kind::FirstWalkQuietUse);
 			TickLife(fDt);
 			TickMovement(fDt);
 			TickFootsteps(fDt, bMoving);

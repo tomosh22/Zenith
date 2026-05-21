@@ -192,6 +192,7 @@
     <ClInclude Include="..\Source\DPProcLevel\DPProcLevel_LevelLayout.h" />
     <ClInclude Include="..\Source\DPTelemetry.h" />
     <ClInclude Include="..\Source\DPTelemetryAnalyzer.h" />
+    <ClInclude Include="..\Source\DPTutorial.h" />
     <ClInclude Include="..\Source\DPUI.h" />
     <ClInclude Include="..\Source\DP_Archetypes.h" />
     <ClInclude Include="..\Source\DP_Reagents.h" />
@@ -208,6 +209,7 @@
     <ClCompile Include="..\Source\DPProcLevel\DPProcLevel_JsonExport.cpp" />
     <ClCompile Include="..\Source\DPTelemetry.cpp" />
     <ClCompile Include="..\Source\DPTelemetryAnalyzer.cpp" />
+    <ClCompile Include="..\Source\DPTutorial.cpp" />
     <ClCompile Include="..\Source\DP_Archetypes.cpp" />
     <ClCompile Include="..\Source\DP_Reagents.cpp" />
     <ClCompile Include="..\Source\DP_Save.cpp" />
@@ -299,6 +301,7 @@
     <ClCompile Include="..\Tests\Test_P4UI_RestartPromptAfterRunOver.cpp" />
     <ClCompile Include="..\Tests\Test_P5HUD_TelegraphFormatters.cpp" />
     <ClCompile Include="..\Tests\Test_P5Particles_BurstsOnGameplayEvents.cpp" />
+    <ClCompile Include="..\Tests\Test_P5Tutorial_FirstEncounters.cpp" />
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp" />
     <ClCompile Include="..\Tests\Test_PersonalityPlaythrough.cpp" />
     <ClCompile Include="..\Tests\Test_Possession.cpp" />

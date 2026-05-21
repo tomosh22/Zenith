@@ -184,7 +184,7 @@ public:
 
 		DP_Player::SetHeldItem(xVillager, m_xParentEntity.GetEntityID());
 		Zenith_EventDispatcher::Get().Dispatch(
-			DP_OnItemPickedUp{ xVillager, m_xParentEntity.GetEntityID() });
+			DP_OnItemPickedUp{ xVillager, m_xParentEntity.GetEntityID(), m_eTag });
 
 		// MVP-2.2.6: BellSoul rings the bell on pickup -- audible to
 		// every priest on the map. Dispatches DP_OnBellRing (HUD +

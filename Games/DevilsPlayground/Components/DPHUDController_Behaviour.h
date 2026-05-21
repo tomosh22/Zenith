@@ -32,6 +32,7 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
+#include "Source/DPTutorial.h"
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/Priest_Behaviour.h"
 #include "Components/DPDoor_Behaviour.h"
@@ -585,6 +586,33 @@ public:
 			else
 			{
 				pxTut->SetVisible(false);
+			}
+		}
+
+		// 2026-05-21: TutorialOverlay -- first-encounter tips driven by
+		// DP_Tutorial. The tutorialisation system subscribes to DP
+		// events and surfaces a one-shot text + auto-clearing 5 s
+		// timer. We tick the timer here (every frame, paused or not --
+		// the tip text deserves the player's reading time even
+		// mid-pause), then read the active tip + visibility.
+		DP_Tutorial::Tick(fDt);
+		if (auto* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIText>("TutorialOverlay"))
+		{
+			const char* szTip = DP_Tutorial::GetActiveTipText();
+			if (szTip != nullptr)
+			{
+				pxOverlay->SetText(szTip);
+				// Optional fade in the last 0.5 s of the tip's
+				// lifetime so it doesn't pop-clear. Alpha lerps from
+				// 1.0 to 0.4 across that window.
+				const float fRem = DP_Tutorial::GetActiveTipRemaining();
+				const float fAlpha = (fRem < 0.5f) ? 0.4f + 1.2f * fRem : 1.0f;
+				pxOverlay->SetColor(Zenith_Maths::Vector4(1.0f, 0.95f, 0.75f, fAlpha));
+				pxOverlay->SetVisible(true);
+			}
+			else
+			{
+				pxOverlay->SetVisible(false);
 			}
 		}
 	}
