@@ -21,15 +21,19 @@
 # personality smoke test, vs2022_Debug_Win64_False):
 #   -Parallelism 1 :  182.6 s  (baseline serial)
 #   -Parallelism 2 :   57.7 s  (3.16x speedup)
-#   -Parallelism 3 :   45.9 s  (3.98x speedup -- sweet spot)
-#   -Parallelism 4 :  >5300 s  (Stealth hangs; UNSTABLE -- do not use)
+#   -Parallelism 3 :   45.9 s  (3.98x speedup)
+#   -Parallelism 4 :   27.9 s  (6.54x speedup, after --skip-unit-tests fix)
 #
-# At P>=4 the Stealth personality reliably hangs in a way that
-# Casual / Speedrunner / Zealot don't, even when running solo for
-# the last 30+ minutes after the other three finished. Root cause
-# unknown; suspected lifecycle deadlock between concurrent
-# devilsplayground.exe boots. Until that's debugged, the default
-# stays at 1 and the recommended manual setting is -Parallelism 3.
+# P>=4 history: prior to 2026-05-21, P>=4 reliably hung. The hang
+# was traced to the engine's unit-test suite, which runs on every
+# boot (before the automated-test handler kicks in) and writes
+# fixture files like test_nested_base.zpfb / TestData/round_trip_
+# test.zdata into the cwd with hardcoded paths. With 4+ concurrent
+# engine boots in the same cwd, two processes would race on a
+# fixture file and one would either assert on
+# "Reading past end of DataStream" or block on the file lock. The
+# fix is to pass --skip-unit-tests to the engine, which is safe
+# here because the dp-tests CI step runs unit tests independently.
 #
 # ASCII-only.
 
@@ -40,13 +44,13 @@ param(
     [int]$ExitAfterFrames  = 8500,
     [switch]$Headless      = $true,
     [uint64[]]$Seeds       = @(0, 12345, 99999),
-    # 2026-05-21: how many cells to run concurrently. Defaults to 1
-    # (legacy serial behaviour). On a 12-core machine 6-8 is a
-    # reasonable starting point -- each devilsplayground.exe is mostly
-    # single-threaded gameplay + thread-pool job dispatch, so
-    # over-subscription helps the job pool but starves the gameplay
-    # thread above ~N=cores/2.
-    [int]$Parallelism      = 1
+    # 2026-05-21: how many cells to run concurrently. Defaults to 4,
+    # the empirical sweet spot post-fix (6.54x speedup over serial).
+    # On a 12-core machine 6-8 is a reasonable next step to try --
+    # each devilsplayground.exe is mostly single-threaded gameplay +
+    # thread-pool job dispatch, so over-subscription helps the job
+    # pool but starves the gameplay thread above ~N=cores/2.
+    [int]$Parallelism      = 4
 )
 
 $ErrorActionPreference = "Stop"
@@ -143,7 +147,15 @@ $worker = {
         "--automated-test", $testName,
         "--exit-after-frames", "$ExitAfterFrames",
         "--fixed-dt", "0.01666",
-        "--test-results", $resultJson
+        "--test-results", $resultJson,
+        # 2026-05-21: unit tests run on every engine boot and write
+        # fixture files (test_nested_base.zpfb, TestData/round_trip_
+        # test.zdata, ~25 others) to the cwd with hardcoded paths.
+        # At P>=4, concurrent engine boots race on those fixtures
+        # and one of them asserts/hangs on a partially-written file.
+        # The dp-tests CI step runs unit tests independently, so
+        # skipping them here loses no coverage.
+        "--skip-unit-tests"
     )
     if ($Headless) { $procArgs += "--headless" }
 
