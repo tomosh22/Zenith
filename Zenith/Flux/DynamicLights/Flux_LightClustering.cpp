@@ -1,8 +1,9 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/DynamicLights/Flux_LightClustering.h"
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
-#include "Flux/DynamicLights/Flux_DynamicLights.h"
+#include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
+#include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -28,7 +29,6 @@
 // for the rationale.
 // =====================================================================
 
-bool Flux_LightClustering::s_bInitialised = false;
 
 
 // Per-cluster outputs. GPU-resident — written by compute, read by
@@ -44,14 +44,14 @@ struct LightClusteringPushConstants
 	u_int m_uPad2;
 };
 
-void Flux_LightClustering::BuildPipelines()
+void Flux_LightClusteringImpl::BuildPipelines()
 {
 	g_xEngine.LightClustering().m_xComputeShader.Initialise(FluxShaderProgram::LightClustering);
 	Flux_RootSigBuilder::FromReflection(g_xEngine.LightClustering().m_xComputeRootSig, g_xEngine.LightClustering().m_xComputeShader.GetReflection());
 	Flux_ComputePipelineBuilder::BuildFromShader(g_xEngine.LightClustering().m_xComputePipeline, g_xEngine.LightClustering().m_xComputeShader, g_xEngine.LightClustering().m_xComputeRootSig);
 }
 
-void Flux_LightClustering::Initialise()
+void Flux_LightClusteringImpl::Initialise()
 {
 	// Cluster light counts: 3456 * 4 bytes ≈ 14 KB.
 	const u_int64 ulCountBufferSize = uCLUSTER_COUNT * sizeof(u_int);
@@ -74,23 +74,23 @@ void Flux_LightClustering::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::LightClustering,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_LightClustering::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.LightClustering().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
-	s_bInitialised = true;
+	m_bInitialised = true;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_LightClustering initialised (%ux%ux%u clusters, %u max lights/cluster)",
 		uCLUSTER_DIM_X, uCLUSTER_DIM_Y, uCLUSTER_DIM_Z, uMAX_LIGHTS_PER_CLUSTER);
 }
 
-void Flux_LightClustering::Shutdown()
+void Flux_LightClusteringImpl::Shutdown()
 {
-	if (!s_bInitialised) return;
+	if (!m_bInitialised) return;
 
 	Flux_MemoryManager::DestroyReadWriteBuffer(g_xEngine.LightClustering().m_xClusterLightCounts);
 	Flux_MemoryManager::DestroyReadWriteBuffer(g_xEngine.LightClustering().m_xClusterLightIndices);
 
-	s_bInitialised = false;
+	m_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_LightClustering shut down");
 }
 
@@ -108,20 +108,20 @@ void Flux_LightClustering::Shutdown()
 // Zenith_TerrainComponent.cpp's MarkBufferHostWritten note).
 static void PrepareLightClustering(void* /*pUserData*/)
 {
-	if (!Flux_LightClustering::IsInitialised()) return;
-	Flux_DynamicLights::GatherLightsFromScene();
+	if (!g_xEngine.LightClustering().IsInitialised()) return;
+	g_xEngine.DynamicLights().GatherLightsFromScene();
 }
 
 static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUserData*/)
 {
-	if (!Flux_LightClustering::IsInitialised()) return;
+	if (!g_xEngine.LightClustering().IsInitialised()) return;
 
 	// Always dispatch — even when no lights exist or dynamic lights are
 	// disabled. The shader writes count = 0 to every cluster, ensuring
 	// the cluster-count buffer has fresh zeroes (no stale carry-over
 	// from a previous frame). Skipping the dispatch when the count is
 	// zero would leave the buffer dirty.
-	const u_int uLightCount = Flux_DynamicLights::GetLightCount();
+	const u_int uLightCount = g_xEngine.DynamicLights().GetLightCount();
 
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&g_xEngine.LightClustering().m_xComputePipeline);
 
@@ -131,7 +131,7 @@ static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUse
 	xBinder.BindCBV(g_xEngine.LightClustering().m_xComputeShader, "FrameConstants",
 		&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV_Buffer(g_xEngine.LightClustering().m_xComputeShader, "LightBuffer",
-		Flux_DynamicLights::GetLightBufferSRV());
+		g_xEngine.DynamicLights().GetLightBufferSRV());
 
 	// Outputs (UAVs).
 	xBinder.BindUAV_Buffer(g_xEngine.LightClustering().m_xComputeShader, "ClusterLightCounts",
@@ -151,12 +151,12 @@ static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUse
 	// kernel declares [numthreads(16, 9, 1)] (= 144 threads / workgroup,
 	// covering one full XY plane of clusters). We dispatch CLUSTER_DIM_Z
 	// = 24 workgroups along Z so each Z slice is its own workgroup.
-	pxCommandList->AddCommand<Flux_CommandDispatch>(1, 1, Flux_LightClustering::uCLUSTER_DIM_Z);
+	pxCommandList->AddCommand<Flux_CommandDispatch>(1, 1, Flux_LightClusteringImpl::uCLUSTER_DIM_Z);
 }
 
-void Flux_LightClustering::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_LightClusteringImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	if (!s_bInitialised) return;
+	if (!m_bInitialised) return;
 
 	// Only the cluster-output buffers are graph-tracked. The LightBuffer
 	// is host-uploaded each frame from PrepareLightClustering, and
@@ -173,22 +173,14 @@ void Flux_LightClustering::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.WritesBuffer(xIndicesBuf,   RESOURCE_ACCESS_WRITE_UAV);
 }
 
-Flux_ShaderResourceView_Buffer& Flux_LightClustering::GetClusterLightCountsSRV()
+Flux_ShaderResourceView_Buffer& Flux_LightClusteringImpl::GetClusterLightCountsSRV()
 {
 	return g_xEngine.LightClustering().m_xClusterLightCounts.GetSRV();
 }
 
-Flux_ShaderResourceView_Buffer& Flux_LightClustering::GetClusterLightIndicesSRV()
+Flux_ShaderResourceView_Buffer& Flux_LightClusteringImpl::GetClusterLightIndicesSRV()
 {
 	return g_xEngine.LightClustering().m_xClusterLightIndices.GetSRV();
 }
 
-Flux_ReadWriteBuffer& Flux_LightClustering::GetClusterLightCountsBuffer()
-{
-	return g_xEngine.LightClustering().m_xClusterLightCounts;
-}
 
-Flux_ReadWriteBuffer& Flux_LightClustering::GetClusterLightIndicesBuffer()
-{
-	return g_xEngine.LightClustering().m_xClusterLightIndices;
-}

@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Shadows/Flux_Shadows.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 
 #include "Core/Zenith_GraphicsOptions.h"
@@ -25,7 +26,7 @@ DEBUGVAR float dbg_fZMultiplier = 8.f;
 
 static Flux_RenderAttachment& GetCSM(u_int uIndex)
 {
-	Zenith_Assert(g_xEngine.Shadows().m_pxGraph, "Flux_Shadows::GetCSM: graph pointer is null");
+	Zenith_Assert(g_xEngine.Shadows().m_pxGraph, "Flux_ShadowsImpl::GetCSM: graph pointer is null");
 	return g_xEngine.Shadows().m_pxGraph->GetTransientAttachment(g_xEngine.Shadows().m_axCSMHandles[uIndex]);
 }
 
@@ -82,7 +83,7 @@ static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Ze
 	return xRet;
 }
 
-void Flux_Shadows::Initialise()
+void Flux_ShadowsImpl::Initialise()
 {
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
@@ -94,7 +95,7 @@ void Flux_Shadows::Initialise()
 #endif
 }
 
-void Flux_Shadows::Shutdown()
+void Flux_ShadowsImpl::Shutdown()
 {
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
@@ -126,7 +127,7 @@ static void PreExecuteShadowMatrices(void*)
 	{
 		return;
 	}
-	Flux_Shadows::UpdateShadowMatrices();
+	g_xEngine.Shadows().UpdateShadowMatrices();
 }
 
 static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserData)
@@ -152,7 +153,7 @@ static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserDat
 	// Flux_Terrain::RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 }
 
-void Flux_Shadows::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	g_xEngine.Shadows().m_pxGraph = &xGraph;
 
@@ -194,7 +195,7 @@ void Flux_Shadows::SetupRenderGraph(Flux_RenderGraph& xGraph)
 // Callers (Flux_AnimatedMeshes / StaticMeshes / InstancedMeshes / Terrain /
 // DeferredShading) rely on the non-null pxDepthStencil guarantee; if this ever
 // changes, every caller must be audited for null guards.
-Flux_RenderAttachment* Flux_Shadows::GetCSMTargetSetup(const uint32_t uIndex, uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil)
+Flux_RenderAttachment* Flux_ShadowsImpl::GetCSMTargetSetup(const uint32_t uIndex, uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil)
 {
 	Zenith_Assert(uIndex < ZENITH_FLUX_NUM_CSMS, "GetCSMTargetSetup: cascade index %u out of bounds (max %u)", uIndex, ZENITH_FLUX_NUM_CSMS);
 	uNumColour = 0;
@@ -203,22 +204,14 @@ Flux_RenderAttachment* Flux_Shadows::GetCSMTargetSetup(const uint32_t uIndex, ui
 	return nullptr;
 }
 
-Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
-{
-	return g_xEngine.Shadows().m_axSunViewProjMats[uIndex];
-}
 
-Flux_ShaderResourceView& Flux_Shadows::GetCSMSRV(const uint32_t u)
+Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMSRV(const uint32_t u)
 {
 	return Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? GetCSM(u).SRV() : g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV;
 }
 
-Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)
-{
-	return g_xEngine.Shadows().m_xShadowMatrixBuffers[u];
-}
 
-void Flux_Shadows::UpdateShadowMatrices()
+void Flux_ShadowsImpl::UpdateShadowMatrices()
 {
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
 	const Zenith_Maths::Matrix4& xViewMat = Flux_Graphics::GetViewMatrix();

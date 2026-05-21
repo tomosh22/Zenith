@@ -24,7 +24,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Flux/Terrain/Flux_Terrain.h"
-#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsImpl.h"
@@ -283,7 +283,7 @@ static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxTerrain = xTerrains.Get(u);
-		Flux_TerrainStreamingState* pxState = Flux_TerrainStreamingManager::GetStateFor(pxTerrain);
+		Flux_TerrainStreamingState* pxState = g_xEngine.TerrainStreaming().GetStateFor(pxTerrain);
 
 		const uint32_t uActiveCount = pxState ? static_cast<uint32_t>(pxState->m_xActiveChunkIndices.size()) : 0;
 		const uint32_t uHighResident = pxState ? RenderTest_CountHighResidentChunks(*pxState) : 0;
@@ -641,7 +641,7 @@ private:
 		for (u_int u = 0; u < xTerrains.GetSize(); u++)
 		{
 			Flux_TerrainStreamingState* pxState =
-				Flux_TerrainStreamingManager::GetStateFor(xTerrains.Get(u));
+				g_xEngine.TerrainStreaming().GetStateFor(xTerrains.Get(u));
 			RenderTest_ResidencySnapshot xSnapshot;
 			if (pxState != nullptr) RenderTest_CaptureResidencySnapshot(*pxState, xSnapshot);
 			axSnapshots.PushBack(xSnapshot);

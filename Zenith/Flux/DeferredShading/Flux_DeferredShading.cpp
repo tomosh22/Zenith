@@ -7,13 +7,13 @@
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/Shadows/Flux_Shadows.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/IBL/Flux_IBL.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSGI/Flux_SSGI.h"
-#include "Flux/DynamicLights/Flux_DynamicLights.h"
-#include "Flux/DynamicLights/Flux_LightClustering.h"
+#include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
+#include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #ifdef ZENITH_TOOLS
@@ -96,7 +96,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "g_xCSM0", "g_xCSM1", "g_xCSM2", "g_xCSM3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		Flux_ShaderResourceView& xSRV = Flux_Shadows::GetCSMSRV(u);
+		Flux_ShaderResourceView& xSRV = g_xEngine.Shadows().GetCSMSRV(u);
 		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, s_aszCSMNames[u], &xSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
 	}
 
@@ -104,7 +104,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	static const char* const s_aszShadowMatrixNames[ZENITH_FLUX_NUM_CSMS] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		xBinder.BindCBV(g_xEngine.DeferredShading().m_xShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+		xBinder.BindCBV(g_xEngine.DeferredShading().m_xShader, s_aszShadowMatrixNames[u], &g_xEngine.Shadows().GetShadowMatrixBuffer(u).GetCBV());
 	}
 
 	// Bind IBL textures
@@ -140,11 +140,11 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	// bound regardless of whether dynamic lights exist this frame (the
 	// fragment shader's cluster loop runs zero iterations when count = 0).
 	xBinder.BindSRV_Buffer(g_xEngine.DeferredShading().m_xShader, "LightBuffer",
-		Flux_DynamicLights::GetLightBufferSRV());
+		g_xEngine.DynamicLights().GetLightBufferSRV());
 	xBinder.BindSRV_Buffer(g_xEngine.DeferredShading().m_xShader, "ClusterLightCounts",
-		Flux_LightClustering::GetClusterLightCountsSRV());
+		g_xEngine.LightClustering().GetClusterLightCountsSRV());
 	xBinder.BindSRV_Buffer(g_xEngine.DeferredShading().m_xShader, "ClusterLightIndices",
-		Flux_LightClustering::GetClusterLightIndicesSRV());
+		g_xEngine.LightClustering().GetClusterLightIndicesSRV());
 
 	// Pass constants to shader
 	struct DeferredShadingConstants
@@ -202,7 +202,7 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	{
 		uint32_t uNumColour;
 		Flux_RenderAttachment* pxDepthStencil;
-		Flux_Shadows::GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
+		g_xEngine.Shadows().GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
 		xGraph.Read(xPass, *pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
 	}
 
@@ -215,11 +215,11 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// here would be stale on subsequent frames. Visibility of its
 	// host-side upload is covered by vkQueueSubmit's implicit host-write
 	// barrier instead.
-	if (Flux_LightClustering::IsInitialised())
+	if (g_xEngine.LightClustering().IsInitialised())
 	{
-		xGraph.ReadBuffer(xPass, Flux_LightClustering::GetClusterLightCountsBuffer().GetBuffer(),
+		xGraph.ReadBuffer(xPass, g_xEngine.LightClustering().GetClusterLightCountsBuffer().GetBuffer(),
 			RESOURCE_ACCESS_READ_SRV);
-		xGraph.ReadBuffer(xPass, Flux_LightClustering::GetClusterLightIndicesBuffer().GetBuffer(),
+		xGraph.ReadBuffer(xPass, g_xEngine.LightClustering().GetClusterLightIndicesBuffer().GetBuffer(),
 			RESOURCE_ACCESS_READ_SRV);
 	}
 

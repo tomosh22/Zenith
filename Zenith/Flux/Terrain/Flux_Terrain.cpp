@@ -3,11 +3,11 @@
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Core/Zenith_Engine.h"
-#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/Shadows/Flux_Shadows.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -261,7 +261,7 @@ void Flux_Terrain::Initialise()
 #endif
 
 	// ========== Initialize Terrain Streaming Manager ==========
-	Flux_TerrainStreamingManager::Initialize();
+	g_xEngine.TerrainStreaming().Initialize();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain initialised");
 }
@@ -289,7 +289,7 @@ void Flux_Terrain::Shutdown()
 	// any terrain component still alive at engine teardown is a leak that
 	// will trip the assert here, instead of silently freeing the manager
 	// out from under live state.
-	Flux_TerrainStreamingManager::Shutdown();
+	g_xEngine.TerrainStreaming().Shutdown();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain shut down");
 }
@@ -401,7 +401,7 @@ void Flux_Terrain::PreRenderUpdate(void* /*pUserData*/)
 	for (u_int u = 0; u < g_xEngine.Terrain().m_xTerrainComponentsToRender.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxTerrain = g_xEngine.Terrain().m_xTerrainComponentsToRender.Get(u);
-		Flux_TerrainStreamingManager::UpdateStreamingForTerrain(pxTerrain, xCameraPos);
+		g_xEngine.TerrainStreaming().UpdateStreamingForTerrain(pxTerrain, xCameraPos);
 		pxTerrain->UpdateChunkLODAllocations();
 		pxTerrain->UploadFrustumPlanesForFrame(xViewProj);
 

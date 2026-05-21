@@ -64,7 +64,7 @@
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
 
 // Terrain streaming (for chunk distance tests)
-#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 
 // Slang reflection schema + codegen. Both headers are platform-neutral
 // (Slang DLL access is gated inside the .cpp via ZENITH_WINDOWS), so the
@@ -12267,8 +12267,8 @@ ZENITH_TEST(Terrain, ChunkDistanceSymmetry) { Zenith_UnitTests::TestChunkDistanc
 void Zenith_UnitTests::TestChunkDistanceSymmetry(){
 
 	// Use two distinct chunks: (2,3) and (5,7)
-	const uint32_t uChunkA = Flux_TerrainStreamingManager::ChunkCoordsToIndex(2, 3);
-	const uint32_t uChunkB = Flux_TerrainStreamingManager::ChunkCoordsToIndex(5, 7);
+	const uint32_t uChunkA = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(2, 3);
+	const uint32_t uChunkB = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(5, 7);
 
 	// Build a synthetic streaming state with cached AABBs for the two chunks.
 	Flux_TerrainStreamingState xState;
@@ -12283,12 +12283,12 @@ void Zenith_UnitTests::TestChunkDistanceSymmetry(){
 	);
 
 	// Get chunk centers
-	Zenith_Maths::Vector3 xCenterA = Flux_TerrainStreamingManager::GetChunkCenter(xState, 2, 3);
-	Zenith_Maths::Vector3 xCenterB = Flux_TerrainStreamingManager::GetChunkCenter(xState, 5, 7);
+	Zenith_Maths::Vector3 xCenterA = Flux_TerrainStreamingManagerImpl::GetChunkCenter(xState, 2, 3);
+	Zenith_Maths::Vector3 xCenterB = Flux_TerrainStreamingManagerImpl::GetChunkCenter(xState, 5, 7);
 
 	// Distance from A's center to chunk B should equal distance from B's center to chunk A
-	float fDistAToB = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uChunkB, xCenterA);
-	float fDistBToA = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uChunkA, xCenterB);
+	float fDistAToB = Flux_TerrainStreamingManagerImpl::GetChunkDistanceSq(xState, uChunkB, xCenterA);
+	float fDistBToA = Flux_TerrainStreamingManagerImpl::GetChunkDistanceSq(xState, uChunkA, xCenterB);
 
 	// Squared distance is symmetric: |A-B|^2 == |B-A|^2
 	float fDifference = fabsf(fDistAToB - fDistBToA);
@@ -12300,7 +12300,7 @@ ZENITH_TEST(Terrain, ChunkDistanceZero) { Zenith_UnitTests::TestChunkDistanceZer
 
 void Zenith_UnitTests::TestChunkDistanceZero(){
 
-	const uint32_t uChunkIndex = Flux_TerrainStreamingManager::ChunkCoordsToIndex(4, 4);
+	const uint32_t uChunkIndex = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(4, 4);
 
 	// Synthetic state with one cached AABB.
 	Flux_TerrainStreamingState xState;
@@ -12311,8 +12311,8 @@ void Zenith_UnitTests::TestChunkDistanceZero(){
 	);
 
 	// Camera at exact chunk center should give distance 0
-	Zenith_Maths::Vector3 xChunkCenter = Flux_TerrainStreamingManager::GetChunkCenter(xState, 4, 4);
-	float fDistanceSq = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uChunkIndex, xChunkCenter);
+	Zenith_Maths::Vector3 xChunkCenter = Flux_TerrainStreamingManagerImpl::GetChunkCenter(xState, 4, 4);
+	float fDistanceSq = Flux_TerrainStreamingManagerImpl::GetChunkDistanceSq(xState, uChunkIndex, xChunkCenter);
 
 	ZENITH_ASSERT_LT(fDistanceSq, 0.001f, "Distance from chunk center to itself should be ~0, got %.6f", fDistanceSq);
 
@@ -12357,7 +12357,7 @@ void Zenith_UnitTests::TestTerrainStreamingResidencyIsolatedBetweenStates(){
 	Flux_TerrainStreamingState xStateA;
 	Flux_TerrainStreamingState xStateB;
 
-	const uint32_t uChunkIndex = Flux_TerrainStreamingManager::ChunkCoordsToIndex(7, 11);
+	const uint32_t uChunkIndex = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(7, 11);
 	// Both states start with all chunks NOT_LOADED.
 	ZENITH_ASSERT_EQ(xStateA.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::NOT_LOADED, "State A chunk must start NOT_LOADED");
 	ZENITH_ASSERT_EQ(xStateB.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::NOT_LOADED, "State B chunk must start NOT_LOADED");
@@ -12413,14 +12413,14 @@ void Zenith_UnitTests::TestTerrainActiveSetSortedNearestFirst(){
 	{
 		for (uint32_t cy = 4; cy <= 6; ++cy)
 		{
-			const uint32_t uIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(cx, cy);
+			const uint32_t uIdx = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(cx, cy);
 			xState.m_axChunkAABBs[uIdx] = Zenith_AABB(
 				Zenith_Maths::Vector3(static_cast<float>(cx)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 0.0f,        static_cast<float>(cy)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD),
 				Zenith_Maths::Vector3(static_cast<float>(cx + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 64.0f,       static_cast<float>(cy + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD));
 		}
 	}
 
-	Flux_TerrainStreamingManager::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
+	Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
 
 	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices.size(), (size_t)9, "Active set with radius 1 should hold 9 chunks (3×3)");
 
@@ -12428,7 +12428,7 @@ void Zenith_UnitTests::TestTerrainActiveSetSortedNearestFirst(){
 	for (size_t u = 0; u < xState.m_xActiveChunkIndices.size(); ++u)
 	{
 		const uint32_t uIdx       = xState.m_xActiveChunkIndices[u];
-		const float    fDistanceSq = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uIdx, xCameraPos);
+		const float    fDistanceSq = Flux_TerrainStreamingManagerImpl::GetChunkDistanceSq(xState, uIdx, xCameraPos);
 		ZENITH_ASSERT(fDistanceSq + 0.0001f >= fPrevDistSq, "Active set must be non-decreasing in distance, entry %zu broke ordering", u);
 		fPrevDistSq = fDistanceSq;
 	}
@@ -12451,17 +12451,17 @@ void Zenith_UnitTests::TestTerrainActiveSetCenterIndexFirst(){
 	{
 		for (uint32_t cy = 4; cy <= 6; ++cy)
 		{
-			const uint32_t uIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(cx, cy);
+			const uint32_t uIdx = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(cx, cy);
 			xState.m_axChunkAABBs[uIdx] = Zenith_AABB(
 				Zenith_Maths::Vector3(static_cast<float>(cx)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 0.0f,        static_cast<float>(cy)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD),
 				Zenith_Maths::Vector3(static_cast<float>(cx + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 64.0f,       static_cast<float>(cy + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD));
 		}
 	}
 
-	Flux_TerrainStreamingManager::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
+	Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
 
 	ZENITH_ASSERT(xState.m_xActiveChunkIndices.size() > 0, "Active set must be non-empty");
-	const uint32_t uExpectedCenter = Flux_TerrainStreamingManager::ChunkCoordsToIndex(5, 5);
+	const uint32_t uExpectedCenter = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(5, 5);
 	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices[0], uExpectedCenter, "First entry of sorted active set must be the chunk under the camera");
 }
 
@@ -12480,7 +12480,7 @@ void Zenith_UnitTests::TestTerrainActiveSetUsesNearestAABBForOffsetTerrain(){
 	{
 		for (uint32_t cy = 0; cy < Flux_TerrainConfig::CHUNK_GRID_SIZE; ++cy)
 		{
-			const uint32_t uIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(cx, cy);
+			const uint32_t uIdx = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(cx, cy);
 			const float fBaseX = 100000.0f + static_cast<float>(cx) * fChunkSize;
 			const float fBaseZ = 100000.0f + static_cast<float>(cy) * fChunkSize;
 			xState.m_axChunkAABBs[uIdx] = Zenith_AABB(
@@ -12491,7 +12491,7 @@ void Zenith_UnitTests::TestTerrainActiveSetUsesNearestAABBForOffsetTerrain(){
 
 	const uint32_t uTargetX = 10;
 	const uint32_t uTargetY = 12;
-	const uint32_t uTargetIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(uTargetX, uTargetY);
+	const uint32_t uTargetIdx = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(uTargetX, uTargetY);
 	xState.m_axChunkAABBs[uTargetIdx] = Zenith_AABB(
 		Zenith_Maths::Vector3(-512.0f, 0.0f, -256.0f),
 		Zenith_Maths::Vector3(-448.0f, 64.0f, -192.0f));
@@ -12500,13 +12500,13 @@ void Zenith_UnitTests::TestTerrainActiveSetUsesNearestAABBForOffsetTerrain(){
 	int32_t iChunkX = -1;
 	int32_t iChunkY = -1;
 	uint32_t uNearestIdx = UINT32_MAX;
-	Flux_TerrainStreamingManager::ResolveCameraChunkCoords(xState, xCameraPos, iChunkX, iChunkY, uNearestIdx);
+	Flux_TerrainStreamingManagerImpl::ResolveCameraChunkCoords(xState, xCameraPos, iChunkX, iChunkY, uNearestIdx);
 
 	ZENITH_ASSERT_EQ(uNearestIdx, uTargetIdx, "AABB nearest-chunk selection should pick the offset target chunk");
 	ZENITH_ASSERT_EQ(iChunkX, static_cast<int32_t>(uTargetX), "Resolved camera chunk X should come from nearest AABB");
 	ZENITH_ASSERT_EQ(iChunkY, static_cast<int32_t>(uTargetY), "Resolved camera chunk Y should come from nearest AABB");
 
-	Flux_TerrainStreamingManager::RebuildActiveChunkSet(xState, iChunkX, iChunkY, xCameraPos);
+	Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(xState, iChunkX, iChunkY, xCameraPos);
 	ZENITH_ASSERT(xState.m_xActiveChunkIndices.size() > 0, "Offset active set should be non-empty");
 	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices[0], uTargetIdx, "Nearest offset chunk should be first in the sorted active set");
 }
@@ -12523,7 +12523,7 @@ void Zenith_UnitTests::TestTerrainChunkDataNoLowZeroWhenLowResident(){
 	for (uint32_t uChunkIndex = 0; uChunkIndex < Flux_TerrainConfig::TOTAL_CHUNKS; ++uChunkIndex)
 	{
 		uint32_t uChunkX, uChunkY;
-		Flux_TerrainStreamingManager::ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
+		Flux_TerrainStreamingManagerImpl::ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
 		xState.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_LOW] = Flux_TerrainLODResidencyState::RESIDENT;
 		xState.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_LOW].m_uVertexOffset = uChunkIndex * 4u;
 		xState.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_LOW].m_uVertexCount = 4u;
@@ -12534,10 +12534,10 @@ void Zenith_UnitTests::TestTerrainChunkDataNoLowZeroWhenLowResident(){
 			Zenith_Maths::Vector3(static_cast<float>(uChunkX + 1u) * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 64.0f, static_cast<float>(uChunkY + 1u) * Flux_TerrainConfig::CHUNK_SIZE_WORLD));
 	}
 
-	ZENITH_ASSERT_EQ(Flux_TerrainStreamingManager::CountLowZeroChunks(xState), 0u, "LOW zero-count diagnostic should be zero when all LOW chunks are resident with indices");
+	ZENITH_ASSERT_EQ(Flux_TerrainStreamingManagerImpl::CountLowZeroChunks(xState), 0u, "LOW zero-count diagnostic should be zero when all LOW chunks are resident with indices");
 
 	Zenith_TerrainChunkData* pxChunkData = new Zenith_TerrainChunkData[Flux_TerrainConfig::TOTAL_CHUNKS];
-	Flux_TerrainStreamingManager::BuildChunkDataForGPU_Internal(xState, pxChunkData);
+	Flux_TerrainStreamingManagerImpl::BuildChunkDataForGPU_Internal(xState, pxChunkData);
 	for (uint32_t uChunkIndex = 0; uChunkIndex < Flux_TerrainConfig::TOTAL_CHUNKS; ++uChunkIndex)
 	{
 		ZENITH_ASSERT_EQ(pxChunkData[uChunkIndex].m_axLODs[LOD_LOW].m_uIndexCount, 6u, "Generated chunk data LOW index count should match populated residency");

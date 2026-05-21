@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/DynamicLights/Flux_DynamicLights.h"
+#include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -56,7 +57,7 @@ static constexpr float fLIGHT_TYPE_TAG_DIRECTIONAL = 2.0f;
 // Cached frustum for culling (updated each frame).
 
 // CPU staging — flat array of all light types, packed by GatherLightsFromScene.
-static LightInstance s_axLightStaging[Flux_DynamicLights::uMAX_LIGHTS];
+static LightInstance s_axLightStaging[Flux_DynamicLightsImpl::uMAX_LIGHTS];
 
 // GPU-side: host-visible, frame-indexed. Host-visible is correct here
 // because this buffer is CPU-uploaded each frame (unlike the cluster
@@ -174,7 +175,7 @@ static float CalculateLightPriority(const Zenith_Maths::Vector3& xLightPos, floa
 
 // ========== PUBLIC API ==========
 
-void Flux_DynamicLights::Initialise()
+void Flux_DynamicLightsImpl::Initialise()
 {
 	// One flat GPU buffer for all lights (point + spot + directional).
 	const u_int64 ulLightBufferSize = uMAX_LIGHTS * sizeof(LightInstance);
@@ -193,7 +194,7 @@ void Flux_DynamicLights::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DynamicLights initialised (clustered-deferred gather front-end, max %u lights)", uMAX_LIGHTS);
 }
 
-void Flux_DynamicLights::Shutdown()
+void Flux_DynamicLightsImpl::Shutdown()
 {
 	if (!g_xEngine.DynamicLights().m_bInitialised)
 	{
@@ -207,7 +208,7 @@ void Flux_DynamicLights::Shutdown()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DynamicLights shut down");
 }
 
-void Flux_DynamicLights::Reset()
+void Flux_DynamicLightsImpl::Reset()
 {
 	// Light count is reset in GatherLightsFromScene().
 }
@@ -219,7 +220,7 @@ void Flux_DynamicLights::Reset()
 static void StagePointLight(const Zenith_Maths::Vector3& xPosition, float fRange,
 	const Zenith_Maths::Vector3& xColor, float fIntensity)
 {
-	if (g_xEngine.DynamicLights().m_uLightCount >= Flux_DynamicLights::uMAX_LIGHTS) return;
+	if (g_xEngine.DynamicLights().m_uLightCount >= Flux_DynamicLightsImpl::uMAX_LIGHTS) return;
 	LightInstance& xOut = s_axLightStaging[g_xEngine.DynamicLights().m_uLightCount++];
 	xOut.m_xPositionRange  = { xPosition.x, xPosition.y, xPosition.z, fRange };
 	xOut.m_xColorIntensity = { xColor.x, xColor.y, xColor.z, fIntensity };
@@ -231,7 +232,7 @@ static void StageSpotLight(const Zenith_Maths::Vector3& xPosition, float fRange,
 	const Zenith_Maths::Vector3& xColor, float fIntensity,
 	const Zenith_Maths::Vector3& xDirection, float fCosInner, float fCosOuter)
 {
-	if (g_xEngine.DynamicLights().m_uLightCount >= Flux_DynamicLights::uMAX_LIGHTS) return;
+	if (g_xEngine.DynamicLights().m_uLightCount >= Flux_DynamicLightsImpl::uMAX_LIGHTS) return;
 	LightInstance& xOut = s_axLightStaging[g_xEngine.DynamicLights().m_uLightCount++];
 	xOut.m_xPositionRange  = { xPosition.x, xPosition.y, xPosition.z, fRange };
 	xOut.m_xColorIntensity = { xColor.x, xColor.y, xColor.z, fIntensity };
@@ -242,7 +243,7 @@ static void StageSpotLight(const Zenith_Maths::Vector3& xPosition, float fRange,
 static void StageDirectionalLight(const Zenith_Maths::Vector3& xDirection,
 	const Zenith_Maths::Vector3& xColor, float fIntensity)
 {
-	if (g_xEngine.DynamicLights().m_uLightCount >= Flux_DynamicLights::uMAX_LIGHTS) return;
+	if (g_xEngine.DynamicLights().m_uLightCount >= Flux_DynamicLightsImpl::uMAX_LIGHTS) return;
 	LightInstance& xOut = s_axLightStaging[g_xEngine.DynamicLights().m_uLightCount++];
 	xOut.m_xPositionRange  = { 0.0f, 0.0f, 0.0f, 0.0f };
 	xOut.m_xColorIntensity = { xColor.x, xColor.y, xColor.z, fIntensity };
@@ -400,7 +401,7 @@ static std::optional<PendingLight> ProcessDirectionalLightCandidate(Zenith_Light
 // stage that subset directional-first.
 static void StageLightsWithPriority(const Zenith_Vector<PendingLight>& xPending, u_int uTotal)
 {
-	const u_int uMAX_LIGHTS = Flux_DynamicLights::uMAX_LIGHTS;
+	const u_int uMAX_LIGHTS = Flux_DynamicLightsImpl::uMAX_LIGHTS;
 
 	if (uTotal <= uMAX_LIGHTS)
 	{
@@ -465,7 +466,7 @@ namespace
 }
 #endif
 
-void Flux_DynamicLights::GatherLightsFromScene()
+void Flux_DynamicLightsImpl::GatherLightsFromScene()
 {
 	g_xEngine.DynamicLights().m_uLightCount = 0;
 
@@ -537,17 +538,9 @@ void Flux_DynamicLights::GatherLightsFromScene()
 
 // ========== ACCESSORS FOR DOWNSTREAM PASSES ==========
 
-Flux_ShaderResourceView_Buffer& Flux_DynamicLights::GetLightBufferSRV()
+Flux_ShaderResourceView_Buffer& Flux_DynamicLightsImpl::GetLightBufferSRV()
 {
 	return g_xEngine.DynamicLights().m_xLightBuffer.GetSRV();
 }
 
-Flux_DynamicReadWriteBuffer& Flux_DynamicLights::GetLightBuffer()
-{
-	return g_xEngine.DynamicLights().m_xLightBuffer;
-}
 
-u_int Flux_DynamicLights::GetLightCount()
-{
-	return g_xEngine.DynamicLights().m_uLightCount;
-}

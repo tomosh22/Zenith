@@ -22,7 +22,7 @@
 #include "Flux/Zenith_GameRenderHook.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/SDFs/Flux_SDFsImpl.h"
-#include "Flux/Shadows/Flux_Shadows.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
@@ -33,8 +33,8 @@
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/Vegetation/Flux_Grass.h"
-#include "Flux/DynamicLights/Flux_DynamicLights.h"
-#include "Flux/DynamicLights/Flux_LightClustering.h"
+#include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
+#include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
 #include "Flux/Decals/Flux_Decals.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -212,7 +212,7 @@ void Flux::LateInitialise()
 	Flux_PlatformAPI::InitialiseImGui();
 	Flux_Gizmos::Initialise();
 #endif
-	Flux_Shadows::Initialise();
+	g_xEngine.Shadows().Initialise();
 	Flux_Skybox::Initialise();       // Cubemap skybox + procedural atmosphere
 	Flux_IBL::Initialise();          // Image-based lighting (BRDF LUT, environment probes)
 	g_xEngine.StaticMeshes().Initialise();
@@ -224,8 +224,8 @@ void Flux::LateInitialise()
 	g_xEngine.HiZ().Initialise();          // Hi-Z depth pyramid (needed by SSR)
 	Flux_SSR::Initialise();          // Screen-space reflections (uses Hi-Z, needed by DeferredShading)
 	Flux_SSGI::Initialise();         // Screen-space GI (uses Hi-Z, needed by DeferredShading)
-	Flux_DynamicLights::Initialise();   // Light gather + upload (front-end for clustered deferred)
-	Flux_LightClustering::Initialise(); // Per-cluster light culling compute (must precede DeferredShading)
+	g_xEngine.DynamicLights().Initialise();   // Light gather + upload (front-end for clustered deferred)
+	g_xEngine.LightClustering().Initialise(); // Per-cluster light culling compute (must precede DeferredShading)
 	g_xEngine.DeferredShading().Initialise(); // Reads cluster buffers + light buffer in fragment shader
 	Flux_Decals::Initialise();          // Deferred screen-space box decals (writes G-buffer pre-readers)
 	Flux_SSAO::Initialise();
@@ -329,7 +329,7 @@ void Flux::SetupRenderGraph()
 	Flux_Skybox::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// Geometry (all write to G-Buffer + Depth)
-	Flux_Shadows::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Shadows().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.StaticMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Terrain::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Primitives::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
@@ -353,7 +353,7 @@ void Flux::SetupRenderGraph()
 	// read by the deferred-shading fragment shader. The graph orders these via
 	// .ReadsBuffer / .WritesBuffer declarations, but registering in this order
 	// keeps the source-side intent explicit.
-	Flux_LightClustering::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.LightClustering().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.DeferredShading().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	// Aerial perspective runs after DeferredShading — it blends scattering on
 	// top of the already-lit HDR scene. Registering here keeps the writer-chain
@@ -427,8 +427,8 @@ void Flux::Shutdown()
 	// Flux_Fog, Flux_DeferredShading - no Shutdown() methods
 	Flux_SSAO::Shutdown();           // SSAO render targets
 	Flux_Decals::Shutdown();          // Deferred decal renderer (frees instance buffer + IB)
-	Flux_LightClustering::Shutdown(); // Cluster compute pass (frees cluster buffers)
-	Flux_DynamicLights::Shutdown();   // Light gather front-end (frees unified light buffer)
+	g_xEngine.LightClustering().Shutdown(); // Cluster compute pass (frees cluster buffers)
+	g_xEngine.DynamicLights().Shutdown();   // Light gather front-end (frees unified light buffer)
 	Flux_SSGI::Shutdown();         // Before HiZ (SSGI uses Hi-Z)
 	Flux_SSR::Shutdown();          // Before HiZ (SSR uses Hi-Z)
 	g_xEngine.HiZ().Shutdown();          // Hi-Z depth pyramid
@@ -439,7 +439,7 @@ void Flux::Shutdown()
 	// Flux_AnimatedMeshes, Flux_StaticMeshes - no Shutdown() methods
 	Flux_IBL::Shutdown();          // After Skybox (uses skybox for environment)
 	Flux_Skybox::Shutdown();
-	Flux_Shadows::Shutdown();
+	g_xEngine.Shadows().Shutdown();
 
 #ifdef ZENITH_WINDOWS
 	Flux_SlangCompiler::Shutdown();

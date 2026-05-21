@@ -1,9 +1,10 @@
 #pragma once
 
-#include "Flux/Fog/Flux_RaymarchFog.h"
 #include "Flux/Flux.h"
 
-// Phase 7c: per-Engine state for RaymarchFog subsystem.
+class Flux_CommandList;
+
+// Phase 9: state + behaviour for RaymarchFog subsystem.
 class Flux_RaymarchFogImpl
 {
 public:
@@ -13,8 +14,11 @@ public:
 	Flux_RaymarchFogImpl(const Flux_RaymarchFogImpl&) = delete;
 	Flux_RaymarchFogImpl& operator=(const Flux_RaymarchFogImpl&) = delete;
 
-	Flux_Shader              m_xShader;
-	Flux_Pipeline            m_xPipeline;
-	// Per-frame push constants stay file-static in the .cpp -- their
-	// struct type Flux_RaymarchConstants is locally defined there.
+	void Initialise();
+	void BuildPipelines();
+	void Reset();
+	void Render(Flux_CommandList* pxCommandList);
+
+	Flux_Shader   m_xShader;
+	Flux_Pipeline m_xPipeline;
 };

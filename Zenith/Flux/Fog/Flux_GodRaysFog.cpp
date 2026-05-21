@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Fog/Flux_GodRaysFog.h"
+#include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 
@@ -43,7 +44,7 @@ DEBUGVAR float dbg_fGodRaysWeight = 0.5f;
 static Flux_GodRaysConstants s_xConstants;
 
 
-void Flux_GodRaysFog::BuildPipelines()
+void Flux_GodRaysFogImpl::BuildPipelines()
 {
 	g_xEngine.GodRaysFog().m_xShader.Initialise(FluxShaderProgram::Fog_GodRays);
 
@@ -70,7 +71,7 @@ void Flux_GodRaysFog::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(g_xEngine.GodRaysFog().m_xPipeline, xPipelineSpec);
 }
 
-void Flux_GodRaysFog::Initialise()
+void Flux_GodRaysFogImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -86,19 +87,19 @@ void Flux_GodRaysFog::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::Fog_GodRays,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_GodRaysFog::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.GodRaysFog().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_GodRaysFog initialised");
 }
 
-void Flux_GodRaysFog::Reset()
+void Flux_GodRaysFogImpl::Reset()
 {
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_GodRaysFog::Reset()");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_GodRaysFogImpl::Reset()");
 }
 
-void Flux_GodRaysFog::Render(Flux_CommandList* pxCommandList)
+void Flux_GodRaysFogImpl::Render(Flux_CommandList* pxCommandList)
 {
 	// Get sun direction from frame constants and project to screen space
 	const Zenith_Maths::Vector3& xSunDir = g_xEngine.FluxGraphics().m_xFrameConstants.m_xSunDir_Pad;

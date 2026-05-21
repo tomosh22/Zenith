@@ -4,9 +4,9 @@
 #include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Flux.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
-#include "Flux/Fog/Flux_GodRaysFog.h"
-#include "Flux/Fog/Flux_RaymarchFog.h"
-#include "Flux/Fog/Flux_FroxelFog.h"
+#include "Flux/Fog/Flux_GodRaysFogImpl.h"
+#include "Flux/Fog/Flux_RaymarchFogImpl.h"
+#include "Flux/Fog/Flux_FroxelFogImpl.h"
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
@@ -77,9 +77,9 @@ void Flux_Fog::Initialise()
 	Flux_VolumeFog::Initialise();
 
 	// Initialize all volumetric fog techniques (spatial-only, no temporal)
-	Flux_GodRaysFog::Initialise();
-	Flux_RaymarchFog::Initialise();
-	Flux_FroxelFog::Initialise();
+	g_xEngine.GodRaysFog().Initialise();
+	g_xEngine.RaymarchFog().Initialise();
+	g_xEngine.FroxelFog().Initialise();
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -105,9 +105,9 @@ void Flux_Fog::Reset()
 {
 	// Reset all volumetric fog techniques (spatial-only, no temporal)
 	Flux_VolumeFog::Reset();
-	Flux_GodRaysFog::Reset();
-	Flux_RaymarchFog::Reset();
-	Flux_FroxelFog::Reset();
+	g_xEngine.GodRaysFog().Reset();
+	g_xEngine.RaymarchFog().Reset();
+	g_xEngine.FroxelFog().Reset();
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Fog::Reset() - Reset all fog systems");
 }
@@ -179,7 +179,7 @@ void Flux_Fog::ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserD
 	{
 		return;
 	}
-	Flux_FroxelFog::RenderInject(pxCommandList);
+	g_xEngine.FroxelFog().RenderInject(pxCommandList);
 }
 
 void Flux_Fog::ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserData)
@@ -189,7 +189,7 @@ void Flux_Fog::ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserDa
 	{
 		return;
 	}
-	Flux_FroxelFog::RenderLight(pxCommandList);
+	g_xEngine.FroxelFog().RenderLight(pxCommandList);
 }
 
 void Flux_Fog::ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserData)
@@ -199,7 +199,7 @@ void Flux_Fog::ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserDa
 	{
 		return;
 	}
-	Flux_FroxelFog::RenderApply(pxCommandList);
+	g_xEngine.FroxelFog().RenderApply(pxCommandList);
 }
 
 void Flux_Fog::ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
@@ -209,7 +209,7 @@ void Flux_Fog::ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
 	{
 		return;
 	}
-	Flux_RaymarchFog::Render(pxCommandList);
+	g_xEngine.RaymarchFog().Render(pxCommandList);
 }
 
 void Flux_Fog::ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData)
@@ -219,7 +219,7 @@ void Flux_Fog::ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData)
 	{
 		return;
 	}
-	Flux_GodRaysFog::Render(pxCommandList);
+	g_xEngine.GodRaysFog().Render(pxCommandList);
 }
 
 void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -235,7 +235,7 @@ void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	g_xEngine.Fog().m_uLastFogTechnique = UINT32_MAX; // Force initial enable/disable
 
 	// Let FroxelFog create its transient resources (must happen before pass registration)
-	Flux_FroxelFog::SetupTransients(xGraph);
+	g_xEngine.FroxelFog().SetupTransients(xGraph);
 
 	// All technique passes are registered up front; ApplyTechniqueSelectionToGraph
 	// toggles their enable bits each frame based on dbg_uVolFogTechnique and the
@@ -247,14 +247,14 @@ void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	g_xEngine.Fog().m_xFroxelInjectPass = xGraph.AddPass("Fog_FroxelInject", ExecuteFroxelInject)
-		.WritesTransient(Flux_FroxelFog::GetDensityGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
+		.WritesTransient(g_xEngine.FroxelFog().GetDensityGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
 
 	// Light shader writes both lighting and scattering grids (see the two
 	// UAV binding points in Flux_FroxelFog.cpp).
 	g_xEngine.Fog().m_xFroxelLightPass = xGraph.AddPass("Fog_FroxelLight", ExecuteFroxelLight)
-		.ReadsTransient (Flux_FroxelFog::GetDensityGridHandle(),    RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(Flux_FroxelFog::GetLightingGridHandle(),   RESOURCE_ACCESS_WRITE_UAV)
-		.WritesTransient(Flux_FroxelFog::GetScatteringGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
+		.ReadsTransient (g_xEngine.FroxelFog().GetDensityGridHandle(),    RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(g_xEngine.FroxelFog().GetLightingGridHandle(),   RESOURCE_ACCESS_WRITE_UAV)
+		.WritesTransient(g_xEngine.FroxelFog().GetScatteringGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
 
 	// Apply shader samples both lighting and scattering grids — both must
 	// be declared so the graph transitions them out of GENERAL before the
@@ -262,8 +262,8 @@ void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	g_xEngine.Fog().m_xFroxelApplyPass = xGraph.AddPass("Fog_FroxelApply", ExecuteFroxelApply)
 		.Writes        (Flux_HDR::GetHDRSceneTarget(),               RESOURCE_ACCESS_WRITE_RTV)
 		.Reads         (Flux_Graphics::GetDepthAttachment(),         RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient(Flux_FroxelFog::GetLightingGridHandle(),     RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient(Flux_FroxelFog::GetScatteringGridHandle(),   RESOURCE_ACCESS_READ_SRV);
+		.ReadsTransient(g_xEngine.FroxelFog().GetLightingGridHandle(),     RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient(g_xEngine.FroxelFog().GetScatteringGridHandle(),   RESOURCE_ACCESS_READ_SRV);
 
 	g_xEngine.Fog().m_xRaymarchPass = xGraph.AddPass("Fog_Raymarch", ExecuteRaymarch)
 		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)

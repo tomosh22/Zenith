@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Fog/Flux_RaymarchFog.h"
+#include "Flux/Fog/Flux_RaymarchFogImpl.h"
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 
@@ -9,7 +10,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Flux/Shadows/Flux_Shadows.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 #ifdef ZENITH_TOOLS
@@ -50,7 +51,7 @@ DEBUGVAR float dbg_fRaymarchShadowConeRadius = 0.002f; // Cone spread - controls
 // Cached constants for push constant (per-frame transient -- kept file-static).
 static Flux_RaymarchConstants s_xConstants;
 
-void Flux_RaymarchFog::BuildPipelines()
+void Flux_RaymarchFogImpl::BuildPipelines()
 {
 	g_xEngine.RaymarchFog().m_xShader.Initialise(FluxShaderProgram::Fog_Raymarch);
 
@@ -77,7 +78,7 @@ void Flux_RaymarchFog::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(g_xEngine.RaymarchFog().m_xPipeline, xPipelineSpec);
 }
 
-void Flux_RaymarchFog::Initialise()
+void Flux_RaymarchFogImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -97,19 +98,19 @@ void Flux_RaymarchFog::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::Fog_Raymarch,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_RaymarchFog::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.RaymarchFog().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_RaymarchFog initialised");
 }
 
-void Flux_RaymarchFog::Reset()
+void Flux_RaymarchFogImpl::Reset()
 {
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_RaymarchFog::Reset()");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_RaymarchFogImpl::Reset()");
 }
 
-void Flux_RaymarchFog::Render(Flux_CommandList* pxCommandList)
+void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
 {
 	// Get shared fog parameters
 	Flux_VolumeFogConstants& xShared = Flux_VolumeFog::GetSharedConstants();
@@ -174,9 +175,9 @@ void Flux_RaymarchFog::Render(Flux_CommandList* pxCommandList)
 	static const char* const s_aszShadowMatrixNames[ZENITH_FLUX_NUM_CSMS] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		Flux_ShaderResourceView& xCSMSRV = Flux_Shadows::GetCSMSRV(u);
+		Flux_ShaderResourceView& xCSMSRV = g_xEngine.Shadows().GetCSMSRV(u);
 		xBinder.BindSRV(g_xEngine.RaymarchFog().m_xShader, s_aszCSMNames[u], &xCSMSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
-		xBinder.BindCBV(g_xEngine.RaymarchFog().m_xShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+		xBinder.BindCBV(g_xEngine.RaymarchFog().m_xShader, s_aszShadowMatrixNames[u], &g_xEngine.Shadows().GetShadowMatrixBuffer(u).GetCBV());
 	}
 
 	xBinder.BindDrawConstants(g_xEngine.RaymarchFog().m_xShader, "RaymarchConstants", &s_xConstants, sizeof(Flux_RaymarchConstants));

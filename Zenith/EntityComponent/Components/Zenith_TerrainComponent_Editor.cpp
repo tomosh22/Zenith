@@ -12,7 +12,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Terrain/Flux_Terrain.h"
-#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include <filesystem>
 
 // Windows file dialog support
@@ -405,7 +405,7 @@ void Zenith_TerrainComponent::CleanupPriorGenerationForRegenerate()
 	// s_pxPrimary, which on a non-primary terrain would unregister the
 	// wrong state and leave THIS component still in the registry pointing
 	// at buffers we're about to destroy.
-	Flux_TerrainStreamingManager::UnregisterTerrainBuffers(this);
+	g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(this);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing unified buffers...");
 	Flux_MemoryManager::DestroyVertexBuffer(m_xUnifiedVertexBuffer);
@@ -464,9 +464,9 @@ void Zenith_TerrainComponent::RenderDebugVisualizationSection()
 	// Component-aware: pull this terrain's own stats. Falls back to a zeroed
 	// snapshot if streaming state isn't yet initialised (component just
 	// constructed, not yet registered).
-	static const Flux_TerrainStreamingManager::StreamingStats kxZeroStats{};
+	static const Flux_TerrainStreamingManagerImpl::StreamingStats kxZeroStats{};
 	const Flux_TerrainStreamingState* pxState = m_pxStreamingState;
-	const Flux_TerrainStreamingManager::StreamingStats& xStats = pxState ? pxState->m_xStats : kxZeroStats;
+	const Flux_TerrainStreamingManagerImpl::StreamingStats& xStats = pxState ? pxState->m_xStats : kxZeroStats;
 
 	ImGui::Text("HIGH LOD Chunks: %u / %u", xStats.m_uHighLODChunksResident, TOTAL_CHUNKS);
 	ImGui::Text("Streams This Frame: %u", xStats.m_uStreamsThisFrame);

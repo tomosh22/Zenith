@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Fog/Flux_FroxelFog.h"
+#include "Flux/Fog/Flux_FroxelFogImpl.h"
 #include "Flux/Fog/Flux_FroxelFogImpl.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 
@@ -10,7 +11,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Flux/Shadows/Flux_Shadows.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 #ifdef ZENITH_TOOLS
@@ -100,23 +101,23 @@ static ApplyConstants s_xApplyConstants;
 
 static Flux_RenderAttachment& GetDensityGridInternal()
 {
-	Zenith_Assert(g_xEngine.FroxelFog().m_pxGraph, "Flux_FroxelFog::GetDensityGridInternal: graph pointer is null");
+	Zenith_Assert(g_xEngine.FroxelFog().m_pxGraph, "Flux_FroxelFogImpl::GetDensityGridInternal: graph pointer is null");
 	return g_xEngine.FroxelFog().m_pxGraph->GetTransientAttachment(g_xEngine.FroxelFog().m_xDensityGridHandle);
 }
 
 static Flux_RenderAttachment& GetLightingGridInternal()
 {
-	Zenith_Assert(g_xEngine.FroxelFog().m_pxGraph, "Flux_FroxelFog::GetLightingGridInternal: graph pointer is null");
+	Zenith_Assert(g_xEngine.FroxelFog().m_pxGraph, "Flux_FroxelFogImpl::GetLightingGridInternal: graph pointer is null");
 	return g_xEngine.FroxelFog().m_pxGraph->GetTransientAttachment(g_xEngine.FroxelFog().m_xLightingGridHandle);
 }
 
 static Flux_RenderAttachment& GetScatteringGridInternal()
 {
-	Zenith_Assert(g_xEngine.FroxelFog().m_pxGraph, "Flux_FroxelFog::GetScatteringGridInternal: graph pointer is null");
+	Zenith_Assert(g_xEngine.FroxelFog().m_pxGraph, "Flux_FroxelFogImpl::GetScatteringGridInternal: graph pointer is null");
 	return g_xEngine.FroxelFog().m_pxGraph->GetTransientAttachment(g_xEngine.FroxelFog().m_xScatteringGridHandle);
 }
 
-void Flux_FroxelFog::BuildPipelines()
+void Flux_FroxelFogImpl::BuildPipelines()
 {
 	// Initialize inject compute shader
 	g_xEngine.FroxelFog().m_xInjectShader.Initialise(FluxShaderProgram::Fog_FroxelInject);
@@ -170,7 +171,7 @@ void Flux_FroxelFog::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(g_xEngine.FroxelFog().m_xApplyPipeline, xApplySpec);
 }
 
-void Flux_FroxelFog::Initialise()
+void Flux_FroxelFogImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -197,14 +198,14 @@ void Flux_FroxelFog::Initialise()
 		FluxShaderProgram::Fog_FroxelLight,
 		FluxShaderProgram::Fog_FroxelApply,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_FroxelFog::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.FroxelFog().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_FroxelFog initialised (%ux%ux%u grid)", FROXEL_WIDTH, FROXEL_HEIGHT, FROXEL_DEPTH);
 }
 
-void Flux_FroxelFog::SetupTransients(Flux_RenderGraph& xGraph)
+void Flux_FroxelFogImpl::SetupTransients(Flux_RenderGraph& xGraph)
 {
 	g_xEngine.FroxelFog().m_pxGraph = &xGraph;
 
@@ -221,57 +222,45 @@ void Flux_FroxelFog::SetupTransients(Flux_RenderGraph& xGraph)
 	g_xEngine.FroxelFog().m_xScatteringGridHandle = xGraph.CreateTransient(xFroxelDesc);
 }
 
-void Flux_FroxelFog::Reset()
+void Flux_FroxelFogImpl::Reset()
 {
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_FroxelFog::Reset()");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_FroxelFogImpl::Reset()");
 }
 
-Flux_RenderAttachment& Flux_FroxelFog::GetDensityGrid()
+Flux_RenderAttachment& Flux_FroxelFogImpl::GetDensityGrid()
 {
 	return GetDensityGridInternal();
 }
 
-Flux_RenderAttachment& Flux_FroxelFog::GetLightingGrid()
+Flux_RenderAttachment& Flux_FroxelFogImpl::GetLightingGrid()
 {
 	return GetLightingGridInternal();
 }
 
-Flux_RenderAttachment& Flux_FroxelFog::GetScatteringGrid()
+Flux_RenderAttachment& Flux_FroxelFogImpl::GetScatteringGrid()
 {
 	return GetScatteringGridInternal();
 }
 
-Flux_TransientHandle Flux_FroxelFog::GetDensityGridHandle()
-{
-	return g_xEngine.FroxelFog().m_xDensityGridHandle;
-}
 
-Flux_TransientHandle Flux_FroxelFog::GetLightingGridHandle()
-{
-	return g_xEngine.FroxelFog().m_xLightingGridHandle;
-}
 
-Flux_TransientHandle Flux_FroxelFog::GetScatteringGridHandle()
-{
-	return g_xEngine.FroxelFog().m_xScatteringGridHandle;
-}
 
-Flux_RenderAttachment& Flux_FroxelFog::GetDebugSliceTexture()
+Flux_RenderAttachment& Flux_FroxelFogImpl::GetDebugSliceTexture()
 {
 	return GetScatteringGridInternal();
 }
 
-float Flux_FroxelFog::GetNearZ()
+float Flux_FroxelFogImpl::GetNearZ()
 {
 	return dbg_fFroxelNearZ;
 }
 
-float Flux_FroxelFog::GetFarZ()
+float Flux_FroxelFogImpl::GetFarZ()
 {
 	return dbg_fFroxelFarZ;
 }
 
-void Flux_FroxelFog::RenderInject(Flux_CommandList* pxCommandList)
+void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 {
 	// Get shared fog constants
 	const Flux_VolumeFogConstants& xShared = Flux_VolumeFog::GetSharedConstants();
@@ -319,7 +308,7 @@ void Flux_FroxelFog::RenderInject(Flux_CommandList* pxCommandList)
 	);
 }
 
-void Flux_FroxelFog::RenderLight(Flux_CommandList* pxCommandList)
+void Flux_FroxelFogImpl::RenderLight(Flux_CommandList* pxCommandList)
 {
 	extern u_int dbg_uVolFogDebugMode;
 	const Flux_VolumeFogConstants& xShared = Flux_VolumeFog::GetSharedConstants();
@@ -354,9 +343,9 @@ void Flux_FroxelFog::RenderLight(Flux_CommandList* pxCommandList)
 	static const char* const s_aszShadowMatrixNames[ZENITH_FLUX_NUM_CSMS] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		Flux_ShaderResourceView& xCSMSRV = Flux_Shadows::GetCSMSRV(u);
+		Flux_ShaderResourceView& xCSMSRV = g_xEngine.Shadows().GetCSMSRV(u);
 		xLightBinder.BindSRV(g_xEngine.FroxelFog().m_xLightShader, s_aszCSMNames[u], &xCSMSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
-		xLightBinder.BindCBV(g_xEngine.FroxelFog().m_xLightShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+		xLightBinder.BindCBV(g_xEngine.FroxelFog().m_xLightShader, s_aszShadowMatrixNames[u], &g_xEngine.Shadows().GetShadowMatrixBuffer(u).GetCBV());
 	}
 
 	xLightBinder.BindDrawConstants(g_xEngine.FroxelFog().m_xLightShader, "LightConstants", &s_xLightConstants, sizeof(LightConstants));
@@ -367,7 +356,7 @@ void Flux_FroxelFog::RenderLight(Flux_CommandList* pxCommandList)
 	);
 }
 
-void Flux_FroxelFog::RenderApply(Flux_CommandList* pxCommandList)
+void Flux_FroxelFogImpl::RenderApply(Flux_CommandList* pxCommandList)
 {
 	extern u_int dbg_uVolFogDebugMode;
 
