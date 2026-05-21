@@ -2,7 +2,7 @@
 #include "UI/Zenith_UIOverlay.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
-#include "Flux/Text/Flux_Text.h" // SetOverlayClipRect
+#include "Flux/Text/Flux_TextImpl.h" // SetOverlayClipRect
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -129,7 +129,7 @@ void Zenith_UIOverlay::Render(Zenith_UICanvas& xCanvas)
 
 	// Set clip rect so text from lower sort-order elements is discarded
 	// within the content box bounds (handled in the Flux_Text fragment shader)
-	Flux_Text::SetOverlayClipRect(GetScreenBounds(), GetSortOrder());
+	g_xEngine.Text().SetOverlayClipRect(GetScreenBounds(), GetSortOrder());
 
 	// Render children (submits overlay's own text entries)
 	Zenith_UIElement::Render(xCanvas);

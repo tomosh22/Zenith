@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
 #ifdef ZENITH_TOOLS
 
@@ -9,7 +10,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Flux/Gizmos/Flux_Gizmos.h"
+#include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -41,7 +42,9 @@ DEBUGVAR float dbg_fGizmoAlpha = 1.0f;
 
 
 
-void Flux_Gizmos::BuildPipelines()
+static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData);
+
+void Flux_GizmosImpl::BuildPipelines()
 {
 	// Load shaders
 	g_xEngine.Gizmos().m_xShader.Initialise(FluxShaderProgram::Gizmos);
@@ -77,7 +80,7 @@ void Flux_Gizmos::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(g_xEngine.Gizmos().m_xPipeline, xSpec);
 }
 
-void Flux_Gizmos::Initialise()
+void Flux_GizmosImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -93,16 +96,16 @@ void Flux_Gizmos::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::Gizmos,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Gizmos::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Gizmos().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 
 	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos initialised");
 }
 
-void Flux_Gizmos::Shutdown()
+void Flux_GizmosImpl::Shutdown()
 {
 	// Destroy GPU buffers for all gizmo geometry
-	auto DestroyGeometryBuffers = [](Zenith_Vector<GizmoGeometry>& xGeometry)
+	auto DestroyGeometryBuffers = [](Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>& xGeometry)
 	{
 		for (uint32_t i = 0; i < xGeometry.GetSize(); ++i)
 		{
@@ -119,7 +122,7 @@ void Flux_Gizmos::Shutdown()
 	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos shut down");
 }
 
-void Flux_Gizmos::Reset()
+void Flux_GizmosImpl::Reset()
 {
 	// Clear target entity reference (will be invalid after scene reset)
 	g_xEngine.Gizmos().m_pxTargetEntity = nullptr;
@@ -129,12 +132,12 @@ void Flux_Gizmos::Reset()
 	g_xEngine.Gizmos().m_eActiveComponent = GizmoComponent::None;
 	g_xEngine.Gizmos().m_bIsInteracting = false;
 
-	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos::Reset() - Cleared entity reference");
+	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_GizmosImpl::Reset() - Cleared entity reference");
 }
 
 // ==================== EXTRACTED HELPERS ====================
 
-Zenith_TransformComponent* Flux_Gizmos::GetEditableTransform()
+Zenith_TransformComponent* Flux_GizmosImpl::GetEditableTransform()
 {
 	if (!g_xEngine.Gizmos().m_pxTargetEntity)
 	{
@@ -162,7 +165,7 @@ Zenith_TransformComponent* Flux_Gizmos::GetEditableTransform()
 	return &pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(g_xEngine.Gizmos().m_pxTargetEntity->GetEntityID());
 }
 
-void Flux_Gizmos::InterleaveVertexData(Zenith_Vector<float>& xOut, const Zenith_Vector<Zenith_Maths::Vector3>& xPositions, const Zenith_Vector<Zenith_Maths::Vector3>& xColors)
+void Flux_GizmosImpl::InterleaveVertexData(Zenith_Vector<float>& xOut, const Zenith_Vector<Zenith_Maths::Vector3>& xPositions, const Zenith_Vector<Zenith_Maths::Vector3>& xColors)
 {
 	for (uint32_t i = 0; i < xPositions.GetSize(); ++i)
 	{
@@ -175,7 +178,7 @@ void Flux_Gizmos::InterleaveVertexData(Zenith_Vector<float>& xOut, const Zenith_
 	}
 }
 
-void Flux_Gizmos::UploadGizmoGeometry(Zenith_Vector<GizmoGeometry>& xGeometryList, const Zenith_Vector<float>& xVertexData, const Zenith_Vector<uint32_t>& xIndices, const Zenith_Maths::Vector3& xColor, GizmoComponent eComponent)
+void Flux_GizmosImpl::UploadGizmoGeometry(Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>& xGeometryList, const Zenith_Vector<float>& xVertexData, const Zenith_Vector<uint32_t>& xIndices, const Zenith_Maths::Vector3& xColor, GizmoComponent eComponent)
 {
 	GizmoGeometry xGeom;
 	xGeom.m_eComponent = eComponent;
@@ -197,7 +200,7 @@ void Flux_Gizmos::UploadGizmoGeometry(Zenith_Vector<GizmoGeometry>& xGeometryLis
 	xGeometryList.PushBack(xGeom);
 }
 
-bool Flux_Gizmos::GetLineLineClosestPointParameter(const Zenith_Maths::Vector3& xAxisOrigin, const Zenith_Maths::Vector3& xAxis, const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir, float& fOutT)
+bool Flux_GizmosImpl::GetLineLineClosestPointParameter(const Zenith_Maths::Vector3& xAxisOrigin, const Zenith_Maths::Vector3& xAxis, const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir, float& fOutT)
 {
 	// Standard line-line closest point formula:
 	// w = AxisOrigin - RayOrigin
@@ -223,7 +226,7 @@ bool Flux_Gizmos::GetLineLineClosestPointParameter(const Zenith_Maths::Vector3& 
 	return true;
 }
 
-void Flux_Gizmos::ComputeTangentFrame(const Zenith_Maths::Vector3& xAxis, Zenith_Maths::Vector3& xOutTangent, Zenith_Maths::Vector3& xOutBitangent)
+void Flux_GizmosImpl::ComputeTangentFrame(const Zenith_Maths::Vector3& xAxis, Zenith_Maths::Vector3& xOutTangent, Zenith_Maths::Vector3& xOutBitangent)
 {
 	Zenith_Maths::Vector3 xPerpendicular = glm::abs(xAxis.x) > 0.9f ? Zenith_Maths::Vector3(0, 1, 0) : Zenith_Maths::Vector3(1, 0, 0);
 	xOutTangent = glm::normalize(glm::cross(xAxis, xPerpendicular));
@@ -232,7 +235,7 @@ void Flux_Gizmos::ComputeTangentFrame(const Zenith_Maths::Vector3& xAxis, Zenith
 
 // ==================== RENDERING ====================
 
-void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bGizmosEnabled)
@@ -240,7 +243,7 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 		return;
 	}
 
-	Zenith_TransformComponent* pxTransform = GetEditableTransform();
+	Zenith_TransformComponent* pxTransform = g_xEngine.Gizmos().GetEditableTransform();
 	if (!pxTransform)
 	{
 		return;
@@ -273,7 +276,7 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 	xGizmoMatrix = glm::scale(xGizmoMatrix, Zenith_Maths::Vector3(g_xEngine.Gizmos().m_fGizmoScale));
 
 	// Select geometry based on mode
-	Zenith_Vector<GizmoGeometry>* pxGeometry = nullptr;
+	Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>* pxGeometry = nullptr;
 	switch (g_xEngine.Gizmos().m_eMode)
 	{
 		case GizmoMode::Translate: pxGeometry = &g_xEngine.Gizmos().m_xTranslateGeometry; break;
@@ -296,7 +299,7 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 	// Render each gizmo component
 	for (uint32_t i = 0; i < pxGeometry->GetSize(); ++i)
 	{
-		const GizmoGeometry& xGeom = pxGeometry->Get(i);
+		const Flux_GizmosImpl::GizmoGeometry& xGeom = pxGeometry->Get(i);
 
 		// Set vertex and index buffers
 		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&xGeom.m_xVertexBuffer);
@@ -326,13 +329,13 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 	}
 }
 
-void Flux_Gizmos::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_GizmosImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Gizmos", ExecuteGizmos)
 		.Writes(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
-void Flux_Gizmos::SetTargetEntity(Zenith_Entity* pxEntity)
+void Flux_GizmosImpl::SetTargetEntity(Zenith_Entity* pxEntity)
 {
 	g_xEngine.Gizmos().m_pxTargetEntity = pxEntity;
 
@@ -342,7 +345,7 @@ void Flux_Gizmos::SetTargetEntity(Zenith_Entity* pxEntity)
 	g_xEngine.Gizmos().m_eHoveredComponent = GizmoComponent::None;
 }
 
-void Flux_Gizmos::SetGizmoMode(GizmoMode eMode)
+void Flux_GizmosImpl::SetGizmoMode(GizmoMode eMode)
 {
 	g_xEngine.Gizmos().m_eMode = eMode;
 
@@ -352,7 +355,7 @@ void Flux_Gizmos::SetGizmoMode(GizmoMode eMode)
 	g_xEngine.Gizmos().m_eHoveredComponent = GizmoComponent::None;
 }
 
-void Flux_Gizmos::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
+void Flux_GizmosImpl::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
 	if (!g_xEngine.Gizmos().m_pxTargetEntity)
 	{
@@ -381,7 +384,7 @@ void Flux_Gizmos::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const
 	}
 }
 
-void Flux_Gizmos::UpdateInteraction(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
+void Flux_GizmosImpl::UpdateInteraction(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
 	if (!g_xEngine.Gizmos().m_bIsInteracting || !g_xEngine.Gizmos().m_pxTargetEntity)
 		return;
@@ -395,7 +398,7 @@ void Flux_Gizmos::UpdateInteraction(const Zenith_Maths::Vector3& rayOrigin, cons
 	}
 }
 
-void Flux_Gizmos::EndInteraction()
+void Flux_GizmosImpl::EndInteraction()
 {
 	g_xEngine.Gizmos().m_bIsInteracting = false;
 	g_xEngine.Gizmos().m_eActiveComponent = GizmoComponent::None;
@@ -403,7 +406,7 @@ void Flux_Gizmos::EndInteraction()
 
 // ==================== GEOMETRY GENERATION ====================
 
-void Flux_Gizmos::GenerateTranslationGizmoGeometry()
+void Flux_GizmosImpl::GenerateTranslationGizmoGeometry()
 {
 	// X axis (Red)
 	GenerateArrowGeometry(g_xEngine.Gizmos().m_xTranslateGeometry, Zenith_Maths::Vector3(1, 0, 0), Zenith_Maths::Vector3(1, 0, 0), GizmoComponent::TranslateX);
@@ -413,7 +416,7 @@ void Flux_Gizmos::GenerateTranslationGizmoGeometry()
 	GenerateArrowGeometry(g_xEngine.Gizmos().m_xTranslateGeometry, Zenith_Maths::Vector3(0, 0, 1), Zenith_Maths::Vector3(0, 0, 1), GizmoComponent::TranslateZ);
 }
 
-void Flux_Gizmos::GenerateRotationGizmoGeometry()
+void Flux_GizmosImpl::GenerateRotationGizmoGeometry()
 {
 	// X axis circle (Red)
 	GenerateCircleGeometry(g_xEngine.Gizmos().m_xRotateGeometry, Zenith_Maths::Vector3(1, 0, 0), Zenith_Maths::Vector3(1, 0, 0), GizmoComponent::RotateX);
@@ -423,7 +426,7 @@ void Flux_Gizmos::GenerateRotationGizmoGeometry()
 	GenerateCircleGeometry(g_xEngine.Gizmos().m_xRotateGeometry, Zenith_Maths::Vector3(0, 0, 1), Zenith_Maths::Vector3(0, 0, 1), GizmoComponent::RotateZ);
 }
 
-void Flux_Gizmos::GenerateScaleGizmoGeometry()
+void Flux_GizmosImpl::GenerateScaleGizmoGeometry()
 {
 	// X axis (Red)
 	GenerateArrowGeometry(g_xEngine.Gizmos().m_xScaleGeometry, Zenith_Maths::Vector3(1, 0, 0), Zenith_Maths::Vector3(1, 0, 0), GizmoComponent::ScaleX);
@@ -435,7 +438,7 @@ void Flux_Gizmos::GenerateScaleGizmoGeometry()
 	GenerateCubeGeometry(g_xEngine.Gizmos().m_xScaleGeometry, Zenith_Maths::Vector3(0, 0, 0), Zenith_Maths::Vector3(1, 1, 1), GizmoComponent::ScaleXYZ);
 }
 
-void Flux_Gizmos::GenerateArrowGeometry(Zenith_Vector<GizmoGeometry>& geometryList, const Zenith_Maths::Vector3& axis, const Zenith_Maths::Vector3& color, GizmoComponent component)
+void Flux_GizmosImpl::GenerateArrowGeometry(Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>& geometryList, const Zenith_Maths::Vector3& axis, const Zenith_Maths::Vector3& color, GizmoComponent component)
 {
 	Zenith_Vector<Zenith_Maths::Vector3> positions;
 	Zenith_Vector<Zenith_Maths::Vector3> colors;
@@ -502,7 +505,7 @@ void Flux_Gizmos::GenerateArrowGeometry(Zenith_Vector<GizmoGeometry>& geometryLi
 	UploadGizmoGeometry(geometryList, xVertexData, indices, color, component);
 }
 
-void Flux_Gizmos::GenerateCircleGeometry(Zenith_Vector<GizmoGeometry>& geometryList, const Zenith_Maths::Vector3& normal, const Zenith_Maths::Vector3& color, GizmoComponent component)
+void Flux_GizmosImpl::GenerateCircleGeometry(Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>& geometryList, const Zenith_Maths::Vector3& normal, const Zenith_Maths::Vector3& color, GizmoComponent component)
 {
 	Zenith_Vector<Zenith_Maths::Vector3> positions;
 	Zenith_Vector<Zenith_Maths::Vector3> colors;
@@ -559,7 +562,7 @@ void Flux_Gizmos::GenerateCircleGeometry(Zenith_Vector<GizmoGeometry>& geometryL
 	UploadGizmoGeometry(geometryList, xVertexData, indices, color, component);
 }
 
-void Flux_Gizmos::GenerateCubeGeometry(Zenith_Vector<GizmoGeometry>& geometryList, const Zenith_Maths::Vector3& offset, const Zenith_Maths::Vector3& color, GizmoComponent component)
+void Flux_GizmosImpl::GenerateCubeGeometry(Zenith_Vector<Flux_GizmosImpl::GizmoGeometry>& geometryList, const Zenith_Maths::Vector3& offset, const Zenith_Maths::Vector3& color, GizmoComponent component)
 {
 	Zenith_Vector<Zenith_Maths::Vector3> positions;
 	Zenith_Vector<Zenith_Maths::Vector3> colors;
@@ -667,7 +670,7 @@ static void IntersectRotateRings(const Zenith_Maths::Vector3& xRelOrigin, const 
 	}
 }
 
-GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, float& outDistance)
+GizmoComponent Flux_GizmosImpl::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, float& outDistance)
 {
 	Zenith_TransformComponent* pxTransform = GetEditableTransform();
 	if (!pxTransform)
@@ -708,7 +711,7 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 
 // ==================== TRANSFORM MANIPULATION ====================
 
-void Flux_Gizmos::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
+void Flux_GizmosImpl::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
 	Zenith_TransformComponent* pxTransform = GetEditableTransform();
 	if (!pxTransform)
@@ -746,7 +749,7 @@ void Flux_Gizmos::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const
 	pxTransform->SetPosition(xNewPosition);
 }
 
-void Flux_Gizmos::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
+void Flux_GizmosImpl::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
 	Zenith_TransformComponent* pxTransform = GetEditableTransform();
 	if (!pxTransform)
@@ -792,7 +795,7 @@ void Flux_Gizmos::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, const Ze
 	xTransform.SetRotation(newRotation);
 }
 
-void Flux_Gizmos::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
+void Flux_GizmosImpl::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
 	Zenith_TransformComponent* pxTransform = GetEditableTransform();
 	if (!pxTransform)
@@ -864,7 +867,3 @@ void Flux_Gizmos::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Zenit
 #endif // ZENITH_TOOLS
 
 // Phase 7e: out-of-line accessor bodies.
-GizmoMode      Flux_Gizmos::GetGizmoMode()        { return g_xEngine.Gizmos().m_eMode; }
-bool           Flux_Gizmos::IsInteracting()       { return g_xEngine.Gizmos().m_bIsInteracting; }
-GizmoComponent Flux_Gizmos::GetHoveredComponent() { return g_xEngine.Gizmos().m_eHoveredComponent; }
-GizmoComponent Flux_Gizmos::GetActiveComponent()  { return g_xEngine.Gizmos().m_eActiveComponent; }

@@ -15,12 +15,12 @@
 
 // Flux reset includes (for ResetAllRenderSystems)
 #include "Flux/Terrain/Flux_Terrain.h"
-#include "Flux/Text/Flux_Text.h"
-#include "Flux/Particles/Flux_Particles.h"
+#include "Flux/Text/Flux_TextImpl.h"
+#include "Flux/Particles/Flux_ParticlesImpl.h"
 #include "Flux/Skybox/Flux_Skybox.h"
 #include "Flux/Fog/Flux_FogImpl.h"
 #ifdef ZENITH_TOOLS
-#include "Flux/Gizmos/Flux_Gizmos.h"
+#include "Flux/Gizmos/Flux_GizmosImpl.h"
 #endif
 #include "Physics/Zenith_Physics.h"
 
@@ -1359,12 +1359,12 @@ void Zenith_SceneManager::ResetAllRenderSystems()
 	// Only subsystems with real per-scene state need a Reset hook. The empty
 	// stubs that the render-graph refactor left behind have been deleted.
 	Flux_Terrain::Reset();
-	Flux_Text::Reset();
-	Flux_Particles::Reset();
+	g_xEngine.Text().Reset();
+	g_xEngine.Particles().Reset();
 	Flux_Skybox::Reset();
 	g_xEngine.Fog().Reset();
 #ifdef ZENITH_TOOLS
-	Flux_Gizmos::Reset();
+	g_xEngine.Gizmos().Reset();
 #endif
 }
 

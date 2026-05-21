@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Particles/Flux_Particles.h"
+#include "Flux/Particles/Flux_ParticlesImpl.h"
 #include "Flux/Particles/Flux_ParticlesImpl.h"
 #include "Flux/Particles/Flux_ParticleData.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
@@ -32,7 +33,9 @@ static constexpr uint32_t s_uMaxParticles = 4096;
 
 // Pinned via TextureHandle so UnloadUnused never frees the particle atlas mid-frame.
 
-void Flux_Particles::BuildPipelines()
+static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData);
+
+void Flux_ParticlesImpl::BuildPipelines()
 {
 	g_xEngine.Particles().m_xShader.Initialise(FluxShaderProgram::Particles);
 
@@ -74,7 +77,7 @@ void Flux_Particles::BuildPipelines()
 	Flux_ParticleGPU::BuildPipelines();
 }
 
-void Flux_Particles::Initialise()
+void Flux_ParticlesImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -98,26 +101,26 @@ void Flux_Particles::Initialise()
 		FluxShaderProgram::Particles,
 		FluxShaderProgram::ParticleUpdate,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Particles::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Particles().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles initialised (max %u particles)", s_uMaxParticles);
 }
 
-void Flux_Particles::Reset()
+void Flux_ParticlesImpl::Reset()
 {
 	g_xEngine.Particles().m_uAlphaInstanceCount = 0;
 	g_xEngine.Particles().m_uAdditiveInstanceCount = 0;
-	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles::Reset()");
+	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_ParticlesImpl::Reset()");
 }
 
-void Flux_Particles::ReleaseAssetReferences()
+void Flux_ParticlesImpl::ReleaseAssetReferences()
 {
 	g_xEngine.Particles().m_xParticleTexture.Clear();
 }
 
-void Flux_Particles::Shutdown()
+void Flux_ParticlesImpl::Shutdown()
 {
 	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAlpha);
 	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAdditive);
@@ -190,7 +193,7 @@ static void UploadInstanceData()
 	}
 }
 
-void Flux_Particles::Render(void*)
+void Flux_ParticlesImpl::Render(void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bCPUParticlesEnabled)
 	{
@@ -205,7 +208,7 @@ void Flux_Particles::Render(void*)
 	UploadInstanceData();
 }
 
-void Flux_Particles::ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bCPUParticlesEnabled)
@@ -265,7 +268,7 @@ static void PreExecuteParticleCompute(void*)
 	Flux_ParticleGPU::PreExecuteCompute();
 }
 
-void Flux_Particles::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// GPU particle compute pass (updates instance buffer before draw). The
 	// instance buffer is managed internally by Flux_ParticleGPU and isn't

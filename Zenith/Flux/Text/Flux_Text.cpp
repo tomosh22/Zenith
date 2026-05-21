@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Text/Flux_Text.h"
+#include "Flux/Text/Flux_TextImpl.h"
 #include "Flux/Text/Flux_TextImpl.h"
 
 #include "Flux/Flux.h"
@@ -32,13 +33,13 @@ struct TextVertex
 };
 
 // Pinned via TextureHandle so UnloadUnused never frees the font atlas while the
-// engine is running. Cleared in Flux_Text::ReleaseAssetReferences.
+// engine is running. Cleared in Flux_TextImpl::ReleaseAssetReferences.
 
-// Overlay clip rect state (set during canvas render, consumed during Flux_Text::Render)
+// Overlay clip rect state (set during canvas render, consumed during Flux_TextImpl::Render)
 
 DEBUGVAR float dbg_fTextSize = 100.f;
 
-void Flux_Text::BuildPipelines()
+void Flux_TextImpl::BuildPipelines()
 {
 	g_xEngine.Text().m_xShader.Initialise(FluxShaderProgram::Text);
 
@@ -68,7 +69,7 @@ void Flux_Text::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(g_xEngine.Text().m_xPipeline, xPipelineSpec);
 }
 
-void Flux_Text::Initialise()
+void Flux_TextImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -94,40 +95,40 @@ void Flux_Text::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::Text,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Text::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Text().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text initialised");
 }
 
-void Flux_Text::Reset()
+void Flux_TextImpl::Reset()
 {
 	// Clear pending text entries to prevent stale text from destroyed scenes persisting
 	Zenith_UI::Zenith_UICanvas::ClearPendingTextEntries();
 
-	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text::Reset() - Cleared pending text entries");
+	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_TextImpl::Reset() - Cleared pending text entries");
 }
 
-void Flux_Text::ReleaseAssetReferences()
+void Flux_TextImpl::ReleaseAssetReferences()
 {
 	g_xEngine.Text().m_xFontAtlasTexture.Clear();
 }
 
-void Flux_Text::Shutdown()
+void Flux_TextImpl::Shutdown()
 {
 	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Text().m_xInstanceBuffer);
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text shut down");
 }
 
-void Flux_Text::SetOverlayClipRect(const Zenith_Maths::Vector4& xRect, int iSortOrder)
+void Flux_TextImpl::SetOverlayClipRect(const Zenith_Maths::Vector4& xRect, int iSortOrder)
 {
 	g_xEngine.Text().m_bOverlayClipActive = true;
 	g_xEngine.Text().m_xOverlayClipRect = xRect;
 	g_xEngine.Text().m_iOverlayClipSortOrder = iSortOrder;
 }
 
-void Flux_Text::ClearOverlayClipRect()
+void Flux_TextImpl::ClearOverlayClipRect()
 {
 	g_xEngine.Text().m_bOverlayClipActive = false;
 	g_xEngine.Text().m_xOverlayClipRect = {-1.f, -1.f, -1.f, -1.f};
@@ -176,7 +177,7 @@ static void ProcessTextEntry(const Zenith_UI::UITextEntry& xEntry, Zenith_Vector
 }
 
 //#TO returns number of chars to render
-uint32_t Flux_Text::UploadChars()
+uint32_t Flux_TextImpl::UploadChars()
 {
 	Zenith_Vector<TextVertex> xVertices(s_uMaxCharsPerFrame);
 	uint32_t uCharCount = 0;
@@ -233,7 +234,7 @@ uint32_t Flux_Text::UploadChars()
 	return uCharCount;
 }
 
-void Flux_Text::Render(void*)
+void Flux_TextImpl::Render(void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bTextEnabled)
 	{
@@ -251,7 +252,7 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	uint32_t uNumChars = Flux_Text::UploadChars();
+	uint32_t uNumChars = g_xEngine.Text().UploadChars();
 	if (uNumChars == 0)
 	{
 		g_xEngine.Text().m_bOverlayClipActive = false;
@@ -294,7 +295,7 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 	g_xEngine.Text().m_bOverlayClipActive = false;
 }
 
-void Flux_Text::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_TextImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Text", ExecuteText)
 		.Writes(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);

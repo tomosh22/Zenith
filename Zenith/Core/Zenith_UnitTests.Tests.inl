@@ -73,7 +73,7 @@
 #include "Flux/Slang/Flux_CodeGenerator.h"
 
 #ifdef ZENITH_TOOLS
-#include "Flux/Gizmos/Flux_Gizmos.h"
+#include "Flux/Gizmos/Flux_GizmosImpl.h"
 #endif
 
 ZENITH_TEST(Core, DataStream) { Zenith_UnitTests::TestDataStream(); }
@@ -12750,17 +12750,17 @@ void Zenith_UnitTests::TestGizmosLineLineParallel(){
 	Zenith_Maths::Vector3 xRayDir(1, 0, 0);	// Parallel to axis
 
 	float fOutT = 0.0f;
-	bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+	bool bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 	ZENITH_ASSERT_FALSE(bResult, "Parallel lines should return false");
 
 	// Also test with opposite direction (anti-parallel)
 	xRayDir = Zenith_Maths::Vector3(-1, 0, 0);
-	bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+	bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 	ZENITH_ASSERT_FALSE(bResult, "Anti-parallel lines should return false");
 
 	// Near-parallel lines (very small angle) should also return false
 	xRayDir = glm::normalize(Zenith_Maths::Vector3(1, 0.00001f, 0));
-	bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+	bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 	ZENITH_ASSERT_FALSE(bResult, "Near-parallel lines should return false");
 
 }
@@ -12777,7 +12777,7 @@ void Zenith_UnitTests::TestGizmosLineLinePerpendicular(){
 		Zenith_Maths::Vector3 xRayDir(0, 1, 0);
 
 		float fOutT = -999.0f;
-		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+		bool bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 		ZENITH_ASSERT_TRUE(bResult, "Perpendicular lines should return true");
 		ZENITH_ASSERT_LT(glm::abs(fOutT), 0.001f, "Closest point on axis should be at t=0");
 	}
@@ -12791,7 +12791,7 @@ void Zenith_UnitTests::TestGizmosLineLinePerpendicular(){
 		Zenith_Maths::Vector3 xRayDir(0, 0, 1);
 
 		float fOutT = -999.0f;
-		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+		bool bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 		ZENITH_ASSERT_TRUE(bResult, "Perpendicular lines should return true");
 		ZENITH_ASSERT_LT(glm::abs(fOutT - 3.0f), 0.001f, "Closest point should be at t=3");
 	}
@@ -12805,7 +12805,7 @@ void Zenith_UnitTests::TestGizmosLineLinePerpendicular(){
 		Zenith_Maths::Vector3 xRayDir(1, 0, 0);
 
 		float fOutT = -999.0f;
-		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+		bool bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 		ZENITH_ASSERT_TRUE(bResult, "Perpendicular lines should return true");
 		ZENITH_ASSERT_LT(glm::abs(fOutT - 7.0f), 0.001f, "Closest point should be at t=7");
 	}
@@ -12819,7 +12819,7 @@ void Zenith_UnitTests::TestGizmosTangentFrame(){
 	auto TestAxis = [](const Zenith_Maths::Vector3& xAxis, const char* pszName)
 	{
 		Zenith_Maths::Vector3 xTangent, xBitangent;
-		Flux_Gizmos::ComputeTangentFrame(xAxis, xTangent, xBitangent);
+		g_xEngine.Gizmos().ComputeTangentFrame(xAxis, xTangent, xBitangent);
 
 		// Tangent should be perpendicular to axis
 		float fDotAxisTangent = glm::abs(glm::dot(xAxis, xTangent));
@@ -12859,7 +12859,7 @@ void Zenith_UnitTests::TestGizmosTangentFrame(){
 //=============================================================================
 // Gizmo Unity-parity tests (audit §3.17)
 //=============================================================================
-// These verify Flux_Gizmos::GetEditableTransform() resolves the target entity's
+// These verify g_xEngine.Gizmos().GetEditableTransform() resolves the target entity's
 // transform through the entity's OWN scene, not GetActiveScene(). Unity's
 // SceneManager.GetActiveScene is explicit: "the active Scene has no impact on
 // what Scenes are rendered" — and multi-scene editing lets the gizmo manipulate
@@ -12893,7 +12893,7 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 	// Set the gizmo target to the persistent entity — stored as pointer to a stable
 	// local, matching how Zenith_Editor passes its static selected-entity.
 	Zenith_Entity xTargetCopy = xPersistentEntity;
-	Flux_Gizmos::SetTargetEntity(&xTargetCopy);
+	g_xEngine.Gizmos().SetTargetEntity(&xTargetCopy);
 
 	// Confirm the active scene is NOT the persistent scene (otherwise this test
 	// would still pass under the buggy pre-fix code).
@@ -12903,7 +12903,7 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 	// Fixed behaviour: GetEditableTransform() walks the entity's own scene and
 	// returns its transform. Under the buggy pre-fix code this returns nullptr
 	// because the persistent entity isn't in the active scene's component pool.
-	Zenith_TransformComponent* pxTransform = Flux_Gizmos::GetEditableTransform();
+	Zenith_TransformComponent* pxTransform = g_xEngine.Gizmos().GetEditableTransform();
 	ZENITH_ASSERT_NOT_NULL(pxTransform, "GetEditableTransform must resolve persistent entity via entity.GetSceneData() (Unity parity)");
 
 	// Verify the transform we got back is actually the persistent entity's.
@@ -12912,7 +12912,7 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 	ZENITH_ASSERT_EQ(pxTransform, &xExpected, "Returned transform must belong to the persistent entity, not the active scene");
 
 	// Cleanup: clear target, destroy persistent entity, unload temp scene.
-	Flux_Gizmos::SetTargetEntity(nullptr);
+	g_xEngine.Gizmos().SetTargetEntity(nullptr);
 	Zenith_SceneManager::DestroyImmediate(xPersistentEntity);
 	Zenith_SceneManager::UnloadScene(xTempScene);
 	Zenith_SceneManager::SetActiveScene(xSavedActive);
@@ -12937,16 +12937,16 @@ void Zenith_UnitTests::TestGizmoEditsEntityInAdditiveScene(){
 	// Confirm active scene really is A, not B.
 	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetActiveScene(), xSceneA, "Test setup: active scene should be A, target lives in B");
 
-	Flux_Gizmos::SetTargetEntity(&xTarget);
+	g_xEngine.Gizmos().SetTargetEntity(&xTarget);
 
-	Zenith_TransformComponent* pxTransform = Flux_Gizmos::GetEditableTransform();
+	Zenith_TransformComponent* pxTransform = g_xEngine.Gizmos().GetEditableTransform();
 	ZENITH_ASSERT_NOT_NULL(pxTransform, "Gizmo must resolve target in additively-loaded scene (Unity multi-scene editing parity)");
 
 	Zenith_TransformComponent& xExpected =
 		pxSceneBData->GetComponentFromEntity<Zenith_TransformComponent>(xTarget.GetEntityID());
 	ZENITH_ASSERT_EQ(pxTransform, &xExpected, "Returned transform must belong to Scene B's entity, not Scene A");
 
-	Flux_Gizmos::SetTargetEntity(nullptr);
+	g_xEngine.Gizmos().SetTargetEntity(nullptr);
 	Zenith_SceneManager::UnloadScene(xSceneB);
 	Zenith_SceneManager::UnloadScene(xSceneA);
 	Zenith_SceneManager::SetActiveScene(xSavedActive);
@@ -12967,10 +12967,10 @@ void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(){
 	Zenith_SceneData* pxSceneAData = Zenith_SceneManager::GetSceneData(xSceneA);
 	Zenith_Entity xTarget(pxSceneAData, "DragTarget");
 
-	Flux_Gizmos::SetTargetEntity(&xTarget);
+	g_xEngine.Gizmos().SetTargetEntity(&xTarget);
 
 	// Begin the "drag" while target's scene is active.
-	Zenith_TransformComponent* pxBefore = Flux_Gizmos::GetEditableTransform();
+	Zenith_TransformComponent* pxBefore = g_xEngine.Gizmos().GetEditableTransform();
 	ZENITH_ASSERT_NOT_NULL(pxBefore, "Pre-switch gizmo resolve must succeed");
 
 	// Simulate the active-scene change mid-drag.
@@ -12979,11 +12979,11 @@ void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(){
 
 	// Post-switch: gizmo must still resolve to Scene A's entity (Unity parity —
 	// active scene doesn't gate editability).
-	Zenith_TransformComponent* pxAfter = Flux_Gizmos::GetEditableTransform();
+	Zenith_TransformComponent* pxAfter = g_xEngine.Gizmos().GetEditableTransform();
 	ZENITH_ASSERT_NOT_NULL(pxAfter, "Gizmo must keep resolving target after active-scene change (Unity parity)");
 	ZENITH_ASSERT_EQ(pxAfter, pxBefore, "Gizmo transform must be identical across the active-scene switch (same underlying entity)");
 
-	Flux_Gizmos::SetTargetEntity(nullptr);
+	g_xEngine.Gizmos().SetTargetEntity(nullptr);
 	Zenith_SceneManager::UnloadScene(xSceneB);
 	Zenith_SceneManager::UnloadScene(xSceneA);
 	Zenith_SceneManager::SetActiveScene(xSavedActive);
@@ -12995,8 +12995,8 @@ ZENITH_TEST(Core, GizmoGetEditableTransform_ReturnsNullForInvalidTarget) { Zenit
 void Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget(){
 
 	// No target set — must return nullptr.
-	Flux_Gizmos::SetTargetEntity(nullptr);
-	ZENITH_ASSERT_NULL(Flux_Gizmos::GetEditableTransform(), "GetEditableTransform must return nullptr when no target is set");
+	g_xEngine.Gizmos().SetTargetEntity(nullptr);
+	ZENITH_ASSERT_NULL(g_xEngine.Gizmos().GetEditableTransform(), "GetEditableTransform must return nullptr when no target is set");
 
 }
 

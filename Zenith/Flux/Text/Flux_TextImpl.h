@@ -3,8 +3,20 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "Maths/Zenith_Maths.h"
 
-// Phase 7e: per-Engine state for Text subsystem.
+class Flux_RenderGraph;
+
+/// Character width as fraction of height (typical monospace ratio is ~0.5-0.6).
+static constexpr float fCHAR_ASPECT_RATIO = 0.5f;
+
+/// Monospace character spacing.
+static constexpr float fCHAR_SPACING = fCHAR_ASPECT_RATIO * 1.1f;
+
+// Fraction of font height consumed by the ascender in the SDF atlas
+static constexpr float fFONT_ASCENDER_RATIO = 0.25f;
+
+// Phase 9: state + behaviour for Text subsystem.
 class Flux_TextImpl
 {
 public:
@@ -13,6 +25,18 @@ public:
 
 	Flux_TextImpl(const Flux_TextImpl&) = delete;
 	Flux_TextImpl& operator=(const Flux_TextImpl&) = delete;
+
+	void Initialise();
+	void BuildPipelines();
+	void ReleaseAssetReferences();
+	void Shutdown();
+	void Reset();
+	void Render(void*);
+	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+	uint32_t UploadChars();
+
+	void SetOverlayClipRect(const Zenith_Maths::Vector4& xRect, int iSortOrder);
+	void ClearOverlayClipRect();
 
 	Flux_Shader              m_xShader;
 	Flux_Pipeline            m_xPipeline;

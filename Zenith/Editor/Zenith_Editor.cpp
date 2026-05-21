@@ -29,7 +29,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_Gizmo.h"
 #include "Zenith_UndoSystem.h"
-#include "Flux/Gizmos/Flux_Gizmos.h"
+#include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -324,7 +324,7 @@ void Zenith_Editor::Shutdown()
 
 	// Shutdown editor subsystems
 	// Zenith_AnimationStateMachineEditor::Shutdown();  // TEMPORARILY DISABLED
-	Flux_Gizmos::Shutdown();
+	g_xEngine.Gizmos().Shutdown();
 	Zenith_Gizmo::Shutdown();
 	Zenith_SelectionSystem::Shutdown();
 }
@@ -436,7 +436,7 @@ bool Zenith_Editor::Update()
 	HandleGizmoInteraction();
 
 	// Handle object picking (only when not manipulating gizmo)
-	if (!Flux_Gizmos::IsInteracting() && !Zenith_Gizmo::IsManipulating())
+	if (!g_xEngine.Gizmos().IsInteracting() && !Zenith_Gizmo::IsManipulating())
 	{
 		HandleObjectPicking();
 	}
@@ -700,17 +700,17 @@ void Zenith_Editor::UpdateEditorInput()
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
 		{
 			SetGizmoMode(EditorGizmoMode::Translate);
-			Flux_Gizmos::SetGizmoMode(GizmoMode::Translate);
+			g_xEngine.Gizmos().SetGizmoMode(GizmoMode::Translate);
 		}
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_E))
 		{
 			SetGizmoMode(EditorGizmoMode::Rotate);
-			Flux_Gizmos::SetGizmoMode(GizmoMode::Rotate);
+			g_xEngine.Gizmos().SetGizmoMode(GizmoMode::Rotate);
 		}
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
 		{
 			SetGizmoMode(EditorGizmoMode::Scale);
-			Flux_Gizmos::SetGizmoMode(GizmoMode::Scale);
+			g_xEngine.Gizmos().SetGizmoMode(GizmoMode::Scale);
 		}
 	}
 
@@ -890,10 +890,10 @@ void Zenith_Editor::RenderGizmos()
 	// CRITICAL: Only update target/mode when NOT interacting!
 	// SetTargetEntity and SetGizmoMode reset s_bIsInteracting, which would
 	// break mid-drag operations. Only update when safe to do so.
-	if (!Flux_Gizmos::IsInteracting())
+	if (!g_xEngine.Gizmos().IsInteracting())
 	{
-		Flux_Gizmos::SetTargetEntity(pxSelectedEntity);
-		Flux_Gizmos::SetGizmoMode(static_cast<GizmoMode>(g_xEngine.Editor().m_eGizmoMode));
+		g_xEngine.Gizmos().SetTargetEntity(pxSelectedEntity);
+		g_xEngine.Gizmos().SetGizmoMode(static_cast<GizmoMode>(g_xEngine.Editor().m_eGizmoMode));
 	}
 
 	// Gizmos are now part of the render graph - no separate task submission needed
@@ -928,7 +928,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 
 	// Debug: Log mouse position every frame during interaction
 	static int s_iFrameCounter = 0;
-	if (Flux_Gizmos::IsInteracting())
+	if (g_xEngine.Gizmos().IsInteracting())
 	{
 		if (++s_iFrameCounter % 60 == 0) // Log every 60 frames
 		{
@@ -960,13 +960,13 @@ void Zenith_Editor::HandleGizmoInteraction()
 	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Mouse left pressed - viewport hovered=%d, selected=%zu", g_xEngine.Editor().m_bViewportHovered, g_xEngine.Editor().m_xSelectedEntityIDs.size());
-		Flux_Gizmos::BeginInteraction(xRayOrigin, xRayDir);
-		Zenith_Log(LOG_CATEGORY_EDITOR, "After BeginInteraction: IsInteracting=%d", Flux_Gizmos::IsInteracting());
+		g_xEngine.Gizmos().BeginInteraction(xRayOrigin, xRayDir);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "After BeginInteraction: IsInteracting=%d", g_xEngine.Gizmos().IsInteracting());
 	}
 	
 	// Update interaction while dragging (can happen same frame as BeginInteraction)
 	bool bIsKeyDown = Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT);
-	bool bIsInteracting = Flux_Gizmos::IsInteracting();
+	bool bIsInteracting = g_xEngine.Gizmos().IsInteracting();
 	
 	if (bIsKeyDown || bIsInteracting)
 	{
@@ -977,14 +977,14 @@ void Zenith_Editor::HandleGizmoInteraction()
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Calling UpdateInteraction: ViewportMouse=(%.1f,%.1f)",
 			xViewportMousePos.x, xViewportMousePos.y);
-		Flux_Gizmos::UpdateInteraction(xRayOrigin, xRayDir);
+		g_xEngine.Gizmos().UpdateInteraction(xRayOrigin, xRayDir);
 	}
 	
 	// End interaction when mouse released
-	if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT) && Flux_Gizmos::IsInteracting())
+	if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT) && g_xEngine.Gizmos().IsInteracting())
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Ending interaction");
-		Flux_Gizmos::EndInteraction();
+		g_xEngine.Gizmos().EndInteraction();
 	}
 }
 
@@ -1356,7 +1356,7 @@ void Zenith_Editor::SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection
 	Zenith_Entity* pxEntity = GetSelectedEntity();
 	if (pxEntity)
 	{
-		Flux_Gizmos::SetTargetEntity(pxEntity);
+		g_xEngine.Gizmos().SetTargetEntity(pxEntity);
 	}
 }
 
@@ -1406,7 +1406,7 @@ void Zenith_Editor::SelectRange(Zenith_EntityID uEndEntityID)
 	Zenith_Entity* pxEntity = GetSelectedEntity();
 	if (pxEntity)
 	{
-		Flux_Gizmos::SetTargetEntity(pxEntity);
+		g_xEngine.Gizmos().SetTargetEntity(pxEntity);
 	}
 }
 
@@ -1446,7 +1446,7 @@ void Zenith_Editor::ToggleEntitySelection(Zenith_EntityID uEntityID)
 
 	// Update Flux_Gizmos target entity
 	Zenith_Entity* pxEntity = GetSelectedEntity();
-	Flux_Gizmos::SetTargetEntity(pxEntity);
+	g_xEngine.Gizmos().SetTargetEntity(pxEntity);
 }
 
 void Zenith_Editor::ClearSelection()
@@ -1454,7 +1454,7 @@ void Zenith_Editor::ClearSelection()
 	g_xEngine.Editor().m_xSelectedEntityIDs.clear();
 	g_xEngine.Editor().m_uPrimarySelectedEntityID = INVALID_ENTITY_ID;
 	g_xEngine.Editor().m_uLastClickedEntityID = INVALID_ENTITY_ID;
-	Flux_Gizmos::SetTargetEntity(nullptr);
+	g_xEngine.Gizmos().SetTargetEntity(nullptr);
 }
 
 void Zenith_Editor::DeselectEntity(Zenith_EntityID uEntityID)
@@ -1470,7 +1470,7 @@ void Zenith_Editor::DeselectEntity(Zenith_EntityID uEntityID)
 
 	// Update gizmo target
 	Zenith_Entity* pxEntity = GetSelectedEntity();
-	Flux_Gizmos::SetTargetEntity(pxEntity);
+	g_xEngine.Gizmos().SetTargetEntity(pxEntity);
 }
 
 bool Zenith_Editor::IsSelected(Zenith_EntityID uEntityID)

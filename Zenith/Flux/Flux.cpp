@@ -11,7 +11,7 @@
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #endif
 #ifdef ZENITH_TOOLS
-#include "Flux/Gizmos/Flux_Gizmos.h"
+#include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 #include "Flux/Primitives/Flux_Primitives.h"
@@ -23,10 +23,10 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/SDFs/Flux_SDFsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
-#include "Flux/Particles/Flux_Particles.h"
-#include "Flux/Text/Flux_Text.h"
+#include "Flux/Particles/Flux_ParticlesImpl.h"
+#include "Flux/Text/Flux_TextImpl.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
-#include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
+#include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/IBL/Flux_IBL.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
@@ -210,14 +210,14 @@ void Flux::LateInitialise()
 	Flux_HDR::Initialise();  // Must be before DeferredShading - deferred renders to HDR target
 #ifdef ZENITH_TOOLS
 	Flux_PlatformAPI::InitialiseImGui();
-	Flux_Gizmos::Initialise();
+	g_xEngine.Gizmos().Initialise();
 #endif
 	g_xEngine.Shadows().Initialise();
 	Flux_Skybox::Initialise();       // Cubemap skybox + procedural atmosphere
 	Flux_IBL::Initialise();          // Image-based lighting (BRDF LUT, environment probes)
 	g_xEngine.StaticMeshes().Initialise();
 	g_xEngine.AnimatedMeshes().Initialise();
-	Flux_InstancedMeshes::Initialise();
+	g_xEngine.InstancedMeshes().Initialise();
 	Flux_Terrain::Initialise();
 	Flux_Grass::Initialise();        // Grass/vegetation (after terrain)
 	Flux_Primitives::Initialise();
@@ -231,9 +231,9 @@ void Flux::LateInitialise()
 	g_xEngine.SSAO().Initialise();
 	g_xEngine.Fog().Initialise();
 	g_xEngine.SDFs().Initialise();
-	Flux_Particles::Initialise();
+	g_xEngine.Particles().Initialise();
 	g_xEngine.Quads().Initialise();
-	Flux_Text::Initialise();
+	g_xEngine.Text().Initialise();
 	Flux_MemoryManager::EndFrame(false);
 
 	// Create and compile the render graph
@@ -334,7 +334,7 @@ void Flux::SetupRenderGraph()
 	Flux_Terrain::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Primitives::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.AnimatedMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_InstancedMeshes::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.InstancedMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Grass::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// Decals (read G-Buffer + depth, write G-Buffer MRTs). Must be
@@ -370,14 +370,14 @@ void Flux::SetupRenderGraph()
 
 	// Post-processing
 	g_xEngine.SDFs().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_Particles::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Particles().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_HDR::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// UI & presentation
 	g_xEngine.Quads().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_Text::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Text().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 #ifdef ZENITH_TOOLS
-	Flux_Gizmos::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Gizmos().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 #endif
 
 	// Final-layout transition pass — leaves the Final Render Target in
@@ -397,8 +397,8 @@ void Flux::ReleaseAssetReferences()
 	// Drop refs to Flux-side assets so Zenith_AssetRegistry::Shutdown can delete them
 	// cleanly. Each subsystem releases the handles it owns.
 	Flux_Graphics::ReleaseAssetReferences();
-	Flux_Text::ReleaseAssetReferences();
-	Flux_Particles::ReleaseAssetReferences();
+	g_xEngine.Text().ReleaseAssetReferences();
+	g_xEngine.Particles().ReleaseAssetReferences();
 	Flux_Terrain::ReleaseAssetReferences();
 	Flux_Skybox::ReleaseAssetReferences();
 	g_xEngine.VolumeFog().ReleaseAssetReferences();
@@ -420,9 +420,9 @@ void Flux::Shutdown()
 	// This ensures dependencies are destroyed after their dependents
 	// NOTE: Some subsystems (Fog, DeferredShading, AnimatedMeshes, StaticMeshes)
 	// don't have Shutdown() methods - they rely on RAII or are stateless
-	Flux_Text::Shutdown();
+	g_xEngine.Text().Shutdown();
 	g_xEngine.Quads().Shutdown();
-	Flux_Particles::Shutdown();
+	g_xEngine.Particles().Shutdown();
 	g_xEngine.SDFs().Shutdown();
 	// Flux_Fog, Flux_DeferredShading - no Shutdown() methods
 	g_xEngine.SSAO().Shutdown();           // SSAO render targets
@@ -435,7 +435,7 @@ void Flux::Shutdown()
 	Flux_Primitives::Shutdown();   // Debug primitives (reverse of init: between HiZ and Grass)
 	Flux_Grass::Shutdown();        // After Terrain (depends on terrain data)
 	Flux_Terrain::Shutdown();
-	Flux_InstancedMeshes::Shutdown();
+	g_xEngine.InstancedMeshes().Shutdown();
 	// Flux_AnimatedMeshes, Flux_StaticMeshes - no Shutdown() methods
 	Flux_IBL::Shutdown();          // After Skybox (uses skybox for environment)
 	Flux_Skybox::Shutdown();
@@ -447,7 +447,7 @@ void Flux::Shutdown()
 
 #ifdef ZENITH_TOOLS
 	Flux_ShaderHotReload::Shutdown();
-	Flux_Gizmos::Shutdown();
+	g_xEngine.Gizmos().Shutdown();
 	Flux_PlatformAPI::ShutdownImGui();
 #endif
 

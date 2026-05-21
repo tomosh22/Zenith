@@ -5,7 +5,10 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Flux/Particles/Flux_ParticleData.h"
 
-// Phase 7e: per-Engine state for Particles subsystem.
+class Flux_CommandList;
+class Flux_RenderGraph;
+
+// Phase 9: state + behaviour for Particles subsystem.
 class Flux_ParticlesImpl
 {
 public:
@@ -16,6 +19,14 @@ public:
 
 	Flux_ParticlesImpl(const Flux_ParticlesImpl&) = delete;
 	Flux_ParticlesImpl& operator=(const Flux_ParticlesImpl&) = delete;
+
+	void Initialise();
+	void BuildPipelines();
+	void ReleaseAssetReferences();
+	void Shutdown();
+	void Reset();
+	void Render(void*);
+	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	Flux_Shader              m_xShader;
 	Flux_Pipeline            m_xPipelineAlpha;

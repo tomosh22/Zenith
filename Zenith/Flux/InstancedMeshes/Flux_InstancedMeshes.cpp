@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
+#include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
 #include "Flux/InstancedMeshes/Flux_InstanceCulling.h"
@@ -58,7 +59,10 @@ static_assert(sizeof(InstancedMeshPushConstants) == 128, "InstancedMeshPushConst
 // Initialise / Shutdown
 //=============================================================================
 
-void Flux_InstancedMeshes::BuildPipelines()
+static void ExecuteCulling(Flux_CommandList* pxCmdList, void* pUserData);
+static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void* pUserData);
+
+void Flux_InstancedMeshesImpl::BuildPipelines()
 {
 	// Load shaders
 	g_xEngine.InstancedMeshes().m_xGBufferShader.Initialise(FluxShaderProgram::InstancedMesh_ToGBuffer);
@@ -130,7 +134,7 @@ void Flux_InstancedMeshes::BuildPipelines()
 	}
 }
 
-void Flux_InstancedMeshes::Initialise()
+void Flux_InstancedMeshesImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -144,7 +148,7 @@ void Flux_InstancedMeshes::Initialise()
 		FluxShaderProgram::InstancedMesh_ToShadowmap,
 		FluxShaderProgram::InstanceCulling,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_InstancedMeshes::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.InstancedMeshes().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -154,32 +158,32 @@ void Flux_InstancedMeshes::Initialise()
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes initialised (GPU culling enabled)");
 }
 
-void Flux_InstancedMeshes::Shutdown()
+void Flux_InstancedMeshesImpl::Shutdown()
 {
 	ClearAllGroups();
 	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.InstancedMeshes().m_xCullingConstantsBuffer);
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes shutdown");
 }
 
-void Flux_InstancedMeshes::Reset()
+void Flux_InstancedMeshesImpl::Reset()
 {
 	// Reset is handled by the render graph
 	// Update statistics
 	g_xEngine.InstancedMeshes().m_uTotalInstances = 0;
 	g_xEngine.InstancedMeshes().m_uVisibleInstances = 0;
 
-	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes::Reset()");
+	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshesImpl::Reset()");
 }
 
 //=============================================================================
 // Instance Group Registration
 //=============================================================================
 
-void Flux_InstancedMeshes::RegisterInstanceGroup(Flux_InstanceGroup* pxGroup)
+void Flux_InstancedMeshesImpl::RegisterInstanceGroup(Flux_InstanceGroup* pxGroup)
 {
 	if (!pxGroup)
 	{
-		Zenith_Error(LOG_CATEGORY_MESH, "Flux_InstancedMeshes::RegisterInstanceGroup - null group");
+		Zenith_Error(LOG_CATEGORY_MESH, "Flux_InstancedMeshesImpl::RegisterInstanceGroup - null group");
 		return;
 	}
 
@@ -196,7 +200,7 @@ void Flux_InstancedMeshes::RegisterInstanceGroup(Flux_InstanceGroup* pxGroup)
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Registered instance group (total: %zu)", g_xEngine.InstancedMeshes().m_apxInstanceGroups.size());
 }
 
-void Flux_InstancedMeshes::UnregisterInstanceGroup(Flux_InstanceGroup* pxGroup)
+void Flux_InstancedMeshesImpl::UnregisterInstanceGroup(Flux_InstanceGroup* pxGroup)
 {
 	for (size_t i = 0; i < g_xEngine.InstancedMeshes().m_apxInstanceGroups.size(); ++i)
 	{
@@ -211,7 +215,7 @@ void Flux_InstancedMeshes::UnregisterInstanceGroup(Flux_InstanceGroup* pxGroup)
 	}
 }
 
-void Flux_InstancedMeshes::ClearAllGroups()
+void Flux_InstancedMeshesImpl::ClearAllGroups()
 {
 	g_xEngine.InstancedMeshes().m_apxInstanceGroups.clear();
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_InstancedMeshes: Cleared all instance groups");
@@ -221,7 +225,7 @@ void Flux_InstancedMeshes::ClearAllGroups()
 // Per-Frame Rendering
 //=============================================================================
 
-void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_InstancedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// Pass 1: GPU culling compute (no declared resources — per-instance-group
 	// output buffers are dynamic and not graph-tracked, so the GBuffer pass's
@@ -229,7 +233,7 @@ void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	Flux_PassHandle xCullingPass = xGraph.AddPass("Instanced Meshes Culling", ExecuteCulling);
 
 	// Pass 2: GBuffer render
-	xGraph.AddPass("Instanced Meshes GBuffer", ExecuteGBuffer)
+	xGraph.AddPass("Instanced Meshes GBuffer", ExecuteInstancedGBuffer)
 		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),			RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT),	RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),		RESOURCE_ACCESS_WRITE_RTV)
@@ -237,7 +241,7 @@ void Flux_InstancedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.DependsOn(xCullingPass);
 }
 
-void Flux_InstancedMeshes::ExecuteCulling(Flux_CommandList* pxCmdList, void*)
+static void ExecuteCulling(Flux_CommandList* pxCmdList, void*)
 {
 	// Check if GPU culling should run
 	if (!g_xEngine.InstancedMeshes().m_bCullingInitialized || !g_xEngine.InstancedMeshes().m_bCullingEnabled || !Zenith_GraphicsOptions::Get().m_bInstancedMeshGPUCullingEnabled)
@@ -401,7 +405,7 @@ static void IssueBatchDraw(Flux_CommandList* pxCmdList, Flux_InstanceGroup* pxGr
 	}
 }
 
-void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
+static void ExecuteInstancedGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bInstancedMeshesEnabled)
 	{
@@ -462,7 +466,7 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	}
 }
 
-void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
+void Flux_InstancedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bInstancedMeshesEnabled)
 	{
@@ -525,17 +529,5 @@ void Flux_InstancedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Fl
 // Accessors
 //=============================================================================
 
-uint32_t Flux_InstancedMeshes::GetTotalInstanceCount()
-{
-	return g_xEngine.InstancedMeshes().m_uTotalInstances;
-}
 
-uint32_t Flux_InstancedMeshes::GetVisibleInstanceCount()
-{
-	return g_xEngine.InstancedMeshes().m_uVisibleInstances;
-}
 
-uint32_t Flux_InstancedMeshes::GetGroupCount()
-{
-	return static_cast<uint32_t>(g_xEngine.InstancedMeshes().m_apxInstanceGroups.size());
-}
