@@ -2,7 +2,7 @@
 #include "AI/Navigation/Zenith_Pathfinding.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include <queue>
 #include <unordered_set>
 #include <algorithm>
@@ -523,7 +523,7 @@ void Zenith_Pathfinding::FindPathsBatch(PathRequest* pxRequests, uint32_t uNumRe
 		true  // Submitting thread joins - main thread helps process tasks
 	);
 
-	Zenith_TaskSystem::SubmitTaskArray(&xPathTask);
+	g_xEngine.Tasks().SubmitTaskArray(&xPathTask);
 	xPathTask.WaitUntilComplete();
 }
 

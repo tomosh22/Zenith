@@ -137,7 +137,7 @@ Zenith_MultithreadingImpl& Zenith_Engine::Threading()
 Zenith_TaskSystemImpl& Zenith_Engine::Tasks()
 {
 	// No assert: SubmitTask is a hot path, and Zenith_Engine::Initialise
-	// allocates m_pxTasks before Zenith_TaskSystem::Inititalise() (the
+	// allocates m_pxTasks before g_xEngine.Tasks().Initialise() (the
 	// forwarder that brings worker threads online).
 	return *m_pxTasks;
 }
@@ -491,12 +491,12 @@ void Zenith_Engine::Initialise()
 	Zenith_Profiling::Initialise();
 
 	// Phase 3b: per-Engine TaskSystem state. Allocate BEFORE
-	// Zenith_TaskSystem::Inititalise() below, which spawns worker
+	// g_xEngine.Tasks().Initialise() below, which spawns worker
 	// threads whose ThreadFunc reads from g_xEngine.Tasks().
 	Zenith_Assert(m_pxTasks == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxTasks = new Zenith_TaskSystemImpl();
 
-	Zenith_TaskSystem::Inititalise();
+	g_xEngine.Tasks().Initialise();
 
 	// Set asset directories before registry initialization
 	// Game assets dir comes from the game project (each game defines GAME_ASSETS_DIR)
@@ -715,10 +715,10 @@ void Zenith_Engine::Shutdown()
 	}
 
 	// 9. Shutdown task system (terminates worker threads)
-	Zenith_TaskSystem::Shutdown();
+	g_xEngine.Tasks().Shutdown();
 
 	// 10. Free the per-Engine TaskSystem state. Must come AFTER
-	// Zenith_TaskSystem::Shutdown above -- the forwarder there reads
+	// g_xEngine.Tasks().Shutdown above -- the forwarder there reads
 	// from g_xEngine.Tasks() to drive Shutdown.
 	delete m_pxTasks;
 	m_pxTasks = nullptr;

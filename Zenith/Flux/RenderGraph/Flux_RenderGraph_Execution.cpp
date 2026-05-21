@@ -3,7 +3,7 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 //==========================================================================
 // Flux_RenderGraph — execution / command-list recording / recording context
@@ -156,7 +156,7 @@ void Flux_RenderGraph::RecordCommandLists()
 	}
 
 	Zenith_TaskArray xTasks(ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS, Flux_RenderGraph_RecordPassTask, pxTaskData, uNumPasses, true);
-	Zenith_TaskSystem::SubmitTaskArray(&xTasks);
+	g_xEngine.Tasks().SubmitTaskArray(&xTasks);
 	xTasks.WaitUntilComplete();
 	Zenith_MemoryManagement::Deallocate(pxTaskData);
 }

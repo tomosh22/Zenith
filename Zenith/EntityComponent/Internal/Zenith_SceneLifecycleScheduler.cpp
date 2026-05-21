@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 #include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistry.h"
@@ -167,7 +168,7 @@ void Zenith_SceneLifecycleScheduler::Update(float fDt)
 #ifdef ZENITH_ASSERT
 		Zenith_SceneManager::SetAnimTasksActive(true);
 #endif
-		Zenith_TaskSystem::SubmitTaskArray(g_pxAnimUpdateTask);
+		g_xEngine.Tasks().SubmitTaskArray(g_pxAnimUpdateTask);
 	}
 }
 

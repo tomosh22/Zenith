@@ -27,7 +27,7 @@
 #include "TilePuzzle_Rules.h"
 #include "TilePuzzle_Solver.h"
 #include "Collections/Zenith_Vector.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include "Profiling/Zenith_Profiling.h"
 
 // Generation constants
@@ -324,7 +324,7 @@ public:
 			static_cast<u_int>(uNumWorkers),
 			true);
 
-		Zenith_TaskSystem::SubmitTaskArray(&xTaskArray);
+		g_xEngine.Tasks().SubmitTaskArray(&xTaskArray);
 		xTaskArray.WaitUntilComplete();
 
 		// Find the best result across all workers

@@ -12,7 +12,7 @@
 #include "Collections/Zenith_MemoryPool.h"
 #include "Flux/Flux_Types.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 // Scene serialization includes
 #include "EntityComponent/Zenith_Scene.h"
@@ -156,9 +156,9 @@ void Zenith_UnitTests::TestProfiling(){
 	Zenith_Task* pxTask0 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_SHADOWS, Test, &xTest0);
 	Zenith_Task* pxTask1 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING, Test, &xTest1);
 	Zenith_Task* pxTask2 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_SKYBOX, Test, &xTest2);
-	Zenith_TaskSystem::SubmitTask(pxTask0);
-	Zenith_TaskSystem::SubmitTask(pxTask1);
-	Zenith_TaskSystem::SubmitTask(pxTask2);
+	g_xEngine.Tasks().SubmitTask(pxTask0);
+	g_xEngine.Tasks().SubmitTask(pxTask1);
+	g_xEngine.Tasks().SubmitTask(pxTask2);
 	pxTask0->WaitUntilComplete();
 	pxTask1->WaitUntilComplete();
 	pxTask2->WaitUntilComplete();
@@ -8286,7 +8286,7 @@ void Zenith_UnitTests::TestTaskArrayCallingThreadParticipates(){
 		uNumInvocations,
 		/* bCallingThreadParticipates = */ true
 	);
-	Zenith_TaskSystem::SubmitTaskArray(&xArray);
+	g_xEngine.Tasks().SubmitTaskArray(&xArray);
 	xArray.WaitUntilComplete();
 
 	ZENITH_ASSERT_TRUE(xData.m_uMainThreadInvocations.load() >= 1,
@@ -8892,7 +8892,7 @@ void Zenith_UnitTests::TestPrefabLoadFromDeletedFile(){
 // The plan called for a "outstanding tasks complete before Shutdown() returns"
 // test. It cannot be expressed in this framework: the engine's TaskSystem is
 // initialised once at process start and shut down once at process end. Tests
-// run *between* those points; calling Zenith_TaskSystem::Shutdown() from a
+// run *between* those points; calling g_xEngine.Tasks().Shutdown() from a
 // test would tear down the worker pool that every subsequent test depends on.
 // The drain contract is exercised every time the engine exits cleanly, so
 // regressions surface immediately as hangs or use-after-free in shutdown
@@ -8923,7 +8923,7 @@ void Zenith_UnitTests::TestTaskReuseAfterWait(){
 
 	Zenith_Task xTask(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, ReuseTaskFunc, &xData);
 
-	Zenith_TaskSystem::SubmitTask(&xTask);
+	g_xEngine.Tasks().SubmitTask(&xTask);
 	xTask.WaitUntilComplete();
 	ZENITH_ASSERT_EQ(xData.m_uExecutionCount.load(), 1u, "TestTaskReuseAfterWait: first submit should run task once");
 
@@ -8931,7 +8931,7 @@ void Zenith_UnitTests::TestTaskReuseAfterWait(){
 	// cleared by WaitUntilComplete) — call it to exercise the path anyway.
 	xTask.Reset();
 
-	Zenith_TaskSystem::SubmitTask(&xTask);
+	g_xEngine.Tasks().SubmitTask(&xTask);
 	xTask.WaitUntilComplete();
 	ZENITH_ASSERT_EQ(xData.m_uExecutionCount.load(), 2u, "TestTaskReuseAfterWait: second submit should run task again");
 }

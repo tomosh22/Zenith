@@ -11,9 +11,9 @@
 // other and there is no DependsOn(...) API. To order work, the caller blocks
 // on WaitUntilComplete() of the predecessor task before submitting the next:
 //
-//     Zenith_TaskSystem::SubmitTask(&xTaskA);
+//     g_xEngine.Tasks().SubmitTask(&xTaskA);
 //     xTaskA.WaitUntilComplete();              // serialise A before B
-//     Zenith_TaskSystem::SubmitTask(&xTaskB);
+//     g_xEngine.Tasks().SubmitTask(&xTaskB);
 //
 // Use Zenith_TaskArray for data-parallel work where each invocation is
 // independent. Use multiple Zenith_Task submissions when the work items can
@@ -100,7 +100,7 @@ protected:
 	void* m_pData;
 	u_int m_uCompletedThreadID;
 
-	friend class Zenith_TaskSystem;
+	friend class Zenith_TaskSystemImpl;
 	friend class Zenith_TaskSystemImpl;  // Phase 3b: state owner accesses m_bSubmitted
 	std::atomic<bool> m_bSubmitted;  // Thread-safe submitted flag
 };
@@ -181,13 +181,4 @@ private:
 // as 1-line forwarders to g_xEngine.Tasks() so the 26 existing call
 // sites compile unchanged; Phase 9's static-API removal sweep deletes
 // them once the codemod to g_xEngine.Tasks().X() is done.
-class Zenith_TaskSystem
-{
-public:
-	static void Inititalise();
-	static void Shutdown();
-
-	static void SubmitTask(Zenith_Task* const pxTask);
-	static void SubmitTaskArray(Zenith_TaskArray* const pxTaskArray);
-};
 

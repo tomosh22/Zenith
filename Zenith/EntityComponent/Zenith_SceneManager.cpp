@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneManager_Internal.h"
@@ -688,7 +689,7 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsync(const std::string& s
 
 	// Create and submit task for file loading on worker thread
 	pxJob->m_pxTask = new Zenith_Task(ZENITH_PROFILE_INDEX__ASSET_LOAD, Zenith_SceneOperationQueue::AsyncSceneLoadTask, pxJob);
-	Zenith_TaskSystem::SubmitTask(pxJob->m_pxTask);
+	g_xEngine.Tasks().SubmitTask(pxJob->m_pxTask);
 
 	g_xEngine.SceneOperations().m_axAsyncJobs.PushBack(pxJob);
 	g_xEngine.SceneOperations().m_bAsyncJobsNeedSort = true;

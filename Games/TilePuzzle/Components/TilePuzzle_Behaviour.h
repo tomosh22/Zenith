@@ -55,7 +55,7 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 #include <unordered_map>
 #include <utility>
@@ -3961,7 +3961,7 @@ private:
 
 		// Dispatch solver on background thread
 		m_pxHintTask = new Zenith_Task(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_WITH_PATH, HintSolveTask, &m_xHintSolverData);
-		Zenith_TaskSystem::SubmitTask(m_pxHintTask);
+		g_xEngine.Tasks().SubmitTask(m_pxHintTask);
 		m_bHintSolving = true;
 		m_fHintFlashTimer = 0.f;
 	}

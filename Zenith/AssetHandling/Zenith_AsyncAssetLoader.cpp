@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "Zenith_AsyncAssetLoader.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 // Static member definitions
 Zenith_Vector<Zenith_AsyncAssetLoader::LoadRequest> Zenith_AsyncAssetLoader::s_xPendingLoads;
@@ -155,7 +155,7 @@ void Zenith_AsyncAssetLoader::SubmitLoadRequest(const LoadRequest& xRequest)
 	// Store task pointer in data so it can be deleted when task completes
 	pxTaskData->m_pxTask = pxTask;
 
-	Zenith_TaskSystem::SubmitTask(pxTask);
+	g_xEngine.Tasks().SubmitTask(pxTask);
 }
 
 //------------------------------------------------------------------------------

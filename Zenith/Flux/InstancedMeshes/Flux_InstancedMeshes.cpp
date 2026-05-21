@@ -14,7 +14,7 @@
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"

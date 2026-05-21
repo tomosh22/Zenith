@@ -34,7 +34,7 @@ extern void ExportHeightmapFromMat(const cv::Mat& xHeightmap, const std::string&
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 #endif
 
 // ============================================================================
@@ -227,7 +227,7 @@ static void GenerateProceduralSplatmap(const cv::Mat& xHeightmap, const std::str
 	xSlopeData.iSize = iSize;
 
 	Zenith_TaskArray xSlopeTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, ComputeSlopesTask, &xSlopeData, uNumInvocations, true);
-	Zenith_TaskSystem::SubmitTaskArray(&xSlopeTask);
+	g_xEngine.Tasks().SubmitTaskArray(&xSlopeTask);
 	xSlopeTask.WaitUntilComplete();
 
 	// Reduce per-invocation max slopes
@@ -247,7 +247,7 @@ static void GenerateProceduralSplatmap(const cv::Mat& xHeightmap, const std::str
 	xWeightData.fMaxSlope = fMaxSlope;
 
 	Zenith_TaskArray xWeightTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, GenerateWeightsTask, &xWeightData, uNumInvocations, true);
-	Zenith_TaskSystem::SubmitTaskArray(&xWeightTask);
+	g_xEngine.Tasks().SubmitTaskArray(&xWeightTask);
 	xWeightTask.WaitUntilComplete();
 
 	Zenith_DataStream xStream;
@@ -323,7 +323,7 @@ static cv::Mat GenerateProceduralHeightmap(uint32_t uSize, float fTerrainWorldSi
 
 	u_int uNumInvocations = std::min(static_cast<u_int>(64), uSize);
 	Zenith_TaskArray xTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, GenerateHeightmapRowsTask, &xData, uNumInvocations, true);
-	Zenith_TaskSystem::SubmitTaskArray(&xTask);
+	g_xEngine.Tasks().SubmitTaskArray(&xTask);
 	xTask.WaitUntilComplete();
 
 	cv::flip(xHeightmap, xHeightmap, 0);

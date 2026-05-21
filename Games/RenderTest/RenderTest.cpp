@@ -46,7 +46,7 @@
 
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 extern void ExportHeightmapFromMat(const cv::Mat& xHeightmap, const std::string& strOutputDir);
 extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir);

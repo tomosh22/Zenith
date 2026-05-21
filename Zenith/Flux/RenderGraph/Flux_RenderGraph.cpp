@@ -3,7 +3,7 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 // Hard cap on pass count. Chosen to be generous (current engine sits around
 // 60 passes); a runaway loop registering passes trips the assert before it

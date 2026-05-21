@@ -22,7 +22,7 @@
  *   Survival_TaskProcessor::WaitForWorldUpdate();
  */
 
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "Survival_ResourceNode.h"
 #include "Survival_EventBus.h"
@@ -123,7 +123,7 @@ public:
 			&s_xWorldUpdateData
 		);
 
-		Zenith_TaskSystem::SubmitTask(s_pxWorldUpdateTask);
+		g_xEngine.Tasks().SubmitTask(s_pxWorldUpdateTask);
 	}
 
 	/**
@@ -186,7 +186,7 @@ public:
 			true  // Calling thread participates (main thread helps with work)
 		);
 
-		Zenith_TaskSystem::SubmitTaskArray(s_pxNodeUpdateTaskArray);
+		g_xEngine.Tasks().SubmitTaskArray(s_pxNodeUpdateTaskArray);
 	}
 
 	/**

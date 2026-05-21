@@ -8,7 +8,7 @@
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include <random>

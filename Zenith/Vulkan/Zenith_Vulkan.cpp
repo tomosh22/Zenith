@@ -7,7 +7,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include <algorithm>
 
 #ifdef ZENITH_WINDOWS
@@ -518,7 +518,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 		true
 	);
 	
-	Zenith_TaskSystem::SubmitTaskArray(&xRecordingTask);
+	g_xEngine.Tasks().SubmitTaskArray(&xRecordingTask);
 	xRecordingTask.WaitUntilComplete();
 	
 	// Clear all pending command lists now that recording is complete
