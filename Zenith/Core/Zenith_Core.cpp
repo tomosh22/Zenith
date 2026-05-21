@@ -21,9 +21,9 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Fog/Flux_FogImpl.h"
-#include "Flux/IBL/Flux_IBL.h"
-#include "Flux/SSR/Flux_SSR.h"
-#include "Flux/SSGI/Flux_SSGI.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
+#include "Flux/SSR/Flux_SSRImpl.h"
+#include "Flux/SSGI/Flux_SSGIImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #endif
@@ -143,12 +143,12 @@ static void ExecuteRenderGraph()
 	g_xEngine.Fog().ApplyTechniqueSelectionToGraph(xGraph);
 	// SSR / SSGI runtime output toggles: when blur or denoise flip, these
 	// enable/disable their post-pass and MarkDirty so the deferred-lighting
-	// pass re-reads the correct handle (see Flux_SSR::GetReflectionHandle).
+	// pass re-reads the correct handle (see g_xEngine.SSR().GetReflectionHandle).
 	// Must run BEFORE IBL's UpdateGraphPassEnables for the same MarkDirty
 	// propagation reason described above.
-	Flux_SSR::ApplyBlurSelectionToGraph(xGraph);
-	Flux_SSGI::ApplyDenoiseSelectionToGraph(xGraph);
-	Flux_IBL::UpdateGraphPassEnables(xGraph);
+	g_xEngine.SSR().ApplyBlurSelectionToGraph(xGraph);
+	g_xEngine.SSGI().ApplyDenoiseSelectionToGraph(xGraph);
+	g_xEngine.IBL().UpdateGraphPassEnables(xGraph);
 
 	xGraph.Compile();
 	xGraph.Execute();

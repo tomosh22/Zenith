@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/SSGI/Flux_SSGI.h"
+#include "Flux/SSGI/Flux_SSGIImpl.h"
 #include "Flux/SSGI/Flux_SSGIImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
@@ -83,19 +84,19 @@ static struct SSGIDenoiseConstants
 // Denoise is split into two separable sub-passes (H then V) for a cheap
 // approximation of the 2D joint bilateral. Both share the same CB layout.
 
-Flux_RenderAttachment& Flux_SSGI::GetRawResultAttachment()
+Flux_RenderAttachment& Flux_SSGIImpl::GetRawResultAttachment()
 {
-	Zenith_Assert(g_xEngine.SSGI().m_pxGraph, "Flux_SSGI::GetRawResultAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	Zenith_Assert(g_xEngine.SSGI().m_pxGraph, "g_xEngine.SSGI().GetRawResultAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
 	return g_xEngine.SSGI().m_pxGraph->GetTransientAttachment(g_xEngine.SSGI().m_xRawResultHandle);
 }
-Flux_RenderAttachment& Flux_SSGI::GetResolvedAttachment()
+Flux_RenderAttachment& Flux_SSGIImpl::GetResolvedAttachment()
 {
-	Zenith_Assert(g_xEngine.SSGI().m_pxGraph, "Flux_SSGI::GetResolvedAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	Zenith_Assert(g_xEngine.SSGI().m_pxGraph, "g_xEngine.SSGI().GetResolvedAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
 	return g_xEngine.SSGI().m_pxGraph->GetTransientAttachment(g_xEngine.SSGI().m_xResolvedHandle);
 }
-Flux_RenderAttachment& Flux_SSGI::GetDenoisedAttachment()
+Flux_RenderAttachment& Flux_SSGIImpl::GetDenoisedAttachment()
 {
-	Zenith_Assert(g_xEngine.SSGI().m_pxGraph, "Flux_SSGI::GetDenoisedAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	Zenith_Assert(g_xEngine.SSGI().m_pxGraph, "g_xEngine.SSGI().GetDenoisedAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
 	return g_xEngine.SSGI().m_pxGraph->GetTransientAttachment(g_xEngine.SSGI().m_xDenoisedHandle);
 }
 
@@ -106,21 +107,21 @@ Flux_RenderAttachment& Flux_SSGI::GetDenoisedAttachment()
 static const Flux_ShaderResourceView* DebugGetRawSRV()
 {
 	if (g_xEngine.SSGI().m_pxGraph == nullptr) return nullptr;
-	return &Flux_SSGI::GetRawResultAttachment().SRV();
+	return &g_xEngine.SSGI().GetRawResultAttachment().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetResolvedSRV()
 {
 	if (g_xEngine.SSGI().m_pxGraph == nullptr) return nullptr;
-	return &Flux_SSGI::GetResolvedAttachment().SRV();
+	return &g_xEngine.SSGI().GetResolvedAttachment().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetDenoisedSRV()
 {
 	if (g_xEngine.SSGI().m_pxGraph == nullptr) return nullptr;
-	return &Flux_SSGI::GetDenoisedAttachment().SRV();
+	return &g_xEngine.SSGI().GetDenoisedAttachment().SRV();
 }
 #endif
 
-void Flux_SSGI::BuildPipelines()
+void Flux_SSGIImpl::BuildPipelines()
 {
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		g_xEngine.SSGI().m_xRayMarchShader, g_xEngine.SSGI().m_xRayMarchPipeline,
@@ -139,7 +140,7 @@ void Flux_SSGI::BuildPipelines()
 		FluxShaderProgram::SSGI_DenoiseV, SSGI_FORMAT);
 }
 
-void Flux_SSGI::Initialise()
+void Flux_SSGIImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -150,7 +151,7 @@ void Flux_SSGI::Initialise()
 		FluxShaderProgram::SSGI_DenoiseH,
 		FluxShaderProgram::SSGI_DenoiseV,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_SSGI::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.SSGI().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -190,7 +191,7 @@ void Flux_SSGI::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSGI initialised");
 }
 
-void Flux_SSGI::Shutdown()
+void Flux_SSGIImpl::Shutdown()
 {
 	if (!g_xEngine.SSGI().m_bInitialised)
 		return;
@@ -226,7 +227,7 @@ static void UpdateSSGIConstants()
 
 static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSGI::IsEnabled() || !g_xEngine.HiZ().IsEnabled())
+	if (!g_xEngine.SSGI().IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
@@ -262,7 +263,7 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSGI::IsEnabled() || !g_xEngine.HiZ().IsEnabled())
+	if (!g_xEngine.SSGI().IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
@@ -274,7 +275,7 @@ static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindSRV(g_xEngine.SSGI().m_xUpsampleShader, "g_xSSGITex", &Flux_SSGI::GetRawResultAttachment().SRV());
+	xBinder.BindSRV(g_xEngine.SSGI().m_xUpsampleShader, "g_xSSGITex", &g_xEngine.SSGI().GetRawResultAttachment().SRV());
 	xBinder.BindSRV(g_xEngine.SSGI().m_xUpsampleShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -285,7 +286,7 @@ static void ExecuteSSGIUpsample(Flux_CommandList* pxCommandList, void*)
 // direction is the only difference between the two shaders.
 static void ExecuteSSGIDenoiseH(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSGI::IsEnabled() || !g_xEngine.HiZ().IsEnabled())
+	if (!g_xEngine.SSGI().IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
@@ -300,7 +301,7 @@ static void ExecuteSSGIDenoiseH(Flux_CommandList* pxCommandList, void*)
 	dbg_xSSGIDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
 	xBinder.BindDrawConstants(g_xEngine.SSGI().m_xDenoiseHShader, "PushConstants", &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
-	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xSSGITex",    &Flux_SSGI::GetResolvedAttachment().SRV());
+	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xSSGITex",    &g_xEngine.SSGI().GetResolvedAttachment().SRV());
 	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xDepthTex",   Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(g_xEngine.SSGI().m_xDenoiseHShader, "g_xAlbedoTex",  Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
@@ -312,7 +313,7 @@ static void ExecuteSSGIDenoiseH(Flux_CommandList* pxCommandList, void*)
 // denoised result that deferred shading consumes.
 static void ExecuteSSGIDenoiseV(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSGI::IsEnabled() || !g_xEngine.HiZ().IsEnabled())
+	if (!g_xEngine.SSGI().IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::Scope xScope(ZENITH_PROFILE_INDEX__FLUX_SSGI);
@@ -342,7 +343,7 @@ static void ExecuteSSGIDenoiseV(Flux_CommandList* pxCommandList, void*)
 // toggle still resolves to this handle — any runtime toggle without a matching
 // Flux::RequestGraphRebuild() trips at the point of the mistake.
 
-void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_SSGIImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	g_xEngine.SSGI().m_pxGraph = &xGraph;
 
@@ -419,7 +420,7 @@ void Flux_SSGI::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	g_xEngine.SSGI().m_xCommittedSSGIHandle = bDenoise ? g_xEngine.SSGI().m_xDenoisedHandle : g_xEngine.SSGI().m_xResolvedHandle;
 }
 
-void Flux_SSGI::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
+void Flux_SSGIImpl::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 {
 	const bool bDenoiseChanged    = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled != g_xEngine.SSGI().m_bLastDenoiseEnabled;
 	const bool bResolutionChanged = g_xEngine.SSGI().m_uRayMarchResolutionDivisor != g_xEngine.SSGI().m_uLastResolutionDivisor;
@@ -434,19 +435,8 @@ void Flux_SSGI::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 	Flux::RequestGraphRebuild();
 }
 
-Flux_TransientHandle Flux_SSGI::GetSSGIHandle()
-{
-	const Flux_TransientHandle xLive = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? g_xEngine.SSGI().m_xDenoisedHandle : g_xEngine.SSGI().m_xResolvedHandle;
-	Zenith_Assert(!g_xEngine.SSGI().m_xCommittedSSGIHandle.IsValid() || xLive == g_xEngine.SSGI().m_xCommittedSSGIHandle,
-		"Flux_SSGI::GetSSGIHandle: live handle (idx=%u gen=%u) disagrees with the handle committed at SetupRenderGraph exit (idx=%u gen=%u). "
-		"Denoise toggle changed without Flux::RequestGraphRebuild() being called in ApplyDenoiseSelectionToGraph — "
-		"MarkDirty() alone does not re-run SetupRenderGraph, so the deferred pass's declared Read is stale.",
-		xLive.m_uIndex, xLive.m_uGeneration,
-		g_xEngine.SSGI().m_xCommittedSSGIHandle.m_uIndex, g_xEngine.SSGI().m_xCommittedSSGIHandle.m_uGeneration);
-	return xLive;
-}
 
-Flux_ShaderResourceView& Flux_SSGI::GetSSGISRV()
+Flux_ShaderResourceView& Flux_SSGIImpl::GetSSGISRV()
 {
 	// Must match GetSSGIHandle so bind-time-declared-access assertions see the
 	// same resource the graph has a Read declared on.
@@ -455,12 +445,8 @@ Flux_ShaderResourceView& Flux_SSGI::GetSSGISRV()
 	return GetResolvedAttachment().SRV();
 }
 
-bool Flux_SSGI::IsEnabled()
+bool Flux_SSGIImpl::IsEnabled() const
 {
 	return Zenith_GraphicsOptions::Get().m_bSSGIEnabled && g_xEngine.SSGI().m_bInitialised;
 }
 
-bool Flux_SSGI::IsInitialised()
-{
-	return g_xEngine.SSGI().m_bInitialised;
-}

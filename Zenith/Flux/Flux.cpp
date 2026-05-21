@@ -28,10 +28,10 @@
 #include "Flux/Quads/Flux_QuadsImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/HDR/Flux_HDR.h"
-#include "Flux/IBL/Flux_IBL.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
-#include "Flux/SSR/Flux_SSR.h"
-#include "Flux/SSGI/Flux_SSGI.h"
+#include "Flux/SSR/Flux_SSRImpl.h"
+#include "Flux/SSGI/Flux_SSGIImpl.h"
 #include "Flux/Vegetation/Flux_Grass.h"
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
@@ -214,7 +214,7 @@ void Flux::LateInitialise()
 #endif
 	g_xEngine.Shadows().Initialise();
 	Flux_Skybox::Initialise();       // Cubemap skybox + procedural atmosphere
-	Flux_IBL::Initialise();          // Image-based lighting (BRDF LUT, environment probes)
+	g_xEngine.IBL().Initialise();          // Image-based lighting (BRDF LUT, environment probes)
 	g_xEngine.StaticMeshes().Initialise();
 	g_xEngine.AnimatedMeshes().Initialise();
 	g_xEngine.InstancedMeshes().Initialise();
@@ -222,8 +222,8 @@ void Flux::LateInitialise()
 	Flux_Grass::Initialise();        // Grass/vegetation (after terrain)
 	Flux_Primitives::Initialise();
 	g_xEngine.HiZ().Initialise();          // Hi-Z depth pyramid (needed by SSR)
-	Flux_SSR::Initialise();          // Screen-space reflections (uses Hi-Z, needed by DeferredShading)
-	Flux_SSGI::Initialise();         // Screen-space GI (uses Hi-Z, needed by DeferredShading)
+	g_xEngine.SSR().Initialise();          // Screen-space reflections (uses Hi-Z, needed by DeferredShading)
+	g_xEngine.SSGI().Initialise();         // Screen-space GI (uses Hi-Z, needed by DeferredShading)
 	g_xEngine.DynamicLights().Initialise();   // Light gather + upload (front-end for clustered deferred)
 	g_xEngine.LightClustering().Initialise(); // Per-cluster light culling compute (must precede DeferredShading)
 	g_xEngine.DeferredShading().Initialise(); // Reads cluster buffers + light buffer in fragment shader
@@ -325,7 +325,7 @@ void Flux::SetupRenderGraph()
 	Flux_HDR::SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph); // HDR scene target used by many subsystems
 
 	// Preprocessing
-	Flux_IBL::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.IBL().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Skybox::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// Geometry (all write to G-Buffer + Depth)
@@ -345,8 +345,8 @@ void Flux::SetupRenderGraph()
 
 	// Screen-space effects
 	g_xEngine.HiZ().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_SSR::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_SSGI::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.SSR().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.SSGI().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// Lighting & composition
 	// Clustering runs first — its outputs (per-cluster light index lists) are
@@ -429,15 +429,15 @@ void Flux::Shutdown()
 	g_xEngine.Decals().Shutdown();          // Deferred decal renderer (frees instance buffer + IB)
 	g_xEngine.LightClustering().Shutdown(); // Cluster compute pass (frees cluster buffers)
 	g_xEngine.DynamicLights().Shutdown();   // Light gather front-end (frees unified light buffer)
-	Flux_SSGI::Shutdown();         // Before HiZ (SSGI uses Hi-Z)
-	Flux_SSR::Shutdown();          // Before HiZ (SSR uses Hi-Z)
+	g_xEngine.SSGI().Shutdown();         // Before HiZ (SSGI uses Hi-Z)
+	g_xEngine.SSR().Shutdown();          // Before HiZ (SSR uses Hi-Z)
 	g_xEngine.HiZ().Shutdown();          // Hi-Z depth pyramid
 	Flux_Primitives::Shutdown();   // Debug primitives (reverse of init: between HiZ and Grass)
 	Flux_Grass::Shutdown();        // After Terrain (depends on terrain data)
 	Flux_Terrain::Shutdown();
 	g_xEngine.InstancedMeshes().Shutdown();
 	// Flux_AnimatedMeshes, Flux_StaticMeshes - no Shutdown() methods
-	Flux_IBL::Shutdown();          // After Skybox (uses skybox for environment)
+	g_xEngine.IBL().Shutdown();          // After Skybox (uses skybox for environment)
 	Flux_Skybox::Shutdown();
 	g_xEngine.Shadows().Shutdown();
 

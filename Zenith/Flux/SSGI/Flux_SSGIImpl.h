@@ -1,12 +1,21 @@
 #pragma once
 
-#include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/Flux.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 class Flux_RenderGraph;
 
-// Phase 7f: per-Engine state for SSGI subsystem.
+enum SSGI_DebugMode : u_int
+{
+	SSGI_DEBUG_NONE = 0,
+	SSGI_DEBUG_RAY_DIRECTIONS,
+	SSGI_DEBUG_HIT_POSITIONS,
+	SSGI_DEBUG_CONFIDENCE,
+	SSGI_DEBUG_FINAL_RESULT,
+	SSGI_DEBUG_COUNT
+};
+
+// Phase 9: state + behaviour for SSGI subsystem.
 class Flux_SSGIImpl
 {
 public:
@@ -15,6 +24,22 @@ public:
 
 	Flux_SSGIImpl(const Flux_SSGIImpl&) = delete;
 	Flux_SSGIImpl& operator=(const Flux_SSGIImpl&) = delete;
+
+	void Initialise();
+	void Shutdown();
+	void BuildPipelines();
+
+	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+	void ApplyDenoiseSelectionToGraph(Flux_RenderGraph& xGraph);
+
+	Flux_TransientHandle GetSSGIHandle() const { return m_xCommittedSSGIHandle; }
+	Flux_ShaderResourceView& GetSSGISRV();
+	bool IsEnabled() const;
+	bool IsInitialised() const { return m_bInitialised; }
+
+	Flux_RenderAttachment& GetRawResultAttachment();
+	Flux_RenderAttachment& GetResolvedAttachment();
+	Flux_RenderAttachment& GetDenoisedAttachment();
 
 	Flux_TransientHandle m_xRawResultHandle;
 	Flux_TransientHandle m_xResolvedHandle;

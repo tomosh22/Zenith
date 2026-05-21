@@ -8,10 +8,10 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
-#include "Flux/IBL/Flux_IBL.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
-#include "Flux/SSR/Flux_SSR.h"
-#include "Flux/SSGI/Flux_SSGI.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
+#include "Flux/SSR/Flux_SSRImpl.h"
+#include "Flux/SSGI/Flux_SSGIImpl.h"
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -108,15 +108,15 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	}
 
 	// Bind IBL textures
-	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xBRDFLUT", &Flux_IBL::GetBRDFLUTSRV());
-	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xIrradianceMap", &Flux_IBL::GetIrradianceMapSRV());
-	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xPrefilteredMap", &Flux_IBL::GetPrefilteredMapSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xBRDFLUT", &g_xEngine.IBL().GetBRDFLUTSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xIrradianceMap", &g_xEngine.IBL().GetIrradianceMapSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xPrefilteredMap", &g_xEngine.IBL().GetPrefilteredMapSRV());
 
 	// Always bind SSR texture if initialised (shader checks g_bSSREnabled before sampling)
 	// This avoids Vulkan validation errors for unbound descriptors
-	if (Flux_SSR::IsInitialised())
+	if (g_xEngine.SSR().IsInitialised())
 	{
-		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSRTex", &Flux_SSR::GetReflectionSRV());
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSRTex", &g_xEngine.SSR().GetReflectionSRV());
 	}
 	else
 	{
@@ -125,9 +125,9 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	}
 
 	// Always bind SSGI texture if initialised (shader checks g_bSSGIEnabled before sampling)
-	if (Flux_SSGI::IsInitialised())
+	if (g_xEngine.SSGI().IsInitialised())
 	{
-		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSGITex", &Flux_SSGI::GetSSGISRV());
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSGITex", &g_xEngine.SSGI().GetSSGISRV());
 	}
 	else
 	{
@@ -165,16 +165,16 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	DeferredShadingConstants xConstants;
 	xConstants.m_bVisualiseCSMs = dbg_uVisualiseCSMs;
 	// Only enable IBL if both enabled AND ready (textures have been generated)
-	xConstants.m_bIBLEnabled = (Flux_IBL::IsEnabled() && Flux_IBL::IsReady()) ? 1 : 0;
+	xConstants.m_bIBLEnabled = (g_xEngine.IBL().IsEnabled() && g_xEngine.IBL().IsReady()) ? 1 : 0;
 	xConstants.m_uDebugMode = dbg_uDeferredShadingDebugMode;
-	xConstants.m_bIBLDiffuseEnabled = Flux_IBL::IsDiffuseEnabled() ? 1 : 0;
-	xConstants.m_bIBLSpecularEnabled = Flux_IBL::IsSpecularEnabled() ? 1 : 0;
-	xConstants.m_fIBLIntensity = Flux_IBL::GetIntensity();
-	xConstants.m_bShowBRDFLUT = Flux_IBL::IsShowBRDFLUT() ? 1 : 0;
-	xConstants.m_bForceRoughness = Flux_IBL::IsForceRoughness() ? 1 : 0;
-	xConstants.m_fForcedRoughness = Flux_IBL::GetForcedRoughness();
-	xConstants.m_bSSREnabled = Flux_SSR::IsEnabled() ? 1 : 0;
-	xConstants.m_bSSGIEnabled = Flux_SSGI::IsEnabled() ? 1 : 0;
+	xConstants.m_bIBLDiffuseEnabled = g_xEngine.IBL().IsDiffuseEnabled() ? 1 : 0;
+	xConstants.m_bIBLSpecularEnabled = g_xEngine.IBL().IsSpecularEnabled() ? 1 : 0;
+	xConstants.m_fIBLIntensity = g_xEngine.IBL().GetIntensity();
+	xConstants.m_bShowBRDFLUT = g_xEngine.IBL().IsShowBRDFLUT() ? 1 : 0;
+	xConstants.m_bForceRoughness = g_xEngine.IBL().IsForceRoughness() ? 1 : 0;
+	xConstants.m_fForcedRoughness = g_xEngine.IBL().GetForcedRoughness();
+	xConstants.m_bSSREnabled = g_xEngine.SSR().IsEnabled() ? 1 : 0;
+	xConstants.m_bSSGIEnabled = g_xEngine.SSGI().IsEnabled() ? 1 : 0;
 	xConstants.m_fAmbientFallbackIntensity = dbg_fAmbientFallbackIntensity;
 
 	xBinder.BindDrawConstants(g_xEngine.DeferredShading().m_xShader, "DeferredShadingConstants", &xConstants, sizeof(xConstants));
@@ -228,10 +228,10 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// at SetupRenderGraph time. Runtime toggles trigger Flux::RequestGraphRebuild()
 	// via ApplyBlurSelectionToGraph / ApplyDenoiseSelectionToGraph, which re-runs
 	// this SetupRenderGraph and re-resolves the handle.
-	if (Flux_SSR::IsInitialised())
-		xGraph.ReadTransient(xPass, Flux_SSR::GetReflectionHandle(), RESOURCE_ACCESS_READ_SRV);
-	if (Flux_SSGI::IsInitialised())
-		xGraph.ReadTransient(xPass, Flux_SSGI::GetSSGIHandle(), RESOURCE_ACCESS_READ_SRV);
+	if (g_xEngine.SSR().IsInitialised())
+		xGraph.ReadTransient(xPass, g_xEngine.SSR().GetReflectionHandle(), RESOURCE_ACCESS_READ_SRV);
+	if (g_xEngine.SSGI().IsInitialised())
+		xGraph.ReadTransient(xPass, g_xEngine.SSGI().GetSSGIHandle(), RESOURCE_ACCESS_READ_SRV);
 
 	// IBL textures — BRDF LUT, irradiance cubemap, prefiltered cubemap. Cubemap
 	// reads default to FLUX_RG_ALL_MIPS / FLUX_RG_ALL_LAYERS.

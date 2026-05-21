@@ -17,7 +17,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Skybox/Flux_Skybox.h"
-#include "Flux/IBL/Flux_IBL.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/Vegetation/Flux_Grass.h"
 
 #include <cmath>
@@ -455,8 +455,8 @@ namespace Exploration_AtmosphereController
 		float fSunChangeMagnitude = glm::length(xSunDelta);
 		if (fSunChangeMagnitude > s_fSunChangeThreshold)
 		{
-			Flux_IBL::MarkAllProbesDirty();
-			Flux_IBL::UpdateSkyIBL();
+			g_xEngine.IBL().MarkAllProbesDirty();
+			g_xEngine.IBL().UpdateSkyIBL();
 			s_xPreviousSunDirection = s_xCurrentState.m_xSunDirection;
 		}
 	}

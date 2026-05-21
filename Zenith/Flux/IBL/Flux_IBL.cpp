@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux_IBL.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -43,7 +44,7 @@ DEBUGVAR bool dbg_bIBLForceRoughness = false;
 DEBUGVAR float dbg_fIBLForcedRoughness = 0.5f;
 DEBUGVAR bool dbg_bIBLRegenerateBRDFLUT = false;
 
-void Flux_IBL::BuildPipelines()
+void Flux_IBLImpl::BuildPipelines()
 {
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		g_xEngine.IBL().m_xBRDFLUTShader, g_xEngine.IBL().m_xBRDFLUTPipeline,
@@ -58,7 +59,7 @@ void Flux_IBL::BuildPipelines()
 		FluxShaderProgram::IBL_PrefilterEnvMap, g_xEngine.IBL().m_xPrefilteredMap.m_xSurfaceInfo.m_eFormat);
 }
 
-void Flux_IBL::Initialise()
+void Flux_IBLImpl::Initialise()
 {
 	CreateRenderTargets();
 	BuildPipelines();
@@ -71,7 +72,7 @@ void Flux_IBL::Initialise()
 		FluxShaderProgram::IBL_IrradianceConvolution,
 		FluxShaderProgram::IBL_PrefilterEnvMap,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_IBL::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.IBL().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 
 	// On hot reload, the IBL convolutions need re-running too — flag them as
@@ -84,13 +85,13 @@ void Flux_IBL::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL Initialised");
 }
 
-void Flux_IBL::Shutdown()
+void Flux_IBLImpl::Shutdown()
 {
 	DestroyRenderTargets();
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL shut down");
 }
 
-void Flux_IBL::Reset()
+void Flux_IBLImpl::Reset()
 {
 	g_xEngine.IBL().m_bSkyIBLDirty = true;
 	g_xEngine.IBL().m_bIBLReady = false;  // Need to regenerate IBL on next frame
@@ -124,7 +125,7 @@ void Flux_IBL::Reset()
 // leave all 49 IBL passes disabled and trip the validator. Re-running first-
 // generation refills the textures with identical contents (cheap) and gives
 // the barrier generator a consistent view.
-void Flux_IBL::ResetIBLRegenStateForRecompile()
+void Flux_IBLImpl::ResetIBLRegenStateForRecompile()
 {
 	g_xEngine.IBL().m_bBRDFLUTGenerated = false;
 	g_xEngine.IBL().m_bSkyIBLDirty = true;
@@ -138,7 +139,7 @@ void Flux_IBL::ResetIBLRegenStateForRecompile()
 // BRDF LUT runs on the first frame and on manual regenerate. Side-effects:
 // clears the regenerate-LUT debug flag and resets the generated bit when the
 // regenerate flag was set so the LUT runs THIS frame.
-bool Flux_IBL::ResolveBRDFLUTRun()
+bool Flux_IBLImpl::ResolveBRDFLUTRun()
 {
 	if (!g_xEngine.IBL().m_bBRDFLUTGenerated || dbg_bIBLRegenerateBRDFLUT)
 	{
@@ -157,7 +158,7 @@ bool Flux_IBL::ResolveBRDFLUTRun()
 // First generation: enable every irradiance face and every prefilter mip+face
 // in one frame. Required so all mip levels have valid layouts before deferred
 // shading binds the cubemap.
-void Flux_IBL::RunFirstGenerationFrame(bool (&abRunIrradiance)[6],
+void Flux_IBLImpl::RunFirstGenerationFrame(bool (&abRunIrradiance)[6],
 	bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6])
 {
 	for (u_int uFace = 0; uFace < 6; uFace++)
@@ -175,7 +176,7 @@ void Flux_IBL::RunFirstGenerationFrame(bool (&abRunIrradiance)[6],
 // passes per frame. Two phases — irradiance (6 faces) then prefilter
 // (mip × face). State (g_xEngine.IBL().m_eRegenState, g_xEngine.IBL().m_uRegenFace, g_xEngine.IBL().m_uRegenMip) advances each
 // frame; idle is reached after all faces of all mips have run.
-void Flux_IBL::AdvanceAmortizedRegen(bool (&abRunIrradiance)[6],
+void Flux_IBLImpl::AdvanceAmortizedRegen(bool (&abRunIrradiance)[6],
 	bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6])
 {
 	if (g_xEngine.IBL().m_bSkyIBLDirty && g_xEngine.IBL().m_eRegenState == IBL_REGEN_IDLE)
@@ -227,7 +228,7 @@ void Flux_IBL::AdvanceAmortizedRegen(bool (&abRunIrradiance)[6],
 // hasn't changed (cheap in steady state); IBL passes have no explicit
 // dependency edges, so this takes the m_bEnabledMaskDirty fast path rather
 // than triggering a full recompile.
-void Flux_IBL::ApplyResolvedIBLEnables(Flux_RenderGraph& xGraph,
+void Flux_IBLImpl::ApplyResolvedIBLEnables(Flux_RenderGraph& xGraph,
 	bool bRunBRDF,
 	const bool (&abRunIrradiance)[6],
 	const bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6])
@@ -240,13 +241,13 @@ void Flux_IBL::ApplyResolvedIBLEnables(Flux_RenderGraph& xGraph,
 			xGraph.SetEnabled(g_xEngine.IBL().m_axPrefilterMipFacePassHandles[uMip][uFace], abRunPrefilter[uMip][uFace]);
 }
 
-void Flux_IBL::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
+void Flux_IBLImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 {
 	// IMPORTANT ordering: this dirty check must run AFTER any system that may
 	// have called MarkDirty() this frame (e.g. g_xEngine.Fog().ApplyTechniqueSelectionToGraph),
 	// so the call sequence in Zenith_Core::ExecuteRenderGraph is:
 	//   1. g_xEngine.Fog().ApplyTechniqueSelectionToGraph(xGraph)  // may call MarkDirty
-	//   2. Flux_IBL::UpdateGraphPassEnables(xGraph)          // sees IsDirty()
+	//   2. Flux_IBLImpl::UpdateGraphPassEnables(xGraph)          // sees IsDirty()
 	//   3. xGraph.Compile()                                  // full recompile
 	//   4. xGraph.Execute()
 	if (xGraph.IsDirty())
@@ -280,7 +281,7 @@ void Flux_IBL::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 	ApplyResolvedIBLEnables(xGraph, bRunBRDF, abRunIrradiance, abRunPrefilter);
 }
 
-void Flux_IBL::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
+void Flux_IBLImpl::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
 {
 	// No per-frame gate — disabled passes are skipped before record runs
 	// (see Flux_RenderGraph::Execute Phase 1/2 enable check).
@@ -294,7 +295,7 @@ void Flux_IBL::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
 	g_xEngine.IBL().m_bBRDFLUTGenerated = true;
 }
 
-void Flux_IBL::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserData)
+void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserData)
 {
 	const u_int uFace = *static_cast<const u_int*>(pUserData);
 
@@ -321,7 +322,7 @@ void Flux_IBL::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserDat
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_IBL::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserData)
+void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserData)
 {
 	const IBLPrefilterPassData* pxData = static_cast<const IBLPrefilterPassData*>(pUserData);
 
@@ -348,7 +349,7 @@ void Flux_IBL::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserD
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_IBLImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// Note: the IBL state-machine reset that used to live here has been moved
 	// into UpdateGraphPassEnables, where it now triggers off the graph's
@@ -357,7 +358,7 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// without needing per-call-site reset code.
 
 	// BRDF LUT pass. The amortised state machine that decides which IBL passes
-	// run this frame lives in Flux_IBL::UpdateGraphPassEnables, called from
+	// run this frame lives in Flux_IBLImpl::UpdateGraphPassEnables, called from
 	// Zenith_Core::ExecuteRenderGraph BEFORE Compile (it cannot live as a pass
 	// OnPrepare because Phase 0 only fires OnPrepare for *enabled* passes).
 	// SetPassClearTargets(true) is safe even when the pass is disabled —
@@ -407,7 +408,7 @@ void Flux_IBL::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	}
 }
 
-void Flux_IBL::CreateRenderTargets()
+void Flux_IBLImpl::CreateRenderTargets()
 {
 	Flux_RenderAttachmentBuilder xBuilder;
 
@@ -433,7 +434,7 @@ void Flux_IBL::CreateRenderTargets()
 	xBuilder.BuildColourCubemap(g_xEngine.IBL().m_xPrefilteredMap, "IBL Prefiltered Map");
 }
 
-void Flux_IBL::DestroyRenderTargets()
+void Flux_IBLImpl::DestroyRenderTargets()
 {
 	// Route through the builder so per-mip RTVs / SRVs / UAVs for multi-mip
 	// attachments (prefiltered cube has 7 mips × 6 faces = 42 RTVs alone) get
@@ -448,7 +449,7 @@ void Flux_IBL::DestroyRenderTargets()
 // driven per-pass execute callbacks (IBLBRDFLUTExecute / IBLIrradianceFaceExecute /
 // IBLPrefilterMipFaceExecute). These entry points remain only for external
 // callers that expect the imperative API; consider deleting them if unused.
-void Flux_IBL::GenerateBRDFLUT()
+void Flux_IBLImpl::GenerateBRDFLUT()
 {
 	// No-op: BRDF LUT generation is driven by the render graph + per-frame
 	// IBLPrepareCallback. Setting g_xEngine.IBL().m_bBRDFLUTGenerated=false marks it for
@@ -456,7 +457,7 @@ void Flux_IBL::GenerateBRDFLUT()
 	g_xEngine.IBL().m_bBRDFLUTGenerated = false;
 }
 
-void Flux_IBL::UpdateSkyIBL()
+void Flux_IBLImpl::UpdateSkyIBL()
 {
 	// No-op: regeneration is driven by IBLPrepareCallback. Marking the dirty
 	// flag is enough to schedule per-face/per-mip work over the next frames.
@@ -466,50 +467,44 @@ void Flux_IBL::UpdateSkyIBL()
 // GenerateIrradianceMap / GeneratePrefilteredMap / GenerateIrradianceFace /
 // GeneratePrefilteredFace were the bypass-submit helpers — now obsolete.
 // All work is performed by the per-pass execute callbacks above.
-void Flux_IBL::GenerateIrradianceMap() {}
-void Flux_IBL::GeneratePrefilteredMap() {}
-void Flux_IBL::GenerateIrradianceFace(u_int /*uFace*/) {}
-void Flux_IBL::GeneratePrefilteredFace(u_int /*uMip*/, u_int /*uFace*/) {}
+void Flux_IBLImpl::GenerateIrradianceMap() {}
+void Flux_IBLImpl::GeneratePrefilteredMap() {}
+void Flux_IBLImpl::GenerateIrradianceFace(u_int /*uFace*/) {}
+void Flux_IBLImpl::GeneratePrefilteredFace(u_int /*uMip*/, u_int /*uFace*/) {}
 
-void Flux_IBL::MarkAllProbesDirty()
+void Flux_IBLImpl::MarkAllProbesDirty()
 {
 	g_xEngine.IBL().m_bSkyIBLDirty = true;
 }
 
 // Accessors - return const references to prevent modification and signal temporary nature
-const Flux_ShaderResourceView& Flux_IBL::GetBRDFLUTSRV()
+const Flux_ShaderResourceView& Flux_IBLImpl::GetBRDFLUTSRV()
 {
 	return g_xEngine.IBL().m_xBRDFLUT.SRV();
 }
 
-const Flux_ShaderResourceView& Flux_IBL::GetIrradianceMapSRV()
+const Flux_ShaderResourceView& Flux_IBLImpl::GetIrradianceMapSRV()
 {
 	return g_xEngine.IBL().m_xIrradianceMap.SRV();
 }
 
-const Flux_ShaderResourceView& Flux_IBL::GetPrefilteredMapSRV()
+const Flux_ShaderResourceView& Flux_IBLImpl::GetPrefilteredMapSRV()
 {
 	return g_xEngine.IBL().m_xPrefilteredMap.SRV();
 }
 
 // Setters (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
-void Flux_IBL::SetIntensity(float fIntensity)
-{
-	g_xEngine.IBL().m_fIntensity = fIntensity;
-}
 
 // Getters
-bool Flux_IBL::IsEnabled() { return Zenith_GraphicsOptions::Get().m_bIBLEnabled; }
-bool Flux_IBL::IsReady() { return g_xEngine.IBL().m_bIBLReady; }
-float Flux_IBL::GetIntensity() { return g_xEngine.IBL().m_fIntensity; }
-bool Flux_IBL::IsDiffuseEnabled() { return Zenith_GraphicsOptions::Get().m_bIBLDiffuseEnabled; }
-bool Flux_IBL::IsSpecularEnabled() { return Zenith_GraphicsOptions::Get().m_bIBLSpecularEnabled; }
-bool Flux_IBL::IsShowBRDFLUT() { return dbg_bIBLShowBRDFLUT; }
-bool Flux_IBL::IsForceRoughness() { return dbg_bIBLForceRoughness; }
-float Flux_IBL::GetForcedRoughness() { return dbg_fIBLForcedRoughness; }
+bool Flux_IBLImpl::IsEnabled() const { return Zenith_GraphicsOptions::Get().m_bIBLEnabled; }
+bool Flux_IBLImpl::IsDiffuseEnabled() const { return Zenith_GraphicsOptions::Get().m_bIBLDiffuseEnabled; }
+bool Flux_IBLImpl::IsSpecularEnabled() const { return Zenith_GraphicsOptions::Get().m_bIBLSpecularEnabled; }
+bool Flux_IBLImpl::IsShowBRDFLUT() const { return dbg_bIBLShowBRDFLUT; }
+bool Flux_IBLImpl::IsForceRoughness() const { return dbg_bIBLForceRoughness; }
+float Flux_IBLImpl::GetForcedRoughness() const { return dbg_fIBLForcedRoughness; }
 
 #ifdef ZENITH_TOOLS
-void Flux_IBL::RegisterDebugVariables()
+void Flux_IBLImpl::RegisterDebugVariables()
 {
 	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "ShowBRDFLUT" }, dbg_bIBLShowBRDFLUT);
 	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "ForceRoughness" }, dbg_bIBLForceRoughness);
