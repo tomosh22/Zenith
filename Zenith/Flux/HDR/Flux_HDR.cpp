@@ -618,6 +618,11 @@ void Flux_HDRImpl::GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxCol
 
 
 
+void Flux_HDRImpl::SetExposure(float fExposure)
+{
+	g_xEngine.HDR().m_fExposure = std::clamp(fExposure, 0.001f, 1000.0f);
+}
+
 void Flux_HDRImpl::SetBloomIntensity(float fIntensity)
 {
 	g_xEngine.HDR().m_fBloomIntensity = std::clamp(fIntensity, 0.0f, 10.0f);
