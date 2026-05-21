@@ -114,7 +114,7 @@ public:
 	static void CreateDebugMessenger();
 #endif
 #ifdef ZENITH_FLUX_PROFILING
-	static vk::DispatchLoaderDynamic& GetDispatchLoader() { return s_xDispatchLoader; }
+	static vk::DispatchLoaderDynamic& GetDispatchLoader();
 #endif
 	static void CreateSurface();
 	static void CreatePhysicalDevice();
@@ -126,14 +126,11 @@ public:
 	static void CreateBindlessTexturesDescriptorPool();
 
 #ifdef ZENITH_TOOLS
-	static vk::RenderPass s_xImGuiRenderPass;
-	static vk::DescriptorPool s_xImGuiDescriptorPool;
-	static vk::DescriptorSetLayout s_xImGuiPreviewLayout;
 	static void InitialiseImGui();
 	static void InitialiseImGuiRenderPass();
 	static void ShutdownImGui();
 	static void ImGuiBeginFrame();
-	static const vk::DescriptorPool& GetImGuiDescriptorPool() { return s_xImGuiDescriptorPool; }
+	static const vk::DescriptorPool& GetImGuiDescriptorPool();
 
 	// ImGui memory tracking
 	static u_int64 GetImGuiMemoryAllocated();
@@ -162,16 +159,16 @@ public:
 
 	static void RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
 
-	static const vk::Instance& GetInstance() { return s_xInstance; }
-	static const vk::PhysicalDevice& GetPhysicalDevice() { return s_xPhysicalDevice; }
-	static const vk::Device& GetDevice() { return s_xDevice; }
-	static const vk::CommandPool& GetCommandPool(CommandType eType) { return s_axCommandPools[eType]; }
+	static const vk::Instance& GetInstance();
+	static const vk::PhysicalDevice& GetPhysicalDevice();
+	static const vk::Device& GetDevice();
+	static const vk::CommandPool& GetCommandPool(CommandType eType);
 	static const vk::CommandPool& GetWorkerCommandPool(u_int uThreadIndex);
-	static const vk::Queue& GetQueue(CommandType eType) { return s_axQueues[eType]; }
+	static const vk::Queue& GetQueue(CommandType eType);
 	static const vk::DescriptorPool& GetPerFrameDescriptorPool(u_int uWorkerIndex);
-	static const vk::SurfaceKHR& GetSurface() { return s_xSurface; }
-	static const uint32_t GetQueueIndex(CommandType eType) { return s_auQueueIndices[eType]; }
-	static const vk::DescriptorPool& GetDefaultDescriptorPool() { return s_xDefaultDescriptorPool; }
+	static const vk::SurfaceKHR& GetSurface();
+	static const uint32_t GetQueueIndex(CommandType eType);
+	static const vk::DescriptorPool& GetDefaultDescriptorPool();
 	static vk::Fence& GetCurrentInFlightFence();
 
 	static const bool ShouldSubmitDrawCalls();
@@ -181,10 +178,11 @@ public:
 	static void IncrementDescriptorSetAllocations();
 	#endif
 
-	static Zenith_Vulkan_CommandBuffer* s_pxMemoryUpdateCmdBuf;
+	// Phase 6b: m_pxMemoryUpdateCmdBuf lives on Zenith_VulkanImpl; reach it
+	// via g_xEngine.Vulkan().m_pxMemoryUpdateCmdBuf.
 
-	static vk::DescriptorSet& GetBindlessTexturesDescriptorSet() { return s_xBindlessTexturesDescriptorSet; }
-	static vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout() { return s_xBindlessTexturesDescriptorSetLayout; }
+	static vk::DescriptorSet& GetBindlessTexturesDescriptorSet();
+	static vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout();
 	static void WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler);
 
 	// Engine-typed wrapper around WriteBindlessDescriptor. Engine code (asset
@@ -204,42 +202,23 @@ public:
 	static vk::AttachmentLoadOp ConvertToVkLoadAction(LoadAction eAction);
 	static vk::AttachmentStoreOp ConvertToVkStoreAction(StoreAction eAction);
 
-private:
-	static vk::Instance s_xInstance;
-	static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity,
-		vk::DebugUtilsMessageTypeFlagsEXT eMessageType,
-		const vk::DebugUtilsMessengerCallbackDataEXT* pxCallbackData,
-		void* pUserData);
-	static vk::DebugUtilsMessengerEXT s_xDebugMessenger;
-#ifdef ZENITH_FLUX_PROFILING
-	static vk::DispatchLoaderDynamic s_xDispatchLoader;
-#endif
-	static vk::SurfaceKHR s_xSurface;
-	static vk::PhysicalDevice s_xPhysicalDevice;
-	static struct GPUCapabilities {
+	// GPUCapabilities struct exposed so the Impl can declare a member.
+	struct GPUCapabilities {
 		uint32_t m_uMaxTextureWidth;
 		uint32_t m_uMaxTextureHeight;
 		uint32_t m_uMaxFramebufferWidth;
 		uint32_t m_uMaxFramebufferHeight;
-	} s_xGPUCapabilties;
-	static uint32_t s_auQueueIndices[COMMANDTYPE_MAX];
-	static vk::Device s_xDevice;
-	static vk::Queue s_axQueues[COMMANDTYPE_MAX];
-	static vk::CommandPool s_axCommandPools[COMMANDTYPE_MAX];
-	
-	static vk::DescriptorPool s_xDefaultDescriptorPool;
+	};
 
-	static vk::DescriptorPool s_xBindlessTexturesDescriptorPool;
-	static vk::DescriptorSet s_xBindlessTexturesDescriptorSet;
-	static vk::DescriptorSetLayout s_xBindlessTexturesDescriptorSetLayout;
+private:
+	static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity,
+		vk::DebugUtilsMessageTypeFlagsEXT eMessageType,
+		const vk::DebugUtilsMessengerCallbackDataEXT* pxCallbackData,
+		void* pUserData);
 
-	public:
-	static std::vector<Zenith_Vulkan_VRAM*> s_xVRAMRegistry;
-	static std::vector<uint32_t> s_xFreeVRAMHandles;
-
-	static std::vector<const Zenith_Vulkan_CommandBuffer*> s_xPendingCommandBuffers;
-	static Zenith_Vulkan_PerFrame s_axPerFrame[MAX_FRAMES_IN_FLIGHT];
-	static Zenith_Vulkan_PerFrame* s_pxCurrentFrame;
+	// Phase 6b: ~22 static data members moved off this class onto
+	// Zenith_VulkanImpl held by Zenith_Engine. Method bodies and the
+	// 55 external readers route through g_xEngine.Vulkan().m_xXxx.
 };
 
 class Zenith_Vulkan_VRAM

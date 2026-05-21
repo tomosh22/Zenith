@@ -31,10 +31,15 @@ class Zenith_Vulkan_CommandBuffer;
 constexpr uint64_t g_uStagingPoolSize = 512u * 1024u * 1024u;
 #define ALIGN(size, align) ((size + align - 1) / align) * align
 
+class Zenith_Vulkan_MemoryManagerImpl;
+
 class Zenith_Vulkan_MemoryManager
 {
+	// Phase 6b: the Impl mirrors private nested types (PerFrameStaging,
+	// PendingVRAMDeletion) as engine-owned members.
+	friend class Zenith_Vulkan_MemoryManagerImpl;
 public:
-	
+
 	Zenith_Vulkan_MemoryManager() {}
 	~Zenith_Vulkan_MemoryManager() {
 		
@@ -194,17 +199,17 @@ public:
 
 	static void FlushStagingBuffer();
 
-	static void IncreaseImageMemoryUsage(u_int64 ulSize) { s_ulImageMemoryUsed += ulSize; }
-	static void DecreaseImageMemoryUsage(u_int64 ulSize) { s_ulImageMemoryUsed -= ulSize; }
-	static const u_int64* GetImageMemoryUsagePtr() { return &s_ulImageMemoryUsed; }
+	static void IncreaseImageMemoryUsage(u_int64 ulSize);
+	static void DecreaseImageMemoryUsage(u_int64 ulSize);
+	static const u_int64* GetImageMemoryUsagePtr();
 
-	static void IncreaseBufferMemoryUsage(u_int64 ulSize) { s_ulBufferMemoryUsed += ulSize; }
-	static void DecreaseBufferMemoryUsage(u_int64 ulSize) { s_ulBufferMemoryUsed -= ulSize; }
-	static const u_int64* GetBufferMemoryUsagePtr() { return &s_ulBufferMemoryUsed; }
+	static void IncreaseBufferMemoryUsage(u_int64 ulSize);
+	static void DecreaseBufferMemoryUsage(u_int64 ulSize);
+	static const u_int64* GetBufferMemoryUsagePtr();
 
-	static void IncreaseMemoryUsage(u_int64 ulSize) { s_ulMemoryUsed += ulSize; }
-	static void DecreaseMemoryUsage(u_int64 ulSize) { s_ulMemoryUsed -= ulSize; }
-	static const u_int64* GetMemoryUsagePtr() { return &s_ulMemoryUsed; }
+	static void IncreaseMemoryUsage(u_int64 ulSize);
+	static void DecreaseMemoryUsage(u_int64 ulSize);
+	static const u_int64* GetMemoryUsagePtr();
 
 	// VMA statistics - returns actual allocated GPU memory from VMA
 	struct VMAStats
@@ -216,7 +221,7 @@ public:
 	static VMAStats GetVMAStats();
 
 	// Direct access to VMA allocator (for advanced buffer creation)
-	static VmaAllocator GetVMAAllocator() { return s_xAllocator; }
+	static VmaAllocator GetVMAAllocator();
 
 	// Determines the VkImageViewType from surface info flags (3D, cube, array, or 2D)
 	static vk::ImageViewType DetermineImageViewType(const Flux_SurfaceInfo& xInfo);
@@ -312,7 +317,9 @@ private:
 		size_t           m_uHighWaterMark      = 0;
 		uint32_t         m_uMidFrameFlushCount = 0;
 	};
-	static PerFrameStaging s_axStaging[MAX_FRAMES_IN_FLIGHT];
+	// PerFrameStaging slots (m_axStaging) live on
+	// Zenith_Vulkan_MemoryManagerImpl held by Zenith_Engine. Access via
+	// g_xEngine.VulkanMemory().m_axStaging or through CurrentStaging() below.
 
 	// Resolves to the staging slot for the current in-flight frame. Both the
 	// CPU memcpy path and the GPU vkCmdCopyBuffer recording path target the
@@ -339,34 +346,7 @@ private:
 		Flux_ImageViewHandle m_xSRV;
 		Flux_ImageViewHandle m_xUAV;
 	};
-	static Zenith_Vector<PendingVRAMDeletion> s_xPendingDeletions;
-
-	static VmaAllocator s_xAllocator;
-
-	// Per-frame staging state lives in s_axStaging above. The single-buffer
-	// fields that used to live here (s_xStagingBuffer, s_xStagingMem,
-	// s_uNextFreeStagingOffset, s_xStagingAllocations) were the source of a
-	// CPU-vs-GPU race on the shared staging memory across in-flight frames.
-	// All staged upload paths now route through CurrentStaging().
-
-	// Single command-buffer wrapper is intentional: Zenith_Vulkan_CommandBuffer
-	// already owns a per-frame VkCommandBuffer internally and resolves
-	// GetCurrentCmdBuffer() to the current frame's slot via BeginRecording.
-	// So one wrapper spanning all frames is equivalent to per-frame wrappers
-	// for our recording pattern, and avoids a duplication that would buy
-	// nothing. Promote to per-frame only if the wrapper's other state (the
-	// descriptor cache, binding state) ever needs slot isolation.
-	static Zenith_Vulkan_CommandBuffer s_xCommandBuffer;
-
-	static Zenith_Mutex s_xMutex;
-
-	static u_int64 s_ulImageMemoryUsed;
-	static u_int64 s_ulBufferMemoryUsed;
-	static u_int64 s_ulMemoryUsed;
-
-	// Handle registry for abstracting Vulkan types
-	static Zenith_Vector<vk::ImageView> s_xImageViewRegistry;
-	static Zenith_Vector<u_int> s_xFreeImageViewHandles;
-	static Zenith_Vector<vk::DescriptorBufferInfo> s_xBufferDescriptorRegistry;
-	static Zenith_Vector<u_int> s_xFreeBufferDescHandles;
+	// Phase 6b: all 11 data members moved to Zenith_Vulkan_MemoryManagerImpl
+	// held by Zenith_Engine. Method bodies reach state via
+	// g_xEngine.VulkanMemory().m_xXxx.
 };

@@ -18,10 +18,10 @@ public:
 	static bool BeginFrame();
 	static void EndFrame();
 
-	static uint32_t GetWidth() { return s_xExtent.width; }
-	static uint32_t GetHeight() { return s_xExtent.height; }
+	static uint32_t GetWidth();
+	static uint32_t GetHeight();
 
-	static vk::Extent2D& GetExent() { return s_xExtent; }
+	static vk::Extent2D& GetExent();
 
 	static vk::Semaphore& GetCurrentImageAvailableSemaphore();
 
@@ -31,7 +31,7 @@ public:
 	// stay free of the Flux_PerFrame include.
 	static uint32_t GetCurrentFrameIndex();
 
-	static vk::Format GetFormat() { return s_xImageFormat; }
+	static vk::Format GetFormat();
 
 	static bool ShouldWaitOnImageAvailableSemaphore();
 	
@@ -40,16 +40,10 @@ public:
 private:
 	static void BindAsTarget();
 	static void InitialiseCopyToFramebufferCommands();
-	static vk::SwapchainKHR s_xSwapChain;
-	//#TO_TODO: make these arrays, not vectors
-	static std::vector<vk::Image> s_xImages;
-	static std::vector<vk::ImageView> s_xImageViews;
-	static vk::Format s_xImageFormat;
-	static vk::Extent2D s_xExtent;
-	static vk::Semaphore s_axImageAvailableSemaphores[MAX_FRAMES_IN_FLIGHT];
-	static vk::Semaphore s_axRenderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
-	static uint32_t s_uCurrentImageIndex; //set by acquireNextImageKHR
-	static bool s_bShouldWaitOnImageAvailableSem;
 
-	static Flux_RenderAttachment s_axColourAttachments[MAX_FRAMES_IN_FLIGHT];
+	// Phase 6b: 9 statics (swapchain, images / image views / format / extent,
+	// per-frame semaphores, current image index, colour attachments,
+	// should-wait flag) moved to Zenith_Vulkan_SwapchainImpl held by
+	// Zenith_Engine. Method bodies reach state via
+	// g_xEngine.VulkanSwapchain().m_xXxx.
 };

@@ -22,6 +22,9 @@
 #include "Input/Zenith_TouchInputImpl.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
+#include "Vulkan/Zenith_VulkanImpl.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManagerImpl.h"
+#include "Vulkan/Zenith_Vulkan_SwapchainImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -211,6 +214,25 @@ Flux_GraphicsImpl& Zenith_Engine::FluxGraphics()
 	return *m_pxFluxGraphics;
 }
 
+Zenith_VulkanImpl& Zenith_Engine::Vulkan()
+{
+	// No assert: Vulkan instance / device / queues / per-frame state are
+	// read from every frame and from Vulkan worker threads. Allocated
+	// EARLY in Initialise alongside FluxGraphics so the backend has a
+	// live store from Flux::EarlyInitialise onward.
+	return *m_pxVulkan;
+}
+
+Zenith_Vulkan_MemoryManagerImpl& Zenith_Engine::VulkanMemory()
+{
+	return *m_pxVulkanMemory;
+}
+
+Zenith_Vulkan_SwapchainImpl& Zenith_Engine::VulkanSwapchain()
+{
+	return *m_pxVulkanSwapchain;
+}
+
 #ifdef ZENITH_TOOLS
 Zenith_EditorImpl& Zenith_Engine::Editor()
 {
@@ -291,6 +313,18 @@ void Zenith_Engine::Initialise()
 	// transient render-graph handles).
 	Zenith_Assert(m_pxFluxGraphics == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxFluxGraphics = new Flux_GraphicsImpl();
+
+	// Phase 6b: Vulkan backend state (instance / device / queues / pools /
+	// per-frame ring / VRAM registry / pending command buffers / ImGui).
+	// Must exist before Flux::EarlyInitialise -> Zenith_Vulkan::Initialise.
+	Zenith_Assert(m_pxVulkan == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxVulkan = new Zenith_VulkanImpl();
+
+	Zenith_Assert(m_pxVulkanMemory == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxVulkanMemory = new Zenith_Vulkan_MemoryManagerImpl();
+
+	Zenith_Assert(m_pxVulkanSwapchain == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxVulkanSwapchain = new Zenith_Vulkan_SwapchainImpl();
 
 #ifdef ZENITH_TOOLS
 	// Phase 5.5c: editor state (selection, viewport, content browser,
@@ -645,6 +679,16 @@ void Zenith_Engine::Shutdown()
 	// freed GPU resources; this just reclaims the holder.
 	delete m_pxFluxGraphics;
 	m_pxFluxGraphics = nullptr;
+
+	// Free Vulkan backend state. Flux::Shutdown above tore down the
+	// Vulkan-side resources (device, command pools, descriptor sets,
+	// memory allocator, swapchain). These delete only the holders.
+	delete m_pxVulkanSwapchain;
+	m_pxVulkanSwapchain = nullptr;
+	delete m_pxVulkanMemory;
+	m_pxVulkanMemory = nullptr;
+	delete m_pxVulkan;
+	m_pxVulkan = nullptr;
 
 #ifdef ZENITH_TOOLS
 	// 21. Free editor state. Done LATE -- the editor's deferred-deletion

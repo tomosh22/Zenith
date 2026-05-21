@@ -9,6 +9,9 @@ class Zenith_AssetRegistry;
 class Zenith_EntityStore;
 class Flux_GraphicsImpl;
 class Flux_RendererImpl;
+class Zenith_VulkanImpl;
+class Zenith_Vulkan_MemoryManagerImpl;
+class Zenith_Vulkan_SwapchainImpl;
 class Zenith_DebugVariablesImpl;
 class Zenith_EditorAutomationImpl;
 class Zenith_EditorImpl;
@@ -77,6 +80,9 @@ public:
 	Zenith_TouchInputImpl& Touch();
 	Flux_RendererImpl& FluxRenderer();
 	Flux_GraphicsImpl& FluxGraphics();
+	Zenith_VulkanImpl& Vulkan();
+	Zenith_Vulkan_MemoryManagerImpl& VulkanMemory();
+	Zenith_Vulkan_SwapchainImpl& VulkanSwapchain();
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl& Editor();
 	// True when Initialise() has run far enough to have allocated the
@@ -112,6 +118,9 @@ private:
 	Zenith_TouchInputImpl*              m_pxTouch           = nullptr;
 	Flux_RendererImpl*                  m_pxFluxRenderer    = nullptr;
 	Flux_GraphicsImpl*                  m_pxFluxGraphics    = nullptr;
+	Zenith_VulkanImpl*                  m_pxVulkan          = nullptr;
+	Zenith_Vulkan_MemoryManagerImpl*    m_pxVulkanMemory    = nullptr;
+	Zenith_Vulkan_SwapchainImpl*        m_pxVulkanSwapchain = nullptr;
 #ifdef ZENITH_TOOLS
 	Zenith_EditorImpl*                  m_pxEditor             = nullptr;
 	Zenith_GizmoImpl*                   m_pxGizmo              = nullptr;

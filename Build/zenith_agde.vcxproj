@@ -1175,13 +1175,16 @@
     <ClInclude Include="..\Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan.h" />
+    <ClInclude Include="..\Zenith\Vulkan\Zenith_VulkanImpl.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Buffer.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.h" />
+    <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManagerImpl.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Internal.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Platform.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.h" />
+    <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_SwapchainImpl.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Texture.h" />
     <ClInclude Include="..\Zenith\Windows\Callstack\Zenith_Windows_Callstack.h" />
     <ClInclude Include="..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h" />
