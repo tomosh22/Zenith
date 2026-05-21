@@ -47,7 +47,7 @@ $exeMap = @{
 }
 $exe = $exeMap[$ConfigName]
 $exeAbs = (Resolve-Path $exe).Path
-$personalities = @("Casual","Stealth","Speedrunner","Zealot")
+$personalities = @("Casual","Stealth","Speedrunner","Zealot","Magpie","Relay","Heretic")
 
 New-Item -ItemType Directory -Path $OutRoot -Force | Out-Null
 
