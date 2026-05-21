@@ -163,3 +163,97 @@ python Tools/dp_seed_matrix_analyse.py
 # Run the cross-personality comparison summary (the table at the top).
 python Tools/dp_personality_compare.py
 ```
+
+---
+
+# PR #140 follow-up — 4 fixes + 8th personality (2026-05-21, later same day)
+
+Implemented all four follow-ups from the PR #139 writeup above. New
+matrix run: 8 personalities x 10 seeds = 80 cells. Per-personality
+table:
+
+| Personality | Cells | Wins | WinRate | ObjsAvg | DeathsAvg | PossessAvg | 1stPickup(s) | 1stApprehend(s) | % NonMonotonic |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Casual      | 10 | 1 | 10% | 2.6 | 4.0 | 4.2 | 18.2 | 44.2 | 0%  |
+| Stealth     | 10 | 0 |  0% | **1.5** | 3.9 | 4.4 | 28.2 | 40.8 | 0%  |
+| Speedrunner | 10 | 1 | 10% | 2.6 | 10.1 | 10.2 | 8.5 | 26.0 | 0%  |
+| Zealot      | 10 | 0 |  0% | 2.2 | 9.9 | 10.1 | 5.9 | 12.9 | 0%  |
+| Magpie      | 10 | 1 | 10% | 2.8 | 9.7 | 9.8 | 8.2 | 36.0 | 88% |
+| Relay       | 10 | 0 |  0% | 2.5 | 8.6 | 8.8 | 6.4 |  3.5 | 0%  |
+| Heretic     | 10 | 0 |  0% | 2.4 | 9.4 | 9.4 | 10.3 | **34.9** | 0%  |
+| Trickster   | 10 | 0 |  0% | 2.2 | 9.7 | 9.7 | 8.2 | 52.1 | **86%** |
+
+## What each fix did
+
+### Walk-quiet rebalance (0.5x -> 0.75x): clear win
+
+Stealth's `ObjsAvg` jumped from **0.7 -> 1.5 (+114%)** after bumping
+`movement.walk_speed_mps` from 4.0 to 6.0. Still 0 wins -- procgen
+dimensions are large enough that even 0.75x jog speed isn't quite
+fast enough -- but the personality is no longer dominated. The walk-
+quiet acoustic benefit (priest hearing range halved) is now tradeable
+against the (smaller) speed loss.
+
+### Heretic emit-and-flee: clear win
+
+Heretic's `1stApprehend` went from **8.5 s -> 34.9 s (+310%)**. With
+`kHereticNoiseDistractFrames` dropped from 90 to 0, the bot emits noise
+and leaves immediately. The priest still investigates the noise (the
+stimulus reaches the priest the same way), but by the time it arrives
+Heretic is already in the obj loop elsewhere on the map. Heretic now
+also has 1stApprehend later than even Casual (44.2 s).
+
+### Trickster combo personality: lands but tuning needed
+
+New 8th personality combining Magpie's any-order + Relay's voluntary-
+switch + Casual's bootstrap + Speedrunner's adaptive sprint. The combo
+fires correctly: 86% non-monotonic order (Magpie part works) and the
+relay-trigger logs fire on low-life cells (Relay part works). But 0
+wins and 2.2 ObjsAvg -- the bootstrap chain steals enough life-timer
+budget that even with voluntary relay the bot can't recover all 5
+objectives. The Magpie+Relay+Speedrunner config (no bootstrap, like
+Relay but with any-order) is probably the next tuning experiment.
+
+### Relay click-targeting reliability: net-neutral / slight regression
+
+Multi-attempt click logic (alternating y=0.9 / y=1.8 head heights, max 2
+target tries) tightened the timeout from 30 frames to 8. Recovered
+ObjsAvg to 2.5 (from a v1 botched-tuning 2.2), but win count went from
+PR #139's 3 -> 0 in this run. Hypothesis: most of PR #139's 3 wins came
+from the FALLBACK path (Relay click misses -> bot falls back to natural
+death + repossess), not the deliberate switch. The new code spends
+extra frames on retries before giving up, hurting the fallback timing
+on some cells.
+
+The honest read: 10 seeds is not enough to distinguish a true 30% win
+rate from a true 0-10% win rate for Relay. A 30-seed matrix would
+sharpen the statistics here.
+
+## Matrix variance is non-trivial
+
+The 1stApprehend time for Casual was 34.4 s in PR #139 and 44.2 s in
+PR #140 on identical seeds. The procgen layout is bit-deterministic
+across runs (`Test_ProcLevel_DeterminismCheck` guards this), so the
+delta has to come from non-deterministic AI perception ordering --
+likely thread-scheduling artifacts in the perception update + priest
+BT tick. The implication: per-personality WinRate at 10 seeds has
+substantial noise. Treat single-digit win-count deltas as inconclusive.
+
+## Suggested follow-ups (next PR)
+
+1. **30-seed matrix run.** Sharpen the win-rate statistics so we can
+   tell PR #139's 30% Relay from this PR's 0% Relay -- is one of them
+   a noise floor? A 30-seed pool would let us see ~3 sigma deltas.
+2. **Magpie+Relay no-bootstrap personality.** Trickster runs the
+   bootstrap; an alternate combo that skips it (call it `Phantom`?)
+   tests whether the bootstrap chain is the reason Trickster doesn't
+   beat Relay+Magpie individually.
+3. **Determinism audit on the AI perception pipeline.** Same procgen
+   seed, same engine, but different 1stApprehend times across runs --
+   suggests either thread-scheduling or floating-point order
+   dependence in the perception update. Fixing this would tighten the
+   matrix' signal-to-noise.
+4. **Relay click anchor**: try `villager_collider.AABB.center` instead
+   of `villager_origin.y + 0.9 m`. The y+0.9 anchor is a guess at head
+   height; the AABB centre is whatever the collider actually is on
+   that archetype.

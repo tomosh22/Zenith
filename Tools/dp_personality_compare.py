@@ -35,7 +35,7 @@ from collections import defaultdict
 from pathlib import Path
 
 PERSONALITIES = ["Casual", "Stealth", "Speedrunner", "Zealot",
-                 "Magpie", "Relay", "Heretic"]
+                 "Magpie", "Relay", "Heretic", "Trickster"]
 
 
 def load_cell_events(events_csv: Path):

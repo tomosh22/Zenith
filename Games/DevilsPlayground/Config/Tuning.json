@@ -30,7 +30,8 @@
   },
 
   "movement": {
-    "walk_speed_mps": 4.0,
+    "walk_speed_mps": 6.0,
+    "_comment_walk_speed": "Speed used when walk-quiet (Ctrl) is held. Was 4.0 (0.5x jog_speed_mps) but the 7-personality matrix on 2026-05-21 showed Stealth at 0% win rate / 0.7 objs-avg, dominated by walk-quiet being too slow to reach objectives inside the 30 s life timer on procgen layouts. Rebalanced to 6.0 (0.75x jog_speed_mps) so the noise-reduction benefit becomes tradeable against speed loss instead of a strict downgrade.",
     "jog_speed_mps": 8.0,
     "sprint_speed_mps": 12.0,
     "sprint_life_cost_extra_per_s": 1.5,
