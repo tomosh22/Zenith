@@ -14,6 +14,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_EntityStore.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBusImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneOperationQueueImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -150,6 +151,14 @@ Zenith_SceneCallbackBusImpl& Zenith_Engine::SceneCallbacks()
 	return *m_pxSceneCallbacks;
 }
 
+Zenith_SceneOperationQueueImpl& Zenith_Engine::SceneOperations()
+{
+	// No assert: operation map / async-job lists are read from the
+	// Update pipeline and from worker-thread completion paths. Allocated
+	// EARLY in Initialise alongside the other scene-system subsystems.
+	return *m_pxSceneOperations;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -179,6 +188,12 @@ void Zenith_Engine::Initialise()
 	// callback during init.
 	Zenith_Assert(m_pxSceneCallbacks == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxSceneCallbacks = new Zenith_SceneCallbackBusImpl();
+
+	// Phase 5d: async scene-operation pipeline state (operation map +
+	// load/unload job queues + re-entrancy depth counters). Must exist
+	// before Zenith_SceneManager::Initialise queues any bootstrap loads.
+	Zenith_Assert(m_pxSceneOperations == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxSceneOperations = new Zenith_SceneOperationQueueImpl();
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
 	// main-thread ID) lives on the engine now. Allocate BEFORE
@@ -474,6 +489,12 @@ void Zenith_Engine::Shutdown()
 	// (called from SceneManager::Shutdown) already cleared the lists.
 	delete m_pxSceneCallbacks;
 	m_pxSceneCallbacks = nullptr;
+
+	// 17. Free the scene-operation queue state. SceneOperationQueue::Shutdown
+	// (called from SceneManager::Shutdown) already waited for and freed
+	// all in-flight load tasks + unload jobs + operation entries.
+	delete m_pxSceneOperations;
+	m_pxSceneOperations = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

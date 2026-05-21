@@ -4,6 +4,7 @@
 #include "EntityComponent/Zenith_SceneManager_Internal.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneOperationQueueImpl.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -517,9 +518,9 @@ static bool IsBootstrapLoadContext()
 // mechanism.
 static Zenith_Scene PumpDeferredLoadUntilComplete()
 {
-	if (Zenith_SceneOperationQueue::s_uProcessingAsyncLoadsDepth > 0)
+	if (g_xEngine.SceneOperations().m_uProcessingAsyncLoadsDepth > 0)
 		return Zenith_Scene::INVALID_SCENE;
-	if (Zenith_SceneOperationQueue::s_uProcessingAsyncUnloadsDepth > 0)
+	if (g_xEngine.SceneOperations().m_uProcessingAsyncUnloadsDepth > 0)
 		return Zenith_Scene::INVALID_SCENE;
 	if (Zenith_SceneLifecycleScheduler::s_bIsUpdating)
 		return Zenith_Scene::INVALID_SCENE;
@@ -603,8 +604,8 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsync(const std::string& s
 		Zenith_SceneOperation* pxOp = new Zenith_SceneOperation();
 		uint64_t ulOpID = Zenith_SceneOperationQueue::AllocateOperationID();
 		pxOp->m_ulOperationID = ulOpID;
-		Zenith_SceneOperationQueue::s_axActiveOperations.PushBack(pxOp);
-		Zenith_SceneOperationQueue::s_axOperationMap.PushBack({ ulOpID, pxOp });
+		g_xEngine.SceneOperations().m_axActiveOperations.PushBack(pxOp);
+		g_xEngine.SceneOperations().m_axOperationMap.PushBack({ ulOpID, pxOp });
 
 		std::string strCanonicalPath = CanonicalizeScenePath(strPath);
 		std::string strName = ExtractSceneNameFromPath(strCanonicalPath);
@@ -636,8 +637,8 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsync(const std::string& s
 	Zenith_SceneOperation* pxOp = new Zenith_SceneOperation();
 	uint64_t ulOpID = Zenith_SceneOperationQueue::AllocateOperationID();
 	pxOp->m_ulOperationID = ulOpID;
-	Zenith_SceneOperationQueue::s_axActiveOperations.PushBack(pxOp);
-	Zenith_SceneOperationQueue::s_axOperationMap.PushBack({ ulOpID, pxOp });
+	g_xEngine.SceneOperations().m_axActiveOperations.PushBack(pxOp);
+	g_xEngine.SceneOperations().m_axOperationMap.PushBack({ ulOpID, pxOp });
 
 	// Check if file exists (use original path for file access)
 	if (!Zenith_FileAccess::FileExists(strPath.c_str()))
@@ -668,10 +669,10 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsync(const std::string& s
 	Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths.PushBack(strCanonicalPath);
 
 	// Warn if exceeding max concurrent async loads
-	if (Zenith_SceneOperationQueue::s_axAsyncJobs.GetSize() >= Zenith_SceneOperationQueue::s_uMaxConcurrentAsyncLoads)
+	if (g_xEngine.SceneOperations().m_axAsyncJobs.GetSize() >= g_xEngine.SceneOperations().m_uMaxConcurrentAsyncLoads)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "LoadSceneAsync: Maximum concurrent loads (%u) reached, load will proceed: %s",
-			Zenith_SceneOperationQueue::s_uMaxConcurrentAsyncLoads, strCanonicalPath.c_str());
+			g_xEngine.SceneOperations().m_uMaxConcurrentAsyncLoads, strCanonicalPath.c_str());
 	}
 
 	FireSceneLoadStartedCallbacks(strCanonicalPath);
@@ -688,8 +689,8 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsync(const std::string& s
 	pxJob->m_pxTask = new Zenith_Task(ZENITH_PROFILE_INDEX__ASSET_LOAD, Zenith_SceneOperationQueue::AsyncSceneLoadTask, pxJob);
 	Zenith_TaskSystem::SubmitTask(pxJob->m_pxTask);
 
-	Zenith_SceneOperationQueue::s_axAsyncJobs.PushBack(pxJob);
-	Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort = true;
+	g_xEngine.SceneOperations().m_axAsyncJobs.PushBack(pxJob);
+	g_xEngine.SceneOperations().m_bAsyncJobsNeedSort = true;
 	return ulOpID;
 }
 
@@ -705,15 +706,15 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsyncByIndex(int iBuildInd
 		Zenith_SceneOperation* pxOp = new Zenith_SceneOperation();
 		uint64_t ulOpID = Zenith_SceneOperationQueue::AllocateOperationID();
 		pxOp->m_ulOperationID = ulOpID;
-		Zenith_SceneOperationQueue::s_axActiveOperations.PushBack(pxOp);
-		Zenith_SceneOperationQueue::s_axOperationMap.PushBack({ ulOpID, pxOp });
+		g_xEngine.SceneOperations().m_axActiveOperations.PushBack(pxOp);
+		g_xEngine.SceneOperations().m_axOperationMap.PushBack({ ulOpID, pxOp });
 		Zenith_SceneOperationQueue::FailAsyncLoadOperation(pxOp);
 		return ulOpID;
 	}
 
 	// B.4: plumb the build index through the same Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex guard the sync
 	// path uses. ADDITIVE_WITHOUT_LOADING completes inside LoadSceneAsync without pushing
-	// to Zenith_SceneOperationQueue::s_axAsyncJobs, so the old job-patch-up code (retained below as a belt-and-braces
+	// to g_xEngine.SceneOperations().m_axAsyncJobs, so the old job-patch-up code (retained below as a belt-and-braces
 	// safety net for the file-load async path, which uses Zenith_SceneOperationQueue::AsyncLoadJob::m_iBuildIndex
 	// directly during Phase 1 scene creation) silently dropped the build index for that
 	// mode. The guard fires early so the branch inside LoadSceneAsync can consume it.
@@ -726,9 +727,9 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsyncByIndex(int iBuildInd
 	// For the file-load path, Phase 1 reads Zenith_SceneOperationQueue::AsyncLoadJob::m_iBuildIndex directly. Set
 	// it on the newly queued job so Phase 1 assigns the right build index to the scene
 	// it creates (Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex is already consumed by the time Phase 1 runs).
-	if (Zenith_SceneOperationQueue::s_axAsyncJobs.GetSize() > 0)
+	if (g_xEngine.SceneOperations().m_axAsyncJobs.GetSize() > 0)
 	{
-		Zenith_SceneOperationQueue::AsyncLoadJob* pxJob = Zenith_SceneOperationQueue::s_axAsyncJobs.GetBack();
+		Zenith_SceneOperationQueue::AsyncLoadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncJobs.GetBack();
 		if (pxJob && pxJob->m_pxOperation && pxJob->m_pxOperation->m_ulOperationID == ulOpID)
 		{
 			pxJob->m_iBuildIndex = iBuildIndex;
@@ -772,9 +773,9 @@ bool Zenith_SceneManager::CanUnloadScene(Zenith_Scene xScene)
 		Zenith_Warning(LOG_CATEGORY_SCENE, "Cannot unload scene that is already being async unloaded");
 		return false;
 	}
-	for (u_int i = 0; i < Zenith_SceneOperationQueue::s_axAsyncUnloadJobs.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axAsyncUnloadJobs.GetSize(); ++i)
 	{
-		Zenith_SceneOperationQueue::AsyncUnloadJob* pxJob = Zenith_SceneOperationQueue::s_axAsyncUnloadJobs.Get(i);
+		Zenith_SceneOperationQueue::AsyncUnloadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncUnloadJobs.Get(i);
 		if (pxJob != nullptr
 			&& pxJob->m_iSceneHandle == xScene.m_iHandle
 			&& pxJob->m_uSceneGeneration == xScene.m_uGeneration)
@@ -862,8 +863,8 @@ Zenith_SceneOperationID Zenith_SceneManager::UnloadSceneAsync(Zenith_Scene xScen
 	Zenith_SceneOperation* pxOp = new Zenith_SceneOperation();
 	uint64_t ulOpID = Zenith_SceneOperationQueue::AllocateOperationID();
 	pxOp->m_ulOperationID = ulOpID;
-	Zenith_SceneOperationQueue::s_axActiveOperations.PushBack(pxOp);
-	Zenith_SceneOperationQueue::s_axOperationMap.PushBack({ ulOpID, pxOp });
+	g_xEngine.SceneOperations().m_axActiveOperations.PushBack(pxOp);
+	g_xEngine.SceneOperations().m_axOperationMap.PushBack({ ulOpID, pxOp });
 	// E.16 (finding 3.17): unload ops don't produce a result scene — the scene
 	// they asked about is gone. Pin the op's result to INVALID_SCENE so callers
 	// polling GetResultScene() get a handle whose IsValid()==false instead of a
@@ -903,7 +904,7 @@ Zenith_SceneOperationID Zenith_SceneManager::UnloadSceneAsync(Zenith_Scene xScen
 	pxJob->m_uDestroyedEntities = 0;
 	pxJob->m_bUnloadingCallbackFired = false;
 
-	Zenith_SceneOperationQueue::s_axAsyncUnloadJobs.PushBack(pxJob);
+	g_xEngine.SceneOperations().m_axAsyncUnloadJobs.PushBack(pxJob);
 	return ulOpID;
 }
 
@@ -1222,9 +1223,9 @@ void Zenith_SceneManager::CompleteAsyncUnloadJobs(Zenith_HashSet<int>& xAlreadyF
 	// which itself completes the unload — so the operation finishes successfully,
 	// just via a different code path. Mark SUCCEEDED rather than FAILED so
 	// status-polling callers see the right outcome.
-	for (u_int i = 0; i < Zenith_SceneOperationQueue::s_axAsyncUnloadJobs.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axAsyncUnloadJobs.GetSize(); ++i)
 	{
-		Zenith_SceneOperationQueue::AsyncUnloadJob* pxJob = Zenith_SceneOperationQueue::s_axAsyncUnloadJobs.Get(i);
+		Zenith_SceneOperationQueue::AsyncUnloadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncUnloadJobs.Get(i);
 		if (pxJob->m_bUnloadingCallbackFired)
 		{
 			// HIGH-2: this job already fired SceneUnloading on the async path.
@@ -1240,7 +1241,7 @@ void Zenith_SceneManager::CompleteAsyncUnloadJobs(Zenith_HashSet<int>& xAlreadyF
 		pxOp->FireCompletionCallback();
 		delete pxJob;
 	}
-	Zenith_SceneOperationQueue::s_axAsyncUnloadJobs.Clear();
+	g_xEngine.SceneOperations().m_axAsyncUnloadJobs.Clear();
 }
 
 Zenith_Vector<Zenith_Scene> Zenith_SceneManager::CollectNonPersistentScenes(int iExcludeHandle)

@@ -7,6 +7,7 @@
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
 #include "EntityComponent/Internal/Zenith_SceneLifecycleContext.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneOperationQueueImpl.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
@@ -24,20 +25,14 @@ using namespace Zenith_SceneManagerDetail;
 // in Zenith_SceneManager_Internal.h's Zenith_SceneManagerDetail namespace.
 //==========================================================================
 
-//==========================================================================
-// Static storage definitions (A3: state migrated from Zenith_SceneManager)
-//==========================================================================
+// Phase 5d: queue state lives on Zenith_SceneOperationQueueImpl
+// (held by Zenith_Engine as m_pxSceneOperations). Method bodies read
+// and write through g_xEngine.SceneOperations().m_xXxx.
 
-Zenith_Vector<Zenith_SceneOperation*>                        Zenith_SceneOperationQueue::s_axActiveOperations;
-Zenith_Vector<Zenith_SceneOperationQueue::OperationMapEntry> Zenith_SceneOperationQueue::s_axOperationMap;
-uint64_t                                                     Zenith_SceneOperationQueue::s_ulNextOperationID = 1;
-Zenith_Vector<Zenith_SceneOperationQueue::AsyncLoadJob*>     Zenith_SceneOperationQueue::s_axAsyncJobs;
-bool                                                         Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort = false;
-Zenith_Vector<Zenith_SceneOperationQueue::AsyncUnloadJob*>   Zenith_SceneOperationQueue::s_axAsyncUnloadJobs;
-uint32_t                                                     Zenith_SceneOperationQueue::s_uAsyncUnloadBatchSize = 50;
-uint32_t                                                     Zenith_SceneOperationQueue::s_uMaxConcurrentAsyncLoads = 8;
-uint32_t                                                     Zenith_SceneOperationQueue::s_uProcessingAsyncLoadsDepth = 0;
-uint32_t                                                     Zenith_SceneOperationQueue::s_uProcessingAsyncUnloadsDepth = 0;
+void Zenith_SceneOperationQueue::NotifyAsyncJobPriorityChanged()
+{
+	g_xEngine.SceneOperations().m_bAsyncJobsNeedSort = true;
+}
 
 Zenith_SceneOperationQueue::AsyncLoadJob::~AsyncLoadJob()
 {
@@ -58,34 +53,34 @@ Zenith_SceneOperationQueue::AsyncUnloadJob::~AsyncUnloadJob()
 void Zenith_SceneOperationQueue::Shutdown()
 {
 	// Wait for in-flight worker tasks before deleting jobs.
-	for (u_int i = 0; i < s_axAsyncJobs.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axAsyncJobs.GetSize(); ++i)
 	{
-		AsyncLoadJob* pxJob = s_axAsyncJobs.Get(i);
+		AsyncLoadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncJobs.Get(i);
 		if (pxJob && pxJob->m_pxTask)
 		{
 			pxJob->m_pxTask->WaitUntilComplete();
 		}
 		delete pxJob;
 	}
-	s_axAsyncJobs.Clear();
+	g_xEngine.SceneOperations().m_axAsyncJobs.Clear();
 
-	for (u_int i = 0; i < s_axAsyncUnloadJobs.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axAsyncUnloadJobs.GetSize(); ++i)
 	{
-		delete s_axAsyncUnloadJobs.Get(i);
+		delete g_xEngine.SceneOperations().m_axAsyncUnloadJobs.Get(i);
 	}
-	s_axAsyncUnloadJobs.Clear();
+	g_xEngine.SceneOperations().m_axAsyncUnloadJobs.Clear();
 
-	for (u_int i = 0; i < s_axActiveOperations.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axActiveOperations.GetSize(); ++i)
 	{
-		delete s_axActiveOperations.Get(i);
+		delete g_xEngine.SceneOperations().m_axActiveOperations.Get(i);
 	}
-	s_axActiveOperations.Clear();
-	s_axOperationMap.Clear();
+	g_xEngine.SceneOperations().m_axActiveOperations.Clear();
+	g_xEngine.SceneOperations().m_axOperationMap.Clear();
 
-	s_bAsyncJobsNeedSort = false;
-	s_ulNextOperationID = 1;
-	s_uProcessingAsyncLoadsDepth = 0;
-	s_uProcessingAsyncUnloadsDepth = 0;
+	g_xEngine.SceneOperations().m_bAsyncJobsNeedSort = false;
+	g_xEngine.SceneOperations().m_ulNextOperationID = 1;
+	g_xEngine.SceneOperations().m_uProcessingAsyncLoadsDepth = 0;
+	g_xEngine.SceneOperations().m_uProcessingAsyncUnloadsDepth = 0;
 }
 
 void Zenith_SceneOperationQueue::ResetForNextTest()
@@ -102,14 +97,14 @@ void Zenith_SceneOperationQueue::ResetForNextTest()
 
 Zenith_SceneOperationID Zenith_SceneOperationQueue::AllocateOperationID()
 {
-	if (s_ulNextOperationID == UINT64_MAX)
+	if (g_xEngine.SceneOperations().m_ulNextOperationID == UINT64_MAX)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE,
 			"Operation ID counter wrapped around after %llu allocations",
-			static_cast<unsigned long long>(s_ulNextOperationID));
-		s_ulNextOperationID = 1;
+			static_cast<unsigned long long>(g_xEngine.SceneOperations().m_ulNextOperationID));
+		g_xEngine.SceneOperations().m_ulNextOperationID = 1;
 	}
-	return s_ulNextOperationID++;
+	return g_xEngine.SceneOperations().m_ulNextOperationID++;
 }
 
 //==========================================================================
@@ -119,7 +114,7 @@ Zenith_SceneOperationID Zenith_SceneOperationQueue::AllocateOperationID()
 uint32_t Zenith_SceneOperationQueue::CountScenesBeingAsyncUnloaded()
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CountScenesBeingAsyncUnloaded must be called from main thread");
-	return static_cast<uint32_t>(s_axAsyncUnloadJobs.GetSize());
+	return static_cast<uint32_t>(g_xEngine.SceneOperations().m_axAsyncUnloadJobs.GetSize());
 }
 
 void Zenith_SceneOperationQueue::AsyncSceneLoadTask(void* pData)
@@ -154,10 +149,10 @@ Zenith_SceneOperation* Zenith_SceneOperationQueue::GetOperation(Zenith_SceneOper
 	{
 		return nullptr;
 	}
-	for (u_int i = 0; i < s_axOperationMap.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axOperationMap.GetSize(); ++i)
 	{
-		if (s_axOperationMap.Get(i).m_ulOperationID == ulID)
-			return s_axOperationMap.Get(i).m_pxOperation;
+		if (g_xEngine.SceneOperations().m_axOperationMap.Get(i).m_ulOperationID == ulID)
+			return g_xEngine.SceneOperations().m_axOperationMap.Get(i).m_pxOperation;
 	}
 	return nullptr;
 }
@@ -170,9 +165,9 @@ bool Zenith_SceneOperationQueue::IsOperationValid(Zenith_SceneOperationID ulID)
 	{
 		return false;
 	}
-	for (u_int i = 0; i < s_axOperationMap.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axOperationMap.GetSize(); ++i)
 	{
-		if (s_axOperationMap.Get(i).m_ulOperationID == ulID) return true;
+		if (g_xEngine.SceneOperations().m_axOperationMap.Get(i).m_ulOperationID == ulID) return true;
 	}
 	return false;
 }
@@ -181,25 +176,25 @@ void Zenith_SceneOperationQueue::CleanupCompletedOperations()
 {
 	// Remove completed operations after a delay to allow result access
 	// Users need time to call GetResultScene() after IsComplete() returns true
-	for (int i = static_cast<int>(s_axActiveOperations.GetSize()) - 1; i >= 0; --i)
+	for (int i = static_cast<int>(g_xEngine.SceneOperations().m_axActiveOperations.GetSize()) - 1; i >= 0; --i)
 	{
-		Zenith_SceneOperation* pxOp = s_axActiveOperations.Get(static_cast<u_int>(i));
+		Zenith_SceneOperation* pxOp = g_xEngine.SceneOperations().m_axActiveOperations.Get(static_cast<u_int>(i));
 		if (pxOp && pxOp->IsComplete())
 		{
 			pxOp->m_uFramesSinceComplete++;
 			if (pxOp->m_uFramesSinceComplete > uOPERATION_CLEANUP_DELAY_FRAMES)
 			{
 				// Remove from operation map before deleting
-				for (u_int j = 0; j < s_axOperationMap.GetSize(); ++j)
+				for (u_int j = 0; j < g_xEngine.SceneOperations().m_axOperationMap.GetSize(); ++j)
 				{
-					if (s_axOperationMap.Get(j).m_ulOperationID == pxOp->m_ulOperationID)
+					if (g_xEngine.SceneOperations().m_axOperationMap.Get(j).m_ulOperationID == pxOp->m_ulOperationID)
 					{
-						s_axOperationMap.RemoveSwap(j);
+						g_xEngine.SceneOperations().m_axOperationMap.RemoveSwap(j);
 						break;
 					}
 				}
 				delete pxOp;
-				s_axActiveOperations.Remove(static_cast<u_int>(i));
+				g_xEngine.SceneOperations().m_axActiveOperations.Remove(static_cast<u_int>(i));
 			}
 		}
 	}
@@ -209,9 +204,9 @@ u_int Zenith_SceneOperationQueue::CancelAllPendingAsyncLoads(AsyncLoadJob* pxExc
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CancelAllPendingAsyncLoads must be called from main thread");
 
-	for (int i = static_cast<int>(s_axAsyncJobs.GetSize()) - 1; i >= 0; --i)
+	for (int i = static_cast<int>(g_xEngine.SceneOperations().m_axAsyncJobs.GetSize()) - 1; i >= 0; --i)
 	{
-		AsyncLoadJob* pxJob = s_axAsyncJobs.Get(static_cast<u_int>(i));
+		AsyncLoadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncJobs.Get(static_cast<u_int>(i));
 		if (pxJob == pxExclude) continue;
 
 		Zenith_SceneOperation* pxOp = pxJob->m_pxOperation;
@@ -265,12 +260,12 @@ u_int Zenith_SceneOperationQueue::CancelAllPendingAsyncLoads(AsyncLoadJob* pxExc
 		CleanupAndRemoveAsyncJob(static_cast<u_int>(i));
 	}
 
-	// Locate pxExclude's surviving slot. Linear scan is fine — s_axAsyncJobs is
+	// Locate pxExclude's surviving slot. Linear scan is fine — g_xEngine.SceneOperations().m_axAsyncJobs is
 	// tiny (typically 1 entry after cancel) and this runs once per SINGLE-mode load.
 	if (pxExclude == nullptr) return UINT32_MAX;
-	for (u_int u = 0; u < s_axAsyncJobs.GetSize(); ++u)
+	for (u_int u = 0; u < g_xEngine.SceneOperations().m_axAsyncJobs.GetSize(); ++u)
 	{
-		if (s_axAsyncJobs.Get(u) == pxExclude) return u;
+		if (g_xEngine.SceneOperations().m_axAsyncJobs.Get(u) == pxExclude) return u;
 	}
 	return UINT32_MAX;
 }
@@ -293,14 +288,14 @@ void Zenith_SceneOperationQueue::FailAsyncLoadOperation(Zenith_SceneOperation* p
 
 void Zenith_SceneOperationQueue::CleanupAndRemoveAsyncJob(u_int uIndex)
 {
-	AsyncLoadJob* pxJob = s_axAsyncJobs.Get(uIndex);
+	AsyncLoadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncJobs.Get(uIndex);
 	if (pxJob->m_pxTask)
 	{
 		pxJob->m_pxTask->WaitUntilComplete();
 	}
 	Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths.EraseValue(pxJob->m_strCanonicalPath);
 	delete pxJob;
-	s_axAsyncJobs.Remove(uIndex);
+	g_xEngine.SceneOperations().m_axAsyncJobs.Remove(uIndex);
 }
 
 void Zenith_SceneOperationQueue::ProcessPendingAsyncLoads()
@@ -308,13 +303,13 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncLoads()
 	// B4.B: bump the re-entrancy depth so a LoadScene fired from inside one
 	// of this pass's SceneLoaded callbacks (Phase 2) does NOT recursively
 	// flush the queue via CompletePriorOperationsForBlockingLoad — the firing
-	// op is still in s_axAsyncJobs at that point, and re-running its phase
+	// op is still in g_xEngine.SceneOperations().m_axAsyncJobs at that point, and re-running its phase
 	// machine would dispatch the callback again. The local RAII releases
 	// even on early return.
 	struct ProcessingDepthGuard
 	{
-		ProcessingDepthGuard()  { ++s_uProcessingAsyncLoadsDepth; }
-		~ProcessingDepthGuard() { --s_uProcessingAsyncLoadsDepth; }
+		ProcessingDepthGuard()  { ++g_xEngine.SceneOperations().m_uProcessingAsyncLoadsDepth; }
+		~ProcessingDepthGuard() { --g_xEngine.SceneOperations().m_uProcessingAsyncLoadsDepth; }
 	} xDepthGuard;
 
 	// B2: snapshot the queue-stall predicate up front. The call also runs the
@@ -335,9 +330,9 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncLoads()
 	// Process pending async loads, highest priority first. The per-step helpers
 	// return an AsyncJobStepResult telling us how to advance: Removed keeps i,
 	// Waiting advances i, FallThrough retries the same i under the next phase.
-	for (u_int i = 0; i < s_axAsyncJobs.GetSize(); )
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axAsyncJobs.GetSize(); )
 	{
-		AsyncLoadJob* pxJob = s_axAsyncJobs.Get(i);
+		AsyncLoadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncJobs.Get(i);
 		Zenith_SceneOperation* pxOp = pxJob->m_pxOperation;
 
 		if (HandleAsyncJobCancellation(pxJob, pxOp, i))
@@ -403,22 +398,22 @@ void Zenith_SceneOperationQueue::SortAsyncJobsByPriority()
 	// 3. In-place, no allocation
 	// 4. Adaptive: O(n) when already sorted, which is the common case
 	// For N > ~50, switch to std::stable_sort.
-	if (!s_bAsyncJobsNeedSort || s_axAsyncJobs.GetSize() <= 1)
+	if (!g_xEngine.SceneOperations().m_bAsyncJobsNeedSort || g_xEngine.SceneOperations().m_axAsyncJobs.GetSize() <= 1)
 		return;
 
-	for (u_int i = 1; i < s_axAsyncJobs.GetSize(); ++i)
+	for (u_int i = 1; i < g_xEngine.SceneOperations().m_axAsyncJobs.GetSize(); ++i)
 	{
-		AsyncLoadJob* pxJob = s_axAsyncJobs.Get(i);
+		AsyncLoadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncJobs.Get(i);
 		const int iPriority = pxJob->m_pxOperation->GetPriority();
 		u_int j = i;
-		while (j > 0 && s_axAsyncJobs.Get(j - 1)->m_pxOperation->GetPriority() < iPriority)
+		while (j > 0 && g_xEngine.SceneOperations().m_axAsyncJobs.Get(j - 1)->m_pxOperation->GetPriority() < iPriority)
 		{
-			s_axAsyncJobs.Get(j) = s_axAsyncJobs.Get(j - 1);
+			g_xEngine.SceneOperations().m_axAsyncJobs.Get(j) = g_xEngine.SceneOperations().m_axAsyncJobs.Get(j - 1);
 			j--;
 		}
-		s_axAsyncJobs.Get(j) = pxJob;
+		g_xEngine.SceneOperations().m_axAsyncJobs.Get(j) = pxJob;
 	}
-	s_bAsyncJobsNeedSort = false;
+	g_xEngine.SceneOperations().m_bAsyncJobsNeedSort = false;
 }
 
 void Zenith_SceneOperationQueue::CompletePriorOperationsForBlockingLoad()
@@ -430,11 +425,11 @@ void Zenith_SceneOperationQueue::CompletePriorOperationsForBlockingLoad()
 	// applies to TOP-LEVEL blocking LoadScene calls. Three paths must skip:
 	//
 	//   * A SceneLoaded handler firing inside Phase 2 calls LoadScene. The
-	//     firing op is still in s_axAsyncJobs (Cleanup runs after the
+	//     firing op is still in g_xEngine.SceneOperations().m_axAsyncJobs (Cleanup runs after the
 	//     callback), so re-pumping would re-enter the same Phase 2 and
 	//     re-fire the callback — past the bus's depth-16 safety limit.
 	//   * A SceneUnloading / SceneUnloaded handler firing inside the unload
-	//     pass calls LoadScene. The firing job is still in s_axAsyncUnloadJobs
+	//     pass calls LoadScene. The firing job is still in g_xEngine.SceneOperations().m_axAsyncUnloadJobs
 	//     (and for SceneUnloaded its scene data has already been deleted),
 	//     so re-pumping would either fire the unloading callback twice or
 	//     trip a use-after-free / double-delete on the unload job.
@@ -446,18 +441,18 @@ void Zenith_SceneOperationQueue::CompletePriorOperationsForBlockingLoad()
 	// In all three cases the LoadScene caller still gets its op queued and
 	// recoverable via GetLastDeferredLoadOp(); the new op simply completes
 	// on the next outer Update tick instead of synchronously.
-	if (s_uProcessingAsyncLoadsDepth > 0)
+	if (g_xEngine.SceneOperations().m_uProcessingAsyncLoadsDepth > 0)
 		return;
-	if (s_uProcessingAsyncUnloadsDepth > 0)
+	if (g_xEngine.SceneOperations().m_uProcessingAsyncUnloadsDepth > 0)
 		return;
 	if (Zenith_SceneLifecycleContext::IsUpdating())
 		return;
 
 	// Release any activation-paused ops first; an explicit blocking LoadScene
 	// is a stronger signal than the caller's earlier SetActivationAllowed(false).
-	for (u_int i = 0; i < s_axAsyncJobs.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axAsyncJobs.GetSize(); ++i)
 	{
-		Zenith_SceneOperation* pxOp = s_axAsyncJobs.Get(i)->m_pxOperation;
+		Zenith_SceneOperation* pxOp = g_xEngine.SceneOperations().m_axAsyncJobs.Get(i)->m_pxOperation;
 		if (!pxOp->IsActivationAllowed())
 			pxOp->SetActivationAllowed(true);
 	}
@@ -469,7 +464,7 @@ void Zenith_SceneOperationQueue::CompletePriorOperationsForBlockingLoad()
 	// iteration before the main-thread phase machine runs.
 	constexpr int iMAX_ITERS = 100000;
 	int iIter = 0;
-	while ((s_axAsyncJobs.GetSize() > 0 || s_axAsyncUnloadJobs.GetSize() > 0) && iIter < iMAX_ITERS)
+	while ((g_xEngine.SceneOperations().m_axAsyncJobs.GetSize() > 0 || g_xEngine.SceneOperations().m_axAsyncUnloadJobs.GetSize() > 0) && iIter < iMAX_ITERS)
 	{
 		WaitForPendingFileReadsForBlockingPump();
 		ProcessPendingAsyncLoads();
@@ -479,7 +474,7 @@ void Zenith_SceneOperationQueue::CompletePriorOperationsForBlockingLoad()
 	Zenith_Assert(iIter < iMAX_ITERS,
 		"CompletePriorOperationsForBlockingLoad: queue did not drain after %d iterations — "
 		"in-flight job may be deadlocked (loads=%u, unloads=%u)",
-		iIter, s_axAsyncJobs.GetSize(), s_axAsyncUnloadJobs.GetSize());
+		iIter, g_xEngine.SceneOperations().m_axAsyncJobs.GetSize(), g_xEngine.SceneOperations().m_axAsyncUnloadJobs.GetSize());
 }
 
 void Zenith_SceneOperationQueue::WaitForPendingFileReadsForBlockingPump()
@@ -490,16 +485,16 @@ void Zenith_SceneOperationQueue::WaitForPendingFileReadsForBlockingPump()
 	// Match the re-entrancy semantics of CompletePriorOperationsForBlockingLoad
 	// and PumpDeferredLoadUntilComplete — blocking the main thread on worker
 	// IO from inside a callback is exactly what those guards exist to prevent.
-	if (s_uProcessingAsyncLoadsDepth > 0)
+	if (g_xEngine.SceneOperations().m_uProcessingAsyncLoadsDepth > 0)
 		return;
-	if (s_uProcessingAsyncUnloadsDepth > 0)
+	if (g_xEngine.SceneOperations().m_uProcessingAsyncUnloadsDepth > 0)
 		return;
 	if (Zenith_SceneLifecycleContext::IsUpdating())
 		return;
 
-	for (u_int i = 0; i < s_axAsyncJobs.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axAsyncJobs.GetSize(); ++i)
 	{
-		AsyncLoadJob* pxJob = s_axAsyncJobs.Get(i);
+		AsyncLoadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncJobs.Get(i);
 		if (!pxJob || !pxJob->m_pxTask)
 			continue;
 		if (pxJob->m_bFileLoadComplete.load(std::memory_order_acquire))
@@ -520,10 +515,10 @@ bool Zenith_SceneOperationQueue::IsAsyncQueueBlockedByActivationPausedHead()
 	// already sorted pay a cheap branch.
 	SortAsyncJobsByPriority();
 
-	if (s_axAsyncJobs.GetSize() == 0)
+	if (g_xEngine.SceneOperations().m_axAsyncJobs.GetSize() == 0)
 		return false;
 
-	AsyncLoadJob* pxJob = s_axAsyncJobs.Get(0);
+	AsyncLoadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncJobs.Get(0);
 	Zenith_SceneOperation* pxOp = pxJob->m_pxOperation;
 
 	// Cancelled / failed / complete heads do NOT block the queue — they will
@@ -679,7 +674,7 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneO
 		// hit the correct slot, without assuming the surviving job is at index 0.
 		const u_int uPostCancelIndex = CancelAllPendingAsyncLoads(pxJob);
 		Zenith_Assert(uPostCancelIndex != UINT32_MAX,
-			"RunAsyncJobPhase1: surviving SINGLE-mode job vanished from s_axAsyncJobs during cancel");
+			"RunAsyncJobPhase1: surviving SINGLE-mode job vanished from g_xEngine.SceneOperations().m_axAsyncJobs during cancel");
 		uIndex = uPostCancelIndex;
 		Zenith_SceneManager::UnloadAllNonPersistent();
 		// B3: Unity-parity. Mirror the sync SINGLE teardown — auto-fire
@@ -842,7 +837,7 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads()
 	// SceneUnloaded handler that calls a blocking LoadScene does NOT cause
 	// the inner CompletePriorOperationsForBlockingLoad to re-enter this
 	// pass. Re-entry is genuinely unsafe for unloads:
-	//   * SceneUnloading branch: the firing job is still in s_axAsyncUnloadJobs
+	//   * SceneUnloading branch: the firing job is still in g_xEngine.SceneOperations().m_axAsyncUnloadJobs
 	//     with m_bUnloadingCallbackFired=true (set just below before the
 	//     fire), so an inner pass advances entity destruction on a job the
 	//     outer pass is holding a pointer to.
@@ -853,8 +848,8 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads()
 	//     (use-after-free + double-delete on outer's `delete pxJob`).
 	struct ProcessingUnloadDepthGuard
 	{
-		ProcessingUnloadDepthGuard()  { ++s_uProcessingAsyncUnloadsDepth; }
-		~ProcessingUnloadDepthGuard() { --s_uProcessingAsyncUnloadsDepth; }
+		ProcessingUnloadDepthGuard()  { ++g_xEngine.SceneOperations().m_uProcessingAsyncUnloadsDepth; }
+		~ProcessingUnloadDepthGuard() { --g_xEngine.SceneOperations().m_uProcessingAsyncUnloadsDepth; }
 	} xDepthGuard;
 
 	// B2: Unity AsyncOperation queue-stall — async unloads queued behind a
@@ -865,9 +860,9 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads()
 		return;
 
 	// Process pending async unloads - iterate in reverse for safe removal
-	for (int i = static_cast<int>(s_axAsyncUnloadJobs.GetSize()) - 1; i >= 0; --i)
+	for (int i = static_cast<int>(g_xEngine.SceneOperations().m_axAsyncUnloadJobs.GetSize()) - 1; i >= 0; --i)
 	{
-		AsyncUnloadJob* pxJob = s_axAsyncUnloadJobs.Get(static_cast<u_int>(i));
+		AsyncUnloadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncUnloadJobs.Get(static_cast<u_int>(i));
 		Zenith_SceneOperation* pxOp = pxJob->m_pxOperation;
 
 		// Build scene handle for validation
@@ -883,7 +878,7 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads()
 			pxOp->SetComplete(true);
 			pxOp->FireCompletionCallback();
 			delete pxJob;
-			s_axAsyncUnloadJobs.Remove(static_cast<u_int>(i));
+			g_xEngine.SceneOperations().m_axAsyncUnloadJobs.Remove(static_cast<u_int>(i));
 			continue;
 		}
 
@@ -924,7 +919,7 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads()
 		// Destroy from the end to avoid index shifting issues
 		// RemoveEntity dispatches OnDisable/OnDestroy internally for each entity
 		// and recursively for children, ensuring no entity is missed
-		while (axEntities.GetSize() > 0 && uEntitiesThisFrame < s_uAsyncUnloadBatchSize)
+		while (axEntities.GetSize() > 0 && uEntitiesThisFrame < g_xEngine.SceneOperations().m_uAsyncUnloadBatchSize)
 		{
 			uint32_t uBefore = axEntities.GetSize();
 			Zenith_EntityID xID = axEntities.Get(uBefore - 1);
@@ -946,14 +941,14 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads()
 			// destroys significantly more than the batch size — the frame-budget
 			// contract is a soft cap ("at least one subtree per frame") and a
 			// cascade that destroys >2x the batch tells QA they should retune
-			// s_uAsyncUnloadBatchSize or flatten the hierarchy.
-			if (uActualRemoved > 2 * s_uAsyncUnloadBatchSize)
+			// g_xEngine.SceneOperations().m_uAsyncUnloadBatchSize or flatten the hierarchy.
+			if (uActualRemoved > 2 * g_xEngine.SceneOperations().m_uAsyncUnloadBatchSize)
 			{
 				Zenith_Warning(LOG_CATEGORY_SCENE,
 					"Async unload: single RemoveEntity destroyed %u entities, exceeding 2x "
 					"batch size (%u). Frame-budget cap is a soft ceiling; consider raising "
 					"SetAsyncUnloadBatchSize() or flattening the hierarchy under the subtree root.",
-					uActualRemoved, s_uAsyncUnloadBatchSize);
+					uActualRemoved, g_xEngine.SceneOperations().m_uAsyncUnloadBatchSize);
 			}
 		}
 
@@ -1004,7 +999,7 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads()
 			pxOp->FireCompletionCallback();
 
 			delete pxJob;
-			s_axAsyncUnloadJobs.Remove(static_cast<u_int>(i));
+			g_xEngine.SceneOperations().m_axAsyncUnloadJobs.Remove(static_cast<u_int>(i));
 		}
 	}
 }
@@ -1032,23 +1027,23 @@ void Zenith_SceneOperationQueue::SetAsyncUnloadBatchSize(uint32_t uEntitiesPerFr
 		uEntitiesPerFrame = uMAX_BATCH;
 	}
 
-	s_uAsyncUnloadBatchSize = uEntitiesPerFrame;
+	g_xEngine.SceneOperations().m_uAsyncUnloadBatchSize = uEntitiesPerFrame;
 }
 
 uint32_t Zenith_SceneOperationQueue::GetAsyncUnloadBatchSize()
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetAsyncUnloadBatchSize must be called from main thread");
-	return s_uAsyncUnloadBatchSize;
+	return g_xEngine.SceneOperations().m_uAsyncUnloadBatchSize;
 }
 
 void Zenith_SceneOperationQueue::SetMaxConcurrentAsyncLoads(uint32_t uMax)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetMaxConcurrentAsyncLoads must be called from main thread");
-	s_uMaxConcurrentAsyncLoads = (uMax > 0) ? uMax : 1;
+	g_xEngine.SceneOperations().m_uMaxConcurrentAsyncLoads = (uMax > 0) ? uMax : 1;
 }
 
 uint32_t Zenith_SceneOperationQueue::GetMaxConcurrentAsyncLoads()
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetMaxConcurrentAsyncLoads must be called from main thread");
-	return s_uMaxConcurrentAsyncLoads;
+	return g_xEngine.SceneOperations().m_uMaxConcurrentAsyncLoads;
 }

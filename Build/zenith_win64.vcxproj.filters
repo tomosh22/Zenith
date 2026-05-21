@@ -3474,6 +3474,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueue.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueueImpl.h">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistry.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>

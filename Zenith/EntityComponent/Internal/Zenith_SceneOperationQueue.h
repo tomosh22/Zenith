@@ -121,34 +121,10 @@ public:
 	};
 
 	//==========================================================================
-	// Storage (A3: state migrated from Zenith_SceneManager)
+	// Storage type declarations only — actual state lives on
+	// Zenith_SceneOperationQueueImpl owned by Zenith_Engine (Phase 5d).
+	// External readers reach it through g_xEngine.SceneOperations().m_xXxx.
 	//==========================================================================
-
-	static Zenith_Vector<Zenith_SceneOperation*> s_axActiveOperations;
-	static Zenith_Vector<OperationMapEntry>      s_axOperationMap;
-	static uint64_t                              s_ulNextOperationID;
-	static Zenith_Vector<AsyncLoadJob*>          s_axAsyncJobs;
-	static bool                                  s_bAsyncJobsNeedSort;
-	static Zenith_Vector<AsyncUnloadJob*>        s_axAsyncUnloadJobs;
-	static uint32_t                              s_uAsyncUnloadBatchSize;       // default 50 entities/frame
-	static uint32_t                              s_uMaxConcurrentAsyncLoads;    // default 8 (warning threshold)
-
-	// B4.B: re-entrancy depths for ProcessPendingAsyncLoads /
-	// ProcessPendingAsyncUnloads. Bumped at function entry, released at exit
-	// (RAII). Read by CompletePriorOperationsForBlockingLoad +
-	// PumpDeferredLoadUntilComplete + WaitForPendingFileReadsForBlockingPump
-	// to skip the flush/pump/wait when the queue is already being processed
-	// — without this, a SceneLoaded / SceneUnloading / SceneUnloaded handler
-	// that calls LoadScene mid-iteration would re-enter the firing op's
-	// phase machine before the outer pass has finished cleaning it up:
-	//   * Loads: re-fires the same SceneLoaded callback past the bus's
-	//     depth-16 safety limit.
-	//   * Unloads: nested pass can free + delete the job that the outer
-	//     pass is still holding a pointer to (use-after-free + double-delete).
-	// Skipping is safe — the new op queues, GetLastDeferredLoadOp surfaces
-	// the id, and the outer Update tick drains it.
-	static uint32_t                              s_uProcessingAsyncLoadsDepth;
-	static uint32_t                              s_uProcessingAsyncUnloadsDepth;
 
 	//==========================================================================
 	// Lifecycle
@@ -216,7 +192,9 @@ public:
 	static AsyncJobStepResult RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int& uIndex);
 	static AsyncJobStepResult RunAsyncJobPhase2(AsyncLoadJob* pxJob, Zenith_SceneOperation* pxOp, u_int uIndex);
 
-	static void NotifyAsyncJobPriorityChanged() { s_bAsyncJobsNeedSort = true; }
+	// Inline forwarder. Body kept here for hot-path callers; it reaches
+	// into the engine-owned Impl (Zenith.h's PCH brings g_xEngine in scope).
+	static void NotifyAsyncJobPriorityChanged();
 
 	//==========================================================================
 	// Async unload pipeline (internal — public UnloadSceneAsync lives on

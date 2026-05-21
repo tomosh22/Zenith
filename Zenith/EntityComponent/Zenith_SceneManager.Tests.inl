@@ -5,6 +5,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneManager_Internal.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
+#include "EntityComponent/Internal/Zenith_SceneOperationQueueImpl.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -1199,13 +1200,13 @@ void Zenith_SceneTests::TestSceneOperationSetPriorityNoOpWhenSame(){
 	ZENITH_ASSERT_NOT_NULL(pxOp, "Operation should be valid");
 
 	pxOp->SetPriority(5);
-	Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort = false;
+	g_xEngine.SceneOperations().m_bAsyncJobsNeedSort = false;
 
 	pxOp->SetPriority(5);
-	ZENITH_ASSERT_FALSE(Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort, "SetPriority with same value should not re-flag async sort");
+	ZENITH_ASSERT_FALSE(g_xEngine.SceneOperations().m_bAsyncJobsNeedSort, "SetPriority with same value should not re-flag async sort");
 
 	pxOp->SetPriority(7);
-	ZENITH_ASSERT_TRUE(Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort, "SetPriority with new value should flag async sort");
+	ZENITH_ASSERT_TRUE(g_xEngine.SceneOperations().m_bAsyncJobsNeedSort, "SetPriority with new value should flag async sort");
 
 	PumpUntilComplete(pxOp);
 	if (!pxOp->HasFailed())
@@ -1987,7 +1988,7 @@ void Zenith_SceneTests::TestShutdownClearsAllStatics(){
 	// Seed statics with non-default values, then Shutdown, then observe a clean slate.
 	Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = true;
 	Zenith_SceneLifecycleScheduler::s_bIsUpdating = true;
-	Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort = true;
+	g_xEngine.SceneOperations().m_bAsyncJobsNeedSort = true;
 	Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp = 42;
 	Zenith_SceneCallbackBus::SetActiveSceneSuppressedForTest(true);
 	Zenith_SceneCallbackBus::SetDeferredOldActive(Zenith_Scene::INVALID_SCENE);
@@ -1998,7 +1999,7 @@ void Zenith_SceneTests::TestShutdownClearsAllStatics(){
 
 	ZENITH_ASSERT_FALSE(Zenith_SceneLifecycleScheduler::s_bIsLoadingScene, "Shutdown should clear s_bIsLoadingScene");
 	ZENITH_ASSERT_FALSE(Zenith_SceneLifecycleScheduler::s_bIsUpdating, "Shutdown should clear s_bIsUpdating");
-	ZENITH_ASSERT_FALSE(Zenith_SceneOperationQueue::s_bAsyncJobsNeedSort, "Shutdown should clear s_bAsyncJobsNeedSort");
+	ZENITH_ASSERT_FALSE(g_xEngine.SceneOperations().m_bAsyncJobsNeedSort, "Shutdown should clear s_bAsyncJobsNeedSort");
 	ZENITH_ASSERT_EQ(Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp, ZENITH_INVALID_OPERATION_ID, "Shutdown should clear s_ulLastDeferredLoadOp (got %llu)", static_cast<unsigned long long>(Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp));
 	ZENITH_ASSERT_FALSE(Zenith_SceneCallbackBus::IsActiveSceneSuppressed(), "Shutdown should clear suppression flag");
 	ZENITH_ASSERT_FALSE(Zenith_SceneCallbackBus::HasDeferredOldActive(), "Shutdown should clear deferred old active");
@@ -3009,7 +3010,7 @@ void Zenith_SceneTests::TestAsyncAdditiveWithoutLoadingSchedulesNoAsyncJob(){
 	// must NOT schedule any worker-thread file I/O. The path doesn't need to exist on
 	// disk, and s_axAsyncJobs must not grow.
 
-	const uint32_t uJobsBefore = Zenith_SceneOperationQueue::s_axAsyncJobs.GetSize();
+	const uint32_t uJobsBefore = g_xEngine.SceneOperations().m_axAsyncJobs.GetSize();
 
 	// Deliberately pick a path that does NOT exist. If the code path ever regressed
 	// to queue a file-read job, the missing file would either fail the op or at
@@ -3024,7 +3025,7 @@ void Zenith_SceneTests::TestAsyncAdditiveWithoutLoadingSchedulesNoAsyncJob(){
 	ZENITH_ASSERT_FALSE(pxOp->HasFailed(), "ADDITIVE_WITHOUT_LOADING must not fail on a missing path");
 	ZENITH_ASSERT_EQ(pxOp->GetProgress(), 1.0f, "Progress must be 1.0 after the synchronous short-circuit");
 
-	const uint32_t uJobsAfter = Zenith_SceneOperationQueue::s_axAsyncJobs.GetSize();
+	const uint32_t uJobsAfter = g_xEngine.SceneOperations().m_axAsyncJobs.GetSize();
 	ZENITH_ASSERT_EQ(uJobsAfter, uJobsBefore, "ADDITIVE_WITHOUT_LOADING must not push to s_axAsyncJobs (jobsBefore=%u jobsAfter=%u)", uJobsBefore, uJobsAfter);
 
 	Zenith_Scene xScene = pxOp->GetResultScene();
@@ -12810,9 +12811,9 @@ void Zenith_SceneTests::TestAsyncLoadJobStoresCreatedSceneGeneration(){
 	// Find the job and verify its generation field matches the current slot generation.
 	// Tests are friended on Zenith_SceneManager, so we can read s_axAsyncJobs directly.
 	bool bFoundJob = false;
-	for (u_int i = 0; i < Zenith_SceneOperationQueue::s_axAsyncJobs.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneOperations().m_axAsyncJobs.GetSize(); ++i)
 	{
-		Zenith_SceneOperationQueue::AsyncLoadJob* pxJob = Zenith_SceneOperationQueue::s_axAsyncJobs.Get(i);
+		Zenith_SceneOperationQueue::AsyncLoadJob* pxJob = g_xEngine.SceneOperations().m_axAsyncJobs.Get(i);
 		if (pxJob->m_pxOperation != pxOp) continue;
 		bFoundJob = true;
 
