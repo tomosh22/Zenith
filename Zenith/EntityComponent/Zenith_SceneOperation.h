@@ -1,7 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 
 // Forward declaration
 struct Zenith_Scene;
@@ -70,7 +70,7 @@ public:
 	 */
 	bool HasFailed() const
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "HasFailed must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "HasFailed must be called from main thread");
 		return m_bHasFailed;
 	}
 
@@ -85,7 +85,7 @@ public:
 	 */
 	bool IsActivationAllowed() const
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "IsActivationAllowed must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "IsActivationAllowed must be called from main thread");
 		return m_bActivationAllowed;
 	}
 
@@ -97,7 +97,7 @@ public:
 	 */
 	void SetActivationAllowed(bool bAllow)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetActivationAllowed must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetActivationAllowed must be called from main thread");
 		m_bActivationAllowed = bAllow;
 	}
 
@@ -112,7 +112,7 @@ public:
 	 */
 	void SetOnComplete(CompletionCallback pfnCallback)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetOnComplete must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetOnComplete must be called from main thread");
 		m_pfnOnComplete = pfnCallback;
 	}
 
@@ -127,7 +127,7 @@ public:
 	 */
 	int GetPriority() const
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetPriority must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetPriority must be called from main thread");
 		return m_iPriority;
 	}
 
@@ -153,7 +153,7 @@ public:
 	 */
 	void RequestCancel()
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RequestCancel must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RequestCancel must be called from main thread");
 		m_bCancellationRequested = true;
 	}
 
@@ -163,7 +163,7 @@ public:
 	 */
 	bool IsCancellationRequested() const
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "IsCancellationRequested must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "IsCancellationRequested must be called from main thread");
 		return m_bCancellationRequested;
 	}
 
@@ -255,12 +255,12 @@ private:
 	}
 	void SetComplete(bool bComplete)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetComplete must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetComplete must be called from main thread");
 		m_bIsComplete.store(bComplete, std::memory_order_release);
 	}
 	void SetResultSceneHandle(int iHandle)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetResultSceneHandle must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetResultSceneHandle must be called from main thread");
 		m_iResultSceneHandle = iHandle;
 		m_uResultSceneGeneration = 0;  // invalid-result path; callers that want a live generation must use SetResultScene
 	}
@@ -271,13 +271,13 @@ private:
 	// the slot.
 	void SetResultScene(int iHandle, uint32_t uGeneration)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetResultScene must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetResultScene must be called from main thread");
 		m_iResultSceneHandle = iHandle;
 		m_uResultSceneGeneration = uGeneration;
 	}
 	void SetFailed(bool bFailed)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetFailed must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetFailed must be called from main thread");
 		m_bHasFailed = bFailed;
 	}
 

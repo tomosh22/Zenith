@@ -114,7 +114,7 @@ void Zenith_SceneLifecycleScheduler::Shutdown()
 
 void Zenith_SceneLifecycleScheduler::Update(float fDt)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Update must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Update must be called from main thread");
 
 	Zenith_SceneOperationQueue::ProcessPendingAsyncLoads();
 	Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads();
@@ -173,7 +173,7 @@ void Zenith_SceneLifecycleScheduler::Update(float fDt)
 
 void Zenith_SceneLifecycleScheduler::WaitForUpdateComplete()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "WaitForUpdateComplete must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "WaitForUpdateComplete must be called from main thread");
 
 	if (g_pxAnimUpdateTask)
 	{
@@ -190,13 +190,13 @@ void Zenith_SceneLifecycleScheduler::WaitForUpdateComplete()
 
 void Zenith_SceneLifecycleScheduler::PushLifecycleContext(const std::string& strCanonicalPath)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "PushLifecycleContext must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "PushLifecycleContext must be called from main thread");
 	g_xEngine.SceneLifecycle().m_axLifecycleLoadStack.PushBack(strCanonicalPath);
 }
 
 void Zenith_SceneLifecycleScheduler::PopLifecycleContext(const std::string& strCanonicalPath)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "PopLifecycleContext must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "PopLifecycleContext must be called from main thread");
 	g_xEngine.SceneLifecycle().m_axLifecycleLoadStack.EraseValue(strCanonicalPath);
 }
 
@@ -219,13 +219,13 @@ bool Zenith_SceneLifecycleScheduler::IsCircularLoadDependency(const std::string&
 
 void Zenith_SceneLifecycleScheduler::SetInitialSceneLoadCallback(InitialSceneLoadFn pfn)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetInitialSceneLoadCallback must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetInitialSceneLoadCallback must be called from main thread");
 	g_xEngine.SceneLifecycle().m_pfnInitialSceneLoad = pfn;
 }
 
 Zenith_SceneLifecycleScheduler::InitialSceneLoadFn Zenith_SceneLifecycleScheduler::GetInitialSceneLoadCallback()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetInitialSceneLoadCallback must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetInitialSceneLoadCallback must be called from main thread");
 	return g_xEngine.SceneLifecycle().m_pfnInitialSceneLoad;
 }
 
@@ -235,7 +235,7 @@ Zenith_SceneLifecycleScheduler::InitialSceneLoadFn Zenith_SceneLifecycleSchedule
 
 void Zenith_SceneLifecycleScheduler::SetFixedTimestep(float fTimestep)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetFixedTimestep must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetFixedTimestep must be called from main thread");
 	Zenith_Assert(fTimestep > 0.0f, "Fixed timestep must be positive");
 	g_xEngine.SceneLifecycle().m_fFixedTimestep = fTimestep;
 }
@@ -252,7 +252,7 @@ float Zenith_SceneLifecycleScheduler::GetFixedTimestep()
 #ifdef ZENITH_TESTING
 void Zenith_SceneLifecycleScheduler::DispatchFullLifecycleInit()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "DispatchFullLifecycleInit must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "DispatchFullLifecycleInit must be called from main thread");
 	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
 		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);

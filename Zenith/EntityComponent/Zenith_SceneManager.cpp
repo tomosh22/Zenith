@@ -290,7 +290,7 @@ bool Zenith_SceneManager::IsSceneUpdatable(const Zenith_SceneData* pxData)
 
 Zenith_Scene Zenith_SceneManager::CreateScene(const std::string& strName)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CreateScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CreateScene must be called from main thread");
 
 	if (strName.empty())
 	{
@@ -311,7 +311,7 @@ Zenith_Scene Zenith_SceneManager::CreateScene(const std::string& strName)
 
 Zenith_Entity Zenith_SceneManager::CreateEntity(const std::string& strName)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CreateEntity must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CreateEntity must be called from main thread");
 
 	const Zenith_Scene xTarget = GetDefaultCreationScene();
 	if (!xTarget.IsValid())
@@ -338,7 +338,7 @@ Zenith_Entity Zenith_SceneManager::CreateEntity(const std::string& strName)
 
 Zenith_Scene Zenith_SceneManager::CreateEmptyScene(const std::string& strName, bool bAllowSetActive)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CreateEmptyScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CreateEmptyScene must be called from main thread");
 	Zenith_Assert(!s_bRenderTasksActive, "CreateEmptyScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	int iHandle = AllocateSceneHandle();
@@ -413,7 +413,7 @@ Zenith_Scene Zenith_SceneManager::GetSceneByPath(const std::string& strPath)
 
 bool Zenith_SceneManager::ValidateLoadRequest(const std::string& strPath)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "LoadScene must be called from main thread");
 
 	if (strPath.empty())
 	{
@@ -443,7 +443,7 @@ Zenith_SceneOperationID Zenith_SceneManager::GetLastDeferredLoadOp()
 
 Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_SceneLoadMode eMode)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "LoadScene must be called from main thread");
 	Zenith_Assert(!s_bRenderTasksActive, "LoadScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	if (!ValidateLoadRequest(strPath))
@@ -465,7 +465,7 @@ Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_S
 
 Zenith_Scene Zenith_SceneManager::LoadSceneByIndex(int iBuildIndex, Zenith_SceneLoadMode eMode)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadSceneByIndex must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "LoadSceneByIndex must be called from main thread");
 
 	// B4: queue-and-defer, mirroring LoadScene. LoadSceneAsyncByIndex already
 	// owns the build-index handoff (PendingBuildIndexGuard + AsyncLoadJob::
@@ -554,7 +554,7 @@ static Zenith_Scene PumpDeferredLoadUntilComplete()
 
 Zenith_Scene Zenith_SceneManager::LoadSceneBlockingForBootstrap(const std::string& strPath, Zenith_SceneLoadMode eMode)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadSceneBlockingForBootstrap must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "LoadSceneBlockingForBootstrap must be called from main thread");
 	Zenith_Assert(IsBootstrapLoadContext(),
 		"LoadSceneBlockingForBootstrap called outside a bootstrap context — main loop is running and no "
 		"LifecycleDeferralGuard is active. Use LoadSceneAsync from gameplay code, or LoadSceneBlocking_ToolsOnly "
@@ -565,7 +565,7 @@ Zenith_Scene Zenith_SceneManager::LoadSceneBlockingForBootstrap(const std::strin
 
 Zenith_Scene Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(int iBuildIndex, Zenith_SceneLoadMode eMode)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadSceneByIndexBlockingForBootstrap must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "LoadSceneByIndexBlockingForBootstrap must be called from main thread");
 	Zenith_Assert(IsBootstrapLoadContext(),
 		"LoadSceneByIndexBlockingForBootstrap called outside a bootstrap context — main loop is running and no "
 		"LifecycleDeferralGuard is active. Use LoadSceneAsyncByIndex from gameplay code, or "
@@ -577,14 +577,14 @@ Zenith_Scene Zenith_SceneManager::LoadSceneByIndexBlockingForBootstrap(int iBuil
 #ifdef ZENITH_TOOLS
 Zenith_Scene Zenith_SceneManager::LoadSceneBlocking_ToolsOnly(const std::string& strPath, Zenith_SceneLoadMode eMode)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadSceneBlocking_ToolsOnly must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "LoadSceneBlocking_ToolsOnly must be called from main thread");
 	LoadScene(strPath, eMode);
 	return PumpDeferredLoadUntilComplete();
 }
 
 Zenith_Scene Zenith_SceneManager::LoadSceneByIndexBlocking_ToolsOnly(int iBuildIndex, Zenith_SceneLoadMode eMode)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadSceneByIndexBlocking_ToolsOnly must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "LoadSceneByIndexBlocking_ToolsOnly must be called from main thread");
 	LoadSceneByIndex(iBuildIndex, eMode);
 	return PumpDeferredLoadUntilComplete();
 }
@@ -596,7 +596,7 @@ Zenith_Scene Zenith_SceneManager::LoadSceneByIndexBlocking_ToolsOnly(int iBuildI
 
 Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsync(const std::string& strPath, Zenith_SceneLoadMode eMode)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadSceneAsync must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "LoadSceneAsync must be called from main thread");
 
 	// Handle ADDITIVE_WITHOUT_LOADING immediately (no async work needed, no file required)
 	// This creates an empty scene for procedural content, completing synchronously.
@@ -746,7 +746,7 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsyncByIndex(int iBuildInd
 
 bool Zenith_SceneManager::CanUnloadScene(Zenith_Scene xScene)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CanUnloadScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CanUnloadScene must be called from main thread");
 
 	if (!xScene.IsValid())
 	{
@@ -826,7 +826,7 @@ void Zenith_SceneManager::UnloadSceneInternal(Zenith_Scene xScene)
 
 void Zenith_SceneManager::UnloadSceneForced(Zenith_Scene xScene)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "UnloadSceneForced must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "UnloadSceneForced must be called from main thread");
 
 	if (!xScene.IsValid())
 	{
@@ -845,7 +845,7 @@ void Zenith_SceneManager::UnloadSceneForced(Zenith_Scene xScene)
 
 void Zenith_SceneManager::UnloadScene(Zenith_Scene xScene)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "UnloadScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "UnloadScene must be called from main thread");
 	Zenith_Assert(!s_bRenderTasksActive, "UnloadScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	if (!CanUnloadScene(xScene))
@@ -859,7 +859,7 @@ void Zenith_SceneManager::UnloadScene(Zenith_Scene xScene)
 
 Zenith_SceneOperationID Zenith_SceneManager::UnloadSceneAsync(Zenith_Scene xScene)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "UnloadSceneAsync must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "UnloadSceneAsync must be called from main thread");
 
 	Zenith_SceneOperation* pxOp = new Zenith_SceneOperation();
 	uint64_t ulOpID = Zenith_SceneOperationQueue::AllocateOperationID();
@@ -930,7 +930,7 @@ void Zenith_SceneManager::MarkEntityPersistent(Zenith_Entity& xEntity) { Zenith_
 
 bool Zenith_SceneManager::SetActiveScene(Zenith_Scene xScene)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetActiveScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetActiveScene must be called from main thread");
 
 	if (!xScene.IsValid())
 	{
@@ -975,7 +975,7 @@ bool Zenith_SceneManager::SetActiveScene(Zenith_Scene xScene)
 
 void Zenith_SceneManager::SetScenePaused(Zenith_Scene xScene, bool bPaused)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetScenePaused must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetScenePaused must be called from main thread");
 
 	Zenith_SceneData* pxSceneData = GetSceneData(xScene);
 	if (pxSceneData)
@@ -986,7 +986,7 @@ void Zenith_SceneManager::SetScenePaused(Zenith_Scene xScene, bool bPaused)
 
 bool Zenith_SceneManager::IsScenePaused(Zenith_Scene xScene)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "IsScenePaused must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "IsScenePaused must be called from main thread");
 
 	Zenith_SceneData* pxSceneData = GetSceneData(xScene);
 	return pxSceneData ? pxSceneData->IsPaused() : false;
@@ -994,7 +994,7 @@ bool Zenith_SceneManager::IsScenePaused(Zenith_Scene xScene)
 
 void Zenith_SceneManager::UnloadUnusedAssets()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "UnloadUnusedAssets must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "UnloadUnusedAssets must be called from main thread");
 
 #ifdef ZENITH_TESTING
 	++s_uUnloadUnusedAssetsCallCount;
@@ -1017,7 +1017,7 @@ void Zenith_SceneManager::UnloadUnusedAssets()
 
 Zenith_CameraComponent* Zenith_SceneManager::FindMainCameraAcrossScenes()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || s_bRenderTasksActive, "FindMainCameraAcrossScenes must be called from main thread or during render task execution");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || s_bRenderTasksActive, "FindMainCameraAcrossScenes must be called from main thread or during render task execution");
 	// Try active scene first (common case). Audit §3.18 note: this IS a
 	// legitimate use of GetActiveScene because the active scene is the
 	// documented source of rendering/camera/lighting context in Unity — see
@@ -1130,13 +1130,13 @@ Zenith_SceneManager::SceneUpdateDeferralGuard::~SceneUpdateDeferralGuard()
 
 Zenith_SceneManager::SceneCreationTargetScope::SceneCreationTargetScope(Zenith_Scene xScene)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SceneCreationTargetScope must be constructed on the main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SceneCreationTargetScope must be constructed on the main thread");
 	g_xEngine.SceneLifecycle().m_axCreationTargetStack.PushBack(xScene);
 }
 
 Zenith_SceneManager::SceneCreationTargetScope::~SceneCreationTargetScope()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SceneCreationTargetScope must be destroyed on the main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SceneCreationTargetScope must be destroyed on the main thread");
 	Zenith_Assert(g_xEngine.SceneLifecycle().m_axCreationTargetStack.GetSize() > 0,
 		"SceneCreationTargetScope: creation-target stack underflow on destruction");
 	g_xEngine.SceneLifecycle().m_axCreationTargetStack.PopBack();
@@ -1154,7 +1154,7 @@ Zenith_Scene Zenith_SceneManager::GetDefaultCreationScene()
 
 void Zenith_SceneManager::SetMainLoopRunning(bool bRunning)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetMainLoopRunning must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetMainLoopRunning must be called from main thread");
 	g_xEngine.SceneLifecycle().m_bIsMainLoopRunning = bRunning;
 }
 
@@ -1326,7 +1326,7 @@ void Zenith_SceneManager::UpdateActiveSceneAfterUnload(Zenith_Scene xOldActive)
 
 void Zenith_SceneManager::UnloadAllNonPersistent(int iExcludeHandle)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "UnloadAllNonPersistent must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "UnloadAllNonPersistent must be called from main thread");
 	Zenith_Assert(!s_bRenderTasksActive, "UnloadAllNonPersistent: scene mutation while render tasks are reading — render-task invariant violated");
 
 	Zenith_HashSet<int> xAlreadyFired;

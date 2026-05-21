@@ -4,7 +4,7 @@
 
 #include "Memory/Zenith_MemoryTracker.h"
 #include "Callstack/Zenith_Callstack.h"
-#include "Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 
 #include <cstring>
 

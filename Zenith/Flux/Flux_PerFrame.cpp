@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RendererImpl.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 
 // Subscriber-tally static assert. Every subsystem that calls
 // RegisterBeginFrameCallback / RegisterEndFrameCallback bumps the tally here
@@ -53,7 +53,7 @@ void Flux_PerFrame::RegisterBeginFrameCallback(OnFrameBeginFunc pfn, void* pUser
 	// that exercise the registration path do so from the main thread too
 	// (RunAllTests is called from Zenith_Main.cpp), so this assertion doesn't
 	// conflict with them.
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"Flux_PerFrame::RegisterBeginFrameCallback must be called from the main thread — callback arrays have no mutex");
 	Zenith_Assert(pfn != nullptr, "Flux_PerFrame::RegisterBeginFrameCallback: null function pointer");
 	Zenith_Assert(g_xEngine.FluxRenderer().m_uNumBeginCallbacks < FLUX_MAX_PERFRAME_CALLBACKS,
@@ -66,7 +66,7 @@ void Flux_PerFrame::RegisterBeginFrameCallback(OnFrameBeginFunc pfn, void* pUser
 
 void Flux_PerFrame::RegisterEndFrameCallback(OnFrameEndFunc pfn, void* pUserData)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"Flux_PerFrame::RegisterEndFrameCallback must be called from the main thread — callback arrays have no mutex");
 	Zenith_Assert(pfn != nullptr, "Flux_PerFrame::RegisterEndFrameCallback: null function pointer");
 	Zenith_Assert(g_xEngine.FluxRenderer().m_uNumEndCallbacks < FLUX_MAX_PERFRAME_CALLBACKS,

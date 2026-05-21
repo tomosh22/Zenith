@@ -343,7 +343,7 @@ Flux_PassBuilder Flux_RenderGraph::AddPass(const char* szName, Flux_RenderGraph_
     Zenith_Assert(pfnOnRecord != nullptr, "Flux_RenderGraph::AddPass: null record callback for pass '%s'", szName);
     Zenith_Assert(uInitialCapacity > 0, "Flux_RenderGraph::AddPass: command-list capacity must be > 0 for pass '%s'", szName);
     Zenith_Assert(m_xPasses.GetSize() < kMaxPassCount, "Flux_RenderGraph::AddPass: exceeded hard pass cap (%u) when adding '%s'", kMaxPassCount, szName);
-    Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Flux_RenderGraph::AddPass: must be called from main thread ('%s')", szName);
+    Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Flux_RenderGraph::AddPass: must be called from main thread ('%s')", szName);
 #ifdef ZENITH_TOOLS
     // Duplicate-name detection: two passes sharing a name makes the ImGui panel
     // and assertion messages ambiguous, and usually indicates a copy-paste bug in
@@ -680,7 +680,7 @@ void Flux_RenderGraph::Clear()
 Flux_TransientHandle Flux_RenderGraph::CreateTransient(const Flux_TransientTextureDesc& xDesc)
 {
     AssertMutable("CreateTransient");
-    Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Flux_RenderGraph::CreateTransient: must be called from main thread");
+    Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Flux_RenderGraph::CreateTransient: must be called from main thread");
     Zenith_Assert(xDesc.m_uWidth > 0 && xDesc.m_uHeight > 0, "Flux_RenderGraph::CreateTransient: zero-size texture (%ux%u)", xDesc.m_uWidth, xDesc.m_uHeight);
     Zenith_Assert(xDesc.m_uDepth >= 1, "Flux_RenderGraph::CreateTransient: depth must be >= 1 (got %u)", xDesc.m_uDepth);
     Zenith_Assert(xDesc.m_uNumMips >= 1, "Flux_RenderGraph::CreateTransient: mip count must be >= 1 (got %u)", xDesc.m_uNumMips);
@@ -1627,7 +1627,7 @@ void Flux_RenderGraph::AssignClearFlags()
 
 bool Flux_RenderGraph::Compile()
 {
-    Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Flux_RenderGraph::Compile: must be called from main thread");
+    Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Flux_RenderGraph::Compile: must be called from main thread");
     if (!m_bDirty) return m_bCompiled;
     if (m_xPasses.GetSize() == 0) { m_bCompiled = true; m_bDirty = false; m_bEnabledMaskDirty = false; return true; }
     BuildResourceTraffic();

@@ -1,6 +1,6 @@
 #include "Zenith.h"
 
-#include "Input/Zenith_TouchInput.h"
+#include "Input/Zenith_TouchInputImpl.h"
 #include "Input/Zenith_TouchInputImpl.h"
 #include "Input/Zenith_Input.h"
 
@@ -11,7 +11,7 @@
 // ============================================================================
 // Update
 // ============================================================================
-void Zenith_TouchInput::Update()
+void Zenith_TouchInputImpl::Update()
 {
 	// Reset per-frame events
 	g_xEngine.Touch().m_bTapThisFrame = false;
@@ -78,66 +78,22 @@ void Zenith_TouchInput::Update()
 // ============================================================================
 // Tap
 // ============================================================================
-bool Zenith_TouchInput::WasTapThisFrame()
-{
-	return g_xEngine.Touch().m_bTapThisFrame;
-}
 
-Zenith_Maths::Vector2 Zenith_TouchInput::GetTapPosition()
-{
-	return g_xEngine.Touch().m_xTapPosition;
-}
 
 // ============================================================================
 // Swipe
 // ============================================================================
-bool Zenith_TouchInput::WasSwipeThisFrame()
-{
-	return g_xEngine.Touch().m_bSwipeThisFrame;
-}
 
-Zenith_SwipeDirection Zenith_TouchInput::GetSwipeDirection()
-{
-	return g_xEngine.Touch().m_eSwipeDirection;
-}
 
-Zenith_Maths::Vector2 Zenith_TouchInput::GetSwipeStartPosition()
-{
-	return g_xEngine.Touch().m_xSwipeStartPos;
-}
 
-float Zenith_TouchInput::GetSwipeDistance()
-{
-	return g_xEngine.Touch().m_fSwipeDistance;
-}
 
 // ============================================================================
 // Configuration
 // ============================================================================
-void Zenith_TouchInput::SetSwipeThreshold(float fPixels)
-{
-	g_xEngine.Touch().m_fSwipeThreshold = fPixels;
-}
 
-void Zenith_TouchInput::SetTapMaxMovement(float fPixels)
-{
-	g_xEngine.Touch().m_fTapMaxMovement = fPixels;
-}
 
-void Zenith_TouchInput::SetTapMaxDuration(float fSeconds)
-{
-	g_xEngine.Touch().m_fTapMaxDuration = fSeconds;
-}
 
 // ============================================================================
 // State Queries
 // ============================================================================
-bool Zenith_TouchInput::IsTouchDown()
-{
-	return g_xEngine.Touch().m_bCurrentlyDown;
-}
 
-Zenith_Maths::Vector2 Zenith_TouchInput::GetTouchPosition()
-{
-	return g_xEngine.Touch().m_xCurrentTouchPos;
-}

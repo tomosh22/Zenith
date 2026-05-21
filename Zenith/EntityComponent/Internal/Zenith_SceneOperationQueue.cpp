@@ -37,14 +37,14 @@ void Zenith_SceneOperationQueue::NotifyAsyncJobPriorityChanged()
 
 Zenith_SceneOperationQueue::AsyncLoadJob::~AsyncLoadJob()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "AsyncLoadJob must be deleted from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "AsyncLoadJob must be deleted from main thread");
 	delete m_pxLoadedData;
 	delete m_pxTask;
 }
 
 Zenith_SceneOperationQueue::AsyncUnloadJob::~AsyncUnloadJob()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "AsyncUnloadJob must be deleted from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "AsyncUnloadJob must be deleted from main thread");
 }
 
 //==========================================================================
@@ -114,7 +114,7 @@ Zenith_SceneOperationID Zenith_SceneOperationQueue::AllocateOperationID()
 
 uint32_t Zenith_SceneOperationQueue::CountScenesBeingAsyncUnloaded()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CountScenesBeingAsyncUnloaded must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CountScenesBeingAsyncUnloaded must be called from main thread");
 	return static_cast<uint32_t>(g_xEngine.SceneOperations().m_axAsyncUnloadJobs.GetSize());
 }
 
@@ -144,7 +144,7 @@ void Zenith_SceneOperationQueue::AsyncSceneLoadTask(void* pData)
 
 Zenith_SceneOperation* Zenith_SceneOperationQueue::GetOperation(Zenith_SceneOperationID ulID)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetOperation must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetOperation must be called from main thread");
 
 	if (ulID == ZENITH_INVALID_OPERATION_ID)
 	{
@@ -160,7 +160,7 @@ Zenith_SceneOperation* Zenith_SceneOperationQueue::GetOperation(Zenith_SceneOper
 
 bool Zenith_SceneOperationQueue::IsOperationValid(Zenith_SceneOperationID ulID)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "IsOperationValid must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "IsOperationValid must be called from main thread");
 
 	if (ulID == ZENITH_INVALID_OPERATION_ID)
 	{
@@ -203,7 +203,7 @@ void Zenith_SceneOperationQueue::CleanupCompletedOperations()
 
 u_int Zenith_SceneOperationQueue::CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CancelAllPendingAsyncLoads must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CancelAllPendingAsyncLoads must be called from main thread");
 
 	for (int i = static_cast<int>(g_xEngine.SceneOperations().m_axAsyncJobs.GetSize()) - 1; i >= 0; --i)
 	{
@@ -419,7 +419,7 @@ void Zenith_SceneOperationQueue::SortAsyncJobsByPriority()
 
 void Zenith_SceneOperationQueue::CompletePriorOperationsForBlockingLoad()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"CompletePriorOperationsForBlockingLoad must be called from main thread");
 
 	// B4.B re-entrancy guard. The Unity flush-prior-async semantic only
@@ -480,7 +480,7 @@ void Zenith_SceneOperationQueue::CompletePriorOperationsForBlockingLoad()
 
 void Zenith_SceneOperationQueue::WaitForPendingFileReadsForBlockingPump()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"WaitForPendingFileReadsForBlockingPump must be called from main thread");
 
 	// Match the re-entrancy semantics of CompletePriorOperationsForBlockingLoad
@@ -1007,7 +1007,7 @@ void Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads()
 
 void Zenith_SceneOperationQueue::SetAsyncUnloadBatchSize(uint32_t uEntitiesPerFrame)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetAsyncUnloadBatchSize must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetAsyncUnloadBatchSize must be called from main thread");
 
 	// Validate batch size to prevent infinite loops (0) and excessive frame hitches (very large)
 	constexpr uint32_t uMIN_BATCH = 1;
@@ -1033,18 +1033,18 @@ void Zenith_SceneOperationQueue::SetAsyncUnloadBatchSize(uint32_t uEntitiesPerFr
 
 uint32_t Zenith_SceneOperationQueue::GetAsyncUnloadBatchSize()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetAsyncUnloadBatchSize must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetAsyncUnloadBatchSize must be called from main thread");
 	return g_xEngine.SceneOperations().m_uAsyncUnloadBatchSize;
 }
 
 void Zenith_SceneOperationQueue::SetMaxConcurrentAsyncLoads(uint32_t uMax)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetMaxConcurrentAsyncLoads must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetMaxConcurrentAsyncLoads must be called from main thread");
 	g_xEngine.SceneOperations().m_uMaxConcurrentAsyncLoads = (uMax > 0) ? uMax : 1;
 }
 
 uint32_t Zenith_SceneOperationQueue::GetMaxConcurrentAsyncLoads()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetMaxConcurrentAsyncLoads must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetMaxConcurrentAsyncLoads must be called from main thread");
 	return g_xEngine.SceneOperations().m_uMaxConcurrentAsyncLoads;
 }

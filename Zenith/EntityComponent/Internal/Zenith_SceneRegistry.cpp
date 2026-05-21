@@ -89,14 +89,14 @@ void Zenith_SceneRegistry::FreeSceneHandle(int iHandle)
 
 uint32_t Zenith_SceneRegistry::GetSceneSlotCount()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(),
 		"GetSceneSlotCount must be called from main thread or during render task execution");
 	return g_xEngine.SceneRegistry().m_axScenes.GetSize();
 }
 
 Zenith_SceneData* Zenith_SceneRegistry::GetSceneDataAtSlot(uint32_t uIndex)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(),
 		"GetSceneDataAtSlot must be called from main thread or during render task execution");
 	if (uIndex >= g_xEngine.SceneRegistry().m_axScenes.GetSize())
 		return nullptr;
@@ -105,7 +105,7 @@ Zenith_SceneData* Zenith_SceneRegistry::GetSceneDataAtSlot(uint32_t uIndex)
 
 Zenith_SceneData* Zenith_SceneRegistry::GetLoadedSceneDataAtSlot(uint32_t uIndex)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(),
 		"GetLoadedSceneDataAtSlot must be called from main thread or during render task execution");
 	if (uIndex >= g_xEngine.SceneRegistry().m_axScenes.GetSize())
 		return nullptr;
@@ -129,7 +129,7 @@ Zenith_Scene Zenith_SceneRegistry::MakeInvalidScene()
 
 Zenith_SceneData* Zenith_SceneRegistry::GetSceneData(Zenith_Scene xScene)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(),
 		"GetSceneData must be called from the main thread or during render task execution");
 	if (xScene.m_iHandle < 0 || xScene.m_iHandle >= static_cast<int>(g_xEngine.SceneRegistry().m_axScenes.GetSize()))
 	{
@@ -162,7 +162,7 @@ Zenith_SceneData* Zenith_SceneRegistry::GetSceneDataForEntity(Zenith_EntityID xI
 
 Zenith_Scene Zenith_SceneRegistry::GetSceneFromHandle(int iHandle)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneFromHandle must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetSceneFromHandle must be called from main thread");
 	Zenith_Scene xScene;
 	xScene.m_iHandle = iHandle;
 	xScene.m_uGeneration = 0;
@@ -179,7 +179,7 @@ Zenith_Scene Zenith_SceneRegistry::GetSceneFromHandle(int iHandle)
 
 Zenith_Scene Zenith_SceneRegistry::GetActiveScene()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(),
 		"GetActiveScene must be called from main thread or during render task execution");
 	const int iHandle = g_xEngine.SceneRegistry().m_iActiveSceneHandle;
 	Zenith_Scene xScene;
@@ -193,7 +193,7 @@ Zenith_Scene Zenith_SceneRegistry::GetActiveScene()
 
 Zenith_Scene Zenith_SceneRegistry::GetSceneAt(uint32_t uIndex)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneAt must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetSceneAt must be called from main thread");
 	Zenith_Scene xScene = MakeInvalidScene();
 
 	uint32_t uCurrent = 0;
@@ -215,7 +215,7 @@ Zenith_Scene Zenith_SceneRegistry::GetSceneAt(uint32_t uIndex)
 
 Zenith_Scene Zenith_SceneRegistry::GetSceneByBuildIndex(int iBuildIndex)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneByBuildIndex must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetSceneByBuildIndex must be called from main thread");
 	Zenith_Scene xScene = MakeInvalidScene();
 	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
@@ -232,7 +232,7 @@ Zenith_Scene Zenith_SceneRegistry::GetSceneByBuildIndex(int iBuildIndex)
 
 Zenith_Scene Zenith_SceneRegistry::GetSceneByName(const std::string& strName)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneByName must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetSceneByName must be called from main thread");
 	Zenith_Scene xScene = MakeInvalidScene();
 	int iFirstMatchHandle = -1;
 	bool bAmbiguous = false;
@@ -299,7 +299,7 @@ Zenith_Scene Zenith_SceneRegistry::GetSceneByName(const std::string& strName)
 // helper alongside the LoadScene path validation that uses the same helper).
 Zenith_Scene Zenith_SceneRegistry::GetSceneByPath(const std::string& strCanonicalPath)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneByPath must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetSceneByPath must be called from main thread");
 	Zenith_Scene xScene = MakeInvalidScene();
 
 	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
@@ -317,7 +317,7 @@ Zenith_Scene Zenith_SceneRegistry::GetSceneByPath(const std::string& strCanonica
 
 uint32_t Zenith_SceneRegistry::GetLoadedSceneCount()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetLoadedSceneCount must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetLoadedSceneCount must be called from main thread");
 	uint32_t uCount = 0;
 	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
@@ -328,7 +328,7 @@ uint32_t Zenith_SceneRegistry::GetLoadedSceneCount()
 
 uint32_t Zenith_SceneRegistry::GetTotalSceneCount()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetTotalSceneCount must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetTotalSceneCount must be called from main thread");
 	uint32_t uCount = 0;
 	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
@@ -339,7 +339,7 @@ uint32_t Zenith_SceneRegistry::GetTotalSceneCount()
 
 uint32_t Zenith_SceneRegistry::GetBuildSceneCount()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetBuildSceneCount must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetBuildSceneCount must be called from main thread");
 	uint32_t uCount = 0;
 	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axBuildIndexToPath.GetSize(); ++i)
 	{
@@ -392,7 +392,7 @@ int Zenith_SceneRegistry::SelectNewActiveScene(int iExcludeHandle)
 
 Zenith_Scene Zenith_SceneRegistry::GetPersistentScene()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetPersistentScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetPersistentScene must be called from main thread");
 	return GetSceneFromHandle(g_xEngine.SceneRegistry().m_iPersistentSceneHandle);
 }
 
@@ -444,7 +444,7 @@ void Zenith_SceneRegistry::RemoveFromSceneNameCache(int iHandle)
 
 void Zenith_SceneRegistry::RegisterSceneBuildIndex(int iBuildIndex, const std::string& strPath)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RegisterSceneBuildIndex must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RegisterSceneBuildIndex must be called from main thread");
 	Zenith_Assert(iBuildIndex >= 0, "RegisterSceneBuildIndex: Build index must be non-negative");
 
 	const u_int uBuildIndex = static_cast<u_int>(iBuildIndex);
@@ -467,7 +467,7 @@ void Zenith_SceneRegistry::RegisterSceneBuildIndex(int iBuildIndex, const std::s
 
 void Zenith_SceneRegistry::ClearBuildIndexRegistry()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "ClearBuildIndexRegistry must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "ClearBuildIndexRegistry must be called from main thread");
 	g_xEngine.SceneRegistry().m_axBuildIndexToPath.Clear();
 
 	uint32_t uScenesCleared = 0;
@@ -515,7 +515,7 @@ bool Zenith_SceneRegistry::RenameScene(Zenith_Scene xScene, const std::string& s
 	// shortcut for GetSceneByName. Before this API, renaming via friend access to
 	// pxSceneData->m_strName left the cache stale — lookups by old name still hit, by
 	// new name missed. Now cache and data move together.
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RenameScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RenameScene must be called from main thread");
 	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(),
 		"RenameScene: scene mutation while render tasks are reading — render-task invariant violated");
 

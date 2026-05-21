@@ -4,7 +4,7 @@
 #include <functional>
 #include <unordered_map>
 #include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 
 /**
  * Zenith_FileWatcher - Hot-reload file monitoring system

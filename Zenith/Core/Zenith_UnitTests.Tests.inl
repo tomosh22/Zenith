@@ -168,7 +168,7 @@ void Zenith_UnitTests::TestProfiling(){
 	ZENITH_ASSERT_TRUE(xTest2.Validate(), "");
 
 	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = Zenith_Profiling::GetEvents();
-	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(Zenith_Multithreading::GetCurrentThreadID());
+	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(g_xEngine.Threading().GetCurrentThreadID());
 	(void)xEvents.at(pxTask0->GetCompletedThreadID());
 	(void)xEvents.at(pxTask1->GetCompletedThreadID());
 	(void)xEvents.at(pxTask2->GetCompletedThreadID());
@@ -8263,7 +8263,7 @@ struct CallingThreadTestData
 static void CallingThreadTestFunc(void* pData, u_int /*uIdx*/, u_int /*uTotal*/)
 {
 	auto* pxData = static_cast<CallingThreadTestData*>(pData);
-	if (Zenith_Multithreading::GetCurrentThreadID() == pxData->m_uMainThreadID)
+	if (g_xEngine.Threading().GetCurrentThreadID() == pxData->m_uMainThreadID)
 	{
 		pxData->m_uMainThreadInvocations.fetch_add(1);
 	}
@@ -8276,7 +8276,7 @@ void Zenith_UnitTests::TestTaskArrayCallingThreadParticipates(){
 	// Verifies the rename's semantics: when bCallingThreadParticipates=true, the
 	// calling thread (main) runs at least one of the array's invocations.
 	CallingThreadTestData xData;
-	xData.m_uMainThreadID = Zenith_Multithreading::GetCurrentThreadID();
+	xData.m_uMainThreadID = g_xEngine.Threading().GetCurrentThreadID();
 
 	constexpr u_int uNumInvocations = 8;
 	Zenith_TaskArray xArray(

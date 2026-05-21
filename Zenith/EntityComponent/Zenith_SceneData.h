@@ -13,7 +13,7 @@
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include <atomic>
 #include <string>
 
@@ -148,7 +148,7 @@ public:
 
 	u_int GetEntityCount() const
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetEntityCount must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetEntityCount must be called from main thread");
 		return m_xActiveEntities.GetSize();
 	}
 	const Zenith_Vector<Zenith_EntityID>& GetActiveEntities() const
@@ -166,7 +166,7 @@ public:
 
 	bool IsBeingDestroyed() const { return m_bIsBeingDestroyed; }
 	bool IsMarkedForDestruction(Zenith_EntityID xID) const;
-	void InvalidateRootEntityCache() { Zenith_Assert(Zenith_Multithreading::IsMainThread(), "InvalidateRootEntityCache must be called from main thread"); m_bRootEntitiesDirty = true; }
+	void InvalidateRootEntityCache() { Zenith_Assert(g_xEngine.Threading().IsMainThread(), "InvalidateRootEntityCache must be called from main thread"); m_bRootEntitiesDirty = true; }
 
 	// Returns the scene handle that owns this entity (-1 if invalid)
 	static int GetEntitySceneHandle(Zenith_EntityID xID)
@@ -177,7 +177,7 @@ public:
 
 	void MarkEntityAwoken(Zenith_EntityID xID)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityAwoken must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MarkEntityAwoken must be called from main thread");
 		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (xSlot.IsAwoken()) return;  // Already awoken or further along - no-op
 		xSlot.TransitionToAwoken();
@@ -341,21 +341,21 @@ private:
 
 	void MarkEntityStarted(Zenith_EntityID xID)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityStarted must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MarkEntityStarted must be called from main thread");
 		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (xSlot.IsStarted()) return;  // Already started - no-op
 		xSlot.TransitionToStarted();
 	}
 	void MarkEntityPendingStart(Zenith_EntityID xID)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityPendingStart must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MarkEntityPendingStart must be called from main thread");
 		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (!xSlot.IsPendingStart()) { xSlot.TransitionToPendingStart(); m_uPendingStartCount++; m_axPendingStartEntities.PushBack(xID); }
 	}
 	// Cancel a pending start: decrement count, remove from pending list, revert lifecycle to AWOKEN
 	void CancelPendingStart(Zenith_EntityID xID)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CancelPendingStart must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CancelPendingStart must be called from main thread");
 		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (!xSlot.IsPendingStart()) return;
 		xSlot.RevertFromPendingStart();
@@ -368,7 +368,7 @@ private:
 	bool IsEntityAwoken(Zenith_EntityID xID) const { return xID.m_uIndex < g_xEngine.EntityStore().m_axEntitySlots.GetSize() && g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).IsAwoken(); }
 	bool IsEntityStarted(Zenith_EntityID xID) const { return xID.m_uIndex < g_xEngine.EntityStore().m_axEntitySlots.GetSize() && g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).IsStarted(); }
 	bool IsOnEnableDispatched(Zenith_EntityID xID) const { return xID.m_uIndex < g_xEngine.EntityStore().m_axEntitySlots.GetSize() && g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bOnEnableDispatched; }
-	void SetOnEnableDispatched(Zenith_EntityID xID, bool bDispatched) { Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetOnEnableDispatched must be called from main thread"); g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bOnEnableDispatched = bDispatched; }
+	void SetOnEnableDispatched(Zenith_EntityID xID, bool bDispatched) { Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetOnEnableDispatched must be called from main thread"); g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bOnEnableDispatched = bDispatched; }
 
 	// Invalidate cached activeInHierarchy for an entity and all descendants
 	static void InvalidateActiveInHierarchyCache(Zenith_EntityID xID);
@@ -376,7 +376,7 @@ private:
 	bool IsUpdating() const { return m_bIsUpdating; }
 	void RegisterCreatedDuringUpdate(Zenith_EntityID xID)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RegisterCreatedDuringUpdate must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RegisterCreatedDuringUpdate must be called from main thread");
 		if (m_bIsUpdating)
 		{
 			g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bCreatedDuringUpdate = true;
@@ -403,7 +403,7 @@ private:
 	// Internal State Queries
 	//==========================================================================
 
-	void SetPaused(bool bPaused) { Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetPaused must be called from main thread"); m_bIsPaused = bPaused; }
+	void SetPaused(bool bPaused) { Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetPaused must be called from main thread"); m_bIsPaused = bPaused; }
 
 	//==========================================================================
 	// Update (called by SceneManager)
@@ -598,7 +598,7 @@ private:
 template<typename T, typename... Args>
 T& Zenith_SceneData::CreateComponent(Zenith_EntityID xID, Args&&... args)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CreateComponent must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CreateComponent must be called from main thread");
 	Zenith_Assert(EntityExists(xID), "CreateComponent: Entity (idx=%u, gen=%u) does not exist", xID.m_uIndex, xID.m_uGeneration);
 
 	Zenith_ComponentPool<T>* pxPool = GetOrCreateComponentPool<T>();
@@ -640,7 +640,7 @@ T& Zenith_SceneData::CreateComponent(Zenith_EntityID xID, Args&&... args)
 template<typename T>
 bool Zenith_SceneData::EntityHasComponent(Zenith_EntityID xID) const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_AreRenderTasksActive()
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive()
 		,
 		"EntityHasComponent must be called from main thread");
 	if (!EntityExists(xID)) return false;
@@ -652,7 +652,7 @@ bool Zenith_SceneData::EntityHasComponent(Zenith_EntityID xID) const
 template<typename T>
 T& Zenith_SceneData::GetComponentFromEntity(Zenith_EntityID xID) const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive(),
 		"GetComponentFromEntity must be called from main thread");
 	Zenith_Assert(EntityExists(xID), "GetComponentFromEntity: Entity (idx=%u, gen=%u) does not exist", xID.m_uIndex, xID.m_uGeneration);
 
@@ -667,7 +667,7 @@ T& Zenith_SceneData::GetComponentFromEntity(Zenith_EntityID xID) const
 template<typename T>
 bool Zenith_SceneData::RemoveComponentFromEntity(Zenith_EntityID xID)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RemoveComponentFromEntity must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RemoveComponentFromEntity must be called from main thread");
 	if (!EntityExists(xID)) return false;
 
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
@@ -696,7 +696,7 @@ bool Zenith_SceneData::RemoveComponentFromEntity(Zenith_EntityID xID)
 template<typename T>
 void Zenith_SceneData::GetAllOfComponentType(Zenith_Vector<T*>& xOut) const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_AreRenderTasksActive(), "GetAllOfComponentType must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive(), "GetAllOfComponentType must be called from main thread");
 	xOut.Clear();
 	AppendAllOfComponentType<T>(xOut);
 }
@@ -704,7 +704,7 @@ void Zenith_SceneData::GetAllOfComponentType(Zenith_Vector<T*>& xOut) const
 template<typename T>
 void Zenith_SceneData::AppendAllOfComponentType(Zenith_Vector<T*>& xOut) const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_AreRenderTasksActive(), "AppendAllOfComponentType must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive(), "AppendAllOfComponentType must be called from main thread");
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
 	if (uTypeID >= m_xComponents.GetSize()) return;
 

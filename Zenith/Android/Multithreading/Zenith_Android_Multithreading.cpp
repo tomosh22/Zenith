@@ -4,7 +4,7 @@
 
 #include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 
 #include <pthread.h>
 #include <unistd.h>
@@ -14,7 +14,7 @@
 // don't belong to an Engine, their registration index does). The
 // shared state (thread-ID allocator + main-thread ID) moved to
 // g_xEngine.Threading() in Phase 3a.
-thread_local static char tl_g_acThreadName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH]{ 0 };
+thread_local static char tl_g_acThreadName[Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH]{ 0 };
 thread_local static u_int tl_g_uThreadID = ~0u;
 
 template<>
@@ -74,10 +74,10 @@ struct ThreadParams
 
 static void* ThreadInit(void* pParams)
 {
-	Zenith_Multithreading::RegisterThread();
+	g_xEngine.Threading().RegisterThread();
 	const ThreadParams* pxParams = static_cast<const ThreadParams*>(pParams);
 	// Copy thread name with guaranteed null termination
-	size_t uNameLen = strnlen(pxParams->m_szName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH - 1);
+	size_t uNameLen = strnlen(pxParams->m_szName, Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH - 1);
 	memcpy(tl_g_acThreadName, pxParams->m_szName, uNameLen);
 	tl_g_acThreadName[uNameLen] = '\0';
 	pxParams->m_pxSemaphore->Signal();
@@ -85,7 +85,7 @@ static void* ThreadInit(void* pParams)
 	return nullptr;
 }
 
-void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_ThreadFunction pfnFunc, const void* pUserData)
+void Zenith_MultithreadingImpl::Platform_CreateThread(const char* szName, Zenith_ThreadFunction pfnFunc, const void* pUserData)
 {
 	Zenith_Android_Semaphore xSemaphore(0, 1);
 
@@ -107,7 +107,7 @@ void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_Thr
 	xSemaphore.Wait();
 }
 
-void Zenith_Multithreading::Platform_RegisterThread(const bool bMainThread)
+void Zenith_MultithreadingImpl::Platform_RegisterThread(const bool bMainThread)
 {
 	// Thread-ID allocator + main-thread tracking live on g_xEngine.Threading()
 	// (Phase 3a). The engine guarantees the impl exists before any
@@ -115,13 +115,13 @@ void Zenith_Multithreading::Platform_RegisterThread(const bool bMainThread)
 	tl_g_uThreadID = g_xEngine.Threading().AllocateThreadID(bMainThread);
 }
 
-u_int Zenith_Multithreading::Platform_GetCurrentThreadID()
+u_int Zenith_MultithreadingImpl::Platform_GetCurrentThreadID()
 {
 	Zenith_Assert(tl_g_uThreadID != ~0u, "This thread hasn't been registered with RegisterThread");
 	return tl_g_uThreadID;
 }
 
-bool Zenith_Multithreading::Platform_IsMainThread()
+bool Zenith_MultithreadingImpl::Platform_IsMainThread()
 {
 	return tl_g_uThreadID == g_xEngine.Threading().GetMainThreadID();
 }

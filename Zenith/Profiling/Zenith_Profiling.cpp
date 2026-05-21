@@ -45,8 +45,8 @@ void Zenith_Profiling::Initialise()
 void Zenith_Profiling::RegisterThread()
 {
 	Zenith_ScopedMutexLock_T xLock(g_xEngine.Profiling().m_xEventsMutex);
-	Zenith_Assert(g_xEngine.Profiling().m_xEvents.find(Zenith_Multithreading::GetCurrentThreadID()) == g_xEngine.Profiling().m_xEvents.end(), "Thread already registered");
-	g_xEngine.Profiling().m_xEvents.insert({ Zenith_Multithreading::GetCurrentThreadID(), {} });
+	Zenith_Assert(g_xEngine.Profiling().m_xEvents.find(g_xEngine.Threading().GetCurrentThreadID()) == g_xEngine.Profiling().m_xEvents.end(), "Thread already registered");
+	g_xEngine.Profiling().m_xEvents.insert({ g_xEngine.Threading().GetCurrentThreadID(), {} });
 }
 
 void Zenith_Profiling::BeginFrame()
@@ -708,7 +708,7 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 
 static Zenith_Vector<Zenith_Profiling::Event>& GetOrCreateThreadEvents()
 {
-	u_int uThreadID = Zenith_Multithreading::GetCurrentThreadID();
+	u_int uThreadID = g_xEngine.Threading().GetCurrentThreadID();
 	Zenith_ScopedMutexLock_T xLock(g_xEngine.Profiling().m_xEventsMutex);
 	auto xIt = g_xEngine.Profiling().m_xEvents.find(uThreadID);
 	if (xIt == g_xEngine.Profiling().m_xEvents.end())
@@ -757,7 +757,7 @@ void Zenith_Profiling::EndProfile(const Zenith_ProfileIndex eIndex)
 			szEventName,
 			fDurationSeconds * 1000.0f,
 			fPROFILING_MAX_EVENT_TIME_SECONDS * 1000.0f,
-			Zenith_Multithreading::GetCurrentThreadID());
+			g_xEngine.Threading().GetCurrentThreadID());
 	}
 
 	GetOrCreateThreadEvents().PushBack(xEvent);

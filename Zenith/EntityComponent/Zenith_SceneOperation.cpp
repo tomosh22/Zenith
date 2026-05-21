@@ -20,7 +20,7 @@ Zenith_Scene Zenith_SceneOperation::GetResultScene() const
 
 void Zenith_SceneOperation::SetPriority(int iPriority)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetPriority must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetPriority must be called from main thread");
 	if (iPriority == m_iPriority)
 	{
 		return;
@@ -31,7 +31,7 @@ void Zenith_SceneOperation::SetPriority(int iPriority)
 
 void Zenith_SceneOperation::FireCompletionCallback()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "FireCompletionCallback must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "FireCompletionCallback must be called from main thread");
 	// D3: completion callback firing before the op is actually complete means
 	// the SceneManager state machine is out of order (e.g. SetProgress(1.0) without
 	// SetComplete(true)). Callers downstream of this see IsComplete()==false and

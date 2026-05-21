@@ -3,7 +3,7 @@
 #include "Collections/Zenith_Vector.h"
 #include "Zenith_PlatformGraphics_Include.h"
 #include "Flux/Flux_CommandList.h"
-#include "Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 
 // Flux_SurfaceInfo and view structs (Flux_ShaderResourceView, Flux_*View)
 // moved to Flux_Types.h (cycle break: MemoryManager.h -> Flux.h -> PlatformGraphics -> MemoryManager.h).

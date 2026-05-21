@@ -75,7 +75,7 @@ void Flux_RenderGraph::Execute()
 {
 	Zenith_Assert(m_bCompiled, "Flux_RenderGraph::Execute: must call Compile() first");
 	Zenith_Assert(!m_bDirty, "Flux_RenderGraph::Execute: graph is dirty — AddPass/Read/Write was called after Compile(). Call Compile() again.");
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Flux_RenderGraph::Execute: must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Flux_RenderGraph::Execute: must be called from main thread");
 	if (m_xExecutionOrder.GetSize() == 0) return;
 
 	// Every enabled pass in the execution order must have a valid command list —

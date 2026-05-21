@@ -66,9 +66,9 @@ void Zenith_TaskSystemImpl::Initialise()
 
 	for (u_int u = 0; u < uNumThreads; u++)
 	{
-		char acName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH];
-		snprintf(acName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH, "Zenith_TaskSystem %u", u);
-		Zenith_Multithreading::CreateThread(acName, ThreadFunc, nullptr);
+		char acName[Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH];
+		snprintf(acName, Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH, "Zenith_TaskSystem %u", u);
+		g_xEngine.Threading().CreateThread(acName, ThreadFunc, nullptr);
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES

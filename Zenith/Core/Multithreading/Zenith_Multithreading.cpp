@@ -1,25 +1,25 @@
 #include "Zenith.h"
 
-#include "Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include "Profiling/Zenith_Profiling.h"
 
-void Zenith_Multithreading::CreateThread(const char* szName, Zenith_ThreadFunction pfnFunc, const void* pUserData)
+void Zenith_MultithreadingImpl::CreateThread(const char* szName, Zenith_ThreadFunction pfnFunc, const void* pUserData)
 {
 	return Platform_CreateThread(szName, pfnFunc, pUserData);
 }
 
-void Zenith_Multithreading::RegisterThread(const bool bMainThread /*= false*/)
+void Zenith_MultithreadingImpl::RegisterThread(const bool bMainThread /*= false*/)
 {
 	Platform_RegisterThread(bMainThread);
 	Zenith_Profiling::RegisterThread();
 }
 
-u_int Zenith_Multithreading::GetCurrentThreadID()
+u_int Zenith_MultithreadingImpl::GetCurrentThreadID()
 {
 	return Platform_GetCurrentThreadID();
 }
 
-bool Zenith_Multithreading::IsMainThread()
+bool Zenith_MultithreadingImpl::IsMainThread()
 {
 	return Platform_IsMainThread();
 }

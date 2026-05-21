@@ -2,7 +2,7 @@
 
 #include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include "EntityComponent/Zenith_SceneData.h"
 
 //------------------------------------------------------------------------------
@@ -255,7 +255,7 @@ void Zenith_EventWrapper<TEvent>::Dispatch(Zenith_EventDispatcher& xDispatcher) 
 template<typename TEvent>
 Zenith_EventHandle Zenith_EventDispatcher::Subscribe(void(*pfnCallback)(const TEvent&))
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Subscribe must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Subscribe must be called from main thread");
 	const u_int uEventTypeID = Zenith_EventTypeID::GetID<TEvent>();
 	const Zenith_EventHandle uHandle = m_uNextHandle++;
 
@@ -274,7 +274,7 @@ Zenith_EventHandle Zenith_EventDispatcher::SubscribeLambda(TCallback&& xCallback
 {
 	static_assert(!std::is_same_v<std::decay_t<TCallback>, std::function<void(const TEvent&)>>,
 		"std::function is forbidden - use a function pointer or lambda");
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SubscribeLambda must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SubscribeLambda must be called from main thread");
 	const u_int uEventTypeID = Zenith_EventTypeID::GetID<TEvent>();
 	const Zenith_EventHandle uHandle = m_uNextHandle++;
 

@@ -58,7 +58,7 @@
 #include "Collections/Zenith_HashSet.h"
 #include <atomic>
 #include <string>
-#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
 // Forward declarations

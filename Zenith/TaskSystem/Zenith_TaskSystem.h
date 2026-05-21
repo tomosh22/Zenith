@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Collections/Zenith_CircularQueue.h"
-#include "Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include "Profiling/Zenith_Profiling.h"
 
 // ----------------------------------------------------------------------------
@@ -60,7 +60,7 @@ public:
 		Zenith_Profiling::BeginProfile(m_eProfileIndex);
 		m_pfnFunc(m_pData);
 		Zenith_Profiling::EndProfile(m_eProfileIndex);
-		m_uCompletedThreadID = Zenith_Multithreading::GetCurrentThreadID();
+		m_uCompletedThreadID = g_xEngine.Threading().GetCurrentThreadID();
 		m_xSemaphore.Signal();
 	}
 
@@ -134,7 +134,7 @@ public:
 		u_int uCompletedCount = m_uCompletionCounter.fetch_add(1) + 1;
 		if (uCompletedCount == m_uNumInvocations)
 		{
-			m_uCompletedThreadID = Zenith_Multithreading::GetCurrentThreadID();
+			m_uCompletedThreadID = g_xEngine.Threading().GetCurrentThreadID();
 			m_xSemaphore.Signal();
 		}
 	}

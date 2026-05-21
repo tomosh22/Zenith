@@ -114,7 +114,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zen
 
 bool Zenith_SceneEntityOwnership::MoveEntityToScene(Zenith_Entity& xEntity, Zenith_Scene xTarget)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MoveEntityToScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MoveEntityToScene must be called from main thread");
 	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(), "MoveEntityToScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	if (!xEntity.IsValid())
@@ -165,7 +165,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityToScene(Zenith_Entity& xEntity, Zeni
 
 bool Zenith_SceneEntityOwnership::MergeScenes(Zenith_Scene xSource, Zenith_Scene xTarget)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MergeScenes must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MergeScenes must be called from main thread");
 	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(), "MergeScenes: scene mutation while render tasks are reading — render-task invariant violated");
 
 	Zenith_SceneData* pxSource = Zenith_SceneRegistry::GetSceneData(xSource);
@@ -218,7 +218,7 @@ bool Zenith_SceneEntityOwnership::MergeScenes(Zenith_Scene xSource, Zenith_Scene
 
 void Zenith_SceneEntityOwnership::MarkEntityPersistent(Zenith_Entity& xEntity)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityPersistent must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MarkEntityPersistent must be called from main thread");
 
 	if (!xEntity.IsValid()) return;
 
@@ -255,7 +255,7 @@ void Zenith_SceneEntityOwnership::MarkEntityPersistent(Zenith_Entity& xEntity)
 
 void Zenith_SceneEntityOwnership::Destroy(Zenith_Entity& xEntity)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Destroy must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Destroy must be called from main thread");
 
 	if (!xEntity.IsValid()) return;
 
@@ -268,7 +268,7 @@ void Zenith_SceneEntityOwnership::Destroy(Zenith_Entity& xEntity)
 
 void Zenith_SceneEntityOwnership::Destroy(Zenith_Entity& xEntity, float fDelay)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Destroy must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Destroy must be called from main thread");
 
 	if (!xEntity.IsValid()) return;
 
@@ -287,7 +287,7 @@ void Zenith_SceneEntityOwnership::Destroy(Zenith_Entity& xEntity, float fDelay)
 
 void Zenith_SceneEntityOwnership::DestroyImmediate(Zenith_Entity& xEntity)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "DestroyImmediate must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "DestroyImmediate must be called from main thread");
 
 	if (!xEntity.IsValid()) return;
 

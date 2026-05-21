@@ -79,7 +79,7 @@ namespace
 	template<typename TCallback>
 	CallbackHandle Register(CallbackList<TCallback>& xList, TCallback pfn)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Callback registration must be on main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Callback registration must be on main thread");
 
 		// B7: warn when Register runs during an active Fire dispatch. The Fire loop
 		// captures the entry count at entry and does NOT pick up entries pushed mid-loop.
@@ -103,7 +103,7 @@ namespace
 	template<typename TCallback>
 	bool Unregister(CallbackList<TCallback>& xList, CallbackHandle ulHandle)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Callback unregistration must be on main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Callback unregistration must be on main thread");
 
 		if (g_xEngine.SceneCallbacks().m_uFiringCallbacksDepth > 0)
 		{
@@ -299,7 +299,7 @@ void Zenith_SceneCallbackBus::ClearDeferredOldActive()
 ActiveSceneChangeSuppressionScope::ActiveSceneChangeSuppressionScope(Zenith_Scene xInitialOldActive)
 	: m_xOldActive(xInitialOldActive)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "ActiveSceneChangeSuppressionScope must be constructed on main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "ActiveSceneChangeSuppressionScope must be constructed on main thread");
 	Zenith_Assert(!Zenith_SceneCallbackBus::IsActiveSceneSuppressed(),
 		"ActiveSceneChangeSuppressionScope: nested suppression scopes are not supported");
 

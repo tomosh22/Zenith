@@ -3,7 +3,7 @@
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Vulkan/Zenith_Vulkan_CommandBuffer.h"
 #include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 
 // Phase 6b: per-Engine state for the Vulkan memory manager. Replaces
 // the file-static members on Zenith_Vulkan_MemoryManager (VMA allocator,

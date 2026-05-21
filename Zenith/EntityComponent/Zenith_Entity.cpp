@@ -145,7 +145,7 @@ void Zenith_Entity::PropagateHierarchyEnabled(Zenith_SceneData* pxSceneData, Zen
 
 const std::string& Zenith_Entity::GetName() const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetName must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetName must be called from main thread");
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"GetName: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
@@ -154,7 +154,7 @@ const std::string& Zenith_Entity::GetName() const
 
 void Zenith_Entity::SetName(const std::string& strName)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetName must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetName must be called from main thread");
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"SetName: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
@@ -164,7 +164,7 @@ void Zenith_Entity::SetName(const std::string& strName)
 
 bool Zenith_Entity::IsEnabled() const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "IsEnabled must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "IsEnabled must be called from main thread");
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"IsEnabled: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
@@ -173,7 +173,7 @@ bool Zenith_Entity::IsEnabled() const
 
 bool Zenith_Entity::IsActiveInHierarchy() const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "IsActiveInHierarchy must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "IsActiveInHierarchy must be called from main thread");
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	if (!pxSceneData || !pxSceneData->EntityExists(m_xEntityID)) return false;
 	if (pxSceneData->IsBeingDestroyed()) return false;
@@ -247,7 +247,7 @@ void Zenith_Entity::DispatchDisableLifecycle(Zenith_SceneData* pxSceneData)
 
 void Zenith_Entity::SetEnabled(bool bEnabled)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetEnabled must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetEnabled must be called from main thread");
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"SetEnabled: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
@@ -274,7 +274,7 @@ void Zenith_Entity::SetEnabled(bool bEnabled)
 
 bool Zenith_Entity::IsTransient() const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "IsTransient must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "IsTransient must be called from main thread");
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"IsTransient: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
@@ -283,7 +283,7 @@ bool Zenith_Entity::IsTransient() const
 
 void Zenith_Entity::SetTransient(bool bTransient)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetTransient must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetTransient must be called from main thread");
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"SetTransient: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
@@ -305,20 +305,20 @@ void Zenith_Entity::DontDestroyOnLoad()
 
 Zenith_EntityID Zenith_Entity::GetParentEntityID() const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetParentEntityID must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetParentEntityID must be called from main thread");
 	const Zenith_TransformComponent& xTransform = GetComponent<Zenith_TransformComponent>();
 	return xTransform.GetParentEntityID();
 }
 
 bool Zenith_Entity::HasParent() const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "HasParent must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "HasParent must be called from main thread");
 	return GetComponent<Zenith_TransformComponent>().HasParent();
 }
 
 void Zenith_Entity::SetParent(Zenith_EntityID xParentID)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetParent must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetParent must be called from main thread");
 	Zenith_Assert(IsValid(), "SetParent: Entity handle is invalid (idx=%u, gen=%u)",
 		m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
 
@@ -342,32 +342,32 @@ void Zenith_Entity::SetParent(Zenith_EntityID xParentID)
 
 const Zenith_Vector<Zenith_EntityID>& Zenith_Entity::GetChildEntityIDs() const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetChildEntityIDs must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetChildEntityIDs must be called from main thread");
 	const Zenith_TransformComponent& xTransform = GetComponent<Zenith_TransformComponent>();
 	return xTransform.GetChildEntityIDs();
 }
 
 bool Zenith_Entity::HasChildren() const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "HasChildren must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "HasChildren must be called from main thread");
 	return GetComponent<Zenith_TransformComponent>().GetChildCount() > 0;
 }
 
 uint32_t Zenith_Entity::GetChildCount() const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetChildCount must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetChildCount must be called from main thread");
 	return GetComponent<Zenith_TransformComponent>().GetChildCount();
 }
 
 bool Zenith_Entity::IsRoot() const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "IsRoot must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "IsRoot must be called from main thread");
 	return GetComponent<Zenith_TransformComponent>().IsRoot();
 }
 
 Zenith_TransformComponent& Zenith_Entity::GetTransform()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetTransform must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetTransform must be called from main thread");
 	return GetComponent<Zenith_TransformComponent>();
 }
 

@@ -466,7 +466,7 @@ void Zenith_Engine::Initialise()
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
 	// main-thread ID) lives on the engine now. Allocate BEFORE
-	// Zenith_Multithreading::RegisterThread(true) below, which reads
+	// g_xEngine.Threading().RegisterThread(true) below, which reads
 	// from g_xEngine.Threading() to issue the main thread's ID.
 	Zenith_Assert(m_pxThreading == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxThreading = new Zenith_MultithreadingImpl();
@@ -479,7 +479,7 @@ void Zenith_Engine::Initialise()
 	Zenith_MemoryManagement::Initialise();
 
 	// Phase 3b: per-Engine Profiling state. Allocate BEFORE
-	// Zenith_Multithreading::RegisterThread(true) below --
+	// g_xEngine.Threading().RegisterThread(true) below --
 	// RegisterThread transitively calls Zenith_Profiling::RegisterThread
 	// (which reads g_xEngine.Profiling().m_xEvents). The Profiling
 	// impl also has to exist before Zenith_Profiling::Initialise()
@@ -487,7 +487,7 @@ void Zenith_Engine::Initialise()
 	Zenith_Assert(m_pxProfiling == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxProfiling = new Zenith_ProfilingImpl();
 
-	Zenith_Multithreading::RegisterThread(true);
+	g_xEngine.Threading().RegisterThread(true);
 	Zenith_Profiling::Initialise();
 
 	// Phase 3b: per-Engine TaskSystem state. Allocate BEFORE

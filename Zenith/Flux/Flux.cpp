@@ -53,7 +53,7 @@ void Flux::SubmitCommandList(const Flux_CommandList* pxCmdList,
 {
 	Zenith_Assert(pxCmdList != nullptr, "SubmitCommandList: Command list is null");
 	Zenith_Assert(pxPass != nullptr, "SubmitCommandList: pass pointer is null — bypass path no longer supported");
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SubmitCommandList: must be called from the main thread (Flux_RenderGraph::Execute Phase 2)");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SubmitCommandList: must be called from the main thread (Flux_RenderGraph::Execute Phase 2)");
 	Flux_CommandListEntry xEntry;
 	xEntry.m_pxCmdList = pxCmdList;
 	for (uint32_t i = 0; i < uNumColour; i++) xEntry.m_axColourAttachments[i] = axColourAttachments[i];
@@ -72,7 +72,7 @@ void Flux::AddResChangeCallback(void(*pfnCallback)())
 
 void Flux::ClearPendingCommandLists()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"ClearPendingCommandLists: main-thread only");
 	g_xEngine.FluxRenderer().m_xPendingCommandLists.Clear();
 }
@@ -307,7 +307,7 @@ void Flux::SyncRenderGraphDebugToggles()
 
 void Flux::SetupRenderGraph()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"SetupRenderGraph: must run on the main thread; pending command lists are accessed without locking here.");
 
 	// Clear pending command lists first — they hold pointers to the graph's command lists

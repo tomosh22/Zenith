@@ -250,7 +250,7 @@ void Zenith_SceneData::RebuildRootEntityCache()
 
 uint32_t Zenith_SceneData::GetCachedRootEntityCount()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetCachedRootEntityCount must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetCachedRootEntityCount must be called from main thread");
 	if (m_bRootEntitiesDirty)
 	{
 		RebuildRootEntityCache();
@@ -260,7 +260,7 @@ uint32_t Zenith_SceneData::GetCachedRootEntityCount()
 
 void Zenith_SceneData::GetCachedRootEntities(Zenith_Vector<Zenith_EntityID>& axOut)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetCachedRootEntities must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetCachedRootEntities must be called from main thread");
 	if (m_bRootEntitiesDirty)
 	{
 		RebuildRootEntityCache();
@@ -277,7 +277,7 @@ void Zenith_SceneData::GetCachedRootEntities(Zenith_Vector<Zenith_EntityID>& axO
 
 Zenith_EntityID Zenith_SceneData::CreateEntity()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CreateEntity must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CreateEntity must be called from main thread");
 	// C9: render-task-ordering invariant — several read APIs (EntityExists,
 	// GetComponentFromEntity, GetAllOfComponentType) widen their main-thread-only
 	// assertion to "main thread OR AreRenderTasksActive()". That relaxation is
@@ -364,7 +364,7 @@ void Zenith_SceneData::CollectHierarchyDepthFirst(Zenith_EntityID xID, Zenith_Ve
 
 void Zenith_SceneData::RemoveEntity(Zenith_EntityID xID)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RemoveEntity must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RemoveEntity must be called from main thread");
 	// C9: see CreateEntity for rationale — render-task-ordering invariant.
 	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(),
 		"RemoveEntity: scene mutation while render tasks are reading — render-task invariant violated");
@@ -437,7 +437,7 @@ Zenith_Entity Zenith_SceneData::TryGetEntity(Zenith_EntityID xID)
 
 Zenith_Entity Zenith_SceneData::FindEntityByName(const std::string& strName)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "FindEntityByName must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "FindEntityByName must be called from main thread");
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
 	{
 		Zenith_EntityID xID = m_xActiveEntities.Get(u);
@@ -465,7 +465,7 @@ const Zenith_SceneData::Zenith_EntitySlot& Zenith_SceneData::GetSlot(Zenith_Enti
 
 void Zenith_SceneData::SetMainCameraEntity(Zenith_EntityID xEntity)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetMainCameraEntity must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetMainCameraEntity must be called from main thread");
 	m_xMainCameraEntity = xEntity;
 }
 
@@ -473,7 +473,7 @@ Zenith_EntityID Zenith_SceneData::GetMainCameraEntity() const
 {
 	// Read-only: m_xMainCameraEntity is stable during render/animation tasks
 	// (main thread does not modify it while worker threads are running)
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_SceneManager::s_bRenderTasksActive,
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_SceneManager::s_bRenderTasksActive,
 		"GetMainCameraEntity must be called from main thread or during render task execution");
 	return m_xMainCameraEntity;
 }
@@ -503,7 +503,7 @@ Zenith_CameraComponent* Zenith_SceneData::TryGetMainCamera() const
 
 void Zenith_SceneData::MarkForDestruction(Zenith_EntityID xID)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkForDestruction must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MarkForDestruction must be called from main thread");
 	if (!xID.IsValid()) return;
 	if (!EntityExists(xID)) return;
 
@@ -539,7 +539,7 @@ void Zenith_SceneData::MarkChildrenForDestructionRecursive(Zenith_EntityID xID)
 
 void Zenith_SceneData::MarkForTimedDestruction(Zenith_EntityID xID, float fDelay)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkForTimedDestruction must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MarkForTimedDestruction must be called from main thread");
 	if (!xID.IsValid() || !EntityExists(xID)) return;
 
 	TimedDestruction xEntry;
@@ -557,7 +557,7 @@ bool Zenith_SceneData::IsMarkedForDestruction(Zenith_EntityID xID) const
 
 void Zenith_SceneData::ProcessPendingDestructions()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "ProcessPendingDestructions must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "ProcessPendingDestructions must be called from main thread");
 	for (int i = static_cast<int>(m_xPendingDestruction.GetSize()) - 1; i >= 0; --i)
 	{
 		Zenith_EntityID xEntityID = m_xPendingDestruction.Get(i);
@@ -578,7 +578,7 @@ void Zenith_SceneData::ProcessPendingDestructions()
 
 void Zenith_SceneData::Update(float fDt)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Update must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Update must be called from main thread");
 
 	m_bIsUpdating = true;
 
@@ -744,7 +744,7 @@ void Zenith_SceneData::ClearCreatedDuringUpdateFlags()
 
 void Zenith_SceneData::FixedUpdate(float fFixedDt)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "FixedUpdate must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "FixedUpdate must be called from main thread");
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 
 	// Snapshot entity IDs before iteration - OnFixedUpdate may create/destroy entities
