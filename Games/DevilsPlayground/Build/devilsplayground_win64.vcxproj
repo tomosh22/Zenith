@@ -511,7 +511,6 @@
     <ClCompile Include="..\Tests\Test_DPHeuristicBot_Pathing.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryAnalyzer.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp" />
-    <ClCompile Include="..\Tests\Test_EngineBootShutdownSmoke.cpp" />
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp" />
     <ClCompile Include="..\Tests\Test_FullPlaythrough.cpp" />
     <ClCompile Include="..\Tests\Test_GameLevelScene.cpp" />

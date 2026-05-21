@@ -59,9 +59,6 @@
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="..\Tests\Test_EngineBootShutdownSmoke.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

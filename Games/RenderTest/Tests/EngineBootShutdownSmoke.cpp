@@ -8,9 +8,9 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 
 // Phase 1 of the Zenith_Engine refactor: headless boot/shutdown smoke
-// test. Hosted in DP because DP's editor automation runs cleanly in
-// headless mode (RenderTest currently crashes mid-automation on a
-// pre-existing headless-VRAM issue unrelated to this refactor).
+// test. Hosted in RenderTest because RenderTest is the primary
+// per-phase verification gate (Execution Constraints in the refactor
+// plan).
 //
 // Runs Initialise -> 1 frame -> Shutdown via the existing harness.
 // The host runner invokes the test 10x in separate processes to verify
