@@ -3,7 +3,7 @@
 
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
-#include "Flux/Fog/Flux_VolumeFog.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
 
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"

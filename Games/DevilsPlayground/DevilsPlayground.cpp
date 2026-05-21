@@ -157,7 +157,7 @@ const char* Project_GetGameAssetsDir() { return GAME_ASSETS_DIR; }
 void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 	// W0 stub. B6 may set fog technique here; the game disables engine fog
-	// entirely via Flux_Fog::SetExternallyOverridden(true) inside DPFogPass.
+	// entirely via g_xEngine.Fog().SetExternallyOverridden(true) inside DPFogPass.
 }
 
 void Project_RegisterScriptBehaviours()
@@ -177,7 +177,7 @@ void Project_RegisterScriptBehaviours()
 void Project_Shutdown()
 {
 	// Order matters: tear down the render hook BEFORE engine resources go
-	// away (Flux_Fog::SetExternallyOverridden is guarded against the
+	// away (g_xEngine.Fog().SetExternallyOverridden is guarded against the
 	// render graph already being torn down).
 	DPFogPass::Shutdown();
 	DevilsPlayground::CleanupResources();

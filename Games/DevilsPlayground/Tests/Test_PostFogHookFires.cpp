@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Fog/Flux_FogImpl.h"
 
 // ============================================================================
 // PostFogHookFires_Test
@@ -27,7 +27,7 @@
 // incidental graph rebuilds during gameplay init. Non-tools builds have
 // no such rebuild and the bug surfaces as "fog completely missing".
 //
-// Symptom probe: Flux_Fog::IsExternallyOverridden() — set true only inside
+// Symptom probe: g_xEngine.Fog().IsExternallyOverridden() — set true only inside
 // DPFogPass::SetupDPFog. If the hook fired, the flag is true. If it
 // didn't, the flag stayed false from boot.
 // ============================================================================
@@ -50,7 +50,7 @@ static bool Step_PostFogHookFires(int iFrame)
 	// first frame ticks, so by Step's first call the flag must be true.
 	if (iFrame == 0)
 	{
-		g_bWasOverriddenAfterBoot = Flux_Fog::IsExternallyOverridden();
+		g_bWasOverriddenAfterBoot = g_xEngine.Fog().IsExternallyOverridden();
 		return false;
 	}
 	return false;

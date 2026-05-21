@@ -20,7 +20,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
-#include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/IBL/Flux_IBL.h"
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSGI/Flux_SSGI.h"
@@ -140,7 +140,7 @@ static void ExecuteRenderGraph()
 	// UpdateGraphPassEnables checks IsDirty() — which lets IBL force-enable
 	// all 49 of its passes for the upcoming full Compile() so the validator
 	// sees a writer for every IBL texture that DeferredShading reads.
-	Flux_Fog::ApplyTechniqueSelectionToGraph(xGraph);
+	g_xEngine.Fog().ApplyTechniqueSelectionToGraph(xGraph);
 	// SSR / SSGI runtime output toggles: when blur or denoise flip, these
 	// enable/disable their post-pass and MarkDirty so the deferred-lighting
 	// pass re-reads the correct handle (see Flux_SSR::GetReflectionHandle).

@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Decals/Flux_Decals.h"
+#include "Flux/Decals/Flux_DecalsImpl.h"
 #include "Flux/Decals/Flux_DecalsImpl.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -46,7 +47,6 @@ static_assert(sizeof(DecalInstance) == 160, "DecalInstance must match Flux_Decal
 
 // ===== STATIC STATE =====
 
-bool Flux_Decals::s_bInitialised = false;
 
 // CPU-side pool. Ring buffer for slot recycling — m_uNextSlot tracks the
 // next slot to overwrite when SpawnDecal is called.
@@ -60,11 +60,11 @@ struct CpuDecalSlot
 	float                 m_fRemainingLifetime = 0.0f;
 	DecalInstance         m_xInstance{};
 };
-static CpuDecalSlot s_axDecalSlots[Flux_Decals::uMAX_DECALS];
+static CpuDecalSlot s_axDecalSlots[Flux_DecalsImpl::uMAX_DECALS];
 
 // Dense GPU staging — packed at upload time so SV_InstanceID indexes
 // 0..uActiveDecalCount-1 contiguously regardless of CPU ring layout.
-static DecalInstance s_axDecalStaging[Flux_Decals::uMAX_DECALS];
+static DecalInstance s_axDecalStaging[Flux_DecalsImpl::uMAX_DECALS];
 
 // Default tuning. The normal-alignment threshold gates leakage onto
 // perpendicular surfaces inside the decal volume — 0.3 ≈ 70°, beyond
@@ -148,7 +148,7 @@ static void BuildDecalInstance(const Zenith_Maths::Vector3& xPosition,
 static u_int TickAndPackDense(float fDt)
 {
 	u_int uActive = 0;
-	for (u_int u = 0; u < Flux_Decals::uMAX_DECALS; ++u)
+	for (u_int u = 0; u < Flux_DecalsImpl::uMAX_DECALS; ++u)
 	{
 		CpuDecalSlot& xSlot = s_axDecalSlots[u];
 		if (!xSlot.m_bActive)
@@ -201,7 +201,7 @@ static void InitialiseDecalIndexBuffer()
 
 // ===== PIPELINES =====
 
-void Flux_Decals::BuildPipelines()
+void Flux_DecalsImpl::BuildPipelines()
 {
 	// NormalsCopy — vanilla fullscreen-quad pass writing the transient.
 	Flux_PipelineHelper::BuildFullscreenPipeline(
@@ -259,7 +259,7 @@ void Flux_Decals::BuildPipelines()
 
 // ===== INIT / SHUTDOWN =====
 
-void Flux_Decals::Initialise()
+void Flux_DecalsImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -283,7 +283,7 @@ void Flux_Decals::Initialise()
 		FluxShaderProgram::Decals_NormalsCopy,
 		FluxShaderProgram::Decals_Apply,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Decals::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Decals().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -292,13 +292,13 @@ void Flux_Decals::Initialise()
 		dbg_bDecalDebugSpheres);
 #endif
 
-	s_bInitialised = true;
+	m_bInitialised = true;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Decals initialised (deferred screen-space box, max %u decals)", uMAX_DECALS);
 }
 
-void Flux_Decals::Shutdown()
+void Flux_DecalsImpl::Shutdown()
 {
-	if (!s_bInitialised)
+	if (!m_bInitialised)
 		return;
 
 	Flux_MemoryManager::DestroyDynamicReadWriteBuffer(g_xEngine.Decals().m_xDecalBuffer);
@@ -315,14 +315,14 @@ void Flux_Decals::Shutdown()
 
 	g_xEngine.Decals().m_pxGraph           = nullptr;
 	g_xEngine.Decals().m_uActiveDecalCount = 0;
-	s_bInitialised      = false;
+	m_bInitialised      = false;
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Decals shut down");
 }
 
 // ===== GAME-SIDE API =====
 
-void Flux_Decals::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
+void Flux_DecalsImpl::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
                              const Zenith_Maths::Vector3& xNormal,
                              Zenith_TextureAsset* /*pxTexture*/,
                              float                        fSize,
@@ -333,12 +333,12 @@ void Flux_Decals::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
 	// produce a NaN basis — log + bail.
 	if (glm::length2(xNormal) < 1e-6f)
 	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Decals::SpawnDecal: ignoring near-zero normal");
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DecalsImpl::SpawnDecal: ignoring near-zero normal");
 		return;
 	}
 	if (fSize <= 0.0f || fLifetime <= 0.0f)
 	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Decals::SpawnDecal: ignoring non-positive size/lifetime");
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DecalsImpl::SpawnDecal: ignoring non-positive size/lifetime");
 		return;
 	}
 
@@ -368,7 +368,7 @@ void Flux_Decals::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
 		uSlot, bWasActive ? 1 : 0, g_xEngine.Decals().m_uActiveDecalCount,
 		xPosition.x, xPosition.y, xPosition.z,
 		xUnitNormal.x, xUnitNormal.y, xUnitNormal.z,
-		fSize, fLifetime, s_bInitialised ? 1 : 0);
+		fSize, fLifetime, m_bInitialised ? 1 : 0);
 }
 
 // ===== RECORD CALLBACKS =====
@@ -448,7 +448,7 @@ static void PrepareDecals(void*)
 
 // ===== GRAPH SETUP =====
 
-void Flux_Decals::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	g_xEngine.Decals().m_pxGraph = &xGraph;
 
@@ -489,14 +489,14 @@ void Flux_Decals::SetupRenderGraph(Flux_RenderGraph& xGraph)
 // ===== TEST HOOKS =====
 
 #ifdef ZENITH_TESTING
-u_int Flux_Decals::GetActiveCountForTest()
+u_int Flux_DecalsImpl::GetActiveCountForTest()
 {
 	return g_xEngine.Decals().m_uActiveDecalCount;
 }
 
-Flux_Decals::TestSlotView Flux_Decals::GetSlotForTest(u_int uSlotIndex)
+Flux_DecalsImpl::TestSlotView Flux_DecalsImpl::GetSlotForTest(u_int uSlotIndex)
 {
-	Zenith_Assert(uSlotIndex < uMAX_DECALS, "Flux_Decals::GetSlotForTest: index %u >= %u", uSlotIndex, uMAX_DECALS);
+	Zenith_Assert(uSlotIndex < uMAX_DECALS, "Flux_DecalsImpl::GetSlotForTest: index %u >= %u", uSlotIndex, uMAX_DECALS);
 	const CpuDecalSlot& xSlot = s_axDecalSlots[uSlotIndex];
 	TestSlotView xView;
 	xView.m_xPosition          = xSlot.m_xPosition;
@@ -506,7 +506,7 @@ Flux_Decals::TestSlotView Flux_Decals::GetSlotForTest(u_int uSlotIndex)
 	return xView;
 }
 
-void Flux_Decals::ResetForTest()
+void Flux_DecalsImpl::ResetForTest()
 {
 	for (u_int u = 0; u < uMAX_DECALS; ++u)
 		s_axDecalSlots[u].m_bActive = false;

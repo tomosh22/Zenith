@@ -23,7 +23,7 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UI.h"
-#include "Flux/Decals/Flux_Decals.h"
+#include "Flux/Decals/Flux_DecalsImpl.h"
 
 #include "RenderTest/Components/RenderTest_GameplayState.h"
 
@@ -754,7 +754,7 @@ private:
 
 		if (xHit.m_bHit)
 		{
-			Flux_Decals::SpawnDecal(
+			g_xEngine.Decals().SpawnDecal(
 				xHit.m_xHitPoint, xHit.m_xHitNormal,
 				/*pxTexture*/ nullptr,
 				k_fDecalSize, k_fDecalLifetime);

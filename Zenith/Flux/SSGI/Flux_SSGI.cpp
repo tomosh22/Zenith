@@ -8,7 +8,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDR.h"
-#include "Flux/Fog/Flux_VolumeFog.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -255,7 +255,7 @@ static void ExecuteSSGIRayMarch(Flux_CommandList* pxCommandList, void*)
 	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
 	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xHiZTex", &g_xEngine.HiZ().GetHiZSRV());
 	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xBlueNoiseTex", &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.SSGI().m_xRayMarchShader, "g_xBlueNoiseTex", &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }

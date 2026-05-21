@@ -16,9 +16,9 @@
 #endif
 #include "Flux/Primitives/Flux_Primitives.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
-#include "Flux/SSAO/Flux_SSAO.h"
-#include "Flux/Fog/Flux_Fog.h"
-#include "Flux/Fog/Flux_VolumeFog.h"
+#include "Flux/SSAO/Flux_SSAOImpl.h"
+#include "Flux/Fog/Flux_FogImpl.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Zenith_GameRenderHook.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/SDFs/Flux_SDFsImpl.h"
@@ -35,7 +35,7 @@
 #include "Flux/Vegetation/Flux_Grass.h"
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
-#include "Flux/Decals/Flux_Decals.h"
+#include "Flux/Decals/Flux_DecalsImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 #include "Flux/Flux_RendererImpl.h"
@@ -227,9 +227,9 @@ void Flux::LateInitialise()
 	g_xEngine.DynamicLights().Initialise();   // Light gather + upload (front-end for clustered deferred)
 	g_xEngine.LightClustering().Initialise(); // Per-cluster light culling compute (must precede DeferredShading)
 	g_xEngine.DeferredShading().Initialise(); // Reads cluster buffers + light buffer in fragment shader
-	Flux_Decals::Initialise();          // Deferred screen-space box decals (writes G-buffer pre-readers)
-	Flux_SSAO::Initialise();
-	Flux_Fog::Initialise();
+	g_xEngine.Decals().Initialise();          // Deferred screen-space box decals (writes G-buffer pre-readers)
+	g_xEngine.SSAO().Initialise();
+	g_xEngine.Fog().Initialise();
 	g_xEngine.SDFs().Initialise();
 	Flux_Particles::Initialise();
 	g_xEngine.Quads().Initialise();
@@ -341,7 +341,7 @@ void Flux::SetupRenderGraph()
 	// registered after all G-buffer writers and before all G-buffer
 	// readers so the topo sort places it correctly. Grass doesn't write
 	// the G-buffer, so its position relative to decals is irrelevant.
-	Flux_Decals::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Decals().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// Screen-space effects
 	g_xEngine.HiZ().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
@@ -359,12 +359,12 @@ void Flux::SetupRenderGraph()
 	// top of the already-lit HDR scene. Registering here keeps the writer-chain
 	// topological order correct.
 	Flux_Skybox::SetupAerialPerspectiveRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_SSAO::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_Fog::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.SSAO().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Fog().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// Game-side post-fog hook: contracted to fire AFTER engine fog passes are
 	// registered and BEFORE any post-processing passes. Games that disable the
-	// engine fog system (Flux_Fog::SetExternallyOverridden(true)) and substitute
+	// engine fog system (g_xEngine.Fog().SetExternallyOverridden(true)) and substitute
 	// their own atmospheric pass register here. See Zenith_GameRenderHook.h.
 	Zenith_GameRenderHook::InvokePostFogRegistrations(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
@@ -401,7 +401,7 @@ void Flux::ReleaseAssetReferences()
 	Flux_Particles::ReleaseAssetReferences();
 	Flux_Terrain::ReleaseAssetReferences();
 	Flux_Skybox::ReleaseAssetReferences();
-	Flux_VolumeFog::ReleaseAssetReferences();
+	g_xEngine.VolumeFog().ReleaseAssetReferences();
 
 	// Material defaults live in AssetHandling but are part of the same pre-registry
 	// release window — this is the natural place to drop them.
@@ -425,8 +425,8 @@ void Flux::Shutdown()
 	Flux_Particles::Shutdown();
 	g_xEngine.SDFs().Shutdown();
 	// Flux_Fog, Flux_DeferredShading - no Shutdown() methods
-	Flux_SSAO::Shutdown();           // SSAO render targets
-	Flux_Decals::Shutdown();          // Deferred decal renderer (frees instance buffer + IB)
+	g_xEngine.SSAO().Shutdown();           // SSAO render targets
+	g_xEngine.Decals().Shutdown();          // Deferred decal renderer (frees instance buffer + IB)
 	g_xEngine.LightClustering().Shutdown(); // Cluster compute pass (frees cluster buffers)
 	g_xEngine.DynamicLights().Shutdown();   // Light gather front-end (frees unified light buffer)
 	Flux_SSGI::Shutdown();         // Before HiZ (SSGI uses Hi-Z)

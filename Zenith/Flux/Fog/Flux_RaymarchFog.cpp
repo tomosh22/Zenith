@@ -3,7 +3,7 @@
 
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
-#include "Flux/Fog/Flux_VolumeFog.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
 
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Graphics.h"
@@ -113,7 +113,7 @@ void Flux_RaymarchFogImpl::Reset()
 void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
 {
 	// Get shared fog parameters
-	Flux_VolumeFogConstants& xShared = Flux_VolumeFog::GetSharedConstants();
+	Flux_VolumeFogConstants& xShared = g_xEngine.VolumeFog().GetSharedConstants();
 
 	// Update constants
 	s_xConstants.m_xFogColour = xShared.m_xFogColour;
@@ -167,8 +167,8 @@ void Flux_RaymarchFogImpl::Render(Flux_CommandList* pxCommandList)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindCBV(g_xEngine.RaymarchFog().m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV(g_xEngine.RaymarchFog().m_xShader, "u_xDepthTexture", Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(g_xEngine.RaymarchFog().m_xShader, "u_xNoiseTexture3D", &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV);
-	xBinder.BindSRV(g_xEngine.RaymarchFog().m_xShader, "u_xBlueNoiseTexture", &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.RaymarchFog().m_xShader, "u_xNoiseTexture3D", &g_xEngine.VolumeFog().GetNoiseTexture3D()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.RaymarchFog().m_xShader, "u_xBlueNoiseTexture", &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
 
 	// Bind CSM shadow maps and matrices for volumetric shadows
 	static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "u_xCSM0", "u_xCSM1", "u_xCSM2", "u_xCSM3" };

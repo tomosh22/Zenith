@@ -1,9 +1,10 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Flux.h"
-#include "Flux/Fog/Flux_VolumeFog.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
 #include "Flux/Fog/Flux_FroxelFogImpl.h"
@@ -48,7 +49,14 @@ static struct Flux_FogConstants
 	float m_fPad[3] = { 0.f, 0.f, 0.f };
 } dbg_xConstants;
 
-void Flux_Fog::BuildPipelines()
+static void ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData);
+static void ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData);
+
+void Flux_FogImpl::BuildPipelines()
 {
 	g_xEngine.Fog().m_xShader.Initialise(FluxShaderProgram::Fog_Simple);
 
@@ -69,12 +77,12 @@ void Flux_Fog::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(g_xEngine.Fog().m_xPipeline, xPipelineSpec);
 }
 
-void Flux_Fog::Initialise()
+void Flux_FogImpl::Initialise()
 {
 	BuildPipelines();
 
 	// Initialize shared volumetric fog infrastructure
-	Flux_VolumeFog::Initialise();
+	g_xEngine.VolumeFog().Initialise();
 
 	// Initialize all volumetric fog techniques (spatial-only, no temporal)
 	g_xEngine.GodRaysFog().Initialise();
@@ -85,7 +93,7 @@ void Flux_Fog::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::Fog_Simple,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Fog::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Fog().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -101,18 +109,18 @@ void Flux_Fog::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Fog initialised (4 spatial-only techniques: Simple, Froxel, Raymarch, GodRays)");
 }
 
-void Flux_Fog::Reset()
+void Flux_FogImpl::Reset()
 {
 	// Reset all volumetric fog techniques (spatial-only, no temporal)
-	Flux_VolumeFog::Reset();
+	g_xEngine.VolumeFog().Reset();
 	g_xEngine.GodRaysFog().Reset();
 	g_xEngine.RaymarchFog().Reset();
 	g_xEngine.FroxelFog().Reset();
 
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Fog::Reset() - Reset all fog systems");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_FogImpl::Reset() - Reset all fog systems");
 }
 
-void Flux_Fog::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
+void Flux_FogImpl::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 {
 	// EXT-1: when a game has taken over fog rendering via SetExternallyOverridden,
 	// short-circuit completely — DON'T re-toggle SetEnabled per frame, otherwise
@@ -151,7 +159,7 @@ void Flux_Fog::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 	xGraph.MarkDirty();
 }
 
-void Flux_Fog::ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -172,7 +180,7 @@ void Flux_Fog::ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_Fog::ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -182,7 +190,7 @@ void Flux_Fog::ExecuteFroxelInject(Flux_CommandList* pxCommandList, void* pUserD
 	g_xEngine.FroxelFog().RenderInject(pxCommandList);
 }
 
-void Flux_Fog::ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -192,7 +200,7 @@ void Flux_Fog::ExecuteFroxelLight(Flux_CommandList* pxCommandList, void* pUserDa
 	g_xEngine.FroxelFog().RenderLight(pxCommandList);
 }
 
-void Flux_Fog::ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -202,7 +210,7 @@ void Flux_Fog::ExecuteFroxelApply(Flux_CommandList* pxCommandList, void* pUserDa
 	g_xEngine.FroxelFog().RenderApply(pxCommandList);
 }
 
-void Flux_Fog::ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -212,7 +220,7 @@ void Flux_Fog::ExecuteRaymarch(Flux_CommandList* pxCommandList, void* pUserData)
 	g_xEngine.RaymarchFog().Render(pxCommandList);
 }
 
-void Flux_Fog::ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
@@ -222,7 +230,7 @@ void Flux_Fog::ExecuteGodRays(Flux_CommandList* pxCommandList, void* pUserData)
 	g_xEngine.GodRaysFog().Render(pxCommandList);
 }
 
-void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// All fog technique passes are registered, but only the active technique's
 	// passes are enabled. ApplyTechniqueSelectionToGraph (called every frame
@@ -281,12 +289,8 @@ void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	ReapplyOverrideToCurrentGraph();
 }
 
-bool Flux_Fog::IsExternallyOverridden()
-{
-	return s_bExternallyOverridden;
-}
 
-void Flux_Fog::SetExternallyOverridden(bool bOverridden)
+void Flux_FogImpl::SetExternallyOverridden(bool bOverridden)
 {
 	s_bExternallyOverridden = bOverridden;
 
@@ -309,7 +313,7 @@ void Flux_Fog::SetExternallyOverridden(bool bOverridden)
 	xGraph.MarkDirty();
 }
 
-void Flux_Fog::ReapplyOverrideToCurrentGraph()
+void Flux_FogImpl::ReapplyOverrideToCurrentGraph()
 {
 	if (!s_bExternallyOverridden) return;
 	if (!Flux::IsRenderGraphValid()) return;

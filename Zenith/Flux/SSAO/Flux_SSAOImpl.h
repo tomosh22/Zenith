@@ -5,7 +5,7 @@
 
 class Flux_RenderGraph;
 
-// Phase 7d: per-Engine state for SSAO subsystem.
+// Phase 9: state + behaviour for SSAO subsystem.
 class Flux_SSAOImpl
 {
 public:
@@ -14,6 +14,11 @@ public:
 
 	Flux_SSAOImpl(const Flux_SSAOImpl&) = delete;
 	Flux_SSAOImpl& operator=(const Flux_SSAOImpl&) = delete;
+
+	void Initialise();
+	void Shutdown();
+	void BuildPipelines();
+	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	Flux_Shader   m_xGenerateShader;
 	Flux_Shader   m_xBlurShader;
@@ -25,6 +30,4 @@ public:
 	Flux_TransientHandle m_xRawOcclusionHandle;
 	Flux_TransientHandle m_xBlurredHandle;
 	Flux_RenderGraph*    m_pxGraph = nullptr;
-	// SSAOGenerateConstants / SSAOBlurConstants are .cpp-local types --
-	// their backing storage stays file-static there.
 };

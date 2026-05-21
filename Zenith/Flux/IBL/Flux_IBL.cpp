@@ -243,9 +243,9 @@ void Flux_IBL::ApplyResolvedIBLEnables(Flux_RenderGraph& xGraph,
 void Flux_IBL::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 {
 	// IMPORTANT ordering: this dirty check must run AFTER any system that may
-	// have called MarkDirty() this frame (e.g. Flux_Fog::ApplyTechniqueSelectionToGraph),
+	// have called MarkDirty() this frame (e.g. g_xEngine.Fog().ApplyTechniqueSelectionToGraph),
 	// so the call sequence in Zenith_Core::ExecuteRenderGraph is:
-	//   1. Flux_Fog::ApplyTechniqueSelectionToGraph(xGraph)  // may call MarkDirty
+	//   1. g_xEngine.Fog().ApplyTechniqueSelectionToGraph(xGraph)  // may call MarkDirty
 	//   2. Flux_IBL::UpdateGraphPassEnables(xGraph)          // sees IsDirty()
 	//   3. xGraph.Compile()                                  // full recompile
 	//   4. xGraph.Execute()

@@ -7,7 +7,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Zenith_GameRenderHook.h"
-#include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -155,7 +155,7 @@ void DPFogPass::Shutdown()
 	// silently disabled. Guarded against teardown order — see EXT-1.
 	if (Flux::IsRenderGraphValid())
 	{
-		Flux_Fog::SetExternallyOverridden(false);
+		g_xEngine.Fog().SetExternallyOverridden(false);
 	}
 	s_bPipelineBuilt = false;
 }
@@ -165,7 +165,7 @@ namespace
 	void SetupDPFog(Flux_RenderGraph& xGraph)
 	{
 		// EXT-1: kill the 6 engine fog passes — DP ships its own.
-		Flux_Fog::SetExternallyOverridden(true);
+		g_xEngine.Fog().SetExternallyOverridden(true);
 
 		// Register the actual DP_Fog pass. Reads scene depth so the shader can
 		// reconstruct world position; writes the HDR scene target. Pass builder

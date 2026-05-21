@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/SSAO/Flux_SSAO.h"
+#include "Flux/SSAO/Flux_SSAOImpl.h"
 #include "Flux/SSAO/Flux_SSAOImpl.h"
 
 #include "Flux/Flux_RenderTargets.h"
@@ -42,12 +43,12 @@ static struct SSAOBlurConstants
 // Attachment accessors — always resolve through the graph's transient slot.
 static Flux_RenderAttachment& GetRawOcclusion()
 {
-	Zenith_Assert(g_xEngine.SSAO().m_pxGraph, "Flux_SSAO::GetRawOcclusion: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	Zenith_Assert(g_xEngine.SSAO().m_pxGraph, "Flux_SSAOImpl::GetRawOcclusion: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
 	return g_xEngine.SSAO().m_pxGraph->GetTransientAttachment(g_xEngine.SSAO().m_xRawOcclusionHandle);
 }
 static Flux_RenderAttachment& GetBlurred()
 {
-	Zenith_Assert(g_xEngine.SSAO().m_pxGraph, "Flux_SSAO::GetBlurred: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	Zenith_Assert(g_xEngine.SSAO().m_pxGraph, "Flux_SSAOImpl::GetBlurred: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
 	return g_xEngine.SSAO().m_pxGraph->GetTransientAttachment(g_xEngine.SSAO().m_xBlurredHandle);
 }
 
@@ -69,7 +70,7 @@ static const Flux_ShaderResourceView* DebugGetBlurredSRV()
 
 // ---- Init / Shutdown ----
 
-void Flux_SSAO::BuildPipelines()
+void Flux_SSAOImpl::BuildPipelines()
 {
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		g_xEngine.SSAO().m_xGenerateShader, g_xEngine.SSAO().m_xGeneratePipeline,
@@ -91,7 +92,7 @@ void Flux_SSAO::BuildPipelines()
 	}
 }
 
-void Flux_SSAO::Initialise()
+void Flux_SSAOImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -101,7 +102,7 @@ void Flux_SSAO::Initialise()
 		FluxShaderProgram::SSAO_Blur,
 		FluxShaderProgram::SSAO_Upsample,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_SSAO::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.SSAO().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -125,7 +126,7 @@ void Flux_SSAO::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSAO initialised");
 }
 
-void Flux_SSAO::Shutdown()
+void Flux_SSAOImpl::Shutdown()
 {
 	g_xEngine.SSAO().m_pxGraph = nullptr;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSAO shut down");
@@ -193,7 +194,7 @@ static void ExecuteSSAOUpsample(Flux_CommandList* pxCommandList, void*)
 
 // ---- Render graph setup (chooses transient vs owned based on toggle) ----
 
-void Flux_SSAO::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_SSAOImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	g_xEngine.SSAO().m_pxGraph = &xGraph;
 

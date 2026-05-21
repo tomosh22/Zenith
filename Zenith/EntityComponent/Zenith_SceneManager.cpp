@@ -18,7 +18,7 @@
 #include "Flux/Text/Flux_Text.h"
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Skybox/Flux_Skybox.h"
-#include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Fog/Flux_FogImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #endif
@@ -1362,7 +1362,7 @@ void Zenith_SceneManager::ResetAllRenderSystems()
 	Flux_Text::Reset();
 	Flux_Particles::Reset();
 	Flux_Skybox::Reset();
-	Flux_Fog::Reset();
+	g_xEngine.Fog().Reset();
 #ifdef ZENITH_TOOLS
 	Flux_Gizmos::Reset();
 #endif

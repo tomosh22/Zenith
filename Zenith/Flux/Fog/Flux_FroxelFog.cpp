@@ -3,7 +3,7 @@
 
 #include "Flux/Fog/Flux_FroxelFogImpl.h"
 #include "Flux/Fog/Flux_FroxelFogImpl.h"
-#include "Flux/Fog/Flux_VolumeFog.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
 
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Graphics.h"
@@ -263,7 +263,7 @@ float Flux_FroxelFogImpl::GetFarZ()
 void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 {
 	// Get shared fog constants
-	const Flux_VolumeFogConstants& xShared = Flux_VolumeFog::GetSharedConstants();
+	const Flux_VolumeFogConstants& xShared = g_xEngine.VolumeFog().GetSharedConstants();
 	float fTime = static_cast<float>(Flux::GetFrameCounter()) * 0.016f;
 
 	s_xInjectConstants.m_xFogParams = Zenith_Maths::Vector4(
@@ -298,7 +298,7 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 
 	Flux_ShaderBinder xInjectBinder(*pxCommandList);
 	xInjectBinder.BindCBV(g_xEngine.FroxelFog().m_xInjectShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xInjectBinder.BindSRV(g_xEngine.FroxelFog().m_xInjectShader, "u_xNoiseTexture3D", &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV, &g_xEngine.FluxGraphics().m_xRepeatSampler);
+	xInjectBinder.BindSRV(g_xEngine.FroxelFog().m_xInjectShader, "u_xNoiseTexture3D", &g_xEngine.VolumeFog().GetNoiseTexture3D()->m_xSRV, &g_xEngine.FluxGraphics().m_xRepeatSampler);
 	xInjectBinder.BindUAV_Texture(g_xEngine.FroxelFog().m_xInjectShader, "u_xDensityGrid", &GetDensityGridInternal().UAV(0));
 	xInjectBinder.BindDrawConstants(g_xEngine.FroxelFog().m_xInjectShader, "InjectConstants", &s_xInjectConstants, sizeof(InjectConstants));
 	pxCommandList->AddCommand<Flux_CommandDispatch>(
@@ -311,7 +311,7 @@ void Flux_FroxelFogImpl::RenderInject(Flux_CommandList* pxCommandList)
 void Flux_FroxelFogImpl::RenderLight(Flux_CommandList* pxCommandList)
 {
 	extern u_int dbg_uVolFogDebugMode;
-	const Flux_VolumeFogConstants& xShared = Flux_VolumeFog::GetSharedConstants();
+	const Flux_VolumeFogConstants& xShared = g_xEngine.VolumeFog().GetSharedConstants();
 
 	s_xLightConstants.m_xFogColour = xShared.m_xFogColour;
 	s_xLightConstants.m_xLightDirection = Zenith_Maths::Vector4(

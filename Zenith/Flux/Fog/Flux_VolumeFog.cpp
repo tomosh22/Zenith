@@ -1,6 +1,7 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Fog/Flux_VolumeFog.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 
 #include "Flux/Flux_Graphics.h"
@@ -86,7 +87,7 @@ namespace
 // Static member definitions
 // Note: Use {} initialization to trigger default member initializers
 
-void Flux_VolumeFog::Initialise()
+void Flux_VolumeFogImpl::Initialise()
 {
 	// Generate shared textures
 	GenerateNoiseTexture3D();
@@ -109,23 +110,23 @@ void Flux_VolumeFog::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_VolumeFog initialised");
 }
 
-void Flux_VolumeFog::ReleaseAssetReferences()
+void Flux_VolumeFogImpl::ReleaseAssetReferences()
 {
 	g_xEngine.VolumeFog().m_xNoiseTexture3D.Clear();
 	g_xEngine.VolumeFog().m_xBlueNoiseTexture.Clear();
 }
 
-void Flux_VolumeFog::Shutdown()
+void Flux_VolumeFogImpl::Shutdown()
 {
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_VolumeFog shutdown");
 }
 
-void Flux_VolumeFog::Reset()
+void Flux_VolumeFogImpl::Reset()
 {
 	// Spatial-only fog - no history buffers to reset
 }
 
-void Flux_VolumeFog::GenerateNoiseTexture3D()
+void Flux_VolumeFogImpl::GenerateNoiseTexture3D()
 {
 	constexpr u_int uSize = 64;  // 64^3 texture
 	constexpr u_int uNumPixels = uSize * uSize * uSize;
@@ -182,7 +183,7 @@ void Flux_VolumeFog::GenerateNoiseTexture3D()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Generated 3D noise texture (%ux%ux%u)", uSize, uSize, uSize);
 }
 
-void Flux_VolumeFog::GenerateBlueNoiseTexture()
+void Flux_VolumeFogImpl::GenerateBlueNoiseTexture()
 {
 	constexpr u_int uSize = 64;  // 64x64 texture
 	constexpr u_int uNumPixels = uSize * uSize;
@@ -264,26 +265,21 @@ void Flux_VolumeFog::GenerateBlueNoiseTexture()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Generated blue noise texture (%ux%u)", uSize, uSize);
 }
 
-void Flux_VolumeFog::CreateFroxelGrids()
+void Flux_VolumeFogImpl::CreateFroxelGrids()
 {
 	// STUB - not implemented
 }
 
-void Flux_VolumeFog::CreateDebugOutput()
+void Flux_VolumeFogImpl::CreateDebugOutput()
 {
 	// STUB - not implemented
 }
 
-void Flux_VolumeFog::RegisterDebugVariables()
+void Flux_VolumeFogImpl::RegisterDebugVariables()
 {
 	// Done in Initialise
 }
 
 // Phase 7d: out-of-line accessor bodies (header inlines stripped).
-Zenith_TextureAsset*       Flux_VolumeFog::GetNoiseTexture3D()      { return g_xEngine.VolumeFog().m_xNoiseTexture3D.GetDirect(); }
-Zenith_TextureAsset*       Flux_VolumeFog::GetBlueNoiseTexture()    { return g_xEngine.VolumeFog().m_xBlueNoiseTexture.GetDirect(); }
-Flux_RenderAttachment&     Flux_VolumeFog::GetFroxelDensityGrid()   { return g_xEngine.VolumeFog().m_xFroxelDensityGrid; }
-Flux_RenderAttachment&     Flux_VolumeFog::GetFroxelLightingGrid()  { return g_xEngine.VolumeFog().m_xFroxelLightingGrid; }
-Flux_RenderAttachment&     Flux_VolumeFog::GetDebugOutput()         { return g_xEngine.VolumeFog().m_xDebugOutput; }
-Flux_VolumeFogConstants&   Flux_VolumeFog::GetSharedConstants()     { return g_xEngine.VolumeFog().m_xSharedConstants; }
-Flux_FroxelConfig&         Flux_VolumeFog::GetFroxelConfig()        { return g_xEngine.VolumeFog().m_xFroxelConfig; }
+Zenith_TextureAsset*       Flux_VolumeFogImpl::GetNoiseTexture3D()      { return g_xEngine.VolumeFog().m_xNoiseTexture3D.GetDirect(); }
+Zenith_TextureAsset*       Flux_VolumeFogImpl::GetBlueNoiseTexture()    { return g_xEngine.VolumeFog().m_xBlueNoiseTexture.GetDirect(); }

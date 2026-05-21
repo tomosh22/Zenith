@@ -1,16 +1,14 @@
 #pragma once
 
-#include "Flux/Decals/Flux_Decals.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Maths/Zenith_Maths.h"
 
+class Zenith_TextureAsset;
 class Flux_RenderGraph;
 
-// Phase 7d: per-Engine state for Decals subsystem. The CPU staging
-// types (CpuDecalSlot / DecalInstance) live as file-local POD in the
-// .cpp -- the array storage stays there, only the counts + pipelines
-// + graph state move here.
+// Phase 9: state + behaviour for Decals subsystem.
 class Flux_DecalsImpl
 {
 public:
@@ -20,6 +18,35 @@ public:
 	Flux_DecalsImpl(const Flux_DecalsImpl&) = delete;
 	Flux_DecalsImpl& operator=(const Flux_DecalsImpl&) = delete;
 
+	void Initialise();
+	void Shutdown();
+	void BuildPipelines();
+	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	void SpawnDecal(const Zenith_Maths::Vector3& xPosition,
+	                const Zenith_Maths::Vector3& xNormal,
+	                Zenith_TextureAsset*         pxTexture,
+	                float                        fSize,
+	                float                        fLifetime);
+
+	bool IsInitialised() const { return m_bInitialised; }
+
+	static constexpr u_int uMAX_DECALS = 64;
+
+#ifdef ZENITH_TESTING
+	struct TestSlotView
+	{
+		Zenith_Maths::Vector3 m_xPosition;
+		Zenith_Maths::Vector3 m_xNormal;
+		float                 m_fRemainingLifetime;
+		bool                  m_bActive;
+	};
+	u_int        GetActiveCountForTest();
+	TestSlotView GetSlotForTest(u_int uSlotIndex);
+	void         ResetForTest();
+#endif
+
+	bool                        m_bInitialised      = false;
 	u_int                       m_uNextSlot         = 0;
 	u_int                       m_uActiveDecalCount = 0;
 
