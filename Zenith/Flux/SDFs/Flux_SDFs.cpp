@@ -7,7 +7,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -135,6 +135,6 @@ void Flux_SDFsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// The pipeline uses default depth-test+write enabled, so the depth attachment
 	// is bound as a writable DSV for the renderpass.
 	xGraph.AddPass("SDFs", ExecuteSDFs)
-		.Writes(Flux_HDR::GetHDRSceneTarget(),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),        RESOURCE_ACCESS_WRITE_RTV)
 		.Writes(Flux_Graphics::GetDepthAttachment(),  RESOURCE_ACCESS_WRITE_DSV);
 }

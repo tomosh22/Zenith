@@ -89,7 +89,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	}
 
 	// Ensure streaming manager is initialized — defensive, normally
-	// Flux_Terrain::Initialise() does this once at engine startup.
+	// g_xEngine.Terrain().Initialise() does this once at engine startup.
 	if (!g_xEngine.TerrainStreaming().IsInitialized())
 	{
 		g_xEngine.TerrainStreaming().Initialize();
@@ -858,7 +858,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	m_bCullingResourcesInitialized = true;
 
 	// New per-terrain GPU buffers (chunk data, indirect, count, LOD level)
-	// just appeared. Flux_Terrain::SetupRenderGraph reads
+	// just appeared. g_xEngine.Terrain().SetupRenderGraph reads
 	// m_bCullingResourcesInitialized when declaring per-component buffer
 	// dependencies, so the next graph compile must rebuild to pick them up.
 	Flux::RequestGraphRebuild();

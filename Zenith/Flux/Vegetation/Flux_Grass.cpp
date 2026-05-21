@@ -5,7 +5,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -171,7 +171,7 @@ void Flux_GrassImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// also shared with DeferredShading's no-depth setup, which DOES clear it,
 	// so the underlying image is already in a valid state when Grass runs.
 	xGraph.AddPass("Grass", ExecuteRender)
-		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_DEPTH);
 }
 

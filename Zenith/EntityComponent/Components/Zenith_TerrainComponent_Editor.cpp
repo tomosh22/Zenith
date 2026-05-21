@@ -11,7 +11,7 @@
 #include "Editor/Zenith_Editor_MaterialUI.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include <filesystem>
 
@@ -448,14 +448,14 @@ void Zenith_TerrainComponent::RenderDebugVisualizationSection()
 		"Roughness", "Metallic", "Occlusion", "World Position", "Chunk Grid",
 		"Tangent", "Bitangent Sign", "Source Chunk Hash"
 	};
-	u_int& uDebugMode = Flux_Terrain::GetDebugMode();
+	u_int& uDebugMode = g_xEngine.Terrain().GetDebugMode();
 	int iDebugMode = static_cast<int>(uDebugMode);
 	if (ImGui::Combo("Visualization Mode", &iDebugMode, aszDebugModeNames, IM_ARRAYSIZE(aszDebugModeNames)))
 	{
 		uDebugMode = static_cast<u_int>(iDebugMode);
 	}
 
-	bool& bWireframe = Flux_Terrain::GetWireframeMode();
+	bool& bWireframe = g_xEngine.Terrain().GetWireframeMode();
 	ImGui::Checkbox("Wireframe", &bWireframe);
 
 	ImGui::Separator();

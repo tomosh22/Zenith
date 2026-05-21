@@ -124,7 +124,7 @@ public:
 	/**
 	 * Upload this frame's camera frustum planes + position to the per-component
 	 * frustum-planes constant buffer. Called once per frame from
-	 * Flux_Terrain::PreRenderUpdate (Prepare phase) so the host transfer
+	 * g_xEngine.Terrain().PreRenderUpdate (Prepare phase) so the host transfer
 	 * write is colocated with the chunk-data upload — both are then visible
 	 * to the render-graph barrier synthesiser via MarkBufferHostWritten.
 	 *

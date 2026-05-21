@@ -1,14 +1,15 @@
 #pragma once
 
-#include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Collections/Zenith_Vector.h"
 
+class Flux_DynamicConstantBuffer;
 class Zenith_TerrainComponent;
 
-// Phase 7h: per-Engine state for Terrain subsystem.
+// Phase 9: state + behaviour for Terrain subsystem.
 class Flux_TerrainImpl
 {
 public:
@@ -17,6 +18,27 @@ public:
 
 	Flux_TerrainImpl(const Flux_TerrainImpl&) = delete;
 	Flux_TerrainImpl& operator=(const Flux_TerrainImpl&) = delete;
+
+	void Initialise();
+	void BuildPipelines();
+
+	void ReleaseAssetReferences();
+
+	void Shutdown();
+	void Reset();
+
+	void RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);
+
+	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	void PreRenderUpdate(void* pUserData);
+
+	Flux_Pipeline& GetShadowPipeline()                          { return m_xTerrainShadowPipeline; }
+	Flux_DynamicConstantBuffer& GetTerrainConstantsBuffer()     { return m_xTerrainConstantsBuffer; }
+	Flux_Pipeline& GetCullingPipeline()                         { return m_xCullingPipeline; }
+
+	u_int& GetDebugMode();
+	bool& GetWireframeMode();
 
 	// Per-frame list of terrain components contributing to the current draw.
 	Zenith_Vector<Zenith_TerrainComponent*> m_xTerrainComponentsToRender;

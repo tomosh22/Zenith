@@ -8,7 +8,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Zenith_GameRenderHook.h"
 #include "Flux/Fog/Flux_FogImpl.h"
-#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
@@ -172,7 +172,7 @@ namespace
 		// is &&-qualified so the chain MUST be consumed inline.
 		xGraph.AddPass("DP_Fog", &ExecuteDPFog)
 			.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
-			.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV);
+			.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV);
 	}
 
 	void ExecuteDPFog(Flux_CommandList* pxCommandList, void* /*pUserData*/)

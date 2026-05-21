@@ -4,7 +4,7 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
@@ -189,7 +189,7 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// at the semicolon. All loop/conditional declarations below go through
 	// the graph's Read/ReadTransient helpers with the captured handle.
 	const Flux_PassHandle xPass = xGraph.AddPass("Apply Lighting", ExecuteApplyLighting)
-		.Writes(Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.HDR().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.ClearTargets();
 
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)

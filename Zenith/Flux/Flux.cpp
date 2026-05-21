@@ -6,7 +6,7 @@
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
-#include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/Terrain/Flux_TerrainImpl.h"
 #ifdef ZENITH_WINDOWS
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #endif
@@ -27,7 +27,7 @@
 #include "Flux/Text/Flux_TextImpl.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
-#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/SSR/Flux_SSRImpl.h"
@@ -207,7 +207,7 @@ void Flux::LateInitialise()
 #endif
 
 	Flux_Graphics::Initialise();
-	Flux_HDR::Initialise();  // Must be before DeferredShading - deferred renders to HDR target
+	g_xEngine.HDR().Initialise();  // Must be before DeferredShading - deferred renders to HDR target
 #ifdef ZENITH_TOOLS
 	Flux_PlatformAPI::InitialiseImGui();
 	g_xEngine.Gizmos().Initialise();
@@ -218,7 +218,7 @@ void Flux::LateInitialise()
 	g_xEngine.StaticMeshes().Initialise();
 	g_xEngine.AnimatedMeshes().Initialise();
 	g_xEngine.InstancedMeshes().Initialise();
-	Flux_Terrain::Initialise();
+	g_xEngine.Terrain().Initialise();
 	g_xEngine.Grass().Initialise();        // Grass/vegetation (after terrain)
 	g_xEngine.Primitives().Initialise();
 	g_xEngine.HiZ().Initialise();          // Hi-Z depth pyramid (needed by SSR)
@@ -278,10 +278,10 @@ void Flux::LateInitialise()
 	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "MRT Material" },      &Flux_Graphics::GetDebugSRV_MRTMaterial);
 	Zenith_DebugVariables::AddTextureCallback({ "Render", "Debug", "Depth" },             &Flux_Graphics::GetDebugSRV_Depth);
 	// HDR textures follow Flux_HDR.cpp's established "Flux/HDR/..." convention.
-	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "HDRScene"  }, &Flux_HDR::GetDebugSRV_HDRScene);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip0" }, &Flux_HDR::GetDebugSRV_Bloom0);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip1" }, &Flux_HDR::GetDebugSRV_Bloom1);
-	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip2" }, &Flux_HDR::GetDebugSRV_Bloom2);
+	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "HDRScene"  }, [](){ return g_xEngine.HDR().GetDebugSRV_HDRScene(); });
+	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip0" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom0(); });
+	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip1" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom1(); });
+	Zenith_DebugVariables::AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip2" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom2(); });
 #endif
 
 	SetupRenderGraph();
@@ -322,7 +322,7 @@ void Flux::SetupRenderGraph()
 
 	// Core render targets FIRST — every other subsystem depends on these.
 	Flux_Graphics::SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_HDR::SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph); // HDR scene target used by many subsystems
+	g_xEngine.HDR().SetupTransients(*g_xEngine.FluxRenderer().m_pxRenderGraph); // HDR scene target used by many subsystems
 
 	// Preprocessing
 	g_xEngine.IBL().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
@@ -331,7 +331,7 @@ void Flux::SetupRenderGraph()
 	// Geometry (all write to G-Buffer + Depth)
 	g_xEngine.Shadows().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.StaticMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_Terrain::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Terrain().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.Primitives().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.AnimatedMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.InstancedMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
@@ -371,7 +371,7 @@ void Flux::SetupRenderGraph()
 	// Post-processing
 	g_xEngine.SDFs().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.Particles().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_HDR::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.HDR().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// UI & presentation
 	g_xEngine.Quads().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
@@ -399,7 +399,7 @@ void Flux::ReleaseAssetReferences()
 	Flux_Graphics::ReleaseAssetReferences();
 	g_xEngine.Text().ReleaseAssetReferences();
 	g_xEngine.Particles().ReleaseAssetReferences();
-	Flux_Terrain::ReleaseAssetReferences();
+	g_xEngine.Terrain().ReleaseAssetReferences();
 	g_xEngine.Skybox().ReleaseAssetReferences();
 	g_xEngine.VolumeFog().ReleaseAssetReferences();
 
@@ -434,7 +434,7 @@ void Flux::Shutdown()
 	g_xEngine.HiZ().Shutdown();          // Hi-Z depth pyramid
 	g_xEngine.Primitives().Shutdown();   // Debug primitives (reverse of init: between HiZ and Grass)
 	g_xEngine.Grass().Shutdown();        // After Terrain (depends on terrain data)
-	Flux_Terrain::Shutdown();
+	g_xEngine.Terrain().Shutdown();
 	g_xEngine.InstancedMeshes().Shutdown();
 	// Flux_AnimatedMeshes, Flux_StaticMeshes - no Shutdown() methods
 	g_xEngine.IBL().Shutdown();          // After Skybox (uses skybox for environment)
@@ -452,7 +452,7 @@ void Flux::Shutdown()
 #endif
 
 	// HDR must shutdown after other render systems that target HDR buffer
-	Flux_HDR::Shutdown();
+	g_xEngine.HDR().Shutdown();
 
 	// Shutdown core graphics (render targets, depth buffer, quad mesh, frame constants)
 	Flux_Graphics::Shutdown();

@@ -14,7 +14,7 @@
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 
 // Flux reset includes (for ResetAllRenderSystems)
-#include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Text/Flux_TextImpl.h"
 #include "Flux/Particles/Flux_ParticlesImpl.h"
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
@@ -1358,7 +1358,7 @@ void Zenith_SceneManager::ResetAllRenderSystems()
 	// separately after UnloadAllNonPersistent().
 	// Only subsystems with real per-scene state need a Reset hook. The empty
 	// stubs that the render-graph refactor left behind have been deleted.
-	Flux_Terrain::Reset();
+	g_xEngine.Terrain().Reset();
 	g_xEngine.Text().Reset();
 	g_xEngine.Particles().Reset();
 	g_xEngine.Skybox().Reset();

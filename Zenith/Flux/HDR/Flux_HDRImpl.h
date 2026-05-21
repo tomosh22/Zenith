@@ -1,11 +1,36 @@
 #pragma once
 
-#include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
-// Phase 7h: per-Engine state for HDR subsystem.
+enum ToneMappingOperator : u_int
+{
+	TONEMAPPING_ACES,
+	TONEMAPPING_ACES_FITTED,
+	TONEMAPPING_REINHARD,
+	TONEMAPPING_UNCHARTED2,
+	TONEMAPPING_NEUTRAL,
+	TONEMAPPING_COUNT
+};
+
+enum HDR_DebugMode : u_int
+{
+	HDR_DEBUG_NONE,
+	HDR_DEBUG_LUMINANCE_HEAT,
+	HDR_DEBUG_HISTOGRAM_OVERLAY,
+	HDR_DEBUG_EXPOSURE_METER,
+	HDR_DEBUG_BLOOM_ONLY,
+	HDR_DEBUG_BLOOM_MIPS,
+	HDR_DEBUG_PRE_TONEMAP,
+	HDR_DEBUG_CLIPPING,
+	HDR_DEBUG_EV_ZONES,
+	HDR_DEBUG_TONEMAP_PASS_TEST,
+	HDR_DEBUG_RAW_HDR_TEXTURE,
+	HDR_DEBUG_COUNT
+};
+
+// Phase 9: state + behaviour for HDR subsystem.
 class Flux_HDRImpl
 {
 public:
@@ -15,19 +40,54 @@ public:
 	Flux_HDRImpl(const Flux_HDRImpl&) = delete;
 	Flux_HDRImpl& operator=(const Flux_HDRImpl&) = delete;
 
-	// HDR scene target (transient).
+	void Initialise();
+	void Shutdown();
+	void Reset();
+	void BuildPipelines();
+
+	void SetupTransients(Flux_RenderGraph& xGraph);
+	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	Flux_ShaderResourceView& GetHDRSceneSRV();
+	Flux_RenderAttachment&   GetHDRSceneTarget();
+	void GetHDRSceneTargetSetup(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
+	void GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
+
+	void SetToneMappingOperator(ToneMappingOperator eOperator);
+	void SetExposure(float fExposure);
+	void SetBloomIntensity(float fIntensity);
+	void SetBloomThreshold(float fThreshold);
+
+	float GetCurrentExposure();
+	float GetAverageLuminance();
+	bool IsEnabled();
+
+	Flux_RenderAttachment& GetBloomChainAttachment(u_int uIndex);
+
+	void SetAdaptationSpeed(float fSpeed);
+	void SetTargetLuminance(float fLuminance);
+	void SetExposureRange(float fMin, float fMax);
+
+	bool IsAutoExposureEnabled();
+	float GetAdaptationSpeed();
+	float GetTargetLuminance();
+
+#ifdef ZENITH_TOOLS
+	void RegisterDebugVariables();
+
+	const Flux_ShaderResourceView* GetDebugSRV_HDRScene();
+	const Flux_ShaderResourceView* GetDebugSRV_Bloom0();
+	const Flux_ShaderResourceView* GetDebugSRV_Bloom1();
+	const Flux_ShaderResourceView* GetDebugSRV_Bloom2();
+#endif
+
+	void SyncDebugVariables();
+
 	Flux_TransientHandle      m_xHDRSceneTargetHandle;
-
-	// Bloom transient chain (5 mips).
 	Flux_TransientHandle      m_axBloomChainHandles[5];
-
-	// Cached graph pointer (used by debug SRV resolvers).
 	Flux_RenderGraph*         m_pxGraph = nullptr;
-
-	// Auto-exposure prev-state tracking for state change detection.
 	bool                      m_bAutoExposureWasEnabled = false;
 
-	// Pipelines.
 	Flux_Pipeline             m_xToneMappingPipeline;
 	Flux_Pipeline             m_xBloomDownsamplePipeline;
 	Flux_Pipeline             m_xBloomUpsamplePipeline;
@@ -35,7 +95,6 @@ public:
 	Flux_Pipeline             m_xLuminanceHistogramPipeline;
 	Flux_Pipeline             m_xAdaptationPipeline;
 
-	// Shaders.
 	Flux_Shader               m_xToneMappingShader;
 	Flux_Shader               m_xBloomThresholdShader;
 	Flux_Shader               m_xBloomDownsampleShader;
@@ -43,21 +102,17 @@ public:
 	Flux_Shader               m_xLuminanceHistogramShader;
 	Flux_Shader               m_xAdaptationShader;
 
-	// Root sigs (compute).
 	Flux_RootSig              m_xLuminanceRootSig;
 	Flux_RootSig              m_xAdaptationRootSig;
 
-	// Auto-exposure compute buffers.
 	Flux_ReadWriteBuffer      m_xHistogramBuffer;
 	Flux_ReadWriteBuffer      m_xExposureBuffer;
 
-	// Manual exposure / tone mapping.
 	float                     m_fExposure          = 1.0f;
 	float                     m_fBloomIntensity    = 0.5f;
 	float                     m_fBloomThreshold    = 1.0f;
 	ToneMappingOperator       m_eToneMappingOperator = TONEMAPPING_ACES;
 
-	// Auto-exposure state.
 	float                     m_fCurrentExposure   = 1.0f;
 	float                     m_fAverageLuminance  = 0.18f;
 	float                     m_fAdaptationSpeed   = 2.0f;

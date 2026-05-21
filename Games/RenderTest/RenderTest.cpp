@@ -23,7 +23,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
-#include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "Physics/Zenith_Physics.h"
@@ -1474,9 +1474,9 @@ void Project_LoadInitialScene()
 	if (RenderTest_IsSmokeMode())
 	{
 		if (RenderTest_HasCommandLineFlag("--rendertest-lod-debug"))
-			Flux_Terrain::GetDebugMode() = 1;
+			g_xEngine.Terrain().GetDebugMode() = 1;
 		if (RenderTest_HasCommandLineFlag("--rendertest-wireframe"))
-			Flux_Terrain::GetWireframeMode() = true;
+			g_xEngine.Terrain().GetWireframeMode() = true;
 
 		Zenith_Editor::SetEditorMode(EditorMode::Playing);
 	}

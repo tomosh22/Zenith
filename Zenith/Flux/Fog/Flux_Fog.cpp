@@ -12,7 +12,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -251,7 +251,7 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Flux_PassHandle conversion.
 
 	g_xEngine.Fog().m_xSimpleFogPass = xGraph.AddPass("Fog_Simple", ExecuteSimpleFog)
-		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	g_xEngine.Fog().m_xFroxelInjectPass = xGraph.AddPass("Fog_FroxelInject", ExecuteFroxelInject)
@@ -268,17 +268,17 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// be declared so the graph transitions them out of GENERAL before the
 	// SRV bind.
 	g_xEngine.Fog().m_xFroxelApplyPass = xGraph.AddPass("Fog_FroxelApply", ExecuteFroxelApply)
-		.Writes        (Flux_HDR::GetHDRSceneTarget(),               RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (g_xEngine.HDR().GetHDRSceneTarget(),               RESOURCE_ACCESS_WRITE_RTV)
 		.Reads         (Flux_Graphics::GetDepthAttachment(),         RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(g_xEngine.FroxelFog().GetLightingGridHandle(),     RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(g_xEngine.FroxelFog().GetScatteringGridHandle(),   RESOURCE_ACCESS_READ_SRV);
 
 	g_xEngine.Fog().m_xRaymarchPass = xGraph.AddPass("Fog_Raymarch", ExecuteRaymarch)
-		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	g_xEngine.Fog().m_xGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays)
-		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	// EXT-1: re-apply game-side override after the graph has been (re)built.

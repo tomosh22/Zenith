@@ -12,7 +12,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
-#include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/Terrain/Flux_TerrainImpl.h"
 
 // Graph-owned transient — backing Flux_RenderAttachment is allocated and
 // destroyed by the render graph, sized from the descriptor in SetupRenderGraph.
@@ -150,7 +150,7 @@ static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserDat
 	g_xEngine.AnimatedMeshes().RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 
 	// #TODO: Enable terrain shadow casting
-	// Flux_Terrain::RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
+	// g_xEngine.Terrain().RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 }
 
 void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)

@@ -7,7 +7,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -225,7 +225,7 @@ void Flux_SSAOImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Upsample pass — writes AO factor onto the HDR scene via multiplicative blend.
 	xGraph.AddPass("SSAO Upsample", ExecuteSSAOUpsample)
 		.Reads         (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
-		.Writes        (Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (g_xEngine.HDR().GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.ReadsTransient(g_xEngine.SSAO().m_xBlurredHandle,                    RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(g_xEngine.SSAO().m_xRawOcclusionHandle,               RESOURCE_ACCESS_READ_SRV);
 }

@@ -39,11 +39,11 @@
 #include "SaveData/Zenith_SaveData.h"
 #include "UI/Zenith_UIOverlay.h"
 #include "UI/Zenith_UIText.h"
-#include "Flux/Text/Flux_Text.h"
+#include "Flux/Text/Flux_TextImpl.h"
 
 #include "EntityComponent/Components/Zenith_LightComponent.h"
-#include "Flux/HDR/Flux_HDR.h"
-#include "Flux/Skybox/Flux_Skybox.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
+#include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Core/Zenith_GraphicsOptions.h"
 
 #include "DataStream/Zenith_DataStream.h"
@@ -547,9 +547,9 @@ public:
 			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
 			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
 
-			Flux_HDR::SetBloomIntensity(0.8f);
-			Flux_HDR::SetBloomThreshold(0.8f);
-			Flux_HDR::SetExposure(1.2f);
+			g_xEngine.HDR().SetBloomIntensity(0.8f);
+			g_xEngine.HDR().SetBloomThreshold(0.8f);
+			g_xEngine.HDR().SetExposure(1.2f);
 			Zenith_GraphicsOptions::Get().m_xSkyboxColour = Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f);
 
 			CreatePlayfield();
@@ -585,9 +585,9 @@ public:
 				m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
 				Zenith_SceneManager::SetActiveScene(m_xPinballScene);
 
-				Flux_HDR::SetBloomIntensity(0.8f);
-				Flux_HDR::SetBloomThreshold(0.8f);
-				Flux_HDR::SetExposure(1.2f);
+				g_xEngine.HDR().SetBloomIntensity(0.8f);
+				g_xEngine.HDR().SetBloomThreshold(0.8f);
+				g_xEngine.HDR().SetExposure(1.2f);
 				Zenith_GraphicsOptions::Get().m_xSkyboxColour = Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f);
 
 				CreatePlayfield();
@@ -799,9 +799,9 @@ private:
 			TilePuzzle_WriteSaveData, &m_xSaveData);
 
 		// Restore HDR defaults
-		Flux_HDR::SetBloomIntensity(0.5f);
-		Flux_HDR::SetBloomThreshold(1.0f);
-		Flux_HDR::SetExposure(1.0f);
+		g_xEngine.HDR().SetBloomIntensity(0.5f);
+		g_xEngine.HDR().SetBloomThreshold(1.0f);
+		g_xEngine.HDR().SetExposure(1.0f);
 
 		// Cleanup dynamic scene
 		if (m_xPinballScene.IsValid())
@@ -823,9 +823,9 @@ private:
 		}
 
 		// Restore HDR defaults
-		Flux_HDR::SetBloomIntensity(0.5f);
-		Flux_HDR::SetBloomThreshold(1.0f);
-		Flux_HDR::SetExposure(1.0f);
+		g_xEngine.HDR().SetBloomIntensity(0.5f);
+		g_xEngine.HDR().SetBloomThreshold(1.0f);
+		g_xEngine.HDR().SetExposure(1.0f);
 		Zenith_GraphicsOptions::Get().m_xSkyboxColour = Zenith_Maths::Vector3(0.f, 0.f, 0.f);
 
 		DetermineCurrentGate();
@@ -1935,9 +1935,9 @@ private:
 			TilePuzzle_WriteSaveData, &m_xSaveData);
 
 		// Restore HDR defaults
-		Flux_HDR::SetBloomIntensity(0.5f);
-		Flux_HDR::SetBloomThreshold(1.0f);
-		Flux_HDR::SetExposure(1.0f);
+		g_xEngine.HDR().SetBloomIntensity(0.5f);
+		g_xEngine.HDR().SetBloomThreshold(1.0f);
+		g_xEngine.HDR().SetExposure(1.0f);
 
 		// Cleanup dynamic scene
 		if (m_xPinballScene.IsValid())
@@ -2411,9 +2411,9 @@ private:
 			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
 			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
 
-			Flux_HDR::SetBloomIntensity(0.8f);
-			Flux_HDR::SetBloomThreshold(0.8f);
-			Flux_HDR::SetExposure(1.2f);
+			g_xEngine.HDR().SetBloomIntensity(0.8f);
+			g_xEngine.HDR().SetBloomThreshold(0.8f);
+			g_xEngine.HDR().SetExposure(1.2f);
 			Zenith_GraphicsOptions::Get().m_xSkyboxColour = Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f);
 
 			CreatePlayfield();
@@ -2441,9 +2441,9 @@ private:
 			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
 			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
 
-			Flux_HDR::SetBloomIntensity(0.8f);
-			Flux_HDR::SetBloomThreshold(0.8f);
-			Flux_HDR::SetExposure(1.2f);
+			g_xEngine.HDR().SetBloomIntensity(0.8f);
+			g_xEngine.HDR().SetBloomThreshold(0.8f);
+			g_xEngine.HDR().SetExposure(1.2f);
 			Zenith_GraphicsOptions::Get().m_xSkyboxColour = Zenith_Maths::Vector3(0.02f, 0.02f, 0.06f);
 
 			CreatePlayfield();
