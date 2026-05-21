@@ -76,10 +76,15 @@ static void Setup_P2HUDAelfric()
 	}
 
 	// --- AelfricAwareness ---
+	// 2026-05-21: format upgraded to "[ glyph ] Aelfric: <state>" so
+	// the icon line reads as a distinct status badge. Calm uses
+	// "Patrolling" (more player-friendly than "CALM"). Suspicious /
+	// Pursuing keep their uppercase emphasis for urgency. Test still
+	// pins the "Aelfric: " prefix + the state-name substring.
 	DPHUDController_Behaviour::BuildAwarenessText(buf, sizeof(buf), AelfricState::Calm);
-	if (!Has(buf, "Aelfric: ") || !Has(buf, "CALM"))
+	if (!Has(buf, "Aelfric: ") || !Has(buf, "Patrolling"))
 	{
-		g_szFailureReason = "awareness for Calm doesn't contain 'Aelfric: CALM'";
+		g_szFailureReason = "awareness for Calm doesn't contain 'Aelfric: Patrolling'";
 		return;
 	}
 	DPHUDController_Behaviour::BuildAwarenessText(buf, sizeof(buf), AelfricState::Suspicious);
