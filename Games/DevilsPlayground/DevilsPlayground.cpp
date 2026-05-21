@@ -9,6 +9,7 @@
 #include "Source/DP_Archetypes.h"
 #include "Source/DP_Reagents.h"
 #include "Source/DPParticles.h"
+#include "Source/DPTutorial.h"
 
 #include <cstdio>
 #include <cstring>
@@ -98,6 +99,14 @@ namespace DevilsPlayground
 		// DP_Particles::EnsureEmittersInScene. Idempotent.
 		DP_Particles::Initialize();
 
+		// 2026-05-21: first-encounter tutorialisation. Subscribes to the
+		// same DP events as the particles + telemetry, but uses them to
+		// emit one-shot tips ("first time you pick up Iron, here's what
+		// to do with it"). Tips display in the TutorialOverlay HUD
+		// element for ~5 s. Shown-flag table is process-global; reset
+		// per run via DP_Tutorial::ResetForNewRun.
+		DP_Tutorial::Initialize();
+
 #ifdef ZENITH_INPUT_SIMULATOR
 		// Tell the automated-test harness how to wipe DP-specific persistent
 		// globals between batched tests. The harness force-loads scene 0
@@ -118,6 +127,9 @@ namespace DevilsPlayground
 			// alive across tests (they're process-global).
 			DP_Particles::ClearEmitterEntities();
 			DP_Particles::ResetBurstCountsForTest();
+			// Clear shown-flags so first-encounter tips fire for each
+			// batched test independently. Subscriptions stay alive.
+			DP_Tutorial::ResetForNewRun();
 		});
 #endif
 	}
@@ -135,6 +147,10 @@ namespace DevilsPlayground
 		// hold Zenith_ParticleEmitterComponent pointers to configs, and the
 		// configs must outlive the emitters.
 		DP_Particles::Shutdown();
+		// Tutorial: unsubscribe events + clear flags. Order vs Particles
+		// doesn't matter (no cross-dependency), but grouped here for
+		// consistency.
+		DP_Tutorial::Shutdown();
 		DPMaterials::Shutdown();
 
 		// Drop the archetype cache before tuning -- archetypes don't depend on
@@ -520,6 +536,21 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIFontSize("ArchetypeStatus", DPUI::fHUD_VILLAGER_INFO_FONT);
 		Zenith_EditorAutomation::AddStep_SetUIColor("ArchetypeStatus", 0.95f, 0.85f, 0.65f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("ArchetypeStatus", false);
+
+		// 2026-05-21: TutorialOverlay. Large centered text driven by
+		// DP_Tutorial::GetActiveTipText. Shows first-encounter tips
+		// (FirstPossession, FirstIronPickup, FirstLockedDoor, etc) for
+		// ~5 s each, auto-clearing. Sits above the lower-third
+		// WhisperLine + InteractHint stack so it doesn't compete for
+		// the bottom-of-screen "current advice" space; uses the
+		// vertical middle for the eye-catch-while-playing read.
+		Zenith_EditorAutomation::AddStep_CreateUIText("TutorialOverlay", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("TutorialOverlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("TutorialOverlay", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("TutorialOverlay", 0.0f, 120.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("TutorialOverlay", DPUI::fHUD_WHISPER_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("TutorialOverlay", 1.0f, 0.95f, 0.75f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("TutorialOverlay", false);
 
 		// MVP-2.5.4: Dawn sun-gauge -- text countdown at top-centre.
 		Zenith_EditorAutomation::AddStep_CreateUIText("DawnGauge", "");

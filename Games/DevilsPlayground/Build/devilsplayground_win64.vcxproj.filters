@@ -23,6 +23,9 @@
     <ClCompile Include="..\Source\DPTelemetryAnalyzer.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DPTutorial.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DP_Archetypes.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -296,6 +299,9 @@
     <ClCompile Include="..\Tests\Test_P5Particles_BurstsOnGameplayEvents.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P5Tutorial_FirstEncounters.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_PentagramVictory.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -446,6 +452,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPTelemetryAnalyzer.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DPTutorial.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DPUI.h">

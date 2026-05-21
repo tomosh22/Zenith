@@ -25,6 +25,12 @@ struct DP_OnItemPickedUp
 {
 	Zenith_EntityID m_xVillager;
 	Zenith_EntityID m_xItem;
+	// 2026-05-21: tag carried in the payload so the tutorialisation
+	// system + telemetry consumers don't have to re-resolve via
+	// DP_Items::GetItemTag (which can race against item-destroy in
+	// special-behaviour paths like BellSoul). Default-init covers
+	// existing dispatchers that don't yet pass the tag explicitly.
+	DP_ItemTag      m_eTag = DP_ItemTag::None;
 };
 
 struct DP_OnInteract
@@ -292,6 +298,10 @@ struct DP_OnPriestAlerted
 	DP_PriestAlertKind      m_eKind;
 	Zenith_Maths::Vector3   m_xPosition;    // priest world pos at alert (for the "!" billboard anchor)
 };
+
+// (DP_OnItemPickedUp lives at the top of the file -- its tag field
+// was extended 2026-05-21 to carry the picked-up tag so the
+// tutorialisation system + telemetry don't have to re-resolve.)
 
 // ============================================================================
 // DP_Player — published by B2 (player + camera + input).
