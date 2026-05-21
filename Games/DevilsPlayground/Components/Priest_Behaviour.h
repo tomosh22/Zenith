@@ -71,6 +71,7 @@ public:
 		m_fSightAwarenessGain   = DP_Tuning::Get<float>("priest.sight_awareness_gain_rate");
 		m_fSightAwarenessDecay  = DP_Tuning::Get<float>("priest.sight_awareness_decay_rate");
 		m_fMoveSpeed            = DP_Tuning::Get<float>("priest.pursue_speed_mps");
+		m_fApprehendRange       = DP_Tuning::Get<float>("priest.apprehend_range_m");
 
 		// Ensure the AIAgent component is on this entity. The scene authoring
 		// step `AddStep_AddComponent("AIAgent")` resolves through
@@ -289,7 +290,71 @@ public:
 		{
 			m_xTree.Reset(m_xParentEntity, xBB);
 		}
-		m_xLastSeenTarget = xCurrentTarget;
+
+		// 2026-05-21: in-world alert telegraph. The priest's BT can shift
+		// into Investigate / Pursue / Apprehend mid-frame; previously the
+		// only feedback to the player was the HUD's text indicator (and
+		// sometimes that indicator was placeholder text). DP_OnPriestAlerted
+		// fires on rising-edge of each transition so the particles system
+		// can paint a "!" above the priest's head and the HUD can raise
+		// the awareness icon to the right state.
+		//
+		// Falling edge (target lost, priest returns to patrol) is NOT
+		// emitted; the particles + HUD auto-clear on their own timers.
+		Zenith_Maths::Vector3 xPriestPos(0.0f);
+		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		{
+			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPriestPos);
+		}
+
+		// Priority order: Apprehend > Pursue > Investigate. We only fire
+		// the highest-priority NEW alert this frame, even if multiple
+		// stimuli rose at once -- otherwise three particle bursts stack
+		// onto each other and read as noise rather than the cleaner
+		// "the priest just noticed you" signal.
+		const bool bHasInvestigate = xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
+		bool bWithinApprehendRange = false;
+		if (xCurrentTarget.IsValid() && m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		{
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xCurrentTarget);
+			if (pxScene != nullptr)
+			{
+				Zenith_Entity xTgt = pxScene->TryGetEntity(xCurrentTarget);
+				if (xTgt.IsValid() && xTgt.HasComponent<Zenith_TransformComponent>())
+				{
+					Zenith_Maths::Vector3 xTgtPos;
+					xTgt.GetComponent<Zenith_TransformComponent>().GetPosition(xTgtPos);
+					const float fDx = xTgtPos.x - xPriestPos.x;
+					const float fDz = xTgtPos.z - xPriestPos.z;
+					bWithinApprehendRange = (fDx*fDx + fDz*fDz)
+						<= (m_fApprehendRange * m_fApprehendRange);
+				}
+			}
+		}
+
+		const Zenith_EntityID xSelfId = m_xParentEntity.GetEntityID();
+		if (bWithinApprehendRange && !m_bLastWithinApprehendRange)
+		{
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnPriestAlerted{
+					xSelfId, DP_PriestAlertKind::WithinRange, xPriestPos });
+		}
+		else if (xCurrentTarget.IsValid() && !m_xLastSeenTarget.IsValid())
+		{
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnPriestAlerted{
+					xSelfId, DP_PriestAlertKind::SawTarget, xPriestPos });
+		}
+		else if (bHasInvestigate && !m_bLastHadInvestigate)
+		{
+			Zenith_EventDispatcher::Get().Dispatch(
+				DP_OnPriestAlerted{
+					xSelfId, DP_PriestAlertKind::HeardNoise, xPriestPos });
+		}
+
+		m_xLastSeenTarget          = xCurrentTarget;
+		m_bLastHadInvestigate      = bHasInvestigate;
+		m_bLastWithinApprehendRange = bWithinApprehendRange;
 
 		// Tick the tree manually. We do NOT call xAgent.SetBehaviorTree(&m_xTree)
 		// because Zenith_AIAgentComponent::Update would then double-tick.
@@ -446,6 +511,14 @@ private:
 	// in-flight patrol branch to complete.
 	Zenith_EntityID     m_xLastSeenTarget = INVALID_ENTITY_ID;
 
+	// 2026-05-21: rising-edge tracking for DP_OnPriestAlerted dispatch.
+	// The HUD + particles system both subscribe; firing on every frame
+	// the priest is in Investigate / Pursue / Apprehend would spam the
+	// burst counter and stack particle clouds. We fire ONCE per
+	// transition into a higher-priority branch.
+	bool                m_bLastHadInvestigate       = false;
+	bool                m_bLastWithinApprehendRange = false;
+
 	// Non-owning pointer to the patrol's FindPos node. Set in OnStart so
 	// OnUpdate can refresh the navmesh handle when DP_AI rebuilds the cache.
 	// The BT itself owns the node's memory; we only need read access to
@@ -467,6 +540,7 @@ private:
 	float m_fSightAwarenessGain  = 2.0f;
 	float m_fSightAwarenessDecay = 0.5f;
 	float m_fMoveSpeed           = 7.0f;
+	float m_fApprehendRange      = 2.0f;
 
 #ifdef ZENITH_INPUT_SIMULATOR
 public:

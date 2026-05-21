@@ -45,6 +45,7 @@
 #include "Components/Priest_Behaviour.h"
 #include "Components/DPOrbitCamera_Behaviour.h"
 #include "Source/PublicInterfaces.h"
+#include "Source/DPParticles.h"
 
 #include <cstdio>
 #include <cstdint>
@@ -151,6 +152,16 @@ public:
 		// so by this point the orbit defaults are stable and our
 		// override sticks.
 		FrameCameraToLevel();
+
+		// 2026-05-21: lay down the per-scene particle emitter entities
+		// (forge sparks, door dust, pentagram ritual swirl, etc) in the
+		// persistent scene so subsequent gameplay events can fire bursts.
+		// OnStart timing means the persistent scene exists and is ready
+		// for entity creation; placement here means we don't need to
+		// expose the call from DevilsPlayground.cpp's lifecycle hooks
+		// (which fire BEFORE the persistent scene is loaded on some
+		// boot paths).
+		DP_Particles::EnsureEmittersInScene();
 	}
 
 	void OnDestroy() ZENITH_FINAL override

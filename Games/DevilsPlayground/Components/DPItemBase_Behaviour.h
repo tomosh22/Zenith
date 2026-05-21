@@ -72,7 +72,20 @@ public:
 				if (pxScene != nullptr)
 				{
 					Zenith_Entity xEnt = pxScene->TryGetEntity(m_xParentEntity.GetEntityID());
-					if (xEnt.IsValid()) Zenith_SceneManager::Destroy(xEnt);
+					if (xEnt.IsValid())
+					{
+						// 2026-05-21: capture the position before the
+						// destroy so DP_Particles can fire the steam
+						// burst at the right location. The destroy
+						// invalidates the entity ID for any post-hoc
+						// world-position lookup.
+						Zenith_Maths::Vector3 xPos = DP_Items::GetItemWorldPos(
+							m_xParentEntity.GetEntityID());
+						Zenith_EventDispatcher::Get().Dispatch(
+							DP_OnItemEvaporated{
+								m_xParentEntity.GetEntityID(), m_eTag, xPos });
+						Zenith_SceneManager::Destroy(xEnt);
+					}
 				}
 				return;
 			}
