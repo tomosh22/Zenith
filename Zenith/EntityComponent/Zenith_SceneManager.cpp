@@ -223,8 +223,9 @@ void Zenith_SceneManager::Shutdown()
 	Zenith_SceneRegistry::Shutdown();              // deletes scene data + clears slot tables
 	Zenith_SceneCallbackBus::Shutdown();           // clears callback lists + suppression flags
 
-	// Reset global entity storage (shared across all scenes).
-	Zenith_SceneData::ResetGlobalEntityStorage();
+	// Reset global entity storage (shared across all scenes). Phase 5a:
+	// storage moved off Zenith_SceneData onto Zenith_EntityStore.
+	g_xEngine.EntityStore().Reset();
 }
 
 #ifdef ZENITH_TESTING

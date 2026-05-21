@@ -10,17 +10,9 @@
 #include "Editor/Zenith_Editor.h"
 #endif
 
-// Static member definitions - global entity storage shared across all scenes
-Zenith_Vector<Zenith_SceneData::Zenith_EntitySlot> Zenith_SceneData::s_axEntitySlots;
-Zenith_Vector<uint32_t> Zenith_SceneData::s_axFreeEntityIndices;
-Zenith_Vector<std::unordered_map<Zenith_SceneData::TypeID, u_int>> Zenith_SceneData::s_axEntityComponents; // #TODO: Replace with engine hash map
-
-void Zenith_SceneData::ResetGlobalEntityStorage()
-{
-	s_axEntitySlots.Clear();
-	s_axFreeEntityIndices.Clear();
-	s_axEntityComponents.Clear();
-}
+// Phase 5a: global entity storage moved off Zenith_SceneData onto
+// Zenith_EntityStore (held by Zenith_Engine). ResetGlobalEntityStorage was
+// replaced by Zenith_EntityStore::Reset(); call sites updated.
 
 void Zenith_SceneData::InvalidateActiveInHierarchyCache(Zenith_EntityID xID)
 {
@@ -33,8 +25,8 @@ void Zenith_SceneData::InvalidateActiveInHierarchyCache(Zenith_EntityID xID)
 		Zenith_EntityID xCurrentID = axStack.GetBack();
 		axStack.PopBack();
 
-		if (xCurrentID.m_uIndex >= s_axEntitySlots.GetSize()) continue;
-		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xCurrentID.m_uIndex);
+		if (xCurrentID.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) continue;
+		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xCurrentID.m_uIndex);
 		if (!xSlot.IsOccupied() || xSlot.m_uGeneration != xCurrentID.m_uGeneration) continue;
 
 		xSlot.m_bActiveInHierarchyDirty = true;
@@ -71,7 +63,7 @@ void Zenith_SceneData::DisableEntity(Zenith_EntityID xID)
 {
 	if (!EntityExists(xID)) return;
 	Zenith_Entity xEntity(this, xID);
-	Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+	Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 	if (xEntity.IsEnabled() && xSlot.m_bOnEnableDispatched)
 	{
 		Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(xEntity);
@@ -139,12 +131,12 @@ void Zenith_SceneData::FreeGlobalSlotsForActiveEntities()
 	for (u_int i = 0; i < m_xActiveEntities.GetSize(); ++i)
 	{
 		Zenith_EntityID xID = m_xActiveEntities.Get(i);
-		if (xID.m_uIndex >= s_axEntitySlots.GetSize()) continue;
-		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+		if (xID.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) continue;
+		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (!xSlot.IsOccupied() || xSlot.m_uGeneration != xID.m_uGeneration) continue;
-		s_axEntityComponents.Get(xID.m_uIndex).clear();
+		g_xEngine.EntityStore().m_axEntityComponents.Get(xID.m_uIndex).clear();
 		xSlot.ReleaseSlot();
-		s_axFreeEntityIndices.PushBack(xID.m_uIndex);
+		g_xEngine.EntityStore().m_axFreeEntityIndices.PushBack(xID.m_uIndex);
 	}
 }
 
@@ -297,12 +289,12 @@ Zenith_EntityID Zenith_SceneData::CreateEntity()
 
 	// Try to reuse a free slot. Skip any slots with generation overflow (retired permanently).
 	bool bFoundFreeSlot = false;
-	while (s_axFreeEntityIndices.GetSize() > 0)
+	while (g_xEngine.EntityStore().m_axFreeEntityIndices.GetSize() > 0)
 	{
-		uIndex = s_axFreeEntityIndices.GetBack();
-		s_axFreeEntityIndices.PopBack();
+		uIndex = g_xEngine.EntityStore().m_axFreeEntityIndices.GetBack();
+		g_xEngine.EntityStore().m_axFreeEntityIndices.PopBack();
 
-		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(uIndex);
+		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(uIndex);
 
 		// Check for generation overflow (very unlikely but catastrophic if it happens)
 		// After UINT32_MAX reuses of the same slot, generation wraps to 0 causing
@@ -325,18 +317,18 @@ Zenith_EntityID Zenith_SceneData::CreateEntity()
 	// No free slots available (or all were retired) - allocate fresh
 	if (!bFoundFreeSlot)
 	{
-		uIndex = s_axEntitySlots.GetSize();
+		uIndex = g_xEngine.EntityStore().m_axEntitySlots.GetSize();
 		uGeneration = 1;
 
 		Zenith_EntitySlot xNewSlot;
 		xNewSlot.m_uGeneration = uGeneration;
 		xNewSlot.OccupySlot(m_iHandle);
-		s_axEntitySlots.PushBack(std::move(xNewSlot));
+		g_xEngine.EntityStore().m_axEntitySlots.PushBack(std::move(xNewSlot));
 	}
 
-	while (s_axEntityComponents.GetSize() <= uIndex)
+	while (g_xEngine.EntityStore().m_axEntityComponents.GetSize() <= uIndex)
 	{
-		s_axEntityComponents.PushBack({});
+		g_xEngine.EntityStore().m_axEntityComponents.PushBack({});
 	}
 
 	Zenith_EntityID xNewID = { uIndex, uGeneration };
@@ -406,9 +398,9 @@ void Zenith_SceneData::RemoveEntity(Zenith_EntityID xID)
 		Zenith_EntityID xEntityID = axHierarchy.Get(i);
 		if (!EntityExists(xEntityID)) continue;
 		DestroyEntityComponents(xEntityID);
-		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xEntityID.m_uIndex);
+		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex);
 
-		s_axEntityComponents.Get(xEntityID.m_uIndex).clear();
+		g_xEngine.EntityStore().m_axEntityComponents.Get(xEntityID.m_uIndex).clear();
 
 		// Cancel any pending start before releasing the slot
 		if (xSlot.IsPendingStart())
@@ -416,7 +408,7 @@ void Zenith_SceneData::RemoveEntity(Zenith_EntityID xID)
 			CancelPendingStart(xEntityID);
 		}
 		xSlot.ReleaseSlot();
-		s_axFreeEntityIndices.PushBack(xEntityID.m_uIndex);
+		g_xEngine.EntityStore().m_axFreeEntityIndices.PushBack(xEntityID.m_uIndex);
 
 		m_xActiveEntities.EraseValue(xEntityID);
 	}
@@ -450,7 +442,7 @@ Zenith_Entity Zenith_SceneData::FindEntityByName(const std::string& strName)
 		Zenith_EntityID xID = m_xActiveEntities.Get(u);
 		if (EntityExists(xID))
 		{
-			const Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+			const Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 			if (xSlot.m_strName == strName)
 			{
 				return Zenith_Entity(this, xID);
@@ -463,7 +455,7 @@ Zenith_Entity Zenith_SceneData::FindEntityByName(const std::string& strName)
 const Zenith_SceneData::Zenith_EntitySlot& Zenith_SceneData::GetSlot(Zenith_EntityID xID) const
 {
 	Zenith_Assert(EntityExists(xID), "GetSlot: Entity (idx=%u, gen=%u) is invalid", xID.m_uIndex, xID.m_uGeneration);
-	return s_axEntitySlots.Get(xID.m_uIndex);
+	return g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 }
 
 //==========================================================================
@@ -515,14 +507,14 @@ void Zenith_SceneData::MarkForDestruction(Zenith_EntityID xID)
 	if (!EntityExists(xID)) return;
 
 	// Already marked - prevent double-marking and infinite recursion (use global slot flag)
-	if (s_axEntitySlots.Get(xID.m_uIndex).m_bMarkedForDestruction) return;
+	if (g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bMarkedForDestruction) return;
 
 	// Mark children's flags (so scripts can't interact with them), but only push the root
 	// entity to m_xPendingDestruction. RemoveEntity handles children recursively.
 	MarkChildrenForDestructionRecursive(xID);
 
 	// Mark this entity and add to pending list (only root entities are in the pending list)
-	s_axEntitySlots.Get(xID.m_uIndex).TransitionToDestroying();
+	g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).TransitionToDestroying();
 	m_xPendingDestruction.PushBack(xID);
 }
 
@@ -536,9 +528,9 @@ void Zenith_SceneData::MarkChildrenForDestructionRecursive(Zenith_EntityID xID)
 	for (u_int u = 0; u < axChildIDs.GetSize(); ++u)
 	{
 		Zenith_EntityID xChildID = axChildIDs.Get(u);
-		if (xChildID.IsValid() && EntityExists(xChildID) && !s_axEntitySlots.Get(xChildID.m_uIndex).m_bMarkedForDestruction)
+		if (xChildID.IsValid() && EntityExists(xChildID) && !g_xEngine.EntityStore().m_axEntitySlots.Get(xChildID.m_uIndex).m_bMarkedForDestruction)
 		{
-			s_axEntitySlots.Get(xChildID.m_uIndex).TransitionToDestroying();
+			g_xEngine.EntityStore().m_axEntitySlots.Get(xChildID.m_uIndex).TransitionToDestroying();
 			MarkChildrenForDestructionRecursive(xChildID);
 		}
 	}
@@ -558,8 +550,8 @@ void Zenith_SceneData::MarkForTimedDestruction(Zenith_EntityID xID, float fDelay
 bool Zenith_SceneData::IsMarkedForDestruction(Zenith_EntityID xID) const
 {
 	if (!xID.IsValid()) return false;
-	if (xID.m_uIndex >= s_axEntitySlots.GetSize()) return false;
-	return s_axEntitySlots.Get(xID.m_uIndex).m_bMarkedForDestruction;
+	if (xID.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) return false;
+	return g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bMarkedForDestruction;
 }
 
 void Zenith_SceneData::ProcessPendingDestructions()
@@ -641,7 +633,7 @@ void Zenith_SceneData::DispatchAwakeAndEnableForNewEntities(Zenith_Vector<Zenith
 
 			DispatchAwakeForEntity(uID);
 
-			Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(uID.m_uIndex);
+			Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(uID.m_uIndex);
 			Zenith_Entity xEntity = GetEntity(uID);
 			if (xEntity.IsActiveInHierarchy() && !xSlot.m_bOnEnableDispatched)
 			{
@@ -742,9 +734,9 @@ void Zenith_SceneData::ClearCreatedDuringUpdateFlags()
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
 	{
 		Zenith_EntityID xID = m_xActiveEntities.Get(u);
-		if (xID.m_uIndex < s_axEntitySlots.GetSize())
+		if (xID.m_uIndex < g_xEngine.EntityStore().m_axEntitySlots.GetSize())
 		{
-			s_axEntitySlots.Get(xID.m_uIndex).m_bCreatedDuringUpdate = false;
+			g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bCreatedDuringUpdate = false;
 		}
 	}
 }
@@ -792,7 +784,7 @@ void Zenith_SceneData::DispatchImmediateLifecycleForRuntime(Zenith_EntityID xID)
 
 	DispatchAwakeForEntity(xID);
 
-	Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+	Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 	Zenith_Entity xEntity = GetEntity(xID);
 	if (xEntity.IsActiveInHierarchy() && !xSlot.m_bOnEnableDispatched)
 	{
@@ -917,7 +909,7 @@ void Zenith_SceneData::DispatchEnableAndPendingStartsForNewScene()
 		Zenith_EntityID xEntityID = m_xActiveEntities.Get(u);
 		if (EntityExists(xEntityID))
 		{
-			Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xEntityID.m_uIndex);
+			Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex);
 			if (xSlot.m_bOnEnableDispatched) continue;  // Already dispatched (e.g., via SetEnabled during OnAwake)
 
 			Zenith_Entity xEntity = GetEntity(xEntityID);
@@ -979,8 +971,8 @@ void Zenith_SceneData::DispatchPendingStarts()
 
 Zenith_SceneData::PendingStartResult Zenith_SceneData::ProcessSinglePendingStart(Zenith_EntityID xEntityID, Zenith_ComponentMetaRegistry& xRegistry)
 {
-	if (xEntityID.m_uIndex >= s_axEntitySlots.GetSize()) return PendingStartResult::SKIP;
-	Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xEntityID.m_uIndex);
+	if (xEntityID.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) return PendingStartResult::SKIP;
+	Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex);
 	if (!xSlot.IsPendingStart()) return PendingStartResult::SKIP;
 
 	// Validate entity still owns this slot.

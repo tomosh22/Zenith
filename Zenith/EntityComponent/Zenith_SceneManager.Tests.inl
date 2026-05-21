@@ -3335,7 +3335,7 @@ void Zenith_SceneTests::TestSetEnabledUnderDisabledParentNoOnEnable(){
 	xParent.SetEnabled(false);
 
 	// Child's OnEnable should have been dispatched during lifecycle and then OnDisable from parent disable
-	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = Zenith_SceneData::s_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
 	ZENITH_ASSERT_FALSE(xChildSlot.m_bOnEnableDispatched, "Child OnEnable should NOT be dispatched when parent is disabled");
 
 	// Now disable the child
@@ -3376,7 +3376,7 @@ void Zenith_SceneTests::TestSetEnabledUnderEnabledParentFiresOnEnable(){
 
 	// Disable and re-enable child while parent is still enabled
 	xChild.SetEnabled(false);
-	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = Zenith_SceneData::s_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
 	ZENITH_ASSERT_FALSE(xChildSlot.m_bOnEnableDispatched, "OnEnable should not be dispatched after disable");
 
 	xChild.SetEnabled(true);
@@ -3713,7 +3713,7 @@ void Zenith_SceneTests::TestActiveInHierarchyCacheValid(){
 	ZENITH_ASSERT_TRUE(bActive, "Child should be active in hierarchy");
 
 	// Second call should use cached value
-	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = Zenith_SceneData::s_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
 	ZENITH_ASSERT_FALSE(xChildSlot.m_bActiveInHierarchyDirty, "Cache should be clean after IsActiveInHierarchy call");
 
 	bool bActive2 = xChild.IsActiveInHierarchy();
@@ -3738,7 +3738,7 @@ void Zenith_SceneTests::TestActiveInHierarchyCacheInvalidatedOnSetEnabled(){
 	// Prime the cache
 	ZENITH_ASSERT_TRUE(xChild.IsActiveInHierarchy(), "Child should be active initially");
 
-	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = Zenith_SceneData::s_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
 	ZENITH_ASSERT_FALSE(xChildSlot.m_bActiveInHierarchyDirty, "Cache should be clean");
 
 	// Disable parent - should invalidate child's cache
@@ -3773,7 +3773,7 @@ void Zenith_SceneTests::TestActiveInHierarchyCacheInvalidatedOnSetParent(){
 	// Child under enabled parent should be active
 	ZENITH_ASSERT_TRUE(xChild.IsActiveInHierarchy(), "Child under enabled parent should be active");
 
-	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = Zenith_SceneData::s_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
 	ZENITH_ASSERT_FALSE(xChildSlot.m_bActiveInHierarchyDirty, "Cache should be clean");
 
 	// Reparent child under disabled parent - cache should be invalidated
@@ -3900,7 +3900,7 @@ void Zenith_SceneTests::TestSlotReuseDirtyFlagReset(){
 	Zenith_EntityID xIDA = xEntityA.GetEntityID();
 	uint32_t uSlotIndex = xIDA.m_uIndex;
 
-	Zenith_SceneData::Zenith_EntitySlot& xSlotBefore = Zenith_SceneData::s_axEntitySlots.Get(uSlotIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xSlotBefore = g_xEngine.EntityStore().m_axEntitySlots.Get(uSlotIndex);
 	ZENITH_ASSERT_FALSE(xSlotBefore.m_bActiveInHierarchyDirty, "Cache should be clean after query");
 
 	// Destroy entity A and create entity B in same slot
@@ -4234,7 +4234,7 @@ void Zenith_SceneTests::TestRuntimeEntityUnderEnabledParentGetsOnEnable(){
 	Zenith_SceneManager::WaitForUpdateComplete();
 
 	// Child SHOULD have OnEnable dispatched because parent is enabled
-	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = Zenith_SceneData::s_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xChildSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xChild.GetEntityID().m_uIndex);
 	ZENITH_ASSERT_TRUE(xChildSlot.m_bOnEnableDispatched, "Runtime entity under enabled parent should receive OnEnable");
 	ZENITH_ASSERT_TRUE(xChild.IsActiveInHierarchy(), "Runtime entity under enabled parent should be active in hierarchy");
 

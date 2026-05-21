@@ -47,7 +47,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zen
 	// handle's generation still matches — this guards a future refactor that allows
 	// slot destroy to interleave with move from corrupting the global entity table.
 	{
-		const Zenith_SceneData::Zenith_EntitySlot& xPreMoveSlot = Zenith_SceneData::s_axEntitySlots.Get(xEntityID.m_uIndex);
+		const Zenith_SceneData::Zenith_EntitySlot& xPreMoveSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex);
 		Zenith_Assert(xPreMoveSlot.IsOccupied(),
 			"MoveEntityInternal: source slot %u is not occupied at mutation point", xEntityID.m_uIndex);
 		Zenith_Assert(xPreMoveSlot.m_uGeneration == xEntityID.m_uGeneration,
@@ -56,7 +56,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zen
 	}
 
 	// Update global slot to point to target scene
-	Zenith_SceneData::s_axEntitySlots.Get(xEntityID.m_uIndex).m_iSceneHandle = pxTargetData->m_iHandle;
+	g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex).m_iSceneHandle = pxTargetData->m_iHandle;
 
 	// Move entity from source's active list to target's active list
 	pxSourceData->m_xActiveEntities.EraseValue(xEntityID);
@@ -73,7 +73,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zen
 	}
 
 	// Adjust pending start count and list if this entity hasn't had Start() called yet
-	Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(xEntityID.m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex);
 	if (xSlot.IsPendingStart())
 	{
 		Zenith_Assert(pxSourceData->m_uPendingStartCount > 0, "PendingStartCount underflow in MoveEntityInternal");
@@ -296,9 +296,9 @@ void Zenith_SceneEntityOwnership::DestroyImmediate(Zenith_Entity& xEntity)
 		Zenith_EntityID xEntityID = xEntity.GetEntityID();
 
 		// Clear from pending destruction if present (use global slot flag).
-		if (xEntityID.m_uIndex < Zenith_SceneData::s_axEntitySlots.GetSize())
+		if (xEntityID.m_uIndex < g_xEngine.EntityStore().m_axEntitySlots.GetSize())
 		{
-			Zenith_SceneData::s_axEntitySlots.Get(xEntityID.m_uIndex).m_bMarkedForDestruction = false;
+			g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex).m_bMarkedForDestruction = false;
 		}
 
 		// Remove from pending destruction list to prevent stale processing.

@@ -3489,6 +3489,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.inl">
       <Filter>EntityComponent</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_EntityStore.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>

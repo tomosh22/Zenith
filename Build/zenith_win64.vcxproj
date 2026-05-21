@@ -1163,6 +1163,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.inl" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_EntityStore.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_RenderTaskState.h" />

@@ -6,6 +6,7 @@
 // only included by Zenith_Engine.cpp where the accessor bodies live.
 class FrameContext;
 class Zenith_AssetRegistry;
+class Zenith_EntityStore;
 class Zenith_MultithreadingImpl;
 class Zenith_PhysicsImpl;
 class Zenith_ProfilingImpl;
@@ -52,18 +53,20 @@ public:
 	Zenith_ProfilingImpl& Profiling();
 	Zenith_AssetRegistry& Assets();
 	Zenith_PhysicsImpl& Physics();
+	Zenith_EntityStore& EntityStore();
 
 private:
 	// Subsystem members. Raw pointers to forward-declared types so the
 	// default ctor/dtor stay trivial and the constinit global has zero
 	// static-init cost. Each is allocated in Initialise() and deleted
 	// in Shutdown().
-	FrameContext*              m_pxFrame     = nullptr;
-	Zenith_MultithreadingImpl* m_pxThreading = nullptr;
-	Zenith_TaskSystemImpl*     m_pxTasks     = nullptr;
-	Zenith_ProfilingImpl*      m_pxProfiling = nullptr;
-	Zenith_AssetRegistry*      m_pxAssets    = nullptr;
-	Zenith_PhysicsImpl*        m_pxPhysics   = nullptr;
+	FrameContext*              m_pxFrame       = nullptr;
+	Zenith_MultithreadingImpl* m_pxThreading   = nullptr;
+	Zenith_TaskSystemImpl*     m_pxTasks       = nullptr;
+	Zenith_ProfilingImpl*      m_pxProfiling   = nullptr;
+	Zenith_AssetRegistry*      m_pxAssets      = nullptr;
+	Zenith_PhysicsImpl*        m_pxPhysics     = nullptr;
+	Zenith_EntityStore*        m_pxEntityStore = nullptr;
 };
 
 // Compile-time guard: enforce trivial destruction so the

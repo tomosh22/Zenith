@@ -12,6 +12,7 @@
 #include "Profiling/Zenith_ProfilingImpl.h"
 #include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "EntityComponent/Zenith_EntityStore.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -120,6 +121,16 @@ Zenith_PhysicsImpl& Zenith_Engine::Physics()
 	return *m_pxPhysics;
 }
 
+Zenith_EntityStore& Zenith_Engine::EntityStore()
+{
+	// No assert: EntityStore is read on the hot path for every entity
+	// access (lifecycle queries, component lookups). Zenith_Engine::Initialise
+	// allocates m_pxEntityStore very early -- before SceneManager / Physics
+	// init -- so the store is always available once any subsystem touches
+	// entity slots.
+	return *m_pxEntityStore;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -128,6 +139,13 @@ void Zenith_Engine::Initialise()
 	// below, matching the historical Zenith_Init behaviour.
 	Zenith_Assert(m_pxFrame == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxFrame = new FrameContext();
+
+	// Phase 5a: global entity storage. Allocate VERY EARLY -- any
+	// subsystem that touches entity slots reads g_xEngine.EntityStore()
+	// and would dereference nullptr if we wait. Empty store is fine
+	// until SceneManager / scene-load starts creating entities.
+	Zenith_Assert(m_pxEntityStore == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxEntityStore = new Zenith_EntityStore();
 
 	// Phase 3a: multithreading registry (thread-ID allocator +
 	// main-thread ID) lives on the engine now. Allocate BEFORE
@@ -406,6 +424,13 @@ void Zenith_Engine::Shutdown()
 	// IsMainThread while we're freeing the registry.
 	delete m_pxThreading;
 	m_pxThreading = nullptr;
+
+	// 14. Free the per-Engine entity store. Done VERY LATE -- after
+	// SceneManager::Shutdown (step 3), Physics::Shutdown (step 4),
+	// Project_Shutdown (step 5), Flux::Shutdown (step 8) which all
+	// may touch entity slots during teardown.
+	delete m_pxEntityStore;
+	m_pxEntityStore = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

@@ -12,9 +12,9 @@
 Zenith_SceneData* Zenith_Entity::GetSceneData() const
 {
 	if (!m_xEntityID.IsValid()) return nullptr;
-	if (m_xEntityID.m_uIndex >= Zenith_SceneData::s_axEntitySlots.GetSize()) return nullptr;
+	if (m_xEntityID.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) return nullptr;
 
-	const Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
+	const Zenith_SceneData::Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex);
 	if (!xSlot.IsOccupied() || xSlot.m_uGeneration != m_xEntityID.m_uGeneration)
 		return nullptr;
 
@@ -41,9 +41,9 @@ bool Zenith_Entity::IsValid() const
 Zenith_Scene Zenith_Entity::GetScene() const
 {
 	if (!m_xEntityID.IsValid()) return Zenith_Scene::INVALID_SCENE;
-	if (m_xEntityID.m_uIndex >= Zenith_SceneData::s_axEntitySlots.GetSize()) return Zenith_Scene::INVALID_SCENE;
+	if (m_xEntityID.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) return Zenith_Scene::INVALID_SCENE;
 
-	const Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
+	const Zenith_SceneData::Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex);
 	if (!xSlot.IsOccupied() || xSlot.m_uGeneration != m_xEntityID.m_uGeneration)
 		return Zenith_Scene::INVALID_SCENE;
 
@@ -72,11 +72,11 @@ Zenith_Entity::Zenith_Entity(Zenith_SceneData* pxSceneData, const std::string& s
 
 	// CreateEntity allocates a slot and returns a generation-aware ID
 	m_xEntityID = pxSceneData->CreateEntity();
-	Zenith_Assert(Zenith_SceneData::s_axEntityComponents.Get(m_xEntityID.m_uIndex).empty(),
+	Zenith_Assert(g_xEngine.EntityStore().m_axEntityComponents.Get(m_xEntityID.m_uIndex).empty(),
 		"Entity slot %u already has components - registry not cleared or ID collision", m_xEntityID.m_uIndex);
 
 	// Set initial state directly in the slot (single source of truth)
-	Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex);
 	xSlot.m_strName = strName;
 	xSlot.m_bEnabled = true;
 	xSlot.m_bTransient = true;  // Default: transient (not saved)
@@ -149,7 +149,7 @@ const std::string& Zenith_Entity::GetName() const
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"GetName: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
-	return Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex).m_strName;
+	return g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex).m_strName;
 }
 
 void Zenith_Entity::SetName(const std::string& strName)
@@ -158,7 +158,7 @@ void Zenith_Entity::SetName(const std::string& strName)
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"SetName: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
-	Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex).m_strName = strName;
+	g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex).m_strName = strName;
 	pxSceneData->MarkDirty();
 }
 
@@ -168,7 +168,7 @@ bool Zenith_Entity::IsEnabled() const
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"IsEnabled: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
-	return Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex).m_bEnabled;
+	return g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex).m_bEnabled;
 }
 
 bool Zenith_Entity::IsActiveInHierarchy() const
@@ -178,7 +178,7 @@ bool Zenith_Entity::IsActiveInHierarchy() const
 	if (!pxSceneData || !pxSceneData->EntityExists(m_xEntityID)) return false;
 	if (pxSceneData->IsBeingDestroyed()) return false;
 
-	Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex);
 
 	// Check own enabled flag first (fast path)
 	if (!xSlot.m_bEnabled) return false;
@@ -196,8 +196,8 @@ bool Zenith_Entity::IsActiveInHierarchy() const
 	Zenith_EntityID xCurrentParent = pxTransform->GetParentEntityID();
 	while (xCurrentParent.IsValid())
 	{
-		if (xCurrentParent.m_uIndex >= Zenith_SceneData::s_axEntitySlots.GetSize()) { bActive = false; break; }
-		const Zenith_SceneData::Zenith_EntitySlot& xParentSlot = Zenith_SceneData::s_axEntitySlots.Get(xCurrentParent.m_uIndex);
+		if (xCurrentParent.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) { bActive = false; break; }
+		const Zenith_SceneData::Zenith_EntitySlot& xParentSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xCurrentParent.m_uIndex);
 		if (!xParentSlot.IsOccupied() || xParentSlot.m_uGeneration != xCurrentParent.m_uGeneration) { bActive = false; break; }
 		if (!xParentSlot.m_bEnabled) { bActive = false; break; }
 
@@ -213,7 +213,7 @@ bool Zenith_Entity::IsActiveInHierarchy() const
 
 void Zenith_Entity::DispatchEnableLifecycle(Zenith_SceneData* pxSceneData)
 {
-	Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex);
 	bool bActiveInHierarchy = IsActiveInHierarchy();
 	if (bActiveInHierarchy)
 	{
@@ -234,7 +234,7 @@ void Zenith_Entity::DispatchEnableLifecycle(Zenith_SceneData* pxSceneData)
 
 void Zenith_Entity::DispatchDisableLifecycle(Zenith_SceneData* pxSceneData)
 {
-	Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex);
 	if (xSlot.m_bOnEnableDispatched)
 	{
 		Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(*this);
@@ -251,7 +251,7 @@ void Zenith_Entity::SetEnabled(bool bEnabled)
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"SetEnabled: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
-	Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex);
 	if (xSlot.m_bEnabled == bEnabled)
 	{
 		return;
@@ -278,7 +278,7 @@ bool Zenith_Entity::IsTransient() const
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"IsTransient: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
-	return Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex).m_bTransient;
+	return g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex).m_bTransient;
 }
 
 void Zenith_Entity::SetTransient(bool bTransient)
@@ -287,7 +287,7 @@ void Zenith_Entity::SetTransient(bool bTransient)
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	Zenith_Assert(pxSceneData != nullptr && pxSceneData->EntityExists(m_xEntityID),
 		"SetTransient: Entity handle is invalid (idx=%u, gen=%u)", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
-	Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex).m_bTransient = bTransient;
+	g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex).m_bTransient = bTransient;
 }
 
 //------------------------------------------------------------------------------
@@ -400,7 +400,7 @@ void Zenith_Entity::ReadFromDataStream(Zenith_DataStream& xStream)
 	Zenith_SceneData* pxSceneData = GetSceneData();
 	if (pxSceneData != nullptr && IsValid())
 	{
-		Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex).m_strName = strName;
+		g_xEngine.EntityStore().m_axEntitySlots.Get(m_xEntityID.m_uIndex).m_strName = strName;
 	}
 
 	// Note: m_xEntityID is set by the scene during loading, not here
