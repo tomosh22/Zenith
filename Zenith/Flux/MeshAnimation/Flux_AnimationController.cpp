@@ -4,7 +4,7 @@
 #include "AssetHandling/Zenith_AnimationAsset.h"
 
 #ifdef ZENITH_TOOLS
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #endif
 
 //=============================================================================
@@ -631,7 +631,7 @@ void Flux_AnimationController::DebugDraw(bool bShowBones, bool bShowIKTargets)
 			xPos = Zenith_Maths::Vector3(m_xWorldMatrix * Zenith_Maths::Vector4(xPos, 1.0f));
 
 			// Draw small sphere at bone position
-			Flux_Primitives::AddSphere(xPos, 0.02f, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f));
+			g_xEngine.Primitives().AddSphere(xPos, 0.02f, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f));
 		}
 	}
 
@@ -644,7 +644,7 @@ void Flux_AnimationController::DebugDraw(bool bShowBones, bool bShowIKTargets)
 			if (pxTarget && pxTarget->m_bEnabled)
 			{
 				// Draw target as red sphere
-				Flux_Primitives::AddSphere(pxTarget->m_xPosition, 0.05f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+				g_xEngine.Primitives().AddSphere(pxTarget->m_xPosition, 0.05f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
 			}
 		}
 	}

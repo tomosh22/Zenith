@@ -6,7 +6,7 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Physics/Zenith_PhysicsImpl.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
@@ -152,7 +152,7 @@ namespace
 
 		for (uint32_t u = 0; u < 12; ++u)
 		{
-			Flux_Primitives::AddLine(
+			g_xEngine.Primitives().AddLine(
 				axCorners[s_auEdgeIndices[u * 2 + 0]],
 				axCorners[s_auEdgeIndices[u * 2 + 1]],
 				xColor);
@@ -622,7 +622,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 		Zenith_Maths::Vector3 xHalfExtents, xLocalOffset;
 		ComputeBoxDimensionsAndOffset(xScale, xHalfExtents, xLocalOffset,
 			/*bWarnOnDegenerateBounds=*/false);
-		Flux_Primitives::AddWireframeCube(xPosition + xLocalOffset, xHalfExtents, xColor);
+		g_xEngine.Primitives().AddWireframeCube(xPosition + xLocalOffset, xHalfExtents, xColor);
 		break;
 	}
 
@@ -666,7 +666,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 	case COLLISION_VOLUME_TYPE_SPHERE:
 	{
 		const float fRadius = std::max({ xScale.x, xScale.y, xScale.z }) * 0.5f;
-		Flux_Primitives::AddSphere(xPosition, fRadius, xColor);
+		g_xEngine.Primitives().AddSphere(xPosition, fRadius, xColor);
 		break;
 	}
 
@@ -694,7 +694,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 			Zenith_Maths::RotateVector(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), xRotation));
 		const Zenith_Maths::Vector3 xStart = xPosition - xAxis * fHalfHeight;
 		const Zenith_Maths::Vector3 xEnd = xPosition + xAxis * fHalfHeight;
-		Flux_Primitives::AddCapsule(xStart, xEnd, fRadius, xColor);
+		g_xEngine.Primitives().AddCapsule(xStart, xEnd, fRadius, xColor);
 		break;
 	}
 

@@ -1,13 +1,12 @@
 #pragma once
 
-#include "Flux/Primitives/Flux_Primitives.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Maths/Zenith_Maths.h"
 
-// Per-primitive instance types. These were file-static in Flux_Primitives.cpp
-// before Phase 7g; promoted here so the per-frame instance queues can become
-// members of Flux_PrimitivesImpl.
+// Per-primitive instance types (file-static before Phase 7g; promoted to
+// engine-owned arrays).
 struct Flux_PrimitivesSphereInstance
 {
 	Zenith_Maths::Vector3 m_xCenter;
@@ -55,7 +54,7 @@ struct Flux_PrimitivesTriangleInstance
 	Zenith_Maths::Vector3 m_xColor;
 };
 
-// Phase 7g: per-Engine state for Primitives subsystem.
+// Phase 9: state + behaviour for Primitives subsystem.
 class Flux_PrimitivesImpl
 {
 public:
@@ -65,13 +64,43 @@ public:
 	Flux_PrimitivesImpl(const Flux_PrimitivesImpl&) = delete;
 	Flux_PrimitivesImpl& operator=(const Flux_PrimitivesImpl&) = delete;
 
-	// Shaders and pipelines.
+	void Initialise();
+	void BuildPipelines();
+	void Shutdown();
+	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	void AddSphere(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor);
+	void AddCube(const Zenith_Maths::Vector3& xCenter, const Zenith_Maths::Vector3& xHalfExtents, const Zenith_Maths::Vector3& xColor);
+	void AddWireframeCube(const Zenith_Maths::Vector3& xCenter, const Zenith_Maths::Vector3& xHalfExtents, const Zenith_Maths::Vector3& xColor);
+	void AddLine(const Zenith_Maths::Vector3& xStart, const Zenith_Maths::Vector3& xEnd, const Zenith_Maths::Vector3& xColor, float fThickness = 0.02f);
+	void AddCapsule(const Zenith_Maths::Vector3& xStart, const Zenith_Maths::Vector3& xEnd, float fRadius, const Zenith_Maths::Vector3& xColor);
+	void AddCylinder(const Zenith_Maths::Vector3& xStart, const Zenith_Maths::Vector3& xEnd, float fRadius, const Zenith_Maths::Vector3& xColor);
+	void AddTriangle(const Zenith_Maths::Vector3& xV0, const Zenith_Maths::Vector3& xV1,
+		const Zenith_Maths::Vector3& xV2, const Zenith_Maths::Vector3& xColor);
+
+	void Clear();
+
+	void AddCross(const Zenith_Maths::Vector3& xCenter, float fSize, const Zenith_Maths::Vector3& xColor);
+	void AddCircle(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor,
+		const Zenith_Maths::Vector3& xNormal = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), uint32_t uSegments = 32);
+	void AddArrow(const Zenith_Maths::Vector3& xStart, const Zenith_Maths::Vector3& xEnd,
+		const Zenith_Maths::Vector3& xColor, float fThickness = 0.02f, float fHeadSize = 0.15f);
+	void AddConeOutline(const Zenith_Maths::Vector3& xApex, const Zenith_Maths::Vector3& xDirection,
+		float fAngle, float fLength, const Zenith_Maths::Vector3& xColor, uint32_t uSegments = 16);
+	void AddArc(const Zenith_Maths::Vector3& xCenter, float fRadius, float fStartAngle, float fEndAngle,
+		const Zenith_Maths::Vector3& xColor, const Zenith_Maths::Vector3& xNormal = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
+		uint32_t uSegments = 16);
+	void AddPolygonOutline(const Zenith_Maths::Vector3* axVertices, uint32_t uVertexCount,
+		const Zenith_Maths::Vector3& xColor, bool bClosed = true);
+	void AddGrid(const Zenith_Maths::Vector3& xCenter, float fSize, uint32_t uDivisions,
+		const Zenith_Maths::Vector3& xColor);
+	void AddAxes(const Zenith_Maths::Vector3& xOrigin, float fSize);
+
 	Flux_Shader   m_xPrimitivesShader;
 	Flux_Pipeline m_xPrimitivesPipeline;
 	Flux_Pipeline m_xPrimitivesWireframePipeline;
 	Flux_Pipeline m_xLinesPipeline;
 
-	// Shared unit meshes (transformed via push constants).
 	Flux_VertexBuffer m_xSphereVertexBuffer;
 	Flux_IndexBuffer  m_xSphereIndexBuffer;
 	u_int             m_uSphereIndexCount = 0;
@@ -92,7 +121,6 @@ public:
 	Flux_IndexBuffer  m_xLineIndexBuffer;
 	u_int             m_uLineIndexCount = 0;
 
-	// Per-frame instance queues.
 	Zenith_Vector<Flux_PrimitivesSphereInstance>   m_xSphereInstances;
 	Zenith_Vector<Flux_PrimitivesCubeInstance>     m_xCubeInstances;
 	Zenith_Vector<Flux_PrimitivesLineInstance>     m_xLineInstances;
@@ -100,11 +128,9 @@ public:
 	Zenith_Vector<Flux_PrimitivesCylinderInstance> m_xCylinderInstances;
 	Zenith_Vector<Flux_PrimitivesTriangleInstance> m_xTriangleInstances;
 
-	// Dynamic triangle buffers (reused each frame).
 	Flux_DynamicVertexBuffer m_xTriangleDynamicVertexBuffer;
 	Flux_IndexBuffer         m_xTriangleIndexBuffer;
 	bool                     m_bTriangleBuffersInitialised = false;
 
-	// Thread-safe AddXXX calls.
 	Zenith_Mutex m_xInstanceMutex;
 };

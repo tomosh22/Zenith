@@ -6,7 +6,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 #ifdef ZENITH_TOOLS
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 
 static Zenith_Maths::Vector3 RoleToDebugColor(SquadRole eRole)
 {
@@ -583,11 +583,11 @@ void Zenith_Squad::DebugDrawSquadLinks(Zenith_SceneData* pxSceneData, const Zeni
 		xMemberEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xMemberPos);
 		xMemberPos.y += 2.0f;
 
-		Flux_Primitives::AddLine(xLeaderPos, xMemberPos, RoleToDebugColor(xMember.m_eRole));
+		g_xEngine.Primitives().AddLine(xLeaderPos, xMemberPos, RoleToDebugColor(xMember.m_eRole));
 	}
 
 	// Draw leader marker (gold crown)
-	Flux_Primitives::AddSphere(xLeaderPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), 0.2f, Zenith_Maths::Vector3(1.0f, 0.84f, 0.0f));
+	g_xEngine.Primitives().AddSphere(xLeaderPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), 0.2f, Zenith_Maths::Vector3(1.0f, 0.84f, 0.0f));
 }
 
 void Zenith_Squad::DebugDrawFormationPositions() const
@@ -605,7 +605,7 @@ void Zenith_Squad::DebugDrawFormationPositions() const
 			continue;
 		}
 
-		Flux_Primitives::AddSphere(xMember.m_xFormationOffset, 0.3f, RoleToDebugColor(xMember.m_eRole) * 0.5f);
+		g_xEngine.Primitives().AddSphere(xMember.m_xFormationOffset, 0.3f, RoleToDebugColor(xMember.m_eRole) * 0.5f);
 	}
 }
 
@@ -623,7 +623,7 @@ void Zenith_Squad::DebugDrawSharedTargets() const
 			? Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f)
 			: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
 
-		Flux_Primitives::AddCross(xTarget.m_xLastKnownPosition + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.5f, xTargetColor);
+		g_xEngine.Primitives().AddCross(xTarget.m_xLastKnownPosition + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.5f, xTargetColor);
 	}
 }
 
@@ -656,41 +656,41 @@ void Zenith_Squad::DebugDrawRoleLabels(Zenith_SceneData* pxSceneData) const
 		switch (xMember.m_eRole)
 		{
 		case SquadRole::LEADER:
-			Flux_Primitives::AddSphere(xLabelPos, 0.15f, xRoleColor);
-			Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.25f, 0.0f), xRoleColor);
-			Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.0f, 0.3f, 0.0f), xRoleColor);
-			Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.15f, 0.25f, 0.0f), xRoleColor);
+			g_xEngine.Primitives().AddSphere(xLabelPos, 0.15f, xRoleColor);
+			g_xEngine.Primitives().AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.25f, 0.0f), xRoleColor);
+			g_xEngine.Primitives().AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.0f, 0.3f, 0.0f), xRoleColor);
+			g_xEngine.Primitives().AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.15f, 0.25f, 0.0f), xRoleColor);
 			break;
 		case SquadRole::ASSAULT:
-			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.15f),
+			g_xEngine.Primitives().AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.15f),
 				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f), xRoleColor, 0.03f);
-			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.15f),
+			g_xEngine.Primitives().AddLine(xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.15f),
 				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f), xRoleColor, 0.03f);
 			break;
 		case SquadRole::SUPPORT:
-			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
+			g_xEngine.Primitives().AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
 				xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.0f), xRoleColor, 0.03f);
-			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f),
+			g_xEngine.Primitives().AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f),
 				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f), xRoleColor, 0.03f);
 			break;
 		case SquadRole::FLANKER:
-			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
+			g_xEngine.Primitives().AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
 				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f), xRoleColor, 0.03f);
-			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f),
+			g_xEngine.Primitives().AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f),
 				xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.0f), xRoleColor, 0.03f);
 			break;
 		case SquadRole::OVERWATCH:
-			Flux_Primitives::AddCircle(xLabelPos, 0.12f, xRoleColor);
-			Flux_Primitives::AddSphere(xLabelPos, 0.05f, xRoleColor);
+			g_xEngine.Primitives().AddCircle(xLabelPos, 0.12f, xRoleColor);
+			g_xEngine.Primitives().AddSphere(xLabelPos, 0.05f, xRoleColor);
 			break;
 		case SquadRole::MEDIC:
-			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.12f, 0.0f, 0.0f),
+			g_xEngine.Primitives().AddLine(xLabelPos + Zenith_Maths::Vector3(-0.12f, 0.0f, 0.0f),
 				xLabelPos + Zenith_Maths::Vector3(0.12f, 0.0f, 0.0f), xRoleColor, 0.04f);
-			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.12f),
+			g_xEngine.Primitives().AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.12f),
 				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.12f), xRoleColor, 0.04f);
 			break;
 		default:
-			Flux_Primitives::AddSphere(xLabelPos, 0.1f, xRoleColor);
+			g_xEngine.Primitives().AddSphere(xLabelPos, 0.1f, xRoleColor);
 			break;
 		}
 	}

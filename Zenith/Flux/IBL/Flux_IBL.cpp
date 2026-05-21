@@ -7,7 +7,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Flux/Skybox/Flux_Skybox.h"
+#include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
 
@@ -302,7 +302,7 @@ void Flux_IBLImpl::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUse
 	struct IrradianceConstants { u_int m_uUseAtmosphere; float m_fSunIntensity; u_int m_uFaceIndex; float m_fPad; };
 	IrradianceConstants xConsts;
 	xConsts.m_uUseAtmosphere = 1;
-	xConsts.m_fSunIntensity = Flux_Skybox::GetSunIntensity();
+	xConsts.m_fSunIntensity = g_xEngine.Skybox().GetSunIntensity();
 	xConsts.m_uFaceIndex = uFace;
 	xConsts.m_fPad = 0.0f;
 
@@ -330,7 +330,7 @@ void Flux_IBLImpl::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pU
 	PrefilterConstants xConsts;
 	xConsts.m_fRoughness = static_cast<float>(pxData->m_uMip) / static_cast<float>(IBLConfig::uPREFILTER_MIP_COUNT - 1);
 	xConsts.m_uUseAtmosphere = 1;
-	xConsts.m_fSunIntensity = Flux_Skybox::GetSunIntensity();
+	xConsts.m_fSunIntensity = g_xEngine.Skybox().GetSunIntensity();
 	xConsts.m_uFaceIndex = pxData->m_uFace;
 
 	pxCmd->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.IBL().m_xPrefilterPipeline);

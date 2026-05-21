@@ -3,7 +3,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Skybox/Flux_Skybox.h"
+#include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/Terrain/Flux_Terrain.h"
@@ -14,7 +14,7 @@
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/SSAO/Flux_SSAOImpl.h"
 #include "Flux/Fog/Flux_FogImpl.h"
@@ -32,7 +32,7 @@
 #include "Flux/HiZ/Flux_HiZImpl.h"
 #include "Flux/SSR/Flux_SSRImpl.h"
 #include "Flux/SSGI/Flux_SSGIImpl.h"
-#include "Flux/Vegetation/Flux_Grass.h"
+#include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
 #include "Flux/Decals/Flux_DecalsImpl.h"
@@ -213,14 +213,14 @@ void Flux::LateInitialise()
 	g_xEngine.Gizmos().Initialise();
 #endif
 	g_xEngine.Shadows().Initialise();
-	Flux_Skybox::Initialise();       // Cubemap skybox + procedural atmosphere
+	g_xEngine.Skybox().Initialise();       // Cubemap skybox + procedural atmosphere
 	g_xEngine.IBL().Initialise();          // Image-based lighting (BRDF LUT, environment probes)
 	g_xEngine.StaticMeshes().Initialise();
 	g_xEngine.AnimatedMeshes().Initialise();
 	g_xEngine.InstancedMeshes().Initialise();
 	Flux_Terrain::Initialise();
-	Flux_Grass::Initialise();        // Grass/vegetation (after terrain)
-	Flux_Primitives::Initialise();
+	g_xEngine.Grass().Initialise();        // Grass/vegetation (after terrain)
+	g_xEngine.Primitives().Initialise();
 	g_xEngine.HiZ().Initialise();          // Hi-Z depth pyramid (needed by SSR)
 	g_xEngine.SSR().Initialise();          // Screen-space reflections (uses Hi-Z, needed by DeferredShading)
 	g_xEngine.SSGI().Initialise();         // Screen-space GI (uses Hi-Z, needed by DeferredShading)
@@ -326,16 +326,16 @@ void Flux::SetupRenderGraph()
 
 	// Preprocessing
 	g_xEngine.IBL().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_Skybox::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Skybox().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// Geometry (all write to G-Buffer + Depth)
 	g_xEngine.Shadows().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.StaticMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Terrain::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_Primitives::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Primitives().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.AnimatedMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.InstancedMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_Grass::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Grass().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// Decals (read G-Buffer + depth, write G-Buffer MRTs). Must be
 	// registered after all G-buffer writers and before all G-buffer
@@ -358,7 +358,7 @@ void Flux::SetupRenderGraph()
 	// Aerial perspective runs after DeferredShading — it blends scattering on
 	// top of the already-lit HDR scene. Registering here keeps the writer-chain
 	// topological order correct.
-	Flux_Skybox::SetupAerialPerspectiveRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Skybox().SetupAerialPerspectiveRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.SSAO().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	g_xEngine.Fog().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
@@ -400,7 +400,7 @@ void Flux::ReleaseAssetReferences()
 	g_xEngine.Text().ReleaseAssetReferences();
 	g_xEngine.Particles().ReleaseAssetReferences();
 	Flux_Terrain::ReleaseAssetReferences();
-	Flux_Skybox::ReleaseAssetReferences();
+	g_xEngine.Skybox().ReleaseAssetReferences();
 	g_xEngine.VolumeFog().ReleaseAssetReferences();
 
 	// Material defaults live in AssetHandling but are part of the same pre-registry
@@ -432,13 +432,13 @@ void Flux::Shutdown()
 	g_xEngine.SSGI().Shutdown();         // Before HiZ (SSGI uses Hi-Z)
 	g_xEngine.SSR().Shutdown();          // Before HiZ (SSR uses Hi-Z)
 	g_xEngine.HiZ().Shutdown();          // Hi-Z depth pyramid
-	Flux_Primitives::Shutdown();   // Debug primitives (reverse of init: between HiZ and Grass)
-	Flux_Grass::Shutdown();        // After Terrain (depends on terrain data)
+	g_xEngine.Primitives().Shutdown();   // Debug primitives (reverse of init: between HiZ and Grass)
+	g_xEngine.Grass().Shutdown();        // After Terrain (depends on terrain data)
 	Flux_Terrain::Shutdown();
 	g_xEngine.InstancedMeshes().Shutdown();
 	// Flux_AnimatedMeshes, Flux_StaticMeshes - no Shutdown() methods
 	g_xEngine.IBL().Shutdown();          // After Skybox (uses skybox for environment)
-	Flux_Skybox::Shutdown();
+	g_xEngine.Skybox().Shutdown();
 	g_xEngine.Shadows().Shutdown();
 
 #ifdef ZENITH_WINDOWS

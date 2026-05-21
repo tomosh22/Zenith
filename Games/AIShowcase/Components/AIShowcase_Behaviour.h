@@ -31,7 +31,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "UI/Zenith_UIButton.h"
 
 // AI System includes
@@ -1067,7 +1067,7 @@ private:
 		Zenith_TacticalPointSystem::DebugDraw();
 
 		// Draw player indicator
-		Flux_Primitives::AddCircle(m_xPlayerPos, 1.5f,
+		g_xEngine.Primitives().AddCircle(m_xPlayerPos, 1.5f,
 			Zenith_Maths::Vector3(0.2f, 0.6f, 1.0f));
 #endif
 	}
@@ -1099,7 +1099,7 @@ private:
 
 				// Note: Actual FOV is 90 degrees (45 half-angle), but we draw a narrower
 				// cone (25 degrees) for better visual clarity - full FOV would be too wide
-				Flux_Primitives::AddConeOutline(
+				g_xEngine.Primitives().AddConeOutline(
 					xEyePos,
 					xForward,
 					25.0f,  // Visualization half-angle (narrower than actual FOV for clarity)
@@ -1110,7 +1110,7 @@ private:
 			// Draw hearing radius (controlled by s_bDrawHearingRadius)
 			if (Zenith_AIDebugVariables::s_bDrawHearingRadius)
 			{
-				Flux_Primitives::AddCircle(xPos, s_fHearingRange,
+				g_xEngine.Primitives().AddCircle(xPos, s_fHearingRange,
 					Zenith_Maths::Vector3(0.3f, 0.3f, 0.8f));  // Blue
 			}
 
@@ -1131,7 +1131,7 @@ private:
 						float fAwareness = xTarget.m_fAwareness;
 						Zenith_Maths::Vector3 xColor(fAwareness, 1.0f - fAwareness, 0.0f);
 
-						Flux_Primitives::AddLine(xEyePos, xTarget.m_xLastKnownPosition, xColor);
+						g_xEngine.Primitives().AddLine(xEyePos, xTarget.m_xLastKnownPosition, xColor);
 					}
 
 					// Draw memory position marker (controlled by s_bDrawMemoryPositions)
@@ -1142,9 +1142,9 @@ private:
 						Zenith_Maths::Vector3 xMemoryColor(1.0f, 0.5f, 0.0f);  // Orange
 						xMemoryColor = xMemoryColor * fFade;
 
-						Flux_Primitives::AddSphere(xTarget.m_xLastKnownPosition, 0.3f, xMemoryColor);
+						g_xEngine.Primitives().AddSphere(xTarget.m_xLastKnownPosition, 0.3f, xMemoryColor);
 						// Question mark indicator for "lost" target
-						Flux_Primitives::AddLine(
+						g_xEngine.Primitives().AddLine(
 							xTarget.m_xLastKnownPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f),
 							xTarget.m_xLastKnownPosition + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
 							xMemoryColor);

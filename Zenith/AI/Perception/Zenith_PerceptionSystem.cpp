@@ -6,7 +6,7 @@
 #include "Physics/Zenith_Physics.h"
 
 #ifdef ZENITH_TOOLS
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #endif
 
 std::unordered_map<uint64_t, Zenith_PerceptionSystem::AgentPerceptionData> Zenith_PerceptionSystem::s_xAgentData; // #TODO: Replace with engine hash map
@@ -646,7 +646,7 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 		xDir.z = xForward.x * fSin + xForward.z * fCos;
 		xDir = Zenith_Maths::Normalize(xDir);
 
-		Flux_Primitives::AddLine(xEyePos, xEyePos + xDir * xConfig.m_fMaxRange, xColor, 0.02f);
+		g_xEngine.Primitives().AddLine(xEyePos, xEyePos + xDir * xConfig.m_fMaxRange, xColor, 0.02f);
 	};
 
 	DrawConeEdge(fFOVRad, xFOVColor);
@@ -655,7 +655,7 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 	DrawConeEdge(-fPeriphRad, xPeripheralColor);
 
 	// Draw forward direction
-	Flux_Primitives::AddLine(xEyePos, xEyePos + xForward * 2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.03f);
+	g_xEngine.Primitives().AddLine(xEyePos, xEyePos + xForward * 2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.03f);
 
 	// Draw perceived targets
 	for (uint32_t u = 0; u < xData.m_axPerceivedTargets.GetSize(); ++u)
@@ -666,10 +666,10 @@ void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 		Zenith_Maths::Vector3 xColor(xTarget.m_fAwareness, 1.0f - xTarget.m_fAwareness, 0.0f);
 
 		// Line to last known position
-		Flux_Primitives::AddLine(xEyePos, xTarget.m_xLastKnownPosition, xColor, 0.015f);
+		g_xEngine.Primitives().AddLine(xEyePos, xTarget.m_xLastKnownPosition, xColor, 0.015f);
 
 		// Sphere at last known position
-		Flux_Primitives::AddSphere(xTarget.m_xLastKnownPosition, 0.15f, xColor);
+		g_xEngine.Primitives().AddSphere(xTarget.m_xLastKnownPosition, 0.15f, xColor);
 	}
 }
 #endif

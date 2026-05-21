@@ -7,7 +7,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
@@ -172,7 +172,7 @@ static u_int TickAndPackDense(float fDt)
 #ifdef ZENITH_DEBUG_VARIABLES
 		if (dbg_bDecalDebugSpheres)
 		{
-			Flux_Primitives::AddSphere(
+			g_xEngine.Primitives().AddSphere(
 				xSlot.m_xPosition,
 				xSlot.m_fSize * 0.5f,
 				Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f));

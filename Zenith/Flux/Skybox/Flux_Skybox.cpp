@@ -1,6 +1,6 @@
 #include "Zenith.h"
 
-#include "Flux/Skybox/Flux_Skybox.h"
+#include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Core/Zenith_Engine.h"
 
@@ -62,7 +62,7 @@ float dbg_fAerialStrength = 1.0f;
 u_int dbg_uSkySamples = AtmosphereConfig::uDEFAULT_SKY_SAMPLES;
 u_int dbg_uLightSamples = AtmosphereConfig::uDEFAULT_LIGHT_SAMPLES;
 
-void Flux_Skybox::BuildPipelines()
+void Flux_SkyboxImpl::BuildPipelines()
 {
 	// ========== Cubemap skybox pipeline (MRT with no blending) ==========
 	{
@@ -145,7 +145,7 @@ void Flux_Skybox::BuildPipelines()
 	}
 }
 
-void Flux_Skybox::Initialise()
+void Flux_SkyboxImpl::Initialise()
 {
 	CreateRenderTargets();
 
@@ -166,7 +166,7 @@ void Flux_Skybox::Initialise()
 		FluxShaderProgram::SkyboxAtmosphere,
 		FluxShaderProgram::SkyboxAerialPerspective,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Skybox::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Skybox().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -177,12 +177,12 @@ void Flux_Skybox::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox initialised");
 }
 
-void Flux_Skybox::ReleaseAssetReferences()
+void Flux_SkyboxImpl::ReleaseAssetReferences()
 {
 	g_xEngine.Skybox().m_xCubemapTexture.Clear();
 }
 
-void Flux_Skybox::Shutdown()
+void Flux_SkyboxImpl::Shutdown()
 {
 	DestroyRenderTargets();
 	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.Skybox().m_xAtmosphereConstantsBuffer);
@@ -190,13 +190,13 @@ void Flux_Skybox::Shutdown()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox shut down");
 }
 
-void Flux_Skybox::Reset()
+void Flux_SkyboxImpl::Reset()
 {
 	g_xEngine.Skybox().m_bLUTNeedsUpdate = true;
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox::Reset()");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SkyboxImpl::Reset()");
 }
 
-void Flux_Skybox::CreateRenderTargets()
+void Flux_SkyboxImpl::CreateRenderTargets()
 {
 	// Create transmittance LUT for atmosphere
 	Flux_RenderAttachmentBuilder xBuilder;
@@ -208,7 +208,7 @@ void Flux_Skybox::CreateRenderTargets()
 	xBuilder.BuildColour(g_xEngine.Skybox().m_xTransmittanceLUT, "Skybox Transmittance LUT");
 }
 
-void Flux_Skybox::DestroyRenderTargets()
+void Flux_SkyboxImpl::DestroyRenderTargets()
 {
 	if (g_xEngine.Skybox().m_xTransmittanceLUT.m_xVRAMHandle.IsValid())
 	{
@@ -229,7 +229,7 @@ static void PreExecuteSkybox(void*)
 		s_xSolidColourConstants.m_xColour = Zenith_Maths::Vector4(xOpts.m_xSkyboxColour, 1.f);
 		Flux_MemoryManager::UploadBufferData(g_xEngine.Skybox().m_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
 	}
-	else if (Flux_Skybox::IsAtmosphereEnabled())
+	else if (g_xEngine.Skybox().IsAtmosphereEnabled())
 	{
 		s_xAtmosphereConstants.m_xRayleighScatter = Zenith_Maths::Vector4(
 			AtmosphereConfig::afRAYLEIGH_SCATTER[0],
@@ -245,12 +245,12 @@ static void PreExecuteSkybox(void*)
 
 		s_xAtmosphereConstants.m_fPlanetRadius = AtmosphereConfig::fEARTH_RADIUS;
 		s_xAtmosphereConstants.m_fAtmosphereRadius = AtmosphereConfig::fATMOSPHERE_RADIUS;
-		s_xAtmosphereConstants.m_fMieG = Flux_Skybox::GetMieG();
-		s_xAtmosphereConstants.m_fSunIntensity = Flux_Skybox::GetSunIntensity();
+		s_xAtmosphereConstants.m_fMieG = g_xEngine.Skybox().GetMieG();
+		s_xAtmosphereConstants.m_fSunIntensity = g_xEngine.Skybox().GetSunIntensity();
 
-		s_xAtmosphereConstants.m_fRayleighScale = Flux_Skybox::GetRayleighScale();
-		s_xAtmosphereConstants.m_fMieScale = Flux_Skybox::GetMieScale();
-		s_xAtmosphereConstants.m_fAerialPerspectiveStrength = Flux_Skybox::GetAerialPerspectiveStrength();
+		s_xAtmosphereConstants.m_fRayleighScale = g_xEngine.Skybox().GetRayleighScale();
+		s_xAtmosphereConstants.m_fMieScale = g_xEngine.Skybox().GetMieScale();
+		s_xAtmosphereConstants.m_fAerialPerspectiveStrength = g_xEngine.Skybox().GetAerialPerspectiveStrength();
 		s_xAtmosphereConstants.m_uDebugMode = dbg_uSkyboxDebugMode;
 
 		s_xAtmosphereConstants.m_uSkySamples = dbg_uSkySamples;
@@ -276,7 +276,7 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 		return;
 	}
 
-	if (Flux_Skybox::IsAtmosphereEnabled())
+	if (g_xEngine.Skybox().IsAtmosphereEnabled())
 	{
 		// Atmosphere sky (constants uploaded in PreExecuteSkybox)
 		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Skybox().m_xAtmospherePipeline);
@@ -312,7 +312,7 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 
 static void ExecuteAerialPerspective(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_Skybox::IsAtmosphereEnabled() || !Flux_Skybox::IsAerialPerspectiveEnabled())
+	if (!g_xEngine.Skybox().IsAtmosphereEnabled() || !g_xEngine.Skybox().IsAerialPerspectiveEnabled())
 	{
 		return;
 	}
@@ -331,7 +331,7 @@ static void ExecuteAerialPerspective(Flux_CommandList* pxCommandList, void*)
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_Skybox::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// Sky render pass (writes to MRT). Skybox is a fullscreen quad that writes
 	// all G-Buffer channels via OutputToGBuffer, so it's the natural place to
@@ -348,7 +348,7 @@ void Flux_Skybox::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.ClearTargets();
 }
 
-void Flux_Skybox::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_SkyboxImpl::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// Aerial perspective applies atmospheric scattering via SRC_ALPHA blending
 	// on top of existing HDR content. It is registered AFTER DeferredShading
@@ -361,28 +361,18 @@ void Flux_Skybox::SetupAerialPerspectiveRenderGraph(Flux_RenderGraph& xGraph)
 }
 
 // Setters (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)
-void Flux_Skybox::SetSunIntensity(float fIntensity) { g_xEngine.Skybox().m_fSunIntensity = fIntensity; }
-void Flux_Skybox::SetRayleighScale(float fScale) { g_xEngine.Skybox().m_fRayleighScale = fScale; }
-void Flux_Skybox::SetMieScale(float fScale) { g_xEngine.Skybox().m_fMieScale = fScale; }
-void Flux_Skybox::SetMieG(float fG) { g_xEngine.Skybox().m_fMieG = fG; }
-void Flux_Skybox::SetAerialPerspectiveStrength(float fStrength) { g_xEngine.Skybox().m_fAerialPerspectiveStrength = fStrength; }
 
 // Getters
-bool Flux_Skybox::IsAtmosphereEnabled() { return Zenith_GraphicsOptions::Get().m_bSkyboxAtmosphereEnabled; }
-float Flux_Skybox::GetSunIntensity() { return g_xEngine.Skybox().m_fSunIntensity; }
-float Flux_Skybox::GetRayleighScale() { return g_xEngine.Skybox().m_fRayleighScale; }
-float Flux_Skybox::GetMieScale() { return g_xEngine.Skybox().m_fMieScale; }
-float Flux_Skybox::GetMieG() { return g_xEngine.Skybox().m_fMieG; }
-bool Flux_Skybox::IsAerialPerspectiveEnabled() { return Zenith_GraphicsOptions::Get().m_bSkyboxAerialPerspectiveEnabled; }
-float Flux_Skybox::GetAerialPerspectiveStrength() { return g_xEngine.Skybox().m_fAerialPerspectiveStrength; }
+bool Flux_SkyboxImpl::IsAtmosphereEnabled() const { return Zenith_GraphicsOptions::Get().m_bSkyboxAtmosphereEnabled; }
+bool Flux_SkyboxImpl::IsAerialPerspectiveEnabled() const { return Zenith_GraphicsOptions::Get().m_bSkyboxAerialPerspectiveEnabled; }
 
-Flux_ShaderResourceView& Flux_Skybox::GetTransmittanceLUTSRV()
+Flux_ShaderResourceView& Flux_SkyboxImpl::GetTransmittanceLUTSRV()
 {
 	return g_xEngine.Skybox().m_xTransmittanceLUT.SRV();
 }
 
 #ifdef ZENITH_DEBUG_VARIABLES
-void Flux_Skybox::RegisterDebugVariables()
+void Flux_SkyboxImpl::RegisterDebugVariables()
 {
 	Zenith_DebugVariables::AddUInt32({ "Flux", "Skybox", "DebugMode" }, dbg_uSkyboxDebugMode, 0, SKYBOX_DEBUG_COUNT - 1);
 	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "SunIntensity" }, dbg_fSunIntensity, 1.0f, 100.0f);

@@ -5,7 +5,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 #ifdef ZENITH_TOOLS
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #endif
 
 bool Zenith_NavMeshAgent::SetDestination(const Zenith_Maths::Vector3& xDestination)
@@ -307,7 +307,7 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		// Draw line from agent to current waypoint
 		if (m_uCurrentWaypoint < m_xCurrentPath.m_axWaypoints.GetSize())
 		{
-			Flux_Primitives::AddLine(xAgentPosition,
+			g_xEngine.Primitives().AddLine(xAgentPosition,
 				m_xCurrentPath.m_axWaypoints.Get(m_uCurrentWaypoint),
 				xPathColor, 0.03f);
 		}
@@ -315,7 +315,7 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		// Draw remaining path
 		for (uint32_t u = m_uCurrentWaypoint; u + 1 < m_xCurrentPath.m_axWaypoints.GetSize(); ++u)
 		{
-			Flux_Primitives::AddLine(m_xCurrentPath.m_axWaypoints.Get(u),
+			g_xEngine.Primitives().AddLine(m_xCurrentPath.m_axWaypoints.Get(u),
 				m_xCurrentPath.m_axWaypoints.Get(u + 1),
 				xPathColor, 0.02f);
 		}
@@ -328,11 +328,11 @@ void Zenith_NavMeshAgent::DebugDraw(const Zenith_Maths::Vector3& xAgentPosition)
 		{
 			Zenith_Maths::Vector3 xColor = (u == m_xCurrentPath.m_axWaypoints.GetSize() - 1)
 				? xTargetColor : xWaypointColor;
-			Flux_Primitives::AddSphere(m_xCurrentPath.m_axWaypoints.Get(u), 0.1f, xColor);
+			g_xEngine.Primitives().AddSphere(m_xCurrentPath.m_axWaypoints.Get(u), 0.1f, xColor);
 		}
 
 		// Draw destination marker
-		Flux_Primitives::AddSphere(m_xDestination, 0.15f, xTargetColor);
+		g_xEngine.Primitives().AddSphere(m_xDestination, 0.15f, xTargetColor);
 	}
 }
 #endif

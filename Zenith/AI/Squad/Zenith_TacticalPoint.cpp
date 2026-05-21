@@ -7,7 +7,7 @@
 #include "Physics/Zenith_Physics.h"
 
 #ifdef ZENITH_TOOLS
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #endif
 
 // Lookup table for tactical point type properties (color, display score, name)
@@ -860,17 +860,17 @@ void Zenith_TacticalPointSystem::DebugDrawPoint(const Zenith_TacticalPoint& xPoi
 	}
 
 	// Draw sphere at position
-	Flux_Primitives::AddSphere(xPoint.m_xPosition, 0.3f, xColor);
+	g_xEngine.Primitives().AddSphere(xPoint.m_xPosition, 0.3f, xColor);
 
 	// Draw facing direction
 	Zenith_Maths::Vector3 xFacingEnd = xPoint.m_xPosition + xPoint.m_xFacing * 0.8f;
-	Flux_Primitives::AddLine(xPoint.m_xPosition, xFacingEnd, xColor);
+	g_xEngine.Primitives().AddLine(xPoint.m_xPosition, xFacingEnd, xColor);
 
 	// Draw vertical line for elevated points
 	if (xPoint.m_uFlags & TACPOINT_FLAG_ELEVATED)
 	{
 		Zenith_Maths::Vector3 xTop = xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f);
-		Flux_Primitives::AddLine(xPoint.m_xPosition, xTop, Zenith_Maths::Vector3(0.0f, 1.0f, 1.0f));
+		g_xEngine.Primitives().AddLine(xPoint.m_xPosition, xTop, Zenith_Maths::Vector3(0.0f, 1.0f, 1.0f));
 	}
 
 	// Draw score if enabled
@@ -907,10 +907,10 @@ void Zenith_TacticalPointSystem::DebugDrawPoint(const Zenith_TacticalPoint& xPoi
 		// Visual indicator of score (taller = higher score)
 		float fScoreHeight = fDisplayScore * 0.3f;
 		Zenith_Maths::Vector3 xScoreTop = xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f + fScoreHeight, 0.0f);
-		Flux_Primitives::AddLine(xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), xScoreTop, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f), 0.03f);
+		g_xEngine.Primitives().AddLine(xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), xScoreTop, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f), 0.03f);
 
 		// Add a small sphere at top to make it more visible
-		Flux_Primitives::AddSphere(xScoreTop, 0.08f, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f));
+		g_xEngine.Primitives().AddSphere(xScoreTop, 0.08f, Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f));
 	}
 }
 #endif

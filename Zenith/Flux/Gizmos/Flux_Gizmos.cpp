@@ -15,7 +15,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_Buffers.h"
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Maths/Zenith_Maths_Intersections.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
@@ -260,13 +260,13 @@ static void ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData)
 
 #ifdef ZENITH_DEBUG
 	// Visualize gizmo interaction bounding boxes for debugging
-	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * g_xEngine.Gizmos().m_fGizmoScale,
+	g_xEngine.Primitives().AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * g_xEngine.Gizmos().m_fGizmoScale,
 		Zenith_Maths::Vector3(GIZMO_ARROW_LENGTH * g_xEngine.Gizmos().m_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * g_xEngine.Gizmos().m_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * g_xEngine.Gizmos().m_fGizmoScale),
 		Zenith_Maths::Vector3(1, 0, 0));
-	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 1, 0) * GIZMO_ARROW_LENGTH * 0.5f * g_xEngine.Gizmos().m_fGizmoScale,
+	g_xEngine.Primitives().AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 1, 0) * GIZMO_ARROW_LENGTH * 0.5f * g_xEngine.Gizmos().m_fGizmoScale,
 		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * g_xEngine.Gizmos().m_fGizmoScale, GIZMO_ARROW_LENGTH * g_xEngine.Gizmos().m_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * g_xEngine.Gizmos().m_fGizmoScale),
 		Zenith_Maths::Vector3(0, 1, 0));
-	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 0, 1) * GIZMO_ARROW_LENGTH * 0.5f * g_xEngine.Gizmos().m_fGizmoScale,
+	g_xEngine.Primitives().AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 0, 1) * GIZMO_ARROW_LENGTH * 0.5f * g_xEngine.Gizmos().m_fGizmoScale,
 		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * g_xEngine.Gizmos().m_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * g_xEngine.Gizmos().m_fGizmoScale, GIZMO_ARROW_LENGTH * g_xEngine.Gizmos().m_fGizmoScale * 0.5f),
 		Zenith_Maths::Vector3(0, 0, 1));
 #endif
