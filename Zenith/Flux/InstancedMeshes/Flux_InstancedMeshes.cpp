@@ -7,6 +7,7 @@
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/Flux_MaterialBinding.h"
@@ -327,7 +328,7 @@ static void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup*
 	Zenith_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
 	if (!pxMaterial)
 	{
-		pxMaterial = Flux_Graphics::s_xBlankMaterial.GetDirect();
+		pxMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
 	}
 
 	Flux_AnimationTexture* pxAnimTex = pxGroup->GetAnimationTexture();
@@ -377,7 +378,7 @@ static void BindBatchDescriptors(Flux_ShaderBinder& xBinder, Flux_InstanceGroup*
 	}
 	else
 	{
-		xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &Flux_Graphics::s_xWhiteTexture.GetDirect()->m_xSRV);
+		xBinder.BindSRV(s_xGBufferShader, "g_xAnimationTex", &g_xEngine.FluxGraphics().m_xWhiteTexture.GetDirect()->m_xSRV);
 	}
 
 	// Bind instance buffers
@@ -430,7 +431,7 @@ void Flux_InstancedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind FrameConstants once per command list (set 0 - per-frame data)
-	xBinder.BindCBV(s_xGBufferShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Track statistics
 	s_uTotalInstances = 0;

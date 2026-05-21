@@ -6,6 +6,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 
 //#TO purely for the static assert in SetIndexBuffer
 
@@ -170,7 +171,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 				? vk::ImageLayout::eDepthStencilReadOnlyOptimal
 				: vk::ImageLayout::eShaderReadOnlyOptimal;
 			axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
-				.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
+				.setSampler(pxSampler ? pxSampler->GetSampler() : g_xEngine.FluxGraphics().m_xRepeatSampler.GetSampler())
 				.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(pxSRV->m_xImageViewHandle))
 				.setImageLayout(eLayout);
 

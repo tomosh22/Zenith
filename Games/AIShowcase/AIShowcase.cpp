@@ -14,6 +14,7 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
@@ -84,7 +85,7 @@ static void InitializeAIShowcaseResources()
 	g_pxCylinderGeometry = g_xCylinderAsset.GetDirect()->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials.
-	const TextureHandle& xGridTex = Flux_Graphics::s_xGridTexture;
+	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 	// Create materials with grid texture and BaseColor
 	g_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());

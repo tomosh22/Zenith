@@ -4,6 +4,7 @@
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -264,7 +265,7 @@ void Flux_Terrain::Initialise()
 	BuildPipelines();
 
 	// Take a ref-counted copy of the global water normal texture handle (set during init in Zenith_Main).
-	s_xWaterNormalTexture = Flux_Graphics::s_xWaterNormalTexture;
+	s_xWaterNormalTexture = g_xEngine.FluxGraphics().m_xWaterNormalTexture;
 
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), s_xTerrainConstantsBuffer);
@@ -427,7 +428,7 @@ void Flux_Terrain::PreRenderUpdate(void* /*pUserData*/)
 	// Frame indexing eliminates cross-frame CPU/GPU races on shared memory.
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 	const Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
-	const Zenith_Maths::Matrix4& xViewProj = Flux_Graphics::s_xFrameConstants.m_xViewProjMat;
+	const Zenith_Maths::Matrix4& xViewProj = g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat;
 	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxTerrain = g_xTerrainComponentsToRender.Get(u);
@@ -505,7 +506,7 @@ void Flux_Terrain::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
 	// Bind set 0 (per-frame data) once per command list
-	xBinder.BindCBV(s_xTerrainGBufferShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xTerrainGBufferShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindCBV(s_xTerrainGBufferShader, "TerrainConstants", &s_xTerrainConstantsBuffer.GetCBV());
 
 	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
@@ -544,15 +545,15 @@ void Flux_Terrain::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 		// Bind material textures (set 1, named bindings) — 4 slots × 5 channels.
 		// Per-channel defaulting (white / normal-up) is already handled by
 		// Zenith_MaterialAsset::GetXxxTexture(); the fallback here is at the
-		// slot level: a null material falls back to Flux_Graphics::s_xBlankMaterial,
+		// slot level: a null material falls back to g_xEngine.FluxGraphics().m_xBlankMaterial,
 		// whose channel getters return the engine-wide defaults. The binding
 		// table at file scope (s_axTerrainTexBindings) holds stable codegen
 		// name pointers — see comment there for why.
 		auto ResolveSRV = [](Zenith_MaterialAsset* pxMat,
 			Zenith_TextureAsset* (Zenith_MaterialAsset::*pfn)()) -> const Flux_ShaderResourceView*
 		{
-			Zenith_MaterialAsset* pxResolved = pxMat ? pxMat : Flux_Graphics::s_xBlankMaterial.GetDirect();
-			Zenith_Assert(pxResolved != nullptr, "Flux_Graphics::s_xBlankMaterial not initialised — Flux_Graphics::Initialise must run before terrain renders");
+			Zenith_MaterialAsset* pxResolved = pxMat ? pxMat : g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
+			Zenith_Assert(pxResolved != nullptr, "g_xEngine.FluxGraphics().m_xBlankMaterial not initialised — Flux_Graphics::Initialise must run before terrain renders");
 			Zenith_TextureAsset* pxTex = (pxResolved->*pfn)();
 			Zenith_Assert(pxTex != nullptr, "Material channel getter returned null — Zenith_MaterialAsset defaults should guarantee non-null");
 			return &pxTex->m_xSRV;

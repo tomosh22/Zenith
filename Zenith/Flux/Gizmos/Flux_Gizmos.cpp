@@ -11,6 +11,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Primitives/Flux_Primitives.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -305,7 +306,7 @@ void Flux_Gizmos::ExecuteGizmos(Flux_CommandList* pxCommandList, void* pUserData
 
 	// Create binder once - bind frame constants once (same for all gizmo components)
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(s_xShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Render each gizmo component
 	for (uint32_t i = 0; i < pxGeometry->GetSize(); ++i)

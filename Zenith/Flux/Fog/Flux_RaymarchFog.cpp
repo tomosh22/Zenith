@@ -5,6 +5,7 @@
 
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shadows/Flux_Shadows.h"
@@ -159,11 +160,11 @@ void Flux_RaymarchFog::Render(Flux_CommandList* pxCommandList)
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(s_xShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV(s_xShader, "u_xDepthTexture", Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(s_xShader, "u_xNoiseTexture3D", &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV);
 	xBinder.BindSRV(s_xShader, "u_xBlueNoiseTexture", &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
@@ -174,7 +175,7 @@ void Flux_RaymarchFog::Render(Flux_CommandList* pxCommandList)
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xCSMSRV = Flux_Shadows::GetCSMSRV(u);
-		xBinder.BindSRV(s_xShader, s_aszCSMNames[u], &xCSMSRV, &Flux_Graphics::s_xClampSampler);
+		xBinder.BindSRV(s_xShader, s_aszCSMNames[u], &xCSMSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
 		xBinder.BindCBV(s_xShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
 	}
 

@@ -3,6 +3,7 @@
 #include "Flux/Primitives/Flux_Primitives.h"
 
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -956,7 +957,7 @@ void Flux_Primitives::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	}
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
-	xBinder.BindCBV(s_xPrimitivesShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xPrimitivesShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	RenderSpherePrimitives(pxCmdList, xBinder, xLocalSphereInstances);
 	RenderCubePrimitives(pxCmdList, xBinder, xLocalCubeInstances);

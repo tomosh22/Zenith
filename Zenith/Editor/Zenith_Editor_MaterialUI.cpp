@@ -6,6 +6,7 @@
 #include "Zenith_Editor.h"
 #include "Zenith_EditorMaterialUIImpl.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -54,7 +55,7 @@ Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Zenith_TextureAsse
 	// Register new texture with ImGui
 	Flux_ImGuiTextureHandle xHandle = Flux_ImGuiIntegration::RegisterTexture(
 		pxTexture->m_xSRV,
-		Flux_Graphics::s_xClampSampler
+		g_xEngine.FluxGraphics().m_xClampSampler
 	);
 
 	g_xEngine.EditorMaterialUI().m_xTexturePreviewCache[ulKey] = { xHandle, ulImageViewHandle };

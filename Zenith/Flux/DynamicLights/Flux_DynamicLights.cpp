@@ -2,6 +2,7 @@
 
 #include "Flux/DynamicLights/Flux_DynamicLights.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_Query.h"
@@ -169,7 +170,7 @@ static Zenith_Vector<LightSortKey> s_xSortBuffer;
 
 static float CalculateLightPriority(const Zenith_Maths::Vector3& xLightPos, float fIntensity, float fRange)
 {
-	Zenith_Maths::Vector3 xCamPos = Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad;
+	Zenith_Maths::Vector3 xCamPos = g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad;
 	float fDistance = Zenith_Maths::Length(xLightPos - xCamPos);
 	return (fIntensity * fRange) / (fDistance + 1.0f);
 }

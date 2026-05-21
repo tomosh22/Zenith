@@ -4,6 +4,7 @@
 #include "Flux/Fog/Flux_VolumeFog.h"
 
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -100,9 +101,9 @@ void Flux_GodRaysFog::Reset()
 void Flux_GodRaysFog::Render(Flux_CommandList* pxCommandList)
 {
 	// Get sun direction from frame constants and project to screen space
-	const Zenith_Maths::Vector3& xSunDir = Flux_Graphics::s_xFrameConstants.m_xSunDir_Pad;
-	const Zenith_Maths::Matrix4& xViewProj = Flux_Graphics::s_xFrameConstants.m_xViewProjMat;
-	const Zenith_Maths::Vector3& xCamPos = Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad;
+	const Zenith_Maths::Vector3& xSunDir = g_xEngine.FluxGraphics().m_xFrameConstants.m_xSunDir_Pad;
+	const Zenith_Maths::Matrix4& xViewProj = g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat;
+	const Zenith_Maths::Vector3& xCamPos = g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad;
 
 	// Calculate sun position far along sun direction from camera
 	// Distance to place virtual sun position for screen-space projection
@@ -140,11 +141,11 @@ void Flux_GodRaysFog::Render(Flux_CommandList* pxCommandList)
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(s_xShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV(s_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
 
 	xBinder.BindDrawConstants(s_xShader, "GodRaysConstants", &s_xConstants, sizeof(Flux_GodRaysConstants));

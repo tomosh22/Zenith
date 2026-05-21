@@ -17,6 +17,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Prefab/Zenith_Prefab.h"
 
@@ -61,7 +62,7 @@ static void InitializeSokobanResources()
 	g_pxCubeGeometry = g_xCubeAsset.GetDirect()->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials.
-	const TextureHandle& xGridTex = Flux_Graphics::s_xGridTexture;
+	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 	g_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	g_xFloorMaterial.GetDirect()->SetName("SokobanFloor");

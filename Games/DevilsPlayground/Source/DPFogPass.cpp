@@ -5,6 +5,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Zenith_GameRenderHook.h"
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/HDR/Flux_HDR.h"
@@ -225,11 +226,11 @@ namespace
 
 		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindCBV(s_xShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindSRV(s_xShader, "g_xDepthTex",     Flux_Graphics::GetDepthStencilSRV());
 		xBinder.BindDrawConstants(s_xShader, "DPFogConstants", &s_xPayload, sizeof(s_xPayload));
 

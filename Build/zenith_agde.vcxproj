@@ -978,6 +978,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Graphics.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_GraphicsImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialBinding.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h" />

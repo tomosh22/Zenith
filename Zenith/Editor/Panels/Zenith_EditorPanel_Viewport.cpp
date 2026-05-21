@@ -4,6 +4,7 @@
 
 #include "Zenith_EditorPanel_Viewport.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -42,7 +43,7 @@ void Zenith_EditorPanelViewport::Render(ViewportState& xState)
 			// Allocate new ImGui texture handle for the game viewport texture
 			xState.m_xCachedGameTextureHandle = Flux_ImGuiIntegration::RegisterTexture(
 				xGameRenderSRV,
-				Flux_Graphics::s_xRepeatSampler
+				g_xEngine.FluxGraphics().m_xRepeatSampler
 			);
 
 			// Cache the image view handle so we know when it changes

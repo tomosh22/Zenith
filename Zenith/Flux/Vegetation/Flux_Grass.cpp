@@ -2,6 +2,7 @@
 
 #include "Flux_Grass.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -247,7 +248,7 @@ void Flux_Grass::ExecuteRender(Flux_CommandList* pxCmdList, void*)
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmdList);
-		xBinder.BindCBV(s_xGrassShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(s_xGrassShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindCBV(s_xGrassShader, "GrassConstants", &s_xGrassConstantsBuffer.GetCBV());
 		xBinder.BindUAV_Buffer(s_xGrassShader, "InstanceBuffer", &s_xInstanceBuffer.GetUAV());
 	}

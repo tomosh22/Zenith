@@ -7,6 +7,7 @@
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -98,7 +99,7 @@ void Flux_Particles::Initialise()
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_PARTICLES, "Warning: Failed to load particle texture, using white texture");
-		s_xParticleTexture = Flux_Graphics::s_xWhiteTexture;
+		s_xParticleTexture = g_xEngine.FluxGraphics().m_xWhiteTexture;
 	}
 
 #ifdef ZENITH_TOOLS
@@ -234,12 +235,12 @@ void Flux_Particles::ExecuteParticles(Flux_CommandList* pxCommandList, void* pUs
 		{
 			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipelineAlpha);
 
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer(), 0);
+			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBufferAlpha, 1);
 
 			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-			pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+			pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
 			pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_xParticleTexture.GetDirect()->m_xSRV, 1);
 
 			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uAlphaInstanceCount);
@@ -250,12 +251,12 @@ void Flux_Particles::ExecuteParticles(Flux_CommandList* pxCommandList, void* pUs
 		{
 			pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipelineAdditive);
 
-			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer(), 0);
+			pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 			pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBufferAdditive, 1);
 
 			pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-			pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+			pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
 			pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_xParticleTexture.GetDirect()->m_xSRV, 1);
 
 			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, s_uAdditiveInstanceCount);

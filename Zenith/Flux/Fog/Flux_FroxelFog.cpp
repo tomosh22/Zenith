@@ -5,6 +5,7 @@
 
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -318,8 +319,8 @@ void Flux_FroxelFog::RenderInject(Flux_CommandList* pxCommandList)
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&s_xInjectPipeline);
 
 	Flux_ShaderBinder xInjectBinder(*pxCommandList);
-	xInjectBinder.BindCBV(s_xInjectShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xInjectBinder.BindSRV(s_xInjectShader, "u_xNoiseTexture3D", &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV, &Flux_Graphics::s_xRepeatSampler);
+	xInjectBinder.BindCBV(s_xInjectShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xInjectBinder.BindSRV(s_xInjectShader, "u_xNoiseTexture3D", &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV, &g_xEngine.FluxGraphics().m_xRepeatSampler);
 	xInjectBinder.BindUAV_Texture(s_xInjectShader, "u_xDensityGrid", &GetDensityGridInternal().UAV(0));
 	xInjectBinder.BindDrawConstants(s_xInjectShader, "InjectConstants", &s_xInjectConstants, sizeof(InjectConstants));
 	pxCommandList->AddCommand<Flux_CommandDispatch>(
@@ -336,9 +337,9 @@ void Flux_FroxelFog::RenderLight(Flux_CommandList* pxCommandList)
 
 	s_xLightConstants.m_xFogColour = xShared.m_xFogColour;
 	s_xLightConstants.m_xLightDirection = Zenith_Maths::Vector4(
-		Flux_Graphics::s_xFrameConstants.m_xSunDir_Pad.x,
-		Flux_Graphics::s_xFrameConstants.m_xSunDir_Pad.y,
-		Flux_Graphics::s_xFrameConstants.m_xSunDir_Pad.z,
+		g_xEngine.FluxGraphics().m_xFrameConstants.m_xSunDir_Pad.x,
+		g_xEngine.FluxGraphics().m_xFrameConstants.m_xSunDir_Pad.y,
+		g_xEngine.FluxGraphics().m_xFrameConstants.m_xSunDir_Pad.z,
 		0.0f
 	);
 	s_xLightConstants.m_xLightColour = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -354,7 +355,7 @@ void Flux_FroxelFog::RenderLight(Flux_CommandList* pxCommandList)
 	pxCommandList->AddCommand<Flux_CommandBindComputePipeline>(&s_xLightPipeline);
 
 	Flux_ShaderBinder xLightBinder(*pxCommandList);
-	xLightBinder.BindCBV(s_xLightShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xLightBinder.BindCBV(s_xLightShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xLightBinder.BindSRV(s_xLightShader, "u_xDensityGrid", &GetDensityGridInternal().SRV());
 	xLightBinder.BindUAV_Texture(s_xLightShader, "u_xLightingGrid", &GetLightingGridInternal().UAV(0));
 	xLightBinder.BindUAV_Texture(s_xLightShader, "u_xScatteringGrid", &GetScatteringGridInternal().UAV(0));
@@ -365,7 +366,7 @@ void Flux_FroxelFog::RenderLight(Flux_CommandList* pxCommandList)
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xCSMSRV = Flux_Shadows::GetCSMSRV(u);
-		xLightBinder.BindSRV(s_xLightShader, s_aszCSMNames[u], &xCSMSRV, &Flux_Graphics::s_xClampSampler);
+		xLightBinder.BindSRV(s_xLightShader, s_aszCSMNames[u], &xCSMSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
 		xLightBinder.BindCBV(s_xLightShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
 	}
 
@@ -388,11 +389,11 @@ void Flux_FroxelFog::RenderApply(Flux_CommandList* pxCommandList)
 	s_xApplyConstants.m_uDebugSliceIndex = dbg_uFroxelDebugSlice;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xApplyPipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xApplyBinder(*pxCommandList);
-	xApplyBinder.BindCBV(s_xApplyShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xApplyBinder.BindCBV(s_xApplyShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xApplyBinder.BindSRV(s_xApplyShader, "u_xDepthTexture", Flux_Graphics::GetDepthStencilSRV());
 	xApplyBinder.BindSRV(s_xApplyShader, "u_xLightingGrid", &GetLightingGridInternal().SRV());
 	xApplyBinder.BindSRV(s_xApplyShader, "u_xScatteringGrid", &GetScatteringGridInternal().SRV());

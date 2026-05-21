@@ -5,6 +5,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/IBL/Flux_IBL.h"
 #include "Flux/SSR/Flux_SSR.h"
@@ -75,14 +76,14 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 {
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	// Use named bindings via shader binder (auto-manages descriptor set switches)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	// Bind frame constants
-	xBinder.BindCBV(s_xShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Bind G-buffer textures (named bindings)
 	xBinder.BindSRV(s_xShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
@@ -95,7 +96,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xSRV = Flux_Shadows::GetCSMSRV(u);
-		xBinder.BindSRV(s_xShader, s_aszCSMNames[u], &xSRV, &Flux_Graphics::s_xClampSampler);
+		xBinder.BindSRV(s_xShader, s_aszCSMNames[u], &xSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
 	}
 
 	// Bind shadow matrix buffers (named bindings)

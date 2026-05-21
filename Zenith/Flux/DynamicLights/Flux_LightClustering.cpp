@@ -3,6 +3,7 @@
 #include "Flux/DynamicLights/Flux_LightClustering.h"
 #include "Flux/DynamicLights/Flux_DynamicLights.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
 
@@ -132,7 +133,7 @@ static void ExecuteLightClustering(Flux_CommandList* pxCommandList, void* /*pUse
 
 	// Inputs.
 	xBinder.BindCBV(s_xComputeShader, "FrameConstants",
-		&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV_Buffer(s_xComputeShader, "LightBuffer",
 		Flux_DynamicLights::GetLightBufferSRV());
 

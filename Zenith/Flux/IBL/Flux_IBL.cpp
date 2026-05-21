@@ -2,6 +2,7 @@
 
 #include "Flux_IBL.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Skybox/Flux_Skybox.h"
@@ -303,8 +304,8 @@ void Flux_IBL::ExecuteBRDFLUTPass(Flux_CommandList* pxCmd, void*)
 	// No per-frame gate — disabled passes are skipped before record runs
 	// (see Flux_RenderGraph::Execute Phase 1/2 enable check).
 	pxCmd->AddCommand<Flux_CommandSetPipeline>(&s_xBRDFLUTPipeline);
-	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	// BRDF integration only reads its UV input; the Slang version exposes no
 	// CBs in reflection so no binder calls are needed before the draw.
@@ -324,16 +325,16 @@ void Flux_IBL::ExecuteIrradianceFacePass(Flux_CommandList* pxCmd, void* pUserDat
 	xConsts.m_fPad = 0.0f;
 
 	pxCmd->AddCommand<Flux_CommandSetPipeline>(&s_xIrradianceConvolvePipeline);
-	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(s_xIrradianceConvolveShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(s_xIrradianceConvolveShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindDrawConstants(s_xIrradianceConvolveShader, "IrradianceConstants", &xConsts, sizeof(xConsts));
-		if (Zenith_TextureAsset* pxCubemap = Flux_Graphics::s_xCubemapTexture.GetDirect())
+		if (Zenith_TextureAsset* pxCubemap = g_xEngine.FluxGraphics().m_xCubemapTexture.GetDirect())
 			xBinder.BindSRV(s_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
-		else if (Zenith_TextureAsset* pxBlack = Flux_Graphics::s_xBlackTexture.GetDirect())
+		else if (Zenith_TextureAsset* pxBlack = g_xEngine.FluxGraphics().m_xBlackTexture.GetDirect())
 			xBinder.BindSRV(s_xIrradianceConvolveShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -351,16 +352,16 @@ void Flux_IBL::ExecutePrefilterMipFacePass(Flux_CommandList* pxCmd, void* pUserD
 	xConsts.m_uFaceIndex = pxData->m_uFace;
 
 	pxCmd->AddCommand<Flux_CommandSetPipeline>(&s_xPrefilterPipeline);
-	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCmd->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCmd);
-		xBinder.BindCBV(s_xPrefilterShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(s_xPrefilterShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindDrawConstants(s_xPrefilterShader, "PrefilterConstants", &xConsts, sizeof(xConsts));
-		if (Zenith_TextureAsset* pxCubemap = Flux_Graphics::s_xCubemapTexture.GetDirect())
+		if (Zenith_TextureAsset* pxCubemap = g_xEngine.FluxGraphics().m_xCubemapTexture.GetDirect())
 			xBinder.BindSRV(s_xPrefilterShader, "g_xSkyboxCubemap", &pxCubemap->GetSRV());
-		else if (Zenith_TextureAsset* pxBlack = Flux_Graphics::s_xBlackTexture.GetDirect())
+		else if (Zenith_TextureAsset* pxBlack = g_xEngine.FluxGraphics().m_xBlackTexture.GetDirect())
 			xBinder.BindSRV(s_xPrefilterShader, "g_xSkyboxCubemap", &pxBlack->GetSRV());
 	}
 	pxCmd->AddCommand<Flux_CommandDrawIndexed>(6);

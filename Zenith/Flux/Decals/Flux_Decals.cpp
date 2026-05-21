@@ -2,6 +2,7 @@
 
 #include "Flux/Decals/Flux_Decals.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Primitives/Flux_Primitives.h"
@@ -392,8 +393,8 @@ static void ExecuteNormalsCopy(Flux_CommandList* pxCommandList, void*)
 		return;
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xNormalsCopyPipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindSRV(s_xNormalsCopyShader, "g_xNormalsTex",
@@ -415,7 +416,7 @@ static void ExecuteApply(Flux_CommandList* pxCommandList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(s_xApplyShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xApplyShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	xBinder.BindSRV(s_xApplyShader, "g_xDepthTex",       Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(s_xApplyShader, "g_xNormalsCopyTex", &s_pxGraph->GetTransientAttachment(s_xNormalsCopyHandle).SRV());

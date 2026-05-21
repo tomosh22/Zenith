@@ -18,6 +18,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/IBL/Flux_IBL.h"
@@ -90,7 +91,7 @@ void RenderImGui()
 	// Also render the old debug tools window for backwards compatibility
 	ImGui::Begin("Zenith Tools");
 
-	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.x)) + " " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.y)) + " " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.z));
+	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad.x)) + " " + std::to_string(static_cast<int32_t>(g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad.y)) + " " + std::to_string(static_cast<int32_t>(g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad.z));
 	ImGui::Text(strCamPosText.c_str());
 
 	std::string strFpsText = "FPS: " + std::to_string(1.f / g_xEngine.Frame().GetDt());

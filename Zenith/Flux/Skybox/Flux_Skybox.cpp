@@ -5,6 +5,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -15,7 +16,7 @@
 #endif
 
 
-// Ref-counted copy of Flux_Graphics::s_xCubemapTexture (set during init in Zenith_Main).
+// Ref-counted copy of g_xEngine.FluxGraphics().m_xCubemapTexture (set during init in Zenith_Main).
 // Owned by handle so the cubemap survives any UnloadUnused calls during the frame.
 static TextureHandle s_xCubemapTexture;
 
@@ -181,7 +182,7 @@ void Flux_Skybox::Initialise()
 	BuildPipelines();
 
 	// Take a ref-counted copy of the global cubemap handle (set during init in Zenith_Main).
-	s_xCubemapTexture = Flux_Graphics::s_xCubemapTexture;
+	s_xCubemapTexture = g_xEngine.FluxGraphics().m_xCubemapTexture;
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -292,8 +293,8 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 		// Solid colour override (buffer uploaded in PreExecuteSkybox)
 
 		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_Skybox::s_xSolidColourPipeline);
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 		pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
 		pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Skybox::s_xSolidColourConstantsBuffer.GetCBV(), 0);
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
@@ -304,12 +305,12 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 	{
 		// Atmosphere sky (constants uploaded in PreExecuteSkybox)
 		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_Skybox::s_xAtmospherePipeline);
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 		{
 			Flux_ShaderBinder xBinder(*pxCommandList);
-			xBinder.BindCBV(Flux_Skybox::s_xAtmosphereShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+			xBinder.BindCBV(Flux_Skybox::s_xAtmosphereShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 			xBinder.BindCBV(Flux_Skybox::s_xAtmosphereShader, "AtmosphereConstants", &Flux_Skybox::s_xAtmosphereConstantsBuffer.GetCBV());
 		}
 
@@ -325,10 +326,10 @@ static void ExecuteSkybox(Flux_CommandList* pxCommandList, void*)
 		}
 
 		pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_Skybox::s_xCubemapPipeline);
-		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+		pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 		pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-		pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+		pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
 		pxCommandList->AddCommand<Flux_CommandBindSRV>(&pxCubemap->m_xSRV, 1);
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 	}
@@ -342,12 +343,12 @@ static void ExecuteAerialPerspective(Flux_CommandList* pxCommandList, void*)
 	}
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_Skybox::s_xAerialPerspectivePipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	{
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindCBV(Flux_Skybox::s_xAerialPerspectiveShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(Flux_Skybox::s_xAerialPerspectiveShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 		xBinder.BindCBV(Flux_Skybox::s_xAerialPerspectiveShader, "AtmosphereConstants", &Flux_Skybox::s_xAtmosphereConstantsBuffer.GetCBV());
 		xBinder.BindSRV(Flux_Skybox::s_xAerialPerspectiveShader, "g_xDepthTex", &Flux_Graphics::GetDepthAttachment().SRV());
 	}

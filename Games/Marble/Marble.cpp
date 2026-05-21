@@ -16,6 +16,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -162,7 +163,7 @@ static void InitializeMarbleResources()
 
 	// Use grid pattern texture with BaseColor for all materials.
 	// Copying the handle by value AddRefs; each material owns a ref via its own handle copy.
-	const TextureHandle& xGridTex = Flux_Graphics::s_xGridTexture;
+	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 	// Create materials with grid texture and BaseColor
 	g_xBallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());

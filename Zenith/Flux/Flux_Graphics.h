@@ -44,38 +44,12 @@ public:
 	static Flux_RenderAttachment& GetDepthAttachment();
 	static Flux_RenderAttachment& GetFinalRenderTarget();
 
-	//----------------------------------------------------------------------
-	// Samplers
-	//----------------------------------------------------------------------
-	static Flux_Sampler s_xRepeatSampler;
-	static Flux_Sampler s_xClampSampler;
-
-	//----------------------------------------------------------------------
-	// Shared Geometry & Buffers
-	//----------------------------------------------------------------------
-	static Flux_MeshGeometry s_xQuadMesh;
-	static Flux_DynamicConstantBuffer s_xFrameConstantsBuffer;
-
-	//----------------------------------------------------------------------
-	// Fallback Assets (engine defaults for missing/loading assets).
-	// Stored as handles so they hold a permanent ref while initialised — without
-	// that, Zenith_AssetRegistry::UnloadUnused() would free them out from under
-	// every consumer that uses them as a fallback.
-	//----------------------------------------------------------------------
-	static TextureHandle s_xWhiteTexture;
-	static TextureHandle s_xBlackTexture;
-	static TextureHandle s_xGridTexture;
-	static Flux_MeshGeometry s_xBlankMesh;
-	static MaterialHandle s_xBlankMaterial;
-
-	//----------------------------------------------------------------------
-	// Scene Textures (set during initialization in Zenith_Main.cpp)
-	//----------------------------------------------------------------------
-	static TextureHandle s_xCubemapTexture;
-	static TextureHandle s_xWaterNormalTexture;
+	// Phase 6a-2: the 17 file-static data members previously declared
+	// here moved onto Flux_GraphicsImpl (held by Zenith_Engine). The
+	// static facade methods below keep their signatures; bodies route
+	// through g_xEngine.FluxGraphics().m_xXxx.
 
 	static TextureFormat GetMRTFormat(MRTIndex eIndex);
-	static TextureFormat s_aeMRTFormats[MRT_INDEX_COUNT];
 
 	static const Zenith_Maths::Vector3& GetCameraPosition();
 	
@@ -96,16 +70,14 @@ public:
 	static const Flux_ShaderResourceView* GetDebugSRV_Depth();
 #endif
 
-	static Zenith_Maths::Matrix4 GetViewProjMatrix() { return s_xFrameConstants.m_xViewProjMat; }
-	static Zenith_Maths::Matrix4 GetInvViewProjMatrix() { return s_xFrameConstants.m_xInvViewProjMat; }
-	static Zenith_Maths::Matrix4 GetViewMatrix() { return s_xFrameConstants.m_xViewMat; }
-	static Zenith_Maths::Vector3 GetSunDir() { return s_xFrameConstants.m_xSunDir_Pad; }
+	static Zenith_Maths::Matrix4 GetViewProjMatrix();
+	static Zenith_Maths::Matrix4 GetInvViewProjMatrix();
+	static Zenith_Maths::Matrix4 GetViewMatrix();
+	static Zenith_Maths::Vector3 GetSunDir();
 	static float GetNearPlane();
 	static float GetFarPlane();
 	static float GetFOV();
 	static float GetAspectRatio();
-
-	static Flux_BindingGroupLayout s_xFrameConstantsLayout;
 
 	struct FrameConstants
 	{
@@ -129,16 +101,6 @@ public:
 #endif
 		Zenith_Maths::Vector2 m_xCameraNearFar;  // x = near plane, y = far plane
 	};
-	static FrameConstants s_xFrameConstants;
 private:
 	static bool BuildCameraMatrices(FrameConstants& xConstants);
-
-	// Graph-owned transient handles — backing Flux_RenderAttachments are
-	// allocated and destroyed by the render graph, sized from the descriptors
-	// set in SetupTransients. Access the resolved attachments via the
-	// Get*Attachment / GetFinalRenderTarget* getters above.
-	static Flux_TransientHandle s_axMRTHandles[MRT_INDEX_COUNT];
-	static Flux_TransientHandle s_xFinalRTHandle;
-	static Flux_TransientHandle s_xDepthHandle;
-	static Flux_RenderGraph* s_pxGraph;
 };

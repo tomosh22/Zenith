@@ -4,6 +4,7 @@
 
 #include "Zenith_Vulkan.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -415,8 +416,8 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 
 	s_xCopyToFramebufferCmd.SetPipeline(&s_xPipeline);
 
-	s_xCopyToFramebufferCmd.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	s_xCopyToFramebufferCmd.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	s_xCopyToFramebufferCmd.SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	s_xCopyToFramebufferCmd.SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	s_xCopyToFramebufferCmd.BeginBind(0);
 #ifdef ZENITH_DEBUG_VARIABLES

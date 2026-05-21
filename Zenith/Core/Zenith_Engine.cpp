@@ -21,6 +21,7 @@
 #include "Input/Zenith_InputImpl.h"
 #include "Input/Zenith_TouchInputImpl.h"
 #include "Flux/Flux_RendererImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -202,6 +203,14 @@ Flux_RendererImpl& Zenith_Engine::FluxRenderer()
 	return *m_pxFluxRenderer;
 }
 
+Flux_GraphicsImpl& Zenith_Engine::FluxGraphics()
+{
+	// No assert: graphics state (samplers, fallback textures, frame
+	// constants, MRT formats) is read from every subsystem during every
+	// frame. Allocated alongside m_pxFluxRenderer.
+	return *m_pxFluxGraphics;
+}
+
 #ifdef ZENITH_TOOLS
 Zenith_EditorImpl& Zenith_Engine::Editor()
 {
@@ -276,6 +285,12 @@ void Zenith_Engine::Initialise()
 	// before Flux::EarlyInitialise creates the graph.
 	Zenith_Assert(m_pxFluxRenderer == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxFluxRenderer = new Flux_RendererImpl();
+
+	// Phase 6a-2: Flux_Graphics state (samplers, fallback texture /
+	// material handles, scene textures, MRT formats, frame constants,
+	// transient render-graph handles).
+	Zenith_Assert(m_pxFluxGraphics == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxFluxGraphics = new Flux_GraphicsImpl();
 
 #ifdef ZENITH_TOOLS
 	// Phase 5.5c: editor state (selection, viewport, content browser,
@@ -406,13 +421,13 @@ void Zenith_Engine::Initialise()
 				ENGINE_ASSETS_DIR"Textures/Cubemap/pz" ZENITH_TEXTURE_EXT,
 				ENGINE_ASSETS_DIR"Textures/Cubemap/nz" ZENITH_TEXTURE_EXT
 			);
-			Flux_Graphics::s_xCubemapTexture.Set(pxCubemap);
+			g_xEngine.FluxGraphics().m_xCubemapTexture.Set(pxCubemap);
 		}
 
 		// Load water normal texture (pinned)
 		if (Zenith_TextureAsset* pxWaterNormal = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT))
 		{
-			Flux_Graphics::s_xWaterNormalTexture.Set(pxWaterNormal);
+			g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWaterNormal);
 		}
 
 		Flux_MemoryManager::EndFrame(false);
@@ -625,6 +640,11 @@ void Zenith_Engine::Shutdown()
 	// holder.
 	delete m_pxFluxRenderer;
 	m_pxFluxRenderer = nullptr;
+
+	// Free Flux_Graphics state. Flux_Graphics::Shutdown above has already
+	// freed GPU resources; this just reclaims the holder.
+	delete m_pxFluxGraphics;
+	m_pxFluxGraphics = nullptr;
 
 #ifdef ZENITH_TOOLS
 	// 21. Free editor state. Done LATE -- the editor's deferred-deletion

@@ -2,6 +2,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 
 // Unified data size calculation for both compressed and uncompressed textures
 static size_t CalculateTextureDataSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight, uint32_t uDepth = 1)
@@ -48,7 +49,7 @@ void Zenith_TextureAsset::MarkAsBindless()
 		Flux_PlatformAPI::WriteBindlessTextureSlot(
 			m_xSRV.m_xImageViewHandle.AsUInt(),
 			m_xSRV,
-			Flux_Graphics::s_xClampSampler);
+			g_xEngine.FluxGraphics().m_xClampSampler);
 	}
 }
 

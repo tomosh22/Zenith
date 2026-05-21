@@ -5,6 +5,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "UI/Zenith_UICanvas.h"
@@ -91,7 +92,7 @@ void Flux_Text::Initialise()
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_TEXT, "Warning: Failed to load font atlas texture, using white texture");
-		s_xFontAtlasTexture = Flux_Graphics::s_xWhiteTexture;  // copy: AddRefs the white default
+		s_xFontAtlasTexture = g_xEngine.FluxGraphics().m_xWhiteTexture;  // copy: AddRefs the white default
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -268,12 +269,12 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer(), 0);
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
 
 	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
-	pxCommandList->AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+	pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
 	pxCommandList->AddCommand<Flux_CommandBindSRV>(&s_xFontAtlasTexture.GetDirect()->m_xSRV, 1);
 
 	if (s_bOverlayClipActive && s_uBgCharCount > 0)

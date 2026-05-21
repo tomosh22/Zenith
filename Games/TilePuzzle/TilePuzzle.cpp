@@ -17,6 +17,7 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UIButton.h"
@@ -1428,7 +1429,7 @@ static void InitializeTilePuzzleResources()
 	g_fHighlightEmissiveIntensity = fHighlightEmissive;
 
 	// Use grid pattern texture with BaseColor for all materials.
-	const TextureHandle& xGridTex = Flux_Graphics::s_xGridTexture;
+	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 	// Create materials with loaded colors
 	g_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());

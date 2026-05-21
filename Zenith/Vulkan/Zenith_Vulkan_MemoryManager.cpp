@@ -12,6 +12,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
 
 // Probe cache storage. ProbeCacheEntry itself lives in
@@ -1399,7 +1400,7 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 		Zenith_Vulkan::WriteBindlessDescriptor(
 			xView.m_xImageViewHandle.AsUInt(),
 			xVkView,
-			Flux_Graphics::s_xClampSampler.GetSampler());
+			g_xEngine.FluxGraphics().m_xClampSampler.GetSampler());
 	}
 
 	return xView;
@@ -1443,7 +1444,7 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewFor
 		Zenith_Vulkan::WriteBindlessDescriptor(
 			xView.m_xImageViewHandle.AsUInt(),
 			xVkView,
-			Flux_Graphics::s_xClampSampler.GetSampler());
+			g_xEngine.FluxGraphics().m_xClampSampler.GetSampler());
 	}
 
 	return xView;

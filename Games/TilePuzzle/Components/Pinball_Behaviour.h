@@ -32,6 +32,7 @@
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UICanvas.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ModelInstance.h"
 
 #include "TilePuzzle/Components/TilePuzzle_SaveData.h"
@@ -860,7 +861,7 @@ private:
 
 	void CreateMaterials()
 	{
-		const TextureHandle& xGridTex = Flux_Graphics::s_xGridTexture;
+		const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 		// Ball - cat-themed orange, metallic chrome
 		m_xBallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());

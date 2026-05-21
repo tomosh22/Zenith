@@ -21,6 +21,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
@@ -870,7 +871,7 @@ static void InitializeRenderTestResources()
 
 	RenderTest::g_xCubeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
 	RenderTest::g_xCubeMaterial.GetDirect()->SetName("RenderTestCubeMaterial");
-	RenderTest::g_xCubeMaterial.GetDirect()->SetDiffuseTexture(Flux_Graphics::s_xGridTexture);
+	RenderTest::g_xCubeMaterial.GetDirect()->SetDiffuseTexture(g_xEngine.FluxGraphics().m_xGridTexture);
 	RenderTest::g_xPlayerMaterial = CreateFlatColorMaterial("RenderTestPlayerMaterial",
 		strProceduralTexDir + "PlayerDiffuse" ZENITH_TEXTURE_EXT, 0, 200, 220);
 
