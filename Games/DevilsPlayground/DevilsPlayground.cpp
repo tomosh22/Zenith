@@ -483,6 +483,44 @@ namespace
 		Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.9f, 0.2f, 0.2f, 1.0f);
 		Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
 
+		// 2026-05-21: LockedDoorAlert. A short-lived warning under the Status
+		// banner that fires on DP_OnDoorLockRejected. Pre-fix the player got
+		// zero feedback that a door was locked -- F-press silently did
+		// nothing. The HUD now flashes "LOCKED -- needs Key" or similar
+		// for ~2 s. Hidden by default; the controller flips visibility.
+		Zenith_EditorAutomation::AddStep_CreateUIText("LockedDoorAlert", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("LockedDoorAlert", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("LockedDoorAlert", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("LockedDoorAlert", 0.0f, -40.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("LockedDoorAlert", DPUI::fHUD_STATUS_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("LockedDoorAlert", 0.95f, 0.30f, 0.20f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("LockedDoorAlert", false);
+
+		// 2026-05-21: ScentBar. The companion bar visualisation to
+		// ScentIndicator (which is a numeric "Scent: 0.42"). The bar
+		// gives the player a glanceable readout of scent saturation
+		// across the 0-1 range, with colour signalling when scent
+		// crosses the hound-bark threshold (0.5).
+		Zenith_EditorAutomation::AddStep_CreateUIText("ScentBar", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("ScentBar", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("ScentBar", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("ScentBar", DPUI::fEDGE_INSET, -DPUI::fEDGE_INSET - 25.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("ScentBar", DPUI::fHUD_SCENT_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("ScentBar", 0.7f, 0.3f, 0.9f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("ScentBar", false);
+
+		// 2026-05-21: ArchetypeStatus. A one-line description of the
+		// possessed villager's archetype-specific gameplay rule.
+		// Sits below VillagerInfo on the TopLeft stack. Hidden when
+		// not possessing or possessing a Farmhand (baseline).
+		Zenith_EditorAutomation::AddStep_CreateUIText("ArchetypeStatus", "");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor("ArchetypeStatus", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+		Zenith_EditorAutomation::AddStep_SetUIAlignment("ArchetypeStatus", static_cast<int>(Zenith_UI::TextAlignment::Left));
+		Zenith_EditorAutomation::AddStep_SetUIPosition("ArchetypeStatus", DPUI::fEDGE_INSET, DPUI::fEDGE_INSET + 245.0f);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize("ArchetypeStatus", DPUI::fHUD_VILLAGER_INFO_FONT);
+		Zenith_EditorAutomation::AddStep_SetUIColor("ArchetypeStatus", 0.95f, 0.85f, 0.65f, 1.0f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible("ArchetypeStatus", false);
+
 		// MVP-2.5.4: Dawn sun-gauge -- text countdown at top-centre.
 		Zenith_EditorAutomation::AddStep_CreateUIText("DawnGauge", "");
 		Zenith_EditorAutomation::AddStep_SetUIAnchor("DawnGauge", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
