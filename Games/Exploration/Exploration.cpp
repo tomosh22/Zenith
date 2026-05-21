@@ -38,13 +38,20 @@ extern void ExportHeightmapFromMat(const cv::Mat& xHeightmap, const std::string&
 #endif
 
 // ============================================================================
-// Exploration Resources
+// Exploration Resources - Phase 8: per-game ProjectResources struct.
 // ============================================================================
 namespace Exploration
 {
-	// Terrain materials (4-material splatmap palette)
-	MaterialHandle g_axTerrainMaterials[4];
-	TextureHandle g_xTerrainSplatmap;
+	struct ExplorationResources
+	{
+		MaterialHandle                  m_axTerrainMaterials[4];
+		TextureHandle                   m_xTerrainSplatmap;
+		MaterialHandle                  m_xTreeMaterial;
+		Zenith_InstancedMeshComponent*  m_pxTreeComponent = nullptr;
+	};
+
+	static ExplorationResources g_xResources;
+	ExplorationResources& Resources() { return g_xResources; }
 }
 
 static bool s_bResourcesInitialized = false;
@@ -401,22 +408,12 @@ static void InitializeExplorationResources()
 
 	for (u_int u = 0; u < 4; u++)
 	{
-		g_axTerrainMaterials[u].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-		g_axTerrainMaterials[u].GetDirect()->SetName(aszDisplayNames[u]);
-		SetMaterialTexturePaths(g_axTerrainMaterials[u].GetDirect(), strTexturesDir, aszNames[u]);
+		Resources().m_axTerrainMaterials[u].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		Resources().m_axTerrainMaterials[u].GetDirect()->SetName(aszDisplayNames[u]);
+		SetMaterialTexturePaths(Resources().m_axTerrainMaterials[u].GetDirect(), strTexturesDir, aszNames[u]);
 	}
 
 	s_bResourcesInitialized = true;
-}
-
-// ============================================================================
-// Instanced Trees System
-// ============================================================================
-namespace Exploration
-{
-	// Resources for instanced trees
-	MaterialHandle g_xTreeMaterial;
-	Zenith_InstancedMeshComponent* g_pxTreeComponent = nullptr;
 }
 
 
@@ -543,11 +540,11 @@ static void CreateInstancedTrees(Zenith_SceneData* pxSceneData)
 	Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] Creating instanced trees entity...");
 
 	// Create tree material (green with some variation) - guard for replay
-	if (g_xTreeMaterial.GetDirect() == nullptr)
+	if (Resources().m_xTreeMaterial.GetDirect() == nullptr)
 	{
-		g_xTreeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-		g_xTreeMaterial.GetDirect()->SetName("TreeMaterial");
-		g_xTreeMaterial.GetDirect()->SetBaseColor(Zenith_Maths::Vector4(0.3f, 0.5f, 0.2f, 1.0f));
+		Resources().m_xTreeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		Resources().m_xTreeMaterial.GetDirect()->SetName("TreeMaterial");
+		Resources().m_xTreeMaterial.GetDirect()->SetBaseColor(Zenith_Maths::Vector4(0.3f, 0.5f, 0.2f, 1.0f));
 	}
 
 	// Create entity with instanced mesh component
@@ -555,7 +552,7 @@ static void CreateInstancedTrees(Zenith_SceneData* pxSceneData)
 	xTreesEntity.SetTransient(false);
 
 	Zenith_InstancedMeshComponent& xTrees = xTreesEntity.AddComponent<Zenith_InstancedMeshComponent>();
-	g_pxTreeComponent = &xTrees;
+	Resources().m_pxTreeComponent = &xTrees;
 
 	// Load mesh
 	xTrees.LoadMesh(strMeshAssetPath);
@@ -574,7 +571,7 @@ static void CreateInstancedTrees(Zenith_SceneData* pxSceneData)
 	}
 
 	// Set material
-	xTrees.SetMaterial(g_xTreeMaterial.GetDirect());
+	xTrees.SetMaterial(Resources().m_xTreeMaterial.GetDirect());
 
 	// Spawn trees (start with 10k for testing, can increase to 100k)
 	// Reduced count for initial testing to ensure performance is acceptable
@@ -600,12 +597,12 @@ void Exploration_CreateWorldContent(Zenith_SceneData* pxSceneData)
 		xTerrainEntity.SetTransient(false);
 
 		Zenith_TerrainComponent& xTerrain = xTerrainEntity.AddComponent<Zenith_TerrainComponent>(
-			*g_axTerrainMaterials[0].GetDirect(),
-			*g_axTerrainMaterials[1].GetDirect());
+			*Resources().m_axTerrainMaterials[0].GetDirect(),
+			*Resources().m_axTerrainMaterials[1].GetDirect());
 
 		// Set materials 2-3 and splatmap
-		xTerrain.GetMaterialHandle(2).Set(g_axTerrainMaterials[2].GetDirect());
-		xTerrain.GetMaterialHandle(3).Set(g_axTerrainMaterials[3].GetDirect());
+		xTerrain.GetMaterialHandle(2).Set(Resources().m_axTerrainMaterials[2].GetDirect());
+		xTerrain.GetMaterialHandle(3).Set(Resources().m_axTerrainMaterials[3].GetDirect());
 		xTerrain.GetSplatmapHandle().SetPath("game:Terrain/Splatmap" ZENITH_TEXTURE_EXT);
 
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Terrain entity created successfully!");
@@ -639,7 +636,7 @@ void Exploration_CreateWorldContent(Zenith_SceneData* pxSceneData)
 
 void Exploration_CleanupWorldContent()
 {
-	Exploration::g_pxTreeComponent = nullptr;
+	Exploration::Resources().m_pxTreeComponent = nullptr;
 }
 
 // ============================================================================

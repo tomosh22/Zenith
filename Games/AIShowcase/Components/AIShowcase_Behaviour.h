@@ -59,26 +59,33 @@
 #endif
 
 // ============================================================================
-// AIShowcase Resources - Global access
-// Defined in AIShowcase.cpp
+// AIShowcase Resources - Phase 8 per-game ProjectResources struct.
 // ============================================================================
 namespace AIShowcase
 {
-	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Flux_MeshGeometry* g_pxSphereGeometry;
-	extern Flux_MeshGeometry* g_pxCylinderGeometry;
+	struct AIShowcaseResources
+	{
+		MeshGeometryHandle  m_xCubeAsset;
+		MeshGeometryHandle  m_xSphereAsset;
+		MeshGeometryHandle  m_xCylinderAsset;
+		Flux_MeshGeometry*  m_pxCubeGeometry      = nullptr;
+		Flux_MeshGeometry*  m_pxSphereGeometry    = nullptr;
+		Flux_MeshGeometry*  m_pxCylinderGeometry  = nullptr;
 
-	extern MaterialHandle g_xFloorMaterial;
-	extern MaterialHandle g_xWallMaterial;
-	extern MaterialHandle g_xObstacleMaterial;
-	extern MaterialHandle g_xPlayerMaterial;
-	extern MaterialHandle g_xEnemyMaterial;
-	extern MaterialHandle g_xLeaderMaterial;
-	extern MaterialHandle g_xFlankerMaterial;
-	extern MaterialHandle g_xCoverPointMaterial;
-	extern MaterialHandle g_xPatrolPointMaterial;
+		MaterialHandle      m_xFloorMaterial;
+		MaterialHandle      m_xWallMaterial;
+		MaterialHandle      m_xObstacleMaterial;
+		MaterialHandle      m_xPlayerMaterial;
+		MaterialHandle      m_xEnemyMaterial;
+		MaterialHandle      m_xLeaderMaterial;
+		MaterialHandle      m_xFlankerMaterial;
+		MaterialHandle      m_xCoverPointMaterial;
+		MaterialHandle      m_xPatrolPointMaterial;
 
-	extern Zenith_NavMesh* g_pxArenaNavMesh;
+		Zenith_NavMesh*     m_pxArenaNavMesh = nullptr;
+	};
+
+	AIShowcaseResources& Resources();
 }
 
 // ============================================================================
@@ -328,8 +335,8 @@ private:
 		Zenith_PerceptionSystem::Shutdown();
 
 		// Delete NavMesh
-		delete AIShowcase::g_pxArenaNavMesh;
-		AIShowcase::g_pxArenaNavMesh = nullptr;
+		delete AIShowcase::Resources().m_pxArenaNavMesh;
+		AIShowcase::Resources().m_pxArenaNavMesh = nullptr;
 
 		// Clear member state
 		m_xPlayerEntity = Zenith_EntityID();
@@ -408,7 +415,7 @@ private:
 		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, -0.05f, 0.0f));
 
 		Zenith_ModelComponent& xModel = xFloor.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xFloorMaterial.GetDirect());
+		xModel.AddMeshEntry(*AIShowcase::Resources().m_pxCubeGeometry, *AIShowcase::Resources().m_xFloorMaterial.GetDirect());
 
 		// Add static collider for NavMesh generation
 		Zenith_ColliderComponent& xCollider = xFloor.AddComponent<Zenith_ColliderComponent>();
@@ -451,7 +458,7 @@ private:
 			xTransform.SetScale(aWalls[u].m_xScale);
 
 			Zenith_ModelComponent& xModel = xWall.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xWallMaterial.GetDirect());
+			xModel.AddMeshEntry(*AIShowcase::Resources().m_pxCubeGeometry, *AIShowcase::Resources().m_xWallMaterial.GetDirect());
 
 			Zenith_ColliderComponent& xCollider = xWall.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
@@ -495,7 +502,7 @@ private:
 			xTransform.SetScale(aObstacles[u].m_xScale);
 
 			Zenith_ModelComponent& xModel = xObstacle.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xObstacleMaterial.GetDirect());
+			xModel.AddMeshEntry(*AIShowcase::Resources().m_pxCubeGeometry, *AIShowcase::Resources().m_xObstacleMaterial.GetDirect());
 
 			Zenith_ColliderComponent& xCollider = xObstacle.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
@@ -523,7 +530,7 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(0.8f, 1.0f, 0.8f));
 
 		Zenith_ModelComponent& xModel = xPlayer.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*AIShowcase::g_pxCylinderGeometry, *AIShowcase::g_xPlayerMaterial.GetDirect());
+		xModel.AddMeshEntry(*AIShowcase::Resources().m_pxCylinderGeometry, *AIShowcase::Resources().m_xPlayerMaterial.GetDirect());
 
 		Zenith_ColliderComponent& xCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCapsuleCollider(0.4f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
@@ -571,19 +578,19 @@ private:
 			{
 			case 0:
 				eRole = SquadRole::LEADER;
-				pxMaterial = AIShowcase::g_xLeaderMaterial.GetDirect();
+				pxMaterial = AIShowcase::Resources().m_xLeaderMaterial.GetDirect();
 				break;
 			case 1:
 				eRole = SquadRole::ASSAULT;
-				pxMaterial = AIShowcase::g_xEnemyMaterial.GetDirect();
+				pxMaterial = AIShowcase::Resources().m_xEnemyMaterial.GetDirect();
 				break;
 			case 2:
 				eRole = SquadRole::FLANKER;
-				pxMaterial = AIShowcase::g_xFlankerMaterial.GetDirect();
+				pxMaterial = AIShowcase::Resources().m_xFlankerMaterial.GetDirect();
 				break;
 			default:
 				eRole = SquadRole::ASSAULT;
-				pxMaterial = AIShowcase::g_xEnemyMaterial.GetDirect();
+				pxMaterial = AIShowcase::Resources().m_xEnemyMaterial.GetDirect();
 				break;
 			}
 
@@ -616,7 +623,7 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(0.8f, 1.0f, 0.8f));
 
 		Zenith_ModelComponent& xModel = xEnemy.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*AIShowcase::g_pxCylinderGeometry, *pxMaterial);
+		xModel.AddMeshEntry(*AIShowcase::Resources().m_pxCylinderGeometry, *pxMaterial);
 
 		// Add AI components
 		Zenith_AIAgentComponent& xAI = xEnemy.AddComponent<Zenith_AIAgentComponent>();
@@ -652,12 +659,12 @@ private:
 		xConfig.m_fMaxStepHeight = 0.3f;
 		xConfig.m_fCellSize = 0.3f;
 
-		AIShowcase::g_pxArenaNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxSceneData, xConfig);
+		AIShowcase::Resources().m_pxArenaNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxSceneData, xConfig);
 
-		if (AIShowcase::g_pxArenaNavMesh)
+		if (AIShowcase::Resources().m_pxArenaNavMesh)
 		{
 			Zenith_Log(LOG_CATEGORY_AI, "AIShowcase: NavMesh generated with %u polygons",
-				AIShowcase::g_pxArenaNavMesh->GetPolygonCount());
+				AIShowcase::Resources().m_pxArenaNavMesh->GetPolygonCount());
 		}
 		else
 		{
@@ -667,7 +674,7 @@ private:
 		// Assign NavMesh to all NavMeshAgents
 		for (uint32_t u = 0; u < m_uEnemyCount; ++u)
 		{
-			m_axNavAgents[u].SetNavMesh(AIShowcase::g_pxArenaNavMesh);
+			m_axNavAgents[u].SetNavMesh(AIShowcase::Resources().m_pxArenaNavMesh);
 		}
 	}
 
@@ -979,7 +986,7 @@ private:
 			Zenith_Maths::Vector3 xStart, xEnd;
 			if (xNav.GetPendingPathRequest(xStart, xEnd))
 			{
-				axRequests[uNumRequests].m_pxNavMesh = AIShowcase::g_pxArenaNavMesh;
+				axRequests[uNumRequests].m_pxNavMesh = AIShowcase::Resources().m_pxArenaNavMesh;
 				axRequests[uNumRequests].m_xStart = xStart;
 				axRequests[uNumRequests].m_xEnd = xEnd;
 				auAgentIndices[uNumRequests] = u;
@@ -1039,9 +1046,9 @@ private:
 			return;
 
 		// NavMesh visualization (checks its own flags internally)
-		if (AIShowcase::g_pxArenaNavMesh)
+		if (AIShowcase::Resources().m_pxArenaNavMesh)
 		{
-			AIShowcase::g_pxArenaNavMesh->DebugDraw();
+			AIShowcase::Resources().m_pxArenaNavMesh->DebugDraw();
 		}
 
 		// Perception visualization for each enemy (sight cones, hearing, detection lines, memory)

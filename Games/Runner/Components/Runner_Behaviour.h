@@ -48,29 +48,36 @@
 #endif
 
 // ============================================================================
-// Runner Resources - Global access
-// Defined in Runner.cpp, initialized in Project_RegisterScriptBehaviours
+// Runner Resources - Phase 8 per-game ProjectResources struct.
 // ============================================================================
 class Zenith_Prefab;
 
 namespace Runner
 {
-	extern Flux_MeshGeometry* g_pxCapsuleGeometry;
-	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Flux_MeshGeometry* g_pxSphereGeometry;
+	struct RunnerResources
+	{
+		MeshGeometryHandle  m_xCapsuleAsset;
+		MeshGeometryHandle  m_xCubeAsset;
+		MeshGeometryHandle  m_xSphereAsset;
+		Flux_MeshGeometry*  m_pxCapsuleGeometry = nullptr;
+		Flux_MeshGeometry*  m_pxCubeGeometry    = nullptr;
+		Flux_MeshGeometry*  m_pxSphereGeometry  = nullptr;
 
-	extern MaterialHandle g_xCharacterMaterial;
-	extern MaterialHandle g_xGroundMaterial;
-	extern MaterialHandle g_xObstacleMaterial;
-	extern MaterialHandle g_xCollectibleMaterial;
-	extern MaterialHandle g_xDustMaterial;
-	extern MaterialHandle g_xCollectParticleMaterial;
+		MaterialHandle      m_xCharacterMaterial;
+		MaterialHandle      m_xGroundMaterial;
+		MaterialHandle      m_xObstacleMaterial;
+		MaterialHandle      m_xCollectibleMaterial;
+		MaterialHandle      m_xDustMaterial;
+		MaterialHandle      m_xCollectParticleMaterial;
 
-	extern PrefabHandle g_xCharacterPrefab;
-	extern PrefabHandle g_xGroundPrefab;
-	extern PrefabHandle g_xObstaclePrefab;
-	extern PrefabHandle g_xCollectiblePrefab;
-	extern PrefabHandle g_xParticlePrefab;
+		PrefabHandle        m_xCharacterPrefab;
+		PrefabHandle        m_xGroundPrefab;
+		PrefabHandle        m_xObstaclePrefab;
+		PrefabHandle        m_xCollectiblePrefab;
+		PrefabHandle        m_xParticlePrefab;
+	};
+
+	RunnerResources& Resources();
 }
 
 /**
@@ -102,15 +109,15 @@ public:
 	void OnAwake() ZENITH_FINAL override
 	{
 		// Cache resource pointers
-		m_pxCapsuleGeometry = Runner::g_pxCapsuleGeometry;
-		m_pxCubeGeometry = Runner::g_pxCubeGeometry;
-		m_pxSphereGeometry = Runner::g_pxSphereGeometry;
-		m_xCharacterMaterial = Runner::g_xCharacterMaterial;
-		m_xGroundMaterial = Runner::g_xGroundMaterial;
-		m_xObstacleMaterial = Runner::g_xObstacleMaterial;
-		m_xCollectibleMaterial = Runner::g_xCollectibleMaterial;
-		m_xDustMaterial = Runner::g_xDustMaterial;
-		m_xCollectParticleMaterial = Runner::g_xCollectParticleMaterial;
+		m_pxCapsuleGeometry = Runner::Resources().m_pxCapsuleGeometry;
+		m_pxCubeGeometry = Runner::Resources().m_pxCubeGeometry;
+		m_pxSphereGeometry = Runner::Resources().m_pxSphereGeometry;
+		m_xCharacterMaterial = Runner::Resources().m_xCharacterMaterial;
+		m_xGroundMaterial = Runner::Resources().m_xGroundMaterial;
+		m_xObstacleMaterial = Runner::Resources().m_xObstacleMaterial;
+		m_xCollectibleMaterial = Runner::Resources().m_xCollectibleMaterial;
+		m_xDustMaterial = Runner::Resources().m_xDustMaterial;
+		m_xCollectParticleMaterial = Runner::Resources().m_xCollectParticleMaterial;
 
 		// Wire menu button callback
 		bool bHasMenu = false;
@@ -392,7 +399,7 @@ private:
 		Runner_TerrainManager::Config xTerrainConfig;
 		Runner_TerrainManager::Initialize(
 			xTerrainConfig,
-			Runner::g_xGroundPrefab.GetDirect(),
+			Runner::Resources().m_xGroundPrefab.GetDirect(),
 			m_pxCubeGeometry,
 			m_xGroundMaterial.GetDirect());
 
@@ -400,8 +407,8 @@ private:
 		Runner_CollectibleSpawner::Config xSpawnConfig;
 		Runner_CollectibleSpawner::Initialize(
 			xSpawnConfig,
-			Runner::g_xCollectiblePrefab.GetDirect(),
-			Runner::g_xObstaclePrefab.GetDirect(),
+			Runner::Resources().m_xCollectiblePrefab.GetDirect(),
+			Runner::Resources().m_xObstaclePrefab.GetDirect(),
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
 			m_xCollectibleMaterial.GetDirect(),
@@ -412,7 +419,7 @@ private:
 		Runner_ParticleManager::Config xParticleConfig;
 		Runner_ParticleManager::Initialize(
 			xParticleConfig,
-			Runner::g_xParticlePrefab.GetDirect(),
+			Runner::Resources().m_xParticlePrefab.GetDirect(),
 			m_pxSphereGeometry,
 			m_xDustMaterial.GetDirect(),
 			m_xCollectParticleMaterial.GetDirect());
@@ -423,14 +430,14 @@ private:
 
 	void CreateCharacter()
 	{
-		if (!Runner::g_xCharacterPrefab || m_pxCapsuleGeometry == nullptr || !m_xCharacterMaterial)
+		if (!Runner::Resources().m_xCharacterPrefab || m_pxCapsuleGeometry == nullptr || !m_xCharacterMaterial)
 			return;
 
 		if (!m_xGameScene.IsValid())
 			return;
 
 		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xGameScene);
-		Zenith_Entity xCharacter = Runner::g_xCharacterPrefab.GetDirect()->Instantiate(pxSceneData, "Runner");
+		Zenith_Entity xCharacter = Runner::Resources().m_xCharacterPrefab.GetDirect()->Instantiate(pxSceneData, "Runner");
 
 		Zenith_TransformComponent& xTransform = xCharacter.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));

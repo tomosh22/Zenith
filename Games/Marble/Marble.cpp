@@ -34,24 +34,8 @@
 // ============================================================================
 namespace Marble
 {
-	// Geometry assets (registry-managed via handles)
-	MeshGeometryHandle g_xSphereAsset;
-	MeshGeometryHandle g_xCubeAsset;
-
-	// Convenience pointers to underlying geometry (set in Initialise via .GetDirect()->GetGeometry())
-	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
-	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
-	MaterialHandle g_xBallMaterial;
-	MaterialHandle g_xPlatformMaterial;
-	MaterialHandle g_xGoalMaterial;
-	MaterialHandle g_xCollectibleMaterial;
-	MaterialHandle g_xFloorMaterial;
-
-	// Prefabs for runtime instantiation (handles for ref counting)
-	PrefabHandle g_xBallPrefab;
-	PrefabHandle g_xPlatformPrefab;
-	PrefabHandle g_xGoalPrefab;
-	PrefabHandle g_xCollectiblePrefab;
+	static MarbleResources g_xResources;
+	MarbleResources& Resources() { return g_xResources; }
 }
 
 static bool s_bResourcesInitialized = false;
@@ -153,43 +137,43 @@ static void InitializeMarbleResources()
 		Flux_MeshGeometry* pxSphereGeom = new Flux_MeshGeometry();
 		GenerateUVSphere(*pxSphereGeom, 0.5f, 16, 12);
 		pxSphereAsset->SetGeometry(pxSphereGeom);
-		g_xSphereAsset.Set(pxSphereAsset);
-		g_pxSphereGeometry = pxSphereAsset->GetGeometry();
+		Resources().m_xSphereAsset.Set(pxSphereAsset);
+		Resources().m_pxSphereGeometry = pxSphereAsset->GetGeometry();
 	}
 
 	// Create cube geometry (uses cached unit cube)
-	g_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
-	g_pxCubeGeometry = g_xCubeAsset.GetDirect()->GetGeometry();
+	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials.
 	// Copying the handle by value AddRefs; each material owns a ref via its own handle copy.
 	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 	// Create materials with grid texture and BaseColor
-	g_xBallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xBallMaterial.GetDirect()->SetName("MarbleBall");
-	g_xBallMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xBallMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
+	Resources().m_xBallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xBallMaterial.GetDirect()->SetName("MarbleBall");
+	Resources().m_xBallMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xBallMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
 
-	g_xPlatformMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xPlatformMaterial.GetDirect()->SetName("MarblePlatform");
-	g_xPlatformMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xPlatformMaterial.GetDirect()->SetBaseColor({ 102.f/255.f, 102.f/255.f, 102.f/255.f, 1.f });
+	Resources().m_xPlatformMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPlatformMaterial.GetDirect()->SetName("MarblePlatform");
+	Resources().m_xPlatformMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xPlatformMaterial.GetDirect()->SetBaseColor({ 102.f/255.f, 102.f/255.f, 102.f/255.f, 1.f });
 
-	g_xGoalMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xGoalMaterial.GetDirect()->SetName("MarbleGoal");
-	g_xGoalMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xGoalMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
+	Resources().m_xGoalMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xGoalMaterial.GetDirect()->SetName("MarbleGoal");
+	Resources().m_xGoalMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xGoalMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	g_xCollectibleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xCollectibleMaterial.GetDirect()->SetName("MarbleCollectible");
-	g_xCollectibleMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xCollectibleMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 215.f/255.f, 0.f/255.f, 1.f });
+	Resources().m_xCollectibleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xCollectibleMaterial.GetDirect()->SetName("MarbleCollectible");
+	Resources().m_xCollectibleMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xCollectibleMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 215.f/255.f, 0.f/255.f, 1.f });
 
-	g_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xFloorMaterial.GetDirect()->SetName("MarbleFloor");
-	g_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xFloorMaterial.GetDirect()->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
+	Resources().m_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xFloorMaterial.GetDirect()->SetName("MarbleFloor");
+	Resources().m_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xFloorMaterial.GetDirect()->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
 
 	// Create prefabs for runtime instantiation
 	// Note: Prefabs are lightweight templates with only TransformComponent
@@ -206,7 +190,7 @@ static void InitializeMarbleResources()
 
 		Zenith_Prefab* pxBall = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxBall->CreateFromEntity(xBallTemplate, "Ball");
-		g_xBallPrefab.Set(pxBall);
+		Resources().m_xBallPrefab.Set(pxBall);
 
 		Zenith_SceneManager::Destroy(xBallTemplate);
 	}
@@ -217,7 +201,7 @@ static void InitializeMarbleResources()
 
 		Zenith_Prefab* pxPlatform = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxPlatform->CreateFromEntity(xPlatformTemplate, "Platform");
-		g_xPlatformPrefab.Set(pxPlatform);
+		Resources().m_xPlatformPrefab.Set(pxPlatform);
 
 		Zenith_SceneManager::Destroy(xPlatformTemplate);
 	}
@@ -228,7 +212,7 @@ static void InitializeMarbleResources()
 
 		Zenith_Prefab* pxGoal = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxGoal->CreateFromEntity(xGoalTemplate, "Goal");
-		g_xGoalPrefab.Set(pxGoal);
+		Resources().m_xGoalPrefab.Set(pxGoal);
 
 		Zenith_SceneManager::Destroy(xGoalTemplate);
 	}
@@ -239,7 +223,7 @@ static void InitializeMarbleResources()
 
 		Zenith_Prefab* pxCollectible = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxCollectible->CreateFromEntity(xCollectibleTemplate, "Collectible");
-		g_xCollectiblePrefab.Set(pxCollectible);
+		Resources().m_xCollectiblePrefab.Set(pxCollectible);
 
 		Zenith_SceneManager::Destroy(xCollectibleTemplate);
 	}
@@ -277,17 +261,17 @@ void Project_RegisterScriptBehaviours()
 void Project_Shutdown()
 {
 	// Drop asset handle refs before Zenith_AssetRegistry::Shutdown teardown.
-	Marble::g_xSphereAsset.Clear();
-	Marble::g_xCubeAsset.Clear();
-	Marble::g_xBallMaterial.Clear();
-	Marble::g_xPlatformMaterial.Clear();
-	Marble::g_xGoalMaterial.Clear();
-	Marble::g_xCollectibleMaterial.Clear();
-	Marble::g_xFloorMaterial.Clear();
-	Marble::g_xBallPrefab.Clear();
-	Marble::g_xPlatformPrefab.Clear();
-	Marble::g_xGoalPrefab.Clear();
-	Marble::g_xCollectiblePrefab.Clear();
+	Marble::Resources().m_xSphereAsset.Clear();
+	Marble::Resources().m_xCubeAsset.Clear();
+	Marble::Resources().m_xBallMaterial.Clear();
+	Marble::Resources().m_xPlatformMaterial.Clear();
+	Marble::Resources().m_xGoalMaterial.Clear();
+	Marble::Resources().m_xCollectibleMaterial.Clear();
+	Marble::Resources().m_xFloorMaterial.Clear();
+	Marble::Resources().m_xBallPrefab.Clear();
+	Marble::Resources().m_xPlatformPrefab.Clear();
+	Marble::Resources().m_xGoalPrefab.Clear();
+	Marble::Resources().m_xCollectiblePrefab.Clear();
 }
 
 void Project_LoadInitialScene(); // Forward declaration for automation steps
