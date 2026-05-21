@@ -109,7 +109,7 @@ void PlayerController_Behaviour::Shoot()
 	xTrans.SetScale({ 1, 1, 1 });
 
 	Zenith_ColliderComponent& xCollider = xBulletEntity.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xFacingDir * 50.0f);
+	g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xFacingDir * 50.0f);
 }
 
 void PlayerController_Behaviour::OnUpdate(const float fDt)
@@ -180,7 +180,7 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 	
 
 	Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Maths::Vector3 xFinalVelocity(0, Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID()).y, 0);
+	Zenith_Maths::Vector3 xFinalVelocity(0, g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID()).y, 0);
 
 	if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W))
 	{
@@ -215,7 +215,7 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 		xFinalVelocity.y = dMoveSpeed / 10;
 	}
 
-	Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xFinalVelocity);
+	g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xFinalVelocity);
 	xTrans.SetRotation(Zenith_Maths::EulerRotationToMatrix4(-xCamera.GetYaw() * Zenith_Maths::RadToDeg, { 0,1,0 }));
 
 	Zenith_Maths::Vector3 xOffsetXZ = Zenith_Maths::Vector3(sinf(xCamera.GetYaw()), 0, -cosf(xCamera.GetYaw())) * dbg_fCamDistance;

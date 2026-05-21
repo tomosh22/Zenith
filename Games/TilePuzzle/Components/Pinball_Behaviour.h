@@ -28,7 +28,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UICanvas.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -1043,7 +1043,7 @@ private:
 		{
 			Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
-			Zenith_Physics::SetFriction(xCollider.GetBodyID(), 0.f);
+			g_xEngine.Physics().SetFriction(xCollider.GetBodyID(), 0.f);
 		}
 
 		return xEntity;
@@ -1065,7 +1065,7 @@ private:
 
 		Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_STATIC);
-		Zenith_Physics::SetFriction(xCollider.GetBodyID(), 0.f);
+		g_xEngine.Physics().SetFriction(xCollider.GetBodyID(), 0.f);
 
 		return xEntity;
 	}
@@ -1142,7 +1142,7 @@ private:
 
 			Zenith_ColliderComponent& xCollider = xCurve.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
-			Zenith_Physics::SetFriction(xCollider.GetBodyID(), 0.f);
+			g_xEngine.Physics().SetFriction(xCollider.GetBodyID(), 0.f);
 		}
 
 		// Second curve piece - continues guiding ball rightward into main field
@@ -1160,7 +1160,7 @@ private:
 
 			Zenith_ColliderComponent& xCollider = xCurve2.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
-			Zenith_Physics::SetFriction(xCollider.GetBodyID(), 0.f);
+			g_xEngine.Physics().SetFriction(xCollider.GetBodyID(), 0.f);
 		}
 
 		// === Pegs ===
@@ -1190,7 +1190,7 @@ private:
 
 			Zenith_ColliderComponent& xCollider = xTarget.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
-			Zenith_Physics::SetFriction(xCollider.GetBodyID(), 0.f);
+			g_xEngine.Physics().SetFriction(xCollider.GetBodyID(), 0.f);
 
 			m_xTargetEntityID = xTarget.GetEntityID();
 		}
@@ -1259,7 +1259,7 @@ private:
 
 		Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
-		Zenith_Physics::SetFriction(xCollider.GetBodyID(), 0.f);
+		g_xEngine.Physics().SetFriction(xCollider.GetBodyID(), 0.f);
 
 		return xEntity;
 	}
@@ -1308,17 +1308,17 @@ private:
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
 
 		// Gravity OFF until launch — ball rests on plunger
-		Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
+		g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
 
 		// Lock rotation for cleaner 2D behavior
-		Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, true, true);
+		g_xEngine.Physics().LockRotation(xCollider.GetBodyID(), true, true, true);
 
 		// Zero velocity so ball sits still
-		Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0.f));
+		g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0.f));
 
 		// Bounce off walls and obstacles
-		Zenith_Physics::SetRestitution(xCollider.GetBodyID(), 0.6f);
-		Zenith_Physics::SetFriction(xCollider.GetBodyID(), 0.f);
+		g_xEngine.Physics().SetRestitution(xCollider.GetBodyID(), 0.6f);
+		g_xEngine.Physics().SetFriction(xCollider.GetBodyID(), 0.f);
 
 		// Attach collision behaviour to receive OnCollisionEnter callbacks
 		Zenith_ScriptComponent& xScript = xBall.AddComponent<Zenith_ScriptComponent>();
@@ -1441,11 +1441,11 @@ private:
 			return;
 
 		// Enable gravity now that the ball is being launched
-		Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), true);
+		g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), true);
 
 		float fForce = m_fPlungerPull * s_fPB_LaunchForceMax;
 		// Launch upward (+Y)
-		Zenith_Physics::AddImpulse(xCollider.GetBodyID(),
+		g_xEngine.Physics().AddImpulse(xCollider.GetBodyID(),
 			Zenith_Maths::Vector3(0.f, fForce, 0.f));
 	}
 
@@ -1469,7 +1469,7 @@ private:
 			Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
 			if (xCollider.HasValidBody())
 			{
-				Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0.f));
+				g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0.f));
 			}
 		}
 	}
@@ -1514,9 +1514,9 @@ private:
 				Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
 				if (xCollider.HasValidBody())
 				{
-					Zenith_Maths::Vector3 xVel = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+					Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 					xVel.z = 0.f;
-					Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVel);
+					g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVel);
 				}
 			}
 		}

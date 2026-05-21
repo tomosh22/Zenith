@@ -67,7 +67,7 @@
 #include "Editor/Zenith_UndoSystemImpl.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #endif
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Physics/Zenith_PhysicsImpl.h"
 #include "UnitTests/Zenith_UnitTests.h"
 
@@ -540,12 +540,12 @@ void Zenith_Engine::Initialise()
 	}
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Physics::Initialise...");
 	// Phase 4: per-Engine Physics state lives on Zenith_PhysicsImpl.
-	// Allocate BEFORE Zenith_Physics::Initialise() below -- the static
+	// Allocate BEFORE g_xEngine.Physics().Initialise() below -- the static
 	// facade now reads/writes g_xEngine.Physics().m_pxXxx for every
 	// piece of state it used to keep as Zenith_Physics::s_*.
 	Zenith_Assert(m_pxPhysics == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxPhysics = new Zenith_PhysicsImpl();
-	Zenith_Physics::Initialise();
+	g_xEngine.Physics().Initialise();
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: SceneManager::Initialise...");
 	Zenith_SceneManager::Initialise();
 
@@ -685,7 +685,7 @@ void Zenith_Engine::Shutdown()
 	// 4. Shutdown physics system. The static facade drains state out of
 	// g_xEngine.Physics().m_pxXxx; engine then reclaims the Impl below
 	// (Phase 4 makes Zenith_Engine the sole owner).
-	Zenith_Physics::Shutdown();
+	g_xEngine.Physics().Shutdown();
 	delete m_pxPhysics;
 	m_pxPhysics = nullptr;
 

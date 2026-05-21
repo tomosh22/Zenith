@@ -13,7 +13,7 @@
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"

@@ -3,7 +3,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
@@ -534,7 +534,7 @@ bool Zenith_PerceptionSystem::CheckLineOfSight(const Zenith_Maths::Vector3& xFro
 		return true;  // Same position, assume clear LOS
 	}
 
-	Zenith_Physics::RaycastResult xResult = Zenith_Physics::Raycast(xFrom, xDirection, fDistance);
+	Zenith_PhysicsImpl::RaycastResult xResult = g_xEngine.Physics().Raycast(xFrom, xDirection, fDistance);
 
 	// If we didn't hit anything, line of sight is clear
 	if (!xResult.m_bHit)

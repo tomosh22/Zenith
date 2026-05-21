@@ -607,7 +607,7 @@ private:
 
 		Zenith_ColliderComponent& xPlayerCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
 		xPlayerCollider.AddCapsuleCollider(0.3f, 0.6f, RIGIDBODY_TYPE_DYNAMIC);
-		Zenith_Physics::LockRotation(xPlayerCollider.GetBodyID(), true, false, true);
+		g_xEngine.Physics().LockRotation(xPlayerCollider.GetBodyID(), true, false, true);
 
 		m_xLevelEntities.m_uPlayerEntityID = xPlayer.GetEntityID();
 		Combat_DamageSystem::RegisterEntity(xPlayer.GetEntityID(), 100.0f, 0.2f);
@@ -686,7 +686,7 @@ private:
 
 			Zenith_ColliderComponent& xCollider = xEnemy.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCapsuleCollider(0.27f, 0.54f, RIGIDBODY_TYPE_DYNAMIC);
-			Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, false, true);
+			g_xEngine.Physics().LockRotation(xCollider.GetBodyID(), true, false, true);
 
 			m_xLevelEntities.m_axEnemyEntityIDs.push_back(xEnemy.GetEntityID());
 

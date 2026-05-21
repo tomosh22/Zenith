@@ -788,8 +788,8 @@ void Zenith_ColliderComponent::RebuildCollider()
 	
 	if (bWasDynamic && HasValidBody())
 	{
-		xLinearVel = Zenith_Physics::GetLinearVelocity(m_xBodyID);
-		xAngularVel = Zenith_Physics::GetAngularVelocity(m_xBodyID);
+		xLinearVel = g_xEngine.Physics().GetLinearVelocity(m_xBodyID);
+		xAngularVel = g_xEngine.Physics().GetAngularVelocity(m_xBodyID);
 	}
 
 	// Remove existing collider
@@ -817,8 +817,8 @@ void Zenith_ColliderComponent::RebuildCollider()
 	// Restore velocity if it was a dynamic body
 	if (bWasDynamic && HasValidBody())
 	{
-		Zenith_Physics::SetLinearVelocity(m_xBodyID, xLinearVel);
-		Zenith_Physics::SetAngularVelocity(m_xBodyID, xAngularVel);
+		g_xEngine.Physics().SetLinearVelocity(m_xBodyID, xLinearVel);
+		g_xEngine.Physics().SetAngularVelocity(m_xBodyID, xAngularVel);
 	}
 
 	Zenith_Log(LOG_CATEGORY_PHYSICS, " Rebuilt collider after scale change");
@@ -903,7 +903,7 @@ void Zenith_ColliderComponent::RenderConfiguredColliderUI()
 		static bool s_bGravityEnabled = true;
 		if (ImGui::Checkbox("Gravity Enabled", &s_bGravityEnabled))
 		{
-			Zenith_Physics::SetGravityEnabled(m_xBodyID, s_bGravityEnabled);
+			g_xEngine.Physics().SetGravityEnabled(m_xBodyID, s_bGravityEnabled);
 			Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Gravity %s", s_bGravityEnabled ? "enabled" : "disabled");
 		}
 	}

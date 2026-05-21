@@ -26,7 +26,7 @@
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Physics/Zenith_PhysicsImpl.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UI.h"
@@ -630,7 +630,7 @@ private:
 			JPH::RVec3(xTarget.x, xTarget.y, xTarget.z),
 			JPH::Quat::sIdentity(),
 			JPH::EActivation::Activate);
-		Zenith_Physics::SetLinearVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
+		g_xEngine.Physics().SetLinearVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
 	}
 
 	void CaptureResidencySnapshots(Zenith_Vector<RenderTest_ResidencySnapshot>& axSnapshots)

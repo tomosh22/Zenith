@@ -35,7 +35,7 @@
 #include "Components/DummyNoiseMachine_Behaviour.h"
 #include "Components/Priest_Behaviour.h"
 
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 
 #include <cstdio>
 #include <cmath>
@@ -382,7 +382,7 @@ namespace
 				// (chests, forge) is treated as an obstacle the test must
 				// path around.
 				auto IsPointOnFloor = [](float fX, float fZ) -> bool {
-					const Zenith_Physics::RaycastResult xH = Zenith_Physics::Raycast(
+					const Zenith_PhysicsImpl::RaycastResult xH = g_xEngine.Physics().Raycast(
 						Zenith_Maths::Vector3(fX, 10.0f, fZ),
 						Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 12.0f);
 					return xH.m_bHit && xH.m_xHitPoint.y < 1.5f;

@@ -11,7 +11,7 @@
 #include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 
 // Pull in the detail symbols so existing body code can use unqualified names
 // (progress milestone constants).
@@ -684,7 +684,7 @@ Zenith_SceneOperationQueue::RunAsyncJobPhase1(AsyncLoadJob* pxJob, Zenith_SceneO
 		// Phase 1 already validated the new file's header by this point, so we
 		// won't reach here on a corrupt SINGLE load.
 		Zenith_SceneManager::UnloadUnusedAssets();
-		Zenith_Physics::Reset();
+		g_xEngine.Physics().Reset();
 		g_xEngine.SceneLifecycle().m_fFixedTimeAccumulator = 0.0f;  // Unity behavior: reset on scene load
 
 		// Cancel the scope: Phase 2 fires the consolidated ActiveSceneChanged

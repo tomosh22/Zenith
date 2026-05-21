@@ -29,7 +29,7 @@
 #endif
 #include "Input/Zenith_InputImpl.h"
 #include "Input/Zenith_TouchInputImpl.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
 
@@ -223,7 +223,7 @@ void Zenith_Core::Zenith_MainLoop()
 
 	if (bShouldUpdateGameLogic)
 	{
-		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Physics::Update, ZENITH_PROFILE_INDEX__PHYSICS, g_xEngine.Frame().GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Physics().Update, ZENITH_PROFILE_INDEX__PHYSICS, g_xEngine.Frame().GetDt());
 		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_SceneManager::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, g_xEngine.Frame().GetDt());
 	}
 

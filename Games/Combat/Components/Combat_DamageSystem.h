@@ -20,7 +20,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Maths/Zenith_Maths.h"
 #include <unordered_map>
 
@@ -401,7 +401,7 @@ private:
 		{
 			Zenith_Maths::Vector3 xImpulse = (xDirection / fLen) * fFinalForce;
 			xImpulse.y = fFinalForce * 0.3f;  // Add slight upward component
-			Zenith_Physics::AddImpulse(xCollider.GetBodyID(), xImpulse);
+			g_xEngine.Physics().AddImpulse(xCollider.GetBodyID(), xImpulse);
 		}
 	}
 

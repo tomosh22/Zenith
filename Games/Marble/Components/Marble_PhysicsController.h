@@ -15,7 +15,7 @@
  */
 
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Maths/Zenith_Maths.h"
 
 // Configuration constants
@@ -43,7 +43,7 @@ public:
 		if (glm::length(xDirection) > 0.0f)
 		{
 			Zenith_Maths::Vector3 xForce = xDirection * s_fMarbleMoveSpeed;
-			Zenith_Physics::AddImpulse(xCollider.GetBodyID(), xForce);
+			g_xEngine.Physics().AddImpulse(xCollider.GetBodyID(), xForce);
 		}
 	}
 
@@ -64,13 +64,13 @@ public:
 		const JPH::BodyID& xBodyID = xCollider.GetBodyID();
 
 		// Check current vertical velocity
-		Zenith_Maths::Vector3 xVel = Zenith_Physics::GetLinearVelocity(xBodyID);
+		Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xBodyID);
 
 		// Only allow jump if not already moving upward significantly
 		// This prevents air-jumps and double-jumps
 		if (xVel.y < 1.0f)
 		{
-			Zenith_Physics::AddImpulse(xBodyID, Zenith_Maths::Vector3(0.f, s_fMarbleJumpImpulse, 0.f));
+			g_xEngine.Physics().AddImpulse(xBodyID, Zenith_Maths::Vector3(0.f, s_fMarbleJumpImpulse, 0.f));
 			return true;
 		}
 
@@ -98,6 +98,6 @@ public:
 		if (!xCollider.HasValidBody())
 			return Zenith_Maths::Vector3(0.f);
 
-		return Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+		return g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 	}
 };

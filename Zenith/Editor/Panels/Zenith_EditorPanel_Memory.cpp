@@ -11,7 +11,7 @@
 #include "Callstack/Zenith_Callstack.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Vulkan/Zenith_Vulkan.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #ifdef ZENITH_WINDOWS
 #include "Windows/Zenith_Windows_Window.h"
 #endif
@@ -170,8 +170,8 @@ namespace Zenith_EditorPanelMemory
 		ImGui::Text("Physics Memory (Jolt)");
 		ImGui::Separator();
 
-		u_int64 ulJoltMem = Zenith_Physics::GetJoltMemoryAllocated();
-		u_int64 ulJoltAllocs = Zenith_Physics::GetJoltAllocationCount();
+		u_int64 ulJoltMem = g_xEngine.Physics().GetJoltMemoryAllocated();
+		u_int64 ulJoltAllocs = g_xEngine.Physics().GetJoltAllocationCount();
 
 		FormatBytes(ulJoltMem, acBuffer, sizeof(acBuffer));
 		ImGui::Text("Jolt Allocated: %s (%llu allocs)", acBuffer, ulJoltAllocs);

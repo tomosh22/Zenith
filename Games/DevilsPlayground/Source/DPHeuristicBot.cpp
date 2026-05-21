@@ -19,7 +19,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Windows/Zenith_Windows_Window.h"
@@ -312,7 +312,7 @@ namespace DPHeuristicBot
 				// 5-ray capsule test but ~5x cheaper. Wall AABBs sit Y=1..5;
 				// floor at Y=0..1. Threshold 1.5 m sits between, so floor
 				// hits are walkable + wall hits are blocked.
-				const Zenith_Physics::RaycastResult xH = Zenith_Physics::Raycast(
+				const Zenith_PhysicsImpl::RaycastResult xH = g_xEngine.Physics().Raycast(
 					Zenith_Maths::Vector3(cx, 10.0f, cz),
 					Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 12.0f);
 				const bool bWalkable = xH.m_bHit && xH.m_xHitPoint.y < kPathFloorYTop;

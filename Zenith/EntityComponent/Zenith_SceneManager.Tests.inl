@@ -13,7 +13,7 @@
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "Core/Zenith_Core.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Prefab/Zenith_Prefab.h"
 #include <filesystem>
 #include <chrono>

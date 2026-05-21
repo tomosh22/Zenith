@@ -16,7 +16,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Maths/Zenith_Maths.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
 #include "Combat_QueryHelper.h"
@@ -138,7 +138,7 @@ public:
 			Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
 			if (xCollider.HasValidBody())
 			{
-				Zenith_Physics::EnforceUpright(xCollider.GetBodyID());
+				g_xEngine.Physics().EnforceUpright(xCollider.GetBodyID());
 			}
 		}
 
@@ -282,8 +282,8 @@ private:
 					if (xCollider.HasValidBody())
 					{
 						Zenith_Maths::Vector3 xVelocity = xDirection * m_xConfig.m_fMoveSpeed;
-						xVelocity.y = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID()).y;
-						Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+						xVelocity.y = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID()).y;
+						g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 					}
 				}
 
@@ -301,10 +301,10 @@ private:
 				Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
 				if (xCollider.HasValidBody())
 				{
-					Zenith_Maths::Vector3 xVelocity = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+					Zenith_Maths::Vector3 xVelocity = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 					xVelocity.x = 0.0f;
 					xVelocity.z = 0.0f;
-					Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+					g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 				}
 			}
 

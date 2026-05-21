@@ -9,7 +9,7 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
@@ -139,7 +139,7 @@ public:
 		}
 		if (xCollider.HasValidBody())
 		{
-			Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, false, true);
+			g_xEngine.Physics().LockRotation(xCollider.GetBodyID(), true, false, true);
 		}
 
 		if (m_xParentEntity.HasComponent<Zenith_AnimatorComponent>())
@@ -186,7 +186,7 @@ public:
 
 		if (xCollider.HasValidBody())
 		{
-			Zenith_Physics::EnforceUpright(xCollider.GetBodyID());
+			g_xEngine.Physics().EnforceUpright(xCollider.GetBodyID());
 		}
 
 		// Camera-relative basis. Sign convention matches the Test game's
@@ -224,15 +224,15 @@ public:
 			fSpeed = bSprinting ? m_fMoveSpeed * m_fSprintMultiplier : m_fMoveSpeed;
 
 			Zenith_Maths::Vector3 xVelocity = xMoveDirNorm * fSpeed;
-			xVelocity.y = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID()).y;
-			Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+			xVelocity.y = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID()).y;
+			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 		}
 		else if (xCollider.HasValidBody())
 		{
-			Zenith_Maths::Vector3 xVelocity = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+			Zenith_Maths::Vector3 xVelocity = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 			xVelocity.x = 0.0f;
 			xVelocity.z = 0.0f;
-			Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 		}
 
 		// --- Jump input ---
@@ -244,9 +244,9 @@ public:
 			&& xCollider.HasValidBody()
 			&& IsGrounded())
 		{
-			Zenith_Maths::Vector3 xVelocity = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+			Zenith_Maths::Vector3 xVelocity = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 			xVelocity.y = m_fJumpVelocity;
-			Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 			if (m_pxBaseLayer)
 			{
 				m_pxBaseLayer->GetStateMachine().GetParameters().SetTrigger("JumpTrigger");
@@ -727,7 +727,7 @@ private:
 
 		// Hitscan: raycast from the barrel along the camera forward. Ignore
 		// the player's own collider per the IK precedent in UpdateFootIK.
-		const Zenith_Physics::RaycastResult xHit = Zenith_Physics::Raycast(
+		const Zenith_PhysicsImpl::RaycastResult xHit = g_xEngine.Physics().Raycast(
 			xBarrel, xFwd, k_fMaxRange, m_xParentEntity.GetEntityID());
 
 		if (xHit.m_bHit)
@@ -804,8 +804,8 @@ private:
 		const Zenith_Maths::Vector3 xRayOrigin =
 			xPlayerPos - Zenith_Maths::Vector3(0.0f, fCapsuleHalfExtent + fEpsilon, 0.0f);
 		const Zenith_Maths::Vector3 xDown(0.0f, -1.0f, 0.0f);
-		const Zenith_Physics::RaycastResult xResult =
-			Zenith_Physics::Raycast(xRayOrigin, xDown, 0.2f);
+		const Zenith_PhysicsImpl::RaycastResult xResult =
+			g_xEngine.Physics().Raycast(xRayOrigin, xDown, 0.2f);
 		return xResult.m_bHit;
 	}
 
@@ -843,7 +843,7 @@ private:
 			Zenith_ColliderComponent& xCollider2 = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
 			if (xCollider2.HasValidBody())
 			{
-				const Zenith_Maths::Vector3 xVel = Zenith_Physics::GetLinearVelocity(xCollider2.GetBodyID());
+				const Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCollider2.GetBodyID());
 				fHorizontalSpeedSq = xVel.x * xVel.x + xVel.z * xVel.z;
 			}
 		}
@@ -865,7 +865,7 @@ private:
 			const Zenith_Maths::Vector3 xOrigin = xFootPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f);
 			// Ignore the player's own capsule. Without this, the foot ray (origin
 			// inside the capsule) hits self and the helper clears IK every frame.
-			const Zenith_Physics::RaycastResult xHit = Zenith_Physics::Raycast(
+			const Zenith_PhysicsImpl::RaycastResult xHit = g_xEngine.Physics().Raycast(
 				xOrigin, Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 1.5f,
 				m_xParentEntity.GetEntityID());
 

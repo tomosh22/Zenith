@@ -22,7 +22,7 @@
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
 #endif
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 
 // Static member definitions.
 // A1: callback-list statics moved to Zenith_SceneCallbackBus.

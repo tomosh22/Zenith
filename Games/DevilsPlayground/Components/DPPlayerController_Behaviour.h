@@ -12,7 +12,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Input/Zenith_InputImpl.h"
 // NOTE: do not include "Windows/Zenith_Windows_Window.h" directly. Zenith.h
 // (already included by the .cpp via the PCH) pulls in the platform-correct
