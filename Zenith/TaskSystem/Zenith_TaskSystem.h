@@ -101,6 +101,7 @@ protected:
 	u_int m_uCompletedThreadID;
 
 	friend class Zenith_TaskSystem;
+	friend class Zenith_TaskSystemImpl;  // Phase 3b: state owner accesses m_bSubmitted
 	std::atomic<bool> m_bSubmitted;  // Thread-safe submitted flag
 };
 
@@ -175,6 +176,11 @@ private:
 	std::atomic<u_int> m_uCompletionCounter;
 };
 
+// Public static facade. Phase 3b moved the actual state + logic onto
+// Zenith_TaskSystemImpl (held by Zenith_Engine). These methods remain
+// as 1-line forwarders to g_xEngine.Tasks() so the 26 existing call
+// sites compile unchanged; Phase 9's static-API removal sweep deletes
+// them once the codemod to g_xEngine.Tasks().X() is done.
 class Zenith_TaskSystem
 {
 public:
@@ -183,13 +189,5 @@ public:
 
 	static void SubmitTask(Zenith_Task* const pxTask);
 	static void SubmitTaskArray(Zenith_TaskArray* const pxTaskArray);
-
-private:
-	// Atomic CAS to claim a task for submission. Returns false if already submitted.
-	static bool TryClaimTask(Zenith_Task* pxTask, const char* szCallerName);
-
-	// Enqueue a task pointer uCount times under the queue lock, then signal workers.
-	// Returns the number of tasks successfully enqueued.
-	static u_int EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount);
 };
 

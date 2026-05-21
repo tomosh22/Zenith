@@ -979,6 +979,9 @@
     <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp">
       <Filter>TaskSystem</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystemImpl.cpp">
+      <Filter>TaskSystem</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Telemetry\Zenith_Telemetry.cpp">
       <Filter>Telemetry</Filter>
     </ClCompile>
@@ -4081,6 +4084,9 @@
       <Filter>SaveData</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h">
+      <Filter>TaskSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystemImpl.h">
       <Filter>TaskSystem</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Telemetry\Zenith_Telemetry.h">

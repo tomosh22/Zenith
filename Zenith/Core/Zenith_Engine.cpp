@@ -9,6 +9,7 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Core/FrameContext.h"
 #include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -83,6 +84,14 @@ Zenith_MultithreadingImpl& Zenith_Engine::Threading()
 	return *m_pxThreading;
 }
 
+Zenith_TaskSystemImpl& Zenith_Engine::Tasks()
+{
+	// No assert: SubmitTask is a hot path, and Zenith_Engine::Initialise
+	// allocates m_pxTasks before Zenith_TaskSystem::Inititalise() (the
+	// forwarder that brings worker threads online).
+	return *m_pxTasks;
+}
+
 void Zenith_Engine::Initialise()
 {
 	// Phase 2: per-frame timing state lives here now. Construct
@@ -108,6 +117,13 @@ void Zenith_Engine::Initialise()
 
 	Zenith_Multithreading::RegisterThread(true);
 	Zenith_Profiling::Initialise();
+
+	// Phase 3b: per-Engine TaskSystem state. Allocate BEFORE
+	// Zenith_TaskSystem::Inititalise() below, which spawns worker
+	// threads whose ThreadFunc reads from g_xEngine.Tasks().
+	Zenith_Assert(m_pxTasks == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
+	m_pxTasks = new Zenith_TaskSystemImpl();
+
 	Zenith_TaskSystem::Inititalise();
 
 	// Set asset directories before registry initialization
@@ -304,13 +320,19 @@ void Zenith_Engine::Shutdown()
 	// 9. Shutdown task system (terminates worker threads)
 	Zenith_TaskSystem::Shutdown();
 
-	// 10. Tear down per-frame timing state. Done last so any
+	// 10. Free the per-Engine TaskSystem state. Must come AFTER
+	// Zenith_TaskSystem::Shutdown above -- the forwarder there reads
+	// from g_xEngine.Tasks() to drive Shutdown.
+	delete m_pxTasks;
+	m_pxTasks = nullptr;
+
+	// 11. Tear down per-frame timing state. Done late so any
 	// subsystem shutdown that needs to log dt or read accumulated
 	// time still can.
 	delete m_pxFrame;
 	m_pxFrame = nullptr;
 
-	// 11. Tear down the multithreading registry. Done after the task
+	// 12. Tear down the multithreading registry. Done after the task
 	// system shutdown (step 9) so worker threads aren't still calling
 	// IsMainThread while we're freeing the registry.
 	delete m_pxThreading;

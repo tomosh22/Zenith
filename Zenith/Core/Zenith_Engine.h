@@ -6,6 +6,7 @@
 // only included by Zenith_Engine.cpp where the accessor bodies live.
 class FrameContext;
 class Zenith_MultithreadingImpl;
+class Zenith_TaskSystemImpl;
 
 // Zenith_Engine is the single owner of the engine's mutable runtime
 // state. Phase 0 introduces the class and moves the bootstrap ordering
@@ -44,6 +45,7 @@ public:
 	// declares the return types.
 	FrameContext& Frame();
 	Zenith_MultithreadingImpl& Threading();
+	Zenith_TaskSystemImpl& Tasks();
 
 private:
 	// Subsystem members. Raw pointers to forward-declared types so the
@@ -52,6 +54,7 @@ private:
 	// in Shutdown().
 	FrameContext*              m_pxFrame     = nullptr;
 	Zenith_MultithreadingImpl* m_pxThreading = nullptr;
+	Zenith_TaskSystemImpl*     m_pxTasks     = nullptr;
 };
 
 // Compile-time guard: enforce trivial destruction so the
