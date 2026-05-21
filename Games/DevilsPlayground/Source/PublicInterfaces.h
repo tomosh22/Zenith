@@ -299,6 +299,20 @@ struct DP_OnPriestAlerted
 	Zenith_Maths::Vector3   m_xPosition;    // priest world pos at alert (for the "!" billboard anchor)
 };
 
+// Child-archetype tool-pickup refusal (2026-05-21). Dispatched by
+// DPItemBase when the proximity-pickup path detects the possessed
+// villager is a Child AND the item tag is a tool (Iron / Key). The
+// pickup is silently rejected gameplay-side; this event surfaces the
+// rejection to the particles + tutorialisation systems so the
+// player can see "this villager can't carry that."
+struct DP_OnChildToolRefused
+{
+	Zenith_EntityID         m_xVillager;
+	Zenith_EntityID         m_xItem;
+	DP_ItemTag              m_eTag;          // the tool tag the Child refused
+	Zenith_Maths::Vector3   m_xPosition;     // villager world pos at refusal
+};
+
 // (DP_OnItemPickedUp lives at the top of the file -- its tag field
 // was extended 2026-05-21 to carry the picked-up tag so the
 // tutorialisation system + telemetry don't have to re-resolve.)

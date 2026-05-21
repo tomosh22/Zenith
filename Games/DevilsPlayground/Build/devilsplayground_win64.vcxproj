@@ -593,6 +593,7 @@
     <ClCompile Include="..\Tests\Test_P4Playthrough_LossByNoVessels.cpp" />
     <ClCompile Include="..\Tests\Test_P4Playthrough_Night1WinGolden.cpp" />
     <ClCompile Include="..\Tests\Test_P4UI_RestartPromptAfterRunOver.cpp" />
+    <ClCompile Include="..\Tests\Test_P5Archetype_Telegraphs.cpp" />
     <ClCompile Include="..\Tests\Test_P5HUD_TelegraphFormatters.cpp" />
     <ClCompile Include="..\Tests\Test_P5Particles_BurstsOnGameplayEvents.cpp" />
     <ClCompile Include="..\Tests\Test_P5Scent_PriestPatrolBiasedByScent.cpp" />

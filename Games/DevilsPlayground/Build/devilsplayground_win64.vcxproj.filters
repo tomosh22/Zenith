@@ -293,6 +293,9 @@
     <ClCompile Include="..\Tests\Test_P4UI_RestartPromptAfterRunOver.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P5Archetype_Telegraphs.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P5HUD_TelegraphFormatters.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

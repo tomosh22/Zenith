@@ -203,6 +203,44 @@ public:
 				xHighestId, fHighestScent >= fThreshold);
 		}
 
+		// 2026-05-21: archetype-aware aura updates.
+		//
+		// BeggarStealthAura: emit while the player is possessing a
+		// Beggar -- telegraphs "the priest will not pursue this body."
+		// Without the visual the Beggar-ignored rule is a silent
+		// BridgePerceptionToBlackboard filter the player can't observe.
+		//
+		// DevoutChannel: emit while DP_Player is mid-channel onto a
+		// Devout target. The 0.8 s channel is otherwise invisible --
+		// the player clicks, nothing happens for 0.8 s, then possession
+		// snaps. The candlelight aura makes the "ritual in progress"
+		// state legible.
+		{
+			Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
+			bool bIsBeggar = false;
+			if (xPossessed.IsValid())
+			{
+				Zenith_SceneData* pxScene =
+					Zenith_SceneManager::GetSceneDataForEntity(xPossessed);
+				if (pxScene != nullptr)
+				{
+					Zenith_Entity xV = pxScene->TryGetEntity(xPossessed);
+					if (xV.IsValid() && xV.HasComponent<Zenith_ScriptComponent>())
+					{
+						DPVillager_Behaviour* pxV =
+							xV.GetComponent<Zenith_ScriptComponent>()
+							  .GetScript<DPVillager_Behaviour>();
+						bIsBeggar = (pxV != nullptr && pxV->GetArchetypeId() == "Beggar");
+					}
+				}
+			}
+			DP_Particles::UpdateBeggarStealthAura(xPossessed, bIsBeggar);
+
+			const Zenith_EntityID xChannelTarget = DP_Player::GetChannelTarget();
+			const bool bChanneling = DP_Player::IsChanneling();
+			DP_Particles::UpdateDevoutChannelAura(xChannelTarget, bChanneling);
+		}
+
 		// MVP-2.1.1/2 Devout channel: per-frame countdown + priest
 		// interrupt check. Quiet no-op until TryVoluntaryPossessSwitch
 		// starts a channel onto a Devout target.
