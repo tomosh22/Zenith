@@ -4,8 +4,8 @@
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Skybox/Flux_Skybox.h"
-#include "Flux/StaticMeshes/Flux_StaticMeshes.h"
-#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
+#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 #ifdef ZENITH_WINDOWS
 #include "Flux/Slang/Flux_SlangCompiler.h"
@@ -15,17 +15,17 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 #include "Flux/Primitives/Flux_Primitives.h"
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/SSAO/Flux_SSAO.h"
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 #include "Flux/Zenith_GameRenderHook.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
-#include "Flux/SDFs/Flux_SDFs.h"
+#include "Flux/SDFs/Flux_SDFsImpl.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
-#include "Flux/Quads/Flux_Quads.h"
+#include "Flux/Quads/Flux_QuadsImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/IBL/Flux_IBL.h"
@@ -215,8 +215,8 @@ void Flux::LateInitialise()
 	Flux_Shadows::Initialise();
 	Flux_Skybox::Initialise();       // Cubemap skybox + procedural atmosphere
 	Flux_IBL::Initialise();          // Image-based lighting (BRDF LUT, environment probes)
-	Flux_StaticMeshes::Initialise();
-	Flux_AnimatedMeshes::Initialise();
+	g_xEngine.StaticMeshes().Initialise();
+	g_xEngine.AnimatedMeshes().Initialise();
 	Flux_InstancedMeshes::Initialise();
 	Flux_Terrain::Initialise();
 	Flux_Grass::Initialise();        // Grass/vegetation (after terrain)
@@ -226,13 +226,13 @@ void Flux::LateInitialise()
 	Flux_SSGI::Initialise();         // Screen-space GI (uses Hi-Z, needed by DeferredShading)
 	Flux_DynamicLights::Initialise();   // Light gather + upload (front-end for clustered deferred)
 	Flux_LightClustering::Initialise(); // Per-cluster light culling compute (must precede DeferredShading)
-	Flux_DeferredShading::Initialise(); // Reads cluster buffers + light buffer in fragment shader
+	g_xEngine.DeferredShading().Initialise(); // Reads cluster buffers + light buffer in fragment shader
 	Flux_Decals::Initialise();          // Deferred screen-space box decals (writes G-buffer pre-readers)
 	Flux_SSAO::Initialise();
 	Flux_Fog::Initialise();
-	Flux_SDFs::Initialise();
+	g_xEngine.SDFs().Initialise();
 	Flux_Particles::Initialise();
-	Flux_Quads::Initialise();
+	g_xEngine.Quads().Initialise();
 	Flux_Text::Initialise();
 	Flux_MemoryManager::EndFrame(false);
 
@@ -330,10 +330,10 @@ void Flux::SetupRenderGraph()
 
 	// Geometry (all write to G-Buffer + Depth)
 	Flux_Shadows::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_StaticMeshes::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.StaticMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Terrain::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Primitives::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_AnimatedMeshes::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.AnimatedMeshes().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_InstancedMeshes::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Grass::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
@@ -354,7 +354,7 @@ void Flux::SetupRenderGraph()
 	// .ReadsBuffer / .WritesBuffer declarations, but registering in this order
 	// keeps the source-side intent explicit.
 	Flux_LightClustering::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
-	Flux_DeferredShading::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.DeferredShading().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	// Aerial perspective runs after DeferredShading — it blends scattering on
 	// top of the already-lit HDR scene. Registering here keeps the writer-chain
 	// topological order correct.
@@ -369,12 +369,12 @@ void Flux::SetupRenderGraph()
 	Zenith_GameRenderHook::InvokePostFogRegistrations(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// Post-processing
-	Flux_SDFs::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.SDFs().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Particles::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_HDR::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 
 	// UI & presentation
-	Flux_Quads::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
+	g_xEngine.Quads().SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 	Flux_Text::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
 #ifdef ZENITH_TOOLS
 	Flux_Gizmos::SetupRenderGraph(*g_xEngine.FluxRenderer().m_pxRenderGraph);
@@ -421,9 +421,9 @@ void Flux::Shutdown()
 	// NOTE: Some subsystems (Fog, DeferredShading, AnimatedMeshes, StaticMeshes)
 	// don't have Shutdown() methods - they rely on RAII or are stateless
 	Flux_Text::Shutdown();
-	Flux_Quads::Shutdown();
+	g_xEngine.Quads().Shutdown();
 	Flux_Particles::Shutdown();
-	Flux_SDFs::Shutdown();
+	g_xEngine.SDFs().Shutdown();
 	// Flux_Fog, Flux_DeferredShading - no Shutdown() methods
 	Flux_SSAO::Shutdown();           // SSAO render targets
 	Flux_Decals::Shutdown();          // Deferred decal renderer (frees instance buffer + IB)

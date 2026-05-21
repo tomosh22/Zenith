@@ -1,7 +1,7 @@
 #include "Zenith.h"
 
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDR.h"
@@ -27,7 +27,7 @@ DEBUGVAR bool dbg_bVisualiseCSMs = false;
 DEBUGVAR u_int dbg_uDeferredShadingDebugMode = 0;  // 0=normal, 1=cyan, 2=depth, 3=diffuse
 DEBUGVAR float dbg_fAmbientFallbackIntensity = 0.03f;  // Ambient when IBL disabled (0.01-0.1 typical)
 
-void Flux_DeferredShading::BuildPipelines()
+void Flux_DeferredShadingImpl::BuildPipelines()
 {
 	g_xEngine.DeferredShading().m_xShader.Initialise(FluxShaderProgram::DeferredShading);
 
@@ -52,7 +52,7 @@ void Flux_DeferredShading::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(g_xEngine.DeferredShading().m_xPipeline, xPipelineSpec);
 }
 
-void Flux_DeferredShading::Initialise()
+void Flux_DeferredShadingImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -66,7 +66,7 @@ void Flux_DeferredShading::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::DeferredShading,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_DeferredShading::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.DeferredShading().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -182,7 +182,7 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// First writer of the HDR scene target — clear overwrites every pixel.
 	// Capture the handle via the implicit conversion; builder temporary dies

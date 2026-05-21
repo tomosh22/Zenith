@@ -1,7 +1,7 @@
 #include "Zenith.h"
 
-#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
@@ -10,7 +10,7 @@
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/Shadows/Flux_Shadows.h"
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -27,7 +27,9 @@
 // Phase 7b: state on Flux_AnimatedMeshesImpl held by Zenith_Engine.
 
 
-void Flux_AnimatedMeshes::BuildPipelines()
+static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*);
+
+void Flux_AnimatedMeshesImpl::BuildPipelines()
 {
 	g_xEngine.AnimatedMeshes().m_xGBufferShader.Initialise(FluxShaderProgram::AnimatedMesh_ToGBuffer);
 	g_xEngine.AnimatedMeshes().m_xShadowShader.Initialise(FluxShaderProgram::AnimatedMesh_ToShadowmap);
@@ -85,7 +87,7 @@ void Flux_AnimatedMeshes::BuildPipelines()
 	}
 }
 
-void Flux_AnimatedMeshes::Initialise()
+void Flux_AnimatedMeshesImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -94,14 +96,14 @@ void Flux_AnimatedMeshes::Initialise()
 		FluxShaderProgram::AnimatedMesh_ToGBuffer,
 		FluxShaderProgram::AnimatedMesh_ToShadowmap,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_AnimatedMeshes::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.AnimatedMeshes().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "Flux_AnimatedMeshes initialised");
 }
 
-void Flux_AnimatedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_AnimatedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Animated Meshes GBuffer", ExecuteGBuffer)
 		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
@@ -110,7 +112,7 @@ void Flux_AnimatedMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes(Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV);
 }
 
-void Flux_AnimatedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
+static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bAnimatedMeshesEnabled)
 	{
@@ -208,7 +210,7 @@ void Flux_AnimatedMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	}
 }
 
-void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
+void Flux_AnimatedMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(xCmdBuf);
@@ -267,7 +269,3 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flu
 	}
 }
 
-Flux_Pipeline& Flux_AnimatedMeshes::GetShadowPipeline()
-{
-	return g_xEngine.AnimatedMeshes().m_xShadowPipeline;
-}

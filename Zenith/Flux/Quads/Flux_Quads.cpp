@@ -1,7 +1,7 @@
 #include "Zenith.h"
 
-#include "Flux/Quads/Flux_Quads.h"
 #include "Flux/Quads/Flux_QuadsImpl.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -20,7 +20,9 @@
 
 
 
-void Flux_Quads::BuildPipelines()
+static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData);
+
+void Flux_QuadsImpl::BuildPipelines()
 {
 	g_xEngine.Quads().m_xShader.Initialise(FluxShaderProgram::Quads);
 
@@ -52,7 +54,7 @@ void Flux_Quads::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(g_xEngine.Quads().m_xPipeline, xPipelineSpec);
 }
 
-void Flux_Quads::Initialise()
+void Flux_QuadsImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -62,35 +64,35 @@ void Flux_Quads::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::Quads,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Quads::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Quads().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads initialised");
 }
 
-void Flux_Quads::Shutdown()
+void Flux_QuadsImpl::Shutdown()
 {
 	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Quads().m_xInstanceBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads shut down");
 }
 
-void Flux_Quads::UploadInstanceData()
+void Flux_QuadsImpl::UploadInstanceData()
 {
 	Flux_MemoryManager::UploadBufferData(g_xEngine.Quads().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, g_xEngine.Quads().m_axQuadsToRender, sizeof(Quad) * g_xEngine.Quads().m_uQuadRenderIndex);
 }
 
-void Flux_Quads::Render(void*)
+void Flux_QuadsImpl::Render(void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bQuadsEnabled)
 	{
 		return;
 	}
 
-	UploadInstanceData();
+	g_xEngine.Quads().UploadInstanceData();
 }
 
-void Flux_Quads::ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bQuadsEnabled || g_xEngine.Quads().m_uQuadRenderIndex == 0)
@@ -98,7 +100,7 @@ void Flux_Quads::ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	UploadInstanceData();
+	g_xEngine.Quads().UploadInstanceData();
 
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Quads().m_xPipeline);
 
@@ -116,13 +118,13 @@ void Flux_Quads::ExecuteQuads(Flux_CommandList* pxCommandList, void* pUserData)
 	g_xEngine.Quads().m_uQuadRenderIndex = 0;
 }
 
-void Flux_Quads::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_QuadsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Quads", ExecuteQuads)
 		.Writes(Flux_Graphics::GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
-void Flux_Quads::UploadQuad(const Quad& xQuad)
+void Flux_QuadsImpl::UploadQuad(const Quad& xQuad)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bQuadsEnabled)
 	{

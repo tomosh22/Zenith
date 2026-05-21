@@ -5,7 +5,7 @@
 #include "UI/Zenith_UIImage.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIToggle.h"
-#include "Flux/Quads/Flux_Quads.h"
+#include "Flux/Quads/Flux_QuadsImpl.h"
 #include "Input/Zenith_Input.h"
 #include <algorithm>
 
@@ -389,8 +389,8 @@ void Zenith_UICanvas::SubmitQuad(const Zenith_Maths::Vector4& xBounds, const Zen
     Zenith_Maths::Vector2 xUVMultAdd = { 1.0f, 0.0f };
     Zenith_Maths::Vector2 xSizePixels = { fWidth, fHeight };
 
-    Flux_Quads::Quad xQuad(xPositionSize, xColor, uTextureID, xUVMultAdd, fCornerRadius, xSizePixels, xGradientColor);
-    Flux_Quads::UploadQuad(xQuad);
+    Flux_QuadsImpl::Quad xQuad(xPositionSize, xColor, uTextureID, xUVMultAdd, fCornerRadius, xSizePixels, xGradientColor);
+    g_xEngine.Quads().UploadQuad(xQuad);
 }
 
 void Zenith_UICanvas::SubmitQuadWithUV(const Zenith_Maths::Vector4& xBounds, const Zenith_Maths::Vector4& xColor, uint32_t uTextureID, const Zenith_Maths::Vector2& xUVMin, const Zenith_Maths::Vector2& xUVMax)
@@ -415,8 +415,8 @@ void Zenith_UICanvas::SubmitQuadWithUV(const Zenith_Maths::Vector4& xBounds, con
     float fUVAdd = xUVMin.x;
     Zenith_Maths::Vector2 xUVMultAdd = { fUVMult, fUVAdd };
 
-    Flux_Quads::Quad xQuad(xPositionSize, xColor, uTextureID, xUVMultAdd);
-    Flux_Quads::UploadQuad(xQuad);
+    Flux_QuadsImpl::Quad xQuad(xPositionSize, xColor, uTextureID, xUVMultAdd);
+    g_xEngine.Quads().UploadQuad(xQuad);
 }
 
 void Zenith_UICanvas::SubmitText(const std::string& strText, const Zenith_Maths::Vector2& xPosition, float fSize, const Zenith_Maths::Vector4& xColor)

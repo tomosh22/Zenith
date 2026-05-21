@@ -9,8 +9,8 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
-#include "Flux/StaticMeshes/Flux_StaticMeshes.h"
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshesImpl.h"
+#include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 
 // Graph-owned transient — backing Flux_RenderAttachment is allocated and
@@ -138,15 +138,15 @@ static void ExecuteShadowCascade(Flux_CommandList* pxCommandList, void* pUserDat
 
 	const uint32_t u = Flux_UnpackUserData<uint32_t>(pUserData);
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.StaticMeshes().GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	Flux_StaticMeshes::RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
+	g_xEngine.StaticMeshes().RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&Flux_AnimatedMeshes::GetShadowPipeline());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.AnimatedMeshes().GetShadowPipeline());
 
 	// RenderToShadowMap handles all bindings via shader reflection
-	Flux_AnimatedMeshes::RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
+	g_xEngine.AnimatedMeshes().RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);
 
 	// #TODO: Enable terrain shadow casting
 	// Flux_Terrain::RenderToShadowMap(*pxCommandList, g_xEngine.Shadows().m_xShadowMatrixBuffers[u]);

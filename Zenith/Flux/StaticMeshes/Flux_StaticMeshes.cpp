@@ -1,14 +1,14 @@
 #include "Zenith.h"
 
-#include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshesImpl.h"
+#include "Core/Zenith_Engine.h"
 
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_Shadows.h"
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -28,7 +28,9 @@
 
 
 
-void Flux_StaticMeshes::BuildPipelines()
+static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*);
+
+void Flux_StaticMeshesImpl::BuildPipelines()
 {
 	g_xEngine.StaticMeshes().m_xGBufferShader.Initialise(FluxShaderProgram::StaticMesh_ToGBuffer);
 	g_xEngine.StaticMeshes().m_xShadowShader.Initialise(FluxShaderProgram::StaticMesh_ToShadowmap);
@@ -82,7 +84,7 @@ void Flux_StaticMeshes::BuildPipelines()
 	}
 }
 
-void Flux_StaticMeshes::Initialise()
+void Flux_StaticMeshesImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -91,7 +93,7 @@ void Flux_StaticMeshes::Initialise()
 		FluxShaderProgram::StaticMesh_ToGBuffer,
 		FluxShaderProgram::StaticMesh_ToShadowmap,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_StaticMeshes::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.StaticMeshes().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -101,7 +103,7 @@ void Flux_StaticMeshes::Initialise()
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_StaticMeshes initialised");
 }
 
-void Flux_StaticMeshes::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_StaticMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Static Meshes GBuffer", ExecuteGBuffer)
 		.Writes(Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
@@ -187,7 +189,7 @@ static void RenderModelInstanceMeshes(Flux_CommandList* pxCmdList, Flux_ShaderBi
 	}
 }
 
-void Flux_StaticMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
+static void ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bStaticMeshesEnabled) return;
 
@@ -212,7 +214,7 @@ void Flux_StaticMeshes::ExecuteGBuffer(Flux_CommandList* pxCmdList, void*)
 	}
 }
 
-void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
+void Flux_StaticMeshesImpl::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	Flux_ShaderBinder xBinder(xCmdBuf);
 	// Shadow pass binds only DrawConstants + ShadowMatrix. Slang reflection
@@ -251,7 +253,3 @@ void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_
 	}
 }
 
-Flux_Pipeline& Flux_StaticMeshes::GetShadowPipeline()
-{
-	return g_xEngine.StaticMeshes().m_xShadowPipeline;
-}

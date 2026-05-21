@@ -34,7 +34,7 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Maths/Zenith_Maths.h"
-#include "Flux/Quads/Flux_Quads.h"
+#include "Flux/Quads/Flux_QuadsImpl.h"
 #include "UI/Zenith_UIButton.h"
 
 // Include combat modules
@@ -948,12 +948,12 @@ private:
 		uint32_t uX = static_cast<uint32_t>(xScreenPos.x - uBarWidth / 2);
 		uint32_t uY = static_cast<uint32_t>(xScreenPos.y);
 
-		Flux_Quads::Quad xBgQuad;
+		Flux_QuadsImpl::Quad xBgQuad;
 		xBgQuad.m_xPosition_Size = Zenith_Maths::UVector4(uX, uY, uBarWidth, uBarHeight);
 		xBgQuad.m_xColour = Zenith_Maths::Vector4(0.15f, 0.15f, 0.15f, 0.9f);
 		xBgQuad.m_uTexture = 0;
 		xBgQuad.m_xUVMult_UVAdd = Zenith_Maths::Vector2(0.0f, 0.0f);
-		Flux_Quads::UploadQuad(xBgQuad);
+		g_xEngine.Quads().UploadQuad(xBgQuad);
 
 		if (fHealthPercent > 0.0f)
 		{
@@ -968,12 +968,12 @@ private:
 				else
 					xFgColor = Zenith_Maths::Vector4(0.9f, 0.2f, 0.2f, 1.0f);
 
-				Flux_Quads::Quad xFgQuad;
+				Flux_QuadsImpl::Quad xFgQuad;
 				xFgQuad.m_xPosition_Size = Zenith_Maths::UVector4(uX + 1, uY + 1, uFgWidth - 2, uBarHeight - 2);
 				xFgQuad.m_xColour = xFgColor;
 				xFgQuad.m_uTexture = 0;
 				xFgQuad.m_xUVMult_UVAdd = Zenith_Maths::Vector2(0.0f, 0.0f);
-				Flux_Quads::UploadQuad(xFgQuad);
+				g_xEngine.Quads().UploadQuad(xFgQuad);
 			}
 		}
 	}

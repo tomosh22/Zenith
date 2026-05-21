@@ -1,7 +1,7 @@
 #include "Zenith.h"
 
-#include "Flux/SDFs/Flux_SDFs.h"
 #include "Flux/SDFs/Flux_SDFsImpl.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -31,7 +31,9 @@ struct SphereData
 } s_axSphereData;
 
 
-void Flux_SDFs::BuildPipelines()
+static void ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData);
+
+void Flux_SDFsImpl::BuildPipelines()
 {
 	g_xEngine.SDFs().m_xShader.Initialise(FluxShaderProgram::SDFs);
 
@@ -52,7 +54,7 @@ void Flux_SDFs::BuildPipelines()
 	Flux_PipelineBuilder::FromSpecification(g_xEngine.SDFs().m_xPipeline, xPipelineSpec);
 }
 
-void Flux_SDFs::Initialise()
+void Flux_SDFsImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -65,14 +67,14 @@ void Flux_SDFs::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::SDFs,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_SDFs::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.SDFs().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs initialised");
 }
 
-void Flux_SDFs::Shutdown()
+void Flux_SDFsImpl::Shutdown()
 {
 	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.SDFs().m_xSpheresBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs shut down");
@@ -96,7 +98,7 @@ void UploadSpheres()
 	Flux_MemoryManager::UploadBufferData(g_xEngine.SDFs().m_xSpheresBuffer.GetBuffer().m_xVRAMHandle, &s_axSphereData, sizeof(s_axSphereData));
 }
 
-void Flux_SDFs::Render(void*)
+void Flux_SDFsImpl::Render(void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bSDFsEnabled)
 	{
@@ -106,7 +108,7 @@ void Flux_SDFs::Render(void*)
 	UploadSpheres();
 }
 
-void Flux_SDFs::ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
+static void ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
 	if (!Zenith_GraphicsOptions::Get().m_bSDFsEnabled)
@@ -128,7 +130,7 @@ void Flux_SDFs::ExecuteSDFs(Flux_CommandList* pxCommandList, void* pUserData)
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_SDFs::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_SDFsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// The pipeline uses default depth-test+write enabled, so the depth attachment
 	// is bound as a writable DSV for the renderpass.

@@ -10,7 +10,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Shadows/Flux_Shadows.h"
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
 #include "Flux/Flux_MaterialBinding.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
