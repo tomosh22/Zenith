@@ -95,17 +95,17 @@ public:
 	static void Reset();  // Clear state when scene resets
 
 	// Shared resources accessors
-	static Zenith_TextureAsset* GetNoiseTexture3D() { return s_xNoiseTexture3D.GetDirect(); }
-	static Zenith_TextureAsset* GetBlueNoiseTexture() { return s_xBlueNoiseTexture.GetDirect(); }
-	static Flux_RenderAttachment& GetFroxelDensityGrid() { return s_xFroxelDensityGrid; }
-	static Flux_RenderAttachment& GetFroxelLightingGrid() { return s_xFroxelLightingGrid; }
+	static Zenith_TextureAsset* GetNoiseTexture3D();
+	static Zenith_TextureAsset* GetBlueNoiseTexture();
+	static Flux_RenderAttachment& GetFroxelDensityGrid();
+	static Flux_RenderAttachment& GetFroxelLightingGrid();
 
 	// Debug output
-	static Flux_RenderAttachment& GetDebugOutput() { return s_xDebugOutput; }
+	static Flux_RenderAttachment& GetDebugOutput();
 
 	// Configuration
-	static Flux_VolumeFogConstants& GetSharedConstants() { return s_xSharedConstants; }
-	static Flux_FroxelConfig& GetFroxelConfig() { return s_xFroxelConfig; }
+	static Flux_VolumeFogConstants& GetSharedConstants();
+	static Flux_FroxelConfig& GetFroxelConfig();
 
 private:
 	static void GenerateNoiseTexture3D();
@@ -114,18 +114,6 @@ private:
 	static void CreateDebugOutput();
 	static void RegisterDebugVariables();
 
-	// Shared textures (pinned via handles so UnloadUnused never frees them mid-frame).
-	static TextureHandle s_xNoiseTexture3D;      // 64^3 Perlin-Worley noise
-	static TextureHandle s_xBlueNoiseTexture;    // 64x64 blue noise
-
-	// Froxel grids (3D render targets)
-	static Flux_RenderAttachment s_xFroxelDensityGrid;   // RGBA16F: density + scattering
-	static Flux_RenderAttachment s_xFroxelLightingGrid;  // RGBA16F: lit color + transmittance
-
-	// Debug visualization output
-	static Flux_RenderAttachment s_xDebugOutput;
-
-	// Shared configuration
-	static Flux_VolumeFogConstants s_xSharedConstants;
-	static Flux_FroxelConfig s_xFroxelConfig;
+	// Phase 7d: data members moved to Flux_VolumeFogImpl held by
+	// Zenith_Engine.
 };

@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Flux.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 #include "Flux/Fog/Flux_GodRaysFog.h"
@@ -19,13 +20,6 @@
 #endif
 
 // Render graph pass indices for dynamic enable/disable
-static Flux_PassHandle s_xSimpleFogPass;
-static Flux_PassHandle s_xFroxelInjectPass;
-static Flux_PassHandle s_xFroxelLightPass;
-static Flux_PassHandle s_xFroxelApplyPass;
-static Flux_PassHandle s_xRaymarchPass;
-static Flux_PassHandle s_xGodRaysPass;
-static u_int s_uLastFogTechnique = UINT32_MAX;
 
 // Game-side override flag (EXT-1). When true, all 6 fog passes are explicitly
 // disabled on the active render graph and ApplyTechniqueSelectionToGraph
@@ -34,16 +28,14 @@ static bool s_bExternallyOverridden = false;
 
 static void DisableAllFogPasses(Flux_RenderGraph& xGraph)
 {
-	xGraph.SetEnabled(s_xSimpleFogPass,        false);
-	xGraph.SetEnabled(s_xFroxelInjectPass,     false);
-	xGraph.SetEnabled(s_xFroxelLightPass,      false);
-	xGraph.SetEnabled(s_xFroxelApplyPass,      false);
-	xGraph.SetEnabled(s_xRaymarchPass,         false);
-	xGraph.SetEnabled(s_xGodRaysPass,          false);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xSimpleFogPass,        false);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xFroxelInjectPass,     false);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xFroxelLightPass,      false);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xFroxelApplyPass,      false);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xRaymarchPass,         false);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xGodRaysPass,          false);
 }
 
-static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipeline;
 
 u_int dbg_uVolFogDebugMode = 0;  // Debug visualization mode (non-static for external linkage)
 
@@ -58,7 +50,7 @@ static struct Flux_FogConstants
 
 void Flux_Fog::BuildPipelines()
 {
-	s_xShader.Initialise(FluxShaderProgram::Fog_Simple);
+	g_xEngine.Fog().m_xShader.Initialise(FluxShaderProgram::Fog_Simple);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -66,15 +58,15 @@ void Flux_Fog::BuildPipelines()
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_pxShader = &g_xEngine.Fog().m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	g_xEngine.Fog().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(g_xEngine.Fog().m_xPipeline, xPipelineSpec);
 }
 
 void Flux_Fog::Initialise()
@@ -130,17 +122,17 @@ void Flux_Fog::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 		return;
 
 	const u_int uTechnique = Zenith_GraphicsOptions::Get().m_uVolFogTechnique;
-	if (uTechnique == s_uLastFogTechnique)
+	if (uTechnique == g_xEngine.Fog().m_uLastFogTechnique)
 		return;
 
-	s_uLastFogTechnique = uTechnique;
+	g_xEngine.Fog().m_uLastFogTechnique = uTechnique;
 
-	xGraph.SetEnabled(s_xSimpleFogPass, uTechnique == 0);
-	xGraph.SetEnabled(s_xFroxelInjectPass, uTechnique == 1);
-	xGraph.SetEnabled(s_xFroxelLightPass, uTechnique == 1);
-	xGraph.SetEnabled(s_xFroxelApplyPass, uTechnique == 1);
-	xGraph.SetEnabled(s_xRaymarchPass, uTechnique == 2);
-	xGraph.SetEnabled(s_xGodRaysPass, uTechnique == 3);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xSimpleFogPass, uTechnique == 0);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xFroxelInjectPass, uTechnique == 1);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xFroxelLightPass, uTechnique == 1);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xFroxelApplyPass, uTechnique == 1);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xRaymarchPass, uTechnique == 2);
+	xGraph.SetEnabled(g_xEngine.Fog().m_xGodRaysPass, uTechnique == 3);
 
 	// Force a full recompile. SetPassEnabled's cheap m_bEnabledMaskDirty path
 	// only re-resolves per-target-setup clear ownership; it does NOT rebuild
@@ -167,15 +159,15 @@ void Flux_Fog::ExecuteSimpleFog(Flux_CommandList* pxCommandList, void* pUserData
 		return;
 	}
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Fog().m_xPipeline);
 
 	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindCBV(s_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindSRV(s_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindDrawConstants(s_xShader, "FogConstants", &dbg_xConstants, sizeof(Flux_FogConstants));
+	xBinder.BindCBV(g_xEngine.Fog().m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindSRV(g_xEngine.Fog().m_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindDrawConstants(g_xEngine.Fog().m_xShader, "FogConstants", &dbg_xConstants, sizeof(Flux_FogConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
@@ -240,7 +232,7 @@ void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// because Phase 0 only fires OnPrepare for *enabled* passes -- once the
 	// previously-active technique is disabled, an OnPrepare-based switcher
 	// would never run again and the user could never switch back.
-	s_uLastFogTechnique = UINT32_MAX; // Force initial enable/disable
+	g_xEngine.Fog().m_uLastFogTechnique = UINT32_MAX; // Force initial enable/disable
 
 	// Let FroxelFog create its transient resources (must happen before pass registration)
 	Flux_FroxelFog::SetupTransients(xGraph);
@@ -250,16 +242,16 @@ void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// stored handles (s_x…Pass). Handles captured via the builder's implicit
 	// Flux_PassHandle conversion.
 
-	s_xSimpleFogPass = xGraph.AddPass("Fog_Simple", ExecuteSimpleFog)
+	g_xEngine.Fog().m_xSimpleFogPass = xGraph.AddPass("Fog_Simple", ExecuteSimpleFog)
 		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
-	s_xFroxelInjectPass = xGraph.AddPass("Fog_FroxelInject", ExecuteFroxelInject)
+	g_xEngine.Fog().m_xFroxelInjectPass = xGraph.AddPass("Fog_FroxelInject", ExecuteFroxelInject)
 		.WritesTransient(Flux_FroxelFog::GetDensityGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
 
 	// Light shader writes both lighting and scattering grids (see the two
 	// UAV binding points in Flux_FroxelFog.cpp).
-	s_xFroxelLightPass = xGraph.AddPass("Fog_FroxelLight", ExecuteFroxelLight)
+	g_xEngine.Fog().m_xFroxelLightPass = xGraph.AddPass("Fog_FroxelLight", ExecuteFroxelLight)
 		.ReadsTransient (Flux_FroxelFog::GetDensityGridHandle(),    RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(Flux_FroxelFog::GetLightingGridHandle(),   RESOURCE_ACCESS_WRITE_UAV)
 		.WritesTransient(Flux_FroxelFog::GetScatteringGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
@@ -267,17 +259,17 @@ void Flux_Fog::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Apply shader samples both lighting and scattering grids — both must
 	// be declared so the graph transitions them out of GENERAL before the
 	// SRV bind.
-	s_xFroxelApplyPass = xGraph.AddPass("Fog_FroxelApply", ExecuteFroxelApply)
+	g_xEngine.Fog().m_xFroxelApplyPass = xGraph.AddPass("Fog_FroxelApply", ExecuteFroxelApply)
 		.Writes        (Flux_HDR::GetHDRSceneTarget(),               RESOURCE_ACCESS_WRITE_RTV)
 		.Reads         (Flux_Graphics::GetDepthAttachment(),         RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(Flux_FroxelFog::GetLightingGridHandle(),     RESOURCE_ACCESS_READ_SRV)
 		.ReadsTransient(Flux_FroxelFog::GetScatteringGridHandle(),   RESOURCE_ACCESS_READ_SRV);
 
-	s_xRaymarchPass = xGraph.AddPass("Fog_Raymarch", ExecuteRaymarch)
+	g_xEngine.Fog().m_xRaymarchPass = xGraph.AddPass("Fog_Raymarch", ExecuteRaymarch)
 		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
-	s_xGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays)
+	g_xEngine.Fog().m_xGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays)
 		.Writes(Flux_HDR::GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
@@ -312,7 +304,7 @@ void Flux_Fog::SetExternallyOverridden(bool bOverridden)
 		// Don't blanket-enable all 6 passes — let ApplyTechniqueSelectionToGraph
 		// pick whichever subset matches the current technique on the next
 		// frame. Invalidate the cached technique so the apply path runs.
-		s_uLastFogTechnique = UINT32_MAX;
+		g_xEngine.Fog().m_uLastFogTechnique = UINT32_MAX;
 	}
 	xGraph.MarkDirty();
 }

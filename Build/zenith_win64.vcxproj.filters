@@ -3591,6 +3591,9 @@
     <ClInclude Include="..\Zenith\Flux\Decals\Flux_Decals.h">
       <Filter>Flux\Decals</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Decals\Flux_DecalsImpl.h">
+      <Filter>Flux\Decals</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h">
       <Filter>Flux\DeferredShading</Filter>
     </ClInclude>
@@ -3657,6 +3660,9 @@
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_Fog.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_FogImpl.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFog.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
@@ -3676,6 +3682,9 @@
       <Filter>Flux\Fog</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFog.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFogImpl.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h">
@@ -4084,6 +4093,9 @@
       <Filter>Flux\Slang</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO.h">
+      <Filter>Flux\SSAO</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAOImpl.h">
       <Filter>Flux\SSAO</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGI.h">

@@ -38,6 +38,10 @@
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
+#include "Flux/SSAO/Flux_SSAOImpl.h"
+#include "Flux/Decals/Flux_DecalsImpl.h"
+#include "Flux/Fog/Flux_FogImpl.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux_Graphics.h"
@@ -259,6 +263,10 @@ Flux_FroxelFogImpl&                Zenith_Engine::FroxelFog()         { return *
 Flux_GodRaysFogImpl&               Zenith_Engine::GodRaysFog()        { return *m_pxGodRaysFog; }
 Flux_RaymarchFogImpl&              Zenith_Engine::RaymarchFog()       { return *m_pxRaymarchFog; }
 Flux_TerrainStreamingManagerImpl&  Zenith_Engine::TerrainStreaming()  { return *m_pxTerrainStreaming; }
+Flux_SSAOImpl&                     Zenith_Engine::SSAO()              { return *m_pxSSAO; }
+Flux_DecalsImpl&                   Zenith_Engine::Decals()            { return *m_pxDecals; }
+Flux_FogImpl&                      Zenith_Engine::Fog()               { return *m_pxFog; }
+Flux_VolumeFogImpl&                Zenith_Engine::VolumeFog()         { return *m_pxVolumeFog; }
 
 #ifdef ZENITH_TOOLS
 Zenith_EditorImpl& Zenith_Engine::Editor()
@@ -374,6 +382,12 @@ void Zenith_Engine::Initialise()
 	m_pxGodRaysFog       = new Flux_GodRaysFogImpl();
 	m_pxRaymarchFog      = new Flux_RaymarchFogImpl();
 	m_pxTerrainStreaming = new Flux_TerrainStreamingManagerImpl();
+
+	// Phase 7d: 4 more.
+	m_pxSSAO       = new Flux_SSAOImpl();
+	m_pxDecals     = new Flux_DecalsImpl();
+	m_pxFog        = new Flux_FogImpl();
+	m_pxVolumeFog  = new Flux_VolumeFogImpl();
 
 #ifdef ZENITH_TOOLS
 	// Phase 5.5c: editor state (selection, viewport, content browser,
@@ -753,6 +767,10 @@ void Zenith_Engine::Shutdown()
 	delete m_pxGodRaysFog;       m_pxGodRaysFog = nullptr;
 	delete m_pxRaymarchFog;      m_pxRaymarchFog = nullptr;
 	delete m_pxTerrainStreaming; m_pxTerrainStreaming = nullptr;
+	delete m_pxSSAO;       m_pxSSAO = nullptr;
+	delete m_pxDecals;     m_pxDecals = nullptr;
+	delete m_pxFog;        m_pxFog = nullptr;
+	delete m_pxVolumeFog;  m_pxVolumeFog = nullptr;
 
 #ifdef ZENITH_TOOLS
 	// 21. Free editor state. Done LATE -- the editor's deferred-deletion

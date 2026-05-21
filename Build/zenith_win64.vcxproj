@@ -1197,6 +1197,7 @@
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Presentation.h" />
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Sync.h" />
     <ClInclude Include="..\Zenith\Flux\Decals\Flux_Decals.h" />
+    <ClInclude Include="..\Zenith\Flux\Decals\Flux_DecalsImpl.h" />
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h" />
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShadingImpl.h" />
     <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.h" />
@@ -1219,6 +1220,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_Fog.h" />
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_FogImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFog.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFogImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.h" />
@@ -1226,6 +1228,7 @@
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_RaymarchFog.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_RaymarchFogImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFog.h" />
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFogImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h" />
     <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDR.h" />
     <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZ.h" />
@@ -1362,6 +1365,7 @@
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderRegistry.h" />
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h" />
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO.h" />
+    <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAOImpl.h" />
     <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGI.h" />
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR.h" />
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
