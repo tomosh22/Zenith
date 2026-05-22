@@ -109,18 +109,24 @@ namespace DevilsPlayground
 
 #ifdef ZENITH_INPUT_SIMULATOR
 		// Tell the automated-test harness how to wipe DP-specific persistent
-		// globals between batched tests. The harness force-loads scene 0
-		// before firing this hook, so entity-managed side-tables (DP_Items,
-		// DP_Fog) are already cleared via OnDestroy by the time we run; we
-		// only need to reset state that has no entity owner.
+		// state between batched tests. The harness force-loads scene 0
+		// before firing this hook, so entity-managed side-tables (held
+		// items, scent, fog holes, item tags, possession state, win, night)
+		// are already cleared via OnDestroy by the time we run. Only state
+		// that has no entity owner needs explicit reset here.
+		//
+		// 2026-05-22 Phase 5.2: removed DP_Player::ResetForNewRun /
+		// DP_Win::Reset / DP_Night::Reset from this hook -- their state
+		// now lives on DPPlayerController_Behaviour::m_x*, destroyed via
+		// the scene-reload OnDestroy. DP_Fog::ClearAll* are also entity-
+		// owned (DPFogPass_Behaviour) but kept here defensively so the
+		// hook is robust to any future code path that calls it on a scene
+		// where the fog-pass script never spun up.
 		Zenith_AutomatedTestRunner::RegisterBetweenTestsHook([]()
 		{
-			DP_Player::ResetForNewRun();
-			DP_Win::Reset();
 			DP_Fog::ClearAllFogHoles();
 			DP_Fog::ClearAllMemoryReveals();
 			DP_AI::ResetLevelNavMesh();
-			DP_Night::Reset();
 			DPPauseMenuController_Behaviour::ResetForTest();
 			// Drop emitter entities + zero burst counts so the next test
 			// gets a fresh particle slate. Configs + subscriptions stay

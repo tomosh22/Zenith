@@ -20,31 +20,10 @@
 #include "../Components/Priest_Behaviour.h"
 #include "../Components/DPPlayerController_Behaviour.h"
 
+#include <cmath>
+
 namespace
 {
-	// ---- DP_Player state (B2 fills in) ----
-	Zenith_EntityID g_xPossessedVillager = INVALID_ENTITY_ID;
-
-	// MVP-1.5: possession-cooldown timer. Decrements per frame via
-	// DP_Player::TickPossessionCooldown (called from
-	// DPPlayerController_Behaviour::OnUpdate). Set by
-	// TryVoluntaryPossessSwitch on a successful voluntary switch /
-	// release. Death + apprehend paths bypass this entirely (they
-	// call SetPossessedVillager directly), matching the Tuning.json
-	// canon: "cooldown_after_burnout_s = 0.0".
-	float g_fPossessionCooldownRemaining = 0.0f;
-
-	// MVP-1.8: anchor position. Set by SetPossessedVillager and
-	// TryVoluntaryPossessSwitch from the new villager's transform
-	// position on any successful possession.
-	Zenith_Maths::Vector3 g_xPossessionAnchor = Zenith_Maths::Vector3(0.0f);
-	bool                  g_bHasPossessionAnchor = false;
-
-	// MVP-2.1.1 Devout channel state.
-	Zenith_EntityID g_xChannelTarget   = INVALID_ENTITY_ID;
-	float           g_fChannelRemaining = 0.0f;
-	bool            g_bChannelActive    = false;
-
 	// Resolves a villager handle to its world position. Returns false
 	// if the entity has no transform / no scene-data binding (e.g.,
 	// passed a stale handle after the villager was destroyed).
@@ -58,28 +37,69 @@ namespace
 		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
 		return true;
 	}
+
+	// Internal commit helper used by both the immediate-possession path
+	// and the channel-completion path in TryVoluntaryPossessSwitch.
+	void CommitVoluntaryPossession(
+		DPPlayerController_Behaviour& xCtrl,
+		Zenith_EntityID xId,
+		const Zenith_Maths::Vector3& xNewPos,
+		bool bGotNewPos)
+	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"CommitVoluntaryPossession must be called from main thread");
+		xCtrl.m_xPossessedVillager = xId;
+		xCtrl.m_fPossessionCooldownSec =
+			DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
+
+		if (bGotNewPos)
+		{
+			xCtrl.m_xPossessionAnchor = xNewPos;
+			xCtrl.m_bHasPossessionAnchor = true;
+		}
+		else
+		{
+			xCtrl.m_bHasPossessionAnchor = false;
+		}
+
+		// MVP-1.6 scent: only successful possession bumps. Tuning.json's
+		// scent comment explicitly says channel-interrupted switches
+		// produce no scent.
+		if (xId.IsValid())
+		{
+			const float fPerPossession =
+				DP_Tuning::Get<float>("possession.demon_scent_per_possession");
+			const float fMaxScent =
+				DP_Tuning::Get<float>("possession.demon_scent_max");
+			xCtrl.BumpDemonScent(xId, fPerPossession, fMaxScent);
+		}
+	}
 }
 
 namespace DP_Player
 {
 	Zenith_EntityID GetPossessedVillager()
 	{
-		return g_xPossessedVillager;
+		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return INVALID_ENTITY_ID;
+		return pxCtrl->m_xPossessedVillager;
 	}
 
 	void SetPossessedVillager(Zenith_EntityID xId)
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::SetPossessedVillager must be called from main thread");
-		const Zenith_EntityID xPrior = g_xPossessedVillager;
-		g_xPossessedVillager = xId;
-		if (xId.IsValid() && TryGetVillagerPos(xId, g_xPossessionAnchor))
+		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return;
+		const Zenith_EntityID xPrior = pxCtrl->m_xPossessedVillager;
+		pxCtrl->m_xPossessedVillager = xId;
+		if (xId.IsValid() && TryGetVillagerPos(xId, pxCtrl->m_xPossessionAnchor))
 		{
-			g_bHasPossessionAnchor = true;
+			pxCtrl->m_bHasPossessionAnchor = true;
 		}
 		else
 		{
-			g_bHasPossessionAnchor = false;
+			pxCtrl->m_bHasPossessionAnchor = false;
 		}
 		if (xPrior != xId)
 		{
@@ -88,70 +108,30 @@ namespace DP_Player
 		}
 	}
 
-	// Internal helper used by both the immediate-possession path and
-	// the channel-completion path. Updates possessed handle, sets
-	// anchor, arms cooldown, bumps scent. Caller is responsible for
-	// having already passed the gates (cooldown / state / range).
-	static void CommitVoluntaryPossession(
-		Zenith_EntityID xId,
-		const Zenith_Maths::Vector3& xNewPos,
-		bool bGotNewPos)
-	{
-		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
-			"DP_Player::CommitVoluntaryPossession must be called from main thread");
-		g_xPossessedVillager = xId;
-		g_fPossessionCooldownRemaining =
-			DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
-
-		if (bGotNewPos)
-		{
-			g_xPossessionAnchor = xNewPos;
-			g_bHasPossessionAnchor = true;
-		}
-		else
-		{
-			g_bHasPossessionAnchor = false;
-		}
-
-		// MVP-1.6 scent: only successful possession bumps. Tuning.json's
-		// scent comment explicitly says channel-interrupted switches
-		// produce no scent.
-		if (xId.IsValid())
-		{
-			DPPlayerController_Behaviour* pxCtrl =
-				DPPlayerController_Behaviour::Instance();
-			if (pxCtrl != nullptr)
-			{
-				const float fPerPossession =
-					DP_Tuning::Get<float>("possession.demon_scent_per_possession");
-				const float fMaxScent =
-					DP_Tuning::Get<float>("possession.demon_scent_max");
-				pxCtrl->BumpDemonScent(xId, fPerPossession, fMaxScent);
-			}
-		}
-	}
-
 	bool TryVoluntaryPossessSwitch(Zenith_EntityID xId)
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::TryVoluntaryPossessSwitch must be called from main thread");
+		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return false;
+
 		// Idempotent re-click.
 		if (xId.IsValid()
-			&& g_xPossessedVillager.IsValid()
-			&& xId.m_uIndex == g_xPossessedVillager.m_uIndex
-			&& xId.m_uGeneration == g_xPossessedVillager.m_uGeneration)
+			&& pxCtrl->m_xPossessedVillager.IsValid()
+			&& xId.m_uIndex == pxCtrl->m_xPossessedVillager.m_uIndex
+			&& xId.m_uGeneration == pxCtrl->m_xPossessedVillager.m_uGeneration)
 		{
 			return true;
 		}
 
 		// MVP-2.1.1: refuse a new switch attempt while a Devout channel
 		// is in progress.
-		if (g_bChannelActive)
+		if (pxCtrl->m_bChannelActive)
 		{
 			if (xId.IsValid()
-				&& g_xChannelTarget.IsValid()
-				&& xId.m_uIndex == g_xChannelTarget.m_uIndex
-				&& xId.m_uGeneration == g_xChannelTarget.m_uGeneration)
+				&& pxCtrl->m_xChannelTarget.IsValid()
+				&& xId.m_uIndex == pxCtrl->m_xChannelTarget.m_uIndex
+				&& xId.m_uGeneration == pxCtrl->m_xChannelTarget.m_uGeneration)
 			{
 				return true;
 			}
@@ -159,14 +139,13 @@ namespace DP_Player
 		}
 
 		// Cooldown gate.
-		if (g_fPossessionCooldownRemaining > 0.0f)
+		if (pxCtrl->m_fPossessionCooldownSec > 0.0f)
 		{
 			return false;
 		}
 
 		// MVP-1.4.1-3: state gate. Refuse fainted (still recovering) or
-		// dead villagers. SetPossessedVillager (system path) bypasses
-		// this -- only the player-driven voluntary switch enforces it.
+		// dead villagers.
 		if (xId.IsValid())
 		{
 			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
@@ -189,10 +168,10 @@ namespace DP_Player
 		// MVP-1.8: range gate.
 		Zenith_Maths::Vector3 xNewPos(0.0f);
 		const bool bGotNewPos = xId.IsValid() && TryGetVillagerPos(xId, xNewPos);
-		if (g_bHasPossessionAnchor && bGotNewPos)
+		if (pxCtrl->m_bHasPossessionAnchor && bGotNewPos)
 		{
-			const float fDx = xNewPos.x - g_xPossessionAnchor.x;
-			const float fDz = xNewPos.z - g_xPossessionAnchor.z;
+			const float fDx = xNewPos.x - pxCtrl->m_xPossessionAnchor.x;
+			const float fDz = xNewPos.z - pxCtrl->m_xPossessionAnchor.z;
 			const float fDist = std::sqrt(fDx * fDx + fDz * fDz);
 			const float fMaxRange =
 				DP_Tuning::Get<float>("possession.range_from_anchor_m");
@@ -225,54 +204,62 @@ namespace DP_Player
 
 		if (fChannelSec > 0.0f)
 		{
-			g_xChannelTarget    = xId;
-			g_fChannelRemaining = fChannelSec;
-			g_bChannelActive    = true;
+			pxCtrl->m_xChannelTarget    = xId;
+			pxCtrl->m_fChannelRemaining = fChannelSec;
+			pxCtrl->m_bChannelActive    = true;
 			return true;
 		}
 
-		CommitVoluntaryPossession(xId, xNewPos, bGotNewPos);
+		CommitVoluntaryPossession(*pxCtrl, xId, xNewPos, bGotNewPos);
 		return true;
 	}
 
 	bool IsChanneling()
 	{
-		return g_bChannelActive;
+		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return false;
+		return pxCtrl->m_bChannelActive;
 	}
 
 	Zenith_EntityID GetChannelTarget()
 	{
-		return g_xChannelTarget;
+		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return INVALID_ENTITY_ID;
+		return pxCtrl->m_xChannelTarget;
 	}
 
 	float GetChannelRemaining()
 	{
-		return g_fChannelRemaining;
+		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return 0.0f;
+		return pxCtrl->m_fChannelRemaining;
 	}
 
 	void InterruptChannel()
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::InterruptChannel must be called from main thread");
-		if (!g_bChannelActive) return;
-		g_bChannelActive    = false;
-		g_xChannelTarget    = INVALID_ENTITY_ID;
-		g_fChannelRemaining = 0.0f;
+		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr || !pxCtrl->m_bChannelActive) return;
+		pxCtrl->m_bChannelActive    = false;
+		pxCtrl->m_xChannelTarget    = INVALID_ENTITY_ID;
+		pxCtrl->m_fChannelRemaining = 0.0f;
 	}
 
 	void TickChannel(float fDt)
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::TickChannel must be called from main thread");
-		if (!g_bChannelActive) return;
+		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr || !pxCtrl->m_bChannelActive) return;
 
 		// MVP-2.1.2 interrupt check: any priest within
 		// channel_interrupt_distance_m of the channel target cancels
 		// the channel before the timer runs down.
 		Zenith_Maths::Vector3 xTargetPos(0.0f);
 		const bool bGotTargetPos =
-			g_xChannelTarget.IsValid()
-			&& TryGetVillagerPos(g_xChannelTarget, xTargetPos);
+			pxCtrl->m_xChannelTarget.IsValid()
+			&& TryGetVillagerPos(pxCtrl->m_xChannelTarget, xTargetPos);
 		if (bGotTargetPos)
 		{
 			const float fInterruptDist =
@@ -300,17 +287,17 @@ namespace DP_Player
 			}
 		}
 
-		g_fChannelRemaining -= fDt;
-		if (g_fChannelRemaining <= 0.0f)
+		pxCtrl->m_fChannelRemaining -= fDt;
+		if (pxCtrl->m_fChannelRemaining <= 0.0f)
 		{
-			Zenith_EntityID xTarget = g_xChannelTarget;
-			g_bChannelActive    = false;
-			g_xChannelTarget    = INVALID_ENTITY_ID;
-			g_fChannelRemaining = 0.0f;
+			Zenith_EntityID xTarget = pxCtrl->m_xChannelTarget;
+			pxCtrl->m_bChannelActive    = false;
+			pxCtrl->m_xChannelTarget    = INVALID_ENTITY_ID;
+			pxCtrl->m_fChannelRemaining = 0.0f;
 			Zenith_Maths::Vector3 xCommitPos(0.0f);
 			const bool bGotPos =
 				xTarget.IsValid() && TryGetVillagerPos(xTarget, xCommitPos);
-			CommitVoluntaryPossession(xTarget, xCommitPos, bGotPos);
+			CommitVoluntaryPossession(*pxCtrl, xTarget, xCommitPos, bGotPos);
 		}
 	}
 
@@ -318,25 +305,21 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::TickPossessionCooldown must be called from main thread");
-		if (g_fPossessionCooldownRemaining <= 0.0f) return;
-		g_fPossessionCooldownRemaining -= fDt;
-		if (g_fPossessionCooldownRemaining < 0.0f)
+		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr || pxCtrl->m_fPossessionCooldownSec <= 0.0f) return;
+		pxCtrl->m_fPossessionCooldownSec -= fDt;
+		if (pxCtrl->m_fPossessionCooldownSec < 0.0f)
 		{
-			g_fPossessionCooldownRemaining = 0.0f;
+			pxCtrl->m_fPossessionCooldownSec = 0.0f;
 		}
 	}
 
 	float GetPossessionCooldownRemaining()
 	{
-		return g_fPossessionCooldownRemaining;
+		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return 0.0f;
+		return pxCtrl->m_fPossessionCooldownSec;
 	}
-
-	// 2026-05-17 scene-ownership refactor: all per-villager side
-	// tables (held item, demon scent) live on
-	// DPPlayerController_Behaviour::m_xHeldItems / m_xDemonScent so
-	// they get destroyed automatically when the scene that owns the
-	// controller unloads. Forwarders below return safe defaults when
-	// no controller is loaded (between-scenes / non-DP scenes).
 
 	float GetDemonScent(Zenith_EntityID xVillager)
 	{
@@ -434,15 +417,20 @@ namespace DP_Player
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Player::ResetForNewRun must be called from main thread");
-		g_xPossessedVillager = INVALID_ENTITY_ID;
-		// Note: held-items + demon-scent tables no longer need explicit
-		// reset here -- they're owned by DPPlayerController_Behaviour
-		// which is destroyed on scene unload. 2026-05-17.
-		g_fPossessionCooldownRemaining = 0.0f;
-		g_xPossessionAnchor = Zenith_Maths::Vector3(0.0f);
-		g_bHasPossessionAnchor = false;
-		g_xChannelTarget    = INVALID_ENTITY_ID;
-		g_fChannelRemaining = 0.0f;
-		g_bChannelActive    = false;
+		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return;
+		// Scene-bound state lifetime: held-items + demon-scent tables are
+		// owned by the controller and cleared by Clear() below. Possession,
+		// cooldown, anchor + channel state are also controller-owned now
+		// (2026-05-22 Phase 5.2 migration).
+		pxCtrl->m_xHeldItems.Clear();
+		pxCtrl->m_xDemonScent.Clear();
+		pxCtrl->m_xPossessedVillager     = INVALID_ENTITY_ID;
+		pxCtrl->m_fPossessionCooldownSec = 0.0f;
+		pxCtrl->m_xPossessionAnchor      = Zenith_Maths::Vector3(0.0f);
+		pxCtrl->m_bHasPossessionAnchor   = false;
+		pxCtrl->m_xChannelTarget         = INVALID_ENTITY_ID;
+		pxCtrl->m_fChannelRemaining      = 0.0f;
+		pxCtrl->m_bChannelActive         = false;
 	}
 }

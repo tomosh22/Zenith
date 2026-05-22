@@ -390,12 +390,39 @@ private:
 
 	static inline DPPlayerController_Behaviour* s_pxInstance = nullptr;
 
+	// State block (held-items + demon-scent maps + the per-run state
+	// migrated in Phase 5.2 from PublicInterfaces.cpp anon-namespace
+	// globals). Public so the DP_Player / DP_Win / DP_Night namespace
+	// functions in Source/ can read + write through Instance() without
+	// needing a forwarder per field. Lifetime is tied to this script
+	// instance, which is per-scene singleton — scene unload destroys
+	// every field via the script's OnDestroy.
+public:
 	// Held-item registry: one entry per villager holding an item.
-	// Cleared automatically when this script is destroyed (scene unload).
 	Zenith_HashMap<Zenith_EntityID, DPVillagerHeldRecord> m_xHeldItems;
 
 	// Demon-scent registry: per-villager scalar, accumulates on possession
-	// + decays per-frame via DP_Player::TickDemonScent. Cleared automatically
-	// when this script is destroyed (scene unload).
+	// + decays per-frame via DP_Player::TickDemonScent.
 	Zenith_HashMap<Zenith_EntityID, float> m_xDemonScent;
+
+	// Possession state.
+	Zenith_EntityID       m_xPossessedVillager       = INVALID_ENTITY_ID;
+	float                 m_fPossessionCooldownSec   = 0.0f;
+	Zenith_Maths::Vector3 m_xPossessionAnchor        = Zenith_Maths::Vector3(0.0f);
+	bool                  m_bHasPossessionAnchor     = false;
+
+	// Devout-channel state.
+	Zenith_EntityID       m_xChannelTarget           = INVALID_ENTITY_ID;
+	float                 m_fChannelRemaining        = 0.0f;
+	bool                  m_bChannelActive           = false;
+
+	// Win state (objectives bitmask + has-won flag). Pentagram delivery
+	// is the only writer; HUD + tests read.
+	uint32_t              m_uCollectedObjectivesMask = 0;
+	bool                  m_bHasWon                  = false;
+
+	// Night-timer state. StartNight seeds, TickNight decrements.
+	float                 m_fNightRemainingSec       = 0.0f;
+	bool                  m_bNightActive             = false;
+	bool                  m_bDawnDispatched          = false;
 };

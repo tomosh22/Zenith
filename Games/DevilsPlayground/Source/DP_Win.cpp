@@ -7,25 +7,24 @@
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "DevilsPlayground_Tags.h"
 
-#include <cstdint>
+#include "../Components/DPPlayerController_Behaviour.h"
 
-namespace
-{
-	// ---- DP_Win state (B3 Pentagram fills in) ----
-	uint32_t g_uCollectedObjectivesMask = 0;
-	bool     g_bHasWon = false;
-}
+#include <cstdint>
 
 namespace DP_Win
 {
 	uint32_t GetCollectedObjectivesMask()
 	{
-		return g_uCollectedObjectivesMask;
+		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return 0;
+		return pxCtrl->m_uCollectedObjectivesMask;
 	}
 
 	bool HasWon()
 	{
-		return g_bHasWon;
+		const DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return false;
+		return pxCtrl->m_bHasWon;
 	}
 
 	void NotifyObjectiveCollected(DP_ItemTag eObjective,
@@ -34,9 +33,11 @@ namespace DP_Win
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Win::NotifyObjectiveCollected must be called from main thread");
+		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return;
 		const uint32_t uBit = DP_ObjectiveTagToBit(eObjective);
 		if (uBit == 0) return;
-		g_uCollectedObjectivesMask |= uBit;
+		pxCtrl->m_uCollectedObjectivesMask |= uBit;
 		// 2026-05-21 balance pass: was `mask == DP_ALL_OBJECTIVES_MASK`
 		// (all 5 objectives required), changed to popcount(mask) >=
 		// tuning-value. This lets the design ratchet between "5 of 5"
@@ -45,13 +46,13 @@ namespace DP_Win
 			"night.reagents_required_for_victory");
 		// Manual popcount -- avoids std::popcount C++20 header dep.
 		int iCollected = 0;
-		for (uint32_t u = g_uCollectedObjectivesMask; u; u >>= 1)
+		for (uint32_t u = pxCtrl->m_uCollectedObjectivesMask; u; u >>= 1)
 		{
 			iCollected += static_cast<int>(u & 1u);
 		}
-		if (iCollected >= iRequired && !g_bHasWon)
+		if (iCollected >= iRequired && !pxCtrl->m_bHasWon)
 		{
-			g_bHasWon = true;
+			pxCtrl->m_bHasWon = true;
 			Zenith_EventDispatcher::Get().Dispatch(
 				DP_OnVictory{ xVillager, xPentagram });
 		}
@@ -61,7 +62,9 @@ namespace DP_Win
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Win::Reset must be called from main thread");
-		g_uCollectedObjectivesMask = 0;
-		g_bHasWon = false;
+		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
+		if (pxCtrl == nullptr) return;
+		pxCtrl->m_uCollectedObjectivesMask = 0;
+		pxCtrl->m_bHasWon                  = false;
 	}
 }
