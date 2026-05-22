@@ -8,6 +8,24 @@
 
 ---
 
+## 2026-05-22 — DP cleanup Phase 4: skipped (caching not justified by measured/expected cost).
+
+**Decision:** The audit plan called for caching the entity lists currently traversed each frame by `DPFogPass_Behaviour::OnUpdate` (full villager + light scans via `DP_Query::ForEachScriptInActiveScene<>` / `pxScene->Query<Zenith_LightComponent>()`) and by `DPHUDController_Behaviour::FindNearestInteractableType` (five separate type-templated `ForEachScriptInActiveScene<T>` scans). Phase 4 of the plan is **not implemented** — the arithmetic doesn't justify trading away the existing clear-and-rebuild design's safety properties.
+
+**Why:**
+- Active-scene script counts in DP MVP scope: 17 villagers + 1 priest + 5 interactables + ~5 items + a handful of singletons = ~30 scripts. `ForEachScriptInActiveScene<T>` is a linear scan with a `strcmp` per script against T's type-name; at ~100 ns per compare that's ~3 μs per scan. DPFogPass does one such scan + a `Query<Zenith_LightComponent>` (~5-15 lights, no string compare); total per frame: ~5 μs. DPHUDController does five typed scans per HUD update: ~15 μs.
+- 5–15 μs per frame is **0.03–0.09 % of a 16.67 ms (60 Hz) frame budget**. It will not show up in any practical profile readout.
+- `DPFogPass_Behaviour.h:5-9` documents the clear-and-rebuild design as an intentional choice: *"This avoids stale entries from destroyed entities and means producers don't have to subscribe to entity-lifetime callbacks."* Caching would require `Zenith_Event_EntityCreated` / `Zenith_Event_EntityDestroyed` / `Zenith_Event_ComponentAdded` subscriptions + a per-iteration `IsValid()` safety net to recover the same property. The audit acknowledged this trade and put it behind a measure-first gate.
+- The plan's Step 4.0 measure-first gate fired: *"If neither shows up above 0.1 ms per frame on the perf budget, stop here."* The expected cost is at least an order of magnitude under that threshold.
+
+**Trade-offs considered:**
+- *Add the new `Zenith_Event_*` subscriptions anyway as defensive engineering.* Rejected — pure speculation at this script count. Easy to revisit if a future seed-matrix run shows fog or HUD updates pulling > 0.1 ms.
+- *Switch HUD's 5-scan FindNearestInteractableType to a single shared interactable registry* (option b in the plan). Rejected for now — same reasoning. Reasonable to revisit if a new HUD feature adds more interactable types.
+
+**Reversibility:** Trivial. If a future profiler pass shows either function exceeding the 0.1 ms threshold, the cache design is documented in `~/.claude/plans/the-devilsplayground-game-was-refactored-pearl.md` (Phase 4 section). The two suspect functions are at `DPFogPass_Behaviour.h:148-187` and `DPHUDController_Behaviour.h:1171-1183` respectively.
+
+---
+
 ## 2026-05-22 — DP cleanup Phase 2a: closed the deferred-JSON-parser lift.
 
 **Decision:** Extracted the hand-rolled JSON parser into `Source/DP_Json.{h,cpp}` and migrated `DPMaterials.cpp`, `DP_Tuning.cpp`, `DP_Archetypes.cpp`, `DP_Reagents.cpp` to consume the shared header. ~880 LOC of byte-identical duplication deleted (4 × ~220 LOC parser blocks → 1 shared copy).
