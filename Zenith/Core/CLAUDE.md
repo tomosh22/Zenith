@@ -7,8 +7,12 @@ Engine core utilities, configuration, and main loop.
 ### Root
 - `Zenith.h/cpp` - Master header, type definitions, logging, assertions, GUID system
 - `Zenith_Core.h/cpp` - Main loop, frame timing
+- `Zenith_Engine.h/cpp` - Process-level engine owner (`g_xEngine`) — holds every mutable subsystem
+- `FrameContext.h` - Per-frame timing state owned by the engine
 - `ZenithConfig.h` - Central configuration constants
 - `Zenith_String.h` - String utilities
+- `Zenith_CommandLine.h/cpp` - Parsed once at process start, read-only after
+- `Zenith_GraphicsOptions.h/cpp` - Set once by `Project_SetGraphicsOptions`, read-only after
 
 ### Subdirectories
 - `Memory/` - Memory management system
@@ -104,3 +108,69 @@ Provides `Zenith_ScopedMutexLock` RAII wrapper for locking.
 3. **Same Usage Syntax**: The conversion is transparent to callers - `Zenith_Core::GetDt()` works identically whether `Zenith_Core` is a class or namespace.
 
 4. **Variable Naming**: Changed from `s_` (static member) prefix to `g_` (global) prefix following the codebase naming conventions, since namespace-scope variables are essentially globals.
+
+## Zenith_Engine — Process-Level Engine Owner
+
+`Zenith_Engine` is the single owner of every mutable engine subsystem. There is exactly one instance: the global `g_xEngine`, defined in `Zenith_Engine.cpp`. All subsystem state that used to live in module-scope `g_*` / `s_*` variables now lives behind `g_xEngine.X()` accessors.
+
+```cpp
+// Reading subsystem state — always via g_xEngine
+float fDt = g_xEngine.Frame().GetDt();
+g_xEngine.Physics().Update(fDt);
+g_xEngine.Tasks().SubmitTask(&xTask);
+g_xEngine.SSR().ApplyBlurSelectionToGraph(xGraph);
+```
+
+### constinit-safe Global
+
+`g_xEngine` is `constinit`-eligible: its default constructor and destructor are trivial. All subsystem state is held as **raw pointers to forward-declared `*Impl` classes**, allocated explicitly in `Zenith_Engine::Initialise()` and deleted in `Zenith_Engine::Shutdown()`. This means:
+
+- No work happens at static-init time — no chance of the static-init-order-fiasco that the old `g_*` module variables were vulnerable to.
+- The engine header (`Zenith_Engine.h`) forward-declares every subsystem `*Impl` class; full headers stay out of the engine header to keep its include footprint small. Accessor bodies (`Zenith_TaskSystemImpl& Tasks() { return *m_pxTasks; }`) live in `Zenith_Engine.cpp` where the full subsystem headers are available.
+- Subsystem boot/teardown order lives in `Zenith_Engine::Initialise/Shutdown`, replacing the old `Zenith_Init` / `Zenith_Shutdown` free functions. The order matters — load-bearing comments in those functions encode dependency rules.
+
+### Subsystem Class Convention
+
+Each mutable subsystem now has an `*Impl` class:
+
+- `Zenith_PhysicsImpl`, `Zenith_TaskSystemImpl`, `Zenith_AssetRegistry`, `Flux_RendererImpl`, etc.
+- Public surface uses the historical name (`Zenith_Physics`, `Zenith_Profiling`, ...) as either a thin namespace of free functions that forward to `g_xEngine.X()`, or — for trivially-replaceable static facades — was deleted entirely.
+
+When migrating a call site, prefer `g_xEngine.X().Y()` directly over a forwarder. The forwarders exist as a transitional convenience and were swept down to zero in Phase 9.
+
+### Macro-Driven APIs
+
+Some APIs were kept as namespaces (not classes) because they're surfaced through macros that other TUs include heavily — `ZENITH_PROFILING_FUNCTION_WRAPPER`, `Zenith_DebugVariables::Add*`. The namespace form lets the macro body expand without requiring callers to drag in subsystem implementation details. The state still lives on `g_xEngine`; only the dispatch surface differs.
+
+## What Stays Static (and Why)
+
+Not everything moves onto the engine. These carve-outs are deliberate and the asymmetry is intentional — adding new statics is a code-review red flag *unless* it fits one of these categories:
+
+### Process-level I/O and OS resources
+- **Logging** (`Zenith_Log`, `Zenith_Error`, `Zenith_Warning`, `Zenith_Assert`) — stdout/stderr is a process-level sink. There's nothing per-engine to track.
+- **Memory allocator** (`Zenith_MemoryManagement`) — overloads global `new`/`delete`. Has to be process-level by C++ language semantics.
+- **`Zenith_Window::GetInstance()`** — wraps the OS window, which is itself a process-level resource on every platform we target.
+
+### Per-thread state (not per-engine)
+- **`Zenith_Multithreading` thread-locals** — thread name + thread id are TLS, by definition not per-engine. The thread-registry (mapping thread ids to friendly names) *did* move onto the engine; only the `thread_local` storage stays in module scope.
+
+### Pure / stateless
+- **Math + utility namespaces** — `Zenith_String`, GLM wrappers, `Collections/`, `Maths/`. Stateless functions only; nothing to own.
+- **Compile-time constants** — `ZenithConfig.h`. Read-only.
+
+### Read-only after boot
+- **`Zenith_CommandLine`** — parsed once during process startup. Read-only thereafter.
+- **`Zenith_GraphicsOptions`** — populated once by `Project_SetGraphicsOptions` at boot. Read-only thereafter.
+
+### Static-init registration side-lists
+- **`ZENITH_REGISTER_COMPONENT` / `ZENITH_BEHAVIOUR_TYPE_NAME` macros** — populate process-level side-lists at static-init time. `Zenith_Engine::Initialise()` reads from these lists during construction; moving them onto the engine would create a chicken-and-egg ordering problem with the macros.
+- **`Zenith_ComponentMetaRegistry::Get()`** — populated by `ZENITH_REGISTER_COMPONENT`. Belongs alongside the registration macros (same lifetime, same hazard if moved).
+- **`Zenith_EventDispatcher::Get()`** — process-level event bus populated by static-init registrations. Same rationale.
+
+### Test / automation helpers
+- **`Zenith_InputSimulator`** — test/automation helper. Lives outside the engine's normal-runtime surface so it can be poked at from automated-test driver code without an engine reference.
+
+### The documented singleton
+- **`Zenith_Engine g_xEngine` itself** — the one and only intentional process-level singleton. Everything else hangs off it.
+
+**Practical rule of thumb:** if you find yourself reaching for `static` for new mutable state, check this list. If your case isn't on it, the answer is probably "put it on an `*Impl` class held by `Zenith_Engine`" — see how any of the existing subsystems are wired up for the pattern.
