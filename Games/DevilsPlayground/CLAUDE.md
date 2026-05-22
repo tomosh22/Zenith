@@ -2,8 +2,11 @@
 
 Occult-horror prototype. Click-to-possess top-down gameplay: the player
 picks one of ~17 villagers spawned across a procgen village, races a
-30-second life timer to deliver objective items to a pentagram while
-avoiding a roaming priest.
+per-archetype life timer (45 s for Farmhand / Devout; 37.5 s for Beggar;
+22.5 s for Child -- ratified 2026-05-22 balance pass) to deliver
+objective items to a pentagram while avoiding a roaming priest. The
+win condition is `popcount(collected_mask) >= night.reagents_required_for_victory`
+(currently 3-of-5), set in `DP_Win::NotifyObjectiveCollected`.
 
 Originally ported from a UE5 source map; on 2026-05-19 the hand-authored
 GameLevel scene + the 4 gym scenes + the `Tools/dp_export/` UE-bridge
@@ -101,7 +104,7 @@ reach into each other's headers.
 | `DP_Interactables` | DPInteractable | Marker for non-behaviour entities (currently a no-op stub) |
 | `DP_AI` | Priest + DummyNoiseMachine | `EmitNoise` wraps `Zenith_PerceptionSystem::EmitSoundStimulus`; BB key constants |
 | `DP_Fog` | DPFogPass_Behaviour | `ClearAllFogHoles` → `RegisterFogHole(*N)` per frame |
-| `DP_Win` | DPPentagram | Bitmask of 5 objectives; dispatches `DP_OnVictory` event when 5/5 |
+| `DP_Win` | DPPentagram | Bitmask of 5 objectives; dispatches `DP_OnVictory` event when `popcount(mask) >= night.reagents_required_for_victory` (default 3-of-5 since 2026-05-22; old 5/5 behaviour reachable by setting tuning value to 5) |
 | `DP_Query` | every behaviour that needs it | Template helpers — scripts live INSIDE `Zenith_ScriptComponent`, so `Query<MyBehaviour>` doesn't work; use `DP_Query::ForEachScriptInActiveScene<T>` |
 
 ## Test runner
@@ -148,20 +151,33 @@ life-timer per villager, held-item tag, camera state, per-frame perf
 ms, and 12 new event types (Apprehend channel start/complete/interrupt,
 PerceptionContactBegin/End, etc).
 
-The personality test (`Test_PersonalityPlaythrough.cpp`) registers 4
-personalities — Casual / Stealth / Speedrunner / Zealot — each
-driving the procgen scene through `Zenith_InputSimulator` and emitting
-telemetry. Zealot (PR #128) skips the iron / forge / door / chest /
-noise bootstrap chain entirely and runs straight to the objective
-loop; the other three personalities cover the bootstrap.
+The personality test (`Test_PersonalityPlaythrough.cpp`) registers
+**8 personalities** — Casual / Stealth / Speedrunner / Zealot /
+**Magpie / Relay / Heretic / Trickster** — each driving the procgen
+scene through `Zenith_InputSimulator` and emitting telemetry. The
+first four cover the baseline behaviour axes (walking, walk-quiet,
+adaptive sprint, skip-bootstrap); the latter four (added 2026-05-21)
+exercise opportunistic-objective-pickup (Magpie), voluntary-switch
+drop-handoff (Relay), priest-bait-via-noise-machine (Heretic), and
+the Magpie+Relay+bootstrap+adaptive combo (Trickster). See
+`Tests/CLAUDE.md` for the per-personality axis table.
 
-The seed-matrix tooling (PR #121) runs the 4 personalities across N
-procgen seeds (default `0, 12345, 99999`; the 10-seed extended set is
-`0, 1, 7, 42, 100, 12345, 55555, 99999, 250000, 4276994270`) and
-produces a per-cell telemetry artifact + an aggregate
-`matrix_summary.json` + a `REPORT.md` rendered by the analyser. Used
-to detect personality-vs-procgen-layout interactions ("does Zealot
-under-deliver on seed 0?", "is sprint balance fair?", etc).
+The seed-matrix tooling (PR #121) runs the 8 personalities across N
+procgen seeds (default `0, 12345, 99999`; the canonical 10-seed test
+set ratified by the 2026-05-22 balance pass is
+`1, 5, 7, 42, 100, 12345, 55555, 99999, 250000, 4276994270` -- seed 0
+excluded because its procgen layout is unsolvable; see
+`Docs/Shortfalls.md`). Produces a per-cell telemetry artifact + an
+aggregate `matrix_summary.json` + a `REPORT.md` rendered by the
+analyser. Used to detect personality-vs-procgen-layout interactions.
+
+The bar the matrix is judged against (ratified 2026-05-21):
+1. Every personality has win rate strictly between 0% and 100%
+2. Every level (procgen seed in the canonical set) is winnable by at
+   least one personality
+
+Both criteria are currently met -- see `Docs/GameBalance_2026-05-22.md`
+for the per-personality breakdown.
 
 Run the matrix:
 

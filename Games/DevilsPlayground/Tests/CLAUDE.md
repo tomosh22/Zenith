@@ -49,7 +49,7 @@ Between batched tests the harness:
 | `Test_ProcLevel_*` | Procgen generator unit tests |
 | `Test_DPTelemetry*` / `Test_Telemetry*` | Telemetry recorder / analyser / hooks |
 | `Test_DPHeuristicBot_*` | Heuristic bot pathing / goal dispatch |
-| `PersonalityPlaythrough_*` | The 4-personality matrix tests (Casual / Stealth / Speedrunner / Zealot) |
+| `PersonalityPlaythrough_*` | The 8-personality matrix tests (Casual / Stealth / Speedrunner / Zealot + Magpie / Relay / Heretic / Trickster) |
 | `Test_<Subsystem>` (no prefix) | Smoke + contract tests authored pre-Phase-1 |
 
 The convention isn't strict — `Test_P1Apprehend_*` and
@@ -75,36 +75,94 @@ The headless boot in `Zenith_Main` branches on
 
 ## The personality framework
 
-`Test_PersonalityPlaythrough.cpp` registers four tests sharing a Setup
-/ Step / Verify trio + a per-personality `g_xActiveCfg`:
+`Test_PersonalityPlaythrough.cpp` registers **8 tests** sharing a Setup
+/ Step / Verify trio + a per-personality `g_xActiveCfg`. Each personality
+toggles a small bundle of input-layer flags — adding a new one is
+~30 lines (enum value + `kPersonality_X` constexpr + Setup wrapper +
+`ZENITH_AUTOMATED_TEST_REGISTER`).
 
 ```
 PersonalityPlaythrough_Casual       Walks normally, single F-press, runs the pause overlay
                                     test, engages every system. Reference recording.
-PersonalityPlaythrough_Stealth      Holds Ctrl while walking (walk-quiet, half speed,
-                                    halved footstep loudness). Skips the noise machine
-                                    entirely. Walk-budget x2 because half speed.
+PersonalityPlaythrough_Stealth      Holds Ctrl while walking (walk-quiet, 0.875x speed of
+                                    jog as of 2026-05-22, halved footstep loudness x0.25).
+                                    Skips the noise machine entirely. Walk-budget x2.
+                                    iObjAttemptCap=24 (slow walker -> more retries).
 PersonalityPlaythrough_Speedrunner  Adaptive sprint -- holds Shift only while the next
                                     target is > 5 m away; walks close approaches. Runs
-                                    the full bootstrap chain.
+                                    the full bootstrap chain. Sprint life-cost is now
+                                    1.5/s (was 1.0 -- bumped 2026-05-22 because cheap
+                                    sprint let Speedrunner win 100% of seeds).
 PersonalityPlaythrough_Zealot       Skips the entire iron/forge/door/chest/noise
                                     bootstrap -- jumps straight from possession to the
                                     objective-deliver loop. Adaptive sprint between
-                                    targets. (Replaced Berserker on 2026-05-20 -- see
-                                    DecisionLog for the seed-matrix analysis that
-                                    motivated the swap.)
+                                    targets. (Replaced Berserker on 2026-05-20.)
+PersonalityPlaythrough_Magpie       (NEW 2026-05-21) Opportunistic objective ordering --
+                                    picks the closest uncollected objective each iter
+                                    instead of fixed Obj1->5 order. Runs full bootstrap.
+                                    Empirical question: how much of Zealot's underperform-
+                                    ance was fixed-order traversal cost?
+PersonalityPlaythrough_Relay        (NEW 2026-05-21) Voluntary-switch + drop-handoff. When
+                                    life timer drops below 5 s while holding an obj, drops
+                                    it at the foot of the nearest healthy villager and
+                                    click-possesses them (voluntary-faint, not death).
+                                    Skips bootstrap. iObjAttemptCap=20.
+PersonalityPlaythrough_Heretic      (NEW 2026-05-21) Walks to + F-presses the noise machine
+                                    BEFORE the objective loop (priest distraction bait),
+                                    then jumps to obj loop. Skips iron/forge/door/chest.
+                                    Distract-frame count was 90 originally; dropped to 0
+                                    in 2026-05-21 because lingering pulled priest INTO the
+                                    bot rather than away. iObjAttemptCap=12 (noise expires).
+PersonalityPlaythrough_Trickster    (NEW 2026-05-21 PR #140) Magpie's any-order pick +
+                                    Relay's voluntary-switch + Casual's bootstrap chain +
+                                    Speedrunner's adaptive sprint. The combo predicted
+                                    strongest by the 7p x 10s matrix. iObjAttemptCap=20.
 ```
 
 Each test drives the procgen scene through `Zenith_InputSimulator` —
 mouse click to possess, WASD camera-relative to walk, Shift / Ctrl
-modifier keys, F to interact, Esc / R / Q for pause / restart / quit.
-**No teleporting, no `*ForTest` bypass, no `SetPossessedVillager`** —
-every action goes through the same input path the player uses.
+modifier keys, F to interact, G to drop, Esc / R / Q for pause /
+restart / quit. **No teleporting, no `*ForTest` bypass, no
+`SetPossessedVillager`** — every action goes through the same input
+path the player uses.
+
+### PersonalityConfig fields
+
+The personality test reads these per-personality flags off
+`g_xActiveCfg`. Adding a new flag means: (1) add to the
+`PersonalityConfig` struct + (2) initialise it on all 8 existing
+configs + (3) read it from the Step machine.
+
+| Field | Meaning |
+|---|---|
+| `bHoldSprint` | Hold Shift for the whole walk (always sprint) |
+| `bHoldQuiet` | Hold Ctrl for the whole walk (walk-quiet) |
+| `bAdaptiveSprint` | Sprint only while target > `kSprintMinDistanceM` (5 m) away |
+| `bSkipBootstrap` | Skip iron / forge / door / chest / noise -- jump straight to obj loop |
+| `bRunNoiseMachine` | Walk to + engage the noise machine on the bootstrap path |
+| `bRunPauseTest` | Run the Esc pause-overlay phases at all |
+| `iPauseCycles` | How many open/close cycles when `bRunPauseTest` |
+| `iWalkBudgetMul` | Multiplier on the 1200-frame per-walk budget (Stealth = 2) |
+| `bAnyOrderObjectives` | (Magpie) Pick closest uncollected obj each iter, not fixed Obj1->5 |
+| `bUseRelayDrop` | (Relay) Drop + voluntary-switch when life < `kRelayLifeThresholdSec` |
+| `bDeliberateNoiseFirst` | (Heretic) F-press noise machine FIRST, before bootstrap |
+| `iObjAttemptCap` | (2026-05-22) Per-personality patience cap on the obj-loop retry counter. Default 16; Heretic 12 (noise expires), Stealth 24 (slow walker), Relay/Trickster 20 (click-miss burns attempts). Replaces the old global `kMaxObjAttempts` constant. |
 
 Path-finding for the bot uses a 240×240 grid (0.5 m cells) over the
 playable area. The grid is rebuilt on door open / scene reload via the
 `g_bPathGridBuilt` flag. A* between current villager position and
 target; side-step recovery (90° rotate for 0.5 s) on stuck-detect.
+
+> **Known follow-up**: this grid-A* duplicates the engine's
+> `Zenith_Pathfinding::FindPath` over the navmesh (which the priest
+> uses). A 2026-05-22 refactor attempt found that FindPath returns
+> FAILED for ~99% of bot queries on procgen layouts even with explicit
+> polygon-centre snapping -- suggests engine-side issue in
+> `Zenith_NavMeshGenerator` polygon coverage. Reverted; deferred as
+> engine work. The door collider physics fix that landed in the same
+> PR brings the bot's grid into parity with the player's capsule
+> physics (both now correctly block on closed doors), regardless of
+> which pathfinding system the bot uses.
 
 Cross-possession memory (PR #127) — when a villager dies mid-walk
 holding an objective, the bot:
@@ -115,20 +173,45 @@ holding an objective, the bot:
 - Doesn't increment the per-objective attempt counter (the failure was
   the death, not the delivery attempt).
 
+### Win condition (since 2026-05-22)
+
+`DP_Win::NotifyObjectiveCollected` fires `DP_OnVictory` when
+`popcount(collected_mask) >= night.reagents_required_for_victory`.
+Default tuning is **3-of-5**; the test bot reads the same mask via
+`DP_Win::GetCollectedObjectivesMask` + `DP_Win::HasWon`. Changing the
+tuning value flips the win bar without a code change.
+
 ## Seed-matrix tooling
 
-Across the 4 personalities × N procgen seeds:
+Across the 8 personalities × N procgen seeds. Default `-Parallelism 16`
+uses one engine process per HW thread (the runner spawns concurrent
+DP processes; matrix wall-clock is ~20 min for 80 cells on a 16-thread
+box, vs ~50 min serial).
 
 ```
-# Default 3 seeds (0, 12345, 99999)
+# Quick smoke (3 default seeds)
 powershell -NoProfile -File Tools/dp_seed_matrix_run.ps1
 
-# 10-seed extended pool
-powershell -NoProfile -File Tools/dp_seed_matrix_run.ps1 -Seeds 0,1,7,42,100,12345,55555,99999,250000,4276994270
+# Canonical 10-seed test set (ratified 2026-05-22 -- excludes seed 0
+# because its procgen layout is unsolvable; see Docs/Shortfalls.md).
+pwsh -Command "& 'Tools/dp_seed_matrix_run.ps1' -Seeds @(1,5,7,42,100,12345,55555,99999,250000,4276994270) -Parallelism 16"
 
-# Regenerate the analyser report from existing telemetry
+# Cross-personality summary (win-rate / ObjsAvg / deaths / etc).
+python Tools/dp_personality_compare.py
+
+# Regenerate the legacy analyser report from existing telemetry.
 python Tools/dp_seed_matrix_analyse.py
 ```
+
+### Balance criteria (ratified 2026-05-21 by user)
+
+1. Every personality has win rate strictly between 0% and 100% (each
+   wins some games AND loses some).
+2. Every level (procgen seed in the canonical 10-seed set) is winnable
+   by at least one personality.
+
+Both currently met -- per-personality details in
+`Docs/GameBalance_2026-05-22.md`.
 
 Each cell writes a per-(seed, personality) `.ztlm` + `.json` to
 `Build/dp_telemetry/seed_matrix/seed_<seed>/<personality>.*`, plus a
@@ -263,7 +346,7 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 | Procgen | `Test_ProcLevel_BSP`, `Test_ProcLevel_DeterminismCheck`, `Test_ProcLevelScene`, `Test_ProcLevelBootstrap`, `Test_BuildingWallClosure` |
 | Telemetry | `Test_TelemetryRoundTrip`, `Test_TelemetryEdgeCases`, `Test_DPTelemetryHooks`, `Test_DPTelemetryAnalyzer` |
 | Heuristic bot | `Test_DPHeuristicBotPlaythrough`, `Test_DPHeuristicBot_Pathing`, `Test_DPHeuristicBot_GoalDispatch` |
-| Personality matrix | `PersonalityPlaythrough_Casual`, `_Stealth`, `_Speedrunner`, `_Zealot` |
+| Personality matrix | `PersonalityPlaythrough_Casual`, `_Stealth`, `_Speedrunner`, `_Zealot`, `_Magpie`, `_Relay`, `_Heretic`, `_Trickster` |
 
 ### Smoke + per-system tests
 

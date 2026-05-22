@@ -92,6 +92,19 @@ Every player decision in *Devil's Playground* is shaped by these three nested ti
 | **Night** | 25–35 min (per run) | The Pursuivant gains a new advantage at the 5/10/15/20 min marks. |
 | **Campaign** | 7 nights | Permanent state transitions in the village. |
 
+> **2026-05-22 prototype tuning note:** the shipping design above
+> targets a 30 s possession timer. The current prototype's MVP
+> archetypes (`Config/Archetypes.json`) use 45 s for Farmhand /
+> Devout, 37.5 s for Beggar, 22.5 s for Child -- raised from the
+> baseline 30 s as part of the 2026-05-22 game-balance pass so the
+> 8-personality bot matrix could satisfy the user-ratified balance
+> criteria (every personality WR in (0%, 100%); every level winnable
+> by ≥1 personality). The shipping design hasn't changed; the
+> prototype tuning is a temporary calibration while the bot test bar
+> is at its current threshold. Reverting to 30 s is a single-line
+> change to each archetype + the spec test once the bot can pass at
+> the original numbers.
+
 The smallest loop — the **moment-to-moment loop** — is:
 
 1. **Scan.** Pan the camera. Find the next reagent, the next safe body, the nearest distraction.
