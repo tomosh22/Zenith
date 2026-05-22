@@ -9,12 +9,13 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Maths/Zenith_Maths.h"
 
+#include "Collections/Zenith_HashMap.h"
+
 #include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <string>
-#include <unordered_map>
 
 namespace
 {
@@ -86,8 +87,8 @@ namespace
 	// ---------------------------------------------------------------------------
 	bool s_bInitialized = false;
 	uint32_t s_uRegisteredMaterialCount = 0;
-	std::unordered_map<std::string, Zenith_MaterialAsset*>* s_pxStemMap = nullptr;
-	std::unordered_map<Zenith_MaterialAsset*, Zenith_MaterialAsset*>* s_pxPossessedMap = nullptr;
+	Zenith_HashMap<std::string, Zenith_MaterialAsset*>* s_pxStemMap = nullptr;
+	Zenith_HashMap<Zenith_MaterialAsset*, Zenith_MaterialAsset*>* s_pxPossessedMap = nullptr;
 	Zenith_MaterialAsset* s_pxDefaultMaterial = nullptr;
 
 	// ---------------------------------------------------------------------------
@@ -293,7 +294,7 @@ namespace
 			if (!pxMat) continue;
 
 			std::string strStem = xPath.stem().string();
-			(*s_pxStemMap)[strStem] = pxMat;
+			s_pxStemMap->Insert(strStem, pxMat);
 			++s_uRegisteredMaterialCount;
 		}
 	}
@@ -308,8 +309,8 @@ namespace DPMaterials
 	{
 		if (s_bInitialized) return;
 
-		s_pxStemMap = new std::unordered_map<std::string, Zenith_MaterialAsset*>();
-		s_pxPossessedMap = new std::unordered_map<Zenith_MaterialAsset*, Zenith_MaterialAsset*>();
+		s_pxStemMap = new Zenith_HashMap<std::string, Zenith_MaterialAsset*>();
+		s_pxPossessedMap = new Zenith_HashMap<Zenith_MaterialAsset*, Zenith_MaterialAsset*>();
 		s_uRegisteredMaterialCount = 0;
 
 		// Build the canonical default material first so it has a stable handle
@@ -344,18 +345,22 @@ namespace DPMaterials
 		// the materials at engine teardown. Do this before zeroing the maps.
 		if (s_pxStemMap)
 		{
-			for (auto& xPair : *s_pxStemMap)
+			Zenith_HashMap<std::string, Zenith_MaterialAsset*>::Iterator it(*s_pxStemMap);
+			while (!it.Done())
 			{
-				if (xPair.second) xPair.second->Release();
+				if (it.GetValue()) it.GetValue()->Release();
+				it.Next();
 			}
 			delete s_pxStemMap;
 			s_pxStemMap = nullptr;
 		}
 		if (s_pxPossessedMap)
 		{
-			for (auto& xPair : *s_pxPossessedMap)
+			Zenith_HashMap<Zenith_MaterialAsset*, Zenith_MaterialAsset*>::Iterator it(*s_pxPossessedMap);
+			while (!it.Done())
 			{
-				if (xPair.second) xPair.second->Release();
+				if (it.GetValue()) it.GetValue()->Release();
+				it.Next();
 			}
 			delete s_pxPossessedMap;
 			s_pxPossessedMap = nullptr;
@@ -377,8 +382,8 @@ namespace DPMaterials
 	Zenith_MaterialAsset* GetMaterialByStem(const std::string& strStem)
 	{
 		if (!s_pxStemMap) return nullptr;
-		auto it = s_pxStemMap->find(strStem);
-		return (it != s_pxStemMap->end()) ? it->second : nullptr;
+		Zenith_MaterialAsset* const* ppxMat = s_pxStemMap->TryGet(strStem);
+		return ppxMat ? *ppxMat : nullptr;
 	}
 
 	std::string UEPathToRegistryPath(const std::string& strUEPath)
@@ -398,8 +403,8 @@ namespace DPMaterials
 		if (!pxBase) return nullptr;
 		if (!s_pxPossessedMap) return pxBase;
 
-		auto it = s_pxPossessedMap->find(pxBase);
-		if (it != s_pxPossessedMap->end()) return it->second;
+		Zenith_MaterialAsset* const* ppxExisting = s_pxPossessedMap->TryGet(pxBase);
+		if (ppxExisting != nullptr) return *ppxExisting;
 
 		std::string strBaseName = pxBase->GetName();
 		std::string strRegPath = std::string("game:Materials/Possessed_") + strBaseName + ".zmtrl";
@@ -436,7 +441,7 @@ namespace DPMaterials
 		// Pin: see comment in AuthorMaterialFromJson about UnloadUnused.
 		pxTint->AddRef();
 
-		(*s_pxPossessedMap)[pxBase] = pxTint;
+		s_pxPossessedMap->Insert(pxBase, pxTint);
 		++s_uRegisteredMaterialCount;
 		return pxTint;
 	}

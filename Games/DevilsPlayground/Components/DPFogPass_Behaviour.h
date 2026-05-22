@@ -18,7 +18,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Components/DPVillager_Behaviour.h"
 
-#include <unordered_map>
+#include "Collections/Zenith_HashMap.h"
 
 // FogHole + MemoryCellKey live next to their owning script so the
 // PublicInterfaces.cpp anon-namespace doesn't need to forward-declare
@@ -72,42 +72,39 @@ public:
 	static DPFogPass_Behaviour* Instance() { return s_pxInstance; }
 
 	//==========================================================================
-	// Fog-hole registry. Keyed by packed emitter EntityID (villager or light).
+	// Fog-hole registry. Keyed by emitter EntityID (villager or light).
 	// Cleared via per-frame ClearAllFogHoles in OnUpdate -- the table never
 	// holds stale entries between frames, but it's still scene-owned so
 	// nothing leaks across scene transitions either.
 	//==========================================================================
-	static uint64_t PackEntityID(Zenith_EntityID xID)
-	{
-		return (static_cast<uint64_t>(xID.m_uGeneration) << 32)
-		     | static_cast<uint64_t>(xID.m_uIndex);
-	}
-
 	void RegisterFogHole(Zenith_EntityID xId, float fRadius)
 	{
 		DPFogHole xHole;
 		xHole.m_xId     = xId;
 		xHole.m_fRadius = fRadius;
-		m_xFogHoles[PackEntityID(xId)] = xHole;
+		m_xFogHoles.Insert(xId, xHole);
 	}
 
 	void UnregisterFogHole(Zenith_EntityID xId)
 	{
-		m_xFogHoles.erase(PackEntityID(xId));
+		m_xFogHoles.Remove(xId);
 	}
 
-	void ClearAllFogHoles() { m_xFogHoles.clear(); }
+	void ClearAllFogHoles() { m_xFogHoles.Clear(); }
 
-	uint32_t GetFogHoleCount() const { return static_cast<uint32_t>(m_xFogHoles.size()); }
+	uint32_t GetFogHoleCount() const { return static_cast<uint32_t>(m_xFogHoles.GetSize()); }
 
 	// Callback iteration -- decouples the namespace consumer from
-	// std::unordered_map. Callback signature: void(Zenith_EntityID, float).
+	// Zenith_HashMap. Callback signature: void(Zenith_EntityID, float).
 	template <typename TFn>
 	void ForEachFogHole(TFn xFn) const
 	{
-		for (const auto& [uPacked, xHole] : m_xFogHoles)
+		Zenith_HashMap<Zenith_EntityID, DPFogHole>::Iterator it(m_xFogHoles);
+		while (!it.Done())
 		{
+			const DPFogHole& xHole = it.GetValue();
 			xFn(xHole.m_xId, xHole.m_fRadius);
+			it.Next();
 		}
 	}
 
@@ -116,24 +113,29 @@ public:
 	// cell's age in seconds since the most recent reveal. Read by
 	// GetMemoryStateAt; written by RecordMemoryReveal + TickMemoryFog.
 	//==========================================================================
-	void RecordMemoryRevealCell(const DPMemoryCellKey& xKey) { m_xMemoryReveals[xKey] = 0.0f; }
+	void RecordMemoryRevealCell(const DPMemoryCellKey& xKey) { m_xMemoryReveals.Insert(xKey, 0.0f); }
 
 	void TickMemoryFog(float fDt)
 	{
 		if (fDt <= 0.0f) return;
-		for (auto& xPair : m_xMemoryReveals) xPair.second += fDt;
+		Zenith_HashMap<DPMemoryCellKey, float, DPMemoryCellKeyHash>::Iterator it(m_xMemoryReveals);
+		while (!it.Done())
+		{
+			it.GetValueMutable() += fDt;
+			it.Next();
+		}
 	}
 
 	float GetMemoryCellAgeOrNeg1(const DPMemoryCellKey& xKey) const
 	{
-		const auto it = m_xMemoryReveals.find(xKey);
-		if (it == m_xMemoryReveals.end()) return -1.0f;
-		return it->second;
+		const float* pxAge = m_xMemoryReveals.TryGet(xKey);
+		if (pxAge == nullptr) return -1.0f;
+		return *pxAge;
 	}
 
-	void ClearAllMemoryReveals() { m_xMemoryReveals.clear(); }
+	void ClearAllMemoryReveals() { m_xMemoryReveals.Clear(); }
 
-	uint32_t GetMemoryRevealCount() const { return static_cast<uint32_t>(m_xMemoryReveals.size()); }
+	uint32_t GetMemoryRevealCount() const { return static_cast<uint32_t>(m_xMemoryReveals.GetSize()); }
 
 	void OnUpdate(const float /*fDt*/) ZENITH_FINAL override
 	{
@@ -198,6 +200,6 @@ private:
 
 	// Per-scene fog-hole + memory-fog tables. Cleared automatically
 	// when this script is destroyed (scene unload).
-	std::unordered_map<uint64_t, DPFogHole> m_xFogHoles;
-	std::unordered_map<DPMemoryCellKey, float, DPMemoryCellKeyHash> m_xMemoryReveals;
+	Zenith_HashMap<Zenith_EntityID, DPFogHole> m_xFogHoles;
+	Zenith_HashMap<DPMemoryCellKey, float, DPMemoryCellKeyHash> m_xMemoryReveals;
 };

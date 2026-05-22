@@ -19,8 +19,6 @@
 #include "../Components/DPPlayerController_Behaviour.h"
 #include "../Components/DPFogPass_Behaviour.h"
 
-#include <unordered_map>
-
 // ============================================================================
 // W0-stub coordinator state.
 // Wave-2 streams (B2 player, B3 items, B6 fog, etc.) extend each section with
@@ -76,26 +74,6 @@ namespace
 		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
 		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
 		return true;
-	}
-
-	// Per-villager held-item record. Mutated by DP_Player::SetHeldItem /
-	// RemoveHeldItem, read by DP_Player::GetHeldItem*. EntityID hashes via
-	// (m_uIndex,m_uGeneration) — pack to uint64_t for std::unordered_map.
-	uint64_t PackEntityID(Zenith_EntityID xID)
-	{
-		return (static_cast<uint64_t>(xID.m_uGeneration) << 32) | static_cast<uint64_t>(xID.m_uIndex);
-	}
-
-	// Inverse of PackEntityID -- recovers an EntityID from the packed
-	// uint64_t key used in side-table std::unordered_maps. Used by the
-	// scent table's "find highest" scan to translate a winning map entry
-	// back into a handle the blackboard can store.
-	Zenith_EntityID UnpackEntityID(uint64_t uKey)
-	{
-		Zenith_EntityID xID;
-		xID.m_uIndex      = static_cast<uint32_t>(uKey & 0xFFFFFFFFull);
-		xID.m_uGeneration = static_cast<uint32_t>((uKey >> 32) & 0xFFFFFFFFull);
-		return xID;
 	}
 
 	// (DP_Player held-item table removed 2026-05-17 -- moved onto

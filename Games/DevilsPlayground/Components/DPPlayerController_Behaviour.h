@@ -29,7 +29,8 @@
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/DPItemBase_Behaviour.h"
 
-#include <unordered_map>
+#include "Collections/Zenith_HashMap.h"
+#include "Collections/Zenith_Vector.h"
 
 // VillagerHeldRecord lives outside the class so callers (DP_Player
 // namespace functions in PublicInterfaces.cpp) can refer to it without
@@ -73,37 +74,31 @@ public:
 	static DPPlayerController_Behaviour* Instance() { return s_pxInstance; }
 
 	//==========================================================================
-	// Held-item registry. Keyed by packed villager EntityID. Mutated by
+	// Held-item registry. Keyed by villager EntityID. Mutated by
 	// DP_Player::SetHeldItem / RemoveHeldItem; read by GetHeldItem*.
 	//==========================================================================
-	static uint64_t PackEntityID(Zenith_EntityID xID)
-	{
-		return (static_cast<uint64_t>(xID.m_uGeneration) << 32)
-		     | static_cast<uint64_t>(xID.m_uIndex);
-	}
-
 	void SetHeldItemRecord(Zenith_EntityID xVillager, const DPVillagerHeldRecord& xRec)
 	{
-		m_xHeldItems[PackEntityID(xVillager)] = xRec;
+		m_xHeldItems.Insert(xVillager, xRec);
 	}
 
 	void RemoveHeldItem(Zenith_EntityID xVillager)
 	{
-		m_xHeldItems.erase(PackEntityID(xVillager));
+		m_xHeldItems.Remove(xVillager);
 	}
 
 	DP_ItemTag GetHeldItemTag(Zenith_EntityID xVillager) const
 	{
-		auto it = m_xHeldItems.find(PackEntityID(xVillager));
-		if (it == m_xHeldItems.end()) return DP_ItemTag::None;
-		return it->second.m_eTag;
+		const DPVillagerHeldRecord* pxRec = m_xHeldItems.TryGet(xVillager);
+		if (pxRec == nullptr) return DP_ItemTag::None;
+		return pxRec->m_eTag;
 	}
 
 	Zenith_EntityID GetHeldItemEntity(Zenith_EntityID xVillager) const
 	{
-		auto it = m_xHeldItems.find(PackEntityID(xVillager));
-		if (it == m_xHeldItems.end()) return INVALID_ENTITY_ID;
-		return it->second.m_xItem;
+		const DPVillagerHeldRecord* pxRec = m_xHeldItems.TryGet(xVillager);
+		if (pxRec == nullptr) return INVALID_ENTITY_ID;
+		return pxRec->m_xItem;
 	}
 
 	//==========================================================================
@@ -112,31 +107,38 @@ public:
 	//==========================================================================
 	float GetDemonScent(Zenith_EntityID xVillager) const
 	{
-		auto it = m_xDemonScent.find(PackEntityID(xVillager));
-		if (it == m_xDemonScent.end()) return 0.0f;
-		return it->second;
+		const float* pxScent = m_xDemonScent.TryGet(xVillager);
+		if (pxScent == nullptr) return 0.0f;
+		return *pxScent;
 	}
 
 	void BumpDemonScent(Zenith_EntityID xVillager, float fAddAmount, float fMax)
 	{
-		const uint64_t uKey = PackEntityID(xVillager);
-		float fNew = m_xDemonScent[uKey] + fAddAmount;
+		const float* pxExisting = m_xDemonScent.TryGet(xVillager);
+		float fNew = (pxExisting != nullptr ? *pxExisting : 0.0f) + fAddAmount;
 		if (fNew > fMax) fNew = fMax;
-		m_xDemonScent[uKey] = fNew;
+		m_xDemonScent.Insert(xVillager, fNew);
 	}
 
 	// Decays every entry by fDecayPerSec * fDt and erases rows that
-	// hit zero. Iterate-and-erase to keep the table from accumulating
-	// dead handles.
+	// hit zero. Two-pass collect-then-remove pattern because
+	// Zenith_HashMap::Iterator does not support iterate-and-erase.
 	void DecayDemonScent(float fDecayPerSec, float fDt)
 	{
-		if (m_xDemonScent.empty()) return;
+		if (m_xDemonScent.IsEmpty()) return;
 		const float fDecay = fDecayPerSec * fDt;
-		for (auto it = m_xDemonScent.begin(); it != m_xDemonScent.end(); )
+		Zenith_Vector<Zenith_EntityID> axDead;
+		Zenith_HashMap<Zenith_EntityID, float>::Iterator it(m_xDemonScent);
+		while (!it.Done())
 		{
-			it->second -= fDecay;
-			if (it->second <= 0.0f) it = m_xDemonScent.erase(it);
-			else ++it;
+			float& fScent = it.GetValueMutable();
+			fScent -= fDecay;
+			if (fScent <= 0.0f) axDead.PushBack(it.GetKey());
+			it.Next();
+		}
+		for (u_int u = 0; u < axDead.GetSize(); ++u)
+		{
+			m_xDemonScent.Remove(axDead.Get(u));
 		}
 	}
 
@@ -145,16 +147,15 @@ public:
 	template <typename TFn>
 	void ForEachDemonScentEntry(TFn xFn) const
 	{
-		for (const auto& [uPacked, fScent] : m_xDemonScent)
+		Zenith_HashMap<Zenith_EntityID, float>::Iterator it(m_xDemonScent);
+		while (!it.Done())
 		{
-			Zenith_EntityID xId;
-			xId.m_uIndex      = static_cast<uint32_t>(uPacked & 0xFFFFFFFFu);
-			xId.m_uGeneration = static_cast<uint32_t>(uPacked >> 32);
-			xFn(xId, fScent);
+			xFn(it.GetKey(), it.GetValue());
+			it.Next();
 		}
 	}
 
-	bool HasDemonScentEntries() const { return !m_xDemonScent.empty(); }
+	bool HasDemonScentEntries() const { return !m_xDemonScent.IsEmpty(); }
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
@@ -391,10 +392,10 @@ private:
 
 	// Held-item registry: one entry per villager holding an item.
 	// Cleared automatically when this script is destroyed (scene unload).
-	std::unordered_map<uint64_t, DPVillagerHeldRecord> m_xHeldItems;
+	Zenith_HashMap<Zenith_EntityID, DPVillagerHeldRecord> m_xHeldItems;
 
 	// Demon-scent registry: per-villager scalar, accumulates on possession
 	// + decays per-frame via DP_Player::TickDemonScent. Cleared automatically
 	// when this script is destroyed (scene unload).
-	std::unordered_map<uint64_t, float> m_xDemonScent;
+	Zenith_HashMap<Zenith_EntityID, float> m_xDemonScent;
 };
