@@ -990,9 +990,26 @@ private:
 	// Wait for the puzzle to be in PLAYING state
 	void UpdateFullGame_WaitForPlaying()
 	{
+		// TilePuzzle::NextLevel auto-loads the pinball scene when the next level
+		// is a gate (every 10th level). If the puzzle is gone but pinball is
+		// present, divert into the pinball flow for this gate instead of
+		// timing out waiting for the puzzle that's no longer loaded.
 		m_pxPuzzleBehaviour = FindPuzzleBehaviour();
 		if (!m_pxPuzzleBehaviour)
 		{
+			if (FindPinballBehaviour())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  Pinball gate %u auto-loaded after level %u",
+					m_uFullGameNextGate, m_uFullGameCurrentLevel - 1);
+				// Reset per-gate tracking and dive straight into the pinball wait phase.
+				m_uPinballLaunchCount = 0;
+				m_uPinballGateAttempts = 0;
+				m_uPinballTotalFrames = 0;
+				m_uWaitFrames = 0;
+				m_ePhase = PHASE_FULL_GAME_PINBALL_WAIT;
+				m_uFrameDelay = 5;
+				return;
+			}
 			m_uWaitFrames++;
 			if (m_uWaitFrames > 120)
 			{
