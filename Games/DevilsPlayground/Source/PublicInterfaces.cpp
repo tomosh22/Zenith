@@ -133,6 +133,8 @@ namespace DP_Player
 
 	void SetPossessedVillager(Zenith_EntityID xId)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::SetPossessedVillager must be called from main thread");
 		// Snapshot prior possession BEFORE the assign so the dispatched
 		// event carries the actual transition (old, new). Skip the
 		// dispatch when nothing changed (idempotent re-set with the same
@@ -175,6 +177,8 @@ namespace DP_Player
 		const Zenith_Maths::Vector3& xNewPos,
 		bool bGotNewPos)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::CommitVoluntaryPossession must be called from main thread");
 		g_xPossessedVillager = xId;
 		g_fPossessionCooldownRemaining =
 			DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
@@ -211,6 +215,8 @@ namespace DP_Player
 
 	bool TryVoluntaryPossessSwitch(Zenith_EntityID xId)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::TryVoluntaryPossessSwitch must be called from main thread");
 		// Idempotent re-click: clicking the same villager you're already
 		// possessing is a no-op (and doesn't waste the cooldown window
 		// or trip the range gate).
@@ -348,6 +354,8 @@ namespace DP_Player
 
 	void InterruptChannel()
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::InterruptChannel must be called from main thread");
 		if (!g_bChannelActive) return;
 		g_bChannelActive    = false;
 		g_xChannelTarget    = INVALID_ENTITY_ID;
@@ -360,6 +368,8 @@ namespace DP_Player
 
 	void TickChannel(float fDt)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::TickChannel must be called from main thread");
 		if (!g_bChannelActive) return;
 
 		// MVP-2.1.2 interrupt check: any priest within
@@ -415,6 +425,8 @@ namespace DP_Player
 
 	void TickPossessionCooldown(float fDt)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::TickPossessionCooldown must be called from main thread");
 		if (g_fPossessionCooldownRemaining <= 0.0f) return;
 		g_fPossessionCooldownRemaining -= fDt;
 		if (g_fPossessionCooldownRemaining < 0.0f)
@@ -445,6 +457,8 @@ namespace DP_Player
 
 	void TickDemonScent(float fDt)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::TickDemonScent must be called from main thread");
 		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
 		if (pxCtrl == nullptr || !pxCtrl->HasDemonScentEntries()) return;
 		const float fDecayPerSec =
@@ -454,6 +468,8 @@ namespace DP_Player
 
 	void WriteHighestScentToBlackboard()
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::WriteHighestScentToBlackboard must be called from main thread");
 		// Find the highest-scent villager via the controller-owned table.
 		Zenith_EntityID xHighestId = INVALID_ENTITY_ID;
 		float fHighestScent = 0.0f;
@@ -510,6 +526,8 @@ namespace DP_Player
 
 	void SetHeldItem(Zenith_EntityID xVillager, Zenith_EntityID xItem)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::SetHeldItem must be called from main thread");
 		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
 		if (pxCtrl == nullptr) return;
 		DPVillagerHeldRecord xRec;
@@ -524,6 +542,8 @@ namespace DP_Player
 	// missing key is a no-op).
 	void RemoveHeldItem(Zenith_EntityID xVillager)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::RemoveHeldItem must be called from main thread");
 		DPPlayerController_Behaviour* pxCtrl = DPPlayerController_Behaviour::Instance();
 		if (pxCtrl == nullptr) return;
 		pxCtrl->RemoveHeldItem(xVillager);
@@ -531,6 +551,8 @@ namespace DP_Player
 
 	void ResetForNewRun()
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Player::ResetForNewRun must be called from main thread");
 		g_xPossessedVillager = INVALID_ENTITY_ID;
 		// Note: held-items + demon-scent tables no longer need explicit
 		// reset here -- they're owned by DPPlayerController_Behaviour
@@ -577,6 +599,8 @@ namespace DP_Items
 
 	bool TryConsumeKeyForUnlock(Zenith_EntityID xVillager, DP_ItemTag eRequiredKey)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Items::TryConsumeKeyForUnlock must be called from main thread");
 		// SkeletonKey is a master key — opens any lock.
 		const DP_ItemTag eHeld = DP_Player::GetHeldItemTag(xVillager);
 		if (eHeld == DP_ItemTag::None) return false;
@@ -623,12 +647,16 @@ namespace DP_Items
 	// Internal: B3 calls these from DPItemBase_Behaviour OnAwake/OnDestroy.
 	void Internal_RegisterItemTag(Zenith_EntityID xItem, DP_ItemTag eTag)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Items::Internal_RegisterItemTag must be called from main thread");
 		DPItemManager_Behaviour* pxMgr = DPItemManager_Behaviour::Instance();
 		if (pxMgr == nullptr) return;
 		pxMgr->RegisterItemTag(xItem, eTag);
 	}
 	void Internal_UnregisterItemTag(Zenith_EntityID xItem)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Items::Internal_UnregisterItemTag must be called from main thread");
 		DPItemManager_Behaviour* pxMgr = DPItemManager_Behaviour::Instance();
 		if (pxMgr == nullptr) return;
 		pxMgr->UnregisterItemTag(xItem);
@@ -725,11 +753,15 @@ namespace DP_AI
 {
 	void EmitNoise(Vec3 xPos, float fLoudness, float fRadius, Zenith_EntityID xSource)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_AI::EmitNoise must be called from main thread");
 		Zenith_PerceptionSystem::EmitSoundStimulus(xPos, fLoudness, fRadius, xSource);
 	}
 
 	void NotifyAllPriestsOfInvestigatePos(Vec3 xPos)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_AI::NotifyAllPriestsOfInvestigatePos must be called from main thread");
 		// Direct-BB-write fanout, deliberately bypassing the perception
 		// system. The perception path clamps each agent's hearing radius
 		// at agent_max_range (priest default 30 m) -- so a 200 m bell
@@ -758,6 +790,8 @@ namespace DP_AI
 
 	const Zenith_NavMesh* GetOrBuildLevelNavMesh()
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_AI::GetOrBuildLevelNavMesh must be called from main thread");
 		// Cache hit: same build-indexed scene as last call.
 		Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
 		const int iActiveBuildIndex = xActive.IsValid()
@@ -813,6 +847,8 @@ namespace DP_AI
 
 	void ResetLevelNavMesh()
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_AI::ResetLevelNavMesh must be called from main thread");
 		delete g_pxLevelNavMesh;
 		g_pxLevelNavMesh = nullptr;
 		g_iCachedNavMeshBuildIndex = -1;
@@ -831,6 +867,8 @@ namespace DP_Fog
 
 	void RegisterFogHole(Zenith_EntityID xId, float fRadius)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Fog::RegisterFogHole must be called from main thread");
 		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->RegisterFogHole(xId, fRadius);
@@ -838,6 +876,8 @@ namespace DP_Fog
 
 	void UnregisterFogHole(Zenith_EntityID xId)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Fog::UnregisterFogHole must be called from main thread");
 		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->UnregisterFogHole(xId);
@@ -845,6 +885,8 @@ namespace DP_Fog
 
 	void ClearAllFogHoles()
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Fog::ClearAllFogHoles must be called from main thread");
 		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->ClearAllFogHoles();
@@ -903,6 +945,8 @@ namespace DP_Fog
 
 	void RecordMemoryReveal(Vec3 xPosition)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Fog::RecordMemoryReveal must be called from main thread");
 		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->RecordMemoryRevealCell(CellKeyForPosition(xPosition));
@@ -910,6 +954,8 @@ namespace DP_Fog
 
 	void TickMemoryFog(float fDt)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Fog::TickMemoryFog must be called from main thread");
 		if (fDt <= 0.0f) return;
 		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
 		if (pxFog == nullptr) return;
@@ -941,6 +987,8 @@ namespace DP_Fog
 
 	void ClearAllMemoryReveals()
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Fog::ClearAllMemoryReveals must be called from main thread");
 		DPFogPass_Behaviour* pxFog = DPFogPass_Behaviour::Instance();
 		if (pxFog == nullptr) return;
 		pxFog->ClearAllMemoryReveals();
@@ -966,6 +1014,8 @@ namespace DP_Win
 	                              Zenith_EntityID xVillager,
 	                              Zenith_EntityID xPentagram)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Win::NotifyObjectiveCollected must be called from main thread");
 		const uint32_t uBit = DP_ObjectiveTagToBit(eObjective);
 		if (uBit == 0) return;
 		g_uCollectedObjectivesMask |= uBit;
@@ -996,6 +1046,8 @@ namespace DP_Win
 
 	void Reset()
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Win::Reset must be called from main thread");
 		g_uCollectedObjectivesMask = 0;
 		g_bHasWon = false;
 	}
@@ -1019,6 +1071,8 @@ namespace DP_Night
 {
 	void StartNight(float fDurationSeconds)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Night::StartNight must be called from main thread");
 		g_fNightRemainingSec = (fDurationSeconds > 0.0f) ? fDurationSeconds : 0.0f;
 		g_bNightActive       = true;
 		// Re-arm: a new run begins, even if a prior dawn already
@@ -1028,6 +1082,8 @@ namespace DP_Night
 
 	void TickNight(float fDt)
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Night::TickNight must be called from main thread");
 		if (!g_bNightActive)        return;
 		if (g_bDawnDispatched)
 		{
@@ -1072,6 +1128,8 @@ namespace DP_Night
 
 	void Reset()
 	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_Night::Reset must be called from main thread");
 		g_fNightRemainingSec = 0.0f;
 		g_bNightActive       = false;
 		g_bDawnDispatched    = false;

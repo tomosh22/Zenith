@@ -242,19 +242,19 @@ namespace
 		// Each unique input path yields a fresh heap-allocated buffer that
 		// outlives the program.  Linear search of a small table is fine —
 		// we expect ~16 unique meshes total.
-		static std::vector<const char*> s_axKeys;
-		static std::vector<const char*> s_axValues;
+		static Zenith_Vector<const char*> s_axKeys;
+		static Zenith_Vector<const char*> s_axValues;
 
 		if (!szUePath || szUePath[0] == '\0')
 		{
 			return nullptr;
 		}
 
-		for (size_t i = 0; i < s_axKeys.size(); ++i)
+		for (u_int i = 0; i < s_axKeys.GetSize(); ++i)
 		{
-			if (std::strcmp(s_axKeys[i], szUePath) == 0)
+			if (std::strcmp(s_axKeys.Get(i), szUePath) == 0)
 			{
-				return s_axValues[i];
+				return s_axValues.Get(i);
 			}
 		}
 
@@ -302,8 +302,8 @@ namespace
 		std::memcpy(pszKey, szUePath, uKeyLen + 1);
 		char* pszValue = new char[strFull.size() + 1];
 		std::memcpy(pszValue, strFull.c_str(), strFull.size() + 1);
-		s_axKeys.push_back(pszKey);
-		s_axValues.push_back(pszValue);
+		s_axKeys.PushBack(pszKey);
+		s_axValues.PushBack(pszValue);
 		return pszValue;
 	}
 
