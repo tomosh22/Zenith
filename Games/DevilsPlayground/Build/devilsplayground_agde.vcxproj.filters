@@ -29,6 +29,9 @@
     <ClCompile Include="..\Source\DP_Archetypes.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DP_Json.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DP_Reagents.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -467,6 +470,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DP_Archetypes.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Json.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DP_Reagents.h">

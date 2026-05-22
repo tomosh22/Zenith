@@ -8,6 +8,34 @@
 
 ---
 
+## 2026-05-22 — DP cleanup Phase 2a: closed the deferred-JSON-parser lift.
+
+**Decision:** Extracted the hand-rolled JSON parser into `Source/DP_Json.{h,cpp}` and migrated `DPMaterials.cpp`, `DP_Tuning.cpp`, `DP_Archetypes.cpp`, `DP_Reagents.cpp` to consume the shared header. ~880 LOC of byte-identical duplication deleted (4 × ~220 LOC parser blocks → 1 shared copy).
+
+**Why now:** Closes the conditional lift documented in PR #3 (2026-05-12 entry below). That decision said "Promoting to a shared `DP_Json` becomes justified when the third consumer arrives." Four consumers now exist — trigger condition met. Part of the wider 2026-05-22 DP cleanup audit covering convention violations the original junior-authored modules introduced. See `~/.claude/plans/the-devilsplayground-game-was-refactored-pearl.md` for the full plan.
+
+**This is a Phase 2a — extract verbatim** commit: the shared parser keeps `std::vector<JsonValue>` / `std::vector<std::pair<std::string, JsonValue>>` internally, byte-identical to the four anon-namespace copies that preceded it. Phase 2b is a separate follow-up commit that swaps the internal containers to `Zenith_Vector` and rewrites the range-for / indexing accordingly (`Zenith_Vector` has no `begin/end/operator[]`). Splitting the two operations keeps each commit independently bisectable if a JSON-loader test ever regresses.
+
+**Caller migration shape:** each caller's anonymous namespace previously held a verbatim copy of `JsonType` / `JsonValue` / `JsonParser` / `LoadJsonFile`. Replaced by:
+```cpp
+namespace
+{
+    using DP_Json::JsonValue;
+    using DP_Json::LoadJsonFile;
+    using enum DP_Json::JsonType;  // brings JSON_OBJECT, JSON_NUMBER, … into scope
+    // …existing per-caller code unchanged
+}
+```
+`using enum` is C++20; the project already builds at C++20.
+
+**Trade-offs considered:**
+- *Fully qualify everywhere (`DP_Json::JSON_OBJECT`).* Rejected — would have churned ~50 call sites across the four callers for zero readability gain.
+- *Single `using namespace DP_Json;` in each caller.* Rejected — pulls more symbols into scope than needed; the selective `using` form is more targeted.
+
+**Test that prevents regression:** Same coverage as before — `Test_P1Tuning_LoadsAndValuesInBand`, `Test_P2Archetype_TimersMatchSpec` (pre-existing failures unrelated to this change), `Materials_Test`, plus the reagent-pickup tests. The parser is byte-identical to the prior copies, so any regression would point at a transcription error in the extraction.
+
+---
+
 ## 2026-05-20 — PR #128 Berserker personality replaced by Zealot; F-mash code removed.
 
 **Decision:** Drop Berserker as a registered personality + the bMashInteract flag + kBerserkerMashFrames + the per-press-F-phase mash blocks. Replace with **Zealot** -- single-minded pursuit of the pentagram ritual, skips the iron/forge/door/chest/noise bootstrap chain entirely, runs straight from possession to the objective-deliver loop. Adds a new `bSkipBootstrap` flag on PersonalityConfig; `kHP_WaitPossess` branches on it to choose between `kHP_WalkIron` (existing) and `kHP_ObjLoopFind` (new).

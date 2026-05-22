@@ -42,6 +42,11 @@ DP_Reagents.{h,cpp}           # Loads Config/Reagents.json; exposes per-tag pick
 DP_Save.{h,cpp}               # DP_RunState struct + serialisation. Schema version anchored;
                               #   corruption + version mismatch fall back to default. See
                               #   Docs/SaveFormat.md.
+DP_Json.{h,cpp}               # Shared JSON parser. Extracted 2026-05-22 from the four byte-identical
+                              #   copies that lived in DPMaterials / DP_Tuning / DP_Archetypes /
+                              #   DP_Reagents. `DP_Json::JsonValue` + `DP_Json::LoadJsonFile` are
+                              #   the only public symbols; the parser implementation is anon-
+                              #   namespace-local to DP_Json.cpp.
 DP_Tuning.{h,cpp}             # Loads Config/Tuning.json at startup, flattens dotted-key tree into
                               #   a Zenith_Vector<KVPair>. `DP_Tuning::Get<T>(key)` is the single
                               #   numerical-value lookup; every gameplay constant routes through
