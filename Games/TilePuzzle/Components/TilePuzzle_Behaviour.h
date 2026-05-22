@@ -131,9 +131,13 @@ namespace TilePuzzle
 		TextureHandle       m_xBlockerTexture;
 
 		// Pinball materials (loaded from .zmtrl files).
-		Zenith_MaterialAsset* m_pxPinballBallMaterial   = nullptr;
-		Zenith_MaterialAsset* m_pxPinballPegMaterial    = nullptr;
-		Zenith_MaterialAsset* m_pxPinballPegHitMaterial = nullptr;
+		// Held via MaterialHandle (not raw pointer) so the registry refcount
+		// stays > 0 across UnloadUnusedAssets calls -- otherwise the assets
+		// would be freed at the first SCENE_LOAD_SINGLE and dangle when
+		// Pinball_Behaviour reads them.
+		MaterialHandle      m_xPinballBallMaterial;
+		MaterialHandle      m_xPinballPegMaterial;
+		MaterialHandle      m_xPinballPegHitMaterial;
 
 		// Pinball PBR textures.
 		TextureHandle       m_xPinballBumperDiffuseTex;

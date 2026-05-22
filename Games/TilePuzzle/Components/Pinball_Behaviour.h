@@ -938,12 +938,12 @@ private:
 		m_xPegFlashMaterial.GetDirect()->SetEmissiveIntensity(5.0f);
 
 		// Use loaded procedural materials when available
-		if (TilePuzzle::Resources().m_pxPinballBallMaterial)
-			m_xBallMaterial.Set(TilePuzzle::Resources().m_pxPinballBallMaterial);
-		if (TilePuzzle::Resources().m_pxPinballPegMaterial)
-			m_xObstacleMaterial.Set(TilePuzzle::Resources().m_pxPinballPegMaterial);
-		if (TilePuzzle::Resources().m_pxPinballPegHitMaterial)
-			m_xPegHitMaterial.Set(TilePuzzle::Resources().m_pxPinballPegHitMaterial);
+		if (TilePuzzle::Resources().m_xPinballBallMaterial.IsLoaded())
+			m_xBallMaterial.Set(TilePuzzle::Resources().m_xPinballBallMaterial.GetDirect());
+		if (TilePuzzle::Resources().m_xPinballPegMaterial.IsLoaded())
+			m_xObstacleMaterial.Set(TilePuzzle::Resources().m_xPinballPegMaterial.GetDirect());
+		if (TilePuzzle::Resources().m_xPinballPegHitMaterial.IsLoaded())
+			m_xPegHitMaterial.Set(TilePuzzle::Resources().m_xPinballPegHitMaterial.GetDirect());
 	}
 
 	// ========================================================================

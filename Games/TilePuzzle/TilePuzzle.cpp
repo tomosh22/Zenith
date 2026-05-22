@@ -1212,17 +1212,17 @@ static void LoadProceduralAssets()
 		Resources().m_axCatMaterials[i].GetDirect()->SetDiffuseTexture(Resources().m_axCatFaceTextures[i]);
 	}
 
-	// Load pinball materials from .zmtrl files.
-	// AddRef so the assets survive UnloadUnusedAssets that fires on each
-	// SCENE_LOAD_SINGLE (e.g. transitioning into the pinball scene at level 10).
-	// Without this, the raw pointers dangle and crash later when Pinball_Behaviour
-	// uses them inside CreateMaterials().
-	Resources().m_pxPinballBallMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_ball" ZENITH_MATERIAL_EXT);
-	if (Resources().m_pxPinballBallMaterial) Resources().m_pxPinballBallMaterial->AddRef();
-	Resources().m_pxPinballPegMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg" ZENITH_MATERIAL_EXT);
-	if (Resources().m_pxPinballPegMaterial) Resources().m_pxPinballPegMaterial->AddRef();
-	Resources().m_pxPinballPegHitMaterial = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg_hit" ZENITH_MATERIAL_EXT);
-	if (Resources().m_pxPinballPegHitMaterial) Resources().m_pxPinballPegHitMaterial->AddRef();
+	// Load pinball materials from .zmtrl files into MaterialHandles -- the
+	// handle's Set() AddRefs the asset so UnloadUnusedAssets (fired on every
+	// SCENE_LOAD_SINGLE, e.g. transitioning into the pinball scene at level 10)
+	// leaves them alone. Storing the raw pointer would leave the asset at
+	// refcount 0 and crash later inside Pinball_Behaviour::CreateMaterials.
+	Resources().m_xPinballBallMaterial.Set(
+		Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_ball" ZENITH_MATERIAL_EXT));
+	Resources().m_xPinballPegMaterial.Set(
+		Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg" ZENITH_MATERIAL_EXT));
+	Resources().m_xPinballPegHitMaterial.Set(
+		Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg_hit" ZENITH_MATERIAL_EXT));
 
 	// Load pinball PBR textures
 	Resources().m_xPinballBumperDiffuseTex.SetPath(GAME_ASSETS_DIR "Textures/Pinball/bumper_diffuse" ZENITH_TEXTURE_EXT);
