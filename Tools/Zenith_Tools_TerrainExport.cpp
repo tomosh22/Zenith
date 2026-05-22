@@ -22,7 +22,7 @@ static std::string GetGameAssetsDirectory()
 #include <cstring>
 #include <cmath>
 
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 #define MAX_TERRAIN_HEIGHT 4096
 
@@ -632,7 +632,7 @@ void ExportMesh(u_int uDensityDivisor, std::string strName, const cv::Mat& xHeig
 
 	u_int uNumInvocations = std::min(static_cast<u_int>(64), uTotalChunks);
 	Zenith_TaskArray xChunkTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, ExportChunkBatch, &xChunkData, uNumInvocations, true);
-	Zenith_TaskSystem::SubmitTaskArray(&xChunkTask);
+	g_xEngine.Tasks().SubmitTaskArray(&xChunkTask);
 	xChunkTask.WaitUntilComplete();
 }
 

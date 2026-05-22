@@ -1,6 +1,8 @@
 #include "Zenith.h"
 #include "Zenith_Core.h"
+#include "Core/FrameContext.h"
 #include "Core/Zenith_CommandLine.h"
+#include "Core/Zenith_Engine.h"
 
 // InputSimulator + AutomatedTest are both gated on ZENITH_INPUT_SIMULATOR. The
 // nested #ifdef the previous version emitted around the AutomatedTest include
@@ -10,48 +12,46 @@
 #include "Core/Zenith_AutomatedTest.h"
 #endif
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "DebugVariables/Zenith_DebugVariablesImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Flux/Flux.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_PerFrame.h"
-#include "Flux/Fog/Flux_Fog.h"
-#include "Flux/IBL/Flux_IBL.h"
-#include "Flux/SSR/Flux_SSR.h"
-#include "Flux/SSGI/Flux_SSGI.h"
+#include "Flux/Fog/Flux_FogImpl.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
+#include "Flux/SSR/Flux_SSRImpl.h"
+#include "Flux/SSGI/Flux_SSGIImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #endif
-#include "Input/Zenith_Input.h"
-#include "Input/Zenith_TouchInput.h"
-#include "Physics/Zenith_Physics.h"
+#include "Input/Zenith_InputImpl.h"
+#include "Input/Zenith_TouchInputImpl.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
 
 
-// Namespace variable definitions
-float Zenith_Core::g_fDt = 0.f;
-float Zenith_Core::g_fTimePassed = 0.f;
-std::chrono::high_resolution_clock::time_point Zenith_Core::g_xLastFrameTime;
-
 void Zenith_Core::UpdateTimers()
 {
-	std::chrono::high_resolution_clock::time_point xCurrentTime = std::chrono::high_resolution_clock::now();
+	FrameContext& xFrame = g_xEngine.Frame();
+	const std::chrono::high_resolution_clock::time_point xCurrentTime = std::chrono::high_resolution_clock::now();
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	if (Zenith_InputSimulator::HasFixedDtOverride())
 	{
-		Zenith_Core::SetDt(Zenith_InputSimulator::GetFixedDt());
+		xFrame.SetDt(Zenith_InputSimulator::GetFixedDt());
 	}
 	else
 #endif
 	{
-		Zenith_Core::SetDt(static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - g_xLastFrameTime).count() / 1.e9));
+		xFrame.SetDt(static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - xFrame.GetLastFrameTime()).count() / 1.e9));
 	}
-	g_xLastFrameTime = xCurrentTime;
+	xFrame.SetLastFrameTime(xCurrentTime);
 
-	Zenith_Core::AddTimePassed(Zenith_Core::GetDt());
+	xFrame.AddTimePassed(xFrame.GetDt());
 }
 
 #ifdef ZENITH_TOOLS
@@ -91,13 +91,13 @@ void RenderImGui()
 	// Also render the old debug tools window for backwards compatibility
 	ImGui::Begin("Zenith Tools");
 
-	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.x)) + " " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.y)) + " " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.z));
+	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad.x)) + " " + std::to_string(static_cast<int32_t>(g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad.y)) + " " + std::to_string(static_cast<int32_t>(g_xEngine.FluxGraphics().m_xFrameConstants.m_xCamPos_Pad.z));
 	ImGui::Text(strCamPosText.c_str());
 
-	std::string strFpsText = "FPS: " + std::to_string(1.f / Zenith_Core::GetDt());
+	std::string strFpsText = "FPS: " + std::to_string(1.f / g_xEngine.Frame().GetDt());
 	ImGui::Text(strFpsText.c_str());
 
-	Zenith_DebugVariableTree& xTree = Zenith_DebugVariables::s_xTree;
+	Zenith_DebugVariableTree& xTree = g_xEngine.DebugVariables().m_xTree;
 	Zenith_DebugVariableTree::Node* pxRoot = xTree.m_pxRoot;
 	TraverseTree(pxRoot, 0);
 
@@ -140,15 +140,15 @@ static void ExecuteRenderGraph()
 	// UpdateGraphPassEnables checks IsDirty() — which lets IBL force-enable
 	// all 49 of its passes for the upcoming full Compile() so the validator
 	// sees a writer for every IBL texture that DeferredShading reads.
-	Flux_Fog::ApplyTechniqueSelectionToGraph(xGraph);
+	g_xEngine.Fog().ApplyTechniqueSelectionToGraph(xGraph);
 	// SSR / SSGI runtime output toggles: when blur or denoise flip, these
 	// enable/disable their post-pass and MarkDirty so the deferred-lighting
-	// pass re-reads the correct handle (see Flux_SSR::GetReflectionHandle).
+	// pass re-reads the correct handle (see g_xEngine.SSR().GetReflectionHandle).
 	// Must run BEFORE IBL's UpdateGraphPassEnables for the same MarkDirty
 	// propagation reason described above.
-	Flux_SSR::ApplyBlurSelectionToGraph(xGraph);
-	Flux_SSGI::ApplyDenoiseSelectionToGraph(xGraph);
-	Flux_IBL::UpdateGraphPassEnables(xGraph);
+	g_xEngine.SSR().ApplyBlurSelectionToGraph(xGraph);
+	g_xEngine.SSGI().ApplyDenoiseSelectionToGraph(xGraph);
+	g_xEngine.IBL().UpdateGraphPassEnables(xGraph);
 
 	xGraph.Compile();
 	xGraph.Execute();
@@ -166,9 +166,9 @@ void Zenith_Core::Zenith_MainLoop()
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PerFrame::BeginFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME);
 
 	UpdateTimers();
-	Zenith_Input::BeginFrame();
+	g_xEngine.Input().BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
-	Zenith_TouchInput::Update();
+	g_xEngine.Touch().Update();
 
 	// Process async asset load callbacks on main thread
 	Zenith_AsyncAssetLoader::ProcessCompletedLoads();
@@ -223,8 +223,8 @@ void Zenith_Core::Zenith_MainLoop()
 
 	if (bShouldUpdateGameLogic)
 	{
-		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Physics::Update, ZENITH_PROFILE_INDEX__PHYSICS, Zenith_Core::GetDt());
-		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_SceneManager::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Physics().Update, ZENITH_PROFILE_INDEX__PHYSICS, g_xEngine.Frame().GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_SceneManager::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, g_xEngine.Frame().GetDt());
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -236,7 +236,7 @@ void Zenith_Core::Zenith_MainLoop()
 
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		Flux_Graphics::UploadFrameConstants();
+		g_xEngine.FluxGraphics().UploadFrameConstants();
 	}
 
 	// Only submit render tasks if we're going to process them
@@ -267,7 +267,7 @@ void Zenith_Core::Zenith_MainLoop()
 			for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
 			{
 				Zenith_UIComponent* const pxUI = xIt.GetData();
-				pxUI->Update(Zenith_Core::GetDt());
+				pxUI->Update(g_xEngine.Frame().GetDt());
 				pxUI->Render();
 			}
 		}

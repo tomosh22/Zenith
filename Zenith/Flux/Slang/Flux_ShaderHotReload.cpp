@@ -6,7 +6,7 @@
 #include "Flux/Slang/Flux_ShaderRegistry.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Core/Zenith_FileWatcher.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include "Zenith_PlatformGraphics_Include.h"
 #include <algorithm>
 #include <string>

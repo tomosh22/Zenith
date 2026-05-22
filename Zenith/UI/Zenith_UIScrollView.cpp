@@ -2,7 +2,7 @@
 #include "UI/Zenith_UIScrollView.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -58,7 +58,7 @@ void Zenith_UIScrollView::ClampScrollPosition()
 
 void Zenith_UIScrollView::HandleDragInput(float fMouseX, float fMouseY, bool bInside, float fDt)
 {
-	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 
 	if (bMouseDown && !m_bMouseDownLastFrame && bInside)
 	{

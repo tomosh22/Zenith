@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_Editor.h"
+#include "Zenith_EditorImpl.h"
 #include "Zenith_UndoSystem.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -23,7 +24,7 @@
 // Carved out of Zenith_Editor.cpp so each top-level menu (File/Edit/View)
 // lives next to the dispatcher, rather than one end of a 1000+ LOC file.
 // All symbols used here — ShowOpenFileDialog, ShowSaveFileDialog,
-// Zenith_Editor::s_uGameCameraEntity, ClearSelection, ResetEditorCameraToDefaults,
+// Zenith_Editor::g_xEngine.Editor().m_uGameCameraEntity, ClearSelection, ResetEditorCameraToDefaults,
 // RequestLoadSceneFromFile — have external linkage already, so the extraction
 // did not require any changes to the Zenith_Editor interface.
 //==========================================================================
@@ -74,7 +75,7 @@ void Zenith_Editor::RenderFileMenu()
 			Zenith_SceneManager::SetActiveScene(xNewScene);
 
 			ClearSelection();
-			s_uGameCameraEntity = INVALID_ENTITY_ID;
+			g_xEngine.Editor().m_uGameCameraEntity = INVALID_ENTITY_ID;
 			ResetEditorCameraToDefaults();
 			Zenith_UndoSystem::Clear();
 			Zenith_Log(LOG_CATEGORY_EDITOR, "New scene created (handle=%d, name='Untitled')", xNewScene.m_iHandle);
@@ -176,19 +177,19 @@ void Zenith_Editor::RenderViewMenu()
 {
 	if (ImGui::BeginMenu("View"))
 	{
-		if (ImGui::MenuItem("Hierarchy", nullptr, s_bShowHierarchyPanel))
+		if (ImGui::MenuItem("Hierarchy", nullptr, g_xEngine.Editor().m_bShowHierarchyPanel))
 		{
-			s_bShowHierarchyPanel = !s_bShowHierarchyPanel;
+			g_xEngine.Editor().m_bShowHierarchyPanel = !g_xEngine.Editor().m_bShowHierarchyPanel;
 		}
 
-		if (ImGui::MenuItem("Properties", nullptr, s_bShowPropertiesPanel))
+		if (ImGui::MenuItem("Properties", nullptr, g_xEngine.Editor().m_bShowPropertiesPanel))
 		{
-			s_bShowPropertiesPanel = !s_bShowPropertiesPanel;
+			g_xEngine.Editor().m_bShowPropertiesPanel = !g_xEngine.Editor().m_bShowPropertiesPanel;
 		}
 
-		if (ImGui::MenuItem("Console", nullptr, s_bShowConsolePanel))
+		if (ImGui::MenuItem("Console", nullptr, g_xEngine.Editor().m_bShowConsolePanel))
 		{
-			s_bShowConsolePanel = !s_bShowConsolePanel;
+			g_xEngine.Editor().m_bShowConsolePanel = !g_xEngine.Editor().m_bShowConsolePanel;
 		}
 
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED

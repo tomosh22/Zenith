@@ -6,7 +6,8 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -70,7 +71,7 @@ Zenith_ColliderComponent& Zenith_ColliderComponent::operator=(Zenith_ColliderCom
 		// Clean up our existing physics body first
 		if (m_xBodyID.IsInvalid() == false)
 		{
-			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 			xBodyInterface.RemoveBody(m_xBodyID);
 			xBodyInterface.DestroyBody(m_xBodyID);
 		}
@@ -106,9 +107,9 @@ bool Zenith_ColliderComponent::HasValidBody() const
 
 Zenith_ColliderComponent::~Zenith_ColliderComponent()
 {
-	if (m_xBodyID.IsInvalid() == false && Zenith_Physics::s_pxPhysicsSystem != nullptr)
+	if (m_xBodyID.IsInvalid() == false && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
 	{
-		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 		// Check if the body actually exists in the physics system before trying to destroy it.
 		// This handles cases where scene restore loads stale body IDs that don't exist.
 		if (xBodyInterface.IsAdded(m_xBodyID))
@@ -151,7 +152,7 @@ namespace
 
 		for (uint32_t u = 0; u < 12; ++u)
 		{
-			Flux_Primitives::AddLine(
+			g_xEngine.Primitives().AddLine(
 				axCorners[s_auEdgeIndices[u * 2 + 0]],
 				axCorners[s_auEdgeIndices[u * 2 + 1]],
 				xColor);
@@ -571,7 +572,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	const JPH::ObjectLayer uObjectLayer = (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC) ? 1 : 0; // MOVING : NON_MOVING
 
 	JPH::BodyCreationSettings xBodySettings(pxShape, xJoltPos, xJoltRot, eMotionType, uObjectLayer);
-	JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	m_xBodyID = xBodyInterface.CreateAndAddBody(xBodySettings, JPH::EActivation::Activate);
 
 	if (m_xBodyID.IsInvalid())
@@ -580,7 +581,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		return;
 	}
 
-	JPH::BodyLockWrite xLock(Zenith_Physics::s_pxPhysicsSystem->GetBodyLockInterface(), m_xBodyID);
+	JPH::BodyLockWrite xLock(g_xEngine.Physics().m_pxPhysicsSystem->GetBodyLockInterface(), m_xBodyID);
 	if (xLock.Succeeded())
 	{
 		m_pxRigidBody = &xLock.GetBody();
@@ -621,7 +622,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 		Zenith_Maths::Vector3 xHalfExtents, xLocalOffset;
 		ComputeBoxDimensionsAndOffset(xScale, xHalfExtents, xLocalOffset,
 			/*bWarnOnDegenerateBounds=*/false);
-		Flux_Primitives::AddWireframeCube(xPosition + xLocalOffset, xHalfExtents, xColor);
+		g_xEngine.Primitives().AddWireframeCube(xPosition + xLocalOffset, xHalfExtents, xColor);
 		break;
 	}
 
@@ -665,7 +666,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 	case COLLISION_VOLUME_TYPE_SPHERE:
 	{
 		const float fRadius = std::max({ xScale.x, xScale.y, xScale.z }) * 0.5f;
-		Flux_Primitives::AddSphere(xPosition, fRadius, xColor);
+		g_xEngine.Primitives().AddSphere(xPosition, fRadius, xColor);
 		break;
 	}
 
@@ -693,7 +694,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 			Zenith_Maths::RotateVector(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), xRotation));
 		const Zenith_Maths::Vector3 xStart = xPosition - xAxis * fHalfHeight;
 		const Zenith_Maths::Vector3 xEnd = xPosition + xAxis * fHalfHeight;
-		Flux_Primitives::AddCapsule(xStart, xEnd, fRadius, xColor);
+		g_xEngine.Primitives().AddCapsule(xStart, xEnd, fRadius, xColor);
 		break;
 	}
 
@@ -787,14 +788,14 @@ void Zenith_ColliderComponent::RebuildCollider()
 	
 	if (bWasDynamic && HasValidBody())
 	{
-		xLinearVel = Zenith_Physics::GetLinearVelocity(m_xBodyID);
-		xAngularVel = Zenith_Physics::GetAngularVelocity(m_xBodyID);
+		xLinearVel = g_xEngine.Physics().GetLinearVelocity(m_xBodyID);
+		xAngularVel = g_xEngine.Physics().GetAngularVelocity(m_xBodyID);
 	}
 
 	// Remove existing collider
 	if (m_xBodyID.IsInvalid() == false)
 	{
-		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 		xBodyInterface.RemoveBody(m_xBodyID);
 		xBodyInterface.DestroyBody(m_xBodyID);
 		m_xBodyID = JPH::BodyID();
@@ -816,8 +817,8 @@ void Zenith_ColliderComponent::RebuildCollider()
 	// Restore velocity if it was a dynamic body
 	if (bWasDynamic && HasValidBody())
 	{
-		Zenith_Physics::SetLinearVelocity(m_xBodyID, xLinearVel);
-		Zenith_Physics::SetAngularVelocity(m_xBodyID, xAngularVel);
+		g_xEngine.Physics().SetLinearVelocity(m_xBodyID, xLinearVel);
+		g_xEngine.Physics().SetAngularVelocity(m_xBodyID, xAngularVel);
 	}
 
 	Zenith_Log(LOG_CATEGORY_PHYSICS, " Rebuilt collider after scale change");
@@ -841,7 +842,7 @@ void Zenith_ColliderComponent::DestroyExistingCollider()
 {
 	if (m_xBodyID.IsInvalid() == false)
 	{
-		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 		xBodyInterface.RemoveBody(m_xBodyID);
 		xBodyInterface.DestroyBody(m_xBodyID);
 		m_xBodyID = JPH::BodyID();
@@ -902,7 +903,7 @@ void Zenith_ColliderComponent::RenderConfiguredColliderUI()
 		static bool s_bGravityEnabled = true;
 		if (ImGui::Checkbox("Gravity Enabled", &s_bGravityEnabled))
 		{
-			Zenith_Physics::SetGravityEnabled(m_xBodyID, s_bGravityEnabled);
+			g_xEngine.Physics().SetGravityEnabled(m_xBodyID, s_bGravityEnabled);
 			Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Gravity %s", s_bGravityEnabled ? "enabled" : "disabled");
 		}
 	}

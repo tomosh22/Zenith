@@ -4,7 +4,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
@@ -283,9 +283,9 @@ void Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(
 		Zenith_Maths::Vector3 xV2(xPos2.x, xPos2.y, xPos2.z);
 
 		// Draw the three edges of the triangle
-		Flux_Primitives::AddLine(xV0, xV1, xColor, 0.05f);
-		Flux_Primitives::AddLine(xV1, xV2, xColor, 0.05f);
-		Flux_Primitives::AddLine(xV2, xV0, xColor, 0.05f);
+		g_xEngine.Primitives().AddLine(xV0, xV1, xColor, 0.05f);
+		g_xEngine.Primitives().AddLine(xV1, xV2, xColor, 0.05f);
+		g_xEngine.Primitives().AddLine(xV2, xV0, xColor, 0.05f);
 	}
 }
 

@@ -1,0 +1,192 @@
+
+  zenith_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Build\output\win64\vs2022_debug_win64_true\zenith.lib
+  aishowcase_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Games\AIShowcase\build\output\win64\vs2022_debug_win64_true\aishowcase.exe
+  File not found - *.dll
+  0 File(s) copied
+  combat_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Games\Combat\build\output\win64\vs2022_debug_win64_true\combat.exe
+  File not found - *.dll
+  0 File(s) copied
+  DevilsPlayground.cpp
+  DPFogPass.cpp
+  DPHeuristicBot.cpp
+  DPMaterials.cpp
+  DPTelemetry.cpp
+  DPTelemetryAnalyzer.cpp
+  DP_Archetypes.cpp
+  DP_Reagents.cpp
+  DP_Save.cpp
+  DP_Tuning.cpp
+  PublicInterfaces.cpp
+  Test_BuildingWallClosure.cpp
+  Test_DPFogPass.cpp
+  Test_DPHeuristicBotPlaythrough.cpp
+  Test_DPHeuristicBot_GoalDispatch.cpp
+  Test_DPHeuristicBot_Pathing.cpp
+  Test_DPTelemetryAnalyzer.cpp
+  Test_DPTelemetryHooks.cpp
+  Test_DimLightsCutFog.cpp
+  Test_DoubleDoorAndForge.cpp
+  Test_FrontEndPlay.cpp
+  Test_FullPlaythrough.cpp
+  Test_GameLevelScene.cpp
+  Test_GameRenderHook.cpp
+  Test_GameplaySystems.cpp
+  Test_GymScenes.cpp
+  Test_HearingFlow.cpp
+  Test_Hello.cpp
+  Test_HumanPlaythrough.cpp
+  Test_ItemPickup.cpp
+  Test_LifeTimer.cpp
+  Test_Materials.cpp
+  Test_MouseWheel.cpp
+  Test_P1Apprehend_OutOfRangeIgnored.cpp
+  Test_P1Apprehend_PriestCatchesPlayer.cpp
+  Test_P1Apprehend_PriestStandsStillDuringChannel.cpp
+  Test_P1Apprehend_SwitchBreaksChannel.cpp
+  Test_P1Cooldown_CannotPossessFor1pt5s.cpp
+  Test_P1Cooldown_NotAffectedByDeath.cpp
+  Test_P1Dawn_DispatchesRunLost.cpp
+  Test_P1Dawn_NoFireWhenNotStarted.cpp
+  Test_P1Drop_GoesToGroundAtBodyPosition.cpp
+  Test_P1Drop_PickupChainHandoff.cpp
+  Test_P1Faint_RecoversToIdle.cpp
+  Test_P1Faint_SystemPossessBypassesGate.cpp
+  Test_P1NavMesh_ClosedDoorBlocksPath.cpp
+  Test_P1NavMesh_PathRespectsWalls.cpp
+  Test_P1NavMesh_RegenerationOnSceneSwap.cpp
+  Test_P1NoVessels_DispatchesRunLost.cpp
+  Test_P1Pause_InputSimDuringPause.cpp
+  Test_P1Pause_PriestStopsOnEscape.cpp
+  Test_P1Pause_TimerStopsOnEscape.cpp
+  Test_P1Priest_DoesNotChasePossessedOutOfSight.cpp
+  Test_P1Priest_PursuesAfterLineOfSight.cpp
+  Test_P1Range_AcceptedInRange.cpp
+  Test_P1Range_AnchorMovesWithEachHop.cpp
+  Test_P1Range_RefusedOutOfRange.cpp
+  Test_P1Save_RobustToCorruption.cpp
+  Test_P1Save_RoundTripMeta.cpp
+  Test_P1Save_VersionMismatchFallsBackToDefault.cpp
+  Test_P1Scent_AccumulatesOnPossession.cpp
+  Test_P1Scent_DecaysOverTime.cpp
+  Test_P1Scent_HighestWinsInBlackboard.cpp
+  Test_P1Scent_NoBumpWhilePossessing.cpp
+  Test_P1Scent_NotificationToBlackboard.cpp
+  Test_P1Sprint_DrainsLifeFaster.cpp
+  Test_P1Sprint_NoDrainWhenNotMoving.cpp
+  Test_P1Sprint_WinsTieOverWalkQuiet.cpp
+  Test_P1Switch_BurnOutDoesDie.cpp
+  Test_P1Switch_FaintNotDie.cpp
+  Test_P1Tuning_InteractableValuesMatchConfig.cpp
+  Test_P1Tuning_LoadsAndValuesInBand.cpp
+  Test_P1Tuning_PriestValuesMatchConfig.cpp
+  Test_P1Villager_TuningMigration.cpp
+  Test_P1WalkQuiet_AelfricEffectiveHearingHalved.cpp
+  Test_P1WalkQuiet_FootstepLoudnessHalved.cpp
+  Test_P2Archetype_BeggarIgnoredByAelfric.cpp
+  Test_P2Archetype_ChildCannotCarryTools.cpp
+  Test_P2Archetype_DevoutChannel.cpp
+  Test_P2Archetype_DevoutChannelInterrupt.cpp
+  Test_P2Archetype_TimersMatchSpec.cpp
+  Test_P2BellSoul_AudibleAcrossMap.cpp
+  Test_P2BellSoul_PriestHearsTheBell.cpp
+  Test_P2Fog_AelfricNotRevealed.cpp
+  Test_P2Fog_LightAddsHole.cpp
+  Test_P2Fog_MemoryDimsAfter10s.cpp
+  Test_P2Fog_MemoryFollowsPossessedVillager.cpp
+  Test_P2Forge_AudibleAt30m.cpp
+  Test_P2Forge_IronToSkeletonKey.cpp
+  Test_P2Forge_PriestHearsTheHammer.cpp
+  Test_P2Forge_WoodToSpike.cpp
+  Test_P2HUD_AelfricStateInRealScene.cpp
+  Test_P2HUD_AelfricStateReadouts.cpp
+  Test_P2HUD_DawnAndScentReadouts.cpp
+  Test_P2HUD_DetailedReadouts.cpp
+  Test_P2HUD_TutorialHint.cpp
+  Test_P2Menu_PauseAndMainMenuShortcuts.cpp
+  Test_P2Pause_RestartActuallyReloadsScene.cpp
+  Test_P2Reagent_BellSoulRingsBell.cpp
+  Test_P2Reagent_BogWaterEvaporates.cpp
+  Test_P2Reagent_UniquePickupChannel.cpp
+  Test_P2Villager_ArchetypeStatsApplied.cpp
+  Test_P3Inventory_ArchetypeCount.cpp
+  Test_P4Playthrough_LossByApprehend.cpp
+  Test_P4Playthrough_LossByDawn.cpp
+  Test_P4Playthrough_LossByNoVessels.cpp
+  Test_P4Playthrough_Night1WinGolden.cpp
+  Test_P4UI_RestartPromptAfterRunOver.cpp
+  Test_PentagramVictory.cpp
+  Test_Possession.cpp
+  Test_PostFogHookFires.cpp
+  Test_PriestBBBridge.cpp
+  Test_PriestPursuit.cpp
+  Test_PublicInterfaces.cpp
+  Test_T0AudioBus_EmitsAndRecords.cpp
+  Test_T0NavMesh_QueryCountIncrements.cpp
+  Test_T0RenderBus_RecordsDrawCalls.cpp
+  Test_T0SaveData_TestHooks.cpp
+  Test_T1NavMesh_BTUnitsCanFollowRealPath.cpp
+  Test_T1NavMesh_GeneratorPerf.cpp
+  Test_TelemetryEdgeCases.cpp
+  Test_TelemetryRoundTrip.cpp
+  Test_VisualWiring.cpp
+  devilsplayground_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Games\DevilsPlayground\Build\output\win64\vs2022_debug_win64_true\devilsplayground.exe
+  File not found - *.dll
+  0 File(s) copied
+  exploration_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Games\Exploration\build\output\win64\vs2022_debug_win64_true\exploration.exe
+  File not found - *.dll
+  0 File(s) copied
+  FluxCompiler.cpp
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_SetGraphicsOptions(struct Zenith_GraphicsOptions &)" (?Project_SetGraphicsOptions@@YAXAEAUZenith_GraphicsOptions@@@Z) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\FluxCompiler\fluxcompiler_win64.vcxproj]
+zenith.lib(Zenith_Main.obj) : error LNK2001: unresolved external symbol "void __cdecl Project_SetGraphicsOptions(struct Zenith_GraphicsOptions &)" (?Project_SetGraphicsOptions@@YAXAEAUZenith_GraphicsOptions@@@Z) [C:\tmp\Zenith-engine-refactor\FluxCompiler\fluxcompiler_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "char const * __cdecl Project_GetGameAssetsDir(void)" (?Project_GetGameAssetsDir@@YAPEBDXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\FluxCompiler\fluxcompiler_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_RegisterScriptBehaviours(void)" (?Project_RegisterScriptBehaviours@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\FluxCompiler\fluxcompiler_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_Shutdown(void)" (?Project_Shutdown@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Shutdown(void)" (?Shutdown@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\FluxCompiler\fluxcompiler_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_InitializeResources(void)" (?Project_InitializeResources@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\FluxCompiler\fluxcompiler_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_RegisterEditorAutomationSteps(void)" (?Project_RegisterEditorAutomationSteps@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\FluxCompiler\fluxcompiler_win64.vcxproj]
+output\win64\vs2022_debug_win64_true\fluxcompiler.exe : fatal error LNK1120: 6 unresolved externals [C:\tmp\Zenith-engine-refactor\FluxCompiler\fluxcompiler_win64.vcxproj]
+  marble_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Games\Marble\build\output\win64\vs2022_debug_win64_true\marble.exe
+  File not found - *.dll
+  0 File(s) copied
+  rendertest_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Games\RenderTest\build\output\win64\vs2022_debug_win64_true\rendertest.exe
+  File not found - *.dll
+  0 File(s) copied
+  runner_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Games\Runner\build\output\win64\vs2022_debug_win64_true\runner.exe
+  File not found - *.dll
+  0 File(s) copied
+  sokoban_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Games\Sokoban\Build\output\win64\vs2022_debug_win64_true\sokoban.exe
+  File not found - *.dll
+  0 File(s) copied
+  survival_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Games\Survival\build\output\win64\vs2022_debug_win64_true\survival.exe
+  File not found - *.dll
+  0 File(s) copied
+  tilepuzzle_win64.vcxproj -> C:\tmp\Zenith-engine-refactor\Games\TilePuzzle\build\output\win64\vs2022_debug_win64_true\tilepuzzle.exe
+  File not found - *.dll
+  0 File(s) copied
+  TilePuzzleLevelGen.cpp
+C:\tmp\Zenith-engine-refactor\games\tilepuzzle\Components\TilePuzzle_LevelGenerator.h(838,17): warning C4100: 'xRng': unreferenced formal parameter [C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj]
+  (compiling source file 'TilePuzzleLevelGen.cpp')
+  
+C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\TilePuzzleLevelGen.cpp(1477,12): warning C4244: 'argument': conversion from 'time_t' to 'unsigned int', possible loss of data [C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_SetGraphicsOptions(struct Zenith_GraphicsOptions &)" (?Project_SetGraphicsOptions@@YAXAEAUZenith_GraphicsOptions@@@Z) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj]
+zenith.lib(Zenith_Main.obj) : error LNK2001: unresolved external symbol "void __cdecl Project_SetGraphicsOptions(struct Zenith_GraphicsOptions &)" (?Project_SetGraphicsOptions@@YAXAEAUZenith_GraphicsOptions@@@Z) [C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "char const * __cdecl Project_GetGameAssetsDir(void)" (?Project_GetGameAssetsDir@@YAPEBDXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_RegisterScriptBehaviours(void)" (?Project_RegisterScriptBehaviours@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_Shutdown(void)" (?Project_Shutdown@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Shutdown(void)" (?Shutdown@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_InitializeResources(void)" (?Project_InitializeResources@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_RegisterEditorAutomationSteps(void)" (?Project_RegisterEditorAutomationSteps@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj]
+output\win64\vs2022_debug_win64_true\tilepuzzlelevelgen.exe : fatal error LNK1120: 6 unresolved externals [C:\tmp\Zenith-engine-refactor\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj]
+  imgui_impl_dx11.cpp
+  imgui_impl_win32.cpp
+  imgui.cpp
+  imgui_draw.cpp
+  imgui_tables.cpp
+  imgui_widgets.cpp
+  TilePuzzleRegistryViewer.cpp
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_SetGraphicsOptions(struct Zenith_GraphicsOptions &)" (?Project_SetGraphicsOptions@@YAXAEAUZenith_GraphicsOptions@@@Z) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleRegistryViewer\tilepuzzleregistryviewer_win64.vcxproj]
+zenith.lib(Zenith_Main.obj) : error LNK2001: unresolved external symbol "void __cdecl Project_SetGraphicsOptions(struct Zenith_GraphicsOptions &)" (?Project_SetGraphicsOptions@@YAXAEAUZenith_GraphicsOptions@@@Z) [C:\tmp\Zenith-engine-refactor\TilePuzzleRegistryViewer\tilepuzzleregistryviewer_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "char const * __cdecl Project_GetGameAssetsDir(void)" (?Project_GetGameAssetsDir@@YAPEBDXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleRegistryViewer\tilepuzzleregistryviewer_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_RegisterScriptBehaviours(void)" (?Project_RegisterScriptBehaviours@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleRegistryViewer\tilepuzzleregistryviewer_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_Shutdown(void)" (?Project_Shutdown@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Shutdown(void)" (?Shutdown@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleRegistryViewer\tilepuzzleregistryviewer_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_InitializeResources(void)" (?Project_InitializeResources@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleRegistryViewer\tilepuzzleregistryviewer_win64.vcxproj]
+zenith.lib(Zenith_Engine.obj) : error LNK2019: unresolved external symbol "void __cdecl Project_RegisterEditorAutomationSteps(void)" (?Project_RegisterEditorAutomationSteps@@YAXXZ) referenced in function "public: void __cdecl Zenith_Engine::Initialise(void)" (?Initialise@Zenith_Engine@@QEAAXXZ) [C:\tmp\Zenith-engine-refactor\TilePuzzleRegistryViewer\tilepuzzleregistryviewer_win64.vcxproj]
+output\win64\vs2022_debug_win64_true\tilepuzzleregistryviewer.exe : fatal error LNK1120: 6 unresolved externals [C:\tmp\Zenith-engine-refactor\TilePuzzleRegistryViewer\tilepuzzleregistryviewer_win64.vcxproj]

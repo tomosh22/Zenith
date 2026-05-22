@@ -3,7 +3,8 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_Viewport.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -18,7 +19,7 @@ void Zenith_EditorPanelViewport::Render(ViewportState& xState)
 	xState.m_xViewportPos = { xViewportPanelPos.x, xViewportPanelPos.y };
 
 	// Get the final render target SRV
-	Flux_ShaderResourceView& xGameRenderSRV = Flux_Graphics::GetFinalRenderTarget().SRV();
+	Flux_ShaderResourceView& xGameRenderSRV = g_xEngine.FluxGraphics().GetFinalRenderTarget().SRV();
 
 	if (xGameRenderSRV.m_xImageViewHandle.IsValid())
 	{
@@ -42,7 +43,7 @@ void Zenith_EditorPanelViewport::Render(ViewportState& xState)
 			// Allocate new ImGui texture handle for the game viewport texture
 			xState.m_xCachedGameTextureHandle = Flux_ImGuiIntegration::RegisterTexture(
 				xGameRenderSRV,
-				Flux_Graphics::s_xRepeatSampler
+				g_xEngine.FluxGraphics().m_xRepeatSampler
 			);
 
 			// Cache the image view handle so we know when it changes

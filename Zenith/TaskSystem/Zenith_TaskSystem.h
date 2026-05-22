@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Collections/Zenith_CircularQueue.h"
-#include "Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include "Profiling/Zenith_Profiling.h"
 
 // ----------------------------------------------------------------------------
@@ -11,9 +11,9 @@
 // other and there is no DependsOn(...) API. To order work, the caller blocks
 // on WaitUntilComplete() of the predecessor task before submitting the next:
 //
-//     Zenith_TaskSystem::SubmitTask(&xTaskA);
+//     g_xEngine.Tasks().SubmitTask(&xTaskA);
 //     xTaskA.WaitUntilComplete();              // serialise A before B
-//     Zenith_TaskSystem::SubmitTask(&xTaskB);
+//     g_xEngine.Tasks().SubmitTask(&xTaskB);
 //
 // Use Zenith_TaskArray for data-parallel work where each invocation is
 // independent. Use multiple Zenith_Task submissions when the work items can
@@ -60,7 +60,7 @@ public:
 		Zenith_Profiling::BeginProfile(m_eProfileIndex);
 		m_pfnFunc(m_pData);
 		Zenith_Profiling::EndProfile(m_eProfileIndex);
-		m_uCompletedThreadID = Zenith_Multithreading::GetCurrentThreadID();
+		m_uCompletedThreadID = g_xEngine.Threading().GetCurrentThreadID();
 		m_xSemaphore.Signal();
 	}
 
@@ -100,7 +100,8 @@ protected:
 	void* m_pData;
 	u_int m_uCompletedThreadID;
 
-	friend class Zenith_TaskSystem;
+	friend class Zenith_TaskSystemImpl;
+	friend class Zenith_TaskSystemImpl;  // Phase 3b: state owner accesses m_bSubmitted
 	std::atomic<bool> m_bSubmitted;  // Thread-safe submitted flag
 };
 
@@ -133,7 +134,7 @@ public:
 		u_int uCompletedCount = m_uCompletionCounter.fetch_add(1) + 1;
 		if (uCompletedCount == m_uNumInvocations)
 		{
-			m_uCompletedThreadID = Zenith_Multithreading::GetCurrentThreadID();
+			m_uCompletedThreadID = g_xEngine.Threading().GetCurrentThreadID();
 			m_xSemaphore.Signal();
 		}
 	}
@@ -175,21 +176,9 @@ private:
 	std::atomic<u_int> m_uCompletionCounter;
 };
 
-class Zenith_TaskSystem
-{
-public:
-	static void Inititalise();
-	static void Shutdown();
-
-	static void SubmitTask(Zenith_Task* const pxTask);
-	static void SubmitTaskArray(Zenith_TaskArray* const pxTaskArray);
-
-private:
-	// Atomic CAS to claim a task for submission. Returns false if already submitted.
-	static bool TryClaimTask(Zenith_Task* pxTask, const char* szCallerName);
-
-	// Enqueue a task pointer uCount times under the queue lock, then signal workers.
-	// Returns the number of tasks successfully enqueued.
-	static u_int EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount);
-};
+// Public static facade. Phase 3b moved the actual state + logic onto
+// Zenith_TaskSystemImpl (held by Zenith_Engine). These methods remain
+// as 1-line forwarders to g_xEngine.Tasks() so the 26 existing call
+// sites compile unchanged; Phase 9's static-API removal sweep deletes
+// them once the codemod to g_xEngine.Tasks().X() is done.
 

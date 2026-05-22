@@ -315,8 +315,10 @@ std::string Zenith_AssetRegistry::NormalizeAssetPath(const std::string& strPath)
 
 void Zenith_AssetRegistry::Initialize()
 {
-	Zenith_Assert(s_pxInstance == nullptr, "Zenith_AssetRegistry already initialized!");
-	s_pxInstance = new Zenith_AssetRegistry();
+	// Phase 4: Zenith_Engine owns the instance and installs s_pxInstance
+	// as a view-pointer before calling here. This function now only
+	// registers loaders. Allocation/deletion is the engine's job.
+	Zenith_Assert(s_pxInstance != nullptr, "Zenith_AssetRegistry::Initialize called before Zenith_Engine bound s_pxInstance");
 
 	// Register asset loaders
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_TextureAsset>(), LoadTextureAsset);
@@ -345,14 +347,15 @@ void Zenith_AssetRegistry::InitializeGPUDependentAssets()
 
 void Zenith_AssetRegistry::Shutdown()
 {
+	// Phase 4: instance ownership lives on Zenith_Engine. This function
+	// only drains state; Zenith_Engine::Shutdown deletes m_pxAssets and
+	// clears s_pxInstance after we return.
 	if (s_pxInstance)
 	{
 		// Shutdown material defaults before unloading assets
 		Zenith_MaterialAsset::ShutdownDefaults();
 
 		s_pxInstance->UnloadAll();
-		delete s_pxInstance;
-		s_pxInstance = nullptr;
 
 		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry shutdown");
 	}

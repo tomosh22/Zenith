@@ -16,7 +16,7 @@
  *
  * Optional physics path: if the priest has a Zenith_ColliderComponent with a
  * valid body (added by VisualWiring), each frame we additionally write the
- * agent's desired XZ velocity to the body via Zenith_Physics::SetLinearVelocity.
+ * agent's desired XZ velocity to the body via g_xEngine.Physics().SetLinearVelocity.
  * Without a collider, the transform-mutation path alone is sufficient for
  * pursuit; the test only asserts distance closes, not how it was applied.
  */
@@ -34,7 +34,7 @@
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
@@ -116,8 +116,8 @@ public:
 			if (xCollider.HasValidBody())
 			{
 				const JPH::BodyID& xBodyID = xCollider.GetBodyID();
-				Zenith_Physics::SetGravityEnabled(xBodyID, false);
-				Zenith_Physics::LockRotation(xBodyID, /*X=*/true, /*Y=*/false, /*Z=*/true);
+				g_xEngine.Physics().SetGravityEnabled(xBodyID, false);
+				g_xEngine.Physics().LockRotation(xBodyID, /*X=*/true, /*Y=*/false, /*Z=*/true);
 			}
 		}
 
@@ -497,7 +497,7 @@ private:
 		if (!m_xParentEntity.HasComponent<Zenith_ColliderComponent>()) return;
 		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
 		if (!xCollider.HasValidBody()) return;
-		Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(),
+		g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(),
 			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	}
 

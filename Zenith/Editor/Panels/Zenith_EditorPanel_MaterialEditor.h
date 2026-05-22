@@ -13,11 +13,15 @@ class Zenith_MaterialAsset;
 // Material property editing with texture drag-drop support.
 //=============================================================================
 
-// Material editor state structure
+// Material editor state structure.
+// m_pxSelectedMaterial is a non-owning view pointer -- the editor's owning
+// MaterialHandle lives on Zenith_EditorImpl. The panel never mutates this
+// field; it calls Zenith_Editor::SelectMaterial / ClearMaterialSelection
+// to change the selection.
 struct MaterialEditorState
 {
-	Zenith_MaterialAsset*& m_pxSelectedMaterial;
-	bool& m_bShowMaterialEditor;
+	Zenith_MaterialAsset*  m_pxSelectedMaterial;
+	bool&                  m_bShowMaterialEditor;
 };
 
 namespace Zenith_EditorPanelMaterialEditor

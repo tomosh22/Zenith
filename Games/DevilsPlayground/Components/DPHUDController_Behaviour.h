@@ -26,7 +26,7 @@
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIRect.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Source/DPInputActions.h"
 #include "Maths/Zenith_Maths.h"
 

@@ -12,7 +12,7 @@
  * - Marble uses IsKeyHeld for smooth physics-based movement
  */
 
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -57,21 +57,21 @@ public:
 		Zenith_Maths::Vector3 xDirection(0.f);
 
 		// Forward/backward
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_W) || Zenith_Input::IsKeyHeld(ZENITH_KEY_UP))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))
 		{
 			xDirection += xForward;
 		}
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_S) || Zenith_Input::IsKeyHeld(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))
 		{
 			xDirection -= xForward;
 		}
 
 		// Left/right strafe
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_A) || Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))
 		{
 			xDirection -= xRight;
 		}
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_D) || Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT))
 		{
 			xDirection += xRight;
 		}
@@ -90,7 +90,7 @@ public:
 	 */
 	static bool WasJumpPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE);
 	}
 
 	/**
@@ -98,8 +98,8 @@ public:
 	 */
 	static bool WasPausePressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P) ||
-			   Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P) ||
+			   g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
 	}
 
 	/**
@@ -107,6 +107,6 @@ public:
 	 */
 	static bool WasResetPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R);
 	}
 };

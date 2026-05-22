@@ -27,11 +27,11 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "UI/Zenith_UIButton.h"
 
 // AI System includes
@@ -59,26 +59,33 @@
 #endif
 
 // ============================================================================
-// AIShowcase Resources - Global access
-// Defined in AIShowcase.cpp
+// AIShowcase Resources - Phase 8 per-game ProjectResources struct.
 // ============================================================================
 namespace AIShowcase
 {
-	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Flux_MeshGeometry* g_pxSphereGeometry;
-	extern Flux_MeshGeometry* g_pxCylinderGeometry;
+	struct AIShowcaseResources
+	{
+		MeshGeometryHandle  m_xCubeAsset;
+		MeshGeometryHandle  m_xSphereAsset;
+		MeshGeometryHandle  m_xCylinderAsset;
+		Flux_MeshGeometry*  m_pxCubeGeometry      = nullptr;
+		Flux_MeshGeometry*  m_pxSphereGeometry    = nullptr;
+		Flux_MeshGeometry*  m_pxCylinderGeometry  = nullptr;
 
-	extern MaterialHandle g_xFloorMaterial;
-	extern MaterialHandle g_xWallMaterial;
-	extern MaterialHandle g_xObstacleMaterial;
-	extern MaterialHandle g_xPlayerMaterial;
-	extern MaterialHandle g_xEnemyMaterial;
-	extern MaterialHandle g_xLeaderMaterial;
-	extern MaterialHandle g_xFlankerMaterial;
-	extern MaterialHandle g_xCoverPointMaterial;
-	extern MaterialHandle g_xPatrolPointMaterial;
+		MaterialHandle      m_xFloorMaterial;
+		MaterialHandle      m_xWallMaterial;
+		MaterialHandle      m_xObstacleMaterial;
+		MaterialHandle      m_xPlayerMaterial;
+		MaterialHandle      m_xEnemyMaterial;
+		MaterialHandle      m_xLeaderMaterial;
+		MaterialHandle      m_xFlankerMaterial;
+		MaterialHandle      m_xCoverPointMaterial;
+		MaterialHandle      m_xPatrolPointMaterial;
 
-	extern Zenith_NavMesh* g_pxArenaNavMesh;
+		Zenith_NavMesh*     m_pxArenaNavMesh = nullptr;
+	};
+
+	AIShowcaseResources& Resources();
 }
 
 // ============================================================================
@@ -179,12 +186,12 @@ public:
 			break;
 
 		case AIShowcaseGameState::PAUSED:
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
 				m_eGameState = AIShowcaseGameState::PLAYING;
 				Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
 			}
-			else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
 				ReturnToMenu();
@@ -328,8 +335,8 @@ private:
 		Zenith_PerceptionSystem::Shutdown();
 
 		// Delete NavMesh
-		delete AIShowcase::g_pxArenaNavMesh;
-		AIShowcase::g_pxArenaNavMesh = nullptr;
+		delete AIShowcase::Resources().m_pxArenaNavMesh;
+		AIShowcase::Resources().m_pxArenaNavMesh = nullptr;
 
 		// Clear member state
 		m_xPlayerEntity = Zenith_EntityID();
@@ -408,7 +415,7 @@ private:
 		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, -0.05f, 0.0f));
 
 		Zenith_ModelComponent& xModel = xFloor.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xFloorMaterial.GetDirect());
+		xModel.AddMeshEntry(*AIShowcase::Resources().m_pxCubeGeometry, *AIShowcase::Resources().m_xFloorMaterial.GetDirect());
 
 		// Add static collider for NavMesh generation
 		Zenith_ColliderComponent& xCollider = xFloor.AddComponent<Zenith_ColliderComponent>();
@@ -451,7 +458,7 @@ private:
 			xTransform.SetScale(aWalls[u].m_xScale);
 
 			Zenith_ModelComponent& xModel = xWall.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xWallMaterial.GetDirect());
+			xModel.AddMeshEntry(*AIShowcase::Resources().m_pxCubeGeometry, *AIShowcase::Resources().m_xWallMaterial.GetDirect());
 
 			Zenith_ColliderComponent& xCollider = xWall.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
@@ -495,7 +502,7 @@ private:
 			xTransform.SetScale(aObstacles[u].m_xScale);
 
 			Zenith_ModelComponent& xModel = xObstacle.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xObstacleMaterial.GetDirect());
+			xModel.AddMeshEntry(*AIShowcase::Resources().m_pxCubeGeometry, *AIShowcase::Resources().m_xObstacleMaterial.GetDirect());
 
 			Zenith_ColliderComponent& xCollider = xObstacle.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
@@ -523,7 +530,7 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(0.8f, 1.0f, 0.8f));
 
 		Zenith_ModelComponent& xModel = xPlayer.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*AIShowcase::g_pxCylinderGeometry, *AIShowcase::g_xPlayerMaterial.GetDirect());
+		xModel.AddMeshEntry(*AIShowcase::Resources().m_pxCylinderGeometry, *AIShowcase::Resources().m_xPlayerMaterial.GetDirect());
 
 		Zenith_ColliderComponent& xCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCapsuleCollider(0.4f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
@@ -571,19 +578,19 @@ private:
 			{
 			case 0:
 				eRole = SquadRole::LEADER;
-				pxMaterial = AIShowcase::g_xLeaderMaterial.GetDirect();
+				pxMaterial = AIShowcase::Resources().m_xLeaderMaterial.GetDirect();
 				break;
 			case 1:
 				eRole = SquadRole::ASSAULT;
-				pxMaterial = AIShowcase::g_xEnemyMaterial.GetDirect();
+				pxMaterial = AIShowcase::Resources().m_xEnemyMaterial.GetDirect();
 				break;
 			case 2:
 				eRole = SquadRole::FLANKER;
-				pxMaterial = AIShowcase::g_xFlankerMaterial.GetDirect();
+				pxMaterial = AIShowcase::Resources().m_xFlankerMaterial.GetDirect();
 				break;
 			default:
 				eRole = SquadRole::ASSAULT;
-				pxMaterial = AIShowcase::g_xEnemyMaterial.GetDirect();
+				pxMaterial = AIShowcase::Resources().m_xEnemyMaterial.GetDirect();
 				break;
 			}
 
@@ -616,7 +623,7 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(0.8f, 1.0f, 0.8f));
 
 		Zenith_ModelComponent& xModel = xEnemy.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*AIShowcase::g_pxCylinderGeometry, *pxMaterial);
+		xModel.AddMeshEntry(*AIShowcase::Resources().m_pxCylinderGeometry, *pxMaterial);
 
 		// Add AI components
 		Zenith_AIAgentComponent& xAI = xEnemy.AddComponent<Zenith_AIAgentComponent>();
@@ -652,12 +659,12 @@ private:
 		xConfig.m_fMaxStepHeight = 0.3f;
 		xConfig.m_fCellSize = 0.3f;
 
-		AIShowcase::g_pxArenaNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxSceneData, xConfig);
+		AIShowcase::Resources().m_pxArenaNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxSceneData, xConfig);
 
-		if (AIShowcase::g_pxArenaNavMesh)
+		if (AIShowcase::Resources().m_pxArenaNavMesh)
 		{
 			Zenith_Log(LOG_CATEGORY_AI, "AIShowcase: NavMesh generated with %u polygons",
-				AIShowcase::g_pxArenaNavMesh->GetPolygonCount());
+				AIShowcase::Resources().m_pxArenaNavMesh->GetPolygonCount());
 		}
 		else
 		{
@@ -667,7 +674,7 @@ private:
 		// Assign NavMesh to all NavMeshAgents
 		for (uint32_t u = 0; u < m_uEnemyCount; ++u)
 		{
-			m_axNavAgents[u].SetNavMesh(AIShowcase::g_pxArenaNavMesh);
+			m_axNavAgents[u].SetNavMesh(AIShowcase::Resources().m_pxArenaNavMesh);
 		}
 	}
 
@@ -752,7 +759,7 @@ private:
 	void HandlePlayerInput(float fDt)
 	{
 		// Pause
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
 		{
 			m_eGameState = AIShowcaseGameState::PAUSED;
 			Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
@@ -761,7 +768,7 @@ private:
 		}
 
 		// Escape - return to menu
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 		{
 			ReturnToMenu();
 			return;
@@ -774,13 +781,13 @@ private:
 
 		// Movement
 		Zenith_Maths::Vector3 xMoveDir(0.0f);
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_W))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W))
 			xMoveDir.z += 1.0f;  // Forward = +Z (away from camera)
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_S))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S))
 			xMoveDir.z -= 1.0f;  // Backward = -Z (toward camera)
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_A))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A))
 			xMoveDir.x -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_D))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D))
 			xMoveDir.x += 1.0f;
 
 		if (Zenith_Maths::LengthSq(xMoveDir) > 0.01f)
@@ -803,7 +810,7 @@ private:
 		}
 
 		// Attack / Make sound
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
 		{
 			// Emit sound stimulus for hearing test
 			Zenith_PerceptionSystem::EmitSoundStimulus(
@@ -811,19 +818,19 @@ private:
 		}
 
 		// Formation switching (1-5 keys)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_1))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_1))
 			SetFormation(0);
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_2))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_2))
 			SetFormation(1);
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_3))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_3))
 			SetFormation(2);
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_4))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_4))
 			SetFormation(3);
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_5))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_5))
 			SetFormation(4);
 
 		// Reset
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
 		{
 			ResetDemo();
 			return;
@@ -979,7 +986,7 @@ private:
 			Zenith_Maths::Vector3 xStart, xEnd;
 			if (xNav.GetPendingPathRequest(xStart, xEnd))
 			{
-				axRequests[uNumRequests].m_pxNavMesh = AIShowcase::g_pxArenaNavMesh;
+				axRequests[uNumRequests].m_pxNavMesh = AIShowcase::Resources().m_pxArenaNavMesh;
 				axRequests[uNumRequests].m_xStart = xStart;
 				axRequests[uNumRequests].m_xEnd = xEnd;
 				auAgentIndices[uNumRequests] = u;
@@ -1039,9 +1046,9 @@ private:
 			return;
 
 		// NavMesh visualization (checks its own flags internally)
-		if (AIShowcase::g_pxArenaNavMesh)
+		if (AIShowcase::Resources().m_pxArenaNavMesh)
 		{
-			AIShowcase::g_pxArenaNavMesh->DebugDraw();
+			AIShowcase::Resources().m_pxArenaNavMesh->DebugDraw();
 		}
 
 		// Perception visualization for each enemy (sight cones, hearing, detection lines, memory)
@@ -1060,7 +1067,7 @@ private:
 		Zenith_TacticalPointSystem::DebugDraw();
 
 		// Draw player indicator
-		Flux_Primitives::AddCircle(m_xPlayerPos, 1.5f,
+		g_xEngine.Primitives().AddCircle(m_xPlayerPos, 1.5f,
 			Zenith_Maths::Vector3(0.2f, 0.6f, 1.0f));
 #endif
 	}
@@ -1092,7 +1099,7 @@ private:
 
 				// Note: Actual FOV is 90 degrees (45 half-angle), but we draw a narrower
 				// cone (25 degrees) for better visual clarity - full FOV would be too wide
-				Flux_Primitives::AddConeOutline(
+				g_xEngine.Primitives().AddConeOutline(
 					xEyePos,
 					xForward,
 					25.0f,  // Visualization half-angle (narrower than actual FOV for clarity)
@@ -1103,7 +1110,7 @@ private:
 			// Draw hearing radius (controlled by s_bDrawHearingRadius)
 			if (Zenith_AIDebugVariables::s_bDrawHearingRadius)
 			{
-				Flux_Primitives::AddCircle(xPos, s_fHearingRange,
+				g_xEngine.Primitives().AddCircle(xPos, s_fHearingRange,
 					Zenith_Maths::Vector3(0.3f, 0.3f, 0.8f));  // Blue
 			}
 
@@ -1124,7 +1131,7 @@ private:
 						float fAwareness = xTarget.m_fAwareness;
 						Zenith_Maths::Vector3 xColor(fAwareness, 1.0f - fAwareness, 0.0f);
 
-						Flux_Primitives::AddLine(xEyePos, xTarget.m_xLastKnownPosition, xColor);
+						g_xEngine.Primitives().AddLine(xEyePos, xTarget.m_xLastKnownPosition, xColor);
 					}
 
 					// Draw memory position marker (controlled by s_bDrawMemoryPositions)
@@ -1135,9 +1142,9 @@ private:
 						Zenith_Maths::Vector3 xMemoryColor(1.0f, 0.5f, 0.0f);  // Orange
 						xMemoryColor = xMemoryColor * fFade;
 
-						Flux_Primitives::AddSphere(xTarget.m_xLastKnownPosition, 0.3f, xMemoryColor);
+						g_xEngine.Primitives().AddSphere(xTarget.m_xLastKnownPosition, 0.3f, xMemoryColor);
 						// Question mark indicator for "lost" target
-						Flux_Primitives::AddLine(
+						g_xEngine.Primitives().AddLine(
 							xTarget.m_xLastKnownPosition + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f),
 							xTarget.m_xLastKnownPosition + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
 							xMemoryColor);

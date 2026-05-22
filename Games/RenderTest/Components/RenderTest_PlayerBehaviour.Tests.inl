@@ -1,6 +1,6 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Input/Zenith_InputSimulator.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -25,7 +25,7 @@
 //
 // Frame model:
 //   - BeginFrame() — mirrors Zenith_Core::Zenith_MainLoop's first step: it
-//     calls Zenith_Input::BeginFrame() which auto-releases SimulateKeyPress'd
+//     calls g_xEngine.Input().BeginFrame() which auto-releases SimulateKeyPress'd
 //     keys from the prior frame and recomputes mouse delta from the simulator
 //     position. Inputs simulated AFTER this point and BEFORE Step() are read.
 //   - Step()      — runs one OnUpdate(player) + OnLateUpdate(camera) tick.
@@ -95,7 +95,7 @@ namespace
 		// updates mouse delta from the simulator's current position.
 		void BeginFrame()
 		{
-			Zenith_Input::BeginFrame();
+			g_xEngine.Input().BeginFrame();
 		}
 
 		// Runs one update tick. The player updates first because the camera

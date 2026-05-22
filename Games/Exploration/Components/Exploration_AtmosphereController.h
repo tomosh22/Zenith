@@ -14,10 +14,11 @@
  */
 
 #include "Maths/Zenith_Maths.h"
-#include "Flux/Flux_Graphics.h"
-#include "Flux/Skybox/Flux_Skybox.h"
-#include "Flux/IBL/Flux_IBL.h"
-#include "Flux/Vegetation/Flux_Grass.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Skybox/Flux_SkyboxImpl.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
+#include "Flux/Vegetation/Flux_GrassImpl.h"
 
 #include <cmath>
 #include <random>
@@ -398,7 +399,7 @@ namespace Exploration_AtmosphereController
 	{
 		// Update frame constants with sun direction and color
 		// Note: This modifies the shared FrameConstants that get uploaded to GPU
-		Flux_Graphics::FrameConstants& xConstants = Flux_Graphics::s_xFrameConstants;
+		Flux_GraphicsImpl::FrameConstants& xConstants = g_xEngine.FluxGraphics().m_xFrameConstants;
 
 		xConstants.m_xSunDir_Pad = Zenith_Maths::Vector4(
 			s_xCurrentState.m_xSunDirection.x,
@@ -413,7 +414,7 @@ namespace Exploration_AtmosphereController
 			s_xCurrentState.m_fAmbientIntensity);
 
 		// Update Flux_Skybox atmosphere with sun intensity
-		Flux_Skybox::SetSunIntensity(s_xCurrentState.m_fSunIntensity);
+		g_xEngine.Skybox().SetSunIntensity(s_xCurrentState.m_fSunIntensity);
 
 		// Set aerial perspective strength based on weather
 		float fAerialStrength = 1.0f;
@@ -429,7 +430,7 @@ namespace Exploration_AtmosphereController
 			fAerialStrength = 2.0f;
 			break;
 		}
-		Flux_Skybox::SetAerialPerspectiveStrength(fAerialStrength);
+		g_xEngine.Skybox().SetAerialPerspectiveStrength(fAerialStrength);
 
 		// Update Flux_Grass wind based on weather
 		Zenith_Maths::Vector2 xWindDir(1.0f, 0.2f);
@@ -446,16 +447,16 @@ namespace Exploration_AtmosphereController
 			fWindStrength = 0.2f;  // Calm during fog
 			break;
 		}
-		Flux_Grass::SetWindDirection(xWindDir);
-		Flux_Grass::SetWindStrength(fWindStrength);
+		g_xEngine.Grass().SetWindDirection(xWindDir);
+		g_xEngine.Grass().SetWindStrength(fWindStrength);
 
 		// Check if sun direction has changed significantly and update IBL
 		Zenith_Maths::Vector3 xSunDelta = s_xCurrentState.m_xSunDirection - s_xPreviousSunDirection;
 		float fSunChangeMagnitude = glm::length(xSunDelta);
 		if (fSunChangeMagnitude > s_fSunChangeThreshold)
 		{
-			Flux_IBL::MarkAllProbesDirty();
-			Flux_IBL::UpdateSkyIBL();
+			g_xEngine.IBL().MarkAllProbesDirty();
+			g_xEngine.IBL().UpdateSkyIBL();
 			s_xPreviousSunDirection = s_xCurrentState.m_xSunDirection;
 		}
 	}

@@ -1,163 +1,99 @@
 #include "Zenith.h"
 
-#include "Input/Zenith_TouchInput.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_TouchInputImpl.h"
+#include "Input/Zenith_TouchInputImpl.h"
+#include "Input/Zenith_InputImpl.h"
 
-// ============================================================================
-// State
-// ============================================================================
-static bool s_bTouchActive = false;
-static Zenith_Maths::Vector2 s_xTouchStartPos = { 0.f, 0.f };
-static float s_fTouchStartTime = 0.f;
-static bool s_bWasTouchDownLastFrame = false;
-
-// Per-frame events (reset each Update)
-static bool s_bTapThisFrame = false;
-static bool s_bSwipeThisFrame = false;
-static Zenith_SwipeDirection s_eSwipeDirection = ZENITH_SWIPE_NONE;
-static Zenith_Maths::Vector2 s_xTapPosition = { 0.f, 0.f };
-static Zenith_Maths::Vector2 s_xSwipeStartPos = { 0.f, 0.f };
-static float s_fSwipeDistance = 0.f;
-
-// Current position
-static Zenith_Maths::Vector2 s_xCurrentTouchPos = { 0.f, 0.f };
-static bool s_bCurrentlyDown = false;
-
-// Thresholds
-static float s_fSwipeThreshold = 30.f;
-static float s_fTapMaxMovement = 15.f;
-static float s_fTapMaxDuration = 0.3f;
+// Phase 5.5b: touch-gesture state lives on Zenith_TouchInputImpl held by
+// Zenith_Engine. All former file-statics are now reached via
+// g_xEngine.Touch().m_xXxx.
 
 // ============================================================================
 // Update
 // ============================================================================
-void Zenith_TouchInput::Update()
+void Zenith_TouchInputImpl::Update()
 {
 	// Reset per-frame events
-	s_bTapThisFrame = false;
-	s_bSwipeThisFrame = false;
-	s_eSwipeDirection = ZENITH_SWIPE_NONE;
-	s_fSwipeDistance = 0.f;
+	g_xEngine.Touch().m_bTapThisFrame = false;
+	g_xEngine.Touch().m_bSwipeThisFrame = false;
+	g_xEngine.Touch().m_eSwipeDirection = ZENITH_SWIPE_NONE;
+	g_xEngine.Touch().m_fSwipeDistance = 0.f;
 
 	// Read current mouse/touch state
-	bool bDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	bool bDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 	Zenith_Maths::Vector2_64 xPos64;
-	Zenith_Input::GetMousePosition(xPos64);
-	s_xCurrentTouchPos = Zenith_Maths::Vector2(static_cast<float>(xPos64.x), static_cast<float>(xPos64.y));
-	s_bCurrentlyDown = bDown;
+	g_xEngine.Input().GetMousePosition(xPos64);
+	g_xEngine.Touch().m_xCurrentTouchPos = Zenith_Maths::Vector2(static_cast<float>(xPos64.x), static_cast<float>(xPos64.y));
+	g_xEngine.Touch().m_bCurrentlyDown = bDown;
 
-	float fCurrentTime = Zenith_Core::GetTimePassed();
+	float fCurrentTime = g_xEngine.Frame().GetTimePassed();
 
-	if (bDown && !s_bWasTouchDownLastFrame)
+	if (bDown && !g_xEngine.Touch().m_bWasTouchDownLastFrame)
 	{
 		// Touch just started
-		s_bTouchActive = true;
-		s_xTouchStartPos = s_xCurrentTouchPos;
-		s_fTouchStartTime = fCurrentTime;
+		g_xEngine.Touch().m_bTouchActive = true;
+		g_xEngine.Touch().m_xTouchStartPos = g_xEngine.Touch().m_xCurrentTouchPos;
+		g_xEngine.Touch().m_fTouchStartTime = fCurrentTime;
 	}
-	else if (!bDown && s_bWasTouchDownLastFrame && s_bTouchActive)
+	else if (!bDown && g_xEngine.Touch().m_bWasTouchDownLastFrame && g_xEngine.Touch().m_bTouchActive)
 	{
 		// Touch just ended - classify gesture
-		float fDeltaX = s_xCurrentTouchPos.x - s_xTouchStartPos.x;
-		float fDeltaY = s_xCurrentTouchPos.y - s_xTouchStartPos.y;
+		float fDeltaX = g_xEngine.Touch().m_xCurrentTouchPos.x - g_xEngine.Touch().m_xTouchStartPos.x;
+		float fDeltaY = g_xEngine.Touch().m_xCurrentTouchPos.y - g_xEngine.Touch().m_xTouchStartPos.y;
 		float fDistance = std::sqrt(fDeltaX * fDeltaX + fDeltaY * fDeltaY);
-		float fDuration = fCurrentTime - s_fTouchStartTime;
+		float fDuration = fCurrentTime - g_xEngine.Touch().m_fTouchStartTime;
 
-		if (fDistance < s_fTapMaxMovement && fDuration < s_fTapMaxDuration)
+		if (fDistance < g_xEngine.Touch().m_fTapMaxMovement && fDuration < g_xEngine.Touch().m_fTapMaxDuration)
 		{
 			// Tap detected
-			s_bTapThisFrame = true;
-			s_xTapPosition = s_xTouchStartPos;
+			g_xEngine.Touch().m_bTapThisFrame = true;
+			g_xEngine.Touch().m_xTapPosition = g_xEngine.Touch().m_xTouchStartPos;
 		}
-		else if (fDistance >= s_fSwipeThreshold)
+		else if (fDistance >= g_xEngine.Touch().m_fSwipeThreshold)
 		{
 			// Swipe detected - determine dominant direction
-			s_bSwipeThisFrame = true;
-			s_xSwipeStartPos = s_xTouchStartPos;
-			s_fSwipeDistance = fDistance;
+			g_xEngine.Touch().m_bSwipeThisFrame = true;
+			g_xEngine.Touch().m_xSwipeStartPos = g_xEngine.Touch().m_xTouchStartPos;
+			g_xEngine.Touch().m_fSwipeDistance = fDistance;
 
 			float fAbsDeltaX = std::abs(fDeltaX);
 			float fAbsDeltaY = std::abs(fDeltaY);
 
 			if (fAbsDeltaX > fAbsDeltaY)
 			{
-				s_eSwipeDirection = (fDeltaX > 0.f) ? ZENITH_SWIPE_RIGHT : ZENITH_SWIPE_LEFT;
+				g_xEngine.Touch().m_eSwipeDirection = (fDeltaX > 0.f) ? ZENITH_SWIPE_RIGHT : ZENITH_SWIPE_LEFT;
 			}
 			else
 			{
-				s_eSwipeDirection = (fDeltaY > 0.f) ? ZENITH_SWIPE_DOWN : ZENITH_SWIPE_UP;
+				g_xEngine.Touch().m_eSwipeDirection = (fDeltaY > 0.f) ? ZENITH_SWIPE_DOWN : ZENITH_SWIPE_UP;
 			}
 		}
 
-		s_bTouchActive = false;
+		g_xEngine.Touch().m_bTouchActive = false;
 	}
 
-	s_bWasTouchDownLastFrame = bDown;
+	g_xEngine.Touch().m_bWasTouchDownLastFrame = bDown;
 }
 
 // ============================================================================
 // Tap
 // ============================================================================
-bool Zenith_TouchInput::WasTapThisFrame()
-{
-	return s_bTapThisFrame;
-}
 
-Zenith_Maths::Vector2 Zenith_TouchInput::GetTapPosition()
-{
-	return s_xTapPosition;
-}
 
 // ============================================================================
 // Swipe
 // ============================================================================
-bool Zenith_TouchInput::WasSwipeThisFrame()
-{
-	return s_bSwipeThisFrame;
-}
 
-Zenith_SwipeDirection Zenith_TouchInput::GetSwipeDirection()
-{
-	return s_eSwipeDirection;
-}
 
-Zenith_Maths::Vector2 Zenith_TouchInput::GetSwipeStartPosition()
-{
-	return s_xSwipeStartPos;
-}
 
-float Zenith_TouchInput::GetSwipeDistance()
-{
-	return s_fSwipeDistance;
-}
 
 // ============================================================================
 // Configuration
 // ============================================================================
-void Zenith_TouchInput::SetSwipeThreshold(float fPixels)
-{
-	s_fSwipeThreshold = fPixels;
-}
 
-void Zenith_TouchInput::SetTapMaxMovement(float fPixels)
-{
-	s_fTapMaxMovement = fPixels;
-}
 
-void Zenith_TouchInput::SetTapMaxDuration(float fSeconds)
-{
-	s_fTapMaxDuration = fSeconds;
-}
 
 // ============================================================================
 // State Queries
 // ============================================================================
-bool Zenith_TouchInput::IsTouchDown()
-{
-	return s_bCurrentlyDown;
-}
 
-Zenith_Maths::Vector2 Zenith_TouchInput::GetTouchPosition()
-{
-	return s_xCurrentTouchPos;
-}

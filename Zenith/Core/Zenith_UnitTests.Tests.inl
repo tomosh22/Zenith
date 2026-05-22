@@ -12,7 +12,7 @@
 #include "Collections/Zenith_MemoryPool.h"
 #include "Flux/Flux_Types.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 // Scene serialization includes
 #include "EntityComponent/Zenith_Scene.h"
@@ -64,7 +64,7 @@
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
 
 // Terrain streaming (for chunk distance tests)
-#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 
 // Slang reflection schema + codegen. Both headers are platform-neutral
 // (Slang DLL access is gated inside the .cpp via ZENITH_WINDOWS), so the
@@ -73,7 +73,7 @@
 #include "Flux/Slang/Flux_CodeGenerator.h"
 
 #ifdef ZENITH_TOOLS
-#include "Flux/Gizmos/Flux_Gizmos.h"
+#include "Flux/Gizmos/Flux_GizmosImpl.h"
 #endif
 
 ZENITH_TEST(Core, DataStream) { Zenith_UnitTests::TestDataStream(); }
@@ -156,9 +156,9 @@ void Zenith_UnitTests::TestProfiling(){
 	Zenith_Task* pxTask0 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_SHADOWS, Test, &xTest0);
 	Zenith_Task* pxTask1 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING, Test, &xTest1);
 	Zenith_Task* pxTask2 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_SKYBOX, Test, &xTest2);
-	Zenith_TaskSystem::SubmitTask(pxTask0);
-	Zenith_TaskSystem::SubmitTask(pxTask1);
-	Zenith_TaskSystem::SubmitTask(pxTask2);
+	g_xEngine.Tasks().SubmitTask(pxTask0);
+	g_xEngine.Tasks().SubmitTask(pxTask1);
+	g_xEngine.Tasks().SubmitTask(pxTask2);
 	pxTask0->WaitUntilComplete();
 	pxTask1->WaitUntilComplete();
 	pxTask2->WaitUntilComplete();
@@ -168,7 +168,7 @@ void Zenith_UnitTests::TestProfiling(){
 	ZENITH_ASSERT_TRUE(xTest2.Validate(), "");
 
 	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = Zenith_Profiling::GetEvents();
-	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(Zenith_Multithreading::GetCurrentThreadID());
+	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(g_xEngine.Threading().GetCurrentThreadID());
 	(void)xEvents.at(pxTask0->GetCompletedThreadID());
 	(void)xEvents.at(pxTask1->GetCompletedThreadID());
 	(void)xEvents.at(pxTask2->GetCompletedThreadID());
@@ -8263,7 +8263,7 @@ struct CallingThreadTestData
 static void CallingThreadTestFunc(void* pData, u_int /*uIdx*/, u_int /*uTotal*/)
 {
 	auto* pxData = static_cast<CallingThreadTestData*>(pData);
-	if (Zenith_Multithreading::GetCurrentThreadID() == pxData->m_uMainThreadID)
+	if (g_xEngine.Threading().GetCurrentThreadID() == pxData->m_uMainThreadID)
 	{
 		pxData->m_uMainThreadInvocations.fetch_add(1);
 	}
@@ -8276,7 +8276,7 @@ void Zenith_UnitTests::TestTaskArrayCallingThreadParticipates(){
 	// Verifies the rename's semantics: when bCallingThreadParticipates=true, the
 	// calling thread (main) runs at least one of the array's invocations.
 	CallingThreadTestData xData;
-	xData.m_uMainThreadID = Zenith_Multithreading::GetCurrentThreadID();
+	xData.m_uMainThreadID = g_xEngine.Threading().GetCurrentThreadID();
 
 	constexpr u_int uNumInvocations = 8;
 	Zenith_TaskArray xArray(
@@ -8286,7 +8286,7 @@ void Zenith_UnitTests::TestTaskArrayCallingThreadParticipates(){
 		uNumInvocations,
 		/* bCallingThreadParticipates = */ true
 	);
-	Zenith_TaskSystem::SubmitTaskArray(&xArray);
+	g_xEngine.Tasks().SubmitTaskArray(&xArray);
 	xArray.WaitUntilComplete();
 
 	ZENITH_ASSERT_TRUE(xData.m_uMainThreadInvocations.load() >= 1,
@@ -8892,7 +8892,7 @@ void Zenith_UnitTests::TestPrefabLoadFromDeletedFile(){
 // The plan called for a "outstanding tasks complete before Shutdown() returns"
 // test. It cannot be expressed in this framework: the engine's TaskSystem is
 // initialised once at process start and shut down once at process end. Tests
-// run *between* those points; calling Zenith_TaskSystem::Shutdown() from a
+// run *between* those points; calling g_xEngine.Tasks().Shutdown() from a
 // test would tear down the worker pool that every subsequent test depends on.
 // The drain contract is exercised every time the engine exits cleanly, so
 // regressions surface immediately as hangs or use-after-free in shutdown
@@ -8923,7 +8923,7 @@ void Zenith_UnitTests::TestTaskReuseAfterWait(){
 
 	Zenith_Task xTask(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, ReuseTaskFunc, &xData);
 
-	Zenith_TaskSystem::SubmitTask(&xTask);
+	g_xEngine.Tasks().SubmitTask(&xTask);
 	xTask.WaitUntilComplete();
 	ZENITH_ASSERT_EQ(xData.m_uExecutionCount.load(), 1u, "TestTaskReuseAfterWait: first submit should run task once");
 
@@ -8931,7 +8931,7 @@ void Zenith_UnitTests::TestTaskReuseAfterWait(){
 	// cleared by WaitUntilComplete) — call it to exercise the path anyway.
 	xTask.Reset();
 
-	Zenith_TaskSystem::SubmitTask(&xTask);
+	g_xEngine.Tasks().SubmitTask(&xTask);
 	xTask.WaitUntilComplete();
 	ZENITH_ASSERT_EQ(xData.m_uExecutionCount.load(), 2u, "TestTaskReuseAfterWait: second submit should run task again");
 }
@@ -12267,8 +12267,8 @@ ZENITH_TEST(Terrain, ChunkDistanceSymmetry) { Zenith_UnitTests::TestChunkDistanc
 void Zenith_UnitTests::TestChunkDistanceSymmetry(){
 
 	// Use two distinct chunks: (2,3) and (5,7)
-	const uint32_t uChunkA = Flux_TerrainStreamingManager::ChunkCoordsToIndex(2, 3);
-	const uint32_t uChunkB = Flux_TerrainStreamingManager::ChunkCoordsToIndex(5, 7);
+	const uint32_t uChunkA = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(2, 3);
+	const uint32_t uChunkB = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(5, 7);
 
 	// Build a synthetic streaming state with cached AABBs for the two chunks.
 	Flux_TerrainStreamingState xState;
@@ -12283,12 +12283,12 @@ void Zenith_UnitTests::TestChunkDistanceSymmetry(){
 	);
 
 	// Get chunk centers
-	Zenith_Maths::Vector3 xCenterA = Flux_TerrainStreamingManager::GetChunkCenter(xState, 2, 3);
-	Zenith_Maths::Vector3 xCenterB = Flux_TerrainStreamingManager::GetChunkCenter(xState, 5, 7);
+	Zenith_Maths::Vector3 xCenterA = Flux_TerrainStreamingManagerImpl::GetChunkCenter(xState, 2, 3);
+	Zenith_Maths::Vector3 xCenterB = Flux_TerrainStreamingManagerImpl::GetChunkCenter(xState, 5, 7);
 
 	// Distance from A's center to chunk B should equal distance from B's center to chunk A
-	float fDistAToB = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uChunkB, xCenterA);
-	float fDistBToA = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uChunkA, xCenterB);
+	float fDistAToB = Flux_TerrainStreamingManagerImpl::GetChunkDistanceSq(xState, uChunkB, xCenterA);
+	float fDistBToA = Flux_TerrainStreamingManagerImpl::GetChunkDistanceSq(xState, uChunkA, xCenterB);
 
 	// Squared distance is symmetric: |A-B|^2 == |B-A|^2
 	float fDifference = fabsf(fDistAToB - fDistBToA);
@@ -12300,7 +12300,7 @@ ZENITH_TEST(Terrain, ChunkDistanceZero) { Zenith_UnitTests::TestChunkDistanceZer
 
 void Zenith_UnitTests::TestChunkDistanceZero(){
 
-	const uint32_t uChunkIndex = Flux_TerrainStreamingManager::ChunkCoordsToIndex(4, 4);
+	const uint32_t uChunkIndex = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(4, 4);
 
 	// Synthetic state with one cached AABB.
 	Flux_TerrainStreamingState xState;
@@ -12311,8 +12311,8 @@ void Zenith_UnitTests::TestChunkDistanceZero(){
 	);
 
 	// Camera at exact chunk center should give distance 0
-	Zenith_Maths::Vector3 xChunkCenter = Flux_TerrainStreamingManager::GetChunkCenter(xState, 4, 4);
-	float fDistanceSq = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uChunkIndex, xChunkCenter);
+	Zenith_Maths::Vector3 xChunkCenter = Flux_TerrainStreamingManagerImpl::GetChunkCenter(xState, 4, 4);
+	float fDistanceSq = Flux_TerrainStreamingManagerImpl::GetChunkDistanceSq(xState, uChunkIndex, xChunkCenter);
 
 	ZENITH_ASSERT_LT(fDistanceSq, 0.001f, "Distance from chunk center to itself should be ~0, got %.6f", fDistanceSq);
 
@@ -12357,7 +12357,7 @@ void Zenith_UnitTests::TestTerrainStreamingResidencyIsolatedBetweenStates(){
 	Flux_TerrainStreamingState xStateA;
 	Flux_TerrainStreamingState xStateB;
 
-	const uint32_t uChunkIndex = Flux_TerrainStreamingManager::ChunkCoordsToIndex(7, 11);
+	const uint32_t uChunkIndex = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(7, 11);
 	// Both states start with all chunks NOT_LOADED.
 	ZENITH_ASSERT_EQ(xStateA.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::NOT_LOADED, "State A chunk must start NOT_LOADED");
 	ZENITH_ASSERT_EQ(xStateB.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::NOT_LOADED, "State B chunk must start NOT_LOADED");
@@ -12413,14 +12413,14 @@ void Zenith_UnitTests::TestTerrainActiveSetSortedNearestFirst(){
 	{
 		for (uint32_t cy = 4; cy <= 6; ++cy)
 		{
-			const uint32_t uIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(cx, cy);
+			const uint32_t uIdx = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(cx, cy);
 			xState.m_axChunkAABBs[uIdx] = Zenith_AABB(
 				Zenith_Maths::Vector3(static_cast<float>(cx)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 0.0f,        static_cast<float>(cy)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD),
 				Zenith_Maths::Vector3(static_cast<float>(cx + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 64.0f,       static_cast<float>(cy + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD));
 		}
 	}
 
-	Flux_TerrainStreamingManager::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
+	Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
 
 	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices.size(), (size_t)9, "Active set with radius 1 should hold 9 chunks (3×3)");
 
@@ -12428,7 +12428,7 @@ void Zenith_UnitTests::TestTerrainActiveSetSortedNearestFirst(){
 	for (size_t u = 0; u < xState.m_xActiveChunkIndices.size(); ++u)
 	{
 		const uint32_t uIdx       = xState.m_xActiveChunkIndices[u];
-		const float    fDistanceSq = Flux_TerrainStreamingManager::GetChunkDistanceSq(xState, uIdx, xCameraPos);
+		const float    fDistanceSq = Flux_TerrainStreamingManagerImpl::GetChunkDistanceSq(xState, uIdx, xCameraPos);
 		ZENITH_ASSERT(fDistanceSq + 0.0001f >= fPrevDistSq, "Active set must be non-decreasing in distance, entry %zu broke ordering", u);
 		fPrevDistSq = fDistanceSq;
 	}
@@ -12451,17 +12451,17 @@ void Zenith_UnitTests::TestTerrainActiveSetCenterIndexFirst(){
 	{
 		for (uint32_t cy = 4; cy <= 6; ++cy)
 		{
-			const uint32_t uIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(cx, cy);
+			const uint32_t uIdx = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(cx, cy);
 			xState.m_axChunkAABBs[uIdx] = Zenith_AABB(
 				Zenith_Maths::Vector3(static_cast<float>(cx)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 0.0f,        static_cast<float>(cy)       * Flux_TerrainConfig::CHUNK_SIZE_WORLD),
 				Zenith_Maths::Vector3(static_cast<float>(cx + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 64.0f,       static_cast<float>(cy + 1u)  * Flux_TerrainConfig::CHUNK_SIZE_WORLD));
 		}
 	}
 
-	Flux_TerrainStreamingManager::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
+	Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(xState, 5, 5, xCameraPos);
 
 	ZENITH_ASSERT(xState.m_xActiveChunkIndices.size() > 0, "Active set must be non-empty");
-	const uint32_t uExpectedCenter = Flux_TerrainStreamingManager::ChunkCoordsToIndex(5, 5);
+	const uint32_t uExpectedCenter = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(5, 5);
 	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices[0], uExpectedCenter, "First entry of sorted active set must be the chunk under the camera");
 }
 
@@ -12480,7 +12480,7 @@ void Zenith_UnitTests::TestTerrainActiveSetUsesNearestAABBForOffsetTerrain(){
 	{
 		for (uint32_t cy = 0; cy < Flux_TerrainConfig::CHUNK_GRID_SIZE; ++cy)
 		{
-			const uint32_t uIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(cx, cy);
+			const uint32_t uIdx = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(cx, cy);
 			const float fBaseX = 100000.0f + static_cast<float>(cx) * fChunkSize;
 			const float fBaseZ = 100000.0f + static_cast<float>(cy) * fChunkSize;
 			xState.m_axChunkAABBs[uIdx] = Zenith_AABB(
@@ -12491,7 +12491,7 @@ void Zenith_UnitTests::TestTerrainActiveSetUsesNearestAABBForOffsetTerrain(){
 
 	const uint32_t uTargetX = 10;
 	const uint32_t uTargetY = 12;
-	const uint32_t uTargetIdx = Flux_TerrainStreamingManager::ChunkCoordsToIndex(uTargetX, uTargetY);
+	const uint32_t uTargetIdx = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(uTargetX, uTargetY);
 	xState.m_axChunkAABBs[uTargetIdx] = Zenith_AABB(
 		Zenith_Maths::Vector3(-512.0f, 0.0f, -256.0f),
 		Zenith_Maths::Vector3(-448.0f, 64.0f, -192.0f));
@@ -12500,13 +12500,13 @@ void Zenith_UnitTests::TestTerrainActiveSetUsesNearestAABBForOffsetTerrain(){
 	int32_t iChunkX = -1;
 	int32_t iChunkY = -1;
 	uint32_t uNearestIdx = UINT32_MAX;
-	Flux_TerrainStreamingManager::ResolveCameraChunkCoords(xState, xCameraPos, iChunkX, iChunkY, uNearestIdx);
+	Flux_TerrainStreamingManagerImpl::ResolveCameraChunkCoords(xState, xCameraPos, iChunkX, iChunkY, uNearestIdx);
 
 	ZENITH_ASSERT_EQ(uNearestIdx, uTargetIdx, "AABB nearest-chunk selection should pick the offset target chunk");
 	ZENITH_ASSERT_EQ(iChunkX, static_cast<int32_t>(uTargetX), "Resolved camera chunk X should come from nearest AABB");
 	ZENITH_ASSERT_EQ(iChunkY, static_cast<int32_t>(uTargetY), "Resolved camera chunk Y should come from nearest AABB");
 
-	Flux_TerrainStreamingManager::RebuildActiveChunkSet(xState, iChunkX, iChunkY, xCameraPos);
+	Flux_TerrainStreamingManagerImpl::RebuildActiveChunkSet(xState, iChunkX, iChunkY, xCameraPos);
 	ZENITH_ASSERT(xState.m_xActiveChunkIndices.size() > 0, "Offset active set should be non-empty");
 	ZENITH_ASSERT_EQ(xState.m_xActiveChunkIndices[0], uTargetIdx, "Nearest offset chunk should be first in the sorted active set");
 }
@@ -12523,7 +12523,7 @@ void Zenith_UnitTests::TestTerrainChunkDataNoLowZeroWhenLowResident(){
 	for (uint32_t uChunkIndex = 0; uChunkIndex < Flux_TerrainConfig::TOTAL_CHUNKS; ++uChunkIndex)
 	{
 		uint32_t uChunkX, uChunkY;
-		Flux_TerrainStreamingManager::ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
+		Flux_TerrainStreamingManagerImpl::ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
 		xState.m_axChunkResidency[uChunkIndex].m_aeStates[LOD_LOW] = Flux_TerrainLODResidencyState::RESIDENT;
 		xState.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_LOW].m_uVertexOffset = uChunkIndex * 4u;
 		xState.m_axChunkResidency[uChunkIndex].m_axAllocations[LOD_LOW].m_uVertexCount = 4u;
@@ -12534,10 +12534,10 @@ void Zenith_UnitTests::TestTerrainChunkDataNoLowZeroWhenLowResident(){
 			Zenith_Maths::Vector3(static_cast<float>(uChunkX + 1u) * Flux_TerrainConfig::CHUNK_SIZE_WORLD, 64.0f, static_cast<float>(uChunkY + 1u) * Flux_TerrainConfig::CHUNK_SIZE_WORLD));
 	}
 
-	ZENITH_ASSERT_EQ(Flux_TerrainStreamingManager::CountLowZeroChunks(xState), 0u, "LOW zero-count diagnostic should be zero when all LOW chunks are resident with indices");
+	ZENITH_ASSERT_EQ(Flux_TerrainStreamingManagerImpl::CountLowZeroChunks(xState), 0u, "LOW zero-count diagnostic should be zero when all LOW chunks are resident with indices");
 
 	Zenith_TerrainChunkData* pxChunkData = new Zenith_TerrainChunkData[Flux_TerrainConfig::TOTAL_CHUNKS];
-	Flux_TerrainStreamingManager::BuildChunkDataForGPU_Internal(xState, pxChunkData);
+	Flux_TerrainStreamingManagerImpl::BuildChunkDataForGPU_Internal(xState, pxChunkData);
 	for (uint32_t uChunkIndex = 0; uChunkIndex < Flux_TerrainConfig::TOTAL_CHUNKS; ++uChunkIndex)
 	{
 		ZENITH_ASSERT_EQ(pxChunkData[uChunkIndex].m_axLODs[LOD_LOW].m_uIndexCount, 6u, "Generated chunk data LOW index count should match populated residency");
@@ -12750,17 +12750,17 @@ void Zenith_UnitTests::TestGizmosLineLineParallel(){
 	Zenith_Maths::Vector3 xRayDir(1, 0, 0);	// Parallel to axis
 
 	float fOutT = 0.0f;
-	bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+	bool bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 	ZENITH_ASSERT_FALSE(bResult, "Parallel lines should return false");
 
 	// Also test with opposite direction (anti-parallel)
 	xRayDir = Zenith_Maths::Vector3(-1, 0, 0);
-	bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+	bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 	ZENITH_ASSERT_FALSE(bResult, "Anti-parallel lines should return false");
 
 	// Near-parallel lines (very small angle) should also return false
 	xRayDir = glm::normalize(Zenith_Maths::Vector3(1, 0.00001f, 0));
-	bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+	bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 	ZENITH_ASSERT_FALSE(bResult, "Near-parallel lines should return false");
 
 }
@@ -12777,7 +12777,7 @@ void Zenith_UnitTests::TestGizmosLineLinePerpendicular(){
 		Zenith_Maths::Vector3 xRayDir(0, 1, 0);
 
 		float fOutT = -999.0f;
-		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+		bool bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 		ZENITH_ASSERT_TRUE(bResult, "Perpendicular lines should return true");
 		ZENITH_ASSERT_LT(glm::abs(fOutT), 0.001f, "Closest point on axis should be at t=0");
 	}
@@ -12791,7 +12791,7 @@ void Zenith_UnitTests::TestGizmosLineLinePerpendicular(){
 		Zenith_Maths::Vector3 xRayDir(0, 0, 1);
 
 		float fOutT = -999.0f;
-		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+		bool bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 		ZENITH_ASSERT_TRUE(bResult, "Perpendicular lines should return true");
 		ZENITH_ASSERT_LT(glm::abs(fOutT - 3.0f), 0.001f, "Closest point should be at t=3");
 	}
@@ -12805,7 +12805,7 @@ void Zenith_UnitTests::TestGizmosLineLinePerpendicular(){
 		Zenith_Maths::Vector3 xRayDir(1, 0, 0);
 
 		float fOutT = -999.0f;
-		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+		bool bResult = g_xEngine.Gizmos().GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
 		ZENITH_ASSERT_TRUE(bResult, "Perpendicular lines should return true");
 		ZENITH_ASSERT_LT(glm::abs(fOutT - 7.0f), 0.001f, "Closest point should be at t=7");
 	}
@@ -12819,7 +12819,7 @@ void Zenith_UnitTests::TestGizmosTangentFrame(){
 	auto TestAxis = [](const Zenith_Maths::Vector3& xAxis, const char* pszName)
 	{
 		Zenith_Maths::Vector3 xTangent, xBitangent;
-		Flux_Gizmos::ComputeTangentFrame(xAxis, xTangent, xBitangent);
+		g_xEngine.Gizmos().ComputeTangentFrame(xAxis, xTangent, xBitangent);
 
 		// Tangent should be perpendicular to axis
 		float fDotAxisTangent = glm::abs(glm::dot(xAxis, xTangent));
@@ -12859,7 +12859,7 @@ void Zenith_UnitTests::TestGizmosTangentFrame(){
 //=============================================================================
 // Gizmo Unity-parity tests (audit §3.17)
 //=============================================================================
-// These verify Flux_Gizmos::GetEditableTransform() resolves the target entity's
+// These verify g_xEngine.Gizmos().GetEditableTransform() resolves the target entity's
 // transform through the entity's OWN scene, not GetActiveScene(). Unity's
 // SceneManager.GetActiveScene is explicit: "the active Scene has no impact on
 // what Scenes are rendered" — and multi-scene editing lets the gizmo manipulate
@@ -12893,7 +12893,7 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 	// Set the gizmo target to the persistent entity — stored as pointer to a stable
 	// local, matching how Zenith_Editor passes its static selected-entity.
 	Zenith_Entity xTargetCopy = xPersistentEntity;
-	Flux_Gizmos::SetTargetEntity(&xTargetCopy);
+	g_xEngine.Gizmos().SetTargetEntity(&xTargetCopy);
 
 	// Confirm the active scene is NOT the persistent scene (otherwise this test
 	// would still pass under the buggy pre-fix code).
@@ -12903,7 +12903,7 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 	// Fixed behaviour: GetEditableTransform() walks the entity's own scene and
 	// returns its transform. Under the buggy pre-fix code this returns nullptr
 	// because the persistent entity isn't in the active scene's component pool.
-	Zenith_TransformComponent* pxTransform = Flux_Gizmos::GetEditableTransform();
+	Zenith_TransformComponent* pxTransform = g_xEngine.Gizmos().GetEditableTransform();
 	ZENITH_ASSERT_NOT_NULL(pxTransform, "GetEditableTransform must resolve persistent entity via entity.GetSceneData() (Unity parity)");
 
 	// Verify the transform we got back is actually the persistent entity's.
@@ -12912,7 +12912,7 @@ void Zenith_UnitTests::TestGizmoEditsPersistentEntityAcrossSceneLoad(){
 	ZENITH_ASSERT_EQ(pxTransform, &xExpected, "Returned transform must belong to the persistent entity, not the active scene");
 
 	// Cleanup: clear target, destroy persistent entity, unload temp scene.
-	Flux_Gizmos::SetTargetEntity(nullptr);
+	g_xEngine.Gizmos().SetTargetEntity(nullptr);
 	Zenith_SceneManager::DestroyImmediate(xPersistentEntity);
 	Zenith_SceneManager::UnloadScene(xTempScene);
 	Zenith_SceneManager::SetActiveScene(xSavedActive);
@@ -12937,16 +12937,16 @@ void Zenith_UnitTests::TestGizmoEditsEntityInAdditiveScene(){
 	// Confirm active scene really is A, not B.
 	ZENITH_ASSERT_EQ(Zenith_SceneManager::GetActiveScene(), xSceneA, "Test setup: active scene should be A, target lives in B");
 
-	Flux_Gizmos::SetTargetEntity(&xTarget);
+	g_xEngine.Gizmos().SetTargetEntity(&xTarget);
 
-	Zenith_TransformComponent* pxTransform = Flux_Gizmos::GetEditableTransform();
+	Zenith_TransformComponent* pxTransform = g_xEngine.Gizmos().GetEditableTransform();
 	ZENITH_ASSERT_NOT_NULL(pxTransform, "Gizmo must resolve target in additively-loaded scene (Unity multi-scene editing parity)");
 
 	Zenith_TransformComponent& xExpected =
 		pxSceneBData->GetComponentFromEntity<Zenith_TransformComponent>(xTarget.GetEntityID());
 	ZENITH_ASSERT_EQ(pxTransform, &xExpected, "Returned transform must belong to Scene B's entity, not Scene A");
 
-	Flux_Gizmos::SetTargetEntity(nullptr);
+	g_xEngine.Gizmos().SetTargetEntity(nullptr);
 	Zenith_SceneManager::UnloadScene(xSceneB);
 	Zenith_SceneManager::UnloadScene(xSceneA);
 	Zenith_SceneManager::SetActiveScene(xSavedActive);
@@ -12967,10 +12967,10 @@ void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(){
 	Zenith_SceneData* pxSceneAData = Zenith_SceneManager::GetSceneData(xSceneA);
 	Zenith_Entity xTarget(pxSceneAData, "DragTarget");
 
-	Flux_Gizmos::SetTargetEntity(&xTarget);
+	g_xEngine.Gizmos().SetTargetEntity(&xTarget);
 
 	// Begin the "drag" while target's scene is active.
-	Zenith_TransformComponent* pxBefore = Flux_Gizmos::GetEditableTransform();
+	Zenith_TransformComponent* pxBefore = g_xEngine.Gizmos().GetEditableTransform();
 	ZENITH_ASSERT_NOT_NULL(pxBefore, "Pre-switch gizmo resolve must succeed");
 
 	// Simulate the active-scene change mid-drag.
@@ -12979,11 +12979,11 @@ void Zenith_UnitTests::TestGizmoDragSurvivesActiveSceneChange(){
 
 	// Post-switch: gizmo must still resolve to Scene A's entity (Unity parity —
 	// active scene doesn't gate editability).
-	Zenith_TransformComponent* pxAfter = Flux_Gizmos::GetEditableTransform();
+	Zenith_TransformComponent* pxAfter = g_xEngine.Gizmos().GetEditableTransform();
 	ZENITH_ASSERT_NOT_NULL(pxAfter, "Gizmo must keep resolving target after active-scene change (Unity parity)");
 	ZENITH_ASSERT_EQ(pxAfter, pxBefore, "Gizmo transform must be identical across the active-scene switch (same underlying entity)");
 
-	Flux_Gizmos::SetTargetEntity(nullptr);
+	g_xEngine.Gizmos().SetTargetEntity(nullptr);
 	Zenith_SceneManager::UnloadScene(xSceneB);
 	Zenith_SceneManager::UnloadScene(xSceneA);
 	Zenith_SceneManager::SetActiveScene(xSavedActive);
@@ -12995,8 +12995,8 @@ ZENITH_TEST(Core, GizmoGetEditableTransform_ReturnsNullForInvalidTarget) { Zenit
 void Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget(){
 
 	// No target set — must return nullptr.
-	Flux_Gizmos::SetTargetEntity(nullptr);
-	ZENITH_ASSERT_NULL(Flux_Gizmos::GetEditableTransform(), "GetEditableTransform must return nullptr when no target is set");
+	g_xEngine.Gizmos().SetTargetEntity(nullptr);
+	ZENITH_ASSERT_NULL(g_xEngine.Gizmos().GetEditableTransform(), "GetEditableTransform must return nullptr when no target is set");
 
 }
 
@@ -14051,6 +14051,7 @@ void Zenith_UnitTests::TestBinderNameCacheTypeStoredCorrectly(){
 // the test installs.
 
 #include "Flux/Flux_PerFrame.h"
+#include "Flux/Flux_RendererImpl.h"
 
 // Snapshot of Flux_PerFrame's internal state used by the §5.2 tests to save
 // the live engine state before installing scratch callbacks, then restore it
@@ -14069,32 +14070,34 @@ struct Zenith_UnitTests::PerFrameSnapshot
 
 void Zenith_UnitTests::SnapshotPerFrameAndReset(PerFrameSnapshot& xOut)
 {
-	xOut.m_uFrameCounter = Flux_PerFrame::s_uFrameCounter;
-	xOut.m_uNumBegin     = Flux_PerFrame::s_uNumBeginCallbacks;
-	xOut.m_uNumEnd       = Flux_PerFrame::s_uNumEndCallbacks;
+	Flux_RendererImpl& xR = g_xEngine.FluxRenderer();
+	xOut.m_uFrameCounter = xR.m_uFrameCounter;
+	xOut.m_uNumBegin     = xR.m_uNumBeginCallbacks;
+	xOut.m_uNumEnd       = xR.m_uNumEndCallbacks;
 	for (u_int u = 0; u < FLUX_MAX_PERFRAME_CALLBACKS; u++)
 	{
-		xOut.m_apfnBegin[u]   = Flux_PerFrame::s_apfnBeginCallbacks[u];
-		xOut.m_apBeginUser[u] = Flux_PerFrame::s_apBeginUserData[u];
-		xOut.m_apfnEnd[u]     = Flux_PerFrame::s_apfnEndCallbacks[u];
-		xOut.m_apEndUser[u]   = Flux_PerFrame::s_apEndUserData[u];
+		xOut.m_apfnBegin[u]   = xR.m_apfnBeginCallbacks[u];
+		xOut.m_apBeginUser[u] = xR.m_apBeginUserData[u];
+		xOut.m_apfnEnd[u]     = xR.m_apfnEndCallbacks[u];
+		xOut.m_apEndUser[u]   = xR.m_apEndUserData[u];
 	}
-	Flux_PerFrame::s_uFrameCounter      = 0;
-	Flux_PerFrame::s_uNumBeginCallbacks = 0;
-	Flux_PerFrame::s_uNumEndCallbacks   = 0;
+	xR.m_uFrameCounter      = 0;
+	xR.m_uNumBeginCallbacks = 0;
+	xR.m_uNumEndCallbacks   = 0;
 }
 
 void Zenith_UnitTests::RestorePerFrame(const PerFrameSnapshot& xIn)
 {
-	Flux_PerFrame::s_uFrameCounter      = xIn.m_uFrameCounter;
-	Flux_PerFrame::s_uNumBeginCallbacks = xIn.m_uNumBegin;
-	Flux_PerFrame::s_uNumEndCallbacks   = xIn.m_uNumEnd;
+	Flux_RendererImpl& xR = g_xEngine.FluxRenderer();
+	xR.m_uFrameCounter      = xIn.m_uFrameCounter;
+	xR.m_uNumBeginCallbacks = xIn.m_uNumBegin;
+	xR.m_uNumEndCallbacks   = xIn.m_uNumEnd;
 	for (u_int u = 0; u < FLUX_MAX_PERFRAME_CALLBACKS; u++)
 	{
-		Flux_PerFrame::s_apfnBeginCallbacks[u] = xIn.m_apfnBegin[u];
-		Flux_PerFrame::s_apBeginUserData[u]    = xIn.m_apBeginUser[u];
-		Flux_PerFrame::s_apfnEndCallbacks[u]   = xIn.m_apfnEnd[u];
-		Flux_PerFrame::s_apEndUserData[u]      = xIn.m_apEndUser[u];
+		xR.m_apfnBeginCallbacks[u] = xIn.m_apfnBegin[u];
+		xR.m_apBeginUserData[u]    = xIn.m_apBeginUser[u];
+		xR.m_apfnEndCallbacks[u]   = xIn.m_apfnEnd[u];
+		xR.m_apEndUserData[u]      = xIn.m_apEndUser[u];
 	}
 }
 

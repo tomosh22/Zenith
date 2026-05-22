@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Flux/Flux_PerFrame.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Flux/Flux_RendererImpl.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 
 // Subscriber-tally static assert. Every subsystem that calls
 // RegisterBeginFrameCallback / RegisterEndFrameCallback bumps the tally here
@@ -24,21 +25,14 @@ static_assert(FLUX_MAX_PERFRAME_CALLBACKS >= FLUX_PERFRAME_BEGIN_SUBSCRIBER_TALL
 static_assert(FLUX_MAX_PERFRAME_CALLBACKS >= FLUX_PERFRAME_END_SUBSCRIBER_TALLY,
 	"FLUX_MAX_PERFRAME_CALLBACKS smaller than the counted end-subscriber tally. Bump the config constant.");
 
-u_int Flux_PerFrame::s_uFrameCounter = 0;
-
-Flux_PerFrame::OnFrameBeginFunc Flux_PerFrame::s_apfnBeginCallbacks[FLUX_MAX_PERFRAME_CALLBACKS] = {};
-void*                           Flux_PerFrame::s_apBeginUserData   [FLUX_MAX_PERFRAME_CALLBACKS] = {};
-u_int                           Flux_PerFrame::s_uNumBeginCallbacks = 0;
-
-Flux_PerFrame::OnFrameEndFunc   Flux_PerFrame::s_apfnEndCallbacks[FLUX_MAX_PERFRAME_CALLBACKS] = {};
-void*                           Flux_PerFrame::s_apEndUserData   [FLUX_MAX_PERFRAME_CALLBACKS] = {};
-u_int                           Flux_PerFrame::s_uNumEndCallbacks = 0;
+// Phase 6a-1: per-frame state moved onto Flux_RendererImpl held by
+// Zenith_Engine. Methods below dereference g_xEngine.FluxRenderer().m_xXxx.
 
 void Flux_PerFrame::Initialise()
 {
-	s_uFrameCounter = 0;
-	s_uNumBeginCallbacks = 0;
-	s_uNumEndCallbacks = 0;
+	g_xEngine.FluxRenderer().m_uFrameCounter = 0;
+	g_xEngine.FluxRenderer().m_uNumBeginCallbacks = 0;
+	g_xEngine.FluxRenderer().m_uNumEndCallbacks = 0;
 }
 
 void Flux_PerFrame::Shutdown()
@@ -47,8 +41,8 @@ void Flux_PerFrame::Shutdown()
 	// per-resource deferred-deletion ring has already drained. Resetting the
 	// counter here would do nothing useful. Just clear the callback arrays so
 	// a subsequent Initialise() starts from a known empty state.
-	s_uNumBeginCallbacks = 0;
-	s_uNumEndCallbacks = 0;
+	g_xEngine.FluxRenderer().m_uNumBeginCallbacks = 0;
+	g_xEngine.FluxRenderer().m_uNumEndCallbacks = 0;
 }
 
 void Flux_PerFrame::RegisterBeginFrameCallback(OnFrameBeginFunc pfn, void* pUserData)
@@ -59,28 +53,28 @@ void Flux_PerFrame::RegisterBeginFrameCallback(OnFrameBeginFunc pfn, void* pUser
 	// that exercise the registration path do so from the main thread too
 	// (RunAllTests is called from Zenith_Main.cpp), so this assertion doesn't
 	// conflict with them.
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"Flux_PerFrame::RegisterBeginFrameCallback must be called from the main thread — callback arrays have no mutex");
 	Zenith_Assert(pfn != nullptr, "Flux_PerFrame::RegisterBeginFrameCallback: null function pointer");
-	Zenith_Assert(s_uNumBeginCallbacks < FLUX_MAX_PERFRAME_CALLBACKS,
+	Zenith_Assert(g_xEngine.FluxRenderer().m_uNumBeginCallbacks < FLUX_MAX_PERFRAME_CALLBACKS,
 		"Flux_PerFrame: begin-frame callback array overflow (max %u). Increase FLUX_MAX_PERFRAME_CALLBACKS in ZenithConfig.h.",
 		static_cast<u_int>(FLUX_MAX_PERFRAME_CALLBACKS));
-	s_apfnBeginCallbacks[s_uNumBeginCallbacks] = pfn;
-	s_apBeginUserData   [s_uNumBeginCallbacks] = pUserData;
-	s_uNumBeginCallbacks++;
+	g_xEngine.FluxRenderer().m_apfnBeginCallbacks[g_xEngine.FluxRenderer().m_uNumBeginCallbacks] = pfn;
+	g_xEngine.FluxRenderer().m_apBeginUserData   [g_xEngine.FluxRenderer().m_uNumBeginCallbacks] = pUserData;
+	g_xEngine.FluxRenderer().m_uNumBeginCallbacks++;
 }
 
 void Flux_PerFrame::RegisterEndFrameCallback(OnFrameEndFunc pfn, void* pUserData)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"Flux_PerFrame::RegisterEndFrameCallback must be called from the main thread — callback arrays have no mutex");
 	Zenith_Assert(pfn != nullptr, "Flux_PerFrame::RegisterEndFrameCallback: null function pointer");
-	Zenith_Assert(s_uNumEndCallbacks < FLUX_MAX_PERFRAME_CALLBACKS,
+	Zenith_Assert(g_xEngine.FluxRenderer().m_uNumEndCallbacks < FLUX_MAX_PERFRAME_CALLBACKS,
 		"Flux_PerFrame: end-frame callback array overflow (max %u). Increase FLUX_MAX_PERFRAME_CALLBACKS in ZenithConfig.h.",
 		static_cast<u_int>(FLUX_MAX_PERFRAME_CALLBACKS));
-	s_apfnEndCallbacks[s_uNumEndCallbacks] = pfn;
-	s_apEndUserData   [s_uNumEndCallbacks] = pUserData;
-	s_uNumEndCallbacks++;
+	g_xEngine.FluxRenderer().m_apfnEndCallbacks[g_xEngine.FluxRenderer().m_uNumEndCallbacks] = pfn;
+	g_xEngine.FluxRenderer().m_apEndUserData   [g_xEngine.FluxRenderer().m_uNumEndCallbacks] = pUserData;
+	g_xEngine.FluxRenderer().m_uNumEndCallbacks++;
 }
 
 // Cross-check the registered callback counts against the subscriber-tally
@@ -120,12 +114,12 @@ static void AssertSubscriberTalliesMatch(u_int uActualBegin, u_int uActualEnd)
 void Flux_PerFrame::BeginFrame()
 {
 #ifdef ZENITH_DEBUG
-	AssertSubscriberTalliesMatch(s_uNumBeginCallbacks, s_uNumEndCallbacks);
+	AssertSubscriberTalliesMatch(g_xEngine.FluxRenderer().m_uNumBeginCallbacks, g_xEngine.FluxRenderer().m_uNumEndCallbacks);
 #endif
 	const u_int uRingIndex = GetRingIndex();
-	for (u_int u = 0; u < s_uNumBeginCallbacks; u++)
+	for (u_int u = 0; u < g_xEngine.FluxRenderer().m_uNumBeginCallbacks; u++)
 	{
-		s_apfnBeginCallbacks[u](uRingIndex, s_apBeginUserData[u]);
+		g_xEngine.FluxRenderer().m_apfnBeginCallbacks[u](uRingIndex, g_xEngine.FluxRenderer().m_apBeginUserData[u]);
 	}
 }
 
@@ -138,26 +132,26 @@ void Flux_PerFrame::EndFrame()
 void Flux_PerFrame::FireEndCallbacks()
 {
 #ifdef ZENITH_DEBUG
-	AssertSubscriberTalliesMatch(s_uNumBeginCallbacks, s_uNumEndCallbacks);
+	AssertSubscriberTalliesMatch(g_xEngine.FluxRenderer().m_uNumBeginCallbacks, g_xEngine.FluxRenderer().m_uNumEndCallbacks);
 #endif
 	const u_int uRingIndex = GetRingIndex();
-	for (u_int u = 0; u < s_uNumEndCallbacks; u++)
+	for (u_int u = 0; u < g_xEngine.FluxRenderer().m_uNumEndCallbacks; u++)
 	{
-		s_apfnEndCallbacks[u](uRingIndex, s_apEndUserData[u]);
+		g_xEngine.FluxRenderer().m_apfnEndCallbacks[u](uRingIndex, g_xEngine.FluxRenderer().m_apEndUserData[u]);
 	}
 }
 
 void Flux_PerFrame::AdvanceCounter()
 {
-	s_uFrameCounter++;
+	g_xEngine.FluxRenderer().m_uFrameCounter++;
 }
 
 u_int Flux_PerFrame::GetRingIndex()
 {
-	return s_uFrameCounter % MAX_FRAMES_IN_FLIGHT;
+	return g_xEngine.FluxRenderer().m_uFrameCounter % MAX_FRAMES_IN_FLIGHT;
 }
 
 u_int Flux_PerFrame::GetFrameCounter()
 {
-	return s_uFrameCounter;
+	return g_xEngine.FluxRenderer().m_uFrameCounter;
 }

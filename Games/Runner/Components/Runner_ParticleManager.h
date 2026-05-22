@@ -182,7 +182,7 @@ public:
 		// Each frame:
 		// 1. Build array of active particles
 		// 2. Upload to s_xInstanceBuffer via Flux_MemoryManager
-		// 3. Flux_Particles::Render() draws them as billboarded quads
+		// 3. g_xEngine.Particles().Render() draws them as billboarded quads
 	}
 
 	static void UpdateRealParticles()

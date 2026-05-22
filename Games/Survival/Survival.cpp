@@ -33,31 +33,8 @@
 // ============================================================================
 namespace Survival
 {
-	// Geometry assets (registry-managed via handles)
-	MeshGeometryHandle g_xCubeAsset;
-	MeshGeometryHandle g_xSphereAsset;
-	MeshGeometryHandle g_xCapsuleAsset;
-
-	// Convenience pointers to underlying geometry (set in init via .GetDirect()->GetGeometry())
-	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
-	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
-	Flux_MeshGeometry* g_pxCapsuleGeometry = nullptr;
-
-	// Materials
-	MaterialHandle g_xPlayerMaterial;
-	MaterialHandle g_xGroundMaterial;
-	MaterialHandle g_xTreeMaterial;
-	MaterialHandle g_xRockMaterial;
-	MaterialHandle g_xBerryMaterial;
-	MaterialHandle g_xWoodMaterial;
-	MaterialHandle g_xStoneMaterial;
-
-	// Prefabs for runtime instantiation (handles for ref counting)
-	PrefabHandle g_xPlayerPrefab;
-	PrefabHandle g_xTreePrefab;
-	PrefabHandle g_xRockPrefab;
-	PrefabHandle g_xBerryBushPrefab;
-	PrefabHandle g_xDroppedItemPrefab;
+	static SurvivalResources g_xResources;
+	SurvivalResources& Resources() { return g_xResources; }
 }
 
 static bool s_bResourcesInitialized = false;
@@ -356,12 +333,12 @@ static void InitializeSurvivalResources()
 	std::filesystem::create_directories(strMeshDir);
 
 	// Create geometries using registry
-	g_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
-	g_pxCubeGeometry = g_xCubeAsset.GetDirect()->GetGeometry();
+	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strCubePath = strMeshDir + "/Cube" ZENITH_MESH_EXT;
-	g_pxCubeGeometry->Export(strCubePath.c_str());
-	g_pxCubeGeometry->m_strSourcePath = strCubePath;
+	Resources().m_pxCubeGeometry->Export(strCubePath.c_str());
+	Resources().m_pxCubeGeometry->m_strSourcePath = strCubePath;
 #endif
 
 	// Custom sphere - tracked through registry
@@ -370,13 +347,13 @@ static void InitializeSurvivalResources()
 		Flux_MeshGeometry* pxSphere = new Flux_MeshGeometry();
 		GenerateUVSphere(*pxSphere, 0.5f, 16, 12);
 		pxSphereAsset->SetGeometry(pxSphere);
-		g_xSphereAsset.Set(pxSphereAsset);
-		g_pxSphereGeometry = pxSphereAsset->GetGeometry();
+		Resources().m_xSphereAsset.Set(pxSphereAsset);
+		Resources().m_pxSphereGeometry = pxSphereAsset->GetGeometry();
 	}
 #ifdef ZENITH_TOOLS
 	std::string strSpherePath = strMeshDir + "/Sphere" ZENITH_MESH_EXT;
-	g_pxSphereGeometry->Export(strSpherePath.c_str());
-	g_pxSphereGeometry->m_strSourcePath = strSpherePath;
+	Resources().m_pxSphereGeometry->Export(strSpherePath.c_str());
+	Resources().m_pxSphereGeometry->m_strSourcePath = strSpherePath;
 #endif
 
 	// Custom capsule - tracked through registry
@@ -385,13 +362,13 @@ static void InitializeSurvivalResources()
 		Flux_MeshGeometry* pxCapsule = new Flux_MeshGeometry();
 		GenerateCapsule(*pxCapsule, 0.3f, 1.6f, 12, 6);
 		pxCapsuleAsset->SetGeometry(pxCapsule);
-		g_xCapsuleAsset.Set(pxCapsuleAsset);
-		g_pxCapsuleGeometry = pxCapsuleAsset->GetGeometry();
+		Resources().m_xCapsuleAsset.Set(pxCapsuleAsset);
+		Resources().m_pxCapsuleGeometry = pxCapsuleAsset->GetGeometry();
 	}
 #ifdef ZENITH_TOOLS
 	std::string strCapsulePath = strMeshDir + "/Capsule" ZENITH_MESH_EXT;
-	g_pxCapsuleGeometry->Export(strCapsulePath.c_str());
-	g_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
+	Resources().m_pxCapsuleGeometry->Export(strCapsulePath.c_str());
+	Resources().m_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
 #endif
 
 	// Create textures directory
@@ -409,33 +386,33 @@ static void InitializeSurvivalResources()
 
 	// Create materials with texture paths (properly serializable)
 
-	g_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xPlayerMaterial.GetDirect()->SetName("SurvivalPlayer");
-	g_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xPlayerTextureHandle);
+	Resources().m_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPlayerMaterial.GetDirect()->SetName("SurvivalPlayer");
+	Resources().m_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xPlayerTextureHandle);
 
-	g_xGroundMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xGroundMaterial.GetDirect()->SetName("SurvivalGround");
-	g_xGroundMaterial.GetDirect()->SetDiffuseTexture(xGroundTextureHandle);
+	Resources().m_xGroundMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xGroundMaterial.GetDirect()->SetName("SurvivalGround");
+	Resources().m_xGroundMaterial.GetDirect()->SetDiffuseTexture(xGroundTextureHandle);
 
-	g_xTreeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xTreeMaterial.GetDirect()->SetName("SurvivalTree");
-	g_xTreeMaterial.GetDirect()->SetDiffuseTexture(xTreeTextureHandle);
+	Resources().m_xTreeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xTreeMaterial.GetDirect()->SetName("SurvivalTree");
+	Resources().m_xTreeMaterial.GetDirect()->SetDiffuseTexture(xTreeTextureHandle);
 
-	g_xRockMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xRockMaterial.GetDirect()->SetName("SurvivalRock");
-	g_xRockMaterial.GetDirect()->SetDiffuseTexture(xRockTextureHandle);
+	Resources().m_xRockMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xRockMaterial.GetDirect()->SetName("SurvivalRock");
+	Resources().m_xRockMaterial.GetDirect()->SetDiffuseTexture(xRockTextureHandle);
 
-	g_xBerryMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xBerryMaterial.GetDirect()->SetName("SurvivalBerry");
-	g_xBerryMaterial.GetDirect()->SetDiffuseTexture(xBerryTextureHandle);
+	Resources().m_xBerryMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xBerryMaterial.GetDirect()->SetName("SurvivalBerry");
+	Resources().m_xBerryMaterial.GetDirect()->SetDiffuseTexture(xBerryTextureHandle);
 
-	g_xWoodMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xWoodMaterial.GetDirect()->SetName("SurvivalWood");
-	g_xWoodMaterial.GetDirect()->SetDiffuseTexture(xWoodTextureHandle);
+	Resources().m_xWoodMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xWoodMaterial.GetDirect()->SetName("SurvivalWood");
+	Resources().m_xWoodMaterial.GetDirect()->SetDiffuseTexture(xWoodTextureHandle);
 
-	g_xStoneMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xStoneMaterial.GetDirect()->SetName("SurvivalStone");
-	g_xStoneMaterial.GetDirect()->SetDiffuseTexture(xStoneTextureHandle);
+	Resources().m_xStoneMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xStoneMaterial.GetDirect()->SetName("SurvivalStone");
+	Resources().m_xStoneMaterial.GetDirect()->SetDiffuseTexture(xStoneTextureHandle);
 
 	// Create prefabs for runtime instantiation.
 	// Use the persistent scene here: InitializeResources runs before the initial scene
@@ -448,7 +425,7 @@ static void InitializeSurvivalResources()
 		Zenith_Entity xPlayerTemplate(pxSceneData, "PlayerTemplate");
 		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
-		g_xPlayerPrefab.Set(pxPlayer);
+		Resources().m_xPlayerPrefab.Set(pxPlayer);
 		Zenith_SceneManager::Destroy(xPlayerTemplate);
 	}
 
@@ -457,7 +434,7 @@ static void InitializeSurvivalResources()
 		Zenith_Entity xTreeTemplate(pxSceneData, "TreeTemplate");
 		Zenith_Prefab* pxTree = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxTree->CreateFromEntity(xTreeTemplate, "Tree");
-		g_xTreePrefab.Set(pxTree);
+		Resources().m_xTreePrefab.Set(pxTree);
 		Zenith_SceneManager::Destroy(xTreeTemplate);
 	}
 
@@ -466,7 +443,7 @@ static void InitializeSurvivalResources()
 		Zenith_Entity xRockTemplate(pxSceneData, "RockTemplate");
 		Zenith_Prefab* pxRock = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxRock->CreateFromEntity(xRockTemplate, "Rock");
-		g_xRockPrefab.Set(pxRock);
+		Resources().m_xRockPrefab.Set(pxRock);
 		Zenith_SceneManager::Destroy(xRockTemplate);
 	}
 
@@ -475,7 +452,7 @@ static void InitializeSurvivalResources()
 		Zenith_Entity xBerryTemplate(pxSceneData, "BerryBushTemplate");
 		Zenith_Prefab* pxBerry = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxBerry->CreateFromEntity(xBerryTemplate, "BerryBush");
-		g_xBerryBushPrefab.Set(pxBerry);
+		Resources().m_xBerryBushPrefab.Set(pxBerry);
 		Zenith_SceneManager::Destroy(xBerryTemplate);
 	}
 
@@ -484,7 +461,7 @@ static void InitializeSurvivalResources()
 		Zenith_Entity xDroppedItemTemplate(pxSceneData, "DroppedItemTemplate");
 		Zenith_Prefab* pxDropped = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxDropped->CreateFromEntity(xDroppedItemTemplate, "DroppedItem");
-		g_xDroppedItemPrefab.Set(pxDropped);
+		Resources().m_xDroppedItemPrefab.Set(pxDropped);
 		Zenith_SceneManager::Destroy(xDroppedItemTemplate);
 	}
 
@@ -507,14 +484,14 @@ void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData)
 	xGroundTransform.SetScale(Zenith_Maths::Vector3(100.f, 1.f, 100.f));
 
 	Zenith_ModelComponent& xGroundModel = xGround.AddComponent<Zenith_ModelComponent>();
-	xGroundModel.AddMeshEntry(*Survival::g_pxCubeGeometry, *Survival::g_xGroundMaterial.GetDirect());
+	xGroundModel.AddMeshEntry(*Survival::Resources().m_pxCubeGeometry, *Survival::Resources().m_xGroundMaterial.GetDirect());
 
 	// ========================================================================
 	// Create Player
 	// ========================================================================
 	static constexpr float s_fPlayerHeightLocal = 1.6f;
 
-	Zenith_Entity xPlayer = Survival::g_xPlayerPrefab.GetDirect()->Instantiate(pxSceneData, "Player");
+	Zenith_Entity xPlayer = Survival::Resources().m_xPlayerPrefab.GetDirect()->Instantiate(pxSceneData, "Player");
 	xPlayer.SetTransient(false);
 
 	Zenith_TransformComponent& xPlayerTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
@@ -522,7 +499,7 @@ void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData)
 	xPlayerTransform.SetScale(Zenith_Maths::Vector3(1.f));
 
 	Zenith_ModelComponent& xPlayerModel = xPlayer.AddComponent<Zenith_ModelComponent>();
-	xPlayerModel.AddMeshEntry(*Survival::g_pxCapsuleGeometry, *Survival::g_xPlayerMaterial.GetDirect());
+	xPlayerModel.AddMeshEntry(*Survival::Resources().m_pxCapsuleGeometry, *Survival::Resources().m_xPlayerMaterial.GetDirect());
 
 	// ========================================================================
 	// Create Resource Nodes (deterministic positions using fixed seed)
@@ -576,7 +553,7 @@ void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData)
 
 		char szName[32];
 		snprintf(szName, sizeof(szName), "Tree_%u", i);
-		Zenith_Entity xTree = Survival::g_xTreePrefab.GetDirect()->Instantiate(pxSceneData, szName);
+		Zenith_Entity xTree = Survival::Resources().m_xTreePrefab.GetDirect()->Instantiate(pxSceneData, szName);
 		xTree.SetTransient(false);
 
 		Zenith_TransformComponent& xTreeTransform = xTree.GetComponent<Zenith_TransformComponent>();
@@ -584,7 +561,7 @@ void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData)
 		xTreeTransform.SetScale(xScale);
 
 		Zenith_ModelComponent& xTreeModel = xTree.AddComponent<Zenith_ModelComponent>();
-		xTreeModel.AddMeshEntry(*Survival::g_pxCubeGeometry, *Survival::g_xTreeMaterial.GetDirect());
+		xTreeModel.AddMeshEntry(*Survival::Resources().m_pxCubeGeometry, *Survival::Resources().m_xTreeMaterial.GetDirect());
 	}
 
 	// Create rocks
@@ -595,7 +572,7 @@ void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData)
 
 		char szName[32];
 		snprintf(szName, sizeof(szName), "Rock_%u", i);
-		Zenith_Entity xRock = Survival::g_xRockPrefab.GetDirect()->Instantiate(pxSceneData, szName);
+		Zenith_Entity xRock = Survival::Resources().m_xRockPrefab.GetDirect()->Instantiate(pxSceneData, szName);
 		xRock.SetTransient(false);
 
 		Zenith_TransformComponent& xRockTransform = xRock.GetComponent<Zenith_TransformComponent>();
@@ -603,7 +580,7 @@ void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData)
 		xRockTransform.SetScale(xScale);
 
 		Zenith_ModelComponent& xRockModel = xRock.AddComponent<Zenith_ModelComponent>();
-		xRockModel.AddMeshEntry(*Survival::g_pxSphereGeometry, *Survival::g_xRockMaterial.GetDirect());
+		xRockModel.AddMeshEntry(*Survival::Resources().m_pxSphereGeometry, *Survival::Resources().m_xRockMaterial.GetDirect());
 	}
 
 	// Create berry bushes
@@ -614,7 +591,7 @@ void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData)
 
 		char szName[32];
 		snprintf(szName, sizeof(szName), "BerryBush_%u", i);
-		Zenith_Entity xBush = Survival::g_xBerryBushPrefab.GetDirect()->Instantiate(pxSceneData, szName);
+		Zenith_Entity xBush = Survival::Resources().m_xBerryBushPrefab.GetDirect()->Instantiate(pxSceneData, szName);
 		xBush.SetTransient(false);
 
 		Zenith_TransformComponent& xBushTransform = xBush.GetComponent<Zenith_TransformComponent>();
@@ -622,7 +599,7 @@ void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData)
 		xBushTransform.SetScale(xScale);
 
 		Zenith_ModelComponent& xBushModel = xBush.AddComponent<Zenith_ModelComponent>();
-		xBushModel.AddMeshEntry(*Survival::g_pxSphereGeometry, *Survival::g_xBerryMaterial.GetDirect());
+		xBushModel.AddMeshEntry(*Survival::Resources().m_pxSphereGeometry, *Survival::Resources().m_xBerryMaterial.GetDirect());
 	}
 }
 
@@ -656,21 +633,21 @@ void Project_RegisterScriptBehaviours()
 void Project_Shutdown()
 {
 	// Drop asset handle refs before Zenith_AssetRegistry::Shutdown teardown.
-	Survival::g_xCubeAsset.Clear();
-	Survival::g_xSphereAsset.Clear();
-	Survival::g_xCapsuleAsset.Clear();
-	Survival::g_xPlayerMaterial.Clear();
-	Survival::g_xGroundMaterial.Clear();
-	Survival::g_xTreeMaterial.Clear();
-	Survival::g_xRockMaterial.Clear();
-	Survival::g_xBerryMaterial.Clear();
-	Survival::g_xWoodMaterial.Clear();
-	Survival::g_xStoneMaterial.Clear();
-	Survival::g_xPlayerPrefab.Clear();
-	Survival::g_xTreePrefab.Clear();
-	Survival::g_xRockPrefab.Clear();
-	Survival::g_xBerryBushPrefab.Clear();
-	Survival::g_xDroppedItemPrefab.Clear();
+	Survival::Resources().m_xCubeAsset.Clear();
+	Survival::Resources().m_xSphereAsset.Clear();
+	Survival::Resources().m_xCapsuleAsset.Clear();
+	Survival::Resources().m_xPlayerMaterial.Clear();
+	Survival::Resources().m_xGroundMaterial.Clear();
+	Survival::Resources().m_xTreeMaterial.Clear();
+	Survival::Resources().m_xRockMaterial.Clear();
+	Survival::Resources().m_xBerryMaterial.Clear();
+	Survival::Resources().m_xWoodMaterial.Clear();
+	Survival::Resources().m_xStoneMaterial.Clear();
+	Survival::Resources().m_xPlayerPrefab.Clear();
+	Survival::Resources().m_xTreePrefab.Clear();
+	Survival::Resources().m_xRockPrefab.Clear();
+	Survival::Resources().m_xBerryBushPrefab.Clear();
+	Survival::Resources().m_xDroppedItemPrefab.Clear();
 }
 
 void Project_LoadInitialScene(); // Forward declaration for automation steps

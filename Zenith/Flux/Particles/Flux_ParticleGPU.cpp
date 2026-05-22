@@ -3,7 +3,7 @@
 #include "Flux/Particles/Flux_ParticleGPU.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -375,7 +375,7 @@ void Flux_ParticleGPU::DispatchCompute(Flux_CommandList* pxCmdList)
 	if (!Zenith_GraphicsOptions::Get().m_bGPUParticlesEnabled || s_axEmitters.GetSize() == 0)
 		return;
 
-	float fDt = Zenith_Core::GetDt();
+	float fDt = g_xEngine.Frame().GetDt();
 
 	// Determine which buffers to use (ping-pong)
 	Flux_ReadWriteBuffer& xInputBuffer = s_bUseBufferA ? s_xParticleBufferA : s_xParticleBufferB;

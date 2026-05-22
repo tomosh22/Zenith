@@ -302,7 +302,7 @@ void Zenith_InputSimulator::ProcessAutoReleases()
 	// NOTE: wheel-delta is NOT cleared here. Doing so would defeat the
 	// pattern where SimulateMouseWheel(f) is called in the test's Setup or
 	// in Step, and the consumer (orbit camera etc.) reads via
-	// Zenith_Input::GetMouseWheelDelta the same frame — BeginFrame runs
+	// g_xEngine.Input().GetMouseWheelDelta the same frame — BeginFrame runs
 	// before either, so clearing here would zero the value before the
 	// consumer ever sees it. The wheel is instead cleared from
 	// EndOfFrameTickComplete() below, invoked by Zenith_Core::Zenith_MainLoop
@@ -313,7 +313,7 @@ void Zenith_InputSimulator::EndOfFrameTickComplete()
 {
 	// Clear simulator-supplied wheel delta. Called once per main-loop
 	// iteration AFTER the game systems update phase has had a chance to
-	// read it via Zenith_Input::GetMouseWheelDelta. The same call also
+	// read it via g_xEngine.Input().GetMouseWheelDelta. The same call also
 	// covers the Setup-before-tick-0 case: Setup's SimulateMouseWheel
 	// survives the first BeginFrame (since ProcessAutoReleases no longer
 	// clears), the test's Step + game systems read it within tick 0,

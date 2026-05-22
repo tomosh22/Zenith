@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_SelectionSystem.h"
+#include "Zenith_SelectionSystemImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_Entity.h"
@@ -77,8 +78,8 @@ void BoundingBox::Transform(const Zenith_Maths::Matrix4& transform)
 	}
 }
 
-// Selection system implementation
-static std::unordered_map<Zenith_EntityID, BoundingBox> s_xEntityBoundingBoxes;
+// Phase 5.5d: AABB cache lives on Zenith_SelectionSystemImpl held by
+// Zenith_Engine; reach it via g_xEngine.Selection().m_xEntityBoundingBoxes.
 
 // Helper: Ray-triangle intersection using Möller–Trumbore algorithm
 // Returns true if ray intersects triangle, with distance in outT
@@ -192,17 +193,17 @@ static bool RaycastPhysicsMesh(
 
 void Zenith_SelectionSystem::Initialise()
 {
-	s_xEntityBoundingBoxes.clear();
+	g_xEngine.Selection().m_xEntityBoundingBoxes.clear();
 }
 
 void Zenith_SelectionSystem::Shutdown()
 {
-	s_xEntityBoundingBoxes.clear();
+	g_xEngine.Selection().m_xEntityBoundingBoxes.clear();
 }
 
 void Zenith_SelectionSystem::UpdateBoundingBoxes()
 {
-	s_xEntityBoundingBoxes.clear();
+	g_xEngine.Selection().m_xEntityBoundingBoxes.clear();
 
 	// Iterate every entity in every loaded scene via TransformComponent (every
 	// entity is guaranteed to have one — see EntityComponent/CLAUDE.md). This
@@ -219,7 +220,7 @@ void Zenith_SelectionSystem::UpdateBoundingBoxes()
 		Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 		BoundingBox xBoundingBox = CalculateBoundingBox(&xEntity);
-		s_xEntityBoundingBoxes[uEntityID] = xBoundingBox;
+		g_xEngine.Selection().m_xEntityBoundingBoxes[uEntityID] = xBoundingBox;
 	}
 	
 	// PERFORMANCE NOTE:
@@ -242,8 +243,8 @@ BoundingBox Zenith_SelectionSystem::GetEntityBoundingBox(Zenith_Entity* pxEntity
 	}
 	
 	Zenith_EntityID uEntityID = pxEntity->GetEntityID();
-	auto it = s_xEntityBoundingBoxes.find(uEntityID);
-	if (it != s_xEntityBoundingBoxes.end())
+	auto it = g_xEngine.Selection().m_xEntityBoundingBoxes.find(uEntityID);
+	if (it != g_xEngine.Selection().m_xEntityBoundingBoxes.end())
 	{
 		return it->second;
 	}
@@ -262,8 +263,8 @@ bool Zenith_SelectionSystem::TestEntityHit(Zenith_ModelComponent* pxModel,
 	const Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 	// AABB cull: reject before touching mesh data.
-	const auto it = s_xEntityBoundingBoxes.find(uEntityID);
-	if (it != s_xEntityBoundingBoxes.end())
+	const auto it = g_xEngine.Selection().m_xEntityBoundingBoxes.find(uEntityID);
+	if (it != g_xEngine.Selection().m_xEntityBoundingBoxes.end())
 	{
 		float fBBoxDistance;
 		if (!it->second.Intersects(xRayOrigin, xRayDir, fBBoxDistance))
@@ -287,7 +288,7 @@ bool Zenith_SelectionSystem::TestEntityHit(Zenith_ModelComponent* pxModel,
 		return RaycastPhysicsMesh(xRayOrigin, xRayDir, pxPhysicsMesh, xTransformMatrix, fOutDistance);
 	}
 
-	if (it == s_xEntityBoundingBoxes.end())
+	if (it == g_xEngine.Selection().m_xEntityBoundingBoxes.end())
 		return false;
 
 	float fBBoxDistance;

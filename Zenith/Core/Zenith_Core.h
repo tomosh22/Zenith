@@ -1,8 +1,11 @@
 #pragma once
 
-// Zenith_Core namespace - provides global frame timing and main loop
-// Note: Converted from static-only class to namespace for idiomatic C++
-// (classes should have instance state; use namespaces for grouping related functions)
+// Zenith_Core namespace - main loop entry points and per-frame timer
+// tick. Phase 2 of the engine refactor moved per-frame timing state
+// (g_fDt / g_fTimePassed / g_xLastFrameTime) out of this namespace
+// and onto Zenith_Engine::Frame() (FrameContext). All call sites that
+// previously read Zenith_Core::GetDt() now read
+// g_xEngine.Frame().GetDt() directly.
 namespace Zenith_Core
 {
 #ifdef ZENITH_WINDOWS
@@ -16,24 +19,9 @@ namespace Zenith_Core
 	// post-loop sequence by hand.
 	void Zenith_FullShutdown();
 
-	// Frame timing accessors (inline for performance)
-	inline void SetDt(const float fDt);
-	inline float GetDt();
-	inline void AddTimePassed(const float fDt);
-	inline float GetTimePassed();
-
-	// Main loop and render synchronization
+	// Main loop and per-frame timer tick. UpdateTimers writes the
+	// new frame's dt / accumulated time into g_xEngine.Frame() and
+	// is called once per main-loop iteration.
 	void Zenith_MainLoop();
 	void UpdateTimers();
-
-	// Frame timing state (definitions in Zenith_Core.cpp)
-	extern float g_fDt;
-	extern float g_fTimePassed;
-	extern std::chrono::high_resolution_clock::time_point g_xLastFrameTime;
-
-	// Inline implementations
-	inline void SetDt(const float fDt) { g_fDt = fDt; }
-	inline float GetDt() { return g_fDt; }
-	inline void AddTimePassed(const float fDt) { g_fTimePassed += fDt; }
-	inline float GetTimePassed() { return g_fTimePassed; }
 }

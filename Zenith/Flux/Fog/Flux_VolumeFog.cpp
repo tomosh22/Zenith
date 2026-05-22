@@ -1,8 +1,10 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Fog/Flux_VolumeFog.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
 
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -84,15 +86,8 @@ namespace
 
 // Static member definitions
 // Note: Use {} initialization to trigger default member initializers
-TextureHandle Flux_VolumeFog::s_xNoiseTexture3D;
-TextureHandle Flux_VolumeFog::s_xBlueNoiseTexture;
-Flux_RenderAttachment Flux_VolumeFog::s_xFroxelDensityGrid;
-Flux_RenderAttachment Flux_VolumeFog::s_xFroxelLightingGrid;
-Flux_RenderAttachment Flux_VolumeFog::s_xDebugOutput;
-Flux_VolumeFogConstants Flux_VolumeFog::s_xSharedConstants{};
-Flux_FroxelConfig Flux_VolumeFog::s_xFroxelConfig{};
 
-void Flux_VolumeFog::Initialise()
+void Flux_VolumeFogImpl::Initialise()
 {
 	// Generate shared textures
 	GenerateNoiseTexture3D();
@@ -100,38 +95,38 @@ void Flux_VolumeFog::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	// Master controls
-	Zenith_DebugVariables::AddVector3({ "Render", "Volumetric Fog", "Shared", "Colour" }, s_xSharedConstants.m_xFogColour, 0.f, 1.f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Density" }, s_xSharedConstants.m_fDensity, 0.f, 0.01f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Scattering" }, s_xSharedConstants.m_fScatteringCoeff, 0.f, 1.f);
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Absorption" }, s_xSharedConstants.m_fAbsorptionCoeff, 0.f, 1.f);
+	Zenith_DebugVariables::AddVector3({ "Render", "Volumetric Fog", "Shared", "Colour" }, g_xEngine.VolumeFog().m_xSharedConstants.m_xFogColour, 0.f, 1.f);
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Density" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fDensity, 0.f, 0.01f);
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Scattering" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fScatteringCoeff, 0.f, 1.f);
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Absorption" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fAbsorptionCoeff, 0.f, 1.f);
 	// Ambient irradiance ratio: fraction of sky light vs direct sun contribution to fog
 	// Physical basis: Clear sky ~0.15-0.25, overcast ~0.4-0.6
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Ambient Irradiance Ratio" }, s_xSharedConstants.m_fAmbientIrradianceRatio, 0.f, 1.f);
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Ambient Irradiance Ratio" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fAmbientIrradianceRatio, 0.f, 1.f);
 	// Noise world scale: maps world-space coordinates to noise texture UV
 	// Smaller values = larger fog features, larger values = denser noise detail
-	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Noise World Scale" }, s_xSharedConstants.m_fNoiseWorldScale, 0.001f, 0.1f);
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Noise World Scale" }, g_xEngine.VolumeFog().m_xSharedConstants.m_fNoiseWorldScale, 0.001f, 0.1f);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_VolumeFog initialised");
 }
 
-void Flux_VolumeFog::ReleaseAssetReferences()
+void Flux_VolumeFogImpl::ReleaseAssetReferences()
 {
-	s_xNoiseTexture3D.Clear();
-	s_xBlueNoiseTexture.Clear();
+	g_xEngine.VolumeFog().m_xNoiseTexture3D.Clear();
+	g_xEngine.VolumeFog().m_xBlueNoiseTexture.Clear();
 }
 
-void Flux_VolumeFog::Shutdown()
+void Flux_VolumeFogImpl::Shutdown()
 {
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_VolumeFog shutdown");
 }
 
-void Flux_VolumeFog::Reset()
+void Flux_VolumeFogImpl::Reset()
 {
 	// Spatial-only fog - no history buffers to reset
 }
 
-void Flux_VolumeFog::GenerateNoiseTexture3D()
+void Flux_VolumeFogImpl::GenerateNoiseTexture3D()
 {
 	constexpr u_int uSize = 64;  // 64^3 texture
 	constexpr u_int uNumPixels = uSize * uSize * uSize;
@@ -180,7 +175,7 @@ void Flux_VolumeFog::GenerateNoiseTexture3D()
 	if (Zenith_TextureAsset* pxNoise3D = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
 	{
 		pxNoise3D->CreateFromData(pData, xSurfaceInfo, false);
-		s_xNoiseTexture3D.Set(pxNoise3D);
+		g_xEngine.VolumeFog().m_xNoiseTexture3D.Set(pxNoise3D);
 	}
 
 	Zenith_MemoryManagement::Deallocate(pData);
@@ -188,7 +183,7 @@ void Flux_VolumeFog::GenerateNoiseTexture3D()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Generated 3D noise texture (%ux%ux%u)", uSize, uSize, uSize);
 }
 
-void Flux_VolumeFog::GenerateBlueNoiseTexture()
+void Flux_VolumeFogImpl::GenerateBlueNoiseTexture()
 {
 	constexpr u_int uSize = 64;  // 64x64 texture
 	constexpr u_int uNumPixels = uSize * uSize;
@@ -262,7 +257,7 @@ void Flux_VolumeFog::GenerateBlueNoiseTexture()
 	if (Zenith_TextureAsset* pxBlueNoise = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
 	{
 		pxBlueNoise->CreateFromData(pData, xSurfaceInfo, false);
-		s_xBlueNoiseTexture.Set(pxBlueNoise);
+		g_xEngine.VolumeFog().m_xBlueNoiseTexture.Set(pxBlueNoise);
 	}
 
 	Zenith_MemoryManagement::Deallocate(pData);
@@ -270,17 +265,21 @@ void Flux_VolumeFog::GenerateBlueNoiseTexture()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Generated blue noise texture (%ux%u)", uSize, uSize);
 }
 
-void Flux_VolumeFog::CreateFroxelGrids()
+void Flux_VolumeFogImpl::CreateFroxelGrids()
 {
 	// STUB - not implemented
 }
 
-void Flux_VolumeFog::CreateDebugOutput()
+void Flux_VolumeFogImpl::CreateDebugOutput()
 {
 	// STUB - not implemented
 }
 
-void Flux_VolumeFog::RegisterDebugVariables()
+void Flux_VolumeFogImpl::RegisterDebugVariables()
 {
 	// Done in Initialise
 }
+
+// Phase 7d: out-of-line accessor bodies (header inlines stripped).
+Zenith_TextureAsset*       Flux_VolumeFogImpl::GetNoiseTexture3D()      { return g_xEngine.VolumeFog().m_xNoiseTexture3D.GetDirect(); }
+Zenith_TextureAsset*       Flux_VolumeFogImpl::GetBlueNoiseTexture()    { return g_xEngine.VolumeFog().m_xBlueNoiseTexture.GetDirect(); }

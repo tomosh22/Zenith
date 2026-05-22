@@ -20,12 +20,14 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "FileAccess/Zenith_FileAccess.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
-#include "Flux/Terrain/Flux_Terrain.h"
-#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
+#include "Flux/Terrain/Flux_TerrainImpl.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UI.h"
 #include "Zenith_OS_Include.h"
@@ -44,7 +46,7 @@
 
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 extern void ExportHeightmapFromMat(const cv::Mat& xHeightmap, const std::string& strOutputDir);
 extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir);
@@ -57,25 +59,23 @@ extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const 
 #include <filesystem>
 #include <vector>
 
+// Phase 8: per-game ProjectResources struct.
 namespace RenderTest
 {
-	MaterialHandle g_axTerrainMaterials[4];
+	struct RenderTestResources
+	{
+		MaterialHandle              m_axTerrainMaterials[4];
+		ModelHandle                 m_xCubeModelAsset;
+		std::string                 m_strCubeModelPath;
+		ModelHandle                 m_xStickFigureModelAsset;
+		std::string                 m_strStickFigureModelPath;
+		MaterialHandle              m_xCubeMaterial;
+		MaterialHandle              m_xPlayerMaterial;
+		Flux_ParticleEmitterConfig* m_pxMuzzleConfig = nullptr;
+	};
 
-	// Cube primitive — exported as a .zmodel so it survives scene save/load.
-	ModelHandle g_xCubeModelAsset;
-	std::string g_strCubeModelPath;
-
-	// StickFigure model + materials for the player and cube.
-	ModelHandle g_xStickFigureModelAsset;
-	std::string g_strStickFigureModelPath;
-
-	MaterialHandle g_xCubeMaterial;
-	MaterialHandle g_xPlayerMaterial;
-
-	// Muzzle-flash particle config (heap-owned; registered by name with
-	// Flux_ParticleEmitterConfig). Sokoban precedent: registry borrows the
-	// pointer, caller deletes on shutdown.
-	Flux_ParticleEmitterConfig*                      g_pxMuzzleConfig = nullptr;
+	static RenderTestResources g_xResources;
+	RenderTestResources& Resources() { return g_xResources; }
 }
 
 static bool s_bResourcesInitialized = false;
@@ -283,7 +283,7 @@ static bool RenderTest_LogTerrainSmokeState(uint32_t uFrame)
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxTerrain = xTerrains.Get(u);
-		Flux_TerrainStreamingState* pxState = Flux_TerrainStreamingManager::GetStateFor(pxTerrain);
+		Flux_TerrainStreamingState* pxState = g_xEngine.TerrainStreaming().GetStateFor(pxTerrain);
 
 		const uint32_t uActiveCount = pxState ? static_cast<uint32_t>(pxState->m_xActiveChunkIndices.size()) : 0;
 		const uint32_t uHighResident = pxState ? RenderTest_CountHighResidentChunks(*pxState) : 0;
@@ -623,14 +623,14 @@ private:
 		Zenith_Entity xPlayer = RenderTest_FindPlayerEntity();
 		if (!xPlayer.IsValid() || !xPlayer.HasComponent<Zenith_ColliderComponent>()) return;
 		const JPH::BodyID& xBodyID = xPlayer.GetComponent<Zenith_ColliderComponent>().GetBodyID();
-		if (xBodyID.IsInvalid() || !Zenith_Physics::s_pxPhysicsSystem) return;
+		if (xBodyID.IsInvalid() || !g_xEngine.Physics().m_pxPhysicsSystem) return;
 
-		JPH::BodyInterface& xBI = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+		JPH::BodyInterface& xBI = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 		xBI.SetPositionAndRotation(xBodyID,
 			JPH::RVec3(xTarget.x, xTarget.y, xTarget.z),
 			JPH::Quat::sIdentity(),
 			JPH::EActivation::Activate);
-		Zenith_Physics::SetLinearVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
+		g_xEngine.Physics().SetLinearVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
 	}
 
 	void CaptureResidencySnapshots(Zenith_Vector<RenderTest_ResidencySnapshot>& axSnapshots)
@@ -641,7 +641,7 @@ private:
 		for (u_int u = 0; u < xTerrains.GetSize(); u++)
 		{
 			Flux_TerrainStreamingState* pxState =
-				Flux_TerrainStreamingManager::GetStateFor(xTerrains.Get(u));
+				g_xEngine.TerrainStreaming().GetStateFor(xTerrains.Get(u));
 			RenderTest_ResidencySnapshot xSnapshot;
 			if (pxState != nullptr) RenderTest_CaptureResidencySnapshot(*pxState, xSnapshot);
 			axSnapshots.PushBack(xSnapshot);
@@ -729,7 +729,7 @@ static MaterialHandle CreateFlatColorMaterial(const std::string& strMaterialName
 // produced by a previous tools-build run.
 static void EnsureUnitCubeModelExists()
 {
-	if (!RenderTest::g_strCubeModelPath.empty())
+	if (!RenderTest::Resources().m_strCubeModelPath.empty())
 		return;
 
 	const std::string strMeshAssetPath = std::string(GAME_ASSETS_DIR) + "Meshes/UnitCube" ZENITH_MESH_ASSET_EXT;
@@ -752,7 +752,7 @@ static void EnsureUnitCubeModelExists()
 		Zenith_Vector<std::string> xEmptyMaterials;
 		pxModel->AddMeshByPath(strMeshAssetPath, xEmptyMaterials);
 		pxModel->Export(strModelPath.c_str());
-		RenderTest::g_xCubeModelAsset.Set(pxModel);
+		RenderTest::Resources().m_xCubeModelAsset.Set(pxModel);
 	}
 #else
 	if (!std::filesystem::exists(strModelPath))
@@ -764,7 +764,7 @@ static void EnsureUnitCubeModelExists()
 	}
 #endif
 
-	RenderTest::g_strCubeModelPath = strModelPath;
+	RenderTest::Resources().m_strCubeModelPath = strModelPath;
 }
 
 // Mirrors Combat::TryInitializeStickFigureModel — bundle the StickFigure mesh
@@ -774,7 +774,7 @@ static void EnsureUnitCubeModelExists()
 // a previous tools run.
 static void EnsureStickFigureModelExists()
 {
-	if (!RenderTest::g_strStickFigureModelPath.empty())
+	if (!RenderTest::Resources().m_strStickFigureModelPath.empty())
 		return;
 
 	const std::string strMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MESH_ASSET_EXT;
@@ -799,7 +799,7 @@ static void EnsureStickFigureModelExists()
 		Zenith_Vector<std::string> xEmptyMaterials;
 		pxModel->AddMeshByPath(strMeshAssetPath, xEmptyMaterials);
 		pxModel->Export(strModelPath.c_str());
-		RenderTest::g_xStickFigureModelAsset.Set(pxModel);
+		RenderTest::Resources().m_xStickFigureModelAsset.Set(pxModel);
 	}
 #else
 	if (!std::filesystem::exists(strModelPath))
@@ -811,7 +811,7 @@ static void EnsureStickFigureModelExists()
 	}
 #endif
 
-	RenderTest::g_strStickFigureModelPath = strModelPath;
+	RenderTest::Resources().m_strStickFigureModelPath = strModelPath;
 }
 
 // Build a terrain material from one of the user-provided PBR texture sets at
@@ -859,44 +859,44 @@ static void InitializeRenderTestResources()
 	const std::string strGrassDir = std::string(GAME_ASSETS_DIR) + "Textures/Terrain/Grass/";
 	const std::string strRockDir  = std::string(GAME_ASSETS_DIR) + "Textures/Terrain/Rock/";
 
-	SetupPBRTerrainMaterial(RenderTest::g_axTerrainMaterials[0], "RenderTestTerrainGrass",  strGrassDir);
-	SetupPBRTerrainMaterial(RenderTest::g_axTerrainMaterials[1], "RenderTestTerrainRock",   strRockDir);
-	SetupPBRTerrainMaterial(RenderTest::g_axTerrainMaterials[2], "RenderTestTerrainGrass2", strGrassDir);
-	SetupPBRTerrainMaterial(RenderTest::g_axTerrainMaterials[3], "RenderTestTerrainRock2",  strRockDir);
+	SetupPBRTerrainMaterial(RenderTest::Resources().m_axTerrainMaterials[0], "RenderTestTerrainGrass",  strGrassDir);
+	SetupPBRTerrainMaterial(RenderTest::Resources().m_axTerrainMaterials[1], "RenderTestTerrainRock",   strRockDir);
+	SetupPBRTerrainMaterial(RenderTest::Resources().m_axTerrainMaterials[2], "RenderTestTerrainGrass2", strGrassDir);
+	SetupPBRTerrainMaterial(RenderTest::Resources().m_axTerrainMaterials[3], "RenderTestTerrainRock2",  strRockDir);
 
 	const std::string strProceduralTexDir = std::string(GAME_ASSETS_DIR) + "Textures/";
 	std::filesystem::create_directories(strProceduralTexDir);
 
-	RenderTest::g_xCubeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	RenderTest::g_xCubeMaterial.GetDirect()->SetName("RenderTestCubeMaterial");
-	RenderTest::g_xCubeMaterial.GetDirect()->SetDiffuseTexture(Flux_Graphics::s_xGridTexture);
-	RenderTest::g_xPlayerMaterial = CreateFlatColorMaterial("RenderTestPlayerMaterial",
+	RenderTest::Resources().m_xCubeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	RenderTest::Resources().m_xCubeMaterial.GetDirect()->SetName("RenderTestCubeMaterial");
+	RenderTest::Resources().m_xCubeMaterial.GetDirect()->SetDiffuseTexture(g_xEngine.FluxGraphics().m_xGridTexture);
+	RenderTest::Resources().m_xPlayerMaterial = CreateFlatColorMaterial("RenderTestPlayerMaterial",
 		strProceduralTexDir + "PlayerDiffuse" ZENITH_TEXTURE_EXT, 0, 200, 220);
 
 	EnsureUnitCubeModelExists();
 	EnsureStickFigureModelExists();
 
 	// --- Muzzle flash particle config (Sokoban pattern) ---
-	if (!RenderTest::g_pxMuzzleConfig)
+	if (!RenderTest::Resources().m_pxMuzzleConfig)
 	{
-		RenderTest::g_pxMuzzleConfig = new Flux_ParticleEmitterConfig();
-		RenderTest::g_pxMuzzleConfig->m_fSpawnRate            = 0.0f;       // burst-only
-		RenderTest::g_pxMuzzleConfig->m_uBurstCount           = 8;
-		RenderTest::g_pxMuzzleConfig->m_uMaxParticles         = 64;
-		RenderTest::g_pxMuzzleConfig->m_fLifetimeMin          = 0.04f;
-		RenderTest::g_pxMuzzleConfig->m_fLifetimeMax          = 0.10f;
-		RenderTest::g_pxMuzzleConfig->m_fSpreadAngleDegrees   = 25.0f;
-		RenderTest::g_pxMuzzleConfig->m_fSpeedMin             = 4.0f;
-		RenderTest::g_pxMuzzleConfig->m_fSpeedMax             = 8.0f;
-		RenderTest::g_pxMuzzleConfig->m_xGravity              = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
-		RenderTest::g_pxMuzzleConfig->m_fDrag                 = 4.0f;
-		RenderTest::g_pxMuzzleConfig->m_xColorStart           = { 1.0f, 0.95f, 0.4f, 1.0f };
-		RenderTest::g_pxMuzzleConfig->m_xColorEnd             = { 1.0f, 0.40f, 0.0f, 0.0f };
-		RenderTest::g_pxMuzzleConfig->m_fSizeStart            = 0.25f;
-		RenderTest::g_pxMuzzleConfig->m_fSizeEnd              = 0.05f;
-		RenderTest::g_pxMuzzleConfig->m_bAdditiveBlending     = true;
-		RenderTest::g_pxMuzzleConfig->m_bUseGPUCompute        = false;
-		Flux_ParticleEmitterConfig::Register("RenderTest_MuzzleFlash", RenderTest::g_pxMuzzleConfig);
+		RenderTest::Resources().m_pxMuzzleConfig = new Flux_ParticleEmitterConfig();
+		RenderTest::Resources().m_pxMuzzleConfig->m_fSpawnRate            = 0.0f;       // burst-only
+		RenderTest::Resources().m_pxMuzzleConfig->m_uBurstCount           = 8;
+		RenderTest::Resources().m_pxMuzzleConfig->m_uMaxParticles         = 64;
+		RenderTest::Resources().m_pxMuzzleConfig->m_fLifetimeMin          = 0.04f;
+		RenderTest::Resources().m_pxMuzzleConfig->m_fLifetimeMax          = 0.10f;
+		RenderTest::Resources().m_pxMuzzleConfig->m_fSpreadAngleDegrees   = 25.0f;
+		RenderTest::Resources().m_pxMuzzleConfig->m_fSpeedMin             = 4.0f;
+		RenderTest::Resources().m_pxMuzzleConfig->m_fSpeedMax             = 8.0f;
+		RenderTest::Resources().m_pxMuzzleConfig->m_xGravity              = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+		RenderTest::Resources().m_pxMuzzleConfig->m_fDrag                 = 4.0f;
+		RenderTest::Resources().m_pxMuzzleConfig->m_xColorStart           = { 1.0f, 0.95f, 0.4f, 1.0f };
+		RenderTest::Resources().m_pxMuzzleConfig->m_xColorEnd             = { 1.0f, 0.40f, 0.0f, 0.0f };
+		RenderTest::Resources().m_pxMuzzleConfig->m_fSizeStart            = 0.25f;
+		RenderTest::Resources().m_pxMuzzleConfig->m_fSizeEnd              = 0.05f;
+		RenderTest::Resources().m_pxMuzzleConfig->m_bAdditiveBlending     = true;
+		RenderTest::Resources().m_pxMuzzleConfig->m_bUseGPUCompute        = false;
+		Flux_ParticleEmitterConfig::Register("RenderTest_MuzzleFlash", RenderTest::Resources().m_pxMuzzleConfig);
 	}
 
 	s_bResourcesInitialized = true;
@@ -1246,12 +1246,29 @@ void Project_Shutdown()
 	// Particle config registry borrows the pointer (Sokoban precedent at
 	// Sokoban.cpp:204). Unregister + delete + null so a subsequent Initialise
 	// rebuilds cleanly if the process were to keep running.
-	if (RenderTest::g_pxMuzzleConfig)
+	if (RenderTest::Resources().m_pxMuzzleConfig)
 	{
 		Flux_ParticleEmitterConfig::Unregister("RenderTest_MuzzleFlash");
-		delete RenderTest::g_pxMuzzleConfig;
-		RenderTest::g_pxMuzzleConfig = nullptr;
+		delete RenderTest::Resources().m_pxMuzzleConfig;
+		RenderTest::Resources().m_pxMuzzleConfig = nullptr;
 	}
+
+	// Release file-scope asset handles BEFORE AssetRegistry::Shutdown
+	// destroys the underlying assets. Without this, the static
+	// destructors of these globals fire AFTER the engine has shut down
+	// and try to Release() pointers into freed memory -- manifesting
+	// as either "Release called on asset with 0 ref count" or an
+	// outright access violation, depending on whether the freed slot
+	// has been reused. Reset-via-assignment runs each handle's dtor
+	// while the registry is still alive.
+	for (MaterialHandle& xMat : RenderTest::Resources().m_axTerrainMaterials)
+	{
+		xMat = MaterialHandle{};
+	}
+	RenderTest::Resources().m_xCubeModelAsset        = ModelHandle{};
+	RenderTest::Resources().m_xStickFigureModelAsset = ModelHandle{};
+	RenderTest::Resources().m_xCubeMaterial          = MaterialHandle{};
+	RenderTest::Resources().m_xPlayerMaterial        = MaterialHandle{};
 }
 
 void Project_LoadInitialScene();
@@ -1307,10 +1324,10 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_CreateEntity("RenderTestTerrain");
 	Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
 	Zenith_EditorAutomation::AddStep_AddComponent("Terrain");
-	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(0, RenderTest::g_axTerrainMaterials[0].GetDirect());
-	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(1, RenderTest::g_axTerrainMaterials[1].GetDirect());
-	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(2, RenderTest::g_axTerrainMaterials[2].GetDirect());
-	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(3, RenderTest::g_axTerrainMaterials[3].GetDirect());
+	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(0, RenderTest::Resources().m_axTerrainMaterials[0].GetDirect());
+	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(1, RenderTest::Resources().m_axTerrainMaterials[1].GetDirect());
+	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(2, RenderTest::Resources().m_axTerrainMaterials[2].GetDirect());
+	Zenith_EditorAutomation::AddStep_SetTerrainMaterial(3, RenderTest::Resources().m_axTerrainMaterials[3].GetDirect());
 	Zenith_EditorAutomation::AddStep_SetTerrainSplatmapPath("game:Textures/Terrain/Splatmap_RGBA" ZENITH_TEXTURE_EXT);
 	Zenith_EditorAutomation::AddStep_AddCollider();
 	Zenith_EditorAutomation::AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
@@ -1321,8 +1338,8 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY - 2.f, 512 * 0.5f);
 	Zenith_EditorAutomation::AddStep_SetTransformScale(30.0f, 0.5f, 30.0f);
 	Zenith_EditorAutomation::AddStep_AddModel();
-	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::g_strCubeModelPath.c_str());
-	Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::g_xCubeMaterial.GetDirect());
+	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::Resources().m_strCubeModelPath.c_str());
+	Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::Resources().m_xCubeMaterial.GetDirect());
 	Zenith_EditorAutomation::AddStep_AddCollider();
 	Zenith_EditorAutomation::AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 
@@ -1339,8 +1356,8 @@ void Project_RegisterEditorAutomationSteps()
 		Zenith_EditorAutomation::AddStep_SetTransformPosition(fX, fY, fZ);
 		Zenith_EditorAutomation::AddStep_SetTransformScale(fSX, fSY, fSZ);
 		Zenith_EditorAutomation::AddStep_AddModel();
-		Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::g_strCubeModelPath.c_str());
-		Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::g_xCubeMaterial.GetDirect());
+		Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::Resources().m_strCubeModelPath.c_str());
+		Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::Resources().m_xCubeMaterial.GetDirect());
 		Zenith_EditorAutomation::AddStep_AddCollider();
 		Zenith_EditorAutomation::AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 	};
@@ -1377,8 +1394,8 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetEntityTransient(false);
 	Zenith_EditorAutomation::AddStep_SetTransformPosition(512 * 0.5f, fInitialPlayerY, 512 * 0.5f);
 	Zenith_EditorAutomation::AddStep_AddModel();
-	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::g_strStickFigureModelPath.c_str());
-	Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::g_xPlayerMaterial.GetDirect());
+	Zenith_EditorAutomation::AddStep_LoadModel(RenderTest::Resources().m_strStickFigureModelPath.c_str());
+	Zenith_EditorAutomation::AddStep_SetModelMaterial(0, RenderTest::Resources().m_xPlayerMaterial.GetDirect());
 	Zenith_EditorAutomation::AddStep_AddAnimator();
 	// Muzzle flash emitter lives on the Player entity; the player behaviour
 	// overrides its emit position+direction per shot so we don't need a
@@ -1457,9 +1474,9 @@ void Project_LoadInitialScene()
 	if (RenderTest_IsSmokeMode())
 	{
 		if (RenderTest_HasCommandLineFlag("--rendertest-lod-debug"))
-			Flux_Terrain::GetDebugMode() = 1;
+			g_xEngine.Terrain().GetDebugMode() = 1;
 		if (RenderTest_HasCommandLineFlag("--rendertest-wireframe"))
-			Flux_Terrain::GetWireframeMode() = true;
+			g_xEngine.Terrain().GetWireframeMode() = true;
 
 		Zenith_Editor::SetEditorMode(EditorMode::Playing);
 	}

@@ -14,7 +14,8 @@
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/Flux_ImGuiIntegration.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "../../../Tools/Zenith_Tools_TextureExport.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -189,7 +190,7 @@ static Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath)
 	{
 		xEntry.m_xImGuiHandle = Flux_ImGuiIntegration::RegisterTexture(
 			pxTexture->m_xSRV,
-			Flux_Graphics::s_xClampSampler
+			g_xEngine.FluxGraphics().m_xClampSampler
 		);
 	}
 

@@ -7,7 +7,7 @@
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 
 //------------------------------------------------------------------------------
 // Destructor

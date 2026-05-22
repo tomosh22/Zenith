@@ -4,7 +4,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 
 #include "Combat_Behaviour.h"   // static GameManager state (player/enemy registry, game state)
 #include "Combat_DamageSystem.h"
@@ -52,7 +52,7 @@ void Combat_PlayerBehaviour::OnUpdate(float fDt)
 
 	if (xCollider.HasValidBody())
 	{
-		Zenith_Physics::EnforceUpright(xCollider.GetBodyID());
+		g_xEngine.Physics().EnforceUpright(xCollider.GetBodyID());
 	}
 
 	if (Combat_DamageSystem::IsDead(m_xParentEntity.GetEntityID()))

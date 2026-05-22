@@ -2,10 +2,12 @@
 
 #include "Zenith_Vulkan_CommandBuffer.h"
 
-#include "Zenith_Vulkan.h"
+#include "Vulkan/Zenith_Vulkan.h"
+#include "Vulkan/Zenith_VulkanImpl.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 
 //#TO purely for the static assert in SetIndexBuffer
 
@@ -170,7 +172,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 				? vk::ImageLayout::eDepthStencilReadOnlyOptimal
 				: vk::ImageLayout::eShaderReadOnlyOptimal;
 			axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
-				.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
+				.setSampler(pxSampler ? pxSampler->GetSampler() : g_xEngine.FluxGraphics().m_xRepeatSampler.GetSampler())
 				.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(pxSRV->m_xImageViewHandle))
 				.setImageLayout(eLayout);
 
@@ -260,7 +262,7 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 	const ScratchBufferBinding& xScratch = m_xBindings[uDescSet].m_xScratchBuffer;
 	if (xScratch.m_bValid)
 	{
-		Zenith_Vulkan_PerFrame* pxFrame = Zenith_Vulkan::s_pxCurrentFrame;
+		Zenith_Vulkan_PerFrame* pxFrame = g_xEngine.Vulkan().m_pxCurrentFrame;
 		axBufferInfos[uNumBufferWrites] = vk::DescriptorBufferInfo()
 			.setBuffer(pxFrame->GetScratchBuffer())
 			.setOffset(xScratch.m_uOffset)
@@ -425,7 +427,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(const Flux_RenderGraph_Attachm
 
 	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(aeColourFormats, uNumColourAttachments, eDepthStencilFormat, eColourLoad, STORE_ACTION_STORE, eDepthStencilLoad, STORE_ACTION_STORE, RENDER_TARGET_USAGE_RENDERTARGET, bDepthIsReadOnly);
 	Zenith_Assert(m_xCurrentRenderPass, "BeginRenderPass: TargetSetupToRenderPass returned null render pass");
-	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyRenderPass(m_xCurrentRenderPass);
+	g_xEngine.Vulkan().m_pxCurrentFrame->DeferDestroyRenderPass(m_xCurrentRenderPass);
 
 	// Mip-adjusted framebuffer dimensions. When a pass binds mip N of an
 	// attachment (e.g. the IBL prefilter chain at mips 1..6), the framebuffer
@@ -451,7 +453,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(const Flux_RenderGraph_Attachm
 	}
 
 	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(axColourAttachments, uNumColourAttachments, rxDepthStencil, uWidth, uHeight, m_xCurrentRenderPass);
-	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyFramebuffer(xFramebuffer);
+	g_xEngine.Vulkan().m_pxCurrentFrame->DeferDestroyFramebuffer(xFramebuffer);
 
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
 		.setRenderPass(m_xCurrentRenderPass)
@@ -568,7 +570,7 @@ void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void*, uint32_t) {
 void Zenith_Vulkan_CommandBuffer::BindDrawConstants(void* pData, size_t uSize, u_int uBinding)
 {
 	// Allocate from scratch buffer
-	Zenith_Vulkan_PerFrame* pxFrame = Zenith_Vulkan::s_pxCurrentFrame;
+	Zenith_Vulkan_PerFrame* pxFrame = g_xEngine.Vulkan().m_pxCurrentFrame;
 	u_int uOffset = pxFrame->AllocateScratchBuffer(static_cast<u_int>(uSize), m_uWorkerIndex);
 
 	// Copy data to scratch buffer

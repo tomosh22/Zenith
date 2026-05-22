@@ -368,7 +368,7 @@ void Zenith_FileWatcher::Platform_StartWatching()
 
 	// Start watch thread
 	s_bWatchThreadRunning = true;
-	Zenith_Multithreading::CreateThread("FileWatcher", WatchThreadFunc, nullptr);
+	g_xEngine.Threading().CreateThread("FileWatcher", WatchThreadFunc, nullptr);
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "Windows file watcher started");
 }

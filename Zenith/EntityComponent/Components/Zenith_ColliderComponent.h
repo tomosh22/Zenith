@@ -1,6 +1,6 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Reference.h>
 

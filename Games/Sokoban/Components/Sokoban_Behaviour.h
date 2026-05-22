@@ -25,7 +25,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -51,29 +51,37 @@
 #endif
 
 // ============================================================================
-// Sokoban Resources - Global access
-// Defined in Sokoban.cpp, initialized in Project_RegisterScriptBehaviours
+// Sokoban Resources - per-game ProjectResources struct
+// Phase 8: replaces the scattered namespace-scope extern globals with a single
+// struct + accessor function. The struct instance lives in Sokoban.cpp; reach
+// individual resources via Sokoban::Resources().m_xWhatever.
 // ============================================================================
 class Zenith_Prefab;
 class Flux_ParticleEmitterConfig;
 
 namespace Sokoban
 {
-	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern MaterialHandle g_xFloorMaterial;
-	extern MaterialHandle g_xWallMaterial;
-	extern MaterialHandle g_xBoxMaterial;
-	extern MaterialHandle g_xBoxOnTargetMaterial;
-	extern MaterialHandle g_xPlayerMaterial;
-	extern MaterialHandle g_xTargetMaterial;
+	struct SokobanResources
+	{
+		MeshGeometryHandle  m_xCubeAsset;
+		Flux_MeshGeometry*  m_pxCubeGeometry = nullptr;
 
-	extern PrefabHandle g_xTilePrefab;
-	extern PrefabHandle g_xBoxPrefab;
-	extern PrefabHandle g_xPlayerPrefab;
+		MaterialHandle      m_xFloorMaterial;
+		MaterialHandle      m_xWallMaterial;
+		MaterialHandle      m_xBoxMaterial;
+		MaterialHandle      m_xBoxOnTargetMaterial;
+		MaterialHandle      m_xPlayerMaterial;
+		MaterialHandle      m_xTargetMaterial;
 
-	// Particle effects
-	extern Flux_ParticleEmitterConfig* g_pxDustConfig;
-	extern Zenith_EntityID g_uDustEmitterID;
+		PrefabHandle        m_xTilePrefab;
+		PrefabHandle        m_xBoxPrefab;
+		PrefabHandle        m_xPlayerPrefab;
+
+		Flux_ParticleEmitterConfig* m_pxDustConfig    = nullptr;
+		Zenith_EntityID             m_uDustEmitterID  = INVALID_ENTITY_ID;
+	};
+
+	SokobanResources& Resources();
 }
 
 // Note: SokobanTileType and SokobanDirection enums are defined in Sokoban_GridLogic.h
@@ -160,13 +168,13 @@ public:
 	void OnAwake() ZENITH_FINAL override
 	{
 		// Use global resources (initialized in Sokoban.cpp)
-		m_pxCubeGeometry = Sokoban::g_pxCubeGeometry;
-		m_xFloorMaterial = Sokoban::g_xFloorMaterial;
-		m_xWallMaterial = Sokoban::g_xWallMaterial;
-		m_xBoxMaterial = Sokoban::g_xBoxMaterial;
-		m_xBoxOnTargetMaterial = Sokoban::g_xBoxOnTargetMaterial;
-		m_xPlayerMaterial = Sokoban::g_xPlayerMaterial;
-		m_xTargetMaterial = Sokoban::g_xTargetMaterial;
+		m_pxCubeGeometry = Sokoban::Resources().m_pxCubeGeometry;
+		m_xFloorMaterial = Sokoban::Resources().m_xFloorMaterial;
+		m_xWallMaterial = Sokoban::Resources().m_xWallMaterial;
+		m_xBoxMaterial = Sokoban::Resources().m_xBoxMaterial;
+		m_xBoxOnTargetMaterial = Sokoban::Resources().m_xBoxOnTargetMaterial;
+		m_xPlayerMaterial = Sokoban::Resources().m_xPlayerMaterial;
+		m_xTargetMaterial = Sokoban::Resources().m_xTargetMaterial;
 
 		// Wire up button callbacks
 		bool bHasMenu = false;
@@ -224,7 +232,7 @@ public:
 
 		case SokobanGameState::PLAYING:
 			// Escape returns to menu
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -484,13 +492,13 @@ private:
 		// Up/Down would cycle if more buttons existed
 		static constexpr int32_t s_iButtonCount = 1;
 
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
+			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W))
 		{
 			m_iFocusIndex = (m_iFocusIndex - 1 + s_iButtonCount) % s_iButtonCount;
 		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN) ||
+			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_S))
 		{
 			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
 		}
@@ -610,13 +618,13 @@ private:
 		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xPersistentScene);
 
 		if (!pxSceneData ||
-			Sokoban::g_uDustEmitterID == INVALID_ENTITY_ID ||
-			!pxSceneData->EntityExists(Sokoban::g_uDustEmitterID))
+			Sokoban::Resources().m_uDustEmitterID == INVALID_ENTITY_ID ||
+			!pxSceneData->EntityExists(Sokoban::Resources().m_uDustEmitterID))
 		{
 			return;
 		}
 
-		Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Sokoban::g_uDustEmitterID);
+		Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Sokoban::Resources().m_uDustEmitterID);
 		if (!xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
 		{
 			return;
@@ -645,13 +653,13 @@ private:
 		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xPersistentScene);
 
 		if (!pxSceneData ||
-			Sokoban::g_uDustEmitterID == INVALID_ENTITY_ID ||
-			!pxSceneData->EntityExists(Sokoban::g_uDustEmitterID))
+			Sokoban::Resources().m_uDustEmitterID == INVALID_ENTITY_ID ||
+			!pxSceneData->EntityExists(Sokoban::Resources().m_uDustEmitterID))
 		{
 			return;
 		}
 
-		Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Sokoban::g_uDustEmitterID);
+		Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Sokoban::Resources().m_uDustEmitterID);
 		if (xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
 		{
 			xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>().SetEmitting(false);
@@ -746,7 +754,7 @@ private:
 			m_uGridWidth, m_uGridHeight,
 			m_aeTiles, m_abBoxes, m_abTargets,
 			m_uPlayerX, m_uPlayerY,
-			Sokoban::g_xTilePrefab.GetDirect(), Sokoban::g_xBoxPrefab.GetDirect(), Sokoban::g_xPlayerPrefab.GetDirect(),
+			Sokoban::Resources().m_xTilePrefab.GetDirect(), Sokoban::Resources().m_xBoxPrefab.GetDirect(), Sokoban::Resources().m_xPlayerPrefab.GetDirect(),
 			m_pxCubeGeometry,
 			m_xFloorMaterial.GetDirect(), m_xWallMaterial.GetDirect(), m_xTargetMaterial.GetDirect(),
 			m_xBoxMaterial.GetDirect(), m_xBoxOnTargetMaterial.GetDirect(), m_xPlayerMaterial.GetDirect(),

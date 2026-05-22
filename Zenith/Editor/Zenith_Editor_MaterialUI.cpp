@@ -4,7 +4,9 @@
 
 #include "Zenith_Editor_MaterialUI.h"
 #include "Zenith_Editor.h"
-#include "Flux/Flux_Graphics.h"
+#include "Zenith_EditorMaterialUIImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -18,17 +20,8 @@
 // Texture Preview Cache
 //=============================================================================
 
-namespace
-{
-	struct TexturePreviewCacheEntry
-	{
-		Flux_ImGuiTextureHandle m_xHandle;
-		u_int64 m_ulImageViewHandle = 0;  // Cached to detect changes
-	};
-
-	// Cache keyed by VRAM handle (unique per texture)
-	static std::unordered_map<u_int64, TexturePreviewCacheEntry> s_xTexturePreviewCache;
-}
+// Phase 5.5d: texture preview cache lives on Zenith_EditorMaterialUIImpl
+// held by Zenith_Engine.
 
 //=============================================================================
 // Implementation
@@ -47,8 +40,8 @@ Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Zenith_TextureAsse
 	u_int64 ulKey = pxTexture->m_xVRAMHandle.AsUInt();
 	u_int64 ulImageViewHandle = pxTexture->m_xSRV.m_xImageViewHandle.AsUInt();
 
-	auto it = s_xTexturePreviewCache.find(ulKey);
-	if (it != s_xTexturePreviewCache.end())
+	auto it = g_xEngine.EditorMaterialUI().m_xTexturePreviewCache.find(ulKey);
+	if (it != g_xEngine.EditorMaterialUI().m_xTexturePreviewCache.end())
 	{
 		// Check if image view changed (e.g., texture was reloaded)
 		if (it->second.m_ulImageViewHandle == ulImageViewHandle)
@@ -62,20 +55,20 @@ Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Zenith_TextureAsse
 	// Register new texture with ImGui
 	Flux_ImGuiTextureHandle xHandle = Flux_ImGuiIntegration::RegisterTexture(
 		pxTexture->m_xSRV,
-		Flux_Graphics::s_xClampSampler
+		g_xEngine.FluxGraphics().m_xClampSampler
 	);
 
-	s_xTexturePreviewCache[ulKey] = { xHandle, ulImageViewHandle };
+	g_xEngine.EditorMaterialUI().m_xTexturePreviewCache[ulKey] = { xHandle, ulImageViewHandle };
 	return xHandle;
 }
 
 void ClearTexturePreviewCache()
 {
-	for (auto& xEntry : s_xTexturePreviewCache)
+	for (auto& xEntry : g_xEngine.EditorMaterialUI().m_xTexturePreviewCache)
 	{
 		Flux_ImGuiIntegration::UnregisterTexture(xEntry.second.m_xHandle);
 	}
-	s_xTexturePreviewCache.clear();
+	g_xEngine.EditorMaterialUI().m_xTexturePreviewCache.clear();
 }
 
 std::string GetTexturePathForSlot(const Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot)

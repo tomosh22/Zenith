@@ -14,7 +14,7 @@
  */
 
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 
 #include <cmath>
@@ -82,7 +82,7 @@ namespace Exploration_PlayerController
 	 */
 	inline bool WasEscapePressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
 	}
 
 	/**
@@ -90,7 +90,7 @@ namespace Exploration_PlayerController
 	 */
 	inline bool WasMouseClicked()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
 	}
 
 	/**
@@ -111,7 +111,7 @@ namespace Exploration_PlayerController
 
 		// Get mouse delta directly from engine
 		Zenith_Maths::Vector2_64 xDelta;
-		Zenith_Input::GetMouseDelta(xDelta);
+		g_xEngine.Input().GetMouseDelta(xDelta);
 
 		// Apply sensitivity
 		float fYawDelta = static_cast<float>(xDelta.x) * s_fMouseSensitivity;
@@ -140,21 +140,21 @@ namespace Exploration_PlayerController
 		Zenith_Maths::Vector3 xInput(0.0f, 0.0f, 0.0f);
 
 		// Forward/backward (W/S or Up/Down)
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_W) || Zenith_Input::IsKeyHeld(ZENITH_KEY_UP))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))
 		{
 			xInput.z += 1.0f;
 		}
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_S) || Zenith_Input::IsKeyHeld(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))
 		{
 			xInput.z -= 1.0f;
 		}
 
 		// Strafe left/right (A/D or Left/Right)
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_A) || Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))
 		{
 			xInput.x -= 1.0f;
 		}
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_D) || Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT))
 		{
 			xInput.x += 1.0f;
 		}
@@ -176,8 +176,8 @@ namespace Exploration_PlayerController
 	 */
 	inline bool IsSprinting()
 	{
-		return Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT_SHIFT) ||
-		       Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT);
+		return g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT_SHIFT) ||
+		       g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT);
 	}
 
 	/**
@@ -185,7 +185,7 @@ namespace Exploration_PlayerController
 	 */
 	inline bool WasJumpPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE);
 	}
 
 	/**

@@ -13,7 +13,7 @@
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Collections/Zenith_Vector.h"
-#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include <atomic>
 #include <string>
 
@@ -25,6 +25,13 @@ class Zenith_SceneData;
 
 // Include Zenith_Entity to get complete EntityID type definition
 #include "EntityComponent/Zenith_Entity.h"
+
+// Phase 5a: Zenith_EntitySlot + the three "global entity storage" arrays
+// live here. SceneData's inline methods reach the arrays through
+// g_xEngine.EntityStore().m_axXxx -- requires Zenith_Engine.h to be included
+// (transitively via Zenith.h PCH, which every .cpp pulls in first).
+#include "EntityComponent/Zenith_EntityStore.h"
+#include "Core/Zenith_Engine.h"
 
 // Pool types + Zenith_Component concept moved out to break the historical
 // SceneData.h ↔ SceneManager.h cycle (T2.4). The new header carries its own
@@ -96,6 +103,18 @@ public:
 	const std::string& GetPath() const { return m_strPath; }
 	int GetBuildIndex() const { return m_iBuildIndex; }
 	int GetHandle() const { return m_iHandle; }
+
+#ifdef ZENITH_TOOLS
+	// Editor-only hooks used by the play-mode backup/restore path
+	// (Zenith_Editor::EnterStopMode). The editor restores the original scene
+	// path / build-index after running the scene in play mode, and re-marks
+	// entities as started when re-entering play mode from a backup.
+	// Exposed publicly so Zenith_Editor (now a namespace) doesn't need the
+	// stale `friend class Zenith_Editor` declaration.
+	void Editor_SetPath(const std::string& strPath) { m_strPath = strPath; }
+	void Editor_SetBuildIndex(int iBuildIndex) { m_iBuildIndex = iBuildIndex; }
+	void Editor_MarkEntityStarted(Zenith_EntityID xID);
+#endif
 	bool IsLoaded() const { return m_bIsLoaded; }
 	bool IsActivated() const { return m_bIsActivated; }
 	bool IsUnloading() const { return m_bIsUnloading; }
@@ -121,13 +140,13 @@ public:
 
 	void RemoveEntity(Zenith_EntityID xID);
 
-	// Thread-safe: only reads from s_axEntitySlots which is stable during task execution
+	// Thread-safe: only reads from g_xEngine.EntityStore().m_axEntitySlots which is stable during task execution
 	// (main thread does not modify entity storage while worker threads are running)
 	bool EntityExists(Zenith_EntityID xID) const
 	{
 		if (xID.m_uIndex == Zenith_EntityID::INVALID_INDEX) return false;
-		if (xID.m_uIndex >= s_axEntitySlots.GetSize()) return false;
-		const Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+		if (xID.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) return false;
+		const Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		return xSlot.IsOccupied() && xSlot.m_uGeneration == xID.m_uGeneration;
 	}
 
@@ -141,7 +160,7 @@ public:
 
 	u_int GetEntityCount() const
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetEntityCount must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetEntityCount must be called from main thread");
 		return m_xActiveEntities.GetSize();
 	}
 	const Zenith_Vector<Zenith_EntityID>& GetActiveEntities() const
@@ -159,19 +178,19 @@ public:
 
 	bool IsBeingDestroyed() const { return m_bIsBeingDestroyed; }
 	bool IsMarkedForDestruction(Zenith_EntityID xID) const;
-	void InvalidateRootEntityCache() { Zenith_Assert(Zenith_Multithreading::IsMainThread(), "InvalidateRootEntityCache must be called from main thread"); m_bRootEntitiesDirty = true; }
+	void InvalidateRootEntityCache() { Zenith_Assert(g_xEngine.Threading().IsMainThread(), "InvalidateRootEntityCache must be called from main thread"); m_bRootEntitiesDirty = true; }
 
 	// Returns the scene handle that owns this entity (-1 if invalid)
 	static int GetEntitySceneHandle(Zenith_EntityID xID)
 	{
-		if (xID.m_uIndex >= s_axEntitySlots.GetSize()) return -1;
-		return s_axEntitySlots.Get(xID.m_uIndex).m_iSceneHandle;
+		if (xID.m_uIndex >= g_xEngine.EntityStore().m_axEntitySlots.GetSize()) return -1;
+		return g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_iSceneHandle;
 	}
 
 	void MarkEntityAwoken(Zenith_EntityID xID)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityAwoken must be called from main thread");
-		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MarkEntityAwoken must be called from main thread");
+		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (xSlot.IsAwoken()) return;  // Already awoken or further along - no-op
 		xSlot.TransitionToAwoken();
 	}
@@ -260,9 +279,10 @@ private:
 	friend class Zenith_SceneTests;
 	friend class Zenith_UnitTests;
 	friend class Zenith_ComponentMetaRegistry;
-#ifdef ZENITH_TOOLS
-	friend class Zenith_Editor;
-#endif
+	// (Earlier revisions friended `class Zenith_Editor` here so editor code
+	// could reach into scene-data privates. Audited stale -- editor accesses
+	// scene data only through the public API -- and removed when
+	// Zenith_Editor became a namespace.)
 
 	//==========================================================================
 	// Entity Slot Storage (Generation Counter System)
@@ -293,119 +313,18 @@ private:
 	// m_bMarkedForDestruction is orthogonal to lifecycle state (can overlay any active state).
 	//
 
-	enum class EntityLifecycleState : uint8_t
-	{
-		FREE = 0,            // Slot unoccupied, available for reuse
-		OCCUPIED = 1,        // Created but not yet awoken
-		AWOKEN = 2,          // Awake() called
-		PENDING_START = 3,   // Queued for Start() next frame
-		STARTED = 4,         // Start() called, receives Update/LateUpdate
-	};
-
-	struct Zenith_EntitySlot
-	{
-		std::string m_strName;
-		bool m_bEnabled = true;
-		bool m_bTransient = true;
-
-		uint32_t m_uGeneration = 0;
-		EntityLifecycleState m_eLifecycle = EntityLifecycleState::FREE;
-		bool m_bMarkedForDestruction = false;  // Orthogonal: can overlay any active lifecycle state
-		int m_iSceneHandle = -1;        // Which scene owns this entity
-
-		// Supplementary flags (orthogonal to lifecycle progression)
-		bool m_bCreatedDuringUpdate = false;
-		bool m_bOnEnableDispatched = false;  // Tracks whether OnEnable has been dispatched (Unity parity: prevents double-dispatch)
-
-		// Cached activeInHierarchy state (Unity parity: avoids O(depth) parent chain walk per call)
-		// Rebuilt lazily in Zenith_Entity::IsActiveInHierarchy() on first access.
-		// Invalidated at 4 sites via InvalidateActiveInHierarchyCache():
-		//   1. Zenith_Entity::SetEnabled()    - own enabled flag changed
-		//   2. Zenith_Entity::SetParent()     - parent hierarchy changed
-		//   3. ReleaseSlot()                  - slot freed (reset to defaults)
-		//   4. OccupySlot()                   - new entity (reset to defaults)
-		mutable bool m_bActiveInHierarchy = true;
-		mutable bool m_bActiveInHierarchyDirty = true;
-
-		// Lifecycle state queries
-		bool IsOccupied() const { return m_eLifecycle >= EntityLifecycleState::OCCUPIED; }
-		bool IsAwoken() const { return m_eLifecycle >= EntityLifecycleState::AWOKEN; }
-		bool IsPendingStart() const { return m_eLifecycle == EntityLifecycleState::PENDING_START; }
-		bool IsStarted() const { return m_eLifecycle >= EntityLifecycleState::STARTED; }
-
-#ifdef ZENITH_ASSERT
-		void ValidateSlotState() const
-		{
-			if (m_eLifecycle == EntityLifecycleState::FREE)
-			{
-				return; // Free slot, nothing to validate
-			}
-			Zenith_Assert(!m_bMarkedForDestruction || IsOccupied(), "Destroyed entity not occupied");
-		}
-#endif
-
-		// Explicit lifecycle transition methods with invariant assertions
-		void TransitionToAwoken()
-		{
-			Zenith_Assert(m_eLifecycle == EntityLifecycleState::OCCUPIED, "Invalid state for Awoken transition (current=%u)", static_cast<uint8_t>(m_eLifecycle));
-			m_eLifecycle = EntityLifecycleState::AWOKEN;
-		}
-		void TransitionToPendingStart()
-		{
-			Zenith_Assert(m_eLifecycle == EntityLifecycleState::AWOKEN, "Invalid state for PendingStart transition (current=%u)", static_cast<uint8_t>(m_eLifecycle));
-			m_eLifecycle = EntityLifecycleState::PENDING_START;
-		}
-		void TransitionToStarted()
-		{
-			Zenith_Assert(m_eLifecycle == EntityLifecycleState::AWOKEN || m_eLifecycle == EntityLifecycleState::PENDING_START,
-				"Invalid state for Start transition (current=%u)", static_cast<uint8_t>(m_eLifecycle));
-			m_eLifecycle = EntityLifecycleState::STARTED;
-		}
-		// Revert from PENDING_START back to AWOKEN (used when entity is destroyed before Start fires)
-		void RevertFromPendingStart()
-		{
-			Zenith_Assert(m_eLifecycle == EntityLifecycleState::PENDING_START, "RevertFromPendingStart: not in PENDING_START state (current=%u)", static_cast<uint8_t>(m_eLifecycle));
-			m_eLifecycle = EntityLifecycleState::AWOKEN;
-		}
-
-		void TransitionToDestroying()
-		{
-			Zenith_Assert(IsOccupied() && !m_bMarkedForDestruction, "Invalid state for Destroy transition");
-			m_bMarkedForDestruction = true;
-		}
-
-		// Reset all lifecycle flags and release the slot for reuse
-		void ReleaseSlot()
-		{
-			m_eLifecycle = EntityLifecycleState::FREE;
-			m_bMarkedForDestruction = false;
-			m_bCreatedDuringUpdate = false;
-			m_bOnEnableDispatched = false;
-			m_bActiveInHierarchy = true;
-			m_bActiveInHierarchyDirty = true;
-			m_iSceneHandle = -1;
-		}
-
-		// Initialize all lifecycle flags and occupy the slot for a new entity
-		void OccupySlot(int iSceneHandle)
-		{
-			m_eLifecycle = EntityLifecycleState::OCCUPIED;
-			m_bMarkedForDestruction = false;
-			m_bCreatedDuringUpdate = false;
-			m_bOnEnableDispatched = false;
-			m_bActiveInHierarchy = true;
-			m_bActiveInHierarchyDirty = true;
-			m_iSceneHandle = iSceneHandle;
-		}
-	};
+	// Phase 5a: Zenith_EntitySlot, EntityLifecycleState, and the three global
+	// entity-storage arrays moved off this class. Lifecycle state and slot type
+	// now live at file scope in Zenith_EntityStore.h; the arrays moved onto
+	// Zenith_EntityStore which Zenith_Engine owns. Back-compat using-aliases
+	// below keep qualified names like Zenith_SceneData::Zenith_EntitySlot and
+	// Zenith_SceneData::EntityLifecycleState::OCCUPIED resolving for the
+	// existing 20-odd call sites; new code should use the unqualified file-
+	// scope names. ResetGlobalEntityStorage is now Zenith_EntityStore::Reset().
+	using Zenith_EntitySlot = ::Zenith_EntitySlot;
+	using EntityLifecycleState = Zenith_EntityLifecycleState;
 
 	const Zenith_EntitySlot& GetSlot(Zenith_EntityID xID) const;
-
-	// Global entity storage (shared across all scenes - indexed by EntityID.m_uIndex)
-	static Zenith_Vector<Zenith_EntitySlot> s_axEntitySlots;
-	static Zenith_Vector<uint32_t> s_axFreeEntityIndices;
-	static Zenith_Vector<std::unordered_map<TypeID, u_int>> s_axEntityComponents; // #TODO: Replace with engine hash map
-	static void ResetGlobalEntityStorage();
 
 	// Internal entity creation - use Zenith_Entity constructor for external code
 	Zenith_EntityID CreateEntity();
@@ -435,22 +354,22 @@ private:
 
 	void MarkEntityStarted(Zenith_EntityID xID)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityStarted must be called from main thread");
-		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MarkEntityStarted must be called from main thread");
+		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (xSlot.IsStarted()) return;  // Already started - no-op
 		xSlot.TransitionToStarted();
 	}
 	void MarkEntityPendingStart(Zenith_EntityID xID)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityPendingStart must be called from main thread");
-		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MarkEntityPendingStart must be called from main thread");
+		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (!xSlot.IsPendingStart()) { xSlot.TransitionToPendingStart(); m_uPendingStartCount++; m_axPendingStartEntities.PushBack(xID); }
 	}
 	// Cancel a pending start: decrement count, remove from pending list, revert lifecycle to AWOKEN
 	void CancelPendingStart(Zenith_EntityID xID)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CancelPendingStart must be called from main thread");
-		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CancelPendingStart must be called from main thread");
+		Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (!xSlot.IsPendingStart()) return;
 		xSlot.RevertFromPendingStart();
 		Zenith_Assert(m_uPendingStartCount > 0, "PendingStartCount underflow in CancelPendingStart");
@@ -459,10 +378,10 @@ private:
 	}
 
 	bool HasPendingStarts() const { return m_uPendingStartCount > 0; }
-	bool IsEntityAwoken(Zenith_EntityID xID) const { return xID.m_uIndex < s_axEntitySlots.GetSize() && s_axEntitySlots.Get(xID.m_uIndex).IsAwoken(); }
-	bool IsEntityStarted(Zenith_EntityID xID) const { return xID.m_uIndex < s_axEntitySlots.GetSize() && s_axEntitySlots.Get(xID.m_uIndex).IsStarted(); }
-	bool IsOnEnableDispatched(Zenith_EntityID xID) const { return xID.m_uIndex < s_axEntitySlots.GetSize() && s_axEntitySlots.Get(xID.m_uIndex).m_bOnEnableDispatched; }
-	void SetOnEnableDispatched(Zenith_EntityID xID, bool bDispatched) { Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetOnEnableDispatched must be called from main thread"); s_axEntitySlots.Get(xID.m_uIndex).m_bOnEnableDispatched = bDispatched; }
+	bool IsEntityAwoken(Zenith_EntityID xID) const { return xID.m_uIndex < g_xEngine.EntityStore().m_axEntitySlots.GetSize() && g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).IsAwoken(); }
+	bool IsEntityStarted(Zenith_EntityID xID) const { return xID.m_uIndex < g_xEngine.EntityStore().m_axEntitySlots.GetSize() && g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).IsStarted(); }
+	bool IsOnEnableDispatched(Zenith_EntityID xID) const { return xID.m_uIndex < g_xEngine.EntityStore().m_axEntitySlots.GetSize() && g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bOnEnableDispatched; }
+	void SetOnEnableDispatched(Zenith_EntityID xID, bool bDispatched) { Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetOnEnableDispatched must be called from main thread"); g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bOnEnableDispatched = bDispatched; }
 
 	// Invalidate cached activeInHierarchy for an entity and all descendants
 	static void InvalidateActiveInHierarchyCache(Zenith_EntityID xID);
@@ -470,13 +389,13 @@ private:
 	bool IsUpdating() const { return m_bIsUpdating; }
 	void RegisterCreatedDuringUpdate(Zenith_EntityID xID)
 	{
-		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RegisterCreatedDuringUpdate must be called from main thread");
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RegisterCreatedDuringUpdate must be called from main thread");
 		if (m_bIsUpdating)
 		{
-			s_axEntitySlots.Get(xID.m_uIndex).m_bCreatedDuringUpdate = true;
+			g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bCreatedDuringUpdate = true;
 		}
 	}
-	bool WasCreatedDuringUpdate(Zenith_EntityID xID) const { return xID.m_uIndex < s_axEntitySlots.GetSize() && s_axEntitySlots.Get(xID.m_uIndex).m_bCreatedDuringUpdate; }
+	bool WasCreatedDuringUpdate(Zenith_EntityID xID) const { return xID.m_uIndex < g_xEngine.EntityStore().m_axEntitySlots.GetSize() && g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex).m_bCreatedDuringUpdate; }
 
 	//==========================================================================
 	// Immediate Lifecycle Dispatch (Unity parity: Awake/OnEnable fire immediately on Instantiate)
@@ -497,7 +416,7 @@ private:
 	// Internal State Queries
 	//==========================================================================
 
-	void SetPaused(bool bPaused) { Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetPaused must be called from main thread"); m_bIsPaused = bPaused; }
+	void SetPaused(bool bPaused) { Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetPaused must be called from main thread"); m_bIsPaused = bPaused; }
 
 	//==========================================================================
 	// Update (called by SceneManager)
@@ -692,7 +611,7 @@ private:
 template<typename T, typename... Args>
 T& Zenith_SceneData::CreateComponent(Zenith_EntityID xID, Args&&... args)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CreateComponent must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "CreateComponent must be called from main thread");
 	Zenith_Assert(EntityExists(xID), "CreateComponent: Entity (idx=%u, gen=%u) does not exist", xID.m_uIndex, xID.m_uGeneration);
 
 	Zenith_ComponentPool<T>* pxPool = GetOrCreateComponentPool<T>();
@@ -726,7 +645,7 @@ T& Zenith_SceneData::CreateComponent(Zenith_EntityID xID, Args&&... args)
 		uComponentIndex = pxPool->EmplaceBack(xID, std::forward<Args>(args)...);
 	}
 
-	s_axEntityComponents.Get(xID.m_uIndex)[uTypeID] = uComponentIndex;
+	g_xEngine.EntityStore().m_axEntityComponents.Get(xID.m_uIndex)[uTypeID] = uComponentIndex;
 	MarkDirty();
 	return pxPool->Get(uComponentIndex);
 }
@@ -734,24 +653,24 @@ T& Zenith_SceneData::CreateComponent(Zenith_EntityID xID, Args&&... args)
 template<typename T>
 bool Zenith_SceneData::EntityHasComponent(Zenith_EntityID xID) const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_AreRenderTasksActive()
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive()
 		,
 		"EntityHasComponent must be called from main thread");
 	if (!EntityExists(xID)) return false;
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
-	const auto& xMap = s_axEntityComponents.Get(xID.m_uIndex);
+	const auto& xMap = g_xEngine.EntityStore().m_axEntityComponents.Get(xID.m_uIndex);
 	return xMap.contains(uTypeID);
 }
 
 template<typename T>
 T& Zenith_SceneData::GetComponentFromEntity(Zenith_EntityID xID) const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_AreRenderTasksActive(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive(),
 		"GetComponentFromEntity must be called from main thread");
 	Zenith_Assert(EntityExists(xID), "GetComponentFromEntity: Entity (idx=%u, gen=%u) does not exist", xID.m_uIndex, xID.m_uGeneration);
 
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
-	const auto& xMap = s_axEntityComponents.Get(xID.m_uIndex);
+	const auto& xMap = g_xEngine.EntityStore().m_axEntityComponents.Get(xID.m_uIndex);
 	auto xIt = xMap.find(uTypeID);
 	Zenith_Assert(xIt != xMap.end(), "GetComponentFromEntity: Entity does not have component");
 	const u_int uIndex = xIt->second;
@@ -761,11 +680,11 @@ T& Zenith_SceneData::GetComponentFromEntity(Zenith_EntityID xID) const
 template<typename T>
 bool Zenith_SceneData::RemoveComponentFromEntity(Zenith_EntityID xID)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "RemoveComponentFromEntity must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RemoveComponentFromEntity must be called from main thread");
 	if (!EntityExists(xID)) return false;
 
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
-	auto& xMap = s_axEntityComponents.Get(xID.m_uIndex);
+	auto& xMap = g_xEngine.EntityStore().m_axEntityComponents.Get(xID.m_uIndex);
 	auto xIt = xMap.find(uTypeID);
 	if (xIt == xMap.end()) return false;
 
@@ -790,7 +709,7 @@ bool Zenith_SceneData::RemoveComponentFromEntity(Zenith_EntityID xID)
 template<typename T>
 void Zenith_SceneData::GetAllOfComponentType(Zenith_Vector<T*>& xOut) const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_AreRenderTasksActive(), "GetAllOfComponentType must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive(), "GetAllOfComponentType must be called from main thread");
 	xOut.Clear();
 	AppendAllOfComponentType<T>(xOut);
 }
@@ -798,7 +717,7 @@ void Zenith_SceneData::GetAllOfComponentType(Zenith_Vector<T*>& xOut) const
 template<typename T>
 void Zenith_SceneData::AppendAllOfComponentType(Zenith_Vector<T*>& xOut) const
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_AreRenderTasksActive(), "AppendAllOfComponentType must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread() || Zenith_AreRenderTasksActive(), "AppendAllOfComponentType must be called from main thread");
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
 	if (uTypeID >= m_xComponents.GetSize()) return;
 
@@ -842,7 +761,7 @@ template<typename T>
 Zenith_ComponentHandle<T> Zenith_SceneData::GetComponentHandle(Zenith_EntityID xID) const
 {
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
-	const auto& xMap = s_axEntityComponents.Get(xID.m_uIndex);
+	const auto& xMap = g_xEngine.EntityStore().m_axEntityComponents.Get(xID.m_uIndex);
 	auto xIt = xMap.find(uTypeID);
 	if (xIt == xMap.end()) return Zenith_ComponentHandle<T>::Invalid();
 	const u_int uIndex = xIt->second;
@@ -855,7 +774,7 @@ template<typename T>
 void Zenith_SceneData::TransferComponent(Zenith_EntityID xEntityID, Zenith_SceneData* pxSource, Zenith_SceneData* pxTarget)
 {
 	const TypeID uTypeID = TypeIDGenerator::GetTypeID<T>();
-	auto& xMap = s_axEntityComponents.Get(xEntityID.m_uIndex);
+	auto& xMap = g_xEngine.EntityStore().m_axEntityComponents.Get(xEntityID.m_uIndex);
 	auto xIt = xMap.find(uTypeID);
 	if (xIt == xMap.end()) return;
 

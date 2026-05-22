@@ -50,26 +50,31 @@
 #endif
 
 // ============================================================================
-// Marble Resources - Global access
-// Defined in Marble.cpp, initialized in Project_RegisterScriptBehaviours
+// Marble Resources - Phase 8 per-game ProjectResources struct.
 // ============================================================================
 class Zenith_Prefab;
 
 namespace Marble
 {
-	extern Flux_MeshGeometry* g_pxSphereGeometry;
-	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern MaterialHandle g_xBallMaterial;
-	extern MaterialHandle g_xPlatformMaterial;
-	extern MaterialHandle g_xGoalMaterial;
-	extern MaterialHandle g_xCollectibleMaterial;
-	extern MaterialHandle g_xFloorMaterial;
+	struct MarbleResources
+	{
+		MeshGeometryHandle  m_xSphereAsset;
+		MeshGeometryHandle  m_xCubeAsset;
+		Flux_MeshGeometry*  m_pxSphereGeometry = nullptr;
+		Flux_MeshGeometry*  m_pxCubeGeometry   = nullptr;
+		MaterialHandle      m_xBallMaterial;
+		MaterialHandle      m_xPlatformMaterial;
+		MaterialHandle      m_xGoalMaterial;
+		MaterialHandle      m_xCollectibleMaterial;
+		MaterialHandle      m_xFloorMaterial;
 
-	// Prefabs for runtime instantiation (handles for ref counting)
-	extern PrefabHandle g_xBallPrefab;
-	extern PrefabHandle g_xPlatformPrefab;
-	extern PrefabHandle g_xGoalPrefab;
-	extern PrefabHandle g_xCollectiblePrefab;
+		PrefabHandle        m_xBallPrefab;
+		PrefabHandle        m_xPlatformPrefab;
+		PrefabHandle        m_xGoalPrefab;
+		PrefabHandle        m_xCollectiblePrefab;
+	};
+
+	MarbleResources& Resources();
 }
 
 // ============================================================================
@@ -110,13 +115,13 @@ public:
 	void OnAwake() ZENITH_FINAL override
 	{
 		// Cache resource pointers
-		m_pxSphereGeometry = Marble::g_pxSphereGeometry;
-		m_pxCubeGeometry = Marble::g_pxCubeGeometry;
-		m_xBallMaterial = Marble::g_xBallMaterial;
-		m_xPlatformMaterial = Marble::g_xPlatformMaterial;
-		m_xGoalMaterial = Marble::g_xGoalMaterial;
-		m_xCollectibleMaterial = Marble::g_xCollectibleMaterial;
-		m_xFloorMaterial = Marble::g_xFloorMaterial;
+		m_pxSphereGeometry = Marble::Resources().m_pxSphereGeometry;
+		m_pxCubeGeometry = Marble::Resources().m_pxCubeGeometry;
+		m_xBallMaterial = Marble::Resources().m_xBallMaterial;
+		m_xPlatformMaterial = Marble::Resources().m_xPlatformMaterial;
+		m_xGoalMaterial = Marble::Resources().m_xGoalMaterial;
+		m_xCollectibleMaterial = Marble::Resources().m_xCollectibleMaterial;
+		m_xFloorMaterial = Marble::Resources().m_xFloorMaterial;
 
 		// Wire menu button callbacks
 		bool bHasMenu = false;
@@ -176,7 +181,7 @@ public:
 				ResetLevel();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -203,7 +208,7 @@ public:
 				m_eGameState = MarbleGameState::PLAYING;
 				Zenith_SceneManager::SetScenePaused(m_xLevelScene, false);
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -218,7 +223,7 @@ public:
 				ResetLevel();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -303,10 +308,10 @@ private:
 		Marble_LevelGenerator::GenerateLevel(
 			m_xLevelEntities,
 			m_xRng,
-			Marble::g_xBallPrefab.GetDirect(),
-			Marble::g_xPlatformPrefab.GetDirect(),
-			Marble::g_xGoalPrefab.GetDirect(),
-			Marble::g_xCollectiblePrefab.GetDirect(),
+			Marble::Resources().m_xBallPrefab.GetDirect(),
+			Marble::Resources().m_xPlatformPrefab.GetDirect(),
+			Marble::Resources().m_xGoalPrefab.GetDirect(),
+			Marble::Resources().m_xCollectiblePrefab.GetDirect(),
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
 			m_xBallMaterial.GetDirect(),
@@ -352,10 +357,10 @@ private:
 		Marble_LevelGenerator::GenerateLevel(
 			m_xLevelEntities,
 			m_xRng,
-			Marble::g_xBallPrefab.GetDirect(),
-			Marble::g_xPlatformPrefab.GetDirect(),
-			Marble::g_xGoalPrefab.GetDirect(),
-			Marble::g_xCollectiblePrefab.GetDirect(),
+			Marble::Resources().m_xBallPrefab.GetDirect(),
+			Marble::Resources().m_xPlatformPrefab.GetDirect(),
+			Marble::Resources().m_xGoalPrefab.GetDirect(),
+			Marble::Resources().m_xCollectiblePrefab.GetDirect(),
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
 			m_xBallMaterial.GetDirect(),
@@ -416,9 +421,9 @@ private:
 
 		static constexpr int32_t s_iButtonCount = 2;
 
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP) || g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W))
 			m_iFocusIndex = (m_iFocusIndex - 1 + s_iButtonCount) % s_iButtonCount;
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN) || g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_S))
 			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
 
 		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");

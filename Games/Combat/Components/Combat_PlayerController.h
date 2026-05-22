@@ -14,8 +14,8 @@
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Physics/Zenith_Physics.h"
-#include "Input/Zenith_Input.h"
+#include "Physics/Zenith_PhysicsImpl.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 
 // ============================================================================
@@ -239,8 +239,8 @@ private:
 			if (xCollider.HasValidBody())
 			{
 				Zenith_Maths::Vector3 xVelocity = m_xMoveDirection * m_fMoveSpeed;
-				xVelocity.y = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID()).y;  // Preserve Y velocity
-				Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+				xVelocity.y = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID()).y;  // Preserve Y velocity
+				g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 			}
 
 			// Rotate towards movement direction
@@ -255,10 +255,10 @@ private:
 			// Stop horizontal movement
 			if (xCollider.HasValidBody())
 			{
-				Zenith_Maths::Vector3 xVelocity = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+				Zenith_Maths::Vector3 xVelocity = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 				xVelocity.x = 0.0f;
 				xVelocity.z = 0.0f;
-				Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+				g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 			}
 		}
 	}
@@ -300,8 +300,8 @@ private:
 		if (xCollider.HasValidBody())
 		{
 			Zenith_Maths::Vector3 xVelocity = m_xDodgeDirection * m_fDodgeSpeed;
-			xVelocity.y = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID()).y;
-			Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+			xVelocity.y = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID()).y;
+			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 		}
 
 		// Dodge finished
@@ -330,13 +330,13 @@ private:
 	{
 		Zenith_Maths::Vector3 xInput(0.0f);
 
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_W) || Zenith_Input::IsKeyHeld(ZENITH_KEY_UP))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))
 			xInput.z += 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_S) || Zenith_Input::IsKeyHeld(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))
 			xInput.z -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_A) || Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))
 			xInput.x -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_D) || Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT))
 			xInput.x += 1.0f;
 
 		if (glm::length(xInput) > 0.01f)
@@ -348,7 +348,7 @@ private:
 	bool CheckAttackInput()
 	{
 		// Heavy attack (right click)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_RIGHT))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_RIGHT))
 		{
 			if (CanMove())
 			{
@@ -358,7 +358,7 @@ private:
 		}
 
 		// Light attack (left click)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
 		{
 			if (CanMove())
 			{
@@ -377,7 +377,7 @@ private:
 
 	bool CheckDodgeInput()
 	{
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
 		{
 			if (CanDodge())
 			{

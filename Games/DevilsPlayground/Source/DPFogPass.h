@@ -2,7 +2,7 @@
 /**
  * DPFogPass - registers a game-side fog pass via Zenith_GameRenderHook
  * (EXT-1) and disables the engine fog system via
- * Flux_Fog::SetExternallyOverridden.
+ * g_xEngine.Fog().SetExternallyOverridden.
  *
  * Init() is called from Project_RegisterScriptBehaviours.
  * Shutdown() is called from Project_Shutdown — guarded so it survives

@@ -2,11 +2,12 @@
 // with Jolt's custom operator new
 #include "Zenith.h"
 #define ZENITH_PLACEMENT_NEW_ZONE
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 // Re-enter the placement-new disabled zone for the additional Jolt headers
 // not already pulled in by Zenith_Physics.h (which re-enables on exit).
 #ifdef ZENITH_PLACEMENT_NEW_ZONE
@@ -23,18 +24,17 @@
 #endif
 #undef ZENITH_PHYSICS_CPP_ZONE_WAS_SET
 
-JPH::TempAllocatorImpl* Zenith_Physics::s_pxTempAllocator = nullptr;
-JPH::JobSystemThreadPool* Zenith_Physics::s_pxJobSystem = nullptr;
-JPH::PhysicsSystem* Zenith_Physics::s_pxPhysicsSystem = nullptr;
-double Zenith_Physics::s_fTimestepAccumulator = 0;
-Zenith_Physics::PhysicsContactListener Zenith_Physics::s_xContactListener;
-Zenith_Vector<Zenith_Physics::DeferredCollisionEvent> Zenith_Physics::s_xDeferredEvents;
-Zenith_Mutex_NoProfiling Zenith_Physics::s_xEventQueueMutex;
-uint32_t Zenith_Physics::s_uDroppedEventCount = 0;
+// Phase 4: per-Engine physics state lives on Zenith_PhysicsImpl
+// (held by Zenith_Engine as m_pxPhysics). Everything that used to be
+// declared as Zenith_PhysicsImpl:: static storage is now an m_x member on
+// the Impl, reached via g_xEngine.Physics().m_xXxx.
+//
+// Jolt allocation counters stay file-static below: they're diagnostic
+// atomics written from the Jolt allocator on any thread (including
+// during process-exit static-destruction of Jolt globals), and treated
+// as the same carve-out as logging counters.
 
-static bool g_bInitialised = false;
-
-// Jolt memory tracking
+// Jolt memory tracking (carve-out: see comment above)
 static std::atomic<u_int64> s_ulJoltMemoryAllocated = 0;
 static std::atomic<u_int64> s_ulJoltAllocationCount = 0;
 
@@ -192,15 +192,16 @@ static void JoltAlignedFree(void* inBlock)
 	std::free(pOriginal);
 }
 
-u_int64 Zenith_Physics::GetJoltMemoryAllocated()
+u_int64 Zenith_PhysicsImpl::GetJoltMemoryAllocated()
 {
 	return s_ulJoltMemoryAllocated.load();
 }
 
-u_int64 Zenith_Physics::GetJoltAllocationCount()
+u_int64 Zenith_PhysicsImpl::GetJoltAllocationCount()
 {
 	return s_ulJoltAllocationCount.load();
 }
+
 
 static void TraceImpl(const char* inFMT, ...)
 {
@@ -322,22 +323,22 @@ void QueueCollisionEventInternal(Zenith_EntityID xEntityID1, Zenith_EntityID xEn
 	if (!xEntityID1.IsValid() || !xEntityID2.IsValid())
 		return;
 
-	Zenith_Physics::DeferredCollisionEvent xEvent;
+	Zenith_PhysicsImpl::DeferredCollisionEvent xEvent;
 	xEvent.uEntityID1 = xEntityID1;
 	xEvent.uEntityID2 = xEntityID2;
 	xEvent.eEventType = eEventType;
 
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Zenith_Physics::s_xEventQueueMutex);
-	if (Zenith_Physics::s_xDeferredEvents.GetSize() >= uMAX_DEFERRED_COLLISION_EVENTS)
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(g_xEngine.Physics().m_xEventQueueMutex);
+	if (g_xEngine.Physics().m_xDeferredEvents.GetSize() >= uMAX_DEFERRED_COLLISION_EVENTS)
 	{
-		Zenith_Physics::s_uDroppedEventCount++;
+		g_xEngine.Physics().m_uDroppedEventCount++;
 		Zenith_Assert(false, "Deferred collision event queue overflow (%u events) - events are being dropped", uMAX_DEFERRED_COLLISION_EVENTS);
 		return;
 	}
-	Zenith_Physics::s_xDeferredEvents.PushBack(xEvent);
+	g_xEngine.Physics().m_xDeferredEvents.PushBack(xEvent);
 }
 
-void Zenith_Physics::DispatchCollisionToEntity(Zenith_Entity& xEntity, Zenith_Entity& xOtherEntity, Zenith_EntityID xOtherID, CollisionEventType eEventType)
+void Zenith_PhysicsImpl::DispatchCollisionToEntity(Zenith_Entity& xEntity, Zenith_Entity& xOtherEntity, Zenith_EntityID xOtherID, CollisionEventType eEventType)
 {
 	if (!xEntity.HasComponent<Zenith_ScriptComponent>())
 	{
@@ -359,20 +360,20 @@ void Zenith_Physics::DispatchCollisionToEntity(Zenith_Entity& xEntity, Zenith_En
 	}
 }
 
-void Zenith_Physics::ProcessDeferredCollisionEvents()
+void Zenith_PhysicsImpl::ProcessDeferredCollisionEvents()
 {
-	if (s_uDroppedEventCount > 0)
+	if (g_xEngine.Physics().m_uDroppedEventCount > 0)
 	{
 		Zenith_Warning(LOG_CATEGORY_PHYSICS, "Dropped %u collision events last frame due to queue overflow (max=%u)",
-			s_uDroppedEventCount, uMAX_DEFERRED_COLLISION_EVENTS);
-		s_uDroppedEventCount = 0;
+			g_xEngine.Physics().m_uDroppedEventCount, uMAX_DEFERRED_COLLISION_EVENTS);
+		g_xEngine.Physics().m_uDroppedEventCount = 0;
 	}
 
 	// Swap out the events to minimize lock time
 	Zenith_Vector<DeferredCollisionEvent> xEventsToProcess;
 	{
-		Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xEventQueueMutex);
-		xEventsToProcess = std::move(s_xDeferredEvents);
+		Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(g_xEngine.Physics().m_xEventQueueMutex);
+		xEventsToProcess = std::move(g_xEngine.Physics().m_xDeferredEvents);
 	}
 
 	// Process all deferred events on the main thread (safe to access scene)
@@ -401,13 +402,13 @@ void Zenith_Physics::ProcessDeferredCollisionEvents()
 	}
 }
 
-void Zenith_Physics::Initialise()
+void Zenith_PhysicsImpl::Initialise()
 {
-	if (g_bInitialised)
+	if (g_xEngine.Physics().m_bInitialised)
 	{
 		return;
 	}
-	g_bInitialised = true;
+	g_xEngine.Physics().m_bInitialised = true;
 	// Set custom allocator functions for Jolt memory tracking
 	// Must be done BEFORE any Jolt allocations occur
 	JPH::Allocate = JoltAllocate;
@@ -423,30 +424,30 @@ void Zenith_Physics::Initialise()
 
 	JPH::RegisterTypes();
 
-	s_pxTempAllocator = new JPH::TempAllocatorImpl(10 * 1024 * 1024);
+	g_xEngine.Physics().m_pxTempAllocator = new JPH::TempAllocatorImpl(10 * 1024 * 1024);
 
 	// Ensure we have at least 1 worker thread to avoid deadlock
 	// Jolt Physics requires worker threads to process physics jobs
 	uint32_t uNumThreads = std::max(1u, std::thread::hardware_concurrency() - 1);
-	s_pxJobSystem = new JPH::JobSystemThreadPool(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, uNumThreads);
+	g_xEngine.Physics().m_pxJobSystem = new JPH::JobSystemThreadPool(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, uNumThreads);
 
-	s_pxPhysicsSystem = new JPH::PhysicsSystem();
-	s_pxPhysicsSystem->Init(s_uMaxBodies, s_uNumBodyMutexes, s_uMaxBodyPairs, s_uMaxContactConstraints,
+	g_xEngine.Physics().m_pxPhysicsSystem = new JPH::PhysicsSystem();
+	g_xEngine.Physics().m_pxPhysicsSystem->Init(s_uMaxBodies, s_uNumBodyMutexes, s_uMaxBodyPairs, s_uMaxContactConstraints,
 		s_xBroadPhaseLayerInterface, s_xObjectVsBroadPhaseLayerFilter, s_xObjectLayerPairFilter);
 
-	s_pxPhysicsSystem->SetGravity(JPH::Vec3(0.0f, -9.81f, 0.0f));
+	g_xEngine.Physics().m_pxPhysicsSystem->SetGravity(JPH::Vec3(0.0f, -9.81f, 0.0f));
 
-	s_pxPhysicsSystem->SetContactListener(&s_xContactListener);
+	g_xEngine.Physics().m_pxPhysicsSystem->SetContactListener(&g_xEngine.Physics().m_xContactListener);
 }
 
-void Zenith_Physics::Update(float fDt)
+void Zenith_PhysicsImpl::Update(float fDt)
 {
-	s_fTimestepAccumulator += fDt;
+	g_xEngine.Physics().m_fTimestepAccumulator += fDt;
 
-	while (s_fTimestepAccumulator >= s_fDesiredFramerate)
+	while (g_xEngine.Physics().m_fTimestepAccumulator >= s_fDesiredFramerate)
 	{
-		s_pxPhysicsSystem->Update(static_cast<float>(s_fDesiredFramerate), 1, s_pxTempAllocator, s_pxJobSystem);
-		s_fTimestepAccumulator -= s_fDesiredFramerate;
+		g_xEngine.Physics().m_pxPhysicsSystem->Update(static_cast<float>(s_fDesiredFramerate), 1, g_xEngine.Physics().m_pxTempAllocator, g_xEngine.Physics().m_pxJobSystem);
+		g_xEngine.Physics().m_fTimestepAccumulator -= s_fDesiredFramerate;
 	}
 
 	// CRITICAL: Process deferred collision events AFTER physics update completes
@@ -454,36 +455,36 @@ void Zenith_Physics::Update(float fDt)
 	ProcessDeferredCollisionEvents();
 }
 
-void Zenith_Physics::Reset()
+void Zenith_PhysicsImpl::Reset()
 {
 	Shutdown();
 	Initialise();
 }
 
-void Zenith_Physics::Shutdown()
+void Zenith_PhysicsImpl::Shutdown()
 {
-	if (!g_bInitialised)
+	if (!g_xEngine.Physics().m_bInitialised)
 	{
 		return;
 	}
-	g_bInitialised = false;
+	g_xEngine.Physics().m_bInitialised = false;
 
-	if (s_pxPhysicsSystem)
+	if (g_xEngine.Physics().m_pxPhysicsSystem)
 	{
-		delete s_pxPhysicsSystem;
-		s_pxPhysicsSystem = nullptr;
+		delete g_xEngine.Physics().m_pxPhysicsSystem;
+		g_xEngine.Physics().m_pxPhysicsSystem = nullptr;
 	}
 
-	if (s_pxJobSystem)
+	if (g_xEngine.Physics().m_pxJobSystem)
 	{
-		delete s_pxJobSystem;
-		s_pxJobSystem = nullptr;
+		delete g_xEngine.Physics().m_pxJobSystem;
+		g_xEngine.Physics().m_pxJobSystem = nullptr;
 	}
 
-	if (s_pxTempAllocator)
+	if (g_xEngine.Physics().m_pxTempAllocator)
 	{
-		delete s_pxTempAllocator;
-		s_pxTempAllocator = nullptr;
+		delete g_xEngine.Physics().m_pxTempAllocator;
+		g_xEngine.Physics().m_pxTempAllocator = nullptr;
 	}
 
 	if (JPH::Factory::sInstance)
@@ -495,14 +496,14 @@ void Zenith_Physics::Shutdown()
 	JPH::UnregisterTypes();
 }
 
-Zenith_Physics::RaycastInfo Zenith_Physics::BuildRayFromMouse(Zenith_CameraComponent& xCam)
+Zenith_PhysicsImpl::RaycastInfo Zenith_PhysicsImpl::BuildRayFromMouse(Zenith_CameraComponent& xCam)
 {
 	Zenith_Maths::Vector2_64 xMousePos;
 	// Route through Zenith_Input rather than Zenith_Window so click-driven
 	// raycasts respect Zenith_InputSimulator overrides — without this, simulated
 	// SimulateMousePosition + SimulateMouseClick fires the press event but the
 	// raycast still uses the OS cursor.
-	Zenith_Input::GetMousePosition(xMousePos);
+	g_xEngine.Input().GetMousePosition(xMousePos);
 
 	double fX = xMousePos.x;
 	double fY = xMousePos.y;
@@ -523,10 +524,10 @@ Zenith_Physics::RaycastInfo Zenith_Physics::BuildRayFromMouse(Zenith_CameraCompo
 	return xInfo;
 }
 
-void Zenith_Physics::SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity)
+void Zenith_PhysicsImpl::SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity)
 {
 	if (xBodyID.IsInvalid()) return;
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	// Activate the body before/along with setting velocity. Jolt puts idle
 	// dynamic bodies to sleep to save simulation cost; SetLinearVelocity on
 	// its own does not wake them, so a body that was at rest would have
@@ -548,61 +549,61 @@ void Zenith_Physics::SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_
 	xBodyInterface.SetLinearVelocity(xBodyID, JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
 }
 
-Zenith_Maths::Vector3 Zenith_Physics::GetLinearVelocity(const JPH::BodyID& xBodyID)
+Zenith_Maths::Vector3 Zenith_PhysicsImpl::GetLinearVelocity(const JPH::BodyID& xBodyID)
 {
 	if (xBodyID.IsInvalid()) return Zenith_Maths::Vector3(0, 0, 0);
 	// CRITICAL FIX: Use locked interface for thread safety
 	// GetBodyInterfaceNoLock() was unsafe when physics simulation runs on worker threads
 	// The setter uses GetBodyInterface() so the getter must match for consistency
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	JPH::Vec3 xVel = xBodyInterface.GetLinearVelocity(xBodyID);
 	return Zenith_Maths::Vector3(xVel.GetX(), xVel.GetY(), xVel.GetZ());
 }
 
-void Zenith_Physics::SetAngularVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity)
+void Zenith_PhysicsImpl::SetAngularVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity)
 {
 	if (xBodyID.IsInvalid()) return;
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	xBodyInterface.SetAngularVelocity(xBodyID, JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
 }
 
-Zenith_Maths::Vector3 Zenith_Physics::GetAngularVelocity(const JPH::BodyID& xBodyID)
+Zenith_Maths::Vector3 Zenith_PhysicsImpl::GetAngularVelocity(const JPH::BodyID& xBodyID)
 {
 	if (xBodyID.IsInvalid()) return Zenith_Maths::Vector3(0, 0, 0);
 	// CRITICAL FIX: Use locked interface for thread safety (matches setter)
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	JPH::Vec3 xVel = xBodyInterface.GetAngularVelocity(xBodyID);
 	return Zenith_Maths::Vector3(xVel.GetX(), xVel.GetY(), xVel.GetZ());
 }
 
-void Zenith_Physics::AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xForce)
+void Zenith_PhysicsImpl::AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xForce)
 {
 	if (xBodyID.IsInvalid()) return;
-	Zenith_Assert(s_pxPhysicsSystem != nullptr, "AddForce: Physics system not initialized");
-	if (!s_pxPhysicsSystem) return;  // Defensive check for release builds
+	Zenith_Assert(g_xEngine.Physics().m_pxPhysicsSystem != nullptr, "AddForce: Physics system not initialized");
+	if (!g_xEngine.Physics().m_pxPhysicsSystem) return;  // Defensive check for release builds
 
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	// CRITICAL: Activate the body first - sleeping bodies ignore forces
 	xBodyInterface.ActivateBody(xBodyID);
 	xBodyInterface.AddForce(xBodyID, JPH::Vec3(xForce.x, xForce.y, xForce.z));
 }
 
-void Zenith_Physics::AddImpulse(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xImpulse)
+void Zenith_PhysicsImpl::AddImpulse(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xImpulse)
 {
 	if (xBodyID.IsInvalid()) return;
-	Zenith_Assert(s_pxPhysicsSystem != nullptr, "AddImpulse: Physics system not initialized");
-	if (!s_pxPhysicsSystem) return;  // Defensive check for release builds
+	Zenith_Assert(g_xEngine.Physics().m_pxPhysicsSystem != nullptr, "AddImpulse: Physics system not initialized");
+	if (!g_xEngine.Physics().m_pxPhysicsSystem) return;  // Defensive check for release builds
 
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	// Activate the body and apply instant velocity change
 	xBodyInterface.ActivateBody(xBodyID);
 	xBodyInterface.AddLinearVelocity(xBodyID, JPH::Vec3(xImpulse.x, xImpulse.y, xImpulse.z));
 }
 
-void Zenith_Physics::SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled)
+void Zenith_PhysicsImpl::SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled)
 {
 	if (xBodyID.IsInvalid()) return;
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	xBodyInterface.SetGravityFactor(xBodyID, bEnabled ? 1.0f : 0.0f);
 	if (bEnabled)
 	{
@@ -610,13 +611,13 @@ void Zenith_Physics::SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled
 	}
 }
 
-void Zenith_Physics::LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool bLockY, bool bLockZ)
+void Zenith_PhysicsImpl::LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool bLockY, bool bLockZ)
 {
 	if (xBodyID.IsInvalid()) return;
-	Zenith_Assert(s_pxPhysicsSystem != nullptr, "LockRotation: Physics system not initialized");
-	if (!s_pxPhysicsSystem) return;
+	Zenith_Assert(g_xEngine.Physics().m_pxPhysicsSystem != nullptr, "LockRotation: Physics system not initialized");
+	if (!g_xEngine.Physics().m_pxPhysicsSystem) return;
 
-	JPH::BodyLockWrite xLock(s_pxPhysicsSystem->GetBodyLockInterface(), xBodyID);
+	JPH::BodyLockWrite xLock(g_xEngine.Physics().m_pxPhysicsSystem->GetBodyLockInterface(), xBodyID);
 	if (xLock.Succeeded())
 	{
 		JPH::Body& xBody = xLock.GetBody();
@@ -648,18 +649,18 @@ void Zenith_Physics::LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool 
 				float fYaw = JPH::ATan2(xForward.GetX(), xForward.GetZ());
 				JPH::Quat xUprightRot = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), fYaw);
 				// Use NoLock interface since we already hold the body lock
-				s_pxPhysicsSystem->GetBodyInterfaceNoLock().SetRotation(xBodyID, xUprightRot, JPH::EActivation::DontActivate);
+				g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterfaceNoLock().SetRotation(xBodyID, xUprightRot, JPH::EActivation::DontActivate);
 			}
 		}
 	}
 }
 
-void Zenith_Physics::EnforceUpright(const JPH::BodyID& xBodyID)
+void Zenith_PhysicsImpl::EnforceUpright(const JPH::BodyID& xBodyID)
 {
 	if (xBodyID.IsInvalid()) return;
-	if (!s_pxPhysicsSystem) return;
+	if (!g_xEngine.Physics().m_pxPhysicsSystem) return;
 
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 
 	// Zero out angular velocity on X and Z axes (keep Y rotation allowed)
 	JPH::Vec3 xAngVel = xBodyInterface.GetAngularVelocity(xBodyID);
@@ -675,43 +676,43 @@ void Zenith_Physics::EnforceUpright(const JPH::BodyID& xBodyID)
 	xBodyInterface.SetRotation(xBodyID, xUprightRot, JPH::EActivation::DontActivate);
 }
 
-void Zenith_Physics::SetRestitution(const JPH::BodyID& xBodyID, float fRestitution)
+void Zenith_PhysicsImpl::SetRestitution(const JPH::BodyID& xBodyID, float fRestitution)
 {
 	if (xBodyID.IsInvalid()) return;
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	xBodyInterface.SetRestitution(xBodyID, fRestitution);
 }
 
-float Zenith_Physics::GetRestitution(const JPH::BodyID& xBodyID)
+float Zenith_PhysicsImpl::GetRestitution(const JPH::BodyID& xBodyID)
 {
 	if (xBodyID.IsInvalid()) return 0.f;
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	return xBodyInterface.GetRestitution(xBodyID);
 }
 
-void Zenith_Physics::SetFriction(const JPH::BodyID& xBodyID, float fFriction)
+void Zenith_PhysicsImpl::SetFriction(const JPH::BodyID& xBodyID, float fFriction)
 {
 	if (xBodyID.IsInvalid()) return;
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	xBodyInterface.SetFriction(xBodyID, fFriction);
 }
 
-float Zenith_Physics::GetFriction(const JPH::BodyID& xBodyID)
+float Zenith_PhysicsImpl::GetFriction(const JPH::BodyID& xBodyID)
 {
 	if (xBodyID.IsInvalid()) return 0.f;
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	return xBodyInterface.GetFriction(xBodyID);
 }
 
 // Shared implementation. The body filter is supplied by the caller; passing the
 // default-constructed JPH::BodyFilter() makes this equivalent to an unfiltered cast.
-static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xOrigin,
+static Zenith_PhysicsImpl::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xOrigin,
 	const Zenith_Maths::Vector3& xDirection, float fMaxDistance, const JPH::BodyFilter& xBodyFilter)
 {
-	Zenith_Physics::RaycastResult xResult;
+	Zenith_PhysicsImpl::RaycastResult xResult;
 	xResult.m_bHit = false;
 
-	if (!Zenith_Physics::s_pxPhysicsSystem)
+	if (!g_xEngine.Physics().m_pxPhysicsSystem)
 	{
 		return xResult;
 	}
@@ -723,7 +724,7 @@ static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xO
 	xRay.mDirection = JPH::Vec3(xNormDir.x * fMaxDistance, xNormDir.y * fMaxDistance, xNormDir.z * fMaxDistance);
 
 	JPH::RayCastResult xHit;
-	const JPH::NarrowPhaseQuery& xQuery = Zenith_Physics::s_pxPhysicsSystem->GetNarrowPhaseQuery();
+	const JPH::NarrowPhaseQuery& xQuery = g_xEngine.Physics().m_pxPhysicsSystem->GetNarrowPhaseQuery();
 
 	if (xQuery.CastRay(xRay, xHit, JPH::BroadPhaseLayerFilter(), JPH::ObjectLayerFilter(), xBodyFilter))
 	{
@@ -736,7 +737,7 @@ static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xO
 			static_cast<float>(xHitPoint.GetY()),
 			static_cast<float>(xHitPoint.GetZ()));
 
-		JPH::BodyLockRead xLock(Zenith_Physics::s_pxPhysicsSystem->GetBodyLockInterface(), xHit.mBodyID);
+		JPH::BodyLockRead xLock(g_xEngine.Physics().m_pxPhysicsSystem->GetBodyLockInterface(), xHit.mBodyID);
 		if (xLock.Succeeded())
 		{
 			const JPH::Body& xBody = xLock.GetBody();
@@ -750,13 +751,13 @@ static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xO
 	return xResult;
 }
 
-Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector3& xOrigin,
+Zenith_PhysicsImpl::RaycastResult Zenith_PhysicsImpl::Raycast(const Zenith_Maths::Vector3& xOrigin,
 	const Zenith_Maths::Vector3& xDirection, float fMaxDistance)
 {
 	return RaycastImpl(xOrigin, xDirection, fMaxDistance, JPH::BodyFilter());
 }
 
-Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector3& xOrigin,
+Zenith_PhysicsImpl::RaycastResult Zenith_PhysicsImpl::Raycast(const Zenith_Maths::Vector3& xOrigin,
 	const Zenith_Maths::Vector3& xDirection, float fMaxDistance, Zenith_EntityID xIgnoreEntity)
 {
 	if (xIgnoreEntity == INVALID_ENTITY_ID)
@@ -789,14 +790,14 @@ Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector
 	return RaycastImpl(xOrigin, xDirection, fMaxDistance, xFilter);
 }
 
-JPH::ValidateResult Zenith_Physics::PhysicsContactListener::OnContactValidate(
+JPH::ValidateResult Zenith_PhysicsImpl::PhysicsContactListener::OnContactValidate(
 	const JPH::Body&, const JPH::Body&,
 	JPH::RVec3Arg, const JPH::CollideShapeResult&)
 {
 	return JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
 }
 
-void Zenith_Physics::PhysicsContactListener::OnContactAdded(
+void Zenith_PhysicsImpl::PhysicsContactListener::OnContactAdded(
 	const JPH::Body& inBody1, const JPH::Body& inBody2,
 	const JPH::ContactManifold&, JPH::ContactSettings&)
 {
@@ -806,7 +807,7 @@ void Zenith_Physics::PhysicsContactListener::OnContactAdded(
 	QueueCollisionEventInternal(xEntityID1, xEntityID2, COLLISION_EVENT_TYPE_START);
 }
 
-void Zenith_Physics::PhysicsContactListener::OnContactPersisted(
+void Zenith_PhysicsImpl::PhysicsContactListener::OnContactPersisted(
 	const JPH::Body& inBody1, const JPH::Body& inBody2,
 	const JPH::ContactManifold&, JPH::ContactSettings&)
 {
@@ -816,7 +817,7 @@ void Zenith_Physics::PhysicsContactListener::OnContactPersisted(
 	QueueCollisionEventInternal(xEntityID1, xEntityID2, COLLISION_EVENT_TYPE_STAY);
 }
 
-void Zenith_Physics::PhysicsContactListener::OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair)
+void Zenith_PhysicsImpl::PhysicsContactListener::OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair)
 {
 	// Queue event for deferred processing (thread-safe)
 	JPH::BodyID xBodyID1 = inSubShapePair.GetBody1ID();
@@ -827,7 +828,7 @@ void Zenith_Physics::PhysicsContactListener::OnContactRemoved(const JPH::SubShap
 
 	// CRITICAL: Use TryGetBody instead of BodyLockRead to avoid deadlock
 	// We're already inside a physics callback, so the bodies are locked by Jolt
-	const JPH::BodyLockInterface& xLockInterface = s_pxPhysicsSystem->GetBodyLockInterface();
+	const JPH::BodyLockInterface& xLockInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyLockInterface();
 
 	// TryGetBody doesn't acquire locks - safe to use in callbacks
 	const JPH::Body* pxBody1 = xLockInterface.TryGetBody(xBodyID1);

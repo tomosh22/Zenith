@@ -2,7 +2,7 @@
 
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
-#include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
+#include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_InstancedMeshComponent, "InstancedMesh")
@@ -21,7 +21,7 @@ Zenith_InstancedMeshComponent::~Zenith_InstancedMeshComponent()
 	// Unregister from renderer
 	if (m_pxInstanceGroup != nullptr)
 	{
-		Flux_InstancedMeshes::UnregisterInstanceGroup(m_pxInstanceGroup);
+		g_xEngine.InstancedMeshes().UnregisterInstanceGroup(m_pxInstanceGroup);
 		delete m_pxInstanceGroup;
 		m_pxInstanceGroup = nullptr;
 	}
@@ -68,7 +68,7 @@ Zenith_InstancedMeshComponent& Zenith_InstancedMeshComponent::operator=(Zenith_I
 		// Clean up existing resources
 		if (m_pxInstanceGroup != nullptr)
 		{
-			Flux_InstancedMeshes::UnregisterInstanceGroup(m_pxInstanceGroup);
+			g_xEngine.InstancedMeshes().UnregisterInstanceGroup(m_pxInstanceGroup);
 			delete m_pxInstanceGroup;
 		}
 		delete m_pxOwnedAnimTexture;
@@ -583,7 +583,7 @@ void Zenith_InstancedMeshComponent::EnsureInstanceGroupCreated()
 	if (m_pxInstanceGroup == nullptr)
 	{
 		m_pxInstanceGroup = new Flux_InstanceGroup();
-		Flux_InstancedMeshes::RegisterInstanceGroup(m_pxInstanceGroup);
+		g_xEngine.InstancedMeshes().RegisterInstanceGroup(m_pxInstanceGroup);
 	}
 }
 

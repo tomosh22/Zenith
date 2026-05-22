@@ -25,7 +25,7 @@ void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeT
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
 	{
 		Zenith_EntityID xID = m_xActiveEntities.Get(u);
-		const Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+		const Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (bIncludeTransient || !xSlot.m_bTransient)
 		{
 			uNumEntities++;
@@ -36,7 +36,7 @@ void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeT
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
 	{
 		Zenith_EntityID xID = m_xActiveEntities.Get(u);
-		const Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+		const Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (!bIncludeTransient && xSlot.m_bTransient)
 		{
 			continue;
@@ -51,7 +51,7 @@ void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeT
 	uint32_t uMainCameraIndex = Zenith_EntityID::INVALID_INDEX;
 	if (m_xMainCameraEntity.IsValid())
 	{
-		const Zenith_EntitySlot& xCameraSlot = s_axEntitySlots.Get(m_xMainCameraEntity.m_uIndex);
+		const Zenith_EntitySlot& xCameraSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(m_xMainCameraEntity.m_uIndex);
 		if (bIncludeTransient || !xCameraSlot.m_bTransient)
 		{
 			uMainCameraIndex = m_xMainCameraEntity.m_uIndex;
@@ -180,7 +180,7 @@ Zenith_EntityID Zenith_SceneData::ReadEntityFromDataStream(Zenith_DataStream& xS
 	Zenith_EntityID xNewID = CreateEntity();
 	xFileIndexToNewID[uFileIndex] = xNewID;
 
-	Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xNewID.m_uIndex);
+	Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xNewID.m_uIndex);
 	xSlot.m_strName = strName;
 	xSlot.m_bEnabled = true;
 	xSlot.m_bTransient = false;

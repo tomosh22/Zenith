@@ -33,7 +33,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "UI/Zenith_UIButton.h"
 
 // Include game modules
@@ -157,7 +157,7 @@ public:
 
 		case ExplorationGameState::PLAYING:
 		{
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
@@ -167,7 +167,7 @@ public:
 			UpdateFPS(fDt);
 
 			// Handle debug toggle
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_TAB))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_TAB))
 			{
 				Exploration_UIManager::ToggleDebugHUD();
 			}

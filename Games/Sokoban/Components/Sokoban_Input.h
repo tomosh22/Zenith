@@ -10,7 +10,7 @@
  * - Key codes defined in Input/Zenith_KeyCodes.h
  */
 
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Sokoban_GridLogic.h"  // For SokobanDirection enum
 
 /**
@@ -31,37 +31,37 @@ public:
 	static SokobanDirection GetInputDirection()
 	{
 		// Check WASD keys (common for modern games)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W))
 		{
 			return SOKOBAN_DIR_UP;
 		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_S))
 		{
 			return SOKOBAN_DIR_DOWN;
 		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_A))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_A))
 		{
 			return SOKOBAN_DIR_LEFT;
 		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_D))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_D))
 		{
 			return SOKOBAN_DIR_RIGHT;
 		}
 
 		// Also check arrow keys (traditional Sokoban controls)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP))
 		{
 			return SOKOBAN_DIR_UP;
 		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
 		{
 			return SOKOBAN_DIR_DOWN;
 		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
 		{
 			return SOKOBAN_DIR_LEFT;
 		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
 		{
 			return SOKOBAN_DIR_RIGHT;
 		}
@@ -74,6 +74,6 @@ public:
 	 */
 	static bool WasResetPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R);
 	}
 };

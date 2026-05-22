@@ -2,8 +2,8 @@
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
-#include "Flux/Text/Flux_Text.h"
-#include "Input/Zenith_Input.h"
+#include "Flux/Text/Flux_TextImpl.h"
+#include "Input/Zenith_InputImpl.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -133,8 +133,8 @@ void Zenith_UIToggle::HandleMouseInteraction(bool bHovered, bool bMouseDown)
 void Zenith_UIToggle::HandleKeyboardActivation()
 {
 	bool bActivated = m_bFocused
-		&& (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
-			|| Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
+		&& (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
+			|| g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
 	if (bActivated)
 	{
 		m_bIsOn = !m_bIsOn;
@@ -173,7 +173,7 @@ void Zenith_UIToggle::Update(float fDt)
 	GetTransformedMousePosition(fMouseX, fMouseY);
 
 	bool bHovered = ComputeHovered(bInteractable, fMouseX, fMouseY);
-	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 
 	if (bInteractable)
 	{

@@ -12,7 +12,7 @@
  * Interaction: E key to interact with nearby resources
  */
 
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
@@ -55,21 +55,21 @@ public:
 		Zenith_Maths::Vector3 xDirection(0.f);
 
 		// Forward/backward
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_W) || Zenith_Input::IsKeyHeld(ZENITH_KEY_UP))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))
 		{
 			xDirection += xForward;
 		}
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_S) || Zenith_Input::IsKeyHeld(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))
 		{
 			xDirection -= xForward;
 		}
 
 		// Left/right strafe
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_A) || Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))
 		{
 			xDirection -= xRight;
 		}
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_D) || Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT))
 		{
 			xDirection += xRight;
 		}
@@ -126,7 +126,7 @@ public:
 	 */
 	static bool WasInteractPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_E);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_E);
 	}
 
 	/**
@@ -134,7 +134,7 @@ public:
 	 */
 	static bool WasCraftingKeyPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_C);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_C);
 	}
 
 	/**
@@ -142,7 +142,7 @@ public:
 	 */
 	static bool WasInventoryKeyPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_TAB);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_TAB);
 	}
 
 	/**
@@ -150,7 +150,7 @@ public:
 	 */
 	static bool WasResetPressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R);
 	}
 
 	/**
@@ -158,7 +158,7 @@ public:
 	 */
 	static bool WasCraftAxePressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_1);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_1);
 	}
 
 	/**
@@ -166,7 +166,7 @@ public:
 	 */
 	static bool WasCraftPickaxePressed()
 	{
-		return Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_2);
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_2);
 	}
 
 	/**

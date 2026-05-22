@@ -3,9 +3,9 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include <fstream>
 
 ZENITH_REGISTER_COMPONENT(Zenith_TerrainComponent, "Terrain")
@@ -89,10 +89,10 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	}
 
 	// Ensure streaming manager is initialized — defensive, normally
-	// Flux_Terrain::Initialise() does this once at engine startup.
-	if (!Flux_TerrainStreamingManager::IsInitialized())
+	// g_xEngine.Terrain().Initialise() does this once at engine startup.
+	if (!g_xEngine.TerrainStreaming().IsInitialized())
 	{
-		Flux_TerrainStreamingManager::Initialize();
+		g_xEngine.TerrainStreaming().Initialize();
 	}
 
 #pragma region Render
@@ -256,7 +256,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	pxLowLODGeometry = nullptr;
 
 	// ========== Register buffers with streaming manager ==========
-	Flux_TerrainStreamingManager::RegisterTerrainBuffers(this);
+	g_xEngine.TerrainStreaming().RegisterTerrainBuffers(this);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain render geometry facade setup complete (references component-owned buffers)");
 
@@ -281,7 +281,7 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 	// Take this terrain out of the manager's registry FIRST so no concurrent
 	// PreRenderUpdate iteration can pick up a state that's about to be freed.
 	// Then tear down and free the per-terrain state.
-	Flux_TerrainStreamingManager::UnregisterTerrainBuffers(this);
+	g_xEngine.TerrainStreaming().UnregisterTerrainBuffers(this);
 
 	if (m_pxStreamingState)
 	{
@@ -415,10 +415,10 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	// Streaming manager may have been shut down after the previous terrain
 	// was destroyed — bring it back up before we touch chunks.
-	if (!Flux_TerrainStreamingManager::IsInitialized())
+	if (!g_xEngine.TerrainStreaming().IsInitialized())
 	{
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "ReadFromDataStream - Re-initializing streaming manager (was shut down)");
-		Flux_TerrainStreamingManager::Initialize();
+		g_xEngine.TerrainStreaming().Initialize();
 	}
 
 	uint32_t uVersion;
@@ -456,10 +456,10 @@ void Zenith_TerrainComponent::InitializeRenderResources()
 	m_bTerrainGeometryUnusable = false;
 
 	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
-	if (!Flux_TerrainStreamingManager::IsInitialized())
+	if (!g_xEngine.TerrainStreaming().IsInitialized())
 	{
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "InitializeRenderResources - Re-initializing streaming manager (was shut down)");
-		Flux_TerrainStreamingManager::Initialize();
+		g_xEngine.TerrainStreaming().Initialize();
 	}
 
 	// NOTE: Materials are stored in m_axMaterials[] handles by the caller
@@ -498,7 +498,7 @@ void Zenith_TerrainComponent::InitializeRenderResources()
 	delete pxLowLODGeometry;
 	pxLowLODGeometry = nullptr;
 
-	Flux_TerrainStreamingManager::RegisterTerrainBuffers(this, pxChunkInitData);
+	g_xEngine.TerrainStreaming().RegisterTerrainBuffers(this, pxChunkInitData);
 	delete[] pxChunkInitData;
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain render geometry facade setup complete (references component-owned buffers)");
@@ -858,7 +858,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	m_bCullingResourcesInitialized = true;
 
 	// New per-terrain GPU buffers (chunk data, indirect, count, LOD level)
-	// just appeared. Flux_Terrain::SetupRenderGraph reads
+	// just appeared. g_xEngine.Terrain().SetupRenderGraph reads
 	// m_bCullingResourcesInitialized when declaring per-component buffer
 	// dependencies, so the next graph compile must rebuild to pick them up.
 	Flux::RequestGraphRebuild();
@@ -914,7 +914,7 @@ void Zenith_TerrainComponent::BuildChunkData()
 	// allocations) — component-aware overload routes through this terrain's
 	// own state, no cross-terrain pollution.
 	Zenith_TerrainChunkData* pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
-	Flux_TerrainStreamingManager::BuildChunkDataForGPU(this, pxChunkData);
+	g_xEngine.TerrainStreaming().BuildChunkDataForGPU(this, pxChunkData);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Chunk data retrieved from streaming manager for %u chunks", TOTAL_CHUNKS);
 
@@ -945,7 +945,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 
 	// The per-component dirty-flag short-circuit used to live here:
 	//
-	//   if (!Flux_TerrainStreamingManager::IsChunkDataDirty(this)) return;
+	//   if (!g_xEngine.TerrainStreaming().IsChunkDataDirty(this)) return;
 	//
 	// It produced a steady-state "stretched-triangle to a previously-resident
 	// chunk's slot" spike. Disabling the short-circuit and re-uploading every
@@ -971,7 +971,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 
 	// OPTIMIZATION: Use this terrain's pre-allocated cached buffer to avoid
 	// per-frame heap allocation.
-	Zenith_TerrainChunkData* pxChunkData = Flux_TerrainStreamingManager::GetCachedChunkDataBuffer(this);
+	Zenith_TerrainChunkData* pxChunkData = g_xEngine.TerrainStreaming().GetCachedChunkDataBuffer(this);
 	bool bUsedCachedBuffer = (pxChunkData != nullptr);
 
 	if (pxChunkData == nullptr)
@@ -980,7 +980,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 		pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
 	}
 
-	Flux_TerrainStreamingManager::BuildChunkDataForGPU(this, pxChunkData);
+	g_xEngine.TerrainStreaming().BuildChunkDataForGPU(this, pxChunkData);
 
 	// Upload to the CURRENT FRAME's chunk-data buffer slot. m_xChunkDataBuffer
 	// is frame-indexed, so GetBuffer() resolves to the current ring-slot's
@@ -1002,7 +1002,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 	}
 
 	// Clear THIS terrain's dirty flag after successful upload.
-	Flux_TerrainStreamingManager::ClearChunkDataDirty(this);
+	g_xEngine.TerrainStreaming().ClearChunkDataDirty(this);
 }
 
 void Zenith_TerrainComponent::ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Zenith_FrustumPlaneGPU* pxOutPlanes)
@@ -1040,7 +1040,7 @@ void Zenith_TerrainComponent::UploadFrustumPlanesForFrame(const Zenith_Maths::Ma
 		);
 	}
 
-	const Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
+	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
 	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
 
 	Flux_MemoryManager::UploadBufferDataAtOffset(m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);

@@ -10,7 +10,7 @@
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UIOverlay.h"
 #include "UI/Zenith_UIScrollView.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
 #endif
@@ -560,7 +560,7 @@ void Zenith_UIElement::RenderPropertiesPanel()
 void Zenith_UIElement::GetTransformedMousePosition(float& fMouseX, float& fMouseY) const
 {
     Zenith_Maths::Vector2_64 xMousePos;
-    Zenith_Input::GetMousePosition(xMousePos);
+    g_xEngine.Input().GetMousePosition(xMousePos);
     fMouseX = static_cast<float>(xMousePos.x);
     fMouseY = static_cast<float>(xMousePos.y);
 

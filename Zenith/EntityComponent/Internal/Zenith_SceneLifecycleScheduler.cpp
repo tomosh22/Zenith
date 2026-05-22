@@ -1,8 +1,11 @@
 #include "Zenith.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 #include "EntityComponent/Internal/Zenith_SceneLifecycleScheduler.h"
 #include "EntityComponent/Internal/Zenith_SceneRegistry.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 #include "EntityComponent/Internal/Zenith_SceneOperationQueue.h"
+#include "EntityComponent/Internal/Zenith_SceneLifecycleSchedulerImpl.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
@@ -16,22 +19,9 @@
 // gates it. Public Zenith_SceneManager methods forward into this class.
 //=============================================================================
 
-//=============================================================================
-// Static storage definitions
-//=============================================================================
-
-bool                            Zenith_SceneLifecycleScheduler::s_bIsLoadingScene = false;
-bool                            Zenith_SceneLifecycleScheduler::s_bIsPrefabInstantiating = false;
-bool                            Zenith_SceneLifecycleScheduler::s_bIsUpdating = false;
-Zenith_SceneOperationID         Zenith_SceneLifecycleScheduler::s_ulLastDeferredLoadOp = 0;
-float                           Zenith_SceneLifecycleScheduler::s_fFixedTimeAccumulator = 0.0f;
-float                           Zenith_SceneLifecycleScheduler::s_fFixedTimestep = 0.02f;  // 50Hz default (Unity parity)
-Zenith_Vector<std::string>      Zenith_SceneLifecycleScheduler::s_axCurrentlyLoadingPaths;
-Zenith_Vector<std::string>      Zenith_SceneLifecycleScheduler::s_axLifecycleLoadStack;
-int                             Zenith_SceneLifecycleScheduler::s_iPendingBuildIndex = -1;
-Zenith_Vector<Zenith_Scene>     Zenith_SceneLifecycleScheduler::s_axCreationTargetStack;
-bool                            Zenith_SceneLifecycleScheduler::s_bIsMainLoopRunning = false;
-Zenith_SceneLifecycleScheduler::InitialSceneLoadFn Zenith_SceneLifecycleScheduler::s_pfnInitialSceneLoad = nullptr;
+// Phase 5e: scheduler state lives on Zenith_SceneLifecycleSchedulerImpl
+// (held by Zenith_Engine as m_pxSceneLifecycle). Method bodies and
+// external readers reach it via g_xEngine.SceneLifecycle().m_xXxx.
 
 //=============================================================================
 // Animation update task — file-statics, only this TU touches them.
@@ -44,7 +34,7 @@ namespace
 
 	void AnimUpdateTask(void*, u_int uInvocationIndex, u_int uNumInvocations)
 	{
-		const float fDt = Zenith_Core::GetDt();
+		const float fDt = g_xEngine.Frame().GetDt();
 		const u_int uTotalAnimations = g_xAnimationsToUpdate.GetSize();
 
 		if (uInvocationIndex >= uTotalAnimations)
@@ -67,9 +57,9 @@ namespace
 
 	void CollectUpdatableScenes(Zenith_Vector<Zenith_SceneData*>& axOut)
 	{
-		for (u_int i = 0; i < Zenith_SceneRegistry::s_axScenes.GetSize(); ++i)
+		for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 		{
-			Zenith_SceneData* pxData = Zenith_SceneRegistry::s_axScenes.Get(i);
+			Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
 			if (Zenith_SceneRegistry::IsSceneUpdatable(pxData))
 			{
 				axOut.PushBack(pxData);
@@ -105,18 +95,18 @@ void Zenith_SceneLifecycleScheduler::Shutdown()
 	}
 	g_xAnimationsToUpdate.Clear();
 
-	s_bIsLoadingScene = false;
-	s_bIsPrefabInstantiating = false;
-	s_bIsUpdating = false;
-	s_ulLastDeferredLoadOp = 0;
-	s_fFixedTimeAccumulator = 0.0f;
-	// s_fFixedTimestep intentionally NOT reset — it's a config knob, not transient state.
-	s_axCurrentlyLoadingPaths.Clear();
-	s_axLifecycleLoadStack.Clear();
-	s_iPendingBuildIndex = -1;
-	s_axCreationTargetStack.Clear();
-	s_bIsMainLoopRunning = false;
-	s_pfnInitialSceneLoad = nullptr;
+	g_xEngine.SceneLifecycle().m_bIsLoadingScene = false;
+	g_xEngine.SceneLifecycle().m_bIsPrefabInstantiating = false;
+	g_xEngine.SceneLifecycle().m_bIsUpdating = false;
+	g_xEngine.SceneLifecycle().m_ulLastDeferredLoadOp = 0;
+	g_xEngine.SceneLifecycle().m_fFixedTimeAccumulator = 0.0f;
+	// g_xEngine.SceneLifecycle().m_fFixedTimestep intentionally NOT reset — it's a config knob, not transient state.
+	g_xEngine.SceneLifecycle().m_axCurrentlyLoadingPaths.Clear();
+	g_xEngine.SceneLifecycle().m_axLifecycleLoadStack.Clear();
+	g_xEngine.SceneLifecycle().m_iPendingBuildIndex = -1;
+	g_xEngine.SceneLifecycle().m_axCreationTargetStack.Clear();
+	g_xEngine.SceneLifecycle().m_bIsMainLoopRunning = false;
+	g_xEngine.SceneLifecycle().m_pfnInitialSceneLoad = nullptr;
 }
 
 //=============================================================================
@@ -125,7 +115,7 @@ void Zenith_SceneLifecycleScheduler::Shutdown()
 
 void Zenith_SceneLifecycleScheduler::Update(float fDt)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Update must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Update must be called from main thread");
 
 	Zenith_SceneOperationQueue::ProcessPendingAsyncLoads();
 	Zenith_SceneOperationQueue::ProcessPendingAsyncUnloads();
@@ -133,7 +123,7 @@ void Zenith_SceneLifecycleScheduler::Update(float fDt)
 
 	// Mark as updating - any LoadScene/LoadSceneByIndex calls during script execution
 	// will route through LoadSceneAsync to defer to next frame (Unity parity).
-	s_bIsUpdating = true;
+	g_xEngine.SceneLifecycle().m_bIsUpdating = true;
 
 	// E.20 (finding 3.21): collect updatable scenes once per frame.
 	Zenith_Vector<Zenith_SceneData*> axUpdatable;
@@ -149,14 +139,14 @@ void Zenith_SceneLifecycleScheduler::Update(float fDt)
 
 	// Fixed-timestep accumulation.
 	static constexpr float fMAX_FIXED_DT = 0.333f;
-	s_fFixedTimeAccumulator += std::min(fDt, fMAX_FIXED_DT);
-	while (s_fFixedTimeAccumulator >= s_fFixedTimestep)
+	g_xEngine.SceneLifecycle().m_fFixedTimeAccumulator += std::min(fDt, fMAX_FIXED_DT);
+	while (g_xEngine.SceneLifecycle().m_fFixedTimeAccumulator >= g_xEngine.SceneLifecycle().m_fFixedTimestep)
 	{
 		for (u_int i = 0; i < axUpdatable.GetSize(); ++i)
 		{
-			axUpdatable.Get(i)->FixedUpdate(s_fFixedTimestep);
+			axUpdatable.Get(i)->FixedUpdate(g_xEngine.SceneLifecycle().m_fFixedTimestep);
 		}
-		s_fFixedTimeAccumulator -= s_fFixedTimestep;
+		g_xEngine.SceneLifecycle().m_fFixedTimeAccumulator -= g_xEngine.SceneLifecycle().m_fFixedTimestep;
 	}
 
 	for (u_int i = 0; i < axUpdatable.GetSize(); ++i)
@@ -166,25 +156,25 @@ void Zenith_SceneLifecycleScheduler::Update(float fDt)
 
 	// Animation Update (parallel task system).
 	g_xAnimationsToUpdate.Clear();
-	for (u_int i = 0; i < Zenith_SceneRegistry::s_axScenes.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
-		CollectAnimationsFromScene(Zenith_SceneRegistry::s_axScenes.Get(i));
+		CollectAnimationsFromScene(g_xEngine.SceneRegistry().m_axScenes.Get(i));
 	}
 
-	s_bIsUpdating = false;
+	g_xEngine.SceneLifecycle().m_bIsUpdating = false;
 
 	if (g_pxAnimUpdateTask)
 	{
 #ifdef ZENITH_ASSERT
 		Zenith_SceneManager::SetAnimTasksActive(true);
 #endif
-		Zenith_TaskSystem::SubmitTaskArray(g_pxAnimUpdateTask);
+		g_xEngine.Tasks().SubmitTaskArray(g_pxAnimUpdateTask);
 	}
 }
 
 void Zenith_SceneLifecycleScheduler::WaitForUpdateComplete()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "WaitForUpdateComplete must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "WaitForUpdateComplete must be called from main thread");
 
 	if (g_pxAnimUpdateTask)
 	{
@@ -201,25 +191,25 @@ void Zenith_SceneLifecycleScheduler::WaitForUpdateComplete()
 
 void Zenith_SceneLifecycleScheduler::PushLifecycleContext(const std::string& strCanonicalPath)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "PushLifecycleContext must be called from main thread");
-	s_axLifecycleLoadStack.PushBack(strCanonicalPath);
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "PushLifecycleContext must be called from main thread");
+	g_xEngine.SceneLifecycle().m_axLifecycleLoadStack.PushBack(strCanonicalPath);
 }
 
 void Zenith_SceneLifecycleScheduler::PopLifecycleContext(const std::string& strCanonicalPath)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "PopLifecycleContext must be called from main thread");
-	s_axLifecycleLoadStack.EraseValue(strCanonicalPath);
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "PopLifecycleContext must be called from main thread");
+	g_xEngine.SceneLifecycle().m_axLifecycleLoadStack.EraseValue(strCanonicalPath);
 }
 
 bool Zenith_SceneLifecycleScheduler::IsCircularLoadDependency(const std::string& strCanonicalPath)
 {
-	for (u_int i = 0; i < s_axCurrentlyLoadingPaths.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneLifecycle().m_axCurrentlyLoadingPaths.GetSize(); ++i)
 	{
-		if (s_axCurrentlyLoadingPaths.Get(i) == strCanonicalPath) return true;
+		if (g_xEngine.SceneLifecycle().m_axCurrentlyLoadingPaths.Get(i) == strCanonicalPath) return true;
 	}
-	for (u_int i = 0; i < s_axLifecycleLoadStack.GetSize(); ++i)
+	for (u_int i = 0; i < g_xEngine.SceneLifecycle().m_axLifecycleLoadStack.GetSize(); ++i)
 	{
-		if (s_axLifecycleLoadStack.Get(i) == strCanonicalPath) return true;
+		if (g_xEngine.SceneLifecycle().m_axLifecycleLoadStack.Get(i) == strCanonicalPath) return true;
 	}
 	return false;
 }
@@ -230,14 +220,14 @@ bool Zenith_SceneLifecycleScheduler::IsCircularLoadDependency(const std::string&
 
 void Zenith_SceneLifecycleScheduler::SetInitialSceneLoadCallback(InitialSceneLoadFn pfn)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetInitialSceneLoadCallback must be called from main thread");
-	s_pfnInitialSceneLoad = pfn;
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetInitialSceneLoadCallback must be called from main thread");
+	g_xEngine.SceneLifecycle().m_pfnInitialSceneLoad = pfn;
 }
 
 Zenith_SceneLifecycleScheduler::InitialSceneLoadFn Zenith_SceneLifecycleScheduler::GetInitialSceneLoadCallback()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetInitialSceneLoadCallback must be called from main thread");
-	return s_pfnInitialSceneLoad;
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "GetInitialSceneLoadCallback must be called from main thread");
+	return g_xEngine.SceneLifecycle().m_pfnInitialSceneLoad;
 }
 
 //=============================================================================
@@ -246,14 +236,14 @@ Zenith_SceneLifecycleScheduler::InitialSceneLoadFn Zenith_SceneLifecycleSchedule
 
 void Zenith_SceneLifecycleScheduler::SetFixedTimestep(float fTimestep)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "SetFixedTimestep must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "SetFixedTimestep must be called from main thread");
 	Zenith_Assert(fTimestep > 0.0f, "Fixed timestep must be positive");
-	s_fFixedTimestep = fTimestep;
+	g_xEngine.SceneLifecycle().m_fFixedTimestep = fTimestep;
 }
 
 float Zenith_SceneLifecycleScheduler::GetFixedTimestep()
 {
-	return s_fFixedTimestep;
+	return g_xEngine.SceneLifecycle().m_fFixedTimestep;
 }
 
 //=============================================================================
@@ -263,10 +253,10 @@ float Zenith_SceneLifecycleScheduler::GetFixedTimestep()
 #ifdef ZENITH_TESTING
 void Zenith_SceneLifecycleScheduler::DispatchFullLifecycleInit()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "DispatchFullLifecycleInit must be called from main thread");
-	for (u_int i = 0; i < Zenith_SceneRegistry::s_axScenes.GetSize(); ++i)
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "DispatchFullLifecycleInit must be called from main thread");
+	for (u_int i = 0; i < g_xEngine.SceneRegistry().m_axScenes.GetSize(); ++i)
 	{
-		Zenith_SceneData* pxData = Zenith_SceneRegistry::s_axScenes.Get(i);
+		Zenith_SceneData* pxData = g_xEngine.SceneRegistry().m_axScenes.Get(i);
 		if (pxData && pxData->m_bIsLoaded)
 		{
 			pxData->DispatchLifecycleForNewScene();

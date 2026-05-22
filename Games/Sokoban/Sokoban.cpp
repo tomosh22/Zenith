@@ -16,7 +16,8 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Prefab/Zenith_Prefab.h"
 
@@ -29,23 +30,8 @@
 // ============================================================================
 namespace Sokoban
 {
-	MeshGeometryHandle g_xCubeAsset;
-	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
-	MaterialHandle g_xFloorMaterial;
-	MaterialHandle g_xWallMaterial;
-	MaterialHandle g_xBoxMaterial;
-	MaterialHandle g_xBoxOnTargetMaterial;
-	MaterialHandle g_xPlayerMaterial;
-	MaterialHandle g_xTargetMaterial;
-
-	// Prefabs for runtime instantiation (handles so they participate in ref counting)
-	PrefabHandle g_xTilePrefab;
-	PrefabHandle g_xBoxPrefab;
-	PrefabHandle g_xPlayerPrefab;
-
-	// Particle effects
-	Flux_ParticleEmitterConfig* g_pxDustConfig = nullptr;
-	Zenith_EntityID g_uDustEmitterID = INVALID_ENTITY_ID;
+	static SokobanResources g_xResources;
+	SokobanResources& Resources() { return g_xResources; }
 }
 
 static bool s_bResourcesInitialized = false;
@@ -57,41 +43,41 @@ static void InitializeSokobanResources()
 
 	using namespace Sokoban;
 
-	g_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
-	g_pxCubeGeometry = g_xCubeAsset.GetDirect()->GetGeometry();
+	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials.
-	const TextureHandle& xGridTex = Flux_Graphics::s_xGridTexture;
+	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
-	g_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xFloorMaterial.GetDirect()->SetName("SokobanFloor");
-	g_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xFloorMaterial.GetDirect()->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
+	Resources().m_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xFloorMaterial.GetDirect()->SetName("SokobanFloor");
+	Resources().m_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xFloorMaterial.GetDirect()->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
 
-	g_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xWallMaterial.GetDirect()->SetName("SokobanWall");
-	g_xWallMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xWallMaterial.GetDirect()->SetBaseColor({ 102.f/255.f, 64.f/255.f, 38.f/255.f, 1.f });
+	Resources().m_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xWallMaterial.GetDirect()->SetName("SokobanWall");
+	Resources().m_xWallMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xWallMaterial.GetDirect()->SetBaseColor({ 102.f/255.f, 64.f/255.f, 38.f/255.f, 1.f });
 
-	g_xBoxMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xBoxMaterial.GetDirect()->SetName("SokobanBox");
-	g_xBoxMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xBoxMaterial.GetDirect()->SetBaseColor({ 204.f/255.f, 128.f/255.f, 51.f/255.f, 1.f });
+	Resources().m_xBoxMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xBoxMaterial.GetDirect()->SetName("SokobanBox");
+	Resources().m_xBoxMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xBoxMaterial.GetDirect()->SetBaseColor({ 204.f/255.f, 128.f/255.f, 51.f/255.f, 1.f });
 
-	g_xBoxOnTargetMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xBoxOnTargetMaterial.GetDirect()->SetName("SokobanBoxOnTarget");
-	g_xBoxOnTargetMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xBoxOnTargetMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
+	Resources().m_xBoxOnTargetMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xBoxOnTargetMaterial.GetDirect()->SetName("SokobanBoxOnTarget");
+	Resources().m_xBoxOnTargetMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xBoxOnTargetMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	g_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xPlayerMaterial.GetDirect()->SetName("SokobanPlayer");
-	g_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xPlayerMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
+	Resources().m_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPlayerMaterial.GetDirect()->SetName("SokobanPlayer");
+	Resources().m_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xPlayerMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
 
-	g_xTargetMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xTargetMaterial.GetDirect()->SetName("SokobanTarget");
-	g_xTargetMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xTargetMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 51.f/255.f, 1.f });
+	Resources().m_xTargetMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xTargetMaterial.GetDirect()->SetName("SokobanTarget");
+	Resources().m_xTargetMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xTargetMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 51.f/255.f, 1.f });
 
 	// Create prefabs for runtime instantiation
 	// Note: Prefabs don't include ModelComponent because material varies by tile type
@@ -108,7 +94,7 @@ static void InitializeSokobanResources()
 
 		Zenith_Prefab* pxTile = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxTile->CreateFromEntity(xTileTemplate, "Tile");
-		g_xTilePrefab.Set(pxTile);
+		Resources().m_xTilePrefab.Set(pxTile);
 
 		Zenith_SceneManager::Destroy(xTileTemplate);
 	}
@@ -120,7 +106,7 @@ static void InitializeSokobanResources()
 
 		Zenith_Prefab* pxBox = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxBox->CreateFromEntity(xBoxTemplate, "Box");
-		g_xBoxPrefab.Set(pxBox);
+		Resources().m_xBoxPrefab.Set(pxBox);
 
 		Zenith_SceneManager::Destroy(xBoxTemplate);
 	}
@@ -132,7 +118,7 @@ static void InitializeSokobanResources()
 
 		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
-		g_xPlayerPrefab.Set(pxPlayer);
+		Resources().m_xPlayerPrefab.Set(pxPlayer);
 
 		Zenith_SceneManager::Destroy(xPlayerTemplate);
 	}
@@ -163,23 +149,23 @@ void Project_RegisterScriptBehaviours()
 	InitializeSokobanResources();
 
 	// Create dust trail particle config (global resource used at runtime by behaviour)
-	Sokoban::g_pxDustConfig = new Flux_ParticleEmitterConfig();
-	Sokoban::g_pxDustConfig->m_fSpawnRate = 30.0f;
-	Sokoban::g_pxDustConfig->m_uBurstCount = 0;
-	Sokoban::g_pxDustConfig->m_uMaxParticles = 128;
-	Sokoban::g_pxDustConfig->m_fLifetimeMin = 0.3f;
-	Sokoban::g_pxDustConfig->m_fLifetimeMax = 0.6f;
-	Sokoban::g_pxDustConfig->m_fSpeedMin = 0.5f;
-	Sokoban::g_pxDustConfig->m_fSpeedMax = 1.5f;
-	Sokoban::g_pxDustConfig->m_fSpreadAngleDegrees = 60.0f;
-	Sokoban::g_pxDustConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);
-	Sokoban::g_pxDustConfig->m_fDrag = 2.0f;
-	Sokoban::g_pxDustConfig->m_xColorStart = Zenith_Maths::Vector4(0.6f, 0.5f, 0.4f, 0.6f);
-	Sokoban::g_pxDustConfig->m_xColorEnd = Zenith_Maths::Vector4(0.6f, 0.5f, 0.4f, 0.0f);
-	Sokoban::g_pxDustConfig->m_fSizeStart = 0.15f;
-	Sokoban::g_pxDustConfig->m_fSizeEnd = 0.25f;
-	Sokoban::g_pxDustConfig->m_bUseGPUCompute = false;
-	Flux_ParticleEmitterConfig::Register("Sokoban_DustTrail", Sokoban::g_pxDustConfig);
+	Sokoban::Resources().m_pxDustConfig = new Flux_ParticleEmitterConfig();
+	Sokoban::Resources().m_pxDustConfig->m_fSpawnRate = 30.0f;
+	Sokoban::Resources().m_pxDustConfig->m_uBurstCount = 0;
+	Sokoban::Resources().m_pxDustConfig->m_uMaxParticles = 128;
+	Sokoban::Resources().m_pxDustConfig->m_fLifetimeMin = 0.3f;
+	Sokoban::Resources().m_pxDustConfig->m_fLifetimeMax = 0.6f;
+	Sokoban::Resources().m_pxDustConfig->m_fSpeedMin = 0.5f;
+	Sokoban::Resources().m_pxDustConfig->m_fSpeedMax = 1.5f;
+	Sokoban::Resources().m_pxDustConfig->m_fSpreadAngleDegrees = 60.0f;
+	Sokoban::Resources().m_pxDustConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);
+	Sokoban::Resources().m_pxDustConfig->m_fDrag = 2.0f;
+	Sokoban::Resources().m_pxDustConfig->m_xColorStart = Zenith_Maths::Vector4(0.6f, 0.5f, 0.4f, 0.6f);
+	Sokoban::Resources().m_pxDustConfig->m_xColorEnd = Zenith_Maths::Vector4(0.6f, 0.5f, 0.4f, 0.0f);
+	Sokoban::Resources().m_pxDustConfig->m_fSizeStart = 0.15f;
+	Sokoban::Resources().m_pxDustConfig->m_fSizeEnd = 0.25f;
+	Sokoban::Resources().m_pxDustConfig->m_bUseGPUCompute = false;
+	Flux_ParticleEmitterConfig::Register("Sokoban_DustTrail", Sokoban::Resources().m_pxDustConfig);
 
 	// Sokoban_Behaviour auto-registers via ZENITH_BEHAVIOUR_TYPE_NAME (no explicit call needed)
 }
@@ -189,21 +175,21 @@ void Project_Shutdown()
 	// Drop asset handle refs before Zenith_AssetRegistry::Shutdown teardown.
 	// Static handle destructors run after the registry is gone (use-after-free
 	// territory) — explicit Clear() here is the lifecycle fix.
-	Sokoban::g_xCubeAsset.Clear();
-	Sokoban::g_xFloorMaterial.Clear();
-	Sokoban::g_xWallMaterial.Clear();
-	Sokoban::g_xBoxMaterial.Clear();
-	Sokoban::g_xBoxOnTargetMaterial.Clear();
-	Sokoban::g_xPlayerMaterial.Clear();
-	Sokoban::g_xTargetMaterial.Clear();
-	Sokoban::g_xTilePrefab.Clear();
-	Sokoban::g_xBoxPrefab.Clear();
-	Sokoban::g_xPlayerPrefab.Clear();
+	Sokoban::Resources().m_xCubeAsset.Clear();
+	Sokoban::Resources().m_xFloorMaterial.Clear();
+	Sokoban::Resources().m_xWallMaterial.Clear();
+	Sokoban::Resources().m_xBoxMaterial.Clear();
+	Sokoban::Resources().m_xBoxOnTargetMaterial.Clear();
+	Sokoban::Resources().m_xPlayerMaterial.Clear();
+	Sokoban::Resources().m_xTargetMaterial.Clear();
+	Sokoban::Resources().m_xTilePrefab.Clear();
+	Sokoban::Resources().m_xBoxPrefab.Clear();
+	Sokoban::Resources().m_xPlayerPrefab.Clear();
 
 	// Clean up particle config
-	delete Sokoban::g_pxDustConfig;
-	Sokoban::g_pxDustConfig = nullptr;
-	Sokoban::g_uDustEmitterID = INVALID_ENTITY_ID;
+	delete Sokoban::Resources().m_pxDustConfig;
+	Sokoban::Resources().m_pxDustConfig = nullptr;
+	Sokoban::Resources().m_uDustEmitterID = INVALID_ENTITY_ID;
 }
 
 void Project_LoadInitialScene(); // Forward declaration for automation steps
@@ -350,7 +336,7 @@ void Project_RegisterEditorAutomationSteps()
 	// DustEmitter entity
 	Zenith_EditorAutomation::AddStep_CreateEntity("DustEmitter");
 	Zenith_EditorAutomation::AddStep_AddParticleEmitter();
-	Zenith_EditorAutomation::AddStep_SetParticleConfig(Sokoban::g_pxDustConfig);
+	Zenith_EditorAutomation::AddStep_SetParticleConfig(Sokoban::Resources().m_pxDustConfig);
 
 	// Back to GameManager for script
 	Zenith_EditorAutomation::AddStep_SelectEntity("GameManager");

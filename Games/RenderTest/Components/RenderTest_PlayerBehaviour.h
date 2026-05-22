@@ -9,8 +9,8 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Physics/Zenith_Physics.h"
-#include "Input/Zenith_Input.h"
+#include "Physics/Zenith_PhysicsImpl.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -23,7 +23,7 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UI.h"
-#include "Flux/Decals/Flux_Decals.h"
+#include "Flux/Decals/Flux_DecalsImpl.h"
 
 #include "RenderTest/Components/RenderTest_GameplayState.h"
 
@@ -139,7 +139,7 @@ public:
 		}
 		if (xCollider.HasValidBody())
 		{
-			Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, false, true);
+			g_xEngine.Physics().LockRotation(xCollider.GetBodyID(), true, false, true);
 		}
 
 		if (m_xParentEntity.HasComponent<Zenith_AnimatorComponent>())
@@ -186,7 +186,7 @@ public:
 
 		if (xCollider.HasValidBody())
 		{
-			Zenith_Physics::EnforceUpright(xCollider.GetBodyID());
+			g_xEngine.Physics().EnforceUpright(xCollider.GetBodyID());
 		}
 
 		// Camera-relative basis. Sign convention matches the Test game's
@@ -212,8 +212,8 @@ public:
 		const bool bIsReloading = (m_fReloadTimer > 0.0f);
 		const bool bCanAct = !bIsReloading;
 		const bool bSprinting = bCanAct
-			&& (Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT_SHIFT)
-			    || Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT))
+			&& (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT_SHIFT)
+			    || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT_SHIFT))
 			&& fMoveLen > 0.01f;
 
 		float fSpeed = 0.0f;
@@ -224,15 +224,15 @@ public:
 			fSpeed = bSprinting ? m_fMoveSpeed * m_fSprintMultiplier : m_fMoveSpeed;
 
 			Zenith_Maths::Vector3 xVelocity = xMoveDirNorm * fSpeed;
-			xVelocity.y = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID()).y;
-			Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+			xVelocity.y = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID()).y;
+			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 		}
 		else if (xCollider.HasValidBody())
 		{
-			Zenith_Maths::Vector3 xVelocity = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+			Zenith_Maths::Vector3 xVelocity = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 			xVelocity.x = 0.0f;
 			xVelocity.z = 0.0f;
-			Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 		}
 
 		// --- Jump input ---
@@ -240,13 +240,13 @@ public:
 		// check uses a downward raycast from just below the capsule so it
 		// doesn't hit the player's own collider.
 		if (bCanAct
-			&& Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE)
+			&& g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE)
 			&& xCollider.HasValidBody()
 			&& IsGrounded())
 		{
-			Zenith_Maths::Vector3 xVelocity = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+			Zenith_Maths::Vector3 xVelocity = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 			xVelocity.y = m_fJumpVelocity;
-			Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 			if (m_pxBaseLayer)
 			{
 				m_pxBaseLayer->GetStateMachine().GetParameters().SetTrigger("JumpTrigger");
@@ -257,7 +257,7 @@ public:
 		// R + need ammo + have reserve + can act -> start reload. Ammo transfer
 		// is deferred to the gated "just finished" block below — without the
 		// gate the clip would refill every frame after the timer crossed 0.
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R)
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R)
 			&& bCanAct
 			&& m_uAmmoInClip < k_uMagSize
 			&& m_uReserveAmmo > 0)
@@ -268,8 +268,8 @@ public:
 		// --- ADS + Fire input ---
 		// RMB held -> aim. LMB hipfire-clicks force ADS for the duration of the
 		// fire animation via m_fForceAimTimer so the recoil pose still plays.
-		const bool bAimingRMB = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT);
-		const bool bFirePressed = Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
+		const bool bAimingRMB = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT);
+		const bool bFirePressed = g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
 
 		if (bFirePressed && bCanAct)
 		{
@@ -384,10 +384,10 @@ private:
 	Zenith_Maths::Vector3 ReadMovementInput() const
 	{
 		Zenith_Maths::Vector3 xInput(0.0f);
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_W) || Zenith_Input::IsKeyHeld(ZENITH_KEY_UP))    xInput.z += 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_S) || Zenith_Input::IsKeyHeld(ZENITH_KEY_DOWN))  xInput.z -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_A) || Zenith_Input::IsKeyHeld(ZENITH_KEY_LEFT))  xInput.x -= 1.0f;
-		if (Zenith_Input::IsKeyHeld(ZENITH_KEY_D) || Zenith_Input::IsKeyHeld(ZENITH_KEY_RIGHT)) xInput.x += 1.0f;
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_W) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_UP))    xInput.z += 1.0f;
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_S) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_DOWN))  xInput.z -= 1.0f;
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_A) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_LEFT))  xInput.x -= 1.0f;
+		if (g_xEngine.Input().IsKeyHeld(ZENITH_KEY_D) || g_xEngine.Input().IsKeyHeld(ZENITH_KEY_RIGHT)) xInput.x += 1.0f;
 		return xInput;
 	}
 
@@ -727,7 +727,7 @@ private:
 
 		// Hitscan: raycast from the barrel along the camera forward. Ignore
 		// the player's own collider per the IK precedent in UpdateFootIK.
-		const Zenith_Physics::RaycastResult xHit = Zenith_Physics::Raycast(
+		const Zenith_PhysicsImpl::RaycastResult xHit = g_xEngine.Physics().Raycast(
 			xBarrel, xFwd, k_fMaxRange, m_xParentEntity.GetEntityID());
 
 		if (xHit.m_bHit)
@@ -754,7 +754,7 @@ private:
 
 		if (xHit.m_bHit)
 		{
-			Flux_Decals::SpawnDecal(
+			g_xEngine.Decals().SpawnDecal(
 				xHit.m_xHitPoint, xHit.m_xHitNormal,
 				/*pxTexture*/ nullptr,
 				k_fDecalSize, k_fDecalLifetime);
@@ -804,8 +804,8 @@ private:
 		const Zenith_Maths::Vector3 xRayOrigin =
 			xPlayerPos - Zenith_Maths::Vector3(0.0f, fCapsuleHalfExtent + fEpsilon, 0.0f);
 		const Zenith_Maths::Vector3 xDown(0.0f, -1.0f, 0.0f);
-		const Zenith_Physics::RaycastResult xResult =
-			Zenith_Physics::Raycast(xRayOrigin, xDown, 0.2f);
+		const Zenith_PhysicsImpl::RaycastResult xResult =
+			g_xEngine.Physics().Raycast(xRayOrigin, xDown, 0.2f);
 		return xResult.m_bHit;
 	}
 
@@ -843,7 +843,7 @@ private:
 			Zenith_ColliderComponent& xCollider2 = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
 			if (xCollider2.HasValidBody())
 			{
-				const Zenith_Maths::Vector3 xVel = Zenith_Physics::GetLinearVelocity(xCollider2.GetBodyID());
+				const Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCollider2.GetBodyID());
 				fHorizontalSpeedSq = xVel.x * xVel.x + xVel.z * xVel.z;
 			}
 		}
@@ -865,7 +865,7 @@ private:
 			const Zenith_Maths::Vector3 xOrigin = xFootPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f);
 			// Ignore the player's own capsule. Without this, the foot ray (origin
 			// inside the capsule) hits self and the helper clears IK every frame.
-			const Zenith_Physics::RaycastResult xHit = Zenith_Physics::Raycast(
+			const Zenith_PhysicsImpl::RaycastResult xHit = g_xEngine.Physics().Raycast(
 				xOrigin, Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 1.5f,
 				m_xParentEntity.GetEntityID());
 

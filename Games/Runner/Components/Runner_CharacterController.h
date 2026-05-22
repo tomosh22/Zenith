@@ -18,7 +18,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 
 // ============================================================================
@@ -205,30 +205,30 @@ private:
 		}
 
 		// Lane switching - Left (A or Left Arrow)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_A) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_A) ||
+			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
 		{
 			TrySwitchLane(-1);
 		}
 
 		// Lane switching - Right (D or Right Arrow)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_D) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_D) ||
+			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
 		{
 			TrySwitchLane(1);
 		}
 
 		// Jump (Space or W or Up Arrow)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE) ||
+			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W) ||
+			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP))
 		{
 			TryJump();
 		}
 
 		// Slide (S or Down Arrow)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
+		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_S) ||
+			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
 		{
 			TrySlide();
 		}

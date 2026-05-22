@@ -1,6 +1,7 @@
 // This file queries Jolt Physics objects - disable memory tracking macro to avoid conflicts
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -109,8 +110,8 @@ static void ResetPhysicsState()
 		"collider-bearing scenes BEFORE calling this helper — the convention is to call it "
 		"after CreateEmptyScene and before AddCollider.", axLiveColliders.GetSize());
 
-	Zenith_Physics::Reset();
-	Zenith_Physics::s_fTimestepAccumulator = 0;
+	g_xEngine.Physics().Reset();
+	g_xEngine.Physics().m_fTimestepAccumulator = 0;
 }
 
 static Zenith_Entity CreatePhysicsSphere(
@@ -146,13 +147,13 @@ static void StepPhysics(uint32_t uSteps)
 {
 	for (uint32_t i = 0; i < uSteps; i++)
 	{
-		Zenith_Physics::Update(1.0f / 60.0f);
+		g_xEngine.Physics().Update(1.0f / 60.0f);
 	}
 }
 
 static Zenith_Maths::Vector3 GetBodyPosition(const Zenith_ColliderComponent& xCollider)
 {
-	JPH::BodyInterface& xBI = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBI = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	JPH::RVec3 xPos = xBI.GetPosition(xCollider.GetBodyID());
 	return Zenith_Maths::Vector3(
 		static_cast<float>(xPos.GetX()),
@@ -218,7 +219,7 @@ ZENITH_TEST(Physics, GravityDisabledBodyStaysStill)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "NoGravSphere",
 		Zenith_Maths::Vector3(0, 10, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
 
 	StepPhysics(60);
 
@@ -236,13 +237,13 @@ ZENITH_TEST(Physics, GravityReenabledBodyFalls)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "ReGravSphere",
 		Zenith_Maths::Vector3(0, 10, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
 
 	StepPhysics(30);
 	Zenith_Maths::Vector3 xPosBefore = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_EQ_FLOAT(xPosBefore.y, 10.0f, 0.01f, "TestGravityReenabledBodyFalls: Body should be at Y=10 while gravity disabled (got %f)", xPosBefore.y);
 
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), true);
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), true);
 	StepPhysics(30);
 
 	Zenith_Maths::Vector3 xPosAfter = GetBodyPosition(xCollider);
@@ -263,8 +264,8 @@ ZENITH_TEST(Physics, SetLinearVelocity)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "VelSphere",
 		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
-	Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(5, 0, 0));
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(5, 0, 0));
 
 	StepPhysics(60);
 
@@ -283,10 +284,10 @@ ZENITH_TEST(Physics, GetLinearVelocityMatchesSet)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "GetVelSphere",
 		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
 
-	Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(3, 4, 5));
-	Zenith_Maths::Vector3 xVel = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+	g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(3, 4, 5));
+	Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 
 	ZENITH_ASSERT_EQ_FLOAT(xVel.x, 3.0f, 0.01f, "TestGetLinearVelocityMatchesSet: Expected vx=3, got %f", xVel.x);
 	ZENITH_ASSERT_EQ_FLOAT(xVel.y, 4.0f, 0.01f, "TestGetLinearVelocityMatchesSet: Expected vy=4, got %f", xVel.y);
@@ -303,12 +304,12 @@ ZENITH_TEST(Physics, SetAngularVelocity)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "AngVelSphere",
 		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
-	Zenith_Physics::SetAngularVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 5, 0));
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetAngularVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 5, 0));
 
 	StepPhysics(1);
 
-	Zenith_Maths::Vector3 xAngVel = Zenith_Physics::GetAngularVelocity(xCollider.GetBodyID());
+	Zenith_Maths::Vector3 xAngVel = g_xEngine.Physics().GetAngularVelocity(xCollider.GetBodyID());
 	ZENITH_ASSERT_GT(std::abs(xAngVel.y), 0.1f, "TestSetAngularVelocity: Angular velocity Y should be non-zero (got %f)", xAngVel.y);
 
 	Zenith_SceneManager::UnloadSceneForced(xTestScene);
@@ -322,10 +323,10 @@ ZENITH_TEST(Physics, GetAngularVelocityMatchesSet)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "GetAngVelSphere",
 		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
 
-	Zenith_Physics::SetAngularVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(1, 2, 3));
-	Zenith_Maths::Vector3 xAngVel = Zenith_Physics::GetAngularVelocity(xCollider.GetBodyID());
+	g_xEngine.Physics().SetAngularVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(1, 2, 3));
+	Zenith_Maths::Vector3 xAngVel = g_xEngine.Physics().GetAngularVelocity(xCollider.GetBodyID());
 
 	ZENITH_ASSERT_EQ_FLOAT(xAngVel.x, 1.0f, 0.1f, "TestGetAngularVelocityMatchesSet: Expected wx=1, got %f", xAngVel.x);
 	ZENITH_ASSERT_EQ_FLOAT(xAngVel.y, 2.0f, 0.1f, "TestGetAngularVelocityMatchesSet: Expected wy=2, got %f", xAngVel.y);
@@ -342,9 +343,9 @@ ZENITH_TEST(Physics, ZeroVelocityNoMovement)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "ZeroVelSphere",
 		Zenith_Maths::Vector3(5, 5, 5), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
-	Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 0, 0));
-	Zenith_Physics::SetAngularVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 0, 0));
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 0, 0));
+	g_xEngine.Physics().SetAngularVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 0, 0));
 
 	StepPhysics(60);
 
@@ -368,16 +369,16 @@ ZENITH_TEST(Physics, AddForceAcceleratesBody)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "ForceSphere",
 		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
 
 	// Apply force each frame for 60 frames
 	for (uint32_t i = 0; i < 60; i++)
 	{
-		Zenith_Physics::AddForce(xCollider.GetBodyID(), Zenith_Maths::Vector3(100, 0, 0));
-		Zenith_Physics::Update(1.0f / 60.0f);
+		g_xEngine.Physics().AddForce(xCollider.GetBodyID(), Zenith_Maths::Vector3(100, 0, 0));
+		g_xEngine.Physics().Update(1.0f / 60.0f);
 	}
 
-	Zenith_Maths::Vector3 xVel = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+	Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 	ZENITH_ASSERT_GT(xVel.x, 0.0f, "TestAddForceAcceleratesBody: X velocity should be positive (got %f)", xVel.x);
 
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
@@ -394,12 +395,12 @@ ZENITH_TEST(Physics, AddImpulseInstantVelocityChange)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "ImpulseSphere",
 		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
 
 	// AddImpulse uses AddLinearVelocity internally
-	Zenith_Physics::AddImpulse(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 10, 0));
+	g_xEngine.Physics().AddImpulse(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 10, 0));
 
-	Zenith_Maths::Vector3 xVel = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+	Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 	ZENITH_ASSERT_EQ_FLOAT(xVel.y, 10.0f, 0.5f, "TestAddImpulseInstantVelocityChange: Expected vy~10, got %f", xVel.y);
 
 	StepPhysics(60);
@@ -418,26 +419,26 @@ ZENITH_TEST(Physics, ForceAccumulatesOverFrames)
 	Zenith_Entity xSphereA = CreatePhysicsSphere(pxSceneData, "ForceA",
 		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xColliderA = xSphereA.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xColliderA.GetBodyID(), false);
+	g_xEngine.Physics().SetGravityEnabled(xColliderA.GetBodyID(), false);
 
 	// Body B: apply force for 60 frames
 	Zenith_Entity xSphereB = CreatePhysicsSphere(pxSceneData, "ForceB",
 		Zenith_Maths::Vector3(0, 10, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xColliderB = xSphereB.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xColliderB.GetBodyID(), false);
+	g_xEngine.Physics().SetGravityEnabled(xColliderB.GetBodyID(), false);
 
 	for (uint32_t i = 0; i < 60; i++)
 	{
 		if (i < 30)
 		{
-			Zenith_Physics::AddForce(xColliderA.GetBodyID(), Zenith_Maths::Vector3(100, 0, 0));
+			g_xEngine.Physics().AddForce(xColliderA.GetBodyID(), Zenith_Maths::Vector3(100, 0, 0));
 		}
-		Zenith_Physics::AddForce(xColliderB.GetBodyID(), Zenith_Maths::Vector3(100, 0, 0));
-		Zenith_Physics::Update(1.0f / 60.0f);
+		g_xEngine.Physics().AddForce(xColliderB.GetBodyID(), Zenith_Maths::Vector3(100, 0, 0));
+		g_xEngine.Physics().Update(1.0f / 60.0f);
 	}
 
-	Zenith_Maths::Vector3 xVelA = Zenith_Physics::GetLinearVelocity(xColliderA.GetBodyID());
-	Zenith_Maths::Vector3 xVelB = Zenith_Physics::GetLinearVelocity(xColliderB.GetBodyID());
+	Zenith_Maths::Vector3 xVelA = g_xEngine.Physics().GetLinearVelocity(xColliderA.GetBodyID());
+	Zenith_Maths::Vector3 xVelB = g_xEngine.Physics().GetLinearVelocity(xColliderB.GetBodyID());
 
 	// Body B had force applied for twice as long, so velocity should be roughly double
 	ZENITH_ASSERT_GT(xVelB.x, xVelA.x * 1.5f, "TestForceAccumulatesOverFrames: 60-frame body should be faster than 30-frame body (A=%f, B=%f)", xVelA.x, xVelB.x);
@@ -455,7 +456,7 @@ ZENITH_TEST(Physics, ImpulseOnStaticBodyNoEffect)
 		RIGIDBODY_TYPE_STATIC);
 	Zenith_ColliderComponent& xCollider = xBox.GetComponent<Zenith_ColliderComponent>();
 
-	Zenith_Physics::AddImpulse(xCollider.GetBodyID(), Zenith_Maths::Vector3(100, 100, 100));
+	g_xEngine.Physics().AddImpulse(xCollider.GetBodyID(), Zenith_Maths::Vector3(100, 100, 100));
 	StepPhysics(60);
 
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
@@ -503,14 +504,14 @@ ZENITH_TEST(Physics, TwoDynamicBodiesCollide)
 	Zenith_Entity xSphereA = CreatePhysicsSphere(pxSceneData, "SphereA",
 		Zenith_Maths::Vector3(-5, 0, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
 	Zenith_ColliderComponent& xColliderA = xSphereA.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xColliderA.GetBodyID(), false);
-	Zenith_Physics::SetLinearVelocity(xColliderA.GetBodyID(), Zenith_Maths::Vector3(5, 0, 0));
+	g_xEngine.Physics().SetGravityEnabled(xColliderA.GetBodyID(), false);
+	g_xEngine.Physics().SetLinearVelocity(xColliderA.GetBodyID(), Zenith_Maths::Vector3(5, 0, 0));
 
 	Zenith_Entity xSphereB = CreatePhysicsSphere(pxSceneData, "SphereB",
 		Zenith_Maths::Vector3(5, 0, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
 	Zenith_ColliderComponent& xColliderB = xSphereB.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xColliderB.GetBodyID(), false);
-	Zenith_Physics::SetLinearVelocity(xColliderB.GetBodyID(), Zenith_Maths::Vector3(-5, 0, 0));
+	g_xEngine.Physics().SetGravityEnabled(xColliderB.GetBodyID(), false);
+	g_xEngine.Physics().SetLinearVelocity(xColliderB.GetBodyID(), Zenith_Maths::Vector3(-5, 0, 0));
 
 	StepPhysics(120);
 
@@ -648,7 +649,7 @@ ZENITH_TEST(Physics, CollisionExitCallback)
 	StepPhysics(60);
 
 	// Now launch the sphere upward to separate from floor
-	Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 20, 0));
+	g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 20, 0));
 	PhysicsTestBehaviour::s_uCollisionExitCount = 0;
 
 	// Step to allow separation
@@ -699,7 +700,7 @@ ZENITH_TEST(Physics, RaycastHitsSphere)
 	// Step once to ensure body is in the broadphase
 	StepPhysics(1);
 
-	Zenith_Physics::RaycastResult xResult = Zenith_Physics::Raycast(
+	Zenith_PhysicsImpl::RaycastResult xResult = g_xEngine.Physics().Raycast(
 		Zenith_Maths::Vector3(0, 0, -10),
 		Zenith_Maths::Vector3(0, 0, 1),
 		20.0f);
@@ -716,7 +717,7 @@ ZENITH_TEST(Physics, RaycastMissesNoBody)
 	ResetPhysicsState();
 
 	// Empty scene - raycast should miss
-	Zenith_Physics::RaycastResult xResult = Zenith_Physics::Raycast(
+	Zenith_PhysicsImpl::RaycastResult xResult = g_xEngine.Physics().Raycast(
 		Zenith_Maths::Vector3(0, 0, 0),
 		Zenith_Maths::Vector3(0, 0, 1),
 		100.0f);
@@ -737,7 +738,7 @@ ZENITH_TEST(Physics, RaycastReturnsHitPoint)
 
 	StepPhysics(1);
 
-	Zenith_Physics::RaycastResult xResult = Zenith_Physics::Raycast(
+	Zenith_PhysicsImpl::RaycastResult xResult = g_xEngine.Physics().Raycast(
 		Zenith_Maths::Vector3(0, 0, -10),
 		Zenith_Maths::Vector3(0, 0, 1),
 		20.0f);
@@ -761,7 +762,7 @@ ZENITH_TEST(Physics, RaycastReturnsHitEntity)
 
 	StepPhysics(1);
 
-	Zenith_Physics::RaycastResult xResult = Zenith_Physics::Raycast(
+	Zenith_PhysicsImpl::RaycastResult xResult = g_xEngine.Physics().Raycast(
 		Zenith_Maths::Vector3(0, 0, -10),
 		Zenith_Maths::Vector3(0, 0, 1),
 		20.0f);
@@ -784,14 +785,14 @@ ZENITH_TEST(Physics, RaycastMaxDistanceRespected)
 	StepPhysics(1);
 
 	// Short ray should miss
-	Zenith_Physics::RaycastResult xShortResult = Zenith_Physics::Raycast(
+	Zenith_PhysicsImpl::RaycastResult xShortResult = g_xEngine.Physics().Raycast(
 		Zenith_Maths::Vector3(0, 0, 0),
 		Zenith_Maths::Vector3(0, 0, 1),
 		5.0f);
 	ZENITH_ASSERT_FALSE(xShortResult.m_bHit, "TestRaycastMaxDistanceRespected: Short ray should miss");
 
 	// Long ray should hit
-	Zenith_Physics::RaycastResult xLongResult = Zenith_Physics::Raycast(
+	Zenith_PhysicsImpl::RaycastResult xLongResult = g_xEngine.Physics().Raycast(
 		Zenith_Maths::Vector3(0, 0, 0),
 		Zenith_Maths::Vector3(0, 0, 1),
 		25.0f);
@@ -812,14 +813,14 @@ ZENITH_TEST(Physics, LockRotationPreventsAngularVelocity)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "LockRotSphere",
 		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
 
 	// Set angular velocity first, then lock - LockRotation zeroes velocity on locked axes
-	Zenith_Physics::SetAngularVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(10, 10, 10));
-	Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, true, true);
+	g_xEngine.Physics().SetAngularVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(10, 10, 10));
+	g_xEngine.Physics().LockRotation(xCollider.GetBodyID(), true, true, true);
 	StepPhysics(10);
 
-	Zenith_Maths::Vector3 xAngVel = Zenith_Physics::GetAngularVelocity(xCollider.GetBodyID());
+	Zenith_Maths::Vector3 xAngVel = g_xEngine.Physics().GetAngularVelocity(xCollider.GetBodyID());
 	float fTotalAngVel = std::abs(xAngVel.x) + std::abs(xAngVel.y) + std::abs(xAngVel.z);
 	ZENITH_ASSERT_LT(fTotalAngVel, 1.0f, "TestLockRotationPreventsAngularVelocity: Angular velocity should be near zero (got total=%f)", fTotalAngVel);
 
@@ -849,7 +850,7 @@ ZENITH_TEST(Physics, ColliderBodyIDMatchesJolt)
 	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
 
 	// Verify body exists in Jolt
-	JPH::BodyInterface& xBI = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+	JPH::BodyInterface& xBI = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 	bool bIsAdded = xBI.IsAdded(xCollider.GetBodyID());
 	ZENITH_ASSERT_TRUE(bIsAdded, "TestColliderBodyIDMatchesJolt: Body should be added to Jolt physics system");
 
@@ -864,14 +865,14 @@ ZENITH_TEST(Physics, RebuildColliderPreservesVelocity)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "RebuildSphere",
 		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
 
-	Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(5, 0, 0));
+	g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(5, 0, 0));
 
 	// Rebuild the collider (e.g. after scale change)
 	xCollider.RebuildCollider();
 
-	Zenith_Maths::Vector3 xVelAfter = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID());
+	Zenith_Maths::Vector3 xVelAfter = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
 	ZENITH_ASSERT_EQ_FLOAT(xVelAfter.x, 5.0f, 0.5f, "TestRebuildColliderPreservesVelocity: Velocity X should be preserved (~5, got %f)", xVelAfter.x);
 
 	Zenith_SceneManager::UnloadSceneForced(xTestScene);
@@ -948,7 +949,7 @@ ZENITH_TEST(Physics, FixedTimestepOneStep)
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
 
 	// Exactly one fixed timestep
-	Zenith_Physics::Update(1.0f / 60.0f);
+	g_xEngine.Physics().Update(1.0f / 60.0f);
 
 	// After one step at 60Hz: deltaY = 0.5 * 9.81 * (1/60)^2 ~= 0.00136
 	// But velocity after one step: v = 9.81 * (1/60) ~= 0.1635
@@ -970,14 +971,14 @@ ZENITH_TEST(Physics, AccumulatorDoesNotOverStep)
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
 
 	// Update with less than one timestep (0.005s < 1/60s ~= 0.01667s)
-	Zenith_Physics::Update(0.005f);
+	g_xEngine.Physics().Update(0.005f);
 
 	// Accumulator should not have reached threshold - no physics step should occur
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_EQ_FLOAT(xPos.y, 10.0f, 0.01f, "TestAccumulatorDoesNotOverStep: Body should not have moved (got %f)", xPos.y);
 
 	// Now add enough time to trigger a step
-	Zenith_Physics::Update(0.012f); // 0.005 + 0.012 = 0.017 > 1/60
+	g_xEngine.Physics().Update(0.012f); // 0.005 + 0.012 = 0.017 > 1/60
 
 	Zenith_Maths::Vector3 xPosAfter = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_LT(xPosAfter.y, 10.0f, "TestAccumulatorDoesNotOverStep: Body should have moved after accumulator crossed threshold (got %f)", xPosAfter.y);
@@ -999,10 +1000,10 @@ ZENITH_TEST(Physics, ResetClearsPhysicsState)
 	Zenith_SceneManager::UnloadSceneForced(xTestScene);
 
 	// Reset physics (Shutdown + Initialise)
-	Zenith_Physics::Reset();
+	g_xEngine.Physics().Reset();
 
 	// Verify physics system is valid after reset
-	ZENITH_ASSERT_NOT_NULL(Zenith_Physics::s_pxPhysicsSystem, "TestResetClearsPhysicsState: Physics system should be valid after Reset");
+	ZENITH_ASSERT_NOT_NULL(g_xEngine.Physics().m_pxPhysicsSystem, "TestResetClearsPhysicsState: Physics system should be valid after Reset");
 
 	// Create a new body and verify it works
 	Zenith_Scene xTestScene2 = Zenith_SceneManager::CreateEmptyScene("PhysicsTest_Reset2");
@@ -1109,14 +1110,14 @@ ZENITH_TEST(Physics, GravityOffThenImpulseLaunch)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "LaunchSphere",
 		Zenith_Maths::Vector3(0, 5, 0), RIGIDBODY_TYPE_DYNAMIC);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
-	Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, true, true);
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
+	g_xEngine.Physics().LockRotation(xCollider.GetBodyID(), true, true, true);
 
 	// Simulate the "resting on plunger" phase: zero velocity each frame for 30 frames
 	for (uint32_t i = 0; i < 30; i++)
 	{
-		Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0.f));
-		Zenith_Physics::Update(1.0f / 60.0f);
+		g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0.f));
+		g_xEngine.Physics().Update(1.0f / 60.0f);
 	}
 
 	// Ball should still be at Y=5 after being held in place
@@ -1124,8 +1125,8 @@ ZENITH_TEST(Physics, GravityOffThenImpulseLaunch)
 	ZENITH_ASSERT_EQ_FLOAT(xPosHeld.y, 5.0f, 0.01f, "TestGravityOffThenImpulseLaunch: Ball should remain at Y=5 while held (got %f)", xPosHeld.y);
 
 	// Now simulate launch: enable gravity, apply upward impulse
-	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), true);
-	Zenith_Physics::AddImpulse(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 20, 0));
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), true);
+	g_xEngine.Physics().AddImpulse(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 20, 0));
 
 	// Step a few frames — ball should rise above launch position
 	StepPhysics(10);

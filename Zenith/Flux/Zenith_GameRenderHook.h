@@ -5,7 +5,7 @@
  *
  * Game-side extension point into Flux::SetupRenderGraph(). Games (e.g.
  * DevilsPlayground) can register a callback that is invoked at a specific
- * position inside SetupRenderGraph — immediately after Flux_Fog::SetupRenderGraph
+ * position inside SetupRenderGraph — immediately after g_xEngine.Fog().SetupRenderGraph
  * and before Flux_SDFs::SetupRenderGraph — to insert their own passes into the
  * render graph (typically a custom fog/atmosphere pass that replaces the
  * engine fog system).

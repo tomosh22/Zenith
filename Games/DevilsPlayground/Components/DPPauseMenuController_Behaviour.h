@@ -30,7 +30,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_EventSystem.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "UI/Zenith_UIText.h"
 
@@ -102,7 +102,7 @@ public:
 
 	void OnUpdate(const float /*fDt*/) ZENITH_FINAL override
 	{
-		const bool bEsc = Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
+		const bool bEsc = g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
 
 		// MVP-2.5.5: while paused, R restarts the run (reload
 		// gameplay scene) and Q quits to the main menu.
@@ -113,12 +113,12 @@ public:
 		// pause menu.
 		if (m_bShown || m_bRunOver)
 		{
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
 			{
 				HandleRestart();
 				return;
 			}
-			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_Q))
+			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_Q))
 			{
 				HandleQuit();
 				return;

@@ -31,8 +31,8 @@ void CreateCatCafeDisplayEntity()
 		uColorIndex = uCatID % TILEPUZZLE_COLOR_COUNT;
 	}
 
-	Zenith_MaterialAsset* pxMaterial = TilePuzzle::g_axCatCafeDisplayMaterials[uColorIndex].GetDirect();
-	if (!pxMaterial || !TilePuzzle::g_pxCatMeshGeometry)
+	Zenith_MaterialAsset* pxMaterial = TilePuzzle::Resources().m_axCatCafeDisplayMaterials[uColorIndex].GetDirect();
+	if (!pxMaterial || !TilePuzzle::Resources().m_pxCatMeshGeometry)
 		return;
 
 	m_xCatCafeDisplayEntity = Zenith_Entity(pxSceneData, "CatCafeDisplay");
@@ -41,7 +41,7 @@ void CreateCatCafeDisplayEntity()
 	xTransform.SetScale(Zenith_Maths::Vector3(2.f, 2.f, 2.f));
 
 	Zenith_ModelComponent& xModel = m_xCatCafeDisplayEntity.AddComponent<Zenith_ModelComponent>();
-	xModel.AddMeshEntry(*TilePuzzle::g_pxCatMeshGeometry, *pxMaterial);
+	xModel.AddMeshEntry(*TilePuzzle::Resources().m_pxCatMeshGeometry, *pxMaterial);
 }
 
 void DestroyCatCafeDisplayEntity()
@@ -64,13 +64,13 @@ void UpdateCatCafeDisplayMaterial()
 		uColorIndex = uCatID % TILEPUZZLE_COLOR_COUNT;
 	}
 
-	Zenith_MaterialAsset* pxMaterial = TilePuzzle::g_axCatCafeDisplayMaterials[uColorIndex].GetDirect();
+	Zenith_MaterialAsset* pxMaterial = TilePuzzle::Resources().m_axCatCafeDisplayMaterials[uColorIndex].GetDirect();
 	if (!pxMaterial)
 		return;
 
 	Zenith_ModelComponent& xModel = m_xCatCafeDisplayEntity.GetComponent<Zenith_ModelComponent>();
 	xModel.ClearModel();
-	xModel.AddMeshEntry(*TilePuzzle::g_pxCatMeshGeometry, *pxMaterial);
+	xModel.AddMeshEntry(*TilePuzzle::Resources().m_pxCatMeshGeometry, *pxMaterial);
 }
 
 void SetCatCafeVisible(bool bVisible)
@@ -228,9 +228,9 @@ void HandleCatCafeInput(float /*fDeltaTime*/)
 	if (m_axCatCafeCats.GetSize() <= 1)
 		return;
 
-	bool bDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	bool bDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 	Zenith_Maths::Vector2_64 xPos;
-	Zenith_Input::GetMousePosition(xPos);
+	g_xEngine.Input().GetMousePosition(xPos);
 	float fX = static_cast<float>(xPos.x);
 
 	if (bDown && !m_bCatCafeMouseWasDown)
@@ -842,7 +842,7 @@ void UpdateCreditsOverlay(float /*fDeltaTime*/)
 		return;
 
 	// Overlay handles its own rendering — just check for dismiss
-	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	bool bMouseDown = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 	if (bMouseDown && !m_bConfirmDialogMouseWasDown)
 	{
 		m_bCreditsOverlayActive = false;

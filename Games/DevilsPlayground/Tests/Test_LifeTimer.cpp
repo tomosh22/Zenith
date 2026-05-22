@@ -118,7 +118,7 @@ static bool Step_LifeTimer(int iFrame)
 				{
 					g_fInitialLife = xV.GetRemainingLife();
 				});
-			g_fTickStartSec = Zenith_Core::GetTimePassed();
+			g_fTickStartSec = g_xEngine.Frame().GetTimePassed();
 		}
 		++g_iTicks;
 		if (g_iTicks >= kTICK_FRAMES)
@@ -128,7 +128,7 @@ static bool Step_LifeTimer(int iFrame)
 				{
 					g_fFinalLife = xV.GetRemainingLife();
 				});
-			g_fElapsedSec = Zenith_Core::GetTimePassed() - g_fTickStartSec;
+			g_fElapsedSec = g_xEngine.Frame().GetTimePassed() - g_fTickStartSec;
 			g_iLTPhase = kLT_Verify;
 		}
 		return true;

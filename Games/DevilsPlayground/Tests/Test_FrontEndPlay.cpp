@@ -11,7 +11,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Flux/Flux_ModelInstance.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIButton.h"
 
@@ -214,7 +214,7 @@ static bool Step_FrontEndPlay(int /*iFrame*/)
 				// should hit the villager's own collider.
 				Zenith_Maths::Vector3 xVPos2;
 				xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos2);
-				Zenith_Physics::RaycastResult xCast = Zenith_Physics::Raycast(
+				Zenith_PhysicsImpl::RaycastResult xCast = g_xEngine.Physics().Raycast(
 					Zenith_Maths::Vector3(xVPos2.x, xVPos2.y + 5.0f, xVPos2.z),
 					Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f),
 					20.0f);

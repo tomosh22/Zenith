@@ -58,8 +58,8 @@
 #include "Collections/Zenith_HashSet.h"
 #include <atomic>
 #include <string>
-#include "Core/Multithreading/Zenith_Multithreading.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 // Forward declarations
 struct Zenith_Scene;

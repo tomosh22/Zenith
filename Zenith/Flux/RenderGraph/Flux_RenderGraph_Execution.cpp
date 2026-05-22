@@ -1,9 +1,9 @@
 #include "Zenith.h"
 
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
+#include "TaskSystem/Zenith_TaskSystemImpl.h"
 
 //==========================================================================
 // Flux_RenderGraph — execution / command-list recording / recording context
@@ -75,7 +75,7 @@ void Flux_RenderGraph::Execute()
 {
 	Zenith_Assert(m_bCompiled, "Flux_RenderGraph::Execute: must call Compile() first");
 	Zenith_Assert(!m_bDirty, "Flux_RenderGraph::Execute: graph is dirty — AddPass/Read/Write was called after Compile(). Call Compile() again.");
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Flux_RenderGraph::Execute: must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Flux_RenderGraph::Execute: must be called from main thread");
 	if (m_xExecutionOrder.GetSize() == 0) return;
 
 	// Every enabled pass in the execution order must have a valid command list —
@@ -156,7 +156,7 @@ void Flux_RenderGraph::RecordCommandLists()
 	}
 
 	Zenith_TaskArray xTasks(ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS, Flux_RenderGraph_RecordPassTask, pxTaskData, uNumPasses, true);
-	Zenith_TaskSystem::SubmitTaskArray(&xTasks);
+	g_xEngine.Tasks().SubmitTaskArray(&xTasks);
 	xTasks.WaitUntilComplete();
 	Zenith_MemoryManagement::Deallocate(pxTaskData);
 }

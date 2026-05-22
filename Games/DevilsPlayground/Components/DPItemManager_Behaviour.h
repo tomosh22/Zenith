@@ -23,7 +23,7 @@
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Components/DPItemSpawn_Behaviour.h"
 #include "Components/DPItemBase_Behaviour.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"

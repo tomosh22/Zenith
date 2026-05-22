@@ -5,6 +5,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
 
@@ -377,12 +378,12 @@ void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3& xPos)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && Zenith_Physics::s_pxPhysicsSystem != nullptr)
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
 	{
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
-			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 			JPH::Vec3 xJoltPos(xPos.x, xPos.y, xPos.z);
 			xBodyInterface.SetPosition(xCollider.GetBodyID(), xJoltPos, JPH::EActivation::Activate);
 			return;
@@ -395,12 +396,12 @@ void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat& xRot)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && Zenith_Physics::s_pxPhysicsSystem != nullptr)
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
 	{
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
-			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterface();
 			JPH::Quat xJoltRot(xRot.x, xRot.y, xRot.z, xRot.w);
 			xBodyInterface.SetRotation(xCollider.GetBodyID(), xJoltRot, JPH::EActivation::Activate);
 			return;
@@ -441,13 +442,13 @@ void Zenith_TransformComponent::GetPosition(Zenith_Maths::Vector3& xPos)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && Zenith_Physics::s_pxPhysicsSystem != nullptr)
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
 	{
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
 			// Use BodyInterface for safe access - never access Body pointer directly
-			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterfaceNoLock();
+			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterfaceNoLock();
 			JPH::Vec3 xJoltPos = xBodyInterface.GetPosition(xCollider.GetBodyID());
 			xPos.x = xJoltPos.GetX();
 			xPos.y = xJoltPos.GetY();
@@ -466,13 +467,13 @@ void Zenith_TransformComponent::GetRotation(Zenith_Maths::Quat& xRot)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && Zenith_Physics::s_pxPhysicsSystem != nullptr)
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && g_xEngine.Physics().m_pxPhysicsSystem != nullptr)
 	{
 		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
 			// Use BodyInterface for safe access - never access Body pointer directly
-			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterfaceNoLock();
+			JPH::BodyInterface& xBodyInterface = g_xEngine.Physics().m_pxPhysicsSystem->GetBodyInterfaceNoLock();
 			JPH::Quat xJoltRot = xBodyInterface.GetRotation(xCollider.GetBodyID());
 			xRot.x = xJoltRot.GetX();
 			xRot.y = xJoltRot.GetY();

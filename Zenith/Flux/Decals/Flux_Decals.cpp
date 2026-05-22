@@ -1,10 +1,13 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/Decals/Flux_Decals.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Decals/Flux_DecalsImpl.h"
+#include "Flux/Decals/Flux_DecalsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
-#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
@@ -44,7 +47,6 @@ static_assert(sizeof(DecalInstance) == 160, "DecalInstance must match Flux_Decal
 
 // ===== STATIC STATE =====
 
-bool Flux_Decals::s_bInitialised = false;
 
 // CPU-side pool. Ring buffer for slot recycling — m_uNextSlot tracks the
 // next slot to overwrite when SpawnDecal is called.
@@ -58,13 +60,11 @@ struct CpuDecalSlot
 	float                 m_fRemainingLifetime = 0.0f;
 	DecalInstance         m_xInstance{};
 };
-static CpuDecalSlot s_axDecalSlots[Flux_Decals::uMAX_DECALS];
-static u_int        s_uNextSlot          = 0;
-static u_int        s_uActiveDecalCount  = 0;
+static CpuDecalSlot s_axDecalSlots[Flux_DecalsImpl::uMAX_DECALS];
 
 // Dense GPU staging — packed at upload time so SV_InstanceID indexes
 // 0..uActiveDecalCount-1 contiguously regardless of CPU ring layout.
-static DecalInstance s_axDecalStaging[Flux_Decals::uMAX_DECALS];
+static DecalInstance s_axDecalStaging[Flux_DecalsImpl::uMAX_DECALS];
 
 // Default tuning. The normal-alignment threshold gates leakage onto
 // perpendicular surfaces inside the decal volume — 0.3 ≈ 70°, beyond
@@ -84,27 +84,17 @@ static constexpr TextureFormat k_eNormalsCopyFormat = TEXTURE_FORMAT_R16G16B16A1
 DEBUGVAR bool dbg_bDecalDebugSpheres = false;
 
 // Render-graph state.
-static Flux_RenderGraph*    s_pxGraph = nullptr;
-static Flux_TransientHandle s_xNormalsCopyHandle;
-static Flux_PassHandle      s_xNormalsCopyPass;
-static Flux_PassHandle      s_xApplyPass;
 
 // Pipelines and shaders.
-static Flux_Shader   s_xNormalsCopyShader;
-static Flux_Shader   s_xApplyShader;
-static Flux_Pipeline s_xNormalsCopyPipeline;
-static Flux_Pipeline s_xApplyPipeline;
 
 // GPU buffers. The decal SRV is bound at Record time (not via the graph)
 // because frame-indexed dynamic buffers in this renderer are deliberately
 // untracked — same pattern as Flux_DynamicLights' light buffer.
-static Flux_DynamicReadWriteBuffer s_xDecalBuffer;
 
 // Decal-pass index buffer holding 36 indices (0..35). The Apply VS uses
 // SV_VertexID to look up cube corners from a static const table, but
 // Flux exposes only indexed-instanced draws so the IB exists only to
 // satisfy DrawIndexed. Its values are ignored by the shader.
-static Flux_IndexBuffer s_xDecalIndexBuffer;
 
 // ===== HELPERS =====
 
@@ -158,7 +148,7 @@ static void BuildDecalInstance(const Zenith_Maths::Vector3& xPosition,
 static u_int TickAndPackDense(float fDt)
 {
 	u_int uActive = 0;
-	for (u_int u = 0; u < Flux_Decals::uMAX_DECALS; ++u)
+	for (u_int u = 0; u < Flux_DecalsImpl::uMAX_DECALS; ++u)
 	{
 		CpuDecalSlot& xSlot = s_axDecalSlots[u];
 		if (!xSlot.m_bActive)
@@ -182,7 +172,7 @@ static u_int TickAndPackDense(float fDt)
 #ifdef ZENITH_DEBUG_VARIABLES
 		if (dbg_bDecalDebugSpheres)
 		{
-			Flux_Primitives::AddSphere(
+			g_xEngine.Primitives().AddSphere(
 				xSlot.m_xPosition,
 				xSlot.m_fSize * 0.5f,
 				Zenith_Maths::Vector3(1.0f, 1.0f, 0.0f));
@@ -206,27 +196,27 @@ static void InitialiseDecalIndexBuffer()
 	uint32_t auIndices[36];
 	for (uint32_t u = 0; u < 36; ++u)
 		auIndices[u] = u;
-	Flux_MemoryManager::InitialiseIndexBuffer(auIndices, sizeof(auIndices), s_xDecalIndexBuffer);
+	Flux_MemoryManager::InitialiseIndexBuffer(auIndices, sizeof(auIndices), g_xEngine.Decals().m_xDecalIndexBuffer);
 }
 
 // ===== PIPELINES =====
 
-void Flux_Decals::BuildPipelines()
+void Flux_DecalsImpl::BuildPipelines()
 {
 	// NormalsCopy — vanilla fullscreen-quad pass writing the transient.
 	Flux_PipelineHelper::BuildFullscreenPipeline(
-		s_xNormalsCopyShader,
-		s_xNormalsCopyPipeline,
+		g_xEngine.Decals().m_xNormalsCopyShader,
+		g_xEngine.Decals().m_xNormalsCopyPipeline,
 		FluxShaderProgram::Decals_NormalsCopy,
 		k_eNormalsCopyFormat);
 
 	// Apply — instanced cube into 3 G-buffer MRTs with per-attachment
 	// alpha blend and color write mask.
 	{
-		s_xApplyShader.Initialise(FluxShaderProgram::Decals_Apply);
+		g_xEngine.Decals().m_xApplyShader.Initialise(FluxShaderProgram::Decals_Apply);
 
 		Flux_PipelineSpecification xSpec;
-		xSpec.m_pxShader = &s_xApplyShader;
+		xSpec.m_pxShader = &g_xEngine.Decals().m_xApplyShader;
 
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE]        = TEXTURE_FORMAT_RGBA8_UNORM;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
@@ -261,15 +251,15 @@ void Flux_Decals::BuildPipelines()
 		// No vertex bindings — VS emits cube corners from SV_VertexID.
 		xSpec.m_xVertexInputDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
-		s_xApplyShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+		g_xEngine.Decals().m_xApplyShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 
-		Flux_PipelineBuilder::FromSpecification(s_xApplyPipeline, xSpec);
+		Flux_PipelineBuilder::FromSpecification(g_xEngine.Decals().m_xApplyPipeline, xSpec);
 	}
 }
 
 // ===== INIT / SHUTDOWN =====
 
-void Flux_Decals::Initialise()
+void Flux_DecalsImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -278,22 +268,22 @@ void Flux_Decals::Initialise()
 	Zenith_Vector<DecalInstance> xZeroed(uMAX_DECALS);
 	for (u_int u = 0; u < uMAX_DECALS; ++u) xZeroed.EmplaceBack();
 	Flux_MemoryManager::InitialiseDynamicReadWriteBuffer(
-		xZeroed.GetDataPointer(), ulBufferSize, s_xDecalBuffer);
+		xZeroed.GetDataPointer(), ulBufferSize, g_xEngine.Decals().m_xDecalBuffer);
 
 	InitialiseDecalIndexBuffer();
 
 	// CPU pool starts empty.
 	for (u_int u = 0; u < uMAX_DECALS; ++u)
 		s_axDecalSlots[u].m_bActive = false;
-	s_uNextSlot         = 0;
-	s_uActiveDecalCount = 0;
+	g_xEngine.Decals().m_uNextSlot         = 0;
+	g_xEngine.Decals().m_uActiveDecalCount = 0;
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::Decals_NormalsCopy,
 		FluxShaderProgram::Decals_Apply,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_Decals::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.Decals().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -302,37 +292,37 @@ void Flux_Decals::Initialise()
 		dbg_bDecalDebugSpheres);
 #endif
 
-	s_bInitialised = true;
+	m_bInitialised = true;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Decals initialised (deferred screen-space box, max %u decals)", uMAX_DECALS);
 }
 
-void Flux_Decals::Shutdown()
+void Flux_DecalsImpl::Shutdown()
 {
-	if (!s_bInitialised)
+	if (!m_bInitialised)
 		return;
 
-	Flux_MemoryManager::DestroyDynamicReadWriteBuffer(s_xDecalBuffer);
-	Flux_MemoryManager::DestroyIndexBuffer(s_xDecalIndexBuffer);
+	Flux_MemoryManager::DestroyDynamicReadWriteBuffer(g_xEngine.Decals().m_xDecalBuffer);
+	Flux_MemoryManager::DestroyIndexBuffer(g_xEngine.Decals().m_xDecalIndexBuffer);
 
 	// Release pipeline + shader GPU resources eagerly while the Vulkan
 	// device is still alive. Static destructors run after Flux::Shutdown
 	// has torn the device down, so leaving cleanup to the implicit dtor
 	// would be a use-after-free on the device handle.
-	s_xApplyPipeline.Reset();
-	s_xNormalsCopyPipeline.Reset();
-	s_xApplyShader.Reset();
-	s_xNormalsCopyShader.Reset();
+	g_xEngine.Decals().m_xApplyPipeline.Reset();
+	g_xEngine.Decals().m_xNormalsCopyPipeline.Reset();
+	g_xEngine.Decals().m_xApplyShader.Reset();
+	g_xEngine.Decals().m_xNormalsCopyShader.Reset();
 
-	s_pxGraph           = nullptr;
-	s_uActiveDecalCount = 0;
-	s_bInitialised      = false;
+	g_xEngine.Decals().m_pxGraph           = nullptr;
+	g_xEngine.Decals().m_uActiveDecalCount = 0;
+	m_bInitialised      = false;
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Decals shut down");
 }
 
 // ===== GAME-SIDE API =====
 
-void Flux_Decals::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
+void Flux_DecalsImpl::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
                              const Zenith_Maths::Vector3& xNormal,
                              Zenith_TextureAsset* /*pxTexture*/,
                              float                        fSize,
@@ -343,12 +333,12 @@ void Flux_Decals::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
 	// produce a NaN basis — log + bail.
 	if (glm::length2(xNormal) < 1e-6f)
 	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Decals::SpawnDecal: ignoring near-zero normal");
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DecalsImpl::SpawnDecal: ignoring near-zero normal");
 		return;
 	}
 	if (fSize <= 0.0f || fLifetime <= 0.0f)
 	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Decals::SpawnDecal: ignoring non-positive size/lifetime");
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DecalsImpl::SpawnDecal: ignoring non-positive size/lifetime");
 		return;
 	}
 
@@ -356,7 +346,7 @@ void Flux_Decals::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
 
 	// Pick the next slot in the ring. If the slot was active, we're
 	// recycling — the active count stays the same. Otherwise we grow.
-	const u_int uSlot = s_uNextSlot;
+	const u_int uSlot = g_xEngine.Decals().m_uNextSlot;
 	CpuDecalSlot& xSlot = s_axDecalSlots[uSlot];
 	const bool bWasActive = xSlot.m_bActive;
 
@@ -368,17 +358,17 @@ void Flux_Decals::SpawnDecal(const Zenith_Maths::Vector3& xPosition,
 	xSlot.m_fRemainingLifetime = fLifetime;
 	BuildDecalInstance(xPosition, xUnitNormal, fSize, 1.0f, xSlot.m_xInstance);
 
-	s_uNextSlot = (uSlot + 1) % uMAX_DECALS;
-	if (!bWasActive && s_uActiveDecalCount < uMAX_DECALS)
-		++s_uActiveDecalCount;
+	g_xEngine.Decals().m_uNextSlot = (uSlot + 1) % uMAX_DECALS;
+	if (!bWasActive && g_xEngine.Decals().m_uActiveDecalCount < uMAX_DECALS)
+		++g_xEngine.Decals().m_uActiveDecalCount;
 
 	Zenith_Log(LOG_CATEGORY_RENDERER,
 		"[DECAL] SpawnDecal slot=%u recycled=%d activeCount=%u "
 		"pos=(%.2f,%.2f,%.2f) normal=(%.2f,%.2f,%.2f) size=%.3f lifetime=%.2f initialised=%d",
-		uSlot, bWasActive ? 1 : 0, s_uActiveDecalCount,
+		uSlot, bWasActive ? 1 : 0, g_xEngine.Decals().m_uActiveDecalCount,
 		xPosition.x, xPosition.y, xPosition.z,
 		xUnitNormal.x, xUnitNormal.y, xUnitNormal.z,
-		fSize, fLifetime, s_bInitialised ? 1 : 0);
+		fSize, fLifetime, m_bInitialised ? 1 : 0);
 }
 
 // ===== RECORD CALLBACKS =====
@@ -388,57 +378,57 @@ static void ExecuteNormalsCopy(Flux_CommandList* pxCommandList, void*)
 	// No logging here — runs on a worker thread at 60Hz; per-frame log
 	// from each of the parallel-recorder threads serialises them on the
 	// logger mutex and starves the engine.
-	if (s_uActiveDecalCount == 0)
+	if (g_xEngine.Decals().m_uActiveDecalCount == 0)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xNormalsCopyPipeline);
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Decals().m_xNormalsCopyPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(s_xNormalsCopyShader, "g_xNormalsTex",
-		Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.Decals().m_xNormalsCopyShader, "g_xNormalsTex",
+		g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
 static void ExecuteApply(Flux_CommandList* pxCommandList, void*)
 {
-	if (s_uActiveDecalCount == 0)
+	if (g_xEngine.Decals().m_uActiveDecalCount == 0)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xApplyPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.Decals().m_xApplyPipeline);
 	// Index-only draw — VS emits cube corners from SV_VertexID. The IB
 	// values are unused but the command is required (Flux has no
 	// non-indexed instanced draw).
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&s_xDecalIndexBuffer);
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.Decals().m_xDecalIndexBuffer);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(s_xApplyShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(g_xEngine.Decals().m_xApplyShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
-	xBinder.BindSRV(s_xApplyShader, "g_xDepthTex",       Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xApplyShader, "g_xNormalsCopyTex", &s_pxGraph->GetTransientAttachment(s_xNormalsCopyHandle).SRV());
-	xBinder.BindSRV_Buffer(s_xApplyShader, "DecalBuffer", s_xDecalBuffer.GetSRV());
+	xBinder.BindSRV(g_xEngine.Decals().m_xApplyShader, "g_xDepthTex",       g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.Decals().m_xApplyShader, "g_xNormalsCopyTex", &g_xEngine.Decals().m_pxGraph->GetTransientAttachment(g_xEngine.Decals().m_xNormalsCopyHandle).SRV());
+	xBinder.BindSRV_Buffer(g_xEngine.Decals().m_xApplyShader, "DecalBuffer", g_xEngine.Decals().m_xDecalBuffer.GetSRV());
 
-	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(36, s_uActiveDecalCount);
+	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(36, g_xEngine.Decals().m_uActiveDecalCount);
 }
 
 // ===== PREPARE CALLBACK =====
 
 static void PrepareDecals(void*)
 {
-	const float fDt = Zenith_Core::GetDt();
-	const u_int uPriorActive = s_uActiveDecalCount;
+	const float fDt = g_xEngine.Frame().GetDt();
+	const u_int uPriorActive = g_xEngine.Decals().m_uActiveDecalCount;
 
 	// Tick lifetimes + pack active decals into the dense staging array.
 	const u_int uActive = TickAndPackDense(fDt);
-	s_uActiveDecalCount = uActive;
+	g_xEngine.Decals().m_uActiveDecalCount = uActive;
 
 	if (uActive > 0)
 	{
 		Flux_MemoryManager::UploadBufferData(
-			s_xDecalBuffer.GetBuffer().m_xVRAMHandle,
+			g_xEngine.Decals().m_xDecalBuffer.GetBuffer().m_xVRAMHandle,
 			s_axDecalStaging,
 			uActive * sizeof(DecalInstance));
 	}
@@ -458,35 +448,35 @@ static void PrepareDecals(void*)
 
 // ===== GRAPH SETUP =====
 
-void Flux_Decals::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	s_pxGraph = &xGraph;
+	g_xEngine.Decals().m_pxGraph = &xGraph;
 
 	Flux_TransientTextureDesc xDesc;
 	xDesc.m_uWidth       = Flux_Swapchain::GetWidth();
 	xDesc.m_uHeight      = Flux_Swapchain::GetHeight();
 	xDesc.m_eFormat      = k_eNormalsCopyFormat;
 	xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-	s_xNormalsCopyHandle = xGraph.CreateTransient(xDesc);
+	g_xEngine.Decals().m_xNormalsCopyHandle = xGraph.CreateTransient(xDesc);
 
 	// NormalsCopy — clones live normalsAmbient into the transient. The
 	// attached Prepare callback also runs the per-frame lifetime tick,
 	// dense-packs active slots into the GPU staging array, and uploads.
-	s_xNormalsCopyPass = xGraph.AddPass("Decal Normals Copy", ExecuteNormalsCopy)
+	g_xEngine.Decals().m_xNormalsCopyPass = xGraph.AddPass("Decal Normals Copy", ExecuteNormalsCopy)
 		.Prepare(PrepareDecals)
 		.ClearTargets()
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(s_xNormalsCopyHandle,                                       RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(g_xEngine.Decals().m_xNormalsCopyHandle,                                       RESOURCE_ACCESS_WRITE_RTV);
 
 	// Apply — instanced cube into all 3 G-buffer MRTs. Reads depth + the
 	// cloned normals; writes diffuse / normalsAmbient / material under
 	// per-attachment blend.
-	s_xApplyPass = xGraph.AddPass("Decal Apply", ExecuteApply)
-		.Reads         (Flux_Graphics::GetDepthAttachment(),                      RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient(s_xNormalsCopyHandle,                                      RESOURCE_ACCESS_READ_SRV)
-		.Writes        (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes        (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes        (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV);
+	g_xEngine.Decals().m_xApplyPass = xGraph.AddPass("Decal Apply", ExecuteApply)
+		.Reads         (g_xEngine.FluxGraphics().GetDepthAttachment(),                      RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient(g_xEngine.Decals().m_xNormalsCopyHandle,                                      RESOURCE_ACCESS_READ_SRV)
+		.Writes        (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV);
 
 	// Both passes are always-enabled. The render graph skips Prepare
 	// callbacks for disabled passes (Flux_RenderGraph_Execution.cpp:144),
@@ -499,14 +489,14 @@ void Flux_Decals::SetupRenderGraph(Flux_RenderGraph& xGraph)
 // ===== TEST HOOKS =====
 
 #ifdef ZENITH_TESTING
-u_int Flux_Decals::GetActiveCountForTest()
+u_int Flux_DecalsImpl::GetActiveCountForTest()
 {
-	return s_uActiveDecalCount;
+	return g_xEngine.Decals().m_uActiveDecalCount;
 }
 
-Flux_Decals::TestSlotView Flux_Decals::GetSlotForTest(u_int uSlotIndex)
+Flux_DecalsImpl::TestSlotView Flux_DecalsImpl::GetSlotForTest(u_int uSlotIndex)
 {
-	Zenith_Assert(uSlotIndex < uMAX_DECALS, "Flux_Decals::GetSlotForTest: index %u >= %u", uSlotIndex, uMAX_DECALS);
+	Zenith_Assert(uSlotIndex < uMAX_DECALS, "Flux_DecalsImpl::GetSlotForTest: index %u >= %u", uSlotIndex, uMAX_DECALS);
 	const CpuDecalSlot& xSlot = s_axDecalSlots[uSlotIndex];
 	TestSlotView xView;
 	xView.m_xPosition          = xSlot.m_xPosition;
@@ -516,11 +506,11 @@ Flux_Decals::TestSlotView Flux_Decals::GetSlotForTest(u_int uSlotIndex)
 	return xView;
 }
 
-void Flux_Decals::ResetForTest()
+void Flux_DecalsImpl::ResetForTest()
 {
 	for (u_int u = 0; u < uMAX_DECALS; ++u)
 		s_axDecalSlots[u].m_bActive = false;
-	s_uNextSlot         = 0;
-	s_uActiveDecalCount = 0;
+	g_xEngine.Decals().m_uNextSlot         = 0;
+	g_xEngine.Decals().m_uActiveDecalCount = 0;
 }
 #endif

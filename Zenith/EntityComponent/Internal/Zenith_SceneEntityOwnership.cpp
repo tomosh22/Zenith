@@ -5,6 +5,7 @@
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Internal/Zenith_SceneCallbackBus.h"
+#include "EntityComponent/Internal/Zenith_SceneRegistryImpl.h"
 
 //==========================================================================
 // Zenith_SceneEntityOwnership — implementations.
@@ -47,7 +48,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zen
 	// handle's generation still matches — this guards a future refactor that allows
 	// slot destroy to interleave with move from corrupting the global entity table.
 	{
-		const Zenith_SceneData::Zenith_EntitySlot& xPreMoveSlot = Zenith_SceneData::s_axEntitySlots.Get(xEntityID.m_uIndex);
+		const Zenith_SceneData::Zenith_EntitySlot& xPreMoveSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex);
 		Zenith_Assert(xPreMoveSlot.IsOccupied(),
 			"MoveEntityInternal: source slot %u is not occupied at mutation point", xEntityID.m_uIndex);
 		Zenith_Assert(xPreMoveSlot.m_uGeneration == xEntityID.m_uGeneration,
@@ -56,7 +57,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zen
 	}
 
 	// Update global slot to point to target scene
-	Zenith_SceneData::s_axEntitySlots.Get(xEntityID.m_uIndex).m_iSceneHandle = pxTargetData->m_iHandle;
+	g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex).m_iSceneHandle = pxTargetData->m_iHandle;
 
 	// Move entity from source's active list to target's active list
 	pxSourceData->m_xActiveEntities.EraseValue(xEntityID);
@@ -73,7 +74,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zen
 	}
 
 	// Adjust pending start count and list if this entity hasn't had Start() called yet
-	Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(xEntityID.m_uIndex);
+	Zenith_SceneData::Zenith_EntitySlot& xSlot = g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex);
 	if (xSlot.IsPendingStart())
 	{
 		Zenith_Assert(pxSourceData->m_uPendingStartCount > 0, "PendingStartCount underflow in MoveEntityInternal");
@@ -113,7 +114,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityInternal(Zenith_Entity& xEntity, Zen
 
 bool Zenith_SceneEntityOwnership::MoveEntityToScene(Zenith_Entity& xEntity, Zenith_Scene xTarget)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MoveEntityToScene must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MoveEntityToScene must be called from main thread");
 	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(), "MoveEntityToScene: scene mutation while render tasks are reading — render-task invariant violated");
 
 	if (!xEntity.IsValid())
@@ -164,7 +165,7 @@ bool Zenith_SceneEntityOwnership::MoveEntityToScene(Zenith_Entity& xEntity, Zeni
 
 bool Zenith_SceneEntityOwnership::MergeScenes(Zenith_Scene xSource, Zenith_Scene xTarget)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MergeScenes must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MergeScenes must be called from main thread");
 	Zenith_Assert(!Zenith_SceneManager::AreRenderTasksActive(), "MergeScenes: scene mutation while render tasks are reading — render-task invariant violated");
 
 	Zenith_SceneData* pxSource = Zenith_SceneRegistry::GetSceneData(xSource);
@@ -183,14 +184,14 @@ bool Zenith_SceneEntityOwnership::MergeScenes(Zenith_Scene xSource, Zenith_Scene
 	}
 
 	// Cannot merge from the persistent scene
-	if (xSource.m_iHandle == Zenith_SceneRegistry::s_iPersistentSceneHandle)
+	if (xSource.m_iHandle == g_xEngine.SceneRegistry().m_iPersistentSceneHandle)
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "MergeScenes: Cannot merge from persistent scene");
 		return false;
 	}
 
 	// Unity behavior: If source is active, target becomes active
-	if (xSource.m_iHandle == Zenith_SceneRegistry::s_iActiveSceneHandle)
+	if (xSource.m_iHandle == g_xEngine.SceneRegistry().m_iActiveSceneHandle)
 	{
 		Zenith_SceneManager::SetActiveScene(xTarget);
 	}
@@ -217,7 +218,7 @@ bool Zenith_SceneEntityOwnership::MergeScenes(Zenith_Scene xSource, Zenith_Scene
 
 void Zenith_SceneEntityOwnership::MarkEntityPersistent(Zenith_Entity& xEntity)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityPersistent must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "MarkEntityPersistent must be called from main thread");
 
 	if (!xEntity.IsValid()) return;
 
@@ -254,7 +255,7 @@ void Zenith_SceneEntityOwnership::MarkEntityPersistent(Zenith_Entity& xEntity)
 
 void Zenith_SceneEntityOwnership::Destroy(Zenith_Entity& xEntity)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Destroy must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Destroy must be called from main thread");
 
 	if (!xEntity.IsValid()) return;
 
@@ -267,7 +268,7 @@ void Zenith_SceneEntityOwnership::Destroy(Zenith_Entity& xEntity)
 
 void Zenith_SceneEntityOwnership::Destroy(Zenith_Entity& xEntity, float fDelay)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "Destroy must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Destroy must be called from main thread");
 
 	if (!xEntity.IsValid()) return;
 
@@ -286,7 +287,7 @@ void Zenith_SceneEntityOwnership::Destroy(Zenith_Entity& xEntity, float fDelay)
 
 void Zenith_SceneEntityOwnership::DestroyImmediate(Zenith_Entity& xEntity)
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "DestroyImmediate must be called from main thread");
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "DestroyImmediate must be called from main thread");
 
 	if (!xEntity.IsValid()) return;
 
@@ -296,9 +297,9 @@ void Zenith_SceneEntityOwnership::DestroyImmediate(Zenith_Entity& xEntity)
 		Zenith_EntityID xEntityID = xEntity.GetEntityID();
 
 		// Clear from pending destruction if present (use global slot flag).
-		if (xEntityID.m_uIndex < Zenith_SceneData::s_axEntitySlots.GetSize())
+		if (xEntityID.m_uIndex < g_xEngine.EntityStore().m_axEntitySlots.GetSize())
 		{
-			Zenith_SceneData::s_axEntitySlots.Get(xEntityID.m_uIndex).m_bMarkedForDestruction = false;
+			g_xEngine.EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex).m_bMarkedForDestruction = false;
 		}
 
 		// Remove from pending destruction list to prevent stale processing.

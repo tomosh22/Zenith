@@ -3,14 +3,14 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Input/Zenith_InputSimulator.h"
 
 // ============================================================================
 // MouseWheel_Test - exercises EXT-4 (mouse wheel input + simulator override).
 //
 // Verifies:
-//   - SimulateMouseWheel(+1.5) makes Zenith_Input::GetMouseWheelDelta() report +1.5
+//   - SimulateMouseWheel(+1.5) makes g_xEngine.Input().GetMouseWheelDelta() report +1.5
 //   - The reported delta is preserved across reads within a frame
 //   - SimulateMouseWheel(0) clears it
 // ============================================================================
@@ -31,8 +31,8 @@ static bool Step_MouseWheel(int iFrame)
 {
 	if (iFrame == 0)
 	{
-		const float fA = Zenith_Input::GetMouseWheelDelta();
-		const float fB = Zenith_Input::GetMouseWheelDelta();
+		const float fA = g_xEngine.Input().GetMouseWheelDelta();
+		const float fB = g_xEngine.Input().GetMouseWheelDelta();
 		if (fA != fB)
 		{
 			g_bDeltaConsistentInFrame = false;

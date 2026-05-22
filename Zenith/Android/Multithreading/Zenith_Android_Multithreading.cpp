@@ -2,16 +2,20 @@
 
 #include "Zenith_Android_Multithreading.h"
 
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "Multithreading/Zenith_Multithreading.h"
+#include "Core/Multithreading/Zenith_MultithreadingImpl.h"
 
 #include <pthread.h>
 #include <unistd.h>
 #include <cstring>
 
-thread_local static char tl_g_acThreadName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH]{ 0 };
-thread_local static u_int tl_g_uThreadID = -1;
-static u_int g_uMainThreadID = -1;
+// TLS state stays per-thread (carve-out per refactor plan -- threads
+// don't belong to an Engine, their registration index does). The
+// shared state (thread-ID allocator + main-thread ID) moved to
+// g_xEngine.Threading() in Phase 3a.
+thread_local static char tl_g_acThreadName[Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH]{ 0 };
+thread_local static u_int tl_g_uThreadID = ~0u;
 
 template<>
 void Zenith_Android_Mutex_T<true>::Lock()
@@ -70,10 +74,10 @@ struct ThreadParams
 
 static void* ThreadInit(void* pParams)
 {
-	Zenith_Multithreading::RegisterThread();
+	g_xEngine.Threading().RegisterThread();
 	const ThreadParams* pxParams = static_cast<const ThreadParams*>(pParams);
 	// Copy thread name with guaranteed null termination
-	size_t uNameLen = strnlen(pxParams->m_szName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH - 1);
+	size_t uNameLen = strnlen(pxParams->m_szName, Zenith_MultithreadingImpl::uMAX_THREAD_NAME_LENGTH - 1);
 	memcpy(tl_g_acThreadName, pxParams->m_szName, uNameLen);
 	tl_g_acThreadName[uNameLen] = '\0';
 	pxParams->m_pxSemaphore->Signal();
@@ -81,7 +85,7 @@ static void* ThreadInit(void* pParams)
 	return nullptr;
 }
 
-void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_ThreadFunction pfnFunc, const void* pUserData)
+void Zenith_MultithreadingImpl::Platform_CreateThread(const char* szName, Zenith_ThreadFunction pfnFunc, const void* pUserData)
 {
 	Zenith_Android_Semaphore xSemaphore(0, 1);
 
@@ -103,23 +107,21 @@ void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_Thr
 	xSemaphore.Wait();
 }
 
-void Zenith_Multithreading::Platform_RegisterThread(const bool bMainThread)
+void Zenith_MultithreadingImpl::Platform_RegisterThread(const bool bMainThread)
 {
-	static std::atomic<u_int> ls_uThreadID{0};
-	tl_g_uThreadID = ls_uThreadID.fetch_add(1);
-	if (bMainThread)
-	{
-		g_uMainThreadID = tl_g_uThreadID;
-	}
+	// Thread-ID allocator + main-thread tracking live on g_xEngine.Threading()
+	// (Phase 3a). The engine guarantees the impl exists before any
+	// thread can reach this code path.
+	tl_g_uThreadID = g_xEngine.Threading().AllocateThreadID(bMainThread);
 }
 
-u_int Zenith_Multithreading::Platform_GetCurrentThreadID()
+u_int Zenith_MultithreadingImpl::Platform_GetCurrentThreadID()
 {
-	Zenith_Assert(tl_g_uThreadID != -1, "This thread hasn't been registered with RegisterThread");
+	Zenith_Assert(tl_g_uThreadID != ~0u, "This thread hasn't been registered with RegisterThread");
 	return tl_g_uThreadID;
 }
 
-bool Zenith_Multithreading::Platform_IsMainThread()
+bool Zenith_MultithreadingImpl::Platform_IsMainThread()
 {
-	return tl_g_uThreadID == g_uMainThreadID;
+	return tl_g_uThreadID == g_xEngine.Threading().GetMainThreadID();
 }

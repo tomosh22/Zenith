@@ -13,7 +13,8 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
@@ -35,33 +36,8 @@
 // ============================================================================
 namespace AIShowcase
 {
-	// Geometry assets (registry-managed via handles)
-	MeshGeometryHandle g_xCubeAsset;
-	MeshGeometryHandle g_xSphereAsset;
-	MeshGeometryHandle g_xCylinderAsset;
-
-	// Convenience pointers to underlying geometry
-	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
-	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
-	Flux_MeshGeometry* g_pxCylinderGeometry = nullptr;
-
-	// Materials for arena
-	MaterialHandle g_xFloorMaterial;
-	MaterialHandle g_xWallMaterial;
-	MaterialHandle g_xObstacleMaterial;
-
-	// Materials for agents
-	MaterialHandle g_xPlayerMaterial;
-	MaterialHandle g_xEnemyMaterial;
-	MaterialHandle g_xLeaderMaterial;
-	MaterialHandle g_xFlankerMaterial;
-
-	// Debug visualization materials
-	MaterialHandle g_xCoverPointMaterial;
-	MaterialHandle g_xPatrolPointMaterial;
-
-	// NavMesh
-	Zenith_NavMesh* g_pxArenaNavMesh = nullptr;
+	static AIShowcaseResources g_xResources;
+	AIShowcaseResources& Resources() { return g_xResources; }
 }
 
 static bool s_bResourcesInitialized = false;
@@ -74,64 +50,64 @@ static void InitializeAIShowcaseResources()
 	using namespace AIShowcase;
 
 	// Create geometries using registry's cached primitives
-	g_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
-	g_pxCubeGeometry = g_xCubeAsset.GetDirect()->GetGeometry();
+	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 
-	g_xSphereAsset.Set(Zenith_MeshGeometryAsset::CreateUnitSphere(16));
-	g_pxSphereGeometry = g_xSphereAsset.GetDirect()->GetGeometry();
+	Resources().m_xSphereAsset.Set(Zenith_MeshGeometryAsset::CreateUnitSphere(16));
+	Resources().m_pxSphereGeometry = Resources().m_xSphereAsset.GetDirect()->GetGeometry();
 
-	g_xCylinderAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCylinder(16));
-	g_pxCylinderGeometry = g_xCylinderAsset.GetDirect()->GetGeometry();
+	Resources().m_xCylinderAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCylinder(16));
+	Resources().m_pxCylinderGeometry = Resources().m_xCylinderAsset.GetDirect()->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials.
-	const TextureHandle& xGridTex = Flux_Graphics::s_xGridTexture;
+	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 	// Create materials with grid texture and BaseColor
-	g_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xFloorMaterial.GetDirect()->SetName("AIShowcase_Floor");
-	g_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xFloorMaterial.GetDirect()->SetBaseColor({ 64.f/255.f, 64.f/255.f, 64.f/255.f, 1.f });
+	Resources().m_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xFloorMaterial.GetDirect()->SetName("AIShowcase_Floor");
+	Resources().m_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xFloorMaterial.GetDirect()->SetBaseColor({ 64.f/255.f, 64.f/255.f, 64.f/255.f, 1.f });
 
-	g_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xWallMaterial.GetDirect()->SetName("AIShowcase_Wall");
-	g_xWallMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xWallMaterial.GetDirect()->SetBaseColor({ 128.f/255.f, 96.f/255.f, 64.f/255.f, 1.f });
+	Resources().m_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xWallMaterial.GetDirect()->SetName("AIShowcase_Wall");
+	Resources().m_xWallMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xWallMaterial.GetDirect()->SetBaseColor({ 128.f/255.f, 96.f/255.f, 64.f/255.f, 1.f });
 
-	g_xObstacleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xObstacleMaterial.GetDirect()->SetName("AIShowcase_Obstacle");
-	g_xObstacleMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xObstacleMaterial.GetDirect()->SetBaseColor({ 96.f/255.f, 96.f/255.f, 96.f/255.f, 1.f });
+	Resources().m_xObstacleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xObstacleMaterial.GetDirect()->SetName("AIShowcase_Obstacle");
+	Resources().m_xObstacleMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xObstacleMaterial.GetDirect()->SetBaseColor({ 96.f/255.f, 96.f/255.f, 96.f/255.f, 1.f });
 
-	g_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xPlayerMaterial.GetDirect()->SetName("AIShowcase_Player");
-	g_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xPlayerMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
+	Resources().m_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPlayerMaterial.GetDirect()->SetName("AIShowcase_Player");
+	Resources().m_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xPlayerMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
-	g_xEnemyMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xEnemyMaterial.GetDirect()->SetName("AIShowcase_Enemy");
-	g_xEnemyMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xEnemyMaterial.GetDirect()->SetBaseColor({ 230.f/255.f, 77.f/255.f, 77.f/255.f, 1.f });
+	Resources().m_xEnemyMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xEnemyMaterial.GetDirect()->SetName("AIShowcase_Enemy");
+	Resources().m_xEnemyMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xEnemyMaterial.GetDirect()->SetBaseColor({ 230.f/255.f, 77.f/255.f, 77.f/255.f, 1.f });
 
-	g_xLeaderMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xLeaderMaterial.GetDirect()->SetName("AIShowcase_Leader");
-	g_xLeaderMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xLeaderMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
+	Resources().m_xLeaderMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xLeaderMaterial.GetDirect()->SetName("AIShowcase_Leader");
+	Resources().m_xLeaderMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xLeaderMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	g_xFlankerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xFlankerMaterial.GetDirect()->SetName("AIShowcase_Flanker");
-	g_xFlankerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xFlankerMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 128.f/255.f, 0.f/255.f, 1.f });
+	Resources().m_xFlankerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xFlankerMaterial.GetDirect()->SetName("AIShowcase_Flanker");
+	Resources().m_xFlankerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xFlankerMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 128.f/255.f, 0.f/255.f, 1.f });
 
 	// Cover/patrol point materials
-	g_xCoverPointMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xCoverPointMaterial.GetDirect()->SetName("AIShowcase_CoverPoint");
-	g_xCoverPointMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xCoverPointMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
+	Resources().m_xCoverPointMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xCoverPointMaterial.GetDirect()->SetName("AIShowcase_CoverPoint");
+	Resources().m_xCoverPointMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xCoverPointMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	g_xPatrolPointMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
-	g_xPatrolPointMaterial.GetDirect()->SetName("AIShowcase_PatrolPoint");
-	g_xPatrolPointMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
-	g_xPatrolPointMaterial.GetDirect()->SetBaseColor({ 153.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
+	Resources().m_xPatrolPointMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPatrolPointMaterial.GetDirect()->SetName("AIShowcase_PatrolPoint");
+	Resources().m_xPatrolPointMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
+	Resources().m_xPatrolPointMaterial.GetDirect()->SetBaseColor({ 153.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
 	s_bResourcesInitialized = true;
 }
@@ -179,22 +155,22 @@ void Project_Shutdown()
 	Zenith_PerceptionSystem::Shutdown();
 
 	// Cleanup NavMesh
-	delete AIShowcase::g_pxArenaNavMesh;
-	AIShowcase::g_pxArenaNavMesh = nullptr;
+	delete AIShowcase::Resources().m_pxArenaNavMesh;
+	AIShowcase::Resources().m_pxArenaNavMesh = nullptr;
 
 	// Drop asset handle refs before Zenith_AssetRegistry::Shutdown teardown.
-	AIShowcase::g_xCubeAsset.Clear();
-	AIShowcase::g_xSphereAsset.Clear();
-	AIShowcase::g_xCylinderAsset.Clear();
-	AIShowcase::g_xFloorMaterial.Clear();
-	AIShowcase::g_xWallMaterial.Clear();
-	AIShowcase::g_xObstacleMaterial.Clear();
-	AIShowcase::g_xPlayerMaterial.Clear();
-	AIShowcase::g_xEnemyMaterial.Clear();
-	AIShowcase::g_xLeaderMaterial.Clear();
-	AIShowcase::g_xFlankerMaterial.Clear();
-	AIShowcase::g_xCoverPointMaterial.Clear();
-	AIShowcase::g_xPatrolPointMaterial.Clear();
+	AIShowcase::Resources().m_xCubeAsset.Clear();
+	AIShowcase::Resources().m_xSphereAsset.Clear();
+	AIShowcase::Resources().m_xCylinderAsset.Clear();
+	AIShowcase::Resources().m_xFloorMaterial.Clear();
+	AIShowcase::Resources().m_xWallMaterial.Clear();
+	AIShowcase::Resources().m_xObstacleMaterial.Clear();
+	AIShowcase::Resources().m_xPlayerMaterial.Clear();
+	AIShowcase::Resources().m_xEnemyMaterial.Clear();
+	AIShowcase::Resources().m_xLeaderMaterial.Clear();
+	AIShowcase::Resources().m_xFlankerMaterial.Clear();
+	AIShowcase::Resources().m_xCoverPointMaterial.Clear();
+	AIShowcase::Resources().m_xPatrolPointMaterial.Clear();
 }
 
 void Project_LoadInitialScene(); // Forward declaration for automation steps

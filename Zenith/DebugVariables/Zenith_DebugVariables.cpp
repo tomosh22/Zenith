@@ -2,13 +2,22 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "DebugVariables/Zenith_DebugVariablesImpl.h"
 #include "Flux/Flux.h"
-// Pulled in for Flux_Graphics::s_xRepeatSampler (used by the texture preview
+// Pulled in for g_xEngine.FluxGraphics().m_xRepeatSampler (used by the texture preview
 // widget); CreateImGuiTextureID itself is on Flux_PlatformAPI and reachable
 // via the platform-graphics include already in Flux.h.
-#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 
-Zenith_DebugVariableTree Zenith_DebugVariables::s_xTree;
+// Phase 5.7: tree state lives on Zenith_DebugVariablesImpl held by
+// Zenith_Engine. The inline Add* methods in the header all funnel through
+// here so the header doesn't have to expose the Impl.
+void Zenith_DebugVariables::AddLeafNodeToEngineTree(
+	Zenith_DebugVariableTree::LeafNodeBase* pxLeaf, std::vector<std::string>& xName)
+{
+	g_xEngine.DebugVariables().m_xTree.AddLeafNode(pxLeaf, xName);
+}
 
 template<>
 void Zenith_DebugVariableTree::LeafNode<bool>::ImGuiDisplay()
@@ -61,7 +70,7 @@ void Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>::ImGuiDis
 	// dragging Vulkan descriptor / image-view types into the debug-variable
 	// system; portable to backends with different ImGui texture-ID conventions
 	// once each backend implements CreateImGuiTextureID.
-	const uint64_t ulTextureID = Flux_PlatformAPI::CreateImGuiTextureID(*m_pData, Flux_Graphics::s_xRepeatSampler);
+	const uint64_t ulTextureID = Flux_PlatformAPI::CreateImGuiTextureID(*m_pData, g_xEngine.FluxGraphics().m_xRepeatSampler);
 	ImGui::Image(static_cast<ImTextureID>(ulTextureID), ImVec2(1024, 1024), ImVec2(0, 1), ImVec2(1, 0));
 }
 
@@ -72,7 +81,7 @@ void Zenith_DebugVariableTree::TextureCallbackLeafNode::ImGuiDisplay()
 	// graph's transients are allocated — in that case render nothing.
 	const Flux_ShaderResourceView* pxSRV = m_pfnGetSRV ? m_pfnGetSRV() : nullptr;
 	if (pxSRV == nullptr) return;
-	const uint64_t ulTextureID = Flux_PlatformAPI::CreateImGuiTextureID(*pxSRV, Flux_Graphics::s_xRepeatSampler);
+	const uint64_t ulTextureID = Flux_PlatformAPI::CreateImGuiTextureID(*pxSRV, g_xEngine.FluxGraphics().m_xRepeatSampler);
 	ImGui::Image(static_cast<ImTextureID>(ulTextureID), ImVec2(1024, 1024), ImVec2(0, 1), ImVec2(1, 0));
 }
 

@@ -1,11 +1,15 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 
-#include "Flux/SSR/Flux_SSR.h"
-#include "Flux/HiZ/Flux_HiZ.h"
-#include "Flux/Flux_Graphics.h"
+#include "Flux/SSR/Flux_SSRImpl.h"
+#include "Flux/SSR/Flux_SSRImpl.h"
+#include "Flux/HiZ/Flux_HiZImpl.h"
+#include "Flux/HiZ/Flux_HiZImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/HDR/Flux_HDR.h"
-#include "Flux/Fog/Flux_VolumeFog.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
+#include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -17,32 +21,23 @@
 // Graph-owned transient handles — backing Flux_RenderAttachments are allocated
 // and destroyed by the render graph, sized from the descriptors set in
 // SetupRenderGraph.
-//   s_xRayMarchHandle     — half-res RT0, RGB=colour, A=confidence
-//   s_xRayMarchAuxHandle  — half-res RT1, RG=hitUV, B=travelDist, A=rayCount
-//   s_xUpsampledHandle    — full-res RT0, bilateral 2x2 upsample of RT0
-//   s_xUpsampledAuxHandle — full-res RT1, bilateral 2x2 upsample of RT1
-//   s_xDenoiseHHandle     — full-res, H pass RT0: rgb=Σ(w·color), a=Σ(w)
-//   s_xDenoiseHConfHandle — full-res, H pass RT1: r=Σ(w·conf) — Phase 3b accumulator
-//   s_xDenoiseVHandle     — full-res, written by DenoiseV (final denoised output)
+//   g_xEngine.SSR().m_xRayMarchHandle     — half-res RT0, RGB=colour, A=confidence
+//   g_xEngine.SSR().m_xRayMarchAuxHandle  — half-res RT1, RG=hitUV, B=travelDist, A=rayCount
+//   g_xEngine.SSR().m_xUpsampledHandle    — full-res RT0, bilateral 2x2 upsample of RT0
+//   g_xEngine.SSR().m_xUpsampledAuxHandle — full-res RT1, bilateral 2x2 upsample of RT1
+//   g_xEngine.SSR().m_xDenoiseHHandle     — full-res, H pass RT0: rgb=Σ(w·color), a=Σ(w)
+//   g_xEngine.SSR().m_xDenoiseHConfHandle — full-res, H pass RT1: r=Σ(w·conf) — Phase 3b accumulator
+//   g_xEngine.SSR().m_xDenoiseVHandle     — full-res, written by DenoiseV (final denoised output)
 //
 // The Aux transients carry per-pixel hit metadata used by Phase 3b denoise
 // (BRDF reuse needs neighbour hit UV) and Phase 4 variance estimation
 // (radial component). Phase 0 wires them end-to-end with no consumer beyond
 // debug-texture preview; later phases plug them in.
-static Flux_TransientHandle s_xRayMarchHandle;
-static Flux_TransientHandle s_xRayMarchAuxHandle;
-static Flux_TransientHandle s_xUpsampledHandle;
-static Flux_TransientHandle s_xUpsampledAuxHandle;
-static Flux_TransientHandle s_xDenoiseHHandle;
-static Flux_TransientHandle s_xDenoiseHConfHandle;
-static Flux_TransientHandle s_xDenoiseVHandle;
-static Flux_RenderGraph* s_pxGraph = nullptr;
 
 // SSR render target format.
 static constexpr TextureFormat SSR_FORMAT = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 
 // Static member definitions
-bool Flux_SSR::s_bInitialised = false;
 
 // Debug variables
 DEBUGVAR u_int dbg_uDebugMode = SSR_DEBUG_NONE;
@@ -95,19 +90,11 @@ static struct SSRConstants
 	// (width, height, 1/width, 1/height) into a float4. Populated each
 	// frame in UpdateSSRConstants from the swapchain — replaces in-shader
 	// GetDimensions(g_xHiZTex, mip, ...) calls in the ray-march loop.
-	// Array size matches Flux_HiZ::uHIZ_MAX_MIPS (12).
+	// Array size matches Flux_HiZImpl::uHIZ_MAX_MIPS (12).
 	float m_axHiZMipSizes[12][4] = {};
 } dbg_xSSRConstants;
 
 // Shaders and pipelines
-static Flux_Shader s_xRayMarchShader;
-static Flux_Shader s_xUpsampleShader;
-static Flux_Shader s_xDenoiseHShader;
-static Flux_Shader s_xDenoiseVShader;
-static Flux_Pipeline s_xRayMarchPipeline;
-static Flux_Pipeline s_xUpsamplePipeline;
-static Flux_Pipeline s_xDenoiseHPipeline;
-static Flux_Pipeline s_xDenoiseVPipeline;
 
 // Push-constant struct uploaded per-pass via BindDrawConstants (mirrors the
 // SSGI denoise pattern). Kept ≤32 bytes to fit the 128-byte push budget.
@@ -132,44 +119,43 @@ static struct SSRDenoiseConstants
 // exceeds the 128-byte push limit, and to honour the project convention of
 // passing texture dimensions through CBVs rather than calling GetDimensions
 // inside shaders.
-static Flux_DynamicConstantBuffer s_xSSRConstantsBuffer;
 
 // ---- Helpers to get the right attachment regardless of path ----
 
-Flux_RenderAttachment& Flux_SSR::GetRayMarchAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetRayMarchAttachment()
 {
-	Zenith_Assert(s_pxGraph, "Flux_SSR::GetRayMarchAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return s_pxGraph->GetTransientAttachment(s_xRayMarchHandle);
+	Zenith_Assert(g_xEngine.SSR().m_pxGraph, "g_xEngine.SSR().GetRayMarchAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return g_xEngine.SSR().m_pxGraph->GetTransientAttachment(g_xEngine.SSR().m_xRayMarchHandle);
 }
-Flux_RenderAttachment& Flux_SSR::GetRayMarchAuxAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetRayMarchAuxAttachment()
 {
-	Zenith_Assert(s_pxGraph, "Flux_SSR::GetRayMarchAuxAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return s_pxGraph->GetTransientAttachment(s_xRayMarchAuxHandle);
+	Zenith_Assert(g_xEngine.SSR().m_pxGraph, "g_xEngine.SSR().GetRayMarchAuxAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return g_xEngine.SSR().m_pxGraph->GetTransientAttachment(g_xEngine.SSR().m_xRayMarchAuxHandle);
 }
-Flux_RenderAttachment& Flux_SSR::GetUpsampledAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetUpsampledAttachment()
 {
-	Zenith_Assert(s_pxGraph, "Flux_SSR::GetUpsampledAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return s_pxGraph->GetTransientAttachment(s_xUpsampledHandle);
+	Zenith_Assert(g_xEngine.SSR().m_pxGraph, "g_xEngine.SSR().GetUpsampledAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return g_xEngine.SSR().m_pxGraph->GetTransientAttachment(g_xEngine.SSR().m_xUpsampledHandle);
 }
-Flux_RenderAttachment& Flux_SSR::GetUpsampledAuxAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetUpsampledAuxAttachment()
 {
-	Zenith_Assert(s_pxGraph, "Flux_SSR::GetUpsampledAuxAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return s_pxGraph->GetTransientAttachment(s_xUpsampledAuxHandle);
+	Zenith_Assert(g_xEngine.SSR().m_pxGraph, "g_xEngine.SSR().GetUpsampledAuxAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return g_xEngine.SSR().m_pxGraph->GetTransientAttachment(g_xEngine.SSR().m_xUpsampledAuxHandle);
 }
-Flux_RenderAttachment& Flux_SSR::GetDenoiseHAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetDenoiseHAttachment()
 {
-	Zenith_Assert(s_pxGraph, "Flux_SSR::GetDenoiseHAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return s_pxGraph->GetTransientAttachment(s_xDenoiseHHandle);
+	Zenith_Assert(g_xEngine.SSR().m_pxGraph, "g_xEngine.SSR().GetDenoiseHAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return g_xEngine.SSR().m_pxGraph->GetTransientAttachment(g_xEngine.SSR().m_xDenoiseHHandle);
 }
-Flux_RenderAttachment& Flux_SSR::GetDenoiseHConfAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetDenoiseHConfAttachment()
 {
-	Zenith_Assert(s_pxGraph, "Flux_SSR::GetDenoiseHConfAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return s_pxGraph->GetTransientAttachment(s_xDenoiseHConfHandle);
+	Zenith_Assert(g_xEngine.SSR().m_pxGraph, "g_xEngine.SSR().GetDenoiseHConfAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return g_xEngine.SSR().m_pxGraph->GetTransientAttachment(g_xEngine.SSR().m_xDenoiseHConfHandle);
 }
-Flux_RenderAttachment& Flux_SSR::GetDenoiseVAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetDenoiseVAttachment()
 {
-	Zenith_Assert(s_pxGraph, "Flux_SSR::GetDenoiseVAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return s_pxGraph->GetTransientAttachment(s_xDenoiseVHandle);
+	Zenith_Assert(g_xEngine.SSR().m_pxGraph, "g_xEngine.SSR().GetDenoiseVAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
+	return g_xEngine.SSR().m_pxGraph->GetTransientAttachment(g_xEngine.SSR().m_xDenoiseVHandle);
 }
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -179,82 +165,82 @@ Flux_RenderAttachment& Flux_SSR::GetDenoiseVAttachment()
 // the null-guard in the getters above.
 static const Flux_ShaderResourceView* DebugGetRayMarchSRV()
 {
-	if (s_pxGraph == nullptr) return nullptr;
-	return &Flux_SSR::GetRayMarchAttachment().SRV();
+	if (g_xEngine.SSR().m_pxGraph == nullptr) return nullptr;
+	return &g_xEngine.SSR().GetRayMarchAttachment().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetRayMarchAuxSRV()
 {
-	if (s_pxGraph == nullptr) return nullptr;
-	return &Flux_SSR::GetRayMarchAuxAttachment().SRV();
+	if (g_xEngine.SSR().m_pxGraph == nullptr) return nullptr;
+	return &g_xEngine.SSR().GetRayMarchAuxAttachment().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetUpsampledSRV()
 {
-	if (s_pxGraph == nullptr) return nullptr;
-	return &Flux_SSR::GetUpsampledAttachment().SRV();
+	if (g_xEngine.SSR().m_pxGraph == nullptr) return nullptr;
+	return &g_xEngine.SSR().GetUpsampledAttachment().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetUpsampledAuxSRV()
 {
-	if (s_pxGraph == nullptr) return nullptr;
-	return &Flux_SSR::GetUpsampledAuxAttachment().SRV();
+	if (g_xEngine.SSR().m_pxGraph == nullptr) return nullptr;
+	return &g_xEngine.SSR().GetUpsampledAuxAttachment().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetDenoiseHSRV()
 {
-	if (s_pxGraph == nullptr) return nullptr;
-	return &Flux_SSR::GetDenoiseHAttachment().SRV();
+	if (g_xEngine.SSR().m_pxGraph == nullptr) return nullptr;
+	return &g_xEngine.SSR().GetDenoiseHAttachment().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetDenoiseHConfSRV()
 {
-	if (s_pxGraph == nullptr) return nullptr;
-	return &Flux_SSR::GetDenoiseHConfAttachment().SRV();
+	if (g_xEngine.SSR().m_pxGraph == nullptr) return nullptr;
+	return &g_xEngine.SSR().GetDenoiseHConfAttachment().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetDenoiseVSRV()
 {
-	if (s_pxGraph == nullptr) return nullptr;
-	return &Flux_SSR::GetDenoiseVAttachment().SRV();
+	if (g_xEngine.SSR().m_pxGraph == nullptr) return nullptr;
+	return &g_xEngine.SSR().GetDenoiseVAttachment().SRV();
 }
 #endif
 
-void Flux_SSR::BuildPipelines()
+void Flux_SSRImpl::BuildPipelines()
 {
 	// RayMarch + Upsample are dual-MRT: RT0 carries colour+confidence (legacy
 	// shape), RT1 carries hit metadata (UV / travel distance / ray count) for
 	// downstream Phase 3b denoise BRDF reuse and Phase 4 variance.
 	{
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			s_xRayMarchShader, FluxShaderProgram::SSR_RayMarch, SSR_FORMAT);
+			g_xEngine.SSR().m_xRayMarchShader, FluxShaderProgram::SSR_RayMarch, SSR_FORMAT);
 		xSpec.m_aeColourAttachmentFormats[1] = SSR_FORMAT;
 		xSpec.m_uNumColourAttachments        = 2;
-		Flux_PipelineBuilder::FromSpecification(s_xRayMarchPipeline, xSpec);
+		Flux_PipelineBuilder::FromSpecification(g_xEngine.SSR().m_xRayMarchPipeline, xSpec);
 	}
 
 	{
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			s_xUpsampleShader, FluxShaderProgram::SSR_Upsample, SSR_FORMAT);
+			g_xEngine.SSR().m_xUpsampleShader, FluxShaderProgram::SSR_Upsample, SSR_FORMAT);
 		xSpec.m_aeColourAttachmentFormats[1] = SSR_FORMAT;
 		xSpec.m_uNumColourAttachments        = 2;
-		Flux_PipelineBuilder::FromSpecification(s_xUpsamplePipeline, xSpec);
+		Flux_PipelineBuilder::FromSpecification(g_xEngine.SSR().m_xUpsamplePipeline, xSpec);
 	}
 
 	// DenoiseH is dual-MRT (Phase 3b): RT0 = Σ(w·color)+Σw, RT1 = Σ(w·conf).
 	{
 		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
-			s_xDenoiseHShader, FluxShaderProgram::SSR_DenoiseH, SSR_FORMAT);
+			g_xEngine.SSR().m_xDenoiseHShader, FluxShaderProgram::SSR_DenoiseH, SSR_FORMAT);
 		xSpec.m_aeColourAttachmentFormats[1] = SSR_FORMAT;
 		xSpec.m_uNumColourAttachments        = 2;
-		Flux_PipelineBuilder::FromSpecification(s_xDenoiseHPipeline, xSpec);
+		Flux_PipelineBuilder::FromSpecification(g_xEngine.SSR().m_xDenoiseHPipeline, xSpec);
 	}
 
 	Flux_PipelineHelper::BuildFullscreenPipeline(
-		s_xDenoiseVShader, s_xDenoiseVPipeline,
+		g_xEngine.SSR().m_xDenoiseVShader, g_xEngine.SSR().m_xDenoiseVPipeline,
 		FluxShaderProgram::SSR_DenoiseV, SSR_FORMAT);
 }
 
-void Flux_SSR::Initialise()
+void Flux_SSRImpl::Initialise()
 {
 	BuildPipelines();
 
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(
-		&dbg_xSSRConstants, sizeof(SSRConstants), s_xSSRConstantsBuffer);
+		&dbg_xSSRConstants, sizeof(SSRConstants), g_xEngine.SSR().m_xSSRConstantsBuffer);
 
 #ifdef ZENITH_TOOLS
 	static const FluxShaderProgram s_axPrograms[] = {
@@ -263,7 +249,7 @@ void Flux_SSR::Initialise()
 		FluxShaderProgram::SSR_DenoiseH,
 		FluxShaderProgram::SSR_DenoiseV,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_SSR::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.SSR().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -279,7 +265,7 @@ void Flux_SSR::Initialise()
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "RaysPerPixel" }, dbg_xSSRConstants.m_uRayCount, 1, 4);
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "StepCountMin" }, dbg_xSSRConstants.m_uStepCountMin, 4, 64);
 	// Transient-SRV previews use AddTextureCallback so the SRV is re-resolved
-	// through s_pxGraph on every ImGui draw. Storing a stale pointer via
+	// through g_xEngine.SSR().m_pxGraph on every ImGui draw. Storing a stale pointer via
 	// AddTexture would go dangling once the graph rebuilds (e.g. on resize).
 	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "RayMarch" },     &DebugGetRayMarchSRV);
 	Zenith_DebugVariables::AddTextureCallback({ "Flux", "SSR", "Textures", "RayMarchAux" },  &DebugGetRayMarchAuxSRV);
@@ -297,19 +283,19 @@ void Flux_SSR::Initialise()
 	Zenith_DebugVariables::AddUInt32({ "Flux", "SSR", "Denoise", "KernelRadius" },   dbg_xSSRDenoiseConstants.m_uKernelRadius,   1, 8);
 #endif
 
-	s_bInitialised = true;
+	g_xEngine.SSR().m_bInitialised = true;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR initialised");
 }
 
-void Flux_SSR::Shutdown()
+void Flux_SSRImpl::Shutdown()
 {
-	if (!s_bInitialised)
+	if (!g_xEngine.SSR().m_bInitialised)
 		return;
 
-	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xSSRConstantsBuffer);
+	Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xEngine.SSR().m_xSSRConstantsBuffer);
 
-	s_pxGraph = nullptr;
-	s_bInitialised = false;
+	g_xEngine.SSR().m_pxGraph = nullptr;
+	g_xEngine.SSR().m_bInitialised = false;
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR shut down");
 }
 
@@ -317,7 +303,7 @@ static void UpdateSSRConstants()
 {
 	// Update constants from debug variables and HiZ system
 	dbg_xSSRConstants.m_uDebugMode = dbg_uDebugMode;
-	dbg_xSSRConstants.m_uHiZMipCount = Flux_HiZ::GetMipCount();
+	dbg_xSSRConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount();
 	dbg_xSSRConstants.m_uFrameIndex = Flux::GetFrameCounter();
 
 	// Resolution-based binary search iterations for sub-pixel hit precision.
@@ -363,7 +349,7 @@ static void UpdateSSRConstants()
 
 static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSR::IsEnabled() || !Flux_HiZ::IsEnabled())
+	if (!g_xEngine.SSR().IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	UpdateSSRConstants();
@@ -371,122 +357,118 @@ static void ExecuteSSRRayMarch(Flux_CommandList* pxCommandList, void*)
 	// First SSR pass of the frame: refresh the CBV. The Resolve (and the
 	// new Upsample) pass binds the same CBV without re-uploading.
 	Flux_MemoryManager::UploadBufferData(
-		s_xSSRConstantsBuffer.GetBuffer().m_xVRAMHandle,
+		g_xEngine.SSR().m_xSSRConstantsBuffer.GetBuffer().m_xVRAMHandle,
 		&dbg_xSSRConstants, sizeof(SSRConstants));
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xRayMarchPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SSR().m_xRayMarchPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(s_xRayMarchShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xBinder.BindCBV(s_xRayMarchShader, "SSRConstants",   &s_xSSRConstantsBuffer.GetCBV());
+	xBinder.BindCBV(g_xEngine.SSR().m_xRayMarchShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(g_xEngine.SSR().m_xRayMarchShader, "SSRConstants",   &g_xEngine.SSR().m_xSSRConstantsBuffer.GetCBV());
 
-	xBinder.BindSRV(s_xRayMarchShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xRayMarchShader, "g_xNormalsTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xRayMarchShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(s_xRayMarchShader, "g_xHiZTex", &Flux_HiZ::GetHiZSRV());
-	xBinder.BindSRV(s_xRayMarchShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(s_xRayMarchShader, "g_xBlueNoiseTex", &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
+	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xNormalsTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xMaterialTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xHiZTex", &g_xEngine.HiZ().GetHiZSRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xDiffuseTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(g_xEngine.SSR().m_xRayMarchShader, "g_xBlueNoiseTex", &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
 static void ExecuteSSRUpsample(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSR::IsEnabled() || !Flux_HiZ::IsEnabled())
+	if (!g_xEngine.SSR().IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xUpsamplePipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SSR().m_xUpsamplePipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	// Half-res dimensions live in the SSR CBV — the upsample shader reads
 	// them from there rather than calling GetDimensions on g_xSSRTex.
-	xBinder.BindCBV(s_xUpsampleShader, "SSRConstants", &s_xSSRConstantsBuffer.GetCBV());
+	xBinder.BindCBV(g_xEngine.SSR().m_xUpsampleShader, "SSRConstants", &g_xEngine.SSR().m_xSSRConstantsBuffer.GetCBV());
 
-	xBinder.BindSRV(s_xUpsampleShader, "g_xSSRTex",      &Flux_SSR::GetRayMarchAttachment().SRV());
-	xBinder.BindSRV(s_xUpsampleShader, "g_xDepthTex",    Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xUpsampleShader, "g_xSSRAuxTex",   &Flux_SSR::GetRayMarchAuxAttachment().SRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xUpsampleShader, "g_xSSRTex",      &g_xEngine.SSR().GetRayMarchAttachment().SRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xUpsampleShader, "g_xDepthTex",    g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xUpsampleShader, "g_xSSRAuxTex",   &g_xEngine.SSR().GetRayMarchAuxAttachment().SRV());
 	// Phase 5 — KNN composite-similarity scoring needs full-res normals + material.
-	xBinder.BindSRV(s_xUpsampleShader, "g_xNormalsTex",  Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xUpsampleShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(g_xEngine.SSR().m_xUpsampleShader, "g_xNormalsTex",  g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.SSR().m_xUpsampleShader, "g_xMaterialTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_MATERIAL));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
 static void ExecuteSSRDenoiseH(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSR::IsEnabled() || !Flux_HiZ::IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
+	if (!g_xEngine.SSR().IsEnabled() || !g_xEngine.HiZ().IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xDenoiseHPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SSR().m_xDenoiseHPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(s_xDenoiseHShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(g_xEngine.SSR().m_xDenoiseHShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	dbg_xSSRDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(s_xDenoiseHShader, "PushConstants", &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
+	xBinder.BindDrawConstants(g_xEngine.SSR().m_xDenoiseHShader, "PushConstants", &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
 
-	xBinder.BindSRV(s_xDenoiseHShader, "g_xSSRUpsampledTex",    &Flux_SSR::GetUpsampledAttachment().SRV());
-	xBinder.BindSRV(s_xDenoiseHShader, "g_xDepthTex",           Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xDenoiseHShader, "g_xNormalsTex",         Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xDenoiseHShader, "g_xMaterialTex",        Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(s_xDenoiseHShader, "g_xSSRUpsampledAuxTex", &Flux_SSR::GetUpsampledAuxAttachment().SRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseHShader, "g_xSSRUpsampledTex",    &g_xEngine.SSR().GetUpsampledAttachment().SRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseHShader, "g_xDepthTex",           g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseHShader, "g_xNormalsTex",         g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseHShader, "g_xMaterialTex",        g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseHShader, "g_xSSRUpsampledAuxTex", &g_xEngine.SSR().GetUpsampledAuxAttachment().SRV());
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
 static void ExecuteSSRDenoiseV(Flux_CommandList* pxCommandList, void*)
 {
-	if (!Flux_SSR::IsEnabled() || !Flux_HiZ::IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
+	if (!g_xEngine.SSR().IsEnabled() || !g_xEngine.HiZ().IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xDenoiseVPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.SSR().m_xDenoiseVPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
-	xBinder.BindCBV(s_xDenoiseVShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(g_xEngine.SSR().m_xDenoiseVShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 	dbg_xSSRDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(s_xDenoiseVShader, "PushConstants", &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
+	xBinder.BindDrawConstants(g_xEngine.SSR().m_xDenoiseVShader, "PushConstants", &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
 
-	xBinder.BindSRV(s_xDenoiseVShader, "g_xSSRDenoiseHColTex",  &Flux_SSR::GetDenoiseHAttachment().SRV());
-	xBinder.BindSRV(s_xDenoiseVShader, "g_xDepthTex",           Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xDenoiseVShader, "g_xNormalsTex",         Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xDenoiseVShader, "g_xMaterialTex",        Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(s_xDenoiseVShader, "g_xSSRUpsampledAuxTex", &Flux_SSR::GetUpsampledAuxAttachment().SRV());
-	xBinder.BindSRV(s_xDenoiseVShader, "g_xSSRDenoiseHConfTex", &Flux_SSR::GetDenoiseHConfAttachment().SRV());
-	xBinder.BindSRV(s_xDenoiseVShader, "g_xSSRUpsampledTex",    &Flux_SSR::GetUpsampledAttachment().SRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseVShader, "g_xSSRDenoiseHColTex",  &g_xEngine.SSR().GetDenoiseHAttachment().SRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseVShader, "g_xDepthTex",           g_xEngine.FluxGraphics().GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseVShader, "g_xNormalsTex",         g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseVShader, "g_xMaterialTex",        g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseVShader, "g_xSSRUpsampledAuxTex", &g_xEngine.SSR().GetUpsampledAuxAttachment().SRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseVShader, "g_xSSRDenoiseHConfTex", &g_xEngine.SSR().GetDenoiseHConfAttachment().SRV());
+	xBinder.BindSRV(g_xEngine.SSR().m_xDenoiseVShader, "g_xSSRUpsampledTex",    &g_xEngine.SSR().GetUpsampledAttachment().SRV());
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
 // Pass handles so ApplyBlurSelectionToGraph can toggle their enable bits when
 // m_bSSRRoughnessBlurEnabled changes — both H and V toggle together.
-static Flux_PassHandle s_xDenoiseHPass;
-static Flux_PassHandle s_xDenoiseVPass;
 // Last value seen by ApplyBlurSelectionToGraph — change triggers a graph rebuild.
-static bool s_bLastBlurEnabled = true;
 // Handle committed at SetupRenderGraph exit. GetReflectionHandle asserts the
 // live toggle still resolves to this handle — otherwise a toggle has happened
 // without a corresponding Flux::RequestGraphRebuild(), which would leave the
 // deferred pass's declared Read referencing the stale transient.
-static Flux_TransientHandle s_xCommittedReflectionHandle;
 
-void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_SSRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	s_pxGraph = &xGraph;
+	g_xEngine.SSR().m_pxGraph = &xGraph;
 
 	// Three-pass SSR pipeline (mirrors SSGI):
 	//   RayMarch (half-res) → Upsample (full-res) → Resolve (full-res, optional)
@@ -503,26 +485,26 @@ void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xFullDesc.m_uWidth  = Flux_Swapchain::GetWidth();
 	xFullDesc.m_uHeight = Flux_Swapchain::GetHeight();
 
-	s_xRayMarchHandle     = xGraph.CreateTransient(xHalfDesc);
-	s_xRayMarchAuxHandle  = xGraph.CreateTransient(xHalfDesc);
-	s_xUpsampledHandle    = xGraph.CreateTransient(xFullDesc);
-	s_xUpsampledAuxHandle = xGraph.CreateTransient(xFullDesc);
-	s_xDenoiseHHandle     = xGraph.CreateTransient(xFullDesc);
-	s_xDenoiseHConfHandle = xGraph.CreateTransient(xFullDesc);
-	s_xDenoiseVHandle     = xGraph.CreateTransient(xFullDesc);
+	g_xEngine.SSR().m_xRayMarchHandle     = xGraph.CreateTransient(xHalfDesc);
+	g_xEngine.SSR().m_xRayMarchAuxHandle  = xGraph.CreateTransient(xHalfDesc);
+	g_xEngine.SSR().m_xUpsampledHandle    = xGraph.CreateTransient(xFullDesc);
+	g_xEngine.SSR().m_xUpsampledAuxHandle = xGraph.CreateTransient(xFullDesc);
+	g_xEngine.SSR().m_xDenoiseHHandle     = xGraph.CreateTransient(xFullDesc);
+	g_xEngine.SSR().m_xDenoiseHConfHandle = xGraph.CreateTransient(xFullDesc);
+	g_xEngine.SSR().m_xDenoiseVHandle     = xGraph.CreateTransient(xFullDesc);
 
 	// RayMarch pass — first writer of its targets; clear so the initial
 	// render-pass LoadOp is valid. Dual-MRT: order matters — RT0 = colour,
 	// RT1 = aux metadata (must match the shader's SV_Target indices).
 	xGraph.AddPass("SSR RayMarch", ExecuteSSRRayMarch)
 		.ClearTargets()
-		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_HiZ::GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, Flux_HiZ::s_uMipCount)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(s_xRayMarchHandle,                                         RESOURCE_ACCESS_WRITE_RTV)
-		.WritesTransient(s_xRayMarchAuxHandle,                                      RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.HiZ().GetHiZAttachment(),                              RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().m_uMipCount)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(g_xEngine.SSR().m_xRayMarchHandle,                                         RESOURCE_ACCESS_WRITE_RTV)
+		.WritesTransient(g_xEngine.SSR().m_xRayMarchAuxHandle,                                      RESOURCE_ACCESS_WRITE_RTV);
 
 	// Upsample pass — depth-weighted bilateral 2x2 from half to full-res.
 	// Always enabled; produces the canonical full-res SSR output. Same dual-MRT
@@ -530,13 +512,13 @@ void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// same depth weights so they stay spatially aligned.
 	xGraph.AddPass("SSR Upsample", ExecuteSSRUpsample)
 		.ClearTargets()
-		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (s_xRayMarchHandle,                                         RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (s_xRayMarchAuxHandle,                                      RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(s_xUpsampledHandle,                                        RESOURCE_ACCESS_WRITE_RTV)
-		.WritesTransient(s_xUpsampledAuxHandle,                                     RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (g_xEngine.SSR().m_xRayMarchHandle,                                         RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (g_xEngine.SSR().m_xRayMarchAuxHandle,                                      RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(g_xEngine.SSR().m_xUpsampledHandle,                                        RESOURCE_ACCESS_WRITE_RTV)
+		.WritesTransient(g_xEngine.SSR().m_xUpsampledAuxHandle,                                     RESOURCE_ACCESS_WRITE_RTV);
 
 	// DenoiseH pass — separable bilateral with BRDF reuse, horizontal half.
 	// Dual-MRT output (Phase 3b): RT0 carries the (Σw·color, Σw) accumulator
@@ -544,35 +526,35 @@ void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// final ratio. ApplyBlurSelectionToGraph toggles its enable bit based on
 	// m_bSSRRoughnessBlurEnabled. Roughness gating inside the shader skips
 	// smooth/rough pixels.
-	s_xDenoiseHPass = xGraph.AddPass("SSR DenoiseH", ExecuteSSRDenoiseH)
+	g_xEngine.SSR().m_xDenoiseHPass = xGraph.AddPass("SSR DenoiseH", ExecuteSSRDenoiseH)
 		.ClearTargets()
-		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (s_xUpsampledHandle,                                        RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (s_xUpsampledAuxHandle,                                     RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(s_xDenoiseHHandle,                                         RESOURCE_ACCESS_WRITE_RTV)
-		.WritesTransient(s_xDenoiseHConfHandle,                                     RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (g_xEngine.SSR().m_xUpsampledHandle,                                        RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (g_xEngine.SSR().m_xUpsampledAuxHandle,                                     RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(g_xEngine.SSR().m_xDenoiseHHandle,                                         RESOURCE_ACCESS_WRITE_RTV)
+		.WritesTransient(g_xEngine.SSR().m_xDenoiseHConfHandle,                                     RESOURCE_ACCESS_WRITE_RTV);
 
 	// DenoiseV pass — vertical half, reads H's dual-MRT accumulators + the
 	// upsampled colour (passthrough fallback) + aux (BRDF reuse), applies its
 	// own bilateral × BRDF kernel, divides numerator/denominator at the end,
 	// and outputs the final RGBA the deferred shader consumes.
-	s_xDenoiseVPass = xGraph.AddPass("SSR DenoiseV", ExecuteSSRDenoiseV)
+	g_xEngine.SSR().m_xDenoiseVPass = xGraph.AddPass("SSR DenoiseV", ExecuteSSRDenoiseV)
 		.ClearTargets()
-		.Reads          (Flux_Graphics::GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (Flux_Graphics::GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (s_xUpsampledHandle,                                        RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (s_xUpsampledAuxHandle,                                     RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (s_xDenoiseHHandle,                                         RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (s_xDenoiseHConfHandle,                                     RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(s_xDenoiseVHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (g_xEngine.FluxGraphics().GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (g_xEngine.SSR().m_xUpsampledHandle,                                        RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (g_xEngine.SSR().m_xUpsampledAuxHandle,                                     RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (g_xEngine.SSR().m_xDenoiseHHandle,                                         RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (g_xEngine.SSR().m_xDenoiseHConfHandle,                                     RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(g_xEngine.SSR().m_xDenoiseVHandle,                                         RESOURCE_ACCESS_WRITE_RTV);
 
 	const bool bRoughnessBlur = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled;
-	xGraph.SetEnabled(s_xDenoiseHPass, bRoughnessBlur);
-	xGraph.SetEnabled(s_xDenoiseVPass, bRoughnessBlur);
-	s_bLastBlurEnabled = bRoughnessBlur;
+	xGraph.SetEnabled(g_xEngine.SSR().m_xDenoiseHPass, bRoughnessBlur);
+	xGraph.SetEnabled(g_xEngine.SSR().m_xDenoiseVPass, bRoughnessBlur);
+	g_xEngine.SSR().m_bLastBlurEnabled = bRoughnessBlur;
 
 	// Commit the handle the deferred pass will now read. GetReflectionHandle
 	// asserts against this value on every call — any runtime toggle without a
@@ -580,12 +562,12 @@ void Flux_SSR::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// mistake, not downstream in Validate() or AssertBoundResourceDeclared.
 	// When denoise is off, deferred reads the upsampled (full-res) output —
 	// never the raw half-res raymarch.
-	s_xCommittedReflectionHandle = bRoughnessBlur ? s_xDenoiseVHandle : s_xUpsampledHandle;
+	g_xEngine.SSR().m_xCommittedReflectionHandle = bRoughnessBlur ? g_xEngine.SSR().m_xDenoiseVHandle : g_xEngine.SSR().m_xUpsampledHandle;
 }
 
-void Flux_SSR::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
+void Flux_SSRImpl::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 {
-	if (Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled == s_bLastBlurEnabled)
+	if (Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled == g_xEngine.SSR().m_bLastBlurEnabled)
 		return;
 
 	// Full graph rebuild — not just xGraph.MarkDirty() — because
@@ -598,28 +580,13 @@ void Flux_SSR::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 	// Flux::RequestGraphRebuild() re-runs every subsystem's SetupRenderGraph
 	// on the next frame, so the deferred pass's declared Read resolves to the
 	// handle matching the new m_bSSRRoughnessBlurEnabled value. SetupRenderGraph
-	// above will also re-seed s_xCommittedReflectionHandle and re-set the
+	// above will also re-seed g_xEngine.SSR().m_xCommittedReflectionHandle and re-set the
 	// resolve pass's enable bit.
 	Flux::RequestGraphRebuild();
 }
 
-Flux_TransientHandle Flux_SSR::GetReflectionHandle()
-{
-	// Denoise on → deferred reads the V-pass (final denoised) output.
-	// Denoise off → deferred reads the upsampled (full-res, unblurred) output.
-	// Never the raw half-res raymarch — that would feed half-res data into
-	// the deferred shader at full-res and produce blocky reflections.
-	const Flux_TransientHandle xLive = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? s_xDenoiseVHandle : s_xUpsampledHandle;
-	Zenith_Assert(!s_xCommittedReflectionHandle.IsValid() || xLive == s_xCommittedReflectionHandle,
-		"Flux_SSR::GetReflectionHandle: live handle (idx=%u gen=%u) disagrees with the handle committed at SetupRenderGraph exit (idx=%u gen=%u). "
-		"m_bSSRRoughnessBlurEnabled changed without Flux::RequestGraphRebuild() being called in ApplyBlurSelectionToGraph — "
-		"MarkDirty() alone does not re-run SetupRenderGraph, so the deferred pass's declared Read is stale.",
-		xLive.m_uIndex, xLive.m_uGeneration,
-		s_xCommittedReflectionHandle.m_uIndex, s_xCommittedReflectionHandle.m_uGeneration);
-	return xLive;
-}
 
-Flux_ShaderResourceView& Flux_SSR::GetReflectionSRV()
+Flux_ShaderResourceView& Flux_SSRImpl::GetReflectionSRV()
 {
 	// Must match GetReflectionHandle so bind-time-declared-access assertions
 	// see the same resource the graph has a Read declared on.
@@ -628,12 +595,8 @@ Flux_ShaderResourceView& Flux_SSR::GetReflectionSRV()
 	return GetUpsampledAttachment().SRV();
 }
 
-bool Flux_SSR::IsEnabled()
+bool Flux_SSRImpl::IsEnabled() const
 {
-	return Zenith_GraphicsOptions::Get().m_bSSREnabled && s_bInitialised;
+	return Zenith_GraphicsOptions::Get().m_bSSREnabled && g_xEngine.SSR().m_bInitialised;
 }
 
-bool Flux_SSR::IsInitialised()
-{
-	return s_bInitialised;
-}

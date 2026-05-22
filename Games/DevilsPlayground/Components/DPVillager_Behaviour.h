@@ -19,8 +19,8 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
-#include "Physics/Zenith_Physics.h"
-#include "Input/Zenith_Input.h"
+#include "Physics/Zenith_PhysicsImpl.h"
+#include "Input/Zenith_InputImpl.h"
 #include "Maths/Zenith_Maths.h"
 #include "Core/Zenith_AudioBus.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
@@ -106,8 +106,8 @@ public:
 			if (xCollider.HasValidBody())
 			{
 				const JPH::BodyID& xBodyID = xCollider.GetBodyID();
-				Zenith_Physics::SetGravityEnabled(xBodyID, false);
-				Zenith_Physics::LockRotation(xBodyID, /*X=*/true, /*Y=*/false, /*Z=*/true);
+				g_xEngine.Physics().SetGravityEnabled(xBodyID, false);
+				g_xEngine.Physics().LockRotation(xBodyID, /*X=*/true, /*Y=*/false, /*Z=*/true);
 			}
 		}
 	}
@@ -503,7 +503,7 @@ private:
 			}
 			xVel = xDir * fSpeed;
 		}
-		Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVel);
+		g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVel);
 	}
 
 	// MVP-1.7.5: footstep emission. Called once per frame from
@@ -565,7 +565,7 @@ private:
 		Zenith_ColliderComponent& xCollider =
 			m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
 		if (!xCollider.HasValidBody()) return;
-		Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(),
+		g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(),
 			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	}
 

@@ -577,6 +577,9 @@
     <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp">
       <Filter>Core\Multithreading</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_MultithreadingImpl.cpp">
+      <Filter>Core\Multithreading</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -590,6 +593,9 @@
       <Filter>Core</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_Engine.cpp">
       <Filter>Core</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_GraphicsOptions.cpp">
@@ -970,7 +976,7 @@
     <ClCompile Include="..\Zenith\SaveData\Zenith_SaveData.cpp">
       <Filter>SaveData</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp">
+    <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystemImpl.cpp">
       <Filter>TaskSystem</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Telemetry\Zenith_Telemetry.cpp">
@@ -3279,6 +3285,9 @@
     <ClInclude Include="..\Zenith\Core\Callstack\Zenith_Callstack.h">
       <Filter>Core\Callstack</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\FrameContext.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.h">
       <Filter>Core\Memory</Filter>
     </ClInclude>
@@ -3297,7 +3306,7 @@
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.h">
       <Filter>Core\Memory</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h">
+    <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_MultithreadingImpl.h">
       <Filter>Core\Multithreading</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith.h">
@@ -3316,6 +3325,9 @@
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_Engine.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h">
@@ -3340,6 +3352,9 @@
       <Filter>DataStream</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h">
+      <Filter>DebugVariables</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariablesImpl.h">
       <Filter>DebugVariables</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel.h">
@@ -3387,6 +3402,15 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.Tests.inl">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomationImpl.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorImpl.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorMaterialUIImpl.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h">
       <Filter>Editor</Filter>
     </ClInclude>
@@ -3396,10 +3420,19 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_GizmoImpl.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystemImpl.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystemImpl.h">
       <Filter>Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.h">
@@ -3441,6 +3474,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBus.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneCallbackBusImpl.h">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneEntityOwnership.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>
@@ -3450,10 +3486,19 @@
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleScheduler.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneLifecycleSchedulerImpl.h">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueue.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneOperationQueueImpl.h">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistry.h">
+      <Filter>EntityComponent\Internal</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Internal\Zenith_SceneRegistryImpl.h">
       <Filter>EntityComponent\Internal</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h">
@@ -3469,6 +3514,9 @@
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.inl">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_EntityStore.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h">
@@ -3507,7 +3555,7 @@
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h">
       <Filter>FileAccess</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h">
+    <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshesImpl.h">
       <Filter>Flux\AnimatedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_CommandRecorder.h">
@@ -3531,16 +3579,16 @@
     <ClInclude Include="..\Zenith\Flux\Backend\Concepts\Flux_Concept_Sync.h">
       <Filter>Flux\Backend\Concepts</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Decals\Flux_Decals.h">
+    <ClInclude Include="..\Zenith\Flux\Decals\Flux_DecalsImpl.h">
       <Filter>Flux\Decals</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h">
+    <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShadingImpl.h">
       <Filter>Flux\DeferredShading</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.h">
+    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLightsImpl.h">
       <Filter>Flux\DynamicLights</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_LightClustering.h">
+    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_LightClusteringImpl.h">
       <Filter>Flux\DynamicLights</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux.h">
@@ -3561,7 +3609,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h">
       <Filter>Flux</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Flux_Graphics.h">
+    <ClInclude Include="..\Zenith\Flux\Flux_GraphicsImpl.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h">
@@ -3576,37 +3624,40 @@
     <ClInclude Include="..\Zenith\Flux\Flux_PerFrame.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_RendererImpl.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h">
       <Filter>Flux</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Fog\Flux_Fog.h">
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_FogImpl.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFog.h">
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFogImpl.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.h">
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_GodRaysFogImpl.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Fog\Flux_RaymarchFog.h">
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_RaymarchFogImpl.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFog.h">
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFogImpl.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h">
+    <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_GizmosImpl.h">
       <Filter>Flux\Gizmos</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDR.h">
+    <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDRImpl.h">
       <Filter>Flux\HDR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZ.h">
+    <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZImpl.h">
       <Filter>Flux\HiZ</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBL.h">
+    <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBLImpl.h">
       <Filter>Flux\IBL</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.h">
@@ -3615,7 +3666,7 @@
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceCulling.h">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes.h">
+    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshesImpl.h">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h">
@@ -3669,19 +3720,19 @@
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleGPU.h">
       <Filter>Flux\Particles</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Particles\Flux_Particles.h">
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticlesImpl.h">
       <Filter>Flux\Particles</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Primitives\Flux_Primitives.h">
+    <ClInclude Include="..\Zenith\Flux\Primitives\Flux_PrimitivesImpl.h">
       <Filter>Flux\Primitives</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Quads\Flux_Quads.h">
+    <ClInclude Include="..\Zenith\Flux\Quads\Flux_QuadsImpl.h">
       <Filter>Flux\Quads</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.h">
       <Filter>Flux\RenderGraph</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFs.h">
+    <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFsImpl.h">
       <Filter>Flux\SDFs</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMesh_ToGBuffer.slang">
@@ -3969,10 +4020,10 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.slang">
       <Filter>Flux\Shaders\Water</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shadows\Flux_Shadows.h">
+    <ClInclude Include="..\Zenith\Flux\Shadows\Flux_ShadowsImpl.h">
       <Filter>Flux\Shadows</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Skybox\Flux_Skybox.h">
+    <ClInclude Include="..\Zenith\Flux\Skybox\Flux_SkyboxImpl.h">
       <Filter>Flux\Skybox</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_CodeGenerator.h">
@@ -3990,31 +4041,31 @@
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO.h">
+    <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAOImpl.h">
       <Filter>Flux\SSAO</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGI.h">
+    <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGIImpl.h">
       <Filter>Flux\SSGI</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR.h">
+    <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSRImpl.h">
       <Filter>Flux\SSR</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h">
+    <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshesImpl.h">
       <Filter>Flux\StaticMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Terrain\Flux_Terrain.h">
-      <Filter>Flux\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainConfig.h">
       <Filter>Flux\Terrain</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.h">
+    <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainImpl.h">
       <Filter>Flux\Terrain</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Text\Flux_Text.h">
+    <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManagerImpl.h">
+      <Filter>Flux\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Text\Flux_TextImpl.h">
       <Filter>Flux\Text</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_Grass.h">
+    <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_GrassImpl.h">
       <Filter>Flux\Vegetation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Zenith_GameRenderHook.h">
@@ -4023,7 +4074,7 @@
     <ClInclude Include="..\Zenith\Flux\Zenith_RenderBus.h">
       <Filter>Flux</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Input\Zenith_Input.h">
+    <ClInclude Include="..\Zenith\Input\Zenith_InputImpl.h">
       <Filter>Input</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Input\Zenith_InputSimulator.h">
@@ -4032,7 +4083,7 @@
     <ClInclude Include="..\Zenith\Input\Zenith_KeyCodes.h">
       <Filter>Input</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Input\Zenith_TouchInput.h">
+    <ClInclude Include="..\Zenith\Input\Zenith_TouchInputImpl.h">
       <Filter>Input</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Maths\Zenith_FrustumCulling.h">
@@ -4044,10 +4095,10 @@
     <ClInclude Include="..\Zenith\Maths\Zenith_Maths_Intersections.h">
       <Filter>Maths</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Physics\Zenith_Physics.h">
+    <ClInclude Include="..\Zenith\Physics\Zenith_Physics.Tests.inl">
       <Filter>Physics</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Physics\Zenith_Physics.Tests.inl">
+    <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsImpl.h">
       <Filter>Physics</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h">
@@ -4062,10 +4113,16 @@
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h">
       <Filter>Profiling</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Profiling\Zenith_ProfilingImpl.h">
+      <Filter>Profiling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\SaveData\Zenith_SaveData.h">
       <Filter>SaveData</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h">
+      <Filter>TaskSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystemImpl.h">
       <Filter>TaskSystem</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Telemetry\Zenith_Telemetry.h">
@@ -4134,6 +4191,9 @@
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan.h">
       <Filter>Vulkan</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Vulkan\Zenith_VulkanImpl.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Buffer.h">
       <Filter>Vulkan</Filter>
     </ClInclude>
@@ -4141,6 +4201,9 @@
       <Filter>Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManagerImpl.h">
       <Filter>Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager_Internal.h">
@@ -4153,6 +4216,9 @@
       <Filter>Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.h">
+      <Filter>Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_SwapchainImpl.h">
       <Filter>Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Texture.h">

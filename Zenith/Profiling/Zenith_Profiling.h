@@ -213,10 +213,13 @@ Zenith_Profiling::BeginProfile(eProfile); \
 x(__VA_ARGS__); \
 Zenith_Profiling::EndProfile(eProfile);
 
-class Zenith_Profiling
+// Phase 9: Zenith_Profiling converted from class-with-static-methods to a
+// namespace. Methods are free functions that delegate to the engine-owned
+// Zenith_ProfilingImpl. Macro-driven API surface (ZENITH_PROFILING_FUNCTION_WRAPPER,
+// Scope RAII helper, Task's inline DoTask) keep their existing call sites --
+// the Zenith_Profiling:: qualifier still works for both classes and namespaces.
+namespace Zenith_Profiling
 {
-	friend class Zenith_UnitTests;
-public:
 	struct Event
 	{
 		Event(const std::chrono::time_point<std::chrono::high_resolution_clock>& xBegin, const std::chrono::time_point<std::chrono::high_resolution_clock>& xEnd, const Zenith_ProfileIndex eIndex, const u_int uDepth, const char* szLabel = nullptr)
@@ -231,12 +234,40 @@ public:
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_xEnd;
 		Zenith_ProfileIndex m_eIndex;
 		u_int m_uDepth;
-		// Optional label — string literal pointer (no copy, no lifetime concern).
-		// When non-null, profiler UI displays this in place of g_aszProfileNames[m_eIndex].
-		// Used by per-pass render-graph profiling so a single FLUX_RECORD_PASS slot
-		// can carry per-pass names without enum bloat.
 		const char* m_szLabel;
 	};
+
+	void Initialise();
+
+	void RegisterThread();
+
+	void BeginFrame();
+	void EndFrame();
+	#ifdef ZENITH_TOOLS
+	struct TimelineViewState
+	{
+		int m_iMinDepthToRender = 0;
+		int m_iMaxDepthToRender = 10;
+		int m_iMaxDepthToRenderSeparately = 3;
+		float m_fTimelineZoom = 1.0f;
+		float m_fTimelineScroll = 0.0f;
+		float m_fVerticalScale = 1.0f;
+	};
+
+	void RenderToImGui();
+	void RenderTimelineView(TimelineViewState& xState);
+	void RenderThreadBreakdown(float fFrameDurationMs, u_int& uThreadID);
+	#endif
+
+	void BeginProfile(const Zenith_ProfileIndex eIndex, const char* szLabel = nullptr);
+	void EndProfile(const Zenith_ProfileIndex eIndex);
+
+	const Zenith_ProfileIndex GetCurrentIndex();
+
+	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& GetEvents();
+
+	void ClearEvents();
+	void WriteTextReport(FILE* pFile);
 
 	class Scope
 	{
@@ -254,41 +285,4 @@ public:
 	private:
 		Zenith_ProfileIndex m_eIndex;
 	};
-
-	static void Initialise();
-
-	static void RegisterThread();
-
-	static void BeginFrame();
-	static void EndFrame();
-	#ifdef ZENITH_TOOLS
-	// Persistent state for the Timeline panel — sliders, zoom, scroll, vertical scale.
-	// Bundled so callers hold one static instead of six, and so the renderer's
-	// signature stays trivial.
-	struct TimelineViewState
-	{
-		int m_iMinDepthToRender = 0;
-		int m_iMaxDepthToRender = 10;
-		int m_iMaxDepthToRenderSeparately = 3;
-		float m_fTimelineZoom = 1.0f;
-		float m_fTimelineScroll = 0.0f;
-		float m_fVerticalScale = 1.0f;
-	};
-
-	static void RenderToImGui();
-private:
-	static void RenderTimelineView(TimelineViewState& xState);
-	static void RenderThreadBreakdown(float fFrameDurationMs, u_int& uThreadID);
-public:
-	#endif
-
-	static void BeginProfile(const Zenith_ProfileIndex eIndex, const char* szLabel = nullptr);
-	static void EndProfile(const Zenith_ProfileIndex eIndex);
-
-	static const Zenith_ProfileIndex GetCurrentIndex();
-
-	static const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& GetEvents();
-
-	static void ClearEvents();
-	static void WriteTextReport(FILE* pFile);
-};
+}

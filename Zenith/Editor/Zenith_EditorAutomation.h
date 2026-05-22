@@ -217,8 +217,8 @@ public:
 	// Execution
 	//--------------------------------------------------------------------------
 	static void Begin();
-	static bool IsRunning() { return s_bRunning; }
-	static bool IsComplete() { return s_bComplete; }
+	static bool IsRunning();
+	static bool IsComplete();
 	static void ExecuteNextStep();
 	static void Reset();
 
@@ -493,10 +493,8 @@ public:
 private:
 	static void ExecuteAction(const Zenith_EditorAction& xAction);
 
-	static Zenith_Vector<Zenith_EditorAction> s_axActions;
-	static uint32_t s_uCurrentAction;
-	static bool s_bRunning;
-	static bool s_bComplete;
+	// Phase 5.5d: action queue + run state moved to
+	// Zenith_EditorAutomationImpl (held by Zenith_Engine).
 };
 
 #endif // ZENITH_TOOLS

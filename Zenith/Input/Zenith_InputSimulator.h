@@ -66,7 +66,7 @@ public:
 	static void GetMousePositionSimulated(Zenith_Maths::Vector2_64& xOut);
 	static float GetMouseWheelDeltaSimulated();
 
-	// Frame lifecycle (called by Zenith_Input::BeginFrame)
+	// Frame lifecycle (called by g_xEngine.Input().BeginFrame)
 	static void ProcessAutoReleases();
 
 	// Called once per main-loop iteration AFTER the scene/script update

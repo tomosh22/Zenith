@@ -2,7 +2,7 @@
 
 #include "Windows/Zenith_Windows_Window.h"
 
-#include "Input/Zenith_Input.h"
+#include "Input/Zenith_InputImpl.h"
 #include <atomic>
 #include <cstdlib>  // __argc / __argv (MSVC globals) for --headless parsing
 #include <cstring>  // std::strcmp
@@ -105,7 +105,7 @@ static void KeyCallback(GLFWwindow*, int32_t iKey, int32_t, int32_t iAction, int
 	switch (iAction)
 	{
 	case GLFW_PRESS:
-		Zenith_Input::KeyPressedCallback(iKey);
+		g_xEngine.Input().KeyPressedCallback(iKey);
 		break;
 	}
 }
@@ -115,7 +115,7 @@ static void MouseCallback(GLFWwindow*, int32_t iKey, int32_t iAction, int32_t)
 	switch (iAction)
 	{
 	case GLFW_PRESS:
-		Zenith_Input::MouseButtonPressedCallback(static_cast<uint32_t>(iKey));
+		g_xEngine.Input().MouseButtonPressedCallback(static_cast<uint32_t>(iKey));
 		break;
 	}
 }
@@ -126,7 +126,7 @@ static void MouseCallback(GLFWwindow*, int32_t iKey, int32_t iAction, int32_t)
 // future API extension can read it without re-wiring GLFW.
 static void ScrollCallback(GLFWwindow*, double fXOffset, double fYOffset)
 {
-	Zenith_Input::MouseWheelCallback(fXOffset, fYOffset);
+	g_xEngine.Input().MouseWheelCallback(fXOffset, fYOffset);
 }
 
 Zenith_Window::Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHeight)

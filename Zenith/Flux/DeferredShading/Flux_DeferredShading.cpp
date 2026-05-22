@@ -1,33 +1,35 @@
 #include "Zenith.h"
 
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/DeferredShading/Flux_DeferredShadingImpl.h"
+#include "Core/Zenith_Engine.h"
 
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/HDR/Flux_HDR.h"
-#include "Flux/Flux_Graphics.h"
-#include "Flux/Shadows/Flux_Shadows.h"
-#include "Flux/IBL/Flux_IBL.h"
-#include "Flux/SSR/Flux_SSR.h"
-#include "Flux/SSGI/Flux_SSGI.h"
-#include "Flux/DynamicLights/Flux_DynamicLights.h"
-#include "Flux/DynamicLights/Flux_LightClustering.h"
+#include "Flux/HDR/Flux_HDRImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Shadows/Flux_ShadowsImpl.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
+#include "Flux/IBL/Flux_IBLImpl.h"
+#include "Flux/SSR/Flux_SSRImpl.h"
+#include "Flux/SSGI/Flux_SSGIImpl.h"
+#include "Flux/DynamicLights/Flux_DynamicLightsImpl.h"
+#include "Flux/DynamicLights/Flux_LightClusteringImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 
-static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipeline;
+// Phase 7b: state on Flux_DeferredShadingImpl held by Zenith_Engine.
 
 DEBUGVAR u_int dbg_uVisualiseCSMs = 0;
 DEBUGVAR bool dbg_bVisualiseCSMs = false;
 DEBUGVAR u_int dbg_uDeferredShadingDebugMode = 0;  // 0=normal, 1=cyan, 2=depth, 3=diffuse
 DEBUGVAR float dbg_fAmbientFallbackIntensity = 0.03f;  // Ambient when IBL disabled (0.01-0.1 typical)
 
-void Flux_DeferredShading::BuildPipelines()
+void Flux_DeferredShadingImpl::BuildPipelines()
 {
-	s_xShader.Initialise(FluxShaderProgram::DeferredShading);
+	g_xEngine.DeferredShading().m_xShader.Initialise(FluxShaderProgram::DeferredShading);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -35,10 +37,10 @@ void Flux_DeferredShading::BuildPipelines()
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_aeColourAttachmentFormats[0] = HDR_SCENE_FORMAT;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_pxShader = &g_xEngine.DeferredShading().m_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
+	g_xEngine.DeferredShading().m_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
@@ -47,10 +49,10 @@ void Flux_DeferredShading::BuildPipelines()
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(g_xEngine.DeferredShading().m_xPipeline, xPipelineSpec);
 }
 
-void Flux_DeferredShading::Initialise()
+void Flux_DeferredShadingImpl::Initialise()
 {
 	BuildPipelines();
 
@@ -64,7 +66,7 @@ void Flux_DeferredShading::Initialise()
 	static const FluxShaderProgram s_axPrograms[] = {
 		FluxShaderProgram::DeferredShading,
 	};
-	Flux_ShaderHotReload::RegisterSubsystem(&Flux_DeferredShading::BuildPipelines,
+	Flux_ShaderHotReload::RegisterSubsystem([](){ g_xEngine.DeferredShading().BuildPipelines(); },
 		s_axPrograms, sizeof(s_axPrograms) / sizeof(s_axPrograms[0]));
 #endif
 
@@ -73,76 +75,76 @@ void Flux_DeferredShading::Initialise()
 
 static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 {
-	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.DeferredShading().m_xPipeline);
 
-	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetVertexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->AddCommand<Flux_CommandSetIndexBuffer>(&g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
 	// Use named bindings via shader binder (auto-manages descriptor set switches)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	// Bind frame constants
-	xBinder.BindCBV(s_xShader, "FrameConstants", &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(g_xEngine.DeferredShading().m_xShader, "FrameConstants", &g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV());
 
 	// Bind G-buffer textures (named bindings)
-	xBinder.BindSRV(s_xShader, "g_xDiffuseTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(s_xShader, "g_xNormalsAmbientTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(s_xShader, "g_xMaterialTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(s_xShader, "g_xDepthTex", Flux_Graphics::GetDepthStencilSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xDiffuseTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xNormalsAmbientTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xMaterialTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xDepthTex", g_xEngine.FluxGraphics().GetDepthStencilSRV());
 
 	// Bind shadow maps (named bindings)
 	static const char* const s_aszCSMNames[ZENITH_FLUX_NUM_CSMS] = { "g_xCSM0", "g_xCSM1", "g_xCSM2", "g_xCSM3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		Flux_ShaderResourceView& xSRV = Flux_Shadows::GetCSMSRV(u);
-		xBinder.BindSRV(s_xShader, s_aszCSMNames[u], &xSRV, &Flux_Graphics::s_xClampSampler);
+		Flux_ShaderResourceView& xSRV = g_xEngine.Shadows().GetCSMSRV(u);
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, s_aszCSMNames[u], &xSRV, &g_xEngine.FluxGraphics().m_xClampSampler);
 	}
 
 	// Bind shadow matrix buffers (named bindings)
 	static const char* const s_aszShadowMatrixNames[ZENITH_FLUX_NUM_CSMS] = { "ShadowMatrix0", "ShadowMatrix1", "ShadowMatrix2", "ShadowMatrix3" };
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		xBinder.BindCBV(s_xShader, s_aszShadowMatrixNames[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+		xBinder.BindCBV(g_xEngine.DeferredShading().m_xShader, s_aszShadowMatrixNames[u], &g_xEngine.Shadows().GetShadowMatrixBuffer(u).GetCBV());
 	}
 
 	// Bind IBL textures
-	xBinder.BindSRV(s_xShader, "g_xBRDFLUT", &Flux_IBL::GetBRDFLUTSRV());
-	xBinder.BindSRV(s_xShader, "g_xIrradianceMap", &Flux_IBL::GetIrradianceMapSRV());
-	xBinder.BindSRV(s_xShader, "g_xPrefilteredMap", &Flux_IBL::GetPrefilteredMapSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xBRDFLUT", &g_xEngine.IBL().GetBRDFLUTSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xIrradianceMap", &g_xEngine.IBL().GetIrradianceMapSRV());
+	xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xPrefilteredMap", &g_xEngine.IBL().GetPrefilteredMapSRV());
 
 	// Always bind SSR texture if initialised (shader checks g_bSSREnabled before sampling)
 	// This avoids Vulkan validation errors for unbound descriptors
-	if (Flux_SSR::IsInitialised())
+	if (g_xEngine.SSR().IsInitialised())
 	{
-		xBinder.BindSRV(s_xShader, "g_xSSRTex", &Flux_SSR::GetReflectionSRV());
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSRTex", &g_xEngine.SSR().GetReflectionSRV());
 	}
 	else
 	{
 		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(s_xShader, "g_xSSRTex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSRTex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
 	// Always bind SSGI texture if initialised (shader checks g_bSSGIEnabled before sampling)
-	if (Flux_SSGI::IsInitialised())
+	if (g_xEngine.SSGI().IsInitialised())
 	{
-		xBinder.BindSRV(s_xShader, "g_xSSGITex", &Flux_SSGI::GetSSGISRV());
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSGITex", &g_xEngine.SSGI().GetSSGISRV());
 	}
 	else
 	{
 		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(s_xShader, "g_xSSGITex", Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		xBinder.BindSRV(g_xEngine.DeferredShading().m_xShader, "g_xSSGITex", g_xEngine.FluxGraphics().GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
 	// Clustered dynamic lights — buffers populated by Flux_LightClustering.
 	// All three are statically referenced by the shader, so all must be
 	// bound regardless of whether dynamic lights exist this frame (the
 	// fragment shader's cluster loop runs zero iterations when count = 0).
-	xBinder.BindSRV_Buffer(s_xShader, "LightBuffer",
-		Flux_DynamicLights::GetLightBufferSRV());
-	xBinder.BindSRV_Buffer(s_xShader, "ClusterLightCounts",
-		Flux_LightClustering::GetClusterLightCountsSRV());
-	xBinder.BindSRV_Buffer(s_xShader, "ClusterLightIndices",
-		Flux_LightClustering::GetClusterLightIndicesSRV());
+	xBinder.BindSRV_Buffer(g_xEngine.DeferredShading().m_xShader, "LightBuffer",
+		g_xEngine.DynamicLights().GetLightBufferSRV());
+	xBinder.BindSRV_Buffer(g_xEngine.DeferredShading().m_xShader, "ClusterLightCounts",
+		g_xEngine.LightClustering().GetClusterLightCountsSRV());
+	xBinder.BindSRV_Buffer(g_xEngine.DeferredShading().m_xShader, "ClusterLightIndices",
+		g_xEngine.LightClustering().GetClusterLightIndicesSRV());
 
 	// Pass constants to shader
 	struct DeferredShadingConstants
@@ -163,44 +165,44 @@ static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 	DeferredShadingConstants xConstants;
 	xConstants.m_bVisualiseCSMs = dbg_uVisualiseCSMs;
 	// Only enable IBL if both enabled AND ready (textures have been generated)
-	xConstants.m_bIBLEnabled = (Flux_IBL::IsEnabled() && Flux_IBL::IsReady()) ? 1 : 0;
+	xConstants.m_bIBLEnabled = (g_xEngine.IBL().IsEnabled() && g_xEngine.IBL().IsReady()) ? 1 : 0;
 	xConstants.m_uDebugMode = dbg_uDeferredShadingDebugMode;
-	xConstants.m_bIBLDiffuseEnabled = Flux_IBL::IsDiffuseEnabled() ? 1 : 0;
-	xConstants.m_bIBLSpecularEnabled = Flux_IBL::IsSpecularEnabled() ? 1 : 0;
-	xConstants.m_fIBLIntensity = Flux_IBL::GetIntensity();
-	xConstants.m_bShowBRDFLUT = Flux_IBL::IsShowBRDFLUT() ? 1 : 0;
-	xConstants.m_bForceRoughness = Flux_IBL::IsForceRoughness() ? 1 : 0;
-	xConstants.m_fForcedRoughness = Flux_IBL::GetForcedRoughness();
-	xConstants.m_bSSREnabled = Flux_SSR::IsEnabled() ? 1 : 0;
-	xConstants.m_bSSGIEnabled = Flux_SSGI::IsEnabled() ? 1 : 0;
+	xConstants.m_bIBLDiffuseEnabled = g_xEngine.IBL().IsDiffuseEnabled() ? 1 : 0;
+	xConstants.m_bIBLSpecularEnabled = g_xEngine.IBL().IsSpecularEnabled() ? 1 : 0;
+	xConstants.m_fIBLIntensity = g_xEngine.IBL().GetIntensity();
+	xConstants.m_bShowBRDFLUT = g_xEngine.IBL().IsShowBRDFLUT() ? 1 : 0;
+	xConstants.m_bForceRoughness = g_xEngine.IBL().IsForceRoughness() ? 1 : 0;
+	xConstants.m_fForcedRoughness = g_xEngine.IBL().GetForcedRoughness();
+	xConstants.m_bSSREnabled = g_xEngine.SSR().IsEnabled() ? 1 : 0;
+	xConstants.m_bSSGIEnabled = g_xEngine.SSGI().IsEnabled() ? 1 : 0;
 	xConstants.m_fAmbientFallbackIntensity = dbg_fAmbientFallbackIntensity;
 
-	xBinder.BindDrawConstants(s_xShader, "DeferredShadingConstants", &xConstants, sizeof(xConstants));
+	xBinder.BindDrawConstants(g_xEngine.DeferredShading().m_xShader, "DeferredShadingConstants", &xConstants, sizeof(xConstants));
 
 	pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6);
 }
 
-void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// First writer of the HDR scene target — clear overwrites every pixel.
 	// Capture the handle via the implicit conversion; builder temporary dies
 	// at the semicolon. All loop/conditional declarations below go through
 	// the graph's Read/ReadTransient helpers with the captured handle.
 	const Flux_PassHandle xPass = xGraph.AddPass("Apply Lighting", ExecuteApplyLighting)
-		.Writes(Flux_HDR::GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(g_xEngine.HDR().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.ClearTargets();
 
 	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
-		xGraph.Read(xPass, Flux_Graphics::GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(xPass, g_xEngine.FluxGraphics().GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
 
-	xGraph.Read(xPass, Flux_Graphics::GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, g_xEngine.FluxGraphics().GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
 
 	// Shadow maps (CSM depth targets)
 	for (u_int u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		uint32_t uNumColour;
 		Flux_RenderAttachment* pxDepthStencil;
-		Flux_Shadows::GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
+		g_xEngine.Shadows().GetCSMTargetSetup(u, uNumColour, pxDepthStencil);
 		xGraph.Read(xPass, *pxDepthStencil, RESOURCE_ACCESS_READ_SRV);
 	}
 
@@ -213,11 +215,11 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// here would be stale on subsequent frames. Visibility of its
 	// host-side upload is covered by vkQueueSubmit's implicit host-write
 	// barrier instead.
-	if (Flux_LightClustering::IsInitialised())
+	if (g_xEngine.LightClustering().IsInitialised())
 	{
-		xGraph.ReadBuffer(xPass, Flux_LightClustering::GetClusterLightCountsBuffer().GetBuffer(),
+		xGraph.ReadBuffer(xPass, g_xEngine.LightClustering().GetClusterLightCountsBuffer().GetBuffer(),
 			RESOURCE_ACCESS_READ_SRV);
-		xGraph.ReadBuffer(xPass, Flux_LightClustering::GetClusterLightIndicesBuffer().GetBuffer(),
+		xGraph.ReadBuffer(xPass, g_xEngine.LightClustering().GetClusterLightIndicesBuffer().GetBuffer(),
 			RESOURCE_ACCESS_READ_SRV);
 	}
 
@@ -226,14 +228,14 @@ void Flux_DeferredShading::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// at SetupRenderGraph time. Runtime toggles trigger Flux::RequestGraphRebuild()
 	// via ApplyBlurSelectionToGraph / ApplyDenoiseSelectionToGraph, which re-runs
 	// this SetupRenderGraph and re-resolves the handle.
-	if (Flux_SSR::IsInitialised())
-		xGraph.ReadTransient(xPass, Flux_SSR::GetReflectionHandle(), RESOURCE_ACCESS_READ_SRV);
-	if (Flux_SSGI::IsInitialised())
-		xGraph.ReadTransient(xPass, Flux_SSGI::GetSSGIHandle(), RESOURCE_ACCESS_READ_SRV);
+	if (g_xEngine.SSR().IsInitialised())
+		xGraph.ReadTransient(xPass, g_xEngine.SSR().GetReflectionHandle(), RESOURCE_ACCESS_READ_SRV);
+	if (g_xEngine.SSGI().IsInitialised())
+		xGraph.ReadTransient(xPass, g_xEngine.SSGI().GetSSGIHandle(), RESOURCE_ACCESS_READ_SRV);
 
 	// IBL textures — BRDF LUT, irradiance cubemap, prefiltered cubemap. Cubemap
 	// reads default to FLUX_RG_ALL_MIPS / FLUX_RG_ALL_LAYERS.
-	xGraph.Read(xPass, Flux_IBL::s_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(xPass, Flux_IBL::s_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(xPass, Flux_IBL::s_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, g_xEngine.IBL().m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, g_xEngine.IBL().m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, g_xEngine.IBL().m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
 }
