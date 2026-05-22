@@ -26,10 +26,28 @@
     <ClCompile Include="..\Source\DPTutorial.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DP_AI.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DP_Archetypes.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DP_Fog.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Source\DP_Interactables.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Source\DP_Items.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DP_Json.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Source\DP_Night.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Source\DP_Player.cpp">
       <Filter>Source</Filter>
     </ClCompile>
     <ClCompile Include="..\Source\DP_Reagents.cpp">
@@ -41,7 +59,7 @@
     <ClCompile Include="..\Source\DP_Tuning.cpp">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="..\Source\PublicInterfaces.cpp">
+    <ClCompile Include="..\Source\DP_Win.cpp">
       <Filter>Source</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_DimLightsCutFog.cpp">
@@ -436,6 +454,9 @@
     <ClInclude Include="..\Source\DevilsPlayground_Tags.h">
       <Filter>Source</Filter>
     </ClInclude>
+    <ClInclude Include="..\Source\DPCommonTypes.h">
+      <Filter>Source</Filter>
+    </ClInclude>
     <ClInclude Include="..\Source\DPFogPass.h">
       <Filter>Source</Filter>
     </ClInclude>
@@ -469,10 +490,31 @@
     <ClInclude Include="..\Source\DPUI.h">
       <Filter>Source</Filter>
     </ClInclude>
+    <ClInclude Include="..\Source\DP_AI.h">
+      <Filter>Source</Filter>
+    </ClInclude>
     <ClInclude Include="..\Source\DP_Archetypes.h">
       <Filter>Source</Filter>
     </ClInclude>
+    <ClInclude Include="..\Source\DP_Fog.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Interactables.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Items.h">
+      <Filter>Source</Filter>
+    </ClInclude>
     <ClInclude Include="..\Source\DP_Json.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Night.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Player.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Query.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DP_Reagents.h">
@@ -482,6 +524,9 @@
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\DP_Tuning.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Win.h">
       <Filter>Source</Filter>
     </ClInclude>
     <ClInclude Include="..\Source\PublicInterfaces.h">

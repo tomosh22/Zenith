@@ -477,6 +477,7 @@
     <ClInclude Include="..\Components\DummyNoiseMachine_Behaviour.h" />
     <ClInclude Include="..\Components\Priest_Behaviour.h" />
     <ClInclude Include="..\Source\DevilsPlayground_Tags.h" />
+    <ClInclude Include="..\Source\DPCommonTypes.h" />
     <ClInclude Include="..\Source\DPFogPass.h" />
     <ClInclude Include="..\Source\DPInputActions.h" />
     <ClInclude Include="..\Source\DPMaterials.h" />
@@ -488,11 +489,19 @@
     <ClInclude Include="..\Source\DPTelemetryAnalyzer.h" />
     <ClInclude Include="..\Source\DPTutorial.h" />
     <ClInclude Include="..\Source\DPUI.h" />
+    <ClInclude Include="..\Source\DP_AI.h" />
     <ClInclude Include="..\Source\DP_Archetypes.h" />
+    <ClInclude Include="..\Source\DP_Fog.h" />
+    <ClInclude Include="..\Source\DP_Interactables.h" />
+    <ClInclude Include="..\Source\DP_Items.h" />
     <ClInclude Include="..\Source\DP_Json.h" />
+    <ClInclude Include="..\Source\DP_Night.h" />
+    <ClInclude Include="..\Source\DP_Player.h" />
+    <ClInclude Include="..\Source\DP_Query.h" />
     <ClInclude Include="..\Source\DP_Reagents.h" />
     <ClInclude Include="..\Source\DP_Save.h" />
     <ClInclude Include="..\Source\DP_Tuning.h" />
+    <ClInclude Include="..\Source\DP_Win.h" />
     <ClInclude Include="..\Source\PublicInterfaces.h" />
   </ItemGroup>
   <ItemGroup>
@@ -505,12 +514,18 @@
     <ClCompile Include="..\Source\DPTelemetry.cpp" />
     <ClCompile Include="..\Source\DPTelemetryAnalyzer.cpp" />
     <ClCompile Include="..\Source\DPTutorial.cpp" />
+    <ClCompile Include="..\Source\DP_AI.cpp" />
     <ClCompile Include="..\Source\DP_Archetypes.cpp" />
+    <ClCompile Include="..\Source\DP_Fog.cpp" />
+    <ClCompile Include="..\Source\DP_Interactables.cpp" />
+    <ClCompile Include="..\Source\DP_Items.cpp" />
     <ClCompile Include="..\Source\DP_Json.cpp" />
+    <ClCompile Include="..\Source\DP_Night.cpp" />
+    <ClCompile Include="..\Source\DP_Player.cpp" />
     <ClCompile Include="..\Source\DP_Reagents.cpp" />
     <ClCompile Include="..\Source\DP_Save.cpp" />
     <ClCompile Include="..\Source\DP_Tuning.cpp" />
-    <ClCompile Include="..\Source\PublicInterfaces.cpp" />
+    <ClCompile Include="..\Source\DP_Win.cpp" />
     <ClCompile Include="..\Tests\Test_DimLightsCutFog.cpp" />
     <ClCompile Include="..\Tests\Test_DoubleDoorAndForge.cpp" />
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp" />
