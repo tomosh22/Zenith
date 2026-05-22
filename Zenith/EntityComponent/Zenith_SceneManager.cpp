@@ -1348,7 +1348,7 @@ uint32_t Zenith_SceneManager::CountScenesBeingAsyncUnloaded() { return Zenith_Sc
 
 bool Zenith_SceneManager::HasPendingDestructions()
 {
-	Zenith_Assert(Zenith_Multithreading::IsMainThread(),
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"HasPendingDestructions must be called from main thread");
 	// Async-unload jobs are the only async destruction path. Synchronous
 	// destruction (UnloadAllNonPersistent + UnloadScene's blocking path)

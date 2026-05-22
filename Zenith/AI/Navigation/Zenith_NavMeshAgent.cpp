@@ -4,7 +4,7 @@
 #include "AI/Zenith_AIDebugVariables.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsImpl.h"
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
@@ -132,8 +132,8 @@ void Zenith_NavMeshAgent::Update(float fDt,
 		if (bUsePhysics)
 		{
 			const JPH::BodyID& xBodyID = pxCollider->GetBodyID();
-			const Zenith_Maths::Vector3 xCurVel = Zenith_Physics::GetLinearVelocity(xBodyID);
-			Zenith_Physics::SetLinearVelocity(xBodyID,
+			const Zenith_Maths::Vector3 xCurVel = g_xEngine.Physics().GetLinearVelocity(xBodyID);
+			g_xEngine.Physics().SetLinearVelocity(xBodyID,
 				Zenith_Maths::Vector3(0.0f, xCurVel.y, 0.0f));
 		}
 		return;
@@ -202,7 +202,7 @@ void Zenith_NavMeshAgent::Update(float fDt,
 		// is supposed to be authoritative for the agent's intent;
 		// gravity + collision response handle the rest of the physics
 		// story.
-		Zenith_Physics::SetLinearVelocity(pxCollider->GetBodyID(), xNewVelocity);
+		g_xEngine.Physics().SetLinearVelocity(pxCollider->GetBodyID(), xNewVelocity);
 	}
 	else
 	{
