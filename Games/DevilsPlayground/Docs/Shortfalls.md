@@ -4,7 +4,13 @@
 
 **Scope:** Everything in the current `Games/DevilsPlayground/` tree. **Note (2026-05-20):** this doc was written against the 2026-05-11 skeleton-grade port. Phase 1 + Phase 2 + most of Phase 4 (4.1.1, 4.3.1, 4.3.2, 4.3.3 -- only 4.3.4 HUMAN_GATE remains) + a substantial Phase 5 telemetry / verification system + instructional HUD + the procgen migration (PRs #96-#117 retiring the UE-exported GameLevel + gym scenes) + telemetry v3 + seed-matrix tooling + the personality-matrix-driven balance pass have all shipped since (see [Status.md](Status.md) for the current state) — many "missing" items listed below are now landed. Treat the headline gaps in §1 as historical snapshots and cross-check against Status.md before acting on any one.
 
-**Updated 2026-05-11** (post peer-review reconciliation), **2026-05-16** (test-count + telemetry), **2026-05-20** (procgen migration + matrix tooling + Zealot personality):
+**Updated 2026-05-11** (post peer-review reconciliation), **2026-05-16** (test-count + telemetry), **2026-05-20** (procgen migration + matrix tooling + Zealot personality), **2026-05-22** (game-balance pass + door collider physics fix + 4 new bot personalities; see Status.md + DecisionLog.md):
+
+- **2026-05-22 balance criteria ratified + met:** every personality WR strictly in (0%, 100%), every canonical-seed level winnable by ≥1 personality. PR #141. Full writeup in `Docs/GameBalance_2026-05-22.md`.
+- **2026-05-22 door collider physics fix** -- prior to this, closed doors were 1m cubes at floor level that neither the bot's grid raycast nor the player's capsule physics actually collided with. The priest was the only AI that respected door state, via the navmesh BLOCKED flag. Player + bot now physically blocked by closed doors.
+- **2026-05-21 three new bot personalities** (Magpie / Relay / Heretic, PR #139) exercising design axes the 4-personality matrix didn't cover. PR #140 added Trickster (Magpie+Relay+bootstrap+adaptive sprint combo) + four follow-up fixes (Heretic emit-and-flee, walk-quiet rebalance, Relay click reliability, footstep loudness).
+- **2026-05-22 new follow-ups added** to §3 below: procgen seed 0 unsolvable (`ValidateSolvability` warns instead of reject+retry), navmesh / Pathfinding bot integration deferred (engine-side issue in `Zenith_NavMeshGenerator` polygon coverage).
+
 - Prototype originally contained 24 test `.cpp` files registering 34 tests; as of 2026-05-20 the suite is **117 registered tests across 104 .cpp files** (was 122 at 2026-05-16; consolidations during the procgen migration and Berserker → Zealot personality swap net -5).
 - Telemetry v3 shipped 2026-05-19 (PR #120) -- adds AI intent / per-villager life timer / held-item tag / camera state / per-frame perf ms + 12 new event types (Apprehend channel start/complete/interrupted, PerceptionContactBegin/End, etc).
 - Seed-matrix tooling shipped 2026-05-20 (PR #121) -- `Tools/dp_seed_matrix_run.ps1` cycles N seeds × 4 personalities; `Tools/dp_seed_matrix_analyse.py` aggregates into `REPORT.md`.
@@ -220,6 +226,24 @@ Per memory: `feedback_msvc_static_init_dead_strip.md` documents that `ZENITH_REG
 The project supports Android (per Sharpmake configs) but the GDD targets Switch 2 / Series X|S / PS5. Each requires a platform layer in `Zenith_<Platform>` (akin to `Zenith_Windows_*`). Game-specific work is minor; engine-layer work is significant and outside the DP project's scope.
 
 **Bridge cost:** ~6 months engine-team work across all three platforms. Out of scope for this analysis but on the critical path.
+
+### 3.10 Procgen `ValidateSolvability` warns instead of reject + retry
+
+`DPProcLevel_Generator.cpp::ValidateSolvability` emits a warning when a generated layout is unsolvable but lets `Generate` return the layout anyway. Per the 2026-05-22 8-personality matrix, **seed 0** produces such a layout -- the pentagram is behind multiple locked-door corridors, the bot only forges 1 key per run, and no personality can deliver any objectives. Excluded from the canonical 10-seed test set.
+
+**Fix:** make `ValidateSolvability` reject + retry with the next seed-rotation (the generator already supports re-seeding internally). Alternatively: cap the number of locked corridors on the pentagram-incident set to one + leave the others open.
+
+**Bridge cost:** ~1 engineering day (procgen change + add a test that confirms `Generate` retries on a known-bad seed and produces a different solvable layout).
+
+### 3.11 Bot pathfinding duplicates the engine navmesh
+
+`Test_PersonalityPlaythrough.cpp` runs its own 240×240 grid A* (~1000 lines: `BuildPathGrid` + downward-raycast walkability classifier + custom A* + stuck recovery + waypoint follower). The priest uses `Zenith_Pathfinding::FindPath` over `Zenith_NavMesh`. Two parallel pathfinding systems traversing the same world is the architectural smell that surfaced the **door collider physics bug** (fixed PR #141): the bot ignored closed doors because its raycast threshold missed the short door mesh.
+
+A 2026-05-22 refactor attempt to replace the bot's grid with `Zenith_Pathfinding::FindPath` calls (so bot + priest share a single source of truth) found that `FindPath` returns FAILED for ~99% of bot queries on procgen layouts, even with explicit `FindNearestPolygon` polygon-centre snap. Suggests an engine-side issue in `Zenith_NavMeshGenerator` polygon coverage or `FindPolygonContaining` thresholds -- the navmesh has 118k polygons on the procgen output but doesn't reliably contain the bot's query endpoints.
+
+**Fix:** engine-side debugging of `Zenith_NavMeshGenerator` polygon generation on DP's procgen scene + `FindPolygonContaining`'s vertical/horizontal tolerances. After that, replace the bot's grid with `Zenith_Pathfinding::FindPath` to consolidate the two systems.
+
+**Bridge cost:** ~1-2 engineering weeks (engine navmesh investigation + bot refactor + verifying the matrix still produces the same balance outcomes).
 
 ---
 

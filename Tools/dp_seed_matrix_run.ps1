@@ -41,7 +41,7 @@
 param(
     [string]$ConfigName    = "Debug_False",
     [string]$OutRoot       = "Build/dp_telemetry/seed_matrix",
-    [int]$ExitAfterFrames  = 8500,
+    [int]$ExitAfterFrames  = 12000,
     [switch]$Headless      = $true,
     [uint64[]]$Seeds       = @(0, 12345, 99999),
     # 2026-05-21: how many cells to run concurrently. Defaults to 4,
@@ -69,7 +69,7 @@ if (-not (Test-Path $exe)) {
 }
 $exeAbs = (Resolve-Path $exe).Path
 
-$personalities = @("Casual","Stealth","Speedrunner","Zealot")
+$personalities = @("Casual","Stealth","Speedrunner","Zealot","Magpie","Relay","Heretic","Trickster")
 $tempDir = $env:TEMP
 if (-not $tempDir) { $tempDir = $env:TMP }
 

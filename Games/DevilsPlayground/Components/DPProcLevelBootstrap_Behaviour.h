@@ -354,8 +354,16 @@ private:
 			{
 			case DPProcLevel::GameElementType::Pentagram:
 			{
-				xEntity.AddComponent<Zenith_ColliderComponent>()
-					.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+				Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
+				xCol.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+				// 2026-05-22: same rationale as the Iron / Objective items
+				// below -- exclude from navmesh so the bot can path TO the
+				// pentagram for delivery. Pentagram is a wide ritual disc
+				// (2x2 footprint at y=1.0); leaving its collider in the
+				// navmesh creates a hole the bot can't path to. F-press
+				// pickup-delivery is proximity-based (1.5 m), not collision-
+				// based.
+				xCol.SetIncludeInNavMesh(false);
 				xEntity.AddComponent<Zenith_ScriptComponent>()
 					.AddScript<DPPentagram_Behaviour>();
 				break;
@@ -368,6 +376,62 @@ private:
 			}
 			case DPProcLevel::GameElementType::Door:
 			{
+				// 2026-05-22: previously the door spawned with default
+				// scale (1,1,1) at y=0 -- a 1 m cube at floor level. That
+				// failed to actually block movement because:
+				//   * Bot's path-grid raycast threshold is `hit.y < 1.5 m`
+				//     => walkable; the 1 m-tall door's top sits at y=1.0
+				//     and is invisible to the bot's pathfinder.
+				//   * The 1 m-wide door only occupied half the 2 m wall
+				//     gap (fDoorGapHalfWidth=1.0), leaving 0.5 m of open
+				//     space on each side that a 0.5 m-radius villager
+				//     capsule could squeeze through.
+				// Result: keyless bots (Zealot, Relay) walked straight
+				// through "locked" doors -- the priest was the only AI
+				// that respected them, because the priest uses navmesh
+				// pathing and DPDoor toggles a navmesh BLOCKED flag
+				// independently of the physics collider.
+				//
+				// Fix: spawn the door with the same y=1 floor offset and
+				// wall-tall (4 m) height as walls, scaled (0.3, 4, 2) so
+				// the collider's wide axis fills the 2 m wall gap. The
+				// element yaw (set by the generator from the corridor's
+				// perpendicular axis) rotates the door so its wide axis
+				// lies ALONG the wall. The same corner-anchor offset
+				// SpawnWalls uses applies here because the SM_Cube mesh
+				// is corner-anchored, not centre-anchored.
+				//
+				// When the door opens (DPDoor::ApplyRotation rotates the
+				// entity 90° around Y), Zenith_TransformComponent::SetRotation
+				// propagates to the Jolt body via SetRotation(EActivation::
+				// Activate) -- the collider rotates in sync with the mesh
+				// and the corridor gap opens. No RebuildCollider needed.
+				if (xEntity.HasComponent<Zenith_TransformComponent>())
+				{
+					Zenith_TransformComponent& xT = xEntity.GetComponent<Zenith_TransformComponent>();
+					// Door dimensions: thin (0.3 m), wall-tall (4 m), and
+					// 2 m wide along the wall (matches the 2 m wall gap).
+					constexpr float fHalfThick = 0.15f; // along local +X
+					constexpr float fHalfWide  = 1.0f;  // along local +Z
+					const float fCosY = std::cos(xElem.fYawRadians);
+					const float fSinY = std::sin(xElem.fYawRadians);
+					// Same corner->centre compensation SpawnWalls uses:
+					// the mesh extends from entity origin to +scale; offset
+					// the entity by R(yaw) * (-halfX, 0, -halfZ) so the
+					// mesh's geometric centre lands on (fX, _, fZ).
+					const float fOffsetX = -fHalfThick * fCosY - fHalfWide * fSinY;
+					const float fOffsetZ =  fHalfThick * fSinY - fHalfWide * fCosY;
+					xT.SetPosition(Zenith_Maths::Vector3(
+						xElem.fX + fOffsetX,
+						1.0f,  // sit on top of the floor (matches walls)
+						xElem.fZ + fOffsetZ));
+					xT.SetRotation(Zenith_Maths::AngleAxis(
+						xElem.fYawRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+					xT.SetScale(Zenith_Maths::Vector3(
+						2.0f * fHalfThick,  // 0.3 m thick door panel
+						4.0f,               // wall-tall: matches SpawnWalls
+						2.0f * fHalfWide)); // 2 m wide: fills the wall gap
+				}
 				xEntity.AddComponent<Zenith_ColliderComponent>()
 					.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 				xEntity.AddComponent<Zenith_ScriptComponent>()
@@ -376,8 +440,12 @@ private:
 			}
 			case DPProcLevel::GameElementType::Chest:
 			{
-				xEntity.AddComponent<Zenith_ColliderComponent>()
-					.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+				Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
+				xCol.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+				// 2026-05-22: navmesh-exclude (same rationale as the
+				// pentagram + items above). Bot walks to the chest to
+				// F-press; its collider should not gate routing.
+				xCol.SetIncludeInNavMesh(false);
 				xEntity.AddComponent<Zenith_ScriptComponent>()
 					.AddScript<DPChest_Behaviour>();
 				break;
@@ -395,8 +463,21 @@ private:
 			case DPProcLevel::GameElementType::Objective4:
 			case DPProcLevel::GameElementType::Objective5:
 			{
-				xEntity.AddComponent<Zenith_ColliderComponent>()
-					.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_STATIC);
+				Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
+				xCol.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_STATIC);
+				// 2026-05-22: exclude pickups from navmesh generation. The
+				// navmesh-based pathfinder needs to ROUTE TO these items
+				// to pick them up, but a static sphere collider at the
+				// item position carves a HOLE in the navmesh at exactly
+				// that position -- FindPath then reports "End position not
+				// on navmesh" because the item's XZ is in a non-walkable
+				// gap surrounded by polygons. Pickup is proximity-based
+				// (1.5 m), not collision-based, so the item's collider
+				// doesn't need to block navigation -- only the visual mesh
+				// + pickup-distance check matter for gameplay. The doors
+				// use this same SetIncludeInNavMesh(false) pattern; this
+				// extends it to all pickups.
+				xCol.SetIncludeInNavMesh(false);
 				DPItemBase_Behaviour* pxItem = xEntity
 					.AddComponent<Zenith_ScriptComponent>()
 					.AddScript<DPItemBase_Behaviour>();

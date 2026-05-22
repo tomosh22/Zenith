@@ -62,6 +62,27 @@ public:
 		// origin cell instead of the door's actual footprint.
 		StitchNavMeshPortal();
 		SyncNavMeshBlock();
+
+		// 2026-05-22: capture the door's CLOSED yaw from its current
+		// transform rotation, so the open-rotation interpolation in
+		// ApplyRotation() starts from the procgen-set angle rather than
+		// from hardcoded 0. Without this, procgen doors (which need a
+		// per-corridor yaw so their collider lies along the wall) would
+		// snap to yaw=0 on the first OnUpdate, mis-orienting the
+		// collider + uncovering the corridor gap before any F-press.
+		// Authored-scene doors (which spawn at yaw=0) still see
+		// m_fClosedYaw=0 -- the read is just a no-op for them.
+		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		{
+			Zenith_Maths::Quat xQuat;
+			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetRotation(xQuat);
+			// Extract yaw from quaternion: yaw = atan2(2(w*y + x*z), 1 - 2(y*y + x*x)).
+			// Standard Tait-Bryan extraction for Y-up rotation; matches
+			// glm::yaw conventions and the SpawnWalls fYawRadians usage.
+			const float fSiny_cosp = 2.0f * (xQuat.w * xQuat.y + xQuat.x * xQuat.z);
+			const float fCosy_cosp = 1.0f - 2.0f * (xQuat.y * xQuat.y + xQuat.x * xQuat.x);
+			m_fClosedYaw = glm::degrees(std::atan2(fSiny_cosp, fCosy_cosp));
+		}
 	}
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override

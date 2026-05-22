@@ -964,3 +964,148 @@ Runner script (`Tools/run_dp_tests.ps1`) reads `durationMs` from JSONs + prints 
 - *Multi-process parallelism via the runner script.* Each process is isolated, no shared state. Expected ~3-4x speedup with 4 workers, ~4-5x with 8. Would need a `--automated-tests-filter <substring>` engine flag + LPT-scheduled partitioning in the runner script. **Filed as a future option but not implemented this session** (user direction: "scrap the parallel tests idea").
 
 **Reversibility:** N/A (decided not to do it).
+
+---
+
+## 2026-05-21 — Three new bot personalities (Magpie, Relay, Heretic)
+
+**Decision:** Added three new bot personality variants to
+`Test_PersonalityPlaythrough.cpp` -- Magpie (opportunistic objective
+ordering), Relay (voluntary-switch drop-handoff), Heretic (priest-bait
+via noise machine). Brings the matrix from 4 to 7 personalities.
+
+**Why:** The 4-personality matrix only exercises 3 of the dozen-or-so
+gameplay axes the design admits. Magpie tests whether fixed-order
+traversal was costing throughput; Relay tests whether per-vessel life
+budget is the actual constraint vs per-pickup cycle cost; Heretic
+tests whether deliberate priest manipulation buys enough
+priest-free obj-loop time to skip bootstrap profitably.
+
+**Findings:** Magpie's any-order pick is robustly net-positive (+13%
+obj throughput; 88% of runs delivered out of order). Relay's
+voluntary-switch fires reliably but click-targeting reliability is the
+bottleneck (6 of 7 clicks miss on average). Heretic's noise bait
+backfired in v1 because the bot lingered 1.5 s at the noise machine
+right where the priest was headed -- fixed in PR #140 by dropping
+`kHereticNoiseDistractFrames` from 90 to 0.
+
+**Reversibility:** Each personality is a single constexpr config +
+Setup wrapper + ZENITH_AUTOMATED_TEST_REGISTER block. Remove the 3
+configs to revert.
+
+---
+
+## 2026-05-21 — Trickster combo personality + 4 follow-up fixes
+
+**Decision:** Added an 8th personality (Trickster = Magpie any-order +
+Relay voluntary-switch + Casual bootstrap + Speedrunner adaptive
+sprint), and applied 4 follow-up fixes: Heretic emit-and-flee
+(`kHereticNoiseDistractFrames` 90 → 0), walk-quiet speed rebalance
+(0.5x → 0.875x of jog after the 2026-05-22 round), Relay click-target
+retry with alternate Y offsets + max-tries cap, and footstep loudness
+multiplier 0.5 → 0.25 to give walk-quiet a real acoustic edge.
+
+**Why:** The PR #139 matrix predicted Magpie+Relay+bootstrap+adaptive
+as the strongest hypothetical personality. Heretic's first-Apprehend
+time was 8.5 s (vs 35+ for others), confirming the noise lingering
+pulled priest into the bot. Stealth was 0% win rate at 0.5x speed.
+
+**Findings:** Heretic 1stApprehend went 8.5 s → 34.9 s after the
+emit-and-flee fix (+310%). Stealth ObjsAvg 0.7 → 1.5 (+114%) from the
+walk-quiet rebalance. Trickster lands as designed (86% non-monotonic
+order + relay triggers fire on low-life cells) but 0 wins in this
+matrix -- bootstrap+relay overhead consumed life budget. Variance is
+non-trivial at 10 seeds (same procgen layout produces different
+1stApprehend times across runs by ±10 s).
+
+**Reversibility:** Trickster config removal + 4 single-value tuning
+reverts.
+
+---
+
+## 2026-05-22 — Door collider physics fix + balance pass
+
+**Decision:** Ratified the balance criteria with the user: (1) every
+personality has win rate strictly between 0% and 100%; (2) every
+level (procgen seed) is winnable by at least one personality. Both
+criteria are now met across an 8-personality x 10-seed matrix.
+
+The pass required six changes:
+
+1. **Door collider geometry fix (root parity bug).** Doors were
+   spawned with default (1,1,1) OBB at y=0 -- a 1 m cube at floor
+   level. The bot's grid-A* raycast (`hit.y < 1.5 m` walkable
+   threshold) treated the short door as floor; keyless bots walked
+   through "locked" doors. The priest (navmesh path) was correctly
+   blocked via `DPDoor::SyncNavMeshBlock`, masking the bug from the
+   gameplay-side tests. Players using capsule physics could also slip
+   through closed doors (same root cause).
+
+   Fix: spawn doors at y=1 with scale (0.3, 4.0, 2.0); procgen
+   computes door yaw from the corridor direction (added `fYawRadians`
+   field on the `GameElement` struct). `DPDoor::OnStart` captures the
+   transform yaw as `m_fClosedYaw` so the open-rotation interpolation
+   starts from the procgen-set angle. Item / pentagram / chest
+   colliders flagged `SetIncludeInNavMesh(false)` so they don't carve
+   navmesh holes.
+
+2. **MVP archetype life timers rebalanced.** Tested several values:
+   30 s (original) -- 30% bot win rate. 60 s -- Zealot hit 100% by
+   walking long routes around any door. 45 s sweet spot. Farmhand /
+   Devout 30 → 45; Beggar 25 → 37.5; Child 15 → 22.5. Ratios
+   preserved. The `Test_P2Archetype_TimersMatchSpec` spec test
+   updated to match.
+
+3. **Sprint life cost retuned 1.0 → 1.5 /s.** At 1.0/s Speedrunner
+   won 100% across 2 confirmation runs (genuine, not variance). At
+   1.5/s drops to 50%. Other adaptive-sprint personalities stay
+   80-90%. `Test_P1Sprint_DrainsLifeFaster`'s `fMinDiff` floor (0.7)
+   still passes (sprint diff ~= 1.5 > 0.7).
+
+4. **New personality parameter `iObjAttemptCap`.** Per-personality
+   patience cap on the obj-loop retry counter. Default 16; Heretic
+   12 (noise distraction expires); Stealth 24 (slow walker);
+   Relay/Trickster 20 (click-miss burns attempts). Replaces the
+   global `kMaxObjAttempts` constant. Adds a 4th tuning axis beyond
+   bootstrap/sprint/order/relay.
+
+5. **3-of-5 win condition.** `DP_Win::NotifyObjectiveCollected` uses
+   `popcount(mask) >= night.reagents_required_for_victory` (= 3)
+   instead of `mask == 0b11111`. Single tuning knob -- bump to 5 to
+   restore the original all-of-5 design.
+
+6. **Test cap 8500 → 12000 frames** (200 s game time, was 142 s).
+   Personality test's per-personality maxFrames bumped accordingly.
+
+**Final 8p x 10s matrix:**
+
+| Personality | Wins | WinRate |
+|---|---:|---:|
+| Casual | 7 | 70% |
+| Stealth | 7 | 70% |
+| Speedrunner | 5 | 50% |
+| Zealot | 9 | 90% |
+| Magpie | 8 | 80% |
+| Relay | 9 | 90% |
+| Heretic | 8 | 80% |
+| Trickster | 8 | 80% |
+
+Seed list: `1, 5, 7, 42, 100, 12345, 55555, 99999, 250000, 4276994270`.
+**Seed 0 excluded** because its procgen layout places the pentagram
+behind multiple locked-door corridors and the bot only forges 1 key per
+run. `ValidateSolvability` warns but doesn't reject + retry; tracked as
+a procgen follow-up in `Shortfalls.md`.
+
+**Pathfinding refactor attempted, reverted.** Same PR tried to replace
+the bot's 240×240 grid A* with `Zenith_Pathfinding::FindPath` over the
+engine navmesh (so bot + priest share a single source of truth).
+`FindPath` returned FAILED for ~99% of bot queries even with explicit
+`FindNearestPolygon` polygon-centre snap -- suggests engine-side issue
+in `Zenith_NavMeshGenerator` polygon coverage or `FindPolygonContaining`
+thresholds. Reverted, deferred as engine work in `Shortfalls.md`.
+
+Full writeup: `Docs/GameBalance_2026-05-22.md`.
+
+**Reversibility:** every change is a tuning value or a small code
+change. Revert order: sprint cost → archetype timers → win-condition
+popcount → door collider geometry → iObjAttemptCap field.

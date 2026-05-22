@@ -1,9 +1,15 @@
 # DP Status
 
-**Last updated:** 2026-05-20 — procgen migration complete (PRs #96-#117), telemetry v3 + seed-matrix tooling shipped (#120/121), personality-matrix-driven balance + bot fixes (#122/126/127/128), priest navmesh integration overhaul (#123/125). Master HEAD `30c775f5`. Full suite **117 PASSED, 0 FAILED** locally via `Tools/run_dp_tests.ps1 -Headless` (~120 s headless; longest single test ~25 s — `PersonalityPlaythrough_Speedrunner`).
+**Last updated:** 2026-05-22 — game-balance pass (PR #141) closes the loop on the user-ratified balance criteria. Three new personalities added 2026-05-21 (Magpie / Relay / Heretic, PR #139) + a combo Trickster (PR #140) on top of the original four. Door collider physics fix in PR #141 brings bot grid pathing into parity with player capsule physics + priest navmesh path. Previous procgen migration (PRs #96-#117), telemetry v3 + seed-matrix tooling (#120/121), and priest navmesh integration overhaul (#123/125) landed at 2026-05-20 HEAD `30c775f5`.
 
 **Build:** ✅ DP target builds clean (`vs2022_Debug_Win64_True` 0 warnings 0 errors; `Debug_False` + `Release_False` configs also building cleanly since 2026-05-10).
-**Tests:** Full local suite green. Headless skips graphics-only tests by `m_bRequiresGraphics`; all compute-only tests pass. Per-test wall-clock timing reported in JSON (`durationMs`) + slowest-10 surfaced after every batch run. 118 registered automated tests across 104 .cpp files (was 122 at 2026-05-16; consolidations during the procgen migration and the Berserker → Zealot personality swap net -4).
+**Tests:** Full local suite green. Headless skips graphics-only tests by `m_bRequiresGraphics`; all compute-only tests pass. Per-test wall-clock timing reported in JSON (`durationMs`) + slowest-10 surfaced after every batch run. **122 registered automated tests** across 108 .cpp files (4 new tests for the 4 new personalities since 2026-05-20).
+
+**Balance criteria (ratified 2026-05-21):**
+1. Every personality WR ∈ (0%, 100%) ✅ — Casual 70%, Stealth 70%, Speedrunner 50%, Zealot 90%, Magpie 80%, Relay 90%, Heretic 80%, Trickster 80% across the canonical 10-seed matrix.
+2. Every level winnable by ≥1 personality ✅ — canonical seeds `1, 5, 7, 42, 100, 12345, 55555, 99999, 250000, 4276994270` all have multiple winners. Seed 0 excluded (procgen-unsolvable; see Shortfalls.md).
+
+Full per-personality / per-seed breakdown: `Docs/GameBalance_2026-05-22.md`.
 
 **Operating mode:** Direct-to-master with auto-merge on green CI. Branch protection disabled per Tomos 2026-05-15 direction (CI still runs on every push via `push: branches: [master]` triggers). Worktrees in `.claude/worktrees/` are sandbox-only; main work happens at `C:/dev/Zenith` on master.
 

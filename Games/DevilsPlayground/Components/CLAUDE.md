@@ -21,11 +21,13 @@ DPPlayerController_Behaviour.h    # Click-to-possess raycast. Reads mouse positi
                                   #   DP_Player::TryVoluntaryPossessSwitch (cooldown + range
                                   #   gates) for player clicks; SetPossessedVillager for
                                   #   system paths (tests, death-respawn).
-DPVillager_Behaviour.h            # Possessable villager. Holds the 30 s life timer + WASD
-                                  #   movement (camera-relative; matches DPInputActions).
-                                  #   States: Idle / Possessed / Fainted / Dead. Sprint
-                                  #   (Shift) drains life faster; walk-quiet (Ctrl) halves
-                                  #   speed + halved footstep loudness.
+DPVillager_Behaviour.h            # Possessable villager. Holds the per-archetype life timer
+                                  #   (Farmhand 45 s / Devout 45 / Beggar 37.5 / Child 22.5
+                                  #   as of 2026-05-22) + WASD movement (camera-relative;
+                                  #   matches DPInputActions). States: Idle / Possessed /
+                                  #   Fainted / Dead. Sprint (Shift) drains life at +1.5 s/s
+                                  #   over base (was 1.0 -- bumped 2026-05-22). Walk-quiet
+                                  #   (Ctrl) uses 0.875x jog speed + 0.25x footstep loudness.
 DPOrbitCamera_Behaviour.h         # Orbit camera over the possessed villager. Q/E yaw + mouse-
                                   #   wheel zoom (EXT-4). DPVillager position drives orbit
                                   #   target. Not a Zenith_CameraComponent (which is FPS-only);
@@ -60,6 +62,17 @@ DPInteractable_Behaviour.h        # Base class. Distance-based proximity (defaul
 DPDoor_Behaviour.h                #   Lerp-rotate door. Key-gated; consumes the held Key on
                                   #   interact. Triggers a path-grid invalidation via
                                   #   OnInteractEvent so the test-bot pathing can re-route.
+                                  #   Collider geometry rebalance 2026-05-22: was a default
+                                  #   (1,1,1) cube at y=0 (1m tall, in floor) -- bot raycasts
+                                  #   treated it as floor and walked through "locked" doors.
+                                  #   Now spawned with scale (0.3, 4.0, 2.0) at y=1, rotated
+                                  #   to align with the wall axis (procgen stores fYawRadians
+                                  #   on the door GameElement). OnAwake captures the entity
+                                  #   transform yaw as m_fClosedYaw so the open-rotation
+                                  #   interpolation starts from the procgen-set angle.
+                                  #   SetIncludeInNavMesh(false) so the navmesh emits walkable
+                                  #   polygons through the doorway; SyncNavMeshBlock toggles
+                                  #   the BLOCKED flag at runtime for priest pathing.
 DPDoubleDoor_Behaviour.h          #   Two-leaf door. FindChildTransform("Leaf_L" / "Leaf_R")
                                   #   drives per-leaf rotation. Same key-gated semantics.
 DPChest_Behaviour.h               #   Lid pivot + (WIP) loot dispense. Currently only the lid
@@ -134,6 +147,21 @@ DPProcLevelBootstrap_Behaviour.h  # ProcLevel scene's bootstrap script. OnAwake 
                                   #   pentagram, item spawners, villagers, priest, priest
                                   #   patrol nodes). Seed from DP_PROCGEN_SEED env var if
                                   #   set, else the default seed (currently 0xCAFEBEEF).
+                                  #
+                                  #   2026-05-22 changes:
+                                  #     * Door entities scaled (0.3, 4.0, 2.0) at y=1 and
+                                  #       rotated to align with wall axis (procgen now
+                                  #       stores fYawRadians on the door GameElement).
+                                  #       Doors actually block bot raycasts + player capsule
+                                  #       physics now -- prior to this, closed doors only
+                                  #       blocked navmesh AI (priest).
+                                  #     * Item / pentagram / chest colliders now navmesh-
+                                  #       excluded (SetIncludeInNavMesh(false)). The bot
+                                  #       paths TO these entities for pickup / delivery;
+                                  #       their colliders would otherwise carve holes in
+                                  #       the navmesh and break FindPath queries.
+                                  #       Pickup remains proximity-based (1.5 m), not
+                                  #       collision-based.
 ```
 
 ## The behaviour pattern

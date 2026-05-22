@@ -182,7 +182,7 @@ namespace
 	//                   The empirical question Zealot answers: is the
 	//                   bootstrap chain net-negative for the win condition?
 	// ------------------------------------------------------------------------
-	enum class Personality : uint8_t { Casual, Stealth, Speedrunner, Zealot };
+	enum class Personality : uint8_t { Casual, Stealth, Speedrunner, Zealot, Magpie, Relay, Heretic, Trickster };
 
 	struct PersonalityConfig
 	{
@@ -198,6 +198,38 @@ namespace
 		bool        bRunPauseTest;      // run the Esc pause-overlay phases at all
 		int         iPauseCycles;       // how many open/close cycles when bRunPauseTest=true
 		int         iWalkBudgetMul;     // multiplier on the base 1200-frame walk budget
+		// Magpie axis: when true, the objective loop picks the CLOSEST
+		// uncollected objective each iteration rather than the fixed
+		// Obj1 -> Obj2 -> ... -> Obj5 tag order. Tests whether the
+		// fixed-order traversal cost is the dominant overhead in
+		// Zealot underperformance, and whether the procgen pentagram-
+		// to-spawner distance distribution rewards reorder.
+		bool        bAnyOrderObjectives;
+		// Relay axis: when true, the bot drops the current held
+		// objective at the foot of the nearest healthy villager and
+		// voluntary-switches to them whenever the remaining life
+		// timer falls below kRelayLifeThresholdSec. Tests the drop-
+		// handoff mechanic (zero events across the existing matrix)
+		// and whether the per-vessel life budget or the per-pickup
+		// cycle cost is the actual constraint.
+		bool        bUseRelayDrop;
+		// Heretic axis: when true, walks to + F-presses the noise
+		// machine BEFORE the objective loop, then jumps straight to
+		// kHP_ObjLoopFind (skipping iron/forge/door/chest). Tests
+		// whether deliberate priest baiting buys enough "priest-free"
+		// objective-loop time to win more cells than Speedrunner.
+		bool        bDeliberateNoiseFirst;
+		// 2026-05-22: per-personality cap on the per-objective retry
+		// counter (replaces the global kMaxObjAttempts constant). The
+		// counter increments each time a pentagram F-press fails to
+		// deliver (typically because the bot was repossessed mid-walk
+		// and the new villager has no item; cross-possession memory
+		// then re-acquires the item but burns one attempt). Higher cap
+		// = more patient bot; lower cap = quicker to skip a stuck
+		// objective and try the next one. Adds a fourth tuning axis
+		// beyond bootstrap / sprint / order / relay that personalities
+		// can be designed around.
+		int         iObjAttemptCap;
 	};
 
 	// Walk budget multipliers calibrated for the per-personality movement
@@ -219,7 +251,9 @@ namespace
 		/*sprint*/false, /*quiet*/false, /*adaptive*/false,
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/true,  /*pauseCycles*/1,
-		/*budgetMul*/1 };
+		/*budgetMul*/1,
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
+		/*objAttemptCap*/16 };
 	// Stealth caveat (seed-matrix analysis 2026-05-19): walk-quiet only
 	// halves *footstep* loudness (movement.walk_footstep_loudness_multiplier).
 	// The gameplay interactions Stealth still performs -- forge crafting
@@ -236,13 +270,19 @@ namespace
 		/*sprint*/false, /*quiet*/true,  /*adaptive*/false,
 		/*skipBootstrap*/false,
 		/*noise*/false,  /*pause*/true,  /*pauseCycles*/1,
-		/*budgetMul*/2 };
+		/*budgetMul*/2,
+		// Stealth gets a higher retry cap because its slow walk means
+		// more wasted frames per failed attempt.
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
+		/*objAttemptCap*/24 };
 	constexpr PersonalityConfig kPersonality_Speedrunner = {
 		Personality::Speedrunner, "Speedrunner",
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1 };
+		/*budgetMul*/1,
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
+		/*objAttemptCap*/16 };
 	// Zealot bypasses the entire iron/forge/door/chest/noise coverage
 	// chain and goes straight to the objective-deliver loop after the
 	// first possession lands. Adaptive sprint (not blind sprint) so the
@@ -256,7 +296,85 @@ namespace
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*skipBootstrap*/true,
 		/*noise*/false,  /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1 };
+		/*budgetMul*/1,
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
+		/*objAttemptCap*/16 };
+	// Magpie (2026-05-21): opportunistic objective ordering. Picks the
+	// closest uncollected objective each iteration instead of the fixed
+	// Obj1 -> Obj5 tag order Casual / Stealth / Speedrunner / Zealot
+	// all follow. Runs the full bootstrap chain so Casual vs Magpie is
+	// a fair "what does any-order cost" delta with everything else held
+	// constant. Empirical question: how much of Zealot's underperformance
+	// is the fixed-order traversal cost, and is the procgen spawn
+	// distribution rewarding reorder?
+	constexpr PersonalityConfig kPersonality_Magpie = {
+		Personality::Magpie,      "Magpie",
+		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
+		/*skipBootstrap*/false,
+		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
+		/*budgetMul*/1,
+		/*anyOrder*/true,  /*relayDrop*/false, /*noiseFirst*/false,
+		/*objAttemptCap*/16 };
+	// Relay (2026-05-21): voluntary-switch + drop-handoff chain. When
+	// life timer falls below kRelayLifeThresholdSec and the bot is
+	// holding an objective, drops it at the foot of the nearest healthy
+	// villager and click-possesses them (which voluntary-faints the
+	// outgoing villager rather than killing it). Tests the drop verb
+	// (zero events across the existing 4-personality matrix) + the
+	// hypothesis that the per-vessel life budget, not the per-pickup
+	// cycle cost, is the actual constraint on win rate. Skip the
+	// bootstrap because the relay mechanic is only interesting on the
+	// objective loop's "I'm holding an item and about to die" tension.
+	constexpr PersonalityConfig kPersonality_Relay = {
+		Personality::Relay,       "Relay",
+		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
+		/*skipBootstrap*/true,
+		/*noise*/false,  /*pause*/false, /*pauseCycles*/1,
+		/*budgetMul*/1,
+		// Relay gets a slightly elevated cap because each click-miss
+		// burns the attempt counter without being a real obj-loop fail.
+		/*anyOrder*/false, /*relayDrop*/true,  /*noiseFirst*/false,
+		/*objAttemptCap*/20 };
+	// Heretic (2026-05-21): deliberate priest manipulation. Walks to +
+	// F-presses the noise machine BEFORE the objective loop, then jumps
+	// straight to kHP_ObjLoopFind. The noise emission baits the priest
+	// into an Investigate state for ~30 s, buying that window for the
+	// objective loop without priest pressure on the route. Skip the
+	// rest of the bootstrap (iron/forge/door/chest) so the noise-bait
+	// payoff isn't squandered on side-trips. Empirical question: does
+	// position-of-priest matter more than amount-of-priest? Zealot has
+	// 5x less priest engagement but doesn't deliver more; if Heretic
+	// (more priest engagement, but directed AWAY) wins more cells, the
+	// answer is "position".
+	constexpr PersonalityConfig kPersonality_Heretic = {
+		Personality::Heretic,     "Heretic",
+		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
+		/*skipBootstrap*/true,
+		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
+		/*budgetMul*/1,
+		// Heretic gets a LOWER retry cap because the noise distraction
+		// expires (priest investigate -> patrol after ~30 s); patience
+		// past that window means racing a more aggressive priest.
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/true,
+		/*objAttemptCap*/12 };
+	// Trickster (2026-05-21 PR #140): the combo personality predicted
+	// strongest by the 7p x 10s matrix run. Magpie's any-order pick
+	// (+13% obj throughput) + Relay's voluntary-switch (+3x win rate)
+	// + Casual's bootstrap chain (skip-bootstrap was net-negative)
+	// + Speedrunner's adaptive sprint (best obj-loop speed). The
+	// hypothesis: each of these axes is independently win-rate
+	// positive, and the three modifications are orthogonal, so a bot
+	// that combines all of them should beat any single-axis bot.
+	constexpr PersonalityConfig kPersonality_Trickster = {
+		Personality::Trickster,   "Trickster",
+		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
+		/*skipBootstrap*/false,
+		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
+		/*budgetMul*/1,
+		// Trickster has Relay's click-miss overhead AND Magpie's
+		// re-aim work; bump cap accordingly.
+		/*anyOrder*/true,  /*relayDrop*/true,  /*noiseFirst*/false,
+		/*objAttemptCap*/20 };
 	// (Methodical personality removed 2026-05-19 -- the seed-matrix
 	// analysis found its bot behaviour was within rounding error of
 	// Casual on every metric except the pause-cycle count (3 cycles
@@ -320,6 +438,16 @@ namespace
 		kHP_ObjLoopWalk,
 		kHP_ObjLoopWalkPentagram,
 		kHP_ObjLoopPressF,
+		// Relay phases (2026-05-21). Inserted between ObjLoopWalk* and
+		// ObjLoopPressF: when life < kRelayLifeThresholdSec while holding
+		// an objective, walk to the nearest healthy villager, drop, then
+		// click-possess them. The voluntary-switch path arms a Fainted
+		// timer (not Dead), so the previous vessel is recoverable for
+		// later cycles.
+		kHP_RelayFindTarget,
+		kHP_RelayWalkToTarget,
+		kHP_RelayDropAndSwitch,
+		kHP_RelayWaitSwitch,
 		kHP_AssertVictory,
 		kHP_PauseOpen,
 		kHP_PauseAssertOpen,
@@ -423,7 +551,81 @@ namespace
 	// does nothing, attempt++"). 16 gives the cross-possession recover
 	// path room to actually re-pickup -- each repossess-and-re-pickup
 	// costs ~1 attempt, so 16 lets ~10 productive deliveries through.
+	// 2026-05-22: this is now the FALLBACK only -- per-personality
+	// iObjAttemptCap takes precedence (default 16, ranges 12-24 across
+	// the current 8 personalities). The constant is kept for documentation
+	// + as a sanity check; the runtime read uses g_xActiveCfg.iObjAttemptCap.
 	constexpr int kMaxObjAttempts = 16;
+
+	// Relay (2026-05-21): trigger the drop-handoff when remaining life
+	// is below this threshold. 5 s gives the bot ~1.5 s to walk to the
+	// nearest healthy villager + drop + faint-switch within the
+	// life timer window. Tuned by inspection of the existing 4-
+	// personality matrix: median life-remaining at death is ~0.2 s
+	// (i.e., bots ride the timer to zero), and the typical inter-
+	// villager spacing on procgen is 8-12 m which a Speedrunner-style
+	// sprint covers in ~1-1.5 s.
+	constexpr float kRelayLifeThresholdSec = 5.0f;
+	// Heretic (2026-05-21): how many frames the bot lingers near the
+	// noise machine after pressing F. Originally 90 (1.5 s @ 60 Hz)
+	// to let the priest start investigating BEFORE the bot leaves.
+	//
+	// 2026-05-21 PR #139 follow-up: this BACKFIRED. The matrix data
+	// showed Heretic's first-Apprehend time as 7-13 s (vs 35-74 s for
+	// other personalities) -- the priest beelined to the noise-machine
+	// position and apprehended Heretic exactly because Heretic was
+	// still standing there. Now 0 frames: emit noise and leave
+	// immediately. The priest still goes to investigate (the noise
+	// stimulus reaches the priest the same way), but by the time it
+	// arrives Heretic is elsewhere running the obj loop.
+	//
+	// We keep the kHP_WaitNoise -> kHP_ObjLoopFind transition path
+	// (it's the natural exit) and just set the loiter count to 0 so
+	// the wait-frames check in kHP_WaitNoise advances immediately.
+	constexpr int kHereticNoiseDistractFrames = 0;
+	// Magpie (2026-05-21): closest-uncollected-objective tracker. The
+	// in-order personalities derive the expected tag from the counter
+	// (g_aeObjTags[g_iObjectivesDelivered]); Magpie sets this in
+	// kHP_ObjLoopFind to the closest still-uncollected obj tag and
+	// every downstream phase reads from this when bAnyOrderObjectives
+	// is set. The in-order personalities also write to this so the
+	// ObjLoopPressF check can use a single uniform path.
+	DP_ItemTag g_eCurrentObjTag = DP_ItemTag::Objective1;
+	// Relay state. Filled in kHP_RelayFindTarget; consumed by the
+	// walk/drop/switch sub-phases.
+	Zenith_EntityID g_xRelayTarget;
+	int g_iRelayClickWait = 0;
+	// 2026-05-21 PR #140 follow-up: the prior implementation only
+	// tried one click target per Relay phase entry. The matrix data
+	// showed 6 of 7 clicks missing on seed 42 (target villager idx=80
+	// at screen (544, 215) returned no possession flip), with the 7th
+	// landing because the target had moved and WorldToScreen now
+	// projected to a different screen pos.
+	//
+	// New design: track villagers we've already tried clicking, so
+	// RelayFindTarget can pick the NEXT closest non-tried target on
+	// retry instead of looping back to the same one. Plus try two Y
+	// offsets per attempt -- 0.9 m (head-height) and 1.8 m (over-top)
+	// -- since the villager's screen-collider may be wider in y than
+	// the original 0.9 m anchor caught. Cap total tries to 4 so we
+	// don't burn the whole life timer on doomed clicks.
+	// 2026-05-21 PR #140: dropped from 4 to 2. 4 was meant to give the
+	// bot generous retry budget, but the matrix data showed it just
+	// meant 4x more frames burned on doomed clicks during low-life
+	// crisis. 2 targets x 2 Y-offsets x 8 frames = 32 frames total
+	// fallback cost vs the OLD 30-frame single-attempt path -- still
+	// extra cost, but small enough that the click-success benefit can
+	// dominate when it lands.
+	constexpr int kMaxRelayTargetTries = 2;
+	Zenith_EntityID g_axRelayTried[kMaxRelayTargetTries];
+	int g_iRelayTriedCount = 0;
+	// Which Y offset is being tried for the CURRENT target -- toggles
+	// between 0.9 and 1.8 on each RelayDropAndSwitch entry, so a
+	// single target gets two click attempts before being marked tried.
+	int g_iRelayYOffsetTry = 0;
+	// Heretic state. Counts the post-noise-press lingering frames so
+	// the priest has time to start Investigate before the bot leaves.
+	int g_iHereticDistractWait = 0;
 
 	// Victory / pause flags.
 	bool g_bVictoryEvent = false;
@@ -1526,6 +1728,40 @@ namespace
 		return xBest;
 	}
 
+	// Magpie helper (2026-05-21): return the closest item across ALL
+	// objective tags whose corresponding bit isn't yet set in the win
+	// mask. Returns INVALID_ENTITY_ID + leaves eOutTag untouched when
+	// nothing is reachable / everything's already collected.
+	//
+	// Used by kHP_ObjLoopFind when g_xActiveCfg.bAnyOrderObjectives is
+	// true to break out of the fixed Obj1 -> Obj2 -> ... order. The
+	// in-order personalities sit on g_aeObjTags[g_iObjectivesDelivered]
+	// instead, and they never call this.
+	Zenith_EntityID FindClosestUncollectedObjective(
+		const Zenith_Maths::Vector3& xRef, DP_ItemTag& eOutTag)
+	{
+		const uint32_t uMask = DP_Win::GetCollectedObjectivesMask();
+		Zenith_EntityID xBest;
+		float fBestSq = 1e30f;
+		DP_ItemTag eBest = DP_ItemTag::None;
+		DP_Query::ForEachScriptInActiveScene<DPItemBase_Behaviour>(
+			[&xBest, &fBestSq, &eBest, &xRef, uMask](Zenith_EntityID xId, DPItemBase_Behaviour& xItem)
+			{
+				const DP_ItemTag eTag = xItem.GetTag();
+				if (!DP_IsObjectiveTag(eTag)) return;
+				const uint32_t uBit = DP_ObjectiveTagToBit(eTag);
+				if (uMask & uBit) return;  // already delivered
+				Zenith_Maths::Vector3 xPos;
+				if (!TryGetEntityPos(xId, xPos)) return;
+				const float fDx = xPos.x - xRef.x;
+				const float fDz = xPos.z - xRef.z;
+				const float fSq = fDx*fDx + fDz*fDz;
+				if (fSq < fBestSq) { fBestSq = fSq; xBest = xId; eBest = eTag; }
+			});
+		if (xBest.IsValid()) eOutTag = eBest;
+		return xBest;
+	}
+
 	// FindItemByTag returns the *first* matching item, which may be far from
 	// the villager and force a long unnecessary walk. Prefer the closest one
 	// so the test stays within the 3-minute wall-clock budget.
@@ -1708,6 +1944,22 @@ static void Setup_HumanPlaythrough()
 	g_iWait  = 0;
 	g_iWalkBudget = 0;
 	g_iRepossessAttempts = 0;
+
+	// 2026-05-21: per-personality state introduced for Magpie / Relay /
+	// Heretic. Resetting at Setup so batched-mode test runs don't leak
+	// state across cells (the runner re-uses the same process via
+	// --all-automated-tests + between-tests hooks).
+	g_eCurrentObjTag       = DP_ItemTag::Objective1;
+	g_xRelayTarget         = INVALID_ENTITY_ID;
+	g_iRelayClickWait      = 0;
+	g_iHereticDistractWait = 0;
+	// PR #140: relay tried-target tracking.
+	for (int i = 0; i < kMaxRelayTargetTries; ++i)
+	{
+		g_axRelayTried[i] = INVALID_ENTITY_ID;
+	}
+	g_iRelayTriedCount = 0;
+	g_iRelayYOffsetTry = 0;
 
 	g_xPossessTarget   = INVALID_ENTITY_ID;
 	g_xCurrentVillager = INVALID_ENTITY_ID;
@@ -2091,7 +2343,16 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			// could be spending. Jumps straight to ObjLoopFind so all
 			// possessions (including poss 1) are spent on pentagram
 			// deliveries.
-			if (g_xActiveCfg.bSkipBootstrap)
+			//
+			// Heretic (2026-05-21) is bSkipBootstrap=true BUT also walks
+			// to the noise machine FIRST as a priest-bait. The kHP_WalkNoise
+			// transition naturally lands at kHP_ObjLoopFind after kHP_WaitNoise,
+			// so we don't need a return path; the existing chain handles it.
+			if (g_xActiveCfg.bDeliberateNoiseFirst)
+			{
+				g_iPhase = kHP_WalkNoise;
+			}
+			else if (g_xActiveCfg.bSkipBootstrap)
 			{
 				g_iPhase = kHP_ObjLoopFind;
 			}
@@ -2467,7 +2728,14 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	case kHP_WaitNoise:
 	{
 		++g_iWait;
-		if (g_iWait < 8) return true;  // perception system needs a few frames
+		// Heretic lingers longer near the noise machine so the priest
+		// gets enough frames in Investigate before the bot leaves --
+		// this is the whole point of the personality. Non-Heretic
+		// noise users just need 8 frames for the perception system
+		// to register the stimulus before they continue.
+		const int kFrames = g_xActiveCfg.bDeliberateNoiseFirst
+			? kHereticNoiseDistractFrames : 8;
+		if (g_iWait < kFrames) return true;
 		if (g_xPriest.IsValid())
 		{
 			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(g_xPriest);
@@ -2512,20 +2780,30 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		if (!xCur.IsValid()) return true;     // wait one more frame for re-possession
 		g_xCurrentVillager = xCur;
 
-		// Already delivered this objective on a previous attempt? Skip ahead.
 		const uint32_t uMask = DP_Win::GetCollectedObjectivesMask();
-		const uint32_t uBit = 1u << g_iObjectivesDelivered;
-		if (uMask & uBit)
+
+		// Magpie skips the in-order "skip-ahead" path -- there is no
+		// fixed obj index for any-order play, just an uncollected mask.
+		// The remaining-obj count is the popcount of the inverted mask
+		// AND'd with the 5-objective range.
+		if (!g_xActiveCfg.bAnyOrderObjectives)
 		{
-			++g_iObjectivesDelivered;
-			g_iObjAttempts = 0;
-			return true;
+			// Already delivered this objective on a previous attempt? Skip ahead.
+			const uint32_t uBit = 1u << g_iObjectivesDelivered;
+			if (uMask & uBit)
+			{
+				++g_iObjectivesDelivered;
+				g_iObjAttempts = 0;
+				return true;
+			}
 		}
 
 		// Cap retries — if a single objective resists multiple attempts (e.g.
 		// item entity got destroyed without bit being set), give up and move
 		// on so the test still terminates rather than spinning forever.
-		if (g_iObjAttempts >= kMaxObjAttempts)
+		// 2026-05-22: per-personality cap replaces the old kMaxObjAttempts
+		// global. See PersonalityConfig.iObjAttemptCap docs for the rationale.
+		if (g_iObjAttempts >= g_xActiveCfg.iObjAttemptCap)
 		{
 			std::printf("[HumanPlaythrough] obj %d MAX_ATTEMPTS — skipping\n",
 				g_iObjectivesDelivered);
@@ -2535,12 +2813,39 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			return true;
 		}
 
-		const DP_ItemTag eExpected = g_aeObjTags[g_iObjectivesDelivered];
+		// Magpie: pick the CLOSEST uncollected obj tag from the bot's
+		// current position. In-order: use the next-by-counter tag.
+		Zenith_Maths::Vector3 xObjVPos;
+		if (!TryGetEntityPos(xCur, xObjVPos))
+			xObjVPos = Zenith_Maths::Vector3(45.0f, 0.0f, 53.0f);
+		Zenith_EntityID xItem;
+		if (g_xActiveCfg.bAnyOrderObjectives)
+		{
+			xItem = FindClosestUncollectedObjective(xObjVPos, g_eCurrentObjTag);
+		}
+		else
+		{
+			g_eCurrentObjTag = g_aeObjTags[g_iObjectivesDelivered];
+			xItem = FindClosestItemByTag(g_eCurrentObjTag, xObjVPos);
+		}
 
 		// If this villager is already carrying the right item (e.g., previous
 		// pent F-press fired but range was wrong, or we re-possessed and the
 		// new villager picked it up automatically), walk straight to pent.
-		if (DP_Player::GetHeldItemTag(xCur) == eExpected)
+		// For Magpie: if the current held item is ANY uncollected obj, head
+		// to pent with that tag (override g_eCurrentObjTag).
+		const DP_ItemTag eHeldNow = DP_Player::GetHeldItemTag(xCur);
+		const bool bHoldingUncollectedObj = DP_IsObjectiveTag(eHeldNow)
+			&& ((uMask & DP_ObjectiveTagToBit(eHeldNow)) == 0);
+		if (g_xActiveCfg.bAnyOrderObjectives && bHoldingUncollectedObj)
+		{
+			g_eCurrentObjTag = eHeldNow;
+			g_xCurrentObjItem = INVALID_ENTITY_ID;
+			g_iPhase = kHP_ObjLoopWalkPentagram;
+			SetWalkBudget(1200);
+			return true;
+		}
+		if (!g_xActiveCfg.bAnyOrderObjectives && eHeldNow == g_eCurrentObjTag)
 		{
 			g_xCurrentObjItem = INVALID_ENTITY_ID;
 			g_iPhase = kHP_ObjLoopWalkPentagram;
@@ -2548,16 +2853,10 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			return true;
 		}
 
-		// Closest objective of the requested tag — avoids forcing a long
-		// walk across the map when an equivalent item is nearby.
-		Zenith_Maths::Vector3 xObjVPos;
-		if (!TryGetEntityPos(xCur, xObjVPos))
-			xObjVPos = Zenith_Maths::Vector3(45.0f, 0.0f, 53.0f);
-		Zenith_EntityID xItem = FindClosestItemByTag(eExpected, xObjVPos);
 		if (!xItem.IsValid())
 		{
 			std::printf("[HumanPlaythrough] objective %d (tag=%d) NOT in scene — skipping\n",
-				g_iObjectivesDelivered, (int)eExpected);
+				g_iObjectivesDelivered, (int)g_eCurrentObjTag);
 			std::fflush(stdout);
 			++g_iObjectivesDelivered;
 			g_iObjAttempts = 0;
@@ -2590,8 +2889,24 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
 		if (xCur.IsValid() && g_iObjectivesDelivered < 5)
 		{
-			const DP_ItemTag eExpected = g_aeObjTags[g_iObjectivesDelivered];
-			if (DP_Player::GetHeldItemTag(xCur) == eExpected)
+			// Magpie: opportunistic re-target. If we got auto-pickup-ed
+			// onto ANY uncollected objective while walking, head to pent
+			// with that. Otherwise the in-order check.
+			const DP_ItemTag eHeldNow = DP_Player::GetHeldItemTag(xCur);
+			const uint32_t uMaskNow  = DP_Win::GetCollectedObjectivesMask();
+			const bool bHoldingUncollectedObj = DP_IsObjectiveTag(eHeldNow)
+				&& ((uMaskNow & DP_ObjectiveTagToBit(eHeldNow)) == 0);
+			if (g_xActiveCfg.bAnyOrderObjectives && bHoldingUncollectedObj)
+			{
+				g_eCurrentObjTag = eHeldNow;
+				ClearWASD();
+				g_xCurrentObjItem = INVALID_ENTITY_ID;
+				g_iPhase = kHP_ObjLoopWalkPentagram;
+				SetWalkBudget(1200);
+				ResetPath();
+				return true;
+			}
+			if (!g_xActiveCfg.bAnyOrderObjectives && eHeldNow == g_eCurrentObjTag)
 			{
 				ClearWASD();
 				g_xCurrentObjItem = INVALID_ENTITY_ID;
@@ -2603,7 +2918,12 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			Zenith_Maths::Vector3 xCurPos;
 			if (TryGetEntityPos(xCur, xCurPos))
 			{
-				const Zenith_EntityID xClosest = FindClosestItemByTag(eExpected, xCurPos);
+				// Magpie re-aim: among ALL uncollected obj tags, pick the
+				// closest. In-order: only re-aim within the current tag.
+				DP_ItemTag eReaimTag = g_eCurrentObjTag;
+				Zenith_EntityID xClosest = g_xActiveCfg.bAnyOrderObjectives
+					? FindClosestUncollectedObjective(xCurPos, eReaimTag)
+					: FindClosestItemByTag(g_eCurrentObjTag, xCurPos);
 				if (xClosest.IsValid() && xClosest != g_xCurrentObjItem)
 				{
 					Zenith_Maths::Vector3 xOldPos = DP_Items::GetItemWorldPos(g_xCurrentObjItem);
@@ -2618,6 +2938,7 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 					if (fNewSq + 16.0f < fOldSq)
 					{
 						g_xCurrentObjItem = xClosest;
+						g_eCurrentObjTag  = eReaimTag;
 						ResetPath();
 					}
 				}
@@ -2667,8 +2988,28 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
 		if (xCur.IsValid() && g_iObjectivesDelivered < 5)
 		{
-			const DP_ItemTag eExpected = g_aeObjTags[g_iObjectivesDelivered];
-			if (DP_Player::GetHeldItemTag(xCur) != eExpected)
+			const DP_ItemTag eHeldNow = DP_Player::GetHeldItemTag(xCur);
+			// Magpie: re-aim mid-walk if we're holding ANY uncollected
+			// obj. In-order: just check the current tag.
+			const uint32_t uMaskNow = DP_Win::GetCollectedObjectivesMask();
+			const bool bHoldingUncollectedObj = DP_IsObjectiveTag(eHeldNow)
+				&& ((uMaskNow & DP_ObjectiveTagToBit(eHeldNow)) == 0);
+			if (g_xActiveCfg.bAnyOrderObjectives)
+			{
+				if (!bHoldingUncollectedObj)
+				{
+					ClearWASD();
+					g_xCurrentObjItem = INVALID_ENTITY_ID;
+					g_iPhase = kHP_ObjLoopFind;
+					ResetPath();
+					return true;
+				}
+				// Track which tag we're actually delivering (may have
+				// drifted from our walk-out plan if a repossess landed
+				// us on a different obj).
+				g_eCurrentObjTag = eHeldNow;
+			}
+			else if (eHeldNow != g_eCurrentObjTag)
 			{
 				// Don't increment g_iObjAttempts here -- this isn't a
 				// failed attempt at *this* objective, just a re-route to
@@ -2679,6 +3020,29 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 				g_iPhase = kHP_ObjLoopFind;
 				ResetPath();
 				return true;
+			}
+		}
+
+		// Relay (2026-05-21): if life is below threshold while holding
+		// an objective, drop + voluntary-switch instead of riding the
+		// timer to zero. We check it on the pentagram walk because
+		// that's the only walk where we know we're holding the goal
+		// item (the obj-item walk is BEFORE pickup, nothing to drop).
+		if (g_xActiveCfg.bUseRelayDrop && xCur.IsValid())
+		{
+			if (DPVillager_Behaviour* pxV = GetScript<DPVillager_Behaviour>(xCur))
+			{
+				const float fLife = pxV->GetRemainingLife();
+				if (fLife > 0.0f && fLife < kRelayLifeThresholdSec)
+				{
+					std::printf("[HumanPlaythrough] RELAY trigger: life=%.1f tag=%d\n",
+						fLife, (int)g_eCurrentObjTag);
+					std::fflush(stdout);
+					ClearWASD();
+					g_iPhase = kHP_RelayFindTarget;
+					g_iWait = 0;
+					return true;
+				}
 			}
 		}
 
@@ -2723,7 +3087,12 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		const DP_ItemTag eHeldNow = xCur.IsValid()
 			? DP_Player::GetHeldItemTag(xCur) : DP_ItemTag::None;
 		const uint32_t uMask = DP_Win::GetCollectedObjectivesMask();
-		const uint32_t uBit = 1u << g_iObjectivesDelivered;
+		// For in-order personalities, this is the bit corresponding to
+		// g_iObjectivesDelivered's slot, which matches g_eCurrentObjTag.
+		// For Magpie, g_eCurrentObjTag is the tag we routed to (set in
+		// ObjLoopFind and updated in ObjLoopWalkPentagram), so the bit
+		// derived from it tells us whether THAT specific delivery took.
+		const uint32_t uBit = DP_ObjectiveTagToBit(g_eCurrentObjTag);
 		const bool bDelivered = (uMask & uBit) != 0;
 		std::printf("[HumanPlaythrough] objective %d attempt#%d: held=%d mask=0x%X bit=0x%X delivered=%d\n",
 			g_iObjectivesDelivered, g_iObjAttempts, (int)eHeldNow, uMask, uBit, (int)bDelivered);
@@ -2743,6 +3112,249 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		}
 		g_xCurrentObjItem = INVALID_ENTITY_ID;
 		g_iPhase = kHP_ObjLoopFind;
+		return true;
+	}
+
+	// ----------------------------------------------------------------------
+	// Relay phases (2026-05-21) -- entered from kHP_ObjLoopWalkPentagram
+	// when life is below kRelayLifeThresholdSec while holding an
+	// objective. Finds nearest healthy villager, walks to within range,
+	// drops the obj, voluntary-switches via possession-click.
+	// ----------------------------------------------------------------------
+	case kHP_RelayFindTarget:
+	{
+		const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
+		if (!xCur.IsValid()) { g_iPhase = kHP_ObjLoopFind; return true; }
+		Zenith_Maths::Vector3 xCurPos;
+		if (!TryGetEntityPos(xCur, xCurPos)) { g_iPhase = kHP_ObjLoopFind; return true; }
+
+		// PR #140 reliability: cap total tries so a Stealth-style slow
+		// run doesn't burn its whole life timer chasing unreachable
+		// click targets. After kMaxRelayTargetTries failed switches,
+		// fall back to the normal walk-to-pent and accept the death.
+		if (g_iRelayTriedCount >= kMaxRelayTargetTries)
+		{
+			std::printf("[HumanPlaythrough] RELAY exhausted %d targets -- back to pent walk\n",
+				g_iRelayTriedCount);
+			std::fflush(stdout);
+			// Reset tried set so future Relay-trigger entries get a
+			// fresh slate (the bot may re-spawn into a new villager
+			// pool via TryRepossessIfDead).
+			for (int i = 0; i < kMaxRelayTargetTries; ++i) g_axRelayTried[i] = INVALID_ENTITY_ID;
+			g_iRelayTriedCount = 0;
+			g_iRelayYOffsetTry = 0;
+			g_iPhase = kHP_ObjLoopWalkPentagram;
+			SetWalkBudget(1200);
+			return true;
+		}
+
+		// Pick the closest LIVING villager that isn't us AND isn't in
+		// the tried-set. Excludes Fainted (still recovering, can't be
+		// possessed) and Dead. State machine accessor:
+		// GetRemainingLife() > 0 covers Idle/Possessed; we additionally
+		// filter the current villager and tried entries out.
+		Zenith_EntityID xBest;
+		float fBestSq = 1e30f;
+		DP_Query::ForEachScriptInActiveScene<DPVillager_Behaviour>(
+			[&xBest, &fBestSq, &xCurPos, xCur](Zenith_EntityID xId, DPVillager_Behaviour& xVilla)
+			{
+				if (xId == xCur) return;
+				if (xVilla.GetRemainingLife() <= 0.0f) return;
+				if (xVilla.GetFaintRecoveryRemaining() > 0.0f) return;
+				// Filter out previously-tried targets so we don't
+				// loop clicking on the same unreachable villager.
+				for (int i = 0; i < g_iRelayTriedCount; ++i)
+				{
+					if (g_axRelayTried[i] == xId) return;
+				}
+				Zenith_Maths::Vector3 xPos;
+				if (!TryGetEntityPos(xId, xPos)) return;
+				const float fDx = xPos.x - xCurPos.x;
+				const float fDz = xPos.z - xCurPos.z;
+				const float fSq = fDx*fDx + fDz*fDz;
+				if (fSq < fBestSq) { fBestSq = fSq; xBest = xId; }
+			});
+
+		if (!xBest.IsValid())
+		{
+			// No relay target left -- bail back to normal walk path so
+			// we ride the timer out and rely on TryRepossessIfDead's
+			// recovery instead.
+			std::printf("[HumanPlaythrough] RELAY no-target -- back to pent walk\n");
+			std::fflush(stdout);
+			g_iPhase = kHP_ObjLoopWalkPentagram;
+			SetWalkBudget(1200);
+			return true;
+		}
+		g_xRelayTarget = xBest;
+		g_iRelayYOffsetTry = 0;  // start with head-height Y on this fresh target
+		std::printf("[HumanPlaythrough] RELAY target acquired idx=%u (dist^2=%.1f) try=%d/%d\n",
+			g_xRelayTarget.m_uIndex, fBestSq, g_iRelayTriedCount + 1, kMaxRelayTargetTries);
+		std::fflush(stdout);
+		g_iPhase = kHP_RelayWalkToTarget;
+		SetWalkBudget(600);  // tight budget -- we're racing the life timer
+		return true;
+	}
+
+	case kHP_RelayWalkToTarget:
+	{
+		if (TryRepossessIfDead()) return true;
+		if (!g_xRelayTarget.IsValid())
+		{
+			g_iPhase = kHP_ObjLoopWalkPentagram;
+			SetWalkBudget(1200);
+			return true;
+		}
+		Zenith_Maths::Vector3 xTPos;
+		if (!TryGetEntityPos(g_xRelayTarget, xTPos))
+		{
+			g_xRelayTarget = INVALID_ENTITY_ID;
+			g_iPhase = kHP_ObjLoopWalkPentagram;
+			SetWalkBudget(1200);
+			return true;
+		}
+		LogWalkProgress("relay", xTPos);
+		--g_iWalkBudget;
+		// 2.5 m stop so the drop lands within proximity-pickup range
+		// of the relay target (DPItemBase auto-pickup triggers at
+		// ~1.5 m).
+		const bool bArrived = DriveWASDToward(xTPos, 2.5f);
+		if (bArrived || g_iWalkBudget <= 0)
+		{
+			ClearWASD();
+			g_iPhase = kHP_RelayDropAndSwitch;
+			g_iWait = 0;
+			return true;
+		}
+		return true;
+	}
+
+	case kHP_RelayDropAndSwitch:
+	{
+		++g_iWait;
+		// Frame 1: idle to flush WASD.
+		if (g_iWait == 1) return true;
+		// Frame 2: press G to drop the held item.
+		if (g_iWait == 2)
+		{
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_G);
+			return true;
+		}
+		// Frame 3-4: idle while drop processes.
+		if (g_iWait < 5) return true;
+		// Frame 5: click on relay target to voluntary-switch possession.
+		if (g_iWait == 5)
+		{
+			if (!g_xRelayTarget.IsValid())
+			{
+				g_iPhase = kHP_ObjLoopFind;
+				return true;
+			}
+			Zenith_Maths::Vector3 xTPos;
+			if (!TryGetEntityPos(g_xRelayTarget, xTPos))
+			{
+				g_xRelayTarget = INVALID_ENTITY_ID;
+				g_iPhase = kHP_ObjLoopFind;
+				return true;
+			}
+			// PR #140: alternate Y offsets on retry. 0.9 m is the
+			// original head-height anchor; 1.8 m is over-top, in case
+			// the villager's screen collider extends higher than head.
+			// g_iRelayYOffsetTry toggles between 0 and 1 on each
+			// RelayDropAndSwitch entry for a given target.
+			const float fYOffset = (g_iRelayYOffsetTry == 0) ? 0.9f : 1.8f;
+			xTPos.y += fYOffset;
+			double fSx = 0.0, fSy = 0.0;
+			if (!WorldToScreen(xTPos, fSx, fSy))
+			{
+				// Target off-screen / behind cam; treat as a missed
+				// click and let RelayWaitSwitch's timeout path retry.
+				std::printf("[HumanPlaythrough] RELAY click off-screen y+=%.1f tgt=%u\n",
+					fYOffset, g_xRelayTarget.m_uIndex);
+				std::fflush(stdout);
+				g_iRelayClickWait = 0;
+				g_iPhase = kHP_RelayWaitSwitch;
+				return true;
+			}
+			Zenith_InputSimulator::SimulateMousePosition(fSx, fSy);
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
+			std::printf("[HumanPlaythrough] RELAY click at (%.1f, %.1f) y+=%.1f tgt=%u\n",
+				fSx, fSy, fYOffset, g_xRelayTarget.m_uIndex);
+			std::fflush(stdout);
+			g_iRelayClickWait = 0;
+			g_iPhase = kHP_RelayWaitSwitch;
+			return true;
+		}
+		return true;
+	}
+
+	case kHP_RelayWaitSwitch:
+	{
+		++g_iRelayClickWait;
+		const Zenith_EntityID xNow = DP_Player::GetPossessedVillager();
+		if (xNow.IsValid() && xNow == g_xRelayTarget)
+		{
+			std::printf("[HumanPlaythrough] RELAY switch confirmed: new=%u\n",
+				xNow.m_uIndex);
+			std::fflush(stdout);
+			g_xCurrentVillager = xNow;
+			g_xRelayTarget = INVALID_ENTITY_ID;
+			// PR #140: reset tried-set on success so future Relay
+			// entries (later in the run) get a fresh slate. Otherwise
+			// every successful switch shrinks the pool for the next
+			// trigger.
+			for (int i = 0; i < kMaxRelayTargetTries; ++i) g_axRelayTried[i] = INVALID_ENTITY_ID;
+			g_iRelayTriedCount = 0;
+			g_iRelayYOffsetTry = 0;
+			// Go back to ObjLoopFind so the new villager either:
+			//   a) auto-picks-up the just-dropped item via proximity and
+			//      we walk straight to pent, or
+			//   b) walks back to pick it up the normal way.
+			g_xCurrentObjItem = INVALID_ENTITY_ID;
+			g_iPhase = kHP_ObjLoopFind;
+			return true;
+		}
+		// Click might have missed. Give it ~8 frames before giving
+		// up on the CURRENT click attempt. PR #140: instead of
+		// abandoning to ObjLoopFind, alternate the Y-offset for one
+		// more shot at this target, and only after two failed Y-tries
+		// add the target to the tried-set and find a different one.
+		//
+		// 8 frames @ 60 Hz = 0.13 s -- enough for DPPlayerController
+		// to process a successful click + DP_Player to set the new
+		// possessed villager (typically 1-2 frames), with a healthy
+		// margin. Originally 30 frames but the 8p x 10s matrix on
+		// 2026-05-21 showed Relay regressing from 3 wins to 0 because
+		// the bot was burning 240+ frames on doomed retries while life
+		// was already < 5 s. Tighter timeout caps the worst-case
+		// fallback cost at ~32 frames (2 targets x 2 Y-offsets x 8
+		// frames), well under one second of life-timer budget.
+		if (g_iRelayClickWait > 8)
+		{
+			if (g_iRelayYOffsetTry == 0)
+			{
+				std::printf("[HumanPlaythrough] RELAY click MISS (y=0.9) tgt=%u -- retry y=1.8\n",
+					g_xRelayTarget.m_uIndex);
+				std::fflush(stdout);
+				g_iRelayYOffsetTry = 1;
+				g_iPhase = kHP_RelayDropAndSwitch;
+				g_iWait = 4;  // skip the drop + idle frames, just re-click
+				return true;
+			}
+			// Both Y offsets exhausted on this target -- mark tried
+			// and look for the next-closest healthy villager.
+			std::printf("[HumanPlaythrough] RELAY click MISS (y=1.8) tgt=%u -- marking tried\n",
+				g_xRelayTarget.m_uIndex);
+			std::fflush(stdout);
+			if (g_iRelayTriedCount < kMaxRelayTargetTries)
+			{
+				g_axRelayTried[g_iRelayTriedCount++] = g_xRelayTarget;
+			}
+			g_xRelayTarget = INVALID_ENTITY_ID;
+			g_iRelayYOffsetTry = 0;
+			g_iPhase = kHP_RelayFindTarget;
+			return true;
+		}
 		return true;
 	}
 
@@ -2928,6 +3540,10 @@ static void Setup_Personality_Casual()        { g_xActiveCfg = kPersonality_Casu
 static void Setup_Personality_Stealth()       { g_xActiveCfg = kPersonality_Stealth;       Setup_HumanPlaythrough(); }
 static void Setup_Personality_Speedrunner()   { g_xActiveCfg = kPersonality_Speedrunner;   Setup_HumanPlaythrough(); }
 static void Setup_Personality_Zealot()        { g_xActiveCfg = kPersonality_Zealot;        Setup_HumanPlaythrough(); }
+static void Setup_Personality_Magpie()        { g_xActiveCfg = kPersonality_Magpie;        Setup_HumanPlaythrough(); }
+static void Setup_Personality_Relay()         { g_xActiveCfg = kPersonality_Relay;         Setup_HumanPlaythrough(); }
+static void Setup_Personality_Heretic()       { g_xActiveCfg = kPersonality_Heretic;       Setup_HumanPlaythrough(); }
+static void Setup_Personality_Trickster()     { g_xActiveCfg = kPersonality_Trickster;     Setup_HumanPlaythrough(); }
 
 // Frame-budget rationale (rough wall-clock at fixed-dt 1/60):
 //   * Casual      ~1800 frames (~30 s in-game / ~38 s wall-clock)
@@ -2976,5 +3592,62 @@ static const Zenith_AutomatedTest g_xPersonalityTest_Zealot = {
 	6000
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Zealot);
+
+// 2026-05-21: three new personalities -- Magpie / Relay / Heretic. See
+// the constexpr PersonalityConfig kPersonality_<Name> blocks at the top
+// of this file for the rationale + the empirical question each one is
+// designed to answer. Setup_Personality_<Name> just plants the config
+// and chains into the shared Setup_HumanPlaythrough; everything else
+// runs off g_xActiveCfg in the phase machine.
+//
+// Frame budgets:
+//   * Magpie  -- same shape as Casual (full bootstrap + obj loop), so
+//                same 6000-frame cap. Any-order pick is a tag-selection
+//                tweak, not a phase-count tweak.
+//   * Relay   -- shape is Zealot's (skip bootstrap, straight to obj
+//                loop) plus the 4 relay sub-phases. Relay swaps add
+//                ~30 frames per swap; budget for 4-5 swaps fits in 6000.
+//   * Heretic -- shape is Zealot's plus a single noise-machine detour.
+//                The noise loiter (kHereticNoiseDistractFrames = 90)
+//                + walk-to-noise costs ~150 frames vs Zealot; 6000 still
+//                covers the obj loop.
+static const Zenith_AutomatedTest g_xPersonalityTest_Magpie = {
+	"PersonalityPlaythrough_Magpie",
+	&Setup_Personality_Magpie,
+	&Step_HumanPlaythrough,
+	&Verify_HumanPlaythrough,
+	6000
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Magpie);
+
+static const Zenith_AutomatedTest g_xPersonalityTest_Relay = {
+	"PersonalityPlaythrough_Relay",
+	&Setup_Personality_Relay,
+	&Step_HumanPlaythrough,
+	&Verify_HumanPlaythrough,
+	6000
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Relay);
+
+static const Zenith_AutomatedTest g_xPersonalityTest_Heretic = {
+	"PersonalityPlaythrough_Heretic",
+	&Setup_Personality_Heretic,
+	&Step_HumanPlaythrough,
+	&Verify_HumanPlaythrough,
+	6000
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Heretic);
+
+// Trickster: same frame budget as Casual / Magpie -- full bootstrap +
+// obj loop, no extra phases beyond Relay's 4 sub-phases which only
+// activate when life < 5 s.
+static const Zenith_AutomatedTest g_xPersonalityTest_Trickster = {
+	"PersonalityPlaythrough_Trickster",
+	&Setup_Personality_Trickster,
+	&Step_HumanPlaythrough,
+	&Verify_HumanPlaythrough,
+	6000
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPersonalityTest_Trickster);
 
 #endif // ZENITH_INPUT_SIMULATOR

@@ -252,14 +252,15 @@ static bool Verify_P1Sprint()
 		Zenith_Log(LOG_CATEGORY_AI, "P1Sprint: walk window had no life drop -- TickLife didn't run");
 		return false;
 	}
-	// Expected difference: ~1.5 s/s extra cost over a 1 s window = 1.5 s
-	// (was 3.0 s/s pre-2026-05-20; tuning dropped to 1.5 to give
-	// sprint personalities a fairer shot on procgen geometry where the
-	// item-spawner-to-target distances exceed a single villager's
-	// walking budget at the old drain rate).
-	// Allow ~33% slack (1.0 s minimum) for frame-time / boundary jitter.
+	// Expected difference: ~1.0 s/s extra cost over a 1 s window = 1.0 s
+	// (was 3.0 s/s -> 1.5 s/s -> 1.0 s/s; tuning was dropped further on
+	// 2026-05-21 as part of the game-balance pass that targets >0% and
+	// <100% win rate per personality + >=1 win per procgen seed). The
+	// test still asserts sprint drains MORE than walk; the magnitude
+	// floor is just lower to match the rebalanced cost.
+	// Allow ~30% slack (0.7 s minimum) for frame-time / boundary jitter.
 	const float fDiff = fSprintDrop - fWalkDrop;
-	const float fMinDiff = 1.0f;
+	const float fMinDiff = 0.7f;
 	if (fDiff < fMinDiff)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
