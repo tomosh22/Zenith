@@ -15,6 +15,16 @@
 // Zenith_EntityStore (held by Zenith_Engine). ResetGlobalEntityStorage was
 // replaced by Zenith_EntityStore::Reset(); call sites updated.
 
+#ifdef ZENITH_TOOLS
+// Defined out-of-line so the inline private MarkEntityStarted doesn't have
+// to be reordered; the public Editor_-prefixed entry point simply forwards.
+// Used by Zenith_Editor::EnterStopMode (namespace, no longer a friend).
+void Zenith_SceneData::Editor_MarkEntityStarted(Zenith_EntityID xID)
+{
+	MarkEntityStarted(xID);
+}
+#endif
+
 void Zenith_SceneData::InvalidateActiveInHierarchyCache(Zenith_EntityID xID)
 {
 	// Iterative tree walk using explicit stack (avoids stack overflow on deep hierarchies)

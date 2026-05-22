@@ -646,8 +646,8 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 		Zenith_SceneData* pxRestoredData = Zenith_SceneManager::GetSceneData(xRestoredScene);
 		if (pxRestoredData)
 		{
-			pxRestoredData->m_strPath = g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath;
-			pxRestoredData->m_iBuildIndex = g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex;
+			pxRestoredData->Editor_SetPath(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
+			pxRestoredData->Editor_SetBuildIndex(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
 		}
 	}
 
@@ -1079,7 +1079,7 @@ bool Zenith_Editor::EnterPlayMode()
 			{
 				xRegistry.DispatchOnStart(xEntity);
 			}
-			pxSceneData->MarkEntityStarted(uID);
+			pxSceneData->Editor_MarkEntityStarted(uID);
 		}
 	}
 	return true;
@@ -1279,8 +1279,8 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 		Zenith_SceneData* pxRestoredData = Zenith_SceneManager::GetSceneData(xRestoredScene);
 		if (pxRestoredData)
 		{
-			pxRestoredData->m_strPath = g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath;
-			pxRestoredData->m_iBuildIndex = g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex;
+			pxRestoredData->Editor_SetPath(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
+			pxRestoredData->Editor_SetBuildIndex(g_xEngine.Editor().m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
 		}
 	}
 

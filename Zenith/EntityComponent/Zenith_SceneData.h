@@ -103,6 +103,18 @@ public:
 	const std::string& GetPath() const { return m_strPath; }
 	int GetBuildIndex() const { return m_iBuildIndex; }
 	int GetHandle() const { return m_iHandle; }
+
+#ifdef ZENITH_TOOLS
+	// Editor-only hooks used by the play-mode backup/restore path
+	// (Zenith_Editor::EnterStopMode). The editor restores the original scene
+	// path / build-index after running the scene in play mode, and re-marks
+	// entities as started when re-entering play mode from a backup.
+	// Exposed publicly so Zenith_Editor (now a namespace) doesn't need the
+	// stale `friend class Zenith_Editor` declaration.
+	void Editor_SetPath(const std::string& strPath) { m_strPath = strPath; }
+	void Editor_SetBuildIndex(int iBuildIndex) { m_iBuildIndex = iBuildIndex; }
+	void Editor_MarkEntityStarted(Zenith_EntityID xID);
+#endif
 	bool IsLoaded() const { return m_bIsLoaded; }
 	bool IsActivated() const { return m_bIsActivated; }
 	bool IsUnloading() const { return m_bIsUnloading; }
@@ -267,9 +279,10 @@ private:
 	friend class Zenith_SceneTests;
 	friend class Zenith_UnitTests;
 	friend class Zenith_ComponentMetaRegistry;
-#ifdef ZENITH_TOOLS
-	friend class Zenith_Editor;
-#endif
+	// (Earlier revisions friended `class Zenith_Editor` here so editor code
+	// could reach into scene-data privates. Audited stale -- editor accesses
+	// scene data only through the public API -- and removed when
+	// Zenith_Editor became a namespace.)
 
 	//==========================================================================
 	// Entity Slot Storage (Generation Counter System)

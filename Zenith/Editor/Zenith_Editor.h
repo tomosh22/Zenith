@@ -84,27 +84,26 @@ enum class EditorGizmoMode
 	Scale
 };
 
-class Zenith_Editor
+namespace Zenith_Editor
 {
-public:
-	static void Initialise();
-	static void Shutdown();
-	static bool Update();
-	static void Render();
+	void Initialise();
+	void Shutdown();
+	bool Update();
+	void Render();
 
 	// Editor state
-	static EditorMode GetEditorMode();
-	static void SetEditorMode(EditorMode eMode);
+	EditorMode GetEditorMode();
+	void SetEditorMode(EditorMode eMode);
 
 	// Synchronously process pending scene operations (load/save/reset)
 	// Used by unit tests to ensure scene state is consistent after mode transitions
-	static void FlushPendingSceneOperations();
+	void FlushPendingSceneOperations();
 
 	// Request loading a registered scene by build index (deferred to next Update)
-	static void RequestLoadRegisteredScene(int iBuildIndex);
+	void RequestLoadRegisteredScene(int iBuildIndex);
 
 	// Request loading a scene from a file path (deferred to next Update)
-	static void RequestLoadSceneFromFile(const std::string& strPath);
+	void RequestLoadSceneFromFile(const std::string& strPath);
 
 	//--------------------------------------------------------------------------
 	// Multi-Select System
@@ -115,88 +114,88 @@ public:
 	 * @param uEntityID Entity to select
 	 * @param bAddToSelection If true, add to existing selection (Ctrl+click). If false, replace selection.
 	 */
-	static void SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection = false);
+	void SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection = false);
 
 	/**
 	 * Select a range of entities (for Shift+click in hierarchy)
 	 * Selects all entities between the last selected and the specified entity
 	 * @param uEndEntityID The end point of the range selection
 	 */
-	static void SelectRange(Zenith_EntityID uEndEntityID);
+	void SelectRange(Zenith_EntityID uEndEntityID);
 
 	/**
 	 * Toggle selection state of an entity (Ctrl+click)
 	 * If selected, deselect. If not selected, add to selection.
 	 */
-	static void ToggleEntitySelection(Zenith_EntityID uEntityID);
+	void ToggleEntitySelection(Zenith_EntityID uEntityID);
 
 	/**
 	 * Clear all selected entities
 	 */
-	static void ClearSelection();
+	void ClearSelection();
 
 	/**
 	 * Check if a specific entity is selected
 	 */
-	static bool IsSelected(Zenith_EntityID uEntityID);
+	bool IsSelected(Zenith_EntityID uEntityID);
 
 	/**
 	 * Get the primary selected entity ID (first in selection, or last clicked)
 	 * Returns INVALID_ENTITY_ID if no selection
 	 */
-	static Zenith_EntityID GetSelectedEntityID();
+	Zenith_EntityID GetSelectedEntityID();
 
 	/**
 	 * Get the primary selected entity (for backwards compatibility and property panel)
 	 */
-	static Zenith_Entity* GetSelectedEntity();
+	Zenith_Entity* GetSelectedEntity();
 
 	/**
 	 * Get all selected entity IDs
 	 */
-	static const std::unordered_set<Zenith_EntityID>& GetSelectedEntityIDs();
+	const std::unordered_set<Zenith_EntityID>& GetSelectedEntityIDs();
 
 	/**
 	 * Get the number of selected entities
 	 */
-	static size_t GetSelectionCount();
+	size_t GetSelectionCount();
 
 	/**
 	 * Check if any entities are selected
 	 */
-	static bool HasSelection();
+	bool HasSelection();
 
 	/**
 	 * Check if multiple entities are selected
 	 */
-	static bool HasMultiSelection();
+	bool HasMultiSelection();
 
 	/**
 	 * Get the last clicked entity ID (for range selection)
 	 */
-	static Zenith_EntityID GetLastClickedEntityID();
+	Zenith_EntityID GetLastClickedEntityID();
 
 	/**
 	 * Remove an entity from selection
 	 */
-	static void DeselectEntity(Zenith_EntityID uEntityID);
+	void DeselectEntity(Zenith_EntityID uEntityID);
 
 	// Viewport
-	static Zenith_Maths::Vector2 GetViewportPos();
-	static Zenith_Maths::Vector2 GetViewportSize();
+	Zenith_Maths::Vector2 GetViewportPos();
+	Zenith_Maths::Vector2 GetViewportSize();
 
 	// Gizmo
-	static EditorGizmoMode GetGizmoMode();
-	static void SetGizmoMode(EditorGizmoMode eMode);
+	EditorGizmoMode GetGizmoMode();
+	void SetGizmoMode(EditorGizmoMode eMode);
 
 	// Console log
-	static void AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel, Zenith_LogCategory eCategory);
-	static void ClearConsole();
+	void AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel, Zenith_LogCategory eCategory);
+	void ClearConsole();
 	
 	// Material Editor
-	static void SelectMaterial(Zenith_MaterialAsset* pMaterial);
-	static void ClearMaterialSelection();
-	static Zenith_MaterialAsset* GetSelectedMaterial();
+	void SelectMaterial(Zenith_MaterialAsset* pMaterial);
+	void ClearMaterialSelection();
+	Zenith_MaterialAsset* GetSelectedMaterial();
 
 	//--------------------------------------------------------------------------
 	// Editor Operations
@@ -207,42 +206,41 @@ public:
 
 	/// Corresponds to: Hierarchy panel > right-click > "Create Empty Entity"
 	/// Creates entity, sets non-transient, and selects it (matching editor UI behaviour).
-	static Zenith_EntityID CreateEntity(const char* szName);
+	Zenith_EntityID CreateEntity(const char* szName);
 
 	/// Corresponds to: clicking an entity by name in the Hierarchy panel.
-	static void SelectEntityByName(const char* szName);
+	void SelectEntityByName(const char* szName);
 
 	/// Corresponds to: toggling the "Transient" checkbox in Properties panel.
-	static void SetSelectedEntityTransient(bool bTransient);
+	void SetSelectedEntityTransient(bool bTransient);
 
 	/// Corresponds to: Properties panel > "Add Component" popup > selecting a component.
-	static bool AddComponentToSelected(const char* szDisplayName);
+	bool AddComponentToSelected(const char* szDisplayName);
 
 	/// Corresponds to: Properties panel > Camera section > "Set As Main Camera" button.
-	static void SetSelectedAsMainCamera();
+	void SetSelectedAsMainCamera();
 
 	/// Append a script slot to the selected entity at runtime (Unity-style: multiple scripts allowed).
 	/// Adds the ScriptComponent if missing. Calls OnAwake on the new behaviour, marks entity awoken.
 	/// Used by editor drag-drop and the "Add Script" popup in the script properties panel.
-	static void AttachScriptToSelectedAndAwake(const char* szBehaviourTypeName);
+	void AttachScriptToSelectedAndAwake(const char* szBehaviourTypeName);
 
 	/// Append a script slot for build-time scene serialization (no lifecycle hooks called).
 	/// Adds the ScriptComponent if missing. Lifecycle dispatched when scene enters Play mode.
 	/// Used by EditorAutomation's ATTACH_SCRIPT action.
-	static void AttachScriptForSerializationToSelected(const char* szBehaviourTypeName);
+	void AttachScriptForSerializationToSelected(const char* szBehaviourTypeName);
 
 	/// Corresponds to: File > New Scene menu item.
 	/// Creates empty scene, sets active, clears selection.
-	static void CreateNewScene(const char* szName);
+	void CreateNewScene(const char* szName);
 
 	/// Corresponds to: File > Save Scene menu item (with specific path).
-	static void SaveActiveScene(const char* szPath);
+	void SaveActiveScene(const char* szPath);
 
 	/// Corresponds to: File > Unload Scene menu item.
 	/// Clears selection, then unloads the active scene.
-	static void UnloadActiveScene();
+	void UnloadActiveScene();
 
-private:
 	// SetEditorMode transition helpers — split out so each transition's
 	// scene-state shuffling lives in one place. SetEditorMode owns the mode
 	// state itself; these helpers are pure transition routines.
@@ -251,46 +249,46 @@ private:
 	//   data is loaded — caller is expected to revert s_eEditorMode.
 	// EnterStopMode: queue the deferred scene-restore from backup. The actual
 	//   load runs in next frame's Update() before any render tasks.
-	static bool EnterPlayMode();
-	static void EnterStopMode();
+	bool EnterPlayMode();
+	void EnterStopMode();
 
-	static void RenderConsolePanel();
-	static void RenderMainMenuBar();
-	static void RenderFileMenu();
-	static void RenderEditMenu();
-	static void RenderViewMenu();
-	static void RenderToolbar();
-	static void RenderHierarchyPanel();
-	static void RenderPropertiesPanel();
-	static void RenderViewport();
-	static void HandleObjectPicking();
-	static void RenderGizmos();
-	static void HandleGizmoInteraction();  // New method for Flux_Gizmos integration
+	void RenderConsolePanel();
+	void RenderMainMenuBar();
+	void RenderFileMenu();
+	void RenderEditMenu();
+	void RenderViewMenu();
+	void RenderToolbar();
+	void RenderHierarchyPanel();
+	void RenderPropertiesPanel();
+	void RenderViewport();
+	void HandleObjectPicking();
+	void RenderGizmos();
+	void HandleGizmoInteraction();  // New method for Flux_Gizmos integration
 
 	// Deferred scene operations (extracted from Update)
-	static bool ProcessDeferredSceneOperations();
-	static bool HandlePendingSceneLoad();
+	bool ProcessDeferredSceneOperations();
+	bool HandlePendingSceneLoad();
 
 	// FlushPendingSceneOperations branches — split out so each pending
 	// operation lives in one place. All three may run in the same frame
 	// (e.g. save+load), so they're called sequentially from the dispatcher.
-	static void WaitForGPUAndFlushDeferred(const char* szReason);
-	static void HandlePendingSceneReset();
-	static void HandlePendingSceneSave();
-	static void HandlePendingSceneLoadDeferred();
+	void WaitForGPUAndFlushDeferred(const char* szReason);
+	void HandlePendingSceneReset();
+	void HandlePendingSceneSave();
+	void HandlePendingSceneLoadDeferred();
 
 	// Editor input (extracted from Update)
-	static void UpdateEditorInput();
+	void UpdateEditorInput();
 
 	// Content Browser
-	static void RenderContentBrowser();
-	static void RefreshDirectoryContents();
-	static void NavigateToDirectory(const std::string& strPath);
-	static void NavigateToParent();
+	void RenderContentBrowser();
+	void RefreshDirectoryContents();
+	void NavigateToDirectory(const std::string& strPath);
+	void NavigateToParent();
 	
 	// Material Editor
-	static void RenderMaterialEditorPanel();
-	static void RenderMaterialTextureSlot(const char* szLabel, Zenith_MaterialAsset* pMaterial,
+	void RenderMaterialEditorPanel();
+	void RenderMaterialTextureSlot(const char* szLabel, Zenith_MaterialAsset* pMaterial,
 		const std::string& strCurrentPath,
 		void (*SetPathFunc)(Zenith_MaterialAsset*, const std::string&));
 
@@ -299,31 +297,30 @@ private:
 	// Zenith_Engine). Method bodies, the 42 external readers, and the
 	// EditorCamera.cpp camera storage now all read/write through
 	// g_xEngine.Editor().m_xXxx.
-	static constexpr size_t MAX_CONSOLE_ENTRIES = 1000;
+	inline constexpr size_t MAX_CONSOLE_ENTRIES = 1000;
 
 	// Editor theme
-	static void ApplyEditorTheme();
+	void ApplyEditorTheme();
 
 	// Editor camera control
-	static void InitializeEditorCamera();
-	static void UpdateEditorCamera(float fDt);
+	void InitializeEditorCamera();
+	void UpdateEditorCamera(float fDt);
 	// UpdateEditorCamera implementation broken into focused steps so callers
 	// don't have to read 100+ lines of input-handling mixed with scene writes.
-	static void UpdateEditorCameraLook();
-	static void UpdateEditorCameraMovement(float fDt);
-	static void ApplyEditorCameraToScene();
-	static void SwitchToEditorCamera();
-	static void SwitchToGameCamera();
-	static void ResetEditorCameraToDefaults();
-public:
+	void UpdateEditorCameraLook();
+	void UpdateEditorCameraMovement(float fDt);
+	void ApplyEditorCameraToScene();
+	void SwitchToEditorCamera();
+	void SwitchToGameCamera();
+	void ResetEditorCameraToDefaults();
 	// Camera data access for Flux_Graphics (delegates to appropriate camera based on mode)
-	static void BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix);
-	static void BuildProjectionMatrix(Zenith_Maths::Matrix4& xOutMatrix);
-	static void GetCameraPosition(Zenith_Maths::Vector4& xOutPosition);
-	static float GetCameraNearPlane();
-	static float GetCameraFarPlane();
-	static float GetCameraFOV();
-	static float GetCameraAspectRatio();
-};
+	void BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix);
+	void BuildProjectionMatrix(Zenith_Maths::Matrix4& xOutMatrix);
+	void GetCameraPosition(Zenith_Maths::Vector4& xOutPosition);
+	float GetCameraNearPlane();
+	float GetCameraFarPlane();
+	float GetCameraFOV();
+	float GetCameraAspectRatio();
+}
 
 #endif // ZENITH_TOOLS
