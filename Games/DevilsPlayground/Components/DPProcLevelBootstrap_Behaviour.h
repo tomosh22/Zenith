@@ -25,7 +25,7 @@
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics_Fwd.h"
-#include "Physics/Zenith_Physics.h"  // SetGravityEnabled / LockRotation for character bodies
+#include "Physics/Zenith_PhysicsImpl.h"  // SetGravityEnabled / LockRotation for character bodies
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/DPProcLevel/DPProcLevel_Generator.h"
@@ -776,8 +776,8 @@ private:
 		if (xCol.HasValidBody())
 		{
 			const JPH::BodyID& xBodyID = xCol.GetBodyID();
-			Zenith_Physics::SetGravityEnabled(xBodyID, false);
-			Zenith_Physics::LockRotation(xBodyID, /*X=*/true, /*Y=*/true, /*Z=*/true);
+			g_xEngine.Physics().SetGravityEnabled(xBodyID, false);
+			g_xEngine.Physics().LockRotation(xBodyID, /*X=*/true, /*Y=*/true, /*Z=*/true);
 		}
 
 		if (bIsPriest)
