@@ -219,6 +219,17 @@ namespace
 		// whether deliberate priest baiting buys enough "priest-free"
 		// objective-loop time to win more cells than Speedrunner.
 		bool        bDeliberateNoiseFirst;
+		// 2026-05-22: per-personality cap on the per-objective retry
+		// counter (replaces the global kMaxObjAttempts constant). The
+		// counter increments each time a pentagram F-press fails to
+		// deliver (typically because the bot was repossessed mid-walk
+		// and the new villager has no item; cross-possession memory
+		// then re-acquires the item but burns one attempt). Higher cap
+		// = more patient bot; lower cap = quicker to skip a stuck
+		// objective and try the next one. Adds a fourth tuning axis
+		// beyond bootstrap / sprint / order / relay that personalities
+		// can be designed around.
+		int         iObjAttemptCap;
 	};
 
 	// Walk budget multipliers calibrated for the per-personality movement
@@ -241,7 +252,8 @@ namespace
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/true,  /*pauseCycles*/1,
 		/*budgetMul*/1,
-		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false };
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
+		/*objAttemptCap*/16 };
 	// Stealth caveat (seed-matrix analysis 2026-05-19): walk-quiet only
 	// halves *footstep* loudness (movement.walk_footstep_loudness_multiplier).
 	// The gameplay interactions Stealth still performs -- forge crafting
@@ -259,14 +271,18 @@ namespace
 		/*skipBootstrap*/false,
 		/*noise*/false,  /*pause*/true,  /*pauseCycles*/1,
 		/*budgetMul*/2,
-		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false };
+		// Stealth gets a higher retry cap because its slow walk means
+		// more wasted frames per failed attempt.
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
+		/*objAttemptCap*/24 };
 	constexpr PersonalityConfig kPersonality_Speedrunner = {
 		Personality::Speedrunner, "Speedrunner",
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
 		/*budgetMul*/1,
-		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false };
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
+		/*objAttemptCap*/16 };
 	// Zealot bypasses the entire iron/forge/door/chest/noise coverage
 	// chain and goes straight to the objective-deliver loop after the
 	// first possession lands. Adaptive sprint (not blind sprint) so the
@@ -281,7 +297,8 @@ namespace
 		/*skipBootstrap*/true,
 		/*noise*/false,  /*pause*/false, /*pauseCycles*/1,
 		/*budgetMul*/1,
-		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false };
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
+		/*objAttemptCap*/16 };
 	// Magpie (2026-05-21): opportunistic objective ordering. Picks the
 	// closest uncollected objective each iteration instead of the fixed
 	// Obj1 -> Obj5 tag order Casual / Stealth / Speedrunner / Zealot
@@ -296,7 +313,8 @@ namespace
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
 		/*budgetMul*/1,
-		/*anyOrder*/true,  /*relayDrop*/false, /*noiseFirst*/false };
+		/*anyOrder*/true,  /*relayDrop*/false, /*noiseFirst*/false,
+		/*objAttemptCap*/16 };
 	// Relay (2026-05-21): voluntary-switch + drop-handoff chain. When
 	// life timer falls below kRelayLifeThresholdSec and the bot is
 	// holding an objective, drops it at the foot of the nearest healthy
@@ -313,7 +331,10 @@ namespace
 		/*skipBootstrap*/true,
 		/*noise*/false,  /*pause*/false, /*pauseCycles*/1,
 		/*budgetMul*/1,
-		/*anyOrder*/false, /*relayDrop*/true,  /*noiseFirst*/false };
+		// Relay gets a slightly elevated cap because each click-miss
+		// burns the attempt counter without being a real obj-loop fail.
+		/*anyOrder*/false, /*relayDrop*/true,  /*noiseFirst*/false,
+		/*objAttemptCap*/20 };
 	// Heretic (2026-05-21): deliberate priest manipulation. Walks to +
 	// F-presses the noise machine BEFORE the objective loop, then jumps
 	// straight to kHP_ObjLoopFind. The noise emission baits the priest
@@ -331,7 +352,11 @@ namespace
 		/*skipBootstrap*/true,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
 		/*budgetMul*/1,
-		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/true  };
+		// Heretic gets a LOWER retry cap because the noise distraction
+		// expires (priest investigate -> patrol after ~30 s); patience
+		// past that window means racing a more aggressive priest.
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/true,
+		/*objAttemptCap*/12 };
 	// Trickster (2026-05-21 PR #140): the combo personality predicted
 	// strongest by the 7p x 10s matrix run. Magpie's any-order pick
 	// (+13% obj throughput) + Relay's voluntary-switch (+3x win rate)
@@ -346,7 +371,10 @@ namespace
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
 		/*budgetMul*/1,
-		/*anyOrder*/true,  /*relayDrop*/true,  /*noiseFirst*/false };
+		// Trickster has Relay's click-miss overhead AND Magpie's
+		// re-aim work; bump cap accordingly.
+		/*anyOrder*/true,  /*relayDrop*/true,  /*noiseFirst*/false,
+		/*objAttemptCap*/20 };
 	// (Methodical personality removed 2026-05-19 -- the seed-matrix
 	// analysis found its bot behaviour was within rounding error of
 	// Casual on every metric except the pause-cycle count (3 cycles
@@ -523,6 +551,10 @@ namespace
 	// does nothing, attempt++"). 16 gives the cross-possession recover
 	// path room to actually re-pickup -- each repossess-and-re-pickup
 	// costs ~1 attempt, so 16 lets ~10 productive deliveries through.
+	// 2026-05-22: this is now the FALLBACK only -- per-personality
+	// iObjAttemptCap takes precedence (default 16, ranges 12-24 across
+	// the current 8 personalities). The constant is kept for documentation
+	// + as a sanity check; the runtime read uses g_xActiveCfg.iObjAttemptCap.
 	constexpr int kMaxObjAttempts = 16;
 
 	// Relay (2026-05-21): trigger the drop-handoff when remaining life
@@ -2769,7 +2801,9 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		// Cap retries — if a single objective resists multiple attempts (e.g.
 		// item entity got destroyed without bit being set), give up and move
 		// on so the test still terminates rather than spinning forever.
-		if (g_iObjAttempts >= kMaxObjAttempts)
+		// 2026-05-22: per-personality cap replaces the old kMaxObjAttempts
+		// global. See PersonalityConfig.iObjAttemptCap docs for the rationale.
+		if (g_iObjAttempts >= g_xActiveCfg.iObjAttemptCap)
 		{
 			std::printf("[HumanPlaythrough] obj %d MAX_ATTEMPTS — skipping\n",
 				g_iObjectivesDelivered);

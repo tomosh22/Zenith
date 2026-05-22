@@ -952,6 +952,24 @@ namespace DPProcLevel
 				xE.fZ          = 0.5f * (xDA.fZ + xDB.fZ);
 				xE.xRoomId     = kInvalidRoomId;
 				xE.iCorridorId = static_cast<int32_t>(iC);
+				// 2026-05-22: door yaw aligns the door's "wide" axis along
+				// the WALL so the door's collider fills the corridor gap
+				// when closed. The corridor goes (xDA -> xDB); the wall
+				// it crosses is perpendicular to that. The bootstrap
+				// scales the door (0.3 thick, 4 tall, 2 wide along its
+				// local +Z); we want local +Z to point along the wall.
+				// Wall direction = corridor-perpendicular = atan2 of
+				// rotated corridor delta.
+				const float fDx = xDB.fX - xDA.fX;
+				const float fDz = xDB.fZ - xDA.fZ;
+				// Wall axis = corridor axis rotated 90° in XZ. So if the
+				// corridor goes mostly along X, the wall (and the door's
+				// local +Z) should point along Z. atan2(deltaCorridorX,
+				// deltaCorridorZ) gives a yaw that maps local +Z to that
+				// world direction. The exact sign convention follows the
+				// wall yaw convention (matches SpawnWalls' fYawRadians
+				// usage; see WallSegment doc in DPProcLevel_LevelLayout.h).
+				xE.fYawRadians = static_cast<float>(std::atan2(fDx, fDz));
 				xLayout.axGameElements.PushBack(xE);
 				axGatedCorridors.PushBack(static_cast<int32_t>(iC));
 			}

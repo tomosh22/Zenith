@@ -129,8 +129,13 @@ static bool Verify_P1Tuning()
 
 	const float fLifeTimerDefault =
 		DP_Tuning::Get<float>("possession.life_timer_default_s");
+	// 2026-05-21: was 30.0 (MVP-original) -> 45.0 -> 60.0. Round-2 of the
+	// game-balance pass that targets >0% and <100% win rate per
+	// personality + >=1 win per procgen seed. See
+	// Docs/PersonalityMatrix_2026-05-21.md for the matrix data that
+	// motivated the lift.
 	VerifyFloatEqual("possession.life_timer_default_s",
-		fLifeTimerDefault, 30.0f);
+		fLifeTimerDefault, 60.0f);
 
 	const float fAnchorX =
 		DP_Tuning::Get<float>("possession.anchor_initial_position.x");
@@ -139,8 +144,11 @@ static bool Verify_P1Tuning()
 
 	const int iReagentsRequired =
 		DP_Tuning::Get<int>("night.reagents_required_for_victory");
+	// 2026-05-21: was 5 (all-of-5). Rebalanced to 3 (3-of-5) as part of
+	// the game-balance pass that targets every-personality-wins-some +
+	// every-seed-winnable-by-at-least-one.
 	VerifyIntEqual("night.reagents_required_for_victory",
-		iReagentsRequired, 5);
+		iReagentsRequired, 3);
 
 	const bool bApprehendInterruptible =
 		DP_Tuning::Get<bool>("priest.apprehend_interruptible_by_switch");

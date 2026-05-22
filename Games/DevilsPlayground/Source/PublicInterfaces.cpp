@@ -969,7 +969,24 @@ namespace DP_Win
 		const uint32_t uBit = DP_ObjectiveTagToBit(eObjective);
 		if (uBit == 0) return;
 		g_uCollectedObjectivesMask |= uBit;
-		if (g_uCollectedObjectivesMask == DP_ALL_OBJECTIVES_MASK && !g_bHasWon)
+		// 2026-05-21 balance pass: was `mask == DP_ALL_OBJECTIVES_MASK`
+		// (all 5 objectives required), changed to popcount(mask) >=
+		// tuning-value. This lets the design ratchet between "5 of 5"
+		// and "3 of 5" without touching code. The bot matrix on
+		// 2026-05-21 needed 3/5 to satisfy the balance criteria
+		// ("every personality wins some games, every seed winnable by
+		// at least one personality") on procgen layouts. Players still
+		// see 5 objective spawners on the map; landing any THRESHOLD
+		// of them at the pentagram triggers victory.
+		const int iRequired = DP_Tuning::Get<int>(
+			"night.reagents_required_for_victory");
+		// Manual popcount -- avoids std::popcount C++20 header dep.
+		int iCollected = 0;
+		for (uint32_t u = g_uCollectedObjectivesMask; u; u >>= 1)
+		{
+			iCollected += static_cast<int>(u & 1u);
+		}
+		if (iCollected >= iRequired && !g_bHasWon)
 		{
 			g_bHasWon = true;
 			Zenith_EventDispatcher::Get().Dispatch(

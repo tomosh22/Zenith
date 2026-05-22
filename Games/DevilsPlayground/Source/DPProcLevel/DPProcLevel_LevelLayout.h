@@ -111,6 +111,14 @@ namespace DPProcLevel
 		// Only used for Door: which corridor (index into axCorridors)
 		// this door gates. -1 for non-door elements.
 		int32_t         iCorridorId = -1;
+		// 2026-05-22: world-space yaw for elements that need to align
+		// with a wall (currently only Door -- the door's collider needs
+		// to align with the wall axis so the corridor gap is fully
+		// blocked when closed). Default 0 (axis-aligned) for elements
+		// that don't care about rotation (Iron / Objectives / Chest /
+		// Forge / NoiseMachine / Pentagram all use sphere/AABB colliders
+		// or are circular-symmetric).
+		float           fYawRadians = 0.0f;
 	};
 
 	// Villager spawn anchor. Each villager gets a world (x, z) and an

@@ -103,12 +103,14 @@ struct MvpExpect
 };
 
 // Ratified Archetypes.json values for the 4 MVP archetypes (TestPlan §3.1
-// expectation table updated 2026-05-12 -- Sexton -> Beggar swap).
+// expectation table updated 2026-05-12 -- Sexton -> Beggar swap; 2026-05-22
+// -- MVP archetype life timers doubled across the board as part of the
+// game-balance pass, preserving inter-archetype ratios).
 static const MvpExpect g_axMvpExpect[] = {
-	{ "Farmhand", 30.0f, 4.0f, 8.0f, 12.0f, 0.0f, 0.0f, 6, 10 },
-	{ "Beggar",   25.0f, 4.0f, 8.0f, 12.0f, 0.0f, 0.0f, 1,  2 },
-	{ "Devout",   30.0f, 4.0f, 8.0f, 12.0f, 0.8f, 0.4f, 1,  3 },
-	{ "Child",    15.0f, 4.0f, 8.0f, 12.0f, 0.0f, 0.0f, 1,  2 },
+	{ "Farmhand", 45.0f, 4.0f, 8.0f, 12.0f, 0.0f, 0.0f, 6, 10 },
+	{ "Beggar",   37.5f, 4.0f, 8.0f, 12.0f, 0.0f, 0.0f, 1,  2 },
+	{ "Devout",   45.0f, 4.0f, 8.0f, 12.0f, 0.8f, 0.4f, 1,  3 },
+	{ "Child",    22.5f, 4.0f, 8.0f, 12.0f, 0.0f, 0.0f, 1,  2 },
 };
 
 static void CheckMvpArchetype(const MvpExpect& xExp)
