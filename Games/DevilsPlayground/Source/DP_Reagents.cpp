@@ -47,10 +47,10 @@ namespace
 	{
 		const JsonValue* pxArr = xObj.FindKey("tint_rgb");
 		if (pxArr == nullptr || pxArr->m_eType != JSON_ARRAY) return;
-		if (pxArr->m_axArray.size() < 3) return;
-		const JsonValue& xR = pxArr->m_axArray[0];
-		const JsonValue& xG = pxArr->m_axArray[1];
-		const JsonValue& xB = pxArr->m_axArray[2];
+		if (pxArr->m_axArray.GetSize() < 3) return;
+		const JsonValue& xR = pxArr->m_axArray.Get(0);
+		const JsonValue& xG = pxArr->m_axArray.Get(1);
+		const JsonValue& xB = pxArr->m_axArray.Get(2);
 		if (xR.m_eType == JSON_NUMBER) xOut.tint_r = static_cast<float>(xR.m_fNumber);
 		if (xG.m_eType == JSON_NUMBER) xOut.tint_g = static_cast<float>(xG.m_fNumber);
 		if (xB.m_eType == JSON_NUMBER) xOut.tint_b = static_cast<float>(xB.m_fNumber);
@@ -94,8 +94,9 @@ namespace DP_Reagents
 			"DP_Reagents: 'reagents' key missing or not an array");
 		if (pxArr == nullptr || pxArr->m_eType != JSON_ARRAY) return;
 
-		for (const auto& xEntry : pxArr->m_axArray)
+		for (u_int u = 0; u < pxArr->m_axArray.GetSize(); ++u)
 		{
+			const JsonValue& xEntry = pxArr->m_axArray.Get(u);
 			if (xEntry.m_eType != JSON_OBJECT) continue;
 			Reagent xR;
 			xR.id                   = ReadString(xEntry, "id");

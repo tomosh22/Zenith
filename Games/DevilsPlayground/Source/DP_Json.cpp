@@ -11,8 +11,9 @@ namespace DP_Json
 	const JsonValue* JsonValue::FindKey(const char* szKey) const
 	{
 		if (m_eType != JSON_OBJECT) return nullptr;
-		for (const auto& xPair : m_axObject)
+		for (u_int u = 0; u < m_axObject.GetSize(); ++u)
 		{
+			const auto& xPair = m_axObject.Get(u);
 			if (xPair.first == szKey) return &xPair.second;
 		}
 		return nullptr;
@@ -83,7 +84,7 @@ namespace DP_Json
 					++m_uPos;
 					JsonValue xVal;
 					if (!ParseValue(xVal)) return false;
-					xOut.m_axObject.emplace_back(std::move(xKey.m_strString), std::move(xVal));
+					xOut.m_axObject.EmplaceBack(std::move(xKey.m_strString), std::move(xVal));
 					SkipWhitespace();
 					if (AtEnd()) return false;
 					if (Peek() == ',') { ++m_uPos; continue; }
@@ -103,7 +104,7 @@ namespace DP_Json
 				{
 					JsonValue xVal;
 					if (!ParseValue(xVal)) return false;
-					xOut.m_axArray.push_back(std::move(xVal));
+					xOut.m_axArray.PushBack(std::move(xVal));
 					SkipWhitespace();
 					if (AtEnd()) return false;
 					if (Peek() == ',') { ++m_uPos; continue; }

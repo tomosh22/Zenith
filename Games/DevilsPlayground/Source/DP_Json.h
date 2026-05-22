@@ -6,15 +6,17 @@
 // consumer condition documented in Docs/DecisionLog.md PR #3 (2026-05-12) has
 // now fired.
 //
-// Internal data still uses std::vector — this header is the Phase 2a "extract
-// verbatim" step, deliberately matching the pre-refactor behaviour byte for
-// byte. The Phase 2b commit swaps to Zenith_Vector.
+// 2026-05-22 Phase 2b: internal containers swapped from std::vector to
+// Zenith_Vector for convention compliance with the rest of the engine
+// (memory pool, no STL allocator). Note that Zenith_Vector has no begin/end /
+// operator[]; iterate with index loops via GetSize() + Get(u).
+
+#include "Collections/Zenith_Vector.h"
 
 #include <cstdint>
 #include <filesystem>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace DP_Json
 {
@@ -34,8 +36,8 @@ namespace DP_Json
 		double m_fNumber = 0.0;
 		bool m_bBool = false;
 		std::string m_strString;
-		std::vector<JsonValue> m_axArray;
-		std::vector<std::pair<std::string, JsonValue>> m_axObject;
+		Zenith_Vector<JsonValue> m_axArray;
+		Zenith_Vector<std::pair<std::string, JsonValue>> m_axObject;
 
 		const JsonValue* FindKey(const char* szKey) const;
 	};

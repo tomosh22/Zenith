@@ -106,17 +106,18 @@ namespace
 				"Emissive Color", "EmissiveColor", "Emissive", "EmissiveTint"
 			};
 
-			for (const auto& xPair : pxVectors->m_axObject)
+			for (u_int u = 0; u < pxVectors->m_axObject.GetSize(); ++u)
 			{
+				const auto& xPair = pxVectors->m_axObject.Get(u);
 				const std::string& strKey = xPair.first;
 				const JsonValue& xVal = xPair.second;
-				if (xVal.m_eType != JSON_ARRAY || xVal.m_axArray.size() < 3) continue;
+				if (xVal.m_eType != JSON_ARRAY || xVal.m_axArray.GetSize() < 3) continue;
 
-				float r = static_cast<float>(xVal.m_axArray[0].m_fNumber);
-				float g = static_cast<float>(xVal.m_axArray[1].m_fNumber);
-				float b = static_cast<float>(xVal.m_axArray[2].m_fNumber);
-				float a = (xVal.m_axArray.size() > 3)
-					? static_cast<float>(xVal.m_axArray[3].m_fNumber)
+				float r = static_cast<float>(xVal.m_axArray.Get(0).m_fNumber);
+				float g = static_cast<float>(xVal.m_axArray.Get(1).m_fNumber);
+				float b = static_cast<float>(xVal.m_axArray.Get(2).m_fNumber);
+				float a = (xVal.m_axArray.GetSize() > 3)
+					? static_cast<float>(xVal.m_axArray.Get(3).m_fNumber)
 					: 1.0f;
 
 				if (KeyMatchesAny(strKey, aszBaseColorKeys, sizeof(aszBaseColorKeys) / sizeof(aszBaseColorKeys[0])))
@@ -144,8 +145,9 @@ namespace
 			static const char* const aszEmissiveIntensityKeys[] = { "EmissiveIntensity", "Emissive Intensity", "EmissiveMultiplier" };
 			static const char* const aszAlphaCutoffKeys[] = { "AlphaCutoff", "Alpha Cutoff", "OpacityMaskClipValue" };
 
-			for (const auto& xPair : pxScalars->m_axObject)
+			for (u_int u = 0; u < pxScalars->m_axObject.GetSize(); ++u)
 			{
+				const auto& xPair = pxScalars->m_axObject.Get(u);
 				const std::string& strKey = xPair.first;
 				const JsonValue& xVal = xPair.second;
 				if (xVal.m_eType != JSON_NUMBER) continue;
@@ -180,8 +182,9 @@ namespace
 			static const char* const aszEmissiveKeys[] = { "emissive" };
 			static const char* const aszOcclusionKeys[] = { "occlusion", "ao", "ambientocclusion" };
 
-			for (const auto& xPair : pxTextures->m_axObject)
+			for (u_int u = 0; u < pxTextures->m_axObject.GetSize(); ++u)
 			{
+				const auto& xPair = pxTextures->m_axObject.Get(u);
 				const std::string& strKey = xPair.first;
 				const JsonValue& xVal = xPair.second;
 				if (xVal.m_eType != JSON_STRING) continue;

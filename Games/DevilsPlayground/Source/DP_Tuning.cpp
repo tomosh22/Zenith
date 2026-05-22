@@ -41,8 +41,9 @@ namespace
 	{
 		if (xNode.m_eType == JSON_OBJECT)
 		{
-			for (const auto& xPair : xNode.m_axObject)
+			for (u_int u = 0; u < xNode.m_axObject.GetSize(); ++u)
 			{
+				const auto& xPair = xNode.m_axObject.Get(u);
 				const std::string& strKey = xPair.first;
 				if (!strKey.empty() && strKey[0] == '_') continue;
 
