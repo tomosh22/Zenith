@@ -50,7 +50,7 @@ public:
 
 	void OnDestroy() ZENITH_FINAL override
 	{
-		// m_xItemTagTable is auto-cleared by std::unordered_map's
+		// m_xItemTagTable is auto-cleared by Zenith_HashMap's
 		// destructor when this script instance is freed. Because the
 		// script lives on a scene-owned entity, scene unload (which
 		// destroys every entity + fires this OnDestroy) is the only
