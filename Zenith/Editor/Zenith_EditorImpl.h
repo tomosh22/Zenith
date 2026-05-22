@@ -6,6 +6,7 @@
 #include "Editor/Zenith_EditorState.h"
 #include "Editor/Panels/Zenith_EditorPanel_Viewport.h"   // PendingImGuiTextureDeletion
 #include "Flux/Flux_Types.h"                              // Flux_ImGuiTextureHandle, Flux_ImageViewHandle
+#include "AssetHandling/Zenith_AssetHandle.h"             // MaterialHandle
 #include <bitset>
 #include <string>
 #include <unordered_set>
@@ -78,7 +79,12 @@ public:
 	bool                              m_bShowConsolePanel      = true;
 
 	// Material Editor state.
-	Zenith_MaterialAsset*             m_pxSelectedMaterial     = nullptr;
+	// Held via MaterialHandle (not raw pointer) so the registry refcount
+	// stays > 0 while the editor has the material selected. Otherwise a
+	// SCENE_LOAD_SINGLE between selecting the material and rendering the
+	// editor panel would let UnloadUnusedAssets free the asset, leaving
+	// m_xSelectedMaterial pointing at freed memory.
+	MaterialHandle                    m_xSelectedMaterial;
 	bool                              m_bShowMaterialEditor    = true;
 
 	// Editor camera state. Defaults match the constants previously hard-

@@ -145,7 +145,7 @@ Zenith_Maths::Vector2 Zenith_Editor::GetViewportPos() { return g_xEngine.Editor(
 Zenith_Maths::Vector2 Zenith_Editor::GetViewportSize() { return g_xEngine.Editor().m_xViewportSize; }
 EditorGizmoMode Zenith_Editor::GetGizmoMode() { return g_xEngine.Editor().m_eGizmoMode; }
 void Zenith_Editor::SetGizmoMode(EditorGizmoMode eMode) { g_xEngine.Editor().m_eGizmoMode = eMode; }
-Zenith_MaterialAsset* Zenith_Editor::GetSelectedMaterial() { return g_xEngine.Editor().m_pxSelectedMaterial; }
+Zenith_MaterialAsset* Zenith_Editor::GetSelectedMaterial() { return g_xEngine.Editor().m_xSelectedMaterial.GetDirect(); }
 
 void Zenith_Editor::ApplyEditorTheme()
 {
@@ -320,7 +320,7 @@ void Zenith_Editor::Shutdown()
 	g_xEngine.Editor().m_bEditorCameraInitialized = false;
 	
 	// Clear material selection (material system managed by Zenith_AssetRegistry)
-	g_xEngine.Editor().m_pxSelectedMaterial = nullptr;
+	g_xEngine.Editor().m_xSelectedMaterial.Clear();
 
 	// Shutdown editor subsystems
 	// Zenith_AnimationStateMachineEditor::Shutdown();  // TEMPORARILY DISABLED
@@ -1742,7 +1742,11 @@ void Zenith_Editor::RenderConsolePanel()
 
 void Zenith_Editor::SelectMaterial(Zenith_MaterialAsset* pMaterial)
 {
-	g_xEngine.Editor().m_pxSelectedMaterial = pMaterial;
+	// Set() AddRefs so the asset survives UnloadUnusedAssets while the
+	// editor has it selected; the handle's dtor (and Clear() below)
+	// Releases. Replaces an earlier raw-pointer assignment that would
+	// dangle the moment a scene-load cycle freed the registry entry.
+	g_xEngine.Editor().m_xSelectedMaterial.Set(pMaterial);
 	g_xEngine.Editor().m_bShowMaterialEditor = true;
 	if (pMaterial)
 	{
@@ -1752,13 +1756,13 @@ void Zenith_Editor::SelectMaterial(Zenith_MaterialAsset* pMaterial)
 
 void Zenith_Editor::ClearMaterialSelection()
 {
-	g_xEngine.Editor().m_pxSelectedMaterial = nullptr;
+	g_xEngine.Editor().m_xSelectedMaterial.Clear();
 }
 
 void Zenith_Editor::RenderMaterialEditorPanel()
 {
 	MaterialEditorState xState = {
-		g_xEngine.Editor().m_pxSelectedMaterial,
+		g_xEngine.Editor().m_xSelectedMaterial.GetDirect(),
 		g_xEngine.Editor().m_bShowMaterialEditor
 	};
 	Zenith_EditorPanelMaterialEditor::Render(xState);

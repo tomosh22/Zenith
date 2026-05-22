@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Editor/Zenith_Editor.h"
+#include "AssetHandling/Zenith_AssetHandle.h"  // MaterialHandle
 #include <vector>
 #include <string>
 #include <unordered_set>
@@ -188,7 +189,9 @@ struct Zenith_EditorCameraState
 //-----------------------------------------------------------------------------
 struct Zenith_EditorMaterialState
 {
-	Zenith_MaterialAsset* m_pxSelectedMaterial = nullptr;
+	// Same lifetime rule as Zenith_EditorImpl::m_xSelectedMaterial -- use a
+	// MaterialHandle so the asset survives UnloadUnusedAssets cycles.
+	MaterialHandle m_xSelectedMaterial;
 	bool m_bShowEditor = true;
 };
 
