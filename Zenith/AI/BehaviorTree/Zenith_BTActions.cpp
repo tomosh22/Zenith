@@ -119,9 +119,34 @@ BTNodeStatus Zenith_BTAction_MoveTo::Execute(Zenith_Entity& xAgent, Zenith_Black
 		m_bPathRequested = true;
 	}
 
-	// Check if arrived
+	// Check if arrived. "Arrived" means the agent is actually within
+	// m_fAcceptanceRadius of the requested position -- NOT just "has
+	// reached the end of whatever path the navmesh found." When the
+	// requested position is unreachable, Zenith_Pathfinding::FindPath
+	// returns Status::PARTIAL with waypoints to the nearest reachable
+	// navmesh polygon; the agent walks the path, reaches its end, and
+	// sets m_bReachedDestination = true. Without the actual-position
+	// distance check below, the action returned SUCCESS even though the
+	// agent stopped short of the requested point -- and on a recurring
+	// trigger (e.g. priest BT polling InvestigatePos every frame from
+	// perception), the action enters a tight SUCCESS / re-fire loop with
+	// no progress (`Build/dp_telemetry/find_stuck.py` 2026-05-23).
+	//
+	// On a PARTIAL path the agent has done all it can; return FAILURE so
+	// the parent Selector falls through to a lower-priority branch.
 	if (pxNav->HasReachedDestination())
 	{
+		if (xAgent.HasComponent<Zenith_TransformComponent>())
+		{
+			Zenith_Maths::Vector3 xAgentPos;
+			xAgent.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
+			const float fDist = Zenith_Maths::Length(xTargetPos - xAgentPos);
+			if (fDist > m_fAcceptanceRadius)
+			{
+				m_eLastStatus = BTNodeStatus::FAILURE;
+				return m_eLastStatus;
+			}
+		}
 		m_eLastStatus = BTNodeStatus::SUCCESS;
 		return m_eLastStatus;
 	}
@@ -244,6 +269,31 @@ BTNodeStatus Zenith_BTAction_MoveToEntity::Execute(Zenith_Entity& xAgent, Zenith
 		{
 			pxNav->Stop();
 			m_eLastStatus = BTNodeStatus::SUCCESS;
+			return m_eLastStatus;
+		}
+
+		// 2026-05-23: detect "agent reached the end of its path but the
+		// actual target is still beyond the acceptance radius." This is
+		// the PARTIAL-path case: Zenith_Pathfinding::FindPath returns a
+		// path to the nearest reachable navmesh polygon when the actual
+		// destination isn't connected (disconnected polygon island,
+		// blocked-by-door corridor that's still BLOCKED at the time of
+		// pathfind, etc.). The agent dutifully walks to that partial
+		// endpoint and sets m_bReachedDestination = true -- but we're
+		// still fDist metres short of the requested target. Without this
+		// check, MoveToEntity would re-issue SetDestination every
+		// m_fRepathInterval seconds, FindPath would return the same
+		// partial path, the agent would "re-arrive" immediately (already
+		// at the endpoint), and the BT action would loop forever. The
+		// priest in DevilsPlayground hit this on seed 12345 -- frozen
+		// for 175 s of a 200 s run (`Build/dp_telemetry/find_stuck.py`).
+		// Returning FAILURE lets the parent Selector fall through to a
+		// lower-priority branch (e.g. Patrol) that might actually be
+		// reachable.
+		if (pxNav->HasReachedDestination())
+		{
+			pxNav->Stop();
+			m_eLastStatus = BTNodeStatus::FAILURE;
 			return m_eLastStatus;
 		}
 	}
