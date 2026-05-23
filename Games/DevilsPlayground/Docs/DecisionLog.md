@@ -8,6 +8,32 @@
 
 ---
 
+## 2026-05-23 — Noise-machine radius dropped 20 m → 19 m to satisfy the balance criteria after the personality unification.
+
+**Context.** Removing the personality buffs (decision-log entry below) made Heretic — the deliberate-noise-first personality — dominant at 10/10 wins on the canonical 10-seed matrix, violating "every personality strictly between 0 % and 100 %." With the priest now genuinely mobile (the navmesh fixes earlier today) and all personalities playing the same game, the noise machine's 20 m radius was reliably pulling the priest within earshot at the start of every layout in the canonical set.
+
+**The cliff.** Bisected the radius down (20 → 12 → 15 → 17 → 19). Each step broke Heretic correctly (9/10 from 17 m onward), but 12 / 15 / 17 m also rendered seed 250000 unwinnable by *any* personality (the priest's spawn on that layout intercepts every other strategy, so weakening the bait removed the only viable approach). The transition was sharp because procgen places the priest in discrete rooms — there's no smooth gradient between "in earshot" and "out of earshot" for any single seed. **19 m** landed on the safe side of the boundary for the entire canonical set:
+
+| Personality | Pre (20 m) | 12 m | 15 m | 17 m | **19 m** |
+|---|---:|---:|---:|---:|---:|
+| Casual | 7/10 | 8/10 | 7/10 | 7/10 | 8/10 |
+| Heretic | 10/10 ★ | 9/10 | 9/10 | 9/10 | **9/10** |
+| Magpie | 9/10 | 9/10 | 9/10 | 9/10 | **9/10** |
+| Relay | 8/10 | 8/10 | 8/10 | 8/10 | **8/10** |
+| Speedrunner | 7/10 | 7/10 | 7/10 | 7/10 | 6/10 |
+| Stealth | 6/10 | 7/10 | 7/10 | 7/10 | 8/10 |
+| Trickster | 9/10 | 8/10 | 7/10 | 7/10 | 7/10 |
+| Zealot | 6/10 | 6/10 | 6/10 | 6/10 | 7/10 |
+| **Seed 250000 winners** | 1 (Heretic) | **0** | **0** | **0** | **3** (Casual/Stealth/Zealot) |
+
+Interesting twist on the 19 m run: seed 250000 is now winnable by Casual / Stealth / Zealot — but NOT by Heretic. The bootstrap-chain use of the noise machine (Casual triggers it as one of several side-objectives, by which time the priest has moved) is now more effective on seed 250000 than the deliberate-first use (Heretic triggers it at frame 0, but the noise+investigate cycle happens before Heretic has any way to capitalise; on this layout the priest is back to interrupting routes by the time Heretic has done a single round trip).
+
+**Criteria check** (v8 unified personalities + 19 m noise machine + navmesh OBB + door yaw):
+- ✓ All personalities strictly between 0 % and 100 % (range 60 – 90 %)
+- ✓ Every seed winnable by ≥ 1 personality
+
+**Files changed.** `Config/Tuning.json` noise_machine_radius_m + comment, `Tests/Test_P1Tuning_InteractableValuesMatchConfig.cpp` (the radius-pin sanity check), `Components/CLAUDE.md` (the per-script comment that mentioned 20 m).
+
 ## 2026-05-23 — Personality buffs removed: bot must be mechanically identical across all 8 personalities.
 
 **Context.** User feedback while reviewing the post-navmesh-fix seed-matrix balance shifts: "Personalities must not be buffs or nerfs and must not give the bot any extra abilities. The personalities are supposed to purely simulate how different human beings might play the exact same game." Two `PersonalityConfig` fields violated that principle.

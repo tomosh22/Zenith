@@ -85,7 +85,7 @@ DPPentagram_Behaviour.h           #   Win condition. On interact: if held item t
                                   #   Objective1..5 and not already collected, mark the bit
                                   #   in DP_Win's mask. 5/5 dispatches DP_OnVictory.
 DummyNoiseMachine_Behaviour.h     #   Deliberate hearing stimulus. F-press emits a
-                                  #   loudness=1.0 / radius=20 m sound via DP_AI::EmitNoise.
+                                  #   loudness=1.0 / radius=19 m sound via DP_AI::EmitNoise.
                                   #   The one in-game source of deliberate priest aggro --
                                   #   Stealth personality opts out (bRunNoiseMachine=false).
 ```

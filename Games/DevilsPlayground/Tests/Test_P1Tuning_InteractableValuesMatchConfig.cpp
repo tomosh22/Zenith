@@ -206,7 +206,9 @@ static bool Verify_P1Tuning_InteractableValuesMatchConfig()
 	CheckMatch("double door duration == 0.5",  g_fDDOpenDuration,    0.5f);
 	CheckMatch("chest duration == 0.8",        g_fChestOpenDuration, 0.8f);
 	CheckMatch("noise loudness == 1.0",        g_fNoiseLoudness,     1.0f);
-	CheckMatch("noise radius == 20.0",         g_fNoiseRadius,       20.0f);
+	// 2026-05-23: 20.0 -> 19.0 (broke Heretic 100% wins on the canonical
+	// 10-seed matrix while keeping seed 250000 winnable; see DecisionLog.md).
+	CheckMatch("noise radius == 19.0",         g_fNoiseRadius,       19.0f);
 
 	if (g_iFailures > 0)
 	{

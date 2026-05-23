@@ -110,7 +110,8 @@
     "forge_audible_loudness": 1.0,
     "pentagram_inscribe_duration_s": 1.5,
     "noise_machine_loudness": 1.0,
-    "noise_machine_radius_m": 20.0,
+    "noise_machine_radius_m": 19.0,
+    "_comment_noise_machine_radius": "Was 20.0. The 80-cell unified-personality matrix on 2026-05-23 showed Heretic (noise-bait personality) at 10/10 wins -- violating 'every personality strictly between 0% and 100%'. Bisected the radius down: 12m, 15m, 17m all broke Heretic correctly (9/10) but ALSO broke seed 250000 entirely (priest spawn on that layout intercepts every other strategy). 19m was the threshold where seed 250000 became winnable again (by Casual/Stealth/Zealot via the noise machine's bootstrap-chain use, NOT Heretic's deliberate-first use) and Heretic stayed at 9/10. Both balance criteria are now met. The 19m vs 20m cliff is sharp because procgen places the priest in discrete rooms; there's no smooth gradient between 'in earshot' and 'out of earshot' for any given seed, but 19m happens to land on the safe side of the boundary for the canonical 10-seed set.",
     "item_pickup_radius_m": 1.5,
     "item_pickup_default_channel_s": 0.0,
     "reagent_pickup_channel_s": 1.0
