@@ -8,6 +8,37 @@
 
 ---
 
+## 2026-05-23 — Personality buffs removed: bot must be mechanically identical across all 8 personalities.
+
+**Context.** User feedback while reviewing the post-navmesh-fix seed-matrix balance shifts: "Personalities must not be buffs or nerfs and must not give the bot any extra abilities. The personalities are supposed to purely simulate how different human beings might play the exact same game." Two `PersonalityConfig` fields violated that principle.
+
+**The two buffs:**
+
+- `iWalkBudgetMul` (test-harness per-walk-goal frame timeout). Stealth got 2× the budget of everyone else "to give it equal opportunity to reach the same target" given walk-quiet's 0.875× speed. But a real Stealth-style human player doesn't get extra wall-clock for being slow — they cover less map inside the same dawn timer. This was a hidden buff with no human-player equivalent.
+
+- `iObjAttemptCap` (per-objective retry counter). Varied 12 (Heretic) – 24 (Stealth) based on a designer's judgement of each personality's style. A human player doesn't have a personality-dependent patience budget — they keep trying until win/loss.
+
+Both fields removed from `PersonalityConfig` and promoted to file-scope constants (`kWalkFrameBudget = 1200`, `kObjAttemptCap = 20`). All 8 personalities now share identical mechanical capabilities; per-personality variation is exclusively in decision flags (sprint/quiet/adaptive/skip-bootstrap/any-order/relay-drop/noise-first/pause-test). Committed as 0813cff6.
+
+**Impact (v3 with buffs → v4 unified, 80-cell canonical matrix):**
+
+| Personality | v3 buffed | v4 unified | Δ |
+|---|---:|---:|---:|
+| Casual | 8/10 | 7/10 | -1 |
+| Heretic | 9/10 | **10/10 ★** | +1 |
+| Magpie | 9/10 | 9/10 | 0 |
+| Relay | 8/10 | 8/10 | 0 |
+| Speedrunner | 7/10 | 7/10 | 0 |
+| Stealth | 5/10 | 6/10 | +1 |
+| Trickster | **10/10 ★** | 9/10 | -1 |
+| Zealot | 6/10 | 6/10 | 0 |
+
+The 100% violation moved from Trickster to Heretic. Trickster losing on seed 250000 + Heretic being the lone winner on seed 250000 confirms the noise-bait strategy is the genuine differentiator on hard seeds, not a side-effect of test-harness budget variance. Other shifts (Casual -1, Stealth +1) are within the expected RNG/scheduling-noise band on parallel test runs.
+
+**Open balance issue (NOT a fix-this-now item):** Heretic at 100 % violates the balance criterion. This is a *game-design* finding — the noise-machine bait is the universally strongest strategy on the canonical 10-seed set — not a test artifact. The fix is to tune the noise-machine effectiveness (e.g. shorter priest-Investigate window, or noise-machine cooldown) so a Heretic-style player CAN still lose on some seed, not to re-buff other personalities.
+
+**Tests/CLAUDE.md design principle (newly documented):** if a personality needs more time / more patience to win its target seeds, the right fix is to tune the underlying game (life timer, dawn duration, walk-quiet speed multiplier in `Config/Tuning.json`, or procgen size in `GenConfig`) so a real human playing that style could win — or accept the strategic ceiling, as long as the criteria (every personality strictly between 0 % and 100 %; every seed winnable by ≥1 personality) are met. The personality bot itself must remain mechanically identical to every other personality bot.
+
 ## 2026-05-23 — Two upstream-of-DP bugs fixed: NavMesh OBB geometry + procgen door yaw.
 
 **Context.** User reported via headed-window playthrough that the priest spent most of a run "stuck in the same place trying to walk through a wall." Telemetry confirmed: across the BT-fix-only 10-seed matrix run, several cells showed the priest's `priest_total_distance` at literally 0.0m (seed 99999 Relay being the clearest case — priest never left spawn). Question was "could there be a bug in the level generation?" — investigation found two real bugs, one engine-side and one DP-side, that together produced the stuck-against-walls behaviour.
