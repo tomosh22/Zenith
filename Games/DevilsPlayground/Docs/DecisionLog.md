@@ -8,6 +8,28 @@
 
 ---
 
+## 2026-05-23 — Two upstream-of-DP bugs fixed: NavMesh OBB geometry + procgen door yaw.
+
+**Context.** User reported via headed-window playthrough that the priest spent most of a run "stuck in the same place trying to walk through a wall." Telemetry confirmed: across the BT-fix-only 10-seed matrix run, several cells showed the priest's `priest_total_distance` at literally 0.0m (seed 99999 Relay being the clearest case — priest never left spawn). Question was "could there be a bug in the level generation?" — investigation found two real bugs, one engine-side and one DP-side, that together produced the stuck-against-walls behaviour.
+
+**Bug 1 (engine — `Zenith/AI/Navigation/Zenith_NavMeshGenerator.cpp`):** `CollectGeometryFromScene` built `xWorldMatrix` from the entity's transform but never used it. The obstacle box vertices fed into the voxelizer were `xPos + xScale * 0.5`-signed-half-extents at axis-aligned orientation, throwing away both the entity's rotation AND the mesh-anchoring local offset (corner-anchored `[0,1]³` meshes have a `+0.5` per-axis offset after scale). On any rotated wall the navmesh thought the wall was at the entity's translation as an AABB instead of the actual rotated OBB. For DP procgen specifically, walls are corner-anchored cubes rotated per the room's `iRot` — every wall drifted by up to a half-extent AND was rotated 0° instead of `R.iRot`. Fix mirrors `Zenith_ColliderComponent::QueueDebugDraw` exactly: `ComputeBoxDimensionsAndOffset` to get the mesh-aware half-extents and local offset, `RotateVector(localOffset, xRot)` to land the box centre on the physics body, then rotate each signed-corner by `xRot` to form the eight world-space OBB corners. Engine debug-draw wireframe and navmesh now agree on every collider's footprint. Committed as 677d2ab7.
+
+**Bug 2 (DP — `Source/DPProcLevel/DPProcLevel_Generator.cpp`):** Door `fYawRadians = atan2(xDB.fX - xDA.fX, xDB.fZ - xDA.fZ)`. For BSP-adjacent rooms with no per-room rotation (the majority case for axis-aligned partitions), `ProjectDoorPoint_I` snaps BOTH door points to the same world coordinate on the shared partition edge — so the delta was (0, 0) and `atan2(0, 0) = 0`. Every such door ended up at yaw=0 — correct for rooms-side-by-side-along-X (wall along world Z), wrong for rooms-stacked-along-Z (wall along world X). In the wrong case the door's 0.3m thin axis sat *along* the wall (leaving 0.85m of open gap on each side of the door's centre) and the 2m wide axis projected *into* the adjacent rooms along the corridor. The door's collider is `SetIncludeInNavMesh(false)` so the priest navmesh didn't see the misorientation directly, but `DPDoor::StitchNavMeshPortal` reads the door's yaw to pick probe axes — wrong yaw meant the first probe ran *along* the wall instead of across it, and the perpendicular-fallback only saved some seeds. Fix: use the line between the two ROOM CENTRES as the corridor-traversal direction (always axis-aligned for BSP-adjacent rooms because BSP partitions are axis-aligned), then `yaw = atan2(corridorZ, -corridorX)` so the door's local +Z points along the wall and its local +X (the StitchNavMeshPortal forward axis) points across it. Committed as f8e21f78.
+
+**Impact.** Spot-check vs the BT-fix-only 10-seed matrix run for the Relay personality:
+
+| Seed   | BT-fix-only priest distance | Both fixes priest distance |
+|--------|----------------------------:|----------------------------:|
+| 12345  | 10.5m                       | 12.6m                       |
+| 99999  | **0.0m (totally stuck)**    | **18.8m**                   |
+
+Both cells still produce Victory — bot delivery flow is unaffected — but the priest now actually moves around the level. Seed 99999 is the clearest single-cell win: prior to these fixes the priest sat unable to leave its spawn polygon because the navmesh believed the room boundary walls were elsewhere.
+
+**Known follow-ups (not blocking):**
+
+- `PriestPursuit_Test` and `Test_P1Priest_PursuesAfterLineOfSight` now fail. Both teleport the villager to `priestPos + (0, 0, +6)` then expect the priest to close 0.5m in 120 frames. With the now-correct navmesh that teleport often lands inside a wall (or off-mesh in a different room) so the priest has no path. Tests need to be reworked to use known-clear positions, per the `Tests/CLAUDE.md` guidance "Procgen geometry is not tuned for hand-tuned priest tests." Not a code regression — exposed test brittleness that pre-fix passed only because walls were misrepresented.
+- `DP_Win_Test` was already failing before today's work: yesterday's balance commit (9a0f4886) changed the win threshold from strict-5-of-5 to `popcount(mask) >= 3` but didn't update the test's `DP_EXPECT(!HasWon(), "4/5 !HasWon")`. Independent of this work.
+
 ## 2026-05-22 — DP cleanup Phase 4: skipped (caching not justified by measured/expected cost).
 
 **Decision:** The audit plan called for caching the entity lists currently traversed each frame by `DPFogPass_Behaviour::OnUpdate` (full villager + light scans via `DP_Query::ForEachScriptInActiveScene<>` / `pxScene->Query<Zenith_LightComponent>()`) and by `DPHUDController_Behaviour::FindNearestInteractableType` (five separate type-templated `ForEachScriptInActiveScene<T>` scans). Phase 4 of the plan is **not implemented** — the arithmetic doesn't justify trading away the existing clear-and-rebuild design's safety properties.
