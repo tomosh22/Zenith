@@ -86,8 +86,7 @@ PersonalityPlaythrough_Casual       Walks normally, single F-press, runs the pau
                                     test, engages every system. Reference recording.
 PersonalityPlaythrough_Stealth      Holds Ctrl while walking (walk-quiet, 0.875x speed of
                                     jog as of 2026-05-22, halved footstep loudness x0.25).
-                                    Skips the noise machine entirely. Walk-budget x2.
-                                    iObjAttemptCap=24 (slow walker -> more retries).
+                                    Skips the noise machine entirely.
 PersonalityPlaythrough_Speedrunner  Adaptive sprint -- holds Shift only while the next
                                     target is > 5 m away; walks close approaches. Runs
                                     the full bootstrap chain. Sprint life-cost is now
@@ -106,17 +105,17 @@ PersonalityPlaythrough_Relay        (NEW 2026-05-21) Voluntary-switch + drop-han
                                     life timer drops below 5 s while holding an obj, drops
                                     it at the foot of the nearest healthy villager and
                                     click-possesses them (voluntary-faint, not death).
-                                    Skips bootstrap. iObjAttemptCap=20.
+                                    Skips bootstrap.
 PersonalityPlaythrough_Heretic      (NEW 2026-05-21) Walks to + F-presses the noise machine
                                     BEFORE the objective loop (priest distraction bait),
                                     then jumps to obj loop. Skips iron/forge/door/chest.
                                     Distract-frame count was 90 originally; dropped to 0
                                     in 2026-05-21 because lingering pulled priest INTO the
-                                    bot rather than away. iObjAttemptCap=12 (noise expires).
+                                    bot rather than away.
 PersonalityPlaythrough_Trickster    (NEW 2026-05-21 PR #140) Magpie's any-order pick +
                                     Relay's voluntary-switch + Casual's bootstrap chain +
                                     Speedrunner's adaptive sprint. The combo predicted
-                                    strongest by the 7p x 10s matrix. iObjAttemptCap=20.
+                                    strongest by the 7p x 10s matrix.
 ```
 
 Each test drives the procgen scene through `Zenith_InputSimulator` —
@@ -128,7 +127,25 @@ path the player uses.
 
 ### PersonalityConfig fields
 
-The personality test reads these per-personality flags off
+**Design principle (ratified 2026-05-23):** personalities are *decision
+profiles* that simulate how different humans play the same game. They
+choose which legitimate in-game actions to use (sprint vs walk,
+walk-quiet vs walk, drop+switch vs hold, any-order vs fixed-order
+objectives, noise-bait vs ignore). They **MUST NOT** differ in
+mechanical capabilities the simulated player wouldn't have control
+over: life-timer length, walk speed, pickup radius, dawn-timer length,
+repossession latency, test-harness retry budgets, etc.
+
+If a new personality "needs more time" or "needs more patience" to win
+its target seeds, the right answer is to either tune the underlying
+game (life timer / dawn / walk-quiet multiplier in `Config/Tuning.json`,
+or procgen size in `GenConfig`) so that a real human playing that
+style could win — or accept that the style has lower win-rate ceiling
+on hard seeds, as long as the balance criteria (every personality
+strictly between 0 % and 100 %; every seed winnable by ≥1 personality)
+are met.
+
+The personality test reads these per-personality decision flags off
 `g_xActiveCfg`. Adding a new flag means: (1) add to the
 `PersonalityConfig` struct + (2) initialise it on all 8 existing
 configs + (3) read it from the Step machine.
@@ -142,11 +159,16 @@ configs + (3) read it from the Step machine.
 | `bRunNoiseMachine` | Walk to + engage the noise machine on the bootstrap path |
 | `bRunPauseTest` | Run the Esc pause-overlay phases at all |
 | `iPauseCycles` | How many open/close cycles when `bRunPauseTest` |
-| `iWalkBudgetMul` | Multiplier on the 1200-frame per-walk budget (Stealth = 2) |
 | `bAnyOrderObjectives` | (Magpie) Pick closest uncollected obj each iter, not fixed Obj1->5 |
 | `bUseRelayDrop` | (Relay) Drop + voluntary-switch when life < `kRelayLifeThresholdSec` |
 | `bDeliberateNoiseFirst` | (Heretic) F-press noise machine FIRST, before bootstrap |
-| `iObjAttemptCap` | (2026-05-22) Per-personality patience cap on the obj-loop retry counter. Default 16; Heretic 12 (noise expires), Stealth 24 (slow walker), Relay/Trickster 20 (click-miss burns attempts). Replaces the old global `kMaxObjAttempts` constant. |
+
+The test-harness internals `kWalkFrameBudget` (per-walk-goal frame
+cap) and `kObjAttemptCap` (per-objective retry cap) are file-scope
+constants that apply uniformly to every personality. They used to vary
+per personality (Stealth had 2x walk budget, retry caps ranged 12–24)
+but were unified on 2026-05-23 because varying them per personality
+is a hidden buff/nerf with no human-player equivalent.
 
 Path-finding for the bot uses a 240×240 grid (0.5 m cells) over the
 playable area. The grid is rebuilt on door open / scene reload via the

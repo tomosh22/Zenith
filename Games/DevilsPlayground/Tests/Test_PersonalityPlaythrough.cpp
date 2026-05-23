@@ -197,7 +197,6 @@ namespace
 		bool        bRunNoiseMachine;   // walk to + engage the noise machine
 		bool        bRunPauseTest;      // run the Esc pause-overlay phases at all
 		int         iPauseCycles;       // how many open/close cycles when bRunPauseTest=true
-		int         iWalkBudgetMul;     // multiplier on the base 1200-frame walk budget
 		// Magpie axis: when true, the objective loop picks the CLOSEST
 		// uncollected objective each iteration rather than the fixed
 		// Obj1 -> Obj2 -> ... -> Obj5 tag order. Tests whether the
@@ -219,25 +218,42 @@ namespace
 		// whether deliberate priest baiting buys enough "priest-free"
 		// objective-loop time to win more cells than Speedrunner.
 		bool        bDeliberateNoiseFirst;
-		// 2026-05-22: per-personality cap on the per-objective retry
-		// counter (replaces the global kMaxObjAttempts constant). The
-		// counter increments each time a pentagram F-press fails to
-		// deliver (typically because the bot was repossessed mid-walk
-		// and the new villager has no item; cross-possession memory
-		// then re-acquires the item but burns one attempt). Higher cap
-		// = more patient bot; lower cap = quicker to skip a stuck
-		// objective and try the next one. Adds a fourth tuning axis
-		// beyond bootstrap / sprint / order / relay that personalities
-		// can be designed around.
-		int         iObjAttemptCap;
 	};
 
-	// Walk budget multipliers calibrated for the per-personality movement
-	// speed. Stealth halves the villager's walk speed (Ctrl held), so we
-	// double the per-walk frame budget to give it equal opportunity to
-	// reach the same target. The other personalities don't slow down so
-	// they run at the base 1x budget.
+	// 2026-05-23: personalities are *decision profiles* — they choose
+	// which legitimate in-game actions to use (sprint vs walk, walk-quiet
+	// vs walk, drop+switch vs hold, any-order vs fixed-order objectives,
+	// noise-bait vs ignore). They MUST NOT differ in mechanical
+	// capabilities the simulated human player wouldn't have control over:
+	// life-timer length, walk speed, pickup radius, dawn-timer length,
+	// repossession latency, etc.
 	//
+	// In particular, two test-harness internals that used to vary per
+	// personality have been promoted to uniform constants:
+	//
+	//   * `kWalkFrameBudget` is the per-walk-goal frame timeout used by
+	//     the bot's stuck-detection (it bails out of a walk if it hasn't
+	//     reached the target inside this budget so the test doesn't hang
+	//     on unreachable goals). Previously Stealth got 2x. A real
+	//     Stealth-style human player doesn't get extra wall-clock for
+	//     being slower -- they just cover less ground inside the same
+	//     dawn timer. Now uniform across all personalities; the slowest
+	//     personality genuinely covers less map, and any win-rate gap
+	//     reflects the strategic cost of walking-quiet, not a test-harness
+	//     accommodation.
+	//
+	//   * `kObjAttemptCap` is the per-objective retry counter used to
+	//     skip a stuck objective and try the next one. Previously varied
+	//     12 (Heretic) -- 24 (Stealth). A human player doesn't have a
+	//     personality-dependent patience budget. Now uniform across all
+	//     personalities.
+	//
+	// If a personality needs to behave more cautiously / aggressively,
+	// that's expressed as a DECISION FLAG (bUseRelayDrop, bAdaptiveSprint,
+	// bAnyOrderObjectives, ...) -- not a hidden capability multiplier.
+	constexpr int kWalkFrameBudget = 1200;   // base per-walk-goal frame cap
+	constexpr int kObjAttemptCap   = 20;     // single shared patience cap
+
 	// All personalities load the same scene (ProcLevel, build index 1, the
 	// only gameplay scene since 2026-05-19) and run Verify in lenient
 	// mode -- procgen geometry doesn't guarantee a reachable
@@ -246,14 +262,20 @@ namespace
 	// not "bot completed the full win condition". The walking +
 	// possession + interaction signatures are still observable via the
 	// telemetry emitted alongside each run.
+	//
+	// Personalities differ only in DECISION FLAGS (sprint/quiet/adaptive,
+	// skip-bootstrap, any-order, relay-drop, noise-first, pause-test).
+	// They share identical mechanical capabilities: same walk-frame budget,
+	// same objective retry cap, same life timer, same dawn timer, same
+	// pickup radius. Win-rate differences reflect strategic effectiveness,
+	// not a test-harness accommodation. (See kWalkFrameBudget /
+	// kObjAttemptCap above for the 2026-05-23 unification.)
 	constexpr PersonalityConfig kPersonality_Casual = {
 		Personality::Casual,      "Casual",
 		/*sprint*/false, /*quiet*/false, /*adaptive*/false,
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/true,  /*pauseCycles*/1,
-		/*budgetMul*/1,
-		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
-		/*objAttemptCap*/16 };
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false };
 	// Stealth caveat (seed-matrix analysis 2026-05-19): walk-quiet only
 	// halves *footstep* loudness (movement.walk_footstep_loudness_multiplier).
 	// The gameplay interactions Stealth still performs -- forge crafting
@@ -265,24 +287,26 @@ namespace
 	// bRunNoiseMachine=false flag below specifically opts Stealth out of
 	// the *deliberate* noise-emit (DummyNoiseMachine F-press); it does
 	// not silence side-effect noise from forge/chest/door.
+	//
+	// 2026-05-23: Stealth used to get a 2x walk-frame budget and a 24
+	// objAttemptCap to "give it equal opportunity" against the faster
+	// personalities. Removed -- a Stealth-style human player doesn't get
+	// extra wall-clock for being slow; they cover less map inside the
+	// same dawn timer. If walking-quiet is too punishing relative to the
+	// procgen layout sizes, the fix is to tune the layout / dawn timer /
+	// walk-quiet speed multiplier, not to give the bot a hidden buff.
 	constexpr PersonalityConfig kPersonality_Stealth = {
 		Personality::Stealth,     "Stealth",
 		/*sprint*/false, /*quiet*/true,  /*adaptive*/false,
 		/*skipBootstrap*/false,
 		/*noise*/false,  /*pause*/true,  /*pauseCycles*/1,
-		/*budgetMul*/2,
-		// Stealth gets a higher retry cap because its slow walk means
-		// more wasted frames per failed attempt.
-		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
-		/*objAttemptCap*/24 };
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false };
 	constexpr PersonalityConfig kPersonality_Speedrunner = {
 		Personality::Speedrunner, "Speedrunner",
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1,
-		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
-		/*objAttemptCap*/16 };
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false };
 	// Zealot bypasses the entire iron/forge/door/chest/noise coverage
 	// chain and goes straight to the objective-deliver loop after the
 	// first possession lands. Adaptive sprint (not blind sprint) so the
@@ -296,9 +320,7 @@ namespace
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*skipBootstrap*/true,
 		/*noise*/false,  /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1,
-		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false,
-		/*objAttemptCap*/16 };
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/false };
 	// Magpie (2026-05-21): opportunistic objective ordering. Picks the
 	// closest uncollected objective each iteration instead of the fixed
 	// Obj1 -> Obj5 tag order Casual / Stealth / Speedrunner / Zealot
@@ -312,9 +334,7 @@ namespace
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1,
-		/*anyOrder*/true,  /*relayDrop*/false, /*noiseFirst*/false,
-		/*objAttemptCap*/16 };
+		/*anyOrder*/true,  /*relayDrop*/false, /*noiseFirst*/false };
 	// Relay (2026-05-21): voluntary-switch + drop-handoff chain. When
 	// life timer falls below kRelayLifeThresholdSec and the bot is
 	// holding an objective, drops it at the foot of the nearest healthy
@@ -330,11 +350,7 @@ namespace
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*skipBootstrap*/true,
 		/*noise*/false,  /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1,
-		// Relay gets a slightly elevated cap because each click-miss
-		// burns the attempt counter without being a real obj-loop fail.
-		/*anyOrder*/false, /*relayDrop*/true,  /*noiseFirst*/false,
-		/*objAttemptCap*/20 };
+		/*anyOrder*/false, /*relayDrop*/true,  /*noiseFirst*/false };
 	// Heretic (2026-05-21): deliberate priest manipulation. Walks to +
 	// F-presses the noise machine BEFORE the objective loop, then jumps
 	// straight to kHP_ObjLoopFind. The noise emission baits the priest
@@ -351,12 +367,7 @@ namespace
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*skipBootstrap*/true,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1,
-		// Heretic gets a LOWER retry cap because the noise distraction
-		// expires (priest investigate -> patrol after ~30 s); patience
-		// past that window means racing a more aggressive priest.
-		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/true,
-		/*objAttemptCap*/12 };
+		/*anyOrder*/false, /*relayDrop*/false, /*noiseFirst*/true };
 	// Trickster (2026-05-21 PR #140): the combo personality predicted
 	// strongest by the 7p x 10s matrix run. Magpie's any-order pick
 	// (+13% obj throughput) + Relay's voluntary-switch (+3x win rate)
@@ -370,11 +381,7 @@ namespace
 		/*sprint*/false, /*quiet*/false, /*adaptive*/true,
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/false, /*pauseCycles*/1,
-		/*budgetMul*/1,
-		// Trickster has Relay's click-miss overhead AND Magpie's
-		// re-aim work; bump cap accordingly.
-		/*anyOrder*/true,  /*relayDrop*/true,  /*noiseFirst*/false,
-		/*objAttemptCap*/20 };
+		/*anyOrder*/true,  /*relayDrop*/true,  /*noiseFirst*/false };
 	// (Methodical personality removed 2026-05-19 -- the seed-matrix
 	// analysis found its bot behaviour was within rounding error of
 	// Casual on every metric except the pause-cycle count (3 cycles
@@ -461,13 +468,14 @@ namespace
 	int g_iWait  = 0;            // generic intra-phase frame counter
 	int g_iWalkBudget = 0;       // remaining frames allowed in current walk
 
-	// Single-source setter for the per-walk frame budget. Replaces the
-	// literal `SetWalkBudget(1200);` assignments scattered across Step
-	// so the active personality's budget multiplier is honoured everywhere
-	// (Stealth needs 2x because walk-quiet halves villager speed).
-	inline void SetWalkBudget(int iBase)
+	// Single-source setter for the per-walk frame budget. All personalities
+	// share kWalkFrameBudget -- the multiplier that used to live on
+	// PersonalityConfig.iWalkBudgetMul (Stealth=2) has been removed because
+	// it gave the slow personality extra wall-clock that no human player
+	// would have. See the kWalkFrameBudget comment above.
+	inline void SetWalkBudget(int /*iBaseIgnored*/)
 	{
-		g_iWalkBudget = iBase * g_xActiveCfg.iWalkBudgetMul;
+		g_iWalkBudget = kWalkFrameBudget;
 	}
 
 	// Stuck-detection state — bail early when the villager hasn't moved in N
@@ -542,20 +550,12 @@ namespace
 		DP_ItemTag::Objective3, DP_ItemTag::Objective4,
 		DP_ItemTag::Objective5,
 	};
-	// Per-objective retry cap. Was 4 pre-2026-05-20. The seed-matrix
-	// after the cross-possession memory landed showed cells reaching
-	// 4-5 objectives only when the bot survived 8+ possessions; with
-	// the old cap of 4 the bot would surrender an objective after just
-	// 4 failed pentagram-presses (the typical failure pattern is
-	// "pickup, die mid-walk, repossess, walker has no item, F-press
-	// does nothing, attempt++"). 16 gives the cross-possession recover
-	// path room to actually re-pickup -- each repossess-and-re-pickup
-	// costs ~1 attempt, so 16 lets ~10 productive deliveries through.
-	// 2026-05-22: this is now the FALLBACK only -- per-personality
-	// iObjAttemptCap takes precedence (default 16, ranges 12-24 across
-	// the current 8 personalities). The constant is kept for documentation
-	// + as a sanity check; the runtime read uses g_xActiveCfg.iObjAttemptCap.
-	constexpr int kMaxObjAttempts = 16;
+	// Per-objective retry cap historical note: the 2026-05-22 design briefly
+	// introduced per-personality caps (iObjAttemptCap ranging 12-24); the
+	// 2026-05-23 rework unified this back to a single shared cap because
+	// personality-specific patience budgets are a test-harness buff that
+	// no human player would have. See `kObjAttemptCap` at the top of the
+	// file for the current uniform value.
 
 	// Relay (2026-05-21): trigger the drop-handoff when remaining life
 	// is below this threshold. 5 s gives the bot ~1.5 s to walk to the
@@ -2801,9 +2801,11 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		// Cap retries — if a single objective resists multiple attempts (e.g.
 		// item entity got destroyed without bit being set), give up and move
 		// on so the test still terminates rather than spinning forever.
-		// 2026-05-22: per-personality cap replaces the old kMaxObjAttempts
-		// global. See PersonalityConfig.iObjAttemptCap docs for the rationale.
-		if (g_iObjAttempts >= g_xActiveCfg.iObjAttemptCap)
+		// 2026-05-23: uniform kObjAttemptCap across all personalities --
+		// personality-specific patience budgets gave the test harness an
+		// extra knob no human player would have. See the kObjAttemptCap
+		// constant for the rationale.
+		if (g_iObjAttempts >= kObjAttemptCap)
 		{
 			std::printf("[HumanPlaythrough] obj %d MAX_ATTEMPTS — skipping\n",
 				g_iObjectivesDelivered);
