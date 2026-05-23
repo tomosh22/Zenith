@@ -199,39 +199,86 @@ bool Zenith_NavMeshGenerator::CollectGeometryFromScene(Zenith_SceneData& xScene,
 		}
 
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
-		Zenith_Maths::Matrix4 xWorldMatrix;
-		xTransform.BuildModelMatrix(xWorldMatrix);
+		Zenith_Maths::Vector3 xPos;
 		Zenith_Maths::Vector3 xScale;
+		Zenith_Maths::Quat    xRot;
+		xTransform.GetPosition(xPos);
 		xTransform.GetScale(xScale);
+		xTransform.GetRotation(xRot);
 
-		// Get shape geometry based on collider type
-		// For now, generate approximate geometry for basic shapes
-		// A full implementation would query the actual mesh from Jolt
+		// 2026-05-23: build the world-space box corners properly. The
+		// previous implementation used (xPos + axis-aligned half-extents)
+		// which silently ignored TWO real properties of every collider in
+		// the scene:
+		//
+		//   1. Rotation. Any entity with a non-identity yaw -- procgen-
+		//      generated walls, rotated props, etc -- ended up modelled
+		//      in the navmesh as an AABB at the entity's TRANSLATION,
+		//      not its actual rotated OBB. So a wall sitting at 45 deg
+		//      had its real OBB span replaced by a same-size axis-aligned
+		//      box rotated 0 deg, leaving large gaps where the wall
+		//      really was and false obstacles in the rotated-into-AABB
+		//      corners.
+		//
+		//   2. Mesh anchoring. Zenith_ColliderComponent's BoxShape uses
+		//      ComputeBoxDimensionsAndOffset to compute a local-space
+		//      offset that aligns the collision shape with the visible
+		//      mesh (e.g. wall meshes anchored at [0,1]^3 corner have a
+		//      +0.5 local offset on each axis after scale; building-kit
+		//      meshes with y-min=0 have an offset of half the height).
+		//      The navmesh ignored this offset entirely, so its modelled
+		//      box centre was shifted by up to one full half-extent from
+		//      where the physics body actually sits.
+		//
+		// Together this produced a navmesh whose polygons drifted +/- a
+		// full half-extent from real geometry, and on rotated walls had
+		// the wrong orientation too. The bot's grid-A* worked around it
+		// by using its own raycast grid (see DP Tests/CLAUDE.md "Known
+		// follow-up"). The priest, which has no such workaround, simply
+		// got stuck against walls the navmesh said weren't there.
+		//
+		// Fix: use ComputeBoxDimensionsAndOffset to get the actual world
+		// half-extents + local offset, rotate the offset by the entity's
+		// rotation to land the box centre where the physics body is, then
+		// rotate each of the eight signed half-extent corners by the
+		// rotation to form a true world-space OBB. Same logic Zenith_
+		// ColliderComponent's QueueDebugDraw uses for the OBB wireframe,
+		// so the rendered debug viz and the navmesh now agree on where
+		// every collider is.
+		Zenith_Maths::Vector3 xHalfExtents;
+		Zenith_Maths::Vector3 xLocalOffset;
+		xCollider.ComputeBoxDimensionsAndOffset(xScale, xHalfExtents,
+			xLocalOffset, /*bWarnOnDegenerateBounds=*/false);
 
-		// Generate a simple box/cube approximation based on scale
-		// This is a simplified approach - a full implementation would
-		// extract the actual collision mesh from the physics system
+		const Zenith_Maths::Vector3 xRotatedOffset =
+			Zenith_Maths::RotateVector(xLocalOffset, xRot);
+		const Zenith_Maths::Vector3 xBoxCentre = xPos + xRotatedOffset;
 
 		uint32_t uBaseVertex = axVerticesOut.GetSize();
-		Zenith_Maths::Vector3 xPos;
-		xTransform.GetPosition(xPos);
-		Zenith_Maths::Vector3 xHalfExtents = xScale * 0.5f;
 
-		// Create box vertices (8 corners)
-		// NOTE: The cube model is CENTERED at origin, so position is the center
-		// and scale extends ±half in each direction
-		Zenith_Maths::Vector3 axBoxVerts[8] = {
-			// Bottom face (4 corners at center.y - halfExtent.y)
-			xPos + Zenith_Maths::Vector3(-xHalfExtents.x, -xHalfExtents.y, -xHalfExtents.z),
-			xPos + Zenith_Maths::Vector3( xHalfExtents.x, -xHalfExtents.y, -xHalfExtents.z),
-			xPos + Zenith_Maths::Vector3( xHalfExtents.x, -xHalfExtents.y,  xHalfExtents.z),
-			xPos + Zenith_Maths::Vector3(-xHalfExtents.x, -xHalfExtents.y,  xHalfExtents.z),
-			// Top face (4 corners at center.y + halfExtent.y)
-			xPos + Zenith_Maths::Vector3(-xHalfExtents.x,  xHalfExtents.y, -xHalfExtents.z),
-			xPos + Zenith_Maths::Vector3( xHalfExtents.x,  xHalfExtents.y, -xHalfExtents.z),
-			xPos + Zenith_Maths::Vector3( xHalfExtents.x,  xHalfExtents.y,  xHalfExtents.z),
-			xPos + Zenith_Maths::Vector3(-xHalfExtents.x,  xHalfExtents.y,  xHalfExtents.z)
+		// Eight corners in the order the triangle emit code below expects:
+		//   0..3 = bottom face CCW (-y), 4..7 = top face CCW (+y)
+		//   per-corner XZ winding: (-,-) (+,-) (+,+) (-,+)
+		static const Zenith_Maths::Vector3 s_axCornerSigns[8] = {
+			Zenith_Maths::Vector3(-1.0f, -1.0f, -1.0f),
+			Zenith_Maths::Vector3( 1.0f, -1.0f, -1.0f),
+			Zenith_Maths::Vector3( 1.0f, -1.0f,  1.0f),
+			Zenith_Maths::Vector3(-1.0f, -1.0f,  1.0f),
+			Zenith_Maths::Vector3(-1.0f,  1.0f, -1.0f),
+			Zenith_Maths::Vector3( 1.0f,  1.0f, -1.0f),
+			Zenith_Maths::Vector3( 1.0f,  1.0f,  1.0f),
+			Zenith_Maths::Vector3(-1.0f,  1.0f,  1.0f),
 		};
+		Zenith_Maths::Vector3 axBoxVerts[8];
+		for (uint32_t uC = 0; uC < 8; ++uC)
+		{
+			const Zenith_Maths::Vector3 xLocalCorner(
+				s_axCornerSigns[uC].x * xHalfExtents.x,
+				s_axCornerSigns[uC].y * xHalfExtents.y,
+				s_axCornerSigns[uC].z * xHalfExtents.z);
+			axBoxVerts[uC] = xBoxCentre +
+				Zenith_Maths::RotateVector(xLocalCorner, xRot);
+		}
 
 		for (int i = 0; i < 8; ++i)
 		{
