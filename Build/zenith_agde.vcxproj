@@ -89,7 +89,7 @@
       <AssemblerOutput>NoListing</AssemblerOutput>
       <CompileAs>Default</CompileAs>
       <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFileDirectory>c:\tmp\zenith-engine-refactor\build\obj\agde\arm64_v8a_vs2022_debug_agde_false\</PrecompiledHeaderOutputFileDirectory>
+      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\agde\arm64_v8a_vs2022_debug_agde_false\</PrecompiledHeaderOutputFileDirectory>
       <UnwindTables>true</UnwindTables>
       <AddressSignificanceTable>false</AddressSignificanceTable>
       <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
@@ -120,7 +120,7 @@
       <AssemblerOutput>NoListing</AssemblerOutput>
       <CompileAs>Default</CompileAs>
       <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFileDirectory>c:\tmp\zenith-engine-refactor\build\obj\agde\arm64_v8a_vs2022_release_agde_false\</PrecompiledHeaderOutputFileDirectory>
+      <PrecompiledHeaderOutputFileDirectory>c:\dev\zenith\build\obj\agde\arm64_v8a_vs2022_release_agde_false\</PrecompiledHeaderOutputFileDirectory>
       <UnwindTables>true</UnwindTables>
       <AddressSignificanceTable>false</AddressSignificanceTable>
       <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
@@ -144,6 +144,9 @@
     <ClInclude Include="..\Middleware\imgui-docking\imstb_rectpack.h" />
     <ClInclude Include="..\Middleware\imgui-docking\imstb_textedit.h" />
     <ClInclude Include="..\Middleware\imgui-docking\imstb_truetype.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX\VertexConstants.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL\VertexConstants.h" />
+    <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\VertexConstants.h" />
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.h" />
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeToBuffer.h" />
     <ClInclude Include="..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\NodeCodec\NodeCodecQuadTreeHalfFloat.h" />

@@ -1,0 +1,8 @@
+{
+  "name": "Test_P2Pause_RestartActuallyReloadsScene",
+  "passed": true,
+  "frames": 40,
+  "durationMs": 1233.040,
+  "failures": [],
+  "skipped": false
+}

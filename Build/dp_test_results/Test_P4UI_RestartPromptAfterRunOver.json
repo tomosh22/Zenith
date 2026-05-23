@@ -1,0 +1,8 @@
+{
+  "name": "Test_P4UI_RestartPromptAfterRunOver",
+  "passed": true,
+  "frames": 14,
+  "durationMs": 980.358,
+  "failures": [],
+  "skipped": false
+}

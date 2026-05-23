@@ -1,0 +1,8 @@
+{
+  "name": "Test_P1Cooldown_CannotPossessFor1pt5s",
+  "passed": true,
+  "frames": 110,
+  "durationMs": 1064.484,
+  "failures": [],
+  "skipped": false
+}
