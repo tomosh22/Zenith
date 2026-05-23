@@ -952,24 +952,47 @@ namespace DPProcLevel
 				xE.fZ          = 0.5f * (xDA.fZ + xDB.fZ);
 				xE.xRoomId     = kInvalidRoomId;
 				xE.iCorridorId = static_cast<int32_t>(iC);
-				// 2026-05-22: door yaw aligns the door's "wide" axis along
-				// the WALL so the door's collider fills the corridor gap
-				// when closed. The corridor goes (xDA -> xDB); the wall
-				// it crosses is perpendicular to that. The bootstrap
-				// scales the door (0.3 thick, 4 tall, 2 wide along its
-				// local +Z); we want local +Z to point along the wall.
-				// Wall direction = corridor-perpendicular = atan2 of
-				// rotated corridor delta.
-				const float fDx = xDB.fX - xDA.fX;
-				const float fDz = xDB.fZ - xDA.fZ;
-				// Wall axis = corridor axis rotated 90° in XZ. So if the
-				// corridor goes mostly along X, the wall (and the door's
-				// local +Z) should point along Z. atan2(deltaCorridorX,
-				// deltaCorridorZ) gives a yaw that maps local +Z to that
-				// world direction. The exact sign convention follows the
-				// wall yaw convention (matches SpawnWalls' fYawRadians
-				// usage; see WallSegment doc in DPProcLevel_LevelLayout.h).
-				xE.fYawRadians = static_cast<float>(std::atan2(fDx, fDz));
+				// 2026-05-23: door yaw aligns the door's "wide" axis (local +Z,
+				// 2 m) along the WALL so the door's collider fills the
+				// corridor gap when closed. The bootstrap scales the door
+				// (0.3 thick, 4 tall, 2 wide along its local +Z); we want
+				// local +Z to point along the wall and local +X to point
+				// across the wall (along the corridor traversal direction).
+				//
+				// BUG FIXED 2026-05-23: the previous formula was
+				//     atan2(xDB-xDA in X, xDB-xDA in Z)
+				// computed from the door-point delta. For BSP-adjacent
+				// axis-aligned rooms (no per-room rotation) ProjectDoorPoint_I
+				// snaps BOTH door points to the same world coordinate on the
+				// shared partition edge -- so (xDB - xDA) was (0, 0) and the
+				// atan2 collapsed to 0. Result: the door's local +Z always
+				// pointed along world +Z regardless of which axis the wall
+				// ran along. For walls running along X (rooms BSP-stacked
+				// front-back) the door was rotated 90° from where it should
+				// be, leaving a 0.85 m gap on each side of the (now
+				// 0.3 m-wide-in-X) door that the priest's navmesh-excluded
+				// pathing went straight through, AND making
+				// DPDoor::StitchNavMeshPortal probe along the wall instead of
+				// along the corridor (the perpendicular fallback masked this
+				// in some seeds but not all).
+				//
+				// Fix: use the line between the two ROOM CENTRES (which is
+				// always axis-aligned for BSP-adjacent rooms because the BSP
+				// partitions are axis-aligned in world space) as the
+				// corridor-traversal direction. The wall is perpendicular to
+				// that. Door's local +Z must point in the wall direction:
+				//
+				//     R_y(yaw) * (0, 0, 1) = (sin(yaw), 0, cos(yaw))
+				//                          = wallDir
+				//                          = (corridor.z, -corridor.x) / |corridor|
+				//   => yaw = atan2(corridor.z, -corridor.x)
+				//
+				// where (corridor.x, corridor.z) = centreB - centreA.
+				const Room& xRoomA = xLayout.axRooms.Get(static_cast<uint32_t>(xDA.xRoomId));
+				const Room& xRoomB = xLayout.axRooms.Get(static_cast<uint32_t>(xDB.xRoomId));
+				const float fCorridorX = xRoomB.fCentreX - xRoomA.fCentreX;
+				const float fCorridorZ = xRoomB.fCentreZ - xRoomA.fCentreZ;
+				xE.fYawRadians = static_cast<float>(std::atan2(fCorridorZ, -fCorridorX));
 				xLayout.axGameElements.PushBack(xE);
 				axGatedCorridors.PushBack(static_cast<int32_t>(iC));
 			}
