@@ -89,12 +89,31 @@ float4 fsMain(VsOut input, float4 fragCoord : SV_Position) : SV_Target
 		}
 	}
 
-	float3 xMSD          = g_xTexture.Sample(input.uv).rgb;
-	float  fSD           = Median3(xMSD.r, xMSD.g, xMSD.b);
-	float  fScreenPxDist = ScreenPxRange(input.uv) * (fSD - 0.5);
-	float  fAlpha        = saturate(fScreenPxDist + 0.5);
+	float  fScreenPxRange = ScreenPxRange(input.uv);
+	float3 xMSD           = g_xTexture.Sample(input.uv).rgb;
+	float  fSD            = Median3(xMSD.r, xMSD.g, xMSD.b);
+	float  fScreenPxDist  = fScreenPxRange * (fSD - 0.5);
 
-	// Standard alpha blending handles fAlpha = 0 cleanly. No hard discard at
-	// low alpha — that's what made the legacy bitmap shader's edges jagged.
-	return float4(input.colour.rgb, fAlpha * input.colour.a);
+	// 1-pixel black halo around every glyph for legibility on any background.
+	// fInkAlpha covers the glyph ink; fOutlineAlpha extends the ink mask by
+	// `fHaloWidthPx` screen pixels via the SDF (no second texture sample).
+	// We then lerp the ink colour to black inside the halo ring, and use the
+	// wider mask for the output alpha — so the halo fades to transparent at
+	// its outer edge with the same 1-px AA as the ink edge.
+	//
+	// fHaloWidthPx is capped by what the SDF can represent at the current
+	// minification. The SDF stores at most ~ScreenPxRange/2 screen pixels of
+	// "outside" distance (since fSD saturates to 0 beyond the bake-time
+	// pxRange/2 atlas pixels). At small render sizes where ScreenPxRange
+	// clamps to 1, the SDF can't see far enough outside to fade a 1-px halo
+	// correctly — without this cap, `saturate(fScreenPxDist + 1.5)` would
+	// fill the entire quad with halo alpha, producing a grey rectangle behind
+	// the glyph. We linearly ramp the halo width from 0 at ScreenPxRange=1
+	// to a full 1 px at ScreenPxRange=3, then cap.
+	const float fTargetHaloPx = 1.0;
+	float  fHaloWidthPx  = clamp(0.5 * (fScreenPxRange - 1.0), 0.0, fTargetHaloPx);
+	float  fInkAlpha     = saturate(fScreenPxDist + 0.5);
+	float  fOutlineAlpha = saturate(fScreenPxDist + 0.5 + fHaloWidthPx);
+	float3 xRgb          = lerp(float3(0.0, 0.0, 0.0), input.colour.rgb, fInkAlpha);
+	return float4(xRgb, fOutlineAlpha * input.colour.a);
 }
