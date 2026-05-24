@@ -1,8 +1,8 @@
 {
   "name": "Test_P1Scent_AccumulatesOnPossession",
   "passed": true,
-  "frames": 124,
-  "durationMs": 1160.558,
+  "frames": 123,
+  "durationMs": 999.680,
   "failures": [],
   "skipped": false
 }

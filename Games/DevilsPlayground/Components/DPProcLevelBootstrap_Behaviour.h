@@ -22,6 +22,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "Flux/Flux_ModelInstance.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics_Fwd.h"
@@ -31,6 +32,7 @@
 #include "Source/DPProcLevel/DPProcLevel_Generator.h"
 #include "Source/DPProcLevel/DPProcLevel_LevelLayout.h"
 #include "Source/DevilsPlayground_Tags.h"
+#include "Source/DPMaterials.h"
 
 // Behaviour types attached to procgen-spawned game elements. The bootstrap
 // is the canonical place game scripts get wired up onto procgen-generated
@@ -132,6 +134,15 @@ public:
 		// anchor, not entities in their own right.
 		SpawnGameElements();
 
+		// Debug: spawn a small green marker at every doorPoint (where
+		// each corridor meets a room edge), so we can visually verify
+		// that the wall outline's openings line up with where doorPoints
+		// say they should be. The gameplay Door entities sit at corridor
+		// midpoints, not at doorPoints, so without these markers there's
+		// no in-scene cue for whether a "gap in a wall" is the intended
+		// 2 m door opening or a real geometric hole.
+		SpawnDoorPointMarkers();
+
 		// P4d: AI agents -- 17 villagers + 1 priest. Each is a
 		// CAPSULE-collider DYNAMIC body with the proper character
 		// script attached. The priest's OnAwake also auto-adds the
@@ -223,6 +234,88 @@ private:
 	// Rotation convention (visualiser's R_y, PR #95):
 	//   local (lx, lz) -> world (lx*cos + lz*sin, -lx*sin + lz*cos)
 	// So the world offset from wall centre to mesh-corner (-hx, 0, -hz):
+	// Debug visualisation: spawn a thin green pillar at every doorPoint
+	// (the world position where a corridor meets a room edge). The wall
+	// outline has a 2 m gap there to let the corridor pass through.
+	// Without this marker, those gaps are visually indistinguishable
+	// from accidental geometric holes in the wall emission.
+	void SpawnDoorPointMarkers()
+	{
+		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+		if (pxScene == nullptr) return;
+
+		const std::string strMeshPath =
+			std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" + ZENITH_MODEL_EXT;
+
+		const uint32_t uN = m_xLayout.axDoorPoints.GetSize();
+		for (uint32_t i = 0; i < uN; ++i)
+		{
+			const DPProcLevel::DoorPoint& xDP = m_xLayout.axDoorPoints.Get(i);
+			char szName[64];
+			std::snprintf(szName, sizeof(szName), "ProcDoorPointMarker_%u", i);
+			Zenith_Entity xEntity(pxScene, std::string(szName));
+			if (!xEntity.IsValid()) continue;
+
+			// Look up the doorPoint's room so the marker rotates with the
+			// building. doorPoints with no valid roomId fall back to axis-
+			// aligned (yaw = 0).
+			float fRoomYaw = 0.0f;
+			if (xDP.xRoomId != DPProcLevel::kInvalidRoomId)
+			{
+				const uint32_t uRoomCount = m_xLayout.axRooms.GetSize();
+				for (uint32_t uR = 0; uR < uRoomCount; ++uR)
+				{
+					const DPProcLevel::Room& xR = m_xLayout.axRooms.Get(uR);
+					if (xR.id == xDP.xRoomId) { fRoomYaw = xR.fYawRadians; break; }
+				}
+			}
+
+			if (xEntity.HasComponent<Zenith_TransformComponent>())
+			{
+				Zenith_TransformComponent& xT = xEntity.GetComponent<Zenith_TransformComponent>();
+				// Door panel marker: same height as walls (4 m), 1 m square
+				// base. Corner-anchored SM_Cube with the room's yaw and the
+				// corner-anchor offset (same formula SpawnWalls uses) so the
+				// mesh centre lands exactly on the doorPoint regardless of
+				// rotation.
+				constexpr float fHalfXZ = 0.5f;   // 1 m square base
+				constexpr float fHeight = 4.0f;   // matches wall height
+				const float fCosY = std::cos(fRoomYaw);
+				const float fSinY = std::sin(fRoomYaw);
+				const float fOffsetX = -fHalfXZ * fCosY - fHalfXZ * fSinY;
+				const float fOffsetZ =  fHalfXZ * fSinY - fHalfXZ * fCosY;
+				xT.SetPosition(Zenith_Maths::Vector3(xDP.fX + fOffsetX, 1.0f, xDP.fZ + fOffsetZ));
+				xT.SetRotation(Zenith_Maths::AngleAxis(
+					fRoomYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+				xT.SetScale(Zenith_Maths::Vector3(2.0f * fHalfXZ, fHeight, 2.0f * fHalfXZ));
+			}
+
+			Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
+			xModel.LoadModel(strMeshPath);
+			Flux_ModelInstance* pxInstance = xModel.GetModelInstance();
+			if (pxInstance != nullptr)
+			{
+				// Wood-brown door panel.
+				const Zenith_Maths::Vector3 xBrown(0.45f, 0.28f, 0.12f);
+				const uint32_t uMats = pxInstance->GetNumMaterials();
+				for (uint32_t u = 0; u < uMats; ++u)
+				{
+					Zenith_MaterialAsset* pxBase = pxInstance->GetMaterial(u);
+					Zenith_MaterialAsset* pxTint =
+						DPMaterials::GetOrCreateColouredVariant(pxBase, xBrown, "TintDoorPointMarker");
+					if (pxTint)
+					{
+						pxTint->SetEmissiveIntensity(0.0f);
+						pxInstance->SetMaterial(u, pxTint);
+					}
+				}
+			}
+		}
+		std::printf("[DPProcLevelBootstrap] spawned %u doorPoint markers\n", uN);
+		std::fflush(stdout);
+	}
+
 	//   wx_offset = -hx*cos - hz*sin
 	//   wz_offset =  hx*sin - hz*cos
 	void SpawnWalls()
@@ -434,8 +527,13 @@ private:
 				}
 				xEntity.AddComponent<Zenith_ColliderComponent>()
 					.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+
 				xEntity.AddComponent<Zenith_ScriptComponent>()
 					.AddScript<DPDoor_Behaviour>();
+				// DPDoor_Behaviour::OnStart tints the door mesh green so doors
+				// are visually distinct from walls (both use SM_Cube). The
+				// tint has to wait until OnStart -- materials aren't ready
+				// at this AddComponent call.
 				break;
 			}
 			case DPProcLevel::GameElementType::Chest:

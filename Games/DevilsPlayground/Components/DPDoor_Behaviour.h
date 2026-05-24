@@ -13,10 +13,13 @@
 #include "Components/DPInteractable_Behaviour.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "Flux/Flux_ModelInstance.h"
 #include "Maths/Zenith_Maths.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
+#include "Source/DPMaterials.h"
 
 class DPDoor_Behaviour ZENITH_FINAL : public DPInteractable_Behaviour
 {
@@ -62,6 +65,29 @@ public:
 		// origin cell instead of the door's actual footprint.
 		StitchNavMeshPortal();
 		SyncNavMeshBlock();
+
+		// Tint the door mesh green so doors are visually distinct from walls.
+		// Walls and doors share the SM_Cube mesh, so without a colour override
+		// any visible interruption in a wall outline could equally be either.
+		// Has to wait until OnStart because the model's material list isn't
+		// ready at the bootstrap spawn-time AddComponent call.
+		if (m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+		{
+			Flux_ModelInstance* pxInstance =
+				m_xParentEntity.GetComponent<Zenith_ModelComponent>().GetModelInstance();
+			if (pxInstance != nullptr)
+			{
+				const Zenith_Maths::Vector3 xGreen(0.2f, 0.9f, 0.2f);
+				const uint32_t uMats = pxInstance->GetNumMaterials();
+				for (uint32_t u = 0; u < uMats; ++u)
+				{
+					Zenith_MaterialAsset* pxBase = pxInstance->GetMaterial(u);
+					Zenith_MaterialAsset* pxTint =
+						DPMaterials::GetOrCreateColouredVariant(pxBase, xGreen, "TintDoorDebug");
+					if (pxTint) pxInstance->SetMaterial(u, pxTint);
+				}
+			}
+		}
 
 		// 2026-05-22: capture the door's CLOSED yaw from its current
 		// transform rotation, so the open-rotation interpolation in

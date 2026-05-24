@@ -2,7 +2,7 @@
   "name": "TelemetryRoundTrip_Test",
   "passed": true,
   "frames": 3,
-  "durationMs": 6.694,
+  "durationMs": 4.201,
   "failures": [],
   "skipped": false
 }

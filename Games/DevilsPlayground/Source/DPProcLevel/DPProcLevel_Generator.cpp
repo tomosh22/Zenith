@@ -521,7 +521,8 @@ namespace DPProcLevel
 		// world coordinates. This kills the original FP-sensitive
 		// re-derivation.
 		// --------------------------------------------------------------------
-		DoorI ProjectDoorPoint_I(const RoomI& R, Coord worldX, Coord worldZ)
+		DoorI ProjectDoorPoint_I(const RoomI& R, Coord worldX, Coord worldZ,
+		                         Coord doorHalf, Coord halfThick)
 		{
 			// Translate to room-centred frame, then INVERSE rotate into the
 			// room's local frame.
@@ -547,12 +548,27 @@ namespace DPProcLevel
 			const int64_t lhs = static_cast<int64_t>(absLx) * R.hz;
 			const int64_t rhs = static_cast<int64_t>(absLz) * R.hx;
 
+			// Clamp the position-along-edge so the door's 2*doorHalf gap stays
+			// at least halfThick away from each room corner. Without this, a
+			// projected door near a corner carved a wall opening straight
+			// through the corner, leaving the corner visually broken even
+			// though the wall emitter closes the corner geometrically.
+			auto ClampAwayFromCorner = [doorHalf, halfThick](Coord v, Coord axisMax) -> Coord
+			{
+				const Coord margin = doorHalf + halfThick;
+				const Coord lo = (margin < axisMax) ? (-axisMax + margin) : 0;
+				const Coord hi = (margin < axisMax) ? ( axisMax - margin) : 0;
+				if (v < lo) return lo;
+				if (v > hi) return hi;
+				return v;
+			};
+
 			EdgeSide eEdge;
 			Coord edgeLx, edgeLz, posAlongEdge;
 			if (lhs > rhs)
 			{
-				// X-edge wins. Snap to ±hx; clamp lz to [-hz, +hz].
-				const Coord clz = (lz < -R.hz) ? -R.hz : ((lz > R.hz) ? R.hz : lz);
+				// X-edge wins. Snap to ±hx; door slides along lz on this edge.
+				const Coord clz = ClampAwayFromCorner(lz, R.hz);
 				if (lx >= 0)
 				{
 					eEdge = EdgeSide::Right;
@@ -568,8 +584,8 @@ namespace DPProcLevel
 			}
 			else
 			{
-				// Z-edge wins. Snap to ±hz; clamp lx to [-hx, +hx].
-				const Coord clx = (lx < -R.hx) ? -R.hx : ((lx > R.hx) ? R.hx : lx);
+				// Z-edge wins. Snap to ±hz; door slides along lx on this edge.
+				const Coord clx = ClampAwayFromCorner(lx, R.hx);
 				if (lz >= 0)
 				{
 					eEdge = EdgeSide::Top;
@@ -597,9 +613,51 @@ namespace DPProcLevel
 		}
 
 		// --------------------------------------------------------------------
-		// Wall segment emission. Reads each door's pre-tagged EdgeSide; never
-		// re-derives. This is the heart of the determinism fix.
+		// Wall segment emission. A building is a rotated rectangle; its
+		// walls are the four edges, each a rotated cuboid of thickness
+		// 2*halfThick. Each wall covers its edge from one OUTER corner to
+		// the other -- i.e. it extends past the room's local axisMax by
+		// halfThick on each side, so adjacent perpendicular walls overlap
+		// at every corner and the outline closes without any special-case
+		// corner geometry. Doors are gaps in those rectangles: each door
+		// carves [doorPos - doorHalf, doorPos + doorHalf] out of its
+		// edge's wall (clipped to the wall's full range so a door near a
+		// corner can't carve outside the mesh).
+		//
+		// Each door's EdgeSide is set at door-creation time; this routine
+		// reads the tag verbatim and never re-classifies from coordinates,
+		// which kept the original FP-divergent re-derivation out of the
+		// integer pipeline.
 		// --------------------------------------------------------------------
+
+		// Emit one wall sub-segment along an X- or Z-edge of room R,
+		// spanning [A, B] on the edge axis with perpendicular centerline
+		// at perpPos. Half-thickness perpendicular to the edge is
+		// halfThick. No-op for degenerate (<1 mm) spans.
+		void EmitOneWall_I(const RoomI& R, bool bIsXEdge,
+		                   Coord perpPos, Coord A, Coord B, Coord halfThick,
+		                   Zenith_Vector<WallSegmentI>& xOut)
+		{
+			const Coord segHalf = (B - A) / 2;
+			if (segHalf < 1) return;
+			const Coord segCentre = (A + B) / 2;
+
+			Coord localCX, localCZ;
+			if (bIsXEdge) { localCX = segCentre; localCZ = perpPos;   }
+			else          { localCX = perpPos;   localCZ = segCentre; }
+
+			Coord wx, wz;
+			RotPoint(localCX, localCZ, R.iRot, wx, wz);
+
+			WallSegmentI W;
+			W.cx   = R.cx + wx;
+			W.cz   = R.cz + wz;
+			W.iRot = R.iRot;
+			if (bIsXEdge) { W.hx = segHalf;   W.hz = halfThick; }
+			else          { W.hx = halfThick; W.hz = segHalf;   }
+			xOut.PushBack(W);
+		}
+
 		void EmitWallSegments_I(const Zenith_Vector<RoomI>& axRooms,
 		                        const Zenith_Vector<DoorI>& axDoors,
 		                        Coord halfThick,
@@ -608,12 +666,21 @@ namespace DPProcLevel
 		{
 			xOut.Clear();
 
+			// Edge layout: perpendicular position of each wall's centerline,
+			// and whether the wall runs along lx (X-edge) or lz (Z-edge).
+			//   0 = Bottom (lz = -hz, axis = lx)
+			//   1 = Right  (lx = +hx, axis = lz)
+			//   2 = Top    (lz = +hz, axis = lx)
+			//   3 = Left   (lx = -hx, axis = lz)
+			const bool abIsXEdge[4] = { true, false, true, false };
+
 			for (uint32_t uR = 0; uR < axRooms.GetSize(); ++uR)
 			{
 				const RoomI& R = axRooms.Get(uR);
 
-				// Group doors by edge using the explicit tag. Each list
-				// holds the position-along-edge in mm.
+				const Coord aPerpPos[4] = { -R.hz, +R.hx, +R.hz, -R.hx };
+
+				// Bucket doors by their pre-tagged edge.
 				Zenith_Vector<Coord> aaDoorsAlongEdge[4];
 				for (uint32_t uD = 0; uD < axDoors.GetSize(); ++uD)
 				{
@@ -622,19 +689,14 @@ namespace DPProcLevel
 					aaDoorsAlongEdge[static_cast<int>(D.eEdge)].PushBack(D.fLocalPos);
 				}
 
-				// For each edge: sort doors, split [-axisMax, +axisMax] into
-				// segments around the door gaps, emit a wall for each segment.
-				const Coord aLocalFixed[4][2] = {
-					{ 0,    -R.hz },   // Bottom: local (0, -hz), axis = lx
-					{ R.hx,  0    },   // Right:  local (+hx, 0), axis = lz
-					{ 0,     R.hz },   // Top:    local (0, +hz), axis = lx
-					{-R.hx,  0    },   // Left:   local (-hx, 0), axis = lz
-				};
-				const bool abIsXEdge[4] = { true, false, true, false };
-
 				for (int iE = 0; iE < 4; ++iE)
 				{
 					const Coord axisMax = abIsXEdge[iE] ? R.hx : R.hz;
+					// Wall covers the full edge plus halfThick past each
+					// corner -- this is the entire corner-closure mechanism.
+					const Coord wallMin = -(axisMax + halfThick);
+					const Coord wallMax = +(axisMax + halfThick);
+
 					Zenith_Vector<Coord>& axDoorsOnE = aaDoorsAlongEdge[iE];
 
 					// Bubble-sort (small N -- typically <= 2 doors per edge).
@@ -651,68 +713,34 @@ namespace DPProcLevel
 						}
 					}
 
-					// Walk along the edge, emit segments. Integer comparisons
-					// only; no FP fragility.
-					Coord cursor = -axisMax;
-					Zenith_Vector<Coord> axBreakpoints;
+					// Walk the wall span; emit a sub-rectangle between each
+					// pair of door gaps. Door gaps are clipped to the room
+					// edge [-axisMax, +axisMax] (NOT the full wall range)
+					// so the halfThick corner-extension strip at each end
+					// of the wall always survives, even when a door sits
+					// close enough to a corner that its raw gap would
+					// otherwise carve into that strip. This is what
+					// guarantees every corner is closed regardless of
+					// door placement.
+					Coord cursor = wallMin;
 					for (uint32_t uD = 0; uD < axDoorsOnE.GetSize(); ++uD)
 					{
 						const Coord doorPos = axDoorsOnE.Get(uD);
-						const Coord gapStart = doorPos - doorHalf;
-						const Coord gapEnd   = doorPos + doorHalf;
+						const Coord rawStart = doorPos - doorHalf;
+						const Coord rawEnd   = doorPos + doorHalf;
+						const Coord gapStart = (rawStart < -axisMax) ? -axisMax : rawStart;
+						const Coord gapEnd   = (rawEnd   > +axisMax) ? +axisMax : rawEnd;
 						if (gapStart > cursor)
 						{
-							axBreakpoints.PushBack(cursor);
-							axBreakpoints.PushBack(gapStart);
+							EmitOneWall_I(R, abIsXEdge[iE], aPerpPos[iE],
+								cursor, gapStart, halfThick, xOut);
 						}
 						if (gapEnd > cursor) cursor = gapEnd;
 					}
-					if (cursor < axisMax)
+					if (cursor < wallMax)
 					{
-						axBreakpoints.PushBack(cursor);
-						axBreakpoints.PushBack(axisMax);
-					}
-
-					// Each pair = one wall segment.
-					for (uint32_t uP = 0; uP + 1 < axBreakpoints.GetSize(); uP += 2)
-					{
-						const Coord A = axBreakpoints.Get(uP);
-						const Coord B = axBreakpoints.Get(uP + 1);
-						const Coord segHalf = (B - A) / 2;
-						if (segHalf < 1) continue;  // < 1 mm = degenerate
-
-						const Coord segCentre = (A + B) / 2;
-						Coord localCX, localCZ;
-						if (abIsXEdge[iE])
-						{
-							localCX = segCentre;
-							localCZ = aLocalFixed[iE][1];
-						}
-						else
-						{
-							localCX = aLocalFixed[iE][0];
-							localCZ = segCentre;
-						}
-
-						// Rotate the local centre into world.
-						Coord wx, wz;
-						RotPoint(localCX, localCZ, R.iRot, wx, wz);
-
-						WallSegmentI W;
-						W.cx   = R.cx + wx;
-						W.cz   = R.cz + wz;
-						W.iRot = R.iRot;
-						if (abIsXEdge[iE])
-						{
-							W.hx = segHalf;
-							W.hz = halfThick;
-						}
-						else
-						{
-							W.hx = halfThick;
-							W.hz = segHalf;
-						}
-						xOut.PushBack(W);
+						EmitOneWall_I(R, abIsXEdge[iE], aPerpPos[iE],
+							cursor, wallMax, halfThick, xOut);
 					}
 				}
 			}
@@ -1492,8 +1520,8 @@ namespace DPProcLevel
 					midX = (xLo + xHi) / 2;
 				}
 
-				const DoorI dA = ProjectDoorPoint_I(axRoomsI.Get(i), midX, midZ);
-				const DoorI dB = ProjectDoorPoint_I(axRoomsI.Get(j), midX, midZ);
+				const DoorI dA = ProjectDoorPoint_I(axRoomsI.Get(i), midX, midZ, doorHalf, halfThick);
+				const DoorI dB = ProjectDoorPoint_I(axRoomsI.Get(j), midX, midZ, doorHalf, halfThick);
 				const int32_t iA = static_cast<int32_t>(axDoorsI.GetSize());
 				axDoorsI.PushBack(dA);
 				const int32_t iB = static_cast<int32_t>(axDoorsI.GetSize());

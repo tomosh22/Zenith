@@ -1,8 +1,8 @@
 {
   "name": "OrbitCameraStaysFixed_Test",
   "passed": true,
-  "frames": 37,
-  "durationMs": 1175.872,
+  "frames": 36,
+  "durationMs": 986.206,
   "failures": [],
   "skipped": false
 }

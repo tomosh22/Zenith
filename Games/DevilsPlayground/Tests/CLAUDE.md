@@ -365,7 +365,7 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 
 | Cluster | Tests |
 |---|---|
-| Procgen | `Test_ProcLevel_BSP`, `Test_ProcLevel_DeterminismCheck`, `Test_ProcLevelScene`, `Test_ProcLevelBootstrap`, `Test_BuildingWallClosure` |
+| Procgen | `Test_ProcLevel_BSP`, `Test_ProcLevel_DeterminismCheck`, `Test_ProcLevelScene`, `Test_ProcLevelBootstrap`, `Test_ProcLevel_BuildingWallClosure` |
 | Telemetry | `Test_TelemetryRoundTrip`, `Test_TelemetryEdgeCases`, `Test_DPTelemetryHooks`, `Test_DPTelemetryAnalyzer` |
 | Heuristic bot | `Test_DPHeuristicBotPlaythrough`, `Test_DPHeuristicBot_Pathing`, `Test_DPHeuristicBot_GoalDispatch` |
 | Personality matrix | `PersonalityPlaythrough_Casual`, `_Stealth`, `_Speedrunner`, `_Zealot`, `_Magpie`, `_Relay`, `_Heretic`, `_Trickster` |

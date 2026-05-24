@@ -1,8 +1,8 @@
 {
   "name": "ItemPickup_Test",
   "passed": true,
-  "frames": 9,
-  "durationMs": 1107.270,
+  "frames": 8,
+  "durationMs": 891.109,
   "failures": [],
   "skipped": false
 }

@@ -1,8 +1,8 @@
 {
   "name": "Test_P1Drop_GoesToGroundAtBodyPosition",
   "passed": true,
-  "frames": 9,
-  "durationMs": 933.206,
+  "frames": 8,
+  "durationMs": 876.231,
   "failures": [],
   "skipped": false
 }

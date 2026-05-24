@@ -1,8 +1,8 @@
 {
   "name": "Test_P2Reagent_UniquePickupChannel",
   "passed": true,
-  "frames": 96,
-  "durationMs": 1432.719,
+  "frames": 97,
+  "durationMs": 1009.461,
   "failures": [],
   "skipped": false
 }

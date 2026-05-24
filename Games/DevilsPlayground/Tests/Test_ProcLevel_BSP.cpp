@@ -255,6 +255,7 @@ namespace
 	bool RunOneSeed(uint64_t uSeed)
 	{
 		DPProcLevel::GenConfig xCfg;  // defaults
+		xCfg.fWallHalfThickness = 0.4f;  // TEMP DEBUG: match playthrough config so visualiser shows real walls
 		DPProcLevel::LevelLayout xA, xB;
 
 		if (!DPProcLevel::Generate(uSeed, xCfg, xA))

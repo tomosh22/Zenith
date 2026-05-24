@@ -1,8 +1,8 @@
 {
   "name": "Test_P1Drop_PickupChainHandoff",
   "passed": true,
-  "frames": 50,
-  "durationMs": 1184.771,
+  "frames": 51,
+  "durationMs": 948.888,
   "failures": [],
   "skipped": false
 }

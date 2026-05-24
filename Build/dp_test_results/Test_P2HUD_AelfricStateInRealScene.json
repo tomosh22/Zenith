@@ -1,8 +1,8 @@
 {
   "name": "Test_P2HUD_AelfricStateInRealScene",
   "passed": true,
-  "frames": 99,
-  "durationMs": 1615.961,
+  "frames": 10,
+  "durationMs": 1324.880,
   "failures": [],
   "skipped": false
 }

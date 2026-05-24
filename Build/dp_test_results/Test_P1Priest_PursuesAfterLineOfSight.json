@@ -1,8 +1,8 @@
 {
   "name": "Test_P1Priest_PursuesAfterLineOfSight",
-  "passed": false,
-  "frames": 186,
-  "durationMs": 1456.160,
+  "passed": true,
+  "frames": 107,
+  "durationMs": 1037.408,
   "failures": [],
   "skipped": false
 }

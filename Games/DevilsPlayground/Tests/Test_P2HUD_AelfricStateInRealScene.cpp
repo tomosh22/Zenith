@@ -9,50 +9,50 @@
 #include "Components/DPHUDController_Behaviour.h"
 #include "Components/DPVillager_Behaviour.h"
 #include "Components/Priest_Behaviour.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
-#include "Maths/Zenith_Maths.h"
 
 #include <cstdio>
 
 // ============================================================================
 // Test_P2HUD_AelfricStateInRealScene (MVP-2.5.1 + 2.5.3 INTEGRATION)
 //
-// Test_P2HUD_AelfricStateReadouts pins the formatters (state name ->
-// text). This test pins the CLASSIFIER: ComputeAelfricState reads
-// the priest's blackboard each frame and returns the right enum.
-// Real scene with a real priest agent registered with the perception
-// system; we drive possession to flip the priest's BB and watch
-// the classifier change.
+// Pins the CLASSIFIER (DPHUDController_Behaviour::ComputeAelfricState):
+// the priest's blackboard each frame must classify into Calm / Suspicious
+// / Pursuing.
 //
-// Two scenarios:
+//   PHASE A: idle scene -- priest's BB has neither TargetWithDevil nor
+//   HasInvestigatePos. Expectation: ComputeAelfricState() == Calm.
 //
-//   PHASE A: idle scene (priest hasn't seen anything).
-//     Setup: load GameLevel, NO villager possessed yet.
-//     Expectation: ComputeAelfricState() == Calm. The priest's
-//     BB has neither TargetWithDevil nor HasInvestigatePos set.
-//
-//   PHASE B: possessed villager (priest's BB.TargetWithDevil set).
-//     Setup: register the villager + teleport it 4 m into the
-//     priest's facing direction so real sight-cone perception
-//     catches it. Possess. Tick until awareness gain crosses the
-//     detection threshold (kBRIDGE_TICKS frames).
-//     Expectation: ComputeAelfricState() == Pursuing.
+//   PHASE B: drive a hostile perception target via the proper API
+//   (Zenith_PerceptionSystem::EmitDamageStimulus). The damage stimulus
+//   grants the priest immediate full awareness of the attacker, which
+//   the priest's BridgePerceptionToBlackboard then writes into
+//   BB.TargetWithDevil on the next frame. Expectation:
+//   ComputeAelfricState() == Pursuing.
 //
 // What this catches (vs the formatter unit test):
 //   * ComputeAelfricState reads the wrong BB key.
 //   * ComputeAelfricState fails the priest-script iteration (e.g.,
 //     wrong template type, DP_Query forgot to scan that entity).
 //   * The priest's BridgePerceptionToBlackboard regressed and no
-//     longer writes TargetWithDevil even with the omniscient
-//     fallback on.
+//     longer translates a perceived possessed villager into
+//     BB.TargetWithDevil.
+//
+// Note: earlier versions of this test teleported the villager 4 m in
+// the priest's facing direction and ticked 90 frames for the sight
+// cone to lift awareness above the detection threshold. That setup
+// was brittle to procgen geometry changes -- any wall or navmesh shift
+// that altered the priest's patrol target could swing its facing away
+// from the static villager position, so perception never built up.
+// EmitDamageStimulus drives the same code path through the public API
+// without any spatial dependency.
 // ============================================================================
 
 namespace
 {
 	enum Phase : int {
 		kAS_Start, kAS_WaitScene, kAS_SnapshotCalm,
-		kAS_EnableOmni, kAS_PossessVillager, kAS_TickForBridge,
+		kAS_EmitDamage, kAS_WaitBridge,
 		kAS_SnapshotPursuing, kAS_Verify, kAS_Done
 	};
 
@@ -65,12 +65,13 @@ namespace
 	DPHUDController_Behaviour::AelfricState g_ePursuingSnapshot =
 		DPHUDController_Behaviour::AelfricState::Calm;       // sentinel
 
-	// Awareness gain rate ~2.0/s means the priest's awareness of a
-	// villager in its sight cone crosses any reasonable detection
-	// threshold within ~1 s. 90 frames at 60 Hz = 1.5 s -- comfortable
-	// margin so the test isn't flaky on slow CI even though the bridge
-	// itself runs every frame.
-	constexpr int kBRIDGE_TICKS = 90;
+	// One full update cycle has to elapse between EmitDamageStimulus and
+	// reading BB.TargetWithDevil: PerceptionSystem::Update runs first to
+	// fold the damage stimulus into the priest's perceived-targets list,
+	// THEN the priest's OnUpdate runs the bridge that copies that list
+	// into the blackboard. Two ticks gives both phases a comfortable
+	// chance to run regardless of script vs system update ordering.
+	constexpr int kBRIDGE_TICKS = 2;
 
 	const char* StateName(DPHUDController_Behaviour::AelfricState e)
 	{
@@ -128,51 +129,32 @@ static bool Step_P2HUDAelfricRealScene(int iFrame)
 	}
 
 	case kAS_SnapshotCalm:
-		// MVP-1.9 cleanup: no possession yet + no LOS setup -- the
-		// priest's BB has nothing in TargetWithDevil so the
-		// classifier should report Calm.
+		// No possession, no stimuli -- the priest's BB should report
+		// neither TargetWithDevil nor HasInvestigatePos. If the bridge
+		// is leaking stale state into the BB the classifier will read
+		// Pursuing/Suspicious here instead.
 		g_eCalmSnapshot = DPHUDController_Behaviour::ComputeAelfricState();
-		g_iPhase = kAS_EnableOmni;
+		g_iPhase = kAS_EmitDamage;
 		return true;
 
-	case kAS_EnableOmni:
-	{
-		// MVP-1.9 cleanup (omniscient fallback removed): use real
-		// perception instead. Register the villager + teleport it
-		// 4 m IN FRONT of the priest (authored priest yaw = 0,
-		// facing +Z) so the priest's sight cone catches it.
-		Zenith_PerceptionSystem::RegisterTarget(g_xVillager, /*hostile=*/true);
-		Zenith_SceneData* pxPriestScene =
-			Zenith_SceneManager::GetSceneDataForEntity(g_xPriest);
-		Zenith_SceneData* pxVillagerScene =
-			Zenith_SceneManager::GetSceneDataForEntity(g_xVillager);
-		if (pxPriestScene != nullptr && pxVillagerScene != nullptr)
-		{
-			Zenith_Entity xPriestEnt = pxPriestScene->TryGetEntity(g_xPriest);
-			Zenith_Entity xVillagerEnt = pxVillagerScene->TryGetEntity(g_xVillager);
-			if (xPriestEnt.IsValid() && xVillagerEnt.IsValid()
-			 && xPriestEnt.HasComponent<Zenith_TransformComponent>()
-			 && xVillagerEnt.HasComponent<Zenith_TransformComponent>())
-			{
-				Zenith_Maths::Vector3 xPriestPos;
-				xPriestEnt.GetComponent<Zenith_TransformComponent>()
-					.GetPosition(xPriestPos);
-				xVillagerEnt.GetComponent<Zenith_TransformComponent>()
-					.SetPosition(Zenith_Maths::Vector3(
-						xPriestPos.x, xPriestPos.y, xPriestPos.z + 4.0f));
-			}
-		}
-		g_iPhase = kAS_PossessVillager;
-		return true;
-	}
-
-	case kAS_PossessVillager:
+	case kAS_EmitDamage:
+		// Drive the bridge through the public perception API. Possess
+		// the villager so the bridge's IsPossessedVillager filter
+		// accepts it as a TargetWithDevil candidate, register the
+		// villager as a hostile target (gives the perception system
+		// permission to track it), and emit a damage stimulus from
+		// the villager against the priest. The damage path bypasses
+		// the sight cone -- it grants immediate full awareness of the
+		// attacker -- so there's no geometry dependency to make this
+		// flaky against procgen layout changes.
 		DP_Player::SetPossessedVillager(g_xVillager);
+		Zenith_PerceptionSystem::RegisterTarget(g_xVillager, /*hostile=*/true);
+		Zenith_PerceptionSystem::EmitDamageStimulus(g_xPriest, g_xVillager);
 		g_iTickCounter = 0;
-		g_iPhase = kAS_TickForBridge;
+		g_iPhase = kAS_WaitBridge;
 		return true;
 
-	case kAS_TickForBridge:
+	case kAS_WaitBridge:
 		++g_iTickCounter;
 		if (g_iTickCounter >= kBRIDGE_TICKS) g_iPhase = kAS_SnapshotPursuing;
 		return true;
@@ -212,7 +194,7 @@ static bool Verify_P2HUDAelfricRealScene()
 	if (g_ePursuingSnapshot != DPHUDController_Behaviour::AelfricState::Pursuing)
 	{
 		Zenith_Log(LOG_CATEGORY_AI,
-			"P2HUDAelfricReal: state after possessing a villager is %s, expected Pursuing. Either the priest's BridgePerceptionToBlackboard isn't writing TargetWithDevil (omniscient fallback off?) or ComputeAelfricState isn't reading the right BB key",
+			"P2HUDAelfricReal: state after EmitDamageStimulus is %s, expected Pursuing. Either the priest's BridgePerceptionToBlackboard isn't translating the damage-perceived possessed villager into BB.TargetWithDevil, or ComputeAelfricState isn't reading the right BB key",
 			StateName(g_ePursuingSnapshot));
 		return false;
 	}

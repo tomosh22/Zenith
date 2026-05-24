@@ -1,8 +1,8 @@
 {
   "name": "Test_P2Archetype_ChildCannotCarryTools",
   "passed": true,
-  "frames": 22,
-  "durationMs": 1087.112,
+  "frames": 21,
+  "durationMs": 873.061,
   "failures": [],
   "skipped": false
 }

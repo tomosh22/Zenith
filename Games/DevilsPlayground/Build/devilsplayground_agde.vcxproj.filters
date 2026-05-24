@@ -356,6 +356,9 @@
     <ClCompile Include="..\Tests\Test_ProcLevel_BSP.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_ProcLevel_BuildingWallClosure.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_ProcLevel_DeterminismCheck.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

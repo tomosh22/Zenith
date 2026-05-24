@@ -1,8 +1,8 @@
 {
   "name": "Test_P1Pause_InputSimDuringPause",
   "passed": true,
-  "frames": 10,
-  "durationMs": 1022.348,
+  "frames": 11,
+  "durationMs": 810.714,
   "failures": [],
   "skipped": false
 }

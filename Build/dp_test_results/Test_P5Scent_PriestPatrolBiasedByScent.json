@@ -1,8 +1,8 @@
 {
   "name": "Test_P5Scent_PriestPatrolBiasedByScent",
   "passed": true,
-  "frames": 13,
-  "durationMs": 1162.585,
+  "frames": 11,
+  "durationMs": 764.158,
   "failures": [],
   "skipped": false
 }

@@ -1,8 +1,8 @@
 {
   "name": "HearingFlow_Test",
   "passed": true,
-  "frames": 12,
-  "durationMs": 962.820,
+  "frames": 11,
+  "durationMs": 882.849,
   "failures": [],
   "skipped": false
 }

@@ -1,8 +1,8 @@
 {
   "name": "Test_P1Switch_FaintNotDie",
   "passed": true,
-  "frames": 13,
-  "durationMs": 981.787,
+  "frames": 12,
+  "durationMs": 866.187,
   "failures": [],
   "skipped": false
 }

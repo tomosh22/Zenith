@@ -1,8 +1,8 @@
 {
   "name": "NoiseMachineFlow_Test",
   "passed": true,
-  "frames": 13,
-  "durationMs": 1209.408,
+  "frames": 12,
+  "durationMs": 830.313,
   "failures": [],
   "skipped": false
 }
