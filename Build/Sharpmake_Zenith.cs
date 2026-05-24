@@ -78,6 +78,12 @@ public class ZenithProject : ZenithBaseProject
 		SourceFilesExcludeRegex.Add(@".*untgz\\.*");
 		SourceFilesExcludeRegex.Add(@".*opencv.*");
 		SourceFilesExcludeRegex.Add(@".*stb_vorbis\.c.*");
+
+		// MSDF font deps: source-vendored but built externally via build_msdf_deps.bat;
+		// linked as prebuilt .libs (see ConfigureAll). Exclude their full source trees from
+		// the /Tools auto-scan so they don't get compiled into Zenith — ODR violation otherwise.
+		SourceFilesExcludeRegex.Add(@".*Tools\\Middleware\\freetype\\.*");
+		SourceFilesExcludeRegex.Add(@".*Tools\\Middleware\\msdf-atlas-gen\\.*");
 	}
 
 	[Configure]
@@ -179,6 +185,16 @@ public class ZenithProject : ZenithBaseProject
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/build/include");
 			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/opencv/build/include/opencv2");
 
+			// MSDF font dep includes. Libs built as separate Sharpmake static-lib
+			// projects (Sharpmake_FreeType.cs, Sharpmake_Msdfgen.cs, Sharpmake_MsdfAtlasGen.cs)
+			// and added as deps below via AddPublicDependency.
+			// "Config" subdir holds the hand-written msdfgen-config.h that
+			// base.h references as <msdfgen/msdfgen-config.h>.
+			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/freetype/include");
+			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen");
+			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen/msdfgen");
+			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen/msdfgen/Config");
+
 			// Tools library paths and dependencies
 			conf.LibraryPaths.Add(RootPath + "/Tools/Middleware/opencv/build/x64/vc16/lib");
 			conf.LibraryPaths.Add(RootPath + "/Tools/Middleware/assimp/lib");
@@ -196,6 +212,10 @@ public class ZenithProject : ZenithBaseProject
 				conf.LibraryFiles.Add("opencv_world4100.lib");
 				conf.LibraryFiles.Add("assimp-vc143-mt.lib");
 			}
+
+			// MSDF font deps as Sharpmake static-lib project deps (tools-only).
+			// MsdfAtlasGenProject transitively brings in MsdfgenProject + FreeTypeProject.
+			conf.AddPublicDependency<MsdfAtlasGenProject>(target);
 		}
 		else
 		{

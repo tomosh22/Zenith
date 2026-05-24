@@ -25,6 +25,7 @@
 #include "UI/Zenith_UIScrollView.h"
 #include "UI/Zenith_UIRect.h"
 #include "Flux/Text/Flux_TextImpl.h"
+#include "AssetHandling/Zenith_FontAsset.h"
 #include "TilePuzzle/Components/Pinball_Behaviour.h"
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Rules.h"
@@ -6963,8 +6964,8 @@ private:
 		Zenith_UI::Zenith_UIText xText("Hello", "TestText");
 		xText.SetFontSize(24.f);
 
-		// Verify GetTextWidth() == 5 * 24 * fCHAR_SPACING
-		float fExpectedWidth = 5.f * 24.f * fCHAR_SPACING;
+		// Verify GetTextWidth() == 5 * 24 * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance
+		float fExpectedWidth = 5.f * 24.f * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance;
 		float fActualWidth = xText.GetTextWidth();
 		if (std::abs(fActualWidth - fExpectedWidth) > 0.01f)
 		{
@@ -6990,7 +6991,7 @@ private:
 		}
 
 		// Verify GetTextWidth() returns max of line widths ("World" = 5 chars)
-		float fExpectedMaxWidth = 5.f * 24.f * fCHAR_SPACING;
+		float fExpectedMaxWidth = 5.f * 24.f * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance;
 		fActualWidth = xText.GetTextWidth();
 		if (std::abs(fActualWidth - fExpectedMaxWidth) > 0.01f)
 		{

@@ -1,30 +1,27 @@
 // =====================================================================
-// Flux_Text — Slang module.
+// Flux_Text - MSDF text shader.
 //
-// Subsystem: Text. Instanced character glyph renderer. Each instance
-// supplies a text-root pixel position, a per-character pixel offset,
-// a font-atlas UV offset, and a colour tint. Glyph atlas is sampled
-// with a tint × atlas-RGB multiply so white glyphs take the tint and
-// pre-baked drop-shadows pass through.
+// Per-glyph instanced renderer with screen-space-derivative AA. Sharp at
+// any render size from a single 256x256 atlas baked offline by
+// Tools/Zenith_Tools_FontExport via msdf-atlas-gen.
 //
-// Imports Common.Frame for FrameConstants.g_xRcpScreenDims.
+// Vertex inputs (per-instance) come from Flux_TextVertex in Flux_TextImpl.h.
+// Push-constant layout below MUST match Flux_TextDrawConstants on the host
+// side (static_asserted to 32 bytes).
 // =====================================================================
 
 import Common.Frame;
 
-// Character width as a fraction of height. Matches fCHAR_ASPECT_RATIO
-// in Flux_Text.h — typical monospace metric.
-static const float CHAR_ASPECT_RATIO = 0.5;
-
 struct VsIn
 {
-	float3 a_xPosition          : POSITION;
-	float2 a_xUV                : TEXCOORD0;
-	float2 a_xInstancePosition  : TEXCOORD1;
-	float2 a_xInstanceUV        : TEXCOORD2;
-	uint2  a_xInstanceTextRoot  : TEXCOORD3;
-	float  a_fInstanceTextSize  : TEXCOORD4;
-	float4 a_xInstanceColour    : TEXCOORD5;
+	float3 a_xPosition       : POSITION;     // unit quad [-1,1]
+	float2 a_xUV             : TEXCOORD0;    // unit quad UV [0,1]
+	float2 a_xQuadOffsetPx   : TEXCOORD1;    // glyph top-left, relative to text root
+	float2 a_xQuadSizePx     : TEXCOORD2;    // glyph quad size in pixels
+	float2 a_xAtlasUVOrigin  : TEXCOORD3;    // glyph's UV rect origin in atlas
+	float2 a_xAtlasUVSize    : TEXCOORD4;    // glyph's UV rect size in atlas
+	float2 a_xTextRootPx     : TEXCOORD5;    // float2 — subpixel positions OK
+	float4 a_xColour         : TEXCOORD6;
 };
 
 struct VsOut
@@ -37,51 +34,67 @@ struct VsOut
 [shader("vertex")]
 VsOut vsMain(VsIn input)
 {
+	float2 xQuadXY = input.a_xPosition.xy * 0.5 + 0.5;       // [0,1]
+	float2 xPxPos  = input.a_xTextRootPx + input.a_xQuadOffsetPx
+				   + xQuadXY * input.a_xQuadSizePx;
+
 	VsOut o;
-
-	// Flip V for Vulkan Y-down + 10×10 atlas grid → instance UV slot.
-	o.uv     = float2(input.a_xUV.x, 1.0 - input.a_xUV.y) / 10.0 + input.a_xInstanceUV;
-	o.colour = input.a_xInstanceColour;
-
-	// Quad vertices in [-1,1] → [0,1] unit square.
-	float2 xQuadPos = input.a_xPosition.xy * 0.5 + 0.5;
-	xQuadPos.x *= CHAR_ASPECT_RATIO;
-
-	// textRoot + (per-character offset + quad position) × text size.
-	float2 xPixelPos = float2(input.a_xInstanceTextRoot)
-					 + input.a_fInstanceTextSize * (input.a_xInstancePosition + xQuadPos);
-	float2 xNDC      = xPixelPos * FrameConstants.g_xRcpScreenDims * 2.0 - 1.0;
-	o.position       = float4(xNDC, 0.0, 1.0);
+	o.position = float4(xPxPos * FrameConstants.g_xRcpScreenDims * 2.0 - 1.0, 0.0, 1.0);
+	o.uv       = input.a_xAtlasUVOrigin + xQuadXY * input.a_xAtlasUVSize;
+	o.colour   = input.a_xColour;
 	return o;
 }
 
 [[vk::binding(1, 0)]] Sampler2D g_xTexture;
 
-struct TextClipConstantsLayout
+struct TextConstantsLayout
 {
 	// Overlay clip rect (x1, y1, x2, y2) in pixels. (-1,-1,-1,-1) → disabled.
-	// Text fragments inside the rect are discarded so the overlay's
-	// content box can occlude debug text behind it.
+	// Fragments inside the rect are discarded so an overlay panel can occlude
+	// debug text behind it. (Inverted from a scissor — discard if INSIDE.)
 	float4 g_xClipRect;
+	// Atlas size and msdfgen "range" — feed the fwidth-based AA helper below.
+	float2 g_xAtlasSizePx;
+	float  g_fAtlasPxRange;
+	float  g_fPad;
 };
-[[vk::binding(2, 0)]] ConstantBuffer<TextClipConstantsLayout> TextClipConstants;
+[[vk::binding(2, 0)]] ConstantBuffer<TextConstantsLayout> TextConstants;
+
+float Median3(float a, float b, float c)
+{
+	return max(min(a, b), min(max(a, b), c));
+}
+
+// Canonical msdfgen recipe: convert the atlas-space pxRange into screen pixels
+// using fwidth of the UV. Clamp to >=1 to keep AA stable at extreme minification.
+// Without this, glyph weight changes with render size.
+float ScreenPxRange(float2 uv)
+{
+	float2 unitRange     = float2(TextConstants.g_fAtlasPxRange, TextConstants.g_fAtlasPxRange) / TextConstants.g_xAtlasSizePx;
+	float2 screenTexSize = 1.0 / fwidth(uv);
+	return max(0.5 * dot(unitRange, screenTexSize), 1.0);
+}
 
 [shader("fragment")]
 float4 fsMain(VsOut input, float4 fragCoord : SV_Position) : SV_Target
 {
-	if (TextClipConstants.g_xClipRect.x >= 0.0)
+	// Inverted clip-rect (discard if INSIDE): matches legacy Flux_Text behaviour.
+	if (TextConstants.g_xClipRect.x >= 0.0)
 	{
-		float2 xPixelPos = fragCoord.xy;
-		if (xPixelPos.x >= TextClipConstants.g_xClipRect.x &&
-			xPixelPos.x <= TextClipConstants.g_xClipRect.z &&
-			xPixelPos.y >= TextClipConstants.g_xClipRect.y &&
-			xPixelPos.y <= TextClipConstants.g_xClipRect.w) discard;
+		float2 p = fragCoord.xy;
+		if (p.x >= TextConstants.g_xClipRect.x && p.x <= TextConstants.g_xClipRect.z &&
+			p.y >= TextConstants.g_xClipRect.y && p.y <= TextConstants.g_xClipRect.w)
+		{
+			discard;
+		}
 	}
 
-	float4 xTex = g_xTexture.Sample(input.uv);
-	if (xTex.a < 0.01) discard;
+	float3 xMSD          = g_xTexture.Sample(input.uv).rgb;
+	float  fSD           = Median3(xMSD.r, xMSD.g, xMSD.b);
+	float  fScreenPxDist = ScreenPxRange(input.uv) * (fSD - 0.5);
+	float  fAlpha        = saturate(fScreenPxDist + 0.5);
 
-	// White-glyph atlas tinted by instance colour. Black drop-shadow
-	// pixels (RGB ~ 0) survive the tint multiply with their alpha intact.
-	return float4(xTex.rgb * input.colour.rgb, xTex.a * input.colour.a);
+	// Standard alpha blending handles fAlpha = 0 cleanly. No hard discard at
+	// low alpha — that's what made the legacy bitmap shader's edges jagged.
+	return float4(input.colour.rgb, fAlpha * input.colour.a);
 }

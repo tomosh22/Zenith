@@ -2,16 +2,15 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Text/Flux_TextImpl.h"
-#include "Flux/Text/Flux_TextImpl.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "UI/Zenith_UICanvas.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "AssetHandling/Zenith_FontAsset.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 #ifdef ZENITH_TOOLS
@@ -21,22 +20,6 @@
 
 static constexpr uint32_t s_uMaxCharsPerFrame = 65536;
 
-// fCHAR_ASPECT_RATIO and fCHAR_SPACING defined in Flux_Text.h
-
-struct TextVertex
-{
-	Zenith_Maths::Vector2 m_xPos;
-	Zenith_Maths::Vector2 m_xUV;
-	Zenith_Maths::UVector2 m_xTextRoot;
-	float m_fTextSize;
-	Zenith_Maths::Vector4 m_xColour;
-};
-
-// Pinned via TextureHandle so UnloadUnused never frees the font atlas while the
-// engine is running. Cleared in Flux_TextImpl::ReleaseAssetReferences.
-
-// Overlay clip rect state (set during canvas render, consumed during Flux_TextImpl::Render)
-
 DEBUGVAR float dbg_fTextSize = 100.f;
 
 void Flux_TextImpl::BuildPipelines()
@@ -45,14 +28,17 @@ void Flux_TextImpl::BuildPipelines()
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+	// Per-vertex: unit quad (position + uv) — unchanged from legacy pipeline.
 	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
 	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);//position
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);//offset into font texture atlas
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_UINT2);//text root
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT);//text size
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);//colour
+	// Per-instance: matches Flux_TextVertex layout (56 bytes, static_asserted).
+	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // quadOffsetPx
+	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // quadSizePx
+	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // atlasUVOrigin
+	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // atlasUVSize
+	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);  // textRoot (float, was uint)
+	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);  // colour
 	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
 
 	Flux_PipelineSpecification xPipelineSpec;
@@ -73,18 +59,16 @@ void Flux_TextImpl::Initialise()
 {
 	BuildPipelines();
 
-	//#TO_TODO: need to experiment with this, not sure which will be faster
 	constexpr bool bDeviceLocal = false;
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(TextVertex), g_xEngine.Text().m_xInstanceBuffer, bDeviceLocal);
+	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(Flux_TextVertex), g_xEngine.Text().m_xInstanceBuffer, bDeviceLocal);
 
-	if (Zenith_TextureAsset* pxFontAtlas = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR "Textures/Font/FontAtlas" ZENITH_TEXTURE_EXT))
+	// Load the MSDF font asset. Path resolved via Zenith_AssetRegistry; the
+	// asset itself reads the .zfont header and constructs a procedural texture
+	// for the atlas (no mips — see Zenith_FontAsset::LoadFromFile).
+	g_xEngine.Text().m_xFontAsset = FontHandle("engine:Fonts/LiberationMono.zfont");
+	if (!g_xEngine.Text().m_xFontAsset.Resolve())
 	{
-		g_xEngine.Text().m_xFontAtlasTexture.Set(pxFontAtlas);
-	}
-	else
-	{
-		Zenith_Log(LOG_CATEGORY_TEXT, "Warning: Failed to load font atlas texture, using white texture");
-		g_xEngine.Text().m_xFontAtlasTexture = g_xEngine.FluxGraphics().m_xWhiteTexture;  // copy: AddRefs the white default
+		Zenith_Warning(LOG_CATEGORY_TEXT, "Flux_Text: failed to load engine:Fonts/LiberationMono.zfont — text rendering will be no-op");
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -104,15 +88,13 @@ void Flux_TextImpl::Initialise()
 
 void Flux_TextImpl::Reset()
 {
-	// Clear pending text entries to prevent stale text from destroyed scenes persisting
 	Zenith_UI::Zenith_UICanvas::ClearPendingTextEntries();
-
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_TextImpl::Reset() - Cleared pending text entries");
 }
 
 void Flux_TextImpl::ReleaseAssetReferences()
 {
-	g_xEngine.Text().m_xFontAtlasTexture.Clear();
+	g_xEngine.Text().m_xFontAsset.Clear();
 }
 
 void Flux_TextImpl::Shutdown()
@@ -134,80 +116,116 @@ void Flux_TextImpl::ClearOverlayClipRect()
 	g_xEngine.Text().m_xOverlayClipRect = {-1.f, -1.f, -1.f, -1.f};
 }
 
-// Helper: process a text entry's characters into the vertex buffer
-static void ProcessTextEntry(const Zenith_UI::UITextEntry& xEntry, Zenith_Vector<TextVertex>& xVertices, uint32_t& uCharCount)
+// Per-glyph emission. For each char in the text:
+//   - look up the GlyphMetric (advance + plane bounds + atlas UV rect)
+//   - ink-less glyphs (space, etc.): advance cursor, emit no quad
+//   - missing glyphs (stray non-ASCII): substitute space's advance, no quad,
+//     don't `continue` silently — that collapses words on garbage input
+//   - newlines: reset cursor X, step baseline by lineHeight
+//   - everything else: emit one quad
+//
+// Baseline-Y semantics: fBaselineYPx = fAscentPx for the first line. The plane
+// bounds in GlyphMetric are RELATIVE TO BASELINE (Y-down, see Zenith_FontAsset.h),
+// so they're added to (cursorX, baselineY) without further sign-flips.
+static void ProcessTextEntry(const Zenith_UI::UITextEntry& xEntry,
+							 const Zenith_FontAsset* pxFont,
+							 Zenith_Vector<Flux_TextVertex>& xVertices,
+							 uint32_t& uCharCount)
 {
-	float fCursorX = 0.f;
-	float fCursorY = 0.f;
-	for (uint32_t u = 0; u < xEntry.m_strText.size(); u++)
+	if (!pxFont)
 	{
-		char cChar = xEntry.m_strText.at(u);
+		// Font wasn't loaded (boot order, missing .zfont). Skip silently — UI
+		// layout still works via Zenith_FontAsset::GetDefaultMetrics().
+		return;
+	}
 
-		// Handle newline: advance to next line
-		if (cChar == '\n')
+	const float fAscentPx     = pxFont->GetMetrics().fAscent     * xEntry.m_fSize;
+	const float fLineHeightPx = pxFont->GetMetrics().fLineHeight * xEntry.m_fSize;
+	float fCursorXPx   = 0.f;
+	float fBaselineYPx = fAscentPx;
+
+	for (size_t u = 0; u < xEntry.m_strText.size(); ++u)
+	{
+		// Use unsigned char so codepoints > 127 don't sign-extend to large
+		// negatives on signed-char builds.
+		const unsigned char uc = static_cast<unsigned char>(xEntry.m_strText[u]);
+
+		if (uc == '\n')
 		{
-			fCursorX = 0.f;
-			fCursorY += 1.f;
+			fCursorXPx = 0.f;
+			fBaselineYPx += fLineHeightPx;
 			continue;
 		}
 
-		// Skip non-printable characters (ASCII < 32) to prevent index underflow
-		// Font atlas starts at space (ASCII 32), so characters below that are invalid
-		if (cChar < 32 || cChar > 126)
+		const Zenith_FontGlyphMetric* pxG = pxFont->FindGlyph(static_cast<u_int32>(uc));
+		if (!pxG)
 		{
+			// Stray non-ASCII or out-of-charset. Substitute space's advance so
+			// text retains approximate horizontal extent (better than silent collapse).
+			if (const Zenith_FontGlyphMetric* pxSpace = pxFont->FindGlyph(' '))
+			{
+				fCursorXPx += pxSpace->m_fAdvance * xEntry.m_fSize;
+			}
 			continue;
 		}
 
-		TextVertex xVertex;
-		xVertex.m_xTextRoot = { static_cast<uint32_t>(xEntry.m_xPosition.x), static_cast<uint32_t>(xEntry.m_xPosition.y) };
-		xVertex.m_fTextSize = xEntry.m_fSize;
-		xVertex.m_xPos = Zenith_Maths::Vector2(fCursorX, fCursorY);
-		xVertex.m_xColour = xEntry.m_xColor;
+		// Ink-less glyph (space, etc.): advance only, no quad emitted.
+		// Branch on zero-area, not codepoint, so any future ink-less glyph just works.
+		const float fW = (pxG->m_fPlaneR - pxG->m_fPlaneL) * xEntry.m_fSize;
+		const float fH = (pxG->m_fPlaneB - pxG->m_fPlaneT) * xEntry.m_fSize;
+		if (fW <= 0.f || fH <= 0.f)
+		{
+			fCursorXPx += pxG->m_fAdvance * xEntry.m_fSize;
+			continue;
+		}
 
-		const uint32_t uIndex = static_cast<uint32_t>(cChar - 32);
-
-		const Zenith_Maths::UVector2 xTextureOffsets = { (uIndex % 10), (uIndex / 10) };
-		xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
-		xVertex.m_xUV /= 10.f;
-		uCharCount++;
-
+		Flux_TextVertex xVertex;
+		xVertex.m_xQuadOffsetPx  = { fCursorXPx   + pxG->m_fPlaneL * xEntry.m_fSize,
+									 fBaselineYPx + pxG->m_fPlaneT * xEntry.m_fSize };
+		xVertex.m_xQuadSizePx    = { fW, fH };
+		xVertex.m_xAtlasUVOrigin = { pxG->m_fAtlasU0, pxG->m_fAtlasV0 };
+		xVertex.m_xAtlasUVSize   = { pxG->m_fAtlasU1 - pxG->m_fAtlasU0,
+									 pxG->m_fAtlasV1 - pxG->m_fAtlasV0 };
+		// xEntry.m_xPosition is already Vector2 (float). The legacy path floored
+		// it via uint cast (bug #6) — keeping it float fixes subpixel jitter.
+		xVertex.m_xTextRoot      = xEntry.m_xPosition;
+		xVertex.m_xColour        = xEntry.m_xColor;
 		xVertices.PushBack(xVertex);
-		fCursorX += fCHAR_SPACING;
+		++uCharCount;
+
+		fCursorXPx += pxG->m_fAdvance * xEntry.m_fSize;
 	}
 }
 
-//#TO returns number of chars to render
 uint32_t Flux_TextImpl::UploadChars()
 {
-	Zenith_Vector<TextVertex> xVertices(s_uMaxCharsPerFrame);
+	Zenith_Vector<Flux_TextVertex> xVertices(s_uMaxCharsPerFrame);
 	uint32_t uCharCount = 0;
+
+	const Zenith_FontAsset* pxFont = g_xEngine.Text().m_xFontAsset.Resolve();
 
 	Zenith_Vector<Zenith_UI::UITextEntry>& xUITextEntries = Zenith_UI::Zenith_UICanvas::GetPendingTextEntries();
 
 	if (g_xEngine.Text().m_bOverlayClipActive)
 	{
-		// Two-pass partitioning: background text first, then overlay text
-		// This allows the renderer to draw them with different clip rect push constants
 		g_xEngine.Text().m_uBgCharCount = 0;
 		g_xEngine.Text().m_uFgCharCount = 0;
 
-		// Pass 1: Background text (sort order below overlay threshold)
 		for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
 		{
 			const Zenith_UI::UITextEntry& xEntry = xIt.GetData();
 			if (xEntry.m_iSortOrder < g_xEngine.Text().m_iOverlayClipSortOrder)
 			{
-				ProcessTextEntry(xEntry, xVertices, g_xEngine.Text().m_uBgCharCount);
+				ProcessTextEntry(xEntry, pxFont, xVertices, g_xEngine.Text().m_uBgCharCount);
 			}
 		}
 
-		// Pass 2: Overlay/foreground text (sort order at or above overlay threshold)
 		for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
 		{
 			const Zenith_UI::UITextEntry& xEntry = xIt.GetData();
 			if (xEntry.m_iSortOrder >= g_xEngine.Text().m_iOverlayClipSortOrder)
 			{
-				ProcessTextEntry(xEntry, xVertices, g_xEngine.Text().m_uFgCharCount);
+				ProcessTextEntry(xEntry, pxFont, xVertices, g_xEngine.Text().m_uFgCharCount);
 			}
 		}
 
@@ -215,20 +233,21 @@ uint32_t Flux_TextImpl::UploadChars()
 	}
 	else
 	{
-		// No overlay active: process all entries in a single pass
 		g_xEngine.Text().m_uBgCharCount = 0;
 		g_xEngine.Text().m_uFgCharCount = 0;
 
 		for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
 		{
-			ProcessTextEntry(xIt.GetData(), xVertices, uCharCount);
+			ProcessTextEntry(xIt.GetData(), pxFont, xVertices, uCharCount);
 		}
 	}
 
-	// Clear UI text entries after processing
 	Zenith_UI::Zenith_UICanvas::ClearPendingTextEntries();
 
-	Flux_MemoryManager::UploadBufferData(g_xEngine.Text().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(TextVertex) * xVertices.GetSize());
+	if (xVertices.GetSize() > 0)
+	{
+		Flux_MemoryManager::UploadBufferData(g_xEngine.Text().m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(Flux_TextVertex) * xVertices.GetSize());
+	}
 
 	g_xEngine.Text().m_uTotalCharCount = uCharCount;
 	return uCharCount;
@@ -252,9 +271,25 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 		return;
 	}
 
-	uint32_t uNumChars = g_xEngine.Text().UploadChars();
+	const uint32_t uNumChars = g_xEngine.Text().UploadChars();
 	if (uNumChars == 0)
 	{
+		g_xEngine.Text().m_bOverlayClipActive = false;
+		return;
+	}
+
+	const Zenith_FontAsset* pxFont = g_xEngine.Text().m_xFontAsset.Resolve();
+	if (!pxFont)
+	{
+		// No font loaded — nothing to draw.
+		g_xEngine.Text().m_bOverlayClipActive = false;
+		return;
+	}
+
+	const Zenith_TextureAsset* pxAtlas = pxFont->GetAtlasTexture().Resolve();
+	if (!pxAtlas)
+	{
+		Zenith_Warning(LOG_CATEGORY_TEXT, "Flux_Text: font asset has no atlas texture");
 		g_xEngine.Text().m_bOverlayClipActive = false;
 		return;
 	}
@@ -267,31 +302,39 @@ static void ExecuteText(Flux_CommandList* pxCommandList, void* pUserData)
 
 	pxCommandList->AddCommand<Flux_CommandBeginBind>(0);
 	pxCommandList->AddCommand<Flux_CommandBindCBV>(&g_xEngine.FluxGraphics().m_xFrameConstantsBuffer.GetCBV(), 0);
-	pxCommandList->AddCommand<Flux_CommandBindSRV>(&g_xEngine.Text().m_xFontAtlasTexture.GetDirect()->m_xSRV, 1);
+	// Explicit clamp sampler at the bind site — MSDF AA assumes no wrap.
+	pxCommandList->AddCommand<Flux_CommandBindSRV>(&pxAtlas->m_xSRV, 1);
+
+	// Build the 32-byte push-constant block. Atlas size + pxRange feed the
+	// shader's fwidth-based ScreenPxRange() helper for derivative-based AA.
+	Flux_TextDrawConstants xConstants{};
+	xConstants.m_xAtlasSizePx   = pxFont->GetAtlasSize();
+	xConstants.m_fAtlasPxRange  = pxFont->GetAtlasPxRange();
+	xConstants.m_fPad           = 0.f;
 
 	if (g_xEngine.Text().m_bOverlayClipActive && g_xEngine.Text().m_uBgCharCount > 0)
 	{
-		// Draw background text with overlay clip rect active
-		pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&g_xEngine.Text().m_xOverlayClipRect, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+		// Background text draw: clip rect active.
+		xConstants.m_xClipRect = g_xEngine.Text().m_xOverlayClipRect;
+		pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, g_xEngine.Text().m_uBgCharCount, 0, 0, 0);
 
 		if (g_xEngine.Text().m_uFgCharCount > 0)
 		{
-			// Draw overlay text without clip rect
-			Zenith_Maths::Vector4 xNoClip = {-1.f, -1.f, -1.f, -1.f};
-			pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+			// Foreground/overlay text draw: clip off.
+			xConstants.m_xClipRect = { -1.f, -1.f, -1.f, -1.f };
+			pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
 			pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, g_xEngine.Text().m_uFgCharCount, 0, 0, g_xEngine.Text().m_uBgCharCount);
 		}
 	}
 	else
 	{
-		// No overlay clipping: single draw, clip rect disabled
-		Zenith_Maths::Vector4 xNoClip = {-1.f, -1.f, -1.f, -1.f};
-		pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&xNoClip, static_cast<u_int>(sizeof(Zenith_Maths::Vector4)), 2);
+		// No overlay clipping: single draw, clip off.
+		xConstants.m_xClipRect = { -1.f, -1.f, -1.f, -1.f };
+		pxCommandList->AddCommand<Flux_CommandBindDrawConstants>(&xConstants, static_cast<u_int>(sizeof(Flux_TextDrawConstants)), 2);
 		pxCommandList->AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
 	}
 
-	// Clear overlay clip rect for next frame
 	g_xEngine.Text().m_bOverlayClipActive = false;
 }
 

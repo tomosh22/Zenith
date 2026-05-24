@@ -200,7 +200,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Runner/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\freetype\include;..\..\..\tools\middleware\msdf-atlas-gen;..\..\..\tools\middleware\msdf-atlas-gen\msdfgen;..\..\..\tools\middleware\msdf-atlas-gen\msdfgen\config;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>true</TreatWarningAsError>
@@ -249,7 +249,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <OutputFile>output\win64\vs2022_debug_win64_true\runner.exe</OutputFile>
       <ShowProgress>NotSet</ShowProgress>
-      <AdditionalLibraryDirectories>..\..\..\build\output\win64\vs2022_debug_win64_true;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\slang\lib;..\..\..\middleware\vulkansdk\1.3.280.0\lib;..\..\..\tools\middleware\assimp\lib;..\..\..\tools\middleware\opencv\build\x64\vc16\lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\..\build\output\freetype\debug;..\..\..\build\output\msdfatlasgen\debug;..\..\..\build\output\msdfgen\debug;..\..\..\build\output\win64\vs2022_debug_win64_true;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\slang\lib;..\..\..\middleware\vulkansdk\1.3.280.0\lib;..\..\..\tools\middleware\assimp\lib;..\..\..\tools\middleware\opencv\build\x64\vc16\lib</AdditionalLibraryDirectories>
       <ProgramDatabaseFile>output\win64\vs2022_debug_win64_true\runner.pdb</ProgramDatabaseFile>
       <GenerateMapFile>true</GenerateMapFile>
       <MapExports>false</MapExports>
@@ -270,7 +270,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>zenith.lib;assimp-vc143-mtd.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100d.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;assimp-vc143-mtd.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100d.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
@@ -374,7 +374,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
       <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Runner/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_ROOT="c:/dev/zenith/";ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\freetype\include;..\..\..\tools\middleware\msdf-atlas-gen;..\..\..\tools\middleware\msdf-atlas-gen\msdfgen;..\..\..\tools\middleware\msdf-atlas-gen\msdfgen\config;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>true</TreatWarningAsError>
@@ -423,7 +423,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <OutputFile>output\win64\vs2022_release_win64_true\runner.exe</OutputFile>
       <ShowProgress>NotSet</ShowProgress>
-      <AdditionalLibraryDirectories>..\..\..\build\output\win64\vs2022_release_win64_true;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\slang\lib;..\..\..\middleware\vulkansdk\1.3.280.0\lib;..\..\..\tools\middleware\assimp\lib;..\..\..\tools\middleware\opencv\build\x64\vc16\lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\..\build\output\freetype\release;..\..\..\build\output\msdfatlasgen\release;..\..\..\build\output\msdfgen\release;..\..\..\build\output\win64\vs2022_release_win64_true;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\slang\lib;..\..\..\middleware\vulkansdk\1.3.280.0\lib;..\..\..\tools\middleware\assimp\lib;..\..\..\tools\middleware\opencv\build\x64\vc16\lib</AdditionalLibraryDirectories>
       <ProgramDatabaseFile>output\win64\vs2022_release_win64_true\runner.pdb</ProgramDatabaseFile>
       <GenerateMapFile>true</GenerateMapFile>
       <MapExports>false</MapExports>
@@ -444,7 +444,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>zenith.lib;assimp-vc143-mt.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>freetype.lib;msdf-atlas-gen.lib;msdfgen.lib;zenith.lib;assimp-vc143-mt.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -474,6 +474,21 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\build\zenith_win64.vcxproj">
       <Project>{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\freetype_win64.vcxproj">
+      <Project>{344E0FC1-1BED-6B65-10B3-6D38E6A2E5F7}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\msdfgen_win64.vcxproj">
+      <Project>{8EC57622-53A0-0F1E-899A-13A5CA34A40A}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\build\msdf-atlas-gen_win64.vcxproj">
+      <Project>{CE98799E-A399-5D8C-D6E4-CC12C760014F}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>

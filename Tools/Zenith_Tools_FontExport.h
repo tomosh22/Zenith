@@ -5,16 +5,19 @@
 
 namespace Zenith_Tools_FontExport
 {
-	// Export font atlas from TTF file
-	// - Generates 512x512 RGBA texture with 10x10 character grid
-	// - Characters 32-131 (ASCII printable range)
-	// - White text with black shadow baked in
-	void ExportFromFile(const std::string& strTTFPath, const std::string& strOutputPath);
+	// Export an MSDF font atlas + metrics sidecar from a TTF file.
+	// - Generates a 256x256 RGBA8 MSDF atlas via msdf-atlas-gen + msdfgen + FreeType
+	// - Charset: printable ASCII (codepoints 32..126; 95 glyphs incl. space)
+	// - Writes the atlas as a .ztxtr at strAtlasPath and the per-glyph metrics
+	//   as a .zfont at strZFontPath. The .zfont stores an engine-prefixed
+	//   reference to the atlas; bake-time and runtime paths must agree.
+	void ExportFromFile(const std::string& strTTFPath, const std::string& strZFontPath, const std::string& strAtlasPath);
 
-	// Export with custom parameters
-	void ExportFromFile(const std::string& strTTFPath, const std::string& strOutputPath,
-					   uint32_t uAtlasSize, float fFontSize, float fShadowOffset);
+	// As above with custom atlas pixel dims, em-px, and SDF range. Defaults are
+	// 256/32/4 which are tuned for ASCII at typical UI sizes.
+	void ExportFromFile(const std::string& strTTFPath, const std::string& strZFontPath, const std::string& strAtlasPath,
+					   uint32_t uAtlasSize, float fPxPerEm, float fPxRange);
 }
 
-// Export the default engine font atlas
+// Export the default engine font atlas (LiberationMono → engine assets).
 void ExportDefaultFontAtlas();

@@ -3,6 +3,7 @@
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
 #include "Flux/Text/Flux_TextImpl.h"
+#include "AssetHandling/Zenith_FontAsset.h"
 #include "Input/Zenith_InputImpl.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
@@ -244,7 +245,7 @@ Zenith_UIButton::ButtonIconLayout Zenith_UIButton::CalculateIconTextPositions(co
 
 	const float fBoundsW = xBounds.z - xBounds.x;
 	const float fBoundsH = xBounds.w - xBounds.y;
-	const float fCharWidth = m_fFontSize * fCHAR_SPACING;
+	const float fCharWidth = m_fFontSize * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance;
 	const float fTextWidth = m_strText.empty() ? 0.f : static_cast<float>(m_strText.length()) * fCharWidth;
 	const float fTextHeight = m_fFontSize;
 

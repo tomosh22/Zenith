@@ -1,0 +1,60 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\artery-font-export.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\bitmap-blit.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\charset-parser.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\Charset.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\csv-export.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\FontGeometry.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\glyph-generators.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\GlyphGeometry.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\GridAtlasPacker.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\image-encode.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\json-export.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\main.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\Padding.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\RectanglePacker.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\shadron-preview-generator.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\size-selectors.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\TightAtlasPacker.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\utf8.cpp" />
+    <ClCompile Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\Workload.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\artery-font-export.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\AtlasGenerator.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\AtlasStorage.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\bitmap-blit.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\BitmapAtlasStorage.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\BitmapAtlasStorage.hpp" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\Charset.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\csv-export.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\DynamicAtlas.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\DynamicAtlas.hpp" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\FontGeometry.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\glyph-generators.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\GlyphBox.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\GlyphGeometry.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\GridAtlasPacker.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\image-encode.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\image-save.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\image-save.hpp" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\ImmediateAtlasGenerator.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\ImmediateAtlasGenerator.hpp" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\json-export.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\msdf-atlas-gen.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\Padding.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\rectangle-packing.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\rectangle-packing.hpp" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\Rectangle.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\RectanglePacker.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\Remap.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\shadron-preview-generator.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\size-selectors.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\TightAtlasPacker.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\types.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\utf8.h" />
+    <ClInclude Include="..\Tools\Middleware\msdf-atlas-gen\msdf-atlas-gen\Workload.h" />
+  </ItemGroup>
+</Project>

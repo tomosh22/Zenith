@@ -7,6 +7,7 @@
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_AnimationAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
+#include "AssetHandling/Zenith_FontAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
 //--------------------------------------------------------------------------
@@ -318,6 +319,49 @@ void Zenith_AssetHandle<Zenith_AnimationAsset>::WriteToDataStream(Zenith_DataStr
 
 template<>
 void Zenith_AssetHandle<Zenith_AnimationAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	if (m_pxCached)
+	{
+		m_pxCached->Release();
+		m_pxCached = nullptr;
+	}
+	xStream >> m_strPath;
+	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
+}
+
+//--------------------------------------------------------------------------
+// Font specializations
+//--------------------------------------------------------------------------
+
+template<>
+Zenith_FontAsset* Zenith_AssetHandle<Zenith_FontAsset>::Get() const
+{
+	if (m_pxCached)
+	{
+		return m_pxCached;
+	}
+
+	if (m_strPath.empty())
+	{
+		return nullptr;
+	}
+
+	m_pxCached = Zenith_AssetRegistry::Get<Zenith_FontAsset>(m_strPath);
+	if (m_pxCached)
+	{
+		m_pxCached->AddRef();
+	}
+	return m_pxCached;
+}
+
+template<>
+void Zenith_AssetHandle<Zenith_FontAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
+{
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
+}
+
+template<>
+void Zenith_AssetHandle<Zenith_FontAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	if (m_pxCached)
 	{

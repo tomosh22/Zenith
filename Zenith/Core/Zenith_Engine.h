@@ -131,6 +131,10 @@ public:
 	Flux_VolumeFogImpl& VolumeFog();
 	Flux_ParticlesImpl& Particles();
 	Flux_TextImpl& Text();
+	// Like Text(), but returns nullptr if the subsystem isn't yet constructed
+	// (engine init, headless tests, shutdown). Safe to call any time. Used
+	// by Zenith_FontAsset::GetActiveOrDefaultMetrics for UI metric fallback.
+	Flux_TextImpl* TryGetText() const { return m_pxText; }
 	Flux_InstancedMeshesImpl& InstancedMeshes();
 	Flux_SSRImpl& SSR();
 	Flux_SSGIImpl& SSGI();

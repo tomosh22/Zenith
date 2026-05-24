@@ -199,6 +199,15 @@ public class ZenithSolution : Solution
 			conf.AddProject<FluxCompilerProject>(target);
 			conf.AddProject<TilePuzzleLevelGenProject>(target);
 			conf.AddProject<TilePuzzleRegistryViewerProject>(target);
+
+			// MSDF font deps — only present in tools-enabled builds (used by
+			// Zenith_Tools_FontExport for the offline atlas bake at engine init).
+			if (target.ToolsEnabled == ToolsEnabled.True)
+			{
+				conf.AddProject<FreeTypeProject>(target);
+				conf.AddProject<MsdfgenProject>(target);
+				conf.AddProject<MsdfAtlasGenProject>(target);
+			}
 		}
 	}
 }

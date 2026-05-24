@@ -187,6 +187,7 @@ class Zenith_MaterialAsset;
 class Zenith_MeshAsset;
 class Zenith_ModelAsset;
 class Zenith_Prefab;
+class Zenith_FontAsset;
 
 namespace
 {
@@ -216,3 +217,4 @@ template<> void* AsyncLoadAsset<Zenith_Prefab>(const std::string&)
 {
 	return LogAsyncNotImplemented("Zenith_Prefab");
 }
+template<> void* AsyncLoadAsset<Zenith_FontAsset>(const std::string&) { return LogAsyncNotImplemented("Zenith_FontAsset"); }

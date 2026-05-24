@@ -2,6 +2,7 @@
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UICanvas.h"
 #include "Flux/Text/Flux_TextImpl.h"
+#include "AssetHandling/Zenith_FontAsset.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -29,7 +30,7 @@ void Zenith_UIText::RebuildWrappedText()
         return;
     }
 
-    float fCharWidth = m_fFontSize * fCHAR_SPACING;
+    float fCharWidth = m_fFontSize * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance;
     m_strWrappedText.clear();
     m_strWrappedText.reserve(m_strText.length() + 10);
 
@@ -101,7 +102,7 @@ float Zenith_UIText::GetTextWidth() const
         }
         else
         {
-            fCurrentWidth += m_fFontSize * fCHAR_SPACING;
+            fCurrentWidth += m_fFontSize * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance;
         }
     }
     if (fCurrentWidth > fMaxWidth)
@@ -173,7 +174,7 @@ void Zenith_UIText::SubmitTextWithShadow(Zenith_UICanvas& xCanvas, const std::st
 void Zenith_UIText::RenderMultilineAligned(Zenith_UICanvas& xCanvas, const std::string& strDisplay,
                                            float fLeft, float fWidth, float fStartY, float fAlpha)
 {
-    const float fCharWidth = m_fFontSize * fCHAR_SPACING;
+    const float fCharWidth = m_fFontSize * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance;
     float fLineY = fStartY;
     size_t uLineStart = 0;
 

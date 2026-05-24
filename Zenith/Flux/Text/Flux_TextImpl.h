@@ -6,17 +6,41 @@
 #include "Maths/Zenith_Maths.h"
 
 class Flux_RenderGraph;
+class Zenith_FontAsset;
 
-/// Character width as fraction of height (typical monospace ratio is ~0.5-0.6).
-static constexpr float fCHAR_ASPECT_RATIO = 0.5f;
+// Per-glyph instance vertex pushed to the GPU. One per visible glyph quad.
+// Layout matches the vertex input description in Flux_TextImpl::BuildPipelines.
+//
+// Position math, evaluated in the vertex shader:
+//   screen_px = m_xTextRoot + m_xQuadOffsetPx + quad_uv * m_xQuadSizePx
+//   atlas_uv  = m_xAtlasUVOrigin + quad_uv * m_xAtlasUVSize
+//
+// m_xTextRoot is float2 (subpixel-tolerant) — historically uint2, which floored
+// text positions to whole pixels and was the source of jitter at small sizes.
+struct Flux_TextVertex
+{
+	Zenith_Maths::Vector2 m_xQuadOffsetPx;
+	Zenith_Maths::Vector2 m_xQuadSizePx;
+	Zenith_Maths::Vector2 m_xAtlasUVOrigin;
+	Zenith_Maths::Vector2 m_xAtlasUVSize;
+	Zenith_Maths::Vector2 m_xTextRoot;
+	Zenith_Maths::Vector4 m_xColour;
+};
+static_assert(sizeof(Flux_TextVertex) == 56, "Flux_TextVertex layout drift will silently break the vertex input description");
 
-/// Monospace character spacing.
-static constexpr float fCHAR_SPACING = fCHAR_ASPECT_RATIO * 1.1f;
+// Push-constant block bound to the text fragment shader. Layout MUST match
+// TextConstantsLayout in Flux_Text.slang. 32 bytes total (was 16 in the legacy
+// bitmap pipeline) — a size mismatch with shader reflection causes silent
+// rendering failures in some drivers.
+struct Flux_TextDrawConstants
+{
+	Zenith_Maths::Vector4 m_xClipRect;        // (-1,-1,-1,-1) = clip off
+	Zenith_Maths::Vector2 m_xAtlasSizePx;     // e.g. (256, 256)
+	float                 m_fAtlasPxRange;    // msdfgen "range" in atlas pixels
+	float                 m_fPad;             // pad to 16-byte alignment
+};
+static_assert(sizeof(Flux_TextDrawConstants) == 32, "Flux_TextDrawConstants must be 32 bytes to match shader push-constant range");
 
-// Fraction of font height consumed by the ascender in the SDF atlas
-static constexpr float fFONT_ASCENDER_RATIO = 0.25f;
-
-// Phase 9: state + behaviour for Text subsystem.
 class Flux_TextImpl
 {
 public:
@@ -38,10 +62,16 @@ public:
 	void SetOverlayClipRect(const Zenith_Maths::Vector4& xRect, int iSortOrder);
 	void ClearOverlayClipRect();
 
+	// Accessor for the active font asset. Returns the handle (which Resolves on first
+	// use) so callers can grab metrics or null-check. Used by
+	// Zenith_FontAsset::GetActiveOrDefaultMetrics and by UI layout call sites.
+	FontHandle& GetFontHandle() { return m_xFontAsset; }
+	const FontHandle& GetFontHandle() const { return m_xFontAsset; }
+
 	Flux_Shader              m_xShader;
 	Flux_Pipeline            m_xPipeline;
 	Flux_DynamicVertexBuffer m_xInstanceBuffer;
-	TextureHandle            m_xFontAtlasTexture;
+	FontHandle               m_xFontAsset;
 
 	bool                     m_bOverlayClipActive    = false;
 	Zenith_Maths::Vector4    m_xOverlayClipRect      = { -1.f, -1.f, -1.f, -1.f };

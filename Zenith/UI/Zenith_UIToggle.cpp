@@ -3,6 +3,7 @@
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIStyleRenderer.h"
 #include "Flux/Text/Flux_TextImpl.h"
+#include "AssetHandling/Zenith_FontAsset.h"
 #include "Input/Zenith_InputImpl.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
@@ -208,7 +209,7 @@ void Zenith_UIToggle::Render(Zenith_UICanvas& xCanvas)
 	// Render text centered
 	if (!m_strText.empty())
 	{
-		float fCharWidth = m_fFontSize * fCHAR_SPACING;
+		float fCharWidth = m_fFontSize * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance;
 		float fTextWidth = static_cast<float>(m_strText.length()) * fCharWidth;
 		float fBoundsW = xBounds.z - xBounds.x;
 		float fBoundsH = xBounds.w - xBounds.y;

@@ -3,6 +3,7 @@
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UICanvas.h"
 #include "Flux/Text/Flux_TextImpl.h"
+#include "AssetHandling/Zenith_FontAsset.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -322,7 +323,7 @@ void Zenith_UILayoutGroup::PlaceChild(uint32_t uIndex, PlacementContext& xCtx)
 			Zenith_UIElement* pxSibling = m_xChildren.Get(s);
 			if (pxSibling && pxSibling->IsVisible() && pxSibling->GetType() == UIElementType::Text)
 			{
-				fCrossOffset -= static_cast<Zenith_UIText*>(pxSibling)->GetFontSize() * fFONT_ASCENDER_RATIO;
+				fCrossOffset -= static_cast<Zenith_UIText*>(pxSibling)->GetFontSize() * Zenith_FontAsset::GetActiveOrDefaultMetrics().fLayoutAscenderCorrection;
 				break;
 			}
 		}

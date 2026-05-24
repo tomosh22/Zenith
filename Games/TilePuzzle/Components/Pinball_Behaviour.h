@@ -28,6 +28,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_FontAsset.h"
 #include "Physics/Zenith_PhysicsImpl.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UICanvas.h"
@@ -2507,9 +2508,9 @@ private:
 				if (uCurrentLen > uMaxLineLen) uMaxLineLen = uCurrentLen;
 				if (uMaxLineLen > 0)
 				{
-					float fLineWidth = static_cast<float>(uMaxLineLen) * fDesiredFont * fCHAR_SPACING;
+					float fLineWidth = static_cast<float>(uMaxLineLen) * fDesiredFont * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance;
 					if (fLineWidth > fTextW)
-						fDesiredFont = fTextW / (static_cast<float>(uMaxLineLen) * fCHAR_SPACING);
+						fDesiredFont = fTextW / (static_cast<float>(uMaxLineLen) * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance);
 				}
 				m_pxTutorialText->SetFontSize(fDesiredFont);
 				m_pxTutorialText->SetText(szText);

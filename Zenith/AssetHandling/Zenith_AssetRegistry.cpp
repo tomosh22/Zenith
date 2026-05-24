@@ -9,6 +9,7 @@
 #include "AssetHandling/Zenith_AnimationAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_ScriptAsset.h"
+#include "AssetHandling/Zenith_FontAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 #include <fstream>
 
@@ -330,6 +331,7 @@ void Zenith_AssetRegistry::Initialize()
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_AnimationAsset>(), LoadAnimationAsset);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshGeometryAsset>(), LoadMeshGeometryAsset);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_ScriptAsset>(), LoadScriptAsset);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_FontAsset>(), LoadFontAsset);
 
 	// Note: Zenith_MaterialAsset::InitializeDefaults() must be called AFTER Vulkan/VMA
 	// is initialized (after Flux::EarlyInitialise). See InitializeGPUDependentAssets().

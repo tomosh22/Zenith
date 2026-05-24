@@ -26,6 +26,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "AssetHandling/Zenith_FontAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UIButton.h"
@@ -2052,9 +2053,9 @@ private:
 		float fDesiredFont = TilePuzzleUI::fTUTORIAL_FONT;
 		if (uMaxLineLen > 0)
 		{
-			float fLineWidth = static_cast<float>(uMaxLineLen) * fDesiredFont * fCHAR_SPACING;
+			float fLineWidth = static_cast<float>(uMaxLineLen) * fDesiredFont * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance;
 			if (fLineWidth > fTextW)
-				fDesiredFont = fTextW / (static_cast<float>(uMaxLineLen) * fCHAR_SPACING);
+				fDesiredFont = fTextW / (static_cast<float>(uMaxLineLen) * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance);
 		}
 		m_pxTutorialText->SetFontSize(fDesiredFont);
 		m_pxTutorialText->SetText(szText);
