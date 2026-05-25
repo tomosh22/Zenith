@@ -1244,7 +1244,7 @@
     <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h" />
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleData.h" />
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleEmitterConfig.h" />
-    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleGPU.h" />
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleGPUImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticlesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Primitives\Flux_PrimitivesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Quads\Flux_QuadsImpl.h" />

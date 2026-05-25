@@ -156,6 +156,8 @@ void DPFogPass::Shutdown()
 	{
 		g_xEngine.Fog().SetExternallyOverridden(false);
 	}
+	s_xPipeline.Reset();
+	s_xShader.Reset();
 	s_bPipelineBuilt = false;
 }
 

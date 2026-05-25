@@ -3732,7 +3732,7 @@
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleEmitterConfig.h">
       <Filter>Flux\Particles</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleGPU.h">
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleGPUImpl.h">
       <Filter>Flux\Particles</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticlesImpl.h">

@@ -3,8 +3,9 @@
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "Core/Zenith_Engine.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
-#include "Flux/Particles/Flux_ParticleGPU.h"
+#include "Flux/Particles/Flux_ParticleGPUImpl.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_ParticleEmitterComponent, "ParticleEmitter")
 
@@ -21,7 +22,7 @@ void Zenith_ParticleEmitterComponent::SetConfig(Flux_ParticleEmitterConfig* pxCo
 	// Unregister from GPU system if previously registered
 	if (m_uGPUEmitterID != UINT32_MAX)
 	{
-		Flux_ParticleGPU::UnregisterEmitter(m_uGPUEmitterID);
+		g_xEngine.ParticleGPU().UnregisterEmitter(m_uGPUEmitterID);
 		m_uGPUEmitterID = UINT32_MAX;
 	}
 

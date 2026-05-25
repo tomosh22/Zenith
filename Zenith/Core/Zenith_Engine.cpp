@@ -43,6 +43,7 @@
 #include "Flux/Fog/Flux_FogImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
 #include "Flux/Particles/Flux_ParticlesImpl.h"
+#include "Flux/Particles/Flux_ParticleGPUImpl.h"
 #include "Flux/Text/Flux_TextImpl.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshesImpl.h"
 #include "Flux/SSR/Flux_SSRImpl.h"
@@ -280,6 +281,7 @@ Flux_DecalsImpl&                   Zenith_Engine::Decals()            { return *
 Flux_FogImpl&                      Zenith_Engine::Fog()               { return *m_pxFog; }
 Flux_VolumeFogImpl&                Zenith_Engine::VolumeFog()         { return *m_pxVolumeFog; }
 Flux_ParticlesImpl&                Zenith_Engine::Particles()         { return *m_pxParticles; }
+Flux_ParticleGPUImpl&              Zenith_Engine::ParticleGPU()       { return *m_pxParticleGPU; }
 Flux_TextImpl&                     Zenith_Engine::Text()              { return *m_pxText; }
 Flux_InstancedMeshesImpl&          Zenith_Engine::InstancedMeshes()   { return *m_pxInstancedMeshes; }
 Flux_SSRImpl&                      Zenith_Engine::SSR()               { return *m_pxSSR; }
@@ -417,6 +419,7 @@ void Zenith_Engine::Initialise()
 
 	// Phase 7e: 4 more.
 	m_pxParticles       = new Flux_ParticlesImpl();
+	m_pxParticleGPU     = new Flux_ParticleGPUImpl();
 	m_pxText            = new Flux_TextImpl();
 	m_pxInstancedMeshes = new Flux_InstancedMeshesImpl();
 
@@ -780,27 +783,10 @@ void Zenith_Engine::Shutdown()
 	delete m_pxTouch;
 	m_pxTouch = nullptr;
 
-	// Free Flux renderer state. Flux::Shutdown above has already freed the
-	// render graph and cleared the callback lists; this just reclaims the
-	// holder.
-	delete m_pxFluxRenderer;
-	m_pxFluxRenderer = nullptr;
-
-	// Free Flux_Graphics state. g_xEngine.FluxGraphics().Shutdown above has already
-	// freed GPU resources; this just reclaims the holder.
-	delete m_pxFluxGraphics;
-	m_pxFluxGraphics = nullptr;
-
-	// Free Vulkan backend state. Flux::Shutdown above tore down the
-	// Vulkan-side resources (device, command pools, descriptor sets,
-	// memory allocator, swapchain). These delete only the holders.
-	delete m_pxVulkanSwapchain;
-	m_pxVulkanSwapchain = nullptr;
-	delete m_pxVulkanMemory;
-	m_pxVulkanMemory = nullptr;
-	delete m_pxVulkan;
-	m_pxVulkan = nullptr;
-
+	// Free Flux subsystem holders before Vulkan holders. Flux::Shutdown above
+	// has drained subsystem-owned state, but these deletes run member dtors;
+	// many members are Flux_Shader / Flux_Pipeline wrappers that need the
+	// Vulkan device to destroy any remaining native handles.
 	delete m_pxHiZ;
 	m_pxHiZ = nullptr;
 	delete m_pxStaticMeshes;    m_pxStaticMeshes = nullptr;
@@ -820,6 +806,7 @@ void Zenith_Engine::Shutdown()
 	delete m_pxFog;        m_pxFog = nullptr;
 	delete m_pxVolumeFog;  m_pxVolumeFog = nullptr;
 	delete m_pxParticles;       m_pxParticles = nullptr;
+	delete m_pxParticleGPU;     m_pxParticleGPU = nullptr;
 	delete m_pxText;            m_pxText = nullptr;
 	delete m_pxInstancedMeshes; m_pxInstancedMeshes = nullptr;
 	delete m_pxSSR;  m_pxSSR  = nullptr;
@@ -833,6 +820,26 @@ void Zenith_Engine::Shutdown()
 #ifdef ZENITH_TOOLS
 	delete m_pxGizmos;          m_pxGizmos = nullptr;
 #endif
+
+	// Free Flux renderer state. Flux::Shutdown above has already freed the
+	// render graph and cleared the callback lists; this just reclaims the
+	// holder.
+	delete m_pxFluxRenderer;
+	m_pxFluxRenderer = nullptr;
+
+	// Free Flux_Graphics state. g_xEngine.FluxGraphics().Shutdown above has
+	// already freed GPU resources; this just reclaims the holder.
+	delete m_pxFluxGraphics;
+	m_pxFluxGraphics = nullptr;
+
+	// Free Vulkan backend state last among graphics holders so device-backed
+	// member destructors above can still call Zenith_Vulkan::GetDevice().
+	delete m_pxVulkanSwapchain;
+	m_pxVulkanSwapchain = nullptr;
+	delete m_pxVulkanMemory;
+	m_pxVulkanMemory = nullptr;
+	delete m_pxVulkan;
+	m_pxVulkan = nullptr;
 
 #ifdef ZENITH_TOOLS
 	// 21. Free editor state. Done LATE -- the editor's deferred-deletion

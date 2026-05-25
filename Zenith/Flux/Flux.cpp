@@ -457,6 +457,10 @@ void Flux::Shutdown()
 	// Shutdown core graphics (render targets, depth buffer, quad mesh, frame constants)
 	g_xEngine.FluxGraphics().Shutdown();
 
+	// Shutdown swapchain-owned file-static shader/pipeline state before the
+	// Vulkan device and memory-manager registries go away.
+	Flux_Swapchain::Shutdown();
+
 	// Shutdown memory manager (VMA allocator, handle registries)
 	Flux_MemoryManager::Shutdown();
 

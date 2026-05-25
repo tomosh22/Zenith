@@ -5,7 +5,7 @@
 #include "Flux/Particles/Flux_ParticlesImpl.h"
 #include "Flux/Particles/Flux_ParticleData.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
-#include "Flux/Particles/Flux_ParticleGPU.h"
+#include "Flux/Particles/Flux_ParticleGPUImpl.h"
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -74,7 +74,7 @@ void Flux_ParticlesImpl::BuildPipelines()
 	// Rebuild the GPU compute pipeline alongside the rasterisation ones so a
 	// shader edit to either Particles.slang or ParticleUpdate.slang triggers a
 	// single coordinated rebuild.
-	Flux_ParticleGPU::BuildPipelines();
+	g_xEngine.ParticleGPU().BuildPipelines();
 }
 
 void Flux_ParticlesImpl::Initialise()
@@ -122,6 +122,7 @@ void Flux_ParticlesImpl::ReleaseAssetReferences()
 
 void Flux_ParticlesImpl::Shutdown()
 {
+	g_xEngine.ParticleGPU().Shutdown();
 	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAlpha);
 	Flux_MemoryManager::DestroyDynamicVertexBuffer(g_xEngine.Particles().m_xInstanceBufferAdditive);
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles shut down");
@@ -260,12 +261,12 @@ static void ExecuteParticles(Flux_CommandList* pxCommandList, void* pUserData)
 
 static void ExecuteParticleCompute(Flux_CommandList* pxCmdList, void*)
 {
-	Flux_ParticleGPU::DispatchCompute(pxCmdList);
+	g_xEngine.ParticleGPU().DispatchCompute(pxCmdList);
 }
 
 static void PreExecuteParticleCompute(void*)
 {
-	Flux_ParticleGPU::PreExecuteCompute();
+	g_xEngine.ParticleGPU().PreExecuteCompute();
 }
 
 void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)

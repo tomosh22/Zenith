@@ -14,6 +14,7 @@ public:
 	Zenith_Vulkan_Swapchain() {}
 	~Zenith_Vulkan_Swapchain();
 	static void Initialise();
+	static void Shutdown();
 
 	static bool BeginFrame();
 	static void EndFrame();

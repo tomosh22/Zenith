@@ -29,6 +29,7 @@ class Flux_VolumeFogImpl;
 class Flux_GizmosImpl;
 class Flux_InstancedMeshesImpl;
 class Flux_ParticlesImpl;
+class Flux_ParticleGPUImpl;
 class Flux_TextImpl;
 class Flux_SSRImpl;
 class Flux_SSGIImpl;
@@ -130,6 +131,7 @@ public:
 	Flux_FogImpl& Fog();
 	Flux_VolumeFogImpl& VolumeFog();
 	Flux_ParticlesImpl& Particles();
+	Flux_ParticleGPUImpl& ParticleGPU();
 	Flux_TextImpl& Text();
 	// Like Text(), but returns nullptr if the subsystem isn't yet constructed
 	// (engine init, headless tests, shutdown). Safe to call any time. Used
@@ -203,6 +205,7 @@ private:
 	Flux_FogImpl*                       m_pxFog              = nullptr;
 	Flux_VolumeFogImpl*                 m_pxVolumeFog        = nullptr;
 	Flux_ParticlesImpl*                 m_pxParticles        = nullptr;
+	Flux_ParticleGPUImpl*               m_pxParticleGPU      = nullptr;
 	Flux_TextImpl*                      m_pxText             = nullptr;
 	Flux_InstancedMeshesImpl*           m_pxInstancedMeshes  = nullptr;
 	Flux_SSRImpl*                       m_pxSSR              = nullptr;

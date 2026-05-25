@@ -31,10 +31,6 @@ uint32_t       Zenith_Vulkan_Swapchain::GetHeight() { return g_xEngine.VulkanSwa
 vk::Extent2D&  Zenith_Vulkan_Swapchain::GetExent()  { return g_xEngine.VulkanSwapchain().m_xExtent; }
 vk::Format     Zenith_Vulkan_Swapchain::GetFormat() { return g_xEngine.VulkanSwapchain().m_xImageFormat; }
 
-static Zenith_Vulkan_Shader s_xShader;
-static Zenith_Vulkan_Pipeline s_xPipeline;
-static Zenith_Vulkan_CommandBuffer s_xCopyToFramebufferCmd;
-
 DEBUGVAR bool dbg_bOutputMRT = false;
 DEBUGVAR uint32_t dbg_uMRTIndex = MRT_INDEX_DIFFUSE;
 
@@ -131,46 +127,29 @@ Zenith_Vulkan_Swapchain::~Zenith_Vulkan_Swapchain()
 
 void Zenith_Vulkan_Swapchain::InitialiseCopyToFramebufferCommands()
 {
-	s_xCopyToFramebufferCmd.Initialise();
+	Zenith_Vulkan_SwapchainImpl& xSwapchain = g_xEngine.VulkanSwapchain();
+
+	xSwapchain.m_xCopyToFramebufferCmd.Initialise();
 
 	// Pilot Slang program — replaces the GLSL pair Flux_Fullscreen_UV.vert +
 	// Flux_TexturedQuad.frag. Resolves to Quads/Flux_TexturedQuad.slang via
 	// Flux_ShaderRegistry.
-	s_xShader.Initialise(FluxShaderProgram::TexturedQuad);
+	xSwapchain.m_xCopyToFramebufferShader.Initialise(FluxShaderProgram::TexturedQuad);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_aeColourAttachmentFormats[0] = g_xEngine.VulkanSwapchain().m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat;
+	xPipelineSpec.m_aeColourAttachmentFormats[0] = xSwapchain.m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat;
 	xPipelineSpec.m_uNumColourAttachments = 1;
-	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_pxShader = &xSwapchain.m_xCopyToFramebufferShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
 	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
 	xLayout.m_uNumBindingGroups = 1;
 	xLayout.m_axBindingGroups[0].m_axBindings[0].m_eType = BINDING_TYPE_TEXTURE;
 
-#if 0
-	(
-		xVertexDesc,
-		&s_xShader,
-		xBlendStates,
-		false,
-		false,
-		DEPTH_COMPARE_FUNC_ALWAYS,
-		DEPTHSTENCIL_FORMAT_NONE,
-		false,
-		false,
-		{ 0,1 },
-		{ 0,0 },
-		s_axTargetSetups[0],
-		false
-	);
-#endif
-
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
-
+	Flux_PipelineBuilder::FromSpecification(xSwapchain.m_xCopyToFramebufferPipeline, xPipelineSpec);
 }
 
 void Zenith_Vulkan_Swapchain::Initialise()
@@ -312,6 +291,70 @@ void Zenith_Vulkan_Swapchain::Initialise()
 #endif
 }
 
+void Zenith_Vulkan_Swapchain::Shutdown()
+{
+	Zenith_Vulkan_SwapchainImpl& xSwapchain = g_xEngine.VulkanSwapchain();
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+
+	// Tear down the copy-to-framebuffer shader/pipeline/cmd buffer while the
+	// Vulkan device is still alive. The members' destructors run later when
+	// Zenith_Engine deletes the swapchain impl, but by then they'll be in the
+	// freshly-reset state so the Reset()s inside the destructors are no-ops.
+	xSwapchain.m_xCopyToFramebufferPipeline.Reset();
+	xSwapchain.m_xCopyToFramebufferShader.Reset();
+	xSwapchain.m_xCopyToFramebufferCmd.GetCurrentCmdBuffer() = VK_NULL_HANDLE;
+	xSwapchain.m_xCopyToFramebufferCmd.SetCurrentRenderPass(VK_NULL_HANDLE);
+
+	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		Flux_RenderAttachment& xAttachment = xSwapchain.m_axColourAttachments[u];
+		if (xAttachment.SRV().m_xImageViewHandle.IsValid())
+		{
+			Zenith_Vulkan_MemoryManager::ReleaseImageViewHandle(xAttachment.SRV().m_xImageViewHandle);
+		}
+		if (xAttachment.RTV().m_xImageViewHandle.IsValid())
+		{
+			Zenith_Vulkan_MemoryManager::ReleaseImageViewHandle(xAttachment.RTV().m_xImageViewHandle);
+		}
+		xAttachment = Flux_RenderAttachment();
+
+		if (xSwapchain.m_axImageAvailableSemaphores[u])
+		{
+			xDevice.destroySemaphore(xSwapchain.m_axImageAvailableSemaphores[u]);
+			xSwapchain.m_axImageAvailableSemaphores[u] = VK_NULL_HANDLE;
+		}
+		if (xSwapchain.m_axRenderFinishedSemaphores[u])
+		{
+			xDevice.destroySemaphore(xSwapchain.m_axRenderFinishedSemaphores[u]);
+			xSwapchain.m_axRenderFinishedSemaphores[u] = VK_NULL_HANDLE;
+		}
+	}
+
+	for (vk::ImageView& xImageView : xSwapchain.m_xImageViews)
+	{
+		if (xImageView)
+		{
+			xDevice.destroyImageView(xImageView);
+			xImageView = VK_NULL_HANDLE;
+		}
+	}
+	xSwapchain.m_xImageViews.clear();
+	xSwapchain.m_xImages.clear();
+
+	if (xSwapchain.m_xSwapChain)
+	{
+		xDevice.destroySwapchainKHR(xSwapchain.m_xSwapChain);
+		xSwapchain.m_xSwapChain = VK_NULL_HANDLE;
+	}
+
+	xSwapchain.m_xImageFormat = vk::Format::eUndefined;
+	xSwapchain.m_xExtent = vk::Extent2D();
+	xSwapchain.m_uCurrentImageIndex = 0;
+	xSwapchain.m_bShouldWaitOnImageAvailableSem = false;
+
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan swapchain shut down");
+}
+
 bool Zenith_Vulkan_Swapchain::BeginFrame()
 {
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
@@ -377,10 +420,11 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 		.setPClearValues(&xClear)
 		.setClearValueCount(1);
 
-	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
-	
+	Zenith_Vulkan_CommandBuffer& xCmd = g_xEngine.VulkanSwapchain().m_xCopyToFramebufferCmd;
+	xCmd.GetCurrentCmdBuffer().beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
+
 	// Set the render pass in the command buffer object so RenderImGui() can verify it's active
-	s_xCopyToFramebufferCmd.SetCurrentRenderPass(xRenderPass);
+	xCmd.SetCurrentRenderPass(xRenderPass);
 
 	//flipping because porting from opengl
 	vk::Viewport xViewport{};
@@ -397,8 +441,8 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 		g_xEngine.VulkanSwapchain().m_axColourAttachments[g_xEngine.VulkanSwapchain().m_uCurrentImageIndex].m_xSurfaceInfo.m_uWidth,
 		g_xEngine.VulkanSwapchain().m_axColourAttachments[g_xEngine.VulkanSwapchain().m_uCurrentImageIndex].m_xSurfaceInfo.m_uHeight);
 
-	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().setViewport(0, 1, &xViewport);
-	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().setScissor(0, 1, &xScissor);
+	xCmd.GetCurrentCmdBuffer().setViewport(0, 1, &xViewport);
+	xCmd.GetCurrentCmdBuffer().setScissor(0, 1, &xScissor);
 }
 
 bool Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore()
@@ -408,16 +452,19 @@ bool Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore()
 
 void Zenith_Vulkan_Swapchain::EndFrame()
 {
-	s_xCopyToFramebufferCmd.BeginRecording();
+	Zenith_Vulkan_SwapchainImpl& xSwapchain = g_xEngine.VulkanSwapchain();
+	Zenith_Vulkan_CommandBuffer& xCmd = xSwapchain.m_xCopyToFramebufferCmd;
+
+	xCmd.BeginRecording();
 
 	BindAsTarget();
 
-	s_xCopyToFramebufferCmd.SetPipeline(&s_xPipeline);
+	xCmd.SetPipeline(&xSwapchain.m_xCopyToFramebufferPipeline);
 
-	s_xCopyToFramebufferCmd.SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	s_xCopyToFramebufferCmd.SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	xCmd.SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
+	xCmd.SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
 
-	s_xCopyToFramebufferCmd.BeginBind(0);
+	xCmd.BeginBind(0);
 #ifdef ZENITH_DEBUG_VARIABLES
 	if (dbg_bOutputMRT)
 	{
@@ -425,7 +472,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		Flux_ShaderResourceView* pxMRTSRV = g_xEngine.FluxGraphics().GetGBufferSRV((MRTIndex)dbg_uMRTIndex);
 		if (pxMRTSRV)
 		{
-			s_xCopyToFramebufferCmd.BindSRV(pxMRTSRV, 0);
+			xCmd.BindSRV(pxMRTSRV, 0);
 		}
 	}
 	else
@@ -435,7 +482,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		Flux_ShaderResourceView& xSRV = g_xEngine.FluxGraphics().GetFinalRenderTarget().SRV();
 		if (xSRV.m_xImageViewHandle.IsValid())
 		{
-			s_xCopyToFramebufferCmd.BindSRV(&xSRV, 0);
+			xCmd.BindSRV(&xSRV, 0);
 		}
 		else
 		{
@@ -443,26 +490,26 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		}
 	}
 
-	s_xCopyToFramebufferCmd.DrawIndexed(6);
+	xCmd.DrawIndexed(6);
 
 #ifdef ZENITH_TOOLS
 	// Render ImGui on top of the game content
 	// The render pass is still active from BindAsTarget()
-	s_xCopyToFramebufferCmd.RenderImGui();
+	xCmd.RenderImGui();
 #endif
 
-	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().endRenderPass();
-	VkCheck(s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().end());
+	xCmd.GetCurrentCmdBuffer().endRenderPass();
+	VkCheck(xCmd.GetCurrentCmdBuffer().end());
 
 	// Only signal renderFinished semaphore when we have a valid image to present
 	// Otherwise the semaphore stays signaled and causes a double-signal on the next frame
 	vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
 		.setCommandBufferCount(1)
-		.setPCommandBuffers(&s_xCopyToFramebufferCmd.GetCurrentCmdBuffer())
+		.setPCommandBuffers(&xCmd.GetCurrentCmdBuffer())
 		.setPWaitSemaphores(nullptr)
 		.setWaitSemaphoreCount(0)
-		.setPSignalSemaphores(g_xEngine.VulkanSwapchain().m_bShouldWaitOnImageAvailableSem ? &g_xEngine.VulkanSwapchain().m_axRenderFinishedSemaphores[g_xEngine.VulkanSwapchain().m_uCurrentImageIndex] : nullptr)
-		.setSignalSemaphoreCount(g_xEngine.VulkanSwapchain().m_bShouldWaitOnImageAvailableSem ? 1 : 0);
+		.setPSignalSemaphores(xSwapchain.m_bShouldWaitOnImageAvailableSem ? &xSwapchain.m_axRenderFinishedSemaphores[xSwapchain.m_uCurrentImageIndex] : nullptr)
+		.setSignalSemaphoreCount(xSwapchain.m_bShouldWaitOnImageAvailableSem ? 1 : 0);
 
 	VkCheck(Zenith_Vulkan::GetQueue(COMMANDTYPE_GRAPHICS).submit(xRenderSubmitInfo, Zenith_Vulkan::GetCurrentInFlightFence()));
 
