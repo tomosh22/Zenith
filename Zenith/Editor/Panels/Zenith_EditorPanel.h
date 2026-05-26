@@ -1,68 +1,13 @@
 #pragma once
 
-#ifdef ZENITH_TOOLS
-
-#include "Maths/Zenith_Maths.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include <string>
-
-// Forward declarations
-struct Zenith_EditorState;
-class Zenith_MaterialAsset;
-
-//=============================================================================
-// Zenith_EditorPanel
+// This header previously declared:
+//   - class Zenith_EditorPanel: an abstract base class for editor panels
+//   - namespace Zenith_EditorPanels: transitional factory-style render functions
+// Both were removed because they had no derived classes / no implementations and
+// no callers anywhere in the repo. The actual editor panels are implemented as
+// per-feature namespaces (Zenith_EditorPanelHierarchy, ...PanelProperties, etc.)
+// in sibling Zenith_EditorPanel_*.{h,cpp} files.
 //
-// Base interface for editor UI panels. Each panel is responsible for
-// rendering a specific portion of the editor UI (hierarchy, properties,
-// viewport, console, etc.)
-//
-// Panels access shared state through references passed to their Render()
-// methods, avoiding global state access.
-//=============================================================================
-
-class Zenith_EditorPanel
-{
-public:
-	virtual ~Zenith_EditorPanel() = default;
-
-	// Render the panel UI. Called each frame.
-	virtual void Render() = 0;
-
-	// Panel identification
-	virtual const char* GetName() const = 0;
-	virtual const char* GetWindowID() const { return GetName(); }
-
-	// Visibility control
-	bool IsVisible() const { return m_bVisible; }
-	void SetVisible(bool bVisible) { m_bVisible = bVisible; }
-	void ToggleVisible() { m_bVisible = !m_bVisible; }
-
-protected:
-	bool m_bVisible = true;
-};
-
-//=============================================================================
-// Panel Factory Functions
-//
-// Static functions to render each panel. These are used during the transition
-// from the monolithic Zenith_Editor.cpp to separate panel classes.
-// Eventually these will be replaced with panel class instances.
-//=============================================================================
-
-namespace Zenith_EditorPanels
-{
-	// Core panels
-	void RenderMainMenuBar();
-	void RenderToolbar();
-	void RenderHierarchyPanel();
-	void RenderPropertiesPanel();
-	void RenderViewport();
-
-	// Content panels
-	void RenderContentBrowser();
-	void RenderConsolePanel();
-	void RenderMaterialEditorPanel();
-}
-
-#endif // ZENITH_TOOLS
+// The file itself is kept (now empty) so that the Sharpmake-generated
+// zenith_win64.vcxproj reference does not need to be regenerated. A future pass
+// can remove the file outright once Sharpmake is re-run.
