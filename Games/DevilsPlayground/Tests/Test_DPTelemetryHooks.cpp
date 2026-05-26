@@ -120,6 +120,7 @@ static void Setup_TelemetryHooks()
 		xDisp.Dispatch(DP_OnPossessionChanged{kEntPriorVillager, kEntVillager});  // start possess
 		xDisp.Dispatch(DP_OnPossessionChanged{kEntVillager,      Zenith_EntityID{}});  // un-possess (death)
 		xDisp.Dispatch(DP_OnDoorOpened{kEntVillager, kEntTarget});
+		xDisp.Dispatch(DP_OnDoorClosed{kEntVillager, kEntTarget});
 		xDisp.Dispatch(DP_OnChestOpened{kEntVillager, kEntTarget});
 		xDisp.Dispatch(DP_OnForgeCrafted{kEntVillager, kEntTarget, kEntItem});
 		xDisp.Dispatch(DP_OnObjectivePlaced{kEntVillager, kEntTarget, kObjectiveBitIndex});
@@ -172,6 +173,7 @@ static void Setup_TelemetryHooks()
 		DPE::PossessionChanged,   // start possess
 		DPE::PossessionChanged,   // un-possess (death)
 		DPE::DoorOpened,
+		DPE::DoorClosed,
 		DPE::ChestOpened,
 		DPE::ForgeCrafted,
 		DPE::ObjectivePlaced,
@@ -286,6 +288,8 @@ static void Setup_TelemetryHooks()
 		{ Fail("hooks: json missing PossessionChanged name"); return; }
 	if (strBody.find("\"name\":\"DoorOpened\"") == std::string::npos)
 		{ Fail("hooks: json missing DoorOpened name"); return; }
+	if (strBody.find("\"name\":\"DoorClosed\"") == std::string::npos)
+		{ Fail("hooks: json missing DoorClosed name"); return; }
 	if (strBody.find("\"name\":\"ChestOpened\"") == std::string::npos)
 		{ Fail("hooks: json missing ChestOpened name"); return; }
 	if (strBody.find("\"name\":\"ForgeCrafted\"") == std::string::npos)

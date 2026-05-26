@@ -32,4 +32,27 @@ namespace DP_AI
 
 	// Reset state on scene unload — the next GetOrBuildLevelNavMesh rebuilds.
 	void ResetLevelNavMesh();
+
+	// 2026-05-25: procgen patrol nodes (world-space positions, one per
+	// non-pent room near the priest spawn -- see PlaceAI in the
+	// generator). The priest's FindPos BT node round-robins through
+	// these so the priest actually traverses between rooms instead of
+	// patrolling within its spawn room. Bootstrap calls SetPatrolNodes
+	// after Generate; ResetLevelNavMesh clears them along with the
+	// navmesh on scene unload.
+	void SetPatrolNodes(const Zenith_Vector<Vec3>& axNodes);
+	void ClearPatrolNodes();
+	const Zenith_Vector<Vec3>& GetPatrolNodes();
+
+	// 2026-05-25: F-press equivalent for non-player actors (priest +
+	// scripted events). Mediates between Priest_Behaviour and
+	// DPDoor_Behaviour without the priest having to include the door
+	// header (cross-behaviour rule). Iterates every door in the active
+	// scene; for each closed door within the door's own interact
+	// radius of xActorPos, calls DPDoor::TryInteract(xActor) which
+	// bypasses the DPInteractable visibility/range gating + the
+	// F-press release latch. Honors lock state (locked doors reject
+	// actors that don't hold the matching key).
+	void OpenNearbyDoorsFor(Zenith_EntityID xActor,
+	                        const Vec3& xActorPos);
 }

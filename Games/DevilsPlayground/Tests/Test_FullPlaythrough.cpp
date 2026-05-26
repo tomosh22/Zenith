@@ -373,7 +373,23 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		// Capture references for later phases.
 		g_xPriest    = FindFirstScript<Priest_Behaviour>();
 		g_xPentagram = FindFirstScript<DPPentagram_Behaviour>();
-		g_xDoor      = FindFirstScript<DPDoor_Behaviour>();
+		// 2026-05-25: doors are now unlocked-by-default. The kFP_DoorSetup
+		// phase explicitly gives the villager a Key and exercises the
+		// unlock path -- pick a LOCKED door so we actually test the key-
+		// consume code path. Falling back to FindFirstScript when no
+		// locked door exists keeps the test runnable in artificial
+		// configurations (zero pentagram corridors).
+		g_xDoor      = INVALID_ENTITY_ID;
+		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
+			[](Zenith_EntityID xId, DPDoor_Behaviour& xScript)
+			{
+				if (g_xDoor.IsValid()) return;
+				if (xScript.GetRequiredKey() == DP_ItemTag::Key)
+				{
+					g_xDoor = xId;
+				}
+			});
+		if (!g_xDoor.IsValid()) g_xDoor = FindFirstScript<DPDoor_Behaviour>();
 		g_xChest     = FindFirstScript<DPChest_Behaviour>();
 		g_xNoise     = FindFirstScript<DummyNoiseMachine_Behaviour>();
 
@@ -573,15 +589,13 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		DP_Player::RemoveHeldItem(g_xVillager);
 		GiveSyntheticHeldItem(g_xVillager, DP_ItemTag::Key);
 
-		// Teleport villager onto the door, flip interact-on-overlap so the
-		// next OnUpdate's rising-edge dispatches HandleInteract directly.
-		Zenith_Maths::Vector3 xDoorPos;
-		if (TryGetEntityPos(g_xDoor, xDoorPos))
-		{
-			TrySetEntityPos(g_xVillager, xDoorPos);
-		}
+		// Teleport villager onto the door's logical centre (NOT the entity
+		// transform -- corner-anchored SM_Cube offsets the transform by
+		// ~1 m), flip interact-on-overlap so the next OnUpdate's rising-
+		// edge dispatches HandleInteract directly.
 		if (DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor))
 		{
+			TrySetEntityPos(g_xVillager, pxDoor->GetInteractionCentre());
 			pxDoor->SetInteractOnOverlap(true);
 		}
 		g_iPhase = kFP_DoorWait;

@@ -77,7 +77,10 @@ namespace
 		for (uint32_t i = 0; i < xL.axDoorPoints.GetSize(); ++i)
 		{
 			const auto& d = xL.axDoorPoints.Get(i);
-			HashF(d.fX); HashF(d.fZ); HashI(d.xRoomId);
+			// 2026-05-25: fWallYawRadians is the new integer-derived
+			// wall yaw -- needs hashing for both within-config determinism
+			// AND cross-config (Debug/Release) parity.
+			HashF(d.fX); HashF(d.fZ); HashI(d.xRoomId); HashF(d.fWallYawRadians);
 		}
 
 		HashU(xL.axCorridors.GetSize());
@@ -99,7 +102,12 @@ namespace
 		for (uint32_t i = 0; i < xL.axGameElements.GetSize(); ++i)
 		{
 			const auto& e = xL.axGameElements.Get(i);
+			// 2026-05-25: pre-existing gap -- fYawRadians was tracked
+			// in the struct but never hashed. Now hashed alongside the
+			// new bDoorLocked so determinism comparisons cover door
+			// orientation + lock state.
 			HashE(e.eType); HashF(e.fX); HashF(e.fZ); HashI(e.xRoomId); HashI(e.iCorridorId);
+			HashF(e.fYawRadians); HashB(e.bDoorLocked);
 		}
 
 		HashU(xL.axVillagerSpawns.GetSize());

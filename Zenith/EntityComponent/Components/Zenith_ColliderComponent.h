@@ -64,6 +64,13 @@ public:
 	void AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType);
 	void AddCapsuleCollider(float fRadius, float fHalfHeight, RigidBodyType eRigidBodyType);
 	void RebuildCollider(); // Rebuild collider with current transform (e.g., after scale change)
+
+	// 2026-05-25: toggle the body between solid (default) and sensor.
+	// Sensor bodies still register overlap events but don't physically
+	// collide -- other bodies pass straight through. Used by DPDoor to
+	// let the player walk through a swinging-open door without being
+	// pushed by the rotating collider. No-op if the body isn't valid yet.
+	void SetIsSensor(bool bSensor);
 	void QueueDebugDraw(const Zenith_Maths::Vector3& xColor) const;
 
 #ifdef ZENITH_TOOLS

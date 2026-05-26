@@ -248,6 +248,13 @@ namespace DPProcLevel
 			RoomId   xRoomId = kInvalidRoomId;
 			EdgeSide eEdge   = EdgeSide::Bottom;
 			Coord    fLocalPos = 0;  // position along the edge's axis in room-local frame
+			// 2026-05-25: discrete rotation index for the WALL direction this
+			// door sits in (so the emitted DPDoor entity's "wide" local +Z
+			// lies along the wall). Bottom/Top edges run along the room's
+			// local +X, so wallRot = roomRot + π/2; Left/Right edges run
+			// along local +Z, so wallRot = roomRot. Computed at door-creation
+			// time so float conversion stays bit-deterministic.
+			int32_t  iWallRot = 0;
 		};
 
 		struct WallSegmentI
@@ -603,12 +610,25 @@ namespace DPProcLevel
 			// Rotate the snapped local point back to world.
 			Coord wx, wz;
 			RotPoint(edgeLx, edgeLz, R.iRot, wx, wz);
+
+			// 2026-05-25: derive the WALL direction's rotation index from
+			// the room rotation + which edge we landed on. Bottom/Top edges
+			// run along room-local +X (so wallRot = roomRot + π/2);
+			// Left/Right edges run along room-local +Z (so wallRot =
+			// roomRot). kROT_COUNT is 32 (a power of two), so the bitmask
+			// wrap is exact.
+			constexpr int32_t kQuarterTurn = kROT_COUNT / 4;   // 8
+			const int32_t iQuarterOffset =
+				(eEdge == EdgeSide::Bottom || eEdge == EdgeSide::Top) ? kQuarterTurn : 0;
+			const int32_t iWallRot = (R.iRot + iQuarterOffset) & (kROT_COUNT - 1);
+
 			DoorI D;
 			D.x = R.cx + wx;
 			D.z = R.cz + wz;
 			D.xRoomId = R.id;
 			D.eEdge = eEdge;
 			D.fLocalPos = posAlongEdge;
+			D.iWallRot = iWallRot;
 			return D;
 		}
 
@@ -874,6 +894,7 @@ namespace DPProcLevel
 			F.fX = kFFromCoord(I.x);
 			F.fZ = kFFromCoord(I.z);
 			F.xRoomId = I.xRoomId;
+			F.fWallYawRadians = YawFromRot(I.iWallRot);
 		}
 
 		void ToFloat_Wall(const WallSegmentI& I, WallSegment& F)
@@ -894,7 +915,9 @@ namespace DPProcLevel
 		// kROT_TABLE.
 		// --------------------------------------------------------------------
 		void PlaceGameElements_I(const Zenith_Vector<RoomI>& axRoomsI,
-		                         LevelLayout& xLayout)
+		                         LevelLayout& xLayout,
+		                         const GenConfig& xConfig,
+		                         uint64_t uSeed)
 		{
 			xLayout.axGameElements.Clear();
 			const uint32_t uN = axRoomsI.GetSize();
@@ -962,67 +985,98 @@ namespace DPProcLevel
 			}
 			xLayout.axGameElements.PushBack(RoomElement(GameElementType::Pentagram, xPentRoom));
 
-			// Doors: one on every corridor incident to the pentagram.
+			// Doors: TWO per corridor (one at each DoorPoint, anchored to
+			// the wall of the corresponding endpoint room). The pentagram-
+			// side door on a pentagram-incident corridor is the only door
+			// LOCKED by default -- everything else opens on F-press alone.
+			// This preserves today's one-key economy: one forge-produced
+			// Key unlocks one pentagram-corridor traversal (the player
+			// picks which).
+			//
+			// Each DoorPoint already carries its own wall-aligned yaw
+			// (DoorPoint.fWallYawRadians, computed in integer math during
+			// ProjectDoorPoint_I from R.iRot + edge classification). No
+			// per-door FP atan2 needed; the door's broad face will lie
+			// along the wall by construction, on every seed regardless of
+			// room rotation.
+			//
+			// `axGatedCorridors` lists ALL corridors that contain >=1
+			// locked door (de-duplicated). It's the input to
+			// `BfsSkippingGated` below, which finds spawn-side rooms for
+			// iron + forge placement.
 			Zenith_Vector<int32_t> axGatedCorridors;
 			for (uint32_t iC = 0; iC < xLayout.axCorridors.GetSize(); ++iC)
 			{
 				const Corridor& xC = xLayout.axCorridors.Get(iC);
-				const RoomId xA = xLayout.axDoorPoints.Get(xC.iDoorA).xRoomId;
-				const RoomId xB = xLayout.axDoorPoints.Get(xC.iDoorB).xRoomId;
-				if (xA != xPentRoom && xB != xPentRoom) continue;
 				const DoorPoint& xDA = xLayout.axDoorPoints.Get(xC.iDoorA);
 				const DoorPoint& xDB = xLayout.axDoorPoints.Get(xC.iDoorB);
-				GameElement xE;
-				xE.eType       = GameElementType::Door;
-				// (door world position is the midpoint of the two door
-				//  points; the integer math is exact here at mm scale.)
-				xE.fX          = 0.5f * (xDA.fX + xDB.fX);
-				xE.fZ          = 0.5f * (xDA.fZ + xDB.fZ);
-				xE.xRoomId     = kInvalidRoomId;
-				xE.iCorridorId = static_cast<int32_t>(iC);
-				// 2026-05-23: door yaw aligns the door's "wide" axis (local +Z,
-				// 2 m) along the WALL so the door's collider fills the
-				// corridor gap when closed. The bootstrap scales the door
-				// (0.3 thick, 4 tall, 2 wide along its local +Z); we want
-				// local +Z to point along the wall and local +X to point
-				// across the wall (along the corridor traversal direction).
-				//
-				// BUG FIXED 2026-05-23: the previous formula was
-				//     atan2(xDB-xDA in X, xDB-xDA in Z)
-				// computed from the door-point delta. For BSP-adjacent
-				// axis-aligned rooms (no per-room rotation) ProjectDoorPoint_I
-				// snaps BOTH door points to the same world coordinate on the
-				// shared partition edge -- so (xDB - xDA) was (0, 0) and the
-				// atan2 collapsed to 0. Result: the door's local +Z always
-				// pointed along world +Z regardless of which axis the wall
-				// ran along. For walls running along X (rooms BSP-stacked
-				// front-back) the door was rotated 90° from where it should
-				// be, leaving a 0.85 m gap on each side of the (now
-				// 0.3 m-wide-in-X) door that the priest's navmesh-excluded
-				// pathing went straight through, AND making
-				// DPDoor::StitchNavMeshPortal probe along the wall instead of
-				// along the corridor (the perpendicular fallback masked this
-				// in some seeds but not all).
-				//
-				// Fix: use the line between the two ROOM CENTRES (which is
-				// always axis-aligned for BSP-adjacent rooms because the BSP
-				// partitions are axis-aligned in world space) as the
-				// corridor-traversal direction. The wall is perpendicular to
-				// that. Door's local +Z must point in the wall direction:
-				//
-				//     R_y(yaw) * (0, 0, 1) = (sin(yaw), 0, cos(yaw))
-				//                          = wallDir
-				//                          = (corridor.z, -corridor.x) / |corridor|
-				//   => yaw = atan2(corridor.z, -corridor.x)
-				//
-				// where (corridor.x, corridor.z) = centreB - centreA.
-				const Room& xRoomA = xLayout.axRooms.Get(static_cast<uint32_t>(xDA.xRoomId));
-				const Room& xRoomB = xLayout.axRooms.Get(static_cast<uint32_t>(xDB.xRoomId));
-				const float fCorridorX = xRoomB.fCentreX - xRoomA.fCentreX;
-				const float fCorridorZ = xRoomB.fCentreZ - xRoomA.fCentreZ;
-				xE.fYawRadians = static_cast<float>(std::atan2(fCorridorZ, -fCorridorX));
-				xLayout.axGameElements.PushBack(xE);
-				axGatedCorridors.PushBack(static_cast<int32_t>(iC));
+				const bool bPent = (xDA.xRoomId == xPentRoom || xDB.xRoomId == xPentRoom);
+				const DoorPoint* apxDp[2] = { &xDA, &xDB };
+				for (uint32_t iDp = 0; iDp < 2; ++iDp)
+				{
+					const DoorPoint* pxDp = apxDp[iDp];
+					GameElement xE;
+					xE.eType        = GameElementType::Door;
+					xE.fX           = pxDp->fX;
+					xE.fZ           = pxDp->fZ;
+					// Anchor each door to the ROOM whose wall it cuts. The
+					// `iCorridorId` still names the corridor (so the test
+					// invariants `doorCount == 2 * corridorCount` + per-
+					// corridor symmetry checks stay simple).
+					xE.xRoomId      = pxDp->xRoomId;
+					xE.iCorridorId  = static_cast<int32_t>(iC);
+					xE.fYawRadians  = pxDp->fWallYawRadians;
+					// Lock ONLY the pentagram-side door of a pentagram-
+					// incident corridor; everything else unlocked. Extra
+					// random locks land via the lock-pass below.
+					xE.bDoorLocked  = bPent && (pxDp->xRoomId == xPentRoom);
+					xLayout.axGameElements.PushBack(xE);
+				}
+				// Push the corridor onto `axGatedCorridors` ONCE per
+				// corridor (not per door) when it carries a pentagram-side
+				// lock. The extra-lock pass below may also push corridors
+				// here (de-duplicated via linear scan).
+				if (bPent) axGatedCorridors.PushBack(static_cast<int32_t>(iC));
+			}
+
+			// Extra-lock pass: optionally promote non-pentagram-side doors
+			// to locked. Uses a SEPARATE RNG stream derived from uSeed (not
+			// consumed from the main rng) so two properties hold:
+			//   1. Tuning-stable: changing fDoorLockedFraction does NOT
+			//      shift chest / objective / villager / priest placement
+			//      (those decisions all run on the main rng AFTER this
+			//      function returns).
+			//   2. Default-stable: fDoorLockedFraction == 0 -> the inner
+			//      branch never fires, so the main rng is untouched and
+			//      the downstream RNG stream is bit-identical to the case
+			//      where this pass didn't exist.
+			//
+			// The integer-bucket (0..1023) trick keeps the comparison
+			// /fp:fast-stable -- a direct `RngF < fClampedFrac` would mix
+			// float math with the seeded integer rng.
+			Rng xLockRng = RngInit(uSeed ^ 0xD009B100CCEDD00Aull);
+			const float fClampedFrac = glm::clamp(xConfig.fDoorLockedFraction, 0.0f, 1.0f);
+			// std::round (explicit) avoids /fp:fast FMA-ordering producing
+			// 511 vs 512 on ulp-edge cases.
+			const uint32_t uLockNumerator =
+				static_cast<uint32_t>(std::round(fClampedFrac * 1024.0f));
+			if (uLockNumerator > 0u)
+			{
+				for (uint32_t i = 0; i < xLayout.axGameElements.GetSize(); ++i)
+				{
+					GameElement& xE = xLayout.axGameElements.Get(i);
+					if (xE.eType != GameElementType::Door) continue;
+					if (xE.bDoorLocked) continue;   // already pentagram-locked
+					if (RngRangeI(xLockRng, 0, 1023) < static_cast<int32_t>(uLockNumerator))
+					{
+						xE.bDoorLocked = true;
+						const int32_t iC = xE.iCorridorId;
+						bool bAlready = false;
+						for (uint32_t g = 0; g < axGatedCorridors.GetSize(); ++g)
+							if (axGatedCorridors.Get(g) == iC) { bAlready = true; break; }
+						if (!bAlready) axGatedCorridors.PushBack(iC);
+					}
+				}
 			}
 
 			// BFS skipping all gated corridors, to find spawn-side rooms
@@ -1076,10 +1130,84 @@ namespace DPProcLevel
 				if (ax.GetSize() == 0) return kInvalidRoomId;
 				return ax.Get(uIdx % ax.GetSize());
 			};
-			const RoomId xIronRoom  = PickNth(axSpawnSide.GetSize() > 0 ? axSpawnSide : axAnyNonCritical, 0);
-			const RoomId xForgeRoom = PickNth(axSpawnSide.GetSize() > 1 ? axSpawnSide : axAnyNonCritical, 1);
-			xLayout.axGameElements.PushBack(RoomElement(GameElementType::Iron,  xIronRoom));
+
+			// Iron + forge placement. One Iron per locked door (the player
+			// needs to forge one Key per locked traversal); safety floor
+			// of 1 even when zero doors are locked so the forge isn't
+			// input-starved. Slot assignments match the historical layout
+			// for default tuning: Iron at slot 0, Forge at slot 1 -- so
+			// the single-lock seed (today's common case) doesn't shift
+			// downstream entity positions unrelated to this PR.
+			uint32_t uLockedDoorCount = 0;
+			for (uint32_t i = 0; i < xLayout.axGameElements.GetSize(); ++i)
+			{
+				const GameElement& xE = xLayout.axGameElements.Get(i);
+				if (xE.eType == GameElementType::Door && xE.bDoorLocked) ++uLockedDoorCount;
+			}
+			const uint32_t uIronCount = (uLockedDoorCount > 0u) ? uLockedDoorCount : 1u;
+
+			auto PickRoom = [&](uint32_t uSlot) -> RoomId
+			{
+				return PickNth((axSpawnSide.GetSize() > uSlot) ? axSpawnSide : axAnyNonCritical, uSlot);
+			};
+
+			// 2026-05-26 (Option B): pick the FORGE room as the spawn-
+			// side room minimizing post-forge walk to the pentagram.
+			// Pre-Option-B the forge was always at axSpawnSide[1] (the
+			// 2nd-nearest-to-spawn room), which on layouts where pent
+			// is far from spawn (seed 1: spawn->pent straight-line 86m,
+			// forge->pent 79m) makes the bootstrap chain too long for
+			// the bot to make 3 deliveries inside the villager-life
+			// budget. The matrix balance criterion #2 (every seed
+			// winnable) failed on seed 1 with 0 wins across 8
+			// personalities.
+			//
+			// Option B picks whichever axSpawnSide room is closest to
+			// the pent-room CENTER, breaking ties by lower-room-id for
+			// determinism. The Iron stays at axSpawnSide[0] (nearest
+			// to spawn) so the spawn -> iron leg is short; the change
+			// only affects the iron -> forge -> pent leg.
+			//
+			// Determinism: the iteration order is the stable
+			// axSpawnSide order, ties broken by index. Same seed
+			// produces same room id every run.
+			//
+			// Risk: shifts forge position on most seeds, so the
+			// matrix balance re-baselines. Existing tests with
+			// forge-position assertions (none currently in Tests/)
+			// would need updates.
+			RoomId xForgeRoom = kInvalidRoomId;
+			{
+				const Room& xPentR = xLayout.axRooms.Get(static_cast<uint32_t>(xPentRoom));
+				float fBestDist = 1e30f;
+				for (uint32_t i = 0; i < axSpawnSide.GetSize(); ++i)
+				{
+					const RoomId xR = axSpawnSide.Get(i);
+					const Room& xRoom = xLayout.axRooms.Get(static_cast<uint32_t>(xR));
+					const float fDx = xRoom.fCentreX - xPentR.fCentreX;
+					const float fDz = xRoom.fCentreZ - xPentR.fCentreZ;
+					const float fDist = std::sqrt(fDx * fDx + fDz * fDz);
+					if (fDist < fBestDist)
+					{
+						fBestDist = fDist;
+						xForgeRoom = xR;
+					}
+				}
+				// Fallback: if axSpawnSide is empty (degenerate layout)
+				// fall back to the pre-Option-B slot-1 pick from
+				// axAnyNonCritical so the forge still spawns.
+				if (xForgeRoom == kInvalidRoomId)
+				{
+					xForgeRoom = PickRoom(1u);
+				}
+			}
+
+			xLayout.axGameElements.PushBack(RoomElement(GameElementType::Iron,  PickRoom(0u)));
 			xLayout.axGameElements.PushBack(RoomElement(GameElementType::Forge, xForgeRoom));
+			for (uint32_t i = 1; i < uIronCount; ++i)
+			{
+				xLayout.axGameElements.PushBack(RoomElement(GameElementType::Iron, PickRoom(1u + i)));
+			}
 
 			const RoomId xChestRoom = PickNth(axAnyNonCritical, 2);
 			const RoomId xNoiseRoom = PickNth(axAnyNonCritical, 3);
@@ -1104,7 +1232,15 @@ namespace DPProcLevel
 			RoomId  xPent  = kInvalidRoomId;
 			Zenith_Vector<int32_t> axGated;
 			Zenith_Vector<RoomId>  axObjectiveRooms;
-			RoomId xIron = kInvalidRoomId, xForge = kInvalidRoomId;
+			// 2026-05-25: track ALL iron rooms (was: a single xIron that
+			// got overwritten on each Iron element, so only the last iron
+			// was validated for reachability). With auto-scaling iron
+			// count we need >= uLockedDoorCount iron rooms reachable
+			// without crossing a locked door so the player can always
+			// craft enough Keys.
+			Zenith_Vector<RoomId>  axIronRooms;
+			uint32_t uLockedDoorCount = 0;
+			RoomId xForge = kInvalidRoomId;
 			for (uint32_t i = 0; i < xLayout.axGameElements.GetSize(); ++i)
 			{
 				const GameElement& xE = xLayout.axGameElements.Get(i);
@@ -1112,8 +1248,18 @@ namespace DPProcLevel
 				{
 					case GameElementType::SpawnPoint: xSpawn = xE.xRoomId; break;
 					case GameElementType::Pentagram:  xPent  = xE.xRoomId; break;
-					case GameElementType::Door:       axGated.PushBack(xE.iCorridorId); break;
-					case GameElementType::Iron:       xIron  = xE.xRoomId; break;
+					case GameElementType::Door:
+						// Only LOCKED doors gate; unlocked doors are pass-through
+						// for the solvability BFS. Duplicates in axGated are fine
+						// (BFS does a linear-scan membership test); uLockedDoorCount
+						// is the canonical count for the iron-vs-locks comparison.
+						if (xE.bDoorLocked)
+						{
+							++uLockedDoorCount;
+							axGated.PushBack(xE.iCorridorId);
+						}
+						break;
+					case GameElementType::Iron:       axIronRooms.PushBack(xE.xRoomId); break;
 					case GameElementType::Forge:      xForge = xE.xRoomId; break;
 					case GameElementType::Objective1:
 					case GameElementType::Objective2:
@@ -1160,7 +1306,18 @@ namespace DPProcLevel
 			const Zenith_Vector<bool> abNoDoor   = BfsSkippingMany(xSpawn);
 			const Zenith_Vector<bool> abWithDoor = BfsReachable(xLayout, xSpawn, -1);
 
-			if (xIron != kInvalidRoomId && !abNoDoor.Get(static_cast<uint32_t>(xIron))) return false;
+			// Iron-reachability check scales with the locked-door count: each
+			// locked door needs ONE iron pickup the player can reach without
+			// already needing a Key. (Previously this checked a single xIron;
+			// with multi-iron procgen we now require enough irons to forge
+			// enough keys.)
+			uint32_t uReachableIron = 0;
+			for (uint32_t i = 0; i < axIronRooms.GetSize(); ++i)
+			{
+				const RoomId xR = axIronRooms.Get(i);
+				if (xR != kInvalidRoomId && abNoDoor.Get(static_cast<uint32_t>(xR))) ++uReachableIron;
+			}
+			if (uReachableIron < uLockedDoorCount) return false;
 			if (xForge != kInvalidRoomId && !abNoDoor.Get(static_cast<uint32_t>(xForge))) return false;
 			if (!abWithDoor.Get(static_cast<uint32_t>(xPent))) return false;
 			for (uint32_t i = 0; i < axObjectiveRooms.GetSize(); ++i)
@@ -1182,12 +1339,29 @@ namespace DPProcLevel
 			if (uN == 0u) return kInvalidRoomId;
 			const Zenith_Vector<int32_t> aiDistFromSpawn = BfsDistances(xLayout, xSpawnRoom);
 			const Zenith_Vector<int32_t> aiDistFromPent  = BfsDistances(xLayout, xPentRoom);
+			// 2026-05-25 v4: count each room's incident corridors. A
+			// room with zero corridors would trap the priest forever
+			// (no exit doors); reject it here so the priest's spawn
+			// is guaranteed to have at least one unlocked door (every
+			// non-pent room's incident corridor has an unlocked door
+			// on this room's side -- only pent-side doors are locked).
+			Zenith_Vector<uint32_t> auCorridorCount;
+			for (uint32_t i = 0; i < uN; ++i) auCorridorCount.PushBack(0u);
+			for (uint32_t iC = 0; iC < xLayout.axCorridors.GetSize(); ++iC)
+			{
+				const Corridor& xC = xLayout.axCorridors.Get(iC);
+				const RoomId xA = xLayout.axDoorPoints.Get(xC.iDoorA).xRoomId;
+				const RoomId xB = xLayout.axDoorPoints.Get(xC.iDoorB).xRoomId;
+				if (xA != kInvalidRoomId) auCorridorCount.Get(static_cast<uint32_t>(xA))++;
+				if (xB != kInvalidRoomId) auCorridorCount.Get(static_cast<uint32_t>(xB))++;
+			}
 			RoomId xBest  = kInvalidRoomId;
 			int32_t iBest = -1;
 			for (uint32_t i = 0; i < uN; ++i)
 			{
 				const RoomId xR = static_cast<RoomId>(i);
 				if (xR == xSpawnRoom || xR == xPentRoom) continue;
+				if (auCorridorCount.Get(i) == 0u) continue;  // no exit
 				const int32_t dS = aiDistFromSpawn.Get(i);
 				const int32_t dP = aiDistFromPent.Get(i);
 				if (dS < 0 || dP < 0) continue;
@@ -1196,10 +1370,19 @@ namespace DPProcLevel
 			}
 			if (xBest == kInvalidRoomId)
 			{
+				// Fallback: any non-spawn, non-pent room with at least
+				// one corridor. If even that's empty, give up (the
+				// layout is so degenerate the priest can't sensibly
+				// spawn anywhere -- ValidateSolvability would have
+				// already rejected the seed).
 				for (uint32_t i = 0; i < uN; ++i)
 				{
 					const RoomId xR = static_cast<RoomId>(i);
-					if (xR != xSpawnRoom && xR != xPentRoom) { xBest = xR; break; }
+					if (xR != xSpawnRoom && xR != xPentRoom && auCorridorCount.Get(i) > 0u)
+					{
+						xBest = xR;
+						break;
+					}
 				}
 			}
 			return xBest;
@@ -1352,8 +1535,100 @@ namespace DPProcLevel
 			if (xPriestRoom != kInvalidRoomId)
 			{
 				const Room& xR = xLayout.axRooms.Get(static_cast<uint32_t>(xPriestRoom));
-				xLayout.xPriestSpawn.fX           = xR.fCentreX;
-				xLayout.xPriestSpawn.fZ           = xR.fCentreZ;
+				// 2026-05-25 v4: shift the priest spawn from the room
+				// center TOWARD one of the room's UNLOCKED doors. The
+				// priest's runtime OpenNearbyDoorsFor uses a 2 m radius
+				// from the priest position -- spawning at the room
+				// center leaves the priest >2 m from every door on
+				// procgen rooms larger than a 4x4 m closet, so the
+				// priest's BT patrol cycles within its tiny initial
+				// navmesh region (the spawn room before any door is
+				// opened) for the entire run. Telemetry-confirmed on
+				// seed 5: 27 unique priest positions over 200 s; the
+				// priest never moved more than 5 m from spawn.
+				//
+				// Walk the priest's room's incident corridors, take the
+				// first one whose door on THIS side is UNLOCKED, and
+				// place the priest at a point 60% of the way from room
+				// center to that DoorPoint. 60% keeps the priest a meter
+				// or so off the doorway so its capsule doesn't spawn
+				// embedded in the closed-door collider, while still
+				// ensuring OpenNearbyDoorsFor's 2 m radius catches the
+				// door from frame 1. Determinism preserved -- the
+				// corridor iteration order is the layout's stable
+				// axCorridors traversal.
+				float fSpawnX = xR.fCentreX;
+				float fSpawnZ = xR.fCentreZ;
+				const uint32_t uCN = xLayout.axCorridors.GetSize();
+				for (uint32_t iC = 0; iC < uCN; ++iC)
+				{
+					const Corridor& xC = xLayout.axCorridors.Get(iC);
+					const DoorPoint& xDA = xLayout.axDoorPoints.Get(xC.iDoorA);
+					const DoorPoint& xDB = xLayout.axDoorPoints.Get(xC.iDoorB);
+					const DoorPoint* pxDp = nullptr;
+					if      (xDA.xRoomId == xPriestRoom) pxDp = &xDA;
+					else if (xDB.xRoomId == xPriestRoom) pxDp = &xDB;
+					if (pxDp == nullptr) continue;
+					// Find the door GameElement at this DoorPoint to check
+					// its lock state. The bDoorLocked field is true only
+					// on pent-side doors; for the priest's (non-pent)
+					// room, all its doors are unlocked.
+					bool bUnlocked = true;
+					for (uint32_t iE = 0; iE < xLayout.axGameElements.GetSize(); ++iE)
+					{
+						const GameElement& xE = xLayout.axGameElements.Get(iE);
+						if (xE.eType != GameElementType::Door) continue;
+						const float fDx = xE.fX - pxDp->fX;
+						const float fDz = xE.fZ - pxDp->fZ;
+						if (fDx * fDx + fDz * fDz < 0.01f)  // same point (mm precision)
+						{
+							bUnlocked = !xE.bDoorLocked;
+							break;
+						}
+					}
+					if (!bUnlocked) continue;
+					// 2026-05-26 v2: fixed 2.5 m inset from the doorpoint
+					// along the line back to the room center. Previously
+					// 1.5 m, but on seeds where the door's swing
+					// direction happens to point toward the priest's
+					// spawn (telemetry-confirmed on seed 55555), the
+					// door's 2 m-wide arm sweeps through the priest's
+					// capsule during the open animation. Jolt resolves
+					// the overlap by pushing the priest UP -- the priest
+					// ends up stranded at y ~ 2.5 m, off the navmesh,
+					// permanently stuck (priest BT keeps Investigate
+					// intent locked on the door logical centre, can't
+					// reach it because the agent is floating).
+					// 2.5 m sits outside the door's 2 m sweep radius
+					// from the corner pivot but still inside the
+					// AI's 4 m OpenNearbyDoorsFor radius, so the
+					// door still opens from frame 1 -- just not while
+					// sweeping the priest's capsule.
+					const float fDx = pxDp->fX - xR.fCentreX;
+					const float fDz = pxDp->fZ - xR.fCentreZ;
+					const float fLen = std::sqrt(fDx * fDx + fDz * fDz);
+					if (fLen > 0.01f)
+					{
+						const float fInset = 2.5f;
+						// If the doorpoint is so close to the room
+						// center that 2.5 m inset would overshoot
+						// (room is small), clamp at room center.
+						const float fT = (fLen > fInset)
+							? (fLen - fInset) / fLen
+							: 0.0f;
+						fSpawnX = xR.fCentreX + fT * fDx;
+						fSpawnZ = xR.fCentreZ + fT * fDz;
+					}
+					else
+					{
+						// Degenerate: doorpoint == center. Use center.
+						fSpawnX = xR.fCentreX;
+						fSpawnZ = xR.fCentreZ;
+					}
+					break;
+				}
+				xLayout.xPriestSpawn.fX           = fSpawnX;
+				xLayout.xPriestSpawn.fZ           = fSpawnZ;
 				xLayout.xPriestSpawn.fYawRadians  = xR.fYawRadians;
 				xLayout.xPriestSpawn.xRoomId      = xPriestRoom;
 				xLayout.xPriestSpawn.bValid       = true;
@@ -1551,7 +1826,7 @@ namespace DPProcLevel
 		}
 
 		// 5. Game elements.
-		PlaceGameElements_I(axRoomsI, xOut);
+		PlaceGameElements_I(axRoomsI, xOut, xConfig, uSeed);
 
 		// 5b. Relocate some objectives outdoor.
 		OutdoorRelocateObjectivesI(axRoomsI, xOut, rng,

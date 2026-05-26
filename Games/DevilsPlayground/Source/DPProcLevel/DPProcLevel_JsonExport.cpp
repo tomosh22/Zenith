@@ -17,7 +17,7 @@ namespace DPProcLevel
 
 		// Header
 		xOut << "  \"header\": {\n";
-		xOut << "    \"version\": 1,\n";
+		xOut << "    \"version\": 2,\n";
 		xOut << "    \"seed\": " << xLayout.uSeed << ",\n";
 		std::snprintf(buf, sizeof(buf),
 			"    \"bounds\": { \"minX\": %.3f, \"minZ\": %.3f, \"maxX\": %.3f, \"maxZ\": %.3f }\n",
@@ -46,9 +46,11 @@ namespace DPProcLevel
 		for (uint32_t i = 0; i < uND; ++i)
 		{
 			const DoorPoint& xD = xLayout.axDoorPoints.Get(i);
+			// v2: added wallYaw so the visualiser can draw a wall-direction
+			// tick at each DoorPoint (useful for QA on rotated rooms).
 			std::snprintf(buf, sizeof(buf),
-				"{\"x\":%.3f,\"z\":%.3f,\"roomId\":%d}",
-				xD.fX, xD.fZ, xD.xRoomId);
+				"{\"x\":%.3f,\"z\":%.3f,\"roomId\":%d,\"wallYaw\":%.5f}",
+				xD.fX, xD.fZ, xD.xRoomId, xD.fWallYawRadians);
 			xOut << buf;
 			if (i + 1 < uND) xOut << ",";
 		}
@@ -111,9 +113,13 @@ namespace DPProcLevel
 		for (uint32_t i = 0; i < uNG; ++i)
 		{
 			const GameElement& xE = xLayout.axGameElements.Get(i);
+			// v2: added `yaw` (was tracked in the struct but not exported)
+			// and `locked` (new in v2). `locked` is JSON-boolean so the
+			// visualiser can read it without integer coercion.
 			std::snprintf(buf, sizeof(buf),
-				"{\"type\":\"%s\",\"x\":%.3f,\"z\":%.3f,\"roomId\":%d,\"corridorId\":%d}",
-				TypeName(xE.eType), xE.fX, xE.fZ, xE.xRoomId, xE.iCorridorId);
+				"{\"type\":\"%s\",\"x\":%.3f,\"z\":%.3f,\"roomId\":%d,\"corridorId\":%d,\"yaw\":%.5f,\"locked\":%s}",
+				TypeName(xE.eType), xE.fX, xE.fZ, xE.xRoomId, xE.iCorridorId,
+				xE.fYawRadians, xE.bDoorLocked ? "true" : "false");
 			xOut << buf;
 			if (i + 1 < uNG) xOut << ",";
 		}

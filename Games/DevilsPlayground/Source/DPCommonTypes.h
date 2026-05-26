@@ -149,6 +149,16 @@ struct DP_OnDoorOpened
 	Zenith_EntityID m_xDoor;
 };
 
+// 2026-05-25: doors are now TWO-WAY (F-press an open door swings it
+// closed). Fires on the Open -> Closing transition. Same payload shape
+// as DP_OnDoorOpened so the telemetry recorder can mirror the existing
+// DoorOpened subscription pattern in DPTelemetry's Hooks.
+struct DP_OnDoorClosed
+{
+	Zenith_EntityID m_xVillager;
+	Zenith_EntityID m_xDoor;
+};
+
 struct DP_OnChestOpened
 {
 	Zenith_EntityID m_xVillager;

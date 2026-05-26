@@ -139,6 +139,8 @@ namespace
 			if (dA.fX != dB.fX) return false;
 			if (dA.fZ != dB.fZ) return false;
 			if (dA.xRoomId != dB.xRoomId) return false;
+			// v2 (2026-05-25): wall-aligned yaw must match too.
+			if (dA.fWallYawRadians != dB.fWallYawRadians) return false;
 		}
 		for (uint32_t i = 0; i < xA.axCorridors.GetSize(); ++i)
 		{
@@ -146,6 +148,23 @@ namespace
 			const auto& cB = xB.axCorridors.Get(i);
 			if (cA.iDoorA != cB.iDoorA) return false;
 			if (cA.iDoorB != cB.iDoorB) return false;
+		}
+		// 2026-05-25: GameElements weren't previously compared here -- a
+		// gap exposed by the door overhaul (within-config determinism on
+		// game-element layout went unchecked). Compare the full struct
+		// including the new bDoorLocked field.
+		if (xA.axGameElements.GetSize() != xB.axGameElements.GetSize()) return false;
+		for (uint32_t i = 0; i < xA.axGameElements.GetSize(); ++i)
+		{
+			const auto& eA = xA.axGameElements.Get(i);
+			const auto& eB = xB.axGameElements.Get(i);
+			if (eA.eType        != eB.eType)        return false;
+			if (eA.fX           != eB.fX)           return false;
+			if (eA.fZ           != eB.fZ)           return false;
+			if (eA.xRoomId      != eB.xRoomId)      return false;
+			if (eA.iCorridorId  != eB.iCorridorId)  return false;
+			if (eA.fYawRadians  != eB.fYawRadians)  return false;
+			if (eA.bDoorLocked  != eB.bDoorLocked)  return false;
 		}
 		return true;
 	}
@@ -318,17 +337,90 @@ namespace
 		if (auCounts[kSpawn] != 1u) return Fail("expected exactly 1 SpawnPoint",   static_cast<int>(uSeed));
 		if (auCounts[kPent]  != 1u) return Fail("expected exactly 1 Pentagram",    static_cast<int>(uSeed));
 		if (auCounts[kForge] != 1u) return Fail("expected exactly 1 Forge",        static_cast<int>(uSeed));
-		// Pentagram has 1..N incident corridors -- each gets its own door
-		// so the bot can't bypass the puzzle via an unlocked alternate path.
-		// Any count >= 1 is acceptable.
-		if (auCounts[kDoor]  <  1u) return Fail("expected >= 1 Door",              static_cast<int>(uSeed));
 		if (auCounts[kChest] != 1u) return Fail("expected exactly 1 Chest",        static_cast<int>(uSeed));
 		if (auCounts[kNoise] != 1u) return Fail("expected exactly 1 NoiseMachine", static_cast<int>(uSeed));
-		if (auCounts[kIron]  != 1u) return Fail("expected exactly 1 Iron",         static_cast<int>(uSeed));
 		for (uint8_t u = kObj1; u <= kObj5; ++u)
 		{
 			if (auCounts[u] != 1u) return Fail("expected exactly 1 of each Objective", static_cast<int>(uSeed));
 		}
+
+		// 2026-05-25: door / lock / iron invariants for the new
+		// "two doors per corridor, unlocked-by-default" placement.
+		// (Tested under the default fDoorLockedFraction=0, so the lock
+		// count is fully determined by the pentagram-incident corridor
+		// set.)
+		const uint32_t uCorridorCount = xA.axCorridors.GetSize();
+		if (auCounts[kDoor] != 2u * uCorridorCount)
+			return Fail("expected exactly 2 doors per corridor", static_cast<int>(uSeed));
+
+		// Find xPentRoom and count pentagram-incident corridors.
+		DPProcLevel::RoomId xPentRoomLocal = DPProcLevel::kInvalidRoomId;
+		for (uint32_t i = 0; i < xA.axGameElements.GetSize(); ++i)
+		{
+			if (xA.axGameElements.Get(i).eType == DPProcLevel::GameElementType::Pentagram)
+			{
+				xPentRoomLocal = xA.axGameElements.Get(i).xRoomId;
+				break;
+			}
+		}
+		uint32_t uPentIncidentCorridors = 0;
+		for (uint32_t iC = 0; iC < xA.axCorridors.GetSize(); ++iC)
+		{
+			const auto& xC = xA.axCorridors.Get(iC);
+			const DPProcLevel::RoomId xRA = xA.axDoorPoints.Get(xC.iDoorA).xRoomId;
+			const DPProcLevel::RoomId xRB = xA.axDoorPoints.Get(xC.iDoorB).xRoomId;
+			if (xRA == xPentRoomLocal || xRB == xPentRoomLocal) ++uPentIncidentCorridors;
+		}
+
+		// Walk all doors: count locked, validate lock placement.
+		uint32_t uLockedDoorCount = 0;
+		for (uint32_t i = 0; i < xA.axGameElements.GetSize(); ++i)
+		{
+			const auto& xE = xA.axGameElements.Get(i);
+			if (xE.eType != DPProcLevel::GameElementType::Door) continue;
+			if (!xE.bDoorLocked) continue;
+			++uLockedDoorCount;
+			// Every locked door (at default tuning) must sit on the
+			// pentagram-room side of a pentagram-incident corridor.
+			if (xE.xRoomId != xPentRoomLocal)
+				return Fail("locked door not anchored to pentagram room", static_cast<int>(uSeed));
+		}
+		if (uLockedDoorCount != uPentIncidentCorridors)
+			return Fail("locked-door count != pentagram-incident corridor count", static_cast<int>(uSeed));
+
+		// Symmetry: each pentagram-incident corridor has exactly 1
+		// locked + 1 unlocked door (split by which side anchors the
+		// pentagram). Non-pentagram corridors have 0 locked doors.
+		for (uint32_t iC = 0; iC < xA.axCorridors.GetSize(); ++iC)
+		{
+			uint32_t uLockedInCorridor = 0;
+			uint32_t uTotalInCorridor  = 0;
+			for (uint32_t i = 0; i < xA.axGameElements.GetSize(); ++i)
+			{
+				const auto& xE = xA.axGameElements.Get(i);
+				if (xE.eType != DPProcLevel::GameElementType::Door) continue;
+				if (xE.iCorridorId != static_cast<int32_t>(iC)) continue;
+				++uTotalInCorridor;
+				if (xE.bDoorLocked) ++uLockedInCorridor;
+			}
+			if (uTotalInCorridor != 2u)
+				return Fail("corridor doesn't have exactly 2 doors", static_cast<int>(uSeed));
+			const auto& xC = xA.axCorridors.Get(iC);
+			const DPProcLevel::RoomId xRA = xA.axDoorPoints.Get(xC.iDoorA).xRoomId;
+			const DPProcLevel::RoomId xRB = xA.axDoorPoints.Get(xC.iDoorB).xRoomId;
+			const bool bPent = (xRA == xPentRoomLocal || xRB == xPentRoomLocal);
+			if (bPent && uLockedInCorridor != 1u)
+				return Fail("pentagram corridor must have exactly 1 locked door", static_cast<int>(uSeed));
+			if (!bPent && uLockedInCorridor != 0u)
+				return Fail("non-pentagram corridor has unexpected locked door", static_cast<int>(uSeed));
+		}
+
+		// Iron count auto-scales 1:1 with locked-door count; safety
+		// floor of 1 even with zero locked doors (so the forge isn't
+		// input-starved on artificial configs).
+		const uint32_t uExpectedIron = (uLockedDoorCount > 0u) ? uLockedDoorCount : 1u;
+		if (auCounts[kIron] != uExpectedIron)
+			return Fail("iron count != max(lockedDoorCount, 1)", static_cast<int>(uSeed));
 
 		// P3 AI placement invariants:
 		//   * Exactly uVillagerCount villager spawns (default 17).

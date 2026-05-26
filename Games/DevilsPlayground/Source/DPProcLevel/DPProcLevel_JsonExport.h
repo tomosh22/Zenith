@@ -5,10 +5,12 @@
  * for runtime use. Format mirrors the telemetry JSON layout (header +
  * arrays) so future readers can follow the same parsing pattern.
  *
- * Schema (v1):
+ * Schema (v2; bumped 2026-05-25 -- doorPoints gained `wallYaw`,
+ * gameElements gained `yaw` (was previously only in the struct) and
+ * `locked` (new)):
  *   {
  *     "header": {
- *       "version": 1,
+ *       "version": 2,
  *       "seed": <uint64>,
  *       "bounds": { "minX": .., "minZ": .., "maxX": .., "maxZ": .. }
  *     },
@@ -17,11 +19,16 @@
  *       ...
  *     ],
  *     "doorPoints": [
- *       { "x": .., "z": .., "roomId": N },
+ *       { "x": .., "z": .., "roomId": N, "wallYaw": .. },
  *       ...
  *     ],
  *     "corridors": [
  *       { "doorA": N, "doorB": N },
+ *       ...
+ *     ],
+ *     "gameElements": [
+ *       { "type": "Door", "x": .., "z": .., "roomId": N,
+ *         "corridorId": N, "yaw": .., "locked": true|false },
  *       ...
  *     ]
  *   }

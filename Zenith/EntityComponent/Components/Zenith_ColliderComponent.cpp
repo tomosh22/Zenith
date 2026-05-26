@@ -779,6 +779,12 @@ void Zenith_ColliderComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// m_xParentEntity will be set by the entity deserialization system
 }
 
+void Zenith_ColliderComponent::SetIsSensor(bool bSensor)
+{
+	if (!HasValidBody()) return;
+	g_xEngine.Physics().SetIsSensor(m_xBodyID, bSensor);
+}
+
 void Zenith_ColliderComponent::RebuildCollider()
 {
 	// Store current velocity and other physics state if it's a dynamic body

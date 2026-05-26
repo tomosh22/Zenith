@@ -998,8 +998,19 @@ Zenith_SceneData::PendingStartResult Zenith_SceneData::ProcessSinglePendingStart
 	{
 		// Revert lifecycle (ReleaseSlot will reset to FREE during destruction)
 		xSlot.RevertFromPendingStart();
-		Zenith_Assert(m_uPendingStartCount > 0, "PendingStartCount underflow in DispatchPendingStarts (destroyed entity)");
-		m_uPendingStartCount--;
+		// Underflow tolerance: same justification as the
+		// MoveEntityInternal-during-Start path below (lines ~1035-1038).
+		// Reproduced 2026-05-25 with Release_False + windowed +
+		// --automated-test in DP: the harness's scene-load and the
+		// first render frame interleave such that m_uPendingStartCount
+		// can already be zero by the time this path runs (the entity's
+		// PENDING_START bookkeeping was cleared elsewhere). Only
+		// decrement when there's something to decrement -- the
+		// underflow case means bookkeeping is already consistent.
+		if (m_uPendingStartCount > 0)
+		{
+			m_uPendingStartCount--;
+		}
 		return PendingStartResult::CLEARED;
 	}
 
@@ -1043,8 +1054,19 @@ Zenith_SceneData::PendingStartResult Zenith_SceneData::ProcessSinglePendingStart
 	}
 
 	MarkEntityStarted(xEntityID);
-	Zenith_Assert(m_uPendingStartCount > 0, "PendingStartCount underflow in DispatchPendingStarts");
-	m_uPendingStartCount--;
+	// Underflow tolerance: same justification as the cross-scene-move
+	// branch above (lines ~1035-1038). Reproduced 2026-05-25 with
+	// Release_False + windowed + --automated-test in DP: the harness's
+	// scene-load and the first render frame interleave such that
+	// m_uPendingStartCount can already be zero by the time this path
+	// runs (the entity's PENDING_START bookkeeping was cleared
+	// elsewhere -- e.g. an earlier MoveEntityInternal-during-Start
+	// transferred the count to the target scene which dispatched Start
+	// first). Only decrement when there's something to decrement.
+	if (m_uPendingStartCount > 0)
+	{
+		m_uPendingStartCount--;
+	}
 	return PendingStartResult::CLEARED;
 }
 

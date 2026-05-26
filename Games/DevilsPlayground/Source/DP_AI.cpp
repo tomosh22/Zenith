@@ -14,6 +14,7 @@
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include "../Components/Priest_Behaviour.h"
+#include "../Components/DPDoor_Behaviour.h"
 
 namespace
 {
@@ -28,6 +29,12 @@ namespace
 	// patrol APIs functional without crashing on a null navmesh pointer.
 	Zenith_NavMesh* g_pxLevelNavMesh = nullptr;
 	int             g_iCachedNavMeshBuildIndex = -1;
+
+	// 2026-05-25: procgen patrol nodes (anon-namespace state; populated
+	// by SetPatrolNodes from the bootstrap, read by the priest's BT
+	// FindPos node to cycle between rooms). Cleared by ResetLevelNavMesh
+	// so scene reloads start fresh.
+	Zenith_Vector<Vec3> g_axPatrolNodes;
 
 	void BuildSyntheticFlatNavMesh()
 	{
@@ -102,6 +109,46 @@ namespace DP_AI
 			});
 	}
 
+	void OpenNearbyDoorsFor(Zenith_EntityID xActor, const Vec3& xActorPos)
+	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_AI::OpenNearbyDoorsFor must be called from main thread");
+		// 2026-05-26: door-open radius for AI actors is bumped to 4 m
+		// (double the player's 2 m InteractRadius). The priest's BT
+		// patrol picks random reachable navmesh points and walks to
+		// them; with a 2 m radius the priest has to almost touch the
+		// door before opening, which on rooms larger than ~6 m diag
+		// the patrol's interior-biased random sampling rarely
+		// achieves -- telemetry-confirmed on seed 5: priest moved
+		// 1.4 x 2.5 m in a single room for 200 s, never approaching
+		// a door's 2 m circle. 4 m means a patrol point within ~4 m
+		// of a wall door triggers the open, which the patrol's
+        // uniform-random sampling reliably reaches inside one or two
+		// cycles. AI's "arm length" being twice the player's is a
+		// pragmatic asymmetry -- the player decides explicitly when
+		// to F-press, the priest needs to discover doors via
+		// proximity alone.
+		//
+		// Iterate every DPDoor in the active scene. For each closed
+		// door within 4 m of xActorPos, fire TryInteract -- which goes
+		// through DPDoor's normal state machine (key check, audio
+		// cue, DP_OnDoorOpened dispatch, collider-sensor toggle).
+		// Same code path the player would take; the only difference
+		// is the gated DPInteractable proximity poll is bypassed.
+		constexpr float kAiDoorRadiusM = 4.0f;
+		constexpr float kAiDoorRadiusSq = kAiDoorRadiusM * kAiDoorRadiusM;
+		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
+			[&xActor, &xActorPos](Zenith_EntityID /*xDoorId*/, DPDoor_Behaviour& xDoor)
+			{
+				if (!xDoor.BlocksPath()) return;          // already open/opening
+				const Vec3 xC = xDoor.GetInteractionCentre();
+				const float fDx = xActorPos.x - xC.x;
+				const float fDz = xActorPos.z - xC.z;
+				if (fDx * fDx + fDz * fDz > kAiDoorRadiusSq) return;
+				xDoor.TryInteract(xActor);
+			});
+	}
+
 	const Zenith_NavMesh* GetOrBuildLevelNavMesh()
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
@@ -165,5 +212,32 @@ namespace DP_AI
 		delete g_pxLevelNavMesh;
 		g_pxLevelNavMesh = nullptr;
 		g_iCachedNavMeshBuildIndex = -1;
+		// 2026-05-25: patrol nodes are scene-scoped, drop them alongside
+		// the navmesh so the next Generate writes a fresh set.
+		g_axPatrolNodes.Clear();
+	}
+
+	void SetPatrolNodes(const Zenith_Vector<Vec3>& axNodes)
+	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_AI::SetPatrolNodes must be called from main thread");
+		g_axPatrolNodes.Clear();
+		const uint32_t uN = axNodes.GetSize();
+		for (uint32_t i = 0; i < uN; ++i)
+		{
+			g_axPatrolNodes.PushBack(axNodes.Get(i));
+		}
+	}
+
+	void ClearPatrolNodes()
+	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_AI::ClearPatrolNodes must be called from main thread");
+		g_axPatrolNodes.Clear();
+	}
+
+	const Zenith_Vector<Vec3>& GetPatrolNodes()
+	{
+		return g_axPatrolNodes;
 	}
 }

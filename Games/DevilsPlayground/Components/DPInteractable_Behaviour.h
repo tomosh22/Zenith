@@ -124,7 +124,11 @@ protected:
 	// implement the actual response. Default is a no-op.
 	virtual void HandleInteract(Zenith_EntityID /*xVillager*/) {}
 
-	bool IsVillagerInRange(Zenith_EntityID xVillager) const
+	// 2026-05-25: virtual so subclasses can override with a custom
+	// anchor (DPDoor uses its logical centre, not the entity transform,
+	// because the corner-anchored SM_Cube mesh offsets the transform
+	// position by ~1 m from the geometric door centre).
+	virtual bool IsVillagerInRange(Zenith_EntityID xVillager) const
 	{
 		if (!xVillager.IsValid()) return false;
 		Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xVillager);

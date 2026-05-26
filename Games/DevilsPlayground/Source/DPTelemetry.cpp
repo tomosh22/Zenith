@@ -30,6 +30,7 @@ namespace DPTelemetry
 		case DPEventType::PossessedSwitched: return "PossessedSwitched";
 		case DPEventType::PossessionChanged: return "PossessionChanged";
 		case DPEventType::DoorOpened:        return "DoorOpened";
+		case DPEventType::DoorClosed:        return "DoorClosed";
 		case DPEventType::ChestOpened:       return "ChestOpened";
 		case DPEventType::ForgeCrafted:      return "ForgeCrafted";
 		case DPEventType::ObjectivePlaced:   return "ObjectivePlaced";
@@ -202,6 +203,15 @@ namespace DPTelemetry
 				EmitEvent(DPEventType::DoorOpened, xEvt.m_xVillager, xEvt.m_xDoor);
 			});
 
+		// 2026-05-25: mirror DoorOpened. Doors became two-way; DoorClosed
+		// fires on the Open -> Closing transition (the F-press that
+		// swings the door shut, not the natural end of the close anim).
+		m_xDoorClosed = xDisp.SubscribeLambda<DP_OnDoorClosed>(
+			[](const DP_OnDoorClosed& xEvt)
+			{
+				EmitEvent(DPEventType::DoorClosed, xEvt.m_xVillager, xEvt.m_xDoor);
+			});
+
 		m_xChestOpened = xDisp.SubscribeLambda<DP_OnChestOpened>(
 			[](const DP_OnChestOpened& xEvt)
 			{
@@ -303,6 +313,7 @@ namespace DPTelemetry
 		if (m_xBellRing        != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xBellRing);
 		if (m_xPossessChanged  != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xPossessChanged);
 		if (m_xDoorOpened      != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xDoorOpened);
+		if (m_xDoorClosed      != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xDoorClosed);
 		if (m_xChestOpened     != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xChestOpened);
 		if (m_xForgeCrafted    != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xForgeCrafted);
 		if (m_xObjectivePlaced != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xObjectivePlaced);

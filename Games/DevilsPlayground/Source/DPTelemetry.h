@@ -89,6 +89,10 @@ namespace DPTelemetry
 		PauseToggle                 = 21, // ints[0]=1 if pausing, 0 if unpausing
 		PerceptionContactBegin      = 22, // entityA=observer, entityB=target, ints[0]=stimulus mask, floats[0]=awareness
 		PerceptionContactEnd        = 23, // entityA=observer, entityB=target, ints[0]=stimulus mask
+		// 2026-05-25: doors became two-way (F-press an open door closes
+		// it). DoorClosed mirrors DoorOpened so the analyser can pair
+		// them on the timeline.
+		DoorClosed                  = 24, // entityA=villager, entityB=door
 
 		_Count
 	};
@@ -195,6 +199,7 @@ namespace DPTelemetry
 		// Phase-5-audit (2026-05-16) granular event subscriptions.
 		Zenith_EventHandle m_xPossessChanged   = INVALID_EVENT_HANDLE;
 		Zenith_EventHandle m_xDoorOpened       = INVALID_EVENT_HANDLE;
+		Zenith_EventHandle m_xDoorClosed       = INVALID_EVENT_HANDLE;
 		Zenith_EventHandle m_xChestOpened      = INVALID_EVENT_HANDLE;
 		Zenith_EventHandle m_xForgeCrafted     = INVALID_EVENT_HANDLE;
 		Zenith_EventHandle m_xObjectivePlaced  = INVALID_EVENT_HANDLE;

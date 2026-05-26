@@ -15,9 +15,18 @@
  *   * Corridors connect ROOMS (by index) via a single straight line
  *     between two DOOR POINTS (one anchored on each room's edge)
  *
- * Format-version 1. Bump if the struct layout changes incompatibly --
+ * Format-version 2. Bump if the struct layout changes incompatibly --
  * the JSON exporter mirrors the same version field so old PNGs can be
  * regenerated from old JSONs without lying about which generator built them.
+ *
+ * v2 (vs v1):
+ *   - DoorPoint gained fWallYawRadians (the world-space yaw the door at
+ *     this point should be rotated to so its broad face lies along the
+ *     wall the DoorPoint cuts).
+ *   - GameElement gained bDoorLocked (true = needs a key on F-press).
+ *   - GameElement.xRoomId for a Door is now the RoomId of the room
+ *     whose wall the door sits in (was kInvalidRoomId in v1 because
+ *     v1 doors sat at corridor midpoints not anchored to any room).
  */
 
 #include "Collections/Zenith_Vector.h"
@@ -52,6 +61,13 @@ namespace DPProcLevel
 		// Which room this door anchors against. Each corridor has two
 		// door points, one per endpoint room.
 		RoomId xRoomId = kInvalidRoomId;
+		// 2026-05-25: world-space yaw (radians) so the door's broad face
+		// lies ALONG the wall the DoorPoint cuts. Computed in integer
+		// math during ProjectDoorPoint_I from R.iRot + the edge classification
+		// so it stays bit-deterministic across /fp:fast Debug+Release.
+		// Used by PlaceGameElements_I to set the wall-aligned yaw on each
+		// emitted door GameElement.
+		float fWallYawRadians = 0.0f;
 	};
 
 	struct Corridor
@@ -105,8 +121,10 @@ namespace DPProcLevel
 		GameElementType eType;
 		float           fX = 0.0f;
 		float           fZ = 0.0f;
-		// Which room this element sits in. -1 for Door (it sits on a
-		// corridor between rooms, not in any single one).
+		// Which room this element sits in. For a Door (post-v2): the
+		// RoomId of the room whose WALL this door cuts (each corridor
+		// produces two doors, one anchored to each endpoint room).
+		// `iCorridorId` still names the corridor the door gates.
 		RoomId          xRoomId     = kInvalidRoomId;
 		// Only used for Door: which corridor (index into axCorridors)
 		// this door gates. -1 for non-door elements.
@@ -119,6 +137,14 @@ namespace DPProcLevel
 		// Forge / NoiseMachine / Pentagram all use sphere/AABB colliders
 		// or are circular-symmetric).
 		float           fYawRadians = 0.0f;
+		// 2026-05-25: only used for Door. True = the door requires the
+		// Key item to open (consumed on first successful unlock; lock
+		// state is sticky afterwards). False = F-press alone opens it.
+		// By default, ONE door per pentagram-incident corridor (the door
+		// on the pentagram-room side) is locked; everything else is
+		// unlocked. Optional `interactables.door_locked_fraction` tuning
+		// can promote non-pentagram-side doors to locked.
+		bool            bDoorLocked = false;
 	};
 
 	// Villager spawn anchor. Each villager gets a world (x, z) and an
@@ -252,5 +278,16 @@ namespace DPProcLevel
 		// Margin around a room's OBB in metres -- outdoor points must
 		// sit at least this far from any wall so villagers don't clip.
 		float    fOutdoorMargin         = 0.8f;
+		// 2026-05-25: fraction (0..1) of non-pentagram-side doors that
+		// get an EXTRA random lock on top of the always-locked
+		// pentagram-side door. Default 0 preserves the one-key economy
+		// (only pentagram-side doors are locked). Sourced from
+		// `interactables.door_locked_fraction` tuning; the bootstrap
+		// CLAMPS the read value to [0, 1] before assigning here -- a
+		// negative value would underflow the uint32_t cast in the
+		// generator's lock-pass scalar. Iron count auto-scales 1:1 with
+		// the final locked-door count so the player can always craft
+		// enough keys, regardless of fraction.
+		float    fDoorLockedFraction    = 0.0f;
 	};
 }

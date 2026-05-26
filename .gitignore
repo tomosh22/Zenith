@@ -48,6 +48,8 @@
 **/obj/
 # Per-session Claude worktrees should stay local
 .claude/worktrees/
+# Per-session scheduled-task lock (harness state, not a code artifact)
+.claude/scheduled_tasks.lock
 /*vs/*
 .vs/
 /Middleware/VulkanSDK/1.4.313.1/Lib/*

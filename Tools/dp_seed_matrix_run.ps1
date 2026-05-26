@@ -39,7 +39,13 @@
 
 [CmdletBinding()]
 param(
-    [string]$ConfigName    = "Debug_False",
+    # 2026-05-25: default flipped from Debug_False -> Release_False. The
+    # Release config runs the bot 3-5x faster (DPInteractable/scene
+    # iteration is hot in the bot's pathing layer), so a full 80-cell
+    # matrix completes in ~5 min instead of ~20 min. Debug_False stays
+    # available via `-ConfigName Debug_False` for debugging individual
+    # cells (asserts + symbols).
+    [string]$ConfigName    = "Release_False",
     [string]$OutRoot       = "Build/dp_telemetry/seed_matrix",
     [int]$ExitAfterFrames  = 12000,
     [switch]$Headless      = $true,

@@ -611,6 +611,20 @@ void Zenith_PhysicsImpl::SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEna
 	}
 }
 
+void Zenith_PhysicsImpl::SetIsSensor(const JPH::BodyID& xBodyID, bool bSensor)
+{
+	if (xBodyID.IsInvalid()) return;
+	if (m_pxPhysicsSystem == nullptr) return;
+	// Jolt's SetIsSensor takes a body lock internally; safe to call from
+	// the main thread between physics steps. Activate the body too --
+	// sleeping bodies don't pick up the sensor-flag change until they
+	// wake (sleep timer eventually wakes them but for door state
+	// transitions we want the change to take effect on the next step).
+	JPH::BodyInterface& xBodyInterface = m_pxPhysicsSystem->GetBodyInterface();
+	xBodyInterface.SetIsSensor(xBodyID, bSensor);
+	xBodyInterface.ActivateBody(xBodyID);
+}
+
 void Zenith_PhysicsImpl::LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool bLockY, bool bLockZ)
 {
 	if (xBodyID.IsInvalid()) return;

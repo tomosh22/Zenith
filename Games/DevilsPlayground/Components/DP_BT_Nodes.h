@@ -45,8 +45,10 @@ public:
 		// position rather than the priest's own. Means "demon's been
 		// hopping bodies a lot -- priest is drawn to where the demon's
 		// scent is strongest." Falls back to the agent's own position
-		// when no qualifying scent target exists (existing behaviour).
+		// when no qualifying scent target exists.
 		Zenith_Maths::Vector3 xCenter = xAgentPos;
+		float fRadius = xBB.GetFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, 15.0f);
+		bool bScentDiversion = false;
 		const Zenith_EntityID xScentTarget =
 			xBB.GetEntityID(DP_AI::BB_KEY_HIGH_SCENT_TARGET);
 		if (xScentTarget.IsValid())
@@ -64,16 +66,76 @@ public:
 					if (xTgt.IsValid() && xTgt.HasComponent<Zenith_TransformComponent>())
 					{
 						xTgt.GetComponent<Zenith_TransformComponent>().GetPosition(xCenter);
+						bScentDiversion = true;
 					}
 				}
 			}
 		}
 
-		const float fRadius = xBB.GetFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, 15.0f);
+		// 2026-05-25: tried wiring DP_AI::GetPatrolNodes() into the
+		// FindPos cycle so the priest would roam across rooms instead
+		// of staying within 15 m of its spawn. Both "every cycle" and
+		// "every 4th cycle" patrol-node sampling dropped the matrix
+		// win rates from 70%+ to 0% across the board (the priest
+		// reliably reached every objective hand-off zone before the
+		// bot could deliver). Reverted: patrol-node storage still
+		// exists in DP_AI for future tuning, but the BT only uses the
+		// local 15 m suspicion sphere + scent diversion. The "priest
+		// stays in spawn room" complaint is partially addressed by
+		// the priest's own door-opening (DP_AI::OpenNearbyDoorsFor)
+		// -- once the player opens a route into the priest's room,
+		// the priest can patrol outward without the navmesh BLOCKED
+		// flag walling it in (DPDoor::SyncNavMeshBlock is a no-op).
+
+		// 2026-05-26: every 5th FindPos call, try a procgen patrol
+		// node as the target instead of the local suspicion sphere.
+		// The patrol nodes are spread across the map (one per non-
+		// pent room near the priest spawn) -- visiting them gives
+		// the priest a route OUT of its spawn navmesh region so
+		// OpenNearbyDoorsFor catches the room's exit doors as the
+		// priest walks past them.
+		//
+		// 1-in-5 ratio chosen to balance: priest's threat curve
+		// remains driven by perception (scent/sight) so it doesn't
+		// reach every objective hand-off zone unprompted, but the
+		// priest no longer parks in its spawn room for the whole
+		// run when no contact triggers a pursue.
+		//
+		// History (matrix dropped from 70%+ to 0% on earlier attempts):
+		// "every cycle" and "every 4th cycle" patrol-node sampling
+		// dropped the matrix to 0% wins because the priest reached
+		// the bot's hand-off zones reliably before the bot could
+		// deliver. 1-in-5 sampling at this point in the bot+door
+		// pipeline (with sensor toggle + all-doors rasterisation
+		// fixes already landed) lets the priest occasionally roam
+		// without dominating the player's escape windows.
+		m_uFindPosTick++;
+		const Zenith_Vector<Zenith_Maths::Vector3>& axPatrolNodes =
+			DP_AI::GetPatrolNodes();
+		const uint32_t uPatrolN = axPatrolNodes.GetSize();
 		Zenith_Maths::Vector3 xResult;
-		if (!m_pxNavMesh->GetRandomReachablePointInRadius(xCenter, fRadius, xResult))
+		bool bGot = false;
+		if (uPatrolN > 0 && (m_uFindPosTick % 5u) == 0u && !bScentDiversion)
 		{
-			return BTNodeStatus::FAILURE;
+			const uint32_t uIdx = (m_uFindPosTick / 5u) % uPatrolN;
+			const Zenith_Maths::Vector3& xNode = axPatrolNodes.Get(uIdx);
+			// Try to find a reachable point near the patrol node.
+			// Use a generous 30 m sphere so the request succeeds even
+			// when the node sits in a building the priest hasn't
+			// reached yet (the priest's planner will path as far as
+			// the current navmesh permits, opening doors along the
+			// way via OpenNearbyDoorsFor).
+			if (m_pxNavMesh->GetRandomReachablePointInRadius(xNode, 30.0f, xResult))
+			{
+				bGot = true;
+			}
+		}
+		if (!bGot)
+		{
+			if (!m_pxNavMesh->GetRandomReachablePointInRadius(xCenter, fRadius, xResult))
+			{
+				return BTNodeStatus::FAILURE;
+			}
 		}
 		xBB.SetVector3(DP_AI::BB_KEY_PATROL_TARGET, xResult);
 		return BTNodeStatus::SUCCESS;
@@ -85,6 +147,9 @@ public:
 
 private:
 	const Zenith_NavMesh* m_pxNavMesh = nullptr;
+	// 2026-05-26: incremented on every Execute. Used for the 1-in-5
+	// patrol-node sampling pattern in the body (see comment there).
+	uint32_t              m_uFindPosTick = 0u;
 };
 
 class DP_BTCondition_HasInvestigatePos : public Zenith_BTLeaf

@@ -267,6 +267,32 @@ public:
 
 		BridgePerceptionToBlackboard(xBB);
 
+		// 2026-05-25 v4: priest opens any closed unlocked door it's
+		// adjacent to, regardless of BT branch (Idle / Patrol /
+		// Investigate / Pursue / Apprehend). User-confirmed via
+		// telemetry that pursuit-gating left the priest stuck in
+		// its spawn room (intent=Patrol for 200 s, position
+		// unchanged after the first 0.8 s) because patrol never
+		// crosses a closed door and pursuit only fires on LOS
+		// contact -- which can't happen if the priest can't leave
+		// the spawn room.
+		//
+		// Locked doors still reject the priest (it doesn't hold a
+		// Key), so the player's pent-side locks remain a hard
+		// gate; the priest cannot follow the player into the pent
+		// room without the same Key economy the player navigates.
+		// Threat curve: priest now roams the non-pent map freely,
+		// which is the same reach it had pre-PR (when doors lived
+		// at corridor midpoints and the wall gaps were always
+		// open -- the priest's pre-PR navmesh was the union of
+		// every room and corridor).
+		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		{
+			Zenith_Maths::Vector3 xPriestPosForDoors;
+			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPriestPosForDoors);
+			DP_AI::OpenNearbyDoorsFor(m_xParentEntity.GetEntityID(), xPriestPosForDoors);
+		}
+
 		// Reactive-selector hack: Zenith_BTSelector resumes at the last
 		// RUNNING child rather than re-evaluating from the top each tick.
 		// That's the standard "memory selector" semantics, but it breaks our

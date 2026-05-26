@@ -49,6 +49,15 @@ Add-Type -AssemblyName System.Drawing
 if (-not $Quiet) { Write-Host "Loading $JsonPath..." -ForegroundColor Cyan }
 $layout = Get-Content $JsonPath -Raw | ConvertFrom-Json
 
+# 2026-05-25: bumped to v2 (DoorPoint.wallYaw + GameElement.yaw + locked).
+# Older v1 layouts are still readable -- the new fields are optional and
+# the rendering paths fall back to sensible defaults when they're missing.
+$expectedSchemaVersion = 2
+$actualSchemaVersion = if ($layout.header.version) { [int]$layout.header.version } else { 1 }
+if ($actualSchemaVersion -lt $expectedSchemaVersion -and -not $Quiet) {
+    Write-Host "  ! layout schema v$actualSchemaVersion older than tool's v$expectedSchemaVersion -- door lock state + wall-yaw ticks unavailable" -ForegroundColor Yellow
+}
+
 $rooms      = if ($layout.rooms)          { @($layout.rooms) }          else { @() }
 $doors      = if ($layout.doorPoints)     { @($layout.doorPoints) }     else { @() }
 $corridors  = if ($layout.corridors)      { @($layout.corridors) }      else { @() }
@@ -206,16 +215,36 @@ foreach ($c in $corridors) {
 $corridorPen.Dispose()
 
 # Door points (small dots) -- drawn last so they sit on top of rooms +
-# corridors.
+# corridors. Schema v2: draw a short wall-direction tick at each
+# DoorPoint to verify wall-alignment visually on rotated rooms.
 $doorFill = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 255, 230, 100))
 $doorStroke = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 1.0)
+$wallTickPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(220, 255, 220, 80), 1.5)
 foreach ($d in $doors) {
     $p = Project ([double]$d.x) ([double]$d.z)
+    # Wall tick (only when wallYaw present in JSON). Draw a short line
+    # ALONG the wall direction the DoorPoint cuts (the door's broad face
+    # will lie along this direction in the engine).
+    if ($d.PSObject.Properties.Match('wallYaw').Count -gt 0) {
+        $wy = [double]$d.wallYaw
+        # Door's local +Z is the wall direction (R_y(wy) * (0,0,1)).
+        # In world XZ: (sin(wy), cos(wy)). The tick is 0.8 m world per
+        # side -> 1.6 m total.
+        $tickHalf = 0.8
+        $tx0 = [double]$d.x - $tickHalf * [math]::Sin($wy)
+        $tz0 = [double]$d.z - $tickHalf * [math]::Cos($wy)
+        $tx1 = [double]$d.x + $tickHalf * [math]::Sin($wy)
+        $tz1 = [double]$d.z + $tickHalf * [math]::Cos($wy)
+        $t0 = Project $tx0 $tz0
+        $t1 = Project $tx1 $tz1
+        $g.DrawLine($wallTickPen, $t0[0], $t0[1], $t1[0], $t1[1])
+    }
     $g.FillEllipse($doorFill, ($p[0] - 4), ($p[1] - 4), 8, 8)
     $g.DrawEllipse($doorStroke, ($p[0] - 4), ($p[1] - 4), 8, 8)
 }
 $doorFill.Dispose()
 $doorStroke.Dispose()
+$wallTickPen.Dispose()
 
 # Game elements -- distinct shape + colour per type. Drawn LAST so
 # they sit on top of rooms / walls / doors / corridors. Matches the
@@ -269,9 +298,20 @@ foreach ($elem in $elements) {
             $brush.Dispose()
         }
         'Door' {
-            # Door is on a corridor. Render as a thick red bar perpendicular
-            # to the corridor at this element's (x, z).
-            $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 230, 70, 70))
+            # 2026-05-25: schema v2 added `locked` boolean -- locked doors
+            # are red, unlocked doors are green (matches the in-engine tint
+            # the DPDoor_Behaviour applies via ApplyLockTint). Older v1
+            # layouts (no `locked` field) fall back to red to preserve the
+            # historical visualiser output.
+            $isLocked = $true   # default for older layouts
+            if ($elem.PSObject.Properties.Match('locked').Count -gt 0) {
+                $isLocked = [bool]$elem.locked
+            }
+            if ($isLocked) {
+                $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 230, 70, 70))
+            } else {
+                $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 70, 230, 90))
+            }
             $g.FillEllipse($brush, ($cx - 10), ($cy - 10), 20, 20)
             $g.DrawEllipse($elemStroke, ($cx - 10), ($cy - 10), 20, 20)
             $brush.Dispose()

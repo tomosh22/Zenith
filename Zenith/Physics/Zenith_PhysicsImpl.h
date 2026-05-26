@@ -56,6 +56,14 @@ public:
 	void AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xForce);
 	void AddImpulse(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xImpulse);
 	void SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled);
+	// 2026-05-25: toggle a body between solid (collides + pushes) and
+	// sensor (detects overlap but doesn't physically collide). Used by
+	// DPDoor to let the player walk through a door while it's in
+	// Opening / Open / Closing state -- the door's rotating collider
+	// would otherwise sweep through the player's capsule and push them
+	// out of the doorway. Wraps Jolt's BodyInterface::SetIsSensor;
+	// the body must already be created (HasValidBody on the component).
+	void SetIsSensor(const JPH::BodyID& xBodyID, bool bSensor);
 	void LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool bLockY, bool bLockZ);
 	void EnforceUpright(const JPH::BodyID& xBodyID);
 

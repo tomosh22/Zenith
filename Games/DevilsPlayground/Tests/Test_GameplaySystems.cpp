@@ -118,7 +118,22 @@ static bool Step_DoorUnlock(int /*iFrame*/)
 	case kWait:
 	{
 		g_xVillager = FindFirstEntityWith<DPVillager_Behaviour>();
-		g_xDoor     = FindFirstEntityWith<DPDoor_Behaviour>();
+		// 2026-05-25: most doors are now unlocked-by-default; "first door
+		// found" would silently pass the consume-key assertion against an
+		// unlocked door (the door opens without needing a key, the test
+		// just sees the open transition). Filter for a door that
+		// actually requires a Key so the unlock path is the only way to
+		// open it.
+		g_xDoor = INVALID_ENTITY_ID;
+		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
+			[](Zenith_EntityID xId, DPDoor_Behaviour& xScript)
+			{
+				if (g_xDoor.IsValid()) return;
+				if (xScript.GetRequiredKey() == DP_ItemTag::Key)
+				{
+					g_xDoor = xId;
+				}
+			});
 		if (!g_xVillager.IsValid() || !g_xDoor.IsValid()) return true;
 
 		DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor);
@@ -140,11 +155,13 @@ static bool Step_DoorUnlock(int /*iFrame*/)
 		DP_Player::SetHeldItem(g_xVillager, g_xKeyItem);
 
 		// Teleport villager to within the door's interact radius (default 2m).
-		Zenith_Maths::Vector3 xDoorPos;
-		if (TryGetEntityPosition(g_xDoor, xDoorPos))
-		{
-			TrySetEntityPosition(g_xVillager, xDoorPos + Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
-		}
+		// 2026-05-25: use the door's LOGICAL centre, not the entity
+		// transform -- the transform is corner-offset by ~1 m via SM_Cube
+		// anchoring, so teleporting to entity.position + 1m east would
+		// land the villager just outside (or right at the edge of) the
+		// 2m interact radius.
+		const Zenith_Maths::Vector3 xDoorPos = pxDoor->GetInteractionCentre();
+		TrySetEntityPosition(g_xVillager, xDoorPos + Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
 		g_iPhase = kEnterRange;
 		return true;
 	}

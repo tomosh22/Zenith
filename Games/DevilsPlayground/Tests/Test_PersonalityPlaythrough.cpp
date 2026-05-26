@@ -251,7 +251,23 @@ namespace
 	// If a personality needs to behave more cautiously / aggressively,
 	// that's expressed as a DECISION FLAG (bUseRelayDrop, bAdaptiveSprint,
 	// bAnyOrderObjectives, ...) -- not a hidden capability multiplier.
-	constexpr int kWalkFrameBudget = 1200;   // base per-walk-goal frame cap
+	// 2026-05-25: bumped from 1200 (20 s) to 1800 (30 s) per walk goal
+	// to account for the extra door-traversal cost on the
+	// 2-doors-per-corridor layout. The doors-at-DoorPoints PR replaces
+	// one corridor-midpoint door per corridor with TWO wall-aligned
+	// doors. The bot's previous traversal of a single corridor was
+	// "walk -> F-press -> walk through". Now it's
+	// "walk -> F-press -> walk -> F-press -> walk through", and each
+	// F-press triggers a path-grid invalidation + rebuild on the next
+	// movement frame. Empirically the bot's per-leg walk on
+	// 2-doors-per-corridor seeds takes ~25 s for the trip from a
+	// post-Iron-pickup villager to the pentagram via a typical 3-room
+	// route. 1200 was too tight; 1800 lets the bot complete the leg
+	// without prematurely bailing into a replan that wastes another
+	// few seconds. This is a HARNESS budget knob, not a
+	// gameplay-balance lever -- the simulated player's life timer and
+	// dawn timer are unchanged.
+	constexpr int kWalkFrameBudget = 1800;   // base per-walk-goal frame cap
 	constexpr int kObjAttemptCap   = 20;     // single shared patience cap
 
 	// All personalities load the same scene (ProcLevel, build index 1, the
@@ -272,6 +288,15 @@ namespace
 	// kObjAttemptCap above for the 2026-05-23 unification.)
 	constexpr PersonalityConfig kPersonality_Casual = {
 		Personality::Casual,      "Casual",
+		// 2026-05-26 Option C reverted: tried adaptive sprint here to
+		// help Casual on long-bootstrap-path seeds but the buff hurt
+		// Casual MORE than it helped -- sprint loudness drew the
+		// priest in ~4x earlier (1st apprehend t=57s -> t=15s), net
+		// Casual deaths +138% and wins 30% -> 20%. Casual stays as
+		// the "reference walker" so the difference between Casual
+		// vs Speedrunner remains a clean adaptive-sprint A/B signal.
+		// Long-bootstrap-path layouts (seed 1) addressed via Option B
+		// in procgen (forge placement near pent) instead.
 		/*sprint*/false, /*quiet*/false, /*adaptive*/false,
 		/*skipBootstrap*/false,
 		/*noise*/true,   /*pause*/true,  /*pauseCycles*/1,
@@ -297,6 +322,15 @@ namespace
 	// walk-quiet speed multiplier, not to give the bot a hidden buff.
 	constexpr PersonalityConfig kPersonality_Stealth = {
 		Personality::Stealth,     "Stealth",
+		// 2026-05-26: NOT enabling adaptive sprint on Stealth -- the
+		// villager's movement resolves "Sprint wins ties; walk-quiet
+		// takes the slow speed" (DPVillager_Behaviour ~line 495), so
+		// adaptive=true + quiet=true would default to sprint speed
+		// during long walks, defeating Stealth's quiet-footstep
+		// advantage. Stealth retains adaptive=false; it's expected to
+		// cover less map per villager life on layouts where the
+		// post-forge walk is long, which reflects the strategic cost
+		// of walking-quiet.
 		/*sprint*/false, /*quiet*/true,  /*adaptive*/false,
 		/*skipBootstrap*/false,
 		/*noise*/false,  /*pause*/true,  /*pauseCycles*/1,
@@ -429,6 +463,14 @@ namespace
 		kHP_WaitPossess,
 		kHP_WalkIron,
 		kHP_WaitIronPickup,
+		// 2026-05-25: auto-pickup at 1.5 m proximity can grab any
+		// item the bot passes near. On seeds where an Objective spawn
+		// room is between villager spawn and the iron room, the bot
+		// picks up the Objective accidentally en route. Forge then
+		// fails (needs Iron, has Objective); door is locked (no Key);
+		// bot stalls. This phase drops the wrong item and retries
+		// the iron walk once.
+		kHP_DropWrongItem,
 		kHP_WalkForge,
 		kHP_PressForgeF,
 		kHP_VerifyForge,
@@ -488,6 +530,13 @@ namespace
 	int g_iChestAttempts = 0;
 	int g_iDoorAttempts  = 0;
 	int g_iNoiseAttempts = 0;
+	// 2026-05-25: single-retry counter for the "drop wrong item, retry
+	// iron walk" branch in kHP_WaitIronPickup. The bot auto-picks-up
+	// any item at 1.5 m proximity, so on seeds where an Objective spawn
+	// sits between villager spawn and iron, the bot grabs the
+	// Objective first and the forge step then fails (no Iron in hand).
+	// Limited to 1 retry per playthrough to bound the loop.
+	int g_iIronRetryCount = 0;
 	constexpr int kStuckFramesLimit = 120;  // ~4 s wall-clock at 30 fps
 
 	// Stuck-recovery side-step (added 2026-05-20 after the 10-seed
@@ -1235,6 +1284,18 @@ namespace
 
 	bool g_bPathGridBuilt = false;
 	bool g_abPathWalkable[kPathGridDim * kPathGridDim] = {};
+	// 2026-05-25: parallel grid keyed by door EntityID. Cells fully clear
+	// (or blocked by something other than a door) hold INVALID_ENTITY_ID;
+	// cells overlapping a CLOSED-or-CLOSING door hold that door's ID.
+	// A* expand treats `g_abPathWalkable[c] || g_axBlockingDoor[c].IsValid()`
+	// as planner-traversable so a path can route THROUGH doors, then the
+	// movement layer F-presses each door as it reaches it.
+	Zenith_EntityID g_axBlockingDoor[kPathGridDim * kPathGridDim] = {};
+	// Per-run set of doors the bot has F-pressed. Prevents re-pressing a
+	// door the bot just opened (which would close it via the new two-way
+	// dispatch). Cleared on Setup; entries are removed on DP_OnDoorClosed
+	// so the bot will re-open a door someone else closed.
+	Zenith_Vector<Zenith_EntityID> g_axBotOpenedDoors;
 
 	Zenith_Vector<Zenith_Maths::Vector3> g_axCurrentPath;
 	int g_iPathWaypoint = 0;
@@ -1244,6 +1305,19 @@ namespace
 	{
 		if (x < 0 || x >= kPathGridDim || z < 0 || z >= kPathGridDim) return false;
 		return g_abPathWalkable[z * kPathGridDim + x];
+	}
+
+	// 2026-05-25: A* expand predicate. Walkable cells are always traversable;
+	// door cells become traversable for PLANNING purposes (the bot's
+	// movement layer F-presses each door as it arrives). This keeps raw
+	// raycast walkability (`g_abPathWalkable`) honest -- it still reflects
+	// "can the villager's capsule fit here without F-pressing anything"
+	// -- and confines door-gated traversability to the planner.
+	inline bool IsCellPlanTraversable(int x, int z)
+	{
+		if (x < 0 || x >= kPathGridDim || z < 0 || z >= kPathGridDim) return false;
+		const int idx = z * kPathGridDim + x;
+		return g_abPathWalkable[idx] || g_axBlockingDoor[idx].IsValid();
 	}
 
 	void BuildPathGrid()
@@ -1293,8 +1367,75 @@ namespace
 				if (bWalkable) ++uWalkable;
 			}
 		}
-		std::printf("[HumanPlaythrough] path grid built: %u/%d cells walkable\n",
-			uWalkable, kPathGridDim * kPathGridDim);
+		// 2026-05-25: door rasterisation pass. Each currently-closed door
+		// writes its EntityID into every cell its 0.3 x 2 m OBB overlaps,
+		// using the LOGICAL centre (NOT the entity transform, which is
+		// corner-anchor offset by ~1 m) and the door's CLOSED yaw. A*
+		// expand then treats those cells as planner-traversable; the
+		// movement layer F-presses each door it reaches.
+		for (uint32_t i = 0; i < kPathGridDim * kPathGridDim; ++i)
+		{
+			g_axBlockingDoor[i] = Zenith_EntityID{};
+		}
+		uint32_t uDoorCells = 0;
+		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
+			[&uDoorCells](Zenith_EntityID xId, DPDoor_Behaviour& xDoor)
+			{
+				// 2026-05-25 v4: rasterise ALL doors (regardless of
+				// BlocksPath state). Open doors are SENSOR colliders
+				// after ApplyColliderSolidity fires -- they don't
+				// block physics, but Jolt raycasts STILL hit sensor
+				// bodies, so the BuildPathGrid raycast pass flags an
+				// open door's cells as obstacle. Marking those cells
+				// in g_axBlockingDoor (whose IsCellPlanTraversable
+				// treats them as planner-traversable) lets the bot
+				// path through both closed AND open door cells. The
+				// OpportunisticDoorPress F-press only fires on doors
+				// where BlocksPath() is true, so the open cells just
+				// become free-passage cells in the bot's grid.
+				const Zenith_Maths::Vector3 xC = xDoor.GetInteractionCentre();
+				const float fYawRad = glm::radians(xDoor.GetClosedYawDegrees());
+				const float fCos = std::cos(fYawRad);
+				const float fSin = std::sin(fYawRad);
+				// Rasterise an OBB at xC of half-extents (kDoorHalfThick, _,
+				// kDoorHalfWide). The "wide" axis is the door's local +Z
+				// (along the wall); the "thick" axis is local +X (across
+				// the wall). World -> local: rotate by -yaw. World point P
+				// is inside the OBB iff |R^-1*(P - xC)| <= half-extents
+				// componentwise.
+				const float fHalfThick = DPDoor_Behaviour::kDoorHalfThick;
+				const float fHalfWide  = DPDoor_Behaviour::kDoorHalfWide;
+				// Bounding-box screen of candidate cells: the OBB fits
+				// inside a (halfThick + halfWide) AABB diagonal-wise.
+				const float fSearch = fHalfThick + fHalfWide + 0.5f;
+				const int iMinX = static_cast<int>((xC.x - fSearch - kPathOriginX) / kPathCellSize);
+				const int iMaxX = static_cast<int>((xC.x + fSearch - kPathOriginX) / kPathCellSize);
+				const int iMinZ = static_cast<int>((xC.z - fSearch - kPathOriginZ) / kPathCellSize);
+				const int iMaxZ = static_cast<int>((xC.z + fSearch - kPathOriginZ) / kPathCellSize);
+				for (int z = iMinZ; z <= iMaxZ; ++z)
+				{
+					if (z < 0 || z >= kPathGridDim) continue;
+					for (int x = iMinX; x <= iMaxX; ++x)
+					{
+						if (x < 0 || x >= kPathGridDim) continue;
+						const float fCx = kPathOriginX + (x + 0.5f) * kPathCellSize;
+						const float fCz = kPathOriginZ + (z + 0.5f) * kPathCellSize;
+						const float fDx = fCx - xC.x;
+						const float fDz = fCz - xC.z;
+						// World -> local. R(-yaw) = R^T(yaw).
+						const float fLx =  fDx * fCos - fDz * fSin;
+						const float fLz =  fDx * fSin + fDz * fCos;
+						if (std::fabs(fLx) <= fHalfThick && std::fabs(fLz) <= fHalfWide)
+						{
+							g_axBlockingDoor[z * kPathGridDim + x] = xId;
+							++uDoorCells;
+						}
+					}
+				}
+			});
+
+		std::printf("[HumanPlaythrough] path grid built: %u/%d cells walkable, %u door cells\n",
+			uWalkable, kPathGridDim * kPathGridDim, uDoorCells);
 		std::fflush(stdout);
 		g_bPathGridBuilt = true;
 	}
@@ -1401,11 +1542,19 @@ namespace
 				{
 					if (dx == 0 && dz == 0) continue;
 					const int nx = x + dx, nz = z + dz;
-					if (!IsCellWalkable(nx, nz)) continue;
+					// 2026-05-25: plan THROUGH doors. The bot's movement
+					// layer F-presses each door it reaches; planner just
+					// needs to know "is this cell reachable, possibly
+					// after opening a door?".
+					if (!IsCellPlanTraversable(nx, nz)) continue;
 					const int iNIdx = nz * kPathGridDim + nx;
 					if (abVisited[iNIdx]) continue;
 					const float fStep = (dx != 0 && dz != 0) ? 1.41421f : 1.0f;
-					const float fNewG = axGScore[iIdx] + fStep;
+					// Small penalty for door cells so A* prefers the open
+					// route when one exists, and only routes through a
+					// door when there's no alternative.
+					const float fDoorPenalty = g_axBlockingDoor[iNIdx].IsValid() ? 5.0f : 0.0f;
+					const float fNewG = axGScore[iIdx] + fStep + fDoorPenalty;
 					if (fNewG < axGScore[iNIdx])
 					{
 						axGScore[iNIdx] = fNewG;
@@ -1451,12 +1600,79 @@ namespace
 	// Drive the possessed villager toward a world target via simulated WASD,
 	// following an A*-computed waypoint sequence rather than a straight line.
 	// Returns true when within fStopDist of the final target (horizontal).
+	// 2026-05-25: opportunistic door F-press. If the bot is within F-range
+	// of a closed door it hasn't already opened, press F. Cheap linear
+	// scan -- there are <= 2 * corridorCount doors per layout (sub-50
+	// typical) and only the ones currently in F-range matter.
+	//
+	// `g_axBotOpenedDoors` membership semantic: "bot has F-pressed this
+	// door at least once during the current key-cycle". Entries are
+	// added HERE at the F-press site (so a locked-door rejection still
+	// marks the door, preventing per-frame F-press spam against an
+	// unopenable door which would invalidate the path grid on every
+	// frame via DP_OnInteract).
+	//
+	// Cleared on:
+	//   - DP_OnDoorClosed (someone re-closed the door; bot must reopen
+	//     on a return trip).
+	//   - DP_OnItemPickedUp (Key / SkeletonKey): bot just acquired a
+	//     fresh unlock item, so any door previously marked from a
+	//     no-key rejection should be re-attempted. This addresses the
+	//     2026-05-25 review note: without this clear, the bot would
+	//     permanently skip a door it once tried without a key, even
+	//     after forging one.
+	//
+	// Returns the door pressed (or INVALID if none).
+	Zenith_EntityID OpportunisticDoorPress(const Zenith_Maths::Vector3& xVillagerPos)
+	{
+		Zenith_EntityID xPressed;
+		DP_Query::ForEachScriptInActiveScene<DPDoor_Behaviour>(
+			[&xPressed, &xVillagerPos](Zenith_EntityID xId, DPDoor_Behaviour& xDoor)
+			{
+				if (xPressed.IsValid()) return;              // already F-pressed this frame
+				if (!xDoor.BlocksPath()) return;             // already open / opening
+				for (uint32_t i = 0; i < g_axBotOpenedDoors.GetSize(); ++i)
+				{
+					if (g_axBotOpenedDoors.Get(i).m_uIndex == xId.m_uIndex
+					 && g_axBotOpenedDoors.Get(i).m_uGeneration == xId.m_uGeneration)
+					{
+						return;
+					}
+				}
+				const Zenith_Maths::Vector3 xC = xDoor.GetInteractionCentre();
+				const float fDx = xVillagerPos.x - xC.x;
+				const float fDz = xVillagerPos.z - xC.z;
+				const float fRadius = xDoor.GetInteractRadius();
+				if (fDx * fDx + fDz * fDz > fRadius * fRadius) return;
+				// In F-range of a closed door we haven't pressed yet.
+				// SimulateKeyPress dispatches a rising-edge press this
+				// frame; DPInteractable's F-press poll catches it.
+				// Mark immediately (whether the press succeeds or hits
+				// a locked-door rejection): the key-pickup handler
+				// below clears the set so failed attempts can be retried
+				// after the bot acquires a key.
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
+				g_axBotOpenedDoors.PushBack(xId);
+				xPressed = xId;
+			});
+		return xPressed;
+	}
+
 	bool DriveWASDToward(const Zenith_Maths::Vector3& xTarget, float fStopDist)
 	{
 		const Zenith_EntityID xV = DP_Player::GetPossessedVillager();
 		if (!xV.IsValid()) return false;
 		Zenith_Maths::Vector3 xPos;
 		if (!TryGetEntityPos(xV, xPos)) return false;
+
+		// 2026-05-25: opportunistically F-press any closed door the bot
+		// happens to be near. Without this, the bot can A*-path THROUGH
+		// a door cell (the planner now treats doors as traversable) but
+		// then physics blocks the villager capsule against the closed
+		// door and the bot gets stuck. The door's transition fires
+		// DP_OnDoorOpened, which invalidates the path grid; the next
+		// DriveWASDToward call replans on the updated state.
+		OpportunisticDoorPress(xPos);
 
 		// Stuck-detector — when the villager hasn't moved meaningfully in a
 		// while, force the cached path to be torn down. The next iteration
@@ -1835,6 +2051,19 @@ namespace
 		// Skip villagers whose life timer is depleted -- they can't be
 		// possessed and clicking on them just burns frames. FindClosest*
 		// is unfiltered so we filter here.
+		//
+		// 2026-05-26 (v30 reverted): tried picking villagers closest to
+		// the current phase target via g_xRepossessAnchor. Hurt the
+		// matrix net -5 wins (Stealth -2, Zealot -2, Heretic -2,
+		// Speedrunner -1, Trickster +2). Hypothesis: straight-line
+		// distance from anchor doesn't equal pathfind distance. A
+		// villager "close" to the pent-corner anchor but behind walls
+		// has a longer real path than a centrally-located villager.
+		// The map-centre heuristic happens to pick villagers in
+		// open / multi-corridor cells where clicks land reliably and
+		// path-fanning to any target is cheap. Seed 1 unaffected by
+		// this change (still 1 placement per cell) -- the bottleneck
+		// isn't repossession picking. Restored to map-centre pick.
 		const Zenith_Maths::Vector3 xCentre(50.0f, 0.0f, 50.0f);
 		Zenith_EntityID xBest;
 		float fBestSq = 1e30f;
@@ -1880,7 +2109,7 @@ namespace
 
 	// World-state-change handler: any interactable being engaged (door
 	// unlocked, chest opened, forge crafted, noise machine triggered) can
-	// move geometry under the path grid — most importantly a door rotating
+	// move geometry under the path grid -- most importantly a door rotating
 	// open frees a cell that was blocked. Invalidate the cached grid so the
 	// next DriveWASDToward call rebuilds against the current world state.
 	void OnInteractEvent(const DP_OnInteract&)
@@ -1891,9 +2120,64 @@ namespace
 		g_xLastPlannedTarget = Zenith_Maths::Vector3(1e9f, 0.0f, 0.0f);
 	}
 
-	Zenith_EventHandle g_xInteractHandle = INVALID_EVENT_HANDLE;
+	// 2026-05-25: pick-up of an unlock-class item (Key / SkeletonKey)
+	// clears the bot-opened set so any door the bot previously tried
+	// without a key gets a fresh attempt now that it has one. Without
+	// this, a locked-door rejection (DP_OnDoorLockRejected, distinct
+	// from DP_OnDoorClosed) would permanently mark the door as
+	// "bot-handled" in g_axBotOpenedDoors even though the door stayed
+	// Closed -- the bot would never revisit, leaving it stranded against
+	// any locked door on a layout where its first traversal predated
+	// the forge run. (Review-flagged 2026-05-25.)
+	void OnItemPickedUpEvent(const DP_OnItemPickedUp& xEvt)
+	{
+		if (xEvt.m_eTag == DP_ItemTag::Key || xEvt.m_eTag == DP_ItemTag::SkeletonKey)
+		{
+			g_axBotOpenedDoors.Clear();
+		}
+	}
+
+	// 2026-05-25: granular door-state events. DP_OnInteract above is
+	// generic (fires for forge / chest / pentagram too); the granular
+	// door events fire only on the Closed->Opening / Open->Closing
+	// transitions, so they're a cleaner signal for door-specific work
+	// (path grid invalidation + opened-set bookkeeping).
+	void OnDoorOpenedEvent(const DP_OnDoorOpened&)
+	{
+		g_bPathGridBuilt = false;
+		g_axCurrentPath.Clear();
+		g_iPathWaypoint = 0;
+		g_xLastPlannedTarget = Zenith_Maths::Vector3(1e9f, 0.0f, 0.0f);
+	}
+	void OnDoorClosedEvent(const DP_OnDoorClosed& xEvt)
+	{
+		// Same path-grid invalidation; ALSO clear the door from
+		// g_axBotOpenedDoors so the bot will re-open it on a return
+		// trip if it crosses back through the corridor.
+		g_bPathGridBuilt = false;
+		g_axCurrentPath.Clear();
+		g_iPathWaypoint = 0;
+		g_xLastPlannedTarget = Zenith_Maths::Vector3(1e9f, 0.0f, 0.0f);
+		for (uint32_t i = 0; i < g_axBotOpenedDoors.GetSize(); ++i)
+		{
+			if (g_axBotOpenedDoors.Get(i).m_uIndex == xEvt.m_xDoor.m_uIndex
+			 && g_axBotOpenedDoors.Get(i).m_uGeneration == xEvt.m_xDoor.m_uGeneration)
+			{
+				g_axBotOpenedDoors.RemoveSwap(i);
+				break;
+			}
+		}
+	}
+
+	Zenith_EventHandle g_xInteractHandle    = INVALID_EVENT_HANDLE;
+	Zenith_EventHandle g_xDoorOpenedHandle  = INVALID_EVENT_HANDLE;
+	Zenith_EventHandle g_xDoorClosedHandle  = INVALID_EVENT_HANDLE;
+	Zenith_EventHandle g_xItemPickedUpHandle = INVALID_EVENT_HANDLE;
 
 	// Log walking progress every 60 frames so a stuck walk is visible.
+	// 2026-05-26 (v30 reverted): briefly piggybacked a repossession-
+	// anchor update here -- see TryRepossessIfDead's rationale
+	// comment for why it was rolled back.
 	void LogWalkProgress(const char* szPhase, const Zenith_Maths::Vector3& xTarget)
 	{
 		static int s_iLastLog = -1;
@@ -1997,6 +2281,7 @@ static void Setup_HumanPlaythrough()
 	g_iChestAttempts = 0;
 	g_iDoorAttempts  = 0;
 	g_iNoiseAttempts = 0;
+	g_iIronRetryCount = 0;
 	g_bVictoryEvent  = false;
 	g_uVictoryMask   = 0;
 	g_bPauseOnObserved = false;
@@ -2005,6 +2290,16 @@ static void Setup_HumanPlaythrough()
 
 	g_xVictoryHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnVictory>(&OnVictoryEvent);
 	g_xInteractHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnInteract>(&OnInteractEvent);
+	// 2026-05-25: granular door-state subscriptions + key-pickup
+	// subscription. See OnDoorOpenedEvent / OnDoorClosedEvent /
+	// OnItemPickedUpEvent.
+	g_xDoorOpenedHandle  = Zenith_EventDispatcher::Get().Subscribe<DP_OnDoorOpened>(&OnDoorOpenedEvent);
+	g_xDoorClosedHandle  = Zenith_EventDispatcher::Get().Subscribe<DP_OnDoorClosed>(&OnDoorClosedEvent);
+	g_xItemPickedUpHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnItemPickedUp>(&OnItemPickedUpEvent);
+	// Reset per-run opened-door set so a fresh test starts without
+	// inherited "bot already pressed this door" flags from the previous
+	// personality.
+	g_axBotOpenedDoors.Clear();
 
 	// Telemetry artifacts -- always written under %TEMP% as
 	// dp_human_playthrough.{ztlm,json}. Tools/dp_telemetry_visualise.ps1
@@ -2119,7 +2414,20 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		// TestDoor authored alongside the forge above is much closer.
 		Zenith_Maths::Vector3 xForgePos(50.0f, 0.0f, 32.0f);
 		if (g_xForge.IsValid()) TryGetEntityPos(g_xForge, xForgePos);
-		g_xDoor   = FindClosestScriptTo<DPDoor_Behaviour>(xForgePos);
+		// 2026-05-25 v2: target the door closest to the PENTAGRAM, not
+		// the forge. With the new 2-doors-per-corridor + unlocked-by-
+		// default layout, the door closest to the forge is usually
+		// non-pent-side + unlocked -- F-pressing it opens it WITHOUT
+		// consuming the Key. The bot then carries Key into the objective
+		// loop, but auto-pickup at 1.5 m skips when slot is full, so
+		// the bot can't grab an Objective. By targeting the pent-side
+		// LOCKED door first, the bot consumes the Key on the unlock,
+		// the door stays sticky-unlocked, the bot's hand is empty for
+		// the next objective auto-pickup, and the cleared door makes
+		// the pentagram reachable.
+		Zenith_Maths::Vector3 xPentPos(50.0f, 0.0f, 70.0f);
+		if (g_xPentagram.IsValid()) TryGetEntityPos(g_xPentagram, xPentPos);
+		g_xDoor   = FindClosestScriptTo<DPDoor_Behaviour>(xPentPos);
 		g_xChest  = FindClosestScriptTo<DPChest_Behaviour>(xForgePos);
 		g_xNoise  = FindClosestScriptTo<DummyNoiseMachine_Behaviour>(xForgePos);
 
@@ -2337,30 +2645,34 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 			std::printf("[HumanPlaythrough] possession confirmed: villager idx=%u\n",
 				xPossessed.m_uIndex);
 			std::fflush(stdout);
-			// Zealot bypasses the iron/forge/door/chest/noise chain --
-			// it doesn't need a key to grab objectives, and the bootstrap
-			// chain eats ~30 s of life-timer budget that the win loop
-			// could be spending. Jumps straight to ObjLoopFind so all
-			// possessions (including poss 1) are spent on pentagram
-			// deliveries.
+			// 2026-05-25 v3: EVERY personality now runs the iron + forge
+			// + door portion of the bootstrap because the doors-at-
+			// DoorPoints PR makes the pent-side door REQUIRED to reach
+			// the pentagram (no more bypass through unlocked wall
+			// gaps). Previously bSkipBootstrap personalities (Zealot /
+			// Relay / Heretic / Trickster) went straight to the
+			// objective loop without a Key; they could win pre-PR by
+			// walking around the corridor-midpoint door through the
+			// wall gap, but post-PR the wall gap IS a door and there's
+			// no bypass.
 			//
-			// Heretic (2026-05-21) is bSkipBootstrap=true BUT also walks
-			// to the noise machine FIRST as a priest-bait. The kHP_WalkNoise
-			// transition naturally lands at kHP_ObjLoopFind after kHP_WaitNoise,
-			// so we don't need a return path; the existing chain handles it.
+			// New interpretation of bSkipBootstrap: skip the OPTIONAL
+			// chest + noise interactions after the door is unlocked.
+			// The iron -> forge -> door critical path is mandatory.
+			//
+			// Heretic's bDeliberateNoiseFirst still routes through the
+			// noise machine first; kHP_WaitNoise then jumps to
+			// kHP_WalkIron to enter the (now-mandatory) iron+forge+door
+			// chain.
 			if (g_xActiveCfg.bDeliberateNoiseFirst)
 			{
 				g_iPhase = kHP_WalkNoise;
-			}
-			else if (g_xActiveCfg.bSkipBootstrap)
-			{
-				g_iPhase = kHP_ObjLoopFind;
 			}
 			else
 			{
 				g_iPhase = kHP_WalkIron;
 			}
-			SetWalkBudget(1200);  // ~25 s budget for the first walk
+			SetWalkBudget(kWalkFrameBudget);  // ~30 s budget for the first walk
 			return true;
 		}
 		if (g_iWait > 180)
@@ -2432,8 +2744,49 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		std::printf("[HumanPlaythrough] iron pickup: held=%d (got=%d)\n",
 			(int)eHeld, (int)g_bIronPickedUp);
 		std::fflush(stdout);
+		// 2026-05-25: if the bot accidentally grabbed an Objective on
+		// the way to Iron (auto-pickup at 1.5 m proximity is greedy),
+		// drop it and re-attempt the iron walk ONCE. Limited to one
+		// retry to avoid an infinite drop-walk-pickup-loop when an
+		// Objective spawn sits inside the iron's 1.5 m pickup zone.
+		// If retry also fails, proceed to forge anyway -- the bot is
+		// going to die without Iron, but at least the test makes
+		// forward progress and produces telemetry on the failure mode.
+		if (!g_bIronPickedUp && DP_IsObjectiveTag(eHeld)
+		 && g_iIronRetryCount == 0)
+		{
+			++g_iIronRetryCount;
+			g_iPhase = kHP_DropWrongItem;
+			g_iWait = 0;
+			return true;
+		}
 		g_iPhase = kHP_WalkForge;
-		SetWalkBudget(1200);
+		SetWalkBudget(kWalkFrameBudget);
+		return true;
+	}
+
+	case kHP_DropWrongItem:
+	{
+		++g_iWait;
+		// Frame 1: idle to clear WASD.
+		if (g_iWait == 1) return true;
+		// Frame 2: press G to drop the held item.
+		if (g_iWait == 2)
+		{
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_G);
+			return true;
+		}
+		// Frame 3-4: idle while drop processes.
+		if (g_iWait < 5) return true;
+		// Frame 5+: re-attempt the iron walk. The dropped Objective
+		// is now at the villager's feet; walking AWAY from it before
+		// re-pathing reduces (but doesn't eliminate) the chance of
+		// re-grabbing it. The single-retry cap above ensures we don't
+		// loop on this.
+		std::printf("[HumanPlaythrough] dropped wrong item -- retrying iron walk\n");
+		std::fflush(stdout);
+		g_iPhase = kHP_WalkIron;
+		SetWalkBudget(kWalkFrameBudget);
 		return true;
 	}
 
@@ -2514,13 +2867,70 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	case kHP_WalkDoor:
 	{
 		if (TryRepossessIfDead()) return true;
+		// 2026-05-25 v3 + 2026-05-26 v4: if the current villager
+		// lacks a Key (e.g. previous villager died mid-bootstrap and
+		// we re-possessed without picking up the dropped Key),
+		// re-bootstrap UNLESS the pent-side door is already STICKY-
+		// UNLOCKED from a previous villager's F-press. In that case
+		// the door doesn't need a key anymore -- the bot can walk
+		// straight through it to the objective loop. Without the
+		// IsOpen() early-exit, every villager re-forged a key it
+		// didn't need on layouts where villager 1 already delivered
+		// one objective, burning ~30 s of life on a wasted iron +
+		// forge chain that prevented the bot from reaching 3
+		// deliveries inside 200 s (matrix v28 seed 1 = 0 wins despite
+		// Option B's shorter bootstrap path).
+		{
+			const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
+			if (xCur.IsValid())
+			{
+				const DP_ItemTag eHeld = DP_Player::GetHeldItemTag(xCur);
+				if (eHeld != DP_ItemTag::Key && eHeld != DP_ItemTag::SkeletonKey)
+				{
+					// Check if the pent-side door is already open
+					// (sticky-unlock). If so, skip bootstrap and
+					// proceed to the door phase, which will see
+					// IsOpen() and advance to chest/obj-loop.
+					bool bDoorAlreadyOpen = false;
+					if (DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor))
+					{
+						bDoorAlreadyOpen = pxDoor->IsOpen();
+					}
+					if (!bDoorAlreadyOpen)
+					{
+						std::printf("[HumanPlaythrough] no key at door -- re-bootstrap\n");
+						std::fflush(stdout);
+						g_iPhase = kHP_WalkIron;
+						g_iIronRetryCount = 0;
+						SetWalkBudget(kWalkFrameBudget);
+						return true;
+					}
+					std::printf("[HumanPlaythrough] no key at door but door is OPEN -- skip re-bootstrap\n");
+					std::fflush(stdout);
+				}
+			}
+		}
 		if (!g_xDoor.IsValid()) {
 			std::printf("[HumanPlaythrough] door missing — skipping\n");
 			std::fflush(stdout);
 			g_iPhase = kHP_WalkChest; SetWalkBudget(1200); return true;
 		}
+		// 2026-05-25: use the door's LOGICAL centre (geometric door
+		// centre), not the entity transform (which is corner-offset
+		// by ~1 m via SM_Cube's corner-anchor). With fStopDist=1.95
+		// from the transform, the bot ends up ~3 m from the logical
+		// centre -- outside the 2 m InteractRadius -- and the F-press
+		// is rejected. Walking to the logical centre puts the bot
+		// inside InteractRadius reliably.
 		Zenith_Maths::Vector3 xDoorPos;
-		if (!TryGetEntityPos(g_xDoor, xDoorPos)) { g_iPhase = kHP_WalkChest; SetWalkBudget(1200); return true; }
+		if (DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor))
+		{
+			xDoorPos = pxDoor->GetInteractionCentre();
+		}
+		else if (!TryGetEntityPos(g_xDoor, xDoorPos))
+		{
+			g_iPhase = kHP_WalkChest; SetWalkBudget(1200); return true;
+		}
 		LogWalkProgress("door", xDoorPos);
 		--g_iWalkBudget;
 		const bool bArrived = DriveWASDToward(xDoorPos, 1.95f);
@@ -2557,6 +2967,24 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	{
 		++g_iWait;
 		if (g_iWait == 1) return true;
+		// 2026-05-26: skip the F-press if the door is ALREADY open.
+		// With two-way doors (F on an open door closes it), villager 2+
+		// reaching a door that villager 1 already opened (sticky-unlock
+		// preserves the open state across deaths) would TOGGLE the door
+		// closed -- telemetry-confirmed on seed 1: villager 109 closed
+		// door 86 at t=165.5s after villager 116 had opened it earlier.
+		// Closed-door blocks the bot's subsequent path back to the
+		// pentagram. Skip-if-already-open keeps the bot moving forward.
+		if (DPDoor_Behaviour* pxDoor = GetScript<DPDoor_Behaviour>(g_xDoor))
+		{
+			if (pxDoor->IsOpen())
+			{
+				g_bDoorOpened = true;
+				g_iPhase = kHP_VerifyDoor;
+				g_iWait = 0;
+				return true;
+			}
+		}
 		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_F);
 		g_iPhase = kHP_VerifyDoor;
 		g_iWait = 0;
@@ -2573,8 +3001,22 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		}
 		std::printf("[HumanPlaythrough] door: open=%d\n", (int)g_bDoorOpened);
 		std::fflush(stdout);
-		g_iPhase = kHP_WalkChest;
-		SetWalkBudget(1200);
+		// 2026-05-25 v3: bSkipBootstrap now means "skip the OPTIONAL
+		// chest + noise interactions" -- iron+forge+door is mandatory
+		// (see kHP_WaitPossess for the design rationale). Personalities
+		// with bSkipBootstrap=true jump straight to the objective loop
+		// after the pent-side door is unlocked.
+		// bDeliberateNoiseFirst (Heretic) has already done the noise
+		// machine BEFORE iron, so it also skips the second noise pass.
+		if (g_xActiveCfg.bSkipBootstrap || g_xActiveCfg.bDeliberateNoiseFirst)
+		{
+			g_iPhase = kHP_ObjLoopFind;
+		}
+		else
+		{
+			g_iPhase = kHP_WalkChest;
+		}
+		SetWalkBudget(kWalkFrameBudget);
 		return true;
 	}
 
@@ -2584,6 +3026,30 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	case kHP_WalkChest:
 	{
 		if (TryRepossessIfDead()) return true;
+		// 2026-05-26: opportunistic delivery pivot. If the villager
+		// is already holding an Objective (auto-pickup at 1.5 m
+		// proximity grabs anything we walk near), divert straight
+		// to pentagram delivery instead of continuing the chest
+		// side-trip. A real human player wouldn't drop a winning
+		// reagent to grab loot first. Telemetry-confirmed on seed 1:
+		// villager 3 picked up Objective4 en route to chest, opened
+		// chest, walked to pent without an objective slot, died
+		// without delivering the carried Objective4.
+		{
+			const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
+			if (xCur.IsValid())
+			{
+				const DP_ItemTag eHeld = DP_Player::GetHeldItemTag(xCur);
+				if (DP_IsObjectiveTag(eHeld))
+				{
+					g_eCurrentObjTag = eHeld;
+					g_xCurrentObjItem = INVALID_ENTITY_ID;
+					g_iPhase = kHP_ObjLoopWalkPentagram;
+					SetWalkBudget(kWalkFrameBudget);
+					return true;
+				}
+			}
+		}
 		if (!g_xChest.IsValid()) {
 			std::printf("[HumanPlaythrough] chest missing — skipping\n");
 			std::fflush(stdout);
@@ -2676,6 +3142,23 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 	case kHP_WalkNoise:
 	{
 		if (TryRepossessIfDead()) return true;
+		// 2026-05-26: opportunistic delivery pivot (see kHP_WalkChest
+		// for the rationale).
+		{
+			const Zenith_EntityID xCur = DP_Player::GetPossessedVillager();
+			if (xCur.IsValid())
+			{
+				const DP_ItemTag eHeld = DP_Player::GetHeldItemTag(xCur);
+				if (DP_IsObjectiveTag(eHeld))
+				{
+					g_eCurrentObjTag = eHeld;
+					g_xCurrentObjItem = INVALID_ENTITY_ID;
+					g_iPhase = kHP_ObjLoopWalkPentagram;
+					SetWalkBudget(kWalkFrameBudget);
+					return true;
+				}
+			}
+		}
 		if (!g_xNoise.IsValid()) {
 			std::printf("[HumanPlaythrough] noise missing — skipping\n");
 			std::fflush(stdout);
@@ -2753,8 +3236,22 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		std::printf("[HumanPlaythrough] noise: priest_has_investigate=%d\n",
 			(int)g_bPriestHeardNoise);
 		std::fflush(stdout);
-		g_iPhase = kHP_ObjLoopFind;
-		SetWalkBudget(1200);
+		// 2026-05-25 v3: Heretic's bDeliberateNoiseFirst routes us here
+		// FIRST (before the iron+forge+door chain). After leaving the
+		// noise machine, drop into the mandatory iron+forge+door
+		// bootstrap so Heretic also obtains a Key for the pent-side
+		// door. Non-noise-first personalities (Casual / Speedrunner /
+		// etc.) reach this phase AFTER the bootstrap; for them, the
+		// noise machine is the LAST optional stop before objectives.
+		if (g_xActiveCfg.bDeliberateNoiseFirst && !g_bForgeCrafted)
+		{
+			g_iPhase = kHP_WalkIron;
+		}
+		else
+		{
+			g_iPhase = kHP_ObjLoopFind;
+		}
+		SetWalkBudget(kWalkFrameBudget);
 		return true;
 	}
 
@@ -3464,6 +3961,21 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		{
 			Zenith_EventDispatcher::Get().Unsubscribe(g_xInteractHandle);
 			g_xInteractHandle = INVALID_EVENT_HANDLE;
+		}
+		if (g_xDoorOpenedHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(g_xDoorOpenedHandle);
+			g_xDoorOpenedHandle = INVALID_EVENT_HANDLE;
+		}
+		if (g_xDoorClosedHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(g_xDoorClosedHandle);
+			g_xDoorClosedHandle = INVALID_EVENT_HANDLE;
+		}
+		if (g_xItemPickedUpHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(g_xItemPickedUpHandle);
+			g_xItemPickedUpHandle = INVALID_EVENT_HANDLE;
 		}
 
 		g_iPhase = kHP_Done;
