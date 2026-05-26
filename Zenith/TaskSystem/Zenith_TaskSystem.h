@@ -161,12 +161,6 @@ public:
 		return m_bCallingThreadParticipates;
 	}
 
-	// Backward-compatible name. Prefer GetCallingThreadParticipates() in new code.
-	const bool GetSubmittingThreadJoins() const
-	{
-		return GetCallingThreadParticipates();
-	}
-
 private:
 
 	Zenith_TaskArrayFunction m_pfnArrayFunc;

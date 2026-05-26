@@ -8291,10 +8291,6 @@ void Zenith_UnitTests::TestTaskArrayCallingThreadParticipates(){
 
 	ZENITH_ASSERT_TRUE(xData.m_uMainThreadInvocations.load() >= 1,
 		"TestTaskArrayCallingThreadParticipates: calling thread should run at least one invocation when flag is true");
-
-	// Also confirm the legacy accessor still works.
-	ZENITH_ASSERT_TRUE(xArray.GetSubmittingThreadJoins(),
-		"TestTaskArrayCallingThreadParticipates: legacy GetSubmittingThreadJoins() should reflect the flag");
 }
 
 //==============================================================================
