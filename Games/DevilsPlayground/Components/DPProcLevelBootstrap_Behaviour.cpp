@@ -19,6 +19,7 @@
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_AI.h"
 #include "Source/DP_Tuning.h"
+#include "Source/DPMaterials.h"
 #include "Source/DPParticles.h"
 
 #include "Components/DPPentagram_Behaviour.h"
@@ -467,6 +468,20 @@ bool DPProcLevelBootstrap_Behaviour::SpawnCharacterEntity(
 
 	Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
 	xModel.LoadModel(strMeshPath);
+	Zenith_Assert(xModel.GetModelInstance(), "Character has no model instance");
+
+	if (bIsPriest)
+	{
+		Flux_ModelInstance* pxInst = xModel.GetModelInstance();
+		const uint32_t uMatCount = pxInst->GetNumMaterials();
+		const Zenith_Maths::Vector3 xRgb{ 0.95f, 0.10f, 0.10f };
+		for (uint32_t u = 0; u < uMatCount; ++u)
+		{
+			Zenith_MaterialAsset* pxBase = pxInst->GetMaterial(u);
+			Zenith_MaterialAsset* pxRed = DPMaterials::GetOrCreateColouredVariant(pxBase, xRgb, "Priest");
+			pxInst->SetMaterial(u, pxRed);
+		}
+	}
 
 	Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
 	xCol.AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
