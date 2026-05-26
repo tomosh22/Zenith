@@ -80,19 +80,7 @@ public:
 		const Zenith_Maths::Matrix4& viewMatrix,
 		const Zenith_Maths::Matrix4& projMatrix
 	);
-	
-	static void RenderRotateGizmo(
-		const Zenith_Maths::Vector3& position,
-		const Zenith_Maths::Matrix4& viewMatrix,
-		const Zenith_Maths::Matrix4& projMatrix
-	);
-	
-	static void RenderScaleGizmo(
-		const Zenith_Maths::Vector3& position,
-		const Zenith_Maths::Matrix4& viewMatrix,
-		const Zenith_Maths::Matrix4& projMatrix
-	);
-	
+
 	// Mouse ray casting
 	static Zenith_Maths::Vector3 ScreenToWorldRay(
 		const Zenith_Maths::Vector2& mousePos,
