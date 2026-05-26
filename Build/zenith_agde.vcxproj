@@ -896,7 +896,6 @@
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariablesImpl.h" />
-    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_ContentBrowser.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.h" />
