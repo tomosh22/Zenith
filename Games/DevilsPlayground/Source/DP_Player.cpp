@@ -144,8 +144,11 @@ namespace DP_Player
 			return false;
 		}
 
-		// MVP-1.4.1-3: state gate. Refuse fainted (still recovering) or
-		// dead villagers.
+		// Resolve the candidate villager script once and share it across
+		// the possessability check + Devout-channel branch below. GetScript
+		// is a linear scan by type-name string, so two queries per click is
+		// avoidable churn (Components/CLAUDE.md known-gotcha).
+		DPVillager_Behaviour* pxCandidateVillager = nullptr;
 		if (xId.IsValid())
 		{
 			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
@@ -154,15 +157,18 @@ namespace DP_Player
 				Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
 				if (xEnt.IsValid() && xEnt.HasComponent<Zenith_ScriptComponent>())
 				{
-					DPVillager_Behaviour* pxV =
+					pxCandidateVillager =
 						xEnt.GetComponent<Zenith_ScriptComponent>()
 							.GetScript<DPVillager_Behaviour>();
-					if (pxV != nullptr && !pxV->IsPossessable())
-					{
-						return false;
-					}
 				}
 			}
+		}
+
+		// MVP-1.4.1-3: state gate. Refuse fainted (still recovering) or
+		// dead villagers.
+		if (pxCandidateVillager != nullptr && !pxCandidateVillager->IsPossessable())
+		{
+			return false;
 		}
 
 		// MVP-1.8: range gate.
@@ -183,23 +189,9 @@ namespace DP_Player
 
 		// MVP-2.1.1: Devout channel dispatch.
 		float fChannelSec = DP_Tuning::Get<float>("possession.channel_default_s");
-		if (xId.IsValid())
+		if (pxCandidateVillager != nullptr && pxCandidateVillager->GetArchetypeId() == "Devout")
 		{
-			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataForEntity(xId);
-			if (pxScene != nullptr)
-			{
-				Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-				if (xEnt.IsValid() && xEnt.HasComponent<Zenith_ScriptComponent>())
-				{
-					DPVillager_Behaviour* pxV =
-						xEnt.GetComponent<Zenith_ScriptComponent>()
-							.GetScript<DPVillager_Behaviour>();
-					if (pxV != nullptr && pxV->GetArchetypeId() == "Devout")
-					{
-						fChannelSec = DP_Tuning::Get<float>("possession.channel_devout_s");
-					}
-				}
-			}
+			fChannelSec = DP_Tuning::Get<float>("possession.channel_devout_s");
 		}
 
 		if (fChannelSec > 0.0f)

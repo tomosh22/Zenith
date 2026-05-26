@@ -172,8 +172,9 @@ Every script follows the same skeleton:
 #pragma once
 #include "EntityComponent/Zenith_ScriptBehaviour.h"
 
-class DPFoo_Behaviour ZENITH_FINAL : public Zenith_ScriptBehaviour
+class DPFoo_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
+    friend class Zenith_ScriptComponent;
 public:
     ZENITH_BEHAVIOUR_TYPE_NAME(DPFoo_Behaviour)
 
@@ -189,6 +190,23 @@ public:
     virtual void OnDestroy() override { /* deregister side-tables */ }
 };
 ```
+
+**Note on the inheritance syntax:** `ZENITH_FINAL` leaf behaviours use
+*private* inheritance (`: Zenith_ScriptBehaviour`, no `public`) — this
+matches every other shipping game project in the engine
+(Sokoban / Marble / Combat / TilePuzzle / AIShowcase / etc.). The
+`friend class Zenith_ScriptComponent;` declaration is what grants the
+script-component access to the lifecycle hooks; private inheritance
+still permits the derived class to override the virtual functions for
+polymorphic dispatch.
+
+The only place we use `public Zenith_ScriptBehaviour` is when the
+behaviour is *itself* a base for further derivation — see
+[DPInteractable_Behaviour.h](DPInteractable_Behaviour.h), which is
+the parent of DPDoor / DPChest / DPForge / DPPentagram / DPDoubleDoor /
+DummyNoiseMachine. Subclasses then use
+`: public DPInteractable_Behaviour` to inherit the proximity +
+F-press wiring.
 
 The `ZENITH_BEHAVIOUR_TYPE_NAME(DPFoo_Behaviour)` macro registers the
 C++ factory at static-init via `Zenith_ScriptAsset::RegisterFactory`.

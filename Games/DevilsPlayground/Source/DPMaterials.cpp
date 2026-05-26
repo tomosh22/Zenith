@@ -20,6 +20,7 @@
 namespace
 {
 	using DP_Json::JsonValue;
+	using DP_Json::JsonObjectEntry;
 	using DP_Json::LoadJsonFile;
 	using enum DP_Json::JsonType;
 
@@ -109,9 +110,9 @@ namespace
 
 			for (u_int u = 0; u < pxVectors->m_axObject.GetSize(); ++u)
 			{
-				const auto& xPair = pxVectors->m_axObject.Get(u);
-				const std::string& strKey = xPair.first;
-				const JsonValue& xVal = xPair.second;
+				const JsonObjectEntry& xEntry = pxVectors->m_axObject.Get(u);
+				const std::string& strKey = xEntry.m_strKey;
+				const JsonValue& xVal = xEntry.m_xValue;
 				if (xVal.m_eType != JSON_ARRAY || xVal.m_axArray.GetSize() < 3) continue;
 
 				float r = static_cast<float>(xVal.m_axArray.Get(0).m_fNumber);
@@ -148,9 +149,9 @@ namespace
 
 			for (u_int u = 0; u < pxScalars->m_axObject.GetSize(); ++u)
 			{
-				const auto& xPair = pxScalars->m_axObject.Get(u);
-				const std::string& strKey = xPair.first;
-				const JsonValue& xVal = xPair.second;
+				const JsonObjectEntry& xEntry = pxScalars->m_axObject.Get(u);
+				const std::string& strKey = xEntry.m_strKey;
+				const JsonValue& xVal = xEntry.m_xValue;
 				if (xVal.m_eType != JSON_NUMBER) continue;
 				float fVal = static_cast<float>(xVal.m_fNumber);
 
@@ -185,9 +186,9 @@ namespace
 
 			for (u_int u = 0; u < pxTextures->m_axObject.GetSize(); ++u)
 			{
-				const auto& xPair = pxTextures->m_axObject.Get(u);
-				const std::string& strKey = xPair.first;
-				const JsonValue& xVal = xPair.second;
+				const JsonObjectEntry& xEntry = pxTextures->m_axObject.Get(u);
+				const std::string& strKey = xEntry.m_strKey;
+				const JsonValue& xVal = xEntry.m_xValue;
 				if (xVal.m_eType != JSON_STRING) continue;
 				const std::string& strUEPath = xVal.m_strString;
 				if (strUEPath.empty()) continue;

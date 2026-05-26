@@ -13,6 +13,7 @@
 namespace
 {
 	using DP_Json::JsonValue;
+	using DP_Json::JsonObjectEntry;
 	using DP_Json::LoadJsonFile;
 	using enum DP_Json::JsonType;
 
@@ -43,14 +44,14 @@ namespace
 		{
 			for (u_int u = 0; u < xNode.m_axObject.GetSize(); ++u)
 			{
-				const auto& xPair = xNode.m_axObject.Get(u);
-				const std::string& strKey = xPair.first;
+				const JsonObjectEntry& xJsonEntry = xNode.m_axObject.Get(u);
+				const std::string& strKey = xJsonEntry.m_strKey;
 				if (!strKey.empty() && strKey[0] == '_') continue;
 
 				std::string strNext = strPrefix.empty()
 				                      ? strKey
 				                      : (strPrefix + "." + strKey);
-				FlattenObject(xPair.second, strNext, xOut);
+				FlattenObject(xJsonEntry.m_xValue, strNext, xOut);
 			}
 		}
 		else if (xNode.m_eType == JSON_NUMBER || xNode.m_eType == JSON_BOOL)

@@ -70,7 +70,7 @@ public:
 		// returns; no need to forward here.
 	}
 
-	~DPVillager_Behaviour() = default;
+	~DPVillager_Behaviour() override = default;
 
 	void OnAwake() ZENITH_FINAL override
 	{

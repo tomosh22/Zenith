@@ -103,6 +103,23 @@ namespace DP_Particles
 		// Config construction helpers. Each constructs a tuned
 		// Flux_ParticleEmitterConfig matching the visual semantic of one
 		// Kind. All CPU-simulated (small particle counts; no GPU benefit).
+		//
+		// Per-emitter constants (lifetimes / colors / spawn rates / spread
+		// angles / sizes) live inline rather than in Config/Tuning.json by
+		// design: they are visual *design data* for one effect each, not
+		// gameplay knobs that designers tune across runs. Routing ~180
+		// values through DP_Tuning::Get<float> would bloat Tuning.json into
+		// an unreadable wall of `particles.forge_sparks.lifetime_min_s = 0.25`
+		// keys and make each Make*() function less readable, with no
+		// practical iteration win -- each value is hand-tuned once when
+		// the visual is authored and rarely revisited.
+		//
+		// Gameplay-affecting values (e.g. priest hearing radius, life
+		// timer) DO go through DP_Tuning; particle visuals do not. If
+		// this ever changes -- e.g. accessibility settings adjust effect
+		// intensity -- the right move is to add a small set of cross-
+		// emitter multipliers (overall_intensity, etc.) to DP_Tuning, not
+		// to migrate per-value.
 		// -----------------------------------------------------------------
 		Flux_ParticleEmitterConfig* MakeForgeSparks()
 		{

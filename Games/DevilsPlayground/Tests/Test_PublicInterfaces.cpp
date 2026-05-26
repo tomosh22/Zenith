@@ -5,6 +5,7 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "Source/PublicInterfaces.h"
 #include "Source/DevilsPlayground_Tags.h"
+#include "Source/DP_Tuning.h"
 #include "../Components/DPItemManager_Behaviour.h"
 #include "../Components/DPPlayerController_Behaviour.h"
 #include "../Components/DPFogPass_Behaviour.h"
@@ -207,6 +208,19 @@ static void Setup_Win()
 	g_bWinSetupRan = true;
 	g_bAllPassed = true;
 	g_bVictoryFired = false;
+
+	// 2026-05-17: DP_Win's state lives on DPPlayerController_Behaviour
+	// (was process-global before). Tests that exercise NotifyObjective-
+	// Collected / Reset have to spin up a scene with the controller
+	// attached -- otherwise every call silently no-ops on a null
+	// Instance() and the assertions all fail. Mirrors Setup_HeldItem.
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("WinTest");
+	Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xManagerEntity(pxScene, "ManagerEntity");
+	Zenith_ScriptComponent& xScripts =
+		xManagerEntity.AddComponent<Zenith_ScriptComponent>();
+	xScripts.AddScript<DPPlayerController_Behaviour>();
+
 	DP_Win::Reset();
 
 	g_xVictoryHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnVictory>(&OnVictoryEvent);
@@ -214,20 +228,42 @@ static void Setup_Win()
 	DP_EXPECT(DP_Win::GetCollectedObjectivesMask() == 0, "initial mask = 0");
 	DP_EXPECT(!DP_Win::HasWon(),                         "initial !HasWon");
 
-	// Collect 4 of 5 — not yet won.
-	DP_Win::NotifyObjectiveCollected(DP_ItemTag::Objective1);
-	DP_Win::NotifyObjectiveCollected(DP_ItemTag::Objective2);
-	DP_Win::NotifyObjectiveCollected(DP_ItemTag::Objective3);
-	DP_Win::NotifyObjectiveCollected(DP_ItemTag::Objective4);
-	DP_EXPECT(!DP_Win::HasWon(),                         "4/5 !HasWon");
-	DP_EXPECT(!g_bVictoryFired,                          "4/5 no victory event");
+	// Read the win threshold from tuning so this test stays correct as
+	// the design ratchets between "3 of 5" and "5 of 5" without code
+	// changes (see DP_Win::NotifyObjectiveCollected). Clamp to [1, 5]
+	// because the available objective bits are 1..5.
+	int iRequired = DP_Tuning::Get<int>("night.reagents_required_for_victory");
+	if (iRequired < 1) iRequired = 1;
+	if (iRequired > 5) iRequired = 5;
 
-	// 5th — should fire.
-	DP_Win::NotifyObjectiveCollected(DP_ItemTag::Objective5);
-	DP_EXPECT(DP_Win::HasWon(),                          "5/5 HasWon");
+	// Collect objectives one-by-one. Below the threshold => !HasWon and
+	// no victory event. At the threshold => HasWon and event fires
+	// exactly once. The remaining objectives still set their bits but
+	// do not re-fire the event (NotifyObjectiveCollected gates on
+	// m_bHasWon).
+	const DP_ItemTag aeOrder[5] = {
+		DP_ItemTag::Objective1,
+		DP_ItemTag::Objective2,
+		DP_ItemTag::Objective3,
+		DP_ItemTag::Objective4,
+		DP_ItemTag::Objective5,
+	};
+	for (int i = 0; i < 5; ++i)
+	{
+		DP_Win::NotifyObjectiveCollected(aeOrder[i]);
+		const int iCollected = i + 1;
+		const bool bShouldHaveWon = (iCollected >= iRequired);
+		DP_EXPECT(DP_Win::HasWon() == bShouldHaveWon,
+			bShouldHaveWon ? "at/over threshold -> HasWon"
+			               : "below threshold -> !HasWon");
+		DP_EXPECT(g_bVictoryFired == bShouldHaveWon,
+			bShouldHaveWon ? "at/over threshold -> victory event fired"
+			               : "below threshold -> no victory event");
+	}
+
+	// After collecting all 5, mask should be every objective bit set.
 	DP_EXPECT(DP_Win::GetCollectedObjectivesMask() == DP_ALL_OBJECTIVES_MASK,
 		"5/5 mask all set");
-	DP_EXPECT(g_bVictoryFired,                           "5/5 victory event fired");
 
 	// Re-collecting an already-set objective should be idempotent.
 	DP_Win::NotifyObjectiveCollected(DP_ItemTag::Objective1);
@@ -236,8 +272,8 @@ static void Setup_Win()
 
 	// Reset clears state.
 	DP_Win::Reset();
-	DP_EXPECT(DP_Win::GetCollectedObjectivesMask() == 0, "reset → mask = 0");
-	DP_EXPECT(!DP_Win::HasWon(),                         "reset → !HasWon");
+	DP_EXPECT(DP_Win::GetCollectedObjectivesMask() == 0, "reset -> mask = 0");
+	DP_EXPECT(!DP_Win::HasWon(),                         "reset -> !HasWon");
 
 	// Non-objective tags ignored.
 	DP_Win::NotifyObjectiveCollected(DP_ItemTag::Key);
@@ -245,6 +281,7 @@ static void Setup_Win()
 
 	Zenith_EventDispatcher::Get().Unsubscribe(g_xVictoryHandle);
 	g_xVictoryHandle = INVALID_EVENT_HANDLE;
+	Zenith_SceneManager::UnloadScene(xScene);
 }
 
 static bool Step_Win(int)                            { return false; }

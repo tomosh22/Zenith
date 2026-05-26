@@ -82,18 +82,19 @@ public:
 			});
 	}
 
+	void OnDisable() ZENITH_FINAL override
+	{
+		// Unsubscribe before the destroy wave reaches us. The lambda captures
+		// `this`; leaving the subscription live across the disable->destroy
+		// window risks the dispatcher invoking it after destruction. OnDestroy
+		// repeats the unsubscribe as a safety net (the handle zeroing makes
+		// the second call a no-op).
+		UnsubscribeRunOverEvents();
+	}
+
 	void OnDestroy()
 	{
-		if (m_xVictoryHandle != INVALID_EVENT_HANDLE)
-		{
-			Zenith_EventDispatcher::Get().Unsubscribe(m_xVictoryHandle);
-			m_xVictoryHandle = INVALID_EVENT_HANDLE;
-		}
-		if (m_xRunLostHandle != INVALID_EVENT_HANDLE)
-		{
-			Zenith_EventDispatcher::Get().Unsubscribe(m_xRunLostHandle);
-			m_xRunLostHandle = INVALID_EVENT_HANDLE;
-		}
+		UnsubscribeRunOverEvents();
 		if (s_pxPersistentInstance == this)
 		{
 			s_pxPersistentInstance = nullptr;
@@ -236,6 +237,20 @@ private:
 		ResetAllRunStateBeforeReload();
 		// Load front-end (build index 0).
 		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+	}
+
+	void UnsubscribeRunOverEvents()
+	{
+		if (m_xVictoryHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(m_xVictoryHandle);
+			m_xVictoryHandle = INVALID_EVENT_HANDLE;
+		}
+		if (m_xRunLostHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(m_xRunLostHandle);
+			m_xRunLostHandle = INVALID_EVENT_HANDLE;
+		}
 	}
 
 	void ResetVisibleAndUnpause()

@@ -10,13 +10,14 @@
 // Zenith_Vector for convention compliance with the rest of the engine
 // (memory pool, no STL allocator). Note that Zenith_Vector has no begin/end /
 // operator[]; iterate with index loops via GetSize() + Get(u).
+// Phase 2c (post-audit 2026-05-26): replaced the inner std::pair with
+// JsonObjectEntry so the parser no longer leaks <utility> into call sites.
 
 #include "Collections/Zenith_Vector.h"
 
 #include <cstdint>
 #include <filesystem>
 #include <string>
-#include <utility>
 
 namespace DP_Json
 {
@@ -30,6 +31,8 @@ namespace DP_Json
 		JSON_OBJECT,
 	};
 
+	struct JsonObjectEntry;
+
 	struct JsonValue
 	{
 		JsonType m_eType = JSON_NULL;
@@ -37,9 +40,17 @@ namespace DP_Json
 		bool m_bBool = false;
 		std::string m_strString;
 		Zenith_Vector<JsonValue> m_axArray;
-		Zenith_Vector<std::pair<std::string, JsonValue>> m_axObject;
+		Zenith_Vector<JsonObjectEntry> m_axObject;
 
 		const JsonValue* FindKey(const char* szKey) const;
+	};
+
+	// One key/value pair inside a JSON_OBJECT. Defined after JsonValue
+	// because m_xValue is stored by value.
+	struct JsonObjectEntry
+	{
+		std::string m_strKey;
+		JsonValue   m_xValue;
 	};
 
 	// Reads + parses a JSON file. Returns false on file-open or parse error;

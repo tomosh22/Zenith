@@ -211,6 +211,7 @@
     <ClInclude Include="..\Source\PublicInterfaces.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\Components\DPProcLevelBootstrap_Behaviour.cpp" />
     <ClCompile Include="..\DevilsPlayground.cpp" />
     <ClCompile Include="..\Source\DPFogPass.cpp" />
     <ClCompile Include="..\Source\DPMaterials.cpp" />
