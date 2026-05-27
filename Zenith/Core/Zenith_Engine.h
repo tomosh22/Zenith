@@ -95,6 +95,15 @@ public:
 	// Subsystem accessors. Bodies live in Zenith_Engine.cpp where the
 	// full subsystem headers are visible; this header only forward-
 	// declares the return types.
+	//
+	// Accessor null-assert policy (see per-accessor docs in
+	// Zenith_Engine.cpp for specifics):
+	//   - Some steady-state hot-path accessors omit the null assert when
+	//     Initialise() guarantees allocation before the main loop.
+	//   - Others keep the null assert; the choice is case-by-case per
+	//     accessor, not a blanket rule.
+	//   - Calling any accessor before its Initialise phase is undefined;
+	//     see Initialise() for the ordering.
 	FrameContext& Frame();
 	Zenith_MultithreadingImpl& Threading();
 	Zenith_TaskSystemImpl& Tasks();

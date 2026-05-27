@@ -1,5 +1,12 @@
 #pragma once
 
+// State location note (post-Phase-6a-1):
+//   The static methods in this header preserve the historic API surface, but
+//   the actual data members live on Flux_RendererImpl / Flux_GraphicsImpl,
+//   reachable via g_xEngine.FluxRenderer() / g_xEngine.FluxGraphics().
+//   Static methods are thin forwards. To find where a piece of state lives,
+//   search Flux_RendererImpl.h / Flux_GraphicsImpl.h first.
+
 #include "Collections/Zenith_Vector.h"
 #include "Zenith_PlatformGraphics_Include.h"
 #include "Flux/Flux_CommandList.h"
@@ -429,6 +436,20 @@ public:
 	// editor variable mid-frame takes effect on the next Compile rather
 	// than waiting for the next SetupRenderGraph (which only runs on resize).
 	static void SyncRenderGraphDebugToggles();
+
+	// Called every frame from Zenith_Core::ExecuteRenderGraph before Compile.
+	// Forwards per-subsystem runtime selections (Fog technique, SSR blur,
+	// SSGI denoise, IBL pass enable set) into the graph. Each call may
+	// SetPassEnabled / MarkDirty so that editor-toggle changes take effect
+	// on the same frame. Order is load-bearing: Fog before IBL, SSR/SSGI
+	// before IBL — see the function body for the MarkDirty-propagation
+	// rationale.
+	//
+	// Narrow by design: this is the four subsystem selection-apply calls
+	// only. SyncRenderGraphDebugToggles() is *also* pre-compile graph-state
+	// work and could reasonably be folded in alongside, but that is a
+	// separate consolidation question (see plan).
+	static void ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph);
 
 	// Request a full graph rebuild (Clear + SetupRenderGraph) at the start of
 	// the next frame. Safe to call from execute callbacks — the rebuild is

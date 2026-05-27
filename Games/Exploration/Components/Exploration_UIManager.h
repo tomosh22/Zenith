@@ -30,7 +30,6 @@ namespace Exploration_UIManager
 	static constexpr const char* UI_WEATHER = "Weather";
 	static constexpr const char* UI_FPS = "FPS";
 	static constexpr const char* UI_CONTROLS = "Controls";
-	static constexpr const char* UI_LOADING = "Loading";
 	static constexpr const char* UI_TERRAIN_LOD = "TerrainLOD";
 	static constexpr const char* UI_STREAMING = "Streaming";
 
@@ -118,14 +117,6 @@ namespace Exploration_UIManager
 		pxFPS->SetAlignment(Zenith_UI::TextAlignment::Right);
 		pxFPS->SetFontSize(s_fFontSize);
 		pxFPS->SetColor(xWhite);
-
-		// Loading status (top right, below FPS)
-		Zenith_UI::Zenith_UIText* pxLoading = xUI.CreateText(UI_LOADING, "");
-		pxLoading->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopRight);
-		pxLoading->SetPosition(-s_fMarginLeft, s_fMarginTop + s_fLineHeight);
-		pxLoading->SetAlignment(Zenith_UI::TextAlignment::Right);
-		pxLoading->SetFontSize(s_fFontSize);
-		pxLoading->SetColor(xYellow);
 
 		// Controls hint (bottom left)
 		Zenith_UI::Zenith_UIText* pxControls = xUI.CreateText(UI_CONTROLS,
@@ -278,18 +269,6 @@ namespace Exploration_UIManager
 	}
 
 	/**
-	 * Update loading status display
-	 */
-	inline void UpdateLoading(Zenith_UIComponent& xUI, const char* szStatus)
-	{
-		Zenith_UI::Zenith_UIText* pxLoading = xUI.FindElement<Zenith_UI::Zenith_UIText>(UI_LOADING);
-		if (pxLoading)
-		{
-			pxLoading->SetText(szStatus);
-		}
-	}
-
-	/**
 	 * Toggle debug HUD visibility
 	 */
 	inline void ToggleDebugHUD()
@@ -350,8 +329,7 @@ namespace Exploration_UIManager
 		float fVertexTotalMB,
 		uint32_t uHighLODChunks,
 		uint32_t uStreamsPerFrame,
-		float fFPS,
-		const char* szLoadingStatus)
+		float fFPS)
 	{
 		UpdateTime(xUI, szTimeStr);
 		UpdateWeather(xUI, szWeatherName, fWeatherTransition);
@@ -360,7 +338,6 @@ namespace Exploration_UIManager
 		UpdateTerrainLOD(xUI, szLODName, uResidentLOD);
 		UpdateStreaming(xUI, fVertexUsedMB, fVertexTotalMB, uHighLODChunks, uStreamsPerFrame);
 		UpdateFPS(xUI, fFPS);
-		UpdateLoading(xUI, szLoadingStatus);
 	}
 
 } // namespace Exploration_UIManager

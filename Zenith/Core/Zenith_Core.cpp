@@ -31,7 +31,6 @@
 #include "Input/Zenith_TouchInputImpl.h"
 #include "Physics/Zenith_PhysicsImpl.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
-#include "AssetHandling/Zenith_AsyncAssetLoader.h"
 
 
 void Zenith_Core::UpdateTimers()
@@ -128,27 +127,10 @@ static void ExecuteRenderGraph()
 	// waiting until the next SetupRenderGraph (which only runs on resize).
 	Flux::SyncRenderGraphDebugToggles();
 
-	// Order matters here. Both subsystems below run BEFORE Compile() so any
-	// SetPassEnabled / MarkDirty mutations they perform take effect on the
-	// same frame. Neither can live as a pass OnPrepare callback because
-	// Phase 0 only fires OnPrepare for *enabled* passes — once a system has
-	// disabled its previously-active pass, an OnPrepare-based switcher would
-	// never run again.
-	//
-	// Fog must run BEFORE IBL so that if the user changes fog technique this
-	// frame, ApplyTechniqueSelectionToGraph calls MarkDirty() *before* IBL's
-	// UpdateGraphPassEnables checks IsDirty() — which lets IBL force-enable
-	// all 49 of its passes for the upcoming full Compile() so the validator
-	// sees a writer for every IBL texture that DeferredShading reads.
-	g_xEngine.Fog().ApplyTechniqueSelectionToGraph(xGraph);
-	// SSR / SSGI runtime output toggles: when blur or denoise flip, these
-	// enable/disable their post-pass and MarkDirty so the deferred-lighting
-	// pass re-reads the correct handle (see g_xEngine.SSR().GetReflectionHandle).
-	// Must run BEFORE IBL's UpdateGraphPassEnables for the same MarkDirty
-	// propagation reason described above.
-	g_xEngine.SSR().ApplyBlurSelectionToGraph(xGraph);
-	g_xEngine.SSGI().ApplyDenoiseSelectionToGraph(xGraph);
-	g_xEngine.IBL().UpdateGraphPassEnables(xGraph);
+	// Apply per-subsystem runtime selections (Fog technique, SSR blur,
+	// SSGI denoise, IBL pass enable). Order/rationale lives in
+	// Flux::ApplySubsystemGraphSelections.
+	Flux::ApplySubsystemGraphSelections(xGraph);
 
 	xGraph.Compile();
 	xGraph.Execute();
@@ -169,9 +151,6 @@ void Zenith_Core::Zenith_MainLoop()
 	g_xEngine.Input().BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
 	g_xEngine.Touch().Update();
-
-	// Process async asset load callbacks on main thread
-	Zenith_AsyncAssetLoader::ProcessCompletedLoads();
 
 	if (!Zenith_CommandLine::IsHeadless())
 	{

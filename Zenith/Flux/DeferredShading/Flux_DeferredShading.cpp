@@ -73,6 +73,13 @@ void Flux_DeferredShadingImpl::Initialise()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DeferredShading initialised");
 }
 
+void Flux_DeferredShadingImpl::Shutdown()
+{
+	// Pipeline references its shader, so destroy pipeline first.
+	g_xEngine.DeferredShading().m_xPipeline.Reset();
+	g_xEngine.DeferredShading().m_xShader.Reset();
+}
+
 static void ExecuteApplyLighting(Flux_CommandList* pxCommandList, void*)
 {
 	pxCommandList->AddCommand<Flux_CommandSetPipeline>(&g_xEngine.DeferredShading().m_xPipeline);

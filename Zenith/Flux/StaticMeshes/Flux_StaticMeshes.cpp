@@ -103,6 +103,15 @@ void Flux_StaticMeshesImpl::Initialise()
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_StaticMeshes initialised");
 }
 
+void Flux_StaticMeshesImpl::Shutdown()
+{
+	// Pipelines reference their shaders, so destroy pipelines first.
+	g_xEngine.StaticMeshes().m_xGBufferPipeline.Reset();
+	g_xEngine.StaticMeshes().m_xShadowPipeline.Reset();
+	g_xEngine.StaticMeshes().m_xGBufferShader.Reset();
+	g_xEngine.StaticMeshes().m_xShadowShader.Reset();
+}
+
 void Flux_StaticMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Static Meshes GBuffer", ExecuteGBuffer)

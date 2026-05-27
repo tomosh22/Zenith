@@ -1,3 +1,15 @@
+// =============================================================================
+// Memory management dual codepath
+// -----------------------------------------------------------------------------
+// This file holds BOTH the plain malloc/free Allocate/Deallocate path AND the
+// tracked AllocateTracked path (guard bytes, MemoryTracker, category stacking)
+// behind ZENITH_MEMORY_MANAGEMENT_ENABLED. The tracked path is currently
+// disabled but is PLANNED to be enabled in the future - it is the target
+// implementation, not dead scaffolding. Keep both paths intact; do not
+// extract, restructure, or delete either side. See Zenith.h near the
+// ZENITH_MEMORY_MANAGEMENT_ENABLED define for the same note.
+// =============================================================================
+
 #include "Zenith.h"
 #include "Zenith_MemoryManagement.h"
 

@@ -16,6 +16,7 @@ public:
 	Flux_StaticMeshesImpl& operator=(const Flux_StaticMeshesImpl&) = delete;
 
 	void Initialise();
+	void Shutdown();
 	void BuildPipelines();
 
 	void RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer);

@@ -193,6 +193,13 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 // - thread_local recursion guards (no cross-thread interference)
 // - Initialization check BEFORE accessing TLS (avoids TLS init allocating)
 // - Untracked allocations (static init) silently use plain malloc/free
+//
+// STATUS: currently DISABLED, but planned to be enabled in the future.
+// The tracked code path (AllocateTracked, guard bytes, MemoryTracker,
+// category stacking) is the target implementation, NOT dead scaffolding.
+// Do not remove or restructure either path. Both paths intentionally live
+// side-by-side in Zenith_MemoryManagement.cpp behind this macro until
+// enablement lands.
 //#define ZENITH_MEMORY_MANAGEMENT_ENABLED
 #define ZENITH_INPUT_SIMULATOR
 

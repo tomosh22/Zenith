@@ -1,5 +1,9 @@
 #include "Zenith.h"
 
+// State lives on Flux_GraphicsImpl, reachable via g_xEngine.FluxGraphics().
+// Static methods in Flux_Graphics are thin forwards (post-Phase-6a-1). See
+// Flux/Flux.h for the broader migration note.
+
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"

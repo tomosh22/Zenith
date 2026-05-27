@@ -60,9 +60,6 @@
 // Model instance (for material tests)
 #include "Flux/Flux_ModelInstance.h"
 
-// Async asset loading
-#include "AssetHandling/Zenith_AsyncAssetLoader.h"
-
 // Terrain streaming (for chunk distance tests)
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 
@@ -8977,40 +8974,6 @@ void Zenith_UnitTests::TestPrefabVariantNestedPathSkipped(){
 #ifndef ZENITH_ANDROID
 	std::filesystem::remove(strBasePath);
 #endif
-}
-
-//==============================================================================
-// Async Asset Loading Tests
-//==============================================================================
-
-ZENITH_TEST(Asset, AsyncLoadState) { Zenith_UnitTests::TestAsyncLoadState(); }
-
-void Zenith_UnitTests::TestAsyncLoadState(){
-
-	// Test that default state is UNLOADED for unknown paths
-	std::string strUnknownPath = "game:NonExistent/Unknown" ZENITH_TEXTURE_EXT;
-	AssetLoadState eState = Zenith_AsyncAssetLoader::GetLoadState(strUnknownPath);
-	ZENITH_ASSERT_EQ(eState, AssetLoadState::UNLOADED, "TestAsyncLoadState: Unknown path should be UNLOADED");
-
-}
-
-ZENITH_TEST(Asset, AsyncLoadRequest) { Zenith_UnitTests::TestAsyncLoadRequest(); }
-
-void Zenith_UnitTests::TestAsyncLoadRequest(){
-
-	// Cancel any pending loads to reset state
-	Zenith_AsyncAssetLoader::CancelAllPendingLoads();
-	ZENITH_ASSERT_FALSE(Zenith_AsyncAssetLoader::HasPendingLoads(), "TestAsyncLoadRequest: After cancel, should have no pending loads");
-
-}
-
-ZENITH_TEST(Asset, AsyncLoadCompletion) { Zenith_UnitTests::TestAsyncLoadCompletion(); }
-
-void Zenith_UnitTests::TestAsyncLoadCompletion(){
-
-	// Test ProcessCompletedLoads doesn't crash with no pending loads
-	Zenith_AsyncAssetLoader::ProcessCompletedLoads();
-
 }
 
 //==============================================================================

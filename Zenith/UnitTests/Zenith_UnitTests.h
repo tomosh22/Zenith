@@ -235,11 +235,6 @@ public:
 	// RenderGraph diagnostic accessor
 	static void TestRenderGraphPassOrderDescription();
 
-	// Async asset loading tests
-	static void TestAsyncLoadState();
-	static void TestAsyncLoadRequest();
-	static void TestAsyncLoadCompletion();
-
 	// DataAsset system tests
 	static void TestDataAssetRegistration();
 	static void TestDataAssetCreateAndSave();

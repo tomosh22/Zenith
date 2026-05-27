@@ -535,9 +535,6 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.cpp">
-      <Filter>AssetHandling</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
@@ -3250,9 +3247,6 @@
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.Tests.inl">
-      <Filter>AssetHandling</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h">

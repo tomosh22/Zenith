@@ -288,6 +288,31 @@ void Flux::LateInitialise()
 	AddResChangeCallback(SetupRenderGraph);
 }
 
+void Flux::ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph)
+{
+	// Order matters here. Both subsystems below run BEFORE Compile() so any
+	// SetPassEnabled / MarkDirty mutations they perform take effect on the
+	// same frame. Neither can live as a pass OnPrepare callback because
+	// Phase 0 only fires OnPrepare for *enabled* passes — once a system has
+	// disabled its previously-active pass, an OnPrepare-based switcher would
+	// never run again.
+	//
+	// Fog must run BEFORE IBL so that if the user changes fog technique this
+	// frame, ApplyTechniqueSelectionToGraph calls MarkDirty() *before* IBL's
+	// UpdateGraphPassEnables checks IsDirty() — which lets IBL force-enable
+	// all 49 of its passes for the upcoming full Compile() so the validator
+	// sees a writer for every IBL texture that DeferredShading reads.
+	g_xEngine.Fog().ApplyTechniqueSelectionToGraph(xGraph);
+	// SSR / SSGI runtime output toggles: when blur or denoise flip, these
+	// enable/disable their post-pass and MarkDirty so the deferred-lighting
+	// pass re-reads the correct handle (see g_xEngine.SSR().GetReflectionHandle).
+	// Must run BEFORE IBL's UpdateGraphPassEnables for the same MarkDirty
+	// propagation reason described above.
+	g_xEngine.SSR().ApplyBlurSelectionToGraph(xGraph);
+	g_xEngine.SSGI().ApplyDenoiseSelectionToGraph(xGraph);
+	g_xEngine.IBL().UpdateGraphPassEnables(xGraph);
+}
+
 void Flux::SyncRenderGraphDebugToggles()
 {
 	if (g_xEngine.FluxRenderer().m_pxRenderGraph == nullptr)
@@ -418,13 +443,13 @@ void Flux::Shutdown()
 
 	// Shutdown Flux subsystems in REVERSE order of initialization
 	// This ensures dependencies are destroyed after their dependents
-	// NOTE: Some subsystems (Fog, DeferredShading, AnimatedMeshes, StaticMeshes)
-	// don't have Shutdown() methods - they rely on RAII or are stateless
+	// NOTE: Flux_Fog does not have a Shutdown() method - relies on RAII / stateless
 	g_xEngine.Text().Shutdown();
 	g_xEngine.Quads().Shutdown();
 	g_xEngine.Particles().Shutdown();
 	g_xEngine.SDFs().Shutdown();
-	// Flux_Fog, Flux_DeferredShading - no Shutdown() methods
+	// Flux_Fog - no Shutdown() method
+	g_xEngine.DeferredShading().Shutdown(); // Lighting pipeline + shader
 	g_xEngine.SSAO().Shutdown();           // SSAO render targets
 	g_xEngine.Decals().Shutdown();          // Deferred decal renderer (frees instance buffer + IB)
 	g_xEngine.LightClustering().Shutdown(); // Cluster compute pass (frees cluster buffers)
@@ -436,7 +461,8 @@ void Flux::Shutdown()
 	g_xEngine.Grass().Shutdown();        // After Terrain (depends on terrain data)
 	g_xEngine.Terrain().Shutdown();
 	g_xEngine.InstancedMeshes().Shutdown();
-	// Flux_AnimatedMeshes, Flux_StaticMeshes - no Shutdown() methods
+	g_xEngine.AnimatedMeshes().Shutdown(); // GBuffer + Shadow pipelines/shaders
+	g_xEngine.StaticMeshes().Shutdown();   // GBuffer + Shadow pipelines/shaders
 	g_xEngine.IBL().Shutdown();          // After Skybox (uses skybox for environment)
 	g_xEngine.Skybox().Shutdown();
 	g_xEngine.Shadows().Shutdown();

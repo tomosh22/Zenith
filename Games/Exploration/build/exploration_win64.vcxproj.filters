@@ -4,9 +4,6 @@
     <ClCompile Include="..\Exploration.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\Exploration_AsyncLoader.h">
-      <Filter>Components</Filter>
-    </ClInclude>
     <ClInclude Include="..\Components\Exploration_AtmosphereController.h">
       <Filter>Components</Filter>
     </ClInclude>

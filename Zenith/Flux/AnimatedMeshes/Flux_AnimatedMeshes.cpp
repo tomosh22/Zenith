@@ -103,6 +103,15 @@ void Flux_AnimatedMeshesImpl::Initialise()
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "Flux_AnimatedMeshes initialised");
 }
 
+void Flux_AnimatedMeshesImpl::Shutdown()
+{
+	// Pipelines reference their shaders, so destroy pipelines first.
+	g_xEngine.AnimatedMeshes().m_xGBufferPipeline.Reset();
+	g_xEngine.AnimatedMeshes().m_xShadowPipeline.Reset();
+	g_xEngine.AnimatedMeshes().m_xGBufferShader.Reset();
+	g_xEngine.AnimatedMeshes().m_xShadowShader.Reset();
+}
+
 void Flux_AnimatedMeshesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	xGraph.AddPass("Animated Meshes GBuffer", ExecuteGBuffer)

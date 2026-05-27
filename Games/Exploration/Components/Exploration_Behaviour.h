@@ -6,7 +6,6 @@
  * - Player movement (Exploration_PlayerController.h)
  * - Terrain interaction (Exploration_TerrainExplorer.h)
  * - Day/night cycle (Exploration_AtmosphereController.h)
- * - Asset streaming (Exploration_AsyncLoader.h)
  * - UI management (Exploration_UIManager.h)
  *
  * Key lifecycle hooks:
@@ -41,7 +40,6 @@
 #include "Exploration_PlayerController.h"
 #include "Exploration_TerrainExplorer.h"
 #include "Exploration_AtmosphereController.h"
-#include "Exploration_AsyncLoader.h"
 #include "Exploration_UIManager.h"
 
 #ifdef ZENITH_TOOLS
@@ -197,9 +195,6 @@ public:
 
 			// Update atmosphere (day/night cycle, weather)
 			Exploration_AtmosphereController::Update(fDt);
-
-			// Update async loader
-			Exploration_AsyncLoader::Update();
 
 			// Update UI
 			UpdateUI(xPlayerPos);
@@ -512,8 +507,7 @@ private:
 			xStreamingStats.m_fVertexBufferTotalMB,
 			xStreamingStats.m_uHighLODChunksResident,
 			xStreamingStats.m_uStreamsThisFrame,
-			m_fCurrentFPS,
-			Exploration_AsyncLoader::GetStatusString());
+			m_fCurrentFPS);
 	}
 
 	// ========================================================================

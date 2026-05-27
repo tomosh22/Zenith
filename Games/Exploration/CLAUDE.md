@@ -11,7 +11,6 @@ A first-person terrain exploration experience demonstrating atmospheric renderin
 | **Fog Effects** | `Flux_Fog` | Atmospheric depth fog |
 | **Cascaded Shadow Maps** | `Flux_Shadows` | 4-cascade shadow system |
 | **SSAO** | `Flux_SSAO` | Screen-space ambient occlusion |
-| **Async Asset Loading** | `Zenith_AsyncAssetLoader` | Background asset streaming |
 | **First-Person Camera** | `Zenith_CameraComponent` | Mouse-look + WASD movement |
 | **Script Behaviours** | `Zenith_ScriptBehaviour` | Game logic via lifecycle hooks |
 | **DataAsset System** | `Zenith_DataAsset` | Configuration serialization |
@@ -31,7 +30,6 @@ Games/Exploration/
     Exploration_PlayerController.h   # First-person movement and mouse-look
     Exploration_TerrainExplorer.h    # Terrain streaming observer
     Exploration_AtmosphereController.h # Day/night cycle + weather
-    Exploration_AsyncLoader.h        # Asset streaming manager
     Exploration_UIManager.h          # Minimal HUD
   Assets/
     Scenes/Exploration.zscen         # Serialized scene
@@ -89,16 +87,6 @@ Demonstrates:
 - Weather state machine (clear, cloudy, foggy)
 - Smooth transitions between weather states
 
-### Exploration_AsyncLoader.h - Asset Streaming
-**Engine APIs:** `Zenith_AsyncAssetLoader`
-
-Demonstrates:
-- Background texture loading
-- Load state tracking (pending, loading, loaded, failed)
-- Progress reporting for UI
-- Priority-based loading queue
-- Cancellation support for scene transitions
-
 ### Exploration_UIManager.h - HUD Management
 **Engine APIs:** `Zenith_UIComponent`, `Zenith_UIText`
 
@@ -135,7 +123,6 @@ Uses `CreateEmptyScene("World")` + `SetActiveScene()` to enter gameplay, `Unload
 2. **Understand camera:** `Exploration_PlayerController.h` - First-person controls
 3. **Study terrain:** `Exploration_TerrainExplorer.h` - Terrain interaction
 4. **See atmosphere:** `Exploration_AtmosphereController.h` - Day/night cycle
-5. **Advanced:** `Exploration_AsyncLoader.h` - Async loading patterns
 
 ## Controls
 
@@ -277,7 +264,6 @@ This process generates LOD0-LOD3 mesh files for all 4096 terrain chunks and may 
 - **LOD**: "LOD0" - Current chunk's LOD level
 - **FPS**: "60.0" - Frame rate
 - **VRAM**: "128.5 / 256.0 MB" - Vertex buffer usage
-- **Loader**: "Ready" - Asset streaming status
 
 ### Gameplay Actions
 1. **Mouse Look**: Click to capture mouse, move mouse to look around

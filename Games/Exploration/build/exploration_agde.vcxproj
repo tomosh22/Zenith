@@ -162,7 +162,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\Exploration_AsyncLoader.h" />
     <ClInclude Include="..\Components\Exploration_AtmosphereController.h" />
     <ClInclude Include="..\Components\Exploration_Behaviour.h" />
     <ClInclude Include="..\Components\Exploration_Config.h" />

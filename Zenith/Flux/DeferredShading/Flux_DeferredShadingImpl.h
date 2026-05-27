@@ -14,6 +14,7 @@ public:
 	Flux_DeferredShadingImpl& operator=(const Flux_DeferredShadingImpl&) = delete;
 
 	void Initialise();
+	void Shutdown();
 	void BuildPipelines();
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
